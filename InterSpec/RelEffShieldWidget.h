@@ -3,15 +3,15 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WGroupBox>
+#include <Wt/WGroupBox.h>
 
 
-#include <Wt/WContainerWidget>
-#include <Wt/WLineEdit>
-#include <Wt/WCheckBox>
-#include <Wt/WStackedWidget>
-#include <Wt/WLabel>
-#include <Wt/WSuggestionPopup>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WLabel.h>
+#include <Wt/WSuggestionPopup.h>
 
 
 //Forward declarations
@@ -74,7 +74,7 @@ public:
 
   enum class ShieldType { SelfAtten, ExternalAtten };
 
-  RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *parent = nullptr );
+  RelEffShieldWidget( ShieldType type );
   ~RelEffShieldWidget();
 
   bool isMaterialSelected() const;
@@ -115,11 +115,11 @@ public:
   std::unique_ptr<RelEffShieldState> state() const;
   void setState(const RelEffShieldState& state);
 
-  Wt::Signal<void> &changed();
+  Wt::Signal<> &changed();
 
 private:
   ShieldType m_type;
-  Wt::Signal<void> m_changed;
+  Wt::Signal<> m_changed;
   SwitchCheckbox *m_frameSwitch;
   Wt::WStackedWidget *m_stackedWidget;
   Wt::WContainerWidget *m_materialFrame;

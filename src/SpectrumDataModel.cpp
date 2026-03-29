@@ -31,13 +31,13 @@
 // Disable streamsize <=> size_t warnings in boost
 #pragma warning(disable:4244)
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
-#include <Wt/WSignal>
-#include <Wt/WString>
-#include <Wt/WModelIndex>
-#include <Wt/Chart/WDataSeries>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WSignal.h>
+#include <Wt/WString.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/Chart/WDataSeries.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
@@ -50,14 +50,14 @@ using SpecUtils::Measurement;
 
 namespace
 {
-  const Wt::WColor ns_default_foreground_color( black );
-  const Wt::WColor ns_default_background_color( cyan );
-  const Wt::WColor ns_default_secondary_color( darkGreen );
+  const Wt::WColor ns_default_foreground_color( Wt::StandardColor::Black );
+  const Wt::WColor ns_default_background_color( Wt::StandardColor::Cyan );
+  const Wt::WColor ns_default_secondary_color( Wt::StandardColor::DarkGreen );
 }
 
 
-SpectrumDataModel::SpectrumDataModel( Wt::WObject *parent )
-  : Wt::WAbstractItemModel( parent ),
+SpectrumDataModel::SpectrumDataModel()
+  : Wt::WAbstractItemModel(),
     m_rebinFactor( 1 ),
     m_dataLiveTime( -1.0 ),
     m_dataRealTime( -1.0 ),
@@ -73,7 +73,7 @@ SpectrumDataModel::SpectrumDataModel( Wt::WObject *parent )
     m_secondDataOwnAxis(  true ),
     m_backgroundSubtract( false ),
     m_addHistIntegralToLegend( true ),
-    m_dataSet( this ),
+    m_dataSet(),
     m_seriesColors{ ns_default_foreground_color, ns_default_background_color, ns_default_secondary_color }
 {
 } // SpectrumDataModel constructor
@@ -492,7 +492,7 @@ void SpectrumDataModel::yRangeInXRange( const double xMin, const double xMax,
     {
       try
       {
-        const double val = boost::any_cast<double>( data( index( row, column ), DisplayRole ) );
+        const double val = Wt::cpp17::any_cast<double>( data( index( row, column ), Wt::ItemDataRole::Display ) );
         yMax = max( yMax, val );
         yMin = min( yMin, val );
       } catch(...) { }
@@ -553,7 +553,7 @@ double SpectrumDataModel::data( int row, int column ) const
 {
   try
   {
-    return boost::any_cast<double>( data( index( row, column ), DisplayRole ) );
+    return Wt::cpp17::any_cast<double>( data( index( row, column ), Wt::ItemDataRole::Display ) );
   }
   catch(...)
   {
@@ -564,7 +564,7 @@ double SpectrumDataModel::data( int row, int column ) const
 } // double SpectrumDataModel::data( int row, int column ) const
 
 
-boost::any SpectrumDataModel::displayBinValue( int row,
+Wt::cpp17::any SpectrumDataModel::displayBinValue( int row,
                                                SpectrumDataModel::ColumnType column ) const
 {
   //Could optimize this function to be a bit more efficient since we no longer
@@ -572,12 +572,12 @@ boost::any SpectrumDataModel::displayBinValue( int row,
   std::shared_ptr<const Measurement> xHist = histUsedForXAxis();
 
   if( !xHist )
-    return boost::any();
+    return Wt::cpp17::any();
 
   const size_t nchannel = xHist->num_gamma_channels();
   const int numRows = static_cast<int>(nchannel) / m_rebinFactor;
   if( (row < 0) || (row >= numRows) )
-    return boost::any();
+    return Wt::cpp17::any();
 
   const size_t newxAxisFirstBin = std::min( static_cast<size_t>(row * m_rebinFactor), nchannel-1);
   const size_t newxAxisLastBin = std::min( static_cast<size_t>(newxAxisFirstBin + m_rebinFactor - 1), nchannel-1 );
@@ -590,7 +590,7 @@ boost::any SpectrumDataModel::displayBinValue( int row,
     {
       const float xMin = xHist->gamma_channel_lower( newxAxisFirstBin );
       const float xMax = xHist->gamma_channel_upper( newxAxisLastBin );
-      return boost::any(0.5*(xMax+xMin));
+      return Wt::cpp17::any(0.5*(xMax+xMin));
     }
       
     case DATA_COLUMN:        hist = m_data;       break;
@@ -599,7 +599,7 @@ boost::any SpectrumDataModel::displayBinValue( int row,
   }//switch( column )
 
   if( !hist )
-    return boost::any();
+    return Wt::cpp17::any();
   
   double integral = 0.0;
   const vector<float> &channel_contents = *(hist->gamma_channel_contents());
@@ -661,14 +661,14 @@ boost::any SpectrumDataModel::displayBinValue( int row,
     case BACKGROUND_COLUMN:  integral *= backgroundScaledBy(); break;
   }//switch( column )
 
-  return boost::any( integral );
+  return Wt::cpp17::any( integral );
 }//displayBinValue(...)
 
 
-boost::any SpectrumDataModel::data( const WModelIndex &index, int role ) const
+Wt::cpp17::any SpectrumDataModel::data( const WModelIndex &index, Wt::ItemDataRole role ) const
 {
-  if( role != Wt::DisplayRole )
-    return boost::any();
+  if( role != Wt::ItemDataRole::Display )
+    return Wt::cpp17::any();
 
   const int row    = index.row();
   const int column = index.column();
@@ -682,9 +682,9 @@ boost::any SpectrumDataModel::data( const WModelIndex &index, int role ) const
 
   // Make sure it's within standard bounds.
   if( ( row    < 0 ) || ( row    >= numRows    ) )
-    return boost::any();
+    return Wt::cpp17::any();
   if( ( column < 0 ) || ( column >= numColumns ) )
-    return boost::any();
+    return Wt::cpp17::any();
 
   if( column == X_AXIS_COLUMN )
     return displayBinValue( row, X_AXIS_COLUMN );
@@ -696,7 +696,7 @@ boost::any SpectrumDataModel::data( const WModelIndex &index, int role ) const
     
     const double value = asNumber( displayBinValue( row, DATA_COLUMN ) )
                          - asNumber( displayBinValue( row, BACKGROUND_COLUMN ) );
-    return boost::any( value );
+    return Wt::cpp17::any( value );
   }else if( (column == SECOND_DATA_COLUMN) && !!m_secondData )
   {
     if( !m_backgroundSubtract || m_secondDataOwnAxis || !m_background )
@@ -704,14 +704,14 @@ boost::any SpectrumDataModel::data( const WModelIndex &index, int role ) const
     
     const double value = asNumber( displayBinValue( row, SECOND_DATA_COLUMN ) )
                          - asNumber( displayBinValue( row, BACKGROUND_COLUMN ) );
-    return boost::any( value );
+    return Wt::cpp17::any( value );
   }else if( (column == BACKGROUND_COLUMN) && m_background )
   {
     return displayBinValue( row, BACKGROUND_COLUMN );
   }
   
-  return boost::any();
-} //boost::any SpectrumDataModel::data( const WModelIndex &index, int role ) const
+  return Wt::cpp17::any();
+} //Wt::cpp17::any SpectrumDataModel::data( const WModelIndex &index, Wt::ItemDataRole role ) const
 
 
 WModelIndex SpectrumDataModel::index( int row, int column, const WModelIndex & ) const
@@ -757,13 +757,13 @@ bool SpectrumDataModel::columnHasData( int column ) const
 }
 
 
-boost::any SpectrumDataModel::headerData( int section, Orientation orientation, int role ) const
+Wt::cpp17::any SpectrumDataModel::headerData( int section, Orientation orientation, Wt::ItemDataRole role ) const
 {
   // If orientation is horizontal, the section is a column (histogram) number.
   // If orientation is vertical,   the section is a row    (bin)       number.
-  if( role == LevelRole ) return 0;
+  if( role == Wt::ItemDataRole::Level ) return 0;
 
-  if( ( orientation != Horizontal ) || ( role != DisplayRole ) )
+  if( ( orientation != Wt::Orientation::Horizontal ) || ( role != Wt::ItemDataRole::Display ) )
     return WAbstractItemModel::headerData( section, orientation, role );
 
   if( section == X_AXIS_COLUMN )
@@ -821,8 +821,8 @@ boost::any SpectrumDataModel::headerData( int section, Orientation orientation, 
   } // else if( m_background && section == BACKGROUND_COLUMN )
   
   // This should never happen, but just in case.
-  return boost::any();
-} // boost::any SpectrumDataModel::headerData( int section, Orientation orientation, int role ) const
+  return Wt::cpp17::any();
+} // Wt::cpp17::any SpectrumDataModel::headerData( int section, Orientation orientation, Wt::ItemDataRole role ) const
 
 
 void SpectrumDataModel::reset()
@@ -863,7 +863,7 @@ vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
   // Potentially add in all of the datafields
   if( m_background )
   {
-    Chart::WDataSeries series( BACKGROUND_COLUMN, Chart::LineSeries );
+    Chart::WDataSeries series( BACKGROUND_COLUMN, Chart::SeriesType::Line );
     series.setStacked( false );
     
     // Force a black line and other line-based variables
@@ -876,7 +876,7 @@ vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
 
   if( m_secondData )
   {
-    Chart::WDataSeries series( SECOND_DATA_COLUMN, Chart::LineSeries );
+    Chart::WDataSeries series( SECOND_DATA_COLUMN, Chart::SeriesType::Line );
     series.setStacked( false );
     
     // Force a darkGreen line and other line-based variables
@@ -887,13 +887,13 @@ vector< Chart::WDataSeries > SpectrumDataModel::suggestDataSeries() const
 
     // If it's on its own, note that.
     if( m_secondDataOwnAxis )
-      series.bindToAxis( Chart::Y2Axis );
+      series.bindToAxis( Chart::Axis::Y2 );
 
     answer.push_back( series );
   } // if( m_secondData )
 
   {
-    Chart::WDataSeries series( DATA_COLUMN, Chart::LineSeries );
+    Chart::WDataSeries series( DATA_COLUMN, Chart::SeriesType::Line );
     series.setStacked( false );
     
     // Force a black line and other line-based variables
@@ -929,7 +929,7 @@ void SpectrumDataModel::addIntegralOfHistogramToLegend( const bool doIt )
   if( doIt == m_addHistIntegralToLegend ) return;
 
   m_addHistIntegralToLegend = doIt;
-  headerDataChanged().emit( Horizontal, 0, rowCount() );
+  headerDataChanged().emit( Wt::Orientation::Horizontal, 0, rowCount() );
 } // void SpectrumDataModel::addIntegralOfHistogramToLegend( const bool doIt )
 
 

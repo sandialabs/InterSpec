@@ -30,7 +30,7 @@
 #include <map>
 #include <vector>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 struct ColorTheme;
 class DetectorPeakResponse;
@@ -64,7 +64,7 @@ protected:
 
   
 public:
-  DrfChart( Wt::WContainerWidget *parent = 0 );
+  DrfChart();
   virtual ~DrfChart();
   
   void updateChart( std::shared_ptr<const DetectorPeakResponse> det );

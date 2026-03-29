@@ -25,8 +25,10 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WDateTime>
-#include <Wt/WItemDelegate>
+#include <chrono>
+
+#include <Wt/WDateTime.h>
+#include <Wt/WItemDelegate.h>
 
 namespace Wt
 {
@@ -36,12 +38,12 @@ namespace Wt
 class LocalTimeDelegate : public Wt::WItemDelegate
 {
   //m_timeZoneOffset: as reported by Wt::WEnvironment
-  int m_timeZoneOffset;
+  std::chrono::minutes m_timeZoneOffset;
    
 public:
-  LocalTimeDelegate( Wt::WObject *parent = 0 );
+  LocalTimeDelegate();
   virtual ~LocalTimeDelegate();
-  virtual Wt::WWidget *update( Wt::WWidget *widget,
+  virtual std::unique_ptr<Wt::WWidget> update( Wt::WWidget *widget,
                                const Wt::WModelIndex &index,
                                Wt::WFlags<Wt::ViewItemRenderFlag > flags );
 };//class LocalTimeDelegate

@@ -29,8 +29,8 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WString>
-#include <Wt/WContainerWidget>
+#include <Wt/WString.h>
+#include <Wt/WContainerWidget.h>
 
 
 namespace Wt
@@ -56,8 +56,7 @@ public:
    */
   NuclideSourceEnterController( Wt::WLineEdit *nuclideEdit,
                                Wt::WLineEdit *nuclideAgeEdit,
-                               Wt::WText *halfLifeTxt,
-                               Wt::WObject *parent );
+                               Wt::WText *halfLifeTxt );
   
   
   void handleNuclideUserInput();
@@ -96,7 +95,7 @@ protected:
 class NuclideSourceEnter : public Wt::WContainerWidget
 {
 public:
-  NuclideSourceEnter( const bool showHalfLife, const bool showToolTips, Wt::WContainerWidget *parent );
+  NuclideSourceEnter( const bool showHalfLife, const bool showToolTips );
   virtual ~NuclideSourceEnter();
   
   void setNuclideText( const std::string &txt );

@@ -25,8 +25,8 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WMenuItem>
-#include <Wt/WPopupMenu>
+#include <Wt/WMenuItem.h>
+#include <Wt/WPopupMenu.h>
 
 class PopupDivMenuItem;
 

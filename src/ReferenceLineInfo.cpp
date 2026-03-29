@@ -30,8 +30,8 @@
 #include <string>
 #include <stdexcept>
 
-#include <Wt/WLocale>
-#include <Wt/WWebWidget>  //For quoting strings only
+#include <Wt/WLocale.h>
+#include <Wt/WWebWidget.h>  //For quoting strings only
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -456,8 +456,8 @@ shared_ptr<const vector<NuclideYield>> fission_nuclide_info( const SandiaDecay::
       {
         label += "m";
 #if PERFORM_DEVELOPER_CHECKS
-        if( level > 1 )
-          cout << label << " has level=" << level << endl;
+        //if( level > 1 )
+        //  cout << label << " has level=" << level << endl;
 #endif
       }//if( level > 0 )
 
@@ -3993,7 +3993,7 @@ vector<string> ReferenceLineInfo::additional_ref_line_sources()
         assert( 0 && "Fission header flags do not match parsed data!" );
       }
     }//for( const FissionCheck &chk : checks )
-    cout << "Developer check: all fission header flags match parsed data." << endl;
+    //cout << "Developer check: all fission header flags match parsed data." << endl;
   }
 #endif // PERFORM_DEVELOPER_CHECKS
 

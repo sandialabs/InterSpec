@@ -29,29 +29,28 @@
 #include <ctype.h>
 #include <algorithm>
 
-#include <Wt/WText>
-#include <Wt/Utils>
-#include <Wt/WTable>
-#include <Wt/WString>
-#include <Wt/WDialog>
-#include <Wt/WLength>
-#include <Wt/WPainter>
-#include <Wt/WRectArea>
-#include <Wt/WResource>
-#include <Wt/WTableCell>
-#include <Wt/WGridLayout>
-#include <Wt/Chart/WAxis>
-#include <Wt/WPushButton>
-#include <Wt/WPaintDevice>
-#include <Wt/WApplication>
-#include <Wt/Http/Response>
-#include <Wt/WStringStream>
-#include <Wt/WContainerWidget>
-#include <Wt/Chart/WCartesianChart>
+#include <Wt/WText.h>
+#include <Wt/Utils.h>
+#include <Wt/WTable.h>
+#include <Wt/WString.h>
+#include <Wt/WDialog.h>
+#include <Wt/WLength.h>
+#include <Wt/WPainter.h>
+#include <Wt/WRectArea.h>
+#include <Wt/WResource.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/Chart/WAxis.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WPaintDevice.h>
+#include <Wt/WApplication.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/Chart/WCartesianChart.h>
 
-#include <boost/ref.hpp>
-#include <boost/any.hpp>
-#include <boost/bind.hpp>
+#include <Wt/WAny.h>
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -146,9 +145,9 @@ protected:
   Wt::WApplication *m_app;
   
 public:
-  DecayChainHtmlResource( DecayChainChart *parent )
-  : WResource( parent ),
-  m_chart( parent ),
+  DecayChainHtmlResource( DecayChainChart *chart )
+  : WResource(),
+  m_chart( chart ),
   m_app( WApplication::instance() )
   {
     assert( m_app );
@@ -184,7 +183,7 @@ private:
       const SandiaDecay::Nuclide * const nuclide = m_chart->nuclide();
       
       const string filename = (nuclide ? nuclide->symbol : string("blank")) + "_decay_chain.html";
-      suggestFileName( filename, WResource::Attachment );
+      suggestFileName( filename, ContentDisposition::Attachment );
       
       
       WStringStream js;
@@ -265,8 +264,8 @@ private:
 }//namespace
 
 
-DecayChainChart::DecayChainChart( WContainerWidget *parent  )
-  : WContainerWidget( parent ),
+DecayChainChart::DecayChainChart()
+  : WContainerWidget(),
   m_useCurie( true ),
   m_jsLoaded( false ),
   m_nuclide( nullptr ),
@@ -281,25 +280,33 @@ DecayChainChart::DecayChainChart( WContainerWidget *parent  )
   
   InterSpec::instance()->useMessageResourceBundle( "DecayActivity" );
   
-  m_showDecayParticles.connect( boost::bind( &DecayChainChart::showDecayParticleInfo, this,
-                                            boost::placeholders::_1 ) );
-  m_showDecaysThrough.connect( boost::bind( &DecayChainChart::showDecaysThrough, this,
-                                           boost::placeholders::_1 ) );
+  m_showDecayParticles.connect( [this]( const std::string &csv ){ showDecayParticleInfo( csv ); } );
+  m_showDecaysThrough.connect( [this]( const std::string &nuc ){ showDecaysThrough( nuc ); } );
   
   
   //////////////
-  WResource *csv = new DecayChainHtmlResource( this );
+  DecayChainHtmlResource *csv = addChild( std::make_unique<DecayChainHtmlResource>( this ) );
 #if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *csvButton = new WAnchor( WLink(csv), this );
-  csvButton->setTarget( AnchorTarget::TargetNewWindow );
+  WLink csvLinkOsx( WLink::Type::Url, csv->url() );
+  csvLinkOsx.setTarget( Wt::LinkTarget::NewWindow );
+  WAnchor *csvButton = addNew<WAnchor>( csvLinkOsx );
   csvButton->setStyleClass( "LinkBtn DownloadLink DecayChainDnldBtn" );
+  csvButton->setText( "HTML" );
+  csvButton->setObjectName( "htmldownload" );
+  csvButton->hide();
 #else
-  WPushButton *csvButton = new WPushButton( this );
+  WPushButton *csvButton = addNew<WPushButton>();
   csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
-  csvButton->setLink( WLink(csv) );
-  csvButton->setLinkTarget( Wt::TargetNewWindow );
+  {
+    WLink csvLink( WLink::Type::Url, csv->url() );
+    csvLink.setTarget( Wt::LinkTarget::NewWindow );
+    csvButton->setLink( csvLink );
+  }
   csvButton->setStyleClass( "LinkBtn DownloadBtn DecayChainDnldBtn" );
-  
+  csvButton->setText( "HTML" );
+  csvButton->setObjectName( "htmldownload" );
+  csvButton->hide();
+
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   csvButton->clicked().connect( std::bind([csv](){
@@ -307,11 +314,6 @@ DecayChainChart::DecayChainChart( WContainerWidget *parent  )
   }) );
 #endif //ANDROID
 #endif
-  
-  csvButton->setText( "HTML" );
-  
-  csvButton->setObjectName( "htmldownload" );
-  csvButton->hide();
 }//DecayChainChart constructor
 
 
@@ -336,17 +338,15 @@ pair<AuxWindow *, DecayChainChart *>
       break;
   }//switch( type )
   
-  DecayChainChart *chart = new DecayChainChart();
-
   AuxWindow *window = new AuxWindow( title, (AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) );
-  
+
   WPushButton *close = window->addCloseButtonToFooter();
-  close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
+  close->clicked().connect( [window](){ window->hide(); } );
   window->rejectWhenEscapePressed();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
   WGridLayout *layout = window->stretcher();
-  layout->addWidget( chart, 0, 0 );
+  DecayChainChart *chart = layout->addWidget( std::make_unique<DecayChainChart>(), 0, 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
@@ -386,7 +386,7 @@ void DecayChainChart::doJavaScript( const std::string &js )
 
 void DecayChainChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
+  const bool renderFull = flags.test( Wt::RenderFlag::Full );
   //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
   
   WContainerWidget::render( flags );
@@ -726,7 +726,7 @@ void DecayChainChart::showDecayParticleInfo( const std::string &csvIsotopeNames 
   m_moreInfoDialog = new AuxWindow( WString::tr("dcc-particle-window-title") );
   m_moreInfoDialog->contents()->setMinimumSize(250, 80);
   m_moreInfoDialog->contents()->setMaximumSize(330, 400);
-  m_moreInfoDialog->contents()->setOverflow(Wt::WContainerWidget::OverflowAuto, Wt::Vertical);
+  m_moreInfoDialog->contents()->setOverflow(Wt::Overflow::Auto, Wt::Orientation::Vertical);
   m_moreInfoDialog->setClosable( true );
   m_moreInfoDialog->setModal( false );
   m_moreInfoDialog->rejectWhenEscapePressed();
@@ -739,40 +739,41 @@ void DecayChainChart::showDecayParticleInfo( const std::string &csvIsotopeNames 
   int nucs = 0;
   for( const auto &nuc_infos : nucinfos )
   {
-    auto header = new Wt::WText(  WString::tr("dcc-particles-from").arg(nuc_infos.first), m_moreInfoDialog->contents() );
+    Wt::WContainerWidget * const dlgContents = m_moreInfoDialog->contents();
+    auto header = dlgContents->addNew<Wt::WText>( WString::tr("dcc-particles-from").arg(nuc_infos.first) );
     header->addStyleClass( "DecayPartInfoHeader" );
     header->setInline( false );
-    
+
     if( nucs++ )
-      header->setMargin( 20, Wt::Top );
-    
+      header->setMargin( 20, Wt::Side::Top );
+
     if( nuc_infos.second.empty() )
     {
       WString msg = WString("<center>{1}</center>").arg( WString::tr("dcc-nuc-has-no-particles") );
-      auto blank = new WText( msg, Wt::XHTMLText, m_moreInfoDialog->contents() );
+      auto blank = dlgContents->addNew<WText>( msg, Wt::TextFormat::XHTML );
       blank->setInline( false );
       continue;
     }
-    
-    WTable *table = new Wt::WTable( m_moreInfoDialog->contents() );
+
+    WTable *table = dlgContents->addNew<Wt::WTable>();
     table->addStyleClass( "DecayChainChartTable" );
     table->setHeaderCount( 1 );
-    table->elementAt(0, 0)->addWidget( new Wt::WText( WString::tr("dcc-particle") ) );
-    table->elementAt(0, 1)->addWidget( new Wt::WText( WString::tr("Energy (keV)")) );
-    table->elementAt(0, 2)->addWidget( new Wt::WText( WString::tr("dcc-intensity") ) );
-    
+    table->elementAt(0, 0)->addNew<Wt::WText>( WString::tr("dcc-particle") );
+    table->elementAt(0, 1)->addNew<Wt::WText>( WString::tr("Energy (keV)") );
+    table->elementAt(0, 2)->addNew<Wt::WText>( WString::tr("dcc-intensity") );
+
     int row = 0;
     for( const auto &infos : nuc_infos.second )
     {
       ++row;
-      
+
       char energyStr[32], intensityStr[32];
       snprintf( energyStr, sizeof(energyStr), "%.2f", std::get<1>(infos) );
       snprintf( intensityStr, sizeof(intensityStr), "%.5g", std::get<2>(infos) );
-      
-      table->elementAt(row, 0)->addWidget( new Wt::WText( productname(std::get<0>(infos)) ) );
-      table->elementAt(row, 1)->addWidget( new Wt::WText( energyStr ) );
-      table->elementAt(row, 2)->addWidget( new Wt::WText( intensityStr ) );
+
+      table->elementAt(row, 0)->addNew<Wt::WText>( productname(std::get<0>(infos)) );
+      table->elementAt(row, 1)->addNew<Wt::WText>( energyStr );
+      table->elementAt(row, 2)->addNew<Wt::WText>( intensityStr );
     }//for( loop over infos )
   }//for( loop over nucinfos )
   
@@ -802,9 +803,8 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   | AuxWindowProperties::EnableResize;
   
   m_moreInfoDialog = new AuxWindow( WString::tr("dcc-decay-through-window-title").arg(nuclide->symbol), windowProp );
-  DecayChainChart *w = new DecayChainChart();
+  DecayChainChart *w = m_moreInfoDialog->stretcher()->addWidget( std::make_unique<DecayChainChart>(), 0, 0 );
   w->setNuclide( nuclide, m_useCurie, DecayChainChart::DecayChainType::DecayThrough );
-  m_moreInfoDialog->stretcher()->addWidget( w, 0, 0  );
   
   m_moreInfoDialog->resizeWindow( std::max( 800, static_cast<int>(std::min(ww,1.3*wh) ) ), std::max( 600, static_cast<int>(wh) ) );
   
@@ -823,7 +823,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
 void DecayChainChart::deleteMoreInfoDialog()
 {
   if( m_moreInfoDialog )
-    delete m_moreInfoDialog;
+    AuxWindow::deleteAuxWindow( m_moreInfoDialog );
   m_moreInfoDialog = nullptr;
 }//void deleteMoreInfoDialog()
 

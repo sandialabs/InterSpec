@@ -31,7 +31,7 @@
 #include <string>
 #include <utility>
 
-#include <Wt/WString>
+#include <Wt/WString.h>
 
 #include "InterSpec/PhysicalUnits.h"
 

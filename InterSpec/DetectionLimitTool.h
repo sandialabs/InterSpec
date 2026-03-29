@@ -28,8 +28,8 @@
 #include <tuple>
 #include <vector>
 
-#include <Wt/Json/Object>
-#include <Wt/WContainerWidget>
+#include <Wt/Json/Object.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -150,8 +150,7 @@ public:
   
 public:
   DetectionLimitTool( InterSpec *viewer,
-                          Wt::WSuggestionPopup *materialSuggest,
-                          Wt::WContainerWidget *parent = 0 );
+                          Wt::WSuggestionPopup *materialSuggest );
   
   virtual ~DetectionLimitTool();
   

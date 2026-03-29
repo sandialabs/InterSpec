@@ -31,23 +31,23 @@
 #include <iostream>
 #include <stdexcept>
 
-#include <Wt/WText>
-#include <Wt/WTable>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WAnchor>
-#include <Wt/WServer>
-#include <Wt/WSvgImage>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WPopupMenu>
-#include <Wt/WTableCell>
-#include <Wt/WTabWidget>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WItemDelegate>
+#include <Wt/WText.h>
+#include <Wt/WTable.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WServer.h>
+#include <Wt/WSvgImage.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WPopupMenu.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WItemDelegate.h>
 
 #include "SpecUtils/Filesystem.h"
 
@@ -156,9 +156,11 @@ namespace
         
         m_peakModel->setData( index, color );
         if( m_color )
-          delete m_color;
-        m_color = nullptr;
-        updateRender(index,0);
+        {
+          auto owned = m_color->removeFromParent();
+          m_color = nullptr;
+        }
+        updateRender(index,WFlags<ViewItemRenderFlag>());
       }
       
       void colorSelected( const std::string &color )
@@ -173,15 +175,14 @@ namespace
         
         auto model = dynamic_cast<const PeakModel *>( index.model() );
         
-        if( model && (flags & RenderEditing) ) //RenderSelected, RenderEditing, RenderFocused, RenderInvalid
+        if( model && (flags & ViewItemRenderFlag::Editing) ) //RenderSelected, RenderEditing, RenderFocused, RenderInvalid
         {
           if( !m_color )
           {
-            m_color = new ColorSelect(ColorSelect::PrefferNative,this);
+            m_color = addNew<ColorSelect>( ColorSelect::PrefferNative );
             setAttributeValue( "style", "margin: 0px; background-color: null;" );
             m_color->setAttributeValue("style", "height: 15px;" );
-            m_color->cssColorChanged().connect( boost::bind( &EditWidget::colorSelected, this,
-                                                            boost::placeholders::_1 ) );
+            m_color->cssColorChanged().connect( [this]( const std::string &color ){ colorSelected( color ); } );
           }
           try
           {
@@ -218,27 +219,26 @@ namespace
     };//class EditWidget
     
   public:
-    ColorDelegate( Wt::WObject *parent = NULL )
-      : WAbstractItemDelegate(parent)
+    ColorDelegate()
+      : WAbstractItemDelegate()
     {
-      closeEditor().connect( boost::bind( &ColorDelegate::doCloseEditor, this,
-                                         boost::placeholders::_1, boost::placeholders::_2 ) );
+      closeEditor().connect( [this]( WWidget *w, bool save ){ doCloseEditor( w, save ); } );
     }
-    
+
     virtual ~ColorDelegate(){}
-    
-    virtual Wt::WWidget *update( Wt::WWidget *widget,
-                                const Wt::WModelIndex &index,
-                                Wt::WFlags< Wt::ViewItemRenderFlag > flags )
+
+    virtual std::unique_ptr<Wt::WWidget> update( Wt::WWidget *widget,
+                                                const Wt::WModelIndex &index,
+                                                Wt::WFlags<Wt::ViewItemRenderFlag> flags )
     {
       EditWidget *edit = dynamic_cast<EditWidget *>(widget);
       if( !edit )
-        edit = new EditWidget( index, flags, this );
+        return std::make_unique<EditWidget>( index, flags, this );
       else
         edit->updateRender( index, flags );
-      
-      return edit;
-    }//WWidget *update(...)
+
+      return nullptr;
+    }//update(...)
     
     
     void doCloseEditor( WWidget *editor, bool save )
@@ -251,24 +251,24 @@ namespace
   protected:
     
  
-    boost::any editState( Wt::WWidget *editor ) const
+    Wt::cpp17::any editState( Wt::WWidget *editor ) const
     {
       EditWidget *w = dynamic_cast<EditWidget *>(editor);
       if( !w )
       {
         cerr << "editState():\n\tLogic error - fix me!" << endl;
-        return boost::any();
+        return Wt::cpp17::any();
       }//if( !w )
       
       WString csscolor = "none";
       if( w )
         csscolor = w->cssColor();
       
-      return boost::any( csscolor );
-    }//boost::any editState( WWidget *editor ) const
+      return Wt::cpp17::any( csscolor );
+    }//Wt::cpp17::any editState( WWidget *editor ) const
 
     
-    void setEditState( Wt::WWidget *editor, const boost::any &value ) const
+    void setEditState( Wt::WWidget *editor, const Wt::cpp17::any &value ) const
     {
       EditWidget *w = dynamic_cast<EditWidget *>(editor);
       if( !w )
@@ -279,20 +279,20 @@ namespace
       
       try
       {
-        w->setCssCollor( boost::any_cast<WString>(value) );
+        w->setCssCollor( Wt::cpp17::any_cast<WString>(value) );
       }catch(...)
       {
         cerr << "setEditState(...)\n\tPossible Logic error - fix me!" << endl;
       }//try / catch
-    }//void setEditState( WWidget *editor, const boost::any& value ) const
+    }//void setEditState( WWidget *editor, const Wt::cpp17::any& value ) const
 
     
-    void setModelData( const boost::any &editState,
+    void setModelData( const Wt::cpp17::any &editState,
                       Wt::WAbstractItemModel *model,
                       const Wt::WModelIndex &index ) const
     {
       if( model )
-        model->setData( index, editState, EditRole );
+        model->setData( index, editState, ItemDataRole::Edit );
     }//void setModelData(...)
   };//class ColorDelegate
 #endif //ALLOW_PEAK_COLOR_DELEGATE
@@ -306,8 +306,8 @@ namespace
 class ItemDelegate : public Wt::WItemDelegate
 {
 public:
-  ItemDelegate(WObject *parent = 0)
-  : WItemDelegate( parent )
+  ItemDelegate()
+  : WItemDelegate()
   {
   }
    
@@ -353,13 +353,13 @@ protected:
     
     switch( k.key() )
     {
-      case Wt::Key_Enter: case Wt::Key_Tab: case Wt::Key_Shift: case Wt::Key_Control:
-      case Wt::Key_Alt: case Wt::Key_PageUp: case Wt::Key_PageDown: case Wt::Key_End:
-      case Wt::Key_Home: case Wt::Key_Left: case Wt::Key_Up: case Wt::Key_Right:
-      case Wt::Key_Down: case Wt::Key_Escape: case Wt::Key_Insert:
-      case Wt::Key_F1: case Wt::Key_F2: case Wt::Key_F3: case Wt::Key_F4: case Wt::Key_F5:
-      case Wt::Key_F6: case Wt::Key_F7: case Wt::Key_F8: case Wt::Key_F9: case Wt::Key_F10:
-      case Wt::Key_F11: case Wt::Key_F12:
+      case Wt::Key::Enter: case Wt::Key::Tab: case Wt::Key::Shift: case Wt::Key::Control:
+      case Wt::Key::Alt: case Wt::Key::PageUp: case Wt::Key::PageDown: case Wt::Key::End:
+      case Wt::Key::Home: case Wt::Key::Left: case Wt::Key::Up: case Wt::Key::Right:
+      case Wt::Key::Down: case Wt::Key::Escape: case Wt::Key::Insert:
+      case Wt::Key::F1: case Wt::Key::F2: case Wt::Key::F3: case Wt::Key::F4: case Wt::Key::F5:
+      case Wt::Key::F6: case Wt::Key::F7: case Wt::Key::F8: case Wt::Key::F9: case Wt::Key::F10:
+      case Wt::Key::F11: case Wt::Key::F12:
         break;
         
         // Only set changed if the key actually made a difference.
@@ -373,15 +373,16 @@ protected:
   }//onKeyDown
   
   
-  virtual WWidget *createEditor( const WModelIndex& index,
-                                WFlags<ViewItemRenderFlag> flags) const
+  virtual std::unique_ptr<WWidget> createEditor( const WModelIndex& index,
+                                               WFlags<ViewItemRenderFlag> flags) const
   {
-    WWidget *w = WItemDelegate::createEditor(index, flags);
+    std::unique_ptr<WWidget> wOwner = WItemDelegate::createEditor(index, flags);
+    WWidget *w = wOwner.get();
     auto div = dynamic_cast<WContainerWidget *>( w );
     assert( div );
     if( !div )
-      return w;
-    
+      return wOwner;
+
     for( WWidget *d : div->children() )
     {
       auto e = dynamic_cast<WLineEdit *>( d );
@@ -389,14 +390,17 @@ protected:
       {
         auto changed = make_shared<bool>( false );
         auto keydownsig = make_shared<Wt::Signals::connection>();
-        e->blurred().connect( boost::bind( &ItemDelegate::closeOnBlur, this, w, e, e->id(), changed ) );
-        
-        *keydownsig = e->keyWentDown().connect( boost::bind( &ItemDelegate::onKeyDown, this,
-                                                e, e->id(), changed, keydownsig, boost::placeholders::_1 ) );
+        e->blurred().connect( [this, w, e, eID = e->id(), changed](){
+          closeOnBlur( w, e, eID, changed );
+        } );
+
+        *keydownsig = e->keyWentDown().connect( [this, e, eID = e->id(), changed, keydownsig]( WKeyEvent k ){
+          onKeyDown( e, eID, changed, keydownsig, k );
+        } );
       }//if( e )
     }//
-    
-    return w;
+
+    return wOwner;
   }//createEditor(...)
 };//class ItemDelegate
 
@@ -408,13 +412,13 @@ protected:
 class MeanDelegate : public ItemDelegate
 {
 public:
-  MeanDelegate( PeakModel *model, WObject *parent = nullptr )
-    : ItemDelegate( parent ),
+  MeanDelegate( PeakModel *model )
+    : ItemDelegate(),
       m_peakModel( model )
   {
   }
 
-  virtual void setModelData( const boost::any &editState,
+  virtual void setModelData( const Wt::cpp17::any &editState,
                              Wt::WAbstractItemModel *model,
                              const Wt::WModelIndex &index ) const
   {
@@ -438,7 +442,7 @@ public:
     double newMean = oldMean;
     try
     {
-      const WString txt = boost::any_cast<WString>( editState );
+      const WString txt = Wt::cpp17::any_cast<WString>( editState );
       string valstr = txt.toUTF8();
 
       // Strip uncertainty portion if present
@@ -473,7 +477,7 @@ public:
     // doesnt re-parse units like "0.555 MeV" as 0.555 keV.
     char meanBuf[64];
     snprintf( meanBuf, sizeof(meanBuf), "%.6g", newMean );
-    const boost::any kevEditState = boost::any( WString::fromUTF8( meanBuf ) );
+    const Wt::cpp17::any kevEditState = Wt::cpp17::any( WString::fromUTF8( meanBuf ) );
 
     const vector<shared_ptr<const PeakDef>> roiPeaks = m_peakModel->peaksSharingRoi( peak );
     const bool isSinglePeakRoi = (roiPeaks.size() == 1);
@@ -521,29 +525,30 @@ protected:
 class ContinuumTypeDelegate : public Wt::WAbstractItemDelegate
 {
 public:
-  ContinuumTypeDelegate( WObject *parent = nullptr )
-    : WAbstractItemDelegate( parent )
+  ContinuumTypeDelegate()
+    : WAbstractItemDelegate()
   {
   }
 
-  virtual WWidget *update( WWidget *widget, const WModelIndex &index,
-                           WFlags<ViewItemRenderFlag> flags )
+  virtual std::unique_ptr<WWidget> update( WWidget *widget, const WModelIndex &index,
+                                          WFlags<ViewItemRenderFlag> flags )
   {
-    if( flags & RenderEditing )
+    if( flags.test(ViewItemRenderFlag::Editing) )
     {
       // Check if we already have an editor (container with combo box)
       WContainerWidget *container = dynamic_cast<WContainerWidget *>( widget );
       if( !container )
       {
-        widget = createEditor( index, flags );
-        WInteractWidget *iw = dynamic_cast<WInteractWidget *>( widget );
+        std::unique_ptr<WWidget> editor = createEditor( index, flags );
+        WInteractWidget *iw = dynamic_cast<WInteractWidget *>( editor.get() );
         if( iw )
         {
           iw->mouseWentDown().preventPropagation();
           iw->clicked().preventPropagation();
         }
+        return editor;
       }
-      return widget;
+      return nullptr;
     }
 
     // Not editing - display as text
@@ -551,55 +556,60 @@ public:
       widget = nullptr;
 
     WText *text = dynamic_cast<WText *>( widget );
-    if( !text )
-      text = new WText();
+    if( text )
+    {
+      const Wt::cpp17::any d = index.data( ItemDataRole::Display );
+      if( !!d.has_value() )
+        text->setText( Wt::cpp17::any_cast<WString>( d ) );
+      else
+        text->setText( "" );
+      return nullptr;
+    }
 
-    const boost::any d = index.data( DisplayRole );
-    if( !d.empty() )
-      text->setText( boost::any_cast<WString>( d ) );
-    else
-      text->setText( "" );
-
-    return text;
+    auto newText = std::make_unique<WText>();
+    const Wt::cpp17::any d = index.data( ItemDataRole::Display );
+    if( !!d.has_value() )
+      newText->setText( Wt::cpp17::any_cast<WString>( d ) );
+    return newText;
   }//update(...)
 
 
-  virtual void setModelData( const boost::any &editState,
+  virtual void setModelData( const Wt::cpp17::any &editState,
                              Wt::WAbstractItemModel *model,
                              const Wt::WModelIndex &index ) const
   {
-    const int comboIndex = boost::any_cast<int>( editState );
+    const int comboIndex = Wt::cpp17::any_cast<int>( editState );
     if( (comboIndex < 0) || (comboIndex >= static_cast<int>(m_types.size())) )
       return;
 
     const WString label = WString::tr( PeakContinuum::offset_type_label_tr( m_types[comboIndex] ) );
-    model->setData( index, boost::any( label ), EditRole );
+    model->setData( index, Wt::cpp17::any( label ), ItemDataRole::Edit );
   }//setModelData(...)
 
 
-  virtual boost::any editState( WWidget *editor ) const
+  virtual Wt::cpp17::any editState( WWidget *editor ) const
   {
     WContainerWidget *container = dynamic_cast<WContainerWidget *>( editor );
     if( !container )
-      return boost::any();
+      return Wt::cpp17::any();
 
     for( WWidget *child : container->children() )
     {
       WComboBox *combo = dynamic_cast<WComboBox *>( child );
       if( combo )
-        return boost::any( combo->currentIndex() );
+        return Wt::cpp17::any( combo->currentIndex() );
     }
-    return boost::any();
+    return Wt::cpp17::any();
   }//editState(...)
 
 
-  virtual void setEditState( WWidget *editor, const boost::any &value ) const
+  virtual void setEditState( WWidget *editor, const Wt::cpp17::any &value ) const
   {
     WContainerWidget *container = dynamic_cast<WContainerWidget *>( editor );
     if( !container )
       return;
 
-    const int idx = boost::any_cast<int>( value );
+    const int idx = Wt::cpp17::any_cast<int>( value );
     for( WWidget *child : container->children() )
     {
       WComboBox *combo = dynamic_cast<WComboBox *>( child );
@@ -612,17 +622,17 @@ public:
   }//setEditState(...)
 
 protected:
-  WWidget *createEditor( const WModelIndex &index, WFlags<ViewItemRenderFlag> flags ) const
+  std::unique_ptr<WWidget> createEditor( const WModelIndex &index, WFlags<ViewItemRenderFlag> flags ) const
   {
-    WContainerWidget *container = new WContainerWidget();
+    auto container = std::make_unique<WContainerWidget>();
     container->setSelectable( true );
     //container->setPadding(15, Wt::Right);
 
-    WComboBox *combo = new WComboBox( container );
+    WComboBox *combo = container->addNew<WComboBox>();
 
     // Find current type from the display data
-    const boost::any d = index.data( DisplayRole );
-    const WString currentLabel = d.empty() ? WString() : boost::any_cast<WString>( d );
+    const Wt::cpp17::any d = index.data( ItemDataRole::Display );
+    const WString currentLabel = !d.has_value() ? WString() : Wt::cpp17::any_cast<WString>( d );
 
     int currentIdx = 0;
     for( size_t i = 0; i < m_types.size(); ++i )
@@ -636,18 +646,19 @@ protected:
     combo->setCurrentIndex( currentIdx );
 
     auto userSelected = make_shared<bool>( false );
+    WContainerWidget *containerRaw = container.get();
 
     // Close and save on explicit selection change
-    combo->changed().connect( std::bind( [this, container, userSelected](){
+    combo->changed().connect( [this, containerRaw, userSelected](){
       (*userSelected) = true;
-      doCloseEditor( container, true );
-    }) );
+      doCloseEditor( containerRaw, true );
+    } );
 
     // Close without saving on blur (e.g., switching tabs)
-    combo->blurred().connect( std::bind( [this, container, userSelected](){
+    combo->blurred().connect( [this, containerRaw, userSelected](){
       if( !(*userSelected) )
-        doCloseEditor( container, false );
-    }) );
+        doCloseEditor( containerRaw, false );
+    } );
 
     return container;
   }//createEditor(...)
@@ -798,9 +809,8 @@ function( sender, event, dataOwner, dataName )
 
 PeakInfoDisplay::PeakInfoDisplay( InterSpec *viewer,
                                   D3SpectrumDisplayDiv *spectrumDisplayDiv,
-                                  PeakModel *peakModel,
-                                  Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+                                  PeakModel *peakModel )
+  : WContainerWidget(),
     m_model( peakModel ),
     m_viewer( viewer ),
     m_spectrumDisplayDiv( spectrumDisplayDiv ),
@@ -845,7 +855,7 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
     WPushButton *yes_button = window->addButton( "Yes" );
     WPushButton *no_button = window->addButton( "No" );
     
-    yes_button->clicked().connect( boost::bind( &PeakInfoDisplay::removeAllPeaks, display ) );
+    yes_button->clicked().connect( [display](){ PeakInfoDisplay::removeAllPeaks( display ); } );
   };
   
   make_dialog();
@@ -856,15 +866,14 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   WPushButton *yes_button = window->addButton( WString::tr("Yes") );
   window->addButton( WString::tr("No") );
   
-  yes_button->clicked().connect( boost::bind( &PeakInfoDisplay::removeAllPeaks, this ) );
-  
-  
+  yes_button->clicked().connect( [this](){ removeAllPeaks(); } );
+
+
   // We'll put an "undo" to close the dialog we just made - we could do a redo, but then making the
   //  undo becomes a bit harder... good enough, I guess
-  auto closerfcn = wApp->bind( boost::bind( &WDialog::done, window, Wt::WDialog::DialogCode::Accepted ) );
   UndoRedoManager *undoManager = m_viewer ? m_viewer->undoRedoManager() : nullptr;
   if( undoManager )
-    undoManager->addUndoRedoStep( closerfcn, nullptr, "Click clear all peaks." );
+    undoManager->addUndoRedoStep( [window](){ window->done( Wt::DialogCode::Accepted ); }, nullptr, "Click clear all peaks." );
 }//void confirmRemoveAllPeaks()
 
 
@@ -970,7 +979,7 @@ void PeakInfoDisplay::handleChartLeftClick( const double energy )
     return;
   
   Wt::WModelIndex index = m_model->indexOfPeak( peak );
-  m_infoView->scrollTo( index, WTreeView::ScrollHint::EnsureVisible );
+  m_infoView->scrollTo( index, Wt::ScrollHint::EnsureVisible );
   m_infoView->select( index );
   
   enablePeakDelete( index );
@@ -1020,16 +1029,15 @@ void PeakInfoDisplay::createNewPeak()
   const float initialEnergy = 0.5f*(xmin + xmax);
   
   AddNewPeakDialog *window = new AddNewPeakDialog( initialEnergy, "" );
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
   // We'll make it so "undo" will close the window.
   //  Not implementing "redo", as it will get complicated, and not super useful
   InterSpec *viewer = InterSpec::instance();
   UndoRedoManager *undoManager = viewer ? viewer->undoRedoManager() : nullptr;
   if( undoManager )
   {
-    auto closer = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    undoManager->addUndoRedoStep( closer, nullptr , "Open add peak dialog." );
+    undoManager->addUndoRedoStep( [window](){ AuxWindow::deleteAuxWindow( window ); }, nullptr , "Open add peak dialog." );
   }//if( undoManager )
 }//createNewPeak()
 
@@ -1068,7 +1076,7 @@ void PeakInfoDisplay::enablePeakDelete( WModelIndex index )
     return;
 
   const WFlags<ItemFlag> flags = m_model->flags( index );
-  if( (flags & Wt::ItemIsSelectable) == Wt::ItemIsSelectable )
+  if( (flags & Wt::ItemFlag::Selectable) == Wt::ItemFlag::Selectable )
   {
     m_deletePeak->enable();
     m_deletePeak->show();
@@ -1134,117 +1142,114 @@ void PeakInfoDisplay::init()
 
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
-  m_infoLayout = new WGridLayout();
-  setLayout( m_infoLayout );
+  m_infoLayout = setLayout( std::make_unique<WGridLayout>() );
   
   m_infoLayout->setContentsMargins( 0, 0, 0, 0 );
   m_infoLayout->setVerticalSpacing( 0 );
   m_infoLayout->setHorizontalSpacing( 0 );
   
-  m_infoView = new RowStretchTreeView();
+  auto infoViewOwner = std::make_unique<RowStretchTreeView>();
+  m_infoView = infoViewOwner.get();
   m_infoView->addStyleClass( "PeakInfoDisplayTable" );
-  m_infoView->setRootIsDecorated(	false); //makes the tree look like a table! :)
-  
-  m_infoView->setModel( m_model );
+  m_infoView->setRootIsDecorated( false ); //makes the tree look like a table! :)
+
+  m_infoView->setModel( std::shared_ptr<Wt::WAbstractItemModel>( m_model, [](Wt::WAbstractItemModel*){} ) );
 
 //  m_infoView->setRowHeight(28);
 //  m_infoView->setHeaderHeight(28);
   m_infoView->setSortingEnabled( true );
   m_infoView->setAlternatingRowColors( true );
   m_infoView->setSelectable( true );
-  m_infoView->setSelectionMode( SingleSelection );
+  m_infoView->setSelectionMode( SelectionMode::Single );
   
   m_infoView->setColumnHidden( PeakModel::kCandidateIsotopes, true );
   m_infoView->setColumnHidden( PeakModel::kUseForCalibration, true );
   m_infoView->setColumnHidden( PeakModel::kUseForManualRelEff, true );
   m_infoView->setColumnHidden( PeakModel::kUseForShieldingSourceFit, true );
 
-  m_infoView->setEditTriggers( WAbstractItemView::SingleClicked | WAbstractItemView::DoubleClicked );
-  blurred().connect( boost::bind(&RowStretchTreeView::closeEditors, m_infoView, true) );
+  m_infoView->setEditTriggers( EditTrigger::SingleClicked | EditTrigger::DoubleClicked );
+  blurred().connect( [this](){ m_infoView->closeEditors( true ); } );
   
-  MeanDelegate *meanDelegate = new MeanDelegate( m_model, m_infoView );
+  auto meanDelegate = std::make_shared<MeanDelegate>( m_model );
   meanDelegate->setTextFormat( "%.2f" );
   m_infoView->setItemDelegateForColumn( PeakModel::kMean, meanDelegate );
 
-  ItemDelegate *dblDelagate = new ItemDelegate( m_infoView );
+  auto dblDelagate = std::make_shared<ItemDelegate>();
   dblDelagate->setTextFormat( "%.2f" );
   m_infoView->setItemDelegateForColumn( PeakModel::kFwhm, dblDelagate );
   m_infoView->setItemDelegateForColumn( PeakModel::kLowerX, dblDelagate );
   m_infoView->setItemDelegateForColumn( PeakModel::kUpperX, dblDelagate );
 
-  dblDelagate = new ItemDelegate( m_infoView );
-  dblDelagate->setTextFormat( "%.0f" );
-  //m_infoView->setItemDelegateForColumn( PeakModel::kAmplitude, dblDelagate ); // We'll actually return a string for peak amplitude
-  m_infoView->setItemDelegateForColumn( PeakModel::kRoiCounts, dblDelagate );
+  auto dblDelagate2 = std::make_shared<ItemDelegate>();
+  dblDelagate2->setTextFormat( "%.0f" );
+  //m_infoView->setItemDelegateForColumn( PeakModel::kAmplitude, dblDelagate2 ); // We'll actually return a string for peak amplitude
+  m_infoView->setItemDelegateForColumn( PeakModel::kRoiCounts, dblDelagate2 );
 
   //tweak column widths
-  m_infoView->setColumnWidth( PeakModel::kMean,       WLength(8, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kFwhm,       WLength(9, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kAmplitude,  WLength(12, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kCps,        WLength(13, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kMean,       WLength(8, WLength::Unit::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kFwhm,       WLength(9, WLength::Unit::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kAmplitude,  WLength(12, WLength::Unit::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kCps,        WLength(13, WLength::Unit::FontEx) );
   
   
-  m_infoView->setColumnWidth( PeakModel::kIsotope,    WLength(9, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kDifference,    WLength(8, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kIsotope,    WLength(9, WLength::Unit::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kDifference,    WLength(8, WLength::Unit::FontEx) );
   //Note 20131211, wcjohns: closeOnBlur was previoulsy set to false, however
   //  there was a rare crash that happened with the model row was deleted while
   //  the editor was still open.  Hopefully closeOnBlur==true will fix this
   //  (appears to).
   const bool closeOnBlur = true;
-  PhotopeakDelegate *nuclideDelegate = new PhotopeakDelegate( PhotopeakDelegate::NuclideDelegate, closeOnBlur, m_infoView );
+  auto nuclideDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::NuclideDelegate, closeOnBlur );
   m_infoView->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
 
-  m_infoView->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(13 /*18*/, WLength::FontEx) );
-  PhotopeakDelegate *photopeakDelegate = new PhotopeakDelegate( PhotopeakDelegate::GammaEnergyDelegate, closeOnBlur, m_infoView );
+  m_infoView->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(13 /*18*/, WLength::Unit::FontEx) );
+  auto photopeakDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::GammaEnergyDelegate, closeOnBlur );
   m_infoView->setItemDelegateForColumn( PeakModel::kPhotoPeakEnergy, photopeakDelegate );
 
-  m_infoView->setColumnWidth( PeakModel::kUserLabel,  WLength(9, WLength::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kUserLabel,  WLength(9, WLength::Unit::FontEx) );
   
 #if( ALLOW_PEAK_COLOR_DELEGATE )
-  m_infoView->setColumnWidth( PeakModel::kPeakLineColor, WLength(6,WLength::FontEx) );
-  ColorDelegate *colorDelegate = new ColorDelegate( m_infoView );
+  m_infoView->setColumnWidth( PeakModel::kPeakLineColor, WLength(6,WLength::Unit::FontEx) );
+  auto colorDelegate = std::make_shared<ColorDelegate>();
   m_infoView->setItemDelegateForColumn( PeakModel::kPeakLineColor, colorDelegate );
 #else
   m_infoView->setColumnHidden( PeakModel::kPeakLineColor, true );
 #endif
   
   m_infoView->setColumnHidden( PeakModel::kHasSkew, true );
-//  m_infoView->setColumnWidth( PeakModel::kHasSkew,    WLength(9, WLength::FontEx) );
+//  m_infoView->setColumnWidth( PeakModel::kHasSkew,    WLength(9, WLength::Unit::FontEx) );
   
   m_infoView->setColumnHidden( PeakModel::kSkewAmount, true );
-//  m_infoView->setColumnWidth( PeakModel::kSkewAmount, WLength(/*10*/13, WLength::FontEx) );
+//  m_infoView->setColumnWidth( PeakModel::kSkewAmount, WLength(/*10*/13, WLength::Unit::FontEx) );
   
   m_infoView->setColumnHidden( PeakModel::kType, true );
-//  m_infoView->setColumnWidth( PeakModel::kType,       WLength(12, WLength::FontEx) );
+//  m_infoView->setColumnWidth( PeakModel::kType,       WLength(12, WLength::Unit::FontEx) );
   
-  m_infoView->setColumnWidth( PeakModel::kLowerX,     WLength(/*11*/12, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kUpperX,     WLength(/*11*/12, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kRoiCounts,  WLength(8, WLength::FontEx) );
-  m_infoView->setColumnWidth( PeakModel::kContinuumType,  WLength(/*11*/12, WLength::FontEx) );
-  ContinuumTypeDelegate *contTypeDelegate = new ContinuumTypeDelegate( m_infoView );
+  m_infoView->setColumnWidth( PeakModel::kLowerX,     WLength(/*11*/12, WLength::Unit::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kUpperX,     WLength(/*11*/12, WLength::Unit::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kRoiCounts,  WLength(8, WLength::Unit::FontEx) );
+  m_infoView->setColumnWidth( PeakModel::kContinuumType,  WLength(/*11*/12, WLength::Unit::FontEx) );
+  auto contTypeDelegate = std::make_shared<ContinuumTypeDelegate>();
   m_infoView->setItemDelegateForColumn( PeakModel::kContinuumType, contTypeDelegate );
-//  m_infoView->setColumnWidth( PeakModel::kNumColumns, WLength(6, WLength::FontEx) );
+//  m_infoView->setColumnWidth( PeakModel::kNumColumns, WLength(6, WLength::Unit::FontEx) );
 //  m_infoView->setColumnAlignment( PeakModel::kMean, AlignRight );
 
 //  Selection mode seems to have no effect....
 //  m_infoView->setSelectionBehavior( Wt::SelectRows );
 //  m_infoView->setSelectionMode( Wt::SingleSelection );
-  m_infoView->setEditOptions( WAbstractItemView::SingleEditor );
+  m_infoView->setEditOptions( EditOption::SingleEditor );
 
-  //m_infoView->clicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this,
-  //                                           boost::placeholders::_1 ) );
-  //m_infoView->doubleClicked().connect( boost::bind( &PeakInfoDisplay::enablePeakDelete, this,
-  //                                                 boost::placeholders::_1 ) );
+  //m_infoView->clicked().connect( [this]( Wt::WModelIndex index ){ enablePeakDelete( index ); } );
+  //m_infoView->doubleClicked().connect( [this]( Wt::WModelIndex index ){ enablePeakDelete( index ); } );
 
   m_infoView->selectionChanged().connect( this, &PeakInfoDisplay::handleSelectionChanged );
-  
-  m_infoLayout->addWidget( m_infoView, 0, 0 );
+
+  m_infoLayout->addWidget( std::move(infoViewOwner), 0, 0 );
   m_infoLayout->setRowStretch( 0, 1 );
   m_infoLayout->setColumnStretch( 0, 1 );
 
   // Peak fit detector preferences panel (collapsible, right of table)
-  m_peakFitDetPrefsGui = new PeakFitDetPrefsGui( m_viewer, true );
-  m_infoLayout->addWidget( m_peakFitDetPrefsGui, 0, 1 );
+  m_peakFitDetPrefsGui = m_infoLayout->addWidget( std::make_unique<PeakFitDetPrefsGui>( m_viewer, true ), 0, 1 );
 
   m_viewer->peakFitDetPrefsChanged().connect(
     m_peakFitDetPrefsGui, &PeakFitDetPrefsGui::handlePrefsChanged );
@@ -1256,28 +1261,25 @@ void PeakInfoDisplay::init()
        std::placeholders::_3, std::placeholders::_4 ) );
 
   //Now add buttons to search/clear peaks
-  WContainerWidget *bottomDiv = new WContainerWidget();
+  WContainerWidget *bottomDiv = m_infoLayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0, 1, 2 );
   bottomDiv->addStyleClass( "PeakInfoDisplayBottomDiv" );
-  m_infoLayout->addWidget( bottomDiv, 1, 0, 1, 2 );
 
-  
-  auto helpBtn = new WContainerWidget( bottomDiv );
+  WContainerWidget *helpBtn = bottomDiv->addNew<WContainerWidget>();
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn PeakInfoHlpBtn" );
-  helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "peak-manager" ) );
-  
-  
-  WContainerWidget *buttonsDiv = new WContainerWidget( bottomDiv );
+  helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "peak-manager" ); } );
+
+  WContainerWidget *buttonsDiv = bottomDiv->addNew<WContainerWidget>();
   buttonsDiv->addStyleClass( "PeakInfoDisplayButtonsDiv" );
-  
-  m_searchForPeaks = new WPushButton( WString::tr("pid-search-peaks-btn"), buttonsDiv );
+
+  m_searchForPeaks = buttonsDiv->addNew<WPushButton>( WString::tr("pid-search-peaks-btn") );
   m_searchForPeaks->setIcon( "InterSpec_resources/images/magnifier.png" );
   
   HelpSystem::attachToolTipOn( m_searchForPeaks, WString::tr("pid-tt-search-peaks-btn"),
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
-  m_searchForPeaks->clicked().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, m_viewer, true ) );
+  m_searchForPeaks->clicked().connect( [this](){ PeakSearchGuiUtils::automated_search_for_peaks( m_viewer, true ); } );
 
   
-  m_clearPeaksButton = new WPushButton( WString::tr("pid-clear-peaks-btn"), buttonsDiv );
+  m_clearPeaksButton = buttonsDiv->addNew<WPushButton>( WString::tr("pid-clear-peaks-btn") );
   HelpSystem::attachToolTipOn( m_clearPeaksButton, WString::tr("pid-tt-clear-peaks-btn"),
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
   
@@ -1286,13 +1288,13 @@ void PeakInfoDisplay::init()
   m_clearPeaksButton->disable();
 
   //"Nuc. from Ref."
-  m_nucFromRefButton = new WPushButton( WString::tr("pid-nuc-from-ref-btn"), buttonsDiv );
+  m_nucFromRefButton = buttonsDiv->addNew<WPushButton>( WString::tr("pid-nuc-from-ref-btn") );
   m_nucFromRefButton->setIcon( "InterSpec_resources/images/assign_white.png" );
   
   //button->setMargin(WLength(2),Wt::Left|Wt::Right);
   HelpSystem::attachToolTipOn( m_nucFromRefButton, WString::tr("pid-tt-nuc-from-ref-btn"),
                               showToolTips , HelpSystem::ToolTipPosition::Top );
-  m_nucFromRefButton->clicked().connect( boost::bind( &PeakInfoDisplay::assignNuclidesFromRefLines, this ) );
+  m_nucFromRefButton->clicked().connect( [this](){ assignNuclidesFromRefLines(); } );
   m_nucFromRefButton->disable();
   
   auto enableDisableNucRef = [this](){
@@ -1309,21 +1311,21 @@ void PeakInfoDisplay::init()
   
 
   
-  m_peakAddRemoveLabel = new WLabel( WString::tr("pid-peak-label"), buttonsDiv);
+  m_peakAddRemoveLabel = buttonsDiv->addNew<WLabel>( WString::tr("pid-peak-label") );
   m_peakAddRemoveLabel->addStyleClass("buttonSeparator");
-  m_peakAddRemoveLabel->setMargin(WLength(10),Wt::Left);
+  m_peakAddRemoveLabel->setMargin(WLength(10), Wt::Side::Left);
   
   if( m_viewer->isMobile() )
   {
-    WImage *addPeak = new WImage( WLink("InterSpec_resources/images/plus_min_black.svg"), buttonsDiv );
+    WImage *addPeak = buttonsDiv->addNew<WImage>( WLink("InterSpec_resources/images/plus_min_black.svg") );
     addPeak->setAttributeValue( "width", "16" );
     addPeak->setAttributeValue( "height", "16" );
     addPeak->addStyleClass( "WhiteIcon" );
-    addPeak->setMargin( 2, Wt::Left );
-    addPeak->setMargin( 8, Wt::Right );
+    addPeak->setMargin( 2, Wt::Side::Left );
+    addPeak->setMargin( 8, Wt::Side::Right );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
-    
-    WImage *delPeak = new WImage( WLink("InterSpec_resources/images/minus_min_black.svg"), buttonsDiv );
+
+    WImage *delPeak = buttonsDiv->addNew<WImage>( WLink("InterSpec_resources/images/minus_min_black.svg") );
     delPeak->setAttributeValue( "width", "16" );
     delPeak->setAttributeValue( "height", "16" );
     delPeak->addStyleClass( "WhiteIcon" );
@@ -1332,13 +1334,13 @@ void PeakInfoDisplay::init()
     m_deletePeak->hide();
   }else
   {
-    WPushButton *addPeak = new WPushButton( WString::tr("pid-add-peak-btn"), buttonsDiv );
+    WPushButton *addPeak = buttonsDiv->addNew<WPushButton>( WString::tr("pid-add-peak-btn") );
     HelpSystem::attachToolTipOn( addPeak, WString::tr("pid-tt-add-peak-btn"),
                                 showToolTips, HelpSystem::ToolTipPosition::Top );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
     addPeak->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
-    
-    WPushButton *delPeak = new WPushButton( WString::tr("Delete"), buttonsDiv );
+
+    WPushButton *delPeak = buttonsDiv->addNew<WPushButton>( WString::tr("Delete") );
     HelpSystem::attachToolTipOn( delPeak, WString::tr("pid-tt-del-peaks"),
                                 showToolTips, HelpSystem::ToolTipPosition::Top  );
     delPeak->setHiddenKeepsGeometry( true );
@@ -1354,10 +1356,11 @@ void PeakInfoDisplay::init()
   set<WAbstractItemDelegate *> uniqueDelegates;
   for( int col = 0; col < m_model->columnCount(); ++col )
   {
-    WAbstractItemDelegate *delegate = m_infoView->itemDelegateForColumn( col );
+    const std::shared_ptr<WAbstractItemDelegate> delegatePtr = m_infoView->itemDelegateForColumn( col );
+    WAbstractItemDelegate *delegate = delegatePtr.get();
     if( delegate && !uniqueDelegates.count(delegate) )
     {
-      delegate->closeEditor().connect( this, &PeakInfoDisplay::disablePeakDelete );
+      delegate->closeEditor().connect( [this]( WWidget *, bool ){ disablePeakDelete(); } );
       uniqueDelegates.insert( delegate );
     }
   }//for( int col = 0; col < m_model->columnCount(); ++col )
@@ -1371,7 +1374,7 @@ void PeakInfoDisplay::init()
     hintTxt = WString::tr(key);
   }
   
-  WText *txt = new WText( hintTxt, bottomDiv );
+  WText *txt = bottomDiv->addNew<WText>( hintTxt );
   txt->addStyleClass( "PeakEditHint" );
   const string show_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','visible');}catch(e){}}" );
   const string hide_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','hidden');}catch(e){}}" );
@@ -1380,20 +1383,26 @@ void PeakInfoDisplay::init()
   txt->doJavaScript( "(" + hide_js + ")();" );
 
   
-  WContainerWidget *csvDiv = new WContainerWidget( bottomDiv );
+  WContainerWidget *csvDiv = bottomDiv->addNew<WContainerWidget>();
   csvDiv->addStyleClass( "PeakInfoDisplayCsvBtns" );
-  
-  WPushButton *copyButton = new WPushButton( csvDiv );
+
+  WPushButton *copyButton = csvDiv->addNew<WPushButton>();
   copyButton->setIcon( "InterSpec_resources/images/copy_small.svg" );
   copyButton->setStyleClass( "LinkBtn" );
   copyButton->disable();
   HelpSystem::attachToolTipOn( copyButton, WString::tr("pid-tt-csv-copy"), showToolTips );
   WPopupMenu *copyMenu = nullptr;
   if( m_viewer->isMobile() )
-    copyMenu = new WPopupMenu();
-  else
-    copyMenu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu);
-  copyButton->setMenu( copyMenu );
+  {
+    auto menuOwner = std::make_unique<WPopupMenu>();
+    copyMenu = menuOwner.get();
+    copyButton->setMenu( std::move(menuOwner) );
+  }else
+  {
+    auto menuOwner = std::make_unique<PopupDivMenu>( nullptr, PopupDivMenu::MenuType::TransientMenu );
+    copyMenu = menuOwner.get();
+    copyButton->setMenu( std::move(menuOwner) );
+  }
   copyButton->clicked().connect( this, &PeakInfoDisplay::copyCsvPeakDataToClient );
   copyMenu->aboutToHide().connect( this, &PeakInfoDisplay::removeCsvPeakDatafromClient );
   
@@ -1421,14 +1430,18 @@ void PeakInfoDisplay::init()
   
   WResource *csv = m_model->peakCsvResource();
 #if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *csvButton = new WAnchor( WLink(csv), csvDiv );
-  csvButton->setTarget( AnchorTarget::TargetNewWindow );
+  WLink csvAnchorLink( csv->url() );
+  csvAnchorLink.setTarget( Wt::LinkTarget::NewWindow );
+  WAnchor *csvButton = csvDiv->addNew<WAnchor>( csvAnchorLink );
   csvButton->setStyleClass( "LinkBtn DownloadLink" );
 #else
-  WPushButton *csvButton = new WPushButton( csvDiv );
+  WPushButton *csvButton = csvDiv->addNew<WPushButton>();
   csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
-  csvButton->setLink( WLink(csv) );
-  csvButton->setLinkTarget( Wt::TargetNewWindow );
+  {
+    WLink lnk( csv->url() );
+    lnk.setTarget( Wt::LinkTarget::NewWindow );
+    csvButton->setLink( lnk );
+  }
   csvButton->setStyleClass( "LinkBtn DownloadBtn" );
   
 #if( ANDROID )

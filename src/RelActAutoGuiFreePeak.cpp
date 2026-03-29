@@ -26,14 +26,14 @@
 #include <string>
 #include <limits>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WSignal>
-#include <Wt/WString>
-#include <Wt/WCheckBox>
-#include <Wt/WLineEdit>
-#include <Wt/WPushButton>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WSignal.h>
+#include <Wt/WString.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WContainerWidget.h>
 
 
 #include "InterSpec/InterSpec.h"
@@ -48,13 +48,11 @@ using namespace std;
 using namespace Wt;
 
 
-RelActAutoGuiFreePeak::RelActAutoGuiFreePeak( WContainerWidget *parent )
-  : WContainerWidget( parent ),
+RelActAutoGuiFreePeak::RelActAutoGuiFreePeak()
+  : WContainerWidget(),
   m_energy( nullptr ),
   m_fwhm_constrained( nullptr ),
-  m_apply_energy_cal( nullptr ),
-  m_updated( this ),
-  m_remove( this )
+  m_apply_energy_cal( nullptr )
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
   if( app )
@@ -63,44 +61,44 @@ RelActAutoGuiFreePeak::RelActAutoGuiFreePeak( WContainerWidget *parent )
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   
-  WLabel *label = new WLabel( WString::tr("Energy"), this );
+  WLabel *label = addNew<WLabel>( WString::tr("Energy") );
   label->addStyleClass( "GridFirstCol GridFirstRow" );
-  
-  m_energy = new NativeFloatSpinBox( this );
+
+  m_energy = addNew<NativeFloatSpinBox>();
   label->setBuddy( m_energy );
   m_energy->setSpinnerHidden( true );
   m_energy->valueChanged().connect( this, &RelActAutoGuiFreePeak::handleEnergyChange );
   m_energy->addStyleClass( "GridSecondCol GridFirstRow" );
-  
+
   // Things are a little cramped if we include the keV
-  //label = new WLabel( "keV", this );
-  //label->addStyleClass( "GridThirdCol GridFirstRow" );
-  
-  WPushButton *removeFreePeak = new WPushButton( this );
+  //WLabel *keVlabel = addNew<WLabel>( "keV" );
+  //keVlabel->addStyleClass( "GridThirdCol GridFirstRow" );
+
+  WPushButton *removeFreePeak = addNew<WPushButton>();
   removeFreePeak->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
   removeFreePeak->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
   removeFreePeak->clicked().connect( this, &RelActAutoGuiFreePeak::handleRemoveSelf );
   removeFreePeak->addStyleClass( "GridThirdCol GridFirstRow" );
-  
-  m_fwhm_constrained = new WCheckBox( WString::tr("raagfp-constrain-fwhm"), this );
+
+  m_fwhm_constrained = addNew<WCheckBox>( WString::tr("raagfp-constrain-fwhm") );
   m_fwhm_constrained->setChecked( true );
   m_fwhm_constrained->checked().connect( this, &RelActAutoGuiFreePeak::handleFwhmConstrainChanged );
   m_fwhm_constrained->unChecked().connect( this, &RelActAutoGuiFreePeak::handleFwhmConstrainChanged );
   m_fwhm_constrained->addStyleClass( "FreePeakConstrain GridFirstCol GridSecondRow GridSpanThreeCol" );
-  
+
   HelpSystem::attachToolTipOn( m_fwhm_constrained, WString::tr("raagfp-constrain-fwhm-tt"), showToolTips );
-  
-  
-  m_apply_energy_cal = new WCheckBox( WString::tr("raagfp-true-energy"), this );
+
+
+  m_apply_energy_cal = addNew<WCheckBox>( WString::tr("raagfp-true-energy") );
   m_apply_energy_cal->setStyleClass( "CbNoLineBreak" );
   m_apply_energy_cal->setChecked( true );
   m_apply_energy_cal->checked().connect( this, &RelActAutoGuiFreePeak::handleApplyEnergyCalChanged );
   m_apply_energy_cal->unChecked().connect( this, &RelActAutoGuiFreePeak::handleApplyEnergyCalChanged );
   m_apply_energy_cal->addStyleClass( "FreePeakConstrain GridFirstCol GridThirdRow GridSpanThreeCol" );
   HelpSystem::attachToolTipOn( m_apply_energy_cal, WString::tr("raagfp-true-energy-tt"), showToolTips );
-  
-  
-  m_invalid = new WText( WString::tr("raagfp-not-in-roi"), this );
+
+
+  m_invalid = addNew<WText>( WString::tr("raagfp-not-in-roi") );
   m_invalid->addStyleClass( "InvalidFreePeakEnergy GridFirstCol GridFourthRow GridSpanThreeCol" );
   m_invalid->hide();
 }//RelActAutoGuiFreePeak constructor

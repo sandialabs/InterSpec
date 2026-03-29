@@ -27,8 +27,8 @@
 
 #include <map>
 
-#include <Wt/WTreeView>
-//#include <Wt/WItemDelegate>
+#include <Wt/WTreeView.h>
+//#include <Wt/WItemDelegate.h>
 
 
 // This class stretchs the column widths to be as cumulatively as wide as the
@@ -42,7 +42,7 @@ class RowStretchTreeView : public Wt::WTreeView
    */
 
 public:
-  RowStretchTreeView( Wt::WContainerWidget *parent = nullptr );
+  RowStretchTreeView();
   virtual ~RowStretchTreeView(){}
   
   //Setting the width of a column will ensure it is never narrower
@@ -53,7 +53,7 @@ public:
   
   //Hi-jack the model calls so we can intercept when rows are being added or
   //  removed, in order to deal with if the scroll bars will appear or disapear.
-  virtual void setModel( Wt::WAbstractItemModel *model );
+  virtual void setModel( const std::shared_ptr<Wt::WAbstractItemModel> &model ) override;
   
   /** Useful to call after showing/hiding columns to force a recomutation of
      column stretches and such.

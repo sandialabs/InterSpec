@@ -10,10 +10,10 @@
 #include <vector>
 #include <utility>
 
-#include <Wt/WColor>
-#include <Wt/WEvent>
-#include <Wt/WSignal>
-#include <Wt/WContainerWidget>
+#include <Wt/WColor.h>
+#include <Wt/WEvent.h>
+#include <Wt/WSignal.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
@@ -57,7 +57,7 @@ namespace SpecUtils{ enum class SpectrumType : int; }
 class D3SpectrumDisplayDiv : public Wt::WContainerWidget
 {
 public:
-  D3SpectrumDisplayDiv( Wt::WContainerWidget *parent = 0 );
+  D3SpectrumDisplayDiv();
   virtual ~D3SpectrumDisplayDiv();
   
   /** Function called when the locale is changed. */

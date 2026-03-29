@@ -29,7 +29,7 @@
 #include <memory>
 #include <utility>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/RelActCalcAuto.h"
 
@@ -88,7 +88,7 @@ public:
   static const char *to_str( const AddUncert val );
   
 public:
-  RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
+  RelActAutoGui( InterSpec *viewer );
   
   ~RelActAutoGui();
   
@@ -498,9 +498,9 @@ protected:
   /** Emitted whenever m_solution is set. */
   Wt::Signal< std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> > m_solution_updated;
   
-  Wt::WResource *m_html_download_rsc;
+  std::shared_ptr<Wt::WResource> m_html_download_rsc;
   
-  Wt::WResource *m_xml_download_rsc;
+  std::shared_ptr<Wt::WResource> m_xml_download_rsc;
 };//class RelActAutoGui
 
 

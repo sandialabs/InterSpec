@@ -24,17 +24,18 @@
 #include "InterSpec_config.h"
 
 #include <fstream>
+#include <memory>
 #include <iostream>
 #include <chrono>
 
-#include <Wt/WMenu>
-#include <Wt/WServer>
-#include <Wt/WGroupBox>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WStackedWidget>
-#include <Wt/WContainerWidget>
+#include <Wt/WMenu.h>
+#include <Wt/WServer.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/Filesystem.h"
 
@@ -57,21 +58,18 @@ BatchGuiDialog::BatchGuiDialog( FileDragUploadResource *uploadResource, const Wt
 {
   addStyleClass( "BatchGuiDialog" );
 
-  WGridLayout *layout = new WGridLayout();
+  WGridLayout *layout = contents()->setLayout( std::make_unique<WGridLayout>() );
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
 
-  contents()->setLayout( layout );
+  m_widget = layout->addWidget( std::make_unique<BatchGuiWidget>( uploadResource ), 0, 0 );
 
-  m_widget = new BatchGuiWidget( uploadResource );
-  layout->addWidget( m_widget, 0, 0 );
-
-  m_processBtn = new WPushButton( WString::tr( "bgw-analyze-button" ), footer() );
+  m_processBtn = footer()->addNew<WPushButton>( WString::tr( "bgw-analyze-button" ) );
   m_processBtn->setStyleClass( "simple-dialog-btn" );
   m_processBtn->clicked().connect( m_widget, &BatchGuiWidget::performAnalysis );
   m_processBtn->disable();
-  m_widget->canDoAnalysis().connect( boost::bind( &WPushButton::setEnabled, m_processBtn, boost::placeholders::_1 ) );
+  m_widget->canDoAnalysis().connect( [this]( bool enabled ){ m_processBtn->setEnabled( enabled ); } );
 
   addButton( WString::tr( "Close" ) );
 
@@ -129,14 +127,14 @@ BatchGuiDialog::~BatchGuiDialog()
 BatchGuiDialog *BatchGuiDialog::createDialog( FileDragUploadResource *uploadResource )
 {
   // WString title = WString::tr("bgw-dialog-title");
-  WString title;
+  const WString title;
   BatchGuiDialog *dialog = new BatchGuiDialog( uploadResource, title );
 
   return dialog;
 }
 
-BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WContainerWidget *parent )
-: Wt::WContainerWidget( parent ),
+BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource )
+: Wt::WContainerWidget(),
   m_uploadResource( uploadResource ),
   m_batch_type_menu( nullptr ),
   m_options_stack( nullptr ),
@@ -147,7 +145,7 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   m_output_dir( nullptr ),
   m_input_status_error( nullptr ),
   m_can_do_analysis( false ),
-  m_canDoAnalysis( this )
+  m_canDoAnalysis()
 {
   assert( m_uploadResource );
   InterSpec *interspec = InterSpec::instance();
@@ -168,36 +166,51 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   interspec->saveRelActAutoStateToForegroundSpecMeas();
 #endif
   
-  Wt::WGroupBox *options_container = new Wt::WGroupBox( WString::tr( "bgw-type-select-label" ), this );
+  Wt::WGroupBox *options_container = addNew<Wt::WGroupBox>( WString::tr( "bgw-type-select-label" ) );
   options_container->addStyleClass( "TypeSelectContainer" );
 
-  m_options_stack = new Wt::WStackedWidget();
-  m_batch_type_menu = new Wt::WMenu( m_options_stack, options_container );
-  m_batch_type_menu->addStyleClass( "LightNavMenu VerticalNavMenu AnaTypeMenu" );
-  options_container->addWidget( m_options_stack );
+  // Note: In Wt3 menu was added to options_container via constructor, stack added after.
+  //  In Wt4 we replicate that order: menu first, then stack.
+  {
+    auto stack_owner = std::make_unique<Wt::WStackedWidget>();
+    m_options_stack = stack_owner.get();
+    m_batch_type_menu = options_container->addNew<Wt::WMenu>( m_options_stack );
+    m_batch_type_menu->addStyleClass( "LightNavMenu VerticalNavMenu AnaTypeMenu" );
+    options_container->addWidget( std::move(stack_owner) );
+  }
 
-  m_act_shield_ana_opts = new BatchGuiActShieldAnaWidget();
-  WMenuItem *item = new WMenuItem(
-    WString::tr( "bgw-act-shield-ana-opts-label" ), m_act_shield_ana_opts, WMenuItem::LoadPolicy::PreLoading );
-  m_act_shield_ana_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
-  m_batch_type_menu->addItem( item );
+  {
+    auto act_shield_owner = std::make_unique<BatchGuiActShieldAnaWidget>();
+    m_act_shield_ana_opts = act_shield_owner.get();
+    m_act_shield_ana_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
+    m_batch_type_menu->addItem( WString::tr( "bgw-act-shield-ana-opts-label" ),
+                                std::move( act_shield_owner ),
+                                Wt::ContentLoading::Eager );
+  }
 
-  m_peak_fit_opts = new BatchGuiPeakFitWidget();
-  item = new WMenuItem( WString::tr( "bgw-peak-fit-opts-label" ), m_peak_fit_opts, WMenuItem::LoadPolicy::PreLoading );
-  m_peak_fit_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
-  m_batch_type_menu->addItem( item );
-  
-  
-  m_file_convert_opts = new FileConvertOpts();
-  item = new WMenuItem( WString::tr( "bgw-file-convert-opts-label" ), m_file_convert_opts, WMenuItem::LoadPolicy::PreLoading );
-  m_file_convert_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
-  m_batch_type_menu->addItem( item );
+  {
+    auto peak_fit_owner = std::make_unique<BatchGuiPeakFitWidget>();
+    m_peak_fit_opts = peak_fit_owner.get();
+    m_peak_fit_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
+    m_batch_type_menu->addItem( WString::tr( "bgw-peak-fit-opts-label" ),
+                                std::move( peak_fit_owner ),
+                                Wt::ContentLoading::Eager );
+  }
+
+  {
+    auto file_convert_owner = std::make_unique<FileConvertOpts>();
+    m_file_convert_opts = file_convert_owner.get();
+    m_file_convert_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
+    m_batch_type_menu->addItem( WString::tr( "bgw-file-convert-opts-label" ),
+                                std::move( file_convert_owner ),
+                                Wt::ContentLoading::Eager );
+  }
   
 
   m_batch_type_menu->select( 0 );
   m_batch_type_menu->itemSelected().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
 
-  m_input_files_container = new WGroupBox( WString::tr( "bgw-input-files-label" ), this );
+  m_input_files_container = addNew<WGroupBox>( WString::tr( "bgw-input-files-label" ) );
   m_input_files_container->addStyleClass( "InputFilesContainer" );
 
   m_input_files_container->doJavaScript( "BatchInputDropUploadSetup(" + m_input_files_container->jsRef() +
@@ -206,13 +219,13 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
                                          interspec->fileManager()->batchDragNDrop()->url() + "');" );
   doJavaScript( "setupOnDragEnterDom(['" + m_input_files_container->id() + "']);" );
 
-  m_output_dir = new DirectorySelector( this );
+  m_output_dir = addNew<DirectorySelector>();
   m_output_dir->setLabelTxt( WString::tr( "bgw-output-dir-label" ) );
   m_output_dir->pathChanged().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
 
   m_uploadResource->fileDrop().connect( this, &BatchGuiWidget::handleFileDrop );
 
-  m_input_status_error = new WText( this );
+  m_input_status_error = addNew<WText>();
   m_input_status_error->addStyleClass( "ReasonCantAnalyzeMsg" );
   m_input_status_error->hide();
 
@@ -224,9 +237,9 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   //  maybe because the JS is somehow getting out of order?
   //addInputFiles( spooled_files );
 
-  //boost::function<void()> load_files
+  //std::function<void()> load_files
   //              = wApp->bind( boost::bind( &BatchGuiWidget::addInputFiles, this, spooled_files ) );
-  //boost::function<void()> worker = [load_files](){
+  //std::function<void()> worker = [load_files](){
   //  load_files();
   //  wApp->triggerUpdate();
   //};
@@ -234,7 +247,7 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   // Fallback function to clean the files up, incase this session is no longer alive
   //  BUT note that there is a path where if this widget is deleted, before the worker is called,
   //  then the files wont be cleaned up any way.
-  //boost::function<void()> fall_back = [spooled_files](){
+  //std::function<void()> fall_back = [spooled_files](){
   //  for( const tuple<string, string, bool> &file : spooled_files )
   //  {
   //    const string &path_to_file = std::get<1>( file );
@@ -244,7 +257,7 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   //  }
   //};//fall_back
   
-  //WServer::instance()->schedule( 1, wApp->sessionId(), worker, fall_back );
+  //WServer::instance()->schedule( std::chrono::milliseconds(1), wApp->sessionId(), worker, fall_back );
 
   handleFileDrop( "", "" );
 
@@ -267,8 +280,8 @@ void BatchGuiWidget::handleFileDrop( const std::string &, const std::string & )
 {
   const vector<tuple<string, string, bool>> dropped_files = m_uploadResource->takeSpooledFiles();
   //addInputFiles( dropped_files );
-  auto worker = wApp->bind( boost::bind( &BatchGuiWidget::addInputFiles, this, dropped_files ) );
-  WServer::instance()->schedule( 25, wApp->sessionId(), worker );
+  std::function<void()> worker = [this, dropped_files](){ addInputFiles( dropped_files ); };
+  WServer::instance()->schedule( std::chrono::milliseconds(25), wApp->sessionId(), worker );
   wApp->triggerUpdate();
 }
 
@@ -287,10 +300,10 @@ void BatchGuiWidget::addInputFiles( const std::vector<std::tuple<std::string, st
                                 : BatchGuiInputSpectrumFile::ShowPreviewOption::DontShow;
 
     BatchGuiInputSpectrumFile *input_file =
-      new BatchGuiInputSpectrumFile( display_name, path_to_file, should_delete, show_preview, m_input_files_container );
+      m_input_files_container->addNew<BatchGuiInputSpectrumFile>( display_name, path_to_file, should_delete, show_preview );
     input_file->preview_created_signal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
     input_file->remove_self_request().connect(
-      boost::bind( &BatchGuiWidget::handle_remove_input_file, this, boost::placeholders::_1 ) );
+      [this]( BatchGuiInputSpectrumFile *f ){ handle_remove_input_file( f ); } );
 
 
     num_initial_files += 1;
@@ -301,7 +314,8 @@ void BatchGuiWidget::addInputFiles( const std::vector<std::tuple<std::string, st
 
 void BatchGuiWidget::handle_remove_input_file( BatchGuiInputSpectrumFile *input )
 {
-  delete input;
+  // removeWidget returns unique_ptr which goes out of scope here, destroying the widget
+  m_input_files_container->removeWidget( input );
 
   updateCanDoAnalysis();
 }// void handle_remove_input_file( BatchGuiInputSpectrumFile *input )

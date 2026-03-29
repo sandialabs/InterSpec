@@ -27,8 +27,8 @@
 
 #include <string>
 
-#include <Wt/WSignal>
-#include <Wt/WLineEdit>
+#include <Wt/WSignal.h>
+#include <Wt/WLineEdit.h>
 
 //Forward declerations
 namespace Wt { class WString; }
@@ -43,7 +43,7 @@ namespace Wt { class WString; }
 class NativeFloatSpinBox : public Wt::WLineEdit
 {
 public:
-  NativeFloatSpinBox( Wt::WContainerWidget *parent = 0 );
+  NativeFloatSpinBox();
           
   virtual ~NativeFloatSpinBox();
   

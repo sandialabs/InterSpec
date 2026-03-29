@@ -27,10 +27,10 @@
 
 #include <memory>
 
-#include <Wt/WDialog>
-#include <Wt/WString>
+#include <Wt/WDialog.h>
+#include <Wt/WString.h>
 #include <Wt/WConfig.h>
-#include <Wt/WJavaScript>
+#include <Wt/WJavaScript.h>
 
 namespace Wt
 {
@@ -133,7 +133,7 @@ public:
   //By default AuxWindow will be shown, centered in the window, at 50% of
   //  browser size.  Wt will assume that the window is visible as well, for
   //  the purposes of lazy loading of content.
-  AuxWindow( const Wt::WString &windowTitle, Wt::WFlags<AuxWindowProperties> properties = Wt::WFlags<AuxWindowProperties>(0) );
+  AuxWindow( const Wt::WString &windowTitle, Wt::WFlags<AuxWindowProperties> properties = Wt::WFlags<AuxWindowProperties>{} );
   virtual ~AuxWindow();
 
   

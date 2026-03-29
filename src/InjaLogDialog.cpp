@@ -29,16 +29,16 @@
 #include <memory>
 #include <sstream>
 
-#include <Wt/WText>
-#include <Wt/Utils>
-#include <Wt/WComboBox>
-#include <Wt/WResource>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WContainerWidget>
-#include <Wt/WMemoryResource>
+#include <Wt/WText.h>
+#include <Wt/Utils.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WResource.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WMemoryResource.h>
 
 #include <nlohmann/json.hpp>
 
@@ -57,10 +57,10 @@ namespace
     const std::string m_html_content;
 
   public:
-    InjaReportResource( std::string &&html_content, Wt::WObject *parent = nullptr )
-    : Wt::WResource( parent ), m_html_content( std::move( html_content ) )
+    InjaReportResource( std::string &&html_content )
+    : Wt::WResource(), m_html_content( std::move( html_content ) )
     {
-      setDispositionType( DispositionType::Inline );
+      setDispositionType( Wt::ContentDisposition::Inline );
     }
 
     virtual ~InjaReportResource()
@@ -90,9 +90,9 @@ class InjaLogResource : public Wt::WResource
 {
   // Resource class for safely downloading rendered HTML content
 public:
-  InjaLogResource( InjaLogDialog *parent )
-  : Wt::WResource( parent ),
-  m_dialog( parent ),
+  InjaLogResource( InjaLogDialog *dialog )
+  : Wt::WResource(),
+  m_dialog( dialog ),
   m_app( Wt::WApplication::instance() )
   {
     assert( m_app );
@@ -132,7 +132,7 @@ private:
     const std::string filename = m_dialog->current_suggested_name();
     const std::string &content = m_dialog->current_content();
 
-    suggestFileName( filename, Wt::WResource::Attachment );
+    suggestFileName( filename, Wt::ContentDisposition::Attachment );
 
     // Determine MIME type from file extension
     std::string mime_type = "text/html; charset=utf-8";
@@ -179,20 +179,20 @@ InjaLogDialog::InjaLogDialog( const Wt::WString &title,
     interspec->useMessageResourceBundle( "InjaLogDialog" );
 
   // Create iframe holder
-  m_iframe_holder = new Wt::WText( contents() );
+  m_iframe_holder = contents()->addNew<Wt::WText>();
   m_iframe_holder->addStyleClass( "InjaLogDialogIFrameHolder" );
-  m_iframe_holder->setWidth( Wt::WLength( 100.0, Wt::WLength::Percentage ) );
-  m_iframe_holder->setHeight( Wt::WLength( 100.0, Wt::WLength::Percentage ) );
+  m_iframe_holder->setWidth( Wt::WLength( 100.0, Wt::WLength::Unit::Percentage ) );
+  m_iframe_holder->setHeight( Wt::WLength( 100.0, Wt::WLength::Unit::Percentage ) );
 
   
   // Create toolbar for template selector and download button
-  m_toolbar = new Wt::WContainerWidget( contents() );
+  m_toolbar = contents()->addNew<Wt::WContainerWidget>();
   m_toolbar->addStyleClass( "InjaLogToolbar" );
 
   // Only show template selector if we have multiple templates
   if( m_template_options.size() > 1 )
   {
-    m_template_selector = new Wt::WComboBox( m_toolbar );
+    m_template_selector = m_toolbar->addNew<Wt::WComboBox>();
     m_template_selector->addStyleClass( "InjaLogTemplateSelector" );
     for( size_t i = 0; i < m_template_options.size(); ++i )
     {
@@ -203,18 +203,20 @@ InjaLogDialog::InjaLogDialog( const Wt::WString &title,
     m_template_selector->changed().connect( this, &InjaLogDialog::handleTemplateChange );
   }
 
-  // Create download resource
-  m_download_resource = new InjaLogResource( this );
+  // Create download resource as shared_ptr for WLink compatibility
+  std::shared_ptr<InjaLogResource> download_resource = std::make_shared<InjaLogResource>( this );
+  m_download_resource = download_resource.get();
 
   // Add download button
-  m_download_button = new Wt::WPushButton( m_toolbar );
+  m_download_button = m_toolbar->addNew<Wt::WPushButton>();
   m_download_button->setIcon( "InterSpec_resources/images/download_small.svg" );
-  m_download_button->setLink( Wt::WLink( static_cast<Wt::WResource*>(m_download_resource) ) );
-  m_download_button->setLinkTarget( Wt::TargetNewWindow );
+  Wt::WLink dlLink( download_resource );
+  dlLink.setTarget( Wt::LinkTarget::NewWindow );
+  m_download_button->setLink( dlLink );
   m_download_button->setStyleClass( "LinkBtn DownloadBtn InjaLogDownloadBtn" );
 
   // Set dialog size
-  resize( Wt::WLength( 95.0, Wt::WLength::Percentage ), Wt::WLength( 95.0, Wt::WLength::Percentage ) );
+  resize( Wt::WLength( 95.0, Wt::WLength::Unit::Percentage ), Wt::WLength( 95.0, Wt::WLength::Unit::Percentage ) );
 
   // Add standard close button
   addButton( Wt::WString::tr( "Close" ) );
@@ -309,7 +311,7 @@ void InjaLogDialog::updateDisplay()
   {
     const std::string error_msg = "<p style='color: red;'>" + Wt::WString::tr( "ild-no-templates" ).toUTF8() + "</p>";
     m_iframe_holder->setText( error_msg );
-    m_iframe_holder->setTextFormat( Wt::TextFormat::XHTMLUnsafeText );
+    m_iframe_holder->setTextFormat( Wt::TextFormat::UnsafeXHTML );
     return;
   }
 
@@ -339,7 +341,7 @@ void InjaLogDialog::updateDisplay()
     if( log_type == LogType::Text )
     {
       // For text content, escape HTML and wrap in <pre> tags
-      const std::string escaped_content = Wt::Utils::htmlEncode( m_current_content, Wt::Utils::EncodeNewLines );
+      const std::string escaped_content = Wt::Utils::htmlEncode( m_current_content, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
       display_content = std::string( sm_txt_log_pre_wrapper ) + escaped_content + sm_txt_log_post_wrapper;
     }else
     {
@@ -347,15 +349,15 @@ void InjaLogDialog::updateDisplay()
       display_content = m_current_content;
     }
 
-    // Clean up old resource if it exists
+    // Clean up old resource if it exists; removeChild returns unique_ptr which is destroyed here
     if( m_current_resource )
     {
-      delete m_current_resource;
+      removeChild( m_current_resource );
       m_current_resource = nullptr;
     }
 
-    // Create new resource and get its URL
-    m_current_resource = new InjaReportResource( std::move( display_content ), this );
+    // Create new resource and get its URL (addChild takes ownership)
+    m_current_resource = addChild( std::make_unique<InjaReportResource>( std::move( display_content ) ) );
     const std::string resource_url = m_current_resource->url();
 
     // Create iframe HTML
@@ -369,13 +371,13 @@ void InjaLogDialog::updateDisplay()
                                     "</iframe>";
 
     m_iframe_holder->setText( iframe_html );
-    m_iframe_holder->setTextFormat( Wt::TextFormat::XHTMLUnsafeText );
+    m_iframe_holder->setTextFormat( Wt::TextFormat::UnsafeXHTML );
 
   } catch( nlohmann::json::parse_error &e )
   {
     const std::string error_msg = "<p>" + Wt::WString::tr( "ild-json-parse-error" ).arg( std::string( e.what() ) ).toUTF8() + "</p>";
     m_iframe_holder->setText( error_msg );
-    m_iframe_holder->setTextFormat( Wt::TextFormat::XHTMLUnsafeText );
+    m_iframe_holder->setTextFormat( Wt::TextFormat::UnsafeXHTML );
     m_iframe_holder->removeStyleClass( "InjaLogDialogIFrameHolder" );
     m_iframe_holder->addStyleClass( "InjaLogDialogJsonError" );
 
@@ -390,7 +392,7 @@ void InjaLogDialog::updateDisplay()
                                   "</p>";
 
     m_iframe_holder->setText( error_msg );
-    m_iframe_holder->setTextFormat( Wt::TextFormat::XHTMLUnsafeText );
+    m_iframe_holder->setTextFormat( Wt::TextFormat::UnsafeXHTML );
     m_iframe_holder->removeStyleClass( "InjaLogDialogIFrameHolder" );
     m_iframe_holder->addStyleClass( "InjaLogDialogInjaError" );
 
@@ -398,7 +400,7 @@ void InjaLogDialog::updateDisplay()
   {
     const std::string error_msg = "<p>" + Wt::WString::tr( "ild-misc-error" ).arg( std::string( e.what() ) ).toUTF8() + "</p>";
     m_iframe_holder->setText( error_msg );
-    m_iframe_holder->setTextFormat( Wt::TextFormat::XHTMLUnsafeText );
+    m_iframe_holder->setTextFormat( Wt::TextFormat::UnsafeXHTML );
     m_iframe_holder->removeStyleClass( "InjaLogDialogIFrameHolder" );
     m_iframe_holder->addStyleClass( "InjaLogDialogMiscError" );
   }

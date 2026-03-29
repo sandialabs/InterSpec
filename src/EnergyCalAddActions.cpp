@@ -25,21 +25,22 @@
 
 #include <set>
 #include <tuple>
+#include <memory>
 #include <vector>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WSpinBox>
-#include <Wt/WCheckBox>
-#include <Wt/WGroupBox>
-#include <Wt/WTableCell>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WButtonGroup>
-#include <Wt/WApplication>
-#include <Wt/WRadioButton>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WSpinBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WApplication.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/EnergyCalibration.h"
 
@@ -92,7 +93,7 @@ public:
   
   void fromLowerChannelEnergiesOptionChanged();
   void convertLowerChannelEnegies( const size_t ncoeffs, const bool set_cals_to, std::string &msg );
-  void handleFinish( Wt::WDialog::DialogCode result );
+  void handleFinish( Wt::DialogCode result );
 };//class ConvertCalTypeTool
 
 
@@ -118,7 +119,7 @@ public:
                     EnergyCalTool *cal, AuxWindow *parent );
   virtual ~LinearizeCalTool();
   
-  void handleFinish( Wt::WDialog::DialogCode result );
+  void handleFinish( Wt::DialogCode result );
 };//class LinearizeCalTool
 
 
@@ -140,7 +141,7 @@ public:
                        EnergyCalTool *cal, AuxWindow *parent );
   virtual ~CombineChannelsTool();
   
-  void handleFinish( Wt::WDialog::DialogCode result );
+  void handleFinish( Wt::DialogCode result );
 };//class CombineChannelsTool
 
 
@@ -169,7 +170,7 @@ public:
                        EnergyCalTool *cal, AuxWindow *parent );
   virtual ~TruncateChannelsTool();
   
-  void handleFinish( Wt::WDialog::DialogCode result );
+  void handleFinish( Wt::DialogCode result );
 };//class CombineChannelsTool
 
 
@@ -194,34 +195,34 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
   {
     case MoreActionsIndex::Linearize:
       AuxWindow::setWindowTitle( WString::tr("ecaa-linearize-title") );
-      new LinearizeCalTool( m_measToChange, m_calibrator, this );
+      stretcher()->addWidget( std::make_unique<LinearizeCalTool>( m_measToChange, m_calibrator, this ), 0, 0 );
       break;
-      
+
     case MoreActionsIndex::Truncate:
       AuxWindow::setWindowTitle( WString::tr("ecaa-truncate-title") );
-      new TruncateChannelsTool( m_measToChange, m_calibrator, this );
+      stretcher()->addWidget( std::make_unique<TruncateChannelsTool>( m_measToChange, m_calibrator, this ), 0, 0 );
       break;
-      
+
     case MoreActionsIndex::CombineChannels:
       AuxWindow::setWindowTitle( WString::tr("ecaa-combine-title") );
-      new CombineChannelsTool( m_measToChange, m_calibrator, this );
+      stretcher()->addWidget( std::make_unique<CombineChannelsTool>( m_measToChange, m_calibrator, this ), 0, 0 );
       break;
-      
+
     case MoreActionsIndex::ConvertToFrf:
       setWidth( WLength(425.0, WLength::Unit::Pixel) );
       AuxWindow::setWindowTitle( WString::tr("ecaa-convert-frf-title") );
-      new ConvertCalTypeTool( SpecUtils::EnergyCalType::FullRangeFraction, m_measToChange, m_calibrator, this );
+      stretcher()->addWidget( std::make_unique<ConvertCalTypeTool>( SpecUtils::EnergyCalType::FullRangeFraction, m_measToChange, m_calibrator, this ), 0, 0 );
       break;
-      
+
     case MoreActionsIndex::ConvertToPoly:
       setWidth( WLength(425.0, WLength::Unit::Pixel) );
       AuxWindow::setWindowTitle( WString::tr("ecaa-convert-poly-title") );
-      new ConvertCalTypeTool( SpecUtils::EnergyCalType::Polynomial, m_measToChange, m_calibrator, this );
+      stretcher()->addWidget( std::make_unique<ConvertCalTypeTool>( SpecUtils::EnergyCalType::Polynomial, m_measToChange, m_calibrator, this ), 0, 0 );
       break;
-      
+
     case MoreActionsIndex::MultipleFilesCal:
       AuxWindow::setWindowTitle( WString::tr("ecaa-multi-file-title") );
-      new EnergyCalMultiFile( m_calibrator, this );
+      stretcher()->addWidget( std::make_unique<EnergyCalMultiFile>( m_calibrator, this ), 0, 0 );
       break;
       
     case MoreActionsIndex::NumMoreActionsIndex:
@@ -269,9 +270,8 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer );
   
-  if( parent )
-    parent->stretcher()->addWidget( this, 0, 0  );
-  
+  // Note: In Wt4, parent adds this widget to its stretcher; no self-add needed here.
+
   set<size_t> coeforder, nchannels;
   set<SpecUtils::EnergyCalType> caltypes;
   if( m_measToChange )
@@ -304,7 +304,7 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
     if( parent )
     {
       auto close = parent->addCloseButtonToFooter();
-      close->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Rejected ) );
+      close->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
       parent->finished().connect( this, &ConvertCalTypeTool::handleFinish );
     }
     
@@ -316,19 +316,19 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
     else
       msgtxt = WString::tr("ecaa-multiple-cal-types");
     
-    WText *msg = new WText( msgtxt, this );
+    WText *msg = addNew<WText>( msgtxt );
     msg->addStyleClass( "ConvertToNA" );
     msg->setInline( false );
-    
+
     return;
   }//if( caltypes.size() != 1 || cal is type wanted )
-  
-  
+
+
   string applyToTxt = cal->applyToSummaryTxt();
   if( !applyToTxt.empty() )
   {
     WString localizedMsg = WString::tr("ecaa-changes-applied-to").arg(applyToTxt);
-    WText *msg = new WText( localizedMsg, this );
+    WText *msg = addNew<WText>( localizedMsg );
     msg->addStyleClass( "ConvertToApplieTo" );
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
@@ -348,73 +348,73 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
         msgtxt = WString::tr("ecaa-terms-lost");
       else
         msgtxt = WString::tr("ecaa-no-info-lost");
-      WText *msg = new WText( msgtxt, this );
+      WText *msg = addNew<WText>( msgtxt );
       msg->setInline( false );
       msg->addStyleClass( "ConvertToMsg" );
       break;
     }//case SpecUtils::EnergyCalType::FullRangeFraction:
-      
+
     case SpecUtils::EnergyCalType::LowerChannelEdge:
     {
-      WText *msg = new WText( WString::tr("ecaa-conversion-question"), this );
+      WText *msg = addNew<WText>( WString::tr("ecaa-conversion-question") );
       msg->addStyleClass( "ConvertToMsg" );
       msg->setInline( false );
-      
-      m_group = new WButtonGroup( this );
-      WGroupBox *box = new WGroupBox( this );
-      
-      WRadioButton *btn = new WRadioButton( WString::tr("ecaa-linearize-rebin-counts"), box );
+
+      m_group = addChild( std::make_unique<WButtonGroup>() );
+      WGroupBox *box = addNew<WGroupBox>();
+
+      WRadioButton *btn = box->addNew<WRadioButton>( WString::tr("ecaa-linearize-rebin-counts") );
       HelpSystem::attachToolTipOn( btn, WString::tr("ecaa-tt-linearize-rebin"), showToolTips );
       btn->setInline( false );
       m_group->addButton( btn, 0 );
-      
-      btn = new WRadioButton( WString::tr("ecaa-linearize-same-counts"), box );
+
+      btn = box->addNew<WRadioButton>( WString::tr("ecaa-linearize-same-counts") );
       HelpSystem::attachToolTipOn( btn, WString::tr("ecaa-tt-linearize-same"), showToolTips );
       btn->setInline( false );
       m_group->addButton( btn, 1 );
-      
-      btn = new WRadioButton( WString::tr("ecaa-fit-quadratic"), box );
+
+      btn = box->addNew<WRadioButton>( WString::tr("ecaa-fit-quadratic") );
       btn->setInline( false );
       m_group->addButton( btn, 2 );
-      
-      btn = new WRadioButton( WString::tr("ecaa-fit-cubic"), box );
+
+      btn = box->addNew<WRadioButton>( WString::tr("ecaa-fit-cubic") );
       btn->setInline( false );
       m_group->addButton( btn, 3 );
-      
+
       m_group->setSelectedButtonIndex( 0 );
       m_group->checkedChanged().connect( this, &ConvertCalTypeTool::fromLowerChannelEnergiesOptionChanged );
-      
+
       m_group->setSelectedButtonIndex( 0 );
       WString msgstr = m_group->button(0) ? m_group->button(0)->toolTip() : WString();
-      m_fitCoefTxt = new WText( msgstr, this );
+      m_fitCoefTxt = addNew<WText>( msgstr );
       m_fitCoefTxt->setInline( false );
       m_fitCoefTxt->addStyleClass( "ConvertFromLCERes" );
-      
+
       break;
     }//case SpecUtils::EnergyCalType::LowerChannelEdge:
-      
+
     case SpecUtils::EnergyCalType::InvalidEquationType:
       assert( 0 );
     break;
   }//switch( m_sourceType )
-  
-  WText *noUndoNote = new WText( WString::tr("ecaa-no-undo-note"), this );
+
+  WText *noUndoNote = addNew<WText>( WString::tr("ecaa-no-undo-note") );
   noUndoNote->addStyleClass( "NoUndoNote" );
   noUndoNote->setInline( false );
-  
+
   WContainerWidget *buttonDiv = nullptr;
   if( parent )
     buttonDiv = parent->footer();
   else
-    buttonDiv = new WContainerWidget( this );
-  
+    buttonDiv = addNew<WContainerWidget>();
+
   //AuxWindow::addHelpInFooter( buttonDiv, "convert-to-polynomial-dialog" );
+
+  m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
+  m_accept = buttonDiv->addNew<WPushButton>( WString::tr("Accept") );
   
-  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
-  m_accept = new WPushButton( WString::tr("Accept"), buttonDiv );
-  
-  m_cancel->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Rejected ) );
-  m_accept->clicked().connect( boost::bind( &ConvertCalTypeTool::handleFinish, this, WDialog::Accepted ) );
+  m_cancel->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_accept->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
 }//ConvertCalTypeTool(...)
   
 
@@ -712,7 +712,7 @@ void ConvertCalTypeTool::fromLowerChannelEnergiesOptionChanged()
 }//void fromLowerChannelEnergiesOptionChanged()
 
 
-void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
+void ConvertCalTypeTool::handleFinish( Wt::DialogCode result )
 {
   using namespace SpecUtils;
   
@@ -721,7 +721,7 @@ void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
   
   switch( result )
   {
-    case WDialog::Rejected:
+    case Wt::DialogCode::Rejected:
     {
       cerr << "\nRejected ConvertCalTypeTool" << endl;
       
@@ -752,7 +752,7 @@ void ConvertCalTypeTool::handleFinish( Wt::WDialog::DialogCode result )
       break;
     }//case WDialog::Rejected:
       
-    case WDialog::Accepted:
+    case Wt::DialogCode::Accepted:
     {
       cerr << "\nAccepted ConvertCalTypeTool" << endl;
       
@@ -955,10 +955,9 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
-    
-  if( parent )
-    parent->stretcher()->addWidget( this, 0, 0  );
-    
+
+  // Note: In Wt4, parent adds this widget to its stretcher; no self-add needed here.
+
   //Create a mapping that for each unique number of channels, gives the min/max energy of any
   //  measurements with that energy range
   map<size_t,std::pair<float,float>> nchannelToRange;
@@ -998,74 +997,74 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     if( parent )
     {
       auto close = parent->addCloseButtonToFooter();
-      close->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Rejected ) );
+      close->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
       parent->finished().connect( this, &LinearizeCalTool::handleFinish );
     }
     
-    WText *msg = new WText( WString::tr("ecaa-conversion-no-effect"), this );
+    WText *msg = addNew<WText>( WString::tr("ecaa-conversion-no-effect") );
     msg->addStyleClass( "ConvertToNA" );
     msg->setInline( false );
-    
+
     return;
   }//if( nchannelToRange.empty() )
-  
-  
+
+
   //Create widgets
   for( const auto &chanToRange : nchannelToRange )
   {
-    WTable *table = new WTable( this );
+    WTable *table = addNew<WTable>();
     table->addStyleClass( "LinearizeInputTbl" );
-    
+
     const size_t nchannel = chanToRange.first;
     const float lower_energy = chanToRange.second.first;
     const float upper_energy = chanToRange.second.second;
-    
+
     const int multiple = (nchannelToRange.size() > 1);
     if( multiple )
     {
       auto cell = table->elementAt(0, 0);
       cell->setColumnSpan( 2 );
       WString msg = WString::tr("ecaa-for-n-channel-spectra").arg(to_string(nchannel));
-      WText *txt = new WText( msg, cell );
+      WText *txt = cell->addNew<WText>( msg );
       txt->addStyleClass( "NChannelSpecTxt" );
     }//if( multiple )
-    
+
     const int input_nchar = 8;
     const int input_width_px = 75;
-    
+
     auto cell = table->elementAt( 0 + multiple, 0 );
-    auto label = new WLabel( WString::tr("ecaa-lower-energy"), cell );
+    WLabel *label = cell->addNew<WLabel>( WString::tr("ecaa-lower-energy") );
     label->addStyleClass( "LinearizeLabel" );
-    
+
     cell = table->elementAt( 0 + multiple, 1 );
-    NativeFloatSpinBox *lower = new NativeFloatSpinBox( cell );
+    NativeFloatSpinBox *lower = cell->addNew<NativeFloatSpinBox>();
     lower->setValue( lower_energy );
     lower->setRange( -3000.0f, upper_energy );
     lower->setTextSize( input_nchar ); //doesnt seem to have an effect, but is showing up in the DOM
     lower->setWidth( input_width_px );
     lower->valueChanged().connect( this, &LinearizeCalTool::energyRangeUpdatedCallback );
     label->setBuddy( lower );
-    
+
     cell = table->elementAt( 1 + multiple, 0 );
-    label = new WLabel( WString::tr("ecaa-upper-energy"), cell );
+    label = cell->addNew<WLabel>( WString::tr("ecaa-upper-energy") );
     label->addStyleClass( "LinearizeLabel" );
-    
+
     cell = table->elementAt( 1 + multiple, 1 );
-    NativeFloatSpinBox *upper = new NativeFloatSpinBox( cell );
+    NativeFloatSpinBox *upper = cell->addNew<NativeFloatSpinBox>();
     upper->setValue( upper_energy );
     upper->setRange( lower_energy, 32000000.0f );
     upper->setTextSize( input_nchar );  //doesnt seem to have an effect, but is showing up in the DOM
     upper->setWidth( input_width_px );
     upper->valueChanged().connect( this, &LinearizeCalTool::energyRangeUpdatedCallback );
     label->setBuddy( upper );
-    
-    
+
+
     cell = table->elementAt( 2 + multiple, 0);
-    label = new WLabel( WString::tr("ecaa-num-channels"), cell );
+    label = cell->addNew<WLabel>( WString::tr("ecaa-num-channels") );
     label->addStyleClass( "LinearizeLabel" );
-    
+
     cell = table->elementAt( 2 + multiple, 1 );
-    WSpinBox *nchannelSB = new WSpinBox( cell );
+    WSpinBox *nchannelSB = cell->addNew<WSpinBox>();
     nchannelSB->setMinimum( 5 );
     nchannelSB->setMaximum( 65536 );
     nchannelSB->setValue( static_cast<int>(nchannel) );
@@ -1075,38 +1074,38 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     nchannelSB->setWidth( input_width_px - 16 );
     nchannelSB->valueChanged().connect( this, &LinearizeCalTool::numberOfChannelsUpdatedCallback );
     label->setBuddy( nchannelSB );
-    
-    
-    
+
+
+
     m_options[nchannel] = std::tuple<NativeFloatSpinBox *,NativeFloatSpinBox *,WSpinBox *>(lower, upper, nchannelSB);
   }//for( const auto &ranges : nchannelToRange )
-  
+
   string applyToTxt = cal->applyToSummaryTxt();
   if( !applyToTxt.empty() )
   {
     const WString applyToMsg = WString::tr("ecaa-changes-applied-to").arg( applyToTxt );
-    WText *msg = new WText( applyToMsg, this );
+    WText *msg = addNew<WText>( applyToMsg );
     msg->addStyleClass( "ConvertToApplieTo" );
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
-  
-  WText *noUndoNote = new WText( WString::tr("ecaa-no-undo-note"), this );
+
+  WText *noUndoNote = addNew<WText>( WString::tr("ecaa-no-undo-note") );
   noUndoNote->addStyleClass( "NoUndoNote" );
   noUndoNote->setInline( false );
-      
+
   WContainerWidget *buttonDiv = nullptr;
   if( parent )
     buttonDiv = parent->footer();
   else
-    buttonDiv = new WContainerWidget( this );
-  
+    buttonDiv = addNew<WContainerWidget>();
+
   //AuxWindow::addHelpInFooter( buttonDiv, "linearize-dialog" );
+
+  m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
+  m_accept = buttonDiv->addNew<WPushButton>( WString::tr("Accept") );
   
-  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
-  m_accept = new WPushButton( WString::tr("Accept"), buttonDiv );
-  
-  m_cancel->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Rejected ) );
-  m_accept->clicked().connect( boost::bind( &LinearizeCalTool::handleFinish, this, WDialog::Accepted ) );
+  m_cancel->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_accept->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
 }//ConvertCalTypeTool(...)
   
   
@@ -1159,7 +1158,7 @@ void LinearizeCalTool::numberOfChannelsUpdatedCallback()
 }//void numberOfChannelsUpdatedCallback()
   
   
-void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
+void LinearizeCalTool::handleFinish( Wt::DialogCode result )
 {
   using namespace SpecUtils;
   
@@ -1168,7 +1167,7 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
   
   switch( result )
   {
-    case WDialog::Rejected:
+    case Wt::DialogCode::Rejected:
     {
       cerr << "\nRejected LinearizeCalTool" << endl;
       UndoRedoManager *undoManager = viewer->undoRedoManager();
@@ -1195,7 +1194,7 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
       break;
     }
       
-    case WDialog::Accepted:
+    case Wt::DialogCode::Accepted:
     {
       cout << "\nAccepted LinearizeCalTool" << endl;
       
@@ -1277,7 +1276,7 @@ void LinearizeCalTool::handleFinish( Wt::WDialog::DialogCode result )
   
   if( m_parent )
     m_parent->hide();
-}//void handleFinish( WDialog::DialogCode result )
+}//void handleFinish( DialogCode result )
 
 
 CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> measToChange,
@@ -1296,10 +1295,9 @@ CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChang
     
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
-    
-  if( parent )
-    parent->stretcher()->addWidget( this, 0, 0  );
-    
+
+  // Note: In Wt4, parent adds this widget to its stretcher; no self-add needed here.
+
   size_t maxcombine = 1024;
   if( m_measToChange )
   {
@@ -1320,43 +1318,43 @@ CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChang
   }//if( m_measToChange )
   
   //Create widgets
-  WText *txt = new WText( WString::tr("ecaa-combine-channels-desc"), this );
+  WText *txt = addNew<WText>( WString::tr("ecaa-combine-channels-desc") );
   txt->setInline( false );
   txt->setPadding( 5, Wt::Side::Bottom );
-  
-  WLabel *label = new WLabel( WString::tr("ecaa-num-channels-to-combine"), this );
+
+  WLabel *label = addNew<WLabel>( WString::tr("ecaa-num-channels-to-combine") );
   label->setMargin( 5, Wt::Side::Right );
-  m_ncombine = new WSpinBox( this );
+  m_ncombine = addNew<WSpinBox>();
   m_ncombine->setValue( 1 );
   m_ncombine->setRange( 1, static_cast<int>(maxcombine) );
   m_ncombine->valueChanged().connect( this, &CombineChannelsTool::ncombineUpdatedCallback );
-  
+
   string applyToTxt = cal->applyToSummaryTxt();
   if( !applyToTxt.empty() )
   {
     const WString applyToMsg = WString::tr("ecaa-changes-applied-to").arg( applyToTxt );
-    WText *msg = new WText( applyToMsg, this );
+    WText *msg = addNew<WText>( applyToMsg );
     msg->addStyleClass( "ConvertToApplieTo" );
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
-  
-  WText *noUndoNote = new WText( WString::tr("ecaa-no-undo-note"), this );
+
+  WText *noUndoNote = addNew<WText>( WString::tr("ecaa-no-undo-note") );
   noUndoNote->addStyleClass( "NoUndoNote" );
   noUndoNote->setInline( false );
-  
+
   WContainerWidget *buttonDiv = nullptr;
   if( parent )
     buttonDiv = parent->footer();
   else
-    buttonDiv = new WContainerWidget( this );
-  
+    buttonDiv = addNew<WContainerWidget>();
+
   //AuxWindow::addHelpInFooter( buttonDiv, "combine-channels-dialog" );
+
+  m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
+  m_accept = buttonDiv->addNew<WPushButton>( WString::tr("Accept") );
   
-  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
-  m_accept = new WPushButton( WString::tr("Accept"), buttonDiv );
-  
-  m_cancel->clicked().connect( boost::bind( &CombineChannelsTool::handleFinish, this, WDialog::Rejected ) );
-  m_accept->clicked().connect( boost::bind( &CombineChannelsTool::handleFinish, this, WDialog::Accepted ) );
+  m_cancel->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_accept->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
 }//CombineChannelsTool constructor
   
 
@@ -1369,21 +1367,21 @@ void CombineChannelsTool::ncombineUpdatedCallback()
 {
   switch( m_ncombine->validate() )
   {
-    case Wt::WValidator::Invalid:
+    case Wt::ValidationState::Invalid:
       m_accept->disable();
       break;
       
-    case Wt::WValidator::InvalidEmpty:
+    case Wt::ValidationState::InvalidEmpty:
       m_ncombine->setValue( 1 );
       
-    case Wt::WValidator::Valid:
+    case Wt::ValidationState::Valid:
       m_accept->enable();
       break;
   }//switch( m_ncombine->validate() )
 }//void ncombineUpdatedCallback()
   
 
-void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
+void CombineChannelsTool::handleFinish( Wt::DialogCode result )
 {
   using namespace SpecUtils;
   
@@ -1392,7 +1390,7 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
   
   switch( result )
   {
-    case WDialog::Rejected:
+    case Wt::DialogCode::Rejected:
     {
       cerr << "\nRejected CombineChannelsTool" << endl;
       
@@ -1419,7 +1417,7 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
       break;
     }//case WDialog::Rejected:
       
-    case WDialog::Accepted:
+    case Wt::DialogCode::Accepted:
     {
       cout << "\nAccepted CombineChannelsTool" << endl;
       
@@ -1432,11 +1430,11 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
       int ncombine = 1;
       switch( m_ncombine->validate() )
       {
-        case Wt::WValidator::Invalid:
-        case Wt::WValidator::InvalidEmpty:
+        case Wt::ValidationState::Invalid:
+        case Wt::ValidationState::InvalidEmpty:
           break;
           
-        case Wt::WValidator::Valid:
+        case Wt::ValidationState::Valid:
           ncombine = m_ncombine->value();
           break;
       }//switch( m_ncombine->validate() )
@@ -1492,7 +1490,7 @@ void CombineChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
   
   if( m_parent )
     m_parent->hide();
-}//void handleFinish( Wt::WDialog::DialogCode result )
+}//void handleFinish( Wt::DialogCode result )
 
 
 
@@ -1513,12 +1511,11 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
-    
+
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer );
-    
-  if( parent )
-    parent->stretcher()->addWidget( this, 0, 0  );
-    
+
+  // Note: In Wt4, parent adds this widget to its stretcher; no self-add needed here.
+
   //Create a mapping that for each unique number of channels, gives the min/max energy of any
   //  measurements with that energy range
   map<size_t,set<shared_ptr<const SpecUtils::EnergyCalibration>>> nChannelToCals;
@@ -1545,125 +1542,125 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     if( parent )
     {
       auto close = parent->addCloseButtonToFooter();
-      close->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Rejected ) );
+      close->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
       parent->finished().connect( this, &TruncateChannelsTool::handleFinish );
     }
     
     const string msgtxt = "Truncations would not effect any spectra; try selecting more"
     " &quot;Apply Changes To&quot; criteria.";
     
-    WText *msg = new WText( WString::fromUTF8(msgtxt), this );
+    WText *msg = addNew<WText>( WString::fromUTF8(msgtxt) );
     msg->addStyleClass( "ConvertToNA" );
     msg->setInline( false );
-    
+
     return;
   }//if( nchannelToRange.empty() )
-  
-  
+
+
   //Create widgets
   for( const auto &chanToCals : nChannelToCals )
   {
-    WTable *table = new WTable( this );
+    WTable *table = addNew<WTable>();
     table->addStyleClass( "LinearizeInputTbl" );
-    
+
     const size_t nchannel = chanToCals.first;
     const set<shared_ptr<const SpecUtils::EnergyCalibration>> &cals = chanToCals.second;
-    
+
     const int multiple = (nChannelToCals.size() > 1);
     if( multiple )
     {
       auto cell = table->elementAt(0, 0);
       cell->setColumnSpan( (cals.size() > 1) ? 2 : 3 );
       WString msg = WString::tr("ecaa-for-n-channel-spectra").arg(to_string(nchannel));
-      WText *txt = new WText( msg, cell );
+      WText *txt = cell->addNew<WText>( msg );
       txt->addStyleClass( "NChannelSpecTxt" );
     }//if( multiple )
-    
+
     size_t maxChann = 1;
     for( const auto &c : cals )
       maxChann = std::max( maxChann, c->num_channels() );
-    
+
     const int input_nchar = 8;
     const int input_width_px = 75;
-    
+
     auto cell = table->elementAt( 0 + multiple, 0 );
-    auto label = new WLabel( WString::tr("ecaa-first-channel-to-keep"), cell );
+    WLabel *label = cell->addNew<WLabel>( WString::tr("ecaa-first-channel-to-keep") );
     label->addStyleClass( "LinearizeLabel" );
-    
+
     cell = table->elementAt( 0 + multiple, 1 );
-    WSpinBox *lower = new WSpinBox( cell );
+    WSpinBox *lower = cell->addNew<WSpinBox>();
     lower->setValue( 0 );
     lower->setRange( 0, static_cast<int>(maxChann - 1) );
     lower->setTextSize( input_nchar ); //doesnt seem to have an effect, but is showing up in the DOM
     lower->setWidth( input_width_px );
-    lower->valueChanged().connect( boost::bind(&TruncateChannelsTool::userUpdatedChannelCallback, this, lower) );
+    lower->valueChanged().connect( [this,lower](){ userUpdatedChannelCallback( lower ); } );
     label->setBuddy( lower );
-    
+
     cell = table->elementAt( 1 + multiple, 0 );
-    label = new WLabel( WString::tr("ecaa-last-channel-to-keep"), cell );
+    label = cell->addNew<WLabel>( WString::tr("ecaa-last-channel-to-keep") );
     label->addStyleClass( "LinearizeLabel" );
-    
+
     cell = table->elementAt( 1 + multiple, 1 );
-    WSpinBox *upper = new WSpinBox( cell );
+    WSpinBox *upper = cell->addNew<WSpinBox>();
     upper->setValue( static_cast<int>(maxChann - 1) );
     upper->setRange( 0, static_cast<int>(maxChann - 1) );
     upper->setTextSize( input_nchar ); //doesnt seem to have an effect, but is showing up in the DOM
     upper->setWidth( input_width_px );
-    upper->valueChanged().connect( boost::bind(&TruncateChannelsTool::userUpdatedChannelCallback, this, upper) );
+    upper->valueChanged().connect( [this,upper](){ userUpdatedChannelCallback( upper ); } );
     label->setBuddy( upper );
-    
-    
+
+
     WLabel *lowerEnergy = nullptr, *upperEnergy = nullptr;
     if( cals.size() == 1 )
     {
       cell = table->elementAt( 0 + multiple, 2 );
-      lowerEnergy = new WLabel( "", cell );
-      
+      lowerEnergy = cell->addNew<WLabel>( "" );
+
       cell = table->elementAt( 1 + multiple, 2 );
-      upperEnergy = new WLabel( "", cell );
+      upperEnergy = cell->addNew<WLabel>( "" );
     }//if( cals.size() == 1 )
-  
+
     m_options[nchannel] = std::tuple<WSpinBox *,WLabel *,WSpinBox *,WLabel *>( lower, lowerEnergy, upper, upperEnergy );
   }//for( const auto &ranges : nchannelToRange )
-  
-  m_keepOverflow = new WCheckBox( WString::tr("ecaa-keep-overflow"), this );
+
+  m_keepOverflow = addNew<WCheckBox>( WString::tr("ecaa-keep-overflow") );
   m_keepOverflow->addStyleClass( "TruncateKeepOverflow" );
   HelpSystem::attachToolTipOn( m_keepOverflow, WString::tr("ecaa-tt-keep-overflow"), showToolTips );
-  
+
   string applyToTxt = cal->applyToSummaryTxt();
   if( !applyToTxt.empty() )
   {
     const WString applyToMsg = WString::tr("ecaa-changes-applied-to").arg( applyToTxt );
-    WText *msg = new WText( applyToMsg, this );
+    WText *msg = addNew<WText>( applyToMsg );
     msg->addStyleClass( "TruncateApplyTo  " );
     msg->setInline( false );
   }//if( !applyToTxt.empty() )
-  
-  WText *truncNote = new WText( WString::tr("ecaa-first-channel-note"), this );
+
+  WText *truncNote = addNew<WText>( WString::tr("ecaa-first-channel-note") );
   truncNote->addStyleClass( "TruncateNote" );
   if( applyToTxt.empty() )
     truncNote->addStyleClass( "TruncateApplyTo" );
   truncNote->setInline( false );
-  
-  WText *noUndoNote = new WText( WString::tr("ecaa-no-undo-note"), this );
+
+  WText *noUndoNote = addNew<WText>( WString::tr("ecaa-no-undo-note") );
   noUndoNote->addStyleClass( "NoUndoNote" );
   noUndoNote->setInline( false );
-    
+
   validateInput();
-  
+
   WContainerWidget *buttonDiv = nullptr;
   if( parent )
     buttonDiv = parent->footer();
   else
-    buttonDiv = new WContainerWidget( this );
-  
+    buttonDiv = addNew<WContainerWidget>();
+
   //AuxWindow::addHelpInFooter( buttonDiv, "linearize-dialog" );
+
+  m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
+  m_accept = buttonDiv->addNew<WPushButton>( WString::tr("Accept") );
   
-  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
-  m_accept = new WPushButton( WString::tr("Accept"), buttonDiv );
-  
-  m_cancel->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Rejected ) );
-  m_accept->clicked().connect( boost::bind( &TruncateChannelsTool::handleFinish, this, WDialog::Accepted ) );
+  m_cancel->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_accept->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
 }//TruncateChannelsTool constructor
 
 
@@ -1765,7 +1762,7 @@ void TruncateChannelsTool::userUpdatedChannelCallback( WSpinBox *w )
 }//void userUpdatedChannelCallback( WSpinBox *w )
 
 
-void TruncateChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
+void TruncateChannelsTool::handleFinish( Wt::DialogCode result )
 {
   using namespace SpecUtils;
   
@@ -1774,7 +1771,7 @@ void TruncateChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
   
   switch( result )
   {
-    case WDialog::Rejected:
+    case Wt::DialogCode::Rejected:
     {
       cerr << "\nRejected TruncateChannelsTool" << endl;
       
@@ -1801,7 +1798,7 @@ void TruncateChannelsTool::handleFinish( Wt::WDialog::DialogCode result )
       break;
     }
       
-    case WDialog::Accepted:
+    case Wt::DialogCode::Accepted:
     {
       cout << "\nAccepted TruncateChannelsTool" << endl;
       

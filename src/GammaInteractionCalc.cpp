@@ -43,8 +43,8 @@
 #include <boost/function.hpp>
 #include <boost/asio/deadline_timer.hpp>
 
-#include <Wt/WServer>
-#include <Wt/WIOService>
+#include <Wt/WServer.h>
+#include <Wt/WIOService.h>
 
 //Roots Minuit2 includes
 #include "Minuit2/FCNBase.h"
@@ -5409,7 +5409,7 @@ vector<PeakResultPlotInfo>
   
   for( size_t materialN = 0; materialN < nMaterials; ++materialN )
   {
-    boost::function<double(float)> att_coef_fcn;
+    std::function<double(float)> att_coef_fcn;
     const ShieldingSourceFitCalc::ShieldingInfo &shielding = m_initial_shieldings[materialN];
     const shared_ptr<const Material> &material = shielding.m_material;
 
@@ -5434,8 +5434,9 @@ vector<PeakResultPlotInfo>
       if( ad_in_gcm2 > sm_max_areal_density_g_cm2 )
         areal_density = static_cast<float>(sm_max_areal_density_g_cm2*PhysicalUnits::g/PhysicalUnits::cm2);
   
-      att_coef_fcn = boost::bind( &transmition_coefficient_generic, atomic_number, areal_density,
-                                 boost::placeholders::_1 );
+      att_coef_fcn = [atomic_number, areal_density]( float energy ){
+        return transmition_coefficient_generic( atomic_number, areal_density, energy );
+      };
     }else
     {
       double thickness = 0.0;
@@ -5464,8 +5465,9 @@ vector<PeakResultPlotInfo>
       
       shield_outer_rad += thickness;
       
-      att_coef_fcn = boost::bind( &transmition_coefficient_material, material.get(),
-                                 boost::placeholders::_1, static_cast<float>(thickness) );
+      att_coef_fcn = [mat = material.get(), thickness]( float energy ){
+        return transmition_coefficient_material( mat, energy, static_cast<float>(thickness) );
+      };
     }//if( generic material ) / else
 
 /*
@@ -6106,7 +6108,7 @@ vector<PeakResultPlotInfo>
     {
       SpecUtilsAsync::ThreadPool pool;
       for( const unique_ptr<DistributedSrcCalc> &calculator : calculators )
-        pool.post( boost::bind( &ShieldingSourceChi2Fcn::selfShieldingIntegration, boost::ref(*calculator) ) );
+        pool.post( [&calculator](){ ShieldingSourceChi2Fcn::selfShieldingIntegration( *calculator ); } );
       pool.join();
     }else
     {
@@ -6114,10 +6116,10 @@ vector<PeakResultPlotInfo>
         selfShieldingIntegration(*calculator);
     }
     
-//    vector<boost::function<void()> > workers;
+//    vector<std::function<void()> > workers;
 //    for( DistributedSrcCalc &calculator : calculators )
 //    {
-//      boost::function<void()> worker = boost::bind( &ShieldingSourceChi2Fcn::selfShieldingIntegration, boost::ref(calculator) );
+//      std::function<void()> worker = boost::bind( &ShieldingSourceChi2Fcn::selfShieldingIntegration, boost::ref(calculator) );
 //      workers.push_back( worker );
 //    }//for( size_t i = 0; i < calculators.size(); ++i )
 //    SpecUtils::do_asyncronous_work( workers, false );

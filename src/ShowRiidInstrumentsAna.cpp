@@ -23,14 +23,14 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/Utils>
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WLineEdit>
-#include <Wt/WTextArea>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
+#include <Wt/Utils.h>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/SpecFile.h"
 
@@ -112,20 +112,19 @@ class AnaResultDisplay : public WContainerWidget
   
 #if( ENABLE_EDIT_RESULTS )
   // For when we want to enable editing
+  // Wt4_TODO: update addWidget calls to use unique_ptr when ENABLE_EDIT_RESULTS is activated
   template <class T>
   void addField( T *&edit, WTable *table, const WString &labelstr,
                 int row, int col, int rowspan = 1, int colspan = 1 )
   {
-    WLabel *label = new WLabel(labelstr);
-    label->setStyleClass("AlgoInfoLabel");
     WTableCell *cell = table->elementAt(row, col);
     cell->setRowSpan( rowspan );
-    cell->addWidget( label );
-    edit = new T();
+    WLabel *label = cell->addNew<WLabel>( labelstr );
+    label->setStyleClass("AlgoInfoLabel");
     cell = table->elementAt(row, col+1);
     cell->setRowSpan( rowspan );
     cell->setColumnSpan( colspan );
-    cell->addWidget( edit );
+    edit = cell->addNew<T>();
     label->setBuddy( edit );
     edit->disable();
     edit->setStyleClass( "AlgoInfoEdit" );
@@ -135,23 +134,21 @@ class AnaResultDisplay : public WContainerWidget
   void addField( WText *&edit, WTable *table, const WString &labelstr,
                 int row, int col, int rowspan = 1, int colspan = 1 )
   {
-    WLabel *label = new WLabel(labelstr);
-    label->setStyleClass( "AlgoInfoLabel" );
     WTableCell *cell = table->elementAt(row, col);
     cell->setRowSpan( rowspan );
-    cell->addWidget( label );
-    
+    WLabel *label = cell->addNew<WLabel>( labelstr );
+    label->setStyleClass( "AlgoInfoLabel" );
+
     cell = table->elementAt(row, col+1);
     cell->setRowSpan( rowspan );
     cell->setColumnSpan( colspan );
-    edit = new WText();
-    cell->addWidget( edit );
+    edit = cell->addNew<WText>();
     edit->setStyleClass( "AlgoInfoTxt" );
   }
   
 public:
-  AnaResultDisplay( WContainerWidget *parent = nullptr )
-  : WContainerWidget( parent ),
+  AnaResultDisplay()
+  : WContainerWidget(),
   m_summary( nullptr ),
   m_meas{ nullptr },
   m_table( nullptr ),
@@ -171,11 +168,11 @@ public:
     
     addStyleClass( "AnaResultDisplay" );
 
-    WLabel *algoInfo = new WLabel( WString::tr("srria-algo-info-label"), this );
+    WLabel *algoInfo = addNew<WLabel>( WString::tr("srria-algo-info-label") );
     algoInfo->addStyleClass( "AlgoInfoTitle" );
     algoInfo->setInline( false );
-    
-    m_table = new WTable( this );
+
+    m_table = addNew<WTable>();
     m_table->addStyleClass( "AlgoInfoTbl" );
     m_table->setHeaderCount( 1, Wt::Orientation::Vertical );
     
@@ -187,12 +184,12 @@ public:
     addField( m_algorithm_remarks, m_table, WString::tr("srria-remarks"), AlgorithmRemarks, 0 );
     
 #if( ENABLE_EDIT_RESULTS )
-    m_algorithm_name->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmName) );
-    m_algorithm_version->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this,AlgorithmVersion ) );
-    m_algorithm_creator->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmCreator ) );
-    m_algorithm_description->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmDescription ) );
-    m_algorithm_result_description->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmResultDescription ) );
-    m_algorithm_remarks->changed().connect( boost::bind( &AnaResultDisplay::handleFieldUpdate, this, AlgorithmRemarks ) );
+    m_algorithm_name->changed().connect( [this](){ handleFieldUpdate( AlgorithmName ); } );
+    m_algorithm_version->changed().connect( [this](){ handleFieldUpdate( AlgorithmVersion ); } );
+    m_algorithm_creator->changed().connect( [this](){ handleFieldUpdate( AlgorithmCreator ); } );
+    m_algorithm_description->changed().connect( [this](){ handleFieldUpdate( AlgorithmDescription ); } );
+    m_algorithm_result_description->changed().connect( [this](){ handleFieldUpdate( AlgorithmResultDescription ); } );
+    m_algorithm_remarks->changed().connect( [this](){ handleFieldUpdate( AlgorithmRemarks ); } );
 #endif
   }//constructor
   
@@ -204,8 +201,11 @@ public:
       ana = meas->detectors_analysis();
     
     if( m_summary )
-      delete m_summary;
-    m_summary = nullptr;
+    {
+      // removeWidget returns unique_ptr which goes out of scope here, destroying the widget
+      removeWidget( m_summary );
+      m_summary = nullptr;
+    }
     
     if( !ana )
     {
@@ -317,12 +317,11 @@ public:
     {
       anastr = "<div class=\"RiidNuclideResults\"><div class=\"AlgoInfoTitle\">"
                 + WString::tr("srria-algo-results").toUTF8() + ":</div>" + anastr + "</div>";
-      m_summary = new WText( anastr );
+      m_summary = addNew<WText>( anastr );
       m_summary->setInline( false );
-      this->addWidget( m_summary );
     }else
     {
-      m_summary = new WText( WString::tr("srria-no-algo-results") );
+      m_summary = addNew<WText>( WString::tr("srria-no-algo-results") );
       m_summary->addStyleClass( "AlgoInfoTitle" );
       m_summary->setInline( false );
     }
@@ -389,7 +388,7 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
     }
   }
   
-  return Wt::Utils::htmlEncode( WString::fromUTF8(summary),0).toUTF8();
+  return Wt::Utils::htmlEncode( WString::fromUTF8(summary) ).toUTF8();
 }//riidAnaSummary(...)
 
 
@@ -400,11 +399,11 @@ SimpleDialog *showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spe
   dialog->addButton( WString::tr("Close") );
   
   WContainerWidget *contents = dialog->contents();
-  WText *dialogTitle = new WText( WString::tr("srria-inst-ana-window-title"), contents );
+  WText *dialogTitle = contents->addNew<WText>( WString::tr("srria-inst-ana-window-title") );
   dialogTitle->addStyleClass( "title RiidDialogTitle" );
   dialogTitle->setInline( false );
-  
-  AnaResultDisplay *display = new AnaResultDisplay( contents );
+
+  AnaResultDisplay *display = contents->addNew<AnaResultDisplay>();
   display->updateDisplay( spec );
   
   return dialog;

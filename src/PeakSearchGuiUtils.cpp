@@ -28,21 +28,21 @@
 #include <memory>
 #include <functional>
 
-#include <Wt/WText>
-#include <Wt/WTable>
-#include <Wt/WPanel>
-#include <Wt/WServer>
-#include <Wt/WPainter>
-#include <Wt/WComboBox>
-#include <Wt/WCheckBox>
-#include <Wt/WSvgImage>
-#include <Wt/WAnimation>
-#include <Wt/WIOService>
-#include <Wt/WTableCell>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/Chart/WDataSeries>
+#include <Wt/WText.h>
+#include <Wt/WTable.h>
+#include <Wt/WPanel.h>
+#include <Wt/WServer.h>
+#include <Wt/WPainter.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WSvgImage.h>
+#include <Wt/WAnimation.h>
+#include <Wt/WIOService.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/Chart/WDataSeries.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -281,18 +281,18 @@ public:
     {
       case PeakSelectorWindowReason::PeakSearch:
         if( m_displayed.size() )
-          txt = new WText( WString::tr("psw-search-instruct-adjust"), contents() );
+          txt = contents()->addNew<WText>( WString::tr("psw-search-instruct-adjust") );
         else
-          txt = new WText( WString::tr("psw-search-instruct-unselect"), contents() );
+          txt = contents()->addNew<WText>( WString::tr("psw-search-instruct-unselect") );
         break;
-        
+
       case PeakSelectorWindowReason::NuclideId:
-        txt = new WText( WString::tr("psw-search-instruct-assign"), contents() );
+        txt = contents()->addNew<WText>( WString::tr("psw-search-instruct-assign") );
         break;
-        
+
       case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
       case PeakSelectorWindowReason::PeaksFromCsvFile:
-        txt = new WText( WString::tr("psw-search-instruct-keep"), contents() );
+        txt = contents()->addNew<WText>( WString::tr("psw-search-instruct-keep") );
         break;
     }//switch( m_reason )
     
@@ -302,9 +302,9 @@ public:
     switch( m_reason )
     {
       case PeakSelectorWindowReason::NuclideId:
-        m_showAllPeaks = new WCheckBox( WString::tr("psw-show-all-peaks"), contents() );
+        m_showAllPeaks = contents()->addNew<WCheckBox>( WString::tr("psw-show-all-peaks") );
         break;
-        
+
       case PeakSelectorWindowReason::PeakSearch:
       case PeakSelectorWindowReason::PeaksFromCsvFile:
       {
@@ -314,7 +314,7 @@ public:
           for( size_t i = 0; !anyNonAssignedPeaks && i < m_old_to_new_peaks.size(); ++i )
             if( m_old_to_new_peaks[i].second )
               anyNonAssignedPeaks = !m_old_to_new_peaks[i].second->hasSourceGammaAssigned();
-          
+
           if( anyNonAssignedPeaks )
           {
             string srcs;
@@ -327,23 +327,23 @@ public:
               srcs += m_displayed[i]->m_input.m_input_txt;
             }
             WString msg = WString::tr("psw-keep-only-assigned-peaks").arg(srcs);
-            m_keepRefLinePeaksOnly = new WCheckBox( msg, contents() );
+            m_keepRefLinePeaksOnly = contents()->addNew<WCheckBox>( msg );
             m_keepRefLinePeaksOnly->setInline( false );
             m_keepRefLinePeaksOnly->checked().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
             m_keepRefLinePeaksOnly->unChecked().connect( this, &PeakSelectorWindow::keepOnlyRefLinesCbChanged );
-            m_keepRefLinePeaksOnly->setMargin( 10, Wt::Top );
+            m_keepRefLinePeaksOnly->setMargin( 10, Wt::Side::Top );
             m_keepRefLinePeaksOnly->addStyleClass( "KeepRefLinPeaksOnlyCb CbNoLineBreak" );
           }//if( anyNonAssignedPeaks )
         }//if( we searched for peaks, and there were reference lines )
-        
+
         if( orig_peaks.size() )
-          m_showAllPeaks = new WCheckBox( WString::tr("psw-show-prev-peaks"), contents() );
+          m_showAllPeaks = contents()->addNew<WCheckBox>( WString::tr("psw-show-prev-peaks") );
         break;
       }//case PeakSelectorWindowReason::PeakSearch:
-        
+
       case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
         if( final_peaks.size() != orig_peaks.size() )
-          m_showAllPeaks = new WCheckBox( WString::tr("psw-show-missing-peaks"), contents() );
+          m_showAllPeaks = contents()->addNew<WCheckBox>( WString::tr("psw-show-missing-peaks") );
         break;
     }//switch ( m_reason )
     
@@ -355,7 +355,7 @@ public:
       m_showAllPeaks->checked().connect( this, &PeakSelectorWindow::showAllPeaksCbChanged );
       m_showAllPeaks->unChecked().connect( this, &PeakSelectorWindow::showAllPeaksCbChanged );
       if( !m_keepRefLinePeaksOnly )
-        m_showAllPeaks->setMargin( 10, Wt::Top );
+        m_showAllPeaks->setMargin( 10, Wt::Side::Top );
     }//if( m_showAllPeaks )
     
     
@@ -363,10 +363,10 @@ public:
     // Potentially create a rel eff chart to help the user decide about interferences and such
     setupRelEffChart();
 #endif
-    contents()->setOverflow( WContainerWidget::Overflow::OverflowAuto, Orientation::Vertical );
-    m_table = new WTable( contents() );
+    contents()->setOverflow( Wt::Overflow::Auto, Orientation::Vertical );
+    m_table = contents()->addNew<WTable>();
     m_table->addStyleClass( "PeakSelectorTable" );
-    m_table->setHeaderCount( 1, Wt::Horizontal );
+    m_table->setHeaderCount( 1, Wt::Orientation::Horizontal );
     
     m_keep_peak_cbs.resize( m_old_to_new_peaks.size(), nullptr );
     m_nuc_select_combos.resize( m_old_to_new_peaks.size(), nullptr );
@@ -488,33 +488,33 @@ public:
       cell = m_table->elementAt(0,keepPeakIndex);
       // We will add in some space so the "Keep Peak" text will have enough room to be next to the
       //  actual check box, and they wont be on separate lines.
-      txt = new WText( WString::tr("psw-keep-peak-q"), cell );
+      txt = cell->addNew<WText>( WString::tr("psw-keep-peak-q") );
       txt->setWordWrap( false );
     }
-    
+
     if( peakEnergyIndex >= 0 )
     {
       cell = m_table->elementAt(0,peakEnergyIndex);
       WString labeltxt = WString("{1}, {2}").arg( WString::tr("Energy") ).arg( WString::tr("FWHM") );
-      new WText( labeltxt, cell );
+      cell->addNew<WText>( labeltxt );
     }
-    
+
     if( origColumnIndex >= 0 )
     {
       cell = m_table->elementAt(0,origColumnIndex);
-      new WText( WString::tr("psw-orig-nuc"), cell );
+      cell->addNew<WText>( WString::tr("psw-orig-nuc") );
     }
-    
+
     if( newColumnIndex >= 0 )
     {
       cell = m_table->elementAt(0,newColumnIndex);
-      new WText( WString::tr("psw-assigned-nuc"), cell );
+      cell->addNew<WText>( WString::tr("psw-assigned-nuc") );
     }
-    
+
     if( previewIndex >= 0 )
     {
       cell = m_table->elementAt(0,previewIndex);
-      new WText( WString::tr("psw-peak-preview"), cell );
+      cell->addNew<WText>( WString::tr("psw-peak-preview") );
     }
     
     
@@ -544,10 +544,10 @@ public:
         if( (m_reason == PeakSelectorWindowReason::PeaksFromPreviousSpectrum)
             && !m_old_to_new_peaks[i].second )
         {
-          new WText( WString::tr("psw-not-found"), cbcell );
+          cbcell->addNew<WText>( WString::tr("psw-not-found") );
         }else if( has_changed )
         {
-          WCheckBox *cb = new WCheckBox( WString::tr("psw-keep-peak"), cbcell );
+          WCheckBox *cb = cbcell->addNew<WCheckBox>( WString::tr("psw-keep-peak") );
           cb->setWordWrap(false);
           cb->addStyleClass( "CbNoLineBreak" );
           cb->setChecked(true);
@@ -562,7 +562,7 @@ public:
         const string origstr = makeSourceDesciption( m_old_to_new_peaks[i].first );
         WTableCell *origNucCell = m_table->elementAt( table_row, origColumnIndex );
         origNucCell->addStyleClass( "OrigNucCell" );
-        new WText( origstr, origNucCell );
+        origNucCell->addNew<WText>( origstr );
       }
       
       if( newColumnIndex >= 0 )
@@ -574,23 +574,23 @@ public:
             && m_reason!=PeakSelectorWindowReason::PeaksFromPreviousSpectrum
             && m_reason!=PeakSelectorWindowReason::PeaksFromCsvFile )
         {
-          m_nuc_select_combos[i] = new WComboBox(newNucCell);
+          m_nuc_select_combos[i] = newNucCell->addNew<WComboBox>();
           m_nuc_select_combos[i]->setInline( false );
-          m_nuc_select_combos[i]->changed().connect( boost::bind( &PeakSelectorWindow::nucSelectChanged, this, i ) );
-          
+          m_nuc_select_combos[i]->changed().connect( [this, i](){ nucSelectChanged( i ); } );
+
           // Only show the "Don't change" checkbox if this is a previously existing peak
           if( m_old_to_new_peaks[i].first )
           {
-            m_dont_change_nuc_cbs[i] = new WCheckBox( WString::tr("psw-dont-change"), newNucCell );
+            m_dont_change_nuc_cbs[i] = newNucCell->addNew<WCheckBox>( WString::tr("psw-dont-change") );
             m_dont_change_nuc_cbs[i]->addStyleClass( "DontAssignCb" );
             m_dont_change_nuc_cbs[i]->setInline( false );
-            m_dont_change_nuc_cbs[i]->checked().connect( boost::bind( &PeakSelectorWindow::dontChangeNucCbChanged, this, i ) );
-            m_dont_change_nuc_cbs[i]->unChecked().connect( boost::bind( &PeakSelectorWindow::dontChangeNucCbChanged, this, i ) );
+            m_dont_change_nuc_cbs[i]->checked().connect( [this, i](){ dontChangeNucCbChanged( i ); } );
+            m_dont_change_nuc_cbs[i]->unChecked().connect( [this, i](){ dontChangeNucCbChanged( i ); } );
           }//if( m_old_to_new_peaks[i].first )
         }else
         {
           const string origstr = makeSourceDesciption( m_old_to_new_peaks[i].second );
-          new WText( origstr, newNucCell );
+          newNucCell->addNew<WText>( origstr );
         }
       }//if( newColumnIndex >= 0 )
       
@@ -616,7 +616,7 @@ public:
         
         WTableCell *peakene = m_table->elementAt( table_row, peakEnergyIndex );
         peakene->addStyleClass( "PeakEnergyCell" );
-        new WText( buffer, peakene );
+        peakene->addNew<WText>( buffer );
       }
       
       if( displayPeak && (previewIndex>=0) )
@@ -640,9 +640,9 @@ public:
       case PeakSelectorWindowReason::NuclideId:
         if( !some_nuclides_changed )
         {
-          txt = new WText( WString("<strong>{1}</strong>").arg( WString::tr("psw-no-nuc-changed") ), contents() );
-          txt->setPadding( 10, Wt::Top | Wt::Bottom );
-          txt->setTextAlignment( Wt::AlignmentFlag::AlignCenter );
+          txt = contents()->addNew<WText>( WString("<strong>{1}</strong>").arg( WString::tr("psw-no-nuc-changed") ) );
+          txt->setPadding( 10, Wt::Side::Top | Wt::Side::Bottom );
+          txt->setTextAlignment( Wt::AlignmentFlag::Center );
           txt->setInline( false );
         }
         break;
@@ -655,7 +655,7 @@ public:
 #endif
     
     WPushButton *acceptButton = addCloseButtonToFooter( WString::tr("Accept"), true );
-    acceptButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+    acceptButton->clicked().connect( [this](){ hide(); } );
     
     acceptButton->clicked().connect( std::bind( [viewer, orig_peaks, final_peaks](){
       
@@ -681,14 +681,14 @@ public:
     WPushButton *cancelButton = nullptr;
     if( viewer->isPhone() )
     {
-      cancelButton = new WPushButton( WString::tr("Cancel"), footer() );
-      cancelButton->setFloatSide( Wt::Right );
+      cancelButton = footer()->addNew<WPushButton>( WString::tr("Cancel") );
+      cancelButton->setFloatSide( Wt::Side::Right );
     }else
     {
       cancelButton = addCloseButtonToFooter( WString::tr("Cancel"), true );
     }
-    
-    cancelButton->clicked().connect( boost::bind( &PeakSelectorWindow::cancelOperation, this ) );
+
+    cancelButton->clicked().connect( [this](){ cancelOperation(); } );
     
     finished().connect( this, &PeakSelectorWindow::doFinish );
     
@@ -700,10 +700,9 @@ public:
     
     
     {// Begin handle undo when the dialog is showing, and the user hasnt accepted it
-      auto cancel = wApp->bind( boost::bind( &PeakSelectorWindow::cancelOperation, this ) );
-      
-      auto undo = [cancel](){
-        cancel();
+      // In Wt4, wApp->bind() was removed; undo/redo is called from app session context already
+      auto undo = [this](){
+        cancelOperation();
       };
       auto redo = [](){
         //We just wont do anything - we could create a PeakSelectorWindow, but we will
@@ -765,23 +764,22 @@ public:
     if( (max_peaks < 2) || (num_peaks.size() != 1) )
       return;
     
-    m_chartPanel = new WPanel( contents() );
+    m_chartPanel = contents()->addNew<WPanel>();
     m_chartPanel->addStyleClass( "PeakSelectRelEffPanel" );
     m_chartPanel->setCollapsible( true );
     m_chartPanel->setCollapsed( true );
     m_chartPanel->setTitle( WString::tr("psw-rel-eff-plot-title") );
-    m_chartPanel->setAnimation( WAnimation(WAnimation::SlideInFromTop, WAnimation::EaseOut, 100) );
-    
-    WContainerWidget *holder = new WContainerWidget();
-    m_chartPanel->setCentralWidget( holder );
-    WGridLayout *layout = new WGridLayout();
-    holder->setLayout( layout );
+    m_chartPanel->setAnimation( WAnimation(AnimationEffect::SlideInFromTop, TimingFunction::EaseOut, 100) );
+
+    auto holderOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *holder = holderOwner.get();
+    WGridLayout *layout = holder->setLayout( std::make_unique<WGridLayout>() );
     layout->setContentsMargins( 0, 0, 0, 0 );
-    
-    m_rel_eff_chart = new RelEffChart();
+
+    m_rel_eff_chart = layout->addWidget( std::make_unique<RelEffChart>(), 0, 0 );
     m_rel_eff_chart->setHeight( 250 );
     m_rel_eff_chart->setYAxisTitle( WString::tr("psw-rel-eff-plot-y-axis-title").toUTF8() );
-    layout->addWidget( m_rel_eff_chart, 0, 0 );
+    m_chartPanel->setCentralWidget( std::move(holderOwner) );
   }//void setupRelEffChart()
  
   
@@ -1072,7 +1070,7 @@ public:
       preview->clear();
       if( !preview->hasStyleClass("PeakPreviewCell") )
         preview->addStyleClass( "PeakPreviewCell" );
-      new WText( strm.str(), Wt::XHTMLUnsafeText, preview );
+      new WText( strm.str(), Wt::TextFormat::UnsafeXHTML, preview );
     }
      */
     
@@ -1084,28 +1082,28 @@ public:
     if( chart )
     {
 #if( !DYNAMICALLY_ADJUST_LEFT_CHART_PADDING )
-      chart->setPlotAreaPadding( 14, Wt::Left );
+      chart->setPlotAreaPadding( 14, Wt::Side::Left );
 #endif
-      chart->setPlotAreaPadding( 22, Wt::Bottom );
-      chart->setPlotAreaPadding( 0, Wt::Right );
-      chart->setPlotAreaPadding( 0, Wt::Top );
+      chart->setPlotAreaPadding( 22, Wt::Side::Bottom );
+      chart->setPlotAreaPadding( 0, Wt::Side::Right );
+      chart->setPlotAreaPadding( 0, Wt::Side::Top );
       
-      WFont labelFont( WFont::Default );
+      WFont labelFont;
       labelFont.setSize(WFont::Size::XXSmall);
-      chart->axis(Chart::XAxis).setLabelFont( labelFont );
+      chart->axis(Chart::Axis::X).setLabelFont( labelFont );
       
       // The y-axis label font doesnt seem to be respected (and instead a 10pt font is always used)
       //  Rendering the axis is done in SpectrumChart.cpp, and it isnt clear what the problem is,
       //  so we'll just leave off the y-axis labels for now.  Not a great solution, but its time
       //  to move on to more effective ways to spend time.
-      chart->axis(Chart::YAxis).setLabelFont( labelFont ); //doesnt seem to be obeyed
-      chart->axis(Chart::YAxis).setLabelFormat( " " );
+      chart->axis(Chart::Axis::Y).setLabelFont( labelFont ); //doesnt seem to be obeyed
+      chart->axis(Chart::Axis::Y).setLabelFormat( " " );
       
       WTableCell *preview = m_table->elementAt( static_cast<int>(i+1), m_previewChartColumn );
       preview->clear();
       if( !preview->hasStyleClass("PeakPreviewCell") )
         preview->addStyleClass( "PeakPreviewCell" );
-      preview->addWidget( chart );
+      preview->addWidget( std::unique_ptr<SpectrumChart>(chart) );
     }//if( previewChart )
   }//void updatePreviewPlot( size_t i )
   
@@ -1806,7 +1804,7 @@ void set_peaks_from_search( InterSpec *viewer,
                             std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > peaks,
                             std::shared_ptr<const SpecUtils::Measurement> originaldata,
                             std::vector<PeakDef> originalPeaks,
-                            boost::function<void(void)> guiupdater )
+                            std::function<void(void)> guiupdater )
 {
   if( !viewer )
     return;
@@ -1835,7 +1833,7 @@ void set_peaks_from_search( InterSpec *viewer,
   
   peakModel->setPeaks( filtered_peaks );
   
-  if( !guiupdater.empty() )
+  if( guiupdater )
     guiupdater();
   
   viewer->automatedPeakSearchCompleted();
@@ -1915,22 +1913,27 @@ namespace PeakSearchGuiUtils
     std::unique_ptr<SpectrumChart> chart( new SpectrumChart() );
     chart->setWidth( width );
     chart->setHeight( height );
-    PeakModel *peakmodel = new PeakModel( chart.get() );
-    SpectrumDataModel *dataModel = new SpectrumDataModel( chart.get() );
+    PeakModel *peakmodel = chart->addChild( std::make_unique<PeakModel>() );
+    SpectrumDataModel *dataModel = chart->addChild( std::make_unique<SpectrumDataModel>() );
     
-    chart->setModel( dataModel );
+    chart->setModel( std::shared_ptr<Wt::WAbstractItemModel>( dataModel, [](Wt::WAbstractItemModel *){} ) );
     chart->setPeakModel( peakmodel );
     peakmodel->setForeground( meas );
     peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers(), SpecUtils::SpectrumType::Foreground );
-    
+
     dataModel->setDataHistogram( meas );
-    
-    const vector<Chart::WDataSeries> series = dataModel->suggestDataSeries();
-    chart->setSeries( series );
+
+    {
+      const vector<Chart::WDataSeries> rawSeries = dataModel->suggestDataSeries();
+      vector<std::unique_ptr<Chart::WDataSeries>> series;
+      for( const Chart::WDataSeries &s : rawSeries )
+        series.push_back( std::make_unique<Chart::WDataSeries>(s) );
+      chart->setSeries( std::move(series) );
+    }
     
     //chart.enableLegend( true );
     
-    chart->axis(Chart::YAxis).setScale( Chart::LogScale );
+    chart->axis(Chart::Axis::Y).setScale( Chart::AxisScale::Log );
     
     for( size_t i = displayed.size(); i > 1; --i )
     {
@@ -1953,8 +1956,8 @@ namespace PeakSearchGuiUtils
     const size_t displayednbin = meas->find_gamma_channel( upperx )
                               - meas->find_gamma_channel( lowx );
     const int plotAreaWidth = width 
-                              - chart->plotAreaPadding(Left)
-                              - chart->plotAreaPadding(Right);
+                              - chart->plotAreaPadding(Wt::Side::Left)
+                              - chart->plotAreaPadding(Wt::Side::Right);
     const float bins_per_pixel = float(displayednbin) / float(plotAreaWidth);
     const int factor = max( static_cast<int>(ceil(bins_per_pixel)), 1 );
     
@@ -1967,7 +1970,13 @@ namespace PeakSearchGuiUtils
       dataModel->setForegroundSpectrumColor( theme->foregroundLine );
       dataModel->setBackgroundSpectrumColor( theme->backgroundLine );
       dataModel->setSecondarySpectrumColor( theme->secondaryLine );
-      chart->setSeries( dataModel->suggestDataSeries() );
+      {
+        const vector<Chart::WDataSeries> rawSeries = dataModel->suggestDataSeries();
+        vector<std::unique_ptr<Chart::WDataSeries>> series;
+        for( const Chart::WDataSeries &s : rawSeries )
+          series.push_back( std::make_unique<Chart::WDataSeries>(s) );
+        chart->setSeries( std::move(series) );
+      }
       
       chart->setDefaultPeakColor( theme->defaultPeakLine );
       
@@ -1999,27 +2008,27 @@ namespace PeakSearchGuiUtils
     
     if( compact )
     {
-      chart->axis(Chart::XAxis).setTitle("");
-      chart->axis(Chart::YAxis).setTitle("");
+      chart->axis(Chart::Axis::X).setTitle("");
+      chart->axis(Chart::Axis::Y).setTitle("");
       //chart->setLeftYAxisPadding(double width, <#double height#>)
-      chart->setPlotAreaPadding( 35, Wt::Left );
-      chart->setPlotAreaPadding( 16, Wt::Bottom );
-      chart->setPlotAreaPadding( 0, Wt::Right );
-      chart->setPlotAreaPadding( 0, Wt::Top );
+      chart->setPlotAreaPadding( 35, Wt::Side::Left );
+      chart->setPlotAreaPadding( 16, Wt::Side::Bottom );
+      chart->setPlotAreaPadding( 0, Wt::Side::Right );
+      chart->setPlotAreaPadding( 0, Wt::Side::Top );
       
-      WFont labelFont( WFont::Default );
+      WFont labelFont;
       labelFont.setSize(8);
-      chart->axis(Chart::XAxis).setLabelFont( labelFont );
+      chart->axis(Chart::Axis::X).setLabelFont( labelFont );
 
       if( width < 125 ) //125 px arbitrarily chosen as widest to not show y-axis numbers
       {
-        chart->setPlotAreaPadding( 6, Wt::Left );
+        chart->setPlotAreaPadding( 6, Wt::Side::Left );
         labelFont.setSize(1);
-        chart->axis(Chart::YAxis).setLabelFont( labelFont );
-        chart->axis(Chart::YAxis).setTextPen( WPen( WColor(0,0,0,0) ) );
+        chart->axis(Chart::Axis::Y).setLabelFont( labelFont );
+        chart->axis(Chart::Axis::Y).setTextPen( WPen( WColor(0,0,0,0) ) );
       }else
       {
-        chart->axis(Chart::YAxis).setLabelFont( labelFont );
+        chart->axis(Chart::Axis::Y).setLabelFont( labelFont );
       }
     }//if( compact )
     
@@ -2271,21 +2280,20 @@ void automated_search_for_peaks( InterSpec *viewer,
   if( !keep_old_peaks )
     startingPeaks.reset();
   
-  //using WApplication::bind to call msg->hide() will protect against the user
-  //  closing the msg window (which will have deleted it)
-  boost::function<void(void)> guiupdater
-                          = wApp->bind( boost::bind( &SimpleDialog::accept, msg ) );
-  
+  // In Wt4, wApp->bind() is removed.  The callbacks below are posted back to the
+  //  session by search_for_peaks_worker (which already uses server->post), so
+  //  they will execute in session context without needing bind().
+  std::function<void(void)> guiupdater = [msg](){ msg->accept(); };
+
   //The results of the peak search will be placed into the vector pointed to
   // by searchresults, which is why both 'callback' and below and
   // search_for_peaks_worker(...) get a shared pointer to this vector.
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
-  
-  //Again, use WApplication::bind to create the call that will set the peaks
-  //  when the searching is done.
-  boost::function<void(void)> callback
-                          = wApp->bind( boost::bind( &set_peaks_from_search,
-                                        viewer, displayed, searchresults, dataPtr, originalPeaks, guiupdater ) );
+
+  std::function<void(void)> callback
+                          = [viewer, displayed, searchresults, dataPtr, originalPeaks, guiupdater](){
+                              set_peaks_from_search( viewer, displayed, searchresults, dataPtr, originalPeaks, guiupdater );
+                            };
   
   auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   shared_ptr<const DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
@@ -2309,7 +2317,7 @@ void automated_search_for_peaks( InterSpec *viewer,
        && (fitPrefs->m_fwhm_method != PeakFitDetPrefs::FwhmMethod::Normal)
        && drf && drf->hasResolutionInfo() )
     {
-      Wt::WFlags<PeakFitLM::PeakFitLMOptions> fwhm_options( 0 );
+      Wt::WFlags<PeakFitLM::PeakFitLMOptions> fwhm_options;
       for( shared_ptr<const PeakDef> &peak : *searchresults )
       {
         shared_ptr<PeakDef> mutablePeak = make_shared<PeakDef>( *peak );
@@ -2835,7 +2843,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                const vector<ReferenceLineInfo> displayed,
                                const bool setColor,
                                std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
-                               boost::function<void(void)> callback,
+                               std::function<void(void)> callback,
                                const std::string sessionID,
                                const bool singleThread,
                                std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
@@ -3193,7 +3201,7 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
           SimpleDialog *d = dynamic_cast<SimpleDialog *>( ppp );
             
           if( d )
-            d->done(Wt::WDialog::DialogCode::Accepted);
+            d->done(Wt::DialogCode::Accepted);
           wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
         };
         
@@ -3208,10 +3216,10 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
         if( window )
         {
           window->tool()->updatedDrf().connect(
-            boost::bind( &refit_peaks_with_drf_fwhm, interspec, rightClickEnergy
-          ) );
+            [interspec, rightClickEnergy](){ refit_peaks_with_drf_fwhm( interspec, rightClickEnergy ); }
+          );
         }//if( window )
-        
+
         auto undo = [interspec,rightClickEnergy](){
           interspec->deleteFwhmFromForegroundWindow();
           refit_peaks_with_drf_fwhm( interspec, rightClickEnergy );
@@ -3223,15 +3231,15 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
           WWidget *ppp = pp ? pp->parent() : nullptr;
           SimpleDialog *d = dynamic_cast<SimpleDialog *>( ppp );
           if( d )
-            d->done(Wt::WDialog::DialogCode::Accepted);
+            d->done(Wt::DialogCode::Accepted);
           wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
-          
+
           MakeFwhmForDrfWindow *window = interspec->fwhmFromForegroundWindow(true);
           if( window )
           {
             window->tool()->updatedDrf().connect(
-              boost::bind( &refit_peaks_with_drf_fwhm, interspec, rightClickEnergy
-            ) );
+              [interspec, rightClickEnergy](){ refit_peaks_with_drf_fwhm( interspec, rightClickEnergy ); }
+            );
           }//if( window )
         };
         
@@ -3890,7 +3898,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
         = contFitPrefs ? contFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
 
       const vector<shared_ptr<const PeakDef>> result
-                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, contDetType, WFlags<PeakFitLM::PeakFitLMOptions>(0) );
+                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, contDetType, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
 
       if( result.size() == newCandidatePeaks.size() )
       {
@@ -4137,7 +4145,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
         = skewFitPrefs ? skewFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
 
       const vector<shared_ptr<const PeakDef>> result
-                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, skewDetType, WFlags<PeakFitLM::PeakFitLMOptions>(0) );
+                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, skewDetType, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
 
       if( result.size() == newCandidatePeaks.size() )
       {

@@ -36,19 +36,19 @@
 #if __APPLE__
 #include "TargetConditionals.h"
 #endif
-#include <Wt/WApplication>
-#include <Wt/WServer>
-#include <Wt/WResource>
-#include <Wt/WIOService>
-#include <Wt/Http/Client>
-#include <Wt/Utils>
-#include <Wt/Http/Response>
-#include <Wt/Dbo/Dbo>
-#include <Wt/Dbo/WtSqlTraits>
-#include <Wt/Dbo/backend/Sqlite3>
-#include <Wt/Json/Array>
-#include <Wt/Json/Object>
-#include <Wt/Json/Parser>
+#include <Wt/WApplication.h>
+#include <Wt/WServer.h>
+#include <Wt/WResource.h>
+#include <Wt/WIOService.h>
+#include <Wt/Http/Client.h>
+#include <Wt/Utils.h>
+#include <Wt/Http/Response.h>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/Dbo/WtSqlTraits.h>
+#include <Wt/Dbo/backend/Sqlite3.h>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Object.h>
+#include <Wt/Json/Parser.h>
 
 
 #include <boost/filesystem.hpp>
@@ -112,10 +112,10 @@ std::mutex ns_sessions_mutex;
 std::map<string,SessionState> ns_sessions;
 bool ns_allow_untokened_sessions = true;
   
-  Wt::WApplication *create_application( const Wt::WEnvironment &env )
+  std::unique_ptr<Wt::WApplication> create_application( const Wt::WEnvironment &env )
   {
-    return new InterSpecApp( env );
-  }// Wt::WApplication *createApplication(const Wt::WEnvironment& env)
+    return std::make_unique<InterSpecApp>( env );
+  }// unique_ptr<Wt::WApplication> create_application(const Wt::WEnvironment& env)
 }
 
 namespace InterSpecServer
@@ -218,12 +218,11 @@ namespace InterSpecServer
   }//bool changeToBaseDir( argc, argv )
   
   
-  Wt::WApplication *createAppForServer( const Wt::WEnvironment &env,
+  std::unique_ptr<Wt::WApplication> createAppForServer( const Wt::WEnvironment &env,
                                        Wt::WApplication::ApplicationCreator appCreator )
   {
-    Wt::WApplication *app = appCreator( env );
-    return app;
-  }//WApplication *createAppForServer(...)
+    return appCreator( env );
+  }//unique_ptr<WApplication> createAppForServer(...)
   
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   void startServer( int argc, char *argv[],
@@ -239,7 +238,7 @@ namespace InterSpecServer
       return;
     }
 
-    Wt::WString::setDefaultEncoding( Wt::UTF8 );   
+    // Wt 4: WString is always UTF-8, setDefaultEncoding removed   
 
     //If we are in an Apple Sandbox, we cant write to /tmp (especially done when
     //  spooling files), so we will check if we passed in an argument of a tmp
@@ -283,7 +282,7 @@ namespace InterSpecServer
     
     ns_server->setServerConfiguration( argc_wthttp, argv_wthttp, WTHTTP_CONFIGURATION );
     
-    ns_server->addEntryPoint( Wt::Application, boost::bind( &createAppForServer, _1, createApplication ) );
+    ns_server->addEntryPoint( Wt::EntryPointType::Application, [createApplication](const Wt::WEnvironment &env){ return createAppForServer(env, createApplication); } );
     
     if( ns_server->start() )
     {
@@ -346,7 +345,7 @@ void startWebServer( string name,
   if( basedir.empty() )
     basedir = ".";
     
-  Wt::WString::setDefaultEncoding( Wt::UTF8 );
+  // Wt 4: WString is always UTF-8, setDefaultEncoding removed
     
     
   ns_server = new Wt::WServer( name, xml_config_path );
@@ -385,7 +384,7 @@ void startWebServer( string name,
     
   ns_server->setServerConfiguration( argc_wthttp, argv_wthttp, WTHTTP_CONFIGURATION );
     
-  ns_server->addEntryPoint( Wt::Application, boost::bind( &createAppForServer, _1, create_application ) );
+  ns_server->addEntryPoint( Wt::EntryPointType::Application, [](const Wt::WEnvironment &env){ return createAppForServer(env, create_application); } );
     
   if( !ns_server->start() )
     throw std::runtime_error( "Failed to start Wt server" );
@@ -826,7 +825,7 @@ void killServer()
       Wt::Json::Value result;
       Wt::Json::parse( files_json, result, true );
       
-      if( result.type() != Wt::Json::ArrayType )
+      if( result.type() != Wt::Json::Type::Array )
         throw runtime_error( "Json passed in was not an array" );
       
       const Wt::Json::Array &jsonfiles = result;

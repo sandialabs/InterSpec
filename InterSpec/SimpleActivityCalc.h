@@ -30,7 +30,7 @@
 #include <memory>
 #include <optional>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/ShieldingSelect.h"
@@ -169,8 +169,7 @@ class SimpleActivityCalc : public Wt::WContainerWidget
 public:
   
   SimpleActivityCalc( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec *specViewer,
-                  Wt::WContainerWidget *parent = 0 );
+                  InterSpec *specViewer );
   
   virtual ~SimpleActivityCalc();
   

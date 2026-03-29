@@ -29,7 +29,7 @@
 #include <vector>
 #include <memory>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -67,7 +67,7 @@ protected:
 class FeatureMarkerWidget : public Wt::WContainerWidget
 {
 public:
-  FeatureMarkerWidget( InterSpec* viewer, Wt::WContainerWidget *parent = 0 );
+  FeatureMarkerWidget( InterSpec* viewer );
   
   virtual ~FeatureMarkerWidget();
   

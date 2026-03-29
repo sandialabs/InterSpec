@@ -5526,12 +5526,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 {
   PeakFitResult result;
 
-  const bool fit_norm_peaks = user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaks)
-                              || user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse);
-  const bool norm_peaks_dont_use = user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse);
+  const bool fit_norm_peaks = user_options.test(FitSrcPeaksOptions::FitNormBkgrndPeaks)
+                              || user_options.test(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse);
+  const bool norm_peaks_dont_use = user_options.test(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse);
   const bool apply_energy_cal_between = config.fit_energy_cal
-                                        && !user_options.testFlag(FitSrcPeaksOptions::DoNotVaryEnergyCal)
-                                        && !user_options.testFlag(FitSrcPeaksOptions::DoNotRefineEnergyCal);
+                                        && !user_options.test(FitSrcPeaksOptions::DoNotVaryEnergyCal)
+                                        && !user_options.test(FitSrcPeaksOptions::DoNotRefineEnergyCal);
   
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
@@ -5733,7 +5733,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   //options.energy_cal_type = config.fit_energy_cal
   //  ? RelActCalcAuto::EnergyCalFitType::NonLinearFit
   //  : RelActCalcAuto::EnergyCalFitType::NoFit;
-  options.energy_cal_type = user_options.testFlag(FitSrcPeaksOptions::DoNotVaryEnergyCal)
+  options.energy_cal_type = user_options.test(FitSrcPeaksOptions::DoNotVaryEnergyCal)
                               ? RelActCalcAuto::EnergyCalFitType::NoFit
                               : RelActCalcAuto::EnergyCalFitType::NonLinearFit;
   
@@ -5755,8 +5755,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   // Find valid energy range based on contiguous channels with data
   const auto [min_valid_energy, max_valid_energy] = find_valid_energy_range( orig_foreground );
 
-  const bool do_not_use_existing_rois = user_options.testFlag( FitSrcPeaksOptions::DoNotUseExistingRois );
-  const bool existing_peaks_as_free   = user_options.testFlag( FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
+  const bool do_not_use_existing_rois = user_options.test( FitSrcPeaksOptions::DoNotUseExistingRois );
+  const bool existing_peaks_as_free   = user_options.test( FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
 
   assert( !(do_not_use_existing_rois && existing_peaks_as_free) );
 
@@ -8104,7 +8104,7 @@ PeakFitResult fit_peaks_for_nuclides(
   }
 
   // Validate sources
-  if( sources.empty() && !options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaks) )
+  if( sources.empty() && !options.test(FitSrcPeaksOptions::FitNormBkgrndPeaks) )
   {
     result.status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
     result.error_message = "No sources provided";
@@ -8284,8 +8284,8 @@ PeakFitResult fit_peaks_for_nuclides(
     // We need to fit NORM peaks on a different Rel Eff curve than source nuclides (since they will have two differnt
     //  efficiency curves), and then combine the ROIs together.
     vector<RelActCalcAuto::RoiRange> norm_rois;
-    if( options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaks)
-       || options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse) )
+    if( options.test(FitSrcPeaksOptions::FitNormBkgrndPeaks)
+       || options.test(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse) )
     {
       long_background = nullptr; //We dont want to do background subtraction if we are trying to fit NORM peaks.
       

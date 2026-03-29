@@ -23,18 +23,19 @@
 
 #include "InterSpec_config.h"
 
+#include <fstream>
 #include <numeric>
 
-#include <Wt/Utils>
-#include <Wt/Json/Value>
-#include <Wt/Json/Array>
-#include <Wt/Json/Parser>
-#include <Wt/Json/Object>
-#include <Wt/WStringStream>
+#include <Wt/Utils.h>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Parser.h>
+#include <Wt/Json/Object.h>
+#include <Wt/WStringStream.h>
 
-#include <Wt/Dbo/Dbo>
-#include <Wt/Dbo/WtSqlTraits>
-#include <Wt/Dbo/backend/Sqlite3>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/Dbo/WtSqlTraits.h>
+#include <Wt/Dbo/backend/Sqlite3.h>
 
 #include "pugixml.hpp"
 
@@ -78,7 +79,7 @@ using namespace Wt;
 // a pain to discover this issue and implement around it.
 #include <sstream>
 #include <type_traits>
-#include <Wt/WStringStream>
+#include <Wt/WStringStream.h>
 #include <boost/tokenizer.hpp>
 #include <boost/io/detail/quoted_manip.hpp>
 #define USE_TEXT_FOR_BLOB 1
@@ -755,7 +756,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
         // four properties "author", "comments", "last_modified", "base_node_test"
         // We only care about "base_node_test".
         const auto &node = valobj.get("base_node_test");
-        if( !node.isNull() && node.type()==Json::StringType )
+        if( !node.isNull() && node.type()==Json::Type::String )
           base_node_test = static_cast<const string &>(node);
         continue;
       }//if( arraypos == 0 )
@@ -765,7 +766,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       info.m_base_node_test = base_node_test;
       
       const auto &label = valobj.get("label");
-      if( label.isNull() || label.type()!=Json::StringType )
+      if( label.isNull() || label.type()!=Json::Type::String )
         throw runtime_error( "Each Event XML JSON object must have a string label" );
       
       info.m_label = Wt::Utils::htmlEncode( static_cast<const string &>(label) );
@@ -786,7 +787,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       
       //"show_result_in_gui": true,
       const auto &showInGui = valobj.get("show_result_in_gui");
-      if( showInGui.isNull() || showInGui.type()!=Json::BoolType )
+      if( showInGui.isNull() || showInGui.type()!=Json::Type::Bool )
         info.show_in_gui_table = true;
       else
         info.show_in_gui_table = static_cast<bool>( showInGui );
@@ -799,7 +800,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       
       string typestr;
       const auto &type = valobj.get("type");
-      if( !type.isNull() && type.type()==Json::StringType )
+      if( !type.isNull() && type.type()==Json::Type::String )
         typestr = static_cast<const string &>(type);
       
       if( SpecUtils::iequals_ascii(typestr, "select") )
@@ -813,7 +814,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
                             + "' does not have a valid type property (can have string values 'select' or 'text')." );
       
       const auto &xpath = valobj.get("xpath");
-      if( xpath.isNull() || xpath.type()!=Json::StringType || (static_cast<const string &>(xpath).empty()) )
+      if( xpath.isNull() || xpath.type()!=Json::Type::String || (static_cast<const string &>(xpath).empty()) )
         throw runtime_error( "The Event XML query condition '" + info.m_label
                             + "' does not have a string xpath property specified." );
       info.m_xpath = static_cast<const string &>(xpath);
@@ -828,7 +829,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       }
       
       const auto &placeholder = valobj.get("placeholder");
-      if( !placeholder.isNull() && placeholder.type()==Json::StringType )
+      if( !placeholder.isNull() && placeholder.type()==Json::Type::String )
       {
         info.m_placeholder = Wt::Utils::htmlEncode( static_cast<const string &>(placeholder) );
         const size_t len = SpecUtils::utf8_str_len(info.m_placeholder.c_str(), info.m_placeholder.size());
@@ -838,7 +839,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       }
       
       const auto &operators = valobj.get("operators");
-      if( operators.isNull() || operators.type()!=Json::ArrayType )
+      if( operators.isNull() || operators.type()!=Json::Type::Array )
         throw runtime_error( "The Event XML query condition '" + info.m_label
                             + "' does not have the property 'operators' defined as an array of strings." );
       
@@ -851,7 +852,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       
       for( const Json::Value &op : static_cast<const Json::Array &>(operators) )
       {
-        if( op.type() != Json::StringType )
+        if( op.type() != Json::Type::String )
           throw runtime_error( "The Event XML query condition '" + info.m_label
                               + "' has an array entry to 'operators' that is not a string." );
         string strval = static_cast<const string &>(op);
@@ -892,14 +893,14 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
         case EventXmlFilterInfo::InputType::Select:
         {
           const auto &discreetops = valobj.get("discreet_options");
-          if( discreetops.isNull() || discreetops.type()!=Json::ArrayType )
+          if( discreetops.isNull() || discreetops.type()!=Json::Type::Array )
             throw runtime_error( "The Event XML query condition '" + info.m_label
                                 + "' does not have the property 'discreet_options' defined as an array of strings "
                                 "(required since a type=='select' specified)." );
           
           for( const Json::Value &op : static_cast<const Json::Array &>(discreetops) )
           {
-            if( op.type() != Json::StringType )
+            if( op.type() != Json::Type::String )
               throw runtime_error( "The Event XML query condition '" + info.m_label
                                   + "' has an array entry to 'discreet_options' that is not a string." );
             string strval = Wt::Utils::htmlEncode( static_cast<const string &>(op) );
@@ -1462,7 +1463,7 @@ SpecFileQueryDbCache::~SpecFileQueryDbCache()
   {
     std::lock_guard<std::mutex> lock( m_db_mutex );
     m_db_session.reset();
-    m_db.reset();
+    
     
     if( !m_using_persist_caching )
       SpecUtils::remove_file( m_db_location );
@@ -1483,20 +1484,19 @@ bool SpecFileQueryDbCache::open_db( const std::string &path, const bool create_t
 {
   try
   {
-    std::unique_ptr<Wt::Dbo::backend::Sqlite3> db( new Wt::Dbo::backend::Sqlite3(path) );
+    auto db = std::make_unique<Wt::Dbo::backend::Sqlite3>( path );
     std::unique_ptr<Wt::Dbo::Session> db_session( new Wt::Dbo::Session() );
-    
+
     db->setProperty( "show-queries", "false" );
-    db_session->setConnection( *db );
-    
+    db_session->setConnection( std::move(db) );  // Wt4: setConnection takes unique_ptr
+
     db_session->mapClass<SpecFileInfoToQuery>( "SpecFileInfoToQuery" );
     if( create_tables )
       db_session->createTables();
-    
+
     m_use_db_caching = true;
     m_db_location = path;
     m_db_session = std::move( db_session );
-    m_db = std::move( db );
   }catch( Wt::Dbo::Exception &e )
   {
     cerr << "Failed to create SpecFileQueryDbCache session, Dbo::Exception: " << e.what() << endl;
@@ -1539,11 +1539,11 @@ bool SpecFileQueryDbCache::init_existing_persisted_db()
 
   try
   {
-    std::unique_ptr<Wt::Dbo::backend::Sqlite3> db( new Wt::Dbo::backend::Sqlite3(persisted_path) );
+    auto db = std::make_unique<Wt::Dbo::backend::Sqlite3>( persisted_path );
     std::unique_ptr<Wt::Dbo::Session> db_session( new Wt::Dbo::Session() );
-    
+
     db->setProperty( "show-queries", "false" );
-    db_session->setConnection( *db );
+    db_session->setConnection( std::move(db) );  // Wt4: setConnection takes unique_ptr
     db_session->mapClass<SpecFileInfoToQuery>( "SpecFileInfoToQuery" );
     
     
@@ -1587,9 +1587,9 @@ bool SpecFileQueryDbCache::init_existing_persisted_db()
       Dbo::ptr<SpecFileInfoToQuery> dummy;
       {
         Wt::Dbo::Transaction innertrans( *db_session );
-        SpecFileInfoToQuery *dummyptr = new SpecFileInfoToQuery();
-        dummyptr->file_path = "Dummy";
-        dummy = db_session->add( dummyptr );
+        auto dummyOwner = std::make_unique<SpecFileInfoToQuery>();
+        dummyOwner->file_path = "Dummy";
+        dummy = db_session->add( std::move(dummyOwner) );
         innertrans.commit();
       }
       
@@ -1600,7 +1600,6 @@ bool SpecFileQueryDbCache::init_existing_persisted_db()
       }
     }//if( !gotentry )
   
-    m_db = std::move( db );
     m_db_session = std::move( db_session );
     m_db_location = persisted_path;
     m_using_persist_caching = true;
@@ -1608,7 +1607,7 @@ bool SpecFileQueryDbCache::init_existing_persisted_db()
   }catch( std::exception &e )
   {
     m_db_session.reset();
-    m_db.reset();
+    
     //passMessage( "Caught exception initind persisted DB; " + string(e.what()), "", 3 );
     cerr << "\n\nIn persisting cache, caught: " << e.what() << endl << endl;
   }
@@ -1738,7 +1737,7 @@ void SpecFileQueryDbCache::cache_results( const std::vector<std::string> &&files
     
     {
       std::lock_guard<std::mutex> lock( m_db_mutex ); //always locked inside of m_cv_mutex
-      m_doing_caching = (!!m_db && !!m_db_session);
+      m_doing_caching = (!!m_db_session);
     }
     
     if( !m_doing_caching )
@@ -1786,8 +1785,9 @@ void SpecFileQueryDbCache::cache_results( const std::vector<std::string> &&files
         trans.commit();
       }//end lock on m_db_mutex
       
-      auto dbinforaw = new SpecFileInfoToQuery();;
-      Wt::Dbo::ptr<SpecFileInfoToQuery> dbinfo( dbinforaw );
+      auto dbinfoOwner = std::make_unique<SpecFileInfoToQuery>();
+      SpecFileInfoToQuery * const dbinforaw = dbinfoOwner.get();
+      Wt::Dbo::ptr<SpecFileInfoToQuery> dbinfo( std::move(dbinfoOwner) );
       dbinforaw->fill_info_from_file(filename);
       dbinforaw->fill_event_xml_filter_values(filename,m_xmlfilters);
       
@@ -1907,7 +1907,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
         && SpecUtils::is_file(newfilename) )
       SpecUtils::remove_file(newfilename);
     
-    if( m_db && m_db_session )
+    if( m_db_session )
     {
       if( newfilename == m_db_location )
       {
@@ -1918,7 +1918,7 @@ void SpecFileQueryDbCache::set_persist( const bool persist )
       }
       
       m_db_session.reset();
-      m_db.reset();
+      
 
       if( SpecUtils::is_file(m_db_location) ) //This is being a little over-cautious, but whatever.
       {
@@ -2027,7 +2027,7 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
     {//begin check in DB
       std::lock_guard<std::mutex> lock( m_db_mutex );
       
-      if( !m_db || !m_db_session )
+      if( !m_db_session )
       {
         //Shouldnt ever get here!
         info->fill_info_from_file( filepath );
@@ -2057,9 +2057,10 @@ std::unique_ptr<SpecFileInfoToQuery> SpecFileQueryDbCache::spec_file_info( const
     info->fill_info_from_file( filepath );
     info->fill_event_xml_filter_values( filepath, m_xmlfilters );
     
-    auto dbinforaw = new SpecFileInfoToQuery();
-    Wt::Dbo::ptr<SpecFileInfoToQuery> dbinfo( dbinforaw );
-    *dbinforaw = *info;
+    auto dbinfoOwner2 = std::make_unique<SpecFileInfoToQuery>();
+    SpecFileInfoToQuery * const dbinforaw2 = dbinfoOwner2.get();
+    Wt::Dbo::ptr<SpecFileInfoToQuery> dbinfo( std::move(dbinfoOwner2) );
+    *dbinforaw2 = *info;
     
     {//begin check in DB
       std::lock_guard<std::mutex> lock( m_db_mutex );

@@ -23,20 +23,20 @@
 #include "InterSpec_config.h"
 
 #include "InterSpec/AuxWindow.h"
-#include <Wt/WText>
-#include <Wt/WTheme>
-#include <Wt/WPanel>
-#include <Wt/WImage>
-#include <Wt/WIconPair>
-#include <Wt/WTemplate>
-#include <Wt/WBoxLayout>
-#include <Wt/WBorderLayout>
-#include <Wt/WPushButton>
-#include <Wt/WJavaScript>
-#include <Wt/WEnvironment>
-#include <Wt/WApplication>
-#include <Wt/WStringStream>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WTheme.h>
+#include <Wt/WPanel.h>
+#include <Wt/WImage.h>
+#include <Wt/WIconPair.h>
+#include <Wt/WTemplate.h>
+#include <Wt/WBoxLayout.h>
+#include <Wt/WBorderLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
@@ -703,7 +703,7 @@ WT_DECLARE_WT_MEMBER
 
 
 AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProperties> properties)
-  : WDialog(InterSpec::instance()),
+  : WDialog(),
   m_auxIsHidden(true),
   m_modalOrig(false),
   m_titleText(NULL),
@@ -755,13 +755,13 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   const bool isPhone = viewer ? viewer->isPhone() : false;
   const bool isTablet = viewer ? viewer->isTablet() : false;
 
-  const bool isPhoneNotFullScreen = properties.testFlag(AuxWindowProperties::PhoneNotFullScreen);
-  const bool isTabletNotFullScreen = properties.testFlag(AuxWindowProperties::TabletNotFullScreen);
+  const bool isPhoneNotFullScreen = properties.test(AuxWindowProperties::PhoneNotFullScreen);
+  const bool isTabletNotFullScreen = properties.test(AuxWindowProperties::TabletNotFullScreen);
 
   const bool phoneFullScreen = (isPhone && !isPhoneNotFullScreen)
     || (isTablet && !isTabletNotFullScreen && !isPhoneNotFullScreen);
 
-  m_modalOrig = properties.testFlag(AuxWindowProperties::IsModal);
+  m_modalOrig = properties.test(AuxWindowProperties::IsModal);
   if (phoneFullScreen)
   {
     m_modalOrig = false;  //Sometimes the Welcome screen modal underlay seems a bit sticky.
@@ -786,7 +786,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   WContainerWidget* title = titleBar();
   WContainerWidget* content = contents();
   title->clear();
-  title->setContentAlignment(AlignMiddle);
+  title->setContentAlignment(AlignmentFlag::Middle);
   title->setPadding(WLength(0));
 
   content->clear();
@@ -799,63 +799,65 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   string fcntcall;
   std::string resources = WApplication::resourcesUrl();
 
-  m_closedSignal.reset(new JSignal<void>(this, "closed", true));
-  m_openedSignal.reset(new JSignal<void>(this, "opened", true));
+  m_closedSignal = std::make_unique<JSignal<>>(this, "closed", true);
+  m_openedSignal = std::make_unique<JSignal<>>(this, "opened", true);
 
-  m_collapsedSignal.reset(new JSignal<void>(this, "collapsed", true));
-  m_expandedSignal.reset(new JSignal<void>(this, "expanded", true));
+  m_collapsedSignal = std::make_unique<JSignal<>>(this, "collapsed", true);
+  m_expandedSignal = std::make_unique<JSignal<>>(this, "expanded", true);
 
   if (m_isPhone
-    || properties.testFlag(AuxWindowProperties::DisableCollapse)
+    || properties.test(AuxWindowProperties::DisableCollapse)
     || ((isPhone || isTablet) && (isTabletNotFullScreen || isPhoneNotFullScreen)))
   {
-    m_collapseSlot.reset(new JSlot("function(){}", this));
-    m_expandSlot.reset(new JSlot("function(){}", this));
-    m_toggleExpandedStatusSlot.reset(new JSlot("function(){}", this));
+    m_collapseSlot = std::make_unique<JSlot>("function(){}", this);
+    m_expandSlot = std::make_unique<JSlot>("function(){}", this);
+    m_toggleExpandedStatusSlot = std::make_unique<JSlot>("function(){}", this);
   }
   else
   {
-    m_collapseIcon = new WImage(resources + "collapse.gif");
+    auto collapseIconOwner = std::make_unique<WImage>( WLink(resources + "collapse.gif") );
+    m_collapseIcon = collapseIconOwner.get();
     m_collapseIcon->setMinimumSize(WLength(16), WLength(16));
     m_collapseIcon->setStyleClass("HeaderIcon");
     m_collapseIcon->addStyleClass("titleVertMiddle");
 
-    m_expandIcon = new WImage(resources + "expand.gif");
+    auto expandIconOwner = std::make_unique<WImage>( WLink(resources + "expand.gif") );
+    m_expandIcon = expandIconOwner.get();
     m_expandIcon->setMinimumSize(WLength(16), WLength(16));
     m_expandIcon->setStyleClass("HeaderIcon");
     m_expandIcon->addStyleClass("titleVertMiddle");
-    m_collapseIcon->decorationStyle().setCursor(PointingHandCursor);
-    m_expandIcon->decorationStyle().setCursor(PointingHandCursor);
+    m_collapseIcon->decorationStyle().setCursor(Cursor::PointingHand);
+    m_expandIcon->decorationStyle().setCursor(Cursor::PointingHand);
 
-    title->insertWidget(0, m_collapseIcon);
-    title->insertWidget(0, m_expandIcon);
+    title->insertWidget(0, std::move(collapseIconOwner));
+    title->insertWidget(0, std::move(expandIconOwner));
 
     const string jsthis = "$('#" + id() + "')";
     const string jscontent = "$('#" + content->id() + "')";
 
     fcntcall = "function(){"
-      + m_collapsedSignal->createEventCall(id(), "null") + "}";
-    m_collapseSlot.reset(new JSlot("function(s,e){ Wt.WT.AuxWindowCollapse(s,e,'"
+      + m_collapsedSignal->createEventCall(id(), "null", {}) + "}";
+    m_collapseSlot = std::make_unique<JSlot>("function(s,e){ Wt.WT.AuxWindowCollapse(s,e,'"
       + id() + "','" + content->id() + "','"
       + m_collapseIcon->id() + "','"
       + m_expandIcon->id() + "',"
       + fcntcall
-      + ");}", this));
+      + ");}", this);
 
     m_collapseIcon->clicked().connect(*m_collapseSlot);
     m_collapsedSignal->connect(*m_collapseSlot);
 
     fcntcall = "function(){"
-      + m_expandedSignal->createEventCall(id(), "null") + "}";
-    m_expandSlot.reset(new JSlot("function(s,e){ Wt.WT.AuxWindowExpand(s,e,'"
+      + m_expandedSignal->createEventCall(id(), "null", {}) + "}";
+    m_expandSlot = std::make_unique<JSlot>("function(s,e){ Wt.WT.AuxWindowExpand(s,e,'"
       + id() + "','" + content->id() + "','"
       + m_collapseIcon->id() + "','"
       + m_expandIcon->id() + "',"
       + fcntcall
-      + ");}", this));
+      + ");}", this);
 
     m_expandIcon->clicked().connect(*m_expandSlot);
-    m_expandIcon->clicked().connect(boost::bind(&AuxWindow::refresh, this));
+    m_expandIcon->clicked().connect( [this](){ refresh(); } );
     m_expandedSignal->connect(*m_expandSlot);
 
     stringstream toggleExpandJs;
@@ -870,33 +872,32 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
       ""  "" << m_collapseSlot->execJs("s", "e") << ";"
       ""  "}"
       "}";
-    m_toggleExpandedStatusSlot.reset(new JSlot(toggleExpandJs.str(), this));
+    m_toggleExpandedStatusSlot = std::make_unique<JSlot>(toggleExpandJs.str(), this);
     title->doubleClicked().connect(*m_toggleExpandedStatusSlot);
-    title->doubleClicked().connect(boost::bind(&AuxWindow::refresh, this));
+    title->doubleClicked().connect( [this](){ refresh(); } );
   }//if( m_isPhone ) ' else
 
-  m_titleText = new WText(windowTitle, XHTMLText, title);
+  m_titleText = title->addNew<WText>( windowTitle, Wt::TextFormat::XHTML );
   m_titleText->addStyleClass("titleVertMiddle");
 
-  fcntcall = "function(){" + m_closedSignal->createEventCall(id(), "null") + "}";
-  m_hideSlot.reset(new JSlot("function(s,e){ Wt.WT.AuxWindowHide(s,e,'" + id()
-    + "'," + fcntcall + ");}", this));
+  fcntcall = "function(){" + m_closedSignal->createEventCall(id(), "null", {}) + "}";
+  m_hideSlot = std::make_unique<JSlot>("function(s,e){ Wt.WT.AuxWindowHide(s,e,'" + id()
+    + "'," + fcntcall + ");}", this);
 
-
-  fcntcall = "function(){" + m_openedSignal->createEventCall(id(), "null") + "}";
-  m_showSlot.reset(new JSlot("function(s,e){ Wt.WT.AuxWindowShow(s,e,'"
-    + id() + "'," + fcntcall + ");}", this));
+  fcntcall = "function(){" + m_openedSignal->createEventCall(id(), "null", {}) + "}";
+  m_showSlot = std::make_unique<JSlot>("function(s,e){ Wt.WT.AuxWindowShow(s,e,'"
+    + id() + "'," + fcntcall + ");}", this);
 
 #if( USE_NEW_AUXWINDOW_ISH )
-  m_repositionSlot.reset(new JSlot("function(s,e){Wt.WT.AuxWindowReposition(s,e);}", this));
-  m_centerSlot.reset(new JSlot("function(s,e){Wt.WT.AuxWindowCenter(s,e);}", this));
-  m_resizeSlot.reset(new JSlot("function(s,e){Wt.WT.AuxWindowResize(s,e);}", this));
-  m_resizeScaledSlot.reset(new JSlot("function(s,e){Wt.WT.AuxWindowScaleResize(s,e);}", this));
+  m_repositionSlot = std::make_unique<JSlot>("function(s,e){Wt.WT.AuxWindowReposition(s,e);}", this);
+  m_centerSlot = std::make_unique<JSlot>("function(s,e){Wt.WT.AuxWindowCenter(s,e);}", this);
+  m_resizeSlot = std::make_unique<JSlot>("function(s,e){Wt.WT.AuxWindowResize(s,e);}", this);
+  m_resizeScaledSlot = std::make_unique<JSlot>("function(s,e){Wt.WT.AuxWindowScaleResize(s,e);}", this);
 #endif
 
   // Centering is done using either centerWindow() or repositionWindow()
-  m_closedSignal->connect(boost::bind(&AuxWindow::setHidden, this, true, WAnimation()));
-  m_openedSignal->connect(boost::bind(&AuxWindow::setHidden, this, false, WAnimation()));
+  m_closedSignal->connect( [this](){ setHidden( true, WAnimation() ); } );
+  m_openedSignal->connect( [this](){ setHidden( false, WAnimation() ); } );
 
   // We wont bring dialog to top, if the user clicked a button on the title (primarily
   //  for mobile, where we might have buttons in the title)
@@ -910,7 +911,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
 
   if( !m_isPhone )
   {
-    const bool setCloseable = properties.testFlag(AuxWindowProperties::SetCloseable);
+    const bool setCloseable = properties.test(AuxWindowProperties::SetCloseable);
     AuxWindow::setClosable( setCloseable );
     title->touchStarted().connect("function(s,e){ Wt.WT.AuxWindowTitlebarTouchStart(s,e,'" + id() + "'); }");
     title->touchMoved().connect("function(s,e){ Wt.WT.AuxWindowTitlebarHandleMove(s,e,'" + id() + "'); }");
@@ -926,7 +927,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     content->setLoadLaterWhenInvisible(false);
   }
 
-  setOffsets(WLength(0, WLength::Pixel), Wt::Left | Wt::Top);
+  setOffsets(WLength(0, WLength::Unit::Pixel), Wt::Side::Left | Wt::Side::Top);
 
   // By default it'll just spawn at 50% width and height of the host
 //  resizeScaledWindow( 0.5, 0.5 );
@@ -938,7 +939,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     doJavaScript("$('#" + m_expandIcon->id() + "').hide();");
 
 
-  if (properties.testFlag(AuxWindowProperties::IsHelpWindow))
+  if (properties.test(AuxWindowProperties::IsHelpWindow))
   {
     if (!m_isPhone)
     {
@@ -959,7 +960,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   }//helpWindow
 
 
-  if (!m_isPhone && properties.testFlag(AuxWindowProperties::EnableResize))
+  if (!m_isPhone && properties.test(AuxWindowProperties::EnableResize))
   {
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum
@@ -1029,7 +1030,7 @@ void AuxWindow::render( Wt::WFlags<Wt::RenderFlag> flags )
   // Sometimes the contents of the AuxWindow will not get the contents laid out correctly, so we'll
   //  just always trigger a rather heavy handed resize event.
   // Definitely a hack
-  if (flags & Wt::RenderFlag::RenderFull)
+  if (flags.test(Wt::RenderFlag::Full))
   {
     wApp->doJavaScript(wApp->javaScriptClass() + ".TriggerResizeEvent();");
 
@@ -1096,7 +1097,7 @@ WContainerWidget* AuxWindow::footer()
   if( m_isPhone )
   {
     WContainerWidget *bar = titleBar();
-    bar->setHeight( WLength(35,WLength::Pixel) );
+    bar->setHeight( WLength(35,WLength::Unit::Pixel) );
     bar->setStyleClass( "PhoneAuxWindowHeader" );
     
     //ToDo: for Android should show window title, but not in iOS
@@ -1108,16 +1109,17 @@ WContainerWidget* AuxWindow::footer()
         caption->setHidden(true);
     }
     
-    m_footer = new WContainerWidget;
+    auto footerOwner = std::make_unique<WContainerWidget>();
+    m_footer = footerOwner.get();
     m_footer->addStyleClass( "PhoneAuxWindowFooter" );
-    
-    m_footer->setMargin( 12, Wt::Left );
-    m_footer->setMargin( 12, Wt::Right );
-    bar->insertWidget( 0, m_footer );
+
+    m_footer->setMargin( 12, Wt::Side::Left );
+    m_footer->setMargin( 12, Wt::Side::Right );
+    bar->insertWidget( 0, std::move(footerOwner) );
   }else
   {
     m_footer = WDialog::footer();
-    m_footer->setHeight(WLength(45,WLength::Pixel));
+    m_footer->setHeight(WLength(45,WLength::Unit::Pixel));
     m_footer->setStyleClass("modal-footer");
   }
   
@@ -1137,7 +1139,7 @@ AuxWindow::~AuxWindow()
 
 void AuxWindow::emitReject()
 {
-  finished().emit(WDialog::Rejected);
+  finished().emit( Wt::DialogCode::Rejected );
 }
 
 bool AuxWindow::isPhone() const
@@ -1149,7 +1151,8 @@ Wt::WPushButton *AuxWindow::addCloseButtonToFooter( Wt::WString override_txt,
                                                    const bool float_right,
                                                    Wt::WContainerWidget *footerOverride )
 {
-  WPushButton *close = new WPushButton();
+  auto closeOwner = std::make_unique<WPushButton>();
+  WPushButton *close = closeOwner.get();
   
   if( override_txt.key().empty() && (override_txt.toUTF8() == "Close") )
     override_txt = WString::tr("Close");
@@ -1177,7 +1180,7 @@ Wt::WPushButton *AuxWindow::addCloseButtonToFooter( Wt::WString override_txt,
   //Sometimes, the footer may not be footer(), so we allow user to override
   if( !footerOverride )
     footerOverride = footer();
-  footerOverride->insertWidget( footerOverride->count(), close );
+  footerOverride->insertWidget( footerOverride->count(), std::move(closeOwner) );
 
   return close;
 }//Wt::WPushButton *addCloseButtonToFooter()
@@ -1193,9 +1196,9 @@ void AuxWindow::setClosable( bool closable )
   {
     if( m_closeIcon )
       return;
-    m_closeIcon = new WText( titleBar() );
+    m_closeIcon = titleBar()->addNew<WText>();
     WApplication::instance()->theme()->apply(this, m_closeIcon,
-                                              DialogCloseIconRole);
+                                              WidgetThemeRole::DialogCloseIcon);
     //order of connections below matter
     m_closeIcon->clicked().connect( *m_expandSlot );
     m_closeIcon->clicked().connect( *m_hideSlot );
@@ -1211,8 +1214,8 @@ void AuxWindow::setClosable( bool closable )
   {
     if( !m_closeIcon )
       return;
-    delete m_closeIcon;
-    m_closeIcon = (WInteractWidget *)0;
+    auto owned = m_closeIcon->removeFromParent();
+    m_closeIcon = nullptr;
   }//if( closable ) / else
 }//void setClosable( bool closable );
 
@@ -1240,7 +1243,6 @@ WGridLayout *AuxWindow::stretcher()
 {
   if( !m_contentStretcher )
   {
-    m_contentStretcher = new WGridLayout();
     WContainerWidget *container = WDialog::contents();
     if( container->count() )
     {
@@ -1250,8 +1252,8 @@ WGridLayout *AuxWindow::stretcher()
       container->clear();
     }//if( container->count() )
 
-    container->setLayout( m_contentStretcher );
-    container->setOverflow( WContainerWidget::OverflowHidden );
+    m_contentStretcher = container->setLayout( std::make_unique<WGridLayout>() );
+    container->setOverflow( Wt::Overflow::Hidden );
   }//if( !m_contentStretcher )
 
   return m_contentStretcher;
@@ -1563,8 +1565,8 @@ void AuxWindow::disableCollapse()
     m_collapseSlot->setJavaScript("function(){}");
   if( !m_isPhone )
   {
-    titleBar()->setPadding(WLength(5),Wt::Left);
-    titleBar()->setPadding(WLength(2),Wt::Top);
+    titleBar()->setPadding(WLength(5), Wt::Side::Left);
+    titleBar()->setPadding(WLength(2), Wt::Side::Top);
   }
 }
 
@@ -1628,14 +1630,12 @@ void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
 {
   InterSpec *viewer = InterSpec::instance();
   
-  Wt::WImage *image = nullptr;
-  
-  image = new Wt::WImage(Wt::WLink("InterSpec_resources/images/help_minimal.svg"), footer);
+  Wt::WImage *image = footer->addNew<Wt::WImage>( Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
   image->setStyleClass("Wt-icon FooterHelpBtn");
-  image->setFloatSide( (viewer && viewer->isMobile()) ? Wt::Right : Wt::Left );
-  
+  image->setFloatSide( (viewer && viewer->isMobile()) ? Wt::Side::Right : Wt::Side::Left );
+
   image->setAlternateText("Help");
-  image->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, page ) );
+  image->clicked().connect( [page](){ HelpSystem::createHelpWindow( page ); } );
 }
 //
 //void AuxWindow::openHelpWindow(std::string page,AuxWindow *parent)
@@ -1647,7 +1647,7 @@ void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
 //  m_helpWindow->contents()->setLayout(layout);
 //
 //  WContainerWidget* m_helpWindowContent= new WContainerWidget();
-//  m_helpWindowContent->setOverflow( WContainerWidget::OverflowAuto );
+//  m_helpWindowContent->setOverflow( Overflow::Auto );
 //  
 //  layout->addWidget(m_helpWindowContent,Wt::WBorderLayout::Center);
 //  layout->setContentsMargins(0, 0, 0, 0);
@@ -1659,10 +1659,10 @@ void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
 //  
 //  new WTemplate( WString::tr(page), m_helpWindowContent);
 // 
-//  m_helpWindow->footer()->setHeight(WLength(50,WLength::Pixel));
+//  m_helpWindow->footer()->setHeight(WLength(50,WLength::Unit::Pixel));
 //  m_helpWindow->rejectWhenEscapePressed();
-//  m_helpWindow->setMinimumSize( WLength(300, WLength::Pixel), WLength(300,WLength::Pixel));
-//  m_helpWindow->resize( WLength(500, WLength::Pixel), parent->height());
+//  m_helpWindow->setMinimumSize( WLength(300, WLength::Unit::Pixel), WLength(300,WLength::Unit::Pixel));
+//  m_helpWindow->resize( WLength(500, WLength::Unit::Pixel), parent->height());
 //  m_helpWindow->setResizable( true );
 //  m_helpWindow->show();
 //  m_helpWindow->centerWindow();

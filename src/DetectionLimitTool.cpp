@@ -31,23 +31,23 @@
 #include <boost/math/tools/minima.hpp>
 #include <boost/math/distributions/chi_squared.hpp>
 
-#include <Wt/WText>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WComboBox>
-#include <Wt/WCheckBox>
-#include <Wt/WLineEdit>
-#include <Wt/WTableCell>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WRegExpValidator>
-#include <Wt/WSuggestionPopup>
+#include <Wt/WText.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WSuggestionPopup.h>
 
-#include <Wt/Json/Array>
-#include <Wt/Json/Value>
-#include <Wt/Json/Object>
-#include <Wt/Json/Serializer>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Object.h>
+#include <Wt/Json/Serializer.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/SpecUtilsAsync.h"
@@ -597,9 +597,8 @@ protected:
   
 public:
   MdaPeakRow( const DetectionLimitTool::MdaPeakRowInput &input,
-             const SandiaDecay::Nuclide *nuclide,
-             WContainerWidget *parent = nullptr )
-  : WContainerWidget( parent ),
+             const SandiaDecay::Nuclide *nuclide )
+  : WContainerWidget(),
   m_input( input ),
   m_nuclide( nuclide ),
   m_title( nullptr ),
@@ -614,7 +613,7 @@ public:
   m_simple_excess_counts( -1.0 ),
   m_simple_max_det_dist( -1.0 ),
   m_decon_cont_norm_method( nullptr ),
-  m_changed( this )
+  m_changed()
   {
     addStyleClass( "MdaPeakRow" );
     
@@ -637,15 +636,15 @@ public:
     
     char buffer[64] = { '\0' };
     
-    WContainerWidget *leftColumn = new WContainerWidget( this );
+    WContainerWidget *leftColumn = addNew<WContainerWidget>();
     leftColumn->addStyleClass( "MdaRowSettings" );
-    
-    WContainerWidget *rightColumn = new WContainerWidget( this );
+
+    WContainerWidget *rightColumn = addNew<WContainerWidget>();
     rightColumn->addStyleClass( "MdaRowCurrieMda" );
     
     const string br_str = SpecUtils::printCompact(input.branch_ratio, 3);
     snprintf( buffer, sizeof(buffer), "%.2f keV, br=%s", input.energy, br_str.c_str() );
-    m_title = new WText( buffer, leftColumn );
+    m_title = leftColumn->addNew<WText>( buffer );
     m_title->addStyleClass( "MdaRowTitle GridFirstCol GridFirstRow GridSpanTwoCol" );
     
     
@@ -656,44 +655,44 @@ public:
     
     snprintf( buffer, sizeof(buffer), "FWHM=%s, %s cnts/bq%s",
              fwhm_str.c_str(), cnts_per_bq_str.c_str(), act_postfix.c_str() );
-    m_title_info = new WText( buffer, rightColumn );
+    m_title_info = rightColumn->addNew<WText>( buffer );
     m_title_info->addStyleClass( "MdaRowDetInfo" );
     
     
-    m_use_for_likelihood = new SwitchCheckbox( WString::tr("dlt-use-for-multi-peak"), leftColumn );
+    m_use_for_likelihood = leftColumn->addNew<SwitchCheckbox>( WString::tr("dlt-use-for-multi-peak") );
     m_use_for_likelihood->setChecked( input.use_for_likelihood );
     m_use_for_likelihood->addStyleClass( "GridFirstCol GridSecondRow GridSpanTwoCol UseForLiklihood" );
     
     
-    WLabel *label = new WLabel( WString::tr("dlt-roi-lower-label"), leftColumn );
+    WLabel *label = leftColumn->addNew<WLabel>( WString::tr("dlt-roi-lower-label") );
     label->addStyleClass( "GridFirstCol GridThirdRow" );
-    m_roi_start = new NativeFloatSpinBox( leftColumn );
+    m_roi_start = leftColumn->addNew<NativeFloatSpinBox>();
     m_roi_start->addStyleClass( "GridSecondCol GridThirdRow MdaRoiInput" );
     m_roi_start->setSpinnerHidden( true );
     m_roi_start->setFormatString( "%.2f" );
     label->setBuddy( m_roi_start );
-    
-    label = new WLabel( WString::tr("dlt-roi-upper-label"), leftColumn );
+
+    label = leftColumn->addNew<WLabel>( WString::tr("dlt-roi-upper-label") );
     label->addStyleClass( "GridFirstCol GridFourthRow" );
-    m_roi_end = new NativeFloatSpinBox( leftColumn );
+    m_roi_end = leftColumn->addNew<NativeFloatSpinBox>();
     m_roi_end->addStyleClass( "GridSecondCol GridFourthRow MdaRoiInput" );
     m_roi_end->setSpinnerHidden( true );
     m_roi_end->setFormatString( "%.2f" );
     label->setBuddy( m_roi_end );
-    
-    label = new WLabel( WString::tr("dlt-continuum-label"), leftColumn );
+
+    label = leftColumn->addNew<WLabel>( WString::tr("dlt-continuum-label") );
     label->addStyleClass( "GridFirstCol GridFifthRow" );
-    m_continuum = new WComboBox( leftColumn );
+    m_continuum = leftColumn->addNew<WComboBox>();
     m_continuum->addStyleClass( "GridSecondCol GridFifthRow" );
     m_continuum->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Linear) ) );
     m_continuum->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Quadratic) ) );
     m_continuum->setCurrentIndex( 0 );
     label->setBuddy( m_continuum );
-    
-    
-    label = new WLabel( WString::tr("dlt-cont-norm-label"), leftColumn );
+
+
+    label = leftColumn->addNew<WLabel>( WString::tr("dlt-cont-norm-label") );
     label->addStyleClass( "GridFirstCol GridSixthRow" );
-    m_decon_cont_norm_method = new WComboBox( leftColumn );
+    m_decon_cont_norm_method = leftColumn->addNew<WComboBox>();
     m_decon_cont_norm_method->addStyleClass( "GridSecondCol GridSixthRow" );
     
     static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::Floating) == 0, "DeconContinuumNorm out of date" );
@@ -743,19 +742,19 @@ public:
     }//switch( input.offset_type )
     
     
-    WContainerWidget *currieLimitContent = new WContainerWidget( rightColumn );
+    WContainerWidget *currieLimitContent = rightColumn->addNew<WContainerWidget>();
     currieLimitContent->addStyleClass( "MdaRowCurrieLimitContent" );
 
-    WLabel *currie_label = new WLabel( WString::tr("dlt-single-peak-currie-limit"), currieLimitContent );
+    WLabel *currie_label = currieLimitContent->addNew<WLabel>( WString::tr("dlt-single-peak-currie-limit") );
     currie_label->addStyleClass( "MdaCurrieLimitTitle" );
-    
-    m_poisonLimit = new WText( "&nbsp;", currieLimitContent );
+
+    m_poisonLimit = currieLimitContent->addNew<WText>( "&nbsp;" );
     m_poisonLimit->addStyleClass( "CurrieTxt");
-    
-    WContainerWidget *num_side_chan_row = new WContainerWidget( currieLimitContent );
+
+    WContainerWidget *num_side_chan_row = currieLimitContent->addNew<WContainerWidget>();
     num_side_chan_row->addStyleClass( "CurrieNSideChanRow" );
-    label = new WLabel( WString::tr("dlt-num-side-channels-label"), num_side_chan_row );
-    m_num_side_channels = new NativeFloatSpinBox( num_side_chan_row );
+    label = num_side_chan_row->addNew<WLabel>( WString::tr("dlt-num-side-channels-label") );
+    m_num_side_channels = num_side_chan_row->addNew<NativeFloatSpinBox>();
     m_num_side_channels->setFormatString( "%.0f" );
     m_num_side_channels->setSingleStep( 1.0 );
     m_num_side_channels->setRange( 1.0f, 50.0f );
@@ -766,8 +765,7 @@ public:
     {
       case DetectionLimitTool::LimitType::Activity:
       {
-        WPushButton *moreInfoButton = new WPushButton( currieLimitContent );
-        moreInfoButton->setText( WString::tr("dlt-further-details-link") );
+        WPushButton *moreInfoButton = currieLimitContent->addNew<WPushButton>( WString::tr("dlt-further-details-link") );
         moreInfoButton->setStyleClass( "LinkBtn CurrieMoreInfoBtn" );
         moreInfoButton->clicked().connect( this, &MdaPeakRow::createMoreInfoWindow );
         
@@ -945,10 +943,9 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
   assert( viewer );
   rejectWhenEscapePressed( true );
 
-  m_tool = new DetectionLimitTool( viewer, materialSuggest );
   WContainerWidget *content = contents();
   content->addStyleClass( "DetectionLimitWindowContent" );
-  content->addWidget( m_tool );
+  m_tool = content->addNew<DetectionLimitTool>( viewer, materialSuggest );
   
   AuxWindow::addHelpInFooter( footer(), "detection-confidence-tool" );
   
@@ -957,7 +954,7 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+  finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
   
   show();
   
@@ -986,9 +983,8 @@ DetectionLimitTool *DetectionLimitWindow::tool()
 
 
 DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
-                                                  Wt::WSuggestionPopup *materialSuggest,
-                                                  WContainerWidget *parent )
-  : WContainerWidget( parent ),
+                                                  Wt::WSuggestionPopup *materialSuggest )
+  : WContainerWidget(),
     m_interspec( viewer ),
     m_needsUpdate( true ),
     m_chart( nullptr ),
@@ -1032,16 +1028,16 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   //new WLabel( "DetectionLimitTool", this );
-  const WLength fieldWidth(4,WLength::FontEm);
-  const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
+  const WLength fieldWidth(4,WLength::Unit::FontEm);
+  const WLength optionWidth(5.25,WLength::Unit::FontEm), buttonWidth(5.25,WLength::Unit::FontEm);
   
   // Container to hold and m_chart and m_results (which itself holds m_chi2Chart,  m_bestChi2Act,
   //  and m_upperLimit).
-  WContainerWidget *upperCharts = new WContainerWidget( this );
+  WContainerWidget *upperCharts = addNew<WContainerWidget>();
   upperCharts->addStyleClass( "MdaCharts" );
-  
 
-  m_chart = new D3SpectrumDisplayDiv( upperCharts );
+
+  m_chart = upperCharts->addNew<D3SpectrumDisplayDiv>();
   
   /*
   //const int screenW = viewer->renderedWidth();
@@ -1060,7 +1056,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
              adjust the ROI, and re-due our fit - we should probably do something more intuitive
              so the user knows whats going on.
    */
-  m_chart->existingRoiEdgeDragUpdate().connect( boost::bind( &DetectionLimitTool::roiDraggedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+  m_chart->existingRoiEdgeDragUpdate().connect( [this]( double a, double b, double c, double d, std::string e, bool f ){
+    roiDraggedCallback( a, b, c, d, e, f );
+  } );
   
   
   m_chart->setCompactAxis( true );
@@ -1069,20 +1067,20 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
 
   //m_chart->xAxisSliderShown().connect(...)
   
-  m_peakModel = new PeakModel( this );
+  m_peakModel = addChild( std::make_unique<PeakModel>() );
   m_chart->setPeakModel( m_peakModel );
 
   // Create the user-input area under the spectrum and liklihood chart
-  WContainerWidget *inputTable = new WContainerWidget( this );
+  WContainerWidget *inputTable = addNew<WContainerWidget>();
   inputTable->addStyleClass( "Inputs" );
-  
-  
+
+
   // Create nuclide label and input
-  WLabel *label = new WLabel( WString::tr("nuclide-label"), inputTable );
+  WLabel *label = inputTable->addNew<WLabel>( WString::tr("nuclide-label") );
   label->addStyleClass( "GridFirstCol GridFirstRow GridVertCenter" );
-  
-  
-  m_nuclideEdit = new WLineEdit( "", inputTable );
+
+
+  m_nuclideEdit = inputTable->addNew<WLineEdit>();
   m_nuclideEdit->setMargin( 1 );
   m_nuclideEdit->addStyleClass( "GridSecondCol GridFirstRow" );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
@@ -1094,11 +1092,11 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   string replacerJs, matcherJs;
   IsotopeNameFilterModel::replacerJs( replacerJs );
   IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
-  IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( m_nuclideEdit );
+  IsotopeNameFilterModel *isoSuggestModel = addChild( std::make_unique<IsotopeNameFilterModel>() );
   isoSuggestModel->excludeReactions( true );
   isoSuggestModel->excludeEscapes( true );
   isoSuggestModel->excludeXrays( true );
-  m_nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
+  m_nuclideSuggest = addChild( std::make_unique<WSuggestionPopup>( matcherJs, replacerJs ) );
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
   m_nuclideSuggest->addStyleClass( "nuclide-suggest" );
   
@@ -1108,19 +1106,19 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );
   
-  m_nuclideSuggest->setModel( isoSuggestModel );
+  m_nuclideSuggest->setModel( std::shared_ptr<WAbstractItemModel>( isoSuggestModel, [](WAbstractItemModel*){} ) );
   m_nuclideSuggest->filterModel().connect( isoSuggestModel, &IsotopeNameFilterModel::filter );
-  m_nuclideSuggest->forEdit( m_nuclideEdit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
+  m_nuclideSuggest->forEdit( m_nuclideEdit, PopupTrigger::Editing );  // | PopupTrigger::DropDownIcon
   
   
   // Create age input and time input validator
-  label = new WLabel( WString::tr("age-label"), inputTable );
+  label = inputTable->addNew<WLabel>( WString::tr("age-label") );
   label->addStyleClass( "GridFirstCol GridSecondRow GridVertCenter" );
-  
-  m_ageEdit = new WLineEdit( "", inputTable );
+
+  m_ageEdit = inputTable->addNew<WLineEdit>();
   m_ageEdit->addStyleClass( "GridSecondCol GridSecondRow" );
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_ageEdit );
-  validator->setFlags(Wt::MatchCaseInsensitive);
+  auto validator = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+  validator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);
   m_ageEdit->setValidator(validator);
   m_ageEdit->setAutoComplete( false );
   label->setBuddy( m_ageEdit );
@@ -1137,51 +1135,51 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   
   // Create distance input
-  label = new WLabel( WString::tr("distance-label"), inputTable );
+  label = inputTable->addNew<WLabel>( WString::tr("distance-label") );
   label->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   m_distanceLabel = label;
 
-  m_distanceForActivityLimit = new WLineEdit( "100 cm", inputTable );
+  m_distanceForActivityLimit = inputTable->addNew<WLineEdit>( "100 cm" );
   m_distanceForActivityLimit->addStyleClass( "GridSecondCol GridThirdRow" );
   label->setBuddy( m_distanceForActivityLimit );
   m_distanceForActivityLimit->changed().connect( this, &DetectionLimitTool::handleInputChange );
   m_distanceForActivityLimit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
-  
-  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, m_distanceForActivityLimit );
-  distValidator->setFlags( Wt::MatchCaseInsensitive );
+
+  auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+  distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_distanceForActivityLimit->setValidator( distValidator );
-  
-  
+
+
   // We will but the activity label/input right next to the distance stuff, but since we default to
   //  calculating activity limit, we'll hide the activity stuff.
-  label = new WLabel( WString::tr("activity-label"), inputTable );
+  label = inputTable->addNew<WLabel>( WString::tr("activity-label") );
   label->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
   m_activityLabel = label;
   label->hide();
-  
-  m_activityForDistanceLimit = new WLineEdit( "0 uCi", inputTable );
+
+  m_activityForDistanceLimit = inputTable->addNew<WLineEdit>( "0 uCi" );
   m_activityForDistanceLimit->addStyleClass( "GridSecondCol GridThirdRow" );
   label->setBuddy( m_activityForDistanceLimit );
   m_activityForDistanceLimit->changed().connect( this, &DetectionLimitTool::handleInputChange );
   m_activityForDistanceLimit->enterPressed().connect( this, &DetectionLimitTool::handleInputChange );
-  
-  WRegExpValidator *actvalidator = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
-  actvalidator->setFlags(Wt::MatchCaseInsensitive);
+
+  auto actvalidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_activityRegex );
+  actvalidator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);
   m_activityForDistanceLimit->setValidator( actvalidator );
   m_activityForDistanceLimit->hide();
   
   
   
   SpectraFileModel *specFileModel = viewer->fileManager()->model();
-  m_detectorDisplay = new DetectorDisplay( viewer, specFileModel, inputTable );
+  m_detectorDisplay = inputTable->addNew<DetectorDisplay>( viewer, specFileModel );
   m_detectorDisplay->addStyleClass( "GridThirdCol GridFirstRow" );
-  viewer->detectorChanged().connect( boost::bind( &DetectionLimitTool::handleDrfSelected, this, boost::placeholders::_1 ) );
-  viewer->detectorModified().connect( boost::bind( &DetectionLimitTool::handleDrfSelected, this, boost::placeholders::_1 ) );
-  
-  
-  m_shieldingSelect = new ShieldingSelect( m_materialSuggest, inputTable );
+  viewer->detectorChanged().connect( [this]( std::shared_ptr<DetectorPeakResponse> drf ){ handleDrfSelected( drf ); } );
+  viewer->detectorModified().connect( [this]( std::shared_ptr<DetectorPeakResponse> drf ){ handleDrfSelected( drf ); } );
+
+
+  m_shieldingSelect = inputTable->addNew<ShieldingSelect>( m_materialSuggest );
   m_shieldingSelect->addStyleClass( "GridThirdCol GridSecondRow GridSpanTwoRows" );
-  m_shieldingSelect->materialEdit()->setEmptyText( WString("<{1}>").arg( WString::tr("dlt-shield-empty-text") ) );
+  m_shieldingSelect->materialEdit()->setPlaceholderText( WString("<{1}>").arg( WString::tr("dlt-shield-empty-text") ) );
 
   
 
@@ -1190,31 +1188,31 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_shieldingSelect->setMinimumSize( WLength(250), WLength::Auto );
   
   
-  SwitchCheckbox *loglin = new SwitchCheckbox( WString::tr("dlt-log"), WString::tr("dlt-lin"), inputTable );
+  SwitchCheckbox *loglin = inputTable->addNew<SwitchCheckbox>( WString::tr("dlt-log"), WString::tr("dlt-lin") );
   loglin->addStyleClass( "MdaChartLogLin GridFourthCol GridFirstRow GridSpanTwoCol" );
-  loglin->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_chart, true ) );
-  loglin->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_chart, false ) );
-  m_chart->yAxisLogLinChanged().connect( boost::bind( &SwitchCheckbox::setUnChecked, loglin, boost::placeholders::_1 ) );
+  loglin->unChecked().connect( [this](){ m_chart->setYAxisLog( true ); } );
+  loglin->checked().connect( [this](){ m_chart->setYAxisLog( false ); } );
+  m_chart->yAxisLogLinChanged().connect( [loglin]( bool isLog ){ loglin->setUnChecked( isLog ); } );
   
-  m_attenuateForAir = new WCheckBox( WString::tr("dlt-attenuate-for-air"), inputTable );
+  m_attenuateForAir = inputTable->addNew<WCheckBox>( WString::tr("dlt-attenuate-for-air") );
   m_attenuateForAir->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
   m_attenuateForAir->setChecked( true );
   m_attenuateForAir->checked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
   m_attenuateForAir->unChecked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
   
   
-  m_distOrActivity = new SwitchCheckbox( WString::tr("dlt-activity-limit"), WString::tr("dlt-distance-limit"), inputTable );
+  m_distOrActivity = inputTable->addNew<SwitchCheckbox>( WString::tr("dlt-activity-limit"), WString::tr("dlt-distance-limit") );
   m_distOrActivity->addStyleClass( "GridFourthCol GridThirdRow GridSpanTwoCol" );
 
   m_distOrActivity->checked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
   m_distOrActivity->unChecked().connect( this, &DetectionLimitTool::handleUserChangedToComputeActOrDist );
   
   
-  label = new WLabel( WString::tr("dlt-peaks-disp-act-label"), inputTable );
+  label = inputTable->addNew<WLabel>( WString::tr("dlt-peaks-disp-act-label") );
   label->addStyleClass( "GridSixthCol GridFirstRow GridVertCenter" );
   m_displayActivityLabel = label;
-  
-  m_displayActivity = new WLineEdit( inputTable );
+
+  m_displayActivity = inputTable->addNew<WLineEdit>();
   m_displayActivity->addStyleClass( "GridSeventhCol GridFirstRow" );
   label->setBuddy( m_displayActivity );
   
@@ -1227,11 +1225,11 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Like with user input, we will put the put the display distance stuff right next to activity,
   //  and hide the display distance stuff
-  label = new WLabel( WString::tr("dlt-peaks-disp-dist-label"), inputTable );
+  label = inputTable->addNew<WLabel>( WString::tr("dlt-peaks-disp-dist-label") );
   label->addStyleClass( "GridSixthCol GridFirstRow GridVertCenter" );
   m_displayDistanceLabel = label;
-  
-  m_displayDistance = new WLineEdit( inputTable );
+
+  m_displayDistance = inputTable->addNew<WLineEdit>();
   m_displayDistance->addStyleClass( "GridSeventhCol GridFirstRow" );
   label->setBuddy( m_displayDistance );
   
@@ -1245,9 +1243,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_displayDistance->hide();
   
   
-  label = new WLabel( WString::tr("dlt-conf-level-label"), inputTable );
+  label = inputTable->addNew<WLabel>( WString::tr("dlt-conf-level-label") );
   label->addStyleClass( "GridSixthCol GridSecondRow GridVertCenter" );
-  m_confidenceLevel = new WComboBox( inputTable );
+  m_confidenceLevel = inputTable->addNew<WComboBox>();
   m_confidenceLevel->addStyleClass( "GridSeventhCol GridSecondRow GridVertCenter" );
   
   for( auto cl = ConfidenceLevel(0); cl < NumConfidenceLevel; cl = ConfidenceLevel(cl+1) )
@@ -1288,55 +1286,54 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_chart->setData( ourspec, false );
   }//if( spec )
 
-  m_results = new WContainerWidget( upperCharts );
+  m_results = upperCharts->addNew<WContainerWidget>();
   m_results->addStyleClass( "MdaResults" );
   m_results->hide();
-  
-  m_chi2Chart = new WContainerWidget( m_results );
+
+  m_chi2Chart = m_results->addNew<WContainerWidget>();
   m_chi2Chart->addStyleClass( "MdaChi2Chart" );
-  
+
   //////////////////////////////////////////////////////////////////////
-  m_bestChi2Act = new WText( "&nbsp;", m_results );
+  m_bestChi2Act = m_results->addNew<WText>( "&nbsp;" );
   m_bestChi2Act->setInline( false );
   m_bestChi2Act->addStyleClass( "MdaResultTxt" );
-    
-  m_upperLimit = new WText( "&nbsp;", m_results );
+
+  m_upperLimit = m_results->addNew<WText>( "&nbsp;" );
   m_upperLimit->setInline( false );
   m_upperLimit->addStyleClass( "MdaResultTxt" );
-  
-  m_errorMsg = new WText("&nbsp;", this );
+
+  m_errorMsg = addNew<WText>( "&nbsp;" );
   m_errorMsg->addStyleClass( "MdaErrMsg" );
   m_errorMsg->hide();
-  
-  m_fitFwhmBtn = new WPushButton( WString::tr("dlt-fit-fwhm-btn"), this );
+
+  m_fitFwhmBtn = addNew<WPushButton>( WString::tr("dlt-fit-fwhm-btn") );
   m_fitFwhmBtn->addStyleClass( "MdaFitFwhm LightButton" );
   m_fitFwhmBtn->clicked().connect( this, &DetectionLimitTool::handleFitFwhmRequested );
   m_fitFwhmBtn->hide();
-  
-  WContainerWidget *peaksHolder = new WContainerWidget( this );
+
+  WContainerWidget *peaksHolder = addNew<WContainerWidget>();
   peaksHolder->addStyleClass( "MdaPeaksArea" );
-  
-  WContainerWidget *titleBar = new WContainerWidget( peaksHolder );
+
+  WContainerWidget *titleBar = peaksHolder->addNew<WContainerWidget>();
   titleBar->addStyleClass( "MdaPeaksTitleBar" );
-  
-  WText *peaksTitle = new WText( WString::tr("dlt-gamma-lines-to-use"), titleBar );
+
+  WText *peaksTitle = titleBar->addNew<WText>( WString::tr("dlt-gamma-lines-to-use") );
   peaksTitle->addStyleClass( "MdaPeaksTitle" );
-  
-  WContainerWidget *filterDiv = new WContainerWidget( titleBar );
+
+  WContainerWidget *filterDiv = titleBar->addNew<WContainerWidget>();
   filterDiv->addStyleClass( "MdaPeaksFilter" );
-  label = new WLabel( WString::tr("dlt-min-rel-intensity-label"), filterDiv );
+  label = filterDiv->addNew<WLabel>( WString::tr("dlt-min-rel-intensity-label") );
   label->addStyleClass( "GridFourthCol GridSecondRow" );
-  m_minRelIntensity = new NativeFloatSpinBox( filterDiv );
+  m_minRelIntensity = filterDiv->addNew<NativeFloatSpinBox>();
   m_minRelIntensity->addStyleClass( "GridFifthCol GridSecondRow" );
   m_minRelIntensity->setMinimum( 0.0f );
   m_minRelIntensity->setMaximum( 0.999f );
   m_minRelIntensity->setSpinnerHidden( true );
   label->setBuddy( m_minRelIntensity );
   m_minRelIntensity->valueChanged().connect(this, &DetectionLimitTool::handleUserMinRelativeIntensityChange );
-  
-  
-  
-  m_peaks = new WContainerWidget( peaksHolder );
+
+
+  m_peaks = peaksHolder->addNew<WContainerWidget>();
   m_peaks->addStyleClass( "MdaPeaks" );
   
   
@@ -1378,7 +1375,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   // Update the displayed activity units, when the user changes this preference.
   viewer->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
-                                        boost::bind(&DetectionLimitTool::handleInputChange, this) );
+                                        [this](){ handleInputChange(); } );
   
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1850,7 +1847,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     const double upper_upper_energy = assertedNoSignal ? upper_lower_energy : input.spectrum->gamma_channel_upper( result.last_upper_continuum_channel );
     
     // Add chart
-    D3SpectrumDisplayDiv *chart = new D3SpectrumDisplayDiv( dialog->contents() );
+    D3SpectrumDisplayDiv *chart = dialog->contents()->addNew<D3SpectrumDisplayDiv>();
     chart->addStyleClass( "MdaCurrieChart" );
     chart->setXAxisTitle( "" );
     chart->setYAxisTitle( "", "" );
@@ -1864,18 +1861,18 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     
     //TODO: set no interaction, and implement drawing the various areas...
     
-    PeakModel *pmodel = new PeakModel( chart );
+    PeakModel *pmodel = chart->addChild( make_unique<PeakModel>() );
     pmodel->setNoSpecMeasBacking();
     chart->setPeakModel( pmodel );
     pmodel->setForeground( hist );
-    
+
     vector<CurrieResultPeak> dummy_peaks; //We'll pass empty vector, so the function will create a single peak for us
     update_spectrum_for_currie_result( chart, pmodel, input, &result, drf, limitType, gammas_per_bq, dummy_peaks );
     chart->setChartTitle( "" );
-    
-    
+
+
     //Gross Counts in Peak Foreground: 1389.813
-    WTable *table = new WTable( dialog->contents() );
+    WTable *table = dialog->contents()->addNew<WTable>();
     table->addStyleClass( "MdaCurrieMoreInfoTable" );
     
     WTableCell *cell = nullptr;
@@ -1884,10 +1881,10 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     auto addTooltipToRow = [table]( const WString &tt ){
       WTableCell *cell = table->elementAt( table->rowCount() - 1, 2 );
       
-      WImage *img = new WImage( cell );
+      WImage *img = cell->addNew<WImage>();
       img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
       img->setStyleClass("Wt-icon GridFourthRow GridThirdCol GridJustifyEnd");
-      img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+      img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
       
       HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
                                   HelpSystem::ToolTipPrefOverride::InstantAlways );
@@ -1912,9 +1909,9 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
                                   + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
 
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( obs_label, cell );
+            cell->addNew<WText>( obs_label );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( nomstr, cell );
+            cell->addNew<WText>( nomstr );
             addTooltipToRow( WString::tr("dlt-tt-greater-than-lc") );
           }
 
@@ -1923,9 +1920,9 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
             const string nomstr = SpecUtils::printCompact(result.source_counts, 4);
 
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( obs_label, cell );
+            cell->addNew<WText>( obs_label );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( nomstr, cell );
+            cell->addNew<WText>( nomstr );
             addTooltipToRow( WString::tr("dlt-tt-greater-than-lc") );
           }
 
@@ -1940,9 +1937,9 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
             const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
                         + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( range_label, cell );
+            cell->addNew<WText>( range_label );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
+            cell->addNew<WText>( "[" + lowerstr + ", " + upperstr + "]" );
             addTooltipToRow( WString::tr("dlt-tt-activity-range").arg(confidence_level) );
           }
 
@@ -1951,15 +1948,15 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
             const string lowerstr = SpecUtils::printCompact(result.lower_limit, 4);
             const string upperstr = SpecUtils::printCompact(result.upper_limit, 4);
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( range_label, cell );
+            cell->addNew<WText>( range_label );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
+            cell->addNew<WText>( "[" + lowerstr + ", " + upperstr + "]" );
             addTooltipToRow( WString::tr("dlt-tt-counts-range").arg(confidence_level) );
           }//if( drf ) / else
         }else if( result.upper_limit < 0 )
         {
           assert( !assertedNoSignal );
-          
+
           // This can happen when there are a lot fewer counts in the peak region than predicted
           //  from the sides - since this is non-sensical, we'll just say zero.
           const string unitstr = drf ? (useCuries ? "Ci" : "Bq") : " counts";
@@ -1967,12 +1964,12 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           cell->setColumnSpan( 2 );
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
-            new WText( WString::tr("dlt-activity-le-zero").arg(unitstr), cell );
+            cell->addNew<WText>( WString::tr("dlt-activity-le-zero").arg(unitstr) );
           }else
           {
-            new WText( WString::tr("dlt-counts-le-zero"), cell );
+            cell->addNew<WText>( WString::tr("dlt-counts-le-zero") );
           }
-          
+
           addTooltipToRow( WString::tr("dlt-tt-fewer-than-predicted") );
         }else
         {
@@ -1986,9 +1983,9 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
                       + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
 
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( label_txt, cell );
+            cell->addNew<WText>( label_txt );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( mdastr , cell);
+            cell->addNew<WText>( mdastr );
 
             addTooltipToRow( WString::tr("dlt-tt-upper-bound").arg(confidence_level) );
           }
@@ -1999,106 +1996,106 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
             const string mdastr = SpecUtils::printCompact( result.upper_limit, 4 ) + " counts";
 
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( label_txt, cell );
+            cell->addNew<WText>( label_txt );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( mdastr , cell);
+            cell->addNew<WText>( mdastr );
 
             addTooltipToRow( WString::tr("dlt-tt-upper-bound").arg(confidence_level) );
           }
-          
+
 
         }
-        
+
         break;
       }//case DetectionLimitTool::LimitType::Activity:
-        
+
       case DetectionLimitTool::LimitType::Distance:
       {
-        WText *msg = new WText( WString::tr("dlt-distance-not-supported"), dialog->contents() );
+        WText *msg = dialog->contents()->addNew<WText>( WString::tr("dlt-distance-not-supported") );
         msg->addStyleClass( "content" );
         msg->setInline( false );
         break;
       }
     }//switch( limitType )
-    
+
     // Add a blank row
     string val;
     cell = table->elementAt( table->rowCount(), 0 );
-    WText *txt = new WText( "&nbsp;", TextFormat::XHTMLText, cell );
-    
+    cell->addNew<WText>( "&nbsp;", TextFormat::XHTML );
+
     if( !assertedNoSignal )
     {
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( WString::tr("dlt-lower-region-channels"), cell );
+      cell->addNew<WText>( WString::tr("dlt-lower-region-channels") );
       val = "[" + std::to_string(result.first_lower_continuum_channel) + ", "
             + std::to_string(result.last_lower_continuum_channel) + "]";
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      txt = new WText( val, cell );
-      
-      
+      cell->addNew<WText>( val );
+
+
       addTooltipToRow( WString::tr("dlt-tt-lower-region-channels").arg(lower_lower_energy).arg(lower_upper_energy) );
-      
-      
+
+
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( WString::tr("dlt-lower-region-counts"), cell );
+      cell->addNew<WText>( WString::tr("dlt-lower-region-counts") );
       val = SpecUtils::printCompact( result.lower_continuum_counts_sum, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      txt = new WText( val, cell );
+      cell->addNew<WText>( val );
       addTooltipToRow( WString::tr("dlt-tt-lower-region-counts") );
-      
+
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( WString::tr("dlt-upper-region-channels"), cell );
+      cell->addNew<WText>( WString::tr("dlt-upper-region-channels") );
       val = "[" + std::to_string(result.first_upper_continuum_channel) + ", "
       + std::to_string(result.last_upper_continuum_channel) + "]";
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      txt = new WText( val, cell );
+      cell->addNew<WText>( val );
       addTooltipToRow( WString::tr("dlt-tt-upper-region-channels").arg(upper_lower_energy).arg(upper_upper_energy) );
-      
+
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( WString::tr("dlt-upper-region-counts"), cell );
+      cell->addNew<WText>( WString::tr("dlt-upper-region-counts") );
       val = SpecUtils::printCompact( result.upper_continuum_counts_sum, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      txt = new WText( val, cell );
+      cell->addNew<WText>( val );
       addTooltipToRow( WString::tr("dlt-tt-upper-region-counts") );
     }else
     {
       cell = table->elementAt( table->rowCount(), 0 );
       cell->setColumnSpan( 2 );
-      txt = new WText( WString::tr("dlt-using-roi-as-background"), cell );
+      cell->addNew<WText>( WString::tr("dlt-using-roi-as-background") );
     }//if( !assertedNoSignal ) / else
-    
+
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( assertedNoSignal ? WString::tr("dlt-roi-area-channels") : WString::tr("dlt-peak-area-channels"), cell );
+    cell->addNew<WText>( assertedNoSignal ? WString::tr("dlt-roi-area-channels") : WString::tr("dlt-peak-area-channels") );
     val = "[" + std::to_string(result.first_peak_region_channel) + ", "
                   + std::to_string(result.last_peak_region_channel) + "]";
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
-    
+    cell->addNew<WText>( val );
+
     const double peak_lower_energy = input.spectrum->gamma_channel_lower( result.first_peak_region_channel );
     const double peak_upper_energy = input.spectrum->gamma_channel_upper( result.last_peak_region_channel );
     addTooltipToRow( WString::tr("dlt-tt-peak-area-channels").arg(peak_lower_energy).arg(peak_upper_energy) );
-    
-    
+
+
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( assertedNoSignal ? WString::tr("dlt-roi-region-counts") : WString::tr("dlt-peak-region-counts"), cell );
+    cell->addNew<WText>( assertedNoSignal ? WString::tr("dlt-roi-region-counts") : WString::tr("dlt-peak-region-counts") );
     val = SpecUtils::printCompact( result.peak_region_counts_sum, 5 );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
+    cell->addNew<WText>( val );
     addTooltipToRow( WString::tr("dlt-tt-peak-region-counts") );
-    
+
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( assertedNoSignal ? WString::tr("dlt-roi-region-null-est") : WString::tr("dlt-peak-region-null-est"), cell );
+    cell->addNew<WText>( assertedNoSignal ? WString::tr("dlt-roi-region-null-est") : WString::tr("dlt-peak-region-null-est") );
     val = SpecUtils::printCompact( result.estimated_peak_continuum_counts, 5 )
           + " &plusmn; " + SpecUtils::printCompact( result.estimated_peak_continuum_uncert, 5 );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, TextFormat::XHTMLText, cell );
+    cell->addNew<WText>( val, TextFormat::XHTML );
     addTooltipToRow( WString::tr("dlt-tt-peak-region-null-est") );
-    
+
     // I believe this quantity corresponds to Currie's "critical level" ( L_c ),
     //   the net signal level (instrument response) above which an observed signal may be
     //   reliably recognized as "detected"
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( WString::tr("dlt-peak-critical-limit"), cell );
+    cell->addNew<WText>( WString::tr("dlt-peak-critical-limit") );
     if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
     {
       const double decision_threshold_act = result.decision_threshold / gammas_per_bq;
@@ -2111,17 +2108,17 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     {
       val = SpecUtils::printCompact( result.decision_threshold, 4 ) + " counts";
     }
-    
+
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
+    cell->addNew<WText>( val );
     addTooltipToRow( WString::tr("dlt-tt-critical-limit") );
-    
-    
+
+
     // Note: I believe this quantity corresponds to Currie's "detection limit" (L_d) that
-    //       is the “true” net signal level which may be a priori expected to lead to detection.
+    //       is the "true" net signal level which may be a priori expected to lead to detection.
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( WString::tr("dlt-peak-detection-limit"), cell );
-    
+    cell->addNew<WText>( WString::tr("dlt-peak-detection-limit") );
+
     if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
     {
       const double detection_limit_act = result.detection_limit / gammas_per_bq;
@@ -2134,12 +2131,12 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     {
       val = SpecUtils::printCompact( result.detection_limit, 4 ) + " counts";
     }
-    
+
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    txt = new WText( val, cell );
+    cell->addNew<WText>( val );
     addTooltipToRow( WString::tr("dlt-tt-detection-limit") );
-    
-    
+
+
     switch( limitType )
     {
       case DetectionLimitTool::LimitType::Activity:
@@ -2157,9 +2154,9 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
 
             nom_counts_str += " <span style=\"font-size: smaller;\">" + WString::tr("dlt-below-lc").toUTF8() + "</span>";
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( obs_counts_label, cell );
+            cell->addNew<WText>( obs_counts_label );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( WString::fromUTF8(nom_counts_str), cell );
+            cell->addNew<WText>( WString::fromUTF8(nom_counts_str) );
             addTooltipToRow( WString::tr("dlt-tt-below-lc-counts") );
 
             if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
@@ -2175,78 +2172,78 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
 
               nom_act_str += " <span style=\"font-size: smaller;\">" + WString::tr("dlt-below-lc").toUTF8() + "</span>";
               cell = table->elementAt( table->rowCount(), 0 );
-              new WText( obs_act_label, cell );
+              cell->addNew<WText>( obs_act_label );
               cell = table->elementAt( table->rowCount() - 1, 1 );
-              new WText( WString::fromUTF8(nom_act_str), cell );
+              cell->addNew<WText>( WString::fromUTF8(nom_act_str) );
               addTooltipToRow( WString::tr("dlt-tt-below-lc-activity") );
             }//if( !nom_act_str.empty() )
           }//if( !assertedNoSignal )
         }//if( result.source_counts <= result.decision_threshold )
       }//case DetectionLimitTool::LimitType::Activity:
-        
+
       case DetectionLimitTool::LimitType::Distance:
         break;
     }//switch( limitType )
-    
-    
+
+
     // Add a blank row
     cell = table->elementAt( table->rowCount(), 0 );
-    txt = new WText( "&nbsp;", TextFormat::XHTMLText, cell );
+    cell->addNew<WText>( "&nbsp;", TextFormat::XHTML );
     if( drf )
     {
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( WString::tr("dlt-detector-intrinsic-eff"), cell );
+      cell->addNew<WText>( WString::tr("dlt-detector-intrinsic-eff") );
       val = SpecUtils::printCompact( intrinsic_eff, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      txt = new WText( val, cell );
+      cell->addNew<WText>( val );
       addTooltipToRow( WString::tr("dlt-tt-detector-intrinsic-eff") );
-      
+
       if( distance >= 0.0 )
       {
         cell = table->elementAt( table->rowCount(), 0 );
-        txt = new WText( WString::tr("dlt-solid-angle-fraction"), cell );
+        cell->addNew<WText>( WString::tr("dlt-solid-angle-fraction") );
         val = SpecUtils::printCompact( geom_eff, 5 );
         cell = table->elementAt( table->rowCount() - 1, 1 );
-        txt = new WText( val, cell );
+        cell->addNew<WText>( val );
         addTooltipToRow( WString::tr("dlt-tt-solid-angle-fraction") );
       }//if( distance >= 0.0 )
     }//if( drf )
-    
+
     if( shield_transmission != 1.0 )
     {
       const double shield_trans = gammas_per_bq_into_4pi / branch_ratio / input.spectrum->live_time();
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( WString::tr("dlt-shielding-transmission"), cell );
+      cell->addNew<WText>( WString::tr("dlt-shielding-transmission") );
       val = SpecUtils::printCompact( shield_transmission, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      txt = new WText( val, cell );
+      cell->addNew<WText>( val );
       addTooltipToRow( WString::tr("dlt-tt-shielding-transmission") );
     }//if( branch_ratio != counts_per_bq_into_4pi )
-    
+
     if( air_atten )
     {
       const double air_trans = gammas_per_bq_into_4pi_with_air / gammas_per_bq_into_4pi;
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( WString::tr("dlt-air-transmission"), cell );
+      cell->addNew<WText>( WString::tr("dlt-air-transmission") );
       val = SpecUtils::printCompact( air_trans, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      txt = new WText( val, cell );
+      cell->addNew<WText>( val );
       addTooltipToRow( WString::tr("dlt-tt-air-transmission") );
     }//if( air_atten )
-    
+
     if( branch_ratio > 0.0 )
     {
       cell = table->elementAt( table->rowCount(), 0 );
-      txt = new WText( WString::tr("dlt-nuclide-branching-ratio"), cell );
+      cell->addNew<WText>( WString::tr("dlt-nuclide-branching-ratio") );
       val = SpecUtils::printCompact( branch_ratio, 5 );
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      txt = new WText( val, cell );
+      cell->addNew<WText>( val );
       addTooltipToRow( WString::tr("dlt-tt-branching-ratio") );
     }//if( branch_ratio > 0.0 )
   }catch( std::exception &e )
   {
     cerr << "Error computing Currie limit information: " << e.what() << endl;
-    WText *msg = new WText( WString::tr("dlt-err-computing-currie-info").arg(e.what()), dialog->contents() );
+    WText *msg = dialog->contents()->addNew<WText>( WString::tr("dlt-err-computing-currie-info").arg(e.what()) );
     msg->addStyleClass( "content" );
     msg->setInline( false );
   }//try / catch
@@ -2347,7 +2344,7 @@ Wt::Json::Object DetectionLimitTool::generateChartJson( const DetectionLimitCalc
 
 void DetectionLimitTool::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
+  const bool renderFull = flags.test( Wt::RenderFlag::Full );
   //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
   
   if( renderFull || m_needsUpdate )
@@ -2753,20 +2750,24 @@ vector<DetectionLimitTool::GammaLineInfo> DetectionLimitTool::gammaLines() const
   
   vector<SandiaDecay::EnergyRatePair> gammas = mixture.gammas( m_currentAge, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
   
-  boost::function<double(float)> att_coef_fcn, air_atten_fcn;
+  std::function<double(float)> att_coef_fcn, air_atten_fcn;
     
   if( generic_shielding )
   {
-    att_coef_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_generic,
-                                 shielding_an, shielding_ad, _1 );
+    att_coef_fcn = [shielding_an, shielding_ad]( float energy ){
+      return GammaInteractionCalc::transmition_coefficient_generic( shielding_an, shielding_ad, energy );
+    };
   }else if( shielding_material && shielding_thickness > 0.0 )
   {
-    att_coef_fcn = boost::bind( &GammaInteractionCalc::transmition_coefficient_material,
-                                 shielding_material.get(), _1, shielding_thickness );
+    att_coef_fcn = [mat = shielding_material.get(), shielding_thickness]( float energy ){
+      return GammaInteractionCalc::transmition_coefficient_material( mat, energy, shielding_thickness );
+    };
   }
-    
+
   if( air_distance > 0.0 )
-    air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, air_distance );
+    air_atten_fcn = [air_distance]( float energy ){
+      return GammaInteractionCalc::transmission_coefficient_air( energy, air_distance );
+    };
   
   
   vector<GammaLineInfo> lines;
@@ -2776,8 +2777,8 @@ vector<DetectionLimitTool::GammaLineInfo> DetectionLimitTool::gammaLines() const
     const double decay_br = erp.numPerSecond / parent_activity;
     
     //br *= drf->efficiency( static_cast<float>(energy), static_cast<float>(distance) );
-    const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
-    const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
+    const double shield_transmission = !att_coef_fcn ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
+    const double air_transmission = !air_atten_fcn ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
       
     GammaLineInfo info;
     info.energy = energy;
@@ -3023,7 +3024,7 @@ void DetectionLimitTool::handleInputChange()
       }
     }//if( we have seen this energy before )
     
-    auto row = new MdaPeakRow( input, m_currentNuclide, m_peaks );
+    MdaPeakRow *row = m_peaks->addNew<MdaPeakRow>( input, m_currentNuclide );
     
     row->changed().connect( this, &DetectionLimitTool::scheduleCalcUpdate );
   }//for( const auto &line : lines )
@@ -3581,7 +3582,9 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
     if( !MaterialDB::instance() )
       throw std::runtime_error( "DetectionLimitTool::setRefLinesAndGetLineInfo(): no material DB" );
     
-    const auto air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, air_distance );
+    const auto air_atten_fcn = [air_distance]( float energy ){
+      return GammaInteractionCalc::transmission_coefficient_air( energy, air_distance );
+    };
     
     ref_input.m_det_intrinsic_eff = [intrinsic_eff,air_atten_fcn]( float energy ) -> float {
       return intrinsic_eff(energy) * exp( -1.0 * air_atten_fcn( energy ) );

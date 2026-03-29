@@ -39,65 +39,65 @@
 #pragma warning(disable:4308) // warning C4308: negative integral constant converted to unsigned type
 #pragma warning(disable:4355) // warning C4308: negative integral constant converted to unsigned type
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 #include <boost/range.hpp>
 #include <boost/scope_exit.hpp>
 #include <boost/system/error_code.hpp>
 #include <boost/asio/deadline_timer.hpp>
 
-#include <Wt/WLink>
-#include <Wt/WText>
-#include <Wt/Utils>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WAnchor>
-#include <Wt/WString>
-#include <Wt/WServer>
-#include <Wt/WBorder>
-#include <Wt/WServer>
-#include <Wt/WTextArea>
-#include <Wt/WIconPair>
-#include <Wt/WTabWidget>
-#include <Wt/WTableCell>
-#include <Wt/WIOService>
-#include <Wt/Chart/WAxis>
+#include <Wt/WLink.h>
+#include <Wt/WText.h>
+#include <Wt/Utils.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WString.h>
+#include <Wt/WServer.h>
+#include <Wt/WBorder.h>
+#include <Wt/WServer.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WIconPair.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WIOService.h>
+#include <Wt/Chart/WAxis.h>
 
-#include <Wt/WGroupBox>
-#include <Wt/WResource>
-#include <Wt/WDateTime>
-#include <Wt/WGroupBox>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WBoxLayout>
+#include <Wt/WGroupBox.h>
+#include <Wt/WResource.h>
+#include <Wt/WDateTime.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WBoxLayout.h>
 
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WModelIndex>
-#include <Wt/WFileUpload>
-#include <Wt/WButtonGroup>
-#include <Wt/WRadioButton>
-#include <Wt/WEnvironment>
-#include <Wt/WApplication>
-#include <Wt/WProgressBar>
-#include <Wt/WStandardItem>
-#include <Wt/WSelectionBox>
-#include <Wt/Http/Response>
-#include <Wt/WItemDelegate>
-#include <Wt/WBorderLayout>
-#include <Wt/Dbo/QueryModel>
-#include <Wt/WMemoryResource>
-#include <Wt/WStringListModel>
-#include <Wt/WContainerWidget>
-#include <Wt/WRegExpValidator>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/WFileUpload.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WApplication.h>
+#include <Wt/WProgressBar.h>
+#include <Wt/WStandardItem.h>
+#include <Wt/WSelectionBox.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WItemDelegate.h>
+#include <Wt/WBorderLayout.h>
+#include <Wt/Dbo/QueryModel.h>
+#include <Wt/WMemoryResource.h>
+#include <Wt/WStringListModel.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
 #if( HAS_WTDBOMYSQL )
-#include <Wt/Dbo/backend/MySQL>
+#include <Wt/Dbo/backend/MySQL.h>
 #endif
-#include <Wt/WStandardItemModel>
-#include <Wt/WAbstractItemModel>
-#include <Wt/WCssDecorationStyle>
-#include <Wt/Dbo/backend/Sqlite3>
+#include <Wt/WStandardItemModel.h>
+#include <Wt/WAbstractItemModel.h>
+#include <Wt/WCssDecorationStyle.h>
+#include <Wt/Dbo/backend/Sqlite3.h>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -213,15 +213,13 @@ namespace
       m_header( header )
     {
       addStyleClass( "PreviousDbEntry" );
-      if( dialog )
-        container->addWidget( this );
       string msg = "Uploaded: "
                 + dbentry->uploadTime.toString( DATE_TIME_FORMAT_STR ).toUTF8();
       if( dbentry->userHasModified )
         msg += ", was modified";
-      WText *txt = new WText( msg, this );
+      WText *txt = addNew<WText>( msg );
       txt->addStyleClass( "PreviousDbEntryTxt" );
-      WPushButton *button = new WPushButton( "Resume From", this );
+      WPushButton *button = addNew<WPushButton>( "Resume From" );
       button->addStyleClass( "PreviousDbEntryButton" );
       button->clicked().connect( this, &PreviousDbEntry::dorevert );
       button->setFocus();
@@ -363,28 +361,27 @@ namespace
       
       if( !instructions.empty() )
       {
-        txt = new WText( instructions );
-        layout->addWidget( txt, layout->rowCount(), 0 );
+        txt = layout->addWidget( std::make_unique<WText>( instructions ), layout->rowCount(), 0 );
       }
-      
+
       if( !noForeground )
       {
-        WGroupBox *buttons = new WGroupBox( WString::tr("fud-btn-grp-title") );
-      
-        layout->addWidget( buttons, layout->rowCount(), 0 );
-        
-        WButtonGroup *group = new WButtonGroup( buttons );
-        
-        WRadioButton *foreground = new WRadioButton( WString::tr("Foreground"), buttons );
+        WGroupBox *buttons = layout->addWidget( std::make_unique<WGroupBox>( WString::tr("fud-btn-grp-title") ), layout->rowCount(), 0 );
+
+        auto groupOwned = std::make_unique<WButtonGroup>();
+        WButtonGroup *group = groupOwned.get();
+        buttons->addChild( std::move(groupOwned) );
+
+        WRadioButton *foreground = buttons->addNew<WRadioButton>( WString::tr("Foreground") );
         foreground->setInline( false );
         foreground->setChecked( true );
         group->addButton( foreground, toint(SpectrumType::Foreground) );
-        
-        WRadioButton *background = new WRadioButton( WString::tr("Background"), buttons );
+
+        WRadioButton *background = buttons->addNew<WRadioButton>( WString::tr("Background") );
         background->setInline( false );
         group->addButton( background, toint(SpectrumType::Background) );
-        
-        WRadioButton *secondary = new WRadioButton( WString::tr("Secondary"), buttons );
+
+        WRadioButton *secondary = buttons->addNew<WRadioButton>( WString::tr("Secondary") );
         secondary->setInline( false );
         group->addButton( secondary, toint(SpectrumType::SecondForeground) );
         
@@ -394,14 +391,16 @@ namespace
       }//if( !noForeground )
 
     
-      m_fileUpload = new WFileUpload();
+      {
+        auto uploadOwned = std::make_unique<WFileUpload>();
+        m_fileUpload = uploadOwned.get();
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-      m_fileUpload->setProgressBar( new WProgressBar() );
+        m_fileUpload->setProgressBar( std::make_unique<WProgressBar>() );
 #endif
-    
-      layout->addWidget( m_fileUpload, layout->rowCount(), 0, AlignMiddle | AlignCenter );
+        layout->addWidget( std::move(uploadOwned), layout->rowCount(), 0, Wt::AlignmentFlag::Middle | Wt::AlignmentFlag::Center );
+      }
       layout->setRowStretch( layout->rowCount()-1, 1 );
-      
+
       WString msg = "";
       if( !viewer->isMobile() )
       {
@@ -414,19 +413,17 @@ namespace
               "</span>";
       }
 
-      WText *friendlyMsg = new WText( msg );
-      friendlyMsg->setStyleClass( "startQuickUploadMsg" );
-      
-      layout->addWidget( friendlyMsg, layout->rowCount(), 0, AlignMiddle | AlignBottom );
-      
-      
-      WPushButton *cancel = new WPushButton( WString::tr("Cancel"), footer() );
+      {
+        WText *friendlyMsg = layout->addWidget( std::make_unique<WText>( msg ), layout->rowCount(), 0, Wt::AlignmentFlag::Middle | Wt::AlignmentFlag::Bottom );
+        friendlyMsg->setStyleClass( "startQuickUploadMsg" );
+      }
+
+      WPushButton *cancel = footer()->addNew<WPushButton>( WString::tr("Cancel") );
       
       cancel->clicked().connect( this, &FileUploadDialog::userCanceled );
       m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
       m_fileUpload->uploaded().connect( this, &FileUploadDialog::finishUpload );
-      m_fileUpload->fileTooLarge().connect( boost::bind( &FileUploadDialog::toLarge, this,
-                                                        boost::placeholders::_1 ) );
+      m_fileUpload->fileTooLarge().connect( [this]( const ::int64_t size_tried ){ toLarge( size_tried ); } );
       m_specChangedConection = viewer->displayedSpectrumChanged().connect( this, &AuxWindow::emitReject );
       
       finished().connect( this, &FileUploadDialog::userCanceled );
@@ -455,14 +452,14 @@ namespace
     {
       m_manager->fileTooLarge( size_tried );
       
-      if( m_specChangedConection.connected() )
+      if( m_specChangedConection.isConnected() )
         m_specChangedConection.disconnect();
       AuxWindow::deleteAuxWindow( this );
     }
     
     void userCanceled()
     {
-      if( m_specChangedConection.connected() )
+      if( m_specChangedConection.isConnected() )
         m_specChangedConection.disconnect();
       
       AuxWindow::deleteAuxWindow( this );
@@ -470,7 +467,7 @@ namespace
     
     void finishUpload()
     {
-      if( m_specChangedConection.connected() )
+      if( m_specChangedConection.isConnected() )
         m_specChangedConection.disconnect();
       
       m_manager->finishQuickUpload( m_fileUpload, m_type );
@@ -479,7 +476,7 @@ namespace
     
     virtual ~FileUploadDialog()
     {
-      if( m_specChangedConection.connected() )
+      if( m_specChangedConection.isConnected() )
         m_specChangedConection.disconnect();
     }//~FileUploadDialog()
     
@@ -935,14 +932,14 @@ protected:
   WText *m_qrCodeStatusTxt;
   
   JSignal<int,std::string> m_qrDecodeSignal;
-  boost::function<void()> m_close_parent_dialog;
+  std::function<void()> m_close_parent_dialog;
   
   /** We'll make some (lifetime safe) cleanup function to delete sub-dialogs
     created from this widget, when this widget destructs.
     The functions put in `m_cleanups` need to be made with `wApp->bind( boost::bind(WWidget...) )`
     so we dont try to delete widgets that have already been deleted.
    */
-  vector<boost::function<void()>> m_cleanups;
+  vector<std::function<void()>> m_cleanups;
   
   void close_parent_dialog()
   {
@@ -1097,8 +1094,8 @@ protected:
       dialog->addButton( WString::tr("Okay") );
       
       // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
-      m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
-      
+      m_cleanups.push_back( [dialog](){ dialog->done( Wt::DialogCode::Accepted ); } );
+
       return;
     }//if( num_qr <= 0 )
     
@@ -1146,8 +1143,8 @@ protected:
       dialog->addButton( WString::tr("Okay") );
       
       // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
-      m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
-      
+      m_cleanups.push_back( [dialog](){ dialog->done( Wt::DialogCode::Accepted ); } );
+
       return;
     }//if( cleaned_up_uris.size() != initial_uris.size() )
     
@@ -1175,13 +1172,13 @@ protected:
     
     SimpleDialog *dialog = new SimpleDialog( title, content );
     WPushButton *btn = dialog->addButton( WString::tr("Yes") );
-    btn->clicked().connect( boost::bind(&UploadedImgDisplay::apply_uris, this, cleaned_up_uris)  );
+    btn->clicked().connect( [this, cleaned_up_uris](){ apply_uris( cleaned_up_uris ); } );
     btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
     
     btn = dialog->addButton( WString::tr("No") );
     
     // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
-    m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
+    m_cleanups.push_back( [dialog](){ dialog->done( Wt::DialogCode::Accepted ); } );
   }//void qr_check_result( const int num_qr, const string b64_value )
   
   
@@ -1248,7 +1245,7 @@ public:
                      std::ifstream &infile,
                      SimpleDialog *dialog,
                      SpecUtils::SpectrumType type )
-    : WContainerWidget( dialog->contents() ),
+    : WContainerWidget(),
   m_viewer( interspec ),
   m_display_name( display_name ),
   m_mimetype( mimetype ),
@@ -1260,61 +1257,63 @@ public:
   m_qrCodeStatusTxt( nullptr ),
   m_qrDecodeSignal( this, "QrDecodedFromImg", false)
   {
-    m_close_parent_dialog = wApp->bind( boost::bind( &SimpleDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
-    
+    m_close_parent_dialog = [dialog](){ dialog->done( Wt::DialogCode::Accepted ); };
+
     // Incase we find a QR code in the image, lets avoid `dialog` being called to front of view
     //  multiple times, which can cause some jank since there will be a dialog asking if the
     //  user wants to use the URL in the QR code.  Even with this call, the dialog will be brought
     //  forward a single time
     dialog->doNotUseMultpleBringstoFront();
-    
-    WText *t = new WText( WString::tr("uid-image-not-spectrum"), this );
+
+    WText *t = addNew<WText>( WString::tr("uid-image-not-spectrum") );
     t->addStyleClass( "NonSpecOtherFile" );
-    
+
     const size_t max_disp_size = 16*1024*1024;
-    
+
     if( filesize > max_disp_size )
     {
-      WText *errort = new WText( WString::tr("uid-err-to-large"), this );
+      WText *errort = addNew<WText>( WString::tr("uid-err-to-large") );
       errort->addStyleClass( "NonSpecError" );
       return;
     }//if( filesize > max_disp_size )
-      
+
     vector<uint8_t> totaldata( filesize );
     const bool success = infile.read( (char *)&(totaldata[0]), filesize ).good();
-      
+
     if( !success )
     {
-      WText *errort = new WText( WString::tr("uid-err-reading-upload"), this );
+      WText *errort = addNew<WText>( WString::tr("uid-err-reading-upload") );
       errort->addStyleClass( "NonSpecError" );
       return;
     }//if( !success )
-    
-    m_resource = new WMemoryResource( mimetype, this );
+
+    auto resourceOwned = std::make_unique<WMemoryResource>( mimetype );
+    m_resource = resourceOwned.get();
     m_resource->setData( totaldata );
-        
-    m_image = new WImage();
-    m_image->setImageLink( WLink(m_resource) );
+    addChild( std::move(resourceOwned) );
+
+    auto imageOwned = std::make_unique<WImage>();
+    m_image = imageOwned.get();
+    m_image->setImageLink( WLink(m_resource->url()) );
     m_image->addStyleClass( "NonSpecImgFile" );
-    addWidget( m_image );
-        
-    WContainerWidget *btn_div = new WContainerWidget( this );
+    addWidget( std::move(imageOwned) );
+
+    WContainerWidget *btn_div = addNew<WContainerWidget>();
     btn_div->addStyleClass( "ImgFileBtnBar" );
-        
+
     if( m_autoQrCodeSearch )
     {
-      m_qrCodeStatusTxt = new WText( btn_div );
+      m_qrCodeStatusTxt = btn_div->addNew<WText>();
       HelpSystem::attachToolTipOn( m_qrCodeStatusTxt, WString::tr("uid-tt-auto-qr"),
                                   true, HelpSystem::ToolTipPosition::Right );
     }else
     {
-      m_checkForQrCodeBtn = new WPushButton( WString::tr("uid-check-for-qr-btn"), btn_div );
+      m_checkForQrCodeBtn = btn_div->addNew<WPushButton>( WString::tr("uid-check-for-qr-btn") );
       m_checkForQrCodeBtn->setStyleClass( "LinkBtn NonSpecQrCodeBtn" );
     }//if( m_autoQrCodeSearch ) / else
     
     
-    m_qrDecodeSignal.connect( boost::bind( &UploadedImgDisplay::qr_check_result, this,
-                                          boost::placeholders::_1, boost::placeholders::_2 ) );
+    m_qrDecodeSignal.connect( [this]( int num_qr, std::string b64_value ){ qr_check_result( num_qr, b64_value ); } );
     
     // We will draw the image to a canvas, and use that
     if( m_autoQrCodeSearch )
@@ -1328,7 +1327,7 @@ public:
       // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
       //  if image file is invalid, or a HEIC on Windows.
       m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ", 5); }" );
-      m_image->imageLoaded().connect( boost::bind( &WText::setText, m_qrCodeStatusTxt, WString("Looking for QR-codes.") ) );
+      m_image->imageLoaded().connect( [this](){ m_qrCodeStatusTxt->setText( WString("Looking for QR-codes.") ); } );
     }else
     {
       m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_from_canvas );
@@ -1339,7 +1338,7 @@ public:
         
     if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
     {
-      WPushButton *embedbtn = new WPushButton( WString::tr("uid-embed-image-btn"), btn_div );
+      WPushButton *embedbtn = btn_div->addNew<WPushButton>( WString::tr("uid-embed-image-btn") );
       embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
       embedbtn->clicked().connect( this, &UploadedImgDisplay::embed_in_n42 );
     }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
@@ -1370,46 +1369,47 @@ public:
                 | AuxWindowProperties::EnableResize) ),
   m_manager( manager )
   {
-    WGridLayout *layout = new Wt::WGridLayout();
-    contents()->setLayout(layout);
-    
-    WLabel *uploadText = new WLabel( WString::tr("foreground-label") );
-    WFileUpload *m_fileUpload = new WFileUpload(  );
-    m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
-    m_fileUpload->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload, SpectrumType::Foreground));
-    m_fileUpload->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
-                                                      boost::placeholders::_1 ) );
+    auto layoutOwned = std::make_unique<Wt::WGridLayout>();
+    WGridLayout *layout = layoutOwned.get();
+    contents()->setLayout( std::move(layoutOwned) );
 
-    WLabel *uploadText2 = new WLabel( WString::tr("background-label") );
-    WFileUpload *m_fileUpload2 = new WFileUpload(  );
+    auto uploadText = std::make_unique<WLabel>( WString::tr("foreground-label") );
+    auto fileUploadOwned = std::make_unique<WFileUpload>();
+    WFileUpload *m_fileUpload = fileUploadOwned.get();
+    m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
+    m_fileUpload->uploaded().connect( [this, m_fileUpload](){ m_manager->dataUploaded2( m_fileUpload, SpectrumType::Foreground ); } );
+    m_fileUpload->fileTooLarge().connect( []( const ::int64_t size_tried ){ SpecMeasManager::fileTooLarge( size_tried ); } );
+
+    auto uploadText2 = std::make_unique<WLabel>( WString::tr("background-label") );
+    auto fileUpload2Owned = std::make_unique<WFileUpload>();
+    WFileUpload *m_fileUpload2 = fileUpload2Owned.get();
     m_fileUpload2->changed().connect( m_fileUpload2, &Wt::WFileUpload::upload );
-    m_fileUpload2->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload2, SpectrumType::Background));
-    m_fileUpload2->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
-                                                       boost::placeholders::_1 ) );
-    
-    WLabel *uploadText3 = new WLabel( WString::tr("secondary-label") );
-    WFileUpload *m_fileUpload3 = new WFileUpload(  );
+    m_fileUpload2->uploaded().connect( [this, m_fileUpload2](){ m_manager->dataUploaded2( m_fileUpload2, SpectrumType::Background ); } );
+    m_fileUpload2->fileTooLarge().connect( []( const ::int64_t size_tried ){ SpecMeasManager::fileTooLarge( size_tried ); } );
+
+    auto uploadText3 = std::make_unique<WLabel>( WString::tr("secondary-label") );
+    auto fileUpload3Owned = std::make_unique<WFileUpload>();
+    WFileUpload *m_fileUpload3 = fileUpload3Owned.get();
     m_fileUpload3->changed().connect( m_fileUpload3, &Wt::WFileUpload::upload );
-    m_fileUpload3->uploaded().connect( boost::bind( &SpecMeasManager::dataUploaded2, m_manager, m_fileUpload3, SpectrumType::SecondForeground));
-    m_fileUpload3->fileTooLarge().connect( boost::bind( &SpecMeasManager::fileTooLarge,
-                                                       boost::placeholders::_1 ) );
-    
-    layout->addWidget( uploadText, 0, 0 );
-    layout->addWidget( m_fileUpload, 0, 1 );
-    layout->addWidget( uploadText2, 1, 0 );
-    layout->addWidget( m_fileUpload2, 1, 1 );
-    layout->addWidget( uploadText3, 2, 0 );
-    layout->addWidget( m_fileUpload3, 2, 1 );
-    layout->addWidget( new WText(""),3,0);
+    m_fileUpload3->uploaded().connect( [this, m_fileUpload3](){ m_manager->dataUploaded2( m_fileUpload3, SpectrumType::SecondForeground ); } );
+    m_fileUpload3->fileTooLarge().connect( []( const ::int64_t size_tried ){ SpecMeasManager::fileTooLarge( size_tried ); } );
+
+    layout->addWidget( std::move(uploadText), 0, 0 );
+    layout->addWidget( std::move(fileUploadOwned), 0, 1 );
+    layout->addWidget( std::move(uploadText2), 1, 0 );
+    layout->addWidget( std::move(fileUpload2Owned), 1, 1 );
+    layout->addWidget( std::move(uploadText3), 2, 0 );
+    layout->addWidget( std::move(fileUpload3Owned), 2, 1 );
+    layout->addWidget( std::make_unique<WText>(""), 3, 0 );
     
     
     WPushButton *cancel = addCloseButtonToFooter();
-    cancel->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+    cancel->clicked().connect( [this](){ hide(); } );
 
     layout->setRowStretch( 3, 1 );
-    
+
     rejectWhenEscapePressed();
-    finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+    finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
     
     
     rejectWhenEscapePressed();
@@ -1446,9 +1446,9 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_removeForeButton ( NULL),
     m_removeBackButton ( NULL),
     m_removeFore2Button ( NULL),
-    m_foregroundDragNDrop( new FileDragUploadResource(this) ),
-    m_secondForegroundDragNDrop( new FileDragUploadResource(this) ),
-    m_backgroundDragNDrop( new FileDragUploadResource(this) ),
+    m_foregroundDragNDrop( new FileDragUploadResource() ),
+    m_secondForegroundDragNDrop( new FileDragUploadResource() ),
+    m_backgroundDragNDrop( new FileDragUploadResource() ),
 #if( USE_BATCH_GUI_TOOLS )
     m_batchDragNDrop( nullptr ),
 #endif
@@ -1472,9 +1472,9 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     viewer->useMessageResourceBundle( "SpecMeasManager" );
   
   m_treeView = new RowStretchTreeView();
-  m_fileModel = new SpectraFileModel( m_treeView );
-  m_treeView->setModel( m_fileModel );
-  m_treeView->selectionChanged().connect( boost::bind( &SpecMeasManager::selectionChanged, this ) );
+  m_fileModel = new SpectraFileModel();
+  m_treeView->setModel( std::shared_ptr<Wt::WAbstractItemModel>( m_fileModel, [](Wt::WAbstractItemModel*){} ) );
+  m_treeView->selectionChanged().connect( [this](){ selectionChanged(); } );
 
   // TODO: (20241028) it doesn't appear necessary to show and then delete the spectrum manager window - but leaving until after v1.0.13 release
   startSpectrumManager(); //initializes
@@ -1482,30 +1482,30 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     
   m_sql = viewer->sql();
 
-  m_foregroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this,
-                                                         boost::placeholders::_1,
-                                                         boost::placeholders::_2,
-                                                         SpectrumType::Foreground ) );
-  m_secondForegroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop,
-                                                               this, boost::placeholders::_1,
-                                                               boost::placeholders::_2,
-                                                               SpectrumType::SecondForeground ) );
-  m_backgroundDragNDrop->fileDrop().connect( boost::bind( &SpecMeasManager::handleFileDrop, this,
-                                                         boost::placeholders::_1,
-                                                         boost::placeholders::_2,
-                                                         SpectrumType::Background ) );
-  
-  m_foregroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
-                                      boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Foreground ) );
-  
-  m_secondForegroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
-                                      boost::placeholders::_1, boost::placeholders::_2, SpectrumType::SecondForeground ) );
-  
-  m_backgroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
-                                      boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Background ) );
+  m_foregroundDragNDrop->fileDrop().connect( [this]( const std::string &name, const std::string &spoolName ){
+    handleFileDrop( name, spoolName, SpectrumType::Foreground );
+  } );
+  m_secondForegroundDragNDrop->fileDrop().connect( [this]( const std::string &name, const std::string &spoolName ){
+    handleFileDrop( name, spoolName, SpectrumType::SecondForeground );
+  } );
+  m_backgroundDragNDrop->fileDrop().connect( [this]( const std::string &name, const std::string &spoolName ){
+    handleFileDrop( name, spoolName, SpectrumType::Background );
+  } );
+
+  m_foregroundDragNDrop->dataReceived().connect( [this]( uint64_t num_bytes_recieved, uint64_t num_bytes_total ){
+    handleDataRecievedStatus( num_bytes_recieved, num_bytes_total, SpectrumType::Foreground );
+  } );
+
+  m_secondForegroundDragNDrop->dataReceived().connect( [this]( uint64_t num_bytes_recieved, uint64_t num_bytes_total ){
+    handleDataRecievedStatus( num_bytes_recieved, num_bytes_total, SpectrumType::SecondForeground );
+  } );
+
+  m_backgroundDragNDrop->dataReceived().connect( [this]( uint64_t num_bytes_recieved, uint64_t num_bytes_total ){
+    handleDataRecievedStatus( num_bytes_recieved, num_bytes_total, SpectrumType::Background );
+  } );
 
 #if( USE_BATCH_GUI_TOOLS )
-  m_batchDragNDrop = new FileDragUploadResource( this );
+  m_batchDragNDrop = new FileDragUploadResource();
   m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
 #endif
 }// SpecMeasManager
@@ -1535,52 +1535,52 @@ void SpecMeasManager::startSpectrumManager()
     WContainerWidget *title = m_spectrumManagerWindow->titleBar();
     title->addStyleClass( "SpectraFileManagerHeader" );
     
-    m_spectrumManagerWindow->finished().connect( boost::bind( &SpecMeasManager::displayIsBeingHidden, this ) );
-    // collapsed().connect( boost::bind( &SpecMeasManager::displayIsBeingHidden, this ) );
-    m_spectrumManagerWindow->expanded().connect( boost::bind( &SpecMeasManager::displayIsBeingShown, this ) );
+    m_spectrumManagerWindow->finished().connect( [this](){ displayIsBeingHidden(); } );
+    // collapsed().connect( [this](){ displayIsBeingHidden(); } );
+    m_spectrumManagerWindow->expanded().connect( [this](){ displayIsBeingShown(); } );
     
-    WContainerWidget *uploadDiv = new WContainerWidget( );
+    auto uploadDivOwned = std::make_unique<WContainerWidget>();
+    WContainerWidget *uploadDiv = uploadDivOwned.get();
     uploadDiv->setStyleClass( "uploadDiv" );
-    
-    //WText* spec =
-    new WText( WString::tr("smm-load-spec-from"), uploadDiv);
-    //spec->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
-    
-    Wt::WPushButton* uploadButton = new Wt::WPushButton( WString::tr("app-mi-file-open"),uploadDiv);
+
+    uploadDiv->addNew<WText>( WString::tr("smm-load-spec-from") );
+
+    Wt::WPushButton* uploadButton = uploadDiv->addNew<Wt::WPushButton>( WString::tr("app-mi-file-open") );
     uploadButton->clicked().connect(  this, &SpecMeasManager::uploadSpectrum );
     HelpSystem::attachToolTipOn(uploadButton, WString::tr("smm-tt-upload-file"),
                                 showToolTips, HelpSystem::ToolTipPosition::Bottom );
     uploadButton->setIcon( "InterSpec_resources/images/file_search.png" );
-    uploadButton->setMargin(10,Wt::Left);
-    
+    uploadButton->setMargin(10, Wt::Side::Left);
+
 #if( USE_DB_TO_STORE_SPECTRA )
-    Wt::WPushButton* importButton = new Wt::WPushButton( WString::tr("app-mi-file-prev"), uploadDiv );
-    importButton->clicked().connect( boost::bind( &SpecMeasManager::browsePrevSpectraAndStatesDb, this ) );
-    HelpSystem::attachToolTipOn(importButton, WString::tr("app-mi-tt-file-prev"), 
+    Wt::WPushButton* importButton = uploadDiv->addNew<Wt::WPushButton>( WString::tr("app-mi-file-prev") );
+    importButton->clicked().connect( [this](){ browsePrevSpectraAndStatesDb(); } );
+    HelpSystem::attachToolTipOn(importButton, WString::tr("app-mi-tt-file-prev"),
                                 showToolTips, HelpSystem::ToolTipPosition::Bottom );
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
-    importButton->setMargin(2,Wt::Left);
-    
+    importButton->setMargin(2, Wt::Side::Left);
+
 #endif
-    
+
     Wt::WContainerWidget *treeDiv   = createTreeViewDiv();
     Wt::WContainerWidget *buttonBar = createButtonBar();
-    
-    WContainerWidget * content = m_spectrumManagerWindow->contents();
-  
+
+    WContainerWidget *content = m_spectrumManagerWindow->contents();
+
     WGridLayout *layout = m_spectrumManagerWindow->stretcher();
-    layout->addWidget(uploadDiv, 0,0);
-    layout->addWidget( treeDiv,       1, 0 );
-    layout->addWidget( buttonBar,     2, 0 );
+    layout->addWidget( std::move(uploadDivOwned), 0, 0 );
+    layout->addWidget( std::unique_ptr<WWidget>(treeDiv), 1, 0 );
+    layout->addWidget( std::unique_ptr<WWidget>(buttonBar), 2, 0 );
     layout->setRowStretch( 1, 10 );
-    
+
     layout->setVerticalSpacing( 0 );
     layout->setHorizontalSpacing( 0 );
     layout->setContentsMargins( 5, 5, 5, 5 );
+
+    if( auto *parentWidget = dynamic_cast<WWebWidget *>(content) )
+      parentWidget->setHiddenKeepsGeometry(true);
     
-    dynamic_cast<WWebWidget *>(layout->parent())->setHiddenKeepsGeometry(true);
-    
-    content->setOverflow(WContainerWidget::OverflowVisible,Orientation::Vertical); //necessary for menu to not be covered by footer
+    content->setOverflow(Overflow::Visible,Orientation::Vertical); //necessary for menu to not be covered by footer
     //content->setStyleClass("filemanageroverflow");
     
     
@@ -1590,7 +1590,7 @@ void SpecMeasManager::startSpectrumManager()
     
     // Make it so it can't be totally deformed
     //  setMinimumSize( 500, 400 );
-    m_spectrumManagerWindow->finished().connect( boost::bind( &SpecMeasManager::deleteSpectrumManager, this ) );
+    m_spectrumManagerWindow->finished().connect( [this](){ deleteSpectrumManager(); } );
     m_spectrumManagerWindow->rejectWhenEscapePressed();
     m_spectrumManagerWindow->resizeWindow( 800, 550 );
     m_spectrumManagerWindow->centerWindow();
@@ -1598,7 +1598,7 @@ void SpecMeasManager::startSpectrumManager()
     selectionChanged();
   
   if( m_viewer && m_viewer->undoRedoManager() && m_viewer->undoRedoManager()->canAddUndoRedoNow() )
-    new UndoRedoManager::BlockGuiUndoRedo( m_spectrumManagerWindow ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+    m_spectrumManagerWindow->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
   
   UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -1774,39 +1774,50 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     WString txt = WString::tr( name.size() ? "smm-zip-sel-file" : "smm-zip-sel-file-no-name")
                   .arg( name )
                   .arg( (m_viewer->isPhone() ? "" : "<br />") );
-    WText *t = new WText( txt );
+    auto tOwned = std::make_unique<WText>( txt );
+    WText *t = tOwned.get();
     //WSelectionBox *selection = new WSelectionBox();
-    
-    RowStretchTreeView *table = new RowStretchTreeView();
+
+    auto tableOwned = std::make_unique<RowStretchTreeView>();
+    RowStretchTreeView *table = tableOwned.get();
     table->setRootIsDecorated( false );
     table->setAlternatingRowColors( true );
-    table->setSelectionMode( Wt::SingleSelection );
+    table->setSelectionMode( Wt::SelectionMode::Single );
     table->addStyleClass( "FilesInZipTable" );
-    WStandardItemModel *model = new WStandardItemModel( table );
-    table->setModel( model );
+    auto modelShared = std::make_shared<WStandardItemModel>();
+    WStandardItemModel *model = modelShared.get();
+    table->setModel( modelShared );
     model->insertColumns( 0, 2 );
-    model->setHeaderData(  0, Horizontal, WString::tr("smm-zip-filename-hdr"), DisplayRole );
-    model->setHeaderData(  1, Horizontal, WString::tr("smm-zip-kilobyte-hdr"), DisplayRole );
-    WItemDelegate *delegate = new WItemDelegate( table );
-    delegate->setTextFormat( "%.1f" );
-    table->setItemDelegateForColumn( 1, delegate );
-    
-    
-    WContainerWidget *typecb = new WContainerWidget();
-    WGridLayout *cblayout = new WGridLayout( typecb );
+    model->setHeaderData( 0, Wt::Orientation::Horizontal, WString::tr("smm-zip-filename-hdr"), Wt::ItemDataRole::Display );
+    model->setHeaderData( 1, Wt::Orientation::Horizontal, WString::tr("smm-zip-kilobyte-hdr"), Wt::ItemDataRole::Display );
+    auto delegateShared = std::make_shared<WItemDelegate>();
+    delegateShared->setTextFormat( "%.1f" );
+    table->setItemDelegateForColumn( 1, delegateShared );
+
+
+    auto typecbOwned = std::make_unique<WContainerWidget>();
+    WContainerWidget *typecb = typecbOwned.get();
+    auto cblayoutOwned = std::make_unique<WGridLayout>();
+    WGridLayout *cblayout = cblayoutOwned.get();
     cblayout->setContentsMargins( 2, 0, 0, 0 );
     cblayout->setVerticalSpacing( 0 );
     cblayout->setHorizontalSpacing( 0 );
-    WButtonGroup *group = new WButtonGroup(typecb);
-    Wt::WRadioButton *button = new WRadioButton( WString::tr("Foreground") );
-    cblayout->addWidget( button, 0, 0, AlignCenter );
+    typecb->setLayout( std::move(cblayoutOwned) );
+    auto groupOwned2 = std::make_unique<WButtonGroup>();
+    WButtonGroup *group = groupOwned2.get();
+    typecb->addChild( std::move(groupOwned2) );
+    auto btn0 = std::make_unique<Wt::WRadioButton>( WString::tr("Foreground") );
+    Wt::WRadioButton *button = btn0.get();
     group->addButton(button, toint(SpectrumType::Foreground) );
-    button = new WRadioButton( WString::tr("Background"), typecb);
-    cblayout->addWidget( button, 0, 1, AlignCenter );
+    cblayout->addWidget( std::move(btn0), 0, 0, Wt::AlignmentFlag::Center );
+    auto btn1 = std::make_unique<WRadioButton>( WString::tr("Background") );
+    button = btn1.get();
     group->addButton(button, toint(SpectrumType::Background) );
-    button = new Wt::WRadioButton( WString::tr("Secondary"), typecb);
-    cblayout->addWidget( button, 0, 2, AlignCenter );
+    cblayout->addWidget( std::move(btn1), 0, 1, Wt::AlignmentFlag::Center );
+    auto btn2 = std::make_unique<Wt::WRadioButton>( WString::tr("Secondary") );
+    button = btn2.get();
     group->addButton(button, toint(SpectrumType::SecondForeground) );
+    cblayout->addWidget( std::move(btn2), 0, 2, Wt::AlignmentFlag::Center );
     
     if( validtype )
     {
@@ -1825,10 +1836,10 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
                   (AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::EnableResize) );
-    window->stretcher()->addWidget( t, 0, 0 );
+    window->stretcher()->addWidget( std::move(tOwned), 0, 0 );
     //window->stretcher()->addWidget( selection, 1, 0 );
-    window->stretcher()->addWidget( table, 1, 0 );
-    window->stretcher()->addWidget( typecb, 2, 0 );
+    window->stretcher()->addWidget( std::move(tableOwned), 1, 0 );
+    window->stretcher()->addWidget( std::move(typecbOwned), 2, 0 );
     window->stretcher()->setRowStretch( 1, 1 );
     window->stretcher()->setContentsMargins( 9, 9, 9, 2 );
     
@@ -1845,16 +1856,17 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
         continue;
       //selection->addItem( n );
       
-      WStandardItem *item = new WStandardItem();
-      item->setText( n );
-      model->setItem( static_cast<int>(i), 0, item );
-      item = new WStandardItem();
-      
-      const double sizekb = uncompresssize[i]/1024.0;
-      
-      //item->setText( buff );
-      item->setData( sizekb, DisplayRole );
-      model->setItem( static_cast<int>(i), 1, item );
+      {
+        auto item = std::make_unique<WStandardItem>();
+        item->setText( n );
+        model->setItem( static_cast<int>(i), 0, std::move(item) );
+      }
+      {
+        auto item = std::make_unique<WStandardItem>();
+        const double sizekb = uncompresssize[i]/1024.0;
+        item->setData( sizekb, Wt::ItemDataRole::Display );
+        model->setItem( static_cast<int>(i), 1, std::move(item) );
+      }
     }//for( size_t i = 0; i < filenames.size(); ++i )
     
     //if( selection->count() == 0 )
@@ -1895,10 +1907,10 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }
     
     //Fix the width of column 1, so it is independant of window width
-    table->Wt::WTreeView::setColumnWidth( 1, WLength(5,WLength::FontEm) );
+    table->Wt::WTreeView::setColumnWidth( 1, WLength(5,WLength::Unit::FontEm) );
     
     //Set column 0 to have a stretchy width so it will expand to full width.
-    table->setColumnWidth( 0, 150 /*WLength(maxnumchars,WLength::FontEx)*/ );
+    table->setColumnWidth( 0, 150 /*WLength(maxnumchars,WLength::Unit::FontEx)*/ );
     
     if( !m_viewer->isPhone() )
     {
@@ -1925,20 +1937,19 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     
     window->rejectWhenEscapePressed();
     Wt::WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"),true);
-    closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    
-    WPushButton *openButton = new WPushButton( WString::tr("smm-zip-display-btn") );
+    closeButton->clicked().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+    window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
+    WPushButton *openButton = window->footer()->addNew<WPushButton>( WString::tr("smm-zip-display-btn") );
     openButton->disable();
     //selection->activated().connect( openButton, &WPushButton::enable );
     table->clicked().connect( openButton, &WPushButton::enable );
-    table->doubleClicked().connect( boost::bind( &SpecMeasManager::extractAndOpenFromZip, this,
-                                                spoolName, group, table, window,
-                                                boost::placeholders::_1 ) );
-    window->footer()->addWidget( openButton );
-    
-    //openButton->clicked().connect( boost::bind( &SpecMeasManager::extractAndOpenFromZip, this, spoolName, type, selection, window ) );
-    openButton->clicked().connect( boost::bind( &SpecMeasManager::extractAndOpenFromZip, this, spoolName, group, table, window, WModelIndex() ) );
+    table->doubleClicked().connect( [this, spoolName, group, table, window]( const WModelIndex &index ){
+      extractAndOpenFromZip( spoolName, group, table, window, index );
+    } );
+
+    //openButton->clicked().connect( [this, spoolName, group, table, window](){ extractAndOpenFromZip( spoolName, type, selection, window ); } );
+    openButton->clicked().connect( [this, spoolName, group, table, window](){ extractAndOpenFromZip( spoolName, group, table, window, WModelIndex() ); } );
     
     window->centerWindow();
     window->disableCollapse();
@@ -2078,24 +2089,18 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   m_nonSpecFileDialog = dialog;
   
-  // The dialog may get deleted, and never accepted, so we will hook up to the
-  //  `destroyed()` signal to keep track of `m_nonSpecFileDialog`
-  m_nonSpecFileDialog->destroyed().connect( std::bind([dialog](){
+  // Hook up to finished() to clear m_nonSpecFileDialog when dialog closes
+  m_nonSpecFileDialog->finished().connect( [dialog]( Wt::DialogCode ){
     InterSpec *interspec = InterSpec::instance();
     SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
-    assert( manager );
-    if( !manager )
-      return;
-    
-    assert( !manager->m_nonSpecFileDialog || (dialog == manager->m_nonSpecFileDialog) );
-    
-    manager->m_nonSpecFileDialog = nullptr;
-  }) );
+    if( manager && manager->m_nonSpecFileDialog == dialog )
+      manager->m_nonSpecFileDialog = nullptr;
+  } );
   
   dialog->addButton( WString::tr("Close") );
   WContainerWidget *contents = dialog->contents();
   contents->addStyleClass( "NonSpecDialogBody" );
-  WText *title = new WText( WString::tr("smm-not-spec-file"), contents );
+  WText *title = contents->addNew<WText>( WString::tr("smm-not-spec-file") );
   title->addStyleClass( "title" );
   
   auto add_undo_redo = [dialog, displayName, filesize, &infile, type](){
@@ -2136,8 +2141,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
           cout << "Clearing memory of file: " << data_ptr.use_count() << endl;
         };
         
-        const int milliSeconds = 5*60*1000;
-        WServer::instance()->schedule( milliSeconds, wApp->sessionId(), clear_mem, clear_mem );
+        WServer::instance()->schedule( std::chrono::milliseconds(5*60*1000), wApp->sessionId(), clear_mem, clear_mem );
       }//if( filesize > 64*1024 )
       
       const std::string dispname = displayName;
@@ -2245,7 +2249,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
        || SpecUtils::icontains( datastr, "DNDOEWSchema" )
        || SpecUtils::icontains( datastr, "DNDOARSchema" ) )
     {
-      WText *t = new WText( WString::tr("smm-icd2"), contents );
+      WText *t = contents->addNew<WText>( WString::tr("smm-icd2") );
       t->addStyleClass( "NonSpecOtherFile" );
       add_undo_redo();
       return true;
@@ -2307,7 +2311,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   if( iszip )
   {
     //zip (but can be xlsx, pptx, docx, odp, jar, apk) 50 4B 03 04
-    WText *t = new WText( WString::tr("smm-invalid-zip"), contents );
+    WText *t = contents->addNew<WText>( WString::tr("smm-invalid-zip") );
     t->addStyleClass( "NonSpecOtherFile" );
     
     add_undo_redo();
@@ -2316,7 +2320,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( israr || istar || iszip7 || isgz )
   {
-    WText *t = new WText( WString::tr("smm-unsupported-archive"), contents );
+    WText *t = contents->addNew<WText>( WString::tr("smm-unsupported-archive") );
     t->addStyleClass( "NonSpecOtherFile" );
     
     add_undo_redo();
@@ -2327,7 +2331,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( ispdf | isps | istif )
   {
-    WText *t = new WText( WString::tr("smm-unsupported-document"), contents );
+    WText *t = contents->addNew<WText>( WString::tr("smm-unsupported-document") );
     t->addStyleClass( "NonSpecOtherFile" );
     
     add_undo_redo();
@@ -2350,7 +2354,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     
     title->setText( WString::tr("smm-image-file") );
     
-    new UploadedImgDisplay( m_viewer, displayName, mimetype, filesize, infile, dialog, type );
+    dialog->contents()->addNew<UploadedImgDisplay>( m_viewer, displayName, mimetype, filesize, infile, dialog, type );
     
     add_undo_redo();
     
@@ -2419,10 +2423,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       return true;
     }catch( exception &e )
     {
-      WText *errort = new WText( WString::tr("smm-invalid-peak-csv"), contents );
+      WText *errort = contents->addNew<WText>( WString::tr("smm-invalid-peak-csv") );
       errort->addStyleClass( "NonSpecError" );
-      
-      errort = new WText( string(e.what()), contents );
+
+      errort = contents->addNew<WText>( string(e.what()) );
       errort->setAttributeValue( "style", "color: red; " );
       
       add_undo_redo();
@@ -2680,9 +2684,9 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
       if( orig_extension.size() )
         filename = filename.substr( 0, filename.size() - orig_extension.size() );
       
-      const int offset = wApp->environment().timeZoneOffset();
+      const chrono::minutes offset = wApp->environment().timeZoneOffset();
       auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-      now += chrono::seconds(60*offset);
+      now += chrono::duration_cast<chrono::microseconds>( offset );
       
       string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
       const string::size_type pos = timestr.find( ' ' );
@@ -2805,17 +2809,18 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     dialog->footer()->clear();
     
     closeButton = dialog->addButton( WString::tr("Close") );
-    stretcher = new WGridLayout();
-    
+    auto stretcherOwned = std::make_unique<WGridLayout>();
+    stretcher = stretcherOwned.get();
+
     // If we set the contents margins to 0, then scroll-bars may appear.
     //  However doing just the below looks okay, and the scroll bars dont seem to appear
     stretcher->setContentsMargins( 9, 2, 9, 2 );
-    dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Horizontal );
-    
-    dialog->contents()->setLayout( stretcher );
-    WText *title = new WText( WString::tr("smm-not-spec-file") );
-    title->addStyleClass( "title" );
-    stretcher->addWidget( title, 0, 0 );
+    dialog->contents()->setOverflow( Overflow::Hidden, Wt::Orientation::Horizontal );
+
+    dialog->contents()->setLayout( std::move(stretcherOwned) );
+    auto titleOwned = std::make_unique<WText>( WString::tr("smm-not-spec-file") );
+    titleOwned->addStyleClass( "title" );
+    stretcher->addWidget( std::move(titleOwned), 0, 0 );
   };//clear_dialog lamda
   
   
@@ -2825,9 +2830,11 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     clear_dialog();
     assert( stretcher && closeButton );
     
-    WText *t = new WText( WString::tr("smm-CALp-no-fore") );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    auto tOwned = std::make_unique<WText>( WString::tr("smm-CALp-no-fore") );
+    WText *t = tOwned.get();
+    stretcher->addWidget( std::move(tOwned), stretcher->rowCount(), 0,
+                          Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
+    t->setTextAlignment( Wt::AlignmentFlag::Center );
     
     return true;
   }//if( !currdata )
@@ -2871,11 +2878,13 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
         clear_dialog();
         assert( stretcher && closeButton );
         
-        WText *t = new WText( WString::tr("smm-CALp-invalid") );
-        stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-        t->setTextAlignment( Wt::AlignCenter );
-        dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowVisible,
-                                         Wt::Horizontal | Wt::Vertical );
+        auto tOwned = std::make_unique<WText>( WString::tr("smm-CALp-invalid") );
+        WText *t = tOwned.get();
+        stretcher->addWidget( std::move(tOwned), stretcher->rowCount(), 0,
+                              Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
+        t->setTextAlignment( Wt::AlignmentFlag::Center );
+        dialog->contents()->setOverflow( Overflow::Visible,
+                                         Wt::Orientation::Horizontal | Wt::Orientation::Vertical );
         return true;
       }//if( we didnt get any calibrations )
       
@@ -3033,18 +3042,21 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   if( !have_cal_for_all_dets )
     msg += WString::tr( (det_to_cal.size() == 1) ? "smm-warn-single-for-multi" : "smm-warn-multi-for-single" );
   
-  WText *t = new WText( msg );
-  stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-  t->setTextAlignment( Wt::AlignCenter );
+  auto tOwned = std::make_unique<WText>( msg );
+  WText *t = tOwned.get();
+  stretcher->addWidget( std::move(tOwned), stretcher->rowCount(), 0,
+                        Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
+  t->setTextAlignment( Wt::AlignmentFlag::Center );
   
   WCheckBox *applyOnlyCurrentlyVisible = nullptr;
   WCheckBox *applyForeground = nullptr, *applyBackground = nullptr, *applySecondary = nullptr;
   
   if( fore_samples.size() != foreground->sample_numbers().size() )
   {
-    applyOnlyCurrentlyVisible = new WCheckBox( WString::tr("smm-CALp-cb-disp-samples-only") );
+    auto cbOwned0 = std::make_unique<WCheckBox>( WString::tr("smm-CALp-cb-disp-samples-only") );
+    applyOnlyCurrentlyVisible = cbOwned0.get();
     applyOnlyCurrentlyVisible->addStyleClass( "CbNoLineBreak" );
-    stretcher->addWidget( applyOnlyCurrentlyVisible, stretcher->rowCount(), 0, AlignLeft );
+    stretcher->addWidget( std::move(cbOwned0), stretcher->rowCount(), 0, Wt::AlignmentFlag::Left );
   }//if( not displaying all foreground samples )
   
   const auto back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
@@ -3053,32 +3065,39 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   //Only have
   if( (back && (back != foreground)) || (second && (second != foreground)) )
   {
-    applyForeground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-fore") );
+    auto cbOwned1 = std::make_unique<WCheckBox>( WString::tr("smm-CALp-cb-apply-to-fore") );
+    applyForeground = cbOwned1.get();
     applyForeground->setChecked( true );
     applyForeground->addStyleClass( "CbNoLineBreak" );
-    stretcher->addWidget( applyForeground, stretcher->rowCount(), 0, AlignLeft );
+    stretcher->addWidget( std::move(cbOwned1), stretcher->rowCount(), 0, Wt::AlignmentFlag::Left );
   }
   
   if( back && (back != foreground) )
   {
-    applyBackground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-back") );
+    auto cbOwned2 = std::make_unique<WCheckBox>( WString::tr("smm-CALp-cb-apply-to-back") );
+    applyBackground = cbOwned2.get();
     applyBackground->setChecked( true );
     applyBackground->addStyleClass( "CbNoLineBreak" );
-    stretcher->addWidget( applyBackground, stretcher->rowCount(), 0, AlignLeft );
+    stretcher->addWidget( std::move(cbOwned2), stretcher->rowCount(), 0, Wt::AlignmentFlag::Left );
   }
   
   if( second && (second != foreground) && (second != back) )
   {
-    applySecondary = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-second") );
+    auto cbOwned3 = std::make_unique<WCheckBox>( WString::tr("smm-CALp-cb-apply-to-second") );
+    applySecondary = cbOwned3.get();
     applySecondary->setChecked( true );
     applySecondary->addStyleClass( "CbNoLineBreak" );
-    stretcher->addWidget( applySecondary, stretcher->rowCount(), 0, AlignLeft );
+    stretcher->addWidget( std::move(cbOwned3), stretcher->rowCount(), 0, Wt::AlignmentFlag::Left );
   }
   
   
-  t = new WText( WString::tr("smm-CALp-like-to-use") );
-  stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-  t->setTextAlignment( Wt::AlignCenter );
+  {
+    auto tOwned2 = std::make_unique<WText>( WString::tr("smm-CALp-like-to-use") );
+    t = tOwned2.get();
+    stretcher->addWidget( std::move(tOwned2), stretcher->rowCount(), 0,
+                          Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
+    t->setTextAlignment( Wt::AlignmentFlag::Center );
+  }
 
   // Sometimes detectors that provide lower channel energy calibration wont have a consistent binning
   //  structure, but the uploaded CALp may be assuming that, so we'll give a warning in this case.
@@ -3087,9 +3106,11 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
      && (currdata->energy_calibration()->type() == SpecUtils::EnergyCalType::LowerChannelEdge)
      && any_new_cal_is_poly_ish )
   {
-    t = new WText( WString::tr("smm-CALp-prev-is-channel-lower-energy") );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    auto tOwned3 = std::make_unique<WText>( WString::tr("smm-CALp-prev-is-channel-lower-energy") );
+    t = tOwned3.get();
+    stretcher->addWidget( std::move(tOwned3), stretcher->rowCount(), 0,
+                          Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
+    t->setTextAlignment( Wt::AlignmentFlag::Center );
   }
 
   dialog->contents()->addStyleClass( "CALp" );
@@ -3142,7 +3163,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   if( autoApply && !applyOnlyCurrentlyVisible && !applyForeground && !applyBackground && !applySecondary )
   {
     applyLambda();
-    dialog->done( Wt::WDialog::DialogCode::Accepted );
+    dialog->done( Wt::DialogCode::Accepted );
     return true;
   }
   
@@ -3183,7 +3204,7 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
     
     tool->setGuiStateFromXml( &doc );
     
-    dialog->done( Wt::WDialog::DialogCode::Accepted );
+    dialog->done( Wt::DialogCode::Accepted );
     return true;
   }catch( rapidxml::parse_error &e )
   {
@@ -3211,21 +3232,22 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
   dialog->footer()->clear();
     
   WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
-  WGridLayout *stretcher = new WGridLayout();
-    
+  auto stretcherOwned2 = std::make_unique<WGridLayout>();
+  WGridLayout *stretcher = stretcherOwned2.get();
+
   // If we set the contents margins to 0, then scroll-bars may appear.
   //  However doing just the below looks okay, and the scroll bars dont seem to appear
   stretcher->setContentsMargins( 9, 2, 9, 2 );
-  //dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
-    
-  dialog->contents()->setLayout( stretcher );
-  WText *title = new WText( WString::tr("smm-err-iso-by-nuc-window-title") );
-  title->addStyleClass( "title" );
-  stretcher->addWidget( title, 0, 0 );
-  
-  WText *content = new WText( error_msg );
-  content->addStyleClass( "content" );
-  stretcher->addWidget( content, 1, 0 );
+  //dialog->contents()->setOverflow( Overflow::Hidden );
+
+  dialog->contents()->setLayout( std::move(stretcherOwned2) );
+  auto titleOwned2 = std::make_unique<WText>( WString::tr("smm-err-iso-by-nuc-window-title") );
+  titleOwned2->addStyleClass( "title" );
+  stretcher->addWidget( std::move(titleOwned2), 0, 0 );
+
+  auto contentOwned = std::make_unique<WText>( error_msg );
+  contentOwned->addStyleClass( "content" );
+  stretcher->addWidget( std::move(contentOwned), 1, 0 );
   
   return true;
 }//bool handleRelActAutoXmlFile( std::istream &input, SimpleDialog *dialog );
@@ -3292,11 +3314,11 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   charth = std::max( charth, 175 );
   
   const bool is_outx = (det->drfSource() == DetectorPeakResponse::DrfSource::AngleOutx);
-  WText *title = new WText( WString::tr(is_outx ? "smm-outx-curve" : "smm-ecc-curve"), dialog->contents() );
+  WText *title = dialog->contents()->addNew<WText>( WString::tr(is_outx ? "smm-outx-curve" : "smm-ecc-curve") );
   title->addStyleClass( "title" );
   title->setInline( false );
-  
-  DrfChart *chart = new DrfChart( dialog->contents() );
+
+  DrfChart *chart = dialog->contents()->addNew<DrfChart>();
   chart->setMinimumSize( 300, 175 );
   chart->resize( chartw, charth );
   chart->updateChart( det );
@@ -3322,15 +3344,15 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     "</p>";
   //msg += "<p>Would you like to use this DRF?</p>";
   
-  WText *txt = new WText( msg, TextFormat::XHTMLText, dialog->contents() );
+  WText *txt = dialog->contents()->addNew<WText>( msg, TextFormat::XHTML );
 
-  WContainerWidget *btn_div = new WContainerWidget( dialog->contents() );
+  WContainerWidget *btn_div = dialog->contents()->addNew<WContainerWidget>();
   btn_div->addStyleClass( "HowToUseGrp" );
-  
+
   map<int,DetectorPeakResponse::EffGeometryType> index_to_geom;
-  
-  WLabel *geom_label = new WLabel( WString::tr("smm-ecc-how-to-interpret"), btn_div );
-  WComboBox *geom_combo = new WComboBox( btn_div );
+
+  WLabel *geom_label = btn_div->addNew<WLabel>( WString::tr("smm-ecc-how-to-interpret") );
+  WComboBox *geom_combo = btn_div->addNew<WComboBox>();
   geom_combo->addItem( WString::tr("smm-ecc-far-field") );
   index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
   
@@ -3354,22 +3376,22 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   geom_combo->setCurrentIndex( 1 );
     
-  WTable *far_field_opt = new WTable( dialog->contents() );
+  WTable *far_field_opt = dialog->contents()->addNew<WTable>();
   //far_field_opt->setHiddenKeepsGeometry( true );
   far_field_opt->addStyleClass( "FarFieldOptTbl" );
-  
-  WRegExpValidator *dist_validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
-  dist_validator->setFlags( Wt::MatchCaseInsensitive );
+
+  auto dist_validator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex );
+  dist_validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   dist_validator->setInvalidBlankText( "0.0 cm" );
   dist_validator->setMandatory( true );
-    
+
   WTableCell *cell = far_field_opt->elementAt( 0, 0 );
-  WLabel *label = new WLabel( WString::tr("smm-ecc-det-diam"), cell );
+  WLabel *label = cell->addNew<WLabel>( WString::tr("smm-ecc-det-diam") );
   cell = far_field_opt->elementAt( 0, 1 );
-  WLineEdit *diameter_edit = new WLineEdit( "", cell );
+  WLineEdit *diameter_edit = cell->addNew<WLineEdit>();
   label->setBuddy( diameter_edit );
   diameter_edit->setValidator( dist_validator );
-  diameter_edit->setEmptyText( "0 cm" );
+  diameter_edit->setPlaceholderText( "0 cm" );
 
   if( det->detectorDiameter() > 0.0f )
     diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() ) );
@@ -3379,19 +3401,19 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   if( det->detectorSetback() > 0.0 )
   {
     cell = far_field_opt->elementAt( ff_row, 0 );
-    new WLabel( WString::tr("smm-ecc-det-setback"), cell );
+    cell->addNew<WLabel>( WString::tr("smm-ecc-det-setback") );
     cell = far_field_opt->elementAt( ff_row, 1 );
-    new WText( PhysicalUnits::printToBestLengthUnits( det->detectorSetback() ), cell );
+    cell->addNew<WText>( PhysicalUnits::printToBestLengthUnits( det->detectorSetback() ) );
     ++ff_row;
   }//if( det->detectorSetback() > 0.0 )
 
   cell = far_field_opt->elementAt( ff_row, 0 );
-  label = new WLabel( WString::tr("smm-ecc-dist"), cell );
+  label = cell->addNew<WLabel>( WString::tr("smm-ecc-dist") );
   cell = far_field_opt->elementAt( ff_row, 1 );
-  WLineEdit *distance_edit = new WLineEdit( "", cell );
+  WLineEdit *distance_edit = cell->addNew<WLineEdit>();
   label->setBuddy( distance_edit );
   distance_edit->setValidator( dist_validator );
-  distance_edit->setEmptyText( "0 cm" );
+  distance_edit->setPlaceholderText( "0 cm" );
   
   // TODO: make option to correct for air-attenuation
   
@@ -3412,13 +3434,13 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   {
     InterSpec::instance()->useMessageResourceBundle( "DrfSelect" );
 
-    WContainerWidget *saveCbDiv = new WContainerWidget( dialog->contents() );
+    WContainerWidget *saveCbDiv = dialog->contents()->addNew<WContainerWidget>();
     saveCbDiv->addStyleClass( "EccDrfDefaultCbs" );
 
     if( makeSerialNumCb )
     {
       WString msg = WString::tr("ds-use-for-serialnum-cb").arg( fore->instrument_id() );
-      defaultForSerialNumber = new WCheckBox( msg, saveCbDiv );
+      defaultForSerialNumber = saveCbDiv->addNew<WCheckBox>( msg );
       defaultForSerialNumber->addStyleClass( "CbNoLineBreak" );
       defaultForSerialNumber->setInline( false );
     }//if( have serial number )
@@ -3432,7 +3454,7 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
         model = fore->instrument_model();
 
       WString msg = WString::tr("ds-use-for-model-cb").arg( model );
-      defaultForDetectorModel = new WCheckBox( msg, saveCbDiv );
+      defaultForDetectorModel = saveCbDiv->addNew<WCheckBox>( msg );
       defaultForDetectorModel->addStyleClass( "CbNoLineBreak" );
       defaultForDetectorModel->setInline( false );
     }//if( makeModelCb )
@@ -3628,11 +3650,11 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
   chartw = std::max( chartw, 300 );
   charth = std::max( charth, 175 );
 
-  WText *title = new WText( WString::tr("smm-eff-csv-curve"), dialog->contents() );
+  WText *title = dialog->contents()->addNew<WText>( WString::tr("smm-eff-csv-curve") );
   title->addStyleClass( "title" );
   title->setInline( false );
 
-  DrfChart *chart = new DrfChart( dialog->contents() );
+  DrfChart *chart = dialog->contents()->addNew<DrfChart>();
   chart->setMinimumSize( 300, 175 );
   chart->resize( chartw, charth );
   chart->updateChart( det );
@@ -3656,15 +3678,15 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
         "Desc: " + desc +
     "</p>";
 
-  new WText( msg, TextFormat::XHTMLText, dialog->contents() );
+  dialog->contents()->addNew<WText>( msg, TextFormat::XHTML );
 
-  WContainerWidget *btn_div = new WContainerWidget( dialog->contents() );
+  WContainerWidget *btn_div = dialog->contents()->addNew<WContainerWidget>();
   btn_div->addStyleClass( "HowToUseGrp" );
 
   map<int,DetectorPeakResponse::EffGeometryType> index_to_geom;
 
-  WLabel *geom_label = new WLabel( WString::tr("smm-ecc-how-to-interpret"), btn_div );
-  WComboBox *geom_combo = new WComboBox( btn_div );
+  WLabel *geom_label = btn_div->addNew<WLabel>( WString::tr("smm-ecc-how-to-interpret") );
+  WComboBox *geom_combo = btn_div->addNew<WComboBox>();
 
   const int intrinsic_index = geom_combo->count();
   geom_combo->addItem( WString::tr("smm-eff-csv-intrinsic") );
@@ -3687,18 +3709,18 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
 
   if( is_gadras )
   {
-    WContainerWidget *det_dat_div = new WContainerWidget( dialog->contents() );
+    WContainerWidget *det_dat_div = dialog->contents()->addNew<WContainerWidget>();
     det_dat_div->addStyleClass( "DetDatUploadDiv" );
 
-    new WLabel( WString::tr("smm-eff-csv-det-dat-label"), det_dat_div );
+    det_dat_div->addNew<WLabel>( WString::tr("smm-eff-csv-det-dat-label") );
 
-    det_dat_upload = new WFileUpload( det_dat_div );
+    det_dat_upload = det_dat_div->addNew<WFileUpload>();
     det_dat_upload->changed().connect( det_dat_upload, &Wt::WFileUpload::upload );
 
-    det_dat_status = new WText( det_dat_div );
+    det_dat_status = det_dat_div->addNew<WText>();
     det_dat_status->setInline( false );
     det_dat_status->setAttributeValue( "style", "margin-left: 20px;" );
-    setback_text = new WText( det_dat_div );
+    setback_text = det_dat_div->addNew<WText>();
     setback_text->setInline( false );
     setback_text->setAttributeValue( "style", "margin-left: 20px;" );
   }//if( is_gadras )
@@ -3707,21 +3729,21 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
   // Detector diameter and distance table - we put diameter and distance in separate tables
   //  so we can independently show/hide the distance row (intrinsic needs only diameter,
   //  absolute needs both).
-  WTable *diam_opt = new WTable( dialog->contents() );
+  WTable *diam_opt = dialog->contents()->addNew<WTable>();
   diam_opt->addStyleClass( "FarFieldOptTbl" );
 
-  WRegExpValidator *dist_validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
-  dist_validator->setFlags( Wt::MatchCaseInsensitive );
-  dist_validator->setInvalidBlankText( "0.0 cm" );
-  dist_validator->setMandatory( true );
+  auto dist_validator2 = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex );
+  dist_validator2->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+  dist_validator2->setInvalidBlankText( "0.0 cm" );
+  dist_validator2->setMandatory( true );
 
   WTableCell *cell = diam_opt->elementAt( 0, 0 );
-  WLabel *label = new WLabel( WString::tr("smm-ecc-det-diam"), cell );
+  WLabel *label = cell->addNew<WLabel>( WString::tr("smm-ecc-det-diam") );
   cell = diam_opt->elementAt( 0, 1 );
-  WLineEdit *diameter_edit = new WLineEdit( "", cell );
+  WLineEdit *diameter_edit = cell->addNew<WLineEdit>();
   label->setBuddy( diameter_edit );
-  diameter_edit->setValidator( dist_validator );
-  diameter_edit->setEmptyText( "0 cm" );
+  diameter_edit->setValidator( dist_validator2 );
+  diameter_edit->setPlaceholderText( "0 cm" );
 
   if( det->detectorDiameter() > 0.0f )
     diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() ) );
@@ -3730,22 +3752,22 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
   if( det->detectorSetback() > 0.0 )
   {
     cell = diam_opt->elementAt( diam_row, 0 );
-    new WLabel( WString::tr("smm-ecc-det-setback"), cell );
+    cell->addNew<WLabel>( WString::tr("smm-ecc-det-setback") );
     cell = diam_opt->elementAt( diam_row, 1 );
-    new WText( PhysicalUnits::printToBestLengthUnits( det->detectorSetback() ), cell );
+    cell->addNew<WText>( PhysicalUnits::printToBestLengthUnits( det->detectorSetback() ) );
     ++diam_row;
   }
 
-  WTable *dist_opt = new WTable( dialog->contents() );
+  WTable *dist_opt = dialog->contents()->addNew<WTable>();
   dist_opt->addStyleClass( "FarFieldOptTbl" );
 
   cell = dist_opt->elementAt( 0, 0 );
-  label = new WLabel( WString::tr("smm-ecc-dist"), cell );
+  label = cell->addNew<WLabel>( WString::tr("smm-ecc-dist") );
   cell = dist_opt->elementAt( 0, 1 );
-  WLineEdit *distance_edit = new WLineEdit( "", cell );
+  WLineEdit *distance_edit = cell->addNew<WLineEdit>();
   label->setBuddy( distance_edit );
-  distance_edit->setValidator( dist_validator );
-  distance_edit->setEmptyText( "0 cm" );
+  distance_edit->setValidator( dist_validator2 );
+  distance_edit->setPlaceholderText( "0 cm" );
 
   // A lambda to update visibility of diameter/distance based on current geometry selection
   auto update_field_visibility = [=](){
@@ -3826,13 +3848,13 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
   {
     InterSpec::instance()->useMessageResourceBundle( "DrfSelect" );
 
-    WContainerWidget *saveCbDiv = new WContainerWidget( dialog->contents() );
+    WContainerWidget *saveCbDiv = dialog->contents()->addNew<WContainerWidget>();
     saveCbDiv->addStyleClass( "EccDrfDefaultCbs" );
 
     if( makeSerialNumCb )
     {
       WString cb_msg = WString::tr("ds-use-for-serialnum-cb").arg( fore->instrument_id() );
-      defaultForSerialNumber = new WCheckBox( cb_msg, saveCbDiv );
+      defaultForSerialNumber = saveCbDiv->addNew<WCheckBox>( cb_msg );
       defaultForSerialNumber->addStyleClass( "CbNoLineBreak" );
       defaultForSerialNumber->setInline( false );
     }
@@ -3846,7 +3868,7 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
         model = fore->instrument_model();
 
       WString cb_msg = WString::tr("ds-use-for-model-cb").arg( model );
-      defaultForDetectorModel = new WCheckBox( cb_msg, saveCbDiv );
+      defaultForDetectorModel = saveCbDiv->addNew<WCheckBox>( cb_msg );
       defaultForDetectorModel->addStyleClass( "CbNoLineBreak" );
       defaultForDetectorModel->setInline( false );
     }
@@ -4025,11 +4047,11 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     dialog->contents()->clear();
     dialog->footer()->clear();
     
-    WText *title = new WText( WString::tr("smm-act-shield-xml"), dialog->contents() );
+    WText *title = dialog->contents()->addNew<WText>( WString::tr("smm-act-shield-xml") );
     title->addStyleClass( "title" );
     title->setInline( false );
-    
-    WText *content = new WText( WString::tr("smm-act-shield-use"), dialog->contents() );
+
+    WText *content = dialog->contents()->addNew<WText>( WString::tr("smm-act-shield-use") );
     content->addStyleClass( "content" );
     content->setInline( false );
     
@@ -4084,11 +4106,11 @@ bool SpecMeasManager::handleSourceLibFile( std::istream &input, SimpleDialog *di
     dialog->contents()->clear();
     dialog->footer()->clear();
     
-    WText *title = new WText( WString::tr("smm-source-lib-title"), dialog->contents() );
+    WText *title = dialog->contents()->addNew<WText>( WString::tr("smm-source-lib-title") );
     title->addStyleClass( "title" );
     title->setInline( false );
-    
-    WText *content = new WText( WString::tr("smm-source-source-use"), dialog->contents() );
+
+    WText *content = dialog->contents()->addNew<WText>( WString::tr("smm-source-source-use") );
     content->addStyleClass( "content" );
     content->setInline( false );
     
@@ -4164,7 +4186,7 @@ void SpecMeasManager::checkCloseUploadDialog( SimpleDialog *dialog, WApplication
   
   if( m_processingUploadDialog )
   {
-    m_processingUploadDialog->done(WDialog::DialogCode::Accepted);
+    m_processingUploadDialog->done(DialogCode::Accepted);
     m_processingUploadDialog = nullptr;
   }//if( m_processingUploadDialog )
   
@@ -4204,10 +4226,13 @@ void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uin
       m_processingUploadTimer.reset();
     }//if( m_processingUploadTimer )
     
-    auto timeoutfcn = app->bind( boost::bind(&SpecMeasManager::checkCloseUploadDialog, this, dialog, app) );
+    const std::string sessionId = app->sessionId();
     m_processingUploadTimer = make_unique<boost::asio::deadline_timer>( server->ioService() );
     m_processingUploadTimer->expires_from_now( boost::posix_time::seconds(120) );
-    m_processingUploadTimer->async_wait( [timeoutfcn](const boost::system::error_code &ec){ if(!ec) timeoutfcn(); } );
+    m_processingUploadTimer->async_wait( [this, dialog, app, sessionId, server]( const boost::system::error_code &ec ){
+      if( !ec )
+        server->post( sessionId, [this, dialog, app](){ checkCloseUploadDialog( dialog, app ); } );
+    } );
   };//make_timer lamda
   
   
@@ -4291,7 +4316,7 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
     // TODO: check that the dialog is actually deleted correctly in all cases.
     if( dialog )
     {
-      auto accept = boost::bind(&SimpleDialog::accept, dialog);
+      auto accept = [dialog](){ dialog->accept(); };
       WServer::instance()->post( wApp->sessionId(), std::bind([accept](){
         accept();
         WApplication::instance()->triggerUpdate();
@@ -4349,7 +4374,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   
   if( m_processingUploadDialog )
   {
-    m_processingUploadDialog->done(WDialog::DialogCode::Accepted);
+    m_processingUploadDialog->done(DialogCode::Accepted);
     m_processingUploadDialog = nullptr;
   }//if( m_processingUploadDialog )
   
@@ -4378,8 +4403,9 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
 //                             boost::bind( &SpecMeasManager::handleFileDropWorker, this,
 //                                          name, spoolName, type, dialog, wApp ) );
   
-  WServer::instance()->ioService().boost::asio::io_service::post( boost::bind( &SpecMeasManager::handleFileDropWorker, this,
-                                                    name, spoolName, type, dialog, wApp ) );
+  WServer::instance()->ioService().boost::asio::io_service::post( [this, name, spoolName, type, dialog, app = wApp](){
+    handleFileDropWorker( name, spoolName, type, dialog, app );
+  } );
 }//handleFileDrop(...)
 
 
@@ -4746,7 +4772,7 @@ std::shared_ptr<SpectraFileHeader> SpecMeasManager::selectedFile() const
 
 void SpecMeasManager::unDisplay( SpecUtils::SpectrumType type )
 {
-  m_viewer->setSpectrum( nullptr, {}, type, 0 );
+  m_viewer->setSpectrum( nullptr, {}, type );
   selectionChanged(); // update buttons
 } // void SpecMeasManager::unDisplay( SpecUtils::SpectrumType type );
 
@@ -4792,9 +4818,8 @@ void SpecMeasManager::startQuickUpload()
   
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
   {
-    auto closer = wApp->bind( boost::bind(&AuxWindow::hide, window) );
     // We wont use a redo step, because this would be a bit weird to redo.
-    undoRedo->addUndoRedoStep( closer, nullptr, "Show file upload dialog" );
+    undoRedo->addUndoRedoStep( [window](){ window->hide(); }, nullptr, "Show file upload dialog" );
   }
 }//void startQuickUpload( SpecUtils::SpectrumType type )
 
@@ -5071,9 +5096,9 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
         btn_txt = Wt::Utils::htmlEncode( btn_txt );
           
         WPushButton *button = dialog->addButton( btn_txt );
-        button->clicked().connect( boost::bind( &SpecMeasManager::selectVirtualDetectorChoice, this,
-                                               dets, header, meas, type,
-                                               checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+        button->clicked().connect( [this, dets, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+          selectVirtualDetectorChoice( dets, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
+        } );
       };//add_button
       
       add_button( WString::tr("smm-vd-all-btn").toUTF8(), set<string>{}, 6 );
@@ -5108,19 +5133,19 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
                                             WString::tr("smm-derived-window-txt") );
     WPushButton *button = dialog->addButton( WString::tr("smm-derived-all") );
     
-    button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
-                                           DerivedDataToKeep::All, header, meas, type,
-                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
-    
+    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+      selectDerivedDataChoice( DerivedDataToKeep::All, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
+    } );
+
     button = dialog->addButton( WString::tr("smm-derived-raw") );
-    button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
-                                           DerivedDataToKeep::RawOnly, header, meas, type,
-                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
-    
+    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+      selectDerivedDataChoice( DerivedDataToKeep::RawOnly, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
+    } );
+
     button = dialog->addButton( WString::tr("smm-derived-derived") );
-    button->clicked().connect( boost::bind( &SpecMeasManager::selectDerivedDataChoice, this,
-                                           DerivedDataToKeep::DerivedOnly, header, meas, type,
-                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+      selectDerivedDataChoice( DerivedDataToKeep::DerivedOnly, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
+    } );
     
     return true;
   }//if( derivedData )
@@ -5143,68 +5168,65 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     if( ncolwide > 4 )
       ncolwide = 4;
   
-    WTable *table = new WTable( dialog->contents() );
-  
-    WText *msg = new WText( WString::tr(msgtxt_key), XHTMLText );
-    //layout->addWidget( msg, 0, 0, 1, ncolwide );
+    WTable *table = dialog->contents()->addNew<WTable>();
+
     WTableCell *cell = table->elementAt( 0, 0 );
-    cell->addWidget( msg );
+    cell->addNew<WText>( WString::tr(msgtxt_key), TextFormat::XHTML );
     cell->setColumnSpan( ncolwide );
-    
-    WPushButton *button = new WPushButton( WString::tr("smm-multiple-binnings-keep-all-btn") );
+
     cell = table->elementAt( 1, 0 );
-    cell->addWidget( button );
-    button->setWidth( WLength(95.0,WLength::Percentage) );
+    WPushButton *button = cell->addNew<WPushButton>( WString::tr("smm-multiple-binnings-keep-all-btn") );
+    button->setWidth( WLength(95.0,WLength::Unit::Percentage) );
   
-    button->clicked().connect( boost::bind( &SimpleDialog::reject, dialog ) );
-    button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
-                                           string("Keep All"), header, meas, type,
-                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
-    
+    button->clicked().connect( [dialog](){ dialog->reject(); } );
+    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+      selectEnergyBinning( string("Keep All"), header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
+    } );
+
     int calnum = 1;
     for( set<string>::const_iterator iter = cals.begin(); iter != cals.end(); ++iter, ++calnum )
     {
       const int row = 1 + (calnum / ncolwide);
       const int col = (calnum % ncolwide);
-      
+
       //Make sure the calbration ID isnt too long
       string label = *iter;
       SpecUtils::utf8_limit_str_size( label, 15 );
-      
-      button = new WPushButton( label );
-      //layout->addWidget( button, row, col );
+
       cell = table->elementAt( row, col );
-      cell->addWidget( button );
-      button->setWidth( WLength(95.0,WLength::Percentage) );
-      
-      button->clicked().connect( boost::bind( &SimpleDialog::reject, dialog ) );
+      button = cell->addNew<WPushButton>( label );
+      button->setWidth( WLength(95.0,WLength::Unit::Percentage) );
+
+      button->clicked().connect( [dialog](){ dialog->reject(); } );
       //Note, using *iter instead of label below.
-      button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
-                                             *iter, header, meas, type,
-                                             checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+      const string cal_name = *iter;
+      button->clicked().connect( [this, cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+        selectEnergyBinning( cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
+      } );
     }//for( loop over calibrations )
   }else  //if( cals.size() > 3 )
   {
     SimpleDialog *dialog = new SimpleDialog( WString::tr(title_key) );
-    
-    WText *msg = new WText( WString::tr(msgtxt_key), XHTMLText, dialog->contents() );
+
+    WText *msg = dialog->contents()->addNew<WText>( WString::tr(msgtxt_key), TextFormat::XHTML );
     msg->addStyleClass( "content" );
-    
+
     WPushButton *button = dialog->addButton( WString::tr("smm-multiple-binnings-keep-all-btn") );
-    button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
-                                           string("Keep All"), header, meas, type,
-                                           checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
-    
+    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+      selectEnergyBinning( string("Keep All"), header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
+    } );
+
     for( set<string>::const_iterator iter = cals.begin(); iter != cals.end(); ++iter )
     {
       //Make sure the calbration ID isnt too long
       string label = *iter;
       SpecUtils::utf8_limit_str_size( label, 15 );
-      
+
       button = dialog->addButton( label );
-      button->clicked().connect( boost::bind( &SpecMeasManager::selectEnergyBinning, this,
-                                             *iter, header, meas, type,
-                                             checkIfPreviouslyOpened, doPreviousEnergyRangeCheck ) );
+      const string cal_name = *iter;
+      button->clicked().connect( [this, cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+        selectEnergyBinning( cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
+      } );
     }//for( loop over calibrations )
   }// if( cals.size() > 3 ) / else
   
@@ -5613,11 +5635,10 @@ void SpecMeasManager::displayFile( int row,
   WApplication *app = wApp;
   if( checkIfPreviouslyOpened && !!header && app )
   {
-    boost::function<void(void)> worker = app->bind(
-                      boost::bind( &SpecMeasManager::checkIfPreviouslyOpened,
-                                   this, app->sessionId(), header, type, m_destructMutex, m_destructed ) );
-//    WServer::instance()->post( app->sessionId(), worker );
-    WServer::instance()->ioService().boost::asio::io_service::post( worker );
+    const std::string sessionId = app->sessionId();
+    WServer::instance()->post( sessionId, [this, sessionId, header, type](){
+      this->checkIfPreviouslyOpened( sessionId, header, type, m_destructMutex, m_destructed );
+    } );
   }//if( checkIfPreviouslyOpened )
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 }//void displayFile(...)
@@ -5650,7 +5671,7 @@ void SpecMeasManager::removeSpecMeas( std::shared_ptr<const SpecMeas> meas, cons
           unDisplay(SpecUtils::SpectrumType::Background);
       }//if( undisplay )
       
-      if( header->m_aboutToBeDeletedConnection.connected() )
+      if( header->m_aboutToBeDeletedConnection.isConnected() )
         header->m_aboutToBeDeletedConnection.disconnect();
       
       //This seems to cause problems, so taking this out for now
@@ -6094,7 +6115,7 @@ void SpecMeasManager::newFileFromSelection()
       m_treeView->setSelectedIndexes( selected );
       selectionChanged();
       
-      m_treeView->scrollTo( index, WAbstractItemView::ScrollHint::EnsureVisible );
+      m_treeView->scrollTo( index, Wt::ScrollHint::EnsureVisible );
     }// if( index.isValid() )
   }catch( std::exception &e )
   {
@@ -6130,7 +6151,7 @@ void SpecMeasManager::sumSelectedSpectra()
       m_treeView->setSelectedIndexes( selected );
       selectionChanged();
       
-      m_treeView->scrollTo( index, WAbstractItemView::ScrollHint::EnsureVisible );
+      m_treeView->scrollTo( index, Wt::ScrollHint::EnsureVisible );
     }// if( index.isValid() )
   }catch( std::exception &e )
   {
@@ -6324,28 +6345,28 @@ WContainerWidget *SpecMeasManager::createTreeViewDiv()
 
   m_spectrumManagertreeDiv = new WContainerWidget();
   m_spectrumManagertreeDiv->setStyleClass( "treeDiv" );
-  m_spectrumManagertreeDiv->setOverflow( WContainerWidget::OverflowAuto );
+  m_spectrumManagertreeDiv->setOverflow( Overflow::Auto );
 
-  m_treeView->setHeight( WLength(98.0,WLength::Percentage) );
-  m_spectrumManagertreeDiv->addWidget( m_treeView );
+  m_treeView->setHeight( WLength(98.0,WLength::Unit::Percentage) );
+  m_spectrumManagertreeDiv->addWidget( std::unique_ptr<WWidget>( m_treeView ) );
 
   
 
   m_treeView->setSortingEnabled( true );
-  m_treeView->setSelectionMode( ExtendedSelection /*SingleSelection*/ );
-  m_treeView->setColumn1Fixed( false );
-  m_treeView->setColumnWidth( SpectraFileModel::kDisplayName,     WLength( 17, WLength::FontEx ) );
-  m_treeView->setColumnWidth( SpectraFileModel::kUploadTime,      WLength( 16, WLength::FontEx ) );
-  m_treeView->setColumnWidth( SpectraFileModel::kRiidResult,      WLength( 16, WLength::FontEx ) );
-  m_treeView->setColumnWidth( SpectraFileModel::kNumMeasurements, WLength( 10, WLength::FontEx ) );
-  m_treeView->setColumnWidth( SpectraFileModel::kLiveTime,        WLength( 14, WLength::FontEx ) );
-  m_treeView->setColumnWidth( SpectraFileModel::kRealTime,        WLength( 14, WLength::FontEx ) );
-  m_treeView->setColumnWidth( SpectraFileModel::kGammaCounts,     WLength( 15, WLength::FontEx ) );
-  m_treeView->setColumnWidth( SpectraFileModel::kNeutronCounts,   WLength( 15, WLength::FontEx ) );
-  m_treeView->setColumnWidth( SpectraFileModel::kSpectrumTime,    WLength( 18, WLength::FontEx ) );
-  m_treeView->setColumnWidth( SpectraFileModel::kNumDetectors,    WLength( 10, WLength::FontEx ) );
+  m_treeView->setSelectionMode( Wt::SelectionMode::Extended /*SingleSelection*/ );
+  //m_treeView->setColumn1Fixed( false );  // setColumn1Fixed not available in Wt4
+  m_treeView->setColumnWidth( SpectraFileModel::kDisplayName,     WLength( 17, WLength::Unit::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kUploadTime,      WLength( 16, WLength::Unit::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kRiidResult,      WLength( 16, WLength::Unit::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kNumMeasurements, WLength( 10, WLength::Unit::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kLiveTime,        WLength( 14, WLength::Unit::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kRealTime,        WLength( 14, WLength::Unit::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kGammaCounts,     WLength( 15, WLength::Unit::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kNeutronCounts,   WLength( 15, WLength::Unit::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kSpectrumTime,    WLength( 18, WLength::Unit::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kNumDetectors,    WLength( 10, WLength::Unit::FontEx ) );
 
-  WItemDelegate *delegate = new WItemDelegate( m_treeView );
+  auto delegate = std::make_shared<WItemDelegate>();
   delegate->setTextFormat( "%.2f" );
   m_treeView->setItemDelegateForColumn( SpectraFileModel::kLiveTime, delegate );
   m_treeView->setItemDelegateForColumn( SpectraFileModel::kRealTime, delegate );
@@ -6360,89 +6381,92 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   WContainerWidget *buttonBar = new WContainerWidget();
   buttonBar->setStyleClass( "SpectraFileManagerButtonDiv" );
 
-  WGridLayout *buttonAlignment = new WGridLayout();
+  auto buttonAlignmentOwned = std::make_unique<WGridLayout>();
+  WGridLayout *buttonAlignment = buttonAlignmentOwned.get();
   buttonAlignment->setContentsMargins( 0, 0, 0, 0 );
-  WContainerWidget* buttonHost = new WContainerWidget( buttonBar );
-  buttonHost->setLayout( buttonAlignment );
-  
+  WContainerWidget *buttonHost = buttonBar->addNew<WContainerWidget>();
+  buttonHost->setLayout( std::move(buttonAlignmentOwned) );
+
   // ---- try new bar ----
-  WContainerWidget *m_newDiv = new WContainerWidget( );
-  buttonAlignment->addWidget( m_newDiv, 1, 0 );
+  auto newDiv1Owned = std::make_unique<WContainerWidget>();
+  WContainerWidget *m_newDiv = newDiv1Owned.get();
+  buttonAlignment->addWidget( std::move(newDiv1Owned), 1, 0 );
   m_newDiv->setStyleClass( "LoadSpectrumUploadDiv" );
-  new WLabel( WString::tr("smm-selected-spec-label"), m_newDiv );
-  
-  m_setButton = new WPushButton( WString::tr("smm-disp-as-btn"), m_newDiv);
+  m_newDiv->addNew<WLabel>( WString::tr("smm-selected-spec-label") );
+
+  m_setButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-disp-as-btn") );
   m_setButton->setIcon( "InterSpec_resources/images/bullet_arrow_down.png" );
-  
-  WPopupMenu *setPopup = new WPopupMenu();
-  m_setAsForeground = setPopup->addItem( WString::tr("Foreground") );
-  m_setAsForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::Foreground, true) );
-  m_setAsBackground = setPopup->addItem( WString::tr("Background") );
-  m_setAsBackground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::Background, true) );
-  m_setAsSecForeground = setPopup->addItem( WString::tr("second-foreground") );
-  m_setAsSecForeground->triggered().connect( boost::bind( &SpecMeasManager::loadSelected, this, SpecUtils::SpectrumType::SecondForeground, true ) );
-  m_setButton->setMenu(setPopup);
+
+  {
+    auto setPopupOwned = std::make_unique<WPopupMenu>();
+    WPopupMenu *setPopup = setPopupOwned.get();
+    m_setAsForeground = setPopup->addItem( WString::tr("Foreground") );
+    m_setAsForeground->triggered().connect( [this](){ loadSelected( SpecUtils::SpectrumType::Foreground, true ); } );
+    m_setAsBackground = setPopup->addItem( WString::tr("Background") );
+    m_setAsBackground->triggered().connect( [this](){ loadSelected( SpecUtils::SpectrumType::Background, true ); } );
+    m_setAsSecForeground = setPopup->addItem( WString::tr("second-foreground") );
+    m_setAsSecForeground->triggered().connect( [this](){ loadSelected( SpecUtils::SpectrumType::SecondForeground, true ); } );
+    m_setButton->setMenu( std::move(setPopupOwned) );
+  }
   m_setButton->hide();
 
   // Note: the only difference between the m_combineToNewFileButton and
   //  m_subsetOfMeasToNewFileButton buttons are the icons, and a slight difference in text, but the
   //  functionality they trigger is the same either way.
-  m_combineToNewFileButton = new WPushButton( WString::tr("smm-to-new-file"), m_newDiv );
+  m_combineToNewFileButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-to-new-file") );
   m_combineToNewFileButton->setToolTip( WString::tr("smm-tt-to-new-file") );
   m_combineToNewFileButton->addStyleClass("InvertInDark");
   m_combineToNewFileButton->setIcon( "InterSpec_resources/images/arrow_join.svg" );
-  m_combineToNewFileButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
+  m_combineToNewFileButton->clicked().connect( [this](){ newFileFromSelection(); } );
   m_combineToNewFileButton->hide();
-  
-  m_subsetOfMeasToNewFileButton = new WPushButton( WString::tr("smm-as-new-file"), m_newDiv );
+
+  m_subsetOfMeasToNewFileButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-as-new-file") );
   m_subsetOfMeasToNewFileButton->setToolTip( WString::tr("smm-tt-as-new-file") );
   m_subsetOfMeasToNewFileButton->addStyleClass("InvertInDark");
   m_subsetOfMeasToNewFileButton->setIcon( "InterSpec_resources/images/partial.svg" );
-  m_subsetOfMeasToNewFileButton->clicked().connect( boost::bind( &SpecMeasManager::newFileFromSelection, this ) );
+  m_subsetOfMeasToNewFileButton->clicked().connect( [this](){ newFileFromSelection(); } );
   m_subsetOfMeasToNewFileButton->hide();
-  
-  
-  m_sumSpectraButton = new WPushButton( WString::tr("smm-sum-spectra"), m_newDiv );
+
+  m_sumSpectraButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-sum-spectra") );
   m_sumSpectraButton->setToolTip( WString::tr("smm-tt-sum-spectra") );
   m_sumSpectraButton->addStyleClass("InvertInDark");
   m_sumSpectraButton->setIcon( "InterSpec_resources/images/sum_symbol.svg" );
-  m_sumSpectraButton->clicked().connect( boost::bind( &SpecMeasManager::sumSelectedSpectra, this ) );
+  m_sumSpectraButton->clicked().connect( [this](){ sumSelectedSpectra(); } );
   m_sumSpectraButton->hide();
-  
-  
-  m_saveButton = new WPushButton( WString::tr("smm-export-btn"), m_newDiv );
+
+  m_saveButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-export-btn") );
   m_saveButton->clicked().connect( this, &SpecMeasManager::startSaveSelected );
   m_saveButton->hide();
-  
-  
-  m_deleteButton = new WPushButton( WString::tr("smm-unload-btn"), m_newDiv);
+
+  m_deleteButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-unload-btn") );
   m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
-  m_deleteButton->clicked().connect( boost::bind( &SpecMeasManager::removeSelected, this ) );
+  m_deleteButton->clicked().connect( [this](){ removeSelected(); } );
   m_deleteButton->hide();
-  
+
   // ---- try new bar 2 ----
-  WContainerWidget *m_newDiv2 = new WContainerWidget( );
-  buttonAlignment->addWidget( m_newDiv2, 2, 0);
+  auto newDiv2Owned = std::make_unique<WContainerWidget>();
+  WContainerWidget *m_newDiv2 = newDiv2Owned.get();
+  buttonAlignment->addWidget( std::move(newDiv2Owned), 2, 0 );
   m_newDiv2->setStyleClass( "LoadSpectrumUploadDiv" );
 
   //WLabel *text =
-  new WLabel( WString::tr("smm-unassign-label"), m_newDiv2 );
-  
-  m_removeForeButton = new WPushButton( WString::tr("Foreground"), m_newDiv2 );
+  m_newDiv2->addNew<WLabel>( WString::tr("smm-unassign-label") );
+
+  m_removeForeButton = m_newDiv2->addNew<WPushButton>( WString::tr("Foreground") );
 //      m_removeForeButton->setIcon( "InterSpec_resources/images/minus_min.png" );
-  m_removeForeButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, SpecUtils::SpectrumType::Foreground) );
-  m_removeForeButton  ->setHidden( true, WAnimation() );
+  m_removeForeButton->clicked().connect( [this](){ unDisplay( SpecUtils::SpectrumType::Foreground ); } );
+  m_removeForeButton->setHidden( true, WAnimation() );
 //  m_removeForeButton->setHiddenKeepsGeometry( true );
-  
-  m_removeBackButton = new WPushButton( WString::tr("Background"), m_newDiv2 );
+
+  m_removeBackButton = m_newDiv2->addNew<WPushButton>( WString::tr("Background") );
 //          m_removeBackButton->setIcon( "InterSpec_resources/images/minus_min.png" );
-  m_removeBackButton->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, SpecUtils::SpectrumType::Background ) );
-  m_removeBackButton  ->setHidden( true, WAnimation() );
+  m_removeBackButton->clicked().connect( [this](){ unDisplay( SpecUtils::SpectrumType::Background ); } );
+  m_removeBackButton->setHidden( true, WAnimation() );
 //  m_removeBackButton->setHiddenKeepsGeometry( true );
-  
-  m_removeFore2Button = new WPushButton( WString::tr("second-foreground"), m_newDiv2 );
+
+  m_removeFore2Button = m_newDiv2->addNew<WPushButton>( WString::tr("second-foreground") );
 //              m_removeFore2Button->setIcon( "InterSpec_resources/images/minus_min.png" );
-  m_removeFore2Button->clicked().connect( boost::bind( &SpecMeasManager::unDisplay, this, SpecUtils::SpectrumType::SecondForeground ) );
+  m_removeFore2Button->clicked().connect( [this](){ unDisplay( SpecUtils::SpectrumType::SecondForeground ); } );
   m_removeFore2Button->setHidden( true, WAnimation() );
 //  m_removeFore2Button->setHiddenKeepsGeometry( true );
   
@@ -6508,17 +6532,17 @@ void SpecMeasManager::saveToDatabase( std::shared_ptr<const SpecMeas> input ) co
       return;
     
     std::shared_ptr<SpecMeas> meas = header->parseFile();
-    boost::function<void(void)> worker
-                      = wApp->bind( boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header ) );
+    std::function<void(void)> worker
+                      = [meas, header](){ SpectraFileHeader::saveToDatabaseWorker( meas, header ); };
     
     // Instead of posting immediately, we'll
     //WServer::instance()->post( wApp->sessionId(), worker );
     
-    boost::function<void ()> fallback = [](){
+    std::function<void ()> fallback = [](){
       cerr << "Failed to save file to database." << endl;
     };
     
-    WServer::instance()->schedule( 50, wApp->sessionId(), worker, fallback );
+    WServer::instance()->schedule( std::chrono::milliseconds(50), wApp->sessionId(), worker, fallback );
   }//if( headermeas && (headermeas==meas) )
 }//void saveToDatabase( std::shared_ptr<const SpecMeas> meas ) const
 
@@ -6549,12 +6573,12 @@ void SpecMeasManager::userCanceledResumeFromPreviousOpened( shared_ptr<SpectraFi
 {
   std::shared_ptr<SpecMeas> meas = header->measurementIfInMemory();
   
-  boost::function<void(void)> f;
+  std::function<void(void)> f;
   
   if( meas )
-    f = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
+    f = [meas, header](){ SpectraFileHeader::saveToDatabaseWorker( meas, header ); };
   else
-    f = boost::bind( &SpectraFileHeader::saveToDatabaseFromTempFileWorker, header );
+    f = [header](){ if( header ) header->saveToDatabaseFromTempFileWorker(); };
   
   WServer::instance()->post( wApp->sessionId(), f );
   //WServer::instance()->ioService().boost::asio::io_service::post( f );
@@ -6615,78 +6639,75 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   cancel->clicked().connect( window, &AuxWindow::hide );
   
   //bool auto_save_states = false;
-  SnapshotBrowser *snapshots = nullptr;
-  AutosavedSpectrumBrowser *auto_saved = nullptr;
-  
+  std::unique_ptr<SnapshotBrowser> snapshotsOwned;
+  std::unique_ptr<AutosavedSpectrumBrowser> auto_savedOwned;
+
   try
   {
     //auto_save_states = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
-    
+
     if( userStatesWithFile.size() )
     {
       // TODO: pass userStatesWithFile into SnapshotBrowser
-      snapshots = new SnapshotBrowser( this, m_viewer, header, nullptr, nullptr );
-      snapshots->finished().connect( boost::bind( &SpecMeasManager::handleClosePreviousStatesDialogAfterSelect,
-                                      this, window) );
+      snapshotsOwned = std::make_unique<SnapshotBrowser>( this, m_viewer, header );
+      snapshotsOwned->finished().connect( [this, window](){ handleClosePreviousStatesDialogAfterSelect( window ); } );
     }//if( userStatesWithFile.size() )
-    
-    
+
+
     if( !modifiedFiles.empty() )
     {
-      auto_saved = new AutosavedSpectrumBrowser( modifiedFiles, type, m_fileModel, this, header );
-      auto_saved->loadedASpectrum().connect( boost::bind( &SpecMeasManager::handleClosePreviousStatesDialogAfterSelect,
-                                                         this, window) );
-      
+      auto_savedOwned = std::make_unique<AutosavedSpectrumBrowser>( modifiedFiles, type, m_fileModel, this, header );
+      auto_savedOwned->loadedASpectrum().connect( [this, window](){ handleClosePreviousStatesDialogAfterSelect( window ); } );
+
       if( unModifiedFiles.empty() )
       {
-        window->finished().connect( boost::bind( &SpecMeasManager::userCanceledResumeFromPreviousOpened,
-                                                this, header ) );
+        window->finished().connect( [this, header](){ userCanceledResumeFromPreviousOpened( header ); } );
       }
     }//if( !modifiedFiles.empty() )
   }catch( std::exception &e )
   {
-    if( snapshots )
-      delete snapshots;
-    if( auto_saved )
-      delete auto_saved;
+    snapshotsOwned.reset();
+    auto_savedOwned.reset();
     if( window )
       delete window;
-    
-    snapshots = nullptr;
-    auto_saved = nullptr;
     window = nullptr;
-    
+
     WString msg = WString::tr("smm-err-prev-state-unexpected").arg( e.what() );
     passMessage( msg, WarningWidget::WarningMsgLevel::WarningMsgHigh)
     return;
   }// try / catch
-  
+
+  SnapshotBrowser *snapshots = snapshotsOwned.get();
+  AutosavedSpectrumBrowser *auto_saved = auto_savedOwned.get();
+
   if( !snapshots && !auto_saved )
   {
     assert( 0 );
     delete window;
     return;
   }
-  
+
   WGridLayout *layout = window->stretcher();
   if( snapshots && auto_saved )
   {
-    WTabWidget *tabbed = new WTabWidget();
-    layout->addWidget( tabbed, 0, 0 );
-    
-    tabbed->addTab( snapshots, WString::tr("smm-tab-saved-states"), WTabWidget::LoadPolicy::PreLoading );
-    tabbed->addTab( auto_saved, WString::tr("smm-tab-auto-saved"), WTabWidget::LoadPolicy::PreLoading );
+    auto tabbedOwned = std::make_unique<WTabWidget>();
+    WTabWidget *tabbed = tabbedOwned.get();
+    layout->addWidget( std::move(tabbedOwned), 0, 0 );
+
+    tabbed->addTab( std::move(snapshotsOwned), WString::tr("smm-tab-saved-states"), ContentLoading::Eager );
+    tabbed->addTab( std::move(auto_savedOwned), WString::tr("smm-tab-auto-saved"), ContentLoading::Eager );
   }else
   {
     if( snapshots )
-      layout->addWidget( snapshots, 0, 0 );
+      layout->addWidget( std::move(snapshotsOwned), 0, 0 );
     else
-      layout->addWidget( auto_saved, 0, 0 );
+      layout->addWidget( std::move(auto_savedOwned), 0, 0 );
   }//if( snapshots && auto_saved ) / else
-  
-  WCheckBox *cb = new WCheckBox( WString::tr("smm-auto-check-prev-cb") );
+
+  auto cbOwned = std::make_unique<WCheckBox>( WString::tr("smm-auto-check-prev-cb") );
+  WCheckBox *cb = cbOwned.get();
   cb->addStyleClass( "PrefCb CbNoLineBreak" );
-  layout->addWidget( cb, 1, 0 );
+  layout->addWidget( std::move(cbOwned), 1, 0 );
   layout->setRowStretch( 0, 1 );
   
   UserPreferences::associateWidget( "CheckForPrevOnSpecLoad", cb, m_viewer );
@@ -6700,7 +6721,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   window->show();
   
   m_previousStatesDialog = window;
-  window->finished().connect( boost::bind( &SpecMeasManager::handleCancelPreviousStatesDialog, this, window ) );
+  window->finished().connect( [this, window](){ handleCancelPreviousStatesDialog( window ); } );
   
   wApp->triggerUpdate();
 }//void showPreviousSpecFileUsesDialog(..)
@@ -6809,7 +6830,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
           .arg( limit_size );
 
         WServer::instance()->post( sessionID,
-                  boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgMedium ) );
+                  [msg](){ postErrorMessage( msg, WarningWidget::WarningMsgMedium ); } );
       }
       return;
     }//if( this is a new-to-us file )
@@ -6824,7 +6845,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
            << dbentry->uploadTime.toString(DATE_TIME_FORMAT_STR).toUTF8()
            << endl;
       
-      WServer::instance()->post( sessionID, boost::bind( &setHeadersDbEntry, header, dbentry) );
+      WServer::instance()->post( sessionID, [header, dbentry](){ setHeadersDbEntry( header, dbentry ); } );
       
       return;
     }//if( user has opened the file, but didnt modify or save it )
@@ -6832,17 +6853,18 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     
     // If we are here, the user has either modified the file, or has it as part of the save-state.
     WServer::instance()->post( sessionID,
-                              boost::bind( &SpecMeasManager::showPreviousSpecFileUsesDialog,
-                                          this, header, type, modifiedFiles, unModifiedFiles,
-                                          userStatesWithFile ) );
+                              [this, header, type, modifiedFiles, unModifiedFiles, userStatesWithFile](){
+                                showPreviousSpecFileUsesDialog( header, type, modifiedFiles, unModifiedFiles, userStatesWithFile );
+                              } );
     
   }catch( std::exception &e )
   {
     cerr << "Error checking if this file had been opened previously: " << e.what() << endl;
     WServer::instance()->post( sessionID,
-                              boost::bind( &postErrorMessage,
-              WString("Error checking if this file had been opened previously"),
-              WarningWidget::WarningMsgHigh ) );
+                              [](){ postErrorMessage(
+                                WString("Error checking if this file had been opened previously"),
+                                WarningWidget::WarningMsgHigh );
+                              } );
   }//try / catch
 }//void checkIfPreviouslyOpened(...)
 #endif  //#if( USE_DB_TO_STORE_SPECTRA )
@@ -7187,8 +7209,7 @@ void SpecMeasManager::browsePrevSpectraAndStatesDb()
   UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
   {
-    auto closer = wApp->bind( boost::bind( &AuxWindow::hide, browser ) );
-    undoRedo->addUndoRedoStep( closer, nullptr, "Show browse previous spectra." );
+    undoRedo->addUndoRedoStep( [browser](){ browser->hide(); }, nullptr, "Show browse previous spectra." );
   }//if( add undo )
 }//void browsePrevSpectraAndStatesDb()
 

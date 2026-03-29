@@ -27,9 +27,9 @@
 #include <string>
 #include <iostream>
 
-#include <Wt/WText>
-#include <Wt/WTextArea>
-#include <Wt/WPushButton>
+#include <Wt/WText.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WPushButton.h>
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -67,9 +67,12 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   
+  // Wt4_TODO: SimpleDialog self-deletes via `delete this`; in Wt4 dialogs should be owned via
+  //            addChild(std::make_unique<SimpleDialog>(...)).  This requires redesigning
+  //            SimpleDialog's lifetime management across the whole codebase.
   SimpleDialog *window = new SimpleDialog( "Enter URL", "" );
   
-  WTextArea *text = new WTextArea( window->contents() );
+  WTextArea *text = window->contents()->addNew<WTextArea>();
   text->setObjectName( "txtarea" );
   text->setInline( false );
   
@@ -85,7 +88,7 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   
   const char *desctxt = "<div style=\"margin-top: 10px;\">Enter, usually through copy/paste, InterSpec URLs.</div>"
                         "<div>These URLs start with either <code>interspec://</code>, or <code>raddata://</code>.</div>";
-  WText *desc = new WText( desctxt, window->contents() );
+  WText *desc = window->contents()->addNew<WText>( desctxt );
   desc->addStyleClass( "content" );
   desc->setInline( false );
   
@@ -220,6 +223,7 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
       }//
     }catch( std::exception &e )
     {
+      // Wt4_TODO: see note above about SimpleDialog ownership
       SimpleDialog *errdialog = new SimpleDialog( "Error with entered URL", e.what() );
       errdialog->addButton( "Okay" );
     }

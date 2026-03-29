@@ -29,7 +29,7 @@
 #include <memory>
 #include <utility>
 
-#include <Wt/WFlags>
+#include <Wt/WFlags.h>
 
 #include "InterSpec/PeakDef.h"
 
@@ -197,7 +197,7 @@ std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_roi_LM(
                                    const std::vector<std::shared_ptr<const PeakDef>> coFitPeaks,
                                    const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                                    const PeakFitUtils::CoarseResolutionType det_type,
-                                   const Wt::WFlags<PeakFitLMOptions> fit_options = 0 );
+                                   const Wt::WFlags<PeakFitLMOptions> fit_options = {} );
 
 /** Refit peaks that share an ROI.
  * @param data The data to fit
@@ -214,7 +214,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
                                    const std::vector<std::shared_ptr<const PeakDef>> &inpeaks,
                                    const PeakFitUtils::CoarseResolutionType det_type,
-                                   const Wt::WFlags<PeakFitLMOptions> fit_options = 0 );
+                                   const Wt::WFlags<PeakFitLMOptions> fit_options = {} );
 
 // Need to implement the equivalent of `search_for_peaks(...)` which uses Minuit2 based `AutoPeakSearchChi2Fcn` class.
 // Also, the `searchForPeakFromUser(...)` 
@@ -298,7 +298,7 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const std::vector<std::shared_ptr<cons
                                const double hypothesis_threshold,
                                const std::optional<PeakFitUtils::CoarseResolutionType> resolution_type,
                                const std::optional<PeakDef::SkewType> skew_type = std::nullopt,
-                               const Wt::WFlags<PeakFitLMOptions> fit_options = 0 ) throw();
+                               const Wt::WFlags<PeakFitLMOptions> fit_options = {} ) throw();
   
 }//namespace PeakFitLM
 

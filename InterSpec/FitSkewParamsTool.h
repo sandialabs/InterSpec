@@ -30,8 +30,8 @@
 #include <vector>
 #include <optional>
 
-#include <Wt/WSignal>
-#include <Wt/WContainerWidget>
+#include <Wt/WSignal.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/AuxWindow.h"
@@ -67,7 +67,7 @@ namespace SpecUtils
 class FitSkewParamsTool : public Wt::WContainerWidget
 {
 public:
-  FitSkewParamsTool( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
+  FitSkewParamsTool( InterSpec *viewer );
   virtual ~FitSkewParamsTool();
 
   /** Signal emitted when fit completes or results change; dialog can update Accept button. */

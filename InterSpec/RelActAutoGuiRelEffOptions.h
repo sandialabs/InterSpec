@@ -29,8 +29,8 @@
 #include <memory>
 #include <optional>
 
-#include <Wt/WString>
-#include <Wt/WContainerWidget>
+#include <Wt/WString.h>
+#include <Wt/WContainerWidget.h>
 
 
 
@@ -52,7 +52,7 @@ class RelActAutoGui;
 class RelActAutoGuiRelEffOptions : public Wt::WContainerWidget
 {
 public:
-  RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::WString name, Wt::WContainerWidget *parent = nullptr);
+  RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::WString name);
   ~RelActAutoGuiRelEffOptions();
 
   void showAndHideOptionsForEqnType();

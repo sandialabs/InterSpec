@@ -31,17 +31,17 @@
 #include <vector>
 #include <string>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 #include <boost/asio/deadline_timer.hpp>
 
-#include <Wt/WString>
-#include <Wt/WResource>
-#include <Wt/WDateTime>
-#include <Wt/WModelIndex>
-#include <Wt/Dbo/Session>
-#include <Wt/WContainerWidget>
-#include <Wt/Dbo/SqlConnection>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WString.h>
+#include <Wt/WResource.h>
+#include <Wt/WDateTime.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/Dbo/Session.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/Dbo/SqlConnection.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/SpecMeas.h"
@@ -512,9 +512,9 @@ protected:
   Wt::WContainerWidget *m_spectrumManagertreeDiv;
   
   Wt::WPushButton *m_setButton;
-  Wt::WPopupMenuItem  *m_setAsForeground;
-  Wt::WPopupMenuItem  *m_setAsBackground;
-  Wt::WPopupMenuItem  *m_setAsSecForeground;
+  Wt::WMenuItem  *m_setAsForeground;
+  Wt::WMenuItem  *m_setAsBackground;
+  Wt::WMenuItem  *m_setAsSecForeground;
   Wt::WPushButton *m_combineToNewFileButton;
   Wt::WPushButton *m_subsetOfMeasToNewFileButton;
   Wt::WPushButton *m_sumSpectraButton;

@@ -29,7 +29,7 @@
 #include <vector>
 #include <ostream>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -116,8 +116,7 @@ public:
   class ScoreDisplay : public Wt::WContainerWidget
   {
   public:
-    ScoreDisplay( const Score &score,
-                  Wt::WContainerWidget *parent = 0 );
+    ScoreDisplay( const Score &score );
     void setScore( const Score &score );
     
     //renderScore(): renders m_score to (X)HTML text.
@@ -141,8 +140,7 @@ public:
 #endif
   
   SpectrumViewerTester( InterSpec *viewer,
-                        int widthHint, int heightHint,
-                        Wt::WContainerWidget *parent = 0 );
+                        int widthHint, int heightHint );
   virtual ~SpectrumViewerTester();
 
   Score testAutomatedPeakSearch();
@@ -158,7 +156,7 @@ public:
   //scoreAllTests(): XXX - untested, doesnt actually work yet
   void scoreAllTests();
   
-  void doScorring( TestType type, Wt::WContainerWidget *parent );
+  void doScorring( TestType type );
   Score doTest( TestType type );
   
   void updateOverview();

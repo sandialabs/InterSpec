@@ -6,7 +6,7 @@
 #include <map>
 #include <vector>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/RelActCalcAuto.h"
@@ -23,7 +23,7 @@ namespace Wt
 class RelEffChart : public Wt::WContainerWidget
 {
 public:
-  RelEffChart( Wt::WContainerWidget *parent = 0 );
+  RelEffChart();
   virtual ~RelEffChart();
   
   struct ReCurveInfo

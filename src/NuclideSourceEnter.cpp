@@ -26,16 +26,16 @@
 #include <string>
 #include <limits>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WSignal>
-#include <Wt/WString>
-#include <Wt/WLineEdit>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/WRegExpValidator>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WSignal.h>
+#include <Wt/WString.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -57,15 +57,14 @@ using namespace Wt;
 
 NuclideSourceEnterController::NuclideSourceEnterController( Wt::WLineEdit *nuclideEdit,
                                Wt::WLineEdit *nuclideAgeEdit,
-                               Wt::WText *halfLifeTxt,
-                               Wt::WObject *parent )
-  : WObject( parent ),
+                               Wt::WText *halfLifeTxt )
+  : WObject(),
   m_nuclideEdit( nuclideEdit ),
   m_nuclideAgeEdit( nuclideAgeEdit ),
   m_halfLifeTxt( halfLifeTxt ),
   m_currentNuc( nullptr ),
   m_prevAgeTxt{},
-  m_changed( this )
+  m_changed()
 {
   assert( nuclideEdit );
   assert( nuclideAgeEdit );
@@ -90,16 +89,16 @@ NuclideSourceEnterController::NuclideSourceEnterController( Wt::WLineEdit *nucli
   PhotopeakDelegate::EditWidget::replacerJs( replacerJs );
   PhotopeakDelegate::EditWidget::nuclideNameMatcherJs( matcherJs );
     
-  WSuggestionPopup *suggestions = new WSuggestionPopup( matcherJs, replacerJs, this );
+  WSuggestionPopup *suggestions = addChild( std::make_unique<WSuggestionPopup>( matcherJs, replacerJs ) );
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   suggestions->setJavaScriptMember("wtNoReparent", "true");
 #endif
     
   suggestions->addStyleClass( "nuclide-suggest" );
-  suggestions->forEdit( m_nuclideEdit, WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+  suggestions->forEdit( m_nuclideEdit, PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
     
-  IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel( this );
+  IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel();
     
   filterModel->excludeNuclides( false );
   filterModel->excludeXrays( true );
@@ -108,7 +107,7 @@ NuclideSourceEnterController::NuclideSourceEnterController( Wt::WLineEdit *nucli
   
   filterModel->filter( "" );
   suggestions->setFilterLength( -1 );
-  suggestions->setModel( filterModel );
+  suggestions->setModel( std::shared_ptr<Wt::WAbstractItemModel>( filterModel, [](Wt::WAbstractItemModel*){} ) );
   suggestions->filterModel().connect( filterModel, &IsotopeNameFilterModel::filter );
     
   m_nuclideEdit->changed().connect( this, &NuclideSourceEnterController::handleNuclideUserInput );
@@ -118,8 +117,8 @@ NuclideSourceEnterController::NuclideSourceEnterController( Wt::WLineEdit *nucli
   IsotopeNameFilterModel::setQuickTypeFixHackjs( suggestions );
   IsotopeNameFilterModel::setEnterKeyMatchFixJs( suggestions, m_nuclideEdit );
   
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
-  validator->setFlags(Wt::MatchCaseInsensitive);
+  auto validator = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+  validator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);
   m_nuclideAgeEdit->setValidator(validator);
   
   m_nuclideAgeEdit->changed().connect( this, &NuclideSourceEnterController::handleAgeUserChange );
@@ -371,8 +370,8 @@ Wt::Signal<> &NuclideSourceEnterController::changed()
 
 
 
-NuclideSourceEnter::NuclideSourceEnter( const bool showHalfLife, const bool showToolTips, Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+NuclideSourceEnter::NuclideSourceEnter( const bool showHalfLife, const bool showToolTips )
+  : WContainerWidget(),
     m_nuclideEdit( nullptr ),
     m_nuclideAgeEdit( nullptr ),
     m_halfLifeTxt( nullptr ),
@@ -383,55 +382,31 @@ NuclideSourceEnter::NuclideSourceEnter( const bool showHalfLife, const bool show
   wApp->useStyleSheet( "InterSpec_resources/NuclideSourceEnter.css" );
   addStyleClass( "NuclideSourceEnter" );
   
-  WLabel *nucLabel = new WLabel( WString::tr("nuclide-label") );
-  m_nuclideEdit = new WLineEdit();
-  
+  // Create and add widgets in DOM order: row1 = nucLabel, nuclideEdit, [halfLifeTxt]; row2 = ageLabel, nuclideAgeEdit
+  wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
+
+  WLabel *nucLabel = addNew<WLabel>( WString::tr("nuclide-label") );
+  nucLabel->addStyleClass( "GridFirstRow GridFirstCol GridVertCenter" );
+
+  m_nuclideEdit = addNew<WLineEdit>();
   m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
+  m_nuclideEdit->addStyleClass( "GridFirstRow GridSecondCol GridStretchCol" );
   nucLabel->setBuddy( m_nuclideEdit );
-  
-  WLabel *ageLabel = new WLabel( WString::tr("age-label") );
-  m_nuclideAgeEdit = new WLineEdit();
-  m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
-  m_nuclideAgeEdit->setPlaceholderText( WString::tr("N/A") );
-  ageLabel->setBuddy( m_nuclideAgeEdit );
-  
+
   if( showHalfLife )
   {
-    m_halfLifeTxt = new WText();
-    m_halfLifeTxt->addStyleClass( "HLTxt" );
+    m_halfLifeTxt = addNew<WText>();
+    m_halfLifeTxt->addStyleClass( "GridFirstRow GridThirdCol GridVertCenter HLTxt" );
   }//if( showHalfLife )
-  
-#define USE_WLAYOUT_FOR_THIS 0
-#if( USE_WLAYOUT_FOR_THIS )
-  WGridLayout *layout = new WGridLayout( this );
-  layout->setContentsMargins( 0, 0, 0, 0 );
-  layout->addWidget( nucLabel, 0, 0, AlignMiddle );
-  layout->addWidget( m_nuclideEdit, 0, 1 );
-  layout->addWidget( ageLabel, 1, 0, AlignMiddle );
-  layout->addWidget( m_nuclideAgeEdit, 1, 1 );
-  if( m_halfLifeTxt )
-    layout->addWidget( m_halfLifeTxt, 0, 2, AlignMiddle );
-  layout->setColumnStretch( 1, 1 );
-#else
-  wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
-  nucLabel->addStyleClass( "GridFirstRow GridFirstCol GridVertCenter" );
-  addWidget( nucLabel );
-  
-  m_nuclideEdit->addStyleClass( "GridFirstRow GridSecondCol GridStretchCol" );
-  addWidget( m_nuclideEdit );
-  
-  if( m_halfLifeTxt )
-  {
-    m_halfLifeTxt->addStyleClass( "GridFirstRow GridThirdCol GridVertCenter" );
-    addWidget( m_halfLifeTxt );
-  }//if( m_halfLifeTxt )
-  
+
+  WLabel *ageLabel = addNew<WLabel>( WString::tr("age-label") );
   ageLabel->addStyleClass( "GridSecondRow GridFirstCol GridVertCenter" );
-  addWidget( ageLabel );
-  
+
+  m_nuclideAgeEdit = addNew<WLineEdit>();
+  m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
+  m_nuclideAgeEdit->setPlaceholderText( WString::tr("N/A") );
   m_nuclideAgeEdit->addStyleClass( "GridSecondRow GridSecondCol GridStretchCol" );
-  addWidget( m_nuclideAgeEdit );
-#endif
+  ageLabel->setBuddy( m_nuclideAgeEdit );
   
   HelpSystem::attachToolTipOn( {nucLabel, m_nuclideEdit},
                               WString::tr("dcw-tt-nuc-edit"), showToolTips );
@@ -439,7 +414,7 @@ NuclideSourceEnter::NuclideSourceEnter( const bool showHalfLife, const bool show
   HelpSystem::attachToolTipOn( {ageLabel, m_nuclideAgeEdit},
                               WString::tr("dcw-tt-age-edit"), showToolTips );
   
-  m_controller = new NuclideSourceEnterController( m_nuclideEdit, m_nuclideAgeEdit, m_halfLifeTxt, this );
+  m_controller = new NuclideSourceEnterController( m_nuclideEdit, m_nuclideAgeEdit, m_halfLifeTxt );
 }//NuclideSourceEnter constructor
 
 

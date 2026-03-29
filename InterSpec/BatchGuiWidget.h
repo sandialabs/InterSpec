@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/SimpleDialog.h"
 
@@ -84,7 +84,7 @@ private:
 class BatchGuiWidget : public Wt::WContainerWidget
 {
 public:
-  BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WContainerWidget *parent = nullptr );
+  BatchGuiWidget( FileDragUploadResource *uploadResource );
   virtual ~BatchGuiWidget();
 
   Wt::Signal<bool> &canDoAnalysis();

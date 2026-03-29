@@ -48,7 +48,7 @@
 
 #include "mpParser.h"
 
-#include "Wt/Utils"
+#include "Wt/Utils.h"
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -916,8 +916,9 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
   
   m_efficiencyForm = kFunctialEfficienyForm;
   m_efficiencyFormula = fcnstr;
-  m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression,
-                                boost::placeholders::_1  );
+  m_efficiencyFcn = [expression]( float energy ) -> float {
+    return expression->efficiency( energy );
+  };
   m_detectorDiameter = diameter;
   m_detectorSetback = 0.0;
   m_efficiencyEnergyUnits = energyUnits;
@@ -2082,7 +2083,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     {
       const bool isMeV = (efficiencyEnergyUnits > 10.0f);
       auto expression = std::make_shared<FormulaWrapper>( m_efficiencyFormula, isMeV );
-      efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression, boost::placeholders::_1  );
+      efficiencyFcn = [expression]( float energy ) -> float {
+        return expression->efficiency( energy );
+      };
     }catch( std::exception &e )
     {
       throw runtime_error( "fromAppUrl: Invalid detector efficiency formula: " + string(e.what()) );
@@ -3727,8 +3730,9 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
       try
       {
         auto expression = std::make_shared<FormulaWrapper>( m_efficiencyFormula, isMeV );
-        m_efficiencyFcn = boost::bind( &FormulaWrapper::efficiency, expression,
-                                      boost::placeholders::_1  );
+        m_efficiencyFcn = [expression]( float energy ) -> float {
+          return expression->efficiency( energy );
+        };
       }catch( std::exception &e )
       {
         throw runtime_error( "Invalid detector efficiency formula in XML: " + string(e.what()) );

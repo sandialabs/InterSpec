@@ -34,14 +34,14 @@
 
 #include "3rdparty/date/include/date/date.h"
 
-#include <Wt/WLabel>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WPushButton>
-#include <Wt/WJavaScript>
-#include <Wt/WApplication>
-#include <Wt/WStringStream>
-#include <Wt/WContainerWidget>
+#include <Wt/WLabel.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
@@ -74,13 +74,13 @@ namespace
 }//namespace
 
 
-#include <Wt/WMenu>
-#include <Wt/WText>
-#include <Wt/WMenuItem>
-#include <Wt/WTabWidget>
-#include <Wt/WSelectionBox>
-#include <Wt/WStackedWidget>
-#include <Wt/WStackedWidget>
+#include <Wt/WMenu.h>
+#include <Wt/WText.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WSelectionBox.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WStackedWidget.h>
 
 #include "InterSpec/NativeFloatSpinBox.h"
 
@@ -119,7 +119,7 @@ class D3TimeChartFilters : public WContainerWidget
 
 public:
   D3TimeChartFilters( D3TimeChart *parent )
-    : WContainerWidget( parent ),
+    : WContainerWidget(),
       m_parentChart( parent ),
       m_tabs( nullptr ),
       m_currentTab( 0 ),
@@ -146,31 +146,33 @@ public:
     addStyleClass( "D3TimeChartFilters" );
     
     
-    WContainerWidget *closeIcon = new WContainerWidget( this );
+    WContainerWidget *closeIcon = addNew<WContainerWidget>();
     closeIcon->addStyleClass( "closeicon-wtdefault" );
-    closeIcon->clicked().connect( boost::bind( &D3TimeChart::showFilters, parent, false ) );
-    
-    
-    m_tabs = new WTabWidget( this );
+    closeIcon->clicked().connect( [parent](){ parent->showFilters( false ); } );
+
+
+    m_tabs = addNew<WTabWidget>();
     m_currentTab = 0;
     m_tabs->addStyleClass( "D3TimeFiltersTab" );
-    m_tabs->currentChanged().connect( boost::bind( &D3TimeChartFilters::userChangedTab, this, boost::placeholders::_1 ) );
-    
-    WContainerWidget *interact = new WContainerWidget();
+    m_tabs->currentChanged().connect( [this]( int idx ){ userChangedTab( idx ); } );
+
+    auto interactOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *interact = interactOwner.get();
     interact->addStyleClass( "D3TimeInteractTab" );
-    m_tabs->addTab(interact, "Int"); //Returns a
+    m_tabs->addTab( std::move(interactOwner), "Int" );
     // If we want to add an icon, we could:
     //WMenuItem* tab = m_tabs->addTab(interact, "");
     //tab->setIcon("InterSpec_resources/images/interact.svg");
     //  But then we need to adjust the ".D3TimeChartFilters .Wt-tabs li.item .Wt-icon" CSS selector to make thigns look okay
 
-    WStackedWidget *instructionsStack = new WStackedWidget();
+    auto instrStackOwner = std::make_unique<WStackedWidget>();
+    WStackedWidget *instructionsStack = instrStackOwner.get();
     instructionsStack->addStyleClass( "D3TimeInteractInst" );
-    
-    WText *title = new WText( "Interaction mode:", interact );
+
+    WText *title = interact->addNew<WText>( "Interaction mode:" );
     title->addStyleClass( "D3TimeInteractModeText" );
-    
-    m_interactModeMenu = new WMenu( instructionsStack, interact );
+
+    m_interactModeMenu = interact->addNew<WMenu>( instructionsStack );
     m_interactModeMenu->addStyleClass( "D3TimeInteractMenu D3TimeInteractModeMenu LightNavMenu" );
     
     WMenuItem *item = nullptr;
@@ -184,7 +186,8 @@ public:
       switch( index )
       {
         case InteracModeIndex::IM_Normal:
-          instructions = new WText( "Left mouse: select<br />"
+          item = m_interactModeMenu->addItem( "Normal",
+            std::make_unique<WText>( "Left mouse: select<br />"
                                     "&nbsp;&nbsp;&nbsp;&nbsp;no modifiers: foreground<br />"
 #ifdef __APPLE__
                                     "&nbsp;&nbsp;&nbsp;&nbsp;Option-key: background<br />"
@@ -194,91 +197,91 @@ public:
                                     "&nbsp;&nbsp;&nbsp;&nbsp;shift-key: add times<br />"
                                     "&nbsp;&nbsp;&nbsp;&nbsp;Ctrl-key: remove times<br />"
                                     "Right mouse: zoom in/out<br />"
-                                    "Wheel: zoom and left/right<br />" );
-          item = m_interactModeMenu->addItem( "Normal", instructions );
+                                    "Wheel: zoom and left/right<br />" ) );
           break;
-          
+
         case InteracModeIndex::IM_Zoom:
-          instructions = new WText( "Click drag right zoom in<br />"
+          item = m_interactModeMenu->addItem( "Zoom",
+            std::make_unique<WText>( "Click drag right zoom in<br />"
                                     "Click drag left zoom out<br />"
-                                    "Drag x-axis to pan<br />" );
-          item = m_interactModeMenu->addItem( "Zoom", instructions );
+                                    "Drag x-axis to pan<br />" ) );
           break;
-          
+
         case InteracModeIndex::IM_Pan:
-          instructions = new WText( "Click drag chart left/right<br />");
-          item = m_interactModeMenu->addItem( "Pan", instructions );
+          item = m_interactModeMenu->addItem( "Pan",
+            std::make_unique<WText>( "Click drag chart left/right<br />" ) );
           break;
-          
+
         case InteracModeIndex::IM_Select:
-          instructions = new WText( "Click drag to select<br />"
-                                    "to sum for spectrum.");
-          item = m_interactModeMenu->addItem( "Select", instructions );
+          item = m_interactModeMenu->addItem( "Select",
+            std::make_unique<WText>( "Click drag to select<br />"
+                                    "to sum for spectrum." ) );
           break;
-          
+
         case InteracModeIndex::IM_Add:
-          instructions = new WText( "Click drag to add additional<br />"
-                                    "time periods to spectrum sum.");
-          item = m_interactModeMenu->addItem( "Add", instructions );
+          item = m_interactModeMenu->addItem( "Add",
+            std::make_unique<WText>( "Click drag to add additional<br />"
+                                    "time periods to spectrum sum." ) );
           break;
-          
+
         case InteracModeIndex::IM_Remove:
-          instructions = new WText( "Click drag to remove time<br />"
-                                    "periods from spectrum sum." );
-          item = m_interactModeMenu->addItem( "Remove", instructions );
+          item = m_interactModeMenu->addItem( "Remove",
+            std::make_unique<WText>( "Click drag to remove time<br />"
+                                    "periods from spectrum sum." ) );
           break;
-          
+
         case InteracModeIndex::IM_NumMode:
           assert(0);
           break;
       }//switch( index )
-      
+
       assert( item );
-      item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+      item->clicked().connect( [item](){ item->select(); } );
       item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
     }//for( loop over InteracModeIndex index )
-    
-    
-    
+
+
+
     // Add menu to allow choose Foreground/Background/Secondary for the "Select", "Add", and "Remove" options
-    m_specTypeDiv = new WContainerWidget( interact );
+    m_specTypeDiv = interact->addNew<WContainerWidget>();
     m_specTypeDiv->setHidden( true );
-    
-    title = new WText( "Spectrum Type:", m_specTypeDiv );
+
+    title = m_specTypeDiv->addNew<WText>( "Spectrum Type:" );
     title->addStyleClass( "D3TimeInteractSpecTypeText" );
-    
-    m_specTypeSelect = new WMenu( m_specTypeDiv );
+
+    m_specTypeSelect = m_specTypeDiv->addNew<WMenu>();
     m_specTypeSelect->addStyleClass( "D3TimeInteractMenu D3TimeInteractSpecTypeMenu LightNavMenu" );
     item = m_specTypeSelect->addItem( "Fore." );
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item->clicked().connect( [item](){ item->select(); } );
     item = m_specTypeSelect->addItem( "Back." );
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item->clicked().connect( [item](){ item->select(); } );
     item = m_specTypeSelect->addItem( "Sec." );
-    item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+    item->clicked().connect( [item](){ item->select(); } );
     m_specTypeSelect->select( m_specTypeSelect->itemAt(0) );
     m_specTypeSelect->itemSelected().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
-    
-    
-    interact->addWidget( instructionsStack );
-    
-    
-    
-    WContainerWidget *filterContents = new WContainerWidget();
+
+
+    interact->addWidget( std::move(instrStackOwner) );
+
+
+
+    auto filterContentsOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *filterContents = filterContentsOwner.get();
     filterContents->addStyleClass( "D3TimeFilterTab" );
-    m_tabs->addTab(filterContents, "Filt");
-    
-    WText *filterTitle = new WText("Filter energy range:", filterContents);
+    m_tabs->addTab( std::move(filterContentsOwner), "Filt" );
+
+    WText *filterTitle = filterContents->addNew<WText>( "Filter energy range:" );
     filterTitle->addStyleClass("FilterTitle");
 
-    WContainerWidget* row = new WContainerWidget(filterContents);
+    WContainerWidget *row = filterContents->addNew<WContainerWidget>();
     row->addStyleClass("FilterRow");
 
-    m_lowerEnergy = new NativeFloatSpinBox(row);
+    m_lowerEnergy = row->addNew<NativeFloatSpinBox>();
     m_lowerEnergy->addStyleClass("FiltRangeInput");
-    
-    WText *txt = new WText("to", row);
+
+    WText *txt = row->addNew<WText>( "to" );
     txt->addStyleClass("FilterEnergyLabel");
-    m_upperEnergy = new NativeFloatSpinBox(row);
+    m_upperEnergy = row->addNew<NativeFloatSpinBox>();
     m_upperEnergy->addStyleClass("FiltRangeInput");
 
     m_lowerEnergy->setSpinnerHidden( true );
@@ -294,7 +297,7 @@ public:
     m_upperEnergy->valueChanged().connect( this, &D3TimeChartFilters::energyFilterChangedCallback );
     
     // Add a checkbox, and additional energy ranges, etc
-    m_normalizeCb = new WCheckBox("Normalize to energy range", filterContents);
+    m_normalizeCb = filterContents->addNew<WCheckBox>("Normalize to energy range");
     m_normalizeCb->addStyleClass("DoNormCb CbNoLineBreak");
     m_normalizeCb->hide();
 
@@ -307,17 +310,17 @@ public:
     HelpSystem::attachToolTipOn(m_normalizeCb, tooltip, showToolTips);
 
 
-    m_normBox = new WContainerWidget(filterContents);
+    m_normBox = filterContents->addNew<WContainerWidget>();
     m_normBox->addStyleClass("NormRangeInput");
-    row = new WContainerWidget(m_normBox);
+    row = m_normBox->addNew<WContainerWidget>();
     row->addStyleClass("FilterRow");
-    m_normLowerEnergy = new NativeFloatSpinBox(row);
+    m_normLowerEnergy = row->addNew<NativeFloatSpinBox>();
     m_normLowerEnergy->addStyleClass("FiltRangeInput");
-    txt = new WText("to", row);
+    txt = row->addNew<WText>( "to" );
     txt->addStyleClass("FilterEnergyLabel");
-    m_normUpperEnergy = new NativeFloatSpinBox(row);
+    m_normUpperEnergy = row->addNew<NativeFloatSpinBox>();
     m_normUpperEnergy->addStyleClass("FiltRangeInput");
-    txt = new WText("Recomend: use energies above range of interest.", m_normBox);
+    txt = m_normBox->addNew<WText>( "Recomend: use energies above range of interest." );
     txt->addStyleClass("NormRangeSuggest");
 
     m_normLowerEnergy->setSpinnerHidden(true);
@@ -336,41 +339,42 @@ public:
     m_normLowerEnergy->valueChanged().connect(this, &D3TimeChartFilters::userChangedNormEnergyRange);
     m_normUpperEnergy->valueChanged().connect(this, &D3TimeChartFilters::userChangedNormEnergyRange);
 
-    m_clearEnergyFilterBtn = new WPushButton( "Clear Energies", filterContents );
+    m_clearEnergyFilterBtn = filterContents->addNew<WPushButton>( "Clear Energies" );
     m_clearEnergyFilterBtn->addStyleClass( "D3TimeFilterClear" );
     m_clearEnergyFilterBtn->clicked().connect( this, &D3TimeChartFilters::clearFilterEnergiesCallback );
     m_clearEnergyFilterBtn->hide();
     m_clearEnergyFilterBtn->setHiddenKeepsGeometry( true );
-    
 
-    WContainerWidget* optContents = new WContainerWidget();
+
+    auto optContentsOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *optContents = optContentsOwner.get();
     optContents->addStyleClass("D3TimeOptTab");
-    m_tabs->addTab(optContents, "Opt");
+    m_tabs->addTab( std::move(optContentsOwner), "Opt" );
 
-    
-    m_dontRebin = new WCheckBox( "Don't rebin", optContents);
+
+    m_dontRebin = optContents->addNew<WCheckBox>( "Don't rebin" );
     m_dontRebin->addStyleClass( "D3TimeDontRebin CbNoLineBreak" );
     m_dontRebin->setToolTip( "Disable combining time samples on the chart when there are more time samples than pixels." );
     m_dontRebin->checked().connect( this, &D3TimeChartFilters::dontRebinChanged );
     m_dontRebin->unChecked().connect( this, &D3TimeChartFilters::dontRebinChanged );
-    
-    m_hideNeutrons = new WCheckBox( "Hide neutrons", optContents);
+
+    m_hideNeutrons = optContents->addNew<WCheckBox>( "Hide neutrons" );
     m_hideNeutrons->addStyleClass( "D3TimeHideNeutrons CbNoLineBreak" );
     m_hideNeutrons->setToolTip( "Do not show neutrons on chart" );
     m_hideNeutrons->checked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
     m_hideNeutrons->unChecked().connect( this, &D3TimeChartFilters::hideNeutronsChanged );
-    
-    
-    m_gammaLogY = new WCheckBox( "Log Y Scale", optContents );
+
+
+    m_gammaLogY = optContents->addNew<WCheckBox>( "Log Y Scale" );
     m_gammaLogY->addStyleClass( "D3TimeGammaLogY CbNoLineBreak" );
     m_gammaLogY->setToolTip( "Make the y-axis log, for the gammas" );
     m_gammaLogY->checked().connect( this, &D3TimeChartFilters::gammaLogYChanged );
     m_gammaLogY->unChecked().connect( this, &D3TimeChartFilters::gammaLogYChanged );
-    
-    
-    WContainerWidget *sfDiv = new WContainerWidget(optContents);
+
+
+    WContainerWidget *sfDiv = optContents->addNew<WContainerWidget>();
     sfDiv->addStyleClass( "D3TimeYAxisRelScale" );
-    
+
     sfDiv->setToolTip( "This value allows emphasizing either the gamma or neutron data by scaling"
                        " one of the y-axis's range to be a multiple of the maximum data displayed.\n"
                        " A value greater than 1.0 will scale the neutron axis by the entered"
@@ -378,9 +382,9 @@ public:
                        " will scale gamma axis by one over the entered value.\n "
                        "i.e., to emphasize gamma chart enter value >1, for neutron <1.\n"
                        "Must be between 0.04 and 25." );
-    WLabel *label = new WLabel( "Rel. y-max:" , sfDiv );
-    
-    m_gammaNeutRelEmphasis = new NativeFloatSpinBox( sfDiv );
+    WLabel *label = sfDiv->addNew<WLabel>( "Rel. y-max:" );
+
+    m_gammaNeutRelEmphasis = sfDiv->addNew<NativeFloatSpinBox>();
     label->setBuddy( m_gammaNeutRelEmphasis );
     m_gammaNeutRelEmphasis->setText( "1.0" );
     m_gammaNeutRelEmphasis->setSingleStep( 0.2f );
@@ -401,11 +405,11 @@ public:
     if( !undoRedo || undoRedo->isInUndoOrRedo() )
       return;
     
-    auto undoTab = wApp->bind( boost::bind( &WTabWidget::setCurrentIndex, m_tabs, prev_index ) );
-    auto undoSetTab = wApp->bind( boost::bind( &D3TimeChartFilters::userChangedTab, this, prev_index ) );
-    
-    auto redoTab = wApp->bind( boost::bind( &WTabWidget::setCurrentIndex, m_tabs, index ) );
-    auto redoSetTab = wApp->bind( boost::bind( &D3TimeChartFilters::userChangedTab, this, index ) );
+    auto undoTab = [this, prev_index](){ m_tabs->setCurrentIndex( prev_index ); };
+    auto undoSetTab = [this, prev_index](){ userChangedTab( prev_index ); };
+
+    auto redoTab = [this, index](){ m_tabs->setCurrentIndex( index ); };
+    auto redoSetTab = [this, index](){ userChangedTab( index ); };
     
     auto undo = [=](){ undoTab(); undoSetTab(); };
     auto redo = [=](){ redoTab(); redoSetTab(); };
@@ -533,8 +537,8 @@ public:
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( (prevIntMode != newIntMode) && undoRedo && !undoRedo->isInUndoOrRedo() )
     {
-      auto undo = wApp->bind( boost::bind( &D3TimeChartFilters::setInteractionMode, this, prevIntMode ) );
-      auto redo = wApp->bind( boost::bind( &D3TimeChartFilters::setInteractionMode, this, newIntMode ) );
+      auto undo = [this, prevIntMode](){ setInteractionMode( prevIntMode ); };
+      auto redo = [this, newIntMode](){ setInteractionMode( newIntMode ); };
       undoRedo->addUndoRedoStep( undo, redo, "Change time-chart interaction mode." );
     }//if( prevIntMode != newIntMode )
     
@@ -671,8 +675,8 @@ public:
     if( !undoRedo || undoRedo->isInUndoOrRedo() )
       return;
     
-    auto undo = wApp->bind( boost::bind( &D3TimeChartFilters::setEnergyRangeFilters, this, old_filters ) );
-    auto redo = wApp->bind( boost::bind( &D3TimeChartFilters::setEnergyRangeFilters, this, new_filters ) );
+    auto undo = [this, old_filters](){ setEnergyRangeFilters( old_filters ); };
+    auto redo = [this, new_filters](){ setEnergyRangeFilters( new_filters ); };
     undoRedo->addUndoRedoStep( undo, redo, "Change time-chart energy filter." );
   }//void addFilterChangeUndoRedo()
   
@@ -823,12 +827,12 @@ public:
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( undoRedo && !undoRedo->isInUndoOrRedo() )
     {
-      auto togleDontRebinCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_dontRebin, !dontRebin ) );
-      auto unTogleDontRebinCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_dontRebin, dontRebin ) );
-      auto callDonRebinChanged = wApp->bind( boost::bind( &D3TimeChartFilters::dontRebinChanged, this ) );
+      auto togleDontRebinCB = [this, dontRebin](){ m_dontRebin->setChecked( !dontRebin ); };
+      auto unTogleDontRebinCB = [this, dontRebin](){ m_dontRebin->setChecked( dontRebin ); };
+      auto callDonRebinChanged = [this](){ dontRebinChanged(); };
       // We could make sure filter widget is showing, like with the next line, but instead we'll
       //  just relly on tracking its visibility state correctly
-      //auto showFilters = wApp->bind( boost::bind( &D3TimeChart::showFilters, m_parentChart, true) );
+      //auto showFilters = boost::bind( &D3TimeChart::showFilters, m_parentChart, true);
       
       auto undo = [togleDontRebinCB, callDonRebinChanged](){
         togleDontRebinCB();
@@ -853,9 +857,9 @@ public:
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( undoRedo && !undoRedo->isInUndoOrRedo() )
     {
-      auto togleHideNeutronsCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_hideNeutrons, !hideNuetrons ) );
-      auto unTogleHideNeutronsCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_hideNeutrons, hideNuetrons ) );
-      auto callHideNeutChanged = wApp->bind( boost::bind( &D3TimeChartFilters::hideNeutronsChanged, this ) );
+      auto togleHideNeutronsCB = [this, hideNuetrons](){ m_hideNeutrons->setChecked( !hideNuetrons ); };
+      auto unTogleHideNeutronsCB = [this, hideNuetrons](){ m_hideNeutrons->setChecked( hideNuetrons ); };
+      auto callHideNeutChanged = [this](){ hideNeutronsChanged(); };
       
       auto undo = [togleHideNeutronsCB, callHideNeutChanged](){
         togleHideNeutronsCB();
@@ -881,9 +885,9 @@ public:
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( undoRedo && !undoRedo->isInUndoOrRedo() )
     {
-      auto toggleLogYCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_gammaLogY, !logy ) );
-      auto unToggleLogYCB = wApp->bind( boost::bind( &WCheckBox::setChecked, m_gammaLogY, logy ) );
-      auto callLogYChanged = wApp->bind( boost::bind( &D3TimeChartFilters::gammaLogYChanged, this ) );
+      auto toggleLogYCB = [this, logy](){ m_gammaLogY->setChecked( !logy ); };
+      auto unToggleLogYCB = [this, logy](){ m_gammaLogY->setChecked( logy ); };
+      auto callLogYChanged = [this](){ gammaLogYChanged(); };
       
       auto undo = [toggleLogYCB, callLogYChanged](){
         toggleLogYCB();
@@ -905,12 +909,12 @@ public:
     float value = 1.0f;
     switch( m_gammaNeutRelEmphasis->validate() )
     {
-      case Wt::WValidator::Invalid:
-      case Wt::WValidator::InvalidEmpty:
+      case Wt::ValidationState::Invalid:
+      case Wt::ValidationState::InvalidEmpty:
         m_gammaNeutRelEmphasis->setText( "1.0" );
         break;
         
-      case Wt::WValidator::Valid:
+      case Wt::ValidationState::Valid:
         value = m_gammaNeutRelEmphasis->value();
         if( value < 0.04f )
         {
@@ -937,9 +941,9 @@ public:
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( undoRedo && !undoRedo->isInUndoOrRedo() )
     {
-      auto undoSet = wApp->bind( boost::bind( &NativeFloatSpinBox::setValue, m_gammaNeutRelEmphasis, prevValue) );
-      auto redoSet = wApp->bind( boost::bind( &NativeFloatSpinBox::setValue, m_gammaNeutRelEmphasis, value) );
-      auto callHandleChange = wApp->bind( boost::bind( &D3TimeChartFilters::handleGammaNeutRelEmphasisChanged, this ) );
+      auto undoSet = [this, prevValue](){ m_gammaNeutRelEmphasis->setValue( prevValue ); };
+      auto redoSet = [this, value](){ m_gammaNeutRelEmphasis->setValue( value ); };
+      auto callHandleChange = [this](){ handleGammaNeutRelEmphasisChanged(); };
       
       auto undo = [undoSet, callHandleChange](){
         undoSet();
@@ -980,12 +984,12 @@ public:
 };//class D3TimeChartFilters
 
 
-D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
- : WContainerWidget( parent ),
+D3TimeChart::D3TimeChart()
+ : WContainerWidget(),
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
   m_inited( false ),
 #endif //OPTIMIZE_D3TimeChart_HIDDEN_LOAD
-  m_renderFlags( 0 ),
+  m_renderFlags(),
   m_layoutWidth( 0 ),
   m_layoutHeight( 0 ),
   m_chartWidthPx( 0.0 ),
@@ -1002,9 +1006,9 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_compactXAxisTitle( "Time (seconds)" ),
   m_y1AxisTitle( "Gamma CPS" ),
   m_y2AxisTitle( "Neutron CPS"),
-  m_chartClicked( this ),
-  m_chartDragged( this ),
-  m_displayedXRangeChange( this ),
+  m_chartClicked(),
+  m_chartDragged(),
+  m_displayedXRangeChange(),
   //m_energyRangeFilterChanged( this ),
   m_chartClickedJS( nullptr ),
   m_chartDraggedJS( nullptr ),
@@ -1043,19 +1047,19 @@ void D3TimeChart::init()
   wApp->useStyleSheet( "InterSpec_resources/D3TimeChart.css" );
   initChangeableCssRules();
   
-  m_chart = new WContainerWidget( this );
+  m_chart = addNew<WContainerWidget>();
   m_chart->addStyleClass( "D3TimeChartHolder" );
-  
+
   // Cancel right-click events for the div, we handle it all in JS
   m_chart->setAttributeValue( "oncontextmenu",
                     "event.cancelBubble = true; event.returnValue = false; return false;" );
-  
-  m_options = new D3TimeChartFilters( this );
+
+  m_options = addNew<D3TimeChartFilters>( this );
   m_options->hide();
-  
-  m_showOptionsIcon = new WContainerWidget( this );
+
+  m_showOptionsIcon = addNew<WContainerWidget>();
   m_showOptionsIcon->setStyleClass( "RoundMenuIcon ShowD3TimeChartFilters InvertInDark" ); //Should have 'Wt-icon' style class too?
-  m_showOptionsIcon->clicked().connect( boost::bind( &D3TimeChart::showFilters, this, true) );
+  m_showOptionsIcon->clicked().connect( [this](){ showFilters( true ); } );
   
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
   defineJavaScript();
@@ -1091,7 +1095,7 @@ void D3TimeChart::setHidden( bool hidden, const Wt::WAnimation &animation )
 void D3TimeChart::defineJavaScript()
 {
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
-  assert( !m_inited || m_renderFlags.testFlag(TimeRenderActions::RefreshJs) );
+  assert( !m_inited || m_renderFlags.test(TimeRenderActions::RefreshJs) );
 #endif
   //WWebWidget::doJavaScript( "$(" + m_chart->jsRef() + ").append('<svg width=\"400\" height=\"75\" style=\"box-sizing: border-box; \"><rect width=\"300\" height=\"75\" style=\"fill:rgb(0,0,255);stroke-width:3;stroke:rgb(0,0,0)\" /></svg>' ); console.log( 'Added rect' );" );
   
@@ -2339,8 +2343,8 @@ void D3TimeChart::showFilters( const bool show )
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && !undoRedo->isInUndoOrRedo() )
   {
-    auto undo = wApp->bind( boost::bind( &D3TimeChart::showFilters, this, !show ) );
-    auto redo = wApp->bind( boost::bind( &D3TimeChart::showFilters, this, show ) );
+    auto undo = [this, show](){ showFilters( !show ); };
+    auto redo = [this, show](){ showFilters( show ); };
     undoRedo->addUndoRedoStep( undo, redo, (show ? "Show" : "Hide") + string(" time-chart options") );
   }
 }//void showFilters( const bool show )
@@ -2545,36 +2549,36 @@ void D3TimeChart::initChangeableCssRules()
 
 void D3TimeChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
-  //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
+  const bool renderFull = flags.test( Wt::RenderFlag::Full );
+  //const bool renderUpdate = flags.test( Wt::RenderFlag::Update );
   
   WContainerWidget::render( flags );
   
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
   if( isVisible() )
   {
-    if( m_renderFlags.testFlag(TimeRenderActions::RefreshJs) )
+    if( m_renderFlags.test(TimeRenderActions::RefreshJs) )
       defineJavaScript();
     
-    if( m_renderFlags.testFlag(TimeRenderActions::UpdateData) )
+    if( m_renderFlags.test(TimeRenderActions::UpdateData) )
       setDataToClient();
     
-    if( m_renderFlags.testFlag(TimeRenderActions::UpdateHighlightRegions) )
+    if( m_renderFlags.test(TimeRenderActions::UpdateHighlightRegions) )
       setHighlightRegionsToClient();
     
-    m_renderFlags = 0;
+    m_renderFlags = WFlags<TimeRenderActions>();
   }//if( isVisible() )
 #else
   if( renderFull )
     defineJavaScript();
-  
-  if( m_renderFlags.testFlag(TimeRenderActions::UpdateData) )
+
+  if( m_renderFlags.test(TimeRenderActions::UpdateData) )
     setDataToClient();
-  
-  if( m_renderFlags.testFlag(TimeRenderActions::UpdateHighlightRegions) )
+
+  if( m_renderFlags.test(TimeRenderActions::UpdateHighlightRegions) )
     setHighlightRegionsToClient();
-  
-  m_renderFlags = 0;
+
+  m_renderFlags = WFlags<TimeRenderActions>();
 #endif  // OPTIMIZE_D3TimeChart_HIDDEN_LOAD / else
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 

@@ -27,7 +27,7 @@
 
 #include <vector>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/MakeDrfFit.h"
@@ -73,8 +73,7 @@ class MakeDrf : public Wt::WContainerWidget
 {
 public:
   MakeDrf( InterSpec *viewer,
-           Wt::WSuggestionPopup *materialSuggest,
-           Wt::WContainerWidget *parent = nullptr );
+           Wt::WSuggestionPopup *materialSuggest );
   
   virtual ~MakeDrf();
   

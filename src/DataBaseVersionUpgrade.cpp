@@ -26,15 +26,15 @@
 #include <iostream>
 #include <iterator>
 
-#include <Wt/Dbo/Dbo>
-#include <Wt/Dbo/SqlConnection>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/Dbo/SqlConnection.h>
 
 #if( USE_MYSQL_DB )
-#include <Wt/Dbo/backend/MySQL>
+#include <Wt/Dbo/backend/MySQL.h>
 #endif
 
 #if( USE_SQLITE3_DB )
-#include <Wt/Dbo/backend/Sqlite3>
+#include <Wt/Dbo/backend/Sqlite3.h>
 #endif
 
 #include "InterSpec/InterSpecUser.h"
@@ -309,18 +309,18 @@ namespace DataBaseVersionUpgrade
   }//void checkAndUpgradeVersion()
   
   
-  std::shared_ptr<Wt::Dbo::Session> getSession( std::unique_ptr<Wt::Dbo::SqlConnection> &database )
+  std::shared_ptr<Wt::Dbo::Session> getSession( std::unique_ptr<Wt::Dbo::SqlConnection> & /*database*/ )
   {
-    if( !database )
-      database.reset( DataBaseUtils::getDatabaseConnection() );
-    database->setProperty( "show-queries", "true" );
-    
-    std::shared_ptr<Wt::Dbo::Session> sqlSession;
-    sqlSession.reset( new Wt::Dbo::Session() );
-    sqlSession->setConnection( *database );
-    
+    // In Wt4, Session::setConnection() takes ownership of the connection via unique_ptr.
+    // We create a fresh connection for each session, letting the session own it.
+    std::unique_ptr<Wt::Dbo::SqlConnection> conn( DataBaseUtils::getDatabaseConnection() );
+    conn->setProperty( "show-queries", "true" );
+
+    std::shared_ptr<Wt::Dbo::Session> sqlSession = std::make_shared<Wt::Dbo::Session>();
+    sqlSession->setConnection( std::move(conn) );
+
     return sqlSession;
-  }//shared_ptr<Session> getSession( scoped_ptr<SqlConnection> &database )
+  }//shared_ptr<Session> getSession( std::unique_ptr<SqlConnection> &database )
 
   
   

@@ -25,20 +25,20 @@
 
 #include <string>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 #include <boost/regex.hpp>
 
-#include <Wt/WText>
-#include <Wt/WServer>
-#include <Wt/WLineEdit>
-#include <Wt/WHBoxLayout>
-#include <Wt/WModelIndex>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
-#include <Wt/WAbstractItemDelegate>
+#include <Wt/WText.h>
+#include <Wt/WServer.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WHBoxLayout.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
+#include <Wt/WAbstractItemDelegate.h>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakModel.h"
@@ -300,54 +300,38 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
 
   replacerJs( replaceJS );
 
-  m_suggestions = new WSuggestionPopup( matcherJS, replaceJS );
-#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
-  m_suggestions->setJavaScriptMember("wtNoReparent", "true");
-#endif
-  
-  m_suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+  m_suggestions = addChild( std::make_unique<WSuggestionPopup>( matcherJS, replaceJS ) );
+  m_suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::Unit::FontEm) );
 
-  m_edit = new WLineEdit();
-  
+  auto editUPtr = std::make_unique<WLineEdit>();
+  m_edit = editUPtr.get();
+
   m_edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_edit->setAttributeValue( "autocorrect", "off" );
   m_edit->setAttributeValue( "spellcheck", "off" );
 #endif
-  
+
   m_edit->setTextSize( 7 );
 
-  m_edit->enterPressed().connect
-    (boost::bind(&PhotopeakDelegate::doCloseEditor, parent, this, true, false ));
-  m_edit->escapePressed().connect
-    (boost::bind(&PhotopeakDelegate::doCloseEditor, parent, this, false, false ));
+  m_edit->enterPressed().connect( [parent, this](){ parent->doCloseEditor( this, true, false ); } );
+  m_edit->escapePressed().connect( [parent, this](){ parent->doCloseEditor( this, false, false ); } );
   m_edit->escapePressed().preventPropagation();
-  
-  if( closeOnBlur )
-    m_edit->blurred().connect
-      (boost::bind(&PhotopeakDelegate::EditWidget::handleBlur, this ));
 
-  if( flags & RenderFocused )
+  if( closeOnBlur )
+    m_edit->blurred().connect( [this](){ handleBlur(); } );
+
+  if( flags.test( ViewItemRenderFlag::Focused ) )
     m_edit->setFocus();
 
   m_suggestions->forEdit( m_edit,
-                   WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+                   PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
-  // We use a layout so that the line edit fills the entire cell.
-  // Somehow, this does not work with konqueror, but it does respond
-  // properly to width, height being set to 100% !
-  WApplication *app = WApplication::instance();
-  if( app->environment().agent() != WEnvironment::Konqueror )
   {
-    setLayout( new WHBoxLayout() );
-    layout()->setContentsMargins(1, 1, 1, 1);
-    layout()->addWidget( m_edit );
-  }else
-  {
-    m_edit->resize( WLength(100, WLength::Percentage),
-                    WLength(100, WLength::Percentage) );
-    addWidget( m_edit );
-  }//if( a non-Konqueror browser ) / else
+    WHBoxLayout *hbox = setLayout( std::make_unique<WHBoxLayout>() );
+    hbox->setContentsMargins(1, 1, 1, 1);
+    hbox->addWidget( std::move(editUPtr) );
+  }
 
   const PeakModel *peakModel = dynamic_cast<const PeakModel *>( index.model() );
   if( !peakModel )
@@ -362,15 +346,15 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
   {
     case NuclideDelegate:
     {
-      PeakIsotopeNameFilterModel *filterModel = new PeakIsotopeNameFilterModel( peak, this );
-//      IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel( this );
-      
+      std::shared_ptr<PeakIsotopeNameFilterModel> filterModelShared
+        = std::make_shared<PeakIsotopeNameFilterModel>( peak );
+      PeakIsotopeNameFilterModel *filterModel = filterModelShared.get();
+
       filterModel->filter( "" );
       m_suggestions->setFilterLength( -1 );
-      m_suggestions->setModel( filterModel );
+      m_suggestions->setModel( filterModelShared );
       m_suggestions->filterModel().connect( filterModel, &PeakIsotopeNameFilterModel::filter );
-//      m_suggestions->filterModel().connect( filterModel, &IsotopeNameFilterModel::filter );
-      
+
       break;
     }//case NuclideDelegate:
 
@@ -384,12 +368,12 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
       const SandiaDecay::Nuclide *nuclide = peak->parentNuclide();
       
       /*
-       boost::any iso_any = peakModel->data( peakModel->index( row, PeakModel::kIsotope ) );
-      boost::any fitEnergy_any = peakModel->data( peakModel->index( row, PeakModel::kMean ) );
+       Wt::cpp17::any iso_any = peakModel->data( peakModel->index( row, PeakModel::kIsotope ) );
+      Wt::cpp17::any fitEnergy_any = peakModel->data( peakModel->index( row, PeakModel::kMean ) );
       string isotope;
-      try { isotope = boost::any_cast<WString>( iso_any ).narrow(); }
+      try { isotope = Wt::cpp17::any_cast<WString>( iso_any ).narrow(); }
       catch(...){ return; }
-      try{ fitEnergy = boost::any_cast<double>( fitEnergy_any ); }catch(...){}
+      try{ fitEnergy = Wt::cpp17::any_cast<double>( fitEnergy_any ); }catch(...){}
 
       const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
       if( !db )
@@ -449,7 +433,7 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
 
 PhotopeakDelegate::EditWidget::~EditWidget()
 {
-  delete m_suggestions;
+  // m_suggestions is owned via addChild; no manual deletion needed
 }
 
 WLineEdit *PhotopeakDelegate::EditWidget::edit()
@@ -457,7 +441,7 @@ WLineEdit *PhotopeakDelegate::EditWidget::edit()
   return m_edit;
 }
 
-void PhotopeakDelegate::EditWidget::handleBlurWorker( boost::function<void()> worker )
+void PhotopeakDelegate::EditWidget::handleBlurWorker( std::function<void()> worker )
 {
   if( worker )
   {
@@ -476,18 +460,18 @@ void PhotopeakDelegate::EditWidget::handleBlur()
   PhotopeakDelegate::EditWidget *self = this;
   
   // We will protect against either this function, or m_parent getting deleted
-  boost::function<void()> parent_closer = wApp->bind( boost::bind( &PhotopeakDelegate::doCloseEditor, parent, self, true, true ) );
-  boost::function<void()> self_closer = wApp->bind( boost::bind( &PhotopeakDelegate::EditWidget::handleBlurWorker, this, parent_closer ) );
-  
-  WServer::instance()->schedule( 250, wApp->sessionId(), self_closer );
+  const string sessionId = wApp->sessionId();
+  std::function<void()> parent_closer = [parent, self](){ parent->doCloseEditor( self, true, true ); };
+  std::function<void()> self_closer = [this, parent_closer](){ handleBlurWorker( parent_closer ); };
+
+  WServer::instance()->schedule( std::chrono::milliseconds(250), sessionId, self_closer );
 }//void PhotopeakDelegate::EditWidget::handleBlur()
 
 
 
-PhotopeakDelegate::PhotopeakDelegate(  PhotopeakDelegate::DelegateType delegateType,
-                                       bool closeOnBlur,
-                                       Wt::WObject *parent )
-  : WAbstractItemDelegate( parent ),
+PhotopeakDelegate::PhotopeakDelegate( PhotopeakDelegate::DelegateType delegateType,
+                                      bool closeOnBlur )
+  : WAbstractItemDelegate(),
     m_closeOnBlur( closeOnBlur ),
     m_delegateType( delegateType ),
     m_suggestionPopup( NULL )
@@ -514,19 +498,24 @@ void PhotopeakDelegate::doCloseEditor( WWidget *editor, bool save, bool isBlurr 
 
 
 
-WWidget *PhotopeakDelegate::update( WWidget *widget,
-                                    const WModelIndex &index,
-                                    WFlags< ViewItemRenderFlag > flags )
+std::unique_ptr<WWidget> PhotopeakDelegate::update( WWidget *widget,
+                                                    const WModelIndex &index,
+                                                    WFlags< ViewItemRenderFlag > flags )
 {
-  bool isNew = true;
-  const bool editing = (widget && (widget->find("t") == 0));
+  bool isNew = false;
+  const bool editing = (widget && (widget->find("t") == nullptr));
 
-  if( flags & RenderEditing )
+  // created holds a newly constructed widget; w points to the widget being rendered
+  std::unique_ptr<WWidget> created;
+  WWidget *w = widget;
+
+  if( flags.test( ViewItemRenderFlag::Editing ) )
   {
     if( !editing )
     {
-      widget = new EditWidget( index, flags, m_closeOnBlur, m_delegateType, this );
-      WInteractWidget *iw = dynamic_cast<WInteractWidget *>( widget );
+      created = std::make_unique<EditWidget>( index, flags, m_closeOnBlur, m_delegateType, this );
+      w = created.get();
+      WInteractWidget *iw = dynamic_cast<WInteractWidget *>( w );
       if( iw ) // Disable drag & drop and selection behaviour
       {
         iw->mouseWentDown().preventPropagation();
@@ -536,53 +525,61 @@ WWidget *PhotopeakDelegate::update( WWidget *widget,
   }else
   {
     if( editing )
-      widget = 0;
-  }//if( flags & RenderEditing ) / lese
+      w = nullptr;
+  }//if( flags.test(Editing) ) / else
 
-  if( !(flags & RenderEditing) )
+  if( !flags.test( ViewItemRenderFlag::Editing ) )
   {
-    WText *text = dynamic_cast<WText *>( widget );
+    WText *text = dynamic_cast<WText *>( w );
 
     if( !text )
     {
       isNew = true;
-      text = new WText();
+      auto textUPtr = std::make_unique<WText>();
+      text = textUPtr.get();
       text->setObjectName( "t" );
-      if( !index.isValid() || (index.isValid() && !(index.flags() & ItemIsXHTMLText)) )
-        text->setTextFormat(PlainText);
-      text->setWordWrap(true);
-      widget = text;
+      if( !index.isValid() || (index.isValid() && !index.flags().test( ItemFlag::XHTMLText )) )
+        text->setTextFormat( TextFormat::Plain );
+      text->setWordWrap( true );
+      created = std::move( textUPtr );
+      w = text;
     }else if( !index.isValid() )
+    {
       text->setText( "" );
+    }
 
     if( !index.isValid() )
-      return widget;
+      return created;
 
     text->setText( asString( index.data() ) );
-  }//if( !(flags & RenderEditing) )
+  }//if( !flags.test(Editing) )
 
-  WString tooltip = asString( index.data(ToolTipRole) );
-  if( !tooltip.empty() || !isNew )
-    widget->setToolTip( tooltip );
+  if( w )
+  {
+    WString tooltip = asString( index.data( ItemDataRole::ToolTip ) );
+    if( !tooltip.empty() || !isNew )
+      w->setToolTip( tooltip );
 
-  WT_USTRING sc = asString( index.data(StyleClassRole) );
+    WT_USTRING sc = asString( index.data( ItemDataRole::StyleClass ) );
 
-  if( flags & RenderSelected )
-    sc += WT_USTRING::fromUTF8( " Wt-selected" );
+    if( flags.test( ViewItemRenderFlag::Selected ) )
+      sc += WT_USTRING::fromUTF8( " Wt-selected" );
 
-  widget->setStyleClass( sc );
+    w->setStyleClass( sc );
+  }//if( w )
 
-  return widget;
-}//WWidget *update(...)
+  return created;
+}//std::unique_ptr<WWidget> update(...)
 
 
-boost::any PhotopeakDelegate::editState( WWidget *editor ) const
+Wt::cpp17::any PhotopeakDelegate::editState( WWidget *editor,
+                                             const Wt::WModelIndex &/*index*/ ) const
 {
   WContainerWidget *w = dynamic_cast<WContainerWidget *>(editor);
   if( !w )
   {
     cerr << "PhotopeakDelegate::editState(...)\n\tLogic error - fix me!" << endl;
-    return boost::any();
+    return Wt::cpp17::any();
   }//if( !w )
 
   WLineEdit *lineEdit = dynamic_cast<WLineEdit *>(w->widget(0));
@@ -590,15 +587,16 @@ boost::any PhotopeakDelegate::editState( WWidget *editor ) const
   if( !lineEdit )
   {
     cerr << "PhotopeakDelegate::editState(...)\n\tLogic error - fix me!" << endl;
-    return boost::any();
+    return Wt::cpp17::any();
   }//if( !lineEdit )
 
-  return boost::any( lineEdit->text() );
-}//boost::any editState( WWidget *editor ) const
+  return Wt::cpp17::any( lineEdit->text() );
+}//Wt::cpp17::any editState( WWidget *editor, const WModelIndex & ) const
 
 
 void PhotopeakDelegate::setEditState( WWidget *editor,
-                                    const boost::any& value ) const
+                                      const Wt::WModelIndex &/*index*/,
+                                      const Wt::cpp17::any& value ) const
 {
   WContainerWidget *w = dynamic_cast<WContainerWidget *>(editor);
   if( !w )
@@ -617,31 +615,30 @@ void PhotopeakDelegate::setEditState( WWidget *editor,
 
   try
   {
-//    lineEdit->setText( boost::any_cast<WT_USTRING>(value) );
-    lineEdit->setText( boost::any_cast<WString>(value) );
+//    lineEdit->setText( Wt::cpp17::any_cast<WT_USTRING>(value) );
+    lineEdit->setText( Wt::cpp17::any_cast<WString>(value) );
   }catch(...)
   {
     cerr << "PhotopeakDelegate::setEditState(...)\n\tPossible Logic error - fix me!" << endl;
     lineEdit->setText( "" );
   }//try / catch
-}//void setEditState( WWidget *editor, const boost::any& value ) const
+}//void setEditState( WWidget *editor, const Wt::cpp17::any& value ) const
 
 
-void PhotopeakDelegate::setModelData( const boost::any& editState,
+void PhotopeakDelegate::setModelData( const Wt::cpp17::any& editState,
                                     WAbstractItemModel *model,
                                     const WModelIndex& index) const
 {
   if( model )
-    model->setData( index, editState, EditRole );
+    model->setData( index, editState, ItemDataRole::Edit );
 }//void setModelData(...)
 
 
 
 
 PeakIsotopeNameFilterModel::PeakIsotopeNameFilterModel(
-                                  const std::shared_ptr<const PeakDef> &peak,
-                                  Wt::WObject *parent  )
-  : WAbstractItemModel( parent ),
+                                  const std::shared_ptr<const PeakDef> &peak )
+  : WAbstractItemModel(),
     m_minHalfLife( 60.0*15.0 ),
     m_filter( "" ),
     m_peak( peak )
@@ -692,7 +689,7 @@ int PeakIsotopeNameFilterModel::columnCount( const WModelIndex &parent ) const
 
 
 WString PeakIsotopeNameFilterModel::displayText( const SandiaDecay::Nuclide *nuclide,
-                    double peakMean, PeakDef::SourceGammaType type, int role )
+                    double peakMean, PeakDef::SourceGammaType type, Wt::ItemDataRole role )
 {
   string typePrefix = "", typePostFix = "";
   switch( type )
@@ -716,20 +713,20 @@ WString PeakIsotopeNameFilterModel::displayText( const SandiaDecay::Nuclide *nuc
   }//switch( type )
   
   
-  if( (role==DisplayRole) || (role==ToolTipRole) )
+  if( (role == ItemDataRole::Display) || (role == ItemDataRole::ToolTip) )
   {
     string descript;
     descript = nuclide->symbol;
-    
+
     const vector< IsotopeSelectionAids::NearGammaInfo > energies
              = IsotopeSelectionAids::equilibriumGammasByNearestEnergy( nuclide,
                                                      peakMean, 1.0E-10, true, true );
     const size_t nlines = energies.size();
-    
+
     if( nlines )
       descript += " (";
-    
-    const size_t max_lines = (role!=ToolTipRole) ? 3 : 10;
+
+    const size_t max_lines = (role != ItemDataRole::ToolTip) ? 3 : 10;
     for( size_t line = 0; line < max_lines && line < nlines; ++line )
     {
       const IsotopeSelectionAids::NearGammaInfo &info = energies[line];
@@ -760,17 +757,17 @@ WString PeakIsotopeNameFilterModel::displayText( const SandiaDecay::Nuclide *nuc
     if( nlines )
       descript += ")";
     return typePrefix + descript;
-  }//if( role == DisplayRole )
-  
-  if( role == UserRole )
+  }//if( role == ItemDataRole::Display )
+
+  if( role == ItemDataRole::User )
     return typePrefix + nuclide->symbol + typePostFix;
-  
+
   return "";
-}//WString displayText( const SandiaDecay::Nuclide *txt, int role )
+}//WString displayText( const SandiaDecay::Nuclide *txt, ItemDataRole role )
 
 
 WString PeakIsotopeNameFilterModel::displayText( const SandiaDecay::Element *element,
-                                                 int role, double minHalfLife )
+                                                 Wt::ItemDataRole role, double minHalfLife )
 {
   stringstream answer;
   answer << element->symbol;
@@ -779,7 +776,7 @@ WString PeakIsotopeNameFilterModel::displayText( const SandiaDecay::Element *ele
   //  possible isotopes so this way if the user selects this option, only
   //  the symbol will be placed into the form
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  if( db && (role==DisplayRole) )
+  if( db && (role == ItemDataRole::Display) )
   {
     int niso = 0;
     std::vector<const SandiaDecay::Nuclide *> nuclides = db->nuclides( element );
@@ -787,41 +784,42 @@ WString PeakIsotopeNameFilterModel::displayText( const SandiaDecay::Element *ele
     {
       if( (nuclides[i]->halfLife > minHalfLife)
          && !IsInf( nuclides[i]->halfLife)
-         && (niso<5 || role==Wt::ToolTipRole) )
+         && (niso<5 || role == ItemDataRole::ToolTip) )
       {
         ++niso;
         answer << " " << nuclides[i]->symbol.substr( element->symbol.length() );
-      }else if( niso >= 5 && (role!=Wt::ToolTipRole) )
+      }else if( niso >= 5 && (role != ItemDataRole::ToolTip) )
       {
         answer << "...";
         break;
       }
     }//for( const Nuclide *nuclide : nuclides )
   }//if( db )
-  
-  if(role == UserRole || role == DisplayRole || role == ToolTipRole )
+
+  if( role == ItemDataRole::User || role == ItemDataRole::Display || role == ItemDataRole::ToolTip )
     return answer.str();
   
   return "";
 }//WString displayText( const SandiaDecay::Element *el, int role )
 
 
-boost::any PeakIsotopeNameFilterModel::data( const Wt::WModelIndex &index, int role ) const
+Wt::cpp17::any PeakIsotopeNameFilterModel::data( const Wt::WModelIndex &index,
+                                                 Wt::ItemDataRole role ) const
 {
   const int row = index.row();
   const int column = index.column();
   const int nrows = static_cast<int>( m_displayData.size() );
 
   if( row < 0 || column!=0 || row >= nrows  )
-    return boost::any();
+    return Wt::cpp17::any();
 
-  if( role == DisplayRole )
+  if( role == ItemDataRole::Display )
     return m_displayData[row];
-  else if( role == UserRole )
+  else if( role == ItemDataRole::User )
     return m_userData[row];
-  
-  return boost::any();
-}//boost::any data(..)
+
+  return Wt::cpp17::any();
+}//Wt::cpp17::any data(..)
 
 
 
@@ -1256,15 +1254,15 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
   
   for( const PeakDef::CandidateNuclide &cand : fitleredCandidates )
   {
-    displayData.push_back( displayText(cand.nuclide, peakMean, srcType, Wt::DisplayRole) );
-    userData.push_back( displayText(cand.nuclide, peakMean, srcType, Wt::UserRole) );
+    displayData.push_back( displayText(cand.nuclide, peakMean, srcType, Wt::ItemDataRole::Display) );
+    userData.push_back( displayText(cand.nuclide, peakMean, srcType, Wt::ItemDataRole::User) );
   }
   
   for( size_t i = 0; i < nuclides.size(); ++i )
   {
     const SandiaDecay::Nuclide *nuc = nuclides[ sort_indices[i] ];
-    displayData.push_back( displayText(nuc, peakMean, srcType, Wt::DisplayRole) );
-    userData.push_back( displayText(nuc, peakMean, srcType, Wt::UserRole) );
+    displayData.push_back( displayText(nuc, peakMean, srcType, Wt::ItemDataRole::Display) );
+    userData.push_back( displayText(nuc, peakMean, srcType, Wt::ItemDataRole::User) );
   }//for( size_t i = 0; i < nuclides.size(); ++i )
   
   
@@ -1279,8 +1277,8 @@ void PeakIsotopeNameFilterModel::filter( const Wt::WString &text )
   for( size_t i = 0; i < elements.size(); ++i )
   {
     const SandiaDecay::Element *el = elements[ element_sort_indices[i] ];
-    displayData.push_back( displayText(el, Wt::DisplayRole, m_minHalfLife) );
-    userData.push_back( displayText(el, Wt::UserRole, m_minHalfLife) );
+    displayData.push_back( displayText(el, Wt::ItemDataRole::Display, m_minHalfLife) );
+    userData.push_back( displayText(el, Wt::ItemDataRole::User, m_minHalfLife) );
     
     if( el->xrays.size() )
     {

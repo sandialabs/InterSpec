@@ -28,10 +28,10 @@
 #include <vector>
 #include <cfloat>
 
-#include <Wt/WColor>
-#include <Wt/WString>
-#include <Wt/WModelIndex>
-#include <Wt/WAbstractTableModel>
+#include <Wt/WColor.h>
+#include <Wt/WString.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/WAbstractTableModel.h>
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
@@ -42,8 +42,8 @@ using namespace Wt;
 using namespace std;
 
 
-SearchMode3DDataModel::SearchMode3DDataModel( WObject *parent )
-  : WAbstractTableModel( parent ),
+SearchMode3DDataModel::SearchMode3DDataModel()
+  : WAbstractTableModel(),
   m_minCounts( 0.0f ),
   m_maxCounts( 0.0f ),
   m_maxNumChannels( 128 ),
@@ -69,56 +69,56 @@ int SearchMode3DDataModel::columnCount( const Wt::WModelIndex &parent ) const
 }
   
 
-boost::any SearchMode3DDataModel::data( int row, int column, int role,
+Wt::cpp17::any SearchMode3DDataModel::data( int row, int column, Wt::ItemDataRole role,
                                         const WModelIndex &parent ) const
 {
   return data( createIndex(row, column, (void*)0), role );
 }
   
   
-boost::any SearchMode3DDataModel::data( const WModelIndex &index,
-                                        int role ) const
+Wt::cpp17::any SearchMode3DDataModel::data( const WModelIndex &index,
+                                        Wt::ItemDataRole role ) const
 {
   if( !index.isValid() )
-    return boost::any();
+    return Wt::cpp17::any();
     
   const int row = index.row();
   const int column = index.column();
   
-  if( role == MarkerBrushColorRole )
-    return boost::any();  //Kevin: you might want to customize the color here, or you could create your own version of WStandardColorMap
-  else if( role != DisplayRole )
-    return boost::any();
+  if( role == Wt::ItemDataRole::MarkerBrushColor )
+    return Wt::cpp17::any();  //Kevin: you might want to customize the color here, or you could create your own version of WStandardColorMap
+  else if( role != Wt::ItemDataRole::Display )
+    return Wt::cpp17::any();
     
   //Lets check to make sure data requested is for valid data
   const int nrow = rowCount();
   const int ncolumn = columnCount();
     
   if( row < 0 || column < 0 || row >= nrow || column >= ncolumn )
-    return boost::any();
+    return Wt::cpp17::any();
     
   if( row == 0 )  //for row==0, we will return the energy for this column
-    return (column==0 ? boost::any() : boost::any(m_energies[column/2]));
+    return (column==0 ? Wt::cpp17::any() : Wt::cpp17::any(m_energies[column/2]));
     
   if( column == 0 )  //for column == 0, we will return the time (since measurment started) for this row
-    return boost::any(m_times[row/2]);
+    return Wt::cpp17::any(m_times[row/2]);
     
   const int sample = (row-1) / 2;
   const int channel = (column-1) / 2;
     
   if( channel == (m_energies.size()-1) || sample == (m_times.size()-1) )
-    return boost::any( 0.0 );
+    return Wt::cpp17::any( 0.0 );
   
   if( channel >= m_energies.size() || sample >= m_times.size() )
-    return boost::any();
+    return Wt::cpp17::any();
     
-  return boost::any( m_counts[sample][channel] );
+  return Wt::cpp17::any( m_counts[sample][channel] );
 }//data()
   
   
-boost::any SearchMode3DDataModel::headerData( int section,
+Wt::cpp17::any SearchMode3DDataModel::headerData( int section,
                                               Orientation orientation,
-                                              int role ) const
+                                              Wt::ItemDataRole role ) const
 {
   return 0.0;  //un-implemented
 }

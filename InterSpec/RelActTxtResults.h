@@ -29,7 +29,7 @@
 #include <memory>
 #include <utility>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 namespace RelActCalcAuto
 {
@@ -39,7 +39,7 @@ namespace RelActCalcAuto
 class RelActTxtResults : public Wt::WContainerWidget
 {
 public:
-  RelActTxtResults( Wt::WContainerWidget *parent = nullptr );
+  RelActTxtResults();
   
   void setNoResults();
   

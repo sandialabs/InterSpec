@@ -30,9 +30,9 @@
 #include <memory>
 #include <utility>
 
-#include <Wt/WDialog>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WDialog.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
 
 // Forward Declarations
 class PeakDef;
@@ -70,7 +70,7 @@ public:
   
   void applyCurrentFit();
   
-  void handleFinish( Wt::WDialog::DialogCode result );
+  void handleFinish( Wt::DialogCode result );
 protected:
   void updateCoefDisplay();
   
@@ -95,7 +95,7 @@ protected:
 class EnergyCalMultiFileModel : public  Wt::WAbstractItemModel
 {
 public:
-  EnergyCalMultiFileModel( EnergyCalTool *calibrator, Wt::WObject *parent = 0 );
+  EnergyCalMultiFileModel( EnergyCalTool *calibrator );
   virtual ~EnergyCalMultiFileModel();
   
   virtual Wt::WModelIndex index( int row, int column,
@@ -105,14 +105,14 @@ public:
   virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   virtual int columnCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   
-  virtual boost::any data( const Wt::WModelIndex &index,
-                           int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
+                           Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   virtual bool setData( const Wt::WModelIndex &index,
-                        const boost::any &value, int role = Wt::EditRole );
+                        const Wt::cpp17::any &value, Wt::ItemDataRole role = Wt::ItemDataRole::Edit );
   virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const;
-  virtual boost::any headerData( int section,
-                                 Wt::Orientation orientation = Wt::Horizontal,
-                                 int role = Wt::DisplayRole) const;
+  virtual Wt::cpp17::any headerData( int section,
+                                 Wt::Orientation orientation = Wt::Orientation::Horizontal,
+                                 Wt::ItemDataRole role = Wt::ItemDataRole::Display) const;
   void refreshData();
   
 protected:

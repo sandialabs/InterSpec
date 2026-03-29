@@ -33,7 +33,7 @@
 
 #include "SpecUtils/SpecFile.h"
 
-#include <Wt/WFlags>
+#include <Wt/WFlags.h>
 
 #include "InterSpec/FitPeaksForNuclides.h"
 #include "InterSpec/ReactionGamma.h" //for ReactionGamma::Reaction

@@ -128,7 +128,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
                                const PeakFitUtils::CoarseResolutionType det_type,
                                const std::string sessionid,
                                std::shared_ptr< std::vector<std::string> > candidates,
-                               boost::function<void(void)> doupdate );
+                               std::function<void(void)> doupdate );
 
   
 //isotopesFromOtherPeaks(): looks at peaks other than 'peak' and places

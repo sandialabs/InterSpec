@@ -27,8 +27,9 @@
 #include <mutex>
 #include <vector>
 #include <string>
+#include <fstream>
 
-#include <Wt/WServer>
+#include <Wt/WServer.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -1505,10 +1506,10 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
                                const PeakFitUtils::CoarseResolutionType det_type,
                                const std::string sessionid,
                                std::shared_ptr< vector<string> > candidates,
-                               boost::function<void(void)> doupdate )
+                               std::function<void(void)> doupdate )
 {
   //TODO: should probably add in some error logging or something
-  if( !data || !peak || !candidates || doupdate.empty() )
+  if( !data || !peak || !candidates || !doupdate )
     return;
   
   char buffer[128];
@@ -1559,16 +1560,18 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
   }//if( hintpeaks )
   
   
-  pool.post( boost::bind( &findCandidates,
-                         boost::ref(suggestednucs),
-                         peak, allpeaks, detector, data, det_type ) );
-  
-  pool.post( boost::bind( &findCharacteristics,
-                         boost::ref(characteristicnucs), peak ) );
-  
+  pool.post( [&suggestednucs, peak, allpeaks, detector, data, det_type](){
+    findCandidates( suggestednucs, peak, allpeaks, detector, data, det_type );
+  } );
+
+  pool.post( [&characteristicnucs, peak](){
+    findCharacteristics( characteristicnucs, peak );
+  } );
+
   if( userpeaks )
-    pool.post( boost::bind( &isotopesFromOtherPeaks,
-                           boost::ref(otherpeaksnucs), peak, userpeaks ) );
+    pool.post( [&otherpeaksnucs, peak, userpeaks](){
+      isotopesFromOtherPeaks( otherpeaksnucs, peak, userpeaks );
+    } );
   
   const char *modifier = "";
   switch( peak->sourceGammaType() )

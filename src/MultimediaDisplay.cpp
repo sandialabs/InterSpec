@@ -23,15 +23,19 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/Utils>
-#include <Wt/WText>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WCheckBox>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WMemoryResource>
-#include <Wt/WContainerWidget>
+#include <memory>
+
+#include <Wt/Utils.h>
+#include <Wt/WLink.h>
+#include <Wt/WText.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WMemoryResource.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
@@ -61,7 +65,7 @@ class MultimediaDisplay : public WContainerWidget
 {
   std::shared_ptr<const SpecMeas> m_meas;
   size_t m_current_index;
-  WMemoryResource *m_resource;
+  shared_ptr<WMemoryResource> m_resource;
   WImage *m_image;
   WText *m_error;
   WContainerWidget *m_add_info;
@@ -79,8 +83,8 @@ class MultimediaDisplay : public WContainerWidget
 #endif
   
 public:
-  MultimediaDisplay( WContainerWidget *parent = nullptr )
-  : WContainerWidget( parent ),
+  MultimediaDisplay()
+  : WContainerWidget(),
   m_meas{ nullptr },
   m_current_index( 0 ),
   m_resource( nullptr ),
@@ -102,46 +106,46 @@ public:
     
     addStyleClass( "MultimediaDisplay" );
   
-    m_resource = new WMemoryResource( this );
-    
-    m_image = new WImage( WLink(m_resource), this );
+    m_resource = make_shared<WMemoryResource>();
+
+    m_image = addNew<WImage>( WLink(m_resource) );
     m_image->addStyleClass( "SpecImage" );
     m_image->setHidden( true );
-    
-    m_error = new WText( this );
+
+    m_error = addNew<WText>();
     m_error->setStyleClass( "NoContentTxt" );
-    
-    m_add_info = new WContainerWidget( this );
+
+    m_add_info = addNew<WContainerWidget>();
     m_add_info->addStyleClass( "AddInfo" );
-    
-    m_remark = new WText( m_add_info );
+
+    m_remark = m_add_info->addNew<WText>();
     m_remark->addStyleClass( WString::tr("Remark") );
-    
-    m_description = new WText( m_add_info );
+
+    m_description = m_add_info->addNew<WText>();
     m_description->addStyleClass( WString::tr("Description") );
-    
-    m_time = new WText( m_add_info );
+
+    m_time = m_add_info->addNew<WText>();
     m_time->addStyleClass( "Time" );
-    
-    m_nav = new WContainerWidget( this );
+
+    m_nav = addNew<WContainerWidget>();
     m_nav->addStyleClass( "Nav" );
-    
-    m_prev = new WPushButton( WString::tr("smmd-prev-btn"), m_nav );
+
+    m_prev = m_nav->addNew<WPushButton>( WString::tr("smmd-prev-btn") );
     m_prev->addStyleClass( "Prev" );
     m_prev->clicked().connect( this, &MultimediaDisplay::prevIndex );
-    
-    m_pos_txt = new WText( m_nav );
+
+    m_pos_txt = m_nav->addNew<WText>();
     m_pos_txt->addStyleClass( "NavPos" );
-    
-    m_next = new WPushButton( WString::tr("smmd-next-btn"), m_nav );
+
+    m_next = m_nav->addNew<WPushButton>( WString::tr("smmd-next-btn") );
     m_next->addStyleClass( "Next" );
     m_next->clicked().connect( this, &MultimediaDisplay::nextIndex );
-    
-    
-    WContainerWidget *footer = new WContainerWidget( this );
+
+
+    WContainerWidget *footer = addNew<WContainerWidget>();
     footer->addStyleClass( "PrefAndDownload" );
-    
-    WCheckBox *cb = new WCheckBox( WString::tr("smmd-auto-show-images-cb"), footer );
+
+    WCheckBox *cb = footer->addNew<WCheckBox>( WString::tr("smmd-auto-show-images-cb") );
     cb->setToolTip( WString::tr("smmd-tt-auto-show-images") );
     cb->addStyleClass( "CbNoLineBreak" );
     m_next->setFocus();
@@ -152,27 +156,30 @@ public:
       UserPreferences::associateWidget( "AutoShowSpecMultimedia", cb, interspec );
     
 #if( BUILD_AS_OSX_APP || IOS )
-    m_download = new WAnchor( WLink(m_resource), footer );
+    m_download = footer->addNew<WAnchor>( WLink(m_resource) );
     m_download->setTarget( AnchorTarget::TargetNewWindow );
     m_download->setStyleClass( "LinkBtn DownloadLink" );
     m_download->setTarget( AnchorTarget::TargetNewWindow ); //TargetDownload
     m_download->setText( "Save..." );
 #else
-    m_download = new WPushButton( footer );
+    m_download = footer->addNew<WPushButton>();
     m_download->setIcon( "InterSpec_resources/images/download_small.svg" );
-    m_download->setLink( WLink(m_resource) );
-    m_download->setLinkTarget( Wt::TargetNewWindow ); //TargetDownload
+    {
+      WLink lnk( m_resource );
+      lnk.setTarget( LinkTarget::NewWindow );
+      m_download->setLink( lnk );
+    }
     m_download->setStyleClass( "LinkBtn DownloadBtn" );
-    
+
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
     m_download->clicked().connect( std::bind([this](){
-      android_download_workaround(m_resource, "image_from_spec_file");
+      android_download_workaround(m_resource.get(), "image_from_spec_file");
     }) );
 #endif //ANDROID
 #endif
     
-    m_download->setToolTip( WString::tr("smmd-tt-export-image-file"), Wt::PlainText );
+    m_download->setToolTip( WString::tr("smmd-tt-export-image-file"), Wt::TextFormat::Plain );
     
     setIndex( 0 );
   }//constructor
@@ -377,11 +384,11 @@ SimpleDialog *displayMultimedia( const std::shared_ptr<const SpecMeas> &spec )
   const bool multiple_images = (spec && (spec->multimedia_data().size() > 1));
   const char *title_key = multiple_images ? "smmd-window-title-multiple" : "smmd-window-title-single";
   // I think its find that we may not have read MultimediaDisplay.xml yet - I dont think WString resolves the keys immediately
-  WText *dialogTitle = new WText( WString::tr(title_key), contents );
+  WText *dialogTitle = contents->addNew<WText>( WString::tr(title_key) );
   dialogTitle->addStyleClass( "title MultimediaDialogTitle" );
   dialogTitle->setInline( false );
-  
-  MultimediaDisplay *display = new MultimediaDisplay( contents );
+
+  MultimediaDisplay *display = contents->addNew<MultimediaDisplay>();
   display->updateDisplay( spec );
   
   return dialog;

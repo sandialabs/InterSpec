@@ -27,7 +27,7 @@
 
 #include <memory>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -50,7 +50,7 @@ class NativeFloatSpinBox;
 class ColorThemeWidget : public Wt::WContainerWidget
 {
 public:
-	ColorThemeWidget( Wt::WContainerWidget *parent = nullptr );
+	ColorThemeWidget();
 	virtual ~ColorThemeWidget();
 
 	/** A copy of the theme passed in will be made, and modified. */

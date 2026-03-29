@@ -29,7 +29,7 @@
 #include <vector>
 #include <utility>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -57,8 +57,7 @@ class MakeFwhmForDrf : public Wt::WContainerWidget
 public:
   MakeFwhmForDrf( const bool auto_fit_peaks,
                  InterSpec *viewer,
-                 std::shared_ptr<DetectorPeakResponse> drf,
-                 Wt::WContainerWidget *parent = nullptr );
+                 std::shared_ptr<DetectorPeakResponse> drf );
   
   virtual ~MakeFwhmForDrf() override;
 

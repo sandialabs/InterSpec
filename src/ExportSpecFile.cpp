@@ -30,31 +30,32 @@
 #include <vector>
 #include <iostream>
 #include <exception>
+#include <functional>
 
-#include <Wt/Utils>
-#include <Wt/WMenu>
-#include <Wt/WText>
-#include <Wt/WTable>
-#include <Wt/WImage>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WMenuItem>
-#include <Wt/WResource>
-#include <Wt/WTabWidget>
-#include <Wt/WTableCell>
-#include <Wt/WLabel>
-#include <Wt/WAnchor>
-#include <Wt/WPushButton>
-#include <Wt/Http/Request>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/Http/Response>
-#include <Wt/WMemoryResource>
-#include <Wt/WContainerWidget>
-#include <Wt/WRegExpValidator>
-#include <Wt/WMessageResourceBundle>
+#include <Wt/Utils.h>
+#include <Wt/WMenu.h>
+#include <Wt/WText.h>
+#include <Wt/WTable.h>
+#include <Wt/WImage.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WResource.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WLabel.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WPushButton.h>
+#include <Wt/Http/Request.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WMemoryResource.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WMessageResourceBundle.h>
 
 //Following include only needed for lines:
 //  answer->setShieldingSourceModel(...);
@@ -160,9 +161,9 @@ std::string clean_uuid( string uuid )
 
   void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls,
                        const size_t index,
-                       boost::function<void()> successfullyDone,
+                       std::function<void()> successfullyDone,
                        const bool as_emailto,
-                       boost::function<void()> toogleEmailVsUri )
+                       std::function<void()> toogleEmailVsUri )
   {
     string seqnum = as_emailto ? "QR-code to create email" : "QR-code of spectrum";
     if( urls.size() > 1 )
@@ -215,8 +216,9 @@ std::string clean_uuid( string uuid )
     {
       WString btn_txt = as_emailto ? WString::tr("esf-url-link") : WString::tr("esf-email-link");
       WPushButton *btn = dialog->addButton( btn_txt );
-      dialog->footer()->removeWidget( btn );
-      dialog->footer()->insertWidget( 0, btn );
+      // Wt4: removeWidget returns unique_ptr; capture it to keep the widget alive, then reinsert
+      auto btn_owner = dialog->footer()->removeWidget( btn );
+      dialog->footer()->insertWidget( 0, std::move(btn_owner) );
       btn->clicked().connect( std::bind(toogleEmailVsUri) );
     }//if( toogleEmailVsUri )
   }//void displayQr( vector<QRSpectrum::QrCodeEncodedSpec> urls )
@@ -224,7 +226,7 @@ std::string clean_uuid( string uuid )
 
 void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
                    shared_ptr<const SpecMeas> spec,
-                   boost::function<void()> successfullyDone,
+                   std::function<void()> successfullyDone,
                    const bool as_emailto )
 {
   try
@@ -288,7 +290,7 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
     }//if( urls.empty() )
     
     
-    boost::function<void()> toogleEmailVsUri = [=](){
+    std::function<void()> toogleEmailVsUri = [=](){
       displayQrCode( urlspec, spec, successfullyDone, !as_emailto );
     };
     
@@ -303,7 +305,7 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
 
 void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
                           shared_ptr<const SpecMeas> spec,
-                          boost::function<void()> successfullyDone )
+                          std::function<void()> successfullyDone )
 {
   // QR version options: version -> elements = version*4+17
   struct QrVersionInfo
@@ -411,8 +413,8 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
 
   const unsigned char *svg_begin = reinterpret_cast<const unsigned char *>( qr_svg_str.data() );
   const vector<unsigned char> svg_data( svg_begin, svg_begin + qr_svg_str.size() );
-  WMemoryResource *svgResource = new WMemoryResource( "image/svg+xml", svg_data, window );
-  svgResource->suggestFileName( "qr_lossy.svg", WResource::Attachment );
+  auto svgResource = std::make_shared<WMemoryResource>( "image/svg+xml", svg_data );
+  svgResource->suggestFileName( "qr_lossy.svg", ContentDisposition::Attachment );
 
   string contentStyle;
   if( is_phone && !narrow_layout )
@@ -427,7 +429,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   if( !contentStyle.empty() )
     window->contents()->setAttributeValue( "style", contentStyle );
 
-  WImage *qrImage = new WImage( WLink(svgResource), window->contents() );
+  WImage *qrImage = window->contents()->addNew<WImage>( WLink(svgResource) );
   qrImage->setInline( false );
   qrImage->resize( svg_size, svg_size );
   qrImage->setMargin( 5, Wt::Side::Bottom );
@@ -435,7 +437,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   qrImage->setMargin( WLength::Auto, Wt::Side::Right );
 
   // Error tolerance row
-  WContainerWidget *eclRow = new WContainerWidget( window->contents() );
+  WContainerWidget *eclRow = window->contents()->addNew<WContainerWidget>();
   const char *row_style = "margin-bottom: 10px;"
     " display: flex;"
     " flex-wrap: nowrap;"
@@ -445,8 +447,8 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
     " margin-right: 10px;";
   eclRow->setAttributeValue( "style", row_style );
 
-  WLabel *eclLabel = new WLabel( WString::tr("esf-qr-error-tolerance"), eclRow );
-  WComboBox *eclSelect = new WComboBox( eclRow );
+  WLabel *eclLabel = eclRow->addNew<WLabel>( WString::tr("esf-qr-error-tolerance") );
+  WComboBox *eclSelect = eclRow->addNew<WComboBox>();
   eclLabel->setBuddy( eclSelect );
   eclSelect->setNoSelectionEnabled( false );
   eclSelect->addItem( "Approx. 7% Loss" );
@@ -456,11 +458,11 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   eclSelect->setCurrentIndex( default_ecl_index );
 
   // QR version (size) row
-  WContainerWidget *verRow = new WContainerWidget( window->contents() );
+  WContainerWidget *verRow = window->contents()->addNew<WContainerWidget>();
   verRow->setAttributeValue( "style", row_style );
 
-  WLabel *verLabel = new WLabel( WString::tr("esf-qr-num-elements"), verRow );
-  WComboBox *verSelect = new WComboBox( verRow );
+  WLabel *verLabel = verRow->addNew<WLabel>( WString::tr("esf-qr-num-elements") );
+  WComboBox *verSelect = verRow->addNew<WComboBox>();
   verLabel->setBuddy( verSelect );
   verSelect->setNoSelectionEnabled( false );
   for( size_t i = 0; i < s_num_versions; ++i )
@@ -468,14 +470,14 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   verSelect->setCurrentIndex( default_ver_index );
 
   // RMSE and coefficient info
-  WContainerWidget *infoRow = new WContainerWidget( window->contents() );
+  WContainerWidget *infoRow = window->contents()->addNew<WContainerWidget>();
   infoRow->setAttributeValue( "style", row_style );
 
   char rmse_buf[64];
   snprintf( rmse_buf, sizeof(rmse_buf), "%.2f", result.m_rmse );
-  WText *infoTxt = new WText( WString::tr("esf-qr-rmse-info")
+  WText *infoTxt = infoRow->addNew<WText>( WString::tr("esf-qr-rmse-info")
                                .arg( rmse_buf )
-                               .arg( result.m_num_coefficients ), infoRow );
+                               .arg( result.m_num_coefficients ) );
 
   // Shared state for the update lambda
   // current_url holds the decoded URL (for QR rendering), current_encoded_url holds
@@ -535,28 +537,30 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   verSelect->changed().connect( std::bind(doUpdate) );
 
   // Buttons row
-  WContainerWidget *btndiv = new WContainerWidget( window->contents() );
+  WContainerWidget *btndiv = window->contents()->addNew<WContainerWidget>();
 
 #if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *svgDownload = new WAnchor( WLink(svgResource) );
-  svgDownload->setTarget( AnchorTarget::TargetNewWindow );
+  WLink svgDlLink( svgResource );
+  svgDlLink.setTarget( LinkTarget::NewWindow );
+  WAnchor *svgDownload = btndiv->addNew<WAnchor>( svgDlLink );
   svgDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
 #else
-  WPushButton *svgDownload = new WPushButton( btndiv );
+  WPushButton *svgDownload = btndiv->addNew<WPushButton>();
   svgDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
-  svgDownload->setLink( WLink(svgResource) );
-  svgDownload->setLinkTarget( Wt::TargetNewWindow );
+  {
+    WLink lnk( svgResource );
+    lnk.setTarget( LinkTarget::NewWindow );
+    svgDownload->setLink( lnk );
+  }
   svgDownload->setStyleClass( "LinkBtn DownloadBtn" );
 #if( ANDROID )
   svgDownload->clicked().connect( std::bind([svgResource](){
-    android_download_workaround( svgResource, "qr_lossy.svg" );
+    android_download_workaround( svgResource.get(), "qr_lossy.svg" );
   }) );
 #endif //ANDROID
 #endif
-  svgDownload->setText( "SVG" );
-  svgDownload->setFloatSide( Wt::Side::Right );
 
-  WPushButton *copyBtn = new WPushButton( "Copy url to clipboard", btndiv );
+  WPushButton *copyBtn = btndiv->addNew<WPushButton>( "Copy url to clipboard" );
   copyBtn->setStyleClass( "LinkBtn" );
   copyBtn->setFloatSide( Wt::Side::Left );
 
@@ -580,15 +584,9 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   eclSelect->changed().connect( std::bind(updateJsUrl) );
   verSelect->changed().connect( std::bind(updateJsUrl) );
 
-  if( is_phone && !narrow_layout )
-  {
-    btndiv->addWidget( svgDownload );
-    btndiv->addWidget( copyBtn );
-  }else
-  {
-    btndiv->addWidget( copyBtn );
-    btndiv->addWidget( svgDownload );
-  }
+  // Note: svgDownload and copyBtn are already children of btndiv (created via addNew above).
+  //  In Wt4, order of widgets is determined by insertion order.
+  //  Wt4_TODO: if phone/non-narrow order matters, consider using insertWidget() to reorder.
 
   // Connect Close button to successfullyDone if provided
   if( successfullyDone )
@@ -645,10 +643,10 @@ namespace ExportSpecFileTool_imp
 
 
   DownloadSpectrumResource::DownloadSpectrumResource( ExportSpecFileTool *tool )
-    : WResource( tool ),
+    : WResource(),
       m_tool( tool ),
       m_app( WApplication::instance() ),
-      m_download_finished( this )
+      m_download_finished()
   {
     assert( m_app );
   }
@@ -969,15 +967,15 @@ namespace ExportSpecFileTool_imp
 }//namespace ExportSpecFileTool_imp
 
 
-ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget *parent )
- : Wt::WContainerWidget( parent ),
+ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer )
+ : Wt::WContainerWidget(),
   m_interspec ( viewer ),
   m_is_specific_file( false ),
   m_specific_spectrum( nullptr ),
   m_specific_samples{},
   m_specific_detectors{},
   m_current_file(),
-  m_done( this ),
+  m_done(),
   m_fileSelect( nullptr ),
   m_forePlusBack( nullptr ),
   m_fileInfo( nullptr ),
@@ -1019,16 +1017,15 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
 ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &spectrum,
                    const std::set<int> &samples,
                    const std::vector<std::string> &detectors,
-                   InterSpec *viewer,
-                   Wt::WContainerWidget *parent )
-: Wt::WContainerWidget( parent ),
+                   InterSpec *viewer )
+: Wt::WContainerWidget(),
   m_interspec ( viewer ),
   m_is_specific_file( false ),
   m_specific_spectrum( spectrum ),
   m_specific_samples{ samples },
   m_specific_detectors{ detectors },
   m_current_file( spectrum ),
-  m_done( this ),
+  m_done(),
   m_fileSelect( nullptr ),
   m_forePlusBack( nullptr ),
   m_fileInfo( nullptr ),
@@ -1100,26 +1097,34 @@ void ExportSpecFileTool::init()
   {
     addStyleClass( "ExportSpecFileToolPhone" );
 
-    mobileTabs = new WTabWidget( this );
+    mobileTabs = addNew<WTabWidget>();
     mobileTabs->addStyleClass( "ExportSpecFileTabs" );
   }else
   {
-    body = new WContainerWidget( this );
+    body = addNew<WContainerWidget>();
     body->addStyleClass( "ExportSpecFileBody" );
   }
-  
-  
-  WContainerWidget *fileSelectDiv = new WContainerWidget( body );
-  fileSelectDiv->addStyleClass( "ExportSpecSelect" );
+
+
+  WContainerWidget *fileSelectDiv = nullptr;
   if( isPhone )
-    mobileTabs->addTab( fileSelectDiv, WString::tr("esf-file-tab"), Wt::WTabWidget::LoadPolicy::PreLoading );
+  {
+    auto divOwner = std::make_unique<WContainerWidget>();
+    fileSelectDiv = divOwner.get();
+    fileSelectDiv->addStyleClass( "ExportSpecSelect" );
+    mobileTabs->addTab( std::move(divOwner), WString::tr("esf-file-tab"), Wt::ContentLoading::Eager );
+  }else
+  {
+    fileSelectDiv = body->addNew<WContainerWidget>();
+    fileSelectDiv->addStyleClass( "ExportSpecSelect" );
+  }
   
   if( !m_specific_spectrum )
   {
-    WText *title = new WText( WString::tr("esf-file-to-export"), fileSelectDiv );
+    WText *title = fileSelectDiv->addNew<WText>( WString::tr("esf-file-to-export") );
     title->addStyleClass( "ExportColTitle" );
-    
-    m_fileSelect = new WComboBox( fileSelectDiv );
+
+    m_fileSelect = fileSelectDiv->addNew<WComboBox>();
     m_fileSelect->setNoSelectionEnabled( true );
     
     SpecMeasManager * const measManager = m_interspec->fileManager();
@@ -1127,7 +1132,7 @@ void ExportSpecFileTool::init()
     if( !measManager || !fileModel )
       throw runtime_error( "null SpecMeasManager or SpectraFileModel" );
     
-    m_fileSelect->setModel( fileModel );
+    m_fileSelect->setModel( std::shared_ptr<Wt::WAbstractItemModel>( fileModel, [](Wt::WAbstractItemModel*){} ) );
     m_fileSelect->setModelColumn( SpectraFileModel::DisplayFields::kDisplayName );
     m_fileSelect->activated().connect( this, &ExportSpecFileTool::handleFileSelectionChanged );
     
@@ -1151,7 +1156,7 @@ void ExportSpecFileTool::init()
 
       string title_str = title.toUTF8();
       
-      m_forePlusBack = new WCheckBox( title_str, fileSelectDiv );
+      m_forePlusBack = fileSelectDiv->addNew<WCheckBox>( title_str );
       m_forePlusBack->addStyleClass( "ExportForPlusBack CbNoLineBreak" );
       m_forePlusBack->checked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
       m_forePlusBack->unChecked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
@@ -1160,23 +1165,31 @@ void ExportSpecFileTool::init()
   }//if( !m_specific_spectrum )
   
   // We will put the table in a holder so it can scroll if we are limited on height
-  WContainerWidget *tableHolder = new WContainerWidget( fileSelectDiv );
+  WContainerWidget *tableHolder = fileSelectDiv->addNew<WContainerWidget>();
   tableHolder->addStyleClass( "ExportSpecInfo" );
-  
-  m_fileInfo = new WTable( tableHolder );
+
+  m_fileInfo = tableHolder->addNew<WTable>();
   m_fileInfo->addStyleClass( "ExportSpecInfoTable" );
-  m_fileInfo->setHeaderCount( 1, Orientation::Vertical );
-  
+  m_fileInfo->setHeaderCount( 1, Wt::Orientation::Vertical );
+
   // Spectrum format
-  WContainerWidget *menuHolder = new WContainerWidget( body );
-  menuHolder->addStyleClass( "ExportSpecFormat" );
+  WContainerWidget *menuHolder = nullptr;
   if( isPhone )
-    mobileTabs->addTab( menuHolder, WString::tr("esf-format-tab"), Wt::WTabWidget::LoadPolicy::PreLoading );
-  
-  WText *title = new WText( WString::tr("esf-file-format"), menuHolder );
+  {
+    auto menuHolderOwner = std::make_unique<WContainerWidget>();
+    menuHolder = menuHolderOwner.get();
+    menuHolder->addStyleClass( "ExportSpecFormat" );
+    mobileTabs->addTab( std::move(menuHolderOwner), WString::tr("esf-format-tab"), Wt::ContentLoading::Eager );
+  }else
+  {
+    menuHolder = body->addNew<WContainerWidget>();
+    menuHolder->addStyleClass( "ExportSpecFormat" );
+  }
+
+  WText *title = menuHolder->addNew<WText>( WString::tr("esf-file-format") );
   title->addStyleClass( "ExportColTitle" );
-  
-  m_formatMenu = new WMenu( menuHolder );
+
+  m_formatMenu = menuHolder->addNew<WMenu>();
   m_formatMenu->itemSelected().connect( this, &ExportSpecFileTool::handleFormatChange );
   m_formatMenu->addStyleClass( "SideMenu VerticalNavMenu LightNavMenu ExportSpecFormatMenu" );
   
@@ -1190,25 +1203,25 @@ void ExportSpecFileTool::init()
   
   
   auto addFormatItem = [this, &descrip_bundle, isMobile]( const char *label, SpecUtils::SaveSpectrumAsType type ){
-    WMenuItem *item = m_formatMenu->addItem( label );
-    item->clicked().connect( boost::bind(&right_select_item, m_formatMenu, item) );
+    WMenuItem *item = m_formatMenu->addItem( WString::fromUTF8(label) );
+    item->clicked().connect( [this, item](){ right_select_item( m_formatMenu, item ); } );
     item->setData( reinterpret_cast<void *>(type) );
-    
+
     if( !isMobile )
     {
       string description;
       if( descrip_bundle.resolveKey(label, description) )
       {
         SpecUtils::trim( description );
-       
+
         description = Wt::Utils::htmlEncode( description, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
-        
-        WImage *img = new WImage( item );
+
+        WImage *img = item->addNew<WImage>();
         img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
         img->setStyleClass("Wt-icon");
-        img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+        img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
         img->setFloatSide( Wt::Side::Right );
-        
+
         HelpSystem::attachToolTipOn( img, description, true,
                                     HelpSystem::ToolTipPosition::Right,
                                     HelpSystem::ToolTipPrefOverride::InstantAlways );
@@ -1239,46 +1252,52 @@ void ExportSpecFileTool::init()
 #endif
   
   // Meas/samples to include
-  m_samplesHolder = new WContainerWidget( body );
-  m_samplesHolder->addStyleClass( "ExportSpecSamples" );
-
   if( isPhone )
-    mobileTabs->addTab( m_samplesHolder, WString::tr("esf-options-tab"), Wt::WTabWidget::LoadPolicy::PreLoading );
+  {
+    auto sampHolderOwner = std::make_unique<WContainerWidget>();
+    m_samplesHolder = sampHolderOwner.get();
+    m_samplesHolder->addStyleClass( "ExportSpecSamples" );
+    mobileTabs->addTab( std::move(sampHolderOwner), WString::tr("esf-options-tab"), Wt::ContentLoading::Eager );
+  }else
+  {
+    m_samplesHolder = body->addNew<WContainerWidget>();
+    m_samplesHolder->addStyleClass( "ExportSpecSamples" );
+  }
 
-  title = new WText( WString::tr("esf-samples-to-include"), m_samplesHolder );
+  title = m_samplesHolder->addNew<WText>( WString::tr("esf-samples-to-include") );
   title->addStyleClass( "ExportColTitle" );
-  
-  m_dispForeSamples   = new WCheckBox( WString::tr("esf-disp-foreground"), m_samplesHolder );
+
+  m_dispForeSamples = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-disp-foreground") );
   m_dispForeSamples->addStyleClass( "CbNoLineBreak" );
-  m_dispForeSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
-  m_dispForeSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
-  
-  m_dispBackSamples   = new WCheckBox( WString::tr("esf-disp-background"), m_samplesHolder );
+  m_dispForeSamples->checked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Foreground ); } );
+  m_dispForeSamples->unChecked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Foreground ); } );
+
+  m_dispBackSamples = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-disp-background") );
   m_dispBackSamples->addStyleClass( "CbNoLineBreak" );
-  m_dispBackSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
-  m_dispBackSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
-  
-  m_dispSecondSamples = new WCheckBox( WString::tr("esf-disp-secondary"), m_samplesHolder );
+  m_dispBackSamples->checked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Background ); } );
+  m_dispBackSamples->unChecked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Background ); } );
+
+  m_dispSecondSamples = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-disp-secondary") );
   m_dispSecondSamples->addStyleClass( "CbNoLineBreak" );
-  m_dispSecondSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
-  m_dispSecondSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
+  m_dispSecondSamples->checked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::SecondForeground ); } );
+  m_dispSecondSamples->unChecked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::SecondForeground ); } );
   
-  m_allSamples = new WCheckBox( WString::tr("esf-all-samples"), m_samplesHolder );
+  m_allSamples = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-all-samples") );
   m_allSamples->addStyleClass( "CbNoLineBreak" );
   m_allSamples->checked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
   m_allSamples->unChecked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
   
-  m_customSamples = new WCheckBox( WString::tr("esf-custom-samples"), m_samplesHolder );
+  m_customSamples = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-custom-samples") );
   m_customSamples->addStyleClass( "CbNoLineBreak" );
   m_customSamples->checked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
   m_customSamples->unChecked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
   
   
   const char *val_regex = "(\\-?\\d+\\s*((\\-|to|through)\\s*\\d+)?,*\\s*)+";
-  WRegExpValidator *validator = new WRegExpValidator( val_regex, this );
-  validator->setFlags( Wt::MatchCaseInsensitive );
-  
-  m_customSamplesEdit = new WLineEdit( m_samplesHolder );
+  auto validator = std::make_shared<WRegExpValidator>( val_regex );
+  validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+
+  m_customSamplesEdit = m_samplesHolder->addNew<WLineEdit>();
   m_customSamplesEdit->setAttributeValue( "ondragstart", "return false" );
   m_customSamplesEdit->addStyleClass( "SampleNumInput ExportSpecCustomSamples" );
   m_customSamplesEdit->setValidator( validator );
@@ -1298,24 +1317,24 @@ void ExportSpecFileTool::init()
   
   m_customSamplesEdit->hide();
 
-  m_filterDetector = new WCheckBox( WString::tr("esf-filter-detectors"), m_samplesHolder );
+  m_filterDetector = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-filter-detectors") );
   m_filterDetector->addStyleClass( "CbNoLineBreak" );
   m_filterDetector->checked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
   m_filterDetector->unChecked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
-  
-  m_detectorFilterCbs = new WContainerWidget( m_samplesHolder );
+
+  m_detectorFilterCbs = m_samplesHolder->addNew<WContainerWidget>();
   m_detectorFilterCbs->addStyleClass( "ExportDetsToFilter" );
   m_filterDetector->hide();
   m_detectorFilterCbs->hide();
-  
+
   // Options
-  m_optionsHolder = new WContainerWidget( m_samplesHolder );
+  m_optionsHolder = m_samplesHolder->addNew<WContainerWidget>();
   m_optionsHolder->addStyleClass( "ExportSpecOptions" );
-  title = new WText( WString::tr("esf-options"), m_optionsHolder );
+  title = m_optionsHolder->addNew<WText>( WString::tr("esf-options") );
   title->addStyleClass( "ExportColTitle" );
   
   
-  m_sumAllToSingleRecord = new WCheckBox( WString::tr("esf-sum-to-single-record"), m_optionsHolder );
+  m_sumAllToSingleRecord = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-sum-to-single-record") );
   m_sumAllToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-to-single-record-tt");
   HelpSystem::attachToolTipOn( m_sumAllToSingleRecord, tooltip, true,
@@ -1324,7 +1343,7 @@ void ExportSpecFileTool::init()
   m_sumAllToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
   m_sumAllToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
   
-  m_sumForeToSingleRecord = new WCheckBox( WString::tr("esf-sum-fore-to-single-record"), m_optionsHolder );
+  m_sumForeToSingleRecord = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-sum-fore-to-single-record") );
   m_sumForeToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-fore-to-single-record-tt");
   HelpSystem::attachToolTipOn( m_sumForeToSingleRecord, tooltip, true,
@@ -1333,7 +1352,7 @@ void ExportSpecFileTool::init()
   m_sumForeToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumForeToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
-  m_sumBackToSingleRecord = new WCheckBox( WString::tr("esf-sum-back-to-single-record"), m_optionsHolder );
+  m_sumBackToSingleRecord = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-sum-back-to-single-record") );
   m_sumBackToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-back-to-single-record-tt");
   HelpSystem::attachToolTipOn( m_sumForeToSingleRecord, tooltip, true,
@@ -1342,12 +1361,12 @@ void ExportSpecFileTool::init()
   m_sumBackToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumBackToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
-  m_sumSecoToSingleRecord = new WCheckBox( WString::tr("esf-sum-sec-to-single-record"), m_optionsHolder );
+  m_sumSecoToSingleRecord = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-sum-sec-to-single-record") );
   m_sumSecoToSingleRecord->addStyleClass( "CbNoLineBreak" );
   m_sumSecoToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumSecoToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
-  m_backSubFore = new WCheckBox( WString::tr("esf-background-subtract"), m_optionsHolder );
+  m_backSubFore = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-background-subtract") );
   m_backSubFore->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-background-subtract-tt");
   HelpSystem::attachToolTipOn( m_backSubFore, tooltip, true,
@@ -1356,7 +1375,7 @@ void ExportSpecFileTool::init()
   m_backSubFore->checked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   m_backSubFore->unChecked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   
-  m_sumDetsPerSample = new WCheckBox( WString::tr("esf-sum-det-per-sample"), m_optionsHolder );
+  m_sumDetsPerSample = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-sum-det-per-sample") );
   m_sumDetsPerSample->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-det-per-sample-tt");
   HelpSystem::attachToolTipOn( m_sumDetsPerSample, tooltip, true,
@@ -1366,7 +1385,7 @@ void ExportSpecFileTool::init()
   m_sumDetsPerSample->unChecked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   
   
-  m_sumSamplesPerDets = new WCheckBox( WString::tr("esf-sum-samples-per-det"), m_optionsHolder );
+  m_sumSamplesPerDets = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-sum-samples-per-det") );
   m_sumSamplesPerDets->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-samples-per-det-tt");
   HelpSystem::attachToolTipOn( m_sumSamplesPerDets, tooltip, true,
@@ -1376,7 +1395,7 @@ void ExportSpecFileTool::init()
   m_sumSamplesPerDets->unChecked().connect( this, &ExportSpecFileTool::handleSumSamplesPerDetChanged );
   
   
-  m_excludeInterSpecInfo = new WCheckBox( WString::tr("esf-remove-interspec-info"), m_optionsHolder );
+  m_excludeInterSpecInfo = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-remove-interspec-info") );
   m_excludeInterSpecInfo->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-remove-interspec-info-tt");
   HelpSystem::attachToolTipOn( m_excludeInterSpecInfo, tooltip, true,
@@ -1385,11 +1404,11 @@ void ExportSpecFileTool::init()
   m_excludeInterSpecInfo->checked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   m_excludeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   
-  m_excludeGpsInfo = new WCheckBox( WString::tr("esf-remove-gps"), m_optionsHolder );
+  m_excludeGpsInfo = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-remove-gps") );
   m_excludeGpsInfo->addStyleClass( "CbNoLineBreak" );
 
 #if( USE_QR_CODES )
-  m_lossless_qr_cb = new WCheckBox( WString::tr("esf-lossless-qr"), m_optionsHolder );
+  m_lossless_qr_cb = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-lossless-qr") );
   m_lossless_qr_cb->addStyleClass( "CbNoLineBreak" );
   m_lossless_qr_cb->setChecked( true );
   m_lossless_qr_cb->hide();
@@ -1399,55 +1418,65 @@ void ExportSpecFileTool::init()
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
 #endif
 
-  m_sampleSelectNotAppTxt = new WText( WString::tr("esf-not-applicable") );
-  m_sampleSelectNotAppTxt->addStyleClass( "ExportNotAppTxt" );
-  m_samplesHolder->insertWidget( 1, m_sampleSelectNotAppTxt ); // Put right below title
-  
-  m_optionsNotAppTxt = new WText( WString::tr("esf-none-available") );
-  m_optionsNotAppTxt->addStyleClass( "ExportNotAppTxt" );
-  m_optionsHolder->insertWidget( 1, m_optionsNotAppTxt );      // Put right below title
-  
-  WContainerWidget *footer = new WContainerWidget( this );
+  {
+    auto w = std::make_unique<WText>( WString::tr("esf-not-applicable") );
+    m_sampleSelectNotAppTxt = w.get();
+    m_sampleSelectNotAppTxt->addStyleClass( "ExportNotAppTxt" );
+    m_samplesHolder->insertWidget( 1, std::move(w) ); // Put right below title
+  }
+
+  {
+    auto w = std::make_unique<WText>( WString::tr("esf-none-available") );
+    m_optionsNotAppTxt = w.get();
+    m_optionsNotAppTxt->addStyleClass( "ExportNotAppTxt" );
+    m_optionsHolder->insertWidget( 1, std::move(w) ); // Put right below title
+  }
+
+  WContainerWidget *footer = addNew<WContainerWidget>();
   footer->addStyleClass( "ExportSpecFileFooter" );
-  
-  
-  m_msg = new WText( "&nbsp;", footer );
+
+  m_msg = footer->addNew<WText>( "&nbsp;" );
   m_msg->addStyleClass( "ExportSpecMsg" );
-  
-  WContainerWidget *btnsDiv = new WContainerWidget( footer );
+
+  WContainerWidget *btnsDiv = footer->addNew<WContainerWidget>();
   btnsDiv->addStyleClass( "ExportSpecBtns" );
-  
-  
-  WPushButton *cancel_btn = new WPushButton( WString::tr("Cancel"), btnsDiv );
+
+  WPushButton *cancel_btn = btnsDiv->addNew<WPushButton>( WString::tr("Cancel") );
   cancel_btn->addStyleClass( "LightButton" );
-  cancel_btn->clicked().connect( boost::bind(&ExportSpecFileTool::emitDone, this, false) );
+  cancel_btn->clicked().connect( [this](){ emitDone( false ); } );
   
   if( !m_resource )
   {
-    m_resource = new ExportSpecFileTool_imp::DownloadSpectrumResource( this );
+    m_resource = std::make_shared<ExportSpecFileTool_imp::DownloadSpectrumResource>( this );
     m_resource->setTakesUpdateLock( true );
-    m_resource->downloadFinished().connect( boost::bind(&ExportSpecFileTool::emitDone, this, true) );
+    m_resource->downloadFinished().connect( [this](){ emitDone( true ); } );
   }//if( !m_resource )
   
   
 #if( BUILD_AS_OSX_APP || IOS )
-  m_export_btn = new WAnchor( WLink(m_resource), btnsDiv );
-  m_export_btn->setTarget( AnchorTarget::TargetNewWindow );
+  {
+    WLink lnk( m_resource );
+    lnk.setTarget( LinkTarget::NewWindow );
+    m_export_btn = btnsDiv->addNew<WAnchor>( lnk );
+  }
   m_export_btn->setStyleClass( "LinkBtn DownloadLink ExportSpecExportBtn" );
 #else
-  m_export_btn = new WPushButton( btnsDiv );
-  m_export_btn->setLink( WLink(m_resource) );
-  m_export_btn->setLinkTarget( AnchorTarget::TargetNewWindow );
+  m_export_btn = btnsDiv->addNew<WPushButton>();
+  {
+    WLink lnk( m_resource );
+    lnk.setTarget( LinkTarget::NewWindow );
+    m_export_btn->setLink( lnk );
+  }
   m_export_btn->setStyleClass( "LightButton LinkBtn DownloadBtn ExportSpecExportBtn" );
-    
+
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_export_btn->clicked().connect( std::bind( [this](){
+  m_export_btn->clicked().connect( [this](){
     string filename = m_resource->suggestedFileName().toUTF8();
     if( filename.empty() )
       filename = "spectrum_file";
-    android_download_workaround( m_resource, filename );
-  } ) );
+    android_download_workaround( m_resource.get(), filename );
+  } );
 #endif //ANDROID
 #endif
   
@@ -1456,7 +1485,7 @@ void ExportSpecFileTool::init()
 
 
 #if( USE_QR_CODES )
-  m_show_qr_btn = new WPushButton( WString::tr("esf-show-qr-code"), btnsDiv );
+  m_show_qr_btn = btnsDiv->addNew<WPushButton>( WString::tr("esf-show-qr-code") );
   m_show_qr_btn->clicked().connect( this, &ExportSpecFileTool::handleGenerateQrCode );
   m_show_qr_btn->disable();
   m_show_qr_btn->hide();
@@ -1508,35 +1537,35 @@ void ExportSpecFileTool::updateInfoAboutSelectedFile()
   if( !meas )
   {
     // Put a empty table row in - just to keep column width
-    new WText("&nbsp;", m_fileInfo->elementAt(0, 0));
-    new WText("&nbsp;", m_fileInfo->elementAt(0, 1));
+    m_fileInfo->elementAt(0, 0)->addNew<WText>( "&nbsp;" );
+    m_fileInfo->elementAt(0, 1)->addNew<WText>( "&nbsp;" );
     return;
   }
-  
+
   // Helper lambda to add a table row - if `withDiv` is true, will put text in a div, so this way
   //  CSS will be applied to prevent wrapping, and display ellipses if to long
   auto addTableRow = [this](const WString &header, const WString &value, const bool withDiv ) {
     const int row = m_fileInfo->rowCount();
-    new WText(header, m_fileInfo->elementAt(row, 0));
-    
+    m_fileInfo->elementAt(row, 0)->addNew<WText>( header );
+
     if( withDiv )
     {
-      WContainerWidget *w = new WContainerWidget( m_fileInfo->elementAt(row, 1) );
+      WContainerWidget *w = m_fileInfo->elementAt(row, 1)->addNew<WContainerWidget>();
       w->addStyleClass( "DetInfoNoWrap" );
-      new WText(value, w );
+      w->addNew<WText>( value );
     }else
     {
-      new WText(value, m_fileInfo->elementAt(row, 1));
+      m_fileInfo->elementAt(row, 1)->addNew<WText>( value );
     }
   };
-  
+
   // Helper lambda to add a table row with empty header (for continuation rows)
   auto addContinuationRow = [this](const WString &value) {
     const int row = m_fileInfo->rowCount();
-    new WText("", m_fileInfo->elementAt(row, 0));
-    WContainerWidget *w = new WContainerWidget( m_fileInfo->elementAt(row, 1) );
+    m_fileInfo->elementAt(row, 0)->addNew<WText>( "" );
+    WContainerWidget *w = m_fileInfo->elementAt(row, 1)->addNew<WContainerWidget>();
     w->addStyleClass( "DetInfoNoWrap" );
-    new WText( value, w );
+    w->addNew<WText>( value );
   };
   
   double min_gamma_cps = 0.0, max_gamma_cps = 0.0, min_neutron_cps = 0.0, max_neutron_cps = 0.0;
@@ -2234,7 +2263,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_detectorFilterCbs->clear();
     for( const string &name : spec->detector_names() )
     {
-      WCheckBox *cb = new WCheckBox( name, m_detectorFilterCbs );
+      WCheckBox *cb = m_detectorFilterCbs->addNew<WCheckBox>( name );
       cb->addStyleClass( "CbNoLineBreak" );
       if( prev_check.count(cb->text().toUTF8()) )
         cb->setChecked( prev_check[cb->text().toUTF8()] );
@@ -3583,7 +3612,7 @@ void ExportSpecFileTool::handleGenerateQrCode()
   
     const vector<SpecUtils::UrlSpectrum> urlspec = SpecUtils::to_url_spectra( spec->measurements(), model );
     
-    auto successfullyDone = wApp->bind( boost::bind( &ExportSpecFileTool::emitDone, this, true ) );
+    auto successfullyDone = [this](){ emitDone( true ); };
 
     if( m_lossless_qr_cb && m_lossless_qr_cb->isChecked() )
       displayQrCode( urlspec, spec, successfullyDone, false );
@@ -3669,8 +3698,8 @@ void ExportSpecFileTool::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( undoRedo && !undoRedo->isInUndoOrRedo() )
   {
     WServer *server = WServer::instance();
-    auto worker = wApp->bind( boost::bind(&ExportSpecFileTool::updateUndoRedo, this) );
-    server->schedule( 25, wApp->sessionId(), worker );
+    auto worker = [this](){ updateUndoRedo(); };
+    server->schedule( std::chrono::milliseconds(25), wApp->sessionId(), worker );
   }
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
@@ -4074,11 +4103,11 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
     resize( 320, Wt::WLength::Auto ); //320 px is about the smallest width Android phone to expect
   }else 
   {
-    //setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Pixel), WLength::Auto );
-    setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 650.0) : 650.0, WLength::Pixel), WLength::Auto );
+    //setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Unit::Pixel), WLength::Auto );
+    setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 650.0) : 650.0, WLength::Unit::Pixel), WLength::Auto );
   }
-  m_tool = new ExportSpecFileTool( viewer, contents() );
-  m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );
+  m_tool = contents()->addNew<ExportSpecFileTool>( viewer );
+  m_tool->done().connect( [this](bool){ accept(); } );
   
   if( viewer && viewer->isPhone() )
   {
@@ -4097,9 +4126,14 @@ void ExportSpecFileWindow::setSpecificSpectrum( const std::shared_ptr<const Spec
                          const std::vector<std::string> &detectors,
                          InterSpec *viewer )
 {
-  delete m_tool;
-  m_tool = new ExportSpecFileTool( spectrum, samples, detectors, viewer, contents() );
-  m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );
+  if( m_tool )
+  {
+    // Wt4: removeWidget returns unique_ptr, which will delete the widget when it goes out of scope
+    contents()->removeWidget( m_tool );
+    m_tool = nullptr;
+  }
+  m_tool = contents()->addNew<ExportSpecFileTool>( spectrum, samples, detectors, viewer );
+  m_tool->done().connect( [this](bool){ accept(); } );
 }//void setSpecificSpectrum(...)
 
 

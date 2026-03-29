@@ -27,8 +27,8 @@
 
 #include <string>
 
-#include <Wt/WSignal>
-#include <Wt/WContainerWidget>
+#include <Wt/WSignal.h>
+#include <Wt/WContainerWidget.h>
 
 //Forward declerations
 namespace Wt
@@ -46,13 +46,12 @@ public:
   /** Constructor that will cause a label to be displayed on the right side of the widget, and for the toggle to function as a on/off, where
    the background of the switch will change color to indicate on/off.
    */
-  SwitchCheckbox( const Wt::WString &rightlabel, Wt::WContainerWidget *parent = nullptr );
+  SwitchCheckbox( const Wt::WString &rightlabel );
   
   /** Constructor that will cause there to be a label on the left side, and the right side.  The background will not change when switched,
    just the position of the round indicator.
    */
-  SwitchCheckbox( const Wt::WString &left_off_label, const Wt::WString &right_on_label,
-                 Wt::WContainerWidget *parent = nullptr );
+  SwitchCheckbox( const Wt::WString &left_off_label, const Wt::WString &right_on_label );
   
   // Function that are straight pass-throughs to the WCheckBox functions
   bool isChecked() const;

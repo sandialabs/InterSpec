@@ -55,7 +55,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
-#include <Wt/WApplication>
+#include <Wt/WApplication.h>
 
 using namespace std;
 
@@ -1872,7 +1872,7 @@ namespace AnalystChecks
 
             const vector<shared_ptr<const PeakDef>> refitResult
               = refitPeaksThatShareROI( data, det, peaksToFit, refitDetType,
-                                        Wt::WFlags<PeakFitLM::PeakFitLMOptions>(0) );
+                                        Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
 
             // Only use refit result if no peaks were lost (e.g., became insignificant)
             if( refitResult.size() == mergedPeaks.size() )

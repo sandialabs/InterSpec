@@ -30,18 +30,18 @@
 #include <cctype>
 #include <algorithm>
 
-#include <Wt/WResource>
-#include <Wt/WModelIndex>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WStringStream>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WResource.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WAbstractItemModel.h>
 
 
 // Block out some warnings occurring in boost files.
 #pragma warning(disable:4244)  // warning C4244: 'initializing' : conversion from 'std::streamoff' to 'size_t', possible loss of data
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 #include <boost/tokenizer.hpp>
 
 #include "SandiaDecay/SandiaDecay.h"
@@ -894,7 +894,7 @@ vector<PeakDef> PeakModel::gadras_peak_csv_to_peaks( std::shared_ptr<const SpecU
 
 
 PeakModel::PeakCsvResource::PeakCsvResource( PeakModel *parent )
-  : WResource( parent ),
+  : WResource(),
     m_model( parent ),
     m_app( WApplication::instance() )
 {
@@ -939,7 +939,7 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
     filename += ".CSV";
   }//if( meas && !meas->filename().empty() )
     
-  suggestFileName( filename, WResource::Attachment ); //WResource::NoDisposition
+  suggestFileName( filename, ContentDisposition::Attachment ); //WResource::NoDisposition
 
   response.setMimeType( "text/csv" );
 
@@ -983,13 +983,13 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
 
 
 
-PeakModel::PeakModel( Wt::WObject *parent )
-  : WAbstractItemModel( parent ),
+PeakModel::PeakModel()
+  : WAbstractItemModel(),
     m_foreground( nullptr ),
-    m_backgroundPeaksChanged( this ),
-    m_secondaryPeaksChanged( this ),
+    m_backgroundPeaksChanged(),
+    m_secondaryPeaksChanged(),
     m_sortColumn( kMean ),
-    m_sortOrder( Wt::AscendingOrder ),
+    m_sortOrder( Wt::SortOrder::Ascending ),
     m_csvResource( NULL )
 {
   auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
@@ -1064,13 +1064,15 @@ void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
     m_peaks = peaks;
   }else
   {
-    boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
+    std::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
     
     const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
-    sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                          m_sortColumn, m_sortOrder, data );
-    meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                           kMean, Wt::AscendingOrder, data );
+    sortfcn = [col = m_sortColumn, ord = m_sortOrder, data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ){
+      return PeakModel::compare( lhs, rhs, col, ord, data );
+    };
+    meansort = [data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ){
+      return PeakModel::compare( lhs, rhs, kMean, Wt::SortOrder::Ascending, data );
+    };
 
     //Make sure no null peaks
     peaks->erase( std::remove_if( peaks->begin(), peaks->end(), [](std::shared_ptr<const PeakDef> a){return !a;}), peaks->end() );
@@ -1146,10 +1148,11 @@ PeakModel::PeakShrdPtr PeakModel::nearestPeak( double energy ) const
   if( !m_peaks || m_peaks->empty() )
     return nullptr;
   
-  boost::function<bool( const PeakShrdPtr &, const PeakShrdPtr &)> meansort;
   const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
-  meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                         kMean, Wt::AscendingOrder, data );
+  std::function<bool( const PeakShrdPtr &, const PeakShrdPtr &)> meansort =
+    [data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ){
+      return PeakModel::compare( lhs, rhs, kMean, Wt::SortOrder::Ascending, data );
+    };
   PeakDef *new_peak_ptr = new PeakDef();
   PeakShrdPtr peak_ptr( new_peak_ptr );
   new_peak_ptr->setMean( energy );
@@ -1344,12 +1347,15 @@ std::pair<std::shared_ptr<const PeakDef>,Wt::WModelIndex> PeakModel::addNewPeakI
   definePeakXRange( *new_peak_ptr );
   //Need to go through and estimate the Chi2Dof here.
   
-  boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
   const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
-  sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                        m_sortColumn, m_sortOrder, data );
-  meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                         kMean, Wt::AscendingOrder, data );
+  std::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn =
+    [col = m_sortColumn, ord = m_sortOrder, data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ){
+      return PeakModel::compare( lhs, rhs, col, ord, data );
+    };
+  std::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> meansort =
+    [data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ){
+      return PeakModel::compare( lhs, rhs, kMean, Wt::SortOrder::Ascending, data );
+    };
 
   deque< PeakShrdPtr >::iterator mean_pos
          = lower_bound( m_peaks->begin(), m_peaks->end(), peak_ptr, meansort );
@@ -1504,7 +1510,7 @@ void PeakModel::setPeaks( vector<shared_ptr<const PeakDef>> peaks )
     };
     
     auto meansort = [this, data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ) -> bool {
-      return PeakModel::compare( lhs, rhs, kMean, Wt::AscendingOrder, data );
+      return PeakModel::compare( lhs, rhs, kMean, Wt::SortOrder::Ascending, data );
     };
 
     beginInsertRows( WModelIndex(), 0, int(npeaksadd - 1) );
@@ -1550,8 +1556,7 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
   // Remove any peaks that aren't within the range.
   const vector<PeakDef>::const_iterator peaks_end
               = remove_if( peaks.begin(), peaks.end(),
-                           boost::bind( &PeakModel::isOutOfRange, this,
-                                       boost::placeholders::_1 ) );
+                           [this]( const PeakDef &peak ){ return isOutOfRange( peak ); } );
   
   
   const size_t npeaksadd = peaks_end - peaks.begin();
@@ -1562,12 +1567,15 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
       definePeakXRange( peaks[i] );
 //    need to go through and estimate the chi2DOF here
     
-    boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn, meansort;
     const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
-    sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                          m_sortColumn, m_sortOrder, data );
-    meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                           kMean, Wt::AscendingOrder, data );
+    std::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn =
+      [col = m_sortColumn, ord = m_sortOrder, data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ){
+        return PeakModel::compare( lhs, rhs, col, ord, data );
+      };
+    std::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> meansort =
+      [data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ){
+        return PeakModel::compare( lhs, rhs, kMean, Wt::SortOrder::Ascending, data );
+      };
 
     beginInsertRows( WModelIndex(), 0, int(npeaksadd - 1) );
 
@@ -1919,10 +1927,10 @@ const PeakModel::PeakShrdPtr &PeakModel::peak( const Wt::WModelIndex &index ) co
   return m_sortedPeaks[index.row()];
 }//PeakShrdPtr peak( const Wt::WModelIndex &index ) const
 
-boost::any PeakModel::data( const WModelIndex &index, int role ) const
+Wt::cpp17::any PeakModel::data( const WModelIndex &index, Wt::ItemDataRole role ) const
 {
-  using boost::any;
-  
+  using Wt::cpp17::any;
+
   if( !m_peaks )
     return any();
 
@@ -1935,17 +1943,17 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     throw std::runtime_error( msg );
   }//if( m_sortedPeaks.size() != m_peaks->size() )
 
-  // TODO: implement ToolTipRole
-  if( role == ToolTipRole )
+  // TODO: implement ItemDataRole::ToolTip
+  if( role == ItemDataRole::ToolTip )
   {
     if( index.column() == kUseForCalibration )
       return WString::tr("pm-tt-use-for-cal");
     return any();
-  }//if( role == ToolTipRole )
+  }//if( role == ItemDataRole::ToolTip )
   
-  if( (role != Wt::DisplayRole)
-     && (role != Wt::EditRole)
-     && !((role==Wt::CheckStateRole)
+  if( (role != Wt::ItemDataRole::Display)
+     && (role != Wt::ItemDataRole::Edit)
+     && !((role==Wt::ItemDataRole::Checked)
             && ((index.column()==kUseForCalibration)
             || (index.column()==kUseForShieldingSourceFit)
             || (index.column()==kUseForManualRelEff))
@@ -1969,7 +1977,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
   const PeakShrdPtr &peak = m_sortedPeaks[row];
 
   
-  auto getPeakArea = [&peak,this]() -> boost::any {
+  auto getPeakArea = [&peak,this]() -> Wt::cpp17::any {
     switch( peak->type() )
     {
       case PeakDef::GaussianDefined:
@@ -1978,13 +1986,13 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       case PeakDef::DataDefined:
       {
         if( !m_foreground )
-          return boost::any();
+          return Wt::cpp17::any();
         
         double contArea = 0.0;
         const std::shared_ptr<const SpecUtils::Measurement> &dataH = m_foreground;
         
         if( !dataH )
-          return boost::any();
+          return Wt::cpp17::any();
         
         assert( peak->continuum()->energyRangeDefined() );
         const double lowx = peak->lowerX();
@@ -2015,14 +2023,14 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       }//case PeakDef::DataDefined:
     }//switch( peak->type() )
 
-    return boost::any();
+    return Wt::cpp17::any();
   };//auto getPeakArea lambda
   
   switch( column )
   {
     case kMean:
     {
-      if( role == Wt::EditRole )
+      if( role == Wt::ItemDataRole::Edit )
       {
         const double uncert = peak->meanUncert();
         if( uncert > 0.0 )
@@ -2033,7 +2041,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         char text[64];
         snprintf( text, sizeof(text), "%.2f", peak->mean() );
         return WString::fromUTF8( text );
-      }//if( role == Wt::EditRole )
+      }//if( role == Wt::ItemDataRole::Edit )
 
       return peak->mean();
     }//case kMean:
@@ -2045,7 +2053,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         case PeakDef::GaussianDefined:
         {
           const double fwhm = 2.3548201 * peak->sigma();
-          if( role == Wt::EditRole )
+          if( role == Wt::ItemDataRole::Edit )
           {
             const double uncert = 2.3548201 * peak->sigmaUncert();
             if( uncert > 0.0 )
@@ -2056,23 +2064,23 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
             char text[64];
             snprintf( text, sizeof(text), "%.2f", fwhm );
             return WString::fromUTF8( text );
-          }//if( role == Wt::EditRole )
+          }//if( role == Wt::ItemDataRole::Edit )
 
           return fwhm;
         }//case PeakDef::GaussianDefined:
 
         case PeakDef::DataDefined:
-          return boost::any();
+          return Wt::cpp17::any();
       }//switch( peak->type() )
     }//case kFwhm:
       
     case kAmplitude:
     {
-      boost::any areaAny = getPeakArea();
-      if( areaAny.empty() )
+      Wt::cpp17::any areaAny = getPeakArea();
+      if( !areaAny.has_value() )
         return areaAny;
       
-      const double area = boost::any_cast<double>(areaAny);
+      const double area = Wt::cpp17::any_cast<double>(areaAny);
       double uncert = peak->amplitudeUncert();
       
       switch( peak->type() )
@@ -2102,16 +2110,16 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       
     case PeakModel::kCps:
     {
-      boost::any areaAny = getPeakArea();
+      Wt::cpp17::any areaAny = getPeakArea();
       
-      if( areaAny.empty() )
+      if( !areaAny.has_value() )
         return areaAny;
       
-      const double area = boost::any_cast<double>(areaAny);
+      const double area = Wt::cpp17::any_cast<double>(areaAny);
       const shared_ptr<const SpecUtils::Measurement> &dataH = m_foreground;
       const float liveTime = dataH ? dataH->live_time() : -1.0f;
       if( liveTime <= 0.0f )
-        return boost::any();
+        return Wt::cpp17::any();
       
       const double cps = area / liveTime;
       const double uncert = peak->amplitudeUncert();
@@ -2138,13 +2146,13 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       else if( peak->reaction() )
         return WString( peak->reaction()->name() );
       
-      return boost::any();
+      return Wt::cpp17::any();
     }//case kIsotope:
 
     case kDifference:
     {
       if( !peak->hasSourceGammaAssigned() )
-        return boost::any();
+        return Wt::cpp17::any();
       
       try
       {
@@ -2154,14 +2162,14 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         return WString( text );
       }catch( std::exception & )
       {
-        return boost::any();
+        return Wt::cpp17::any();
       }
     }
       
     case kPhotoPeakEnergy:
     {
       if( !peak->hasSourceGammaAssigned() )
-        return boost::any();
+        return Wt::cpp17::any();
       
       try
       {
@@ -2193,7 +2201,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         return WString( text );
       }catch( std::exception & )
       {
-        return boost::any();
+        return Wt::cpp17::any();
       }
     }//case kPhotoPeakEnergy:
 
@@ -2207,19 +2215,19 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         case PeakDef::NormalGamma:
         case PeakDef::XrayGamma:
           if( !peak->nuclearTransition() || !peak->parentNuclide() || (peak->decayParticleIndex() < 0) )
-            return boost::any();
+            return Wt::cpp17::any();
           break;
           
         case PeakDef::AnnihilationGamma:
           // Annihilation gammas wont have a nuclearTransition or decay particle index associated with them
           if( !peak->parentNuclide() )
-            return boost::any();
+            return Wt::cpp17::any();
           break;
         
         case PeakDef::SingleEscapeGamma:
         case PeakDef::DoubleEscapeGamma:
           // Don't show "use for shielding/source fit" checkbox for single and double escape peaks
-          return boost::any();
+          return Wt::cpp17::any();
           break;
       }//switch( peak->sourceGammaType() )
       
@@ -2230,7 +2238,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     {
       const bool fixed_mean = !peak->fitFor(PeakDef::CoefficientType::Mean);
       if( fixed_mean )
-        return boost::any();
+        return Wt::cpp17::any();
       return peak->useForEnergyCalibration();
     }
       
@@ -2241,18 +2249,18 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
         case PeakDef::XrayGamma:
           if( peak->parentNuclide() )
             return peak->useForManualRelEff();
-          return boost::any();
+          return Wt::cpp17::any();
         break;
 
         case PeakDef::NormalGamma:
         case PeakDef::AnnihilationGamma:
           if( !peak->parentNuclide() && !peak->reaction() )
-            return boost::any();
+            return Wt::cpp17::any();
           break;
 
         case PeakDef::SingleEscapeGamma:
         case PeakDef::DoubleEscapeGamma:
-          return boost::any();
+          return Wt::cpp17::any();
           break;
       }//switch( peak->sourceGammaType() )
       
@@ -2262,15 +2270,15 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     case kPeakLineColor:
     {
       if( peak->lineColor().isDefault() )
-        return boost::any();
-      return boost::any( WString::fromUTF8(peak->lineColor().cssText(false)) );
+        return Wt::cpp17::any();
+      return Wt::cpp17::any( WString::fromUTF8(peak->lineColor().cssText(false)) );
     }//case kPeakLineColor:
       
     case kUserLabel:
     {
       if( peak->userLabel().empty() )
-        return boost::any();
-      return boost::any( WString::fromUTF8(peak->userLabel()) );
+        return Wt::cpp17::any();
+      return Wt::cpp17::any( WString::fromUTF8(peak->userLabel()) );
     }//case kUserLabel:
       
     case kHasSkew:
@@ -2351,7 +2359,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
       shared_ptr<const PeakContinuum> continuum = peak->continuum();
       assert( continuum->energyRangeDefined() );
       const double val = (column == kLowerX) ? peak->lowerX() : peak->upperX();
-      if( role == Wt::EditRole )
+      if( role == Wt::ItemDataRole::Edit )
       {
         char text[64];
         snprintf( text, sizeof(text), "%.2f", val );
@@ -2364,7 +2372,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     case kRoiCounts:
     {
       if( !m_foreground )
-        return boost::any();
+        return Wt::cpp17::any();
       
       assert( peak->continuum()->energyRangeDefined() );
       const double lowx = peak->lowerX();
@@ -2381,7 +2389,7 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
   }//switch( section )
 
   return any();
-}//boost::any PeakModel::data( const WModelIndex &index, int role ) const
+}//Wt::cpp17::any PeakModel::data( const WModelIndex &index, Wt::ItemDataRole role ) const
 
 
 
@@ -2753,7 +2761,7 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
 
 
 bool PeakModel::setData( const WModelIndex &index,
-                         const boost::any &value, int role )
+                         const Wt::cpp17::any &value, Wt::ItemDataRole role )
 {
   if( !m_peaks )
     throw runtime_error( "Set a primary spectrum before setting peak data" );
@@ -2764,7 +2772,7 @@ bool PeakModel::setData( const WModelIndex &index,
   
   try
   {
-    if( (role != Wt::EditRole) && (role != Wt::CheckStateRole) )
+    if( (role != Wt::ItemDataRole::Edit) && (role != Wt::ItemDataRole::Checked) )
       return false;
 
     const int row = index.row();
@@ -2773,7 +2781,7 @@ bool PeakModel::setData( const WModelIndex &index,
 
     bool changedFit = false;
     
-    if( value.empty() || row < 0 || column < 0 || column>=kNumColumns || row >= nrows )
+    if( !value.has_value() || row < 0 || column < 0 || column>=kNumColumns || row >= nrows )
       return false;
 
     switch( column )
@@ -2821,7 +2829,7 @@ bool PeakModel::setData( const WModelIndex &index,
 
     try
     {
-      txt_val = boost::any_cast<WString>( value );
+      txt_val = Wt::cpp17::any_cast<WString>( value );
     }catch(...)
     {}
 
@@ -2860,10 +2868,10 @@ bool PeakModel::setData( const WModelIndex &index,
           
           // There could be some rounding in the string representation of the uncertainty, or the
           //  area so lets avoid this if the user hasnt changed that part of it
-          const boost::any prevData = data( index, role );
-          if( !prevData.empty() )
+          const Wt::cpp17::any prevData = data( index, role );
+          if( prevData.has_value() )
           {
-            WString prevDataWstr = boost::any_cast<WString>( prevData );
+            WString prevDataWstr = Wt::cpp17::any_cast<WString>( prevData );
             
             assert( row < m_sortedPeaks.size() );
             const PeakShrdPtr &peak = m_sortedPeaks[row];
@@ -3154,7 +3162,7 @@ bool PeakModel::setData( const WModelIndex &index,
       {
         try
         {
-          const vector<PeakDef::CandidateNuclide> candidates = boost::any_cast< vector<PeakDef::CandidateNuclide> >( value );
+          const vector<PeakDef::CandidateNuclide> candidates = Wt::cpp17::any_cast< vector<PeakDef::CandidateNuclide> >( value );
           new_peak.setCandidateNuclides( candidates );
         }catch(...)
         {
@@ -3168,13 +3176,13 @@ bool PeakModel::setData( const WModelIndex &index,
       {
         try
         {
-          const bool use = boost::any_cast<bool>( value );
+          const bool use = Wt::cpp17::any_cast<bool>( value );
           
 //          cerr << "useForShieldingSourceFit=" << use << " type="
 //               << value.type().name() << endl;
-//          boost::any myfalsebool( bool(false) ), mytrueebool( bool(true) );
-//          cerr << "myfalsebool value=" << boost::any_cast<bool>( myfalsebool)
-//               << " mytrueebool value=" << boost::any_cast<bool>( mytrueebool)
+//          Wt::cpp17::any myfalsebool( bool(false) ), mytrueebool( bool(true) );
+//          cerr << "myfalsebool value=" << Wt::cpp17::any_cast<bool>( myfalsebool)
+//               << " mytrueebool value=" << Wt::cpp17::any_cast<bool>( mytrueebool)
 //               << " and typename=" << myfalsebool.type().name() << endl;
           if( use && !new_peak.parentNuclide() )
             passMessage( WString::tr("pm-err-use-fit-no-nuc"), WarningWidget::WarningMsgHigh );
@@ -3200,7 +3208,7 @@ bool PeakModel::setData( const WModelIndex &index,
       {
         try
         {
-          const bool use = boost::any_cast<bool>( value );
+          const bool use = Wt::cpp17::any_cast<bool>( value );
           if( use && !new_peak.xrayElement() && !new_peak.parentNuclide()
               && !new_peak.reaction() )
             passMessage( WString::tr("pm-err-use-cal-no-nuc"), WarningWidget::WarningMsgHigh );
@@ -3222,7 +3230,7 @@ bool PeakModel::setData( const WModelIndex &index,
       {
         try
         {
-          const bool use = boost::any_cast<bool>( value );
+          const bool use = Wt::cpp17::any_cast<bool>( value );
           
           if( use )
           {
@@ -3320,7 +3328,7 @@ bool PeakModel::setData( const WModelIndex &index,
 
         vector<shared_ptr<const PeakDef>> result
           = refitPeaksThatShareROI( m_foreground, detector, newCandidatePeaks,
-                                    det_type, Wt::WFlags<PeakFitLM::PeakFitLMOptions>(0) );
+                                    det_type, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
 
         if( result.size() == newCandidatePeaks.size() )
         {
@@ -3403,7 +3411,7 @@ bool PeakModel::setData( const WModelIndex &index,
 
         const vector<shared_ptr<const PeakDef>> result
           = refitPeaksThatShareROI( m_foreground, detector, newCandidatePeaks,
-                                    det_type, Wt::WFlags<PeakFitLM::PeakFitLMOptions>(0) );
+                                    det_type, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
 
         if( result.size() == newCandidatePeaks.size() )
         {
@@ -3477,7 +3485,7 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
 #if( ALLOW_PEAK_COLOR_DELEGATE )
     case kPeakLineColor:
 #endif
-      return ItemIsEditable | ItemIsSelectable; //ItemIsSelectabl
+      return ItemFlag::Editable | ItemFlag::Selectable; //ItemIsSelectabl
 
     case kFwhm: case kAmplitude:
     {
@@ -3487,23 +3495,23 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
         switch( m_sortedPeaks[row]->type() )
         {
           case PeakDef::GaussianDefined:
-            return ItemIsEditable | ItemIsSelectable;
+            return ItemFlag::Editable | ItemFlag::Selectable;
           case PeakDef::DataDefined:
-            return ItemIsSelectable;
+            return ItemFlag::Selectable;
         }//switch( peak type )
       }//if( a valid row of a peak )
       
-      return ItemIsEditable | ItemIsSelectable;
+      return ItemFlag::Editable | ItemFlag::Selectable;
     }//case kFwhm: case kAmplitude:
       
     case kUseForShieldingSourceFit:
     case kUseForCalibration:
     case kUseForManualRelEff:
-      return ItemIsUserCheckable | ItemIsSelectable;
+      return ItemFlag::UserCheckable | ItemFlag::Selectable;
 
     case kLowerX: case kUpperX:
     case kContinuumType:
-      return ItemIsEditable | ItemIsSelectable;
+      return ItemFlag::Editable | ItemFlag::Selectable;
 
     case kHasSkew: case kSkewAmount: case kType:
     case kRoiCounts: case kCps:
@@ -3511,7 +3519,7 @@ WFlags<ItemFlag> PeakModel::flags( const WModelIndex &index ) const
     case kPeakLineColor:
 #endif
     case kNumColumns:
-      return ItemIsSelectable;
+      return ItemFlag::Selectable;
   }//switch( section )
 
   return WFlags<ItemFlag>();
@@ -3525,75 +3533,75 @@ WModelIndex PeakModel::index( int row, int column, const WModelIndex & ) const
 
 
 
-boost::any PeakModel::headerData( int section, Orientation orientation, int role ) const
+Wt::cpp17::any PeakModel::headerData( int section, Orientation orientation, ItemDataRole role ) const
 {
   //When orientation is Horizontal, section is a column number,
   //  when orientation is Vertical, section is a row (peak) number.
 
-  if( role == LevelRole )
+  if( role == ItemDataRole::Level )
   {
     return 0;
-  } //LevelRole
-  else if (role == DisplayRole)
+  } //ItemDataRole::Level
+  else if( role == ItemDataRole::Display )
   {
     //If we are here, we want the column title
     switch( section )
     {
-      case kMean:           return boost::any( WString::tr("Mean") );
-      case kFwhm:           return boost::any( WString::tr("FWHM") ); //\x03C3
-      case kAmplitude:      return boost::any( WString::tr("Area") );
-      case kCps:            return boost::any( WString::tr("CPS") );
-      case kIsotope:        return boost::any( WString::tr("Nuclide") );
-      case kPhotoPeakEnergy:return boost::any( WString::tr("Photopeak") );
-      case kDifference:     return boost::any( WString::tr("pm-hdr-diff") );
-      case kUseForShieldingSourceFit: return boost::any( WString::tr("Use") );
-      case kCandidateIsotopes:  return boost::any();
-      case kUseForCalibration:  return boost::any( WString::tr("pm-hdr-cal-peak") );
-      case kUseForManualRelEff: return boost::any( WString::tr("pm-hdr-rel-act") );
-      case kUserLabel:      return boost::any( WString::tr("pm-hdr-label") );
-      case kPeakLineColor:  return boost::any( WString::tr("pm-hdr-color") );
-      case kHasSkew:        return boost::any( WString::tr("Skew") );
-      case kSkewAmount:     return boost::any( WString::tr("pm-hdr-skew-amp") );
-      case kType:           return boost::any( WString::tr("pm-hdr-peak-type") );
-      case kLowerX:         return boost::any( WString::tr("pm-hdr-low-energy") );
-      case kUpperX:         return boost::any( WString::tr("pm-hdr-up-energy") );
-      case kRoiCounts:      return boost::any( WString::tr("pm-hdr-roi-counts") );
-      case kContinuumType:  return boost::any( WString::tr("cont-type") );
-      case kNumColumns:     return boost::any();
+      case kMean:           return Wt::cpp17::any( WString::tr("Mean") );
+      case kFwhm:           return Wt::cpp17::any( WString::tr("FWHM") ); //\x03C3
+      case kAmplitude:      return Wt::cpp17::any( WString::tr("Area") );
+      case kCps:            return Wt::cpp17::any( WString::tr("CPS") );
+      case kIsotope:        return Wt::cpp17::any( WString::tr("Nuclide") );
+      case kPhotoPeakEnergy:return Wt::cpp17::any( WString::tr("Photopeak") );
+      case kDifference:     return Wt::cpp17::any( WString::tr("pm-hdr-diff") );
+      case kUseForShieldingSourceFit: return Wt::cpp17::any( WString::tr("Use") );
+      case kCandidateIsotopes:  return Wt::cpp17::any();
+      case kUseForCalibration:  return Wt::cpp17::any( WString::tr("pm-hdr-cal-peak") );
+      case kUseForManualRelEff: return Wt::cpp17::any( WString::tr("pm-hdr-rel-act") );
+      case kUserLabel:      return Wt::cpp17::any( WString::tr("pm-hdr-label") );
+      case kPeakLineColor:  return Wt::cpp17::any( WString::tr("pm-hdr-color") );
+      case kHasSkew:        return Wt::cpp17::any( WString::tr("Skew") );
+      case kSkewAmount:     return Wt::cpp17::any( WString::tr("pm-hdr-skew-amp") );
+      case kType:           return Wt::cpp17::any( WString::tr("pm-hdr-peak-type") );
+      case kLowerX:         return Wt::cpp17::any( WString::tr("pm-hdr-low-energy") );
+      case kUpperX:         return Wt::cpp17::any( WString::tr("pm-hdr-up-energy") );
+      case kRoiCounts:      return Wt::cpp17::any( WString::tr("pm-hdr-roi-counts") );
+      case kContinuumType:  return Wt::cpp17::any( WString::tr("cont-type") );
+      case kNumColumns:     return Wt::cpp17::any();
     }//switch( section )
-  } //DisplayRole
-  else if (role == ToolTipRole)
+  } //ItemDataRole::Display
+  else if( role == ItemDataRole::ToolTip )
   {
     switch( section )
     {
-      case kMean:           return boost::any( WString::tr("pm-hdr-tt-mean") );
-      case kFwhm:           return boost::any( WString::tr("pm-hdr-tt-fwhm") ); //\x03C3
-      case kAmplitude:      return boost::any( WString::tr("pm-hdr-tt-amp") );
-      case kCps:            return boost::any( WString::tr("pm-hdr-tt-cps") );
-      case kIsotope:        return boost::any();
-      case kPhotoPeakEnergy:return boost::any( WString::tr("pm-hdr-tt-photopeak-energy") );
-      case kDifference:     return boost::any( WString::tr("pm-hdr-tt-diff") );
-      case kUseForShieldingSourceFit: return boost::any();
-      case kCandidateIsotopes:  return boost::any();
-      case kUseForCalibration:  return boost::any();
-      case kUseForManualRelEff: return boost::any( WString::tr("pm-hdr-tt-man-rel-eff") );
-      case kPeakLineColor:     return boost::any( WString::tr("pm-hdr-tt-color") );
-      case kUserLabel:         return boost::any( WString::tr("pm-hdr-tt-label") );
-      case kRoiCounts:         return boost::any( WString::tr("pm-hdr-tt-roi-counts") );
+      case kMean:           return Wt::cpp17::any( WString::tr("pm-hdr-tt-mean") );
+      case kFwhm:           return Wt::cpp17::any( WString::tr("pm-hdr-tt-fwhm") ); //\x03C3
+      case kAmplitude:      return Wt::cpp17::any( WString::tr("pm-hdr-tt-amp") );
+      case kCps:            return Wt::cpp17::any( WString::tr("pm-hdr-tt-cps") );
+      case kIsotope:        return Wt::cpp17::any();
+      case kPhotoPeakEnergy:return Wt::cpp17::any( WString::tr("pm-hdr-tt-photopeak-energy") );
+      case kDifference:     return Wt::cpp17::any( WString::tr("pm-hdr-tt-diff") );
+      case kUseForShieldingSourceFit: return Wt::cpp17::any();
+      case kCandidateIsotopes:  return Wt::cpp17::any();
+      case kUseForCalibration:  return Wt::cpp17::any();
+      case kUseForManualRelEff: return Wt::cpp17::any( WString::tr("pm-hdr-tt-man-rel-eff") );
+      case kPeakLineColor:     return Wt::cpp17::any( WString::tr("pm-hdr-tt-color") );
+      case kUserLabel:         return Wt::cpp17::any( WString::tr("pm-hdr-tt-label") );
+      case kRoiCounts:         return Wt::cpp17::any( WString::tr("pm-hdr-tt-roi-counts") );
       case kHasSkew:
       case kSkewAmount:
       case kType:
       case kLowerX:
       case kUpperX:
       case kContinuumType:
-      case kNumColumns:     return boost::any();
+      case kNumColumns:     return Wt::cpp17::any();
     }//switch( section )
-    
-  } //ToolTipRole
-  else if( (orientation != Horizontal) || (role != DisplayRole) )
+
+  } //ItemDataRole::ToolTip
+  else if( (orientation != Orientation::Horizontal) || (role != ItemDataRole::Display) )
     return WAbstractItemModel::headerData( section, orientation, role );
 
-  return boost::any();
+  return Wt::cpp17::any();
 }//any headerData( int section, Orientation orientation, int role ) const
 
 
@@ -3645,8 +3653,6 @@ bool PeakModel::removeColumns( int, int, const Wt::WModelIndex & )
 
 void PeakModel::sort( int col, Wt::SortOrder order )
 {
-  using boost::bind;
-
   if( m_sortedPeaks.empty() )
     return;
 
@@ -3656,10 +3662,11 @@ void PeakModel::sort( int col, Wt::SortOrder order )
   if( m_sortColumn==kNumColumns )
     m_sortColumn = kMean;
 
-  boost::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn;
   const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
-  sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                        m_sortColumn, order, data );
+  std::function<bool(const PeakShrdPtr &, const PeakShrdPtr &)> sortfcn =
+    [col = m_sortColumn, order, data]( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs ){
+      return PeakModel::compare( lhs, rhs, col, order, data );
+    };
 
   layoutAboutToBeChanged().emit();
   stable_sort( m_sortedPeaks.begin(), m_sortedPeaks.end(), sortfcn );
@@ -3695,7 +3702,7 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
                          Columns column, Wt::SortOrder order,
                          const std::shared_ptr<const SpecUtils::Measurement> &data )
 {
-  const bool asscend = (order==AscendingOrder);
+  const bool asscend = (order == SortOrder::Ascending);
 
   if( lhs == rhs )
     return false;

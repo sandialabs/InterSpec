@@ -23,12 +23,12 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WDialog>
-#include <Wt/WServer>
-#include <Wt/WTemplate>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
+#include <Wt/WDialog.h>
+#include <Wt/WServer.h>
+#include <Wt/WTemplate.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
 
 #include <string>
 
@@ -65,7 +65,7 @@ WT_DECLARE_WT_MEMBER
 
 
 SimpleDialog::SimpleDialog()
-: Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
+: Wt::WDialog(),
   m_title( nullptr ),
   m_msgContents( nullptr ),
   m_multipleBringToFront( true )
@@ -75,7 +75,7 @@ SimpleDialog::SimpleDialog()
 
 
 SimpleDialog::SimpleDialog( const Wt::WString &title )
- : Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
+ : Wt::WDialog(),
   m_title( nullptr ),
   m_msgContents( nullptr ),
   m_multipleBringToFront( true )
@@ -85,7 +85,7 @@ SimpleDialog::SimpleDialog( const Wt::WString &title )
 
 
 SimpleDialog::SimpleDialog( const Wt::WString &title, const Wt::WString &content )
- : Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
+ : Wt::WDialog(),
   m_title( nullptr ),
   m_msgContents( nullptr ),
   m_multipleBringToFront( true )
@@ -98,9 +98,9 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   Wt::WDialog::render( flags );
   
-  if( flags & RenderFull )
+  if( flags.test( Wt::RenderFlag::Full ) )
   {
-    // WDialog::setMaximumSize will silently not use dimensions if WLength::Percentage, so we use CSS.
+    // WDialog::setMaximumSize will silently not use dimensions if WLength::Unit::Percentage, so we use CSS.
     //  Note that page dimensions wont be available during initial rendering of the webapp
     
     // The below seems to be necessary or else sometimes the window doesnt resize to fit its content
@@ -158,20 +158,20 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
     //setWindowTitle( title ); //Dont use the default Wt <h4>Some Text...</h4> stuff
     titleBar()->removeStyleClass( "titlebar" );  //Avoid the Wt changing of text color and such
     titleBar()->addStyleClass( "title" );
-    m_title = new WText( title, titleBar() );
+    m_title = titleBar()->addNew<WText>( title );
     m_title->setInline( false );
     //m_title->addStyleClass( "title" );
   }
   
   if( !content.empty() )
   {
-    m_msgContents = new WText( content, contents() );
+    m_msgContents = contents()->addNew<WText>( content );
     m_msgContents->addStyleClass( "content" );
     m_msgContents->setInline( false );
   }
   
   // We need to set the minimum size in C++; the maximum size is set in CSS.
-  setMinimumSize( WLength(260,WLength::Pixel), WLength::Auto );
+  setMinimumSize( WLength(260,WLength::Unit::Pixel), WLength::Auto );
   
   show();
   finished().connect( this, &SimpleDialog::startDeleteSelf );
@@ -199,7 +199,7 @@ void SimpleDialog::rejectWhenEscapePressed( bool enable )
 {
   WDialog::rejectWhenEscapePressed( enable );
   
-  if( enable == m_escapeConnection1.connected() )
+  if( enable == m_escapeConnection1.isConnected() )
     return;
   
   if( enable )
@@ -216,15 +216,15 @@ void SimpleDialog::rejectWhenEscapePressed( bool enable )
 
 Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt )
 {
-  Wt::WPushButton *b = new WPushButton( txt, footer() );
+  Wt::WPushButton *b = footer()->addNew<WPushButton>( txt );
   b->setStyleClass( "simple-dialog-btn" );
-  
+
   // TODO: closing the dialog seems a little laggy; check if WDialog::hide is faster, or if we
   //       should stick to using the JS
   //b->clicked().connect( this, &WDialog::hide );
   b->clicked().connect( "function(){$('#" + id() + "').hide(); $('.Wt-dialogcover').hide();}" );
-  
-  b->clicked().connect( boost::bind( &WDialog::done, this, Wt::WDialog::DialogCode::Accepted ) );
+
+  b->clicked().connect( [this](){ done( Wt::DialogCode::Accepted ); } );
   return b;
 }//addButton(...)
 
@@ -237,17 +237,23 @@ void SimpleDialog::startDeleteSelf()
   // We'll actually delete the windows later on in the event loop incase the order of connections
   //  to its signals is out of intended order, but also we will protect against being deleted in the
   //  current event loop as well
-  boost::function<void(void)> updater = wApp->bind( boost::bind( &SimpleDialog::deleteSelf, this ) );
-  WServer::instance()->post( wApp->sessionId(), std::bind( [updater](){
-    updater();
-    wApp->triggerUpdate();
-  } ) );
+  const string sessionId = wApp->sessionId();
+  WServer::instance()->post( sessionId, [this, sessionId](){
+    auto *app = WApplication::instance();
+    if( app && (app->sessionId() == sessionId) )
+    {
+      deleteSelf();
+      app->triggerUpdate();
+    }
+  } );
 }//startDeleteSelf()
 
 
 void SimpleDialog::deleteSelf()
 {
-  // calling 'delete this' makes me feel uneasy
+  // Wt4_TODO: `delete this` is not the correct Wt4 pattern for dialogs. Dialogs should be owned
+  //            via WObject::addChild(std::make_unique<SimpleDialog>(...)) and removed via
+  //            removeChild(). Redesigning SimpleDialog lifetime management is required.
   delete this;
 }
 

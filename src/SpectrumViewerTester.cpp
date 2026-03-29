@@ -36,25 +36,23 @@
 #include <sys/stat.h>
 #include <condition_variable>
 
-#include <boost/ref.hpp>
-
-#include <Wt/WText>
-#include <Wt/WMenu>
-#include <Wt/WImage>
-#include <Wt/WTable>
-#include <Wt/Dbo/Dbo>
-#include <Wt/WServer>
-#include <Wt/WPainter>
-#include <Wt/WSvgImage>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WStringStream>
-#include <Wt/WCssStyleSheet>
-#include <Wt/WStackedWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/Dbo/backend/Sqlite3>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/WText.h>
+#include <Wt/WMenu.h>
+#include <Wt/WImage.h>
+#include <Wt/WTable.h>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/WServer.h>
+#include <Wt/WPainter.h>
+#include <Wt/WSvgImage.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WCssStyleSheet.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/Dbo/backend/Sqlite3.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -103,7 +101,7 @@
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
 
-//#include <Wt/Dbo/WtSqlTraits>
+//#include <Wt/Dbo/WtSqlTraits.h>
 
 #if( ALLOW_URL_TO_FILESYSTEM_MAP )
 #include "InterSpec/DbToFilesystemLink.h"
@@ -128,7 +126,7 @@ const double SpectrumViewerTester::sm_nfwhm_manually_click = 0.75;
 const double SpectrumViewerTester::sm_min_manually_click_corr_frac = 0.9;
 
 
-typedef boost::function<void(WContainerWidget *)> TestDisplayCreateFunction;
+typedef std::function<void(WContainerWidget *)> TestDisplayCreateFunction;
 
 namespace
 {
@@ -145,16 +143,22 @@ namespace
                           SpectrumViewerTester *tester,
                           WMenu *m )
   {
-    TestDisplayCreateFunction f
-          = boost::bind( &SpectrumViewerTester::doScorring, tester, type, _1 );
-    
-    DeferredWidget< TestDisplayCreateFunction > *w = deferCreate( f );
+    TestDisplayCreateFunction f = [tester, type]( WContainerWidget *container ){
+      tester->doScorring( type, container );
+    };
+
+    // Wt4_TODO: SideMenuItem constructor (in UseInfoWindow.cpp) must be updated to accept
+    //  unique_ptr<WWidget> for its contents parameter, per Wt 4 WMenuItem API.
+    auto wOwner = std::unique_ptr<DeferredWidget<TestDisplayCreateFunction>>(
+                    new DeferredWidget<TestDisplayCreateFunction>( f ) );
+    DeferredWidget< TestDisplayCreateFunction > *w = wOwner.get();
     w->addStyleClass( "UseInfoItem" );
     const char *title = SpectrumViewerTester::tostr( type );
-    SideMenuItem *item = new SideMenuItem( title, w );
-    item->clicked().connect( boost::bind( &select_item, m, item ) );
-    m->addItem( item );
-  
+    auto itemOwner = std::make_unique<SideMenuItem>( title, std::move(wOwner) );
+    SideMenuItem *item = itemOwner.get();
+    item->clicked().connect( [m, item](){ select_item( m, item ); } );
+    m->addItem( std::move(itemOwner) );
+
     std::pair<SideMenuItem *, DeferredWidget< TestDisplayCreateFunction > *> p;
     p.first = item;
     p.second = w;
@@ -653,10 +657,10 @@ const char *SpectrumViewerTester::tostr( TestType type )
 
 
 SpectrumViewerTesterWindow::SpectrumViewerTesterWindow( InterSpec *viewer )
-  : AuxWindow( "InterSpec Tester", 
+  : AuxWindow( "InterSpec Tester",
               (WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
               | AuxWindowProperties::DisableCollapse) ),
-    m_tester( 0 )
+    m_tester( nullptr )
 {
   addStyleClass( "SpectrumViewerTesterWindow" );
   
@@ -667,16 +671,17 @@ SpectrumViewerTesterWindow::SpectrumViewerTesterWindow( InterSpec *viewer )
   height = std::max( 450.0, height );
   
   
-  m_tester = new SpectrumViewerTester( viewer,
-                                       static_cast<int>(width),
-                                       static_cast<int>(height) );
-  m_tester->setSizeHint( static_cast<int>(width), static_cast<int>(height) );
-  
-  m_tester->m_done.connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  
   WGridLayout *layout = stretcher();
-  layout->addWidget( m_tester, 0, 0 );
+  m_tester = layout->addWidget(
+    std::make_unique<SpectrumViewerTester>( viewer,
+                                            static_cast<int>(width),
+                                            static_cast<int>(height) ),
+    0, 0 );
+  m_tester->setSizeHint( static_cast<int>(width), static_cast<int>(height) );
+
+  m_tester->m_done.connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+  finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+
   layout->setContentsMargins( 0, 0, 0, 0 );
   
   show();
@@ -707,24 +712,23 @@ SpectrumViewerTester::ScoreNote::~ScoreNote()
 }//~ScoreNote()
 
 
-SpectrumViewerTester::ScoreDisplay::ScoreDisplay( const Score &score,
-                                                Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
+SpectrumViewerTester::ScoreDisplay::ScoreDisplay( const Score &score )
+: WContainerWidget(),
   m_score( score ),
-  m_notes( 0 )
+  m_notes( nullptr )
 {
   addStyleClass( "ScoreDisplay" );
-  WText *title = new WText( tostr(m_score.m_test), this );
+  WText *title = addNew<WText>( tostr(m_score.m_test) );
   title->addStyleClass( "ScoreDisplayTitle" );
   title->setInline( false );
-  
-  m_notes = new WContainerWidget( this );
+
+  m_notes = addNew<WContainerWidget>();
   m_notes->addStyleClass( "ScoreDisplayNotes" );
-  
+
   stringstream html;
   renderScore( html );
   m_notes->clear();
-  new WText( html.str(), XHTMLUnsafeText, m_notes );
+  m_notes->addNew<WText>( html.str(), Wt::TextFormat::UnsafeXHTML );
 //  cerr << "\n\n\nHtmlText" << endl;
 //  htmlText( cerr );
 //  cerr << "EndHtmlText\n\n\n" << endl;
@@ -734,11 +738,11 @@ SpectrumViewerTester::ScoreDisplay::ScoreDisplay( const Score &score,
 void SpectrumViewerTester::ScoreDisplay::setScore( const Score &score )
 {
   m_score = score;
-  
+
   stringstream html;
   renderScore( html );
   m_notes->clear();
-  new WText( html.str(), XHTMLText, m_notes );
+  m_notes->addNew<WText>( html.str(), Wt::TextFormat::XHTML );
 }//class ScoreDisplay
 
 
@@ -843,7 +847,7 @@ void SpectrumViewerTester::updateOverview()
   score.m_test = NumTestType;
   m_overview->clear();
   
-  WText *txt = new WText( "Score Overview", m_overview );
+  WText *txt = m_overview->addNew<WText>( "Score Overview" );
   txt->setInline( false );
   txt->addStyleClass( "ScoreOverviewTitle" );
 
@@ -863,7 +867,7 @@ void SpectrumViewerTester::updateOverview()
     snprintf( onstack, sizeof(onstack),
              "Have completed %i of %i tests, click buttons on left to run tests",
              ncomplete, int(NumTestType) );
-    txt = new WText( onstack, m_overview );
+    txt = m_overview->addNew<WText>( onstack );
     txt->setInline( false );
     txt->addStyleClass( "ScoreOverviewTestsComplete" );
   }//if( ncomplete != int(NumTestType) )
@@ -879,7 +883,7 @@ void SpectrumViewerTester::updateOverview()
          << corrPercent << "%)</div>\n"
          << "\t\t\t<div>" << score.m_nwrong << " issues found</div>\n"
          << "\t\t</div>\n";
-    /*txt =*/ new WText( strm.str(), XHTMLText, m_overview );
+    m_overview->addNew<WText>( strm.str(), Wt::TextFormat::XHTML );
   }//if( ncomplete )
   
 //  if( ncomplete != int(NumTestType) )
@@ -953,10 +957,10 @@ SpectrumViewerTester::Score SpectrumViewerTester::doTest( SpectrumViewerTester::
 
 
 void SpectrumViewerTester::doScorring( SpectrumViewerTester::TestType type,
-                                        Wt::WContainerWidget *parent )
+                                        Wt::WContainerWidget *container )
 {
   m_scores[type] = doTest(type);
-  m_scoreDisplays[type] = new ScoreDisplay( m_scores[type], parent );
+  m_scoreDisplays[type] = container->addNew<ScoreDisplay>( m_scores[type] );
   if( m_menuItems[type] )
   {
     m_menuItems[type]->enable();
@@ -968,48 +972,53 @@ void SpectrumViewerTester::doScorring( SpectrumViewerTester::TestType type,
 
 
 SpectrumViewerTester::SpectrumViewerTester( InterSpec *viewer,
-                                            int width, int height,
-                                            WContainerWidget *parent )
-  : WContainerWidget( parent ),
+                                            int width, int height )
+  : WContainerWidget(),
     m_viewer( viewer ),
-    m_overview( 0 ),
-    m_sideMenu( 0 ),
+    m_overview( nullptr ),
+    m_sideMenu( nullptr ),
     m_picWidth( 500 ),
     m_picHeight( 375 )
 {
   setSizeHint( width, height );
-  
+
   for( TestType t = TestType(0); t < NumTestType; t = TestType(t+1) )
   {
-    m_scoreDisplays[t] = 0;
-    m_menuItems[t] = 0;
+    m_scoreDisplays[t] = nullptr;
+    m_menuItems[t] = nullptr;
   }//for( loop over TestType )
-  
+
   if( wApp )
     wApp->useStyleSheet( "InterSpec_resources/SpectrumViewerTester.css" );
-  
-  WStackedWidget *stack = new WStackedWidget();
+
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
+
+  auto stackOwner = std::make_unique<WStackedWidget>();
+  WStackedWidget *stack = stackOwner.get();
   stack->addStyleClass( "UseInfoStack" );
-  WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+  WAnimation animation( Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200 );
   stack->setTransitionAnimation( animation, true );
-  
-  m_sideMenu = new WMenu( stack, Wt::Vertical );
+
+  auto menuOwner = std::make_unique<WMenu>( stack );
+  m_sideMenu = menuOwner.get();
   m_sideMenu->addStyleClass( "VerticalNavMenu HeavyNavMenu SideMenu" );
-  
-  WGridLayout *layout = new WGridLayout();
-  setLayout( layout );
-  layout->addWidget( m_sideMenu, 0, 0, AlignLeft );
-  layout->addWidget( stack, 0, 1 );
+
+  layout->addWidget( std::move(menuOwner), 0, 0, Wt::AlignmentFlag::Left );
+  layout->addWidget( std::move(stackOwner), 0, 1 );
   layout->setContentsMargins( 0, 0, 0, 0 );
-  
-  
-  m_overview = new WContainerWidget();
+
+
+  // Wt4_TODO: SideMenuItem constructor (in UseInfoWindow.cpp) must be updated to accept
+  //  unique_ptr<WWidget> for its contents parameter, per Wt 4 WMenuItem API.
+  auto overviewOwner = std::make_unique<WContainerWidget>();
+  m_overview = overviewOwner.get();
   m_overview->addStyleClass( "ScoreOverview" );
   m_overview->addStyleClass( "UseInfoItem" );
-  SideMenuItem *overviewItem = new SideMenuItem( "Overview", m_overview );
-  overviewItem->clicked().connect( boost::bind( &select_item, m_sideMenu, overviewItem ) );
-  
-  m_sideMenu->addItem( overviewItem );
+  auto overviewItemOwner = std::make_unique<SideMenuItem>( "Overview", std::move(overviewOwner) );
+  SideMenuItem *overviewItem = overviewItemOwner.get();
+  overviewItem->clicked().connect( [this, overviewItem](){ select_item( m_sideMenu, overviewItem ); } );
+
+  m_sideMenu->addItem( std::move(overviewItemOwner) );
   
   for( TestType type = TestType(0); type < NumTestType; type= TestType(type+1) )
   {

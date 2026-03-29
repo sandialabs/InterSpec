@@ -29,7 +29,7 @@
 #include <vector>
 #include <utility>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
@@ -64,8 +64,7 @@ public:
   //GammaXsGui(...) assumes `tool` is valid and remains accessible throughout
   //  the life of the GammaXsGui - also assumes no multithread issues with it
   GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
-              InterSpec *specViewer,
-              Wt::WContainerWidget *parent = 0 );
+              InterSpec *specViewer );
   virtual ~GammaXsGui();
   
   void updateDetectorCalc();
@@ -106,7 +105,7 @@ protected:
   void checkAndAddUndoRedo();
   
   Wt::WLineEdit *m_energyEdit;
-  Wt::WDoubleValidator *m_energyValidator;
+  std::shared_ptr<Wt::WDoubleValidator> m_energyValidator;
   Wt::WLineEdit *m_materialEdit;
   Wt::WSuggestionPopup *m_materialSuggestion; //not owned by this object
   Wt::WText *m_effectiveZ;

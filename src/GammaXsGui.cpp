@@ -27,17 +27,17 @@
 #include <vector>
 #include <sstream>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WLineEdit>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WDoubleValidator>
-#include <Wt/WRegExpValidator>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WDoubleValidator.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
@@ -56,7 +56,7 @@
 
 
 #if( USE_QR_CODES )
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 
 #include "InterSpec/QrCode.h"
 #endif
@@ -66,316 +66,347 @@ using namespace std;
 
 
 GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
-                        InterSpec* viewer,
-                        WContainerWidget *parent )
-  : WContainerWidget( parent ),
-    m_energyEdit( NULL ),
-    m_energyValidator( NULL ),
-    m_materialEdit( NULL ),
+                        InterSpec* viewer )
+  : WContainerWidget(),
+    m_energyEdit( nullptr ),
+    m_energyValidator( nullptr ),
+    m_materialEdit( nullptr ),
     m_materialSuggestion( materialSuggestion ),
-    m_effectiveZ( NULL ),
-    m_totalAttenuation( NULL ),
-    m_compton( NULL ),
+    m_effectiveZ( nullptr ),
+    m_totalAttenuation( nullptr ),
+    m_compton( nullptr ),
 #if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
-    m_rayleigh( NULL ),
+    m_rayleigh( nullptr ),
 #endif
-    m_photoElectric( NULL ),
-    m_conversion( NULL ),
-    m_density( NULL ),
-    m_thickness( NULL ),
-    m_transmissionFraction( NULL ),
+    m_photoElectric( nullptr ),
+    m_conversion( nullptr ),
+    m_density( nullptr ),
+    m_thickness( nullptr ),
+    m_transmissionFraction( nullptr ),
     m_transmissionFractionVal( -1.0f ),
-    m_layout( NULL ),
+    m_layout( nullptr ),
     m_specViewer( viewer ),
-    m_detectorDisplay( NULL ),
+    m_detectorDisplay( nullptr ),
     m_detectorDistanceLabel( nullptr ),
     m_detectorDistance( nullptr ),
     m_efficiencyLabel( nullptr ),
-    m_efficiency( NULL ),
+    m_efficiency( nullptr ),
     m_totalEfficiencyLabel( nullptr ),
-    m_totalEfficiency( NULL ),
+    m_totalEfficiency( nullptr ),
     m_intrinsicEfficiencyLabel( nullptr ),
     m_intrinsicEfficiency( nullptr ),
     m_fractionalAngleLabel( nullptr ),
-    m_fractionalAngle( NULL )
+    m_fractionalAngle( nullptr )
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-  
+
   addStyleClass( "GammaXsGui" );
 
   wApp->useStyleSheet( "InterSpec_resources/GammaXsGui.css" );
 
-  m_layout = new WGridLayout();
-  setLayout( m_layout );
+  m_layout = setLayout( std::make_unique<WGridLayout>() );
 
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
 
   m_specViewer->useMessageResourceBundle( "GammaXsGui" );
-  
-  m_energyEdit = new WLineEdit( "100" );
-  
-  m_energyEdit->setAutoComplete( false );
-  m_energyEdit->setAttributeValue( "ondragstart", "return false" );
+
+  {
+    auto edit = std::make_unique<WLineEdit>( "100" );
+    m_energyEdit = edit.get();
+    m_energyEdit->setAutoComplete( false );
+    m_energyEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
-  m_energyEdit->setAttributeValue( "autocorrect", "off" );
-  m_energyEdit->setAttributeValue( "spellcheck", "off" );
+    m_energyEdit->setAttributeValue( "autocorrect", "off" );
+    m_energyEdit->setAttributeValue( "spellcheck", "off" );
 #endif
-  m_energyValidator = new WDoubleValidator( 1.0, 10000.0, m_energyEdit );
+    m_energyEdit->addStyleClass( "numberValidator"); //used to detect mobile keyboard
+    m_energyEdit->changed().connect( this, &GammaXsGui::calculateCrossSections );
+    m_energyEdit->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
+    m_energyEdit->focussed().connect( this, &GammaXsGui::calculateCrossSections );
+    m_energyEdit->blurred().connect( this, &GammaXsGui::calculateCrossSections );
+    // Validator is a child of the edit widget, so create after parenting
+    m_layout->addWidget( std::move(edit), 0, 1, 1, 1 );
+  }
+  m_energyValidator = std::make_shared<WDoubleValidator>( 1.0, 10000.0 );
   m_energyEdit->setValidator( m_energyValidator );
-  m_energyEdit->addStyleClass( "numberValidator"); //used to detect mobile keyboard
-  m_energyEdit->changed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_energyEdit->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_energyEdit->focussed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_energyEdit->blurred().connect( this, &GammaXsGui::calculateCrossSections );
 
   int row = 0;
-  WLabel *label = new WLabel( WString::tr("energy-label") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_layout->addWidget( m_energyEdit, row, 1, 1, 1 );
-  label = new WLabel( "keV" );
-  m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
+  m_layout->addWidget( std::make_unique<WLabel>( WString::tr("energy-label") ), row, 0, 1, 1, AlignmentFlag::Left );
+  // m_energyEdit already added above at (0, 1)
+  m_layout->addWidget( std::make_unique<WLabel>( "keV" ), row, 2, 1, 1, AlignmentFlag::Left );
 
   ++row;
-  
-  label = new WLabel( WString::tr("gxsg-material-formula") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_materialEdit = new WLineEdit( "C0.5H0.2Ni0.3" );
-  
-  m_materialEdit->setAutoComplete( false );
-  m_materialEdit->setAttributeValue( "ondragstart", "return false" );
+
+  WLabel *matLabel = m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-material-formula") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto edit = std::make_unique<WLineEdit>( "C0.5H0.2Ni0.3" );
+    m_materialEdit = edit.get();
+    m_materialEdit->setAutoComplete( false );
+    m_materialEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
-  m_materialEdit->setAttributeValue( "autocorrect", "off" );
-  m_materialEdit->setAttributeValue( "spellcheck", "off" );
+    m_materialEdit->setAttributeValue( "autocorrect", "off" );
+    m_materialEdit->setAttributeValue( "spellcheck", "off" );
 #endif
-  m_materialEdit->changed().connect( this, &GammaXsGui::handleMaterialChange );
-  m_materialEdit->enterPressed().connect( this, &GammaXsGui::handleMaterialChange );
+    m_materialEdit->changed().connect( this, &GammaXsGui::handleMaterialChange );
+    m_materialEdit->enterPressed().connect( this, &GammaXsGui::handleMaterialChange );
 //  m_materialEdit->focussed().connect( this, &GammaXsGui::handleMaterialChange );
-  m_materialEdit->blurred().connect( this, &GammaXsGui::handleMaterialChange );
-
-  HelpSystem::attachToolTipOn( {label,m_materialEdit}, WString::tr("gxsg-tt-material"), showToolTips );
-  
-  m_layout->addWidget( m_materialEdit, row, 1, 1, 2 );
+    m_materialEdit->blurred().connect( this, &GammaXsGui::handleMaterialChange );
+    m_layout->addWidget( std::move(edit), row, 1, 1, 2 );
+  }
+  HelpSystem::attachToolTipOn( {matLabel, m_materialEdit}, WString::tr("gxsg-tt-material"), showToolTips );
   m_materialSuggestion->forEdit( m_materialEdit,
-                  WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+                  PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
   ++row;
-  label = new WLabel( WString::tr("gxsg-total-atten-xs") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_totalAttenuation = new WText();
-  m_totalAttenuation->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_totalAttenuation, row, 1, 1, 1 );
+  m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-total-atten-xs") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto w = std::make_unique<WText>();
+    m_totalAttenuation = w.get();
+    m_totalAttenuation->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 1 );
+  }
 #ifndef WT_NO_STD_WSTRING
-  label = new WLabel( L"cm\x00B2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( L"cm\x00B2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #else
-  label = new WLabel( "cm2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( "cm2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #endif
-  m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
 
   ++row;
-  label = new WLabel( WString::tr("gxsg-compton-label") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_compton = new WText();
-  m_compton->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_compton, row, 1, 1, 1 );
+  m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-compton-label") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto w = std::make_unique<WText>();
+    m_compton = w.get();
+    m_compton->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 1 );
+  }
 #ifndef WT_NO_STD_WSTRING
-  label = new WLabel( L"cm\x00B2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( L"cm\x00B2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #else
-  label = new WLabel( "cm2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( "cm2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #endif
-  m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
 
 #if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
   ++row;
-  label = new WLabel( WString::tr("gxsg-rayleigh-label") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_rayleigh = new WText();
-  m_rayleigh->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_rayleigh, row, 1, 1, 1 );
+  m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-rayleigh-label") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto w = std::make_unique<WText>();
+    m_rayleigh = w.get();
+    m_rayleigh->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 1 );
+  }
 #ifndef WT_NO_STD_WSTRING
-  label = new WLabel( L"cm\x00B2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( L"cm\x00B2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #else
-  label = new WLabel( "cm2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( "cm2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #endif
-  m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
 #endif //#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
-  
+
   ++row;
-  label = new WLabel( WString::tr("gxsg-photoelec-label") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_photoElectric = new WText();
-  m_photoElectric->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_photoElectric, row, 1, 1, 1 );
+  m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-photoelec-label") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto w = std::make_unique<WText>();
+    m_photoElectric = w.get();
+    m_photoElectric->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 1 );
+  }
 #ifndef WT_NO_STD_WSTRING
-  label = new WLabel( L"cm\x00B2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( L"cm\x00B2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #else
-  label = new WLabel( "cm2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( "cm2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #endif
-  m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
 
   ++row;
-  label = new WLabel( WString::tr("gxsg-pp-label") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_conversion = new WText();
-  m_conversion->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_conversion, row, 1, 1, 1 );
+  m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-pp-label") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto w = std::make_unique<WText>();
+    m_conversion = w.get();
+    m_conversion->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 1 );
+  }
 #ifndef WT_NO_STD_WSTRING
-  label = new WLabel( L"cm\x00B2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( L"cm\x00B2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #else
-  label = new WLabel( "cm2/g" );
+  m_layout->addWidget( std::make_unique<WLabel>( "cm2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #endif
-  m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
 
   ++row;
-  label = new WLabel( WString::tr("gxsg-mass-avrg-an") );
-  m_effectiveZ = new WText( "" );
-  m_effectiveZ->addStyleClass( "GxsResult" );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_layout->addWidget( m_effectiveZ, row, 1, 1, 1 );
-  
-  ++row;
-  WText *attText = new WText( WString::tr("gxsg-opt-atten") );
-  m_layout->addWidget( attText, row, 0, 1, 3, AlignBottom );
+  m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-mass-avrg-an") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto w = std::make_unique<WText>( "" );
+    m_effectiveZ = w.get();
+    m_effectiveZ->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 1 );
+  }
 
   ++row;
-  label = new WLabel( WString::tr("gxsg-density-label") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_density = new WLineEdit();
-  
-  m_density->setAutoComplete( false );
-  m_density->setAttributeValue( "ondragstart", "return false" );
+  m_layout->addWidget( std::make_unique<WText>( WString::tr("gxsg-opt-atten") ), row, 0, 1, 3, AlignmentFlag::Bottom );
+
+  ++row;
+  m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-density-label") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto edit = std::make_unique<WLineEdit>();
+    m_density = edit.get();
+    m_density->setAutoComplete( false );
+    m_density->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
-  m_density->setAttributeValue( "autocorrect", "off" );
-  m_density->setAttributeValue( "spellcheck", "off" );
+    m_density->setAttributeValue( "autocorrect", "off" );
+    m_density->setAttributeValue( "spellcheck", "off" );
 #endif
-  WDoubleValidator *doubValidator = new WDoubleValidator( m_density );
-  m_density->setValidator( doubValidator );
-  m_density->addStyleClass( "numberValidator" ); //used to detect mobile keyboard
-    
-  m_layout->addWidget( m_density, row, 1, 1, 1 );
+    m_density->addStyleClass( "numberValidator" ); //used to detect mobile keyboard
+    m_density->changed().connect( this, &GammaXsGui::calculateCrossSections );
+    m_density->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
+    m_density->focussed().connect( this, &GammaXsGui::calculateCrossSections );
+    m_density->blurred().connect( this, &GammaXsGui::calculateCrossSections );
+    m_layout->addWidget( std::move(edit), row, 1, 1, 1 );
+  }
+  {
+    auto doubValidator = std::make_shared<WDoubleValidator>();
+    m_density->setValidator( doubValidator );
+  }
 #ifndef WT_NO_STD_WSTRING
-  label = new WLabel( L"g/cm\x00B3" );
+  m_layout->addWidget( std::make_unique<WLabel>( L"g/cm\x00B3" ), row, 2, 1, 1, AlignmentFlag::Left );
 #else
-  label = new WLabel( "g/cm3" );
+  m_layout->addWidget( std::make_unique<WLabel>( "g/cm3" ), row, 2, 1, 1, AlignmentFlag::Left );
 #endif
-  m_layout->addWidget( label, row, 2, 1, 1, AlignLeft );
 
-    
-  m_density->changed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_density->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_density->focussed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_density->blurred().connect( this, &GammaXsGui::calculateCrossSections );
+  // Create shared distance validator for thickness and detector distance fields
+  auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex );
+  distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
 
   ++row;
-  label = new WLabel( WString::tr("gxsg-thickness-label") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_thickness = new WLineEdit( "1 cm" );
-  
-  m_thickness->setAutoComplete( false );
-  m_thickness->setAttributeValue( "ondragstart", "return false" );
+  m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-thickness-label") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto edit = std::make_unique<WLineEdit>( "1 cm" );
+    m_thickness = edit.get();
+    m_thickness->setAutoComplete( false );
+    m_thickness->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
-  m_thickness->setAttributeValue( "autocorrect", "off" );
-  m_thickness->setAttributeValue( "spellcheck", "off" );
+    m_thickness->setAttributeValue( "autocorrect", "off" );
+    m_thickness->setAttributeValue( "spellcheck", "off" );
 #endif
-    
-  WRegExpValidator *distValidator
-                = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
-  distValidator->setFlags( Wt::MatchCaseInsensitive );
-  m_thickness->setValidator( distValidator );
-    
-  m_layout->addWidget( m_thickness, row, 1, 1, 1 );
-  m_thickness->changed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_thickness->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_thickness->focussed().connect( this, &GammaXsGui::calculateCrossSections );
-  m_thickness->blurred().connect( this, &GammaXsGui::calculateCrossSections );
+    m_thickness->setValidator( distValidator );
+    m_thickness->changed().connect( this, &GammaXsGui::calculateCrossSections );
+    m_thickness->enterPressed().connect( this, &GammaXsGui::calculateCrossSections );
+    m_thickness->focussed().connect( this, &GammaXsGui::calculateCrossSections );
+    m_thickness->blurred().connect( this, &GammaXsGui::calculateCrossSections );
+    m_layout->addWidget( std::move(edit), row, 1, 1, 1 );
+  }
   HelpSystem::attachToolTipOn( m_thickness, WString::tr("gxsg-tt-thickness"), showToolTips );
-  
+
   ++row;
-  label = new WLabel( WString::tr("gxsg-trans-frac-label") );
-  m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
-  m_transmissionFraction = new WText();
-  m_transmissionFraction->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_transmissionFraction, row, 1, 1, 2 );
-  
-  HelpSystem::attachToolTipOn( {label, m_transmissionFraction}, WString::tr("gxsg-tt-trans-frac"),
+  WLabel *transFracLabel = m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-trans-frac-label") ), row, 0, 1, 1, AlignmentFlag::Left );
+  {
+    auto w = std::make_unique<WText>();
+    m_transmissionFraction = w.get();
+    m_transmissionFraction->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 2 );
+  }
+  HelpSystem::attachToolTipOn( {transFracLabel, m_transmissionFraction}, WString::tr("gxsg-tt-trans-frac"),
                               showToolTips );
   m_layout->setColumnStretch( 1, row );
 
   ++row;
-  SpecMeasManager *fileManager = m_specViewer->fileManager();
-  m_detectorDisplay = new DetectorDisplay( m_specViewer, fileManager->model() );
-  m_detectorDisplay->setMinimumSize( WLength::Auto, WLength(1.5,WLength::FontEm) );
-  m_layout->addWidget( m_detectorDisplay, row, 0, 1, 3 );
-  
+  {
+    SpecMeasManager *fileManager = m_specViewer->fileManager();
+    auto dd = std::make_unique<DetectorDisplay>( m_specViewer, fileManager->model() );
+    m_detectorDisplay = dd.get();
+    m_detectorDisplay->setMinimumSize( WLength::Auto, WLength(1.5,WLength::Unit::FontEm) );
+    m_layout->addWidget( std::move(dd), row, 0, 1, 3 );
+  }
+
   ++row;
-  m_detectorDistanceLabel = new WLabel( WString::tr("Distance") );
-  m_layout->addWidget( m_detectorDistanceLabel, row, 0, 1, 1, AlignLeft );
-  m_detectorDistance = new WLineEdit("2 cm");
-  
-  m_detectorDistance->setAutoComplete( false );
-  m_detectorDistance->setAttributeValue( "ondragstart", "return false" );
+  {
+    auto lbl = std::make_unique<WLabel>( WString::tr("Distance") );
+    m_detectorDistanceLabel = lbl.get();
+    m_layout->addWidget( std::move(lbl), row, 0, 1, 1, AlignmentFlag::Left );
+  }
+  {
+    auto edit = std::make_unique<WLineEdit>("2 cm");
+    m_detectorDistance = edit.get();
+    m_detectorDistance->setAutoComplete( false );
+    m_detectorDistance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
-  m_detectorDistance->setAttributeValue( "autocorrect", "off" );
-  m_detectorDistance->setAttributeValue( "spellcheck", "off" );
+    m_detectorDistance->setAttributeValue( "autocorrect", "off" );
+    m_detectorDistance->setAttributeValue( "spellcheck", "off" );
 #endif
-  m_detectorDistance->setValidator( distValidator );
-  m_layout->addWidget( m_detectorDistance, row, 1, 1, 2 );
+    m_detectorDistance->setValidator( distValidator );
+    m_detectorDistance->changed().connect( this, &GammaXsGui::updateDetectorCalc );
+    m_detectorDistance->enterPressed().connect( this, &GammaXsGui::updateDetectorCalc );
+    m_detectorDistance->focussed().connect( this, &GammaXsGui::updateDetectorCalc );
+    m_detectorDistance->blurred().connect( this, &GammaXsGui::updateDetectorCalc );
+    m_layout->addWidget( std::move(edit), row, 1, 1, 2 );
+  }
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"This is the distance of the selected detector.", showToolTips );
   HelpSystem::attachToolTipOn( m_detectorDistance, WString::tr("gxsg-tt-distance"), showToolTips );
-  
-  m_detectorDistance->changed().connect( this, &GammaXsGui::updateDetectorCalc );
-  m_detectorDistance->enterPressed().connect( this, &GammaXsGui::updateDetectorCalc );
-  m_detectorDistance->focussed().connect( this, &GammaXsGui::updateDetectorCalc );
-  m_detectorDistance->blurred().connect( this, &GammaXsGui::updateDetectorCalc );
-  
+
   ++row;
-  m_intrinsicEfficiencyLabel = new WLabel( WString::tr("gxsg-intrinsic-eff-label") );
-  m_layout->addWidget( m_intrinsicEfficiencyLabel , row, 0, 1, 1, AlignLeft );
-  m_intrinsicEfficiency = new WText();
-  m_intrinsicEfficiency->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_intrinsicEfficiency, row, 1, 1, 2 );
-  
+  {
+    auto lbl = std::make_unique<WLabel>( WString::tr("gxsg-intrinsic-eff-label") );
+    m_intrinsicEfficiencyLabel = lbl.get();
+    m_layout->addWidget( std::move(lbl), row, 0, 1, 1, AlignmentFlag::Left );
+  }
+  {
+    auto w = std::make_unique<WText>();
+    m_intrinsicEfficiency = w.get();
+    m_intrinsicEfficiency->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 2 );
+  }
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Intrinsic efficiency (in-peak detection efficiency of gammas striking detector face).", showToolTips );
   HelpSystem::attachToolTipOn( m_intrinsicEfficiency, WString::tr("gxsg-tt-intrinsic-eff"),
                               showToolTips );
-  
+
   ++row;
-  m_fractionalAngleLabel = new WLabel( WString::tr("gxsg-solid-angle-frac-label") );
-  m_layout->addWidget( m_fractionalAngleLabel, row, 0, 1, 1, AlignLeft );
-  m_fractionalAngle = new WText();
-  m_fractionalAngle->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_fractionalAngle, row, 1, 1, 2 );
-  
+  {
+    auto lbl = std::make_unique<WLabel>( WString::tr("gxsg-solid-angle-frac-label") );
+    m_fractionalAngleLabel = lbl.get();
+    m_layout->addWidget( std::move(lbl), row, 0, 1, 1, AlignmentFlag::Left );
+  }
+  {
+    auto w = std::make_unique<WText>();
+    m_fractionalAngle = w.get();
+    m_fractionalAngle->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 2 );
+  }
 //  HelpSystem::attachToolTipOn( m_detectorLabel[detectorCount],"Fractional solid angle of the selected detector at specified distance." , showToolTips );
   HelpSystem::attachToolTipOn( m_fractionalAngle, WString::tr("gxsg-tt-solid-angle-frac"),
                               showToolTips );
-  
-  
+
   ++row;
-  m_efficiencyLabel = new WLabel( WString::tr("gxsg-det-eff-label") );
-  m_layout->addWidget( m_efficiencyLabel, row, 0, 1, 1, AlignLeft );
-  m_efficiency = new WText();
-  m_efficiency->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_efficiency, row, 1, 1, 2 );
-  
+  {
+    auto lbl = std::make_unique<WLabel>( WString::tr("gxsg-det-eff-label") );
+    m_efficiencyLabel = lbl.get();
+    m_layout->addWidget( std::move(lbl), row, 0, 1, 1, AlignmentFlag::Left );
+  }
+  {
+    auto w = std::make_unique<WText>();
+    m_efficiency = w.get();
+    m_efficiency->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 2 );
+  }
   HelpSystem::attachToolTipOn( {m_efficiencyLabel, m_efficiency}, WString::tr("gxsg-tt-det-eff"),
                               showToolTips );
-  
+
   ++row;
-  m_totalEfficiencyLabel = new WLabel( WString::tr("gxsg-total-eff-label") );
-  m_layout->addWidget( m_totalEfficiencyLabel, row, 0, 1, 1, AlignLeft );
-  m_totalEfficiency = new WText();
-  m_totalEfficiency->addStyleClass( "GxsResult" );
-  m_layout->addWidget( m_totalEfficiency, row, 1, 1, 2 );
-  
+  {
+    auto lbl = std::make_unique<WLabel>( WString::tr("gxsg-total-eff-label") );
+    m_totalEfficiencyLabel = lbl.get();
+    m_layout->addWidget( std::move(lbl), row, 0, 1, 1, AlignmentFlag::Left );
+  }
+  {
+    auto w = std::make_unique<WText>();
+    m_totalEfficiency = w.get();
+    m_totalEfficiency->addStyleClass( "GxsResult" );
+    m_layout->addWidget( std::move(w), row, 1, 1, 2 );
+  }
   HelpSystem::attachToolTipOn( m_totalEfficiencyLabel,
     "Transmission fraction times detection efficiency." , showToolTips );
   HelpSystem::attachToolTipOn( m_totalEfficiency, WString::tr("gxsg-tt-total-eff"),
                               showToolTips );
-  
+
   m_specViewer->detectorChanged().connect( this, &GammaXsGui::handleDetectorChange );
   m_specViewer->detectorModified().connect( this, &GammaXsGui::handleDetectorChange );
   handleDetectorChange( m_detectorDisplay->detector() );
-  
+
   calculateCrossSections();
 }//GammaXsGui
 
@@ -500,7 +531,7 @@ vector<pair<const SandiaDecay::Element *, float> > GammaXsGui::parseMaterial()
       material = MaterialDB::materialFromChemicalFormula( text, db );
 
       // Check if this suggestion already exists before adding
-      Wt::WAbstractItemModel *mdl = m_materialSuggestion->model();
+      std::shared_ptr<Wt::WAbstractItemModel> mdl = m_materialSuggestion->model();
       const Wt::WString suggName = Wt::WString::fromUTF8( material->name );
       bool alreadyHave = false;
       for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
@@ -669,13 +700,13 @@ void GammaXsGui::calculateCrossSections()
   float energy = -999.0;
   vector<pair<const SandiaDecay::Element *, float> > chemFormula;
 
-  if( m_energyEdit->validate() == WValidator::Valid )
+  if( m_energyEdit->validate() == ValidationState::Valid )
   {
     try
     {
       energy = static_cast<float>( std::stod( m_energyEdit->text().narrow() ) );
     }catch(...){}
-  }//if( m_energyEdit->validate() == WValidator::Valid )
+  }//if( m_energyEdit->validate() == ValidationState::Valid )
 
   chemFormula = parseMaterial();
 
@@ -872,19 +903,19 @@ GammaXsWindow::GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion ,
 {
   rejectWhenEscapePressed( true );
 
-  contents()->setOverflow( Wt::WContainerWidget::OverflowAuto, Wt::Orientation::Vertical );
+  contents()->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
 
-  m_tool = new GammaXsGui( materialSuggestion, viewer, contents() );
+  m_tool = contents()->addNew<GammaXsGui>( materialSuggestion, viewer );
   
   AuxWindow::addHelpInFooter( footer(), "gamma-xs-dialog" );
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = footer()->addNew<WPushButton>();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
-  qr_btn->clicked().connect( std::bind( [this](){
+  qr_btn->clicked().connect( [this](){
     try
     {
       const string url = "interspec://gammaxs/?" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());
@@ -893,7 +924,7 @@ GammaXsWindow::GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion ,
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
-  }) );
+  } );
 #endif //USE_QR_CODES
   
   WPushButton *closeButton = addCloseButtonToFooter();

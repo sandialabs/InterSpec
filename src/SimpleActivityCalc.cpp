@@ -28,18 +28,18 @@
 #include <limits>
 #include <algorithm>
 
-#include <Wt/WMenu>
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WIOService>
-#include <Wt/WPushButton>
-#include <Wt/WContainerWidget>
-#include <Wt/WRegExpValidator>
-#include <Wt/WSuggestionPopup>
+#include <Wt/WMenu.h>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WIOService.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WSuggestionPopup.h>
 
 #include "rapidxml/rapidxml.hpp"
 
@@ -84,7 +84,7 @@
 
 
 #if( USE_QR_CODES )
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 #include "InterSpec/QrCode.h"
 #endif
 
@@ -632,17 +632,18 @@ SimpleActivityCalcWindow::SimpleActivityCalcWindow( Wt::WSuggestionPopup *materi
 {
   setModal( false );
 
-  m_tool = new SimpleActivityCalc( materialSuggestion, viewer, contents() );
-  
+  m_tool = contents()->addNew<SimpleActivityCalc>( materialSuggestion, viewer );
+
   AuxWindow::addHelpInFooter( footer(), "simple-activity-calc" );
-  
+
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton();
+  auto qr_btn_owner = std::make_unique<WPushButton>();
+  WPushButton *qr_btn = qr_btn_owner.get();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
-  qr_btn->clicked().connect( std::bind( [this](){
+  qr_btn->clicked().connect( [this](){
     try
     {
       const string url = "interspec://simple-activity/?" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());
@@ -652,17 +653,17 @@ SimpleActivityCalcWindow::SimpleActivityCalcWindow( Wt::WSuggestionPopup *materi
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
-  }) );
+  } );
   if( !viewer->isPhone() )
-    footer()->addWidget( qr_btn );
+    footer()->addWidget( std::move(qr_btn_owner) );
 #endif //USE_QR_CODES
-  
+
   WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
   closeButton->clicked().connect( this, &AuxWindow::hide );
-  
+
 #if( USE_QR_CODES )
   if( viewer->isPhone() )
-    footer()->addWidget( qr_btn );
+    footer()->addWidget( std::move(qr_btn_owner) );
 #endif
   
   centerWindow();
@@ -686,10 +687,9 @@ SimpleActivityCalc *SimpleActivityCalcWindow::tool()
 }
 
 SimpleActivityCalc::SimpleActivityCalc( Wt::WSuggestionPopup *materialSuggestion,
-                                      InterSpec *specViewer,
-                                      Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
-  m_renderFlags( 0x0 ),
+                                      InterSpec *specViewer )
+: WContainerWidget(),
+  m_renderFlags(),
   m_haveRendered( false ),
   m_viewer( specViewer ),
   m_materialSuggest( materialSuggestion ),
@@ -741,84 +741,84 @@ void SimpleActivityCalc::init()
   setLayoutSizeAware( true );
   
   // Peak selection row
-  WContainerWidget *peakRow = new WContainerWidget( this );
+  WContainerWidget *peakRow = addNew<WContainerWidget>();
   peakRow->addStyleClass( "row" );
-  WLabel *peakLabel = new WLabel( WString::tr("sac-peak-label"), peakRow );
+  WLabel *peakLabel = peakRow->addNew<WLabel>( WString::tr("sac-peak-label") );
   peakLabel->addStyleClass( "label" );
-  m_peakSelect = new WComboBox( peakRow );
+  m_peakSelect = peakRow->addNew<WComboBox>();
   peakLabel->setBuddy( m_peakSelect );
   m_peakSelect->addStyleClass( "input" );
   m_peakSelect->changed().connect( this, &SimpleActivityCalc::handlePeakChanged );
-  
+
   // Nuclide info display (shows nuclide, energy, branching ratio, etc.)
-  m_nuclideInfo = new WText( this );
+  m_nuclideInfo = addNew<WText>();
   m_nuclideInfo->addStyleClass( "row nuclide-info" );
-  
+
   // Age row (hidden if not appropriate for the nuclide)
-  m_ageRow = new WContainerWidget( this );
+  m_ageRow = addNew<WContainerWidget>();
   m_ageRow->addStyleClass( "row" );
-  WLabel *ageLabel = new WLabel( WString::tr("sac-age-label"), m_ageRow );
+  WLabel *ageLabel = m_ageRow->addNew<WLabel>( WString::tr("sac-age-label") );
   ageLabel->addStyleClass( "label" );
-  m_ageEdit = new WLineEdit( m_ageRow );
+  m_ageEdit = m_ageRow->addNew<WLineEdit>();
   ageLabel->setBuddy( m_ageEdit );
   m_ageEdit->addStyleClass( "input" );
   m_ageEdit->changed().connect( this, &SimpleActivityCalc::handleAgeChanged );
   m_ageRow->hide(); // Initially hidden
-  
+
   // Detector row
-  WContainerWidget *detectorRow = new WContainerWidget( this );
+  WContainerWidget *detectorRow = addNew<WContainerWidget>();
   detectorRow->addStyleClass( "row" );
-  m_detectorDisplay = new DetectorDisplay( m_viewer, m_viewer->fileManager()->model(), detectorRow );
+  m_detectorDisplay = detectorRow->addNew<DetectorDisplay>( m_viewer, m_viewer->fileManager()->model() );
   m_detectorDisplay->addStyleClass( "input" );
-  
+
   // Shielding row
-  WContainerWidget *shieldingRow = new WContainerWidget( this );
+  WContainerWidget *shieldingRow = addNew<WContainerWidget>();
   shieldingRow->addStyleClass( "row" );
-  WLabel *shieldingLabel = new WLabel( WString::tr("sac-shielding-label"), shieldingRow );
+  WLabel *shieldingLabel = shieldingRow->addNew<WLabel>( WString::tr("sac-shielding-label") );
   shieldingLabel->addStyleClass( "label" );
-  m_shieldingSelect = new ShieldingSelect( m_materialSuggest, shieldingRow );
+  m_shieldingSelect = shieldingRow->addNew<ShieldingSelect>( m_materialSuggest );
   //m_shieldingSelect->addStyleClass( "input" );
   m_shieldingSelect->materialChanged().connect( this, &SimpleActivityCalc::handleShieldingChanged );
   m_shieldingSelect->materialModified().connect( this, &SimpleActivityCalc::handleShieldingChanged );
-  
+
   // Geometry row (hidden if fixed geometry detector)
-  m_geometryRow = new WContainerWidget( this );
+  m_geometryRow = addNew<WContainerWidget>();
   m_geometryRow->addStyleClass( "row" );
-  WLabel *geometryLabel = new WLabel( WString::tr("sac-geometry-label"), m_geometryRow );
+  WLabel *geometryLabel = m_geometryRow->addNew<WLabel>( WString::tr("sac-geometry-label") );
   geometryLabel->addStyleClass( "label" );
-  m_geometrySelect = new WComboBox( m_geometryRow );
+  m_geometrySelect = m_geometryRow->addNew<WComboBox>();
   geometryLabel->setBuddy( m_geometrySelect );
   m_geometrySelect->addStyleClass( "input" );
   m_geometrySelect->addItem( WString::tr("sac-geometry-point") );
   m_geometrySelect->changed().connect( this, &SimpleActivityCalc::handleGeometryChanged );
   m_geometryRow->hide(); // Initially hidden, shown if not fixed geometry
-  
+
   // Distance row (hidden if fixed geometry)
-  m_distanceRow = new WContainerWidget( this );
+  m_distanceRow = addNew<WContainerWidget>();
   m_distanceRow->addStyleClass( "row" );
-  WLabel *distanceLabel = new WLabel( WString::tr("sac-distance-label"), m_distanceRow );
+  WLabel *distanceLabel = m_distanceRow->addNew<WLabel>( WString::tr("sac-distance-label") );
   distanceLabel->addStyleClass( "label" );
-  m_distanceEdit = new WLineEdit( m_distanceRow );
+  m_distanceEdit = m_distanceRow->addNew<WLineEdit>();
   distanceLabel->setBuddy( m_distanceEdit );
   m_distanceEdit->addStyleClass( "input" );
   m_distanceEdit->setText( "1 m" );
-  m_distanceEdit->setValidator( new WRegExpValidator( PhysicalUnits::sm_distanceRegex ) );
+  m_distanceEdit->setValidator( std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex ) );
   m_distanceEdit->changed().connect( this, &SimpleActivityCalc::handleDistanceChanged );
 
   // Background subtract row (hidden if no background spectrum loaded)
-  m_backgroundSubtractRow = new WContainerWidget( this );
+  m_backgroundSubtractRow = addNew<WContainerWidget>();
   m_backgroundSubtractRow->addStyleClass( "row backsubrow" );
-  m_backgroundSubtractCheck = new WCheckBox( WString::tr("sac-background-subtract-label"), m_backgroundSubtractRow );
+  m_backgroundSubtractCheck = m_backgroundSubtractRow->addNew<WCheckBox>( WString::tr("sac-background-subtract-label") );
   m_backgroundSubtractCheck->addStyleClass( "CbNoLineBreak input backsub" );
   m_backgroundSubtractCheck->changed().connect( this, &SimpleActivityCalc::handleBackgroundSubtractChanged );
   m_backgroundSubtractRow->hide(); // Initially hidden
 
   // Result display
-  m_resultText = new WText( this );
+  m_resultText = addNew<WText>();
   m_resultText->addStyleClass( "row result" );
-  
+
   // Error display
-  m_errorText = new WText( this );
+  m_errorText = addNew<WText>();
   m_errorText->addStyleClass( "row error" );
   m_errorText->hide();
   
@@ -901,13 +901,13 @@ void SimpleActivityCalc::render( WFlags<RenderFlag> flags )
 {
   WContainerWidget::render( flags );
   
-  if( m_haveRendered && m_renderFlags.testFlag(AddUndoRedoStep) )
+  if( m_haveRendered && m_renderFlags.test(AddUndoRedoStep) )
     handleAddUndoPoint();
-  
-  if( m_renderFlags.testFlag(UpdateResult) )
+
+  if( m_renderFlags.test(UpdateResult) )
     updateResult();
-  
-  m_renderFlags = 0;
+
+  m_renderFlags = WFlags<RenderActions>();
   
   if( !m_haveRendered )
   {
@@ -1613,29 +1613,28 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
 
         SimpleDialog *dialog = new SimpleDialog( WString::tr("sac-use-fit-background-peak"), "" );
         
-        D3SpectrumDisplayDiv *spectrum = new D3SpectrumDisplayDiv( dialog->contents() );
+        D3SpectrumDisplayDiv *spectrum = dialog->contents()->addNew<D3SpectrumDisplayDiv>();
         spectrum->clicked().preventPropagation();
         spectrum->setThumbnailMode();
         spectrum->resize( 250, 200 );
         spectrum->setData( background, false );
-        PeakModel *pmodel = new PeakModel( spectrum );
+        PeakModel *pmodel = spectrum->addChild( std::make_unique<PeakModel>() );
         pmodel->setNoSpecMeasBacking();
         pmodel->setForeground( background );
         spectrum->setPeakModel( pmodel );
         pmodel->addPeaks( fit_peaks );
         const double dx = upper_x - lower_x;
-        
+
         // Setting the x-axis range now doesnt seem to work, so we'll "post" it - which seems to work
-        spectrum->setXAxisRange( lower_x - 0.5*dx, upper_x + 0.5*dx ); //
-        auto set_range = wApp->bind( boost::bind( &D3SpectrumDisplayDiv::setXAxisRange, spectrum, lower_x - 0.5*dx, upper_x + 0.5*dx ) );
-        WServer::instance()->schedule( 100, wApp->sessionId(), [set_range](){
-          set_range();
+        spectrum->setXAxisRange( lower_x - 0.5*dx, upper_x + 0.5*dx );
+        WServer::instance()->schedule( std::chrono::milliseconds(100), wApp->sessionId(), [spectrum, lower_x, upper_x, dx](){
+          spectrum->setXAxisRange( lower_x - 0.5*dx, upper_x + 0.5*dx );
           wApp->triggerUpdate();
         } );
         
         WPushButton *okay_btn = dialog->addButton( WString::tr("Yes") );
         WPushButton *no_btn = dialog->addButton( WString::tr("No") );
-        okay_btn->clicked().connect( boost::bind(&SimpleActivityCalc::setFitBackgroundPeak, this, background_peak) );
+        okay_btn->clicked().connect( [this, background_peak](){ setFitBackgroundPeak( background_peak ); } );
         no_btn->clicked().connect( m_backgroundSubtractCheck, &WCheckBox::setUnChecked );
       }catch( std::exception &e )
       {
@@ -1741,7 +1740,7 @@ void SimpleActivityCalc::updateResult()
     return;
   }
   
-  if( m_distanceEdit && !m_distanceEdit->validate() )
+  if( m_distanceEdit && (m_distanceEdit->validate() != Wt::ValidationState::Valid) )
   {
     m_errorText->setText( WString::tr("sac-error-invalid-distance") );
     m_errorText->show();

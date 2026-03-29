@@ -31,14 +31,14 @@
 
 #include "3rdparty/date/include/date/date.h"
 
-#include <Wt/Utils>
-#include <Wt/WColor>
-#include <Wt/WString>
-#include <Wt/WApplication>
-#include <Wt/WJavaScript>
-#include <Wt/WStringStream>
-#include <Wt/WCssStyleSheet>
-#include <Wt/WContainerWidget>
+#include <Wt/Utils.h>
+#include <Wt/WColor.h>
+#include <Wt/WString.h>
+#include <Wt/WApplication.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WCssStyleSheet.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
@@ -52,8 +52,8 @@ using namespace Wt;
 using namespace std;
 
 
-ShieldingSourceFitPlot::ShieldingSourceFitPlot( WContainerWidget *parent )
-: WContainerWidget( parent ),
+ShieldingSourceFitPlot::ShieldingSourceFitPlot()
+: WContainerWidget(),
   m_jsgraph( jsRef() + ".chart" ),
   m_xAxisTitle{},
   m_yAxisTitleChi{},
@@ -66,7 +66,7 @@ ShieldingSourceFitPlot::ShieldingSourceFitPlot( WContainerWidget *parent )
   m_showChi( true )
 {
   addStyleClass( "ShieldingSourceFitPlot" );
-  setOverflow( Overflow::OverflowHidden );
+  setOverflow( Overflow::Hidden );
 
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSourceFitPlot.css" );
     
@@ -131,10 +131,10 @@ void ShieldingSourceFitPlot::defineJavaScript()
 
   // Initialize JSignals for communication from JavaScript to C++
   m_displayModeChangedJS.reset( new JSignal<bool>( this, "displayModeChanged", true ) );
-  m_displayModeChangedJS->connect( boost::bind( &ShieldingSourceFitPlot::handleDisplayModeChanged, this, boost::placeholders::_1 ) );
+  m_displayModeChangedJS->connect( [this]( bool showChi ){ handleDisplayModeChanged( showChi ); } );
 
   m_dataPointClickedJS.reset( new JSignal<double>( this, "dataPointClicked", true ) );
-  m_dataPointClickedJS->connect( boost::bind( &ShieldingSourceFitPlot::handleDataPointClicked, this, boost::placeholders::_1 ) );
+  m_dataPointClickedJS->connect( [this]( double energy ){ handleDataPointClicked( energy ); } );
 
   for( const string &js : m_pendingJs )
     doJavaScript( js );
@@ -145,7 +145,7 @@ void ShieldingSourceFitPlot::defineJavaScript()
 
 void ShieldingSourceFitPlot::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
+  const bool renderFull = flags.test( Wt::RenderFlag::Full );
 
   WContainerWidget::render( flags );
 

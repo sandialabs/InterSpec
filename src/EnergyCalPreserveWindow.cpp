@@ -25,13 +25,13 @@
 
 #include <vector>
 
-#include <Wt/WText>
-#include <Wt/WMenu>
-#include <Wt/WMenuItem>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/WStackedWidget>
+#include <Wt/WText.h>
+#include <Wt/WMenu.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStackedWidget.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
@@ -132,7 +132,7 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
 
   msg += ", but with a different calibration.</div>";
   
-  auto txt = new WText( msg, XHTMLText, contents() );
+  WText *txt = contents()->addNew<WText>( msg, Wt::TextFormat::XHTML );
   txt->setInline( false );
   
   auto create_table = []( const shared_ptr<const EnergyCalibration> &oldcal,
@@ -229,7 +229,7 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
     return msg;
   };//create_table(...) lambda
   
-  WContainerWidget *calcontent = new WContainerWidget( contents() );
+  WContainerWidget *calcontent = contents()->addNew<WContainerWidget>();
   calcontent->addStyleClass( "EnergyCalPreserveCalContent" );
   
   InterSpec *viewer = InterSpec::instance();
@@ -248,25 +248,23 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
     const auto oldcal = (oldpos == end(old_cals)) ? nullptr : oldpos->second;  //should always be valid
     
     msg = create_table( oldcal, newcal );
-    auto txt = new WText( msg, XHTMLText, calcontent );
-    txt->setInline( false );
+    WText *calTxt = calcontent->addNew<WText>( msg, Wt::TextFormat::XHTML );
+    calTxt->setInline( false );
   }else
   {
-    WGridLayout *layout = new WGridLayout( calcontent );
-    
-    auto contentstack = new WStackedWidget();
+    WGridLayout *layout = calcontent->setLayout( std::make_unique<WGridLayout>() );
+
+    auto contentstack = layout->addWidget( std::make_unique<WStackedWidget>(), 0, 1 );
     contentstack->addStyleClass( "EnergyCalPreserveStack" );
-    WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+    WAnimation animation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200);
     contentstack->setTransitionAnimation( animation );
-    
-    auto menu = new WMenu( contentstack );
+
+    WMenu *menu = layout->addWidget( std::make_unique<WMenu>( contentstack ), 0, 0 );
     menu->addStyleClass( "VerticalNavMenu HeavyNavMenu" );
     //menu->itemSelected().connect( this, &... );
-    
-    layout->addWidget( menu, 0, 0 );
-    layout->addWidget( contentstack, 0, 1 );
+
     layout->setColumnStretch( 1, 1 );
-    
+
     for( const auto &nc : new_cals )
     {
       const string &name = nc.first;
@@ -274,14 +272,14 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
       const auto old_pos = old_cals.find(name);
       assert( old_pos != end(old_cals) );
       const auto oldcal = (old_pos == end(old_cals)) ? nullptr : old_pos->second;  //should always be valid
-      
+
       string tablestr = create_table( oldcal, newcal );
-      auto tabltw = new WText( tablestr, XHTMLText );
+      auto tabltw = std::make_unique<WText>( tablestr, Wt::TextFormat::XHTML );
       tabltw->setInline( false );
-      auto item = menu->addItem( name, tabltw );
-      
-      //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-      item->clicked().connect( boost::bind(&WMenuItem::select, item) );
+      WMenuItem *item = menu->addItem( name, std::move(tabltw) );
+
+      //Fix issue, if user doesnt click exactly on the <a> element
+      item->clicked().connect( [item](){ item->select(); } );
     }//for( const auto &nc : new_cals )
   }//if( new_cals.size == 1 ) / else
   
@@ -291,21 +289,21 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
          "Would you like to use the previous calibration with the new file?"
          "</b></div>";
   
-  txt = new WText( msg, XHTMLText, contents() );
+  txt = contents()->addNew<WText>( msg, Wt::TextFormat::XHTML );
   txt->setInline( false );
-  
-  
+
+
   WContainerWidget *bottom = footer();
   //bottom->setStyleClass("modal-footer");
-  WPushButton *cancel = new WPushButton( "No", bottom );
+  WPushButton *cancel = bottom->addNew<WPushButton>( "No" );
   cancel->clicked().connect( this, &EnergyCalPreserveWindow::emitReject );
-  cancel->setWidth( WLength(47.5,WLength::Percentage) );
-  cancel->setFloatSide(Wt::Left);
-  
-  WPushButton *use = new WPushButton( "Yes", bottom );
+  cancel->setWidth( WLength(47.5,WLength::Unit::Percentage) );
+  cancel->setFloatSide(Wt::Side::Left);
+
+  WPushButton *use = bottom->addNew<WPushButton>( "Yes" );
   use->clicked().connect( this, &EnergyCalPreserveWindow::propogateCalibrations );
-  use->setWidth( WLength(47.5,WLength::Percentage) );
-  use->setFloatSide( Wt::Right );
+  use->setWidth( WLength(47.5,WLength::Unit::Percentage) );
+  use->setFloatSide( Wt::Side::Right );
   
   rejectWhenEscapePressed();
   AuxWindow::disableCollapse();
@@ -490,7 +488,7 @@ void EnergyCalPreserveWindow::propogateCalibrations()
 #endif
             
     viewer->logMessage( msg, 2 );
-    finished().emit(WDialog::Accepted);
+    finished().emit(Wt::DialogCode::Accepted);
     return;
   }//try / catch translate peaks
   
@@ -560,7 +558,7 @@ void EnergyCalPreserveWindow::propogateCalibrations()
 #endif
 
       viewer->logMessage( msg, 2 );
-      //finished().emit(WDialog::Accepted);
+      //finished().emit(Wt::DialogCode::Accepted);
       //return;
     }//try / catch translate peaks
   }//for( const set<int> &samples : samplesWithPeak )
@@ -631,12 +629,12 @@ void EnergyCalPreserveWindow::propogateCalibrations()
   }catch( std::exception &e )
   {
     viewer->logMessage( e.what(), 2 );
-    finished().emit(WDialog::Accepted);
+    finished().emit(Wt::DialogCode::Accepted);
     return;
   }//try / catch
   
   viewer->refreshDisplayedCharts();
   m_calibrator->refreshGuiFromFiles();
   
-  finished().emit(WDialog::Accepted);
+  finished().emit(Wt::DialogCode::Accepted);
 }//void propogateCalibrations()

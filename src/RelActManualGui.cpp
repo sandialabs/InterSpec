@@ -28,32 +28,32 @@
 
 #include <boost/math/distributions/chi_squared.hpp>
 
-#include <Wt/WMenu>
-#include <Wt/WLabel>
-#include <Wt/WPanel>
-#include <Wt/WTable>
-#include <Wt/WLabel>
-#include <Wt/WServer>
-#include <Wt/WComboBox>
-#include <Wt/WGroupBox>
-#include <Wt/WLineEdit>
-#include <Wt/WMenuItem>
-#include <Wt/WResource>
-#include <Wt/WTableRow>
-#include <Wt/WCheckBox>
-#include <Wt/WIOService>
-#include <Wt/WTableCell>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/Http/Request>
-#include <Wt/WApplication>
-#include <Wt/Http/Response>
-#include <Wt/WItemDelegate>
-#include <Wt/WStackedWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/WRegExpValidator>
-#include <Wt/WSuggestionPopup>
+#include <Wt/WMenu.h>
+#include <Wt/WLabel.h>
+#include <Wt/WPanel.h>
+#include <Wt/WTable.h>
+#include <Wt/WLabel.h>
+#include <Wt/WServer.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WResource.h>
+#include <Wt/WTableRow.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WIOService.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/Http/Request.h>
+#include <Wt/WApplication.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WItemDelegate.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WSuggestionPopup.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -117,8 +117,8 @@ class RelActManualReportResource : public Wt::WResource
   RelActManualGui *m_tool;
   
 public:
-  RelActManualReportResource( RelActManualGui *tool, InterSpec *viewer, WObject* parent = nullptr )
-  : WResource( parent ), m_app( WApplication::instance() ), m_interspec( viewer ), m_tool( tool )
+  RelActManualReportResource( RelActManualGui *tool, InterSpec *viewer )
+  : WResource(), m_app( WApplication::instance() ), m_interspec( viewer ), m_tool( tool )
   {
     assert( m_app );
     assert( m_tool );
@@ -166,7 +166,7 @@ public:
           *it = ' ';
       }
       
-      suggestFileName( filename, WResource::Attachment );
+      suggestFileName( filename, ContentDisposition::Attachment );
       response.setMimeType( "application/octet-stream" );
       
       const shared_ptr<const RelActCalcManual::RelEffSolution> solution = m_tool->currentSolution();
@@ -250,9 +250,8 @@ public:
 public:
   ManRelEffNucDisp( const SandiaDecay::Nuclide * const nuc,
                    const ReactionGamma::Reaction * const reaction,
-                   double age, const float meas_time,
-                   WContainerWidget *parent = nullptr )
-  : WPanel( parent ),
+                   double age, const float meas_time )
+  : WPanel(),
    m_nuc( nuc ),
    m_reaction( reaction ),
    m_current_age( (nuc && (age < 0.0)) ? PeakDef::defaultDecayTime(nuc) : age ),
@@ -261,7 +260,7 @@ public:
    m_age_edit_tmp( nullptr ),
    m_age_row( nullptr ),
    m_decay_during_meas( nullptr ),
-   m_updated( this )
+   m_updated()
   {
     assert( m_nuc || m_reaction );
     
@@ -278,12 +277,13 @@ public:
     
     if( m_nuc )
     {
-      m_nucContentTable = new WTable();
+      auto nucContentTableOwner = std::make_unique<WTable>();
+      m_nucContentTable = nucContentTableOwner.get();
       m_nucContentTable->addStyleClass( "NucInfoTable" );
-      setCentralWidget( m_nucContentTable );
-      
+      setCentralWidget( std::move(nucContentTableOwner) );
+
       WTableCell *cell = m_nucContentTable->elementAt(0, 0);
-      WLabel *label = new WLabel( WString::tr("Age"), cell );
+      WLabel *label = cell->addNew<WLabel>( WString::tr("Age") );
       
       m_age_row = m_nucContentTable->rowAt(0);
       
@@ -301,10 +301,10 @@ public:
       
       if( m_age_is_settable )
       {
-        m_age_edit_tmp = new WLineEdit( agestr, cell );
-        
-        WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_age_edit_tmp );
-        validator->setFlags(Wt::MatchCaseInsensitive);
+        m_age_edit_tmp = cell->addNew<WLineEdit>( agestr );
+
+        auto validator = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+        validator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);
         m_age_edit_tmp->setValidator(validator);
         label->setBuddy( m_age_edit_tmp );
         m_age_edit_tmp->addStyleClass( "AgeEdit" );
@@ -321,26 +321,26 @@ public:
         m_age_edit_tmp->enterPressed().connect( this, &ManRelEffNucDisp::handleAgeChange );
       }else
       {
-        label = new WLabel( agestr, cell );
+        label = cell->addNew<WLabel>( agestr );
         label->addStyleClass( "FixedAge" );
       }//if( m_age_is_settable ) / else
-      
-      
+
+
       cell = m_nucContentTable->elementAt(1, 0);
       //label = new WLabel( "Half Life", cell );
-      label = new WLabel( WString("<span style=\"font-size: small;\">{1}</span>").arg(WString::tr("T1/2")), cell );
-      
+      label = cell->addNew<WLabel>( WString("<span style=\"font-size: small;\">{1}</span>").arg(WString::tr("T1/2")) );
+
       cell = m_nucContentTable->elementAt(1, 1);
-      WText *txt = new WText( PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife), cell );
-      
+      WText *txt = cell->addNew<WText>( PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife) );
+
       cell = m_nucContentTable->elementAt(2, 0);
-      label = new WLabel( WString::tr("mrend-spec-act"), cell );
+      label = cell->addNew<WLabel>( WString::tr("mrend-spec-act") );
       
       cell = m_nucContentTable->elementAt(2, 1);
       const bool useCurie = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
       const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurie );
-      txt = new WText( sa, cell );
+      txt = cell->addNew<WText>( sa );
       
       if( meas_time > 0.005*m_nuc->halfLife ) //0.005 times HL is arbitrary
       {
@@ -370,10 +370,10 @@ public:
         case NumReactionType:         infostr = WString::tr("mrend-unknown-rxctn");      break;
       }//switch( m_reaction->type )
       
-      WText *content = new WText( infostr );
-      content->setInline( false );
-      content->addStyleClass( "NucInfoTable" );
-      setCentralWidget( content );
+      auto contentOwner = std::make_unique<WText>( infostr );
+      contentOwner->setInline( false );
+      contentOwner->addStyleClass( "NucInfoTable" );
+      setCentralWidget( std::move(contentOwner) );
     }//if( m_nuc ) / else ( m_reaction )
   }//ManRelEffNucDisp(...)
   
@@ -395,7 +395,7 @@ public:
     
     WTableCell *cell = m_nucContentTable->elementAt(3, 0);
     cell->setColumnSpan( 2 );
-    m_decay_during_meas = new WCheckBox( WString::tr("mrend-cb-decay-during-meas"), cell );
+    m_decay_during_meas = cell->addNew<WCheckBox>( WString::tr("mrend-cb-decay-during-meas") );
     m_decay_during_meas->addStyleClass( "CbNoLineBreak" );
     m_decay_during_meas->checked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
     m_decay_during_meas->unChecked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
@@ -488,9 +488,9 @@ public:
 }//namespace
 
 
-RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
-  m_renderFlags( 0 ),
+RelActManualGui::RelActManualGui( InterSpec *viewer )
+: WContainerWidget(),
+  m_renderFlags(),
   m_currentSolution{},
   m_interspec( viewer ),
   m_layout( nullptr ),
@@ -533,7 +533,7 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   //  set the vertical overflow to hidden, a useless horizantal scrollbar will show up on the
   //  entire bottom of the widget (but it only will ever scroll for like 5 px - probably just
   //  padding somewhere), even though each column will also get scrollbars or be squeezed.
-  setOverflow( Overflow::OverflowHidden, Wt::Orientation::Horizontal );
+  setOverflow( Wt::Overflow::Hidden, Wt::Orientation::Horizontal );
   
   init();
 }//RelActManualGui constructor
@@ -548,45 +548,41 @@ void RelActManualGui::init()
   m_renderFlags |= RenderActions::UpdateNuclides;
   scheduleRender();
   
-  if( m_layout )
-    delete m_layout;
-  
-  m_layout = new WGridLayout( this );
+  m_layout = setLayout( std::make_unique<WGridLayout>() );
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
-  
+
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setVerticalSpacing( 0 );
   m_layout->setHorizontalSpacing( 0 );
-  
+
   //Create the options column
-  m_optionsColumn = new WContainerWidget();
+  auto optionsColumnOwner = std::make_unique<WContainerWidget>();
+  m_optionsColumn = optionsColumnOwner.get();
   m_optionsColumn->addStyleClass( "ToolTabTitledColumn OptionsCol" );
-  m_layout->addWidget( m_optionsColumn, 0, 0 );
-  
-  WGridLayout *collayout = new WGridLayout( m_optionsColumn );
+  m_layout->addWidget( std::move(optionsColumnOwner), 0, 0 );
+
+  WGridLayout *collayout = m_optionsColumn->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
-  
-  WText *header = new WText( WString::tr("ramg-options-label") );
+
+  WText *header = collayout->addWidget( std::make_unique<WText>( WString::tr("ramg-options-label") ), 0, 0 );
   header->addStyleClass( "ToolTabColumnTitle" );
-  collayout->addWidget( header, 0, 0 );
-  
+
   //We will put the apply-to list inside a div so we can style consistently with other rows
   // (a <ul> element doesnt accept same css as <div>, apparently).
-  WContainerWidget *optionsDiv = new WContainerWidget();
+  WContainerWidget *optionsDiv = collayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   optionsDiv->addStyleClass( "ToolTabTitledColumnContent OptionsColContent" );
-  collayout->addWidget( optionsDiv, 1, 0 );
   collayout->setRowStretch( 1, 1 );
-  
-  WTable *optionsList = new WTable( optionsDiv );
+
+  WTable *optionsList = optionsDiv->addNew<WTable>();
   optionsList->addStyleClass( "OptionsList" );
   int row = optionsList->rowCount();
-  WLabel *label = new WLabel( WString::tr("ramg-eqn-form-label"), optionsList->elementAt(row, 0) );
-  
-  m_relEffEqnForm = new WComboBox( optionsList->elementAt(row, 1) );
-  m_relEffEqnForm->activated().connect( boost::bind(&RelActManualGui::relEffEqnFormChanged, this, true) );
+  WLabel *label = optionsList->elementAt(row, 0)->addNew<WLabel>( WString::tr("ramg-eqn-form-label") );
+
+  m_relEffEqnForm = optionsList->elementAt(row, 1)->addNew<WComboBox>();
+  m_relEffEqnForm->activated().connect( [this](){ relEffEqnFormChanged( true ); } );
   
   HelpSystem::attachToolTipOn( {optionsList->elementAt(row,0), optionsList->elementAt(row,1)},
                               WString::tr("ramg-tt-eqn-form"), showToolTips );
@@ -638,9 +634,9 @@ void RelActManualGui::init()
   m_relEffEqnForm->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
   
   row = optionsList->rowCount();
-  label = new WLabel( WString::tr("ramg-eqn-order-label"), optionsList->elementAt(row, 0) );
-  
-  m_relEffEqnOrder = new WComboBox( optionsList->elementAt(row, 1) );
+  label = optionsList->elementAt(row, 0)->addNew<WLabel>( WString::tr("ramg-eqn-order-label") );
+
+  m_relEffEqnOrder = optionsList->elementAt(row, 1)->addNew<WComboBox>();
   m_relEffEqnOrder->activated().connect( this, &RelActManualGui::relEffEqnOrderChanged );
   
   m_relEffEqnOrder->addItem( "0" );
@@ -658,7 +654,7 @@ void RelActManualGui::init()
   m_relEffEqnOrderHolder = optionsList->rowAt(row);
 
   row = optionsList->rowCount();
-  m_physModelUseHoerl = new WCheckBox( WString::tr("ramg-phys-model-use-hoerl"), optionsList->elementAt(row, 0) );
+  m_physModelUseHoerl = optionsList->elementAt(row, 0)->addNew<WCheckBox>( WString::tr("ramg-phys-model-use-hoerl") );
   m_physModelUseHoerl->setChecked( true );
   m_physModelUseHoerl->checked().connect( this, &RelActManualGui::physModelUseHoerlChanged );
   m_physModelUseHoerl->unChecked().connect( this, &RelActManualGui::physModelUseHoerlChanged );
@@ -669,8 +665,8 @@ void RelActManualGui::init()
   m_physModelUseHoerlHolder = optionsList->rowAt(row);
 
   row = optionsList->rowCount();
-  label = new WLabel( WString::tr("ramg-yield-info-label"), optionsList->elementAt(row, 0) );
-  m_nucDataSrc = new WComboBox( optionsList->elementAt(row, 1) );
+  label = optionsList->elementAt(row, 0)->addNew<WLabel>( WString::tr("ramg-yield-info-label") );
+  m_nucDataSrc = optionsList->elementAt(row, 1)->addNew<WComboBox>();
   label->setBuddy( m_nucDataSrc );
   m_nucDataSrc->activated().connect( this, &RelActManualGui::nucDataSrcChanged );
   
@@ -699,24 +695,24 @@ void RelActManualGui::init()
   m_nucDataSrcHolder = optionsList->rowAt(row);
 
   row = optionsList->rowCount();
-  label = new WLabel( WString::tr("ramg-match-tol-label"), optionsList->elementAt(row, 0) ); //(FWHM)
-  m_matchTolerance = new NativeFloatSpinBox( optionsList->elementAt(row, 1) );
+  label = optionsList->elementAt(row, 0)->addNew<WLabel>( WString::tr("ramg-match-tol-label") ); //(FWHM)
+  m_matchTolerance = optionsList->elementAt(row, 1)->addNew<NativeFloatSpinBox>();
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->setSpinnerHidden();
   m_matchTolerance->setWidth( 35 );
   m_matchTolerance->setRange( 0, 5 );
   m_matchTolerance->setValue( 0.5 ); //Other places we use 1.25/2.355 = 0.530786
-  label = new WLabel( WString("&nbsp;{1}").arg(WString::tr("FWHM")), optionsList->elementAt(row, 1) );
+  label = optionsList->elementAt(row, 1)->addNew<WLabel>( WString("&nbsp;{1}").arg(WString::tr("FWHM")) );
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->valueChanged().connect( this, &RelActManualGui::matchToleranceChanged );
-  
-  
+
+
   HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
                               WString::tr("ramg-tt-match-tol"), showToolTips );
-  
+
   row = optionsList->rowCount();
-  label = new WLabel( WString::tr("ramg-add-uncert-label"), optionsList->elementAt(row, 0) );
-  m_addUncertainty = new WComboBox( optionsList->elementAt(row, 1) );
+  label = optionsList->elementAt(row, 0)->addNew<WLabel>( WString::tr("ramg-add-uncert-label") );
+  m_addUncertainty = optionsList->elementAt(row, 1)->addNew<WComboBox>();
   label->setBuddy( m_addUncertainty );
   
   HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
@@ -747,7 +743,7 @@ void RelActManualGui::init()
   m_addUncertainty->setCurrentIndex( static_cast<int>(AddUncert::StatOnly) );
   
   row = optionsList->rowCount();
-  m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(row, 0) );
+  m_backgroundSubtract = optionsList->elementAt(row, 0)->addNew<WCheckBox>( WString::tr("ramg-back-sub-cb") );
   m_backgroundSubtract->addStyleClass( "BackSub CbNoLineBreak" );
   optionsList->elementAt(row, 0)->setColumnSpan( 2 );
   m_backgroundSubtractHolder = optionsList->rowAt(row);
@@ -755,90 +751,95 @@ void RelActManualGui::init()
   m_backgroundSubtract->checked().connect( this, &RelActManualGui::backgroundSubtractChanged );
   m_backgroundSubtract->unChecked().connect( this, &RelActManualGui::backgroundSubtractChanged );
 
-  
-  WContainerWidget *btndiv = new WContainerWidget();
+
+  WContainerWidget *btndiv = collayout->addWidget( std::make_unique<WContainerWidget>(), 2, 0 );
   btndiv->addStyleClass( "BtmBtnDiv" );
-  collayout->addWidget( btndiv, 2, 0 );
-  
-  auto helpBtn = new WContainerWidget( btndiv );
+
+  WContainerWidget *helpBtn = btndiv->addNew<WContainerWidget>();
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-  helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "rel-act-manual" ) );
-  
-  m_htmlResource = new RelActManualReportResource( this, m_interspec, btndiv );
-  
+  helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "rel-act-manual" ); } );
+
+  m_htmlResource = std::make_shared<RelActManualReportResource>( this, m_interspec );
+
 #if( BUILD_AS_OSX_APP || IOS )
-  m_downloadHtmlReport = new WAnchor( WLink(m_htmlResource), btndiv );
-  m_downloadHtmlReport->setTarget( AnchorTarget::TargetNewWindow );
-  m_downloadHtmlReport->setStyleClass( "LinkBtn DownloadLink CALp" );
+  {
+    WLink lnk( m_htmlResource );
+    lnk.setTarget( LinkTarget::NewWindow );
+    m_downloadHtmlReport = btndiv->addNew<WAnchor>( lnk );
+    m_downloadHtmlReport->setStyleClass( "LinkBtn DownloadLink CALp" );
+  }
 #else
-  m_downloadHtmlReport = new WPushButton( btndiv );
+  m_downloadHtmlReport = btndiv->addNew<WPushButton>();
   m_downloadHtmlReport->setIcon( "InterSpec_resources/images/download_small.svg" );
-  m_downloadHtmlReport->setLink( WLink( m_htmlResource ) );
-  m_downloadHtmlReport->setLinkTarget( Wt::TargetNewWindow );
+  {
+    WLink lnk( m_htmlResource );
+    lnk.setTarget( LinkTarget::NewWindow );
+    m_downloadHtmlReport->setLink( lnk );
+  }
   m_downloadHtmlReport->setStyleClass( "LinkBtn DownloadBtn CALp" );
- 
+
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   m_downloadHtmlReport->clicked().connect( std::bind([this](){
-    android_download_workaround( m_htmlResource, "rel_eff.html");
+    android_download_workaround( m_htmlResource.get(), "rel_eff.html");
   }) );
 #endif //ANDROID
 #endif
   
   m_downloadHtmlReport->setText( WString::tr("ramg-html-export-label") );
 
-  WContainerWidget *nucCol = new WContainerWidget();
+  auto nucColOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *nucCol = nucColOwner.get();
   nucCol->addStyleClass( "ToolTabTitledColumn RelActNucCol" );
-  
-  collayout = new WGridLayout( nucCol );
+
+  collayout = nucCol->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
 
-  header = new WText( WString::tr("ramg-nucs-label") );
+  header = collayout->addWidget( std::make_unique<WText>( WString::tr("ramg-nucs-label") ), 0, 0 );
   header->addStyleClass( "ToolTabColumnTitle" );
-  collayout->addWidget( header, 0, 0 );
   m_nucColumnTitle = header;
-  
-  m_nuclidesDisp = new WContainerWidget();
+
+  m_nuclidesDisp = collayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   m_nuclidesDisp->addStyleClass( "ToolTabTitledColumnContent" );
-  collayout->addWidget( m_nuclidesDisp, 1, 0 );
   collayout->setRowStretch( 1, 1 );
-  m_layout->addWidget( nucCol, 0, 1 );
+  m_layout->addWidget( std::move(nucColOwner), 0, 1 );
 
 
-  m_physicalModelShields = new WContainerWidget( m_nuclidesDisp );
+  m_physicalModelShields = m_nuclidesDisp->addNew<WContainerWidget>();
   m_physicalModelShields->addStyleClass( "PhysicalModelShields" );
   m_selfAttenShield = nullptr; //We wont create it until we need it
-  m_extAttenShields = new WContainerWidget( m_physicalModelShields );
+  m_extAttenShields = m_physicalModelShields->addNew<WContainerWidget>();
   m_physicalModelShields->hide();
 
 
   // Create the "Peaks to Use" table
-  m_peakTableColumn = new WContainerWidget();
+  auto peakTableColumnOwner = std::make_unique<WContainerWidget>();
+  m_peakTableColumn = peakTableColumnOwner.get();
   m_peakTableColumn->addStyleClass( "ToolTabTitledColumn PeakTableCol" );
-  m_layout->addWidget( m_peakTableColumn, 0, 2 );
+  m_layout->addWidget( std::move(peakTableColumnOwner), 0, 2 );
   //m_layout->setColumnStretch( 2, 1 );
-  
-  
-  collayout = new WGridLayout( m_peakTableColumn );
+
+
+  collayout = m_peakTableColumn->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
-  
-  header = new WText( WString::tr("ramg-peaks-to-use-label") );
+
+  header = collayout->addWidget( std::make_unique<WText>( WString::tr("ramg-peaks-to-use-label") ), 0, 0 );
   header->addStyleClass( "ToolTabColumnTitle" );
-  collayout->addWidget( header, 0, 0 );
-  
-  m_peakTable = new RowStretchTreeView();
+
+  auto peakTableOwner = std::make_unique<RowStretchTreeView>();
+  m_peakTable = peakTableOwner.get();
   m_peakTable->addStyleClass( "ToolTabTitledColumnContent PeakTable" );
-  collayout->addWidget( m_peakTable, 1, 0 );
+  collayout->addWidget( std::move(peakTableOwner), 1, 0 );
   collayout->setRowStretch( 1, 1 );
   
   m_peakTable->setRootIsDecorated( false ); //makes the tree look like a table! :)
-  m_peakTable->setModel( m_peakModel );
+  m_peakTable->setModel( std::shared_ptr<WAbstractItemModel>( m_peakModel, [](WAbstractItemModel*){} ) );
   const int numModelCol = m_peakModel->columnCount();
   for( int col = 0; col < numModelCol; ++col )
     m_peakTable->setColumnHidden( col, true );
@@ -846,9 +847,9 @@ void RelActManualGui::init()
   m_peakTable->setSortingEnabled( true );
   m_peakTable->setAlternatingRowColors( true );
   m_peakTable->setSelectable( true );
-  m_peakTable->setSelectionMode( SingleSelection );
-  m_peakTable->setEditTriggers( WAbstractItemView::SingleClicked
-                               | WAbstractItemView::DoubleClicked );
+  m_peakTable->setSelectionMode( Wt::SelectionMode::Single );
+  m_peakTable->setEditTriggers( Wt::EditTrigger::SingleClicked
+                               | Wt::EditTrigger::DoubleClicked );
   
   m_peakTable->setColumnHidden( PeakModel::kUseForManualRelEff, false );
   m_peakTable->setColumnHidden( PeakModel::kMean, false );
@@ -866,15 +867,15 @@ void RelActManualGui::init()
   m_peakTable->setColumnWidth( PeakModel::kPhotoPeakEnergy, 94 );
 
   
-  WItemDelegate *dblDelagate = new WItemDelegate( m_peakTable );
+  auto dblDelagate = std::make_shared<WItemDelegate>();
   dblDelagate->setTextFormat( "%.2f" );
   m_peakTable->setItemDelegateForColumn( PeakModel::kMean, dblDelagate );
-  
-  PhotopeakDelegate *nuclideDelegate = new PhotopeakDelegate( PhotopeakDelegate::NuclideDelegate, true, m_peakTable );
-  m_peakTable->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
-  
-  PhotopeakDelegate *photopeakDelegate = new PhotopeakDelegate( PhotopeakDelegate::GammaEnergyDelegate, true, m_peakTable );
-  m_peakTable->setItemDelegateForColumn( PeakModel::kPhotoPeakEnergy, photopeakDelegate );
+
+  m_peakTable->setItemDelegateForColumn( PeakModel::kIsotope,
+    std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::NuclideDelegate, true ) );
+
+  m_peakTable->setItemDelegateForColumn( PeakModel::kPhotoPeakEnergy,
+    std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::GammaEnergyDelegate, true ) );
   
   m_peakModel->dataChanged().connect( this, &RelActManualGui::handlePeaksChanged );
   m_peakModel->rowsRemoved().connect( this, &RelActManualGui::handlePeaksChanged );
@@ -886,69 +887,66 @@ void RelActManualGui::init()
   
   
   // Create the results column
-  WContainerWidget *resCol = new WContainerWidget();
+  auto resColOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *resCol = resColOwner.get();
   resCol->addStyleClass( "ToolTabTitledColumn RelActResCol" );
-  
-  collayout = new WGridLayout( resCol );
+
+  collayout = resCol->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
-  
-  header = new WText( WString::tr("ramg-results-label") );
+
+  header = collayout->addWidget( std::make_unique<WText>( WString::tr("ramg-results-label") ), 0, 0 );
   header->addStyleClass( "ToolTabColumnTitle" );
-  collayout->addWidget( header, 0, 0 );
-  
-  
-  
-  WContainerWidget *resultContent = new WContainerWidget();
+
+
+  WContainerWidget *resultContent = collayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   resultContent->addStyleClass( "ToolTabTitledColumnContent ResultColumnContent" );
   resultContent->setMinimumSize(350, WLength::Auto );
-  collayout->addWidget( resultContent, 1, 0 );
   collayout->setRowStretch( 1, 1 );
-  m_layout->addWidget( resCol, 0, 3 );
+  m_layout->addWidget( std::move(resColOwner), 0, 3 );
   m_layout->setColumnStretch( 3, 1 );
-  
-  WGridLayout *resultsLayout = new WGridLayout( resultContent );
-  
-  
-  WStackedWidget *stack = new WStackedWidget();
+
+  WGridLayout *resultsLayout = resultContent->setLayout( std::make_unique<WGridLayout>() );
+
+
+  auto stackOwner = std::make_unique<WStackedWidget>();
+  WStackedWidget *stack = stackOwner.get();
   stack->addStyleClass( "ResultStack" );
-  stack->setOverflow( WContainerWidget::OverflowHidden, Wt::Orientation::Horizontal );
-  stack->setOverflow( WContainerWidget::OverflowAuto, Wt::Orientation::Vertical );
-  
-  WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+  stack->setOverflow( Wt::Overflow::Hidden, Wt::Orientation::Horizontal );
+  stack->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
+
+  WAnimation animation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200);
   stack->setTransitionAnimation( animation, true );
-  
-  m_resultMenu = new WMenu( stack, Wt::Vertical );
+
+  m_resultMenu = resultsLayout->addWidget( std::make_unique<WMenu>( stack ), 0, 0 );
   m_resultMenu->addStyleClass( "ResultMenu LightNavMenu" );
-  
-  
-  resultsLayout->addWidget( m_resultMenu, 0, 0 );
-  resultsLayout->addWidget( stack, 0, 1 );
+
+  resultsLayout->addWidget( std::move(stackOwner), 0, 1 );
   resultsLayout->setColumnStretch( 1, 1 );
-  
-  m_results = new WContainerWidget();
+
+  auto resultsOwner = std::make_unique<WContainerWidget>();
+  m_results = resultsOwner.get();
   m_results->addStyleClass( "ResultsTxt" );
-  WMenuItem *item = new WMenuItem( WString::tr("ramg-mi-results"), m_results );
-  m_resultMenu->addItem( item );
-  
+  WMenuItem *item = m_resultMenu->addItem( WString::tr("ramg-mi-results"), std::move(resultsOwner) );
+
   // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
-  item->clicked().connect( std::bind([this,item](){
+  item->clicked().connect( [this,item](){
     m_resultMenu->select( item );
     item->triggered().emit( item );
-  }) );
+  } );
   // We wont have an undo/redo for changing results tabs, because sometimes we programmatically
   //  set to a specific tab, like if there is an error, and this can create an infinite cycle
   //  that will block previous undo/redo's
   //item->triggered().connect( this, &RelActManualGui::resultTabChanged );
-  
-  m_chart = new RelEffChart();
-  item = new WMenuItem( WString::tr("ramg-mi-chart"), m_chart );
-  m_resultMenu->addItem( item );
-  item->clicked().connect( std::bind([this,item](){
+
+  auto chartOwner = std::make_unique<RelEffChart>();
+  m_chart = chartOwner.get();
+  item = m_resultMenu->addItem( WString::tr("ramg-mi-chart"), std::move(chartOwner) );
+  item->clicked().connect( [this,item](){
     m_resultMenu->select( item );
     item->triggered().emit( item );
-  }) );
+  } );
   //item->triggered().connect( this, &RelActManualGui::resultTabChanged );
   
   displayedSpectrumChanged();
@@ -1019,7 +1017,7 @@ shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
 
 void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
 {
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   bool updateCalc = false;
   const auto eqn_form = RelActCalc::RelEffEqnForm( state.m_relEffEqnFormIndex );
@@ -1031,7 +1029,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
     relEffEqnFormChanged( false );
   }
   
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   if( m_relEffEqnOrder->currentIndex() != state.m_relEffEqnOrderIndex )
   {
@@ -1039,7 +1037,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
     m_relEffEqnOrder->setCurrentIndex( state.m_relEffEqnOrderIndex );
   }
   
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   if( m_physModelUseHoerl->isChecked() != state.m_physModelUseHoerl )
   {
@@ -1047,7 +1045,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
     m_physModelUseHoerl->setChecked( state.m_physModelUseHoerl );
   }
 
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   if( m_nucDataSrc->currentIndex() != static_cast<int>(state.m_nucDataSrcIndex) )
   {
@@ -1055,7 +1053,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
     m_nucDataSrc->setCurrentIndex( static_cast<int>(state.m_nucDataSrcIndex) );
   }
 
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   if( m_matchTolerance->value() != state.m_matchToleranceValue )
   {
@@ -1063,7 +1061,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
     m_matchTolerance->setValue( state.m_matchToleranceValue );
   }
   
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   if( m_addUncertainty->currentIndex() != static_cast<int>(state.m_addUncertIndex) )
   {
@@ -1071,7 +1069,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
     m_addUncertainty->setCurrentIndex( static_cast<int>(state.m_addUncertIndex) );
   }
   
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   if( m_backgroundSubtract->isChecked() != state.m_backgroundSubtract )
   {
@@ -1079,12 +1077,12 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
     m_backgroundSubtract->setChecked( state.m_backgroundSubtract );
   }
   
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   if( m_resultMenu->currentIndex() != state.m_resultTab )
     m_resultMenu->select( state.m_resultTab );
   
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   m_nucAge = state.nucAge;
   m_nucDecayCorrect = state.nucDecayCorrect;
@@ -1113,7 +1111,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
     }
   }//for( auto w : m_nuclidesDisp->children() )
   
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
   
   if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
@@ -1131,7 +1129,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
         m_selfAttenShield->resetState();
     }//if( state.m_selfAttenShield )
 
-    assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+    assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
     
     assert( m_extAttenShields );
     
@@ -1158,7 +1156,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
       
       if( i >= existing_external.size() )
       {
-        RelEffShieldWidget *rr = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+        RelEffShieldWidget *rr = m_extAttenShields->addNew<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::ExternalAtten );
         rr->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
         existing_external.push_back( rr );
       }
@@ -1175,7 +1173,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
       existing_external.front()->resetState();
     }
   
-    assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+    assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
     
     m_physModelUseHoerlHolder->setHidden( false );
     m_relEffEqnOrderHolder->setHidden( true );
@@ -1191,7 +1189,7 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
     scheduleRender();
   }
   
-  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  assert( !m_renderFlags.test(RenderActions::AddUndoRedoStep) );
 }//void setGuiState( const GuiState &state )
 
 
@@ -1230,28 +1228,28 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
   //if( renderFull )
   //  defineJavaScript();
   
-  if( m_renderFlags.testFlag(RelActManualGui::RenderActions::UpdateSpectrumOptions) )
+  if( m_renderFlags.test(RelActManualGui::RenderActions::UpdateSpectrumOptions) )
   {
     updateSpectrumBasedOptions();
     m_renderFlags |= RelActManualGui::RenderActions::UpdateCalc; //just to make sure
   }
     
   
-  if( m_renderFlags.testFlag(RelActManualGui::RenderActions::UpdateNuclides) )
+  if( m_renderFlags.test(RelActManualGui::RenderActions::UpdateNuclides) )
   {
     updateNuclides();
     m_renderFlags |= RelActManualGui::RenderActions::UpdateCalc; //just to make sure
   }
   
   
-  if( m_renderFlags.testFlag(RelActManualGui::RenderActions::UpdateCalc) )
+  if( m_renderFlags.test(RelActManualGui::RenderActions::UpdateCalc) )
   {
     calculateSolution();
   }
   
   
   const shared_ptr<const GuiState> current_gui_state = getGuiState();
-  if( current_gui_state && m_renderFlags.testFlag(RelActManualGui::RenderActions::AddUndoRedoStep ) )
+  if( current_gui_state && m_renderFlags.test(RelActManualGui::RenderActions::AddUndoRedoStep ) )
   {
     addUndoRedoStep( current_gui_state );
   }
@@ -1259,7 +1257,7 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
     m_currentGuiState = current_gui_state;
   
   
-  m_renderFlags = 0;
+  m_renderFlags = Wt::WFlags<RenderActions>();
   
   WContainerWidget::render( flags );
 }//render( Wt::WFlags<Wt::RenderFlag> )
@@ -1820,10 +1818,10 @@ void RelActManualGui::calculateSolution()
 
     const string sessionId = wApp->sessionId();
     auto solution = make_shared<RelActCalcManual::RelEffSolution>();
-    auto updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithResults, this, solution ) );
-    
+    std::function<void()> updater = [this, solution](){ updateGuiWithResults( solution ); };
+
     auto errmsg = make_shared<WString>();
-    auto err_updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithError, this, errmsg ) );
+    std::function<void()> err_updater = [this, errmsg](){ updateGuiWithError( errmsg ); };
     
     // We could almost call `prepare_calc_input(...)` off the GUI thread, and I think the only
     //  impact would be warning messages wouldnt be localized.
@@ -1870,7 +1868,7 @@ void RelActManualGui::updateGuiWithError( std::shared_ptr<Wt::WString> error_msg
   if( !error_msg )
     return;
   
-  WText *error = new WText( *error_msg, m_results );
+  WText *error = m_results->addNew<WText>( *error_msg );
   error->setInline( false );
   error->addStyleClass( "CalcError" );
   m_resultMenu->select( 0 );
@@ -1898,7 +1896,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   
   if( !m_currentSolution )
   {
-    WText *txt = new WText( WString::tr("ramg-no-results-available") );
+    WText *txt = m_results->addNew<WText>( WString::tr("ramg-no-results-available") );
     txt->setInline( false );
     txt->addStyleClass( "NoCalcResults" );
     return;
@@ -1924,7 +1922,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   
   if( !solution.m_error_message.empty() )
   {
-    WText *errtxt = new WText( WString::tr("ramg-result-error-msg").arg(solution.m_error_message), m_results );
+    WText *errtxt = m_results->addNew<WText>( WString::tr("ramg-result-error-msg").arg(solution.m_error_message) );
     errtxt->setInline( false );
     errtxt->addStyleClass( "CalcError" );
     m_resultMenu->select( 0 );
@@ -1933,7 +1931,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   
   for( string warning : solution.m_warnings )
   {
-    WText *warntxt = new WText( WString::tr("ramg-result-warn-msg").arg(warning), m_results );
+    WText *warntxt = m_results->addNew<WText>( WString::tr("ramg-result-warn-msg").arg(warning) );
     warntxt->setInline( false );
     warntxt->addStyleClass( "CalcWarning" );
   }
@@ -2056,7 +2054,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     // We shouldnt need to add any more shields, but we'll go ahead and implement doing this
     while( ext_shields.size() < solution.m_phys_model_external_atten_shields.size() )
     {
-      auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+      RelEffShieldWidget *shield = m_extAttenShields->addNew<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::ExternalAtten );
       shield->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
       ext_shields.push_back( shield );
     }
@@ -2081,14 +2079,15 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
 
     for( size_t i = (solution.m_phys_model_external_atten_shields.size() + 1); i < ext_shields.size(); ++i )
     {
-      delete ext_shields[i];
+      // Remove and delete the widget (unique_ptr returned by removeWidget auto-deletes)
+      { auto p = m_extAttenShields->removeWidget( ext_shields[i] ); }
       ext_shields[i] = nullptr;
     }
 
     ext_kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>{};
     if( ext_kids.empty() )
     {
-      auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+      RelEffShieldWidget *shield = m_extAttenShields->addNew<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::ExternalAtten );
       shield->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
     }
   }//if( !FramPhysicalModel ) / else
@@ -2244,7 +2243,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   results_html << "</div>\n";
   
   
-  new WText( WString::fromUTF8(results_html.str()), m_results );
+  m_results->addNew<WText>( WString::fromUTF8(results_html.str()) );
 }//void updateGuiWithResults( const RelActCalcManual::RelEffSolution &solution );
 
 
@@ -2341,17 +2340,18 @@ void RelActManualGui::initPhysicalModelAttenShieldWidgets()
   {
     m_selfAttenShield->resetState();
   }else
-  {      
-    m_selfAttenShield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
+  {
+    auto selfAttenOwner = std::make_unique<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::SelfAtten );
+    m_selfAttenShield = selfAttenOwner.get();
     m_selfAttenShield->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
-    m_physicalModelShields->insertWidget( 0, m_selfAttenShield );
+    m_physicalModelShields->insertWidget( 0, std::move(selfAttenOwner) );
   }
-  
+
   assert( m_extAttenShields );
   if( m_extAttenShields )
   {
     m_extAttenShields->clear();
-    auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+    RelEffShieldWidget *shield = m_extAttenShields->addNew<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::ExternalAtten );
     shield->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
   }//if( m_extAttenShields )
 }//void initPhysicalModelAttenShieldWidgets()
@@ -2467,17 +2467,18 @@ void RelActManualGui::updateNuclides()
       }
     }//for( loop over existing displays to find position )
     
-    ManRelEffNucDisp *rr = new ManRelEffNucDisp( nuc, nullptr, age, meas_time );
+    auto rrOwner = std::make_unique<ManRelEffNucDisp>( nuc, nullptr, age, meas_time );
+    ManRelEffNucDisp *rr = rrOwner.get();
     rr->updated().connect( this, &RelActManualGui::handlePeaksChanged );
-    
+
     const auto decay_corr_pos = m_nucDecayCorrect.find(nuc->symbol);
     if( decay_corr_pos != end(m_nucDecayCorrect) )
     {
       if( rr->m_decay_during_meas )
         rr->setDecayDuringMeasurement( decay_corr_pos->second );
     }//if( we cached if we should decay correct this nuclide )
-    
-    m_nuclidesDisp->insertWidget( insert_index, rr );
+
+    m_nuclidesDisp->insertWidget( insert_index, std::move(rrOwner) );
   }//for( loop over to add displays for new nuclides )
   
   
@@ -2534,12 +2535,13 @@ void RelActManualGui::updateNuclides()
       insert_index = static_cast<int>( index + 1 );
     }//for( loop over existing displays to find position )
     
-    ManRelEffNucDisp *rr = new ManRelEffNucDisp( nullptr, reaction, 0.0, meas_time );
+    auto rrOwner = std::make_unique<ManRelEffNucDisp>( nullptr, reaction, 0.0, meas_time );
+    ManRelEffNucDisp *rr = rrOwner.get();
     //ManRelEffNucDisp::updated() is only emitted for age changes; not relevant for reactions,
     //  but we'll connect up JIC for the future.
     rr->updated().connect( this, &RelActManualGui::handlePeaksChanged );
-    
-    m_nuclidesDisp->insertWidget( insert_index, rr );
+
+    m_nuclidesDisp->insertWidget( insert_index, std::move(rrOwner) );
   }//for( loop over to add displays for new nuclides )
   
   
@@ -2561,14 +2563,14 @@ void RelActManualGui::updateNuclides()
         m_nucDecayCorrect.erase( decay_corr_pos );
     }
     
-    delete nuc_widget.second;
+    { auto p = m_nuclidesDisp->removeWidget( nuc_widget.second ); } // auto-deletes
   }//for( loop over to remove any nuclides )
-  
+
   // Loop over and remove displays for any reaction we no longer need
   for( const auto nuc_widget : current_rctns )
   {
     if( !reactions_in_peaks.count(nuc_widget.first) )
-      delete nuc_widget.second;
+    { auto p = m_nuclidesDisp->removeWidget( nuc_widget.second ); } // auto-deletes
   }//for( loop over to remove any nuclides )
   
   // We may have deleted some of current_nucs or current_rctns, so lets clear it,

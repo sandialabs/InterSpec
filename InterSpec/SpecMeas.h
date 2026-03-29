@@ -29,7 +29,7 @@
 #include <deque>
 #include <memory>
 
-#include <Wt/WSignal>
+#include <Wt/WSignal.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/EnergyCalibration.h"
@@ -121,7 +121,7 @@ public:
   
   virtual bool save2012N42File( const std::string &filename );
   virtual void save2012N42File( const std::string &filename,
-                              boost::function<void()> error_callback ); //usefull when saving in a detached client thread - be carful of race conditions (eg make error_callback will remain valid)
+                              std::function<void()> error_callback ); //usefull when saving in a detached client thread - be carful of race conditions (eg make error_callback will remain valid)
 
   
   //write_2006_N42(...): writes a 2006 N42 simple spectrometer file (similar to
@@ -174,7 +174,7 @@ public:
   
   static void save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,
                                             const std::string filename,
-                                            boost::function<void()> error_callback );
+                                            std::function<void()> error_callback );
 
   //setDetector(): set not only the detector of *this, but also of all of its
   //  observers, so they all point to the same object in memory

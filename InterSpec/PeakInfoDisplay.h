@@ -25,7 +25,7 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WModelIndex>
+#include <Wt/WModelIndex.h>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -55,8 +55,7 @@ class PeakInfoDisplay : public Wt::WContainerWidget
 public:
   PeakInfoDisplay( InterSpec *viewer,
                    D3SpectrumDisplayDiv *spectrumDisplayDiv,
-                   PeakModel *peakModel,
-                   Wt::WContainerWidget *parent = 0 );
+                   PeakModel *peakModel );
   virtual ~PeakInfoDisplay();
 
   void enablePeakSearchButton( bool enable );

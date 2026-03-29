@@ -1,5 +1,5 @@
 #include "InterSpec/RefSpectraModel.h"
-#include <Wt/WModelIndex>
+#include <Wt/WModelIndex.h>
 
 #include <algorithm>
 #include <iostream>
@@ -13,8 +13,8 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-RefSpectraModel::RefSpectraModel( Wt::WObject *parent )
-  : Wt::WAbstractItemModel( parent )
+RefSpectraModel::RefSpectraModel()
+  : Wt::WAbstractItemModel()
 {
 }
 
@@ -84,36 +84,36 @@ Wt::WModelIndex RefSpectraModel::index( int row, int column, const Wt::WModelInd
 }//Wt::WModelIndex index(...) const
 
 
-boost::any RefSpectraModel::data( const Wt::WModelIndex &index, int role ) const
+Wt::cpp17::any RefSpectraModel::data( const Wt::WModelIndex &index, Wt::ItemDataRole role ) const
 {
   if( !index.isValid() )
-    return boost::any();
+    return Wt::cpp17::any();
   
   Node *node = getNode( index );
   if( !node )
-    return boost::any();
+    return Wt::cpp17::any();
   
-  if( role == Wt::DisplayRole )
-    return boost::any( node->name );
+  if( role == Wt::ItemDataRole::Display )
+    return Wt::cpp17::any( node->name );
   
-  return boost::any();
-}//boost::any data(...) const
+  return Wt::cpp17::any();
+}//Wt::cpp17::any data(...) const
 
 
-boost::any RefSpectraModel::headerData( int section, Wt::Orientation orientation, int role ) const
+Wt::cpp17::any RefSpectraModel::headerData( int section, Wt::Orientation orientation, Wt::ItemDataRole role ) const
 {
-  if( orientation == Wt::Orientation::Horizontal && role == Wt::DisplayRole ) {
-    return boost::any( Wt::WString::tr("rs-dialog-title") );
+  if( orientation == Wt::Orientation::Horizontal && role == Wt::ItemDataRole::Display ) {
+    return Wt::cpp17::any( Wt::WString::tr("rs-dialog-title") );
   }
   
-  return boost::any();
-}//boost::any headerData(...) const
+  return Wt::cpp17::any();
+}//Wt::cpp17::any headerData(...) const
 
 
 void RefSpectraModel::Node::sort_children( Wt::SortOrder order )
 {
   std::sort( begin(children), end(children), [order]( const std::unique_ptr<Node> &a, const std::unique_ptr<Node> &b ) {
-    return (order == Wt::SortOrder::AscendingOrder) ? (a->name < b->name) : (b->name < a->name);
+    return (order == Wt::SortOrder::Ascending) ? (a->name < b->name) : (b->name < a->name);
   } );
 
   for( const std::unique_ptr<Node> &child : children )
@@ -126,7 +126,7 @@ void RefSpectraModel::sort( int column, Wt::SortOrder order )
   layoutAboutToBeChanged().emit();
 
   std::sort( m_rootNodes.begin(), m_rootNodes.end(), [order]( const std::unique_ptr<Node> &a, const std::unique_ptr<Node> &b ) {
-    return (order == Wt::SortOrder::AscendingOrder) ? (a->name < b->name) : (b->name < a->name);
+    return (order == Wt::SortOrder::Ascending) ? (a->name < b->name) : (b->name < a->name);
   } );
 
   for( const std::unique_ptr<Node> &node : m_rootNodes )

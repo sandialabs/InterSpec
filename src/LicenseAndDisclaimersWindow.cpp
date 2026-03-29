@@ -25,24 +25,24 @@
 #include <string>
 #include <fstream>
 
-#include <Wt/WText>
-#include <Wt/WMenu>
-#include <Wt/Utils>
-#include <Wt/WBorder>
-#include <Wt/WString>
-#include <Wt/WTemplate>
-#include <Wt/WMenuItem>
-#include <Wt/WAnimation>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WEnvironment>
-#include <Wt/WApplication>
-#include <Wt/WStackedWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/WCssDecorationStyle>
+#include <Wt/WText.h>
+#include <Wt/WMenu.h>
+#include <Wt/Utils.h>
+#include <Wt/WBorder.h>
+#include <Wt/WString.h>
+#include <Wt/WTemplate.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WAnimation.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WCssDecorationStyle.h>
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-#include <Wt/WServer>
+#include <Wt/WServer.h>
 #endif
 
 #include "SpecUtils/DateTime.h"
@@ -65,6 +65,19 @@
 
 using namespace Wt;
 using namespace std;
+
+namespace
+{
+  // Adapter for Wt3 pattern: bundle.resolveKey(key, outStr)
+  // In Wt4, resolveKey takes (WLocale, key) and returns LocalizedString
+  bool resolveKey( Wt::WMessageResourceBundle &bundle, const std::string &key, std::string &result )
+  {
+    const Wt::LocalizedString ls = bundle.resolveKey( Wt::WLocale::currentLocale(), key );
+    if( ls.success )
+      result = ls.value;
+    return ls.success;
+  }
+}//namespace
 
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
 : AuxWindow( WString::tr("window-title-license-credit"),
@@ -110,77 +123,78 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
   if( !narrow_layout && ((width < 715.0) || (height < 512.0)) )
   {
     setMinimumSize(715,512);
-    resize( WLength(50, WLength::FontEm), WLength(80,WLength::Percentage));
+    resize( WLength(50, WLength::Unit::FontEm), WLength(80,WLength::Unit::Percentage));
   }else
   {
     resize( WLength(width), WLength(height) );
   }
   
-  WStackedWidget *stack = new WStackedWidget();
+  // Create stack and menu as standalone, then add to layout via stretcher()
+  auto stackOwner = std::make_unique<WStackedWidget>();
+  WStackedWidget *stack = stackOwner.get();
   stack->addStyleClass( "UseInfoStack" );
-  stack->setOverflow( WContainerWidget::OverflowAuto );
-  
-  WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+  stack->setOverflow( Overflow::Auto );
+
+  WAnimation animation( Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200 );
   stack->setTransitionAnimation( animation, true );
-  
-  m_menu = new WMenu( stack, Wt::Vertical );
+
+  auto menuOwner = std::make_unique<WMenu>( stack );
+  m_menu = menuOwner.get();
   if( narrow_layout )
     m_menu->addStyleClass( "VerticalNavMenu HeavyNavMenu HorizontalMenu" );
   else
     m_menu->addStyleClass( "VerticalNavMenu HeavyNavMenu SideMenu" );
-  
-  //HorizontalMenu
-  
-  WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
-  
+
+  WDialog::contents()->setOverflow( Overflow::Hidden );
+
   //If on phone, need to make text much smaller!
   const bool phone = (interspec && interspec->isPhone());
   //const bool tablet = (app && app->isTablet());
   if( phone )
     WDialog::contents()->addStyleClass( "PhoneCopywriteContent" );
+
+  auto topDivOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *topDiv = topDivOwner.get();
   
-  WContainerWidget *topDiv = new WContainerWidget();
+  WBorder border( Wt::BorderStyle::Solid, Wt::BorderWidth::Explicit, Wt::StandardColor::Gray );
+  border.setWidth( Wt::BorderWidth::Explicit, WLength(1) );
   
-  WBorder border(WBorder::Solid, WBorder::Explicit, Wt::gray);
-  border.setWidth( WBorder::Explicit, WLength(1) );
-  
-  WGridLayout *layout = stretcher();
-  
-  if( narrow_layout )
-  {
-    m_menu->setMargin( 5, Wt::Side::Bottom );
-    
-    layout->addWidget( topDiv,    0, 0 );
-    layout->addWidget( m_menu,    1, 0 );
-    layout->addWidget( stack,     2, 0 );
-    layout->setRowStretch( 2, 1 );
-  }else
-  {
-    topDiv->decorationStyle().setBorder( border,  Wt::Bottom );
-    stack->decorationStyle().setBorder( border,  Wt::Right | Wt::Left );
-    m_menu->decorationStyle().setBorder( border,  Wt::Left );
-    
-    layout->addWidget( topDiv,    0, 0, 1, 2 );
-    layout->addWidget( m_menu,    1, 0 );
-    layout->addWidget( stack,     1, 1, 1, 1 );
-    layout->setRowStretch( 1, 1 );
-  }
-  layout->setVerticalSpacing( 0 );
-  layout->setHorizontalSpacing( 0 );
-  
-  
-  //Populate topDiv
+  //Populate topDiv before moving ownership to layout
   //The SNL/NTESS copywrite must appear before any open source software licenses
   string apptitle, copyright;
-  m_resourceBundle.resolveKey( "app-title", apptitle );
-  m_resourceBundle.resolveKey( "copyright", copyright );
-  
-  WTemplate *title = new WTemplate( topDiv );
+  resolveKey( m_resourceBundle, "app-title", apptitle );
+  resolveKey( m_resourceBundle, "copyright", copyright );
+
+  WTemplate *title = topDiv->addNew<WTemplate>();
   title->setTemplateText( apptitle );
   title->bindString("build-version", InterSpec_VERSION);
   title->bindString("build-date", std::to_string(AppUtils::compile_date_as_int()) );
   title->bindString("copyright", copyright );
-  
+
+  WGridLayout *layout = stretcher();
+
+  if( narrow_layout )
+  {
+    m_menu->setMargin( 5, Wt::Side::Bottom );
+
+    layout->addWidget( std::move(topDivOwner), 0, 0 );
+    layout->addWidget( std::move(menuOwner),   1, 0 );
+    layout->addWidget( std::move(stackOwner),  2, 0 );
+    layout->setRowStretch( 2, 1 );
+  }else
+  {
+    topDiv->decorationStyle().setBorder( border, Wt::Side::Bottom );
+    stack->decorationStyle().setBorder( border, Wt::Side::Right | Wt::Side::Left );
+    m_menu->decorationStyle().setBorder( border, Wt::Side::Left );
+
+    layout->addWidget( std::move(topDivOwner), 0, 0, 1, 2 );
+    layout->addWidget( std::move(menuOwner),   1, 0 );
+    layout->addWidget( std::move(stackOwner),  1, 1, 1, 1 );
+    layout->setRowStretch( 1, 1 );
+  }
+  layout->setVerticalSpacing( 0 );
+  layout->setHorizontalSpacing( 0 );
+
   //Add items to the left menu; the contents wont be loaded until shown.
   makeItem( WString::tr("ladw-mi-disclaimer"), "dhs-disclaimer" );
   makeLgplLicenseItem();
@@ -190,12 +204,12 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
   makeDataStorageItem();
 #endif
   m_menu->select( 0 );
-  
+
   layout->setColumnStretch( 1, 1 );
 
   //Put in a footer with an Acknowledge that will accept this dialog
   WPushButton *close = addCloseButtonToFooter();
-  close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+  close->clicked().connect( [this](){ hide(); } );
   
   resizeToFitOnScreen(); //jic
   centerWindow();
@@ -214,9 +228,9 @@ LicenseAndDisclaimersWindow::~LicenseAndDisclaimersWindow()
 void LicenseAndDisclaimersWindow::itemCreator( const string &resource, Wt::WContainerWidget *parent, WString title)
 {
   std::string resourceContent;
-  m_resourceBundle.resolveKey( resource, resourceContent );
-  WTemplate *templ = new WTemplate( parent );
-  templ->setTemplateText( WString(resourceContent, UTF8), XHTMLUnsafeText );
+  resolveKey( m_resourceBundle, resource, resourceContent );
+  WTemplate *templ = parent->addNew<WTemplate>();
+  templ->setTemplateText( WString( resourceContent, Wt::CharEncoding::UTF8 ), Wt::TextFormat::UnsafeXHTML );
 }//void LicenseAndDisclaimersWindow::itemCreator( const string &resource, Wt::WContainerWidget *parent, WString title)
 
 
@@ -263,19 +277,20 @@ bool LicenseAndDisclaimersWindow::handleAppUrlPath( const std::string &path )
 
 SideMenuItem *LicenseAndDisclaimersWindow::makeItem( const WString &title, const string &resource)
 {
-  std::function<void(WContainerWidget *)> f = boost::bind( &LicenseAndDisclaimersWindow::itemCreator,
-                                                          this, resource, boost::placeholders::_1,
-                                                          title );
-  
-  WWidget *w = deferCreate( f );
-  w->addStyleClass( "UseInfoItem" );
-  
-  SideMenuItem *item = new SideMenuItem( title, w );
-  item->clicked().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
-  item->mouseWentDown().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
-  
-  m_menu->addItem( item );
-  
+  std::function<void(WContainerWidget *)> f = [this, resource, title]( WContainerWidget *parent ){
+    itemCreator( resource, parent, title );
+  };
+
+  auto wOwned = deferCreate( f );
+  wOwned->addStyleClass( "UseInfoItem" );
+
+  auto itemOwner = std::make_unique<SideMenuItem>( title, std::move(wOwned) );
+  SideMenuItem *item = itemOwner.get();
+  item->clicked().connect( [this, item](){ right_select_item( item ); } );
+  item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+
+  m_menu->addItem( std::move(itemOwner) );
+
   return item;
 }//SideMenuItem * LicenseAndDisclaimersWindow::makeItem( const WString &title, const string &resource)
 
@@ -328,8 +343,8 @@ void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *pare
     " or contacting this softwares authors.</div>";
   }//try catch
   
-  WText *text = new WText( license_content, XHTMLText, parent );
-  
+  WText *text = parent->addNew<WText>( license_content, Wt::TextFormat::XHTML );
+
   if( !error_reading )
     text->addStyleClass( "LicenseContent" );
 }//void lgplLicenseCreator()
@@ -337,20 +352,21 @@ void LicenseAndDisclaimersWindow::lgplLicenseCreator( Wt::WContainerWidget *pare
 
 SideMenuItem *LicenseAndDisclaimersWindow::makeLgplLicenseItem()
 {
-  std::function<void(WContainerWidget *)> f
-              = boost::bind( &LicenseAndDisclaimersWindow::lgplLicenseCreator, this,
-                            boost::placeholders::_1 );
-  
-  WWidget *w = deferCreate( f );
-  w->addStyleClass( "UseInfoItem" );
-  
-  SideMenuItem *item = new SideMenuItem( WString::tr("ladw-mi-license"), w );
-  
-  item->clicked().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
-  item->mouseWentDown().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
-  
-  m_menu->addItem( item );
-  
+  std::function<void(WContainerWidget *)> f = [this]( WContainerWidget *parent ){
+    lgplLicenseCreator( parent );
+  };
+
+  auto wOwned = deferCreate( f );
+  wOwned->addStyleClass( "UseInfoItem" );
+
+  auto itemOwner = std::make_unique<SideMenuItem>( WString::tr("ladw-mi-license"), std::move(wOwned) );
+  SideMenuItem *item = itemOwner.get();
+
+  item->clicked().connect( [this, item](){ right_select_item( item ); } );
+  item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+
+  m_menu->addItem( std::move(itemOwner) );
+
   return item;
 }//SideMenuItem *makeItem( const WString &title, const string &resource)
 
@@ -416,9 +432,9 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
         totalUserTime = PhysicalUnitsLocalized::printToBestTimeUnits( numsecs.count(), 2, 1.0 );
         
         
-        const WDateTime utcStartTime = WDateTime::fromPosixTime( to_ptime(user->firstAccessUTC()) );
-        const int offset = app->environment().timeZoneOffset();
-        firstAccess = utcStartTime.addSecs(60*offset).toString( "dd-MMM-yyyy" ).toUTF8();
+        const WDateTime utcStartTime = WDateTime::fromTimePoint( user->firstAccessUTC() );
+        const chrono::minutes offset = app->environment().timeZoneOffset();
+        firstAccess = utcStartTime.addSecs( static_cast<int>(offset.count()) * 60 ).toString( "dd-MMM-yyyy" ).toUTF8();
         
         // The alternative of using WLocalDateTime leaves the time in UTC...
         //const WLocalDateTime localStartTime = utcStartTime.toLocalTime();
@@ -435,13 +451,13 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     auto server = WServer::instance();
     const int httpPort = server ? server->httpPort() : 0;
     
-    WText *text = new WText( WString::tr("ladw-data-location-user").arg(datadir), parent );
+    WText *text = parent->addNew<WText>( WString::tr("ladw-data-location-user").arg(datadir) );
     text->addStyleClass( "DataLocationSection" );
 
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
     if( !userDataDir.empty() )
     {
-      WPushButton *showBtn = new WPushButton( parent );
+      WPushButton *showBtn = parent->addNew<WPushButton>();
 #ifdef _WIN32
       const char *txt_key = "ladw-show-data-location-win";
 #elif __APPLE__
@@ -456,14 +472,14 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
       }) );
     }
 #endif
-    
-    text = new WText( WString::tr("ladw-data-location-static").arg(staticdir), parent );
+
+    text = parent->addNew<WText>( WString::tr("ladw-data-location-static").arg(staticdir) );
     text->addStyleClass( "DataLocationSection" );
-    
+
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
     if( !userDataDir.empty() )
     {
-      WPushButton *showBtn = new WPushButton( parent );
+      WPushButton *showBtn = parent->addNew<WPushButton>();
 #ifdef _WIN32
       const char *txt_key = "ladw-show-data-location-win";
 #elif __APPLE__
@@ -478,18 +494,18 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
       }) );
     }
 #endif
-    
-    text = new WText( WString::tr("ladw-data-location-network").arg(httpPort), parent );
+
+    text = parent->addNew<WText>( WString::tr("ladw-data-location-network").arg(httpPort) );
     text->addStyleClass( "DataLocationSection" );
-    
+
 #if( USE_DB_TO_STORE_SPECTRA )
     if( displayStats )
     {
-      text = new WText( WString::tr("ladw-user-stats")
-                          .arg(totalUserTime)
-                          .arg(totalFilesOpened)
-                          .arg(totalSessions)
-                          .arg(firstAccess), parent );
+      text = parent->addNew<WText>( WString::tr("ladw-user-stats")
+                                     .arg(totalUserTime)
+                                     .arg(totalFilesOpened)
+                                     .arg(totalSessions)
+                                     .arg(firstAccess) );
       text->addStyleClass( "DataLocationSection" );
     }//if( displayStats )
 #endif //if( USE_DB_TO_STORE_SPECTRA )
@@ -543,11 +559,11 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #endif
 #endif //#if( BUILD_FOR_WEB_DEPLOYMENT ) / else
     
-    text = new WText( content, parent );
+    text = parent->addNew<WText>( content );
     text->addStyleClass( "DataLocationSection" );
   }else
   {
-    WText *text = new WText( "Error retrieving directory data", parent );
+    WText *text = parent->addNew<WText>( "Error retrieving directory data" );
     text->addStyleClass( "DataLocationSection" );
   }
 }//void dataStorageCreator( Wt::WContainerWidget *parent );
@@ -555,20 +571,21 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 
 SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
 {
-  std::function<void(WContainerWidget *)> f
-         = boost::bind( &LicenseAndDisclaimersWindow::dataStorageCreator, this,
-                        boost::placeholders::_1 );
-  
-  WWidget *w = deferCreate( f );
-  w->addStyleClass( "UseInfoItem" );
-  
-  SideMenuItem *item = new SideMenuItem( WString::tr("ladw-mi-data"), w );
-  
-  item->clicked().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
-  item->mouseWentDown().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
-  
-  m_menu->addItem( item );
-  
+  std::function<void(WContainerWidget *)> f = [this]( WContainerWidget *parent ){
+    dataStorageCreator( parent );
+  };
+
+  auto wOwned = deferCreate( f );
+  wOwned->addStyleClass( "UseInfoItem" );
+
+  auto itemOwner = std::make_unique<SideMenuItem>( WString::tr("ladw-mi-data"), std::move(wOwned) );
+  SideMenuItem *item = itemOwner.get();
+
+  item->clicked().connect( [this, item](){ right_select_item( item ); } );
+  item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+
+  m_menu->addItem( std::move(itemOwner) );
+
   return item;
 }//SideMenuItem *makeDataStorageItem()
 #endif //#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )

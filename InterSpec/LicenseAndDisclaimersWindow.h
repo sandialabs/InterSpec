@@ -27,8 +27,8 @@
 
 #include <string>
 
-#include <Wt/WString>
-#include <Wt/WMessageResourceBundle>
+#include <Wt/WString.h>
+#include <Wt/WMessageResourceBundle.h>
 
 #include "InterSpec/AuxWindow.h"
 

@@ -27,23 +27,24 @@
 
 #include <boost/algorithm/string/regex.hpp>
 
-#include <Wt/WDate>
-#include <Wt/WTable>
-#include <Wt/WLabel>
-#include <Wt/WComboBox>
-#include <Wt/WDateEdit>
-#include <Wt/WLineEdit>
-#include <Wt/WCheckBox>
-#include <Wt/WMenuItem>
-#include <Wt/WPopupMenu>
-#include <Wt/WTableCell>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WDoubleSpinBox>
-#include <Wt/WDoubleValidator>
-#include <Wt/WRegExpValidator>
-#include <Wt/WContainerWidget>
-#include <Wt/WSuggestionPopup>
+#include <Wt/WDate.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WDateEdit.h>
+#include <Wt/WDateTime.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WPopupMenu.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WDoubleSpinBox.h>
+#include <Wt/WDoubleValidator.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WSuggestionPopup.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
@@ -328,9 +329,8 @@ std::vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_all_libs()
 
 MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
               const boost::posix_time::ptime &measDate,
-              Wt::WSuggestionPopup *materialSuggest,
-              Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
+              Wt::WSuggestionPopup *materialSuggest )
+: WContainerWidget(),
   m_table( nullptr ),
   m_nuclide( nuc ),
   m_materialSuggest( materialSuggest ),
@@ -352,7 +352,7 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   m_lib_srcs_for_nuc{},
   m_lib_srcs_from_file{},
   m_lib_srcs_added{},
-  m_updated( this )
+  m_updated()
 {
   wApp->useStyleSheet( "InterSpec_resources/MakeDrfSrcDef.css" );
   
@@ -364,7 +364,7 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   
   if( !measDate.is_special() )
   {
-    m_drfMeasurementDate->setDate( WDateTime::fromPosixTime(measDate).date() );
+    m_drfMeasurementDate->setDate( WDateTime::fromTime_t( boost::posix_time::to_time_t(measDate) ).date() );
     validateDateFields();
   }
 }//MakeDrfSrcDef constructor
@@ -436,7 +436,7 @@ void MakeDrfSrcDef::updateSourceLibNuclides()
       assert( src.m_nuclide == m_nuclide );
       
       WMenuItem *item = menu->addItem( src.m_source_name );
-      item->triggered().connect( boost::bind( &MakeDrfSrcDef::setSrcInfo, this, src) );
+      item->triggered().connect( [this, src](){ setSrcInfo( src ); } );
     }//for( const SrcLibLineInfo &src : m_lib_srcs_for_nuc )
   }//if( menu )
 }//void updateSourceLibNuclides()
@@ -489,13 +489,13 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
 
 void MakeDrfSrcDef::create()
 {
-  m_table = new WTable( this );
+  m_table = addNew<WTable>();
   m_table->addStyleClass( "SrcInputTable" );
-  
+
   WTableCell *cell = m_table->elementAt(0,0);
   cell->setColumnSpan( 2 );
   cell->addStyleClass( "SrcNuclideTitle" );
-  m_nuclideLabel = new WText( cell );
+  m_nuclideLabel = cell->addNew<WText>();
   
 /*
   //Code to put a nuclide suggestion into a WLineEdit so user could select nuclide.
@@ -508,11 +508,11 @@ void MakeDrfSrcDef::create()
   nucSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
   
-  nucSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+  nucSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::Unit::FontEm) );
   nucSuggest->forEdit( m_nuclideEdit,
-                       WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+                       PopupTrigger::Editing | PopupTrigger::DropDownIcon );
   
-  IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel( this );
+  IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel();
   
   filterModel->excludeNuclides( false );
   filterModel->excludeXrays( true );
@@ -527,9 +527,9 @@ void MakeDrfSrcDef::create()
 */
   
   cell = m_table->elementAt(sm_distance_row,0);
-  m_distanceLabel = new WLabel( "Distance", cell );
+  m_distanceLabel = cell->addNew<WLabel>( WString::fromUTF8("Distance") );
   cell = m_table->elementAt(sm_distance_row,1);
-  m_distanceEdit = new WLineEdit( cell );
+  m_distanceEdit = cell->addNew<WLineEdit>();
   m_distanceEdit->setTextSize( 16 );
   
   m_distanceEdit->setAutoComplete( false );
@@ -539,8 +539,8 @@ void MakeDrfSrcDef::create()
   m_distanceEdit->setAttributeValue( "spellcheck", "off" );
 #endif
   m_distanceLabel->setBuddy( m_distanceEdit );
-  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
-  distValidator->setFlags( Wt::MatchCaseInsensitive );
+  auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+  distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_distanceEdit->setValidator( distValidator );
   m_distanceEdit->setText( "50 cm" );
   m_distanceEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedDistance );
@@ -548,10 +548,10 @@ void MakeDrfSrcDef::create()
   
   
   cell = m_table->elementAt(sm_activity_row,0);
-  m_activityLabel = new WLabel( "Activity", cell );
-  
+  m_activityLabel = cell->addNew<WLabel>( WString::fromUTF8("Activity") );
+
   cell = m_table->elementAt(sm_activity_row,1);
-  m_activityEdit = new WLineEdit( cell );
+  m_activityEdit = cell->addNew<WLineEdit>();
   
   m_activityEdit->setAutoComplete( false );
   m_activityEdit->setAttributeValue( "ondragstart", "return false" );
@@ -562,8 +562,8 @@ void MakeDrfSrcDef::create()
   m_activityEdit->setTextSize( 16 );
   m_activityLabel->setBuddy( m_activityEdit );
   
-  WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
-  val->setFlags( Wt::MatchCaseInsensitive );
+  auto val = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_activityRegex );
+  val->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_activityEdit->setValidator( val );
   const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_activityEdit->setText( useCi ? "100 uCi" : "3.7 MBq" );
@@ -571,9 +571,9 @@ void MakeDrfSrcDef::create()
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
 
   cell = m_table->elementAt(sm_activity_uncert_row,0);
-  WLabel *label = new WLabel( "Act. Uncert.&nbsp;", cell );  //The nbsp is to make this the longest label so when acti ity or shielding is shown, the width doesnt get changed
+  WLabel *label = cell->addNew<WLabel>( WString::fromUTF8("Act. Uncert.&nbsp;") );  //The nbsp is to make this the longest label so when acti ity or shielding is shown, the width doesnt get changed
   cell = m_table->elementAt(sm_activity_uncert_row,1);
-  m_activityUncertainty = new WDoubleSpinBox( cell );
+  m_activityUncertainty = cell->addNew<WDoubleSpinBox>();
   m_activityUncertainty->setValue( 0.0 );
   m_activityUncertainty->setTextSize( 14 );
   m_activityUncertainty->setAutoComplete( false );
@@ -596,17 +596,17 @@ void MakeDrfSrcDef::create()
   //m_activityUncertainty->setValidator( percentVal );
   
   cell = m_table->elementAt(sm_assay_date_row,0);
-  label = new WLabel( "Assay Date", cell );
+  label = cell->addNew<WLabel>( WString::fromUTF8("Assay Date") );
   cell = m_table->elementAt(sm_assay_date_row,1);
-  m_assayDate = new WDateEdit( cell );
+  m_assayDate = cell->addNew<WDateEdit>();
   //m_assayDate->setTextSize( 9 );
   label->setBuddy( m_assayDate );
   m_assayDate->changed().connect( this, &MakeDrfSrcDef::handleEnteredDatesUpdated );
   
   cell = m_table->elementAt(sm_spec_date_row,0);
-  label = new WLabel( "Spec. Date", cell );
+  label = cell->addNew<WLabel>( WString::fromUTF8("Spec. Date") );
   cell = m_table->elementAt(sm_spec_date_row,1);
-  m_drfMeasurementDate = new WDateEdit( cell );
+  m_drfMeasurementDate = cell->addNew<WDateEdit>();
   //m_drfMeasurementDate->setTextSize( 10 );
   //The right padding is 40px, could reduce down to 30.
   label->setBuddy( m_drfMeasurementDate );
@@ -614,9 +614,9 @@ void MakeDrfSrcDef::create()
   
   
   cell = m_table->elementAt(sm_age_at_assay_row,0);
-  label = new WLabel( "Age@Assay", cell );
+  label = cell->addNew<WLabel>( WString::fromUTF8("Age@Assay") );
   cell = m_table->elementAt(sm_age_at_assay_row,1);
-  m_sourceAgeAtAssay = new WLineEdit( cell );
+  m_sourceAgeAtAssay = cell->addNew<WLineEdit>();
   
   m_sourceAgeAtAssay->setAutoComplete( false );
   m_sourceAgeAtAssay->setAttributeValue( "ondragstart", "return false" );
@@ -628,25 +628,25 @@ void MakeDrfSrcDef::create()
   m_sourceAgeAtAssay->changed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
   m_sourceAgeAtAssay->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedAgeAtAssay );
   
-  val = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), this );
-  val->setFlags( Wt::MatchCaseInsensitive );
+  val = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationRegex() );
+  val->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_sourceAgeAtAssay->setValidator( val );
   m_sourceAgeAtAssay->setText( "0s" );
   
   
   cell = m_table->elementAt(sm_decayed_info_row,0);
-  label = new WLabel( "Aging Res.", cell );
+  label = cell->addNew<WLabel>( WString::fromUTF8("Aging Res.") );
   cell = m_table->elementAt(sm_decayed_info_row,1);
-  m_sourceInfoAtMeasurement = new WText( cell );
+  m_sourceInfoAtMeasurement = cell->addNew<WText>();
   
   //Wt::WDateEdit *m_sourceCreationDate;
   
   cell = m_table->elementAt(sm_options_row,0);
-  
-  m_lib_src_btn = new WPushButton( cell );
+
+  m_lib_src_btn = cell->addNew<WPushButton>();
   m_lib_src_btn->setIcon( "InterSpec_resources/images/db_small.png" );
   m_lib_src_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
-  m_lib_src_btn->setFloatSide( Wt::Left );
+  m_lib_src_btn->setFloatSide( Wt::Side::Left );
   
 #if( WT_VERSION < 0x3070000 )
   m_lib_src_menu = new PopupDivMenu( m_lib_src_btn, PopupDivMenu::TransientMenu );
@@ -659,10 +659,8 @@ void MakeDrfSrcDef::create()
   //  This is a little less than optimal, and make auto-hide of menu not quite as good, but maybe
   //  better than the alternative.
   m_lib_src_menu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
-  m_lib_src_menu->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-  m_lib_src_btn->clicked().connect( boost::bind( 
-          static_cast<void (WPopupMenu::*)(const WMouseEvent &)>(&WPopupMenu::popup),
-          m_lib_src_menu, boost::placeholders::_1 ) );
+  m_lib_src_menu->setMaximumSize( WLength::Auto, WLength(15, WLength::Unit::FontEm) );
+  m_lib_src_btn->clicked().connect( [this]( const WMouseEvent &e ){ m_lib_src_menu->popup( e ); } );
 #endif
   
   m_lib_src_menu->setAutoHide( true, 2500 );
@@ -673,15 +671,15 @@ void MakeDrfSrcDef::create()
   " on of the items is selected, its information will be populated.";
   HelpSystem::attachToolTipOn( m_lib_src_btn, tooltip, showToolTips, HelpSystem::ToolTipPosition::Right );
   
-  m_useAgeInfo = new WCheckBox( "Age?", cell );
-  m_useAgeInfo->setFloatSide( Wt::Right );
+  m_useAgeInfo = cell->addNew<WCheckBox>( WString::fromUTF8("Age?") );
+  m_useAgeInfo->setFloatSide( Wt::Side::Right );
   m_useAgeInfo->setChecked( false );
   m_useAgeInfo->checked().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
   m_useAgeInfo->unChecked().connect( this, &MakeDrfSrcDef::useAgeInfoUserToggled );
   
   cell = m_table->elementAt(sm_options_row,1);
-  m_useShielding = new WCheckBox( "Shielded?", cell );
-  m_useShielding->setFloatSide( Wt::Right );
+  m_useShielding = cell->addNew<WCheckBox>( WString::fromUTF8("Shielded?") );
+  m_useShielding->setFloatSide( Wt::Side::Right );
   m_useShielding->setChecked( false );
   m_useShielding->checked().connect( this, &MakeDrfSrcDef::useShieldingInfoUserToggled );
   m_useShielding->unChecked().connect( this, &MakeDrfSrcDef::useShieldingInfoUserToggled );
@@ -690,7 +688,7 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(sm_shield_material_row,0);
   cell->setColumnSpan( 2 );
   
-  m_shieldingSelect = new ShieldingSelect( m_materialSuggest, cell );
+  m_shieldingSelect = cell->addNew<ShieldingSelect>( m_materialSuggest );
   m_shieldingSelect->materialModified().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
   m_shieldingSelect->materialChanged().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
   m_shieldingSelect->addingIsotopeAsSource().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
@@ -862,7 +860,7 @@ void MakeDrfSrcDef::validateDateFields()
   if( (txt.length() > 1) && std::isspace(txt[0]) )
     m_assayDate->setText( WString::fromUTF8( SpecUtils::trim_copy(txt) ) );
   
-  if( m_drfMeasurementDate->validate() == Wt::WValidator::Valid )
+  if( m_drfMeasurementDate->validate() == Wt::WValidator::State::Valid )
   {
     if( m_drfMeasurementDate->hasStyleClass( "SrcInputError" ) )
       m_drfMeasurementDate->removeStyleClass( "SrcInputError" );
@@ -871,8 +869,8 @@ void MakeDrfSrcDef::validateDateFields()
     if( !m_drfMeasurementDate->hasStyleClass( "SrcInputError" ) )
       m_drfMeasurementDate->addStyleClass( "SrcInputError" );
   }
-  
-  if( m_assayDate->validate() == Wt::WValidator::Valid )
+
+  if( m_assayDate->validate() == Wt::WValidator::State::Valid )
   {
     if( m_assayDate->hasStyleClass( "SrcInputError" ) )
       m_assayDate->removeStyleClass( "SrcInputError" );
@@ -1048,27 +1046,22 @@ void MakeDrfSrcDef::setActivity( const double act )
 void MakeDrfSrcDef::setAssayInfo( const double activity,
                                   const boost::posix_time::ptime &assay_date )
 {
-  // We only want to update the UI at the end of this function - so block emitting updates until
-  //  then (and actually we'll possible get an error in calculation if we dont wait until
-  //  everything is updated)
-  const bool updateBlocked = m_updated.isBlocked();
-  m_updated.setBlocked( true );
-  
+  // We only want to update the UI at the end of this function; intermediate updates are harmless
+  //  but we'll emit once more at the end to ensure final state is propagated.
   m_useAgeInfo->setChecked( !assay_date.is_special() );
-  m_assayDate->setDate( WDateTime::fromPosixTime(assay_date).date() );
+  m_assayDate->setDate( WDateTime::fromTime_t( boost::posix_time::to_time_t(assay_date) ).date() );
   useAgeInfoUserToggled();
-  
+
   if( activity > 0.0 )
   {
     const int ndecimals = 4;
     const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(activity, ndecimals, useCi) );
   }
-  
+
   validateDateFields();
   updateAgedText();
-  
-  m_updated.setBlocked( updateBlocked );
+
   m_updated.emit();
 }//void setAssayInfo(..);
 

@@ -30,23 +30,23 @@
 
 #include <boost/math/tools/roots.hpp>
 
-#include <Wt/WMenu>
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WMenuItem>
-#include <Wt/WLineEdit>
-#include <Wt/WComboBox>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/WButtonGroup>
-#include <Wt/WEnvironment>
-#include <Wt/WRadioButton>
-#include <Wt/WStackedWidget>
-#include <Wt/WDoubleValidator>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WRegExpValidator>
+#include <Wt/WMenu.h>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WDoubleValidator.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WRegExpValidator.h>
 
 
 #include "Math/IFunction.h"
@@ -94,7 +94,7 @@
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
 #if( USE_QR_CODES )
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 
 #include "InterSpec/QrCode.h"
 #endif
@@ -227,14 +227,15 @@ DoseCalcWindow::DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
 {
   rejectWhenEscapePressed( true );
 
-  m_dose = new DoseCalcWidget( materialSuggestion, viewer, contents() );
-  m_dose->setHeight( WLength(100,WLength::Percentage) );
+  m_dose = contents()->addNew<DoseCalcWidget>( materialSuggestion, viewer );
+  m_dose->setHeight( WLength(100,WLength::Unit::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "dose-dialog" );
   
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton();
+  auto qr_btn_owned = std::make_unique<WPushButton>();
+  WPushButton *qr_btn = qr_btn_owned.get();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -251,16 +252,15 @@ DoseCalcWindow::DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
     }
   }) );
   if( !viewer->isPhone() )
-    footer()->addWidget( qr_btn );
+    footer()->addWidget( std::move(qr_btn_owned) );
 #endif //USE_QR_CODES
 
-  
   WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
   closeButton->clicked().connect( this, &AuxWindow::hide );
-  
+
 #if( USE_QR_CODES )
   if( viewer->isPhone() )
-    footer()->addWidget( qr_btn );
+    footer()->addWidget( std::move(qr_btn_owned) );
 #endif
   
   show();
@@ -298,15 +298,14 @@ DoseCalcWidget *DoseCalcWindow::tool()
 
 
 DoseCalcWidget::DoseCalcWidget( Wt::WSuggestionPopup *materialSuggestion,
-                                 InterSpec *specViewer,
-                                 Wt::WContainerWidget *parent )
- : WContainerWidget( parent ),
+                                 InterSpec *specViewer )
+ : WContainerWidget(),
    m_viewer( specViewer ),
    m_materialSuggest( materialSuggestion ),
    m_enterShieldingSelect( NULL ),
    m_answerShieldingSelect( NULL ),
    m_gammaSource( NULL ),
-   m_sourceType( NULL ),
+   m_sourceType( nullptr ),
    m_gammaSourceDiv( NULL ),
    m_neutronSourceDiv( NULL ),
    m_neutronSourceCombo( NULL ),
@@ -339,7 +338,7 @@ void DoseCalcWidget::init()
   m_viewer->useMessageResourceBundle( "DoseCalcWidget" );
       
   addStyleClass( "DoseCalcWidget" );
-  m_layout = new WGridLayout( this );
+  m_layout = setLayout( std::make_unique<WGridLayout>() );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   
   try
@@ -354,7 +353,8 @@ void DoseCalcWidget::init()
     msg +=  Wt::WWebWidget::escapeText(	WString(e.what()), true );
     msg += "</div>";
     
-    m_layout->addWidget( new WText(msg), 0, 0, AlignCenter | AlignMiddle );
+    m_layout->addWidget( std::make_unique<WText>(msg), 0, 0,
+                         Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
     
     return;
   }//try / catch
@@ -372,25 +372,28 @@ void DoseCalcWidget::init()
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
-  WContainerWidget *enterDiv = new WContainerWidget();
-  WContainerWidget *answerDiv = new WContainerWidget();
-  WGridLayout *enterLayout = new WGridLayout( enterDiv );
-  WGridLayout *answerLayout = new WGridLayout( answerDiv );
-  
+  auto enterDivOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *enterDiv = enterDivOwned.get();
+  auto answerDivOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *answerDiv = answerDivOwned.get();
+  WGridLayout *enterLayout = enterDiv->setLayout( std::make_unique<WGridLayout>() );
+  WGridLayout *answerLayout = answerDiv->setLayout( std::make_unique<WGridLayout>() );
+
   enterDiv->addStyleClass( "DoseEnterDiv" );
   answerDiv->addStyleClass( "DoseAnswerDiv" );
-  
-  WContainerWidget *workDiv = new WContainerWidget();
-  WGridLayout *workLayout = new WGridLayout( workDiv );
+
+  auto workDivOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *workDiv = workDivOwned.get();
+  WGridLayout *workLayout = workDiv->setLayout( std::make_unique<WGridLayout>() );
 
   if( narrowLayout )
   {
     addStyleClass( "NarrowDose" );
     answerLayout->setContentsMargins( 5, 1, 5, 1 );
     enterLayout->setContentsMargins( 5, 1, 5, 1 );
-    
-    workLayout->addWidget( enterDiv, 0, 0 );
-    workLayout->addWidget( answerDiv, 1, 0 );
+
+    workLayout->addWidget( std::move(enterDivOwned), 0, 0 );
+    workLayout->addWidget( std::move(answerDivOwned), 1, 0 );
     workLayout->setColumnStretch( 0, 1 );
     workLayout->setRowStretch( 0, 1 );
     workLayout->setRowStretch( 1, 1 );
@@ -398,9 +401,9 @@ void DoseCalcWidget::init()
   {
     answerLayout->setContentsMargins( 9, 1, 9, 5 );
     enterLayout->setContentsMargins( 9, 1, 9, 5 );
-    
-    workLayout->addWidget( enterDiv, 0, 0 );
-    workLayout->addWidget( answerDiv, 0, 1 );
+
+    workLayout->addWidget( std::move(enterDivOwned), 0, 0 );
+    workLayout->addWidget( std::move(answerDivOwned), 0, 1 );
     workLayout->setColumnStretch( 0, 1 );
     workLayout->setColumnStretch( 1, 1 );
   }
@@ -409,103 +412,109 @@ void DoseCalcWidget::init()
   workLayout->setVerticalSpacing( 0 );
   workLayout->setHorizontalSpacing( 0 );
   
-  WText *coltxt = 0;
   if( !isPhone )
   {
-    coltxt = new WText( WString::tr("dcw-inputs"), enterDiv );
+    WText *coltxt = enterLayout->addWidget( std::make_unique<WText>( WString::tr("dcw-inputs") ), 0, 0,
+                                            Wt::AlignmentFlag::Middle | Wt::AlignmentFlag::Top );
     coltxt->addStyleClass( "DoseColLabel" );
     coltxt->setInline( false );
-    enterLayout->addWidget( coltxt, 0, 0, AlignMiddle | AlignTop );
   }//if( !isPhone )
+
+  {
+    WText *coltxt = answerLayout->addWidget( std::make_unique<WText>( WString::tr("dcw-answer") ), 0, 0,
+                                             Wt::AlignmentFlag::Middle | Wt::AlignmentFlag::Top );
+    coltxt->addStyleClass( "DoseColLabel" );
+    coltxt->setInline( false );
+  }
   
-  coltxt = new WText( WString::tr("dcw-answer") );
-  coltxt->addStyleClass( "DoseColLabel" );
-  coltxt->setInline( false );
-  answerLayout->addWidget( coltxt, 0, 0, AlignMiddle | AlignTop );
   
-  
-  WContainerWidget *introDiv = new WContainerWidget();
+  auto introDivOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *introDiv = introDivOwned.get();
   introDiv->addStyleClass( "DoseIntroDiv" );
-  WGridLayout *intoTxtLayout = new WGridLayout( introDiv );
+  WGridLayout *intoTxtLayout = introDiv->setLayout( std::make_unique<WGridLayout>() );
   const char * const instr_key = narrowLayout ? "dcw-intro-instructions-vert-phone" : "dcw-intro-instructions";
-  WText *txt = new WText( WString::tr(instr_key) );
-  txt->addStyleClass( "DoseIntroTxtMain" );
-  
-  intoTxtLayout->addWidget( txt, 0, 0, AlignMiddle | AlignCenter );
-  
-  txt = new WText( WString::tr("dcw-intro-calc-desc") );
-  txt->addStyleClass( "DoseIntroTxtDetail" );
-  
-  intoTxtLayout->addWidget( txt, 1, 0, AlignCenter );
+  {
+    WText *txt = intoTxtLayout->addWidget( std::make_unique<WText>( WString::tr(instr_key) ), 0, 0,
+                                           Wt::AlignmentFlag::Middle | Wt::AlignmentFlag::Center );
+    txt->addStyleClass( "DoseIntroTxtMain" );
+  }
+  {
+    WText *txt = intoTxtLayout->addWidget( std::make_unique<WText>( WString::tr("dcw-intro-calc-desc") ), 1, 0,
+                                           Wt::AlignmentFlag::Center );
+    txt->addStyleClass( "DoseIntroTxtDetail" );
+  }
   intoTxtLayout->setRowStretch( 0, 10 );
-  
-  m_menu = new WMenu();
+
+  auto menuOwned = std::make_unique<WMenu>();
+  m_menu = menuOwned.get();
   m_menu->addStyleClass( "DoseCalcSideMenu" );
-  m_stack = new WStackedWidget();
+
+  auto stackOwned = std::make_unique<WStackedWidget>();
+  m_stack = stackOwned.get();
 //  m_stack->setTransitionAnimation( WAnimation(WAnimation::Fade, WAnimation::Linear, 500), false );
-  m_stack->addWidget( introDiv );
-  m_stack->addWidget( workDiv );
-  
-  
+  m_stack->addWidget( std::move(introDivOwned) );
+  m_stack->addWidget( std::move(workDivOwned) );
+
   if( narrowLayout )
   {
     m_menu->addStyleClass( "VerticalNavMenuPhone HeavyNavMenuPhone HorizontalMenu" );
-    
-    m_layout->addWidget( m_menu, 0, 0 );
-    m_layout->addWidget( m_stack, 1, 0 );
+
+    m_layout->addWidget( std::move(menuOwned), 0, 0 );
+    m_layout->addWidget( std::move(stackOwned), 1, 0 );
     m_layout->setColumnStretch( 0, 1 );
     m_layout->setRowStretch( 1, 1 );
   }else
   {
     // Phone is horizontal
-    m_menu->addStyleClass( isPhone ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone" 
+    m_menu->addStyleClass( isPhone ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone"
                                     : "VerticalNavMenu HeavyNavMenu SideMenu" );
-    m_layout->addWidget( m_menu, 0, 0 );
-    m_layout->addWidget( m_stack, 0, 1 );
+    m_layout->addWidget( std::move(menuOwned), 0, 0 );
+    m_layout->addWidget( std::move(stackOwned), 0, 1 );
     m_layout->setColumnStretch( 1, 1 );
   }//if( narrow ) / else horizontal
   
   //First need to put source capability in
   {
-    WContainerWidget *sourcDiv = new WContainerWidget();
+    auto sourcDivOwned = std::make_unique<WContainerWidget>();
+    WContainerWidget *sourcDiv = sourcDivOwned.get();
     sourcDiv->addStyleClass( "DoseEnterEl" );
-    
+
     if( !isPhone )
     {
-      WLabel *sourceLabel = new WLabel( WString::tr("dcw-source-label"), sourcDiv );
+      WLabel *sourceLabel = sourcDiv->addNew<WLabel>( WString::tr("dcw-source-label") );
       sourceLabel->addStyleClass( "DoseEnterInd" );
       sourceLabel->setInline( false );
     }//if( !isPhone )
-    
-    m_sourceType = new WButtonGroup( sourcDiv );
+
+    m_sourceType = std::make_shared<WButtonGroup>();
     m_sourceType->checkedChanged().connect( this, &DoseCalcWidget::handleSourceTypeChange );
-    
-    WContainerWidget *buttonDiv = new WContainerWidget( sourcDiv );
-    WRadioButton *gammaButton = new Wt::WRadioButton( WString::tr("Gamma"), buttonDiv );
-    gammaButton->setMargin( 7, Wt::Right );
+
+    WContainerWidget *buttonDiv = sourcDiv->addNew<WContainerWidget>();
+    WRadioButton *gammaButton = buttonDiv->addNew<Wt::WRadioButton>( WString::tr("Gamma") );
+    gammaButton->setMargin( 7, Wt::Side::Right );
     m_sourceType->addButton( gammaButton, 0 );
-    
-    WRadioButton *neutronButton = new Wt::WRadioButton( WString::tr("dcw-neutron"), buttonDiv );
+
+    WRadioButton *neutronButton = buttonDiv->addNew<Wt::WRadioButton>( WString::tr("dcw-neutron") );
     m_sourceType->addButton( neutronButton, 1 );
     neutronButton->disable();
     neutronButton->setToolTip( WString::tr("dcw-tt-neut-not-imp") );
     neutronButton->setAttributeValue( "style", "color: grey;" );
-    
+
     m_sourceType->setSelectedButtonIndex( 0 );
-    
-    enterLayout->addWidget( sourcDiv, 1, 0, AlignMiddle );
-    
-    m_gammaSourceDiv = new WContainerWidget( sourcDiv );
-    m_neutronSourceDiv = new WContainerWidget( sourcDiv );
+
+    enterLayout->addWidget( std::move(sourcDivOwned), 1, 0, Wt::AlignmentFlag::Middle );
+
+    m_gammaSourceDiv = sourcDiv->addNew<WContainerWidget>();
+    m_neutronSourceDiv = sourcDiv->addNew<WContainerWidget>();
     m_neutronSourceDiv->hide();
-    m_neutronSourceCombo = new WComboBox( m_neutronSourceDiv );
+    m_neutronSourceCombo = m_neutronSourceDiv->addNew<WComboBox>();
     m_neutronSourceCombo->addStyleClass( "DoseAnswerCombo" );
     m_neutronSourceCombo->addItem( "Ca252" );
     m_neutronSourceCombo->addItem( "WGPu" );
     m_neutronSourceCombo->addItem( "U238" );
     m_neutronSourceCombo->activated().connect( this, &DoseCalcWidget::updateResult );
-    
-    m_gammaSource = new NuclideSourceEnter( true, showToolTips, m_gammaSourceDiv );
+
+    m_gammaSource = m_gammaSourceDiv->addNew<NuclideSourceEnter>( true, showToolTips );
     m_gammaSource->changed().connect( this, &DoseCalcWidget::updateResult );
   }
   
@@ -523,14 +532,13 @@ void DoseCalcWidget::init()
     }//switch( i )
     
     WMenuItem *item = m_menu->addItem( WString::tr(label_key) );
-    item->clicked().connect( boost::bind(&right_select_item, m_menu, item) );
-    item->triggered().connect( boost::bind( &DoseCalcWidget::handleQuantityClick, this, i ) );
+    item->clicked().connect( [menu = m_menu, item](){ right_select_item( menu, item ); } );
+    item->triggered().connect( [this, i](){ handleQuantityClick( i ); } );
 
-    m_enterWidgets[i] = new WContainerWidget();
-    m_answerWidgets[i] = new WContainerWidget();
-    
-    enterLayout->addWidget( m_enterWidgets[i], i + 2, 0, AlignMiddle );
-    answerLayout->addWidget( m_answerWidgets[i], i + 1, 0, AlignMiddle );
+    m_enterWidgets[i] = enterLayout->addWidget( std::make_unique<WContainerWidget>(), i + 2, 0,
+                                                 Wt::AlignmentFlag::Middle );
+    m_answerWidgets[i] = answerLayout->addWidget( std::make_unique<WContainerWidget>(), i + 1, 0,
+                                                   Wt::AlignmentFlag::Middle );
 
     
     m_enterWidgets[i]->addStyleClass( "DoseEnterEl" );
@@ -540,29 +548,28 @@ void DoseCalcWidget::init()
     {
       case Dose:
       {
-        WLabel *doseLabel = new WLabel( WString::tr("dose-label"), m_enterWidgets[i] );
+        WLabel *doseLabel = m_enterWidgets[i]->addNew<WLabel>( WString::tr("dose-label") );
         doseLabel->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           doseLabel->setInline( false );
         else
           doseLabel->setAttributeValue( "style", "display: inline-block; width: 45px;" );
-        
-        WContainerWidget *unitdiv = new WContainerWidget( m_answerWidgets[i] );
-        WLabel *label = new WLabel( WString::tr("dcw-units-label"), unitdiv );
-        m_doseAnswerUnits = new WComboBox( unitdiv );
+
+        WContainerWidget *unitdiv = m_answerWidgets[i]->addNew<WContainerWidget>();
+        WLabel *label = unitdiv->addNew<WLabel>( WString::tr("dcw-units-label") );
+        m_doseAnswerUnits = unitdiv->addNew<WComboBox>();
         label->setBuddy( m_doseAnswerUnits );
-        
-        m_doseAnswer = new WText( m_answerWidgets[i] );
+
+        m_doseAnswer = m_answerWidgets[i]->addNew<WText>();
         m_doseAnswer->setInline( false );
         m_doseAnswer->addStyleClass( "DoseAnswerTxt" );
-        
+
         m_doseAnswerValue = 0.1 * PhysicalUnits::rem / PhysicalUnits::hour;
         m_doseAnswer->setText( "100 mR/hr" );
         m_doseAnswerUnits->addItem( "rem/hr" );
         m_doseAnswerUnits->addItem( "sievert/hr" );
 
-
-        m_doseEnter = new WLineEdit( m_enterWidgets[i] );
+        m_doseEnter = m_enterWidgets[i]->addNew<WLineEdit>();
         doseLabel->setBuddy( m_doseEnter );
 
         m_doseEnter->setAutoComplete( false );
@@ -575,15 +582,15 @@ void DoseCalcWidget::init()
         m_doseEnter->setText( "100" );
         if( isPhone )
           m_doseEnter->setWidth( 50 );
-        
-        WDoubleValidator *val = new WDoubleValidator( m_doseEnter );
-        val->setBottom( 0.0 );
-        m_doseEnter->setValidator( val );
+
+        auto doseValidator = std::make_shared<WDoubleValidator>();
+        doseValidator->setBottom( 0.0 );
+        m_doseEnter->setValidator( doseValidator );
         m_doseEnter->changed().connect( this, &DoseCalcWidget::updateResult );
 //        m_doseEnter->blurred().connect( this, &DoseCalcWidget::updateResult );
 //        m_doseEnter->enterPressed().connect( this, &DoseCalcWidget::updateResult );
 
-        m_doseEnterUnits = new WComboBox( m_enterWidgets[i] );
+        m_doseEnterUnits = m_enterWidgets[i]->addNew<WComboBox>();
         
         
         for( const auto &u : PhysicalUnits::sm_doseRateUnitHtmlNameValues )
@@ -601,24 +608,22 @@ void DoseCalcWidget::init()
         
       case Activity:
       {
-        WLabel *activityLabel = new WLabel( WString::tr("activity-label") );
+        WLabel *activityLabel = m_enterWidgets[i]->addNew<WLabel>( WString::tr("activity-label") );
         activityLabel->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           activityLabel->setInline( false );
         else
           activityLabel->setAttributeValue( "style", "display: inline-block; width: 45px;" );
 
-        m_enterWidgets[i]->addWidget( activityLabel );
-
-        WContainerWidget *unitdiv = new WContainerWidget( m_answerWidgets[i] );
-        WLabel *label = new WLabel( WString::tr("dcw-units-label"), unitdiv );
-        m_activityAnswerUnits = new WComboBox( unitdiv );
+        WContainerWidget *unitdiv = m_answerWidgets[i]->addNew<WContainerWidget>();
+        WLabel *label = unitdiv->addNew<WLabel>( WString::tr("dcw-units-label") );
+        m_activityAnswerUnits = unitdiv->addNew<WComboBox>();
         label->setBuddy( m_activityAnswerUnits );
 
-        m_activityEnter = new WLineEdit( m_enterWidgets[i] );
+        m_activityEnter = m_enterWidgets[i]->addNew<WLineEdit>();
         activityLabel->setBuddy( m_activityEnter );
         m_activityEnter->addStyleClass( "DoseEnterTxt" );
-        
+
         m_activityEnter->setAutoComplete( false );
         m_activityEnter->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -627,17 +632,17 @@ void DoseCalcWidget::init()
 #endif
         if( isPhone )
           m_activityEnter->setWidth( 50 );
-        
-        WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityUnitOptionalRegex, this );
-        val->setFlags( Wt::MatchCaseInsensitive );
-//        WDoubleValidator *val = new WDoubleValidator();
-        m_activityEnter->setValidator( val );
-//        val->setBottom( 0.0 );
-        m_activityEnter->setText( "100" );  
-        m_activityEnter->blurred().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
-        m_activityEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
 
-        m_activityEnterUnits = new WComboBox( m_enterWidgets[i] );
+        auto actValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_activityUnitOptionalRegex );
+        actValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+//        auto actValidator = std::make_shared<WDoubleValidator>();
+        m_activityEnter->setValidator( actValidator );
+//        actValidator->setBottom( 0.0 );
+        m_activityEnter->setText( "100" );
+        m_activityEnter->blurred().connect( [this](){ updateResult(); } );
+        m_activityEnter->enterPressed().connect( [this](){ updateResult(); } );
+
+        m_activityEnterUnits = m_enterWidgets[i]->addNew<WComboBox>();
 
         for( const auto &u : PhysicalUnits::sm_activityUnitHtmlNameValues )
         {
@@ -660,7 +665,7 @@ void DoseCalcWidget::init()
         else
           m_activityAnswerUnits->setCurrentIndex( 0 );
         
-        m_activityAnswer = new WText( m_answerWidgets[i] );
+        m_activityAnswer = m_answerWidgets[i]->addNew<WText>();
         m_activityAnswer->setInline( false );
 
 		    string actstr = useBq ? "1 MBq" : "200 &mu;Ci";
@@ -670,30 +675,26 @@ void DoseCalcWidget::init()
         m_activityAnswer->setText( WString::fromUTF8(actstr) );
         m_activityAnswer->addStyleClass( "DoseAnswerTxt" );
         
-        m_activityEnterUnits->activated().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
-        m_activityAnswerUnits->activated().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_activityEnterUnits->activated().connect( [this]( int ){ updateResult(); } );
+        m_activityAnswerUnits->activated().connect( [this]( int ){ updateResult(); } );
         break;
       }//case Activity:
         
       case Distance:
       {
-        WLabel *distanceLabel = new WLabel( WString::tr("distance-label") );
+        WLabel *distanceLabel = m_enterWidgets[i]->addNew<WLabel>( WString::tr("distance-label") );
         distanceLabel->addStyleClass( "DoseEnterInd" );
         if( !isPhone )
           distanceLabel->setInline( false );
         else
           distanceLabel->setAttributeValue( "style", "display: inline-block; width: 45px;" );
 
-        m_enterWidgets[i]->addWidget( distanceLabel );
-
-        m_distanceAnswer = new WText();
+        m_distanceAnswer = m_answerWidgets[i]->addNew<WText>();
         m_distanceAnswer->setInline( false );
         m_distanceAnswer->addStyleClass( "DoseAnswerTxt" );
         m_distanceAnswer->addStyleClass( "DoseDistanceAnswer" );
-        m_answerWidgets[i]->addWidget( m_distanceAnswer );
 
-
-        m_distanceEnter = new WLineEdit( "100 cm" );
+        m_distanceEnter = m_enterWidgets[i]->addNew<WLineEdit>( "100 cm" );
         distanceLabel->setBuddy( m_distanceEnter );
 
         m_distanceEnter->setAutoComplete( false );
@@ -703,21 +704,19 @@ void DoseCalcWidget::init()
         m_distanceEnter->setAttributeValue( "spellcheck", "off" );
 #endif
         m_distanceEnter->addStyleClass( "DoseEnterTxt" );
-        
+
         if( isPhone )
           m_distanceEnter->setWidth( 50 );
-        
+
 //        m_distanceEnter->setTextSize( 10 );
-        WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
-        validator->setFlags( Wt::MatchCaseInsensitive );
-        m_distanceEnter->setValidator( validator );
+        auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+        distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+        m_distanceEnter->setValidator( distValidator );
         HelpSystem::attachToolTipOn( m_distanceEnter, WString::tr("dcw-tt-distance"), showToolTips );
-        
-        m_distanceEnter->changed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
-        m_distanceEnter->blurred().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
-        m_distanceEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
-        
-        m_enterWidgets[i]->addWidget( m_distanceEnter );
+
+        m_distanceEnter->changed().connect( [this](){ updateResult(); } );
+        m_distanceEnter->blurred().connect( [this](){ updateResult(); } );
+        m_distanceEnter->enterPressed().connect( [this](){ updateResult(); } );
         break;
       }//case Distance:
         
@@ -725,26 +724,23 @@ void DoseCalcWidget::init()
       {
         if( !isPhone )
         {
-          WLabel *shieldingLabel = new WLabel( WString::tr("shielding-label") );
+          WLabel *shieldingLabel = m_enterWidgets[i]->addNew<WLabel>( WString::tr("shielding-label") );
           shieldingLabel->addStyleClass( "DoseEnterInd" );
           shieldingLabel->setInline( false );
-          m_enterWidgets[i]->addWidget( shieldingLabel );
         }
-        
-        m_enterShieldingSelect = new ShieldingSelect( m_materialSuggest );
-        m_answerShieldingSelect = new ShieldingSelect( m_materialSuggest );
+
+        m_enterShieldingSelect = m_enterWidgets[i]->addNew<ShieldingSelect>( m_materialSuggest );
+        m_answerShieldingSelect = m_answerWidgets[i]->addNew<ShieldingSelect>( m_materialSuggest );
         m_answerShieldingSelect->setSphericalThicknessEditEnabled(false);
         m_answerShieldingSelect->arealDensityEdit()->disable();
-        m_enterWidgets[i]->addWidget( m_enterShieldingSelect );
-        m_answerWidgets[i]->addWidget( m_answerShieldingSelect );
-        m_enterShieldingSelect->materialModified().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
-        m_enterShieldingSelect->materialChanged().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
-        m_answerShieldingSelect->materialModified().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
-        m_answerShieldingSelect->materialChanged().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_enterShieldingSelect->materialModified().connect( [this]( ShieldingSelect * ){ updateResult(); } );
+        m_enterShieldingSelect->materialChanged().connect( [this]( ShieldingSelect * ){ updateResult(); } );
+        m_answerShieldingSelect->materialModified().connect( [this]( ShieldingSelect * ){ updateResult(); } );
+        m_answerShieldingSelect->materialChanged().connect( [this]( ShieldingSelect * ){ updateResult(); } );
         
         if( isPhone )
         {
-          m_enterShieldingSelect->materialEdit()->setEmptyText( WString::tr("dcw-shield-empty-text") );
+          m_enterShieldingSelect->materialEdit()->setPlaceholderText( WString::tr("dcw-shield-empty-text") );
         }
         
         break;
@@ -763,13 +759,12 @@ void DoseCalcWidget::init()
   
   
   
-  m_stayTime = new WContainerWidget();
   const int stayRow = answerLayout->rowCount();
-  answerLayout->addWidget( m_stayTime, stayRow, 0 );
-  
-  m_issueTxt = new WText();
+  m_stayTime = answerLayout->addWidget( std::make_unique<WContainerWidget>(), stayRow, 0 );
+
+  m_issueTxt = answerLayout->addWidget( std::make_unique<WText>(), answerLayout->rowCount(), 0,
+                                        Wt::AlignmentFlag::Bottom );
   m_issueTxt->addStyleClass( "DoseIssueTxt" );
-  answerLayout->addWidget( m_issueTxt, answerLayout->rowCount(), 0, AlignBottom );
   
   if( !narrowLayout )
   {
@@ -789,22 +784,23 @@ void DoseCalcWidget::init()
     introDiv->clear();
     introDiv->setStyleClass( "DoseCalcRuntimeCheckFailMsg" );
     
-    auto errorintro = new WText( WString::tr("dcw-runtime-checks-failed"), introDiv );
+    auto errorintro = introDiv->addNew<WText>( WString::tr("dcw-runtime-checks-failed") );
     errorintro->setInline( false );
     errorintro->setStyleClass( "DoseCalcRuntimeCheckFailHdr" );
-    
-    auto errortxt = new WText( e.what(), introDiv );
+
+    auto errortxt = introDiv->addNew<WText>( WString(e.what()) );
     errortxt->setInline( false );
     errortxt->setStyleClass( "DoseCalcRuntimeCheckMsgTxt" );
-    
-    auto furthermsg = new WText( WString::tr("dcw-runtime-check-msg"), introDiv );
+
+    auto furthermsg = introDiv->addNew<WText>( WString::tr("dcw-runtime-check-msg") );
     furthermsg->setStyleClass( "DoseCalcRuntimeCheckInstuct" );
     furthermsg->setInline( false );
-    
-    auto *errordiv = new WText( WString::tr("dcw-runtime-check-err-div") );
-    errordiv->setStyleClass( "DoseCalcRuntimeCheckFailBanner" );
+
     const int row = m_layout->rowCount();
-    m_layout->addWidget( errordiv, row, 0, 1, m_layout->columnCount(), AlignCenter );
+    WText *errordiv = m_layout->addWidget( std::make_unique<WText>( WString::tr("dcw-runtime-check-err-div") ),
+                                           row, 0, 1, m_layout->columnCount(),
+                                           Wt::AlignmentFlag::Center );
+    errordiv->setStyleClass( "DoseCalcRuntimeCheckFailBanner" );
   }//try / caltch runtime sanity check
   
 }//void DoseCalcWidget::init()
@@ -1775,7 +1771,7 @@ void DoseCalcWidget::updateResultForNeutronSource()
 
 void DoseCalcWidget::updateResult()
 {
-  if( m_sourceType->id( m_sourceType->selectedButton() ) == 0 )
+  if( m_sourceType->id( m_sourceType->checkedButton() ) == 0 )
     updateResultForGammaSource();
   else
     updateResultForNeutronSource();
@@ -1830,13 +1826,13 @@ void DoseCalcWidget::updateStayTime()
     if( !m_stayTime->hasStyleClass( "DoseStayTime" ) )
       m_stayTime->addStyleClass( "DoseStayTime" );
     
-    WText *header = new WText( WString::tr("dcw-stay-time"), m_stayTime );
+    WText *header = m_stayTime->addNew<WText>( WString::tr("dcw-stay-time") );
     header->setInline( false );
     header->addStyleClass( "DoseStayTimeHeader" );
-    
-    WContainerWidget *tableDiv = new WContainerWidget( m_stayTime );
+
+    WContainerWidget *tableDiv = m_stayTime->addNew<WContainerWidget>();
     tableDiv->addStyleClass( "DoseStayTimeTable" );
-    WGridLayout *table = new WGridLayout( tableDiv );
+    WGridLayout *table = tableDiv->setLayout( std::make_unique<WGridLayout>() );
     table->setHorizontalSpacing( 0 );
     table->setVerticalSpacing( 0 );
     table->setContentsMargins( 0, 0, 0, 0 );
@@ -1901,22 +1897,19 @@ void DoseCalcWidget::updateStayTime()
       const string timestr = PhysicalUnitsLocalized::printToBestTimeUnits(time);
       
       //Add to the table here
-      WContainerWidget *labelDiv = new WContainerWidget();
+      const int row = table->rowCount();
+      WContainerWidget *labelDiv = table->addWidget( std::make_unique<WContainerWidget>(), row, 0 );
       labelDiv->addStyleClass( "DoseStayLabelDiv" );
-      WText *txt = new WText( dosestr, labelDiv );
+      WText *txt = labelDiv->addNew<WText>( WString::fromUTF8(dosestr) );
       txt->setInline( false );
       txt->addStyleClass( "DoseStayDose" );
-      
-      txt = new WText( descestr, labelDiv );
+
+      txt = labelDiv->addNew<WText>( descestr );
       txt->setInline( false );
       txt->addStyleClass( "DoseStayDesc" );
-      
-      const int row = table->rowCount();
-      table->addWidget( labelDiv, row, 0 );
-      
-      txt = new WText( timestr );
+
+      txt = table->addWidget( std::make_unique<WText>( WString::fromUTF8(timestr) ), row, 1 );
       txt->addStyleClass( "DoseStayTimeAnsw" );
-      table->addWidget( txt, row, 1 );
       
       ++nprinted;
     }//for( loop over ref_doses )

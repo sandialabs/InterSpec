@@ -28,10 +28,10 @@
 #include <string>
 #include <functional>
 
-#include <Wt/WString>
-#include <Wt/WMenuItem>
-#include <Wt/WContainerWidget>
-#include <Wt/WMessageResourceBundle>
+#include <Wt/WString.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WMessageResourceBundle.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -52,7 +52,7 @@ namespace DataBaseUtils{ class DbSession; }
 class SideMenuItem : public Wt::WMenuItem
 {
 public:
-  SideMenuItem( const Wt::WString &text, Wt::WWidget *contents );
+  SideMenuItem( const Wt::WString &text, std::unique_ptr<Wt::WWidget> contents );
   
 protected:
   virtual Wt::SignalBase& activateSignal();
@@ -129,7 +129,7 @@ protected:
   
   //Sample
   RowStretchTreeView                                  *m_tableSample;
-  Wt::WStandardItemModel                              *m_messageModelSample;
+  std::shared_ptr<Wt::WStandardItemModel> m_messageModelSample;
   
   InterSpec                                           *m_viewer;
 
@@ -178,9 +178,9 @@ private:
 
 
 template <typename Function>
-DeferredWidget<Function> *deferCreate( Function f )
+std::unique_ptr<DeferredWidget<Function>> deferCreate( Function f )
 {
-  return new DeferredWidget<Function>( f );
+  return std::make_unique<DeferredWidget<Function>>( f );
 }
 
 

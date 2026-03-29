@@ -31,7 +31,7 @@
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 class MaterialDB;
 class PopupDivMenu;
@@ -140,8 +140,7 @@ class MakeDrfSrcDef : public Wt::WContainerWidget
 public:
   MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
                  const boost::posix_time::ptime &measDate,
-                 Wt::WSuggestionPopup *materialSuggest,
-                 Wt::WContainerWidget *parent = nullptr );
+                 Wt::WSuggestionPopup *materialSuggest );
   
   virtual ~MakeDrfSrcDef();
   

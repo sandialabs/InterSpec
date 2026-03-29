@@ -25,10 +25,11 @@
 
 #include "InterSpec_config.h"
 
+#include <memory>
 #include <initializer_list>
 
-#include <Wt/WObject>
-#include <Wt/WMessageResourceBundle>
+#include <Wt/WObject.h>
+#include <Wt/WMessageResourceBundle.h>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecUser.h"
@@ -73,7 +74,7 @@ namespace HelpSystem
     HelpWindow(std::string preselect="");
     ~HelpWindow();
     void selectHelpToShow();
-    Wt::WTemplate *getContentToDisplay( const std::string &tag ) const;
+    std::unique_ptr<Wt::WTemplate> getContentToDisplay( const std::string &tag ) const;
     
     /** If there are not XML help files associated with a tag, but there are
         children to that tag, then the contents of all the (no-recursive)

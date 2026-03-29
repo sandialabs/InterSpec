@@ -31,7 +31,7 @@
 #include <memory>
 #include <utility>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 // Forward declarations
 class PeakModel;
@@ -111,7 +111,7 @@ public:
   static const char *to_str( const AddUncert val );
   
 public:
-  RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
+  RelActManualGui( InterSpec *viewer );
   
   void init();
 
@@ -220,7 +220,7 @@ protected:
 #else
   Wt::WPushButton *m_downloadHtmlReport;
 #endif
-  Wt::WResource *m_htmlResource;
+  std::shared_ptr<Wt::WResource> m_htmlResource;
   
   Wt::WContainerWidget *m_peakTableColumn;
   PeakModel *m_peakModel;

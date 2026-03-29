@@ -31,8 +31,8 @@
 #include <memory>
 #include <vector>
 
-#include <Wt/Dbo/Dbo>
-#include <Wt/WContainerWidget>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/WContainerWidget.h>
 
 //Without including InterSpecUser.h here, we get some weird issues with the
 //  DB optimistic versioning...
@@ -131,6 +131,7 @@ namespace Wt
   class WText;
   class WMenu;
   class WDialog;
+  class WCheckBox;
   class WMenuItem;
   class WTextArea;
   class WLineEdit;
@@ -168,7 +169,7 @@ class InterSpec : public Wt::WContainerWidget
   \****************************************************************************/
 
 public:
-  InterSpec( Wt::WContainerWidget *parent = 0 );
+  InterSpec();
 
   ~InterSpec() noexcept(true);
     
@@ -301,7 +302,7 @@ public:
   void setSpectrum( std::shared_ptr<SpecMeas> meas,
                     std::set<int> sample_numbers,
                     const SpecUtils::SpectrumType spec_type,
-                    const Wt::WFlags<SetSpectrumOptions> options = 0 );
+                    const Wt::WFlags<SetSpectrumOptions> options = {} );
 
   //reloadCurrentSpectrum(...): reloads the specified spectrum.  This function
   //  is useful when you change teh SpecMeas object (e.x. live or real time),
@@ -1016,7 +1017,7 @@ protected:
   //  doing their thing, so you should explicitly do this if necassarry, or call
   //  this function from within the main loop.
   void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
-                            std::vector<boost::function<void(void)> > workers );
+                            std::vector<std::function<void(void)> > workers );
   
 #if( USE_DETECTION_LIMIT_TOOL )
   void fitNewPeakNotInRoiFromRightClick();
@@ -1063,6 +1064,9 @@ protected:
   //detectorsToDisplayChanged(): a callback function for when the user selects a
   //  detector to be displayed or not.
   void detectorsToDisplayChanged();
+
+  /** Callback variant that receives the checkbox that was toggled. */
+  void detectorsToDisplayChangedForCb( Wt::WCheckBox *cb );
   
   
   /** Returns a vector of pairs that indicate the cumulative chart starting time of each interval, and
@@ -1423,7 +1427,10 @@ protected:
   //  changed to.  In every other function this variable will always be up to
   //  date when in tool tabs are shown.
   int m_currentToolsTab;
-  
+
+  /** Tracks when we are inside handleToolTabChanged() to guard against re-entrancy. */
+  bool m_handlingToolTabChange;
+
   //m_toolsTabs: will be null when not tool tabs are hidden, and non-null in
   //  when they are visible
   Wt::WTabWidget *m_toolsTabs;
@@ -1733,15 +1740,9 @@ protected:
 
   //Connections to the current foreground SpecMeas object that need to be
   //  connected and disconnected when changing spectrums.
-#ifdef WT_USE_BOOST_SIGNALS2
-  boost::signals2::connection m_detectorChangedConnection;
-  boost::signals2::connection m_detectorModifiedConnection;
-  boost::signals2::connection m_displayedSpectrumChanged;
-#else
-  boost::signals::connection m_detectorChangedConnection;
-  boost::signals::connection m_detectorModifiedConnection;
-  boost::signals::connection m_displayedSpectrumChanged;
-#endif
+  Wt::Signals::connection m_detectorChangedConnection;
+  Wt::Signals::connection m_detectorModifiedConnection;
+  Wt::Signals::connection m_displayedSpectrumChanged;
 
   //m_unNamedJSlots: consists of ptrs to JSlots we want to keep around, but
   //  dont care enough to make them member variables so we can be sure to delete
@@ -1770,7 +1771,7 @@ protected:
   Wt::Signal<std::shared_ptr<const ColorTheme>> m_colorThemeChanged;
   
   bool m_findingHintPeaks;
-  std::deque<boost::function<void()> > m_hintQueue;
+  std::deque<std::function<void()> > m_hintQueue;
   Wt::Signal<SpecUtils::SpectrumType> m_hintPeaksSet;
   
   Wt::Signal<std::shared_ptr<const ExternalRidResults>> m_externalRidResultsRecieved;

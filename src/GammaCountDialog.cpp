@@ -28,15 +28,15 @@
 #include <stdexcept>
 
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WImage>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WEnvironment>
-#include <Wt/WApplication>
-#include <Wt/WSelectionBox>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WImage.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WApplication.h>
+#include <Wt/WSelectionBox.h>
+#include <Wt/WContainerWidget.h>
 
 
 #include "SpecUtils/SpecFile.h"
@@ -55,7 +55,7 @@
 #include "InterSpec/NativeFloatSpinBox.h"
 
 #if( USE_QR_CODES )
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 
 #include "InterSpec/QrCode.h"
 #include "InterSpec/WarningWidget.h"
@@ -154,30 +154,30 @@ void GammaCountDialog::init()
   WContainerWidget *body = contents();
   body->addStyleClass( "GammaCountDialog" );
 
-  WText *text = new WText( WString::tr("gcd-summary"), body );
+  WText *text = body->addNew<WText>( WString::tr("gcd-summary") );
   text->setInline( true );
   text->setStyleClass( "line-below" );
-  
-  WContainerWidget *inputs = new WContainerWidget( body );
+
+  WContainerWidget *inputs = body->addNew<WContainerWidget>();
   inputs->addStyleClass( "inputs" );
 
-  WLabel *label = new WLabel( WString::tr("gcd-lower-energy-label"), inputs );
+  WLabel *label = inputs->addNew<WLabel>( WString::tr("gcd-lower-energy-label") );
   label->addStyleClass( "GridFirstRow GridFirstCol EnergyLabel" );
-  m_lowerEnergy = new NativeFloatSpinBox( inputs );
+  m_lowerEnergy = inputs->addNew<NativeFloatSpinBox>();
   m_lowerEnergy->addStyleClass( "GridFirstRow GridSecondCol" );
   m_lowerEnergy->setSpinnerHidden();
   label->setBuddy( m_lowerEnergy );
-  label = new WLabel( "keV", inputs );
+  label = inputs->addNew<WLabel>( "keV" );
   label->addStyleClass( "GridFirstRow GridThirdCol GridJustifyStart" );
   m_lowerEnergy->setRange( xlow, xhigh );
-  
-  label = new WLabel( WString::tr("gcd-upper-energy-label"), inputs );
-  label->addStyleClass( "GridSecondRow GridFirstCol EnergyLabel", inputs );
-  m_upperEnergy = new NativeFloatSpinBox( inputs );
+
+  label = inputs->addNew<WLabel>( WString::tr("gcd-upper-energy-label") );
+  label->addStyleClass( "GridSecondRow GridFirstCol EnergyLabel" );
+  m_upperEnergy = inputs->addNew<NativeFloatSpinBox>();
   label->setBuddy( m_upperEnergy );
   m_upperEnergy->addStyleClass( "GridSecondRow GridSecondCol" );
   m_upperEnergy->setSpinnerHidden();
-  label = new WLabel( "keV", inputs );
+  label = inputs->addNew<WLabel>( "keV" );
   label->addStyleClass( "GridSecondRow GridThirdCol GridJustifyStart" );
   m_upperEnergy->setRange( xlow, xhigh );
   
@@ -198,7 +198,7 @@ void GammaCountDialog::init()
       key_sequence = WString::tr("gcd-shift-option-drag"); //Apple
     }
     
-    text = new WText( WString::tr("gcd-select-shortcut").arg(key_sequence), body);
+    text = body->addNew<WText>( WString::tr("gcd-select-shortcut").arg(key_sequence) );
     text->setInline( false );
     text->setStyleClass( "line-below shortcut-info" );
   }//if( !mobile )
@@ -212,39 +212,38 @@ void GammaCountDialog::init()
 //    m_upperEnergy->setNativeControl(true); //mobile should not show spinner
 //  } //(isMobile())
   
-  WContainerWidget *answers = new WContainerWidget( body );
+  WContainerWidget *answers = body->addNew<WContainerWidget>();
   answers->addStyleClass( "answers" );
-  
-  label = new WLabel( WString::tr("gcd-foreground-counts-label"), answers );
+
+  label = answers->addNew<WLabel>( WString::tr("gcd-foreground-counts-label") );
   label->addStyleClass( "GridFirstRow GridFirstCol" );
-  m_primaryGammaCount = new WText( answers );
+  m_primaryGammaCount = answers->addNew<WText>();
   m_primaryGammaCount->addStyleClass( "GridFirstRow GridSecondCol" );
-  
-  label = new WLabel( WString::tr("gcd-secondary-counts-label"), answers );
+
+  label = answers->addNew<WLabel>( WString::tr("gcd-secondary-counts-label") );
   label->addStyleClass( "GridSecondRow GridFirstCol" );
-  m_secondaryGammaCount = new WText( answers );
+  m_secondaryGammaCount = answers->addNew<WText>();
   m_secondaryGammaCount->addStyleClass( "GridSecondRow GridSecondCol" );
-  
-  label = new WLabel( WString::tr("gcd-background-counts-label"), answers );
+
+  label = answers->addNew<WLabel>( WString::tr("gcd-background-counts-label") );
   label->addStyleClass( "GridThirdRow GridFirstCol" );
-  m_backgroundGammaCount = new WText( answers );
+  m_backgroundGammaCount = answers->addNew<WText>();
   m_backgroundGammaCount->addStyleClass( "GridThirdRow GridSecondCol" );
-  
-  
-  m_sigmaAboveBackground = new WText( "", XHTMLText, answers );
+
+  m_sigmaAboveBackground = answers->addNew<WText>( "", Wt::TextFormat::XHTML );
   m_sigmaAboveBackground->addStyleClass( "line-above GridFourthRow GridFirstCol GridJustifyCenter GridSpanTwoCol nsigma" );
-  
-  m_nsigmaHelp = new WImage( answers );
+
+  m_nsigmaHelp = answers->addNew<WImage>();
   m_nsigmaHelp->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
   m_nsigmaHelp->setStyleClass("Wt-icon GridFourthRow GridThirdCol GridJustifyEnd");
-  m_nsigmaHelp->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+  m_nsigmaHelp->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
   m_nsigmaHelp->setHidden( true );
-  
-  HelpSystem::attachToolTipOn( m_nsigmaHelp, WString::tr("gcd-tt-n-sigma"), true, 
+
+  HelpSystem::attachToolTipOn( m_nsigmaHelp, WString::tr("gcd-tt-n-sigma"), true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::InstantAlways );
-  
-  m_liveTimeScaleNote = new WText( "", XHTMLText, answers );
+
+  m_liveTimeScaleNote = answers->addNew<WText>( "", Wt::TextFormat::XHTML );
   m_liveTimeScaleNote->addStyleClass( "GridFifthRow GridFirstCol GridJustifyCenter GridSpanThreeCol line-above LiveTimeScaleNote" );  //""
   m_liveTimeScaleNote->hide();
   
@@ -252,12 +251,16 @@ void GammaCountDialog::init()
   m_lowerEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   m_upperEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   m_specViewer->displayedSpectrumChanged().connect(
-                boost::bind( &GammaCountDialog::handleSpectrumChange, this,
-                            boost::placeholders::_1, boost::placeholders::_2,
-                            boost::placeholders::_3, boost::placeholders::_4) );
+    [this]( SpecUtils::SpectrumType type,
+            const std::shared_ptr<SpecMeas> &meas,
+            const std::set<int> &samples,
+            const std::vector<std::string> &dets ){
+      handleSpectrumChange( type, meas, samples, dets );
+    }
+  );
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = footer()->addNew<WPushButton>();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -287,7 +290,7 @@ void GammaCountDialog::init()
 
 void GammaCountDialog::emitFinished()
 {
-  finished().emit( WDialog::Rejected );
+  finished().emit( Wt::DialogCode::Rejected );
 }
 
 void GammaCountDialog::setEnergyRange( double lowEnergy, double highEnergy )

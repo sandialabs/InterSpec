@@ -27,8 +27,8 @@
 
 #include <string>
 
-#include <Wt/WSignal>
-#include <Wt/WContainerWidget>
+#include <Wt/WSignal.h>
+#include <Wt/WContainerWidget.h>
 
 //Forward declerations
 namespace Wt
@@ -44,7 +44,7 @@ class NativeFloatSpinBox;
 class RelActAutoGuiFreePeak : public Wt::WContainerWidget
 {
 public:
-  RelActAutoGuiFreePeak( Wt::WContainerWidget *parent = nullptr );
+  RelActAutoGuiFreePeak();
   float energy() const;
   void setEnergy( const float energy );
   bool fwhmConstrained() const;

@@ -46,9 +46,9 @@
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
 
-#include "Wt/WDateTime"
-#include "Wt/WApplication"
-#include "Wt/WLocalDateTime"
+#include <Wt/WDateTime.h>
+#include <Wt/WApplication.h>
+#include <Wt/WLocalDateTime.h>
 
 #ifdef _MSC_VER
 #undef isinf
@@ -16424,7 +16424,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       try
       {
         const vector<shared_ptr<const PeakDef>> lm_results
-          = PeakFitLM::fit_peaks_in_roi_LM( lm_peaks, solution.m_spectrum, cost_functor->m_det_type, Wt::WFlags<PeakFitLM::PeakFitLMOptions>(0) );
+          = PeakFitLM::fit_peaks_in_roi_LM( lm_peaks, solution.m_spectrum, cost_functor->m_det_type, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
 
         // Extract amplitudes from fitting peaks (first effective_means.size() results)
         // Note: fit_peaks_in_roi_LM may reorder peaks by mean; match by closest mean.

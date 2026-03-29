@@ -28,12 +28,12 @@
 #include <vector>
 #include <memory>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
-#include <Wt/WString>
-#include <Wt/WModelIndex>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WString.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/ReactionGamma.h"
@@ -101,7 +101,7 @@ public:
   };//struct IsotopeMatch
   
 public:
-  IsotopeSearchByEnergyModel( Wt::WObject *parent = 0 );
+  IsotopeSearchByEnergyModel();
   virtual ~IsotopeSearchByEnergyModel();
   
   void clearResults();
@@ -130,7 +130,7 @@ public:
     Column sortColumn;
     Wt::SortOrder sortOrder;
     std::shared_ptr<void> undoSentry;
-    boost::function< void(void) > searchdoneCallback;
+    std::function< void(void) > searchdoneCallback;
   };//struct SearchWorkingSpace
   
   void updateSearchResults( std::shared_ptr<SearchWorkingSpace> workingspace );
@@ -142,7 +142,7 @@ public:
                                 const std::vector<const SandiaDecay::Nuclide *> &nuclides,
                                 const std::vector<const ReactionGamma::Reaction *> &reactions,
                                 const std::string appid,
-                                boost::function< void(void) > updatefcn );
+                                std::function< void(void) > updatefcn );
   
   
   virtual int columnCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
@@ -150,8 +150,8 @@ public:
   virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   
   virtual Wt::WModelIndex parent( const Wt::WModelIndex &index ) const;
-  virtual boost::any data( const Wt::WModelIndex &index,
-                          int role = Wt::DisplayRole) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
+                          Wt::ItemDataRole role = Wt::ItemDataRole::Display) const;
   
   //nuclide(...): returns the nuclide IF it is a nuclide defined row, otherwise
   //  NULL
@@ -167,14 +167,14 @@ public:
   
   double assumedAge( const Wt::WModelIndex &index ) const;
   
-  virtual boost::any headerData( int section,
-                                Wt::Orientation orientation = Wt::Horizontal,
-                                int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any headerData( int section,
+                                Wt::Orientation orientation = Wt::Orientation::Horizontal,
+                                Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   
   virtual Wt::WModelIndex index( int row, int column,
                                 const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   
-  virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
+  virtual void sort( int column, Wt::SortOrder order = Wt::SortOrder::Ascending );
   
   virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const;
   

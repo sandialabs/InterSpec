@@ -30,21 +30,21 @@
 #include <memory>
 #include <iostream>
 
-#include <Wt/WMenu>
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WAnchor>
-#include <Wt/WResource>
-#include <Wt/WCheckBox>
-#include <Wt/WFileUpload>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WItemDelegate>
-#include <Wt/WStackedWidget>
-#include <Wt/WContainerWidget>
+#include <Wt/WMenu.h>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WResource.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WFileUpload.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WItemDelegate.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -463,7 +463,7 @@ class CALpDownloadResource : public Wt::WResource
   
 public:
   CALpDownloadResource( EnergyCalTool *tool, InterSpec *viewer, WObject* parent = nullptr )
-  : WResource( parent ), m_app( WApplication::instance() ), m_interspec( viewer ), m_tool( tool )
+  : WResource(), m_app( WApplication::instance() ), m_interspec( viewer ), m_tool( tool )
   {
     assert( m_app );
     assert( m_tool );
@@ -508,7 +508,7 @@ public:
           *it = ' ';
       }
       
-      suggestFileName( filename, WResource::Attachment );
+      suggestFileName( filename, ContentDisposition::Attachment );
       response.setMimeType( "application/octet-stream" );
       
       // First loop over visible measurements, adding calibrations for each new detector name,
@@ -606,23 +606,17 @@ public:
 
 
 DevPair::DevPair( Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
-    //m_energy( new WDoubleSpinBox() ),
-    //m_offset( new WDoubleSpinBox() ),
-    m_energy( new NativeFloatSpinBox() ),
-    m_offset( new NativeFloatSpinBox() ),
-    m_delete( new WContainerWidget() )
+  : WContainerWidget()
 {
-  WGridLayout* layout = new WGridLayout();
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins(0, 0, 0, 0);
   layout->setVerticalSpacing( 0 );
-  
-  setLayout(layout);
+
   setStyleClass( "DevPair" );
-  
-  layout->addWidget(m_energy,0,0);
-  layout->addWidget(m_offset,0,1);
-  layout->addWidget(m_delete,0,2);
+
+  m_energy = layout->addWidget( std::make_unique<NativeFloatSpinBox>(), 0, 0 );
+  m_offset = layout->addWidget( std::make_unique<NativeFloatSpinBox>(), 0, 1 );
+  m_delete = layout->addWidget( std::make_unique<WContainerWidget>(), 0, 2 );
   layout->setColumnStretch(0, 1);
   layout->setColumnStretch(1, 1);
   layout->setColumnStretch(2, 0);
@@ -675,28 +669,27 @@ void DevPair::visuallyIndicateChanged()
 
 
 DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
-    m_pairs( NULL )
+  : WContainerWidget()
     //, m_msg( nullptr )
 {
   addStyleClass( "DevPairDisplay" );
-  WLabel *title = new WLabel( WString::tr("ect-deviation-pairs"), this );
+  WLabel *title = addNew<WLabel>( WString::tr("ect-deviation-pairs") );
   title->setStyleClass( "Wt-itemview Wt-header Wt-label DevPairTitle" );
   title->setInline( false );
 
-  m_pairs = new WContainerWidget(this);
+  m_pairs = addNew<WContainerWidget>();
   m_pairs->setStyleClass( "DevPairsContainer" );
-          
-  //m_msg = new WText( "&nbsp;", this );
+
+  //m_msg = addNew<WText>( "&nbsp;" );
   //m_msg->addStyleClass( "DevPairMsg" );
   //m_msg->setHidden( true );
-  
-  auto footer = new WContainerWidget(this);
+
+  WContainerWidget *footer = addNew<WContainerWidget>();
   footer->setStyleClass( "DevPairsFooter" );
-  
-  auto addBtn = new WContainerWidget( footer );
+
+  WContainerWidget *addBtn = footer->addNew<WContainerWidget>();
   addBtn->addStyleClass( "Wt-icon AddDevPair" );
-  addBtn->clicked().connect( boost::bind(&DeviationPairDisplay::newDevPair, this, true) );
+  addBtn->clicked().connect( [this](){ newDevPair( true ); } );
   addBtn->setToolTip( "Add another deviation pair" );
 }//DeviationPairDisplay constructor
 
@@ -761,13 +754,25 @@ void DeviationPairDisplay::sortDisplayOrder( const bool indicateVisually )
   if( !order_changed )
     return;
           
+  vector<std::unique_ptr<WWidget>> removed;
   for( size_t i = 0; i < displays.size(); ++i )
-    m_pairs->removeWidget( displays[i] );
-    
+    removed.push_back( m_pairs->removeWidget( displays[i] ) );
+
   for( size_t i = 0; i < displays.size(); ++i )
   {
     DevPair *p = displays[ sort_indices[i] ];
-    m_pairs->addWidget( p );
+    // find which removed entry corresponds to p
+    std::unique_ptr<WWidget> widget;
+    for( auto &r : removed )
+    {
+      if( r.get() == p )
+      {
+        widget = std::move(r);
+        break;
+      }
+    }
+    assert( widget );
+    m_pairs->addWidget( std::move(widget) );
     if( indicateVisually && (i != sort_indices[i]) )
       p->visuallyIndicateChanged();
   }
@@ -830,7 +835,7 @@ void DeviationPairDisplay::removeDevPair( DevPair *devpair )
     auto tt = dynamic_cast<DevPair *>( t ); //dynamic_cast prob not necessary
     if( devpair == tt )
     {
-      delete devpair;
+      m_pairs->removeWidget( devpair );
       sortDisplayOrder(false);
       emitChanged( UserFieldChanged::RemovedDeviationPair );
       return;
@@ -855,12 +860,12 @@ void DeviationPairDisplay::setValidValues()
 DevPair *DeviationPairDisplay::newDevPair( const bool emitChangedNow )
 {
   DevPair *dev = new DevPair( m_pairs );
-  dev->m_delete->clicked().connect( boost::bind( &DeviationPairDisplay::removeDevPair, this, dev ) );
+  dev->m_delete->clicked().connect( [this, dev](){ removeDevPair( dev ); } );
   //dev->m_energy->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
   //dev->m_offset->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
-  dev->m_energy->valueChanged().connect( boost::bind( &DeviationPairDisplay::emitChanged, this, UserFieldChanged::EnergyChanged ) );
-  dev->m_offset->valueChanged().connect( boost::bind( &DeviationPairDisplay::emitChanged, this, UserFieldChanged::OffsetChanged ) );
-  dev->m_energy->blurred().connect( boost::bind(&DeviationPairDisplay::sortDisplayOrder, this, true) );
+  dev->m_energy->valueChanged().connect( [this]( double ){ emitChanged( UserFieldChanged::EnergyChanged ); } );
+  dev->m_offset->valueChanged().connect( [this]( double ){ emitChanged( UserFieldChanged::OffsetChanged ); } );
+  dev->m_energy->blurred().connect( [this](){ sortDisplayOrder( true ); } );
   
   if( emitChangedNow )
     emitChanged( UserFieldChanged::AddedDeviationPair );
@@ -883,29 +888,29 @@ public:
   NativeFloatSpinBox *m_value;
   
   CoefDisplay( const size_t order, WContainerWidget *parent = nullptr )
-  : WContainerWidget( parent ),
+  : WContainerWidget(),
     m_order( order ),
     m_label( nullptr ),
     m_fit( nullptr ),
     m_value( nullptr )
   {
     addStyleClass( "CoefDisplay" );
-    
+
     switch( order )
     {
-      case 0:  m_label = new WLabel( WString::tr("ect-offset-label"), this );         break;
-      case 1:  m_label = new WLabel( WString::tr("ect-linear-label"), this );         break;
-      case 2:  m_label = new WLabel( WString::tr("ect-quad-label"), this );           break;
-      case 3:  m_label = new WLabel( WString::tr("ect-cubic-label"), this );          break;
-      default: m_label = new WLabel( WString::tr("ect-nth-label").arg(static_cast<int>(order)), this ); break;
+      case 0:  m_label = addNew<WLabel>( WString::tr("ect-offset-label") );         break;
+      case 1:  m_label = addNew<WLabel>( WString::tr("ect-linear-label") );         break;
+      case 2:  m_label = addNew<WLabel>( WString::tr("ect-quad-label") );           break;
+      case 3:  m_label = addNew<WLabel>( WString::tr("ect-cubic-label") );          break;
+      default: m_label = addNew<WLabel>( WString::tr("ect-nth-label").arg(static_cast<int>(order)) ); break;
     }//switch( order )
-    
+
     m_label->addStyleClass( "CoefLabel" );
-    
-    m_value = new NativeFloatSpinBox( this );
+
+    m_value = addNew<NativeFloatSpinBox>();
     m_value->setSpinnerHidden( true );
-    
-    m_fit = new WCheckBox( "Fit", this );
+
+    m_fit = addNew<WCheckBox>( "Fit" );
     m_fit->addStyleClass( "CoefFit CbNoLineBreak" );
   }//CoefDisplay
 };//class CoefDisplay
@@ -946,7 +951,7 @@ public:
              const std::string &detname,
              const bool isWideLayout,
              WContainerWidget *parent = nullptr )
-  : WContainerWidget( parent ),
+  : WContainerWidget(),
    m_tool( tool ),
    m_cal_type( type ),
    m_det_name( detname ),
@@ -966,108 +971,109 @@ public:
 #endif
   {
     addStyleClass( "CalDisplay" );
-    
-    WGridLayout *layout = new WGridLayout( this );
+
+    WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
     layout->setContentsMargins( 0, 0, 0, 0 );
     layout->setVerticalSpacing( 0 );
     layout->setHorizontalSpacing( 0 );
-    
-    WContainerWidget *coefDiv = new WContainerWidget();
+
+    auto coefDivOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *coefDiv = coefDivOwner.get();
     coefDiv->addStyleClass( "CoefCol" );
-    layout->addWidget( coefDiv, 0, 0 );
-    
-    m_type = new WText( "&nbsp;", coefDiv );
+    layout->addWidget( std::move(coefDivOwner), 0, 0 );
+
+    m_type = coefDiv->addNew<WText>( "&nbsp;" );
     m_type->setInline( false );
     m_type->addStyleClass( "Wt-itemview Wt-header Wt-label CalType" );
-    
-    m_coefficients = new WContainerWidget( coefDiv );
+
+    m_coefficients = coefDiv->addNew<WContainerWidget>();
     m_coefficients->addStyleClass( "CoefContent" );
     
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
-    WContainerWidget *btndiv = new WContainerWidget();
+    auto btndivOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *btndiv = btndivOwner.get();
     btndiv->addStyleClass( "CalCoefsBtnDiv" );
-  
+
 #if( IMP_CALp_BTN_NEAR_COEFS )
-    
-    WResource *csv = m_model->peakCsvResource();
 #if( BUILD_AS_OSX_APP || IOS )
-    m_downloadCALp = new WAnchor( WLink(m_tool->calpResources()), btndiv );
-    m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
+    m_downloadCALp = btndiv->addNew<WAnchor>( WLink(m_tool->calpResources()) );
+    m_downloadCALp->setTarget( Wt::LinkTarget::NewWindow );
     m_downloadCALp->setStyleClass( "LinkBtn DownloadLink" );
 #else
-    m_downloadCALp = new WPushButton( btndiv );
+    m_downloadCALp = btndiv->addNew<WPushButton>();
     m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
-    m_downloadCALp->setLink( WLink( m_tool->calpResources() ) );
-    m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
+    {
+      WLink calLink( m_tool->calpResources() );
+      calLink.setTarget( Wt::LinkTarget::NewWindow );
+      m_downloadCALp->setLink( calLink );
+    }
     m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
-    
+
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
     m_downloadCALp->clicked().connect( std::bind([this](){
-      android_download_workaround(m_tool->calpResources(), "energy_cal.CALp");
+      android_download_workaround(m_tool->calpResources().get(), "energy_cal.CALp");
     }) );
 #endif //ANDROID
-    
+
 #endif //#if( BUILD_AS_OSX_APP || IOS ) / #else
 
     m_downloadCALp->setText( "CALp" );
-    
-    m_uploadCALp = new WPushButton( btndiv );
+
+    m_uploadCALp = btndiv->addNew<WPushButton>();
     m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
     m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
     m_uploadCALp->clicked().connect( m_tool, &EnergyCalTool::handleRequestToUploadCALp );
 #endif //#if( IMP_CALp_BTN_NEAR_COEFS )
-    
-    WContainerWidget *spacer = new WContainerWidget( btndiv );
+
+    WContainerWidget *spacer = btndiv->addNew<WContainerWidget>();
     spacer->addStyleClass( "Spacer" );
-    
+
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-    m_fitCoeffs = new WPushButton( WString::tr("ect-fit-coeff-btn"), btndiv );
+    m_fitCoeffs = btndiv->addNew<WPushButton>( WString::tr("ect-fit-coeff-btn") );
     m_fitCoeffs->addStyleClass( "CalCoefFitBtn" );
 #endif
-    
-    layout->addWidget( btndiv, 1, 0 );
+
+    layout->addWidget( std::move(btndivOwner), 1, 0 );
     layout->setRowStretch( 0, 1 );
 #endif //#if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
-    
-    m_devPairs = new DeviationPairDisplay();
-    
-#if( HIDE_EMPTY_DEV_PAIRS )
-    //For files with multiple detectors, the "Add dev. pairs" buttons doesnt show up right
-    // for the detectors not currently showing - I guess should toggle dev pairs for all detectors.
-    m_devPairs->setHidden( true );
-    m_addPairs = new WPushButton( "Add dev. pairs" );
-    m_addPairs->addStyleClass( "LinkBtn" );
-    //m_addPairs->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
-    m_addPairs->setHidden( true );
-    m_addPairs->clicked().connect( this, &CalDisplay::showDevPairs );
-#endif
     
     if( isWideLayout )
     {
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
-      layout->addWidget( m_devPairs, 0, 1, 2, 1 );
+      m_devPairs = layout->addWidget( std::make_unique<DeviationPairDisplay>(), 0, 1, 2, 1 );
 #else
-      layout->addWidget( m_devPairs, 0, 1 );
+      m_devPairs = layout->addWidget( std::make_unique<DeviationPairDisplay>(), 0, 1 );
 #endif
-      
+
 #if( HIDE_EMPTY_DEV_PAIRS )
-      layout->addWidget( m_addPairs, 1, 0, AlignmentFlag::AlignRight );
+      m_devPairs->setHidden( true );
+      m_addPairs = layout->addWidget( std::make_unique<WPushButton>( "Add dev. pairs" ), 1, 0,
+                                      AlignmentFlag::Right );
+      m_addPairs->addStyleClass( "LinkBtn" );
+      m_addPairs->setHidden( true );
+      m_addPairs->clicked().connect( this, &CalDisplay::showDevPairs );
       layout->setRowStretch( 0, 1 );
 #endif
     }else
     {
 #if( HIDE_EMPTY_DEV_PAIRS )
-      layout->addWidget( m_addPairs, layout->rowCount(), 0, AlignmentFlag::AlignCenter );
-      layout->addWidget( m_devPairs, layout->rowCount(), 0 );
+      m_addPairs = layout->addWidget( std::make_unique<WPushButton>( "Add dev. pairs" ),
+                                      layout->rowCount(), 0, AlignmentFlag::Center );
+      m_addPairs->addStyleClass( "LinkBtn" );
+      m_addPairs->setHidden( true );
+      m_addPairs->clicked().connect( this, &CalDisplay::showDevPairs );
+      m_devPairs = layout->addWidget( std::make_unique<DeviationPairDisplay>(), layout->rowCount(), 0 );
+      m_devPairs->setHidden( true );
 #else
-      layout->addWidget( m_devPairs, layout->rowCount(), 0 );
+      m_devPairs = layout->addWidget( std::make_unique<DeviationPairDisplay>(), layout->rowCount(), 0 );
 #endif
       m_devPairs->setHeight( 100 );
     }
     
-    m_devPairs->changed().connect( boost::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this,
-                                               boost::placeholders::_1 ) );
+    m_devPairs->changed().connect( [tool = m_tool, calDisp = this]( int a1 ){
+      tool->userChangedDeviationPair( calDisp, a1 );
+    } );
   }//CalDisplay( constructor )
   
   SpecUtils::SpectrumType spectrumType() const { return m_cal_type; }
@@ -1101,7 +1107,7 @@ public:
   void showDevPairs()
   {
     m_addPairs->setHidden( true );
-    m_devPairs->setHidden( false, WAnimation(WAnimation::Fade, WAnimation::Linear, 200) );
+    m_devPairs->setHidden( false, WAnimation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200) );
   }
 #endif
   
@@ -1245,7 +1251,7 @@ public:
         {
           if( auto p = dynamic_cast<WContainerWidget *>( m_type->parent() ) )
           {
-            m_convertMsg = new WText( WString::tr("ect-convert-to-poly-msg"), p );
+            m_convertMsg = p->addNew<WText>( WString::tr("ect-convert-to-poly-msg") );
             m_convertMsg->addStyleClass( "ConvertToPolyMsg" );
             m_convertMsg->setInline( false );
           }
@@ -1266,7 +1272,8 @@ public:
 #endif
         if( m_convertMsg )
         {
-          delete m_convertMsg;
+          if( auto pp = dynamic_cast<WContainerWidget *>( m_convertMsg->parent() ) )
+            pp->removeWidget( m_convertMsg );
           m_convertMsg = nullptr;
         }
         break;
@@ -1280,7 +1287,7 @@ public:
     //  pairs; this is because if you click to add deviation pairs, dont add any, then adjust the
     //  the gain, the deviation pair display getting hidden, causing a layout update, is really
     //  jarring.
-    const auto anim = hadCal ? WAnimation(WAnimation::Fade, WAnimation::Linear, 200) : WAnimation{};
+    const auto anim = hadCal ? WAnimation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200) : WAnimation{};
     if( m_devPairs->isHidden() && !devpairs.empty() )
       m_devPairs->setHidden( false, anim );
     m_addPairs->setHidden( !m_devPairs->isHidden(), anim );
@@ -1304,7 +1311,6 @@ public:
         if( coefnum >= num_coef_disp )
         {
           m_coefficients->removeWidget( existing[i] );
-          delete existing[i];
         }else
         {
           assert( coefnum < coef_disps.size() );
@@ -1333,7 +1339,9 @@ public:
                than everything can keep up, and just generally poor working), so for now I have
                disabled these spinners via #NativeFloatSpinBox::setSpinnerHidden()
        */
-      disp->m_value->valueChanged().connect( boost::bind(&EnergyCalTool::userChangedCoefficient, m_tool, coefnum, this) );
+      disp->m_value->valueChanged().connect( [tool = m_tool, coefnum, calDisp = this]( double ){
+        tool->userChangedCoefficient( coefnum, calDisp );
+      } );
     }
     
     
@@ -1400,11 +1408,11 @@ const size_t CalDisplay::sm_min_coef_display = 4;
 }//namespace
 
 
-EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContainerWidget *parent )
-: WContainerWidget( parent ),
+EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel )
+: WContainerWidget(),
   m_interspec( viewer ),
   m_peakModel( peakModel ),
-  m_calpResource( new EnergyCalImp::CALpDownloadResource(this, viewer, this) ),
+  m_calpResource(),
   m_tallLayoutContent( nullptr ),
   m_peakTable( nullptr ),
   m_specTypeMenu( nullptr ),
@@ -1435,12 +1443,14 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, WContaine
   m_addActionWindow( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/EnergyCalTool.css" );
-  
+
   assert( viewer );
   viewer->useMessageResourceBundle( "EnergyCalTool" );
-    
+
+  m_calpResource = std::make_shared<EnergyCalImp::CALpDownloadResource>( this, viewer );
+
   addStyleClass( "EnergyCalTool" );
-  
+
   initWidgets( EnergyCalTool::LayoutType::Wide );
 }
 
@@ -1464,18 +1474,18 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   {
     removeStyleClass( "TallEnergyCal" );
     if( m_tallLayoutContent )
-      delete m_tallLayoutContent;
-    m_tallLayoutContent = nullptr;
-    
-    m_layout = new WGridLayout( this );
+    {
+      auto p = removeWidget( m_tallLayoutContent );
+      m_tallLayoutContent = nullptr;
+    }
+
+    m_layout = setLayout( std::make_unique<WGridLayout>() );
   }else
   {
     addStyleClass( "TallEnergyCal" );
-    if( m_layout )
-      delete m_layout;
-    
-    m_tallLayoutContent = new WContainerWidget( this );
-    m_layout = new WGridLayout( m_tallLayoutContent );
+    // setLayout below will replace/delete existing layout
+    m_tallLayoutContent = addNew<WContainerWidget>();
+    m_layout = m_tallLayoutContent->setLayout( std::make_unique<WGridLayout>() );
   }//if( wide ) / else
   
   
@@ -1511,39 +1521,45 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_layout->setVerticalSpacing( 0 );
   m_layout->setHorizontalSpacing( 0 );
   
-  m_noCalTxt = new WText( WString::tr("ect-no-spec") );
-  m_noCalTxt->addStyleClass( "NoCalContentTxt" );
-  if( wide )
-    m_layout->addWidget( m_noCalTxt, 0, 0, AlignmentFlag::AlignCenter | AlignmentFlag::AlignMiddle );
-  else
-    m_layout->addWidget( m_noCalTxt, 0, 0, 1, 2, AlignmentFlag::AlignCenter | AlignmentFlag::AlignMiddle );
-  
+  {
+    auto noCalOwner = std::make_unique<WText>( WString::tr("ect-no-spec") );
+    m_noCalTxt = noCalOwner.get();
+    m_noCalTxt->addStyleClass( "NoCalContentTxt" );
+    if( wide )
+      m_layout->addWidget( std::move(noCalOwner), 0, 0, AlignmentFlag::Center | AlignmentFlag::Middle );
+    else
+      m_layout->addWidget( std::move(noCalOwner), 0, 0, 1, 2, AlignmentFlag::Center | AlignmentFlag::Middle );
+  }
+
   //Create the more actions column...
-  m_moreActionsColumn = new WContainerWidget();
-  m_moreActionsColumn->addStyleClass( "ToolTabTitledColumn MoreActionCol" );
-  if( wide )
-    m_layout->addWidget( m_moreActionsColumn, 0, 1 );
-  else
-    m_layout->addWidget( m_moreActionsColumn, 3, 0 );
-  
-  WGridLayout *collayout = new WGridLayout( m_moreActionsColumn );
+  {
+    auto col = std::make_unique<WContainerWidget>();
+    m_moreActionsColumn = col.get();
+    m_moreActionsColumn->addStyleClass( "ToolTabTitledColumn MoreActionCol" );
+    if( wide )
+      m_layout->addWidget( std::move(col), 0, 1 );
+    else
+      m_layout->addWidget( std::move(col), 3, 0 );
+  }
+
+  WGridLayout *collayout = m_moreActionsColumn->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
-  
-  WText *header = new WText( WString::tr("ect-more-act") );
-  header->addStyleClass( "ToolTabColumnTitle" );
-  collayout->addWidget( header, 0, 0 );
-  
+
+  {
+    WText *header = collayout->addWidget( std::make_unique<WText>( WString::tr("ect-more-act") ), 0, 0 );
+    header->addStyleClass( "ToolTabColumnTitle" );
+  }
+
   //We will put the apply-to list inside a div so we can style consistently with other rows
   // (a <ul> element doesnt accept same css as <div>, apparently).
-  WContainerWidget *moreActionsDiv = new WContainerWidget();
+  WContainerWidget *moreActionsDiv = collayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   moreActionsDiv->addStyleClass( "ToolTabTitledColumnContent MoreActionsMenuContent" );
-  collayout->addWidget( moreActionsDiv, 1, 0 );
   collayout->setRowStretch( 1, 1 );
-  
-  WContainerWidget *moreActionsList = new WContainerWidget( moreActionsDiv );
+
+  WContainerWidget *moreActionsList = moreActionsDiv->addNew<WContainerWidget>();
   moreActionsList->addStyleClass( "MoreActionsMenuList" );
   moreActionsList->setList( true );
   
@@ -1590,45 +1606,47 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
         break;
     }//switch( index )
     
-    WContainerWidget *holder = new WContainerWidget( moreActionsList );
-    m_moreActions[static_cast<int>(index)] = new WAnchor( WLink(), WString::tr(label), holder );
-    m_moreActions[static_cast<int>(index)]->clicked().connect( boost::bind(&EnergyCalTool::moreActionBtnClicked, this, index) );
+    WContainerWidget *holder = moreActionsList->addNew<WContainerWidget>();
+    m_moreActions[static_cast<int>(index)] = holder->addNew<WAnchor>( WLink(), WString::tr(label) );
+    m_moreActions[static_cast<int>(index)]->clicked().connect( [this, index](){ moreActionBtnClicked( index ); } );
     
     assert( tooltip );
     if( tooltip )
       HelpSystem::attachToolTipOn( holder, WString::tr(tooltip), showToolTips );
   }//for( loop over more actions )
   
-  WContainerWidget *btndiv = new WContainerWidget();
+  WContainerWidget *btndiv = collayout->addWidget( std::make_unique<WContainerWidget>(), 2, 0 );
   btndiv->addStyleClass( "BtmBtnDiv" );
-  collayout->addWidget( btndiv, 2, 0 );
-  
-  auto helpBtn = new WContainerWidget( btndiv );
-  helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-  helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "energy-calibration" ) );
 
-  
+  WContainerWidget *helpBtn = btndiv->addNew<WContainerWidget>();
+  helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
+  helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "energy-calibration" ); } );
+
+
 #if( !IMP_CALp_BTN_NEAR_COEFS )
-  m_uploadCALp = new WPushButton( btndiv );
+  m_uploadCALp = btndiv->addNew<WPushButton>();
   m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
   m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
   m_uploadCALp->clicked().connect( this, &EnergyCalTool::handleRequestToUploadCALp );
-  
+
 #if( BUILD_AS_OSX_APP || IOS )
-  m_downloadCALp = new WAnchor( WLink(m_calpResource), btndiv );
-  m_downloadCALp->setTarget( AnchorTarget::TargetNewWindow );
+  m_downloadCALp = btndiv->addNew<WAnchor>( WLink(m_calpResource) );
+  m_downloadCALp->setTarget( Wt::LinkTarget::NewWindow );
   m_downloadCALp->setStyleClass( "LinkBtn DownloadLink CALp" );
 #else
-  m_downloadCALp = new WPushButton( btndiv );
+  m_downloadCALp = btndiv->addNew<WPushButton>();
   m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
-  m_downloadCALp->setLink( WLink( m_calpResource ) );
-  m_downloadCALp->setLinkTarget( Wt::TargetNewWindow );
+  {
+    WLink calLink( m_calpResource );
+    calLink.setTarget( Wt::LinkTarget::NewWindow );
+    m_downloadCALp->setLink( calLink );
+  }
   m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   m_downloadCALp->clicked().connect( std::bind([this](){
-    android_download_workaround( m_calpResource, "energy_cal.CALp");
+    android_download_workaround( m_calpResource.get(), "energy_cal.CALp");
   }) );
 #endif //ANDROID
   
@@ -1646,7 +1664,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   
 #if( !IMP_COEF_FIT_BTN_NEAR_COEFS )
-  m_fitCalBtn = new WPushButton( WString::tr("ect-fit-coeff-btn"), btndiv );
+  m_fitCalBtn = btndiv->addNew<WPushButton>( WString::tr("ect-fit-coeff-btn") );
   m_fitCalBtn->addStyleClass( "FitCoefBtn" );
   m_fitCalBtn->clicked().connect( this, &EnergyCalTool::fitCoefficients );
   m_fitCalBtn->setDisabled( true );
@@ -1654,30 +1672,33 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
 #endif // !IMP_COEF_FIT_BTN_NEAR_COEFS
   
   // Create the "Apply To" column that determines what to apply changes to
-  m_applyToColumn = new WContainerWidget();
-  m_applyToColumn->addStyleClass( "ToolTabTitledColumn ApplyToCol" );
-  if( wide )
-    m_layout->addWidget( m_applyToColumn, 0, 2 );
-  else
-    m_layout->addWidget( m_applyToColumn, 3, 1 );
-  
-  collayout = new WGridLayout( m_applyToColumn );
+  {
+    auto col = std::make_unique<WContainerWidget>();
+    m_applyToColumn = col.get();
+    m_applyToColumn->addStyleClass( "ToolTabTitledColumn ApplyToCol" );
+    if( wide )
+      m_layout->addWidget( std::move(col), 0, 2 );
+    else
+      m_layout->addWidget( std::move(col), 3, 1 );
+  }
+
+  collayout = m_applyToColumn->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
-  
-  header = new WText( WString::tr("ect-apply-changes-to") );
-  header->addStyleClass( "ToolTabColumnTitle" );
-  collayout->addWidget( header, 0, 0 );
-  
+
+  {
+    WText *header = collayout->addWidget( std::make_unique<WText>( WString::tr("ect-apply-changes-to") ), 0, 0 );
+    header->addStyleClass( "ToolTabColumnTitle" );
+  }
+
   //We will put the apply-to list inside a div so we can style consistently with other rows
   // (a <ul> element doesnt accept same css as <div>, apparently).
-  WContainerWidget *applyToDiv = new WContainerWidget();
+  WContainerWidget *applyToDiv = collayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   applyToDiv->addStyleClass( "ToolTabTitledColumnContent ApplyToMenuContent" );
-  collayout->addWidget( applyToDiv, 1, 0 );
-  
-  WContainerWidget *applyToList = new WContainerWidget( applyToDiv );
+
+  WContainerWidget *applyToList = applyToDiv->addNew<WContainerWidget>();
   applyToList->addStyleClass( "ApplyToMenuList" );
   applyToList->setList( true );
   
@@ -1701,9 +1722,9 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
         break;
     }//switch( index )
     
-    WContainerWidget *item = new WContainerWidget( applyToList );
+    WContainerWidget *item = applyToList->addNew<WContainerWidget>();
     item->addStyleClass( "ApplyToItem" );
-    auto cb = new WCheckBox( WString::tr(label), item );
+    WCheckBox *cb = item->addNew<WCheckBox>( WString::tr(label) );
     cb->setWordWrap( false );
     cb->addStyleClass( "ApplyToItem CbNoLineBreak" );
     
@@ -1725,88 +1746,91 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
         break;
     }//switch( index )
     
-    cb->checked().connect( boost::bind( &EnergyCalTool::applyToCbChanged, this, index ) );
-    cb->unChecked().connect( boost::bind( &EnergyCalTool::applyToCbChanged, this, index ) );
+    cb->checked().connect( [this, index](){ applyToCbChanged( index ); } );
+    cb->unChecked().connect( [this, index](){ applyToCbChanged( index ); } );
     
     m_applyToCbs[index] = cb;
   }//for( loop over ApplyToCbIndex )
   
-  WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+  WAnimation animation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200);
 
   
   // Create the "Coefficients" column that show the polynomial/FRF coefficents.
-  m_calColumn = new WContainerWidget();
-  m_calColumn->addStyleClass( "ToolTabTitledColumn CoefColumn" );
-  if( wide )
-    m_layout->addWidget( m_calColumn, 0, 3 );
-  else
-    m_layout->addWidget( m_calColumn, 1, 0, 1, 2 );
-  
-  
-  collayout = new WGridLayout( m_calColumn );
+  {
+    auto col = std::make_unique<WContainerWidget>();
+    m_calColumn = col.get();
+    m_calColumn->addStyleClass( "ToolTabTitledColumn CoefColumn" );
+    if( wide )
+      m_layout->addWidget( std::move(col), 0, 3 );
+    else
+      m_layout->addWidget( std::move(col), 1, 0, 1, 2 );
+  }
+
+  collayout = m_calColumn->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
-  
+
   if( wide )
     collayout->setColumnStretch( 1, 1 );
-  
-  header = new WText( WString::tr("ect-calib-coeffs") );
-  header->addStyleClass( "ToolTabColumnTitle" );
-  
-  collayout->addWidget( header, 0, 0, 1, 2 );
+
+  {
+    WText *header = collayout->addWidget( std::make_unique<WText>( WString::tr("ect-calib-coeffs") ), 0, 0, 1, 2 );
+    header->addStyleClass( "ToolTabColumnTitle" );
+  }
   //collayout->addWidget( m_calInfoDisplayStack, 1, 0 );
   
   
   // Create the "Detector" column that determines which coefficients to show
-  m_detColumn = new WContainerWidget();
+  m_detColumn = collayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   m_detColumn->addStyleClass( "DetCol" );
-  collayout->addWidget( m_detColumn, 1, 0 );
-  
-  m_detColLayout = new WGridLayout( m_detColumn );
+
+  m_detColLayout = m_detColumn->setLayout( std::make_unique<WGridLayout>() );
   m_detColLayout->setContentsMargins( 0, 0, 0, 0 );
   m_detColLayout->setVerticalSpacing( 0 );
   m_detColLayout->setHorizontalSpacing( 0 );
-  
-  auto detheader = new WText( WString::tr("Detector") );
-  detheader->setInline( false );
-  detheader->addStyleClass( "DetHdr Wt-itemview Wt-header Wt-label" );
-  //detheader->resize( WLength::Auto, WLength(20,WLength::Unit::Pixel) );
-  //collayout->addWidget( detheader, 0, 0 );
-  m_detColLayout->addWidget( detheader, 0, 0  );
+
+  {
+    WText *detheader = m_detColLayout->addWidget( std::make_unique<WText>( WString::tr("Detector") ), 0, 0 );
+    detheader->setInline( false );
+    detheader->addStyleClass( "DetHdr Wt-itemview Wt-header Wt-label" );
+  }
   m_detColLayout->setRowStretch( 2, 1 );
   
   // Create the "Cal Peaks" table
-  m_peakTableColumn = new WContainerWidget();
-  m_peakTableColumn->addStyleClass( "ToolTabTitledColumn PeakTableCol" );
-  if( wide )
   {
-    m_layout->addWidget( m_peakTableColumn, 0, 4 );
-    m_layout->setColumnStretch( 4, 1 );
-  }else
-  {
-    m_layout->addWidget( m_peakTableColumn, 2, 0, 1, 2 );
+    auto col = std::make_unique<WContainerWidget>();
+    m_peakTableColumn = col.get();
+    m_peakTableColumn->addStyleClass( "ToolTabTitledColumn PeakTableCol" );
+    if( wide )
+    {
+      m_layout->addWidget( std::move(col), 0, 4 );
+      m_layout->setColumnStretch( 4, 1 );
+    }else
+    {
+      m_layout->addWidget( std::move(col), 2, 0, 1, 2 );
+    }
   }
 
-  collayout = new WGridLayout( m_peakTableColumn );
+  collayout = m_peakTableColumn->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   if( wide )
     collayout->setRowStretch( 1, 1 );
-  
-  header = new WText( WString::tr("ect-cal-peaks") );
-  header->addStyleClass( "ToolTabColumnTitle" );
-  collayout->addWidget( header, 0, 0 );
-  
-  m_peakTable = new RowStretchTreeView();
+
+  {
+    WText *header = collayout->addWidget( std::make_unique<WText>( WString::tr("ect-cal-peaks") ), 0, 0 );
+    header->addStyleClass( "ToolTabColumnTitle" );
+  }
+
+  m_peakTable = collayout->addWidget( std::make_unique<RowStretchTreeView>(), 1, 0 );
   m_peakTable->addStyleClass( "ToolTabTitledColumnContent PeakTable" );
-  collayout->addWidget( m_peakTable, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   
   m_peakTable->setRootIsDecorated( false ); //makes the tree look like a table! :)
-  m_peakTable->setModel( m_peakModel );
+  m_peakTable->setModel( std::shared_ptr<Wt::WAbstractItemModel>( m_peakModel, [](Wt::WAbstractItemModel *){} ) );
   const int numModelCol = m_peakModel->columnCount();
   for( int col = 0; col < numModelCol; ++col )
     m_peakTable->setColumnHidden( col, true );
@@ -1814,9 +1838,9 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_peakTable->setSortingEnabled( true );
   m_peakTable->setAlternatingRowColors( true );
   m_peakTable->setSelectable( true );
-  m_peakTable->setSelectionMode( SingleSelection );
-  m_peakTable->setEditTriggers( WAbstractItemView::SingleClicked
-                               | WAbstractItemView::DoubleClicked );
+  m_peakTable->setSelectionMode( Wt::SelectionMode::Single );
+  m_peakTable->setEditTriggers( Wt::EditTrigger::SingleClicked
+                               | Wt::EditTrigger::DoubleClicked );
   
   m_peakTable->setColumnHidden( PeakModel::kUseForCalibration, false );
   m_peakTable->setColumnHidden( PeakModel::kMean, false );
@@ -1825,33 +1849,39 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_peakTable->setColumnHidden( PeakModel::kDifference, false );
   
   
-  m_peakTable->setColumnWidth( PeakModel::kUseForCalibration, WLength(3.7, WLength::FontEm) );
-  m_peakTable->setColumnWidth( PeakModel::kMean, WLength(4.5, WLength::FontEm) );
-  m_peakTable->setColumnWidth( PeakModel::kIsotope, WLength(4.5, WLength::FontEm) );
-  m_peakTable->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(6.25, WLength::FontEm) );
-  m_peakTable->setColumnWidth( PeakModel::kDifference, WLength(5, WLength::FontEm) );
+  m_peakTable->setColumnWidth( PeakModel::kUseForCalibration, WLength(3.7, WLength::Unit::FontEm) );
+  m_peakTable->setColumnWidth( PeakModel::kMean, WLength(4.5, WLength::Unit::FontEm) );
+  m_peakTable->setColumnWidth( PeakModel::kIsotope, WLength(4.5, WLength::Unit::FontEm) );
+  m_peakTable->setColumnWidth( PeakModel::kPhotoPeakEnergy, WLength(6.25, WLength::Unit::FontEm) );
+  m_peakTable->setColumnWidth( PeakModel::kDifference, WLength(5, WLength::Unit::FontEm) );
   
   
   
-  WItemDelegate *dblDelagate = new WItemDelegate( m_peakTable );
-  dblDelagate->setTextFormat( "%.2f" );
-  m_peakTable->setItemDelegateForColumn( PeakModel::kMean, dblDelagate );
+  {
+    auto dblDelagate = std::make_shared<WItemDelegate>();
+    dblDelagate->setTextFormat( "%.2f" );
+    m_peakTable->setItemDelegateForColumn( PeakModel::kMean, dblDelagate );
+  }
   
-  PhotopeakDelegate *nuclideDelegate = new PhotopeakDelegate( PhotopeakDelegate::NuclideDelegate, true, m_peakTable );
-  m_peakTable->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
-  
-  PhotopeakDelegate *photopeakDelegate = new PhotopeakDelegate( PhotopeakDelegate::GammaEnergyDelegate, true, m_peakTable );
-  m_peakTable->setItemDelegateForColumn( PeakModel::kPhotoPeakEnergy, photopeakDelegate );
+  {
+    auto nuclideDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::NuclideDelegate, true );
+    m_peakTable->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
+  }
+
+  {
+    auto photopeakDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::GammaEnergyDelegate, true );
+    m_peakTable->setItemDelegateForColumn( PeakModel::kPhotoPeakEnergy, photopeakDelegate );
+  }
   
   m_peakModel->dataChanged().connect( this, &EnergyCalTool::updateFitButtonStatus );
   m_peakModel->rowsRemoved().connect( this, &EnergyCalTool::updateFitButtonStatus );
   m_peakModel->rowsInserted().connect( this, &EnergyCalTool::updateFitButtonStatus );
   m_peakModel->layoutChanged().connect( this, &EnergyCalTool::updateFitButtonStatus );
   
-  m_interspec->displayedSpectrumChanged().connect(
-              boost::bind( &EnergyCalTool::displayedSpectrumChanged,
-                           this, boost::placeholders::_1, boost::placeholders::_2,
-                          boost::placeholders::_3, boost::placeholders::_4 ) );
+  m_interspec->displayedSpectrumChanged().connect( [this]( SpecUtils::SpectrumType a1,
+      std::shared_ptr<SpecMeas> a2, std::set<int> a3, std::vector<std::string> a4 ){
+    displayedSpectrumChanged( a1, a2, a3, a4 );
+  } );
   
   m_renderFlags |= EnergyCalToolRenderFlags::FullGuiUpdate;
   scheduleRender();
@@ -2343,7 +2373,7 @@ std::string EnergyCalTool::detectorNameOfCurrentlyShowingCoefficients() const
 */
 
 
-EnergyCalImp::CALpDownloadResource *EnergyCalTool::calpResources()
+std::shared_ptr<EnergyCalImp::CALpDownloadResource> EnergyCalTool::calpResources()
 {
   return m_calpResource;
 }
@@ -2354,32 +2384,31 @@ void EnergyCalTool::handleRequestToUploadCALp()
 {
   SimpleDialog *dialog = new SimpleDialog();
   WPushButton *closeButton = dialog->addButton( "Cancel" );
-  WGridLayout *stretcher = new WGridLayout();
+  WGridLayout *stretcher = static_cast<WGridLayout *>( dialog->contents()->setLayout( std::make_unique<WGridLayout>() ) );
   stretcher->setContentsMargins( 0, 0, 0, 0 );
-  dialog->contents()->setLayout( stretcher );
-  dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowVisible,
-                                  Wt::Horizontal | Wt::Vertical );
-  WText *title = new WText( WString::tr("ect-import-CALp") );
-  title->addStyleClass( "title" );
-  stretcher->addWidget( title, 0, 0 );
-  
-  WText *t = new WText( WString::tr("ect-select-CALp") );
-  stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-  t->setTextAlignment( Wt::AlignCenter );
-  
-  
-  WFileUpload *upload = new WFileUpload();
+  dialog->contents()->setOverflow( Overflow::Visible,
+                                  Wt::Orientation::Horizontal | Wt::Orientation::Vertical );
+  {
+    WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-import-CALp") ), 0, 0 );
+    title->addStyleClass( "title" );
+  }
+
+  WText *t = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-select-CALp") ), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
+  t->setTextAlignment( Wt::AlignmentFlag::Center );
+
+
+  WFileUpload *upload = stretcher->addWidget( std::make_unique<WFileUpload>(), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
   upload->fileTooLarge().connect( std::bind( [=](){
     dialog->contents()->clear();
     dialog->footer()->clear();
     
     WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
-    WGridLayout *stretcher = new WGridLayout();
+    WGridLayout *stretcher = static_cast<WGridLayout *>( dialog->contents()->setLayout( std::make_unique<WGridLayout>() ) );
     stretcher->setContentsMargins( 0, 0, 0, 0 );
-    dialog->contents()->setLayout( stretcher );
-    WText *title = new WText( WString::tr("ect-upload-CALp-to-large") );
-    title->addStyleClass( "title" );
-    stretcher->addWidget( title, 0, 0 );
+    {
+      WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-upload-CALp-to-large") ), 0, 0 );
+      title->addStyleClass( "title" );
+    }
   }) );
   
   upload->changed().connect( upload, &WFileUpload::upload );
@@ -2399,28 +2428,25 @@ void EnergyCalTool::handleRequestToUploadCALp()
       dialog->footer()->clear();
       
       WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
-      WGridLayout *stretcher = new WGridLayout();
+      WGridLayout *stretcher = static_cast<WGridLayout *>( dialog->contents()->setLayout( std::make_unique<WGridLayout>() ) );
       stretcher->setContentsMargins( 0, 0, 0, 0 );
-      dialog->contents()->setLayout( stretcher );
-      WText *title = new WText( WString::tr("ect-invalid-CALp") );
-      title->addStyleClass( "title" );
-      stretcher->addWidget( title, 0, 0 );
+      {
+        WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-invalid-CALp") ), 0, 0 );
+        title->addStyleClass( "title" );
+      }
       
       return;
     }//if( was not a valid CALp file )
     
     //wApp->doJavaScript( "$('.Wt-dialogcover').hide();" ); // JIC
-    //dialog->done( Wt::WDialog::DialogCode::Accepted );
+    //dialog->done( Wt::DialogCode::Accepted );
   } ) );
-  
-  stretcher->addWidget( upload, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
   
   InterSpec *interspec = InterSpec::instance();
   if( interspec && !interspec->isPhone() )
   {
-    t = new WText( WString::tr("ect-CALp-drag-n-drop-note") );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    t = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-CALp-drag-n-drop-note") ), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
+    t->setTextAlignment( Wt::AlignmentFlag::Center );
   }
   
   /*
@@ -2439,10 +2465,10 @@ void EnergyCalTool::handleRequestToUploadCALp()
    window->centerWindow();
    
    WPushButton *close = window->addCloseButtonToFooter( "Cancel" );
-   close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
-   
-   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-   
+   close->clicked().connect( [window](){ window->hide(); } );
+
+   window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
    // TODO: add link to relevant section of documentation
    //AuxWindow::addHelpInFooter( window->footer(), "energy-cal-CALp" );
    */
@@ -4688,37 +4714,37 @@ void EnergyCalTool::doRefreshFromFiles()
         
         if( m_detectorMenu[i]->currentItem() )
           prevdet[i] = m_detectorMenu[i]->currentItem()->text().toUTF8();
-        delete m_detectorMenu[i];
+        if( auto detMenuDivp = dynamic_cast<WContainerWidget *>( m_detectorMenu[i]->parent() ) )
+          detMenuDivp->removeWidget( m_detectorMenu[i] );
       }
       m_detectorMenu[i] = nullptr;
     }//for( int i = 0; i < 3; ++i )
     
-    delete m_specTypeMenuStack;
-    delete m_specTypeMenu;
+    if( m_specTypeMenuStack )
+      m_detColumn->removeWidget( m_specTypeMenuStack );
+    if( m_specTypeMenu )
+      m_detColumn->removeWidget( m_specTypeMenu );
     m_specTypeMenuStack = nullptr;
     m_specTypeMenu = nullptr;
-    
-    WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
-    
-    m_specTypeMenuStack = new WStackedWidget();
-    m_specTypeMenuStack->addStyleClass( "CalSpecStack" );
-    m_specTypeMenuStack->setTransitionAnimation( animation );
-    
+
+    WAnimation animation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200);
+
     auto callayout = dynamic_cast<WGridLayout *>( m_calColumn->layout() );
     assert( callayout );
-    
-    m_specTypeMenu = new WMenu( m_specTypeMenuStack );
+
+    m_specTypeMenuStack = m_detColLayout->addWidget( std::make_unique<WStackedWidget>(), 2, 0 );
+    m_specTypeMenuStack->addStyleClass( "CalSpecStack" );
+    m_specTypeMenuStack->setTransitionAnimation( animation );
+
+    m_specTypeMenu = m_detColLayout->addWidget( std::make_unique<WMenu>( m_specTypeMenuStack ), 1, 0 );
     m_specTypeMenu->addStyleClass( "CalSpecMenu" );
     m_specTypeMenu->itemSelected().connect( this, &EnergyCalTool::specTypeToDisplayForChanged );
-    m_detColLayout->addWidget( m_specTypeMenu, 1, 0 );  
-    m_detColLayout->addWidget( m_specTypeMenuStack, 2, 0 );
-    
+
     if( m_calInfoDisplayStack )
-      delete m_calInfoDisplayStack;
-    m_calInfoDisplayStack = new WStackedWidget();
+      m_calColumn->removeWidget( m_calInfoDisplayStack );
+    m_calInfoDisplayStack = callayout->addWidget( std::make_unique<WStackedWidget>(), 1, 1 );
     m_calInfoDisplayStack->addStyleClass( "ToolTabTitledColumnContent CalStack" );
     m_calInfoDisplayStack->setTransitionAnimation( animation );
-    callayout->addWidget( m_calInfoDisplayStack, 1, 1 );
     
     /// \TODO: only create these menus when actually needed, so we wont need to
     for( int i = 0; i < 3; ++i )
@@ -4727,21 +4753,21 @@ void EnergyCalTool::doRefreshFromFiles()
       {
         //Add a dummy entry into the menu or else the 'm_specTypeMenu->itemAt(i)' call below will
         //  segfault or not necassarily give the wanted answer.
-        WContainerWidget *detMenuDiv = new WContainerWidget();
-        WMenuItem *item = m_specTypeMenu->addItem( "", detMenuDiv );
+        WMenuItem *item = m_specTypeMenu->addItem( "", std::make_unique<WContainerWidget>() );
         item->setHidden( true );
         continue;
       }
       
-      WContainerWidget *detMenuDiv = new WContainerWidget();  //this holds the WMenu for this SpecFile
+      auto detMenuDivOwner = std::make_unique<WContainerWidget>();  //this holds the WMenu for this SpecFile
+      WContainerWidget *detMenuDiv = detMenuDivOwner.get();
       detMenuDiv->addStyleClass( "DetMenuDiv" );
-      
-      WMenuItem *item = m_specTypeMenu->addItem( WString::tr(spec_type_labels[i]), detMenuDiv, WMenuItem::LoadPolicy::PreLoading );
-      //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-      item->clicked().connect( boost::bind(&WMenuItem::select, item) );
-      
-      m_detectorMenu[i] = new WMenu( m_calInfoDisplayStack, detMenuDiv );
+
+      m_detectorMenu[i] = detMenuDiv->addNew<WMenu>( m_calInfoDisplayStack );
       m_detectorMenu[i]->addStyleClass( "VerticalNavMenu HeavyNavMenu DetCalMenu" );
+
+      WMenuItem *item = m_specTypeMenu->addItem( WString::tr(spec_type_labels[i]), std::move(detMenuDivOwner), ContentLoading::Eager );
+      //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
+      item->clicked().connect( [item](){ item->select(); } );
       
       m_detectorMenu[i]->itemSelected().connect( this, &EnergyCalTool::updateFitButtonStatus );
     }//for( int i = 0; i < 3; ++i )
@@ -4856,11 +4882,12 @@ void EnergyCalTool::doRefreshFromFiles()
         
         if( !item )
         {
-          auto calcontent = new EnergyCalImp::CalDisplay( this, type, detname, isWide );
-          item = detMenu->addItem( displayname, calcontent, WMenuItem::LoadPolicy::PreLoading );
+          auto calcontentOwner = std::make_unique<EnergyCalImp::CalDisplay>( this, type, detname, isWide );
+          EnergyCalImp::CalDisplay *calcontent = calcontentOwner.get();
+          item = detMenu->addItem( displayname, std::move(calcontentOwner), ContentLoading::Eager );
           //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-          item->clicked().connect( boost::bind(&WMenuItem::select, item) );
-          
+          item->clicked().connect( [item](){ item->select(); } );
+
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
           calcontent->setFitButtonEnabled( canFitCeofs );
           calcontent->doFitCoeffs().connect( this, &EnergyCalTool::fitCoefficients );
@@ -5177,8 +5204,8 @@ void EnergyCalTool::render( Wt::WFlags<Wt::RenderFlag> flags)
   //flags.testFlag(RenderFlag::RenderFull) will only be true on initial rending of widget, and
   //  after that only the RenderFlag::RenderUpdate flag will be set
   
-  if( flags.testFlag(Wt::RenderFlag::RenderFull)
-      || m_renderFlags.testFlag(EnergyCalToolRenderFlags::FullGuiUpdate) )
+  if( flags.test(Wt::RenderFlag::Full)
+      || m_renderFlags.test(EnergyCalToolRenderFlags::FullGuiUpdate) )
   {
     doRefreshFromFiles();
     m_renderFlags.clear( EnergyCalToolRenderFlags::FullGuiUpdate );

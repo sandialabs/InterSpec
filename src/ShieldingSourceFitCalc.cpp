@@ -30,8 +30,8 @@
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
-#include <Wt/WServer>
-#include <Wt/WApplication>
+#include <Wt/WServer.h>
+#include <Wt/WApplication.h>
 
 //Roots Minuit2 includes
 #include "Minuit2/FCNBase.h"
@@ -1963,9 +1963,9 @@ void fit_model( const std::string wtsession,
                          std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                          std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
                          std::shared_ptr<ShieldingSourceFitCalc::ModelFitProgress> progress,
-                         boost::function<void()> progress_fcn,
+                         std::function<void()> progress_fcn,
                          std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
-                         boost::function<void()> finished_fcn )
+                         std::function<void()> finished_fcn )
 {
   //The self attenuating probing questions are not tested.
   assert( results );

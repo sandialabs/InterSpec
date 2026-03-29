@@ -31,8 +31,8 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WContainerWidget>
-#include <Wt/WFlags>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WFlags.h>
 
 #include "InterSpec/FitPeaksForNuclides.h"
 #include "InterSpec/SimpleDialog.h"
@@ -122,7 +122,7 @@ private:
 class FitPeaksAdvancedWidget : public Wt::WContainerWidget
 {
 public:
-  FitPeaksAdvancedWidget( Wt::WContainerWidget *parent = nullptr );
+  FitPeaksAdvancedWidget();
   virtual ~FitPeaksAdvancedWidget();
 
   /** Called when user clicks Accept; adds peaks to PeakModel and removes old peaks. */

@@ -31,7 +31,7 @@
 #include <string>
 #include <optional>
 
-#include <Wt/WFlags>
+#include <Wt/WFlags.h>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFitLM.h"

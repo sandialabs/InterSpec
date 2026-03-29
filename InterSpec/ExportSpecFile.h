@@ -31,7 +31,7 @@
 #include <memory>
 #include <cstdint>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/SimpleDialog.h"
 
@@ -73,7 +73,7 @@ class ExportSpecFileTool : public Wt::WContainerWidget
 {
 public:
   /** Constructor to create tool to select from any currently loaded spectrum files. */
-  ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget *parent );
+  ExportSpecFileTool( InterSpec *viewer );
   
   /** Constructor to create tool to export only the spectrum file passed in.
    
@@ -84,8 +84,7 @@ public:
   ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &spectrum,
                       const std::set<int> &samples,
                       const std::vector<std::string> &detectors,
-                      InterSpec *viewer,
-                      Wt::WContainerWidget *parent );
+                      InterSpec *viewer );
   
   Wt::Signal<bool> &done();
   
@@ -245,7 +244,7 @@ protected:
   Wt::WCheckBox *m_lossless_qr_cb;
 #endif
   
-  ExportSpecFileTool_imp::DownloadSpectrumResource *m_resource;
+  std::shared_ptr<ExportSpecFileTool_imp::DownloadSpectrumResource> m_resource;
   
   /** For undo/redo purposes, we will keep track of last state as a URL. */
   std::shared_ptr<const std::string> m_last_state_uri;

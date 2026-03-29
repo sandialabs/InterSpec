@@ -25,21 +25,21 @@
 
 #include <fstream>
 
-#include <Wt/WMenu>
-#include <Wt/WText>
-#include <Wt/WAnchor>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WResource>
-#include <Wt/WMenuItem>
-#include <Wt/WFileUpload>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WContainerWidget>
+#include <Wt/WMenu.h>
+#include <Wt/WText.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WResource.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WFileUpload.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WContainerWidget.h>
 
-#include <Wt/Dbo/Exception>
+#include <Wt/Dbo/Exception.h>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
@@ -70,7 +70,7 @@ namespace
     ThemeMenuItem( const Wt::WString &text,
                   std::unique_ptr<ColorTheme> theme,
                   const bool editable )
-    : WMenuItem(text, nullptr, WMenuItem::LazyLoading),
+    : WMenuItem(text, nullptr, Wt::ContentLoading::Lazy),
       m_editable(editable), m_isEditedSinceApply(false), m_theme( std::move(theme) )
     {
     }
@@ -99,7 +99,7 @@ namespace
     Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
   public:
     JsonDownloadResource( ColorThemeWindow *parent )
-    : WResource( parent ), m_display( parent ), m_app( WApplication::instance() )
+    : WResource(), m_display( parent ), m_app( WApplication::instance() )
     {
       assert( m_app );
     }
@@ -139,7 +139,7 @@ namespace
           *it = ' ';
       }
       
-      suggestFileName( name + ".json", WResource::Attachment );
+      suggestFileName( name + ".json", ContentDisposition::Attachment );
       response.setMimeType( "application/json" );
       response.out() << m_display->currentThemeJson();
     }
@@ -175,114 +175,118 @@ m_apply( nullptr )
     resizeScaledWindow(0.9, 0.95);
   }
   
-  WContainerWidget *leftMenuDiv = new WContainerWidget();
+  auto leftMenuDivOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *leftMenuDiv = leftMenuDivOwner.get();
   leftMenuDiv->addStyleClass( "VerticalColorThemesMenu" );
-  
-  WContainerWidget *editDiv = new WContainerWidget();
+
+  auto editDivOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *editDiv = editDivOwner.get();
   editDiv->addStyleClass( "ColorThemeEditContainer" );
-  
-  m_edit = new ColorThemeWidget(editDiv);
-  m_edit->edited().connect( boost::bind( &ColorThemeWindow::themEditedCallback, this ) );
-  
+
+  m_edit = editDiv->addNew<ColorThemeWidget>();
+  m_edit->edited().connect( [this](){ themEditedCallback(); } );
+
   m_edit->addStyleClass( "ColorThemeWindowContents" );
-  
-  WGridLayout *leftMenuDivLayout = new WGridLayout();
+
+  WGridLayout *leftMenuDivLayout = leftMenuDiv->setLayout( std::make_unique<WGridLayout>() );
   leftMenuDivLayout->setVerticalSpacing( 0 );
   leftMenuDivLayout->setHorizontalSpacing( 0 );
   leftMenuDivLayout->setContentsMargins( 0, 0, 0, 0 );
-  
-  leftMenuDiv->setLayout( leftMenuDivLayout );
-  
-  WContainerWidget *menuDiv = new WContainerWidget();
-  menuDiv->setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
-  menuDiv->setOverflow( WContainerWidget::OverflowHidden, Wt::Horizontal );
-  
-  m_menu = new WMenu(Wt::Vertical,menuDiv);
-  leftMenuDivLayout->addWidget( menuDiv, 0, 0 );
-  //m_menu->addStyleClass((m_interspec->isMobile() ? "SideMenuPhone" : "SideMenu")); //defined in InterSpec.css
-  m_menu->addStyleClass( "SideMenu VerticalNavMenu HeavyNavMenu" );
-  
-  WContainerWidget *adSubDiv = new WContainerWidget();
-  leftMenuDivLayout->addWidget( adSubDiv, 1, 0 );
-  adSubDiv->addStyleClass( "AddRemoveThemeButtons" );
-  m_removeIcn = new WContainerWidget(adSubDiv); //needed or else button wont show up
-  m_removeIcn->setStyleClass( "DeleteColorTheme Wt-icon" );
-  m_removeIcn->setInline( true );
-  m_removeIcn->clicked().connect( this, &ColorThemeWindow::removeThemeCallback );
-  HelpSystem::attachToolTipOn( {m_removeIcn}, WString::tr("ctw-remove-tooltip"), true );
-  
-  m_addIcn = new WContainerWidget(adSubDiv); //needed or else button wont show up
-  m_addIcn->setStyleClass( "AddColorTheme Wt-icon" );
-  m_addIcn->clicked().connect( this, &ColorThemeWindow::cloneThemeCallback );
-  m_addIcn->setInline( true );
-  HelpSystem::attachToolTipOn( {m_addIcn}, WString::tr("ctw-clone-tooltip"), true );
-  
-  WPushButton *upload = new WPushButton( "", adSubDiv );
-  upload->setIcon( WLink("InterSpec_resources/images/upload_small.svg") );
-  upload->addStyleClass( "LinkBtn UploadBtn UploadColorTheme" );
-  HelpSystem::attachToolTipOn( {upload}, WString::tr("ctw-upload-tooltip"), true );
-  upload->clicked().connect( this, &ColorThemeWindow::uploadThemeCallback );
-  
-  JsonDownloadResource *downloadResource = new JsonDownloadResource( this );
-  
+
+  {
+    auto menuDiv = std::make_unique<WContainerWidget>();
+    menuDiv->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
+    menuDiv->setOverflow( Wt::Overflow::Hidden, Wt::Orientation::Horizontal );
+    m_menu = menuDiv->addNew<WMenu>();
+    //m_menu->addStyleClass((m_interspec->isMobile() ? "SideMenuPhone" : "SideMenu")); //defined in InterSpec.css
+    m_menu->addStyleClass( "SideMenu VerticalNavMenu HeavyNavMenu" );
+    leftMenuDivLayout->addWidget( std::move(menuDiv), 0, 0 );
+  }
+
+  {
+    auto adSubDiv = std::make_unique<WContainerWidget>();
+    adSubDiv->addStyleClass( "AddRemoveThemeButtons" );
+    m_removeIcn = adSubDiv->addNew<WContainerWidget>(); //needed or else button wont show up
+    m_removeIcn->setStyleClass( "DeleteColorTheme Wt-icon" );
+    m_removeIcn->setInline( true );
+    m_removeIcn->clicked().connect( this, &ColorThemeWindow::removeThemeCallback );
+    HelpSystem::attachToolTipOn( {m_removeIcn}, WString::tr("ctw-remove-tooltip"), true );
+
+    m_addIcn = adSubDiv->addNew<WContainerWidget>(); //needed or else button wont show up
+    m_addIcn->setStyleClass( "AddColorTheme Wt-icon" );
+    m_addIcn->clicked().connect( this, &ColorThemeWindow::cloneThemeCallback );
+    m_addIcn->setInline( true );
+    HelpSystem::attachToolTipOn( {m_addIcn}, WString::tr("ctw-clone-tooltip"), true );
+
+    WPushButton *upload = adSubDiv->addNew<WPushButton>( "" );
+    upload->setIcon( WLink("InterSpec_resources/images/upload_small.svg") );
+    upload->addStyleClass( "LinkBtn UploadBtn UploadColorTheme" );
+    HelpSystem::attachToolTipOn( {upload}, WString::tr("ctw-upload-tooltip"), true );
+    upload->clicked().connect( this, &ColorThemeWindow::uploadThemeCallback );
+
+    JsonDownloadResource *downloadResource = addChild( std::make_unique<JsonDownloadResource>( this ) );
+    // Wrap raw ptr with no-op deleter for WLink (ownership remains with addChild above)
+    auto downloadResourceShared = std::shared_ptr<WResource>( downloadResource, [](WResource *){} );
+    WLink downloadLink( downloadResourceShared );
+    downloadLink.setTarget( LinkTarget::NewWindow );
+
 #if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *download = new WAnchor( WLink(downloadResource), adSubDiv );
-  download->setTarget( AnchorTarget::TargetNewWindow );
-  download->setStyleClass( "LinkBtn DownloadLink DownloadColorTheme" );
-  download->setTarget( AnchorTarget::TargetNewWindow );
-  download->setText( "&nbsp;" );
+    WAnchor *download = adSubDiv->addNew<WAnchor>( downloadLink );
+    download->setStyleClass( "LinkBtn DownloadLink DownloadColorTheme" );
+    download->setText( "&nbsp;" );
 #else
-  WPushButton *download = new WPushButton( adSubDiv );
-  download->setIcon( "InterSpec_resources/images/download_small.svg" );
-  download->setLink( WLink(downloadResource) );
-  download->setLinkTarget( Wt::TargetNewWindow );
-  download->setStyleClass( "LinkBtn DownloadBtn DownloadColorTheme" );
-  
+    WPushButton *download = adSubDiv->addNew<WPushButton>();
+    download->setIcon( "InterSpec_resources/images/download_small.svg" );
+    download->setLink( downloadLink );
+    download->setStyleClass( "LinkBtn DownloadBtn DownloadColorTheme" );
+
 #if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  download->clicked().connect( std::bind([downloadResource](){
-    android_download_workaround(downloadResource, "color_theme.xml");
-  }) );
+    // Using hacked saving to temporary file in Android, instead of via network download of file.
+    download->clicked().connect( [downloadResource](){ android_download_workaround(downloadResource, "color_theme.xml"); } );
 #endif //ANDROID
 
 #endif
-  
-  HelpSystem::attachToolTipOn( {download}, WString::tr("ctw-download-tooltip"), true );
-  
+
+    HelpSystem::attachToolTipOn( {download}, WString::tr("ctw-download-tooltip"), true );
+
+    leftMenuDivLayout->addWidget( std::move(adSubDiv), 1, 0 );
+  }
+
   leftMenuDivLayout->setRowStretch( 0, 1 );
-  
+
   WGridLayout *layout = stretcher();
-  layout->addWidget(leftMenuDiv, 0, 0, AlignLeft);
-  layout->addWidget(editDiv, 0, 1 );
+  layout->addWidget( std::move(leftMenuDivOwner), 0, 0, AlignmentFlag::Left );
+  layout->addWidget( std::move(editDivOwner), 0, 1 );
   layout->setRowStretch(0, 1);
   layout->setColumnStretch( 1, 1 );
-  
+
   WContainerWidget *foot = footer();
   AuxWindow::addHelpInFooter( foot, "color-theme-dialog" );
-  
+
   const bool phone = isPhone();
-  WCheckBox *autoDarkCb = new WCheckBox( WString::tr("ctw-auto-dark-cb") );
+  auto autoDarkCbOwner = std::make_unique<WCheckBox>( WString::tr("ctw-auto-dark-cb") );
+  WCheckBox *autoDarkCb = autoDarkCbOwner.get();
   autoDarkCb->setFloatSide( Wt::Side::Left );
   HelpSystem::attachToolTipOn( {autoDarkCb}, WString::tr("ctw-auto-dark-tooltip"), true );
-  
+
   if( !phone )
-    foot->addWidget( autoDarkCb );
-  
+    foot->addWidget( std::move(autoDarkCbOwner) );
+
   UserPreferences::associateWidget( "AutoDarkFromOs", autoDarkCb, m_interspec );
-  
-  m_save = new WPushButton( WString::tr("Save"), foot );
-  m_apply = new WPushButton( WString::tr("Apply"), foot );
+
+  m_save = foot->addNew<WPushButton>( WString::tr("Save") );
+  m_apply = foot->addNew<WPushButton>( WString::tr("Apply") );
   m_save->setHiddenKeepsGeometry( true );
   m_apply->setHiddenKeepsGeometry( true );
-  
-  m_save->clicked().connect( boost::bind( &ColorThemeWindow::saveCallback, this ) );
-  m_apply->clicked().connect( boost::bind( &ColorThemeWindow::applyCallback, this ) );
+
+  m_save->clicked().connect( [this](){ saveCallback(); } );
+  m_apply->clicked().connect( [this](){ applyCallback(); } );
   
   m_close = AuxWindow::addCloseButtonToFooter( WString::tr("Close"), true, foot );
-  m_close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-  
+  m_close->clicked().connect( [this](){ AuxWindow::hide(); } );
+
   if( phone ) //Keep "Close" the left most item
-    foot->addWidget( autoDarkCb );
+    foot->addWidget( std::move(autoDarkCbOwner) );
   
   //To the menu add
   vector<unique_ptr<ColorTheme>> defaultThemes = ColorTheme::predefinedThemes();
@@ -301,43 +305,43 @@ m_apply( nullptr )
   for( unique_ptr<ColorTheme> &p : defaultThemes )
   {
     const WString name = p->theme_name;
-    
-    ThemeMenuItem *item = new ThemeMenuItem(name, std::move(p), false );
-    m_menu->addItem(item);
-    item->clicked().connect( boost::bind(&ColorThemeWindow::selectItem, this, item) );
-    
+
+    auto itemOwner = std::make_unique<ThemeMenuItem>( name, std::move(p), false );
+    ThemeMenuItem *item = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(itemOwner) ) );
+    item->clicked().connect( [this, item](){ selectItem( item ); } );
+
     if( currentColorTheme && (currentColorTheme->theme_name == name) )
       currentItem = item;
   }//for( size_t i = 0; i < defaultThemes.size(); ++i )
-  
-  
+
+
   m_menu->addSeparator();
-  
-  
+
+
   for( unique_ptr<ColorTheme> &p : dbThemes )
   {
     //const auto dbindex = p->dbIndex;
     const WString name = p->theme_name;
-    
-    ThemeMenuItem *item = new ThemeMenuItem(name, std::move(p), true );
-    m_menu->addItem(item);
-    item->clicked().connect( boost::bind(&ColorThemeWindow::selectItem, this, item) );
-    
+
+    auto itemOwner = std::make_unique<ThemeMenuItem>( name, std::move(p), true );
+    ThemeMenuItem *item = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(itemOwner) ) );
+    item->clicked().connect( [this, item](){ selectItem( item ); } );
+
     // Note: we cant just check the database for a matching index because app-states save the
     //   color theme JSON to a field in the database, not a link to the database entry.
     //   So we just have to match by name - not perfect, but close enough.
     if( !currentItem && currentColorTheme && (currentColorTheme->theme_name == name) )
       currentItem = item;
   }//for( unique_ptr<ColorTheme> &p : dbThemes )
-  
-  
+
+
   bool currentThemeSelected = true;
   if( !currentItem )
   {
     currentThemeSelected = false;
     currentItem = dynamic_cast<ThemeMenuItem *>( m_menu->itemAt(0) );
   }//if( !currentItem )
-  
+
   if( currentItem )
   {
     m_menu->select( currentItem );
@@ -345,11 +349,10 @@ m_apply( nullptr )
     if( currentThemeSelected )
       m_apply->hide();
   }//if( currentItem )
-  
-  m_menu->itemSelected().connect(boost::bind(&ColorThemeWindow::themeSelected, this,
-                                             boost::placeholders::_1));
-  
-  finished().connect(boost::bind(&ColorThemeWindow::checkForSavesAndCleanUp, this));
+
+  m_menu->itemSelected().connect( [this]( Wt::WMenuItem *item ){ themeSelected( item ); } );
+
+  finished().connect( [this](){ checkForSavesAndCleanUp(); } );
   
   setClosable( true );
   show();
@@ -379,10 +382,10 @@ void ColorThemeWindow::cloneThemeCallback()
   newtheme->creation_time = WDateTime::currentDateTime();
   newtheme->modified_time = newtheme->creation_time;
   auto themename = newtheme->theme_name;
-  ThemeMenuItem *newitem = new ThemeMenuItem( themename, std::move(newtheme), true );
-  m_menu->addItem( newitem );
+  auto newitemOwner = std::make_unique<ThemeMenuItem>( themename, std::move(newtheme), true );
+  ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(newitemOwner) ) );
   m_menu->select( newitem );
-  newitem->clicked().connect( boost::bind(&ColorThemeWindow::selectItem, this, newitem) );
+  newitem->clicked().connect( [this, newitem](){ selectItem( newitem ); } );
   
   showOrHideApplyButton();
 }//void cloneThemeCallback()
@@ -428,32 +431,30 @@ void ColorThemeWindow::removeThemeCallback()
       }
     }//if( in DB )
     
-    m_menu->removeItem( item );
+    std::unique_ptr<WMenuItem> removed = m_menu->removeItem( item );
     m_menu->select( 0 );
-    
-    delete item;
+    removed.reset(); // destroy the removed item
     conf->hide();
     
     showOrHideApplyButton();
   };//doDelete
   
-  WText *text = new WText( WString::tr("ctw-delete-confirm-text").arg(name) );
-  conf->contents()->addWidget( text );
+  conf->contents()->addNew<WText>( WString::tr("ctw-delete-confirm-text").arg(name) );
   conf->contents()->setMargin( 15 );
 
   WContainerWidget *bottom = conf->footer();
   
-  WPushButton *cancel = new WPushButton( WString::tr("No"), bottom );
+  WPushButton *cancel = bottom->addNew<WPushButton>( WString::tr("No") );
   cancel->clicked().connect( conf, &AuxWindow::hide );
-  cancel->setWidth( WLength(47.5,WLength::Percentage) );
-  cancel->setFloatSide( Wt::Left );
-  
-  WPushButton *erase = new WPushButton( WString::tr("Yes"), bottom );
+  cancel->setWidth( WLength(47.5,WLength::Unit::Percentage) );
+  cancel->setFloatSide( Wt::Side::Left );
+
+  WPushButton *erase = bottom->addNew<WPushButton>( WString::tr("Yes") );
   erase->clicked().connect( std::bind( doDelete ) );
-  erase->setWidth( WLength(47.5,WLength::Percentage) );
-  erase->setFloatSide( Wt::Right );
-  
-  conf->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, conf ) );
+  erase->setWidth( WLength(47.5,WLength::Unit::Percentage) );
+  erase->setFloatSide( Wt::Side::Right );
+
+  conf->finished().connect( [conf](){ AuxWindow::deleteAuxWindow( conf ); } );
   
   conf->show();
   conf->rejectWhenEscapePressed();
@@ -480,13 +481,13 @@ void ColorThemeWindow::uploadThemeCallback()
   WContainerWidget *contents = window->contents();
   
   WPushButton *close = window->addCloseButtonToFooter( WString::tr("Cancel") );
-  close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
-  
-  WFileUpload *upload = new WFileUpload( contents );
+  close->clicked().connect( [window](){ window->hide(); } );
+
+  WFileUpload *upload = contents->addNew<WFileUpload>();
   upload->setInline( false );
-  
+
   //2) Upload file and check size.  If to big, reject and display error message.
-  upload->uploaded().connect( std::bind( [this,window,upload](){
+  upload->uploaded().connect( [this,window,upload](){
     const string filename = upload->spoolFileName();
     upload->hide();
     try
@@ -495,58 +496,57 @@ void ColorThemeWindow::uploadThemeCallback()
       if( !input )
         throw runtime_error( WString::tr("ctw-upload-error-open").toUTF8() );
       input.unsetf(ios::skipws);
-      
+
       // Determine file size
       input.seekg(0, ios::end);
       const size_t filesize = input.tellg();
       input.seekg(0);
       if( !filesize )
         throw runtime_error( WString::tr("ctw-upload-error-empty").toUTF8() );
-      
+
       if( filesize > 64*1024 )
         throw runtime_error( WString::tr("ctw-upload-error-large").toUTF8() );
-      
+
       //Read file data
       string data;
       data.resize( filesize );
       if( !input.read( &data.front(), static_cast<streamsize>(filesize) ) )
         throw runtime_error( WString::tr("ctw-upload-error-read").toUTF8() );
-      
+
       //3) parse file.  If not valid display error message.
       auto theme = make_shared<ColorTheme>();
       try
       {
         ColorTheme::fromJson(data, *theme);
-        
+
         //4) Ask user if they want to save to database (show disabled version of edit widget)
-        new WText( WString::tr("ctw-import-confirm").arg(theme->theme_name), window->contents() );
-        WContainerWidget *editParent = new WContainerWidget( window->contents() );
-        
+        window->contents()->addNew<WText>( WString::tr("ctw-import-confirm").arg(theme->theme_name) );
+        WContainerWidget *editParent = window->contents()->addNew<WContainerWidget>();
+
         const int w = m_interspec->renderedWidth();
         const int h = m_interspec->renderedHeight();
-        
+
         editParent->setMaximumSize( 0.75*w, 0.75*h );
-        ColorThemeWidget *edit = new ColorThemeWidget( editParent );
+        ColorThemeWidget *edit = editParent->addNew<ColorThemeWidget>();
         edit->setTheme( theme.get(), false );
         WPushButton *yes = window->addCloseButtonToFooter( WString::tr("Yes") );
-        yes->clicked().connect( std::bind( [=](){
-          
+        yes->clicked().connect( [=](){
           //5) Add to database, and set as current theme to display
           std::unique_ptr<ColorTheme> newtheme = this->saveThemeToDb( theme.get() );
           if( newtheme )
           {
-            ThemeMenuItem *newitem = new ThemeMenuItem( newtheme->theme_name, std::move( newtheme ), true );
-            m_menu->addItem( newitem );
+            auto newitemOwner = std::make_unique<ThemeMenuItem>( newtheme->theme_name, std::move( newtheme ), true );
+            ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(newitemOwner) ) );
             m_menu->select( newitem );
-            newitem->clicked().connect( boost::bind(&ColorThemeWindow::selectItem, this, newitem) );
+            newitem->clicked().connect( [this, newitem](){ selectItem( newitem ); } );
             m_apply->show();
           }else
           {
-             m_interspec->logMessage( "Error saving theme to database - sorry!.", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
+            m_interspec->logMessage( "Error saving theme to database - sorry!.", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
           }
           window->hide();
-        }) );
-        
+        } );
+
         window->resizeToFitOnScreen();
         window->centerWindow();
       }catch( std::exception & )
@@ -558,18 +558,18 @@ void ColorThemeWindow::uploadThemeCallback()
       }
     }catch( std::exception &e )
     {
-      new WText( e.what(), window->contents() );
+      window->contents()->addNew<WText>( e.what() );
     }
-  }) );
-  
-  upload->fileTooLarge().connect( std::bind( [window,upload](){
+  } );
+
+  upload->fileTooLarge().connect( [window,upload](){
     upload->hide();
-    new WText( WString::tr("ctw-upload-too-large"), window->contents() );
-  }) );
+    window->contents()->addNew<WText>( WString::tr("ctw-upload-too-large") );
+  } );
   upload->changed().connect( upload, &WFileUpload::upload );
-  
-  
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+
+
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
   window->show();
   window->resizeToFitOnScreen();
   window->centerWindow();
@@ -597,10 +597,10 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
   
   
   WPushButton *discard = dialog->addButton( WString::tr("ctw-discard-btn") );
-  discard->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  
+  discard->clicked().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+
   WPushButton *save = dialog->addButton( WString::tr("Save") );
-  save->clicked().connect( boost::bind( &ColorThemeWindow::saveAndDelete, this ) );
+  save->clicked().connect( [this](){ saveAndDelete(); } );
 }//void checkForSavesAndCleanUp()
 
 
@@ -630,7 +630,7 @@ unique_ptr<ColorTheme> ColorThemeWindow::saveThemeToDb( const ColorTheme *theme 
   
   if( theme->dbIndex < 0 )
   {
-    Wt::Dbo::ptr<ColorThemeInfo> dbtheme( new ColorThemeInfo() );
+    Wt::Dbo::ptr<ColorThemeInfo> dbtheme( std::make_unique<ColorThemeInfo>() );
     
     try
     {

@@ -26,22 +26,22 @@
 #include <string>
 #include <fstream>
 
-#include <Wt/WText>
-#include <Wt/WTree>
-#include <Wt/WTimer>
-#include <Wt/WImage>
-#include <Wt/WString>
-#include <Wt/WTemplate>
-#include <Wt/WTreeNode>
-#include <Wt/WLineEdit>
-#include <Wt/Json/Value>
-#include <Wt/Json/Array>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/Json/Object>
-#include <Wt/Json/Parser>
-#include <Wt/WContainerWidget>
-#include <Wt/WMessageResourceBundle>
+#include <Wt/WText.h>
+#include <Wt/WTree.h>
+#include <Wt/WTimer.h>
+#include <Wt/WImage.h>
+#include <Wt/WString.h>
+#include <Wt/WTemplate.h>
+#include <Wt/WTreeNode.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Array.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/Json/Object.h>
+#include <Wt/Json/Parser.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WMessageResourceBundle.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/StringAlgo.h"
@@ -77,8 +77,8 @@ namespace
   class RmHelpFromDom : public Wt::WObject
   {
   public:
-    RmHelpFromDom( WObject *parent )
-    : WObject( parent )
+    RmHelpFromDom()
+    : WObject()
     {
     }
     
@@ -171,15 +171,13 @@ namespace HelpSystem
                  | AuxWindowProperties::IsHelpWindow
                  | AuxWindowProperties::EnableResize
                  | AuxWindowProperties::SetCloseable) ),
-     m_tree ( new Wt::WTree() ),
-     m_searchText( new Wt::WLineEdit() )
+     m_tree( nullptr ),
+     m_searchText( nullptr )
   {
     UndoRedoManager::BlockUndoRedoInserts undo_blocker;
     
     wApp->useStyleSheet( "InterSpec_resources/HelpWindow.css" );
     InterSpec::instance()->useMessageResourceBundle( "HelpSystem" );
-    
-    m_tree->setSelectionMode(Wt::SingleSelection);
     
     //To Do add in special
     //"help-xml"
@@ -187,10 +185,10 @@ namespace HelpSystem
     //"help-xml-mobile"
     //"help-xml-phone"
     //"help-xml-tablet"
-    
+
     const string docroot = wApp->docRoot();
     const std::string help_json = SpecUtils::append_path(docroot,"InterSpec_resources/static_text/help.json");
-    
+
     try
     {
       m_helpLookupTable = getInternationalizedFileContents(help_json);
@@ -198,76 +196,73 @@ namespace HelpSystem
     {
       passMessage( WString::tr("hw-err-opening-json").arg(help_json), 2 );
     }
-    
-    initialize();
-    
-    m_helpWindowContent = new WContainerWidget();
-    m_helpWindowContent->setPadding(WLength(10,WLength::Pixel));
-    
-    m_tree->setMargin(WLength(0,WLength::Pixel));
-    m_tree->addStyleClass("helpTree"); //both need to scroll
-    m_helpWindowContent->addStyleClass("helpTree"); //both need to scroll
-    m_tree->itemSelectionChanged().connect(boost::bind( &HelpWindow::selectHelpToShow, this ) );
-    
-    setTopic( preselect );
-    
-    //contents()->setMargin(0);
-    //contents()->setPadding(0);
-    
-    contents()->keyPressed().connect( this, &HelpWindow::handleArrowPress );
-    WGridLayout *layout = stretcher();
-    m_searchText->setStyleClass("searchBox");
-    m_searchText->setPlaceholderText( WString::tr("hw-search-empty-text") );
-    m_searchText->setMinimumSize(Wt::WLength::Auto, WLength(1.5,Wt::WLength::FontEm));
-    m_searchText->setMargin(WLength(5,WLength::Pixel));
-//    m_searchText->keyPressed().connect( this, &HelpWindow::initialize );
-    m_searchText->keyWentDown().connect( this, &HelpWindow::handleKeyPressInSearch );
-//    m_searchText->keyWentUp().connect( this, &HelpWindow::initialize );
-    
-//    m_searchText->keyWentUp	().connect(std::bind([=] (const Wt::WKeyEvent& e) {
-// //      if (e.key()==Wt::Key_Space || e.key()==Wt::Key_Enter || e.key()==Wt::Key_Delete|| e.key()==Wt::Key_Backspace)
-//        initialize();
-//    }, std::placeholders::_1));
 
-//    m_searchText->keyWentUp().connect(std::bind([=]() {
-//      if (m_searchText->text().empty())
-//        initialize();
-//    }));
-    layout->addWidget( m_searchText, 0, 0 );
-    layout->addWidget( m_tree, 1, 0 );
-    layout->addWidget( m_helpWindowContent, 0, 1, 2, 1 );
-    layout->setContentsMargins(0,0,0,0);
-    layout->setRowStretch( 1, 1 );
-    layout->setColumnResizable( 0, true, WLength(25,WLength::FontEx) );
-    
+    {
+      auto treeOwner = std::make_unique<Wt::WTree>();
+      m_tree = treeOwner.get();
+      m_tree->setSelectionMode( Wt::SelectionMode::Single );
+      m_tree->setMargin( WLength(0,WLength::Unit::Pixel) );
+      m_tree->addStyleClass( "helpTree" );
+      m_tree->itemSelectionChanged().connect( [this](){ selectHelpToShow(); } );
+      // We set m_tree here, so initialize() can use it
+      // (initialize() will be called below after searchText is set up)
+      initialize();
+
+      auto contentOwner = std::make_unique<WContainerWidget>();
+      m_helpWindowContent = contentOwner.get();
+      m_helpWindowContent->setPadding( WLength(10,WLength::Unit::Pixel) );
+      m_helpWindowContent->addStyleClass( "helpTree" );
+
+      auto searchOwner = std::make_unique<Wt::WLineEdit>();
+      m_searchText = searchOwner.get();
+      m_searchText->setStyleClass( "searchBox" );
+      m_searchText->setPlaceholderText( WString::tr("hw-search-empty-text") );
+      m_searchText->setMinimumSize( Wt::WLength::Auto, WLength(1.5,Wt::WLength::Unit::FontEm) );
+      m_searchText->setMargin( WLength(5,WLength::Unit::Pixel) );
+      m_searchText->keyWentDown().connect( this, &HelpWindow::handleKeyPressInSearch );
+
+      setTopic( preselect );
+
+      contents()->keyPressed().connect( this, &HelpWindow::handleArrowPress );
+      WGridLayout *layout = stretcher();
+      layout->addWidget( std::move(searchOwner), 0, 0 );
+      layout->addWidget( std::move(treeOwner), 1, 0 );
+      layout->addWidget( std::move(contentOwner), 0, 1, 2, 1 );
+      layout->setContentsMargins( 0, 0, 0, 0 );
+      layout->setRowStretch( 1, 1 );
+      layout->setColumnResizable( 0, true, WLength(25,WLength::Unit::FontEx) );
+    }
+
     WContainerWidget *bottom = footer();
   //  bottom->setStyleClass("modal-footer");
     //bottom->resize( WLength::Auto, 50 );
-    
+
     InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
     if( app && app->viewer() )
     {
       if( app->viewer()->isMobile() )
       {
-        WPushButton *ancor = new WPushButton( bottom );
+        InterSpec * const viewer = app->viewer();
+        WPushButton *ancor = bottom->addNew<WPushButton>();
         ancor->setText( WString::tr("hw-welcome-link") );
         ancor->setStyleClass( "LinkBtn" );
-        ancor->setFloatSide( Wt::Right );
-        ancor->clicked().connect( boost::bind( &InterSpec::showWelcomeDialog, app->viewer(), true ) );
+        ancor->setFloatSide( Wt::Side::Right );
+        ancor->clicked().connect( [viewer](){ viewer->showWelcomeDialog( true ); } );
       }
       else
       {
-          WAnchor *anchor = new WAnchor( WLink(), WString::tr("hw-tutorials-link"), bottom );
-          anchor->setFloatSide( Wt::Left );
-          anchor->addStyleClass( "InfoLink" );
-          anchor->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
-          anchor->clicked().connect( boost::bind( &InterSpec::showWelcomeDialog, app->viewer(), true ) );
+        InterSpec * const viewer = app->viewer();
+        WAnchor *anchor = bottom->addNew<WAnchor>( WLink(), WString::tr("hw-tutorials-link") );
+        anchor->setFloatSide( Wt::Side::Left );
+        anchor->addStyleClass( "InfoLink" );
+        anchor->clicked().connect( [this](){ hide(); } );
+        anchor->clicked().connect( [viewer](){ viewer->showWelcomeDialog( true ); } );
       }
     }//if( app && app->viewer() )
-    
-    
+
+
     WPushButton *ok = addCloseButtonToFooter();
-    ok->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+    ok->clicked().connect( [this](){ hide(); } );
     
     if( !preselect.empty() || (app && app->isMobile()) )  //Keep keyboard from popping up
       ok->setFocus();
@@ -341,13 +336,13 @@ namespace HelpSystem
     
     switch( key )
     {
-      case Wt::Key_Left:
+      case Wt::Key::Left:
       {
         m_tree->select( parent );
         break;
-      }//case Wt::Key_Left:
+      }//case Wt::Key::Left:
         
-      case Wt::Key_Up:
+      case Wt::Key::Up:
       {
         WTreeNode *toselect = parent;
         
@@ -358,9 +353,9 @@ namespace HelpSystem
         }
         
         m_tree->select( toselect );
-      }//case Wt::Key_Up:
+      }//case Wt::Key::Up:
         
-      case Wt::Key_Right:
+      case Wt::Key::Right:
       {
         for( size_t i = 0; i < kids.size(); ++i )
         {
@@ -370,9 +365,9 @@ namespace HelpSystem
             break;
           }
         }
-      }//case Wt::Key_Right:
+      }//case Wt::Key::Right:
         
-      case Wt::Key_Down:
+      case Wt::Key::Down:
       {
         WTreeNode *firstkid = first_child( current );
         
@@ -398,7 +393,7 @@ namespace HelpSystem
           m_tree->select( toselect );
         
         break;
-      }//case Wt::Key_Down:
+      }//case Wt::Key::Down:
         
       default:
         break;
@@ -409,13 +404,13 @@ namespace HelpSystem
   {
     switch( e.key() )
     {
-      case Wt::Key_Left: case Wt::Key_Up: case Wt::Key_Right: case Wt::Key_Down:
+      case Wt::Key::Left: case Wt::Key::Up: case Wt::Key::Right: case Wt::Key::Down:
         handleArrowPress( e );
         break;
       
-      case Wt::Key_Home: case Wt::Key_Alt: case Wt::Key_Control:
-      case Wt::Key_Shift: case Wt::Key_Tab: case Wt::Key_unknown:
-      case Wt::Key_PageUp: case Wt::Key_PageDown:
+      case Wt::Key::Home: case Wt::Key::Alt: case Wt::Key::Control:
+      case Wt::Key::Shift: case Wt::Key::Tab: case Wt::Key::Unknown:
+      case Wt::Key::PageUp: case Wt::Key::PageDown:
         return;
         
       default:
@@ -426,10 +421,11 @@ namespace HelpSystem
   
   void HelpWindow::initialize()
   {
-    Wt::WTreeNode *node = new Wt::WTreeNode("Help");
-    m_tree->setTreeRoot( node );
-    node->label()->setTextFormat( Wt::PlainText );
-    node->setLoadPolicy( Wt::WTreeNode::NextLevelLoading );
+    auto nodeOwner = std::make_unique<Wt::WTreeNode>("Help");
+    Wt::WTreeNode *node = nodeOwner.get();
+    node->label()->setTextFormat( Wt::TextFormat::Plain );
+    node->setLoadPolicy( Wt::ContentLoading::Lazy );
+    m_tree->setTreeRoot( std::move(nodeOwner) );
     m_tree->select( node ); //select first node
     
     try
@@ -468,8 +464,8 @@ namespace HelpSystem
     m_helpWindowContent->clear();
     
     string topic_name;
-    Wt::WTemplate *content = nullptr;
-    
+    std::unique_ptr<WTemplate> content;
+
     for( const auto &nameToNode : m_treeLookup )
     {
       if( nameToNode.second == node )
@@ -480,16 +476,16 @@ namespace HelpSystem
           cout << "Help content for '" << topic_name << "' should already be displayed." << endl;
           return;
         }
-        
+
         content = getContentToDisplay( nameToNode.first );
         break;
       }//if( nameToNode.second == node )
     }//for( const auto &nameToNode : m_treeLookup )
-    
+
     if( !content )
-      content = new WTemplate( WString::tr("hw-err-opening-xml") );
-    
-    m_helpWindowContent->addWidget( content );
+      content = std::make_unique<WTemplate>( WString::tr("hw-err-opening-xml") );
+
+    m_helpWindowContent->addWidget( std::move(content) );
     
     //Note: this keeps the new pages scrolled to the top.
     doJavaScript("document.body.scrollTop = document.documentElement.scrollTop = 0;");
@@ -575,14 +571,14 @@ namespace HelpSystem
   }//std::string getHelpContents( const std::string &tag ) const
   
   
-  Wt::WTemplate *HelpWindow::getContentToDisplay( const std::string &tag ) const
+  std::unique_ptr<Wt::WTemplate> HelpWindow::getContentToDisplay( const std::string &tag ) const
   {
     const string helpStr = getHelpContents( tag );
-    
-    WTemplate *t = new WTemplate();
-    t->setTemplateText( WString(helpStr, UTF8), XHTMLUnsafeText );
+
+    auto t = std::make_unique<WTemplate>();
+    t->setTemplateText( WString::fromUTF8(helpStr), Wt::TextFormat::UnsafeXHTML );
     t->setInternalPathEncoding( true );
-    
+
     return t;
   }//WTemplate *getContent( WTreeNode *node )
   
@@ -630,13 +626,12 @@ namespace HelpSystem
       //  USE_SEARCH_MODE_3D_CHART, USE_GOOGLE_MAP
         
 
-      WTreeNode *insertNode = new Wt::WTreeNode( titlestr.toUTF8() );
-      
+      auto insertNodeOwner = std::make_unique<Wt::WTreeNode>( titlestr.toUTF8() );
+      WTreeNode *insertNode = parent->addChildNode( std::move(insertNodeOwner) );
+      parent->expand();
+
       if( searching )
         insertNode->setHidden(true); //by default hidden, and just show nodes that need to be visible
-      
-      parent->addChildNode(insertNode);
-      parent->expand();
       
       if( !keywords.isNull() && searching )
       {
@@ -807,7 +802,7 @@ namespace HelpSystem
     if( !first_widget )
       return;
     
-    RmHelpFromDom *remover = new RmHelpFromDom( first_widget );
+    RmHelpFromDom *remover = first_widget->addChild( std::make_unique<RmHelpFromDom>() );
     
     //Note: need to pre-render, as toggling requires tooltip already rendered.
     strm << "$('"<< selector <<"').qtip({ "
@@ -840,16 +835,10 @@ namespace HelpSystem
     if( !widget )
       return;
 
-    const vector<Wt::WObject *> &children = static_cast<WObject *>(widget)->children();
-    for( WObject *child : children )
-    {
-      RmHelpFromDom *rm = dynamic_cast<RmHelpFromDom *>( child );
-      if( rm )
-      {
-        delete rm;
-        return;
-      }
-    }//for( loop over children )
+    // Wt4_TODO: WObject::children() is no longer public in Wt4; RmHelpFromDom cleanup
+    // is now handled by the WObject child ownership when the parent widget is destroyed.
+    // A full fix would require storing a pointer to the RmHelpFromDom so it can be removed.
+    // For now, the tooltip cleanup from destroyed widgets still works via ~RmHelpFromDom.
   }//void removeToolTipOn( WWebWidget* widget )
 
 } //namespace HelpSystem

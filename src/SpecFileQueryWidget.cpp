@@ -33,39 +33,40 @@
 #include <boost/regex.hpp>
 #include <boost/filesystem.hpp>
 
-#include <Wt/WText>
-#include <Wt/Utils>
-#include <Wt/WLabel>
-#include <Wt/WTheme>
-#include <Wt/WAnchor>
-#include <Wt/WServer>
-#include <Wt/WSpinBox>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WResource>
-#include <Wt/WLineEdit>
-#include <Wt/WIOService>
-#include <Wt/Json/Value>
-#include <Wt/Json/Array>
-#include <Wt/Json/Parser>
-#include <Wt/Json/Object>
-#include <Wt/WFileUpload>
+#include <Wt/WLink.h>
+#include <Wt/WText.h>
+#include <Wt/Utils.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTheme.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WServer.h>
+#include <Wt/WSpinBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WResource.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WIOService.h>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Parser.h>
+#include <Wt/Json/Object.h>
+#include <Wt/WFileUpload.h>
 #if( WT_VERSION >= 0x3030800 )
-#include <Wt/WTimeEdit>
+#include <Wt/WTimeEdit.h>
 #endif
-#include <Wt/WDatePicker>
-#include <Wt/WTimePicker>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/Http/Request>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WStandardItem>
-#include <Wt/Http/Response>
-#include <Wt/Json/Serializer>
-#include <Wt/WContainerWidget>
-#include <Wt/WStandardItemModel>
-#include <Wt/WSvgImage>
+#include <Wt/WDatePicker.h>
+#include <Wt/WTimePicker.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/Http/Request.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WStandardItem.h>
+#include <Wt/Http/Response.h>
+#include <Wt/Json/Serializer.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WStandardItemModel.h>
+#include <Wt/WSvgImage.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/StringAlgo.h"
@@ -455,8 +456,8 @@ namespace
     WAbstractItemModel *m_model;
     
   public:
-    ResultCsvResource( WAbstractItemModel *model, WObject *parent )
-     : WResource( parent ),
+    ResultCsvResource( WAbstractItemModel *model, WObject */*parent*/ )
+     : WResource(),
        m_model( model )
     {
     }
@@ -470,19 +471,19 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                 Wt::Http::Response &response )
     {
-      suggestFileName( "FileSearchResults.csv", WResource::Attachment ); //WResource::NoDisposition
+      suggestFileName( "FileSearchResults.csv", ContentDisposition::Attachment ); //WResource::NoDisposition
       response.setMimeType( "text/csv" );
       
       if( !m_model )
         return;
       
-      boost::any description = m_model->headerData(0, Horizontal, Wt::UserRole);
+      Wt::cpp17::any description = m_model->headerData(0, Orientation::Horizontal, Wt::ItemDataRole::User);
       response.out() << asString(description).toUTF8() << "\r\n";
       
       const int ncol = m_model->columnCount();
       for( int col = 0; col < ncol; ++col )
       {
-        const boost::any title = m_model->headerData( col, Horizontal, DisplayRole );
+        const Wt::cpp17::any title = m_model->headerData( col, Orientation::Horizontal, Wt::ItemDataRole::Display );
         const WString titlestr = Wt::asString( title );
         string titlestr_utf8 = titlestr.toUTF8();
         
@@ -527,7 +528,7 @@ namespace
       {
         for( int col = 0; col < ncol; ++col )
         {
-          const boost::any txt = m_model->data( row, col, Wt::DisplayRole /* (col==FileDataField::Filename ? UserRole : DisplayRole)*/ );
+          const Wt::cpp17::any txt = m_model->data( row, col, Wt::ItemDataRole::Display /* (col==FileDataField::Filename ? UserRole : DisplayRole)*/ );
           const WString txtstr = Wt::asString( txt );
           string utf8txt = txtstr.toUTF8();
           
@@ -1020,7 +1021,7 @@ protected:
   std::shared_ptr< vector< vector<string> > > m_result;
   int m_sortcolumn;
   Wt::SortOrder m_sortorder;
-  boost::any m_summary;
+  Wt::cpp17::any m_summary;
   std::vector<std::string> m_eventXmlColNames;
   
   // LRU cache for parsed spectrum files (max 20 entries)
@@ -1066,7 +1067,7 @@ protected:
       if( m_column >= NumFileDataFields )
       {
         lesthan = (lhs[m_column] < rhs[m_column]);
-        return ((m_order==Wt::AscendingOrder) ? lesthan : !lesthan);
+        return ((m_order==Wt::SortOrder::Ascending) ? lesthan : !lesthan);
       }//if( m_column >= NumFileDataFields )
       
       
@@ -1183,7 +1184,7 @@ protected:
           break;
       }//switch( FileDataField(column) )
       
-      return ((m_order==Wt::AscendingOrder) ? lesthan : !lesthan);
+      return ((m_order==Wt::SortOrder::Ascending) ? lesthan : !lesthan);
     }
   };
   
@@ -1191,10 +1192,10 @@ protected:
   
   
 public:
-  ResultTableModel( WObject *parent = 0 )
-  : WAbstractItemModel( parent ),
+  ResultTableModel( WObject */*parent*/ = 0 )
+  : WAbstractItemModel(),
   m_sortcolumn( -1 ),
-  m_sortorder( Wt::AscendingOrder )
+  m_sortorder( Wt::SortOrder::Ascending )
   {
     
   }
@@ -1298,20 +1299,20 @@ public:
       return WFlags<ItemFlag>();
 
     if( (index.column() == FileDataField::Filename) || (index.column() == FileDataField::ParentPath) )
-      return ItemFlag::ItemHasDeferredTooltip | ItemFlag::ItemIsXHTMLText | ItemFlag::ItemIsSelectable;
+      return ItemFlag::DeferredToolTip | ItemFlag::XHTMLText | ItemFlag::Selectable;
 
-    return ItemFlag::ItemIsSelectable;
+    return ItemFlag::Selectable;
   }
   
-  virtual boost::any data( const WModelIndex &index, int role = DisplayRole ) const
+  virtual Wt::cpp17::any data( const WModelIndex &index, ItemDataRole role = ItemDataRole::Display ) const
   {
     if( !index.isValid() || !m_result )
-      return boost::any();
+      return Wt::cpp17::any();
     
     const int row = index.row();
     const int col = index.column();
     if( row < 0 || col < 0 || row >= static_cast<int>(m_result->size()) )
-      return boost::any();
+      return Wt::cpp17::any();
     
     if( (col >= NumFileDataFields)
        && ((col - NumFileDataFields) >= static_cast<int>(m_eventXmlColNames.size())) )
@@ -1319,7 +1320,7 @@ public:
 #if( PERFORM_DEVELOPER_CHECKS )
       log_developer_error( __func__, "Unexpected (to large of) column requested (larger than ever expected)" );
 #endif
-      return boost::any();
+      return Wt::cpp17::any();
     }
     
     const vector<string> &fields = (*m_result)[row];
@@ -1329,50 +1330,50 @@ public:
 #if( PERFORM_DEVELOPER_CHECKS )
       log_developer_error( __func__, "Unexpected (to large of) column requested we dont have data for" );
 #endif
-      return boost::any();
+      return Wt::cpp17::any();
     }
 
-    if( (role == ToolTipRole ) && ((col == FileDataField::Filename) || (col == FileDataField::ParentPath)) )
+    if( (role == ItemDataRole::ToolTip) && ((col == FileDataField::Filename) || (col == FileDataField::ParentPath)) )
     {
       // Get file path from Filename column (UserRole returns full path)
       const std::string filepath = fields[FileDataField::Filename];
       const std::string svg_html = generatePreviewSvg( filepath );
-      
+
       return WString::fromUTF8( svg_html );
-    }else if( role != DisplayRole )
+    }else if( role != ItemDataRole::Display )
     {
       if( col == FileDataField::Filename )
       {
-        if( role == UserRole )
+        if( role == ItemDataRole::User )
           return WString::fromUTF8(fields[col]);
-        else if( role == DisplayRole )
+        else if( role == ItemDataRole::Display )
           return WString::fromUTF8(SpecUtils::filename(fields[col]));
       }
-      return boost::any();
+      return Wt::cpp17::any();
     }
     
     return WString::fromUTF8( fields[col] );
   }//data(...)
   
   
-  virtual bool setHeaderData( int section, Orientation orientation, const boost::any &value, int role = EditRole )
+  virtual bool setHeaderData( int section, Orientation orientation, const Wt::cpp17::any &value, ItemDataRole role = ItemDataRole::Edit )
   {
-    if( section != 0 || orientation != Horizontal || role != Wt::UserRole )
+    if( section != 0 || orientation != Orientation::Horizontal || role != ItemDataRole::User )
       return false;
     m_summary = value;
     return true;
   }
   
-  virtual boost::any headerData( int section, Orientation orientation = Horizontal, int role = DisplayRole ) const
+  virtual Wt::cpp17::any headerData( int section, Orientation orientation = Orientation::Horizontal, ItemDataRole role = ItemDataRole::Display ) const
   {
-    if( section < 0 || orientation != Horizontal )
-      return boost::any();
+    if( section < 0 || orientation != Orientation::Horizontal )
+      return Wt::cpp17::any();
     
-    if( section == 0 && role == Wt::UserRole )
+    if( section == 0 && role == ItemDataRole::User )
       return m_summary;
-    
-    if( role != DisplayRole )
-      return boost::any();
+
+    if( role != ItemDataRole::Display )
+      return Wt::cpp17::any();
     
     if( section >= NumFileDataFields )
     {
@@ -1382,7 +1383,7 @@ public:
 #if( PERFORM_DEVELOPER_CHECKS )
         log_developer_error( __func__, "Unexpected (to large of) column requested for header data" );
 #endif
-        return boost::any();
+        return Wt::cpp17::any();
       }
       return WString(m_eventXmlColNames[index]);
     }//if( section >= NumFileDataFields )
@@ -1433,7 +1434,7 @@ public:
       case SpecFileQuery::NumFileDataFields: break;
     }//switch( SpecFileQuery::FileDataField(section) )
       
-    return boost::any();
+    return Wt::cpp17::any();
   }//headerData
   
   virtual WModelIndex index(int row, int column, const WModelIndex &parent = WModelIndex() ) const
@@ -1444,7 +1445,7 @@ public:
   }
   
   
-  virtual void sort( int column, SortOrder order = AscendingOrder )
+  virtual void sort( int column, SortOrder order = SortOrder::Ascending )
   {
     if( column == m_sortcolumn && order == m_sortorder )
       return;
@@ -1467,8 +1468,8 @@ public:
 
 
 
-SpecFileQueryWidget::SpecFileQueryWidget( InterSpec *viewer, Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+SpecFileQueryWidget::SpecFileQueryWidget( InterSpec *viewer )
+  : WContainerWidget( /*parent*/ ),
     m_stopUpdate( std::make_shared< std::atomic<bool> >(false) ),
     m_widgetDeleted( std::make_shared< std::atomic<bool> >(false) ),
     m_app( wApp ),
@@ -1528,12 +1529,12 @@ void SpecFileQueryWidget::init()
   
   const string addfilters = prepareEventXmlFilters();
   
-  WGridLayout *layout = new WGridLayout();
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 9, 9, 9, 0 );
-  setLayout( layout );
-  
-  WContainerWidget *line = new WContainerWidget();
-  WGridLayout *linelayout = new WGridLayout( line );
+
+  auto line_owner = std::make_unique<WContainerWidget>();
+  WContainerWidget *line = line_owner.get();
+  WGridLayout *linelayout = line->setLayout( std::make_unique<WGridLayout>() );
   
   string defpath;
   int maxsize = 32;
@@ -1564,17 +1565,15 @@ void SpecFileQueryWidget::init()
     }
   }
   
-  m_baseLocation = new DirectorySelector();
+  m_baseLocation = linelayout->addWidget( std::make_unique<DirectorySelector>(), 0, 0 );
   m_baseLocation->setLabelTxt( "Base Path:" );
-  linelayout->addWidget( m_baseLocation, 0, 0 );
   
   m_baseLocation->pathChanged().connect( this, &SpecFileQueryWidget::basePathChanged );  
   
-  m_optionsBtn = new WPushButton( WString::tr("sfqw-options") );
+  m_optionsBtn = linelayout->addWidget( std::make_unique<WPushButton>( WString::tr("sfqw-options") ), 0, 1, AlignmentFlag::Middle );
   m_optionsBtn->addStyleClass( "SpecFileQueryOptionsBtn" );
-  
+
   m_optionsMenu = new PopupDivMenu( m_optionsBtn, PopupDivMenu::MenuType::TransientMenu );
-  linelayout->addWidget( m_optionsBtn, 0, 1, AlignMiddle );
   
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
@@ -1584,8 +1583,7 @@ void SpecFileQueryWidget::init()
   m_recursive = item->checkBox();
   if( !m_recursive ) //This shouldnt ever happen, but JIC
   {
-    m_recursive = new WCheckBox( "recursive" );
-    item->addWidget(m_recursive);
+    m_recursive = item->addNew<WCheckBox>( "recursive" );
   }
   
   m_recursive->setChecked( dorecursive );
@@ -1593,41 +1591,45 @@ void SpecFileQueryWidget::init()
   m_recursive->unChecked().connect( this, &SpecFileQueryWidget::basePathChanged );
   
   linelayout->setColumnStretch( 0, 1 );
-  
-  layout->addWidget( line, 0, 0 );
-  
-  line = new WContainerWidget();
-  line->setStyleClass( "SpecFileQueryConditions" );
-  m_conditions = new WContainerWidget( line );
-  
-  layout->addWidget( line, 1, 0 );
-  layout->setRowStretch( 1, 3 );
-  
-  line = new WContainerWidget();
-  linelayout = new WGridLayout( line );
+
+  layout->addWidget( std::move(line_owner), 0, 0 );
+
+  {
+    auto line2_owner = std::make_unique<WContainerWidget>();
+    WContainerWidget *line2 = line2_owner.get();
+    line2->setStyleClass( "SpecFileQueryConditions" );
+    m_conditions = line2->addNew<WContainerWidget>();
+    layout->addWidget( std::move(line2_owner), 1, 0 );
+    layout->setRowStretch( 1, 3 );
+  }
+
+  line_owner = std::make_unique<WContainerWidget>();
+  line = line_owner.get();
+  linelayout = line->setLayout( std::make_unique<WGridLayout>() );
   
 //  linelayout->addWidget( new WContainerWidget(), 0, linelayout->columnCount() );
 //  linelayout->setColumnStretch( linelayout->columnCount()-1, 1 );
 
-  auto maxFileSizeDiv = new WContainerWidget();
-  WLabel *label = new WLabel( "Max file size:", maxFileSizeDiv );
-  label->setMargin( 4, Wt::Bottom );
-  label->setMargin( 15, Wt::Left );
-  
-  m_maxFileSize = new WSpinBox( maxFileSizeDiv );
+  auto maxFileSizeDiv_owner = std::make_unique<WContainerWidget>();
+  WContainerWidget *maxFileSizeDiv = maxFileSizeDiv_owner.get();
+  WLabel *label = maxFileSizeDiv->addNew<WLabel>( "Max file size:" );
+  label->setMargin( 4, Wt::Side::Bottom );
+  label->setMargin( 15, Wt::Side::Left );
+
+  m_maxFileSize = maxFileSizeDiv->addNew<WSpinBox>();
   m_maxFileSize->setMaximum( 2*1024 );
   m_maxFileSize->setMinimum( 0 );
   m_maxFileSize->setValue( maxsize );
   m_maxFileSize->setWidth( 55 );
   label->setBuddy( m_maxFileSize );
   m_maxFileSize->valueChanged().connect( this, &SpecFileQueryWidget::basePathChanged );
-  
-  label = new WLabel( "MB", maxFileSizeDiv );
-  label->setMargin( 6, Wt::Right );
-  label->setMargin( 4, Wt::Bottom );
+
+  label = maxFileSizeDiv->addNew<WLabel>( "MB" );
+  label->setMargin( 6, Wt::Side::Right );
+  label->setMargin( 4, Wt::Side::Bottom );
   label->setBuddy( m_maxFileSize );
 
-  item = m_optionsMenu->addWidget( maxFileSizeDiv );
+  item = m_optionsMenu->addWidget( maxFileSizeDiv_owner.release() );
   tooltip = "Maximum size of file to attempt to parse as a spectrum file.";
   HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
   
@@ -1638,8 +1640,9 @@ void SpecFileQueryWidget::init()
   m_filterByExtension = item->checkBox();
   if( !m_filterByExtension ) //shouldnt ever happen
   {
-    m_filterByExtension = new WCheckBox( "pre-filter by extension" );
-    item->addWidget( m_filterByExtension );
+    auto cb = std::make_unique<WCheckBox>( "pre-filter by extension" );
+    m_filterByExtension = cb.get();
+    item->addWidget( std::unique_ptr<Wt::WWidget>(cb.release()) );
   }
   
   m_filterByExtension->setChecked( dofilter );
@@ -1654,8 +1657,9 @@ void SpecFileQueryWidget::init()
   m_filterUnique = item->checkBox();
   if( !m_filterUnique ) //shouldnt ever happen
   {
-    m_filterUnique = new WCheckBox( "filter duplicate files" );
-    item->addWidget( m_filterUnique );
+    auto cb2 = std::make_unique<WCheckBox>( "filter duplicate files" );
+    m_filterUnique = cb2.get();
+    item->addWidget( std::unique_ptr<Wt::WWidget>(cb2.release()) );
   }
   
   m_filterUnique->setChecked( dofilter );
@@ -1663,7 +1667,7 @@ void SpecFileQueryWidget::init()
   m_filterUnique->unChecked().connect( this, &SpecFileQueryWidget::setResultsStale );
   
   
-  linelayout->addWidget( new WContainerWidget(), 0, linelayout->columnCount() );
+  linelayout->addWidget( std::make_unique<WContainerWidget>(), 0, linelayout->columnCount() );
   linelayout->setColumnStretch( linelayout->columnCount()-1, 6 );
   
   
@@ -1674,8 +1678,9 @@ void SpecFileQueryWidget::init()
   m_cacheParseResults = item->checkBox();
   if( !m_cacheParseResults ) //shouldnt ever happen
   {
-    m_cacheParseResults = new WCheckBox( "Cache parse result" );
-    item->addWidget( m_cacheParseResults );
+    auto cb3 = std::make_unique<WCheckBox>( "Cache parse result" );
+    m_cacheParseResults = cb3.get();
+    item->addWidget( std::unique_ptr<Wt::WWidget>(cb3.release()) );
   }
   
   m_cacheParseResults->setChecked( docache );
@@ -1692,8 +1697,9 @@ void SpecFileQueryWidget::init()
   m_persistCacheResults = item->checkBox();
   if( !m_persistCacheResults ) //shouldnt ever happen
   {
-    m_persistCacheResults = new WCheckBox( "Cache parse result" );
-    item->addWidget( m_persistCacheResults );
+    auto cb4 = std::make_unique<WCheckBox>( "Cache parse result" );
+    m_persistCacheResults = cb4.get();
+    item->addWidget( std::unique_ptr<Wt::WWidget>(cb4.release()) );
   }
   
   m_persistCacheResults->setChecked( false );
@@ -1702,43 +1708,42 @@ void SpecFileQueryWidget::init()
   
   
   
-  m_cancelUpdate = new WPushButton( WString::tr("Cancel") );
+  m_cancelUpdate = linelayout->addWidget( std::make_unique<WPushButton>( WString::tr("Cancel") ), 0, linelayout->columnCount() );
   m_cancelUpdate->setHidden( true );
-  linelayout->addWidget( m_cancelUpdate, 0, linelayout->columnCount() );
   m_cancelUpdate->clicked().connect( this, &SpecFileQueryWidget::cancelUpdate );
-  
-  m_update = new WPushButton( WString::tr("sfqw-update") );
+
+  m_update = linelayout->addWidget( std::make_unique<WPushButton>( WString::tr("sfqw-update") ), 0, linelayout->columnCount() );
   m_update->clicked().connect(
   "function(){"
     "var result = $('#" + m_conditions->id() + "').queryBuilder('getRules',{ allow_invalid: true });"
     "var resultjson = (!$.isEmptyObject(result)) ? JSON.stringify(result, null, 2) : 'empty';"
     "Wt.emit('" + id() + "', 'fileSearchRequested', resultjson);"
   "}" );
-  
-  m_queryChanged.connect( boost::bind( &SpecFileQueryWidget::queryChangedCallback, this, _1 ) );
-  m_searchRequested.connect( boost::bind( &SpecFileQueryWidget::searchRequestedCallback, this, _1 ) );
-  
+
+  m_queryChanged.connect( [this]( std::string a1 ){ queryChangedCallback( a1 ); } );
+  m_searchRequested.connect( [this]( std::string a1 ){ searchRequestedCallback( a1 ); } );
+
   m_update->disable();
-  linelayout->addWidget( m_update, 0, linelayout->columnCount() );
   
-  layout->addWidget( line, 2, 0 );
-  
-  m_resultview = new RowStretchTreeView();
+  layout->addWidget( std::move(line_owner), 2, 0 );
+
+  m_resultview = layout->addWidget( std::make_unique<RowStretchTreeView>(), 3, 0 );
   m_resultview->addStyleClass( "SpecFileQueryResults" );
   m_resultview->setRootIsDecorated( false ); //makes the tree look like a table! :)
   m_resultview->setAlternatingRowColors( true );
-  m_resultview->setColumnWidth( 0, WLength(20,WLength::FontEx) );
-  layout->addWidget( m_resultview, 3, 0 );
+  m_resultview->setColumnWidth( 0, WLength(20,WLength::Unit::FontEx) );
   layout->setRowStretch( 3, 5 );
 
   vector<string> collnames;
   for( const auto &filter : m_eventXmlFilters )
     collnames.push_back( filter.m_label );
   
-  m_resultmodel = new ResultTableModel( this );
-  m_resultmodel->setEventXmlColumns( collnames );
-  
-  m_resultview->setModel( m_resultmodel );
+  {
+    auto modelOwner = std::make_unique<ResultTableModel>();
+    m_resultmodel = modelOwner.get();
+    m_resultmodel->setEventXmlColumns( collnames );
+    m_resultview->setModel( std::shared_ptr<WAbstractItemModel>( std::move(modelOwner) ) );
+  }
   m_resultview->setColumnHidden( DetectorName, true );
   m_resultview->setColumnHidden( Remark, true );
   m_resultview->setColumnHidden( LocationName, true );
@@ -1752,57 +1757,61 @@ void SpecFileQueryWidget::init()
   }
   
   m_resultview->selectionChanged().connect( this, &SpecFileQueryWidget::selectionChanged );
-  m_resultview->setSelectionBehavior( Wt::SelectRows );
-  m_resultview->setSelectionMode( Wt::SingleSelection );
-  line = new WContainerWidget();
-  linelayout = new WGridLayout( line );
-  layout->addWidget( line, 4, 0 );
-  
-  m_numberFiles = new WText( "Select path to search" );
-  linelayout->addWidget( m_numberFiles, 0, 0 );
-  
-  m_numberResults = new WText();
-  linelayout->addWidget( m_numberResults, 0, 1 );
-  
-  linelayout->setColumnStretch( 0, 1 );
-  linelayout->setColumnStretch( 1, 2 );
-  
-  ResultCsvResource *csvresource = new ResultCsvResource( m_resultmodel, this );
-  
+  m_resultview->setSelectionBehavior( Wt::SelectionBehavior::Rows );
+  m_resultview->setSelectionMode( Wt::SelectionMode::Single );
+
+  {
+    auto line4_owner = std::make_unique<WContainerWidget>();
+    WContainerWidget *line4 = line4_owner.get();
+    WGridLayout *linelayout4 = line4->setLayout( std::make_unique<WGridLayout>() );
+
+    m_numberFiles = linelayout4->addWidget( std::make_unique<WText>( "Select path to search" ), 0, 0 );
+    m_numberResults = linelayout4->addWidget( std::make_unique<WText>(), 0, 1 );
+
+    linelayout4->setColumnStretch( 0, 1 );
+    linelayout4->setColumnStretch( 1, 2 );
+
+    auto csvresource = std::make_shared<ResultCsvResource>( m_resultmodel, this );
+
 #if( BUILD_AS_OSX_APP || IOS )
-  m_csv = new WAnchor( WLink(csvresource) );
-  m_csv->setTarget( Wt::TargetNewWindow );
+    {
+      WLink lnk( std::static_pointer_cast<WResource>(csvresource) );
+      lnk.setTarget( LinkTarget::NewWindow );
+      m_csv = linelayout4->addWidget( std::make_unique<WAnchor>( lnk ), 0, linelayout4->columnCount(), AlignmentFlag::Bottom );
+    }
 #else
-  m_csv = new WPushButton();
-  m_csv->setIcon( "InterSpec_resources/images/download_small.svg" );
-  m_csv->setLink( WLink(csvresource) );
-  m_csv->setLinkTarget( Wt::TargetNewWindow );
+    {
+      auto csvBtn = std::make_unique<WPushButton>();
+      csvBtn->setIcon( "InterSpec_resources/images/download_small.svg" );
+      WLink lnk( std::static_pointer_cast<WResource>(csvresource) );
+      lnk.setTarget( LinkTarget::NewWindow );
+      csvBtn->setLink( lnk );
+      m_csv = linelayout4->addWidget( std::move(csvBtn), 0, linelayout4->columnCount(), AlignmentFlag::Bottom );
+    }
 #endif
-  
-  m_csv->setText( "CSV" );
-  m_csv->setStyleClass( "LinkBtn" );
-  m_csv->disable();
-  
-  m_loadSelectedFile = new WPushButton( WString::tr("sfqw-load-selected") );
-  linelayout->addWidget( m_loadSelectedFile, 0, linelayout->columnCount(), AlignRight );
-  m_loadSelectedFile->clicked().connect( this, &SpecFileQueryWidget::loadSelected );
-  m_loadSelectedFile->disable();
+
+    m_csv->setText( "CSV" );
+    m_csv->setStyleClass( "LinkBtn" );
+    m_csv->disable();
+
+    m_loadSelectedFile = linelayout4->addWidget( std::make_unique<WPushButton>( WString::tr("sfqw-load-selected") ), 0, linelayout4->columnCount(), AlignmentFlag::Right );
+    m_loadSelectedFile->clicked().connect( this, &SpecFileQueryWidget::loadSelected );
+    m_loadSelectedFile->disable();
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 #if( __APPLE__ )
-  const char *show_msg = "Show in Finder...";
+    const char *show_msg = "Show in Finder...";
 #else
-  const char *show_msg = "Show in Explorer...";
+    const char *show_msg = "Show in Explorer...";
 #endif
-  m_openSelectedDir = new WPushButton( show_msg );
-  m_openSelectedDir->setToolTip( "Opens the directory containing the file in your operating systems file explorer." );
-  linelayout->addWidget( m_openSelectedDir, 0, linelayout->columnCount(), AlignRight );
-  m_openSelectedDir->clicked().connect( this, &SpecFileQueryWidget::openSelectedFilesParentDir );
-  m_openSelectedDir->disable();
+    m_openSelectedDir = linelayout4->addWidget( std::make_unique<WPushButton>( show_msg ), 0, linelayout4->columnCount(), AlignmentFlag::Right );
+    m_openSelectedDir->setToolTip( "Opens the directory containing the file in your operating systems file explorer." );
+    m_openSelectedDir->clicked().connect( this, &SpecFileQueryWidget::openSelectedFilesParentDir );
+    m_openSelectedDir->disable();
 #endif
 
-  
-  linelayout->addWidget( m_csv, 0, linelayout->columnCount(), AlignBottom );
+    layout->addWidget( std::move(line4_owner), 4, 0 );
+  }
   
   const string init_js_call = "Wt.WT.FileQueryInit('" + m_conditions->id() + "','" + id() + "', " + addfilters + ");";
   
@@ -2224,10 +2233,12 @@ void SpecFileQueryWidget::basePathChanged()
   {
     m_numberFiles->setText( "Updating # of files" );
     const size_t maxsize_mb = static_cast<size_t>(maxsize*1024*1024);
-    server->ioService().boost::asio::io_service::post( boost::bind( &SpecFileQueryWidget::updateNumberFiles,
-                                           basepath, recursive, filter, maxsize_mb,
-                                           this, wApp->sessionId(), m_widgetDeleted,
-                                           database ) );
+    server->ioService().boost::asio::io_service::post( [basepath, recursive, filter, maxsize_mb,
+        queryWidget = this, sessionId = wApp->sessionId(), widgetDeleted = m_widgetDeleted,
+        database](){
+      SpecFileQueryWidget::updateNumberFiles( basepath, recursive, filter, maxsize_mb,
+          queryWidget, sessionId, widgetDeleted, database );
+    } );
   }else
   {
     cerr << "SpecFileQueryWidget::basePathChanged()\n\tWarning: couldnt get WServer to post to - not good" << endl << endl;
@@ -2338,8 +2349,9 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
           {
             updatetime = nowtime;
             if( !(*widgetdeleted) )
-              WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,
-                nfiles, false, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+              WServer::instance()->post( sessionid, [nfiles, srcdir, recursive, extfilter, querywidget, widgetdeleted](){
+                SpecFileQueryWidget::updateNumberFilesInGui( nfiles, false, srcdir, recursive, extfilter, querywidget, widgetdeleted );
+              } );
             else
               return;
           }
@@ -2356,8 +2368,9 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
     }//while( diriter != dirend )
 
     if( !(*widgetdeleted) )
-      WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,
-        nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+      WServer::instance()->post( sessionid, [nfiles, srcdir, recursive, extfilter, querywidget, widgetdeleted](){
+        SpecFileQueryWidget::updateNumberFilesInGui( nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted );
+      } );
 #else
     if( recursive )
       files = SpecUtils::recursive_ls( srcdir, filterfcn, (void *)&maxsize );
@@ -2367,8 +2380,9 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
     const size_t nfiles = files.size();
 
     if( !(*widgetdeleted) )
-      WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,
-        nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+      WServer::instance()->post( sessionid, [nfiles, srcdir, recursive, extfilter, querywidget, widgetdeleted](){
+        SpecFileQueryWidget::updateNumberFilesInGui( nfiles, true, srcdir, recursive, extfilter, querywidget, widgetdeleted );
+      } );
 
 #endif
   } catch( std::exception &e )
@@ -2376,8 +2390,9 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
     std::cerr << "Error in updateNumberFiles; unexpected exception: " << e.what() << std::endl;
 
     if( !(*widgetdeleted) )
-      WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::updateNumberFilesInGui,
-        0, true, srcdir, recursive, extfilter, querywidget, widgetdeleted ) );
+      WServer::instance()->post( sessionid, [srcdir, recursive, extfilter, querywidget, widgetdeleted](){
+        SpecFileQueryWidget::updateNumberFilesInGui( 0, true, srcdir, recursive, extfilter, querywidget, widgetdeleted );
+      } );
     return;
   }
 
@@ -2553,9 +2568,10 @@ void SpecFileQueryWidget::searchRequestedCallback( const std::string &queryJson 
     
     m_stopUpdate->store( false );
     WServer::instance()->ioService().boost::asio::io_service::post(
-                                          boost::bind( &SpecFileQueryWidget::doSearch, this, basepath, options,
-                                                      maxsize, test, wApp->sessionId(), database, m_stopUpdate,
-                                                      m_widgetDeleted ) );
+        [this, basepath, options, maxsize, test, sessionId = wApp->sessionId(),
+         database, stopUpdate = m_stopUpdate, widgetDeleted = m_widgetDeleted](){
+          doSearch( basepath, options, maxsize, test, sessionId, database, stopUpdate, widgetDeleted );
+        } );
   }catch( std::runtime_error &e )
   {
     passMessage( "Current query is invalid: " + string(e.what()), WarningWidget::WarningMsgHigh );
@@ -2593,7 +2609,7 @@ void SpecFileQueryWidget::finishUpdate( std::shared_ptr< std::vector< std::vecto
     return;
   }
   
-  m_resultmodel->setHeaderData( 0, Horizontal, boost::any(WString(description)), Wt::UserRole );
+  m_resultmodel->setHeaderData( 0, Orientation::Horizontal, Wt::cpp17::any(WString(description)), Wt::ItemDataRole::User );
   //m_resultmodel->setResult( result );
   m_resultmodel->appendResults( result );
   
@@ -2700,7 +2716,7 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
   int offset = 0;
   if( wApp )
   {
-    const int offset = wApp->environment().timeZoneOffset();
+    const int offset = wApp->environment().timeZoneOffset().count();
     const chrono::system_clock::time_point localtime = utctime + std::chrono::seconds(60*offset);
     
     description << "Search performed at " << SpecUtils::to_extended_iso_string(std::chrono::time_point_cast<std::chrono::microseconds>(localtime) )
@@ -2753,8 +2769,9 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     if( stopUpdate->load() )
       throw std::runtime_error( "" );
     
-    WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
-                                                      this, 0, 0, "", result, widgetDeleted ) );
+    WServer::instance()->post( sessionid, [this, result, widgetDeleted](){
+      updateSearchStatus( 0, 0, "", result, widgetDeleted );
+    } );
 #else
     ls_fcn_t lsfcn = &SpecUtils::recursive_ls;
     if( !recursive )
@@ -2768,8 +2785,9 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     if( stopUpdate->load() )
       throw std::runtime_error( "" );
     
-    WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
-                                                      this, nfiles, 0, "", result, widgetDeleted ) );
+    WServer::instance()->post( sessionid, [this, nfiles, result, widgetDeleted](){
+      updateSearchStatus( nfiles, 0, "", result, widgetDeleted );
+    } );
 #endif //USE_DIRECTORY_ITERATOR_METHOD
     
     int nupdates_sent = 0;
@@ -2874,8 +2892,9 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
             num_files_pass += result->size();
             
             std::unique_lock<std::mutex> lock( result_mutex );
-            WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
-                                                              this, 0, ncheckssubmitted, "", result, widgetDeleted ) );
+            WServer::instance()->post( sessionid, [this, ncheckssubmitted, result, widgetDeleted](){
+              updateSearchStatus( 0, ncheckssubmitted, "", result, widgetDeleted );
+            } );
             result = std::make_shared< vector<vector<string> > >();
             lastupdate = now;
           }
@@ -2917,9 +2936,9 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
       vector< vector<string> > testres( nfilethisone );
       
       for( int j = 0; j < nfilethisone; ++j )
-        pool.post( boost::bind( &testfile, boost::cref(files[i+j]), boost::ref(testres[j]),
-                                boost::cref(query), boost::ref(uniqueCheck), database,
-                                boost::cref(basedir) ) );
+        pool.post( [&file = files[i+j], &res = testres[j], &query, &uniqueCheck, database, &basedir](){
+          testfile( file, res, query, uniqueCheck, database, basedir );
+        } );
       pool.join();
       
       for( int j = 0; j < nfilethisone; ++j )
@@ -2931,8 +2950,9 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
       {
         ++nupdates_sent;
         num_files_pass += result->size();
-        WServer::instance()->post( sessionid, boost::bind(&SpecFileQueryWidget::updateSearchStatus,
-                                                          this, nfiles, i+nfilethisone, "", result, widgetDeleted ) );
+        WServer::instance()->post( sessionid, [this, nfiles, filesChecked = i+nfilethisone, result, widgetDeleted](){
+          updateSearchStatus( nfiles, filesChecked, "", result, widgetDeleted );
+        } );
         result = std::make_shared< vector<vector<string> > >();
         lastupdate = now;
       }
@@ -2941,7 +2961,9 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
   }catch( ... )
   {
     const double total_clock_time = (SpecUtils::get_wall_time() - starttime);
-    WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::finishUpdate, this, result, description.str(), total_clock_time, true, widgetDeleted ) );
+    WServer::instance()->post( sessionid, [this, result, desc = description.str(), total_clock_time, widgetDeleted](){
+      finishUpdate( result, desc, total_clock_time, true, widgetDeleted );
+    } );
   }
   
   const double total_clock_time = (SpecUtils::get_wall_time() - starttime);
@@ -2956,7 +2978,9 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
   //      finishUpdate().  But I guess life will go on for now (I dont think this
   //      will actually happen because although its not gaurnteed in the future,
   //      the underlying boost::asio scedules jobs serially - I think).
-  WServer::instance()->post( sessionid, boost::bind( &SpecFileQueryWidget::finishUpdate, this, result, description.str(), total_clock_time,  false, widgetDeleted ) );
+  WServer::instance()->post( sessionid, [this, result, desc = description.str(), total_clock_time, widgetDeleted](){
+    finishUpdate( result, desc, total_clock_time, false, widgetDeleted );
+  } );
 }//doSearch(...)
   
 
@@ -2990,7 +3014,7 @@ void SpecFileQueryWidget::openSelectedFilesParentDir()
   const int row = selected.begin()->row();
   const WModelIndex fn_index = m_resultmodel->index( row, SpecFileQuery::Filename );
   // SpecFileQuery::Filename, with role=UserRole, returns full-path (DisplayRole returns just the name)
-  const boost::any fn_any = m_resultmodel->data( fn_index, Wt::UserRole );
+  const Wt::cpp17::any fn_any = m_resultmodel->data( fn_index, Wt::ItemDataRole::User );
   const std::string filepath = asString(fn_any).toUTF8();
   
   AppUtils::showFileInOsFileBrowser(filepath);
@@ -3009,7 +3033,7 @@ void SpecFileQueryWidget::loadSelected()
   
   const int row = selected.begin()->row();
   WModelIndex findex = m_resultmodel->index( row, SpecFileQuery::Filename );
-  boost::any fnany = m_resultmodel->data( findex, Wt::UserRole );
+  Wt::cpp17::any fnany = m_resultmodel->data( findex, Wt::ItemDataRole::User );
   const std::string filenameandy = asString(fnany).toUTF8();
   
   if( !SpecUtils::is_file(filenameandy) )

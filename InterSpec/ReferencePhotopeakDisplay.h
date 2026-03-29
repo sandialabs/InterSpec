@@ -30,9 +30,9 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WColor>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WColor.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -112,22 +112,22 @@ public:
   static bool less_than( const RowData &lhs, const RowData &rhs,
                          const Column r, const Wt::SortOrder order );
 
-  DecayParticleModel( Wt::WObject *parent = 0 );
+  DecayParticleModel();
   virtual ~DecayParticleModel();
 
   virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const;
-  virtual boost::any data( const Wt::WModelIndex &index,
-                                            int role = Wt::DisplayRole ) const;
-  boost::any headerData( int section,
-                         Wt::Orientation orientation = Wt::Horizontal,
-                         int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
+                                            Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
+  Wt::cpp17::any headerData( int section,
+                         Wt::Orientation orientation = Wt::Orientation::Horizontal,
+                         Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   virtual int columnCount( const Wt::WModelIndex &parent
                                                     = Wt::WModelIndex() ) const;
   virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   virtual Wt::WModelIndex parent( const Wt::WModelIndex &index) const;
   virtual Wt::WModelIndex index( int row, int column,
                       const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
-  virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
+  virtual void sort( int column, Wt::SortOrder order = Wt::SortOrder::Ascending );
   void clear();
   virtual void setRowData( const std::vector<RowData> &newData );
 
@@ -147,8 +147,7 @@ public:
   ReferencePhotopeakDisplay(
                         D3SpectrumDisplayDiv *chart,
                         Wt::WSuggestionPopup *materialSuggest,
-                        InterSpec *specViewer,
-                        Wt::WContainerWidget *parent = 0 );
+                        InterSpec *specViewer );
   virtual ~ReferencePhotopeakDisplay();
 
   void setFocusToIsotopeEdit();

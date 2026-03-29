@@ -41,10 +41,10 @@
 #include <stdexcept>
 #include <functional>
 
-#include <Wt/Dbo/Dbo>
-#include <Wt/WDateTime>
-#include <Wt/Dbo/SqlTraits>
-#include <Wt/Dbo/WtSqlTraits>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/WDateTime.h>
+#include <Wt/Dbo/SqlTraits.h>
+#include <Wt/Dbo/WtSqlTraits.h>
 
 #include "InterSpec/PeakModel.h"
 #include "SpecUtils/StringAlgo.h"

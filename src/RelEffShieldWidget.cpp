@@ -25,13 +25,13 @@
 
 #include "rapidxml/rapidxml.hpp"
 
-#include <Wt/WCheckBox>
-#include <Wt/WGroupBox>
-#include <Wt/WLineEdit>
-#include <Wt/WApplication>
-#include <Wt/WStackedWidget>
-#include <Wt/WRegExpValidator>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WCheckBox.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
@@ -48,10 +48,10 @@
 using namespace Wt;
 using namespace std;
 
-RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *parent)
-  : Wt::WGroupBox( Wt::WString::tr(type == ShieldType::SelfAtten ? "resw-self-atten-title" : "resw-ext-atten-title"), parent),
+RelEffShieldWidget::RelEffShieldWidget( ShieldType type )
+  : Wt::WGroupBox( Wt::WString::tr(type == ShieldType::SelfAtten ? "resw-self-atten-title" : "resw-ext-atten-title") ),
   m_type(type),
-  m_changed( this )
+  m_changed()
 {
   WApplication *app = WApplication::instance();
   InterSpec *interspec = InterSpec::instance();
@@ -66,53 +66,50 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
 
   addStyleClass("RelEffShieldWidget");
     
-  m_frameSwitch = new SwitchCheckbox( Wt::WString::tr("resw-material-frame-label"), 
-                                    Wt::WString::tr("resw-generic-frame-label"), this );
+  m_frameSwitch = addNew<SwitchCheckbox>( Wt::WString::tr("resw-material-frame-label"),
+                                          Wt::WString::tr("resw-generic-frame-label") );
   m_frameSwitch->checked().connect( this, &RelEffShieldWidget::materialTypeUpdated );
   m_frameSwitch->unChecked().connect( this, &RelEffShieldWidget::materialTypeUpdated );
 
-  m_stackedWidget = new Wt::WStackedWidget( this );
+  m_stackedWidget = addNew<Wt::WStackedWidget>();
 
-  m_materialFrame = new Wt::WContainerWidget();
-  m_stackedWidget->addWidget( m_materialFrame );
+  m_materialFrame = m_stackedWidget->addNew<Wt::WContainerWidget>();
   m_materialFrame->addStyleClass("MaterialFrame");
-  auto materialLabel = new Wt::WLabel( Wt::WString::tr("resw-material-frame-label"), m_materialFrame); //TODO: maybe make `resw-material-frame-label` its own string
+  Wt::WLabel *materialLabel = m_materialFrame->addNew<Wt::WLabel>( Wt::WString::tr("resw-material-frame-label") ); //TODO: maybe make `resw-material-frame-label` its own string
   materialLabel->addStyleClass("GridFirstCol GridFirstRow");
-    
-  m_materialEdit = new Wt::WLineEdit( m_materialFrame );
+
+  m_materialEdit = m_materialFrame->addNew<Wt::WLineEdit>();
   m_materialEdit->addStyleClass("GridSecondCol GridFirstRow");
   m_materialSuggest = interspec->shieldingSuggester();
   if( m_materialSuggest )
-    m_materialSuggest->forEdit( m_materialEdit, WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
-  m_materialEdit->changed().connect( this, &RelEffShieldWidget::materialUpdated );  
+    m_materialSuggest->forEdit( m_materialEdit, PopupTrigger::Editing | PopupTrigger::DropDownIcon );
+  m_materialEdit->changed().connect( this, &RelEffShieldWidget::materialUpdated );
   m_materialEdit->enterPressed().connect( this, &RelEffShieldWidget::materialUpdated );
 
-  auto thicknessLabel = new Wt::WLabel( Wt::WString::tr("resw-thickness-label"), m_materialFrame);
+  Wt::WLabel *thicknessLabel = m_materialFrame->addNew<Wt::WLabel>( Wt::WString::tr("resw-thickness-label") );
   thicknessLabel->addStyleClass("GridFirstCol GridSecondRow");
-    
 
-  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, this );
-  distValidator->setFlags( Wt::MatchCaseInsensitive );
-  m_thicknessEdit = new Wt::WLineEdit( m_materialFrame );
+  const auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex );
+  distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+  m_thicknessEdit = m_materialFrame->addNew<Wt::WLineEdit>();
   m_thicknessEdit->setValidator( distValidator );
   m_thicknessEdit->addStyleClass("GridSecondCol GridSecondRow");
   m_thicknessEdit->changed().connect( this, &RelEffShieldWidget::userUpdated );
   m_thicknessEdit->enterPressed().connect( this, &RelEffShieldWidget::userUpdated );
 
-  m_fitThickness = new Wt::WCheckBox( WString::tr("Fit"), m_materialFrame);
+  m_fitThickness = m_materialFrame->addNew<Wt::WCheckBox>( WString::tr("Fit") );
   m_fitThickness->addStyleClass("GridThirdCol GridSecondRow GridJustifyEnd");
   m_fitThickness->unChecked().connect( this, &RelEffShieldWidget::userUpdated );
   m_fitThickness->checked().connect( this, &RelEffShieldWidget::userUpdated );
   m_fitThickness->setChecked( true );
 
-  m_parametersFrame = new Wt::WContainerWidget();
-  m_stackedWidget->addWidget( m_parametersFrame );
-
+  m_parametersFrame = m_stackedWidget->addNew<Wt::WContainerWidget>();
   m_parametersFrame->addStyleClass("GenericFrame");
-  m_atomicNumberLabel = new Wt::WLabel( Wt::WString::tr("resw-atomic-number-label"), m_parametersFrame);
+
+  m_atomicNumberLabel = m_parametersFrame->addNew<Wt::WLabel>( Wt::WString::tr("resw-atomic-number-label") );
   m_atomicNumberLabel->addStyleClass("AN GridFirstCol GridFirstRow");
-    
-  m_atomicNumber = new NativeFloatSpinBox( m_parametersFrame );
+
+  m_atomicNumber = m_parametersFrame->addNew<NativeFloatSpinBox>();
   m_atomicNumber->setRange( 1.0f, 98.0f ); //dont set single-step, so it wont be invalid for a non-step value
   m_atomicNumber->setWidth( 50 );
   m_atomicNumber->setSpinnerHidden( true );
@@ -120,17 +117,17 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
   m_atomicNumber->addStyleClass("AN GridSecondCol GridFirstRow");
   m_atomicNumber->setValue( 26.0f );
   m_atomicNumber->valueChanged().connect( this, &RelEffShieldWidget::userUpdated );
-    
-  m_fitAtomicNumber = new Wt::WCheckBox(WString::tr("Fit"), m_parametersFrame );
+
+  m_fitAtomicNumber = m_parametersFrame->addNew<Wt::WCheckBox>( WString::tr("Fit") );
   m_fitAtomicNumber->addStyleClass("AN GridThirdCol GridFirstRow GridJustifyEnd");
   m_fitAtomicNumber->unChecked().connect( this, &RelEffShieldWidget::userUpdated );
   m_fitAtomicNumber->checked().connect( this, &RelEffShieldWidget::userUpdated );
   m_fitAtomicNumber->setChecked( false );
 
-  m_arealDensityLabel = new Wt::WLabel(WString::tr("resw-areal-density-label"), m_parametersFrame);
+  m_arealDensityLabel = m_parametersFrame->addNew<Wt::WLabel>( WString::tr("resw-areal-density-label") );
   m_arealDensityLabel->addStyleClass("AD GridFirstCol GridSecondRow");
-    
-  m_arealDensity = new NativeFloatSpinBox( m_parametersFrame );
+
+  m_arealDensity = m_parametersFrame->addNew<NativeFloatSpinBox>();
   m_arealDensity->setRange( 0.0f, 500.0f ); //dont set single-step, so it wont be invalid for a non-step value
   m_arealDensity->setWidth( 50 );
   m_arealDensity->setSpinnerHidden( true );
@@ -140,7 +137,7 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
   m_arealDensity->setValue( 0.0 );
   m_arealDensity->valueChanged().connect( this, &RelEffShieldWidget::userUpdated );
 
-  m_fitArealDensity = new Wt::WCheckBox(WString::tr("Fit"), m_parametersFrame );
+  m_fitArealDensity = m_parametersFrame->addNew<Wt::WCheckBox>( WString::tr("Fit") );
   m_fitArealDensity->addStyleClass("AD GridThirdCol GridSecondRow GridJustifyEnd");
   m_fitArealDensity->setChecked( false );
   m_fitArealDensity->unChecked().connect( this, &RelEffShieldWidget::userUpdated );
@@ -159,10 +156,8 @@ RelEffShieldWidget::~RelEffShieldWidget()
   if( !interspec )
     return;
     
-  const vector<Wt::WObject *> &kids = interspec->Wt::WObject::children();
-  // kids.size() is usually just 2 or 3, so this isnt that heavy of an operation.
-  auto pos = std::find( begin(kids), end(kids), static_cast<WObject *>(m_materialSuggest) );
-  if( pos != end(kids) )
+  // Check that m_materialSuggest is still the active suggester before calling removeEdit.
+  if( interspec->shieldingSuggester() == m_materialSuggest )
     m_materialSuggest->removeEdit( m_materialEdit );
 }//~RelEffShieldWidget()
 
@@ -212,7 +207,7 @@ std::shared_ptr<const Material> RelEffShieldWidget::material( const std::string 
     if( suggester )
     {
       // Check if this suggestion already exists before adding
-      Wt::WAbstractItemModel *mdl = suggester->model();
+      Wt::WAbstractItemModel *mdl = suggester->model().get();
       const Wt::WString suggName = Wt::WString::fromUTF8( mat->name );
       bool alreadyHave = false;
       for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
@@ -471,7 +466,7 @@ void RelEffShieldWidget::setState(const RelEffShieldState& s)
 }
 
 
-Wt::Signal<void> &RelEffShieldWidget::changed()
+Wt::Signal<> &RelEffShieldWidget::changed()
 {
   return m_changed;
 }

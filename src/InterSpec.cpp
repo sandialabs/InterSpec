@@ -43,36 +43,36 @@
 
 #include <boost/ref.hpp>
 
-#include <Wt/WText>
-#include <Wt/Utils>
-#include <Wt/WLabel>
-#include <Wt/WImage>
-#include <Wt/WPoint>
-#include <Wt/WServer>
-#include <Wt/Dbo/Dbo>
-#include <Wt/WTextArea>
-#include <Wt/WCheckBox>
-#include <Wt/WIOService>
-#include <Wt/WTabWidget>
-#include <Wt/WPopupMenu>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WJavaScript>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WBorderLayout>
-#include <Wt/WSelectionBox>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WContainerWidget>
-#include <Wt/WDefaultLoadingIndicator>
-#include <Wt/WEvent>
+#include <Wt/WText.h>
+#include <Wt/Utils.h>
+#include <Wt/WLabel.h>
+#include <Wt/WImage.h>
+#include <Wt/WPoint.h>
+#include <Wt/WServer.h>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WIOService.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WPopupMenu.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WBorderLayout.h>
+#include <Wt/WSelectionBox.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WDefaultLoadingIndicator.h>
+#include <Wt/WEvent.h>
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-#include <Wt/Json/Array>
-#include <Wt/Json/Value>
-#include <Wt/Json/Object>
-#include <Wt/Json/Parser>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Object.h>
+#include <Wt/Json/Parser.h>
 #endif
 
 #include "rapidxml/rapidxml.hpp"
@@ -250,7 +250,7 @@ namespace
 
   // The Reference Photopeak and/or the Search tab need thier widgets loaded,
   //  as other tools depend on thier functions
-  const WTabWidget::LoadPolicy TabLoadPolicy = WTabWidget::PreLoading;
+  const ContentLoading TabLoadPolicy = ContentLoading::Eager;
 
   void postSvlogHelper( const WString &msg, const int priority )
   {
@@ -336,8 +336,8 @@ namespace
       InterSpec *m_interspec;
     
     public:
-      ToolTabContentWrapper( InterSpec *interspec, WContainerWidget *parent = nullptr )
-      : WContainerWidget( parent ),
+      ToolTabContentWrapper( InterSpec *interspec )
+      : WContainerWidget(),
       m_height( 0 ),
       m_interspec( interspec )
       {
@@ -359,8 +359,8 @@ namespace
 }//namespace
 
 
-InterSpec::InterSpec( WContainerWidget *parent )
-  : WContainerWidget( parent ),
+InterSpec::InterSpec()
+  : WContainerWidget(),
     m_user{},
     m_preferences( nullptr ),
     m_peakModel( 0 ),
@@ -384,6 +384,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_peakEditWindow( 0 ),
     m_fitSkewParamsWindow( nullptr ),
     m_currentToolsTab( -1 ),
+    m_handlingToolTabChange( false ),
     m_toolsTabs( 0 ),
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     m_toolsTabsContentHeight( 0 ),
@@ -499,11 +500,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_colorPeaksBasedOnReferenceLines( true ),
   m_currentColorThemeCssFile(),
   m_colorTheme( nullptr ),
-  m_colorThemeChanged( this ),
+  m_colorThemeChanged(),
   m_findingHintPeaks( false ),
   m_hintQueue{},
-  m_hintPeaksSet( this ),
-  m_externalRidResultsRecieved( this ),
+  m_hintPeaksSet(),
+  m_externalRidResultsRecieved(),
   m_infoNotificationsMade{}
 {
   //Initialization of the app (this function) takes about 11ms on my 2.6 GHz
@@ -522,7 +523,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   app->m_viewer = this;
     
   //for notification div
-  m_notificationDiv = new WContainerWidget();
+  auto notificationDivPtr = std::make_unique<WContainerWidget>(); m_notificationDiv = notificationDivPtr.get();
   m_notificationDiv->setStyleClass("qtipDiv");
   m_notificationDiv->setId("qtip-growl-container");
   
@@ -530,9 +531,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_notificationDiv->addStyleClass( "belowMenu" );
 #endif
   
-  app->domRoot()->addWidget( m_notificationDiv );
+  app->root()->addWidget( std::move(notificationDivPtr) );
   
-  app->hotkeySignal().connect( boost::bind( &InterSpec::hotKeyPressed, this, boost::placeholders::_1 ) );
+  app->hotkeySignal().connect( [this]( const unsigned int key ){ hotKeyPressed( key ); } );
   
   // Try to grab the username.
   string username = app->getUserNameFromEnvironment();
@@ -545,10 +546,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
   //If they don't have a username, grab their stored UUID.
   if( username == "" )
   {
-    try
+    // In Wt4, getCookie returns const std::string* (null if not found), rather than throwing
+    const std::string *cookie_val = wApp->environment().getCookie( "SpectrumViewerUUID" );
+    if( cookie_val )
     {
-      username = wApp->environment().getCookie( "SpectrumViewerUUID" );
-    }catch(...)
+      username = *cookie_val;
+    }else
     {
       // We'll set the user name to be a combination of the initial time, and a hash of the
       //  Wt session ID to make sure its unique-enough, without bringing in anything heavyweight
@@ -556,7 +559,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
       username = "user-" + SpecUtils::to_iso_string(now)
                  + "-" + std::to_string( std::hash<std::string>{}(wApp->sessionId()) );
       wApp->setCookie( "SpectrumViewerUUID", username, 3600*24*365 );
-    }//try / catch
+    }//if( cookie_val ) / else
   }//if( no username )
 
   
@@ -586,8 +589,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
       else if( app->isTablet() )
         type = InterSpecUser::TabletDevice;
     
-      InterSpecUser *newuser = new InterSpecUser( username, type );
-      m_user = m_sql->session()->add( newuser );
+      m_user = m_sql->session()->add( std::make_unique<InterSpecUser>( username, type ) );
     }//if( m_user ) / else
   
     m_preferences = new UserPreferences( this );
@@ -619,7 +621,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
   }//if( desktop interface )
     
-  m_peakModel = new PeakModel( this );
+  m_peakModel = new PeakModel();
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
   
@@ -677,7 +679,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
   if( isMobile() )
   {
-    m_mobileMenuButton = new WPushButton( "", wApp->domRoot() );
+    m_mobileMenuButton = static_cast<WContainerWidget *>(wApp->domRoot())->addNew<WPushButton>( "" );
 
     m_mobileMenuButton->addStyleClass( "MobileMenuButton btn" );
     //Need to set z-index inline rather than in css so AuxWindows loaded before
@@ -698,18 +700,16 @@ InterSpec::InterSpec( WContainerWidget *parent )
     // canvas will take over and not propagate the event to close the menu down.
     doJavaScript( "$('body').append('<div class=\"mobilePopupMenuOverlay\" style=\"display: none;\"></div>');" );
     
-    m_mobileBackButton = new WContainerWidget( wApp->domRoot() );
+    m_mobileBackButton = static_cast<WContainerWidget *>(wApp->domRoot())->addNew<WContainerWidget>();
     m_mobileBackButton->addStyleClass( "MobilePrevSample btn" );
     m_mobileBackButton->setZIndex( 8388635 );
-    m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum,
-                     this, SpecUtils::SpectrumType::Foreground, false) );
+    m_mobileBackButton->clicked().connect( [this](){ handleUserIncrementSampleNum( SpecUtils::SpectrumType::Foreground, false ); } );
     m_mobileBackButton->setHidden(true);
-      
-    m_mobileForwardButton = new WContainerWidget( wApp->domRoot() );
+
+    m_mobileForwardButton = static_cast<WContainerWidget *>(wApp->domRoot())->addNew<WContainerWidget>();
     m_mobileForwardButton->addStyleClass( "MobileNextSample btn" );
     m_mobileForwardButton->setZIndex( 8388635 );
-    m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum,
-                     this, SpecUtils::SpectrumType::Foreground, true) );
+    m_mobileForwardButton->clicked().connect( [this](){ handleUserIncrementSampleNum( SpecUtils::SpectrumType::Foreground, true ); } );
     m_mobileForwardButton->setHidden(true);
   }else  //if( isMobile() )
   {
@@ -721,7 +721,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
       menuWidget = m_menuDiv;
       m_menuDiv->addStyleClass( "WebMenuBar" );
       
-      WImage *snlLogo = new WImage( "InterSpec_resources/images/SNL_Stacked_Black_Blue_tiny.png", m_menuDiv );
+      WImage *snlLogo = m_menuDiv->addNew<WImage>( "InterSpec_resources/images/SNL_Stacked_Black_Blue_tiny.png" );
       snlLogo->addStyleClass("SnlWebMenuBarLogo");
     }else
     {
@@ -879,20 +879,19 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   
   /* Set the loading indicator so that it's the highest z-index, so always visible  */
-  WDefaultLoadingIndicator *indicator = new Wt::WDefaultLoadingIndicator();
+  auto indicator = std::make_unique<Wt::WDefaultLoadingIndicator>();
   indicator->addStyleClass( "LoadingIndicator" );
-  app->setLoadingIndicator( indicator );
+  app->setLoadingIndicator( std::move(indicator) );
    
   
   m_charts = new WContainerWidget();
-      
-      
-  m_charts->addWidget( m_spectrum );
+
+  m_charts->addWidget( std::unique_ptr<WWidget>(m_spectrum) );
   m_charts->addStyleClass( "charts" );
-  m_chartResizer = new WContainerWidget( m_charts );
+  m_chartResizer = m_charts->addNew<WContainerWidget>();
   m_chartResizer->addStyleClass( "Wt-hrh2" );
   m_chartResizer->setHeight( isMobile() ? 10 : 5 );
-  m_charts->addWidget( m_timeSeries );
+  m_charts->addWidget( std::unique_ptr<WWidget>(m_timeSeries) );
   
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
   
@@ -904,11 +903,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_layout->setHorizontalSpacing( 0 );
   m_layout->setVerticalSpacing( 0 );
   
-  setLayout( m_layout );
+  setLayout( std::unique_ptr<WLayout>(m_layout) );
 
   if( m_menuDiv )
-    m_layout->addWidget( m_menuDiv, m_layout->rowCount(), 0 );
-  m_layout->addWidget( m_charts, m_layout->rowCount(), 0 );
+    m_layout->addWidget( std::unique_ptr<WWidget>(m_menuDiv), m_layout->rowCount(), 0 );
+  m_layout->addWidget( std::unique_ptr<WWidget>(m_charts), m_layout->rowCount(), 0 );
   m_layout->setRowStretch( m_layout->rowCount() - 1, 1 );
   
   // No need to updated the default axis titles
@@ -944,7 +943,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_rightClickMenu->addPhoneBackItem( nullptr );
   }else
   {
-    m_rightClickMenu->setPositionScheme( Wt::Absolute );
+    m_rightClickMenu->setPositionScheme( Wt::PositionScheme::Absolute );
     m_rightClickMenu->addStyleClass( " Wt-popupmenu Wt-outset" );
   }
   
@@ -959,12 +958,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
         break;
       case kRefitPeakStandard:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-refit-peak") );
-        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::Standard ) );
+        m_rightClickMenutItems[i]->triggered().connect( [this](){ refitPeakFromRightClick( PeakSearchGuiUtils::RefitPeakType::Standard ); } );
         break;
       case kRefitPeakWithDrfFwhm:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-use-drf-fwhm") );
         m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-use-drf-fwhm") );
-        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::WithDrfFwhm ) );
+        m_rightClickMenutItems[i]->triggered().connect( [this](){ refitPeakFromRightClick( PeakSearchGuiUtils::RefitPeakType::WithDrfFwhm ); } );
         break;
       case kSetMeanToNucOrRefLinePhotopeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-fix-mean") );
@@ -974,12 +973,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
       case kRefitRoiStandard:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-refit-roi") );
         m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-refit-roi") );
-        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::Standard ) );
+        m_rightClickMenutItems[i]->triggered().connect( [this](){ refitPeakFromRightClick( PeakSearchGuiUtils::RefitPeakType::Standard ); } );
         break;
       case kRefitRoiAgressive:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-refit-roi-aggressive") );
         m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-refit-roi-aggressive") );
-        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::RoiAgressive ) );
+        m_rightClickMenutItems[i]->triggered().connect( [this](){ refitPeakFromRightClick( PeakSearchGuiUtils::RefitPeakType::RoiAgressive ); } );
         break;
       case kDeletePeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-delete-peak") );
@@ -998,7 +997,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
             type <= PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
         {
           WMenuItem *item = m_rightClickChangeContinuumMenu->addItem( WString::tr( PeakContinuum::offset_type_label_tr(type) ) );
-          item->triggered().connect( boost::bind( &InterSpec::handleChangeContinuumTypeFromRightClick, this, type ) );
+          item->triggered().connect( [this, type](){ handleChangeContinuumTypeFromRightClick( type ); } );
         }//for( loop over PeakContinuum::OffsetTypes )
         break;
       }//case kChangeContinuum:
@@ -1010,8 +1009,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
         for( auto type = PeakDef::SkewType(0); type < PeakDef::NumSkewType; type = PeakDef::SkewType(type+1) )
         {
           WMenuItem *item = m_rightClickChangeSkewMenu->addItem( PeakDef::to_label(type) );
-          item->triggered().connect( boost::bind( &InterSpec::handleChangeSkewTypeFromRightClick,
-                                                 this, static_cast<int>(type) ) );
+          item->triggered().connect( [this, type](){ handleChangeSkewTypeFromRightClick( static_cast<int>(type) ); } );
         }//for( loop over PeakDef::SkewType )
         break;
       }
@@ -1022,11 +1020,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
         break;
       case kShareContinuumWithLeftPeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-combine-cont-left") );
-        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::shareContinuumWithNeighboringPeak, this, true ) );
+        m_rightClickMenutItems[i]->triggered().connect( [this](){ shareContinuumWithNeighboringPeak( true ); } );
         break;
       case kShareContinuumWithRightPeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-combine-cont-right") );
-        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::shareContinuumWithNeighboringPeak, this, false ) );
+        m_rightClickMenutItems[i]->triggered().connect( [this](){ shareContinuumWithNeighboringPeak( false ); } );
         break;
         
       case kMakeOwnContinuum:
@@ -1067,31 +1065,30 @@ InterSpec::InterSpec( WContainerWidget *parent )
   if( app && app->isMobile() && !m_rightClickMenu->isMobile() )
     m_rightClickMenu->addMenuItem( WString::tr("Cancel") );
     
-  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::handleRightClick, this,
-                                                  boost::placeholders::_1, boost::placeholders::_2,
-                                                  boost::placeholders::_3, boost::placeholders::_4,
-                                                  boost::placeholders::_5 ) );
-  m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this,
-                                                  boost::placeholders::_1, boost::placeholders::_2,
-                                                  boost::placeholders::_3, boost::placeholders::_4,
-                                                  boost::placeholders::_5 ) );
+  m_spectrum->rightClicked().connect( [this]( const double a1, const double a2, const int a3, const int a4, const std::string &a5 ){
+    handleRightClick( a1, a2, a3, a4, a5 );
+  } );
+  m_spectrum->chartClicked().connect( [this]( const double a1, const double a2, const int a3, const int a4, const std::string &a5 ){
+    handleLeftClick( a1, a2, a3, a4, a5 );
+  } );
   
-  m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this,
-                                                     boost::placeholders::_1,
-                                                     boost::placeholders::_2 ) );
-  m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this,
-                                                     boost::placeholders::_1, boost::placeholders::_3,
-                                                     boost::placeholders::_4 ) );
-  m_spectrum->xRangeChanged().connect( boost::bind( &InterSpec::handleSpectrumChartXRangeChange, this,
-                                                     boost::placeholders::_1,
-                                                   boost::placeholders::_2,
-                                                   boost::placeholders::_3,
-                                                   boost::placeholders::_4,
-                                                   boost::placeholders::_5) );
+  m_spectrum->shiftKeyDragged().connect( [this]( const double a1, const double a2 ){
+    excludePeaksFromRange( a1, a2 );
+  } );
+  m_spectrum->doubleLeftClick().connect( [this]( const double a1, const double /*a2*/,
+                                                const std::string &a3,
+                                                const Wt::WFlags<Wt::KeyboardModifier> a4 ){
+    searchForSinglePeak( a1, a3, a4 );
+  } );
+  m_spectrum->xRangeChanged().connect( [this]( const double a1, const double a2, const double a3,
+                                              const double a4, const bool a5 ){
+    handleSpectrumChartXRangeChange( a1, a2, a3, a4, a5 );
+  } );
       
-  m_spectrum->yAxisScaled().connect(
-          boost::bind( &InterSpec::handleDisplayScaleFactorChangeFromSpectrum, this,
-                      boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
+  m_spectrum->yAxisScaled().connect( [this]( const double a1, const double a2,
+                                            const SpecUtils::SpectrumType a3 ){
+    handleDisplayScaleFactorChangeFromSpectrum( a1, a2, a3 );
+  } );
     
   m_spectrum->legendDisabled().connect( std::bind([this](){
     if( m_undo && !m_undo->isInUndoOrRedo() )
@@ -1274,14 +1271,17 @@ InterSpec::~InterSpec() noexcept(true)
   if( m_peakInfoDisplay )
   {
     if( m_toolsTabs && m_toolsTabs->indexOf(m_peakInfoDisplay)>=0 )
-        m_toolsTabs->removeTab( m_peakInfoDisplay );
-    if( m_peakInfoWindow )
     {
-      const bool removed = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
-      assert( removed );
+      // In Wt4, removeTab returns unique_ptr - let it go out of scope to delete the widget.
+      // Wt4_TODO: verify ownership semantics are correct here
+      m_toolsTabs->removeTab( m_peakInfoDisplay );
+    }else if( m_peakInfoWindow )
+    {
+      // removeWidget returns unique_ptr - let it destroy the widget
+      auto removed_ptr = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
+      assert( removed_ptr != nullptr );
     }
-    
-    del_ptr_set_null( m_peakInfoDisplay );
+    m_peakInfoDisplay = nullptr;
   }//if( m_peakInfoDisplay )
 
   del_ptr_set_null( m_peakInfoWindow );
@@ -1937,8 +1937,8 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
   std::shared_ptr<const PeakDef> peaktoshare;
   deque<PeakModel::PeakShrdPtr >::const_iterator iter;
   
-//  boost::function<bool(const PeakModel::PeakShrdPtr &, const PeakModel::PeakShrdPtr &)> meansort;
-//  meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2, PeakModel::kMean, Wt::AscendingOrder );
+//  std::function<bool(const PeakModel::PeakShrdPtr &, const PeakModel::PeakShrdPtr &)> meansort;
+//  meansort = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2, PeakModel::kMean, Wt::SortOrder::Ascending );
 //  iter = lower_bound( peaks->begin(), peaks->end(), peak, meansort );
   iter = std::find( peaks->begin(), peaks->end(), peak );
   
@@ -2067,7 +2067,7 @@ void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
   
   index = m_peakModel->index( index.row(), PeakModel::kIsotope );
   
-  m_peakModel->setData( index, boost::any(WString(nuclide)) );
+  m_peakModel->setData( index, Wt::cpp17::any(WString(nuclide)) );
   
   const PeakModel::PeakShrdPtr &p = m_peakModel->peak(index);
   
@@ -2090,7 +2090,7 @@ void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
       )
     {
       index = m_peakModel->index( index.row(), PeakModel::kPeakLineColor );
-      m_peakModel->setData( index, boost::any(WString(lines.m_input.m_color.cssText())) );
+      m_peakModel->setData( index, Wt::cpp17::any(WString(lines.m_input.m_color.cssText())) );
       
       return;
     }
@@ -2110,7 +2110,7 @@ void InterSpec::setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
          )
       {
         index = m_peakModel->index( index.row(), PeakModel::kPeakLineColor );
-        m_peakModel->setData( index, boost::any(WString(lines.m_input.m_color.cssText())) );
+        m_peakModel->setData( index, Wt::cpp17::any(WString(lines.m_input.m_color.cssText())) );
         
         return;
       }
@@ -2155,7 +2155,7 @@ void InterSpec::updateRightClickNuclidesMenu(
       if( nuc[0]=='(' && nuc[nuc.size()-1]==')' )
         item->disable();
       else
-        item->triggered().connect( boost::bind( &InterSpec::setPeakNuclide, this, peak, nuc ) );
+        item->triggered().connect( [this, peak, nuc](){ setPeakNuclide( peak, nuc ); } );
     }else if( i != (nuclides->size()-1) )
     {
       menu->addSeparator();
@@ -2364,9 +2364,11 @@ void InterSpec::handleRightClick( double energy, double counts,
             Wt::WIOService &io = server->ioService();
             std::shared_ptr< vector<string> > candidates
                                        = std::make_shared<vector<string> >();
-            boost::function<void(void)> updater = wApp->bind(
-                       boost::bind(&InterSpec::updateRightClickNuclidesMenu,
-                                   this, peak, candidates ) );
+            // In Wt4, WApplication::bind() was removed; pass lambda directly since
+            // populateCandidateNuclides calls WServer::post(session_id, updater) internally.
+            std::function<void(void)> updater = [this, peak, candidates](){
+              updateRightClickNuclidesMenu( peak, candidates );
+            };
             
             std::shared_ptr<const SpecUtils::Measurement> hist = displayedHistogram( SpecUtils::SpectrumType::Foreground );
             std::shared_ptr<const SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
@@ -2412,7 +2414,7 @@ void InterSpec::handleRightClick( double energy, double counts,
             const PeakFitUtils::CoarseResolutionType det_type
               = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( hist, meas );
 
-            boost::function<void(void)> worker = [=](){
+            std::function<void(void)> worker = [=](){
               IsotopeId::populateCandidateNuclides( hist, peak, hintpeaks,
                       peaks, refLines, detector, det_type, session_id, candidates, updater );
             };
@@ -3013,7 +3015,7 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
   }else
   {
     m_featureMarkersWindow = new FeatureMarkerWindow( this );
-    m_featureMarkersWindow->finished().connect( boost::bind(&InterSpec::displayFeatureMarkerWindow, this, false) );
+    m_featureMarkersWindow->finished().connect( [this](){ displayFeatureMarkerWindow( false ); } );
     
     widget = m_featureMarkersWindow->tool();
   }//if( toolTabsVisible() && m_referencePhotopeakLines ) / else
@@ -3387,9 +3389,9 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       {
         // We may get here if we've removed a state (i.e., a `UserState::kEndOfSessionTemp`) from
         //  the database, but the pointer is still in memory.
-        UserFileInDbData *newdata = new UserFileInDbData();
-        filedata.reset( newdata );
-        newdata->fileInfo = dbfile;
+        // In Wt4, Dbo::ptr::reset() takes unique_ptr; set fileInfo after adding to session
+        filedata.reset( std::make_unique<UserFileInDbData>() );
+        filedata.modify()->fileInfo = dbfile;
         m_sql->session()->add( filedata );
       }
       
@@ -3686,7 +3688,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         iter != options.end(); ++iter )
     {
       Dbo::ptr<UserOption> option = *iter;
-      Json::Value val( Json::ObjectType );
+      Json::Value val( Json::Type::Object );
       Json::Object &obj = val;
       obj["type"]  = int(option->m_type);
       obj["name"]  = WString(option->m_name);
@@ -3784,9 +3786,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     deleteGammaCountDialog();
     closeNuclideSearchWindow();
     
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Foreground, 0 );
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Foreground, {} );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, {} );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, {} );
     
     switch( entry->stateType )
     {
@@ -4416,7 +4418,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     {
       try
       {
-        Json::Value userOptionsVal( Json::ArrayType );
+        Json::Value userOptionsVal( Json::Type::Array );
         Json::parse( entry->userOptionsJson, userOptionsVal );
         //cerr << "Parsed User Options, but not doing anything with them" << endl;
         
@@ -4774,7 +4776,7 @@ void InterSpec::showColorThemeWindow()
   //Takes ~5ms (on the server) to create a ColorThemeWindow.
 	ColorThemeWindow *window = new ColorThemeWindow(this);
   
-  new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+  window->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void showColorThemeWindow()
 
 
@@ -4792,7 +4794,8 @@ void InterSpec::showLicenseAndDisclaimersWindow()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = wApp->bind( boost::bind(&WDialog::accept, m_licenseWindow) );
+    // In Wt4, WApplication::bind() was removed; lambda passed directly
+    auto undo = [this](){ m_licenseWindow->accept(); };
     // We wont have redo show the dialog again, because then the closer functionoid wont work, and
     //  it isnt worth making the SimpleDialog a member variable of the InterSpec class.
     m_undo->addUndoRedoStep( std::move(undo), nullptr, "Show disclaimers, credits, and contact window." );
@@ -4817,7 +4820,8 @@ void InterSpec::startClearSession()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto closer = wApp->bind( boost::bind(&WDialog::accept, window) );
+    // In Wt4, WApplication::bind() was removed; lambda passed directly
+    auto closer = [window](){ window->accept(); };
     // We wont have redo show the dialog again, because then the closer functionoid wont work, and
     //  it isnt worth making the SimpleDialog a member variable of the InterSpec class.
     m_undo->addUndoRedoStep( closer, nullptr, "Show clear session dialog" );
@@ -4874,7 +4878,7 @@ void InterSpec::showWelcomeDialogWorker( const bool force )
   
   m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
 
-  m_useInfoWindow->finished().connect( boost::bind( &InterSpec::deleteWelcomeDialog, this, force ) );
+  m_useInfoWindow->finished().connect( [this, force](){ deleteWelcomeDialog( force ); } );
   
   if( force && m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -5069,13 +5073,13 @@ void InterSpec::showFileQueryDialog()
   SpecFileQueryWidget *qw = new SpecFileQueryWidget( this );
   
   WGridLayout *stretcher = m_specFileQueryDialog->stretcher();
-  stretcher->addWidget( qw, 0, 0 );
+  stretcher->addWidget( std::unique_ptr<WWidget>(qw), 0, 0 );
   stretcher->setContentsMargins( 0, 0, 0, 0 );
   stretcher->setVerticalSpacing( 0 );
   stretcher->setHorizontalSpacing( 0 );
   
   WPushButton *closeButton = m_specFileQueryDialog->addCloseButtonToFooter( WString::tr("Close"), true );
-  closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_specFileQueryDialog ) );
+  closeButton->clicked().connect( [this](){ m_specFileQueryDialog->hide(); } );
   
   m_specFileQueryDialog->finished().connect( this, &InterSpec::deleteFileQueryDialog );
   
@@ -5087,7 +5091,7 @@ void InterSpec::showFileQueryDialog()
   
   AuxWindow::addHelpInFooter( m_specFileQueryDialog->footer(), "spectrum-file-query" );
   
-  new UndoRedoManager::BlockGuiUndoRedo( m_specFileQueryDialog ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+  m_specFileQueryDialog->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void showFileQueryDialog()
 
 
@@ -5166,24 +5170,23 @@ void InterSpec::showWarningsWindow()
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize
                    | AuxWindowProperties::SetCloseable) );
-    m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
+    m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Unit::Pixel), Wt::Side::Left | Wt::Side::Top );
     m_warningsWindow->rejectWhenEscapePressed();
-    m_warningsWindow->stretcher()->addWidget( m_warnings, 0, 0, 1, 1 );
+    m_warningsWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_warnings), 0, 0, 1, 1 );
     m_warningsWindow->stretcher()->setContentsMargins(0,0,0,0);
     //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
     //  size to be the min-size
     m_warningsWindow->setMinimumSize( 640, 480 );
-    m_warningsWindow->finished().connect( boost::bind( &InterSpec::handleWarningsWindowClose, this ) );
+    m_warningsWindow->finished().connect( [this](){ handleWarningsWindowClose(); } );
         
       
-    WPushButton *clearButton = new WPushButton( WString::tr("notification-log-clear"),
-                                               m_warningsWindow->footer() );
-    clearButton->clicked().connect( boost::bind( &WarningWidget::clearMessages, m_warnings ) );
+    WPushButton *clearButton = m_warningsWindow->footer()->addNew<WPushButton>( WString::tr("notification-log-clear") );
+    clearButton->clicked().connect( [this](){ m_warnings->clearMessages(); } );
     clearButton->addStyleClass( "BinIcon" );
     if( isMobile() )
-      clearButton->setFloatSide( Right );
+      clearButton->setFloatSide( Wt::Side::Right );
     WPushButton *closeButton = m_warningsWindow->addCloseButtonToFooter();
-    closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_warningsWindow ) );
+    closeButton->clicked().connect( [this](){ m_warningsWindow->hide(); } );
   }//if( !m_warningsWindow )
   
   m_warningsWindow->show();
@@ -5203,7 +5206,8 @@ void InterSpec::handleWarningsWindowClose()
 {
   if( m_warningsWindow )
   {
-    m_warningsWindow->stretcher()->removeWidget( m_warnings );
+    // In Wt4, removeWidget returns unique_ptr; release() to keep m_warnings alive for re-use
+    m_warningsWindow->stretcher()->removeWidget( m_warnings ).release();
     AuxWindow::deleteAuxWindow( m_warningsWindow );
     m_warningsWindow = nullptr;
     
@@ -5233,21 +5237,21 @@ void InterSpec::showPeakInfoWindow()
     m_peakInfoWindow->rejectWhenEscapePressed();
     WGridLayout *layout = m_peakInfoWindow->stretcher();
     layout->setContentsMargins( 0, 0, 0, 0 );
-    layout->addWidget( m_peakInfoDisplay, 0, 0 );
+    layout->addWidget( std::unique_ptr<WWidget>(m_peakInfoDisplay), 0, 0 );
     // If the "Peak Manager" tab hasnt been explicitly shown yet, then `m_peakInfoDisplay` will
     //  be hidden, so we need to explicitly show it.
     m_peakInfoDisplay->show();
     WContainerWidget *footer = m_peakInfoWindow->footer();
     WPushButton *closeButton = m_peakInfoWindow->addCloseButtonToFooter(WString::tr("Close"),true);
-    closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_peakInfoWindow ) );
+    closeButton->clicked().connect( [this](){ m_peakInfoWindow->hide(); } );
     
-    WPushButton *b = new WPushButton( WString::tr(CalibrationTabTitleKey), footer );
+    WPushButton *b = footer->addNew<WPushButton>( WString::tr(CalibrationTabTitleKey) );
     b->clicked().connect( this, &InterSpec::showEnergyCalWindow );
-    b->setFloatSide(Wt::Right);
-      
-    b = new WPushButton( WString::tr(GammaLinesTabTitleKey), footer );
+    b->setFloatSide(Wt::Side::Right);
+
+    b = footer->addNew<WPushButton>( WString::tr(GammaLinesTabTitleKey) );
     b->clicked().connect( this, &InterSpec::showGammaLinesWindow );
-    b->setFloatSide(Wt::Right);
+    b->setFloatSide(Wt::Side::Right);
       
     AuxWindow::addHelpInFooter( footer, "peak-manager" );
       
@@ -5266,17 +5270,23 @@ void InterSpec::handlePeakInfoClose()
   if( !m_peakInfoWindow )
     return;
 
-  const bool removed = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
-  assert( removed );
-  
+  // In Wt4, removeWidget returns unique_ptr transferring ownership
+  auto removed_ptr = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
+  assert( removed_ptr != nullptr );
+
   if( m_toolsTabs )
   {
     if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
     {
-      m_toolsTabs->addTab( m_peakInfoDisplay, WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
+      m_toolsTabs->addTab( std::move(removed_ptr), WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
       m_toolsTabs->setCurrentIndex( m_toolsTabs->indexOf(m_peakInfoDisplay) );
     }//if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
     m_currentToolsTab = m_toolsTabs->currentIndex();
+  }else
+  {
+    // No tab widget - keep m_peakInfoDisplay alive via release() until explicitly deleted
+    // Wt4_TODO: clarify ownership when no tabs present
+    removed_ptr.release();
   }//if( m_toolsTabs )
   
   delete m_peakInfoWindow;
@@ -5315,7 +5325,7 @@ void InterSpec::finishStoreStateInDb( const WString &name,
       state->snapshotTagParent = parent;
     }//parent
     
-    answer = m_user.session()->add( state );
+    answer = m_user.session()->add( std::unique_ptr<UserState>(state) );
     transaction.commit();
   }//End interaction with database
   
@@ -5728,27 +5738,27 @@ void InterSpec::startN42TestStates()
   
   WGridLayout *layout = window->stretcher();
   WSelectionBox *filesbox = new WSelectionBox();
-  layout->addWidget( filesbox, 0, 0, 1, 2 );
-  
+  layout->addWidget( std::unique_ptr<WWidget>(filesbox), 0, 0, 1, 2 );
+
   //Lets display files by alphabetical name
   vector<string> dispfiles;
   for( const string &p : files )
     dispfiles.push_back( SpecUtils::fs_relative( path_to_tests, p ) );
-    
+
   std::sort( begin(dispfiles), end(dispfiles) );
-  
+
   for( const string &name : dispfiles )
     filesbox->addItem( name );
-  
+
   WPushButton *button = new WPushButton( WString::tr("Cancel") );
-  layout->addWidget( button, 1, 0, AlignCenter );
-  button->clicked().connect( boost::bind(&AuxWindow::deleteAuxWindow, window) );
-  
+  layout->addWidget( std::unique_ptr<WWidget>(button), 1, 0, Wt::AlignmentFlag::Center );
+  button->clicked().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
   button = new WPushButton( WString::tr("Load") );
   button->disable();
-  button->clicked().connect( boost::bind( &doTestStateLoad, filesbox, window, this ) );
-  
-  layout->addWidget( button, 1, 1, AlignCenter );
+  button->clicked().connect( [filesbox, window, this](){ doTestStateLoad( filesbox, window, this ); } );
+
+  layout->addWidget( std::unique_ptr<WWidget>(button), 1, 1, Wt::AlignmentFlag::Center );
   filesbox->activated().connect( button, &WPushButton::enable );
   
   layout->setRowStretch( 0, 1 );
@@ -5766,21 +5776,21 @@ void InterSpec::startStoreTestState()
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
   window->setClosable( false );
   WGridLayout *layout = window->stretcher();
   WLineEdit *edit = new WLineEdit();
-  edit->setEmptyText( WString::tr("db-name-empty-txt") );
-  
+  edit->setPlaceholderText( WString::tr("db-name-empty-txt") );
+
   edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   edit->setAttributeValue( "autocorrect", "off" );
   edit->setAttributeValue( "spellcheck", "off" );
 #endif
-  
+
   WLabel *label = new WLabel( WString::tr("Name") );
-  layout->addWidget( label, 0, 0 );
-  layout->addWidget( edit,  0, 1 );
+  layout->addWidget( std::unique_ptr<WWidget>(label), 0, 0 );
+  layout->addWidget( std::unique_ptr<WWidget>(edit), 0, 1 );
   label->setBuddy( edit );
 
   if( !!m_dataMeasurement && m_dataMeasurement->filename().size() )
@@ -5789,16 +5799,16 @@ void InterSpec::startStoreTestState()
   WTextArea *summary = new WTextArea();
   label = new WLabel( WString::tr("Desc.") );
   label->setBuddy( summary );
-  summary->setEmptyText( WString::tr("db-dec-empty-txt") );
-  layout->addWidget( label, 1, 0 );
-  layout->addWidget( summary, 1, 1 );
+  summary->setPlaceholderText( WString::tr("db-dec-empty-txt") );
+  layout->addWidget( std::unique_ptr<WWidget>(label), 1, 0 );
+  layout->addWidget( std::unique_ptr<WWidget>(summary), 1, 1 );
   layout->setColumnStretch( 1, 1 );
   layout->setRowStretch( 1, 1 );
   
   
   WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false);
-  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  
+  closeButton->clicked().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
   WPushButton *save = new WPushButton( WString::tr("Create"), window->footer() );
   save->setIcon( "InterSpec_resources/images/disk2.png" );
   
@@ -5870,13 +5880,13 @@ void InterSpec::stateSaveAs()
       | AuxWindowProperties::TabletNotFullScreen
       | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
   window->setClosable( false );
   window->disableCollapse(); //Not sure why the property flags dont get this
   WGridLayout *layout = window->stretcher();
     
   WLineEdit *edit = new WLineEdit();
-  edit->setEmptyText( WString::tr("db-name-empty-txt") );
+  edit->setPlaceholderText( WString::tr("db-name-empty-txt") );
   
   edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -5886,43 +5896,43 @@ void InterSpec::stateSaveAs()
 
   
   WText *label = new WText( WString::tr("Name") );
-  layout->addWidget( label, 2, 0 );
-  layout->addWidget( edit,  2, 1 );
-    
+  layout->addWidget( std::unique_ptr<WWidget>(label), 2, 0 );
+  layout->addWidget( std::unique_ptr<WWidget>(edit), 2, 1 );
+
   if( !!m_dataMeasurement && m_dataMeasurement->filename().size() )
-      edit->setText( m_dataMeasurement->filename() );
-    
+    edit->setText( m_dataMeasurement->filename() );
+
   WTextArea *summary = new WTextArea();
   label = new WText( WString::tr("Desc.") );
-  summary->setEmptyText( WString::tr("db-dec-empty-txt") );
-  layout->addWidget( label, 3, 0 );
-  layout->addWidget( summary, 3, 1 );
-  
+  summary->setPlaceholderText( WString::tr("db-dec-empty-txt") );
+  layout->addWidget( std::unique_ptr<WWidget>(label), 3, 0 );
+  layout->addWidget( std::unique_ptr<WWidget>(summary), 3, 1 );
+
   layout->setColumnStretch( 1, 1 );
   layout->setRowStretch( 3, 1 );
-  
+
   label = new WText( WString::tr("db-dec-export-msg") );
   label->setInline( false );
-  label->setTextAlignment( Wt::AlignCenter );
-  layout->addWidget( label, 4, 1 );
+  label->setTextAlignment( Wt::AlignmentFlag::Center );
+  layout->addWidget( std::unique_ptr<WWidget>(label), 4, 1 );
   
   WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false);
-  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    
-  WPushButton *save = new WPushButton( WString::tr("Save") , window->footer() );
+  closeButton->clicked().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
+  WPushButton *save = window->footer()->addNew<WPushButton>( WString::tr("Save") );
   save->setIcon( "InterSpec_resources/images/disk2.png" );
-  
-  save->clicked().connect( boost::bind( &InterSpec::stateSaveAsFinish,
-                                        this, edit, summary, window ) );
-    
+
+  save->clicked().connect( [this, edit, summary, window](){ stateSaveAsFinish( edit, summary, window ); } );
+
   window->setMinimumSize(WLength(450), WLength(250));
-    
+
   window->centerWindow();
   window->show();
-  
+
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto closer = wApp->bind( boost::bind( &AuxWindow::hide, window ) );
+    // In Wt4, WApplication::bind() was removed; lambda passed directly
+    auto closer = [window](){ window->hide(); };
     m_undo->addUndoRedoStep( closer, nullptr, "Show save-as dialog." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void stateSaveAs()
@@ -5934,45 +5944,45 @@ void InterSpec::stateSaveTag()
   AuxWindow *window = new AuxWindow( WString::tr("window-title-tag-state"),
                                     (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
   window->setClosable( false );
   window->disableCollapse();
   WGridLayout *layout = window->stretcher();
-    
+
   WLineEdit *edit = new WLineEdit();
-  
+
   edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   edit->setAttributeValue( "autocorrect", "off" );
   edit->setAttributeValue( "spellcheck", "off" );
 #endif
-  
+
   if( !isMobile() )
     edit->setFocus(true);
   WText *label = new WText( WString::tr("Name") );
-  layout->addWidget( label, 2, 0 );
-  layout->addWidget( edit,  2, 1 );
-    
+  layout->addWidget( std::unique_ptr<WWidget>(label), 2, 0 );
+  layout->addWidget( std::unique_ptr<WWidget>(edit), 2, 1 );
+
   layout->setColumnStretch( 1, 1 );
   layout->setRowStretch( 2, 1 );
-  
+
   WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false );
-  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  
-  WPushButton *save = new WPushButton( WString::tr("db-Tag"), window->footer() );
+  closeButton->clicked().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
+  WPushButton *save = window->footer()->addNew<WPushButton>( WString::tr("db-Tag") );
   //save->setIcon( "InterSpec_resources/images/disk2.png" );
-    
-  save->clicked().connect( boost::bind( &InterSpec::stateSaveTagFinish,
-                                         this, edit, window ) );
-    
+
+  save->clicked().connect( [this, edit, window](){ stateSaveTagFinish( edit, window ); } );
+
   window->setMinimumSize(WLength(450), WLength::Auto);
-    
+
   window->centerWindow();
   window->show();
-  
+
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto closer = wApp->bind( boost::bind( &AuxWindow::hide, window ) );
+    // In Wt4, WApplication::bind() was removed; lambda passed directly
+    auto closer = [window](){ window->hide(); };
     m_undo->addUndoRedoStep( closer, nullptr, "Show save-tag dialog." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void stateSaveTag()
@@ -6075,9 +6085,9 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
   //        if( m_dataMeasurement->memmorysize() > UserFileInDb::sm_maxFileSizeBytes )
   //          return;
   
-  const int offset = wApp->environment().timeZoneOffset();
+  const chrono::minutes offset = wApp->environment().timeZoneOffset();
   WString desc = "Working Point";
-  const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
+  const auto now = chrono::system_clock::now() + offset;
   WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
   
   DataBaseUtils::DbTransaction transaction( *m_sql );
@@ -6116,10 +6126,10 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
         state->description = desc;
         state->snapshotTagParent = parentState;
         
-        Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( state );
-        
+        Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( std::unique_ptr<UserState>(state) );
+
         saveStateToDb( dbstate );
-        
+
         Wt::log("debug") << "saveStateAtForegroundChange(): Saved kUserStateAutoSavedWork"
         " state to database";
       }else
@@ -6171,7 +6181,7 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
         assert( wk_ptr.lock() );
         if( doAsync )
         {
-          WServer::instance()->schedule( 25, wApp->sessionId(), call_save, [](){
+          WServer::instance()->schedule( std::chrono::milliseconds(25), wApp->sessionId(), call_save, [](){
             cerr << "Failed to save spectrum to DB in worker (session dead?)." << endl;
             assert( 0 );
           } );
@@ -6216,9 +6226,9 @@ void InterSpec::saveStateForEndOfSession()
   const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
   Wt::log( "info" ) << "Will auto-save state for session-id: '" << wApp->sessionId() << "' at end of session.";
 
-  const int offset = wApp->environment().timeZoneOffset();
+  const chrono::minutes offset = wApp->environment().timeZoneOffset();
   WString desc = "End of Session";
-  const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
+  const auto now = chrono::system_clock::now() + offset;
   WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
   
   
@@ -6272,12 +6282,12 @@ void InterSpec::saveStateForEndOfSession()
     state->description = desc;
     state->snapshotTagParent = parentState;
     
-    Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( state );
-    
+    Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( std::unique_ptr<UserState>(state) );
+
     saveStateToDb( dbstate );
-    
+
     transaction.commit();
-    
+
     Wt::log("debug") << "Saved end of session app state to database";
   }catch( std::exception &e )
   {
@@ -6315,7 +6325,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   
   if( menuDiv )
   {
-    WPushButton *button = new WPushButton( menuname, menuDiv );
+    WPushButton *button = menuDiv->addNew<WPushButton>( menuname );
     button->addStyleClass( "MenuLabel" );
     m_fileMenuPopup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
   }else
@@ -6346,9 +6356,9 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
         doJavaScript( "window.interspecJava.startBrowseToOpenFile();" );
       }) );
 #else
-      item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
+      item->triggered().connect( [this](){ m_fileManager->startQuickUpload(); } );
 #endif
-      
+
       item = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-loaded-spec") );
       item->triggered().connect( this, &InterSpec::showCompactFileManagerWindow );
     }//if( mobile )
@@ -6363,19 +6373,19 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     
     // --- new save menu ---
     m_saveState = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-store") );
-    m_saveState->triggered().connect( boost::bind( &InterSpec::stateSave, this ) );
+    m_saveState->triggered().connect( [this](){ stateSave(); } );
     HelpSystem::attachToolTipOn(m_saveState, WString::tr("app-mi-tt-file-store"), showToolTips );
     
     
     // --- new save as menu ---
     m_saveStateAs = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-store-as") );
-    m_saveStateAs->triggered().connect( boost::bind( &InterSpec::stateSaveAs, this ) );
+    m_saveStateAs->triggered().connect( [this](){ stateSaveAs(); } );
     HelpSystem::attachToolTipOn(m_saveStateAs, WString::tr("app-mi-tt-file-store-as"), showToolTips );
     m_saveStateAs->setDisabled( true );
     
     // --- new save tag menu ---
     m_createTag = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-tag"), "InterSpec_resources/images/stop_time_small.png");
-    m_createTag->triggered().connect( boost::bind(&InterSpec::stateSaveTag, this ));
+    m_createTag->triggered().connect( [this](){ stateSaveTag(); } );
     
     HelpSystem::attachToolTipOn(m_createTag, WString::tr("app-mi-tt-file-tag"), showToolTips );
     
@@ -6411,24 +6421,27 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   const string docroot = wApp->docRoot();
   
   item = subPopup->addMenuItem( WString::tr("app-mi-samples-ba133") );
-  item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                         SpecUtils::append_path(docroot, "example_spectra/ba133_source_640s_20100317.n42"),
-                                         SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::N42_2006 ) );
+  {
+    const string path = SpecUtils::append_path( docroot, "example_spectra/ba133_source_640s_20100317.n42" );
+    item->triggered().connect( [this, path](){ m_fileManager->loadFromFileSystem( path, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::N42_2006 ); } );
+  }
   if( mobile )
     item = subPopup->addMenuItem( WString::tr("app-mi-samples-passthrough-mobile") );
   else
     item = subPopup->addMenuItem( WString::tr("app-mi-samples-passthrough") );
-  item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                         SpecUtils::append_path(docroot, "example_spectra/passthrough.n42"),
-                                         SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::N42_2006 ) );
-  
+  {
+    const string path = SpecUtils::append_path( docroot, "example_spectra/passthrough.n42" );
+    item->triggered().connect( [this, path](){ m_fileManager->loadFromFileSystem( path, SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::N42_2006 ); } );
+  }
+
   item = subPopup->addMenuItem( WString::tr("app-mi-samples-background") );
-  item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                         SpecUtils::append_path(docroot, "example_spectra/background_20100317.n42"),
-                                         SpecUtils::SpectrumType::Background, SpecUtils::ParserType::N42_2006 ) );
-  
+  {
+    const string path = SpecUtils::append_path( docroot, "example_spectra/background_20100317.n42" );
+    item->triggered().connect( [this, path](){ m_fileManager->loadFromFileSystem( path, SpecUtils::SpectrumType::Background, SpecUtils::ParserType::N42_2006 ); } );
+  }
+
   item = subPopup->addMenuItem( WString::tr("app-mi-samples-reference") );
-  item->triggered().connect( boost::bind( &RefSpectraDialog::createDialog, RefSpectraInitialBehaviour::LastUserSelectedSpectra, SpecUtils::SpectrumType::Foreground ) );
+  item->triggered().connect( [](){ RefSpectraDialog::createDialog( RefSpectraInitialBehaviour::LastUserSelectedSpectra, SpecUtils::SpectrumType::Foreground ); } );
   
   
   if( !mobile )
@@ -6441,12 +6454,12 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
       doJavaScript( "window.interspecJava.startBrowseToOpenFile();" );
     }) );
 #else
-    item->triggered().connect( boost::bind ( &SpecMeasManager::startQuickUpload, m_fileManager ) );
+    item->triggered().connect( [this](){ m_fileManager->startQuickUpload(); } );
 #endif
   }//if( !mobile )
   
   m_exportSpecFileMenu = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-export-file") );
-  m_exportSpecFileMenu->triggered().connect( boost::bind( &InterSpec::createExportSpectrumFileDialog, this ) );
+  m_exportSpecFileMenu->triggered().connect( [this](){ createExportSpectrumFileDialog(); } );
   m_exportSpecFileMenu->disable();
   
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -6459,18 +6472,18 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   m_fileMenuPopup->addSeparator();
   PopupDivMenu* testing = m_fileMenuPopup->addPopupMenuItem( "Testing" , "InterSpec_resources/images/testing.png");
   item = testing->addMenuItem( "Store App Test State..." );
-  item->triggered().connect( boost::bind( &InterSpec::startStoreTestState, this ) );
+  item->triggered().connect( [this](){ startStoreTestState(); } );
   HelpSystem::attachToolTipOn(item,"Stores app state as part of the automated test suite", showToolTips );
   
   item = testing->addMenuItem( "Load N42 Test State..." );
-  item->triggered().connect( boost::bind(&InterSpec::startN42TestStates, this) );
+  item->triggered().connect( [this](){ startN42TestStates(); } );
   HelpSystem::attachToolTipOn(item, "Loads a InterSpec specific variant of a "
                                     "2012 N42 file that contains Foreground, "
                                     "Background, User Settings, and Shielding/"
                                     "Source model.", showToolTips );
   
   item = testing->addMenuItem( "Show Testing Widget..." );
-  item->triggered().connect( boost::bind(&InterSpec::startStateTester, this ) );
+  item->triggered().connect( [this](){ startStateTester(); } );
 #endif //#if( INCLUDE_ANALYSIS_TEST_SUITE )
 
 
@@ -6512,7 +6525,7 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
   
   if( menuDiv )
   {
-    WPushButton *button = new WPushButton( menuname, menuDiv );
+    WPushButton *button = menuDiv->addNew<WPushButton>( menuname );
     button->addStyleClass( "MenuLabel" );
     m_editMenuPopup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
   }else
@@ -6541,10 +6554,10 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
     redoMenu->setDisabled( true );
     redoMenu->triggered().connect( m_undo, &UndoRedoManager::executeRedo );
     
-    m_undo->undoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, undoMenu, boost::placeholders::_1) );
-    m_undo->redoMenuDisableUpdate().connect( boost::bind(&PopupDivMenuItem::setDisabled, redoMenu, boost::placeholders::_1) );
-    m_undo->undoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, undoMenu, boost::placeholders::_1, TextFormat::PlainText) );
-    m_undo->redoMenuToolTipUpdate().connect( boost::bind(&PopupDivMenuItem::setToolTip, redoMenu, boost::placeholders::_1, TextFormat::PlainText) );
+    m_undo->undoMenuDisableUpdate().connect( [undoMenu]( const bool v ){ undoMenu->setDisabled( v ); } );
+    m_undo->redoMenuDisableUpdate().connect( [redoMenu]( const bool v ){ redoMenu->setDisabled( v ); } );
+    m_undo->undoMenuToolTipUpdate().connect( [undoMenu]( const WString &v ){ undoMenu->setToolTip( v, TextFormat::Plain ); } );
+    m_undo->redoMenuToolTipUpdate().connect( [redoMenu]( const WString &v ){ redoMenu->setToolTip( v, TextFormat::Plain ); } );
   }//if( m_undo )
   
 #if( !ANDROID )
@@ -6562,15 +6575,15 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
 #endif
   
   auto saveitem = m_editMenuPopup->insertMenuItem( (m_undo ? 3 : -1), WString::tr("app-mi-edit-save-png"), "", true );
-  saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, true) );
-  
+  saveitem->triggered().connect( [this](){ saveChartToImg( true, true ); } );
+
 #if( BUILD_AS_OSX_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
     menuindex = 4;
 #endif
-  
+
   saveitem = m_editMenuPopup->insertMenuItem( (m_undo ? 4 : -1), WString::tr("app-mi-edit-save-svg"), "", true );
-  saveitem->triggered().connect( boost::bind(&InterSpec::saveChartToImg, this, true, false) );
+  saveitem->triggered().connect( [this](){ saveChartToImg( true, false ); } );
 #endif
   
 #if( BUILD_AS_OSX_APP )
@@ -6585,7 +6598,7 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
 #endif
   
   PopupDivMenuItem *uriItem = m_editMenuPopup->insertMenuItem( (m_undo ? menuindex : -1), WString::tr("app-mi-edit-enter-url"), "", true );
-  uriItem->triggered().connect( boost::bind(&InterSpec::makeEnterAppUrlWindow, this) );
+  uriItem->triggered().connect( [this](){ makeEnterAppUrlWindow(); } );
   
 #if( BUILD_AS_OSX_APP )
   // All the macOS native menu stuff (copy/paste/select/etc) will be below our stuff
@@ -6634,8 +6647,8 @@ void InterSpec::addToolsTabToMenuItems()
   
   icon = "InterSpec_resources/images/reflines.svg";
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 0, WString::tr(GammaLinesTabTitleKey), icon , true );
-  item->triggered().connect( boost::bind( &InterSpec::showGammaLinesWindow, this ) );
-  
+  item->triggered().connect( [this](){ showGammaLinesWindow(); } );
+
   tooltip = WString::tr("app-tab-tt-ref-photopeak");
   HelpSystem::attachToolTipOn( item, tooltip, showToolTips );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::RefPhotopeaks)] = item;
@@ -6663,7 +6676,7 @@ void InterSpec::addToolsTabToMenuItems()
 
   icon = "InterSpec_resources/images/auto_peak_search.png";
   item = m_toolsMenuPopup->insertMenuItem( index_offest + 4, WString::tr("app-tab-tt-auto-search"), icon, true );
-  item->triggered().connect( boost::bind( &PeakSearchGuiUtils::automated_search_for_peaks, this, true ) );
+  item->triggered().connect( [this](){ PeakSearchGuiUtils::automated_search_for_peaks( this, true ); } );
   m_tabToolsMenuItems[static_cast<int>(ToolTabMenuItems::AutoPeakSearch)] = item;  
   
   item = m_toolsMenuPopup->addSeparatorAt( index_offest + 5 );
@@ -6739,20 +6752,19 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   
   if( showToolTabs )
   { //We are showing the tool tabs
+    // In Wt4, removeWidget returns unique_ptr - release() to keep widgets alive for re-use
     if( m_menuDiv )
-      m_layout->removeWidget( m_menuDiv );
-  
-    m_layout->removeWidget( m_charts );
-    m_layout->clear();
-    
+      m_layout->removeWidget( m_menuDiv ).release();
+
+    m_layout->removeWidget( m_charts ).release();
+    // No need to call clear() - setLayout(unique_ptr) below will destroy the old layout
+
     //We have to completely replace m_layout or else the vertical spacing
-    //  changes wont quite trigger.  Prob a Wt bug, so should investigate again
-    //  if we ever upgrade Wt.
-    delete m_layout;
+    //  changes wont quite trigger.  In Wt4, setLayout(unique_ptr) handles cleanup of old layout.
     m_layout = new WGridLayout();
     m_layout->setContentsMargins( 0, 0, 0, 0 );
     m_layout->setHorizontalSpacing( 0 );
-    setLayout( m_layout );
+    setLayout( std::unique_ptr<WLayout>(m_layout) );
     
     const bool wasShowingPeakManager = !!m_peakInfoWindow;
     handlePeakInfoClose();
@@ -6760,7 +6772,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     if( m_energyCalWindow )
     {
-      m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool );
+      // In Wt4, removeWidget returns unique_ptr; release() to keep m_energyCalTool alive for re-use
+      m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool ).release();
       delete m_energyCalWindow;
       m_energyCalWindow = nullptr;
     }//if( m_energyCalWindow )
@@ -6772,26 +6785,26 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     const CompactFileManager::DisplayMode cfmDispMode = phone ? CompactFileManager::Tabbed : CompactFileManager::LeftToRight;
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, cfmDispMode );
     WString tabTitle = phone ? WString() : WString::tr(FileTabTitleKey);
-    WMenuItem *fileTab = m_toolsTabs->addTab( compact, tabTitle, TabLoadPolicy );
+    WMenuItem *fileTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(compact), tabTitle, TabLoadPolicy );
     if( phone )
       fileTab->setIcon( "InterSpec_resources/images/spec_files.svg" );
 #else
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
-    m_toolsTabs->addTab( compact, WString::tr(FileTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::unique_ptr<WWidget>(compact), WString::tr(FileTabTitleKey), TabLoadPolicy );
 #endif
     
-    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
-                                                   boost::placeholders::_1,
-                                                   boost::placeholders::_2,
-                                                   boost::placeholders::_3 ) );
+    m_spectrum->yAxisScaled().connect( [compact]( const double a1, const double a2,
+                                                  const SpecUtils::SpectrumType a3 ){
+      compact->handleSpectrumScale( a1, a2, a3 );
+    } );
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     m_peakInfoDisplay->setNarrowPhoneLayout( phone );
     tabTitle = phone ? WString() : WString::tr(PeakInfoTabTitleKey);
-    WMenuItem *peakManTab = m_toolsTabs->addTab( m_peakInfoDisplay, tabTitle, TabLoadPolicy );
+    WMenuItem *peakManTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_peakInfoDisplay), tabTitle, TabLoadPolicy );
     if( phone )
       peakManTab->setIcon( "InterSpec_resources/images/peakmanager.svg" ); //
 #else
-    m_toolsTabs->addTab( m_peakInfoDisplay, WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_peakInfoDisplay), WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
 #endif
 //    WString tooltip = WString::tr("app-tab-tt-peak-manager");
 //    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
@@ -6811,9 +6824,10 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
                                               this );
     setReferenceLineColors( nullptr );
     
-    m_externalRidResultsRecieved.connect( boost::bind( &ReferencePhotopeakDisplay::setExternalRidResults,
-                                                      m_referencePhotopeakLines, boost::placeholders::_1 ));
-    
+    m_externalRidResultsRecieved.connect( [this]( std::shared_ptr<const ExternalRidResults> v ){
+      m_referencePhotopeakLines->setExternalRidResults( v );
+    } );
+
     //PreLoading is necessary on the m_referencePhotopeakLines widget, so that the
     //  "Isotope Search" widget will work properly when a nuclide is clicked
     //  on to display its photpeaks
@@ -6823,11 +6837,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     m_referencePhotopeakLines->setNarrowPhoneLayout( phone );
     tabTitle = phone ? WString(): WString::tr(GammaLinesTabTitleKey);
-    WMenuItem *refPhotoTab = m_toolsTabs->addTab( m_referencePhotopeakLines, tabTitle, TabLoadPolicy );
+    WMenuItem *refPhotoTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_referencePhotopeakLines), tabTitle, TabLoadPolicy );
     if( phone )
       refPhotoTab->setIcon( "InterSpec_resources/images/reflines.svg" );
 #else
-    m_toolsTabs->addTab( m_referencePhotopeakLines, WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_referencePhotopeakLines), WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
 #endif
 //   WString tooltip = WString::tr("app-tab-tt-ref-photopeak");
 //      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
@@ -6841,12 +6855,12 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_energyCalTool->setWideLayout();
       
     tabTitle = phone ? WString() : WString::tr(CalibrationTabTitleKey);
-    WMenuItem *energyCalTab = m_toolsTabs->addTab( m_energyCalTool, tabTitle, TabLoadPolicy );
+    WMenuItem *energyCalTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_energyCalTool), tabTitle, TabLoadPolicy );
     if( phone )
       energyCalTab->setIcon( "InterSpec_resources/images/calibrate.svg" );
 #else
     m_energyCalTool->setWideLayout();
-    m_toolsTabs->addTab( m_energyCalTool, WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_energyCalTool), WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
 #endif
     
 //  WString tooltip = WString::tr("app-tab-tt-energy-cal");
@@ -6856,19 +6870,19 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsLayout->setContentsMargins( 0, 0, 0, 0 );
     m_toolsLayout->setVerticalSpacing( 0 );
     m_toolsLayout->setHorizontalSpacing( 0 );
-    m_toolsLayout->addWidget( m_toolsTabs, 0, 0 );
-    
+    m_toolsLayout->addWidget( std::unique_ptr<WWidget>(m_toolsTabs), 0, 0 );
+
     int row = 0;
     if( m_menuDiv )
-      m_layout->addWidget( m_menuDiv,  row++, 0 );
-    
-    m_layout->addWidget( m_charts, row, 0 );
+      m_layout->addWidget( std::unique_ptr<WWidget>(m_menuDiv), row++, 0 );
+
+    m_layout->addWidget( std::unique_ptr<WWidget>(m_charts), row, 0 );
     m_layout->setRowResizable( row, true );
     m_layout->setRowStretch( row, 1 );
     
     m_layout->setVerticalSpacing( layoutVertSpacing );
     if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amount of space between the menu bar and the chart
-      m_charts->setMargin( -layoutVertSpacing, Wt::Top );
+      m_charts->setMargin( -layoutVertSpacing, Wt::Side::Top );
     
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
     // With out this next line the time chart wont show if we hide tool tabs, and then show
@@ -6883,7 +6897,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //m_layout->addLayout( toolsLayout,   ++row, 0 );
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     WContainerWidget *toolsWrapper = new ToolTabContentWrapper( this );
-    toolsWrapper->setLayout( m_toolsLayout );
+    toolsWrapper->setLayout( std::unique_ptr<WLayout>(m_toolsLayout) );
     if( (m_toolsTabsContentHeight <= 100)  //No height set yet (e.g., app is just loading), or user made way to small
        || (m_renderedHeight < 100)         //App is loading
        || ((m_renderedHeight > 0) && (m_toolsTabsContentHeight > (m_renderedHeight/2))) ) //No more than half the screen
@@ -6906,24 +6920,25 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     toolsWrapper->setHeight( 245 );
 #endif
     
-    m_layout->addWidget( toolsWrapper, ++row, 0 );
+    m_layout->addWidget( std::unique_ptr<WWidget>(toolsWrapper), ++row, 0 );
     m_layout->setRowStretch( row, 0 );
-    
+
     if( m_nuclideSearchWindow )
     {
       m_nuclideSearch->clearSearchEnergiesOnClient();
-      m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch );
+      // In Wt4, removeWidget returns unique_ptr; release() to keep m_nuclideSearch alive
+      m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch ).release();
       delete m_nuclideSearchWindow;
       m_nuclideSearchWindow = 0;
     }//if( m_nuclideSearchWindow )
-    
+
     assert( !m_nuclideSearchContainer );
-    
+
     m_nuclideSearchContainer = new WContainerWidget();
     WGridLayout *isoSearchLayout = new WGridLayout();
-    m_nuclideSearchContainer->setLayout( isoSearchLayout );
+    m_nuclideSearchContainer->setLayout( std::unique_ptr<WLayout>(isoSearchLayout) );
     isoSearchLayout->setContentsMargins( 0, 0, 0, 0 );
-    isoSearchLayout->addWidget( m_nuclideSearch, 0, 0 );
+    isoSearchLayout->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch), 0, 0 );
     m_nuclideSearchContainer->setMargin( 0 );
     m_nuclideSearchContainer->setPadding( 0 );
     isoSearchLayout->setRowStretch( 0, 1 );
@@ -6932,11 +6947,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     m_nuclideSearch->setNarrowPhoneLayout( phone );
     tabTitle = phone ? WString() : WString::tr(NuclideSearchTabTitleKey);
-    WMenuItem *nuclideTab = m_toolsTabs->addTab( m_nuclideSearchContainer, tabTitle, TabLoadPolicy );
+    WMenuItem *nuclideTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_nuclideSearchContainer), tabTitle, TabLoadPolicy );
     if( phone )
       nuclideTab->setIcon( "InterSpec_resources/images/magnifier_black.svg" );
 #else
-    m_toolsTabs->addTab( m_nuclideSearchContainer, WString::tr(NuclideSearchTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_nuclideSearchContainer), WString::tr(NuclideSearchTabTitleKey), TabLoadPolicy );
 #endif
 //  WString tooltip = WString::tr("app-tab-tt-nuc-search");
 //  HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
@@ -6944,7 +6959,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
     // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
     //  Activity tool
-    m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
+    m_toolsTabs->tabClosed().connect( [this]( const int a1 ){ handleToolTabClosed( a1 ); } );
 #endif
     
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -6976,38 +6991,40 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   }else
   {
     //We are hiding the tool tabs
-    m_layout->removeWidget( m_charts );
-    
+    // In Wt4, removeWidget/removeTab returns unique_ptr; release() to keep widgets alive for re-use
+    m_layout->removeWidget( m_charts ).release();
+
     if( m_menuDiv )
-      m_layout->removeWidget( m_menuDiv );
-    m_toolsTabs->removeTab( m_peakInfoDisplay );
-    m_toolsTabs->removeTab( m_energyCalTool );
+      m_layout->removeWidget( m_menuDiv ).release();
+    m_toolsTabs->removeTab( m_peakInfoDisplay ).release();
+    m_toolsTabs->removeTab( m_energyCalTool ).release();
 
 #if( USE_REL_ACT_TOOL )
     if( m_relActManualGui )
     {
       if( !m_relActManualWindow )
-        m_toolsTabs->removeTab( m_energyCalTool );
+        m_toolsTabs->removeTab( m_energyCalTool ).release();
       handleRelActManualClose();
     }//if( m_relActManualGui )
-    
+
     if( m_relActAutoGui )
       handleRelActAutoClose();
 #endif
-    
+
 #if( USE_TERMINAL_WIDGET )
     if( m_terminal )
     {
       if( !m_terminalWindow )
-        m_toolsTabs->removeTab( m_terminal );
+        m_toolsTabs->removeTab( m_terminal ).release();
       handleTerminalWindowClose();
     }
 #endif
-    
+
     m_nuclideSearch->clearSearchEnergiesOnClient();
-    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
+    // Remove m_nuclideSearch from container before deleting container
+    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch ).release();
+    // removeTab returns unique_ptr which deletes m_nuclideSearchContainer; don't also delete manually
     m_toolsTabs->removeTab( m_nuclideSearchContainer );
-    delete m_nuclideSearchContainer;
     m_nuclideSearchContainer = nullptr;
     
     
@@ -7034,22 +7051,20 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     }//if( !refNucXmlState.empty() )
     
     m_toolsLayout = nullptr;
-    
-    m_layout->clear();
-    
+
+    // No need to call clear() - setLayout(unique_ptr) below will destroy the old layout
+
     //We have to completely replace m_layout or else the vertical spacing
-    //  changes wont quite trigger.  Prob a Wt bug, so should investigate again
-    //  if we ever upgrade Wt.
-    //delete m_layout;
+    //  changes wont quite trigger.  In Wt4, setLayout(unique_ptr) handles cleanup.
     m_layout = new WGridLayout();
     m_layout->setContentsMargins( 0, 0, 0, 0 );
     m_layout->setHorizontalSpacing( 0 );
-    setLayout( m_layout );
-    
+    setLayout( std::unique_ptr<WLayout>(m_layout) );
+
     int row = -1;
     if( m_menuDiv )
-      m_layout->addWidget( m_menuDiv, ++row, 0 );
-    m_layout->addWidget( m_charts, ++row, 0 );
+      m_layout->addWidget( std::unique_ptr<WWidget>(m_menuDiv), ++row, 0 );
+    m_layout->addWidget( std::unique_ptr<WWidget>(m_charts), ++row, 0 );
     m_layout->setRowStretch( row, 1 );
   }//if( showToolTabs ) / else
   
@@ -7131,7 +7146,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   
   if( menuDiv )
   {
-    WPushButton *button = new WPushButton( WString::tr("app-menu-view"), menuDiv );
+    WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-view") );
     button->addStyleClass( "MenuLabel" );
     m_displayOptionsPopupDiv = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
   }else
@@ -7143,8 +7158,8 @@ void InterSpec::addViewMenu( WWidget *parent )
                                                       "InterSpec_resources/images/dock_small.png" );
   m_toolTabsVisibleItems[1] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-hide-tabs"),
                                                     "InterSpec_resources/images/undock_small.png" );
-  m_toolTabsVisibleItems[0]->triggered().connect( boost::bind( &InterSpec::setToolTabsVisible, this, true ) );
-  m_toolTabsVisibleItems[1]->triggered().connect( boost::bind( &InterSpec::setToolTabsVisible, this, false ) );
+  m_toolTabsVisibleItems[0]->triggered().connect( [this](){ setToolTabsVisible( true ); } );
+  m_toolTabsVisibleItems[1]->triggered().connect( [this](){ setToolTabsVisible( false ); } );
 
   if( isPhone() )
   {
@@ -7170,10 +7185,10 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_logYItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-liny") );
   m_logYItems[0]->setHidden( logypref );
   m_logYItems[1]->setHidden( !logypref );
-  m_logYItems[0]->triggered().connect( boost::bind( &InterSpec::setLogY, this, true  ) );
-  m_logYItems[1]->triggered().connect( boost::bind( &InterSpec::setLogY, this, false ) );
+  m_logYItems[0]->triggered().connect( [this](){ setLogY( true ); } );
+  m_logYItems[1]->triggered().connect( [this](){ setLogY( false ); } );
   m_spectrum->setYAxisLog( logypref );
-  m_spectrum->yAxisLogLinChanged().connect( boost::bind(&InterSpec::setLogY, this, boost::placeholders::_1) );
+  m_spectrum->yAxisLogLinChanged().connect( [this]( const bool v ){ setLogY( v ); } );
   m_preferences->addCallbackWhenChanged( "LogY", this, &InterSpec::setLogY );
   
   const bool verticleLines = UserPreferences::preferenceValue<bool>( "ShowVerticalGridlines", this );
@@ -7181,8 +7196,8 @@ void InterSpec::addViewMenu( WWidget *parent )
                                           "InterSpec_resources/images/sc_togglegridvertical.png");
   m_verticalLinesItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-hide-vert"),
                                           "InterSpec_resources/images/sc_togglegridvertical.png");
-  m_verticalLinesItems[0]->triggered().connect( boost::bind( &InterSpec::setVerticalLines, this, true ) );
-  m_verticalLinesItems[1]->triggered().connect( boost::bind( &InterSpec::setVerticalLines, this, false ) );
+  m_verticalLinesItems[0]->triggered().connect( [this](){ setVerticalLines( true ); } );
+  m_verticalLinesItems[1]->triggered().connect( [this](){ setVerticalLines( false ); } );
   m_verticalLinesItems[0]->setHidden( verticleLines );
   m_verticalLinesItems[1]->setHidden( !verticleLines );
   m_spectrum->showVerticalLines( verticleLines );
@@ -7194,8 +7209,8 @@ void InterSpec::addViewMenu( WWidget *parent )
                                           "InterSpec_resources/images/sc_togglegridhorizontal.png");
   m_horizantalLinesItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-hide-horz"),
                                           "InterSpec_resources/images/sc_togglegridhorizontal.png");
-  m_horizantalLinesItems[0]->triggered().connect( boost::bind( &InterSpec::setHorizantalLines, this, true ) );
-  m_horizantalLinesItems[1]->triggered().connect( boost::bind( &InterSpec::setHorizantalLines, this, false ) );
+  m_horizantalLinesItems[0]->triggered().connect( [this](){ setHorizantalLines( true ); } );
+  m_horizantalLinesItems[1]->triggered().connect( [this](){ setHorizantalLines( false ); } );
   m_horizantalLinesItems[0]->setHidden( horizontalLines );
   m_horizantalLinesItems[1]->setHidden( !horizontalLines );
   m_spectrum->showHorizontalLines( horizontalLines );
@@ -7212,8 +7227,8 @@ void InterSpec::addViewMenu( WWidget *parent )
     m_spectrum->setCompactAxis( makeCompact );
     m_compactXAxisItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-compact-x"), "");
     m_compactXAxisItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-normal-x"), "");
-    m_compactXAxisItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, true ) );
-    m_compactXAxisItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, false ) );
+    m_compactXAxisItems[0]->triggered().connect( [this](){ setXAxisCompact( true ); } );
+    m_compactXAxisItems[1]->triggered().connect( [this](){ setXAxisCompact( false ); } );
     m_compactXAxisItems[0]->setHidden( makeCompact );
     m_compactXAxisItems[1]->setHidden( !makeCompact );
     m_preferences->addCallbackWhenChanged( "CompactXAxis", this, &InterSpec::setXAxisCompact );
@@ -7240,7 +7255,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_spectrum->legendDisabled().connect( item, &PopupDivMenuItem::show );
   m_spectrum->legendEnabled().connect( item,  &PopupDivMenuItem::hide );
   
-  item->triggered().connect( boost::bind( &D3SpectrumDisplayDiv::enableLegend, m_spectrum ) );
+  item->triggered().connect( [this](){ m_spectrum->enableLegend(); } );
   
   item->hide(); //we are already showing the legend
   
@@ -7249,22 +7264,22 @@ void InterSpec::addViewMenu( WWidget *parent )
   const bool showSlider = UserPreferences::preferenceValue<bool>( "ShowXAxisSlider", this );
   m_showXAxisSliderItems[0] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-show-slider"), "");
   m_showXAxisSliderItems[1] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-hide-slider"), "");
-  m_showXAxisSliderItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, true, true ) );
-  m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false, true ) );
+  m_showXAxisSliderItems[0]->triggered().connect( [this](){ setXAxisSlider( true, true ); } );
+  m_showXAxisSliderItems[1]->triggered().connect( [this](){ setXAxisSlider( false, true ); } );
   m_showXAxisSliderItems[0]->setHidden( showSlider );
   m_showXAxisSliderItems[1]->setHidden( !showSlider );
-  
+
   m_spectrum->showXAxisSliderChart( showSlider );
-  m_spectrum->xAxisSliderShown().connect( boost::bind(&InterSpec::setXAxisSlider, this, boost::placeholders::_1, true) );
-  m_preferences->addCallbackWhenChanged( "ShowXAxisSlider", boost::bind( &InterSpec::setXAxisSlider, this, boost::placeholders::_1, false) );
+  m_spectrum->xAxisSliderShown().connect( [this]( const bool v ){ setXAxisSlider( v, true ); } );
+  m_preferences->addCallbackWhenChanged( "ShowXAxisSlider", [this]( const bool v ){ setXAxisSlider( v, false ); } );
   
   const bool showScalers = UserPreferences::preferenceValue<bool>( "ShowYAxisScalers", this );
   m_spectrum->showYAxisScalers( showScalers );
   
   m_showYAxisScalerItems[0] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-show-scaler"), "");
   m_showYAxisScalerItems[1] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-hide-scaler"), "");
-  m_showYAxisScalerItems[0]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, true ) );
-  m_showYAxisScalerItems[1]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, false ) );
+  m_showYAxisScalerItems[0]->triggered().connect( [this](){ setShowYAxisScalers( true ); } );
+  m_showYAxisScalerItems[1]->triggered().connect( [this](){ setShowYAxisScalers( false ); } );
   m_showYAxisScalerItems[0]->setHidden( showScalers );
   m_showYAxisScalerItems[1]->setHidden( !showScalers );
   m_preferences->addCallbackWhenChanged( "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
@@ -7273,8 +7288,8 @@ void InterSpec::addViewMenu( WWidget *parent )
   
   m_backgroundSubItems[0] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-back-sub") );
   m_backgroundSubItems[1] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-back-unsub") );
-  m_backgroundSubItems[0]->triggered().connect( boost::bind( &InterSpec::setBackgroundSub, this, true ) );
-  m_backgroundSubItems[1]->triggered().connect( boost::bind( &InterSpec::setBackgroundSub, this, false ) );
+  m_backgroundSubItems[0]->triggered().connect( [this](){ setBackgroundSub( true ); } );
+  m_backgroundSubItems[1]->triggered().connect( [this](){ setBackgroundSub( false ); } );
   m_backgroundSubItems[0]->disable();
   m_backgroundSubItems[1]->hide();
   
@@ -7287,8 +7302,7 @@ void InterSpec::addViewMenu( WWidget *parent )
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   m_mapMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-map"),
                                                       "InterSpec_resources/images/map_small.png" );
-  m_mapMenuItem->triggered().connect( boost::bind( &InterSpec::createMapWindow, this, 
-                                                  SpecUtils::SpectrumType::Foreground, false ) );
+  m_mapMenuItem->triggered().connect( [this](){ createMapWindow( SpecUtils::SpectrumType::Foreground, false ); } );
   m_mapMenuItem->disable();
   HelpSystem::attachToolTipOn( m_mapMenuItem, WString::tr("app-mi-tt-view-map"), showToolTips );
 #endif
@@ -7306,7 +7320,7 @@ void InterSpec::addViewMenu( WWidget *parent )
    
     if( dummyItem->anchor() )
     {
-      WServer::instance()->schedule( 100, wApp->sessionId(), [dummyItem](){
+      WServer::instance()->schedule( std::chrono::milliseconds(100), wApp->sessionId(), [dummyItem](){
         const string jsclick = "try{document.getElementById('"+ dummyItem->anchor()->id() + "').click();}catch(e){}";
         wApp->doJavaScript( jsclick );
         wApp->triggerUpdate();
@@ -7321,18 +7335,18 @@ void InterSpec::addViewMenu( WWidget *parent )
   
 #if( USE_SEARCH_MODE_3D_CHART )
   m_searchMode3DChart = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-3d"),"" );
-  m_searchMode3DChart->triggered().connect( boost::bind( &InterSpec::create3DSearchModeChart, this ) );
+  m_searchMode3DChart->triggered().connect( [this](){ create3DSearchModeChart(); } );
   m_searchMode3DChart->disable();
   HelpSystem::attachToolTipOn( m_searchMode3DChart, WString::tr("app-mi-tt-view-3d"), showToolTips );
 #endif
   
   m_showRiidResults = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-rid"),"" );
-  m_showRiidResults->triggered().connect( boost::bind( &InterSpec::showRiidResults, this, SpecUtils::SpectrumType::Foreground ) );
+  m_showRiidResults->triggered().connect( [this](){ showRiidResults( SpecUtils::SpectrumType::Foreground ); } );
   HelpSystem::attachToolTipOn( m_showRiidResults, WString::tr("app-mi-tt-view-rid"), showToolTips );
   m_showRiidResults->disable();
   
   m_showMultimedia = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-img"),"" );
-  m_showMultimedia->triggered().connect( boost::bind( &InterSpec::showMultimedia, this, SpecUtils::SpectrumType::Foreground ) );
+  m_showMultimedia->triggered().connect( [this](){ showMultimedia( SpecUtils::SpectrumType::Foreground ); } );
   HelpSystem::attachToolTipOn( m_showMultimedia, WString::tr("app-mi-tt-view-img"), showToolTips );
   m_showMultimedia->disable();
   
@@ -7365,11 +7379,10 @@ void InterSpec::addViewMenu( WWidget *parent )
     undo_redo_enable_kin_ref();
   }) );
   m_preferences->addCallbackWhenChanged( "DynamicRefLine",
-    boost::bind( &Wt::WMenuItem::setHidden, m_dynamicRefLineEnableMenuItem, boost::placeholders::_1, Wt::WAnimation() )
+    [this]( const bool v ){ m_dynamicRefLineEnableMenuItem->setHidden( v, Wt::WAnimation() ); }
   );
   m_preferences->addCallbackWhenChanged( "DynamicRefLine",
-    boost::bind( &Wt::WMenuItem::setHidden, m_dynamicRefLineDisableMenuItem,
-                boost::bind(std::logical_not<bool>(), boost::placeholders::_1), Wt::WAnimation() )
+    [this]( const bool v ){ m_dynamicRefLineDisableMenuItem->setHidden( !v, Wt::WAnimation() ); }
   );
   
   
@@ -7502,7 +7515,7 @@ void InterSpec::addDetectorMenu( WWidget *menuWidget )
     if( !menuDiv )
       throw runtime_error( "addDetectorMenu: serious error" );
     
-    WPushButton *button = new WPushButton( WString::tr("app-mi-view-dets"), menuDiv );
+    WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-mi-view-dets") );
     button->addStyleClass( "MenuLabel" );
     m_detectorToShowMenu = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
   }//if( parentPopup )
@@ -7521,18 +7534,22 @@ void InterSpec::handEnergyCalWindowClose()
     return;
   
   WGridLayout *layout = m_energyCalWindow->stretcher();
-  layout->removeWidget( m_energyCalTool );
-  
+  // In Wt4, removeWidget returns unique_ptr; release() to keep m_energyCalTool alive for re-use
+  auto removed_cal = layout->removeWidget( m_energyCalTool );
+
   AuxWindow::deleteAuxWindow( m_energyCalWindow );
   m_energyCalWindow = nullptr;
-  
+
   if( m_toolsTabs )
   {
     m_energyCalTool->setWideLayout();
     if( m_toolsTabs->indexOf(m_energyCalTool) < 0 )
-      m_toolsTabs->addTab( m_energyCalTool, WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
-    
+      m_toolsTabs->addTab( std::move(removed_cal), WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
+
     m_currentToolsTab = m_toolsTabs->currentIndex();
+  }else
+  {
+    removed_cal.release(); // Wt4_TODO: no tabs; ownership unclear, keep alive via raw ptr
   }//if( m_toolsTabs )
 }//void handEnergyCalWindowClose()
 
@@ -7558,25 +7575,30 @@ void InterSpec::showEnergyCalWindow()
   }
 
   const int index = (m_toolsTabs ? m_toolsTabs->indexOf(m_energyCalTool) : -1);
-  
+
+  std::unique_ptr<WWidget> calToolPtr;
   if( index >= 0 )
-    m_toolsTabs->removeTab( m_energyCalTool );
-  
+    calToolPtr = m_toolsTabs->removeTab( m_energyCalTool );
+
   if( m_energyCalWindow )
   {
-    m_energyCalWindow->stretcher()->removeWidget(m_energyCalTool);
+    if( !calToolPtr )
+      calToolPtr = m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool );
     delete m_energyCalWindow;
   }
-    
+
+  if( !calToolPtr )
+    calToolPtr = std::unique_ptr<WWidget>( m_energyCalTool ); // unowned, wrap for addWidget
+
   m_energyCalWindow = new AuxWindow( WString("window-title-energy-cal"),
                                     AuxWindowProperties::SetCloseable | AuxWindowProperties::TabletNotFullScreen );
   m_energyCalWindow->rejectWhenEscapePressed();
-  m_energyCalWindow->stretcher()->addWidget( m_energyCalTool, 0, 0 );
+  m_energyCalWindow->stretcher()->addWidget( std::move(calToolPtr), 0, 0 );
   m_energyCalTool->setTallLayout();
   m_energyCalTool->show();
    
   //m_energyCalWindow->finished().connect(boost::bind( &AuxWindow::deleteAuxWindow, m_energyCalWindow ) );
-  m_energyCalWindow->finished().connect( boost::bind( &InterSpec::handEnergyCalWindowClose, this ) );
+  m_energyCalWindow->finished().connect( [this](){ handEnergyCalWindowClose(); } );
 
   if( (m_renderedWidth > 100) && (m_renderedHeight > 100) )
     m_energyCalWindow->setMaximumSize( 0.8*m_renderedWidth, 0.8*m_renderedHeight );
@@ -7588,7 +7610,7 @@ void InterSpec::showEnergyCalWindow()
   
   AuxWindow::addHelpInFooter( m_energyCalWindow->footer(), "energy-calibration" );
   Wt::WPushButton *closeButton = m_energyCalWindow->addCloseButtonToFooter("Close",true);
-  closeButton->clicked().connect( boost::bind( &InterSpec::handEnergyCalWindowClose, this ) );
+  closeButton->clicked().connect( [this](){ handEnergyCalWindowClose(); } );
   
   
   if( m_toolsTabs )
@@ -7684,16 +7706,16 @@ void InterSpec::startHardBackgroundSub()
   auto truncate_neg = make_shared<bool>(false);
   auto round_counts = make_shared<bool>(false);
   
-  WContainerWidget *optionsDiv = new WContainerWidget( dialog->contents() );
+  WContainerWidget *optionsDiv = dialog->contents()->addNew<WContainerWidget>();
   optionsDiv->setPadding( 40, Wt::Side::Left );
   optionsDiv->setPadding( 20, Wt::Side::Bottom );
-  
-  WCheckBox *cb = new WCheckBox( WString::tr("window-hard-back-sub-truncate"), optionsDiv );
+
+  WCheckBox *cb = optionsDiv->addNew<WCheckBox>( WString::tr("window-hard-back-sub-truncate") );
   cb->setInline( false );
   cb->checked().connect( std::bind([=](){ *truncate_neg = true; } ) );
   cb->unChecked().connect( std::bind([=](){ *truncate_neg = false; } ) );
-  
-  cb = new WCheckBox( WString::tr("window-hard-back-sub-round"), optionsDiv );
+
+  cb = optionsDiv->addNew<WCheckBox>( WString::tr("window-hard-back-sub-round") );
   cb->setInline( false );
   cb->checked().connect( std::bind([=](){ *round_counts = true; } ) );
   cb->unChecked().connect( std::bind([=](){ *round_counts = false; } ) );
@@ -7701,7 +7723,7 @@ void InterSpec::startHardBackgroundSub()
   
   WPushButton *button = dialog->addButton( WString::tr("Yes") );
   button->setFocus();
-  button->clicked().connect( boost::bind( &InterSpec::finishHardBackgroundSub, this, truncate_neg, round_counts ) );
+  button->clicked().connect( [this, truncate_neg, round_counts](){ finishHardBackgroundSub( truncate_neg, round_counts ); } );
   dialog->addButton( WString::tr("No") );  //dont need to hook this to anything
 }//void startHardBackgroundSub()
 
@@ -7840,7 +7862,7 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
     }//if( we need to refit peaks )
     
     // Get rid of the previously displayed background if there was one
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, {} );
     
     
     auto header = m_fileManager->addFile( newmeas->filename(), newmeas );
@@ -8002,12 +8024,8 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
   // Make a lamda to do work of connecting signals, and undo/redo
   auto setupLabelCbCallbacks = [this]( const SpectrumChart::PeakLabels label, WCheckBox *cb ){
     
-    cb->checked().connect( boost::bind( &D3SpectrumDisplayDiv::setShowPeakLabel,
-            m_spectrum, label, true
-    ) );
-    cb->unChecked().connect( boost::bind( &D3SpectrumDisplayDiv::setShowPeakLabel,
-            m_spectrum, label, false
-    ) );
+    cb->checked().connect( [this, label](){ m_spectrum->setShowPeakLabel( label, true ); } );
+    cb->unChecked().connect( [this, label](){ m_spectrum->setShowPeakLabel( label, false ); } );
     
     // FIXME: for some reason undoing things wont change the checkbox state, for first undo, but if you undo/redo/undo it does/  Not totally sure why.
     const auto set_checked = [this,label,cb](){
@@ -8079,7 +8097,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 
   if( menuDiv )
   {
-    WPushButton *button = new WPushButton( WString::tr("app-menu-help"), menuDiv );
+    WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-help") );
     button->addStyleClass( "MenuLabel" );
     m_helpMenuPopup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
   }else
@@ -8088,14 +8106,14 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   }//if( menuDiv ) / else
   
   PopupDivMenuItem *item = m_helpMenuPopup->addMenuItem( WString::tr("app-mi-help-welcome") );
-  item->triggered().connect( boost::bind( &InterSpec::showWelcomeDialog, this, true ) );
+  item->triggered().connect( [this](){ showWelcomeDialog( true ); } );
 
   m_helpMenuPopup->addSeparator();
   
   item = m_helpMenuPopup->addMenuItem( WString::tr("app-mi-help-contents"),
                                       "InterSpec_resources/images/help_minimal.svg");
   
-  item->triggered().connect( boost::bind( &HelpSystem::createHelpWindow, string("getting-started") ) );
+  item->triggered().connect( [](){ HelpSystem::createHelpWindow( string("getting-started") ); } );
 
   Wt::WMenuItem *notifications = m_helpMenuPopup->addMenuItem( WString::tr("app-mi-help-notif-log"),
                                                   "InterSpec_resources/images/log_file_small.png");
@@ -8129,18 +8147,18 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-show-tt"),
                                 true, HelpSystem::ToolTipPosition::Right );
-    checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
-    checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
+    checkbox->checked().connect( [this](){ toggleToolTip( true ); } );
+    checkbox->unChecked().connect( [this](){ toggleToolTip( false ); } );
   }//if( !isMobile() )
-  
+
   {//begin add "AskPropagatePeaks" to menu
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-prop-peak") );
     UserPreferences::associateWidget( "AskPropagatePeaks", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-prop-peak"),
                                  true, HelpSystem::ToolTipPosition::Right );
-    checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
-    checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
+    checkbox->checked().connect( [this](){ toggleToolTip( true ); } );
+    checkbox->unChecked().connect( [this](){ toggleToolTip( false ); } );
   }//end add "AskPropagatePeaks" to menu
 
 
@@ -8150,8 +8168,8 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-preserve-ene-cal"),
                                  true, HelpSystem::ToolTipPosition::Right );
-    checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
-    checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
+    checkbox->checked().connect( [this](){ toggleToolTip( true ); } );
+    checkbox->unChecked().connect( [this](){ toggleToolTip( false ); } );
   }//end add "AskPropagatePeaks" to menu
 
 
@@ -8196,10 +8214,8 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
       .arg( WString::tr("warn-desktop-disp-switch") )
       .arg( WString::tr("warn-desktop-disp-switch-refresh") );
     
-    checkbox->checked().connect( boost::bind( &WarningWidget::addMessageUnsafe,
-      m_warnings, msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
-    checkbox->unChecked().connect( boost::bind( &WarningWidget::addMessageUnsafe,
-      m_warnings, msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
+    checkbox->checked().connect( [this, msg](){ m_warnings->addMessageUnsafe( msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ); } );
+    checkbox->unChecked().connect( [this, msg](){ m_warnings->addMessageUnsafe( msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ); } );
   }//if( is tablet )
   
   WCheckBox *autoDarkCb = new WCheckBox( WString::tr("app-mi-help-pref-auto-dark") );
@@ -8216,7 +8232,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   }) );
   
 	item = subPopup->addMenuItem( WString::tr("app-mi-help-pref-theme") );
-	item->triggered().connect(boost::bind(&InterSpec::showColorThemeWindow, this));
+	item->triggered().connect( [this](){ showColorThemeWindow(); } );
 
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
   subPopup->addSeparator();
@@ -8243,7 +8259,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     item = m_languagesSubMenu->addMenuItem( WString::fromUTF8("Default") );
     if( langPref == "" )
       item->addStyleClass( "CurrentLanguage" );
-    item->triggered().connect( boost::bind( &InterSpec::changeLocale, this, "" ) );
+    item->triggered().connect( [this](){ changeLocale( "" ); } );
     
     
     for( const string &lang : languages )
@@ -8271,7 +8287,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
       item = m_languagesSubMenu->addMenuItem( label );
       if( langPref == lang )
         item->addStyleClass( "CurrentLanguage" );
-      item->triggered().connect( boost::bind( &InterSpec::changeLocale, this, lang ) );
+      item->triggered().connect( [this, lang](){ changeLocale( lang ); } );
     }//for( const string &lang : languages )
   }//if( languages.size() > 1 )
   
@@ -8431,9 +8447,9 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
   if( !spectrum )
     filename += "_timechart";
   
-  const int offset = wApp->environment().timeZoneOffset();
+  const chrono::minutes offset = wApp->environment().timeZoneOffset();
   auto localtime = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-  localtime += chrono::seconds(60*offset);
+  localtime += offset;
   
   std::string timestr = SpecUtils::to_iso_string( localtime );
   auto ppos = timestr.find('.');
@@ -8545,7 +8561,7 @@ OneOverR2Calc *InterSpec::createOneOverR2Calculator()
   if( !m_1overR2Calc )
   {
     m_1overR2Calc = new OneOverR2Calc();
-    m_1overR2Calc->finished().connect( boost::bind( &InterSpec::deleteOneOverR2Calc, this ) );
+    m_1overR2Calc->finished().connect( [this](){ deleteOneOverR2Calc(); } );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
     {
@@ -8592,7 +8608,7 @@ UnitsConverterTool *InterSpec::createUnitsConverterTool()
   if( !m_unitsConverter )
   {
     m_unitsConverter = new UnitsConverterTool();
-    m_unitsConverter->finished().connect( boost::bind( &InterSpec::deleteUnitsConverterTool, this ) );
+    m_unitsConverter->finished().connect( [this](){ deleteUnitsConverterTool(); } );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
     {
@@ -8639,7 +8655,7 @@ FluxToolWindow *InterSpec::createFluxTool()
   if( !m_fluxTool )
   {
     m_fluxTool = new FluxToolWindow( this );
-    m_fluxTool->finished().connect( boost::bind( &InterSpec::deleteFluxTool, this ) );
+    m_fluxTool->finished().connect( [this](){ deleteFluxTool(); } );
   }
   
   m_fluxTool->show();
@@ -8691,7 +8707,7 @@ DecayWindow *InterSpec::createDecayInfoWindow()
   }else
   {
     m_decayInfoWindow = new DecayWindow( this );
-    m_decayInfoWindow->finished().connect( boost::bind( &InterSpec::deleteDecayInfoWindow, this ) );
+    m_decayInfoWindow->finished().connect( [this](){ deleteDecayInfoWindow(); } );
   }
   
   if( m_referencePhotopeakLines )
@@ -8750,14 +8766,13 @@ MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow( const bool use_auto_f
   
   m_addFwhmTool = new MakeFwhmForDrfWindow( use_auto_fit_peaks );
   m_addFwhmTool->tool()->updatedDrf().connect( m_addFwhmTool, &AuxWindow::hide );
-  m_addFwhmTool->finished().connect( boost::bind( &InterSpec::deleteFwhmFromForegroundWindow, this ) );
-  
+  m_addFwhmTool->finished().connect( [this](){ deleteFwhmFromForegroundWindow(); } );
+
   if( m_drfSelectWindow )
   {
-    m_addFwhmTool->tool()->updatedDrf().connect(
-        boost::bind( &DrfSelect::handleFitFwhmFinished,
-                    m_drfSelectWindow->widget(), boost::placeholders::_1
-    ) );
+    m_addFwhmTool->tool()->updatedDrf().connect( [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+      m_drfSelectWindow->widget()->handleFitFwhmFinished( drf );
+    } );
   }//if( m_drfSelectWindow )
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8833,25 +8848,11 @@ DetectionLimitWindow *InterSpec::createDetectionLimitTool()
      
 void InterSpec::handleDetectionLimitWindowClose()
 {
-  auto *caller = dynamic_cast<DetectionLimitWindow *>( WObject::sender() );
-  assert( caller );
-  assert( !m_detectionLimitWindow || (caller == m_detectionLimitWindow) );
-  
-  if( !m_detectionLimitWindow && !caller )
-    return;
-  
-  if( m_detectionLimitWindow && caller && (m_detectionLimitWindow != caller) )
-    return;
-    
-  auto dialog = m_detectionLimitWindow ? m_detectionLimitWindow : caller;
-  assert( caller );
-  
+  // In Wt4, WObject::sender() was removed; use m_detectionLimitWindow directly
   if( !m_detectionLimitWindow )
-  {
-    AuxWindow::deleteAuxWindow( dialog );
     return;
-  }
-  
+
+  DetectionLimitWindow * const dialog = m_detectionLimitWindow;
   m_detectionLimitWindow = nullptr;
   
   const bool canUndo = (m_undo && m_undo->canAddUndoRedoNow());
@@ -8907,20 +8908,17 @@ void InterSpec::programmaticallyCloseSimpleMda()
   
   DetectionLimitSimpleWindow *dialog = m_simpleMdaWindow;
   m_simpleMdaWindow = nullptr; //Prevents undo/redo
-  dialog->done( WDialog::DialogCode::Accepted );
+  dialog->done( DialogCode::Accepted );
 }//void programmaticallyCloseSimpleMda()
 
 
 void InterSpec::handleSimpleMdaWindowClose()
 {
-  auto *caller = dynamic_cast<DetectionLimitSimpleWindow *>( WObject::sender() );
-  assert( caller );
-  assert( !m_simpleMdaWindow || (caller == m_simpleMdaWindow) );
-  
+  // In Wt4, WObject::sender() was removed; use m_simpleMdaWindow directly
   if( !m_simpleMdaWindow )
     return;
-  
-  auto dialog = m_simpleMdaWindow;
+
+  DetectionLimitSimpleWindow * const dialog = m_simpleMdaWindow;
   m_simpleMdaWindow = nullptr;
   
   const string state_uri = dialog->tool()->encodeStateToUrl();
@@ -8944,7 +8942,7 @@ void InterSpec::handleSimpleMdaWindowClose()
 
 void InterSpec::fitNewPeakNotInRoiFromRightClick()
 {
-  searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint, 0 );
+  searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint, {} );
 }//void fitNewPeakNotInRoiFromRightClick()
 
 
@@ -8955,16 +8953,17 @@ void InterSpec::startAddPeakFromRightClick()
   const string ref_line_hint = m_rightClickRefLineHint;
   
   AddNewPeakDialog *window = new AddNewPeakDialog( energy, ref_line_hint );
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto redo = [energy,ref_line_hint](){
-      AddNewPeakDialog *window = new AddNewPeakDialog( energy, ref_line_hint );
-      window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+      AddNewPeakDialog *dlg = new AddNewPeakDialog( energy, ref_line_hint );
+      dlg->finished().connect( [dlg](){ AuxWindow::deleteAuxWindow( dlg ); } );
     };
-    
-    auto closer = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+
+    // In Wt4, WApplication::bind() was removed; lambda passed directly
+    auto closer = [window](){ AuxWindow::deleteAuxWindow( window ); };
     m_undo->addUndoRedoStep( closer, redo , "Start add peak dialog." );
   }//if( undo )
 }//void startAddPeakFromRightClick()
@@ -9105,19 +9104,16 @@ void InterSpec::programmaticallyCloseSimpleActivityCalc()
   
   SimpleActivityCalcWindow *dialog = m_simpleActivityCalcWindow;
   m_simpleActivityCalcWindow = nullptr;
-  dialog->done( WDialog::DialogCode::Accepted );
+  dialog->done( DialogCode::Accepted );
 }//void programmaticallyCloseSimpleActivityCalc()
 
 void InterSpec::handleSimpleActivityCalcWindowClose()
 {
-  auto *caller = dynamic_cast<SimpleActivityCalcWindow *>( WObject::sender() );
-  assert( caller );
-  assert( !m_simpleActivityCalcWindow || (caller == m_simpleActivityCalcWindow) );
-  
+  // In Wt4, WObject::sender() was removed; use m_simpleActivityCalcWindow directly
   if( !m_simpleActivityCalcWindow )
     return;
-  
-  auto dialog = m_simpleActivityCalcWindow;
+
+  SimpleActivityCalcWindow * const dialog = m_simpleActivityCalcWindow;
   m_simpleActivityCalcWindow = nullptr;
   
   shared_ptr<const SimpleActivityCalcState> state = dialog->tool()->currentState();
@@ -9197,7 +9193,7 @@ void InterSpec::deleteDecayInfoWindow()
 void InterSpec::createFileParameterWindow( const SpecUtils::SpectrumType type )
 {
   SpecFileSummary *window = new SpecFileSummary( type, this );
-  new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+  window->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void createFileParameterWindow()
 
 
@@ -9282,15 +9278,15 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
     case SpecUtils::SpectrumType::Background:       label = "Background";        break;
   }//switch( spectrum_type )
   
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
   //window->footer()->setStyleClass( "modal-footer" );
-  
+
   const bool enableLoadingVisible = (meas->sample_numbers().size() > 1);
 
   GoogleMap *googlemap = new GoogleMap( enableLoadingVisible );
   WGridLayout *layout = window->stretcher();
   googlemap->addMeasurment( meas, label, samples );
-  layout->addWidget( googlemap, 0, 0 );
+  layout->addWidget( std::unique_ptr<WWidget>(googlemap), 0, 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
@@ -9306,11 +9302,11 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
     menu->setAutoHide( true );
     button->setMenu( menu );
     WMenuItem *item = menu->addItem( "As Foreground" );
-    item->triggered().connect( boost::bind( &InterSpec::displayOnlySamplesWithinView, this, googlemap, SpecUtils::SpectrumType::Foreground, spectrum_type ) );
+    item->triggered().connect( [this, googlemap, spectrum_type](){ displayOnlySamplesWithinView( googlemap, SpecUtils::SpectrumType::Foreground, spectrum_type ); } );
     item = menu->addItem( "As Background" );
-    item->triggered().connect( boost::bind( &InterSpec::displayOnlySamplesWithinView, this, googlemap, SpecUtils::SpectrumType::Background, spectrum_type ) );
+    item->triggered().connect( [this, googlemap, spectrum_type](){ displayOnlySamplesWithinView( googlemap, SpecUtils::SpectrumType::Background, spectrum_type ); } );
     item = menu->addItem( "As Secondary" );
-    item->triggered().connect( boost::bind( &InterSpec::displayOnlySamplesWithinView, this, googlemap, SpecUtils::SpectrumType::SecondForeground, spectrum_type ) );
+    item->triggered().connect( [this, googlemap, spectrum_type](){ displayOnlySamplesWithinView( googlemap, SpecUtils::SpectrumType::SecondForeground, spectrum_type ); } );
   }//if( meas->measurements().size() > 10 )
   
   
@@ -9340,7 +9336,7 @@ void InterSpec::createMapWindow( const SpecUtils::SpectrumType spectrum_type, co
   if( m_leafletWindow )
     programmaticallyCloseLeafletMap();
   
-  auto onMapCreate = boost::bind( &InterSpec::handleLeafletMapOpen, this, boost::placeholders::_1 );
+  auto onMapCreate = [this]( LeafletRadMapWindow *w ){ handleLeafletMapOpen( w ); };
   
   m_leafletWarning = LeafletRadMap::showForMeasurement( meas, {}, detectors, onMapCreate, noWarning );
     
@@ -9428,7 +9424,7 @@ void InterSpec::programmaticallyCloseLeafletWarning()
   
   SimpleDialog *dialog = m_leafletWarning;
   m_leafletWarning = nullptr;
-  dialog->done( WDialog::DialogCode::Accepted );
+  dialog->done( DialogCode::Accepted );
 }//void programmaticallyCloseLeafletWarning();
 
 
@@ -9494,7 +9490,7 @@ void InterSpec::create3DSearchModeChart()
   layout->setVerticalSpacing( 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
   SearchMode3DChart *chart = new SearchMode3DChart( this );
-  layout->addWidget( chart, 0, 0 );
+  layout->addWidget( std::unique_ptr<WWidget>(chart), 0, 0 );
   
   Wt::WPushButton *closeButton = m_3dViewWindow->addCloseButtonToFooter( WString::tr("Close"),true);
   closeButton->clicked().connect( m_3dViewWindow, &AuxWindow::hide );
@@ -9504,7 +9500,7 @@ void InterSpec::create3DSearchModeChart()
   m_3dViewWindow->resizeScaledWindow( 0.7, 0.9 );
   m_3dViewWindow->centerWindow();
   m_3dViewWindow->setResizable( true );
-  m_3dViewWindow->finished().connect( boost::bind( &InterSpec::handle3DSearchModeChartClose, this, m_3dViewWindow ) );
+  m_3dViewWindow->finished().connect( [this]( ){ handle3DSearchModeChartClose( m_3dViewWindow ); } );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9566,11 +9562,10 @@ void InterSpec::showRiidResults( const SpecUtils::SpectrumType type )
 
 void InterSpec::handleRiidResultsClose()
 {
-  SimpleDialog *caller = dynamic_cast<SimpleDialog *>( WObject::sender() );
-  
-  if( !m_riidDisplay || (caller != m_riidDisplay) )
+  // In Wt4, WObject::sender() was removed; use m_riidDisplay directly
+  if( !m_riidDisplay )
     return;
-  
+
   m_riidDisplay = nullptr;
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -9590,7 +9585,7 @@ void InterSpec::programmaticallyCloseRiidResults()
   
   SimpleDialog *dialog = m_riidDisplay;
   m_riidDisplay = nullptr;
-  dialog->done( WDialog::DialogCode::Accepted );
+  dialog->done( DialogCode::Accepted );
 }//void programmaticallyCloseRiidResults()
 
 
@@ -9600,7 +9595,7 @@ void InterSpec::showMultimedia( const SpecUtils::SpectrumType type )
     programmaticallyCloseMultimediaWindow();
   
   m_multimedia = displayMultimedia( measurment(type) );
-  m_multimedia->finished().connect( boost::bind( &InterSpec::handleMultimediaClose, this, m_multimedia ) );
+  m_multimedia->finished().connect( [this](){ handleMultimediaClose( m_multimedia ); } );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9637,7 +9632,7 @@ void InterSpec::programmaticallyCloseMultimediaWindow()
   SimpleDialog *dialog = m_multimedia;
   m_multimedia = nullptr; //Set m_multimedia to nullptr so #handleMultimediaClose wont add undo/redo step
   if( dialog )
-    dialog->done( Wt::WDialog::DialogCode::Accepted );
+    dialog->done( Wt::DialogCode::Accepted );
 }//void programmaticallyCloseMultimediaWindow()
 
 
@@ -9652,7 +9647,7 @@ void InterSpec::createTerminalWidget()
   
   if( m_toolsTabs )
   {
-    WMenuItem *item = m_toolsTabs->addTab( m_terminal, WString::tr(TerminalTabTitleKey) );
+    WMenuItem *item = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_terminal), WString::tr(TerminalTabTitleKey) );
     item->setCloseable( true );
     m_toolsTabs->setCurrentWidget( m_terminal );
     const int index = m_toolsTabs->currentIndex();
@@ -9682,7 +9677,7 @@ void InterSpec::createTerminalWidget()
       m_terminalWindow->centerWindow();
     }
     
-    m_terminalWindow->stretcher()->addWidget( m_terminal, 0, 0 );
+    m_terminalWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_terminal), 0, 0 );
     
     // We shouldnt block undo/redo any time the terminal window is open
     //new UndoRedoManager::BlockGuiUndoRedo( m_terminalWindow ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
@@ -9696,21 +9691,27 @@ void InterSpec::handleTerminalWindowClose()
 {
   if( !m_terminal )
     return;
- 
+
   m_terminalMenuItem->enable();
-  
+
   if( m_terminalWindow )
   {
     AuxWindow::deleteAuxWindow( m_terminalWindow );
   }else
   {
-    delete m_terminal;
-    if( m_toolsTabs )
+    // In Wt4, if terminal is in a tab, removeTab returns ownership; use it to delete
+    if( m_toolsTabs && m_toolsTabs->indexOf(m_terminal) >= 0 )
+    {
+      m_toolsTabs->removeTab( m_terminal ); // returned unique_ptr deletes m_terminal
       m_toolsTabs->setCurrentIndex( 2 );
+    }else
+    {
+      delete m_terminal; // not in a tab, delete directly
+    }
   }
-  
-  m_terminal = 0;
-  m_terminalWindow = 0;
+
+  m_terminal = nullptr;
+  m_terminalWindow = nullptr;
 }//void handleTerminalWindowClose()
 #endif  //#if( USE_TERMINAL_WIDGET )
 
@@ -9728,9 +9729,10 @@ void InterSpec::createRemoteRidWindow()
   
   m_remoteRidMenuItem->disable();
   
-  auto closeTool = wApp->bind( boost::bind(&InterSpec::deleteRemoteRidWindow, this) );
-  auto openTool = wApp->bind( boost::bind(&InterSpec::createRemoteRidWindow, this) );
-  
+  // In Wt4, WApplication::bind() was removed; lambdas passed directly
+  auto closeTool = std::function<void()>{ [this](){ deleteRemoteRidWindow(); } };
+  auto openTool = std::function<void()>{ [this](){ createRemoteRidWindow(); } };
+
   SimpleDialog *warning = RemoteRid::startRemoteRidDialog( this, [this,closeTool,openTool](AuxWindow *window, RemoteRid *rid ){
     assert( (!window) == (!rid) );
     
@@ -9766,7 +9768,8 @@ void InterSpec::createRemoteRidWindow()
   
   if( warning && m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = wApp->bind( boost::bind(&WDialog::accept, warning) );
+    // In Wt4, WApplication::bind() was removed; lambda passed directly
+    auto undo = std::function<void()>{ [warning](){ warning->accept(); } };
     m_undo->addUndoRedoStep( std::move(undo), openTool, "Show remote RID tool" );
   }//if( undo warning )
 }//void createRemoteRidWindow()
@@ -9796,9 +9799,8 @@ void InterSpec::deleteRemoteRidWindow()
       m_remoteRidWindow = res.first;
       res.first->finished().connect( this, &InterSpec::deleteRemoteRidWindow );
     };
-    auto redo = wApp->bind( boost::bind(&InterSpec::deleteRemoteRidWindow, this) );
-    
-    auto openTool = wApp->bind( boost::bind(&InterSpec::createRemoteRidWindow, this) );
+    // In Wt4, WApplication::bind() was removed; lambdas passed directly
+    auto redo = std::function<void()>{ [this](){ deleteRemoteRidWindow(); } };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close remote RID tool" );
   }
 }//void handleRemoteRidClose()
@@ -9824,7 +9826,7 @@ void InterSpec::programaticallyCloseAutoRemoteRidResultDialog()
   //  wont add undo/redo step
   m_autoRemoteRidResultDialog = nullptr;
   if( dialog )
-    dialog->done( Wt::WDialog::DialogCode::Accepted );
+    dialog->done( Wt::DialogCode::Accepted );
 }//programaticallyCloseAutoRemoteRidResultDialog()
 #endif  //#if( USE_REMOTE_RID )
 
@@ -9847,7 +9849,7 @@ RelActAutoGui *InterSpec::relActAutoWindow( const bool createIfNotOpen )
   m_relActAutoGui = widgets.first;
   m_relActAutoWindow = widgets.second;
   
-  m_relActAutoWindow->finished().connect( boost::bind( &InterSpec::handleRelActAutoClose, this ) );
+  m_relActAutoWindow->finished().connect( [this](){ handleRelActAutoClose(); } );
   
   try
   {
@@ -9924,7 +9926,7 @@ RelActManualGui *InterSpec::createRelActManualWidget()
   
   if( m_toolsTabs )
   {
-    WMenuItem *item = m_toolsTabs->addTab( m_relActManualGui, WString::tr(RelActManualTitleKey) );
+    WMenuItem *item = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_relActManualGui), WString::tr(RelActManualTitleKey) );
     item->setCloseable( true );
     m_toolsTabs->setCurrentWidget( m_relActManualGui );
     const int index = m_toolsTabs->currentIndex();
@@ -9949,7 +9951,7 @@ RelActManualGui *InterSpec::createRelActManualWidget()
       m_relActManualWindow->centerWindow();
     }
     
-    m_relActManualWindow->stretcher()->addWidget( m_relActManualGui, 0, 0 );
+    m_relActManualWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_relActManualGui), 0, 0 );
     
     
     WPushButton *closeButton = m_relActManualWindow->addCloseButtonToFooter();
@@ -9982,7 +9984,7 @@ RelActManualGui *InterSpec::createRelActManualWidget()
   {
     auto undo = [this, origTab](){
       if( !m_relActManualWindow && m_relActManualGui )
-        m_toolsTabs->removeTab( m_relActManualGui );
+        m_toolsTabs->removeTab( m_relActManualGui ).release(); // release: handleRelActManualClose will delete
       
       handleRelActManualClose();
       
@@ -10020,8 +10022,14 @@ void InterSpec::handleRelActManualClose()
   }else
   {
     if( m_relActManualGui )
-      delete m_relActManualGui;
-    
+    {
+      // In Wt4, if in a tab, removeTab owns it; otherwise delete directly
+      if( m_toolsTabs && m_toolsTabs->indexOf(m_relActManualGui) >= 0 )
+        m_toolsTabs->removeTab( m_relActManualGui ); // unique_ptr deletes it
+      else
+        delete m_relActManualGui;
+    }
+
     if( m_toolsTabs )
       m_toolsTabs->setCurrentIndex( 2 );
   }//if( m_relActManualWindow ) / else
@@ -10129,7 +10137,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   
   if( menuDiv )
   {
-    WPushButton *button = new WPushButton( WString::tr("app-menu-tools"), menuDiv );
+    WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-tools") );
     button->addStyleClass( "MenuLabel" );
     popup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
   }else
@@ -10143,7 +10151,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 
   item = popup->addMenuItem( WString::tr("app-mi-tools-act-fit") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-act-fit") , showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::shieldingSourceFit, this, true ) );
+  item->triggered().connect( [this](){ shieldingSourceFit( true ); } );
  
 #if( USE_REL_ACT_TOOL )
   // The Relative Efficiency tools are not specialized to display on phones yet.
@@ -10151,21 +10159,21 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   {
     m_relActAutoMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-nuc") );
     HelpSystem::attachToolTipOn( m_relActAutoMenuItem, WString::tr("app-mi-tt-tools-iso-by-nuc") , showToolTips );
-    m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::relActAutoWindow, this, true ) );
+    m_relActAutoMenuItem->triggered().connect( [this](){ relActAutoWindow( true ); } );
     
     m_relActManualMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-peak") );
     HelpSystem::attachToolTipOn( m_relActManualMenuItem, WString::tr("app-mi-tt-tools-iso-by-peak") , showToolTips );
-    m_relActManualMenuItem->triggered().connect( boost::bind( &InterSpec::createRelActManualWidget, this ) );
+    m_relActManualMenuItem->triggered().connect( [this](){ createRelActManualWidget(); } );
   }//if( !isPhone() )
 #endif
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-xs-calc") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-xs-calc"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showGammaXsTool, this ) );
+  item->triggered().connect( [this](){ showGammaXsTool(); } );
     
   item = popup->addMenuItem( WString::tr("app-mi-tools-dose-calc") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-dose-calc"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showDoseTool, this ) );
+  item->triggered().connect( [this](){ showDoseTool(); } );
   
 //  item = popup->addMenuItem( WString::fromUTF8("1/r² Calculator") );  // is superscript 2
 #if( USE_OSX_NATIVE_MENU )
@@ -10177,19 +10185,19 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-1r2"), showToolTips );
   
-  item->triggered().connect( boost::bind( &InterSpec::createOneOverR2Calculator, this ) );
+  item->triggered().connect( [this](){ createOneOverR2Calculator(); } );
 
   item = popup->addMenuItem( WString::tr("app-mi-tools-unit") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-unit"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::createUnitsConverterTool, this ) );
+  item->triggered().connect( [this](){ createUnitsConverterTool(); } );
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-flux") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-flux"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::createFluxTool, this ) );
+  item->triggered().connect( [this](){ createFluxTool(); } );
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-nuc-decay") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-nuc-decay"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::createDecayInfoWindow, this ) );
+  item->triggered().connect( [this](){ createDecayInfoWindow(); } );
 
 #if( USE_DETECTION_LIMIT_TOOL )
   if( !isPhone() )
@@ -10197,13 +10205,13 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
     // TODO: modify formatting of Detection Confidence tool to work on phones
     item = popup->addMenuItem( WString::tr("app-mi-tools-mda") );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-mda"), showToolTips );
-    item->triggered().connect( boost::bind( &InterSpec::showDetectionLimitTool, this, string() ) );
+    item->triggered().connect( [this](){ showDetectionLimitTool( string() ); } );
   }//if( !isPhone() )
 #endif
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-select-drf") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-select-drf"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showDrfSelectWindow, this ) );
+  item->triggered().connect( [this](){ showDrfSelectWindow(); } );
   
   if( !isPhone() )
   {
@@ -10211,16 +10219,16 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
     //  work anyway, so we'll just skip it.
     item = popup->addMenuItem( WString::tr("app-mi-tools-make-drf") );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-make-drf"), showToolTips );
-    item->triggered().connect( boost::bind( &InterSpec::showMakeDrfWindow, this ) );
+    item->triggered().connect( [this](){ showMakeDrfWindow(); } );
   }
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-file-par") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-file-par"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::createFileParameterWindow, this, SpecUtils::SpectrumType::Foreground ) );
+  item->triggered().connect( [this](){ createFileParameterWindow( SpecUtils::SpectrumType::Foreground ); } );
 
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
+  item->triggered().connect( [this](){ showGammaCountDialog(); } );
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -10327,14 +10335,14 @@ void InterSpec::initMaterialDbAndSuggestions()
 
     // We may want to parent `m_shieldingSuggestion...
 
-    m_shieldingSuggestion = new WSuggestionPopup( popupOptions, this );
+    m_shieldingSuggestion = addNew<WSuggestionPopup>( popupOptions );
 
     m_shieldingSuggestion->addStyleClass("suggestion");
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
     m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
 #endif
     m_shieldingSuggestion->setFilterLength( 0 );
-    m_shieldingSuggestion->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+    m_shieldingSuggestion->setMaximumSize( WLength::Auto, WLength(15, WLength::Unit::FontEm) );
   }//if( !m_shieldingSuggestion )
 
   pushMaterialSuggestionsToUsers();
@@ -10475,8 +10483,8 @@ MakeDrfWindow *InterSpec::showMakeDrfWindow()
     }//for( loop over "Tools" menu items )
     
     m_makeDrfTool = new MakeDrfWindow( this, m_shieldingSuggestion );
-    m_makeDrfTool->finished().connect( boost::bind( &InterSpec::handleCloseMakeDrfWindow, this, m_makeDrfTool ) );
-    new UndoRedoManager::BlockGuiUndoRedo( m_makeDrfTool ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+    m_makeDrfTool->finished().connect( [this](){ handleCloseMakeDrfWindow( m_makeDrfTool ); } );
+    m_makeDrfTool->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
   }//if( !m_makeDrfTool )
   
   return m_makeDrfTool;
@@ -10564,23 +10572,23 @@ void InterSpec::showCompactFileManagerWindow()
 {
  auto *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::Tabbed );
 
-  m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
-                                                 boost::placeholders::_1,
-                                                 boost::placeholders::_2,
-                                                 boost::placeholders::_3 ) );
-  
+  m_spectrum->yAxisScaled().connect( [compact]( const double a1, const double a2,
+                                               const SpecUtils::SpectrumType a3 ){
+    compact->handleSpectrumScale( a1, a2, a3 );
+  } );
+
   AuxWindow *window = new AuxWindow( WString::tr("window-title-compact-file"),
                                     (AuxWindowProperties::SetCloseable |AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  
-  
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
+
   WPushButton *closeButton = window->addCloseButtonToFooter();
   closeButton->clicked().connect(window, &AuxWindow::hide);
   
   WGridLayout *layout = window->stretcher();
-  layout->addWidget( compact, 0, 0 );
-  
+  layout->addWidget( std::unique_ptr<WWidget>(compact), 0, 0 );
+
   window->show();
 //  window->resizeToFitOnScreen();
   window->centerWindow();
@@ -10592,22 +10600,23 @@ void InterSpec::closeNuclideSearchWindow()
     return;
   
   m_nuclideSearch->clearSearchEnergiesOnClient();
-  m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch );
-  
+  // In Wt4, removeWidget returns unique_ptr; release() to keep m_nuclideSearch alive for re-use
+  m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch ).release();
+
   delete m_nuclideSearchWindow;
-  m_nuclideSearchWindow = 0;
-  
+  m_nuclideSearchWindow = nullptr;
+
   if( m_toolsTabs )
   {
     m_nuclideSearchContainer = new WContainerWidget();
     WGridLayout *isotopeSearchGridLayout = new WGridLayout();
-    m_nuclideSearchContainer->setLayout( isotopeSearchGridLayout );
+    m_nuclideSearchContainer->setLayout( std::unique_ptr<WLayout>(isotopeSearchGridLayout) );
 
-    isotopeSearchGridLayout->addWidget( m_nuclideSearch, 0, 0 );
+    isotopeSearchGridLayout->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch), 0, 0 );
     isotopeSearchGridLayout->setRowStretch( 0, 1 );
     isotopeSearchGridLayout->setColumnStretch( 0, 1 );
 
-    m_toolsTabs->addTab( m_nuclideSearchContainer, WString::tr(NuclideSearchTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_nuclideSearchContainer), WString::tr(NuclideSearchTabTitleKey), TabLoadPolicy );
     m_currentToolsTab = m_toolsTabs->currentIndex();
   }//if( m_toolsTabs )
 }//void closeNuclideSearchWindow()
@@ -10625,10 +10634,10 @@ void InterSpec::showNuclideSearchWindow()
   
   if( m_toolsTabs && m_nuclideSearchContainer )
   {
-    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
-    m_toolsTabs->removeTab( m_nuclideSearchContainer );
-    delete m_nuclideSearchContainer;
-    m_nuclideSearchContainer = 0;
+    // In Wt4, removeWidget/removeTab return unique_ptr
+    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch ).release();
+    m_toolsTabs->removeTab( m_nuclideSearchContainer ); // unique_ptr deletes m_nuclideSearchContainer
+    m_nuclideSearchContainer = nullptr;
   }
   
   
@@ -10636,8 +10645,8 @@ void InterSpec::showNuclideSearchWindow()
                                         (AuxWindowProperties::TabletNotFullScreen
                                          | AuxWindowProperties::EnableResize
                                          | AuxWindowProperties::SetCloseable) );
-  m_nuclideSearchWindow->contents()->setOverflow(Wt::WContainerWidget::OverflowHidden);
-  m_nuclideSearchWindow->finished().connect( boost::bind( &InterSpec::closeNuclideSearchWindow, this ) );
+  m_nuclideSearchWindow->contents()->setOverflow(Wt::Overflow::Hidden);
+  m_nuclideSearchWindow->finished().connect( [this](){ closeNuclideSearchWindow(); } );
   m_nuclideSearchWindow->rejectWhenEscapePressed();
   
   //if( isMobile() )
@@ -10647,7 +10656,7 @@ void InterSpec::showNuclideSearchWindow()
   //}//if( isPhone() )
   
   m_nuclideSearchWindow->stretcher()->setContentsMargins( 0, 0, 0, 0 );
-  m_nuclideSearchWindow->stretcher()->addWidget( m_nuclideSearch, 0, 0 );
+  m_nuclideSearchWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch), 0, 0 );
   
   //We need to set the footer height explicitly, or else the window->resize()
   //  messes up.
@@ -10656,11 +10665,11 @@ void InterSpec::showNuclideSearchWindow()
  
   Wt::WPushButton *closeButton = m_nuclideSearchWindow->addCloseButtonToFooter( WString::tr("Close"),true);
   
-  closeButton->clicked().connect( boost::bind( &InterSpec::closeNuclideSearchWindow, this ) );
+  closeButton->clicked().connect( [this](){ closeNuclideSearchWindow(); } );
   
   AuxWindow::addHelpInFooter( m_nuclideSearchWindow->footer(), "nuclide-search-dialog" );
   
-  m_nuclideSearchWindow->resize( WLength(800,WLength::Pixel), WLength(510,WLength::Pixel));
+  m_nuclideSearchWindow->resize( WLength(800,WLength::Unit::Pixel), WLength(510,WLength::Unit::Pixel));
   m_nuclideSearchWindow->resizeToFitOnScreen();
   m_nuclideSearchWindow->centerWindow();
   m_nuclideSearchWindow->show();
@@ -10794,24 +10803,26 @@ void InterSpec::showGammaLinesWindow()
   }
 
   if( m_toolsTabs && m_referencePhotopeakLines )
-    m_toolsTabs->removeTab( m_referencePhotopeakLines );
+  {
+    // In Wt4, removeTab returns unique_ptr; release so we can delete separately below
+    m_toolsTabs->removeTab( m_referencePhotopeakLines ).release();
+  }
 
-  
   std::string xml_state;
-  
+
   if( m_referencePhotopeakLines )
   {
     const ReferenceLineInfo &lines = m_referencePhotopeakLines->currentlyShowingNuclide();
-    
+
     if( (lines.m_validity == ReferenceLineInfo::InputValidity::Valid)
         || m_referencePhotopeakLines->persistedNuclides().size() )
     {
       m_referencePhotopeakLines->serialize( xml_state );
     }
-    
+
     m_referencePhotopeakLines->clearAllLines();
     delete m_referencePhotopeakLines;
-    m_referencePhotopeakLines = NULL;
+    m_referencePhotopeakLines = nullptr;
   }//if( m_referencePhotopeakLines )
 
   m_referencePhotopeakLinesWindow = new AuxWindow( WString::tr(GammaLinesTabTitleKey),
@@ -10819,7 +10830,7 @@ void InterSpec::showGammaLinesWindow()
                                                    | AuxWindowProperties::EnableResize
                                                    | AuxWindowProperties::SetCloseable)
                                                   );
-  m_referencePhotopeakLinesWindow->contents()->setOverflow(WContainerWidget::OverflowHidden);
+  m_referencePhotopeakLinesWindow->contents()->setOverflow(Overflow::Hidden);
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();
 
   m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
@@ -10827,27 +10838,28 @@ void InterSpec::showGammaLinesWindow()
                                                this );
   setReferenceLineColors( nullptr );
 
-  m_externalRidResultsRecieved.connect( boost::bind( &ReferencePhotopeakDisplay::setExternalRidResults,
-                                                    m_referencePhotopeakLines, boost::placeholders::_1 ));
-  
+  m_externalRidResultsRecieved.connect( [this]( std::shared_ptr<const ExternalRidResults> v ){
+    m_referencePhotopeakLines->setExternalRidResults( v );
+  } );
+
   if( xml_state.size() )
     m_referencePhotopeakLines->deSerialize( xml_state );
 
   Wt::WGridLayout *layout = new Wt::WGridLayout();
   layout->setContentsMargins(5,5,5,5);
-  m_referencePhotopeakLinesWindow->contents()->setLayout(layout);
-  layout->addWidget( m_referencePhotopeakLines, 0, 0 );
+  m_referencePhotopeakLinesWindow->contents()->setLayout( std::unique_ptr<WLayout>(layout) );
+  layout->addWidget( std::unique_ptr<WWidget>(m_referencePhotopeakLines), 0, 0 );
 
   Wt::WPushButton *closeButton = m_referencePhotopeakLinesWindow->addCloseButtonToFooter( WString::tr("Close"),true);
   
   if( isPhone() )
   {
-    m_referencePhotopeakLines->displayingNuclide().connect( boost::bind( &WPushButton::setText, closeButton, WString::tr("show-lines")) );
-    m_referencePhotopeakLines->nuclidesCleared().connect( boost::bind( &WPushButton::setText, closeButton, WString::tr("Close")) );
+    m_referencePhotopeakLines->displayingNuclide().connect( [closeButton](){ closeButton->setText( WString::tr("show-lines") ); } );
+    m_referencePhotopeakLines->nuclidesCleared().connect( [closeButton](){ closeButton->setText( WString::tr("Close") ); } );
   }
   
   closeButton->clicked().connect( m_referencePhotopeakLinesWindow, &AuxWindow::hide );
-  m_referencePhotopeakLinesWindow->finished().connect( boost::bind( &InterSpec::closeGammaLinesWindow, this ) );
+  m_referencePhotopeakLinesWindow->finished().connect( [this](){ closeGammaLinesWindow(); } );
   
   AuxWindow::addHelpInFooter( m_referencePhotopeakLinesWindow->footer(),
                               "reference-gamma-lines-dialog" );
@@ -10857,7 +10869,7 @@ void InterSpec::showGammaLinesWindow()
     w = 800.0;
   w = std::min( w, 800.0 );
   
-  m_referencePhotopeakLinesWindow->resize( WLength(w,WLength::Pixel), WLength(310,WLength::Pixel));
+  m_referencePhotopeakLinesWindow->resize( WLength(w,WLength::Unit::Pixel), WLength(310,WLength::Unit::Pixel));
   m_referencePhotopeakLinesWindow->resizeToFitOnScreen();
   m_referencePhotopeakLinesWindow->centerWindow();
   m_referencePhotopeakLinesWindow->show();
@@ -10891,8 +10903,13 @@ void InterSpec::closeGammaLinesWindow()
       m_referencePhotopeakLines->serialize( xmlstate );
     m_referencePhotopeakLines->clearAllLines();
     if( m_toolsTabs && m_toolsTabs->indexOf( m_referencePhotopeakLines ) >= 0 )
+    {
+      // In Wt4, removeTab returns unique_ptr - let it handle deletion
       m_toolsTabs->removeTab( m_referencePhotopeakLines );
-    delete m_referencePhotopeakLines;
+    }else
+    {
+      delete m_referencePhotopeakLines;
+    }
     m_referencePhotopeakLines = nullptr;
   }//if( m_referencePhotopeakLines )
 
@@ -10905,17 +10922,18 @@ void InterSpec::closeGammaLinesWindow()
                                                    m_shieldingSuggestion,
                                                    this );
     setReferenceLineColors( nullptr );
-    
-    m_externalRidResultsRecieved.connect( boost::bind( &ReferencePhotopeakDisplay::setExternalRidResults,
-                                                      m_referencePhotopeakLines, boost::placeholders::_1 ));
-    
+
+    m_externalRidResultsRecieved.connect( [this]( std::shared_ptr<const ExternalRidResults> v ){
+      m_referencePhotopeakLines->setExternalRidResults( v );
+    } );
+
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     if( isPhone() && (renderedHeight() > renderedWidth()) )
       m_referencePhotopeakLines->setNarrowPhoneLayout( true );
 #endif
-    
-    m_toolsTabs->addTab( m_referencePhotopeakLines, WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
-    
+
+    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_referencePhotopeakLines), WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
+
     if( xmlstate.size() )
       m_referencePhotopeakLines->deSerialize( xmlstate );
   }//if( m_toolsTabs )
@@ -10928,6 +10946,10 @@ void InterSpec::closeGammaLinesWindow()
 void InterSpec::handleToolTabChanged( int tab )
 {
   if( !m_toolsTabs )
+    return;
+
+  // In Wt4, Signal::isBlocked()/setBlocked() were removed; use flag to prevent re-entry
+  if( m_handlingToolTabChange )
     return;
   
   const int prev_tab = m_currentToolsTab;
@@ -10977,25 +10999,23 @@ void InterSpec::handleToolTabChanged( int tab )
     if( m_toolsTabs && (prev_tab < m_toolsTabs->count()) )
     {
       //WTabWidget::currentChanged() is emited even when you programmatically change the tab; we
-      //  need to block this here, or else the undo/redo history will get all messed up.
-      const bool orig_state = m_toolsTabs->currentChanged().isBlocked();
-      m_toolsTabs->currentChanged().setBlocked(true);
+      //  need to block re-entry into handleToolTabChanged via m_handlingToolTabChange flag.
+      m_handlingToolTabChange = true;
       m_toolsTabs->setCurrentIndex(prev_tab);
-      m_toolsTabs->currentChanged().setBlocked(orig_state);
+      m_handlingToolTabChange = false;
     }
     handle_change(prev_tab, false);
   };//undo
-  
+
   auto redo = [this, tab, handle_change](){
     if( m_toolsTabs && (tab < m_toolsTabs->count()) )
     {
-      // See note above on blocking the WTabWidget::currentChanged() signal
-      const bool orig_state = m_toolsTabs->currentChanged().isBlocked();
-      m_toolsTabs->currentChanged().setBlocked(true);
+      // See note above on blocking re-entry via m_handlingToolTabChange flag
+      m_handlingToolTabChange = true;
       m_toolsTabs->setCurrentIndex(tab);
-      m_toolsTabs->currentChanged().setBlocked(orig_state);
+      m_handlingToolTabChange = false;
     }
-    
+
     handle_change(tab, false);
   };//redo
   
@@ -11169,15 +11189,15 @@ void InterSpec::timeChartDragged( const int sample_start_in, const int sample_en
   };
   
   ActionType action = ActionType::ChangeSamples;
-  if( modifiers.testFlag(KeyboardModifier::ShiftModifier) )
+  if( modifiers.test(KeyboardModifier::Shift) )
     action = ActionType::AddSamples;
-  else if( modifiers.testFlag(KeyboardModifier::ControlModifier) )
+  else if( modifiers.test(KeyboardModifier::Control) )
     action = ActionType::RemoveSamples;
   
   SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
-  if( modifiers.testFlag(KeyboardModifier::AltModifier) )
+  if( modifiers.test(KeyboardModifier::Alt) )
     type = SpecUtils::SpectrumType::Background;
-  else if( modifiers.testFlag(KeyboardModifier::MetaModifier) )
+  else if( modifiers.test(KeyboardModifier::Meta) )
     type = SpecUtils::SpectrumType::SecondForeground;
   
   const int sample_start = std::min( sample_start_in, sample_end_in );
@@ -11206,7 +11226,7 @@ void InterSpec::timeChartDragged( const int sample_start_in, const int sample_en
   if( measurment(type) != m_dataMeasurement )
   {
     if( action != ActionType::RemoveSamples )
-      setSpectrum( m_dataMeasurement, interaction_samples, type, 0 );
+      setSpectrum( m_dataMeasurement, interaction_samples, type, {} );
     return;
   }//if( the action isnt for the foreground )
   
@@ -11245,7 +11265,7 @@ void InterSpec::timeChartDragged( const int sample_start_in, const int sample_en
             
           case SpecUtils::SpectrumType::Background:
           case SpecUtils::SpectrumType::SecondForeground:
-            setSpectrum( nullptr, std::set<int>{}, type, 0 );
+            setSpectrum( nullptr, std::set<int>{}, type, {} );
             break;
         }//switch( type )
       }//if( !dispsamples.empty() ) / else
@@ -11341,8 +11361,7 @@ std::set<int> InterSpec::validForegroundSamples() const
 void InterSpec::initOsColorThemeChangeDetect()
 {
   m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", false ) );
-  m_osColorThemeChange->connect( boost::bind( &InterSpec::osThemeChange, this,
-                                             boost::placeholders::_1 ) );
+  m_osColorThemeChange->connect( [this]( const std::string &v ){ osThemeChange( v ); } );
   
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsDetectOsColorThemeJs);
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsSetupOsColorThemeChangeJs);
@@ -11517,7 +11536,7 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
 
 
 void InterSpec::doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
-                                  vector<boost::function<void(void)> > workers )
+                                  vector<std::function<void(void)> > workers )
 {
   if( !meas || workers.empty() )
     return;
@@ -11544,7 +11563,7 @@ void InterSpec::doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
     if( !modifiedSinceDecode )
       meas->reset_modified_since_decode();
   }//end codeblock to access meas
-}//void InterSpec::doFinishupSetSpectrumWork( boost::function<void(void)> workers )
+}//void InterSpec::doFinishupSetSpectrumWork( std::function<void(void)> workers )
 
 
 void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
@@ -11556,7 +11575,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   const int spectypeindex = static_cast<int>( spec_type );
   
-  vector< boost::function<void(void)> > furtherworkers;
+  vector< std::function<void(void)> > furtherworkers;
   
   const bool wasModified = (meas ? meas->modified() : false);
   const bool wasModifiedSinceDecode = (meas ? meas->modified_since_decode() : false);
@@ -11566,9 +11585,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     // If we are loading a state from the "Welcome To InterSpec" screen, we dont want to delete
     //  m_useInfoWindow because we will still use it, so instead we'll try deleting the window on
     //  the next go around of the event loop.
-    auto deleter = wApp->bind( boost::bind( &InterSpec::deleteWelcomeDialog, this, false) );
-    auto doDelete = [deleter](){ deleter(); wApp->triggerUpdate(); };
-    WServer::instance()->post( wApp->sessionId(), doDelete );
+    // In Wt4, WApplication::bind() was removed; lambda passed directly to WServer::post()
+    const std::string sessionId = wApp->sessionId();
+    WServer::instance()->post( sessionId, [this](){ deleteWelcomeDialog( false ); wApp->triggerUpdate(); } );
   }//if( meas )
   
   std::shared_ptr<SpecMeas> previous = measurment(spec_type);
@@ -11603,7 +11622,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
-      /* && options.testFlag(SetSpectrumOptions::CheckToPreservePreviousEnergyCal) */
+      /* && options.test(SetSpectrumOptions::CheckToPreservePreviousEnergyCal) */
       && m_referencePhotopeakLines  && (spec_type == SpecUtils::SpectrumType::Foreground) )
   {
     m_referencePhotopeakLines->clearAllLines();
@@ -11670,7 +11689,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           if( drf )
           {
             auto drfcopy = std::make_shared<DetectorPeakResponse>( *drf );
-            boost::function<void(void)> worker = boost::bind( &DrfSelect::updateLastUsedTimeOrAddToDb, drfcopy, m_user.id(), m_sql );
+            const long long userId = m_user.id();
+            std::function<void(void)> worker = [drfcopy, userId, sql = m_sql](){
+              DrfSelect::updateLastUsedTimeOrAddToDb( drfcopy, userId, sql );
+            };
             WServer::instance()->ioService().boost::asio::io_service::post( worker );
           }
         }//if( meas->detector() != old_det )
@@ -11686,16 +11708,27 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
           if( type == SpecUtils::DetectorType::Unknown )
             type = SpecMeas::guessDetectorTypeFromFileName( meas->filename() );
           
-          boost::function<void()> worker
-                  = wApp->bind( boost::bind( &InterSpec::loadDetectorResponseFunction,
-                          this, meas, type, serial_num, manufacturer, model, doLoadDefault, wApp->sessionId() ) );
-          furtherworkers.push_back( worker );
+          {
+            const string sessionId = wApp->sessionId();
+            // In Wt4, WApplication::bind() was removed; lambda passed directly
+            std::function<void()> worker = [this, meas, type, serial_num, manufacturer, model, doLoadDefault, sessionId](){
+              loadDetectorResponseFunction( meas, type, serial_num, manufacturer, model, doLoadDefault, sessionId );
+            };
+            furtherworkers.push_back( worker );
+          }
         }//if( we could try to load a detector type )
-        
-        m_detectorChangedConnection = m_detectorChanged.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), boost::placeholders::_1 ) );
-        m_detectorModifiedConnection = m_detectorModified.connect( boost::bind( &SpecMeas::detectorChangedCallback, meas.get(), boost::placeholders::_1 ) );
-        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( boost::bind( &SpecMeas::displayedSpectrumChangedCallback, meas.get(), boost::placeholders::_1,
-            boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4 ) );
+
+        SpecMeas *measPtr = meas.get();
+        m_detectorChangedConnection = m_detectorChanged.connect( [measPtr]( std::shared_ptr<DetectorPeakResponse> drf ){
+          measPtr->detectorChangedCallback( drf );
+        } );
+        m_detectorModifiedConnection = m_detectorModified.connect( [measPtr]( std::shared_ptr<DetectorPeakResponse> drf ){
+          measPtr->detectorChangedCallback( drf );
+        } );
+        m_displayedSpectrumChanged = m_displayedSpectrumChangedSignal.connect( [measPtr]( const SpecUtils::SpectrumType a1,
+            std::shared_ptr<SpecMeas> a2, const std::set<int> a3, const std::vector<std::string> a4 ){
+          measPtr->displayedSpectrumChangedCallback( a1, a2, a3, a4 );
+        } );
       }//if( meas )
 
       // Determine PeakFitDetPrefs for new foreground
@@ -11820,7 +11853,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   const bool askToPropigatePeaks
           = UserPreferences::preferenceValue<bool>( "AskPropagatePeaks", this );
   if( askToPropigatePeaks
-     && options.testFlag(InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
+     && options.test(InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
      && !sameSpecFile && meas && m_dataMeasurement && previous && m_spectrum->data()
      && spec_type==SpecUtils::SpectrumType::Foreground
      && previous->instrument_id()==meas->instrument_id()
@@ -11867,7 +11900,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   deleteEnergyCalPreserveWindow();
 
-  if( options.testFlag(SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
+  if( options.test(SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
       && !sameSpecFile && m_energyCalTool && !!meas && !!m_dataMeasurement
       && UserPreferences::preferenceValue<bool>("AskPreserveEnergyCal", this)
      )
@@ -12053,7 +12086,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   // Check if there are RIID analysis results in the file, and if so let the user know.
   if( !sameSpecFile && meas && meas->detectors_analysis()
-     && options.testFlag(SetSpectrumOptions::CheckForRiidResults) )
+     && options.test(SetSpectrumOptions::CheckForRiidResults) )
   {
     auto ana = meas->detectors_analysis();
     
@@ -12104,7 +12137,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   }//if( meas && !sameSpecFile )
   
 #if( USE_REMOTE_RID )
-  if( meas && !options.testFlag(SetSpectrumOptions::SkipExternalRid) )
+  if( meas && !options.test(SetSpectrumOptions::SkipExternalRid) )
   {
     const ExternalRidAuotCallPref pref = RemoteRid::external_rid_call_pref( this );
     
@@ -12142,9 +12175,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   if( meas && furtherworkers.size() )
   {
-    boost::function<void(void)> worker = boost::bind(
-                                  &InterSpec::doFinishupSetSpectrumWork,
-                                  this, meas, furtherworkers );
+    std::function<void(void)> worker = [this, meas, furtherworkers](){
+      doFinishupSetSpectrumWork( meas, furtherworkers );
+    };
     WServer::instance()->ioService().boost::asio::io_service::post( worker );
   }//if( meas && furtherworkers.size() )
   
@@ -12281,7 +12314,7 @@ void InterSpec::reloadCurrentSpectrum( SpecUtils::SpectrumType spec_type )
     break;
   }//switch( spec_type )
 
-  setSpectrum( meas, sample_numbers, spec_type, 0 );
+  setSpectrum( meas, sample_numbers, spec_type, {} );
 }//void reloadCurrentSpectrum( SpecUtils::SpectrumType spec_type )
 
 
@@ -12320,17 +12353,14 @@ void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
   
   SimpleDialog *dialog = new SimpleDialog( WString::fromUTF8(filename), WString::tr("prompt-how-open") );
   WPushButton *button = dialog->addButton( WString::tr("Foreground") );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this,
-                                          meas, header, SpecUtils::SpectrumType::Foreground ) );
+  button->clicked().connect( [this, meas, header](){ finishLoadUserFilesystemOpenedFile( meas, header, SpecUtils::SpectrumType::Foreground ); } );
   button->setFocus( true );
-  
+
   button = dialog->addButton( WString::tr("Background") );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this,
-                                          meas, header, SpecUtils::SpectrumType::Background ) );
-  
+  button->clicked().connect( [this, meas, header](){ finishLoadUserFilesystemOpenedFile( meas, header, SpecUtils::SpectrumType::Background ); } );
+
   button = dialog->addButton( WString::tr("Secondary") );
-  button->clicked().connect( boost::bind( &InterSpec::finishLoadUserFilesystemOpenedFile, this,
-                                         meas, header, SpecUtils::SpectrumType::SecondForeground ) );
+  button->clicked().connect( [this, meas, header](){ finishLoadUserFilesystemOpenedFile( meas, header, SpecUtils::SpectrumType::SecondForeground ); } );
 }//void promptUserHowToOpenFile(...)
 
 
@@ -12602,13 +12632,13 @@ void InterSpec::detectorsToDisplayChanged()
   displaySecondForegroundData();
   displayForegroundData( true );
   displayTimeSeriesData();
-  
+
   // \TODO: The foreground may be pass-through, but the user could have just de-selected a detector
   //        so that none of the currently selected sample numbers have gamma/neutron data, and in
   //        this case we should fix things up.  Or it could be the case that the remaining detectors
   //        are not time-series (e.g., only have one or two spectra), so we then no longer would
   //        need/want the time chart (and vice versa when adding a detector).
-  
+
   // This function is only called when a checkbox in the "Detectors" sub-menu is changed, so for the
   //  moment, we will only emit that things changed for the foreground.  In the future we should get
   //  rid of this sub-menu and handle things correctly.
@@ -12616,41 +12646,45 @@ void InterSpec::detectorsToDisplayChanged()
   const auto meas = measurment(type);
   const auto &samples = displayedSamples(type);
   const auto detectors = detectorsToDisplay(type);
-  m_displayedSpectrumChangedSignal.emit(type,meas,samples,detectors);
-  
-  
-  if( !m_undo )
+  m_displayedSpectrumChangedSignal.emit( type, meas, samples, detectors );
+}//void detectorsToDisplayChanged()
+
+
+void InterSpec::detectorsToDisplayChangedForCb( WCheckBox *callerCb )
+{
+  // In Wt4, WObject::sender() was removed; caller passes the checkbox that was changed
+  detectorsToDisplayChanged();
+
+  if( !m_undo || !callerCb || !m_detectorToShowMenu )
     return;
-  
+
   int menu_num_changed = -1;
   bool checked = false;
-  WObject *caller = WObject::sender();
   const vector<WMenuItem *> items = m_detectorToShowMenu->items();
-  
+
   for( size_t i = 0; i < items.size(); ++i )
   {
     if( items[i]->hasStyleClass("PhoneMenuBack") )
       continue;
-    
+
     PopupDivMenuItem *item = dynamic_cast<PopupDivMenuItem *>( items[i] );
     WCheckBox *cb = (item ? item->checkBox() : (WCheckBox *)0);
-    
-    if( cb && ((caller == cb) || (caller == item)) )
+
+    if( cb && (callerCb == cb) )
     {
       menu_num_changed = static_cast<int>( i );
-      assert( cb );
-      checked = cb ? cb->isChecked() : false;
+      checked = cb->isChecked();
       break;
     }
   }//for( size_t i = 0; i < items.size(); ++i )
-  
+
   if( menu_num_changed >= 0 )
   {
     auto undo_redo = [this,menu_num_changed]( const bool set_checked ){
       const vector<WMenuItem *> items = m_detectorToShowMenu->items();
       if( menu_num_changed >= static_cast<int>(items.size()) )
         return;
-      
+
       PopupDivMenuItem *item = dynamic_cast<PopupDivMenuItem *>( items[menu_num_changed] );
       assert( item );
       WCheckBox *cb = (item ? item->checkBox() : (WCheckBox *)0);
@@ -12660,13 +12694,13 @@ void InterSpec::detectorsToDisplayChanged()
         cb->setChecked( set_checked );
         detectorsToDisplayChanged();
       }
-    };//auto undo_redo = [...
-    
+    };//auto undo_redo = [...]
+
     m_undo->addUndoRedoStep( [undo_redo,checked](){ undo_redo( !checked ); },
                              [undo_redo,checked](){ undo_redo( checked ); },
                             "Toggle display detector" );
   }//if( menu_num_changed >= 0 )
-}//void detectorsToDisplayChanged()
+}//void detectorsToDisplayChangedForCb()
 
 
 void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums )
@@ -12747,8 +12781,9 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
       if( isneut )
         item->addStyleClass( "NeutDetCbItem" );
       
-      cb->checked().connect( this, &InterSpec::detectorsToDisplayChanged );
-      cb->unChecked().connect( this, &InterSpec::detectorsToDisplayChanged );
+      // In Wt4, WObject::sender() was removed; capture item index for undo/redo in lambda
+      cb->checked().connect( [this, cb](){ detectorsToDisplayChangedForCb(cb); } );
+      cb->unChecked().connect( [this, cb](){ detectorsToDisplayChangedForCb(cb); } );
       
       //item->triggered().connect( boost::bind( &InterSpec::detectorsToDisplayChanged, this, item ) );
       
@@ -12878,12 +12913,12 @@ void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line
                         "shoudnt be called if peak model isnt set.");
   
   SpecUtils::SpectrumType spec_type = SpecUtils::SpectrumType::Foreground;
-  if( mods.testFlag(KeyboardModifier::AltModifier) && m_spectrum->background() )
+  if( mods.test(KeyboardModifier::Alt) && m_spectrum->background() )
     spec_type = SpecUtils::SpectrumType::Background;
-  else if( mods.testFlag(KeyboardModifier::ShiftModifier) && m_spectrum->secondData() )
+  else if( mods.test(KeyboardModifier::Shift) && m_spectrum->secondData() )
     spec_type = SpecUtils::SpectrumType::SecondForeground;
-  //mods.testFlag(KeyboardModifier::ControlModifier)
-  //mods.testFlag(KeyboardModifier::MetaModifier)
+  //mods.test(KeyboardModifier::Control)
+  //mods.test(KeyboardModifier::Meta)
   
   if( !m_dataMeasurement )
     return;
@@ -12953,11 +12988,13 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                     && (!fitPrefs
                                     || (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown)));
 
-  boost::function<void(void)> callback = wApp->bind( boost::bind(&InterSpec::setHintPeaks,
-                this, spectrum, samples, origPeaks, searchresults, updateDetTypeGuess
-  ) );
+  // In Wt4, WApplication::bind() was removed; lambda passed directly (WServer::post handles session context)
+  std::function<void(void)> callback = [this, spectrum, samples, origPeaks,
+                                        searchresults, updateDetTypeGuess](){
+    setHintPeaks( spectrum, samples, origPeaks, searchresults, updateDetTypeGuess );
+  };
 
-  boost::function<void(void)> worker = [=](){
+  std::function<void(void)> worker = [=](){
     PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
                                                 callback, sessionId, false, fitPrefs );
   };
@@ -12997,7 +13034,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
     if( server )  //this should always be true
     {
       m_findingHintPeaks = true;
-      boost::function<void()> worker = m_hintQueue.back();
+      std::function<void()> worker = m_hintQueue.back();
       m_hintQueue.pop_back();
       server->ioService().boost::asio::io_service::post( worker );
     }//if( server )

@@ -32,29 +32,29 @@
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 
-#include <Wt/WMenu>
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WPoint>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WGroupBox>
-#include <Wt/WMenuItem>
-#include <Wt/WResource>
-#include <Wt/WIOService>
-#include <Wt/WFileUpload>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WInPlaceEdit>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WStackedWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/WStandardItem>
-#include <Wt/WStandardItemModel>
-#include <Wt/WRegExpValidator>
-#include <Wt/WSuggestionPopup>
+#include <Wt/WMenu.h>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WPoint.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WResource.h>
+#include <Wt/WIOService.h>
+#include <Wt/WFileUpload.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WInPlaceEdit.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WStandardItem.h>
+#include <Wt/WStandardItemModel.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WSuggestionPopup.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -168,8 +168,8 @@ namespace
     std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> m_solution;
     
   public:
-    RelActAutoReportResource( RelActAutoGui *tool, WObject* parent = nullptr )
-    : WResource( parent ), m_app( WApplication::instance() ), m_tool( tool ), m_solution( nullptr )
+    RelActAutoReportResource( RelActAutoGui *tool, WObject* /*parent*/ = nullptr )
+    : WResource(), m_app( WApplication::instance() ), m_tool( tool ), m_solution( nullptr )
     {
       assert( m_app );
       assert( m_tool );
@@ -232,7 +232,7 @@ namespace
             *it = ' ';
         }
         
-        suggestFileName( filename, WResource::Attachment );
+        suggestFileName( filename, ContentDisposition::Attachment );
         response.setMimeType( "application/octet-stream" );
               
         m_solution->print_html_report( response.out() );
@@ -252,8 +252,8 @@ namespace
     RelActAutoGui *m_tool;
     
   public:
-    RelActAutoParamsResource( RelActAutoGui *tool, WObject* parent = nullptr )
-    : WResource( parent ), m_app( WApplication::instance() ), m_tool( tool )
+    RelActAutoParamsResource( RelActAutoGui *tool, WObject* /*parent*/ = nullptr )
+    : WResource(), m_app( WApplication::instance() ), m_tool( tool )
     {
       assert( m_app );
       assert( m_tool );
@@ -288,7 +288,7 @@ namespace
           filename = filename.substr(0,filename.size() - orig_extension.size());
         filename += "_releff.xml";
         
-        suggestFileName( filename, WResource::Attachment );
+        suggestFileName( filename, ContentDisposition::Attachment );
         response.setMimeType( "application/xml" );
         
         std::unique_ptr<rapidxml::xml_document<char>> xml = m_tool->guiStateToXml();
@@ -317,23 +317,24 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
   
   AuxWindow *window = nullptr;
   RelActAutoGui *disp = nullptr;
-  
+
   try
   {
-    disp = new RelActAutoGui( viewer );
-    
-    window = new AuxWindow( WString::tr("raag-window-title"), 
+    auto disp_owner = std::make_unique<RelActAutoGui>( viewer );
+    disp = disp_owner.get();
+
+    window = new AuxWindow( WString::tr("raag-window-title"),
                             (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
     window->setMinimumSize( 800, 480 );
     window->setResizable( true );
-    window->contents()->setOffsets(WLength(0,WLength::Pixel));
-    
-    disp->setHeight( WLength(100, WLength::Percentage) );
-    disp->setWidth( WLength(100, WLength::Percentage) );
-    
-    window->contents()->addWidget( disp );
+    window->contents()->setOffsets(WLength(0,WLength::Unit::Pixel));
+
+    disp->setHeight( WLength(100, WLength::Unit::Percentage) );
+    disp->setWidth( WLength(100, WLength::Unit::Percentage) );
+
+    window->contents()->addWidget( std::move(disp_owner) );
     
     //window->stretcher()->addWidget( disp, 0, 0 );
     //window->stretcher()->setContentsMargins(0,0,0,0);
@@ -426,9 +427,9 @@ const char *RelActAutoGui::to_str( const RelActAutoGui::AddUncert val )
 
 
 
-RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
-  m_render_flags( 0 ),
+RelActAutoGui::RelActAutoGui( InterSpec *viewer )
+: WContainerWidget(),
+  m_render_flags(),
   m_default_par_sets_dir( "" ),
   m_user_par_sets_dir( "" ),
   m_interspec( viewer ),
@@ -484,12 +485,12 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_calc_number( 0 ),
   m_cancel_calc{},
   m_solution{},
-  m_calc_started( this ),
-  m_calc_successful( this ),
-  m_calc_failed( this ),
-  m_solution_updated( this ),
-  m_html_download_rsc( new RelActAutoReportResource( this, this ) ),
-  m_xml_download_rsc( new RelActAutoParamsResource( this, this ) )
+  m_calc_started(),
+  m_calc_successful(),
+  m_calc_failed(),
+  m_solution_updated(),
+  m_html_download_rsc( std::make_shared<RelActAutoReportResource>( this ) ),
+  m_xml_download_rsc( std::make_shared<RelActAutoParamsResource>( this ) )
 {
   assert( m_interspec );
   if( !m_interspec )
@@ -510,100 +511,94 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   //WText *alpha_warning = new WText( "This tool is under active development - this is an early preview", this );
   //alpha_warning->addStyleClass( "RelActCalcAutoAlphaBuildWarning" );
     
-  WContainerWidget *upper_div = new WContainerWidget( this );
+  WContainerWidget *upper_div = addNew<WContainerWidget>();
   upper_div->addStyleClass( "RelActAutoUpperArea" );
-  
-  WStackedWidget *upper_stack = new WStackedWidget();
+
+  WStackedWidget *upper_stack = upper_div->addNew<WStackedWidget>();
   upper_stack->addStyleClass( "UpperStack" );
   // Adding this transformation causes the "Rel. Eff." chart to resize wrong initially when you click to it
   //WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
   //upper_stack->setTransitionAnimation( animation, true );
 
-  m_upper_menu = new WMenu( upper_stack, Wt::Vertical, upper_div );
+  m_upper_menu = upper_div->addNew<WMenu>( upper_stack );
   m_upper_menu->addStyleClass( "UpperMenu LightNavMenu" );
-  upper_div->addWidget( upper_stack );
 
   
-  m_spectrum = new D3SpectrumDisplayDiv();
-  m_spectrum->setCompactAxis( true );
-  m_spectrum->disableLegend();
+  {
+    auto spectrum_owner = std::make_unique<D3SpectrumDisplayDiv>();
+    m_spectrum = spectrum_owner.get();
+    m_spectrum->setCompactAxis( true );
+    m_spectrum->disableLegend();
 
-  const bool logypref = UserPreferences::preferenceValue<bool>( "LogY", m_interspec );
-  m_spectrum->setYAxisLog( logypref );
-  
-  auto set_log_y = wApp->bind( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_spectrum, true ) );
-  auto set_lin_y = wApp->bind( boost::bind( &D3SpectrumDisplayDiv::setYAxisLog, m_spectrum, false ) );
-  std::function<void (boost::any)> logy_fcn = [=](boost::any value){
-    if( boost::any_cast<bool>(value) )
-      set_log_y();
-    else
-      set_lin_y();
-  };
-    
-  UserPreferences * const preferences = m_interspec->preferences();
-    
-  preferences->addCallbackWhenChanged( "LogY", m_spectrum,
-                                                     &D3SpectrumDisplayDiv::setYAxisLog );
-  preferences->addIntCallbackWhenChanged( "RefLineThickness", m_spectrum,
-                                             &D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback );
-  const int ref_line_thick = std::max(0, std::min(3, UserPreferences::preferenceValue<int>( "RefLineThickness", m_interspec) ));
-  m_spectrum->setRefLineThickness( static_cast<D3SpectrumDisplayDiv::RefLineThickness>(ref_line_thick) );
+    const bool logypref = UserPreferences::preferenceValue<bool>( "LogY", m_interspec );
+    m_spectrum->setYAxisLog( logypref );
 
-  preferences->addIntCallbackWhenChanged( "RefLineVerbosity", m_spectrum,
-                                             &D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback );
-  const int ref_line_verbosity = std::max(0, std::min(2, UserPreferences::preferenceValue<int>( "RefLineVerbosity", m_interspec) ));
-  m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
-    
-  m_peak_model = new PeakModel( m_spectrum );
-  m_peak_model->setNoSpecMeasBacking();
-  
-  m_spectrum->setPeakModel( m_peak_model );
-  
-  m_spectrum->existingRoiEdgeDragUpdate().connect( this, &RelActAutoGui::handleRoiDrag );
-  m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
-  m_spectrum->rightClicked().connect( this, &RelActAutoGui::handleRightClick );
-  m_spectrum->shiftKeyDragged().connect( this, &RelActAutoGui::handleShiftDrag );
-  m_spectrum->doubleLeftClick().connect( boost::bind( &RelActAutoGui::handleDoubleLeftClick, this,
-                                                       boost::placeholders::_1,
-                                                       boost::placeholders::_2,
-                                                       boost::placeholders::_3,
-                                                       boost::placeholders::_4 ) );
+    UserPreferences * const preferences = m_interspec->preferences();
 
-  m_rel_eff_chart = new RelEffChart();
-  m_txt_results = new RelActTxtResults();
-  
-  WMenuItem *item = new WMenuItem( WString::tr("raag-spec"), m_spectrum );
-  m_upper_menu->addItem( item );
-  
-  // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
-  item->clicked().connect( std::bind([this,item](){
-    m_upper_menu->select( item );
-    item->triggered().emit( item );
-  }) );
-  
-  item = new WMenuItem( WString::tr("raag-rel-eff"), m_rel_eff_chart );
-  m_upper_menu->addItem( item );
-  
-  item->clicked().connect( std::bind([this,item](){
-    m_upper_menu->select( item );
-    item->triggered().emit( item );
-  }) );
-  
-  
-  item = new WMenuItem( WString::tr("raag-result"), m_txt_results );
-  m_upper_menu->addItem( item );
-  
-  item->clicked().connect( std::bind([this,item](){
-    m_upper_menu->select( item );
-    item->triggered().emit( item );
-  }) );
+    preferences->addCallbackWhenChanged( "LogY", m_spectrum,
+                                                       &D3SpectrumDisplayDiv::setYAxisLog );
+    preferences->addIntCallbackWhenChanged( "RefLineThickness", m_spectrum,
+                                               &D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback );
+    const int ref_line_thick = std::max(0, std::min(3, UserPreferences::preferenceValue<int>( "RefLineThickness", m_interspec) ));
+    m_spectrum->setRefLineThickness( static_cast<D3SpectrumDisplayDiv::RefLineThickness>(ref_line_thick) );
+
+    preferences->addIntCallbackWhenChanged( "RefLineVerbosity", m_spectrum,
+                                               &D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback );
+    const int ref_line_verbosity = std::max(0, std::min(2, UserPreferences::preferenceValue<int>( "RefLineVerbosity", m_interspec) ));
+    m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
+
+    auto peak_model_owner = std::make_unique<PeakModel>();
+    m_peak_model = peak_model_owner.get();
+    m_peak_model->setNoSpecMeasBacking();
+    m_spectrum->setPeakModel( m_peak_model );
+    // PeakModel lifetime is managed by this widget
+    addChild( std::move(peak_model_owner) );
+
+    m_spectrum->existingRoiEdgeDragUpdate().connect( this, &RelActAutoGui::handleRoiDrag );
+    m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
+    m_spectrum->rightClicked().connect( this, &RelActAutoGui::handleRightClick );
+    m_spectrum->shiftKeyDragged().connect( this, &RelActAutoGui::handleShiftDrag );
+    m_spectrum->doubleLeftClick().connect( [this]( double a1, double a2, std::string a3, Wt::WFlags<Wt::KeyboardModifier> a4 ){
+      handleDoubleLeftClick( a1, a2, a3, a4 );
+    } );
+
+    WMenuItem *item = m_upper_menu->addItem( WString::tr("raag-spec"), std::move(spectrum_owner) );
+    // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
+    item->clicked().connect( std::bind([this,item](){
+      m_upper_menu->select( item );
+      item->triggered().emit( item );
+    }) );
+  }
+
+  {
+    auto rel_eff_owner = std::make_unique<RelEffChart>();
+    m_rel_eff_chart = rel_eff_owner.get();
+    WMenuItem *item = m_upper_menu->addItem( WString::tr("raag-rel-eff"), std::move(rel_eff_owner) );
+    item->clicked().connect( std::bind([this,item](){
+      m_upper_menu->select( item );
+      item->triggered().emit( item );
+    }) );
+  }
+
+  {
+    auto txt_results_owner = std::make_unique<RelActTxtResults>();
+    m_txt_results = txt_results_owner.get();
+    WMenuItem *item = m_upper_menu->addItem( WString::tr("raag-result"), std::move(txt_results_owner) );
+    item->clicked().connect( std::bind([this,item](){
+      m_upper_menu->select( item );
+      item->triggered().emit( item );
+    }) );
+  }
   
   m_upper_menu->select( static_cast<int>(0) );
   
-  m_interspec->spectrumScaleFactorChanged().connect( boost::bind(
-                 &RelActAutoGui::handleDisplayedSpectrumChange, this, boost::placeholders::_1) );
-  m_interspec->displayedSpectrumChanged().connect( boost::bind(
-                 &RelActAutoGui::handleDisplayedSpectrumChange, this, boost::placeholders::_1) );
+  m_interspec->spectrumScaleFactorChanged().connect( [this]( SpecUtils::SpectrumType a1, double ){
+    handleDisplayedSpectrumChange( a1 );
+  } );
+  m_interspec->displayedSpectrumChanged().connect( [this]( SpecUtils::SpectrumType a1,
+      std::shared_ptr<SpecMeas>, std::set<int>, std::vector<std::string> ){
+    handleDisplayedSpectrumChange( a1 );
+  } );
   
   m_interspec->detectorChanged().connect( this, &RelActAutoGui::handleDetectorChange );
   m_interspec->detectorModified().connect( this, &RelActAutoGui::handleDetectorChange );
@@ -624,10 +619,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }
 #endif
   
-  WContainerWidget *presetDiv = new WContainerWidget( this );
+  WContainerWidget *presetDiv = addNew<WContainerWidget>();
   presetDiv->addStyleClass( "PresetsRow" );
-  WLabel *label = new WLabel( WString::tr("raag-presets"), presetDiv );
-  m_presets = new WComboBox( presetDiv );
+  WLabel *label = presetDiv->addNew<WLabel>( WString::tr("raag-presets") );
+  m_presets = presetDiv->addNew<WComboBox>();
   label->setBuddy( m_presets );
   
   m_presets->addItem( WString::tr("raag-preset-blank") );
@@ -661,7 +656,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 
   // We'll add a place the user can make a note about the RelEff setup -
   // TODO: we currently have zero discoverability that the user can enter a note
-  m_user_note = new WInPlaceEdit( presetDiv );
+  m_user_note = presetDiv->addNew<WInPlaceEdit>();
   m_user_note->setButtonsEnabled( false );
   m_user_note->addStyleClass( "RelActAutoUserNote" );
   m_user_note->valueChanged().connect( this, &RelActAutoGui::handleUserNoteChanged );
@@ -673,24 +668,24 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   //WContainerWidget *spacer = new WContainerWidget( presetDiv );
   //spacer->addStyleClass( "RelActAutoSpacer" );
 
-  m_error_msg = new WText( WString::tr("raag-not-calculated"), presetDiv );
+  m_error_msg = presetDiv->addNew<WText>( WString::tr("raag-not-calculated") );
   m_error_msg->addStyleClass( "RelActAutoErrMsg" );
 
-  m_fit_chi2_msg = new WText( "", presetDiv );
+  m_fit_chi2_msg = presetDiv->addNew<WText>( WString() );
   m_fit_chi2_msg->addStyleClass( "RelActAutoChi2Msg" );
 
-  m_status_indicator = new WText( WString::tr("raag-calculating"), presetDiv );
+  m_status_indicator = presetDiv->addNew<WText>( WString::tr("raag-calculating") );
   m_status_indicator->addStyleClass( "RelActAutoStatusMsg" );
   m_status_indicator->hide();
   
   // We'll take care of the options that apply to all types of Rel Eff curves now.
-  WGroupBox *generalOptionsDiv = new WGroupBox( WString::tr("raag-spectrum-peak-options"), this );
+  WGroupBox *generalOptionsDiv = addNew<WGroupBox>( WString::tr("raag-spectrum-peak-options") );
   generalOptionsDiv->addStyleClass( "RelActAutoGeneralOptionsRow" );
 
-  WContainerWidget *energyCalDiv = new WContainerWidget( generalOptionsDiv );
+  WContainerWidget *energyCalDiv = generalOptionsDiv->addNew<WContainerWidget>();
   energyCalDiv->addStyleClass( "RelActAutoEnergyCalDiv" );
-  label = new WLabel( WString::tr("raag-energy-cal-label"), energyCalDiv );
-  m_fit_energy_cal = new WComboBox( energyCalDiv );
+  label = energyCalDiv->addNew<WLabel>( WString::tr("raag-energy-cal-label") );
+  m_fit_energy_cal = energyCalDiv->addNew<WComboBox>();
   label->setBuddy( m_fit_energy_cal );
 
   for( int i = 0; i <= static_cast<int>(RelActCalcAuto::EnergyCalFitType::NonLinearFit); ++i )
@@ -717,14 +712,14 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   WString tooltip = WString::tr("raag-tt-energy-cal-type");
   HelpSystem::attachToolTipOn( {label, m_fit_energy_cal}, tooltip, showToolTips );
 
-  m_background_subtract = new WCheckBox( WString::tr("raag-back-sub"), generalOptionsDiv );
+  m_background_subtract = generalOptionsDiv->addNew<WCheckBox>( WString::tr("raag-back-sub") );
   m_background_subtract->checked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
   m_background_subtract->unChecked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
-  
-  WContainerWidget *fwhmEstDiv = new WContainerWidget( generalOptionsDiv );
+
+  WContainerWidget *fwhmEstDiv = generalOptionsDiv->addNew<WContainerWidget>();
   fwhmEstDiv->addStyleClass( "RelActAutoFwhmEstDiv" );
-  label = new WLabel( WString::tr("raag-fwhm-est"), fwhmEstDiv );
-  m_fwhm_estimation_method = new WComboBox( fwhmEstDiv );
+  label = fwhmEstDiv->addNew<WLabel>( WString::tr("raag-fwhm-est") );
+  m_fwhm_estimation_method = fwhmEstDiv->addNew<WComboBox>();
   label->setBuddy( m_fwhm_estimation_method );
 
   for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency); ++i )
@@ -756,13 +751,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     m_fwhm_estimation_method->addItem( name );
   }//for( loop over RelActCalcAuto::FwhmEstimationMethod )
 
-  WContainerWidget *fwhmFormDiv = new WContainerWidget( generalOptionsDiv );
+  WContainerWidget *fwhmFormDiv = generalOptionsDiv->addNew<WContainerWidget>();
   fwhmFormDiv->addStyleClass( "RelActAutoFwhmFormDiv" );
-  label = new WLabel( WString::tr("raag-fwhm-form"), fwhmFormDiv );
-  
-  m_fwhm_eqn_form = new WComboBox( fwhmFormDiv );
+  label = fwhmFormDiv->addNew<WLabel>( WString::tr("raag-fwhm-form") );
+
+  m_fwhm_eqn_form = fwhmFormDiv->addNew<WComboBox>();
   label->setBuddy( m_fwhm_eqn_form );
-  WAbstractItemModel *fwhm_eqn_form_model = m_fwhm_eqn_form->model();
+  WAbstractItemModel *fwhm_eqn_form_model = m_fwhm_eqn_form->model().get();
 
   int SqrtEnergyPlusInverse_index = -1;
   for( int i = 0; i < static_cast<int>(RelActCalcAuto::FwhmForm::NotApplicable); ++i )
@@ -792,7 +787,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     
     const int num_rows = fwhm_eqn_form_model->rowCount();
     m_fwhm_eqn_form->addItem( name );
-    fwhm_eqn_form_model->setData( fwhm_eqn_form_model->index(num_rows, 0), fwhm_form, Wt::UserRole );
+    fwhm_eqn_form_model->setData( fwhm_eqn_form_model->index(num_rows, 0), fwhm_form, Wt::ItemDataRole::User );
   }//for( loop over RelActCalcAuto::FwhmForm )
 
   tooltip = WString::tr("raag-tt-fwhm-form");
@@ -804,22 +799,26 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_fwhm_eqn_form->changed().connect( this, &RelActAutoGui::handleFwhmFormChanged );
   m_fwhm_estimation_method->changed().connect( this, &RelActAutoGui::handleFwhmEstimationMethodChanged );
   
-  WContainerWidget *skewDiv = new WContainerWidget( generalOptionsDiv );
+  WContainerWidget *skewDiv = generalOptionsDiv->addNew<WContainerWidget>();
   skewDiv->addStyleClass( "RelActAutoSkewDiv" );
-  label = new WLabel( WString::tr("raag-peak-skew"), skewDiv );
-  m_skew_type = new WComboBox( skewDiv );
+  label = skewDiv->addNew<WLabel>( WString::tr("raag-peak-skew") );
+  m_skew_type = skewDiv->addNew<WComboBox>();
   label->setBuddy( m_skew_type );
   m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
   tooltip = WString::tr("raag-tt-skew-type");
   HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
 
   // Use WStandardItemModel to store enum values with each item
-  WStandardItemModel *skew_model = new WStandardItemModel( m_skew_type );
-  m_skew_type->setModel( skew_model );
+  {
+    auto skew_model_owner = std::make_shared<WStandardItemModel>();
+    WStandardItemModel *skew_model = skew_model_owner.get();
+    (void)skew_model; // skew_model is used by populateSkewTypeComboBox via m_skew_type->model()
+    m_skew_type->setModel( skew_model_owner );
+  }
   populateSkewTypeComboBox( false ); // false = show all skew types
 
   // Lorentzian X-rays checkbox - initially hidden, shown when x-rays present in ROIs
-  m_lorentzian_xrays = new WCheckBox( WString::tr("raag-lorentzian-xrays"), generalOptionsDiv );
+  m_lorentzian_xrays = generalOptionsDiv->addNew<WCheckBox>( WString::tr("raag-lorentzian-xrays") );
   m_lorentzian_xrays->addStyleClass( "LorentzianXraysCb CbNoLineBreak" );
   m_lorentzian_xrays->setHidden( true );
   m_lorentzian_xrays->checked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
@@ -828,7 +827,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( m_lorentzian_xrays, tooltip, showToolTips );
 
   // "Peak fit opt. skew" checkbox - when checked, skew type and fixed params come from PeakFitDetPrefs
-  m_use_fixed_skew = new WCheckBox( WString::tr("raag-use-fixed-skew"), generalOptionsDiv );
+  m_use_fixed_skew = generalOptionsDiv->addNew<WCheckBox>( WString::tr("raag-use-fixed-skew") );
   m_use_fixed_skew->addStyleClass( "UseFixedSkewCb CbNoLineBreak" );
   m_use_fixed_skew->setChecked( true );
   m_use_fixed_skew->setHidden( true );
@@ -839,10 +838,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( m_use_fixed_skew, tooltip, showToolTips );
   handlePeakFitDetPrefsChanged();  // Set initial visibility based on current prefs
 
-  WContainerWidget *addUncertDiv = new WContainerWidget( generalOptionsDiv );
+  WContainerWidget *addUncertDiv = generalOptionsDiv->addNew<WContainerWidget>();
   addUncertDiv->addStyleClass( "RelActAutoAddUncertDiv" );
-  label = new WLabel( WString::tr("raag-add-uncert"), addUncertDiv );
-  m_add_uncert = new WComboBox( addUncertDiv );
+  label = addUncertDiv->addNew<WLabel>( WString::tr("raag-add-uncert") );
+  m_add_uncert = addUncertDiv->addNew<WComboBox>();
   label->setBuddy( m_add_uncert );
   m_add_uncert->activated().connect( this, &RelActAutoGui::handleAdditionalUncertChanged );
     
@@ -872,18 +871,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
     
   
-  WGroupBox *optionsDiv = new WGroupBox( WString::tr("raag-rel-eff-curve-options"), this );
+  WGroupBox *optionsDiv = addNew<WGroupBox>( WString::tr("raag-rel-eff-curve-options") );
   optionsDiv->addStyleClass( "RelActAutoOptions" );
 
-  m_rel_eff_opts_stack = new WStackedWidget();
-  m_rel_eff_opts_stack->addStyleClass( "RelEffCurveOptsStack" );
-  //Do not set a transition animation, it will cause all elements of the stack to be hidden,
-  //  and totally stuck hidden, when we remove an element from the WMenu/WStackedWidget.
-  //m_rel_eff_opts_stack->setTransitionAnimation( animation, true );
+  {
+    auto stack_owner = std::make_unique<WStackedWidget>();
+    m_rel_eff_opts_stack = stack_owner.get();
+    m_rel_eff_opts_stack->addStyleClass( "RelEffCurveOptsStack" );
+    //Do not set a transition animation, it will cause all elements of the stack to be hidden,
+    //  and totally stuck hidden, when we remove an element from the WMenu/WStackedWidget.
+    //m_rel_eff_opts_stack->setTransitionAnimation( animation, true );
 
-  m_rel_eff_opts_menu = new WMenu( m_rel_eff_opts_stack, optionsDiv );
-  m_rel_eff_opts_menu->addStyleClass( "RelEffCurveOptsMenu LightNavMenu" );
-  optionsDiv->addWidget( m_rel_eff_opts_stack );
+    m_rel_eff_opts_menu = optionsDiv->addNew<WMenu>( m_rel_eff_opts_stack );
+    m_rel_eff_opts_menu->addStyleClass( "RelEffCurveOptsMenu LightNavMenu" );
+    optionsDiv->addWidget( std::move(stack_owner) );
+  }
 
 /*
   label = new WLabel( WString::tr("raag-yield-info"), optionsDiv );
@@ -918,7 +920,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
  */
   
     
-  WPushButton *more_btn = new WPushButton( this );
+  WPushButton *more_btn = addNew<WPushButton>();
   more_btn->setIcon( "InterSpec_resources/images/more_menu_icon.svg" );
   more_btn->addStyleClass( "MoreMenuIcon Wt-icon" );
   
@@ -931,23 +933,23 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_apply_energy_cal_item->triggered().connect( this, &RelActAutoGui::startApplyFitEnergyCalToSpecFile );
   
   m_show_ref_lines_item = m_more_options_menu->addMenuItem( WString::tr("raag-show-ref-lines") );
-  m_show_ref_lines_item->triggered().connect( boost::bind( &RelActAutoGui::handleShowRefLines, this, true ) );
-  
+  m_show_ref_lines_item->triggered().connect( [this](){ handleShowRefLines( true ); } );
+
   m_hide_ref_lines_item = m_more_options_menu->addMenuItem( WString::tr("raag-hide-ref-lines") );
-  m_hide_ref_lines_item->triggered().connect( boost::bind( &RelActAutoGui::handleShowRefLines, this, false ) );
+  m_hide_ref_lines_item->triggered().connect( [this](){ handleShowRefLines( false ); } );
   m_hide_ref_lines_item->setHidden( true );
   m_hide_ref_lines_item->setDisabled( true );
   
   m_set_peaks_foreground = m_more_options_menu->addMenuItem( WString::tr("raag-set-peaks-foreground") );
-  m_set_peaks_foreground->triggered().connect( boost::bind( &RelActAutoGui::setPeaksToForeground, this ) );
+  m_set_peaks_foreground->triggered().connect( [this](){ setPeaksToForeground(); } );
   m_set_peaks_foreground->setDisabled( true );
 
   m_show_background = m_more_options_menu->addMenuItem( WString::tr("raag-show-background") );
-  m_show_background->triggered().connect( boost::bind( &RelActAutoGui::handleShowBackground, this, true ) );
+  m_show_background->triggered().connect( [this](){ handleShowBackground( true ); } );
   m_show_background->setDisabled( true );
 
   m_hide_background = m_more_options_menu->addMenuItem( WString::tr("raag-hide-background") );
-  m_hide_background->triggered().connect( boost::bind( &RelActAutoGui::handleShowBackground, this, false ) );
+  m_hide_background->triggered().connect( [this](){ handleShowBackground( false ); } );
   m_hide_background->setDisabled( true );
 
   m_showing_background = UserPreferences::preferenceValue<bool>( "IsoByNucsShowBackground", m_interspec );
@@ -955,54 +957,58 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_hide_background->setHidden( !m_showing_background );
 
 
-  WContainerWidget *bottomArea = new WContainerWidget( this );
+  WContainerWidget *bottomArea = addNew<WContainerWidget>();
   bottomArea->addStyleClass( "EnergiesAndNuclidesHolder" );
-  
+
   //WContainerWidget *nuclidesHolder = new WContainerWidget( bottomArea );
-  WGroupBox *nuclidesHolder = new WGroupBox( WString::tr("raag-nuclides"), bottomArea );
+  WGroupBox *nuclidesHolder = bottomArea->addNew<WGroupBox>( WString::tr("raag-nuclides") );
   nuclidesHolder->addStyleClass( "NuclidesHolder" );
-  
+
   //WContainerWidget *energiesHolder = new WContainerWidget( bottomArea );
-  WGroupBox *energiesHolder = new WGroupBox( WString::tr("raag-energy-ranges"), bottomArea );
+  WGroupBox *energiesHolder = bottomArea->addNew<WGroupBox>( WString::tr("raag-energy-ranges") );
   energiesHolder->addStyleClass( "EnergiesHolder" );
-  
+
   //m_free_peaks_container = new WContainerWidget( bottomArea );
-  m_free_peaks_container = new WGroupBox( WString::tr("raag-free-peaks"), bottomArea );
+  m_free_peaks_container = bottomArea->addNew<WGroupBox>( WString::tr("raag-free-peaks") );
   m_free_peaks_container->addStyleClass( "FreePeaksHolder" );
   m_free_peaks_container->hide();
-  
+
   //WText *nuc_header = new WText( "Nuclides", nuclidesHolder );
   //nuc_header->addStyleClass( "EnergyNucHeader" );
-  
-  m_rel_eff_nuclides_stack = new WStackedWidget();
-  m_rel_eff_nuclides_stack->addStyleClass( "RelEffNuclidesStack" );
-  m_rel_eff_nuclides_menu = new WMenu( m_rel_eff_nuclides_stack, nuclidesHolder );
-  m_rel_eff_nuclides_menu->addStyleClass( "RelEffNuclidesMenu LightNavMenu" ); 
-  nuclidesHolder->addWidget( m_rel_eff_nuclides_stack );
-  WContainerWidget *nuclides_content = new WContainerWidget( nuclidesHolder );
-  
+
+  {
+    auto nuc_stack_owner = std::make_unique<WStackedWidget>();
+    m_rel_eff_nuclides_stack = nuc_stack_owner.get();
+    m_rel_eff_nuclides_stack->addStyleClass( "RelEffNuclidesStack" );
+    m_rel_eff_nuclides_menu = nuclidesHolder->addNew<WMenu>( m_rel_eff_nuclides_stack );
+    m_rel_eff_nuclides_menu->addStyleClass( "RelEffNuclidesMenu LightNavMenu" );
+    nuclidesHolder->addWidget( std::move(nuc_stack_owner) );
+  }
+  WContainerWidget *nuclides_content = nuclidesHolder->addNew<WContainerWidget>();
+  (void)nuclides_content; // used for layout only
+
   m_rel_eff_opts_menu->itemSelected().connect( this, &RelActAutoGui::handleRelEffCurveOptionsSelected );
   m_rel_eff_nuclides_menu->itemSelected().connect( this, &RelActAutoGui::handleRelEffNuclidesSelected );
 
   handleAddRelEffCurve();
-  
-  WContainerWidget *nuc_footer = new WContainerWidget( nuclidesHolder );
+
+  WContainerWidget *nuc_footer = nuclidesHolder->addNew<WContainerWidget>();
   nuc_footer->addStyleClass( "EnergyNucFooter" );
-  
-  WPushButton *add_nuc_icon = new WPushButton( nuc_footer );
+
+  WPushButton *add_nuc_icon = nuc_footer->addNew<WPushButton>();
   add_nuc_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_nuc_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_nuc_icon->clicked().connect( this, &RelActAutoGui::handleAddNuclideForCurrentRelEffCurve );
   tooltip = WString::tr("raag-tt-add-source");
   HelpSystem::attachToolTipOn( add_nuc_icon, tooltip, showToolTips );
 
-  WContainerWidget *spacer = new WContainerWidget( nuc_footer );
+  WContainerWidget *spacer = nuc_footer->addNew<WContainerWidget>();
   spacer->addStyleClass( "RelActAutoSpacer" );
 
-  // same_z_age is something that _could_ be a per-relative-efficiency option, 
+  // same_z_age is something that _could_ be a per-relative-efficiency option,
   //  but it's a little cleaner and maybe clearer to have it here, near the nuclides
   //  (and we are currently forcing nuclides to be same age between RelEff curves...)
-  m_same_z_age = new WCheckBox( WString::tr("raag-same-z-same-age"), nuc_footer );
+  m_same_z_age = nuc_footer->addNew<WCheckBox>( WString::tr("raag-same-z-same-age") );
   m_same_z_age->addStyleClass( "SameZAgeCb CbNoLineBreak" );
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
@@ -1010,14 +1016,14 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 
   //WText *energy_header = new WText( "Energy Ranges", energiesHolder );
   //energy_header->addStyleClass( "EnergyNucHeader" );
-  
-  m_energy_ranges = new WContainerWidget( energiesHolder );
+
+  m_energy_ranges = energiesHolder->addNew<WContainerWidget>();
   m_energy_ranges->addStyleClass( "EnergyNucContent" );
-  
-  WContainerWidget *energies_footer = new WContainerWidget( energiesHolder );
+
+  WContainerWidget *energies_footer = energiesHolder->addNew<WContainerWidget>();
   energies_footer->addStyleClass( "EnergyNucFooter" );
-  
-  WPushButton *add_energy_icon = new WPushButton( energies_footer );
+
+  WPushButton *add_energy_icon = energies_footer->addNew<WPushButton>();
   add_energy_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_energy_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_energy_icon->clicked().connect( this, &RelActAutoGui::handleAddEnergy );
@@ -1026,22 +1032,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( add_energy_icon, tooltip, showToolTips );
 
 
-  m_sort_energy_ranges = new WPushButton( energies_footer );
+  m_sort_energy_ranges = energies_footer->addNew<WPushButton>();
   m_sort_energy_ranges->setStyleClass( "SortEneRanges Decend Wt-icon" );
   m_sort_energy_ranges->setIcon("InterSpec_resources/images/sort_decend_icon.svg");
   m_sort_energy_ranges->clicked().connect( this, &RelActAutoGui::handleSortEnergyRanges );
   HelpSystem::attachToolTipOn( m_sort_energy_ranges, WString::tr("raag-sort-energy-ranges-tt"), showToolTips );
   m_sort_energy_ranges->hide();
 
-
-  spacer = new WContainerWidget( energies_footer );
+  spacer = energies_footer->addNew<WContainerWidget>();
   spacer->addStyleClass( "RelActAutoSpacer" );
 
-  m_show_free_peak = new WPushButton( WString::tr("raag-add-free-peaks"), energies_footer );
+  m_show_free_peak = energies_footer->addNew<WPushButton>( WString::tr("raag-add-free-peaks") );
   m_show_free_peak->addStyleClass( "ShowFreePeaks LightButton" );
   m_show_free_peak->clicked().connect( this, &RelActAutoGui::handleShowFreePeaks );
-  
-  m_clear_energy_ranges = new WPushButton( WString::tr("raag-clear-all-ranges"), energies_footer );
+
+  m_clear_energy_ranges = energies_footer->addNew<WPushButton>( WString::tr("raag-clear-all-ranges") );
   m_clear_energy_ranges->addStyleClass( "ClearEnergyRanges LightButton" );
   m_clear_energy_ranges->clicked().connect( this, &RelActAutoGui::handleClearAllEnergyRanges );
   HelpSystem::attachToolTipOn( m_clear_energy_ranges, WString::tr("raag-remove-all-ranges-tt"), showToolTips );
@@ -1050,18 +1055,18 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 
   //WText *free_peaks_header = new WText( "Free Peaks", m_free_peaks_container );
   //free_peaks_header->addStyleClass( "EnergyNucHeader" );
-  m_free_peaks = new WContainerWidget( m_free_peaks_container );
+  m_free_peaks = m_free_peaks_container->addNew<WContainerWidget>();
   m_free_peaks->addStyleClass( "EnergyNucContent" );
-  
-  WContainerWidget *free_peaks_footer = new WContainerWidget( m_free_peaks_container );
+
+  WContainerWidget *free_peaks_footer = m_free_peaks_container->addNew<WContainerWidget>();
   free_peaks_footer->addStyleClass( "EnergyNucFooter" );
-  
-  WPushButton *add_free_peak_icon = new WPushButton( free_peaks_footer );
+
+  WPushButton *add_free_peak_icon = free_peaks_footer->addNew<WPushButton>();
   add_free_peak_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_free_peak_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
-  add_free_peak_icon->clicked().connect( boost::bind( &RelActAutoGui::handleAddFreePeak, this, 0.0, true, true ) );
-  
-  WPushButton *hide_free_peak = new WPushButton( WString::tr("Close"), free_peaks_footer );
+  add_free_peak_icon->clicked().connect( [this](){ handleAddFreePeak( 0.0, true, true ); } );
+
+  WPushButton *hide_free_peak = free_peaks_footer->addNew<WPushButton>( WString::tr("Close") );
   hide_free_peak->addStyleClass( "HideFreePeaks LightButton" );
   hide_free_peak->clicked().connect( this, &RelActAutoGui::handleHideFreePeaks );
   
@@ -1071,9 +1076,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( {m_free_peaks_container,m_show_free_peak}, WString::tr("raag-free-peaks-tt"), showToolTips );
   
     
-  auto html_rsc = dynamic_cast<RelActAutoReportResource *>( m_html_download_rsc );
-  m_solution_updated.connect( boost::bind( &RelActAutoReportResource::updateSolution,
-                                          html_rsc, boost::placeholders::_1 ) );
+  auto html_rsc = dynamic_cast<RelActAutoReportResource *>( m_html_download_rsc.get() );
+  m_solution_updated.connect( [html_rsc]( std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> a1 ){
+    html_rsc->updateSolution( a1 );
+  } );
   
   m_render_flags |= RenderActions::UpdateSpectra;
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -1148,63 +1154,63 @@ void RelActAutoGui::addUndoRedoStep()
 
 void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  if( m_render_flags.testFlag(RenderActions::UpdateSpectra) )
+  if( m_render_flags.test(RenderActions::UpdateSpectra) )
   {
     updateDuringRenderForSpectrumChange();
     m_render_flags |= RenderActions::UpdateCalculations;
   }
 
-  if( m_render_flags.testFlag(RenderActions::UpdateShowHideBack) )
+  if( m_render_flags.test(RenderActions::UpdateShowHideBack) )
     updateDuringRenderForShowHideBackground();
 
-  if( m_render_flags.testFlag(RenderActions::UpdateFreePeaks)
-     || m_render_flags.testFlag(RenderActions::UpdateEnergyRanges)
-     || m_render_flags.testFlag(RenderActions::UpdateFitEnergyCal) )
+  if( m_render_flags.test(RenderActions::UpdateFreePeaks)
+     || m_render_flags.test(RenderActions::UpdateEnergyRanges)
+     || m_render_flags.test(RenderActions::UpdateFitEnergyCal) )
   {
     updateDuringRenderForFreePeakChange();
     m_render_flags |= RenderActions::UpdateCalculations;
   }
   
-  if( m_render_flags.testFlag(RenderActions::UpdateNuclidesPresent) )
+  if( m_render_flags.test(RenderActions::UpdateNuclidesPresent) )
   {
     updateDuringRenderForNuclideChange();
     m_render_flags |= RenderActions::UpdateCalculations;
   }
   
-  if( m_render_flags.testFlag(RenderActions::UpdateNuclidesPresent)
-     || m_render_flags.testFlag(RenderActions::UpdateRefGammaLines) )
+  if( m_render_flags.test(RenderActions::UpdateNuclidesPresent)
+     || m_render_flags.test(RenderActions::UpdateRefGammaLines) )
   {
     updateDuringRenderForRefGammaLineChange();
   }
   
-  if( m_render_flags.testFlag(RenderActions::UpdateEnergyRanges) )
+  if( m_render_flags.test(RenderActions::UpdateEnergyRanges) )
   {
     updateDuringRenderForEnergyRangeChange();
     m_render_flags |= RenderActions::UpdateCalculations;
   }
 
-  if( m_render_flags.testFlag(RenderActions::UpdateXRaysInRois)
-     || m_render_flags.testFlag(RenderActions::UpdateNuclidesPresent)
-     || m_render_flags.testFlag(RenderActions::UpdateEnergyRanges) )
+  if( m_render_flags.test(RenderActions::UpdateXRaysInRois)
+     || m_render_flags.test(RenderActions::UpdateNuclidesPresent)
+     || m_render_flags.test(RenderActions::UpdateEnergyRanges) )
   {
     updateDuringRenderForXRaysInRois();
   }
 
-  if( m_render_flags.testFlag(RenderActions::ChartToDefaultRange) )
+  if( m_render_flags.test(RenderActions::ChartToDefaultRange) )
   {
     updateSpectrumToDefaultEnergyRange();
   }
   
-  if( m_render_flags.testFlag(RenderActions::UpdateCalculations) )
+  if( m_render_flags.test(RenderActions::UpdateCalculations) )
   {
     startUpdatingCalculation();
   }
 
   // Capture current GUI state and add undo/redo step if flagged
-  if( m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) )
+  if( m_render_flags.test( RenderActions::AddUndoRedoStep ) )
     addUndoRedoStep();
 
-  m_render_flags = 0;
+  m_render_flags = Wt::WFlags<RenderActions>();
   m_loading_preset = false;
 
   WContainerWidget::render( flags );
@@ -1711,14 +1717,15 @@ void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
   {
     m_spectrum->updateRoiBeingDragged( {} );
     
-    RelActAutoGuiEnergyRange *energy_range = new RelActAutoGuiEnergyRange( m_energy_ranges );
+    RelActAutoGuiEnergyRange *energy_range = m_energy_ranges->addNew<RelActAutoGuiEnergyRange>();
     
     energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     
-    energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                                this, static_cast<WWidget *>(energy_range) ) );
-    energy_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1 ) );
-    
+    energy_range->remove().connect( [this, energy_range](){ handleRemoveEnergy( static_cast<WWidget *>(energy_range) ); } );
+    energy_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+      handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+    } );
+
     energy_range->setEnergyRange( roi_lower, roi_upper );
     energy_range->setForceFullRange( true );
     
@@ -1866,10 +1873,12 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     
     const vector<WWidget *> prev_roi_widgets = m_energy_ranges->children();
     
-    RelActAutoGuiEnergyRange *new_roi_w = new RelActAutoGuiEnergyRange( m_energy_ranges );
+    RelActAutoGuiEnergyRange *new_roi_w = m_energy_ranges->addNew<RelActAutoGuiEnergyRange>();
     new_roi_w->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    new_roi_w->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(new_roi_w) ) );
-    new_roi_w->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
+    new_roi_w->remove().connect( [this, new_roi_w](){ handleRemoveEnergy( static_cast<WWidget *>(new_roi_w) ); } );
+    new_roi_w->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+      handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+    } );
     new_roi_w->setFromRoiRange( new_roi );
     
     vector<RelActAutoGuiEnergyRange *> overlapping_rois;
@@ -1973,7 +1982,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   
   DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu( nullptr, PopupDivMenu::TransientMenu );
   menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
-  menu->setPositionScheme( Wt::Absolute );
+  menu->setPositionScheme( Wt::PositionScheme::Absolute );
   
   PopupDivMenuItem *item = nullptr;
   
@@ -1993,47 +2002,47 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
       type < PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
   {
     WMenuItem *item = continuum_menu->addItem( WString::tr(PeakContinuum::offset_type_label_tr(type)) );
-    item->triggered().connect( boost::bind( &RelActAutoGuiEnergyRange::setContinuumType, range, type ) );
+    item->triggered().connect( [range, type](){ range->setContinuumType( type ); } );
     if( type == roi.continuum_type )
       item->setDisabled( true );
   }//for( loop over PeakContinuum::OffsetTypes )
   
   item = menu->addMenuItem( WString::tr("raag-remove-roi") );
-  item->triggered().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(range) ) );
-  
+  item->triggered().connect( [this, range](){ handleRemoveEnergy( static_cast<WWidget *>(range) ); } );
+
   const WString split_text = WString::tr("raag-split-roi-at").arg(formatNumber(energy, 1));
   item = menu->addMenuItem( split_text );
-  item->triggered().connect( boost::bind( &RelActAutoGui::handleSplitEnergyRange, this, static_cast<WWidget *>(range), energy ) );
-  
+  item->triggered().connect( [this, range, energy](){ handleSplitEnergyRange( static_cast<WWidget *>(range), energy ); } );
+
   const char *item_label = "";
   if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
     item_label = "Don't force full-range";
   else
     item_label = "Force full-range";
   item = menu->addMenuItem( item_label );
-  item->triggered().connect( boost::bind( &RelActAutoGui::handleToggleForceFullRange, this, static_cast<WWidget *>(range) ) );
-  
+  item->triggered().connect( [this, range](){ handleToggleForceFullRange( static_cast<WWidget *>(range) ); } );
+
   // TODO: we could be a little more intelligent about when offering to combine ROIs
   if( range_to_left )
   {
     item = menu->addMenuItem( WString::tr("raag-combine-roi-left") );
-    item->triggered().connect( boost::bind( &RelActAutoGui::handleCombineRoi, this,
-                                           static_cast<WWidget *>(range_to_left),
-                                           static_cast<WWidget *>(range) ) );
+    item->triggered().connect( [this, range_to_left, range](){
+      handleCombineRoi( static_cast<WWidget *>(range_to_left), static_cast<WWidget *>(range) );
+    } );
   }//if( range_to_left )
-  
+
   if( range_to_right )
   {
     item = menu->addMenuItem( WString::tr("raag-combine-roi-right") );
-    item->triggered().connect( boost::bind( &RelActAutoGui::handleCombineRoi, this,
-                                           static_cast<WWidget *>(range),
-                                           static_cast<WWidget *>(range_to_right) ) );
+    item->triggered().connect( [this, range, range_to_right](){
+      handleCombineRoi( static_cast<WWidget *>(range), static_cast<WWidget *>(range_to_right) );
+    } );
   }//if( range_to_right )
-  
+
   // TODO: Add floating peak item
   const WString free_peak_text = WString::tr("raag-add-free-peak-at").arg(formatNumber(energy, 1));
   item = menu->addMenuItem( free_peak_text );
-  item->triggered().connect( boost::bind( &RelActAutoGui::handleAddFreePeak, this, energy, true, true ) );
+  item->triggered().connect( [this, energy](){ handleAddFreePeak( energy, true, true ); } );
   
   
   if( is_phone )
@@ -2162,13 +2171,12 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     {
       const RelActCalcAuto::NucInputInfo &nuc = nuclides[nuc_index];
       
-      RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, content );
+      RelActAutoGuiNuclide *nuc_widget = content->addNew<RelActAutoGuiNuclide>( this );
       nuc_widgets[nuc_index] = nuc_widget;
       nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
-      nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
-                                              this, static_cast<WWidget *>(nuc_widget) ) );
+      nuc_widget->remove().connect( [this, nuc_widget](){ handleRemoveNuclide( static_cast<WWidget *>(nuc_widget) ); } );
       nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
-      nuc_widget->age_changed().connect( boost::bind( &RelActAutoGui::handleNuclideAgeChanged, this, boost::placeholders::_1 ) );
+      nuc_widget->age_changed().connect( [this]( RelActAutoGuiNuclide *a1 ){ handleNuclideAgeChanged( a1 ); } );
       nuc_widget->fromNucInputInfo( nuc );
     }//for( const size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
 
@@ -2210,14 +2218,15 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_energy_ranges->clear();
   for( const RelActCalcAuto::RoiRange &roi : options.rois )
   {
-    RelActAutoGuiEnergyRange *energy_range = new RelActAutoGuiEnergyRange( m_energy_ranges );
+    RelActAutoGuiEnergyRange *energy_range = m_energy_ranges->addNew<RelActAutoGuiEnergyRange>();
     
     energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     
-    energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                                this, static_cast<WWidget *>(energy_range) ) );
-    energy_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
-    
+    energy_range->remove().connect( [this, energy_range](){ handleRemoveEnergy( static_cast<WWidget *>(energy_range) ); } );
+    energy_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+      handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+    } );
+
     energy_range->setFromRoiRange( roi );
   }//for( const RelActCalcAuto::RoiRange &roi : rois )
   
@@ -2379,7 +2388,7 @@ void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state
   // m_currentGuiState is only set after the first render(), so if it is set,
   //  we are in active use - and AddUndoRedoStep should not be set during undo/redo execution.
   //  During initial load (e.g., loadStateFromDb), m_currentGuiState is null, and flags may be set.
-  assert( !m_currentGuiState || !m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) );
+  assert( !m_currentGuiState || !m_render_flags.test( RenderActions::AddUndoRedoStep ) );
 
   // Cancel any in-progress calculation so its results dont overwrite the state we are about to restore.
   if( m_cancel_calc )
@@ -2770,14 +2779,14 @@ RelActCalcAuto::FwhmForm RelActAutoGui::getFwhmFormFromCombo() const
     throw std::logic_error( "m_fwhm_eqn_form has invalid current index" );
   }
     
-  const WAbstractItemModel *model = m_fwhm_eqn_form->model();
+  const WAbstractItemModel *model = m_fwhm_eqn_form->model().get();
   const WModelIndex model_index = model->index( current_index, 0 );
-  const boost::any data = model->data( model_index, Wt::UserRole );
+  const Wt::cpp17::any data = model->data( model_index, Wt::ItemDataRole::User );
   
   try
   {
-    return boost::any_cast<RelActCalcAuto::FwhmForm>( data );
-  }catch( const boost::bad_any_cast &e )
+    return Wt::cpp17::any_cast<RelActCalcAuto::FwhmForm>( data );
+  }catch( const std::bad_any_cast &e )
   {
     cerr << "RelActAutoGui::getFwhmFormFromCombo(): Failed to cast model data to FwhmForm at index " 
          << current_index << ": " << e.what() << endl;
@@ -2794,23 +2803,23 @@ void RelActAutoGui::setFwhmFormFromCombo( const RelActCalcAuto::FwhmForm form )
     throw std::logic_error( "m_fwhm_eqn_form is null" );
   }
     
-  const WAbstractItemModel *model = m_fwhm_eqn_form->model();
+  const WAbstractItemModel *model = m_fwhm_eqn_form->model().get();
   const int num_rows = model->rowCount();
   
   for( int i = 0; i < num_rows; ++i )
   {
     const WModelIndex model_index = model->index( i, 0 );
-    const boost::any data = model->data( model_index, Wt::UserRole );
+    const Wt::cpp17::any data = model->data( model_index, Wt::ItemDataRole::User );
     
     try
     {
-      const RelActCalcAuto::FwhmForm stored_form = boost::any_cast<RelActCalcAuto::FwhmForm>( data );
+      const RelActCalcAuto::FwhmForm stored_form = Wt::cpp17::any_cast<RelActCalcAuto::FwhmForm>( data );
       if( stored_form == form )
       {
         m_fwhm_eqn_form->setCurrentIndex( i );
         return;
       }
-    }catch( const boost::bad_any_cast &e )
+    }catch( const std::bad_any_cast &e )
     {
       cerr << "RelActAutoGui::setFwhmFormFromCombo(): Failed to cast model data at index " 
            << i << ": " << e.what() << endl;
@@ -2964,7 +2973,7 @@ void RelActAutoGui::handleSkewTypeChanged()
 
 void RelActAutoGui::populateSkewTypeComboBox( const bool lorentzian_mode )
 {
-  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model() );
+  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model().get() );
   assert( model );
   if( !model )
     return;
@@ -2981,9 +2990,9 @@ void RelActAutoGui::populateSkewTypeComboBox( const bool lorentzian_mode )
     const int row = m_skew_type->currentIndex();
     if( row < model->rowCount() )
     {
-      const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
-      if( !data.empty() )
-        current_skew = boost::any_cast<PeakDef::SkewType>( data );
+      const Wt::cpp17::any data = model->data( model->index(row, 0), Wt::ItemDataRole::User );
+      if( data.has_value() )
+        current_skew = Wt::cpp17::any_cast<PeakDef::SkewType>( data );
     }
   }
 
@@ -2999,17 +3008,17 @@ void RelActAutoGui::populateSkewTypeComboBox( const bool lorentzian_mode )
        && (st != PeakDef::SkewType::GaussPlusBortel) )
       continue;
 
-    WStandardItem *item = new WStandardItem( PeakDef::to_label(st) );
-    item->setData( st, Wt::UserRole );
-    model->appendRow( item );
+    auto item = std::make_unique<WStandardItem>( PeakDef::to_label(st) );
+    item->setData( st, Wt::ItemDataRole::User );
+    model->appendRow( std::move(item) );
   }
 
   // Restore selection or adjust to compatible type
   int new_index = 0;
   for( int row = 0; row < model->rowCount(); ++row )
   {
-    const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
-    if( !data.empty() && (boost::any_cast<PeakDef::SkewType>(data) == current_skew) )
+    const Wt::cpp17::any data = model->data( model->index(row, 0), Wt::ItemDataRole::User );
+    if( data.has_value() && (Wt::cpp17::any_cast<PeakDef::SkewType>(data) == current_skew) )
     {
       new_index = row;
       break;
@@ -3023,8 +3032,8 @@ void RelActAutoGui::populateSkewTypeComboBox( const bool lorentzian_mode )
   {
     for( int row = 0; row < model->rowCount(); ++row )
     {
-      const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
-      if( !data.empty() && (boost::any_cast<PeakDef::SkewType>(data) == PeakDef::SkewType::GaussPlusBortel) )
+      const Wt::cpp17::any data = model->data( model->index(row, 0), Wt::ItemDataRole::User );
+      if( data.has_value() && (Wt::cpp17::any_cast<PeakDef::SkewType>(data) == PeakDef::SkewType::GaussPlusBortel) )
       {
         new_index = row;
         break;
@@ -3119,7 +3128,7 @@ void RelActAutoGui::handlePeakFitDetPrefsChanged()
 
 PeakDef::SkewType RelActAutoGui::currentSkewType() const
 {
-  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model() );
+  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model().get() );
   if( !model || (m_skew_type->currentIndex() < 0) )
     return PeakDef::SkewType::NoSkew;
 
@@ -3127,24 +3136,24 @@ PeakDef::SkewType RelActAutoGui::currentSkewType() const
   if( row >= model->rowCount() )
     return PeakDef::SkewType::NoSkew;
 
-  const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
-  if( data.empty() )
+  const Wt::cpp17::any data = model->data( model->index(row, 0), Wt::ItemDataRole::User );
+  if( !data.has_value() )
     return PeakDef::SkewType::NoSkew;
 
-  return boost::any_cast<PeakDef::SkewType>( data );
+  return Wt::cpp17::any_cast<PeakDef::SkewType>( data );
 }//PeakDef::SkewType RelActAutoGui::currentSkewType() const
 
 
 void RelActAutoGui::setCurrentSkewType( const PeakDef::SkewType skew_type )
 {
-  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model() );
+  WStandardItemModel *model = dynamic_cast<WStandardItemModel *>( m_skew_type->model().get() );
   if( !model )
     return;
 
   for( int row = 0; row < model->rowCount(); ++row )
   {
-    const boost::any data = model->data( model->index(row, 0), Wt::UserRole );
-    if( !data.empty() && (boost::any_cast<PeakDef::SkewType>(data) == skew_type) )
+    const Wt::cpp17::any data = model->data( model->index(row, 0), Wt::ItemDataRole::User );
+    if( data.has_value() && (Wt::cpp17::any_cast<PeakDef::SkewType>(data) == skew_type) )
     {
       m_skew_type->setCurrentIndex( row );
       return;
@@ -3553,12 +3562,11 @@ RelActAutoGuiNuclide *RelActAutoGui::addNuclideForRelEffCurve( const int rel_eff
     return nullptr;
   
   
-  RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, nuc_container );
+  RelActAutoGuiNuclide *nuc_widget = nuc_container->addNew<RelActAutoGuiNuclide>( this );
   nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
-  nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
-                                            this, static_cast<WWidget *>(nuc_widget) ) );
+  nuc_widget->remove().connect( [this, nuc_widget](){ handleRemoveNuclide( static_cast<WWidget *>(nuc_widget) ); } );
   nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
-  nuc_widget->age_changed().connect( boost::bind( &RelActAutoGui::handleNuclideAgeChanged, this, boost::placeholders::_1 ) );
+  nuc_widget->age_changed().connect( [this]( RelActAutoGuiNuclide *a1 ){ handleNuclideAgeChanged( a1 ); } );
   nuc_widget->setNuclideEditFocus();
   
   shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
@@ -3613,13 +3621,14 @@ void RelActAutoGui::handleAddEnergy()
 {
   const int nprev = m_energy_ranges->count();
   
-  RelActAutoGuiEnergyRange *energy_range = new RelActAutoGuiEnergyRange( m_energy_ranges );
+  RelActAutoGuiEnergyRange *energy_range = m_energy_ranges->addNew<RelActAutoGuiEnergyRange>();
   
   energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
   
-  energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                      this, static_cast<WWidget *>(energy_range) ) );
-  energy_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
+  energy_range->remove().connect( [this, energy_range](){ handleRemoveEnergy( static_cast<WWidget *>(energy_range) ); } );
+  energy_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+    handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+  } );
   if( nprev == 0 )
   {
     const auto cal = m_foreground ? m_foreground->energy_calibration() : nullptr;
@@ -3658,11 +3667,12 @@ void RelActAutoGui::handleSortEnergyRanges()
     return ascend ? (rhs->lowerEnergy() < lhs->lowerEnergy()) : (lhs->lowerEnergy() < rhs->lowerEnergy());
   } );
 
+  vector<std::unique_ptr<WWidget>> range_owners;
   for( RelActAutoGuiEnergyRange *range : ranges )
-    m_energy_ranges->removeWidget( range );  //Does not delete widget
+    range_owners.push_back( m_energy_ranges->removeWidget( range ) );
 
-  for( RelActAutoGuiEnergyRange *range : ranges )
-    m_energy_ranges->addWidget( range );
+  for( auto &w : range_owners )
+    m_energy_ranges->addWidget( std::move(w) );
 
   // No need to update calculation... I think
 }//void handleSortEnergyRanges()
@@ -3862,15 +3872,18 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     
     for( const RelActCalcAuto::RoiRange &range : to_ranges )
     {
-      RelActAutoGuiEnergyRange *roi = new RelActAutoGuiEnergyRange();
+      auto roi_owner = std::make_unique<RelActAutoGuiEnergyRange>();
+      RelActAutoGuiEnergyRange *roi = roi_owner.get();
       roi->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-      roi->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(roi) ) );
-      roi->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
-      
+      roi->remove().connect( [this, roi](){ handleRemoveEnergy( static_cast<WWidget *>(roi) ); } );
+      roi->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+        handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+      } );
+
       roi->setFromRoiRange( range );
       roi->setForceFullRange( true );
-      
-      m_energy_ranges->insertWidget( orig_w_index, roi );
+
+      m_energy_ranges->insertWidget( orig_w_index, std::move(roi_owner) );
     }//for( const RelActCalcAuto::RoiRange &range : to_ranges )
     
     checkIfInUserConfigOrCreateOne( false );
@@ -3890,9 +3903,9 @@ void RelActAutoGui::handleAddFreePeak( const double energy, const bool constrain
   if( m_free_peaks_container->isHidden() )
     handleShowFreePeaks();
   
-  RelActAutoGuiFreePeak *peak = new RelActAutoGuiFreePeak( m_free_peaks );
+  RelActAutoGuiFreePeak *peak = m_free_peaks->addNew<RelActAutoGuiFreePeak>();
   peak->updated().connect( this, &RelActAutoGui::handleFreePeakChange );
-  peak->remove().connect( boost::bind( &RelActAutoGui::handleRemoveFreePeak, this, static_cast<WWidget *>(peak) ) );
+  peak->remove().connect( [this, peak](){ handleRemoveFreePeak( static_cast<WWidget *>(peak) ); } );
   peak->setEnergy( static_cast<float>(energy) );
   peak->setFwhmConstrained( constrain_fwhm );
   peak->setApplyEnergyCal( apply_cal );
@@ -3956,49 +3969,57 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
   
   if( is_in_middle )
   {
-    RelActAutoGuiEnergyRange *left_range = new RelActAutoGuiEnergyRange();
+    auto left_owner = std::make_unique<RelActAutoGuiEnergyRange>();
+    RelActAutoGuiEnergyRange *left_range = left_owner.get();
     left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                              this, static_cast<WWidget *>(left_range) ) );
-    left_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
-    
-    RelActAutoGuiEnergyRange *right_range = new RelActAutoGuiEnergyRange();
+    left_range->remove().connect( [this, left_range](){ handleRemoveEnergy( static_cast<WWidget *>(left_range) ); } );
+    left_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+      handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+    } );
+
+    auto right_owner = std::make_unique<RelActAutoGuiEnergyRange>();
+    RelActAutoGuiEnergyRange *right_range = right_owner.get();
     right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                               this, static_cast<WWidget *>(right_range) ) );
-    right_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
-    
+    right_range->remove().connect( [this, right_range](){ handleRemoveEnergy( static_cast<WWidget *>(right_range) ); } );
+    right_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+      handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+    } );
+
     left_range->setFromRoiRange( roi );
     right_range->setFromRoiRange( roi );
     left_range->setEnergyRange( roi.lower_energy, lower_energy );
     right_range->setEnergyRange( upper_energy, roi.upper_energy );
-    
-    m_energy_ranges->insertWidget( orig_w_index, right_range );
-    m_energy_ranges->insertWidget( orig_w_index, left_range );
-    
+
+    m_energy_ranges->insertWidget( orig_w_index, std::move(right_owner) );
+    m_energy_ranges->insertWidget( orig_w_index, std::move(left_owner) );
+
     // TODO: we could split PeakModels ROI peaks here and set them to provide instant feedback during computation
   }else if( is_left )
   {
-    RelActAutoGuiEnergyRange *right_range = new RelActAutoGuiEnergyRange();
+    auto right_owner = std::make_unique<RelActAutoGuiEnergyRange>();
+    RelActAutoGuiEnergyRange *right_range = right_owner.get();
     right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                               this, static_cast<WWidget *>(right_range) ) );
-    right_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
+    right_range->remove().connect( [this, right_range](){ handleRemoveEnergy( static_cast<WWidget *>(right_range) ); } );
+    right_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+      handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+    } );
     right_range->setEnergyRange( upper_energy, roi.upper_energy );
     right_range->setFromRoiRange( roi );
-    m_energy_ranges->insertWidget( orig_w_index, right_range );
-    
+    m_energy_ranges->insertWidget( orig_w_index, std::move(right_owner) );
+
     // TODO: we could update PeakModels peaks/range here and set them to provide instant feedback during computation
   }else if( is_right )
   {
-    RelActAutoGuiEnergyRange *left_range = new RelActAutoGuiEnergyRange();
+    auto left_owner = std::make_unique<RelActAutoGuiEnergyRange>();
+    RelActAutoGuiEnergyRange *left_range = left_owner.get();
     left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                              this, static_cast<WWidget *>(left_range) ) );
-    left_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
+    left_range->remove().connect( [this, left_range](){ handleRemoveEnergy( static_cast<WWidget *>(left_range) ); } );
+    left_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+      handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+    } );
     left_range->setFromRoiRange( roi );
     left_range->setEnergyRange( roi.lower_energy, lower_energy );
-    m_energy_ranges->insertWidget( orig_w_index, left_range );
+    m_energy_ranges->insertWidget( orig_w_index, std::move(left_owner) );
     
     // TODO: we could update PeakModels peaks/range here and set them to provide instant feedback during computation
   }
@@ -4179,7 +4200,7 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     if( !tool )
     {
       ownEnergyCal = true;
-      tool = new EnergyCalTool( m_interspec, m_interspec->peakModel(), nullptr );
+      tool = new EnergyCalTool( m_interspec, m_interspec->peakModel() );
     }
     
     MeasToApplyCoefChangeTo fore, back;
@@ -4299,24 +4320,24 @@ void RelActAutoGui::setPeaksToForeground()
   
   SimpleDialog *dialog = new SimpleDialog( "Use peaks with foreground?", "" );
   dialog->addStyleClass( "SetToPeaksDialog" );
-  WText *message = new WText( WString::tr("raag-peaks-uncert-based-on-fit"), dialog->contents() );
+  WText *message = dialog->contents()->addNew<WText>( WString::tr("raag-peaks-uncert-based-on-fit") );
   message->addStyleClass( "content" );
   message->setInline( false );
-  
+
   SwitchCheckbox *replace_or_add = nullptr;
   const vector<PeakDef> previous_peaks = peak_model->peakVec();
   if( !previous_peaks.empty() )
   {
-    WContainerWidget *holder = new WContainerWidget( dialog->contents() );
+    WContainerWidget *holder = dialog->contents()->addNew<WContainerWidget>();
     holder->addStyleClass( "AddOrReplaceSwitchRow" );
-    
-    replace_or_add = new SwitchCheckbox( "Add peaks", "Replace peaks", holder );
+
+    replace_or_add = holder->addNew<SwitchCheckbox>( "Add peaks", "Replace peaks" );
     replace_or_add->setChecked( true ); //Make "Replace peaks" the default answer
   }//if( we have peaks )
-  
-  WContainerWidget *refit_holder = new WContainerWidget( dialog->contents() );
+
+  WContainerWidget *refit_holder = dialog->contents()->addNew<WContainerWidget>();
   refit_holder->addStyleClass( "AddOrReplaceRefitRow" );
-  WCheckBox *refit_peaks = new WCheckBox( WString::tr("raag-refit-peaks"), refit_holder );
+  WCheckBox *refit_peaks = refit_holder->addNew<WCheckBox>( WString::tr("raag-refit-peaks") );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = 
@@ -4584,9 +4605,11 @@ void RelActAutoGui::handleAddRelEffCurve()
   }
 
   // First we'll add the curve to the RelEffCurveOptsMenu/Stack
-  RelActAutoGuiRelEffOptions *rel_eff_curve = new RelActAutoGuiRelEffOptions( this, name, nullptr );  
-  WMenuItem *item = new WMenuItem( name, rel_eff_curve, WMenuItem::LoadPolicy::PreLoading );
-  m_rel_eff_opts_menu->addItem( item );
+  auto rel_eff_curve_owner = std::make_unique<RelActAutoGuiRelEffOptions>( this, WString::fromUTF8(name) );
+  RelActAutoGuiRelEffOptions *rel_eff_curve = rel_eff_curve_owner.get();
+  auto item_owner = std::make_unique<WMenuItem>( WString::fromUTF8(name), std::move(rel_eff_curve_owner), ContentLoading::Eager );
+  WMenuItem *item = item_owner.get();
+  m_rel_eff_opts_menu->addItem( std::move(item_owner) );
   assert( item->contents() == static_cast<WWidget *>(rel_eff_curve) );
   
   // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
@@ -4596,14 +4619,26 @@ void RelActAutoGui::handleAddRelEffCurve()
   }) );
 
   rel_eff_curve->addRelEffCurve().connect( this, &RelActAutoGui::handleAddRelEffCurve );
-  rel_eff_curve->delRelEffCurve().connect( boost::bind( &RelActAutoGui::handleDelRelEffCurve, this, boost::placeholders::_1 ) );
+  rel_eff_curve->delRelEffCurve().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+    handleDelRelEffCurve( a1 );
+  } );
   rel_eff_curve->nameChanged().connect( this, &RelActAutoGui::handleRelEffCurveNameChanged );
-  rel_eff_curve->optionsChanged().connect( boost::bind( &RelActAutoGui::handleRelEffModelOptionsChanged, this, boost::placeholders::_1 ) );
-  rel_eff_curve->equationTypeChanged().connect( boost::bind( &RelActAutoGui::handleRelEffEqnTypeChanged, this, boost::placeholders::_1 ) );
-  rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( boost::bind( &RelActAutoGui::handleSameHoerlOnAllCurvesChanged, this, boost::placeholders::_1 ) );
-  rel_eff_curve->sameExternalShieldingChanged().connect( boost::bind( &RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->optionsChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+    handleRelEffModelOptionsChanged( a1 );
+  } );
+  rel_eff_curve->equationTypeChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+    handleRelEffEqnTypeChanged( a1 );
+  } );
+  rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+    handleSameHoerlOnAllCurvesChanged( a1 );
+  } );
+  rel_eff_curve->sameExternalShieldingChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+    handleSameExtShieldingOnAllCurvesChanged( a1 );
+  } );
 
-  rel_eff_curve->shieldedByOtherCurvesChanged().connect( boost::bind( &RelActAutoGui::handleShieldedByOtherCurvesChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->shieldedByOtherCurvesChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+    handleShieldedByOtherCurvesChanged( a1 );
+  } );
 
   const bool single_curve = (m_rel_eff_opts_menu->count() == 1);
 
@@ -4621,11 +4656,13 @@ void RelActAutoGui::handleAddRelEffCurve()
 
 
   // Now we'll add the nuclides to the RelEffNuclidesMenu/Stack
-  WContainerWidget *nuclides_content = new WContainerWidget();
+  auto nuclides_content_owner = std::make_unique<WContainerWidget>();
+  WContainerWidget *nuclides_content = nuclides_content_owner.get();
   nuclides_content->addStyleClass( "EnergyNucContent" );
-  
-  WMenuItem *nuc_item = new WMenuItem( name, nuclides_content, WMenuItem::LoadPolicy::PreLoading );
-  m_rel_eff_nuclides_menu->addItem( nuc_item );
+
+  auto nuc_item_owner = std::make_unique<WMenuItem>( WString::fromUTF8(name), std::move(nuclides_content_owner), ContentLoading::Eager );
+  WMenuItem *nuc_item = nuc_item_owner.get();
+  m_rel_eff_nuclides_menu->addItem( std::move(nuc_item_owner) );
   assert( nuc_item->contents() == static_cast<WWidget *>(nuclides_content) );
 
 
@@ -4837,53 +4874,66 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
     return;
   
 #if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *btn = new WAnchor( WLink(m_html_download_rsc), parent );
-  btn->setTarget( AnchorTarget::TargetNewWindow );
-  btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
+  {
+    WLink html_lnk( m_html_download_rsc );
+    html_lnk.setTarget( LinkTarget::NewWindow );
+    WAnchor *btn = new WAnchor( html_lnk, parent );
+    btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
+    btn->setText( WString::tr("raag-html-report") );
+    m_calc_started.connect( btn, &WWidget::disable );
+    m_calc_failed.connect( btn, &WWidget::disable );
+    m_calc_successful.connect( btn, &WWidget::enable );
+  }
+  {
+    WLink xml_lnk( m_xml_download_rsc );
+    xml_lnk.setTarget( LinkTarget::NewWindow );
+    WAnchor *btn = new WAnchor( xml_lnk, parent );
+    btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
+    btn->setText( WString::tr("raag-xml-config") );
+  }
 #else
-  WPushButton *btn = new WPushButton( parent );
+  WPushButton *btn = parent->addNew<WPushButton>();
   btn->setIcon( "InterSpec_resources/images/download_small.svg" );
-  btn->setLink( WLink( m_html_download_rsc ) );
-  btn->setLinkTarget( Wt::TargetNewWindow );
+  {
+    WLink html_lnk( m_html_download_rsc );
+    html_lnk.setTarget( LinkTarget::NewWindow );
+    btn->setLink( html_lnk );
+  }
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   btn->clicked().connect( std::bind([this](){
-    android_download_workaround( m_html_download_rsc, "isotopics_by_nuclide.html");
+    android_download_workaround( m_html_download_rsc.get(), "isotopics_by_nuclide.html");
   }) );
 #endif //ANDROID
-#endif
 
   btn->setText( WString::tr("raag-html-report") );
-  
+
   m_calc_started.connect( btn, &WWidget::disable );
   m_calc_failed.connect( btn, &WWidget::disable );
   m_calc_successful.connect( btn, &WWidget::enable );
-  
-#if( BUILD_AS_OSX_APP || IOS )
-  btn = new WAnchor( WLink(m_xml_download_rsc), parent );
-  btn->setTarget( AnchorTarget::TargetNewWindow );
-  btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
-  btn->setText( WString::tr("raag-xml-config") );
-#else
-  btn = new WPushButton( WString::tr("raag-xml-config"), parent );
-  btn->setIcon( "InterSpec_resources/images/download_small.svg" );
-  btn->setLinkTarget( Wt::TargetNewWindow );
-  btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
-  btn->setLink( WLink(m_xml_download_rsc) );
-  
+
+  WPushButton *xmlbtn = parent->addNew<WPushButton>( WString::tr("raag-xml-config") );
+  xmlbtn->setIcon( "InterSpec_resources/images/download_small.svg" );
+  {
+    WLink xml_lnk( m_xml_download_rsc );
+    xml_lnk.setTarget( LinkTarget::NewWindow );
+    xmlbtn->setLink( xml_lnk );
+  }
+  xmlbtn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
+
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  btn->clicked().connect( std::bind([this](){
-    android_download_workaround( m_xml_download_rsc, "isotopics_by_nuclide_config.html");
+  xmlbtn->clicked().connect( std::bind([this](){
+    android_download_workaround( m_xml_download_rsc.get(), "isotopics_by_nuclide_config.html");
   }) );
 #endif //ANDROID
-  
+
 #endif
 
   // TODO: add XML upload...
-  WPushButton *uploadbtn = new WPushButton( parent );
+  WPushButton *uploadbtn = parent->addNew<WPushButton>();
   uploadbtn->setIcon( "InterSpec_resources/images/upload_small.svg" );
   uploadbtn->setStyleClass( "LinkBtn UploadBtn RelActDownload" );
   uploadbtn->clicked().connect( this, &RelActAutoGui::handleRequestToUploadXmlConfig );
@@ -4894,44 +4944,46 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
 {
   SimpleDialog *dialog = new SimpleDialog();
   WPushButton *closeButton = dialog->addButton( WString::tr("Cancel") );
-  WGridLayout *stretcher = new WGridLayout();
+  (void)closeButton;
+  dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
+  WGridLayout *stretcher = static_cast<WGridLayout *>( dialog->contents()->layout() );
   stretcher->setContentsMargins( 0, 0, 0, 0 );
-  dialog->contents()->setLayout( stretcher );
-  dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowVisible,
-                                  Wt::Horizontal | Wt::Vertical );
-  WText *title = new WText( WString::tr("raag-import-xml-config-title") );
+  dialog->contents()->setOverflow( Overflow::Visible,
+                                  Wt::Orientation::Horizontal | Wt::Orientation::Vertical );
+  WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("raag-import-xml-config-title") ), 0, 0 );
   title->addStyleClass( "title" );
-  stretcher->addWidget( title, 0, 0 );
-  
-  WText *t = new WText( WString::tr("raag-select-isotopics-xml-file") );
-  stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-  t->setTextAlignment( Wt::AlignCenter );
-  
-  
-  WFileUpload *upload = new WFileUpload();
+
+  WText *t = stretcher->addWidget( std::make_unique<WText>( WString::tr("raag-select-isotopics-xml-file") ),
+                                   stretcher->rowCount(), 0,
+                                   AlignmentFlag::Center | AlignmentFlag::Middle );
+  t->setTextAlignment( Wt::AlignmentFlag::Center );
+
+  WFileUpload *upload = stretcher->addWidget( std::make_unique<WFileUpload>(),
+                                              stretcher->rowCount(), 0,
+                                              AlignmentFlag::Center | AlignmentFlag::Middle );
   upload->fileTooLarge().connect( std::bind( [=](){
     dialog->contents()->clear();
     dialog->footer()->clear();
-    
-    WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
-    WGridLayout *stretcher = new WGridLayout();
-    stretcher->setContentsMargins( 0, 0, 0, 0 );
-    dialog->contents()->setLayout( stretcher );
-    WText *title = new WText( WString::tr("raag-file-too-large-title") );
-    title->addStyleClass( "title" );
-    stretcher->addWidget( title, 0, 0 );
+
+    WPushButton *closeButton2 = dialog->addButton( WString::tr("Close") );
+    (void)closeButton2;
+    dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
+    WGridLayout *inner_stretcher = static_cast<WGridLayout *>( dialog->contents()->layout() );
+    inner_stretcher->setContentsMargins( 0, 0, 0, 0 );
+    WText *inner_title = inner_stretcher->addWidget( std::make_unique<WText>( WString::tr("raag-file-too-large-title") ), 0, 0 );
+    inner_title->addStyleClass( "title" );
   }) );
-  
+
   upload->changed().connect( upload, &WFileUpload::upload );
   upload->uploaded().connect( std::bind( [this,dialog,upload](){
-    
+
     try
     {
       const string xml_path = upload->spoolFileName();
       rapidxml::file<char> input_file( xml_path.c_str() );;
       rapidxml::xml_document<char> doc;
       doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
-      
+
       setGuiStateFromXml( &doc );
     }catch( rapidxml::parse_error &e )
     {
@@ -4944,27 +4996,26 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
           end_pos += 1;
         msg += "<br />&nbsp;&nbsp;At: " + std::string(position, end_pos);
       }//if( position )
-      
+
       passMessage( msg, WarningWidget::WarningMsgHigh );
     }catch( std::exception &e )
     {
       passMessage( WString::tr("raag-error-loading-xml-config").arg(e.what()), WarningWidget::WarningMsgHigh );
     }//try / cat to read the XML
-    
+
     dialog->accept();
-    
+
     //wApp->doJavaScript( "$('.Wt-dialogcover').hide();" ); // JIC
-    //dialog->done( Wt::WDialog::DialogCode::Accepted );
+    //dialog->done( Wt::DialogCode::Accepted );
   } ) );
-  
-  stretcher->addWidget( upload, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-  
+
   InterSpec *interspec = InterSpec::instance();
   if( interspec && !interspec->isPhone() )
   {
-    t = new WText( WString::tr("raag-drag-drop-note") );
-    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
-    t->setTextAlignment( Wt::AlignCenter );
+    t = stretcher->addWidget( std::make_unique<WText>( WString::tr("raag-drag-drop-note") ),
+                              stretcher->rowCount(), 0,
+                              AlignmentFlag::Center | AlignmentFlag::Middle );
+    t->setTextAlignment( Wt::AlignmentFlag::Center );
   }
   
   /*
@@ -4983,10 +5034,10 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
    window->centerWindow();
    
    WPushButton *close = window->addCloseButtonToFooter( WString::tr("Cancel") );
-   close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
-   
-   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-   
+   close->clicked().connect( [window](){ window->hide(); } );
+
+   window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
    // TODO: add link to relevant section of documentation
    //AuxWindow::addHelpInFooter( window->footer(), "energy-cal-CALp" );
    */
@@ -5303,9 +5354,8 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
     if( !m_photopeak_widget )
     {
       Wt::WSuggestionPopup *materialSuggest = nullptr;
-      WContainerWidget *parent = nullptr;
       m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, materialSuggest,
-                                                              m_interspec, parent ) );
+                                                              m_interspec ) );
       
       // We need to set peaks getting assigned ref. line color, or else our call to
       //  #setColorsForSpecificSources will be useless.
@@ -5546,8 +5596,12 @@ void RelActAutoGui::startUpdatingCalculation()
   auto solution = make_shared<RelActCalcAuto::RelActAutoSolution>();
   auto error_msg = make_shared<string>();
   
-  auto gui_update_callback = wApp->bind( boost::bind( &RelActAutoGui::updateFromCalc, this, solution, cancel_calc, m_calc_number ) );
-  auto error_callback = wApp->bind( boost::bind( &RelActAutoGui::handleCalcException, this, error_msg, cancel_calc) );
+  auto gui_update_callback = std::function<void()>( [this, solution, cancel_calc, calc_number = m_calc_number](){
+    updateFromCalc( solution, cancel_calc, calc_number );
+  } );
+  auto error_callback = std::function<void()>( [this, error_msg, cancel_calc](){
+    handleCalcException( error_msg, cancel_calc );
+  } );
 
   PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High;
   {

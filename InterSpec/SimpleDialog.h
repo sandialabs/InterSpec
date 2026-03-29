@@ -25,8 +25,8 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WDialog>
-#include <Wt/WString>
+#include <Wt/WDialog.h>
+#include <Wt/WString.h>
 
 namespace Wt
 {

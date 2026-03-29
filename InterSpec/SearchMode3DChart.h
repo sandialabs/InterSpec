@@ -30,7 +30,7 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 //Some forward declarations
 class SpecMeas;
@@ -60,7 +60,7 @@ public:
   /** Constructor.
      \param viewer Must be a valid pointer to thw 'owning' InterSpec instance.
    */
-  SearchMode3DChart( InterSpec *viewer, Wt::WContainerWidget *parent = 0 );
+  SearchMode3DChart( InterSpec *viewer );
 
   /** Destructor.  Nothing fancy (no-op) */
   virtual ~SearchMode3DChart();

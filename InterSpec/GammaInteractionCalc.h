@@ -36,7 +36,7 @@
 
 #include <boost/asio/deadline_timer.hpp>
 
-#include <Wt/WColor>
+#include <Wt/WColor.h>
 
 #include "Minuit2/FCNBase.h"
 

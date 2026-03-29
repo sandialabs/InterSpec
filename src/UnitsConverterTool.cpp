@@ -27,17 +27,17 @@
 
 #include <boost/regex.hpp>
 
-#include <Wt/WText>
-#include <Wt/WBreak>
-#include <Wt/WLabel>
-#include <Wt/WLineEdit>
-#include <Wt/WValidator>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WContainerWidget>
-#include <Wt/WRegExpValidator>
+#include <Wt/WText.h>
+#include <Wt/WBreak.h>
+#include <Wt/WLabel.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WValidator.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -56,7 +56,7 @@
 
 
 #if( USE_QR_CODES )
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 
 #include "InterSpec/QrCode.h"
 #include "InterSpec/WarningWidget.h"
@@ -340,10 +340,9 @@ pair<const SandiaDecay::Nuclide *, std::string> detect_nuclide( std::string val 
 class UnitsInputValidator : public Wt::WValidator
 {
 public:
-  UnitsInputValidator( WObject *parent = nullptr )
-    : WValidator( parent )
+  UnitsInputValidator()
+    : WValidator()
   {
-    
   }
   
   virtual Wt::WValidator::Result validate( const WString &input ) const
@@ -478,25 +477,20 @@ UnitsConverterTool::UnitsConverterTool()
   
   WGridLayout *layout = stretcher();
   setWidth(400);
-  WText *message = new WText( WString::tr("uct-instructions"), Wt::XHTMLText );
 
-  layout->addWidget(message,0,0,1,3);
+  layout->addWidget( std::make_unique<WText>( WString::tr("uct-instructions"), Wt::TextFormat::XHTML ), 0, 0, 1, 3 );
 
-  WLabel *label = new WLabel( WString::tr("uct-input-label") );
-  layout->addWidget(label,1,0);
+  layout->addWidget( std::make_unique<WLabel>( WString::tr("uct-input-label") ), 1, 0 );
   //label->addStyleClass( "UnitsConverterToolLabel" );
-  
-  m_input = new WLineEdit();
-  
+
+  m_input = layout->addWidget( std::make_unique<WLineEdit>(), 1, 1 );
+
   m_input->setAutoComplete( false );
   m_input->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_input->setAttributeValue( "autocorrect", "off" );
   m_input->setAttributeValue( "spellcheck", "off" );
 #endif
-  
-  layout->addWidget(m_input,1,1);
-
 
   /*
   // To validate just unit conversions, we can use a regular expression
@@ -512,67 +506,62 @@ UnitsConverterTool::UnitsConverterTool()
   //  (because then "5uC" would match a nuclide)
   //is:
   //const char *possible_nuc_regex = "(([a-zA-Z]{1,10})(\\s|-)*([0-9]{1,3})(\\s|-)*(m2|m3|m-2|m-3|meta|meta2|meta-2|m2|m){0,1})";
-  
+
   const string regex = string("(") + ""
     "(" + PhysicalUnits::sm_absorbedDoseRegex + ")"
     "|(" + PhysicalUnits::sm_activityRegex + ")"
     "|(" + PhysicalUnits::sm_equivalentDoseRegex + ")"
     "|(" + PhysicalUnits::sm_distanceRegex + ")"
   ")";
-  
+
   WRegExpValidator *validator = new WRegExpValidator( regex, this );
-  validator->setFlags( Wt::MatchCaseInsensitive );
+  validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_input->setValidator(validator);
   */
-  
-  m_input->setValidator( new UnitsInputValidator(this) );
-  
-  
+
+  m_input->setValidator( std::make_shared<UnitsInputValidator>() );
+
   //m_input->addStyleClass( "UnitsConverterToolInput" );
   m_input->setTextSize( 15 );
-  m_input->setWidth( WLength(15.0,WLength::FontEm) );
+  m_input->setWidth( WLength(15.0, WLength::Unit::FontEm) );
   m_input->setText("5 MBq");
   //m_input->changed().connect( this, &UnitsConverterTool::convert ); //the signal is only emitted when the focus is lost
   m_input->blurred().connect( this, &UnitsConverterTool::convert );
   m_input->keyWentUp().connect( this, &UnitsConverterTool::convert );
   //m_input->enterPressed().connect( this, &UnitsConverterTool::convert );
-  
+
   //WPushButton *convertButton = new WPushButton("Convert");
   //layout->addWidget(convertButton,1,2);
   //convertButton->clicked().connect( this, &UnitsConverterTool::convert );
-    
-  label = new WLabel( WString::tr("uct-output-label") );
-  layout->addWidget(label,2,0);
+
+  layout->addWidget( std::make_unique<WLabel>( WString::tr("uct-output-label") ), 2, 0 );
   //label->addStyleClass( "UnitsConverterToolLabel" );
-  
-  m_output = new WLineEdit( );
-  
+
+  m_output = layout->addWidget( std::make_unique<WLineEdit>(), 2, 1 );
+
   m_output->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_output->setAttributeValue( "autocorrect", "off" );
   m_output->setAttributeValue( "spellcheck", "off" );
 #endif
 
-  //layout->addWidget(m_output,2,1,1,2);
-  layout->addWidget( m_output, 2, 1 );
   //m_output->addStyleClass( "UnitsConverterToolInput" );
   m_output->setTextSize( 15 );
-  m_output->setWidth( WLength(15.0,WLength::FontEm) );
+  m_output->setWidth( WLength(15.0, WLength::Unit::FontEm) );
   m_output->setEnabled(false);
   //m_output->setText("135.14 uCi");
-  
-  m_message = new WText( "&nbsp", XHTMLUnsafeText );
-  m_message->setHeight(WLength(50,WLength::Pixel));
-  m_message->setAttributeValue( "style", "color: rgb(18,101,200);"  );
+
+  m_message = layout->addWidget( std::make_unique<WText>( "&nbsp", Wt::TextFormat::UnsafeXHTML ), 3, 0, 1, 3 );
+  m_message->setHeight( WLength(50, WLength::Unit::Pixel) );
+  m_message->setAttributeValue( "style", "color: rgb(18,101,200);" );
 //  m_message->setHiddenKeepsGeometry( true );
   m_message->hide();
-  layout->addWidget(m_message,3,0,1,3);
   layout->setColumnStretch(1, 1);
   layout->setRowStretch(3, 1);
     
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = footer()->addNew<WPushButton>();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -591,7 +580,7 @@ UnitsConverterTool::UnitsConverterTool()
 #endif //USE_QR_CODES
   
   WPushButton *closeButton = addCloseButtonToFooter();
-  closeButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+  closeButton->clicked().connect( [this](){ hide(); } );
 
   rejectWhenEscapePressed();
   
@@ -718,13 +707,13 @@ void UnitsConverterTool::convert()
   {
     switch( m_input->validate() )
     {
-      case Wt::WValidator::Invalid:
+      case Wt::ValidationState::Invalid:
         throw std::runtime_error( WString::tr("uct-invalid-input").toUTF8() );
         
-      case Wt::WValidator::InvalidEmpty:
+      case Wt::ValidationState::InvalidEmpty:
         throw runtime_error( "" );
         
-      case Wt::WValidator::Valid:
+      case Wt::ValidationState::Valid:
         break;
     }//switch( m_input->validate() )
     

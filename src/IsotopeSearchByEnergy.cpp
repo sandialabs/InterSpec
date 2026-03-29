@@ -27,19 +27,19 @@
 #include <vector>
 #include <sstream>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WString>
-#include <Wt/WServer>
-#include <Wt/WLineEdit>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WIOService>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WSplitButton>
-#include <Wt/WContainerWidget>
-#include <Wt/WRegExpValidator>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WString.h>
+#include <Wt/WServer.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WIOService.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WSplitButton.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
 
 
 #include "rapidxml/rapidxml.hpp"
@@ -150,8 +150,8 @@ void IsotopeSearchByEnergy::SearchEnergy::emitAddAnother()
   m_addAnother.emit();
 }
 
-IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
-: WContainerWidget( p ),
+IsotopeSearchByEnergy::SearchEnergy::SearchEnergy()
+: WContainerWidget(),
   m_removeIcn( 0 ),
   m_addAnotherIcn( 0 ),
   m_energy( 0 ),
@@ -159,19 +159,19 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
 {
   addStyleClass( "SearchEnergy" );
   
-  WLabel *label = new WLabel( WString::tr("Energy"), this );
+  WLabel *label = addNew<WLabel>( WString::tr("Energy") );
   label->addStyleClass( "SearchEnergyLabel" );
   
-  m_energy = new NativeFloatSpinBox( this );
+  m_energy = addNew<NativeFloatSpinBox>();
   label->setBuddy( m_energy );
   m_energy->setMinimum( 0.0f );
   m_energy->setMaximum( 1000000.0f );
   m_energy->enterPressed().connect( this, &SearchEnergy::emitEnter );
   
-  label = new WLabel( "+/-", this );
+  label = addNew<WLabel>( "+/-" );
   label->addStyleClass( "SearchEnergyWindowLabel" );
   
-  m_window = new NativeFloatSpinBox( this );
+  m_window = addNew<NativeFloatSpinBox>();
   label->setBuddy( m_window );
   
   m_window->setMinimum( 0.0f );
@@ -179,7 +179,7 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   m_window->setValue( 10.0f );
   m_window->enterPressed().connect( this, &SearchEnergy::emitEnter );
   
-  label = new WLabel( WString::tr("keV"), this );
+  label = addNew<WLabel>( WString::tr("keV") );
   label->addStyleClass( "KeVLabel" );
   
   m_energy->valueChanged().connect( this, &SearchEnergy::emitChanged );
@@ -192,15 +192,15 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
     
   // Add a spacer incase we get wider than we could reasonable want to grow the text inputs, so
   //  there will be a space between the window input and the add/remove buttons.
-  WContainerWidget *spacer = new WContainerWidget( this );
+  WContainerWidget *spacer = addNew<WContainerWidget>();
   spacer->addStyleClass( "SearchEnergySpacer" );
   
-  m_removeIcn = new WContainerWidget( this ); //needed or else button wont show up
+  m_removeIcn = addNew<WContainerWidget>(); //needed or else button wont show up
   m_removeIcn->setStyleClass( "DeleteSearchEnergy Wt-icon" );
   m_removeIcn->clicked().connect( this, &SearchEnergy::emitRemove );
   m_removeIcn->clicked().preventPropagation();  //make it so we wont emit gotFocus()
   
-  m_addAnotherIcn = new WContainerWidget( this ); //needed or else button wont show up
+  m_addAnotherIcn = addNew<WContainerWidget>(); //needed or else button wont show up
   m_addAnotherIcn->setStyleClass( "AddSearchEnergy Wt-icon" );
   m_addAnotherIcn->clicked().connect( this, &SearchEnergy::emitAddAnother );
   m_addAnotherIcn->clicked().preventPropagation(); //make it so we wont emit gotFocus(), which would
@@ -235,7 +235,7 @@ void IsotopeSearchByEnergy::SearchEnergy::disableRemove()
 
 double IsotopeSearchByEnergy::SearchEnergy::energy() const
 {
-  if( m_energy->validate() == WValidator::Valid )
+  if( m_energy->validate() == ValidationState::Valid )
     return m_energy->value();
   return 0.0;
 }
@@ -253,7 +253,7 @@ void IsotopeSearchByEnergy::SearchEnergy::setWindow( double window )
 
 double IsotopeSearchByEnergy::SearchEnergy::window() const
 {
-  if( m_window->validate() == WValidator::Valid )
+  if( m_window->validate() == ValidationState::Valid )
     return m_window->value();
   return 0.0;
 }
@@ -286,9 +286,8 @@ Wt::Signal<> &IsotopeSearchByEnergy::SearchEnergy::addAnother()
 
 
 IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
-                                              D3SpectrumDisplayDiv *chart,
-                                              Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
+                                              D3SpectrumDisplayDiv *chart )
+: WContainerWidget(),
   m_viewer( viewer ),
   m_chart( chart ),
   m_searchConditionsColumn( nullptr ),
@@ -303,7 +302,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minBranchRatio( NULL ),
   m_minHalfLiveDiv( nullptr ),
   m_minHalfLife( NULL ),
-  m_model( NULL ),
+  m_model( nullptr ),
   m_search_categories{},
   m_search_category_select( nullptr ),
   m_nextSearchEnergy( 0 ),
@@ -320,56 +319,54 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   
   shared_ptr<void> undo_sentry = getDisableUndoRedoSentry();
   
-  m_searchConditionsColumn = new WContainerWidget( this );
+  m_searchConditionsColumn = addNew<WContainerWidget>();
   m_searchConditionsColumn->setStyleClass( "IsotopeSearchConditions" );
   
-  m_searchEnergies = new WContainerWidget( m_searchConditionsColumn );
+  m_searchEnergies = m_searchConditionsColumn->addNew<WContainerWidget>();
   m_searchEnergies->setStyleClass( "IsotopeSearchEnergies" );
   
-  m_assignBtnRow = new WContainerWidget( m_searchConditionsColumn );
+  m_assignBtnRow = m_searchConditionsColumn->addNew<WContainerWidget>();
   m_assignBtnRow->addStyleClass( "AssignToSelectedRow" );
-  
-  m_clearRefLines = new WPushButton( WString::tr("isbe-clear-ref"), m_assignBtnRow );
+
+  m_clearRefLines = m_assignBtnRow->addNew<WPushButton>( WString::tr("isbe-clear-ref") );
   m_clearRefLines->addStyleClass( "LightButton" );
   m_clearRefLines->clicked().connect( this, &IsotopeSearchByEnergy::clearSelectionAndRefLines );
   m_clearRefLines->hide();
-  
-  
-  m_assignPeakToSelected = new WSplitButton( "&nbsp;", m_assignBtnRow ); //Space is needed so Wt will add the ".with-label" style class
+
+
+  m_assignPeakToSelected = m_assignBtnRow->addNew<WSplitButton>( "&nbsp;" ); //Space is needed so Wt will add the ".with-label" style class
   m_assignPeakToSelected->addStyleClass( "LightButton" );
   m_assignPeakToSelected->actionButton()->addStyleClass( "LightButton" );
   m_assignPeakToSelected->dropDownButton()->addStyleClass( "LightButton" );
   m_assignPeakToSelected->actionButton()->clicked().connect( this, &IsotopeSearchByEnergy::assignSearchedOnPeaksToSelectedNuclide );
   m_assignPeakToSelected->hide();
   
-  WPopupMenu *assignPeakMenu = nullptr;
   if( m_viewer->isMobile() )
-    assignPeakMenu = new WPopupMenu();
+    m_assignPeakToSelected->setMenu( std::make_unique<WPopupMenu>() );
   else
-    assignPeakMenu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu);
-  m_assignPeakToSelected->setMenu( assignPeakMenu );
+    m_assignPeakToSelected->setMenu( std::make_unique<PopupDivMenu>( nullptr, PopupDivMenu::MenuType::TransientMenu) );
   // We will add relevant menu items to this button when the time comes
   
-  m_search_category_select = new WComboBox( m_searchConditionsColumn );
+  m_search_category_select = m_searchConditionsColumn->addNew<WComboBox>();
   m_search_category_select->setStyleClass( "IsotopeSourceTypes" );
-  m_search_category_select->activated().connect( boost::bind( &IsotopeSearchByEnergy::categoryChanged, this, true ) );
-  
-  WContainerWidget *searchOptions = new WContainerWidget( m_searchConditionsColumn );
+  m_search_category_select->activated().connect( [this]( int ){ categoryChanged( true ); } );
+
+  WContainerWidget *searchOptions = m_searchConditionsColumn->addNew<WContainerWidget>();
   searchOptions->setStyleClass( "IsotopeSearchMinimums" );
 
-  
-  auto helpBtn = new WContainerWidget( searchOptions );
+
+  WContainerWidget *helpBtn = searchOptions->addNew<WContainerWidget>();
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-  helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "nuclide-search-dialog" ) );
+  helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "nuclide-search-dialog" ); } );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
-  m_minBranchRatioDiv = new WContainerWidget( searchOptions );
+  m_minBranchRatioDiv = searchOptions->addNew<WContainerWidget>();
   m_minBranchRatioDiv->setHiddenKeepsGeometry( true );
-  WLabel *label = new WLabel( WString::tr("isbe-min-br"), m_minBranchRatioDiv );
+  WLabel *label = m_minBranchRatioDiv->addNew<WLabel>( WString::tr("isbe-min-br") );
 //  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips , HelpSystem::ToolTipPosition::Top);
 
-  m_minBranchRatio = new NativeFloatSpinBox( m_minBranchRatioDiv );
+  m_minBranchRatio = m_minBranchRatioDiv->addNew<NativeFloatSpinBox>();
   HelpSystem::attachToolTipOn( m_minBranchRatio, WString::tr("isbe-tt-min-br"),
                               showToolTips , HelpSystem::ToolTipPosition::Top);
   
@@ -378,11 +375,11 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minBranchRatio->setSpinnerHidden( true );
   label->setBuddy( m_minBranchRatio );
   
-  m_minHalfLiveDiv = new WContainerWidget( searchOptions );
+  m_minHalfLiveDiv = searchOptions->addNew<WContainerWidget>();
   m_minHalfLiveDiv->setHiddenKeepsGeometry( true );
-  label = new WLabel( WString::tr("isbe-min-hl"), m_minHalfLiveDiv ); //"Min. T\xc2\xbd"
- 
-  m_minHalfLife = new WLineEdit( "6000 s", m_minHalfLiveDiv );
+  label = m_minHalfLiveDiv->addNew<WLabel>( WString::tr("isbe-min-hl") ); //"Min. T\xc2\xbd"
+
+  m_minHalfLife = m_minHalfLiveDiv->addNew<WLineEdit>( "6000 s" );
   m_minHl = 6000.0 * PhysicalUnits::second;
   
   m_minHalfLife->setAttributeValue( "ondragstart", "return false" );
@@ -394,9 +391,9 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   HelpSystem::attachToolTipOn( {label,m_minHalfLife}, WString::tr("isbe-tt-min-hl"),
                               showToolTips , HelpSystem::ToolTipPosition::Top );
 
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), this );
-  validator->setFlags(Wt::MatchCaseInsensitive);
-  m_minHalfLife->setValidator(validator);
+  auto validator = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationRegex() );
+  validator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);
+  m_minHalfLife->setValidator( validator );
   
   label->setBuddy( m_minHalfLife );
 
@@ -409,17 +406,17 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minHalfLife->enterPressed().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   m_minHalfLife->blurred().connect( this, &IsotopeSearchByEnergy::minBrOrHlChanged );
   
-  m_model = new IsotopeSearchByEnergyModel( this );
-  
+  m_model = std::make_shared<IsotopeSearchByEnergyModel>();
+
   // Even though we are using a CSS flex layout to control the size of the m_results table, the JS
   //  wtResize function will be called on this RowStretchTreeView.
-  m_results = new RowStretchTreeView( this );
+  m_results = addNew<RowStretchTreeView>();
   m_results->setRootIsDecorated(false); //makes the tree look like a table! :)
-  
+
   m_results->setModel( m_model );
   m_results->addStyleClass( "IsotopeSearchResultTable ToolTabSection" );
   m_results->setAlternatingRowColors( true );
-  m_results->sortByColumn( IsotopeSearchByEnergyModel::Column::ProfileDistance, Wt::DescendingOrder );
+  m_results->sortByColumn( IsotopeSearchByEnergyModel::Column::ProfileDistance, Wt::SortOrder::Descending );
   
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
   setResultTableColumnWidths( false );
@@ -434,35 +431,35 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
       switch( col )
       {
         case IsotopeSearchByEnergyModel::ParentIsotope:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::Energy:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::Distance:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::BranchRatio:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::ProfileDistance:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::SpecificIsotope:
-          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(8,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::ParentHalfLife:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::AssumedAge:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::NumColumns:
@@ -471,26 +468,25 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
     }//for( loop over peak columns )
 #endif //InterSpec_PHONE_ROTATE_FOR_TABS / else
   
-  m_results->setSelectionMode( Wt::SingleSelection );
-  m_results->setSelectionBehavior( Wt::SelectRows );
+  m_results->setSelectionMode( SelectionMode::Single );
+  m_results->setSelectionBehavior( SelectionBehavior::Rows );
   m_results->selectionChanged().connect( this, &IsotopeSearchByEnergy::resultSelectionChanged );
   
-  m_searching = new WText( WString::tr("isbe-searching"), this );
+  m_searching = addNew<WText>( WString::tr("isbe-searching") );
   m_searching->addStyleClass( "IsotopeSearchInProgress" );
   m_searching->setInline( false );
   m_searching->hide();
-  
-  
+
+
   // Add in one non-removable search energy
-  SearchEnergy *enrgy = new SearchEnergy( m_searchEnergies );
-  enrgy->enter().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
+  SearchEnergy *enrgy = m_searchEnergies->addNew<SearchEnergy>();
+  enrgy->enter().connect( [this](){ startSearch( false ); } );
   enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
-  enrgy->gotFocus().connect( boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus,
-                                        this, enrgy ) );
-  enrgy->remove().connect( boost::bind( &IsotopeSearchByEnergy::removeSearchEnergy, this, enrgy) );
+  enrgy->gotFocus().connect( [this, enrgy](){ searchEnergyRecievedFocus( enrgy ); } );
+  enrgy->remove().connect( [this, enrgy](){ removeSearchEnergy( enrgy ); } );
   enrgy->addStyleClass( ActiveSearchEnergyClass );
   enrgy->disableRemove();
-  enrgy->changed().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
+  enrgy->changed().connect( [this](){ startSearch( false ); } );
 
   // We could initialize filter types here, but instead we'll wait until first render, to slightly
   //  help out initial app render
@@ -522,7 +518,7 @@ void IsotopeSearchByEnergy::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   WContainerWidget::render( flags );
   
-  if( flags.testFlag(Wt::RenderFlag::RenderFull) )
+  if( !!(flags & Wt::RenderFlag::Full) )
   {
     initFilterTypes();
     
@@ -561,16 +557,12 @@ IsotopeSearchByEnergy::SearchEnergy *IsotopeSearchByEnergy::addNewSearchEnergy()
   for( SearchEnergy *enrgy : searchv )
     enrgy->disableAddAnother();
   
-  SearchEnergy *enrgy = new SearchEnergy( m_searchEnergies );
-  enrgy->changed().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
-  enrgy->enter().connect( boost::bind( &IsotopeSearchByEnergy::startSearch, this, false ) );
-  enrgy->remove().connect(
-                      boost::bind( &IsotopeSearchByEnergy::removeSearchEnergy,
-                                   this, enrgy) );
+  SearchEnergy *enrgy = m_searchEnergies->addNew<SearchEnergy>();
+  enrgy->changed().connect( [this](){ startSearch( false ); } );
+  enrgy->enter().connect( [this](){ startSearch( false ); } );
+  enrgy->remove().connect( [this, enrgy](){ removeSearchEnergy( enrgy ); } );
   enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
-  enrgy->gotFocus().connect(
-                boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus,
-                             this, enrgy ) );
+  enrgy->gotFocus().connect( [this, enrgy](){ searchEnergyRecievedFocus( enrgy ); } );
 //  m_search->changed().connect( this,
 //                          &IsotopeSearchByEnergy::loadSearchEnergiesToClient );
 //  m_search->enable();
@@ -586,7 +578,7 @@ IsotopeSearchByEnergy::SearchEnergy *IsotopeSearchByEnergy::addNewSearchEnergy()
       searchEnergyRecievedFocus( searchv[i] );
       // Note: if there are more callbacks queued, like gotFocus(), then they may happen after here, so we
       //    need to either be careful of the ordering of callbacks, or use something like a WTimer here.
-      //WTimer::singleShot( 1, boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus, this, searchv[i]) );
+      //WTimer::singleShot( std::chrono::milliseconds(1), boost::bind( &IsotopeSearchByEnergy::searchEnergyRecievedFocus, this, searchv[i]) );
       break;
     }//if( searchv[i]->energy() < 0.01 )
   }//for( size_t i = 0; i < searchv.size(); ++i )
@@ -637,42 +629,42 @@ void IsotopeSearchByEnergy::setResultTableColumnWidths( const bool narrow )
       switch( col )
       {
         case IsotopeSearchByEnergyModel::ParentIsotope:
-          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(50,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
         break;
           
         case IsotopeSearchByEnergyModel::Energy:
-          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(50,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
         break;
           
         case IsotopeSearchByEnergyModel::Distance:
-          m_results->setColumnWidth( col, WLength(35,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(35,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
         break;
           
         case IsotopeSearchByEnergyModel::BranchRatio:
-          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(50,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
         break;
           
         case IsotopeSearchByEnergyModel::ProfileDistance:
-          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(50,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
           break;
           
         case IsotopeSearchByEnergyModel::SpecificIsotope:
-          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(8,WLength::Unit::FontEm) );
           m_results->setColumnHidden( col, true );
         break;
           
         case IsotopeSearchByEnergyModel::ParentHalfLife:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
           m_results->setColumnHidden( col, true );
         break;
           
         case IsotopeSearchByEnergyModel::AssumedAge:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
           m_results->setColumnHidden( col, true );
         break;
           
@@ -695,35 +687,35 @@ void IsotopeSearchByEnergy::setResultTableColumnWidths( const bool narrow )
       switch( col )
       {
         case IsotopeSearchByEnergyModel::ParentIsotope:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::Energy:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::Distance:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::BranchRatio:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::ProfileDistance:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::SpecificIsotope:
-          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(8,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::ParentHalfLife:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::AssumedAge:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::NumColumns:
@@ -743,7 +735,12 @@ void IsotopeSearchByEnergy::setNarrowPhoneLayout( const bool narrow )
   if( narrow )
   {
     addStyleClass( "NarrowNuclideSearch" );
-    m_searchConditionsColumn->insertBefore( m_results, m_assignBtnRow );
+    {
+      // Re-parent m_results: remove from current parent, then insert into m_searchConditionsColumn
+      auto resultsOwned = m_results->parent() ? m_results->parent()->removeWidget( m_results )
+                                              : std::unique_ptr<WWidget>(m_results);
+      m_searchConditionsColumn->insertBefore( std::move(resultsOwned), m_assignBtnRow );
+    }
     m_results->setLineHeight( 13 );
     m_results->setHeaderHeight( 15 );
     
@@ -754,42 +751,42 @@ void IsotopeSearchByEnergy::setNarrowPhoneLayout( const bool narrow )
       switch( col )
       {
         case IsotopeSearchByEnergyModel::ParentIsotope:
-          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(50,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
         break;
           
         case IsotopeSearchByEnergyModel::Energy:
-          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(50,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
         break;
           
         case IsotopeSearchByEnergyModel::Distance:
-          m_results->setColumnWidth( col, WLength(35,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(35,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
         break;
           
         case IsotopeSearchByEnergyModel::BranchRatio:
-          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(50,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
         break;
           
         case IsotopeSearchByEnergyModel::ProfileDistance:
-          m_results->setColumnWidth( col, WLength(50,WLength::Pixel) );
+          m_results->setColumnWidth( col, WLength(50,WLength::Unit::Pixel) );
           m_results->setColumnHidden( col, false );
           break;
           
         case IsotopeSearchByEnergyModel::SpecificIsotope:
-          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(8,WLength::Unit::FontEm) );
           m_results->setColumnHidden( col, true );
         break;
           
         case IsotopeSearchByEnergyModel::ParentHalfLife:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
           m_results->setColumnHidden( col, true );
         break;
           
         case IsotopeSearchByEnergyModel::AssumedAge:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
           m_results->setColumnHidden( col, true );
         break;
           
@@ -800,7 +797,12 @@ void IsotopeSearchByEnergy::setNarrowPhoneLayout( const bool narrow )
   }else
   {
     removeStyleClass( "NarrowNuclideSearch" );
-    addWidget( m_results );
+    {
+      // Re-parent m_results: remove from current parent, then add to this
+      auto resultsOwned = m_results->parent() ? m_results->parent()->removeWidget( m_results )
+                                              : std::unique_ptr<WWidget>(m_results);
+      addWidget( std::move(resultsOwned) );
+    }
     m_results->setLineHeight( 20 );
     m_results->setHeaderHeight( 20 );
     
@@ -814,35 +816,35 @@ void IsotopeSearchByEnergy::setNarrowPhoneLayout( const bool narrow )
       switch( col )
       {
         case IsotopeSearchByEnergyModel::ParentIsotope:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::Energy:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::Distance:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::BranchRatio:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::ProfileDistance:
-          m_results->setColumnWidth( col, WLength(5,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(5,WLength::Unit::FontEm) );
           break;
           
         case IsotopeSearchByEnergyModel::SpecificIsotope:
-          m_results->setColumnWidth( col, WLength(8,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(8,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::ParentHalfLife:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::AssumedAge:
-          m_results->setColumnWidth( col, WLength(7,WLength::FontEm) );
+          m_results->setColumnWidth( col, WLength(7,WLength::Unit::FontEm) );
         break;
           
         case IsotopeSearchByEnergyModel::NumColumns:
@@ -969,10 +971,10 @@ void IsotopeSearchByEnergy::loadSearchEnergiesToClient()
   ReferencePhotopeakDisplay *display = m_viewer ? m_viewer->referenceLinesWidget() : nullptr;
   if( display )
   {
-    if( !m_refLineUpdateConnection.connected() )
+    if( !m_refLineUpdateConnection.isConnected() )
       m_refLineUpdateConnection
         = display->displayingNuclide().connect( this, &IsotopeSearchByEnergy::handleRefLinesUpdated );
-    if( !m_refLineClearConnection.connected() )
+    if( !m_refLineClearConnection.isConnected() )
       m_refLineClearConnection
         = display->nuclidesCleared().connect( this, &IsotopeSearchByEnergy::handleRefLinesUpdated );
   }//if( display )
@@ -995,10 +997,10 @@ void IsotopeSearchByEnergy::clearSearchEnergiesOnClient()
   // Called when the user clicks off this tab.
   m_chart->setSearchEnergies( vector<pair<double,double>>() );
   
-  if( m_refLineUpdateConnection.connected() )
+  if( m_refLineUpdateConnection.isConnected() )
     m_refLineUpdateConnection.disconnect();
   
-  if( m_refLineClearConnection.connected() )
+  if( m_refLineClearConnection.isConnected() )
     m_refLineClearConnection.disconnect();
 }//void clearSearchEnergiesOnClient()
 
@@ -1212,7 +1214,7 @@ void IsotopeSearchByEnergy::initFilterTypes()
 
 void IsotopeSearchByEnergy::minBrOrHlChanged()
 {
-  if( m_minBranchRatio->validate() == WValidator::Valid )
+  if( m_minBranchRatio->validate() == ValidationState::Valid )
     m_minRelativeBr = m_minBranchRatio->value();
   else
     m_minBranchRatio->setValue( m_minRelativeBr );
@@ -1474,14 +1476,14 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
         {
           txt = WString::tr("isbe-assign-matching-peaks-no-id").arg( symbol );
           item = menu->addItem( txt );
-          item->triggered().connect( boost::bind( &IsotopeSearchByEnergy::assignPeaksNearReferenceLinesToSelectedNuclide, this, true) );
+          item->triggered().connect( [this](){ assignPeaksNearReferenceLinesToSelectedNuclide( true ); } );
         }//if( nPeaksNoIdOnNuc > nPeaksSearched )
         
         if( nPeaksOnNuc > nPeaksSearched )
         {
           txt = WString::tr("isbe-assign-all-matching-peaks").arg( symbol );
           item = menu->addItem( txt );
-          item->triggered().connect( boost::bind( &IsotopeSearchByEnergy::assignPeaksNearReferenceLinesToSelectedNuclide, this, false) );
+          item->triggered().connect( [this](){ assignPeaksNearReferenceLinesToSelectedNuclide( false ); } );
         }//if( nPeaksOnNuc > nPeaksSearched )
       }//if( !hide_menu_btn )
     }//if( menu )
@@ -1674,7 +1676,7 @@ void IsotopeSearchByEnergy::assignSearchedOnPeaksToSelectedNuclide()
     const int peak_row = peak_index.row();
     
     const WModelIndex iso_index = pmodel->index( peak_row, PeakModel::Columns::kIsotope );
-    pmodel->setData( iso_index, boost::any(nucstr) );
+    pmodel->setData( iso_index, Wt::cpp17::any(nucstr) );
     
     // PeakModel doesnt know about reference line color, so lets get the color of the reference
     //  lines (which, if previous peaks have been assigned current nuc/el/rctn, then ref lines
@@ -1693,7 +1695,7 @@ void IsotopeSearchByEnergy::assignSearchedOnPeaksToSelectedNuclide()
         if( !color.isDefault() )
         {
           const WModelIndex color_index = pmodel->index( peak_row, PeakModel::Columns::kPeakLineColor );
-          pmodel->setData( color_index, boost::any( WString(color.cssText()) ) );
+          pmodel->setData( color_index, Wt::cpp17::any( WString(color.cssText()) ) );
         }
       }else
       {
@@ -2424,21 +2426,23 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   }//if( foreground )
   
   ++m_currentSearch;
-  workingspace->searchdoneCallback = app->bind(
-                          boost::bind( &IsotopeSearchByEnergy::hideSearchingTxt,
-                                       this, m_currentSearch ) );
-  
+  const int currentSearch = m_currentSearch;
+  workingspace->searchdoneCallback = [this, currentSearch](){
+    hideSearchingTxt( currentSearch );
+  };
+
   //Verified below is safe if the WApplication instance is terminated before
   //  search results are completed, as well as if the WApplication isnt
   //  terminated but m_model is deleted.
-  boost::function< void(void) > updatefcnt = app->bind( boost::bind(
-                            &IsotopeSearchByEnergyModel::updateSearchResults,
-                            m_model, workingspace ) );
-  boost::function< void(void) > worker = boost::bind(
-                                &IsotopeSearchByEnergyModel::setSearchEnergies,
-                                workingspace, m_minRelativeBr, m_minHl, srcs,
-                                std::move(elements), std::move(nuclides), std::move(reactions),
-                                app->sessionId(), updatefcnt );
+  std::function< void(void) > updatefcnt = [model = m_model, workingspace](){
+    model->updateSearchResults( workingspace );
+  };
+  std::function< void(void) > worker = [workingspace, minRelBr = m_minRelativeBr, minHl = m_minHl,
+      srcs, elements = std::move(elements), nuclides = std::move(nuclides),
+      reactions = std::move(reactions), sessionId = app->sessionId(), updatefcnt](){
+    IsotopeSearchByEnergyModel::setSearchEnergies( workingspace, minRelBr, minHl, srcs,
+        elements, nuclides, reactions, sessionId, updatefcnt );
+  };
   WServer::instance()->ioService().boost::asio::io_service::post( worker );
   
   m_searching->show();

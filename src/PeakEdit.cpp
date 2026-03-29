@@ -26,20 +26,20 @@
 #include <vector>
 #include <sstream>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WServer>
-#include <Wt/WComboBox>
-#include <Wt/WCheckBox>
-#include <Wt/WLineEdit>
-#include <Wt/WPopupMenu>
-#include <Wt/WPushButton>
-#include <Wt/WSplitButton>
-#include <Wt/WApplication>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WDoubleValidator>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WServer.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WPopupMenu.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WSplitButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WDoubleValidator.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
@@ -96,13 +96,13 @@ PeakEditWindow::PeakEditWindow( const double energy,
   
   AuxWindow::addHelpInFooter( footer(), "peak-editor" );
   
-  m_edit = new PeakEdit( energy, peakmodel, viewer, this );
+  m_edit = contents()->addNew<PeakEdit>( energy, peakmodel, viewer, this );
   rejectWhenEscapePressed();
-  
+
   if( viewer->isPhone() )
   {
     setMaximumSize( WLength::Auto, viewer->renderedHeight()-25 );
-    contents()->setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
+    contents()->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
   }else
   {
     resizeToFitOnScreen();
@@ -160,7 +160,7 @@ PeakEdit::PeakEdit( const double energy,
                     PeakModel *peakmodel,
                     InterSpec *viewer,
                     AuxWindow *aux )
-  : WContainerWidget( aux->contents() ),
+  : WContainerWidget(),
     m_energy( energy ),
     m_peakModel( peakmodel ),
     m_viewer( viewer ),
@@ -237,14 +237,14 @@ void PeakEdit::init()
   if( m_viewer )
     m_viewer->useMessageResourceBundle( "PeakEdit" );
   
-  m_valueTable = new WTable( this );
-  m_valueTable->setHeaderCount( 1, Horizontal );
+  m_valueTable = addNew<WTable>();
+  m_valueTable->setHeaderCount( 1, Wt::Orientation::Horizontal );
   m_valueTable->addStyleClass( "PeakEditTable" );
-  
-  WLabel *label = new WLabel( WString::tr("pe-parameter"), m_valueTable->elementAt(0,0) );
-  label = new WLabel( WString::tr("pe-value"), m_valueTable->elementAt(0,1) );
-  label = new WLabel( WString::tr("pe-uncertainty"), m_valueTable->elementAt(0,2) );
-  label = new WLabel( WString::tr("Fit"), m_valueTable->elementAt(0,3) );
+
+  WLabel *label = m_valueTable->elementAt(0,0)->addNew<WLabel>( WString::tr("pe-parameter") );
+  label = m_valueTable->elementAt(0,1)->addNew<WLabel>( WString::tr("pe-value") );
+  label = m_valueTable->elementAt(0,2)->addNew<WLabel>( WString::tr("pe-uncertainty") );
+  label = m_valueTable->elementAt(0,3)->addNew<WLabel>( WString::tr("Fit") );
   
   for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
   {
@@ -259,9 +259,9 @@ void PeakEdit::init()
      continue;
    }//if( t == PeakEdit::PeakColor )
     
-    label = new WLabel( rowLabel(t), m_valueTable->elementAt(t+1,0) );
-    m_values[t] = new WLineEdit( m_valueTable->elementAt(t+1,1) );
-    m_uncertainties[t] = new WLineEdit( m_valueTable->elementAt(t+1,2) );
+    label = m_valueTable->elementAt(t+1,0)->addNew<WLabel>( rowLabel(t) );
+    m_values[t] = m_valueTable->elementAt(t+1,1)->addNew<WLineEdit>();
+    m_uncertainties[t] = m_valueTable->elementAt(t+1,2)->addNew<WLineEdit>();
     
     m_values[t]->setAttributeValue( "ondragstart", "return false" );
     label->setBuddy( m_values[t] );
@@ -282,7 +282,7 @@ void PeakEdit::init()
       case PeakEdit::OffsetPolynomial0:
       case PeakEdit::OffsetPolynomial1: case PeakEdit::OffsetPolynomial2:
       case PeakEdit::OffsetPolynomial3: case PeakEdit::OffsetPolynomial4:
-        m_fitFors[t] = new WCheckBox( m_valueTable->elementAt(t+1,3) );
+        m_fitFors[t] = m_valueTable->elementAt(t+1,3)->addNew<WCheckBox>();
       break;
       
       case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
@@ -363,27 +363,27 @@ void PeakEdit::init()
       break;
     }//case( t )
     
-    WDoubleValidator *validator = new WDoubleValidator( m_values[t] );
+    auto validator = std::make_shared<WDoubleValidator>();
     m_values[t]->setValidator( validator );
     m_values[t]->addStyleClass( "numberValidator"); //used to detect mobile keyboard
-    validator = new WDoubleValidator( m_uncertainties[t] );
+    validator = std::make_shared<WDoubleValidator>();
     m_uncertainties[t]->setValidator( validator );
     m_uncertainties[t]->addStyleClass( "numberValidator"); //used to detect mobile keyboard
 //    m_values[t]->changed().connect( boost::bind( &PeakEdit::checkIfDirty, this, t, false ) );
 //    m_uncertainties[t]->changed().connect( boost::bind( &PeakEdit::checkIfDirty, this, t, true ) );
     m_values[t]->textInput()
-            .connect( boost::bind( &PeakEdit::checkIfDirty, this, t, false ) );
+            .connect( [this, t](){ checkIfDirty( t, false ); } );
     m_values[t]->enterPressed()
-            .connect( boost::bind( &PeakEdit::checkIfDirty, this, t, false ) );
+            .connect( [this, t](){ checkIfDirty( t, false ); } );
     m_uncertainties[t]->textInput()
-            .connect( boost::bind( &PeakEdit::checkIfDirty, this, t, true ) );
+            .connect( [this, t](){ checkIfDirty( t, true ); } );
     m_uncertainties[t]->enterPressed()
-            .connect( boost::bind( &PeakEdit::checkIfDirty, this, t, true ) );
-    
+            .connect( [this, t](){ checkIfDirty( t, true ); } );
+
     if( m_fitFors[t] )
     {
-      m_fitFors[t]->checked().connect( boost::bind( &PeakEdit::fitTypeChanged, this, t ) );
-      m_fitFors[t]->unChecked().connect( boost::bind( &PeakEdit::fitTypeChanged, this, t ) );
+      m_fitFors[t]->checked().connect( [this, t](){ fitTypeChanged( t ); } );
+      m_fitFors[t]->unChecked().connect( [this, t](){ fitTypeChanged( t ); } );
     }//if( m_fitFors[t] )
   }//for(...)
 
@@ -392,16 +392,16 @@ void PeakEdit::init()
   
   row = m_valueTable->rowAt( PeakEdit::PeakPars::SigmaDrfPredicted + 1 );
   row->elementAt(0)->setColumnSpan(4);
-  m_drfFwhm = new WText( "", row->elementAt(0) );
+  m_drfFwhm = row->elementAt(0)->addNew<WText>( "" );
   m_drfFwhm->addStyleClass( "PeakEditDrfFwhm" );
   row->setHidden( true );
   
   // When the detector changed/modified signal is emitted, the DRF for the foreground
   //  may not be updated yet, so we will delay until after current event loop
-  auto drfUpdateWorker = wApp->bind( boost::bind(&PeakEdit::updateDrfFwhmTxt, this) );
-  auto drfUpdater = [drfUpdateWorker](){
-    WServer::instance()->schedule(100, wApp->sessionId(), [drfUpdateWorker](){
-      drfUpdateWorker();
+  const std::string sessionId = wApp->sessionId();
+  auto drfUpdater = [sessionId, this](){
+    WServer::instance()->schedule( std::chrono::milliseconds(100), sessionId, [this](){
+      updateDrfFwhmTxt();
       wApp->triggerUpdate();
     });
   };
@@ -411,20 +411,20 @@ void PeakEdit::init()
   
   row = m_valueTable->rowAt( PeakEdit::PeakPars::SetContinuumToLinear + 1 );
   row->elementAt(0)->setColumnSpan(4);
-  m_resetLinearContinuum = new WPushButton( WString::tr("pe-btn-cont-to-linear"), row->elementAt(0) );
+  m_resetLinearContinuum = row->elementAt(0)->addNew<WPushButton>( WString::tr("pe-btn-cont-to-linear") );
   m_resetLinearContinuum->setToolTip( WString::tr("pe-tt-btn-cont-to-linear") );
   m_resetLinearContinuum->addStyleClass( "LightButton PeakEditEstLinCont" );
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   HelpSystem::attachToolTipOn( m_resetLinearContinuum, WString::tr("pe-tt-btn-cont-to-linear"),
                               showToolTips, HelpSystem::ToolTipPosition::Right );
   row->setHidden( true );
-  m_resetLinearContinuum->clicked().connect( boost::bind( &PeakEdit::estimateLinearContinuumFromData, this ) );
+  m_resetLinearContinuum->clicked().connect( [this](){ estimateLinearContinuumFromData(); } );
   
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+1 );
-  label = new WLabel( WString::tr("Nuclide"), row->elementAt(0) );
+  label = row->elementAt(0)->addNew<WLabel>( WString::tr("Nuclide") );
   row->elementAt(1)->setColumnSpan(2);
-  m_nuclide = new WLineEdit( row->elementAt(1) );
+  m_nuclide = row->elementAt(1)->addNew<WLineEdit>();
   
   m_nuclide->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -436,23 +436,23 @@ void PeakEdit::init()
   PhotopeakDelegate::EditWidget::replacerJs( replacerJs );
   PhotopeakDelegate::EditWidget::nuclideNameMatcherJs( matcherJs );
     
-  m_suggestions = new WSuggestionPopup( matcherJs, replacerJs );
+  m_suggestions = addChild( std::make_unique<WSuggestionPopup>( matcherJs, replacerJs ) );
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   m_suggestions->setJavaScriptMember("wtNoReparent", "true");
 #endif
   
   m_suggestions->addStyleClass( "nuclide-suggest" );
-  m_suggestions->forEdit( m_nuclide, WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+  m_suggestions->forEdit( m_nuclide, PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
   
 //  std::shared_ptr<const PeakDef> dummypeak;
 //  m_filterModel = new PeakIsotopeNameFilterModel( dummypeak, this );
-  m_filterModel = new IsotopeNameFilterModel( this );
+  m_filterModel = std::make_shared<IsotopeNameFilterModel>();
   m_filterModel->filter( "" );
   m_suggestions->setFilterLength( -1 );
   m_suggestions->setModel( m_filterModel );
-//  m_suggestions->filterModel().connect( m_filterModel, &PeakIsotopeNameFilterModel::filter );
-  m_suggestions->filterModel().connect( m_filterModel, &IsotopeNameFilterModel::filter );
+//  m_suggestions->filterModel().connect( m_filterModel.get(), &PeakIsotopeNameFilterModel::filter );
+  m_suggestions->filterModel().connect( m_filterModel.get(), &IsotopeNameFilterModel::filter );
   
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_suggestions );
   IsotopeNameFilterModel::setEnterKeyMatchFixJs( m_suggestions, m_nuclide );
@@ -461,16 +461,16 @@ void PeakEdit::init()
   m_nuclide->blurred().connect( this, &PeakEdit::isotopeChanged );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+2 );
-  label = new WLabel( WString::tr("Photopeak"), row->elementAt(0) );
+  label = row->elementAt(0)->addNew<WLabel>( WString::tr("Photopeak") );
   row->elementAt(1)->setColumnSpan(2);
-  m_photoPeakEnergy = new WComboBox( row->elementAt(1) );
-  m_photoPeakEnergy->setWidth( WLength(13.5,WLength::FontEm) );
+  m_photoPeakEnergy = row->elementAt(1)->addNew<WComboBox>();
+  m_photoPeakEnergy->setWidth( WLength(13.5,WLength::Unit::FontEm) );
   m_photoPeakEnergy->activated().connect( this, &PeakEdit::transitionChanged );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+3 );
-  label = new WLabel( WString::tr("pe-label"), row->elementAt(0) );
+  label = row->elementAt(0)->addNew<WLabel>( WString::tr("pe-label") );
   row->elementAt(1)->setColumnSpan(2);
-  m_userLabel = new WLineEdit( row->elementAt(1) );
+  m_userLabel = row->elementAt(1)->addNew<WLineEdit>();
   
   m_userLabel->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -478,40 +478,38 @@ void PeakEdit::init()
   m_userLabel->setAttributeValue( "spellcheck", "off" );
 #endif
   
-  m_userLabel->setWidth( WLength(100,WLength::Percentage) );
-  m_userLabel->blurred()
-              .connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
-  m_userLabel->enterPressed()
-              .connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
-  m_userLabel->textInput().connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
+  m_userLabel->setWidth( WLength(100,WLength::Unit::Percentage) );
+  m_userLabel->blurred().connect( [this](){ checkIfUserLabelDirty(); } );
+  m_userLabel->enterPressed().connect( [this](){ checkIfUserLabelDirty(); } );
+  m_userLabel->textInput().connect( [this](){ checkIfUserLabelDirty(); } );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+4 );
-  label = new WLabel( WString::tr("pe-label-peak-color"), row->elementAt(0) );
+  label = row->elementAt(0)->addNew<WLabel>( WString::tr("pe-label-peak-color") );
   row->elementAt(1)->setColumnSpan(1);
-  m_color = new ColorSelect( ColorSelect::AllowNoColor, row->elementAt(1) );
-  m_color->cssColorChanged().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
+  m_color = row->elementAt(1)->addNew<ColorSelect>( ColorSelect::AllowNoColor );
+  m_color->cssColorChanged().connect( [this](){ checkIfColorDirty(); } );
   row->elementAt(2)->setColumnSpan(2);
-  m_applyColorForAllNuc = new WCheckBox( "dummy", row->elementAt(2) ); //"dummy" is needed or else later custom labels wont render; Wt bug?
+  m_applyColorForAllNuc = row->elementAt(2)->addNew<WCheckBox>( "dummy" ); //"dummy" is needed or else later custom labels wont render; Wt bug?
   m_applyColorForAllNuc->setHidden( true );
   m_applyColorForAllNuc->setUnChecked();
-  m_applyColorForAllNuc->checked().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
-  m_applyColorForAllNuc->unChecked().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
+  m_applyColorForAllNuc->checked().connect( [this](){ checkIfColorDirty(); } );
+  m_applyColorForAllNuc->unChecked().connect( [this](){ checkIfColorDirty(); } );
   
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+5 );
-  label = new WLabel( WString::tr("pe-peak-type"), row->elementAt(0) );
+  label = row->elementAt(0)->addNew<WLabel>( WString::tr("pe-peak-type") );
   row->elementAt(1)->setColumnSpan(2);
-  
-  m_peakType = new WComboBox( row->elementAt(1) );
+
+  m_peakType = row->elementAt(1)->addNew<WComboBox>();
   m_peakType->addItem( WString::tr("pe-peak-model-gaussian") );    //PeakDef::GaussianDefined
   m_peakType->addItem( WString::tr("pe-peak-model-data") ); //PeakDef::DataDefined
   m_peakType->activated().connect( this, &PeakEdit::peakTypeChanged );
 //
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+6 );
-  label = new WLabel( WString::tr("Continuum"), row->elementAt(0) );
+  label = row->elementAt(0)->addNew<WLabel>( WString::tr("Continuum") );
   row->elementAt(1)->setColumnSpan(2);
-  m_continuumType = new WComboBox( row->elementAt(1) );
+  m_continuumType = row->elementAt(1)->addNew<WComboBox>();
   m_continuumType->activated().connect( this, &PeakEdit::contnuumTypeChanged );
   
   for( PeakContinuum::OffsetType t = PeakContinuum::OffsetType(0);
@@ -521,9 +519,9 @@ void PeakEdit::init()
   }//for( loop over PeakContinuum::OffsetType )
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+7 );
-  label = new WLabel( WString::tr("pe-skew-type"), row->elementAt(0) );
+  label = row->elementAt(0)->addNew<WLabel>( WString::tr("pe-skew-type") );
   row->elementAt(1)->setColumnSpan(2);
-  m_skewType = new WComboBox( row->elementAt(1) );
+  m_skewType = row->elementAt(1)->addNew<WComboBox>();
   m_skewType->activated().connect( this, &PeakEdit::skewTypeChanged );
   
   static_assert( PeakDef::DoubleBortel > PeakDef::ExpGaussExp, "SkewType ordering changed DoubleBortel should be largest" );
@@ -543,35 +541,35 @@ void PeakEdit::init()
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+8 );
   row->elementAt(0)->setColumnSpan(4);
-  m_otherPeaksDiv = new WContainerWidget( row->elementAt(0) );
+  m_otherPeaksDiv = row->elementAt(0)->addNew<WContainerWidget>();
   m_otherPeaksDiv->addStyleClass( "PeakEditOtherPeaks" );
-  m_otherPeakTxt = new WText( m_otherPeaksDiv );
-  
-  m_prevPeakInRoi = new WPushButton( m_otherPeaksDiv );
+  m_otherPeakTxt = m_otherPeaksDiv->addNew<WText>();
+
+  m_prevPeakInRoi = m_otherPeaksDiv->addNew<WPushButton>();
   m_prevPeakInRoi->setStyleClass( "PeakEditPreviousPeak" );
-  m_prevPeakInRoi->clicked().connect( boost::bind( &PeakEdit::changeToNextPeakInRoi, this, true ) );
-  
-  m_nextPeakInRoi = new WPushButton( m_otherPeaksDiv );
+  m_prevPeakInRoi->clicked().connect( [this](){ changeToNextPeakInRoi( true ); } );
+
+  m_nextPeakInRoi = m_otherPeaksDiv->addNew<WPushButton>();
   m_nextPeakInRoi->setStyleClass( "PeakEditNextPeak" );
-  m_nextPeakInRoi->clicked().connect( boost::bind( &PeakEdit::changeToNextPeakInRoi, this, false ) );
+  m_nextPeakInRoi->clicked().connect( [this](){ changeToNextPeakInRoi( false ); } );
   
   
   
   
   m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );
-  m_refit  = new WSplitButton( WString::tr("pe-btn-refit"), m_footer );
-  m_apply  = new WPushButton( WString::tr("Apply"),  m_footer );
-  m_accept = new WPushButton( WString::tr("Accept"), m_footer );
+  m_refit  = m_footer->addNew<WSplitButton>( WString::tr("pe-btn-refit") );
+  m_apply  = m_footer->addNew<WPushButton>( WString::tr("Apply") );
+  m_accept = m_footer->addNew<WPushButton>( WString::tr("Accept") );
   //if( m_viewer && !m_viewer->isMobile() )
   //  m_accept->setIcon( "InterSpec_resources/images/accept.png" );
-  
+
   //Add class to give padding on left side (or modify current style class)
-  
-  WPushButton *deleteButton = new WPushButton( WString::tr("Delete"), m_footer );
+
+  WPushButton *deleteButton = m_footer->addNew<WPushButton>( WString::tr("Delete") );
 //  deleteButton->setFloatSide( Wt::Right );
   
   m_cancel->clicked().connect( this, &PeakEdit::cancel );
-  m_refit->actionButton()->clicked().connect( boost::bind( &PeakEdit::refit, this, RefitOption::Normal ) );
+  m_refit->actionButton()->clicked().connect( [this](){ refit( RefitOption::Normal ); } );
   m_apply->clicked().connect(  this, &PeakEdit::apply  );
   m_accept->clicked().connect( this, &PeakEdit::accept );
   deleteButton->clicked().connect( this, &PeakEdit::deletePeak );
@@ -585,32 +583,34 @@ void PeakEdit::init()
   // Add ROI refit options to `m_refit`.
   if( m_viewer->isMobile() )
   {
-    WPopupMenu *menu = new WPopupMenu();
-    
+    auto menuOwner = std::make_unique<WPopupMenu>();
+    WPopupMenu *menu = menuOwner.get();
+
     WMenuItem *item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-standard") );
-    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::Normal ) );
+    item->triggered().connect( [this](){ refit( RefitOption::Normal ); } );
     item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-independent") );
-    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiIndependentFwhms ) );
+    item->triggered().connect( [this](){ refit( RefitOption::RoiIndependentFwhms ); } );
     item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-fine") );
-    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiSmallRefinement ) );
+    item->triggered().connect( [this](){ refit( RefitOption::RoiSmallRefinement ); } );
     item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-independent-fine") );
-    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiSmallRefinementIndependentFwhm ) );
-    
-    m_refit->setMenu( menu );
+    item->triggered().connect( [this](){ refit( RefitOption::RoiSmallRefinementIndependentFwhm ); } );
+
+    m_refit->setMenu( std::move(menuOwner) );
   }else
   {
-    PopupDivMenu *menu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu);
-    
+    PopupDivMenu *menu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu );
+
     PopupDivMenuItem *item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-standard") );
-    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::Normal ) );
+    item->triggered().connect( [this](){ refit( RefitOption::Normal ); } );
     item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-independent") );
-    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiIndependentFwhms ) );
+    item->triggered().connect( [this](){ refit( RefitOption::RoiIndependentFwhms ); } );
     item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-fine") );
-    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiSmallRefinement ) );
+    item->triggered().connect( [this](){ refit( RefitOption::RoiSmallRefinement ); } );
     item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-independent-fine") );
-    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiSmallRefinementIndependentFwhm ) );
-    
-    m_refit->setMenu( menu );
+    item->triggered().connect( [this](){ refit( RefitOption::RoiSmallRefinementIndependentFwhm ); } );
+
+    // Wt4_TODO: PopupDivMenu ownership - check if setMenu takes unique_ptr or raw ptr
+    m_refit->setMenu( std::unique_ptr<WPopupMenu>(menu) );
   }//if( mobile ) / else
   
   if( m_refit->dropDownButton() )
@@ -620,8 +620,7 @@ void PeakEdit::init()
 
 PeakEdit::~PeakEdit()
 {
-  if( m_suggestions )
-    delete m_suggestions;
+  // m_suggestions is owned by addChild(), no explicit delete needed
 }//~PeakEdit()
 
 
@@ -629,19 +628,19 @@ void PeakEdit::validateMeanOrRoiChange()
 {
   try
   {
-    if( m_values[Mean]->validate() != WValidator::Valid )
+    if( m_values[Mean]->validate() != Wt::ValidationState::Valid )
     {
       passMessage( "Invalid mean value - must be numeric.", WarningWidget::WarningMsgHigh );
       throw runtime_error( "" );
     }
     
-    if( m_values[RangeStartEnergy]->validate() != WValidator::Valid )
+    if( m_values[RangeStartEnergy]->validate() != Wt::ValidationState::Valid )
     {
       passMessage( "Invalid ROI start value - must be numeric.", WarningWidget::WarningMsgHigh );
       throw runtime_error( "" );
     }
     
-    if( m_values[Mean]->validate() != WValidator::Valid )
+    if( m_values[Mean]->validate() != Wt::ValidationState::Valid )
     {
       passMessage( "Invalid ROI end value - must be numeric.", WarningWidget::WarningMsgHigh );
       throw runtime_error( "" );
@@ -1116,7 +1115,7 @@ void PeakEdit::refreshPeakInfo()
           }
           
           m_values[t]->setHidden( false );
-          auto validator = dynamic_cast<WDoubleValidator *>( m_values[t]->validator() );
+          auto validator = std::dynamic_pointer_cast<WDoubleValidator>( m_values[t]->validator() ).get();
           assert( validator );
           if( validator )
             validator->setRange( lower, upper );
@@ -2105,7 +2104,7 @@ void PeakEdit::skewTypeChanged()
           m_valueTable->rowAt(1+index)->setHidden( false );
           m_values[index]->setText( SpecUtils::printCompact(starting_val, 4) );
           m_fitFors[index]->setChecked( true );
-          auto validator = dynamic_cast<WDoubleValidator *>( m_values[index]->validator() );
+          auto validator = std::dynamic_pointer_cast<WDoubleValidator>( m_values[index]->validator() ).get();
           assert( validator );
           if( validator )
             validator->setRange( lower, upper );
@@ -2210,13 +2209,13 @@ void PeakEdit::setSkewInputValueRanges( const PeakDef::SkewType type )
       m_valueTable->rowAt(index+1)->setHidden( false );
       //m_values[index]->setText( SpecUtils::printCompact(starting_val, 4) );
       
-      auto validator = dynamic_cast<WDoubleValidator *>( m_values[index]->validator() );
+      auto validator = std::dynamic_pointer_cast<WDoubleValidator>( m_values[index]->validator() ).get();
       assert( validator );
       if( validator )
         validator->setRange( lower, upper );
       
       double val = 0.0;
-      if( (m_values[index]->validate() != WValidator::Valid)
+      if( (m_values[index]->validate() != Wt::ValidationState::Valid)
          || !(stringstream(m_values[index]->text().toUTF8()) >> val)
          || (val < lower) || (val > upper) )
       {
@@ -2767,7 +2766,7 @@ void PeakEdit::apply()
         
         if( t != PeakEdit::PeakColor )
         {
-          if( m_values[t]->validate() != WValidator::Valid )
+          if( m_values[t]->validate() != Wt::ValidationState::Valid )
             throw runtime_error( "Value for '"
                                 + rowLabel(t).toUTF8() + "' is not a valid number" );
           
@@ -2874,7 +2873,7 @@ void PeakEdit::apply()
       {
         double val = 0.0;
         
-        if( m_uncertainties[t]->validate() != WValidator::Valid )
+        if( m_uncertainties[t]->validate() != Wt::ValidationState::Valid )
           throw runtime_error( "Uncertainty for '"
                               + rowLabel(t).toUTF8() + "' is not a valid number" );
         

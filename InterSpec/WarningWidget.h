@@ -25,7 +25,9 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WContainerWidget>
+#include <memory>
+
+#include <Wt/WContainerWidget.h>
 
 // Some forward declarations
 class InterSpec;
@@ -65,8 +67,7 @@ public:
   static const char *description( const WarningMsgLevel level );
   
 public:
-  WarningWidget( InterSpec *hostViewer,
-                 Wt::WContainerWidget *parent = 0 );
+  WarningWidget( InterSpec *hostViewer );
   virtual ~WarningWidget();
 
   void createContent();
@@ -116,7 +117,7 @@ protected:
   bool m_active[static_cast<int>(WarningMsgLevel::NumWarningMsgType)];
 
   Wt::WGridLayout *m_layout;
-  Wt::WStandardItemModel *m_messageModel;
+  std::shared_ptr<Wt::WStandardItemModel> m_messageModel;
     
   RowStretchTreeView *m_tableView;
   Wt::WText *m_description;

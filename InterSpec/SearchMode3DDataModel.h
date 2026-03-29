@@ -29,8 +29,8 @@
 
 #include <boost/multi_array.hpp>
 
-#include <Wt/WModelIndex>
-#include <Wt/WAbstractTableModel>
+#include <Wt/WModelIndex.h>
+#include <Wt/WAbstractTableModel.h>
 
 //a forward declaration
 class InterSpec;
@@ -76,7 +76,7 @@ public:
   //SearchMode3DDataModel constructor: parent passed in is for memory managment
   //  purposes only (when its constructor gets called, this
   //  SearchMode3DDataModel will be deleted).
-  SearchMode3DDataModel( Wt::WObject *parent = 0 );
+  SearchMode3DDataModel();
   
   //Number of rows in this model will be twice the number of time-samples in
   //  the data (the left and right, or lower and upper, values for each time
@@ -100,20 +100,20 @@ public:
   //  Otherwise the counts for sample=(row-1)/2, and channel=(column-1)/2 will
   //  be returned.
   //  If invalid row/column is specified, or role!=DisplayRole, then an empty
-  //  boost::any() will be returned.  WModelIndex 'parent' should always be
+  //  Wt::cpp17::any() will be returned.  WModelIndex 'parent' should always be
   //  invalid (e.g. blank).
-  virtual boost::any data( int row, int column,
-                           int role = Wt::DisplayRole,
+  virtual Wt::cpp17::any data( int row, int column,
+                           Wt::ItemDataRole role = Wt::ItemDataRole::Display,
                            const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   
   //data(): equivalent to other data() functions.
-  virtual boost::any data( const Wt::WModelIndex &index,
-                           int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
+                           Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   
   //headerData(): not implemented.
-  virtual boost::any headerData( int section,
-                                 Wt::Orientation orientation = Wt::Horizontal,
-                                 int role = Wt::DisplayRole) const;
+  virtual Wt::cpp17::any headerData( int section,
+                                 Wt::Orientation orientation = Wt::Orientation::Horizontal,
+                                 Wt::ItemDataRole role = Wt::ItemDataRole::Display) const;
   
   //minTime()/maxTime() return the min/max x-axis values of current data
   float minTime() const;

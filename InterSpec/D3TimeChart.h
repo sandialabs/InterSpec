@@ -10,10 +10,10 @@
 
 //#include <boost/optional.hpp>
 
-#include <Wt/WColor>
-#include <Wt/WEvent>
-#include <Wt/WSignal>
-#include <Wt/WContainerWidget>
+#include <Wt/WColor.h>
+#include <Wt/WEvent.h>
+#include <Wt/WSignal.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
@@ -60,7 +60,7 @@ class D3TimeChartFilters; //defined in D3TimeChart.cpp
 class D3TimeChart : public Wt::WContainerWidget
 {
 public:
-  D3TimeChart( Wt::WContainerWidget *parent = nullptr );
+  D3TimeChart();
   virtual ~D3TimeChart();
   
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )

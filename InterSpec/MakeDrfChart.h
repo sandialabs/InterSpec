@@ -28,8 +28,8 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WColor>
-#include <Wt/Chart/WCartesianChart>
+#include <Wt/WColor.h>
+#include <Wt/Chart/WCartesianChart.h>
 
 
 class MakeDrfChart : public Wt::Chart::WCartesianChart
@@ -96,7 +96,7 @@ public:
   };//struct DataPoint
   
 public:
-  MakeDrfChart( Wt::WContainerWidget *parent = nullptr );
+  MakeDrfChart();
   virtual ~MakeDrfChart();
   virtual void paint( Wt::WPainter &painter,
                      const Wt::WRectF &rectangle = Wt::WRectF() ) const;
@@ -197,7 +197,7 @@ class DrfChartHolder : public Wt::WContainerWidget
   MakeDrfChart *m_chart;
   
 public:
-  DrfChartHolder( MakeDrfChart *chart, Wt::WContainerWidget *parent );
+  DrfChartHolder( std::unique_ptr<MakeDrfChart> chart );
   virtual ~DrfChartHolder();
   virtual void layoutSizeChanged(int width, int height);
 };//class DrfChartHolder

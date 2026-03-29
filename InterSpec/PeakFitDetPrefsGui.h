@@ -25,7 +25,7 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/PeakFitDetPrefs.h"
 
@@ -57,8 +57,7 @@ public:
           show full controls directly (for use in MakeDrf).
    @param parent Optional parent widget.
    */
-  PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMode,
-                       Wt::WContainerWidget *parent = nullptr );
+  PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMode );
 
   virtual ~PeakFitDetPrefsGui();
 

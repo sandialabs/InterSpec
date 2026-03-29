@@ -29,9 +29,9 @@
 #include <string>
 #include <type_traits>
 
-#include <Wt/WObject>
-#include <Wt/WSignal>
-#include <Wt/Dbo/ptr>
+#include <Wt/WObject.h>
+#include <Wt/WSignal.h>
+#include <Wt/Dbo/ptr.h>
 
 class InterSpec;
 class UserOption;
@@ -74,7 +74,7 @@ public:
    and then finally gets the default value from the XML file, and both adds it to the database,
    and returns that answer.
   */
-  static boost::any preferenceValueAny( const std::string &name, InterSpec *viewer );
+  static Wt::cpp17::any preferenceValueAny( const std::string &name, InterSpec *viewer );
   
   /** Convenience function to call for #preferenceValueAny */
   template<typename T>
@@ -227,19 +227,14 @@ protected:
   std::map<std::string,Wt::Dbo::ptr<UserOption>> m_options;
   
   /** Holds callbacks set from #addCallbackWhenChanged, for boolean preferences.
-   
-   I believe using a Wt::Signals::signal allows makes it so we can connect widget slots (function
-   calls), and then the connection will automatically get deleted when the widget is deleted, making
-   things safe.
-   
-   Note that these function may be "safe" for widgets getting deleted (e.g., signals automatically
-   disconnected), if the signal is connected to an object deriving from Wt::WObject.
+
+   Connections to WObject-derived targets are automatically disconnected when the target is destroyed.
    */
-  std::map<std::string,std::shared_ptr<Wt::Signals::signal<void(bool)>>> m_onBoolChangeSignals;
+  std::map<std::string,std::shared_ptr<Wt::Signal<bool>>> m_onBoolChangeSignals;
 
   /** Holds callbacks set from #addCallbackWhenChanged, for integer preferences.
    */
-  std::map<std::string,std::shared_ptr<Wt::Signals::signal<void(int)>>> m_onIntChangeSignals;
+  std::map<std::string,std::shared_ptr<Wt::Signal<int>>> m_onIntChangeSignals;
 };//class UserPreferences
 
 
@@ -248,8 +243,8 @@ template<typename T>
 T UserPreferences::preferenceValue( const std::string &name,
                                   InterSpec *viewer )
 {
-  boost::any value = UserPreferences::preferenceValueAny( name, viewer );
-  return boost::any_cast<T>( value );
+  Wt::cpp17::any value = UserPreferences::preferenceValueAny( name, viewer );
+  return Wt::cpp17::any_cast<T>( value );
 }//preferenceValue(...)
 
 
@@ -270,10 +265,10 @@ void UserPreferences::addCallbackWhenChanged( const std::string &name, const T &
 {
   //Make sure a valid bool preference
   preferenceValue<bool>( name, m_interspec );
-  
-  std::shared_ptr<Wt::Signals::signal<void(bool)>> &signal = m_onBoolChangeSignals[name];
+
+  std::shared_ptr<Wt::Signal<bool>> &signal = m_onBoolChangeSignals[name];
   if( !signal )
-    signal = std::make_shared<Wt::Signals::signal<void(bool)>>();
+    signal = std::make_shared<Wt::Signal<bool>>();
   signal->connect( fcn );
 }//addCallbackWhenChanged(...)
 
@@ -284,13 +279,13 @@ void UserPreferences::addCallbackWhenChanged( const std::string &name,
 {
   //Make sure a valid bool preference
   preferenceValue<bool>( name, m_interspec );
-  
+
   // Retrieve (or create) the signal, and connect things up
-  std::shared_ptr<Wt::Signals::signal<void(bool)>> &signal = m_onBoolChangeSignals[name];
+  std::shared_ptr<Wt::Signal<bool>> &signal = m_onBoolChangeSignals[name];
   if( !signal )
-    signal = std::make_shared<Wt::Signals::signal<void(bool)>>();
-  
-  signal->connect( boost::bind(method, target, boost::placeholders::_1) );
+    signal = std::make_shared<Wt::Signal<bool>>();
+
+  signal->connect( [target, method]( bool v ){ (target->*method)( v ); } );
 }//addCallbackWhenChanged(...)
 
 
@@ -299,10 +294,10 @@ void UserPreferences::addIntCallbackWhenChanged( const std::string &name, const 
 {
   //Make sure a valid int preference
   preferenceValue<int>( name, m_interspec );
-  
-  std::shared_ptr<Wt::Signals::signal<void(int)>> &signal = m_onIntChangeSignals[name];
+
+  std::shared_ptr<Wt::Signal<int>> &signal = m_onIntChangeSignals[name];
   if( !signal )
-    signal = std::make_shared<Wt::Signals::signal<void(int)>>();
+    signal = std::make_shared<Wt::Signal<int>>();
   signal->connect( fcn );
 }//addIntCallbackWhenChanged(...)
 
@@ -313,13 +308,13 @@ void UserPreferences::addIntCallbackWhenChanged( const std::string &name,
 {
   //Make sure a valid int preference
   preferenceValue<int>( name, m_interspec );
-  
+
   // Retrieve (or create) the signal, and connect things up
-  std::shared_ptr<Wt::Signals::signal<void(int)>> &signal = m_onIntChangeSignals[name];
+  std::shared_ptr<Wt::Signal<int>> &signal = m_onIntChangeSignals[name];
   if( !signal )
-    signal = std::make_shared<Wt::Signals::signal<void(int)>>();
-  
-  signal->connect( boost::bind(method, target, boost::placeholders::_1) );
+    signal = std::make_shared<Wt::Signal<int>>();
+
+  signal->connect( [target, method]( int v ){ (target->*method)( v ); } );
 }//addIntCallbackWhenChanged(...)
 
 #endif //UserPrefernces_h

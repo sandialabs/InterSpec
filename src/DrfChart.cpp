@@ -28,14 +28,14 @@
 #include <sstream>
 #include <string>
 
-#include <Wt/Utils>
-#include <Wt/WColor>
-#include <Wt/WLength>
-#include <Wt/WJavaScript>
-#include <Wt/WApplication>
-#include <Wt/WStringStream>
-#include <Wt/WCssStyleSheet>
-#include <Wt/WContainerWidget>
+#include <Wt/Utils.h>
+#include <Wt/WColor.h>
+#include <Wt/WLength.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WCssStyleSheet.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/InterSpec.h"
@@ -46,13 +46,13 @@ using namespace std;
 using namespace Wt;
 
 
-DrfChart::DrfChart( WContainerWidget *parent )
-: WContainerWidget( parent ),
+DrfChart::DrfChart()
+: WContainerWidget(),
   m_detector( nullptr ),
   m_jsgraph( jsRef() + ".chart" )
 {
   addStyleClass( "DrfChart" );
-  setOverflow( Overflow::OverflowHidden );
+  setOverflow( Overflow::Hidden );
   
   // Require JavaScript resources
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
@@ -114,7 +114,7 @@ void DrfChart::defineJavaScript()
 
 void DrfChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
+  const bool renderFull = flags.test( Wt::RenderFlag::Full );
   
   WContainerWidget::render( flags );
   

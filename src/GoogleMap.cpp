@@ -32,15 +32,15 @@
 #include <stdexcept>
 #include <exception>
 
-#include <Wt/WResource>
-#include <Wt/WDateTime>
-#include <Wt/WGoogleMap>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WContainerWidget>
+#include <Wt/WResource.h>
+#include <Wt/WDateTime.h>
+#include <Wt/WGoogleMap.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/GoogleMap.h"
@@ -78,8 +78,8 @@ void wasClicked( const Wt::WGoogleMap::Coordinate &coord,
 class SrbGoogleMap: public Wt::WGoogleMap
 {
 public:
-  SrbGoogleMap(  const bool trackMapExtent, WContainerWidget *parent = 0) :
-    WGoogleMap( WGoogleMap::Version3, parent ),
+  SrbGoogleMap( const bool trackMapExtent ) :
+    WGoogleMap( WGoogleMap::Version3 ),
     m_center( 37.675821, -121.709863 ),  //wcjohns office
     m_dontUseSandiaKey( false ),
     m_trackMapExtent( trackMapExtent )
@@ -448,8 +448,8 @@ public:
 
 
 
-GoogleMap::GoogleMap( const bool trackMapExtent, Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+GoogleMap::GoogleMap( const bool trackMapExtent )
+  : WContainerWidget(),
     m_map( 0 ),
     m_trackMapExtent( trackMapExtent ),
     m_clicked( this )
@@ -468,25 +468,23 @@ void GoogleMap::init()
   wApp->useStyleSheet( "InterSpec_resources/GoogleMap.css" );
   
   addStyleClass( "GoogleMapDiv" );
-  m_map = new SrbGoogleMap( m_trackMapExtent );
-  
-  WGridLayout *layout = new WGridLayout();
+
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
-  setLayout( layout );
-  
-  layout->addWidget( m_map, 0, 0 );
-  m_map->clicked().connect( boost::bind( &wasClicked,
-                                        boost::placeholders::_1, boost::ref(m_clicked) ) );
+
+  m_map = layout->addWidget( std::make_unique<SrbGoogleMap>( m_trackMapExtent ), 0, 0 );
+  m_map->clicked().connect( [this]( const Wt::WGoogleMap::Coordinate &coord ){
+    wasClicked( coord, m_clicked );
+  } );
 
   m_mapExtents[0] = m_mapExtents[1] = m_mapExtents[2] = m_mapExtents[3] = -999.9f;
   if( !!m_map->m_mapGpsExtentFound )
-    m_map->m_mapGpsExtentFound->connect( boost::bind(&GoogleMap::updateMapGpsCoords, this,
-                                                     boost::placeholders::_1,
-                                                     boost::placeholders::_2,
-                                                     boost::placeholders::_3,
-                                                     boost::placeholders::_4 ) );
+    m_map->m_mapGpsExtentFound->connect( [this]( const double a, const double b,
+                                                 const double c, const double d ){
+      updateMapGpsCoords( a, b, c, d );
+    } );
 }//void init()
 
 void GoogleMap::updateMapGpsCoords( const double upperLat, const double leftLng,

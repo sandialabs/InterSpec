@@ -28,7 +28,7 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WApplication>
+#include <Wt/WApplication.h>
 
 namespace Wt
 {

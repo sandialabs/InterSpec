@@ -32,38 +32,38 @@
 #include <exception>
 #include <sys/stat.h>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
-#include <Wt/WPen>
-#include <Wt/WText>
-#include <Wt/WDate>
-#include <Wt/WTable>
-#include <Wt/WLabel>
-#include <Wt/WRectF>
-#include <Wt/WLength>
-#include <Wt/WSlider>
-#include <Wt/WAnchor>
-#include <Wt/WDialog>
-#include <Wt/WServer>
-#include <Wt/WPainter>
-#include <Wt/WSpinBox>
-#include <Wt/WDateEdit>
-#include <Wt/WCheckBox>
-#include <Wt/WGroupBox>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WResource>
-#include <Wt/WTabWidget>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WPaintDevice>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WStackedWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/WRegExpValidator>
-#include <Wt/WStandardItemModel>
-#include <Wt/Chart/WCartesianChart>
+#include <Wt/WPen.h>
+#include <Wt/WText.h>
+#include <Wt/WDate.h>
+#include <Wt/WTable.h>
+#include <Wt/WLabel.h>
+#include <Wt/WRectF.h>
+#include <Wt/WLength.h>
+#include <Wt/WSlider.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WDialog.h>
+#include <Wt/WServer.h>
+#include <Wt/WPainter.h>
+#include <Wt/WSpinBox.h>
+#include <Wt/WDateEdit.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WResource.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WPaintDevice.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WStandardItemModel.h>
+#include <Wt/Chart/WCartesianChart.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -119,8 +119,8 @@ class DecayActivityModel : public Wt::WStandardItemModel
 #endif
   
 public:
-  DecayActivityModel( Wt::WObject *parent = 0 )
-    : Wt::WStandardItemModel( parent ),
+  DecayActivityModel()
+    : Wt::WStandardItemModel(),
       m_max_activity( 0.0 )
   {
   }
@@ -129,18 +129,18 @@ public:
   {
   }
   
-  virtual boost::any data( const Wt::WModelIndex &index,
-                          int role = Wt::DisplayRole ) const
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
+                          Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const
   {
     if( index.column() == 0 )
       return WStandardItemModel::data( index, role );
     
-    boost::any show = headerData( index.column(), Wt::Horizontal, Wt::UserRole );
+    Wt::cpp17::any show = headerData( index.column(), Wt::Orientation::Horizontal, Wt::ItemDataRole::User );
     try
     {
-      const bool doShow = boost::any_cast<bool>( show );
+      const bool doShow = Wt::cpp17::any_cast<bool>( show );
       if( !doShow )
-        return boost::any();
+        return Wt::cpp17::any();
     }catch( std::exception &e )
     {
       cerr << "DecayActivityModel::data(...) unexpectedly caught: " << e.what()
@@ -149,10 +149,10 @@ public:
     }//try / catch
     
 #if( WT_VERSION > 0x3040000 )
-    if( role == Wt::DisplayRole )
+    if( role == Wt::ItemDataRole::Display )
     {
-      boost::any val = WStandardItemModel::data( index, role );
-      if( val.empty() )
+      Wt::cpp17::any val = WStandardItemModel::data( index, role );
+      if( !val.has_value() )
         return val;
       
       const double valdbl = asNumber(val);
@@ -161,10 +161,10 @@ public:
       
       // 0.00001 chosen arbitrarily, but values this small wont show up as non-zero on the chart
       if( valdbl < 0.00001*m_max_activity )
-        return boost::any( 0.0 );
+        return Wt::cpp17::any( 0.0 );
       
       return val;
-    }//if( role == Wt::DisplayRole )
+    }//if( role == Wt::ItemDataRole::Display )
 #endif
     
     
@@ -173,17 +173,17 @@ public:
   
   void setNuclide( int colum, const std::string nuc )
   {
-    setHeaderData( colum, Wt::Horizontal, boost::any(nuc), Wt::UserRole+1 );
+    setHeaderData( colum, Wt::Orientation::Horizontal, Wt::cpp17::any(nuc), Wt::ItemDataRole( Wt::ItemDataRole::User + 1 ) );
   }
   
   std::string nuclide( int colum )
   {
     if( colum <= 0 || colum >= columnCount() )
       return "";
-    boost::any val = headerData( colum, Wt::Horizontal, Wt::UserRole+1 );
+    Wt::cpp17::any val = headerData( colum, Wt::Orientation::Horizontal, Wt::ItemDataRole::User+1 );
     try
     {
-      return boost::any_cast<std::string>( val );
+      return Wt::cpp17::any_cast<std::string>( val );
     }catch(...)
     {}
     
@@ -195,10 +195,10 @@ public:
     if( colum <= 0 || colum >= columnCount() )
       return true;
     
-    boost::any val = headerData( colum, Wt::Horizontal, Wt::UserRole );
+    Wt::cpp17::any val = headerData( colum, Wt::Orientation::Horizontal, Wt::ItemDataRole::User );
     try
     {
-      return boost::any_cast<bool>( val );
+      return Wt::cpp17::any_cast<bool>( val );
     }catch(...)
     {}
     
@@ -217,8 +217,8 @@ public:
         if( !showSeries( col ) )
           continue;
         
-        boost::any val = WStandardItemModel::data( index(row, col) );
-        if( val.empty() )
+        Wt::cpp17::any val = WStandardItemModel::data( index(row, col) );
+        if( !val.has_value() )
           continue;
         
         const double valdbl = asNumber(val);
@@ -240,7 +240,7 @@ public:
     if( colum < 1 || colum >= columnCount() )
       return;
     
-    setHeaderData( colum, Wt::Horizontal, boost::any(show), Wt::UserRole );
+    setHeaderData( colum, Wt::Orientation::Horizontal, Wt::cpp17::any(show), Wt::ItemDataRole::User );
     
 #if( WT_VERSION > 0x3040000 )
     updateMaxActivity();
@@ -267,8 +267,8 @@ protected:
   WPen m_textPen;
   
 public:
-  DecayActivityChart(  Wt::WContainerWidget *parent = NULL  )
-  : Wt::Chart::WCartesianChart( parent ),
+  DecayActivityChart()
+  : Wt::Chart::WCartesianChart(),
     m_widthInPixels(250),
     m_heightInPixels(250),
     m_phone( false )
@@ -311,7 +311,7 @@ public:
       
       if( theme->spectrumChartText.isDefault() )
       {
-        m_textPen = WPen( WColor(GlobalColor::black) );
+        m_textPen = WPen( WColor(Wt::StandardColor::Black) );
       }else
       {
         m_textPen = WPen(theme->spectrumChartText);
@@ -320,12 +320,12 @@ public:
       
       if( theme->spectrumAxisLines.isDefault() )
       {
-        axis(Chart::XAxis).setPen( WPen(GlobalColor::black) );
-        axis(Chart::YAxis).setPen( WPen(GlobalColor::black) );
+        axis(Chart::Axis::X).setPen( WPen(Wt::StandardColor::Black) );
+        axis(Chart::Axis::Y).setPen( WPen(Wt::StandardColor::Black) );
       }else
       {
-        axis(Chart::XAxis).setPen( WPen(theme->spectrumAxisLines) );
-        axis(Chart::YAxis).setPen( WPen(theme->spectrumAxisLines) );
+        axis(Chart::Axis::X).setPen( WPen(theme->spectrumAxisLines) );
+        axis(Chart::Axis::Y).setPen( WPen(theme->spectrumAxisLines) );
       }
       
       if( theme->spectrumChartMargins.isDefault() )
@@ -334,7 +334,7 @@ public:
         m_chartMarginBrush = WBrush(theme->spectrumChartMargins);
       
       if( theme->spectrumChartBackground.isDefault() )
-        setBackground( Wt::NoBrush );
+        setBackground( Wt::WBrush() );
       else
         setBackground( WBrush(theme->spectrumChartBackground) );
     }
@@ -345,7 +345,7 @@ public:
   {
     m_xAxisTitle = xtitle;
     if( !m_phone )
-      axis(Chart::XAxis).setTitle( xtitle );
+      axis(Chart::Axis::X).setTitle( xtitle );
   }
   
   int paintedWidth() const { return static_cast<int>(m_widthInPixels); }
@@ -353,8 +353,8 @@ public:
   
   void showGridLines( const bool draw = true )
   {
-    Chart::WCartesianChart::axis(Chart::XAxis).setGridLinesEnabled( draw );
-    Chart::WCartesianChart::axis(Chart::YAxis).setGridLinesEnabled( draw );
+    Chart::WCartesianChart::axis(Chart::Axis::X).setGridLinesEnabled( draw );
+    Chart::WCartesianChart::axis(Chart::Axis::Y).setGridLinesEnabled( draw );
   }//void showGridLines( const bool draw )
   
   virtual void paintEvent( Wt::WPaintDevice *paintDevice )
@@ -375,12 +375,12 @@ public:
     painter.rotate( -90 );
     painter.setPen( m_textPen );
     painter.setBrush( WBrush() );
-    const std::string ytitle = axis(Chart::YAxis).title().toUTF8();
+    const std::string ytitle = axis(Chart::Axis::Y).title().toUTF8();
     if( ytitle != "" )
     {
       const double height = painter.window().height();
       painter.drawText( -0.45*height, 0.0, 0.2, 0.1,
-                       AlignCenter, axis(Chart::YAxis).title() );
+                       Wt::AlignmentFlag::Center, axis(Chart::Axis::Y).title() );
     }//if( ytitle != "" )
     
     painter.restore();
@@ -394,7 +394,7 @@ public:
       //  since we arent manually drawing x-axis labels (Wt is doing it), we
       //  dont know if we
       const double w = 7*m_xAxisTitle.size();
-      const double x = width - w - 5 - plotAreaPadding(Wt::Right);
+      const double x = width - w - 5 - plotAreaPadding(Wt::Side::Right);
       const double y = height-15;
       WBrush fillbrush = background();
       if( fillbrush.color().isDefault() )
@@ -402,7 +402,7 @@ public:
       
       painter.fillRect( x-5, y-2.5, w+12, 17, fillbrush );
       painter.setPen( m_textPen );
-      painter.drawText( x, y, w, 12, AlignMiddle, m_xAxisTitle );
+      painter.drawText( x, y, w, 12, Wt::AlignmentFlag::Middle, m_xAxisTitle );
     }//if( m_phone )
     
     
@@ -421,13 +421,13 @@ public:
         h = static_cast<int>( rectangle.height() );
       }
       
-      const int padLeft = plotAreaPadding(Left);
-      const int padRight = plotAreaPadding(Right);
-      const int padTop = plotAreaPadding(Top);
-      const int padBottom = plotAreaPadding(Bottom);
+      const int padLeft = plotAreaPadding(Wt::Side::Left);
+      const int padRight = plotAreaPadding(Wt::Side::Right);
+      const int padTop = plotAreaPadding(Wt::Side::Top);
+      const int padBottom = plotAreaPadding(Wt::Side::Bottom);
       
       WRectF area;
-      if( orientation() == Vertical )
+      if( orientation() == Wt::Orientation::Vertical )
         area = WRectF( padLeft, padTop, std::max(10, w - padLeft - padRight), std::max(10, h - padTop - padBottom) );
       else
         area = WRectF( padTop, padRight, std::max(10, w - padTop - padBottom), std::max(10, h - padRight - padLeft) );
@@ -451,14 +451,14 @@ public:
         painter.fillRect( hv(WRectF(rx+rw,0,rectangle.width()-rw-rx,rectangle.height())), m_chartMarginBrush );
     };
     
-    if( background().style() != NoBrush && m_chartMarginBrush.style() != NoBrush )
+    if( background().style() != Wt::BrushStyle::None && m_chartMarginBrush.style() != Wt::BrushStyle::None )
     {
       paintMargins();
       painter.fillRect( hv(plotArea()), background() );
-    }else if( background().style() != NoBrush )
+    }else if( background().style() != Wt::BrushStyle::None )
     {
       painter.fillRect( hv(rectangle), background() );
-    }else if( m_chartMarginBrush.style() != NoBrush )
+    }else if( m_chartMarginBrush.style() != Wt::BrushStyle::None )
     {
       paintMargins();
     }
@@ -481,8 +481,8 @@ class DateLengthCalculator : public WContainerWidget
   
   
   public:
-  DateLengthCalculator( DecayActivityDiv *activityDiv, WContainerWidget *parent )
-   : WContainerWidget( parent ),
+  DateLengthCalculator( DecayActivityDiv *activityDiv )
+   : WContainerWidget(),
      m_activityDiv( activityDiv ),
      m_layout( NULL ),
      m_begindate( NULL ),
@@ -500,12 +500,11 @@ class DateLengthCalculator : public WContainerWidget
       ndaysBack = (int)floor(0.5 + currentDur / PhysicalUnits::day);
     
     
-    m_layout = new WGridLayout( this );
-    
-    WLabel *label = new WLabel( "Initial Date" );
-    m_layout->addWidget( label, 0, 0, AlignMiddle );
-    
-    m_begindate = new WDateEdit();
+    m_layout = setLayout( make_unique<WGridLayout>() );
+
+    WLabel *label = m_layout->addWidget( make_unique<WLabel>( "Initial Date" ), 0, 0, Wt::AlignmentFlag::Middle );
+
+    m_begindate = m_layout->addWidget( make_unique<WDateEdit>(), 0, 1, 1, 2, Wt::AlignmentFlag::Left );
     label->setBuddy( m_begindate );
     m_begindate->setFormat( "MM/dd/yyyy" );
     m_begindate->setPlaceholderText( "mm/dd/yyy" );
@@ -515,54 +514,46 @@ class DateLengthCalculator : public WContainerWidget
     }catch(...)
     {
     }
-    
-    m_layout->addWidget( m_begindate, 0, 1, 1, 2, AlignLeft );
-    
-    label = new WLabel( "End Date" );
-    m_layout->addWidget( label, 1, 0, AlignMiddle );
-    m_enddate = new WDateEdit();
+
+    label = m_layout->addWidget( make_unique<WLabel>( "End Date" ), 1, 0, Wt::AlignmentFlag::Middle );
+    m_enddate = m_layout->addWidget( make_unique<WDateEdit>(), 1, 1, 1, 2, Wt::AlignmentFlag::Left );
     label->setBuddy( m_enddate );
     m_enddate->setFormat( "MM/dd/yyyy" );
     m_enddate->setPlaceholderText( "mm/dd/yyy" );
     // \TODO: consider setting to current foreground spectrum date
     m_enddate->setDate( Wt::WDate::currentServerDate() );
-    m_layout->addWidget( m_enddate, 1, 1, 1, 2, AlignLeft );
-    
+
     m_begindate->changed().connect( this, &DateLengthCalculator::dateChanged );
     m_enddate->changed().connect( this, &DateLengthCalculator::dateChanged );
-    
-    label = new WLabel( "Time Span" );
-    m_layout->addWidget( label, 2, 0, AlignMiddle );
-    
-    m_duration = new WLineEdit();
-    
+
+    label = m_layout->addWidget( make_unique<WLabel>( "Time Span" ), 2, 0, Wt::AlignmentFlag::Middle );
+
+    m_duration = m_layout->addWidget( make_unique<WLineEdit>(), 2, 1, Wt::AlignmentFlag::Left );
+
     m_duration->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_duration->setAttributeValue( "autocorrect", "off" );
     m_duration->setAttributeValue( "spellcheck", "off" );
 #endif
     label->setBuddy( m_duration );
-    
-    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalPosOrNegRegex(), m_duration );
-    validator->setFlags(Wt::MatchCaseInsensitive);
-    m_duration->setValidator(validator);
+
+    auto validator = make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalPosOrNegRegex() );
+    validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+    m_duration->setValidator( validator );
     m_duration->changed().connect( this, &DateLengthCalculator::durationChanged );
     m_duration->enterPressed().connect( this, &DateLengthCalculator::durationChanged );
-    m_layout->addWidget( m_duration, 2, 1, AlignLeft );
     
     //m_updateParent = new WPushButton( "Update Chart");
     //m_updateParent->clicked().connect( this, &DateLengthCalculator::pushCurrentToParent );
-    //m_layout->addWidget( m_updateParent, 2, 2, AlignCenter );
-    m_layout->addWidget( new WContainerWidget(), 2, 2, AlignCenter );
-    
-    m_error = new WText( "" );
+    //m_layout->addWidget( m_updateParent, 2, 2, Wt::AlignmentFlag::Center );
+    m_layout->addWidget( make_unique<WContainerWidget>(), 2, 2, Wt::AlignmentFlag::Center );
+
+    m_error = m_layout->addWidget( make_unique<WText>( "" ), 3, 0, 1, 3 );
     m_error->setInline( false );
     m_error->hide();
-    m_layout->addWidget( m_error, 3, 0, 1, 3 );
-    
-    m_info = new WContainerWidget( this );
+
+    m_info = m_layout->addWidget( make_unique<WContainerWidget>(), 4, 0, 1, 3 );
     m_info->hide();
-    m_layout->addWidget( m_info, 4, 0, 1, 3 );
     
     m_layout->setRowStretch( 3, 1 );
     m_layout->setRowStretch( 4, 1 );
@@ -593,8 +584,8 @@ class DateLengthCalculator : public WContainerWidget
     try
     {
       const std::string durtxt = m_duration->text().toUTF8();
-      const bool validBeginDate = (m_begindate->validate() == Wt::WValidator::Valid);
-      const bool validEndDate = (m_enddate->validate() == Wt::WValidator::Valid);
+      const bool validBeginDate = (m_begindate->validate() == Wt::ValidationState::Valid);
+      const bool validEndDate = (m_enddate->validate() == Wt::ValidationState::Valid);
       bool duration_valid = false;
       double duration = 0.0;
       try
@@ -865,37 +856,37 @@ class DateLengthCalculator : public WContainerWidget
       }//if (!nucinfo.activityStr.empty())
 
 
-      WTable *nuctbl = new WTable( m_info );
+      WTable *nuctbl = m_info->addNew<WTable>();
       nuctbl->setMargin( 10, Wt::Side::Top );
-      
+
       WTableCell *cell = nullptr;
-      
+
       const bool showNucHeader = (nucs.size() > 1);
       const int rowOffset = showNucHeader ? 1 : 0;
-      
+
       if( showNucHeader )
       {
         nuctbl->setHeaderCount( 1 );
         cell = nuctbl->elementAt(0, 0);
-        new WLabel( "For " + nuc->symbol + ":", cell );
+        cell->addNew<WLabel>( "For " + nuc->symbol + ":" );
         cell->setColumnSpan( 2 );
         cell->setAttributeValue( "style", "text-align: left;" + cell->attributeValue("style") );
       }//if( showNucHeader )
-      
+
       cell = nuctbl->elementAt(1 + rowOffset, 0);
-      cell->setVerticalAlignment( AlignmentFlag::AlignMiddle );
-      new WLabel( ((timeSpan < 0.0) ? "Final Activity&nbsp;" : "Initial Activity&nbsp;"), cell );
-      
+      cell->setVerticalAlignment( Wt::AlignmentFlag::Middle );
+      cell->addNew<WLabel>( ((timeSpan < 0.0) ? "Final Activity&nbsp;" : "Initial Activity&nbsp;") );
+
       cell = nuctbl->elementAt(1 + rowOffset, 1);
-      WLineEdit *activityEdit = new WLineEdit(cell);
+      WLineEdit *activityEdit = cell->addNew<WLineEdit>();
       activityEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
       activityEdit->setAttributeValue( "autocorrect", "off" );
       activityEdit->setAttributeValue( "spellcheck", "off" );
 #endif
       
-      WRegExpValidator *actvalidator = new WRegExpValidator( PhysicalUnits::sm_activityRegex, activityEdit );
-      actvalidator->setFlags(Wt::MatchCaseInsensitive);
+      auto actvalidator = make_shared<WRegExpValidator>( PhysicalUnits::sm_activityRegex );
+      actvalidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
       activityEdit->setValidator( actvalidator );
       activityEdit->setTextSize( 10 );
       activityEdit->setText( actTxt );
@@ -953,19 +944,19 @@ class DateLengthCalculator : public WContainerWidget
       
       const string ageTxt = PhysicalUnitsLocalized::printToBestTimeUnits( nucinfo.age );
       cell = nuctbl->elementAt(2 + rowOffset, 0);
-      cell->setVerticalAlignment( AlignmentFlag::AlignMiddle );
-      new WLabel( "Initial Age&nbsp;", cell );
-      
+      cell->setVerticalAlignment( Wt::AlignmentFlag::Middle );
+      cell->addNew<WLabel>( "Initial Age&nbsp;" );
+
       cell = nuctbl->elementAt(2 + rowOffset, 1);
-      WLineEdit *ageEdit = new WLineEdit(cell);
+      WLineEdit *ageEdit = cell->addNew<WLineEdit>();
       ageEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
       ageEdit->setAttributeValue( "autocorrect", "off" );
       ageEdit->setAttributeValue( "spellcheck", "off" );
 #endif
 
-      WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), ageEdit );
-      agevalidator->setFlags(Wt::MatchCaseInsensitive);
+      auto agevalidator = make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationRegex() );
+      agevalidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
       ageEdit->setValidator( agevalidator );
       ageEdit->setTextSize( 10 );
       ageEdit->setText( ageTxt );
@@ -1028,17 +1019,17 @@ class DateLengthCalculator : public WContainerWidget
     
     if( timeSpan < 0.0 )
     {
-      WText *line = new WText( "&nbsp;", m_info );
+      WText *line = m_info->addNew<WText>( "&nbsp;" );
       line->setInline( false );
-      line = new WText( "Before " + durationTxt + ":", m_info );
+      line = m_info->addNew<WText>( "Before " + durationTxt + ":" );
       line->setInline( false );
-      
-      WTable *beforeTable = new WTable( m_info );
+
+      WTable *beforeTable = m_info->addNew<WTable>();
       beforeTable->addStyleClass( "BeforeDecayNucInfoTable DecayedNucInfoTable" );
-      beforeTable->setHeaderCount( 1, Wt::Horizontal );
-      beforeTable->elementAt(0, 0)->addWidget( new WLabel("Nuclide") );
-      beforeTable->elementAt(0, 1)->addWidget( new WLabel("Activity") );
-      beforeTable->elementAt(0, 2)->addWidget( new WLabel("Mass") );
+      beforeTable->setHeaderCount( 1, Wt::Orientation::Horizontal );
+      beforeTable->elementAt(0, 0)->addNew<WLabel>( "Nuclide" );
+      beforeTable->elementAt(0, 1)->addNew<WLabel>( "Activity" );
+      beforeTable->elementAt(0, 2)->addNew<WLabel>( "Mass" );
       
       const vector<SandiaDecay::NuclideActivityPair> activities = mix->activity( 0.0 );
       const vector<SandiaDecay::NuclideNumAtomsPair> numatoms = mix->numAtoms( 0.0 );
@@ -1065,10 +1056,10 @@ class DateLengthCalculator : public WContainerWidget
         //Figure out if user inputed activity in Ci or Bq for this nuclide
         const bool useCuries = checkUseCuries( nap );
         
-        beforeTable->elementAt(static_cast<int>(row_num),0)->addWidget( new WText(nap.nuclide->symbol) );
-        
+        beforeTable->elementAt(static_cast<int>(row_num),0)->addNew<WText>( nap.nuclide->symbol );
+
         const string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, 3, useCuries, SandiaDecay::becquerel );
-        beforeTable->elementAt(static_cast<int>(row_num),1)->addWidget( new WText(actstr) );
+        beforeTable->elementAt(static_cast<int>(row_num),1)->addNew<WText>( actstr );
         
         const SandiaDecay::NuclideNumAtomsPair *natomp = NULL;
         for( size_t a = 0; !natomp && a < numatoms.size(); ++a )
@@ -1080,25 +1071,25 @@ class DateLengthCalculator : public WContainerWidget
           const double num_atoms_in_gram = nap.nuclide->atomsPerGram();
           const double ngrams = natomp->numAtoms / num_atoms_in_gram;
           const string massstr = PhysicalUnits::printToBestMassUnits( ngrams*PhysicalUnits::gram );
-          beforeTable->elementAt(static_cast<int>(row_num),2)->addWidget( new WText(massstr) );
+          beforeTable->elementAt(static_cast<int>(row_num),2)->addNew<WText>( massstr );
         }
       }//for( size_t i = 0; i < activities.size(); ++i )
     }//if( timeSpan < 0.0 )
     
     
     {
-      WText *line = new WText( "&nbsp;", m_info );
+      WText *line = m_info->addNew<WText>( "&nbsp;" );
       line->setInline( false );
-      line = new WText( "After " + durationTxt + ":", m_info );
+      line = m_info->addNew<WText>( "After " + durationTxt + ":" );
       line->setInline( false );
     }
-    
-    WTable *infotable = new WTable( m_info );
+
+    WTable *infotable = m_info->addNew<WTable>();
     infotable->addStyleClass( "DecayedNucInfoTable" );
-    infotable->setHeaderCount( 1, Wt::Horizontal );
-    infotable->elementAt(0, 0)->addWidget( new WLabel("Nuclide") );
-    infotable->elementAt(0, 1)->addWidget( new WLabel("Activity") );
-    infotable->elementAt(0, 2)->addWidget( new WLabel("Mass") );
+    infotable->setHeaderCount( 1, Wt::Orientation::Horizontal );
+    infotable->elementAt(0, 0)->addNew<WLabel>( "Nuclide" );
+    infotable->elementAt(0, 1)->addNew<WLabel>( "Activity" );
+    infotable->elementAt(0, 2)->addNew<WLabel>( "Mass" );
     
     //infotable->elementAt(0, 3)->addWidget( new WLabel("Gammas/s") );  //could have mouseover showing intensity of each energy
     //infotable->elementAt(0, 4)->addWidget( new WLabel("Mass Frac") );
@@ -1123,12 +1114,12 @@ class DateLengthCalculator : public WContainerWidget
       //Figure out if user inputed activity in Ci or Bq for this nuclide
       const bool useCuries = checkUseCuries( nap );
       
-      infotable->elementAt(row_num,0)->addWidget( new WText(nap.nuclide->symbol) );
-      
+      infotable->elementAt(row_num,0)->addNew<WText>( nap.nuclide->symbol );
+
       string actstr = PhysicalUnits::printToBestActivityUnits( nap.activity, maxDecimal, useCuries );
       if( IsInf(nap.nuclide->halfLife) )
         actstr = "stable";
-      infotable->elementAt(row_num,1)->addWidget( new WText(actstr) );
+      infotable->elementAt(row_num,1)->addNew<WText>( actstr );
       
       
       const SandiaDecay::NuclideNumAtomsPair *natomp = NULL;
@@ -1141,7 +1132,7 @@ class DateLengthCalculator : public WContainerWidget
         const double num_atoms_in_gram = nap.nuclide->atomsPerGram();
         const double ngrams = natomp->numAtoms / num_atoms_in_gram;
         const string massstr = PhysicalUnits::printToBestMassUnits( ngrams*PhysicalUnits::gram, maxDecimal);
-        infotable->elementAt(static_cast<int>(row_num),2)->addWidget( new WText(massstr) );
+        infotable->elementAt(static_cast<int>(row_num),2)->addNew<WText>( massstr );
       }
       
       row_num += 1;
@@ -1212,16 +1203,16 @@ namespace
   {
   public:
     ChartAndLegendHolder( DecayActivityChart *chart, WContainerWidget *legend,
-                          const bool isPhone, WContainerWidget *parent = 0 )
-    : WContainerWidget( parent ),
+                          const bool isPhone )
+    : WContainerWidget(),
       m_chart( chart ),
       m_legend( legend )
     {
       const string chartref = "$('#" + m_chart->id() + "').get(0)";
       const string legref = "$('#" + legend->id() + "')";
       
-      addWidget( m_chart );
-      addWidget( m_legend );
+      m_chart = addWidget( unique_ptr<DecayActivityChart>(chart) );
+      m_legend = addWidget( unique_ptr<WContainerWidget>(legend) );
       
       const string extraheight = isPhone ? "20" : "100";
       
@@ -1253,7 +1244,7 @@ namespace
     //      or maybe with CsvDownloadGui
   public:
     DecayCsvResource( DecayActivityDiv *display )
-      : WResource( display ),
+      : WResource(),
         m_display( display ),
         m_numRows( 400 ),
         m_timeSpan( 0 ),
@@ -1273,7 +1264,7 @@ namespace
       //  get called if the DecayActivityDiv has been deleted
       //  (I'm a little adverse to relying on a 'modal' user effect to enforce
       //   object lifetimes)
-      m_cleanup = wApp->bind( boost::bind( &DecayActivityDiv::deleteCsvDownloadGuiTriggerUpdate, m_display ) );
+      m_cleanup = [this](){ m_display->deleteCsvDownloadGuiTriggerUpdate(); };
     }
     
     virtual ~DecayCsvResource()
@@ -1366,7 +1357,7 @@ namespace
         
         name += "_over_" + remove_space_copy(timestr) + ".csv";
   
-        suggestFileName( name, WResource::Attachment );
+        suggestFileName( name, ContentDisposition::Attachment );
         response.setMimeType( "text/csv" );
       
         //const bool mutliple_types = (int(m_activity) + int(m_xrays) + int(m_gammas) + int(m_alphas) + int(m_betas)) > 1;
@@ -1458,7 +1449,7 @@ namespace
         }//for( int row = 0; row < nrow; ++row )
       }catch( std::exception &e )
       {
-        suggestFileName( "no_data.csv", WResource::Attachment );
+        suggestFileName( "no_data.csv", ContentDisposition::Attachment );
         response.out() << eol_char << e.what() << eol_char;
       }
       
@@ -1475,7 +1466,7 @@ namespace
     bool m_betas;
     std::string m_sessionId;
     Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
-    boost::function<void()> m_cleanup;
+    std::function<void()> m_cleanup;
   };//class DecayCsvResource : public Wt::WResource
 }//namespace
 
@@ -1502,7 +1493,7 @@ public:
     setResizable( false );
     finished().connect( m_parent, &DecayActivityDiv::deleteCsvDownloadGui );
     
-    m_csvResouce = new DecayCsvResource( parent );
+    m_csvResouce = addChild( make_unique<DecayCsvResource>( parent ) );
     
     const double displayTime = parent->timeToDisplayTill();
     const string timeSpanStr = PhysicalUnitsLocalized::printToBestTimeUnits( displayTime );
@@ -1515,17 +1506,17 @@ public:
     m_csvResouce->setGiveAlphas( false );
     m_csvResouce->setGiveBetas( false );
     
-    WTable *table = new WTable( contents() );
-    
+    WTable *table = contents()->addNew<WTable>();
+
     WTableCell *el = table->elementAt(0,0);
-    table->setMargin( 8, Wt::Top | Wt::Left | Wt::Right );
-    WLabel *label = new WLabel( "Time Span:", el );
+    table->setMargin( 8, Wt::Side::Top | Wt::Side::Left | Wt::Side::Right );
+    WLabel *label = el->addNew<WLabel>( "Time Span:" );
     label->addStyleClass( "DecayChartTimeSpanLabel" );
-    el->setVerticalAlignment( Wt::AlignMiddle );
-    label->setMargin( 2, Wt::Right );
-    
+    el->setVerticalAlignment( Wt::AlignmentFlag::Middle );
+    label->setMargin( 2, Wt::Side::Right );
+
     el = table->elementAt(0,1);
-    m_ageEdit = new WLineEdit( timeSpanStr, el );
+    m_ageEdit = el->addNew<WLineEdit>( timeSpanStr );
     m_ageEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_ageEdit->setAttributeValue( "autocorrect", "off" );
@@ -1538,20 +1529,20 @@ public:
                        " '3.2 halflife' for multiples of the first parent"
                        " nuclides half life.");
     label->setBuddy( m_ageEdit );
-    WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
-    validator->setFlags( Wt::MatchCaseInsensitive );
-    m_ageEdit->setValidator(validator);
+    auto validator = make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+    validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+    m_ageEdit->setValidator( validator );
     m_ageEdit->changed().connect( this, &CsvDownloadGui::updateTimeSpan );
     m_ageEdit->blurred().connect( this, &CsvDownloadGui::updateTimeSpan );
     m_ageEdit->enterPressed().connect( this, &CsvDownloadGui::updateTimeSpan );
     
     el = table->elementAt(0,2);
-    label = new WLabel( "Num Rows", el );
-    el->setVerticalAlignment( Wt::AlignMiddle );
-    label->setMargin( 20, Wt::Left );
-    label->setMargin( 2, Wt::Right );
+    label = el->addNew<WLabel>( "Num Rows" );
+    el->setVerticalAlignment( Wt::AlignmentFlag::Middle );
+    label->setMargin( 20, Wt::Side::Left );
+    label->setMargin( 2, Wt::Side::Right );
     el = table->elementAt(0,3);
-    WSpinBox *numPointsSB = new WSpinBox( el );
+    WSpinBox *numPointsSB = el->addNew<WSpinBox>();
     label->setBuddy( numPointsSB );
     label->setToolTip( "Number of time points (rows) to include data for." );
     numPointsSB->setValue( 400 );
@@ -1559,65 +1550,66 @@ public:
     numPointsSB->setMaximum( 10000 );
     numPointsSB->valueChanged().connect( m_csvResouce, &DecayCsvResource::setNumberRows );
     
-    table = new WTable( contents() );
+    table = contents()->addNew<WTable>();
     table->setMargin( 8 );
     el = table->elementAt(0,0);
-    new WLabel( "Include:", el );
-    
+    el->addNew<WLabel>( "Include:" );
+
     el = table->elementAt(0,1);
-    WCheckBox *cb = new WCheckBox( "act.", el );
-    cb->setMargin( 5, Wt::Left );
+    WCheckBox *cb = el->addNew<WCheckBox>( "act." );
+    cb->setMargin( 5, Wt::Side::Left );
     cb->setChecked( true );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( boost::bind( &DecayCsvResource::setGiveActivities, m_csvResouce, true ) );
-    cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveActivities, m_csvResouce, false ) );
-    
+    cb->checked().connect( [this](){ m_csvResouce->setGiveActivities( true ); } );
+    cb->unChecked().connect( [this](){ m_csvResouce->setGiveActivities( false ); } );
+
     el = table->elementAt(0,2);
-    cb = new WCheckBox( "xrays", el );
-    cb->setMargin( 5, Wt::Left );
+    cb = el->addNew<WCheckBox>( "xrays" );
+    cb->setMargin( 5, Wt::Side::Left );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( boost::bind( &DecayCsvResource::setGiveXrays, m_csvResouce, true ) );
-    cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveXrays, m_csvResouce, false ) );
-    
+    cb->checked().connect( [this](){ m_csvResouce->setGiveXrays( true ); } );
+    cb->unChecked().connect( [this](){ m_csvResouce->setGiveXrays( false ); } );
+
     el = table->elementAt(0,3);
-    cb = new WCheckBox( "gammas", el );
-    cb->setMargin( 5, Wt::Left );
+    cb = el->addNew<WCheckBox>( "gammas" );
+    cb->setMargin( 5, Wt::Side::Left );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( boost::bind( &DecayCsvResource::setGiveGammas, m_csvResouce, true ) );
-    cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveGammas, m_csvResouce, false ) );
-    
+    cb->checked().connect( [this](){ m_csvResouce->setGiveGammas( true ); } );
+    cb->unChecked().connect( [this](){ m_csvResouce->setGiveGammas( false ); } );
+
     el = table->elementAt(0,4);
-    cb = new WCheckBox( "alphas", el );
-    cb->setMargin( 5, Wt::Left );
+    cb = el->addNew<WCheckBox>( "alphas" );
+    cb->setMargin( 5, Wt::Side::Left );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( boost::bind( &DecayCsvResource::setGiveAlphas, m_csvResouce, true ) );
-    cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveAlphas, m_csvResouce, false ) );
-    
+    cb->checked().connect( [this](){ m_csvResouce->setGiveAlphas( true ); } );
+    cb->unChecked().connect( [this](){ m_csvResouce->setGiveAlphas( false ); } );
+
     el = table->elementAt(0,5);
-    cb = new WCheckBox( "betas", el );
-    cb->setMargin( 5, Wt::Left );
+    cb = el->addNew<WCheckBox>( "betas" );
+    cb->setMargin( 5, Wt::Side::Left );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( boost::bind( &DecayCsvResource::setGiveBetas, m_csvResouce, true ) );
-    cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveBetas, m_csvResouce, false ) );
+    cb->checked().connect( [this](){ m_csvResouce->setGiveBetas( true ); } );
+    cb->unChecked().connect( [this](){ m_csvResouce->setGiveBetas( false ); } );
     
     //table = new WTable( footer() );
-    //table->setWidth( WLength(100,WLength::Percentage) );
-    //footer()->setOverflow( WContainerWidget::OverflowHidden );
+    //table->setWidth( WLength(100,WLength::Unit::Percentage) );
+    //footer()->setOverflow( Overflow::Hidden );
     
     //el = table->elementAt( 0, 0 );
     //WPushButton *button = new WPushButton( "Cancel", el );
     //button->setAttributeValue( "style", "margin:auto;display:block;" + button->attributeValue("style") );
     //button->clicked().connect( m_parent, &DecayActivityDiv::deleteCsvDownloadGui );
     
-    WAnchor *csvancor = new WAnchor( footer() );
-    csvancor->setLink( WLink(m_csvResouce) );
-    csvancor->setTarget( TargetNewWindow );
+    WLink csvLink( WLink::Type::Url, m_csvResouce->url() );
+    csvLink.setTarget( Wt::LinkTarget::NewWindow );
+    WAnchor *csvancor = footer()->addNew<WAnchor>();
+    csvancor->setLink( csvLink );
     csvancor->setText( "Export CSV" );
-    csvancor->setPadding( 8, Wt::Top );
-    csvancor->setPadding( 2, Wt::Bottom );
+    csvancor->setPadding( 8, Wt::Side::Top );
+    csvancor->setPadding( 2, Wt::Side::Bottom );
     csvancor->setStyleClass( "ExportCsvLink" );
     footer()->setStyleClass( "modal-footer" );
-    footer()->setContentAlignment( Wt::AlignCenter );
+    footer()->setContentAlignment( Wt::AlignmentFlag::Center );
     
     //button = new WPushButton( "Export CSV", el );
     //button->setAttributeValue( "style", "margin:auto;display:block;" + button->attributeValue("style") );
@@ -1664,8 +1656,8 @@ public:
   
 };//class CsvDownloadGui
 
-DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
+DecayActivityDiv::DecayActivityDiv( InterSpec *viewer )
+: WContainerWidget(),
   m_viewer( viewer ),
   m_nuclides( 0 ),
   m_displayTimeLength( NULL ),
@@ -1706,22 +1698,22 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *par
 
 void DecayActivityDiv::globalKeyPressed( const Wt::WKeyEvent &e )
 {
-  if( (e.key() == Wt::Key_A)
-      && ((e.modifiers() & Wt::ShiftModifier)
-          || (e.modifiers() & Wt::AltModifier)
-          || (e.modifiers() & Wt::ControlModifier)
-          || (e.modifiers() & Wt::MetaModifier))
+  if( (e.key() == Wt::Key::A)
+      && ((e.modifiers().test( Wt::KeyboardModifier::Shift ))
+          || (e.modifiers().test( Wt::KeyboardModifier::Alt ))
+          || (e.modifiers().test( Wt::KeyboardModifier::Control ))
+          || (e.modifiers().test( Wt::KeyboardModifier::Meta )))
      )
   {
     m_nuclideSelectDialog->show();
     m_nuclideSelectDialog->centerWindow();
     m_nuclideSelect->setNuclideSearchToFocus();
-  }else if( (e.key() == Wt::Key_Left) || (e.key() == Wt::Key_Right) )
+  }else if( (e.key() == Wt::Key::Left) || (e.key() == Wt::Key::Right) )
   {
     const int num = m_chartTabWidget->count();
     const int current = m_chartTabWidget->currentIndex();
-    
-    int next = current + ((e.key()==Wt::Key_Left) ? -1 : 1);
+
+    int next = current + ((e.key()==Wt::Key::Left) ? -1 : 1);
     if( next < 0 )
       next = num - 1;
     next = (next % num);
@@ -1749,9 +1741,9 @@ void DecayActivityDiv::init()
   m_displayTimeLength->setAttributeValue( "spellcheck", "off" );
 #endif
   
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_displayTimeLength );
-  validator->setFlags(Wt::MatchCaseInsensitive);
-  m_displayTimeLength->setValidator(validator);
+  auto validator = make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+  validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+  m_displayTimeLength->setValidator( validator );
 
   m_displayActivityUnitsCombo      = new WComboBox();
   m_displayActivityUnitsLabel      = new WLabel( WString::tr(isPhone ? "dad-units-label-phone" : "dad-units-label") );
@@ -1765,12 +1757,12 @@ void DecayActivityDiv::init()
   m_nuclideSelectDialog            = new AuxWindow( WString::tr("dad-sel-nuc-window-title"),
                                     (AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
   
-  m_nuclideSelect                  = new DecaySelectNuclide( isPhone, nullptr, m_nuclideSelectDialog );
+  m_nuclideSelect                  = new DecaySelectNuclide( isPhone, m_nuclideSelectDialog );
   m_decayLegend                    = new WContainerWidget();
 
   m_chartTabWidget                 = new WTabWidget();
   m_decayChart                     = new DecayActivityChart();
-  m_decayModel                     = new DecayActivityModel( this );
+  m_decayModel                     = make_shared<DecayActivityModel>();
 
   //Set elements names so we can style with css
   m_parentNuclidesDiv->addStyleClass( "m_parentNuclidesDiv" );
@@ -1802,18 +1794,17 @@ void DecayActivityDiv::init()
 
   //setup m_parentNuclidesDiv
   m_parentNuclidesDiv->setInline( false );
-  m_parentNuclidesDiv->addWidget( m_createNewNuclideButton );
-  m_parentNuclidesDiv->addWidget( m_nuclidesAddedDiv );
-  m_parentNuclidesDiv->addWidget( m_clearNuclidesButton );
+  m_parentNuclidesDiv->addWidget( unique_ptr<WPushButton>(m_createNewNuclideButton) );
+  m_parentNuclidesDiv->addWidget( unique_ptr<WContainerWidget>(m_nuclidesAddedDiv) );
+  m_parentNuclidesDiv->addWidget( unique_ptr<WPushButton>(m_clearNuclidesButton) );
 
   m_nuclidesAddedDiv->setInline( true );
-  m_nuclideSelectDialog->contents()->addWidget( m_nuclideSelect );
+  m_nuclideSelectDialog->contents()->addWidget( unique_ptr<DecaySelectNuclide>(m_nuclideSelect) );
   if( m_viewer && (m_viewer->renderedHeight() > 100) )
     m_nuclideSelectDialog->setMaximumSize( WLength::Auto, 0.9*m_viewer->renderedHeight() );
   
   m_nuclideSelectDialog->rejectWhenEscapePressed();
-  m_createNewNuclideButton->clicked().connect( boost::bind( &WDialog::show,
-                                                      m_nuclideSelectDialog ) );
+  m_createNewNuclideButton->clicked().connect( [this](){ m_nuclideSelectDialog->show(); } );
   m_createNewNuclideButton->clicked().connect( m_nuclideSelect,
                                    &DecaySelectNuclide::setNuclideSearchToFocus );
   
@@ -1823,44 +1814,40 @@ void DecayActivityDiv::init()
   
   m_nuclideSelectDialog->hide();
   
-  m_nuclideSelect->selected().connect( boost::bind( &DecayActivityDiv::addTheNuclide, this,
-                                                   boost::placeholders::_1 ) );
+  m_nuclideSelect->selected().connect( [this]( const NuclideSelectedInfo &info ){ addTheNuclide( info ); } );
   m_clearNuclidesButton->clicked().connect( this, &DecayActivityDiv::clearAllNuclides );
   m_decayChart->clicked().connect( this, &DecayActivityDiv::decayChartClicked );
 
-  WGridLayout *decayLayout = new WGridLayout();
-  WContainerWidget *decayDiv = new WContainerWidget();
+  auto decayDivOwner = make_unique<WContainerWidget>();
+  WContainerWidget *decayDiv = decayDivOwner.get();
   decayDiv->addStyleClass( "DecayActivityChartDiv" ); /* TODO: Hacked to avoid dealing with color theme for the moment */
   decayDiv->addStyleClass( "decayDiv" );
-  decayDiv->setLayout( decayLayout );
-  
-  ChartAndLegendHolder *chartHolder
-                     = new ChartAndLegendHolder( m_decayChart, m_decayLegend, isPhone );
-  
-  decayLayout->addWidget( chartHolder, 0, 0, 1, 1 );
-  decayLayout->addWidget( displayOptionsDiv, 1, 0, 1, 1 );
+  WGridLayout *decayLayout = decayDiv->setLayout( make_unique<WGridLayout>() );
+
+  ChartAndLegendHolder *chartHolder = decayLayout->addWidget( make_unique<ChartAndLegendHolder>( m_decayChart, m_decayLegend, isPhone ), 0, 0, 1, 1 );
+  decayLayout->addWidget( unique_ptr<WContainerWidget>(displayOptionsDiv), 1, 0, 1, 1 );
   decayLayout->setRowStretch( 0, 5 );
 
   //////////////////
   // Decay Chain
   m_decayChainChart = new DecayChainChart();
-  WGridLayout *decayChainLayout = new WGridLayout();
-  WContainerWidget *decayChainDiv = new WContainerWidget();
+  auto decayChainDivOwner = make_unique<WContainerWidget>();
+  WContainerWidget *decayChainDiv = decayChainDivOwner.get();
   decayChainDiv->setMinimumSize( 300, 350 );
   decayChainDiv->addStyleClass( "decayChainDiv" ); //ToDo: Currently decayChainDiv is hacked to avoid dealing with color theme ish
-  decayChainDiv->setOverflow( WContainerWidget::OverflowAuto );
-  decayChainDiv->setLayout( decayChainLayout );
-  
+  decayChainDiv->setOverflow( Wt::Overflow::Auto );
+  WGridLayout *decayChainLayout = decayChainDiv->setLayout( make_unique<WGridLayout>() );
+
   //decayChainLayout->addWidget(elementTemplate, 0, 0, 1, 1, AlignCenter);
-  decayChainLayout->addWidget( m_decayChainChart, 0, 0, 1, 1 );
+  decayChainLayout->addWidget( unique_ptr<DecayChainChart>(m_decayChainChart), 0, 0, 1, 1 );
   decayChainLayout->setRowStretch( 0, 1 );
 
   //////////////////
   // tab widget
-  const WTabWidget::LoadPolicy loadPolicy = WTabWidget::LazyLoading; //WTabWidget::PreLoading;
-  m_chartTabWidget->addTab( decayDiv, WString::tr("dad-mi-act-chart"), loadPolicy );
+  const Wt::ContentLoading loadPolicy = Wt::ContentLoading::Lazy; //Wt::ContentLoading::Eager;
+  m_chartTabWidget->addTab( move(decayDivOwner), WString::tr("dad-mi-act-chart"), loadPolicy );
 
-  m_chartTabWidget->addTab( decayChainDiv, WString::tr("dad-mi-decay-chain"), loadPolicy );
+  m_chartTabWidget->addTab( move(decayChainDivOwner), WString::tr("dad-mi-decay-chain"), loadPolicy );
   m_chartTabWidget->currentChanged().connect( m_decayChainChart,
                                     &DecayChainChart::deleteMoreInfoDialog );
   m_decayChainChart->nuclideChanged().connect( this,
@@ -1872,16 +1859,18 @@ void DecayActivityDiv::init()
   m_chartTabWidget->currentChanged().connect( this,
                             &DecayActivityDiv::manageActiveDecayChainNucStyling );
 
-  m_calc = new DateLengthCalculator( this, NULL );
-  m_chartTabWidget->addTab( m_calc, WString::tr("dad-mi-calc"), loadPolicy );
-  
-  
-  WGridLayout *layout = new WGridLayout();
+  {
+    auto calcOwner = make_unique<DateLengthCalculator>( this );
+    m_calc = calcOwner.get();
+    m_chartTabWidget->addTab( move(calcOwner), WString::tr("dad-mi-calc"), loadPolicy );
+  }
+
+
+  WGridLayout *layout = setLayout( make_unique<WGridLayout>() );
   layout->setContentsMargins( 3, 3, 3, 3 );
-  layout->addWidget(  m_parentNuclidesDiv, 0, 0, 1, 1 );
-  layout->addWidget(  m_chartTabWidget,    1, 0, 1, 1 );
+  layout->addWidget( unique_ptr<WContainerWidget>(m_parentNuclidesDiv), 0, 0, 1, 1 );
+  layout->addWidget( unique_ptr<WTabWidget>(m_chartTabWidget), 1, 0, 1, 1 );
   layout->setRowStretch( 1, 5 );
-  WContainerWidget::setLayout( layout );
   
   if( m_viewer )
     m_viewer->colorThemeChanged().connect( this, &DecayActivityDiv::colorThemeChanged );
@@ -2169,24 +2158,23 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
 
   WContainerWidget *displayOptionsDiv = new WContainerWidget();
   displayOptionsDiv->addStyleClass( "displayOptionsDiv" );
-  WContainerWidget *displOptUpper = new WContainerWidget( displayOptionsDiv );
-  
-  WLabel *endLabel = new WLabel( WString::tr("dad-time-span-label") );
+  WContainerWidget *displOptUpper = displayOptionsDiv->addNew<WContainerWidget>();
+
+  WLabel *endLabel = displOptUpper->addNew<WLabel>( WString::tr("dad-time-span-label") );
   endLabel->setBuddy( m_displayTimeLength );
-  displOptUpper->addWidget( endLabel );
-  displOptUpper->addWidget( m_displayTimeLength );
-  m_displayTimeLength->changed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
-  m_displayTimeLength->enterPressed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
+  displOptUpper->addWidget( unique_ptr<WLineEdit>(m_displayTimeLength) );
+  m_displayTimeLength->changed().connect( [this](){ refreshDecayDisplay( true ); } );
+  m_displayTimeLength->enterPressed().connect( [this](){ refreshDecayDisplay( true ); } );
   
   
   const bool showToolTips = m_viewer ? UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
   if( m_viewer )
     HelpSystem::attachToolTipOn( m_displayTimeLength, WString::tr("dad-tt-age"), showToolTips );
   
-  WLabel *yaxisTypeLabel = new WLabel( WString::tr(isPhone ? "dad-yaxis-label-phone" : "dad-yaxis-label"), displOptUpper );
+  WLabel *yaxisTypeLabel = displOptUpper->addNew<WLabel>( WString::tr(isPhone ? "dad-yaxis-label-phone" : "dad-yaxis-label") );
   yaxisTypeLabel->addStyleClass( "DecayChartYaxisTypeLabel" );
-  
-  displOptUpper->addWidget( m_yAxisType );
+
+  displOptUpper->addWidget( unique_ptr<WComboBox>(m_yAxisType) );
   for( YAxisType y = YAxisType(0); y < NumYAxisType; y = YAxisType(int(y)+1) )
   {
     switch( y )
@@ -2206,17 +2194,17 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
     displOptLower = displOptUpper;
   }else
   {
-    displOptLower = new WContainerWidget( displayOptionsDiv );
-    displOptLower->setMargin( 5, Wt::Top );
+    displOptLower = displayOptionsDiv->addNew<WContainerWidget>();
+    displOptLower->setMargin( 5, Wt::Side::Top );
     displOptLower->addStyleClass( "LowerOptions" );
   }
-  
-  
-  displOptLower->addWidget( m_displayActivityUnitsLabel );
-  displOptLower->addWidget( m_displayActivityUnitsCombo );
-  
-  displOptLower->addWidget( m_logYScale );
-  displOptLower->addWidget( m_showGridLines );
+
+
+  displOptLower->addWidget( unique_ptr<WLabel>(m_displayActivityUnitsLabel) );
+  displOptLower->addWidget( unique_ptr<WComboBox>(m_displayActivityUnitsCombo) );
+
+  displOptLower->addWidget( unique_ptr<WCheckBox>(m_logYScale) );
+  displOptLower->addWidget( unique_ptr<WCheckBox>(m_showGridLines) );
   
   if( m_viewer->isPhone() )
   {
@@ -2225,21 +2213,21 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   }
   
   m_yAxisType->setCurrentIndex( ActivityAxis );
-  m_yAxisType->activated().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
+  m_yAxisType->activated().connect( [this]( int ){ refreshDecayDisplay( true ); } );
   
   if( !m_viewer->isPhone() )
   {
-    WContainerWidget *spacer = new WContainerWidget( displOptLower );
+    WContainerWidget *spacer = displOptLower->addNew<WContainerWidget>();
     spacer->addStyleClass( "LowerOptionsSpacer" );
-    
-    WPushButton *csvButton = new WPushButton( displOptLower );
+
+    WPushButton *csvButton = displOptLower->addNew<WPushButton>();
     csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
     csvButton->setText( WString("{1}...").arg( WString::tr("CSV") ) );
     csvButton->setStyleClass( "LinkBtn DownloadBtn" );
     csvButton->clicked().connect( this, &DecayActivityDiv::createCsvDownloadGui );
   }
 
-  m_displayActivityUnitsCombo->changed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
+  m_displayActivityUnitsCombo->changed().connect( [this](){ refreshDecayDisplay( true ); } );
 
   return displayOptionsDiv;
 }//Wt::WContainerWidget *initDisplayOptionWidgets()
@@ -2257,9 +2245,9 @@ void DecayActivityDiv::deleteCsvDownloadGui()
 {
   if( m_csvDownloadDialog )
   {
-    m_csvDownloadDialog->finished().setBlocked(true);
-    AuxWindow::deleteAuxWindow( m_csvDownloadDialog );
+    AuxWindow *dialog = m_csvDownloadDialog;
     m_csvDownloadDialog = nullptr;
+    AuxWindow::deleteAuxWindow( dialog );
   }
 }//void deleteCsvDownloadGui()
 
@@ -2281,27 +2269,27 @@ void DecayActivityDiv::initCharts()
 
   m_decayChart->setModel( m_decayModel );
   m_decayChart->setXSeriesColumn( 0 );
-//  m_decayChart->axis(Chart::XAxis).setScale( Chart::DateTimeScale );
-  m_decayChart->setType( Chart::ScatterPlot );
-  m_decayChart->axis(Chart::XAxis).setScale( Chart::LinearScale );
+//  m_decayChart->axis(Chart::Axis::X).setScale( Chart::DateTimeScale );
+  m_decayChart->setType( Chart::ChartType::Scatter );
+  m_decayChart->axis(Chart::Axis::X).setScale( Chart::AxisScale::Linear );
 
   //TODO 20110325: The either of next line doesnt seem to have any effect
-  m_decayChart->axis(Chart::XAxis).setLabelFormat( "%.3g" );
+  m_decayChart->axis(Chart::Axis::X).setLabelFormat( "%.3g" );
 
   //  decayLayout->addWidget( m_decayChart, 0, 0, 1, 1 );
   if( m_viewer && m_viewer->isPhone() )
   {
     m_decayChart->setIsPhone();
-    m_decayChart->setPlotAreaPadding( 75, Left );
-    m_decayChart->setPlotAreaPadding( 25, Bottom );
-    m_decayChart->setPlotAreaPadding( 20, Right );
-    m_decayChart->setPlotAreaPadding( 0, Top );
+    m_decayChart->setPlotAreaPadding( 75, Wt::Side::Left );
+    m_decayChart->setPlotAreaPadding( 25, Wt::Side::Bottom );
+    m_decayChart->setPlotAreaPadding( 20, Wt::Side::Right );
+    m_decayChart->setPlotAreaPadding( 0, Wt::Side::Top );
   }else
   {
-    m_decayChart->setPlotAreaPadding( 80, Left );
-    m_decayChart->setPlotAreaPadding( 50, Bottom );
-    m_decayChart->setPlotAreaPadding( 20, Right );
-    m_decayChart->setPlotAreaPadding( 5, Top );
+    m_decayChart->setPlotAreaPadding( 80, Wt::Side::Left );
+    m_decayChart->setPlotAreaPadding( 50, Wt::Side::Bottom );
+    m_decayChart->setPlotAreaPadding( 20, Wt::Side::Right );
+    m_decayChart->setPlotAreaPadding( 5, Wt::Side::Top );
   }
   
   if( m_viewer && m_viewer->getColorTheme() )
@@ -2309,7 +2297,7 @@ void DecayActivityDiv::initCharts()
 
   //do not display the legend to the right of the chat
   m_decayChart->setLegendEnabled( false);
-  //m_decayChart->axis(Chart::XAxis).setTitleOffset( 0.0 );
+  //m_decayChart->axis(Chart::Axis::X).setTitleOffset( 0.0 );
   
 //  m_decayChart->setMargin(0);
 //  m_decayChart->initLayout();
@@ -2448,29 +2436,29 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   nuclide.display   = new WContainerWidget();
   nuclide.display->setInline( true );
   nuclide.display->addStyleClass( "Nuclide" );
-  nuclide.txt = new WText( "", XHTMLText, nuclide.display );
+  nuclide.txt = nuclide.display->addNew<WText>( "", Wt::TextFormat::XHTML );
 
   if( !editedNuclide )
   {
-    m_nuclidesAddedDiv->addWidget( nuclide.display );
+    m_nuclidesAddedDiv->addWidget( unique_ptr<WContainerWidget>(nuclide.display) );
   }else
   {
-    m_nuclidesAddedDiv->insertBefore( nuclide.display, editedNuclide );
+    m_nuclidesAddedDiv->insertBefore( unique_ptr<WWidget>(nuclide.display), editedNuclide );
     removeNuclide( editedNuclide );
   }
 
   const SandiaDecay::Nuclide *nuc = db->nuclide( z, a );
   if( nuc )
   {
-    nuclide.display->clicked().connect(
-          boost::bind( &DecayChainChart::setNuclide,
-                       m_decayChainChart, nuc, useCurie,
-                       DecayChainChart::DecayChainType::DecayFrom) );
+    nuclide.display->clicked().connect( [this, nuc, useCurie](){
+          m_decayChainChart->setNuclide( nuc, useCurie, DecayChainChart::DecayChainType::DecayFrom );
+        } );
   }//if( nuc )
   
-  nuclide.display->doubleClicked().connect(
-                    boost::bind( &DecayActivityDiv::sourceNuclideDoubleClicked,
-                                 this, nuclide.display) );
+  {
+    WContainerWidget *disp = nuclide.display;
+    nuclide.display->doubleClicked().connect( [this, disp](){ sourceNuclideDoubleClicked( disp ); } );
+  }
   nuclide.display->setToolTip( WString::tr("dad-tt-double-click") );
   
   nuclide.updateTxt();
@@ -2479,12 +2467,12 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
 //  WText *closeIcon = new WText();
 //  WApplication::instance()->theme()->apply( this, closeIcon,
 //                                           MenuItemCloseRole );
-  WPushButton *closeIcon = new WPushButton();
-  closeIcon->addStyleClass( "mycloseicon" );
-  
-  closeIcon->clicked().connect( boost::bind( &DecayActivityDiv::removeNuclide,
-                                             this, nuclide.display ) );
-  nuclide.display->addWidget( closeIcon );
+  {
+    WContainerWidget *disp = nuclide.display;
+    WPushButton *closeIcon = nuclide.display->addNew<WPushButton>();
+    closeIcon->addStyleClass( "mycloseicon" );
+    closeIcon->clicked().connect( [this, disp](){ removeNuclide( disp ); } );
+  }
 
   m_nuclides.push_back( nuclide );
 
@@ -2527,7 +2515,7 @@ void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
     }
   }
 
-  delete m_nuclides[to_be_removed].display;
+  { auto p = m_nuclidesAddedDiv->removeWidget( m_nuclides[to_be_removed].display ); }
   m_nuclides.erase( m_nuclides.begin() + to_be_removed );
 
   setTimeLimitToDisplay();
@@ -2539,7 +2527,7 @@ void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
 void DecayActivityDiv::clearAllNuclides()
 {
   for( const Nuclide &nuclide : m_nuclides )
-    delete nuclide.display;
+    { auto p = m_nuclidesAddedDiv->removeWidget( nuclide.display ); }
   m_nuclides.clear();
 
   setTimeLimitToDisplay();
@@ -2668,8 +2656,8 @@ double DecayActivityDiv::findTimeForActivityFrac(
 
 void DecayActivityDiv::updateYScale()
 {
-  const Chart::AxisScale scale = m_logYScale->isChecked() ? Chart::LogScale : Chart::LinearScale;
-  m_decayChart->axis(Chart::YAxis).setScale( scale );
+  const Chart::AxisScale scale = m_logYScale->isChecked() ? Chart::AxisScale::Log : Chart::AxisScale::Linear;
+  m_decayChart->axis(Chart::Axis::Y).setScale( scale );
     
   // If we dont do a full refresh, for some reason sometimes the lines wont show up
   refreshDecayDisplay( true );
@@ -2680,7 +2668,7 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
 {
   WContainerWidget *summary = isotopesSummary( time );
 
-  summary->setMaximumSize( WLength::Auto, WLength( 0.8*m_viewer->renderedHeight() ,WLength::Pixel) );
+  summary->setMaximumSize( WLength::Auto, WLength( 0.8*m_viewer->renderedHeight() ,WLength::Unit::Pixel) );
   
   WString title = WString::tr("dad-summary-at-time").arg( PhysicalUnitsLocalized::printToBestTimeUnits(time) );
 
@@ -2694,14 +2682,13 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
     m_moreInfoDialog->setClosable( true );
     m_moreInfoDialog->disableCollapse();
     m_moreInfoDialog->rejectWhenEscapePressed();
-    m_moreInfoDialog->finished().connect(
-                  boost::bind( &DecayActivityDiv::deleteMoreInfoDialog, this ) );
-      
+    m_moreInfoDialog->finished().connect( [this](){ deleteMoreInfoDialog(); } );
+
     WPushButton *ok = m_moreInfoDialog->addCloseButtonToFooter();
-    ok->clicked().connect(boost::bind( &DecayActivityDiv::deleteMoreInfoDialog, this ) );
+    ok->clicked().connect( [this](){ deleteMoreInfoDialog(); } );
   }//if( m_moreInfoDialog ) / else
 
-  m_moreInfoDialog->contents()->addWidget( summary );
+  m_moreInfoDialog->contents()->addWidget( unique_ptr<WWidget>(summary) );
   
   //WGridLayout *layout = new WGridLayout();
   //container->setLayout( layout );
@@ -2844,13 +2831,13 @@ void DecayActivityDiv::decayChartClicked( const WMouseEvent& event )
      || (m_currentTimeRange<0.0) )
     return;
 
-  const WMouseEvent::Coordinates coords = event.widget();
+  const Coordinates coords = event.widget();
   const WPointF devicePoint( coords.x, coords.y );
   const WPointF cartesianPoint = m_decayChart->mapFromDevice( devicePoint );
 
   double mouseTime = 0.0;
 
-  if( m_decayChart->type() != Chart::ScatterPlot )
+  if( m_decayChart->type() != Chart::ChartType::Scatter )
   {
     //xBin goes from 0 to sm_numTimeAxisDivsions, which maps
     // from time 0 to m_currentTimeRange
@@ -2992,10 +2979,10 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
    
   mixtureInfo = "<div class=\"NuclideInfo\">\n"
                 + mixtureInfo + "\n</div>";
-  new WText( mixtureInfo, TextFormat::XHTMLText, cont );
+  cont->addNew<WText>( mixtureInfo, TextFormat::XHTML );
 
-  new WText( "<br /><br /><H3>Further information about the nuclides:</H3>",
-             TextFormat::XHTMLText, cont );
+  cont->addNew<WText>( "<br /><br /><H3>Further information about the nuclides:</H3>",
+             TextFormat::XHTML );
 
   const int nSolutionNuclides = m_currentMixture->numSolutionNuclides();
 
@@ -3003,7 +2990,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
   {
     const SandiaDecay::Nuclide *nuclide = m_currentMixture->solutionNuclide(i);
     WContainerWidget *nucInfo = nuclideInformation( nuclide );
-    cont->addWidget( nucInfo );
+    cont->addWidget( unique_ptr<WContainerWidget>(nucInfo) );
   }//for( loop over widgets )
 
 
@@ -3111,8 +3098,8 @@ WContainerWidget *DecayActivityDiv::nuclideInformation(
   }//for( size_t i = 0; i < nChilds; ++i )
   
   ostr << "</pre>\n";
-  new WText( ostr.str(), XHTMLUnsafeText, cont );
-  
+  cont->addNew<WText>( ostr.str(), Wt::TextFormat::UnsafeXHTML );
+
   return cont;
 }//WContainerWidget *nuclideInformation( const Nuclide &nuclide ) const;
 
@@ -3126,8 +3113,8 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
   try
   {
     if( noldcol > 2 )
-      showsum = boost::any_cast<bool>(m_decayModel->headerData(noldcol - 1,
-                                                Wt::Horizontal, Wt::UserRole) );
+      showsum = Wt::cpp17::any_cast<bool>(m_decayModel->headerData(noldcol - 1,
+                                                Wt::Orientation::Horizontal, Wt::ItemDataRole::User) );
   }catch( std::exception &e )
   {
     cerr << "refreshDecayDisplay(): unexpectedly caught" << e.what() << endl;
@@ -3147,15 +3134,13 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
   m_currentNumXPoints = m_decayChart->paintedWidth() / 2;
   
   //Remove the series from last time, and reset the model
-#if( WT_VERSION >= 0x3030800 )
-  const std::vector<Wt::Chart::WDataSeries *> &series = m_decayChart->series();
-  for( size_t i = 0; i < series.size(); ++i )
-    m_decayChart->removeSeries( series[i]->modelColumn() );
-#else
-  const std::vector<Wt::Chart::WDataSeries> &series = m_decayChart->series();
-  for( size_t i = 0; i < series.size(); ++i )
-    m_decayChart->removeSeries( series[i].modelColumn() );
-#endif
+  {
+    std::vector<Wt::Chart::WDataSeries *> seriesToRemove;
+    for( const auto &s : m_decayChart->series() )
+      seriesToRemove.push_back( s.get() );
+    for( Wt::Chart::WDataSeries *s : seriesToRemove )
+      m_decayChart->removeSeries( s );
+  }
   
   m_decayModel->clear();
   m_currentTimeUnits  = -1.0;
@@ -3230,7 +3215,7 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
 
   const UnitNameValuePair xUnitsPair = bestTimeUnit( maxDiplayTime );
   const double tunit = xUnitsPair.second;
-  //m_decayChart->axis(Chart::XAxis).setTitle( xUnitsPair.first + " after t\u2080" );
+  //m_decayChart->axis(Chart::Axis::X).setTitle( xUnitsPair.first + " after t\u2080" );
   string xtitle = xUnitsPair.first;
   if( xtitle.size() && islower((int)xtitle[0]) )
     xtitle[0] = (char)toupper( (int)xtitle[0] );
@@ -3245,7 +3230,7 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
     stringstream labelText;
     labelText << fixed << setprecision(3) << (row * dt)/tunit;
     const WString label( labelText.str() );
-    m_decayModel->setData( row, 0, boost::any( label ) );
+    m_decayModel->setData( row, 0, Wt::cpp17::any( label ) );
 
     for( int elN = 0; elN < nElements; ++elN )
     {
@@ -3296,23 +3281,23 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
 #endif
 //      if( activity >= (0.00001*endActivity) )
       
-      m_decayModel->setData( row, column, boost::any( yval ) );
+      m_decayModel->setData( row, column, Wt::cpp17::any( yval ) );
       
       //WString tt = "My Tool Tip";
-      //m_decayModel->setData( row, column, boost::any( tt ), ToolTipRole );
+      //m_decayModel->setData( row, column, Wt::cpp17::any( tt ), ToolTipRole );
     }//for( loop over nuclides to add )
   }//for( loop over time points to add )
 
   //Now put in the sum of all the activities
   const WString dateHeader = WString::tr("dad-hdr-date").arg(xUnitsPair.first);
-  m_decayModel->setHeaderData( 0, boost::any( dateHeader ) );
+  m_decayModel->setHeaderData( 0, Wt::cpp17::any( dateHeader ) );
 
   for( int column = 1; column <= nElements; ++column )
   {
     const WString name = evolutions[column-1].nuclide->symbol;
     m_decayModel->setNuclide( column, evolutions[column-1].nuclide->symbol ); //duplicating lots here
-    m_decayModel->setHeaderData( column, boost::any( name ) );
-    m_decayModel->setHeaderData( column, Wt::Horizontal, true, Wt::UserRole );
+    m_decayModel->setHeaderData( column, Wt::cpp17::any( name ) );
+    m_decayModel->setHeaderData( column, Wt::Orientation::Horizontal, true, Wt::ItemDataRole::User );
   }//for( int column = 0; column < nElements; ++column )
 
   //Add columns to the chart, and set their header data
@@ -3321,42 +3306,42 @@ void DecayActivityDiv::refreshDecayDisplay( const bool update_calc )
     maxActivity = max( maxActivity, totalActivities[row] );
     minActivity = std::min( minActivity, totalActivities[row] );
     const double data = totalActivities[row];
-    m_decayModel->setData( row, nElements+1, boost::any(data) );
+    m_decayModel->setData( row, nElements+1, Wt::cpp17::any(data) );
   }//for( loop over rows )
   
   switch( yaxis )
   {
     case ActivityAxis:
       m_decayModel->setHeaderData( nElements+1,
-                                   boost::any( WString::tr("dad-hdr-total-act") ) );
-      m_decayChart->axis(Chart::YAxis).setTitle( unitStr );
+                                   Wt::cpp17::any( WString::tr("dad-hdr-total-act") ) );
+      m_decayChart->axis(Chart::Axis::Y).setTitle( unitStr );
     break;
     case GammasAxis:
       m_decayModel->setHeaderData( nElements+1,
-                                   boost::any( WString::tr("dad-hdr-total-gammas") ) );
-      m_decayChart->axis(Chart::YAxis).setTitle( WString::tr("dad-yaxis-title-total-gammas") );
+                                   Wt::cpp17::any( WString::tr("dad-hdr-total-gammas") ) );
+      m_decayChart->axis(Chart::Axis::Y).setTitle( WString::tr("dad-yaxis-title-total-gammas") );
     break;
     case BetasAxis:
       m_decayModel->setHeaderData( nElements+1,
-                                   boost::any( WString::tr("dad-hdr-total-betas") ) );
-      m_decayChart->axis(Chart::YAxis).setTitle( WString::tr("dad-yaxis-title-total-betas") );
+                                   Wt::cpp17::any( WString::tr("dad-hdr-total-betas") ) );
+      m_decayChart->axis(Chart::Axis::Y).setTitle( WString::tr("dad-yaxis-title-total-betas") );
     break;
     case AlphasAxis:
       m_decayModel->setHeaderData( nElements+1,
-                                   boost::any( WString::tr("dad-hdr-total-alphas") ) );
-      m_decayChart->axis(Chart::YAxis).setTitle( WString::tr("dad-yaxis-title-total-alphas") );
+                                   Wt::cpp17::any( WString::tr("dad-hdr-total-alphas") ) );
+      m_decayChart->axis(Chart::Axis::Y).setTitle( WString::tr("dad-yaxis-title-total-alphas") );
     break;
     case NumYAxisType:
     break;
   }//switch( yaxis )
   
   
-  m_decayModel->setHeaderData( nElements+1, Wt::Horizontal,
-                                 boost::any(showsum), Wt::UserRole );
+  m_decayModel->setHeaderData( nElements+1, Wt::Orientation::Horizontal,
+                                 Wt::cpp17::any(showsum), Wt::ItemDataRole::User );
   std::vector<string> nuclidesset;
   for( int column = 1; column <= nElements; ++column )
   {
-    //nuclide also containted in m_decayModel->headerData(column, Wt::Horizontal, Wt::UserRole);
+    //nuclide also containted in m_decayModel->headerData(column, Wt::Orientation::Horizontal, Wt::ItemDataRole::User);
     const string name = evolutions[column-1].nuclide->symbol;
     nuclidesset.push_back( name );
   }
@@ -3416,7 +3401,7 @@ void DecayActivityDiv::updateYAxisRange()
 {
   //The next line of letting Wt set y-axis limits doesnt always work super great, so we'll do it
   //  manually
-  // m_decayChart->axis(Chart::YAxis).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
+  // m_decayChart->axis(Chart::Axis::Y).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
   
   double miny = std::numeric_limits<double>::max(), maxy = 0.0;
   
@@ -3427,7 +3412,7 @@ void DecayActivityDiv::updateYAxisRange()
       if( !m_decayModel->showSeries( col ) )
         continue;
       
-      boost::any data = m_decayModel->data( m_decayModel->index(row, col) );
+      Wt::cpp17::any data = m_decayModel->data( m_decayModel->index(row, col) );
       const double yval = asNumber(data);
       if( !IsNan(yval) )
       {
@@ -3444,30 +3429,30 @@ void DecayActivityDiv::updateYAxisRange()
     miny = 0.0;
   
   double min_disp_act = 0.0, max_disp_act = 1.1*maxy;
-  switch( m_decayChart->axis(Chart::YAxis).scale() )
+  switch( m_decayChart->axis(Chart::Axis::Y).scale() )
   {
-    case Wt::Chart::LogScale:
+    case Wt::Chart::AxisScale::Log:
       if( miny < 0.000001*maxy )
         min_disp_act = 0.00001*maxy;
       else
         min_disp_act = 0.75*miny;
       max_disp_act = 1.5*maxy;
       break;
-    
-    case Wt::Chart::LinearScale:
+
+    case Wt::Chart::AxisScale::Linear:
       //If it wont change the dynamic range of the chart much anyways, might as well
       //  anchor the y-axis to zero
       break;
-      
-    case Wt::Chart::CategoryScale:
-    case Wt::Chart::DateScale:
-    case Wt::Chart::DateTimeScale:
+
+    case Wt::Chart::AxisScale::Discrete:
+    case Wt::Chart::AxisScale::Date:
+    case Wt::Chart::AxisScale::DateTime:
       assert( 0 );
       break;
-  }//switch( m_decayChart->axis(Chart::YAxis).scale() )
+  }//switch( m_decayChart->axis(Chart::Axis::Y).scale() )
   
   
-  m_decayChart->axis(Chart::YAxis).setRange( min_disp_act, max_disp_act );
+  m_decayChart->axis(Chart::Axis::Y).setRange( min_disp_act, max_disp_act );
 }//void updateYAxisRange();
 
 
@@ -3481,27 +3466,25 @@ void DecayActivityDiv::userSetShowSeries( int series, bool show )
 
 void DecayActivityDiv::addDecaySeries()
 {
-#if( WT_VERSION >= 0x3030800 )
-  const std::vector<Wt::Chart::WDataSeries *> &series = m_decayChart->series();
-  for( size_t i = 0; i < series.size(); ++i )
-    m_decayChart->removeSeries( series[i]->modelColumn() );
-#else
-  const std::vector<Wt::Chart::WDataSeries> &series = m_decayChart->series();
-  for( size_t i = 0; i < series.size(); ++i )
-    m_decayChart->removeSeries( series[i].modelColumn() );
-#endif
+  {
+    std::vector<Wt::Chart::WDataSeries *> seriesToRemove;
+    for( const auto &s : m_decayChart->series() )
+      seriesToRemove.push_back( s.get() );
+    for( Wt::Chart::WDataSeries *s : seriesToRemove )
+      m_decayChart->removeSeries( s );
+  }
   
   const int nColumns = m_decayModel->columnCount();
   
   for( int column = 1; column < nColumns; ++column )
   {
-    Chart::WDataSeries series(column, Chart::CurveSeries, Chart::YAxis);
+    auto seriesOwned = make_unique<Chart::WDataSeries>( column, Chart::SeriesType::Curve, Chart::Axis::Y );
     WPen pen;
-    
+
     auto theme = m_decayChart->colorTheme();
     if( theme && theme->theme_name.toUTF8().find("Default")!=string::npos )
       theme.reset();
-    
+
     if( column != (nColumns-1) )
     {
       if( theme && (theme->referenceLineColor.size()>6) )
@@ -3516,12 +3499,12 @@ void DecayActivityDiv::addDecaySeries()
     {
       if( theme && !theme->foregroundLine.isDefault() )
         pen.setColor( theme->foregroundLine );
-      pen.setStyle( DashLine );
+      pen.setStyle( Wt::PenStyle::DashLine );
     }
-    
-    series.setPen( pen );
-    
-    m_decayChart->addSeries( series );
+
+    seriesOwned->setPen( pen );
+
+    m_decayChart->addSeries( move(seriesOwned) );
   }//for( int column = 1; column < nElements; ++column )
   
   m_decayLegend->clear();
@@ -3529,36 +3512,35 @@ void DecayActivityDiv::addDecaySeries()
   
   for( int column = nColumns-1; column > 0; --column )
   {
-    WWidget *item = m_decayChart->createLegendItemWidget( column );
-    WContainerWidget *ww = dynamic_cast<WContainerWidget *>( item );
-    
+    unique_ptr<WWidget> itemOwned = m_decayChart->createLegendItemWidget( column );
+    WContainerWidget *ww = dynamic_cast<WContainerWidget *>( itemOwned.get() );
+
     if( nColumns == 3 )  //there is exactly one nuclide
     {
       if( column == (nColumns-1) )  //we're on the Total Activity Entry
       {
-        delete item;
+        // itemOwned goes out of scope and is deleted
         m_decayModel->setShowSeries( column, false );
         continue;
       }
       m_decayModel->setShowSeries( column, true );
     }//if( nColumns == 3 )
-    
+
     if( ww )
     {
       ww->setInline( false );
-      WCheckBox *cb = new WCheckBox();
-      ww->insertWidget( 0, cb );
+      WCheckBox *cb = ww->insertWidget( 0, make_unique<WCheckBox>() );
       ww->addStyleClass( "LegendEntry" );
-      m_decayLegend->addWidget( ww );
+      m_decayLegend->addWidget( move(itemOwned) );
       const bool check = m_decayModel->showSeries( column );
       cb->setChecked( check );
       cb->addStyleClass( "ShowSeriesCb" );
       cb->setDisabled( (nColumns == 3) );
-      cb->checked().connect( boost::bind( &DecayActivityDiv::userSetShowSeries, this, column, true ) );
-      cb->unChecked().connect( boost::bind( &DecayActivityDiv::userSetShowSeries, this, column, false ) );
+      cb->checked().connect( [this, column](){ userSetShowSeries( column, true ); } );
+      cb->unChecked().connect( [this, column](){ userSetShowSeries( column, false ); } );
     }else
     {
-      delete item;
+      // itemOwned goes out of scope and is deleted
       cerr << "DecayActivityDiv::addDecaySeries(): legend items are no longer"
            << " WContainerWidget, please update the code"<< endl;
     }//if( ww )
@@ -3573,13 +3555,13 @@ void DecayActivityDiv::updateMouseOver( const Wt::WMouseEvent& event )
       || (m_currentTimeRange<0.0) )
     return;
 
-  const WMouseEvent::Coordinates coords = event.widget();
+  const Coordinates coords = event.widget();
   const WPointF devicePoint( coords.x, coords.y );
   const WPointF cartesianPoint = m_decayChart->mapFromDevice( devicePoint );
 
   double mouseTime = 0.0;
 
-  if( m_decayChart->type() != Chart::ScatterPlot )
+  if( m_decayChart->type() != Chart::ChartType::Scatter )
   {
   //xBin goes from 0 to sm_numTimeAxisDivsions, which maps
   // from time 0 to m_currentTimeRange

@@ -32,26 +32,26 @@
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WIOService>
-#include <Wt/WGridLayout>
-#include <Wt/WMenuItem>
-#include <Wt/WPopupMenu>
-#include <Wt/WPushButton>
-#include <Wt/WSplitButton>
-#include <Wt/WApplication>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WStringStream>
-#include <Wt/WDoubleSpinBox>
-#include <Wt/WContainerWidget>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WRegExpValidator>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WIOService.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WPopupMenu.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WSplitButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WDoubleSpinBox.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WRegExpValidator.h>
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -135,7 +135,7 @@ namespace
     
   public:
     RefGammaCsvResource( ReferencePhotopeakDisplay *parent )
-    : WResource( parent ),
+    : WResource(),
     m_display( parent ),
     m_app( WApplication::instance() )
     {
@@ -239,7 +239,7 @@ namespace
          filename = filename.substr( 0, filename.size()-1 );
       
       filename += ".csv";
-      suggestFileName( filename, WResource::Attachment );
+      suggestFileName( filename, ContentDisposition::Attachment );
       response.setMimeType( "text/csv" );
       
       std::ostream &out = response.out();
@@ -542,7 +542,7 @@ bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs_input
                                     const DecayParticleModel::Column c,
                                     const SortOrder order )
 {
-  const bool less = (order == Wt::AscendingOrder);
+  const bool less = (order == Wt::SortOrder::Ascending);
   
   const DecayParticleModel::RowData &lhs = less ? lhs_input : rhs_input;
   const DecayParticleModel::RowData &rhs = less ? rhs_input : lhs_input;
@@ -568,10 +568,10 @@ bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs_input
 }//less_than(...)
 
 
-DecayParticleModel::DecayParticleModel( Wt::WObject *parent )
-  : WAbstractItemModel( parent ),
+DecayParticleModel::DecayParticleModel()
+  : WAbstractItemModel(),
     m_sortColumn( DecayParticleModel::kEnergy ),
-    m_sortOrder( Wt::AscendingOrder )
+    m_sortOrder( Wt::SortOrder::Ascending )
 {
 }
 
@@ -583,26 +583,26 @@ DecayParticleModel::~DecayParticleModel()
 WFlags<ItemFlag> DecayParticleModel::flags( const WModelIndex &p ) const
 {
   if( p.isValid() && (p.column()==kDecayMode || p.column()==kParticleType) )
-    return ItemIsXHTMLText;
+    return ItemFlag::XHTMLText;
   return WFlags<ItemFlag>();
 }
 
 
-boost::any DecayParticleModel::data( const WModelIndex &index, int role ) const
+Wt::cpp17::any DecayParticleModel::data( const WModelIndex &index, Wt::ItemDataRole role ) const
 {
   using namespace SandiaDecay;
 
-  if( role != DisplayRole )
-    return boost::any();
+  if( role != ItemDataRole::Display )
+    return Wt::cpp17::any();
 
   const int row = index.row();
   const int nrow = static_cast<int>( m_data.size() );
   if( row < 0 || row >= nrow )
-    return boost::any();
+    return Wt::cpp17::any();
 
   const int column = index.column();
   if( column < 0 || column >= kNumColumn )
-    return boost::any();
+    return Wt::cpp17::any();
 
   const RowData &dataRow = m_data[row];
   
@@ -621,7 +621,7 @@ boost::any DecayParticleModel::data( const WModelIndex &index, int role ) const
     case kResponsibleNuc:
       if( dataRow.responsibleNuc )
         return WString( dataRow.responsibleNuc->symbol );
-      return boost::any();
+      return Wt::cpp17::any();
 
     case kDecayMode:
     {
@@ -649,7 +649,7 @@ boost::any DecayParticleModel::data( const WModelIndex &index, int role ) const
         case RowData::CascadeSumMode:               return WString::tr( "rpd-tbl-cascade-sum" );
       }//switch( dataRow.decayMode )
 
-      return boost::any();
+      return Wt::cpp17::any();
     }//case kDecayMode:
 
     case kParticleType:
@@ -669,27 +669,27 @@ boost::any DecayParticleModel::data( const WModelIndex &index, int role ) const
         case CaptureElectronParticle: return WString( "ec" );
         case XrayParticle:            return WString::tr( "rpd-tbl-xray" );
       }//switch( dataRow.particle )
-      return boost::any();
+      return Wt::cpp17::any();
     }//case kParticleType:
   }//switch( column )
 
-  return boost::any();
-}//boost::any data( const Wt::WModelIndex &index, int role  )
+  return Wt::cpp17::any();
+}//Wt::cpp17::any data( const Wt::WModelIndex &index, int role  )
 
 
-boost::any DecayParticleModel::headerData( int column,
+Wt::cpp17::any DecayParticleModel::headerData( int column,
                                            Orientation orientation,
-                                           int role ) const
+                                           ItemDataRole role ) const
 {
-  if( role == LevelRole )
+  if( role == ItemDataRole::Level )
     return 0;
 
-  if( (orientation != Horizontal)
-      || ((role != DisplayRole) && (role != ToolTipRole)) )
+  if( (orientation != Orientation::Horizontal)
+      || ((role != ItemDataRole::Display) && (role != ItemDataRole::ToolTip)) )
     return WAbstractItemModel::headerData( column, orientation, role );
 
   //If we are here, we want the column title
-  if( role == DisplayRole )
+  if( role == ItemDataRole::Display )
   {
     switch( column )
     {
@@ -698,9 +698,9 @@ boost::any DecayParticleModel::headerData( int column,
       case kResponsibleNuc: return WString::tr( "rpd-tbl-hdr-parent" );
       case kDecayMode:      return WString::tr( "rpd-tbl-hdr-mode" );
       case kParticleType:   return WString::tr( "rpd-tbl-hdr-particle" );
-      case kNumColumn:      return boost::any();
+      case kNumColumn:      return Wt::cpp17::any();
     }//switch( column )
-  }else if( role == ToolTipRole )
+  }else if( role == ItemDataRole::ToolTip )
   {
     switch( column )
     {
@@ -715,11 +715,11 @@ boost::any DecayParticleModel::headerData( int column,
       case kParticleType:
         return WString::tr( "rpd-tbl-hdr-tt-type" );
       case kNumColumn:
-      return boost::any();
+      return Wt::cpp17::any();
     }//switch( column )
-  }//if( role == DisplayRole ) / else
+  }//if( role == ItemDataRole::Display ) / else
 
-  return boost::any();
+  return Wt::cpp17::any();
 }//headerData(...)
 
 
@@ -769,9 +769,9 @@ void DecayParticleModel::sort( int column, Wt::SortOrder order )
   
   vector<RowData> data = m_data;
 
-  boost::function<bool(const RowData&,const RowData&)> comparer;
-  comparer = boost::bind(&DecayParticleModel::less_than, boost::placeholders::_1,
-                         boost::placeholders::_2, m_sortColumn, m_sortOrder);
+  const auto comparer = [this]( const RowData &lhs, const RowData &rhs ) -> bool {
+    return DecayParticleModel::less_than( lhs, rhs, m_sortColumn, m_sortOrder );
+  };
 
   stable_sort( data.begin(), data.end(), comparer );
   m_data.swap( data );
@@ -822,9 +822,8 @@ const std::vector<DecayParticleModel::RowData> &DecayParticleModel::rowData() co
 ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
                                             D3SpectrumDisplayDiv *chart,
                                             WSuggestionPopup *materialSuggest,
-                                            InterSpec *specViewer,
-                                            WContainerWidget *parent )
-  : WContainerWidget( parent ),
+                                            InterSpec *specViewer )
+  : WContainerWidget(),
     m_chart( chart ),
     m_spectrumViewer( specViewer ),
     m_currently_updating( false ),
@@ -874,8 +873,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_peaksGetAssignedRefLineColor( false ),
     m_lineColors{ sm_def_line_colors },
     m_specificSourcelineColors{},
-    m_displayingNuclide( this ),
-    m_nuclidesCleared( this ),
+    m_displayingNuclide(),
+    m_nuclidesCleared(),
     m_nucInfoWindow( nullptr ),
     m_featureMarkers( nullptr )
 {
@@ -896,10 +895,10 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   //The inputDiv/Layout is the left side of the widget that holds all the
   //  nuclide input,age, color picker, DRF, etc
-  WContainerWidget *inputDiv = new WContainerWidget();
-  WGridLayout *inputLayout = new WGridLayout();
+  auto inputDivOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *inputDiv = inputDivOwner.get();
+  WGridLayout *inputLayout = inputDiv->setLayout( std::make_unique<WGridLayout>() );
   inputLayout->setContentsMargins( 0, 2, 0, 0 );
-  inputDiv->setLayout( inputLayout );
     
     
   addStyleClass( "ReferencePhotopeakDisplay" );
@@ -908,42 +907,48 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   if( isPhone )
     addStyleClass( "RefDispMobile" );
   
-  const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
+  const WLength labelWidth(3.5,WLength::Unit::FontEm), fieldWidth(4,WLength::Unit::FontEm);
   
-  WLabel *nucInputLabel = new WLabel( WString::tr("nuclide-label") );
-  nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
-  m_nuclideEdit = new WLineEdit( "" );
-  m_nuclideEdit->setMargin( 1 );
-  m_nuclideEdit->setMargin( 2, Wt::Side::Top );
-//  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
-  m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
-  m_nuclideEdit->doJavaScript( m_nuclideEdit->jsRef() + ".addEventListener('keydown', function(event) {"
-  "if (event.key === 'ArrowUp' || event.key === 'ArrowDown') return true;"
-  "} );" );
-  
-  m_nuclideEdit->setAutoComplete( false );
-  m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
-  m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
-#endif
-  nucInputLabel->setBuddy( m_nuclideEdit );
-  
-  
-//  m_nuclideEdit->changed().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
-//  m_nuclideEdit->blurred().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
-//  m_nuclideEdit->enterPressed().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
-  m_nuclideEdit->changed().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
-  
-//  m_nuclideEdit->selected().connect( boost::bind( &ReferencePhotopeakDisplay::handleIsotopeChange, this, false ) );
-  m_persistLines = new WPushButton( WString::tr("rpd-add-another-btn") );
-  HelpSystem::attachToolTipOn( m_persistLines, WString::tr("rpd-tt-add-another-btn"), showToolTips );
-  m_persistLines->clicked().connect( this, &ReferencePhotopeakDisplay::persistCurentLines );
-  m_persistLines->disable();
-  
-  inputLayout->addWidget( nucInputLabel, 0, 0, AlignMiddle );
-  inputLayout->addWidget( m_nuclideEdit, 0, 1 );
-  inputLayout->addWidget( m_persistLines, 0, 2 );
+  {
+    auto nucInputLabelOwner = std::make_unique<WLabel>( WString::tr("nuclide-label") );
+    WLabel *nucInputLabel = nucInputLabelOwner.get();
+    nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
+
+    auto nuclideEditOwner = std::make_unique<WLineEdit>( "" );
+    m_nuclideEdit = nuclideEditOwner.get();
+    m_nuclideEdit->setMargin( 1 );
+    m_nuclideEdit->setMargin( 2, Wt::Side::Top );
+  //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::Unit::FontEx), WLength::Auto );
+    m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
+    m_nuclideEdit->doJavaScript( m_nuclideEdit->jsRef() + ".addEventListener('keydown', function(event) {"
+    "if (event.key === 'ArrowUp' || event.key === 'ArrowDown') return true;"
+    "} );" );
+
+    m_nuclideEdit->setAutoComplete( false );
+    m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
+  #if( BUILD_AS_OSX_APP || IOS )
+    m_nuclideEdit->setAttributeValue( "autocorrect", "off" );
+    m_nuclideEdit->setAttributeValue( "spellcheck", "off" );
+  #endif
+    nucInputLabel->setBuddy( m_nuclideEdit );
+
+  //  m_nuclideEdit->changed().connect( [this](){ handleIsotopeChange( false ); } );
+  //  m_nuclideEdit->blurred().connect( [this](){ handleIsotopeChange( false ); } );
+  //  m_nuclideEdit->enterPressed().connect( [this](){ handleIsotopeChange( false ); } );
+    m_nuclideEdit->changed().connect( [this](){ handleIsotopeChange( false ); } );
+
+  //  m_nuclideEdit->selected().connect( [this](){ handleIsotopeChange( false ); } );
+
+    auto persistLinesOwner = std::make_unique<WPushButton>( WString::tr("rpd-add-another-btn") );
+    m_persistLines = persistLinesOwner.get();
+    HelpSystem::attachToolTipOn( m_persistLines, WString::tr("rpd-tt-add-another-btn"), showToolTips );
+    m_persistLines->clicked().connect( this, &ReferencePhotopeakDisplay::persistCurentLines );
+    m_persistLines->disable();
+
+    inputLayout->addWidget( std::move(nucInputLabelOwner), 0, 0, AlignmentFlag::Middle );
+    inputLayout->addWidget( std::move(nuclideEditOwner), 0, 1 );
+    inputLayout->addWidget( std::move(persistLinesOwner), 0, 2 );
+  }
   
   
   // If we are typing in this box, we want to let app-hotkeys propogate up, but not arrow keys and
@@ -960,13 +965,13 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   string replacerJs, matcherJs;
   IsotopeNameFilterModel::replacerJs( replacerJs );
   IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
-  IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
+  std::shared_ptr<IsotopeNameFilterModel> isoSuggestModel = std::make_shared<IsotopeNameFilterModel>();
   isoSuggestModel->addCustomSuggestPossibility( "background" );
-  
+
   for( const string &name : ReferenceLineInfo::additional_ref_line_sources() )
     isoSuggestModel->addCustomSuggestPossibility( name );
-  
-  m_nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
+
+  m_nuclideSuggest = addNew<WSuggestionPopup>( matcherJs, replacerJs );
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
@@ -978,50 +983,54 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );
   m_nuclideSuggest->setModel( isoSuggestModel );
-  m_nuclideSuggest->filterModel().connect( isoSuggestModel, &IsotopeNameFilterModel::filter );
-  m_nuclideSuggest->forEdit( m_nuclideEdit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
+  m_nuclideSuggest->filterModel().connect( isoSuggestModel.get(), &IsotopeNameFilterModel::filter );
+  m_nuclideSuggest->forEdit( m_nuclideEdit, PopupTrigger::Editing );  // | PopupTrigger::DropDownIcon
 
 
-  WLabel *ageInputLabel = new WLabel( WString::tr("age-label") );
-  m_ageEdit = new WLineEdit( "" );
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
-  validator->setFlags(Wt::MatchCaseInsensitive);
-  m_ageEdit->setValidator(validator);
-  
-  m_ageEdit->setAutoComplete( false );
-  m_ageEdit->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_ageEdit->setAttributeValue( "autocorrect", "off" );
-  m_ageEdit->setAttributeValue( "spellcheck", "off" );
-#endif
-  ageInputLabel->setBuddy( m_ageEdit );
+  {
+    auto ageInputLabelOwner = std::make_unique<WLabel>( WString::tr("age-label") );
+    WLabel *ageInputLabel = ageInputLabelOwner.get();
 
-  m_ageEdit->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_ageEdit->blurred().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_ageEdit->enterPressed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  
-  
-  //Well make the "Clear All" button a little bit wider for phones so that
-  //  "Gammas" will be on same line as its check box, a little bit hacky
-  if( specViewer->isPhone() )
-    m_clearLines = new WPushButton( WString::tr("Remove") );
-    else
-      m_clearLines = new WPushButton( WString::tr("Clear") );
-      m_clearLines->disable();
-      
-      if( specViewer->isMobile() )
-      {
-        //Get rid of the software keyboard on mobile devices.  It would be nice to
-        //  simulate a screen tap on android devices as well, to get rid of system
-        //  navigation UI
-        m_nuclideEdit->enterPressed().connect( boost::bind( &WPushButton::setFocus, m_clearLines, true ) );
-      }
-  
-  m_clearLines->clicked().connect( this, &ReferencePhotopeakDisplay::clearAllLines );
-  
-  inputLayout->addWidget( ageInputLabel, 1, 0, AlignMiddle );
-  inputLayout->addWidget( m_ageEdit, 1, 1 );
-  inputLayout->addWidget( m_clearLines, 1, 2 );
+    auto ageEditOwner = std::make_unique<WLineEdit>( "" );
+    m_ageEdit = ageEditOwner.get();
+    auto ageValidator = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+    ageValidator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);
+    m_ageEdit->setValidator( ageValidator );
+
+    m_ageEdit->setAutoComplete( false );
+    m_ageEdit->setAttributeValue( "ondragstart", "return false" );
+  #if( BUILD_AS_OSX_APP || IOS )
+    m_ageEdit->setAttributeValue( "autocorrect", "off" );
+    m_ageEdit->setAttributeValue( "spellcheck", "off" );
+  #endif
+    ageInputLabel->setBuddy( m_ageEdit );
+
+    m_ageEdit->changed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+    m_ageEdit->blurred().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+    m_ageEdit->enterPressed().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+
+    //Well make the "Clear All" button a little bit wider for phones so that
+    //  "Gammas" will be on same line as its check box, a little bit hacky
+    auto clearLinesOwner = specViewer->isPhone()
+      ? std::make_unique<WPushButton>( WString::tr("Remove") )
+      : std::make_unique<WPushButton>( WString::tr("Clear") );
+    m_clearLines = clearLinesOwner.get();
+    m_clearLines->disable();
+
+    if( specViewer->isMobile() )
+    {
+      //Get rid of the software keyboard on mobile devices.  It would be nice to
+      //  simulate a screen tap on android devices as well, to get rid of system
+      //  navigation UI
+      m_nuclideEdit->enterPressed().connect( [this](){ m_clearLines->setFocus( true ); } );
+    }
+
+    m_clearLines->clicked().connect( this, &ReferencePhotopeakDisplay::clearAllLines );
+
+    inputLayout->addWidget( std::move(ageInputLabelOwner), 1, 0, AlignmentFlag::Middle );
+    inputLayout->addWidget( std::move(ageEditOwner), 1, 1 );
+    inputLayout->addWidget( std::move(clearLinesOwner), 1, 2 );
+  }
   
   HelpSystem::attachToolTipOn( m_ageEdit, WString::tr("rpd-tt-age"), showToolTips );
   HelpSystem::attachToolTipOn( m_clearLines, WString::tr("rpd-tt-clear"), showToolTips );
@@ -1033,126 +1042,130 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   //  interacting with the layout for this element, however a quick attempt to
   //  fix didnt yield results. Sooo, the solution to this looks to be to have
   //  enough layouts, such that none of them need any spanning of columns.
-  WContainerWidget *lowerInput = new WContainerWidget();
-  WGridLayout *lowerInputLayout = new WGridLayout();
+  auto lowerInputOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *lowerInput = lowerInputOwner.get();
+  WGridLayout *lowerInputLayout = lowerInput->setLayout( std::make_unique<WGridLayout>() );
   lowerInputLayout->setContentsMargins(0, 0, 0, 0);
-  lowerInput->setLayout( lowerInputLayout );
-  
-  WContainerWidget *hlRow = new WContainerWidget();
-  hlRow->addStyleClass("HlOptRow");
-  lowerInputLayout->addWidget( hlRow, 0, 0 );
-  
-  m_halflife = new WText( hlRow );
-  m_halflife->addStyleClass("Hl");
 
-  m_moreInfoBtn = new WPushButton( WString::tr("rpd-more-info"), hlRow );
-  m_moreInfoBtn->addStyleClass( "LinkBtn MoreInfoBtn" );
-  m_moreInfoBtn->clicked().connect( this, &ReferencePhotopeakDisplay::showMoreInfoWindow );
-  m_moreInfoBtn->hide();
-
-  // Couls add prompt and 'bare' only lines options
-  //label = new WLabel( "Lowest I:" );
-  //m_lowerBrCuttoff = new WDoubleSpinBox();
-  //HelpSystem::attachToolTipOn( m_lowerBrCuttoff, tooltip, showToolTips );
-  //m_lowerBrCuttoff->setValue( 0.0 );
-  //m_lowerBrCuttoff->setSingleStep( 0.01 );
-  //m_lowerBrCuttoff->setRange( 0.0, 1.0 );
-  //m_lowerBrCuttoff->valueChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  //m_layout->addWidget( minAmpLabel, 3, 0, AlignMiddle );
-  //m_layout->addWidget( m_lowerBrCuttoff, 3, 1 );
-  
-  SpectraFileModel *specFileModel = specViewer->fileManager()->model();
-  m_detectorDisplay = new DetectorDisplay( specViewer, specFileModel );
-  
-  specViewer->detectorChanged().connect( boost::bind( &ReferencePhotopeakDisplay::handleDrfChange, this, boost::placeholders::_1 ) );
-  specViewer->detectorModified().connect( boost::bind( &ReferencePhotopeakDisplay::handleDrfChange, this, boost::placeholders::_1 ) );
-  
-  // If foreground spectrum _file_ changes, then the RIID analysis results of the suggested
-  //  nuclides may need updating.  However, for simplicity, we'll update suggested nuclides
-  //  whenever the foreground gets updated
-  specViewer->displayedSpectrumChanged().connect(this, &ReferencePhotopeakDisplay::handleSpectrumChange);
-
-  lowerInputLayout->addWidget( m_detectorDisplay, 1, 0 );
-
-  m_shieldingSelect = new ShieldingSelect( m_materialSuggest );
-  m_shieldingSelect->materialEdit()->setEmptyText( WString("<{1}>").arg( WString::tr("rpd-shield-mat") ) );
-  m_shieldingSelect->materialChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  m_shieldingSelect->materialModified().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
-  lowerInputLayout->addWidget( m_shieldingSelect, 2, 0 );
-
-  //m_fitPeaks = new WPushButton( "Fit Peaks" );
-  //tooltip = "Fits dominant peaks for primary nuclide";
-  //HelpSystem::attachToolTipOn( m_fitPeaks, tooltip, showToolTips );
-  //m_fitPeaks->clicked().connect( this, &ReferencePhotopeakDisplay::fitPeaks );
-  //inputLayout->addWidget( m_fitPeaks, 2, 2 );
-  //m_fitPeaks->disable();
-  
-  if( m_lineColors.empty() )
-    m_lineColors = sm_def_line_colors;
-    
-  m_colorSelect = new ColorSelect(ColorSelect::PrefferNative);
-  m_colorSelect->setColor( m_lineColors[0] );
-  
-  if( ColorSelect::willUseNativeColorPicker() )
   {
-    //m_colorSelect->setFloatSide( Wt::Right );
-    m_colorSelect->addStyleClass("RefLinColorPick");
-    hlRow->addWidget( m_colorSelect );
-  }else
-  {
-    WContainerWidget *w = new WContainerWidget();
-    w->addWidget( m_colorSelect );
-    hlRow->addWidget( w );
-    //w->setFloatSide( Wt::Right );
-    w->addStyleClass("RefLinColorPick");
+    auto hlRowOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *hlRow = hlRowOwner.get();
+    hlRow->addStyleClass("HlOptRow");
+
+    m_halflife = hlRow->addNew<WText>();
+    m_halflife->addStyleClass("Hl");
+
+    m_moreInfoBtn = hlRow->addNew<WPushButton>( WString::tr("rpd-more-info") );
+    m_moreInfoBtn->addStyleClass( "LinkBtn MoreInfoBtn" );
+    m_moreInfoBtn->clicked().connect( this, &ReferencePhotopeakDisplay::showMoreInfoWindow );
+    m_moreInfoBtn->hide();
+
+    // Couls add prompt and 'bare' only lines options
+    //label = new WLabel( "Lowest I:" );
+    //m_lowerBrCuttoff = new WDoubleSpinBox();
+    //HelpSystem::attachToolTipOn( m_lowerBrCuttoff, tooltip, showToolTips );
+    //m_lowerBrCuttoff->setValue( 0.0 );
+    //m_lowerBrCuttoff->setSingleStep( 0.01 );
+    //m_lowerBrCuttoff->setRange( 0.0, 1.0 );
+    //m_lowerBrCuttoff->valueChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+    //m_layout->addWidget( minAmpLabel, 3, 0, AlignmentFlag::Middle );
+    //m_layout->addWidget( m_lowerBrCuttoff, 3, 1 );
+
+    SpectraFileModel *specFileModel = specViewer->fileManager()->model();
+
+    {
+      auto detDispOwner = std::make_unique<DetectorDisplay>( specViewer, specFileModel );
+      m_detectorDisplay = detDispOwner.get();
+      specViewer->detectorChanged().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );
+      specViewer->detectorModified().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );
+      specViewer->displayedSpectrumChanged().connect(this, &ReferencePhotopeakDisplay::handleSpectrumChange);
+      lowerInputLayout->addWidget( std::move(detDispOwner), 1, 0 );
+    }
+
+    {
+      auto shieldOwner = std::make_unique<ShieldingSelect>( m_materialSuggest );
+      m_shieldingSelect = shieldOwner.get();
+      m_shieldingSelect->materialEdit()->setPlaceholderText( WString("<{1}>").arg( WString::tr("rpd-shield-mat") ) );
+      m_shieldingSelect->materialChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+      m_shieldingSelect->materialModified().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
+      lowerInputLayout->addWidget( std::move(shieldOwner), 2, 0 );
+    }
+
+    //m_fitPeaks = new WPushButton( "Fit Peaks" );
+    //tooltip = "Fits dominant peaks for primary nuclide";
+    //HelpSystem::attachToolTipOn( m_fitPeaks, tooltip, showToolTips );
+    //m_fitPeaks->clicked().connect( this, &ReferencePhotopeakDisplay::fitPeaks );
+    //inputLayout->addWidget( m_fitPeaks, 2, 2 );
+    //m_fitPeaks->disable();
+
+    if( m_lineColors.empty() )
+      m_lineColors = sm_def_line_colors;
+
+    {
+      auto colorSelectOwner = std::make_unique<ColorSelect>( ColorSelect::PrefferNative );
+      m_colorSelect = colorSelectOwner.get();
+      m_colorSelect->setColor( m_lineColors[0] );
+      if( ColorSelect::willUseNativeColorPicker() )
+      {
+        //m_colorSelect->setFloatSide( Wt::Right );
+        m_colorSelect->addStyleClass("RefLinColorPick");
+        hlRow->addWidget( std::move(colorSelectOwner) );
+      }else
+      {
+        auto w = std::make_unique<WContainerWidget>();
+        //w->setFloatSide( Wt::Right );
+        w->addStyleClass("RefLinColorPick");
+        w->addWidget( std::move(colorSelectOwner) );
+        hlRow->addWidget( std::move(w) );
+      }
+    }
+    m_colorSelect->cssColorChanged().connect( [this]( const Wt::WColor &color ){ userColorSelectCallback( color ); } );
+    m_currentlyShowingNuclide.m_input.m_color = m_lineColors[0];
+
+    m_options_icon = hlRow->addNew<WPushButton>();
+    m_options_icon->setStyleClass("RoundMenuIcon InvertInDark RefLinesOptMenu");
+    m_options_icon->clicked().preventPropagation();
+    //m_options_icon->setFloatSide(Wt::Right);
+    m_options_icon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
+
+    lowerInputLayout->addWidget( std::move(hlRowOwner), 0, 0 );
   }
-  
-  m_colorSelect->cssColorChanged().connect( boost::bind(
-                                               &ReferencePhotopeakDisplay::userColorSelectCallback,
-                                               this, boost::placeholders::_1 ) );
-  m_currentlyShowingNuclide.m_input.m_color = m_lineColors[0];
-  
-  m_options_icon = new WPushButton();
-  m_options_icon->setStyleClass("RoundMenuIcon InvertInDark RefLinesOptMenu");
-  m_options_icon->clicked().preventPropagation();
-  //m_options_icon->setFloatSide(Wt::Right);
-  m_options_icon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
 
-  hlRow->addWidget(m_options_icon);
+  auto optionsOwner = std::make_unique<WContainerWidget>();
+  {
+    m_options = optionsOwner.get();
+    m_options->addStyleClass("RefLinesOptions ToolTabSection ToolTabTitledColumn");
+    m_options->hide();
 
-  m_options = new WContainerWidget();
-  m_options->addStyleClass("RefLinesOptions ToolTabSection ToolTabTitledColumn");
-  m_options->hide();
+    WContainerWidget *closerow = m_options->addNew<WContainerWidget>();
+    closerow->addStyleClass( "ToolTabColumnTitle" );
+    closerow->addNew<WText>( WString::tr("rpd-options") );
+    WContainerWidget *closeIcon = closerow->addNew<WContainerWidget>();
+    closeIcon->addStyleClass("closeicon-wtdefault");
+    closeIcon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
 
-  WContainerWidget* closerow = new WContainerWidget(m_options);
-  closerow->addStyleClass( "ToolTabColumnTitle" );
-  WText *txt = new WText( WString::tr("rpd-options"), closerow );
-  WContainerWidget* closeIcon = new WContainerWidget(closerow);
-  closeIcon->addStyleClass("closeicon-wtdefault");
-  closeIcon->clicked().connect(this, &ReferencePhotopeakDisplay::toggleShowOptions);
+    m_optionsContent = m_options->addNew<WContainerWidget>();
+    m_optionsContent->addStyleClass( "ToolTabTitledColumnContent" );
 
-  m_optionsContent = new WContainerWidget( m_options );
-  m_optionsContent->addStyleClass( "ToolTabTitledColumnContent" );
+    m_promptLinesOnly = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-prompt") );  //ɣ
+    HelpSystem::attachToolTipOn(m_promptLinesOnly, WString::tr("rpd-opt-tt-prompt"), showToolTips);
+    m_promptLinesOnly->addStyleClass( "CbNoLineBreak" );
+    m_promptLinesOnly->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+    m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+    m_promptLinesOnly->hide();
 
-  m_promptLinesOnly = new WCheckBox( WString::tr("rpd-opt-prompt"), m_optionsContent );  //ɣ
-  HelpSystem::attachToolTipOn(m_promptLinesOnly, WString::tr("rpd-opt-tt-prompt"), showToolTips);
-  m_promptLinesOnly->addStyleClass( "CbNoLineBreak" );
-  m_promptLinesOnly->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
-  m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
-  m_promptLinesOnly->hide();
+    m_showGammas = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-gamma") );
+    m_showXrays = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-xray") );
+    m_showAlphas = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-alphas") );
+    m_showBetas = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-betas") );
+    m_showCascadeSums = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-cascade") );
+    m_showCascadeSums->hide();
+    m_showEscapes = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-escapes") );
 
-  m_showGammas = new WCheckBox( WString::tr("rpd-opt-gamma"), m_optionsContent );
-  m_showXrays = new WCheckBox( WString::tr("rpd-opt-xray"), m_optionsContent );
-  m_showAlphas = new WCheckBox( WString::tr("rpd-opt-alphas"), m_optionsContent );
-  m_showBetas = new WCheckBox( WString::tr("rpd-opt-betas"), m_optionsContent );
-  m_showCascadeSums = new WCheckBox( WString::tr("rpd-opt-cascade"), m_optionsContent );
-  m_showCascadeSums->hide();
-  m_showEscapes = new WCheckBox( WString::tr("rpd-opt-escapes"), m_optionsContent );
-      
-  m_showPrevNucs = new WCheckBox( WString::tr("rpd-prev-nucs"), m_optionsContent );
-  m_showRiidNucs = new WCheckBox( WString::tr("rpd-det-nucs"), m_optionsContent );
-  m_showAssocNucs = new WCheckBox( WString::tr("rpd-assoc-nucs"), m_optionsContent );
-  m_showFeatureMarkers = new WCheckBox( WString::tr("rpd-feature-markers"), m_optionsContent );
+    m_showPrevNucs = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-prev-nucs") );
+    m_showRiidNucs = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-det-nucs") );
+    m_showAssocNucs = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-assoc-nucs") );
+    m_showFeatureMarkers = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-feature-markers") );
       
   m_showGammas->setWordWrap( false );
   m_showGammas->addStyleClass( "CbNoLineBreak" );
@@ -1184,28 +1197,29 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showFeatureMarkers->checked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
   m_showFeatureMarkers->unChecked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
       
-  // Add reference line thickness combo box
-  m_refLineThickness = new WComboBox( m_optionsContent );
-  m_refLineThickness->addStyleClass( "RefLineThicknessCombo" );
-  m_refLineThickness->addItem( WString::tr("rpd-line-thick-light") );   // 0: {0.5, 1}
-  m_refLineThickness->addItem( WString::tr("rpd-line-thick-normal") );  // 1: {1, 2}
-  m_refLineThickness->addItem( WString::tr("rpd-line-thick-thick") );   // 2: {2, 3}
-  m_refLineThickness->addItem( WString::tr("rpd-line-thick-thicker") ); // 3: {3, 5}
-  
-  // Set from user preference
-  const int thicknessPref = UserPreferences::preferenceValue<int>( "RefLineThickness", specViewer );
-  m_refLineThickness->setCurrentIndex( std::max(0, std::min(3, thicknessPref)) );
-  
-  // Add reference line verbosity combo box
-  m_refLineVerbosity = new WComboBox( m_optionsContent );
-  m_refLineVerbosity->addStyleClass( "RefLineVerbosityCombo" );
-  m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-none") );     // 0: No extension lines
-  m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-hover") );    // 1: Extension lines on hover only
-  m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-major") );    // 2: Major lines always + hover for all
-  
-  // Set from user preference
-  const int verbosityPref = UserPreferences::preferenceValue<int>( "RefLineVerbosity", specViewer );
-  m_refLineVerbosity->setCurrentIndex( std::max(0, std::min(2, verbosityPref)) );
+    // Add reference line thickness combo box
+    m_refLineThickness = m_optionsContent->addNew<WComboBox>();
+    m_refLineThickness->addStyleClass( "RefLineThicknessCombo" );
+    m_refLineThickness->addItem( WString::tr("rpd-line-thick-light") );   // 0: {0.5, 1}
+    m_refLineThickness->addItem( WString::tr("rpd-line-thick-normal") );  // 1: {1, 2}
+    m_refLineThickness->addItem( WString::tr("rpd-line-thick-thick") );   // 2: {2, 3}
+    m_refLineThickness->addItem( WString::tr("rpd-line-thick-thicker") ); // 3: {3, 5}
+
+    // Set from user preference
+    const int thicknessPref = UserPreferences::preferenceValue<int>( "RefLineThickness", specViewer );
+    m_refLineThickness->setCurrentIndex( std::max(0, std::min(3, thicknessPref)) );
+
+    // Add reference line verbosity combo box
+    m_refLineVerbosity = m_optionsContent->addNew<WComboBox>();
+    m_refLineVerbosity->addStyleClass( "RefLineVerbosityCombo" );
+    m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-none") );     // 0: No extension lines
+    m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-hover") );    // 1: Extension lines on hover only
+    m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-major") );    // 2: Major lines always + hover for all
+
+    // Set from user preference
+    const int verbosityPref = UserPreferences::preferenceValue<int>( "RefLineVerbosity", specViewer );
+    m_refLineVerbosity->setCurrentIndex( std::max(0, std::min(2, verbosityPref)) );
+  }//optionsOwner setup block
 
   //const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", this);
   //HelpSystem::attachToolTipOn(m_showPrevNucs, "Show ", showToolTips);
@@ -1248,132 +1262,137 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showEscapes->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_showEscapes->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
       
-  m_otherNucsColumn = new WContainerWidget();
+  {
+    auto otherNucsOwner = std::make_unique<WContainerWidget>();
+    m_otherNucsColumn = otherNucsOwner.get();
+    m_otherNucsColumn->addStyleClass("OtherNucs ToolTabSection ToolTabTitledColumn");
+    WText *otherNucTitle = m_otherNucsColumn->addNew<WText>( WString::tr("rpd-suggestions") );
+    otherNucTitle->addStyleClass("ToolTabColumnTitle");
+    m_otherNucs = m_otherNucsColumn->addNew<WContainerWidget>();
+    m_otherNucs->addStyleClass( "OtherNucsContent ToolTabTitledColumnContent" );
 
-  m_otherNucsColumn->addStyleClass("OtherNucs ToolTabSection ToolTabTitledColumn");
+    auto featureMarkerOwner = std::make_unique<WContainerWidget>();
+    m_featureMarkerColumn = featureMarkerOwner.get();
+    m_featureMarkerColumn->addStyleClass("FeatureLines ToolTabSection ToolTabTitledColumn");
+    m_featureMarkerColumn->hide();
 
-  WText *otherNucTitle = new WText( WString::tr("rpd-suggestions"), m_otherNucsColumn);
-  otherNucTitle->addStyleClass("ToolTabColumnTitle");
+    {
+      WContainerWidget *featureMarkerTitleRow = m_featureMarkerColumn->addNew<WContainerWidget>();
+      featureMarkerTitleRow->addStyleClass( "ToolTabColumnTitle" );
+      featureMarkerTitleRow->addNew<WText>( WString::tr("rpd-feature-markers") );
+      WContainerWidget *featureMarkerCloseIcon = featureMarkerTitleRow->addNew<WContainerWidget>();
+      featureMarkerCloseIcon->addStyleClass("closeicon-wtdefault");
+      //A little convoluted, but we will have the InterSpec class tell us to close feature marker widget,
+      //  so it can save its state, and update the app menu-item, and handle undo/redo.
+      featureMarkerCloseIcon->clicked().connect( [this](){ m_spectrumViewer->displayFeatureMarkerWindow( false ); } );
+    }
 
-  m_otherNucs = new WContainerWidget(m_otherNucsColumn);
-  m_otherNucs->addStyleClass( "OtherNucsContent ToolTabTitledColumnContent" );
+    auto particleViewOwner = std::make_unique<RowStretchTreeView>();
+    m_particleView = particleViewOwner.get();
+    m_particleView->setRootIsDecorated( false ); //makes the tree look like a table! :)
+    m_particleView->addStyleClass( "ParticleViewTable ToolTabSection" );
 
-  m_featureMarkerColumn = new WContainerWidget();
-  m_featureMarkerColumn->addStyleClass("FeatureLines ToolTabSection ToolTabTitledColumn");
-  m_featureMarkerColumn->hide();
-  
-  WContainerWidget *featureMarkerTitleRow = new WContainerWidget( m_featureMarkerColumn );
-  featureMarkerTitleRow->addStyleClass( "ToolTabColumnTitle" );
-  WText *featureMarkerTitle = new WText( WString::tr("rpd-feature-markers"), featureMarkerTitleRow );
-  WContainerWidget *featureMarkerCloseIcon = new WContainerWidget(featureMarkerTitleRow);
-  featureMarkerCloseIcon->addStyleClass("closeicon-wtdefault");
-  //A little convoluted, but we will have the InterSpec class tell us to close feature marker widget,
-  //  so it can save its state, and update the app menu-item, and handle undo/redo.
-  featureMarkerCloseIcon->clicked().connect( boost::bind( &InterSpec::displayFeatureMarkerWindow, m_spectrumViewer, false) );
-      
-  m_particleView = new RowStretchTreeView();
-  
-  m_particleView->setRootIsDecorated(	false ); //makes the tree look like a table! :)
-  
-  m_particleView->addStyleClass( "ParticleViewTable ToolTabSection" );
-  
-  m_particleModel = new DecayParticleModel( this );
-  m_particleView->setModel( m_particleModel );
-  m_particleView->setAlternatingRowColors( true );
-  m_particleView->setSortingEnabled( true );
-  m_particleView->setColumnWidth( DecayParticleModel::kEnergy,
-                                  WLength(6.5,WLength::FontEm) );
-  m_particleView->setColumnWidth( DecayParticleModel::kBranchingRatio,
-                                  WLength(6,WLength::FontEm) );
-  m_particleView->setColumnWidth( DecayParticleModel::kResponsibleNuc,
-                                 WLength(5,WLength::FontEm) );
-  m_particleView->setColumnWidth( DecayParticleModel::kDecayMode,
-                                 WLength(4,WLength::FontEm) );
-  m_particleView->setColumnWidth( DecayParticleModel::kParticleType,
-                                 WLength(5,WLength::FontEm) );
-  
-  auto bottomRow = new WContainerWidget();
-  bottomRow->addStyleClass( "RefGammaBottomRow" );
-  auto helpBtn = new WContainerWidget(bottomRow);
-  helpBtn->addStyleClass("Wt-icon ContentHelpBtn RefGammaHelp");
-  helpBtn->clicked().connect(boost::bind(&HelpSystem::createHelpWindow, "reference-gamma-lines-dialog"));
+    std::shared_ptr<DecayParticleModel> particleModel = std::make_shared<DecayParticleModel>();
+    m_particleModel = particleModel.get();
+    m_particleView->setModel( particleModel );
+    m_particleView->setAlternatingRowColors( true );
+    m_particleView->setSortingEnabled( true );
+    m_particleView->setColumnWidth( DecayParticleModel::kEnergy,
+                                    WLength(6.5,WLength::Unit::FontEm) );
+    m_particleView->setColumnWidth( DecayParticleModel::kBranchingRatio,
+                                    WLength(6,WLength::Unit::FontEm) );
+    m_particleView->setColumnWidth( DecayParticleModel::kResponsibleNuc,
+                                   WLength(5,WLength::Unit::FontEm) );
+    m_particleView->setColumnWidth( DecayParticleModel::kDecayMode,
+                                   WLength(4,WLength::Unit::FontEm) );
+    m_particleView->setColumnWidth( DecayParticleModel::kParticleType,
+                                   WLength(5,WLength::Unit::FontEm) );
 
-  m_fitSourcesBtn = new WSplitButton( "&nbsp;", bottomRow ); //Space is needed so Wt will add the ".with-label" style class
-  m_fitSourcesBtn->addStyleClass( "LightButton RefGammaFitSources" );
-  m_fitSourcesBtn->actionButton()->addStyleClass( "LightButton" );
-  m_fitSourcesBtn->dropDownButton()->addStyleClass( "LightButton" );
-  m_fitSourcesBtn->hide();
-  
-  WPopupMenu *fit_menu = nullptr;
-  if( m_spectrumViewer && m_spectrumViewer->isMobile() )
-    fit_menu = new WPopupMenu();
-  else
-    fit_menu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu );
-  m_fitSourcesBtn->setMenu( fit_menu );
-  
-  WMenuItem *automatic_item = fit_menu->addItem( WString::tr("rpd-fit-sources-menu-auto") );
-  automatic_item->triggered().connect( boost::bind( &FitPeaksForNuclidesGui::startFitSources, false ) );
+    auto bottomRowOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *bottomRow = bottomRowOwner.get();
+    bottomRow->addStyleClass( "RefGammaBottomRow" );
 
-  WMenuItem *advanced_item = fit_menu->addItem( WString::tr("rpd-fit-sources-menu-advanced") );
-  advanced_item->triggered().connect( this, &ReferencePhotopeakDisplay::showFitSourcesAdvancedDialog );
+    WContainerWidget *helpBtn = bottomRow->addNew<WContainerWidget>();
+    helpBtn->addStyleClass("Wt-icon ContentHelpBtn RefGammaHelp");
+    helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "reference-gamma-lines-dialog" ); } );
 
-  m_fitSourcesBtn->actionButton()->clicked().connect( boost::bind( &FitPeaksForNuclidesGui::startFitSources, false ) );
-  
-  
-  RefGammaCsvResource *csv = new RefGammaCsvResource( this );
-  csv->setTakesUpdateLock( true );
-  
-#if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *csvButton = new WAnchor( WLink(csv), bottomRow );
-  csvButton->setTarget( AnchorTarget::TargetNewWindow );
-  csvButton->setStyleClass( "LinkBtn DownloadLink RefGammaCsv" );
-#else
-  WPushButton *csvButton = new WPushButton( bottomRow );
-  csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
-  csvButton->setLink( WLink(csv) );
-  csvButton->setLinkTarget( Wt::TargetNewWindow );
-  csvButton->setStyleClass( "LinkBtn DownloadBtn RefGammaCsv" );
-  
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  csvButton->clicked().connect( std::bind([csv](){ android_download_workaround(csv, "photopeak_ref_info.csv"); }) );
-#endif //ANDROID
-  
-#endif // BUILD_AS_OSX_APP / else
-  
-  csvButton->clicked().connect( std::bind([](){
-    passMessage( WString::tr("rpd-csv-export-msg"), WarningWidget::WarningMsgInfo );
-    //TODO: check about calling WarningWidget::displayPopupMessageUnsafe( msg, level, 5000 ); directly with a longer time for the message to hang around
-  }));
-  
-  csvButton->setText( WString::tr("CSV") );
-  csvButton->disable();
-  m_csvDownload = csvButton;
+    {
+      auto fitSrcBtnOwner = std::make_unique<WSplitButton>( "&nbsp;" ); //Space is needed so Wt will add the ".with-label" style class
+      m_fitSourcesBtn = fitSrcBtnOwner.get();
+      m_fitSourcesBtn->addStyleClass( "LightButton RefGammaFitSources" );
+      m_fitSourcesBtn->actionButton()->addStyleClass( "LightButton" );
+      m_fitSourcesBtn->dropDownButton()->addStyleClass( "LightButton" );
+      m_fitSourcesBtn->hide();
 
+      std::unique_ptr<WPopupMenu> fit_menu_ptr;
+      if( m_spectrumViewer && m_spectrumViewer->isMobile() )
+        fit_menu_ptr = std::make_unique<WPopupMenu>();
+      else
+        fit_menu_ptr = std::make_unique<PopupDivMenu>( nullptr, PopupDivMenu::MenuType::TransientMenu );
+      WPopupMenu *fit_menu = fit_menu_ptr.get();
+      m_fitSourcesBtn->setMenu( std::move( fit_menu_ptr ) );
 
-  WGridLayout *overallLayout = new WGridLayout();
-  overallLayout->setContentsMargins( 0, 0, 0, 0 );
-  setLayout( overallLayout );
+      WMenuItem *automatic_item = fit_menu->addItem( WString::tr("rpd-fit-sources-menu-auto") );
+      automatic_item->triggered().connect( [](){ FitPeaksForNuclidesGui::startFitSources( false ); } );
 
-  overallLayout->addWidget( inputDiv,              0, 0 );
-  overallLayout->addWidget( lowerInput,            1, 0 );
-  overallLayout->addWidget( m_options,             0, 1, 3, 1 );
-  overallLayout->addWidget( m_otherNucsColumn,     0, 2, 3, 1 );
-  overallLayout->addWidget( m_featureMarkerColumn, 0, 3, 3, 1 );
-  overallLayout->addWidget( m_particleView,        0, 4, 3, 1 );
-  overallLayout->addWidget( bottomRow,             2, 0 );
+      WMenuItem *advanced_item = fit_menu->addItem( WString::tr("rpd-fit-sources-menu-advanced") );
+      advanced_item->triggered().connect( this, &ReferencePhotopeakDisplay::showFitSourcesAdvancedDialog );
 
-  overallLayout->setRowStretch( 2, 1 );
-  overallLayout->setColumnStretch( 4, 1 );
+      m_fitSourcesBtn->actionButton()->clicked().connect( [](){ FitPeaksForNuclidesGui::startFitSources( false ); } );
+
+      bottomRow->addWidget( std::move(fitSrcBtnOwner) );
+    }
+
+    std::shared_ptr<RefGammaCsvResource> csv = std::make_shared<RefGammaCsvResource>( this );
+    csv->setTakesUpdateLock( true );
+
+  #if( BUILD_AS_OSX_APP || IOS )
+    WAnchor *csvButton = bottomRow->addNew<WAnchor>( WLink(csv) );
+    csvButton->setTarget( Wt::LinkTarget::NewWindow );
+    csvButton->setStyleClass( "LinkBtn DownloadLink RefGammaCsv" );
+  #else
+    WPushButton *csvButton = bottomRow->addNew<WPushButton>();
+    csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
+    { WLink lnk(csv); lnk.setTarget( Wt::LinkTarget::NewWindow ); csvButton->setLink( lnk ); }
+    csvButton->setStyleClass( "LinkBtn DownloadBtn RefGammaCsv" );
+
+  #if( ANDROID )
+    // Using hacked saving to temporary file in Android, instead of via network download of file.
+    csvButton->clicked().connect( [csv](){ android_download_workaround(csv, "photopeak_ref_info.csv"); } );
+  #endif //ANDROID
+
+  #endif // BUILD_AS_OSX_APP / else
+
+    csvButton->clicked().connect( [](){
+      passMessage( WString::tr("rpd-csv-export-msg"), WarningWidget::WarningMsgInfo );
+      //TODO: check about calling WarningWidget::displayPopupMessageUnsafe( msg, level, 5000 ); directly with a longer time for the message to hang around
+    });
+
+    csvButton->setText( WString::tr("CSV") );
+    csvButton->disable();
+    m_csvDownload = csvButton;
+
+    WGridLayout *overallLayout = setLayout( std::make_unique<WGridLayout>() );
+    overallLayout->setContentsMargins( 0, 0, 0, 0 );
+
+    overallLayout->addWidget( std::move(inputDivOwner),       0, 0 );
+    overallLayout->addWidget( std::move(lowerInputOwner),     1, 0 );
+    overallLayout->addWidget( std::move(optionsOwner),        0, 1, 3, 1 );
+    overallLayout->addWidget( std::move(otherNucsOwner),      0, 2, 3, 1 );
+    overallLayout->addWidget( std::move(featureMarkerOwner),  0, 3, 3, 1 );
+    overallLayout->addWidget( std::move(particleViewOwner),   0, 4, 3, 1 );
+    overallLayout->addWidget( std::move(bottomRowOwner),      2, 0 );
+
+    overallLayout->setRowStretch( 2, 1 );
+    overallLayout->setColumnStretch( 4, 1 );
+  }
 }//ReferencePhotopeakDisplay constructor
 
 
 ReferencePhotopeakDisplay::~ReferencePhotopeakDisplay()
 {
-  //I think the DOM root should take care of deleting m_nuclideSuggest
+  // m_nuclideSuggest is owned by the widget tree (added via addNew<>)
   programmaticallyCloseFitSourcesAdvancedDialog();
-  if( m_nuclideSuggest )
-    delete m_nuclideSuggest;
 }//~ReferencePhotopeakDisplay()
 
 
@@ -1739,7 +1758,7 @@ void ReferencePhotopeakDisplay::programmaticallyCloseFitSourcesAdvancedDialog()
 {
   if( m_fitSourcesAdvancedDialog )
   {
-    m_fitSourcesAdvancedDialog->done( Wt::WDialog::DialogCode::Accepted );
+    m_fitSourcesAdvancedDialog->done( Wt::DialogCode::Accepted );
   }
 
   m_fitSourcesAdvancedDialog = nullptr;
@@ -1778,19 +1797,19 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
 
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
 
-  WText *header = new WText( WString::tr("rpd-assoc-nucs") );
-  header->addStyleClass( "OtherNucTypeHeader" );
-
-  m_otherNucs->insertWidget( 0, header );
+  {
+    auto headerOwner = std::make_unique<WText>( WString::tr("rpd-assoc-nucs") );
+    headerOwner->addStyleClass( "OtherNucTypeHeader" );
+    m_otherNucs->insertWidget( 0, std::move(headerOwner) );
+  }
 
   for( size_t index = 0; index < info->m_associated.size(); ++index )
   {
     const string &nucstr = info->m_associated[index];
 
-    WPushButton *btn = new WPushButton( nucstr );
+    auto btnOwner = std::make_unique<WPushButton>( nucstr );
+    WPushButton *btn = btnOwner.get();
     btn->addStyleClass( "LinkBtn" );
-
-    m_otherNucs->insertWidget( static_cast<int>(1 + index), btn );
 
     // If text is a valid Nuclide, Element, or Reaction, we'll make this
     //  button clickable to display; otherwise we'll show the text, but
@@ -1823,17 +1842,18 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
       SpecUtils::ireplace_all( elstr, "-_\t ,", "" );
       el = db->element( elstr );
     }//if( it might be an x-ray )
-    
+
     if( nuc || el || !reactions.empty() )
     {
       RefLineInput input = userInput();
       input.m_input_txt = nucstr;
-      
-      btn->clicked().connect( boost::bind( &ReferencePhotopeakDisplay::updateDisplayFromInput, this, input ) );
+      btn->clicked().connect( [this, input](){ updateDisplayFromInput( input ); } );
     }else
     {
       btn->disable();
     }
+
+    m_otherNucs->insertWidget( static_cast<int>(1 + index), std::move(btnOwner) );
   }//for( const auto &riid : riid_nucs )
 }//void updateAssociatedNuclides()
 
@@ -1843,7 +1863,7 @@ void ReferencePhotopeakDisplay::programmaticallyCloseMoreInfoWindow()
   if( m_nucInfoWindow )
   {
     UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-    m_nucInfoWindow->done(Wt::WDialog::DialogCode::Accepted);
+    m_nucInfoWindow->done(Wt::DialogCode::Accepted);
   }
   assert( !m_nucInfoWindow );
   m_nucInfoWindow = nullptr;
@@ -1992,7 +2012,7 @@ FeatureMarkerWidget *ReferencePhotopeakDisplay::showFeatureMarkerTool()
   
   m_showFeatureMarkers->setChecked( true );
   m_featureMarkerColumn->setHidden( false );
-  m_featureMarkers = new FeatureMarkerWidget( m_spectrumViewer, m_featureMarkerColumn );
+  m_featureMarkers = m_featureMarkerColumn->addNew<FeatureMarkerWidget>( m_spectrumViewer );
   
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
   if( m_particleView->isHidden() ) //Narrow phone display
@@ -2117,16 +2137,13 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
     
     prev_orig_nuc = m_nucInfoWindow->originalNuclide();
     prev_orig_nuc = m_nucInfoWindow->currentNuclide();
-    m_nucInfoWindow->done(Wt::WDialog::DialogCode::Accepted);
+    m_nucInfoWindow->done(Wt::DialogCode::Accepted);
     assert( m_nucInfoWindow == nullptr );
     m_nucInfoWindow = nullptr;
   }//if( m_nucInfoWindow )
   
   m_nucInfoWindow = new MoreNuclideInfoWindow( nuc );
-  m_nucInfoWindow->finished().connect( 
-                               boost::bind( &ReferencePhotopeakDisplay::handleMoreInfoWindowClose,
-                                 this, m_nucInfoWindow )
-  );
+  m_nucInfoWindow->finished().connect( [this, win=m_nucInfoWindow](){ handleMoreInfoWindowClose( win ); } );
   
   // All of this undo/redo stuff is a little over the top since we will only ever show one more-info
   //  window at a time, but oh well.
@@ -2141,16 +2158,13 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
       if( !window )
         return;
       
-      window->done(Wt::WDialog::DialogCode::Accepted);
+      window->done(Wt::DialogCode::Accepted);
       
       if( prev_orig_nuc )
       {
         assert( !m_nucInfoWindow );
         m_nucInfoWindow = new MoreNuclideInfoWindow( prev_orig_nuc );
-        m_nucInfoWindow->finished().connect( 
-                  boost::bind( &ReferencePhotopeakDisplay::handleMoreInfoWindowClose,
-                              this, m_nucInfoWindow )
-        );
+        m_nucInfoWindow->finished().connect( [this, win=m_nucInfoWindow](){ handleMoreInfoWindowClose( win ); } );
         
         if( prev_current_nuc && (prev_orig_nuc != prev_current_nuc) )
         {
@@ -2167,14 +2181,11 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
         return;
       
       if( disp->m_nucInfoWindow )
-        disp->m_nucInfoWindow->done(Wt::WDialog::DialogCode::Accepted);
+        disp->m_nucInfoWindow->done(Wt::DialogCode::Accepted);
       
       assert( !disp->moreInfoWindow() );
       disp->m_nucInfoWindow = new MoreNuclideInfoWindow( nuc );
-      disp->m_nucInfoWindow->finished().connect(
-                              boost::bind( &ReferencePhotopeakDisplay::handleMoreInfoWindowClose,
-                              this, m_nucInfoWindow )
-      );
+      disp->m_nucInfoWindow->finished().connect( [disp, win=disp->m_nucInfoWindow](){ disp->handleMoreInfoWindowClose( win ); } );
     };//redo
     
     undo_manager->addUndoRedoStep( undo, redo, "Show " + nuc->symbol + " more info window." );
@@ -2288,7 +2299,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
       case MoreNuclideInfo::InfoStatus::NotInited:
       {
         const string sessionid = wApp->sessionId();
-        boost::function<void()> update_gui = wApp->bind( boost::bind(&ReferencePhotopeakDisplay::updateAssociatedNuclides, this) );
+        std::function<void()> update_gui = [this](){ updateAssociatedNuclides(); };
        
         auto worker = [update_gui, sessionid](){
           const auto infoDb = MoreNuclideInfo::MoreNucInfoDb::instance();
@@ -2324,20 +2335,19 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
     if( nucs.size() > max_riid_res )
       nucs.resize( max_riid_res );
 
-    WText *header = new WText( title, m_otherNucs);
+    WText *header = m_otherNucs->addNew<WText>( title );
     header->addStyleClass("OtherNucTypeHeader");
-    
+
     for( const ExternalRidIsotope &riid : nucs )
     {
-      WPushButton *btn = new WPushButton(riid.name, m_otherNucs);
+      WPushButton *btn = m_otherNucs->addNew<WPushButton>( riid.name );
       btn->addStyleClass( "LinkBtn" );
-      
+
       if( !riid.is_null() )
       {
         RefLineInput input = userInput();
         input.m_input_txt = riid.source_name();
-        
-        btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::updateDisplayFromInput, this, input));
+        btn->clicked().connect( [this, input](){ updateDisplayFromInput( input ); } );
       }else
       {
         btn->disable();
@@ -2358,14 +2368,13 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   
   if( !prev_nucs.empty() )
   {
-    WText *header = new WText( WString::tr("rpd-prev"), m_otherNucs);
+    WText *header = m_otherNucs->addNew<WText>( WString::tr("rpd-prev") );
     header->addStyleClass("OtherNucTypeHeader");
     for( const auto &prev : prev_nucs )
     {
-      WPushButton *btn = new WPushButton(prev.m_input_txt, m_otherNucs);
+      WPushButton *btn = m_otherNucs->addNew<WPushButton>( prev.m_input_txt );
       btn->addStyleClass( "LinkBtn" );
-
-      btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::updateDisplayFromInput, this, prev));
+      btn->clicked().connect( [this, prev](){ updateDisplayFromInput( prev ); } );
     }
   }//if( !prev_nucs.empty() )
 }//void updateOtherNucsDisplay()
@@ -2379,7 +2388,7 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
   input.m_age = m_ageEdit->text().toUTF8();
   input.m_color = m_colorSelect->color();
 
-  if( m_lowerBrCuttoff && (m_lowerBrCuttoff->validate() == WValidator::Valid) )
+  if( m_lowerBrCuttoff && (m_lowerBrCuttoff->validate() == ValidationState::Valid) )
     input.m_lower_br_cutt_off = m_lowerBrCuttoff->value();
 
   input.m_promptLinesOnly = (m_promptLinesOnly && m_promptLinesOnly->isChecked());
@@ -3058,9 +3067,10 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     const bool showCascades = (ref_lines->m_has_coincidences && ref_lines->m_input.m_showCascades);
     if( showCascades && !m_cascadeWarn )
     {
-      m_cascadeWarn = new WText( WString::tr("rpd-warn-cascade-xrays") );
+      auto warnOwner = std::make_unique<WText>( WString::tr("rpd-warn-cascade-xrays") );
+      m_cascadeWarn = warnOwner.get();
       m_cascadeWarn->addStyleClass("CascadeGammaWarn");
-      m_optionsContent->insertWidget( m_optionsContent->indexOf(m_showCascadeSums) + 1, m_cascadeWarn);
+      m_optionsContent->insertWidget( m_optionsContent->indexOf(m_showCascadeSums) + 1, std::move(warnOwner) );
     }//if( show coincidences )
     
     if( m_cascadeWarn )
@@ -3529,12 +3539,10 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
     node = base_node->first_node( "Shielding", 9 );
     if( node )
     {
-      m_shieldingSelect->materialChanged().setBlocked( true );
-      m_shieldingSelect->materialModified().setBlocked( true );
+      // Wt4_TODO: Signal::setBlocked() was removed in Wt 4. Using a flag approach would be
+      //  more robust, but for now we just call deSerialize and accept that signals may fire.
       const bool is_fixed_geom = false; //Shouldnt have an effect either way
       m_shieldingSelect->deSerialize( node, is_fixed_geom );
-      m_shieldingSelect->materialChanged().setBlocked( false );
-      m_shieldingSelect->materialModified().setBlocked( false );
     }
 //    else
 //      m_shieldingSelect-reset();

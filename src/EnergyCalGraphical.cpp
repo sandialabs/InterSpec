@@ -25,16 +25,17 @@
 
 #include <map>
 #include <ctime>
+#include <memory>
 #include <string>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WGroupBox>
-#include <Wt/WCheckBox>
-#include <Wt/WButtonGroup>
-#include <Wt/WRadioButton>
-#include <Wt/WPushButton>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/WPushButton.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/EnergyCalibration.h"
@@ -87,19 +88,19 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
     return;
   }//if( !spectrum->m_interspec->displayedHistogram(SpectrumType::Foreground) )
   
-  WTable *table = new WTable( contents() );
+  WTable *table = contents()->addNew<WTable>();
   //    table->setHeaderCount( 1, Wt::Vertical );
-  new WLabel( "Original Energy", table->elementAt(0,0) );
-  m_startE = new NativeFloatSpinBox( table->elementAt(0,1) );
-  new WLabel( "Modified Energy", table->elementAt(1,0) );
-  m_finalE = new NativeFloatSpinBox( table->elementAt(1,1) );
+  table->elementAt(0,0)->addNew<WLabel>( "Original Energy" );
+  m_startE = table->elementAt(0,1)->addNew<NativeFloatSpinBox>();
+  table->elementAt(1,0)->addNew<WLabel>( "Modified Energy" );
+  m_finalE = table->elementAt(1,1)->addNew<NativeFloatSpinBox>();
   m_startE->setMaximum( 20000 );
   m_finalE->setMaximum( 20000 );
   setEnergies( lowe, highe );
   
   
-  m_typeButtons = new WButtonGroup( contents() );
-  WGroupBox *buttonBox = new WGroupBox( "Parameter to adjust", contents() );
+  m_typeButtons = contents()->addChild( std::make_unique<WButtonGroup>() );
+  WGroupBox *buttonBox = contents()->addNew<WGroupBox>( "Parameter to adjust" );
   
   for( RecalTypes t = RecalTypes(0); t < NumRecalTypes; t = RecalTypes(t+1) )
   {
@@ -113,7 +114,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
       case NumRecalTypes: txt = "";                   break;
     }//switch( t )
     
-    WRadioButton *button = new WRadioButton( txt, buttonBox );
+    WRadioButton *button = buttonBox->addNew<WRadioButton>( txt );
     button->setInline( false );
     m_typeButtons->addButton( button, t );
   }//for( loop over recal types )
@@ -132,7 +133,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   {
     char msg[128];
     snprintf(msg, sizeof(msg), "Preserve %.1f keV Cal.", m_lastEnergy );
-    m_preserveLastCal = new WCheckBox( msg, contents() );
+    m_preserveLastCal = contents()->addNew<WCheckBox>( msg );
     m_preserveLastCal->setInline( false );
     m_preserveLastCal->setStyleClass( "PreserveLastCalCb" );
     
@@ -150,7 +151,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   const string applyToTxt = cal->applyToSummaryTxt();
   if( !applyToTxt.empty() )
   {
-    WText *t = new WText( "Changes will be applied to<br />" + applyToTxt, XHTMLText, contents() );
+    WText *t = contents()->addNew<WText>( "Changes will be applied to<br />" + applyToTxt, Wt::TextFormat::XHTML );
     t->setInline( false );
     t->setAttributeValue( "style", "color: #737373; width: auto; text-align: center;" );
   }
@@ -195,10 +196,10 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   AuxWindow::addHelpInFooter( footer(), "graphical-recal-dialog" );
   
   
-  WPushButton *button = new WPushButton( WString::tr("Cancel"), footer() );
+  WPushButton *button = footer()->addNew<WPushButton>( WString::tr("Cancel") );
   button->clicked().connect( this, &AuxWindow::hide );
-  
-  button = new WPushButton( WString::tr("Accept"), footer()  );
+
+  button = footer()->addNew<WPushButton>( WString::tr("Accept") );
   button->setIcon( "InterSpec_resources/images/accept.png" );
   button->clicked().connect( this, &EnergyCalGraphicalConfirm::apply );
   
@@ -223,7 +224,7 @@ void EnergyCalGraphicalConfirm::apply()
   
   if( startE == finalE )
   {
-    finished().emit(WDialog::Accepted);
+    finished().emit(Wt::DialogCode::Accepted);
     return;
   }//if( startE == finalE )
   
@@ -238,7 +239,7 @@ void EnergyCalGraphicalConfirm::apply()
                                   = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   if( !foreground || !displ_foreground )
   {
-    finished().emit(WDialog::Accepted);
+    finished().emit(Wt::DialogCode::Accepted);
     return;
   }
   
@@ -246,7 +247,7 @@ void EnergyCalGraphicalConfirm::apply()
   if( !energycal || !energycal->valid()
       || (energycal->type() == SpecUtils::EnergyCalType::LowerChannelEdge) )
   {
-    finished().emit(WDialog::Accepted);
+    finished().emit(Wt::DialogCode::Accepted);
     return;
   }
   
@@ -406,7 +407,7 @@ void EnergyCalGraphicalConfirm::apply()
            " Calibration not applied.";
     
     viewer->logMessage( WString::fromUTF8(msg), 3 );
-    finished().emit(WDialog::Accepted);
+    finished().emit(Wt::DialogCode::Accepted);
     return;
   }//try / catch
   
@@ -433,7 +434,7 @@ void EnergyCalGraphicalConfirm::apply()
     viewer->logMessage( e.what(), 2 );
   }//try / catch
   
-  finished().emit(WDialog::Accepted);
+  finished().emit(Wt::DialogCode::Accepted);
 }//void apply()
 
 

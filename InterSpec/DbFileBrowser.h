@@ -51,8 +51,7 @@ public:
   SnapshotBrowser( SpecMeasManager *manager,
                    InterSpec *viewer,
                    std::shared_ptr<SpectraFileHeader> header,
-                   Wt::WContainerWidget *buttonBar = nullptr,
-                   Wt::WContainerWidget *parent = nullptr );
+                   Wt::WContainerWidget *buttonBar = nullptr );
   
    Wt::Signal<> &finished();
   
@@ -141,8 +140,7 @@ public:
                             SpecUtils::SpectrumType type,
                             SpectraFileModel *model,
                             SpecMeasManager *manager,
-                            std::shared_ptr<SpectraFileHeader> header,
-                            WContainerWidget *parent = nullptr );
+                            std::shared_ptr<SpectraFileHeader> header );
   
   Wt::Signal<> &loadedASpectrum();
   

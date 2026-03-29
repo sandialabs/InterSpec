@@ -28,21 +28,20 @@
 #include <cassert>
 #include <functional>
 
-#include <boost/bind.hpp>
 #include <boost/asio/io_service.hpp>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WPoint>
-#include <Wt/WServer>
-#include <Wt/WMenuItem>
-#include <Wt/WIOService>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WPopupMenu>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WPoint.h>
+#include <Wt/WServer.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WIOService.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WPopupMenu.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
@@ -127,8 +126,8 @@ namespace
 }//anonymous namespace
 
 
-FitSkewParamsTool::FitSkewParamsTool( InterSpec *viewer, WContainerWidget *parent )
-  : WContainerWidget( parent ),
+FitSkewParamsTool::FitSkewParamsTool( InterSpec *viewer )
+  : WContainerWidget(),
     m_viewer( viewer ),
     m_chart( nullptr ),
     m_peakModel( nullptr ),
@@ -158,7 +157,7 @@ FitSkewParamsTool::FitSkewParamsTool( InterSpec *viewer, WContainerWidget *paren
 FitSkewParamsTool::~FitSkewParamsTool()
 {
   if( m_cancelCalc )
-    m_cancelCalc->store( true );
+    m_cancelCalc->store( true);
 }
 
 
@@ -182,94 +181,94 @@ Wt::WCheckBox *FitSkewParamsTool::updatePeaksCb()
 
 void FitSkewParamsTool::initWidgets()
 {
-  addStyleClass( "FitSkewParamsTool" );
+  addStyleClass( "FitSkewParamsTool");
 
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance());
   if( app )
   {
-    app->useMessageResourceBundle( "FitSkewParamsTool" );
-    app->useMessageResourceBundle( "PeakEdit" );
+    app->useMessageResourceBundle( "FitSkewParamsTool");
+    app->useMessageResourceBundle( "PeakEdit");
   }
 
-  wApp->useStyleSheet( "InterSpec_resources/FitSkewParamsTool.css" );
+  wApp->useStyleSheet( "InterSpec_resources/FitSkewParamsTool.css");
 
   // Spectrum display on top — flex: 1 fills available space
-  m_chart = new D3SpectrumDisplayDiv( this );
-  m_chart->addStyleClass( "FswChart" );
-  m_chart->setMinimumSize( 300, 150 );
-  m_chart->setCompactAxis( true );
+  m_chart = addNew<D3SpectrumDisplayDiv>();
+  m_chart->addStyleClass( "FswChart");
+  m_chart->setMinimumSize( 300, 150);
+  m_chart->setCompactAxis( true);
 
   // Controls area below the chart — flex column, centered
-  WContainerWidget *controlsDiv = new WContainerWidget( this );
-  controlsDiv->addStyleClass( "FswControls" );
+  WContainerWidget *controlsDiv = addNew<WContainerWidget>();
+  controlsDiv->addStyleClass( "FswControls");
 
   // Skew type row: label + combo side by side
-  WContainerWidget *skewRow = new WContainerWidget( controlsDiv );
-  skewRow->addStyleClass( "FswSkewRow" );
+  WContainerWidget *skewRow = controlsDiv->addNew<WContainerWidget>();
+  skewRow->addStyleClass( "FswSkewRow");
 
-  WLabel *skewLabel = new WLabel( WString::tr( "fsw-skew-type-label" ), skewRow );
-  skewLabel->addStyleClass( "FswLabel" );
+  WLabel *skewLabel = skewRow->addNew<WLabel>( WString::tr( "fsw-skew-type-label" ));
+  skewLabel->addStyleClass( "FswLabel");
 
-  m_skewTypeCombo = new WComboBox( skewRow );
-  m_skewTypeCombo->addStyleClass( "FswCombo" );
-  for( int i = 0; i < static_cast<int>( PeakDef::NumSkewType ); ++i )
+  m_skewTypeCombo = skewRow->addNew<WComboBox>();
+  m_skewTypeCombo->addStyleClass( "FswCombo");
+  for( int i = 0; i < static_cast<int>( PeakDef::NumSkewType); ++i )
   {
-    const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( i );
-    m_skewTypeCombo->addItem( WString::fromUTF8( PeakDef::to_label( st ) ) );
+    const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( i);
+    m_skewTypeCombo->addItem( WString::fromUTF8( PeakDef::to_label( st ) ));
   }
-  m_skewTypeCombo->setCurrentIndex( 0 );
+  m_skewTypeCombo->setCurrentIndex( 0);
   m_skewTypeCombo->activated().connect( std::bind( [this](){
     updateSkewParamRows();
     userEditedSkewValue();
-  }) );
+  }));
 
   // Skew parameter rows container
-  m_paramsDiv = new WContainerWidget( controlsDiv );
-  m_paramsDiv->addStyleClass( "FswSkewParams" );
+  m_paramsDiv = controlsDiv->addNew<WContainerWidget>();
+  m_paramsDiv->addStyleClass( "FswSkewParams");
 
   // Fit button and status on one line
-  WContainerWidget *fitRow = new WContainerWidget( controlsDiv );
-  fitRow->addStyleClass( "FswFitRow" );
+  WContainerWidget *fitRow = controlsDiv->addNew<WContainerWidget>();
+  fitRow->addStyleClass( "FswFitRow");
 
-  m_fitBtn = new WPushButton( WString::tr( "fsw-fit-btn" ), fitRow );
-  m_fitBtn->addStyleClass( "FswFitBtn" );
-  m_fitBtn->clicked().connect( this, &FitSkewParamsTool::doFit );
+  m_fitBtn = fitRow->addNew<WPushButton>( WString::tr( "fsw-fit-btn" ));
+  m_fitBtn->addStyleClass( "FswFitBtn");
+  m_fitBtn->clicked().connect( this, &FitSkewParamsTool::doFit);
 
-  m_statusText = new WText( fitRow );
-  m_statusText->addStyleClass( "FswStatus" );
+  m_statusText = fitRow->addNew<WText>();
+  m_statusText->addStyleClass( "FswStatus");
 
   // "Update analysis peaks on accept" checkbox - created here but may be reparented by the window
-  m_updatePeaksCb = new WCheckBox( WString::tr( "fsw-update-peaks-cb" ), controlsDiv );
-  m_updatePeaksCb->addStyleClass( "FswUpdatePeaksCb" );
-  m_updatePeaksCb->setChecked( false );
+  m_updatePeaksCb = controlsDiv->addNew<WCheckBox>( WString::tr( "fsw-update-peaks-cb" ));
+  m_updatePeaksCb->addStyleClass( "FswUpdatePeaksCb");
+  m_updatePeaksCb->setChecked( false);
 
   // Get a copy of the foreground measurement
   shared_ptr<const SpecUtils::Measurement> foreground
-    = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground);
   if( foreground )
   {
-    m_spectrum = make_shared<SpecUtils::Measurement>( *foreground );
-    m_chart->setData( m_spectrum, false );
+    m_spectrum = make_shared<SpecUtils::Measurement>( *foreground);
+    m_chart->setData( m_spectrum, false);
   }
 
   // Create standalone PeakModel for the chart
-  m_peakModel = new PeakModel( this );
+  m_peakModel = new PeakModel();
   m_peakModel->setNoSpecMeasBacking();
   if( m_spectrum )
-    m_peakModel->setForeground( m_spectrum );
-  m_chart->setPeakModel( m_peakModel );
+    m_peakModel->setForeground( m_spectrum);
+  m_chart->setPeakModel( m_peakModel);
 
   // Initialize from current PeakFitDetPrefs
   shared_ptr<const SpecMeas> meas
-    = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    = m_viewer->measurment( SpecUtils::SpectrumType::Foreground);
   shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
-  assert( prefs );
+  assert( prefs);
 
   if( prefs )
   {
-    const int skewIdx = static_cast<int>( prefs->m_peak_skew_type );
+    const int skewIdx = static_cast<int>( prefs->m_peak_skew_type);
     if( skewIdx >= 0 && skewIdx < static_cast<int>( PeakDef::NumSkewType ) )
-      m_skewTypeCombo->setCurrentIndex( skewIdx );
+      m_skewTypeCombo->setCurrentIndex( skewIdx);
   }
 
   // Build skew param rows
@@ -279,13 +278,13 @@ void FitSkewParamsTool::initWidgets()
   if( prefs )
   {
     const PeakDef::SkewType skewType = prefs->m_peak_skew_type;
-    const size_t nparams = PeakDef::num_skew_parameters( skewType );
+    const size_t nparams = PeakDef::num_skew_parameters( skewType);
     for( size_t p = 0; p < nparams; ++p )
     {
       if( m_lowerSpin[p] && prefs->m_lower_energy_skew[p].has_value() )
-        m_lowerSpin[p]->setValue( static_cast<float>( prefs->m_lower_energy_skew[p].value() ) );
+        m_lowerSpin[p]->setValue( static_cast<float>( prefs->m_lower_energy_skew[p].value() ));
       if( m_upperSpin[p] && prefs->m_upper_energy_skew[p].has_value() )
-        m_upperSpin[p]->setValue( static_cast<float>( prefs->m_upper_energy_skew[p].value() ) );
+        m_upperSpin[p]->setValue( static_cast<float>( prefs->m_upper_energy_skew[p].value() ));
     }
   }//if( prefs )
 
@@ -298,7 +297,7 @@ void FitSkewParamsTool::initWidgets()
       peakOpts.specType = SpecUtils::SpectrumType::Foreground;
       peakOpts.nonBackgroundPeaksOnly = false;
       const AnalystChecks::DetectedPeakStatus detected
-        = AnalystChecks::detected_peaks( peakOpts, m_viewer );
+        = AnalystChecks::detected_peaks( peakOpts, m_viewer);
       m_detectedPeaks = detected.peaks;
     }catch( std::exception & )
     {
@@ -308,35 +307,25 @@ void FitSkewParamsTool::initWidgets()
     // Apply current skew values to peaks and display
     if( !m_detectedPeaks.empty() )
     {
-      const vector<shared_ptr<const PeakDef>> displayPeaks = applySkewToPeaks( m_detectedPeaks );
-      m_peakModel->setPeaks( displayPeaks );
+      const vector<shared_ptr<const PeakDef>> displayPeaks = applySkewToPeaks( m_detectedPeaks);
+      m_peakModel->setPeaks( displayPeaks);
     }
   }//if( m_spectrum )
 
   // Disable fit button if no peaks or NoSkew
   const int skewIdx = m_skewTypeCombo->currentIndex();
-  const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( skewIdx );
+  const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( skewIdx);
   const bool canFit = (PeakDef::num_skew_parameters( st ) > 0) && !m_detectedPeaks.empty();
-  m_fitBtn->setEnabled( canFit );
+  m_fitBtn->setEnabled( canFit);
 
   // Connect ROI edge drag signal for user adjustment of ROI bounds
-  m_chart->existingRoiEdgeDragUpdate().connect(
-    boost::bind( &FitSkewParamsTool::handleRoiDrag, this,
-                 boost::placeholders::_1, boost::placeholders::_2,
-                 boost::placeholders::_3, boost::placeholders::_4,
-                 boost::placeholders::_5, boost::placeholders::_6 ) );
+  m_chart->existingRoiEdgeDragUpdate().connect( this, &FitSkewParamsTool::handleRoiDrag);
 
   // Connect right-click signal for context menu
-  m_chart->rightClicked().connect(
-    boost::bind( &FitSkewParamsTool::handleRightClick, this,
-                 boost::placeholders::_1, boost::placeholders::_2,
-                 boost::placeholders::_3, boost::placeholders::_4,
-                 boost::placeholders::_5 ) );
+  m_chart->rightClicked().connect( this, &FitSkewParamsTool::handleRightClick);
 
   // Connect shift+drag to delete peaks in dragged range
-  m_chart->shiftKeyDragged().connect(
-    boost::bind( &FitSkewParamsTool::handleShiftKeyDrag, this,
-                 boost::placeholders::_1, boost::placeholders::_2 ) );
+  m_chart->shiftKeyDragged().connect( this, &FitSkewParamsTool::handleShiftKeyDrag);
 }//void initWidgets()
 
 
@@ -354,16 +343,16 @@ void FitSkewParamsTool::updateSkewParamRows()
   if( skewIdx < 0 || skewIdx >= static_cast<int>( PeakDef::NumSkewType ) )
     return;
 
-  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx );
-  const size_t nparams = PeakDef::num_skew_parameters( skewType );
+  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
+  const size_t nparams = PeakDef::num_skew_parameters( skewType);
 
   if( nparams == 0 )
   {
-    m_fitBtn->setEnabled( false );
+    m_fitBtn->setEnabled( false);
     return;
   }
 
-  m_fitBtn->setEnabled( !m_detectedPeaks.empty() );
+  m_fitBtn->setEnabled( !m_detectedPeaks.empty());
 
   // Check if any parameter is energy-dependent
   bool hasEnergyDep = false;
@@ -371,7 +360,7 @@ void FitSkewParamsTool::updateSkewParamRows()
   {
     const PeakDef::CoefficientType coefType
       = static_cast<PeakDef::CoefficientType>(
-          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ) );
+          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
     if( PeakDef::is_energy_dependent( skewType, coefType ) )
     {
       hasEnergyDep = true;
@@ -380,121 +369,120 @@ void FitSkewParamsTool::updateSkewParamRows()
   }
 
   // Grid: name | fit_cb | lower_val | upper_val  (or name | fit_cb | val for non-energy-dep only)
-  WContainerWidget *table = new WContainerWidget( m_paramsDiv );
+  WContainerWidget *table = m_paramsDiv->addNew<WContainerWidget>();
   if( hasEnergyDep )
-    table->addStyleClass( "FswParamTable" );
+    table->addStyleClass( "FswParamTable");
   else
-    table->addStyleClass( "FswParamTable FswParamTableSingleCol" );
+    table->addStyleClass( "FswParamTable FswParamTableSingleCol");
 
   // Column headers: name | lower | upper | fit_cb  (or name | val | fit_cb)
   if( hasEnergyDep )
   {
-    new WText( "", table ); // name col placeholder
-    WText *lowHeader = new WText( WString::tr( "fsw-lower-header" ), table );
-    lowHeader->addStyleClass( "FswColHeader" );
-    WText *highHeader = new WText( WString::tr( "fsw-upper-header" ), table );
-    highHeader->addStyleClass( "FswColHeader" );
-    WText *fitHeader = new WText( WString::tr( "fsw-fit-cb-header" ), table );
-    fitHeader->addStyleClass( "FswColHeader" );
+    table->addNew<WText>( ""); // name col placeholder
+    WText *lowHeader = table->addNew<WText>( WString::tr( "fsw-lower-header" ));
+    lowHeader->addStyleClass( "FswColHeader");
+    WText *highHeader = table->addNew<WText>( WString::tr( "fsw-upper-header" ));
+    highHeader->addStyleClass( "FswColHeader");
+    WText *fitHeader = table->addNew<WText>( WString::tr( "fsw-fit-cb-header" ));
+    fitHeader->addStyleClass( "FswColHeader");
   }
   else
   {
-    new WText( "", table );
-    new WText( "", table ); // val col placeholder (no header needed for single-col)
-    WText *fitHeader = new WText( WString::tr( "fsw-fit-cb-header" ), table );
-    fitHeader->addStyleClass( "FswColHeader" );
+    table->addNew<WText>( "");
+    table->addNew<WText>( ""); // val col placeholder (no header needed for single-col)
+    WText *fitHeader = table->addNew<WText>( WString::tr( "fsw-fit-cb-header" ));
+    fitHeader->addStyleClass( "FswColHeader");
   }
 
   for( size_t p = 0; p < nparams; ++p )
   {
     const PeakDef::CoefficientType coefType
       = static_cast<PeakDef::CoefficientType>(
-          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ) );
+          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
 
-    const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType );
+    const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType);
 
     double range_lower = 0, range_upper = 0, start_val = 0, step_size = 0;
-    PeakDef::skew_parameter_range( skewType, coefType, range_lower, range_upper, start_val, step_size );
+    PeakDef::skew_parameter_range( skewType, coefType, range_lower, range_upper, start_val, step_size);
 
     const char *labelMsgId = nullptr;
     const char *tooltipMsgId = nullptr;
-    skew_param_msg_ids( skewType, p, labelMsgId, tooltipMsgId );
+    skew_param_msg_ids( skewType, p, labelMsgId, tooltipMsgId);
 
     // Build tooltip
     WString tooltipText;
     if( tooltipMsgId )
-      tooltipText = WString::tr( tooltipMsgId );
+      tooltipText = WString::tr( tooltipMsgId);
 
     // Parameter label
-    WText *paramLabel = new WText(
-      labelMsgId ? WString::tr( labelMsgId ) : WString::tr( "fsw-param-label" ).arg( static_cast<int>( p ) ),
-      table );
-    paramLabel->addStyleClass( "FswParamName" );
+    WText *paramLabel = table->addNew<WText>(
+      labelMsgId ? WString::tr( labelMsgId ) : WString::tr( "fsw-param-label" ).arg( static_cast<int>( p ) ));
+    paramLabel->addStyleClass( "FswParamName");
 
     if( !tooltipText.empty() )
     {
       HelpSystem::attachToolTipOn( paramLabel, tooltipText, true,
-                                   HelpSystem::ToolTipPosition::Right );
+                                   HelpSystem::ToolTipPosition::Right);
     }
 
     if( energyDep )
     {
       // Lower spin
-      NativeFloatSpinBox *lowerSpin = new NativeFloatSpinBox( table );
-      lowerSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ) );
-      lowerSpin->setFormatString( "%.4G" );
-      lowerSpin->setSpinnerHidden( true );
-      lowerSpin->addStyleClass( "FswSpin" );
-      lowerSpin->setValue( static_cast<float>( start_val ) );
+      NativeFloatSpinBox *lowerSpin = table->addNew<NativeFloatSpinBox>();
+      lowerSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
+      lowerSpin->setFormatString( "%.4G");
+      lowerSpin->setSpinnerHidden( true);
+      lowerSpin->addStyleClass( "FswSpin");
+      lowerSpin->setValue( static_cast<float>( start_val ));
       m_lowerSpin[p] = lowerSpin;
       lowerSpin->valueChanged().connect( std::bind( [this]( float ){
         userEditedSkewValue();
-      }, std::placeholders::_1 ) );
+      }, std::placeholders::_1 ));
 
       // Upper spin
-      NativeFloatSpinBox *upperSpin = new NativeFloatSpinBox( table );
-      upperSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ) );
-      upperSpin->setFormatString( "%.4G" );
-      upperSpin->setSpinnerHidden( true );
-      upperSpin->addStyleClass( "FswSpin" );
-      upperSpin->setValue( static_cast<float>( start_val ) );
+      NativeFloatSpinBox *upperSpin = table->addNew<NativeFloatSpinBox>();
+      upperSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
+      upperSpin->setFormatString( "%.4G");
+      upperSpin->setSpinnerHidden( true);
+      upperSpin->addStyleClass( "FswSpin");
+      upperSpin->setValue( static_cast<float>( start_val ));
       m_upperSpin[p] = upperSpin;
       upperSpin->valueChanged().connect( std::bind( [this]( float ){
         userEditedSkewValue();
-      }, std::placeholders::_1 ) );
+      }, std::placeholders::_1 ));
 
       if( !tooltipText.empty() )
       {
         HelpSystem::attachToolTipOn( lowerSpin, tooltipText, true,
-                                     HelpSystem::ToolTipPosition::Right );
+                                     HelpSystem::ToolTipPosition::Right);
         HelpSystem::attachToolTipOn( upperSpin, tooltipText, true,
-                                     HelpSystem::ToolTipPosition::Right );
+                                     HelpSystem::ToolTipPosition::Right);
       }
     }
     else
     {
       // Single value spin
-      NativeFloatSpinBox *valSpin = new NativeFloatSpinBox( table );
-      valSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ) );
-      valSpin->setFormatString( "%.4G" );
-      valSpin->setSpinnerHidden( true );
-      valSpin->addStyleClass( hasEnergyDep ? "FswSpin FswSpinWide" : "FswSpin" );
-      valSpin->setValue( static_cast<float>( start_val ) );
+      NativeFloatSpinBox *valSpin = table->addNew<NativeFloatSpinBox>();
+      valSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
+      valSpin->setFormatString( "%.4G");
+      valSpin->setSpinnerHidden( true);
+      valSpin->addStyleClass( hasEnergyDep ? "FswSpin FswSpinWide" : "FswSpin");
+      valSpin->setValue( static_cast<float>( start_val ));
       m_lowerSpin[p] = valSpin;
       valSpin->valueChanged().connect( std::bind( [this]( float ){
         userEditedSkewValue();
-      }, std::placeholders::_1 ) );
+      }, std::placeholders::_1 ));
 
       if( !tooltipText.empty() )
       {
         HelpSystem::attachToolTipOn( valSpin, tooltipText, true,
-                                     HelpSystem::ToolTipPosition::Right );
+                                     HelpSystem::ToolTipPosition::Right);
       }
     }
 
     // "Fit" checkbox — last column (right side)
-    m_fitCb[p] = new WCheckBox( table );
-    m_fitCb[p]->setChecked( true );
+    m_fitCb[p] = table->addNew<WCheckBox>();
+    m_fitCb[p]->setChecked( true);
   }//for( each skew param )
 }//void updateSkewParamRows()
 
@@ -506,8 +494,8 @@ vector<shared_ptr<const PeakDef>> FitSkewParamsTool::applySkewToPeaks(
   if( skewIdx < 0 || skewIdx >= static_cast<int>( PeakDef::NumSkewType ) )
     return peaks;
 
-  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx );
-  const size_t nparams = PeakDef::num_skew_parameters( skewType );
+  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
+  const size_t nparams = PeakDef::num_skew_parameters( skewType);
 
   if( nparams == 0 )
     return peaks;
@@ -524,39 +512,39 @@ vector<shared_ptr<const PeakDef>> FitSkewParamsTool::applySkewToPeaks(
   const double energySpan = maxEnergy - minEnergy;
 
   vector<shared_ptr<const PeakDef>> result;
-  result.reserve( peaks.size() );
+  result.reserve( peaks.size());
 
   for( const shared_ptr<const PeakDef> &peak : peaks )
   {
-    shared_ptr<PeakDef> newPeak = make_shared<PeakDef>( *peak );
-    newPeak->setSkewType( skewType );
+    shared_ptr<PeakDef> newPeak = make_shared<PeakDef>( *peak);
+    newPeak->setSkewType( skewType);
 
     for( size_t p = 0; p < nparams; ++p )
     {
       const PeakDef::CoefficientType coefType
         = static_cast<PeakDef::CoefficientType>(
-            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ) );
+            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
 
-      const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType );
+      const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType);
 
       double value = 0;
       if( energyDep && m_lowerSpin[p] && m_upperSpin[p] && (energySpan > 1.0) )
       {
         // Interpolate between lower and upper based on peak energy
-        const double lowerVal = static_cast<double>( m_lowerSpin[p]->value() );
-        const double upperVal = static_cast<double>( m_upperSpin[p]->value() );
+        const double lowerVal = static_cast<double>( m_lowerSpin[p]->value());
+        const double upperVal = static_cast<double>( m_upperSpin[p]->value());
         const double frac = (newPeak->mean() - minEnergy) / energySpan;
         value = lowerVal + frac * (upperVal - lowerVal);
       }
       else if( m_lowerSpin[p] )
       {
-        value = static_cast<double>( m_lowerSpin[p]->value() );
+        value = static_cast<double>( m_lowerSpin[p]->value());
       }
 
-      newPeak->set_coefficient( value, coefType );
+      newPeak->set_coefficient( value, coefType);
     }//for( each param )
 
-    result.push_back( newPeak );
+    result.push_back( newPeak);
   }//for( each peak )
 
   return result;
@@ -572,13 +560,13 @@ void FitSkewParamsTool::userEditedSkewValue()
   const vector<shared_ptr<const PeakDef>> &basePeaks
     = m_fitPeaks.empty() ? m_detectedPeaks : m_fitPeaks;
 
-  const vector<shared_ptr<const PeakDef>> displayPeaks = applySkewToPeaks( basePeaks );
-  m_peakModel->setPeaks( displayPeaks );
+  const vector<shared_ptr<const PeakDef>> displayPeaks = applySkewToPeaks( basePeaks);
+  m_peakModel->setPeaks( displayPeaks);
 
   // Update fit button state
   const int skewIdx = m_skewTypeCombo->currentIndex();
-  const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( skewIdx );
-  m_fitBtn->setEnabled( PeakDef::num_skew_parameters( st ) > 0 && !m_isCalculating );
+  const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( skewIdx);
+  m_fitBtn->setEnabled( PeakDef::num_skew_parameters( st ) > 0 && !m_isCalculating);
 }//void userEditedSkewValue()
 
 
@@ -591,8 +579,8 @@ void FitSkewParamsTool::doFit()
   if( skewIdx < 0 || skewIdx >= static_cast<int>( PeakDef::NumSkewType ) )
     return;
 
-  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx );
-  const size_t nparams = PeakDef::num_skew_parameters( skewType );
+  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
+  const size_t nparams = PeakDef::num_skew_parameters( skewType);
   if( nparams == 0 )
     return;
 
@@ -602,39 +590,39 @@ void FitSkewParamsTool::doFit()
     return;
 
   m_isCalculating = true;
-  m_fitBtn->setEnabled( false );
-  m_statusText->setText( WString::tr( "fsw-fitting" ) );
+  m_fitBtn->setEnabled( false);
+  m_statusText->setText( WString::tr( "fsw-fitting" ));
 
   // Cancel any previous calculation
   if( m_cancelCalc )
-    m_cancelCalc->store( true );
-  m_cancelCalc = make_shared<atomic_bool>( false );
+    m_cancelCalc->store( true);
+  m_cancelCalc = make_shared<atomic_bool>( false);
 
   // Apply current GUI skew values to the model's peaks
-  const vector<shared_ptr<const PeakDef>> basePeaks( modelPeaks->begin(), modelPeaks->end() );
-  vector<shared_ptr<const PeakDef>> inputPeaks = applySkewToPeaks( basePeaks );
+  const vector<shared_ptr<const PeakDef>> basePeaks( modelPeaks->begin(), modelPeaks->end());
+  vector<shared_ptr<const PeakDef>> inputPeaks = applySkewToPeaks( basePeaks);
 
   // Set fitFor flags based on the "fit" checkboxes
   for( shared_ptr<const PeakDef> &constPeak : inputPeaks )
   {
     // We need mutable access - applySkewToPeaks already made copies
-    shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak );
+    shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak);
     for( size_t p = 0; p < nparams; ++p )
     {
       const PeakDef::CoefficientType coefType
         = static_cast<PeakDef::CoefficientType>(
-            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ) );
+            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
 
       const bool shouldFit = m_fitCb[p] && m_fitCb[p]->isChecked();
-      peak->setFitFor( coefType, shouldFit );
+      peak->setFitFor( coefType, shouldFit);
     }
   }
 
   // Get detector type
   shared_ptr<const SpecMeas> meas
-    = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+    = m_viewer->measurment( SpecUtils::SpectrumType::Foreground);
   shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
-  assert( prefs );
+  assert( prefs);
 
   optional<PeakFitUtils::CoarseResolutionType> resType = PeakFitUtils::CoarseResolutionType::Unknown;
   if( prefs )
@@ -649,18 +637,15 @@ void FitSkewParamsTool::doFit()
   if( !server )
   {
     m_isCalculating = false;
-    m_fitBtn->setEnabled( true );
-    m_statusText->setText( "" );
+    m_fitBtn->setEnabled( true);
+    m_statusText->setText( "");
     return;
   }
 
-  // Pre-allocate results and create bound callback in GUI thread, so if widget is destroyed
-  //  before the worker thread finishes, the callback will be a no-op.
+  // Pre-allocate results; WServer::post() safely no-ops if session is gone by the time
+  //  the background thread finishes.
   shared_ptr<PeakFitLM::FitPeaksResults> results
     = make_shared<PeakFitLM::FitPeaksResults>();
-  boost::function<void()> boundCallback = wApp->bind(
-    boost::bind( &FitSkewParamsTool::handleFitResults, this, results, cancelFlag )
-  );
 
   // Run fit in background thread
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
@@ -677,7 +662,7 @@ void FitSkewParamsTool::doFit()
         resType,
         skewType,
         PeakFitLM::SmallRefinementOnly
-      );
+     );
     }catch( std::exception &e )
     {
       results->status = PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Failure;
@@ -688,9 +673,9 @@ void FitSkewParamsTool::doFit()
       results->error_message = "Fit failed with unknown error";
     }
 
-    // Post results back to GUI thread; boundCallback is safe even if widget was destroyed
-    WServer::instance()->post( sessionId, boundCallback );
-  }) );
+    // Post results back to GUI thread; safe even if session was destroyed
+    WServer::instance()->post( sessionId, [this, results, cancelFlag](){ handleFitResults( results, cancelFlag); });
+  }));
 }//void doFit()
 
 
@@ -702,13 +687,13 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
     return;
 
   m_isCalculating = false;
-  m_fitBtn->setEnabled( true );
+  m_fitBtn->setEnabled( true);
 
   if( !results
      || results->status != PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success )
   {
     const string errMsg = results ? results->error_message : "Unknown error";
-    m_statusText->setText( WString::tr( "fsw-fit-failed" ).arg( errMsg ) );
+    m_statusText->setText( WString::tr( "fsw-fit-failed" ).arg( errMsg ));
     return;
   }
 
@@ -734,7 +719,7 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
       if( sr.non_energy_dependent_skew_pars[p].has_value() )
       {
         if( m_lowerSpin[p] )
-          m_lowerSpin[p]->setValue( static_cast<float>( sr.non_energy_dependent_skew_pars[p].value().first ) );
+          m_lowerSpin[p]->setValue( static_cast<float>( sr.non_energy_dependent_skew_pars[p].value().first ));
       }
     }
   }//if( m_fitSkewRelation )
@@ -743,8 +728,8 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
   // by looking at the lowest and highest energy peaks
   if( !m_fitPeaks.empty() )
   {
-    const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( m_skewTypeCombo->currentIndex() );
-    const size_t nparams = PeakDef::num_skew_parameters( skewType );
+    const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( m_skewTypeCombo->currentIndex());
+    const size_t nparams = PeakDef::num_skew_parameters( skewType);
 
     // Find lowest and highest energy peaks
     shared_ptr<const PeakDef> lowestPeak = m_fitPeaks.front();
@@ -761,27 +746,27 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
     {
       const PeakDef::CoefficientType coefType
         = static_cast<PeakDef::CoefficientType>(
-            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ) );
-      const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType );
+            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
+      const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType);
 
       if( energyDep )
       {
         if( m_lowerSpin[p] )
-          m_lowerSpin[p]->setValue( static_cast<float>( lowestPeak->coefficient( coefType ) ) );
+          m_lowerSpin[p]->setValue( static_cast<float>( lowestPeak->coefficient( coefType ) ));
         if( m_upperSpin[p] )
-          m_upperSpin[p]->setValue( static_cast<float>( highestPeak->coefficient( coefType ) ) );
+          m_upperSpin[p]->setValue( static_cast<float>( highestPeak->coefficient( coefType ) ));
       }
       else
       {
         // Non-energy-dep: all peaks should have the same value; use lowest peak's
         if( m_lowerSpin[p] )
-          m_lowerSpin[p]->setValue( static_cast<float>( lowestPeak->coefficient( coefType ) ) );
+          m_lowerSpin[p]->setValue( static_cast<float>( lowestPeak->coefficient( coefType ) ));
       }
     }//for( each param )
   }//if( !m_fitPeaks.empty() )
 
   // Update spectrum display with fit peaks
-  m_peakModel->setPeaks( m_fitPeaks );
+  m_peakModel->setPeaks( m_fitPeaks);
 
   // Compute average chi2/dof across unique ROIs
   double chi2dofSum = 0.0;
@@ -796,15 +781,15 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
     }
   }
 
-  WString statusMsg = WString::tr( "fsw-fit-success" ).arg( static_cast<int>( m_fitPeaks.size() ) );
+  WString statusMsg = WString::tr( "fsw-fit-success" ).arg( static_cast<int>( m_fitPeaks.size() ));
   if( nRois > 0 )
   {
     char chi2Buf[32];
-    snprintf( chi2Buf, sizeof( chi2Buf ), "%.1f", chi2dofSum / nRois );
-    statusMsg += WString::tr( "fsw-fit-chi2" ).arg( chi2Buf );
+    snprintf( chi2Buf, sizeof( chi2Buf ), "%.1f", chi2dofSum / nRois);
+    statusMsg += WString::tr( "fsw-fit-chi2" ).arg( chi2Buf);
   }
 
-  m_statusText->setText( statusMsg );
+  m_statusText->setText( statusMsg);
 
   m_resultUpdated.emit();
 
@@ -831,25 +816,25 @@ void FitSkewParamsTool::acceptResults()
   // Skew type from combo
   const int skewIdx = m_skewTypeCombo->currentIndex();
   if( skewIdx >= 0 && skewIdx < static_cast<int>( PeakDef::NumSkewType ) )
-    newPrefs->m_peak_skew_type = static_cast<PeakDef::SkewType>( skewIdx );
+    newPrefs->m_peak_skew_type = static_cast<PeakDef::SkewType>( skewIdx);
   else
     newPrefs->m_peak_skew_type = PeakDef::NoSkew;
 
   // Skew param values from spin boxes
-  const size_t nparams = PeakDef::num_skew_parameters( newPrefs->m_peak_skew_type );
+  const size_t nparams = PeakDef::num_skew_parameters( newPrefs->m_peak_skew_type);
   for( size_t p = 0; p < nparams; ++p )
   {
     if( m_lowerSpin[p] )
-      newPrefs->m_lower_energy_skew[p] = static_cast<double>( m_lowerSpin[p]->value() );
+      newPrefs->m_lower_energy_skew[p] = static_cast<double>( m_lowerSpin[p]->value());
     if( m_upperSpin[p] )
-      newPrefs->m_upper_energy_skew[p] = static_cast<double>( m_upperSpin[p]->value() );
+      newPrefs->m_upper_energy_skew[p] = static_cast<double>( m_upperSpin[p]->value());
   }
 
   newPrefs->m_roi_independent_skew = false; // This tool is for related skew
   newPrefs->m_source = PeakFitDetPrefs::LoadingSource::UserInputInGui;
 
   // Apply to SpecMeas and notify
-  meas->setPeakFitDetPrefs( newPrefs );
+  meas->setPeakFitDetPrefs( newPrefs);
   m_viewer->peakFitDetPrefsChanged().emit();
 
   // Optionally refit analysis peaks with the new skew parameters
@@ -859,26 +844,26 @@ void FitSkewParamsTool::acceptResults()
     const shared_ptr<const deque<PeakModel::PeakShrdPtr>> currentPeaks
       = peakModel ? peakModel->peaks() : nullptr;
     const shared_ptr<const SpecUtils::Measurement> data
-      = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+      = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground);
 
     if( peakModel && currentPeaks && !currentPeaks->empty() && data )
     {
       UndoRedoManager::PeakModelChange peak_undo_creator;
 
       // Apply fitted skew parameters to copies of the existing analysis peaks
-      const vector<shared_ptr<const PeakDef>> existing( currentPeaks->begin(), currentPeaks->end() );
-      const vector<shared_ptr<const PeakDef>> withSkew = applySkewToPeaks( existing );
+      const vector<shared_ptr<const PeakDef>> existing( currentPeaks->begin(), currentPeaks->end());
+      const vector<shared_ptr<const PeakDef>> withSkew = applySkewToPeaks( existing);
 
       // Lock skew params so refitting only adjusts amplitude, mean, sigma, continuum
       for( const shared_ptr<const PeakDef> &constPeak : withSkew )
       {
-        shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak );
-        const size_t nSkew = PeakDef::num_skew_parameters( peak->skewType() );
+        shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak);
+        const size_t nSkew = PeakDef::num_skew_parameters( peak->skewType());
         for( size_t i = 0; i < nSkew; ++i )
         {
           const PeakDef::CoefficientType ct = static_cast<PeakDef::CoefficientType>(
-            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( i ) );
-          peak->setFitFor( ct, false );
+            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( i ));
+          peak->setFitFor( ct, false);
         }
       }
 
@@ -887,30 +872,30 @@ void FitSkewParamsTool::acceptResults()
 
       map<shared_ptr<const PeakContinuum>, vector<shared_ptr<const PeakDef>>> roiGroups;
       for( const shared_ptr<const PeakDef> &pk : withSkew )
-        roiGroups[pk->continuum()].push_back( pk );
+        roiGroups[pk->continuum()].push_back( pk);
 
       shared_ptr<const PeakFitDetPrefs> skewPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
       if( !skewPrefs && drf )
         skewPrefs = drf->peakFitDetPrefs();
-      assert( skewPrefs );
+      assert( skewPrefs);
       const PeakFitUtils::CoarseResolutionType skewDetType
-        = skewPrefs ? skewPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, meas );
+        = skewPrefs ? skewPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, meas);
 
       vector<shared_ptr<const PeakDef>> allRefit;
       for( const auto &entry : roiGroups )
       {
         const vector<shared_ptr<const PeakDef>> refit
           = refitPeaksThatShareROI( data, drf, entry.second,
-                                    skewDetType, PeakFitLM::SmallRefinementOnly );
+                                    skewDetType, PeakFitLM::SmallRefinementOnly);
 
         if( refit.size() == entry.second.size() )
-          allRefit.insert( allRefit.end(), refit.begin(), refit.end() );
+          allRefit.insert( allRefit.end(), refit.begin(), refit.end());
         else
-          allRefit.insert( allRefit.end(), entry.second.begin(), entry.second.end() );
+          allRefit.insert( allRefit.end(), entry.second.begin(), entry.second.end());
       }//for( each ROI group )
 
-      std::sort( allRefit.begin(), allRefit.end(), &PeakDef::lessThanByMeanShrdPtr );
-      peakModel->setPeaks( allRefit );
+      std::sort( allRefit.begin(), allRefit.end(), &PeakDef::lessThanByMeanShrdPtr);
+      peakModel->setPeaks( allRefit);
     }//if( have peaks and data )
   }//if( update peaks )
 }//void acceptResults()
@@ -931,7 +916,7 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
   shared_ptr<const PeakContinuum> continuum;
   for( const shared_ptr<const PeakDef> &p : *allPeaks )
   {
-    const double de = fabs( p->continuum()->lowerEnergy() - orig_lower );
+    const double de = fabs( p->continuum()->lowerEnergy() - orig_lower);
     if( de < minDe )
     {
       minDe = de;
@@ -951,8 +936,8 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
     new_upper = continuum->upperEnergy();
 
   // Create new continuum with updated range
-  shared_ptr<PeakContinuum> newContinuum = make_shared<PeakContinuum>( *continuum );
-  newContinuum->setRange( new_lower, new_upper );
+  shared_ptr<PeakContinuum> newContinuum = make_shared<PeakContinuum>( *continuum);
+  newContinuum->setRange( new_lower, new_upper);
 
   // Build new peaks for this ROI with the new continuum
   vector<shared_ptr<const PeakDef>> roiPeaks, otherPeaks;
@@ -963,13 +948,13 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
       // Skip peaks whose mean is more than 1 sigma outside the new range
       if( (p->mean() + p->sigma()) < new_lower || (p->mean() - p->sigma()) > new_upper )
         continue;
-      shared_ptr<PeakDef> newPeak = make_shared<PeakDef>( *p );
-      newPeak->setContinuum( newContinuum );
-      roiPeaks.push_back( newPeak );
+      shared_ptr<PeakDef> newPeak = make_shared<PeakDef>( *p);
+      newPeak->setContinuum( newContinuum);
+      roiPeaks.push_back( newPeak);
     }
     else
     {
-      otherPeaks.push_back( p );
+      otherPeaks.push_back( p);
     }
   }//for( each peak )
 
@@ -980,13 +965,13 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
   //  the skew values are already set correctly from the display peaks.
   for( const shared_ptr<const PeakDef> &constPeak : roiPeaks )
   {
-    shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak );
-    const size_t nSkew = PeakDef::num_skew_parameters( peak->skewType() );
+    shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak);
+    const size_t nSkew = PeakDef::num_skew_parameters( peak->skewType());
     for( size_t i = 0; i < nSkew; ++i )
     {
       const PeakDef::CoefficientType ct = static_cast<PeakDef::CoefficientType>(
-        static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( i ) );
-      peak->setFitFor( ct, false );
+        static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( i ));
+      peak->setFitFor( ct, false);
     }
   }//for( set skew fitFor to false )
 
@@ -999,13 +984,13 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
     shared_ptr<const PeakFitDetPrefs> dragFitPrefs = dragMeas ? dragMeas->peakFitDetPrefs() : nullptr;
     if( !dragFitPrefs && dragMeas )
       dragFitPrefs = dragMeas->detector() ? dragMeas->detector()->peakFitDetPrefs() : nullptr;
-    assert( dragFitPrefs );
+    assert( dragFitPrefs);
     const PeakFitUtils::CoarseResolutionType dragDetType
-      = dragFitPrefs ? dragFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( m_spectrum, dragMeas );
+      = dragFitPrefs ? dragFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( m_spectrum, dragMeas);
 
     const vector<shared_ptr<const PeakDef>> refitPeaks
       = refitPeaksThatShareROI_LM( m_spectrum, detector, roiPeaks,
-                                   dragDetType, PeakFitLM::SmallRefinementOnly );
+                                   dragDetType, PeakFitLM::SmallRefinementOnly);
     if( !refitPeaks.empty() )
       roiPeaks = refitPeaks;
   }//if( is_final && worth refitting )
@@ -1014,23 +999,23 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
   {
     // Combine refit ROI peaks with other peaks and update model
     vector<shared_ptr<const PeakDef>> combined;
-    combined.reserve( otherPeaks.size() + roiPeaks.size() );
-    combined.insert( combined.end(), otherPeaks.begin(), otherPeaks.end() );
-    combined.insert( combined.end(), roiPeaks.begin(), roiPeaks.end() );
-    std::sort( combined.begin(), combined.end(), &PeakDef::lessThanByMeanShrdPtr );
-    m_peakModel->setPeaks( combined );
+    combined.reserve( otherPeaks.size() + roiPeaks.size());
+    combined.insert( combined.end(), otherPeaks.begin(), otherPeaks.end());
+    combined.insert( combined.end(), roiPeaks.begin(), roiPeaks.end());
+    std::sort( combined.begin(), combined.end(), &PeakDef::lessThanByMeanShrdPtr);
+    m_peakModel->setPeaks( combined);
 
     // Also update m_detectedPeaks to match (remove old ROI peaks, add new ones)
     vector<shared_ptr<const PeakDef>> updatedDetected;
     for( const shared_ptr<const PeakDef> &p : m_detectedPeaks )
     {
       if( p->continuum() != continuum )
-        updatedDetected.push_back( p );
+        updatedDetected.push_back( p);
     }
     // Add back the refit peaks (without skew, matching the source peaks)
     for( const shared_ptr<const PeakDef> &p : roiPeaks )
-      updatedDetected.push_back( p );
-    std::sort( updatedDetected.begin(), updatedDetected.end(), &PeakDef::lessThanByMeanShrdPtr );
+      updatedDetected.push_back( p);
+    std::sort( updatedDetected.begin(), updatedDetected.end(), &PeakDef::lessThanByMeanShrdPtr);
     m_detectedPeaks = updatedDetected;
 
     m_fitPeaks.clear();
@@ -1038,7 +1023,7 @@ void FitSkewParamsTool::handleRoiDrag( double new_lower, double new_upper, doubl
   else
   {
     // Intermediate drag preview
-    m_chart->updateRoiBeingDragged( roiPeaks );
+    m_chart->updateRoiBeingDragged( roiPeaks);
   }
 }//void handleRoiDrag(...)
 
@@ -1057,7 +1042,7 @@ void FitSkewParamsTool::handleRightClick( double energy, double /*counts*/,
   {
     if( energy >= p->continuum()->lowerEnergy() && energy <= p->continuum()->upperEnergy() )
     {
-      const double dist = fabs( p->mean() - energy );
+      const double dist = fabs( p->mean() - energy);
       if( dist < minDist )
       {
         minDist = dist;
@@ -1078,26 +1063,27 @@ void FitSkewParamsTool::handleRightClick( double energy, double /*counts*/,
   m_rightClickMenu = new WPopupMenu();
 
   // "Change Continuum" submenu
-  WPopupMenu *contMenu = new WPopupMenu();
-  for( int t = static_cast<int>( PeakContinuum::NoOffset );
-       t <= static_cast<int>( PeakContinuum::External );
+  auto contMenuOwned = std::make_unique<WPopupMenu>();
+  WPopupMenu *contMenu = contMenuOwned.get();
+  for( int t = static_cast<int>( PeakContinuum::NoOffset);
+       t <= static_cast<int>( PeakContinuum::External);
        t = t + 1 )
   {
-    const PeakContinuum::OffsetType ot = static_cast<PeakContinuum::OffsetType>( t );
-    WMenuItem *item = contMenu->addItem( WString::tr( PeakContinuum::offset_type_label_tr( ot ) ) );
+    const PeakContinuum::OffsetType ot = static_cast<PeakContinuum::OffsetType>( t);
+    WMenuItem *item = contMenu->addItem( WString::tr( PeakContinuum::offset_type_label_tr( ot ) ));
     item->triggered().connect( std::bind( [this, t](){
-      changeContinuumTypeNearEnergy( m_rightClickEnergy, t );
-    }) );
+      changeContinuumTypeNearEnergy( m_rightClickEnergy, t);
+    }));
   }
-  m_rightClickMenu->addMenu( WString::tr( "fsw-rclick-change-cont" ), contMenu );
+  m_rightClickMenu->addMenu( WString::tr( "fsw-rclick-change-cont" ), std::move(contMenuOwned));
 
   // "Delete Peak" item
-  WMenuItem *delItem = m_rightClickMenu->addItem( WString::tr( "fsw-rclick-delete-peak" ) );
+  WMenuItem *delItem = m_rightClickMenu->addItem( WString::tr( "fsw-rclick-delete-peak" ));
   delItem->triggered().connect( std::bind( [this](){
-    deletePeakNearEnergy( m_rightClickEnergy );
-  }) );
+    deletePeakNearEnergy( m_rightClickEnergy);
+  }));
 
-  m_rightClickMenu->popup( WPoint( pageX, pageY ) );
+  m_rightClickMenu->popup( WPoint( pageX, pageY ));
 }//void handleRightClick(...)
 
 
@@ -1112,7 +1098,7 @@ void FitSkewParamsTool::deletePeakNearEnergy( double energy )
   double minDist = numeric_limits<double>::max();
   for( const shared_ptr<const PeakDef> &p : *allPeaks )
   {
-    const double dist = fabs( p->mean() - energy );
+    const double dist = fabs( p->mean() - energy);
     if( dist < minDist )
     {
       minDist = dist;
@@ -1126,14 +1112,14 @@ void FitSkewParamsTool::deletePeakNearEnergy( double energy )
   const double targetMean = target->mean();
 
   // Remove from display model
-  m_peakModel->removePeak( target );
+  m_peakModel->removePeak( target);
 
   // Remove corresponding peak from m_detectedPeaks (match by mean energy)
   for( auto it = m_detectedPeaks.begin(); it != m_detectedPeaks.end(); ++it )
   {
     if( fabs( (*it)->mean() - targetMean ) < 0.1 )
     {
-      m_detectedPeaks.erase( it );
+      m_detectedPeaks.erase( it);
       break;
     }
   }
@@ -1143,7 +1129,7 @@ void FitSkewParamsTool::deletePeakNearEnergy( double energy )
   {
     if( fabs( (*it)->mean() - targetMean ) < 0.1 )
     {
-      m_fitPeaks.erase( it );
+      m_fitPeaks.erase( it);
       break;
     }
   }
@@ -1153,7 +1139,7 @@ void FitSkewParamsTool::deletePeakNearEnergy( double energy )
 void FitSkewParamsTool::handleShiftKeyDrag( double x0, double x1 )
 {
   if( x0 > x1 )
-    std::swap( x0, x1 );
+    std::swap( x0, x1);
 
   const shared_ptr<const deque<shared_ptr<const PeakDef>>> allPeaks = m_peakModel->peaks();
   if( !allPeaks || allPeaks->empty() )
@@ -1164,7 +1150,7 @@ void FitSkewParamsTool::handleShiftKeyDrag( double x0, double x1 )
   for( const shared_ptr<const PeakDef> &p : *allPeaks )
   {
     if( p->mean() >= x0 && p->mean() <= x1 )
-      toRemove.push_back( p );
+      toRemove.push_back( p);
   }
 
   if( toRemove.empty() )
@@ -1172,7 +1158,7 @@ void FitSkewParamsTool::handleShiftKeyDrag( double x0, double x1 )
 
   // Remove from display model
   for( const shared_ptr<const PeakDef> &p : toRemove )
-    m_peakModel->removePeak( p );
+    m_peakModel->removePeak( p);
 
   // Remove from m_detectedPeaks and m_fitPeaks by matching mean energy
   for( const shared_ptr<const PeakDef> &removed : toRemove )
@@ -1183,7 +1169,7 @@ void FitSkewParamsTool::handleShiftKeyDrag( double x0, double x1 )
     {
       if( fabs( (*it)->mean() - mean ) < 0.1 )
       {
-        m_detectedPeaks.erase( it );
+        m_detectedPeaks.erase( it);
         break;
       }
     }
@@ -1192,7 +1178,7 @@ void FitSkewParamsTool::handleShiftKeyDrag( double x0, double x1 )
     {
       if( fabs( (*it)->mean() - mean ) < 0.1 )
       {
-        m_fitPeaks.erase( it );
+        m_fitPeaks.erase( it);
         break;
       }
     }
@@ -1205,7 +1191,7 @@ void FitSkewParamsTool::changeContinuumTypeNearEnergy( double energy, int contin
   if( continuum_type < 0 || continuum_type > static_cast<int>( PeakContinuum::External ) )
     return;
 
-  const PeakContinuum::OffsetType newType = static_cast<PeakContinuum::OffsetType>( continuum_type );
+  const PeakContinuum::OffsetType newType = static_cast<PeakContinuum::OffsetType>( continuum_type);
 
   const shared_ptr<const deque<shared_ptr<const PeakDef>>> allPeaks = m_peakModel->peaks();
   if( !allPeaks || allPeaks->empty() )
@@ -1218,7 +1204,7 @@ void FitSkewParamsTool::changeContinuumTypeNearEnergy( double energy, int contin
   {
     if( energy >= p->continuum()->lowerEnergy() && energy <= p->continuum()->upperEnergy() )
     {
-      const double dist = fabs( p->mean() - energy );
+      const double dist = fabs( p->mean() - energy);
       if( dist < minDist )
       {
         minDist = dist;
@@ -1233,8 +1219,8 @@ void FitSkewParamsTool::changeContinuumTypeNearEnergy( double energy, int contin
   const shared_ptr<const PeakContinuum> oldContinuum = nearestPeak->continuum();
 
   // Create new continuum with the requested type
-  shared_ptr<PeakContinuum> newContinuum = make_shared<PeakContinuum>( *oldContinuum );
-  newContinuum->setType( newType );
+  shared_ptr<PeakContinuum> newContinuum = make_shared<PeakContinuum>( *oldContinuum);
+  newContinuum->setType( newType);
 
   // Gather all peaks sharing this ROI and update their continuum
   vector<shared_ptr<const PeakDef>> roiPeaks, otherPeaks;
@@ -1242,13 +1228,13 @@ void FitSkewParamsTool::changeContinuumTypeNearEnergy( double energy, int contin
   {
     if( p->continuum() == oldContinuum )
     {
-      shared_ptr<PeakDef> newPeak = make_shared<PeakDef>( *p );
-      newPeak->setContinuum( newContinuum );
-      roiPeaks.push_back( newPeak );
+      shared_ptr<PeakDef> newPeak = make_shared<PeakDef>( *p);
+      newPeak->setContinuum( newContinuum);
+      roiPeaks.push_back( newPeak);
     }
     else
     {
-      otherPeaks.push_back( p );
+      otherPeaks.push_back( p);
     }
   }
 
@@ -1258,13 +1244,13 @@ void FitSkewParamsTool::changeContinuumTypeNearEnergy( double energy, int contin
   // Set skew fitFor(false) on all ROI peaks so skew is preserved during refit
   for( const shared_ptr<const PeakDef> &constPeak : roiPeaks )
   {
-    shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak );
-    const size_t nSkew = PeakDef::num_skew_parameters( peak->skewType() );
+    shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak);
+    const size_t nSkew = PeakDef::num_skew_parameters( peak->skewType());
     for( size_t i = 0; i < nSkew; ++i )
     {
       const PeakDef::CoefficientType ct = static_cast<PeakDef::CoefficientType>(
-        static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( i ) );
-      peak->setFitFor( ct, false );
+        static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( i ));
+      peak->setFitFor( ct, false);
     }
   }//for( set skew fitFor to false )
 
@@ -1277,35 +1263,35 @@ void FitSkewParamsTool::changeContinuumTypeNearEnergy( double energy, int contin
     shared_ptr<const PeakFitDetPrefs> contFitPrefs = contMeas ? contMeas->peakFitDetPrefs() : nullptr;
     if( !contFitPrefs && contMeas )
       contFitPrefs = contMeas->detector() ? contMeas->detector()->peakFitDetPrefs() : nullptr;
-    assert( contFitPrefs );
+    assert( contFitPrefs);
     const PeakFitUtils::CoarseResolutionType contDetType
-      = contFitPrefs ? contFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( m_spectrum, contMeas );
+      = contFitPrefs ? contFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( m_spectrum, contMeas);
 
     const vector<shared_ptr<const PeakDef>> refitPeaks
       = refitPeaksThatShareROI_LM( m_spectrum, detector, roiPeaks,
-                                   contDetType, PeakFitLM::SmallRefinementOnly );
+                                   contDetType, PeakFitLM::SmallRefinementOnly);
     if( !refitPeaks.empty() )
       roiPeaks = refitPeaks;
   }
 
   // Combine and update model
   vector<shared_ptr<const PeakDef>> combined;
-  combined.reserve( otherPeaks.size() + roiPeaks.size() );
-  combined.insert( combined.end(), otherPeaks.begin(), otherPeaks.end() );
-  combined.insert( combined.end(), roiPeaks.begin(), roiPeaks.end() );
-  std::sort( combined.begin(), combined.end(), &PeakDef::lessThanByMeanShrdPtr );
-  m_peakModel->setPeaks( combined );
+  combined.reserve( otherPeaks.size() + roiPeaks.size());
+  combined.insert( combined.end(), otherPeaks.begin(), otherPeaks.end());
+  combined.insert( combined.end(), roiPeaks.begin(), roiPeaks.end());
+  std::sort( combined.begin(), combined.end(), &PeakDef::lessThanByMeanShrdPtr);
+  m_peakModel->setPeaks( combined);
 
   // Also update m_detectedPeaks to reflect the continuum change
   vector<shared_ptr<const PeakDef>> updatedDetected;
   for( const shared_ptr<const PeakDef> &p : m_detectedPeaks )
   {
     if( p->continuum() != oldContinuum )
-      updatedDetected.push_back( p );
+      updatedDetected.push_back( p);
   }
   for( const shared_ptr<const PeakDef> &p : roiPeaks )
-    updatedDetected.push_back( p );
-  std::sort( updatedDetected.begin(), updatedDetected.end(), &PeakDef::lessThanByMeanShrdPtr );
+    updatedDetected.push_back( p);
+  std::sort( updatedDetected.begin(), updatedDetected.end(), &PeakDef::lessThanByMeanShrdPtr);
   m_detectedPeaks = updatedDetected;
 
   m_fitPeaks.clear();
@@ -1325,35 +1311,37 @@ FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
 {
   rejectWhenEscapePressed();
 
-  m_tool = new FitSkewParamsTool( viewer, contents() );
+  m_tool = contents()->addNew<FitSkewParamsTool>( viewer);
 
   // Move the "update peaks" checkbox to the footer
   WCheckBox *updateCb = m_tool->updatePeaksCb();
   if( updateCb && updateCb->parent() )
   {
-    WContainerWidget *oldParent = dynamic_cast<WContainerWidget *>( updateCb->parent() );
+    WContainerWidget *oldParent = dynamic_cast<WContainerWidget *>( updateCb->parent());
     if( oldParent )
-      oldParent->removeWidget( updateCb );
-    footer()->addWidget( updateCb );
+    {
+      std::unique_ptr<Wt::WWidget> cbOwned = oldParent->removeWidget( updateCb);
+      footer()->addWidget( std::move(cbOwned));
+    }
   }
 
   // Cancel button - routes through InterSpec for undo/redo tracking
-  WPushButton *cancelBtn = addCloseButtonToFooter( WString::tr( "fsw-cancel-btn" ), true );
-  cancelBtn->clicked().connect( viewer, &InterSpec::closeFitSkewParamsWindow );
+  WPushButton *cancelBtn = addCloseButtonToFooter( WString::tr( "fsw-cancel-btn" ), true);
+  cancelBtn->clicked().connect( viewer, &InterSpec::closeFitSkewParamsWindow);
 
   // Also route the finished() signal (escape key, close button) through InterSpec
-  finished().connect( viewer, &InterSpec::closeFitSkewParamsWindow );
+  finished().connect( viewer, &InterSpec::closeFitSkewParamsWindow);
 
   // Accept button - routes through InterSpec for undo/redo tracking
-  m_acceptBtn = new WPushButton( WString::tr( "fsw-accept-btn" ), footer() );
-  m_acceptBtn->addStyleClass( "Wt-btn" );
-  m_acceptBtn->clicked().connect( viewer, &InterSpec::acceptFitSkewParamsWindow );
+  m_acceptBtn = footer()->addNew<WPushButton>( WString::tr( "fsw-accept-btn" ));
+  m_acceptBtn->addStyleClass( "Wt-btn");
+  m_acceptBtn->clicked().connect( viewer, &InterSpec::acceptFitSkewParamsWindow);
 
   m_tool->resultUpdated().connect( std::bind( [this](){
-    m_acceptBtn->setEnabled( m_tool->canAccept() );
-  }) );
+    m_acceptBtn->setEnabled( m_tool->canAccept());
+  }));
 
-  resizeScaledWindow( 0.7, 0.7 );
+  resizeScaledWindow( 0.7, 0.7);
   centerWindow();
   show();
 }//FitSkewParamsWindow constructor

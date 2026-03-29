@@ -28,7 +28,7 @@
 #include <string>
 #include <memory>
 
-#include <Wt/Dbo/Dbo>
+#include <Wt/Dbo/Dbo.h>
 
 namespace DataBaseVersionUpgrade
 {

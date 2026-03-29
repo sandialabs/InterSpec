@@ -22,23 +22,23 @@
  */
 #include "InterSpec_config.h"
 
-#include <Wt/WTree>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/Dbo/ptr>
-#include <Wt/WLineEdit>
-#include <Wt/WMenuItem>
-#include <Wt/WGroupBox>
-#include <Wt/WTextArea>
-#include <Wt/WTreeNode>
-#include <Wt/WIconPair>
-#include <Wt/WModelIndex>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WButtonGroup>
-#include <Wt/WRadioButton>
+#include <Wt/WTree.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/Dbo/ptr.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WTreeNode.h>
+#include <Wt/WIconPair.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WRadioButton.h>
 
 
 #include "InterSpec/AuxWindow.h"
@@ -79,15 +79,14 @@ public:
                   SpectraFileModel *model,
                   SpecMeasManager *manager,
                   Dbo::ptr<UserFileInDb> dbentry,
-                  std::shared_ptr<SpectraFileHeader> header,
-                  WContainerWidget *parent = nullptr )
-  : WContainerWidget( parent ),
+                  std::shared_ptr<SpectraFileHeader> header )
+  : WContainerWidget(),
   m_type( type ),
   m_model( model ),
   m_manager( manager ),
   m_dbentry( dbentry ),
   m_header( header ),
-  m_loadedASelection( this )
+  m_loadedASelection()
   {
     if( !m_dbentry || !m_model )
       throw runtime_error( "DbSpecFileItem: invalid input or no wApp" );
@@ -97,7 +96,7 @@ public:
     if( viewer )
       viewer->useMessageResourceBundle( "DbFileBrowser" );
     
-    const int secondsOffset = 60 * wApp->environment().timeZoneOffset();
+    const int secondsOffset = wApp->environment().timeZoneOffset().count() * 60;
     Wt::WDateTime uploadTime = dbentry->uploadTime.addSecs(secondsOffset);
     
     WString msg;
@@ -106,10 +105,10 @@ public:
     else
       msg = WString::tr("sb-loaded-label").arg( uploadTime.toString( DATE_TIME_FORMAT_STR ) );
     
-    WText *txt = new WText( msg, this );
+    WText *txt = addNew<WText>( msg );
     txt->addStyleClass( "DbSpecFileItemTxt" );
-    
-    WPushButton *button = new WPushButton( WString::tr("sb-resume-from-btn"), this );
+
+    WPushButton *button = addNew<WPushButton>( WString::tr("sb-resume-from-btn") );
     button->addStyleClass( "DbSpecFileItemButton" );
     button->clicked().connect( this, &DbSpecFileItem::dorevert );
     button->setFocus();
@@ -215,19 +214,18 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
   
   try
   {
-    m_factory = new SnapshotBrowser( manager, viewer, header, footer(), nullptr );
-    layout->addWidget( m_factory, 0, 0 );
-    
+    auto factoryOwner = std::make_unique<SnapshotBrowser>( manager, viewer, header, footer() );
+    m_factory = factoryOwner.get();
+    layout->addWidget( std::move(factoryOwner), 0, 0 );
+
     m_factory->finished().connect( this, &AuxWindow::deleteSelf );
   }catch( std::exception &e )
   {
     m_factory = nullptr;
-    WText *tt = new WText( WString::tr("sb-err-creating-browser").arg(e.what()) );
-    layout->addWidget( tt, 0, 0 );
+    layout->addWidget( std::make_unique<WText>( WString::tr("sb-err-creating-browser").arg(e.what()) ), 0, 0 );
   }catch( ... )
   {
-    WText *tt = new WText( WString::tr("sb-unexpected-issue") );
-    layout->addWidget( tt, 0, 0 );
+    layout->addWidget( std::make_unique<WText>( WString::tr("sb-unexpected-issue") ), 0, 0 );
   }
   
   WPushButton *cancel = addCloseButtonToFooter();
@@ -322,9 +320,8 @@ SnapshotBrowser is the refactored class to create the UI for loading snapshot/sp
 SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
                                   InterSpec *viewer,
                                   std::shared_ptr<SpectraFileHeader> header,
-                                  Wt::WContainerWidget *buttonBar,
-                                  Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+                                  Wt::WContainerWidget *buttonBar )
+  : WContainerWidget(),
     m_manager( manager ),
     m_viewer( viewer ),
     m_loadSnapshotButton( nullptr ),
@@ -336,7 +333,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_timeLabel( nullptr ),
     m_relatedSpectraLayout( nullptr ),
     m_header( header ),
-    m_finished( this ),
+    m_finished(),
     m_editWindow( nullptr ),
     m_nrows( 0 )
 {
@@ -345,17 +342,20 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   addStyleClass( "SnapshotBrowser" );
   m_viewer->useMessageResourceBundle( "DbFileBrowser" );
   
-  const int secondsOffset = 60 * wApp->environment().timeZoneOffset();
+  const int secondsOffset = wApp->environment().timeZoneOffset().count() * 60;
+  std::unique_ptr<WContainerWidget> ownedFooter;
   WContainerWidget *footer = buttonBar;
   if( !footer )
-    footer = new WContainerWidget();
-  
+  {
+    ownedFooter = std::make_unique<WContainerWidget>();
+    footer = ownedFooter.get();
+  }
+
   footer->addStyleClass( "SnapshotBrowserFooter" );
   
-  WGridLayout *layout = new WGridLayout();
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setVerticalSpacing( 0 );
-  setLayout( layout );
   
   //We have to create a independent Dbo::Session for this class since the
   //  m_viewer->m_user.session() could be used in other threads, messing
@@ -365,37 +365,43 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
   int row = 0;
   if( m_header && !m_header->m_uuid.empty() )
   {
-    auto txt = new WText( WString::tr("sb-resume-from-prev") );
-    txt->addStyleClass( "ResumeWorkTxt" );
-    
-    layout->addWidget( txt, row++, 0);
+    {
+      auto txtOwner = std::make_unique<WText>( WString::tr("sb-resume-from-prev") );
+      txtOwner->addStyleClass( "ResumeWorkTxt" );
+      layout->addWidget( std::move(txtOwner), row++, 0 );
+    }
   }//if( we want to load a specific state )
   
   try
   {
     Dbo::ptr<InterSpecUser> user = m_viewer->user();
-    WContainerWidget* tablecontainer = new WContainerWidget();
-    
-    m_snapshotTable = new WTree();
-    m_snapshotTable->addStyleClass( "SnapshotTable" );
+    auto tablecontainerOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *tablecontainer = tablecontainerOwner.get();
 
-    
-    WGridLayout *tablelayout = new WGridLayout();
-    tablelayout->setContentsMargins( 0, 0, 0, 0 );
-    tablelayout->setVerticalSpacing( 0 );
-    tablelayout->addWidget(m_snapshotTable, 0, 0);
-    tablelayout->setRowStretch(0, 1);
-    tablelayout->setColumnStretch(0, 1);
-    tablecontainer->setLayout( tablelayout );
-    
+    {
+      auto snapshotTableOwner = std::make_unique<WTree>();
+      m_snapshotTable = snapshotTableOwner.get();
+      m_snapshotTable->addStyleClass( "SnapshotTable" );
+
+      WGridLayout *tablelayout = tablecontainer->setLayout( std::make_unique<WGridLayout>() );
+      tablelayout->setContentsMargins( 0, 0, 0, 0 );
+      tablelayout->setVerticalSpacing( 0 );
+      tablelayout->addWidget( std::move(snapshotTableOwner), 0, 0 );
+      tablelayout->setRowStretch(0, 1);
+      tablelayout->setColumnStretch(0, 1);
+    }
+
     m_snapshotTable->itemSelectionChanged().connect( this, &SnapshotBrowser::selectionChanged );
-    
-    Wt::WTreeNode *root = new Wt::WTreeNode( "Root" );
-    root->expand();
-    
-    m_snapshotTable->setTreeRoot(root);
-    m_snapshotTable->setSelectionMode(Wt::SingleSelection);
+
+    {
+      auto rootOwner = std::make_unique<Wt::WTreeNode>( "Root" );
+      Wt::WTreeNode *root_raw = rootOwner.get();
+      m_snapshotTable->setTreeRoot( std::move(rootOwner) );
+      root_raw->expand();
+    }
+    m_snapshotTable->setSelectionMode(Wt::SelectionMode::Single);
     m_snapshotTable->treeRoot()->setNodeVisible( false ); //makes the tree look like a table! :)
+    Wt::WTreeNode *root = m_snapshotTable->treeRoot();
     
     DataBaseUtils::DbTransaction transaction( *m_session );
     
@@ -419,7 +425,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       m_nrows += 1;
     
     if( m_nrows == 0 )
-      layout->addWidget( new WLabel( WString::tr("sb-no-saved-states") ), row++, 0 );
+      layout->addWidget( std::make_unique<WLabel>( WString::tr("sb-no-saved-states") ), row++, 0 );
     
     //Some sudo-styling for if we want to style this - or if we implement this as a WTreeView
     //  most of this styling comes along much easier (so I think this should be what is done
@@ -439,14 +445,15 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     //  wApp->styleSheet().addRule( "ul.Wt-root > li.SnapshotRow:nth-child(odd)", "background: rgb(30,32,34) !important;" );
     //}
     
-    auto spectrumLoaderCallback = wApp->bind( boost::bind( &SnapshotBrowser::loadSpectraSelected, this ) );
+    auto spectrumLoaderCallback = [this](){ loadSpectraSelected(); };
     
     // First we will add a node to show auto-saved spectra not associated with a save-state
     if( num_autosaved_spectra )
     {
       size_t num_unsaved = 0;
-      Wt::WTreeNode *unsavedNode = new Wt::WTreeNode( WString::tr("sb-unsaved-spectra-parent-node-label"), 0, root );
-      unsavedNode->setChildCountPolicy( Wt::WTreeNode::Enabled );
+      auto unsavedNodeOwner = std::make_unique<Wt::WTreeNode>( WString::tr("sb-unsaved-spectra-parent-node-label") );
+      Wt::WTreeNode *unsavedNode = root->addChildNode( std::move(unsavedNodeOwner) );
+      unsavedNode->setChildCountPolicy( Wt::ChildCountPolicy::Enabled );
       unsavedNode->setToolTip( WString::tr("sb-tt-unsaved-spectra-node") );
       
       for( Dbo::collection<Dbo::ptr<UserFileInDb>>::const_iterator file_iter = autosaved_files_query.begin();
@@ -461,7 +468,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
           .arg(file->filename)
           .arg( uploadTime.toString(DATE_TIME_FORMAT_STR) );
         
-        Wt::WTreeNode *spectraNode = new Wt::WTreeNode( txt, nullptr, unsavedNode );
+        Wt::WTreeNode *spectraNode = unsavedNode->addChildNode( std::make_unique<Wt::WTreeNode>( txt ) );
         
         WString tt = WString::tr("sb-tt-unsaved-spectrum-node")
           .arg( file->filename )
@@ -471,7 +478,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
           .arg( file->totalRealTime );
         spectraNode->setToolTip( tt );
         
-        spectraNode->setChildCountPolicy( Wt::WTreeNode::Disabled );
+        spectraNode->setChildCountPolicy( Wt::ChildCountPolicy::Disabled );
         
         WText *label = spectraNode->label();
         WContainerWidget *row = label ? dynamic_cast<WContainerWidget *>(label->parent()) : nullptr;
@@ -495,14 +502,14 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
         unsavedNode->collapse();
     }//if( we also want to show auto-saved spectra not associated with a save-state )
     
-    auto stateLoaderCallback = wApp->bind( boost::bind( &SnapshotBrowser::loadSnapshotSelected, this ) );
+    auto stateLoaderCallback = [this](){ loadSnapshotSelected(); };
     
     // Now list the explicitly saved states
     for( Dbo::collection< Dbo::ptr<UserState> >::const_iterator snapshot_iter = query.begin();
         snapshot_iter != query.end(); ++snapshot_iter )
     {
       const Dbo::ptr<UserState> &snapshot = *snapshot_iter;
-      Wt::WTreeNode *snapshotNode = new Wt::WTreeNode( snapshot->name, 0, root );
+      Wt::WTreeNode *snapshotNode = root->addChildNode( std::make_unique<Wt::WTreeNode>( snapshot->name ) );
     
       //snapshotNode->addStyleClass( "SnapshotRow" );
       
@@ -544,14 +551,14 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       //  InterSpec introductory screen, but instantiated by the "InterSpec" --> "Previous" menu.
       if( buttonBar && rowDiv )
       {
-        WImage *delBtn = new WImage( "InterSpec_resources/images/minus_min_black.svg", rowDiv );
+        WImage *delBtn = rowDiv->addNew<WImage>( "InterSpec_resources/images/minus_min_black.svg" );
         delBtn->resize( WLength(16), WLength(16) );
         delBtn->addStyleClass( "DelSnapshotBtn" );
         delBtn->setToolTip( WString::tr("sb-tt-del-state") );
         delBtn->clicked().connect( this, &SnapshotBrowser::startDeleteSelected );
         delBtn->doubleClicked().preventPropagation();
-        
-        WImage *editBtn = new WImage( "InterSpec_resources/images/edit_black.svg", rowDiv );
+
+        WImage *editBtn = rowDiv->addNew<WImage>( "InterSpec_resources/images/edit_black.svg" );
         editBtn->resize( WLength(16), WLength(16) );
         editBtn->addStyleClass( "DelSnapshotBtn" );
         editBtn->setToolTip( WString::tr("sb-tt-edit-state") );
@@ -559,7 +566,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
         editBtn->doubleClicked().preventPropagation();
       }//if( buttonBar && rowDiv )
       
-      snapshotNode->setChildCountPolicy(Wt::WTreeNode::Disabled);
+      snapshotNode->setChildCountPolicy(Wt::ChildCountPolicy::Disabled);
       
       const Wt::WDateTime serializeTime = snapshot->serializeTime.addSecs(secondsOffset);
       WString tooltip = serializeTime.toString(DATE_TIME_FORMAT_STR)
@@ -576,18 +583,19 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       
       //Create HEAD
       const char *explicitSaveIcon = "InterSpec_resources/images/time.svg";
-      auto headIcons = new Wt::WIconPair( explicitSaveIcon, explicitSaveIcon );
-      headIcons->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
-      headIcons->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
-      
-      Wt::WTreeNode *head_node = new Wt::WTreeNode( WString::tr("sb-state-HEAD-label"), headIcons, snapshotNode);
+      auto headIconsOwner = std::make_unique<Wt::WIconPair>( explicitSaveIcon, explicitSaveIcon );
+      headIconsOwner->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
+      headIconsOwner->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
+
+      Wt::WTreeNode *head_node = snapshotNode->addChildNode(
+        std::make_unique<Wt::WTreeNode>( WString::tr("sb-state-HEAD-label"), std::move(headIconsOwner) ) );
       
       tooltip = serializeTime.toString(DATE_TIME_FORMAT_STR)
                 + (snapshot->description.empty() ? "" : " -- ")
                 + snapshot->description;
       head_node->setToolTip( tooltip );
       
-      head_node->setChildCountPolicy(Wt::WTreeNode::Disabled);
+      head_node->setChildCountPolicy(Wt::ChildCountPolicy::Disabled);
       
       //Add to lookup table (also the HEAD)
       m_UserStateLookup[head_node] = snapshot;
@@ -618,11 +626,12 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
                               : WString("{1} - {2}").arg(explanation).arg(version->name);
         }//
         
-        auto tagIcon = new Wt::WIconPair( icon, icon );
-        tagIcon->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
-        tagIcon->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
-        
-        Wt::WTreeNode *versionNode = new Wt::WTreeNode( name, tagIcon, snapshotNode );
+        auto tagIconOwner = std::make_unique<Wt::WIconPair>( icon, icon );
+        tagIconOwner->icon1()->addStyleClass( "Wt-icon SnapshotIcon" );
+        tagIconOwner->icon2()->addStyleClass( "Wt-icon SnapshotIcon" );
+
+        Wt::WTreeNode *versionNode = snapshotNode->addChildNode(
+          std::make_unique<Wt::WTreeNode>( name, std::move(tagIconOwner) ) );
         
         const Wt::WDateTime serializeTime = version->serializeTime.addSecs(secondsOffset);
         tooltip = serializeTime.toString(DATE_TIME_FORMAT_STR)
@@ -630,7 +639,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
                   + version->description;
         versionNode->setToolTip( tooltip );
         
-        versionNode->setChildCountPolicy( Wt::WTreeNode::Disabled );
+        versionNode->setChildCountPolicy( Wt::ChildCountPolicy::Disabled );
         
         m_UserStateLookup[versionNode] = *version_iter;
         
@@ -646,61 +655,69 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     }//for( loop over query )
     
     transaction.commit();
-    layout->addWidget( tablecontainer, ++row, 0 );
+    layout->addWidget( std::move(tablecontainerOwner), ++row, 0 );
     layout->setRowStretch( row, 1 );
-    
-    m_timeLabel = new WText( ns_empty_descrip_label );
-    m_timeLabel->addStyleClass( "SnapshotTime" );
-    layout->addWidget(m_timeLabel, ++row,0);
-    
-    m_descriptionLabel = new WText( ns_empty_descrip_label );
-    m_descriptionLabel->addStyleClass( "SnapshotDesc" );
-    layout->addWidget(m_descriptionLabel, ++row,0);
-    
-    m_buttonbox = new WGroupBox( WString::tr("sb-open-spectrum-as") );
-    m_buttonbox->setOffsets(10);
-    m_buttonGroup = new WButtonGroup( m_buttonbox );
-    
-    for( int i = 0; i < 3; ++i )
+
     {
-      WString name;
-      switch( SpecUtils::SpectrumType(i) )
+      auto timeLabelOwner = std::make_unique<WText>( ns_empty_descrip_label );
+      m_timeLabel = timeLabelOwner.get();
+      m_timeLabel->addStyleClass( "SnapshotTime" );
+      layout->addWidget( std::move(timeLabelOwner), ++row, 0 );
+    }
+
+    {
+      auto descLabelOwner = std::make_unique<WText>( ns_empty_descrip_label );
+      m_descriptionLabel = descLabelOwner.get();
+      m_descriptionLabel->addStyleClass( "SnapshotDesc" );
+      layout->addWidget( std::move(descLabelOwner), ++row, 0 );
+    }
+
+    {
+      auto buttonboxOwner = std::make_unique<WGroupBox>( WString::tr("sb-open-spectrum-as") );
+      m_buttonbox = buttonboxOwner.get();
+      m_buttonbox->setOffsets(10);
+      m_buttonGroup = m_buttonbox->addChild( std::make_unique<WButtonGroup>() );
+
+      for( int i = 0; i < 3; ++i )
       {
-        case SpecUtils::SpectrumType::Foreground:       name = WString::tr("Foreground"); break;
-        case SpecUtils::SpectrumType::SecondForeground: name = WString::tr("Secondary") ; break;
-        case SpecUtils::SpectrumType::Background:       name = WString::tr("Background"); break;
-      }//switch( SpecUtils::SpectrumType(i) )
-      
-      WRadioButton *button = new WRadioButton( name, m_buttonbox );
-      button->setMargin( 10, Wt::Right );
-      button->setInline(false);
-      m_buttonGroup->addButton( button, i );
-    }//for( int i = 0; i < 3; ++i )
-    
-    m_buttonGroup->setSelectedButtonIndex( 0 );
-    m_buttonbox->setHidden(true);
-    layout->addWidget( m_buttonbox, ++row, 0  );
-    
-    m_loadSpectraButton = new WPushButton( WString::tr("sb-load-spectrum-only"), footer );
-    m_loadSpectraButton->clicked().connect( boost::bind( &SnapshotBrowser::loadSpectraSelected, this));
+        WString name;
+        switch( SpecUtils::SpectrumType(i) )
+        {
+          case SpecUtils::SpectrumType::Foreground:       name = WString::tr("Foreground"); break;
+          case SpecUtils::SpectrumType::SecondForeground: name = WString::tr("Secondary") ; break;
+          case SpecUtils::SpectrumType::Background:       name = WString::tr("Background"); break;
+        }//switch( SpecUtils::SpectrumType(i) )
+
+        WRadioButton *button = m_buttonbox->addNew<WRadioButton>( name );
+        button->setMargin( 10, Wt::Side::Right );
+        button->setInline(false);
+        m_buttonGroup->addButton( button, i );
+      }//for( int i = 0; i < 3; ++i )
+
+      m_buttonGroup->setSelectedButtonIndex( 0 );
+      m_buttonbox->setHidden(true);
+      layout->addWidget( std::move(buttonboxOwner), ++row, 0 );
+    }
+
+    m_loadSpectraButton = footer->addNew<WPushButton>( WString::tr("sb-load-spectrum-only") );
+    m_loadSpectraButton->clicked().connect( [this](){ loadSpectraSelected(); } );
     m_loadSpectraButton->disable();
-    
-    m_loadSnapshotButton = new WPushButton( WString::tr("sb-load-app-state"), footer);
-    m_loadSnapshotButton->clicked().connect( boost::bind(&SnapshotBrowser::loadSnapshotSelected, this));
+
+    m_loadSnapshotButton = footer->addNew<WPushButton>( WString::tr("sb-load-app-state") );
+    m_loadSnapshotButton->clicked().connect( [this](){ loadSnapshotSelected(); } );
     m_loadSnapshotButton->setDefault(true);
     //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.svg" );
     m_loadSnapshotButton->disable();
-    
+
     if( !buttonBar )
     {
-      layout->addWidget( footer, layout->rowCount()+1 , 0 );
+      layout->addWidget( std::move(ownedFooter), layout->rowCount()+1, 0 );
       m_loadSpectraButton->setFloatSide( Wt::Side::Right );
       m_loadSnapshotButton->setFloatSide( Wt::Side::Right );
     }
   }catch( std::exception &e )
   {
-    if( !buttonBar )
-      delete footer;
+    // ownedFooter (if set) will be automatically cleaned up when it goes out of scope
     
     // Remove and clear all children widgets so we dont leak memory
     clear();
@@ -714,11 +731,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_timeLabel = nullptr;
     m_relatedSpectraLayout = nullptr;
     //m_header = header ),
-    //m_finished( this ),
+    //m_finished(),
     m_editWindow = nullptr;
     m_nrows = 0;
     
-    WText *txt = new WText( WString::tr("sb-err-making-browser-txt"), this );
+    WText *txt = addNew<WText>( WString::tr("sb-err-making-browser-txt") );
     txt->setAttributeValue( "style", "color: red; font-weight: bold; font-size: 22px;" );
     
     passMessage( WString::tr("sb-err-making-browser-msg").arg(e.what()),
@@ -739,7 +756,7 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
   //add in foreground/background/2ndfore
   typedef Dbo::collection< Dbo::ptr<UserFileInDb> > Spectras;
   
-  const int secondsOffset = 60 * wApp->environment().timeZoneOffset();
+  const int secondsOffset = wApp->environment().timeZoneOffset().count() * 60;
   
   for( int i = 0; i < 3; i++ )
   {
@@ -757,16 +774,15 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
     for( Dbo::collection< Dbo::ptr<UserFileInDb> >::const_iterator spectraIterator = spectras.begin();
         spectraIterator != spectras.end(); ++spectraIterator )
     {
-      Wt::WIconPair *icon = nullptr;
       if ((*versionIterator)->foregroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Foreground)
       {
-        //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
+        //icon = make_unique<Wt::WIconPair>("InterSpec_resources/images/shape_move_forwards.png","InterSpec_resources/images/shape_move_forwards.png");
       }else if ((*versionIterator)->backgroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::Background)
       {
-        //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
+        //icon = make_unique<Wt::WIconPair>("InterSpec_resources/images/shape_move_backwards.png","InterSpec_resources/images/shape_move_backwards.png");
       }else if ((*versionIterator)->secondForegroundId==spectraIterator->id() && spectratype==SpecUtils::SpectrumType::SecondForeground)
       {
-        //icon = new Wt::WIconPair("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
+        //icon = make_unique<Wt::WIconPair>("InterSpec_resources/images/shape_move_front.png","InterSpec_resources/images/shape_move_front.png");
       }else
       {
         //nothing found, so just return
@@ -787,7 +803,7 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
       
       const auto nodeTxt = pre + " " + (*spectraIterator)->filename
                            + " <i>(" + descriptionText(spectratype)+")</i>" + post;
-      Wt::WTreeNode *spectraNode = new Wt::WTreeNode( nodeTxt, icon, versionNode );
+      Wt::WTreeNode *spectraNode = versionNode->addChildNode( std::make_unique<Wt::WTreeNode>( nodeTxt ) );
       
       // Hack in letting user double click on row to load just the spectrum
       auto label = spectraNode->label();
@@ -831,7 +847,7 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
 //Updates the buttons when a row is selected
 void SnapshotBrowser::selectionChanged()
 {
-  const int secondsOffset = 60 * wApp->environment().timeZoneOffset();
+  const int secondsOffset = wApp->environment().timeZoneOffset().count() * 60;
   
   std::set<Wt::WTreeNode *> sets = m_snapshotTable->selectedNodes();
   
@@ -977,32 +993,43 @@ void SnapshotBrowser::startEditSelected()
   m_editWindow->setHeight( std::min(250, std::max(m_viewer->renderedHeight(), 150)) );
   
   WGridLayout *layout = m_editWindow->stretcher();
-  
-  WLabel *label = new WLabel( WString::tr("sb-edit-name-label") );
-  WLineEdit *nameEdit = new WLineEdit();
-  nameEdit->setAttributeValue( "ondragstart", "return false" );
-  nameEdit->setEmptyText( WString::tr("sb-edit-name-placeholder") );
-  nameEdit->setText( state->name );
-  layout->addWidget( label, 0, 0 );
-  layout->addWidget( nameEdit,  0, 1 );
-  
-  label = new WLabel( WString::tr("sb-edit-desc-label") );
-  WTextArea *description = new WTextArea();
-  description->setEmptyText( WString::tr("sb-edit-desc-placeholder") );
-  description->setText( state->description );
-  layout->addWidget( label, 1, 0 );
-  layout->addWidget( description, 1, 1 );
+
+  WLabel *label = nullptr;
+  WLineEdit *nameEdit = nullptr;
+  {
+    auto labelOwner = std::make_unique<WLabel>( WString::tr("sb-edit-name-label") );
+    auto nameEditOwner = std::make_unique<WLineEdit>();
+    label = labelOwner.get();
+    nameEdit = nameEditOwner.get();
+    nameEdit->setAttributeValue( "ondragstart", "return false" );
+    nameEdit->setPlaceholderText( WString::tr("sb-edit-name-placeholder") );
+    nameEdit->setText( state->name );
+    layout->addWidget( std::move(labelOwner), 0, 0 );
+    layout->addWidget( std::move(nameEditOwner), 0, 1 );
+  }
+
+  WTextArea *description = nullptr;
+  {
+    auto labelOwner2 = std::make_unique<WLabel>( WString::tr("sb-edit-desc-label") );
+    label = labelOwner2.get();
+    auto descriptionOwner = std::make_unique<WTextArea>();
+    description = descriptionOwner.get();
+    description->setPlaceholderText( WString::tr("sb-edit-desc-placeholder") );
+    description->setText( state->description );
+    layout->addWidget( std::move(labelOwner2), 1, 0 );
+    layout->addWidget( std::move(descriptionOwner), 1, 1 );
+  }
   
   layout->setColumnStretch( 1, 1 );
   layout->setRowStretch( 1, 1 );
   
   WContainerWidget *foot = m_editWindow->footer();
   
-  WPushButton *cancel = new WPushButton( WString::tr("Cancel"), foot );
+  WPushButton *cancel = foot->addNew<WPushButton>( WString::tr("Cancel") );
   cancel->addStyleClass( "DialogClose" );
   cancel->setFloatSide( Wt::Side::Right );
-  
-  WPushButton *yes = new WPushButton( WString::tr("Accept"), foot );
+
+  WPushButton *yes = foot->addNew<WPushButton>( WString::tr("Accept") );
   yes->addStyleClass( "DialogClose" );
   yes->setFloatSide( Wt::Side::Right );
   
@@ -1042,7 +1069,7 @@ void SnapshotBrowser::startEditSelected()
   nameEdit->textInput().connect( std::bind(haschanged) );
   description->textInput().connect( std::bind(haschanged) );
   
-  auto deleter = wApp->bind( boost::bind( &AuxWindow::deleteAuxWindow, m_editWindow ) );
+  auto deleter = [this](){ AuxWindow::deleteAuxWindow( m_editWindow ); };
   m_editWindow->finished().connect( std::bind( [deleter,this](){ deleter(); m_editWindow = nullptr; } ) );
   
   m_editWindow->show();
@@ -1339,41 +1366,42 @@ AutosavedSpectrumBrowser::AutosavedSpectrumBrowser(
                            SpecUtils::SpectrumType type,
                            SpectraFileModel *fileModel,
                            SpecMeasManager *manager,
-                           std::shared_ptr<SpectraFileHeader> header,
-                           WContainerWidget *parent )
-: WContainerWidget( parent ),
-  m_loadedASpectrum( this )
+                           std::shared_ptr<SpectraFileHeader> header )
+: WContainerWidget(),
+  m_loadedASpectrum()
 {
   wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
-  
+
   addStyleClass( "AutosavedSpectrumBrowser" );
-  WGridLayout *layout = new WGridLayout( this );
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setVerticalSpacing( 0 );
-  
+
   const char *msg = "";
   if( header )
     msg = "It looks like you have previously loaded and modified this spectrum file, would you like"
           " to resume your previous work?";
   else
     msg = "Select your previously used spectrum file to continue from.";
-  
-  WText *txt = new WText( msg, Wt::XHTMLText);
-  txt->addStyleClass( "ResumeWorkTxt" );
-  txt->setInline( false );
-  
-  layout->addWidget(txt,0,0);
-  
-  WContainerWidget *container = new WContainerWidget();
+
+  {
+    auto txtOwner = std::make_unique<WText>( msg, Wt::TextFormat::XHTML );
+    txtOwner->addStyleClass( "ResumeWorkTxt" );
+    txtOwner->setInline( false );
+    layout->addWidget( std::move(txtOwner), 0, 0 );
+  }
+
+  auto containerOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *container = containerOwner.get();
   container->addStyleClass( "AutosavedSpectra" );
-  layout->addWidget( container, 1, 0 );
+  layout->addWidget( std::move(containerOwner), 1, 0 );
   layout->setRowStretch( 1, 1 );
-  
+
   for( size_t i = 0; i < modifiedFiles.size(); ++i )
   {
     if( !!modifiedFiles[i] )
     {
-      auto entry = new DbSpecFileItem( type, fileModel, manager, modifiedFiles[i], header, container );
+      auto entry = container->addNew<DbSpecFileItem>( type, fileModel, manager, modifiedFiles[i], header );
       entry->m_loadedASelection.connect( this, &AutosavedSpectrumBrowser::entryWasLoaded );
     }
   }//for( size_t i = 0; i < unModifiedFiles.size(); ++i )

@@ -26,13 +26,13 @@
 #include <memory>
 #include <cassert>
 
-#include <Wt/WText>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
+#include <Wt/WText.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
@@ -51,9 +51,8 @@ using namespace std;
 using namespace Wt;
 
 
-PeakFitDetPrefsGui::PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMode,
-                                         WContainerWidget *parent )
-  : WContainerWidget( parent ),
+PeakFitDetPrefsGui::PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMode )
+  : WContainerWidget(),
     m_viewer( viewer ),
     m_compactMode( compactMode ),
     m_programmaticUpdate( false ),
@@ -76,9 +75,9 @@ PeakFitDetPrefsGui::PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMod
     m_upperSkewSpin[i] = nullptr;
   }
 
-  addStyleClass( "PeakFitDetPrefsGui" );
+  addStyleClass( "PeakFitDetPrefsGui");
 
-  wApp->useStyleSheet( "InterSpec_resources/PeakFitDetPrefsGui.css" );
+  wApp->useStyleSheet( "InterSpec_resources/PeakFitDetPrefsGui.css");
 
   
 
@@ -93,82 +92,82 @@ PeakFitDetPrefsGui::~PeakFitDetPrefsGui()
 
 void PeakFitDetPrefsGui::init()
 {
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance());
   if( app )
   {
-    app->useMessageResourceBundle( "PeakEdit" );
-    app->useMessageResourceBundle( "PeakFitDetPrefsGui" );
+    app->useMessageResourceBundle( "PeakEdit");
+    app->useMessageResourceBundle( "PeakFitDetPrefsGui");
   }
   
   if( m_compactMode )
   {
     // Collapsed strip: expand icon at top, vertical text, expand icon at bottom
-    m_collapsedDiv = new WContainerWidget( this );
-    m_collapsedDiv->addStyleClass( "PeakFitDetPrefsCollapsed" );
-    m_collapsedDiv->clicked().connect( this, &PeakFitDetPrefsGui::toggleExpanded );
+    m_collapsedDiv = addNew<WContainerWidget>();
+    m_collapsedDiv->addStyleClass( "PeakFitDetPrefsCollapsed");
+    m_collapsedDiv->clicked().connect( this, &PeakFitDetPrefsGui::toggleExpanded);
 
-    WImage *topIcon = new WImage( WLink( "InterSpec_resources/images/expand_left.svg" ), m_collapsedDiv );
-    topIcon->addStyleClass( "PfdpgExpandIcon PfdpgExpandIconTop" );
+    WImage *topIcon = m_collapsedDiv->addNew<WImage>( WLink( "InterSpec_resources/images/expand_left.svg" ));
+    topIcon->addStyleClass( "PfdpgExpandIcon PfdpgExpandIconTop");
 
-    WText *collapseLabel = new WText( WString::tr( "pfdpg-collapsed-label" ), m_collapsedDiv );
-    collapseLabel->addStyleClass( "PeakFitDetPrefsCollapsedLabel" );
+    WText *collapseLabel = m_collapsedDiv->addNew<WText>( WString::tr( "pfdpg-collapsed-label" ));
+    collapseLabel->addStyleClass( "PeakFitDetPrefsCollapsedLabel");
 
-    WImage *bottomIcon = new WImage( WLink( "InterSpec_resources/images/expand_left.svg" ), m_collapsedDiv );
-    bottomIcon->addStyleClass( "PfdpgExpandIcon PfdpgExpandIconBottom" );
+    WImage *bottomIcon = m_collapsedDiv->addNew<WImage>( WLink( "InterSpec_resources/images/expand_left.svg" ));
+    bottomIcon->addStyleClass( "PfdpgExpandIcon PfdpgExpandIconBottom");
   }//if( m_compactMode )
 
   // Expanded controls container
-  m_expandedDiv = new WContainerWidget( this );
-  m_expandedDiv->addStyleClass( "PeakFitDetPrefsExpanded" );
+  m_expandedDiv = addNew<WContainerWidget>();
+  m_expandedDiv->addStyleClass( "PeakFitDetPrefsExpanded");
 
   if( m_compactMode )
   {
     m_expandedDiv->hide();
 
     // Clickable header to collapse - stays outside scrollable body
-    WText *header = new WText( WString::tr( "pfdpg-collapsed-label" ), m_expandedDiv );
-    header->addStyleClass( "PeakFitDetPrefsExpandedHeader" );
-    header->clicked().connect( this, &PeakFitDetPrefsGui::toggleExpanded );
+    WText *header = m_expandedDiv->addNew<WText>( WString::tr( "pfdpg-collapsed-label" ));
+    header->addStyleClass( "PeakFitDetPrefsExpandedHeader");
+    header->clicked().connect( this, &PeakFitDetPrefsGui::toggleExpanded);
   }else
   {
     if( app )
-      app->useMessageResourceBundle( "PeakEdit" );
+      app->useMessageResourceBundle( "PeakEdit");
   }//if( m_compactMode )
 
   // Scrollable body div - holds all controls so header stays fixed
-  WContainerWidget *contentDiv = new WContainerWidget( m_expandedDiv );
-  contentDiv->addStyleClass( "PeakFitDetPrefsExpandedBody" );
+  WContainerWidget *contentDiv = m_expandedDiv->addNew<WContainerWidget>();
+  contentDiv->addStyleClass( "PeakFitDetPrefsExpandedBody");
 
   // Detector type combo
-  WLabel *detLabel = new WLabel( WString::tr( "pfdpg-det-type-label" ), contentDiv );
-  detLabel->addStyleClass( "PfdpgLabel" );
+  WLabel *detLabel = contentDiv->addNew<WLabel>( WString::tr( "pfdpg-det-type-label" ));
+  detLabel->addStyleClass( "PfdpgLabel");
 
-  m_detTypeCombo = new WComboBox( contentDiv );
-  m_detTypeCombo->addStyleClass( "PfdpgCombo" );
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-nai" ) );        // 0 => Low
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-labr" ) );       // 1 => LaBr
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-czt" ) );        // 2 => CZT
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-medres" ) );     // 3 => MedRes
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-lowormedres" ) ); // 4 => LowOrMedRes
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-hpge" ) );       // 5 => High
-  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-unknown" ) );    // 6 => Unknown
-  m_detTypeCombo->setCurrentIndex( 6 );
+  m_detTypeCombo = contentDiv->addNew<WComboBox>();
+  m_detTypeCombo->addStyleClass( "PfdpgCombo");
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-nai" ));        // 0 => Low
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-labr" ));       // 1 => LaBr
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-czt" ));        // 2 => CZT
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-medres" ));     // 3 => MedRes
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-lowormedres" )); // 4 => LowOrMedRes
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-hpge" ));       // 5 => High
+  m_detTypeCombo->addItem( WString::tr( "pfdpg-det-unknown" ));    // 6 => Unknown
+  m_detTypeCombo->setCurrentIndex( 6);
   m_detTypeCombo->activated().connect( std::bind( [this](){
     if( !m_programmaticUpdate )
       userChangedValue();
-  }) );
+  }));
 
 
   // FWHM method combo
-  WLabel *fwhmLabel = new WLabel( WString::tr( "pfdpg-fwhm-method-label" ), contentDiv );
-  fwhmLabel->addStyleClass( "PfdpgLabel" );
+  WLabel *fwhmLabel = contentDiv->addNew<WLabel>( WString::tr( "pfdpg-fwhm-method-label" ));
+  fwhmLabel->addStyleClass( "PfdpgLabel");
 
-  m_fwhmMethodCombo = new WComboBox( contentDiv );
-  m_fwhmMethodCombo->addStyleClass( "PfdpgCombo" );
-  m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-normal" ) );      // 0 => Normal
-  m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-det" ) );         // 1 => DetFwhm
-  m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-det-refine" ) );  // 2 => DetPlusRefine
-  m_fwhmMethodCombo->setCurrentIndex( 0 );
+  m_fwhmMethodCombo = contentDiv->addNew<WComboBox>();
+  m_fwhmMethodCombo->addStyleClass( "PfdpgCombo");
+  m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-normal" ));      // 0 => Normal
+  m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-det" ));         // 1 => DetFwhm
+  m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-det-refine" ));  // 2 => DetPlusRefine
+  m_fwhmMethodCombo->setCurrentIndex( 0);
   m_fwhmMethodCombo->activated().connect( std::bind( [this](){
     if( m_programmaticUpdate )
       return;
@@ -196,10 +195,10 @@ void PeakFitDetPrefsGui::init()
     // DRF lacks FWHM info - show dialog offering to fit FWHM or cancel
     SimpleDialog *dialog = new SimpleDialog(
       WString::tr( "pfdpg-no-fwhm-title" ),
-      WString::tr( "pfdpg-no-fwhm-content" ) );
+      WString::tr( "pfdpg-no-fwhm-content" ));
 
-    WPushButton *fitBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-fit" ) );
-    WPushButton *cancelBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-cancel" ) );
+    WPushButton *fitBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-fit" ));
+    WPushButton *cancelBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-cancel" ));
 
     const PeakFitDetPrefs::FwhmMethod pending = (idx == 1)
       ? PeakFitDetPrefs::FwhmMethod::DetFwhm
@@ -207,18 +206,18 @@ void PeakFitDetPrefsGui::init()
 
     cancelBtn->clicked().connect( std::bind( [this](){
       m_programmaticUpdate = true;
-      m_fwhmMethodCombo->setCurrentIndex( 0 );
+      m_fwhmMethodCombo->setCurrentIndex( 0);
       m_programmaticUpdate = false;
-    }) );
+    }));
 
     fitBtn->clicked().connect( std::bind( [this, pending](){
       m_pendingFwhmMethod = pending;
       m_programmaticUpdate = true;
-      m_fwhmMethodCombo->setCurrentIndex( 0 );
+      m_fwhmMethodCombo->setCurrentIndex( 0);
       m_programmaticUpdate = false;
-      m_viewer->fwhmFromForegroundWindow( true );
-    }) );
-  }) );
+      m_viewer->fwhmFromForegroundWindow( true);
+    }));
+  }));
 
   // When the DRF changes, check if we have a pending FWHM method to apply
   m_viewer->detectorModified().connect( std::bind( [this]( std::shared_ptr<DetectorPeakResponse> ){
@@ -235,7 +234,7 @@ void PeakFitDetPrefsGui::init()
       // FWHM is now available - apply the pending method
       m_programmaticUpdate = true;
       const int pendIdx = (m_pendingFwhmMethod == PeakFitDetPrefs::FwhmMethod::DetFwhm) ? 1 : 2;
-      m_fwhmMethodCombo->setCurrentIndex( pendIdx );
+      m_fwhmMethodCombo->setCurrentIndex( pendIdx);
       m_programmaticUpdate = false;
       m_pendingFwhmMethod = PeakFitDetPrefs::FwhmMethod::Normal;
       userChangedValue();
@@ -245,59 +244,59 @@ void PeakFitDetPrefsGui::init()
       // Still no FWHM - clear pending
       m_pendingFwhmMethod = PeakFitDetPrefs::FwhmMethod::Normal;
     }
-  }, std::placeholders::_1 ) );
+  }, std::placeholders::_1 ));
 
 
   // Skew type combo
-  WLabel *skewLabel = new WLabel( WString::tr( "pfdpg-skew-type-label" ), contentDiv );
-  skewLabel->addStyleClass( "PfdpgLabel" );
+  WLabel *skewLabel = contentDiv->addNew<WLabel>( WString::tr( "pfdpg-skew-type-label" ));
+  skewLabel->addStyleClass( "PfdpgLabel");
 
-  m_skewTypeCombo = new WComboBox( contentDiv );
-  m_skewTypeCombo->addStyleClass( "PfdpgCombo" );
-  for( int i = 0; i < static_cast<int>( PeakDef::NumSkewType ); ++i )
+  m_skewTypeCombo = contentDiv->addNew<WComboBox>();
+  m_skewTypeCombo->addStyleClass( "PfdpgCombo");
+  for( int i = 0; i < static_cast<int>( PeakDef::NumSkewType); ++i )
   {
-    const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( i );
-    m_skewTypeCombo->addItem( WString::fromUTF8( PeakDef::to_label( st ) ) );
+    const PeakDef::SkewType st = static_cast<PeakDef::SkewType>( i);
+    m_skewTypeCombo->addItem( WString::fromUTF8( PeakDef::to_label( st ) ));
   }
-  m_skewTypeCombo->setCurrentIndex( 0 );
+  m_skewTypeCombo->setCurrentIndex( 0);
   m_skewTypeCombo->activated().connect( std::bind( [this](){
     if( !m_programmaticUpdate )
     {
       updateSkewParamRows();
       userChangedValue();
     }
-  }) );
+  }));
 
 
   // ROI-independent skew checkbox
-  WContainerWidget *cbRow = new WContainerWidget( contentDiv );
-  cbRow->addStyleClass( "PfdpgCheckRow" );
-  m_roiIndepCb = new WCheckBox( WString::tr( "pfdpg-roi-indep-skew" ), cbRow );
-  m_roiIndepCb->setChecked( false );
+  WContainerWidget *cbRow = contentDiv->addNew<WContainerWidget>();
+  cbRow->addStyleClass( "PfdpgCheckRow");
+  m_roiIndepCb = cbRow->addNew<WCheckBox>( WString::tr( "pfdpg-roi-indep-skew" ));
+  m_roiIndepCb->setChecked( false);
   m_roiIndepCb->changed().connect( std::bind( [this](){
     if( !m_programmaticUpdate )
     {
       const bool hide = m_roiIndepCb->isChecked();
-      m_skewParamsDiv->setHidden( hide );
+      m_skewParamsDiv->setHidden( hide);
       if( m_fitSkewLink )
-        m_fitSkewLink->setHidden( hide );
+        m_fitSkewLink->setHidden( hide);
       userChangedValue();
     }
-  }) );
+  }));
 
   // Skew parameters container (dynamic rows)
-  m_skewParamsDiv = new WContainerWidget( contentDiv );
-  m_skewParamsDiv->addStyleClass( "PfdpgSkewParams" );
+  m_skewParamsDiv = contentDiv->addNew<WContainerWidget>();
+  m_skewParamsDiv->addStyleClass( "PfdpgSkewParams");
 
   // "fit skew pars" link - visible when skew is selected and ROI-independent is unchecked
-  m_fitSkewLink = new WText( WString::tr( "pfdpg-fit-skew-link" ), contentDiv );
-  m_fitSkewLink->addStyleClass( "PfdpgFitSkewLink" );
-  m_fitSkewLink->setHidden( true );
-  m_fitSkewLink->clicked().connect( this, &PeakFitDetPrefsGui::showFitSkewDialog );
+  m_fitSkewLink = contentDiv->addNew<WText>( WString::tr( "pfdpg-fit-skew-link" ));
+  m_fitSkewLink->addStyleClass( "PfdpgFitSkewLink");
+  m_fitSkewLink->setHidden( true);
+  m_fitSkewLink->clicked().connect( this, &PeakFitDetPrefsGui::showFitSkewDialog);
 
   // Source label
-  m_sourceLabel = new WText( contentDiv );
-  m_sourceLabel->addStyleClass( "PfdpgSourceLabel" );
+  m_sourceLabel = contentDiv->addNew<WText>();
+  m_sourceLabel->addStyleClass( "PfdpgSourceLabel");
 
   // Set initial state from spectrum (if any)
   updateFromSpecMeas();
@@ -310,13 +309,13 @@ void PeakFitDetPrefsGui::toggleExpanded()
     return;
 
   const bool expanding = m_collapsedDiv->isVisible();
-  m_collapsedDiv->setHidden( expanding );
-  m_expandedDiv->setHidden( !expanding );
+  m_collapsedDiv->setHidden( expanding);
+  m_expandedDiv->setHidden( !expanding);
   
   if( expanding )
   {
-    InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
-    app->useMessageResourceBundle( "PeakEdit" ); //WMessageResourceBundle will check if its already been loaded, and if so, skip it
+    InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance());
+    app->useMessageResourceBundle( "PeakEdit"); //WMessageResourceBundle will check if its already been loaded, and if so, skip it
   }
 }//void toggleExpanded()
 
@@ -402,7 +401,7 @@ namespace
       upper[i] = std::nullopt;
     }
 
-    const size_t nparams = PeakDef::num_skew_parameters( skewType );
+    const size_t nparams = PeakDef::num_skew_parameters( skewType);
     if( nparams == 0 )
       return;
 
@@ -413,9 +412,9 @@ namespace
       {
         const PeakDef::CoefficientType coefType
           = static_cast<PeakDef::CoefficientType>(
-            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ) );
+            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
         double lo = 0, hi = 0, start = 0, step = 0;
-        PeakDef::skew_parameter_range( skewType, coefType, lo, hi, start, step );
+        PeakDef::skew_parameter_range( skewType, coefType, lo, hi, start, step);
         lower[p] = start;
         if( PeakDef::is_energy_dependent( skewType, coefType ) )
           upper[p] = start;
@@ -605,16 +604,16 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
   if( skewIdx < 0 || skewIdx >= static_cast<int>( PeakDef::NumSkewType ) )
     return;
 
-  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx );
-  const size_t nparams = PeakDef::num_skew_parameters( skewType );
+  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
+  const size_t nparams = PeakDef::num_skew_parameters( skewType);
   const bool hasSkew = (nparams > 0);
 
   // Hide checkbox, skew params, and fit link when NoSkew is selected
   if( m_roiIndepCb && m_roiIndepCb->parent() )
-    m_roiIndepCb->parent()->setHidden( !hasSkew );
-  m_skewParamsDiv->setHidden( !hasSkew || m_roiIndepCb->isChecked() );
+    m_roiIndepCb->parent()->setHidden( !hasSkew);
+  m_skewParamsDiv->setHidden( !hasSkew || m_roiIndepCb->isChecked());
   if( m_fitSkewLink )
-    m_fitSkewLink->setHidden( !hasSkew || m_roiIndepCb->isChecked() );
+    m_fitSkewLink->setHidden( !hasSkew || m_roiIndepCb->isChecked());
 
   if( !hasSkew )
     return;
@@ -625,7 +624,7 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
   {
     const PeakDef::CoefficientType coefType
       = static_cast<PeakDef::CoefficientType>(
-          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ) );
+          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
     if( PeakDef::is_energy_dependent( skewType, coefType ) )
     {
       hasEnergyDep = true;
@@ -634,123 +633,122 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
   }//for( check energy dependence )
 
   // Use a single grid table for all params: 3-col if energy-dep, 2-col otherwise
-  WContainerWidget *table = new WContainerWidget( m_skewParamsDiv );
-  table->addStyleClass( hasEnergyDep ? "PfdpgParamTable" : "PfdpgParamTable PfdpgSingleCol" );
+  WContainerWidget *table = m_skewParamsDiv->addNew<WContainerWidget>();
+  table->addStyleClass( hasEnergyDep ? "PfdpgParamTable" : "PfdpgParamTable PfdpgSingleCol");
 
   // Single header row at top with "Low E" / "High E" column labels
   if( hasEnergyDep )
   {
-    new WText( "", table ); // empty name-column cell
-    WText *lowHeader = new WText( WString::tr( "pfdpg-lower-header" ), table );
-    lowHeader->addStyleClass( "PfdpgColHeader" );
-    WText *highHeader = new WText( WString::tr( "pfdpg-upper-header" ), table );
-    highHeader->addStyleClass( "PfdpgColHeader" );
+    table->addNew<WText>( ""); // empty name-column cell
+    WText *lowHeader = table->addNew<WText>( WString::tr( "pfdpg-lower-header" ));
+    lowHeader->addStyleClass( "PfdpgColHeader");
+    WText *highHeader = table->addNew<WText>( WString::tr( "pfdpg-upper-header" ));
+    highHeader->addStyleClass( "PfdpgColHeader");
   }
 
   for( size_t p = 0; p < nparams; ++p )
   {
     const PeakDef::CoefficientType coefType
       = static_cast<PeakDef::CoefficientType>(
-          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ) );
+          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
 
-    const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType );
+    const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType);
 
     double range_lower = 0, range_upper = 0, start_val = 0, step_size = 0;
-    PeakDef::skew_parameter_range( skewType, coefType, range_lower, range_upper, start_val, step_size );
+    PeakDef::skew_parameter_range( skewType, coefType, range_lower, range_upper, start_val, step_size);
 
     const char *labelMsgId = nullptr;
     const char *tooltipMsgId = nullptr;
-    skew_param_msg_ids( skewType, p, labelMsgId, tooltipMsgId );
+    skew_param_msg_ids( skewType, p, labelMsgId, tooltipMsgId);
 
     // Build tooltip text: base tooltip + energy-dependence note
     WString tooltipText;
     if( tooltipMsgId )
     {
-      tooltipText = WString::tr( tooltipMsgId );
+      tooltipText = WString::tr( tooltipMsgId);
       tooltipText += energyDep ? WString::tr( "pfdpg-tt-energy-dep" )
-                               : WString::tr( "pfdpg-tt-not-energy-dep" );
+                               : WString::tr( "pfdpg-tt-not-energy-dep");
     }
 
     // Parameter label
-    WText *paramLabel = new WText(
-      labelMsgId ? WString::tr( labelMsgId ) : WString::tr( "pfdpg-param-label" ).arg( static_cast<int>( p ) ),
-      table );
-    paramLabel->addStyleClass( "PfdpgParamName" );
+    WText *paramLabel = table->addNew<WText>(
+      labelMsgId ? WString::tr( labelMsgId ) : WString::tr( "pfdpg-param-label" ).arg( static_cast<int>( p ) ));
+    paramLabel->addStyleClass( "PfdpgParamName");
 
     if( !tooltipText.empty() )
     {
       HelpSystem::attachToolTipOn( paramLabel, tooltipText, true,
-                                   HelpSystem::ToolTipPosition::Right );
+                                   HelpSystem::ToolTipPosition::Right);
     }
 
     if( energyDep )
     {
       // Energy-dependent: label | lowerSpin | upperSpin on one row
-      NativeFloatSpinBox *lowerSpin = new NativeFloatSpinBox( table );
-      lowerSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ) );
-      //lowerSpin->setSingleStep( static_cast<float>( step_size ) );
-      lowerSpin->setFormatString( "%.4G" );
-      lowerSpin->setSpinnerHidden( true );
-      lowerSpin->addStyleClass( "PfdpgSpin" );
-      lowerSpin->setPlaceholderText( "fit" );
+      NativeFloatSpinBox *lowerSpin = table->addNew<NativeFloatSpinBox>();
+      lowerSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
+      //lowerSpin->setSingleStep( static_cast<float>( step_size ));
+      lowerSpin->setFormatString( "%.4G");
+      lowerSpin->setSpinnerHidden( true);
+      lowerSpin->addStyleClass( "PfdpgSpin");
+      lowerSpin->setPlaceholderText( "fit");
       m_lowerSkewSpin[p] = lowerSpin;
       lowerSpin->valueChanged().connect( std::bind( [this]( float ){
         if( !m_programmaticUpdate )
           userChangedValue();
-      }, std::placeholders::_1 ) );
+      }, std::placeholders::_1 ));
 
-      NativeFloatSpinBox *upperSpin = new NativeFloatSpinBox( table );
-      upperSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ) );
-      //upperSpin->setSingleStep( static_cast<float>( step_size ) );
-      upperSpin->setFormatString( "%.4G" );
-      upperSpin->setSpinnerHidden( true );
-      upperSpin->addStyleClass( "PfdpgSpin" );
-      upperSpin->setPlaceholderText( "fit" );
+      NativeFloatSpinBox *upperSpin = table->addNew<NativeFloatSpinBox>();
+      upperSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
+      //upperSpin->setSingleStep( static_cast<float>( step_size ));
+      upperSpin->setFormatString( "%.4G");
+      upperSpin->setSpinnerHidden( true);
+      upperSpin->addStyleClass( "PfdpgSpin");
+      upperSpin->setPlaceholderText( "fit");
       
       m_upperSkewSpin[p] = upperSpin;
       upperSpin->valueChanged().connect( std::bind( [this]( float ){
         if( !m_programmaticUpdate )
           userChangedValue();
-      }, std::placeholders::_1 ) );
+      }, std::placeholders::_1 ));
 
       if( !m_programmaticUpdate )
       {
-        lowerSpin->setValue( static_cast<float>(start_val) );
-        upperSpin->setValue( static_cast<float>(start_val) );
+        lowerSpin->setValue( static_cast<float>(start_val));
+        upperSpin->setValue( static_cast<float>(start_val));
       }
       
       if( !tooltipText.empty() )
       {
         HelpSystem::attachToolTipOn( lowerSpin, tooltipText, true,
-                                     HelpSystem::ToolTipPosition::Right );
+                                     HelpSystem::ToolTipPosition::Right);
         HelpSystem::attachToolTipOn( upperSpin, tooltipText, true,
-                                     HelpSystem::ToolTipPosition::Right );
+                                     HelpSystem::ToolTipPosition::Right);
       }
     }
     else
     {
       // Non-energy-dependent: label | valSpin (spanning remaining columns if 3-col grid)
-      NativeFloatSpinBox *valSpin = new NativeFloatSpinBox( table );
-      valSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ) );
-      //valSpin->setSingleStep( static_cast<float>( step_size ) );
-      valSpin->setFormatString( "%.4G" );
-      valSpin->setSpinnerHidden( true );
-      valSpin->addStyleClass( hasEnergyDep ? "PfdpgSpin PfdpgSpinWide" : "PfdpgSpin" );
-      valSpin->setPlaceholderText( "fit" );
+      NativeFloatSpinBox *valSpin = table->addNew<NativeFloatSpinBox>();
+      valSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
+      //valSpin->setSingleStep( static_cast<float>( step_size ));
+      valSpin->setFormatString( "%.4G");
+      valSpin->setSpinnerHidden( true);
+      valSpin->addStyleClass( hasEnergyDep ? "PfdpgSpin PfdpgSpinWide" : "PfdpgSpin");
+      valSpin->setPlaceholderText( "fit");
       
       m_lowerSkewSpin[p] = valSpin;
       valSpin->valueChanged().connect( std::bind( [this]( float ){
         if( !m_programmaticUpdate )
           userChangedValue();
-      }, std::placeholders::_1 ) );
+      }, std::placeholders::_1 ));
 
       if( !m_programmaticUpdate )
-        valSpin->setValue( static_cast<float>(start_val) );
+        valSpin->setValue( static_cast<float>(start_val));
       
       if( !tooltipText.empty() )
       {
         HelpSystem::attachToolTipOn( valSpin, tooltipText, true,
-                                     HelpSystem::ToolTipPosition::Right );
+                                     HelpSystem::ToolTipPosition::Right);
       }
     }
   }//for( each skew param )
@@ -773,14 +771,14 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
     }
 
     std::optional<double> defLower[4], defUpper[4];
-    default_skew_values( skewType, detType, defLower, defUpper );
+    default_skew_values( skewType, detType, defLower, defUpper);
 
     for( size_t p = 0; p < nparams; ++p )
     {
       if( m_lowerSkewSpin[p] && defLower[p].has_value() )
-        m_lowerSkewSpin[p]->setValue( static_cast<float>( defLower[p].value() ) );
+        m_lowerSkewSpin[p]->setValue( static_cast<float>( defLower[p].value() ));
       if( m_upperSkewSpin[p] && defUpper[p].has_value() )
-        m_upperSkewSpin[p]->setValue( static_cast<float>( defUpper[p].value() ) );
+        m_upperSkewSpin[p]->setValue( static_cast<float>( defUpper[p].value() ));
     }
      */
   }//if( !m_programmaticUpdate )
@@ -820,24 +818,24 @@ void PeakFitDetPrefsGui::userChangedValue()
   // Skew type
   const int skewIdx = m_skewTypeCombo->currentIndex();
   if( skewIdx >= 0 && skewIdx < static_cast<int>( PeakDef::NumSkewType ) )
-    newPrefs->m_peak_skew_type = static_cast<PeakDef::SkewType>( skewIdx );
+    newPrefs->m_peak_skew_type = static_cast<PeakDef::SkewType>( skewIdx);
   else
     newPrefs->m_peak_skew_type = PeakDef::NoSkew;
 
   // Skew params: read from spin boxes if they exist and have valid text
-  const size_t nparams = PeakDef::num_skew_parameters( newPrefs->m_peak_skew_type );
+  const size_t nparams = PeakDef::num_skew_parameters( newPrefs->m_peak_skew_type);
   for( size_t p = 0; p < nparams; ++p )
   {
     if( m_lowerSkewSpin[p] && !m_lowerSkewSpin[p]->text().empty()
        && m_lowerSkewSpin[p]->text().toUTF8() != "fit" )
     {
-      newPrefs->m_lower_energy_skew[p] = static_cast<double>( m_lowerSkewSpin[p]->value() );
+      newPrefs->m_lower_energy_skew[p] = static_cast<double>( m_lowerSkewSpin[p]->value());
     }
 
     if( m_upperSkewSpin[p] && !m_upperSkewSpin[p]->text().empty()
        && m_upperSkewSpin[p]->text().toUTF8() != "fit" )
     {
-      newPrefs->m_upper_energy_skew[p] = static_cast<double>( m_upperSkewSpin[p]->value() );
+      newPrefs->m_upper_energy_skew[p] = static_cast<double>( m_upperSkewSpin[p]->value());
     }
   }
 
@@ -865,11 +863,11 @@ void PeakFitDetPrefsGui::userChangedValue()
   newPrefs->m_source = PeakFitDetPrefs::LoadingSource::UserInputInGui;
 
   // Apply to SpecMeas
-  meas->setPeakFitDetPrefs( newPrefs );
+  meas->setPeakFitDetPrefs( newPrefs);
 
   // Update the source label
   m_sourceLabel->setText( WString::tr( "pfdpg-source-label" )
-                         + WString::tr( "pfdpg-src-user" ) );
+                         + WString::tr( "pfdpg-src-user" ));
 
   // Register undo/redo
   UndoRedoManager *undoManager = m_viewer->undoRedoManager();
@@ -880,7 +878,7 @@ void PeakFitDetPrefsGui::userChangedValue()
     auto undo = [oldPrefs, weakMeas](){
       shared_ptr<SpecMeas> m = weakMeas.lock();
       if( m )
-        m->setPeakFitDetPrefs( oldPrefs );
+        m->setPeakFitDetPrefs( oldPrefs);
       InterSpec *viewer = InterSpec::instance();
       if( viewer )
         viewer->peakFitDetPrefsChanged().emit();
@@ -889,14 +887,14 @@ void PeakFitDetPrefsGui::userChangedValue()
     auto redo = [newPrefs, weakMeas](){
       shared_ptr<SpecMeas> m = weakMeas.lock();
       if( m )
-        m->setPeakFitDetPrefs( newPrefs );
+        m->setPeakFitDetPrefs( newPrefs);
       InterSpec *viewer = InterSpec::instance();
       if( viewer )
         viewer->peakFitDetPrefsChanged().emit();
     };
 
     undoManager->addUndoRedoStep( undo, redo,
-      WString::tr( "pfdpg-undo-det-type" ).toUTF8() );
+      WString::tr( "pfdpg-undo-det-type" ).toUTF8());
   }//if( undoManager )
 }//void userChangedValue()
 
@@ -917,28 +915,28 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
 
   if( !meas )
   {
-    setControlsEnabled( false );
-    m_detTypeCombo->setCurrentIndex( 4 ); // Unknown
-    m_fwhmMethodCombo->setCurrentIndex( 0 ); // Normal
-    m_skewTypeCombo->setCurrentIndex( 0 ); // NoSkew
+    setControlsEnabled( false);
+    m_detTypeCombo->setCurrentIndex( 4); // Unknown
+    m_fwhmMethodCombo->setCurrentIndex( 0); // Normal
+    m_skewTypeCombo->setCurrentIndex( 0); // NoSkew
     updateSkewParamRows();
-    m_sourceLabel->setText( "" );
+    m_sourceLabel->setText( "");
     m_programmaticUpdate = false;
     return;
   }
 
-  setControlsEnabled( true );
+  setControlsEnabled( true);
 
   shared_ptr<const PeakFitDetPrefs> prefs = meas->peakFitDetPrefs();
 
   if( !prefs )
   {
-    m_detTypeCombo->setCurrentIndex( 6 );
-    m_fwhmMethodCombo->setCurrentIndex( 0 );
-    m_skewTypeCombo->setCurrentIndex( 0 );
+    m_detTypeCombo->setCurrentIndex( 6);
+    m_fwhmMethodCombo->setCurrentIndex( 0);
+    m_skewTypeCombo->setCurrentIndex( 0);
     updateSkewParamRows();
     m_sourceLabel->setText( WString::tr( "pfdpg-source-label" )
-                           + WString::tr( "pfdpg-src-default" ) );
+                           + WString::tr( "pfdpg-src-default" ));
     m_programmaticUpdate = false;
     return;
   }
@@ -946,13 +944,13 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
   // Set detector type combo
   switch( prefs->m_det_type )
   {
-    case PeakFitUtils::CoarseResolutionType::Low:        m_detTypeCombo->setCurrentIndex( 0 ); break;
-    case PeakFitUtils::CoarseResolutionType::LaBr:       m_detTypeCombo->setCurrentIndex( 1 ); break;
-    case PeakFitUtils::CoarseResolutionType::CZT:        m_detTypeCombo->setCurrentIndex( 2 ); break;
-    case PeakFitUtils::CoarseResolutionType::MedRes:     m_detTypeCombo->setCurrentIndex( 3 ); break;
-    case PeakFitUtils::CoarseResolutionType::LowOrMedRes: m_detTypeCombo->setCurrentIndex( 4 ); break;
-    case PeakFitUtils::CoarseResolutionType::High:       m_detTypeCombo->setCurrentIndex( 5 ); break;
-    case PeakFitUtils::CoarseResolutionType::Unknown:    m_detTypeCombo->setCurrentIndex( 6 ); break;
+    case PeakFitUtils::CoarseResolutionType::Low:        m_detTypeCombo->setCurrentIndex( 0); break;
+    case PeakFitUtils::CoarseResolutionType::LaBr:       m_detTypeCombo->setCurrentIndex( 1); break;
+    case PeakFitUtils::CoarseResolutionType::CZT:        m_detTypeCombo->setCurrentIndex( 2); break;
+    case PeakFitUtils::CoarseResolutionType::MedRes:     m_detTypeCombo->setCurrentIndex( 3); break;
+    case PeakFitUtils::CoarseResolutionType::LowOrMedRes: m_detTypeCombo->setCurrentIndex( 4); break;
+    case PeakFitUtils::CoarseResolutionType::High:       m_detTypeCombo->setCurrentIndex( 5); break;
+    case PeakFitUtils::CoarseResolutionType::Unknown:    m_detTypeCombo->setCurrentIndex( 6); break;
   }//switch( prefs->m_det_type )
 
   // Set FWHM method combo
@@ -968,43 +966,43 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
 
     switch( effective )
     {
-      case PeakFitDetPrefs::FwhmMethod::Normal:        m_fwhmMethodCombo->setCurrentIndex( 0 ); break;
-      case PeakFitDetPrefs::FwhmMethod::DetFwhm:       m_fwhmMethodCombo->setCurrentIndex( 1 ); break;
-      case PeakFitDetPrefs::FwhmMethod::DetPlusRefine:  m_fwhmMethodCombo->setCurrentIndex( 2 ); break;
+      case PeakFitDetPrefs::FwhmMethod::Normal:        m_fwhmMethodCombo->setCurrentIndex( 0); break;
+      case PeakFitDetPrefs::FwhmMethod::DetFwhm:       m_fwhmMethodCombo->setCurrentIndex( 1); break;
+      case PeakFitDetPrefs::FwhmMethod::DetPlusRefine:  m_fwhmMethodCombo->setCurrentIndex( 2); break;
     }
   }
 
   // Set skew type combo
-  const int skewIdx = static_cast<int>( prefs->m_peak_skew_type );
+  const int skewIdx = static_cast<int>( prefs->m_peak_skew_type);
   if( skewIdx >= 0 && skewIdx < static_cast<int>( PeakDef::NumSkewType ) )
-    m_skewTypeCombo->setCurrentIndex( skewIdx );
+    m_skewTypeCombo->setCurrentIndex( skewIdx);
   else
-    m_skewTypeCombo->setCurrentIndex( 0 );
+    m_skewTypeCombo->setCurrentIndex( 0);
 
   // Set ROI-independent skew checkbox
-  m_roiIndepCb->setChecked( prefs->m_roi_independent_skew );
+  m_roiIndepCb->setChecked( prefs->m_roi_independent_skew);
 
   // Rebuild skew param rows and update checkbox/params visibility
   updateSkewParamRows();
 
   // Fill in skew param values
-  const size_t nparams = PeakDef::num_skew_parameters( prefs->m_peak_skew_type );
+  const size_t nparams = PeakDef::num_skew_parameters( prefs->m_peak_skew_type);
   for( size_t p = 0; p < nparams; ++p )
   {
     if( m_lowerSkewSpin[p] )
     {
       if( prefs->m_lower_energy_skew[p].has_value() )
-        m_lowerSkewSpin[p]->setValue( static_cast<float>( prefs->m_lower_energy_skew[p].value() ) );
+        m_lowerSkewSpin[p]->setValue( static_cast<float>( prefs->m_lower_energy_skew[p].value() ));
       else
-        m_lowerSkewSpin[p]->setText( "" );
+        m_lowerSkewSpin[p]->setText( "");
     }
 
     if( m_upperSkewSpin[p] )
     {
       if( prefs->m_upper_energy_skew[p].has_value() )
-        m_upperSkewSpin[p]->setValue( static_cast<float>( prefs->m_upper_energy_skew[p].value() ) );
+        m_upperSkewSpin[p]->setValue( static_cast<float>( prefs->m_upper_energy_skew[p].value() ));
       else
-        m_upperSkewSpin[p]->setText( "" );
+        m_upperSkewSpin[p]->setText( "");
     }
   }//for( each param )
 
@@ -1012,13 +1010,13 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
   WString srcTxt;
   switch( prefs->m_source )
   {
-    case PeakFitDetPrefs::LoadingSource::Default:                 srcTxt = WString::tr( "pfdpg-src-default" );   break;
-    case PeakFitDetPrefs::LoadingSource::UserInputInGui:          srcTxt = WString::tr( "pfdpg-src-user" );      break;
-    case PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse: srcTxt = WString::tr( "pfdpg-src-drf" );      break;
-    case PeakFitDetPrefs::LoadingSource::DefaultForDetectorType:  srcTxt = WString::tr( "pfdpg-src-det-type" );  break;
-    case PeakFitDetPrefs::LoadingSource::FromSpectralData:        srcTxt = WString::tr( "pfdpg-src-spectral" );  break;
+    case PeakFitDetPrefs::LoadingSource::Default:                 srcTxt = WString::tr( "pfdpg-src-default");   break;
+    case PeakFitDetPrefs::LoadingSource::UserInputInGui:          srcTxt = WString::tr( "pfdpg-src-user");      break;
+    case PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse: srcTxt = WString::tr( "pfdpg-src-drf");      break;
+    case PeakFitDetPrefs::LoadingSource::DefaultForDetectorType:  srcTxt = WString::tr( "pfdpg-src-det-type");  break;
+    case PeakFitDetPrefs::LoadingSource::FromSpectralData:        srcTxt = WString::tr( "pfdpg-src-spectral");  break;
   }//switch
-  m_sourceLabel->setText( WString::tr( "pfdpg-source-label" ) + srcTxt );
+  m_sourceLabel->setText( WString::tr( "pfdpg-source-label" ) + srcTxt);
 
   m_programmaticUpdate = false;
 }//void updateFromSpecMeas()
@@ -1026,17 +1024,17 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
 
 void PeakFitDetPrefsGui::setControlsEnabled( const bool enabled )
 {
-  m_detTypeCombo->setEnabled( enabled );
-  m_fwhmMethodCombo->setEnabled( enabled );
-  m_skewTypeCombo->setEnabled( enabled );
-  m_roiIndepCb->setEnabled( enabled );
+  m_detTypeCombo->setEnabled( enabled);
+  m_fwhmMethodCombo->setEnabled( enabled);
+  m_skewTypeCombo->setEnabled( enabled);
+  m_roiIndepCb->setEnabled( enabled);
 
   for( int i = 0; i < 4; ++i )
   {
     if( m_lowerSkewSpin[i] )
-      m_lowerSkewSpin[i]->setEnabled( enabled );
+      m_lowerSkewSpin[i]->setEnabled( enabled);
     if( m_upperSkewSpin[i] )
-      m_upperSkewSpin[i]->setEnabled( enabled );
+      m_upperSkewSpin[i]->setEnabled( enabled);
   }
 }//void setControlsEnabled( bool )
 

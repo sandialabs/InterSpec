@@ -49,24 +49,25 @@
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 
 
-#include <Wt/Utils>
-#include <Wt/WMenu>
-#include <Wt/WLabel>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WMenuItem>
-#include <Wt/WResource>
-#include <Wt/WIOService>
-#include <Wt/WGridLayout>
-#include <Wt/WJavaScript>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WStackedWidget>
-#include <Wt/WRegExpValidator>
+#include <Wt/Utils.h>
+#include <Wt/WMenu.h>
+#include <Wt/WLabel.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WResource.h>
+#include <Wt/WIOService.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
@@ -304,7 +305,7 @@ class RestRidInputResource : public Wt::WResource
   InterSpec *m_interspec;
   
 public:
-  RestRidInputResource( InterSpec *interspec, WObject* parent = 0 );
+  RestRidInputResource( InterSpec *interspec );
   
   void setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags );
   void setDrf( const std::string &drf );
@@ -336,7 +337,7 @@ public:
   RestRidInputResource *m_resource;
   
 public:
-  RestRidInterface( InterSpec *viewer, Wt::WContainerWidget *parent );
+  RestRidInterface( InterSpec *viewer );
   void setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags );
   void setDrf( const string &drf );
   void startRestAnalysis( const string ana_service_url );
@@ -489,8 +490,8 @@ public:
   }//std::string mostRecentUserUrl()
   
 public:
-  ExternalRidWidget( const ServiceType type, RemoteRid *remoterid, InterSpec *interspec, WContainerWidget *parent = 0 )
-  : WContainerWidget( parent ),
+  ExternalRidWidget( const ServiceType type, RemoteRid *remoterid, InterSpec *interspec )
+  : WContainerWidget(),
    m_interspec( interspec ),
    m_remote_rid( remoterid ),
    m_type( type ),
@@ -515,41 +516,39 @@ public:
     
     addStyleClass( "ExternalRidWidget" );
     
-    WGridLayout *layout = new WGridLayout( this );
+    WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
     layout->setContentsMargins( 0, 0, 0, 0 );
     layout->setVerticalSpacing( 0 );
     layout->setHorizontalSpacing( 0 );
-    
+
     WString url_label;
     switch( m_type )
     {
       case ServiceType::Rest:
         url_label = WString::tr("rr-mi-url");
         break;
-        
+
       case ServiceType::Exe:
         url_label = WString::tr("rr-mi-executable-path");
         break;
     }//switch( m_type )
-    
-    WLabel *label = new WLabel( url_label );
-    layout->addWidget( label, 0, 0, AlignMiddle );
-    m_url = new WLineEdit();
+
+    WLabel *label = layout->addWidget( std::make_unique<WLabel>( url_label ), 0, 0, Wt::AlignmentFlag::Middle );
+    m_url = layout->addWidget( std::make_unique<WLineEdit>(), 0, 1, Wt::AlignmentFlag::Middle );
     label->setBuddy( m_url );
     m_url->changed().connect( this, &ExternalRidWidget::urlChanged );
     m_url->enterPressed().connect( this, &ExternalRidWidget::urlChanged );
-    
+
     switch( m_type )
     {
       case ServiceType::Rest:
       {
         const char *url_regex = "^(http(s)?:\\/\\/)[\\w.-]+(?:\\.[\\w\\.-]+)*[\\w\\-\\._~:/?#[\\]@!\\$&'\\(\\)\\*\\+,;=.]+$";
-        WRegExpValidator *validator = new WRegExpValidator( url_regex, m_url );
-        m_url->setValidator( validator );
+        m_url->setValidator( std::make_shared<WRegExpValidator>( url_regex ) );
         m_url->setPlaceholderText( WString::tr("rr-url-empty-text") );
         break;
       }//case ServiceType::Rest:
-        
+
       case ServiceType::Exe:
       {
         // TODO: need to implement path validator, and actually for macOS and Electron builds implement allowing to select executable!
@@ -557,82 +556,72 @@ public:
         break;
       }//case ServiceType::Exe:
     }//switch( m_type )
-    
+
     m_prev_url = WString::fromUTF8( mostRecentUserUrl(m_type,m_interspec) );
     m_url->setText( m_prev_url );
-    
-    layout->addWidget( m_url, 0, 1, AlignMiddle );
-    layout->setColumnStretch( 1, 1 );
-  
 
-    m_drf_stack = new WStackedWidget();
+    layout->setColumnStretch( 1, 1 );
+
+
+    m_drf_stack = layout->addWidget( std::make_unique<WStackedWidget>(), 1, 0, 1, 2 );
     m_drf_stack->addStyleClass( "DrfStack" );
-    layout->addWidget( m_drf_stack, 1, 0, 1, 2 );
-    
-    WContainerWidget *container = new WContainerWidget();
-    WGridLayout *sub_layout = new WGridLayout( container );
-    m_retrieve_drfs_btn = new WPushButton( WString::tr("rr-get-detectors") );
-    sub_layout->addWidget( m_retrieve_drfs_btn, 0, 0, AlignCenter | AlignMiddle );
-    m_retrieve_drfs_btn->clicked().connect( this, &ExternalRidWidget::requestServiceInfo );
-    
-    m_drf_stack->addWidget( container );
-    
-    container = new WContainerWidget();
-    sub_layout = new WGridLayout( container );
-    label = new WLabel( WString::tr("rr-detectors-label") );
-    sub_layout->addWidget( label, 0, 0 );
-    m_drf_select = new WComboBox();
-    sub_layout->addWidget( m_drf_select, 0, 1 );
-    sub_layout->setColumnStretch( 1, 1 );
-    m_current_drf_index = -1;
-    m_drf_select->activated().connect( this, &ExternalRidWidget::handleUserChangedDrf );
-    
-    m_drf_stack->addWidget( container );
+
+    {
+      auto container = std::make_unique<WContainerWidget>();
+      WGridLayout *sub_layout = container->setLayout( std::make_unique<WGridLayout>() );
+      m_retrieve_drfs_btn = sub_layout->addWidget( std::make_unique<WPushButton>( WString::tr("rr-get-detectors") ), 0, 0, Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
+      m_retrieve_drfs_btn->clicked().connect( this, &ExternalRidWidget::requestServiceInfo );
+      m_drf_stack->addWidget( std::move(container) );
+    }
+
+    {
+      auto container = std::make_unique<WContainerWidget>();
+      WGridLayout *sub_layout = container->setLayout( std::make_unique<WGridLayout>() );
+      WLabel *drfLabel = sub_layout->addWidget( std::make_unique<WLabel>( WString::tr("rr-detectors-label") ), 0, 0 );
+      m_drf_select = sub_layout->addWidget( std::make_unique<WComboBox>(), 0, 1 );
+      sub_layout->setColumnStretch( 1, 1 );
+      m_current_drf_index = -1;
+      m_drf_select->activated().connect( this, &ExternalRidWidget::handleUserChangedDrf );
+      m_drf_stack->addWidget( std::move(container) );
+    }
     m_drf_stack->setCurrentIndex( 0 );
-    
-    m_status_stack = new WStackedWidget();
+
+    m_status_stack = layout->addWidget( std::make_unique<WStackedWidget>(), 2, 0, 1, 2 );
     m_status_stack->addStyleClass( "RestRidInfoStack" );
-    layout->addWidget( m_status_stack, 2, 0, 1, 2 );
-    
-    m_error = new WText();
+
+    m_error = m_status_stack->addNew<WText>();
     m_error->addStyleClass( "RestRidError" );
     m_error->setInline( false );
-    m_status_stack->addWidget( m_error );
-    
-    m_status = new WText();
+
+    m_status = m_status_stack->addNew<WText>();
     m_status->addStyleClass( "RestRidStatus" );
     m_status->setInline( false );
-    m_status_stack->addWidget( m_status );
-    
-    m_result = new WText( WString::tr("rr-url-instructions") );
+
+    m_result = m_status_stack->addNew<WText>( WString::tr("rr-url-instructions") );
     m_result->addStyleClass( "RestRidResult" );
     m_result->setInline( false );
-    m_status_stack->addWidget( m_result );
-    
+
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_result) );
-    
-    
-    m_onlyDisplayedSamples = new WCheckBox( WString::tr("rr-only-disp-samples-cb") );
+
+
+    m_onlyDisplayedSamples = layout->addWidget( std::make_unique<WCheckBox>( WString::tr("rr-only-disp-samples-cb") ), 3, 0, 1, 2 );
     m_onlyDisplayedSamples->setToolTip( WString::tr("rr-tt-only-disp-samples") );
     m_onlyDisplayedSamples->addStyleClass( "AlwaysSubmitAna" );
-    layout->addWidget( m_onlyDisplayedSamples, 3, 0, 1, 2 );
     auto meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
     m_onlyDisplayedSamples->setHidden( !meas || !meas->passthrough() );
-    
-    
-    m_submit = new WPushButton( WString::tr("rr-submit-ana-btn") );
-    layout->addWidget( m_submit, 4, 0, 1, 2, AlignCenter );
+
+
+    m_submit = layout->addWidget( std::make_unique<WPushButton>( WString::tr("rr-submit-ana-btn") ), 4, 0, 1, 2, Wt::AlignmentFlag::Center );
     m_submit->clicked().connect( this, &ExternalRidWidget::submitForAnalysis );
     m_submit->disable();
-    
-    WContainerWidget *cb_row = new WContainerWidget();
+
+    WContainerWidget *cb_row = layout->addWidget( std::make_unique<WContainerWidget>(), 5, 0, 1, 2 );
     cb_row->addStyleClass( "RidOptionCbRow" );
-    layout->addWidget( cb_row, 5, 0, 1, 2 );
-    
-    m_alwaysDoAnalysisCb = new WCheckBox( WString::tr("rr-always-call-cb"), cb_row );
+
+    m_alwaysDoAnalysisCb = cb_row->addNew<WCheckBox>( WString::tr("rr-always-call-cb") );
     m_alwaysDoAnalysisCb->addStyleClass( "AlwaysSubmitAna" );
-    
-    m_autoAnaInDialog = new WCheckBox( WString::tr("rr-show-dialog-cb"), cb_row );
+
+    m_autoAnaInDialog = cb_row->addNew<WCheckBox>( WString::tr("rr-show-dialog-cb") );
     m_autoAnaInDialog->addStyleClass( "ShowDialogOpt" );
     m_autoAnaInDialog->setToolTip( WString::tr("rr-tt-show-dialog") );
     m_autoAnaInDialog->hide();
@@ -691,8 +680,7 @@ public:
     
     if( m_type == ServiceType::Rest )
     {
-      m_rest_interface = new RestRidInterface( m_interspec, nullptr );
-      layout->addWidget( m_rest_interface, 6, 0, 1, 2 );
+      m_rest_interface = layout->addWidget( std::make_unique<RestRidInterface>( m_interspec ), 6, 0, 1, 2 );
       
       m_rest_interface->m_info_response_signal.connect( this, &ExternalRidWidget::handleInfoResponse );
       m_rest_interface->m_info_error_signal.connect( this, &ExternalRidWidget::handleInfoResponseError );
@@ -996,7 +984,7 @@ public:
         wApp->useStyleSheet( "InterSpec_resources/RemoteRid.css" );
         SimpleDialog *dialog = new SimpleDialog( WString::tr("rr-rid-results-window-title") );
         
-        WText *contents = new WText( msg_html, dialog->contents() );
+        WText *contents = dialog->contents()->addNew<WText>( msg_html );
         contents->addStyleClass( "content RestRidResult" );
         contents->setInline( false );
         
@@ -1195,12 +1183,12 @@ public:
     auto result = std::make_shared<string>();
     auto rcode = std::make_shared<int>(-1);
     auto m = make_shared<mutex>();
-    boost::function<void()> doUpdateFcn;
+    std::function<void()> doUpdateFcn;
     
     if( parent )
-      doUpdateFcn = wApp->bind( boost::bind( &ExternalRidWidget::receiveExeAnalysis, parent, rcode, result, m ) );
+      doUpdateFcn = [parent, rcode, result, m](){ parent->receiveExeAnalysis( rcode, result, m ); };
     else
-      doUpdateFcn = boost::bind( &ExternalRidWidget::displayAutoRidAnaResult, rcode, result, m );
+      doUpdateFcn = [rcode, result, m](){ ExternalRidWidget::displayAutoRidAnaResult( rcode, result, m ); };
     
     auto commandRunner = [tmpfilename,exe_path,arguments,doUpdateFcn,rcode,result,m,appsession](){
       try
@@ -1305,7 +1293,7 @@ public:
     auto result = std::make_shared<string>();
     auto success = std::make_shared<int>(0);
     auto m = make_shared<mutex>();
-    auto doUpdateFcn = wApp->bind( boost::bind( &ExternalRidWidget::receiveExeDrfInfo, this, success, result, m ) );
+    auto doUpdateFcn = std::function<void()>( [this, success, result, m](){ receiveExeDrfInfo( success, result, m ); } );
     
     auto commandRunner = [exe_path,doUpdateFcn,result,success,m,appsession](){
       try
@@ -1425,7 +1413,7 @@ public:
         for( size_t i = 0; i < possibleValues.size(); ++i )
         {
           const Json::Value &value = possibleValues[i];
-          if( value.type() != Wt::Json::Type::StringType)
+          if( value.type() != Wt::Json::Type::String)
              continue;
              
           const WString val = value;
@@ -1689,11 +1677,11 @@ public:
       {
         switch( m_url->validate() )
         {
-          case Wt::WValidator::Invalid:
-          case Wt::WValidator::InvalidEmpty:
+          case Wt::ValidationState::Invalid:
+          case Wt::ValidationState::InvalidEmpty:
             return false;
-            
-          case Wt::WValidator::Valid:
+
+          case Wt::ValidationState::Valid:
             return true;
         }//switch( m_url->validate() )
         
@@ -1946,13 +1934,13 @@ public:
 
 
 
-RestRidInterface::RestRidInterface( InterSpec *viewer, Wt::WContainerWidget *parent )
-: Wt::WContainerWidget( parent ),
+RestRidInterface::RestRidInterface( InterSpec *viewer )
+: Wt::WContainerWidget(),
 m_info_response_signal( this, "info_response", false ),
 m_info_error_signal( this, "info_error", false ),
 m_analysis_results_signal( this, "analysis_results", false ),
 m_analysis_error_signal( this, "analysis_error", false ),
-m_resource( new RestRidInputResource(viewer, this) )
+m_resource( addChild( std::make_unique<RestRidInputResource>(viewer) ) )
 {
   setPositionScheme( PositionScheme::Absolute ); //or Fixed
   setWidth( 0 );
@@ -1996,12 +1984,12 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
   "    .then(json_results => {\n"
   //"      console.log( 'Got JSON analysis response:', json_results );\n"
   "      const result_str = JSON.stringify(json_results);\n"
-  "      " << m_analysis_results_signal.createCall("result_str") << "\n"
+  "      " << m_analysis_results_signal.createCall({"result_str"}) << "\n"
   "    })\n"
   "  .catch( error => {\n"
   "    console.error( 'Error retrieving results from server:', error);\n"
   "    const error_str = 'Error retrieving results from server: ' + error.toString();\n"
-  "  " << m_analysis_error_signal.createCall( "error_str" ) << ";\n"
+  "  " << m_analysis_error_signal.createCall({"error_str"}) << ";\n"
   "  });\n"
   "};\n";
   
@@ -2016,7 +2004,7 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
   "  .catch( error => {\n"
   "    console.error( 'Error getting analysis input:', error);\n"
   "    const error_str = 'Error getting analysis input:' + error.toString();\n"
-  "    " << m_analysis_error_signal.createCall( "error_str" ) << ";\n"
+  "    " << m_analysis_error_signal.createCall({"error_str"}) << ";\n"
   "});\n})();";
   
   doJavaScript( js.str() );
@@ -2032,12 +2020,12 @@ void RestRidInterface::requestRestServiceInfo( const string url )
   "  .then( data => {\n"
 //            << "console.log( 'Got service info data:', data );"
   "    const data_str = JSON.stringify(data);\n"
-  "    " << m_info_response_signal.createCall( "data_str" ) << ";\n"
+  "    " << m_info_response_signal.createCall({"data_str"}) << ";\n"
   "  })\n"
   "  .catch( error => {\n"
   "  console.error( 'Error retrieving info:', error);\n"
   "  const error_str = error.toString();\n"
-  "  " << m_info_error_signal.createCall( "error_str" ) << ";\n"
+  "  " << m_info_error_signal.createCall({"error_str"}) << ";\n"
   "});";
   
   doJavaScript( js.str() );
@@ -2060,14 +2048,20 @@ void RestRidInterface::deleteSelfForToast()
   RestRidInterface *instance = this;
   
   // I think its fine to just call `delete this`, but we'll do a little delay, "just because"
-  WServer::instance()->schedule( 1000, wApp->sessionId(), [rest_id, instance](){
+  WServer::instance()->schedule( std::chrono::milliseconds(1000), wApp->sessionId(), [rest_id, instance](){
     assert( wApp );
     WWidget *w = wApp->domRoot()->findById( rest_id );
     RestRidInterface *ww = dynamic_cast<RestRidInterface *>( w );
     
     // IF the user did a "Clear Session..." the widget could already be deleted
     if( ww && (ww == instance) )
-      delete instance;
+    {
+      // Wt4_TODO: In Wt 4, deleting a widget directly via 'delete' is not preferred;
+      //           use removeWidget on the parent instead.  However, domRoot is the parent here,
+      //           so we use removeWidget to let unique_ptr handle deletion.
+      auto owner = static_cast<Wt::WContainerWidget *>(wApp->domRoot())->removeWidget( instance );
+      (void)owner; // owner goes out of scope here, deleting the widget
+    }
     else
       cerr << "When deleting RestRidInterface, got w = " << w << ", ww = " << ww << ", instance = " << instance << endl;
   } );
@@ -2097,9 +2091,9 @@ void RestRidInterface::handleAutoAnaResultFailure( string response )
 
 
 
-RestRidInputResource::RestRidInputResource( InterSpec *interspec, WObject* parent )
-: WResource( parent ),
-m_flags( 0 ),
+RestRidInputResource::RestRidInputResource( InterSpec *interspec )
+: WResource(),
+m_flags(),
 m_drf( "auto" ),
 m_drf_flags_mutex{},
 m_app( WApplication::instance() ),
@@ -2282,11 +2276,11 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   " a remote URL that you will enter.</p>"
   "<p>Are you sure you would like to continue?</p>"
   ;
-  WText *txt = new WText( warntxt, dialog->contents() );
+  WText *txt = dialog->contents()->addNew<WText>( warntxt );
   txt->addStyleClass( "content" );
   txt->setInline( false );
-  
-  WCheckBox *cb = new WCheckBox( "Don't show again", dialog->contents() );
+
+  WCheckBox *cb = dialog->contents()->addNew<WCheckBox>( "Don't show again" );
   cb->addStyleClass( "NoShowAgain" );
   cb->setInline( false );
   
@@ -2322,14 +2316,14 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
   close->clicked().connect( window, &AuxWindow::hide );
   window->addHelpInFooter( window->footer(), "external-rid" );
   
-  RemoteRid *w = new RemoteRid( viewer, window->contents() );
+  RemoteRid *w = window->contents()->addNew<RemoteRid>( viewer );
   
   window->resizeToFitOnScreen();
   window->centerWindowHeavyHanded();
   
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( window->footer() );
+  WPushButton *qr_btn = window->footer()->addNew<WPushButton>();
   qr_btn->setText( "QR Code" );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -2350,8 +2344,8 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
 }//RemoteRid::createDialog(...)
 
 
-RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
+RemoteRid::RemoteRid( InterSpec *viewer )
+: WContainerWidget(),
   m_interspec( viewer ),
   m_rest_rid( nullptr )
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
@@ -2368,55 +2362,53 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   addStyleClass( "RemoteRid" );
   
-  m_rest_rid = new RestRidImp::ExternalRidWidget( RestRidImp::ExternalRidWidget::ServiceType::Rest, this, viewer );
-  
-  WGridLayout *layout = new WGridLayout( this );
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
   layout->setRowStretch( 0, 1 );
-  
-  
+
+
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
-  m_exe_rid = new RestRidImp::ExternalRidWidget( RestRidImp::ExternalRidWidget::ServiceType::Exe, this, viewer );
-  
-  WStackedWidget *stack = new WStackedWidget();
+  auto stackOwner = std::make_unique<WStackedWidget>();
+  WStackedWidget *stack = stackOwner.get();
   stack->addStyleClass( "UseInfoStack" );
-  stack->setOverflow( WContainerWidget::OverflowAuto );
-  
-  stack->addWidget( m_rest_rid );
-  stack->addWidget( m_exe_rid );
-  
-  WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+  stack->setOverflow( Wt::Overflow::Auto );
+
+  WAnimation animation( Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200 );
   stack->setTransitionAnimation( animation, true );
-  
-  m_menu = new WMenu( stack, Wt::Vertical );
+
+  m_menu = layout->addWidget( std::make_unique<WMenu>( stack ), 0, 0, Wt::AlignmentFlag::Left );
   //const bool is_phone = m_interspec->isPhone();
   //const char *style_class = is_phone ? "VerticalNavMenuPhone HeavyNavMenuPhone"
   //                                   : "VerticalNavMenu HeavyNavMenu SideMenu";
   const char * const style_class = "VerticalNavMenu HeavyNavMenu SideMenu";
   m_menu->addStyleClass( style_class );
-  
-  
-  WMenuItem *item = new WMenuItem( "Remote URL", m_rest_rid );
-  m_menu->addItem( item );
-  
-  item->clicked().connect( std::bind([item,this](){
-    m_menu->select( item );
-    item->triggered().emit( item );
-  }) );
-  
-  item = new WMenuItem( "Executable", m_exe_rid );
-  m_menu->addItem( item );
-  item->clicked().connect( std::bind([item,this](){
-    m_menu->select( item );
-    item->triggered().emit( item );
-  }) );
-  
-  
+
+
+  {
+    auto restRidOwner = std::make_unique<RestRidImp::ExternalRidWidget>( RestRidImp::ExternalRidWidget::ServiceType::Rest, this, viewer );
+    WMenuItem *item = m_menu->addItem( "Remote URL", std::move(restRidOwner), ContentLoading::Eager );
+    m_rest_rid = dynamic_cast<RestRidImp::ExternalRidWidget *>( item->contents() );
+    item->clicked().connect( std::bind([item,this](){
+      m_menu->select( item );
+      item->triggered().emit( item );
+    }) );
+  }
+
+  {
+    auto exeRidOwner = std::make_unique<RestRidImp::ExternalRidWidget>( RestRidImp::ExternalRidWidget::ServiceType::Exe, this, viewer );
+    WMenuItem *item = m_menu->addItem( "Executable", std::move(exeRidOwner), ContentLoading::Eager );
+    m_exe_rid = dynamic_cast<RestRidImp::ExternalRidWidget *>( item->contents() );
+    item->clicked().connect( std::bind([item,this](){
+      m_menu->select( item );
+      item->triggered().emit( item );
+    }) );
+  }
+
+
   layout->setContentsMargins( 9, 0, 9, 0 );
-  layout->addWidget( m_menu, 0, 0, AlignLeft );
-  
-  layout->addWidget( stack, 0, 1 );
+
+  layout->addWidget( std::move(stackOwner), 0, 1 );
   layout->setColumnStretch( 1, 1 );
   
   // If we have it setup to always call the EXE, then show this tab, otherwise show REST tab.
@@ -2459,7 +2451,10 @@ RemoteRid::RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent )
 #else
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setColumnStretch( 0, 1 );
-  layout->addWidget( m_rest_rid, 0, 0 );
+  {
+    auto restRidOwner = std::make_unique<RestRidImp::ExternalRidWidget>( RestRidImp::ExternalRidWidget::ServiceType::Rest, this, viewer );
+    m_rest_rid = layout->addWidget( std::move(restRidOwner), 0, 0 );
+  }
 #endif
 }//RemoteRid constructor
 
@@ -2517,7 +2512,7 @@ std::shared_ptr<SpecUtils::SpecFile> RemoteRid::fileForAnalysis( InterSpec *inte
     };//clear_meta_info lambda
     
     
-    if( foreground_file->passthrough() && !flags.testFlag(OnlyDisplayedSearchSamples) )
+    if( foreground_file->passthrough() && !flags.test(OnlyDisplayedSearchSamples) )
     {
       clear_meta_info( answer );
       return answer;
@@ -2619,7 +2614,7 @@ void RemoteRid::startAutomatedOnLoadAnalysis( InterSpec *interspec,
   {
     case RestRidImp::ExternalRidWidget::ServiceType::Rest:
     {
-      RestRidImp::RestRidInterface *rest = new RestRidImp::RestRidInterface( interspec, wApp->domRoot() );
+      RestRidImp::RestRidInterface *rest = static_cast<Wt::WContainerWidget *>(wApp->domRoot())->addNew<RestRidImp::RestRidInterface>( interspec );
       rest->m_resource->setAnaFlags( flags );
       rest->m_resource->setDrf( "auto" );
       rest->m_analysis_results_signal.connect( rest, &RestRidImp::RestRidInterface::handleAutoAnaResultSuccess );

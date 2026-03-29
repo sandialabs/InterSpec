@@ -31,8 +31,8 @@
 #include <chrono>
 #include <string>
 
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
 
 #if(  BUILD_AS_WX_WIDGETS_APP )
 #include <functional>

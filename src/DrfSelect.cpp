@@ -37,39 +37,39 @@
 #include <boost/assign/list_of.hpp>
 #include <boost/algorithm/string.hpp>
 
-#include <Wt/WMenu>
-#include <Wt/Utils>
-#include <Wt/WText>
-#include <Wt/WBreak>
-#include <Wt/WLabel>
-#include <Wt/WImage>
-#include <Wt/WTable>
-#include <Wt/WSignal>
-#include <Wt/WServer>
-#include <Wt/WRandom>
-#include <Wt/WDateTime>
-#include <Wt/WTextArea>
-#include <Wt/WResource>
-#include <Wt/WLineEdit>
-#include <Wt/WComboBox>
-#include <Wt/WIOService>
-#include <Wt/WTableCell>
-#include <Wt/WTabWidget>
-#include <Wt/WFileUpload>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/WRadioButton>
-#include <Wt/WButtonGroup>
-#include <Wt/WEnvironment>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WItemDelegate>
-#include <Wt/WStackedWidget>
-#include <Wt/Dbo/QueryModel>
-#include <Wt/WRegExpValidator>
-#include <Wt/WContainerWidget>
-#include <Wt/WStandardItemModel>
+#include <Wt/WMenu.h>
+#include <Wt/Utils.h>
+#include <Wt/WText.h>
+#include <Wt/WBreak.h>
+#include <Wt/WLabel.h>
+#include <Wt/WImage.h>
+#include <Wt/WTable.h>
+#include <Wt/WSignal.h>
+#include <Wt/WServer.h>
+#include <Wt/WRandom.h>
+#include <Wt/WDateTime.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WResource.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WIOService.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WFileUpload.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WItemDelegate.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/Dbo/QueryModel.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WStandardItemModel.h>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
@@ -141,34 +141,38 @@ namespace
     int64_t m_now;
     int m_timeZoneOffset;
   public:
-    UtcToLocalTimeDelegate( Wt::WObject *parent = 0 )
-    : WItemDelegate( parent )
+    UtcToLocalTimeDelegate()
+    : WItemDelegate()
     {
       m_now = std::time(nullptr);
       if( wApp )
-        m_timeZoneOffset = wApp->environment().timeZoneOffset();
+        m_timeZoneOffset = static_cast<int>( wApp->environment().timeZoneOffset().count() );
       else
         m_timeZoneOffset = 0;
     }
     virtual ~UtcToLocalTimeDelegate(){}
-    virtual Wt::WWidget *update( Wt::WWidget *widget,
+    virtual std::unique_ptr<Wt::WWidget> update( Wt::WWidget *widget,
                                 const Wt::WModelIndex &index,
-                                Wt::WFlags<Wt::ViewItemRenderFlag > flags )
+                                Wt::WFlags<Wt::ViewItemRenderFlag> flags ) override
     {
-      if( flags & RenderEditing )
+      if( flags.test(Wt::ViewItemRenderFlag::Editing) )
         throw runtime_error( "UtcToLocalTimeDelegate not for editing" );
-      
-      if( !(flags & RenderEditing) )
+
+      if( !flags.test(Wt::ViewItemRenderFlag::Editing) )
       {
         WText *text = dynamic_cast<WText *>( widget );
-        
+
+        std::unique_ptr<WText> newtext;
         if( !text )
-          widget = text = new WText();
-        
+        {
+          newtext = std::make_unique<WText>();
+          text = newtext.get();
+        }
+
         int64_t val;
         try
         {
-          val = boost::any_cast<int64_t>( index.data() );
+          val = Wt::cpp17::any_cast<int64_t>( index.data() );
           string valstr;
           if( val > 0 )
           {
@@ -176,21 +180,29 @@ namespace
             ptt += std::chrono::seconds( 60*m_timeZoneOffset );
             valstr = SpecUtils::to_common_string(ptt, true);
           }
-          
+
           text->setText( WString::fromUTF8( valstr ) );
         }catch( std::exception &e )
         {
           cerr << "UtcToLocalTimeDelegate caught: " << e.what() << endl;
           text->setText( "" );
-          return widget;
+          return newtext;
         }//try / catch
-      }//if( !(flags & RenderEditing) )
-      
-      widget->setStyleClass( asString( index.data(StyleClassRole) ) );
-      if( flags & RenderSelected )
-        widget->addStyleClass(  "Wt-selected" );
 
-      return widget;
+        if( newtext )
+        {
+          newtext->setStyleClass( asString( index.data(Wt::ItemDataRole::StyleClass) ) );
+          if( flags.test(Wt::ViewItemRenderFlag::Selected) )
+            newtext->addStyleClass( "Wt-selected" );
+          return newtext;
+        }
+      }//if( !flags.test(Wt::ViewItemRenderFlag::Editing) )
+
+      widget->setStyleClass( asString( index.data(Wt::ItemDataRole::StyleClass) ) );
+      if( flags.test(Wt::ViewItemRenderFlag::Selected) )
+        widget->addStyleClass( "Wt-selected" );
+
+      return nullptr;
     }
   };//class UtcToLocalTimeDelegate
   
@@ -566,7 +578,7 @@ class DrfDownloadResource : public Wt::WResource
   
 public:
   DrfDownloadResource( DrfSelect *drfSelect )
-  : WResource( drfSelect ),
+  : WResource(),
     m_drfSelect( drfSelect ),
     m_app( WApplication::instance() )
   {
@@ -616,7 +628,7 @@ public:
         *it = '_';
     }
     
-    suggestFileName( name, WResource::Attachment );
+    suggestFileName( name, ContentDisposition::Attachment );
     response.setMimeType( "application/octet-stream" );
     
     try
@@ -709,14 +721,12 @@ public:
   /** Constructor to point to an existing file on disk. */
   RelEffFile( std::string file,
              RelEffDetSelect *parentSelect,
-             DrfSelect *drfSelect,
-             WContainerWidget *parent );
-  
+             DrfSelect *drfSelect );
+
   /** Constructor that will create a file upload area for user to upload a file */
   RelEffFile( RelEffDetSelect *parentSelect,
-             DrfSelect *drfSelect,
-             WContainerWidget *parent );
-  
+             DrfSelect *drfSelect );
+
   
   ~RelEffFile(){}
   
@@ -742,7 +752,7 @@ public:
 class GadrasDirectory : public Wt::WContainerWidget
 {
   friend class GadrasDetSelect;
-  
+
 protected:
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
   std::string m_directory;
@@ -752,15 +762,16 @@ protected:
 #endif
   GadrasDetSelect *m_parent;
   DrfSelect *m_drfSelect;
-  
+
   Wt::WComboBox *m_detectorSelect;
   std::vector<std::shared_ptr<DetectorPeakResponse> > m_responses;
 
   Wt::WText *m_msg;
   Wt::WPushButton *m_deleteBtn;
-  
+
+public:
   GadrasDirectory( std::string dorectory, GadrasDetSelect *parentSelect,
-                   DrfSelect *drfSelect, WContainerWidget *parent );
+                   DrfSelect *drfSelect );
   
   
   ~GadrasDirectory(){}
@@ -830,9 +841,8 @@ public:
 
 RelEffFile::RelEffFile( std::string file,
                        RelEffDetSelect *parentSelect,
-                       DrfSelect *drfSelect,
-                       WContainerWidget *parent )
-: WContainerWidget( parent ),
+                       DrfSelect *drfSelect )
+: WContainerWidget(),
   m_existingFilePath( file ),
   m_fileUpload( nullptr ),
   m_relEffDetSelect( parentSelect ),
@@ -844,9 +854,8 @@ RelEffFile::RelEffFile( std::string file,
 
 
 RelEffFile::RelEffFile( RelEffDetSelect *parentSelect,
-                        DrfSelect *drfSelect,
-                        WContainerWidget *parent )
-: WContainerWidget( parent ),
+                        DrfSelect *drfSelect )
+: WContainerWidget(),
 m_existingFilePath(),
 m_fileUpload( nullptr ),
 m_relEffDetSelect( parentSelect ),
@@ -861,16 +870,16 @@ void RelEffFile::init()
 {
   addStyleClass( "RelEffFile" );
   
-  WContainerWidget *topdiv = new WContainerWidget( this );
+  WContainerWidget *topdiv = addNew<WContainerWidget>();
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  WPushButton *closeIcon = new WPushButton( topdiv );
+  WPushButton *closeIcon = topdiv->addNew<WPushButton>();
   closeIcon->addStyleClass( "closeicon-wtdefault" );
   closeIcon->setToolTip( WString::tr("ref-tt-remove-drf-file") );
   //closeIcon->setAttributeValue( "style", "position: relative; top: 3px; right: 3px;" + closeIcon->attributeValue("style") );
   closeIcon->clicked().connect( this, &RelEffFile::handleUserAskedRemove );
 #endif
-  
+
   if( m_existingFilePath.size() )
   {
     string user_data_dir;
@@ -884,32 +893,30 @@ void RelEffFile::init()
     }catch( std::exception & )
     {
     }
-    
+
     string filename = SpecUtils::filename( m_existingFilePath );
-    WText *filenameDisplay = new WText( WString::fromUTF8(filename), topdiv );
+    WText *filenameDisplay = topdiv->addNew<WText>( WString::fromUTF8(filename) );
     filenameDisplay->addStyleClass( "RelEffFixedPath" );
   }else
   {
-    m_fileUpload = new WFileUpload( topdiv );
+    m_fileUpload = topdiv->addNew<WFileUpload>();
     m_fileUpload->setInline( false );
     m_fileUpload->uploaded().connect( this, &RelEffFile::handleFileUpload );
-    m_fileUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge,
-                                                      boost::placeholders::_1) );
+    m_fileUpload->fileTooLarge().connect( []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
     m_fileUpload->changed().connect( m_fileUpload, &WFileUpload::upload );
   }//if( m_existingFilePath.size() )
-  
-  
-  
-  WContainerWidget *bottomDiv = new WContainerWidget( this );
-  
-  m_detectorSelect = new WComboBox( bottomDiv );
+
+
+  WContainerWidget *bottomDiv = addNew<WContainerWidget>();
+
+  m_detectorSelect = bottomDiv->addNew<WComboBox>();
   m_detectorSelect->setInline( false );
-  m_detectorSelect->setMaximumSize( WLength(90,WLength::Percentage), WLength::Auto );
+  m_detectorSelect->setMaximumSize( WLength(90,WLength::Unit::Percentage), WLength::Auto );
   m_detectorSelect->setNoSelectionEnabled( true );
   m_detectorSelect->activated().connect( this, &RelEffFile::detectorSelectCallback );
-  
-  
-  m_credits = new WText( "", Wt::XHTMLText, bottomDiv );
+
+
+  m_credits = bottomDiv->addNew<WText>( WString(""), Wt::TextFormat::XHTML );
   m_credits->setInline( false );
   m_credits->addStyleClass( "RelEffFileCredits" );
   
@@ -1014,7 +1021,7 @@ void RelEffFile::handleSaveFileForLater()
     if( orig_extension.size() )
       filename = filename.substr( 0, filename.size() - orig_extension.size() );
     
-    const int offset = wApp->environment().timeZoneOffset();
+    const int offset = wApp->environment().timeZoneOffset().count();
     auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
     now += std::chrono::seconds(60*offset);
     string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
@@ -1248,7 +1255,7 @@ const std::vector<std::shared_ptr<DetectorPeakResponse> > &RelEffFile::available
 ////////////////   Begin RelEffDetSelect implementation   //////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent )
-    : WContainerWidget( parent ),
+    : WContainerWidget(),
       m_interspec( interspec ),
       m_drfSelect( detedit ),
       m_files( nullptr )
@@ -1260,7 +1267,7 @@ RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit, WCon
 void RelEffDetSelect::addFile()
 {
   if( m_files )
-    new RelEffFile( this, m_drfSelect, m_files );
+    m_files->addNew<RelEffFile>( this, m_drfSelect );
 }//void addFile()
 
 
@@ -1328,18 +1335,18 @@ void RelEffDetSelect::docreate()
   
   addStyleClass( "DrfSelectArea" );
   
-  m_files = new WContainerWidget( this );
+  m_files = addNew<WContainerWidget>();
   m_files->addStyleClass( "DrfSelectAreaFiles" );
-  
+
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
-  WContainerWidget *holder = new WContainerWidget( this );
+  WContainerWidget *holder = addNew<WContainerWidget>();
   holder->addStyleClass( "DrfSelectAreaFooter" );
   //holder->setToolTip( WString::tr("reds-tt-add-drf-btn") );
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   HelpSystem::attachToolTipOn( holder, WString::tr("reds-tt-add-drf-btn"),
                               showToolTips, HelpSystem::ToolTipPosition::Left );
-  
-  WPushButton *addIcon = new WPushButton( holder );
+
+  WPushButton *addIcon = holder->addNew<WPushButton>();
   addIcon->setStyleClass( "DrfSelectAddFile Wt-icon" );
   addIcon->clicked().connect( this, &RelEffDetSelect::addFile );
 #endif
@@ -1349,8 +1356,8 @@ void RelEffDetSelect::docreate()
   size_t num_user = 0;
   for( const string &path : user_data_paths )
   {
-    RelEffFile *f = new RelEffFile( path, this, m_drfSelect, m_files );
-    
+    RelEffFile *f = m_files->addNew<RelEffFile>( path, this, m_drfSelect );
+
     //We'll remove the widget if the DRF is invalid, or make it so path cant be changed for valid
     //  files (this then doesnt provide any feedback to the user that a DRF they placed in their
     //  data directory is invalid, but I'm not sure if dealing with that here would be a net
@@ -1360,7 +1367,8 @@ void RelEffDetSelect::docreate()
     const vector<shared_ptr<DetectorPeakResponse>> drfs = f->availableDrfs();
     if( drfs.empty() )
     {
-      delete f;
+      // removeWidget returns unique_ptr which goes out of scope, deleting the widget
+      m_files->removeWidget( f );
     }else
     {
       num_user += 1;
@@ -1369,7 +1377,7 @@ void RelEffDetSelect::docreate()
   
   if( !num_user )
   {
-    new RelEffFile( this, m_drfSelect, m_files );
+    m_files->addNew<RelEffFile>( this, m_drfSelect );
   }
 }//void docreate()
 
@@ -1395,7 +1403,7 @@ void RelEffDetSelect::load()
 
 ///************************ Begin Need to implement for GADRAS **************/////
 GadrasDetSelect::GadrasDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent )
-  : WContainerWidget(parent),
+  : WContainerWidget(),
     m_interspec( interspec ),
     m_drfSelect( detedit ),
     m_directories( nullptr )
@@ -1419,33 +1427,31 @@ void GadrasDetSelect::docreate()
   
   addStyleClass( "DrfSelectArea" );
   
-  m_directories = new WContainerWidget( this );
+  m_directories = addNew<WContainerWidget>();
   m_directories->addStyleClass( "DrfSelectAreaFiles" );
-  
+
   //Need to point the GUI to the appropriate directory, and implement to an `ls` to find detctors with both Detcotr.dat and Efficy.csv.
   const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", m_interspec );
-  
-  WContainerWidget *footer = new WContainerWidget( this );
+
+  WContainerWidget *footer = addNew<WContainerWidget>();
   footer->addStyleClass( "DrfSelectAreaFooter" );
-  
+
 #if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   //footer->setToolTip( WString::tr("reds-tt-add-dir") );
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   HelpSystem::attachToolTipOn( footer, WString::tr("reds-tt-add-dir"), showToolTips, HelpSystem::ToolTipPosition::Left );
-  
-  
-  WPushButton *addIcon = new WPushButton( footer );
+
+  WPushButton *addIcon = footer->addNew<WPushButton>();
   addIcon->setStyleClass( "DrfSelectAddFile Wt-icon" );
   addIcon->clicked().connect( this, &GadrasDetSelect::addDirectory );
 #endif
-  
+
   vector<string> paths = DrfSelect::potential_gadras_det_dirs( m_interspec );
-  
-    
+
   for( const string &path : paths )
   {
-    auto dir = new GadrasDirectory( path, this, m_drfSelect, m_directories );
-    
+    auto dir = m_directories->addNew<GadrasDirectory>( path, this, m_drfSelect );
+
     if( path.find("GenericGadrasDetectors") != string::npos )
     {
 #if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
@@ -1454,7 +1460,7 @@ void GadrasDetSelect::docreate()
       dir->m_deleteBtn->hide();
 #endif
     }
-    
+
 #if( !defined(WIN32) )
     if( SpecUtils::istarts_with( path, "C:\\" ) )
       dir->hide();
@@ -1466,8 +1472,8 @@ void GadrasDetSelect::docreate()
 #else
   const char *gadrasToolTip_key = "reds-gadras-drf-info";
 #endif
-  
-  WText *useInfo = new WText( WString::tr(gadrasToolTip_key), footer );
+
+  WText *useInfo = footer->addNew<WText>( WString::tr(gadrasToolTip_key) );
   useInfo->setStyleClass("DrfTypeDescrip");
 }//void docreate()
 
@@ -1530,8 +1536,8 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
     {
       try
       {
-        WAbstractItemModel *m = d->m_detectorSelect->model();
-        const string p = boost::any_cast<std::string>( m->data( currentIndex, 0, Wt::UserRole ) );
+        std::shared_ptr<WAbstractItemModel> m = d->m_detectorSelect->model();
+        const string p = Wt::cpp17::any_cast<std::string>( m->data( currentIndex, 0, Wt::ItemDataRole::User ) );
         auto answer = DrfSelect::initAGadrasDetectorFromDirectory( p );
         
         if( p.find("GenericGadrasDetectors") != string::npos )
@@ -1555,7 +1561,7 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
 void GadrasDetSelect::addDirectory()
 {
   if( m_directories )
-    new GadrasDirectory( "", this, m_drfSelect, m_directories );
+    m_directories->addNew<GadrasDirectory>( "", this, m_drfSelect );
 }//void addDirectory()
 
 
@@ -1621,13 +1627,13 @@ void GadrasDetSelect::detectorSelected( GadrasDirectory *dir, std::shared_ptr<De
 
 
 GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parentSelect,
-                  DrfSelect *drfSelect, WContainerWidget *parent )
-: WContainerWidget( parent ),
+                                   DrfSelect *drfSelect )
+: WContainerWidget(),
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
   m_directory( directory ),
 #else
-  m_directoryEdit( new WLineEdit( Wt::WString::fromUTF8(directory) ) ),
-  m_setDirectoryButton( new WPushButton( WString::tr("ds-set-btn") ) ),
+  m_directoryEdit( nullptr ),
+  m_setDirectoryButton( nullptr ),
 #endif
   m_parent( parentSelect ),
   m_drfSelect( drfSelect ),
@@ -1647,14 +1653,14 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec );
   
   
-  WContainerWidget *topdiv = new WContainerWidget( this );
-  m_deleteBtn = new WPushButton( topdiv );
+  WContainerWidget *topdiv = addNew<WContainerWidget>();
+  m_deleteBtn = topdiv->addNew<WPushButton>();
   m_deleteBtn->addStyleClass( "closeicon-wtdefault" );
   //m_deleteBtn->setToolTip( WString::tr("reds-tt-remove-gad-dir") );
   HelpSystem::attachToolTipOn( m_deleteBtn, WString::tr("reds-tt-remove-gad-dir"),
                               showToolTips, HelpSystem::ToolTipPosition::Left );
   
-  m_deleteBtn->clicked().connect( boost::bind( &GadrasDetSelect::removeDirectory, parentSelect, this ) );
+  m_deleteBtn->clicked().connect( [parentSelect, this](){ parentSelect->removeDirectory( this ); } );
   
   
 //If we wanted to actually select directories, could do similar to file query widget... which webkitdirectory no longer seems to work, so see file query widget use of electrons dialog
@@ -1672,7 +1678,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 //                     "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
 //                     "};"
 //                     );
-  //m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 ) );
+  //m_pathSelectedSignal->connect( [this]( std::string a1 ){ newElectronPathSelected( a1 ); } );
 //#elif( BUILD_AS_OSX_APP )
 //  see usage of macOsUtils::showFilePicker(...)
 //  m_baseLocation = new WFileUpload();
@@ -1728,7 +1734,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
                      "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
                      "};"
                      );
-  m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 ) );
+  m_pathSelectedSignal->connect( [this]( std::string a1 ){ newElectronPathSelected( a1 ); } );
 #elif( BUILD_AS_OSX_APP )
  //For macOS dont saved picked directory to preferences in DB as sandboxing will mess this up.
  
@@ -1773,18 +1779,16 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   }//if( !user_data_dir.empty() )
   
   
-  topdiv->addWidget( m_directoryEdit );
-  m_directoryEdit->setText( directory );
+  m_directoryEdit = topdiv->addNew<WLineEdit>( Wt::WString::fromUTF8(directory) );
   m_directoryEdit->setTextSize( 48 );
-  
+
 #if( BUILD_AS_OSX_APP || IOS )
   m_directoryEdit->setAttributeValue( "autocorrect", "off" );
   m_directoryEdit->setAttributeValue( "spellcheck", "off" );
 #endif
 
-  
-  topdiv->addWidget( m_setDirectoryButton );
-  m_setDirectoryButton->setMargin( 5, Wt::Left );
+  m_setDirectoryButton = topdiv->addNew<WPushButton>( WString::tr("ds-set-btn") );
+  m_setDirectoryButton->setMargin( 5, Wt::Side::Left );
   m_setDirectoryButton->disable();
   //m_setDirectoryButton->setToolTip( WString::tr("reds-tt-gad-set-dir") );
   HelpSystem::attachToolTipOn( m_setDirectoryButton, WString::tr("reds-tt-gad-set-dir"),
@@ -1797,17 +1801,17 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_directoryEdit->enterPressed().connect( this, &GadrasDirectory::dirPathChanged );
 #endif
   
-  WContainerWidget *bottomDiv = new WContainerWidget( this );
-  
-  m_detectorSelect = new WComboBox( bottomDiv );
+  WContainerWidget *bottomDiv = addNew<WContainerWidget>();
+
+  m_detectorSelect = bottomDiv->addNew<WComboBox>();
   m_detectorSelect->setNoSelectionEnabled( true );
   m_detectorSelect->activated().connect( this, &GadrasDirectory::detectorSelectCallback );
-  
+
 #if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   m_directoryEdit->changed().connect( m_detectorSelect, &WPushButton::disable );
 #endif
-  
-  m_msg = new WText( bottomDiv );
+
+  m_msg = bottomDiv->addNew<WText>();
   m_msg->setInline( false );
   
   initDetectors();
@@ -2053,27 +2057,26 @@ void GadrasDirectory::detectorSelected( const int index )
 
 
 DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
-                                  SpectraFileModel *fileModel,
-                                  WContainerWidget *parent )
-  : WContainerWidget( parent ),
-    m_text( NULL ),
+                                  SpectraFileModel *fileModel )
+  : WContainerWidget(),
+    m_text( nullptr ),
     m_interspec( specViewer ),
     m_fileModel( fileModel )
 {
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", specViewer );
-  
+
   HelpSystem::attachToolTipOn( this, WString::tr("app-tt-det-disp"), showToolTips ); //"app-tt-det-disp" defined in InterSpec.xml localisation, so we dont need to load DrfSelect.xml for this widget
-  
+
   addStyleClass( "DetectorDisplay" );  //In InterSpec.css since this widget is loaded almost always at initial load time anyway
 
-  new WImage( "InterSpec_resources/images/detector_small_white.png", this );
-  new WLabel( WString::tr("detector-label"), this );
+  addNew<WImage>( "InterSpec_resources/images/detector_small_white.png" );
+  addNew<WLabel>( WString::tr("detector-label") );
   const bool isMobile = (m_interspec && m_interspec->isMobile());
-  
+
   WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")
                 .arg( WString::tr(isMobile ? "app-det-select-txt-mobile" : "app-det-select-txt") );
-  
-  m_text = new WText( txt, XHTMLText, this );
+
+  m_text = addNew<WText>( txt, Wt::TextFormat::XHTML );
   m_text->addStyleClass( "DetName" );
 
   std::shared_ptr<DetectorPeakResponse> detector;
@@ -2141,7 +2144,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detector()
 DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
                 InterSpec *specViewer,
                 SpectraFileModel *fileModel,
-                AuxWindow* auxWindow )
+                AuxWindow *auxWindow )
   : WContainerWidget(),
     m_footer( nullptr ),
     m_interspec( specViewer ),
@@ -2168,7 +2171,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorManualFunctionName( nullptr ),
     m_detectorManualFunctionText( nullptr ),
     m_detectorManualDescription( nullptr ),
-    m_eqnEnergyGroup( nullptr ),
+    m_eqnEnergyGroup( nullptr ),  //will be created as shared_ptr in constructor body
     m_drfType( nullptr ),
     m_detectorManualDiameterLabel( nullptr ),
     m_detectorManualDiameterText( nullptr ),
@@ -2193,9 +2196,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", specViewer );
   
-  WGridLayout *mainLayout = new WGridLayout();
-  
-  setLayout( mainLayout );
+  WGridLayout *mainLayout = setLayout( std::make_unique<WGridLayout>() );
   mainLayout->setContentsMargins(0, 0, 0, 0);
   mainLayout->setHorizontalSpacing( 0 );
   
@@ -2207,7 +2208,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     InterSpecApp::DeviceOrientation orientation = InterSpecApp::DeviceOrientation::Unknown;
     app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
     if( safeAreas[3] > 1 )
-      setPadding( WLength(safeAreas[3], WLength::Pixel), Side::Left );
+      setPadding( WLength(safeAreas[3], WLength::Unit::Pixel), Side::Left );
   }//if( app )
 #endif
   
@@ -2239,69 +2240,74 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   m_previousEmmittedDetector = m_detector;
   
-  m_chart = new DrfChart();
-  
-  if( is_phone )
   {
-    const double chart_width = narrow_layout ? std::min( std::max( 100.0, w - 40.0 ), 450.0 ) : 325;
-    const double chart_height = chart_width * 125.0/325.0;
-    m_chart->resize( chart_width, chart_height );
-    mainLayout->addWidget( m_chart, 0, 0, AlignCenter );
-  }else
-  {
-    mainLayout->addWidget( m_chart, 0, 0 );
-  }//if( we are on a phone ) / else
-  
-  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, this );
-  distValidator->setFlags( Wt::MatchCaseInsensitive );
+    auto chartOwned = std::make_unique<DrfChart>();
+    m_chart = chartOwned.get();
+    if( is_phone )
+    {
+      const double chart_width = narrow_layout ? std::min( std::max( 100.0, w - 40.0 ), 450.0 ) : 325;
+      const double chart_height = chart_width * 125.0/325.0;
+      m_chart->resize( chart_width, chart_height );
+      mainLayout->addWidget( std::move(chartOwned), 0, 0, AlignmentFlag::Center );
+    }else
+    {
+      mainLayout->addWidget( std::move(chartOwned), 0, 0 );
+    }//if( we are on a phone ) / else
+  }
+
+  auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex );
+  distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   distValidator->setInvalidBlankText( "0.0 cm" );
   distValidator->setMandatory( true );
   
-  WContainerWidget *lowerContent = new WContainerWidget();
-  mainLayout->addWidget( lowerContent, 1, 0 );
-  
-  WGridLayout *lowerLayout = new WGridLayout();
-  lowerContent->setLayout( lowerLayout );
+  WContainerWidget *lowerContent = mainLayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
+
+  WGridLayout *lowerLayout = lowerContent->setLayout( std::make_unique<WGridLayout>() );
   lowerLayout->setContentsMargins( 0, 2, 0, 0 );
-  
+
   //Pre-size the lower content to accommodate the tallest DRF type ("Formula"),
   //  so everything wont change size when the user selects the different types.
   //  Although, as it stands now if you add a bunch of paths to GADRAS/Rel. Eff.
   //  you can make its content larger than the 190 px.
   //ToDo: improve the sizing of this layout to not have hardcoded sizes!
-  lowerContent->resize( WLength::Auto, WLength(190,WLength::Pixel) );
-  
-  m_drfTypeStack = new Wt::WStackedWidget();
-  m_drfTypeStack->addStyleClass( "UseInfoStack DetEditContent" );
-  
-  m_drfTypeMenu = new WMenu( m_drfTypeStack, Wt::Vertical );
-  WContainerWidget *menuHolder = new WContainerWidget();
-  menuHolder->addWidget( m_drfTypeMenu );
-  
-  if( narrow_layout )
+  lowerContent->resize( WLength::Auto, WLength(190,WLength::Unit::Pixel) );
+
   {
-    m_drfTypeMenu->addStyleClass( "VerticalNavMenu HorizontalMenu HeavyNavMenu DetEditMenuHorizontal" );
-    menuHolder->setOverflow( WContainerWidget::Overflow::OverflowAuto, Wt::Orientation::Horizontal );
-    menuHolder->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Vertical );
-    
-    lowerLayout->addWidget( menuHolder, 0, 0 );
-    lowerLayout->addWidget( m_drfTypeStack, 1, 0 );
-    lowerLayout->setRowStretch( 1, 1 );
-  }else
-  {
-    m_drfTypeMenu->addStyleClass( "VerticalNavMenu SideMenu HeavyNavMenu DetEditMenu" );
-    menuHolder->setOverflow( WContainerWidget::Overflow::OverflowAuto, Wt::Orientation::Vertical );
-    menuHolder->setOverflow( WContainerWidget::Overflow::OverflowHidden, Wt::Orientation::Horizontal );
-    
-    lowerLayout->addWidget( menuHolder, 0, 0, 2, 1 );
-    lowerLayout->addWidget( m_drfTypeStack, 0, 1 );
-    lowerLayout->setColumnStretch( 1, 1 );
+    auto stackOwned = std::make_unique<Wt::WStackedWidget>();
+    m_drfTypeStack = stackOwned.get();
+    m_drfTypeStack->addStyleClass( "UseInfoStack DetEditContent" );
+
+    auto menuOwned = std::make_unique<WMenu>( m_drfTypeStack );
+    m_drfTypeMenu = menuOwned.get();
+
+    auto menuHolderOwned = std::make_unique<WContainerWidget>();
+    WContainerWidget *menuHolder = menuHolderOwned.get();
+    menuHolder->addWidget( std::move(menuOwned) );
+
+    if( narrow_layout )
+    {
+      m_drfTypeMenu->addStyleClass( "VerticalNavMenu HorizontalMenu HeavyNavMenu DetEditMenuHorizontal" );
+      menuHolder->setOverflow( Overflow::Auto, Wt::Orientation::Horizontal );
+      menuHolder->setOverflow( Overflow::Hidden, Wt::Orientation::Vertical );
+
+      lowerLayout->addWidget( std::move(menuHolderOwned), 0, 0 );
+      lowerLayout->addWidget( std::move(stackOwned), 1, 0 );
+      lowerLayout->setRowStretch( 1, 1 );
+    }else
+    {
+      m_drfTypeMenu->addStyleClass( "VerticalNavMenu SideMenu HeavyNavMenu DetEditMenu" );
+      menuHolder->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
+      menuHolder->setOverflow( Overflow::Hidden, Wt::Orientation::Horizontal );
+
+      lowerLayout->addWidget( std::move(menuHolderOwned), 0, 0, 2, 1 );
+      lowerLayout->addWidget( std::move(stackOwned), 0, 1 );
+      lowerLayout->setColumnStretch( 1, 1 );
+    }
   }
   
   
   
-  WContainerWidget *defaultOptions = new WContainerWidget();
-  mainLayout->addWidget( defaultOptions, 2, 0 );
+  WContainerWidget *defaultOptions = mainLayout->addWidget( std::make_unique<WContainerWidget>(), 2, 0 );
   //lowerLayout->addWidget( defaultOptions, 1, 1 );
   
   mainLayout->setRowResizable( 0, true, WLength(is_phone ? 125 : 250, WLength::Unit::Pixel) );
@@ -2313,34 +2319,35 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //--- 1)  GADRAS
   //-------------------------------------
   
-  m_gadrasDetSelect = new GadrasDetSelect( m_interspec, this );
-  
+  auto gadrasDetSelectOwned = std::make_unique<GadrasDetSelect>( m_interspec, this );
+  m_gadrasDetSelect = gadrasDetSelectOwned.get();
+
   //-------------------------------------
   //--- 2)  Relative Efficiencies
   //-------------------------------------
 
-  m_relEffSelect = new RelEffDetSelect( m_interspec, this );
+  auto relEffSelectOwned = std::make_unique<RelEffDetSelect>( m_interspec, this );
+  m_relEffSelect = relEffSelectOwned.get();
 
   //-------------------------------------
   //--- 3)  Upload
   //-------------------------------------
 
   
-  WContainerWidget *uploadDetTab = new WContainerWidget();
+  auto uploadDetTabOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *uploadDetTab = uploadDetTabOwned.get();
   uploadDetTab->addStyleClass( "DetUploadDiv" );
-  
-  WText *descrip = new WText( WString::tr("ds-csv-upload-desc"), uploadDetTab );
+
+  WText *descrip = uploadDetTab->addNew<WText>( WString::tr("ds-csv-upload-desc") );
   descrip->setStyleClass("DetectorLabel");
-  
-  
-  m_efficiencyCsvUpload = new WFileUpload( uploadDetTab );
+
+  m_efficiencyCsvUpload = uploadDetTab->addNew<WFileUpload>();
   m_efficiencyCsvUpload->setInline( false );
   m_efficiencyCsvUpload->uploaded().connect( this, &DrfSelect::handleEfficiencyCsvUpload );
-  m_efficiencyCsvUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, boost::placeholders::_1) );
+  m_efficiencyCsvUpload->fileTooLarge().connect( []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
   m_efficiencyCsvUpload->changed().connect( m_efficiencyCsvUpload, &WFileUpload::upload );
-  m_efficiencyCsvUpload->setInline( false );
- 
-  m_efficiencyType = new WComboBox( uploadDetTab );
+
+  m_efficiencyType = uploadDetTab->addNew<WComboBox>();
   m_efficiencyType->setInline( false );
   m_efficiencyType->addStyleClass( "EfficiencyType" );
   m_efficiencyType->addItem( WString::tr("ds-eff-type-intrinsic") );
@@ -2356,11 +2363,11 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   
   
-  m_detectrDiameterDiv = new WContainerWidget( uploadDetTab );
+  m_detectrDiameterDiv = uploadDetTab->addNew<WContainerWidget>();
   m_detectrDiameterDiv->addStyleClass( "DetectorDiamDiv" );
 
-  WLabel *label = new WLabel( WString::tr("ds-det-diam"), m_detectrDiameterDiv );
-  m_detectorDiameter = new WLineEdit( "0 cm", m_detectrDiameterDiv );
+  WLabel *label = m_detectrDiameterDiv->addNew<WLabel>( WString::tr("ds-det-diam") );
+  m_detectorDiameter = m_detectrDiameterDiv->addNew<WLineEdit>( WString::fromUTF8("0 cm") );
   label->setBuddy( m_detectorDiameter );
 
   m_detectorDiameter->setAttributeValue( "ondragstart", "return false" );
@@ -2375,8 +2382,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDiameter->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
   m_detectorDiameter->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
 
-  label = new WLabel( WString::tr("ds-det-setback"), m_detectrDiameterDiv );
-  m_detectorSetback = new WLineEdit( "0 cm", m_detectrDiameterDiv );
+  label = m_detectrDiameterDiv->addNew<WLabel>( WString::tr("ds-det-setback") );
+  m_detectorSetback = m_detectrDiameterDiv->addNew<WLineEdit>( WString::fromUTF8("0 cm") );
   label->setBuddy( m_detectorSetback );
 
   m_detectorSetback->setAttributeValue( "ondragstart", "return false" );
@@ -2391,8 +2398,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorSetback->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
   m_detectorSetback->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
 
-  m_detectorDistanceLabel = new WLabel( WString::tr("ds-dist-label"), m_detectrDiameterDiv );
-  m_detectorDistance = new WLineEdit( "25 cm", m_detectrDiameterDiv );
+  m_detectorDistanceLabel = m_detectrDiameterDiv->addNew<WLabel>( WString::tr("ds-dist-label") );
+  m_detectorDistance = m_detectrDiameterDiv->addNew<WLineEdit>( WString::fromUTF8("25 cm") );
   m_detectorDistanceLabel->setBuddy( m_detectorDistance );
 
   m_detectorDistance->setAttributeValue( "ondragstart", "return false" );
@@ -2409,10 +2416,10 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorDistanceLabel->hide();
   m_detectorDistance->hide();
 
-  m_detectrDotDatLabel = new WLabel( WString::tr("ds-gad-det-file-label"), m_detectrDiameterDiv );
-  m_detectorDotDatUpload = new WFileUpload( m_detectrDiameterDiv );
-  m_detectorDotDatUpload->uploaded().connect( boost::bind( &DrfSelect::handleGadrasDetectorDotDatUpload, this ) );
-  m_detectorDotDatUpload->fileTooLarge().connect( boost::bind(&SpecMeasManager::fileTooLarge, boost::placeholders::_1) );
+  m_detectrDotDatLabel = m_detectrDiameterDiv->addNew<WLabel>( WString::tr("ds-gad-det-file-label") );
+  m_detectorDotDatUpload = m_detectrDiameterDiv->addNew<WFileUpload>();
+  m_detectorDotDatUpload->uploaded().connect( [this](){ handleGadrasDetectorDotDatUpload(); } );
+  m_detectorDotDatUpload->fileTooLarge().connect( []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
   m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
   m_detectrDotDatLabel->hide();
   m_detectorDotDatUpload->hide();
@@ -2420,9 +2427,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectrDiameterDiv->hide();
   m_detectrDiameterDiv->setHiddenKeepsGeometry( true );
 
-  m_uploadedDetNameDiv = new WContainerWidget( uploadDetTab );
-  label = new WLabel( WString::tr("ds-name-label"), m_uploadedDetNameDiv );
-  m_uploadedDetName = new WLineEdit( m_uploadedDetNameDiv );
+  m_uploadedDetNameDiv = uploadDetTab->addNew<WContainerWidget>();
+  label = m_uploadedDetNameDiv->addNew<WLabel>( WString::tr("ds-name-label") );
+  m_uploadedDetName = m_uploadedDetNameDiv->addNew<WLineEdit>();
   label->setBuddy( m_uploadedDetName );
 
   m_uploadedDetName->setAttributeValue( "ondragstart", "return false" );
@@ -2442,17 +2449,18 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   const char *const diamtxt = "2.2 cm";
     
-  WContainerWidget *formulaDiv = new WContainerWidget();
+  auto formulaDivOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *formulaDiv = formulaDivOwned.get();
   WString nameLabel = narrow_layout ? WString::tr("ds-manual-det-desc-label") : WString::tr("ds-manual-det-desc");
-  
-  WText *selfDefineLabel = new WText( nameLabel, formulaDiv );
+
+  WText *selfDefineLabel = formulaDiv->addNew<WText>( nameLabel );
   selfDefineLabel->setInline( false );
   selfDefineLabel->setStyleClass("DetectorLabel");
-  
-  WTable *formulaTable = new WTable( formulaDiv );
+
+  WTable *formulaTable = formulaDiv->addNew<WTable>();
   formulaTable->addStyleClass( "FormulaDrfTbl" );
   WTableCell *cell = formulaTable->elementAt( 0, 0 );
-  label = new WLabel( WString::tr("ds-manual-det-name-label"), cell );
+  label = cell->addNew<WLabel>( WString::tr("ds-manual-det-name-label") );
   if( narrow_layout )
   {
     cell = formulaTable->elementAt( 1, 0 );
@@ -2461,7 +2469,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   {
     cell = formulaTable->elementAt( 0, 1 );
   }
-  m_detectorManualFunctionName = new WLineEdit( cell );
+  m_detectorManualFunctionName = cell->addNew<WLineEdit>();
   label->setBuddy( m_detectorManualFunctionName );
 
   m_detectorManualFunctionName->setAttributeValue( "ondragstart", "return false" );
@@ -2472,19 +2480,19 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_detectorManualFunctionName->setStyleClass("DrfSelectFunctionalFormText");
   m_detectorManualFunctionName->setText( WString::tr("app-default-manual-det-name") );
-  m_detectorManualFunctionName->setEmptyText( WString::tr("ds-manual-det-name-empty-txt") );
+  m_detectorManualFunctionName->setPlaceholderText( WString::tr("ds-manual-det-name-empty-txt") );
   m_detectorManualFunctionName->setInline(false);
-  //m_detectorManualFunctionName->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_detectorManualFunctionName->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualFunctionName->keyWentUp().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualFunctionName->textInput().connect([this](){ verifyManualDefinition(); });
 
   if( narrow_layout )
   {
-    m_detectorManualFunctionName->setWidth( WLength(w - 65,WLength::Pixel) );
+    m_detectorManualFunctionName->setWidth( WLength(w - 65,WLength::Unit::Pixel) );
     m_detectorManualFunctionName->setMargin( WLength::Auto, Wt::Side::Left );
   }
   
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  label = new WLabel( WString::tr("ds-manual-function-label"), cell );
+  label = cell->addNew<WLabel>( WString::tr("ds-manual-function-label") );
   if( narrow_layout )
   {
     cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
@@ -2494,21 +2502,21 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     cell = formulaTable->elementAt( cell->row(), 1 );
   }
   cell->setRowSpan( 2 );
-  m_detectorManualFunctionText = new WTextArea( cell );
+  m_detectorManualFunctionText = cell->addNew<WTextArea>();
   //m_detectorManualFunctionText->setColumns(60);
   label->setBuddy( m_detectorManualFunctionText );
   
   m_detectorManualFunctionText->setRows(3);
   m_detectorManualFunctionText->setStyleClass("DrfSelectFunctionalFormText");
   //m_detectorManualFunctionText->setText( WString::tr("ds-manual-det-empty-fcn") );
-  m_detectorManualFunctionText->setEmptyText( WString::tr("ds-manual-det-empty-fcn") );
+  m_detectorManualFunctionText->setPlaceholderText( WString::tr("ds-manual-det-empty-fcn") );
   m_detectorManualFunctionText->setInline(false);
-  //m_detectorManualFunctionText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_detectorManualFunctionText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualFunctionText->keyWentUp().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualFunctionText->textInput().connect([this](){ verifyManualDefinition(); });
   
   if( narrow_layout )
   {
-    m_detectorManualFunctionText->setWidth( WLength(w - 65,WLength::Pixel) );
+    m_detectorManualFunctionText->setWidth( WLength(w - 65,WLength::Unit::Pixel) );
     m_detectorManualFunctionText->setMargin( WLength::Auto, Wt::Side::Left );
   }
   
@@ -2517,15 +2525,15 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   else
     cell = formulaTable->elementAt( cell->row() + 1, 0 );
   
-  Wt::WContainerWidget *energyContainer = new Wt::WContainerWidget( cell );
-  energyContainer->setMargin( 6, Wt::Top );
-  m_eqnEnergyGroup = new WButtonGroup( energyContainer );
-  WRadioButton *button = new WRadioButton( "keV", energyContainer );
+  Wt::WContainerWidget *energyContainer = cell->addNew<Wt::WContainerWidget>();
+  energyContainer->setMargin( 6, Wt::Side::Top );
+  m_eqnEnergyGroup = std::make_shared<WButtonGroup>();
+  WRadioButton *button = energyContainer->addNew<WRadioButton>( WString::fromUTF8("keV") );
   m_eqnEnergyGroup->addButton( button, 0 );
-  button = new WRadioButton( "MeV", energyContainer );
-  button->setMargin( 5, Wt::Left );
+  button = energyContainer->addNew<WRadioButton>( WString::fromUTF8("MeV") );
+  button->setMargin( 5, Wt::Side::Left );
   m_eqnEnergyGroup->addButton( button, 1 );
-  m_eqnEnergyGroup->checkedChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_eqnEnergyGroup->checkedChanged().connect([this](){ verifyManualDefinition(); });
   m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
     
   HelpSystem::attachToolTipOn( energyContainer, WString::tr("ds-tt-manual-energy-unit"),
@@ -2535,7 +2543,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   WString descLabel = narrow_layout ? WString::tr("ds-description-label") : WString::tr("Description");
   
-  label = new WLabel( descLabel, cell );
+  label = cell->addNew<WLabel>( descLabel );
   if( narrow_layout )
   {
     cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
@@ -2544,19 +2552,19 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   {
     cell = formulaTable->elementAt( cell->row(), 1 );
   }
-  m_detectorManualDescription = new WLineEdit( cell );
+  m_detectorManualDescription = cell->addNew<WLineEdit>();
   label->setBuddy( m_detectorManualDescription );
   if( narrow_layout )
   {
-    m_detectorManualDescription->setWidth( WLength(w - 65,WLength::Pixel) );
+    m_detectorManualDescription->setWidth( WLength(w - 65,WLength::Unit::Pixel) );
     m_detectorManualDescription->setMargin( WLength::Auto, Wt::Side::Left );
     m_detectorManualDescription->setInline( false );
   }else
   {
-    m_detectorManualDescription->setWidth( WLength(100,WLength::Percentage) );
+    m_detectorManualDescription->setWidth( WLength(100,WLength::Unit::Percentage) );
   }
-  m_detectorManualDescription->setEmptyText( WString::tr("ds-tt-manual-desc") );
-  m_detectorManualDescription->changed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualDescription->setPlaceholderText( WString::tr("ds-tt-manual-desc") );
+  m_detectorManualDescription->changed().connect([this](){ verifyManualDefinition(); });
   
   m_detectorManualDescription->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -2565,18 +2573,18 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
   
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  m_detectorManualDiameterLabel = new WLabel( WString::tr("ds-manual-det-diam-label"), cell );
+  m_detectorManualDiameterLabel = cell->addNew<WLabel>( WString::tr("ds-manual-det-diam-label") );
   cell = formulaTable->elementAt( cell->row(), 1 );
-  m_detectorManualDiameterText = new WLineEdit( cell );
+  m_detectorManualDiameterText = cell->addNew<WLineEdit>();
   m_detectorManualDiameterLabel->setBuddy( m_detectorManualDiameterText );
   m_detectorManualDiameterText->setValidator( distValidator );
   //m_detectorManualDiameterText->setText( diamtxt );
-  m_detectorManualDiameterText->setEmptyText( diamtxt );
+  m_detectorManualDiameterText->setPlaceholderText( diamtxt );
   m_detectorManualDiameterText->setValidator( distValidator );
-  m_detectorManualDiameterText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_detectorManualDiameterText->enterPressed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  //m_detectorManualDiameterText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_detectorManualDiameterText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualDiameterText->blurred().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualDiameterText->enterPressed().connect([this](){ verifyManualDefinition(); });
+  //m_detectorManualDiameterText->keyWentUp().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualDiameterText->textInput().connect([this](){ verifyManualDefinition(); });
   
   
   m_detectorManualDiameterText->setAttributeValue( "ondragstart", "return false" );
@@ -2586,15 +2594,15 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 #endif
 
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  WLabel *manualSetbackLabel = new WLabel( WString::tr("ds-manual-det-setback-label"), cell );
+  WLabel *manualSetbackLabel = cell->addNew<WLabel>( WString::tr("ds-manual-det-setback-label") );
   cell = formulaTable->elementAt( cell->row(), 1 );
-  m_detectorManualSetbackText = new WLineEdit( cell );
+  m_detectorManualSetbackText = cell->addNew<WLineEdit>();
   manualSetbackLabel->setBuddy( m_detectorManualSetbackText );
   m_detectorManualSetbackText->setValidator( distValidator );
-  m_detectorManualSetbackText->setEmptyText( "0 cm" );
-  m_detectorManualSetbackText->blurred().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_detectorManualSetbackText->enterPressed().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_detectorManualSetbackText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualSetbackText->setPlaceholderText( "0 cm" );
+  m_detectorManualSetbackText->blurred().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualSetbackText->enterPressed().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualSetbackText->textInput().connect([this](){ verifyManualDefinition(); });
 
   m_detectorManualSetbackText->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -2604,44 +2612,44 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
 
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  label = new WLabel( WString::tr("ds-energy-range"), cell );
-  
+  label = cell->addNew<WLabel>( WString::tr("ds-energy-range") );
+
   cell = formulaTable->elementAt( cell->row(), 1 );
-  label = new WLabel( WString::tr("Min."), cell );
-  m_detectorManualMinEnergy = new NativeFloatSpinBox( cell );
+  label = cell->addNew<WLabel>( WString::tr("Min.") );
+  m_detectorManualMinEnergy = cell->addNew<NativeFloatSpinBox>();
   m_detectorManualMinEnergy->setPlaceholderText( WString::tr("ds-(optional)") );
   m_detectorManualMinEnergy->setRange( 0, 15000 );
   m_detectorManualMinEnergy->setSpinnerHidden( true );
-  m_detectorManualMinEnergy->setWidth( WLength(9,Wt::WLength::FontEx) );
+  m_detectorManualMinEnergy->setWidth( WLength(9,Wt::WLength::Unit::FontEx) );
   m_detectorManualMinEnergy->setText( "" );
   label->setBuddy( m_detectorManualMinEnergy );
-  m_detectorManualMinEnergy->valueChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  m_detectorManualMinEnergy->valueChanged().connect([this](){ verifyManualDefinition(); });
   
   if( narrow_layout )
     cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
     
-  label = new WLabel( WString::tr("Max."), cell );
+  label = cell->addNew<WLabel>( WString::tr("Max.") );
   if( !narrow_layout )
     label->setMargin( 20, Wt::Side::Left );
-  m_detectorManualMaxEnergy = new NativeFloatSpinBox( cell );
+  m_detectorManualMaxEnergy = cell->addNew<NativeFloatSpinBox>();
   m_detectorManualMaxEnergy->setPlaceholderText( WString::tr("ds-(optional)") );
   m_detectorManualMaxEnergy->setRange( 0, 15000 );
   m_detectorManualMaxEnergy->setSpinnerHidden( true );
-  m_detectorManualMaxEnergy->setWidth( WLength(9,Wt::WLength::FontEx) );
+  m_detectorManualMaxEnergy->setWidth( WLength(9,Wt::WLength::Unit::FontEx) );
   m_detectorManualMaxEnergy->setText( "" );
   label->setBuddy( m_detectorManualMaxEnergy );
   if( !narrow_layout )
   {
-    label = new WLabel("(keV)", cell );
+    label = cell->addNew<WLabel>( WString::fromUTF8("(keV)") );
     label->setMargin( 10, Wt::Side::Left );
   }
-  
-  m_detectorManualMaxEnergy->valueChanged().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  
-  
+
+  m_detectorManualMaxEnergy->valueChanged().connect([this](){ verifyManualDefinition(); });
+
+
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   cell->setColumnSpan( 2 );
-  m_drfType = new WComboBox( cell );
+  m_drfType = cell->addNew<WComboBox>();
   m_drfType->addItem( WString::tr("ds-intrinsic-eff") );
   m_drfType->addItem( WString::tr("ds-abs-eff") );
   m_drfType->addItem( WString::tr("ds-fixed-geom-total") );
@@ -2657,40 +2665,45 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   if( narrow_layout )
     cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
-  m_detectorManualDistLabel = new WLabel( WString::tr("ds-dist-label"), cell );
-  m_detectorManualDistLabel->setMargin( 10, Wt::Left );
-  
+  m_detectorManualDistLabel = cell->addNew<WLabel>( WString::tr("ds-dist-label") );
+  m_detectorManualDistLabel->setMargin( 10, Wt::Side::Left );
+
   if( narrow_layout )
     cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
-  m_detectorManualDistText = new Wt::WLineEdit( cell );
+  m_detectorManualDistText = cell->addNew<Wt::WLineEdit>();
   m_detectorManualDistText->setValidator( distValidator );
-  m_detectorManualDistText->setEmptyText("1 m");
+  m_detectorManualDistText->setPlaceholderText("1 m");
   if( !narrow_layout )
     m_detectorManualDistText->setHiddenKeepsGeometry( true );
   m_detectorManualDistLabel->hide();
   m_detectorManualDistText->hide();
-  //m_detectorManualDistText->keyWentUp().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
-  m_detectorManualDistText->textInput().connect(boost::bind(&DrfSelect::verifyManualDefinition, this));
+  //m_detectorManualDistText->keyWentUp().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualDistText->textInput().connect([this](){ verifyManualDefinition(); });
   
   
   if( narrow_layout )
     cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
-  m_manualSetButton = new WPushButton( WString::tr("ds-set-btn"), cell );
+  m_manualSetButton = cell->addNew<WPushButton>( WString::tr("ds-set-btn") );
   //m_manualSetButton->setInline(false);
-  m_manualSetButton->setFloatSide( Wt::Right );
+  m_manualSetButton->setFloatSide( Wt::Side::Right );
   //selfDefineLayout->setColumnStretch( 1, 1 );
-  m_manualSetButton->clicked().connect(boost::bind(&DrfSelect::setFormulaDefineDetector, this));
+  m_manualSetButton->clicked().connect( [this](){ setFormulaDefineDetector(); } );
     
   //-------------------------------------
   //--- 5)  Recent
   //-------------------------------------
-  WContainerWidget *recentDiv = new WContainerWidget( );
-  WGridLayout* recentDivLayout = new WGridLayout( recentDiv );
+  auto recentDivOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *recentDiv = recentDivOwned.get();
+  WGridLayout *recentDivLayout = recentDiv->setLayout( std::make_unique<WGridLayout>() );
   recentDivLayout->setContentsMargins( 0, 0, 0, 0 );
 
   const Dbo::ptr<InterSpecUser> &user = m_interspec->user();
   
-  m_DBtable = new RowStretchTreeView();
+  {
+    auto tblOwned = std::make_unique<RowStretchTreeView>();
+    m_DBtable = tblOwned.get();
+    recentDivLayout->addWidget( std::move(tblOwned), 0, 0, 1, 3 );
+  }
   m_DBtable->setRootIsDecorated	(	false ); //makes the tree look like a table! :)
   
   m_DBtable->addStyleClass( "DbSpecFileSelectTable" );
@@ -2699,38 +2712,37 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //  m_viewer->m_user.session() could be used in other threads, messing
   //  things up (Dbo::Session is not thread safe).
   m_sql.reset( new DataBaseUtils::DbSession( *m_interspec->sql() ) );
+  const auto userid = user.id();  //captured by filter lambda below
 
-  m_model = new Dbo::QueryModel< Dbo::ptr<DetectorPeakResponse> >( m_DBtable );
+  {
+    auto modelOwned = std::make_shared<Dbo::QueryModel<Dbo::ptr<DetectorPeakResponse>>>();
+    m_model = modelOwned.get();
 
-  const auto userid = user.id();
-  m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
-                           .where( "InterSpecUser_id = ? ").bind( userid )
-                           .orderBy( "-1*m_lastUsedUtc" )
-                    );
-  
-  /*  ToDo: - add column for when was last used, but give time in how long ago (remove diameter column)
-            - Add bullets or dropdown to allow filtering by "All", "Uploaded", "Entered Formula", "Made From Data"
-   */
-  
-  m_model->addColumn( "m_name" );
-  m_model->addColumn( "m_description" );
-  m_model->addColumn( "m_lastUsedUtc" );
-  
-  
-  m_model->setHeaderData(  0, Horizontal, WString::tr("Name"), DisplayRole );
-  m_DBtable->setColumnWidth( 0, 200 );
-  m_model->setHeaderData(  1, Horizontal, WString::tr("Description"), DisplayRole );
-  m_DBtable->setColumnWidth( 1, 150 );
-  m_model->setHeaderData(  2, Horizontal, WString::tr("ds-last-used"), DisplayRole );
-  m_DBtable->setColumnWidth( 2, 150 );
- 
-  
-  WItemDelegate *delegate = new UtcToLocalTimeDelegate( m_DBtable );
-  m_DBtable->setItemDelegateForColumn( 2, delegate );
+    m_model->setQuery( m_sql->session()->find< DetectorPeakResponse >()
+                             .where( "InterSpecUser_id = ? ").bind( userid )
+                             .orderBy( "-1*m_lastUsedUtc" )
+                      );
 
-  m_DBtable->setModel( m_model );
-  m_DBtable->setAlternatingRowColors( true );
-  m_DBtable->setSelectionMode( SingleSelection );
+    /*  ToDo: - add column for when was last used, but give time in how long ago (remove diameter column)
+              - Add bullets or dropdown to allow filtering by "All", "Uploaded", "Entered Formula", "Made From Data"
+     */
+
+    m_model->addColumn( "m_name" );
+    m_model->addColumn( "m_description" );
+    m_model->addColumn( "m_lastUsedUtc" );
+
+    m_model->setHeaderData( 0, Wt::Orientation::Horizontal, WString::tr("Name"), ItemDataRole::Display );
+    m_DBtable->setColumnWidth( 0, 200 );
+    m_model->setHeaderData( 1, Wt::Orientation::Horizontal, WString::tr("Description"), ItemDataRole::Display );
+    m_DBtable->setColumnWidth( 1, 150 );
+    m_model->setHeaderData( 2, Wt::Orientation::Horizontal, WString::tr("ds-last-used"), ItemDataRole::Display );
+    m_DBtable->setColumnWidth( 2, 150 );
+
+    m_DBtable->setItemDelegateForColumn( 2, std::make_shared<UtcToLocalTimeDelegate>() );
+    m_DBtable->setModel( modelOwned );
+    m_DBtable->setAlternatingRowColors( true );
+    m_DBtable->setSelectionMode( SelectionMode::Single );
+  }
   
   for( int col = 0; col < m_model->columnCount(); ++col )
   {
@@ -2740,13 +2752,20 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   m_DBtable->selectionChanged().connect( this, &DrfSelect::dbTableSelectionChanged );
 
-  m_deleteButton = new WPushButton( WString::tr("Delete") );
-  m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
-  m_deleteButton->setDefault(true);
-  m_deleteButton->disable();
-  m_deleteButton->clicked().connect( this, &DrfSelect::deleteDBTableSelected );
+  {
+    auto delBtnOwned = std::make_unique<WPushButton>( WString::tr("Delete") );
+    m_deleteButton = delBtnOwned.get();
+    m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
+    m_deleteButton->setDefault(true);
+    m_deleteButton->disable();
+    m_deleteButton->clicked().connect( this, &DrfSelect::deleteDBTableSelected );
+    recentDivLayout->addWidget( std::move(delBtnOwned), 1, 0, AlignmentFlag::Left );
+  }
 
-  WComboBox *filter = new WComboBox();
+  WComboBox *filter = nullptr;
+  {
+    auto filterOwned = std::make_unique<WComboBox>();
+    filter = filterOwned.get();
   filter->addItem( WString::tr("ds-det-type-filter-all") );
   filter->addItem( WString::tr("ds-det-type-filter-uploaded") );
   filter->addItem( WString::tr("ds-det-type-filter-formula") );
@@ -2792,39 +2811,39 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
       return; //shouldnt happen
     }
     
-    m_DBtable->sortByColumn( 2, Wt::SortOrder::DescendingOrder );
+    m_DBtable->sortByColumn( 2, Wt::SortOrder::Descending );
   } ) );
-  
-  recentDivLayout->addWidget( m_DBtable, 0, 0, 1, 3 );
-  recentDivLayout->addWidget( m_deleteButton, 1, 0, AlignLeft);
-  
-  label = new WLabel( WString::tr("ds-show-label") );
-  label->setBuddy( filter );
-  recentDivLayout->addWidget( label, 1, 1, AlignRight | AlignMiddle );
-  
-  recentDivLayout->addWidget( filter, 1, 2, AlignMiddle );
+
+    auto showLabelOwned = std::make_unique<WLabel>( WString::tr("ds-show-label") );
+    WLabel *showLabel = showLabelOwned.get();
+    showLabel->setBuddy( filter );
+    recentDivLayout->addWidget( std::move(showLabelOwned), 1, 1,
+                                AlignmentFlag::Right | AlignmentFlag::Middle );
+    recentDivLayout->addWidget( std::move(filterOwned), 1, 2, AlignmentFlag::Middle );
+  }//end filter/delete button block
+
   recentDivLayout->setRowStretch( 0, 1 );
-  //recentDiv->setOverflow(Wt::WContainerWidget::OverflowHidden);
+  //recentDiv->setOverflow(Wt::Overflow::Hidden);
   //recentDiv->setMaximumSize( WLength::Auto, 180 );
   recentDiv->setHeight( WLength( 100, WLength::Unit::Percentage ) );
-  m_DBtable->sortByColumn( 2, Wt::SortOrder::DescendingOrder );
-  
+  m_DBtable->sortByColumn( 2, Wt::SortOrder::Descending );
+
   //--------------------------------------------------------------------------------
-  
-  WMenuItem *item = m_drfTypeMenu->addItem( WString::tr("ds-mi-gadras"), m_gadrasDetSelect );
-  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
-  
-  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-rel-eff"), m_relEffSelect );
-  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
-  
-  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-import"), uploadDetTab );
-  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
-  
-  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-formula"), formulaDiv );
-  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
-  
-  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-previous"), recentDiv );
-  item->clicked().connect( boost::bind(&right_select_item, m_drfTypeMenu, item) );
+
+  WMenuItem *item = m_drfTypeMenu->addItem( WString::tr("ds-mi-gadras"), std::move(gadrasDetSelectOwned) );
+  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+
+  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-rel-eff"), std::move(relEffSelectOwned) );
+  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+
+  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-import"), std::move(uploadDetTabOwned) );
+  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+
+  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-formula"), std::move(formulaDivOwned) );
+  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+
+  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-previous"), std::move(recentDivOwned) );
+  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
   
   //m_drfTypeStack->setHeight( WLength(185.0) );
   
@@ -2837,7 +2856,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     if( !defaultOptions->hasStyleClass( "DrfDefaultOptions" ) )
       defaultOptions->addStyleClass( "DrfDefaultOptions" );
     
-    m_defaultForSerialNumber = new WCheckBox( WString::tr("ds-use-for-serialnum-cb").arg( meas->instrument_id() ), defaultOptions );
+    m_defaultForSerialNumber = defaultOptions->addNew<WCheckBox>( WString::tr("ds-use-for-serialnum-cb").arg( meas->instrument_id() ) );
     m_defaultForSerialNumber->setInline( false );
     //mainLayout->addWidget( m_defaultForSerialNumber, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have serial number )
@@ -2854,7 +2873,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     if( !defaultOptions->hasStyleClass( "DrfDefaultOptions" ) )
       defaultOptions->addStyleClass( "DrfDefaultOptions" );
     
-    m_defaultForDetectorModel = new WCheckBox( WString::tr("ds-use-for-model-cb").arg(model), defaultOptions );
+    m_defaultForDetectorModel = defaultOptions->addNew<WCheckBox>( WString::tr("ds-use-for-model-cb").arg(model) );
     m_defaultForDetectorModel->setInline( false );
     //mainLayout->addWidget( m_defaultForDetectorModel, mainLayout->rowCount(), 0, 1, mainLayout->columnCount() );
   }//if( have
@@ -2865,8 +2884,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_footer = auxWindow->footer();
     if( narrow_layout )
     {
-      secondFooter = new WContainerWidget();
-      mainLayout->addWidget( secondFooter, mainLayout->rowCount(), 0, 1, 2 );
+      secondFooter = mainLayout->addWidget( std::make_unique<WContainerWidget>(),
+                                            mainLayout->rowCount(), 0, 1, 2 );
       secondFooter->addStyleClass( "DetEditNarrowSecondFooter" );
     }else
     {
@@ -2874,9 +2893,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     }
   }else
   {
-    m_footer = new WContainerWidget();
+    m_footer = mainLayout->addWidget( std::make_unique<WContainerWidget>(),
+                                      mainLayout->rowCount(), 0, 1, 2 );
     secondFooter = m_footer;
-    mainLayout->addWidget( m_footer, mainLayout->rowCount(), 0, 1, 2 );
   }
   
   AuxWindow::addHelpInFooter( m_footer, "detector-edit-dialog" );
@@ -2885,22 +2904,28 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   if( auxWindow && auxWindow->isPhone() )
     m_cancelButton = auxWindow->addCloseButtonToFooter( WString::tr("Cancel") );
   
-  DrfDownloadResource *xmlResource = new DrfDownloadResource( this );
+  auto xmlResource = std::make_shared<DrfDownloadResource>( this );
 #if( BUILD_AS_OSX_APP || IOS )
-  m_xmlDownload = new WAnchor( WLink(xmlResource), secondFooter );
-  m_xmlDownload->setTarget( AnchorTarget::TargetNewWindow );
-  m_xmlDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
+  {
+    WLink lnk( xmlResource );
+    lnk.setTarget( LinkTarget::NewWindow );
+    m_xmlDownload = secondFooter->addNew<WAnchor>( lnk );
+    m_xmlDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
+  }
 #else
-  m_xmlDownload = new WPushButton( secondFooter );
-  m_xmlDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
-  m_xmlDownload->setLink( WLink(xmlResource) );
-  m_xmlDownload->setLinkTarget( Wt::TargetNewWindow );
-  m_xmlDownload->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
-    
+  {
+    WLink lnk( xmlResource );
+    lnk.setTarget( LinkTarget::NewWindow );
+    m_xmlDownload = secondFooter->addNew<WPushButton>();
+    m_xmlDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
+    m_xmlDownload->setLink( lnk );
+    m_xmlDownload->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
+  }
+
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   m_xmlDownload->clicked().connect( std::bind([xmlResource](){
-    android_download_workaround(xmlResource, "drf.xml");
+    android_download_workaround(xmlResource.get(), "drf.xml");
   }) );
 #endif //ANDROID
 
@@ -2910,7 +2935,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_xmlDownload->setHidden( !m_detector || !m_detector->isValid() );
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( secondFooter );
+  WPushButton *qr_btn = secondFooter->addNew<WPushButton>();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
@@ -2935,12 +2960,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   }) );
 #endif //USE_QR_CODES
   
-  m_noDrfButton = new WPushButton( WString::tr("ds-no-det-btn"), secondFooter );
+  m_noDrfButton = secondFooter->addNew<WPushButton>( WString::tr("ds-no-det-btn") );
   m_noDrfButton->clicked().connect( this, &DrfSelect::finishWithNoDetector );
   if( specViewer && !specViewer->isPhone() )
     m_noDrfButton->addStyleClass( "NoDrfBtn" );
   
-  WPushButton *changeFwhm = new WPushButton( WString::tr("ds-fit-fwhm-btn"), secondFooter );
+  WPushButton *changeFwhm = secondFooter->addNew<WPushButton>( WString::tr("ds-fit-fwhm-btn") );
   if( specViewer && !specViewer->isPhone() )
     changeFwhm->addStyleClass( "NoDrfBtn" );
   changeFwhm->clicked().connect( this, &DrfSelect::handleFitFwhmRequested );
@@ -2950,8 +2975,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_cancelButton = auxWindow->addCloseButtonToFooter( WString::tr("Cancel") );
   }else if( !auxWindow )
   {
-    m_cancelButton = new WPushButton( WString::tr("Close") );
-    m_footer->insertWidget( m_footer->count(), m_cancelButton );
+    m_cancelButton = m_footer->insertWidget( m_footer->count(),
+                                             std::make_unique<WPushButton>( WString::tr("Close") ) );
   }
   
   m_cancelButton->clicked().connect( this, &DrfSelect::cancelAndFinish );
@@ -2959,17 +2984,17 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   if( specViewer && !specViewer->isPhone() )
   {
-    m_acceptButton = new WPushButton( WString::tr("Accept"), m_footer );
-    m_acceptButton->setFloatSide(Wt::Right);
-    
+    m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("Accept") );
+    m_acceptButton->setFloatSide( Wt::Side::Right );
+
     m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
     HelpSystem::attachToolTipOn( m_cancelButton, WString::tr("ds-tt-cancel"), showToolTips );
-    
+
     m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
     HelpSystem::attachToolTipOn( m_acceptButton, WString::tr("ds-tt-accept"), showToolTips );
   }else
   {
-    m_acceptButton = new WPushButton( WString::tr("ds-use-det-btn"), m_footer );
+    m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("ds-use-det-btn") );
     m_acceptButton->addStyleClass( "CenterBtnInMblAuxWindowHeader" );
   }//if( isMobile() ) / else
   
@@ -3018,28 +3043,21 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   //WGridLayout *layout = new WGridLayout( dialog->contents() );
   //layout->setContentsMargins( 0, 0, 0, 0 );
   
-  dialog->contents()->setOverflow( Overflow::OverflowHidden, Wt::Orientation::Horizontal );
+  dialog->contents()->setOverflow( Overflow::Hidden, Wt::Orientation::Horizontal );
   
-  DrfChart *chart = new DrfChart();
+  DrfChart *chart = dialog->contents()->addNew<DrfChart>();
   chart->addStyleClass( "DrfFileSelectChart" );
-  
-  //layout->addWidget( chart, 0, 0 );
-  dialog->contents()->addWidget( chart );
-  
-  
+
   if( !mainMsgHtml.empty() )
   {
-    WText *gen_desc = new WText( mainMsgHtml );
+    WText *gen_desc = dialog->contents()->addNew<WText>( mainMsgHtml );
     gen_desc->addStyleClass( "DrfFileSelectMainDesc" );
-    
-    //layout->addWidget( gen_desc, layout->rowCount(), 0 );
     gen_desc->setInline( false );
-    dialog->contents()->addWidget( gen_desc );
   }//if( !descrip_html.empty() )
-  
-  
-  // Create drfDescription so we can capture in lambda; we'll add to layout in a bit
-  WText *drfDescription = new WText();
+
+  // Create drfDescription now for lambda capture; will be added to dialog->contents() after combo
+  auto drfDescriptionOwned = std::make_unique<WText>();
+  WText *drfDescription = drfDescriptionOwned.get();
   drfDescription->addStyleClass( "DrfFileSelectDrfDesc" );
 
   auto showDrf = [drfs,chart,accept,drfDescription,selected_drf](const int index){
@@ -3119,32 +3137,24 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   
   if( drfs.size() > 1 )
   {
-    WComboBox *combo = new WComboBox();
+    WComboBox *combo = dialog->contents()->addNew<WComboBox>();
     combo->addStyleClass( "DrfFileSelectCombo" );
-    
-    //layout->addWidget( combo, layout->rowCount(), 0, AlignCenter );
     combo->setInline( false );
-    dialog->contents()->addWidget( combo );
-    
+
     for( auto drf : drfs )
       combo->addItem( drf->name() );
     combo->setCurrentIndex( 0 );
     combo->activated().connect( std::bind(showDrf, std::placeholders::_1) );
   }//if( drfs.size() > 1 )
-  
-  
-  //layout->addWidget( drfDescription, layout->rowCount(), 0 );
-  drfDescription->setInline( false );
-  dialog->contents()->addWidget( drfDescription );
 
+  drfDescription->addStyleClass( "DrfFileSelectDrfDesc" );
+  drfDescription->setInline( false );
+  dialog->contents()->addWidget( std::move(drfDescriptionOwned) );
 
   if( !creditsHtml.empty() )
   {
-    WText *credits = new WText( creditsHtml );
+    WText *credits = dialog->contents()->addNew<WText>( creditsHtml );
     credits->addStyleClass( "DrfFileSelectCredits" );
-    
-    //layout->addWidget( credits, layout->rowCount(), 0 );
-    dialog->contents()->addWidget( credits );
   }//if( !descrip_html.empty() )
 
   const bool makeDrfsSaveCb = !!saveDrfsCallBack;
@@ -3152,32 +3162,30 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   const bool makeModelCb = (meas
                             && ((meas->detector_type()!=DetectorType::Unknown)
                                  || !meas->instrument_model().empty()));
-  
+
   WContainerWidget *saveCbDiv = nullptr;
   WCheckBox *saveCb = nullptr;
   WCheckBox *defaultForSerialNumber = nullptr, *defaultForDetectorModel = nullptr;
-  
+
   if( makeDrfsSaveCb || makeSerialNumCb || makeModelCb )
   {
-    saveCbDiv = new WContainerWidget( dialog->contents() );
+    saveCbDiv = dialog->contents()->addNew<WContainerWidget>();
     saveCbDiv->addStyleClass( "DrfFileSelectSaveCbs" );
   }
   
   if( makeDrfsSaveCb )
   {
-    saveCb = new WCheckBox( WString::tr("ds-save-for-later-cb"), saveCbDiv );
-    //layout->addWidget( saveCb, layout->rowCount(), 0, AlignLeft );
+    saveCb = saveCbDiv->addNew<WCheckBox>( WString::tr("ds-save-for-later-cb") );
     saveCb->setInline( false );
-    dialog->contents()->addWidget( saveCb );
   }//if( makeDrfsSaveCb )
-  
+
   if( makeSerialNumCb )
   {
-    WString msg = WString::tr("ds-use-for-serialnum-cb").arg( meas->instrument_id() );
-    defaultForSerialNumber = new WCheckBox( msg, saveCbDiv );
+    const WString msg = WString::tr("ds-use-for-serialnum-cb").arg( meas->instrument_id() );
+    defaultForSerialNumber = saveCbDiv->addNew<WCheckBox>( msg );
     defaultForSerialNumber->setInline( false );
   }//if( have serial number )
-  
+
   if( makeModelCb )
   {
     string model;
@@ -3185,10 +3193,9 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
       model = meas->instrument_model();
     else
       model = detectorTypeToString( meas->detector_type() );
-    
-    
-    WString msg = WString::tr("ds-use-for-model-cb").arg( model );
-    defaultForDetectorModel = new WCheckBox( msg, saveCbDiv );
+
+    const WString msg = WString::tr("ds-use-for-model-cb").arg( model );
+    defaultForDetectorModel = saveCbDiv->addNew<WCheckBox>( msg );
     defaultForDetectorModel->setInline( false );
   }//if( makeModelCb )
   
@@ -3294,7 +3301,7 @@ void DrfSelect::handleUserChangedUploadedDrfName()
   string value = m_uploadedDetName->text().toUTF8();
   if( value.empty() )
   {
-    const int offset = wApp->environment().timeZoneOffset();
+    const int offset = wApp->environment().timeZoneOffset().count();
     auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
     now += std::chrono::seconds(60*offset);
     value = SpecUtils::to_vax_string(now);
@@ -4356,7 +4363,7 @@ void DrfSelect::updateUserNameFromCurrentDetEff()
   //  Its something.
   if( userDrfFilename.size() < 15 )
   {
-    const int offset = wApp->environment().timeZoneOffset();
+    const int offset = wApp->environment().timeZoneOffset().count();
     auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
     now += chrono::seconds(60*offset);
     userDrfFilename += " " + SpecUtils::to_vax_string(now);
@@ -5129,11 +5136,11 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
     {
       //Create a separate DetectorPeakResponse because shared_ptr and
       //  dbo::ptr don't work well together
-      DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
+      auto tempDetector = std::make_unique<DetectorPeakResponse>( *drf );
       tempDetector->updateLastUsedTimeToNow();
-      
+
       tempDetector->m_user = static_cast<int>( db_user_id ); //adds the current user to the detectorpeakresponse insertion into DB
-      sql->session()->add( tempDetector );
+      sql->session()->add( std::move(tempDetector) );
     }
     
     transaction.commit();
@@ -5288,16 +5295,14 @@ void DrfSelect::setUserPrefferedDetector( std::shared_ptr<DetectorPeakResponse> 
     if( drflist.size() < 1 )
       throw runtime_error( "Could not find detector with hash '" + std::to_string(uhash) + " in DB." );
     
-    UseDrfPref *newprefraw = new UseDrfPref();
-    Wt::Dbo::ptr<UseDrfPref> newpref( newprefraw );
-      
-    newprefraw->m_user = user;
-    newprefraw->m_field = prefType;
-    newprefraw->m_criteria = criteria;
-    newprefraw->m_flags = 0x00;
-    newprefraw->m_drfIndex = drflist.front().id();
-    
-    newpref = sql->session()->add( newpref );
+    auto newprefOwned = std::make_unique<UseDrfPref>();
+    newprefOwned->m_user = user;
+    newprefOwned->m_field = prefType;
+    newprefOwned->m_criteria = criteria;
+    newprefOwned->m_flags = 0x00;
+    newprefOwned->m_drfIndex = drflist.front().id();
+
+    Wt::Dbo::ptr<UseDrfPref> newpref = sql->session()->add( std::move(newprefOwned) );
     
     auto newid = newpref.id();
     auto drfindex = newpref->m_drfIndex;
@@ -6087,15 +6092,17 @@ DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
   SpecMeasManager *fileManager = m_interspec->fileManager();
   SpectraFileModel *fileModel = fileManager ? fileManager->model() : nullptr;
   
-  m_edit = new DrfSelect( det, m_interspec, fileModel, this );
-  
-  contents()->setPadding( 0 );
-  contents()->setOverflow( WContainerWidget::Overflow::OverflowHidden );
-  stretcher()->addWidget( m_edit, 0, 0 );
+  {
+    auto editOwned = std::make_unique<DrfSelect>( det, m_interspec, fileModel, this );
+    m_edit = editOwned.get();
+    contents()->setPadding( 0 );
+    contents()->setOverflow( Overflow::Hidden );
+    stretcher()->addWidget( std::move(editOwned), 0, 0 );
+  }
   stretcher()->setContentsMargins( 6, 2, 6, 0 );
   
-  m_edit->done().connect( boost::bind( &DrfSelectWindow::acceptAndDelete, this ) );
-  finished().connect( boost::bind( &DrfSelectWindow::acceptAndDelete, this ) );
+  m_edit->done().connect( [this](){ acceptAndDelete( this ); } );
+  finished().connect( [this]( Wt::DialogCode ){ acceptAndDelete( this ); } );
   rejectWhenEscapePressed();
   
   show();
@@ -6103,7 +6110,7 @@ DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
   if( !m_isPhone )
   {
     // None this would have effect for phone
-    resize( WLength(650,WLength::Pixel), WLength(610,WLength::Pixel));
+    resize( WLength(650,WLength::Unit::Pixel), WLength(610,WLength::Unit::Pixel));
     centerWindow();
     
     resizeToFitOnScreen();

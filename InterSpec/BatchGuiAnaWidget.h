@@ -31,7 +31,7 @@
 #include <vector>
 #include <memory>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/BatchActivity.h"
@@ -69,7 +69,7 @@ protected:
   Wt::Signal<bool,Wt::WString> m_canDoAnalysis;
 
 public:
-  BatchGuiAnaWidget( Wt::WContainerWidget *parent );
+  BatchGuiAnaWidget();
 
   virtual void performAnalysis( const std::vector<std::tuple<std::string, std::string, std::shared_ptr<const SpecMeas>>> &input_files,
                                 const std::string &output_dir ) = 0;
@@ -137,7 +137,7 @@ protected:
   FileDragUploadResource *m_summary_custom_report_resource = nullptr;
 
 public:
-  BatchGuiPeakFitWidget( Wt::WContainerWidget *parent = nullptr );
+  BatchGuiPeakFitWidget();
 
   ~BatchGuiPeakFitWidget();
 
@@ -192,7 +192,7 @@ protected:
   Wt::WCheckBox *m_csv_report = nullptr;
 
 public:
-  BatchGuiActShieldAnaWidget( Wt::WContainerWidget *parent = nullptr );
+  BatchGuiActShieldAnaWidget();
 
   BatchActivity::BatchActivityFitOptions getActivityFitOptions() const;
 
@@ -236,7 +236,7 @@ protected:
   SpecUtils::SaveSpectrumAsType currentSaveType() const;
   
 public:
-  FileConvertOpts( Wt::WContainerWidget *parent = nullptr );
+  FileConvertOpts();
   ~FileConvertOpts();
   
   virtual void performAnalysis( const std::vector<std::tuple<std::string, std::string, std::shared_ptr<const SpecMeas>>> &input_files,

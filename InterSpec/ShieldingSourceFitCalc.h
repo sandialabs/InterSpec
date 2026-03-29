@@ -407,9 +407,9 @@ namespace ShieldingSourceFitCalc
                   std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                   std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
                   std::shared_ptr<ModelFitProgress> progress,
-                  boost::function<void()> progress_fcn,
+                  std::function<void()> progress_fcn,
                   std::shared_ptr<ModelFitResults> results,
-                  boost::function<void()> finished_fcn );
+                  std::function<void()> finished_fcn );
   
   /** The maximum time (in milliseconds) a model fit can take before the fit is
       aborted.  This generally will only ever be applicable to fits with

@@ -29,9 +29,9 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WSignal>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WSignal.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "InterSpec/ReactionGamma.h"
 
@@ -57,7 +57,7 @@ class IsotopeNameFilterModel : public  Wt::WAbstractItemModel
     isotopes which do not have any transitions.
     */
 public:
-  IsotopeNameFilterModel( Wt::WObject *parent );
+  IsotopeNameFilterModel();
   virtual ~IsotopeNameFilterModel();
 
   virtual Wt::WModelIndex index( int row, int column,
@@ -68,7 +68,7 @@ public:
   virtual int rowCount( const Wt::WModelIndex & parent = Wt::WModelIndex() ) const;
   virtual int columnCount( const Wt::WModelIndex & parent = Wt::WModelIndex() ) const;
 
-  virtual boost::any data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
 
   void addCustomSuggestPossibility( const std::string &str );
   

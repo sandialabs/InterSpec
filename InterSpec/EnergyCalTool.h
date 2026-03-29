@@ -30,7 +30,7 @@
 #include <vector>
 #include <memory>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -165,7 +165,7 @@ struct MeasToApplyCoefChangeTo
 class EnergyCalTool : public Wt::WContainerWidget
 {
 public:
-  EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, Wt::WContainerWidget *parent = nullptr );
+  EnergyCalTool( InterSpec *viewer, PeakModel *peakModel );
   virtual ~EnergyCalTool();
   
   void setWideLayout();
@@ -286,7 +286,7 @@ public:
   
   /** Returns the pointer to the CALp resource (derived from Wt::WResource) that can be used to export CALp files.
    */
-  EnergyCalImp::CALpDownloadResource *calpResources();
+  std::shared_ptr<EnergyCalImp::CALpDownloadResource> calpResources();
 
   /** Makes a dialog the user can then use to upload a CALp file */
   void handleRequestToUploadCALp();
@@ -356,7 +356,7 @@ protected:
   InterSpec *m_interspec;
   PeakModel *m_peakModel;
   
-  EnergyCalImp::CALpDownloadResource *m_calpResource;
+  std::shared_ptr<EnergyCalImp::CALpDownloadResource> m_calpResource;
   
   WContainerWidget *m_tallLayoutContent;
   

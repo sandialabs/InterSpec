@@ -29,10 +29,10 @@
 #include <vector>
 #include <memory>
 
-#include <Wt/WString>
-#include <Wt/WContainerWidget>
-#include <Wt/WResource>
-#include <Wt/WGoogleMap>
+#include <Wt/WString.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WResource.h>
+#include <Wt/WGoogleMap.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -42,7 +42,7 @@ namespace SpecUtils { class SpecFile; }
 class GoogleMap : public Wt::WContainerWidget
 {
 public:
-  GoogleMap( const bool trackMapExtent, Wt::WContainerWidget *parent = 0 );
+  GoogleMap( const bool trackMapExtent );
   virtual ~GoogleMap();
   
   void addMarker( double latitude, double longitude );

@@ -1607,9 +1607,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
        -> vector<int> {
         deque<shared_ptr<const PeakDef>> peaks_copy = peaks;
         
-        boost::function<bool(const shared_ptr<const PeakDef> &, const shared_ptr<const PeakDef> &)> sortfcn;
-        sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                              column, order, spectrum );
+        auto sortfcn = [column, order, spectrum]( const shared_ptr<const PeakDef> &lhs,
+                                                  const shared_ptr<const PeakDef> &rhs ) -> bool {
+          return PeakModel::compare( lhs, rhs, column, order, spectrum );
+        };
         stable_sort( begin(peaks_copy), end(peaks_copy), sortfcn );
         
         vector<int> indices;
@@ -1624,35 +1625,35 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       
       using So = Wt::SortOrder;
       using Col = PeakModel::Columns;
-      json["PeakSortIndex_Energy_Ascend"] = sorted_indices( So::AscendingOrder, Col::kMean );
-      json["PeakSortIndex_Energy_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kMean );
+      json["PeakSortIndex_Energy_Ascend"] = sorted_indices( So::Ascending, Col::kMean );
+      json["PeakSortIndex_Energy_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kMean );
+
+      json["PeakSortIndex_Isotope_Ascend"] = sorted_indices( So::Ascending, Col::kIsotope );
+      json["PeakSortIndex_Isotope_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kIsotope );
       
-      json["PeakSortIndex_Isotope_Ascend"] = sorted_indices( So::AscendingOrder, Col::kIsotope );
-      json["PeakSortIndex_Isotope_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kIsotope );
+      json["PeakSortIndex_Mean_Ascend"] = sorted_indices( Wt::SortOrder::Ascending, PeakModel::Columns::kMean );
+      json["PeakSortIndex_Mean_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kMean );
       
-      json["PeakSortIndex_Mean_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kMean );
-      json["PeakSortIndex_Mean_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kMean );
+      json["PeakSortIndex_Amp_Ascend"] = sorted_indices( Wt::SortOrder::Ascending, PeakModel::Columns::kAmplitude );
+      json["PeakSortIndex_Amp_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kAmplitude );
       
-      json["PeakSortIndex_Amp_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kAmplitude );
-      json["PeakSortIndex_Amp_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kAmplitude );
+      json["PeakSortIndex_Fwhm_Ascend"] = sorted_indices( Wt::SortOrder::Ascending, PeakModel::Columns::kFwhm );
+      json["PeakSortIndex_Fwhm_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kFwhm );
       
-      json["PeakSortIndex_Fwhm_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kFwhm );
-      json["PeakSortIndex_Fwhm_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kFwhm );
+      json["PeakSortIndex_SrcEnergy_Ascend"] = sorted_indices( Wt::SortOrder::Ascending, PeakModel::Columns::kPhotoPeakEnergy );
+      json["PeakSortIndex_SrcEnergy_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kPhotoPeakEnergy );
       
-      json["PeakSortIndex_SrcEnergy_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kPhotoPeakEnergy );
-      json["PeakSortIndex_SrcEnergy_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kPhotoPeakEnergy );
+      json["PeakSortIndex_RoiCounts_Ascend"] = sorted_indices( Wt::SortOrder::Ascending, PeakModel::Columns::kRoiCounts );
+      json["PeakSortIndex_RoiCounts_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kRoiCounts );
       
-      json["PeakSortIndex_RoiCounts_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kRoiCounts );
-      json["PeakSortIndex_RoiCounts_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kRoiCounts );
+      json["PeakSortIndex_DistSrcEnergyToMean_Ascend"] = sorted_indices( Wt::SortOrder::Ascending, PeakModel::Columns::kDifference );
+      json["PeakSortIndex_DistSrcEnergyToMean_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kDifference );
       
-      json["PeakSortIndex_DistSrcEnergyToMean_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kDifference );
-      json["PeakSortIndex_DistSrcEnergyToMean_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kDifference );
+      json["PeakSortIndex_UseForActivity_Ascend"] = sorted_indices( Wt::SortOrder::Ascending, PeakModel::Columns::kUseForShieldingSourceFit );
+      json["PeakSortIndex_UseForActivity_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kUseForShieldingSourceFit );
       
-      json["PeakSortIndex_UseForActivity_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kUseForShieldingSourceFit );
-      json["PeakSortIndex_UseForActivity_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kUseForShieldingSourceFit );
-      
-      json["PeakSortIndex_UseForEnergyCal_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kUseForCalibration );
-      json["PeakSortIndex_UseForEnergyCal_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kUseForCalibration );
+      json["PeakSortIndex_UseForEnergyCal_Ascend"] = sorted_indices( Wt::SortOrder::Ascending, PeakModel::Columns::kUseForCalibration );
+      json["PeakSortIndex_UseForEnergyCal_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kUseForCalibration );
       
       
       for( int cont_index = 0; cont_index < static_cast<int>(continua.size()); ++cont_index )

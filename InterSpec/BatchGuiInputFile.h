@@ -28,7 +28,7 @@
 #include <string>
 #include <memory>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 
 // Forward declarations
@@ -81,8 +81,7 @@ public:
   BatchGuiInputSpectrumFile( const std::string display_name,
                   const std::string path_to_file,
                   const bool should_cleanup,
-                  const ShowPreviewOption preview,
-                  Wt::WContainerWidget *parent );
+                  const ShowPreviewOption preview );
   
   void set_spectrum( std::shared_ptr<SpecMeas> spec_meas, std::shared_ptr<int> status_ptr );
   
@@ -118,8 +117,7 @@ protected:
 public:
   BatchGuiInputFile( const std::string display_name,
                       const std::string path_to_file,
-                      const bool should_cleanup,
-                      Wt::WContainerWidget *parent );
+                      const bool should_cleanup );
   
   ~BatchGuiInputFile();
   

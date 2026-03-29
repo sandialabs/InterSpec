@@ -29,15 +29,15 @@
 #include <vector>
 
 
-#include <Wt/Utils>
-#include <Wt/WColor>
-#include <Wt/WPoint>
-#include <Wt/WLength>
-#include <Wt/WJavaScript>
-#include <Wt/WApplication>
-#include <Wt/WStringStream>
-#include <Wt/WCssStyleSheet>
-#include <Wt/WContainerWidget>
+#include <Wt/Utils.h>
+#include <Wt/WColor.h>
+#include <Wt/WPoint.h>
+#include <Wt/WLength.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WCssStyleSheet.h>
+#include <Wt/WContainerWidget.h>
 
 
 #include "SandiaDecay/SandiaDecay.h"
@@ -53,8 +53,8 @@ using namespace Wt;
 using namespace std;
 
 
-RelEffChart::RelEffChart( WContainerWidget *parent )
-: WContainerWidget( parent ),
+RelEffChart::RelEffChart()
+: WContainerWidget(),
   m_jsgraph( jsRef() + ".chart" ),
   m_xAxisTitle{},
   m_yAxisTitle{},
@@ -65,7 +65,7 @@ RelEffChart::RelEffChart( WContainerWidget *parent )
   m_titlePadding( -3 )
 {
   addStyleClass( "RelEffChart" );
-  setOverflow(Overflow::OverflowHidden);
+  setOverflow(Overflow::Hidden);
   
   // We will actually totally define the CSS through WApplication, rather than using the same CSS
   //  file we use for the self-contained HTML reports.
@@ -127,7 +127,7 @@ void RelEffChart::defineJavaScript()
 
 void RelEffChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
+  const bool renderFull = flags.test( Wt::RenderFlag::Full );
   
   WContainerWidget::render( flags );
   

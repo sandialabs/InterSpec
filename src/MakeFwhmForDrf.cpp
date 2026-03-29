@@ -26,14 +26,14 @@
 #include <vector>
 #include <algorithm>
 
-#include <Wt/WLabel>
-#include <Wt/WServer>
-#include <Wt/WComboBox>
-#include <Wt/WGroupBox>
-#include <Wt/WIOService>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WLabel.h>
+#include <Wt/WServer.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WIOService.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
@@ -64,13 +64,13 @@ public:
   
 protected:
   Column m_sort_col;
-  SortOrder m_sort_order = AscendingOrder;
+  SortOrder m_sort_order = SortOrder::Ascending;
   std::vector<MakeFwhmForDrf::TableRow> m_rows;
   
   
 public:
-  FwhmPeaksModel( Wt::WObject *parent = nullptr )
-  : Wt::WAbstractItemModel( parent ),
+  FwhmPeaksModel()
+  : Wt::WAbstractItemModel(),
   m_sort_col( Column::Energy )
   {
   }
@@ -137,15 +137,15 @@ public:
   virtual WFlags<ItemFlag> flags( const WModelIndex &index ) const override
   {
     if( index.column() == static_cast<int>(Column::UseForFit) )
-      return WFlags<ItemFlag>(ItemFlag::ItemIsUserCheckable);
+      return WFlags<ItemFlag>(ItemFlag::UserCheckable);
     
-    return WFlags<ItemFlag>(0);
+    return Wt::WFlags<ItemFlag>{};
   }
   
-  virtual boost::any headerData( int section, Orientation orientation = Horizontal, int role = DisplayRole) const override
+  virtual Wt::cpp17::any headerData( int section, Orientation orientation = Orientation::Horizontal, ItemDataRole role = ItemDataRole::Display ) const override
   {
-    if( (orientation != Horizontal) || (role != DisplayRole) )
-      return boost::any();
+    if( (orientation != Orientation::Horizontal) || (role != ItemDataRole::Display) )
+      return Wt::cpp17::any();
     
     switch( Column(section) )
     {
@@ -157,24 +157,24 @@ public:
       case Column::NumColumn: break;
     }
     assert( 0 );
-    return boost::any();
+    return Wt::cpp17::any();
   }//headerData(...)
 
   
-  virtual boost::any data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const override
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const override
   {
     if( !index.isValid()
        || (index.column() < 0) || (index.column() >= static_cast<int>(Column::NumColumn))
        || (index.row() < 0) || (index.row() >= static_cast<int>(m_rows.size())) )
     {
-      return boost::any();
+      return Wt::cpp17::any();
     }
     
-    if( (Column(index.column()) == Column::UseForFit) && (role != ItemDataRole::CheckStateRole) )
-      return boost::any();
-    
-    if( (Column(index.column()) != Column::UseForFit) && (role != ItemDataRole::DisplayRole) )
-      return boost::any();
+    if( (Column(index.column()) == Column::UseForFit) && (role != ItemDataRole::Checked) )
+      return Wt::cpp17::any();
+
+    if( (Column(index.column()) != Column::UseForFit) && (role != ItemDataRole::Display) )
+      return Wt::cpp17::any();
     
     // Could implement a Wt::ItemDataRole::ToolTipRole
     
@@ -200,14 +200,14 @@ public:
         break;
         
       case Column::UseForFit:
-        return boost::any(row.m_use_for_fit);
+        return Wt::cpp17::any(row.m_use_for_fit);
         
       case Column::NumColumn:
         assert( 0 );
         break;
     }//switch( Column(index.column()) )
     
-    return boost::any( WString(buffer) );
+    return Wt::cpp17::any( WString(buffer) );
   }//data(...)
   
   
@@ -233,29 +233,29 @@ public:
   }//void set_use( distances[index].second, const bool use_peak )
   
   
-  virtual bool setData( const WModelIndex &index, const boost::any &value, int role = EditRole ) override
+  virtual bool setData( const WModelIndex &index, const Wt::cpp17::any &value, ItemDataRole role = ItemDataRole::Edit ) override
   {
     if( index.parent().isValid() || (index.row() < 0)
        || (index.row() >= static_cast<int>(m_rows.size()))
        || (index.column() != static_cast<int>(Column::UseForFit))
-       || value.empty()
+       || !Wt::cpp17::any_has_value(value)
        || (value.type() != typeid(bool)) )
     {
       assert( 0 );
       return false;
     }
     
-    m_rows[index.row()].m_use_for_fit = boost::any_cast<bool>(value);
+    m_rows[index.row()].m_use_for_fit = Wt::cpp17::any_cast<bool>(value);
     dataChanged().emit( index, index );
     
     return true;
-  }//bool setData( const WModelIndex &index, const boost::any &value, int role = EditRole )
+  }//bool setData( const WModelIndex &index, const Wt::cpp17::any &value, int role = EditRole )
   
   
   static void sortImp( const Column column, const SortOrder order,
                       vector<MakeFwhmForDrf::TableRow> &rows )
   {
-    const bool littleToBig = (order == AscendingOrder);
+    const bool littleToBig = (order == SortOrder::Ascending);
     
     std::sort( begin(rows), end(rows),
               [column, littleToBig]( const MakeFwhmForDrf::TableRow &lhs,
@@ -291,7 +291,7 @@ public:
   }//void sortImp( Column column, SortOrder order )
   
   
-  virtual void sort( int column, SortOrder order = AscendingOrder ) override
+  virtual void sort( int column, SortOrder order = SortOrder::Ascending ) override
   {
     layoutAboutToBeChanged().emit();
     
@@ -407,9 +407,11 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
   shared_ptr<SpecMeas> foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground );
   shared_ptr<DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
   
-  m_tool = new MakeFwhmForDrf( use_auto_fit_peaks_too, viewer, drf );
-    
-  window->stretcher()->addWidget( m_tool, 0, 0 );
+  {
+    auto toolOwner = std::make_unique<MakeFwhmForDrf>( use_auto_fit_peaks_too, viewer, drf );
+    m_tool = toolOwner.get();
+    window->stretcher()->addWidget( std::move(toolOwner), 0, 0 );
+  }
   window->stretcher()->setContentsMargins( 0, 0, 0, 0 );
   
   AuxWindow::addHelpInFooter( window->footer(), "add-fwhm-to-drf" );
@@ -417,10 +419,9 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
   WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel") );
   closeButton->clicked().connect( window, &AuxWindow::hide );
     
-  WPushButton *saveAs = new WPushButton( WString::tr("mffdw-use-fwhm-btn"), window->footer() );
+  WPushButton *saveAs = window->footer()->addNew<WPushButton>( WString::tr("mffdw-use-fwhm-btn") );
   saveAs->clicked().connect( m_tool, &MakeFwhmForDrf::setToDrf );
-  m_tool->validationChanged().connect( boost::bind( &WPushButton::setEnabled, saveAs,
-                                                                   boost::placeholders::_1 ) );
+  m_tool->validationChanged().connect( [saveAs]( bool valid ){ saveAs->setEnabled( valid ); } );
   // Maybe
   //m_tool->validationChanged().connect( std::bind([m_tool,saveAs](){
   //  saveAs->setEnabled( m_tool->isValidFwhm() );
@@ -443,9 +444,8 @@ MakeFwhmForDrf *MakeFwhmForDrfWindow::tool()
 
 MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
                                InterSpec *viewer,
-               std::shared_ptr<DetectorPeakResponse> drf,
-               Wt::WContainerWidget *parent )
- : WContainerWidget( parent ),
+               std::shared_ptr<DetectorPeakResponse> drf )
+ : WContainerWidget(),
   m_interspec( viewer ),
   m_currently_searching( false ),
   m_refit_scheduled( false ),
@@ -461,8 +461,8 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   m_equation( nullptr ),
   m_table( nullptr ),
   m_model( nullptr ),
-  m_validationChanged( this ),
-  m_updatedDrf( this )
+  m_validationChanged(),
+  m_updatedDrf()
 {
   wApp->useStyleSheet( "InterSpec_resources/MakeFwhmForDrf.css" );
   
@@ -471,47 +471,59 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   m_interspec->useMessageResourceBundle( "MakeFwhmForDrf" );
     
   // Using a Wt layout since the chart requires this
-  WGridLayout *layout = new WGridLayout( this );
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
-    
+
   // TODO: make chart be full energy range of spectrum
   //       Maybe have a parameter be "fixed"...
-  m_chart = new MakeDrfChart();
-  m_chart->showEfficiencyPoints( false );
-  DrfChartHolder *chartholder = new DrfChartHolder( m_chart, nullptr );
-  layout->addWidget( chartholder, layout->rowCount(), 0 );
-  chartholder->setHeight( 250 );
-  //layout->setRowResizable( 0, true, WLength(250, WLength::Pixel) );
+  // Wt4_TODO: MakeDrfChart/DrfChartHolder not yet fully migrated (DrfChartHolder uses addWidget(raw ptr))
+  {
+    auto chartOwned = std::make_unique<MakeDrfChart>();
+    m_chart = chartOwned.get();
+    m_chart->showEfficiencyPoints( false );
+    DrfChartHolder *chartholder = layout->addWidget( std::make_unique<DrfChartHolder>( std::move(chartOwned) ), layout->rowCount(), 0 );
+    chartholder->setHeight( 250 );
+  }
+  //layout->setRowResizable( 0, true, WLength(250, WLength::Unit::Pixel) );
   //layout->setRowStretch( 1, 1 );
-    
-  m_error = new WText( "", Wt::XHTMLText );
-  layout->addWidget( m_error, 1, 0 );
-  m_error->setInline( false );
-  m_error->addStyleClass( "ErrTxt" );
-  m_error->hide();
-  m_equation = new WText( "", Wt::XHTMLText );
-  layout->addWidget( m_equation, 2, 0 );
-  m_equation->setInline( false );
-  m_equation->addStyleClass( "EqnTxt" );
-  m_equation->hide();
-  
-  WContainerWidget *lowerDiv = new WContainerWidget();
-  layout->addWidget( lowerDiv, 3, 0 );
+
+  {
+    auto w = std::make_unique<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
+    m_error = w.get();
+    m_error->setInline( false );
+    m_error->addStyleClass( "ErrTxt" );
+    m_error->hide();
+    layout->addWidget( std::move(w), 1, 0 );
+  }
+
+  {
+    auto w = std::make_unique<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
+    m_equation = w.get();
+    m_equation->setInline( false );
+    m_equation->addStyleClass( "EqnTxt" );
+    m_equation->hide();
+    layout->addWidget( std::move(w), 2, 0 );
+  }
+
+  WContainerWidget *lowerDiv = layout->addWidget( std::make_unique<WContainerWidget>(), 3, 0 );
   layout->setRowStretch( 3, 1 );
-    
-  WGridLayout *lowerLayout = new WGridLayout( lowerDiv );
+
+  WGridLayout *lowerLayout = lowerDiv->setLayout( std::make_unique<WGridLayout>() );
   //lowerLayout->setVerticalSpacing( 0 );
   //lowerLayout->setHorizontalSpacing( 0 );
   lowerLayout->setContentsMargins( 0, 0, 0, 0 );
-    
-  WContainerWidget *optionsDiv = new WContainerWidget();
-  lowerLayout->addWidget( optionsDiv, 0, 0 );
+
+  WContainerWidget *optionsDiv = lowerLayout->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
   optionsDiv->addStyleClass( "Options" );
-    
-  WGroupBox *box = new WGroupBox( WString::tr("mffd-eqn-type-label"), optionsDiv );
-  box->addStyleClass( "OptDiv" );
-  m_fwhmEqnType = new WComboBox( box );
-  
+
+  {
+    auto b = std::make_unique<WGroupBox>( WString::tr("mffd-eqn-type-label") );
+    WGroupBox *box = b.get();
+    box->addStyleClass( "OptDiv" );
+    m_fwhmEqnType = box->addNew<WComboBox>();
+    optionsDiv->addWidget( std::move(b) );
+  }
+
   for( auto fcnfrm = DetectorPeakResponse::ResolutionFnctForm(0);
       fcnfrm != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm;
       fcnfrm = DetectorPeakResponse::ResolutionFnctForm( static_cast<int>(fcnfrm) + 1 ) )
@@ -542,47 +554,58 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   m_fwhmEqnType->setCurrentIndex( DetectorPeakResponse::kSqrtPolynomial );
   m_fwhmEqnType->activated().connect( this, &MakeFwhmForDrf::handleFwhmEqnTypeChange );
   
-  box = new WGroupBox( WString::tr("mffd-num-terms-label"), optionsDiv );
-  box->addStyleClass( "OptDiv" );
-  m_sqrtEqnOrder = new WComboBox( box );
-  m_sqrtEqnOrder->addItem( "1" );
-  m_sqrtEqnOrder->addItem( "2" );
-  m_sqrtEqnOrder->addItem( "3" );
-  m_sqrtEqnOrder->addItem( "4" );
-  m_sqrtEqnOrder->addItem( "5" );
-  m_sqrtEqnOrder->setCurrentIndex( 1 );
-  m_sqrtEqnOrder->activated().connect( this, &MakeFwhmForDrf::handleSqrtEqnOrderChange );
-  
-  WGroupBox *parametersDiv = new WGroupBox( WString::tr("mffd-par-vals-label") );
-  //WContainerWidget *parametersDiv = new WContainerWidget();
-  lowerLayout->addWidget( parametersDiv, 1, 0, Wt::AlignmentFlag::AlignTop );
-  lowerLayout->setRowStretch( 1, 1 );
-    
-  parametersDiv->addStyleClass( "Parameters" );
-    
-  for( int i = 0; i < m_sqrtEqnOrder->count(); ++i )
   {
-    WContainerWidget *parDiv = new WContainerWidget( parametersDiv );
-    parDiv->addStyleClass( "ParDiv" );
-    WLabel *label = new WLabel( "A" + std::to_string(i), parDiv );
-    label->setInline( false );
-    NativeFloatSpinBox *sb = new NativeFloatSpinBox( parDiv );
-    label->setBuddy( sb );
-    sb->setText( "" );
-    sb->setSpinnerHidden( true );
-    sb->setWidth( 75 );
-    sb->valueChanged().connect( boost::bind(&MakeFwhmForDrf::coefficientManuallyChanged, this, i) );
-    sb->disable();
-    parDiv->setHidden( (i > m_sqrtEqnOrder->currentIndex()) );
-    m_parEdits.push_back( sb );
-  }//for( int i = 0; i < m_sqrtEqnOrder->count(); ++i )
+    auto b = std::make_unique<WGroupBox>( WString::tr("mffd-num-terms-label") );
+    WGroupBox *box = b.get();
+    box->addStyleClass( "OptDiv" );
+    m_sqrtEqnOrder = box->addNew<WComboBox>();
+    m_sqrtEqnOrder->addItem( "1" );
+    m_sqrtEqnOrder->addItem( "2" );
+    m_sqrtEqnOrder->addItem( "3" );
+    m_sqrtEqnOrder->addItem( "4" );
+    m_sqrtEqnOrder->addItem( "5" );
+    m_sqrtEqnOrder->setCurrentIndex( 1 );
+    m_sqrtEqnOrder->activated().connect( this, &MakeFwhmForDrf::handleSqrtEqnOrderChange );
+    optionsDiv->addWidget( std::move(b) );
+  }
+  
+  {
+    auto paramsDivOwner = std::make_unique<WGroupBox>( WString::tr("mffd-par-vals-label") );
+    WGroupBox *parametersDiv = paramsDivOwner.get();
+    //WContainerWidget *parametersDiv = new WContainerWidget();
+    parametersDiv->addStyleClass( "Parameters" );
+
+    for( int i = 0; i < m_sqrtEqnOrder->count(); ++i )
+    {
+      WContainerWidget *parDiv = parametersDiv->addNew<WContainerWidget>();
+      parDiv->addStyleClass( "ParDiv" );
+      WLabel *label = parDiv->addNew<WLabel>( "A" + std::to_string(i) );
+      label->setInline( false );
+      NativeFloatSpinBox *sb = parDiv->addNew<NativeFloatSpinBox>();
+      label->setBuddy( sb );
+      sb->setText( "" );
+      sb->setSpinnerHidden( true );
+      sb->setWidth( 75 );
+      sb->valueChanged().connect( [this, i](){ coefficientManuallyChanged(i); } );
+      sb->disable();
+      parDiv->setHidden( (i > m_sqrtEqnOrder->currentIndex()) );
+      m_parEdits.push_back( sb );
+    }//for( int i = 0; i < m_sqrtEqnOrder->count(); ++i )
+
+    lowerLayout->addWidget( std::move(paramsDivOwner), 1, 0, Wt::AlignmentFlag::Top );
+    lowerLayout->setRowStretch( 1, 1 );
+  }
     
-  m_model = new FwhmPeaksModel( this );
-  m_table = new RowStretchTreeView();
-  m_table->setRootIsDecorated( false ); //makes the tree look like a table! :)
-  m_table->addStyleClass( "PeakTable" );
-  lowerLayout->addWidget( m_table, 0, 1, 2, 1 );
-  m_table->setModel( m_model );
+  {
+    auto modelOwned = std::make_shared<FwhmPeaksModel>();
+    m_model = modelOwned.get();
+    auto tableOwner = std::make_unique<RowStretchTreeView>();
+    m_table = tableOwner.get();
+    m_table->setRootIsDecorated( false ); //makes the tree look like a table! :)
+    m_table->addStyleClass( "PeakTable" );
+    lowerLayout->addWidget( std::move(tableOwner), 0, 1, 2, 1 );
+    m_table->setModel( modelOwned );
+  }
   lowerLayout->setColumnStretch( 1, 1 );
   
   m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Energy), 115 );
@@ -670,10 +693,8 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
   //The results of the peak search will be placed into the vector pointed to by searchresults
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
     
-  //I think WApplication::bind should protect against calling back after this widget is deleted
-  boost::function<void(void)> callback
-                            = wApp->bind( boost::bind( &MakeFwhmForDrf::setPeaksFromAutoSearch,
-                                          this, user_peaks, searchresults ) );
+  std::function<void(void)> callback
+    = [this, user_peaks, searchresults](){ setPeaksFromAutoSearch( user_peaks, searchresults ); };
     
   
   Wt::WServer *server = Wt::WServer::instance();
@@ -1277,8 +1298,8 @@ bool MakeFwhmForDrf::ToolState::operator==( const MakeFwhmForDrf::ToolState &rhs
      
   vector<MakeFwhmForDrf::TableRow> lhs_row = m_rows;
   vector<MakeFwhmForDrf::TableRow> rhs_row = rhs.m_rows;
-  FwhmPeaksModel::sortImp( FwhmPeaksModel::Column::Energy, Wt::SortOrder::AscendingOrder, lhs_row );
-  FwhmPeaksModel::sortImp( FwhmPeaksModel::Column::Energy, Wt::SortOrder::AscendingOrder, rhs_row );
+  FwhmPeaksModel::sortImp( FwhmPeaksModel::Column::Energy, Wt::SortOrder::Ascending, lhs_row );
+  FwhmPeaksModel::sortImp( FwhmPeaksModel::Column::Energy, Wt::SortOrder::Ascending, rhs_row );
   
   assert( lhs_row.size() == rhs_row.size() );
   for( size_t i = 0; (i < lhs_row.size()) && (i < rhs_row.size()); ++i )

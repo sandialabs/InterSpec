@@ -27,10 +27,10 @@
 #include <vector>
 #include <functional>
 
-#include <Wt/WObject>
-#include <Wt/WSignal>
-#include <Wt/Dbo/ptr>
-#include <Wt/WCheckBox>
+#include <Wt/WObject.h>
+#include <Wt/WSignal.h>
+#include <Wt/Dbo/ptr.h>
+#include <Wt/WCheckBox.h>
 
 //#include <boost/scope_exit.hpp> //temporary for debug
 
@@ -93,8 +93,9 @@ namespace
     using rapidxml::internal::compare;
     typedef rapidxml::xml_attribute<char> XmlAttribute;
     
-    UserOption *option = new UserOption();
-    Wt::Dbo::ptr<UserOption> option_owner( option );
+    auto option = std::make_unique<UserOption>();
+    UserOption * const option_ptr = option.get();
+    Wt::Dbo::ptr<UserOption> option_owner = Wt::Dbo::ptr<UserOption>( std::move(option) );
     try
     {
       const XmlAttribute *name_att = pref->first_attribute( "name", 4 );
@@ -105,47 +106,47 @@ namespace
       const char *typestr = type_att->value();
       std::size_t typestrlen = type_att->value_size();
       
-      option->m_name = name_att->value();
-      
+      option_ptr->m_name = name_att->value();
+
       // Get rid of "_tablet" or "_phone"
-      auto pos = option->m_name.find( "_tablet" );
+      auto pos = option_ptr->m_name.find( "_tablet" );
       if( pos == string::npos )
-        pos = option->m_name.find( "_phone" );
+        pos = option_ptr->m_name.find( "_phone" );
       if( pos != string::npos )
-        option->m_name = option->m_name.substr(0, pos);
-      
+        option_ptr->m_name = option_ptr->m_name.substr(0, pos);
+
       const char *valuestr = pref->value();
-      
+
       // We'll let "String" type values be empty, but no other types.
       if( !valuestr && !compare(typestr, typestrlen, "String", 6, true) )
-        throw runtime_error( "Missing value for \"" + option->m_name + "\" in default preferences file" );
-      
+        throw runtime_error( "Missing value for \"" + option_ptr->m_name + "\" in default preferences file" );
+
       if( valuestr )
-        option->m_value = std::string( valuestr, valuestr + pref->value_size() );
-      
-      if( option->m_name.length() > UserOption::sm_max_name_str_len )
-        throw runtime_error( "Pref \"" + option->m_name + "\" name to long" );
-      if( option->m_value.length() > UserOption::sm_max_value_str_len )
-        throw runtime_error( "Pref \"" + option->m_name + "\" value to long" );
-      
+        option_ptr->m_value = std::string( valuestr, valuestr + pref->value_size() );
+
+      if( option_ptr->m_name.length() > UserOption::sm_max_name_str_len )
+        throw runtime_error( "Pref \"" + option_ptr->m_name + "\" name to long" );
+      if( option_ptr->m_value.length() > UserOption::sm_max_value_str_len )
+        throw runtime_error( "Pref \"" + option_ptr->m_name + "\" value to long" );
+
       if( compare( typestr, typestrlen, "String", 6, true) )
-        option->m_type = UserOption::String;
+        option_ptr->m_type = UserOption::String;
       else if( compare( typestr, typestrlen, "Decimal", 7, true) )
-        option->m_type = UserOption::Decimal;
+        option_ptr->m_type = UserOption::Decimal;
       else if( compare( typestr, typestrlen, "Integer", 7, true) )
-        option->m_type = UserOption::Integer;
+        option_ptr->m_type = UserOption::Integer;
       else if( compare( typestr, typestrlen, "Boolean", 7, true) )
       {
-        option->m_type = UserOption::Boolean;
-        if( option->m_value == "true" )
-          option->m_value = "1";
-        else if( option->m_value == "false" )
-          option->m_value = "0";
+        option_ptr->m_type = UserOption::Boolean;
+        if( option_ptr->m_value == "true" )
+          option_ptr->m_value = "1";
+        else if( option_ptr->m_value == "false" )
+          option_ptr->m_value = "0";
       }else
         throw runtime_error( "Invalid \"type\" (\"" + string(typestr) + "\") "
                             " for pref " + string(typestr) );
-      
-      check_string_gives_type( option->m_value, option->m_type, option->m_name );
+
+      check_string_gives_type( option_ptr->m_value, option_ptr->m_type, option_ptr->m_name );
     }catch( std::exception &e )
     {
       throw runtime_error( e.what() );
@@ -252,7 +253,7 @@ namespace
 
 
 UserPreferences::UserPreferences( InterSpec *parent )
- : Wt::WObject( parent ),
+ : Wt::WObject(),
   m_interspec( parent ),
   m_options{}
 {
@@ -384,7 +385,7 @@ void UserPreferences::setPreferenceValueInternal( const std::string &name,
   const auto callback_pos = self->m_onBoolChangeSignals.find(name);
   if( (callback_pos != end(self->m_onBoolChangeSignals)) && callback_pos->second )
   {
-    Wt::Signals::signal<void(bool)> &signal = *callback_pos->second;
+    Wt::Signal<bool> &signal = *callback_pos->second;
     signal(value);
   }
 }//setPreferenceValueInternal(...)
@@ -408,7 +409,7 @@ void UserPreferences::setPreferenceValueInternal( const std::string &name,
   const auto callback_pos = self->m_onIntChangeSignals.find(name);
   if( (callback_pos != end(self->m_onIntChangeSignals)) && callback_pos->second )
   {
-    Wt::Signals::signal<void(int)> &signal = *callback_pos->second;
+    Wt::Signal<int> &signal = *callback_pos->second;
     signal(value);
   }
 }//void UserPreferences::setPreferenceValueInternal(int)
@@ -539,7 +540,7 @@ bool UserPreferences::setPreferenceValueWorker( const std::string &name,
 }//setPreferenceValueWorker(...)
 
 
-boost::any UserPreferences::preferenceValueAny( const std::string &name, InterSpec *viewer )
+Wt::cpp17::any UserPreferences::preferenceValueAny( const std::string &name, InterSpec *viewer )
 {
   // These first few things are just for debug
   //bool from_default = false;
@@ -553,7 +554,7 @@ boost::any UserPreferences::preferenceValueAny( const std::string &name, InterSp
   if( !viewer )
   {
     Dbo::ptr<UserOption> option = getDefaultUserPreference( name, InterSpecUser::DeviceType::Desktop );
-    boost::any value = option->value();
+    Wt::cpp17::any value = option->value();
     return value;
   }
   
@@ -583,7 +584,7 @@ boost::any UserPreferences::preferenceValueAny( const std::string &name, InterSp
   self->m_options[name] = def_value;
    
   return def_value->value();
-}//boost::any preferenceValue( const std::string &name, InterSpec *viewer );
+}//Wt::cpp17::any preferenceValue( const std::string &name, InterSpec *viewer );
 
 
 
@@ -596,8 +597,8 @@ void UserPreferences::associateWidget( const std::string &name,
   
   viewer->preferences()->addCallbackWhenChanged( name, cb, &WCheckBox::setChecked );
 
-  cb->checked().connect( boost::bind( &UserPreferences::setBoolPreferenceValue, name, true, viewer ) );
-  cb->unChecked().connect( boost::bind( &UserPreferences::setBoolPreferenceValue, name, false, viewer ) );
+  cb->checked().connect( [name, viewer](){ UserPreferences::setBoolPreferenceValue( name, true, viewer ); } );
+  cb->unChecked().connect( [name, viewer](){ UserPreferences::setBoolPreferenceValue( name, false, viewer ); } );
   
   /*
    //We need to emit the checked() and unChecked() signals so that any side-effect
@@ -610,8 +611,8 @@ void UserPreferences::associateWidget( const std::string &name,
    //  but it works for now.
    const string cbid = cb->id();
    
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const bool value = boost::any_cast<bool>(valueAny);
+  std::function<void(Wt::cpp17::any)> fcn = [=]( Wt::cpp17::any valueAny ){
+    const bool value = Wt::cpp17::any_cast<bool>(valueAny);
     const bool setCbChecked = reverseValue ? !value : value;
     
     // The below doesnt seem to find widgets in AuxWindows (and maybe pop-ups)
@@ -655,8 +656,8 @@ void UserPreferences::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   
   const string sbid = sb->id();
   
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const double value = boost::any_cast<double>(valueAny);
+  std::function<void(Wt::cpp17::any)> fcn = [=]( Wt::cpp17::any valueAny ){
+    const double value = Wt::cpp17::any_cast<double>(valueAny);
   
     auto w = wApp->domRoot()->findById(sbid);
     if( !w && wApp->domRoot2() )
@@ -691,8 +692,8 @@ void UserPreferences::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
   
   const string sbid = sb->id();
   
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const int value = boost::any_cast<int>(valueAny);
+  std::function<void(Wt::cpp17::any)> fcn = [=]( Wt::cpp17::any valueAny ){
+    const int value = Wt::cpp17::any_cast<int>(valueAny);
     
     auto w = wApp->domRoot()->findById(sbid);
     if( !w && wApp->domRoot2() )
@@ -737,28 +738,28 @@ void UserPreferences::restoreUserPrefsFromXml( const rapidxml::xml_node<char> *p
       {
         case UserOption::String:
         {
-          const string value = boost::any_cast<string>( option->value() );
+          const string value = Wt::cpp17::any_cast<string>( option->value() );
           setPreferenceValueInternal( option->m_name, value, viewer );
           break;
         }//case String
           
         case UserOption::Decimal:
         {
-          const double value = boost::any_cast<double>( option->value() );
+          const double value = Wt::cpp17::any_cast<double>( option->value() );
           setPreferenceValueInternal( option->m_name, value, viewer );
           break;
         }//case Decimal
           
         case UserOption::Integer:
         {
-          const int value = boost::any_cast<int>( option->value() );
+          const int value = Wt::cpp17::any_cast<int>( option->value() );
           setPreferenceValueInternal( option->m_name, value, viewer );
           break;
         }//case Integer
           
         case UserOption::Boolean:
         {
-          const bool value = boost::any_cast<bool>( option->value() );
+          const bool value = Wt::cpp17::any_cast<bool>( option->value() );
           setPreferenceValueInternal( option->m_name, value, viewer );
           break;
         }//case Boolean
@@ -824,7 +825,7 @@ rapidxml::xml_node<char> *UserPreferences::userOptionsToXml(
       break;
         
       case UserOption::Boolean:
-        valstr = (boost::any_cast<bool>(option->value()) ? "true" : "false");
+        valstr = (Wt::cpp17::any_cast<bool>(option->value()) ? "true" : "false");
       break;
     }//switch( m_type )
     

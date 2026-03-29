@@ -28,10 +28,10 @@
 #include <vector>
 #include <memory>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
-#include <Wt/WString>
-#include <Wt/WContainerWidget>
+#include <Wt/WString.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/ReactionGamma.h" //Because we cant forward declare ReactionGamma::Reaction
 
@@ -81,7 +81,7 @@ public:
   class SearchEnergy : public Wt::WContainerWidget
   {
   public:
-    SearchEnergy( Wt::WContainerWidget *parent = 0 );
+    SearchEnergy();
     virtual ~SearchEnergy(){}
   
     double energy() const;
@@ -118,8 +118,7 @@ public:
   
 public:
   IsotopeSearchByEnergy(  InterSpec *viewer,
-                          D3SpectrumDisplayDiv *chart,
-                          Wt::WContainerWidget *parent = 0 );
+                          D3SpectrumDisplayDiv *chart );
   
   virtual ~IsotopeSearchByEnergy();
   
@@ -373,7 +372,7 @@ protected:
   NativeFloatSpinBox *m_minBranchRatio;
   Wt::WContainerWidget *m_minHalfLiveDiv;
   Wt::WLineEdit *m_minHalfLife;
-  IsotopeSearchByEnergyModel *m_model;
+  std::shared_ptr<IsotopeSearchByEnergyModel> m_model;
   
   std::vector<NucSearchCategory> m_search_categories;
   

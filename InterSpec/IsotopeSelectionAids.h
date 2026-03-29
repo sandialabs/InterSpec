@@ -28,12 +28,12 @@
 #include <vector>
 #include <string>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
-#include <Wt/WModelIndex>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
-#include <Wt/WAbstractItemDelegate>
+#include <Wt/WModelIndex.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
+#include <Wt/WAbstractItemDelegate.h>
 
 #include "InterSpec/PeakDef.h"
 
@@ -118,7 +118,7 @@ public:
     Wt::WLineEdit *edit();
 
     void handleBlur();
-    void handleBlurWorker( boost::function<void()> worker );
+    void handleBlurWorker( std::function<void()> worker );
     
     static void replacerJs( std::string &js );
     static void nuclideNameMatcherJs( std::string &js );
@@ -131,11 +131,11 @@ public:
   };//class EditWidget
 
 public:
-  PhotopeakDelegate( DelegateType delegateType, bool closeOnBlur, Wt::WObject *parent = NULL );
+  PhotopeakDelegate( DelegateType delegateType, bool closeOnBlur );
   virtual ~PhotopeakDelegate();
-  virtual Wt::WWidget *update( Wt::WWidget *widget,
+  virtual std::unique_ptr<Wt::WWidget> update( Wt::WWidget *widget,
                                const Wt::WModelIndex &index,
-                               Wt::WFlags< Wt::ViewItemRenderFlag > flags );
+                               Wt::WFlags< Wt::ViewItemRenderFlag > flags ) override;
 
 protected:
 
@@ -146,9 +146,9 @@ protected:
   //  presses enter, than we do want to save the result
   virtual void doCloseEditor( Wt::WWidget *editor, bool save, bool isBlurr ) const;
 
-  boost::any editState( Wt::WWidget *editor ) const;
-  void setEditState( Wt::WWidget *editor, const boost::any &value ) const;
-  void setModelData( const boost::any &editState,
+  virtual Wt::cpp17::any editState( Wt::WWidget *editor, const Wt::WModelIndex &index ) const override;
+  virtual void setEditState( Wt::WWidget *editor, const Wt::WModelIndex &index, const Wt::cpp17::any &value ) const override;
+  void setModelData( const Wt::cpp17::any &editState,
                      Wt::WAbstractItemModel *model,
                      const Wt::WModelIndex &index ) const;
 
@@ -162,8 +162,7 @@ protected:
 class PeakIsotopeNameFilterModel : public  Wt::WAbstractItemModel
 {
 public:
-  PeakIsotopeNameFilterModel( const std::shared_ptr<const PeakDef> &peak,
-                    Wt::WObject *parent = 0 );
+  PeakIsotopeNameFilterModel( const std::shared_ptr<const PeakDef> &peak );
   virtual ~PeakIsotopeNameFilterModel();
 
   virtual Wt::WModelIndex index( int row, int column,
@@ -174,14 +173,14 @@ public:
   virtual int rowCount( const Wt::WModelIndex & parent = Wt::WModelIndex() ) const;
   virtual int columnCount( const Wt::WModelIndex & parent = Wt::WModelIndex() ) const;
 
-  virtual boost::any data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
 
   
   static Wt::WString displayText( const SandiaDecay::Nuclide *txt,
                                   double mean, PeakDef::SourceGammaType type,
-                                  int role );
+                                  Wt::ItemDataRole role );
   static Wt::WString displayText( const SandiaDecay::Element *el,
-                                  int role, double minHalfLife );
+                                  Wt::ItemDataRole role, double minHalfLife );
   
   //determineAndRemoveIsoLevel(...) looks for patterns such as 'Co60m', 'Co60meta',
   //  'Co 60 m', etc. to determine if the user is inputting a metts stable state.

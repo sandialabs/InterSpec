@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WContainerWidget>
-#include <Wt/WString>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WString.h>
 
 //Forward declarations
 namespace Wt
@@ -27,7 +27,7 @@ namespace ShieldingSourceFitCalc
 class ShieldingSourceFitPlot : public Wt::WContainerWidget
 {
 public:
-  ShieldingSourceFitPlot( Wt::WContainerWidget *parent = 0 );
+  ShieldingSourceFitPlot();
   virtual ~ShieldingSourceFitPlot();
 
   /** Set data from activity/shielding fit results. */

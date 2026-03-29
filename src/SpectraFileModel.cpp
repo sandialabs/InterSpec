@@ -41,35 +41,35 @@
 #pragma warning(disable:4244) // warning C4244: 'initializing' : conversion from 'std::streamoff' to 'size_t', possible loss of data
 #pragma warning(disable:4308) // warning C4308: negative integral constant converted to unsigned type
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 #include <boost/system/error_code.hpp>
 
-#include <Wt/WText>
-#include <Wt/Utils>
-#include <Wt/WLabel>
-#include <Wt/WAnchor>
-#include <Wt/WString>
-#include <Wt/Dbo/Dbo>
-#include <Wt/WServer>
-#include <Wt/WIconPair>
-#include <Wt/WTreeView>
-#include <Wt/WGroupBox>
-#include <Wt/WResource>
-#include <Wt/WDateTime>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WModelIndex>
-#include <Wt/WFileUpload>
-#include <Wt/WButtonGroup>
-#include <Wt/WRadioButton>
-#include <Wt/WApplication>
-#include <Wt/WProgressBar>
-#include <Wt/Http/Response>
-#include <Wt/WItemDelegate>
-#include <Wt/WBorderLayout>
-#include <Wt/Dbo/WtSqlTraits>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WText.h>
+#include <Wt/Utils.h>
+#include <Wt/WLabel.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WString.h>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/WServer.h>
+#include <Wt/WIconPair.h>
+#include <Wt/WTreeView.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WResource.h>
+#include <Wt/WDateTime.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/WFileUpload.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WProgressBar.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WItemDelegate.h>
+#include <Wt/WBorderLayout.h>
+#include <Wt/Dbo/WtSqlTraits.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "InterSpec/PeakDef.h"
 #include "SpecUtils/SpecFile.h"
@@ -101,13 +101,13 @@ namespace
 {
   bool is_close_to_int( double t )
   {
-    return (fabs(t-floor(t)) < 0.01 );
+    return (fabs(t-floor(t)) < 0.01);
   }
   
   void giveMessageToApp( const string msg,
                         const WarningWidget::WarningMsgLevel level )
   {
-    passMessage( msg, level );
+    passMessage( msg, level);
     if( wApp )  //wApp should aways be valid here
       wApp->triggerUpdate();
   }
@@ -120,7 +120,7 @@ namespace
   {
     WServer *server = WServer::instance();  //can this ever be NULL?
     if( server )
-      server->post( appId, boost::bind( &giveMessageToApp, msg, level ) );
+      server->post( appId, [msg, level](){ giveMessageToApp( msg, level); } );
   }
   
   const char * const error_saving_spectrum_msg
@@ -155,7 +155,7 @@ SpectraHeader::SpectraHeader()
 
 SpectraHeader::SpectraHeader( const std::vector<std::shared_ptr<const SpecUtils::Measurement>> &sample_measurements )
 {
-  init( sample_measurements );
+  init( sample_measurements);
 }
 
 
@@ -175,8 +175,8 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Mea
     contained_neutron_ |= m->contained_neutron();
     gamma_counts_ += m->gamma_count_sum();
     neutron_counts_ += m->neutron_counts_sum();
-    detector_names.push_back( m->detector_name() );
-    detector_numbers_.push_back( m->detector_number() );
+    detector_names.push_back( m->detector_name());
+    detector_numbers_.push_back( m->detector_number());
     spectra_type = m->source_type();
     if( m->derived_data_properties() )
       is_derived_data = true;
@@ -187,22 +187,22 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Mea
         remarks += ", ";
       string thisRemark = m->remarks()[i];
 
-      size_t pos = thisRemark.find( m->detector_name() );
+      size_t pos = thisRemark.find( m->detector_name());
       if( pos != string::npos )
-        thisRemark.erase( pos, m->detector_name().length() );
+        thisRemark.erase( pos, m->detector_name().length());
 
-      pos = thisRemark.find( "Speed" );
+      pos = thisRemark.find( "Speed");
       if( pos != string::npos )
       {
-        size_t end = thisRemark.find_first_not_of( "= \t", pos+5 );
-        thisRemark.erase( pos, end-pos );
+        size_t end = thisRemark.find_first_not_of( "= \t", pos+5);
+        thisRemark.erase( pos, end-pos);
       }//if( pos != string::npos )
 
-      pos = thisRemark.find( "Survey" );
+      pos = thisRemark.find( "Survey");
       if( pos != string::npos )
       {
-        size_t end = thisRemark.find_first_not_of( " \t=", pos+6 );
-        thisRemark.erase( pos, end-pos );
+        size_t end = thisRemark.find_first_not_of( " \t=", pos+6);
+        thisRemark.erase( pos, end-pos);
       }//if( pos != string::npos )
     }//for( const string &s : m->remarks )
 
@@ -210,10 +210,10 @@ void SpectraHeader::init( const std::vector<std::shared_ptr<const SpecUtils::Mea
     // we arent filling in a new different value
 
     char buffer[32];
-    snprintf( buffer, sizeof(buffer), "%.1f m/s", m->speed() );
+    snprintf( buffer, sizeof(buffer), "%.1f m/s", m->speed());
     speed_ = buffer;
     sample_number = m->sample_number();
-    start_time = WDateTime::fromPosixTime( to_ptime( m->start_time() ) );
+    start_time = WDateTime::fromTime_t( std::chrono::system_clock::to_time_t( m->start_time() ));
   }//for( std::shared_ptr<const SpecUtils::Measurement> &m : measurements )
 
   live_time /= measurements.size();
@@ -229,7 +229,7 @@ SpectraHeader::~SpectraHeader()
 SpectraFileHeader::SpectraFileHeader( bool keepInMemmory,
                                       InterSpec *viewer )
 {
-  assert( viewer );
+  assert( viewer);
   m_viewer = viewer;
   m_sql = viewer->sql();
   m_fileSystemLocation = "";
@@ -255,7 +255,7 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
     std::shared_ptr<SpecMeas> memObj;
     
     {
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       m_aboutToBeDeletedConnection.disconnect();
       memObj = m_weakMeasurmentPtr.lock();
       fileSystemLocation = m_fileSystemLocation;
@@ -263,9 +263,9 @@ SpectraFileHeader::~SpectraFileHeader() noexcept(true)
   
     if( fileSystemLocation.size() )
     {
-      const bool status = SpecUtils::remove_file( fileSystemLocation );;
+      const bool status = SpecUtils::remove_file( fileSystemLocation);;
       if( !status )
-        throw runtime_error( m_fileSystemLocation + " didn't exist to delete" );
+        throw runtime_error( m_fileSystemLocation + " didn't exist to delete");
     }// if we should delete the file
   }catch( ... )
   {
@@ -281,23 +281,23 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::resetFromDatabase(
   Dbo::ptr<UserFileInDbData> dbdata;
   
   {//begin interaction with Database
-    DataBaseUtils::DbTransaction transaction( *m_sql );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
     
     if( !info || info->filedata.size() < 1 )
       throw runtime_error( "SpectraFileHeader::resetFromDatabase(...):"
-                           "No UserFileInDbData for this UserFileInDb" );
+                           "No UserFileInDbData for this UserFileInDb");
   
     dbdata = m_sql->session()->find<UserFileInDbData>()
                              .where( "UserFileInDb_id = ?" )
-                             .bind( info->filedata.front().id() );
+                             .bind( info->filedata.front().id());
     transaction.commit();
   }//end interaction with Database
  
-  RecursiveLock lock( m_mutex );
+  RecursiveLock lock( m_mutex);
   std::shared_ptr<SpecMeas> memobj = dbdata->decodeSpectrum();
-  setMeasurmentInfo( memobj );
+  setMeasurmentInfo( memobj);
   
-  m_displayName = SpecUtils::filename( info->filename );
+  m_displayName = SpecUtils::filename( info->filename);
   m_uploadTime = info->uploadTime;
   m_modifiedSinceDecode = info->userHasModified;
   
@@ -319,7 +319,7 @@ bool SpectraFileHeader::candidateForSavingToDb() const
 
 bool SpectraFileHeader::shouldSaveToDb() const
 {
-  return (m_candidateForSavingToDb && m_user );
+  return (m_candidateForSavingToDb && m_user);
 }
 
 void SpectraFileHeader::setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry )
@@ -327,7 +327,7 @@ void SpectraFileHeader::setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry )
   Dbo::ptr<UserFileInDb> initialentry;
   
   {
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     if( m_fileDbEntry == entry )
       return;
     initialentry = m_fileDbEntry;
@@ -336,20 +336,20 @@ void SpectraFileHeader::setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry )
   
   if( initialentry )
   {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
     initialentry.remove();
     transaction.commit();
   }//if( m_fileDbEntry )
   
   if( entry && entry.id() < 0 )
   {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    m_sql->session()->add( entry );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
+    m_sql->session()->add( entry);
     transaction.commit();
   }//if( entry && entry.isTransient() )
   
   {
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     m_fileDbEntry = entry;
   }
 }//void setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry )
@@ -357,7 +357,7 @@ void SpectraFileHeader::setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry )
 
 void SpectraFileHeader::clearDbEntry()
 {
-  RecursiveLock lock( m_mutex );
+  RecursiveLock lock( m_mutex);
   m_fileDbEntry.reset();
 }
 
@@ -370,15 +370,15 @@ Wt::Dbo::ptr<UserFileInDb> SpectraFileHeader::dbEntry()
 
 void SpectraFileHeader::setBasicFileInDbInfo( UserFileInDb *info ) const
 {
-  RecursiveLock lock( m_mutex );
+  RecursiveLock lock( m_mutex);
   
   info->user = m_user;
   info->uuid = m_uuid;
   if( static_cast<int>(info->uuid.length()) > UserFileInDb::sm_maxUuidLength )
-    info->uuid = info->uuid.substr( 0, UserFileInDb::sm_maxUuidLength );
+    info->uuid = info->uuid.substr( 0, UserFileInDb::sm_maxUuidLength);
   info->sessionID       = m_appId;
   if( static_cast<int>(info->uuid.length()) > UserFileInDb::sm_maxSessionIdLength )
-    info->sessionID = info->sessionID.substr( 0, UserFileInDb::sm_maxSessionIdLength );
+    info->sessionID = info->sessionID.substr( 0, UserFileInDb::sm_maxSessionIdLength);
   
   info->filename      = m_displayName; //meas->filename();
   info->uploadTime    = m_uploadTime;
@@ -418,7 +418,7 @@ void SpectraFileHeader::saveToDatabaseFromTempFileWorker() const
     try
     {
       {
-        DataBaseUtils::DbTransaction transaction( *m_sql );
+        DataBaseUtils::DbTransaction transaction( *m_sql);
         m_fileDbEntry.reread();
         transaction.commit();
       }
@@ -444,7 +444,7 @@ void SpectraFileHeader::saveToDatabaseFromTempFileWorker() const
   
   
   if( !m_appId.empty() && msg.size() )
-    postMessageToApp( msg, level, m_appId );
+    postMessageToApp( msg, level, m_appId);
 }//saveToDatabaseFromTempFileWorker(...)
 
 
@@ -457,7 +457,7 @@ void SpectraFileHeader::saveToDatabaseWorker(
   
   try
   {
-    SpectraFileHeader::saveToDatabase( measurment, header );
+    SpectraFileHeader::saveToDatabase( measurment, header);
   }catch( FileToLargeForDbException &e )
   {
     msg = error_saving_spectrum_size_msg;
@@ -468,13 +468,13 @@ void SpectraFileHeader::saveToDatabaseWorker(
     try
     {
       {
-        DataBaseUtils::DbTransaction transaction( *(header->m_sql) );
+        DataBaseUtils::DbTransaction transaction( *(header->m_sql));
         
         header->m_fileDbEntry.reread();
         transaction.commit();
       }
     
-      SpectraFileHeader::saveToDatabase( measurment, header );
+      SpectraFileHeader::saveToDatabase( measurment, header);
       
       msg = error_saving_spectrum_stale_msg;
       level = WarningWidget::WarningMsgInfo;
@@ -493,7 +493,7 @@ void SpectraFileHeader::saveToDatabaseWorker(
   }//try / catch
   
   if( !header->m_appId.empty() && msg.size() )
-    postMessageToApp( msg, level, header->m_appId );
+    postMessageToApp( msg, level, header->m_appId);
 }//void saveToDatabaseWorker( std::shared_ptr<SpecMeas> measurment )
 
 
@@ -502,7 +502,7 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
   Dbo::ptr<UserFileInDb> fileDbEntry;
   
   {//begin locked section
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     if( !shouldSaveToDb() )
       return;
 
@@ -519,15 +519,15 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
   vector< Dbo::ptr<UserFileInDbData> > files;
   if( fileDbEntry )
   {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
     
     //grab a fresh copy of fileDbEntry to avoid any thread safety issues
     fileDbEntry = m_sql->session()->find<UserFileInDb>()
                                   .where( "id = ?" )
-                                  .bind( fileDbEntry.id() );
+                                  .bind( fileDbEntry.id());
     if( fileDbEntry )
       std::copy( fileDbEntry->filedata.begin(), fileDbEntry->filedata.end(),
-                  std::back_inserter(files) );
+                  std::back_inserter(files));
     
     transaction.commit();
   }//if( m_fileDbEntry )
@@ -535,38 +535,38 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
   if( files.size() )
   {
     data = files[0];
-    DataBaseUtils::DbTransaction transaction( *m_sql );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
     fileDbEntry.modify()->serializeTime = WDateTime::currentDateTime();
     transaction.commit();
   }else
   {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    UserFileInDb *info = new UserFileInDb();
-    setBasicFileInDbInfo( info );
-    fileDbEntry = m_sql->session()->add( info );
-    
-    UserFileInDbData *dataptr = new UserFileInDbData();
-    dataptr->fileInfo = fileDbEntry;
-    data = m_sql->session()->add( dataptr );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
+    auto infoOwned = std::make_unique<UserFileInDb>();
+    setBasicFileInDbInfo( infoOwned.get());
+    fileDbEntry = m_sql->session()->add( std::move(infoOwned));
+
+    auto dataptrOwned = std::make_unique<UserFileInDbData>();
+    dataptrOwned->fileInfo = fileDbEntry;
+    data = m_sql->session()->add( std::move(dataptrOwned));
     transaction.commit();
   }//if( m_fileDbEntry )
   
   
   try
   {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
     data = m_sql->session()->find<UserFileInDbData>()
                             .where( "UserFileInDb_id = ?" )
-                            .bind( data.id() );
+                            .bind( data.id());
     if( data )
       data.modify()->setFileData( m_fileSystemLocation,
-                               UserFileInDbData::sm_defaultSerializationFormat );
+                               UserFileInDbData::sm_defaultSerializationFormat);
     transaction.commit();
   }catch( FileToLargeForDbException &e )
   {
     try
     {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
+      DataBaseUtils::DbTransaction transaction( *m_sql);
       if( data )
         data.remove();
       if( fileDbEntry )
@@ -576,7 +576,7 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
     }catch(...){}
     
     {
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       m_fileDbEntry = fileDbEntry;
     }
     
@@ -586,7 +586,7 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
   {
     try
     {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
+      DataBaseUtils::DbTransaction transaction( *m_sql);
       if( data )
         data.remove();
       if( fileDbEntry )
@@ -596,17 +596,17 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
     }catch(...){}
     
     {
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       m_fileDbEntry = fileDbEntry;
     }
     
     cerr << "SpectraFileHeader::saveToDatabaseFromTempFile: caught: " << e.what() << endl;
-    throw runtime_error( e.what() );
+    throw runtime_error( e.what());
   }//try / catch
 
   
   {
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     m_fileDbEntry = fileDbEntry;
   }
   
@@ -619,27 +619,27 @@ void SpectraFileHeader::saveToDatabaseFromTempFile() const
 void SpectraFileHeader::saveToDatabase( std::shared_ptr<SpecMeas> meas,
                                         std::shared_ptr<SpectraFileHeader> header )
 {
-  header->saveToDatabase( meas );
+  header->saveToDatabase( meas);
 }
 
 void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) const
 {
   if( !input )
-    throw runtime_error( "\n\n\nSpectraFileHeader::saveToDatabase(): !input" );
+    throw runtime_error( "\n\n\nSpectraFileHeader::saveToDatabase(): !input");
   
   Wt::log("info") << "Saving '" << input->filename() << " to DB.";
   
   std::shared_ptr<const SpecMeas> meas;
  
   {
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     meas = m_weakMeasurmentPtr.lock();
   
     if( !m_weakMeasurmentPtr.expired() && meas != m_weakMeasurmentPtr.lock() )
-      throw runtime_error( "SpectraFileHeader::saveToDatabase(): meas != m_weakMeasurmentPtr" );
+      throw runtime_error( "SpectraFileHeader::saveToDatabase(): meas != m_weakMeasurmentPtr");
   
     if( !m_user || !m_user.session() )
-      throw runtime_error( "SpectraFileHeader::saveToDatabase(): !m_user || !m_user.session()" );
+      throw runtime_error( "SpectraFileHeader::saveToDatabase(): !m_user || !m_user.session()");
   }
   
   //In principle we should take a recursive mutex lock on meas for this entire function
@@ -647,7 +647,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   
 #if( PERFORM_DEVELOPER_CHECKS && SpecUtils_ENABLE_EQUALITY_CHECKS )
   {//begin code block to do check
-    string filepath = SpecUtils::temp_file_name("DevTestSaveToDb", InterSpecApp::tempDirectory() );
+    string filepath = SpecUtils::temp_file_name("DevTestSaveToDb", InterSpecApp::tempDirectory());
     const string filename = filepath + ".n42";
     
     bool written = false;
@@ -655,46 +655,46 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     {
 #ifdef _WIN32
       const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-      ofstream output( wfilename.c_str(), ios::binary | ios::out );
+      ofstream output( wfilename.c_str(), ios::binary | ios::out);
 #else
-      ofstream output( filename.c_str(), ios::binary | ios::out );
+      ofstream output( filename.c_str(), ios::binary | ios::out);
 #endif
       if( !output.is_open() )
       {
-        log_developer_error( __func__, "Failed to open temp output file" );
+        log_developer_error( __func__, "Failed to open temp output file");
       }else
       {
-        written = meas->write_2012_N42( output );
+        written = meas->write_2012_N42( output);
         if( !written )
-          log_developer_error( __func__, "Failed to write write_2012_N42" );
+          log_developer_error( __func__, "Failed to write write_2012_N42");
       }
     }
     
     if( written )
     {
       SpecMeas newmeas;
-      const bool read = newmeas.load_N42_file( filename );
+      const bool read = newmeas.load_N42_file( filename);
       
       if( !read )
       {
-        log_developer_error( __func__, "Failed to re-read in 2012 N42 file" );
+        log_developer_error( __func__, "Failed to re-read in 2012 N42 file");
       }else
       {
-        newmeas.set_filename( meas->filename() );
+        newmeas.set_filename( meas->filename());
         try
         {
-          SpecMeas::equalEnough( *meas, newmeas );
+          SpecMeas::equalEnough( *meas, newmeas);
           
           cout << "Saving SpecMeas to file and reading it back in worked" << endl;
         }catch( std::exception &e )
         {
           log_developer_error( __func__,
-                               ("Failed check comparing re-serialized SpecMeas object: " + string(e.what())).c_str() );
+                               ("Failed check comparing re-serialized SpecMeas object: " + string(e.what())).c_str());
         }
       }
     }//if( written )
     
-    SpecUtils::remove_file( filename );
+    SpecUtils::remove_file( filename);
   }//end code block to do check
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
   
@@ -703,7 +703,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   bool modifiedSinceDecode;
   
   {
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     modifiedSinceDecode = m_modifiedSinceDecode = meas->modified_since_decode();
     fileDbEntry = m_fileDbEntry;
   }
@@ -711,28 +711,27 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   
   if( !fileDbEntry || fileDbEntry.isTransient() )
   {
-    UserFileInDb *info = new UserFileInDb();
-    Dbo::ptr<UserFileInDb> info_dbo_ptr( info );
-    setBasicFileInDbInfo( info );  //takes lock of m_mutex during execution
-    UserFileInDbData *data = new UserFileInDbData();
-    Dbo::ptr<UserFileInDbData> data_dbo_ptr( data );
+    auto infoOwned = std::make_unique<UserFileInDb>();
+    setBasicFileInDbInfo( infoOwned.get());  //takes lock of m_mutex during execution
+    auto dataOwned = std::make_unique<UserFileInDbData>();
+    UserFileInDbData *data = dataOwned.get();
     
     try
     {
-      data->setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat );
+      data->setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat);
     }catch( FileToLargeForDbException &e )
     {
       throw e;
     }catch( std::exception &e )
     {
-      throw runtime_error( e.what() );
+      throw runtime_error( e.what());
     }//try / catch
     
     {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
-      fileDbEntry = m_sql->session()->add( info_dbo_ptr );
+      DataBaseUtils::DbTransaction transaction( *m_sql);
+      fileDbEntry = m_sql->session()->add( std::move(infoOwned));
       data->fileInfo = fileDbEntry;
-      Dbo::ptr<UserFileInDbData> dataPtr = m_sql->session()->add( data_dbo_ptr );
+      Dbo::ptr<UserFileInDbData> dataPtr = m_sql->session()->add( std::move(dataOwned));
       transaction.commit();
     }
   }else
@@ -740,7 +739,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     //TODO: couldnt the below query just be accomplished by `fileDbEntry.reread()`?
     try
     {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
+      DataBaseUtils::DbTransaction transaction( *m_sql);
       fileDbEntry = m_sql->session()->find<UserFileInDb>().where("id = ?").bind(fileDbEntry.id()).resultValue();
       //fileDbEntry.flush();
       transaction.commit();
@@ -749,10 +748,10 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
         throw runtime_error("no entry");
     }catch( Wt::Dbo::Exception &e )
     {
-      throw runtime_error( "SpectraFileHeader::saveToDatabase(), database error: " + string(e.what()) );
+      throw runtime_error( "SpectraFileHeader::saveToDatabase(), database error: " + string(e.what()));
     }catch( std::exception & )
     {
-      throw runtime_error( "SpectraFileHeader::saveToDatabase(): error re-reading UserFileInDb in DB" );
+      throw runtime_error( "SpectraFileHeader::saveToDatabase(): error re-reading UserFileInDb in DB");
     }//try / catch
     
     typedef Dbo::collection<Dbo::ptr<UserFileInDbData> > Files;
@@ -760,7 +759,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     Dbo::ptr<UserFileInDbData> data;
     
     {//begin interact with database
-      DataBaseUtils::DbTransaction transaction( *m_sql );
+      DataBaseUtils::DbTransaction transaction( *m_sql);
       for( Files::const_iterator i = fileDbEntry->filedata.begin();
           i != fileDbEntry->filedata.end(); ++i )
       {
@@ -776,7 +775,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
       bool modified;
       
       {
-        RecursiveLock lock( m_mutex );
+        RecursiveLock lock( m_mutex);
         modified = meas->modified();
       }
 
@@ -791,11 +790,11 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
       // Make a copy of the `UserFileInDbData`, so we can do the work of serializing things, while
       //  not holding a DB transaction
       UserFileInDbData newdata = *data;
-      newdata.setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat );
+      newdata.setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat);
       
       try
       {
-        DataBaseUtils::DbTransaction transaction( *m_sql );
+        DataBaseUtils::DbTransaction transaction( *m_sql);
         (*data.modify()) = newdata;
         fileDbEntry.modify()->userHasModified = modifiedSinceDecode;
         transaction.commit();
@@ -803,53 +802,51 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
       {
         try
         {
-          DataBaseUtils::DbTransaction transaction( *m_sql );
+          DataBaseUtils::DbTransaction transaction( *m_sql);
           fileDbEntry.remove();
           transaction.commit();
         }catch(...){}
         
         {
-          RecursiveLock lock( m_mutex );
+          RecursiveLock lock( m_mutex);
           m_fileDbEntry.reset();
         }
         
-        throw runtime_error( e.what() );
+        throw runtime_error( e.what());
       }//try / catch
     }else
     {
-      UserFileInDbData *dataptr = new UserFileInDbData();
-      dataptr->fileInfo = fileDbEntry;
+      auto dataptrOwned = std::make_unique<UserFileInDbData>();
+      dataptrOwned->fileInfo = fileDbEntry;
       try
       {
-        dataptr->setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat );
+        dataptrOwned->setFileData( meas, UserFileInDbData::sm_defaultSerializationFormat);
       }catch( std::exception &e )
       {
-        delete dataptr;
-        
         try
         {
-          DataBaseUtils::DbTransaction transaction( *m_sql );
+          DataBaseUtils::DbTransaction transaction( *m_sql);
           fileDbEntry.remove();
           transaction.commit();
         }catch(...){}
-        
+
         {
-          RecursiveLock lock( m_mutex );
+          RecursiveLock lock( m_mutex);
           m_fileDbEntry.reset();
         }
 
-        throw runtime_error( e.what() );
+        throw runtime_error( e.what());
       }//try / catch
-      
-      DataBaseUtils::DbTransaction transaction( *m_sql );
-      data = m_sql->session()->add( dataptr );
-      Wt::log("info") << "Adding '" << meas->filename() << "' spectrum to the database as id "
-                      << data.id() << " to parent " << m_fileDbEntry.id();
+
+      DataBaseUtils::DbTransaction transaction( *m_sql);
+      data = m_sql->session()->add( std::move(dataptrOwned));
+      Wt::log("info") << "Adding '" << meas->filename() << "' spectrum to the database"
+                      << " with parent id " << m_fileDbEntry.id();
       transaction.commit();
     }//if( !data )
     
     {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
+      DataBaseUtils::DbTransaction transaction( *m_sql);
       fileDbEntry.modify()->serializeTime = WDateTime::currentDateTime();
     
       //XXX - a Wt::Dbo::StaleObjectException may be thrown if modifying the same
@@ -860,13 +857,13 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
   }//if( m_fileDbEntry )
   
   {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
     m_sql->session()->flush();  //needed so fileDbEntry.id() will be come not -1
     transaction.commit();
   }
   
   {
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     m_fileDbEntry = fileDbEntry;
   }
   
@@ -875,7 +872,7 @@ void SpectraFileHeader::saveToDatabase( std::shared_ptr<const SpecMeas> input ) 
     std::shared_ptr<SpecMeas> ncmeas;
   
     {
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       ncmeas = m_weakMeasurmentPtr.lock();
       if( !!ncmeas )
         ncmeas->reset_modified();
@@ -889,30 +886,30 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::readFromDataBase() const
   long long int fileDbEntryID;
   
   {
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     if( !m_fileDbEntry )
       throw runtime_error( "SpectraFileHeader::readFromDataBase(): "
-                           "no database entry" );
+                           "no database entry");
     fileDbEntryID = m_fileDbEntry.id();
   }
 
   Wt::Dbo::ptr<UserFileInDb> fileDbEntry;
   
   {//Start interacting with DB
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    fileDbEntry = m_sql->session()->find<UserFileInDb>().where("id = ?").bind( fileDbEntryID );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
+    fileDbEntry = m_sql->session()->find<UserFileInDb>().where("id = ?").bind( fileDbEntryID);
     transaction.commit();
     
     if( !fileDbEntry )
       throw runtime_error( "SpectraFileHeader::readFromDataBase(): "
-                           "no database entry" );
+                           "no database entry");
   }//End interacting with DB
   
   
   Dbo::ptr<UserFileInDbData> data;
   
   {//begin interaction with db
-    DataBaseUtils::DbTransaction transaction( *m_sql );
+    DataBaseUtils::DbTransaction transaction( *m_sql);
   
     typedef Dbo::collection<Dbo::ptr<UserFileInDbData> > Files;
     if( fileDbEntry && fileDbEntry->filedata.size() )
@@ -930,7 +927,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::readFromDataBase() const
   
   if( meas )
   {
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     meas->reset_modified();
   }
   
@@ -971,7 +968,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::initFile(
   {
     std::shared_ptr<SpecMeas> info = std::make_shared<SpecMeas>();
 
-    const bool success = info->load_file( filename, parseType, orig_file_ending );
+    const bool success = info->load_file( filename, parseType, orig_file_ending);
 
     if( success )
     {
@@ -981,7 +978,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::initFile(
       //Currently we are not writing this info to the SpecFile, so this call is not actually needed.
       info->clearAllDbStateId(); //JIV
       
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       m_weakMeasurmentPtr = info;
       return info;
     }//if( success )
@@ -1001,7 +998,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::initFile(
 void SpectraFileHeader::errorSavingCallback( std::string fileLocation,
                                              std::shared_ptr<SpecMeas> meas ) const
 {
-  RecursiveLock lock( m_mutex );
+  RecursiveLock lock( m_mutex);
   m_fileSystemLocation = "";
   cerr << "SpectraFileHeader::errorSavingCallback(...)\n\tThere was an error saving file to location: "
        << fileLocation << " - will attempt to cache it instead, but this is "
@@ -1026,38 +1023,38 @@ void SpectraFileHeader::errorSavingCallback( std::string fileLocation,
 
 void SpectraFileHeader::saveToFileSystemImmediately( SpecMeas *meas ) const
 {
-  RecursiveLock lock( m_mutex );
+  RecursiveLock lock( m_mutex);
   m_modifiedSinceDecode = meas->modified_since_decode();
   
   try
   {
     if( !meas )
-      throw runtime_error( "You must pass in a SpecMeas object to save." );
+      throw runtime_error( "You must pass in a SpecMeas object to save.");
 
     std::shared_ptr<SpecMeas> from_mem = measurementIfInMemory();
     if( from_mem && from_mem.get() != meas )
-      throw runtime_error( "SpecMeas passed in is not the same as in memmorry" );
+      throw runtime_error( "SpecMeas passed in is not the same as in memmorry");
 
     if( !m_fileSystemLocation.empty() )
     {
-      SpecUtils::remove_file( m_fileSystemLocation );
+      SpecUtils::remove_file( m_fileSystemLocation);
       m_fileSystemLocation = "";
     }//if( !m_fileSystemLocation.empty() )
     
-    const string tempfile = SpecUtils::temp_file_name( m_displayName, InterSpecApp::tempDirectory() );
+    const string tempfile = SpecUtils::temp_file_name( m_displayName, InterSpecApp::tempDirectory());
     m_fileSystemLocation = tempfile;
     
     {
 #ifdef _WIN32
       const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(m_fileSystemLocation);
-      ofstream output( wfilename.c_str(), ios::binary | ios::out );
+      ofstream output( wfilename.c_str(), ios::binary | ios::out);
 #else
-      ofstream output( m_fileSystemLocation.c_str(), ios::binary | ios::out );
+      ofstream output( m_fileSystemLocation.c_str(), ios::binary | ios::out);
 #endif
       if( !output.is_open() )
-        throw runtime_error( "Couldnt open file for writing: " + m_fileSystemLocation );
+        throw runtime_error( "Couldnt open file for writing: " + m_fileSystemLocation);
       if( !meas->write_2012_N42( output ) )
-        throw runtime_error( "Failed to write 2012 N42 do to: " + m_fileSystemLocation );
+        throw runtime_error( "Failed to write 2012 N42 do to: " + m_fileSystemLocation);
     }
 
 //#if( USE_DB_TO_STORE_SPECTRA )
@@ -1084,13 +1081,13 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
     std::shared_ptr<SpecMeas> from_mem;
     
     {
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       from_mem = measurementIfInMemory();
     }
     
     
     if( (from_mem && measurment) && (from_mem!=measurment) )
-      throw runtime_error( "Measurement passed in is not same as currently in memory" );
+      throw runtime_error( "Measurement passed in is not same as currently in memory");
 
     if( !measurment && !from_mem )
       from_mem = parseFile();
@@ -1098,10 +1095,10 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
     info = from_mem ? from_mem : measurment;
 
     if( !info )
-      throw runtime_error( "There is no SpecUtils::SpecFile anywhere to save" );
+      throw runtime_error( "There is no SpecUtils::SpecFile anywhere to save");
 
     {
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       m_modifiedSinceDecode = info->modified_since_decode();
     }
     
@@ -1111,18 +1108,18 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
 
     try
     {
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       if( !m_fileSystemLocation.empty() )
-        SpecUtils::remove_file( m_fileSystemLocation );
+        SpecUtils::remove_file( m_fileSystemLocation);
       m_fileSystemLocation = "";
     }catch(...)
     {
     }
 
-    const string tempfile = SpecUtils::temp_file_name( m_displayName, InterSpecApp::tempDirectory() );
+    const string tempfile = SpecUtils::temp_file_name( m_displayName, InterSpecApp::tempDirectory());
 
     {
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       m_fileSystemLocation = tempfile;
       
       m_userStateDbIndexes = info->dbUserStateIndexes();
@@ -1130,17 +1127,17 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
     
     success = true;
     
-//    success = info->save_native_file( tempfile.generic_string() );
-    boost::function<void()> error_callback = boost::bind( &SpectraFileHeader::errorSavingCallback, this, tempfile, info );
-    SpecMeas::save2012N42FileInClientThread( info, tempfile, error_callback );
+//    success = info->save_native_file( tempfile.generic_string());
+    std::function<void()> error_callback = [this, tempfile, info](){ errorSavingCallback( tempfile, info); };
+    SpecMeas::save2012N42FileInClientThread( info, tempfile, error_callback);
     
     
 //#if( USE_DB_TO_STORE_SPECTRA )
 //    if( m_app && shouldSaveToDb() )
 //    {
-//      boost::function<void(void)> worker
-//                  = m_app->bind( boost::bind( &SpectraFileHeader::saveToDatabaseWorker, this, measurment ) );
-//      WServer::instance()->post( m_app->sessionId(), worker );
+//      std::function<void(void)> worker
+//                  = m_app->bind( boost::bind( &SpectraFileHeader::saveToDatabaseWorker, this, measurment ));
+//      WServer::instance()->post( m_app->sessionId(), worker);
 //    }else if( m_candidateForSavingToDb )
 //    {
 //      cerr << "\n\nSpectraFileHeader::saveToFileSystem(...)\n\tSerious error: m_app is invalid"
@@ -1162,7 +1159,7 @@ void SpectraFileHeader::saveToFileSystem( std::shared_ptr<SpecMeas> measurment )
          << " - am caching instead" << endl;
     if( info )
     {
-      RecursiveLock lock( m_mutex );
+      RecursiveLock lock( m_mutex);
       m_cachedMeasurement = info;
       m_weakMeasurmentPtr = info;
     }
@@ -1194,8 +1191,8 @@ struct SpectraHeaderMaker
     {
       const int sample = *iter;
       vector< std::shared_ptr<const SpecUtils::Measurement> > measurements
-                                      = m_info->sample_measurements( sample );
-      m_headerPos->init( measurements );
+                                      = m_info->sample_measurements( sample);
+      m_headerPos->init( measurements);
       ++m_headerPos;
     }//for( const int sample_number : sample_numbers )
   }//void operator()()
@@ -1204,27 +1201,27 @@ struct SpectraHeaderMaker
 
 void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
 {
-  RecursiveLock lock( m_mutex );
+  RecursiveLock lock( m_mutex);
 
   m_displayName = info->filename();
 
   m_uploadTime = WDateTime::currentDateTime();
   const set<int> sample_numbers = info->sample_numbers();
   const vector<int> &detector_numbers = info->detector_numbers();
-  m_numSamples = static_cast<int>( sample_numbers.size() );
+  m_numSamples = static_cast<int>( sample_numbers.size());
   m_isPassthrough = info->passthrough();
-  m_riidSummary = riidAnaSummary( info );
+  m_riidSummary = riidAnaSummary( info);
 
   m_totalLiveTime = info->gamma_live_time();
   m_totalRealTime = info->gamma_real_time();
   m_totalGammaCounts = info->gamma_count_sum();
   m_totalNeutronCounts = info->neutron_counts_sum();
-  m_numDetectors = static_cast<int>( info->detector_numbers().size() );
+  m_numDetectors = static_cast<int>( info->detector_numbers().size());
   m_hasNeutronDetector = !info->neutron_detector_names().empty();
   
   m_uuid = info->uuid();
   if( static_cast<int>(m_uuid.length()) > UserFileInDb::sm_maxUuidLength )
-    m_uuid = m_uuid.substr( 0, UserFileInDb::sm_maxUuidLength );
+    m_uuid = m_uuid.substr( 0, UserFileInDb::sm_maxUuidLength);
   
   m_modifiedSinceDecode = info->modified_since_decode();
   
@@ -1237,11 +1234,11 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
   {
     for( const int detector : detector_numbers )
     {
-      const std::shared_ptr<const SpecUtils::Measurement> meas = info->measurement( sample, detector );
+      const std::shared_ptr<const SpecUtils::Measurement> meas = info->measurement( sample, detector);
       //This next line is not necessary, as long as we properly initialized 'info'
       m_hasNeutronDetector |= (meas && meas->contained_neutron());
       if( meas && (sample == (*sample_numbers.begin())) )
-        m_spectrumTime = WDateTime::fromPosixTime( to_ptime( meas->start_time() ) );
+        m_spectrumTime = WDateTime::fromTime_t( std::chrono::system_clock::to_time_t( meas->start_time() ));
     }//for( const int detector : detector_numbers )
   }//for( const int sample : sample_numbers )
 
@@ -1253,23 +1250,23 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
     for( const int sample_number : sample_numbers )
     {
       vector< std::shared_ptr<const SpecUtils::Measurement> > measurements
-                                      = info->sample_measurements( sample_number );
-      m_samples.push_back( SpectraHeader( measurements ) );
+                                      = info->sample_measurements( sample_number);
+      m_samples.push_back( SpectraHeader( measurements ));
     }//for( const int sample_number : sample_numbers )
   }else
   {
     //We'll do this multithreaded
-//    const vector<int> sample_num_vec( sample_numbers.begin(), sample_numbers.end() );
-    vector<int> sample_num_vec( nsamplenums );
+//    const vector<int> sample_num_vec( sample_numbers.begin(), sample_numbers.end());
+    vector<int> sample_num_vec( nsamplenums);
     std::copy( sample_numbers.begin(), sample_numbers.end(),
-               sample_num_vec.begin() );
+               sample_num_vec.begin());
 
     const int nthread = SpecUtilsAsync::num_logical_cpu_cores();
     const size_t meas_per_thread = nsamplenums / nthread;
 
 //    vector<SpectraHeaderMaker> workers;
     SpecUtilsAsync::ThreadPool pool;
-    m_samples.resize( nsamplenums );
+    m_samples.resize( nsamplenums);
 
     for( size_t pos = 0; pos < nsamplenums; pos += meas_per_thread )
     {
@@ -1281,12 +1278,12 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
       else
         end = sample_num_vec.begin() + nsamplenums;
 
-      pool.post( SpectraHeaderMaker( info, start, end, m_samples.begin()+pos ) );
+      pool.post( SpectraHeaderMaker( info, start, end, m_samples.begin()+pos ));
 //      workers.push_back(
-//                SpectraHeaderMaker( info, start, end, m_samples.begin()+pos ) );
+//                SpectraHeaderMaker( info, start, end, m_samples.begin()+pos ));
     }//for( size_t pos = 0; pos < nstart; pos += meas_per_thread )
 
-//    SpecUtils::do_asyncronous_work( workers, false );
+//    SpecUtils::do_asyncronous_work( workers, false);
     pool.join();
   }//if( sample_numbers.size() < 250 ) / else
 
@@ -1298,33 +1295,31 @@ void SpectraFileHeader::setMeasurmentInfo( std::shared_ptr<SpecMeas> info )
 
   if( m_fileSystemLocation.size() )
   {
-    SpecUtils::remove_file( m_fileSystemLocation );
+    SpecUtils::remove_file( m_fileSystemLocation);
     m_fileSystemLocation = "";
   }//if( m_fileSystemLocation.size() )
 
 
   if( info )
   {
-    if( m_aboutToBeDeletedConnection.connected() )
+    if( m_aboutToBeDeletedConnection.isConnected() )
       m_aboutToBeDeletedConnection.disconnect();
     m_aboutToBeDeletedConnection
-             = info->aboutToBeDeleted().connect( boost::bind(
-                                &SpectraFileHeader::saveToFileSystemImmediately,
-                                                              this, info.get() ) );
+             = info->aboutToBeDeleted().connect( [this, rawInfo = info.get()](){ saveToFileSystemImmediately( rawInfo); } );
   }
-}//void setMeasurmentInfo( std::shared_ptr<SpecMeas> );
+}//void setMeasurmentInfo( std::shared_ptr<SpecMeas>);
 
 
 void SpectraFileHeader::setFile( const std::string &displayFileName, std::shared_ptr<SpecMeas> info )
 {
   if( !info )
-    throw runtime_error( "Not a valid spectrum file." );
+    throw runtime_error( "Not a valid spectrum file.");
   
-  RecursiveLock lock( m_mutex );
+  RecursiveLock lock( m_mutex);
     
   m_weakMeasurmentPtr = info;
   
-  info->set_filename( displayFileName );
+  info->set_filename( displayFileName);
   
   info->reset_modified();
   info->reset_modified_since_decode();
@@ -1337,8 +1332,8 @@ void SpectraFileHeader::setFile( const std::string &displayFileName, std::shared
   
   m_modifiedSinceDecode = false;
   
-  setMeasurmentInfo( info );
-}//void setFile( const std::string &displayFileName, std::shared_ptr<SpecMeas> meas );
+  setMeasurmentInfo( info);
+}//void setFile( const std::string &displayFileName, std::shared_ptr<SpecMeas> meas);
 
 
 std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
@@ -1350,24 +1345,24 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::setFile(
   try
   {
     if( !SpecUtils::is_file(filename) )
-      throw runtime_error( "" );
+      throw runtime_error( "");
   }catch(...)
   {
     Wt::log("error") << "Could not access the file '"
          << displayFileName << "', located at '" << filename << "'";
     
-    throw runtime_error( "Could not access file '" + displayFileName + "'" );
+    throw runtime_error( "Could not access file '" + displayFileName + "'");
   }//try / catch
   
   string orig_file_ending = SpecUtils::file_extension(displayFileName);
-  shared_ptr<SpecMeas> info = initFile( filename, parseType, orig_file_ending );
+  shared_ptr<SpecMeas> info = initFile( filename, parseType, orig_file_ending);
   if( !info )
   {
     throw std::runtime_error( "Could not open '" + displayFileName
-                             + "' with any of the available decoders, sorry." );
+                             + "' with any of the available decoders, sorry.");
   }
   
-  setFile( displayFileName, info );
+  setFile( displayFileName, info);
 
   return info;
 }//setFile(...)
@@ -1378,7 +1373,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::parseFile() const
   string filesystemlocation;
  
   {//begin mutex protected code
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     if( m_cachedMeasurement )
       return m_cachedMeasurement;
   
@@ -1395,7 +1390,7 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::parseFile() const
   bool success = false;
   auto info = std::make_shared<SpecMeas>();
 
-  success = info->load_N42_file( filesystemlocation );
+  success = info->load_N42_file( filesystemlocation);
 
   if( !success )
   {
@@ -1405,11 +1400,11 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::parseFile() const
         << "binary method - this is odd and probably an internal logic error, "
         << "please report this error";
             cout<<"Exit 3 LOCK parseFile"<<endl;
-    throw std::runtime_error( msg.str() );
+    throw std::runtime_error( msg.str());
   }//if( !success )  
   
   {//begin mutex protected code
-    RecursiveLock lock( m_mutex );
+    RecursiveLock lock( m_mutex);
     if( m_keepCache )
       m_cachedMeasurement = info;
     m_weakMeasurmentPtr = info;
@@ -1420,14 +1415,13 @@ std::shared_ptr<SpecMeas> SpectraFileHeader::parseFile() const
       // Restore mappings of sample numbers in this file, to UserState indexes in the database
       info->clearAllDbStateId(); //JIC, but not needed
       for( const auto &sn_index : m_userStateDbIndexes )
-        info->setDbStateId( sn_index.second, sn_index.first );
+        info->setDbStateId( sn_index.second, sn_index.first);
       m_userStateDbIndexes.clear();
       
-      if( m_aboutToBeDeletedConnection.connected() )
+      if( m_aboutToBeDeletedConnection.isConnected() )
         m_aboutToBeDeletedConnection.disconnect();
       m_aboutToBeDeletedConnection = info->aboutToBeDeleted().connect(
-                  boost::bind( &SpectraFileHeader::saveToFileSystemImmediately,
-                               this, info.get() ) );
+                  [this, rawInfo = info.get()](){ saveToFileSystemImmediately( rawInfo); } );
     }//if( info )
 
   }//end mutex protected code
@@ -1515,8 +1509,8 @@ const Wt::WDateTime &SpectraFileHeader::spectrumTime() const
 }
 
 
-SpectraFileModel::SpectraFileModel( Wt::WObject *parent )
-  : WAbstractItemModel( parent )
+SpectraFileModel::SpectraFileModel()
+  : WAbstractItemModel()
 {
   //m_spectra
 }
@@ -1533,17 +1527,17 @@ int SpectraFileModel::columnCount( const Wt::WModelIndex &parent ) const
   switch( indexLevel )
   {
     case FileHeaderLevel:
-      return static_cast<int>( NumDisplayFields );
+      return static_cast<int>( NumDisplayFields);
     case SampleLevel:
       return 0;
     case InvalidLevel:
-      return static_cast<int>( NumDisplayFields );
+      return static_cast<int>( NumDisplayFields);
   }//switch( level(index) )
 
   return 0;
 //  if( parent.internalPointer() )
 //    return 0;
-//  return static_cast<int>( NumDisplayFields );
+//  return static_cast<int>( NumDisplayFields);
 }//int columnCount(...)
 
 
@@ -1572,13 +1566,13 @@ int SpectraFileModel::rowCount( const Wt::WModelIndex &parent ) const
     case SampleLevel:
       return 0;
     case InvalidLevel:
-      return static_cast<int>( m_spectra.size() );
+      return static_cast<int>( m_spectra.size());
   }//switch( level(index) )
 
 //  if( parent.internalPointer() )
 //    return 0;
 //  if( !parent.isValid() )
-//    return static_cast<int>( m_spectra.size() );
+//    return static_cast<int>( m_spectra.size());
 //  const int row = parent.row();
 //  if( row >= static_cast<int>( m_spectra.size() ) )
 //    return 0;
@@ -1593,10 +1587,10 @@ int SpectraFileModel::rowCount( const Wt::WModelIndex &parent ) const
 }//int rowCount(...)
 
 
-boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
-                                   int role ) const
+Wt::cpp17::any SpectraFileModel::data( const Wt::WModelIndex &index,
+                                   Wt::ItemDataRole role ) const
 {
-  if( role != Wt::DisplayRole )
+  if( role != Wt::ItemDataRole::Display )
   {
 //    DisplayRole = 0,      //!< Role for textual representation
 //    DecorationRole = 1,   //!< Role for the url of an icon
@@ -1609,8 +1603,8 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
 //    LevelRole = 8,        //!< Level in aggregation, for header data.
 //    MarkerPenColorRole = 16,  //!< Marker pen color (for Chart::WCartesianChart)
 //    MarkerBrushColorRole = 17,//!< Marker brush color (for Chart::WCartesianChart)
-//    cerr << "\trole != Wt::DisplayRole: " << role << endl;
-    return boost::any();
+//    cerr << "\trole != Wt::ItemDataRole::Display: " << role << endl;
+    return Wt::cpp17::any();
   }//else cerr << "Asked for display role" << endl;
 
   const Level indexLevel = level(index);
@@ -1618,12 +1612,12 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
   if( indexLevel == InvalidLevel )
   {
     cerr << "\t!index.isValid()" << endl;
-    return boost::any();
+    return Wt::cpp17::any();
   }//if( indexLevel == InvalidLevel )
 
   const int row = index.row();
   stringstream strm;
-  strm.setf( ios::fixed );
+  strm.setf( ios::fixed);
 
   if( indexLevel == SampleLevel )
   {
@@ -1633,18 +1627,18 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
     if( !fileHeader )
       throw std::runtime_error( "SpectraFileModel::data(...): Serious logic"
                                 " error, valid WModelIndex should always have a"
-                                " valid internal pointer when it has a parent" );
+                                " valid internal pointer when it has a parent");
 
     //now make sure this is still a valid pointer to a parent
     bool found = false;
     for( size_t i = 0; !found && i < m_spectra.size(); ++i )
-      found = (found || (m_spectra[i].get()==fileHeader) );
+      found = (found || (m_spectra[i].get()==fileHeader));
 
     if( !found )
     {
       cerr << "SpectraFileModel::data(...):\n\tfailed to find spectra, returning empty answer"
            << endl;
-      return boost::any();
+      return Wt::cpp17::any();
     }//if( !found )
 
     if( row >= static_cast<int>( fileHeader->m_samples.size() ) )
@@ -1652,12 +1646,12 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
       cerr << "\trow >= static_cast<int>( fileHeader->m_samples.size() ) row="
            << row << ", fileHeader->m_samples.size()="
            << fileHeader->m_samples.size() << endl;
-      return boost::any();
+      return Wt::cpp17::any();
     }
 
     const SpectraHeader &spectra_header = fileHeader->m_samples[row];
 
-    const DisplayFields field = DisplayFields( index.column() );
+    const DisplayFields field = DisplayFields( index.column());
     
     switch( field )
     {
@@ -1711,7 +1705,7 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
       break;
         
       case kSpectrumTime:
-        strm << spectra_header.start_time.toString( DATE_TIME_FORMAT_STR );
+        strm << spectra_header.start_time.toString( DATE_TIME_FORMAT_STR);
       break;
         
       case NumDisplayFields:
@@ -1723,8 +1717,8 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
     //get rid of malicious stuff here
     
     if( !str.empty() )
-      return boost::any( WString(str) );
-    return boost::any();
+      return Wt::cpp17::any( WString(str));
+    return Wt::cpp17::any();
   }//if( index.parent().isValid() )
 
 //  indexLevel == FileHeaderLevel
@@ -1732,21 +1726,21 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
   if( row >= static_cast<int>( m_spectra.size() ) )
   {
     cerr << "\trow >= static_cast<int>( m_spectra.size() )" << endl;
-    return boost::any();
+    return Wt::cpp17::any();
   }
 
   std::shared_ptr<SpectraFileHeader> header = m_spectra[row];
   
-  const DisplayFields field = DisplayFields( index.column() );
+  const DisplayFields field = DisplayFields( index.column());
   
   switch( field )
   {
     case kDisplayName:
-      strm << header->displayName().toUTF8();  //return boost::any( header->displayName() );
+      strm << header->displayName().toUTF8();  //return Wt::cpp17::any( header->displayName() );
     break;
       
     case kUploadTime:
-      strm << header->uploadTime().toString( DATE_TIME_FORMAT_STR );
+      strm << header->uploadTime().toString( DATE_TIME_FORMAT_STR);
     break;
       
     case kRiidResult:
@@ -1793,7 +1787,7 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
     break;
       
     case kSpectrumTime:
-      strm << header->spectrumTime().toString( DATE_TIME_FORMAT_STR );
+      strm << header->spectrumTime().toString( DATE_TIME_FORMAT_STR);
     break;
       
     case NumDisplayFields:
@@ -1805,9 +1799,9 @@ boost::any SpectraFileModel::data( const Wt::WModelIndex &index,
   //get rid of malicious stuff here
   
   if( !str.empty() )
-    return boost::any( WString(str) );
-  return boost::any();
-}//boost::any SpectraFileModel::data(...)
+    return Wt::cpp17::any( WString(str));
+  return Wt::cpp17::any();
+}//Wt::cpp17::any SpectraFileModel::data(...)
 
 
 std::shared_ptr<const SpectraFileHeader> SpectraFileModel::fileHeader( int row ) const
@@ -1828,10 +1822,10 @@ std::shared_ptr<SpectraFileHeader> SpectraFileModel::fileHeader( int row )
 std::shared_ptr<SpectraFileHeader> SpectraFileModel::fileHeader(
                         std::shared_ptr<const SpecUtils::SpecFile> measinfo )
 {
-  WModelIndex in = index( measinfo );
+  WModelIndex in = index( measinfo);
   if( !in.isValid() )
     return std::shared_ptr<SpectraFileHeader>();
-  return fileHeader( in.row() );
+  return fileHeader( in.row());
 }//fileHeader(...)
 
 
@@ -1839,7 +1833,7 @@ std::shared_ptr<SpectraFileHeader> SpectraFileModel::fileHeader(
 Wt::Dbo::ptr<UserFileInDb> SpectraFileModel::dbEntry(
                         std::shared_ptr<const SpecUtils::SpecFile> measinfo )
 {
-  std::shared_ptr<SpectraFileHeader> head = fileHeader( measinfo );
+  std::shared_ptr<SpectraFileHeader> head = fileHeader( measinfo);
   if( !head )
     return Dbo::ptr<UserFileInDb>();
   return head->dbEntry();
@@ -1853,7 +1847,7 @@ Wt::WModelIndex SpectraFileModel::index( std::shared_ptr<SpectraFileHeader> head
   {
     const std::shared_ptr<SpectraFileHeader> &thisHeader = m_spectra[i];
     if( thisHeader == header )
-      return index( static_cast<int>(i), 0, WModelIndex() );
+      return index( static_cast<int>(i), 0, WModelIndex());
   }//for spectra
 
   return WModelIndex();
@@ -1874,7 +1868,7 @@ Wt::WModelIndex SpectraFileModel::index( std::shared_ptr<const SpecUtils::SpecFi
     meas = thisHeader->measurementIfInMemory();
 
     if( meas == measinfo )
-      return index( static_cast<int>(i), 0, WModelIndex() );
+      return index( static_cast<int>(i), 0, WModelIndex());
   }//for spectra
 
   return WModelIndex();
@@ -1885,11 +1879,11 @@ int SpectraFileModel::addRow( std::shared_ptr<SpectraFileHeader> fileInfo )
 {
   beginInsertRows( WModelIndex(), 
 	               static_cast<int>(m_spectra.size()), 
-				   static_cast<int>(m_spectra.size()) );
-  m_spectra.push_back( fileInfo );
+				   static_cast<int>(m_spectra.size()));
+  m_spectra.push_back( fileInfo);
   endInsertRows();
 
-  return static_cast<int>( m_spectra.size()-1 );
+  return static_cast<int>( m_spectra.size()-1);
 }//int addRow(...)
 
 
@@ -1938,19 +1932,19 @@ bool SpectraFileModel::removeRows( int row, int count, const WModelIndex &parent
   //  children become orphaned.
   for( int i = row; i <= lastRow; ++i )
   {
-    WModelIndex thisIndex = index( i, 0 );
+    WModelIndex thisIndex = index( i, 0);
     std::shared_ptr<SpectraFileHeader> thisHeader = m_spectra.at(i);
-    const int nsamples = rowCount( thisIndex );
+    const int nsamples = rowCount( thisIndex);
 
-    beginRemoveRows( thisIndex, 0, nsamples );
+    beginRemoveRows( thisIndex, 0, nsamples);
     thisHeader->m_numSamples = 0;
     thisHeader->m_samples.clear();
     endRemoveRows();
   }//for( int i = row; i <= lastRow; ++i )
 */
   //now actually remove this file
-  beginRemoveRows( parent, row, lastRow );
-  m_spectra.erase( startRow, startRow+count );
+  beginRemoveRows( parent, row, lastRow);
+  m_spectra.erase( startRow, startRow+count);
   endRemoveRows();
 
   return true;
@@ -1965,7 +1959,7 @@ WModelIndex SpectraFileModel::parent( const WModelIndex &index ) const
 
   for( size_t row = 0; row < m_spectra.size(); ++row )
     if( parentPtr == m_spectra[row].get() )
-      return createIndex( static_cast<int>(row), 0, (void *)NULL );
+      return createIndex( static_cast<int>(row), 0, (void *)NULL);
 
   cerr << "SpectraFileModel::parent(...):\n\tfailed to find parent for " << parentPtr << endl;
 
@@ -1980,7 +1974,7 @@ WModelIndex SpectraFileModel::index( int row, int column,
     return WModelIndex();
 
   if( !parent.isValid() )
-    return createIndex( row, column, (void *)0 );
+    return createIndex( row, column, (void *)0);
 
   if( column >= NumDisplayFields || (column<0) )
     return WModelIndex();
@@ -1989,48 +1983,48 @@ WModelIndex SpectraFileModel::index( int row, int column,
   if( parentRow >= static_cast<int>(m_spectra.size()) )
     return WModelIndex();
 
-  return createIndex( row, column, m_spectra[parentRow].get() );
+  return createIndex( row, column, m_spectra[parentRow].get());
 }//WModelIndex index(...)
 
 
-boost::any SpectraFileModel::headerData( int section, Orientation orientation, int role ) const
+Wt::cpp17::any SpectraFileModel::headerData( int section, Orientation orientation, Wt::ItemDataRole role ) const
 {
-  if( orientation == Horizontal && role==LevelRole )
+  if( orientation == Orientation::Horizontal && role == Wt::ItemDataRole::Level )
     return 0;
-  
-  if( role != Wt::DisplayRole  )
-    return boost::any();
 
-  if( orientation == Horizontal )
+  if( role != Wt::ItemDataRole::Display )
+    return Wt::cpp17::any();
+
+  if( orientation == Orientation::Horizontal )
   {
     // Make sure it's within the proper bounds
     if( section < 0 || section >= columnCount() )
-      return boost::any();
+      return Wt::cpp17::any();
 
-    const DisplayFields field = DisplayFields( section );
+    const DisplayFields field = DisplayFields( section);
     switch( field )
     {
-      case kDisplayName:     return boost::any( WString::tr("sfm-col-file") );
-      case kNumMeasurements: return boost::any( WString::tr("sfm-col-n-samples") );
-      case kLiveTime:        return boost::any( WString::tr("sfm-col-live-time") );
-      case kRealTime:        return boost::any( WString::tr("sfm-col-real-time") );
-      case kGammaCounts:     return boost::any( WString::tr("sfm-col-gam-count") );
-      case kNeutronCounts:   return boost::any( WString::tr("sfm-col-neut-count") );
-      case kSpectrumTime:    return boost::any( WString::tr("sfm-col-time-taken") );
-      case kNumDetectors:    return boost::any( WString::tr("sfm-col-n-dets") );
-      case kUploadTime:      return boost::any( WString::tr("sfm-col-loaded") );
-      case kRiidResult:      return boost::any( WString::tr("sfm-col-file-rid") );
+      case kDisplayName:     return Wt::cpp17::any( WString::tr("sfm-col-file"));
+      case kNumMeasurements: return Wt::cpp17::any( WString::tr("sfm-col-n-samples"));
+      case kLiveTime:        return Wt::cpp17::any( WString::tr("sfm-col-live-time"));
+      case kRealTime:        return Wt::cpp17::any( WString::tr("sfm-col-real-time"));
+      case kGammaCounts:     return Wt::cpp17::any( WString::tr("sfm-col-gam-count"));
+      case kNeutronCounts:   return Wt::cpp17::any( WString::tr("sfm-col-neut-count"));
+      case kSpectrumTime:    return Wt::cpp17::any( WString::tr("sfm-col-time-taken"));
+      case kNumDetectors:    return Wt::cpp17::any( WString::tr("sfm-col-n-dets"));
+      case kUploadTime:      return Wt::cpp17::any( WString::tr("sfm-col-loaded"));
+      case kRiidResult:      return Wt::cpp17::any( WString::tr("sfm-col-file-rid"));
       case NumDisplayFields: break;
     };//switch( field )
 
-  }else if( orientation == Vertical )
+  }else if( orientation == Orientation::Vertical )
   {
     if( section < 0 || section >= rowCount() )
-      return boost::any();
-    return boost::any();
+      return Wt::cpp17::any();
+    return Wt::cpp17::any();
   }//if( orientation == Horizontal ) / else Vertical
 
-  return boost::any();
+  return Wt::cpp17::any();
 }//any SpectraFileModel::headerData(...)
 
 
@@ -2044,7 +2038,7 @@ struct SortSpectraFileModel
   bool operator()( const std::shared_ptr<SpectraFileHeader> &lhs,
                    const std::shared_ptr<SpectraFileHeader> &rhs ) const
   {
-    if( m_order == AscendingOrder )
+    if( m_order == SortOrder::Ascending )
     {
       switch( m_column )
       {
@@ -2060,7 +2054,7 @@ struct SortSpectraFileModel
         case SpectraFileModel::kRiidResult:      return (lhs->riidSummary() < rhs->riidSummary());
         case SpectraFileModel::NumDisplayFields: return false;
       }//switch( m_column )
-    }//if( order == AscendingOrder )
+    }//if( order == SortOrder::Ascending )
 
     switch( m_column )
     {
@@ -2091,19 +2085,19 @@ void SpectraFileModel::sort( int column, SortOrder order )
   layoutAboutToBeChanged().emit();
   std::sort( m_spectra.begin(), m_spectra.end(),
              SortSpectraFileModel(SpectraFileModel::DisplayFields(column),
-                                  order) );
+                                  order));
   layoutChanged().emit();
 }//void sort(...);
 
 
 void *SpectraFileModel::toRawIndex( const Wt::WModelIndex &index ) const
 {
-  const Level indLevel = level( index );
+  const Level indLevel = level( index);
   if( indLevel == InvalidLevel )
     return NULL;
 
   const int row = index.row();
-  const DisplayFields column = DisplayFields( index.column() );
+  const DisplayFields column = DisplayFields( index.column());
 
 
   if( indLevel == FileHeaderLevel )
@@ -2168,45 +2162,45 @@ WModelIndex SpectraFileModel::fromRawIndex( void *rawIndex ) const
   {
     const SpectraFileHeader &header = *(m_spectra[row].get());
     if( rawIndex == &(header.m_displayName) )
-      result = index( row, kDisplayName );
+      result = index( row, kDisplayName);
     else if( rawIndex == &(header.m_uploadTime) )
-      result = index( row, kUploadTime );
+      result = index( row, kUploadTime);
     else if( rawIndex == &(header.m_riidSummary) )
-      result = index( row, kRiidResult );
+      result = index( row, kRiidResult);
     else if( rawIndex == &(header.m_numSamples) )
-      result = index( row, kNumMeasurements );
+      result = index( row, kNumMeasurements);
     else if( rawIndex == &(header.m_numDetectors) )
-      result = index( row, kNumDetectors );
+      result = index( row, kNumDetectors);
     else if( rawIndex == &(header.m_totalLiveTime) )
-      result = index( row, kLiveTime );
+      result = index( row, kLiveTime);
     else if( rawIndex == &(header.m_totalRealTime) )
-      result = index( row, kRealTime );
+      result = index( row, kRealTime);
     else if( rawIndex == &(header.m_totalGammaCounts) )
-      result = index( row, kGammaCounts );
+      result = index( row, kGammaCounts);
     else if( rawIndex == &(header.m_totalNeutronCounts) )
-      result = index( row, kNeutronCounts );
+      result = index( row, kNeutronCounts);
     else if( rawIndex == &(header.m_spectrumTime) )
-      result = index( row, kSpectrumTime );
+      result = index( row, kSpectrumTime);
   }//for( loop over file headers... )
 
   for( size_t i = 0; !result.isValid() && (i < m_spectra.size()); ++i )
   {
     const SpectraFileHeader &spectra = *(m_spectra[i].get());
-    const int nsamples = static_cast<int>( spectra.m_samples.size() );
+    const int nsamples = static_cast<int>( spectra.m_samples.size());
 
     for( int row = 0; !result.isValid() && (row < nsamples); ++row )
     {
       const SpectraHeader &header = spectra.m_samples[row];
       if( rawIndex == &(header.live_time) )
-        result = createIndex( row, kLiveTime,      (void *)&spectra );
+        result = createIndex( row, kLiveTime,      (void *)&spectra);
       else if( rawIndex == &(header.real_time) )
-        result = createIndex( row, kRealTime,      (void *)&spectra );
+        result = createIndex( row, kRealTime,      (void *)&spectra);
       else if( rawIndex == &(header.gamma_counts_) )
-        result = createIndex( row, kGammaCounts,   (void *)&spectra );
+        result = createIndex( row, kGammaCounts,   (void *)&spectra);
       else if( rawIndex == &(header.neutron_counts_) )
-        result = createIndex( row, kNeutronCounts, (void *)&spectra );
+        result = createIndex( row, kNeutronCounts, (void *)&spectra);
       else if( rawIndex == &(header.start_time) )
-        result = createIndex( row, kSpectrumTime,  (void *)&spectra );
+        result = createIndex( row, kSpectrumTime,  (void *)&spectra);
     }//for( int row = 0; row < nsamples; ++row )
   }//for( loop over sample-level items... )
 
@@ -2219,14 +2213,14 @@ WModelIndex SpectraFileModel::fromRawIndex( void *rawIndex ) const
   // Verify round-trip: toRawIndex(fromRawIndex(ptr)) should equal ptr
   if( result.isValid() )
   {
-    void *roundTrip = toRawIndex( result );
+    void *roundTrip = toRawIndex( result);
     if( roundTrip != rawIndex )
     {
       char errormsg[512];
       snprintf( errormsg, sizeof(errormsg),
                 "fromRawIndex/toRawIndex round-trip failed: input=%p, result index=(%d,%d), "
-                "round-trip=%p", rawIndex, result.row(), result.column(), roundTrip );
-      log_developer_error( __func__, errormsg );
+                "round-trip=%p", rawIndex, result.row(), result.column(), roundTrip);
+      log_developer_error( __func__, errormsg);
     }
   }
 #endif
@@ -2237,6 +2231,6 @@ WModelIndex SpectraFileModel::fromRawIndex( void *rawIndex ) const
 
 Wt::WFlags<Wt::ItemFlag> SpectraFileModel::flags( const WModelIndex &/*index*/ ) const
 {
-  return ItemIsSelectable;
+  return ItemFlag::Selectable;
 }
 

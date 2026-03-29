@@ -28,25 +28,25 @@
 #include <sstream>
 
 
-#include <Wt/WMenu>
-#include <Wt/WText>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WSpinBox>
-#include <Wt/WCheckBox>
-#include <Wt/WMenuItem>
-#include <Wt/WLineEdit>
-#include <Wt/WComboBox>
-#include <Wt/WTabWidget>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WButtonGroup>
-#include <Wt/WRadioButton>
-#include <Wt/WStackedWidget>
-#include <Wt/WDoubleValidator>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WRegExpValidator>
+#include <Wt/WMenu.h>
+#include <Wt/WText.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WSpinBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WDoubleValidator.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WRegExpValidator.h>
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -79,7 +79,7 @@
 #include "InterSpec/GammaInteractionCalc.h"
 
 #if( USE_QR_CODES )
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 
 #include "InterSpec/QrCode.h"
 #endif
@@ -112,14 +112,14 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
 
   rejectWhenEscapePressed( true );
 
-  m_tool = new DetectionLimitSimple( materialSuggestion, viewer, contents() );
-  m_tool->setHeight( WLength(100,WLength::Percentage) );
+  m_tool = contents()->addNew<DetectionLimitSimple>( materialSuggestion, viewer );
+  m_tool->setHeight( WLength(100,WLength::Unit::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "simple-mda-dialog" );
   
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = footer()->addNew<WPushButton>();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -180,9 +180,8 @@ DetectionLimitSimple *DetectionLimitSimpleWindow::tool()
 
 
 DetectionLimitSimple::DetectionLimitSimple( Wt::WSuggestionPopup *materialSuggestion,
-                                 InterSpec *specViewer,
-                                 Wt::WContainerWidget *parent )
- : WContainerWidget( parent ),
+                                 InterSpec *specViewer )
+ : WContainerWidget(),
   m_viewer( specViewer ),
   m_materialSuggest( materialSuggestion ),
   m_spectrum( nullptr ),
@@ -244,33 +243,42 @@ void DetectionLimitSimple::init()
  
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
-  WContainerWidget *resultsDiv = new WContainerWidget( this );
+  WContainerWidget *resultsDiv = addNew<WContainerWidget>();
   resultsDiv->addStyleClass( "ResultsArea" );
-  
-  m_chartErrMsgStack = new WStackedWidget( resultsDiv );
-  
-  WContainerWidget *errorDiv = new WContainerWidget();
-  errorDiv->addStyleClass( "ErrDisplay" );
-  m_chartErrMsgStack->addWidget( errorDiv );
-  
-  m_errMsg = new WText( WString::tr("dls-err-no-input"), errorDiv );
-  m_errMsg->addStyleClass( "ErrMsg" );
-  
-  m_fitFwhmBtn = new WPushButton( WString::tr("dls-fit-fwhm-btn"), errorDiv );
-  m_fitFwhmBtn->addStyleClass( "MdaFitFwhm LightButton" );
-  m_fitFwhmBtn->clicked().connect( this, &DetectionLimitSimple::handleFitFwhmRequested );
-  m_fitFwhmBtn->hide();
-  
-  
-  m_spectrum = new D3SpectrumDisplayDiv();
-  m_chartErrMsgStack->addWidget( m_spectrum );
+
+  {
+    auto stackOwner = std::make_unique<WStackedWidget>();
+    m_chartErrMsgStack = stackOwner.get();
+    resultsDiv->addWidget( std::move(stackOwner) );
+  }
+
+  {
+    auto errorDivOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *errorDiv = errorDivOwner.get();
+    errorDiv->addStyleClass( "ErrDisplay" );
+    m_errMsg = errorDiv->addNew<WText>( WString::tr("dls-err-no-input") );
+    m_errMsg->addStyleClass( "ErrMsg" );
+    m_fitFwhmBtn = errorDiv->addNew<WPushButton>( WString::tr("dls-fit-fwhm-btn") );
+    m_fitFwhmBtn->addStyleClass( "MdaFitFwhm LightButton" );
+    m_fitFwhmBtn->clicked().connect( this, &DetectionLimitSimple::handleFitFwhmRequested );
+    m_fitFwhmBtn->hide();
+    m_chartErrMsgStack->addWidget( std::move(errorDivOwner) );
+  }
+
+  {
+    auto spectrumOwner = std::make_unique<D3SpectrumDisplayDiv>();
+    m_spectrum = spectrumOwner.get();
+    m_chartErrMsgStack->addWidget( std::move(spectrumOwner) );
+  }
   m_spectrum->setXAxisTitle( "" );
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->setYAxisLog( false );
   m_spectrum->disableLegend();
   m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
   
-  m_spectrum->existingRoiEdgeDragUpdate().connect( boost::bind( &DetectionLimitSimple::roiDraggedCallback, this, _1, _2, _3, _4, _5, _6 ) );
+  m_spectrum->existingRoiEdgeDragUpdate().connect( [this]( double a, double b, double c, double d, const std::string &e, bool f ){
+    roiDraggedCallback( a, b, c, d, e, f );
+  } );
   
   m_chartErrMsgStack->setCurrentIndex( 0 );
   
@@ -280,17 +288,16 @@ void DetectionLimitSimple::init()
   //m_spectrum->setData( hist, true );
   //m_spectrum->setXAxisRange( lower_lower_energy - 0.5*dx, upper_upper_energy + 0.5*dx );
   
-  m_peakModel = new PeakModel( m_spectrum );
+  m_peakModel = m_spectrum->addChild( std::make_unique<PeakModel>() );
   m_peakModel->setNoSpecMeasBacking();
   m_spectrum->setPeakModel( m_peakModel );
-  
-  
-  m_resultTxt = new WText( "&nbsp;", resultsDiv );
+
+  m_resultTxt = resultsDiv->addNew<WText>( "&nbsp;" );
   m_resultTxt->addStyleClass( "ResultsTxtArea" );
   m_resultTxt->setInline( false );
-  
+
   // Now put the "more info..." link below here and to the right
-  m_moreInfoButton = new WPushButton( resultsDiv );
+  m_moreInfoButton = resultsDiv->addNew<WPushButton>();
   m_moreInfoButton->setText( WString::tr("dls-further-details-link") );
   m_moreInfoButton->setStyleClass( "LinkBtn MdaMoreInfoBtn" );
   m_moreInfoButton->clicked().connect( this, &DetectionLimitSimple::createMoreInfoWindow );
@@ -298,34 +305,32 @@ void DetectionLimitSimple::init()
   m_moreInfoButton->hide();
  
   
-  WContainerWidget *generalInput = new WContainerWidget( this );
+  WContainerWidget *generalInput = addNew<WContainerWidget>();
   generalInput->addStyleClass( "GeneralInput" );
-  
-  
-  WLabel *nucLabel = new WLabel( WString::tr("nuclide-label"), generalInput );
-  m_nuclideEdit = new WLineEdit( generalInput );
-  
+
+  WLabel *nucLabel = generalInput->addNew<WLabel>( WString::tr("nuclide-label") );
+  m_nuclideEdit = generalInput->addNew<WLineEdit>();
+
   m_nuclideEdit->setMinimumSize( 30, WLength::Auto );
   nucLabel->setBuddy( m_nuclideEdit );
-  
-  WLabel *ageLabel = new WLabel( WString::tr("age-label"), generalInput );
-  m_nuclideAgeEdit = new WLineEdit( generalInput );
+
+  WLabel *ageLabel = generalInput->addNew<WLabel>( WString::tr("age-label") );
+  m_nuclideAgeEdit = generalInput->addNew<WLineEdit>();
   m_nuclideAgeEdit->setMinimumSize( 30, WLength::Auto );
   m_nuclideAgeEdit->setPlaceholderText( WString::tr("N/A") );
   ageLabel->setBuddy( m_nuclideAgeEdit );
-  
+
   nucLabel->addStyleClass( "GridFirstCol GridFirstRow GridVertCenter" );
   m_nuclideEdit->addStyleClass( "GridSecondCol GridFirstRow" );
-  
-  WText *dummyThirdRow = new WText( "&nbsp;", generalInput );
+
+  WText *dummyThirdRow = generalInput->addNew<WText>( "&nbsp;" );
   dummyThirdRow->addStyleClass( "GridThirdCol GridFirstRow GridStretchCol SpacerColumn" );
-  
-  
+
   ageLabel->addStyleClass( "GridFirstCol GridSecondRow GridVertCenter" );
   m_nuclideAgeEdit->addStyleClass( "GridSecondCol GridSecondRow" );
-  
-  m_nucEnterController = new NuclideSourceEnterController( m_nuclideEdit, m_nuclideAgeEdit,
-                                                          nullptr, this );
+
+  m_nucEnterController = addChild( std::make_unique<NuclideSourceEnterController>( m_nuclideEdit,
+                                                          m_nuclideAgeEdit, nullptr ) );
   
   m_nucEnterController->changed().connect( this, &DetectionLimitSimple::handleNuclideChanged );
   
@@ -337,35 +342,34 @@ void DetectionLimitSimple::init()
                               WString::tr("dcw-tt-age-edit"), showToolTips );
   
   
-  WLabel *gammaLabel = new WLabel( WString::tr("dls-gamma-label"), generalInput );
+  WLabel *gammaLabel = generalInput->addNew<WLabel>( WString::tr("dls-gamma-label") );
   gammaLabel->addStyleClass( "GridFirstCol GridThirdRow GridVertCenter" );
-  
-  
-  m_photoPeakEnergy = new WComboBox( generalInput );
+
+  m_photoPeakEnergy = generalInput->addNew<WComboBox>();
   m_photoPeakEnergy->activated().connect( this, &DetectionLimitSimple::handleGammaChanged );
   m_photoPeakEnergy->addStyleClass( "GridSecondCol GridThirdRow GridVertCenter PhotopeakComboBox" );
-  
+
   // TODO: Add FWHM input.  Add text for DRF default, or the button to fit from data.
   //       when user changes this value - dont change ROI limits, just recalc deconv, and redraw either decon or Currie
-  
-  
+
+
   // Add Distance input
-  WLabel *distanceLabel = new WLabel( WString::tr("distance-label"), generalInput );
+  WLabel *distanceLabel = generalInput->addNew<WLabel>( WString::tr("distance-label") );
   distanceLabel->addStyleClass( "GridFourthCol GridFirstRow GridVertCenter" );
-  
+
   m_prevDistance = "100 cm";
-  m_distance = new WLineEdit( m_prevDistance, generalInput );
+  m_distance = generalInput->addNew<WLineEdit>( m_prevDistance );
   m_distance->addStyleClass( "GridFifthCol GridFirstRow GridStretchCol" );
   distanceLabel->setBuddy( m_distance );
-  
+
   m_distance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distance->setAttributeValue( "autocorrect", "off" );
   m_distance->setAttributeValue( "spellcheck", "off" );
 #endif
-  
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
-  validator->setFlags( Wt::MatchCaseInsensitive );
+
+  auto validator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+  validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_distance->setValidator( validator );
   //HelpSystem::attachToolTipOn( m_distance, WString::tr("ftw-tt-distance"), showToolTips );
   m_distance->changed().connect( this, &DetectionLimitSimple::handleDistanceChanged );
@@ -373,9 +377,9 @@ void DetectionLimitSimple::init()
   
   
   // Add confidence select
-  WLabel *confidenceLabel = new WLabel( WString::tr("dls-conf-level-label"), generalInput );
+  WLabel *confidenceLabel = generalInput->addNew<WLabel>( WString::tr("dls-conf-level-label") );
   confidenceLabel->addStyleClass( "GridFourthCol GridSecondRow GridVertCenter" );
-  m_confidenceLevel = new WComboBox( generalInput );
+  m_confidenceLevel = generalInput->addNew<WComboBox>();
   m_confidenceLevel->addStyleClass( "GridFifthCol GridSecondRow ClComboBox" );
   
   for( auto cl = ConfidenceLevel(0); cl < NumConfidenceLevel; cl = ConfidenceLevel(cl+1) )
@@ -403,62 +407,62 @@ void DetectionLimitSimple::init()
   
   // Add DRF select
   SpectraFileModel *specFileModel = m_viewer->fileManager()->model();
-  m_detectorDisplay = new DetectorDisplay( m_viewer, specFileModel, generalInput );
+  m_detectorDisplay = generalInput->addNew<DetectorDisplay>( m_viewer, specFileModel );
   m_detectorDisplay->addStyleClass( "DetectorDisplay GridFourthCol GridThirdRow GridSpanTwoCol GridSpanTwoRows GridVertCenter" );
-  m_viewer->detectorChanged().connect( boost::bind( &DetectionLimitSimple::handleDetectorChanged, this, boost::placeholders::_1 ) );
-  m_viewer->detectorModified().connect( boost::bind( &DetectionLimitSimple::handleDetectorChanged, this, boost::placeholders::_1 ) );
+  m_viewer->detectorChanged().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
+  m_viewer->detectorModified().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
   
   
   
-  WLabel *lowerRoiLabel = new WLabel( WString::tr("dls-roi-lower-label"), generalInput );
+  WLabel *lowerRoiLabel = generalInput->addNew<WLabel>( WString::tr("dls-roi-lower-label") );
   lowerRoiLabel->addStyleClass( "GridFirstCol GridFourthRow GridVertCenter" );
-  
-  m_lowerRoi = new NativeFloatSpinBox( generalInput );
+
+  m_lowerRoi = generalInput->addNew<NativeFloatSpinBox>();
   m_lowerRoi->setSpinnerHidden();
   lowerRoiLabel->setBuddy( m_lowerRoi );
   m_lowerRoi->addStyleClass( "GridSecondCol GridFourthRow" );
-  
-  WLabel *upperRoiLabel = new WLabel( WString::tr("dls-roi-upper-label"), generalInput );
+
+  WLabel *upperRoiLabel = generalInput->addNew<WLabel>( WString::tr("dls-roi-upper-label") );
   upperRoiLabel->addStyleClass( "GridFirstCol GridFifthRow GridVertCenter" );
-  
-  m_upperRoi = new NativeFloatSpinBox( generalInput );
+
+  m_upperRoi = generalInput->addNew<NativeFloatSpinBox>();
   m_upperRoi->setSpinnerHidden();
   upperRoiLabel->setBuddy( m_upperRoi );
   m_upperRoi->addStyleClass( "GridSecondCol GridFifthRow" );
-  
+
   m_lowerRoi->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedRoi );
   m_upperRoi->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedRoi );
-  
+
   // Num Side Channel
-  m_numSideChannelLabel = new WLabel( WString::tr("dls-num-side-channel-label"), generalInput );
+  m_numSideChannelLabel = generalInput->addNew<WLabel>( WString::tr("dls-num-side-channel-label") );
   m_numSideChannelLabel->addStyleClass( "GridFourthCol GridFifthRow GridVertCenter" );
-  m_numSideChannel = new WSpinBox( generalInput );
+  m_numSideChannel = generalInput->addNew<WSpinBox>();
   m_numSideChannel->addStyleClass( "GridFifthCol GridFifthRow" );
   m_numSideChannel->setRange( 1, 64 );
   m_numSideChannel->setValue( 4 );
   m_numSideChannelLabel->setBuddy( m_numSideChannel );
   m_numSideChannel->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedNumSideChannel );
-  
+
   m_numSideChannelLabel->setHiddenKeepsGeometry( true );
   m_numSideChannel->setHiddenKeepsGeometry( true );
-  
-  WLabel *fwhmLabel = new WLabel( WString::tr("dls-fwhm-label"), generalInput );
+
+  WLabel *fwhmLabel = generalInput->addNew<WLabel>( WString::tr("dls-fwhm-label") );
   fwhmLabel->addStyleClass( "GridFirstCol GridSixthRow" );
-  m_fwhm = new NativeFloatSpinBox( generalInput );
+  m_fwhm = generalInput->addNew<NativeFloatSpinBox>();
   m_fwhm->setRange( 0.05f, 250.0f );
   m_fwhm->setSpinnerHidden();
   m_fwhm->addStyleClass( "GridSecondCol GridSixthRow" );
   fwhmLabel->setBuddy( m_fwhm );
   m_fwhm->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedFwhm );
-  
-  m_fwhmSuggestTxt = new WText( generalInput );
+
+  m_fwhmSuggestTxt = generalInput->addNew<WText>();
   m_fwhmSuggestTxt->addStyleClass( "FwhmSuggest GridThirdCol GridSixthRow GridVertCenter GridSpanTwoCol" );
-  
-  m_addFwhmBtn = new WPushButton( WString::tr("dls-fit-fwhm-btn"), generalInput );
+
+  m_addFwhmBtn = generalInput->addNew<WPushButton>( WString::tr("dls-fit-fwhm-btn") );
   m_addFwhmBtn->clicked().connect( this, &DetectionLimitSimple::handleFitFwhmRequested );
   m_addFwhmBtn->addStyleClass( "MdaFitFwhm LightButton GridFifthCol GridSixthRow" );
-  
-  m_selectDetectorBtn = new WPushButton( WString::tr("dls-select-drf-btn"), generalInput );
+
+  m_selectDetectorBtn = generalInput->addNew<WPushButton>( WString::tr("dls-select-drf-btn") );
   m_selectDetectorBtn->clicked().connect( this, &DetectionLimitSimple::handleSelectDetectorRequested );
   m_selectDetectorBtn->addStyleClass( "MdaFitFwhm LightButton GridFifthCol GridSixthRow" );
   
@@ -466,41 +470,41 @@ void DetectionLimitSimple::init()
   m_addFwhmBtn->setHidden( !drf || !drf->isValid() || drf->hasResolutionInfo() );
   m_selectDetectorBtn->setHidden( drf && drf->isValid() );
   
-  m_isBackgroundDiv = new WContainerWidget( generalInput );
+  m_isBackgroundDiv = generalInput->addNew<WContainerWidget>();
   m_isBackgroundDiv->addStyleClass( "BackCbDiv GridFirstCol GridSeventhRow GridVertCenter GridSpanTwoCol" );
-  m_isBackgroundSpectrum = new WCheckBox( WString::tr("dls-is-background-spectrum-cb"), m_isBackgroundDiv );
+  m_isBackgroundSpectrum = m_isBackgroundDiv->addNew<WCheckBox>( WString::tr("dls-is-background-spectrum-cb") );
   m_isBackgroundSpectrum->checked().connect( this, &DetectionLimitSimple::handleNoSignalPresentChanged );
   m_isBackgroundSpectrum->unChecked().connect( this, &DetectionLimitSimple::handleNoSignalPresentChanged );
-  
+
   {
     m_isBackgroundSpectrum->setWordWrap( false );
-    WImage *img = new WImage( m_isBackgroundDiv );
+    WImage *img = m_isBackgroundDiv->addNew<WImage>();
     img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
     img->resize( 16, 16 );  //setStyleClass("Wt-icon");
-    img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
-    WString tt = WString::tr("dls-is-background-spectrum-tt");
+    img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
+    const WString tt = WString::tr("dls-is-background-spectrum-tt");
     HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
                                 HelpSystem::ToolTipPrefOverride::InstantAlways );
   }
-  
-  m_continuumPriorLabel = new WLabel( WString::tr("dls-decon-cont-norm-label"), generalInput );
+
+  m_continuumPriorLabel = generalInput->addNew<WLabel>( WString::tr("dls-decon-cont-norm-label") );
   m_continuumPriorLabel->addStyleClass( "GridFirstCol GridSeventhRow GridVertCenter" );
-  m_continuumPrior = new WComboBox( generalInput );
+  m_continuumPrior = generalInput->addNew<WComboBox>();
   m_continuumPrior->addItem( WString::tr("dls-cont-norm-unknown") );
   m_continuumPrior->addItem( WString::tr("dls-cont-norm-not-present") );
   m_continuumPrior->addItem( WString::tr("dls-cont-norm-fixed-by-sides") );
   m_continuumPrior->setCurrentIndex( 0 );
   m_continuumPrior->activated().connect( this, &DetectionLimitSimple::handleDeconPriorChange );
   m_continuumPrior->addStyleClass( "ContTypeCombo GridSecondCol GridSeventhRow" );
-  
+
   //m_continuumPriorLabel->setHiddenKeepsGeometry( true );
   //m_continuumPrior->setHiddenKeepsGeometry( true );
   m_continuumPriorLabel->hide();
   m_continuumPrior->hide();
-  
-  m_continuumTypeLabel = new WLabel( "Continuum Type:", generalInput );
+
+  m_continuumTypeLabel = generalInput->addNew<WLabel>( "Continuum Type:" );
   m_continuumTypeLabel->addStyleClass( "GridFourthCol GridSeventhRow GridVertCenter" );
-  m_continuumType = new WComboBox( generalInput );
+  m_continuumType = generalInput->addNew<WComboBox>();
   m_continuumType->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Linear) ) );
   m_continuumType->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Quadratic) ) );
   m_continuumType->setCurrentIndex( 0 );
@@ -508,23 +512,23 @@ void DetectionLimitSimple::init()
   m_continuumType->addStyleClass( "GridFifthCol GridSeventhRow" );
   m_continuumTypeLabel->setHidden( true );
   m_continuumType->setHidden( true );
-  
-  WContainerWidget *container = new WContainerWidget( generalInput );
+
+  WContainerWidget *container = generalInput->addNew<WContainerWidget>();
   container->addStyleClass( "MethodSelect GridFirstCol GridEighthRow GridSpanFiveCol" );
-  
-  WLabel *methodLabel = new WLabel( WString::tr("dls-calc-method"), container);
-  
-  m_methodGroup = new WButtonGroup( container );
-  WRadioButton *currieBtn = new Wt::WRadioButton( WString::tr("dls-currie-tab-title"), container );
-  m_methodGroup->addButton(currieBtn, static_cast<int>(MethodIds::Currie) );
-  
-  WRadioButton *deconvBtn = new Wt::WRadioButton( WString::tr("dls-decon-tab-title"), container);
-  m_methodGroup->addButton(deconvBtn, static_cast<int>(MethodIds::Deconvolution) );
+
+  container->addNew<WLabel>( WString::tr("dls-calc-method") );
+
+  m_methodGroup = container->addChild( std::make_unique<WButtonGroup>() );
+  WRadioButton *currieBtn = container->addNew<WRadioButton>( WString::tr("dls-currie-tab-title") );
+  m_methodGroup->addButton( currieBtn, static_cast<int>(MethodIds::Currie) );
+
+  WRadioButton *deconvBtn = container->addNew<WRadioButton>( WString::tr("dls-decon-tab-title") );
+  m_methodGroup->addButton( deconvBtn, static_cast<int>(MethodIds::Deconvolution) );
   m_methodGroup->setCheckedButton( currieBtn );
-  
+
   m_methodGroup->checkedChanged().connect( this, &DetectionLimitSimple::handleMethodChanged );
-  
-  m_methodDescription = new WText( WString::tr("dls-currie-desc"), generalInput );
+
+  m_methodDescription = generalInput->addNew<WText>( WString::tr("dls-currie-desc") );
   m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridNinthRow GridSpanFourCol" );
   
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
@@ -864,14 +868,14 @@ const SandiaDecay::Nuclide *DetectionLimitSimple::nuclide() const
 
 void DetectionLimitSimple::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  if( m_renderFlags.testFlag(RenderActions::UpdateDisplayedSpectrum) )
+  if( m_renderFlags.test(RenderActions::UpdateDisplayedSpectrum) )
   {
     shared_ptr<const SpecUtils::Measurement> hist 
                                 = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     m_spectrum->setData( hist, true );
   }//if( update displayed spectrum )
   
-  if( m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) )
+  if( m_renderFlags.test(RenderActions::AddUndoRedoStep) )
   {
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     
@@ -901,22 +905,22 @@ void DetectionLimitSimple::render( Wt::WFlags<Wt::RenderFlag> flags )
       
       m_stateUri = std::move(uri);
     }//if( undoRedo )
-  }//if( m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) )
+  }//if( m_renderFlags.test(RenderActions::AddUndoRedoStep) )
   
   
-  if( m_renderFlags.testFlag(RenderActions::UpdateLimit) )
+  if( m_renderFlags.test(RenderActions::UpdateLimit) )
     updateResult();
   
-  if( m_renderFlags.testFlag(RenderActions::UpdateSpectrumDecorations)
-     || m_renderFlags.testFlag(RenderActions::UpdateDisplayedSpectrum) 
-     || m_renderFlags.testFlag(RenderActions::UpdateLimit) )
+  if( m_renderFlags.test(RenderActions::UpdateSpectrumDecorations)
+     || m_renderFlags.test(RenderActions::UpdateDisplayedSpectrum) 
+     || m_renderFlags.test(RenderActions::UpdateLimit) )
   {
     // Needs to be called after updating results
     updateSpectrumDecorationsAndResultText();
   }//if( update displayed spectrum )
   
   
-  m_renderFlags = 0;
+  m_renderFlags = Wt::WFlags<RenderActions>();
   
   if( m_stateUri.empty() )
     m_stateUri = encodeStateToUrl();
@@ -1279,17 +1283,17 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       {
         const bool fixed_geom = drf->isFixedGeometry();
         
-        boost::function<double(float)> att_coef_fcn, air_atten_fcn;
+        std::function<double(float)> att_coef_fcn, air_atten_fcn;
         if( distance > 0.0 )
-          air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, distance );
+          air_atten_fcn = [distance]( float energy ){ return GammaInteractionCalc::transmission_coefficient_air( energy, distance ); };
         
         {//begin convert `br` to `gammas_per_bq`
           const float energy = m_currentCurrieInput->gamma_energy;
           const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
           : drf->efficiency(energy, distance);
           
-          const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
-          const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
+          const double shield_transmission = !att_coef_fcn ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
+          const double air_transmission = !air_atten_fcn ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
           const double counts_per_bq_into_4pi = br * shield_transmission * m_currentCurrieInput->spectrum->live_time();
           const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
           const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
@@ -1302,8 +1306,8 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         {
           const double &peak_energy = peak.energy;
           const double peak_br = peak.counts_4pi;
-          const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(peak_energy) );
-          const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(peak_energy) );
+          const double shield_transmission = !att_coef_fcn ? 1.0 : exp( -1.0*att_coef_fcn(peak_energy) );
+          const double air_transmission = !air_atten_fcn ? 1.0 : exp( -1.0*air_atten_fcn(peak_energy) );
           const double counts_per_bq_into_4pi = peak_br * shield_transmission * m_currentCurrieInput->spectrum->live_time();
           const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
           const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
@@ -1637,11 +1641,11 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   SimpleDialog *dialog = new SimpleDialog( WString(buffer).arg(WString::tr("dls-Info")) );
   dialog->addButton( WString::tr("Close") );
   
-  WContainerWidget *contents = new WContainerWidget( dialog->contents() );
+  WContainerWidget *contents = dialog->contents()->addNew<WContainerWidget>();
   contents->addStyleClass( "DeconvMoreInfo" );
-  
+
   // Create a chi2 chart
-  WContainerWidget *chi2Chart = new WContainerWidget( contents );
+  WContainerWidget *chi2Chart = contents->addNew<WContainerWidget>();
   chi2Chart->addStyleClass( "DeconChi2Chart" );
   
   chi2Chart->setJavaScriptMember( "chart", "new MdaChi2Chart(" + chi2Chart->jsRef() + ", {});");
@@ -1664,13 +1668,13 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   
   if( !m_currentNuclide )
   {
-    WText *txt = new WText( WString::tr("dls-assumed-br=1"), contents );
+    WText *txt = contents->addNew<WText>( WString::tr("dls-assumed-br=1") );
     txt->addStyleClass( "AssumedBrNote" );
     txt->setInline( false );
   }//if( !m_currentNuclide )
-  
+
   // Now create rows of text information.
-  WTable *table = new WTable( contents );
+  WTable *table = contents->addNew<WTable>();
   table->addStyleClass( "DeconvoMoreInfoTable" );
   
   const auto print_result = [table, use_curie, measurement, roi_start, roi_end]( 
@@ -1680,9 +1684,9 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     WString value = PhysicalUnits::printToBestActivityUnits( result.input.activity, 3, use_curie );
     
     WTableCell *cell = table->elementAt( table->rowCount(), 0 );
-    new WText( label, cell );
+    cell->addNew<WText>( label );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    new WText( value, cell );
+    cell->addNew<WText>( value );
     
     
     label = WString("{1} {2}").arg(typestr).arg( WString::tr( (is_best ? "Counts" : "dls-Limit") ) );
@@ -1696,16 +1700,16 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     //value = PhysicalUnits::printValueWithUncertainty(counts, sqrt(uncert), 5);
     
     cell = table->elementAt( table->rowCount(), 0 );
-    new WText( label, cell );
+    cell->addNew<WText>( label );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    new WText( value, cell );
+    cell->addNew<WText>( value );
     
     label = WString("{1} &chi;<sup>2</sup>").arg(typestr);
     value = SpecUtils::printCompact(result.chi2, 4);
     cell = table->elementAt( table->rowCount(), 0 );
-    new WText( label, cell );
+    cell->addNew<WText>( label );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    new WText( value, cell );
+    cell->addNew<WText>( value );
     
     if( !is_best )
       return;
@@ -1713,9 +1717,9 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     label = WString::tr("dls-DOF");
     value = std::to_string( result.num_degree_of_freedom );
     cell = table->elementAt( table->rowCount(), 0 );
-    new WText( label, cell );
+    cell->addNew<WText>( label );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    new WText( value, cell );
+    cell->addNew<WText>( value );
     
     if( result.fit_peaks.size() )
     {
@@ -1727,9 +1731,9 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
       value = SpecUtils::printCompact(cont_area, 5);
       
       cell = table->elementAt( table->rowCount(), 0 );
-      new WText( label, cell );
+      cell->addNew<WText>( label );
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      new WText( value, cell );
+      cell->addNew<WText>( value );
     }//if( result.overallBestResults->fit_peaks.size() )
   };//const auto print_result
   
@@ -1750,17 +1754,17 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   snprintf( buffer, sizeof(buffer), "%.2f keV", fwhm );
   value = WString::fromUTF8( buffer );
   WTableCell *cell = table->elementAt( table->rowCount(), 0 );
-  new WText( label, cell );
+  cell->addNew<WText>( label );
   cell = table->elementAt( table->rowCount() - 1, 1 );
-  new WText( value, cell );
+  cell->addNew<WText>( value );
   
   label = WString::tr("dls-ROI-range-label");
   snprintf( buffer, sizeof(buffer), "[%.2f, %.2f]", roi_start, roi_end );
   value = WString::fromUTF8( buffer );
   cell = table->elementAt( table->rowCount(), 0 );
-  new WText( label, cell );
+  cell->addNew<WText>( label );
   cell = table->elementAt( table->rowCount() - 1, 1 );
-  new WText( value, cell );
+  cell->addNew<WText>( value );
   
   label = WString::tr("dls-ROI-Channels-label");
   const size_t lower_chan = measurement->find_gamma_channel( roi_start + 0.0001 );
@@ -1768,23 +1772,23 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   const string channels_str = "[" + std::to_string(lower_chan) + ", " + std::to_string(upper_chan) + "]";
   value = WString::fromUTF8( channels_str );
   cell = table->elementAt( table->rowCount(), 0 );
-  new WText( label, cell );
+  cell->addNew<WText>( label );
   cell = table->elementAt( table->rowCount() - 1, 1 );
-  new WText( value, cell );
+  cell->addNew<WText>( value );
   
   label = WString::tr("dls-ROI-Width");
   snprintf( buffer, sizeof(buffer), "%.3f %s", (roi_end - roi_start)/fwhm, WString::tr("FWHM").toUTF8().c_str() );
   value = WString::fromUTF8( buffer );
   cell = table->elementAt( table->rowCount(), 0 );
-  new WText( label, cell );
+  cell->addNew<WText>( label );
   cell = table->elementAt( table->rowCount() - 1, 1 );
-  new WText( value, cell );
+  cell->addNew<WText>( value );
   
   shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
   
   // Add a blank row
   cell = table->elementAt( table->rowCount(), 0 );
-  new WText( "&nbsp;", TextFormat::XHTMLText, cell );
+  cell->addNew<WText>( "&nbsp;", TextFormat::XHTML );
   
   if( drf && drf->isValid() )
   {
@@ -1794,9 +1798,9 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     value = SpecUtils::printCompact( intrinsic_eff, 5 );
     
     cell = table->elementAt( table->rowCount(), 0 );
-    new WText( label, cell );
+    cell->addNew<WText>( label );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    new WText( value, cell );
+    cell->addNew<WText>( value );
     //addTooltipToRow( "The efficiency for a gamma hitting the detector face,"
     //                " to be detected in the full-energy peak." );
     
@@ -1808,9 +1812,9 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
       value = SpecUtils::printCompact( geom_eff, 5 );
       
       cell = table->elementAt( table->rowCount(), 0 );
-      new WText( label, cell );
+      cell->addNew<WText>( label );
       cell = table->elementAt( table->rowCount() - 1, 1 );
-      new WText( value, cell );
+      cell->addNew<WText>( value );
       //addTooltipToRow( "The fraction of the solid angle, the detector face takes up, at the specified distance." );
     }//if( distance >= 0.0 )
   }//if( drf )
@@ -1828,9 +1832,9 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     value = SpecUtils::printCompact( air_transmission, 5 );
     
     cell = table->elementAt( table->rowCount(), 0 );
-    new WText( label, cell );
+    cell->addNew<WText>( label );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    new WText( value, cell );
+    cell->addNew<WText>( value );
     //addTooltipToRow( "The fraction of gammas, at this energy, that will make it through the air (assuming sea level) without interacting." );
   }//if( air_atten )
   
@@ -1849,9 +1853,9 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     value = SpecUtils::printCompact( branch_ratio, 5 );
     
     cell = table->elementAt( table->rowCount(), 0 );
-    new WText( label, cell );
+    cell->addNew<WText>( label );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    new WText( value, cell );
+    cell->addNew<WText>( value );
     //addTooltipToRow( "The number of gamma rays emitted at this energy, from the radioactive"
     //                " source before any shielding, but accounting for nuclide age,"
     //                " per decay of the parent nuclide." );
@@ -1936,7 +1940,7 @@ void DetectionLimitSimple::createMoreInfoWindow()
   
   assert( m_moreInfoWindow );
   if( m_moreInfoWindow )
-    m_moreInfoWindow->finished().connect( boost::bind(&DetectionLimitSimple::handleMoreInfoWindowClose, this, m_moreInfoWindow) );
+    m_moreInfoWindow->finished().connect( [this, win=m_moreInfoWindow](){ handleMoreInfoWindowClose( win ); } );
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -1960,7 +1964,6 @@ void DetectionLimitSimple::createMoreInfoWindow()
 
 void DetectionLimitSimple::handleMoreInfoWindowClose( SimpleDialog *dialog )
 {
-  assert( dialog == dynamic_cast<SimpleDialog *>( WObject::sender() ) );
   assert( dialog == m_moreInfoWindow );
   SimpleDialog *current = m_moreInfoWindow;
   m_moreInfoWindow = nullptr;
@@ -2228,12 +2231,12 @@ void DetectionLimitSimple::updateResult()
           const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
                                             : drf->efficiency(energy, distance);
           
-          boost::function<double(float)> att_coef_fcn, air_atten_fcn;
+          std::function<double(float)> att_coef_fcn, air_atten_fcn;
           if( distance > 0.0 )
-            air_atten_fcn = boost::bind( &GammaInteractionCalc::transmission_coefficient_air, _1, distance );
+            air_atten_fcn = [distance]( float e ){ return GammaInteractionCalc::transmission_coefficient_air( e, distance ); };
           
-          const double shield_transmission = att_coef_fcn.empty() ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
-          const double air_transmission = air_atten_fcn.empty() ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
+          const double shield_transmission = !att_coef_fcn ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
+          const double air_transmission = !air_atten_fcn ? 1.0 : exp( -1.0*air_atten_fcn(energy) );
           const double counts_per_bq_into_4pi = src_gammas_per_bq * shield_transmission;
           const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
           const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
@@ -2322,7 +2325,7 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
   if( !db )
     throw std::logic_error( "No SandiaDecayDataBase" );
   
-  const bool undoWasSet = m_renderFlags.testFlag(RenderActions::AddUndoRedoStep);
+  const bool undoWasSet = m_renderFlags.test(RenderActions::AddUndoRedoStep);
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
  
   string host_str, path_str, query_str, fragment_str;

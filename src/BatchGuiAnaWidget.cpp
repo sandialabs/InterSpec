@@ -36,28 +36,28 @@
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 
-#include <Wt/WText>
-#include <Wt/WMenu>
-#include <Wt/Utils>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WGroupBox>
-#include <Wt/WResource>
-#include <Wt/WSvgImage>
-#include <Wt/WIOService>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WStackedWidget>
-#include <Wt/WFileDropWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/WRegExpValidator>
+#include <Wt/WText.h>
+#include <Wt/WMenu.h>
+#include <Wt/Utils.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WResource.h>
+#include <Wt/WSvgImage.h>
+#include <Wt/WIOService.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WFileDropWidget.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
 
 #include <nlohmann/json.hpp>
 
@@ -169,9 +169,9 @@ namespace
 
 
 
-BatchGuiAnaWidget::BatchGuiAnaWidget( Wt::WContainerWidget *parent )
-  : Wt::WContainerWidget( parent ),
-  m_canDoAnalysis( this )
+BatchGuiAnaWidget::BatchGuiAnaWidget()
+  : Wt::WContainerWidget(),
+  m_canDoAnalysis()
 {
   addStyleClass( "BatchGuiAnaWidget" );
 
@@ -188,15 +188,15 @@ Wt::Signal<bool,Wt::WString> &BatchGuiAnaWidget::canDoAnalysisSignal()
   return m_canDoAnalysis;
 }
 
-BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : BatchGuiAnaWidget( parent )
+BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
 {
   addStyleClass( "BatchGuiPeakFitWidget" );
 
-  m_exemplar_input = new WGroupBox( WString::tr( "bgw-exemplar-grp-title" ), this );
+  m_exemplar_input = addNew<WGroupBox>( WString::tr( "bgw-exemplar-grp-title" ) );
   m_exemplar_input->addStyleClass( "ExemplarToUseOpt" );
-  m_use_current_foreground = new WCheckBox( WString::tr( "bgw-exemplar-use-current-fore" ), m_exemplar_input );
+  m_use_current_foreground = m_exemplar_input->addNew<WCheckBox>( WString::tr( "bgw-exemplar-use-current-fore" ) );
   m_use_current_foreground->addStyleClass( "CbNoLineBreak" );
-  m_exemplar_file_drop = new WContainerWidget( m_exemplar_input );
+  m_exemplar_file_drop = m_exemplar_input->addNew<WContainerWidget>();
   m_exemplar_file_drop->addStyleClass( "ExemplarFileDrop" );
   const bool have_fore = !!InterSpec::instance()->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   m_use_current_foreground->setChecked( have_fore );
@@ -204,115 +204,115 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
   m_use_current_foreground->checked().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
   m_use_current_foreground->unChecked().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
 
-  m_exemplar_file_resource = new FileDragUploadResource( m_exemplar_file_drop );
+  m_exemplar_file_resource = m_exemplar_file_drop->addChild( std::make_unique<FileDragUploadResource>() );
   m_exemplar_file_drop->doJavaScript( "BatchInputDropUploadSetup(" + m_exemplar_file_drop->jsRef() +
                                       ", "
                                       " '" +
                                       m_exemplar_file_resource->url() + "');" );
   doJavaScript( "setupOnDragEnterDom(['" + m_exemplar_file_drop->id() + "']);" );
   m_exemplar_file_resource->fileDrop().connect(
-    boost::bind( &BatchGuiPeakFitWidget::exemplarUploaded, this, boost::placeholders::_1, boost::placeholders::_2 ) );
+    [this]( const std::string &a, const std::string &b ){ exemplarUploaded( a, b ); } );
 
 
   const bool have_back = !!InterSpec::instance()->displayedHistogram( SpecUtils::SpectrumType::Background );
-  m_background_input = new WGroupBox( WString::tr( "bgw-back-grp-title" ), this );
+  m_background_input = addNew<WGroupBox>( WString::tr( "bgw-back-grp-title" ) );
   m_background_input->addStyleClass( "ExemplarToUseOpt" );
 
-  m_use_current_background = new WCheckBox( WString::tr( "bgw-back-use-current" ), m_background_input );
+  m_use_current_background = m_background_input->addNew<WCheckBox>( WString::tr( "bgw-back-use-current" ) );
   m_use_current_background->addStyleClass( "CbNoLineBreak" );
   m_use_current_background->setChecked( have_back );
   m_use_current_background->setHidden( !have_back );
   m_use_current_background->checked().connect( this, &BatchGuiPeakFitWidget::useCurrentBackgroundChanged );
   m_use_current_background->unChecked().connect( this, &BatchGuiPeakFitWidget::useCurrentBackgroundChanged );
 
-  m_no_background = new WCheckBox( WString::tr( "bgw-back-none" ), m_background_input );
+  m_no_background = m_background_input->addNew<WCheckBox>( WString::tr( "bgw-back-none" ) );
   m_no_background->addStyleClass( "CbNoLineBreak" );
   m_no_background->setChecked( !have_back );
   m_no_background->checked().connect( this, &BatchGuiPeakFitWidget::useNoBackgroundChanged );
   m_no_background->unChecked().connect( this, &BatchGuiPeakFitWidget::useNoBackgroundChanged );
 
-  m_background_file_drop = new WContainerWidget( m_background_input );
+  m_background_file_drop = m_background_input->addNew<WContainerWidget>();
   m_background_file_drop->addStyleClass( "ExemplarFileDrop" );
   m_background_file_drop->setHidden( true );
 
-  m_background_file_resource = new FileDragUploadResource( m_background_file_drop );
+  m_background_file_resource = m_background_file_drop->addChild( std::make_unique<FileDragUploadResource>() );
   m_background_file_drop->doJavaScript( "BatchInputDropUploadSetup(" + m_background_file_drop->jsRef() +
                                         ", "
                                         " '" +
                                         m_background_file_resource->url() + "');" );
   doJavaScript( "setupOnDragEnterDom(['" + m_background_file_drop->id() + "']);" );
   m_background_file_resource->fileDrop().connect(
-    boost::bind( &BatchGuiPeakFitWidget::backgroundUploaded, this, boost::placeholders::_1, boost::placeholders::_2 ) );
+    [this]( const std::string &a, const std::string &b ){ backgroundUploaded( a, b ); } );
 
 
-  m_peak_options_container = new Wt::WContainerWidget( this );
+  m_peak_options_container = addNew<Wt::WContainerWidget>();
   m_peak_options_container->addStyleClass( "PeakFitOptionsContainer" );
 
 
-  WContainerWidget *boolOptions = new Wt::WContainerWidget( m_peak_options_container );
+  WContainerWidget *boolOptions = m_peak_options_container->addNew<Wt::WContainerWidget>();
   boolOptions->addStyleClass( "PeakFitBoolOptionsContainer" );
 
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
 
   // Create checkbox options
-  m_fit_all_peaks = new Wt::WCheckBox( WString::tr( "bgw-fit-all-peaks" ), boolOptions );
+  m_fit_all_peaks = boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-fit-all-peaks" ) );
   m_fit_all_peaks->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_fit_all_peaks, WString::tr( "bgw-fit-all-peaks-tt" ), showToolTips );
 
-  m_refit_energy_cal = new Wt::WCheckBox( WString::tr( "bgw-refit-energy-cal" ), boolOptions );
+  m_refit_energy_cal = boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-refit-energy-cal" ) );
   m_refit_energy_cal->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_refit_energy_cal, WString::tr( "bgw-refit-energy-cal-tt" ), showToolTips );
 
-  m_use_exemplar_energy_cal = new Wt::WCheckBox( WString::tr( "bgw-use-exemplar-energy-cal" ), boolOptions );
+  m_use_exemplar_energy_cal = boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-use-exemplar-energy-cal" ) );
   m_use_exemplar_energy_cal->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn(
     m_use_exemplar_energy_cal, WString::tr( "bgw-use-exemplar-energy-cal-tt" ), showToolTips );
 
-  m_write_n42_with_results = new Wt::WCheckBox( WString::tr( "bgw-write-n42-with-results" ), boolOptions );
+  m_write_n42_with_results = boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-write-n42-with-results" ) );
   m_write_n42_with_results->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_write_n42_with_results, WString::tr( "bgw-write-n42-with-results-tt" ), showToolTips );
   m_write_n42_with_results->setChecked( true );
 
-  m_show_nonfit_peaks = new Wt::WCheckBox( WString::tr( "bgw-show-nonfit-peaks" ), boolOptions );
+  m_show_nonfit_peaks = boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-show-nonfit-peaks" ) );
   m_show_nonfit_peaks->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_show_nonfit_peaks, WString::tr( "bgw-show-nonfit-peaks-tt" ), showToolTips );
 
-  m_overwrite_output_files = new Wt::WCheckBox( WString::tr( "bgw-overwrite-output-files" ), boolOptions );
+  m_overwrite_output_files = boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-overwrite-output-files" ) );
   m_overwrite_output_files->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_overwrite_output_files, WString::tr( "bgw-overwrite-output-files-tt" ), showToolTips );
 
-  m_create_json_output = new Wt::WCheckBox( WString::tr( "bgw-create-json-output" ), boolOptions );
+  m_create_json_output = boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-create-json-output" ) );
   m_create_json_output->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_create_json_output, WString::tr( "bgw-create-json-output-tt" ), showToolTips );
 
-  m_concatenate_to_n42 = new Wt::WCheckBox( WString::tr( "bgw-concatenate-to-n42" ), boolOptions );
+  m_concatenate_to_n42 = boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-concatenate-to-n42" ) );
   m_concatenate_to_n42->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_concatenate_to_n42, WString::tr( "bgw-concatenate-to-n42-tt" ), showToolTips );
 
   m_use_existing_background_peaks =
-    new Wt::WCheckBox( WString::tr( "bgw-use-existing-background-peaks" ), boolOptions );
+    boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-use-existing-background-peaks" ) );
   m_use_existing_background_peaks->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn(
     m_use_existing_background_peaks, WString::tr( "bgw-use-existing-background-peaks-tt" ), showToolTips );
 
   m_use_exemplar_energy_cal_for_background =
-    new Wt::WCheckBox( WString::tr( "bgw-use-exemplar-energy-cal-for-background" ), boolOptions );
+    boolOptions->addNew<Wt::WCheckBox>( WString::tr( "bgw-use-exemplar-energy-cal-for-background" ) );
   m_use_exemplar_energy_cal_for_background->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_use_exemplar_energy_cal_for_background,
                                WString::tr( "bgw-use-exemplar-energy-cal-for-background-tt" ),
                                showToolTips );
 
   // Create threshold options with labels
-  WContainerWidget *float_options = new Wt::WContainerWidget( m_peak_options_container );
+  WContainerWidget *float_options = m_peak_options_container->addNew<Wt::WContainerWidget>();
   float_options->addStyleClass( "PeakFitFloatOptionsContainer" );
 
-  m_peak_stat_threshold_container = new Wt::WContainerWidget( float_options );
+  m_peak_stat_threshold_container = float_options->addNew<Wt::WContainerWidget>();
   m_peak_stat_threshold_container->addStyleClass( "ThresholdOptionContainer" );
 
   m_peak_stat_threshold_label =
-    new Wt::WLabel( WString::tr( "bgw-peak-stat-threshold-label" ), m_peak_stat_threshold_container );
+    m_peak_stat_threshold_container->addNew<Wt::WLabel>( WString::tr( "bgw-peak-stat-threshold-label" ) );
   m_peak_stat_threshold_label->setWordWrap( false );
-  m_peak_stat_threshold = new NativeFloatSpinBox( m_peak_stat_threshold_container );
+  m_peak_stat_threshold = m_peak_stat_threshold_container->addNew<NativeFloatSpinBox>();
   m_peak_stat_threshold_label->setBuddy( m_peak_stat_threshold );
   m_peak_stat_threshold->setValue( 2.0f );// Default value from command line
   m_peak_stat_threshold->setRange( 0.0f, 10.0f );
@@ -320,13 +320,13 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
   m_peak_stat_threshold->setWidth( 40 );
   HelpSystem::attachToolTipOn( m_peak_stat_threshold, WString::tr( "bgw-peak-stat-threshold-tt" ), showToolTips );
 
-  m_peak_hypothesis_threshold_container = new Wt::WContainerWidget( float_options );
+  m_peak_hypothesis_threshold_container = float_options->addNew<Wt::WContainerWidget>();
   m_peak_hypothesis_threshold_container->addStyleClass( "ThresholdOptionContainer" );
 
   m_peak_hypothesis_threshold_label =
-    new Wt::WLabel( WString::tr( "bgw-peak-hypothesis-threshold-label" ), m_peak_hypothesis_threshold_container );
+    m_peak_hypothesis_threshold_container->addNew<Wt::WLabel>( WString::tr( "bgw-peak-hypothesis-threshold-label" ) );
   m_peak_hypothesis_threshold_label->setWordWrap( false );
-  m_peak_hypothesis_threshold = new NativeFloatSpinBox( m_peak_hypothesis_threshold_container );
+  m_peak_hypothesis_threshold = m_peak_hypothesis_threshold_container->addNew<NativeFloatSpinBox>();
   m_peak_hypothesis_threshold_label->setBuddy( m_peak_hypothesis_threshold );
   m_peak_hypothesis_threshold->setValue( 1.0f );// Default value from command line
   m_peak_hypothesis_threshold->setRange( 0.0f, 10.0f );
@@ -336,23 +336,23 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
     m_peak_hypothesis_threshold, WString::tr( "bgw-peak-hypothesis-threshold-tt" ), showToolTips );
 
 
-  m_reports_container = new WGroupBox( WString::tr( "bgw-reports-grp-title" ), this );
+  m_reports_container = addNew<WGroupBox>( WString::tr( "bgw-reports-grp-title" ) );
   m_reports_container->addStyleClass( "ReportsContainer" );
-  m_html_report = new Wt::WCheckBox( WString::tr( "bgw-reports-write-html" ), m_reports_container );
+  m_html_report = m_reports_container->addNew<Wt::WCheckBox>( WString::tr( "bgw-reports-write-html" ) );
   m_html_report->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_html_report, WString::tr( "bgw-reports-write-html-tooltip" ), showToolTips );
   m_html_report->setChecked( true );
 
-  m_create_csv_output = new Wt::WCheckBox( WString::tr( "bgw-create-csv-output" ), m_reports_container );
+  m_create_csv_output = m_reports_container->addNew<Wt::WCheckBox>( WString::tr( "bgw-create-csv-output" ) );
   m_create_csv_output->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_create_csv_output, WString::tr( "bgw-create-csv-output-tt" ), showToolTips );
   m_create_csv_output->setChecked( true );// Default to true as per command line
 
 
-  Wt::WContainerWidget *custom_rpt_per_file_opts = new Wt::WContainerWidget( m_reports_container );
+  Wt::WContainerWidget *custom_rpt_per_file_opts = m_reports_container->addNew<Wt::WContainerWidget>();
   custom_rpt_per_file_opts->addStyleClass( "CustomReportOptions" );
   m_per_file_custom_report =
-    new Wt::WCheckBox( WString::tr( "bgw-reports-write-custom-per-file" ), custom_rpt_per_file_opts );
+    custom_rpt_per_file_opts->addNew<Wt::WCheckBox>( WString::tr( "bgw-reports-write-custom-per-file" ) );
   m_per_file_custom_report->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn(
     m_per_file_custom_report, WString::tr( "bgw-reports-write-custom-per-file-tooltip" ), showToolTips );
@@ -360,10 +360,10 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
   m_per_file_custom_report->checked().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
   m_per_file_custom_report->unChecked().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
 
-  m_per_file_custom_report_container = new Wt::WContainerWidget( custom_rpt_per_file_opts );
+  m_per_file_custom_report_container = custom_rpt_per_file_opts->addNew<Wt::WContainerWidget>();
   m_per_file_custom_report_container->addStyleClass( "CustomReportUploader EmptyReportUpload" );
 
-  m_per_file_custom_report_resource = new FileDragUploadResource( m_per_file_custom_report_container );
+  m_per_file_custom_report_resource = m_per_file_custom_report_container->addChild( std::make_unique<FileDragUploadResource>() );
   m_per_file_custom_report_container->doJavaScript( "BatchInputDropUploadSetup(" +
                                                     m_per_file_custom_report_container->jsRef() +
                                                     ", "
@@ -372,16 +372,16 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
 
   m_per_file_custom_report_container->doJavaScript( "setupOnDragEnterDom(['" +
                                                     m_per_file_custom_report_container->id() + "']);" );
-  m_per_file_custom_report_resource->fileDrop().connect( boost::bind(
-    &BatchGuiPeakFitWidget::perFileCustomReportUploaded, this, boost::placeholders::_1, boost::placeholders::_2 ) );
+  m_per_file_custom_report_resource->fileDrop().connect(
+    [this]( const std::string &a, const std::string &b ){ perFileCustomReportUploaded( a, b ); } );
   m_per_file_custom_report_container->hide();
 
   // Group summary custom report elements together
-  Wt::WContainerWidget *custom_rpt_summary_opts = new Wt::WContainerWidget( m_reports_container );
+  Wt::WContainerWidget *custom_rpt_summary_opts = m_reports_container->addNew<Wt::WContainerWidget>();
   custom_rpt_summary_opts->addStyleClass( "CustomReportOptions" );
 
   m_summary_custom_report =
-    new Wt::WCheckBox( WString::tr( "bgw-reports-write-custom-summary" ), custom_rpt_summary_opts );
+    custom_rpt_summary_opts->addNew<Wt::WCheckBox>( WString::tr( "bgw-reports-write-custom-summary" ) );
   m_summary_custom_report->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn(
     m_summary_custom_report, WString::tr( "bgw-reports-write-custom-summary-tooltip" ), showToolTips );
@@ -389,10 +389,10 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
   m_summary_custom_report->checked().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
   m_summary_custom_report->unChecked().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
 
-  m_summary_custom_report_container = new Wt::WContainerWidget( custom_rpt_summary_opts );
+  m_summary_custom_report_container = custom_rpt_summary_opts->addNew<Wt::WContainerWidget>();
   m_summary_custom_report_container->addStyleClass( "CustomReportUploader EmptyReportUpload" );
 
-  m_summary_custom_report_resource = new FileDragUploadResource( m_summary_custom_report_container );
+  m_summary_custom_report_resource = m_summary_custom_report_container->addChild( std::make_unique<FileDragUploadResource>() );
   m_summary_custom_report_container->doJavaScript( "BatchInputDropUploadSetup(" +
                                                    m_summary_custom_report_container->jsRef() +
                                                    ", "
@@ -401,8 +401,8 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
 
   m_summary_custom_report_container->doJavaScript( "setupOnDragEnterDom(['" + m_summary_custom_report_container->id() +
                                                    "']);" );
-  m_summary_custom_report_resource->fileDrop().connect( boost::bind(
-    &BatchGuiPeakFitWidget::summaryCustomReportUploaded, this, boost::placeholders::_1, boost::placeholders::_2 ) );
+  m_summary_custom_report_resource->fileDrop().connect(
+    [this]( const std::string &a, const std::string &b ){ summaryCustomReportUploaded( a, b ); } );
   m_summary_custom_report_container->hide();
 
   // Connect signals to update analysis capability
@@ -469,10 +469,10 @@ void BatchGuiPeakFitWidget::handleFileUpload( WContainerWidget *dropArea, FileDr
   const BatchGuiInputSpectrumFile::ShowPreviewOption show_preview = BatchGuiInputSpectrumFile::ShowPreviewOption::Show;
 
   BatchGuiInputSpectrumFile *input =
-    new BatchGuiInputSpectrumFile( display_name, path_to_file, should_delete, show_preview, dropArea );
+    dropArea->addNew<BatchGuiInputSpectrumFile>( display_name, path_to_file, should_delete, show_preview );
   dropArea->removeStyleClass( "EmptyExemplarUpload" );
   input->remove_self_request().connect(
-    boost::bind( &BatchGuiPeakFitWidget::handle_remove_exemplar_upload, this, boost::placeholders::_1 ) );
+    [this]( BatchGuiInputSpectrumFile *inp ){ handle_remove_exemplar_upload( inp ); } );
 
   input->preview_created_signal().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
 
@@ -511,9 +511,9 @@ void BatchGuiPeakFitWidget::perFileCustomReportUploaded( const std::string &, co
     const bool should_delete = std::get<2>( file );
 
     BatchGuiInputFile *input =
-      new BatchGuiInputFile( display_name, path_to_file, should_delete, m_per_file_custom_report_container );
-    input->remove_self_request().connect( boost::bind(
-      &BatchGuiPeakFitWidget::handle_remove_per_file_custom_report_upload, this, boost::placeholders::_1 ) );
+      m_per_file_custom_report_container->addNew<BatchGuiInputFile>( display_name, path_to_file, should_delete );
+    input->remove_self_request().connect(
+      [this]( BatchGuiInputFile *inp ){ handle_remove_per_file_custom_report_upload( inp ); } );
   }// for( const auto &file : spooled )
 
   optionsChanged();
@@ -530,9 +530,9 @@ void BatchGuiPeakFitWidget::summaryCustomReportUploaded( const std::string &, co
     const bool should_delete = std::get<2>( file );
 
     BatchGuiInputFile *input =
-      new BatchGuiInputFile( display_name, path_to_file, should_delete, m_summary_custom_report_container );
-    input->remove_self_request().connect( boost::bind(
-      &BatchGuiPeakFitWidget::handle_remove_summary_custom_report_upload, this, boost::placeholders::_1 ) );
+      m_summary_custom_report_container->addNew<BatchGuiInputFile>( display_name, path_to_file, should_delete );
+    input->remove_self_request().connect(
+      [this]( BatchGuiInputFile *inp ){ handle_remove_summary_custom_report_upload( inp ); } );
   }// for( const auto &file : spooled )
 
   optionsChanged();
@@ -540,19 +540,22 @@ void BatchGuiPeakFitWidget::summaryCustomReportUploaded( const std::string &, co
 
 void BatchGuiPeakFitWidget::handle_remove_per_file_custom_report_upload( BatchGuiInputFile *input )
 {
-  delete input;
+  if( input && input->parent() )
+    input->parent()->removeWidget( input );
   optionsChanged();
 }
 
 void BatchGuiPeakFitWidget::handle_remove_summary_custom_report_upload( BatchGuiInputFile *input )
 {
-  delete input;
+  if( input && input->parent() )
+    input->parent()->removeWidget( input );
   optionsChanged();
 }
 
 void BatchGuiPeakFitWidget::handle_remove_exemplar_upload( BatchGuiInputSpectrumFile *input )
 {
-  delete input;
+  if( input && input->parent() )
+    input->parent()->removeWidget( input );
   optionsChanged();
 }
 
@@ -973,8 +976,8 @@ void BatchGuiPeakFitWidget::performAnalysis(
   SimpleDialog *waiting_dialog =
     new SimpleDialog( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
-  boost::function<void( void )> close_waiting_dialog =
-    wApp->bind( boost::bind( &SimpleDialog::done, waiting_dialog, Wt::WDialog::DialogCode::Accepted ) );
+  std::function<void( void )> close_waiting_dialog =
+    [waiting_dialog](){ waiting_dialog->done( Wt::DialogCode::Accepted ); };
 
 
   std::function<void( void )> show_error_dialog = [error_msg, close_waiting_dialog]()
@@ -1019,7 +1022,7 @@ void BatchGuiPeakFitWidget::performAnalysis(
       InterSpec *interspec = InterSpec::instance();
       const int app_width = interspec->renderedWidth();
       const double warn_width = std::min( 450, (app_width > 100) ? app_width : 450 );
-      warnings_dialog->setMinimumSize( WLength(warn_width,WLength::Pixel), WLength::Auto );
+      warnings_dialog->setMinimumSize( WLength(warn_width,WLength::Unit::Pixel), WLength::Auto );
 
       WContainerWidget *contents = warnings_dialog->contents();
       contents->setList( true, false );
@@ -1032,8 +1035,8 @@ void BatchGuiPeakFitWidget::performAnalysis(
           continue;
         seen_warnings.insert( warn_msg );
 
-        WContainerWidget *item = new WContainerWidget( contents );
-        new WText( warn_msg, item );
+        WContainerWidget *item = contents->addNew<WContainerWidget>();
+        item->addNew<WText>( warn_msg );
       }
 
       warnings_dialog->addButton( WString::tr( "Okay" ) );
@@ -1127,8 +1130,8 @@ std::pair<bool,Wt::WString> BatchGuiPeakFitWidget::canDoAnalysis() const
   return {true, WString()};
 }//std::pair<bool,Wt::WString> BatchGuiPeakFitWidget::canDoAnalysis() const
 
-BatchGuiActShieldAnaWidget::BatchGuiActShieldAnaWidget( Wt::WContainerWidget *parent )
-: BatchGuiPeakFitWidget( parent ),
+BatchGuiActShieldAnaWidget::BatchGuiActShieldAnaWidget()
+: BatchGuiPeakFitWidget(),
   m_act_shield_container( nullptr ),
   m_use_bq( nullptr ),
   m_hard_background_sub( nullptr ),
@@ -1148,76 +1151,80 @@ BatchGuiActShieldAnaWidget::BatchGuiActShieldAnaWidget( Wt::WContainerWidget *pa
   m_fit_all_peaks->setChecked( false );
   m_fit_all_peaks->hide();
 
-  m_act_shield_container = new Wt::WContainerWidget();
-  m_act_shield_container->addStyleClass( "ActShieldOptionsContainer" );
-  const int back_area_index = indexOf( m_background_input );
-
-  insertWidget( back_area_index + 1, m_act_shield_container );
+  {
+    auto actShieldCont = std::make_unique<Wt::WContainerWidget>();
+    actShieldCont->addStyleClass( "ActShieldOptionsContainer" );
+    const int back_area_index = indexOf( m_background_input );
+    m_act_shield_container = actShieldCont.get();
+    insertWidget( back_area_index + 1, std::move(actShieldCont) );
+  }
 
 
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-  m_csv_report = new Wt::WCheckBox( WString::tr( "bgw-reports-write-csv" ) );
-  m_csv_report->addStyleClass( "CbNoLineBreak" );
-  HelpSystem::attachToolTipOn( m_csv_report, WString::tr( "bgw-reports-write-csv-tooltip" ), showToolTips );
-  m_reports_container->insertWidget( 2, m_csv_report );
+  {
+    auto csvReport = std::make_unique<Wt::WCheckBox>( WString::tr( "bgw-reports-write-csv" ) );
+    csvReport->addStyleClass( "CbNoLineBreak" );
+    HelpSystem::attachToolTipOn( csvReport.get(), WString::tr( "bgw-reports-write-csv-tooltip" ), showToolTips );
+    m_csv_report = m_reports_container->insertWidget( 2, std::move(csvReport) );
+  }
 
-  m_use_bq = new WCheckBox( WString::tr( "bgw-use-bq" ) );
-  m_peak_options_container->insertWidget( 0, m_use_bq );
-  m_use_bq->addStyleClass( "CbNoLineBreak" );
+  {
+    auto useBqCb = std::make_unique<WCheckBox>( WString::tr( "bgw-use-bq" ) );
+    useBqCb->addStyleClass( "CbNoLineBreak" );
+    m_use_bq = m_peak_options_container->insertWidget( 0, std::move(useBqCb) );
+  }
   const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_use_bq->setChecked( useBq );
   m_use_bq->checked().connect( this, &BatchGuiActShieldAnaWidget::useBqChanged );
   m_use_bq->unChecked().connect( this, &BatchGuiActShieldAnaWidget::useBqChanged );
 
 
-  m_hard_background_sub = new WCheckBox( WString::tr( "bgw-hard-background-sub" ), m_background_input );
+  m_hard_background_sub = m_background_input->addNew<WCheckBox>( WString::tr( "bgw-hard-background-sub" ) );
   m_hard_background_sub->addStyleClass( "CbNoLineBreak" );
   m_hard_background_sub->setChecked( false );
   m_hard_background_sub->checked().connect( this, &BatchGuiActShieldAnaWidget::useHardBackgroundSubChanged );
   m_hard_background_sub->unChecked().connect( this, &BatchGuiActShieldAnaWidget::useHardBackgroundSubChanged );
 
-  m_detector_input = new WGroupBox( WString::tr( "bgw-detector-input-label" ), m_act_shield_container );
+  m_detector_input = m_act_shield_container->addNew<WGroupBox>( WString::tr( "bgw-detector-input-label" ) );
   m_detector_input->addStyleClass( "DetectorInputContainer" );
 
-  m_use_detector_override = new WCheckBox( WString::tr( "bgw-use-detector-override" ), m_detector_input );
+  m_use_detector_override = m_detector_input->addNew<WCheckBox>( WString::tr( "bgw-use-detector-override" ) );
   m_use_detector_override->addStyleClass( "CbNoLineBreak" );
   m_use_detector_override->setChecked( false );
   m_use_detector_override->checked().connect( this, &BatchGuiActShieldAnaWidget::useDetectorOverrideChanged );
   m_use_detector_override->unChecked().connect( this, &BatchGuiActShieldAnaWidget::useDetectorOverrideChanged );
 
-  m_detector_file_drop = new WContainerWidget( m_detector_input );
+  m_detector_file_drop = m_detector_input->addNew<WContainerWidget>();
   m_detector_file_drop->addStyleClass( "DetectorFileDrop EmptyDetectorUpload" );
   m_detector_file_drop->setHidden( true );
 
-  m_detector_file_resource = new FileDragUploadResource( m_detector_file_drop );
+  m_detector_file_resource = m_detector_file_drop->addChild( std::make_unique<FileDragUploadResource>() );
   m_detector_file_drop->doJavaScript( "BatchInputDropUploadSetup(" + m_detector_file_drop->jsRef() +
                                       ", "
                                       " '" +
                                       m_detector_file_resource->url() + "');" );
   doJavaScript( "setupOnDragEnterDom(['" + m_detector_file_drop->id() + "']);" );
-  m_detector_file_resource->fileDrop().connect( boost::bind(
-    &BatchGuiActShieldAnaWidget::detectorUploaded, this, boost::placeholders::_1, boost::placeholders::_2 ) );
+  m_detector_file_resource->fileDrop().connect(
+    [this]( const std::string &a, const std::string &b ){ detectorUploaded( a, b ); } );
 
   // Distance override
-  m_override_distance = new WCheckBox( WString::tr( "bgw-override-distance" ), m_act_shield_container );
+  m_override_distance = m_act_shield_container->addNew<WCheckBox>( WString::tr( "bgw-override-distance" ) );
   m_override_distance->addStyleClass( "CbNoLineBreak" );
   m_override_distance->setChecked( false );
   m_override_distance->checked().connect( this, &BatchGuiActShieldAnaWidget::overrideDistanceChanged );
   m_override_distance->unChecked().connect( this, &BatchGuiActShieldAnaWidget::overrideDistanceChanged );
 
-  m_distance_input_container = new Wt::WContainerWidget( m_act_shield_container );
+  m_distance_input_container = m_act_shield_container->addNew<Wt::WContainerWidget>();
   m_distance_input_container->addStyleClass( "DistanceInputContainer" );
   m_distance_input_container->setHidden( true );
 
-  m_distance_label = new Wt::WLabel( WString::tr( "bgw-distance-label" ), m_distance_input_container );
+  m_distance_label = m_distance_input_container->addNew<Wt::WLabel>( WString::tr( "bgw-distance-label" ) );
   m_distance_label->setWordWrap( false );
-  m_distance_edit = new Wt::WLineEdit( m_distance_input_container );
+  m_distance_edit = m_distance_input_container->addNew<Wt::WLineEdit>();
   m_distance_label->setBuddy( m_distance_edit );
   m_distance_edit->setWidth( 100 );
 
-  WRegExpValidator *distValidator =
-    new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, m_distance_edit );
-  m_distance_edit->setValidator( distValidator );
+  m_distance_edit->setValidator( std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex ) );
   m_distance_edit->changed().connect( this, &BatchGuiActShieldAnaWidget::distanceValueChanged );
   m_distance_edit->enterPressed().connect( this, &BatchGuiActShieldAnaWidget::distanceValueChanged );
 
@@ -1309,8 +1316,8 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   SimpleDialog *waiting_dialog =
     new SimpleDialog( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
-  boost::function<void( void )> close_waiting_dialog =
-    wApp->bind( boost::bind( &SimpleDialog::done, waiting_dialog, Wt::WDialog::DialogCode::Accepted ) );
+  std::function<void( void )> close_waiting_dialog =
+    [waiting_dialog](){ waiting_dialog->done( Wt::DialogCode::Accepted ); };
 
   std::function<void( void )> show_error_dialog = [error_msg, close_waiting_dialog]()
   {
@@ -1355,8 +1362,8 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
       contents->setList( true, false );
       for( const string &warn_msg : summary_results->warnings )
       {
-        WContainerWidget *item = new WContainerWidget( contents );
-        new WText( warn_msg, item );
+        WContainerWidget *item = contents->addNew<WContainerWidget>();
+        item->addNew<WText>( warn_msg );
       }
 
       warnings_dialog->addButton( WString::tr( "Okay" ) );
@@ -1538,9 +1545,9 @@ void BatchGuiActShieldAnaWidget::detectorUploaded( const std::string &, const st
       if( m_uploaded_detector )
       {
         BatchGuiInputFile *input =
-          new BatchGuiInputFile( display_name, path_to_file, should_delete, m_detector_file_drop );
+          m_detector_file_drop->addNew<BatchGuiInputFile>( display_name, path_to_file, should_delete );
         input->remove_self_request().connect(
-          boost::bind( &BatchGuiActShieldAnaWidget::handle_remove_detector_upload, this, boost::placeholders::_1 ) );
+          [this]( BatchGuiInputFile *inp ){ handle_remove_detector_upload( inp ); } );
 
         break;// Only use the first valid DRF file
       } else
@@ -1580,7 +1587,8 @@ void BatchGuiActShieldAnaWidget::detectorUploaded( const std::string &, const st
 
 void BatchGuiActShieldAnaWidget::handle_remove_detector_upload( BatchGuiInputFile *input )
 {
-  delete input;
+  if( input && input->parent() )
+    input->parent()->removeWidget( input );
   m_uploaded_detector.reset();
 
   const bool has_drop_class = m_detector_file_drop->hasStyleClass( "EmptyDetectorUpload" );
@@ -1631,8 +1639,8 @@ BatchGuiActShieldAnaWidget::~BatchGuiActShieldAnaWidget()
 }
 
 
-FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
- : BatchGuiAnaWidget( parent ),
+FileConvertOpts::FileConvertOpts()
+ : BatchGuiAnaWidget(),
   m_format_menu( nullptr ),
   m_overwrite_output( nullptr ),
   m_sum_for_single_output_types( nullptr ),
@@ -1640,16 +1648,16 @@ FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
   m_concatenate_all_to_single( nullptr )
 {
   addStyleClass( "FileConvertOpts" );
-  
-  WContainerWidget *menuHolder = new WContainerWidget( this );
+
+  WContainerWidget *menuHolder = addNew<WContainerWidget>();
   menuHolder->addStyleClass( "SideMenuHolder" );
-  
-  m_format_menu = new WMenu( menuHolder );
+
+  m_format_menu = menuHolder->addNew<WMenu>();
   m_format_menu->itemSelected().connect( this, &FileConvertOpts::handleFormatChange );
   m_format_menu->addStyleClass( "SideMenu VerticalNavMenu LightNavMenu FileConvertFormatMenu" );
-  
+
   const bool isMobile = false;
-  
+
   Wt::WMessageResourceBundle descrip_bundle;
   if( !isMobile )
   {
@@ -1657,28 +1665,28 @@ FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
     const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/app_text/spectrum_file_format_descriptions" );
     descrip_bundle.use(bundle_file,true);
   }//if( !isMobile )
-  
-  
+
+
   auto addFormatItem = [this, &descrip_bundle, isMobile]( const char *label, SpecUtils::SaveSpectrumAsType type ){
     WMenuItem *item = m_format_menu->addItem( label );
-    item->clicked().connect( boost::bind(&right_select_item, m_format_menu, item) );
+    item->clicked().connect( [this, item](){ right_select_item( m_format_menu, item ); } );
     item->setData( reinterpret_cast<void *>(type) );
-    
+
     if( !isMobile )
     {
       string description;
       if( descrip_bundle.resolveKey(label, description) )
       {
         SpecUtils::trim( description );
-        
+
         description = Wt::Utils::htmlEncode( description, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
-        
-        WImage *img = new WImage( item );
+
+        WImage *img = item->addNew<WImage>();
         img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
         img->setStyleClass("Wt-icon");
-        img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+        img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
         img->setFloatSide( Wt::Side::Right );
-        
+
         HelpSystem::attachToolTipOn( img, description, true,
                                     HelpSystem::ToolTipPosition::Right,
                                     HelpSystem::ToolTipPrefOverride::InstantAlways );
@@ -1708,35 +1716,35 @@ FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
   addFormatItem( "URI", SpecUtils::SaveSpectrumAsType::Uri );
 #endif
   
-  WContainerWidget *opts = new WContainerWidget( this );
+  WContainerWidget *opts = addNew<WContainerWidget>();
   opts->addStyleClass( "FileConvertOptsOptions" );
 
-  WText *txt = new WText( WString::tr("bgw-info-will-convert-file-type"), opts );
+  WText *txt = opts->addNew<WText>( WString::tr("bgw-info-will-convert-file-type") );
   txt->setInline( false );
   txt->addStyleClass( "FileConvertOptsTitle" );
 
 
-  m_overwrite_output = new WCheckBox( WString::tr("bgw-overwrite-output-cb"), opts );
+  m_overwrite_output = opts->addNew<WCheckBox>( WString::tr("bgw-overwrite-output-cb") );
   m_overwrite_output->addStyleClass( "CbNoLineBreak" );
   m_overwrite_output->checked().connect( this, &FileConvertOpts::optionsChanged );
-  
-  m_sum_for_single_output_types = new WCheckBox( WString::tr("bgw-sum-multirecord-to-single"), opts );
+
+  m_sum_for_single_output_types = opts->addNew<WCheckBox>( WString::tr("bgw-sum-multirecord-to-single") );
   m_sum_for_single_output_types->addStyleClass( "CbNoLineBreak" );
   m_sum_for_single_output_types->hide();
   m_sum_for_single_output_types->checked().connect( this, &FileConvertOpts::optionsChanged );
 
-  m_sum_all_to_single = new WCheckBox( WString::tr("bgw-sum-all-to-single"), opts );
+  m_sum_all_to_single = opts->addNew<WCheckBox>( WString::tr("bgw-sum-all-to-single") );
   m_sum_all_to_single->addStyleClass( "CbNoLineBreak" );
   m_sum_all_to_single->checked().connect( this, &FileConvertOpts::handleSumAllChanged );
   m_sum_all_to_single->unChecked().connect( this, &FileConvertOpts::handleSumAllChanged );
 
-  m_concatenate_all_to_single = new WCheckBox( WString::tr("bgw-concatenate-all-to-single"), opts );
+  m_concatenate_all_to_single = opts->addNew<WCheckBox>( WString::tr("bgw-concatenate-all-to-single") );
   m_concatenate_all_to_single->addStyleClass( "CbNoLineBreak" );
   m_concatenate_all_to_single->hide();
   m_concatenate_all_to_single->checked().connect( this, &FileConvertOpts::handleConcatenateAllChanged );
   m_concatenate_all_to_single->unChecked().connect( this, &FileConvertOpts::handleConcatenateAllChanged );
 
-  WText *spacer = new WText( "&nbsp;", opts );
+  WText *spacer = opts->addNew<WText>( "&nbsp;" );
   spacer->addStyleClass( "FileOptSpacer" );
 
   m_format_menu->select( 0 );
@@ -2022,7 +2030,7 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
 
   if( warnings.empty() )
   {
-    new WText( "File conversion complete.", dialog->contents() );
+    dialog->contents()->addNew<WText>( "File conversion complete." );
   }else
   {
     dialog->addStyleClass( "BatchAnalysisWarningDialog" );
@@ -2031,8 +2039,8 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
     contents->setList( true, false );
     for( const string &warn_msg : warnings )
     {
-      WContainerWidget *item = new WContainerWidget( contents );
-      new WText( warn_msg, item );
+      WContainerWidget *item = contents->addNew<WContainerWidget>();
+      item->addNew<WText>( warn_msg );
     }
   }//if( warnings.empty() ) / else
 

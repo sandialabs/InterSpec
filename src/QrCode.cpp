@@ -28,17 +28,18 @@
 #include <sstream>
 #include <iostream>
 
-#include <Wt/WText>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WAnchor>
-#include <Wt/WComboBox>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WMemoryResource>
-#include <Wt/WContainerWidget>
-#include <Wt/WJavaScriptPreamble>
+#include <Wt/WText.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WLink.h>
+#include <Wt/WMemoryResource.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WJavaScriptPreamble.h>
 
 #include "QR-Code-generator/cpp/qrcodegen.hpp"
 
@@ -314,11 +315,11 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     const unsigned char *svg_begin = (unsigned char *) &(qr_svg_str[0]);
     const unsigned char *svg_end = svg_begin + qr_svg_str.size();
     const vector<unsigned char> svg_data( svg_begin, svg_end );
-    WMemoryResource *svgResource = new WMemoryResource( "image/svg+xml", svg_data, window );
+    auto svgResource = std::make_shared<WMemoryResource>( "image/svg+xml", svg_data );
     if( !title.empty() )
-      svgResource->suggestFileName( title + ".svg", WResource::Attachment );
+      svgResource->suggestFileName( title + ".svg", ContentDisposition::Attachment );
     else
-      svgResource->suggestFileName( "qr.svg", WResource::Attachment );
+      svgResource->suggestFileName( "qr.svg", ContentDisposition::Attachment );
     
     string contentStyle;
     if( is_phone && !narrow_layout )
@@ -333,7 +334,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     if( !contentStyle.empty() )
       window->contents()->setAttributeValue( "style", contentStyle );
     
-    WImage *qrImage = new WImage( WLink(svgResource), window->contents() );
+    WImage *qrImage = window->contents()->addNew<WImage>( WLink(std::static_pointer_cast<WResource>(svgResource)) );
     qrImage->setInline( false );
     qrImage->resize( svg_size, svg_size );
     qrImage->setMargin( 5, Wt::Side::Bottom );
@@ -345,7 +346,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     WContainerWidget *sizeRow = nullptr;
     if( narrow_layout )
     {
-      sizeRow = new WContainerWidget( window->contents() );
+      sizeRow = window->contents()->addNew<WContainerWidget>();
       
       const char *desc_style = "margin-bottom: 10px;"
         " display: flex;"
@@ -356,7 +357,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     }//if( narrow_layout )
     
     
-    WContainerWidget *eclRow = new WContainerWidget( window->contents() );
+    WContainerWidget *eclRow = window->contents()->addNew<WContainerWidget>();
     if( !sizeRow )
       sizeRow = eclRow;
     
@@ -379,7 +380,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     WContainerWidget *tol_sel = eclRow;
     if( is_phone && !narrow_layout )
     {
-      tol_sel = new WContainerWidget( eclRow );
+      tol_sel = eclRow->addNew<WContainerWidget>();
       tol_sel->setAttributeValue( "style",
                                  "display: flex;"
                                  " flex-direction: column;"
@@ -389,8 +390,8 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     }
     
     eclRow->setAttributeValue( "style", ecl_style );
-    WLabel *eclLabel = new WLabel( "Error Tolerance:", tol_sel );
-    WComboBox *eclSelect = new WComboBox( tol_sel );
+    WLabel *eclLabel = tol_sel->addNew<WLabel>( "Error Tolerance:" );
+    WComboBox *eclSelect = tol_sel->addNew<WComboBox>();
     eclLabel->setBuddy( eclSelect );
     eclSelect->setNoSelectionEnabled( false );
     eclSelect->addItem( "Approx. 7% Loss" );
@@ -401,12 +402,12 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     
     if( !is_phone || narrow_layout )
     {
-      WText *spacer = new WText( "&nbsp;", eclRow );
+      WText *spacer = eclRow->addNew<WText>( "&nbsp;" );
       spacer->setAttributeValue( "style", "flex: 1 1;" );
     }
     const string sizeDesc = to_string(qr_size) + "x" + to_string(qr_size) + " elements";
     assert( sizeRow );
-    WText *sizeTxt = new WText( sizeDesc, sizeRow );
+    WText *sizeTxt = sizeRow->addNew<WText>( sizeDesc );
     
     eclSelect->changed().connect( std::bind([eclSelect, sizeTxt, url, svgResource](){
       const int ecl = eclSelect->currentIndex();
@@ -448,19 +449,20 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     
     if( !description.empty() )
     {
-      WText *message = new WText( description );
+      auto messageOwner = std::make_unique<WText>( description );
+      WText *message = messageOwner.get();
       if( is_phone && !narrow_layout )
       {
-        eclRow->insertWidget( 0, message );
+        eclRow->insertWidget( 0, std::move(messageOwner) );
       }else if( narrow_layout )
       {
-        window->contents()->insertBefore( message, qrImage );
+        window->contents()->insertBefore( std::move(messageOwner), qrImage );
         message->addStyleClass( "content" );
         message->setInline( false );
         message->setAttributeValue( "style", "padding-bottom: 5px;" );
       }else
       {
-        window->contents()->addWidget( message );
+        window->contents()->addWidget( std::move(messageOwner) );
         message->addStyleClass( "content" );
         message->setInline( false );
         // For a WText::setPadding() only supports left/right, so we will manually set bottom padding
@@ -468,8 +470,8 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
         message->setAttributeValue( "style", "padding-bottom: 5px;" );
       }//if( is_phone ) / else
     }//if( description.length() )
-    
-    WContainerWidget *btndiv = new WContainerWidget( (is_phone && !narrow_layout) ? eclRow : window->contents() );
+
+    WContainerWidget *btndiv = ((is_phone && !narrow_layout) ? eclRow : window->contents())->addNew<WContainerWidget>();
     if( is_phone && !narrow_layout )
       btndiv->setAttributeValue( "style",
                                 "display: flex; "
@@ -477,49 +479,50 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
                                 "flex-wrap: nowrap; "
                                 "align-items: center; "
                                 "row-gap: 10px;" );
-    
+
 #if( BUILD_AS_OSX_APP || IOS )
-    WAnchor *svgDownload = new WAnchor( WLink(svgResource) );
-    svgDownload->setTarget( AnchorTarget::TargetNewWindow );
-    svgDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
+    {
+      WLink lnk( std::static_pointer_cast<WResource>(svgResource) );
+      lnk.setTarget( LinkTarget::NewWindow );
+      WAnchor *svgDownload = btndiv->addNew<WAnchor>( lnk );
+      svgDownload->setStyleClass( "LinkBtn DownloadLink DrfXmlDownload" );
+      svgDownload->setText( "SVG" );
+      svgDownload->setFloatSide( Wt::Side::Right );
+    }
 #else
-    WPushButton *svgDownload = new WPushButton( btndiv );
+    WPushButton *svgDownload = btndiv->addNew<WPushButton>();
     svgDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
-    svgDownload->setLink( WLink(svgResource) );
-    svgDownload->setLinkTarget( Wt::TargetNewWindow );
+    {
+      WLink lnk( std::static_pointer_cast<WResource>(svgResource) );
+      lnk.setTarget( LinkTarget::NewWindow );
+      svgDownload->setLink( lnk );
+    }
     svgDownload->setStyleClass( "LinkBtn DownloadBtn" );
-    
+
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
     svgDownload->clicked().connect( std::bind([svgResource](){
-      android_download_workaround(svgResource, "qr.svg");
+      android_download_workaround(svgResource.get(), "qr.svg");
     }) );
 #endif //ANDROID
-    
-#endif
+
     svgDownload->setText( "SVG" );
     svgDownload->setFloatSide( Wt::Side::Right );
-    
+#endif
+
     LOAD_JAVASCRIPT(wApp, "QrCode.cpp", "QrCode", wtjsCopyUrlToClipboard );
-    
-    WPushButton *copyBtn = new WPushButton( "Copy url to clipboard", btndiv );
+
+    WPushButton *copyBtn = btndiv->addNew<WPushButton>( "Copy url to clipboard" );
     copyBtn->setStyleClass( "LinkBtn" );
     copyBtn->setFloatSide( Wt::Side::Left );
-    
+
     // TODO: there is probably a way to get wApp->root()->id() directly in the JS
     const string escaped_url = WString(url).jsStringLiteral();
     copyBtn->clicked().connect( "function(s,e){ "
                                  "Wt.WT.CopyUrlToClipboard(s,e,'" + copyBtn->id() + "'," + escaped_url + ");"
                                  "}" );
-    if( is_phone && !narrow_layout )
-    {
-      btndiv->addWidget( svgDownload );
-      btndiv->addWidget( copyBtn );
-    }else
-    {
-      btndiv->addWidget( copyBtn );
-      btndiv->addWidget( svgDownload );
-    }
+    // svgDownload and copyBtn are already children of btndiv from addNew<> above,
+    // so no additional addWidget calls are needed here.
     
     return window;
   }catch( std::exception &e )

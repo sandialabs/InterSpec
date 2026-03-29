@@ -29,13 +29,14 @@
 #include <vector>
 #include <fstream>
 #include <algorithm>
+#include <functional>
 
 #include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml.hpp"
 #include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml_utils.hpp"
 #include "external_libs/SpecUtils/3rdparty/rapidxml/rapidxml_print.hpp"
 
-#include <Wt/WServer>
-#include <Wt/WIOService>
+#include <Wt/WServer.h>
+#include <Wt/WIOService.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -586,7 +587,7 @@ SpecMeas::~SpecMeas()
 
 void SpecMeas::save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,
                                          const std::string filename,
-                                         boost::function<void()> error_callback )
+                                         std::function<void()> error_callback )
 {
   if( !info && error_callback )
   {
@@ -594,12 +595,14 @@ void SpecMeas::save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,
     return;
   }//if( !info && error_callback )
   
-  boost::function<void()> worker = boost::bind( &SpecMeas::save2012N42File, info, filename, error_callback );
-  
+  std::function<void()> worker = [info, filename, error_callback](){
+    info->save2012N42File( filename, error_callback );
+  };
+
   WServer *server = WServer::instance();  //can this ever be NULL?
   if( server )
   {
-    server->ioService().boost::asio::io_service::post( worker );
+    server->ioService().post( worker );
   }else
   {
     //Probably wont ever get here - but just incase
@@ -625,7 +628,7 @@ bool SpecMeas::save2012N42File( const std::string &filename )
 
 
 void SpecMeas::save2012N42File( const std::string &filename,
-                              boost::function<void()> error_callback )
+                              std::function<void()> error_callback )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   const bool status = save2012N42File( filename );

@@ -806,9 +806,10 @@ target_link_libraries(
     Boost::random
     ZLIB::ZLIB
     Eigen3::Eigen
-    Ceres::ceres
     ${CMAKE_DL_LIBS}
     VoigtDistribution
+    PRIVATE
+    Ceres::ceres
 )
 
 if( USE_SPECRUM_FILE_QUERY_WIDGET )

@@ -27,8 +27,8 @@
 
 #include <string>
 
-#include <Wt/WColor>
-#include <Wt/WContainerWidget>
+#include <Wt/WColor.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/RelActCalcAuto.h"
 
@@ -49,7 +49,7 @@ class RelActAutoGuiNuclideConstraint;
 class RelActAutoGuiNuclide : public Wt::WContainerWidget
 {
 public:
-  RelActAutoGuiNuclide( RelActAutoGui *gui, Wt::WContainerWidget *parent = nullptr );
+  RelActAutoGuiNuclide( RelActAutoGui *gui );
 
   /** Function called when the user changes the nuclide via the gui; not meant to be called if loading a serialized state. */
   void handleIsotopeChange();

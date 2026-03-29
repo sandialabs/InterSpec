@@ -28,12 +28,12 @@
 #include <string>
 #include <iostream>
 
-#include <Wt/WLabel>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WPushButton>
-#include <Wt/WInPlaceEdit>
-#include <Wt/WContainerWidget>
+#include <Wt/WLabel.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WInPlaceEdit.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -55,8 +55,8 @@
 using namespace Wt;
 using namespace std;
 
-RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::WString name, Wt::WContainerWidget *parent)
-    : Wt::WContainerWidget(parent),
+RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::WString name)
+    : Wt::WContainerWidget(),
       m_gui(gui),
       m_rel_eff_eqn_form(nullptr),
       m_eqn_order_div(nullptr),
@@ -78,14 +78,14 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_add_del_rel_eff_div(nullptr),
       m_add_rel_eff_btn(nullptr),
       m_del_rel_eff_btn(nullptr),
-      m_add_rel_eff_curve_signal(this),
-      m_del_rel_eff_curve_signal(this),
-      m_name_changed_signal(this),
-      m_eqn_form_changed(this),
-      m_same_hoerl_on_all_curves(this),
-      m_same_ext_shield_on_all_curves(this),
-      m_shielded_by_other_curves(this),
-      m_options_changed_signal(this),
+      m_add_rel_eff_curve_signal(),
+      m_del_rel_eff_curve_signal(),
+      m_name_changed_signal(),
+      m_eqn_form_changed(),
+      m_same_hoerl_on_all_curves(),
+      m_same_ext_shield_on_all_curves(),
+      m_shielded_by_other_curves(),
+      m_options_changed_signal(),
       m_has_multiple_phys_models(false)
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
@@ -96,20 +96,19 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   InterSpec * const viewer = InterSpec::instance();
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer );
 
-  m_rel_eff_curve_name = new WInPlaceEdit( this );
+  m_rel_eff_curve_name = addNew<WInPlaceEdit>();
   m_rel_eff_curve_name->setStyleClass( "RelEffCurveName" );
   m_rel_eff_curve_name->setPlaceholderText( WString::tr("raageo-curve-name") );
-  m_rel_eff_curve_name->setEmptyText( WString::tr("raageo-curve-name") );
   m_rel_eff_curve_name->setButtonsEnabled( false );
   m_rel_eff_curve_name->setText( name );
   m_rel_eff_curve_name->valueChanged().connect( this, &RelActAutoGuiRelEffOptions::emitNameChanged );
 
-  WContainerWidget *eqnTypeDiv = new WContainerWidget( this );
+  WContainerWidget *eqnTypeDiv = addNew<WContainerWidget>();
   eqnTypeDiv->addStyleClass( "EqnTypeDiv" );
-  
-  WLabel *label = new WLabel( WString::tr("raageo-eqn-type"), eqnTypeDiv );
-  
-  m_rel_eff_eqn_form = new WComboBox( eqnTypeDiv );
+
+  WLabel *label = eqnTypeDiv->addNew<WLabel>( WString::tr("raageo-eqn-type") );
+
+  m_rel_eff_eqn_form = eqnTypeDiv->addNew<WComboBox>();
   m_rel_eff_eqn_form->addStyleClass( "GridSecondCol GridFirstRow" );
   label->setBuddy( m_rel_eff_eqn_form );
   m_rel_eff_eqn_form->activated().connect( this, &RelActAutoGuiRelEffOptions::handleRelEffEqnTypeChanged );
@@ -161,11 +160,11 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   
   m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
   
-  m_eqn_order_div = new WContainerWidget( this );
+  m_eqn_order_div = addNew<WContainerWidget>();
   m_eqn_order_div->addStyleClass( "EqnOrderDiv" );
-  
-  label = new WLabel( WString::tr("raageo-eqn-order"), m_eqn_order_div );
-  m_rel_eff_eqn_order = new WComboBox( m_eqn_order_div );
+
+  label = m_eqn_order_div->addNew<WLabel>( WString::tr("raageo-eqn-order") );
+  m_rel_eff_eqn_order = m_eqn_order_div->addNew<WComboBox>();
   label->setBuddy( m_rel_eff_eqn_order );
   m_rel_eff_eqn_order->activated().connect( m_gui, &RelActAutoGui::handleRelEffEqnOrderChanged );
   
@@ -180,11 +179,11 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   
   HelpSystem::attachToolTipOn( {m_eqn_order_div}, WString::tr("raageo-eqn-order-tt"), showToolTips );
 
-  m_pu_corr_div = new WContainerWidget( this );
+  m_pu_corr_div = addNew<WContainerWidget>();
   m_pu_corr_div->addStyleClass( "PuCorrDiv" );
-  
-  label = new WLabel( WString::tr("raageo-pu242-corr"), m_pu_corr_div );
-  m_pu_corr_method = new WComboBox( m_pu_corr_div );
+
+  label = m_pu_corr_div->addNew<WLabel>( WString::tr("raageo-pu242-corr") );
+  m_pu_corr_method = m_pu_corr_div->addNew<WComboBox>();
   label->setBuddy( m_pu_corr_method );
   m_pu_corr_method->activated().connect( m_gui, &RelActAutoGui::handlePuByCorrelationChanged );
   HelpSystem::attachToolTipOn( {m_pu_corr_div}, WString::tr("raageo-pu242-corr-tt"), showToolTips );
@@ -193,27 +192,27 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
 
   
     
-  m_phys_model_opts = new WContainerWidget( this );
+  m_phys_model_opts = addNew<WContainerWidget>();
   m_phys_model_opts->addStyleClass( "PhysicalModelOpts" );
 
-  // We will pu the Use 
-  WContainerWidget *phys_opt_row = new WContainerWidget( m_phys_model_opts );
+  // We will pu the Use
+  WContainerWidget *phys_opt_row = m_phys_model_opts->addNew<WContainerWidget>();
   phys_opt_row->setStyleClass( "PhysicalModelOptRow" );
 
   SpecMeasManager *spec_manager = viewer->fileManager();
   SpectraFileModel *spec_model = spec_manager ? spec_manager->model() : nullptr;
-  DetectorDisplay *det_disp = new DetectorDisplay( viewer, spec_model, phys_opt_row );
+  DetectorDisplay *det_disp = phys_opt_row->addNew<DetectorDisplay>( viewer, spec_model );
 
-  WContainerWidget *phys_opt_cb_row = new WContainerWidget( phys_opt_row );
+  WContainerWidget *phys_opt_cb_row = phys_opt_row->addNew<WContainerWidget>();
   phys_opt_cb_row->addStyleClass( "PhysOptionCbDiv" );
-  m_phys_model_use_hoerl = new WCheckBox( WString::tr("raageo-use-corr-fcn"), phys_opt_cb_row );
+  m_phys_model_use_hoerl = phys_opt_cb_row->addNew<WCheckBox>( WString::tr("raageo-use-corr-fcn") );
   m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb CbNoLineBreak PhysOptionCb GridFirstRow GridFirstCol" );
   m_phys_model_use_hoerl->setChecked( true );
   m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
 
   // Add the new checkboxes for shared settings
-  m_phys_model_same_hoerl_on_all_curves = new WCheckBox( WString::tr("raageo-share-corr-fcn"), phys_opt_cb_row );
+  m_phys_model_same_hoerl_on_all_curves = phys_opt_cb_row->addNew<WCheckBox>( WString::tr("raageo-share-corr-fcn") );
   m_phys_model_same_hoerl_on_all_curves->addStyleClass( "SameHoerlAllCurvesCb CbNoLineBreak PhysOptionCb GridFirstRow GridSecondCol" );
   m_phys_model_same_hoerl_on_all_curves->setChecked( false );
   m_phys_model_same_hoerl_on_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged );
@@ -223,7 +222,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   HelpSystem::attachToolTipOn( {m_phys_model_same_hoerl_on_all_curves}, WString::tr("raageo-share-corr-fcn-tt"), showToolTips );
 
 
-  m_phys_model_same_ext_shield_all_curves = new WCheckBox( WString::tr("raageo-share-ext-atten"), phys_opt_cb_row );
+  m_phys_model_same_ext_shield_all_curves = phys_opt_cb_row->addNew<WCheckBox>( WString::tr("raageo-share-ext-atten") );
   m_phys_model_same_ext_shield_all_curves->addStyleClass( "SameExtShieldAllCurvesCb PhysOptionCb GridSecondRow GridFirstCol" );
   m_phys_model_same_ext_shield_all_curves->setChecked( false );
   m_phys_model_same_ext_shield_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged );
@@ -232,7 +231,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   
   HelpSystem::attachToolTipOn( {m_phys_model_same_ext_shield_all_curves}, WString::tr("raageo-share-ext-atten-tt"), showToolTips );
 
-  m_phys_model_shielded_by_other_curves = new WCheckBox( WString::tr("raageo-shielded-by-other-curves"), phys_opt_cb_row );
+  m_phys_model_shielded_by_other_curves = phys_opt_cb_row->addNew<WCheckBox>( WString::tr("raageo-shielded-by-other-curves") );
   m_phys_model_shielded_by_other_curves->addStyleClass( "ShieldedByOtherCurvesCb PhysOptionCb GridSecondRow GridSecondCol" );
   m_phys_model_shielded_by_other_curves->setChecked( false );
   m_phys_model_shielded_by_other_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleShieldedByOtherCurvesChanged );
@@ -241,22 +240,22 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
 
   HelpSystem::attachToolTipOn( {m_phys_model_shielded_by_other_curves}, WString::tr("raageo-shielded-by-other-curves-tt"), showToolTips );
 
-  m_phys_model_shields = new WContainerWidget( m_phys_model_opts );
+  m_phys_model_shields = m_phys_model_opts->addNew<WContainerWidget>();
   m_phys_model_shields->addStyleClass( "PhysicalModelShields" );
-    
-  m_phys_ext_attens = new WContainerWidget( m_phys_model_shields );
+
+  m_phys_ext_attens = m_phys_model_shields->addNew<WContainerWidget>();
   m_phys_model_opts->hide();
 
   //WContainerWidget *spacer = new WContainerWidget( this );
   //spacer->addStyleClass( "RelActAutoSpacer" );
 
-  m_eqn_txt = new WText( this );
+  m_eqn_txt = addNew<WText>();
   m_eqn_txt->addStyleClass( "RelEffEqnTxt" );
 
-  m_add_del_rel_eff_div = new WContainerWidget( this );
+  m_add_del_rel_eff_div = addNew<WContainerWidget>();
   m_add_del_rel_eff_div->addStyleClass( "AddDelRelEffDiv" );
 
-  m_del_rel_eff_btn = new WPushButton( m_add_del_rel_eff_div );
+  m_del_rel_eff_btn = m_add_del_rel_eff_div->addNew<WPushButton>();
   m_del_rel_eff_btn->setIcon( Wt::WLink( "InterSpec_resources/images/minus_min_black.svg" ) );
   m_del_rel_eff_btn->setStyleClass( "Wt-icon DelRelEffCurve" );
   m_del_rel_eff_btn->clicked().connect( this, &RelActAutoGuiRelEffOptions::emitDelRelEffCurve );
@@ -264,7 +263,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   
   HelpSystem::attachToolTipOn( {m_del_rel_eff_btn}, WString::tr("raageo-del-rel-eff-curve-tt"), showToolTips );
 
-  m_add_rel_eff_btn = new WPushButton( m_add_del_rel_eff_div );
+  m_add_rel_eff_btn = m_add_del_rel_eff_div->addNew<WPushButton>();
   m_add_rel_eff_btn->setIcon( Wt::WLink( "InterSpec_resources/images/plus_min_black.svg" ) );
   m_add_rel_eff_btn->setStyleClass( "Wt-icon AddRelEffCurve" );
   m_add_rel_eff_btn->clicked().connect( this, &RelActAutoGuiRelEffOptions::emitAddRelEffCurve );
@@ -386,8 +385,7 @@ void RelActAutoGuiRelEffOptions::initPhysModelShields()
     m_phys_model_self_atten->resetState();
   }else
   {
-    m_phys_model_self_atten = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
-    m_phys_model_shields->insertWidget( 0, m_phys_model_self_atten );
+    m_phys_model_self_atten = m_phys_model_shields->insertWidget( 0, std::make_unique<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::SelfAtten ) );
     m_phys_model_self_atten->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   }
   
@@ -403,14 +401,13 @@ void RelActAutoGuiRelEffOptions::initPhysModelShields()
   
   if( starting_ext_shields.empty() )
   {
-    RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
-                                                     m_phys_ext_attens );
+    RelEffShieldWidget *sw = m_phys_ext_attens->addNew<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::ExternalAtten );
     sw->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   }else
   {
     starting_ext_shields[0]->resetState();
     for( size_t i = 1; i < starting_ext_shields.size(); ++i )
-      delete starting_ext_shields[i];
+      m_phys_ext_attens->removeWidget( starting_ext_shields[i] ); // unique_ptr goes out of scope, deleting widget
   }//if( starting_ext_shields.empty() )
 }
 
@@ -539,8 +536,7 @@ void RelActAutoGuiRelEffOptions::setRelEffCurveInput( const RelActCalcAuto::RelE
     // Add any new external attenuation widgets
     while( m_phys_ext_attens->children().size() < num_ext_atten )
     {
-      RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
-                                                     m_phys_ext_attens );
+      RelEffShieldWidget *sw = m_phys_ext_attens->addNew<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::ExternalAtten );
       sw->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
     }
 
@@ -745,13 +741,12 @@ void RelActAutoGuiRelEffOptions::update_external_atten_shield_widget(
   const size_t num_ext_atten = std::max( size_t(1), ext_shields.size() );
   while( m_phys_ext_attens->children().size() > num_ext_atten )
   {
-    delete m_phys_ext_attens->children().back();
+    m_phys_ext_attens->removeWidget( m_phys_ext_attens->children().back() ); // unique_ptr goes out of scope, deleting widget
   }
 
   while( m_phys_ext_attens->children().size() < num_ext_atten )
   {
-    RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
-                                                     m_phys_ext_attens );
+    RelEffShieldWidget *sw = m_phys_ext_attens->addNew<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::ExternalAtten );
     sw->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   }
 
@@ -808,13 +803,12 @@ void RelActAutoGuiRelEffOptions::update_external_atten_shield_widget( const std:
   const size_t num_ext_atten = std::max( size_t(1), ext_shields.size() );
   while( m_phys_ext_attens->children().size() > num_ext_atten )
   {
-    delete m_phys_ext_attens->children().back();
+    m_phys_ext_attens->removeWidget( m_phys_ext_attens->children().back() ); // unique_ptr goes out of scope, deleting widget
   }
-  
+
   while( m_phys_ext_attens->children().size() < num_ext_atten )
   {
-    RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
-                                                    m_phys_ext_attens );
+    RelEffShieldWidget *sw = m_phys_ext_attens->addNew<RelEffShieldWidget>( RelEffShieldWidget::ShieldType::ExternalAtten );
     sw->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   }
   

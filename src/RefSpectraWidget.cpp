@@ -28,19 +28,19 @@
 #include <filesystem>
 #include <algorithm>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WTreeView>
-#include <Wt/WLineEdit>
-#include <Wt/WMessageBox>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WStackedWidget>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WTreeView.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WMessageBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -111,20 +111,19 @@ RefSpectraDialog::RefSpectraDialog( const Wt::WString &title )
 {
   addStyleClass( "RefSpectraDialog" );
 
-  WGridLayout *layout = new WGridLayout();
+  WGridLayout *layout = contents()->setLayout( std::make_unique<WGridLayout>() );
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
 
-  contents()->setLayout( layout );
-
-  m_widget = new RefSpectraWidget();
-  layout->addWidget( m_widget, 0, 0 );
+  auto widgetOwner = std::make_unique<RefSpectraWidget>();
+  m_widget = widgetOwner.get();
+  layout->addWidget( std::move(widgetOwner), 0, 0 );
 
   m_loadBtn = addButton( WString::tr("Load") );
   m_loadBtn->clicked().connect( m_widget, &RefSpectraWidget::loadSelectedSpectrum );
   m_loadBtn->setDisabled( true );
-  m_widget->fileSelectionChangedSignal().connect( boost::bind( &RefSpectraDialog::handleSelectionChanged, this, boost::placeholders::_1 ) );
+  m_widget->fileSelectionChangedSignal().connect( [this]( RefSpectraWidgetSelectionType type ){ handleSelectionChanged( type ); } );
 
   addButton( WString::tr("Cancel") );
   
@@ -211,9 +210,9 @@ RefSpectraDialog *RefSpectraDialog::createDialog( const RefSpectraInitialBehavio
   return dialog;
 }
 
-RefSpectraWidget::RefSpectraWidget( Wt::WContainerWidget *parent )
-  : Wt::WContainerWidget( parent ),
-  m_treeModel( nullptr ),
+RefSpectraWidget::RefSpectraWidget()
+  : Wt::WContainerWidget(),
+  m_treeModel{},
   m_treeView( nullptr ),
   m_stack( nullptr ),
   m_spectrum( nullptr ),
@@ -228,7 +227,7 @@ RefSpectraWidget::RefSpectraWidget( Wt::WContainerWidget *parent )
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
   m_showAsComboBox( nullptr ),
   m_baseDirectories{},
-  m_fileSelectionChangedSignal( this ),
+  m_fileSelectionChangedSignal(),
   m_lastCollapsedIndex{},
   m_lastExpandedIndex{},
   m_lastExpandTime{}
@@ -350,7 +349,7 @@ void RefSpectraWidget::setupUI()
                          && (interspec->renderedHeight() > 100)
                          && (interspec->renderedWidth() < 480));
 
-  WGridLayout *mainLayout = new WGridLayout();
+  WGridLayout *mainLayout = setLayout( std::make_unique<WGridLayout>() );
   mainLayout->setContentsMargins( 0, 0, 0, 0 );
   mainLayout->setVerticalSpacing( 0 );
   mainLayout->setHorizontalSpacing( 0 );
@@ -361,57 +360,56 @@ void RefSpectraWidget::setupUI()
     addStyleClass( "RefSpectraWidget-portrait" );
   else
     addStyleClass( "RefSpectraWidget-landscape" );
-
-  setLayout( mainLayout );
   
   // Tree view
-  m_treeModel = new RefSpectraModel( this );
-  m_treeView = new Wt::WTreeView();
+  m_treeModel = std::make_shared<RefSpectraModel>();
+
+  auto treeViewOwner = std::make_unique<Wt::WTreeView>();
+  m_treeView = treeViewOwner.get();
   m_treeView->addStyleClass( "RefSpectraTreeView" );
   //m_treeView->setMinimumSize( WLength(250), WLength::Auto );
   m_treeView->setModel( m_treeModel );
   m_treeView->selectionChanged().connect( this, &RefSpectraWidget::handleSelectionChanged );
-  m_treeView->collapsed().connect( boost::bind( &RefSpectraWidget::handleCollapsed, this, boost::placeholders::_1 ) );
-  m_treeView->expanded().connect( boost::bind( &RefSpectraWidget::handleExpanded, this, boost::placeholders::_1 ) );
+  m_treeView->collapsed().connect( [this]( const Wt::WModelIndex &index ){ handleCollapsed( index ); } );
+  m_treeView->expanded().connect( [this]( const Wt::WModelIndex &index ){ handleExpanded( index ); } );
   m_treeView->setSelectable( true );
-  m_treeView->setSelectionMode( Wt::SelectionMode::SingleSelection );
-  m_treeView->setColumnWidth( 0, WLength(250, WLength::Pixel) );
-  m_treeView->setWidth( WLength(275, WLength::Pixel) ); 
+  m_treeView->setSelectionMode( Wt::SelectionMode::Single );
+  m_treeView->setColumnWidth( 0, WLength(250, WLength::Unit::Pixel) );
+  m_treeView->setWidth( WLength(275, WLength::Unit::Pixel) );
   m_treeView->setColumnResizeEnabled( false );
   m_treeView->setSortingEnabled( false );
 
   m_treeModel->layoutAboutToBeChanged().connect( this, &RefSpectraWidget::handleLayoutAboutToBeChanged );
   m_treeModel->layoutChanged().connect( this, &RefSpectraWidget::handleLayoutChanged );
 
-  WContainerWidget *treeViewWrapper = new WContainerWidget();
+  auto treeViewWrapperOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *treeViewWrapper = treeViewWrapperOwner.get();
   treeViewWrapper->addStyleClass( "RefSpectraTreeViewWrapper" );
-  WGridLayout *treeViewLayout = new WGridLayout();
+  WGridLayout *treeViewLayout = treeViewWrapper->setLayout( std::make_unique<WGridLayout>() );
   treeViewLayout->setContentsMargins( 0, 0, 0, 0 );
   treeViewLayout->setVerticalSpacing( 0 );
   treeViewLayout->setHorizontalSpacing( 0 );
-  treeViewWrapper->setLayout( treeViewLayout );
-  treeViewLayout->addWidget( m_treeView, 0, 0 );
-  WContainerWidget *treeViewOptions = new WContainerWidget();
+  treeViewLayout->addWidget( std::move(treeViewOwner), 0, 0 );
+  WContainerWidget *treeViewOptions = treeViewLayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   treeViewOptions->addStyleClass( "RefSpectraOptions" );
-  treeViewLayout->addWidget( treeViewOptions, 1, 0 );
   treeViewLayout->setRowStretch( 0, 1 );
 
 
-  mainLayout->addWidget( treeViewWrapper, 0, 0 );
+  mainLayout->addWidget( std::move(treeViewWrapperOwner), 0, 0 );
 
   // Stack that will either show intro txt, the spectrum of selected file, or a text box with the readme.txt or readme.xml
-  m_stack = new WStackedWidget();
+  auto stackOwner = std::make_unique<WStackedWidget>();
+  m_stack = stackOwner.get();
   m_stack->addStyleClass( "RefSpectraStack" );
 
   const char *directions_key = interspec->isMobile() ? "rs-no-dir-selected-mobile" : "rs-no-dir-selected-desktop";
-  WText *noDirSelected = new WText( WString::tr(directions_key) );
+  WText *noDirSelected = m_stack->addNew<WText>( WString::tr(directions_key) );
   noDirSelected->addStyleClass( "RefSpectraNoDirSelected" );
-  m_stack->addWidget( noDirSelected );
 
-  m_dirInfoContainer = new WContainerWidget();
-  m_stack->addWidget( m_dirInfoContainer );
+  m_dirInfoContainer = m_stack->addNew<WContainerWidget>();
 
-  m_spectrum = new D3SpectrumDisplayDiv();
+  auto spectrumOwner = std::make_unique<D3SpectrumDisplayDiv>();
+  m_spectrum = spectrumOwner.get();
 
   // Set up the spectrum display, making it compact, and match current color theme and log y setting
   const bool wasLogY = UserPreferences::preferenceValue<bool>( "LogY", interspec );
@@ -424,38 +422,37 @@ void RefSpectraWidget::setupUI()
   //m_spectrum->setShowPeakLabel( 0, true ); //SpectrumChart::PeakLabels::kShowPeakUserLabel
   //m_spectrum->setReferncePhotoPeakLines( ReferenceLineInfo() );
 
-  m_stack->addWidget( m_spectrum );
-  
-  WContainerWidget *stackWrapper = new WContainerWidget();
+  m_stack->addWidget( std::move(spectrumOwner) );
+
+  auto stackWrapperOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *stackWrapper = stackWrapperOwner.get();
   stackWrapper->addStyleClass( "RefSpectraStackWrapper" );
-  WGridLayout *stackLayout = new WGridLayout();
+  WGridLayout *stackLayout = stackWrapper->setLayout( std::make_unique<WGridLayout>() );
   stackLayout->setContentsMargins( 0, 0, 0, 0 );
   stackLayout->setVerticalSpacing( 0 );
   stackLayout->setHorizontalSpacing( 0 );
-  stackWrapper->setLayout( stackLayout ); 
-  stackLayout->addWidget( m_stack, 0, 0 );
+  stackLayout->addWidget( std::move(stackOwner), 0, 0 );
 
-  WContainerWidget *stackOptions = new WContainerWidget();
+  WContainerWidget *stackOptions = stackLayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   stackOptions->addStyleClass( "RefSpectraOptions RefSpecDispOptions" );
-  stackLayout->addWidget( stackOptions, 1, 0 );
   stackLayout->setRowStretch( 0, 1 );
 
 
   if( portrait )
-    mainLayout->addWidget( stackWrapper, 1, 0 );
+    mainLayout->addWidget( std::move(stackWrapperOwner), 1, 0 );
   else
-    mainLayout->addWidget( stackWrapper, 0, 1 );
+    mainLayout->addWidget( std::move(stackWrapperOwner), 0, 1 );
   
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   // Add directory button
-  m_addDirButton = new Wt::WContainerWidget( treeViewOptions );
+  m_addDirButton = treeViewOptions->addNew<Wt::WContainerWidget>();
   m_addDirButton->clicked().connect( this, &RefSpectraWidget::startAddDirectory );
   m_addDirButton->addStyleClass( "AddDirBtn" );
-  
+
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec );
   HelpSystem::attachToolTipOn( m_addDirButton, WString::tr("rs-tt-add-dir-btn"), showToolTips );
 
-  m_deleteDirButton = new Wt::WContainerWidget( treeViewOptions );
+  m_deleteDirButton = treeViewOptions->addNew<Wt::WContainerWidget>();
   m_deleteDirButton->clicked().connect( this, &RefSpectraWidget::removeCurrentlySelectedDirectory );
   m_deleteDirButton->addStyleClass( "DeleteDirBtn" );
   m_deleteDirButton->setHiddenKeepsGeometry( true );
@@ -463,17 +460,17 @@ void RefSpectraWidget::setupUI()
   HelpSystem::attachToolTipOn( m_deleteDirButton, WString::tr("rs-tt-delete-dir-btn"), showToolTips );
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
-  m_showCurrentForeground = new Wt::WCheckBox( WString::tr(portrait ? "rs-show-foreground-portrait" : "rs-show-foreground"), stackOptions );
+  m_showCurrentForeground = stackOptions->addNew<Wt::WCheckBox>( WString::tr(portrait ? "rs-show-foreground-portrait" : "rs-show-foreground") );
   m_showCurrentForeground->addStyleClass( "CbNoLineBreak" );
   m_showCurrentForeground->changed().connect( this, &RefSpectraWidget::updatePreview );
-  
 
-  m_refBackground = new Wt::WCheckBox( WString::tr(portrait ? "rs-show-background-portrait" : "rs-show-background"), stackOptions );
+
+  m_refBackground = stackOptions->addNew<Wt::WCheckBox>( WString::tr(portrait ? "rs-show-background-portrait" : "rs-show-background") );
   m_refBackground->addStyleClass( "CbNoLineBreak" );
   m_refBackground->changed().connect( this, &RefSpectraWidget::updatePreview );
   m_refBackground->setHidden( true );
-  
-  m_loadBackground = new Wt::WCheckBox( WString::tr(portrait ? "rs-load-background-portrait" : "rs-load-background"), stackOptions );
+
+  m_loadBackground = stackOptions->addNew<Wt::WCheckBox>( WString::tr(portrait ? "rs-load-background-portrait" : "rs-load-background") );
   m_loadBackground->addStyleClass( "CbNoLineBreak" );
   m_loadBackground->changed().connect( this, &RefSpectraWidget::updatePreview );
   m_loadBackground->setHidden( true );
@@ -482,24 +479,24 @@ void RefSpectraWidget::setupUI()
   {
     //mainLayout->setRowStretch( 0, 1 );
     //mainLayout->setRowStretch( 1, 1 );
-    mainLayout->setRowResizable( 0, true, WLength(50,WLength::Percentage) ); //This is just to make the tree-view and chart-area split the heiht 50/50
+    mainLayout->setRowResizable( 0, true, WLength(50,WLength::Unit::Percentage) ); //This is just to make the tree-view and chart-area split the heiht 50/50
   }else
   {
     mainLayout->setRowStretch( 0, 1 );
   }
 
-  WContainerWidget *optionsSpacer = new WContainerWidget( treeViewOptions ); 
+  WContainerWidget *optionsSpacer = treeViewOptions->addNew<WContainerWidget>();
   optionsSpacer->addStyleClass( "RefSpectraOptionsSpacer" );
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   #ifdef _WIN32
-  const char *show_exlorer_key = "rs-show-in-explorer";
+  const char * const show_exlorer_key = "rs-show-in-explorer";
   #elif defined( __APPLE__ )
-  const char *show_exlorer_key = "rs-show-in-finder";
+  const char * const show_exlorer_key = "rs-show-in-finder";
   #else
-  const char *show_exlorer_key = "rs-show-in-linux-file-manager";
+  const char * const show_exlorer_key = "rs-show-in-linux-file-manager";
   #endif
-  m_showInExplorerButton = new Wt::WPushButton( WString::tr(show_exlorer_key), treeViewOptions );
+  m_showInExplorerButton = treeViewOptions->addNew<Wt::WPushButton>( WString::tr(show_exlorer_key) );
 
   m_showInExplorerButton->addStyleClass( "LinkBtn ShowInExplorerBtn" );
   m_showInExplorerButton->clicked().connect( this, &RefSpectraWidget::showInExplorer );
@@ -508,14 +505,14 @@ void RefSpectraWidget::setupUI()
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
 
-  optionsSpacer = new WContainerWidget( stackOptions ); 
+  optionsSpacer = stackOptions->addNew<WContainerWidget>();
   optionsSpacer->addStyleClass( "RefSpectraOptionsSpacer" );
 
-  WContainerWidget *showAsGroup = new WContainerWidget(stackOptions);
+  WContainerWidget *showAsGroup = stackOptions->addNew<WContainerWidget>();
   showAsGroup->addStyleClass( "RefSpectraShowAsGroup" );
-  WLabel *showAsLabel = new WLabel( WString::tr("rs-show-as"), showAsGroup );
+  WLabel *showAsLabel = showAsGroup->addNew<WLabel>( WString::tr("rs-show-as") );
   showAsLabel->addStyleClass( "RefSpectraShowAsLabel" );
-  m_showAsComboBox = new WComboBox( showAsGroup );
+  m_showAsComboBox = showAsGroup->addNew<WComboBox>();
   m_showAsComboBox->addStyleClass( "RefSpectraShowAsComboBox" );
 
   for( const SpecUtils::SpectrumType type : ns_spectrum_types )
@@ -555,17 +552,14 @@ void RefSpectraWidget::startAddDirectory()
   contents->addStyleClass( "RefSpectraAddDirDialogContents" );
   okBtn->disable();
 
-  DirectorySelector *dirSelector = new DirectorySelector( contents );
-  
-  dirSelector->pathValidityChanged().connect( 
-    boost::bind( &WPushButton::setDisabled, okBtn, 
-      boost::bind(std::logical_not<bool>(), boost::placeholders::_1) 
-  ) );
-  
-  okBtn->clicked().connect( std::bind([dirSelector, this](){
-    std::string path = dirSelector->path();
-    this->addDirectory( path );
-  }) );
+  DirectorySelector *dirSelector = contents->addNew<DirectorySelector>();
+
+  dirSelector->pathValidityChanged().connect( [okBtn]( bool valid ){ okBtn->setDisabled( !valid ); } );
+
+  okBtn->clicked().connect( [dirSelector, this](){
+    const std::string path = dirSelector->path();
+    addDirectory( path );
+  } );
 
   dialog->show();
 }//void startAddDirectory()
@@ -880,9 +874,8 @@ void RefSpectraWidget::handleSelectionChanged()
   {
     // We'll auto-expand directories when selected, but we'll do it after the current
     //  event loop iteration, incase the user is collapsing the node (in which case we dont want to expand it)
-    boost::function<void()> do_expand = wApp->bind( boost::bind(&RefSpectraWidget::tryExpandNode, this, index) );
-    const auto doExpand = [do_expand](){ do_expand(); wApp->triggerUpdate(); };
-    WServer::instance()->post( wApp->sessionId(), doExpand );
+    const std::string sessionId = wApp->sessionId();
+    WServer::instance()->post( sessionId, [this, index](){ tryExpandNode( index ); wApp->triggerUpdate(); } );
     
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
     int parent_levels = 0;
@@ -921,8 +914,8 @@ void RefSpectraWidget::handleSelectionChanged()
     //m_showAsComboBox->setHidden( true );
 
     m_stack->setCurrentIndex( 1 );
-    
-    Wt::WText *title_text = new Wt::WText( m_dirInfoContainer );
+
+    Wt::WText *title_text = m_dirInfoContainer->addNew<Wt::WText>();
     title_text->addStyleClass( "DirInfoTitle" );
 
     int num_spectra_files = 0, num_dirs = 0;
@@ -956,7 +949,7 @@ void RefSpectraWidget::handleSelectionChanged()
             }
           }//if( SpecUtils::file_size( file ) < 10*1024 )
           
-          Wt::WText *text = new Wt::WText( file_data, Wt::XHTMLText, m_dirInfoContainer );
+          Wt::WText *text = m_dirInfoContainer->addNew<Wt::WText>( file_data, Wt::TextFormat::XHTML );
           text->addStyleClass( "DirReadmeText" );
         }else
         {
@@ -1115,8 +1108,8 @@ void RefSpectraWidget::updatePreview()
   if( !loaded )
   {
     m_stack->setCurrentIndex( 1 );
-    WString error_text = WString::tr("rs-error-invalid-file").arg( filename );
-    Wt::WText *text = new Wt::WText( error_text, m_dirInfoContainer );
+    const WString error_text = WString::tr("rs-error-invalid-file").arg( filename );
+    Wt::WText *text = m_dirInfoContainer->addNew<Wt::WText>( error_text );
     text->addStyleClass( "ErrorLoadingText" );
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
@@ -1484,7 +1477,7 @@ void RefSpectraWidget::initBaseDirs()
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
   // Sort it so things are in alphabetical order
-  m_treeView->sortByColumn( 0, Wt::SortOrder::AscendingOrder );
+  m_treeView->sortByColumn( 0, Wt::SortOrder::Ascending );
 
 
   // Expand the "Common Field Nuclides" node

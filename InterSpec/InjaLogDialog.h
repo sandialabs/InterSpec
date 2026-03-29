@@ -31,7 +31,7 @@
 #include <utility>
 #include <functional>
 
-#include <Wt/WString>
+#include <Wt/WString.h>
 
 #include <nlohmann/json.hpp>
 

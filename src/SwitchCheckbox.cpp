@@ -24,27 +24,26 @@
 #include "InterSpec_config.h"
 
 
-#include <Wt/WText>
-#include <Wt/WString>
-#include <Wt/WCheckBox>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WString.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/SwitchCheckbox.h"
 
 using namespace std;
 using namespace Wt;
 
-SwitchCheckbox::SwitchCheckbox( const Wt::WString &rightlabel, Wt::WContainerWidget *parent )
- : WContainerWidget( parent ),
+SwitchCheckbox::SwitchCheckbox( const Wt::WString &rightlabel )
+ : WContainerWidget(),
    m_cb( nullptr )
 {
   init( "", rightlabel );
 }
 
-SwitchCheckbox::SwitchCheckbox( const Wt::WString &leftlabel, const Wt::WString &rightlabel,
-               Wt::WContainerWidget *parent )
- : WContainerWidget( parent ),
+SwitchCheckbox::SwitchCheckbox( const Wt::WString &leftlabel, const Wt::WString &rightlabel )
+ : WContainerWidget(),
    m_cb( nullptr )
 {
   init( leftlabel, rightlabel );
@@ -63,16 +62,16 @@ void SwitchCheckbox::init( const Wt::WString &leftlabel, const Wt::WString &righ
   //  <span> element until you set it as a buddy).
   //  So instead we'll put left/right label html element into a WText - ehh, it works
   WText *leftText = nullptr, *rightText = nullptr;
-  
+
   if( !leftlabel.empty() )
-    leftText = new WText( this );
-  
+    leftText = addNew<WText>();
+
   // Note that if we create a WCheckBox with some text for its label, the HTML structure will be
   //  totally different, so we will always make our own labels.
-  m_cb = new WCheckBox( this );
-  
+  m_cb = addNew<WCheckBox>();
+
   if( !rightlabel.empty() )
-    rightText = new WText( this );
+    rightText = addNew<WText>();
   
   if( leftText )
     leftText->setText( "<label for=\"" + m_cb->id() + "\">" + leftlabel.toUTF8() + "</label>" );

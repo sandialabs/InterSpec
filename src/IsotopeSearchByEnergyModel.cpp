@@ -29,8 +29,8 @@
 #include <vector>
 #include <sstream>
 
-#include <Wt/WServer>
-#include <Wt/WApplication>
+#include <Wt/WServer.h>
+#include <Wt/WApplication.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -71,7 +71,7 @@ namespace
     bool operator()( const vector<IsotopeSearchByEnergyModel::IsotopeMatch> &lhsin,
                     const vector<IsotopeSearchByEnergyModel::IsotopeMatch> &rhsin )
     {
-      const bool asscending = (m_order==AscendingOrder);
+      const bool asscending = (m_order==Wt::SortOrder::Ascending);
       
       assert( lhsin.size()==rhsin.size() && lhsin.size()==m_energies.size() );
       
@@ -525,10 +525,10 @@ m_element(0), m_xray(0), m_reaction(0)
 }
 
 
-IsotopeSearchByEnergyModel::IsotopeSearchByEnergyModel( Wt::WObject *parent )
-: WAbstractItemModel( parent ),
+IsotopeSearchByEnergyModel::IsotopeSearchByEnergyModel()
+: WAbstractItemModel(),
   m_sortColumn( IsotopeSearchByEnergyModel::Column::ProfileDistance ),
-  m_sortOrder( Wt::AscendingOrder )
+  m_sortOrder( Wt::SortOrder::Ascending )
 {
   
 }//IsotopeSearchByEnergyModel( constuctor )
@@ -1232,7 +1232,7 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
                                                    const std::vector<const SandiaDecay::Nuclide *> &nuclides,
                                                    const std::vector<const ReactionGamma::Reaction *> &specific_reactions,
                                                    const std::string appid,
-                                                   boost::function< void(void) > updatefcn )
+                                                   std::function< void(void) > updatefcn )
 {
   try
   {
@@ -1446,7 +1446,7 @@ double IsotopeSearchByEnergyModel::assumedAge( const Wt::WModelIndex &index ) co
 }//double assumedAge( const Wt::WModelIndex &index ) const;
 
 
-boost::any IsotopeSearchByEnergyModel::data( const WModelIndex &index, int role ) const
+Wt::cpp17::any IsotopeSearchByEnergyModel::data( const WModelIndex &index, Wt::ItemDataRole role ) const
 {
   const int row = index.row();
   const Column col = Column( index.column() );
@@ -1454,9 +1454,9 @@ boost::any IsotopeSearchByEnergyModel::data( const WModelIndex &index, int role 
   const size_t energyNum = static_cast<size_t>( row % m_energies.size() );
   
   
-  if( (role!=Wt::DisplayRole) || (matchNum>m_matches.size())
+  if( (role!=Wt::ItemDataRole::Display) || (matchNum>m_matches.size())
      || (col>=NumColumns) )
-    return boost::any();
+    return Wt::cpp17::any();
   
   const vector<IsotopeMatch> &match = m_matches[matchNum];
   const IsotopeMatch &iso = match[energyNum];
@@ -1467,7 +1467,7 @@ boost::any IsotopeSearchByEnergyModel::data( const WModelIndex &index, int role 
     case ParentIsotope:
     case Distance:
       if( energyNum )
-        return boost::any();
+        return Wt::cpp17::any();
       //fallthrough intentional (my first intentional use in like 5 years)
     case Energy: case BranchRatio: case ProfileDistance:
     case SpecificIsotope: case ParentHalfLife: case AssumedAge:
@@ -1478,18 +1478,18 @@ boost::any IsotopeSearchByEnergyModel::data( const WModelIndex &index, int role 
       break;
   }//switch( col )
   
-  return boost::any();
-}//boost::any data(...)
+  return Wt::cpp17::any();
+}//Wt::cpp17::any data(...)
 
 
-boost::any IsotopeSearchByEnergyModel::headerData( int section,
+Wt::cpp17::any IsotopeSearchByEnergyModel::headerData( int section,
                                                   Wt::Orientation orientation,
-                                                  int role ) const
+                                                  Wt::ItemDataRole role ) const
 {
-  if( (orientation == Wt::Orientation::Horizontal) && (role == Wt::ItemDataRole::LevelRole) )
+  if( (orientation == Wt::Orientation::Horizontal) && (role == Wt::ItemDataRole::Level) )
     return 0;
-  
-  if( role == Wt::ItemDataRole::DisplayRole )
+
+  if( role == Wt::ItemDataRole::Display )
   {
     switch( section )
     {
@@ -1516,7 +1516,7 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
       case IsotopeSearchByEnergyModel::Column::NumColumns:
         break;
     }//switch( col )
-  }else if( role == Wt::ItemDataRole::ToolTipRole )
+  }else if( role == Wt::ItemDataRole::ToolTip )
   {
     switch( section )
     {
@@ -1531,7 +1531,7 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
       case IsotopeSearchByEnergyModel::Column::ProfileDistance:
         return WString::tr("isbem-tt-profile");
       case IsotopeSearchByEnergyModel::Column::SpecificIsotope:
-        return boost::any();
+        return Wt::cpp17::any();
       case IsotopeSearchByEnergyModel::Column::ParentHalfLife:
         return WString::tr("isbem-tt-parent-hl");
       case IsotopeSearchByEnergyModel::Column::AssumedAge:
@@ -1541,8 +1541,8 @@ boost::any IsotopeSearchByEnergyModel::headerData( int section,
     }//switch( col )
   }//ToolTipRole
   
-  return boost::any();
-}//boost::any headerData( int section, Orientation orientation, int role ) const
+  return Wt::cpp17::any();
+}//Wt::cpp17::any headerData( int section, Orientation orientation, int role ) const
 
 
 WModelIndex IsotopeSearchByEnergyModel::index( int row, int column,
@@ -1580,9 +1580,9 @@ WFlags<ItemFlag> IsotopeSearchByEnergyModel::flags( const WModelIndex &index ) c
   const int level = (index.row() % m_energies.size());
   
   if( (col==ParentIsotope) && (level==0) )
-    return WFlags<ItemFlag>( ItemIsSelectable | ItemIsXHTMLText );
-  
-  return WFlags<ItemFlag>( ItemIsXHTMLText );
+    return WFlags<ItemFlag>( ItemFlag::Selectable | ItemFlag::XHTMLText );
+
+  return WFlags<ItemFlag>( ItemFlag::XHTMLText );
 }//WFlags<ItemFlag> flags( const Wt::WModelIndex &index ) const
 
 

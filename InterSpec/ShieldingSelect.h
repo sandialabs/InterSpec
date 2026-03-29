@@ -34,7 +34,7 @@
 #include <boost/optional.hpp>
 #endif
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
@@ -93,7 +93,7 @@ class SourceCheckbox : public Wt::WContainerWidget
 {
 public:
   SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
-                  double massFrac, Wt::WContainerWidget *parent = 0 );
+                  double massFrac );
   virtual ~SourceCheckbox();
 
   double massFraction() const;
@@ -136,8 +136,7 @@ public:
   /** ShieldingSelect constructor for use when you arent fitting material thickness or AN/AD - e.g., everywhere except in
    ShieldingSourceDisplay.
    */
-  ShieldingSelect( Wt::WSuggestionPopup *materialSuggest,
-                   Wt::WContainerWidget *parent = 0 );
+  ShieldingSelect( Wt::WSuggestionPopup *materialSuggest );
 
   //ShieldingSelect constructor: if forFitting==true, then the checkboxes
   //  that tell if a quantity should be fit for, are constructed.  if
@@ -148,8 +147,7 @@ public:
   //  it, to allow safe removing of the suggest from the edit in the destructor.
   ShieldingSelect( SourceFitModel *sourceModel,
                    Wt::WSuggestionPopup *materialSuggest,
-                   const ShieldingSourceDisplay *shieldSource,
-                   Wt::WContainerWidget *parent = 0 );
+                   const ShieldingSourceDisplay *shieldSource );
   
   virtual ~ShieldingSelect();
 

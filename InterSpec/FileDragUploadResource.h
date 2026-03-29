@@ -28,10 +28,10 @@
 #include <tuple>
 #include <string>
 
-#include <Wt/WEvent>
-#include <Wt/WResource>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
+#include <Wt/WEvent.h>
+#include <Wt/WResource.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
 
 
 class FileDragUploadResource : public Wt::WResource
@@ -42,7 +42,7 @@ class FileDragUploadResource : public Wt::WResource
   //  could be a source of optimization
 
 public:
-  FileDragUploadResource( Wt::WObject *parent  );
+  FileDragUploadResource();
   virtual ~FileDragUploadResource();
   Wt::Signal<std::string,std::string> &fileDrop(); //<display_name,spool_name>
 

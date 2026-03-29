@@ -32,13 +32,13 @@
 #include <atomic>
 #include <iostream>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
 #if( BUILD_AS_ELECTRON_APP )
-#include <Wt/WEvent>
+#include <Wt/WEvent.h>
 #endif
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/SpecFileQuery.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
@@ -84,7 +84,7 @@ class SpecFileQueryDbCache;
 class SpecFileQueryWidget : public Wt::WContainerWidget
 {
 public:
-  SpecFileQueryWidget( InterSpec *viewer, Wt::WContainerWidget *parent = 0 );
+  SpecFileQueryWidget( InterSpec *viewer );
   virtual ~SpecFileQueryWidget();
   
   

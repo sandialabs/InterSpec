@@ -27,18 +27,18 @@
 #include <limits>
 #include <random>
 
-#include <Wt/WLabel>
-#include <Wt/WSignal>
-#include <Wt/WString>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WStackedWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/WRegExpValidator>
-#include <Wt/WSuggestionPopup>
+#include <Wt/WLabel.h>
+#include <Wt/WSignal.h>
+#include <Wt/WString.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WSuggestionPopup.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -95,8 +95,8 @@ class RelActAutoGuiNuclideConstraint : public WContainerWidget
   
 
 public:
-  RelActAutoGuiNuclideConstraint( RelActAutoGui *gui, RelActAutoGuiNuclide *nuc, WContainerWidget *parent )
-    : WContainerWidget( parent ),
+  RelActAutoGuiNuclideConstraint( RelActAutoGui *gui, RelActAutoGuiNuclide *nuc, WContainerWidget * /*parent*/ = nullptr )
+    : WContainerWidget(),
     m_gui( gui ),
     m_nuc( nuc ),
     m_constraint_type( nullptr ),
@@ -107,8 +107,8 @@ public:
     m_max_mass_frac_edit( nullptr ),
     m_act_control_nuc_combo( nullptr ),
     m_activity_ratio_edit( nullptr ),
-    m_remove( this ),
-    m_changed( this )
+    m_remove(),
+    m_changed()
   {
     InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
     if( app )
@@ -117,19 +117,18 @@ public:
 
     const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
 
-    m_constraint_type = new WComboBox( this );
+    m_constraint_type = addNew<WComboBox>();
     m_constraint_type->setNoSelectionEnabled( false );
     m_constraint_type->changed().connect( this, &RelActAutoGuiNuclideConstraint::handleConstraintTypeChange );
-    m_stacked_widget = new WStackedWidget( this );
+    m_stacked_widget = addNew<WStackedWidget>();
 
    
     for( NucConstraintType type = NucConstraintType::None; 
         type < NucConstraintType::NumTypes; 
         type = NucConstraintType(static_cast<int>(type) + 1) )
     {
-      WContainerWidget *container = new WContainerWidget( m_stacked_widget );
+      WContainerWidget *container = m_stacked_widget->addNew<WContainerWidget>();
       container->addStyleClass( "ConstraintInputDiv" );
-      m_stacked_widget->addWidget( container );
       const int model_row = m_constraint_type->count();
 
       switch( type )
@@ -137,7 +136,7 @@ public:
         case NucConstraintType::None:
         {
           //m_constraint_type->addItem( "None" );
-          WLabel *label = new WLabel( WString::tr("raagn-select-constraint-type"), container );
+          WLabel *label = container->addNew<WLabel>( WString::tr("raagn-select-constraint-type") );
           label->setInline( false );
           break;
         }
@@ -145,19 +144,19 @@ public:
         case NucConstraintType::RelActRange:
         {
           //m_constraint_type->addItem( "Rel. Act" );
-          WLabel *label = new WLabel( WString::tr("raagn-min"), container );
-          m_min_rel_act_edit = new NativeFloatSpinBox( container );
+          WLabel *label = container->addNew<WLabel>( WString::tr("raagn-min") );
+          m_min_rel_act_edit = container->addNew<NativeFloatSpinBox>();
           label->setBuddy( m_min_rel_act_edit );
           m_min_rel_act_edit->setSpinnerHidden( true );
           m_min_rel_act_edit->setMinimum( 0.0f );
-          m_min_rel_act_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_min_rel_act_edit->setWidth( WLength(35.0, WLength::Unit::Pixel) );
           m_min_rel_act_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleRelActRangeChange );
 
-          label = new WLabel( WString::tr("raagn-max"), container );
-          m_max_rel_act_edit = new NativeFloatSpinBox( container );
+          label = container->addNew<WLabel>( WString::tr("raagn-max") );
+          m_max_rel_act_edit = container->addNew<NativeFloatSpinBox>();
           label->setBuddy( m_max_rel_act_edit );
           m_max_rel_act_edit->setSpinnerHidden( true );
-          m_max_rel_act_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_max_rel_act_edit->setWidth( WLength(35.0, WLength::Unit::Pixel) );
           m_max_rel_act_edit->setMinimum( 0.0f );
           m_max_rel_act_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleRelActRangeChange );
           break;
@@ -166,20 +165,20 @@ public:
         case NucConstraintType::MassFraction:
         {
           //m_constraint_type->addItem( "Mass Frac." );
-          WLabel *label = new WLabel( WString::tr("raagn-min"), container );
-          m_min_mass_frac_edit = new NativeFloatSpinBox( container );
+          WLabel *label = container->addNew<WLabel>( WString::tr("raagn-min") );
+          m_min_mass_frac_edit = container->addNew<NativeFloatSpinBox>();
           label->setBuddy( m_min_mass_frac_edit );
           m_min_mass_frac_edit->setSpinnerHidden( true );
-          m_min_mass_frac_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_min_mass_frac_edit->setWidth( WLength(35.0, WLength::Unit::Pixel) );
           m_min_mass_frac_edit->setRange( 0.0f, 1.0f );
           m_min_mass_frac_edit->setValue( 0.0f );
           m_min_mass_frac_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleMassFractionChange );
 
-          label = new WLabel( WString::tr("raagn-max"), container );
-          m_max_mass_frac_edit = new NativeFloatSpinBox( container );
+          label = container->addNew<WLabel>( WString::tr("raagn-max") );
+          m_max_mass_frac_edit = container->addNew<NativeFloatSpinBox>();
           label->setBuddy( m_max_mass_frac_edit );
           m_max_mass_frac_edit->setSpinnerHidden( true );
-          m_max_mass_frac_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_max_mass_frac_edit->setWidth( WLength(35.0, WLength::Unit::Pixel) );
           m_max_mass_frac_edit->setRange( 0.0, 1.0 );
           m_max_mass_frac_edit->setValue( 1.0f );
           m_max_mass_frac_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleMassFractionChange );
@@ -189,17 +188,17 @@ public:
         case NucConstraintType::ActRatio:
         {
           //m_constraint_type->addItem( "Act Ratio" );
-          WLabel *label = new WLabel( WString::tr("raagn-src"), container );
-          m_act_control_nuc_combo = new WComboBox( container );
+          WLabel *label = container->addNew<WLabel>( WString::tr("raagn-src") );
+          m_act_control_nuc_combo = container->addNew<WComboBox>();
           label->setBuddy( m_act_control_nuc_combo );
-          m_act_control_nuc_combo->setMaximumSize( WLength(60, WLength::Pixel), WLength::Auto );
+          m_act_control_nuc_combo->setMaximumSize( WLength(60, WLength::Unit::Pixel), WLength::Auto );
           m_act_control_nuc_combo->changed().connect( this, &RelActAutoGuiNuclideConstraint::handleActivityRatioChange );
           
-          label = new WLabel( WString::tr("raagn-val"), container );
-          m_activity_ratio_edit = new NativeFloatSpinBox( container );
+          label = container->addNew<WLabel>( WString::tr("raagn-val") );
+          m_activity_ratio_edit = container->addNew<NativeFloatSpinBox>();
           label->setBuddy( m_activity_ratio_edit );
           m_activity_ratio_edit->setSpinnerHidden( true );
-          m_activity_ratio_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_activity_ratio_edit->setWidth( WLength(35.0, WLength::Unit::Pixel) );
           m_activity_ratio_edit->setMinimum( std::numeric_limits<float>::min() );
           m_activity_ratio_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleActivityRatioChange );
           break;
@@ -216,10 +215,10 @@ public:
 
     m_constraint_type->changed().connect( this, &RelActAutoGuiNuclideConstraint::handleConstraintTypeChange );
 
-    WContainerWidget *spacer = new WContainerWidget( this );
+    WContainerWidget *spacer = addNew<WContainerWidget>();
     spacer->setStyleClass( "RelActAutoSpacer" );
 
-    WPushButton *removeBtn = new WPushButton( this );
+    WPushButton *removeBtn = addNew<WPushButton>();
     removeBtn->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
     removeBtn->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
     removeBtn->clicked().connect( this, &RelActAutoGuiNuclideConstraint::handleRemove );
@@ -238,7 +237,7 @@ public:
     const NucConstraintType current_type = constraintType();
 
     m_constraint_type->clear();
-    WAbstractItemModel *constraint_type_model = m_constraint_type->model();
+    WAbstractItemModel *constraint_type_model = m_constraint_type->model().get();
     assert( constraint_type_model );
     if( !constraint_type_model )
       throw runtime_error( "RelActAutoGuiNuclideConstraint::RelActAutoGuiNuclideConstraint() called when no constraint type model is present" );
@@ -295,7 +294,7 @@ public:
       if( !index.isValid() )
         throw runtime_error( "RelActAutoGuiNuclideConstraint::RelActAutoGuiNuclideConstraint() called when no constraint type model index is valid" );
 
-      constraint_type_model->setData( index, boost::any(type), Wt::ItemDataRole::UserRole );
+      constraint_type_model->setData( index, Wt::cpp17::any(type), Wt::ItemDataRole::User );
     }//for( const NucConstraintType &type : types )
   }//void setAvaiableConstraintTypes( const std::set<NucConstraintType> &types )
 
@@ -325,7 +324,7 @@ public:
   map<NucConstraintType,int> constraintTypeRowsForTypes() const
   {
     map<NucConstraintType,int> answer;
-    WAbstractItemModel *model = m_constraint_type->model();
+    WAbstractItemModel *model = m_constraint_type->model().get();
     assert( model );
     if( !model )
       return answer;
@@ -337,10 +336,10 @@ public:
       if( !index.isValid() )
         continue;
 
-      const boost::any any_data = model->data( index, Wt::ItemDataRole::UserRole );
+      const Wt::cpp17::any any_data = model->data( index, Wt::ItemDataRole::User );
       try
       {
-        const NucConstraintType data_type = boost::any_cast<NucConstraintType>(any_data);
+        const NucConstraintType data_type = Wt::cpp17::any_cast<NucConstraintType>(any_data);
         answer[data_type] = row;
       }catch( std::exception & )
       {
@@ -389,7 +388,7 @@ public:
     if( row < 0 )
       return NucConstraintType::None;
 
-    WAbstractItemModel *model = m_constraint_type->model();
+    WAbstractItemModel *model = m_constraint_type->model().get();
     assert( model );
     if( !model )
       return NucConstraintType::None;
@@ -399,12 +398,12 @@ public:
     if( !index.isValid() )
       return NucConstraintType::None;
 
-    const boost::any any_data = model->data( index, Wt::ItemDataRole::UserRole);
-    assert( !any_data.empty() );
-    if( any_data.empty() )
+    const Wt::cpp17::any any_data = model->data( index, Wt::ItemDataRole::User);
+    assert( !!any_data.has_value() );
+    if( !any_data.has_value() )
       return NucConstraintType::None;
 
-    const NucConstraintType type = boost::any_cast<NucConstraintType>(any_data);
+    const NucConstraintType type = Wt::cpp17::any_cast<NucConstraintType>(any_data);
     return type;
   }//NucConstraintType constraintType() const
 
@@ -670,8 +669,8 @@ public:
 
 
 
-RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget *parent )
-  : WContainerWidget( parent ),
+RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
+  : WContainerWidget(),
   m_gui( gui ),
   m_nuclide_edit( nullptr ),
   m_age_container( nullptr ),
@@ -685,10 +684,10 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_fit_age_min_edit( nullptr ),
   m_fit_age_max_edit( nullptr ),
   m_summary_text( nullptr ),
-  m_updated( this ),
-  m_remove( this ),
-  m_fit_age_changed( this ),
-  m_age_changed( this ),
+  m_updated(),
+  m_remove(),
+  m_fit_age_changed(),
+  m_age_changed(),
   m_src_info( std::monostate() )
 {
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
@@ -698,12 +697,12 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   
-  WContainerWidget *upper_container = new WContainerWidget( this );
+  WContainerWidget *upper_container = addNew<WContainerWidget>();
   upper_container->setStyleClass( "UpperRow" );
 
 
-  WLabel *label = new WLabel( WString::tr("raagn-nuclide"), upper_container );
-  m_nuclide_edit = new WLineEdit( "", upper_container );
+  WLabel *label = upper_container->addNew<WLabel>( WString::tr("raagn-nuclide") );
+  m_nuclide_edit = upper_container->addNew<WLineEdit>( "" );
   
   m_nuclide_edit->setAutoComplete( false );
   m_nuclide_edit->setAttributeValue( "ondragstart", "return false" );
@@ -712,7 +711,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_nuclide_edit->setAttributeValue( "spellcheck", "off" );
 #endif
   label->setBuddy( m_nuclide_edit );
-  m_nuclide_edit->setWidth( WLength(75.0, WLength::Pixel) );
+  m_nuclide_edit->setWidth( WLength(75.0, WLength::Unit::Pixel) );
   
   m_nuclide_edit->changed().connect( this, &RelActAutoGuiNuclide::handleIsotopeChange );
   
@@ -730,17 +729,17 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   string replacerJs, matcherJs;
   IsotopeNameFilterModel::replacerJs( replacerJs );
   IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
-  IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
+  auto isoSuggestModel = std::make_shared<IsotopeNameFilterModel>();
   isoSuggestModel->excludeXrays( false );
   isoSuggestModel->excludeEscapes( false );
   isoSuggestModel->excludeReactions( false );
   
-  WSuggestionPopup *nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
+  WSuggestionPopup *nuclideSuggest = addNew<WSuggestionPopup>( matcherJs, replacerJs );
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
   nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
 #endif
   nuclideSuggest->addStyleClass( "nuclide-suggest" );
-  nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+  nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::Unit::FontEm) );
   // Width is set via CSS on the <li> elements in InterSpec.css (.nuclide-suggest li)
   
   IsotopeNameFilterModel::setQuickTypeFixHackjs( nuclideSuggest );
@@ -749,76 +748,76 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   isoSuggestModel->filter( "" );
   nuclideSuggest->setFilterLength( -1 );
   nuclideSuggest->setModel( isoSuggestModel );
-  nuclideSuggest->filterModel().connect( isoSuggestModel, &IsotopeNameFilterModel::filter );
-  nuclideSuggest->forEdit( m_nuclide_edit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
+  nuclideSuggest->filterModel().connect( isoSuggestModel.get(), &IsotopeNameFilterModel::filter );
+  nuclideSuggest->forEdit( m_nuclide_edit, PopupTrigger::Editing );  // | PopupTrigger::DropDownIcon
   
-  m_age_container = new WContainerWidget( upper_container );
+  m_age_container = upper_container->addNew<WContainerWidget>();
   m_age_container->setStyleClass( "RelActAutoGuiNuclideAgeContainer" );
   
-  label = new WLabel( WString::tr("raagn-age"), m_age_container );
-  m_age_edit = new WLineEdit( "", m_age_container );
-  m_age_edit->setWidth( WLength(70.0, WLength::Pixel) );
+  label = m_age_container->addNew<WLabel>( WString::tr("raagn-age") );
+  m_age_edit = m_age_container->addNew<WLineEdit>( "" );
+  m_age_edit->setWidth( WLength(70.0, WLength::Unit::Pixel) );
   label->setBuddy( m_age_edit );
   
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), upper_container );
-  validator->setFlags(Wt::MatchCaseInsensitive);
+  auto validator = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+  validator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);
   m_age_edit->setValidator(validator);
   m_age_edit->setAutoComplete( false );
   m_age_edit->setAttributeValue( "ondragstart", "return false" );
   m_age_edit->changed().connect( this, &RelActAutoGuiNuclide::handleAgeChange );
   m_age_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeChange );
   
-  m_fit_age = new WCheckBox( WString::tr("raagn-fit-age"), m_age_container );
+  m_fit_age = m_age_container->addNew<WCheckBox>( WString::tr("raagn-fit-age") );
   m_fit_age->addStyleClass( "CbNoLineBreak" );
   m_fit_age->setWordWrap( false );
   m_fit_age->checked().connect( this, &RelActAutoGuiNuclide::handleFitAgeChange );
   m_fit_age->unChecked().connect( this, &RelActAutoGuiNuclide::handleFitAgeChange );
   
-  m_summary_text = new WText( upper_container );
+  m_summary_text = upper_container->addNew<WText>();
   m_summary_text->setStyleClass( "RelActAutoGuiNuclideSummaryText" );
 
   //WContainerWidget *spacer = new WContainerWidget( upper_container );
   //spacer->addStyleClass( "RelActAutoSpacer" );
   
   
-  m_color_select = new ColorSelect( ColorSelect::PrefferNative, upper_container );
+  m_color_select = upper_container->addNew<ColorSelect>( ColorSelect::PrefferNative );
   m_color_select->setColor( ns_default_color );
   m_color_select->addStyleClass( "RelActAutGuiNuclideColorSelect" );
 
   m_color_select->cssColorChanged().connect( this, &RelActAutoGuiNuclide::handleColorChange );
   
   
-  WPushButton *removeEnergyRange = new WPushButton( upper_container );
+  WPushButton *removeEnergyRange = upper_container->addNew<WPushButton>();
   removeEnergyRange->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
   removeEnergyRange->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
   removeEnergyRange->clicked().connect( this, &RelActAutoGuiNuclide::handleRemoveSelf );
 
 
-  m_lower_container = new WContainerWidget( this );
+  m_lower_container = addNew<WContainerWidget>();
   m_lower_container->setStyleClass( "LowerRow" );
 
-  m_add_constraint_btn = new WPushButton( WString::tr("raagn-add-constraint"), m_lower_container );
+  m_add_constraint_btn = m_lower_container->addNew<WPushButton>( WString::tr("raagn-add-constraint") );
   m_add_constraint_btn->addStyleClass( "LinkBtn AddConstraintBtn" );
   m_add_constraint_btn->clicked().connect( this, &RelActAutoGuiNuclide::handleAddConstraint );
   HelpSystem::attachToolTipOn( m_add_constraint_btn, WString::tr("raagn-add-constraint-tt"), showToolTips );
   
   
-  m_constraint = new RelActAutoGuiNuclideConstraint( m_gui, this, m_lower_container );
+  m_constraint = m_lower_container->addNew<RelActAutoGuiNuclideConstraint>( m_gui, this );
   m_constraint->remove().connect( this, &RelActAutoGuiNuclide::handleRemoveConstraint );
   m_constraint->changed().connect( this, &RelActAutoGuiNuclide::handleConstraintChanged );
   m_constraint->hide();
 
 
-  m_age_range_container = new WContainerWidget( m_lower_container );
+  m_age_range_container = m_lower_container->addNew<WContainerWidget>();
   m_age_range_container->setStyleClass( "NucAgeRangeContainer" );
 
-  WRegExpValidator *min_max_validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), upper_container );
-  min_max_validator->setFlags(Wt::MatchCaseInsensitive);
+  auto min_max_validator = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+  min_max_validator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);
 
-  label = new WLabel( WString::tr("raagn-min-age"), m_age_range_container );
-  m_fit_age_min_edit = new WLineEdit( m_age_range_container );
+  label = m_age_range_container->addNew<WLabel>( WString::tr("raagn-min-age") );
+  m_fit_age_min_edit = m_age_range_container->addNew<WLineEdit>();
   label->setBuddy( m_fit_age_min_edit );
-  m_fit_age_min_edit->setWidth( WLength(40.0, WLength::Pixel) );
+  m_fit_age_min_edit->setWidth( WLength(40.0, WLength::Unit::Pixel) );
   m_fit_age_min_edit->setValidator(min_max_validator);
   m_fit_age_min_edit->setAutoComplete( false );
   m_fit_age_min_edit->setAttributeValue( "ondragstart", "return false" );
@@ -826,10 +825,10 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_fit_age_min_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeRangeChange );
 
 
-  label = new WLabel( WString::tr("raagn-max-age"), m_age_range_container );
-  m_fit_age_max_edit = new WLineEdit( m_age_range_container );
+  label = m_age_range_container->addNew<WLabel>( WString::tr("raagn-max-age") );
+  m_fit_age_max_edit = m_age_range_container->addNew<WLineEdit>();
   label->setBuddy( m_fit_age_max_edit );
-  m_fit_age_max_edit->setWidth( WLength(40.0, WLength::Pixel) );
+  m_fit_age_max_edit->setWidth( WLength(40.0, WLength::Unit::Pixel) );
   m_fit_age_max_edit->setValidator(min_max_validator);
   m_fit_age_max_edit->setAutoComplete( false );
   m_fit_age_max_edit->setAttributeValue( "ondragstart", "return false" );
@@ -837,7 +836,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_fit_age_max_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeRangeChange );
 
 
-  WContainerWidget *spacer = new WContainerWidget( m_lower_container );
+  WContainerWidget *spacer = m_lower_container->addNew<WContainerWidget>();
   spacer->addStyleClass( "RelActAutoSpacer" );
   
 

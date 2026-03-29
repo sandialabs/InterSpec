@@ -25,13 +25,13 @@
 
 #include <string>
 
-#include <Wt/WLabel>
-#include <Wt/WString>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
+#include <Wt/WLabel.h>
+#include <Wt/WString.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
@@ -45,11 +45,8 @@ using namespace Wt;
 
 
 
-RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange( WContainerWidget *parent )
-  : WContainerWidget( parent ),
-  m_updated( this ),
-  m_remove_energy_range( this ),
-  m_split_ranges_requested( this ),
+RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange()
+  : WContainerWidget(),
   m_lower_energy( nullptr ),
   m_upper_energy( nullptr ),
   m_continuum_type( nullptr ),
@@ -66,58 +63,58 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange( WContainerWidget *parent )
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   
-  WLabel *label = new WLabel( WString::tr("raager-lower-energy"), this );
+  WLabel *label = addNew<WLabel>( WString::tr("raager-lower-energy") );
   label->addStyleClass( "GridFirstCol GridFirstRow" );
-  
-  m_lower_energy = new NativeFloatSpinBox( this );
+
+  m_lower_energy = addNew<NativeFloatSpinBox>();
   m_lower_energy->addStyleClass( "GridSecondCol GridFirstRow" );
   m_lower_energy->setSpinnerHidden( true );
   label->setBuddy( m_lower_energy );
-  
-  label = new WLabel( WString::tr("keV"), this );
+
+  label = addNew<WLabel>( WString::tr("keV") );
   label->addStyleClass( "GridThirdCol GridFirstRow" );
-  
-  label = new WLabel( WString::tr("raager-upper-energy"), this );
+
+  label = addNew<WLabel>( WString::tr("raager-upper-energy") );
   label->addStyleClass( "GridFirstCol GridSecondRow" );
-  
-  m_upper_energy = new NativeFloatSpinBox( this );
+
+  m_upper_energy = addNew<NativeFloatSpinBox>();
   m_upper_energy->addStyleClass( "GridSecondCol GridSecondRow" );
   m_upper_energy->setSpinnerHidden( true );
   label->setBuddy( m_upper_energy );
-  
-  label = new WLabel( WString::tr("keV"), this );
+
+  label = addNew<WLabel>( WString::tr("keV") );
   label->addStyleClass( "GridThirdCol GridSecondRow" );
-  
+
   m_lower_energy->valueChanged().connect( this, &RelActAutoGuiEnergyRange::handleEnergyChange );
   m_upper_energy->valueChanged().connect( this, &RelActAutoGuiEnergyRange::handleEnergyChange );
-  
-  label = new WLabel( WString::tr("raager-continuum-type"), this );
+
+  label = addNew<WLabel>( WString::tr("raager-continuum-type") );
   label->addStyleClass( "GridFourthCol GridFirstRow" );
-  m_continuum_type = new WComboBox( this );
+  m_continuum_type = addNew<WComboBox>();
   m_continuum_type->addStyleClass( "GridFifthCol GridFirstRow" );
   label->setBuddy( m_continuum_type );
-  
+
   // We wont allow "External" here
   for( int i = 0; i < static_cast<int>(PeakContinuum::OffsetType::External); ++i )
   {
     const char *key = PeakContinuum::offset_type_label_tr( PeakContinuum::OffsetType(i) );
     m_continuum_type->addItem( WString::tr(key) );
   }//for( loop over PeakContinuum::OffsetType )
-  
+
   m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
   m_continuum_type->changed().connect( this, &RelActAutoGuiEnergyRange::handleContinuumTypeChange );
-  
-  m_force_full_range = new WCheckBox( WString::tr("raager-force-full-range"), this );
+
+  m_force_full_range = addNew<WCheckBox>( WString::tr("raager-force-full-range") );
   m_force_full_range->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
   m_force_full_range->checked().connect( this, &RelActAutoGuiEnergyRange::handleForceFullRangeChange );
   m_force_full_range->unChecked().connect( this, &RelActAutoGuiEnergyRange::handleForceFullRangeChange );
-  
-  WPushButton *removeEnergyRange = new WPushButton( this );
+
+  WPushButton *removeEnergyRange = addNew<WPushButton>();
   removeEnergyRange->setStyleClass( "DeleteEnergyRangeOrNuc GridSixthCol GridFirstRow Wt-icon" );
   removeEnergyRange->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
   removeEnergyRange->clicked().connect( this, &RelActAutoGuiEnergyRange::handleRemoveSelf );
-  
-  m_to_individual_rois = new WPushButton( this );
+
+  m_to_individual_rois = addNew<WPushButton>();
   m_to_individual_rois->setStyleClass( "ToIndividualRois GridSixthCol GridSecondRow Wt-icon" );
   m_to_individual_rois->setIcon( "InterSpec_resources/images/expand_list.svg" );
   m_to_individual_rois->clicked().connect( this, &RelActAutoGuiEnergyRange::emitSplitRangesRequested );

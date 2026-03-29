@@ -29,10 +29,10 @@
 #include <string>
 #include <fstream>
 
-#include <Wt/WColor>
-#include <Wt/WSignal>
-#include <Wt/WTextArea>
-#include <Wt/WContainerWidget>
+#include <Wt/WColor.h>
+#include <Wt/WSignal.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecUser.h"  //for UseDrfPref::UseDrfType enum only
@@ -91,8 +91,7 @@ public:
   //  passed in are assumed to be valid and longer lived than this
   //  DetectorDisplay
   DetectorDisplay( InterSpec *specViewer,
-                   SpectraFileModel *fileModel,
-                   Wt::WContainerWidget *parent = 0 );
+                   SpectraFileModel *fileModel );
 
   virtual ~DetectorDisplay();
 
@@ -385,7 +384,7 @@ protected:
   Wt::WLineEdit    *m_detectorManualFunctionName;
   Wt::WTextArea    *m_detectorManualFunctionText;
   Wt::WLineEdit    *m_detectorManualDescription;
-  Wt::WButtonGroup *m_eqnEnergyGroup;
+  std::shared_ptr<Wt::WButtonGroup> m_eqnEnergyGroup;
   Wt::WComboBox    *m_drfType;
   
   Wt::WLabel       *m_detectorManualDiameterLabel;

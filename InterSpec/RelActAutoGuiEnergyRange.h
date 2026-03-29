@@ -27,7 +27,7 @@
 
 #include <string>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/PeakDef.h" //For PeakContinuum::OffsetType
 #include "InterSpec/RelActCalcAuto.h"
@@ -47,7 +47,7 @@ class NativeFloatSpinBox;
 class RelActAutoGuiEnergyRange : public Wt::WContainerWidget
 {
 public:
-  RelActAutoGuiEnergyRange( Wt::WContainerWidget *parent = nullptr );
+  RelActAutoGuiEnergyRange();
   bool isEmpty() const;
   void handleRemoveSelf();
   void handleContinuumTypeChange();

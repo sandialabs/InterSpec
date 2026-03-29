@@ -1583,14 +1583,11 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
   for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
   {
     const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
-    threadpool.post( boost::bind( &fitPeaks,
-                                 boost::cref(seperated_peaks[peakn]),
-                                 stat_threshold,
-                                 hypothesis_threshold,
-                                 data,
-                                 boost::ref( fit_peak_ranges[peakn] ),
-                                 fit_options,
-                                 isHPGe ) );
+    threadpool.post( [&seperated_peaks, peakn, stat_threshold, hypothesis_threshold, data,
+                      &fit_peak_ranges, fit_options, isHPGe](){
+      fitPeaks( seperated_peaks[peakn], stat_threshold, hypothesis_threshold, data,
+                fit_peak_ranges[peakn], fit_options, isHPGe );
+    } );
   }//for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
 
   threadpool.join();
@@ -6240,8 +6237,8 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     
     ROOT::Minuit2::MnUserParameters inputPrams;
     
-    const bool amp_only = (fit_options.testFlag(PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly)
-                           || fit_options.testFlag(PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly));
+    const bool amp_only = (fit_options.test(PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly)
+                           || fit_options.test(PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly));
     
     PeakFitChi2Fcn::AddPeaksToFitterMethod method = (amp_only
                                                      ? PeakFitChi2Fcn::kRefitPeakParameters
@@ -7676,9 +7673,9 @@ double AutoPeakSearchChi2Fcn::pars_to_peaks( std::vector<PeakDef> &resultpeaks,
 
     const double *startpars = &(pars[0]) + peakn;
 
-    pool.post( boost::bind( &AutoPeakSearchChi2Fcn::fit_peak_group, this,
-                           boost::cref(peaks), boost::cref(rescoef), group, startpars,
-                           boost::ref(chi2s[group]), boost::ref(peakdefs[group]) ) );
+    pool.post( [this, &peaks, &rescoef, group, startpars, &chi2s, &peakdefs](){
+      fit_peak_group( peaks, rescoef, group, startpars, chi2s[group], peakdefs[group] );
+    } );
 
     peakn += peaks.size();
   }//for( size_t group = 0; group < m_grouped_candidates.size(); ++group )

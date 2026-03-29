@@ -32,7 +32,7 @@
 #include <vector>
 
 
-#include <Wt/WObject>
+#include <Wt/WObject.h>
 
 namespace SpecUtils{ enum class SpectrumType : int; }
 

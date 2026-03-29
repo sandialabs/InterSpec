@@ -28,7 +28,7 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
@@ -107,8 +107,7 @@ public:
                    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
-                   double detectorDiameter,
-                   Wt::WContainerWidget *parent = 0 );
+                   double detectorDiameter );
   
   // Update the data and refresh the display
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
@@ -136,8 +135,7 @@ public:
                    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
-                   double detectorDiameter,
-                   Wt::WContainerWidget *parent = 0 );
+                   double detectorDiameter );
   
   // Update the data and refresh the display
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,

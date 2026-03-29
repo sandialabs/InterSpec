@@ -25,14 +25,14 @@
 #include <sstream>
 #include <iomanip>
 
-#include <Wt/WString>
-#include <Wt/WLogger>
-#include <Wt/WComboBox>
-#include <Wt/WGridLayout>
-#include <Wt/WLayoutItem>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
-#include <Wt/WWidget>
+#include <Wt/WString.h>
+#include <Wt/WLogger.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WLayoutItem.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WWidget.h>
 
 #include <nlohmann/json.hpp>
 
@@ -52,9 +52,8 @@ Shielding2DView::Shielding2DView( const std::vector<ShieldingSourceFitCalc::Shie
                                   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                   GammaInteractionCalc::GeometryType geometry,
                                   double detectorDistance,
-                                  double detectorDiameter,
-                                  Wt::WContainerWidget *parent )
-  : Wt::WContainerWidget( parent ),
+                                  double detectorDiameter )
+  : Wt::WContainerWidget(),
     m_shieldings( shieldings ),
     m_sources( sources ),
     m_geometry( geometry ),
@@ -357,9 +356,8 @@ Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::Shie
                                   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                   GammaInteractionCalc::GeometryType geometry,
                                   double detectorDistance,
-                                  double detectorDiameter,
-                                  Wt::WContainerWidget *parent )
-  : Wt::WContainerWidget( parent ),
+                                  double detectorDiameter )
+  : Wt::WContainerWidget(),
     m_shieldings( shieldings ),
     m_sources( sources ),
     m_geometry( geometry ),
@@ -432,22 +430,19 @@ ShieldingDiagramDialog::ShieldingDiagramDialog(
     viewer->useMessageResourceBundle( "ShieldingSourceDisplay" );
   
   addStyleClass( "ShieldingDiagramDialog" );
-  resize( WLength(95,WLength::Percentage), WLength(95,WLength::Percentage) );
+  resize( WLength(95,WLength::Unit::Percentage), WLength(95,WLength::Unit::Percentage) );
   
-  // Create initial 2D view
-  m_2DView = new Shielding2DView( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter );
-  
-  m_layout = new WGridLayout();
-  m_layout->addWidget( m_2DView, 0, 0 );
+  m_layout = contents()->setLayout( std::make_unique<WGridLayout>() );
   m_layout->setColumnStretch( 0, 1 );
   m_layout->setRowStretch( 0, 1 );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
-  contents()->setLayout( m_layout );
-  contents()->setOverflow( Wt::WContainerWidget::Overflow::OverflowHidden );
-  
-  WContainerWidget *type_row = new WContainerWidget();
-  m_layout->addWidget( type_row, 1, 0 );
-  m_select = new WComboBox( type_row );
+  contents()->setOverflow( Wt::Overflow::Hidden );
+
+  // Create initial 2D view
+  m_2DView = m_layout->addWidget( std::make_unique<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter ), 0, 0 );
+
+  WContainerWidget *type_row = m_layout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
+  m_select = type_row->addNew<WComboBox>();
   m_select->setFloatSide( Wt::Side::Right );
   m_select->addItem( "2D View" );
   m_select->addItem( "3D View" );
@@ -511,21 +506,24 @@ void ShieldingDiagramDialog::switchView( bool show3D )
   if( show3D && !m_3DView )
   {
     if( m_2DView )
-      delete m_2DView;
-    m_2DView = nullptr;
-    
-    m_3DView = new Shielding3DView( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter );
-    m_layout->addWidget( m_3DView, 0, 0 );
+    {
+      // removeWidget returns unique_ptr; letting it go out of scope destroys it
+      m_layout->removeWidget( m_2DView );
+      m_2DView = nullptr;
+    }
+
+    m_3DView = m_layout->addWidget( std::make_unique<Shielding3DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter ), 0, 0 );
   }//if( show3D && !m_3DView )
-  
+
   if( !show3D && !m_2DView )
   {
     if( m_3DView )
-      delete m_3DView;
-    m_3DView = nullptr;
-    
-    m_2DView = new Shielding2DView( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter );
-    m_layout->addWidget( m_2DView, 0, 0 );
+    {
+      m_layout->removeWidget( m_3DView );
+      m_3DView = nullptr;
+    }
+
+    m_2DView = m_layout->addWidget( std::make_unique<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter ), 0, 0 );
   }//if( !show3D && !m_2DView )
 }
 

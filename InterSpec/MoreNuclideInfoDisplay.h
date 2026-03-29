@@ -30,7 +30,7 @@
 #include <memory>
 #include <vector>
 
-#include <Wt/WTemplate>
+#include <Wt/WTemplate.h>
 
 #include "InterSpec/SimpleDialog.h"
 
@@ -55,8 +55,7 @@ public:
    @par parent The standard Wt parent widget.
    */
   MoreNuclideInfoDisplay( const SandiaDecay::Nuclide * const nuc,
-                         const bool displayTitle,
-                          Wt::WContainerWidget *parent = nullptr);
+                         const bool displayTitle );
 
 
   /** Renders WTemplate containing more information of the specified nuclide.

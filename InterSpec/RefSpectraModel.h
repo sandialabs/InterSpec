@@ -1,21 +1,21 @@
 #ifndef RefSpectraModel_h
 #define RefSpectraModel_h
 
-#include <Wt/WModelIndex>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WModelIndex.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include <memory>
 #include <string>
 #include <vector>
 
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
 
 class RefSpectraModel : public Wt::WAbstractItemModel
 {
 public:
-  RefSpectraModel( Wt::WObject *parent = nullptr );
+  RefSpectraModel();
   virtual ~RefSpectraModel();
 
   // Required WAbstractItemModel overrides
@@ -23,10 +23,10 @@ public:
   virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const override;
   virtual Wt::WModelIndex parent( const Wt::WModelIndex &index ) const override;
   virtual Wt::WModelIndex index( int row, int column, const Wt::WModelIndex &parent = Wt::WModelIndex() ) const override;
-  virtual boost::any data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const override;
-  virtual boost::any headerData( int section, Wt::Orientation orientation = Wt::Orientation::Horizontal, int role = Wt::DisplayRole ) const override;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const override;
+  virtual Wt::cpp17::any headerData( int section, Wt::Orientation orientation = Wt::Orientation::Horizontal, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const override;
 
-  virtual void sort(int column, Wt::SortOrder order = Wt::SortOrder::AscendingOrder );
+  virtual void sort(int column, Wt::SortOrder order = Wt::SortOrder::Ascending );
 
   // Custom methods for managing the filesystem data
 

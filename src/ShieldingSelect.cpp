@@ -30,21 +30,21 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WImage>
-#include <Wt/WServer>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WCheckBox>
-#include <Wt/WGroupBox>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WStackedWidget>
-#include <Wt/WRegExpValidator>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WImage.h>
+#include <Wt/WServer.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStackedWidget.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -141,7 +141,7 @@ class TraceSrcDisplay : public WGroupBox
   
 public:
   TraceSrcDisplay( ShieldingSelect *parent )
-  : WGroupBox( WString::tr("ss-trace-source-title"), parent->m_traceSources ),
+  : WGroupBox( WString::tr("ss-trace-source-title") ),
     m_currentNuclide( nullptr ),
     m_currentDisplayActivity( 0.0 ),
     m_currentTotalActivity( 0.0 ),
@@ -154,9 +154,9 @@ public:
     m_relaxationDiv( nullptr ),
     m_relaxationDistance( nullptr ),
     m_relaxationDescription( nullptr ),
-    m_userChanged( this ),
-    m_activityUpdated( this ),
-    m_nucChangedSignal( this )
+    m_userChanged(),
+    m_activityUpdated(),
+    m_nucChangedSignal()
   {
     wApp->useStyleSheet( "InterSpec_resources/ShieldingSelect.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
@@ -166,27 +166,27 @@ public:
     assert( !parent->isGenericMaterial() );
     addStyleClass( "TraceSrcDisplay" );
     
-    WPushButton *closeIcon = new WPushButton( this );
+    WPushButton *closeIcon = addNew<WPushButton>();
     closeIcon->addStyleClass( "closeicon-wtdefault GridThirdCol GridFirstRow" );
-    closeIcon->clicked().connect( boost::bind( &ShieldingSelect::removeTraceSourceWidget, m_parent, this) );
+    closeIcon->clicked().connect( [parent = m_parent, traceSrc = this](){ parent->removeTraceSourceWidget( traceSrc ); } );
     closeIcon->setToolTip( "Remove this trace source." );
     
     
-    WLabel *label = new WLabel( WString::tr("Nuclide"), this );
+    WLabel *label = addNew<WLabel>( WString::tr("Nuclide") );
     label->addStyleClass( "GridFirstCol GridSecondRow" );
     
-    m_isoSelect = new WComboBox( this );
+    m_isoSelect = addNew<WComboBox>();
     m_isoSelect->addItem( WString::tr("ss-select-option") );
     m_isoSelect->activated().connect( this, &TraceSrcDisplay::handleUserNuclideChange );
     m_isoSelect->addStyleClass( "GridSecondCol GridSecondRow GridSpanTwoCol" );
     label->setBuddy( m_isoSelect );
     
     
-    label = new WLabel( WString::tr("Activity"), this );
+    label = addNew<WLabel>( WString::tr("Activity") );
     label->addStyleClass( "GridFirstCol GridThirdRow" );
     
     
-    m_activityInput = new WLineEdit( this );
+    m_activityInput = addNew<WLineEdit>();
     m_activityInput->addStyleClass( "GridSecondCol GridStretchCol GridThirdRow" );
     
     m_activityInput->setAutoComplete( false );
@@ -196,8 +196,8 @@ public:
     m_activityInput->setAttributeValue( "spellcheck", "off" );
 #endif
     
-    WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, m_activityInput );
-    val->setFlags( Wt::MatchCaseInsensitive );
+    auto val = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_activityRegex );
+    val->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
     m_activityInput->setValidator( val );
     m_activityInput->changed().connect( this, &TraceSrcDisplay::handleUserActivityChange );
     m_activityInput->enterPressed().connect( this, &TraceSrcDisplay::handleUserActivityChange );
@@ -207,24 +207,24 @@ public:
     m_currentTotalActivityUncert = -1.0;
     label->setBuddy( m_activityInput );
     
-    m_activityType = new WComboBox( this );
+    m_activityType = addNew<WComboBox>();
     m_activityType->activated().connect( this, &TraceSrcDisplay::handleUserChangeActivityType );
     m_activityType->addStyleClass( "GridThirdCol GridThirdRow" );
     
-    m_allowFitting = new WCheckBox( WString::tr("ss-fit-activity-cb"), this );
+    m_allowFitting = addNew<WCheckBox>( WString::tr("ss-fit-activity-cb") );
     m_allowFitting->addStyleClass( "GridSecondCol GridStretchCol GridFourthRow GridSpanTwoCol CbNoLineBreak" );
     
     
-    m_relaxationDiv = new WContainerWidget( this );
+    m_relaxationDiv = addNew<WContainerWidget>();
     m_relaxationDiv->addStyleClass( "GridFirstCol GridFifthRow GridSpanThreeCol RelaxDistDisplay" );
     
-    WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, m_relaxationDiv );
-    distValidator->setFlags( Wt::MatchCaseInsensitive );
+    auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex );
+    distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
     
-    label = new WLabel( "Relaxation&nbsp;Distance", m_relaxationDiv );
+    label = m_relaxationDiv->addNew<WLabel>( "Relaxation&nbsp;Distance" );
     label->addStyleClass( "GridFirstCol GridFirstRow" );
     
-    m_relaxationDistance = new WLineEdit( m_relaxationDiv );
+    m_relaxationDistance = m_relaxationDiv->addNew<WLineEdit>();
     m_relaxationDistance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     m_relaxationDistance->setAttributeValue( "autocorrect", "off" );
@@ -236,7 +236,7 @@ public:
     m_relaxationDistance->changed().connect( this, &TraceSrcDisplay::handleUserRelaxDistChange );
     m_relaxationDistance->enterPressed().connect( this, &TraceSrcDisplay::handleUserRelaxDistChange );
     
-    m_relaxationDescription = new WText("", m_relaxationDiv);
+    m_relaxationDescription = m_relaxationDiv->addNew<WText>( "" );
     m_relaxationDescription->addStyleClass( "GridFirstCol GridSecondRow GridSpanTwoCol RelaxDescription" );
     m_relaxationDiv->hide();
     
@@ -816,7 +816,7 @@ public:
       tt = WString::fromUTF8(txt);
     }//if( displayUncert > 0.0 )
     
-    m_activityInput->setToolTip( tt, TextFormat::XHTMLText );
+    m_activityInput->setToolTip( tt, TextFormat::XHTML );
   }//void updateDispActivityFromTotalActivity()
   
   
@@ -1105,7 +1105,7 @@ public:
     {
       WModelIndex index = srcmodel->index( m_currentNuclide, SourceFitModel::Columns::kFitActivity );
       const bool doFit = m_allowFitting->isChecked();
-      srcmodel->setData( index, doFit, Wt::CheckStateRole );
+      srcmodel->setData( index, doFit, Wt::ItemDataRole::Checked );
     }catch( std::exception &e )
     {
       assert( 0 ); // shouldnt ever happen, right???
@@ -1247,9 +1247,8 @@ public:
 
 
 
-SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
-                               double massFrac, Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide, double massFrac )
+  : WContainerWidget(),
     m_useAsSourceCb( NULL ),
     m_label( nullptr ),
     m_massFraction( NULL ),
@@ -1261,12 +1260,12 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
   addStyleClass( "SourceCheckbox" );
 
   WString txt = nuclide ? WString::fromUTF8(nuclide->symbol) : WString();
-  m_useAsSourceCb = new WCheckBox( txt, this );
+  m_useAsSourceCb = addNew<WCheckBox>( txt );
   m_useAsSourceCb->addStyleClass( "UseAsSrcCb CbNoLineBreak" );
-  m_label = new WLabel( "--", this );
+  m_label = addNew<WLabel>( "--" );
   m_label->addStyleClass( "SelfAttenSrcLabel" );
   
-  m_massFraction = new NativeFloatSpinBox( this );
+  m_massFraction = addNew<NativeFloatSpinBox>();
   m_label->setBuddy( m_massFraction );
   m_massFraction->setAutoComplete( false );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -1278,7 +1277,7 @@ SourceCheckbox::SourceCheckbox( const SandiaDecay::Nuclide *nuclide,
   m_massFraction->setSpinnerHidden( true );
   m_massFraction->setValue( massFrac );
 
-  m_fitFraction = new WCheckBox( WString::tr("Fit"), this );
+  m_fitFraction = addNew<WCheckBox>( WString::tr("Fit") );
   m_fitFraction->addStyleClass( "FitFractionCb CbNoLineBreak" );
   if( !nuclide )
   {
@@ -1419,9 +1418,8 @@ void SourceCheckbox::handleFitMassFractionChanged()
 }
 
 
-ShieldingSelect::ShieldingSelect( Wt::WSuggestionPopup *materialSuggest,
-                 Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
+ShieldingSelect::ShieldingSelect( Wt::WSuggestionPopup *materialSuggest )
+: WContainerWidget(),
   m_toggleImage( nullptr ),
   m_shieldSrcDisp( nullptr ),
   m_forFitting( false ),
@@ -1465,9 +1463,8 @@ ShieldingSelect::ShieldingSelect( Wt::WSuggestionPopup *materialSuggest,
 
 ShieldingSelect::ShieldingSelect( SourceFitModel *sourceModel,
                                   Wt::WSuggestionPopup *materialSuggest,
-                                  const ShieldingSourceDisplay *shieldSource,
-                                  Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+                                  const ShieldingSourceDisplay *shieldSource )
+  : WContainerWidget(),
     m_toggleImage( nullptr ),
     m_shieldSrcDisp( shieldSource ),
     m_forFitting( (shieldSource != nullptr) ),
@@ -1516,35 +1513,37 @@ void ShieldingSelect::setClosableAndAddable( bool closeable, WGridLayout *layout
     if( m_closeIcon )
       return;
     
-    m_closeIcon = new WPushButton(); //WText();
-    m_addIcon = new WPushButton();
+    auto closeIconUniq = std::make_unique<WPushButton>();
+    m_closeIcon = closeIconUniq.get();
+    auto addIconUniq = std::make_unique<WPushButton>();
+    m_addIcon = addIconUniq.get();
     m_closeIcon->setStyleClass( "ShieldingDelete Wt-icon" );
     m_closeIcon->setIcon("InterSpec_resources/images/minus_min_black.svg");
     m_addIcon->setStyleClass( "ShieldingAdd Wt-icon" );
     m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.svg");
-        
+
     PopupDivMenu *popup = new PopupDivMenu( m_addIcon, PopupDivMenu::TransientMenu );
     PopupDivMenuItem *item = popup->addMenuItem( WString::tr("ss-add-shield-before") );
     item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
     item = popup->addMenuItem( WString::tr("ss-add-shield-after") );
     item->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
-    
-    layout->addWidget( m_closeIcon, 0, 2, AlignMiddle | AlignRight );
-    layout->addWidget( m_addIcon, 1, 2, AlignTop | AlignRight );
-    
+
+    layout->addWidget( std::move(closeIconUniq), 0, 2, AlignmentFlag::Middle | AlignmentFlag::Right );
+    layout->addWidget( std::move(addIconUniq), 1, 2, AlignmentFlag::Top | AlignmentFlag::Right );
+
     m_closeIcon->clicked().connect( this, &ShieldingSelect::emitRemoveSignal );
   }else
   {
     if( m_closeIcon )
     {
-      delete m_closeIcon;
-      m_closeIcon = NULL;
+      m_closeIcon->removeFromParent();
+      m_closeIcon = nullptr;
     }
-    
+
     if( m_addIcon )
     {
-      delete m_addIcon;
-      m_addIcon = 0;
+      m_addIcon->removeFromParent();
+      m_addIcon = nullptr;
     }
   }//if( closeable ) / else
 }//void ShieldingSelect::setClosableAndAddable( bool closeable )
@@ -2224,49 +2223,43 @@ void ShieldingSelect::init()
   addStyleClass( "ShieldingSelect" );
   
 //  int voidIndex = -1;
-  WContainerWidget *materialDiv = new WContainerWidget( this );
-  WGridLayout* materialDivLayout = new WGridLayout();
+  WContainerWidget *materialDiv = addNew<WContainerWidget>();
+  WGridLayout *materialDivLayout = materialDiv->setLayout( std::make_unique<WGridLayout>() );
   materialDivLayout->setContentsMargins(2,2,2,2);
-  materialDiv->setLayout(materialDivLayout);
-  
-  
-  
-  m_toggleImage = new Wt::WImage(Wt::WLink("InterSpec_resources/images/shield.png"));
-  m_toggleImage->clicked().connect( this,&ShieldingSelect::handleToggleGeneric );
-  m_toggleImage->decorationStyle().setCursor(PointingHandCursor);
-  m_toggleImage->addStyleClass( "Wt-icon" );
- 
-  m_toggleImage->clicked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
-  
-  HelpSystem::attachToolTipOn( m_toggleImage, WString::tr("ss-tt-shield-type-toggle"),
-                              showToolTips, HelpSystem::ToolTipPosition::Top );
-  
-  materialDivLayout->addWidget( m_toggleImage, 0, 0, AlignLeft );
-  
-  m_materialEdit = new WLineEdit( "" );
-  
-  m_materialEdit->setAutoComplete( false );
-  m_materialEdit->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_materialEdit->setAttributeValue( "autocorrect", "off" );
-  m_materialEdit->setAttributeValue( "spellcheck", "off" );
-#endif
 
-  m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangedMaterialName );
-  m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleUserChangedMaterialName );
 
-  // Instead of hooking undo/redo to changed(), we'll have handleUserChangedMaterialName() handle it
-  // We will only insert an undo/redo step when the field losses focus.
-  //m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
-  
-  if( m_forFitting )
   {
-    materialDivLayout->addWidget( m_materialEdit, 0, 1, AlignmentFlag::AlignMiddle );
-  }else
-  {
-    materialDivLayout->addWidget( m_materialEdit, 0, 1 );
+    auto toggleImgUniq = std::make_unique<Wt::WImage>( Wt::WLink("InterSpec_resources/images/shield.png") );
+    m_toggleImage = toggleImgUniq.get();
+    m_toggleImage->clicked().connect( this, &ShieldingSelect::handleToggleGeneric );
+    m_toggleImage->decorationStyle().setCursor( Cursor::PointingHand );
+    m_toggleImage->addStyleClass( "Wt-icon" );
+    m_toggleImage->clicked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+    HelpSystem::attachToolTipOn( m_toggleImage, WString::tr("ss-tt-shield-type-toggle"),
+                                showToolTips, HelpSystem::ToolTipPosition::Top );
+    materialDivLayout->addWidget( std::move(toggleImgUniq), 0, 0, AlignmentFlag::Left );
   }
-  
+
+  {
+    auto materialEditUniq = std::make_unique<WLineEdit>( "" );
+    m_materialEdit = materialEditUniq.get();
+    m_materialEdit->setAutoComplete( false );
+    m_materialEdit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_materialEdit->setAttributeValue( "autocorrect", "off" );
+    m_materialEdit->setAttributeValue( "spellcheck", "off" );
+#endif
+    m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangedMaterialName );
+    m_materialEdit->enterPressed().connect( this, &ShieldingSelect::handleUserChangedMaterialName );
+    // Instead of hooking undo/redo to changed(), we'll have handleUserChangedMaterialName() handle it
+    // We will only insert an undo/redo step when the field losses focus.
+    //m_materialEdit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+    if( m_forFitting )
+      materialDivLayout->addWidget( std::move(materialEditUniq), 0, 1, AlignmentFlag::Middle );
+    else
+      materialDivLayout->addWidget( std::move(materialEditUniq), 0, 1 );
+  }
+
   WString material_name_tt;
   if( m_forFitting )
   {
@@ -2277,134 +2270,138 @@ void ShieldingSelect::init()
   {
     material_name_tt = WString::tr("ss-tt-material-name");
   }
-  
+
   HelpSystem::attachToolTipOn( m_materialEdit, material_name_tt,
                               showToolTips, HelpSystem::ToolTipPosition::Top );
-  
+
   if( m_materialSuggest )
     m_materialSuggest->forEdit( m_materialEdit,
-                   WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+                   PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
-  
-  m_materialSummary = new WText( "", XHTMLText );
   if( m_forFitting )
   {
-    materialDivLayout->addWidget( m_materialSummary, 1, 1, AlignMiddle );
+    auto materialSummaryUniq = std::make_unique<WText>( "", TextFormat::XHTML );
+    m_materialSummary = materialSummaryUniq.get();
+    materialDivLayout->addWidget( std::move(materialSummaryUniq), 1, 1, AlignmentFlag::Middle );
   }else
   {
+    m_materialSummary = addNew<WText>( "", TextFormat::XHTML );
     m_materialSummary->addStyleClass( "MaterialSummary" );
+    // Not added to layout yet; will be moved to sphericalLayout below
   }
   
   materialDivLayout->setColumnStretch(1,1);
   if( m_forFitting )
     setClosableAndAddable( true,  materialDivLayout );
 
-  m_dimensionsStack = new WStackedWidget( this );
-  
+  m_dimensionsStack = addNew<WStackedWidget>();
+
   // Begin setting up generic material widgets
-  m_genericDiv = new WContainerWidget();
-  m_dimensionsStack->addWidget( m_genericDiv );
-  
-  WGridLayout *genericMatLayout = new WGridLayout( m_genericDiv );
+  m_genericDiv = m_dimensionsStack->addNew<WContainerWidget>();
+  WGridLayout *genericMatLayout = m_genericDiv->setLayout( std::make_unique<WGridLayout>() );
   genericMatLayout->setContentsMargins(3,3,3,3);
-  WLabel *label = new WLabel( "AD" );
-  label->setAttributeValue( "style", "padding-left: 1em;" );
-  //label->setToolTip( WString::tr("ss-tt-areal-density") );
-  genericMatLayout->addWidget( label, 0, 2+m_forFitting, AlignMiddle );
-  
-  m_arealDensityEdit = new NativeFloatSpinBox();
-  m_arealDensityEdit->setSpinnerHidden( true );
-  m_arealDensityEdit->setFormatString( "%.4g" );
-  m_arealDensityEdit->setTextSize( 5 );
-  m_arealDensityEdit->setRange( 0.0f,
-                            static_cast<float>(GammaInteractionCalc::sm_max_areal_density_g_cm2) );
-  label->setBuddy( m_arealDensityEdit );
-  //m_arealDensityEdit->setToolTip( WString::tr("ss-tt-areal-density") );
-  
-  if( m_forFitting )
-    m_arealDensityEdit->setValue( 15.0f );
-  else
-    m_arealDensityEdit->setPlaceholderText( WString::tr("ss-areal-density-empty-txt") );
-  
-  genericMatLayout->addWidget( m_arealDensityEdit, 0, 3+m_forFitting, AlignMiddle );
-  genericMatLayout->setColumnStretch( 3+m_forFitting, 1 );
-  
-  HelpSystem::attachToolTipOn( {label, m_arealDensityEdit}, WString::tr("ss-tt-areal-density"),
-                              showToolTips, HelpSystem::ToolTipPosition::Top );
-  
-  label = new WLabel( "g/cm<sup>2</sup>");
-  label->setAttributeValue( "style", "font-size: 75%;" );
-  genericMatLayout->addWidget( label, 0, 4+m_forFitting, AlignMiddle );
-  
+
+  {
+    auto adLabelUniq = std::make_unique<WLabel>( "AD" );
+    WLabel * const adLabel = adLabelUniq.get();
+    adLabel->setAttributeValue( "style", "padding-left: 1em;" );
+
+    auto arealDensityEditUniq = std::make_unique<NativeFloatSpinBox>();
+    m_arealDensityEdit = arealDensityEditUniq.get();
+    m_arealDensityEdit->setSpinnerHidden( true );
+    m_arealDensityEdit->setFormatString( "%.4g" );
+    m_arealDensityEdit->setTextSize( 5 );
+    m_arealDensityEdit->setRange( 0.0f,
+                              static_cast<float>(GammaInteractionCalc::sm_max_areal_density_g_cm2) );
+    adLabel->setBuddy( m_arealDensityEdit );
+    if( m_forFitting )
+      m_arealDensityEdit->setValue( 15.0f );
+    else
+      m_arealDensityEdit->setPlaceholderText( WString::tr("ss-areal-density-empty-txt") );
+    HelpSystem::attachToolTipOn( {adLabel, m_arealDensityEdit}, WString::tr("ss-tt-areal-density"),
+                                showToolTips, HelpSystem::ToolTipPosition::Top );
+    genericMatLayout->addWidget( std::move(adLabelUniq), 0, 2+m_forFitting, AlignmentFlag::Middle );
+    genericMatLayout->addWidget( std::move(arealDensityEditUniq), 0, 3+m_forFitting, AlignmentFlag::Middle );
+    genericMatLayout->setColumnStretch( 3+m_forFitting, 1 );
+  }
+
+  {
+    auto gcm2LabelUniq = std::make_unique<WLabel>( "g/cm<sup>2</sup>" );
+    gcm2LabelUniq->setAttributeValue( "style", "font-size: 75%;" );
+    genericMatLayout->addWidget( std::move(gcm2LabelUniq), 0, 4+m_forFitting, AlignmentFlag::Middle );
+  }
+
   if( m_forFitting )
   {
-    m_fitArealDensityCB = new WCheckBox( WString::tr("Fit") );
+    auto fitArealDensityCBUniq = std::make_unique<WCheckBox>( WString::tr("Fit") );
+    m_fitArealDensityCB = fitArealDensityCBUniq.get();
     m_fitArealDensityCB->setChecked( true );
     m_fitArealDensityCB->addStyleClass( "CbNoLineBreak" );
-    genericMatLayout->addWidget( m_fitArealDensityCB, 0, 6, AlignMiddle );
+    genericMatLayout->addWidget( std::move(fitArealDensityCBUniq), 0, 6, AlignmentFlag::Middle );
   }
-  
-  label = new WLabel( "AN" );
-  //label->setToolTip( WString::tr("ss-tt-atomic-number") );
-  genericMatLayout->addWidget( label, 0, 0, AlignMiddle );
-  
-  m_atomicNumberEdit = new NativeFloatSpinBox();
-  m_atomicNumberEdit->setSpinnerHidden( true );
-  m_atomicNumberEdit->setFormatString( "%.3g" );
-  m_atomicNumberEdit->setTextSize( 5 );
-  m_atomicNumberEdit->setRange( MassAttenuation::sm_min_xs_atomic_number,
-                                 MassAttenuation::sm_max_xs_atomic_number );
-  label->setBuddy( m_atomicNumberEdit );
-  //m_atomicNumberEdit->setToolTip( WString::tr("ss-tt-atomic-number") );
-  
-  if( m_forFitting )
-    m_atomicNumberEdit->setValue( 15.0f );
-  else
-    m_atomicNumberEdit->setPlaceholderText( WString::tr("ss-atomic-number-empty-txt") );
-  
-  genericMatLayout->addWidget( m_atomicNumberEdit, 0, 1, AlignMiddle );
-  genericMatLayout->setColumnStretch( 1, 1 );
-  
-  HelpSystem::attachToolTipOn( {label, m_atomicNumberEdit}, WString::tr("ss-tt-atomic-number"),
-                              showToolTips, HelpSystem::ToolTipPosition::Top );
-  
+
+  {
+    auto anLabelUniq = std::make_unique<WLabel>( "AN" );
+    WLabel * const anLabel = anLabelUniq.get();
+
+    auto atomicNumberEditUniq = std::make_unique<NativeFloatSpinBox>();
+    m_atomicNumberEdit = atomicNumberEditUniq.get();
+    m_atomicNumberEdit->setSpinnerHidden( true );
+    m_atomicNumberEdit->setFormatString( "%.3g" );
+    m_atomicNumberEdit->setTextSize( 5 );
+    m_atomicNumberEdit->setRange( MassAttenuation::sm_min_xs_atomic_number,
+                                   MassAttenuation::sm_max_xs_atomic_number );
+    anLabel->setBuddy( m_atomicNumberEdit );
+    if( m_forFitting )
+      m_atomicNumberEdit->setValue( 15.0f );
+    else
+      m_atomicNumberEdit->setPlaceholderText( WString::tr("ss-atomic-number-empty-txt") );
+    HelpSystem::attachToolTipOn( {anLabel, m_atomicNumberEdit}, WString::tr("ss-tt-atomic-number"),
+                                showToolTips, HelpSystem::ToolTipPosition::Top );
+    genericMatLayout->addWidget( std::move(anLabelUniq), 0, 0, AlignmentFlag::Middle );
+    genericMatLayout->addWidget( std::move(atomicNumberEditUniq), 0, 1, AlignmentFlag::Middle );
+    genericMatLayout->setColumnStretch( 1, 1 );
+  }
+
   if( m_forFitting )
   {
-    m_fitAtomicNumberCB = new WCheckBox( WString::tr("Fit") );
+    auto fitAtomicNumberCBUniq = std::make_unique<WCheckBox>( WString::tr("Fit") );
+    m_fitAtomicNumberCB = fitAtomicNumberCBUniq.get();
     m_fitAtomicNumberCB->setChecked( false );
     m_fitAtomicNumberCB->addStyleClass( "CbNoLineBreak" );
-    genericMatLayout->addWidget( m_fitAtomicNumberCB, 0, 2, AlignMiddle );
-    
-    m_asSourceCBs = new WContainerWidget( this );
+    genericMatLayout->addWidget( std::move(fitAtomicNumberCBUniq), 0, 2, AlignmentFlag::Middle );
+
+    m_asSourceCBs = addNew<WContainerWidget>();
     m_asSourceCBs->addStyleClass( "ShieldingAsSourceCBDiv" );
-    label = new WLabel( "Source for:", m_asSourceCBs );
-    label->setInline( false );
+    WLabel *srcForLabel = m_asSourceCBs->addNew<WLabel>( "Source for:" );
+    srcForLabel->setInline( false );
     m_asSourceCBs->hide();
     HelpSystem::attachToolTipOn( m_asSourceCBs, WString::tr("ss-source-for-cb"), showToolTips );
   }//if( m_forFitting )
   
   
-  m_atomicNumberEdit->valueChanged().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
-  m_arealDensityEdit->valueChanged().connect( boost::bind( &ShieldingSelect::handleMaterialChange, this ) );
+  m_atomicNumberEdit->valueChanged().connect( [this]( double ){ handleMaterialChange(); } );
+  m_arealDensityEdit->valueChanged().connect( [this]( double ){ handleMaterialChange(); } );
   
   m_atomicNumberEdit->valueChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   m_arealDensityEdit->valueChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   
   // A validator for the various geometry distances
-  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, this );
-  distValidator->setFlags( Wt::MatchCaseInsensitive );
+  auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex );
+  distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   
   
   // A lamda for setting up dimension edits for the various geometry dimensions
   auto setupDimEdit = [this,distValidator]( const WString &labelTxt, WLineEdit *&edit, WCheckBox *&fitCb, WGridLayout *grid ){
     const int row = grid->rowCount();
-    
-    WLabel *label = new WLabel( labelTxt );
-    grid->addWidget( label, row, 0, AlignMiddle );
-    
-    edit = new WLineEdit( "1.0 cm" );
+
+    auto labelUniq = std::make_unique<WLabel>( labelTxt );
+    WLabel * const label = labelUniq.get();
+
+    auto editUniq = std::make_unique<WLineEdit>( "1.0 cm" );
+    edit = editUniq.get();
     edit->setValidator( distValidator );
-    
+
     edit->setAutoComplete( false );
     edit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -2412,7 +2409,7 @@ void ShieldingSelect::init()
     edit->setAttributeValue( "spellcheck", "off" );
 #endif
     label->setBuddy( edit );
-    
+
     //From a very brief experiment, it looks like the below JS would remove the uncertainty text,
     //  however it appears when the server pushes the value of the edit to the client, the 'value'
     //  tag of the element isnt updated... I have no clue.
@@ -2420,97 +2417,92 @@ void ShieldingSelect::init()
     //  "s.value = s.value.replace('\\(.*\\)','').value.replace('  ',' ');"
     //  "}catch(e){}}";
     //  edit->changed().connect( focusjs );
-    
-    edit->changed().connect( boost::bind( &ShieldingSelect::removeUncertFromDistanceEdit, this, edit) );
-    edit->enterPressed().connect( boost::bind( &ShieldingSelect::removeUncertFromDistanceEdit, this, edit) );
-    //edit->blurred().connect( boost::bind( &ShieldingSelect::removeUncertFromDistanceEdit, this, edit) );
-    
+
+    edit->changed().connect( [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
+    edit->enterPressed().connect( [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
+    //edit->blurred().connect( [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
+
     edit->changed().connect( this, &ShieldingSelect::handleMaterialChange );
     edit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
     //edit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
-    
+
     edit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     edit->enterPressed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
-    
+
+    grid->addWidget( std::move(labelUniq), row, 0, AlignmentFlag::Middle );
+
     if( m_forFitting )
     {
       //edit->setWidth( 150 );
-      grid->addWidget( edit, row, 1, AlignMiddle );
-      
-      fitCb = new WCheckBox( WString::tr("Fit") );
+      grid->addWidget( std::move(editUniq), row, 1, AlignmentFlag::Middle );
+
+      auto fitCbUniq = std::make_unique<WCheckBox>( WString::tr("Fit") );
+      fitCb = fitCbUniq.get();
       fitCb->setChecked( false );
       fitCb->addStyleClass( "CbNoLineBreak" );
-      grid->addWidget( fitCb, row, 2, AlignMiddle | AlignRight );
-      
+      grid->addWidget( std::move(fitCbUniq), row, 2, AlignmentFlag::Middle | AlignmentFlag::Right );
+
       fitCb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
       fitCb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     }else
     {
-      grid->addWidget( edit, row, 1 );
+      grid->addWidget( std::move(editUniq), row, 1 );
     }//if( m_forFitting ) / else
   };//setupDimEdit(...)
   
   
   
   // Begin setting up spherical widgets
-  m_sphericalDiv = new WContainerWidget();
-  m_dimensionsStack->addWidget( m_sphericalDiv );
-  
-  WGridLayout *sphericalLayout = new WGridLayout();
-  m_sphericalDiv->setLayout( sphericalLayout );
+  m_sphericalDiv = m_dimensionsStack->addNew<WContainerWidget>();
+  WGridLayout *sphericalLayout = m_sphericalDiv->setLayout( std::make_unique<WGridLayout>() );
   sphericalLayout->setContentsMargins( 3, 3, 3, 3 );
   sphericalLayout->setColumnStretch( 1, 1 );
-  
+
   const bool fistShield = (!m_shieldSrcDisp || !m_shieldSrcDisp->numberShieldings());
-  
+
   const char *lbltxt_key = "ss-thickness"; //fistShield ? "Radius" : "Thickness";
   setupDimEdit( WString::tr(lbltxt_key), m_thicknessEdit, m_fitThicknessCB, sphericalLayout );
-  
+
   if( !m_forFitting )
   {
     // TODO: right now the only place a ShieldingSelect will be non-generic or non-spherical is
     //       in the Shielding/Activity fit tool, which we always have (m_forFitting == true), but
     //       if geometry is cylindrical or rectangular, and (m_forFitting == false), then the
     //       material summary wont be visible.
-    sphericalLayout->addWidget( m_materialSummary, 0, 2, AlignMiddle );
+    auto summaryUniq = this->removeWidget( m_materialSummary );
+    sphericalLayout->addWidget( std::move(summaryUniq), 0, 2, AlignmentFlag::Middle );
     sphericalLayout->setColumnStretch( 2, 1 );
   }//if( !m_forFitting )
-  
+
   // Begin setting up cylindrical widgets
-  m_cylindricalDiv = new WContainerWidget();
-  m_dimensionsStack->addWidget( m_cylindricalDiv );
-  
-  WGridLayout *cylindricalLayout = new WGridLayout();
-  m_cylindricalDiv->setLayout( cylindricalLayout );
+  m_cylindricalDiv = m_dimensionsStack->addNew<WContainerWidget>();
+  WGridLayout *cylindricalLayout = m_cylindricalDiv->setLayout( std::make_unique<WGridLayout>() );
   cylindricalLayout->setContentsMargins( 3, 3, 3, 3 );
   cylindricalLayout->setColumnStretch( 1, 1 );
-  
+
   lbltxt_key = fistShield ? "ss-radius" : "ss-radial-thickness";
   setupDimEdit( WString::tr(lbltxt_key), m_cylRadiusEdit, m_fitCylRadiusCB, cylindricalLayout );
   lbltxt_key = fistShield ? "ss-half-length" : "ss-length-thickness";
   setupDimEdit( WString::tr(lbltxt_key), m_cylLengthEdit, m_fitCylLengthCB, cylindricalLayout );
 
-  
+
   // Begin setting up rectangular widgets
-  m_rectangularDiv = new WContainerWidget();
-  m_dimensionsStack->addWidget( m_rectangularDiv );
-  
-  WGridLayout *rectangularLayout = new WGridLayout();
-  m_rectangularDiv->setLayout( rectangularLayout );
+  m_rectangularDiv = m_dimensionsStack->addNew<WContainerWidget>();
+  WGridLayout *rectangularLayout = m_rectangularDiv->setLayout( std::make_unique<WGridLayout>() );
   rectangularLayout->setContentsMargins( 3, 3, 3, 3 );
   rectangularLayout->setColumnStretch( 1, 1 );
-  
+
   lbltxt_key = fistShield ? "ss-half-width"  : "ss-width-thickness";
   setupDimEdit( WString::tr(lbltxt_key), m_rectWidthEdit, m_fitRectWidthCB, rectangularLayout );
   lbltxt_key = fistShield ? "ss-half-height" : "ss-height-thickness";
   setupDimEdit( WString::tr(lbltxt_key), m_rectHeightEdit, m_fitRectHeightCB, rectangularLayout );
   lbltxt_key = fistShield ? "ss-half-depth"  : "ss-depth-thickness";
   setupDimEdit( WString::tr(lbltxt_key), m_rectDepthEdit, m_fitRectDepthCB, rectangularLayout );
-  
+
   // Finally we have to
   if( m_forFitting )
   {
-    m_addTraceSrcBtn = new WPushButton( WString::tr("ss-add-trace-src"), this );
+    m_addTraceSrcBtn = addNew<WPushButton>( WString::tr("ss-add-trace-src") );
     m_addTraceSrcBtn->addStyleClass( "LinkBtn AddTrcSrcBtn" );
     m_addTraceSrcBtn->clicked().connect( this, &ShieldingSelect::addTraceSource );
     m_addTraceSrcBtn->clicked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
@@ -2541,9 +2533,9 @@ ShieldingSelect::~ShieldingSelect()
     InterSpec *interspec = InterSpec::instance();
     if( interspec )
     {
-      const vector<Wt::WObject *> &kids = interspec->Wt::WObject::children();
+      const vector<WWidget *> &kids = interspec->WContainerWidget::children();
       // kids.size() is usually just 2 or 3, so this isnt that heavy of an operation.
-      auto pos = std::find( begin(kids), end(kids), static_cast<WObject *>(m_materialSuggest) );
+      auto pos = std::find( begin(kids), end(kids), static_cast<WWidget *>(m_materialSuggest) );
       if( pos != end(kids) )
       {
         // We get here, for example, when you manually close the Activity/Shielding fit window (or
@@ -2678,11 +2670,11 @@ void ShieldingSelect::addTraceSource()
   //       becomes nullptr maybe we should remove trace sources
   if( !m_traceSources )
   {
-    m_traceSources = new WContainerWidget( this );
+    m_traceSources = addNew<WContainerWidget>();
     m_traceSources->addStyleClass( "TraceSrcContainer" );
   }
-  
-  TraceSrcDisplay *src = new TraceSrcDisplay( this );
+
+  TraceSrcDisplay *src = m_traceSources->addNew<TraceSrcDisplay>( this );
   src->nucChangedSignal().connect( this, &ShieldingSelect::handleTraceSourceNuclideChange );
   src->activityUpdated().connect( this, &ShieldingSelect::handleTraceSourceActivityChange );
   
@@ -2730,9 +2722,9 @@ void ShieldingSelect::removeTraceSourceWidget( TraceSrcDisplay *toRemove )
     if( src == toRemove )
     {
       handleTraceSourceWidgetAboutToBeRemoved( src );
-      
-      delete src;
-      
+
+      src->removeFromParent();
+
       setTraceSourceBtnStatus();
       
       handleUserChangeForUndoRedo();
@@ -3266,13 +3258,13 @@ double ShieldingSelect::atomicNumber() const
   
   switch( m_atomicNumberEdit->validate() )
   {
-    case Wt::WValidator::Invalid:
+    case ValidationState::Invalid:
       throw runtime_error( "ShieldingSelect::atomicNumber() invalid value entered" );
       
-    case Wt::WValidator::InvalidEmpty:
+    case ValidationState::InvalidEmpty:
       return 13.0;
       
-    case Wt::WValidator::Valid:
+    case ValidationState::Valid:
       break;
   }//switch( m_arealDensityEdit->validate() )
   
@@ -3287,13 +3279,13 @@ double ShieldingSelect::arealDensity() const
   
   switch( m_arealDensityEdit->validate() )
   {
-    case Wt::WValidator::Invalid:
+    case ValidationState::Invalid:
       throw runtime_error( "ShieldingSelect::arealDensity() invalid value entered" );
       
-    case Wt::WValidator::InvalidEmpty:
+    case ValidationState::InvalidEmpty:
       return 0.0;
       
-    case Wt::WValidator::Valid:
+    case ValidationState::Valid:
       break;
   }//switch( m_arealDensityEdit->validate() )
   
@@ -3504,7 +3496,7 @@ std::shared_ptr<const Material> ShieldingSelect::material( const std::string &te
     if( mat && m_materialSuggest )
     {
       // Check if this suggestion already exists before adding
-      Wt::WAbstractItemModel *mdl = m_materialSuggest->model();
+      std::shared_ptr<Wt::WAbstractItemModel> mdl = m_materialSuggest->model();
       const Wt::WString suggName = Wt::WString::fromUTF8( mat->name );
       bool alreadyHave = false;
       for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
@@ -3711,7 +3703,7 @@ void ShieldingSelect::sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc )
     for( TraceSrcDisplay *w : todel )
     {
       handleTraceSourceWidgetAboutToBeRemoved( w );
-      delete w;
+      w->removeFromParent();
     }
   }//if( m_traceSources )
   
@@ -3737,7 +3729,7 @@ void ShieldingSelect::sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc )
       if( iso == nuc )
       {
         elsToRemove.insert( elDiv.first );
-        delete cb;
+        cb->removeFromParent();
       }//if( iso == nuc )
     }//for( WWidget *child : children )
   }//for( const ElementToNuclideMap::value_type &elDiv : m_sourceIsotopes )
@@ -3748,7 +3740,7 @@ void ShieldingSelect::sourceRemovedFromModel( const SandiaDecay::Nuclide *nuc )
     WContainerWidget *w = m_sourceIsotopes[el];
     if( w->children().empty() )
     {
-      delete w;
+      w->removeFromParent();
       m_sourceIsotopes.erase( el );
     }//if( w->children().empty() )
   }//for( const SandiaDecay::Element *el : elsToRemove )
@@ -4092,7 +4084,7 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   SourceCheckbox *other_src_cb = nullptr;
   
   if( m_sourceIsotopes.find(element) == m_sourceIsotopes.end() )
-    m_sourceIsotopes[element] = new WContainerWidget( m_asSourceCBs );
+    m_sourceIsotopes[element] = m_asSourceCBs->addNew<WContainerWidget>();
   
   WContainerWidget *isotopeDiv = m_sourceIsotopes[element];
   
@@ -4113,36 +4105,30 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   if( !other_src_cb )
   {
     const double other_frac = std::max( 1.0 - accounted_for_frac, 0.0 );
-    other_src_cb = new SourceCheckbox( nullptr, other_frac, isotopeDiv );
+    other_src_cb = isotopeDiv->addNew<SourceCheckbox>( nullptr, other_frac );
     other_src_cb->setFitMassFraction( false );
     other_src_cb->setLabelText( Wt::WString::tr("ss-non-src-frac-el").arg(element->symbol) );
 
     // The user input into mass fraction of this "other" non-src nuclide is disabled, so we
     //  dont need to hook it up to other_src_cb->handleIsotopicChange()....
-    other_src_cb->fitMassFractionChecked().connect( 
-                                boost::bind( &ShieldingSelect::handleFitMassFractionChanged, this,
-                                            true, iso, element ) );
-    other_src_cb->fitMassFractionUnChecked().connect(
-                                boost::bind( &ShieldingSelect::handleFitMassFractionChanged, this,
-                                            false, iso, element ) );
+    other_src_cb->fitMassFractionChecked().connect( [this, iso, element](){ handleFitMassFractionChanged( true, iso, element ); } );
+    other_src_cb->fitMassFractionUnChecked().connect( [this, iso, element](){ handleFitMassFractionChanged( false, iso, element ); } );
     
     other_src_cb->fitMassFractionChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     other_src_cb->fitMassFractionUnChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     other_src_cb->massFractionChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   }//if( !other_src_cb )
   
-  SourceCheckbox *cb = new SourceCheckbox( iso, massFrac );
-  isotopeDiv->insertWidget( isotopeDiv->count() - 1, cb );
+  auto cbUniq = std::make_unique<SourceCheckbox>( iso, massFrac );
+  SourceCheckbox * const cb = cbUniq.get();
+  isotopeDiv->insertWidget( isotopeDiv->count() - 1, std::move(cbUniq) );
   //isotopeDiv->insertBefore( cb, other_src_cb );
-  cb->checked().connect( boost::bind( &ShieldingSelect::isotopeCheckedCallback, this, iso ) );
-  cb->unChecked().connect( boost::bind( &ShieldingSelect::isotopeUnCheckedCallback, this, iso ) );
-  cb->massFractionChanged().connect( boost::bind( &ShieldingSelect::handleIsotopicChange, this,
-                                                 boost::placeholders::_1, iso ) );
+  cb->checked().connect( [this, iso](){ isotopeCheckedCallback( iso ); } );
+  cb->unChecked().connect( [this, iso](){ isotopeUnCheckedCallback( iso ); } );
+  cb->massFractionChanged().connect( [this, iso]( float a1 ){ handleIsotopicChange( a1, iso ); } );
 
-  cb->fitMassFractionChecked().connect( boost::bind( &ShieldingSelect::handleFitMassFractionChanged, 
-                                                    this, true, iso, element ) );
-  cb->fitMassFractionUnChecked().connect( boost::bind( &ShieldingSelect::handleFitMassFractionChanged, 
-                                                      this, false, iso, element ) );
+  cb->fitMassFractionChecked().connect( [this, iso, element](){ handleFitMassFractionChanged( true, iso, element ); } );
+  cb->fitMassFractionUnChecked().connect( [this, iso, element](){ handleFitMassFractionChanged( false, iso, element ); } );
   
   handleIsotopicChange( static_cast<float>(massFrac), iso );
   handleFitMassFractionChanged( cb->fitMassFraction(), iso, element );
@@ -4338,7 +4324,7 @@ void ShieldingSelect::updateSelfAttenOtherNucFraction()
 
     if( (num_fit_frac == 1) && !warning )
     {
-      warning = new Wt::WText( WString::tr("ss-warning-only-one-src-frac").arg(el->name), vt.second );
+      warning = vt.second->addNew<Wt::WText>( WString::tr("ss-warning-only-one-src-frac").arg(el->name) );
       warning->setStyleClass( "warning" );
       // Alternatively, if there is only one source fraction that is being fit, then we need to fit the "other" non-src fraction
       //  to make sure the total source fraction is 1.0
@@ -4891,7 +4877,7 @@ void ShieldingSelect::handleMaterialChange()
           removingIsotopeAsSource().emit( cb->isotope(), ShieldingSourceFitCalc::ModelSourceType::Intrinsic );
       }//for( WWidget *child : children )
 
-      delete vt.second;
+      vt.second->removeFromParent();
     }//for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
 
     m_sourceIsotopes.clear();
@@ -5035,9 +5021,8 @@ void ShieldingSelect::handleUserChangeForUndoRedo()
   assert( server && wApp );
   if( server )
   {
-    auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, true) );
-    server->post( wApp->sessionId(), worker );
-    //server->schedule( 1, wApp->sessionId(), worker );
+    server->post( wApp->sessionId(), [this](){ handleUserChangeForUndoRedoWorker( true ); } );
+    //server->schedule( std::chrono::milliseconds(1), wApp->sessionId(), [this](){ handleUserChangeForUndoRedoWorker( true ); } );
   }
 }//void handleUserChangeForUndoRedo()
 
@@ -5629,9 +5614,8 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
   assert( server && wApp );
   if( m_userChangedStateSignal.isConnected() && server )
   {
-    auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, false) );
-    server->post( wApp->sessionId(), worker );
-    //server->schedule( 1, wApp->sessionId(), worker );
+    server->post( wApp->sessionId(), [this](){ handleUserChangeForUndoRedoWorker( false ); } );
+    //server->schedule( std::chrono::milliseconds(1), wApp->sessionId(), [this](){ handleUserChangeForUndoRedoWorker( false ); } );
   }//if( m_userChangedStateSignal.isConnected() && server )
 }//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 

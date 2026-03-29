@@ -32,10 +32,10 @@
 #include <boost/math/special_functions/erf.hpp>
 #include <boost/math/distributions/poisson.hpp>
 
-#include <Wt/Json/Value>
-#include <Wt/Json/Object>
-#include <Wt/WApplication>
-#include <Wt/Json/Serializer>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Object.h>
+#include <Wt/WApplication.h>
+#include <Wt/Json/Serializer.h>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"

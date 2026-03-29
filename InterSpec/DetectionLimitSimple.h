@@ -29,7 +29,7 @@
 #include <vector>
 #include <memory>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -92,8 +92,7 @@ class DetectionLimitSimple : public Wt::WContainerWidget
 public:
   
   DetectionLimitSimple( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec *specViewer,
-                  Wt::WContainerWidget *parent = 0 );
+                  InterSpec *specViewer );
   
   
   virtual ~DetectionLimitSimple();

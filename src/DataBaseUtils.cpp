@@ -27,22 +27,22 @@
 #include <iostream>
 
 #if( !USE_GLOBAL_DATABASE_CONNECTION_POOL )
-#include <Wt/WTimer>
+#include <Wt/WTimer.h>
 #endif 
 
-#include <Wt/WApplication>
-#include <Wt/Dbo/Session>
-#include <Wt/Dbo/Exception>
-#include <Wt/Dbo/Transaction>
-#include <Wt/Dbo/SqlConnection>
-#include <Wt/Dbo/FixedSqlConnectionPool>
+#include <Wt/WApplication.h>
+#include <Wt/Dbo/Session.h>
+#include <Wt/Dbo/Exception.h>
+#include <Wt/Dbo/Transaction.h>
+#include <Wt/Dbo/SqlConnection.h>
+#include <Wt/Dbo/FixedSqlConnectionPool.h>
 
 #if( USE_MYSQL_DB )
-#include <Wt/Dbo/backend/MySQL>
+#include <Wt/Dbo/backend/MySQL.h>
 #endif
 
 #if( USE_SQLITE3_DB )
-#include <Wt/Dbo/backend/Sqlite3>
+#include <Wt/Dbo/backend/Sqlite3.h>
 #endif
 
 #include "rapidxml/rapidxml.hpp"
@@ -82,17 +82,17 @@ namespace
       const int nconn = m_numconnection.exchange( -1, std::memory_order_seq_cst );
       if( nconn > 0 )
       {
-        vector<Dbo::SqlConnection *> connections;
-        
+        vector<std::unique_ptr<Dbo::SqlConnection>> connections;
+
         //By requesting as many connections as we created we are waiting for
         //  all Dbo::Transactions to return their Dbo::Session object, which
         //  happened and the end of the transaction, thus assuring all database
         //  operations in progress are complete.
         for( int i = 0; i < nconn; ++i )
           connections.push_back( m_pool->getConnection() );
-      
+
         for( size_t i = 0; i < connections.size(); ++i )
-          m_pool->returnConnection( connections[i] );
+          m_pool->returnConnection( std::move(connections[i]) );
         
         m_pool.reset();
       }//if( nconn > 0 )
@@ -124,18 +124,18 @@ namespace
           const int nconn = 5;
 #endif
 #endif
-          Dbo::SqlConnection *connection = DataBaseUtils::getDatabaseConnection();
+          std::unique_ptr<Dbo::SqlConnection> connection( DataBaseUtils::getDatabaseConnection() );
           connection->setProperty( "show-queries", "false" );
-          
+
           Dbo::FixedSqlConnectionPool *pool
-                    = new Wt::Dbo::FixedSqlConnectionPool( connection, nconn );
+                    = new Wt::Dbo::FixedSqlConnectionPool( std::move(connection), nconn );
           m_numconnection.store( nconn, std::memory_order_seq_cst );
           m_pool.reset( pool );
-          
+
 #if( USE_SQLITE3_DB )
           // Incase we are somehow are dead-locked in a transaction, we'll only wait 5 seconds,
           //  before having Wt throw an exception when trying to get the connection.
-          m_pool->setTimeout( 5000 );
+          m_pool->setTimeout( std::chrono::seconds(5) );
 #endif
           
           Dbo::Session sesh;
@@ -265,7 +265,7 @@ DbSession::DbSession()
       //Only make a keep alive timer if in a Wt event loop
       m_keepAliveTimer = new WTimer();
       m_keepAliveTimer->setInterval( 1000*60*60 );
-      m_keepAliveTimer->timeout().connect( boost::bind( &DbSession::keepDbConnectionAlive, this ) );
+      m_keepAliveTimer->timeout().connect( [this](){ keepDbConnectionAlive(); } );
       m_keepAliveTimer->start();
     }//if( wApp )
 #else

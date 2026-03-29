@@ -23,11 +23,11 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/Utils>
-#include <Wt/WText>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
+#include <Wt/Utils.h>
+#include <Wt/WText.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -38,31 +38,29 @@ using namespace Wt;
 using namespace std;
 
 
-RelActTxtResults::RelActTxtResults( Wt::WContainerWidget *parent )
- : Wt::WContainerWidget( parent ),
+RelActTxtResults::RelActTxtResults()
+ : Wt::WContainerWidget(),
   m_txt( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/RelActTxtResults.css" );
-  
+
   addStyleClass( "RelActTxtResults" );
-  
-  m_txt = new WContainerWidget();
-  
+
   // Without using a layout the formatting messes up and the contents move over
   //  onto the tabs... not sure why, but using a layout fixes this.
-  WGridLayout *lay = new WGridLayout( this );
-  lay->addWidget(m_txt, 0, 0);
+  WGridLayout *lay = setLayout( std::make_unique<WGridLayout>() );
+  m_txt = lay->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
   lay->setRowStretch( 0, 1 );
   lay->setColumnStretch( 0, 1 );
-  
-  new WText( "No current results", m_txt );
+
+  m_txt->addNew<WText>( "No current results" );
 }
 
 
 void RelActTxtResults::setNoResults()
 {
   m_txt->clear();
-  new WText( "No current results", m_txt );
+  m_txt->addNew<WText>( "No current results" );
 }
 
 
@@ -77,10 +75,10 @@ void RelActTxtResults::updateResults( const RelActCalcAuto::RelActAutoSolution &
     
     string res = strm.str();
     res = Wt::Utils::htmlEncode( res, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
-    WText *txt = new WText( res, m_txt );
+    WText *txt = m_txt->addNew<WText>( res );
     txt->setInline( false );
   }catch( std::exception &e )
   {
-    new WText( "Error displaying results", this );
+    addNew<WText>( "Error displaying results" );
   }
 }//void updateResults( const RelActCalcAuto::RelActAutoSolution &solution );

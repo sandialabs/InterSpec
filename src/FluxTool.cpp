@@ -26,31 +26,33 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 #include <numeric>
 #include <assert.h>
 #include <algorithm>
 
-#include <Wt/WText>
-#include <Wt/WTable>
-#include <Wt/WLabel>
-#include <Wt/WCheckBox>
-#include <Wt/WResource>
-#include <Wt/WLineEdit>
-#include <Wt/WModelIndex>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WButtonGroup>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WRadioButton>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WRegExpValidator>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
-#include <Wt/WAbstractItemDelegate>
+#include <Wt/WText.h>
+#include <Wt/WTable.h>
+#include <Wt/WLabel.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WResource.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/cpp17/any.hpp>
+#include <Wt/WAbstractItemModel.h>
+#include <Wt/WAbstractItemDelegate.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -71,7 +73,7 @@
 #include "InterSpec/RowStretchTreeView.h"
 
 #if( USE_QR_CODES )
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 
 #include "InterSpec/QrCode.h"
 #endif
@@ -175,7 +177,7 @@ namespace FluxToolImp
         less = names[a] < names[b];
       else
         less = arr[a][m_sortColumn] < arr[b][m_sortColumn];
-      return (m_sortOrder==Wt::SortOrder::AscendingOrder ? less : !less);
+      return (m_sortOrder==Wt::SortOrder::Ascending ? less : !less);
     }
   };//struct index_compare
   
@@ -328,10 +330,10 @@ namespace FluxToolImp
     
   public:
     FluxModel( FluxToolWidget *parent )
-    : WAbstractItemModel( parent ),
+    : WAbstractItemModel(),
       m_fluxtool( parent ),
       m_sortColumn( FluxToolWidget::FluxColumns::FluxEnergyCol ),
-      m_sortOrder( Wt::SortOrder::AscendingOrder )
+      m_sortOrder( Wt::SortOrder::Ascending )
     {
       parent->tableUpdated().connect( this, &FluxModel::handleFluxToolWidgetUpdated );
     }
@@ -344,13 +346,13 @@ namespace FluxToolImp
     
     virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const
     {
-      return Wt::WFlags<Wt::ItemFlag>(Wt::ItemFlag::ItemIsXHTMLText);
+      return Wt::WFlags<Wt::ItemFlag>(Wt::ItemFlag::XHTMLText);
     }
     
     
-    virtual WFlags<Wt::HeaderFlag> headerFlags( int section, Wt::Orientation orientation = Wt::Horizontal ) const
+    virtual WFlags<Wt::HeaderFlag> headerFlags( int section, Wt::Orientation orientation = Wt::Orientation::Horizontal ) const
     {
-      return Wt::WFlags<Wt::HeaderFlag>(Wt::HeaderFlag::HeaderIsXHTMLText);
+      return Wt::WFlags<Wt::HeaderFlag>(Wt::HeaderFlag::XHTMLText);
     }
     
     
@@ -374,11 +376,11 @@ namespace FluxToolImp
     }//void handleFluxToolWidgetUpdated()
     
     
-    virtual boost::any data( const Wt::WModelIndex &index,
-                             int role = Wt::DisplayRole ) const
+    virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
+                             Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const
     {
       if( index.parent().isValid() )
-        return boost::any();
+        return Wt::cpp17::any();
       
       const int row = index.row();
       const int col = index.column();
@@ -386,7 +388,7 @@ namespace FluxToolImp
       if( row < 0 || col < 0
          || col >= FluxToolWidget::FluxColumns::FluxNumColumns
          || row >= static_cast<int>(m_sort_indices.size()) )
-        return boost::any();
+        return Wt::cpp17::any();
       
       const size_t realind = m_sort_indices[row];
       
@@ -398,37 +400,34 @@ namespace FluxToolImp
       assert( uncerts.size() == data.size() );
       assert( realind < data.size() );
       
-      switch( role )
+      if( role == Wt::ItemDataRole::Display )
       {
-        case Wt::DisplayRole:
-          if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
-            return nucs[realind].empty() ? boost::any() : boost::any( WString::fromUTF8(nucs[realind]) );
-          return boost::any( data[realind][col] );
-          
-        //case Wt::StyleClassRole: break;
-        //case Wt::ToolTipRole: break;
-        case Wt::UserRole:
-          if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
-            return boost::any();
-          return uncerts[realind][col] > std::numeric_limits<double>::epsilon() ? boost::any(uncerts[realind][col]) : boost::any();
-
-        default:
-          return boost::any();
-      }//switch( role )
+        if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
+          return nucs[realind].empty() ? Wt::cpp17::any() : Wt::cpp17::any( WString::fromUTF8(nucs[realind]) );
+        return Wt::cpp17::any( data[realind][col] );
+      }else if( role == Wt::ItemDataRole::User )
+      {
+        if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
+          return Wt::cpp17::any();
+        return uncerts[realind][col] > std::numeric_limits<double>::epsilon() ? Wt::cpp17::any(uncerts[realind][col]) : Wt::cpp17::any();
+      }else
+      {
+        return Wt::cpp17::any();
+      }//if/else on role
       
-      return boost::any();
+      return Wt::cpp17::any();
     }//data(...)
     
     
-    boost::any headerData( int section,
-                          Wt::Orientation orientation = Wt::Horizontal,
-                          int role = Wt::DisplayRole ) const
+    Wt::cpp17::any headerData( int section,
+                          Wt::Orientation orientation = Wt::Orientation::Horizontal,
+                          Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const
     {
       if( section < 0 || section >= FluxToolWidget::FluxColumns::FluxNumColumns
-         || orientation != Wt::Horizontal
-         || role != Wt::DisplayRole )
-        return boost::any();
-      return boost::any( m_fluxtool->m_colnames[section] );
+         || orientation != Wt::Orientation::Horizontal
+         || role != Wt::ItemDataRole::Display )
+        return Wt::cpp17::any();
+      return Wt::cpp17::any( m_fluxtool->m_colnames[section] );
     }
     
     virtual int columnCount( const Wt::WModelIndex &parent
@@ -470,7 +469,7 @@ namespace FluxToolImp
                        index_compare_sort( m_fluxtool->m_data, m_fluxtool->m_nucNames, m_sortColumn, m_sortOrder) );
     }//void doSortWork()
     
-    virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder )
+    virtual void sort( int column, Wt::SortOrder order = Wt::SortOrder::Ascending )
     {
       m_sortOrder = order;
       m_sortColumn = FluxToolWidget::FluxColumns( column );
@@ -487,57 +486,57 @@ namespace FluxToolImp
     FluxToolWidget *m_fluxTool;
   public:
     FluxRenderDelegate( FluxToolWidget *parent )
-    : WAbstractItemDelegate( parent ),
+    : WAbstractItemDelegate(),
       m_fluxTool( parent )
     {
     }
-    
-    
-    virtual WWidget *update( WWidget *widget, const WModelIndex& index, WFlags<ViewItemRenderFlag> flags )
+
+
+    virtual std::unique_ptr<WWidget> update( WWidget *widget, const WModelIndex& index, WFlags<ViewItemRenderFlag> flags )
     {
-      auto oldwidget = dynamic_cast<WText *>( widget );
-      
+      WText *oldwidget = dynamic_cast<WText *>( widget );
+
+      std::unique_ptr<WText> newWidget;
       if( oldwidget )
       {
         oldwidget->setText("");
       }else
       {
-        if( widget )
-          delete widget;
-        oldwidget = new WText();
+        newWidget = std::make_unique<WText>();
+        oldwidget = newWidget.get();
       }
-      
-      
-      auto model = index.model();
+
+
+      const auto model = index.model();
       if( !model )
-        return oldwidget;
-      
-      auto data = index.data();
-      auto uncertdata = model->data( index.row(), index.column(), Wt::UserRole );
-      
-      if( data.empty() )
-        return oldwidget;
-      
+        return newWidget;
+
+      const auto data = index.data();
+      const auto uncertdata = model->data( index.row(), index.column(), Wt::ItemDataRole::User );
+
+      if( !Wt::cpp17::any_has_value(data) )
+        return newWidget;
+
       WString valstr;
       if( index.column() == FluxToolWidget::FluxColumns::FluxNuclideCol )
       {
         valstr = Wt::asString(data);
       }else
       {
-        const bool hasUncert = !uncertdata.empty();
-        
+        const bool hasUncert = Wt::cpp17::any_has_value(uncertdata);
+
         double val = 0.0, uncert = 0.0;
         try
         {
-          val = boost::any_cast<double>(data);
+          val = Wt::cpp17::any_cast<double>(data);
           if( hasUncert )
-            uncert = boost::any_cast<double>(uncertdata);
+            uncert = Wt::cpp17::any_cast<double>(uncertdata);
         }catch(...)
         {
-          return oldwidget;
+          return newWidget;
         }
-      
-        
+
+
         if( index.column() == FluxToolWidget::FluxColumns::FluxEnergyCol )
         {
           char buffer[64];
@@ -549,11 +548,11 @@ namespace FluxToolImp
           {
             const bool uncertAsPercent = (m_fluxTool
                   && (m_fluxTool->displayInfoLevel() == FluxToolWidget::DisplayInfoLevel::Simple));
-            
+
             const string tmpstr = print_value( val, uncert )
                                   + " &plusmn; "
                                   + print_uncert( val, uncert, uncertAsPercent );
-            
+
             valstr = WString::fromUTF8( tmpstr );
           }else
           {
@@ -561,11 +560,11 @@ namespace FluxToolImp
           }
         }//if( index.column() == FluxToolWidget::FluxColumns::FluxEnergyCol )
       }//if( nucname ) / else
-      
-      
+
+
       oldwidget->setText( valstr );
-      return oldwidget;
-    }//WWidget *update(...)
+      return newWidget;
+    }//std::unique_ptr<WWidget> update(...)
   };//class FluxRenderDelegate
 
 
@@ -578,7 +577,7 @@ namespace FluxToolImp
     
   public:
     FluxCsvResource( FluxToolWidget *parent )
-    : WResource( parent ),
+    : WResource(),
       m_fluxtool( parent ),
       m_app( WApplication::instance() )
     {
@@ -780,7 +779,7 @@ namespace FluxToolImp
       }
       filename += "flux.csv";
       
-      suggestFileName( filename, WResource::Attachment );
+      suggestFileName( filename, ContentDisposition::Attachment );
       
       FluxToolWidget::DisplayInfoLevel disptype = FluxToolWidget::DisplayInfoLevel::Extended;
       if( m_fluxtool )
@@ -802,20 +801,22 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
 {
   assert( viewer );
   rejectWhenEscapePressed( true );
-  
-  m_fluxTool = new FluxToolWidget( viewer );
-  //m_fluxTool->setHeight( WLength(100, WLength::Percentage) );
-  
-  stretcher()->addWidget( m_fluxTool, 0, 0 );
-  
+
+  {
+    auto fluxToolOwned = std::make_unique<FluxToolWidget>( viewer );
+    m_fluxTool = fluxToolOwned.get();
+    stretcher()->addWidget( std::move(fluxToolOwned), 0, 0 );
+  }
+  //m_fluxTool->setHeight( WLength(100, WLength::Unit::Percentage) );
+
   AuxWindow::addHelpInFooter( footer(), "flux-tool" );
-  
+
   WPushButton *closeButton = nullptr;
   if( viewer && viewer->isPhone() )
     closeButton = addCloseButtonToFooter();
-  
+
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = footer()->addNew<WPushButton>();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -832,36 +833,38 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
     }
   }) );
 #endif //USE_QR_CODES
-  
+
   WContainerWidget *buttonDiv = footer();
-  
+
   if( !viewer || !viewer->isPhone() )
     closeButton = addCloseButtonToFooter();
-  
+
   assert( closeButton );
   closeButton->clicked().connect( this, &AuxWindow::hide );
-  
-  WResource *csv = new FluxToolImp::FluxCsvResource( m_fluxTool );
+
+  auto csv = std::make_shared<FluxToolImp::FluxCsvResource>( m_fluxTool );
 #if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *csvButton = new WAnchor( WLink(csv), buttonDiv );
-  csvButton->setTarget( AnchorTarget::TargetNewWindow );
+  WLink csvLink( csv );
+  csvLink.setTarget( LinkTarget::NewWindow );
+  WAnchor *csvButton = buttonDiv->addNew<WAnchor>( csvLink, WString::tr("CSV") );
   csvButton->setStyleClass( "LinkBtn DownloadLink" );
 #else
-  WPushButton *csvButton = new WPushButton( buttonDiv );
+  WPushButton *csvButton = buttonDiv->addNew<WPushButton>();
   csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
-  csvButton->setLink( WLink(csv) );
-  csvButton->setLinkTarget( Wt::TargetNewWindow );
+  WLink csvLink( csv );
+  csvLink.setTarget( LinkTarget::NewWindow );
+  csvButton->setLink( csvLink );
   csvButton->setStyleClass( "LinkBtn DownloadBtn" );
-  
+
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   csvButton->clicked().connect( std::bind([csv](){
-    android_download_workaround(csv, "flux.csv");
+    android_download_workaround(csv.get(), "flux.csv");
   }) );
 #endif //ANDROID
-  
+
 #endif
-  
+
   csvButton->setText( WString::tr("CSV") );
   //csvButton->setAttributeValue( "style", "float: none;" );  //Keep the CSV download to the left side of the close button.  .LinkBtn style class has the button float right..
   csvButton->setFloatSide( Wt::Side::Left );
@@ -903,8 +906,8 @@ std::string FluxToolWindow::encodeStateToUrl() const
 }
 
 
-FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+FluxToolWidget::FluxToolWidget( InterSpec *viewer )
+  : WContainerWidget(),
     m_interspec( viewer ),
     m_detector( nullptr ),
     m_narrowLayout( false ),
@@ -919,7 +922,7 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
     m_needsTableRefresh( true ),
     m_displayInfoLevel( DisplayInfoLevel::Normal ),
     m_displayLevelButtons( nullptr ),
-    m_tableUpdated( this )
+    m_tableUpdated()
 {
   init();
 }
@@ -1087,59 +1090,60 @@ void FluxToolWidget::init()
   
   addStyleClass( "FluxToolWidget" );
   
-  WGridLayout *layout = new WGridLayout();
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
-  setLayout( layout );
-  
-  WTable *distDetRow = new WTable();
-  distDetRow->addStyleClass( "FluxDistMsgDetTbl" );
+
+  WTable *distDetRow = nullptr;
+  {
+    auto distDetRowOwned = std::make_unique<WTable>();
+    distDetRow = distDetRowOwned.get();
+    distDetRow->addStyleClass( "FluxDistMsgDetTbl" );
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
-  layout->addWidget( distDetRow, 0, 0, 1, 2 );
+    layout->addWidget( std::move(distDetRowOwned), 0, 0, 1, 2 );
 #else
-  layout->addWidget( distDetRow, 0, 0 );
+    layout->addWidget( std::move(distDetRowOwned), 0, 0 );
 #endif
-  
-  
+  }
+
+
   auto distCell = distDetRow->elementAt( m_narrowLayout ? 1 : 0, 0 );
   distCell->addStyleClass( "FluxDistCell" );
-  WLabel *label = new WLabel( WString::tr("distance-label"), distCell );
+  WLabel *label = distCell->addNew<WLabel>( WString::tr("distance-label") );
   label->addStyleClass( "FluxDistLabel" );
-  
+
   m_prevDistance = "100 cm";
-  m_distance = new WLineEdit( m_prevDistance, distCell );
+  m_distance = distCell->addNew<WLineEdit>( m_prevDistance );
   m_distance->addStyleClass( "FluxDistanceEnter" );
   label->setBuddy(m_distance);
-  
+
   m_distance->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   m_distance->setAttributeValue( "autocorrect", "off" );
   m_distance->setAttributeValue( "spellcheck", "off" );
 #endif
-  
-  WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
-  validator->setFlags( Wt::MatchCaseInsensitive );
+
+  auto validator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+  validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_distance->setValidator( validator );
   HelpSystem::attachToolTipOn( m_distance, WString::tr("ftw-tt-distance"), showToolTips );
   m_distance->changed().connect( this, &FluxToolWidget::distanceUpdated );
   m_distance->enterPressed().connect( this, &FluxToolWidget::distanceUpdated );
-  
+
   SpectraFileModel *specFileModel = m_interspec->fileManager()->model();
-  m_detector = new DetectorDisplay( m_interspec, specFileModel );
-  m_detector->addStyleClass( "FluxDet" );
-  m_interspec->detectorChanged().connect( boost::bind( &FluxToolWidget::handleDrfChange, this, boost::placeholders::_1 ) );
-  m_interspec->detectorModified().connect( boost::bind( &FluxToolWidget::handleDrfChange, this, boost::placeholders::_1 ) );
-  
   if( m_narrowLayout )
   {
     auto detCell = distDetRow->elementAt(0,0);
     detCell->setColumnSpan( 2 );
-    detCell->addWidget( m_detector );
+    m_detector = detCell->addNew<DetectorDisplay>( m_interspec, specFileModel );
   }else
   {
-    distDetRow->elementAt(0,1)->addWidget( m_detector );
+    m_detector = distDetRow->elementAt(0,1)->addNew<DetectorDisplay>( m_interspec, specFileModel );
   }
-  
-  
+  m_detector->addStyleClass( "FluxDet" );
+  m_interspec->detectorChanged().connect( [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
+  m_interspec->detectorModified().connect( [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
+
+
   PeakModel *peakmodel = m_interspec->peakModel();
   assert( peakmodel );
   peakmodel->dataChanged().connect( this, &FluxToolWidget::setTableNeedsUpdating );
@@ -1150,44 +1154,57 @@ void FluxToolWidget::init()
   auto msgCell = distDetRow->elementAt( m_narrowLayout ? 2 : 1,0);
   msgCell->setColumnSpan( 2 );
   msgCell->addStyleClass( "FluxMsgCell" );
-  m_msg = new WText( "", Wt::XHTMLText, msgCell );
+  m_msg = msgCell->addNew<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
   m_msg->addStyleClass( "FluxMsg" );
-  
-  
-  FluxToolImp::FluxModel *fluxmodel = new FluxToolImp::FluxModel( this );
-  m_table = new RowStretchTreeView();
-  m_table->setModel( fluxmodel );
+
+
+  auto fluxModelOwned = std::make_shared<FluxToolImp::FluxModel>( this );
+
+  {
+    auto tbl = std::make_unique<RowStretchTreeView>();
+    m_table = tbl.get();
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+    layout->addWidget( std::move(tbl), 1, 0, 1, 2 );
+#else
+    layout->addWidget( std::move(tbl), 1, 0, 1, 1 );
+#endif
+  }
+  m_table->setModel( fluxModelOwned );
   m_table->setRootIsDecorated( false );
   m_table->addStyleClass( "FluxTable" );
   m_table->setAlternatingRowColors( true );
-  m_table->sortByColumn( FluxColumns::FluxEnergyCol, Wt::AscendingOrder );
-  
+  m_table->sortByColumn( FluxColumns::FluxEnergyCol, Wt::SortOrder::Ascending );
+
   //Setting rows selectable doesnt seem to work... not that it would do us
   //  any good anyway since you probably want to copy the info to the clipboard.
   //m_table->setSelectable( true );
   //m_table->setSelectionMode( Wt::SelectionMode::SingleSelection );
-  
-  FluxToolImp::FluxRenderDelegate *renderdel = new FluxToolImp::FluxRenderDelegate( this );
+
+  auto renderdel = std::make_shared<FluxToolImp::FluxRenderDelegate>( this );
   m_table->setItemDelegate( renderdel );
-  
+
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
     m_table->setSortingEnabled( col, (col!=FluxColumns::FluxGeometricEffCol) );
-  
-#if( FLUX_USE_COPY_TO_CLIPBOARD )
-  layout->addWidget( m_table, 1, 0, 1, 2 );
-#else
-  layout->addWidget( m_table, 1, 0, 1, 1 );
-#endif
+
   layout->setRowStretch( 1, 1 );
   
-  WContainerWidget *buttonBox = new WContainerWidget();
-  buttonBox->addStyleClass( "FluxInfoAmount" );
-  
-  WRadioButton *simpleInfo = new WRadioButton( WString::tr("ftw-simple"), buttonBox );
-  WRadioButton *standardInfo = new WRadioButton( WString::tr("ftw-standard"), buttonBox );
-  WRadioButton *moreInfo = new WRadioButton( WString::tr("ftw-more"), buttonBox );
-  
-  m_displayLevelButtons = new WButtonGroup( buttonBox );
+  WContainerWidget *buttonBox = nullptr;
+  {
+    auto buttonBoxOwned = std::make_unique<WContainerWidget>();
+    buttonBox = buttonBoxOwned.get();
+    buttonBox->addStyleClass( "FluxInfoAmount" );
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+    layout->addWidget( std::move(buttonBoxOwned), 2, 1, AlignmentFlag::Right | AlignmentFlag::Middle );
+#else
+    layout->addWidget( std::move(buttonBoxOwned), 2, 0, AlignmentFlag::Right );
+#endif
+  }
+
+  WRadioButton *simpleInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-simple") );
+  WRadioButton *standardInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-standard") );
+  WRadioButton *moreInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-more") );
+
+  m_displayLevelButtons = buttonBox->addChild( std::make_unique<WButtonGroup>() );
   m_displayLevelButtons->addButton( simpleInfo, static_cast<int>(DisplayInfoLevel::Simple) );
   m_displayLevelButtons->addButton( standardInfo, static_cast<int>(DisplayInfoLevel::Normal) );
   m_displayLevelButtons->addButton( moreInfo, static_cast<int>(DisplayInfoLevel::Extended) );
@@ -1195,37 +1212,33 @@ void FluxToolWidget::init()
 
   m_displayLevelButtons->checkedChanged().connect( std::bind( [this](){
     const auto level = static_cast<DisplayInfoLevel>( m_displayLevelButtons->checkedId() );
-    
+
     assert( (level == DisplayInfoLevel::Simple)
            || (level == DisplayInfoLevel::Normal)
            || (level == DisplayInfoLevel::Extended) );
-    
+
     setDisplayInfoLevel( level, false );
   }) );
-  
-  
-#if( FLUX_USE_COPY_TO_CLIPBOARD )
-  layout->addWidget( buttonBox, 2, 1, AlignRight | AlignMiddle );
-#else
-  layout->addWidget( buttonBox, 2, 0, AlignRight );
-#endif
-  
+
+
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   LOAD_JAVASCRIPT(wApp, "FluxTool.cpp", "FluxTool", wtjsCopyFluxDataTextToClipboard );
-  
-  m_copyBtn = new WPushButton( WString::tr( m_narrowLayout ? "ftw-copy-btn-narrow" : "ftw-copy-btn") );
+
+  {
+    auto copyBtnOwned = std::make_unique<WPushButton>( WString::tr( m_narrowLayout ? "ftw-copy-btn-narrow" : "ftw-copy-btn") );
+    m_copyBtn = copyBtnOwned.get();
+    layout->addWidget( std::move(copyBtnOwned), 2, 0, AlignmentFlag::Left | AlignmentFlag::Middle );
+  }
 
   // TODO: "upgrade" to using the InterSpecApp 'miscSignal' directly in CopyFluxDataTextToClipboard, and get rid of m_infoCopied signal handler
   //"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'showMsg-info-' );"
-  
+
   m_copyBtn->clicked().connect( "function(s,e){ "
     "var success = Wt.WT.CopyFluxDataTextToClipboard(s,e,'" + m_copyBtn->id() + "'); "
     "Wt.emit( '" + id() + "', {name:'infocopied', eventObject:e}, success );"
   "}" );
-  layout->addWidget( m_copyBtn, 2, 0, AlignLeft | AlignMiddle );
-  
-  m_infoCopied.connect( boost::bind( &FluxToolWidget::tableCopiedToCliboardCallback, this,
-                                    boost::placeholders::_1 ) );
+
+  m_infoCopied.connect( [this]( int a1 ){ tableCopiedToCliboardCallback( a1 ); } );
 #endif
   
   setDisplayInfoLevel( m_narrowLayout ? DisplayInfoLevel::Simple : DisplayInfoLevel::Normal, true );
@@ -1472,35 +1485,35 @@ void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype, const
     switch( col )
     {
       case FluxEnergyCol:         
-        length = WLength( m_narrowLayout ? 4.25 : 7.5, WLength::FontEm);
+        length = WLength( m_narrowLayout ? 4.25 : 7.5, WLength::Unit::FontEm);
         break;
         
       case FluxNuclideCol:        
-        length = WLength( m_narrowLayout ? 3.25 : 5.0, WLength::FontEm);
+        length = WLength( m_narrowLayout ? 3.25 : 5.0, WLength::Unit::FontEm);
         break;
         
       case FluxPeakCpsCol:        
-        length = WLength(7.5, WLength::FontEm);
+        length = WLength(7.5, WLength::Unit::FontEm);
         break;
         
       case FluxIntrinsicEffCol:   
-        length = WLength(6.5, WLength::FontEm);
+        length = WLength(6.5, WLength::Unit::FontEm);
         break;
         
       case FluxGeometricEffCol:   
-        length = WLength(6.5, WLength::FontEm);
+        length = WLength(6.5, WLength::Unit::FontEm);
         break;
         
       case FluxFluxOnDetCol:      
-        length = WLength(7.5, WLength::FontEm);
+        length = WLength(7.5, WLength::Unit::FontEm);
         break;
         
       case FluxFluxPerCm2PerSCol:
-        length = WLength(9.0, WLength::FontEm);
+        length = WLength(9.0, WLength::Unit::FontEm);
         break;
         
       case FluxGammasInto4PiCol:  
-        length = WLength( m_narrowLayout ? 7.0 : 9.0, WLength::FontEm);
+        length = WLength( m_narrowLayout ? 7.0 : 9.0, WLength::Unit::FontEm);
         break;
         
       case FluxNumColumns:

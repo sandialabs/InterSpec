@@ -25,9 +25,9 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WString>
-#include <Wt/WModelIndex>
-#include <Wt/WContainerWidget>
+#include <Wt/WString.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/AuxWindow.h"
@@ -223,8 +223,8 @@ protected:
   
   //I have temporarily switched from the preffered PeakIsotopeNameFilterModel
   //  to IsotopeNameFilterModel, to allow entry of reactions and xrays.
-//  PeakIsotopeNameFilterModel *m_filterModel;
-  IsotopeNameFilterModel *m_filterModel;
+//  Peakstd::shared_ptr<IsotopeNameFilterModel> m_filterModel;
+  std::shared_ptr<IsotopeNameFilterModel> m_filterModel;
   Wt::WComboBox *m_photoPeakEnergy;
 
   Wt::WLineEdit *m_userLabel;

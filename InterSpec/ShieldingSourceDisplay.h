@@ -38,9 +38,9 @@
 #include <boost/optional.hpp>
 #endif
 
-#include <Wt/WModelIndex>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WModelIndex.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ShieldingSourceFitPlot.h"
@@ -158,8 +158,7 @@ public:
   //  'sameAgeIsotopes' specifies whether isotopes of the same element should be
   //  forced to have the same age.
   SourceFitModel( PeakModel *peakModel,
-                  const bool sameAgeIsotopes,
-                  Wt::WObject *parent = 0 );
+                  const bool sameAgeIsotopes );
   virtual ~SourceFitModel();
 
   //numNuclides(): returns same as rowCount()
@@ -272,18 +271,20 @@ public:
   virtual int rowCount( const Wt::WModelIndex &p = Wt::WModelIndex() ) const;
   virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const;
   virtual Wt::WModelIndex parent( const Wt::WModelIndex &index ) const;
-  virtual boost::any data( const Wt::WModelIndex &index,
-                           int role = Wt::DisplayRole ) const;
-  boost::any headerData( int section,
-                         Wt::Orientation orientation, int role ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
+                           Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
+  Wt::cpp17::any headerData( int section,
+                         Wt::Orientation orientation,
+                         Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   virtual Wt::WModelIndex index( int row, int column,
                       const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
 
   //setData(...) note that if activity or age is set, then the associated
   //  uncertainty for that quantity will be reset as well.
   virtual bool setData( const Wt::WModelIndex &index,
-                        const boost::any &value, int role = Wt::EditRole );
-  virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
+                        const Wt::cpp17::any &value,
+                        Wt::ItemDataRole role = Wt::ItemDataRole::Edit );
+  virtual void sort( int column, Wt::SortOrder order = Wt::SortOrder::Ascending );
 
 
   //compare(...): function to compare SourceFitDef according to relevant Column;
@@ -326,8 +327,7 @@ class ShieldingSourceDisplay : public Wt::WContainerWidget
 public:
   ShieldingSourceDisplay( PeakModel *peakModel,
                           InterSpec *specViewer,
-                          Wt::WSuggestionPopup *materialSuggest,
-                          Wt::WContainerWidget *parent = 0 );
+                          Wt::WSuggestionPopup *materialSuggest );
   
   /** Creates a AuxWindow with a ShieldingSourceDisplay in it.
    

@@ -125,7 +125,7 @@ protected:
 protected:
   InterSpec *m_specViewer;
 
-  Wt::WButtonGroup *m_allowEditGroup;
+  std::shared_ptr<Wt::WButtonGroup> m_allowEditGroup;
 
   Wt::WContainerWidget *m_displaySampleDiv;
   Wt::WLineEdit        *m_displaySampleNumEdit;
@@ -160,7 +160,7 @@ protected:
   Wt::WLineEdit *m_title;
   Wt::WComboBox *m_source;
 
-  Wt::WButtonGroup *m_spectraGroup;
+  std::shared_ptr<Wt::WButtonGroup> m_spectraGroup;
 
   //Fields below here bellong to the whole file
   Wt::WTextArea *m_fileRemarks;

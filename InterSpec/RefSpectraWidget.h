@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/SimpleDialog.h"
 
@@ -103,7 +103,7 @@ private:
 class RefSpectraWidget : public Wt::WContainerWidget
 {
 public:
-  RefSpectraWidget( Wt::WContainerWidget *parent = nullptr );
+  RefSpectraWidget();
   virtual ~RefSpectraWidget();
 
   void setLoadSpectrumType( SpecUtils::SpectrumType type );
@@ -145,7 +145,7 @@ protected:
   //Some commented out code to help prepair the default ref spectra from the source directory.
   //static void dev_code();
 private:
-  RefSpectraModel *m_treeModel;
+  std::shared_ptr<RefSpectraModel> m_treeModel;
   Wt::WTreeView *m_treeView;
   Wt::WStackedWidget *m_stack;
   D3SpectrumDisplayDiv *m_spectrum;

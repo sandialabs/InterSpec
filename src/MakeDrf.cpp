@@ -28,35 +28,35 @@
 #include <deque>
 #include <fstream>
 
-#include <Wt/WText>
-#include <Wt/WPoint>
-#include <Wt/WImage>
-#include <Wt/WPanel>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WAnchor>
-#include <Wt/WServer>
-#include <Wt/WPainter>
-#include <Wt/WResource>
-#include <Wt/WComboBox>
-#include <Wt/WLineEdit>
-#include <Wt/WCheckBox>
-#include <Wt/WSvgImage>
-#include <Wt/WGroupBox>
-#include <Wt/WTemplate>
-#include <Wt/WTextArea>
-#include <Wt/WTableCell>
-#include <Wt/WTabWidget>
-#include <Wt/WIOService>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WEnvironment>
-#include <Wt/WApplication>
-#include <Wt/WPopupWidget>
-#include <Wt/Http/Response>
-#include <Wt/WDoubleSpinBox>
-#include <Wt/WRegExpValidator>
-#include <Wt/WSuggestionPopup>
+#include <Wt/WText.h>
+#include <Wt/WPoint.h>
+#include <Wt/WImage.h>
+#include <Wt/WPanel.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WServer.h>
+#include <Wt/WPainter.h>
+#include <Wt/WResource.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WSvgImage.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WTemplate.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WIOService.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WApplication.h>
+#include <Wt/WPopupWidget.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WDoubleSpinBox.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WSuggestionPopup.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
@@ -209,7 +209,7 @@ namespace
     
   public:
     CalFileDownloadResource( const bool pcf, MakeDrf *parent )
-     : Wt::WResource( parent ), m_pcf(pcf), m_makedrf( parent ), m_filename( "" ),
+     : Wt::WResource(), m_pcf(pcf), m_makedrf( parent ), m_filename( "" ),
        m_app( WApplication::instance() )
     {
       assert( m_app );
@@ -264,7 +264,7 @@ namespace
       if( !SpecUtils::iequals_ascii( SpecUtils::file_extension(filename), extension ) )
         filename += extension;
       
-      suggestFileName( filename, WResource::Attachment );
+      suggestFileName( filename, ContentDisposition::Attachment );
       response.setMimeType( "application/octet-stream" );
       
       if( m_pcf)
@@ -324,7 +324,7 @@ namespace
     
   public:
     DrfSummaryBase( MakeDrf *parent )
-    : WResource( parent ), m_filename(""), m_makedrf( parent ), m_app( WApplication::instance() )
+    : WResource(), m_filename(""), m_makedrf( parent ), m_app( WApplication::instance() )
     {
       assert( m_app );
     }
@@ -342,7 +342,7 @@ namespace
         filename = "drf";
       filename += "_";
       filename += fileEnding();
-      suggestFileName( filename, WResource::Attachment );
+      suggestFileName( filename, ContentDisposition::Attachment );
     }
     
     void setDescription( const string &desc )
@@ -362,7 +362,7 @@ namespace
     CsvDrfDownloadResource( MakeDrf *parent )
     : DrfSummaryBase( parent )
     {
-      suggestFileName( fileEnding(), WResource::Attachment );
+      suggestFileName( fileEnding(), ContentDisposition::Attachment );
     }
     
     virtual const char *fileEnding() const { return "drfinfo.csv"; };
@@ -399,7 +399,7 @@ namespace
     RefSheetDownloadResource( MakeDrf *parent )
      : DrfSummaryBase( parent )
     {
-      suggestFileName( fileEnding(), WResource::Attachment );
+      suggestFileName( fileEnding(), ContentDisposition::Attachment );
     }
   
     virtual const char *fileEnding() const { return "ref_sheet.html"; };
@@ -445,8 +445,8 @@ namespace
     
     DrfPeak( std::shared_ptr<const PeakDef> peak, double livetime,
              std::shared_ptr<const SpecUtils::Measurement> summed_meas,
-             WContainerWidget *parent = nullptr )
-    : WContainerWidget( parent ),
+             WContainerWidget * /*parent*/ = nullptr )
+    : WContainerWidget(),
       m_peak( peak ),
       m_livetime( livetime ),
       m_useForEffCb( nullptr ),
@@ -459,7 +459,7 @@ namespace
       m_isBackground( false )
     {
       addStyleClass( "DrfPeak" );
-      m_useForEffCb = new WCheckBox( "Use", this );
+      m_useForEffCb = addNew<WCheckBox>( WString::fromUTF8("Use") );
       m_useForEffCb->addStyleClass( "DrfPeakUseCb" );
       
       char buffer[256];
@@ -501,7 +501,7 @@ namespace
         m_userBr->setRange( 0.0, 1.0 );
         m_userBr->setSingleStep( 0.01 );
         m_userBr->setValue( 1.0 );
-        m_userBr->setMargin( 5, Wt::Left );
+        m_userBr->setMargin( 5, Wt::Side::Left );
         m_userBr->setTextSize( 8 );
         
         m_useForEffCb->setUnChecked();
@@ -514,7 +514,7 @@ namespace
         } ) );
       }
       
-      m_descTxt = new WText( WString::fromUTF8(buffer), this );
+      m_descTxt = addNew<WText>( WString::fromUTF8(buffer) );
       // This is totally bizarre, but Safari (version 16.5 at least), and Chrome, will crash
       //  (the rendering process for the tab, by running up huge amounts of memory), the
       //  second time we create the "Make Detector Response" window, under some
@@ -523,26 +523,26 @@ namespace
       //  explicitly set its width to be less than 100%, then this crash doesnt happen.
       //  Again, totally bizarre, and took quiet a while to pin down.
       //  Perhaps there is something else going on???  Has to be, right?
-      m_descTxt->setWidth( WLength(70,WLength::Percentage) );
+      m_descTxt->setWidth( WLength(70,WLength::Unit::Percentage) );
       m_descTxt->addStyleClass( "DrfPeakInfoTxt" );
-      m_backSubTxt = new WText( "", this );
+      m_backSubTxt = addNew<WText>( WString::fromUTF8("") );
       m_backSubTxt->addStyleClass( "DrfPeakBackSubTxt" );
       m_backSubTxt->hide();
       
       if( m_userBr )
       {
-        WLabel *l = new WLabel( "BR=", this );
+        WLabel *l = addNew<WLabel>( WString::fromUTF8("BR=") );
         l->addStyleClass( "DrfPeakNoNucBrLbl" );
         l->setBuddy( m_userBr );
-        addWidget( m_userBr );
+        addWidget( std::unique_ptr<WWidget>(m_userBr) );
       }
-      
-      m_previewBtn = new WPushButton( "", this );
+
+      m_previewBtn = addNew<WPushButton>( WString::fromUTF8("") );
       m_previewBtn->setStyleClass( "DrfPeakShowChart" );
       m_previewBtn->setIcon( "InterSpec_resources/images/peak_small.png" );
       //m_previewBtn = new WImage( "InterSpec_resources/images/peak_small.png", this );
       
-      m_previewBtn->clicked().connect( boost::bind( &DrfPeak::togglePeakPreview, this, boost::placeholders::_1 ) );
+      m_previewBtn->clicked().connect( [this]( WMouseEvent a1 ){ togglePeakPreview( a1 ); } );
     }//DrfPeak constructor;
     
     bool useForEffFit() const
@@ -645,15 +645,14 @@ namespace
         stringstream strm;
         svg->write( strm );
         
-        WText *chart = new WText( strm.str(), Wt::XHTMLUnsafeText );
-        chart->addStyleClass( "DrfPeakChart" );
-        m_previewPopup = new WPopupWidget( chart, this );
-        
+        auto chartWidget = std::make_unique<WText>( strm.str(), Wt::TextFormat::UnsafeXHTML );
+        chartWidget->addStyleClass( "DrfPeakChart" );
+        m_previewPopup = addNew<WPopupWidget>( std::move(chartWidget) );
+
         //ToDo: add a "X" in the corner so users can close the showing window.
       }catch( std::exception & )
       {
-        WText *msg = new WText( WString::tr("dp-no-peak-preview") );
-        m_previewPopup = new WPopupWidget( msg, this );
+        m_previewPopup = addNew<WPopupWidget>( std::make_unique<WText>( WString::tr("dp-no-peak-preview") ) );
       }//try / catch make a chart
       
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
@@ -670,8 +669,8 @@ namespace
       m_previewPopup->show();
       
       // Positioning taken from WPopupMenu.C
-      m_previewPopup->setOffsets(42, Left | Top);
-      m_previewPopup->setOffsets(-10000, Left | Top);
+      m_previewPopup->setOffsets(42, Wt::Side::Left | Wt::Side::Top);
+      m_previewPopup->setOffsets(-10000, Wt::Side::Left | Wt::Side::Top);
       doJavaScript(WT_CLASS ".positionXY('" + m_previewPopup->id() + "',"
                    + std::to_string(event.window().x) + ","
                    + std::to_string(event.window().y) + ");");
@@ -686,10 +685,12 @@ namespace
       //  detail for the moment.
       //m_previewPopup->hidden().connect( boost::bind( &WPushButton::removeStyleClass, m_previewBtn, WString("active"), true ) );
       //m_previewPopup->hidden().connect( std::bind([this](){ m_previewBtn->removeStyleClass("active",true); }));
-      m_previewPopup->hidden().connect( boost::bind( &WWebWidget::doJavaScript, m_previewBtn,
-                            "$('#" + m_previewBtn->id() + "').removeClass('active');" ) );
-      m_previewPopup->shown().connect( boost::bind( &WWebWidget::doJavaScript, m_previewBtn,
-                                                   "$('#" + m_previewBtn->id() + "').addClass('active');" ) );
+      m_previewPopup->hidden().connect( [btn = m_previewBtn, js = "$('#" + m_previewBtn->id() + "').removeClass('active');"](){
+        btn->doJavaScript( js );
+      } );
+      m_previewPopup->shown().connect( [btn = m_previewBtn, js = "$('#" + m_previewBtn->id() + "').addClass('active');"](){
+        btn->doJavaScript( js );
+      } );
 #endif
       
       m_previewBtn->addStyleClass( "active" );
@@ -806,8 +807,8 @@ namespace
   public:
     DrfSpecFileSample( std::shared_ptr<SpecMeas> meas, set<int> samples,
                       Wt::WSuggestionPopup *materialSuggest,
-                      WContainerWidget *parent = nullptr )
-    : WPanel( parent ),
+                      WContainerWidget * /*parent*/ = nullptr )
+    : WPanel(),
       m_meas( meas ),
       m_samples( samples ),
       m_materialSuggest( materialSuggest ),
@@ -822,22 +823,23 @@ namespace
       
       addStyleClass( "DrfSpecFileSample" );
       
-      WContainerWidget *body = new WContainerWidget();
-      setCentralWidget( body );
-      
-      m_peaks = new WContainerWidget( body );
-      
-      WContainerWidget *bckgrndDiv = new WContainerWidget( body );
+      auto bodyOwned = std::make_unique<WContainerWidget>();
+      WContainerWidget *body = bodyOwned.get();
+      setCentralWidget( std::move(bodyOwned) );
+
+      m_peaks = body->addNew<WContainerWidget>();
+
+      WContainerWidget *bckgrndDiv = body->addNew<WContainerWidget>();
       bckgrndDiv->addStyleClass( "DrfSpecFileSampleBackground" );
-      m_background = new WCheckBox( WString::tr("dsfs-is-background-cb"), bckgrndDiv );
+      m_background = bckgrndDiv->addNew<WCheckBox>( WString::tr("dsfs-is-background-cb") );
       m_background->checked().connect( this, &DrfSpecFileSample::isBackgroundToggled );
       m_background->unChecked().connect( this, &DrfSpecFileSample::isBackgroundToggled );
       m_background->setChecked( false );
-      m_backgroundTxt = new WText( WString::tr("dsfs-back-peak-txt"), bckgrndDiv );
+      m_backgroundTxt = bckgrndDiv->addNew<WText>( WString::tr("dsfs-back-peak-txt") );
       m_backgroundTxt->addStyleClass( "DrfSpecFileSampleBackgroundTxt" );
       m_backgroundTxt->hide();
-      
-      m_sources = new WContainerWidget( body );
+
+      m_sources = body->addNew<WContainerWidget>();
       
       setCollapsible( true );
       
@@ -888,7 +890,7 @@ namespace
       
       if( npeaks > 1 )
       {
-        m_allNoneSome = new WCheckBox( WString::tr("dsfs-all-peaks-cb"), titleBarWidget() );
+        m_allNoneSome = titleBarWidget()->addNew<WCheckBox>( WString::tr("dsfs-all-peaks-cb") );
         m_allNoneSome->clicked().preventPropagation();
         m_allNoneSome->addStyleClass( "DrfSpecFileAllNoneSomeCb" );
         m_allNoneSome->checked().connect( this, &DrfSpecFileSample::handleUserToggleAllNoneSum );
@@ -1198,9 +1200,9 @@ namespace
       bool useAll = true;
       switch( m_allNoneSome->checkState() )
       {
-        case Wt::Checked:          useAll = true;  break;
-        case Wt::Unchecked:        useAll = false; break;
-        case Wt::PartiallyChecked: useAll = false; break;
+        case Wt::CheckState::Checked:          useAll = true;  break;
+        case Wt::CheckState::Unchecked:        useAll = false; break;
+        case Wt::CheckState::PartiallyChecked: useAll = false; break;
       }//switch( m_allNoneSome->checkState() )
       
       for( auto w : m_peaks->children() )
@@ -1266,7 +1268,7 @@ namespace
             }//for( const int sample : m_samples )
           }//for( size_t i = 0; i < detNames.size(); ++i )
           
-          MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate, m_materialSuggest, m_sources );
+          MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate, m_materialSuggest );
           src->setIsEffGeometryType( static_cast<int>(m_geometry_type) );
           src->updated().connect( std::bind([this](){ m_srcInfoUpdated.emit(); }) );
           
@@ -1372,27 +1374,28 @@ namespace
   public:
     DrfSpecFile( std::shared_ptr<SpecMeas> meas,
                 Wt::WSuggestionPopup *materialSuggest,
-                WContainerWidget *parent = nullptr )
-      : WPanel( parent ),
+                WContainerWidget */*parent*/ = nullptr )
+      : WPanel(),
         m_meas( meas ),
         m_sampleWidgets( nullptr )
     {
       addStyleClass( "DrfSpecFile" );
-      
+
       const set<set<int>> sampsWithPeaks = meas->sampleNumsWithPeaks();
 
-      m_sampleWidgets = new WContainerWidget();
-      setCentralWidget( m_sampleWidgets );
-      
+      auto bodyOwned = std::make_unique<WContainerWidget>();
+      m_sampleWidgets = bodyOwned.get();
+      setCentralWidget( std::move(bodyOwned) );
+
       int nsamples = 0;
       for( const set<int> &peakSamps : sampsWithPeaks )
       {
         std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaksptr = meas->peaks( peakSamps );
         if( !peaksptr || peaksptr->empty() )
           continue;
-        
+
         ++nsamples;
-        auto sample = new DrfSpecFileSample( meas, peakSamps, materialSuggest, m_sampleWidgets );
+        DrfSpecFileSample *sample = m_sampleWidgets->addNew<DrfSpecFileSample>( meas, peakSamps, materialSuggest, nullptr );
         sample->srcInfoUpdated().connect( std::bind( [this](){ m_updated.emit(); }) );
       }//for( const set<int> &peakSamps : sampsWithPeaks )
       
@@ -1454,20 +1457,20 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer,
     setMinimumSize( std::min(width,640), std::min(height,480) );
   }//if( ww > 100 && wh > 100 )
     
-  m_tool = new MakeDrf( viewer, materialSuggest );
-  
-  stretcher()->addWidget( m_tool, 0, 0 );
+  auto toolOwned = std::make_unique<MakeDrf>( viewer, materialSuggest );
+  m_tool = toolOwned.get();
+
+  stretcher()->addWidget( std::move(toolOwned), 0, 0 );
   stretcher()->setContentsMargins( 0, 0, 0, 0 );
-    
+
   AuxWindow::addHelpInFooter( footer(), "make-drf" );
-    
+
   WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
   closeButton->clicked().connect( this, &AuxWindow::hide );
-    
-  WPushButton *saveAs = new WPushButton( WString::tr("md-export-btn"), footer() );
+
+  WPushButton *saveAs = footer()->addNew<WPushButton>( WString::tr("md-export-btn") );
   saveAs->clicked().connect( m_tool, &MakeDrf::startSaveAs );
-  m_tool->intrinsicEfficiencyIsValid().connect( boost::bind( &WPushButton::setEnabled, saveAs,
-                                                                   boost::placeholders::_1 ) );
+  m_tool->intrinsicEfficiencyIsValid().connect( [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
   saveAs->disable();
     
   show();
@@ -1488,13 +1491,12 @@ MakeDrf *MakeDrfWindow::tool()
 
 
 MakeDrf::MakeDrf( InterSpec *viewer,
-                  Wt::WSuggestionPopup *materialSuggest,
-                  Wt::WContainerWidget *parent )
-: WContainerWidget( parent ),
+                  Wt::WSuggestionPopup *materialSuggest )
+: WContainerWidget(),
   m_interspec( viewer ),
   m_materialSuggest( materialSuggest ),
-  m_intrinsicEfficiencyIsValid( this ),
-  m_finished( this ),
+  m_intrinsicEfficiencyIsValid(),
+  m_finished(),
   m_chart( nullptr ),
   m_files( nullptr ),
   m_detDiamGroup( nullptr ),
@@ -1533,19 +1535,21 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", m_interspec );
   
-  WGridLayout *upperLayout = new WGridLayout();
+  auto upperLayoutOwned = std::make_unique<WGridLayout>();
+  WGridLayout *upperLayout = upperLayoutOwned.get();
   upperLayout->setContentsMargins( 0, 0, 0, 0 );
   upperLayout->setVerticalSpacing( 0 );
   upperLayout->setHorizontalSpacing( 0 );
-  
-  WContainerWidget *fitOptionsDiv = new WContainerWidget();
+
+  auto fitOptionsDivOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *fitOptionsDiv = fitOptionsDivOwned.get();
   fitOptionsDiv->addStyleClass( "MakeDrfOptions" );
-  upperLayout->addWidget( fitOptionsDiv, 0, 0, 2, 1 );
+  upperLayout->addWidget( std::move(fitOptionsDivOwned), 0, 0, 2, 1 );
   
-  m_detDiamGroup = new WGroupBox( WString::tr("md-det-diam"), fitOptionsDiv );
-  m_detDiameter = new WLineEdit( m_detDiamGroup );
-  WRegExpValidator *distValidator = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
-  distValidator->setFlags( Wt::MatchCaseInsensitive );
+  m_detDiamGroup = fitOptionsDiv->addNew<WGroupBox>( WString::tr("md-det-diam") );
+  m_detDiameter = m_detDiamGroup->addNew<WLineEdit>();
+  auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+  distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_detDiameter->setValidator( distValidator );
   m_detDiameter->setText( "2.54 cm" );
   m_detDiameter->changed().connect( this, &MakeDrf::handleSourcesUpdates );
@@ -1557,9 +1561,9 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_detDiameter->setAttributeValue( "spellcheck", "off" );
 #endif
 
-  WLabel *setbackLabel = new WLabel( WString::tr("md-det-setback"), m_detDiamGroup );
+  WLabel *setbackLabel = m_detDiamGroup->addNew<WLabel>( WString::tr("md-det-setback") );
   setbackLabel->setInline( false );
-  m_detSetback = new WLineEdit( m_detDiamGroup );
+  m_detSetback = m_detDiamGroup->addNew<WLineEdit>();
   setbackLabel->setBuddy( m_detSetback );
   m_detSetback->setInline( false );
   m_detSetback->setValidator( distValidator );
@@ -1572,20 +1576,20 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_detSetback->setAttributeValue( "spellcheck", "off" );
 #endif
 
-  m_effOptionGroup = new WGroupBox( WString::tr("md-eff-type"), fitOptionsDiv );
-  m_effEqnOrder = new WComboBox( m_effOptionGroup );
+  m_effOptionGroup = fitOptionsDiv->addNew<WGroupBox>( WString::tr("md-eff-type") );
+  m_effEqnOrder = m_effOptionGroup->addNew<WComboBox>();
   m_effEqnOrder->setNoSelectionEnabled( true );
   m_effEqnOrder->setInline( false );
   m_effEqnOrder->changed().connect( this, &MakeDrf::handleSourcesUpdates );
-  
-  m_effEqnUnits = new WComboBox( m_effOptionGroup );
+
+  m_effEqnUnits = m_effOptionGroup->addNew<WComboBox>();
   m_effEqnUnits->setInline( false );
   m_effEqnUnits->addItem( WString::tr("md-eqn-in-kev") );
   m_effEqnUnits->addItem( WString::tr("md-eqn-in-mev") );
   m_effEqnUnits->setCurrentIndex( 1 );
   m_effEqnUnits->changed().connect( this, &MakeDrf::handleSourcesUpdates );
-  
-  m_geometry = new WComboBox( m_effOptionGroup );
+
+  m_geometry = m_effOptionGroup->addNew<WComboBox>();
   m_geometry->setInline( false );
   m_geometry->addStyleClass( "FixedGeomCombo" );
   m_geometry->addItem( WString::tr("md-geom-intrinsic-eff") );
@@ -1603,8 +1607,8 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_geometry->activated().connect( this, &MakeDrf::handleFixedGeometryChanged );
   
   
-  m_fwhmOptionGroup = new WGroupBox( WString::tr("md-fwhm-eqn-form-label"), fitOptionsDiv );
-  m_fwhmEqnType = new WComboBox( m_fwhmOptionGroup );
+  m_fwhmOptionGroup = fitOptionsDiv->addNew<WGroupBox>( WString::tr("md-fwhm-eqn-form-label") );
+  m_fwhmEqnType = m_fwhmOptionGroup->addNew<WComboBox>();
   m_fwhmEqnType->setNoSelectionEnabled( true );
   m_fwhmEqnType->setInline( false );
   
@@ -1639,7 +1643,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_fwhmEqnType->setCurrentIndex( 0 );
   m_fwhmEqnType->changed().connect( this, &MakeDrf::handleFwhmTypeChanged );
   
-  m_sqrtEqnOrder = new WComboBox( m_fwhmOptionGroup );
+  m_sqrtEqnOrder = m_fwhmOptionGroup->addNew<WComboBox>();
   m_sqrtEqnOrder->setNoSelectionEnabled( true );
   m_sqrtEqnOrder->setInline( false );
   m_sqrtEqnOrder->hide();
@@ -1649,8 +1653,8 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_fwhmOptionGroup->hide();
   
 
-  WGroupBox *genOpts = new WGroupBox( fitOptionsDiv );
-  m_airAttenuate = new WCheckBox( WString::tr("md-atten-for-air-cb"), genOpts );
+  WGroupBox *genOpts = fitOptionsDiv->addNew<WGroupBox>();
+  m_airAttenuate = genOpts->addNew<WCheckBox>( WString::tr("md-atten-for-air-cb") );
   m_airAttenuate->setChecked( true );
   m_airAttenuate->setInline( false );
   m_airAttenuate->addStyleClass( "AirAttenCb" );
@@ -1661,30 +1665,32 @@ MakeDrf::MakeDrf( InterSpec *viewer,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   // Peak fit preferences (optional, embedded in DRF)
-  WGroupBox *peakFitPrefsGroup = new WGroupBox( WString::tr( "md-peak-fit-prefs-title" ), fitOptionsDiv );
-  m_peakFitDetPrefsGui = new PeakFitDetPrefsGui( m_interspec, false, peakFitPrefsGroup );
+  WGroupBox *peakFitPrefsGroup = fitOptionsDiv->addNew<WGroupBox>( WString::tr( "md-peak-fit-prefs-title" ) );
+  m_peakFitDetPrefsGui = peakFitPrefsGroup->addNew<PeakFitDetPrefsGui>( m_interspec, false );
 
 
-  m_chart = new MakeDrfChart();
-  DrfChartHolder *chartholder = new DrfChartHolder( m_chart, nullptr );
-  upperLayout->addWidget( chartholder, 0, 1 );
-  
-  WContainerWidget *chartOptionsDiv = new WContainerWidget();
+  auto chartOwned = std::make_unique<MakeDrfChart>();
+  m_chart = chartOwned.get();
+  auto chartholderOwned = std::make_unique<DrfChartHolder>( std::move(chartOwned) );
+  upperLayout->addWidget( std::move(chartholderOwned), 0, 1 );
+
+  auto chartOptionsDivOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *chartOptionsDiv = chartOptionsDivOwned.get();
   chartOptionsDiv->addStyleClass( "MakeDrfChartOptions" );
-  upperLayout->addWidget( chartOptionsDiv, 1, 1 );
-  m_showFwhmPoints = new WCheckBox( WString::tr("md-show-fwhm-markers"), chartOptionsDiv );
+  upperLayout->addWidget( std::move(chartOptionsDivOwned), 1, 1 );
+  m_showFwhmPoints = chartOptionsDiv->addNew<WCheckBox>( WString::tr("md-show-fwhm-markers") );
   m_showFwhmPoints->setChecked( true );
   m_showFwhmPoints->checked().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
   m_showFwhmPoints->unChecked().connect( this, &MakeDrf::handleShowFwhmPointsToggled );
   
-  WLabel *label = new WLabel( WString::tr("md-display-energy-lower-label"), chartOptionsDiv );
-  label->setMargin(15,Wt::Left);
-  m_chartLowerE = new WDoubleSpinBox( chartOptionsDiv );
+  WLabel *label = chartOptionsDiv->addNew<WLabel>( WString::tr("md-display-energy-lower-label") );
+  label->setMargin(15,Wt::Side::Left);
+  m_chartLowerE = chartOptionsDiv->addNew<WDoubleSpinBox>();
   label->setBuddy( m_chartLowerE );
-  
-  label = new WLabel( WString::tr("md-display-energy-upper-label"), chartOptionsDiv );
-  label->setMargin(5,Wt::Left);
-  m_chartUpperE = new WDoubleSpinBox( chartOptionsDiv );
+
+  label = chartOptionsDiv->addNew<WLabel>( WString::tr("md-display-energy-upper-label") );
+  label->setMargin(5,Wt::Side::Left);
+  m_chartUpperE = chartOptionsDiv->addNew<WDoubleSpinBox>();
   m_chartUpperE->setRange(0, 10000);
   m_chartUpperE->setValue( 3000.0 );
   label->setBuddy( m_chartUpperE );
@@ -1700,41 +1706,47 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_chartUpperE->changed().connect( std::bind(updateChartRange) );
   m_chart->xRangeChanged().connect( this, &MakeDrf::chartEnergyRangeChangedCallback );
   
-  WContainerWidget *fileHolder = new WContainerWidget();
-  fileHolder->setOverflow( Overflow::OverflowAuto, Wt::Vertical );
+  auto fileHolderOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *fileHolder = fileHolderOwned.get();
+  fileHolder->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
   fileHolder->addStyleClass( "MakeDrfFiles" );
-  
-  m_files = new WContainerWidget( fileHolder );
-  
-  m_errorMsg = new WText( "", Wt::XHTMLText );
-  m_errorMsg->addStyleClass( "MakeDrfErrTxt" );
-  upperLayout->addWidget( m_errorMsg, 2, 0, 1, 2 );
-  m_errorMsg->hide();
-  
-  m_intrinsicEffAnswer = new WText( "", Wt::XHTMLText );
-  m_intrinsicEffAnswer->addStyleClass( "MakeDrfEqnAnswer" );
-  upperLayout->addWidget( m_intrinsicEffAnswer, 3, 0, 1, 2 );
+
+  m_files = fileHolder->addNew<WContainerWidget>();
+
+  {
+    auto errorMsgOwned = std::make_unique<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
+    m_errorMsg = errorMsgOwned.get();
+    m_errorMsg->addStyleClass( "MakeDrfErrTxt" );
+    upperLayout->addWidget( std::move(errorMsgOwned), 2, 0, 1, 2 );
+    m_errorMsg->hide();
+  }
+
+  {
+    auto intrinsicEffAnswerOwned = std::make_unique<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
+    m_intrinsicEffAnswer = intrinsicEffAnswerOwned.get();
+    m_intrinsicEffAnswer->addStyleClass( "MakeDrfEqnAnswer" );
+    upperLayout->addWidget( std::move(intrinsicEffAnswerOwned), 3, 0, 1, 2 );
+  }
   
   upperLayout->setRowStretch( 0, 1 );
   upperLayout->setColumnStretch( 1, 1 );
   
-  WGridLayout *layout = new WGridLayout();
-  setLayout( layout );
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
   
   if( viewer->isPhone() )
   {
     //Phone layout untested!
-    WTabWidget *tab = new WTabWidget();
-    layout->addWidget( tab, 0, 0 );
-    WContainerWidget *chartTab = new WContainerWidget();
-    chartTab->setLayout( upperLayout );
-    tab->addTab( chartTab, WString::tr("md-mi-chart-phone") );
-    tab->addTab( fileHolder, WString::tr("md-mi-peaks-phone") );
+    WTabWidget *tab = layout->addWidget( std::make_unique<WTabWidget>(), 0, 0 );
+    auto chartTabOwned = std::make_unique<WContainerWidget>();
+    WContainerWidget *chartTab = chartTabOwned.get();
+    chartTab->setLayout( std::move(upperLayoutOwned) );
+    tab->addTab( std::move(chartTabOwned), WString::tr("md-mi-chart-phone") );
+    tab->addTab( std::move(fileHolderOwned), WString::tr("md-mi-peaks-phone") );
   }else
   {
-    layout->addLayout( upperLayout, 0, 0 );
-    layout->addWidget( fileHolder, 1, 0 );
+    layout->addLayout( std::move(upperLayoutOwned), 0, 0 );
+    layout->addWidget( std::move(fileHolderOwned), 1, 0 );
     layout->setRowResizable( 0, true, 275 );
   }//if( is phone ) / else
   
@@ -1758,7 +1770,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
       continue;
     
     //Make a widget representing each file
-    DrfSpecFile *fileWidget = new DrfSpecFile( meas, materialSuggest, m_files );
+    DrfSpecFile *fileWidget = m_files->addNew<DrfSpecFile>( meas, materialSuggest );
     fileWidget->updated().connect( this, &MakeDrf::handleSourcesUpdates );
     added.push_back( fileWidget );
     
@@ -1766,8 +1778,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
     for( DrfSpecFileSample *fs : fileWidget->fileSamples() )
     {
       for( DrfPeak *p : fs->peaks() )
-        p->m_peakPreviewShow.connect( boost::bind(&MakeDrf::peakPreviewShown, this,
-                                                  boost::placeholders::_1)  );
+        p->m_peakPreviewShow.connect( [this]( DrfPeak *a1 ){ peakPreviewShown( a1 ); } );
     }
     
   }//for( loop over opened files )
@@ -1782,7 +1793,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   
   //If we directly call handleSourcesUpdates() now, getting the activity
   //  uncertainty will throw an exception because they wont validate.... whatever.
-  WServer::instance()->post( wApp->sessionId(), wApp->bind( boost::bind(&MakeDrf::handleSourcesUpdates,this) ) );
+  WServer::instance()->post( wApp->sessionId(), [this](){ handleSourcesUpdates(); } );
 }//MakeDrf( constructor )
 
 
@@ -1801,11 +1812,11 @@ void MakeDrf::startSaveAs()
   if( m_effEqnCoefs.empty() )
   {
     AuxWindow *w = new AuxWindow( "Error", windowprop );
-    WText *t = new WText( "Sorry,&nbsp;DRF&nbsp;not&nbsp;valid.", Wt::XHTMLText, w->contents() );
+    WText *t = w->contents()->addNew<WText>( WString::fromUTF8("Sorry,&nbsp;DRF&nbsp;not&nbsp;valid."), Wt::TextFormat::XHTML );
     t->setInline( false );
-    WPushButton *b = new WPushButton( WString::tr("Close"), w->footer() );
+    WPushButton *b = w->footer()->addNew<WPushButton>( WString::tr("Close") );
     b->clicked().connect( w, &AuxWindow::hide );
-    w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w) );
+    w->finished().connect( [w](Wt::DialogCode){ AuxWindow::deleteAuxWindow( w ); } );
     w->rejectWhenEscapePressed();
     w->show();
     w->centerWindow();
@@ -1822,46 +1833,47 @@ void MakeDrf::startSaveAs()
   
   AuxWindow *w = new AuxWindow( WString::tr("md-export-window-title"), windowprop );
 
-  WTable *table = new WTable( w->contents() );
+  WTable *table = w->contents()->addNew<WTable>();
   table->addStyleClass( "MakeDrfSaveAsTable" );
-  
+
   WTableCell *cell = table->elementAt(0, 0);
-  WLabel *label = new WLabel( WString::tr("Name"), cell );
-  
+  WLabel *label = cell->addNew<WLabel>( WString::tr("Name") );
+
   cell = table->elementAt(0, 1);
-  WLineEdit *name = new WLineEdit( cell );
+  WLineEdit *name = cell->addNew<WLineEdit>();
   label->setBuddy( name );
   name->setTextSize( 32 );
   name->setMaxLength( 255 );
   name->setAutoComplete( false );
-  
+
   name->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
   name->setAttributeValue( "autocorrect", "off" );
   name->setAttributeValue( "spellcheck", "off" );
 #endif
-  
+
   //const char *valid_file_name_regex = "(^(?!\\.)(?!com[0-9]$)(?!con$)(?!lpt[0-9]$)(?!nul$)(?!prn$)[^\\|*\\?\\\\:<>/$\"]*[^\\.\\|*\\?\\\\:<>/$\"]+$";
   const char *valid_file_name_regex = R"MyRegexDelim(^[^\\\/\:\*\?\"\'\,\;\<\>\|]+$)MyRegexDelim";
-  WRegExpValidator *validator = new WRegExpValidator( valid_file_name_regex, name );
-  name->setValidator( validator );
-  
+  auto validatorOwned = std::make_shared<WRegExpValidator>( valid_file_name_regex );
+  WRegExpValidator *validator = validatorOwned.get();
+  name->setValidator( validatorOwned );
+
   cell = table->elementAt(0, 2);
-  WImage *help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  WImage *help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-name"), true,
                               HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
-  
+
   cell = table->elementAt(1, 0);
-  label = new WLabel( WString::tr("Description"), cell );
+  label = cell->addNew<WLabel>( WString::tr("Description") );
   cell = table->elementAt(1, 1);
   cell->setRowSpan( 2 );
-  WTextArea *description = new WTextArea( cell );
+  WTextArea *description = cell->addNew<WTextArea>();
   label->setBuddy( description );
-  description->setWidth( WLength(97,WLength::Percentage) );
-  
+  description->setWidth( WLength(97,WLength::Unit::Percentage) );
+
   cell = table->elementAt(1, 2);
-  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-desc"), true,
                               HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
@@ -1900,9 +1912,9 @@ void MakeDrf::startSaveAs()
       cell = table->elementAt(currentRow, 0);
       cell->setColumnSpan( 2 );
     
-      def_for_serial_cb = new WCheckBox( WString::tr("md-make-default-for-serial-cb").arg(serial_number), cell );
+      def_for_serial_cb = cell->addNew<WCheckBox>( WString::tr("md-make-default-for-serial-cb").arg(serial_number) );
       cell = table->elementAt(currentRow, 2);
-      help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+      help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
       help->addStyleClass( "MakeDrfSaveHelp" );
       HelpSystem::attachToolTipOn( help, WString::tr("md-tt-make-default-serial"),
                                   true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
@@ -1919,9 +1931,9 @@ void MakeDrf::startSaveAs()
       currentRow = table->rowCount();
       cell = table->elementAt(currentRow, 0);
       cell->setColumnSpan( 2 );
-      def_for_model_cb = new WCheckBox( WString::tr("md-make-default-for-model-cb").arg(model), cell );
+      def_for_model_cb = cell->addNew<WCheckBox>( WString::tr("md-make-default-for-model-cb").arg(model) );
       cell = table->elementAt(currentRow, 2);
-      help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+      help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
       help->addStyleClass( "MakeDrfSaveHelp" );
       HelpSystem::attachToolTipOn( help, WString::tr("md-tt-make-default-model"),
                                   true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
@@ -1932,40 +1944,67 @@ void MakeDrf::startSaveAs()
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
-  CalFileDownloadResource *n42Resource = new CalFileDownloadResource( false, this );
-  WAnchor *n42anchor = new WAnchor( n42Resource, "Export data as N42-2012 file.", cell );
-  n42anchor->setTarget( AnchorTarget::TargetNewWindow );
-  
+  auto n42ResourceOwned = std::make_shared<CalFileDownloadResource>( false, this );
+  CalFileDownloadResource *n42Resource = n42ResourceOwned.get();
+  {
+    Wt::WLink lnk( n42ResourceOwned );
+    lnk.setTarget( Wt::LinkTarget::NewWindow );
+    WAnchor *n42anchor = cell->addNew<WAnchor>( lnk, WString::fromUTF8("Export data as N42-2012 file.") );
+    (void)n42anchor;
+#if( ANDROID )
+    n42anchor->clicked().connect( std::bind([n42Resource](){
+      android_download_workaround(n42Resource, "drf_data.n42");
+    }) );
+#endif
+  }
   cell = table->elementAt(currentRow, 2);
-  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-n42"), true,
                   HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
-  
+
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
-  CsvDrfDownloadResource *csvResource = new CsvDrfDownloadResource( this );
-  WAnchor *csvanchor = new WAnchor( csvResource, WString::tr("md-export-as-csv"), cell );
-  csvanchor->setTarget( AnchorTarget::TargetNewWindow );
-  
+  auto csvResourceOwned = std::make_shared<CsvDrfDownloadResource>( this );
+  CsvDrfDownloadResource *csvResource = csvResourceOwned.get();
+  {
+    Wt::WLink lnk( csvResourceOwned );
+    lnk.setTarget( Wt::LinkTarget::NewWindow );
+    WAnchor *csvanchor = cell->addNew<WAnchor>( lnk, WString::tr("md-export-as-csv") );
+    (void)csvanchor;
+#if( ANDROID )
+    csvanchor->clicked().connect( std::bind([csvResource](){
+      android_download_workaround(csvResource, "drf_data.csv");
+    }) );
+#endif
+  }
 
   cell = table->elementAt(currentRow, 2);
-  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-as-csv"), true,
                   HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
-  
-  
+
+
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
   cell->setColumnSpan( 2 );
-  RefSheetDownloadResource *refSheetResource = new RefSheetDownloadResource( this );
-  WAnchor *refSheetAnchor = new WAnchor( refSheetResource, WString::tr("md-export-quick-ref"), cell );
-  refSheetAnchor->setTarget( AnchorTarget::TargetNewWindow );
-  
+  auto refSheetResourceOwned = std::make_shared<RefSheetDownloadResource>( this );
+  RefSheetDownloadResource *refSheetResource = refSheetResourceOwned.get();
+  {
+    Wt::WLink lnk( refSheetResourceOwned );
+    lnk.setTarget( Wt::LinkTarget::NewWindow );
+    WAnchor *refSheetAnchor = cell->addNew<WAnchor>( lnk, WString::tr("md-export-quick-ref") );
+    (void)refSheetAnchor;
+#if( ANDROID )
+    refSheetAnchor->clicked().connect( std::bind([refSheetResource](){
+      android_download_workaround(refSheetResource, "drf_ref.html");
+    }) );
+#endif
+  }
   cell = table->elementAt(currentRow, 2);
-  help = new WImage(Wt::WLink("InterSpec_resources/images/help_mobile.svg"), cell);
+  help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-quick-ref"), true,
                   HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
@@ -1988,7 +2027,7 @@ void MakeDrf::startSaveAs()
   
   
   auto updateName = [name,csvResource,n42Resource,refSheetResource](){
-    if( name->validate() == Wt::WValidator::Valid )
+    if( name->validate() == Wt::ValidationState::Valid )
     {
       n42Resource->setSuggestFileName( name->text().toUTF8() );
       csvResource->setSuggestFileName( name->text().toUTF8() );
@@ -2025,7 +2064,7 @@ void MakeDrf::startSaveAs()
                  def_for_serial_cb, def_for_model_cb,
                  representative_meas ](){
     auto state = validator->validate(name->text()).state();
-    if( name->text().empty() || state!=WValidator::Valid )
+    if( name->text().empty() || state!=WValidator::State::Valid )
     {
       passMessage( WString::tr("md-det-name-not-valid"), 3 );
       return;
@@ -2061,9 +2100,9 @@ void MakeDrf::startSaveAs()
       
       DataBaseUtils::DbTransaction transaction( *sql );
       //Create a separate DetectorPeakResponse because shared_ptr and dbo::ptr don't work well together
-      DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
-      tempDetector->m_user = static_cast<int>( m_interspec->user().id() );
-      auto newDbDet = sql->session()->add( tempDetector );
+      auto tempDetectorOwned = std::make_unique<DetectorPeakResponse>( *drf );
+      tempDetectorOwned->m_user = static_cast<int>( m_interspec->user().id() );
+      auto newDbDet = sql->session()->add( std::move(tempDetectorOwned) );
       
       transaction.commit();
     }catch( std::exception &e )
@@ -2107,9 +2146,9 @@ void MakeDrf::startSaveAs()
     bool enable = false;
     switch( validator->validate(name->text()).state() )
     {
-      case WValidator::Invalid:      enable = false; break;
-      case WValidator::InvalidEmpty: enable = false; break;
-      case WValidator::Valid:        enable = !name->text().empty(); break;
+      case WValidator::State::Invalid:      enable = false; break;
+      case WValidator::State::InvalidEmpty: enable = false; break;
+      case WValidator::State::Valid:        enable = !name->text().empty(); break;
     }
     save->setEnabled( enable );
   };
@@ -2120,7 +2159,7 @@ void MakeDrf::startSaveAs()
   name->keyPressed().connect( std::bind(updateSaveBtn) ); //Uhg, I guess we'll just use this until I figure out whats wrong with above so save button will update in real time
   
   
-  w->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, w) );
+  w->finished().connect( [w](Wt::DialogCode){ AuxWindow::deleteAuxWindow( w ); } );
   w->rejectWhenEscapePressed();
   w->show();
   w->centerWindow();
@@ -2720,9 +2759,10 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks )
   
   //ToDo: I'm not entirely sure the next line protects against updateFwhmEqn()
   //  not being called if this widget is deleted before fit is done.
-  auto updater = boost::bind( &MakeDrf::updateFwhmEqn, this, boost::placeholders::_1,
-                             boost::placeholders::_2, boost::placeholders::_3,
-                             static_cast<int>(fnctnlForm), fitid );
+  auto updater = [this, fnctnlForm = static_cast<int>(fnctnlForm), fitid](
+      std::vector<float> coefs, std::vector<float> uncerts, double chi2 ){
+    updateFwhmEqn( coefs, uncerts, chi2, fnctnlForm, fitid );
+  };
   
   const string thisid = id();
   
@@ -2852,10 +2892,10 @@ void MakeDrf::fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data )
   
   //ToDo: I'm not entirely sure the next line protects against updateEffEqn()
   //  not being called if this widget is deleted before fit is done. (it doesnt!)
-  auto updater = boost::bind( &MakeDrf::updateEffEqn, this, boost::placeholders::_1,
-                             boost::placeholders::_2, boost::placeholders::_3,
-                             boost::placeholders::_4, boost::placeholders::_5,
-                             fitid, boost::placeholders::_6 );
+  auto updater = [this, fitid]( std::vector<float> coefs, std::vector<float> uncerts,
+      double chi2, float lowestEnergy, float highestEnergy, std::string errmsg ){
+    updateEffEqn( coefs, uncerts, chi2, lowestEnergy, highestEnergy, fitid, errmsg );
+  };
   const string thisid = id();
   
   
@@ -3321,14 +3361,14 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
     releffuncert = effEqnUncert( co60Energy, effEqnCoefs, effEqnCoefsUncerts );
 
   
-  int offset = 0;
+  std::chrono::minutes tzOffset( 0 );
   if( wApp )
-    offset = wApp->environment().timeZoneOffset();
+    tzOffset = wApp->environment().timeZoneOffset();
   auto localtime = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-  localtime += std::chrono::seconds(60*offset);
+  localtime += tzOffset;
 
   out << "# Detector Response Function generated by InterSpec "
-  << SpecUtils::to_iso_string( localtime ) << (offset ? "" : " UTC")
+  << SpecUtils::to_iso_string( localtime ) << (tzOffset.count() ? "" : " UTC")
   << endline << endline;
   
   out << "# Name,";
@@ -3632,7 +3672,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   const WString diameter = ((geom_type == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic) || (diam > 0.0))
                               ? m_detDiameter->text() : WString("N/A");
   
-  const int offset = wApp->environment().timeZoneOffset();
+  const int offset = static_cast<int>( wApp->environment().timeZoneOffset().count() );
   const WDateTime now = WDateTime::currentDateTime().addSecs(60*offset);
   const string date = now.date().toString("MMM d yyyy").toUTF8();
   
@@ -3864,7 +3904,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   
   WLength chart_width(5*96,WLength::Unit::Pixel), chart_height(3*96,WLength::Unit::Pixel);
   
-  Wt::WSvgImage eff_chart( chart_width, chart_height, nullptr, false );
+  Wt::WSvgImage eff_chart( chart_width, chart_height, false );
 
   {// begin make DRF chart
     MakeDrfChart chart;
@@ -3940,19 +3980,19 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   
   WTemplate tmplt;
   // tmplttxt is unsafe HTML because of <head> tag and stuff, so we dont want Wt to filter it
-  tmplt.setTemplateText( WString::fromUTF8(tmplttxt), TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("drf-name", drfname, TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("drf-desc", drfdescrip, TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("diameter", diameter, TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("date", date, TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("rel-eff", rel_eff_txt, TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("eff-eqn", eff_eqn, TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("fwhm-eqn", fwhm_eqn, TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("eff-table", efftable.str(), TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("eff-svg", eff_chart_svg.str(), TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("qr-code-title", drfname, TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("qr-code", qr_code, TextFormat::XHTMLUnsafeText );
-  tmplt.bindString("qr-code-summary", drfdescrip, TextFormat::XHTMLUnsafeText );
+  tmplt.setTemplateText( WString::fromUTF8(tmplttxt), TextFormat::UnsafeXHTML );
+  tmplt.bindString("drf-name", drfname, TextFormat::UnsafeXHTML );
+  tmplt.bindString("drf-desc", drfdescrip, TextFormat::UnsafeXHTML );
+  tmplt.bindString("diameter", diameter, TextFormat::UnsafeXHTML );
+  tmplt.bindString("date", date, TextFormat::UnsafeXHTML );
+  tmplt.bindString("rel-eff", rel_eff_txt, TextFormat::UnsafeXHTML );
+  tmplt.bindString("eff-eqn", eff_eqn, TextFormat::UnsafeXHTML );
+  tmplt.bindString("fwhm-eqn", fwhm_eqn, TextFormat::UnsafeXHTML );
+  tmplt.bindString("eff-table", efftable.str(), TextFormat::UnsafeXHTML );
+  tmplt.bindString("eff-svg", eff_chart_svg.str(), TextFormat::UnsafeXHTML );
+  tmplt.bindString("qr-code-title", drfname, TextFormat::UnsafeXHTML );
+  tmplt.bindString("qr-code", qr_code, TextFormat::UnsafeXHTML );
+  tmplt.bindString("qr-code-summary", drfdescrip, TextFormat::UnsafeXHTML );
   
   
   tmplt.renderTemplate( output );

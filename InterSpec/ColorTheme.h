@@ -30,9 +30,9 @@
 #include <vector>
 #include <string>
 
-#include <Wt/WColor>
-#include <Wt/WString>
-#include <Wt/WDateTime>
+#include <Wt/WColor.h>
+#include <Wt/WString.h>
+#include <Wt/WDateTime.h>
 
 
 class ColorThemeInfo;

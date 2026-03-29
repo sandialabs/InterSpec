@@ -31,11 +31,11 @@
 #include <sstream>
 #include <iostream>
 
-#include <Wt/WSignal>
-#include <Wt/WTextArea>
-#include <Wt/WPopupMenu>
-#include <Wt/WPushButton>
-#include <Wt/WContainerWidget>
+#include <Wt/WSignal.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WPopupMenu.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/AuxWindow.h"
@@ -54,7 +54,7 @@ namespace Wt
 class TerminalWidget : public Wt::WContainerWidget
 {
   public:
-  TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent = 0 );
+  TerminalWidget( InterSpec *viewer );
   void focusText();
   
   void chartClicked( float energy, float counts, int pageX, int pageY);

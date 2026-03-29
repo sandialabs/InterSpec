@@ -26,19 +26,19 @@
 #include <iostream>
 #include <algorithm>
 
-#include <Wt/WLink>
-#include <Wt/WText>
-#include <Wt/Utils>
-#include <Wt/WLabel>
-#include <Wt/WImage>
-#include <Wt/WCheckBox>
-#include <Wt/WGridLayout>
-#include <Wt/WJavaScript>
-#include <Wt/WApplication>
-#include <Wt/WStandardItem>
-#include <Wt/WStringStream>
-#include <Wt/WContainerWidget>
-#include <Wt/WStandardItemModel>
+#include <Wt/WLink.h>
+#include <Wt/WText.h>
+#include <Wt/Utils.h>
+#include <Wt/WLabel.h>
+#include <Wt/WImage.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStandardItem.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WStandardItemModel.h>
 
 // Disable streamsize <=> size_t warnings in boost
 #pragma warning(disable:4244)
@@ -171,20 +171,19 @@ const char *WarningWidget::description( const WarningMsgLevel level )
 }//const char *description( const WarningMsgLevel level )
 
 
-WarningWidget::WarningWidget( InterSpec *hostViewer,
-                              WContainerWidget *parent )
-: WContainerWidget( parent ),
+WarningWidget::WarningWidget( InterSpec *hostViewer )
+: WContainerWidget(),
   m_hostViewer( hostViewer ),
   m_totalMessages(0),
   m_popupActive{ false },
   m_active{ false },
   m_layout(NULL),
-  m_messageModel(NULL),
+  m_messageModel( nullptr ),
   m_tableView(NULL),
   m_description(NULL)
 {
-  setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
-  m_messageModel = new WStandardItemModel( 1, 3, this );
+  setOffsets( WLength(0, WLength::Unit::Pixel), Wt::Side::Left | Wt::Side::Top );
+  m_messageModel = std::make_shared<WStandardItemModel>( 1, 3 );
   
   // Find which messages should be active.
   for( WarningMsgLevel i = WarningMsgLevel(0); i <= WarningMsgHigh; i = WarningMsgLevel(i+1) )
@@ -227,109 +226,109 @@ void WarningWidget::createContent()
 {
   if (!m_layout) //Create UI for first time
   {
-    m_layout = new WGridLayout();
+    m_layout = setLayout( std::make_unique<WGridLayout>() );
     m_layout->setContentsMargins(0,0,0,0);
-    setLayout(m_layout);
     
     setPadding(0);
     setMargin(0);
-    m_messageModel->setItem (0,0, new WStandardItem("0"));
-    m_messageModel->setItem (0,1, new WStandardItem(""));
-    m_messageModel->setItem (0,2, new WStandardItem("InterSpec started."));
-    m_messageModel->setItem (0,3, new WStandardItem(""));
-    m_messageModel->setHeaderData(  0, Horizontal, WString("#"), DisplayRole );
-    m_messageModel->setHeaderData(  1, Horizontal, WString("Type"), DisplayRole );
-    m_messageModel->setHeaderData(  2, Horizontal, WString("Message"), DisplayRole );
+    m_messageModel->setItem( 0, 0, std::make_unique<WStandardItem>("0") );
+    m_messageModel->setItem( 0, 1, std::make_unique<WStandardItem>("") );
+    m_messageModel->setItem( 0, 2, std::make_unique<WStandardItem>("InterSpec started.") );
+    m_messageModel->setItem( 0, 3, std::make_unique<WStandardItem>("") );
+    m_messageModel->setHeaderData(  0, Wt::Orientation::Horizontal, WString("#"), Wt::ItemDataRole::Display );
+    m_messageModel->setHeaderData(  1, Wt::Orientation::Horizontal, WString("Type"), Wt::ItemDataRole::Display );
+    m_messageModel->setHeaderData(  2, Wt::Orientation::Horizontal, WString("Message"), Wt::ItemDataRole::Display );
     
-    m_tableView = new RowStretchTreeView();
+    m_tableView = m_layout->addWidget( std::make_unique<RowStretchTreeView>(), 0, 0, 1, 6 );
     m_tableView->setRootIsDecorated	(	false); //makes the tree look like a table! :)
     m_tableView->setModel(m_messageModel);
-    m_tableView->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
+    m_tableView->setOffsets( WLength(0, WLength::Unit::Pixel), Wt::Side::Left | Wt::Side::Top );
     m_tableView->setColumnResizeEnabled(true);
-    m_tableView->setColumnAlignment(0, Wt::AlignCenter);
-    m_tableView->setHeaderAlignment(0, Wt::AlignCenter);
+    m_tableView->setColumnAlignment(0, Wt::AlignmentFlag::Center);
+    m_tableView->setHeaderAlignment(0, Wt::AlignmentFlag::Center);
     m_tableView->setColumnWidth(0,50);
     m_tableView->setColumnWidth(1,100);
     m_tableView->setColumnWidth(2,400);
-    
-    m_tableView->setAlternatingRowColors(true);
-    m_tableView->setSelectionMode(Wt::NoSelection);
-    m_tableView->setEditTriggers(Wt::WAbstractItemView::NoEditTrigger);
 
-    m_tableView->setSelectionMode( Wt::SingleSelection );
-    m_tableView->setSelectionBehavior( Wt::SelectRows );
+    m_tableView->setAlternatingRowColors(true);
+    m_tableView->setSelectionMode(Wt::SelectionMode::None);
+    m_tableView->setEditTriggers(Wt::WFlags<Wt::EditTrigger>{Wt::EditTrigger::None});
+
+    m_tableView->setSelectionMode( Wt::SelectionMode::Single );
+    m_tableView->setSelectionBehavior( Wt::SelectionBehavior::Rows );
     m_tableView->selectionChanged().connect( this, &WarningWidget::resultSelectionChanged );
-      
-    m_layout->addWidget(m_tableView,0,0,1,6);
+
     m_layout->setRowStretch(0,1);
     m_layout->setColumnStretch(0,1);
-    
-    
-    WImage* image = new Wt::WImage(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgInfo) ));
-    image->setMaximumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
-    image->setMinimumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
-    m_layout->addWidget(image,1,2, AlignCenter);
 
-    image = new Wt::WImage(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgLow) ));
-    image->setMaximumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
-    image->setMinimumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
-    m_layout->addWidget(image,1,3, AlignCenter);
-    
-    image = new Wt::WImage(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgMedium) ));
-    image->setMaximumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
-    image->setMinimumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
-    m_layout->addWidget(image,1,4, AlignCenter);
-    
-    image = new Wt::WImage(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgHigh) ));
-    image->setMaximumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
-    image->setMinimumSize(WLength(16,WLength::Pixel), WLength(16,WLength::Pixel));
-    m_layout->addWidget(image,1,5, AlignCenter);
-    
-    m_layout->addWidget(new Wt::WLabel("info"),2,2, AlignCenter);
-    m_layout->addWidget(new Wt::WLabel("low"),2,3, AlignCenter);
-    m_layout->addWidget(new Wt::WLabel("medium"),2,4, AlignCenter);
-    m_layout->addWidget(new Wt::WLabel("high"),2,5, AlignCenter);
-    
-    WContainerWidget* desc = new WContainerWidget();
-    desc->setOverflow(Wt::WContainerWidget::OverflowAuto);
-    m_description = new WText(desc);
-    m_description->setWordWrap(true);
-    m_layout->addWidget(desc,1,0, 4,1);
-    WLabel *label = new WLabel("Don't log:");
-    m_layout->addWidget(label,3,1, AlignRight);
-    
+    {
+      Wt::WImage *image = m_layout->addWidget( std::make_unique<Wt::WImage>(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgInfo) )), 1, 2, Wt::AlignmentFlag::Center );
+      image->setMaximumSize(WLength(16,WLength::Unit::Pixel), WLength(16,WLength::Unit::Pixel));
+      image->setMinimumSize(WLength(16,WLength::Unit::Pixel), WLength(16,WLength::Unit::Pixel));
+    }
+
+    {
+      Wt::WImage *image = m_layout->addWidget( std::make_unique<Wt::WImage>(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgLow) )), 1, 3, Wt::AlignmentFlag::Center );
+      image->setMaximumSize(WLength(16,WLength::Unit::Pixel), WLength(16,WLength::Unit::Pixel));
+      image->setMinimumSize(WLength(16,WLength::Unit::Pixel), WLength(16,WLength::Unit::Pixel));
+    }
+
+    {
+      Wt::WImage *image = m_layout->addWidget( std::make_unique<Wt::WImage>(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgMedium) )), 1, 4, Wt::AlignmentFlag::Center );
+      image->setMaximumSize(WLength(16,WLength::Unit::Pixel), WLength(16,WLength::Unit::Pixel));
+      image->setMinimumSize(WLength(16,WLength::Unit::Pixel), WLength(16,WLength::Unit::Pixel));
+    }
+
+    {
+      Wt::WImage *image = m_layout->addWidget( std::make_unique<Wt::WImage>(Wt::WLink( iconUrl(WarningMsgLevel::WarningMsgHigh) )), 1, 5, Wt::AlignmentFlag::Center );
+      image->setMaximumSize(WLength(16,WLength::Unit::Pixel), WLength(16,WLength::Unit::Pixel));
+      image->setMinimumSize(WLength(16,WLength::Unit::Pixel), WLength(16,WLength::Unit::Pixel));
+    }
+
+    m_layout->addWidget( std::make_unique<Wt::WLabel>("info"), 2, 2, Wt::AlignmentFlag::Center );
+    m_layout->addWidget( std::make_unique<Wt::WLabel>("low"), 2, 3, Wt::AlignmentFlag::Center );
+    m_layout->addWidget( std::make_unique<Wt::WLabel>("medium"), 2, 4, Wt::AlignmentFlag::Center );
+    m_layout->addWidget( std::make_unique<Wt::WLabel>("high"), 2, 5, Wt::AlignmentFlag::Center );
+
+    {
+      auto descOwner = std::make_unique<WContainerWidget>();
+      WContainerWidget *desc = descOwner.get();
+      desc->setOverflow(Wt::Overflow::Auto);
+      m_description = desc->addNew<WText>();
+      m_description->setWordWrap(true);
+      m_layout->addWidget( std::move(descOwner), 1, 0, 4, 1 );
+    }
+
+    m_layout->addWidget( std::make_unique<WLabel>("Don't log:"), 3, 1, Wt::AlignmentFlag::Right );
+
     int i = 2;
     for( WarningWidget::WarningMsgLevel level = WarningWidget::WarningMsgLevel(0);
         level <= WarningWidget::WarningMsgHigh;
         level = WarningWidget::WarningMsgLevel(level+1) )
     {
-      WCheckBox *warnToggle = new WCheckBox();
-      m_layout->addWidget( warnToggle, 3, i++, AlignCenter);
-      
+      WCheckBox *warnToggle = m_layout->addWidget( std::make_unique<WCheckBox>(), 3, i++, Wt::AlignmentFlag::Center );
+
       const char *str = tostr( level );
       UserPreferences::associateWidget( str, warnToggle,  m_hostViewer );
-      
-      warnToggle->checked().connect( boost::bind( &WarningWidget::setActivity, this,  level, false ) );
-      warnToggle->unChecked().connect( boost::bind( &WarningWidget::setActivity, this,  level, true ) );
+
+      warnToggle->checked().connect( [this, level](){ setActivity( level, false ); } );
+      warnToggle->unChecked().connect( [this, level](){ setActivity( level, true ); } );
     }//for( loop over
-    
-    label = new WLabel("Hide notifications:");
-    
-    m_layout->addWidget( label, 4, 1, AlignRight);
-    
+
+    m_layout->addWidget( std::make_unique<WLabel>("Hide notifications:"), 4, 1, Wt::AlignmentFlag::Right );
+
     i = 2;
     for( WarningWidget::WarningMsgLevel level = WarningWidget::WarningMsgLevel(0);
         level <= WarningWidget::WarningMsgHigh;
         level = WarningWidget::WarningMsgLevel(level+1) )
     {
-      WCheckBox *warnToggle = new Wt::WCheckBox();
-      m_layout->addWidget( warnToggle, 4, i++, AlignCenter );
-      
+      WCheckBox *warnToggle = m_layout->addWidget( std::make_unique<WCheckBox>(), 4, i++, Wt::AlignmentFlag::Center );
+
       const char *str  = popupToStr( level );
       UserPreferences::associateWidget( str, warnToggle,  m_hostViewer );
-      
-      warnToggle->checked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, false ) );
-      warnToggle->unChecked().connect( boost::bind( &WarningWidget::setPopupActivity, this,  level, true ) );
+
+      warnToggle->checked().connect( [this, level](){ setPopupActivity( level, false ); } );
+      warnToggle->unChecked().connect( [this, level](){ setPopupActivity( level, true ); } );
     }//for( loop over
   } //!m_layout //Create UI for first time
 }//void WarningWidget::createContent()
@@ -518,12 +517,9 @@ void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
   {
     m_totalMessages++; //only count if logging
     
-    vector<WStandardItem* > message;
-    Wt::WStandardItem *msgItem = new Wt::WStandardItem(std::to_string(m_totalMessages));
-    message.push_back(msgItem);
-    
-    msgItem = new Wt::WStandardItem( WarningWidget::description(level) );
-    message.push_back(msgItem);
+    vector<std::unique_ptr<WStandardItem>> message;
+    message.push_back( std::make_unique<Wt::WStandardItem>( std::to_string(m_totalMessages) ) );
+    message.push_back( std::make_unique<Wt::WStandardItem>( WarningWidget::description(level) ) );
     
     
     // Remove any script so we wont store that
@@ -570,10 +566,9 @@ void WarningWidget::addMessageUnsafe( const Wt::WString &msg,
       }//if( we might have custom buttons on this message )
     }//if( a RIID message )
     
-    msgItem = new Wt::WStandardItem(sanitized);
-    message.push_back(msgItem);
-    
-    m_messageModel->appendRow(message);
+    message.push_back( std::make_unique<Wt::WStandardItem>( sanitized ) );
+
+    m_messageModel->appendRow( std::move(message) );
   } // if( m_active[ level ] )
   
   if( displayActive )

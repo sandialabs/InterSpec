@@ -28,7 +28,7 @@
 #include <utility>
 #include <functional>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 class AuxWindow;
 class InterSpec;
@@ -86,7 +86,7 @@ public:
   static std::pair<AuxWindow *, RemoteRid *> createDialog( InterSpec *viewer );
   
 public:
-  RemoteRid( InterSpec *viewer, Wt::WContainerWidget *parent );
+  RemoteRid( InterSpec *viewer );
   
   enum AnaFileOptions
   {
@@ -102,7 +102,7 @@ public:
    On error, returns nullptr.
    */
   static std::shared_ptr<SpecUtils::SpecFile> fileForAnalysis( InterSpec *interspec,
-                                                      const Wt::WFlags<AnaFileOptions> flags = 0 );
+                                                      const Wt::WFlags<AnaFileOptions> flags = {} );
   
   void alwaysCallRestAnaChecked();
   
@@ -116,7 +116,7 @@ public:
 #endif
   
   static void startAutomatedOnLoadAnalysis( InterSpec *interspec,
-                                            const Wt::WFlags<AnaFileOptions> flags = 0 );
+                                            const Wt::WFlags<AnaFileOptions> flags = {} );
   
   static void handleOpeningRemoteRidTool( InterSpec *interspec );
   static void disableAutoRemoteRid( InterSpec *interspec );

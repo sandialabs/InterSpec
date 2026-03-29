@@ -30,7 +30,7 @@
 #include <vector>
 #include <functional>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -76,7 +76,7 @@ public:
                                     std::function<void(LeafletRadMapWindow *)> on_create = nullptr,
                                           const bool forceNoWarning = false );
   
-  LeafletRadMap( Wt::WContainerWidget *parent = nullptr );
+  LeafletRadMap();
   virtual ~LeafletRadMap();
   
   void displayMeasurementOnMap( const std::shared_ptr<const SpecMeas> &meas,

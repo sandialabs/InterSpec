@@ -30,14 +30,14 @@
 #include <utility>
 
 
-#include <Wt/WColor>
-#include <Wt/WRectF>
-#include <Wt/WLength>
-#include <Wt/WEvent>
-#include <Wt/WPainter>
-#include <Wt/WAnimation>
-#include <Wt/WPaintDevice>
-#include <Wt/Chart/WCartesianChart>
+#include <Wt/WColor.h>
+#include <Wt/WRectF.h>
+#include <Wt/WLength.h>
+#include <Wt/WEvent.h>
+#include <Wt/WPainter.h>
+#include <Wt/WAnimation.h>
+#include <Wt/WPaintDevice.h>
+#include <Wt/Chart/WCartesianChart.h>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpectrumDataModel.h"
@@ -133,7 +133,7 @@ public:
   };//enum PeakLabels
   
 public:
-  SpectrumChart( Wt::WContainerWidget *parent = NULL );
+  SpectrumChart();
   virtual ~SpectrumChart();
 
   void setPeakModel( PeakModel *model );

@@ -54,8 +54,8 @@
 
 #include <boost/filesystem.hpp>  //for boost::filesystem::is_symlink and read_symlink
 
-#include <Wt/WLocale>
-#include <Wt/WApplication>
+#include <Wt/WLocale.h>
+#include <Wt/WApplication.h>
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"

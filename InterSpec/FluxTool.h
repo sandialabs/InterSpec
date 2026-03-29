@@ -30,9 +30,9 @@
 #include <vector>
 #include <memory>
 
-#include <Wt/WSignal>
-#include <Wt/WString>
-#include <Wt/WContainerWidget>
+#include <Wt/WSignal.h>
+#include <Wt/WString.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -113,8 +113,7 @@ public:
   
   
 public:
-  FluxToolWidget( InterSpec *viewer,
-                  Wt::WContainerWidget *parent = 0 );
+  FluxToolWidget( InterSpec *viewer );
   
   
   virtual ~FluxToolWidget();

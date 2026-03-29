@@ -27,15 +27,17 @@
 #include <vector>
 #include <utility>
 
-#include <Wt/WPoint>
-#include <Wt/WServer>
-#include <Wt/WLength>
-#include <Wt/WIOService>
-#include <Wt/WJavaScript>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WStringStream>
-#include <Wt/WContainerWidget>
+#include <boost/container_hash/hash.hpp>
+
+#include <Wt/WPoint.h>
+#include <Wt/WServer.h>
+#include <Wt/WLength.h>
+#include <Wt/WIOService.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
@@ -203,9 +205,9 @@ WT_DECLARE_WT_MEMBER
 
 
 
-D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
-: WContainerWidget( parent ),
-  m_renderFlags( 0 ),
+D3SpectrumDisplayDiv::D3SpectrumDisplayDiv()
+: WContainerWidget(),
+  m_renderFlags(),
   m_peakModel( nullptr ),
   m_foreground( nullptr ),
   m_secondary( nullptr ),
@@ -244,21 +246,21 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_sliderDisplayed{ nullptr },
   m_yAxisTypeChanged{ nullptr },
   //These next member variables are all the C++ signals for when events happen
-  m_legendEnabledSignal( this ),
-  m_legendDisabledSignal( this ),
-  m_xRangeChanged( this ),
-  m_shiftKeyDragg( this ),
-  m_shiftAltKeyDragg( this ),
-  m_rightMouseDragg( this ),
-  m_leftClick( this ),
-  m_doubleLeftClick( this ),
-  m_rightClick( this ),
-  m_existingRoiEdgeDrag( this ),
-  m_dragCreateRoi( this ),
-  m_yAxisScaled( this ),
-  m_xAxisSliderShown( this ),
-  m_yAxisLogLinChanged( this ),
-  m_xAxisCompactnessChanged( this ),
+  m_legendEnabledSignal(),
+  m_legendDisabledSignal(),
+  m_xRangeChanged(),
+  m_shiftKeyDragg(),
+  m_shiftAltKeyDragg(),
+  m_rightMouseDragg(),
+  m_leftClick(),
+  m_doubleLeftClick(),
+  m_rightClick(),
+  m_existingRoiEdgeDrag(),
+  m_dragCreateRoi(),
+  m_yAxisScaled(),
+  m_xAxisSliderShown(),
+  m_yAxisLogLinChanged(),
+  m_xAxisCompactnessChanged(),
   // These next member variables roughly track state in the JS
   m_jsgraph( jsRef() + ".chart" ),
   m_num_render_calls( 0 ),
@@ -305,7 +307,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   // Hook up the color theme callback to automatically update when the theme changes
   // This is a hopefully temporary workaround that right now, I think (but unverified) the JS expects the default
   //  peak color to be in the JSON - this needs to be checked on or updated for.
-  InterSpec::instance()->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::updateDefaultPeakColorForColorTheme, this, boost::placeholders::_1 ) );
+  InterSpec::instance()->colorThemeChanged().connect( [this]( std::shared_ptr<const ColorTheme> theme ){ updateDefaultPeakColorForColorTheme( theme ); } );
 
   //For development it may be useful to directly use the original JS/CSS files,
   //  but normally we should use the resources CMake will copy into
@@ -427,70 +429,61 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   if( !m_xRangeChangedJS )
   {
     m_xRangeChangedJS.reset( new JSignal<double,double,double,double,bool>( this, "xrangechanged", true ) );
-    m_xRangeChangedJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartXRangeChangedCallback, this,
-                                            boost::placeholders::_1, boost::placeholders::_2,
-                                            boost::placeholders::_3, boost::placeholders::_4,
-                                            boost::placeholders::_5) );
-    
+    m_xRangeChangedJS->connect( [this]( double a, double b, double c, double d, bool e ){
+      chartXRangeChangedCallback( a, b, c, d, e );
+    } );
+
     m_shiftKeyDraggJS.reset( new JSignal<double,double>( this, "shiftkeydragged", true ) );
-    m_shiftKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftKeyDragCallback, this,
-                                            boost::placeholders::_1, boost::placeholders::_2 ) );
-    
+    m_shiftKeyDraggJS->connect( [this]( double a, double b ){ chartShiftKeyDragCallback( a, b ); } );
+
     m_shiftAltKeyDraggJS.reset( new JSignal<double,double>( this, "shiftaltkeydragged", true ) );
-    m_shiftAltKeyDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback,
-                                               this, boost::placeholders::_1, boost::placeholders::_2 ) );
-    
+    m_shiftAltKeyDraggJS->connect( [this]( double a, double b ){ chartShiftAltKeyDragCallback( a, b ); } );
+
     m_rightMouseDraggJS.reset( new JSignal<double,double>( this, "rightmousedragged", true ) );
-    m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback,
-                                              this, boost::placeholders::_1, boost::placeholders::_2 ) );
-    
+    m_rightMouseDraggJS->connect( [this]( double a, double b ){ chartRightMouseDragCallback( a, b ); } );
+
     m_leftClickJS.reset( new JSignal<double,double,double,double,string>( this, "leftclicked", true ) );
-    m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this,
-                                        boost::placeholders::_1, boost::placeholders::_2,
-                                        boost::placeholders::_3, boost::placeholders::_4,
-                                        boost::placeholders::_5) );
-    
+    m_leftClickJS->connect( [this]( double a, double b, double c, double d, string e ){
+      chartLeftClickCallback( a, b, c, d, e );
+    } );
+
     m_doubleLeftClickJS.reset( new JSignal<double,double,string,unsigned int>( this, "doubleclicked", true ) );
-    m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback,
-                                              this, boost::placeholders::_1, boost::placeholders::_2,
-                                              boost::placeholders::_3, boost::placeholders::_4 ) );
-    
+    m_doubleLeftClickJS->connect( [this]( double a, double b, string c, unsigned int d ){
+      chartDoubleLeftClickCallback( a, b, c, d );
+    } );
+
     m_rightClickJS.reset( new JSignal<double,double,double,double,string>( this, "rightclicked", true ) );
-    m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this,
-                                         boost::placeholders::_1, boost::placeholders::_2,
-                                         boost::placeholders::_3, boost::placeholders::_4,
-                                         boost::placeholders::_5) );
-    
+    m_rightClickJS->connect( [this]( double a, double b, double c, double d, string e ){
+      chartRightClickCallback( a, b, c, d, e );
+    } );
+
     m_yAxisDraggedJS.reset( new Wt::JSignal<double,std::string>( this, "yscaled", true ) );
-    m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this,
-                                           boost::placeholders::_1, boost::placeholders::_2 ) );
-    
-     
+    m_yAxisDraggedJS->connect( [this]( double a, std::string b ){ yAxisScaled( a, b ); } );
+
+
     m_existingRoiEdgeDragJS.reset( new JSignal<double,double,double,double,std::string,bool>( this, "roiDrag", true ) );
-    m_existingRoiEdgeDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::existingRoiEdgeDragCallback, this,
-                                         boost::placeholders::_1, boost::placeholders::_2,
-                                         boost::placeholders::_3, boost::placeholders::_4,
-                                         boost::placeholders::_5, boost::placeholders::_6 ) );
-    
+    m_existingRoiEdgeDragJS->connect( [this]( double a, double b, double c, double d, std::string e, bool f ){
+      existingRoiEdgeDragCallback( a, b, c, d, e, f );
+    } );
+
     m_dragCreateRoiJS.reset( new JSignal<double,double,int,bool,double,double>( this, "fitRoiDrag", true ) );
-    m_dragCreateRoiJS->connect( boost::bind( &D3SpectrumDisplayDiv::dragCreateRoiCallback, this,
-                                         boost::placeholders::_1, boost::placeholders::_2,
-                                         boost::placeholders::_3, boost::placeholders::_4,
-                                         boost::placeholders::_5, boost::placeholders::_6 ) );
-    
+    m_dragCreateRoiJS->connect( [this]( double a, double b, int c, bool d, double e, double f ){
+      dragCreateRoiCallback( a, b, c, d, e, f );
+    } );
+
     //need legend closed signal.
     m_legendClosedJS.reset( new JSignal<>( this, "legendClosed", true ) );
-    m_legendClosedJS->connect( std::bind( [this](){
+    m_legendClosedJS->connect( [this](){
       m_legendEnabled = false;
       m_legendDisabledSignal.emit();
-    }) );
-    
-    
+    } );
+
+
     m_sliderDisplayed.reset( new Wt::JSignal<bool>(this, "sliderChartDisplayed") );
-    m_sliderDisplayed->connect( boost::bind( &D3SpectrumDisplayDiv::sliderChartDisplayedCallback, this, boost::placeholders::_1 ) );
-    
+    m_sliderDisplayed->connect( [this]( bool a ){ sliderChartDisplayedCallback( a ); } );
+
     m_yAxisTypeChanged.reset( new Wt::JSignal<string>(this, "yAxisTypeChanged") );
-    m_yAxisTypeChanged->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisTypeChangedCallback, this, boost::placeholders::_1 ) );
+    m_yAxisTypeChanged->connect( [this]( string a ){ yAxisTypeChangedCallback( a ); } );
   }//if( !m_xRangeChangedJS )
   
   for( const string &js : m_pendingJs )
@@ -547,13 +540,13 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
   
   m_peakModel = model;
 
-  m_peakModel->dataChanged().connect(   boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
-  m_peakModel->rowsRemoved().connect(   boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
-  m_peakModel->rowsInserted().connect(  boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
-  m_peakModel->layoutChanged().connect( boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
-  m_peakModel->modelReset().connect(    boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
-  m_peakModel->backgroundPeaksChanged().connect( boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Background) );
-  m_peakModel->secondaryPeaksChanged().connect( boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::SecondForeground) );
+  m_peakModel->dataChanged().connect(   [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->rowsRemoved().connect(   [this]( Wt::WModelIndex, int, int ){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->rowsInserted().connect(  [this]( Wt::WModelIndex, int, int ){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->layoutChanged().connect( [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->modelReset().connect(    [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->backgroundPeaksChanged().connect( [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Background ); } );
+  m_peakModel->secondaryPeaksChanged().connect( [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::SecondForeground ); } );
 }//void setPeakModel( PeakModel *model );
 
 
@@ -935,8 +928,8 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   WContainerWidget::render( flags );
   
-  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
-  //const bool renderUpdate = (flags & Wt::RenderFlag::RenderUpdate);
+  const bool renderFull = flags.test( Wt::RenderFlag::Full );
+  //const bool renderUpdate = flags.test( Wt::RenderFlag::Update );
   
   if( renderFull )
   {
@@ -957,34 +950,34 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   //      background, which may go to like 12 MeV, while new foreground
   //      only goes to like 3 MeV
   
-  if( m_renderFlags.testFlag(UpdateBackgroundSpectrum) )
+  if( m_renderFlags.test(UpdateBackgroundSpectrum) )
     renderBackgroundToClient();
   
-  if( m_renderFlags.testFlag(UpdateSecondarySpectrum) )
+  if( m_renderFlags.test(UpdateSecondarySpectrum) )
     renderSecondDataToClient();
   
-  if( m_renderFlags.testFlag(UpdateForegroundSpectrum) )
+  if( m_renderFlags.test(UpdateForegroundSpectrum) )
     renderForegroundToClient();
   
-  if( m_renderFlags.testFlag(UpdateForegroundPeaks) )
+  if( m_renderFlags.test(UpdateForegroundPeaks) )
     setPeaksToClient( SpecUtils::SpectrumType::Foreground );
   
-  if( m_renderFlags.testFlag(UpdateSecondaryPeaks) )
+  if( m_renderFlags.test(UpdateSecondaryPeaks) )
     setPeaksToClient( SpecUtils::SpectrumType::SecondForeground );
   
-  if( m_renderFlags.testFlag(UpdateBackgroundPeaks) )
+  if( m_renderFlags.test(UpdateBackgroundPeaks) )
     setPeaksToClient( SpecUtils::SpectrumType::Background );
   
-  if( m_renderFlags.testFlag(UpdateHighlightRegions) )
+  if( m_renderFlags.test(UpdateHighlightRegions) )
     setHighlightRegionsToClient();
   
-  if( m_renderFlags.testFlag(D3RenderActions::UpdateRefLines) )
+  if( m_renderFlags.test(D3RenderActions::UpdateRefLines) )
     setReferenceLinesToClient();
   
-  if( m_dynamic && m_renderFlags.testFlag(D3RenderActions::UpdateDynamicRefLines) )
+  if( m_dynamic && m_renderFlags.test(D3RenderActions::UpdateDynamicRefLines) )
     m_dynamic->startPushUpdates(); //This does not immediately push updated lines, it starts the computation for this in a background thread that will then push the lines later
   
-  m_renderFlags = 0;
+  m_renderFlags = WFlags<D3RenderActions>();
   m_num_render_calls += 1;
 }//void render( flags )
 
@@ -1874,7 +1867,7 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
   
   string js;
   
-  const string resetDomain = m_renderFlags.testFlag(ResetXDomain) ? "true" : "false";
+  const string resetDomain = m_renderFlags.test(ResetXDomain) ? "true" : "false";
   
   // Set the data for the chart
   if ( data_hist )
@@ -2502,15 +2495,15 @@ void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y, con
   const bool altKey = (modifiers & 0x04);
   const bool metaKey = (modifiers & 0x08);
   
-  WFlags<Wt::KeyboardModifier> keymods = Wt::KeyboardModifier::NoModifier;
+  WFlags<Wt::KeyboardModifier> keymods = Wt::KeyboardModifier::None;
   if( shiftKey )
-    keymods |= Wt::KeyboardModifier::ShiftModifier;
+    keymods |= Wt::KeyboardModifier::Shift;
   if( ctrlKey )
-    keymods |= Wt::KeyboardModifier::ControlModifier;
+    keymods |= Wt::KeyboardModifier::Control;
   if( altKey )
-    keymods |= Wt::KeyboardModifier::AltModifier;
+    keymods |= Wt::KeyboardModifier::Alt;
   if( metaKey )
-    keymods |= Wt::KeyboardModifier::MetaModifier;
+    keymods |= Wt::KeyboardModifier::Meta;
   
   m_doubleLeftClick.emit( x, y, ref_line_name, keymods );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
@@ -3019,7 +3012,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       assert( fitPrefs );
       if( fitPrefs )
       {
-        Wt::WFlags<PeakFitLM::PeakFitLMOptions> prefs_options( 0 );
+        Wt::WFlags<PeakFitLM::PeakFitLMOptions> prefs_options;
         apply_fit_prefs_to_peaks( results[best_choice], foreground, detector, *fitPrefs, prefs_options );
 
         // Refit with the preferences applied
@@ -3122,7 +3115,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
 
           PopupDivMenuItem *item = nullptr, *selecteditem = nullptr;
           
-          menu->setPositionScheme( Wt::Absolute );
+          menu->setPositionScheme( Wt::PositionScheme::Absolute );
           if( menu->isMobile() )
             item = menu->addPhoneBackItem( NULL );
           

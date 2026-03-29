@@ -34,9 +34,9 @@
 #include <vector>
 #include <functional>
 
-#include <Wt/WObject>
-#include <Wt/WSignal>
-#include <Wt/WString>
+#include <Wt/WObject.h>
+#include <Wt/WSignal.h>
+#include <Wt/WString.h>
 
 class PeakDef;
 class SpecMeas;
@@ -167,7 +167,7 @@ public:
   /** A struct that blocks the GUI from allowing undo/redo (disables menu items), as well as blocks undo/redo*/
   struct BlockGuiUndoRedo : public Wt::WObject
   {
-    BlockGuiUndoRedo( Wt::WObject *parent );
+    BlockGuiUndoRedo();
     ~BlockGuiUndoRedo();
     
     BlockGuiUndoRedo( const BlockGuiUndoRedo & ) = delete; // non construction-copyable

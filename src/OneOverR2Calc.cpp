@@ -25,19 +25,19 @@
 
 #include <string>
 
-#include <Wt/WText>
-#include <Wt/WBreak>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WComboBox>
-#include <Wt/WTableCell>
-#include <Wt/WValidator>
-#include <Wt/WPushButton>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WDoubleSpinBox>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WBreak.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WValidator.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WDoubleSpinBox.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -50,7 +50,7 @@
 #include "InterSpec/UndoRedoManager.h"
 
 #if( USE_QR_CODES )
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 
 #include "InterSpec/QrCode.h"
 #include "InterSpec/WarningWidget.h"
@@ -79,18 +79,18 @@ OneOverR2Calc::OneOverR2Calc()
   addStyleClass( "OneOverR2CalcWindow" );
   contentDiv->addStyleClass( "OneOverR2Calc" );
   
-  WText *message = new WText( WString::tr("oor2c-instructions"), Wt::XHTMLText, contentDiv );
+  WText *message = contentDiv->addNew<WText>( WString::tr("oor2c-instructions"), Wt::TextFormat::XHTML );
   message->setInline( false );
   message->addStyleClass( "OneOverR2IntroTxt" );
 
-  WTable *layoutTable = new WTable( contentDiv );
+  WTable *layoutTable = contentDiv->addNew<WTable>();
   WTableCell *cell = layoutTable->elementAt( 0, 0 );
-  WLabel *label = new WLabel( WString::tr("oor2c-near-meas-label"), cell );
+  WLabel *label = cell->addNew<WLabel>( WString::tr("oor2c-near-meas-label") );
 
   //TODO:  HelpSystem::attachToolTipOn( label,Intensity can be specified using any unit of measurement (ex. <b>rem</b>, <b>millirem</b>, <b>sievert/hour, gamma counts per second) as long as it is consistent among the fields. , showToolTips );
 
   cell = layoutTable->elementAt( 0, 1 );
-  m_nearMeasurement = new WDoubleSpinBox( cell );
+  m_nearMeasurement = cell->addNew<WDoubleSpinBox>();
   label->setBuddy( m_nearMeasurement );
   m_nearMeasurement->setDecimals( 2 );
   m_nearMeasurement->setMinimum( 0.0 );
@@ -101,10 +101,10 @@ OneOverR2Calc::OneOverR2Calc()
   m_nearMeasurement->enterPressed().connect( this, &OneOverR2Calc::doCalc );
 
   cell = layoutTable->elementAt( 1, 0 );
-  label = new WLabel( WString::tr("oor2c-far-meas-label"), cell );
+  label = cell->addNew<WLabel>( WString::tr("oor2c-far-meas-label") );
 
   cell = layoutTable->elementAt( 1, 1 );
-  m_farMeasurement = new WDoubleSpinBox( cell );
+  m_farMeasurement = cell->addNew<WDoubleSpinBox>();
   label->setBuddy( m_farMeasurement );
   m_farMeasurement->setDecimals( 2 );
   m_farMeasurement->setMinimum( 0.0 );
@@ -115,10 +115,10 @@ OneOverR2Calc::OneOverR2Calc()
   m_farMeasurement->enterPressed().connect( this, &OneOverR2Calc::doCalc );
 
   cell = layoutTable->elementAt( 2, 0 );
-  label = new WLabel( WString::tr("oor2c-background-intensity"), cell );
+  label = cell->addNew<WLabel>( WString::tr("oor2c-background-intensity") );
 
   cell = layoutTable->elementAt( 2, 1 );
-  m_backgroundMeasurment = new WDoubleSpinBox( cell );
+  m_backgroundMeasurment = cell->addNew<WDoubleSpinBox>();
   label->setBuddy( m_backgroundMeasurment );
   m_backgroundMeasurment->setDecimals( 2 );
   m_backgroundMeasurment->setMinimum( 0.0 );
@@ -129,10 +129,10 @@ OneOverR2Calc::OneOverR2Calc()
   m_backgroundMeasurment->enterPressed().connect( this, &OneOverR2Calc::doCalc );
   
   cell = layoutTable->elementAt( 3, 0 );
-  label = new WLabel( WString::tr("oor2c-dist-label"), cell );
+  label = cell->addNew<WLabel>( WString::tr("oor2c-dist-label") );
 
   cell = layoutTable->elementAt( 3, 1 );
-  m_distance = new WDoubleSpinBox( cell );
+  m_distance = cell->addNew<WDoubleSpinBox>();
   label->setBuddy( m_distance );
   m_distance->setDecimals( 2 );
   m_distance->setMinimum( 0.0 );
@@ -146,17 +146,14 @@ OneOverR2Calc::OneOverR2Calc()
   //Power Law
   cell = layoutTable->elementAt( 4, 0 );
   cell->setColumnSpan( 2 );
-  WContainerWidget *powerLawDiv = new WContainerWidget( cell );
-  WGridLayout *powerLayout = new WGridLayout();
+  WContainerWidget *powerLawDiv = cell->addNew<WContainerWidget>();
+  WGridLayout *powerLayout = powerLawDiv->setLayout( std::make_unique<WGridLayout>() );
   powerLayout->setContentsMargins( 0, 0, 0, 0 );
   powerLayout->setVerticalSpacing( 0 );
   powerLayout->setHorizontalSpacing( 0 );
-  powerLawDiv->setLayout( powerLayout );
-  m_powerLawSelect = new WComboBox();
-  label = new WLabel( WString::tr("oor2c-power-law-label") );
-  label->setBuddy( m_powerLawSelect );
-  powerLayout->addWidget( label, 0, 0 );
-  powerLayout->addWidget( m_powerLawSelect, 0, 1 );
+  m_powerLawSelect = powerLayout->addWidget( std::make_unique<WComboBox>(), 0, 1 );
+  WLabel *powerLabel = powerLayout->addWidget( std::make_unique<WLabel>( WString::tr("oor2c-power-law-label") ), 0, 0 );
+  powerLabel->setBuddy( m_powerLawSelect );
   m_powerLawSelect->addItem( WString::tr("oor2c-low-scatter") );
   m_powerLawSelect->addItem( WString::tr("oor2c-mid-scatter") );
   m_powerLawSelect->addItem( WString::tr("oor2c-high-scatter") );
@@ -164,22 +161,21 @@ OneOverR2Calc::OneOverR2Calc()
   m_powerLawSelect->activated().connect( this, &OneOverR2Calc::powerLawSelected );
   
   cell = layoutTable->elementAt( 5, 0 );
-  label = new WLabel( WString::tr("oor2c-dist-to-near-label"), cell );
+  label = cell->addNew<WLabel>( WString::tr("oor2c-dist-to-near-label") );
 
   cell = layoutTable->elementAt( 5, 1 );
-  m_answer  = new WLineEdit( cell );
+  m_answer  = cell->addNew<WLineEdit>();
   label->setBuddy( m_answer );
   m_answer->setDisabled( true );
   m_answer->setAttributeValue( "ondragstart", "return false" );
 
   m_backgroundMeasurment->setText( "" );
 
-  message = new WText( WString::tr("oor2c-bottom-message"), Wt::XHTMLText, contents() );
+  message = contents()->addNew<WText>( WString::tr("oor2c-bottom-message"), Wt::TextFormat::XHTML );
   message->addStyleClass( "OneOverR2TextRow" );
   message->setInline( false );
-  
-  
-  m_message = new WText( "&nbsp;", XHTMLText, contents() );
+
+  m_message = contents()->addNew<WText>( "&nbsp;", Wt::TextFormat::XHTML );
   m_message->setInline( false );
   m_message->addStyleClass( "OneOverR2Message" );
 
@@ -188,7 +184,7 @@ OneOverR2Calc::OneOverR2Calc()
   AuxWindow::addHelpInFooter( footer(), "1/r2-calc-dialog" );
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = footer()->addNew<WPushButton>();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -207,7 +203,7 @@ OneOverR2Calc::OneOverR2Calc()
 #endif //USE_QR_CODES
   
   WPushButton *closeButton = addCloseButtonToFooter();
-  closeButton->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+  closeButton->clicked().connect( [this](){ hide(); } );
   
   rejectWhenEscapePressed();
   show();
@@ -259,7 +255,7 @@ OneOverR2Calc::OneOverR2Calc()
   if( viewer && viewer->isMobile() )
   {
     closeButton->setFocus();
-    closeButton->setFloatSide( Wt::Left ); //The "DialogClose" style class defaults to floating to the right, same as the help icon
+    closeButton->setFloatSide( Wt::Side::Left ); //The "DialogClose" style class defaults to floating to the right, same as the help icon
   }
 }//OneOverR2Calc constructor
 
@@ -280,14 +276,14 @@ void OneOverR2Calc::doCalc()
 {
   m_answer->setText( "" );
 
-  if( m_nearMeasurement->validate() != WValidator::Valid )
+  if( m_nearMeasurement->validate() != Wt::ValidationState::Valid )
   {
     m_message->setText( WString::tr("oor2c-invalid-near") );
     m_message->show();
     return;
   }//if( invalid near measurment )
 
-  if( m_farMeasurement->validate() != WValidator::Valid )
+  if( m_farMeasurement->validate() != Wt::ValidationState::Valid )
   {
     m_message->setText( WString::tr("oor2c-invalid-far") );
     m_message->show();
@@ -295,7 +291,7 @@ void OneOverR2Calc::doCalc()
   }//if( invalid far measurment )
 
 
-  if( m_distance->validate() != WValidator::Valid )
+  if( m_distance->validate() != Wt::ValidationState::Valid )
   {
     m_message->setText( WString::tr("oor2c-invalid-dist") );
     m_message->show();
@@ -303,7 +299,7 @@ void OneOverR2Calc::doCalc()
   }//if( invalid far measurment )
 
   double background = 0.0;
-  if( m_backgroundMeasurment->validate() == WValidator::Valid )
+  if( m_backgroundMeasurment->validate() == Wt::ValidationState::Valid )
     background = m_backgroundMeasurment->value();
 
   const double nearStrength = m_nearMeasurement->value() - background;

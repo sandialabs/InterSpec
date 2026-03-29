@@ -32,20 +32,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WBorder>
-#include <Wt/WString>
-#include <Wt/WServer>
-#include <Wt/WSpinBox>
-#include <Wt/WCheckBox>
-#include <Wt/WModelIndex>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/Chart/WGridData>
-#include <Wt/WContainerWidget>
-#include <Wt/Chart/WCartesian3DChart>
-#include <Wt/Chart/WStandardColorMap>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WBorder.h>
+#include <Wt/WString.h>
+#include <Wt/WServer.h>
+#include <Wt/WSpinBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/Chart/WGridData.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/Chart/WCartesian3DChart.h>
+#include <Wt/Chart/WStandardColorMap.h>
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
@@ -63,9 +63,8 @@ const int SearchMode3DChart::sm_maxTimeDivs = 512;
 const int SearchMode3DChart::sm_maxEnergyDivs = 1024;
 const int SearchMode3DChart::sm_minTimeOrEnergyDivs = 8;
 
-SearchMode3DChart::SearchMode3DChart( InterSpec *viewer,
-                                      WContainerWidget *parent )
- : WContainerWidget( parent ),
+SearchMode3DChart::SearchMode3DChart( InterSpec *viewer )
+ : WContainerWidget(),
    m_viewer( viewer ),
    m_layout( nullptr ),
    m_width( 0 ),
@@ -105,15 +104,12 @@ void SearchMode3DChart::init()
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", InterSpec::instance());
   
-  m_layout = new WGridLayout();
+  m_layout = setLayout( std::make_unique<WGridLayout>() );
   m_layout->setContentsMargins( 9, 9, 9, 0 ); //left, top, right, bottom (default is 9 pixels on each side)
-  setLayout( m_layout );
-  
-  m_loadingTxt = new WText( WString::tr("sm3dc-loading") );
-  m_layout->addWidget( m_loadingTxt, 0, 0, AlignCenter | AlignMiddle );
-  
-  WContainerWidget *controlsDiv = new WContainerWidget();
-  m_layout->addWidget( controlsDiv, 1, 0 );
+
+  m_loadingTxt = m_layout->addWidget( std::make_unique<WText>( WString::tr("sm3dc-loading") ), 0, 0, AlignmentFlag::Center | AlignmentFlag::Middle );
+
+  WContainerWidget *controlsDiv = m_layout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   controlsDiv->addStyleClass( "SearchMode3DControls" );
   
   m_layout->setRowStretch( 0, 1 );
@@ -125,53 +121,52 @@ void SearchMode3DChart::init()
   WCheckBox *logScaleCheckBox = new WCheckBox( "Log Scale", controlsDiv );
   logScaleCheckBox->addStyleClass( "GridFirstRow GridFithCol" );
   logScaleCheckBox->setChecked( false );
-  logScaleCheckBox->checked().connect( boost::bind( &SearchMode3DChart::setLogZ, this, true ) );
-  logScaleCheckBox->unChecked().connect( boost::bind( &SearchMode3DChart::setLogZ, this, false ) );
+  logScaleCheckBox->checked().connect( [this](){ setLogZ( true ); } );
+  logScaleCheckBox->unChecked().connect( [this](){ setLogZ( false ); } );
   */
   
   //Creates a editable textbox that allows users to input the minimum energy they are interested in
-  WLabel *label = new WLabel( WString::tr("sm3dc-min-energy"), controlsDiv );
+  WLabel *label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-min-energy") );
   label->addStyleClass( "GridFirstRow GridFirstCol" );
-  m_inputMinEnergy = new NativeFloatSpinBox( controlsDiv );
+  m_inputMinEnergy = controlsDiv->addNew<NativeFloatSpinBox>();
   m_inputMinEnergy->addStyleClass( "GridFirstRow GridSecondCol" );
   m_inputMinEnergy->setSpinnerHidden( true );
   label->setBuddy( m_inputMinEnergy );
-  m_inputMinEnergy->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
-    
+  m_inputMinEnergy->valueChanged().connect( [this](){ updateRange(); } );
+
   //Creates a editable textbox that allows users to input the maximum energy they are interested in
-  label = new WLabel( WString::tr("sm3dc-max-energy"), controlsDiv );
+  label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-max-energy") );
   label->addStyleClass( "GridFirstRow GridThirdCol" );
-  m_inputMaxEnergy = new NativeFloatSpinBox( controlsDiv );
+  m_inputMaxEnergy = controlsDiv->addNew<NativeFloatSpinBox>();
   m_inputMaxEnergy->addStyleClass( "GridFirstRow GridFourthCol" );
   m_inputMaxEnergy->setSpinnerHidden( true );
   label->setBuddy( m_inputMaxEnergy );
-  m_inputMaxEnergy->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
-    
+  m_inputMaxEnergy->valueChanged().connect( [this](){ updateRange(); } );
+
   //Creates a editable textbox that allows users to input the minimum energy they are interested in
-  label = new WLabel( WString::tr("sm3dc-min-time"), controlsDiv );
+  label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-min-time") );
   label->addStyleClass( "GridSecondRow GridFirstCol" );
-  m_inputMinTime = new NativeFloatSpinBox( controlsDiv );
+  m_inputMinTime = controlsDiv->addNew<NativeFloatSpinBox>();
   m_inputMinTime->addStyleClass( "GridSecondRow GridSecondCol" );
   m_inputMinTime->setSpinnerHidden( true );
   label->setBuddy( m_inputMinTime );
-  m_inputMinTime->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
-    
+  m_inputMinTime->valueChanged().connect( [this](){ updateRange(); } );
+
   //Creates a editable textbox that allows users to input the maximum energy they are interested in
-  label = new WLabel( WString::tr("sm3dc-max-time"), controlsDiv );
+  label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-max-time") );
   label->addStyleClass( "GridSecondRow GridThirdCol" );
-  m_inputMaxTime = new NativeFloatSpinBox( controlsDiv );
+  m_inputMaxTime = controlsDiv->addNew<NativeFloatSpinBox>();
   m_inputMaxTime->addStyleClass( "GridSecondRow GridFourthCol" );
   m_inputMaxTime->setSpinnerHidden( true );
   label->setBuddy( m_inputMaxTime );
-  m_inputMaxTime->valueChanged().connect( boost::bind(&SearchMode3DChart::updateRange, this) );
-  
-  
-  WText *spacer = new WText( "&nbsp;", controlsDiv );
+  m_inputMaxTime->valueChanged().connect( [this](){ updateRange(); } );
+
+  WText *spacer = controlsDiv->addNew<WText>( "&nbsp;" );
   spacer->addStyleClass( "GridFirstRow GridFifthCol" );
-  
-  label = new WLabel( WString::tr("sm3dc-time-bins"), controlsDiv );
+
+  label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-time-bins") );
   label->addStyleClass( "GridFirstRow GridSixthCol" );
-  m_timeDivisions = new WSpinBox( controlsDiv );
+  m_timeDivisions = controlsDiv->addNew<WSpinBox>();
   m_timeDivisions->addStyleClass( "GridFirstRow GridSeventhCol" );
   m_timeDivisions->setValue( 60 );
   m_timeDivisions->setRange( sm_minTimeOrEnergyDivs, sm_maxTimeDivs );
@@ -182,9 +177,9 @@ void SearchMode3DChart::init()
   HelpSystem::attachToolTipOn( {label,m_timeDivisions}, WString::tr("sm3dc-tt-time-bins"),
                               showToolTips, HelpSystem::ToolTipPosition::Left );
   
-  label = new WLabel( WString::tr("sm3dc-energy-bins"), controlsDiv );
+  label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-energy-bins") );
   label->addStyleClass( "GridSecondRow GridSixthCol" );
-  m_energyDivisions = new WSpinBox( controlsDiv );
+  m_energyDivisions = controlsDiv->addNew<WSpinBox>();
   m_energyDivisions->addStyleClass( "GridSecondRow GridSeventhCol" );
   m_energyDivisions->setValue( 128 );
   m_energyDivisions->setRange( sm_minTimeOrEnergyDivs, sm_maxEnergyDivs );
@@ -196,9 +191,12 @@ void SearchMode3DChart::init()
                               showToolTips, HelpSystem::ToolTipPosition::Left );
   
   m_viewer->displayedSpectrumChanged().connect(
-            boost::bind( &SearchMode3DChart::newSpectralDataSet, this,
-                         boost::placeholders::_1, boost::placeholders::_2,
-                         boost::placeholders::_3, boost::placeholders::_4 )
+    [this]( SpecUtils::SpectrumType type,
+            const std::shared_ptr<SpecMeas> &meas,
+            const std::set<int> &samples,
+            const std::vector<std::string> &dets ){
+      newSpectralDataSet( type, meas, samples, dets );
+    }
   );
   
   // Disable any form widgets getting focus
@@ -220,7 +218,7 @@ void SearchMode3DChart::load()
     m_loaded = true;
     assert( !m_model );
     assert( !m_chart );
-    WServer::instance()->post( wApp->sessionId(), wApp->bind( boost::bind( &SearchMode3DChart::initChart, this ) ) );
+    WServer::instance()->post( wApp->sessionId(), [this](){ initChart(); } );
   }//if( !m_loaded )
 }//void load()
 
@@ -232,21 +230,21 @@ void SearchMode3DChart::initChart()
   
   if( m_loadingTxt )
   {
-    delete m_loadingTxt;
+    // removeWidget returns unique_ptr; letting it go out of scope destroys it
+    m_layout->removeWidget( m_loadingTxt );
     m_loadingTxt = nullptr;
   }
   
   setBinningLimits();
   
-  m_model = new SearchMode3DDataModel( this );
+  m_model = addChild( std::make_unique<SearchMode3DDataModel>() );
   m_model->setMaxNumTimeSamples( m_timeDivisions->value() );
   m_model->setMaxNumEnergyChannels( m_energyDivisions->value() );
+
+  m_chart = m_layout->addWidget( std::make_unique<Chart::WCartesian3DChart>(), 0, 0 );
+  m_chart->setType( Chart::ChartType::Scatter );
   
-  m_chart = new Chart::WCartesian3DChart();
-  m_layout->addWidget( m_chart, 0, 0 );
-  m_chart->setType( Chart::ScatterPlot );
-  
-  m_chart->decorationStyle().setBorder( WBorder(WBorder::Solid, WBorder::Thin, Wt::black) );
+  m_chart->decorationStyle().setBorder( WBorder(BorderStyle::Solid, BorderWidth::Thin, WColor(StandardColor::Black)) );
   
   double w = 800.0, h = 600.0;
   if( m_viewer )
@@ -261,43 +259,46 @@ void SearchMode3DChart::initChart()
   //m_chart->setTitle("3D Data View");
   
   //Creates X axis
-  m_chart->axis(Chart::XAxis_3D).setTitle( WString::tr("sm3dc-time-axis-label") );
-  m_chart->axis(Chart::XAxis_3D).setTitleOffset( 10 );
-  m_chart->axis(Chart::XAxis_3D).setLabelFormat( "%1.1f" );
-  m_chart->axis(Chart::XAxis_3D).setLabelBasePoint( 0 );
-  m_chart->axis(Chart::XAxis_3D).setLabelAngle( 90 );
+  m_chart->axis(Chart::Axis::X3D).setTitle( WString::tr("sm3dc-time-axis-label") );
+  m_chart->axis(Chart::Axis::X3D).setTitleOffset( 10 );
+  m_chart->axis(Chart::Axis::X3D).setLabelFormat( "%1.1f" );
+  m_chart->axis(Chart::Axis::X3D).setLabelBasePoint( 0 );
+  m_chart->axis(Chart::Axis::X3D).setLabelAngle( 90 );
   
   //Creates Y axis
-  m_chart->axis(Chart::YAxis_3D).setTitle( WString::tr("Energy (keV)") );
-  m_chart->axis(Chart::YAxis_3D).setTitleOffset( 10 );
-  m_chart->axis(Chart::YAxis_3D).setLabelFormat( "%.1f" );
-  m_chart->axis(Chart::YAxis_3D).setLabelBasePoint( 0 );
-  // m_chart->axis(Chart::YAxis_3D).setLabelInterval( 100 );
-  m_chart->axis(Chart::YAxis_3D).setLabelAngle( 90 );
+  m_chart->axis(Chart::Axis::Y3D).setTitle( WString::tr("Energy (keV)") );
+  m_chart->axis(Chart::Axis::Y3D).setTitleOffset( 10 );
+  m_chart->axis(Chart::Axis::Y3D).setLabelFormat( "%.1f" );
+  m_chart->axis(Chart::Axis::Y3D).setLabelBasePoint( 0 );
+  // m_chart->axis(Chart::Axis::Y3D).setLabelInterval( 100 );
+  m_chart->axis(Chart::Axis::Y3D).setLabelAngle( 90 );
   
   //Creates Z axis
-  m_chart->axis(Chart::ZAxis_3D).setTitle( WString::tr("Counts") );
-  //m_chart->axis(Chart::ZAxis_3D).setTitle( "Counts per Channels" );
-  m_chart->axis(Chart::ZAxis_3D).setTitleOffset( 20 );
-  m_chart->axis(Chart::ZAxis_3D).setLabelFormat( "%.1f" );
-  m_chart->axis(Chart::ZAxis_3D).setLabelBasePoint( 0 );
-  // m_chart->axis(Wt::Chart::ZAxis_3D).setLabelInterval( 100 );
+  m_chart->axis(Chart::Axis::Z3D).setTitle( WString::tr("Counts") );
+  //m_chart->axis(Chart::Axis::Z3D).setTitle( "Counts per Channels" );
+  m_chart->axis(Chart::Axis::Z3D).setTitleOffset( 20 );
+  m_chart->axis(Chart::Axis::Z3D).setLabelFormat( "%.1f" );
+  m_chart->axis(Chart::Axis::Z3D).setLabelBasePoint( 0 );
+  // m_chart->axis(Wt::Chart::Axis::Z3D).setLabelInterval( 100 );
   
   //Create legend
   //m_chart->setLegendStyle(Wt::WFont(), Wt::WPen(), Wt::WBrush(Wt::WColor(Wt::lightGray)));
   //m_chart->setLegendEnabled(true);
   m_chart->setLegendEnabled( false );
   
-  m_chart->setGridEnabled(Chart::XZ_Plane, Chart::ZAxis_3D, true);
-  m_chart->setGridEnabled(Chart::YZ_Plane, Chart::ZAxis_3D, true);
+  m_chart->setGridEnabled(Chart::Plane::XZ, Chart::Axis::Z3D, true);
+  m_chart->setGridEnabled(Chart::Plane::YZ, Chart::Axis::Z3D, true);
   
-  m_data = new Chart::WGridData( m_model );
-  m_data->setTitle( WString::tr("sm3dc-counts-axis-label") );
-  m_data->setType( Wt::Chart::SurfaceSeries3D );
-  
-  m_data->setSurfaceMeshEnabled( true );
-  
-  m_chart->addDataSeries( m_data );
+  {
+    // WGridData takes shared_ptr; use non-owning shared_ptr since m_model is owned by this widget
+    auto dataOwner = std::make_unique<Chart::WGridData>(
+      std::shared_ptr<Wt::WAbstractItemModel>( m_model, [](Wt::WAbstractItemModel*){} ) );
+    m_data = dataOwner.get();
+    m_data->setTitle( WString::tr("sm3dc-counts-axis-label") );
+    m_data->setType( Wt::Chart::Series3DType::Surface );
+    m_data->setSurfaceMeshEnabled( true );
+    m_chart->addDataSeries( std::move(dataOwner) );
+  }
   
   updateDisplay();
   updateRange();
@@ -311,7 +312,7 @@ void SearchMode3DChart::setLogZ( const bool log )
   if( !m_chart )
     return;
   
-  m_chart->axis(Chart::ZAxis_3D).setScale( log ? Chart::LogScale : Chart::LinearScale );
+  m_chart->axis(Chart::Axis::Z3D).setScale( log ? Chart::AxisScale::Log : Chart::AxisScale::Linear );
   
   updateRange();
   
@@ -332,10 +333,10 @@ void SearchMode3DChart::setTimeLimits()
   m_inputMinTime->setRange( std::floor(minTime), std::ceil(maxTime) );
   m_inputMaxTime->setRange( std::floor(minTime), std::ceil(maxTime) );
   
-  if( m_inputMinTime->validate() != WValidator::Valid )
+  if( m_inputMinTime->validate() != Wt::ValidationState::Valid )
     m_inputMinTime->setValue( minTime );
   
-  if( m_inputMaxTime->validate() != WValidator::Valid )
+  if( m_inputMaxTime->validate() != Wt::ValidationState::Valid )
     m_inputMaxTime->setValue( maxTime );
   
   if( fabs( m_inputMinTime->value() - m_inputMaxTime->value() ) < 1.0 )
@@ -361,10 +362,10 @@ void SearchMode3DChart::setEnergyLimits()
   m_inputMinEnergy->setRange( std::floor(minEnergy), std::ceil(maxEnergy) );
   m_inputMaxEnergy->setRange( std::floor(minEnergy), std::ceil(maxEnergy) );
   
-  if( m_inputMinEnergy->validate() != WValidator::Valid )
+  if( m_inputMinEnergy->validate() != Wt::ValidationState::Valid )
     m_inputMinEnergy->setValue( minEnergy );
   
-  if( m_inputMaxEnergy->validate() != WValidator::Valid )
+  if( m_inputMaxEnergy->validate() != Wt::ValidationState::Valid )
     m_inputMaxEnergy->setValue( maxEnergy );
   
   if( fabs( m_inputMinEnergy->value() - m_inputMaxEnergy->value() ) < 1.0 )
@@ -482,33 +483,33 @@ void SearchMode3DChart::updateRange()
   //m_data->setColorMap(colormapUpdated);
     
   // Update the X and Y axis to correspond to the user input
-  m_chart->axis(Chart::YAxis_3D).setRange( minenergy, maxenergy );
-  m_chart->axis(Chart::XAxis_3D).setRange( mintime, maxtime );
+  m_chart->axis(Chart::Axis::Y3D).setRange( minenergy, maxenergy );
+  m_chart->axis(Chart::Axis::X3D).setRange( mintime, maxtime );
   
   std::pair<float,float> minmax_counts = m_model->minMaxCounts( mintime, maxtime, minenergy, maxenergy );
   double zmin = minmax_counts.first; // m_model->minCounts();
   double zmax = minmax_counts.second; // m_model->maxCounts();
   
-  switch( m_chart->axis(Chart::ZAxis_3D).scale() )
+  switch( m_chart->axis(Chart::Axis::Z3D).scale() )
   {
-    case Chart::LinearScale:
+    case Chart::AxisScale::Linear:
       zmax = ((zmax < 1.0) ? 1.0 : 1.2*zmax);
       break;
       
-    case Chart::LogScale:
+    case Chart::AxisScale::Log:
       //Hmmm, it appears log scale on the Z-axis doesnt render correctly... maybe a bug in Wt?
       zmin = std::max( zmin, 0.1 );
       zmax = ((zmax < 1.0) ? 1.0 : 1.2*zmax);
       break;
       
-    case Chart::CategoryScale:
-    case Chart::DateScale:
-    case Chart::DateTimeScale:
+    case Chart::AxisScale::Discrete:
+    case Chart::AxisScale::Date:
+    case Chart::AxisScale::DateTime:
       //Shouldnt ever get here.
       break;
-  }//switch( m_chart->axis(Wt::Chart::ZAxis_3D).scale() )
+  }//switch( m_chart->axis(Wt::Chart::Axis::Z3D).scale() )
   
-  m_chart->axis(Chart::ZAxis_3D).setRange( zmin, zmax );
+  m_chart->axis(Chart::Axis::Z3D).setRange( zmin, zmax );
 
   /*
    //Meh, not convinced its actually working
@@ -524,9 +525,9 @@ void SearchMode3DChart::updateRange()
   if( y_magnitude <= 0.0 || y_magnitude > y_range )
     y_magnitude = 0.1*y_range;
   
-  m_chart->axis(Chart::XAxis_3D).setLabelInterval( x_magnitude );
-  m_chart->axis(Chart::YAxis_3D).setLabelInterval( y_magnitude );
-  //m_chart->axis(Chart::XAxis_3D).setLabelBasePoint( x_magnitude*ceil(mintime/x_magnitude) );
+  m_chart->axis(Chart::Axis::X3D).setLabelInterval( x_magnitude );
+  m_chart->axis(Chart::Axis::Y3D).setLabelInterval( y_magnitude );
+  //m_chart->axis(Chart::Axis::X3D).setLabelBasePoint( x_magnitude*ceil(mintime/x_magnitude) );
    */
 }//updateRange()
 
@@ -542,10 +543,9 @@ void SearchMode3DChart::updateDisplay()
 
   //You might want to customize the color map, perhaps based on sigma above
   //  background, with color generated by http://www.mrao.cam.ac.uk/~dag/CUBEHELIX/
-  Chart::WStandardColorMap *colormap =
-    new Chart::WStandardColorMap( m_data->minimum(Wt::Chart::ZAxis_3D),
-                                      m_data->maximum(Wt::Chart::ZAxis_3D),
-                                      true );
+  auto colormap = std::make_shared<Chart::WStandardColorMap>( m_data->minimum(Wt::Chart::Axis::Z3D),
+                                                              m_data->maximum(Wt::Chart::Axis::Z3D),
+                                                              true );
   m_data->setColorMap( colormap );
   
   //TODO modify SearchMode3DDataModel to generate the colors.

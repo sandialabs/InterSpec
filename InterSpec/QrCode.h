@@ -31,7 +31,7 @@
 #include <utility>
 #include <cstdint>
 
-#include <Wt/WString>
+#include <Wt/WString.h>
 
 // Forward declarations
 class SimpleDialog;

@@ -26,13 +26,14 @@
 #include "InterSpec_config.h"
 
 #include <math.h>
+#include <memory>
 #include <iostream>
 
-#include <Wt/Utils>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
+#include <Wt/Utils.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -68,10 +69,8 @@ DecayWindow::DecayWindow( InterSpec *viewer )
   if( viewer )
     viewer->useMessageResourceBundle( "DecayActivity" );
   
-  m_activityDiv = new DecayActivityDiv( viewer );
-  
   WGridLayout *layout = stretcher();
-  layout->addWidget( m_activityDiv, 0, 0 );
+  m_activityDiv = layout->addWidget( std::make_unique<DecayActivityDiv>( viewer ), 0, 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
@@ -88,7 +87,7 @@ DecayWindow::DecayWindow( InterSpec *viewer )
 
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = footer()->addNew<WPushButton>();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );

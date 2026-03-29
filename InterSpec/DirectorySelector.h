@@ -29,8 +29,8 @@
 #include <string>
 #include <functional>
 
-#include <Wt/WContainerWidget>
-#include <Wt/WSignal>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WSignal.h>
 
 namespace Wt
 {
@@ -57,7 +57,7 @@ class DirectorySelector : public Wt::WContainerWidget
 {
 public:
   /** DirectorySelector constructor */
-  DirectorySelector( Wt::WContainerWidget *parent = nullptr );
+  DirectorySelector();
                      
   virtual ~DirectorySelector();
 

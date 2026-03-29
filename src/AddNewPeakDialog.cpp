@@ -26,15 +26,15 @@
 #include <string>
 #include <limits>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WString>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WSvgImage>
-#include <Wt/WTableCell>
-#include <Wt/WPushButton>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WString.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WSvgImage.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WPushButton.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -73,7 +73,7 @@ AddNewPeakDialog::AddNewPeakDialog( const float initialEnergy, const std::string
             (AuxWindowProperties::IsModal
              | AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::DisableCollapse) ),
-m_renderFlags( 0 ),
+m_renderFlags(),
 m_viewer( InterSpec::instance() ),
 m_peakModel( m_viewer->peakModel() ),
 m_isPhone( m_viewer->isPhone() ),
@@ -123,7 +123,7 @@ m_chart( nullptr )
   const float maxEnergy = m_meas->gamma_channel_upper(nbin-1);
   
   
-  WTable *table = new WTable( contents() );
+  WTable *table = contents()->addNew<WTable>();
   table->addStyleClass( "AddPeakTbl" );
   table->setHeaderCount( 1, Wt::Orientation::Vertical );
   
@@ -134,63 +134,51 @@ m_chart( nullptr )
     wApp->styleSheet().addRule( ".AddPeakTbl", "width: 100%; margin: 10px;", "AddPeakTblMbl" );
   
   
-  WLabel *label = new WLabel( WString::tr("anpd-peak-mean") );
-  table->elementAt(0,0)->addWidget( label );
-  
+  table->elementAt(0,0)->addNew<WLabel>( WString::tr("anpd-peak-mean") );
+
   const WLength inputWidth( 75, WLength::Unit::Pixel );
-  
-  m_energySB = new NativeFloatSpinBox();
+
+  m_energySB = table->elementAt(0,1)->addNew<NativeFloatSpinBox>();
   m_energySB->setWidth( inputWidth );
-  table->elementAt(0,1)->addWidget( m_energySB );
   m_energySB->setRange( minEnergy, maxEnergy );
   m_energySB->setSpinnerHidden( true );
   m_energySB->setValue( initialEnergy );
-  
-  
-  label = new WLabel( WString::tr("anpd-peak-fwhm") );
-  table->elementAt(1,0)->addWidget( label );
-  
-  m_fwhmSB = new NativeFloatSpinBox();
+
+
+  table->elementAt(1,0)->addNew<WLabel>( WString::tr("anpd-peak-fwhm") );
+
+  m_fwhmSB = table->elementAt(1,1)->addNew<NativeFloatSpinBox>();
   m_fwhmSB->setWidth( inputWidth );
-  table->elementAt(1,1)->addWidget( m_fwhmSB );
   m_fwhmSB->setRange( m_meas->gamma_channel_lower(0), m_meas->gamma_channel_upper(nbin-1) );
   m_fwhmSB->setRange( m_minfwhm, m_maxfwhm );
   m_fwhmSB->setSpinnerHidden( true );
   m_fwhmSB->setValue( initialFWHM );
-  
-  
-  label = new WLabel( WString::tr("anpd-peak-amp") );
-  table->elementAt(2,0)->addWidget( label );
-  m_areaSB = new NativeFloatSpinBox();
+
+
+  table->elementAt(2,0)->addNew<WLabel>( WString::tr("anpd-peak-amp") );
+  m_areaSB = table->elementAt(2,1)->addNew<NativeFloatSpinBox>();
   m_areaSB->setWidth( inputWidth );
-  table->elementAt(2,1)->addWidget( m_areaSB );
   m_areaSB->setRange( 0, m_meas->gamma_channels_sum(0, nbin-1) );
   m_areaSB->setSpinnerHidden( true );
   m_areaSB->setValue( initialArea );
-  
-  label = new WLabel( WString::tr("anpd-roi-lower") );
-  table->elementAt(3,0)->addWidget( label );
-  m_roiLowerSB = new NativeFloatSpinBox();
+
+  table->elementAt(3,0)->addNew<WLabel>( WString::tr("anpd-roi-lower") );
+  m_roiLowerSB = table->elementAt(3,1)->addNew<NativeFloatSpinBox>();
   m_roiLowerSB->setWidth( inputWidth );
-  table->elementAt(3,1)->addWidget( m_roiLowerSB );
   m_roiLowerSB->setRange( minEnergy, maxEnergy );
   m_roiLowerSB->setSpinnerHidden( true );
   m_roiLowerSB->setValue( initialRoiLower );
-  
-  label = new WLabel( WString::tr("anpd-roi-upper") );
-  table->elementAt(4,0)->addWidget( label );
-  m_roiUpperSB = new NativeFloatSpinBox();
+
+  table->elementAt(4,0)->addNew<WLabel>( WString::tr("anpd-roi-upper") );
+  m_roiUpperSB = table->elementAt(4,1)->addNew<NativeFloatSpinBox>();
   m_roiUpperSB->setWidth( inputWidth );
-  table->elementAt(4,1)->addWidget( m_roiUpperSB );
   m_roiUpperSB->setRange( minEnergy, maxEnergy );
   m_roiUpperSB->setSpinnerHidden( true );
   m_roiUpperSB->setValue( initialRoiUpper );
-  
-  
-  label = new WLabel( WString::tr("Continuum") );
-  table->elementAt(5,0)->addWidget( label );
-  m_continuumType = new WComboBox();
-  table->elementAt(5,1)->addWidget( m_continuumType );
+
+
+  table->elementAt(5,0)->addNew<WLabel>( WString::tr("Continuum") );
+  m_continuumType = table->elementAt(5,1)->addNew<WComboBox>();
   //layout->addWidget( m_continuumType, 5, 1 );
   m_continuumType->addItem( WString::tr("pct-none") );
   m_continuumType->addItem( WString::tr("pct-constant") );
@@ -203,22 +191,22 @@ m_chart( nullptr )
   m_continuumType->addItem( WString::tr("pct-global") );
   m_continuumType->setCurrentIndex( 2 );
   
-  auto fitCell = table->elementAt(6,0);
+  WTableCell *fitCell = table->elementAt(6,0);
   fitCell->setColumnSpan( 2 );
-  fitCell->setVerticalAlignment( Wt::AlignmentFlag::AlignBottom );
+  fitCell->setVerticalAlignment( Wt::AlignmentFlag::Bottom );
   //layout->addWidget( fitDiv, 0, 6, 1, 2 );
-  m_fitBtn = new WPushButton( WString::tr("Fit"), fitCell );
-  m_fitEnergy = new WCheckBox( WString::tr("Energy"), fitCell );
-  m_fitFWHM = new WCheckBox( WString::tr("FWHM"), fitCell );
-  m_fitAmplitude = new WCheckBox( WString::tr("Amp."), fitCell );
-  m_associateWithNuclide = new WCheckBox( WString::tr("anpd-associate-with").arg("N/A"), fitCell );
-  m_fitEnergy->setMargin(3,Wt::Left);
-  m_fitFWHM->setMargin(3,Wt::Left);
-  m_fitAmplitude->setMargin(3,Wt::Left);
-  m_associateWithNuclide->setMargin(3,Wt::Left);
+  m_fitBtn = fitCell->addNew<WPushButton>( WString::tr("Fit") );
+  m_fitEnergy = fitCell->addNew<WCheckBox>( WString::tr("Energy") );
+  m_fitFWHM = fitCell->addNew<WCheckBox>( WString::tr("FWHM") );
+  m_fitAmplitude = fitCell->addNew<WCheckBox>( WString::tr("Amp.") );
+  m_associateWithNuclide = fitCell->addNew<WCheckBox>( WString::tr("anpd-associate-with").arg("N/A") );
+  m_fitEnergy->setMargin(3,Wt::Side::Left);
+  m_fitFWHM->setMargin(3,Wt::Side::Left);
+  m_fitAmplitude->setMargin(3,Wt::Side::Left);
+  m_associateWithNuclide->setMargin(3,Wt::Side::Left);
   
   WFont fitCbFont;
-  fitCbFont.setWeight( WFont::Weight::NormalWeight );
+  fitCbFont.setWeight( WFont::Weight::Normal );
   fitCbFont.setSize( WFont::Size::Smaller );
   
   m_fitEnergy->decorationStyle().setFont( fitCbFont );
@@ -231,46 +219,48 @@ m_chart( nullptr )
   m_fitFWHM->setChecked( true );
   m_fitAmplitude->setChecked( true );
   
-  m_chart = new WText( "", Wt::XHTMLUnsafeText );
-  m_chart->setInline( false );
-  
   const bool narrowLayout = (m_isPhone && (m_viewer->renderedWidth() < m_viewer->renderedHeight()));
-  
+
   if( narrowLayout )
   {
     // Narrow vertical phone layout
     WTableCell *cell = table->elementAt(7,0);
-    cell->addWidget( m_chart );
+    m_chart = cell->addNew<WText>( "", Wt::TextFormat::UnsafeXHTML );
+    m_chart->setInline( false );
     cell->setRowSpan( 7 );
     cell->setColumnSpan( table->columnCount() );
-    cell->setVerticalAlignment( Wt::AlignmentFlag::AlignMiddle );
-    cell->setContentAlignment( Wt::AlignmentFlag::AlignCenter );
+    cell->setVerticalAlignment( Wt::AlignmentFlag::Middle );
+    cell->setContentAlignment( Wt::AlignmentFlag::Center );
   }else
   {
     // Normal wide Layout
     WTableCell *cell = table->elementAt(0,2);
-    cell->addWidget( m_chart );
+    m_chart = cell->addNew<WText>( "", Wt::TextFormat::UnsafeXHTML );
+    m_chart->setInline( false );
     cell->setRowSpan( 7 );
-    
+
     if( m_isPhone )
     {
-      cell->setVerticalAlignment( Wt::AlignmentFlag::AlignMiddle );
-      cell->setContentAlignment( Wt::AlignmentFlag::AlignCenter );
+      cell->setVerticalAlignment( Wt::AlignmentFlag::Middle );
+      cell->setContentAlignment( Wt::AlignmentFlag::Center );
     }
   }//if( vertical phone ) / else
-  
-  
-  WText *msg = new WText( WString::tr("anpd-tt-more-adv") );
-  msg->decorationStyle().setFont( fitCbFont );
-  if( m_isPhone )
+
+
   {
-    WTableCell *cell = table->elementAt(table->rowCount(),0);
-    cell->addWidget( msg );
-    cell->setColumnSpan( table->columnCount() );
-  }else
-  {
-    footer()->addWidget( msg );
-    msg->setFloatSide( Wt::Side::Left );
+    auto msgOwner = std::make_unique<WText>( WString::tr("anpd-tt-more-adv") );
+    WText *msg = msgOwner.get();
+    msg->decorationStyle().setFont( fitCbFont );
+    if( m_isPhone )
+    {
+      WTableCell *cell = table->elementAt(table->rowCount(),0);
+      cell->addWidget( std::move(msgOwner) );
+      cell->setColumnSpan( table->columnCount() );
+    }else
+    {
+      footer()->addWidget( std::move(msgOwner) );
+      msg->setFloatSide( Wt::Side::Left );
+    }
   }
   
   
@@ -286,13 +276,13 @@ m_chart( nullptr )
   
   WPushButton *closeButton = addCloseButtonToFooter(WString::tr("Cancel"));
   closeButton->clicked().connect( this, &AuxWindow::hide );
-  WPushButton *doAdd = new WPushButton( WString::tr("Add"), footer() );
+  WPushButton *doAdd = footer()->addNew<WPushButton>( WString::tr("Add") );
   
-  doAdd->clicked().connect( std::bind( [this](){
+  doAdd->clicked().connect( [this](){
     UndoRedoManager::PeakModelChange peak_undo_creator;
     m_viewer->addPeak( *m_candidatePeak, false, SpecUtils::SpectrumType::Foreground );
     this->hide();
-  }) );
+  } );
   
   
   roiTypeChanged();
@@ -309,7 +299,7 @@ m_chart( nullptr )
 
 void AddNewPeakDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  if( m_renderFlags.testFlag(RenderActions::UpdatePreview) )
+  if( m_renderFlags.test(RenderActions::UpdatePreview) )
   {
     updateCandidatePeakPreview();
     updateAssociateWithCb();
@@ -317,7 +307,7 @@ void AddNewPeakDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   AuxWindow::render( flags );
   
-  m_renderFlags = 0;
+  m_renderFlags = WFlags<RenderActions>();
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )
 
 

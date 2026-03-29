@@ -29,14 +29,14 @@
 #include <string>
 #include <typeinfo>
 
-#include <Wt/WColor>
-#include <Wt/WString>
-#include <Wt/WDateTime>
-#include <Wt/Json/Value>
-#include <Wt/Json/Array>
-#include <Wt/Json/Parser>
-#include <Wt/Json/Object>
-#include <Wt/Json/Serializer>
+#include <Wt/WColor.h>
+#include <Wt/WString.h>
+#include <Wt/WDateTime.h>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Parser.h>
+#include <Wt/Json/Object.h>
+#include <Wt/Json/Serializer.h>
 
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecUser.h"
@@ -195,10 +195,10 @@ ColorTheme::ColorTheme()
 
   // Non-chart area colors; defaults match the CSS fallback values in InterSpec.css
   appBackgroundColor = WColor( "white" );
-  appTextColor = WColor( GlobalColor::black );
+  appTextColor = WColor( Wt::StandardColor::Black );
   appBorderColor = WColor( "#e1e1e1" );
   appLinkColor = WColor( "blue" );
-  appLabelColor = WColor( GlobalColor::black );
+  appLabelColor = WColor( Wt::StandardColor::Black );
   appInputBackground = WColor( "white" );
   appButtonBackground = WColor( "#888888" );
   appButtonBorderColor = WColor( "#e1e1e1" );
@@ -207,9 +207,9 @@ ColorTheme::ColorTheme()
   appMenuBarActiveColor = WColor( 128, 128, 128 );      //rgba(128,128,128,1.0)
   appMenuBarHoverColor = WColor( 128, 128, 128, 64 );   //rgba(128,128,128,0.25)
 
-  foregroundLine = Wt::WColor(0x00, 0x00, 0x00); //Wt::GlobalColor::black
+  foregroundLine = Wt::WColor(0x00, 0x00, 0x00); //Wt::Wt::StandardColor::Black
   backgroundLine = Wt::WColor(0x00, 0xff, 0xff); //Wt::GlobalColor::cyan
-  secondaryLine = Wt::WColor(0x00, 0x80, 0x00);  //Wt::GlobalColor::darkGreen
+  secondaryLine = Wt::WColor(0x00, 0x80, 0x00);  //Wt::Wt::StandardColor::DarkGreen
   
   timeHistoryForegroundHighlight = Wt::WColor( 255, 255, 0, 155 );
   timeHistoryBackgroundHighlight = Wt::WColor( 0, 255, 255, 75 );
@@ -217,22 +217,22 @@ ColorTheme::ColorTheme()
   
   defaultPeakLine = WColor( 0, 51, 255 );
   
-  spectrumAxisLines = WColor( GlobalColor::black );
+  spectrumAxisLines = WColor( Wt::StandardColor::Black );
   spectrumChartBackground = WColor();
   spectrumChartMargins = WColor();
-  spectrumChartText = WColor( GlobalColor::black );
+  spectrumChartText = WColor( Wt::StandardColor::Black );
   
   spectrumPeakLabelSize = WString();
   spectrumPeakLabelRotation = 0.0;
   spectrumLogYAxisMin = 0.1;
   
-  timeChartGammaLine = WColor( GlobalColor::black );
-  timeChartNeutronLine = Wt::WColor( GlobalColor::darkGreen );
+  timeChartGammaLine = WColor( Wt::StandardColor::Black );
+  timeChartNeutronLine = Wt::WColor( Wt::StandardColor::DarkGreen );
   
-  timeAxisLines = WColor( GlobalColor::black );
+  timeAxisLines = WColor( Wt::StandardColor::Black );
   timeChartBackground = WColor();
   timeChartMargins = WColor();
-  timeChartText = WColor( GlobalColor::black );
+  timeChartText = WColor( Wt::StandardColor::Black );
   
   occupancyIndicatorLines = WColor( 128, 128, 128 ); //alpha channel of 75
   
@@ -274,7 +274,7 @@ std::string ColorTheme::toJson( const ColorTheme &info )
   base["modified"] = info.modified_time.toString( "yyyy-MM-ddThh:mm:ssZ" );
   
   
-  Json::Object &nonChartArea = base["nonChartArea"] = Json::Value(Json::ObjectType);
+  Json::Object &nonChartArea = base["nonChartArea"] = Json::Value(Json::Type::Object);
   if( info.nonChartAreaTheme.empty() )
     nonChartArea["cssTheme"] = WString("default");
   else
@@ -304,7 +304,7 @@ std::string ColorTheme::toJson( const ColorTheme &info )
   if( !info.appMenuBarHoverColor.isDefault() )
     nonChartArea["menuBarHoverColor"] = WString( info.appMenuBarHoverColor.cssText(false) );
 
-  Json::Object &spectrum = base["spectrum"] = Json::Value(Json::ObjectType);
+  Json::Object &spectrum = base["spectrum"] = Json::Value(Json::Type::Object);
   if( !info.foregroundLine.isDefault() )
     spectrum["foregroundColor"] = WString( info.foregroundLine.cssText(false) );
   if( !info.backgroundLine.isDefault() )
@@ -326,7 +326,7 @@ std::string ColorTheme::toJson( const ColorTheme &info )
   if( info.spectrumLogYAxisMin > 0.0 )
     spectrum["logYAxisMin"] = info.spectrumLogYAxisMin;
   
-  Json::Object &timechart = base["timeChart"] = Json::Value(Json::ObjectType);
+  Json::Object &timechart = base["timeChart"] = Json::Value(Json::Type::Object);
   if( !info.timeHistoryForegroundHighlight.isDefault() )
     timechart["foregroundHighlightColor"] = WString( info.timeHistoryForegroundHighlight.cssText(false) );
   if( !info.timeHistoryBackgroundHighlight.isDefault() )
@@ -354,7 +354,7 @@ std::string ColorTheme::toJson( const ColorTheme &info )
     base["defaultPeakLineColor"] = WString( info.defaultPeakLine.cssText(false) );
   
   // Always create the referenceLines object since we may need it for dynamic ref line colors
-  Json::Object &refLines = base["referenceLines"] = Json::Value(Json::ObjectType);
+  Json::Object &refLines = base["referenceLines"] = Json::Value(Json::Type::Object);
   
   // Add dynamic reference line colors to the referenceLines section
   if( !info.dynamicRefLineMedicalColor.isDefault() )
@@ -372,14 +372,14 @@ std::string ColorTheme::toJson( const ColorTheme &info )
   
   if( info.referenceLineColor.size() )
   {
-    Json::Array &lineColors = refLines["lineColors"] = Json::Value(Json::ArrayType);
+    Json::Array &lineColors = refLines["lineColors"] = Json::Value(Json::Type::Array);
     for( const auto &c : info.referenceLineColor )
       lineColors.push_back( WString(c.cssText(false)) );
   }
   
   if( info.referenceLineColorForSources.size() )
   {
-    Json::Object &srcs = refLines["specificSources"] = Json::Value(Json::ObjectType);
+    Json::Object &srcs = refLines["specificSources"] = Json::Value(Json::Type::Object);
     for( const auto &p : info.referenceLineColorForSources )
       srcs[p.first] = WString( p.second.cssText(true) );
   }
@@ -404,7 +404,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   Json::Object &base = baseValue;
   
   auto &nameval = base.get("name");
-  if( nameval.type() != Json::Type::StringType )//required!
+  if( nameval.type() != Json::Type::String )//required!
     throw runtime_error( "JSON didnt contain string required property 'name'" );
   
   info.theme_name = nameval;
@@ -430,14 +430,14 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   
   info.nonChartAreaTheme = "";
   const Json::Value &nonChartArea = base.get("nonChartArea");
-  if( nonChartArea.type()==Json::ObjectType
+  if( nonChartArea.type()==Json::Type::Object
       && static_cast<const Json::Object &>(nonChartArea).contains("cssTheme") )
   {
     const Json::Object &nonChartAreaObj = nonChartArea;
     const Json::Value &cssThemeVal = nonChartAreaObj.get("cssTheme");
 
     string val;
-    if( cssThemeVal.type() == Wt::Json::StringType )
+    if( cssThemeVal.type() == Wt::Json::Type::String )
     {
       if( cssThemeVal.hasType( typeid(Wt::WString) ) )
        val = static_cast<const WString &>(cssThemeVal).toUTF8();
@@ -446,7 +446,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
       else
         cout << "Json type is not string" << endl;
     }else
-      cout << "CssThemeVal is type " << cssThemeVal.type() << endl;
+      cout << "CssThemeVal is type " << static_cast<int>(cssThemeVal.type()) << endl;
 
     if( SpecUtils::iequals_ascii(info.nonChartAreaTheme, "default") )
       val = "";
@@ -537,7 +537,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
       info.appMenuBarHoverColor = WColor( info.nonChartAreaTheme == "dark" ? "rgba(18,101,200,0.25)" : "rgba(128,128,128,0.25)" );
   }
   
-  if( base.contains("spectrum") /*&& base["spectrum"].type()==Json::ObjectType*/ )
+  if( base.contains("spectrum") /*&& base["spectrum"].type()==Json::Type::Object*/ )
   {
     Json::Object &spectrum = base["spectrum"];
     if( spectrum.contains("foregroundColor") )

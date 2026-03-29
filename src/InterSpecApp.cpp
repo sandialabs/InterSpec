@@ -42,19 +42,19 @@
 #undef max
 #endif 
 
-#include <Wt/WText>
-#include <Wt/WTimer>
-#include <Wt/WServer>
-#include <Wt/WGridLayout>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
-#include <Wt/WCssStyleSheet>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WTimer.h>
+#include <Wt/WServer.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WCssStyleSheet.h>
+#include <Wt/WContainerWidget.h>
 
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
-#include <Wt/WLabel>
-#include <Wt/WCheckBox>
-#include <Wt/WPushButton>
+#include <Wt/WLabel.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WPushButton.h>
 #endif
 
 #include "SpecUtils/DateTime.h"
@@ -140,7 +140,7 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   if( !checkExternalTokenFromUrl() )
   {
     setTitle( "Error loading" );
-    new WText( "Invalid 'apptoken' specified, not loading", root() );
+    root()->addNew<WText>( "Invalid 'apptoken' specified, not loading" );
     WApplication::quit( "InterSpec is configured to not allow arbitrary sessions" );
     return;
   }//if( !checkExternalTokenFromUrl() )
@@ -492,7 +492,7 @@ void InterSpecApp::setupDomEnvironment()
   // Pre-load some CSS we will likely encounter anyway; avoids some glitching when loading new
   //  widgets, especially if they are in a AuxWindow.
   //  (The CSS wont be re-loaded later, so maybe we dont hurt anything doing it here too - maybe)
-  WServer::instance()->schedule( 500, sessionId(), [](){
+  WServer::instance()->schedule( std::chrono::milliseconds(500), sessionId(), [](){
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
     wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
@@ -552,15 +552,14 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 {
   if( m_viewer )
   {
-    //for some reason calling 'delete m_layout' doesnt cause m_viewer to
-    //  destruct?
-    delete m_viewer;
+    // In Wt4, m_viewer is owned by the layout; removing from layout destroys it.
+    // clear() will delete all children including m_viewer via ownership.
     m_viewer = nullptr;
   }
 
   if( m_layout )
   {
-    delete m_layout;
+    m_layout = nullptr;
     root()->clear();
   }
 
@@ -579,19 +578,21 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif // #if( BUILD_AS_OSX_APP )
 
 
+  std::unique_ptr<InterSpec> viewerOwner;
   try
   {
-    m_viewer = new InterSpec();
+    viewerOwner = std::make_unique<InterSpec>();
+    m_viewer = viewerOwner.get();
   }catch( std::exception &e )
   {
 #if( BUILD_AS_UNIT_TEST_SUITE )
     throw e;
 #endif //#if( BUILD_AS_UNIT_TEST_SUITE )
-    
+
     Wt::log("error") << "There was an exception initializing a InterSpec: " << e.what();
-    
+
     string msg = "There was a problem initializing a necessary resource for InterSpec";
-    WText *errorText = new WText( msg, root() );
+    WText *errorText = root()->addNew<WText>( msg );
     errorText->setInline( false );
     errorText->setAttributeValue( "style",
                                  "width:100%;"
@@ -599,19 +600,19 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
                                  "font-size:150%;"
                                  "font-family:\"Courier New\", Courier, monospace;" );
     msg = "error:";
-    errorText = new WText( msg, root() );
+    errorText = root()->addNew<WText>( msg );
     errorText->setAttributeValue( "style", "font-family:\"Courier New\", Courier, monospace;" );
-    
-    WContainerWidget *errorDiv = new WContainerWidget( root() );
-    errorText = new WText( e.what(), errorDiv );
+
+    WContainerWidget *errorDiv = root()->addNew<WContainerWidget>();
+    errorText = errorDiv->addNew<WText>( e.what() );
     errorText->setAttributeValue( "style", "font-family:\"Times New Roman\", Times, serif;" );
-    
+
     msg = "<br />Please contact wcjohns@sandia.gov and/or interspec@sandia.gov to fix this error.";
-    errorText = new WText( msg, root() );
+    errorText = root()->addNew<WText>( msg );
     errorText->setAttributeValue( "style", "font-family:Courier New; color: blue;" );
     WApplication::quit();
     return;
-  }//try / catch to create a InterSpec object
+  }//try / catch to create InterSpec object
   
   // Keep from adding any undo/redo while we finish initial rendering
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
@@ -633,14 +634,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     m_miscSignal->connect( this, &InterSpecApp::miscSignalHandler );
   }
   
-  m_layout = new WGridLayout();
-  root()->setLayout( m_layout );
+  m_layout = root()->setLayout( std::make_unique<WGridLayout>() );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setHorizontalSpacing( 0 );
   m_layout->setVerticalSpacing( 0 );
-  
-  
-  m_layout->addWidget( m_viewer, 0, 0, 1, 1 );
+
+  m_layout->addWidget( std::move(viewerOwner), 0, 0, 1, 1 );
   m_layout->setRowStretch( 0, 10 );
   
   // TODO: It seems sometimes when closing a AuxWindow that is modal, the grey background doesnt actually get hidden... not totally sure why, but we *could* maybe help this with the below - but I havent tested it doesnt have odd side-effects, so not currently enabling, but should consider
@@ -776,16 +775,14 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         
           WContainerWidget *dialogDiv = loadStateDialog->contents();
           
-          WLabel *text = new WLabel( "Would you like to pick up where you left off last time?" );
+          WLabel *text = dialogDiv->addNew<WLabel>( "Would you like to pick up where you left off last time?" );
           text->setInline( false );
           text->setMargin( 15 );
-          dialogDiv->addWidget( text );
-          
-          WCheckBox *cb = new WCheckBox( "Dont ask again" );
+
+          WCheckBox *cb = dialogDiv->addNew<WCheckBox>( "Dont ask again" );
           cb->setInline( false );
-          cb->setMargin( 30, Wt::Left );
-          cb->setMargin( 10, Wt::Bottom );
-          dialogDiv->addWidget( cb );
+          cb->setMargin( 30, Wt::Side::Left );
+          cb->setMargin( 10, Wt::Side::Bottom );
           auto changePromptPref = [this](bool dont_ask ){
             try {
               UserPreferences::setPreferenceValue<bool>( "PromptStateLoadOnStart", dont_ask, m_viewer );
@@ -803,26 +800,26 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           };
         
           
-          cb->unChecked().connect( std::bind([changePromptPref](){ changePromptPref(false); }) );
-          cb->checked().connect( std::bind([changePromptPref](){ changePromptPref(true); }) );
+          cb->unChecked().connect( [changePromptPref](){ changePromptPref(false); } );
+          cb->checked().connect( [changePromptPref](){ changePromptPref(true); } );
           
           WPushButton *nobutton = loadStateDialog->addCloseButtonToFooter("No");
           
-          nobutton->clicked().connect( std::bind([this,cb,loadStateDialog,changeDoLoadPref](){
+          nobutton->clicked().connect( [this,cb,loadStateDialog,changeDoLoadPref](){
             if( cb->isChecked() )
               changeDoLoadPref(false);
             AuxWindow::deleteAuxWindow(loadStateDialog);
-          }) );
+          } );
            
         
           WPushButton *yesbutton = loadStateDialog->addCloseButtonToFooter("Yes");
           
-          yesbutton->clicked().connect( std::bind([this,cb,state,loadStateDialog,changeDoLoadPref](){
+          yesbutton->clicked().connect( [this,cb,state,loadStateDialog,changeDoLoadPref](){
             if( cb->isChecked() )
               changeDoLoadPref(true);
             m_viewer->loadStateFromDb( state );
             AuxWindow::deleteAuxWindow(loadStateDialog);
-          }));
+          } );
            
         
           if( loadPrev )
@@ -833,7 +830,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           loadStateDialog->centerWindow();
           loadStateDialog->disableCollapse();
           loadStateDialog->rejectWhenEscapePressed();
-          loadStateDialog->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, loadStateDialog ) );
+          loadStateDialog->finished().connect( [loadStateDialog](){ AuxWindow::deleteAuxWindow(loadStateDialog); } );
           loadStateDialog->show();
         }else
         {
@@ -914,7 +911,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     //Using WTimer as a workaround for iOS so screen size and safe-area and
     //  such can all get setup before creating a AuxWindow; otherwise size of
     //  window will be all messed up.
-    WTimer::singleShot( 25, boost::bind( &InterSpec::showWelcomeDialog, m_viewer, false) );
+    WTimer::singleShot( std::chrono::milliseconds(25), [this](){ m_viewer->showWelcomeDialog( false ); } );
     
 #if( IOS || ANDROID )
     //For iPhoneX* devices we should trigger a resize once
@@ -1271,7 +1268,7 @@ void InterSpecApp::notify( const Wt::WEvent& event )
   try
   {
 #endif
-    const bool userEvent = (event.eventType() == Wt::UserEvent);
+    const bool userEvent = (event.eventType() == Wt::EventType::User);
     if( userEvent )
     {
       const auto thistime = std::chrono::steady_clock::now();
@@ -1288,7 +1285,7 @@ void InterSpecApp::notify( const Wt::WEvent& event )
       // In debug-build, looks to only take 30 to 100 micro-seconds to make the post
       if( m_activeTimeSinceDbUpdate > std::chrono::seconds(30) )
       {
-        WServer::instance()->schedule( 100, sessionId(), [this](){
+        WServer::instance()->schedule( std::chrono::milliseconds(100), sessionId(), [this](){
           WApplication::UpdateLock lock( this );
           if( lock )
             updateUsageTimeToDb();
@@ -1752,9 +1749,9 @@ bool InterSpecApp::isMobile() const
   const bool isMob = (   env.agentIsMobileWebKit()
                       || env.agentIsIEMobile()
                       || env.agentIsMobileWebKit()
-                      || env.agent()==WEnvironment::MobileWebKitiPhone
-                      || env.agent()==WEnvironment::MobileWebKitAndroid
-                      || env.agent()==WEnvironment::MobileWebKit
+                      || env.agent()==Wt::UserAgent::MobileWebKitiPhone
+                      || env.agent()==Wt::UserAgent::MobileWebKitAndroid
+                      || env.agent()==Wt::UserAgent::MobileWebKit
                       || env.userAgent().find("Opera Mobi") != std::string::npos
                       || env.userAgent().find("Android") != std::string::npos
                       || env.userAgent().find("RIM ") != std::string::npos
@@ -1775,7 +1772,7 @@ bool InterSpecApp::isAndroid() const
 #endif
   
   const WEnvironment &env = environment();
-  const bool isDroid = ( env.agent()==WEnvironment::MobileWebKitAndroid
+  const bool isDroid = ( env.agent()==Wt::UserAgent::MobileWebKitAndroid
                       || env.userAgent().find("Android") != std::string::npos
                       || env.userAgent().find("RIM ") != std::string::npos
                       );

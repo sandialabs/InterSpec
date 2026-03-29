@@ -32,23 +32,23 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
-#include <Wt/WText>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WServer>
-#include <Wt/WLineEdit>
-#include <Wt/WTextArea>
-#include <Wt/WComboBox>
-#include <Wt/WGroupBox>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WRadioButton>
-#include <Wt/WButtonGroup>
-#include <Wt/WApplication>
-#include <Wt/WIntValidator>
-#include <Wt/WSelectionBox>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WServer.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WTextArea.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WGroupBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/WButtonGroup.h>
+#include <Wt/WApplication.h>
+#include <Wt/WIntValidator.h>
+#include <Wt/WSelectionBox.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -231,23 +231,26 @@ template <class T>
 void addField( T *&edit, WGridLayout *table, const WString &labelstr,
                int row, int col, int rowspan = 1, int colspan = 1 )
 {
-  WLabel *label = new WLabel(labelstr);
-  label->setStyleClass("SpectrumFileSummaryLabel");
-  table->addWidget( label, row, col, AlignMiddle );
-  edit = new T();
-  table->addWidget( edit, row, col+1, rowspan, colspan );
+  WLabel *label = table->addWidget( std::make_unique<WLabel>( labelstr ), row, col,
+                                    Wt::AlignmentFlag::Middle );
+  label->setStyleClass( "SpectrumFileSummaryLabel" );
+  auto editOwner = std::make_unique<T>();
+  edit = editOwner.get();
+  table->addWidget( std::move(editOwner), row, col+1, rowspan, colspan );
   label->setBuddy( edit );
-}//WLineEdit *addField(...)
+}//addField(...)
 
 
 void addField( WText *&edit, WGridLayout *table, const WString &labelstr,
               int row, int col, int rowspan = 1, int colspan = 1 )
 {
-  WLabel *label = new WLabel(labelstr);
-  label->setStyleClass("SpectrumFileSummaryLabel");
-  table->addWidget( label, row, col, (rowspan==1 ? AlignMiddle : AlignBottom) );
-  edit = new WText();
-  table->addWidget( edit, row, col+1, rowspan, colspan, AlignMiddle | AlignLeft );
+  WLabel *label = table->addWidget( std::make_unique<WLabel>( labelstr ), row, col,
+                                    (rowspan==1 ? Wt::AlignmentFlag::Middle : Wt::AlignmentFlag::Bottom) );
+  label->setStyleClass( "SpectrumFileSummaryLabel" );
+  auto editOwner = std::make_unique<WText>();
+  edit = editOwner.get();
+  table->addWidget( std::move(editOwner), row, col+1, rowspan, colspan,
+                    Wt::AlignmentFlag::Middle | Wt::AlignmentFlag::Left );
 }
 
 
@@ -259,115 +262,118 @@ void SpecFileSummary::init()
   if( m_specViewer )
     m_specViewer->useMessageResourceBundle( "SpecFileSummary" );
   
-  WContainerWidget *holder = new WContainerWidget( contents() );
-  
-  WGridLayout *overallLayout = new WGridLayout();
+  WContainerWidget *holder = contents()->addNew<WContainerWidget>();
+
+  WGridLayout *overallLayout = holder->setLayout( std::make_unique<WGridLayout>() );
   holder->addStyleClass( "SpecFileSummary" );
-  holder->setLayout( overallLayout );
-  
+
   overallLayout->setContentsMargins( 9, 0, 9, 0 );
-  
-  WRadioButton *button = NULL;
+
+  WRadioButton *button = nullptr;
   WGroupBox *spectrumGroupBox = new WGroupBox( WString::tr("sfs-spectrum") );
   spectrumGroupBox->addStyleClass( "SpecSummChoose" );
-  m_spectraGroup = new WButtonGroup( this );
-  button = new WRadioButton( WString::tr("Foreground"), spectrumGroupBox );
+  m_spectraGroup = std::make_shared<WButtonGroup>();
+  button = spectrumGroupBox->addNew<WRadioButton>( WString::tr("Foreground") );
   button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Foreground) );
-  button = new WRadioButton( WString::tr("Secondary"), spectrumGroupBox );
+  button = spectrumGroupBox->addNew<WRadioButton>( WString::tr("Secondary") );
   button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::SecondForeground) );
-  button = new WRadioButton( WString::tr("Background"), spectrumGroupBox );
+  button = spectrumGroupBox->addNew<WRadioButton>( WString::tr("Background") );
   button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Background) );
   m_spectraGroup->setCheckedButton( m_spectraGroup->button( static_cast<int>(SpecUtils::SpectrumType::Foreground) ) );
   m_spectraGroup->checkedChanged().connect( this, &SpecFileSummary::handleSpectrumTypeChanged );
-  
-  
+
+
   WGroupBox *editGroupBox = new WGroupBox( WString::tr("sfs-alow-edit-cb") );
   editGroupBox->addStyleClass( "SpecSummAllowEdit" );
-  m_allowEditGroup = new WButtonGroup( this );
-  button = new WRadioButton( WString::tr("Yes"), editGroupBox );
+  m_allowEditGroup = std::make_shared<WButtonGroup>();
+  button = editGroupBox->addNew<WRadioButton>( WString::tr("Yes") );
   button->addStyleClass( "CbNoLineBreak" );
   m_allowEditGroup->addButton( button, kAllowModify );
-  button = new WRadioButton( WString::tr("No"), editGroupBox );
+  button = editGroupBox->addNew<WRadioButton>( WString::tr("No") );
   button->addStyleClass( "CbNoLineBreak" );
   m_allowEditGroup->addButton( button, kDontAllowModify );
   m_allowEditGroup->setCheckedButton( m_allowEditGroup->button(kDontAllowModify) );
   m_allowEditGroup->checkedChanged().connect( this, &SpecFileSummary::handleAllowModifyStatusChange );
-  
-  WContainerWidget *upperdiv = new WContainerWidget();
-  WGridLayout *upperlayout = new WGridLayout();
-  upperdiv->setLayout( upperlayout );
-  overallLayout->addWidget( upperdiv, 0, 0 );
-  upperlayout->addWidget( spectrumGroupBox, 0, 0, 1, 1 );
-  upperlayout->addWidget( editGroupBox, 0, 1, 1, 1 );
+
+  auto upperdivOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *upperdiv = upperdivOwner.get();
+  WGridLayout *upperlayout = upperdiv->setLayout( std::make_unique<WGridLayout>() );
+  overallLayout->addWidget( std::move(upperdivOwner), 0, 0 );
+  upperlayout->addWidget( std::unique_ptr<WGroupBox>(spectrumGroupBox), 0, 0, 1, 1 );
+  upperlayout->addWidget( std::unique_ptr<WGroupBox>(editGroupBox), 0, 1, 1, 1 );
   upperlayout->setColumnStretch( 1, 1 );
-  
-  m_reloadSpectrum = new WPushButton( WString::tr("sfs-update-display-btn"), editGroupBox );
+
+  m_reloadSpectrum = editGroupBox->addNew<WPushButton>( WString::tr("sfs-update-display-btn") );
   m_reloadSpectrum->setToolTip( WString::tr("sfs-tt-update-display") );
   m_reloadSpectrum->setIcon( WLink("InterSpec_resources/images/arrow_refresh.svg") );
   m_reloadSpectrum->clicked().connect( this, &SpecFileSummary::reloadCurrentSpectrum );
   m_reloadSpectrum->disable();
   
 
-  WGroupBox *filediv = new WGroupBox( WString::tr("sfs-file-info-title") );
+  auto filedivOwner = std::make_unique<WGroupBox>( WString::tr("sfs-file-info-title") );
+  WGroupBox *filediv = filedivOwner.get();
   filediv->addStyleClass( "SpecFileInfo" );
-  WGridLayout *fileInfoLayout = new WGridLayout();
-  filediv->setLayout( fileInfoLayout );
-  overallLayout->addWidget( filediv, 1, 0 );
-  
+  WGridLayout *fileInfoLayout = filediv->setLayout( std::make_unique<WGridLayout>() );
+  overallLayout->addWidget( std::move(filedivOwner), 1, 0 );
+
   addField( m_filename, fileInfoLayout, WString::tr("sfs-file-name-label"), 0, 0, 1, 5 );
   addField( m_sizeInMemmory, fileInfoLayout, WString::tr("sfs-memory-size-label"), 0, 6 );
   addField( m_inspection, fileInfoLayout, WString::tr("sfs-inspection-label"), 1, 0 );
   addField( m_laneNumber, fileInfoLayout, WString::tr("sfs-lane-label"), 1, 2 );
   addField( m_measurement_location_name, fileInfoLayout, WString::tr("sfs-location-label"), 1, 4, 1, 1 );
-  
-  m_ana_button = new WPushButton( WString::tr("sfs-no-det-id-btn") );
+
+  auto ana_btn = std::make_unique<WPushButton>( WString::tr("sfs-no-det-id-btn") );
+  m_ana_button = ana_btn.get();
   m_ana_button->disable();
   m_ana_button->clicked().connect( this, &SpecFileSummary::showRiidAnalysis );
-  fileInfoLayout->addWidget( m_ana_button, 1, 6, 1, 1, AlignLeft );
-  
-  m_multimedia_button = new WPushButton( WString::tr("sfs-show-pics-btn") );
+  fileInfoLayout->addWidget( std::move(ana_btn), 1, 6, 1, 1, Wt::AlignmentFlag::Left );
+
+  auto multimedia_btn = std::make_unique<WPushButton>( WString::tr("sfs-show-pics-btn") );
+  m_multimedia_button = multimedia_btn.get();
   m_multimedia_button->hide();
   m_multimedia_button->clicked().connect( this, &SpecFileSummary::showMultimedia );
-  fileInfoLayout->addWidget( m_multimedia_button, 1, 7, 1, 1, AlignLeft );
-  
+  fileInfoLayout->addWidget( std::move(multimedia_btn), 1, 7, 1, 1, Wt::AlignmentFlag::Left );
+
   addField( m_instrument_type, fileInfoLayout, WString::tr("sfs-instrument-type-label"), 2, 0 );
   addField( m_manufacturer, fileInfoLayout, WString::tr("sfs-manufacturer-label"), 2, 2 );
   addField( m_instrument_model, fileInfoLayout, WString::tr("sfs-model-label"), 2, 4, 1, 3 );
-  
+
   addField( m_instrument_id, fileInfoLayout, WString::tr("sfs-instrument-id-label"), 3, 0, 1, 3 );
   addField( m_uuid, fileInfoLayout, WString::tr("sfs-uuid-label"), 3, 4, 1, 3 );
-  
-  WContainerWidget *labelHolder = new WContainerWidget();
+
+  auto labelHolderOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *labelHolder = labelHolderOwner.get();
   labelHolder->setAttributeValue( "style", "margin-top: auto; margin-bottom: auto;" );
-  WLabel *label = new WLabel( WString::tr("sfs-file-label"), labelHolder );
-  label->setStyleClass("SpectrumFileSummaryLabel");
+  WLabel *label = labelHolder->addNew<WLabel>( WString::tr("sfs-file-label") );
+  label->setStyleClass( "SpectrumFileSummaryLabel" );
   label->setInline( false );
-  label = new WLabel( WString::tr("sfs-remarks-label"), labelHolder );
-  label->setStyleClass("SpectrumFileSummaryLabel");
+  label = labelHolder->addNew<WLabel>( WString::tr("sfs-remarks-label") );
+  label->setStyleClass( "SpectrumFileSummaryLabel" );
   label->setInline( false );
-  fileInfoLayout->addWidget( labelHolder, 4, 0, AlignMiddle );
-  
-  WContainerWidget *remarkHolder = new WContainerWidget();
-  fileInfoLayout->addWidget( remarkHolder, 4, 1, 1, 7 );
-  m_fileRemarks = new WTextArea( remarkHolder );
+  fileInfoLayout->addWidget( std::move(labelHolderOwner), 4, 0, Wt::AlignmentFlag::Middle );
+
+  auto remarkHolderOwner = std::make_unique<WContainerWidget>();
+  WContainerWidget *remarkHolder = remarkHolderOwner.get();
+  fileInfoLayout->addWidget( std::move(remarkHolderOwner), 4, 1, 1, 7 );
+  m_fileRemarks = remarkHolder->addNew<WTextArea>();
   m_fileRemarks->setAttributeValue( "style", "resize: none; width: 100%; height: 100%;" );
-  
+
   fileInfoLayout->setRowStretch( 4, 1 );
-  
+
   fileInfoLayout->setColumnStretch( 1, 1 );
   fileInfoLayout->setColumnStretch( 3, 1 );
   fileInfoLayout->setColumnStretch( 5, 1 );
   fileInfoLayout->setColumnStretch( 7, 1 );
 
   
-  WGroupBox *measdiv = new WGroupBox( WString::tr("sfs-measurement-info-label") );
+  auto measdivOwner = std::make_unique<WGroupBox>( WString::tr("sfs-measurement-info-label") );
+  WGroupBox *measdiv = measdivOwner.get();
   measdiv->addStyleClass( "MeasInfo" );
-  WGridLayout *measTable = new WGridLayout();
-  measdiv->setLayout( measTable );
-  overallLayout->addWidget( measdiv, 2, 0 );
+  WGridLayout *measTable = measdiv->setLayout( std::make_unique<WGridLayout>() );
+  overallLayout->addWidget( std::move(measdivOwner), 2, 0 );
   
   
   addField( m_timeStamp, measTable, WString::tr("sfs-date-time-label"), 0, 0, 1, 3 );
@@ -385,19 +391,21 @@ void SpecFileSummary::init()
   addField( m_longitude, measTable, WString::tr("sfs-longitude-label"), 3, 2 );
   addField( m_gpsTimeStamp, measTable, WString::tr("sfs-position-time-label"), 3, 4 );
   
-  m_latitude->setEmptyText( WString::tr("sfs-latitude-empty-text") );
-  m_longitude->setEmptyText( WString::tr("sfs-longitude-empty-text") );
+  m_latitude->setPlaceholderText( WString::tr("sfs-latitude-empty-text") );
+  m_longitude->setPlaceholderText( WString::tr("sfs-longitude-empty-text") );
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
-  m_showMapButton = new WPushButton( WString::tr("sfs-show-map-btn") );
-  measTable->addWidget( m_showMapButton, 3, 6 );
+  {
+    auto mapBtnOwner = std::make_unique<WPushButton>( WString::tr("sfs-show-map-btn") );
+    m_showMapButton = mapBtnOwner.get();
+    measTable->addWidget( std::move(mapBtnOwner), 3, 6 );
 #if( USE_GOOGLE_MAP  )
-  m_showMapButton->clicked().connect( this, &SpecFileSummary::showGoogleMap );
+    m_showMapButton->clicked().connect( this, &SpecFileSummary::showGoogleMap );
 #elif( USE_LEAFLET_MAP )
-  m_showMapButton->clicked().connect( this, &SpecFileSummary::showLeafletMap );
+    m_showMapButton->clicked().connect( this, &SpecFileSummary::showLeafletMap );
 #endif
-  
-  m_showMapButton->disable();
+    m_showMapButton->disable();
+  }
 #endif
   
   addField( m_title, measTable, WString::tr("sfs-description-label"), 4, 0, 1, 5 );
@@ -424,152 +432,117 @@ void SpecFileSummary::init()
   }//for( int i = 0; i <= SpecUtils::SourceType::Unknown; ++i )
   
 
-  labelHolder = new WContainerWidget();
-  labelHolder->setAttributeValue( "style", "margin-top: auto; margin-bottom: auto;" );
-  label = new WLabel( WString::tr("sfs-spectra-label"), labelHolder );
-  label->setStyleClass("SpectrumFileSummaryLabel");
-  label->setInline( false );
-  label = new WLabel( WString::tr("sfs-remarks-label"), labelHolder );
-  label->setStyleClass("SpectrumFileSummaryLabel");
-  label->setInline( false );
-  measTable->addWidget( labelHolder, 5, 0, AlignMiddle );
-  
-  remarkHolder = new WContainerWidget();
-  measTable->addWidget( remarkHolder, 5, 1, 1, 7 );
-  m_measurmentRemarks = new WTextArea( remarkHolder );
-  m_measurmentRemarks->setAttributeValue( "style", "resize: none; width: 100%; height: 100%;" );
-  
+  {
+    auto lhOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *lh = lhOwner.get();
+    lh->setAttributeValue( "style", "margin-top: auto; margin-bottom: auto;" );
+    label = lh->addNew<WLabel>( WString::tr("sfs-spectra-label") );
+    label->setStyleClass( "SpectrumFileSummaryLabel" );
+    label->setInline( false );
+    label = lh->addNew<WLabel>( WString::tr("sfs-remarks-label") );
+    label->setStyleClass( "SpectrumFileSummaryLabel" );
+    label->setInline( false );
+    measTable->addWidget( std::move(lhOwner), 5, 0, Wt::AlignmentFlag::Middle );
+
+    auto rhOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *rh = rhOwner.get();
+    measTable->addWidget( std::move(rhOwner), 5, 1, 1, 7 );
+    m_measurmentRemarks = rh->addNew<WTextArea>();
+    m_measurmentRemarks->setAttributeValue( "style", "resize: none; width: 100%; height: 100%;" );
+  }
+
   measTable->setRowStretch( 5, 1 );
-  
+
   measTable->setColumnStretch( 1, 1 );
   measTable->setColumnStretch( 3, 1 );
   measTable->setColumnStretch( 5, 1 );
   measTable->setColumnStretch( 7, 1 );
-  
-  
-  m_displaySampleDiv = new WContainerWidget();
-  m_displaySampleDiv->addStyleClass( "displaySampleDiv" );
-  m_prevSampleNumButton = new WImage( "InterSpec_resources/images/previous_arrow.png", m_displaySampleDiv );
-  m_prevSampleNumButton->clicked().connect( boost::bind( &SpecFileSummary::handleUserIncrementSampleNum, this, false) );
-  m_displayedPreText = new WText( m_displaySampleDiv );
-  m_displaySampleNumEdit = new WLineEdit( m_displaySampleDiv );
-  
-  m_displaySampleNumEdit->setAutoComplete( false );
-  m_displaySampleNumEdit->setAttributeValue( "ondragstart", "return false" );
+
+
+  {
+    auto sampleDivOwner = std::make_unique<WContainerWidget>();
+    m_displaySampleDiv = sampleDivOwner.get();
+    m_displaySampleDiv->addStyleClass( "displaySampleDiv" );
+    m_prevSampleNumButton = m_displaySampleDiv->addNew<WImage>( "InterSpec_resources/images/previous_arrow.png" );
+    m_prevSampleNumButton->clicked().connect( [this](){ handleUserIncrementSampleNum( false ); } );
+    m_displayedPreText = m_displaySampleDiv->addNew<WText>();
+    m_displaySampleNumEdit = m_displaySampleDiv->addNew<WLineEdit>();
+
+    m_displaySampleNumEdit->setAutoComplete( false );
+    m_displaySampleNumEdit->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
-  m_displaySampleNumEdit->setAttributeValue( "autocorrect", "off" );
-  m_displaySampleNumEdit->setAttributeValue( "spellcheck", "off" );
+    m_displaySampleNumEdit->setAttributeValue( "autocorrect", "off" );
+    m_displaySampleNumEdit->setAttributeValue( "spellcheck", "off" );
 #endif
 
-  m_displaySampleNumValidator = new WIntValidator( m_displaySampleDiv );
-  m_displaySampleNumEdit->setValidator( m_displaySampleNumValidator );
-  m_displaySampleNumEdit->addStyleClass( "numberValidator"); //used to detect mobile keyboard
-  m_displaySampleNumEdit->setTextSize( 3 );
-  m_displayedPostText = new WText( m_displaySampleDiv );
-  m_nextSampleNumButton = new WImage( "InterSpec_resources/images/next_arrow.png", m_displaySampleDiv );
-  m_nextSampleNumButton->clicked().connect( boost::bind( &SpecFileSummary::handleUserIncrementSampleNum, this, true) );
-  m_displaySampleNumEdit->enterPressed().connect( boost::bind( &SpecFileSummary::handleUserChangeSampleNum, this ) );
-  m_displaySampleNumEdit->blurred().connect( boost::bind( &SpecFileSummary::handleUserChangeSampleNum, this ) );
-  m_displaySampleDiv->setHiddenKeepsGeometry( false );
-  
-  measTable->addWidget( m_displaySampleDiv, measTable->rowCount(), 0, 1, measTable->columnCount(), AlignBottom );
-  
+    auto validatorOwner = std::make_shared<WIntValidator>();
+    m_displaySampleNumValidator = validatorOwner.get();
+    m_displaySampleNumEdit->setValidator( validatorOwner );
+    m_displaySampleNumEdit->addStyleClass( "numberValidator" ); //used to detect mobile keyboard
+    m_displaySampleNumEdit->setTextSize( 3 );
+    m_displayedPostText = m_displaySampleDiv->addNew<WText>();
+    m_nextSampleNumButton = m_displaySampleDiv->addNew<WImage>( "InterSpec_resources/images/next_arrow.png" );
+    m_nextSampleNumButton->clicked().connect( [this](){ handleUserIncrementSampleNum( true ); } );
+    m_displaySampleNumEdit->enterPressed().connect( [this](){ handleUserChangeSampleNum(); } );
+    m_displaySampleNumEdit->blurred().connect( [this](){ handleUserChangeSampleNum(); } );
+    m_displaySampleDiv->setHiddenKeepsGeometry( false );
+
+    measTable->addWidget( std::move(sampleDivOwner), measTable->rowCount(), 0, 1, measTable->columnCount(),
+                          Wt::AlignmentFlag::Bottom );
+  }
+
   overallLayout->setRowStretch( 1, 1 );
   overallLayout->setRowStretch( 2, 1 );
 
-  m_specViewer->displayedSpectrumChanged().connect( boost::bind(
-                &SpecFileSummary::handleSpectrumChange, this,
-                boost::placeholders::_1, boost::placeholders::_2,
-                boost::placeholders::_3, boost::placeholders::_4 ) );
+  m_specViewer->displayedSpectrumChanged().connect(
+                [this]( SpecUtils::SpectrumType t, std::shared_ptr<SpecMeas> m,
+                        std::set<int> s, std::vector<std::string> d ){
+                  handleSpectrumChange( t, m, s, d );
+                } );
 
-  m_displayedLiveTime->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedLiveTime) );
-  m_displayedLiveTime->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedLiveTime) );
-  m_displayedLiveTime->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedLiveTime) );
+  // Helper lambda to connect all three signals (changed, enterPressed, blurred) to handleFieldUpdate
+  auto connectField = [this]( WFormWidget *w, EditableFields f ){
+    w->changed().connect( [this, f](){ handleFieldUpdate( f ); } );
+    w->enterPressed().connect( [this, f](){ handleFieldUpdate( f ); } );
+    w->blurred().connect( [this, f](){ handleFieldUpdate( f ); } );
+  };
 
-  m_displayedRealTime->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedRealTime) );
-  m_displayedRealTime->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedRealTime) );
-  m_displayedRealTime->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDisplayedRealTime) );
+  connectField( m_displayedLiveTime, kDisplayedLiveTime );
+  connectField( m_displayedRealTime, kDisplayedRealTime );
+  connectField( m_timeStamp, kTimeStamp );
+  connectField( m_longitude, kPosition );
+  connectField( m_latitude, kPosition );
+  connectField( m_gpsTimeStamp, kPosition );
+  connectField( m_title, kDescription );
 
-  m_timeStamp->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kTimeStamp) );
-  m_timeStamp->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kTimeStamp) );
-  m_timeStamp->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kTimeStamp) );
+  m_source->activated().connect( [this]( int ){ handleFieldUpdate( kSourceType ); } );
 
-  m_longitude->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kPosition) );
-  m_longitude->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kPosition) );
-  m_longitude->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kPosition) );
-
-  m_latitude->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kPosition) );
-  m_latitude->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kPosition) );
-  m_latitude->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kPosition) );
-
-  m_gpsTimeStamp->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kPosition) );
-  m_gpsTimeStamp->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kPosition) );
-  m_gpsTimeStamp->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kPosition) );
-  
-  m_title->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDescription) );
-  m_title->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDescription) );
-  m_title->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kDescription) );
-  
-  m_source->activated().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kSourceType) );
-  
-  m_measurmentRemarks->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kMeasurmentRemarks) );
-  m_measurmentRemarks->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kMeasurmentRemarks) );
-  m_measurmentRemarks->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kMeasurmentRemarks) );
-
-  m_fileRemarks->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kFileRemarks) );
-  m_fileRemarks->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kFileRemarks) );
-  m_fileRemarks->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kFileRemarks) );
-
-  m_filename->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kFilename) );
-  m_filename->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kFilename) );
-  m_filename->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kFilename) );
-
-  m_uuid->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kUuid) );
-  m_uuid->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kUuid) );
-  m_uuid->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kUuid) );
-
-  m_laneNumber->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kLaneNumber) );
-  m_laneNumber->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kLaneNumber) );
-  m_laneNumber->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kLaneNumber) );
-
-  m_measurement_location_name->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kMeasurement_location_name) );
-  m_measurement_location_name->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kMeasurement_location_name) );
-  m_measurement_location_name->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kMeasurement_location_name) );
-
-  m_inspection->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInspection) );
-  m_inspection->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInspection) );
-  m_inspection->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInspection) );
-
-  m_instrument_type->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInstrument_type) );
-  m_instrument_type->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInstrument_type) );
-  m_instrument_type->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInstrument_type) );
-
-  m_manufacturer->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kManufacturer) );
-  m_manufacturer->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kManufacturer) );
-  m_manufacturer->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kManufacturer) );
-
-  m_instrument_model->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInstrument_model) );
-  m_instrument_model->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInstrument_model) );
-  m_instrument_model->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInstrument_model) );
-
-  m_instrument_id->changed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInstrument_id) );
-  m_instrument_id->enterPressed().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInstrument_id) );
-  m_instrument_id->blurred().connect( boost::bind( &SpecFileSummary::handleFieldUpdate, this, kInstrument_id) );
+  connectField( m_measurmentRemarks, kMeasurmentRemarks );
+  connectField( m_fileRemarks, kFileRemarks );
+  connectField( m_filename, kFilename );
+  connectField( m_uuid, kUuid );
+  connectField( m_laneNumber, kLaneNumber );
+  connectField( m_measurement_location_name, kMeasurement_location_name );
+  connectField( m_inspection, kInspection );
+  connectField( m_instrument_type, kInstrument_type );
+  connectField( m_manufacturer, kManufacturer );
+  connectField( m_instrument_model, kInstrument_model );
+  connectField( m_instrument_id, kInstrument_id );
 
 
   handleSpectrumTypeChanged();
   handleAllowModifyStatusChange();
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
-  
+  finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+
   AuxWindow::addHelpInFooter( footer(), "file-parameters-dialog" );
 
   WPushButton *closeButton = addCloseButtonToFooter();
-  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+  closeButton->clicked().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
   
   holder->setMinimumSize( 780, 500 );
-  holder->setWidth( WLength(100.0,WLength::Percentage) );
-  holder->setHeight( WLength(100.0,WLength::Percentage) );
-  WDialog::contents()->setOverflow( WContainerWidget::OverflowAuto );
+  holder->setWidth( WLength(100.0,WLength::Unit::Percentage) );
+  holder->setHeight( WLength(100.0,WLength::Unit::Percentage) );
+  WDialog::contents()->setOverflow( Wt::Overflow::Auto );
   
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
   //  size to be the min-size
@@ -640,21 +613,20 @@ void SpecFileSummary::showGoogleMap()
   
  
   window->disableCollapse();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
  // window->footer()->setStyleClass( "modal-footer" );
-  window->footer()->setHeight(WLength(50,WLength::Pixel));
+  window->footer()->setHeight(WLength(50,WLength::Unit::Pixel));
   WPushButton *closeButton = window->addCloseButtonToFooter();
   closeButton->clicked().connect( window, &AuxWindow::hide );
   
 
   WGridLayout *layout = window->stretcher();
-  GoogleMap *googlemap = new GoogleMap( false );
+  GoogleMap *googlemap = layout->addWidget( std::make_unique<GoogleMap>( false ), 0, 0 );
   googlemap->addMarker( latitude, longitude );
   googlemap->adjustPanAndZoom();
-  googlemap->mapClicked().connect( boost::bind( &updateCoordText, googlemap,
-                                               boost::placeholders::_1, boost::placeholders::_2,
-                                               latitude, longitude ) );
-  layout->addWidget( googlemap, 0, 0 );
+  googlemap->mapClicked().connect( [googlemap, latitude, longitude]( double lat, double lng ){
+    updateCoordText( googlemap, lat, lng, latitude, longitude );
+  } );
   window->resize( WLength(w), WLength(h) );
   layout->setContentsMargins( 0, 0, 0, 0 );
   layout->setVerticalSpacing( 0 );

@@ -29,26 +29,27 @@
 
 #include <boost/regex.hpp>
 
-#include <Wt/WText>
-#include <Wt/WImage>
-#include <Wt/WLabel>
-#include <Wt/WTable>
-#include <Wt/WSlider>
-#include <Wt/WLineEdit>
-#include <Wt/WComboBox>
-#include <Wt/WTableCell>
-#include <Wt/WTabWidget>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WTableColumn>
-#include <Wt/WStringStream>
-#include <Wt/WContainerWidget>
-#include <Wt/WDoubleValidator>
-#include <Wt/WRegExpValidator>
+#include <Wt/WText.h>
+#include <Wt/WImage.h>
+#include <Wt/WLabel.h>
+#include <Wt/WTable.h>
+#include <Wt/WSlider.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WTableCell.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WTabWidget.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WTableColumn.h>
+#include <Wt/WStringStream.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WDoubleValidator.h>
+#include <Wt/WRegExpValidator.h>
 
 #if( !USE_GOOGLE_MAP && !USE_LEAFLET_MAP )
-#include <Wt/WAnchor>
+#include <Wt/WAnchor.h>
 #endif
                                    
 // Disable streamsize <=> size_t warnings in boost
@@ -80,9 +81,8 @@ using namespace std;
 
 CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
                                         InterSpec *hostViewer,
-                                        CompactFileManager::DisplayMode mode,
-                                        WContainerWidget *parent )
-  : WContainerWidget( parent ),
+                                        CompactFileManager::DisplayMode mode )
+  : WContainerWidget(),
     m_spectrumLineLegend{ nullptr },
     m_selects{ nullptr },
     m_displayedPreTexts{ nullptr },
@@ -133,10 +133,9 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     case Tabbed:
     {
       // We will use a tabbed widget to hold Foreground/Background/Secondary separately
-      tabbedLayout = new WGridLayout( this );
+      tabbedLayout = setLayout( std::make_unique<WGridLayout>() );
       addStyleClass( "Tabbed" );
-      tabWidget = new WTabWidget();
-      tabbedLayout->addWidget( tabWidget, 0, 0 );
+      tabWidget = tabbedLayout->addWidget( std::make_unique<WTabWidget>(), 0, 0 );
       tabbedLayout->setContentsMargins( 0, 0, 0, 0 );
       tabbedLayout->setRowStretch( 0, 1 );
     }
@@ -144,20 +143,20 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   }//switch( m_displayMode )
   
   const char *val_regex = "(\\-?\\d+\\s*((\\-|to|through)\\s*\\d+)?,*\\s*)+";
-  WRegExpValidator *validator = new WRegExpValidator( val_regex, this );
-  validator->setFlags( Wt::MatchCaseInsensitive );
+  auto validatorOwner = std::make_shared<WRegExpValidator>( val_regex );
+  WRegExpValidator *validator = validatorOwner.get();
+  validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   
   for( int j = 0; j < 3; ++j )
   {
-    WContainerWidget *wrapper = new WContainerWidget();
-    wrapper->addStyleClass( "DispType" );
-    
+    WContainerWidget *wrapper = nullptr;
+
     switch( m_displayMode )
     {
       case LeftToRight:
-        addWidget( wrapper );
+        wrapper = addNew<WContainerWidget>();
         break;
-        
+
       case Tabbed:
       {
         const char *tablabel = 0;
@@ -165,13 +164,16 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
         {
           case 0: tablabel = "Foreground"; break;
           case 1: tablabel = "Background"; break;
-          case 2: tablabel = "Secondary";     break;
+          case 2: tablabel = "Secondary";  break;
         }//switch( i )
-        
-        tabWidget->addTab( wrapper, WString::tr(tablabel), WTabWidget::PreLoading );
+
+        WMenuItem *tabItem = tabWidget->addTab( std::make_unique<WContainerWidget>(), WString::tr(tablabel), Wt::ContentLoading::Eager );
+        wrapper = dynamic_cast<WContainerWidget *>( tabItem->contents() );
         break;
       }//case Tabbed:
     }//switch( m_displayMode )
+
+    wrapper->addStyleClass( "DispType" );
     
     SpecUtils::SpectrumType type;
     WLabel *label = NULL;
@@ -202,108 +204,103 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     wrapper->addStyleClass( style );
     
     // Create new row (we are in a flex layout), and put label to left, and SVG all the way to the right
-    WContainerWidget *titleRow = new WContainerWidget( wrapper );
+    WContainerWidget *titleRow = wrapper->addNew<WContainerWidget>();
     titleRow->addStyleClass( "TitleRow" );
-    
-    label = new WLabel( WString::tr(txtKey), titleRow );
-    
+
+    label = titleRow->addNew<WLabel>( WString::tr(txtKey) );
+
     const string svg_style = "CompactFMSpecLine" + string(style);
     const string svg_content =
     string(R"(<svg width="12" height="12" xmlns="http://www.w3.org/2000/svg">
       <rect width="16" height="16" class="CompactFMLegBackground" />
       <line x1="2" y1="8" x2="14" y2="8" class="CompactFMLegLine )" + svg_style + R"(" />
     </svg>)");
-    
-    
+
+
     const int typeindex = static_cast<int>(type);
-    
-    m_spectrumLineLegend[typeindex] = new WText( svg_content, TextFormat::XHTMLText, titleRow );
+
+    m_spectrumLineLegend[typeindex] = titleRow->addNew<WText>( svg_content, TextFormat::XHTML );
     m_spectrumLineLegend[typeindex]->addStyleClass( "SpecLeg" );
     m_spectrumLineLegend[typeindex]->hide();
-    
-    WContainerWidget *comboRow = new WContainerWidget( wrapper );
+
+    WContainerWidget *comboRow = wrapper->addNew<WContainerWidget>();
     comboRow->addStyleClass( "SpecFileSelectRow" );
-    m_selects[typeindex] = new WComboBox( comboRow );
+    m_selects[typeindex] = comboRow->addNew<WComboBox>();
     m_selects[typeindex]->setInline( false );
     m_selects[typeindex]->addStyleClass( "SpecFileSelect" );
     m_selects[typeindex]->setNoSelectionEnabled( true );
     m_selects[typeindex]->setCurrentIndex( -1 );
-    m_selects[typeindex]->activated().connect( boost::bind( &CompactFileManager::handleFileChangeRequest,
-                                                        this, boost::placeholders::_1, type ) );
-    m_clearFileSelection[typeindex] = new WPushButton( comboRow );
+    m_selects[typeindex]->activated().connect( [this, type]( int row ){ handleFileChangeRequest( row, type ); } );
+    m_clearFileSelection[typeindex] = comboRow->addNew<WPushButton>();
     m_clearFileSelection[typeindex]->addStyleClass( "closeicon-wtdefault" );
     m_clearFileSelection[typeindex]->setHiddenKeepsGeometry( true );
     m_clearFileSelection[typeindex]->hide();
     HelpSystem::attachToolTipOn( m_clearFileSelection[typeindex], WString::tr("cfm-tt-clear-spectrum"), showToolTips, HelpSystem::ToolTipPosition::Right );
-    m_clearFileSelection[typeindex]->clicked().connect( boost::bind( &CompactFileManager::handleClearFileSelection, this, type ) );
-    
-    m_sampleDivs[typeindex] = new WContainerWidget( wrapper );
+    m_clearFileSelection[typeindex]->clicked().connect( [this, type](){ handleClearFileSelection( type ); } );
+
+    m_sampleDivs[typeindex] = wrapper->addNew<WContainerWidget>();
     m_sampleDivs[typeindex]->setStyleClass( "SampleSelectRow" );
 
-    m_prevSampleNumButtons[typeindex] = new WContainerWidget( m_sampleDivs[typeindex] );
+    m_prevSampleNumButtons[typeindex] = m_sampleDivs[typeindex]->addNew<WContainerWidget>();
     m_prevSampleNumButtons[typeindex]->setStyleClass( "PrevSampleNum" );
-    
+
     m_prevSampleNumButtons[typeindex]->clicked().connect(
-                 boost::bind( &CompactFileManager::handleUserIncrementSampleNum,
-                              this, type, false) );
-    
-    m_displayedPreTexts[typeindex] = new WText( m_sampleDivs[typeindex] );
-    WLineEdit *edit = new WLineEdit( m_sampleDivs[typeindex] );
+                 [this, type](){ handleUserIncrementSampleNum( type, false ); } );
+
+    m_displayedPreTexts[typeindex] = m_sampleDivs[typeindex]->addNew<WText>();
+    WLineEdit *edit = m_sampleDivs[typeindex]->addNew<WLineEdit>();
     edit->setAttributeValue( "ondragstart", "return false" );
     edit->addStyleClass( "SampleNumInput" );
-    edit->setValidator( validator );
+    edit->setValidator( validatorOwner );
     edit->setAutoComplete( false );
 #if( BUILD_AS_OSX_APP || IOS )
     edit->setAttributeValue( "autocorrect", "off" );
     edit->setAttributeValue( "spellcheck", "off" );
 #endif
     edit->setTextSize( 6 );
-    
-    HelpSystem::attachToolTipOn( edit, WString::tr("cfm-tt-sample-num"), showToolTips, HelpSystem::ToolTipPosition::Bottom );
-    
-    m_displaySampleNumEdits[typeindex] = edit;
-    
 
-    m_displayedPostTexts[typeindex] = new WText( m_sampleDivs[typeindex] );
-    m_nextSampleNumButtons[typeindex] = new WContainerWidget( m_sampleDivs[typeindex] );
+    HelpSystem::attachToolTipOn( edit, WString::tr("cfm-tt-sample-num"), showToolTips, HelpSystem::ToolTipPosition::Bottom );
+
+    m_displaySampleNumEdits[typeindex] = edit;
+
+
+    m_displayedPostTexts[typeindex] = m_sampleDivs[typeindex]->addNew<WText>();
+    m_nextSampleNumButtons[typeindex] = m_sampleDivs[typeindex]->addNew<WContainerWidget>();
     m_nextSampleNumButtons[typeindex]->addStyleClass( "NextNextSample" );
-    
-    
+
+
     m_nextSampleNumButtons[typeindex]->clicked().connect(
-                 boost::bind( &CompactFileManager::handleUserIncrementSampleNum,
-                              this, type, true) );
-    
+                 [this, type](){ handleUserIncrementSampleNum( type, true ); } );
+
     m_displaySampleNumEdits[typeindex]->enterPressed().connect(
-                 boost::bind( &CompactFileManager::handleUserChangeSampleNum,
-                              this, type ) );
-    
+                 [this, type](){ handleUserChangeSampleNum( type ); } );
+
     m_displaySampleNumEdits[typeindex]->blurred().connect(
-                 boost::bind( &CompactFileManager::handleSampleNumEditBlur,
-                              this, type ) );
-    
+                 [this, type](){ handleSampleNumEditBlur( type ); } );
+
     //m_sampleDivs[typeindex]->setHiddenKeepsGeometry( true );
 
 
-    m_titles[typeindex] = new WText( "", wrapper );
+    m_titles[typeindex] = wrapper->addNew<WText>( "" );
     m_titles[typeindex]->addStyleClass( "SpecTitle" );
     m_titles[typeindex]->setInline( false );
     m_titles[typeindex]->hide();
-    
+
     // Add in a empty div that flex-stretches to force the table down
-    WContainerWidget *stretcher = new WContainerWidget( wrapper );
-    stretcher->addStyleClass( "StretcherRow" );
-    
-    m_summaryTables[typeindex] = new WTable( wrapper );
-    m_summaryTables[typeindex]->addStyleClass( "SummaryTable" );
-    m_summaryTables[typeindex]->hide();
-    
-    stretcher = new WContainerWidget( wrapper );
+    WContainerWidget *stretcher = wrapper->addNew<WContainerWidget>();
     stretcher->addStyleClass( "StretcherRow" );
 
-    WContainerWidget *bottomrow = new WContainerWidget( wrapper );
+    m_summaryTables[typeindex] = wrapper->addNew<WTable>();
+    m_summaryTables[typeindex]->addStyleClass( "SummaryTable" );
+    m_summaryTables[typeindex]->hide();
+
+    stretcher = wrapper->addNew<WContainerWidget>();
+    stretcher->addStyleClass( "StretcherRow" );
+
+    WContainerWidget *bottomrow = wrapper->addNew<WContainerWidget>();
     bottomrow->addStyleClass( "BottomRow" );
     
-    m_scaleValueRow[typeindex] = new WContainerWidget( bottomrow ); 
+    m_scaleValueRow[typeindex] = bottomrow->addNew<WContainerWidget>();
     m_scaleValueRow[typeindex]->addStyleClass( "ScaleFactorRow" );
 
     if( type == SpecUtils::SpectrumType::Foreground )
@@ -312,109 +309,111 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       m_rescaleByLiveTime[typeindex] = nullptr;
     }else
     {
-      WLabel *label = new WLabel( WString::tr("cfm-scale-factor-label"), m_scaleValueRow[typeindex] );
-      m_scaleValueTxt[typeindex] = new NativeFloatSpinBox( m_scaleValueRow[typeindex] );
+      WLabel *label = m_scaleValueRow[typeindex]->addNew<WLabel>( WString::tr("cfm-scale-factor-label") );
+      m_scaleValueTxt[typeindex] = m_scaleValueRow[typeindex]->addNew<NativeFloatSpinBox>();
       label->setBuddy( m_scaleValueTxt[typeindex] );
       //m_scaleValueTxt[typeindex]->setSingleStep(0.1);
       m_scaleValueTxt[typeindex]->setSpinnerHidden( true );
       m_scaleValueTxt[typeindex]->setRange( 0.0, 1000000.0 );
       m_scaleValueTxt[typeindex]->addStyleClass( "SpecNormTxt" );
       m_scaleValueTxt[typeindex]->setFormatString( "%.4G" );
-      m_scaleValueTxt[typeindex]->valueChanged().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactor, this, type) );
-      m_scaleValueTxt[typeindex]->mouseWheel().connect( boost::bind( &CompactFileManager::handleUserEnterdScaleFactorWheel, this, type,
-          boost::placeholders::_1) );
-      
+      m_scaleValueTxt[typeindex]->valueChanged().connect( [this, type](){ handleUserEnterdScaleFactor( type ); } );
+      m_scaleValueTxt[typeindex]->mouseWheel().connect( [this, type]( WMouseEvent e ){ handleUserEnterdScaleFactorWheel( type, e ); } );
+
       HelpSystem::attachToolTipOn( m_scaleValueTxt[typeindex], WString::tr("cfm-tt-scale-factor"), showToolTips );
-      
-      
-      m_rescaleByLiveTime[typeindex] = new WPushButton( WString::tr("cfm-norm-btn"), m_scaleValueRow[typeindex] );
+
+
+      m_rescaleByLiveTime[typeindex] = m_scaleValueRow[typeindex]->addNew<WPushButton>( WString::tr("cfm-norm-btn") );
       m_rescaleByLiveTime[typeindex]->hide();
-      m_rescaleByLiveTime[typeindex]->clicked().connect( boost::bind( &CompactFileManager::handleRenormalizeByLIveTime, this, type) );
+      m_rescaleByLiveTime[typeindex]->clicked().connect( [this, type](){ handleRenormalizeByLIveTime( type ); } );
       m_scaleValueTxt[typeindex]->disable();
     }//if( type == SpecUtils::SpectrumType::Foreground ) / else
-    
-    WContainerWidget *btndiv = new WContainerWidget( bottomrow );
+
+    WContainerWidget *btndiv = bottomrow->addNew<WContainerWidget>();
     btndiv->addStyleClass( "InfoBtns" );
-    
-    m_showRidIdResult[typeindex] = new WPushButton( WString::tr("cfm-show-rid-result-btn"), btndiv );
+
+    m_showRidIdResult[typeindex] = btndiv->addNew<WPushButton>( WString::tr("cfm-show-rid-result-btn") );
     m_showRidIdResult[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
-    m_showRidIdResult[typeindex]->clicked().connect( boost::bind( &InterSpec::showRiidResults, m_interspec, type ) );
+    m_showRidIdResult[typeindex]->clicked().connect( [this, type](){ m_interspec->showRiidResults( type ); } );
     //HelpSystem::attachToolTipOn( m_showRidIdResult[typeindex], WString::tr("app-mi-tt-view-rid"), showToolTips );
     m_showRidIdResult[typeindex]->hide();
-    
-    m_showImage[typeindex] = new WPushButton( WString::tr("cfm-show-image-btn"), btndiv );
+
+    m_showImage[typeindex] = btndiv->addNew<WPushButton>( WString::tr("cfm-show-image-btn") );
     m_showImage[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
-    m_showImage[typeindex]->clicked().connect( boost::bind( &InterSpec::showMultimedia, m_interspec, type ) );
+    m_showImage[typeindex]->clicked().connect( [this, type](){ m_interspec->showMultimedia( type ); } );
     //HelpSystem::attachToolTipOn( m_showImage[typeindex], WString::tr("app-mi-tt-view-img"), showToolTips );
     m_showImage[typeindex]->hide();
-    
-    m_moreInfoBtn[typeindex] = new WPushButton( WString::tr("cfm-more-info-btn"), btndiv );
+
+    m_moreInfoBtn[typeindex] = btndiv->addNew<WPushButton>( WString::tr("cfm-more-info-btn") );
     m_moreInfoBtn[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
-    m_moreInfoBtn[typeindex]->clicked().connect( boost::bind(&InterSpec::createFileParameterWindow, m_interspec, type) );
+    m_moreInfoBtn[typeindex]->clicked().connect( [this, type](){ m_interspec->createFileParameterWindow( type ); } );
     m_moreInfoBtn[typeindex]->hide();
-    
+
     //Lets add in a few more customizations based on the display type
     switch( type )
     {
       case SpecUtils::SpectrumType::Foreground:
       {
-        WContainerWidget *foregroundBtns = new WContainerWidget( (m_displayMode == LeftToRight) ? this : wrapper );
+        WContainerWidget *outerContainer = (m_displayMode == LeftToRight) ? this : wrapper;
+        WContainerWidget *foregroundBtns = outerContainer->addNew<WContainerWidget>();
         foregroundBtns->addStyleClass( "CompactManagerButtons" );
-        
+
         //Foreground, add in Manager and Library buttons for quick access
-        WContainerWidget *helpBtn = new WContainerWidget( foregroundBtns );
+        WContainerWidget *helpBtn = foregroundBtns->addNew<WContainerWidget>();
         helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-        helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "compact-file-manager" ) );
-        
-        WPushButton *fileManagerBtn = new WPushButton( WString::tr("app-mi-file-manager"), foregroundBtns );
+        helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "compact-file-manager" ); } );
+
+        WPushButton *fileManagerBtn = foregroundBtns->addNew<WPushButton>( WString::tr("app-mi-file-manager") );
         fileManagerBtn->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
         fileManagerBtn->addStyleClass( "LinkBtn" );
 #if( USE_DB_TO_STORE_SPECTRA )
-        WPushButton *prevSpectraBtn = new WPushButton( WString::tr("app-mi-file-prev"), foregroundBtns );
+        WPushButton *prevSpectraBtn = foregroundBtns->addNew<WPushButton>( WString::tr("app-mi-file-prev") );
         prevSpectraBtn->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
         prevSpectraBtn->addStyleClass( "LinkBtn" );
 #endif
         break;
       }//case SpecUtils::SpectrumType::Foreground:
-      
+
       case SpecUtils::SpectrumType::SecondForeground:
       {
-        WContainerWidget *secondaryBtns = new WContainerWidget( (m_displayMode == LeftToRight) ? this : wrapper );
+        WContainerWidget *outerContainer = (m_displayMode == LeftToRight) ? this : wrapper;
+        WContainerWidget *secondaryBtns = outerContainer->addNew<WContainerWidget>();
         secondaryBtns->addStyleClass( "SecondForegroundBtns" );
-        
-        m_swapSecondaryWithForegroundBtn = new WPushButton( WString::tr("cfm-swap-secondary-with-foreground-btn"), secondaryBtns );
+
+        m_swapSecondaryWithForegroundBtn = secondaryBtns->addNew<WPushButton>( WString::tr("cfm-swap-secondary-with-foreground-btn") );
         HelpSystem::attachToolTipOn( m_swapSecondaryWithForegroundBtn, WString::tr("cfm-tt-swap-secondary-with-foreground-btn"), showToolTips );
-        m_swapSecondaryWithForegroundBtn->clicked().connect( boost::bind( &CompactFileManager::handleSwapWithForeground, this, SpecUtils::SpectrumType::SecondForeground ) );
+        m_swapSecondaryWithForegroundBtn->clicked().connect( [this](){ handleSwapWithForeground( SpecUtils::SpectrumType::SecondForeground ); } );
         m_swapSecondaryWithForegroundBtn->addStyleClass( "LinkBtn" );
         m_swapSecondaryWithForegroundBtn->hide();
-        
-        WContainerWidget *stretcher = new WContainerWidget( secondaryBtns );
+
+        WContainerWidget *stretcher = secondaryBtns->addNew<WContainerWidget>();
         stretcher->addStyleClass( "StretcherRow" );
-        
-        WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), secondaryBtns );
+
+        WPushButton *refSpectraBtn = secondaryBtns->addNew<WPushButton>( WString::tr("cfm-ref-spectra-btn") );
         refSpectraBtn->clicked().connect( this, &CompactFileManager::handleCreateReferenceSpectrumDialog );
-        
+
         refSpectraBtn->addStyleClass( "LinkBtn" );
-        
+
         break;
       }//case SpecUtils::SpectrumType::SecondForeground:
-          
+
       case SpecUtils::SpectrumType::Background:
       {
-        WContainerWidget *backgroundBtns = new WContainerWidget( (m_displayMode == LeftToRight) ? this : wrapper );
+        WContainerWidget *outerContainer = (m_displayMode == LeftToRight) ? this : wrapper;
+        WContainerWidget *backgroundBtns = outerContainer->addNew<WContainerWidget>();
         backgroundBtns->addStyleClass( "BackgroundBtns" );
-        
-        m_swapBackgroundWithForegroundBtn = new WPushButton( WString::tr("cfm-swap-back-with-foreground-btn"), backgroundBtns );
+
+        m_swapBackgroundWithForegroundBtn = backgroundBtns->addNew<WPushButton>( WString::tr("cfm-swap-back-with-foreground-btn") );
         HelpSystem::attachToolTipOn( m_swapBackgroundWithForegroundBtn, WString::tr("cfm-tt-swap-back-with-foreground-btn"), showToolTips );
-        m_swapBackgroundWithForegroundBtn->clicked().connect( boost::bind( &CompactFileManager::handleSwapWithForeground, this, SpecUtils::SpectrumType::Background ) );
+        m_swapBackgroundWithForegroundBtn->clicked().connect( [this](){ handleSwapWithForeground( SpecUtils::SpectrumType::Background ); } );
         m_swapBackgroundWithForegroundBtn->addStyleClass( "LinkBtn" );
         m_swapBackgroundWithForegroundBtn->hide();
         break;
       }
     }//switch( type )
   }//for( int j = 0; j < 3; ++j )
-  
-    
+
+
   // Then actually pull in the available files. If there are none, say so.
   refreshContents();
 
@@ -422,9 +421,10 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   m_files->rowsInserted().connect( this, &CompactFileManager::refreshContents );
   m_files->rowsRemoved().connect( this, &CompactFileManager::refreshContents );
   hostViewer->displayedSpectrumChanged().connect(
-                          boost::bind( &CompactFileManager::handleDisplayChange,
-                                       this, boost::placeholders::_1, boost::placeholders::_2,
-                                      boost::placeholders::_3, boost::placeholders::_4 ) );
+                          [this]( SpecUtils::SpectrumType t, std::shared_ptr<SpecMeas> m,
+                                  std::set<int> s, std::vector<std::string> d ){
+                            handleDisplayChange( t, m, s, d );
+                          } );
 }//CompactFileManager constructor
 
 
@@ -997,72 +997,72 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
   const int num_info_col = 3;
   
   WTableCell *cell = table->elementAt( table_pos / num_info_col, 2*(table_pos % num_info_col) );
-  new WText( live_time_label, cell );
+  cell->addNew<WText>( live_time_label );
   cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
   const string live_time_str = PhysicalUnits::printToBestTimeUnits(live_time, 4);
-  WText *valTxt = new WText( live_time_str, cell );
-  
+  WText *valTxt = cell->addNew<WText>( live_time_str );
+
   // Set tool-tip to be in number of seconds, jic its useful
   snprintf( buffer, sizeof(buffer), "%.3f", live_time );
   valTxt->setToolTip( WString("{1}: {2} {3}").arg(live_time_str).arg(buffer).arg(second_label) );
-  
+
   table_pos += 1;
   cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-  new WText( real_time_label, cell );
+  cell->addNew<WText>( real_time_label );
   cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
   const string real_time_str = PhysicalUnits::printToBestTimeUnits(real_time, 4);
-  valTxt = new WText( real_time_str, cell );
-  
+  valTxt = cell->addNew<WText>( real_time_str );
+
   // Set tool-tip to be in number of seconds, jic its useful
   snprintf( buffer, sizeof(buffer), "%.3f", real_time );
   valTxt->setToolTip( WString("{1}: {2} {3}").arg(real_time_str).arg(buffer).arg(second_label) );
-  
+
   table_pos += 1;
   const double dead_time = 100*(real_time - live_time) / real_time;
   snprintf( buffer, sizeof(buffer), "%.2f%%", dead_time );
   cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-  new WText( WString::tr("d3sdd-deadTime"), cell );
+  cell->addNew<WText>( WString::tr("d3sdd-deadTime") );
   cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-  new WText( buffer, cell );
-  
+  cell->addNew<WText>( buffer );
+
   const double gamma_cps = hist->gamma_count_sum() / hist->live_time();
   if( !IsInf(gamma_cps) && !IsNan(gamma_cps) && (gamma_cps > 0) )
   {
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    new WText( WString::tr("cfm-gamma-cps"), cell );
+    cell->addNew<WText>( WString::tr("cfm-gamma-cps") );
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-    new WText( SpecUtils::printCompact(gamma_cps, 5), cell );
+    cell->addNew<WText>( SpecUtils::printCompact(gamma_cps, 5) );
   }//if( print gamma CPS )
-  
+
   if( hist->contained_neutron() )
   {
     const double num_neut = hist->neutron_counts_sum();
     const float neut_live_time = hist->neutron_live_time();
-    
+
     if( neut_live_time != hist->real_time() )
     {
       table_pos += 1;
       cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-      new WText( WString::tr("cfm-neut-live-time"), cell );
+      cell->addNew<WText>( WString::tr("cfm-neut-live-time") );
       cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-      new WText( PhysicalUnits::printToBestTimeUnits(hist->neutron_live_time(), 3), cell );
+      cell->addNew<WText>( PhysicalUnits::printToBestTimeUnits(hist->neutron_live_time(), 3) );
     }
-    
+
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    new WText( WString::tr("cfm-neut-counts"), cell );
+    cell->addNew<WText>( WString::tr("cfm-neut-counts") );
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-    new WText( SpecUtils::printCompact(num_neut, 5), cell );
-    
+    cell->addNew<WText>( SpecUtils::printCompact(num_neut, 5) );
+
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    new WText( WString::tr("cfm-neut-cps"), cell );
+    cell->addNew<WText>( WString::tr("cfm-neut-cps") );
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-    new WText( SpecUtils::printCompact(num_neut/neut_live_time, 5), cell );
+    cell->addNew<WText>( SpecUtils::printCompact(num_neut/neut_live_time, 5) );
   }//if( hist->contained_neutron() )
-  
-  
+
+
   if( !SpecUtils::is_special(hist->start_time()) )
   {
     string vax_time = SpecUtils::to_vax_string(hist->start_time());
@@ -1073,80 +1073,81 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
       datestr = vax_time.substr(0, split_pos);
       timestr = vax_time.substr(split_pos + 1);
     }
-    
+
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    new WText( WString::tr("cfm-date"), cell );
+    cell->addNew<WText>( WString::tr("cfm-date") );
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-    new WText( datestr, cell );
-    
+    cell->addNew<WText>( datestr );
+
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    new WText( WString::tr("cfm-start-time"), cell );
+    cell->addNew<WText>( WString::tr("cfm-start-time") );
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-    new WText( timestr, cell );
+    cell->addNew<WText>( timestr );
   }//if( valid start time )
-  
-  
+
+
   if( hist->has_gps_info() )
   {
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    new WText( WString::tr("cfm-gps"), cell );
+    cell->addNew<WText>( WString::tr("cfm-gps") );
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-    
+
     snprintf( buffer, sizeof(buffer), "%.4f,%.4f", hist->latitude(), hist->longitude() );
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
     snprintf( buffer, sizeof(buffer), "%.4f,%.4f", hist->latitude(), hist->longitude() );
-    WPushButton *gps = new WPushButton( buffer, cell );
+    WPushButton *gps = cell->addNew<WPushButton>( buffer );
     gps->addStyleClass( "LinkBtn GpsBtn" );
-    gps->clicked().connect( boost::bind( &InterSpec::createMapWindow, m_interspec, type, false) );
-    
+    gps->clicked().connect( [this, type](){ m_interspec->createMapWindow( type, false ); } );
+
     snprintf( buffer, sizeof(buffer), "%.6f,%.6f - click to show a map", hist->latitude(), hist->longitude() );
     gps->setToolTip( buffer );
 #else
     // Make a link to google maps
     WString coordText = WString::fromUTF8(buffer);
     snprintf( buffer, sizeof(buffer), "https://maps.google.com/?q=%.7f,%.7f", hist->latitude(), hist->longitude() );
-    WAnchor *mapLink = new WAnchor( WLink(buffer), coordText, cell );
-    mapLink->setTarget( AnchorTarget::TargetNewWindow );
+    WLink mapLinkTarget( WLink::Type::Url, buffer );
+    mapLinkTarget.setTarget( Wt::LinkTarget::NewWindow );
+    WAnchor *mapLink = cell->addNew<WAnchor>( mapLinkTarget, coordText );
     mapLink->setToolTip( "Will open a web browser window showing this location." );
 #endif
   }//if( hist->has_gps_info() )
-  
+
   if( meas && !meas->manufacturer().empty() )
   {
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    new WText( WString::tr("cfm-manufacturer"), cell );
+    cell->addNew<WText>( WString::tr("cfm-manufacturer") );
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-    WText *txt = new WText( meas->manufacturer(), cell );
+    WText *txt = cell->addNew<WText>( meas->manufacturer() );
     if( meas->manufacturer().size() > 10 )
       txt->setToolTip( meas->manufacturer() );
   }
-  
+
   if( meas && !meas->instrument_model().empty() )
   {
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    new WText( WString::tr("cfm-model"), cell );
+    cell->addNew<WText>( WString::tr("cfm-model") );
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-    WText *txt = new WText( meas->instrument_model(), cell );
-    
+    WText *txt = cell->addNew<WText>( meas->instrument_model() );
+
     if( meas->instrument_model().size() > 10 )
       txt->setToolTip( meas->instrument_model() );
   }else if( meas && (meas->detector_type() != SpecUtils::DetectorType::Unknown) )
   {
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    new WText( WString::tr("cfm-model"), cell );
+    cell->addNew<WText>( WString::tr("cfm-model") );
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
     const string &dt = SpecUtils::detectorTypeToString( meas->detector_type() );
-    WText *txt = new WText( dt, cell );
+    WText *txt = cell->addNew<WText>( dt );
     if( dt.size() > 10 )
       txt->setToolTip( dt );
   }
-  
+
   // 5 rows is really too much, so we'll skip source type if this will be the case
   if( (((table_pos + 1) / num_info_col) < 4)
      && (sample_numbers.size() == 1)
@@ -1154,9 +1155,9 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
   {
     table_pos += 1;
     cell = table->elementAt(table_pos / num_info_col, 2*(table_pos % num_info_col) );
-    WLabel *label = new WLabel( WString::tr("cfm-meas-type"), cell );
-    
-    
+    WLabel *label = cell->addNew<WLabel>( WString::tr("cfm-meas-type") );
+
+
     WString spec_type;
     switch( hist->source_type() )
     {
@@ -1176,10 +1177,10 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
         spec_type = WString::tr("Unknown");
         break;
     }//switch( hist->source_type() )
-    
+
     cell = table->elementAt(table_pos / num_info_col, 1 + 2*(table_pos % num_info_col) );
-    WText *val = new WText( spec_type, cell );
-    
+    WText *val = cell->addNew<WText>( spec_type );
+
     label->setToolTip( WString::tr("cfm-tt-meas-type") );
     val->setToolTip( WString::tr("cfm-tt-meas-type") );
     //const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", hostViewer );

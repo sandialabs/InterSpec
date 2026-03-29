@@ -23,17 +23,17 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WText>
-#include <Wt/WPoint>
-#include <Wt/WLabel>
-#include <Wt/WString>
-#include <Wt/WAnchor>
-#include <Wt/WCheckBox>
-#include <Wt/WJavaScript>
-#include <Wt/WPushButton>
-#include <Wt/WEnvironment>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WPoint.h>
+#include <Wt/WLabel.h>
+#include <Wt/WString.h>
+#include <Wt/WAnchor.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WEnvironment.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
@@ -47,7 +47,7 @@
 using namespace Wt;
 using namespace std;
 
-#include <Wt/WPopupWidget>
+#include <Wt/WPopupWidget.h>
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
@@ -697,7 +697,9 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
       setupDesktopMenuStuff();
     }else
     {
-      menuParent->setMenu( this );
+      // Wt4_TODO: setMenu takes unique_ptr in Wt 4 - this self-referential ownership needs rework
+      //  For now, we transfer ownership from our parent to the button
+      menuParent->setMenu( std::unique_ptr<WPopupMenu>( this ) );
         
       const string js = "function(){"
         //"let fcn = function(){"
@@ -756,8 +758,9 @@ Wt::WMenuItem *PopupDivMenu::addSeparatorAt( int index )
   
   if( (index >= 0) && (indexOf(item) != index) )
   {
-    removeItem( item );
-    WMenu::insertItem( index, item );
+    // In Wt4, removeItem returns unique_ptr; insertItem takes unique_ptr
+    auto itemPtr = removeItem( item );
+    WMenu::insertItem( index, std::move(itemPtr) );
   }
   
 #if( USE_OSX_NATIVE_MENU )
@@ -836,7 +839,7 @@ void PopupDivMenu::setHidden( bool hidden, const Wt::WAnimation &animation )
 void PopupDivMenu::showMobile()
 {
   if( m_menuParent )
-    popup( m_menuParent, Wt::Vertical );
+    popup( m_menuParent, Wt::Orientation::Vertical );
   else
     popup( {0,0} );
   
@@ -1029,7 +1032,7 @@ void PopupDivMenu::mobileDoHide()
 {
   assert( m_mobile );
   if( m_mobile )
-    setHidden(true, WAnimation(WAnimation::SlideInFromLeft,WAnimation::Linear,200));
+    setHidden(true, WAnimation(AnimationEffect::SlideInFromLeft,TimingFunction::Linear,200));
 }//void mobileDoHide()
 
 
@@ -1050,7 +1053,7 @@ PopupDivMenuItem *PopupDivMenu::addWidget( Wt::WWidget *widget,
   if( !dynamic_cast<WCheckBox *>(widget) )
     item->addStyleClass( "PopupDivMenuWidget" );
   
-  item->addWidget( widget );
+  item->addWidget( std::unique_ptr<WWidget>(widget) );
   
   // We could `item->anchor()->hide();`, but we dont appear to need to.
   
@@ -1100,19 +1103,20 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
   if( !closeMenuOnActivation )
   {
     item->setSelectable( false );
-    item->clicked().connect( boost::bind(&doTriggeredEmit, item) );
+    item->clicked().connect( [item](){ doTriggeredEmit( item ); } );
     item->clicked().preventPropagation();
     Wt::WAnchor *a = item->anchor();
     if( a )
     {
       item->anchor()->clicked().preventPropagation();
-      item->anchor()->clicked().connect( boost::bind(&doTriggeredEmit, item) );
+      item->anchor()->clicked().connect( [item](){ doTriggeredEmit( item ); } );
     }
   }
   
 
-  WMenu::insertItem( ((index >= 0) ? index : count()), item );
-  
+  // In Wt4, insertItem takes unique_ptr; item raw pointer remains valid after ownership transfer
+  WMenu::insertItem( ((index >= 0) ? index : count()), std::unique_ptr<WMenuItem>(item) );
+
   //addItem( item );
   
   if( m_mobile && closeMenuOnActivation )
@@ -1173,8 +1177,9 @@ PopupDivMenuItem *PopupDivMenu::addPhoneBackItem( PopupDivMenu *parent )
   const char *txt = parent ? "Previous" : "Close";
   const char *icon = parent ? "InterSpec_resources/images/back-alt-16.png" : "InterSpec_resources/images/menuclose.png";
   PopupDivMenuItem *backitem = new PopupDivMenuItem( txt, icon );
-  
-  addItem( backitem );
+
+  // In Wt4, addItem takes unique_ptr; raw pointer remains valid after ownership transfer
+  addItem( std::unique_ptr<WMenuItem>(backitem) );
   
   if( parent )
   {
@@ -1206,7 +1211,7 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     menu->m_parentItem->clicked().preventPropagation();
     menu->m_parentItem->clicked().preventDefaultAction();
     menu->m_parentItem->setStyleClass( "submenu" );
-    menu->m_parentItem->setMargin(10,Wt::Right);
+    menu->m_parentItem->setMargin(10,Wt::Side::Right);
     menu->m_parentItem->triggered().connect( menu, &PopupDivMenu::showMobile );
     menu->addPhoneBackItem( this );
   }else
@@ -1224,7 +1229,8 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     menu->setMargin( 25, Wt::Top );
 #endif
     
-    menu->m_parentItem = addMenu( iconPath, text, menu );
+    // In Wt4, addMenu takes unique_ptr<WMenu>; raw pointer `menu` remains valid after transfer
+    menu->m_parentItem = addMenu( iconPath, text, std::unique_ptr<WMenu>(menu) );
     
     menu->m_parentItem->clicked().preventPropagation();
     menu->m_parentItem->clicked().preventDefaultAction();
@@ -1248,7 +1254,7 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
 
 PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
                                     const std::string &iconPath )
-  : WMenuItem( iconPath, text, 0, WMenuItem::PreLoading )
+  : WMenuItem( iconPath, text, nullptr, ContentLoading::Lazy )
 #if( USE_OSX_NATIVE_MENU )
    , m_nsmenu( 0 )
    , m_nsmenuitem( 0 )
@@ -1306,7 +1312,7 @@ void PopupDivMenuItem::makeTextXHTML()
       WLabel *label = dynamic_cast<WLabel *>(a->widget(i));
       if( label )
       {
-        label->setTextFormat( Wt::XHTMLText );
+        label->setTextFormat( Wt::TextFormat::XHTML );
         return;
       }
     }

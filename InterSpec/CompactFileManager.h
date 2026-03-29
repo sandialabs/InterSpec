@@ -27,7 +27,7 @@
 
 #include <string>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 namespace Wt
 {
@@ -59,8 +59,7 @@ public:
   
   CompactFileManager( SpecMeasManager *fullFileManager,
                       InterSpec *hostViewer,
-                      DisplayMode mode,
-                      Wt::WContainerWidget *parent = 0 );
+                      DisplayMode mode );
   ~CompactFileManager();
 
   void refreshContents();

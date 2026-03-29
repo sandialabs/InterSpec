@@ -39,28 +39,28 @@
 #include <boost/iostreams/device/back_inserter.hpp>
 
 
-#include <Wt/Dbo/Dbo>
-#include <Wt/WString>
-#include <Wt/WSpinBox>
-#include <Wt/WCheckBox>
-#include <Wt/WApplication>
-#include <Wt/WRadioButton>
-#include <Wt/WDoubleSpinBox>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/WString.h>
+#include <Wt/WSpinBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WApplication.h>
+#include <Wt/WRadioButton.h>
+#include <Wt/WDoubleSpinBox.h>
 
 #if( HAS_WTDBOSQLITE3 )
-#include "Wt/Dbo/backend/Sqlite3"
+#include <Wt/Dbo/backend/Sqlite3.h>
 #endif
 
 #if( HAS_WTDBOMYSQL )
-#include "Wt/Dbo/backend/MySQL"
+#include <Wt/Dbo/backend/MySQL.h>
 #endif
 
 #if( HAS_WTDBOPOSTGRES )
-#include "Wt/Dbo/backend/Postgres"
+#include <Wt/Dbo/backend/Postgres.h>
 #endif
 
 #if( HAS_WTDBOFIREBIRD )
-#include "Wt/Dbo/backend/Firebird"
+#include <Wt/Dbo/backend/Firebird.h>
 #endif
 
 #include "3rdparty/date/include/date/date.h"
@@ -107,6 +107,103 @@ namespace Wt
     {
       return statement->getResult(column, &v, size);
     }
+    // Wt4_TODO: Migrate ptime fields to std::chrono and remove this trait
+    std::string sql_value_traits<boost::posix_time::ptime, void>
+    ::type( SqlConnection *conn, int size )
+    {
+      return "text";
+    }
+
+    void sql_value_traits<boost::posix_time::ptime, void>
+    ::bind( const boost::posix_time::ptime &v, SqlStatement *statement,
+            int column, int size )
+    {
+      if( v.is_special() )
+        statement->bindNull( column );
+      else
+        statement->bind( column, boost::posix_time::to_iso_extended_string( v ) );
+    }
+
+    bool sql_value_traits<boost::posix_time::ptime, void>
+    ::read( boost::posix_time::ptime &v, SqlStatement *statement,
+            int column, int size )
+    {
+      std::string s;
+      if( !statement->getResult( column, &s, size ) )
+      {
+        v = boost::posix_time::ptime();
+        return false;
+      }
+
+      try
+      {
+        // Try ISO extended format first (what we write): "2024-03-15T14:30:22"
+        v = boost::posix_time::from_iso_extended_string( s );
+      }catch(...)
+      {
+        try
+        {
+          // Try ISO string format (what Wt 3 may have written): "20240315T143022"
+          v = boost::posix_time::from_iso_string( s );
+        }catch(...)
+        {
+          try
+          {
+            // Try simple string format: "2024-Mar-15 14:30:22"
+            v = boost::posix_time::time_from_string( s );
+          }catch(...)
+          {
+            v = boost::posix_time::ptime();
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+    std::string sql_value_traits<boost::posix_time::time_duration, void>
+    ::type( SqlConnection *conn, int size )
+    {
+      return "bigint";
+    }
+
+    void sql_value_traits<boost::posix_time::time_duration, void>
+    ::bind( const boost::posix_time::time_duration &v, SqlStatement *statement,
+            int column, int size )
+    {
+      if( v.is_special() )
+        statement->bindNull( column );
+      else
+        statement->bind( column, static_cast<long long>( v.total_milliseconds() ) );
+    }
+
+    bool sql_value_traits<boost::posix_time::time_duration, void>
+    ::read( boost::posix_time::time_duration &v, SqlStatement *statement,
+            int column, int size )
+    {
+      // Try reading as long long first (milliseconds - what we write)
+      long long ms = 0;
+      if( !statement->getResult( column, &ms ) )
+      {
+        // If that fails, try reading as string (what Wt 3 may have stored)
+        std::string s;
+        if( !statement->getResult( column, &s, size ) )
+        {
+          v = boost::posix_time::time_duration();
+          return false;
+        }
+        try
+        {
+          v = boost::posix_time::duration_from_string( s );
+        }catch(...)
+        {
+          v = boost::posix_time::time_duration();
+          return false;
+        }
+        return true;
+      }
+      v = boost::posix_time::milliseconds( ms );
+      return true;
+    }
   }//namespace Dbo
 }//namespace Wt
 
@@ -146,7 +243,7 @@ const std::string InterSpecUser::sm_defaultPreferenceFile = "default_preferences
 namespace
 {
   
-  /** Compares two boost::any objects to check if their underlying type is
+  /** Compares two Wt::cpp17::any objects to check if their underlying type is
    the same, and if so, if their values are equal.
    
    Currently only supports underlying types of std::string, bool, int, double
@@ -154,7 +251,7 @@ namespace
    
    Throws exception if types are not supported.
    */
-  bool boost_any_equal( const boost::any& lhs, const boost::any& rhs )
+  bool boost_any_equal( const Wt::cpp17::any& lhs, const Wt::cpp17::any& rhs )
   {
    
     if( lhs.type() == typeid(std::string) )
@@ -162,7 +259,7 @@ namespace
       if( rhs.type() != typeid(std::string) )
         return false;
       
-      return boost::any_cast<std::string>(lhs) == boost::any_cast<std::string>(rhs);
+      return Wt::cpp17::any_cast<std::string>(lhs) == Wt::cpp17::any_cast<std::string>(rhs);
     }//if( string )
     
     
@@ -173,14 +270,14 @@ namespace
       
       double lhsval, rhsval;
       if( lhs.type() == typeid(double) )
-        lhsval = boost::any_cast<double>(lhs);
+        lhsval = Wt::cpp17::any_cast<double>(lhs);
       else
-        lhsval = boost::any_cast<float>(lhs);
+        lhsval = Wt::cpp17::any_cast<float>(lhs);
       
       if( rhs.type() == typeid(double) )
-        rhsval = boost::any_cast<double>(rhs);
+        rhsval = Wt::cpp17::any_cast<double>(rhs);
       else
-        rhsval = boost::any_cast<float>(rhs);
+        rhsval = Wt::cpp17::any_cast<float>(rhs);
       
       return lhsval == rhsval;
     }//if( double or float )
@@ -192,18 +289,18 @@ namespace
       
       int64_t lhsval, rhsval;
       if( lhs.type() == typeid(int) )
-        lhsval = boost::any_cast<int>(lhs);
+        lhsval = Wt::cpp17::any_cast<int>(lhs);
       else if( lhs.type() == typeid(unsigned int) )
-        lhsval = boost::any_cast<unsigned int>(lhs);
+        lhsval = Wt::cpp17::any_cast<unsigned int>(lhs);
       else
-        lhsval = boost::any_cast<long long>(lhs);
+        lhsval = Wt::cpp17::any_cast<long long>(lhs);
       
       if( rhs.type() == typeid(int) )
-        rhsval = boost::any_cast<int>(rhs);
+        rhsval = Wt::cpp17::any_cast<int>(rhs);
       else if( rhs.type() == typeid(unsigned int) )
-        rhsval = boost::any_cast<unsigned int>(rhs);
+        rhsval = Wt::cpp17::any_cast<unsigned int>(rhs);
       else
-        rhsval = boost::any_cast<long long>(rhs);
+        rhsval = Wt::cpp17::any_cast<long long>(rhs);
       
       return lhsval == rhsval;
     }
@@ -213,7 +310,7 @@ namespace
       if( rhs.type() != typeid(bool) )
         return false;
       
-      return boost::any_cast<bool>(lhs) == boost::any_cast<bool>(rhs);
+      return Wt::cpp17::any_cast<bool>(lhs) == Wt::cpp17::any_cast<bool>(rhs);
     }//if( string )
     
     cerr << "boost_any_equal: unimplemented type encountered" << endl;
@@ -534,8 +631,8 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
   
   try
   {
-    Dbo::ptr<UserFileInDb> answer = session->add( newfile );
-  
+    Dbo::ptr<UserFileInDb> answer = session->add( std::unique_ptr<UserFileInDb>(newfile) );
+
     // The passed in `UserFileInDb` may not actually be in the database, so we have to check
     //  for this.
     if( !orig.isTransient() )
@@ -545,7 +642,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
       {
         UserFileInDbData *newdata = new UserFileInDbData( **iter );
         newdata->fileInfo = answer;
-        session->add( newdata );
+        session->add( std::unique_ptr<UserFileInDbData>(newdata) );
       }
       
       /*
@@ -735,7 +832,7 @@ UserFileInDbData::UserFileInDbData()
 }
 
 
-boost::any UserOption::value() const
+Wt::cpp17::any UserOption::value() const
 {
   if( m_name.empty() || ((m_type != String) && m_value.empty()) )
     throw runtime_error( "UserOption::value(): un-initialized UserOption" );
@@ -777,8 +874,8 @@ boost::any UserOption::value() const
   }//switch( m_type )
   
   throw runtime_error( "UserOption::value(): invalid m_type" );
-  return boost::any();
-}//boost::any value() const
+  return Wt::cpp17::any();
+}//Wt::cpp17::any value() const
 
 
 InterSpecUser::InterSpecUser()

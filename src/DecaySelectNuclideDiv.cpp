@@ -31,20 +31,20 @@
 #include <sstream>
 #include <iostream>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WString>
-#include <Wt/WSignal>
-#include <Wt/WSpinBox>
-#include <Wt/WComboBox>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WSelectionBox>
-#include <Wt/WContainerWidget>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WRegExpValidator>
-#include <Wt/WDoubleValidator>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WString.h>
+#include <Wt/WSignal.h>
+#include <Wt/WSpinBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WSelectionBox.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WRegExpValidator.h>
+#include <Wt/WDoubleValidator.h>
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -81,8 +81,8 @@ namespace
 
 
 
-DecaySelectNuclide::DecaySelectNuclide( const bool phone, Wt::WContainerWidget *parent, AuxWindow *auxWindow )
-  : WContainerWidget( parent ),
+DecaySelectNuclide::DecaySelectNuclide( const bool phone, AuxWindow *auxWindow )
+  : WContainerWidget(),
     m_phone( phone ),
     m_footer(auxWindow->footer()),
     m_auxWindow(auxWindow),
@@ -102,8 +102,7 @@ DecaySelectNuclide::DecaySelectNuclide( const bool phone, Wt::WContainerWidget *
 
 DecaySelectNuclide::~DecaySelectNuclide()
 {
-  if( m_isotopeSuggestions )
-    delete m_isotopeSuggestions;
+  // m_isotopeSuggestions is owned by wApp->domRoot() and should not be deleted here
 }
 
 //Wt::Signal<int,int,int,double,std::string,double> &DecaySelectNuclide::selected()
@@ -112,7 +111,7 @@ Wt::Signal<NuclideSelectedInfo> &DecaySelectNuclide::selected()
   return m_selectedSignal;
 }
 
-Wt::Signal<void> &DecaySelectNuclide::done()
+Wt::Signal<> &DecaySelectNuclide::done()
 {
   return m_doneSignal;
 }
@@ -222,13 +221,19 @@ void DecaySelectNuclide::init()
   
   WContainerWidget::clear();
   
-  WLabel *label = 0;
-  m_elementSelection         = new WSelectionBox();
-  m_massSelection            = new WSelectionBox();
-  m_nuclideActivityEdit      = new WLineEdit();
-  m_nuclideAgeEdit           = new WLineEdit();
-  m_selectedIsotopeHalfLife  = new WText( WString("{1}=").arg(WString::tr("T1/2")) );
-  m_isotopeSearch            = new WLineEdit();
+  WLabel *label = nullptr;
+  auto elSelOwned    = make_unique<WSelectionBox>();
+  auto massSelOwned  = make_unique<WSelectionBox>();
+  auto actEditOwned  = make_unique<WLineEdit>();
+  auto ageEditOwned  = make_unique<WLineEdit>();
+  auto halfLifeOwned = make_unique<WText>( WString("{1}=").arg(WString::tr("T1/2")) );
+  auto isoSearchOwned = make_unique<WLineEdit>();
+  m_elementSelection        = elSelOwned.get();
+  m_massSelection           = massSelOwned.get();
+  m_nuclideActivityEdit     = actEditOwned.get();
+  m_nuclideAgeEdit          = ageEditOwned.get();
+  m_selectedIsotopeHalfLife = halfLifeOwned.get();
+  m_isotopeSearch           = isoSearchOwned.get();
 
   m_nuclideActivityEdit->setAttributeValue( "ondragstart", "return false" );
   m_nuclideAgeEdit->setAttributeValue( "ondragstart", "return false" );
@@ -242,27 +247,25 @@ void DecaySelectNuclide::init()
   m_isotopeSearch->setAttributeValue( "spellcheck", "off" );
 #endif
   
-  m_isoSearchFilterModel     = new SimpleIsotopeNameFilterModel( this );
+  m_isoSearchFilterModel     = make_shared<SimpleIsotopeNameFilterModel>( this );
   string matcherJS, replaceJS;
   SimpleIsotopeNameFilterModel::nuclideNameMatcherJs( matcherJS );
   SimpleIsotopeNameFilterModel::replacerJs( replaceJS );
-  m_isotopeSuggestions = new WSuggestionPopup( matcherJS, replaceJS );
-//  m_isotopeSuggestions = new WSuggestionPopup( m_isotopeSearch );
-  wApp->domRoot()->addWidget( m_isotopeSuggestions );
+  m_isotopeSuggestions = wApp->root()->addNew<WSuggestionPopup>( matcherJS, replaceJS );
   m_isotopeSuggestions->setMaximumSize( WLength::Auto,
-                                        WLength(15, WLength::FontEm) );
+                                        WLength(15, WLength::Unit::FontEm) );
 
   m_isoSearchFilterModel->filter( "" );
   m_isotopeSuggestions->setFilterLength( -1 );
   m_isotopeSuggestions->setModel( m_isoSearchFilterModel );
-  m_isotopeSuggestions->filterModel().connect( m_isoSearchFilterModel,
+  m_isotopeSuggestions->filterModel().connect( m_isoSearchFilterModel.get(),
                                       &SimpleIsotopeNameFilterModel::filter );
 
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_isotopeSuggestions );
   
   
   m_isotopeSuggestions->forEdit( m_isotopeSearch,
-                   WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
+                   PopupTrigger::Editing | PopupTrigger::DropDownIcon );
   m_isotopeSearch->enterPressed().connect( this,
                                            &DecaySelectNuclide::emitAccepted );
   
@@ -298,14 +301,14 @@ void DecaySelectNuclide::init()
     m_elementSelection->setVerticalSize( 20 );
   }//if( !m_phone )
   
-  m_massSelection->setSelectionMode( SingleSelection );
-  m_elementSelection->setSelectionMode( SingleSelection );
+  m_massSelection->setSelectionMode( Wt::SelectionMode::Single );
+  m_elementSelection->setSelectionMode( Wt::SelectionMode::Single );
   m_massSelection->setNoSelectionEnabled( true );
   m_elementSelection->setNoSelectionEnabled( true );
   
   
-  m_acceptButton = new WPushButton( WString::tr("Add"), m_footer);
-  m_acceptButton->setFloatSide(Wt::Right);
+  m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("Add") );
+  m_acceptButton->setFloatSide( Wt::Side::Right );
   m_acceptButton->clicked().connect( this, &DecaySelectNuclide::emitAccepted );
   WPushButton *cancelButton = m_auxWindow->addCloseButtonToFooter( WString::tr("Close") );
   cancelButton->clicked().connect( this, &DecaySelectNuclide::emitDone );
@@ -333,30 +336,28 @@ void DecaySelectNuclide::init()
   m_elementSelection->setCurrentIndex( 0 );
   makeMassList();
 
-  WGridLayout *layout = new WGridLayout();
-  layout->addWidget( m_elementSelection,        0, 0, 1, 1 );
-  layout->addWidget( m_massSelection,           0, 1, 1, 1 );
-  
-  label = new WLabel( WString::tr("nuclide-label") );
-  layout->addWidget( label, 1, 0, 1, 1 );
-  layout->addWidget( m_isotopeSearch, 1, 1, 1, 1 );
-  layout->addWidget( m_selectedIsotopeHalfLife, 2, 0, 1, 2, Wt::AlignCenter );
-  
-  label = new WLabel( WString::tr("activity-label") );
-  layout->addWidget( label,                      3, 0, 1, 1 );
-  layout->addWidget( m_nuclideActivityEdit,      3, 1, 1, 1 );
-  
-  label = new WLabel( WString::tr("dcn-initial-age") );
-  layout->addWidget( label,                   4, 0, 1, 1 );
-  layout->addWidget( m_nuclideAgeEdit,        4, 1, 1, 1 );
-  
+  auto layoutOwned = make_unique<WGridLayout>();
+  WGridLayout *layout = layoutOwned.get();
+  layout->addWidget( move(elSelOwned),    0, 0, 1, 1 );
+  layout->addWidget( move(massSelOwned),  0, 1, 1, 1 );
+
+  layout->addWidget( make_unique<WLabel>( WString::tr("nuclide-label") ), 1, 0, 1, 1 );
+  layout->addWidget( move(isoSearchOwned),  1, 1, 1, 1 );
+  layout->addWidget( move(halfLifeOwned),   2, 0, 1, 2, Wt::AlignmentFlag::Center );
+
+  layout->addWidget( make_unique<WLabel>( WString::tr("activity-label") ), 3, 0, 1, 1 );
+  layout->addWidget( move(actEditOwned),    3, 1, 1, 1 );
+
+  layout->addWidget( make_unique<WLabel>( WString::tr("dcn-initial-age") ), 4, 0, 1, 1 );
+  layout->addWidget( move(ageEditOwned),    4, 1, 1, 1 );
+
 //  WContainerWidget *buttonDiv = new WContainerWidget();
 //  buttonDiv->addWidget( m_acceptButton );
 //  buttonDiv->addWidget( cancelButton );
-//  layout->addWidget( buttonDiv,                 5, 0, 1, 3, Wt::AlignLeft );
-  
+//  layout->addWidget( buttonDiv,                 5, 0, 1, 3, Wt::AlignmentFlag::Left );
+
   layout->setRowStretch( 0, 1 );
-  WContainerWidget::setLayout( layout );
+  WContainerWidget::setLayout( move(layoutOwned) );
 
   enableAcceptButton();
 }//void initNuclideMenu()
@@ -365,8 +366,8 @@ void DecaySelectNuclide::init()
 
 void DecaySelectNuclide::initActivityAgeSelects()
 {
-  WRegExpValidator *actvalidator = new WRegExpValidator( PhysicalUnits::sm_activityRegex, m_nuclideActivityEdit );
-  actvalidator->setFlags(Wt::MatchCaseInsensitive);
+  auto actvalidator = make_shared<WRegExpValidator>( PhysicalUnits::sm_activityRegex );
+  actvalidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_nuclideActivityEdit->setValidator( actvalidator );
   m_nuclideActivityEdit->setTextSize( 10 );
   
@@ -376,9 +377,9 @@ void DecaySelectNuclide::initActivityAgeSelects()
   m_nuclideAgeEdit->setText( "0.0 us" );
   m_nuclideAgeEdit->setTextSize( 10 );
 
-  WRegExpValidator *agevalidator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), m_nuclideAgeEdit );
-  agevalidator->setFlags(Wt::MatchCaseInsensitive);
-  m_nuclideAgeEdit->setValidator(agevalidator);
+  auto agevalidator = make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+  agevalidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+  m_nuclideAgeEdit->setValidator( agevalidator );
   
   m_nuclideActivityEdit->setAutoComplete( false );
   m_nuclideAgeEdit->setAutoComplete( false );
@@ -519,8 +520,8 @@ void DecaySelectNuclide::enableAcceptButton()
     const int massIndex    = m_massSelection->currentIndex();
     const int nuclideIndex = m_elementSelection->currentIndex();
 
-    const bool activity  = m_nuclideActivityEdit->validate()==WValidator::Valid;
-    const bool age       = m_nuclideAgeEdit->validate()==WValidator::Valid;
+    const bool activity  = m_nuclideActivityEdit->validate()==Wt::ValidationState::Valid;
+    const bool age       = m_nuclideAgeEdit->validate()==Wt::ValidationState::Valid;
     
     if( (massIndex<0) || (nuclideIndex<0) || !activity || !age )
     {
@@ -662,7 +663,7 @@ void DecaySelectNuclide::makeMassList()
 
 
 SimpleIsotopeNameFilterModel::SimpleIsotopeNameFilterModel( DecaySelectNuclide *parent )
-  : WAbstractItemModel( parent ),
+  : WAbstractItemModel(),
     m_parent( parent ),
     m_minHalfLife( 0.0 )
 {
@@ -707,7 +708,7 @@ int SimpleIsotopeNameFilterModel::columnCount( const Wt::WModelIndex &parent ) c
   return 1;
 }
 
-boost::any SimpleIsotopeNameFilterModel::data( const Wt::WModelIndex &index, int role ) const
+Wt::cpp17::any SimpleIsotopeNameFilterModel::data( const Wt::WModelIndex &index, Wt::ItemDataRole role ) const
 {
   const int row = index.row();
   const int column = index.column();
@@ -717,7 +718,7 @@ boost::any SimpleIsotopeNameFilterModel::data( const Wt::WModelIndex &index, int
   const int nrows = nnuc + nel;
 
   if( row<0 || row>=nrows || column!=0 )
-    return boost::any();
+    return Wt::cpp17::any();
 
 //  if( role == Wt::ToolTipRole )
 //    return WString( "the_tool_tip" );
@@ -726,15 +727,15 @@ boost::any SimpleIsotopeNameFilterModel::data( const Wt::WModelIndex &index, int
   {
     const SandiaDecay::Nuclide *nuc = m_candidatesNuclides[row];
     //we could customize tool tip or display roles here to give more information...
-    return boost::any( WString( nuc->symbol ) );
+    return Wt::cpp17::any( WString( nuc->symbol ) );
   }else
   {
     const int elnum = row - nnuc;
     const SandiaDecay::Element *el = m_candidatesElements[elnum];
     //we could customize tool tip or display roles here to give more information...
-    return boost::any( WString( el->symbol ) );
+    return Wt::cpp17::any( WString( el->symbol ) );
   }
-}//boost::any SimpleIsotopeNameFilterModel::data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const
+}//Wt::cpp17::any SimpleIsotopeNameFilterModel::data( const Wt::WModelIndex &index, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const
 
 int SimpleIsotopeNameFilterModel::determineAndRemoveIsoLevel( std::string &label )
 {

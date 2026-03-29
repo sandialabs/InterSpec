@@ -32,18 +32,18 @@
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 
-#include <Wt/WMenu>
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WComboBox>
-#include <Wt/WGridLayout>
-#include <Wt/WIOService>
-#include <Wt/WMenuItem>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WStackedWidget>
+#include <Wt/WMenu.h>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WIOService.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WStackedWidget.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -215,7 +215,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
   for( const ReferenceLineInfo &info : persisted )
     add_from_info( info );
 
-  if( sources.empty() && !options.testFlag(FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks) )
+  if( sources.empty() && !options.test(FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks) )
   {
     assert( 0 );
     passMessage( "Sorry, cant fit for any of the current sources.", WarningWidget::WarningMsgMedium ); //Skip localization since we dont expect to be here
@@ -246,8 +246,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
   // Disable button to prevent repeats while running.
   ref_disp->setFitSourcesButtonEnabled( false );
 
-  boost::function<void(void)> close_wait
-                = wApp->bind( boost::bind( &SimpleDialog::accept, wait_dlg ) );
+  std::function<void(void)> close_wait = [wait_dlg](){ wait_dlg->accept(); };
 
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )
@@ -425,23 +424,23 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         const size_t num_peaks = result->observable_peaks.size();
         const size_t num_sources = ref_lines_for_display.size();
         Wt::WString summary = WString::tr("fpn-summary").arg( static_cast<int>(num_peaks) ).arg( static_cast<int>(num_sources) );
-        Wt::WText *summary_text = new Wt::WText( summary, contents );
+        Wt::WText *summary_text = contents->addNew<Wt::WText>( summary );
         summary_text->addStyleClass( "FitSourcesSummary" );
         summary_text->setInline( false );
 
         // Add warnings section if there are any
         if( !result->warnings.empty() )
         {
-          Wt::WText *warnings_header = new Wt::WText( WString::tr("fpn-warnings-header"), contents );
+          Wt::WText *warnings_header = contents->addNew<Wt::WText>( WString::tr("fpn-warnings-header") );
           warnings_header->addStyleClass( "fpn-warnings-header" );
 
           for( const std::string &w : result->warnings )
           {
-            Wt::WText *warning = new Wt::WText( Wt::WString::fromUTF8( "• " + w ), contents );
+            Wt::WText *warning = contents->addNew<Wt::WText>( Wt::WString::fromUTF8( "• " + w ) );
             warning->addStyleClass( "fpn-warning" );
           }
 
-          Wt::WText *spacer = new Wt::WText( "", contents );
+          Wt::WText *spacer = contents->addNew<Wt::WText>( WString::fromUTF8("") );
           spacer->setInline( false );
         }
 
@@ -454,7 +453,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         chartw = std::max( chartw, 300 );
         charth = std::max( charth, 200 );
 
-        D3SpectrumDisplayDiv *spectrum = new D3SpectrumDisplayDiv( contents );
+        D3SpectrumDisplayDiv *spectrum = contents->addNew<D3SpectrumDisplayDiv>();
         spectrum->clicked().preventPropagation();
         spectrum->setThumbnailMode();
         spectrum->setMinimumSize( 300, 200 );
@@ -471,7 +470,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           }
         }
 
-        PeakModel *preview_model = new PeakModel( spectrum );
+        PeakModel *preview_model = spectrum->addChild( std::make_unique<PeakModel>() );
         preview_model->setNoSpecMeasBacking();
         preview_model->setForeground( current_fg );
         spectrum->setPeakModel( preview_model );
@@ -561,7 +560,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         preview_model->addPeaks( preview_peaks );
 
         // Checkbox goes below the chart (lowest item)
-        Wt::WCheckBox *cb = new Wt::WCheckBox( WString::tr("fpn-auto-accept"), contents );
+        Wt::WCheckBox *cb = contents->addNew<Wt::WCheckBox>( WString::tr("fpn-auto-accept") );
         UserPreferences::associateWidget( "AutoAcceptFitSourcesPeaks", cb, viewer_c );
         cb->setInline( false );
 
@@ -600,14 +599,16 @@ FitPeaksAdvancedDialog::FitPeaksAdvancedDialog( const Wt::WString &title )
   addStyleClass( "FitPeaksAdvancedDialog" );
   wApp->useStyleSheet( "InterSpec_resources/FitPeaksForNuclidesGui.css" );
 
-  Wt::WGridLayout *layout = new Wt::WGridLayout();
+  Wt::WGridLayout *layout = contents()->setLayout( std::make_unique<Wt::WGridLayout>() );
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
   layout->setContentsMargins( 0, 0, 0, 0 );
-  contents()->setLayout( layout );
 
-  m_widget = new FitPeaksAdvancedWidget();
-  layout->addWidget( m_widget, 0, 0 );
+  {
+    auto widgetOwned = std::make_unique<FitPeaksAdvancedWidget>();
+    m_widget = widgetOwned.get();
+    layout->addWidget( std::move(widgetOwned), 0, 0 );
+  }
 
   addButton( Wt::WString::tr("fpn-cancel") );
   m_acceptBtn = addButton( Wt::WString::tr("fpn-accept") );
@@ -687,8 +688,8 @@ void FitPeaksAdvancedDialog::onResultUpdated()
 
 
 // FitPeaksAdvancedWidget
-FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+FitPeaksAdvancedWidget::FitPeaksAdvancedWidget()
+  : WContainerWidget(),
     m_title( nullptr ),
     m_upper_menu( nullptr ),
     m_chart( nullptr ),
@@ -715,7 +716,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
     m_opt_rel_eff_type( nullptr ),
     m_opt_rel_eff_order( nullptr ),
     m_rel_eff_order_row( nullptr ),
-    m_render_flags( 0 ),
+    m_render_flags(),
     m_is_calculating( false ),
     m_calc_number( 0 ),
     m_auto_search_peaks( std::make_shared<std::vector<std::shared_ptr<const PeakDef>>>() )
@@ -844,7 +845,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
   for( const ReferenceLineInfo &info : persisted )
     add_from_info( info );
 
-  if( m_sources.empty() && !options.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks ) )
+  if( m_sources.empty() && !options.test( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks ) )
     return;
 
   m_base_options = options;
@@ -875,7 +876,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
       m_user_peaks.assign( current_peaks->begin(), current_peaks->end() );
   }
 
-  m_title = new WText( WString::fromUTF8( "Fit peaks for: " + sourceListTitle() ), this );
+  m_title = addNew<WText>( WString::fromUTF8( "Fit peaks for: " + sourceListTitle() ) );
   m_title->setInline( false );
   m_title->addStyleClass( "fpn-title" );
 
@@ -889,66 +890,70 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
   charth = std::max( charth, 200 );
 
   // Tabbed upper area: Spectrum | Rel. Eff. | Results
-  WContainerWidget *upper_div = new WContainerWidget( this );
+  WContainerWidget *upper_div = addNew<WContainerWidget>();
   upper_div->addStyleClass( "fpn-upper-area" );
 
-  WStackedWidget *upper_stack = new WStackedWidget();
+  // Create the stacked widget and menu; WMenu takes ownership of the stack via pointer
+  WStackedWidget *upper_stack = upper_div->addNew<WStackedWidget>();
   upper_stack->addStyleClass( "UpperStack" );
 
-  m_upper_menu = new WMenu( upper_stack, Wt::Vertical, upper_div );
+  m_upper_menu = upper_div->addNew<WMenu>( upper_stack );
   m_upper_menu->addStyleClass( "UpperMenu LightNavMenu" );
-  upper_div->addWidget( upper_stack );
 
-  m_chart = new D3SpectrumDisplayDiv();
-  m_chart->clicked().preventPropagation();
-  m_chart->setThumbnailMode();
-  m_chart->setMinimumSize( 300, 200 );
-  m_chart->setData( m_fg_copy, false );
-  for( const ReferenceLineInfo &ref_info : m_ref_lines )
+  // Create chart and model
   {
-    m_chart->setReferncePhotoPeakLines( ref_info );
-    m_chart->persistCurrentReferncePhotoPeakLines();
+    auto chartOwned = std::make_unique<D3SpectrumDisplayDiv>();
+    m_chart = chartOwned.get();
+    m_chart->clicked().preventPropagation();
+    m_chart->setThumbnailMode();
+    m_chart->setMinimumSize( 300, 200 );
+    m_chart->setData( m_fg_copy, false );
+    for( const ReferenceLineInfo &ref_info : m_ref_lines )
+    {
+      m_chart->setReferncePhotoPeakLines( ref_info );
+      m_chart->persistCurrentReferncePhotoPeakLines();
+    }
+    m_chart_peak_model = m_chart->addChild( std::make_unique<PeakModel>() );
+    m_chart_peak_model->setNoSpecMeasBacking();
+    m_chart_peak_model->setForeground( m_fg_copy );
+    m_chart->setPeakModel( m_chart_peak_model );
+
+    auto relEffOwned = std::make_unique<RelEffChart>();
+    m_rel_eff_chart = relEffOwned.get();
+
+    auto txtResultsOwned = std::make_unique<RelActTxtResults>();
+    m_txt_results = txtResultsOwned.get();
+
+    WMenuItem *upper_item = m_upper_menu->addItem( WString::tr("fpn-tab-spectrum"), std::move(chartOwned) );
+    upper_item->clicked().connect( std::bind([this,upper_item](){
+      m_upper_menu->select( upper_item );
+      upper_item->triggered().emit( upper_item );
+    }) );
+
+    upper_item = m_upper_menu->addItem( WString::tr("fpn-tab-rel-eff"), std::move(relEffOwned) );
+    upper_item->clicked().connect( std::bind([this,upper_item](){
+      m_upper_menu->select( upper_item );
+      upper_item->triggered().emit( upper_item );
+    }) );
+
+    upper_item = m_upper_menu->addItem( WString::tr("fpn-tab-results"), std::move(txtResultsOwned) );
+    upper_item->clicked().connect( std::bind([this,upper_item](){
+      m_upper_menu->select( upper_item );
+      upper_item->triggered().emit( upper_item );
+    }) );
   }
-  m_chart_peak_model = new PeakModel( m_chart );
-  m_chart_peak_model->setNoSpecMeasBacking();
-  m_chart_peak_model->setForeground( m_fg_copy );
-  m_chart->setPeakModel( m_chart_peak_model );
-
-  m_rel_eff_chart = new RelEffChart();
-  m_txt_results = new RelActTxtResults();
-
-  WMenuItem *upper_item = new WMenuItem( WString::tr("fpn-tab-spectrum"), m_chart );
-  m_upper_menu->addItem( upper_item );
-  upper_item->clicked().connect( std::bind([this,upper_item](){
-    m_upper_menu->select( upper_item );
-    upper_item->triggered().emit( upper_item );
-  }) );
-
-  upper_item = new WMenuItem( WString::tr("fpn-tab-rel-eff"), m_rel_eff_chart );
-  m_upper_menu->addItem( upper_item );
-  upper_item->clicked().connect( std::bind([this,upper_item](){
-    m_upper_menu->select( upper_item );
-    upper_item->triggered().emit( upper_item );
-  }) );
-
-  upper_item = new WMenuItem( WString::tr("fpn-tab-results"), m_txt_results );
-  m_upper_menu->addItem( upper_item );
-  upper_item->clicked().connect( std::bind([this,upper_item](){
-    m_upper_menu->select( upper_item );
-    upper_item->triggered().emit( upper_item );
-  }) );
 
   m_upper_menu->select( static_cast<int>(0) );
 
-  m_status = new WText( WString::tr("fpn-calculating"), this );
+  m_status = addNew<WText>( WString::tr("fpn-calculating") );
   m_status->addStyleClass( "fpn-status" );
   m_status->addStyleClass( "calculating" );
 
-  m_options_div = new WContainerWidget( this );
+  m_options_div = addNew<WContainerWidget>();
   m_options_div->addStyleClass( "fpn-options" );
   buildOptionsFromConfig();
-  
-  m_warnings_div = new WContainerWidget( this );
+
+  m_warnings_div = addNew<WContainerWidget>();
   m_warnings_div->addStyleClass( "fpn-warnings" );
   m_warnings_div->addStyleClass( "fpn-warnings-computing" );
 
@@ -994,7 +999,7 @@ void FitPeaksAdvancedWidget::acceptResult()
       break;
     }
   }
-  if( m_base_options.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks )
+  if( m_base_options.test( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks )
       && !has_background_ref )
   {
     RefLineInput bg_input;
@@ -1104,11 +1109,11 @@ Wt::Signal<> &FitPeaksAdvancedWidget::resultUpdated()
 
 void FitPeaksAdvancedWidget::render( WFlags<RenderFlag> flags )
 {
-  if( m_render_flags.testFlag( UpdateCalculations ) )
+  if( m_render_flags.test( UpdateCalculations ) )
   {
     startComputation();
   }
-  m_render_flags = 0;
+  m_render_flags = Wt::WFlags<RenderActions>();
   WContainerWidget::render( flags );
 }
 
@@ -1186,8 +1191,8 @@ void FitPeaksAdvancedWidget::startComputation()
   std::vector<std::shared_ptr<const PeakDef>> peaks_to_use( m_auto_search_peaks->begin(), m_auto_search_peaks->end() );
   std::shared_ptr<FitPeaksForNuclides::PeakFitResult> result = std::make_shared<FitPeaksForNuclides::PeakFitResult>();
   std::shared_ptr<std::string> error_msg = std::make_shared<std::string>();
-  auto gui_update = wApp->bind( boost::bind( &FitPeaksAdvancedWidget::updateFromResult, this, result, cancel_calc, calc_number ) );
-  auto gui_error = wApp->bind( boost::bind( &FitPeaksAdvancedWidget::handleCalcError, this, error_msg, cancel_calc ) );
+  auto gui_update = [this, result, cancel_calc, calc_number](){ updateFromResult( result, cancel_calc, calc_number ); };
+  auto gui_error = [this, error_msg, cancel_calc](){ handleCalcError( error_msg, cancel_calc ); };
 
   std::shared_ptr<SpecUtils::Measurement> bg_to_use = m_bg_copy;
   if( m_opt_use_background && !m_opt_use_background->isChecked() )
@@ -1273,8 +1278,7 @@ void FitPeaksAdvancedWidget::updateFromResult( std::shared_ptr<FitPeaksForNuclid
     m_warnings_div->addStyleClass( "fpn-warnings-error" );
     while( m_warnings_div->count() > 0 )
       m_warnings_div->removeWidget( m_warnings_div->widget( 0 ) );
-    WText *err_text = new WText( WString::fromUTF8( result->error_message ), m_warnings_div );
-    (void)err_text;
+    m_warnings_div->addNew<WText>( WString::fromUTF8( result->error_message ) );
     m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
     m_txt_results->setNoResults();
   }
@@ -1321,8 +1325,7 @@ void FitPeaksAdvancedWidget::updateFromResult( std::shared_ptr<FitPeaksForNuclid
       m_warnings_div->addStyleClass( "fpn-warnings-success" );
       while( m_warnings_div->count() > 0 )
         m_warnings_div->removeWidget( m_warnings_div->widget( 0 ) );
-      WText *ok = new WText( WString::tr("fpn-computation-successful"), m_warnings_div );
-      (void)ok;
+      m_warnings_div->addNew<WText>( WString::tr("fpn-computation-successful") );
     }
     else
     {
@@ -1331,15 +1334,14 @@ void FitPeaksAdvancedWidget::updateFromResult( std::shared_ptr<FitPeaksForNuclid
         m_warnings_div->removeWidget( m_warnings_div->widget( 0 ) );
       for( const std::string &w : result->warnings )
       {
-        WText *wt = new WText( WString::fromUTF8( "• " + w ), m_warnings_div );
+        WText *wt = m_warnings_div->addNew<WText>( WString::fromUTF8( "• " + w ) );
         wt->setInline( false );
-        (void)wt;
       }
     }
 
     if( !m_chart_peak_model )
     {
-      m_chart_peak_model = new PeakModel( m_chart );
+      m_chart_peak_model = m_chart->addChild( std::make_unique<PeakModel>() );
       m_chart_peak_model->setNoSpecMeasBacking();
       m_chart_peak_model->setForeground( m_fg_copy );
       m_chart->setPeakModel( m_chart_peak_model );
@@ -1419,8 +1421,7 @@ void FitPeaksAdvancedWidget::handleCalcError( std::shared_ptr<std::string> error
   m_warnings_div->addStyleClass( "fpn-warnings-error" );
   while( m_warnings_div->count() > 0 )
     m_warnings_div->removeWidget( m_warnings_div->widget( 0 ) );
-  WText *err_text = new WText( WString::fromUTF8( *error_msg ), m_warnings_div );
-  (void)err_text;
+  m_warnings_div->addNew<WText>( WString::fromUTF8( *error_msg ) );
   m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
   m_txt_results->setNoResults();
   m_resultUpdated.emit();
@@ -1435,7 +1436,7 @@ std::string FitPeaksAdvancedWidget::sourceListTitle() const
       out += ", ";
     out += RelActCalcAuto::to_name( m_base_nucs[i].source );
   }
-  if( m_base_options.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks ) )
+  if( m_base_options.test( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks ) )
   {
     if( !out.empty() )
       out += ", ";
@@ -1471,28 +1472,28 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
 
   auto add_checkbox_row = [this, show_tool_tips]( const WString &label, WCheckBox *input,
                                                    const WString &tooltip = WString() ) {
-    WContainerWidget *row = new WContainerWidget( m_options_div );
+    WContainerWidget *row = m_options_div->addNew<WContainerWidget>();
     row->addStyleClass( "fpn-option-row" );
-    WLabel *lbl = new WLabel( label, row );
+    WLabel *lbl = row->addNew<WLabel>( label );
     lbl->addStyleClass( "fpn-option-label" );
     lbl->setBuddy( input );
-    WContainerWidget *inp_div = new WContainerWidget( row );
+    WContainerWidget *inp_div = row->addNew<WContainerWidget>();
     inp_div->addStyleClass( "fpn-option-input" );
-    inp_div->addWidget( input );
+    inp_div->addWidget( std::unique_ptr<WWidget>( input ) );
     if( !tooltip.empty() )
       HelpSystem::attachToolTipOn( {lbl, input}, tooltip, show_tool_tips );
   };
 
   auto add_form_row = [this, show_tool_tips]( const WString &label, WFormWidget *input,
                                               const WString &tooltip = WString() ) {
-    WContainerWidget *row = new WContainerWidget( m_options_div );
+    WContainerWidget *row = m_options_div->addNew<WContainerWidget>();
     row->addStyleClass( "fpn-option-row" );
-    WLabel *lbl = new WLabel( label, row );
+    WLabel *lbl = row->addNew<WLabel>( label );
     lbl->addStyleClass( "fpn-option-label" );
     lbl->setBuddy( input );
-    WContainerWidget *inp_div = new WContainerWidget( row );
+    WContainerWidget *inp_div = row->addNew<WContainerWidget>();
     inp_div->addStyleClass( "fpn-option-input" );
-    inp_div->addWidget( input );
+    inp_div->addWidget( std::unique_ptr<WWidget>( input ) );
     if( !tooltip.empty() )
       HelpSystem::attachToolTipOn( {lbl, input}, tooltip, show_tool_tips );
   };
@@ -1506,12 +1507,12 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
   }
   const bool has_existing_rois = !distinct_rois.empty();
 
-  WContainerWidget *checkboxes_container = new WContainerWidget( m_options_div );
+  WContainerWidget *checkboxes_container = m_options_div->addNew<WContainerWidget>();
   checkboxes_container->addStyleClass( "fpn-options-checkboxes" );
 
   if( has_existing_rois )
   {
-    m_opt_dont_use_rois = new WCheckBox( WString::tr("fpn-opt-dont-use-existing-rois"), checkboxes_container );
+    m_opt_dont_use_rois = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-dont-use-existing-rois") );
     m_opt_dont_use_rois->setChecked( false );
     m_opt_dont_use_rois->changed().connect( this, &FitPeaksAdvancedWidget::onDontUseRoisChanged );
     HelpSystem::attachToolTipOn( m_opt_dont_use_rois, WString::tr("fpn-opt-tt-dont-use-existing-rois"), show_tool_tips );
@@ -1519,169 +1520,189 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
 
   if( has_existing_peaks )
   {
-    m_opt_existing_as_free = new WCheckBox( WString::tr("fpn-opt-existing-as-free"), checkboxes_container );
+    m_opt_existing_as_free = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-existing-as-free") );
     m_opt_existing_as_free->setChecked( false );
     m_opt_existing_as_free->changed().connect( this, &FitPeaksAdvancedWidget::onExistingAsFreeChanged );
     HelpSystem::attachToolTipOn( m_opt_existing_as_free, WString::tr("fpn-opt-tt-existing-as-free"), show_tool_tips );
   }
 
-  m_opt_dont_vary_energy_cal = new WCheckBox( WString::tr("fpn-opt-dont-vary-energy-cal"), checkboxes_container );
+  m_opt_dont_vary_energy_cal = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-dont-vary-energy-cal") );
   m_opt_dont_vary_energy_cal->setChecked( false );
   m_opt_dont_vary_energy_cal->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   m_opt_dont_vary_energy_cal->changed().connect( this, &FitPeaksAdvancedWidget::onDontVaryEnergyCalChanged );
   HelpSystem::attachToolTipOn( m_opt_dont_vary_energy_cal, WString::tr("fpn-opt-tt-dont-vary-energy-cal"), show_tool_tips );
 
-  m_opt_dont_refine_energy_cal = new WCheckBox( WString::tr("fpn-opt-dont-refine-energy-cal"), checkboxes_container );
+  m_opt_dont_refine_energy_cal = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-dont-refine-energy-cal") );
   m_opt_dont_refine_energy_cal->setChecked( false );
   m_opt_dont_refine_energy_cal->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   HelpSystem::attachToolTipOn( m_opt_dont_refine_energy_cal, WString::tr("fpn-opt-tt-dont-refine-energy-cal"), show_tool_tips );
 
   onDontVaryEnergyCalChanged();
 
-  m_opt_fit_bkgnd_peaks = new WCheckBox( WString::tr("fpn-opt-fit-bkgnd-peaks"), checkboxes_container );
-  m_opt_fit_bkgnd_peaks->setChecked( m_base_options.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks ) );
+  m_opt_fit_bkgnd_peaks = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-fit-bkgnd-peaks") );
+  m_opt_fit_bkgnd_peaks->setChecked( m_base_options.test( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks ) );
   m_opt_fit_bkgnd_peaks->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   HelpSystem::attachToolTipOn( m_opt_fit_bkgnd_peaks, WString::tr("fpn-opt-tt-fit-bkgnd-peaks"), show_tool_tips );
 
   // If fitting only background (no other sources), disable this checkbox but keep it checked
-  const bool fitting_only_background = m_sources.empty() 
-                                       && m_base_options.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks );
+  const bool fitting_only_background = m_sources.empty()
+                                       && m_base_options.test( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks );
   if( fitting_only_background )
     m_opt_fit_bkgnd_peaks->setDisabled( true );
 
   // m_opt_fit_bkgnd_dont_use: not exposed to user for now, may add later
-  // m_opt_fit_bkgnd_dont_use = new WCheckBox( WString::tr("fpn-opt-fit-bkgnd-dont-use"), checkboxes_container );
-  // m_opt_fit_bkgnd_dont_use->setChecked( false );
-  // m_opt_fit_bkgnd_dont_use->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
 
   if( m_bg_copy )
   {
-    m_opt_use_background = new WCheckBox( WString::tr("fpn-opt-use-background"), checkboxes_container );
+    m_opt_use_background = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-use-background") );
     m_opt_use_background->setChecked( true );
     m_opt_use_background->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
     HelpSystem::attachToolTipOn( m_opt_use_background, WString::tr("fpn-opt-tt-use-background"), show_tool_tips );
-    
+
     // Hide "Use Background" checkbox when fitting only background - background is required
     if( fitting_only_background )
       m_opt_use_background->setHidden( true );
   }
 
-  NativeFloatSpinBox *roi_chi2 = new NativeFloatSpinBox();
-  roi_chi2->setWidth( WLength( 4, WLength::Unit::FontEm ) );
-  roi_chi2->setSpinnerHidden( true );
-  roi_chi2->setValue( static_cast<float>( config.roi_significance_min_chi2_reduction ) );
-  roi_chi2->setRange( 0.1f, 1000.f );
-  roi_chi2->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  add_form_row( WString::tr("fpn-opt-roi-min-chi2-red"), roi_chi2, WString::tr("fpn-opt-tt-roi-min-chi2-red") );
-  m_opt_roi_min_chi2 = roi_chi2;
-
-  NativeFloatSpinBox *roi_sig = new NativeFloatSpinBox();
-  roi_sig->setWidth( WLength( 4, WLength::Unit::FontEm ) );
-  roi_sig->setSpinnerHidden( true );
-  roi_sig->setValue( static_cast<float>( config.roi_significance_min_peak_sig ) );
-  roi_sig->setRange( 0.1f, 20.f );
-  roi_sig->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  add_form_row( WString::tr("fpn-opt-roi-min-peak-sig"), roi_sig, WString::tr("fpn-opt-tt-roi-min-peak-sig") );
-  m_opt_roi_min_peak_sig = roi_sig;
-
-  NativeFloatSpinBox *obs_init = new NativeFloatSpinBox();
-  obs_init->setWidth( WLength( 4, WLength::Unit::FontEm ) );
-  obs_init->setSpinnerHidden( true );
-  obs_init->setValue( static_cast<float>( config.observable_peak_initial_significance_threshold ) );
-  obs_init->setRange( 0.1f, 20.f );
-  obs_init->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  add_form_row( WString::tr("fpn-opt-obs-initial-sig"), obs_init, WString::tr("fpn-opt-tt-obs-initial-sig") );
-  m_opt_obs_initial_sig = obs_init;
-
-  NativeFloatSpinBox *obs_fin = new NativeFloatSpinBox();
-  obs_fin->setWidth( WLength( 4, WLength::Unit::FontEm ) );
-  obs_fin->setSpinnerHidden( true );
-  obs_fin->setValue( static_cast<float>( config.observable_peak_final_significance_threshold ) );
-  obs_fin->setRange( 0.1f, 20.f );
-  obs_fin->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  add_form_row( WString::tr("fpn-opt-obs-final-sig"), obs_fin, WString::tr("fpn-opt-tt-obs-final-sig") );
-  m_opt_obs_final_sig = obs_fin;
-
-  m_opt_skew_type = new WComboBox();
-  for( int i = 0; i < static_cast<int>( PeakDef::SkewType::NumSkewType ); ++i )
   {
-    const PeakDef::SkewType s = static_cast<PeakDef::SkewType>( i );
-    m_opt_skew_type->addItem( PeakDef::to_label( s ) );
-    if( s == config.skew_type )
-      m_opt_skew_type->setCurrentIndex( i );
+    auto roi_chi2 = std::make_unique<NativeFloatSpinBox>();
+    m_opt_roi_min_chi2 = roi_chi2.get();
+    roi_chi2->setWidth( WLength( 4, WLength::Unit::FontEm ) );
+    roi_chi2->setSpinnerHidden( true );
+    roi_chi2->setValue( static_cast<float>( config.roi_significance_min_chi2_reduction ) );
+    roi_chi2->setRange( 0.1f, 1000.f );
+    roi_chi2->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+    add_form_row( WString::tr("fpn-opt-roi-min-chi2-red"), roi_chi2.release(), WString::tr("fpn-opt-tt-roi-min-chi2-red") );
   }
-  m_opt_skew_type->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  add_form_row( WString::tr("fpn-opt-skew-type"), m_opt_skew_type, WString::tr("fpn-opt-tt-skew-type") );
+
+  {
+    auto roi_sig = std::make_unique<NativeFloatSpinBox>();
+    m_opt_roi_min_peak_sig = roi_sig.get();
+    roi_sig->setWidth( WLength( 4, WLength::Unit::FontEm ) );
+    roi_sig->setSpinnerHidden( true );
+    roi_sig->setValue( static_cast<float>( config.roi_significance_min_peak_sig ) );
+    roi_sig->setRange( 0.1f, 20.f );
+    roi_sig->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+    add_form_row( WString::tr("fpn-opt-roi-min-peak-sig"), roi_sig.release(), WString::tr("fpn-opt-tt-roi-min-peak-sig") );
+  }
+
+  {
+    auto obs_init = std::make_unique<NativeFloatSpinBox>();
+    m_opt_obs_initial_sig = obs_init.get();
+    obs_init->setWidth( WLength( 4, WLength::Unit::FontEm ) );
+    obs_init->setSpinnerHidden( true );
+    obs_init->setValue( static_cast<float>( config.observable_peak_initial_significance_threshold ) );
+    obs_init->setRange( 0.1f, 20.f );
+    obs_init->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+    add_form_row( WString::tr("fpn-opt-obs-initial-sig"), obs_init.release(), WString::tr("fpn-opt-tt-obs-initial-sig") );
+  }
+
+  {
+    auto obs_fin = std::make_unique<NativeFloatSpinBox>();
+    m_opt_obs_final_sig = obs_fin.get();
+    obs_fin->setWidth( WLength( 4, WLength::Unit::FontEm ) );
+    obs_fin->setSpinnerHidden( true );
+    obs_fin->setValue( static_cast<float>( config.observable_peak_final_significance_threshold ) );
+    obs_fin->setRange( 0.1f, 20.f );
+    obs_fin->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+    add_form_row( WString::tr("fpn-opt-obs-final-sig"), obs_fin.release(), WString::tr("fpn-opt-tt-obs-final-sig") );
+  }
+
+  {
+    auto skew_type = std::make_unique<WComboBox>();
+    m_opt_skew_type = skew_type.get();
+    for( int i = 0; i < static_cast<int>( PeakDef::SkewType::NumSkewType ); ++i )
+    {
+      const PeakDef::SkewType s = static_cast<PeakDef::SkewType>( i );
+      m_opt_skew_type->addItem( PeakDef::to_label( s ) );
+      if( s == config.skew_type )
+        m_opt_skew_type->setCurrentIndex( i );
+    }
+    m_opt_skew_type->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+    add_form_row( WString::tr("fpn-opt-skew-type"), skew_type.release(), WString::tr("fpn-opt-tt-skew-type") );
+  }
 
   // "Use fixed skew from prefs" checkbox - visible only when prefs have fixed values
-  m_opt_use_fixed_skew = new WCheckBox();
-  m_opt_use_fixed_skew->setChecked( true );
-  m_opt_use_fixed_skew->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  add_checkbox_row( WString::tr("fpn-opt-use-fixed-skew"), m_opt_use_fixed_skew,
-                   WString::tr("fpn-opt-tt-use-fixed-skew") );
+  {
+    auto use_fixed_skew = std::make_unique<WCheckBox>();
+    m_opt_use_fixed_skew = use_fixed_skew.get();
+    m_opt_use_fixed_skew->setChecked( true );
+    m_opt_use_fixed_skew->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+    add_checkbox_row( WString::tr("fpn-opt-use-fixed-skew"), use_fixed_skew.release(),
+                     WString::tr("fpn-opt-tt-use-fixed-skew") );
+  }
   handlePeakFitDetPrefsChanged();  // Set initial visibility
 
   if( viewer )
     viewer->peakFitDetPrefsChanged().connect( this, &FitPeaksAdvancedWidget::handlePeakFitDetPrefsChanged );
 
-  m_opt_fwhm_form = new WComboBox();
-  for( int i = 0; i <= static_cast<int>( RelActCalcAuto::FwhmForm::NotApplicable ); ++i )
   {
-    RelActCalcAuto::FwhmForm f = static_cast<RelActCalcAuto::FwhmForm>( i );
-    m_opt_fwhm_form->addItem( RelActCalcAuto::to_str( f ) );
-    if( f == config.fwhm_form )
-      m_opt_fwhm_form->setCurrentIndex( i );
+    auto fwhm_form = std::make_unique<WComboBox>();
+    m_opt_fwhm_form = fwhm_form.get();
+    for( int i = 0; i <= static_cast<int>( RelActCalcAuto::FwhmForm::NotApplicable ); ++i )
+    {
+      RelActCalcAuto::FwhmForm f = static_cast<RelActCalcAuto::FwhmForm>( i );
+      m_opt_fwhm_form->addItem( RelActCalcAuto::to_str( f ) );
+      if( f == config.fwhm_form )
+        m_opt_fwhm_form->setCurrentIndex( i );
+    }
+    m_opt_fwhm_form->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+    add_form_row( WString::tr("fpn-opt-fwhm-form"), fwhm_form.release(), WString::tr("fpn-opt-tt-fwhm-form") );
   }
-  m_opt_fwhm_form->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  add_form_row( WString::tr("fpn-opt-fwhm-form"), m_opt_fwhm_form, WString::tr("fpn-opt-tt-fwhm-form") );
 
-  m_opt_rel_eff_type = new WComboBox();
-  for( int i = 0; i <= static_cast<int>( RelActCalc::RelEffEqnForm::FramPhysicalModel ); ++i )
   {
-    RelActCalc::RelEffEqnForm f = static_cast<RelActCalc::RelEffEqnForm>( i );
-    m_opt_rel_eff_type->addItem( RelActCalc::to_str( f ) );
-    if( f == config.rel_eff_eqn_type )
-      m_opt_rel_eff_type->setCurrentIndex( i );
-  }
-  m_opt_rel_eff_type->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  m_opt_rel_eff_type->changed().connect( this, &FitPeaksAdvancedWidget::onRelEffTypeChanged );
-  
-  WContainerWidget *rel_eff_type_row = new WContainerWidget( m_options_div );
-  rel_eff_type_row->addStyleClass( "fpn-option-row" );
-  WLabel *rel_eff_type_lbl = new WLabel( WString::tr("fpn-opt-rel-eff-eqn-type"), rel_eff_type_row );
-  rel_eff_type_lbl->addStyleClass( "fpn-option-label" );
-  rel_eff_type_lbl->setBuddy( m_opt_rel_eff_type );
-  WContainerWidget *rel_eff_type_inp_div = new WContainerWidget( rel_eff_type_row );
-  rel_eff_type_inp_div->addStyleClass( "fpn-option-input" );
-  rel_eff_type_inp_div->addWidget( m_opt_rel_eff_type );
-  if( !WString::tr("fpn-opt-tt-rel-eff-eqn-type").empty() )
-    HelpSystem::attachToolTipOn( {rel_eff_type_lbl, m_opt_rel_eff_type}, WString::tr("fpn-opt-tt-rel-eff-eqn-type"), show_tool_tips );
-  
-  // Hide relative efficiency type when fitting only background
-  if( fitting_only_background )
-    rel_eff_type_row->setHidden( true );
+    auto rel_eff_type = std::make_unique<WComboBox>();
+    m_opt_rel_eff_type = rel_eff_type.get();
+    for( int i = 0; i <= static_cast<int>( RelActCalc::RelEffEqnForm::FramPhysicalModel ); ++i )
+    {
+      RelActCalc::RelEffEqnForm f = static_cast<RelActCalc::RelEffEqnForm>( i );
+      m_opt_rel_eff_type->addItem( RelActCalc::to_str( f ) );
+      if( f == config.rel_eff_eqn_type )
+        m_opt_rel_eff_type->setCurrentIndex( i );
+    }
+    m_opt_rel_eff_type->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+    m_opt_rel_eff_type->changed().connect( this, &FitPeaksAdvancedWidget::onRelEffTypeChanged );
 
-  NativeFloatSpinBox *order_spin = new NativeFloatSpinBox();
-  order_spin->setWidth( WLength( 4, WLength::Unit::FontEm ) );
-  order_spin->setSpinnerHidden( true );
-  order_spin->setValue( static_cast<float>( config.rel_eff_eqn_order ) );
-  order_spin->setSingleStep( 1.f );
-  order_spin->setRange( 0.f, 10.f );
-  order_spin->setFormatString( "%.0f" );
-  order_spin->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  m_rel_eff_order_row = new WContainerWidget( m_options_div );
-  m_rel_eff_order_row->addStyleClass( "fpn-option-row" );
-  WLabel *order_lbl = new WLabel( WString::tr("fpn-opt-rel-eff-eqn-order"), m_rel_eff_order_row );
-  order_lbl->addStyleClass( "fpn-option-label" );
-  order_lbl->setBuddy( order_spin );
-  WContainerWidget *order_inp_div = new WContainerWidget( m_rel_eff_order_row );
-  order_inp_div->addStyleClass( "fpn-option-input" );
-  order_inp_div->addWidget( order_spin );
-  HelpSystem::attachToolTipOn( {order_lbl, order_spin}, WString::tr("fpn-opt-tt-rel-eff-eqn-order"), show_tool_tips );
-  m_opt_rel_eff_order = order_spin;
-  
+    WContainerWidget *rel_eff_type_row = m_options_div->addNew<WContainerWidget>();
+    rel_eff_type_row->addStyleClass( "fpn-option-row" );
+    WLabel *rel_eff_type_lbl = rel_eff_type_row->addNew<WLabel>( WString::tr("fpn-opt-rel-eff-eqn-type") );
+    rel_eff_type_lbl->addStyleClass( "fpn-option-label" );
+    rel_eff_type_lbl->setBuddy( m_opt_rel_eff_type );
+    WContainerWidget *rel_eff_type_inp_div = rel_eff_type_row->addNew<WContainerWidget>();
+    rel_eff_type_inp_div->addStyleClass( "fpn-option-input" );
+    rel_eff_type_inp_div->addWidget( std::move(rel_eff_type) );
+    if( !WString::tr("fpn-opt-tt-rel-eff-eqn-type").empty() )
+      HelpSystem::attachToolTipOn( {rel_eff_type_lbl, m_opt_rel_eff_type}, WString::tr("fpn-opt-tt-rel-eff-eqn-type"), show_tool_tips );
+
+    // Hide relative efficiency type when fitting only background
+    if( fitting_only_background )
+      rel_eff_type_row->setHidden( true );
+  }
+
+  {
+    auto order_spin = std::make_unique<NativeFloatSpinBox>();
+    m_opt_rel_eff_order = order_spin.get();
+    order_spin->setWidth( WLength( 4, WLength::Unit::FontEm ) );
+    order_spin->setSpinnerHidden( true );
+    order_spin->setValue( static_cast<float>( config.rel_eff_eqn_order ) );
+    order_spin->setSingleStep( 1.f );
+    order_spin->setRange( 0.f, 10.f );
+    order_spin->setFormatString( "%.0f" );
+    order_spin->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+
+    m_rel_eff_order_row = m_options_div->addNew<WContainerWidget>();
+    m_rel_eff_order_row->addStyleClass( "fpn-option-row" );
+    WLabel *order_lbl = m_rel_eff_order_row->addNew<WLabel>( WString::tr("fpn-opt-rel-eff-eqn-order") );
+    order_lbl->addStyleClass( "fpn-option-label" );
+    order_lbl->setBuddy( m_opt_rel_eff_order );
+    WContainerWidget *order_inp_div = m_rel_eff_order_row->addNew<WContainerWidget>();
+    order_inp_div->addStyleClass( "fpn-option-input" );
+    order_inp_div->addWidget( std::move(order_spin) );
+    HelpSystem::attachToolTipOn( {order_lbl, m_opt_rel_eff_order}, WString::tr("fpn-opt-tt-rel-eff-eqn-order"), show_tool_tips );
+  }
+
   // Hide relative efficiency order row when fitting only background or when using physical model
-  const bool hide_order = fitting_only_background 
+  const bool hide_order = fitting_only_background
                           || ( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
   m_rel_eff_order_row->setHidden( hide_order );
 }

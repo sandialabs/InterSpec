@@ -26,7 +26,7 @@
 #include <string>
 #include <iostream>
 
-#include <Wt/WServer>
+#include <Wt/WServer.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
@@ -93,7 +93,7 @@ bool UndoRedoManager::spec_key_equal( const spec_key_t &lhs, const spec_key_t &r
 
 
 UndoRedoManager::UndoRedoManager( InterSpec *parent )
- : Wt::WObject( parent ),
+ : Wt::WObject(),
   m_state( UndoRedoManager::State::Neither ),
   m_steps{},
   m_step_offset{ 0 },
@@ -103,10 +103,10 @@ UndoRedoManager::UndoRedoManager( InterSpec *parent )
   m_num_steps_in_mem( 0 ),
   m_prev{},
   m_interspec( parent ),
-  m_undoMenuDisableUpdate( this ),
-  m_redoMenuDisableUpdate( this ),
-  m_undoMenuToolTipUpdate( this ),
-  m_redoMenuToolTipUpdate( this ),
+  m_undoMenuDisableUpdate(),
+  m_redoMenuDisableUpdate(),
+  m_undoMenuToolTipUpdate(),
+  m_redoMenuToolTipUpdate(),
   m_PeakModelChange_counter( 0 ),
   m_PeakModelChange_starting_peaks{},
   m_PeakModelChange_starting_background_peaks{},
@@ -133,9 +133,10 @@ UndoRedoManager::UndoRedoManager( InterSpec *parent )
   }
     
   m_interspec->displayedSpectrumChanged().connect(
-                boost::bind( &UndoRedoManager::handleSpectrumChange, this,
-                             boost::placeholders::_1, boost::placeholders::_2,
-                            boost::placeholders::_3, boost::placeholders::_4 ) );
+                [this]( const SpecUtils::SpectrumType a1, const std::shared_ptr<SpecMeas> a2,
+                        const std::set<int> a3, const std::vector<std::string> a4 ){
+                  handleSpectrumChange( a1, a2, a3, a4 );
+                } );
 }//UndoRedoManager
 
 
@@ -414,8 +415,8 @@ UndoRedoManager::BlockUndoRedoInserts::~BlockUndoRedoInserts()
 }//~BlockUndoRedoInserts()
 
 
-UndoRedoManager::BlockGuiUndoRedo::BlockGuiUndoRedo( Wt::WObject *parent )
-  : Wt::WObject( parent ),
+UndoRedoManager::BlockGuiUndoRedo::BlockGuiUndoRedo()
+  : Wt::WObject(),
     m_valid( false ),
     m_peak_change( nullptr )
 {
@@ -555,8 +556,8 @@ void UndoRedoManager::addUndoRedoStep( std::function<void()> undo,
   //  are #ns_nsteps_histerious over the max limit, to bother to clean things up.
   //  Also, we'll clean things up outside of the main event loop
   if( (max_steps != 0) && (m_num_steps_in_mem > (max_steps + ns_nsteps_histerious)) )
-    Wt::WServer::instance()->schedule( 100, wApp->sessionId(),
-                                  boost::bind( &UndoRedoManager::limitTotalStepsInMemory, this ) );
+    Wt::WServer::instance()->schedule( std::chrono::milliseconds(100), wApp->sessionId(),
+                                  [this](){ limitTotalStepsInMemory(); } );
 }//void addUndoRedoStep(...)
 
 
@@ -918,8 +919,8 @@ void UndoRedoManager::limitTotalStepsInMemory()
   assert( m_state == State::Neither );
   if( m_state != State::Neither )
   {
-    Wt::WServer::instance()->schedule( 1000, wApp->sessionId(),
-                                  boost::bind( &UndoRedoManager::limitTotalStepsInMemory, this ) );
+    Wt::WServer::instance()->schedule( std::chrono::milliseconds(1000), wApp->sessionId(),
+                                  [this](){ limitTotalStepsInMemory(); } );
     return;
   }
     

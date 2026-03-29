@@ -28,13 +28,13 @@
 #include <vector>
 #include <memory>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
-#include <Wt/WColor>
-#include <Wt/WSignal>
-#include <Wt/WModelIndex>
-#include <Wt/Chart/WDataSeries>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WColor.h>
+#include <Wt/WSignal.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/Chart/WDataSeries.h>
+#include <Wt/WAbstractItemModel.h>
 
 class SpectrumChart;
 namespace SpecUtils{ class Measurement; }
@@ -70,7 +70,7 @@ public:
 
 
 public:
-  SpectrumDataModel( Wt::WObject *parent = 0 );
+  SpectrumDataModel();
   virtual ~SpectrumDataModel();
 
   // If one of the following functions that add or change a histogram would
@@ -136,11 +136,13 @@ public:
   virtual int rowCount(    const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   virtual int columnCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   virtual Wt::WModelIndex parent( const Wt::WModelIndex &index ) const;
-  virtual boost::any data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
+                               Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   virtual Wt::WModelIndex index( int row, int column,
                                  const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
-  virtual boost::any headerData( int section, Wt::Orientation orientation = Wt::Horizontal,
-                                 int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any headerData( int section,
+                                 Wt::Orientation orientation = Wt::Orientation::Horizontal,
+                                 Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   virtual void reset();
 
   /** Changes the color of the series #suggestDataSeries() will return.
@@ -174,7 +176,7 @@ public:
                        double &yMin, double &yMax ) const;
 
   //Simplified convenience functions to grab data without futzing around with
-  // either WModelIndex or boost::any
+  // either WModelIndex or Wt::cpp17::any
   virtual double data( int row, int column ) const;
 
   //displayBinValue(...): returns the data value for the display bin (e.g.
@@ -182,8 +184,8 @@ public:
   //  If the bin x-values of the respective std::shared_ptr<SpecUtils::Measurement> do not align with
   //  the edges of histUsedForXAxis(), then simple linear interpolation is used.
   //  Also, this function does not take into account background subracting.
-  //  An empty boost::any() is returned if data is not avaliable
-  virtual boost::any displayBinValue( int row, ColumnType column ) const;
+  //  An empty Wt::cpp17::any() is returned if data is not avaliable
+  virtual Wt::cpp17::any displayBinValue( int row, ColumnType column ) const;
 
 
   void addIntegralOfHistogramToLegend( const bool doIt = true );
@@ -217,7 +219,7 @@ protected:
   // background subtract.
   bool m_secondDataOwnAxis;
 
-  // This does not affect the number of columns. When true, boost::any() is returned for
+  // This does not affect the number of columns. When true, Wt::cpp17::any() is returned for
   // calls to data(...) requesting background or continuum.
   bool m_backgroundSubtract;
 

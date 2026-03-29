@@ -24,21 +24,17 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include <Wt/WPainter>
-#include <Wt/Chart/WAxis>
-#include <Wt/WStandardItemModel>
-#if( WT_VERSION >= 0x3030600 )
-#include <Wt/Chart/WAbstractChartModel>
-#endif
-
-
-#include <Wt/Chart/WCartesianChart>
-#if( WT_VERSION >= 0x3030600 )
-#include <Wt/Chart/WStandardChartProxyModel>
-#endif
+#include <Wt/WPainter.h>
+#include <Wt/Chart/WAxis.h>
+#include <Wt/cpp17/any.hpp>
+#include <Wt/Chart/WCartesianChart.h>
+#include <Wt/WStandardItemModel.h>
+#include <Wt/Chart/WAbstractChartModel.h>
+#include <Wt/Chart/WStandardChartProxyModel.h>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
@@ -69,12 +65,12 @@ namespace
 }//namespace
 
 
-DrfChartHolder::DrfChartHolder( MakeDrfChart *chart, WContainerWidget *parent )
-  : WContainerWidget( parent ),
-    m_chart( chart )
+DrfChartHolder::DrfChartHolder( std::unique_ptr<MakeDrfChart> chart )
+  : WContainerWidget(),
+    m_chart( chart.get() )
 {
   setLayoutSizeAware( true );
-  addWidget( m_chart );
+  addWidget( std::move( chart ) );
 }
   
 DrfChartHolder::~DrfChartHolder()
@@ -89,8 +85,8 @@ void DrfChartHolder::layoutSizeChanged( int width, int height )
 
 
 
-MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
-: Wt::Chart::WCartesianChart( parent ),
+MakeDrfChart::MakeDrfChart()
+: Wt::Chart::WCartesianChart(),
   m_det_diameter( 1.0*PhysicalUnits::cm ),
   m_det_setback( 0.0f ),
   m_det_lower_energy( 0.0 ),
@@ -105,103 +101,100 @@ MakeDrfChart::MakeDrfChart( Wt::WContainerWidget *parent )
   m_fwhmEqnType( FwhmCoefType::Gadras ),
   m_xRangeChanged(),
   m_chartMarginBrush(),
-  m_textPen( WColor(GlobalColor::black) )
+  m_textPen( WColor(Wt::StandardColor::Black) )
 {
   //setAutoLayoutEnabled( true );
   setLayoutSizeAware( true );
   
-  setPreferredMethod( WPaintedWidget::HtmlCanvas );
+  setPreferredMethod( Wt::RenderMethod::HtmlCanvas );
   
   InterSpec::instance()->useMessageResourceBundle( "MakeDrf" );
     
-  setType( Chart::ScatterPlot );
-  //m_chart->axis(Chart::XAxis).setLabelFormat( "%.2f" );
-  axis(Chart::XAxis).setScale( Chart::LinearScale );
-  axis(Chart::YAxis).setLabelFormat( "%.3g" );
-  axis(Chart::Y2Axis).setLabelFormat( "%.3g" );
+  setType( Chart::ChartType::Scatter );
+  //m_chart->axis(Chart::Axis::X).setLabelFormat( "%.2f" );
+  axis(Chart::Axis::X).setScale( Chart::AxisScale::Linear );
+  axis(Chart::Axis::Y).setLabelFormat( "%.3g" );
+  axis(Chart::Axis::Y2).setLabelFormat( "%.3g" );
+
+  axis(Chart::Axis::X).setMinimum( m_det_lower_energy );
+  axis(Chart::Axis::X).setMaximum( m_det_upper_energy );
   
-  axis(Chart::XAxis).setMinimum( m_det_lower_energy );
-  axis(Chart::XAxis).setMaximum( m_det_upper_energy );
-  
-  WStandardItemModel *m = new WStandardItemModel( this );
-    
-#if( WT_VERSION < 0x3030600 )
-  setModel( m );
-#else
-  // TODO: make a class that derives from either Wt::WAbstractItemModel or
-  //       Wt::Chart::WAbstractChartModel class, depending on Wt version,
-  //       and implement all functionality needed in it
-  auto *proxyModel = new Chart::WStandardChartProxyModel( m, this );
+  auto itemModel = std::make_shared<WStandardItemModel>();
+  auto proxyModel = std::make_shared<Chart::WStandardChartProxyModel>( itemModel );
   setModel( proxyModel );
-#endif
+  WStandardItemModel *m = itemModel.get();
     
   m->insertColumns( 0, sm_num_model_cols );
   m->insertRows( 0, sm_num_eqn_energy_rows );
   setXSeriesColumn( sm_energy_col );
   
-  Chart::WDataSeries data_eff_series( sm_data_eff_col, Chart::SeriesType::PointSeries, Chart::YAxis );
-  data_eff_series.setMarker( Chart::MarkerType::CircleMarker );
-  data_eff_series.setMarkerSize( 6 );
-  addSeries( data_eff_series );
-  
-  Chart::WDataSeries eqn_eff_series( sm_equation_eff_col, Chart::SeriesType::CurveSeries, Chart::YAxis );
-  eqn_eff_series.setMarker( Wt::Chart::MarkerType::NoMarker );
-  addSeries( eqn_eff_series );
+  {
+    auto data_eff_series = std::make_unique<Chart::WDataSeries>( sm_data_eff_col, Chart::SeriesType::Point, Chart::Axis::Y );
+    data_eff_series->setMarker( Chart::MarkerType::Circle );
+    data_eff_series->setMarkerSize( 6 );
+    addSeries( std::move(data_eff_series) );
+  }
+  {
+    auto eqn_eff_series = std::make_unique<Chart::WDataSeries>( sm_equation_eff_col, Chart::SeriesType::Curve, Chart::Axis::Y );
+    eqn_eff_series->setMarker( Wt::Chart::MarkerType::None );
+    addSeries( std::move(eqn_eff_series) );
+  }
   
   //For the moment we wont show the errors since I havent verified they are actually reasonable and correct
   /*
-  Chart::WDataSeries eqn_eff_neg_uncert_series( sm_equation_eff_neg_uncert_col, Chart::SeriesType::CurveSeries, Chart::YAxis );
-  eqn_eff_neg_uncert_series.setMarker( Wt::Chart::MarkerType::NoMarker );
+  Chart::WDataSeries eqn_eff_neg_uncert_series( sm_equation_eff_neg_uncert_col, Chart::SeriesType::Curve, Chart::Axis::Y );
+  eqn_eff_neg_uncert_series.setMarker( Wt::Chart::MarkerType::None );
   eqn_eff_neg_uncert_series.setPen( WPen(Wt::green) );
   addSeries( eqn_eff_neg_uncert_series );
   
-  Chart::WDataSeries eqn_eff_pos_uncert_series( sm_equation_eff_pos_uncert_col, Chart::SeriesType::CurveSeries, Chart::YAxis );
-  eqn_eff_pos_uncert_series.setMarker( Wt::Chart::MarkerType::NoMarker );
+  Chart::WDataSeries eqn_eff_pos_uncert_series( sm_equation_eff_pos_uncert_col, Chart::SeriesType::Curve, Chart::Axis::Y );
+  eqn_eff_pos_uncert_series.setMarker( Wt::Chart::MarkerType::None );
   eqn_eff_pos_uncert_series.setPen( WPen(Wt::red) );
   addSeries( eqn_eff_pos_uncert_series );
   */
   
   
-  Chart::WDataSeries data_fwhm_series( sm_data_fwhm_col, Chart::SeriesType::PointSeries, Chart::Y2Axis );
-  data_fwhm_series.setMarker( Chart::MarkerType::XCrossMarker );
-  data_fwhm_series.setMarkerSize( 6 );
-  addSeries( data_fwhm_series );
+  {
+    auto data_fwhm_series = std::make_unique<Chart::WDataSeries>( sm_data_fwhm_col, Chart::SeriesType::Point, Chart::Axis::Y2 );
+    data_fwhm_series->setMarker( Chart::MarkerType::XCross );
+    data_fwhm_series->setMarkerSize( 6 );
+    addSeries( std::move(data_fwhm_series) );
+  }
+  {
+    auto eqn_fwhm_series = std::make_unique<Chart::WDataSeries>( sm_equation_fwhm_col, Chart::SeriesType::Curve, Chart::Axis::Y2 );
+    eqn_fwhm_series->setMarker( Wt::Chart::MarkerType::None );
+    addSeries( std::move(eqn_fwhm_series) );
+  }
   
-  Chart::WDataSeries eqn_fwhm_series( sm_equation_fwhm_col, Chart::SeriesType::CurveSeries, Chart::Y2Axis );
-  eqn_fwhm_series.setMarker( Wt::Chart::MarkerType::NoMarker );
-  addSeries( eqn_fwhm_series );
+  setPlotAreaPadding(0, Wt::Side::Top);
+  setPlotAreaPadding(55, Wt::Side::Right | Wt::Side::Left);
+  //axis(Chart::Axis::X).setTitle( "Energy (keV)" );
+  setPlotAreaPadding(25, Wt::Side::Bottom);
   
-  setPlotAreaPadding(0, Wt::Top);
-  setPlotAreaPadding(55, Wt::Right | Wt::Left);
-  //axis(Chart::XAxis).setTitle( "Energy (keV)" );
-  setPlotAreaPadding(25, Wt::Bottom);
-  
-  axis(Chart::YAxis).setVisible( true );
-  axis(Chart::YAxis).setTitle( WString::tr("md-geom-intrinsic-eff") );
-  
-  axis(Chart::Y2Axis).setVisible( true );
-  axis(Chart::Y2Axis).setTitle( WString::tr("FWHM") );
+  axis(Chart::Axis::Y).setVisible( true );
+  axis(Chart::Axis::Y).setTitle( WString::tr("md-geom-intrinsic-eff") );
 
-#if( WT_VERSION >= 0x3030400 )
-  axis(Wt::Chart::Y1Axis).setTitleOrientation( Wt::Vertical );
-  axis(Wt::Chart::Y2Axis).setTitleOrientation( Wt::Vertical );
-#endif
-  
+  axis(Chart::Axis::Y2).setVisible( true );
+  axis(Chart::Axis::Y2).setTitle( WString::tr("FWHM") );
+
+  axis(Wt::Chart::Axis::Y1).setTitleOrientation( Wt::Orientation::Vertical );
+  axis(Wt::Chart::Axis::Y2).setTitleOrientation( Wt::Orientation::Vertical );
+
   setAxisPadding( 0 );
-  axis(Chart::Y1Axis).setMargin( 0 );
-  axis(Chart::Y2Axis).setMargin( 0 );
+  axis(Chart::Axis::Y1).setMargin( 0 );
+  axis(Chart::Axis::Y2).setMargin( 0 );
   
-  m->setHeaderData( sm_energy_col, Wt::Horizontal, boost::any( WString::tr("Energy (keV)") ), Wt::DisplayRole );
-  m->setHeaderData( sm_data_eff_col, Wt::Horizontal, boost::any(WString::tr("md-chart-data-intrinsic-eff-label")), Wt::DisplayRole );
-  m->setHeaderData( sm_data_fwhm_col, Wt::Horizontal, boost::any(WString::tr("md-chart-data-fwhm-label")), Wt::DisplayRole );
-  m->setHeaderData( sm_equation_eff_col, Wt::Horizontal, boost::any(WString::tr("md-chart-fit-intrinsic-eff-label")), Wt::DisplayRole );
-  m->setHeaderData( sm_equation_eff_neg_uncert_col, Wt::Horizontal, boost::any(WString::tr("md-chart-intrinsic-eff-plus-label")), Wt::DisplayRole );
-  m->setHeaderData( sm_equation_eff_pos_uncert_col, Wt::Horizontal, boost::any(WString::tr("md-chart-intrinsic-eff-minus-label")), Wt::DisplayRole );
-  m->setHeaderData( sm_equation_fwhm_col, Wt::Horizontal, boost::any(WString::tr("md-chart-fit-fwhm-label")), Wt::DisplayRole );
+  m->setHeaderData( sm_energy_col, Wt::Orientation::Horizontal, Wt::cpp17::any( WString::tr("Energy (keV)") ), Wt::ItemDataRole::Display );
+  m->setHeaderData( sm_data_eff_col, Wt::Orientation::Horizontal, Wt::cpp17::any(WString::tr("md-chart-data-intrinsic-eff-label")), Wt::ItemDataRole::Display );
+  m->setHeaderData( sm_data_fwhm_col, Wt::Orientation::Horizontal, Wt::cpp17::any(WString::tr("md-chart-data-fwhm-label")), Wt::ItemDataRole::Display );
+  m->setHeaderData( sm_equation_eff_col, Wt::Orientation::Horizontal, Wt::cpp17::any(WString::tr("md-chart-fit-intrinsic-eff-label")), Wt::ItemDataRole::Display );
+  m->setHeaderData( sm_equation_eff_neg_uncert_col, Wt::Orientation::Horizontal, Wt::cpp17::any(WString::tr("md-chart-intrinsic-eff-plus-label")), Wt::ItemDataRole::Display );
+  m->setHeaderData( sm_equation_eff_pos_uncert_col, Wt::Orientation::Horizontal, Wt::cpp17::any(WString::tr("md-chart-intrinsic-eff-minus-label")), Wt::ItemDataRole::Display );
+  m->setHeaderData( sm_equation_fwhm_col, Wt::Orientation::Horizontal, Wt::cpp17::any(WString::tr("md-chart-fit-fwhm-label")), Wt::ItemDataRole::Display );
   
   setLegendEnabled( true );
-  setLegendLocation( Wt::Chart::LegendLocation::LegendInside, Wt::Top, Wt::AlignmentFlag::AlignRight );
-  setLegendColumns( 1, WLength(125,WLength::Pixel) );
+  setLegendLocation( Wt::Chart::LegendLocation::Inside, Wt::Side::Top, Wt::AlignmentFlag::Right );
+  setLegendColumns( 1, WLength(125,WLength::Unit::Pixel) );
   
   updateDataToModel();
   updateEqnEnergyToModel();
@@ -230,17 +223,13 @@ void MakeDrfChart::layoutSizeChanged( int width, int height )
 
 void MakeDrfChart::updateYAxisRange()
 {
-  const double xmin = axis(Chart::XAxis).minimum();
-  const double xmax = axis(Chart::XAxis).maximum();
-  
+  const double xmin = axis(Chart::Axis::X).minimum();
+  const double xmax = axis(Chart::Axis::X).maximum();
+
   double miny = 9999.9f, maxy = -9999.9f, miny2 = 9999.9f, maxy2 = -9999.9f;
-  
-#if( WT_VERSION < 0x3030600 )
-  WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
-#else
-  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
-  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
-#endif
+
+  auto proxyModel = std::dynamic_pointer_cast<Chart::WStandardChartProxyModel>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel().get() : nullptr;
   
   assert( m );
   if( !m )
@@ -282,34 +271,30 @@ void MakeDrfChart::updateYAxisRange()
   
   if( maxy <= miny )
   {
-    axis(Chart::YAxis).setRange(0.0, 1.0);
+    axis(Chart::Axis::Y).setRange(0.0, 1.0);
   }else
   {
     miny = (miny < 0.1) ? 0.0 : std::floor(9*miny)/10.0;
     maxy = ((11.0*maxy) > 1.5) ? (std::ceil(11.0*maxy)/10.0) : 1.15*maxy;
-    axis(Chart::YAxis).setRange(miny, maxy);
+    axis(Chart::Axis::Y).setRange(miny, maxy);
   }
-  
+
   if( maxy2 < miny2 )
   {
-    axis(Chart::Y2Axis).setRange(0.0, 1.0);
+    axis(Chart::Axis::Y2).setRange(0.0, 1.0);
   }else
   {
     miny2 = (miny2 < 0.1) ? 0.0 : std::floor(9*miny2)/10.0;
     maxy2 = std::ceil(11.0*maxy2)/10.0;
-    axis(Chart::Y2Axis).setRange(miny2, maxy2);
+    axis(Chart::Axis::Y2).setRange(miny2, maxy2);
   }
 }//void updateYAxisRange()
 
 
 void MakeDrfChart::updateDataToModel()
 {
-#if( WT_VERSION < 0x3030600 )
-  WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
-#else
-  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
-  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
-#endif
+  auto proxyModel = std::dynamic_pointer_cast<Chart::WStandardChartProxyModel>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel().get() : nullptr;
   
   assert( m );
   if( !m )
@@ -331,8 +316,8 @@ void MakeDrfChart::updateDataToModel()
     const int row = i + sm_num_eqn_energy_rows;
     const double energy = data.energy;
     
-    m->setData( row, sm_energy_col, energy, Wt::DisplayRole );
-    
+    m->setData( row, sm_energy_col, energy, Wt::ItemDataRole::Display );
+
     if( (data.peak_area > 0.0f) && (data.source_count_rate > 0.0f)
         && (data.livetime > 0.0f) && ((m_det_diameter > 0.0f) || (data.distance < 0.0)) )
     {
@@ -341,31 +326,31 @@ void MakeDrfChart::updateDataToModel()
                                    : DetectorPeakResponse::fractionalSolidAngle( m_det_diameter, data.distance + m_det_setback );
       const double expected = data.source_count_rate * data.livetime * fracSolidAngle;
       const double eff = data.peak_area / expected;
-      
+
       double fracUncert2 = 0.0;
       if( data.peak_area_uncertainty > 0.0f )
         fracUncert2 += std::pow( data.peak_area_uncertainty / data.peak_area, 2.0f );
       if( data.source_count_rate_uncertainty > 0.0f )
         fracUncert2 += std::pow( data.source_count_rate_uncertainty / data.source_count_rate, 2.0f );
       const double eff_uncert = eff * std::sqrt(fracUncert2);
-      
-      m->setData( row, sm_data_eff_col, boost::any(eff), Wt::DisplayRole );
+
+      m->setData( row, sm_data_eff_col, Wt::cpp17::any(eff), Wt::ItemDataRole::Display );
       if( eff_uncert > 0.0 )
-        m->setData( row, sm_data_eff_col, boost::any(eff_uncert), Wt::UserRole );
-      m->setData( row, sm_data_eff_col, boost::any(data.peak_color), Wt::MarkerPenColorRole );
-      m->setData( row, sm_data_eff_col, boost::any(data.peak_color), Wt::MarkerBrushColorRole );
+        m->setData( row, sm_data_eff_col, Wt::cpp17::any(eff_uncert), Wt::ItemDataRole::User );
+      m->setData( row, sm_data_eff_col, Wt::cpp17::any(data.peak_color), Wt::ItemDataRole::MarkerPenColor );
+      m->setData( row, sm_data_eff_col, Wt::cpp17::any(data.peak_color), Wt::ItemDataRole::MarkerBrushColor );
       if( data.source_information.size() )
-        m->setData( row, sm_data_eff_col, boost::any( WString::fromUTF8(data.source_information)), Wt::ToolTipRole );
+        m->setData( row, sm_data_eff_col, Wt::cpp17::any( WString::fromUTF8(data.source_information)), Wt::ItemDataRole::ToolTip );
     }//if( we can calculate a efficiency )
-    
+
     if( data.peak_fwhm > 0.0f )
     {
       const double fwhm = data.peak_fwhm;
-      m->setData( row, sm_data_fwhm_col, boost::any( fwhm ), Wt::DisplayRole );
+      m->setData( row, sm_data_fwhm_col, Wt::cpp17::any( fwhm ), Wt::ItemDataRole::Display );
       if( data.peak_fwhm_uncertainty > 0.0f )
-        m->setData( row, sm_data_fwhm_col, boost::any( static_cast<double>(data.peak_fwhm_uncertainty) ), Wt::UserRole );
-      m->setData( row, sm_data_fwhm_col, boost::any(data.peak_color), Wt::MarkerPenColorRole );
-      m->setData( row, sm_data_fwhm_col, boost::any(data.peak_color), Wt::MarkerBrushColorRole );
+        m->setData( row, sm_data_fwhm_col, Wt::cpp17::any( static_cast<double>(data.peak_fwhm_uncertainty) ), Wt::ItemDataRole::User );
+      m->setData( row, sm_data_fwhm_col, Wt::cpp17::any(data.peak_color), Wt::ItemDataRole::MarkerPenColor );
+      m->setData( row, sm_data_fwhm_col, Wt::cpp17::any(data.peak_color), Wt::ItemDataRole::MarkerBrushColor );
     }//if( we have FWHM info )
   }//for( int i = 0; i < ndata; ++i )
   
@@ -375,12 +360,8 @@ void MakeDrfChart::updateDataToModel()
 
 void MakeDrfChart::updateEqnEnergyToModel()
 {
-#if( WT_VERSION < 0x3030600 )
-  WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
-#else
-  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
-  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
-#endif
+  auto proxyModel = std::dynamic_pointer_cast<Chart::WStandardChartProxyModel>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel().get() : nullptr;
   
   assert( m );
   assert( m->rowCount() >= sm_num_eqn_energy_rows );
@@ -394,7 +375,7 @@ void MakeDrfChart::updateEqnEnergyToModel()
   {
     //Shouldnt ever happen, but JIC
     for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
-      m->setData( row, sm_energy_col, boost::any() );
+      m->setData( row, sm_energy_col, Wt::cpp17::any() );
     return;
   }//if( m_det_lower_energy == m_det_upper_energy )
   
@@ -403,19 +384,15 @@ void MakeDrfChart::updateEqnEnergyToModel()
   for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
   {
     const double energy = m_det_lower_energy + ((m_det_upper_energy * row) / (sm_num_eqn_energy_rows - 1.0f));
-    m->setData( row, sm_energy_col, boost::any(energy) );
+    m->setData( row, sm_energy_col, Wt::cpp17::any(energy) );
   }//for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
 }//void updateEqnEnergyToModel()
 
 
 void MakeDrfChart::updateEffEquationToModel()
 {
-#if( WT_VERSION < 0x3030600 )
-  WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
-#else
-  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
-  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
-#endif
+  auto proxyModel = std::dynamic_pointer_cast<Chart::WStandardChartProxyModel>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel().get() : nullptr;
   
   assert( m );
   if( !m )
@@ -425,14 +402,14 @@ void MakeDrfChart::updateEffEquationToModel()
   
   if( m_efficiencyCoefs.empty() )
   {
-    if( m->data(0, sm_equation_eff_col).empty() )
+    if( !Wt::cpp17::any_has_value(m->data(0, sm_equation_eff_col)) )
       return;
     
     for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
     {
-      m->setData( row, sm_equation_eff_col, boost::any() );
-      m->setData( row, sm_equation_eff_pos_uncert_col, boost::any() );
-      m->setData( row, sm_equation_eff_neg_uncert_col, boost::any() );
+      m->setData( row, sm_equation_eff_col, Wt::cpp17::any() );
+      m->setData( row, sm_equation_eff_pos_uncert_col, Wt::cpp17::any() );
+      m->setData( row, sm_equation_eff_neg_uncert_col, Wt::cpp17::any() );
     }
     return;
   }//if( no equation )
@@ -446,14 +423,14 @@ void MakeDrfChart::updateEffEquationToModel()
     
     if( IsNan(eff) || IsInf(eff) )
     {
-      m->setData( row, sm_equation_eff_col, boost::any() );
-      m->setData( row, sm_equation_eff_pos_uncert_col, boost::any() );
-      m->setData( row, sm_equation_eff_neg_uncert_col, boost::any() );
+      m->setData( row, sm_equation_eff_col, Wt::cpp17::any() );
+      m->setData( row, sm_equation_eff_pos_uncert_col, Wt::cpp17::any() );
+      m->setData( row, sm_equation_eff_neg_uncert_col, Wt::cpp17::any() );
     }else
     {
-      m->setData( row, sm_equation_eff_col, boost::any(eff) );
+      m->setData( row, sm_equation_eff_col, Wt::cpp17::any(eff) );
       
-      boost::any lowerval, upperval;
+      Wt::cpp17::any lowerval, upperval;
       
       if( m_efficiencyCoefUncerts.size() == m_efficiencyCoefs.size() )
       {
@@ -481,9 +458,9 @@ void MakeDrfChart::updateEffEquationToModel()
         neguncert = sqrt(neguncert);
         
         if( IsNan(posuncert) || IsInf(posuncert) )
-          upperval = boost::any( eff + posuncert );
+          upperval = Wt::cpp17::any( eff + posuncert );
         if( IsNan(neguncert) || IsInf(neguncert) )
-          lowerval = boost::any( eff - neguncert );
+          lowerval = Wt::cpp17::any( eff - neguncert );
       }//if( we have uncertainties )
       
       m->setData( row, sm_equation_eff_pos_uncert_col, upperval );
@@ -495,12 +472,8 @@ void MakeDrfChart::updateEffEquationToModel()
 
 void MakeDrfChart::updateFwhmEquationToModel()
 {
-#if( WT_VERSION < 0x3030600 )
-  WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
-#else
-  auto *proxyModel = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
-  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel() : nullptr;
-#endif
+  auto proxyModel = std::dynamic_pointer_cast<Chart::WStandardChartProxyModel>( model() );
+  WAbstractItemModel *m = proxyModel ? proxyModel->sourceModel().get() : nullptr;
 
   assert( m );
   if( !m )
@@ -513,11 +486,11 @@ void MakeDrfChart::updateFwhmEquationToModel()
      || ((m_fwhmEqnType==FwhmCoefType::ConstantPlusSqrtEnergy) && m_fwhmCoefs.size() != 2)
      || (m_fwhmEqnType==FwhmCoefType::SqrtEqn && m_fwhmCoefs.size() < 1) )
   {
-    if( m->data(0, sm_equation_fwhm_col).empty() )  //
+    if( !Wt::cpp17::any_has_value(m->data(0, sm_equation_fwhm_col)) )  //
       return;
     
     for( int row = 0; row < sm_num_eqn_energy_rows; ++row )
-      m->setData( row, sm_equation_fwhm_col, boost::any() );
+      m->setData( row, sm_equation_fwhm_col, Wt::cpp17::any() );
     return;
   }//if( no equation )
   
@@ -546,7 +519,7 @@ void MakeDrfChart::updateFwhmEquationToModel()
   {
     const float energy = static_cast<float>( m_det_lower_energy + ((m_det_upper_energy * row) / (sm_num_eqn_energy_rows - 1.0)) );
     const double fwhm = DetectorPeakResponse::peakResolutionFWHM( units*energy, eqnType, m_fwhmCoefs );
-    m->setData( row, sm_equation_fwhm_col, boost::any(fwhm) );
+    m->setData( row, sm_equation_fwhm_col, Wt::cpp17::any(fwhm) );
   }//for( loop over eqn rows )
 }//void updateFwhmEquationToModel()
 
@@ -558,30 +531,30 @@ void MakeDrfChart::updateColorTheme( std::shared_ptr<const ColorTheme> theme )
   
   
   if( theme->spectrumAxisLines.isDefault() )
-    m_textPen = WPen( WColor(GlobalColor::black) );
+    m_textPen = WPen( WColor(Wt::StandardColor::Black) );
   else
     m_textPen = WPen( theme->spectrumAxisLines );
   setTextPen( m_textPen );
   
   if( theme->spectrumAxisLines.isDefault() )
   {
-    axis(Chart::XAxis).setPen( WPen(GlobalColor::black) );
-    axis(Chart::YAxis).setPen( WPen(GlobalColor::black) );
-    axis(Chart::Y2Axis).setPen( WPen(GlobalColor::black) );
+    axis(Chart::Axis::X).setPen( WPen(Wt::StandardColor::Black) );
+    axis(Chart::Axis::Y).setPen( WPen(Wt::StandardColor::Black) );
+    axis(Chart::Axis::Y2).setPen( WPen(Wt::StandardColor::Black) );
   }else
   {
-    axis(Chart::XAxis).setPen( WPen(theme->spectrumAxisLines) );
-    axis(Chart::YAxis).setPen( WPen(theme->spectrumAxisLines) );
-    axis(Chart::Y2Axis).setPen( WPen(theme->spectrumAxisLines) );
+    axis(Chart::Axis::X).setPen( WPen(theme->spectrumAxisLines) );
+    axis(Chart::Axis::Y).setPen( WPen(theme->spectrumAxisLines) );
+    axis(Chart::Axis::Y2).setPen( WPen(theme->spectrumAxisLines) );
   }
-  
+
   if( theme->spectrumChartMargins.isDefault() )
     m_chartMarginBrush = WBrush();
   else
     m_chartMarginBrush = WBrush(theme->spectrumChartMargins);
-  
+
   if( theme->spectrumChartBackground.isDefault() )
-    setBackground( Wt::NoBrush );
+    setBackground( WBrush() );
   else
     setBackground( WBrush(theme->spectrumChartBackground) );
   
@@ -602,13 +575,13 @@ void MakeDrfChart::updateColorTheme( std::shared_ptr<const ColorTheme> theme )
   Wt::Chart::WDataSeries &eqnEffSeries = series(sm_equation_eff_col);
   WColor effcolor = theme->foregroundLine;
   if( effcolor.isDefault() )
-    effcolor = WColor(GlobalColor::black);
+    effcolor = WColor(Wt::StandardColor::Black);
   setSeriesColor( eqnEffSeries, effcolor );
   
   Wt::Chart::WDataSeries &eqnFwhmSeries = series(sm_equation_fwhm_col);
   WColor fwhmcolor = theme->backgroundLine;
   if( fwhmcolor.isDefault() )
-    fwhmcolor = WColor(GlobalColor::gray);
+    fwhmcolor = WColor(Wt::StandardColor::Gray);
   setSeriesColor( eqnFwhmSeries, fwhmcolor );
   
   //Efficiency series not yet implemented
@@ -644,13 +617,13 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
       h = static_cast<int>( rectangle.height() );
     }
     
-    const int padLeft = plotAreaPadding(Left);
-    const int padRight = plotAreaPadding(Right);
-    const int padTop = plotAreaPadding(Top);
-    const int padBottom = plotAreaPadding(Bottom);
-    
+    const int padLeft = plotAreaPadding(Wt::Side::Left);
+    const int padRight = plotAreaPadding(Wt::Side::Right);
+    const int padTop = plotAreaPadding(Wt::Side::Top);
+    const int padBottom = plotAreaPadding(Wt::Side::Bottom);
+
     WRectF area;
-    if( orientation() == Vertical )
+    if( orientation() == Wt::Orientation::Vertical )
       area = WRectF( padLeft, padTop, std::max(10, w - padLeft - padRight), std::max(10, h - padTop - padBottom) );
     else
       area = WRectF( padTop, padRight, std::max(10, w - padTop - padBottom), std::max(10, h - padRight - padLeft) );
@@ -674,14 +647,14 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
       painter.fillRect( hv(WRectF(rx+rw,0,rectangle.width()-rw-rx,rectangle.height())), m_chartMarginBrush );
   };
   
-  if( background().style() != NoBrush && m_chartMarginBrush.style() != NoBrush )
+  if( background().style() != Wt::BrushStyle::None && m_chartMarginBrush.style() != Wt::BrushStyle::None )
   {
     paintMargins();
     painter.fillRect( hv(plotArea()), background() );
-  }else if( background().style() != NoBrush )
+  }else if( background().style() != Wt::BrushStyle::None )
   {
     painter.fillRect( hv(rectangle), background() );
-  }else if( m_chartMarginBrush.style() != NoBrush )
+  }else if( m_chartMarginBrush.style() != Wt::BrushStyle::None )
   {
     paintMargins();
   }
@@ -689,33 +662,24 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
   
   
   //Draw error bars
-#if( WT_VERSION < 0x3030600 )
-  WStandardItemModel *m = static_cast<WStandardItemModel *>( model() );
-#else
-  auto *m = dynamic_cast<Chart::WStandardChartProxyModel *>( model() );
-  assert( m );
-  if( !m )
+  auto proxyChartModel = std::dynamic_pointer_cast<Chart::WStandardChartProxyModel>( model() );
+  assert( proxyChartModel );
+  if( !proxyChartModel )
     return;
-    
-  WAbstractItemModel *itemModel = m->sourceModel();
-  assert( itemModel );
-  if( !itemModel )
+
+  std::shared_ptr<WAbstractItemModel> itemModelPtr = proxyChartModel->sourceModel();
+  assert( itemModelPtr );
+  if( !itemModelPtr )
     return;
-#endif
-  
-  const int nrows = m->rowCount();
-  
+
+  WAbstractItemModel *itemModel = itemModelPtr.get();
+  const int nrows = proxyChartModel->rowCount();
+
   for( int row = sm_num_eqn_energy_rows; row < nrows; ++row )
   {
-#if( WT_VERSION < 0x3030600 )
-    const double energy = Wt::asNumber( m->data(row,sm_energy_col,Wt::DisplayRole) );
-    const double eff = Wt::asNumber( m->data(row,sm_data_eff_col,Wt::DisplayRole) );
-    const double uncert = Wt::asNumber( m->data(row,sm_data_eff_col,Wt::UserRole) );
-#else
-    const double energy = m->data(row,sm_energy_col);
-    const double eff = m->data(row,sm_data_eff_col);
-    const double uncert = Wt::asNumber( itemModel->data(row,sm_data_eff_col,Wt::UserRole) );
-#endif
+    const double energy = proxyChartModel->data(row,sm_energy_col);
+    const double eff = proxyChartModel->data(row,sm_data_eff_col);
+    const double uncert = Wt::asNumber( itemModel->data(row,sm_data_eff_col,Wt::ItemDataRole::User) );
       
     if( IsNan(energy) || IsNan(eff) || IsNan(uncert) )
       continue;
@@ -736,14 +700,14 @@ void MakeDrfChart::paint( Wt::WPainter &painter, const Wt::WRectF &rectangle ) c
       maxdata = std::max( maxdata, d.energy );
     }
   
-    const WPointF left_ll = mapToDevice( m_det_lower_energy, axis(Chart::YAxis).minimum() );
-    const WPointF left_ur = mapToDevice( mindata, axis(Chart::YAxis).maximum() );
-    
-    const WPointF right_ll = mapToDevice( maxdata, axis(Chart::YAxis).minimum() );
-    const WPointF right_ur = mapToDevice( m_det_upper_energy, axis(Chart::YAxis).maximum() );
-    
+    const WPointF left_ll = mapToDevice( m_det_lower_energy, axis(Chart::Axis::Y).minimum() );
+    const WPointF left_ur = mapToDevice( mindata, axis(Chart::Axis::Y).maximum() );
+
+    const WPointF right_ll = mapToDevice( maxdata, axis(Chart::Axis::Y).minimum() );
+    const WPointF right_ur = mapToDevice( m_det_upper_energy, axis(Chart::Axis::Y).maximum() );
+
     painter.setBrush( WBrush( WColor(123,123,123,25) ) ); //TODO: get this from the color theme
-    painter.setPen( WPen(PenStyle::NoPen) );
+    painter.setPen( WPen(Wt::PenStyle::None) );
     painter.drawRect(left_ll.x(), left_ll.y(), left_ur.x() - left_ll.x(), left_ur.y() - left_ll.y() );
     painter.drawRect(right_ll.x(), right_ll.y(), right_ur.x() - right_ll.x(), right_ur.y() - right_ll.y() );
     
@@ -808,15 +772,15 @@ void MakeDrfChart::setDataPoints( const std::vector<MakeDrfChart::DataPoint> &da
     updateEffEquationToModel();
     updateFwhmEquationToModel();
     
-    axis(Chart::XAxis).setRange( lower_energy, upper_energy );
+    axis(Chart::Axis::X).setRange( lower_energy, upper_energy );
   }//if( energy range changed )
-  
+
   updateDataToModel();
-  
+
   if( det_diameter > 0.0 )
-    axis(Chart::YAxis).setTitle( WString::tr("md-geom-intrinsic-eff") );
+    axis(Chart::Axis::Y).setTitle( WString::tr("md-geom-intrinsic-eff") );
   else
-    axis(Chart::YAxis).setTitle( WString::tr("Efficiency") );
+    axis(Chart::Axis::Y).setTitle( WString::tr("Efficiency") );
   
   if( update_xrange )
     m_xRangeChanged.emit(m_det_lower_energy,m_det_upper_energy);
@@ -840,8 +804,8 @@ void MakeDrfChart::showFwhmPoints( const bool show )
 {
   series(sm_data_fwhm_col).setHidden( !show );
   series(sm_equation_fwhm_col).setHidden( !show );
-  axis(Chart::Y2Axis).setVisible( show );
-  setPlotAreaPadding( (show ? 55 : 10), Wt::Right );
+  axis(Chart::Axis::Y2).setVisible( show );
+  setPlotAreaPadding( (show ? 55 : 10), Wt::Side::Right );
 }//void showFwhmPoints( const bool show )
 
 
@@ -849,8 +813,8 @@ void MakeDrfChart::showEfficiencyPoints( const bool show )
 {
   series(sm_data_eff_col).setHidden( !show );
   series(sm_equation_eff_col).setHidden( !show );
-  axis(Chart::Y1Axis).setVisible( show );
-  setPlotAreaPadding( (show ? 55 : 10), Wt::Left );
+  axis(Chart::Axis::Y1).setVisible( show );
+  setPlotAreaPadding( (show ? 55 : 10), Wt::Side::Left );
 }//void showEfficiencyPoints( const bool show )
 
 
@@ -862,7 +826,7 @@ void MakeDrfChart::setXRange( double lower, double upper )
   if( fabs(lower-upper) < 1.0 || IsNan(lower) || IsNan(upper) || IsInf(lower) || IsInf(upper) )
     return;
   
-  axis(Chart::XAxis).setRange( lower, upper );
+  axis(Chart::Axis::X).setRange( lower, upper );
   updateYAxisRange();
 }//void setXRange( double lower, upper )
 

@@ -29,15 +29,35 @@
 #include <string>
 #include <vector>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 #include <boost/date_time.hpp>
 
-#include <Wt/Dbo/Dbo>
-//#include <Wt/Dbo/weak_ptr>  //usable with Wt 3.3.1, but not currently using
-#include <Wt/Dbo/SqlTraits>
-#include <Wt/Dbo/collection>
-#include <Wt/Dbo/WtSqlTraits>
+#include <Wt/Dbo/Dbo.h>
+//#include <Wt/Dbo/weak_ptr.h>  //usable with Wt 3.3.1, but not currently using
+#include <Wt/Dbo/SqlTraits.h>
+#include <Wt/Dbo/collection.h>
+#include <Wt/Dbo/WtSqlTraits.h>
 
+// Wt 4 removed built-in Dbo sql_value_traits for boost::posix_time types.
+// Wt4_TODO: Migrate time fields to std::chrono and remove these traits.
+namespace Wt { namespace Dbo {
+template<>
+struct sql_value_traits<boost::posix_time::ptime, void>
+{
+  static const bool specialized = true;
+  static std::string type( SqlConnection *conn, int size );
+  static void bind( const boost::posix_time::ptime &v, SqlStatement *statement, int column, int size );
+  static bool read( boost::posix_time::ptime &v, SqlStatement *statement, int column, int size );
+};
+template<>
+struct sql_value_traits<boost::posix_time::time_duration, void>
+{
+  static const bool specialized = true;
+  static std::string type( SqlConnection *conn, int size );
+  static void bind( const boost::posix_time::time_duration &v, SqlStatement *statement, int column, int size );
+  static bool read( boost::posix_time::time_duration &v, SqlStatement *statement, int column, int size );
+};
+} } // namespace Wt::Dbo
 
 class SpecMeas;
 class InterSpec;
@@ -197,7 +217,7 @@ public:
   std::string m_value;
   
   //value(): throws runtime_error if m_name or m_value is empty;
-  boost::any value() const;
+  Wt::cpp17::any value() const;
   
   template<class Action>
   void persist( Action &a )

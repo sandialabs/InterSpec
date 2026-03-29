@@ -44,7 +44,7 @@
 
 #include <boost/math/distributions/chi_squared.hpp>
 
-#include "Wt/WModelIndex"
+#include "Wt/WModelIndex.h"
 
 #include "mpParser.h"
 

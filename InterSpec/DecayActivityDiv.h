@@ -30,9 +30,9 @@
 #include <vector>
 #include <memory>
 
-#include <Wt/WEvent>
+#include <Wt/WEvent.h>
 #include <Wt/WConfig.h>
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -68,7 +68,7 @@ class DateLengthCalculator;
 class DecayActivityDiv : public Wt::WContainerWidget
 {
 public:
-  DecayActivityDiv( InterSpec *viewer, Wt::WContainerWidget *parent = NULL );
+  DecayActivityDiv( InterSpec *viewer );
   virtual ~DecayActivityDiv();
   
   void addNuclide( const int z, const int a, const int iso,
@@ -191,7 +191,7 @@ public:
   //Objects to actually display the chart of activities
   Wt::WTabWidget              *m_chartTabWidget;
   DecayActivityChart          *m_decayChart;
-  DecayActivityModel          *m_decayModel;
+  std::shared_ptr<DecayActivityModel> m_decayModel;
   
   DecayChainChart           *m_decayChainChart;
     

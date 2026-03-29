@@ -29,9 +29,9 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WSignal>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WSignal.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -83,7 +83,7 @@ public:
   virtual int rowCount( const Wt::WModelIndex & parent = Wt::WModelIndex() ) const;
   virtual int columnCount( const Wt::WModelIndex & parent = Wt::WModelIndex() ) const;
 
-  virtual boost::any data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
 
   //determineAndRemoveIsoLevel(...) looks for patterns such as 'Co60m', 'Co60meta',
   //  'Co 60 m', etc. to determine if the user is inputting a metts stable state.
@@ -129,9 +129,9 @@ protected:
   Wt::WText                    *m_selectedIsotopeHalfLife;
   Wt::WLineEdit                *m_isotopeSearch;
   Wt::WSuggestionPopup         *m_isotopeSuggestions;
-  SimpleIsotopeNameFilterModel *m_isoSearchFilterModel;
+  std::shared_ptr<SimpleIsotopeNameFilterModel> m_isoSearchFilterModel;
 
-  Wt::Signal<void> m_doneSignal;
+  Wt::Signal<> m_doneSignal;
   Wt::Signal< NuclideSelectedInfo > m_selectedSignal;
 
   void init();
@@ -146,10 +146,10 @@ protected:
   int getZ( const std::string &symbol ) const;
 
 public:
-  DecaySelectNuclide( const bool isPhone, Wt::WContainerWidget *parent = nullptr, AuxWindow *window = nullptr );
+  DecaySelectNuclide( const bool isPhone, AuxWindow *window = nullptr );
   virtual ~DecaySelectNuclide();
 
-  Wt::Signal<void> &done();
+  Wt::Signal<> &done();
 //  Wt::Signal<int,int,int,double,std::string,double> &selected();
   Wt::Signal<NuclideSelectedInfo> &selected();
 

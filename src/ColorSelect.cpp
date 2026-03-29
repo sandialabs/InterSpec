@@ -27,10 +27,10 @@
 #include <cctype>
 #include <exception>
 
-#include <Wt/WColor>
-#include <Wt/WFormWidget>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
+#include <Wt/WColor.h>
+#include <Wt/WFormWidget.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
 
 #include "InterSpec/ColorSelect.h"
 
@@ -51,9 +51,9 @@ namespace
     const bool doesntHave = (   env.agentIsMobileWebKit()
                         || env.agentIsIEMobile()
                         || env.agentIsMobileWebKit()
-                        || env.agent()==WEnvironment::MobileWebKitiPhone
-                        || env.agent()==WEnvironment::MobileWebKitAndroid
-                        || env.agent()==WEnvironment::MobileWebKit
+                        || env.agent()==Wt::UserAgent::MobileWebKitiPhone
+                        || env.agent()==Wt::UserAgent::MobileWebKitAndroid
+                        || env.agent()==Wt::UserAgent::MobileWebKit
                         || env.userAgent().find("Opera Mobi") != std::string::npos
                         || env.userAgent().find("Android") != std::string::npos
                         || env.userAgent().find("RIM ") != std::string::npos
@@ -157,10 +157,10 @@ namespace
 }//namespace
 
 
-ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options, Wt::WContainerWidget *parent )
-: WFormWidget( parent ),
+ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options )
+: WFormWidget(),
   m_hasBeenSet( false ),
-  m_usingNative( options.testFlag(PrefferNative) && hasNativePicker() ),
+  m_usingNative( options.test(PrefferNative) && hasNativePicker() ),
   m_userSelectedColor( this, "colorchange", true )
 {
   if( m_usingNative )
@@ -189,7 +189,7 @@ ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options, Wt::WContainer
       //"maxSelectionSize: 10,"
       "localStorageKey: \"colorpicker.palette\","
       "change: function(color){ Wt.emit('" + id() + "', {name: 'colorchange'}, (color ? color.toHexString() : 'null') );  }";
-    if( options.testFlag(AllowNoColor) )
+    if( options.test(AllowNoColor) )
     {
       init_js += ",color: null, allowEmpty: true";
       setAttributeValue( "value", "" );
@@ -204,7 +204,7 @@ ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options, Wt::WContainer
     //ToDo: Support alpha - requires patching Wt.
     //init_js += ",showAlpha: true";
     
-    if( options.testFlag(DontShowPalete) )
+    if( options.test(DontShowPalete) )
     {
       init_js += ",showPalette: false";
     }else
@@ -228,7 +228,7 @@ ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options, Wt::WContainer
        "rgb(12, 52, 61)",    "rgb(28, 69, 135)",     "rgb(7, 55, 99)",       "rgb(32, 18, 77)",     "rgb(76, 17, 48)"]] )tok";
     }
     
-    if( options.testFlag(DontShowTextInput) )
+    if( options.test(DontShowTextInput) )
       init_js += ",showInput: false";
     else
       init_js += ",showInput: true, preferredFormat: \"rgb\"";  //hex other option
@@ -238,8 +238,7 @@ ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options, Wt::WContainer
     doJavaScript( init_js );
   }//if( m_usingNative ) / else
   
-  m_userSelectedColor.connect( boost::bind( &ColorSelect::colorSetCallback, this,
-                                           boost::placeholders::_1 ) );
+  m_userSelectedColor.connect( [this]( const std::string &val ){ colorSetCallback( val ); } );
 }//ColorSelect(...)
 
 
@@ -357,7 +356,7 @@ Wt::Signal<Wt::WColor> &ColorSelect::cssColorChanged()
 
 DomElementType ColorSelect::domElementType() const
 {
-  return Wt::DomElement_INPUT;
+  return Wt::DomElementType::INPUT;
 }
 
 bool ColorSelect::willUseNativeColorPicker()

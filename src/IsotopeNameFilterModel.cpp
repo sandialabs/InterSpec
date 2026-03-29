@@ -27,14 +27,14 @@
 #include <vector>
 #include <algorithm>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
-#include <Wt/WString>
-#include <Wt/WLineEdit>
-#include <Wt/WApplication>
-#include <Wt/WSuggestionPopup>
-#include <Wt/WAbstractItemModel>
-#include <Wt/WJavaScriptPreamble>
+#include <Wt/WString.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WApplication.h>
+#include <Wt/WSuggestionPopup.h>
+#include <Wt/WAbstractItemModel.h>
+#include <Wt/WJavaScriptPreamble.h>
 
 #include "InterSpec/PeakDef.h"
 #include "SpecUtils/StringAlgo.h"
@@ -72,8 +72,8 @@ namespace
   
 }//namespace
 
-IsotopeNameFilterModel::IsotopeNameFilterModel( WObject *parent )
-  : WAbstractItemModel( parent ),
+IsotopeNameFilterModel::IsotopeNameFilterModel()
+  : WAbstractItemModel(),
     m_minHalfLife( 0.0 ),
     m_includeXray( true ),
     m_includeEscape( true ),
@@ -155,7 +155,7 @@ int IsotopeNameFilterModel::columnCount( const Wt::WModelIndex &parent ) const
 }
 
 
-boost::any IsotopeNameFilterModel::data( const Wt::WModelIndex &index, int role ) const
+Wt::cpp17::any IsotopeNameFilterModel::data( const Wt::WModelIndex &index, Wt::ItemDataRole role ) const
 {
   const int row = index.row();
   const int column = index.column();
@@ -167,7 +167,7 @@ boost::any IsotopeNameFilterModel::data( const Wt::WModelIndex &index, int role 
   const int nrows = nnuc + nel + nrctn + ncustom;
 
   if( row<0 || row>=nrows || column!=0 )
-    return boost::any();
+    return Wt::cpp17::any();
 
 //we could customize tool tip or display roles here to give more information...
 //  if( role == Wt::ToolTipRole )
@@ -176,23 +176,23 @@ boost::any IsotopeNameFilterModel::data( const Wt::WModelIndex &index, int role 
   if( row < nel )
   {
     const SandiaDecay::Element *el = m_candidatesElements[row];
-    return boost::any( WString( el->symbol ) );
+    return Wt::cpp17::any( WString( el->symbol ) );
   }else if( row < (nel+nnuc) )
   {
     const int nucnum = row - nel;
     const SandiaDecay::Nuclide *nuc = m_candidatesNuclides[nucnum];
-    return boost::any( WString( m_typePrefix + nuc->symbol ) );
+    return Wt::cpp17::any( WString( m_typePrefix + nuc->symbol ) );
   }else if( row < (nel+nnuc+nrctn) )
   {
     const int rctnum = row - nel - nnuc;
     const ReactionGamma::Reaction *rctn = m_candidatesReactions[rctnum];
-    return boost::any( WString( m_typePrefix + rctn->name() ) );
+    return Wt::cpp17::any( WString( m_typePrefix + rctn->name() ) );
   }else
   {
-    return boost::any( m_customSuggests[row-nel-nnuc-nrctn] );
+    return Wt::cpp17::any( m_customSuggests[row-nel-nnuc-nrctn] );
   }
   
-}//boost::any IsotopeNameFilterModel::data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const
+}//Wt::cpp17::any IsotopeNameFilterModel::data( const Wt::WModelIndex &index, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const
 
 
 int IsotopeNameFilterModel::determineAndRemoveIsoLevel( std::string &label )

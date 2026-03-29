@@ -160,7 +160,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                const std::vector<ReferenceLineInfo> displayed,
                                const bool setColorFromRefLine,
                                std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
-                               boost::function<void(void)> callback,
+                               std::function<void(void)> callback,
                                const std::string sessionID,
                                const bool singleThread,
                                std::shared_ptr<const PeakFitDetPrefs> fitPrefs );

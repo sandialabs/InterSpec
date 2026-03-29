@@ -28,8 +28,8 @@
 #include <string>
 #include <vector>
 
-#include <Wt/WPainter>
-#include <Wt/WPaintedWidget>
+#include <Wt/WPainter.h>
+#include <Wt/WPaintedWidget.h>
 
 //Forward declarations
 namespace Wt
@@ -71,7 +71,7 @@ public:
     DecayThrough
   };//enum class DecayChainType
   
-  DecayChainChart( WContainerWidget *parent = nullptr );
+  DecayChainChart();
   
   /** Show the decay chain, or decay-through chart for a specified
   nuclide, as a AuxWindow.

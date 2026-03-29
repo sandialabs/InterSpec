@@ -28,10 +28,11 @@
 #include <chrono>
 #include <vector>
 #include <memory>
+#include <iomanip>
 #include <optional>
 #include <iostream>
 
-#include <Wt/WApplication>
+#include <Wt/WApplication.h>
 
 #ifdef _MSC_VER
 #undef isinf

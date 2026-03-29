@@ -32,14 +32,11 @@
 #include <stdexcept>
 #include <functional>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
-
-#include <Wt/WText>
-#include <Wt/WServer>
-#include <Wt/WIOService>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
+#include <Wt/WText.h>
+#include <Wt/WServer.h>
+#include <Wt/WIOService.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
 
 
 #include "SpecUtils/SpecFile.h"
@@ -66,14 +63,13 @@ using namespace std;
 
 BatchGuiInputFile::BatchGuiInputFile( const std::string display_name,
                                       const std::string path_to_file,
-                                      const bool should_cleanup,
-                                      Wt::WContainerWidget *parent )
-: Wt::WContainerWidget( parent ),
+                                      const bool should_cleanup )
+: Wt::WContainerWidget(),
   m_filename( path_to_file ),
   m_display_name( display_name ),
   m_should_cleanup( should_cleanup ),
   m_txt( nullptr ),
-  m_remove_self_request_signal( this )
+  m_remove_self_request_signal()
 {
   addStyleClass( "BatchGuiInputFile" );
 
@@ -82,13 +78,13 @@ BatchGuiInputFile::BatchGuiInputFile( const std::string display_name,
 
   wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
   
-  m_txt = new WText( display_name, this );
+  m_txt = addNew<WText>( display_name );
   m_txt->addStyleClass( "FilenameText" );
   m_txt->setToolTip( "Full path of disk file: '" + path_to_file + "'" );
 
-  WContainerWidget *close_icon = new WContainerWidget( this );
+  WContainerWidget *close_icon = addNew<WContainerWidget>();
   close_icon->addStyleClass( "closeicon-wtdefault" );
-  close_icon->clicked().connect( boost::bind( &BatchGuiInputFile::requestRemoveSelf, this ) );
+  close_icon->clicked().connect( [this](){ requestRemoveSelf(); } );
   close_icon->clicked().preventPropagation();
 }// BatchGuiInputFile constructor
 
@@ -126,9 +122,8 @@ Wt::Signal<BatchGuiInputFile *> &BatchGuiInputFile::remove_self_request()
 BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_name,
                                                       const std::string path_to_file,
                                                       const bool should_cleanup,
-                                                      const BatchGuiInputSpectrumFile::ShowPreviewOption preview,
-                                                      Wt::WContainerWidget *parent )
-: Wt::WContainerWidget( parent ),
+                                                      const BatchGuiInputSpectrumFile::ShowPreviewOption preview )
+: Wt::WContainerWidget(),
   m_filename( path_to_file ),
   m_display_name( display_name ),
   m_should_cleanup( should_cleanup ),
@@ -138,8 +133,8 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
   m_preview_created( false ),
   m_spec_meas( nullptr ),
   m_is_peaks_csv( false ),
-  m_preview_created_signal( this ),
-  m_remove_self_request_signal( this )
+  m_preview_created_signal(),
+  m_remove_self_request_signal()
 {
   addStyleClass( "BatchGuiInputSpectrumFile" );
 
@@ -148,23 +143,23 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
   
   wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
   
-  m_preview_container = new Wt::WContainerWidget( this );
+  m_preview_container = addNew<Wt::WContainerWidget>();
   m_preview_container->addStyleClass( "InputFilePreview" );
 
-  WText *filename_text = new WText( display_name, this );
+  WText *filename_text = addNew<WText>( display_name );
   filename_text->addStyleClass( "FilenameText" );
   filename_text->setToolTip( "Full path of disk file: '" + path_to_file + "'" );
 
-  WContainerWidget *close_icon = new WContainerWidget( this );
+  WContainerWidget *close_icon = addNew<WContainerWidget>();
   close_icon->addStyleClass( "closeicon-wtdefault" );
-  close_icon->clicked().connect( boost::bind( &BatchGuiInputSpectrumFile::requestRemoveSelf, this ) );
+  close_icon->clicked().connect( [this](){ requestRemoveSelf(); } );
   close_icon->clicked().preventPropagation();
 
   const string sessionid = wApp->sessionId();
   std::shared_ptr<int> status_ptr = make_shared<int>( 0 );
   std::shared_ptr<SpecMeas> spec_meas = make_shared<SpecMeas>();
-  boost::function<void( void )> updateGuiCallback =
-    wApp->bind( boost::bind( &BatchGuiInputSpectrumFile::set_spectrum, this, spec_meas, status_ptr ) );
+  std::function<void( void )> updateGuiCallback =
+    [this, spec_meas, status_ptr](){ set_spectrum( spec_meas, status_ptr ); };
 
   WServer::instance()->ioService().boost::asio::io_service::post(
     [updateGuiCallback, spec_meas, status_ptr, display_name, path_to_file, sessionid]()
@@ -202,7 +197,7 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
       //  Not quite sure why; elements arent being found in the JS to set their contents.
       //  The obvious thing is that its something to do with us being in a SimpleDialog.
       //  TODO: figure out why we need this next timeout!
-      WServer::instance()->schedule( 1000, sessionid, updateGuiCallback );
+      WServer::instance()->schedule( std::chrono::milliseconds(1000), sessionid, updateGuiCallback );
     } );
 }// BatchGuiInputSpectrumFile constructor
 
@@ -213,12 +208,12 @@ void BatchGuiInputSpectrumFile::set_spectrum( std::shared_ptr<SpecMeas> spec_mea
   {
     m_is_peaks_csv = true;
 
-    WText *preview = new WText( m_preview_container );
+    WText *preview = m_preview_container->addNew<WText>();
     preview->setText( WString::tr( "bgw-peaks-csv-txt" ) );
     preview->setStyleClass( "PeaksCsvFile" );
   } else if( !status_ptr || !spec_meas || ( spec_meas->num_measurements() == 0 ) || ( ( *status_ptr ) != 1 ) )
   {
-    WText *preview = new WText( m_preview_container );
+    WText *preview = m_preview_container->addNew<WText>();
     preview->setText( WString::tr( "bgw-not-spec-preview" ) );
     preview->setStyleClass( "NotSpectrumFile" );
   } else
@@ -242,7 +237,7 @@ void BatchGuiInputSpectrumFile::set_spectrum( std::shared_ptr<SpecMeas> spec_mea
         preview_meas = spec_meas->sum_measurements( samples, det_names, nullptr );
       } catch( std::exception & )
       {
-        WText *preview = new WText( m_preview_container );
+        WText *preview = m_preview_container->addNew<WText>();
         preview->setText( WString::tr( "bgw-passthrough-sum-error" ) );
         return;
       }
@@ -300,17 +295,17 @@ void BatchGuiInputSpectrumFile::set_spectrum( std::shared_ptr<SpecMeas> spec_mea
 
     if( preview_meas && (m_show_preview == ShowPreviewOption::DontShow) )
     {
-      WText *preview = new WText( m_preview_container );
+      WText *preview = m_preview_container->addNew<WText>();
       preview->setText( WString::tr( "bgw-preview-skip" ) );
       preview->setStyleClass( "PreviewSkip" );
     }else if( preview_meas )
     {
       if( !m_spectrum )
       {
-        m_spectrum = new D3SpectrumDisplayDiv( m_preview_container );
+        m_spectrum = m_preview_container->addNew<D3SpectrumDisplayDiv>();
         m_spectrum->clicked().preventPropagation();
         m_spectrum->setThumbnailMode();
-        m_spectrum->resize( WLength( 100, WLength::Percentage ), WLength( 100, WLength::Percentage ) );
+        m_spectrum->resize( WLength( 100, WLength::Unit::Percentage ), WLength( 100, WLength::Unit::Percentage ) );
 
         // We dont currently need to explicitly set the color theme, as all color theme styling for
         //   D3SpectrumDisplayDiv is globally applied...
@@ -323,7 +318,7 @@ void BatchGuiInputSpectrumFile::set_spectrum( std::shared_ptr<SpecMeas> spec_mea
       m_spectrum->setData( preview_meas, false );
     } else
     {
-      WText *preview = new WText( m_preview_container );
+      WText *preview = m_preview_container->addNew<WText>();
       preview->setText( WString::tr( "bgw-preview-error" ) );
       preview->setStyleClass( "PreviewError" );
     }

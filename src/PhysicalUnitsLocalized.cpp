@@ -28,13 +28,27 @@
 #include <regex>
 #include <utility>
 
-#include <Wt/WLocale>
-#include <Wt/WApplication>
-#include <Wt/WMessageResourceBundle>
+#include <Wt/WLocale.h>
+#include <Wt/WApplication.h>
+#include <Wt/WMessageResourceBundle.h>
 
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+
+namespace
+{
+  // Helper to adapt Wt 4 resolveKey (which returns LocalizedString) to the old Wt 3 pattern
+  //  of bool resolveKey(key, outString)
+  bool resolveKeyCompat( Wt::WMessageResourceBundle &bundle,
+                         const std::string &key, std::string &result )
+  {
+    const Wt::LocalizedString ls = bundle.resolveKey( Wt::WLocale::currentLocale(), key );
+    if( ls.success )
+      result = ls.value;
+    return ls.success;
+  }
+}//namespace
 
 using namespace std;
 
@@ -158,7 +172,7 @@ namespace PhysicalUnitsLocalized
     
     auto get_translations = [&]( const string &map_key, const string &val_key ){
       string csv_list;
-      if( bundle.resolveKey( val_key, csv_list ) )
+      if( resolveKeyCompat( bundle, val_key, csv_list ) )
       {
         SpecUtils::split( to_units_from[map_key], csv_list, "|" );
       }else
@@ -292,16 +306,16 @@ namespace PhysicalUnitsLocalized
       bool found = false;
       string localized_unit;
       if( unit == "y" )
-        found = bundle.resolveKey( "units-label-years-short", localized_unit);
+        found = resolveKeyCompat( bundle, "units-label-years-short", localized_unit);
       else if( unit == "d" )
-        found = bundle.resolveKey( "units-label-days-short", localized_unit);
+        found = resolveKeyCompat( bundle, "units-label-days-short", localized_unit);
       else if( unit == "h" )
-        found = bundle.resolveKey( "units-label-hours-short", localized_unit);
+        found = resolveKeyCompat( bundle, "units-label-hours-short", localized_unit);
       else if( unit == "m" )
-        found = bundle.resolveKey( "units-label-minutes-short", localized_unit);
+        found = resolveKeyCompat( bundle, "units-label-minutes-short", localized_unit);
       else if( SpecUtils::iends_with(unit, "s") )
       {
-        found = bundle.resolveKey( "units-label-seconds-short", localized_unit);
+        found = resolveKeyCompat( bundle, "units-label-seconds-short", localized_unit);
         if( found )
         {
           assert( (unit == "s") || (unit == "ms") || (unit == "ps") || (unit == "us") || (unit == "\xCE\xBCs") );

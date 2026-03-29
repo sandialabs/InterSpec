@@ -34,19 +34,19 @@
 #include <string>
 #include <sstream>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
-#include <Wt/WString>
-#include <Wt/Dbo/Dbo>
-#include <Wt/Dbo/ptr>
-#include <Wt/WDateTime>
-#include <Wt/WResource>
-#include <Wt/WDateTime>
-#include <Wt/WModelIndex>
-#include <Wt/Dbo/Session>
-#include <Wt/Dbo/WtSqlTraits>
-#include <Wt/WContainerWidget>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WString.h>
+#include <Wt/Dbo/Dbo.h>
+#include <Wt/Dbo/ptr.h>
+#include <Wt/WDateTime.h>
+#include <Wt/WResource.h>
+#include <Wt/WDateTime.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/Dbo/Session.h>
+#include <Wt/Dbo/WtSqlTraits.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
@@ -373,11 +373,7 @@ public:
    */
   mutable std::map<std::set<int>,long long int> m_userStateDbIndexes;
   
-#ifdef WT_USE_BOOST_SIGNALS2
-  mutable boost::signals2::connection m_aboutToBeDeletedConnection;
-#else
-  mutable boost::signals::connection m_aboutToBeDeletedConnection;
-#endif
+  mutable Wt::Signals::connection m_aboutToBeDeletedConnection;
 };//class SpectraFileHeader
 
 
@@ -424,13 +420,13 @@ public:
     InvalidLevel
   };
 
-  SpectraFileModel( Wt::WObject *parent = NULL );
+  SpectraFileModel();
   ~SpectraFileModel();
   
   virtual int columnCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
-  virtual boost::any data( const Wt::WModelIndex &index,
-                           int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
+                           Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   std::shared_ptr<SpectraFileHeader> fileHeader( int row );
   Wt::WModelIndex index( std::shared_ptr<SpectraFileHeader> header ) const;
 
@@ -458,10 +454,10 @@ public:
   virtual Wt::WModelIndex index( int row, int column,
                              const Wt::WModelIndex &parent = Wt::WModelIndex()
                                                              ) const;
-  virtual boost::any headerData( int section,
-                                 Wt::Orientation orientation = Wt::Horizontal,
-                                 int role = Wt::DisplayRole ) const;
-  virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
+  virtual Wt::cpp17::any headerData( int section,
+                                 Wt::Orientation orientation = Wt::Orientation::Horizontal,
+                                 Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
+  virtual void sort( int column, Wt::SortOrder order = Wt::SortOrder::Ascending );
   virtual void *toRawIndex( const Wt::WModelIndex &index ) const;
   virtual Wt::WModelIndex fromRawIndex( void *rawIndex ) const;
 

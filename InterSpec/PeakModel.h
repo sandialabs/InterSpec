@@ -29,12 +29,12 @@
 #include <vector>
 #include <memory>
 
-#include <Wt/WResource>
-#include <Wt/WModelIndex>
-#include <Wt/Chart/WDataSeries>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WResource.h>
+#include <Wt/WModelIndex.h>
+#include <Wt/Chart/WDataSeries.h>
+#include <Wt/WAbstractItemModel.h>
 
-#include <boost/any.hpp>
+#include <Wt/WAny.h>
 
 #include "InterSpec/PeakDef.h"
 
@@ -95,7 +95,7 @@ public:
   typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
 
 public:
-  PeakModel( Wt::WObject *parent = 0 );
+  PeakModel();
   virtual ~PeakModel();
 
   /** Sets the foreground spectrum - necessary for stepped continua. */
@@ -295,12 +295,12 @@ public:
   virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   virtual int columnCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   virtual Wt::WModelIndex parent( const Wt::WModelIndex &index ) const;
-  virtual boost::any data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any data( const Wt::WModelIndex &index, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   virtual Wt::WModelIndex index( int row, int column, const
                                  Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
-  virtual boost::any headerData( int section,
-                                 Wt::Orientation orientation = Wt::Horizontal,
-                                 int role = Wt::DisplayRole ) const;
+  virtual Wt::cpp17::any headerData( int section,
+                                 Wt::Orientation orientation = Wt::Orientation::Horizontal,
+                                 Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
 
   virtual bool removeRows( int row, int last,
                              const Wt::WModelIndex &parent = Wt::WModelIndex() );
@@ -310,8 +310,8 @@ public:
                               const Wt::WModelIndex &parent = Wt::WModelIndex() );
 
   virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const;
-  virtual bool setData( const Wt::WModelIndex &index, const boost::any &value,
-                        int role = Wt::EditRole );
+  virtual bool setData( const Wt::WModelIndex &index, const Wt::cpp17::any &value,
+                        Wt::ItemDataRole role = Wt::ItemDataRole::Edit );
 
   
   enum class SetGammaSource
@@ -386,7 +386,7 @@ public:
   
   
 
-  virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
+  virtual void sort( int column, Wt::SortOrder order = Wt::SortOrder::Ascending );
   static bool compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
                        Columns column, Wt::SortOrder order,
                        const std::shared_ptr<const SpecUtils::Measurement> &data );

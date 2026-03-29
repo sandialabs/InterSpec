@@ -31,20 +31,20 @@
 #include <iostream>
 #include <iterator>
 
-#include <Wt/Utils>
-#include <Wt/WResource>
-#include <Wt/Json/Value>
-#include <Wt/Json/Parser>
-#include <Wt/Json/Object>
-#include <Wt/WJavaScript>
-#include <Wt/WApplication>
-#include <Wt/WPaintDevice>
-#include <Wt/Http/Request>
-#include <Wt/Http/Response>
-#include <Wt/WPaintedWidget>
-#include <Wt/WContainerWidget>
-#include <Wt/WCssDecorationStyle>
-#include <Wt/Chart/WAbstractChart>
+#include <Wt/Utils.h>
+#include <Wt/WResource.h>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Parser.h>
+#include <Wt/Json/Object.h>
+#include <Wt/WJavaScript.h>
+#include <Wt/WApplication.h>
+#include <Wt/WPaintDevice.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
+#include <Wt/WPaintedWidget.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WCssDecorationStyle.h>
+#include <Wt/Chart/WAbstractChart.h>
 
 
 #include "SpecUtils/Filesystem.h"
@@ -60,9 +60,8 @@ using namespace Wt;
 using namespace std;
 
 
-FileDragUploadResource::FileDragUploadResource( WObject *parent  )
-    : WResource( parent ),
-      m_fileDrop( this )
+FileDragUploadResource::FileDragUploadResource()
+    : WResource()
 {
   setUploadProgress( true );
 

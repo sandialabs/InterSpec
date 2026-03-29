@@ -25,9 +25,9 @@
 
 #include <regex>
 #include <chrono>
-#include <Wt/WServer>
-#include <Wt/WIOService>
-#include <Wt/WApplication>
+#include <Wt/WServer.h>
+#include <Wt/WIOService.h>
+#include <Wt/WApplication.h>
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SpecUtilsAsync.h"
@@ -166,7 +166,7 @@ struct AlwaysSrcs
 
 
 RefLineDynamic::RefLineDynamic( D3SpectrumDisplayDiv *chart, InterSpec *interspec )
-  : Wt::WObject( chart ),
+  : Wt::WObject( /*chart*/ ),
   m_interspec( interspec ),
   m_chart( chart ),
   m_active( false ),
@@ -184,19 +184,22 @@ RefLineDynamic::RefLineDynamic( D3SpectrumDisplayDiv *chart, InterSpec *interspe
   m_active = UserPreferences::preferenceValue<bool>( "DynamicRefLine", m_interspec );
   m_interspec->preferences()->addCallbackWhenChanged( "DynamicRefLine", this, &RefLineDynamic::setActive );
     
-  m_interspec->hintPeaksSet().connect( boost::bind(&RefLineDynamic::autoSearchPeaksSet, this, boost::placeholders::_1) );
-  m_interspec->displayedSpectrumChanged().connect( boost::bind(&RefLineDynamic::spectrumChanged, this,
-    boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4
-  ) );
-  
-  m_interspec->externalRidResultsRecieved().connect( boost::bind( &RefLineDynamic::autoRidResultsRecieved, this, boost::placeholders::_1 ) );
-  m_interspec->colorThemeChanged().connect( boost::bind( &RefLineDynamic::colorThemeChanged, this, boost::placeholders::_1 ) );
+  m_interspec->hintPeaksSet().connect( [this]( const SpecUtils::SpectrumType t ){ autoSearchPeaksSet( t ); } );
+  m_interspec->displayedSpectrumChanged().connect( [this]( const SpecUtils::SpectrumType t,
+    const std::shared_ptr<SpecMeas> &m, const std::set<int> &s, const std::vector<std::string> &d ){
+      spectrumChanged( t, m, s, d );
+  } );
+
+  m_interspec->externalRidResultsRecieved().connect(
+    [this]( const std::shared_ptr<const ExternalRidResults> &r ){ autoRidResultsRecieved( r ); } );
+  m_interspec->colorThemeChanged().connect(
+    [this]( const std::shared_ptr<const ColorTheme> &t ){ colorThemeChanged( t ); } );
   PeakModel * const pmodel = m_interspec->peakModel();
   if( pmodel )
   {
-    pmodel->rowsInserted().connect( boost::bind( &RefLineDynamic::peaksAdded, this ) );
-    pmodel->rowsRemoved().connect( boost::bind( &RefLineDynamic::peaksRemoved, this ) );
-    pmodel->dataChanged().connect( boost::bind( &RefLineDynamic::peakModified, this ) );
+    pmodel->rowsInserted().connect( [this](){ peaksAdded(); } );
+    pmodel->rowsRemoved().connect( [this](){ peaksRemoved(); } );
+    pmodel->dataChanged().connect( [this](){ peakModified(); } );
   }
 
   // TODO: We also need to update lines after an energy calbration is done
@@ -436,10 +439,10 @@ void RefLineDynamic::colorThemeChanged( const shared_ptr<const ColorTheme> &them
 
 void RefLineDynamic::startPushUpdates()
 {
-  if( m_renderFlags.testFlag(DynamicRefLineRenderFlags::UpdateLines) )
+  if( m_renderFlags.test(DynamicRefLineRenderFlags::UpdateLines) )
     startUpdateLines();
-  
-  m_renderFlags = 0;
+
+  m_renderFlags = WFlags<DynamicRefLineRenderFlags>();
 }//void pushUpdates()
 
 
@@ -729,9 +732,9 @@ void RefLineDynamic::startUpdateLines()
   shared_ptr<string> js_fwhm_fcn = make_shared<string>();
   
   const string sessionId = wApp->sessionId();
-  boost::function<void()> updaterfcn = wApp->bind( boost::bind( &RefLineDynamic::finishUpdateLines,
-                                              this, ref_lines_answer, js_fwhm_fcn, starting_calc_num
-  ) );
+  std::function<void()> updaterfcn = [this, ref_lines_answer, js_fwhm_fcn, starting_calc_num](){
+    finishUpdateLines( ref_lines_answer, js_fwhm_fcn, starting_calc_num );
+  };
   
   
   const auto do_work = [foreground, det_ana, unique_foreground_peaks, unique_background_peaks,

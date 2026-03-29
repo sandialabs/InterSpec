@@ -23,9 +23,9 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WTreeView>
-#include <Wt/WApplication>
-#include <Wt/WAbstractItemModel>
+#include <Wt/WTreeView.h>
+#include <Wt/WApplication.h>
+#include <Wt/WAbstractItemModel.h>
 
 #include "InterSpec/RowStretchTreeView.h"
 
@@ -57,8 +57,8 @@ WT_DECLARE_WT_MEMBER(TreeViewCheckWidth, Wt::JavaScriptFunction, "TreeViewCheckW
 );
 
 
-RowStretchTreeView::RowStretchTreeView( WContainerWidget *parent )
-  : WTreeView( parent ),
+RowStretchTreeView::RowStretchTreeView()
+  : WTreeView(),
     m_rowWidthPx( -1 ),
     m_hasScrollBar( true ),
     m_scrollBarWidth( -1 ),
@@ -153,17 +153,17 @@ void RowStretchTreeView::rowsRemovedCallback( Wt::WModelIndex index, int first, 
 
 
 
-void RowStretchTreeView::setModel( Wt::WAbstractItemModel *model )
+void RowStretchTreeView::setModel( const std::shared_ptr<Wt::WAbstractItemModel> &model )
 {
   WTreeView::setModel( model );
-  
+
   if( model )
   {
     model->rowsInserted().connect( this, &RowStretchTreeView::rowsAddedCallback );
     model->rowsRemoved().connect(  this, &RowStretchTreeView::rowsRemovedCallback );
   }//if( model )
-  
-}//void setModel( Wt::WAbstractItemModel *model )
+
+}//void setModel( const std::shared_ptr<Wt::WAbstractItemModel> &model )
 
 
 void RowStretchTreeView::refreshColWidthLayout()
@@ -177,7 +177,7 @@ void RowStretchTreeView::render(	Wt::WFlags<Wt::RenderFlag> flags )
 {
   WTreeView::render( flags );
   
-  if( flags & RenderFull )
+  if( flags.test(Wt::RenderFlag::Full) )
   {
     //Redefine the wtResize so this way adjusting column sizes saves one client
     //  to server round trip.
@@ -280,7 +280,7 @@ void RowStretchTreeView::widthChanged( int widthpx, int scrollbarWidth )
     //  (this is probably a pointless optimiztion that doesnt help - consider
     //  removing)
     if( !isColumnHidden(col) && (delta < -1.0 || delta > 0.0) )
-      WTreeView::setColumnWidth( col, WLength(w,WLength::Pixel) );
+      WTreeView::setColumnWidth( col, WLength(w,WLength::Unit::Pixel) );
   }//for( const RowWidthMap::value_type &vt : m_nominalWidth )
   
   doJavaScript( containerjs + ".css('overflow-x','hidden');" );
@@ -348,7 +348,7 @@ void RowStretchTreeView::layoutSizeChanged( int width, int height )
       const int col = iter->first;
       const double w = iter->second;
       if( !isColumnHidden(col) && fabs(columnWidth(col).toPixels() - w) > 0.9 )
-        WTreeView::setColumnWidth( col, WLength(w,WLength::Pixel));
+        WTreeView::setColumnWidth( col, WLength(w,WLength::Unit::Pixel));
     }
     return;
   }//if( remaniningWidth <= 0.0 )
@@ -364,7 +364,7 @@ void RowStretchTreeView::layoutSizeChanged( int width, int height )
     //  need to adjust the width of the column, in terms of optimizing
     //  renderings, bandwidth, and display
     if( !isColumnHidden(col)  && fabs(columnWidth(col).toPixels() - w) > 0.9 )
-      WTreeView::setColumnWidth( col, WLength(w,WLength::Pixel) );
+      WTreeView::setColumnWidth( col, WLength(w,WLength::Unit::Pixel) );
   }
 }//void layoutSizeChanged (const int width, const int height)
 
@@ -377,18 +377,8 @@ void RowStretchTreeView::selectRange( const Wt::WModelIndex &first, const Wt::WM
   // wrap around to the first item and loop forever.
   //
   // We use WAbstractItemView::select() instead of internalSelect() since internalSelect is not
-  // accessible. We block the selectionChanged() signal during batch selection.
-
-  struct SignalBlocker
-  {
-    Wt::Signal<> &m_signal;
-    const bool m_was_blocked;
-    SignalBlocker( Wt::Signal<> &ref )
-      : m_signal( ref ), m_was_blocked( ref.isBlocked() ){ m_signal.setBlocked( true ); }
-    ~SignalBlocker(){ m_signal.setBlocked( m_was_blocked ); }
-  };//struct SignalBlocker
-
-  SignalBlocker blocker( selectionChanged() );
+  // accessible. Note: in Wt4, Signal::setBlocked() was removed, so selectionChanged() may fire
+  // multiple times during batch selection.
 
   // Helper to promote a child index to its parent if the parent is collapsed.
   // This ensures we use visible row positions for range endpoints when children
@@ -495,7 +485,7 @@ void RowStretchTreeView::selectRange( const Wt::WModelIndex &first, const Wt::WM
       if( !ic.isValid() )
         continue;
 
-      WAbstractItemView::select( ic, Select );
+      WAbstractItemView::select( ic, Wt::SelectionFlag::Select );
 
       // Check both exact match and position match (in case indices differ in representation)
       if( ic == endIdx || sameTreePosition( ic, endIdx ) )

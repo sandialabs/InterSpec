@@ -26,10 +26,9 @@
 #include <string>
 #include <limits>
 
-#include <Wt/WSignal>
-#include <Wt/WString>
-#include <Wt/WLineEdit>
-#include <Wt/WContainerWidget>
+#include <Wt/WSignal.h>
+#include <Wt/WString.h>
+#include <Wt/WLineEdit.h>
 
 #include "InterSpec/NativeFloatSpinBox.h"
 
@@ -37,8 +36,8 @@ using namespace std;
 using namespace Wt;
 
 
-NativeFloatSpinBox::NativeFloatSpinBox( Wt::WContainerWidget *parent )
-    : WLineEdit( parent ),
+NativeFloatSpinBox::NativeFloatSpinBox()
+    : WLineEdit(),
       m_value( 0.0f ),
       m_min( -std::numeric_limits<float>::max() ),
       m_max( std::numeric_limits<float>::max() ),

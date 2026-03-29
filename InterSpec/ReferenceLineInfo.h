@@ -30,7 +30,7 @@
 #include <vector>
 #include <string>
 
-#include <Wt/WColor>
+#include <Wt/WColor.h>
 
 #include "InterSpec/ReactionGamma.h"
 

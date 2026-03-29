@@ -29,7 +29,7 @@
 #include <vector>
 #include <memory>
 
-#include <Wt/WContainerWidget>
+#include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -89,8 +89,7 @@ class DoseCalcWidget : public Wt::WContainerWidget
 public:
   
   DoseCalcWidget( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec *specViewer,
-                  Wt::WContainerWidget *parent = 0 );
+                  InterSpec *specViewer );
   
   
   virtual ~DoseCalcWidget();
@@ -154,7 +153,7 @@ protected:
   ShieldingSelect *m_answerShieldingSelect;
 
   NuclideSourceEnter *m_gammaSource;
-  Wt::WButtonGroup *m_sourceType;
+  std::shared_ptr<Wt::WButtonGroup> m_sourceType;
   Wt::WContainerWidget *m_gammaSourceDiv;
   Wt::WContainerWidget *m_neutronSourceDiv;
   Wt::WComboBox *m_neutronSourceCombo;

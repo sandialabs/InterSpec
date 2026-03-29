@@ -27,11 +27,11 @@
 
 #include <functional>
 
-#include <Wt/WLabel>
-#include <Wt/WText>
-#include <Wt/WLineEdit>
-#include <Wt/WPushButton>
-#include <Wt/WString>
+#include <Wt/WLabel.h>
+#include <Wt/WText.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WString.h>
 
 #include "SpecUtils/Filesystem.h"
 
@@ -47,16 +47,14 @@
 #endif
 
 
-DirectorySelector::DirectorySelector( Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+DirectorySelector::DirectorySelector()
+  : WContainerWidget(),
     m_currentPath(),
     m_isValid( false ),
     m_label( nullptr ),
     m_pathDisplay( nullptr ),
     m_selectButton( nullptr ),
     m_pathInput( nullptr ),
-    m_pathChanged( this ),
-    m_pathValidityChanged( this ),
     m_useNativeDialog( false )
 {
   wApp->useStyleSheet( "InterSpec_resources/DirectorySelector.css" );
@@ -139,28 +137,28 @@ void DirectorySelector::setEnabled( bool enabled )
 void DirectorySelector::setupUI()
 {
   // Add label
-  m_label = new Wt::WLabel( Wt::WString::tr("ds-path-label"), this );
-  
+  m_label = addNew<Wt::WLabel>( Wt::WString::tr("ds-path-label") );
+
   if( m_useNativeDialog )
   {
     // Native dialog UI
-    m_pathDisplay = new Wt::WText( Wt::WString::tr("ds-native-no-path-placeholder"), this );
+    m_pathDisplay = addNew<Wt::WText>( Wt::WString::tr("ds-native-no-path-placeholder") );
     m_pathDisplay->addStyleClass( "DirectorySelectorPathTxt" );
-    
-    m_selectButton = new Wt::WPushButton( Wt::WString::tr("ds-native-select-path-button"), this );
-    m_selectButton->clicked().connect( std::bind( &DirectorySelector::handleNativeDirectorySelection, this ) );
+
+    m_selectButton = addNew<Wt::WPushButton>( Wt::WString::tr("ds-native-select-path-button") );
+    m_selectButton->clicked().connect( [this](){ handleNativeDirectorySelection(); } );
   }else
   {
     // Text input fallback UI
-    m_pathInput = new Wt::WLineEdit( this );
+    m_pathInput = addNew<Wt::WLineEdit>();
     m_pathInput->addStyleClass( "DirectorySelectorPathTxt" );
-    m_pathInput->setEmptyText( Wt::WString::tr("ds-txt-input-placeholder") );
-    
+    m_pathInput->setPlaceholderText( Wt::WString::tr("ds-txt-input-placeholder") );
+
     // Connect all the change events
-    m_pathInput->keyWentUp().connect( std::bind( &DirectorySelector::handleTextInputChange, this ) );
-    m_pathInput->enterPressed().connect( std::bind( &DirectorySelector::handleTextInputChange, this ) );
-    m_pathInput->blurred().connect( std::bind( &DirectorySelector::handleTextInputChange, this ) );
-    m_pathInput->changed().connect( std::bind( &DirectorySelector::handleTextInputChange, this ) );
+    m_pathInput->keyWentUp().connect( [this](){ handleTextInputChange(); } );
+    m_pathInput->enterPressed().connect( [this](){ handleTextInputChange(); } );
+    m_pathInput->blurred().connect( [this](){ handleTextInputChange(); } );
+    m_pathInput->changed().connect( [this](){ handleTextInputChange(); } );
   }
 }//void setupUI()
 

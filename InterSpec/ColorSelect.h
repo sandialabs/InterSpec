@@ -27,8 +27,8 @@
 
 #include <string>
 
-#include <Wt/WColor>
-#include <Wt/WFormWidget>
+#include <Wt/WColor.h>
+#include <Wt/WFormWidget.h>
 
 /** Simple class to allow the user to select a color using a native HTML5 color
     choosing input.
@@ -69,7 +69,7 @@ public:
    specified, color defaults to #000000 (black).  If non-native and AllowNoColor
    is specified, defaults to no color.
    */
-  ColorSelect( Wt::WFlags<ColorSelectOptions> options, Wt::WContainerWidget *parent = nullptr );
+  ColorSelect( Wt::WFlags<ColorSelectOptions> options );
   
   virtual ~ColorSelect();
   

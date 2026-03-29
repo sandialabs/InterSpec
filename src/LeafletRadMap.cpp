@@ -27,20 +27,20 @@
 #include <iostream>
 #include <algorithm>
 
-#include <Wt/WText>
-#include <Wt/WLabel>
-#include <Wt/WComboBox>
-#include <Wt/WCheckBox>
-#include <Wt/WGridLayout>
-#include <Wt/WPushButton>
-#include <Wt/WApplication>
-#include <Wt/WContainerWidget>
-#include <Wt/WImage>
+#include <Wt/WText.h>
+#include <Wt/WLabel.h>
+#include <Wt/WComboBox.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WGridLayout.h>
+#include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WContainerWidget.h>
+#include <Wt/WImage.h>
 
-#include <Wt/Json/Array>
-#include <Wt/Json/Value>
-#include <Wt/Json/Object>
-#include <Wt/Json/Parser>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Object.h>
+#include <Wt/Json/Parser.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
@@ -60,7 +60,7 @@
 #include "InterSpec/HelpSystem.h"
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecServer.h"
 #endif
@@ -140,7 +140,9 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   }) );
   
   WPushButton *accept = dialog->addButton( WString::tr("lrm-pre-warn-proceed-btn") );
-  accept->clicked().connect( boost::bind( &showMapWindow, meas, sample_numbers, detector_names, on_create) );
+  accept->clicked().connect( [meas, sample_numbers, detector_names, on_create](){
+    showMapWindow( meas, sample_numbers, detector_names, on_create );
+  } );
   WPushButton *cancel = dialog->addButton( WString::tr("Cancel") );
   cancel->clicked().connect( std::bind([](){
     InterSpec *viewer = InterSpec::instance();
@@ -164,17 +166,17 @@ LeafletRadMapWindow::LeafletRadMapWindow()
   InterSpec *viewer = InterSpec::instance();
   viewer->useMessageResourceBundle( "LeafletRadMap" );
 
-  m_map = new LeafletRadMap( contents() );
-  m_map->setHeight( WLength(100,WLength::Percentage) );
+  m_map = contents()->addNew<LeafletRadMap>();
+  m_map->setHeight( WLength(100,WLength::Unit::Percentage) );
 
   m_map->tileLoadFailed().connect( this, &LeafletRadMapWindow::handleTileLoadFailed );
-  
+
   AuxWindow::addHelpInFooter( footer(), "leaflet-rad-map" );
-  
+
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
-  
-  finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
+
+  finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
   
   resizeScaledWindow( 0.8, 0.8 );
   
@@ -216,8 +218,7 @@ void LeafletRadMapWindow::handleTileLoadFailed()
   if( m_tileLoadWarningBtn )
     return;
 
-  m_tileLoadWarningBtn = new WPushButton( WString::tr( "lrm-tile-load-btn" ) );
-  footer()->insertWidget( 0, m_tileLoadWarningBtn );
+  m_tileLoadWarningBtn = footer()->insertWidget( 0, std::make_unique<WPushButton>( WString::tr( "lrm-tile-load-btn" ) ) );
 
   m_tileLoadWarningBtn->clicked().connect( std::bind( [](){
     SimpleDialog *dialog = new SimpleDialog( WString::tr( "lrm-tile-load-dialog-title"),
@@ -227,8 +228,8 @@ void LeafletRadMapWindow::handleTileLoadFailed()
 }//void LeafletRadMapWindow::handleTileLoadFailed()
 
 
-LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
- : Wt::WContainerWidget( parent ),
+LeafletRadMap::LeafletRadMap()
+ : Wt::WContainerWidget(),
   m_meas(),
   m_map_holder( nullptr ),
   m_energy_range_row( nullptr ),
@@ -281,47 +282,54 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   wApp->require( "InterSpec_resources/LeafletRadMap.js" );
 
   
-  m_displaySamples.connect( boost::bind( &LeafletRadMap::handleLoadSamples, this,
-                                        boost::placeholders::_1, boost::placeholders::_2 ) );
-  
+  m_displaySamples.connect( [this]( const std::string &s1, const std::string &s2 ){
+    handleLoadSamples( s1, s2 );
+  } );
+
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
   if( viewer )
   {
     viewer->useMessageResourceBundle( "LeafletRadMap" );
-    viewer->displayedSpectrumChanged().connect( boost::bind(&LeafletRadMap::handleDisplayedSpectrumChanged, this,
-                                                            boost::placeholders::_1, boost::placeholders::_2) );
+    viewer->displayedSpectrumChanged().connect( this, &LeafletRadMap::handleDisplayedSpectrumChanged );
   }
 
-  m_map_holder = new WContainerWidget();
+  WGridLayout *grid = setLayout( std::make_unique<WGridLayout>() );
+  grid->setContentsMargins(0, 0, 0, 0);
+  grid->setVerticalSpacing( 0 );
+  grid->setHorizontalSpacing( 0 );
+  grid->setRowStretch( 0, 1 );
+  grid->setColumnStretch( 0, 1 );
+
+  m_map_holder = grid->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
   m_map_holder->addStyleClass( "LeafletRadMap" );
-  m_energy_range_row = new WContainerWidget();
+
+  m_energy_range_row = grid->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   m_energy_range_row->addStyleClass( "EnergyRangeRow" );
 
-  WContainerWidget *ene_grp = new WContainerWidget( m_energy_range_row );
+  WContainerWidget *ene_grp = m_energy_range_row->addNew<WContainerWidget>();
   ene_grp->addStyleClass( "EnergyRangeGrp" );
-  WLabel *label = new WLabel( WString::tr("lrm-filter-label"), ene_grp );
-  m_filter_type = new WComboBox( ene_grp );
+  WLabel *label = ene_grp->addNew<WLabel>( WString::tr("lrm-filter-label") );
+  m_filter_type = ene_grp->addNew<WComboBox>();
   label->setBuddy( m_filter_type );
   m_filter_type->addItem( WString::tr("lrm-filter-none") );
   m_filter_type->addItem( WString::tr("lrm-filter-energy-range") );
   m_filter_type->addItem( WString::tr("lrm-filter-peaks-in-range") );
   m_filter_type->activated().connect( this, &LeafletRadMap::handleEnergyFilterChange );
 
-
-  m_filter_lower_energy_grp = new WContainerWidget( m_energy_range_row );
+  m_filter_lower_energy_grp = m_energy_range_row->addNew<WContainerWidget>();
   m_filter_lower_energy_grp->addStyleClass( "EnergyRangeGrp" );
-  label = new WLabel( WString::tr("lrm-lower-energy"), m_filter_lower_energy_grp );
-  m_filter_lower_energy = new NativeFloatSpinBox( m_filter_lower_energy_grp );
+  label = m_filter_lower_energy_grp->addNew<WLabel>( WString::tr("lrm-lower-energy") );
+  m_filter_lower_energy = m_filter_lower_energy_grp->addNew<NativeFloatSpinBox>();
   m_filter_lower_energy->setSpinnerHidden();
   m_filter_lower_energy->setWidth( 45 );
   m_filter_lower_energy->valueChanged().connect( this, &LeafletRadMap::handleEnergyFilterChange );
   m_filter_lower_energy->setValue( 0.0f );
 
-  m_filter_upper_energy_grp = new WContainerWidget( m_energy_range_row );
+  m_filter_upper_energy_grp = m_energy_range_row->addNew<WContainerWidget>();
   m_filter_upper_energy_grp->addStyleClass( "EnergyRangeGrp" );
-  label = new WLabel( WString::tr("lrm-upper-energy"), m_filter_upper_energy_grp );
-  m_filter_upper_energy = new NativeFloatSpinBox( m_filter_upper_energy_grp );
+  label = m_filter_upper_energy_grp->addNew<WLabel>( WString::tr("lrm-upper-energy") );
+  m_filter_upper_energy = m_filter_upper_energy_grp->addNew<NativeFloatSpinBox>();
   m_filter_upper_energy->setSpinnerHidden();
   m_filter_upper_energy->setWidth( 45 );
   m_filter_upper_energy->valueChanged().connect( this, &LeafletRadMap::handleEnergyFilterChange );
@@ -332,30 +340,18 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   m_filter_upper_energy_grp->hide();
 
   // Add spacer div to push help icon to the right
-  WContainerWidget *spacer = new WContainerWidget( m_energy_range_row );
+  WContainerWidget *spacer = m_energy_range_row->addNew<WContainerWidget>();
   spacer->addStyleClass( "EnergyFilterSpacer" );
-  
+
   // Add help icon
-  WString tt = WString::tr("lrm-energy-filter-help");
-  WImage *img = new WImage( m_energy_range_row );
+  const WString tt = WString::tr("lrm-energy-filter-help");
+  WImage *img = m_energy_range_row->addNew<WImage>();
   img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
   img->setStyleClass("Wt-icon EnergyFilterHelp");
   img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
-  
+
   HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::InstantAlways );
-
-  WGridLayout *grid = new WGridLayout();
-  setLayout( grid );
-  grid->setContentsMargins(0, 0, 0, 0);
-  grid->setVerticalSpacing( 0 );
-  grid->setHorizontalSpacing( 0 );
-
-  grid->addWidget( m_map_holder, 0, 0 );
-  grid->addWidget( m_energy_range_row, 1, 0 );
-
-  grid->setRowStretch( 0, 1 );
-  grid->setColumnStretch( 0, 1 );
 
   m_energy_range_row->hide();
 }//LeafletRadMap
