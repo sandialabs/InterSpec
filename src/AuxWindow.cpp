@@ -1417,11 +1417,17 @@ void AuxWindow::deleteAuxWindow( AuxWindow *window )
 {
   if( !window )
     return;
-  
+
+  // Wt 4: Must dismiss modal and hide the dialog first to clean up the dialog cover, then remove.
+  //  We always call setModal(false) if this was a modal dialog, even if already hidden,
+  //  because the Wt-dialogcover may still be present.
   if( window->m_modalOrig )
-    window->WDialog::setModal(false);
-  
-  delete window;
+    window->WDialog::setModal( false );
+
+  if( !window->isHidden() )
+    window->WDialog::setHidden( true, WAnimation() );
+
+  window->removeFromParent();
 }//void deleteAuxWindow( AuxWindow *window )
 
 
@@ -1474,7 +1480,7 @@ void AuxWindow::hide()
     //Check original modal value, as modal doesn't work well with hide/show
     if (m_modalOrig)
         WDialog::setModal(false);
-    
+
     setHidden( true, WAnimation() );
 }//void hide()
 

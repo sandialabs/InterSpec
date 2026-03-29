@@ -2131,11 +2131,18 @@ void InterSpec::updateRightClickNuclidesMenu(
   if( !peak || !nuclides || m_rightClickEnergy < 0.0 ||!menu )
     return;
   
-  for( WMenuItem *item : menu->items() )
+  // In Wt 4, we cant `delete` menu items directly; use removeItem() which returns
+  //  a unique_ptr that will auto-delete when it goes out of scope.
   {
-    if( !item->hasStyleClass("PhoneMenuBack") && !item->hasStyleClass("PhoneMenuClose") )
-      delete item;
-  }//for( WMenuItem *item : menu->items() )
+    vector<WMenuItem *> toRemove;
+    for( WMenuItem *item : menu->items() )
+    {
+      if( !item->hasStyleClass("PhoneMenuBack") && !item->hasStyleClass("PhoneMenuClose") )
+        toRemove.push_back( item );
+    }
+    for( WMenuItem *item : toRemove )
+      menu->removeItem( item );
+  }
 
   
   for( size_t i = 0; i < nuclides->size(); ++i )
@@ -2347,12 +2354,18 @@ void InterSpec::handleRightClick( double energy, double counts,
         
         if( peak && m_rightClickNuclideSuggestMenu )
         {
-          for( WMenuItem *item : m_rightClickNuclideSuggestMenu->items() )
+          // In Wt 4, we cant `delete` menu items directly; use removeItem()
           {
-            if( !item->hasStyleClass("PhoneMenuBack")
-                && !item->hasStyleClass("PhoneMenuClose") )
-              delete item;
-          }//for( WMenuItem *item : m_rightClickNuclideSuggestMenu->items() )
+            vector<WMenuItem *> toRemove;
+            for( WMenuItem *item : m_rightClickNuclideSuggestMenu->items() )
+            {
+              if( !item->hasStyleClass("PhoneMenuBack")
+                  && !item->hasStyleClass("PhoneMenuClose") )
+                toRemove.push_back( item );
+            }
+            for( WMenuItem *item : toRemove )
+              m_rightClickNuclideSuggestMenu->removeItem( item );
+          }
           
           m_rightClickNuclideSuggestMenu->addMenuItem( WString::tr("rclick-mi-calc-status"),
                                                        "", false );
@@ -2633,7 +2646,7 @@ void InterSpec::createPeakEdit( double energy )
     PeakEdit *editor = m_peakEditWindow->peakEditor();
     if( !editor->isEditingValidPeak() )
     {
-      delete m_peakEditWindow;
+      if( m_peakEditWindow ) m_peakEditWindow->removeFromParent();
       m_peakEditWindow = nullptr;
       return;
     }//if( !editor->isEditingValidPeak() )
@@ -2669,7 +2682,7 @@ void InterSpec::createPeakEdit( double energy )
     auto undo = [this](){
       if( m_peakEditWindow )
       {
-        delete m_peakEditWindow;
+        if( m_peakEditWindow ) m_peakEditWindow->removeFromParent();
         m_peakEditWindow = nullptr;
       }
     };
@@ -2713,7 +2726,7 @@ void InterSpec::deletePeakEdit()
     m_undo->addUndoRedoStep( undo, redo, "Close peak editor." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
   
-  delete m_peakEditWindow;
+  if( m_peakEditWindow ) m_peakEditWindow->removeFromParent();
   m_peakEditWindow = nullptr;
 }//void deletePeakEdit()
 
@@ -2749,7 +2762,7 @@ void InterSpec::closeFitSkewParamsWindow()
     m_undo->addUndoRedoStep( undo, redo, "Close fit skew params tool." );
   }
 
-  delete m_fitSkewParamsWindow;
+  if( m_fitSkewParamsWindow ) m_fitSkewParamsWindow->removeFromParent();
   m_fitSkewParamsWindow = nullptr;
 }//void closeFitSkewParamsWindow()
 
@@ -2818,7 +2831,7 @@ void InterSpec::acceptFitSkewParamsWindow()
   }
 
   // Close the window without adding another undo step
-  delete m_fitSkewParamsWindow;
+  if( m_fitSkewParamsWindow ) m_fitSkewParamsWindow->removeFromParent();
   m_fitSkewParamsWindow = nullptr;
 }//void acceptFitSkewParamsWindow()
 
@@ -4950,7 +4963,7 @@ void InterSpec::deleteEnergyCalPreserveWindow()
 {
   if( m_preserveCalibWindow )
   {
-    delete m_preserveCalibWindow;
+    if( m_preserveCalibWindow ) m_preserveCalibWindow->removeFromParent();
     m_preserveCalibWindow = nullptr;
   }
 }//void deleteEnergyCalPreserveWindow()
@@ -5099,7 +5112,7 @@ void InterSpec::deleteFileQueryDialog()
 {
   if( !m_specFileQueryDialog )
     return;
-  delete m_specFileQueryDialog;
+  if( m_specFileQueryDialog ) m_specFileQueryDialog->removeFromParent();
   m_specFileQueryDialog = 0;
 }//void deleteFileQueryDialog()
 #endif
@@ -5289,7 +5302,7 @@ void InterSpec::handlePeakInfoClose()
     removed_ptr.release();
   }//if( m_toolsTabs )
   
-  delete m_peakInfoWindow;
+  if( m_peakInfoWindow ) m_peakInfoWindow->removeFromParent();
   m_peakInfoWindow = nullptr;
 }//void handlePeakInfoClose()
 
@@ -5716,7 +5729,7 @@ namespace
     const string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
     const string filename = SpecUtils::append_path( path_to_tests, filesbox->currentText().toUTF8() );
     viewer->loadTestStateFromN42( filename );
-    delete window;
+    if( window ) window->removeFromParent();
   }
 }
 
@@ -6698,7 +6711,8 @@ void InterSpec::removeToolsTabToMenuItems()
     if( m_tabToolsMenuItems[i]->isSeparator() )
       m_toolsMenuPopup->removeSeperator( m_tabToolsMenuItems[i] );
     
-    delete m_tabToolsMenuItems[i];
+    if( m_tabToolsMenuItems[i] )
+      m_tabToolsMenuItems[i]->removeFromParent();
     m_tabToolsMenuItems[i] = nullptr;
   }
   
@@ -6774,7 +6788,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     {
       // In Wt4, removeWidget returns unique_ptr; release() to keep m_energyCalTool alive for re-use
       m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool ).release();
-      delete m_energyCalWindow;
+      if( m_energyCalWindow ) m_energyCalWindow->removeFromParent();
       m_energyCalWindow = nullptr;
     }//if( m_energyCalWindow )
     
@@ -6816,7 +6830,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     }
       
     if( m_referencePhotopeakLinesWindow )
-      delete m_referencePhotopeakLinesWindow;
+      if( m_referencePhotopeakLinesWindow ) m_referencePhotopeakLinesWindow->removeFromParent();
     m_referencePhotopeakLinesWindow = NULL;
       
     m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
@@ -6928,7 +6942,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_nuclideSearch->clearSearchEnergiesOnClient();
       // In Wt4, removeWidget returns unique_ptr; release() to keep m_nuclideSearch alive
       m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch ).release();
-      delete m_nuclideSearchWindow;
+      if( m_nuclideSearchWindow ) m_nuclideSearchWindow->removeFromParent();
       m_nuclideSearchWindow = 0;
     }//if( m_nuclideSearchWindow )
 
@@ -7038,7 +7052,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     }
     
     if( m_referencePhotopeakLinesWindow )
-      delete m_referencePhotopeakLinesWindow;
+      if( m_referencePhotopeakLinesWindow ) m_referencePhotopeakLinesWindow->removeFromParent();
     m_referencePhotopeakLinesWindow = nullptr;
     
     if( !refNucXmlState.empty() )
@@ -7584,7 +7598,7 @@ void InterSpec::showEnergyCalWindow()
   {
     if( !calToolPtr )
       calToolPtr = m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool );
-    delete m_energyCalWindow;
+    if( m_energyCalWindow ) m_energyCalWindow->removeFromParent();
   }
 
   if( !calToolPtr )
@@ -8733,7 +8747,7 @@ DecayWindow *InterSpec::createDecayInfoWindow()
       m_decayInfoWindow->addNuclide( nuc.m_nuclide->atomicNumber,
                          nuc.m_nuclide->massNumber,
                          nuc.m_nuclide->isomerNumber,
-                         1.0*PhysicalUnits::microCi, !useBq,
+                         act, !useBq,
                          0.0, actStr, 5.0*age );
     }//if( nuc.nuclide )
   }//if( m_referencePhotopeakLines )
@@ -9899,7 +9913,7 @@ void InterSpec::handleRelActAutoClose()
   if( !m_relActAutoWindow )
     return;
   
-  delete m_relActAutoWindow;
+  if( m_relActAutoWindow ) m_relActAutoWindow->removeFromParent();
   m_relActAutoGui = nullptr;
   m_relActAutoWindow = nullptr;
 
@@ -10603,7 +10617,7 @@ void InterSpec::closeNuclideSearchWindow()
   // In Wt4, removeWidget returns unique_ptr; release() to keep m_nuclideSearch alive for re-use
   m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch ).release();
 
-  delete m_nuclideSearchWindow;
+  if( m_nuclideSearchWindow ) m_nuclideSearchWindow->removeFromParent();
   m_nuclideSearchWindow = nullptr;
 
   if( m_toolsTabs )
@@ -10735,7 +10749,7 @@ void InterSpec::closeShieldingSourceFit()
   
   saveShieldingSourceModelToForegroundSpecMeas();
   
-  delete m_shieldingSourceFitWindow;
+  if( m_shieldingSourceFitWindow ) m_shieldingSourceFitWindow->removeFromParent();
   m_shieldingSourceFitWindow = nullptr;
   m_shieldingSourceFit = nullptr;
   
@@ -10913,7 +10927,7 @@ void InterSpec::closeGammaLinesWindow()
     m_referencePhotopeakLines = nullptr;
   }//if( m_referencePhotopeakLines )
 
-  delete m_referencePhotopeakLinesWindow;
+  if( m_referencePhotopeakLinesWindow ) m_referencePhotopeakLinesWindow->removeFromParent();
   m_referencePhotopeakLinesWindow = nullptr;
 
   if( m_toolsTabs )
@@ -12715,15 +12729,15 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
 
   if( m_detectorToShowMenu )
   {
-    const vector<WMenuItem *> items = m_detectorToShowMenu->items();
-    for( WMenuItem *item : items )
+    // In Wt 4, we cant `delete` menu items directly; use removeItem()
+    vector<WMenuItem *> toRemove;
+    for( WMenuItem *item : m_detectorToShowMenu->items() )
     {
       if( !item->hasStyleClass("PhoneMenuBack") )
-      {
-//        m_detectorToShowMenu->removeItem( item );  //This seems unecassary, leave commented as test
-        delete item;
-      }
+        toRemove.push_back( item );
     }
+    for( WMenuItem *item : toRemove )
+      m_detectorToShowMenu->removeItem( item );
   }//if( m_detectorToShowMenu )
   
   m_timeSeries->setHighlightedIntervals( {}, SpecUtils::SpectrumType::Foreground );

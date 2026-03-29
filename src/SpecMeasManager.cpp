@@ -1628,7 +1628,7 @@ SpecMeasManager::~SpecMeasManager()
   (*m_destructed) = true;
   
   if( m_nonSpecFileDialog )
-    delete m_nonSpecFileDialog;
+    if( m_nonSpecFileDialog ) m_nonSpecFileDialog->removeFromParent();
 } // SpecMeasManager::~SpecMeasManager()
 
 
@@ -1725,7 +1725,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     passMessage( WString::tr("smm-err-zip"), 2 );
   }//try / catch
   
-  delete window;
+  if( window ) window->removeFromParent();
 }//SpecMeasManager::extractAndOpenFromZip(...)
 
 
@@ -1872,7 +1872,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     //if( selection->count() == 0 )
     if( model->rowCount() == 0 )
     {
-      delete window;
+      if( window ) window->removeFromParent();
       return false;
     //}if( selection->count() == 1 )
     }else if( model->rowCount() == 1 && validtype )
@@ -1900,7 +1900,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       
       SpecUtils::remove_file( tmpfile.string<string>() );
       
-      delete window;
+      if( window ) window->removeFromParent();
       
       return (nbytes > 0);
 */
@@ -2082,7 +2082,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   if( m_nonSpecFileDialog )
   {
-    delete m_nonSpecFileDialog; //The `destroyed()` signal will set `m_nonSpecFileDialog` to nullptr
+    if( m_nonSpecFileDialog ) m_nonSpecFileDialog->removeFromParent(); //The `destroyed()` signal will set `m_nonSpecFileDialog` to nullptr
     cerr << "m_nonSpecFileDialog was not nullptr" << endl;
   }
   assert( !m_nonSpecFileDialog );
@@ -6313,7 +6313,9 @@ void SpecMeasManager::deleteSpectrumManager()
   if( !m_spectrumManagerWindow )
     return;
   
-  m_spectrumManagertreeDiv->removeWidget(m_treeView);
+  // Remove m_treeView from the window before deleting, so it survives for reuse.
+  // Release the unique_ptr so m_treeView is not deleted (we manage its lifetime manually).
+  m_spectrumManagertreeDiv->removeWidget( m_treeView ).release();
   AuxWindow::deleteAuxWindow(m_spectrumManagerWindow);
   m_spectrumManagerWindow = nullptr;
   
@@ -6675,7 +6677,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     snapshotsOwned.reset();
     auto_savedOwned.reset();
     if( window )
-      delete window;
+      if( window ) window->removeFromParent();
     window = nullptr;
 
     WString msg = WString::tr("smm-err-prev-state-unexpected").arg( e.what() );
@@ -6689,7 +6691,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   if( !snapshots && !auto_saved )
   {
     assert( 0 );
-    delete window;
+    if( window ) window->removeFromParent();
     return;
   }
 

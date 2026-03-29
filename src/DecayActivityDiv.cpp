@@ -2794,7 +2794,7 @@ void DecayActivityDiv::deleteMoreInfoDialog()
 {
   if( m_moreInfoDialog )
   {
-    delete m_moreInfoDialog;
+    if( m_moreInfoDialog ) m_moreInfoDialog->removeFromParent();
     m_moreInfoDialog = 0;
   }
 }//void deleteMoreInfoDialog()
@@ -3630,7 +3630,7 @@ DecayActivityDiv::~DecayActivityDiv()
     delete m_currentMixture;
 
   if( m_nuclideSelectDialog )
-    delete m_nuclideSelectDialog;
+    if( m_nuclideSelectDialog ) m_nuclideSelectDialog->removeFromParent();
   
   if( m_csvDownloadDialog )
     deleteCsvDownloadGui();

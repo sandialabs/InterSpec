@@ -4720,9 +4720,9 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   if( !item )
     return;
 
+  // In Wt 4, removeItem() returns a unique_ptr that auto-deletes the item
   m_rel_eff_opts_menu->removeItem( item );
   delete curve;
-  delete item;
 
   WMenuItem *nuc_item = m_rel_eff_nuclides_menu->itemAt( index_to_remove );
   assert( nuc_item );

@@ -1058,7 +1058,7 @@ void FitSkewParamsTool::handleRightClick( double energy, double /*counts*/,
 
   // Build context menu
   if( m_rightClickMenu )
-    delete m_rightClickMenu;
+    if( m_rightClickMenu ) m_rightClickMenu->removeFromParent();
 
   m_rightClickMenu = new WPopupMenu();
 
