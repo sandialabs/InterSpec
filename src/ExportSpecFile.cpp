@@ -1128,11 +1128,11 @@ void ExportSpecFileTool::init()
     m_fileSelect->setNoSelectionEnabled( true );
     
     SpecMeasManager * const measManager = m_interspec->fileManager();
-    SpectraFileModel * const fileModel = measManager ? measManager->model() : nullptr;
+    const std::shared_ptr<SpectraFileModel> fileModel = measManager ? measManager->modelShared() : nullptr;
     if( !measManager || !fileModel )
       throw runtime_error( "null SpecMeasManager or SpectraFileModel" );
-    
-    m_fileSelect->setModel( std::shared_ptr<Wt::WAbstractItemModel>( fileModel, [](Wt::WAbstractItemModel*){} ) );
+
+    m_fileSelect->setModel( fileModel );
     m_fileSelect->setModelColumn( SpectraFileModel::DisplayFields::kDisplayName );
     m_fileSelect->activated().connect( this, &ExportSpecFileTool::handleFileSelectionChanged );
     

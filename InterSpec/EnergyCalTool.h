@@ -165,7 +165,7 @@ struct MeasToApplyCoefChangeTo
 class EnergyCalTool : public Wt::WContainerWidget
 {
 public:
-  EnergyCalTool( InterSpec *viewer, PeakModel *peakModel );
+  EnergyCalTool( InterSpec *viewer, std::shared_ptr<PeakModel> peakModel );
   virtual ~EnergyCalTool();
   
   void setWideLayout();
@@ -354,7 +354,7 @@ protected:
   Wt::WFlags<EnergyCalToolRenderFlags> m_renderFlags;
   
   InterSpec *m_interspec;
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   
   std::shared_ptr<EnergyCalImp::CALpDownloadResource> m_calpResource;
   

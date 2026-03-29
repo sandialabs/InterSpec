@@ -1431,7 +1431,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   : WObject(),
     m_spectrumManagerWindow( nullptr ),
     m_treeView( NULL ),
-    m_fileModel( NULL ),
+    m_fileModel( nullptr ),
     m_fileUpload( NULL ),
     m_viewer( viewer ),
     m_setButton ( NULL),
@@ -1472,8 +1472,8 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     viewer->useMessageResourceBundle( "SpecMeasManager" );
   
   m_treeView = new RowStretchTreeView();
-  m_fileModel = new SpectraFileModel();
-  m_treeView->setModel( std::shared_ptr<Wt::WAbstractItemModel>( m_fileModel, [](Wt::WAbstractItemModel*){} ) );
+  m_fileModel = std::make_shared<SpectraFileModel>();
+  m_treeView->setModel( m_fileModel );
   m_treeView->selectionChanged().connect( [this](){ selectionChanged(); } );
 
   // TODO: (20241028) it doesn't appear necessary to show and then delete the spectrum manager window - but leaving until after v1.0.13 release
@@ -6478,14 +6478,20 @@ WContainerWidget *SpecMeasManager::createButtonBar()
 
 SpectraFileModel *SpecMeasManager::model()
 {
-  return m_fileModel;
+  return m_fileModel.get();
 } // SpectraFileModel *SpecMeasManager::model()
 
 
 const SpectraFileModel *SpecMeasManager::model() const
 {
-  return m_fileModel;
+  return m_fileModel.get();
 } // const SpectraFileModel *SpecMeasManager::model() const
+
+
+std::shared_ptr<SpectraFileModel> SpecMeasManager::modelShared()
+{
+  return m_fileModel;
+} // std::shared_ptr<SpectraFileModel> SpecMeasManager::modelShared()
 
 
 RowStretchTreeView *SpecMeasManager::treeView()
@@ -6656,7 +6662,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
 
     if( !modifiedFiles.empty() )
     {
-      auto_savedOwned = std::make_unique<AutosavedSpectrumBrowser>( modifiedFiles, type, m_fileModel, this, header );
+      auto_savedOwned = std::make_unique<AutosavedSpectrumBrowser>( modifiedFiles, type, m_fileModel.get(), this, header );
       auto_savedOwned->loadedASpectrum().connect( [this, window](){ handleClosePreviousStatesDialogAfterSelect( window ); } );
 
       if( unModifiedFiles.empty() )

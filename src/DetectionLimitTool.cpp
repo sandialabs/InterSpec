@@ -1092,22 +1092,22 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   string replacerJs, matcherJs;
   IsotopeNameFilterModel::replacerJs( replacerJs );
   IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
-  IsotopeNameFilterModel *isoSuggestModel = addChild( std::make_unique<IsotopeNameFilterModel>() );
+  auto isoSuggestModel = std::make_shared<IsotopeNameFilterModel>();
   isoSuggestModel->excludeReactions( true );
   isoSuggestModel->excludeEscapes( true );
   isoSuggestModel->excludeXrays( true );
   m_nuclideSuggest = addChild( std::make_unique<WSuggestionPopup>( matcherJs, replacerJs ) );
   m_nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
   m_nuclideSuggest->addStyleClass( "nuclide-suggest" );
-  
+
   IsotopeNameFilterModel::setQuickTypeFixHackjs( m_nuclideSuggest );
   IsotopeNameFilterModel::setEnterKeyMatchFixJs( m_nuclideSuggest, m_nuclideEdit );
-  
+
   isoSuggestModel->filter( "" );
   m_nuclideSuggest->setFilterLength( -1 );
-  
-  m_nuclideSuggest->setModel( std::shared_ptr<WAbstractItemModel>( isoSuggestModel, [](WAbstractItemModel*){} ) );
-  m_nuclideSuggest->filterModel().connect( isoSuggestModel, &IsotopeNameFilterModel::filter );
+
+  m_nuclideSuggest->setModel( isoSuggestModel );
+  m_nuclideSuggest->filterModel().connect( isoSuggestModel.get(), &IsotopeNameFilterModel::filter );
   m_nuclideSuggest->forEdit( m_nuclideEdit, PopupTrigger::Editing );  // | PopupTrigger::DropDownIcon
   
   

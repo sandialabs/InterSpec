@@ -507,7 +507,7 @@ RelActManualGui::RelActManualGui( InterSpec *viewer )
   m_backgroundSubtractHolder( nullptr ),
   m_downloadHtmlReport( nullptr ),
   m_peakTableColumn( nullptr ),
-  m_peakModel( viewer ? viewer->peakModel() : nullptr ),
+  m_peakModel( viewer ? viewer->peakModelShared() : nullptr ),
   m_nuclidesDisp( nullptr ),
   m_nucColumnTitle( nullptr ),
   m_physicalModelShields( nullptr ),
@@ -839,7 +839,7 @@ void RelActManualGui::init()
   collayout->setRowStretch( 1, 1 );
   
   m_peakTable->setRootIsDecorated( false ); //makes the tree look like a table! :)
-  m_peakTable->setModel( std::shared_ptr<WAbstractItemModel>( m_peakModel, [](WAbstractItemModel*){} ) );
+  m_peakTable->setModel( m_peakModel );
   const int numModelCol = m_peakModel->columnCount();
   for( int col = 0; col < numModelCol; ++col )
     m_peakTable->setColumnHidden( col, true );

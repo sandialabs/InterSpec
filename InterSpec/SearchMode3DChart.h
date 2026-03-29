@@ -130,7 +130,7 @@ protected:
   int m_height;  //the rendered height of this widget in in pixels
   
   bool m_loaded;  //set to true once load() function is called.
-  SearchMode3DDataModel *m_model;
+  std::shared_ptr<SearchMode3DDataModel> m_model;
   Wt::Chart::WGridData  *m_data;
   Wt::Chart::WCartesian3DChart *m_chart;
   

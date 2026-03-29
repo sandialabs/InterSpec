@@ -1914,9 +1914,9 @@ namespace PeakSearchGuiUtils
     chart->setWidth( width );
     chart->setHeight( height );
     PeakModel *peakmodel = chart->addChild( std::make_unique<PeakModel>() );
-    SpectrumDataModel *dataModel = chart->addChild( std::make_unique<SpectrumDataModel>() );
-    
-    chart->setModel( std::shared_ptr<Wt::WAbstractItemModel>( dataModel, [](Wt::WAbstractItemModel *){} ) );
+    auto dataModel = std::make_shared<SpectrumDataModel>();
+
+    chart->setModel( dataModel );
     chart->setPeakModel( peakmodel );
     peakmodel->setForeground( meas );
     peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers(), SpecUtils::SpectrumType::Foreground );

@@ -188,7 +188,7 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
  
   // Note: caller (EnergyCalAddActionsWindow) adds this widget to its stretcher via make_unique/addWidget
   
-  m_model = addChild( std::make_unique<EnergyCalMultiFileModel>( cal ) );
+  m_model = std::make_shared<EnergyCalMultiFileModel>( cal );
 
   WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
@@ -203,7 +203,7 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
 
   RowStretchTreeView *tree = layout->addWidget( std::make_unique<RowStretchTreeView>(), 1, 0 );
   tree->setSortingEnabled(false);
-  tree->setModel( std::shared_ptr<Wt::WAbstractItemModel>( m_model, [](Wt::WAbstractItemModel *){} ) );
+  tree->setModel( m_model );
   //tree->setColumn1Fixed( false ); // Not available in Wt4
   tree->setHeaderHeight( 20 );
   tree->setColumnWidth( 0, 200 );

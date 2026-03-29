@@ -1408,7 +1408,7 @@ const size_t CalDisplay::sm_min_coef_display = 4;
 }//namespace
 
 
-EnergyCalTool::EnergyCalTool( InterSpec *viewer, PeakModel *peakModel )
+EnergyCalTool::EnergyCalTool( InterSpec *viewer, std::shared_ptr<PeakModel> peakModel )
 : WContainerWidget(),
   m_interspec( viewer ),
   m_peakModel( peakModel ),
@@ -1830,7 +1830,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   collayout->setRowStretch( 1, 1 );
   
   m_peakTable->setRootIsDecorated( false ); //makes the tree look like a table! :)
-  m_peakTable->setModel( std::shared_ptr<Wt::WAbstractItemModel>( m_peakModel, [](Wt::WAbstractItemModel *){} ) );
+  m_peakTable->setModel( m_peakModel );
   const int numModelCol = m_peakModel->columnCount();
   for( int col = 0; col < numModelCol; ++col )
     m_peakTable->setColumnHidden( col, true );

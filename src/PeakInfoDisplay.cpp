@@ -809,7 +809,7 @@ function( sender, event, dataOwner, dataName )
 
 PeakInfoDisplay::PeakInfoDisplay( InterSpec *viewer,
                                   D3SpectrumDisplayDiv *spectrumDisplayDiv,
-                                  PeakModel *peakModel )
+                                  std::shared_ptr<PeakModel> peakModel )
   : WContainerWidget(),
     m_model( peakModel ),
     m_viewer( viewer ),
@@ -1153,7 +1153,7 @@ void PeakInfoDisplay::init()
   m_infoView->addStyleClass( "PeakInfoDisplayTable" );
   m_infoView->setRootIsDecorated( false ); //makes the tree look like a table! :)
 
-  m_infoView->setModel( std::shared_ptr<Wt::WAbstractItemModel>( m_model, [](Wt::WAbstractItemModel*){} ) );
+  m_infoView->setModel( m_model );
 
 //  m_infoView->setRowHeight(28);
 //  m_infoView->setHeaderHeight(28);
@@ -1170,7 +1170,7 @@ void PeakInfoDisplay::init()
   m_infoView->setEditTriggers( EditTrigger::SingleClicked | EditTrigger::DoubleClicked );
   blurred().connect( [this](){ m_infoView->closeEditors( true ); } );
   
-  auto meanDelegate = std::make_shared<MeanDelegate>( m_model );
+  auto meanDelegate = std::make_shared<MeanDelegate>( m_model.get() );
   meanDelegate->setTextFormat( "%.2f" );
   m_infoView->setItemDelegateForColumn( PeakModel::kMean, meanDelegate );
 

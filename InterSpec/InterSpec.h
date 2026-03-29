@@ -738,6 +738,7 @@ public:
   SpecMeasManager *fileManager();
   
   PeakModel *peakModel();
+  std::shared_ptr<PeakModel> peakModelShared();
 
   /** The suggestion pop-up widget for shielding names; used globally for all shielding name inputs
    so that there is not duplicate copies of the widget in the DOM.
@@ -1379,7 +1380,7 @@ protected:
   Wt::Dbo::ptr<InterSpecUser> m_user;
   UserPreferences *m_preferences;
   
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   D3SpectrumDisplayDiv *m_spectrum;
   D3TimeChart *m_timeSeries;
   

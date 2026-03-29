@@ -25,6 +25,8 @@
 
 #include "InterSpec_config.h"
 
+#include <memory>
+
 #include <Wt/WModelIndex.h>
 
 #include "InterSpec/AuxWindow.h"
@@ -55,7 +57,7 @@ class PeakInfoDisplay : public Wt::WContainerWidget
 public:
   PeakInfoDisplay( InterSpec *viewer,
                    D3SpectrumDisplayDiv *spectrumDisplayDiv,
-                   PeakModel *peakModel );
+                   std::shared_ptr<PeakModel> peakModel );
   virtual ~PeakInfoDisplay();
 
   void enablePeakSearchButton( bool enable );
@@ -88,7 +90,7 @@ protected:
   void removeCsvPeakDatafromClient();
   
 protected:
-  PeakModel *m_model;
+  std::shared_ptr<PeakModel> m_model;
   InterSpec *m_viewer;
   D3SpectrumDisplayDiv *m_spectrumDisplayDiv;
 

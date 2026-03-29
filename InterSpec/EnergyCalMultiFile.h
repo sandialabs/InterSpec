@@ -76,7 +76,7 @@ protected:
   
   EnergyCalTool *m_calibrator;
   AuxWindow *m_parent;
-  EnergyCalMultiFileModel *m_model;
+  std::shared_ptr<EnergyCalMultiFileModel> m_model;
   std::vector<Wt::WCheckBox *> m_fitFor;
   std::vector<Wt::WLineEdit *> m_coefvals;
   Wt::WPushButton *m_use;

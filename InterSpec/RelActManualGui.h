@@ -223,7 +223,7 @@ protected:
   std::shared_ptr<Wt::WResource> m_htmlResource;
   
   Wt::WContainerWidget *m_peakTableColumn;
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   RowStretchTreeView *m_peakTable;
   
   /// All entries in this next <div> will be of class ManRelEffNucDisp

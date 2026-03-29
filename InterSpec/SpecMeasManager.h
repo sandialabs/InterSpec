@@ -97,6 +97,7 @@ public:
   virtual ~SpecMeasManager();
   SpectraFileModel *model();
   const SpectraFileModel *model() const;
+  std::shared_ptr<SpectraFileModel> modelShared();
   RowStretchTreeView *treeView();
   const RowStretchTreeView *treeView() const;
   const InterSpec *viewer() const;
@@ -506,7 +507,7 @@ private:
 protected:
   AuxWindow *m_spectrumManagerWindow;
   RowStretchTreeView    *m_treeView;
-  SpectraFileModel *m_fileModel;
+  std::shared_ptr<SpectraFileModel> m_fileModel;
   Wt::WFileUpload  *m_fileUpload;
   InterSpec   *m_viewer;
   Wt::WContainerWidget *m_spectrumManagertreeDiv;

@@ -4200,7 +4200,7 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     if( !tool )
     {
       ownEnergyCal = true;
-      tool = new EnergyCalTool( m_interspec, m_interspec->peakModel() );
+      tool = new EnergyCalTool( m_interspec, m_interspec->peakModelShared() );
     }
     
     MeasToApplyCoefChangeTo fore, back;

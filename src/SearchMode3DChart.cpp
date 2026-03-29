@@ -237,7 +237,7 @@ void SearchMode3DChart::initChart()
   
   setBinningLimits();
   
-  m_model = addChild( std::make_unique<SearchMode3DDataModel>() );
+  m_model = std::make_shared<SearchMode3DDataModel>();
   m_model->setMaxNumTimeSamples( m_timeDivisions->value() );
   m_model->setMaxNumEnergyChannels( m_energyDivisions->value() );
 
@@ -290,9 +290,7 @@ void SearchMode3DChart::initChart()
   m_chart->setGridEnabled(Chart::Plane::YZ, Chart::Axis::Z3D, true);
   
   {
-    // WGridData takes shared_ptr; use non-owning shared_ptr since m_model is owned by this widget
-    auto dataOwner = std::make_unique<Chart::WGridData>(
-      std::shared_ptr<Wt::WAbstractItemModel>( m_model, [](Wt::WAbstractItemModel*){} ) );
+    auto dataOwner = std::make_unique<Chart::WGridData>( m_model );
     m_data = dataOwner.get();
     m_data->setTitle( WString::tr("sm3dc-counts-axis-label") );
     m_data->setType( Wt::Chart::Series3DType::Surface );

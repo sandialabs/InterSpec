@@ -98,17 +98,17 @@ NuclideSourceEnterController::NuclideSourceEnterController( Wt::WLineEdit *nucli
   suggestions->forEdit( m_nuclideEdit, PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
     
-  IsotopeNameFilterModel *filterModel = new IsotopeNameFilterModel();
-    
+  auto filterModel = std::make_shared<IsotopeNameFilterModel>();
+
   filterModel->excludeNuclides( false );
   filterModel->excludeXrays( true );
   filterModel->excludeEscapes( true );
   filterModel->excludeReactions( true );
-  
+
   filterModel->filter( "" );
   suggestions->setFilterLength( -1 );
-  suggestions->setModel( std::shared_ptr<Wt::WAbstractItemModel>( filterModel, [](Wt::WAbstractItemModel*){} ) );
-  suggestions->filterModel().connect( filterModel, &IsotopeNameFilterModel::filter );
+  suggestions->setModel( filterModel );
+  suggestions->filterModel().connect( filterModel.get(), &IsotopeNameFilterModel::filter );
     
   m_nuclideEdit->changed().connect( this, &NuclideSourceEnterController::handleNuclideUserInput );
   m_nuclideEdit->enterPressed().connect( this, &NuclideSourceEnterController::handleNuclideUserInput );

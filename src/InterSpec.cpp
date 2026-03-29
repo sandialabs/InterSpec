@@ -363,7 +363,7 @@ InterSpec::InterSpec()
   : WContainerWidget(),
     m_user{},
     m_preferences( nullptr ),
-    m_peakModel( 0 ),
+    m_peakModel( nullptr ),
     m_spectrum( 0 ),
     m_timeSeries( 0 ),
     m_detectorToShowMenu( 0 ),
@@ -621,7 +621,7 @@ InterSpec::InterSpec()
     undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
   }//if( desktop interface )
     
-  m_peakModel = new PeakModel();
+  m_peakModel = std::make_shared<PeakModel>();
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
   
@@ -643,7 +643,7 @@ InterSpec::InterSpec()
     doJavaScript( js );
   }//if( isMobile() )
   
-  m_spectrum->setPeakModel( m_peakModel );
+  m_spectrum->setPeakModel( m_peakModel.get() );
   m_spectrum->existingRoiEdgeDragUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork );
   m_spectrum->dragCreateRoiUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performDragCreateRoiWork );
   
@@ -2625,7 +2625,7 @@ void InterSpec::handleRightClick( double energy, double counts,
 void InterSpec::createPeakEdit( double energy )
 {
   auto create_editor = [this]( double ene ){
-    m_peakEditWindow = new PeakEditWindow( ene, m_peakModel, this );
+    m_peakEditWindow = new PeakEditWindow( ene, m_peakModel.get(), this );
     m_peakEditWindow->editingDone().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->finished().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->resizeToFitOnScreen();
@@ -2700,7 +2700,7 @@ void InterSpec::deletePeakEdit()
     const double currentEnergy = editor ? editor->currentPeakEnergy() : 0.0;
     
     auto undo = [this, currentEnergy](){
-      m_peakEditWindow = new PeakEditWindow( currentEnergy, m_peakModel, this );
+      m_peakEditWindow = new PeakEditWindow( currentEnergy, m_peakModel.get(), this );
       m_peakEditWindow->editingDone().connect( this, &InterSpec::deletePeakEdit );
       m_peakEditWindow->finished().connect( this, &InterSpec::deletePeakEdit );
       m_peakEditWindow->resizeToFitOnScreen();
@@ -3211,7 +3211,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
   {
     if( !peak.hasSourceGammaAssigned() )
     {
-      PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
+      PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel.get(),
                                                                spectrum, m_referencePhotopeakLines,
                                                               m_colorPeaksBasedOnReferenceLines, showingEscape );
     }//if( !peak.hasSourceGammaAssigned() )
@@ -11030,6 +11030,12 @@ SpecMeasManager *InterSpec::fileManager()
 
 
 PeakModel *InterSpec::peakModel()
+{
+  return m_peakModel.get();
+}
+
+
+std::shared_ptr<PeakModel> InterSpec::peakModelShared()
 {
   return m_peakModel;
 }

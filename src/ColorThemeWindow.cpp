@@ -224,10 +224,8 @@ m_apply( nullptr )
     HelpSystem::attachToolTipOn( {upload}, WString::tr("ctw-upload-tooltip"), true );
     upload->clicked().connect( this, &ColorThemeWindow::uploadThemeCallback );
 
-    JsonDownloadResource *downloadResource = addChild( std::make_unique<JsonDownloadResource>( this ) );
-    // Wrap raw ptr with no-op deleter for WLink (ownership remains with addChild above)
-    auto downloadResourceShared = std::shared_ptr<WResource>( downloadResource, [](WResource *){} );
-    WLink downloadLink( downloadResourceShared );
+    auto downloadResource = std::make_shared<JsonDownloadResource>( this );
+    WLink downloadLink( downloadResource );
     downloadLink.setTarget( LinkTarget::NewWindow );
 
 #if( BUILD_AS_OSX_APP || IOS )
@@ -242,7 +240,7 @@ m_apply( nullptr )
 
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
-    download->clicked().connect( [downloadResource](){ android_download_workaround(downloadResource, "color_theme.xml"); } );
+    download->clicked().connect( [downloadResource](){ android_download_workaround(downloadResource.get(), "color_theme.xml"); } );
 #endif //ANDROID
 
 #endif
