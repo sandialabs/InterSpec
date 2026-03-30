@@ -2142,9 +2142,9 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
     m_nucInfoWindow = nullptr;
   }//if( m_nucInfoWindow )
   
-  m_nucInfoWindow = new MoreNuclideInfoWindow( nuc );
+  m_nucInfoWindow = SimpleDialog::make<MoreNuclideInfoWindow>( nuc );
   m_nucInfoWindow->finished().connect( [this, win=m_nucInfoWindow](){ handleMoreInfoWindowClose( win ); } );
-  
+
   // All of this undo/redo stuff is a little over the top since we will only ever show one more-info
   //  window at a time, but oh well.
   UndoRedoManager *undo_manager = UndoRedoManager::instance();
@@ -2163,7 +2163,7 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
       if( prev_orig_nuc )
       {
         assert( !m_nucInfoWindow );
-        m_nucInfoWindow = new MoreNuclideInfoWindow( prev_orig_nuc );
+        m_nucInfoWindow = SimpleDialog::make<MoreNuclideInfoWindow>( prev_orig_nuc );
         m_nucInfoWindow->finished().connect( [this, win=m_nucInfoWindow](){ handleMoreInfoWindowClose( win ); } );
         
         if( prev_current_nuc && (prev_orig_nuc != prev_current_nuc) )
@@ -2184,7 +2184,7 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
         disp->m_nucInfoWindow->done(Wt::DialogCode::Accepted);
       
       assert( !disp->moreInfoWindow() );
-      disp->m_nucInfoWindow = new MoreNuclideInfoWindow( nuc );
+      disp->m_nucInfoWindow = SimpleDialog::make<MoreNuclideInfoWindow>( nuc );
       disp->m_nucInfoWindow->finished().connect( [disp, win=disp->m_nucInfoWindow](){ disp->handleMoreInfoWindowClose( win ); } );
     };//redo
     

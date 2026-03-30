@@ -128,7 +128,7 @@ BatchGuiDialog *BatchGuiDialog::createDialog( FileDragUploadResource *uploadReso
 {
   // WString title = WString::tr("bgw-dialog-title");
   const WString title;
-  BatchGuiDialog *dialog = new BatchGuiDialog( uploadResource, title );
+  BatchGuiDialog *dialog = SimpleDialog::make<BatchGuiDialog>( uploadResource, title );
 
   return dialog;
 }

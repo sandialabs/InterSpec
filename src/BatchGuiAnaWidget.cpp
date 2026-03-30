@@ -974,7 +974,7 @@ void BatchGuiPeakFitWidget::performAnalysis(
   auto results = make_shared<BatchPeak::BatchPeakFitSummary>();
 
   SimpleDialog *waiting_dialog =
-    new SimpleDialog( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
+    SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
   std::function<void( void )> close_waiting_dialog =
     [waiting_dialog](){ waiting_dialog->done( Wt::DialogCode::Accepted ); };
@@ -983,7 +983,7 @@ void BatchGuiPeakFitWidget::performAnalysis(
   std::function<void( void )> show_error_dialog = [error_msg, close_waiting_dialog]()
   {
     close_waiting_dialog();
-    SimpleDialog *dialog = new SimpleDialog( WString::tr( "bgw-error-analysis-title" ),
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr( "bgw-error-analysis-title" ),
                                              WString::tr( "bgw-error-analysis-msg" ).arg( *error_msg ) );
     dialog->addStyleClass( "BatchAnalysisErrorDialog" );
     dialog->addButton( WString::tr( "Okay" ) );
@@ -1009,14 +1009,14 @@ void BatchGuiPeakFitWidget::performAnalysis(
     ) );
 
     // Create and show the dialog
-    InjaLogDialog *dialog = new InjaLogDialog( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
+    InjaLogDialog *dialog = SimpleDialog::make<InjaLogDialog>( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
     dialog->setToolbarVisible( false );
     dialog->show();
 
 
     if( !results->warnings.empty() )
     {
-      SimpleDialog *warnings_dialog = new SimpleDialog( WString::tr( "bgw-warning-title" ) );
+      SimpleDialog *warnings_dialog = SimpleDialog::make( WString::tr( "bgw-warning-title" ) );
       warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
 
       InterSpec *interspec = InterSpec::instance();
@@ -1281,7 +1281,7 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   if( !exemplar )
   {
     SimpleDialog *dialog =
-      new SimpleDialog( WString::tr( "bgw-error-analysis-title" ), WString::tr( "bgw-no-exemplar-msg" ) );
+      SimpleDialog::make( WString::tr( "bgw-error-analysis-title" ), WString::tr( "bgw-no-exemplar-msg" ) );
     dialog->addStyleClass( "BatchAnalysisErrorDialog" );
     dialog->addButton( WString::tr( "Okay" ) );
     return;
@@ -1314,7 +1314,7 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   auto error_msg = make_shared<string>();
 
   SimpleDialog *waiting_dialog =
-    new SimpleDialog( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
+    SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
   std::function<void( void )> close_waiting_dialog =
     [waiting_dialog](){ waiting_dialog->done( Wt::DialogCode::Accepted ); };
@@ -1322,7 +1322,7 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   std::function<void( void )> show_error_dialog = [error_msg, close_waiting_dialog]()
   {
     close_waiting_dialog();
-    SimpleDialog *dialog = new SimpleDialog( WString::tr( "bgw-error-analysis-title" ),
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr( "bgw-error-analysis-title" ),
                                              WString::tr( "bgw-error-analysis-msg" ).arg( *error_msg ) );
     dialog->addStyleClass( "BatchAnalysisErrorDialog" );
     dialog->addButton( WString::tr( "Okay" ) );
@@ -1348,14 +1348,14 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
     ) );
 
     // Create and show the dialog
-    InjaLogDialog *dialog = new InjaLogDialog( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
+    InjaLogDialog *dialog = SimpleDialog::make<InjaLogDialog>( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
     dialog->setToolbarVisible( false );
     dialog->show();
 
 
     if( !summary_results->warnings.empty() )
     {
-      SimpleDialog *warnings_dialog = new SimpleDialog( WString::tr( "bgw-warning-title" ) );
+      SimpleDialog *warnings_dialog = SimpleDialog::make( WString::tr( "bgw-warning-title" ) );
       warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
 
       WContainerWidget *contents = warnings_dialog->contents();
@@ -2025,7 +2025,7 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
   }//if( sum_all ) / else if( concat_all ) / else
 
 
-  SimpleDialog *dialog = new SimpleDialog( WString::tr( "bgw-analysis-summary-title" ) );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr( "bgw-analysis-summary-title" ) );
   dialog->addStyleClass( "BatchAnalysisResultDialog" );
 
   if( warnings.empty() )

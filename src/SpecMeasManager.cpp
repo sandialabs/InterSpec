@@ -316,6 +316,7 @@ namespace
 
   class FileUploadDialog : public AuxWindow
   {
+    friend class AuxWindow;
     //Class used to upload spectrum files.  Specialization of AuxWindow
     //  needed to manage InterSpec::displayedSpectrumChanged() connection.
     
@@ -323,8 +324,9 @@ namespace
     WFileUpload *m_fileUpload;
     SpecMeasManager *m_manager;
     SpecUtils::SpectrumType m_type;
-    
-  public:
+
+  protected:
+    // Constructor is protected; use AuxWindow::make<FileUploadDialog>() to create.
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
     : AuxWindow( "", (AuxWindowProperties::IsModal
@@ -368,9 +370,7 @@ namespace
       {
         WGroupBox *buttons = layout->addWidget( std::make_unique<WGroupBox>( WString::tr("fud-btn-grp-title") ), layout->rowCount(), 0 );
 
-        auto groupOwned = std::make_unique<WButtonGroup>();
-        WButtonGroup *group = groupOwned.get();
-        buttons->addChild( std::move(groupOwned) );
+        auto group = std::make_shared<WButtonGroup>();
 
         WRadioButton *foreground = buttons->addNew<WRadioButton>( WString::tr("Foreground") );
         foreground->setInline( false );
@@ -447,7 +447,8 @@ namespace
         centerWindow();
       }
     }//FileUploadDialog constructor
-    
+
+  public:
     void toLarge( const ::int64_t size_tried )
     {
       m_manager->fileTooLarge( size_tried );
@@ -521,11 +522,13 @@ void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls, const si
  */
 class MultiUrlSpectrumDialog : public SimpleDialog
 {
+  friend class SimpleDialog;
   SpecMeasManager *m_manager;
   InterSpec *m_interspec;
   vector<SpecUtils::EncodedSpectraInfo> m_urls;
-  
-public:
+
+protected:
+  // Constructor is protected; use SimpleDialog::make<MultiUrlSpectrumDialog>() to create.
   MultiUrlSpectrumDialog( SpecMeasManager *manager, InterSpec *viewer )
   : SimpleDialog( WString::tr("musd-dialog-title"), "&nbsp;" ),
     m_manager( manager ),
@@ -562,8 +565,9 @@ public:
     }//try / catch get previous results
 #endif //#if( IOS || ANDROID )
   }//MultiUrlSpectrumDialog
-  
-  
+
+public:
+
 #if( IOS || ANDROID )
   static std::string prevUrlFile()
   {
@@ -1090,7 +1094,7 @@ protected:
         }
       }//if( (num_qr == 0) && b64_value.empty() )
       
-      SimpleDialog *dialog = new SimpleDialog( title, content );
+      SimpleDialog *dialog = SimpleDialog::make( title, content );
       dialog->addButton( WString::tr("Okay") );
       
       // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
@@ -1139,7 +1143,7 @@ protected:
         return;
       }
       
-      SimpleDialog *dialog = new SimpleDialog( WString::tr("uid-invalid-uri"), content );
+      SimpleDialog *dialog = SimpleDialog::make( WString::tr("uid-invalid-uri"), content );
       dialog->addButton( WString::tr("Okay") );
       
       // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
@@ -1170,7 +1174,7 @@ protected:
         m_qrCodeStatusTxt->setText( WString::tr("uid-found-qr") );
     }//if( cleaned_up_uris.size() > 1 )
     
-    SimpleDialog *dialog = new SimpleDialog( title, content );
+    SimpleDialog *dialog = SimpleDialog::make( title, content );
     WPushButton *btn = dialog->addButton( WString::tr("Yes") );
     btn->clicked().connect( [this, cleaned_up_uris](){ apply_uris( cleaned_up_uris ); } );
     btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
@@ -1361,7 +1365,10 @@ public:
 
 class UploadBrowser : public AuxWindow
 {
-public:
+  friend class AuxWindow;
+
+protected:
+  // Constructor is protected; use AuxWindow::make<UploadBrowser>() to create.
   UploadBrowser( SpecMeasManager *manager )
   : AuxWindow( "Import Spectrum Files",
                (AuxWindowProperties::IsModal
@@ -1417,7 +1424,8 @@ public:
     centerWindow();
     show();
   }//UploadBrowser
-  
+
+public:
   virtual ~UploadBrowser()
   {
   }
@@ -1524,7 +1532,7 @@ void SpecMeasManager::startSpectrumManager()
     return;
   }//if( m_spectrumManagerWindow )
   
-    m_spectrumManagerWindow = new AuxWindow( WString::tr("smm-window-title"),
+    m_spectrumManagerWindow = AuxWindow::make( WString::tr("smm-window-title"),
                     (AuxWindowProperties::IsModal
                      | AuxWindowProperties::TabletNotFullScreen
                      | AuxWindowProperties::DisableCollapse
@@ -1585,7 +1593,7 @@ void SpecMeasManager::startSpectrumManager()
     
     
     WPushButton *cancel = m_spectrumManagerWindow->addCloseButtonToFooter();
-    cancel->clicked().connect( m_spectrumManagerWindow, &AuxWindow::hide );
+    cancel->clicked().connect( m_spectrumManagerWindow.get(), &AuxWindow::hide );
     
     
     // Make it so it can't be totally deformed
@@ -1725,7 +1733,7 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     passMessage( WString::tr("smm-err-zip"), 2 );
   }//try / catch
   
-  if( window ) window->removeFromParent();
+  if( window ) AuxWindow::deleteAuxWindow( window );
 }//SpecMeasManager::extractAndOpenFromZip(...)
 
 
@@ -1803,9 +1811,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     cblayout->setVerticalSpacing( 0 );
     cblayout->setHorizontalSpacing( 0 );
     typecb->setLayout( std::move(cblayoutOwned) );
-    auto groupOwned2 = std::make_unique<WButtonGroup>();
-    WButtonGroup *group = groupOwned2.get();
-    typecb->addChild( std::move(groupOwned2) );
+    auto group = std::make_shared<WButtonGroup>();
     auto btn0 = std::make_unique<Wt::WRadioButton>( WString::tr("Foreground") );
     Wt::WRadioButton *button = btn0.get();
     group->addButton(button, toint(SpectrumType::Foreground) );
@@ -1832,7 +1838,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       group->setCheckedButton( group->button(toint(SpectrumType::Foreground)) );
     }
     
-    AuxWindow *window = new AuxWindow( WString::tr("smm-zip-window-title"),
+    AuxWindow *window = AuxWindow::make( WString::tr("smm-zip-window-title"),
                   (AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::EnableResize) );
@@ -1872,12 +1878,12 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     //if( selection->count() == 0 )
     if( model->rowCount() == 0 )
     {
-      if( window ) window->removeFromParent();
+      if( window ) AuxWindow::deleteAuxWindow( window );
       return false;
     //}if( selection->count() == 1 )
     }else if( model->rowCount() == 1 && validtype )
     {
-      extractAndOpenFromZip( spoolName, group, table, window, model->index(0,0) );
+      extractAndOpenFromZip( spoolName, group.get(), table, window, model->index(0,0) );
       return (uncompresssize[0] > 0);
 
 /*
@@ -1900,8 +1906,8 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       
       SpecUtils::remove_file( tmpfile.string<string>() );
       
-      if( window ) window->removeFromParent();
-      
+      if( window ) AuxWindow::deleteAuxWindow( window );
+
       return (nbytes > 0);
 */
     }
@@ -1945,11 +1951,11 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     //selection->activated().connect( openButton, &WPushButton::enable );
     table->clicked().connect( openButton, &WPushButton::enable );
     table->doubleClicked().connect( [this, spoolName, group, table, window]( const WModelIndex &index ){
-      extractAndOpenFromZip( spoolName, group, table, window, index );
+      extractAndOpenFromZip( spoolName, group.get(), table, window, index );
     } );
 
     //openButton->clicked().connect( [this, spoolName, group, table, window](){ extractAndOpenFromZip( spoolName, type, selection, window ); } );
-    openButton->clicked().connect( [this, spoolName, group, table, window](){ extractAndOpenFromZip( spoolName, group, table, window, WModelIndex() ); } );
+    openButton->clicked().connect( [this, spoolName, group, table, window](){ extractAndOpenFromZip( spoolName, group.get(), table, window, WModelIndex() ); } );
     
     window->centerWindow();
     window->disableCollapse();
@@ -2078,7 +2084,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   };//header_line_has_both lambda
 
   // SpecMeasManager will keep track of this next dialog, so we can do undo/redo a little better
-  SimpleDialog *dialog = new SimpleDialog();
+  SimpleDialog *dialog = SimpleDialog::make();
   
   if( m_nonSpecFileDialog )
   {
@@ -2093,7 +2099,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   m_nonSpecFileDialog->finished().connect( [dialog]( Wt::DialogCode ){
     InterSpec *interspec = InterSpec::instance();
     SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
-    if( manager && manager->m_nonSpecFileDialog == dialog )
+    if( manager && manager->m_nonSpecFileDialog.get() == dialog )
       manager->m_nonSpecFileDialog = nullptr;
   } );
   
@@ -4143,11 +4149,11 @@ bool SpecMeasManager::handleSourceLibFile( std::istream &input, SimpleDialog *di
 
 void SpecMeasManager::handleCancelPreviousStatesDialog( AuxWindow *dialog )
 {
-  assert( dialog == m_previousStatesDialog );
+  assert( dialog == m_previousStatesDialog.get() );
   if( !dialog )
     return;
-  
-  if( dialog != m_previousStatesDialog )
+
+  if( dialog != m_previousStatesDialog.get() )
   {
     cerr << "SpecMeasManager::handleCancelPreviousStatesDialog: dialog passed in isnt as expected"
     << " - not doing anything." << endl;
@@ -4172,7 +4178,7 @@ void SpecMeasManager::checkCloseUploadDialog( SimpleDialog *dialog, WApplication
   if( !lock )
     return;
   
-  if( dialog != m_processingUploadDialog )
+  if( dialog != m_processingUploadDialog.get() )
     return;
   
   if( m_processingUploadTimer )
@@ -4242,7 +4248,7 @@ void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uin
     
     // TODO: could occasionally (every few seconds) update dialog text with current status
     
-    make_timer( m_processingUploadDialog );
+    make_timer( m_processingUploadDialog.get() );
     return;
   }//if( m_processingUploadDialog )
   
@@ -4278,9 +4284,9 @@ void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uin
     }//switch( type )
   }//end codeblock to add file size to string
    
-  m_processingUploadDialog = new SimpleDialog( title, msg );
+  m_processingUploadDialog = SimpleDialog::make( title, msg );
   
-  make_timer( m_processingUploadDialog );
+  make_timer( m_processingUploadDialog.get() );
   
   app->triggerUpdate();
 }//void handleDataRecievedStatus(...)
@@ -4379,7 +4385,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   }//if( m_processingUploadDialog )
   
   if( m_previousStatesDialog )
-    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+    handleCancelPreviousStatesDialog( m_previousStatesDialog.get() );
   
   // If file is small, and not csv/txt (these are really slow to parse), dont display the parsing
   //  message.
@@ -4391,7 +4397,7 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   }
   
   // Its a larger file - display a message letting the user know its being parsed.
-  auto dialog = new SimpleDialog( WString::tr("smm-window-title-parsing"),
+  auto dialog = SimpleDialog::make( WString::tr("smm-window-title-parsing"),
                                  WString::tr("smm-window-msg-parsing") );
   
   wApp->triggerUpdate();
@@ -4432,7 +4438,7 @@ void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
   try
   {
     if( m_previousStatesDialog )
-      handleCancelPreviousStatesDialog( m_previousStatesDialog );
+      handleCancelPreviousStatesDialog( m_previousStatesDialog.get() );
     
     //Remove everything leading up to "RADDATA://G0/"
     const size_t uri_pos = SpecUtils::ifind_substr_ascii( unencoded, "RADDATA://" );
@@ -4489,14 +4495,14 @@ void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
       m_viewer->userOpenFile( specmeas, display_name );
     }else
     {
-      auto dialog = dynamic_cast<MultiUrlSpectrumDialog *>( m_multiUrlSpectrumDialog );
+      auto dialog = dynamic_cast<MultiUrlSpectrumDialog *>( m_multiUrlSpectrumDialog.get() );
       if( !dialog )
-        m_multiUrlSpectrumDialog = dialog = new MultiUrlSpectrumDialog( this, m_viewer );
+        m_multiUrlSpectrumDialog = dialog = SimpleDialog::make<MultiUrlSpectrumDialog>( this, m_viewer );
       dialog->addUrl( unencoded );
     }
   }catch( std::exception &e )
   {
-    auto dialog = new SimpleDialog( WString::tr("Error"), 
+    auto dialog = SimpleDialog::make( WString::tr("Error"), 
                                    WString::tr("smm-qr-err-decode").arg(e.what()) );
     dialog->addButton( WString::tr("Close") );
   }//try /catch
@@ -4596,7 +4602,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     
     if( urls.empty() )
     {
-      auto dialog = new SimpleDialog( WString::tr("Error"), WString::tr("smm-qr-couldnt-encode") );
+      auto dialog = SimpleDialog::make( WString::tr("Error"), WString::tr("smm-qr-couldnt-encode") );
       dialog->addButton( WString::tr("Close") );
       return;
     }//if( urls.empty() )
@@ -4604,7 +4610,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     displayQrDialog( urls, 0, type );
   }catch( std::exception &e )
   {
-    auto dialog = new SimpleDialog( WString::tr("Error"),
+    auto dialog = SimpleDialog::make( WString::tr("Error"),
                                    WString::tr("smm-qr-encode-fail").arg(e.what()) );
     dialog->addButton( WString::tr("Close") );
   }//try catch
@@ -4635,7 +4641,7 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   
   WString msg = WString::tr("smm-err-parse-spec").arg(lastpart).arg(errormsg);
   
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("smm-err-parse-spec-title"), msg );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("smm-err-parse-spec-title"), msg );
   dialog->addButton( WString::tr("Close") );
   wApp->triggerUpdate();
 }//void displayInvalidFileMsg( std::string filename, std::string errormsg )
@@ -4813,7 +4819,7 @@ void SpecMeasManager::loadSelected( const SpecUtils::SpectrumType type,
 
 void SpecMeasManager::startQuickUpload()
 {
-  auto window = new FileUploadDialog( m_viewer, this );
+  auto window = AuxWindow::make<FileUploadDialog>( m_viewer, this );
   UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
   
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -5085,7 +5091,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
       else
         msgtxt.arg( "" );
       
-      SimpleDialog *dialog = new SimpleDialog( WString::tr("smm-vd-load-title"), msgtxt );
+      SimpleDialog *dialog = SimpleDialog::make( WString::tr("smm-vd-load-title"), msgtxt );
       
       auto add_button = [this, dialog, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck]( string btn_txt, const set<string> &dets, size_t max_txt_size ){
         if( btn_txt.size() > max_txt_size )
@@ -5129,7 +5135,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   
   if( derivedData )
   {
-    SimpleDialog *dialog = new SimpleDialog( WString::tr("smm-derived-window-title"),
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr("smm-derived-window-title"),
                                             WString::tr("smm-derived-window-txt") );
     WPushButton *button = dialog->addButton( WString::tr("smm-derived-all") );
     
@@ -5162,7 +5168,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   
   if( cals.size() > 3 )
   {
-    SimpleDialog *dialog = new SimpleDialog( WString::tr(title_key) );
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr(title_key) );
     
     int ncolwide = (derivedData ? 3 : static_cast<int>(cals.size() + 1));
     if( ncolwide > 4 )
@@ -5206,7 +5212,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     }//for( loop over calibrations )
   }else  //if( cals.size() > 3 )
   {
-    SimpleDialog *dialog = new SimpleDialog( WString::tr(title_key) );
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr(title_key) );
 
     WText *msg = dialog->contents()->addNew<WText>( WString::tr(msgtxt_key), TextFormat::XHTML );
     msg->addStyleClass( "content" );
@@ -6316,7 +6322,7 @@ void SpecMeasManager::deleteSpectrumManager()
   // Remove m_treeView from the window before deleting, so it survives for reuse.
   // Release the unique_ptr so m_treeView is not deleted (we manage its lifetime manually).
   m_spectrumManagertreeDiv->removeWidget( m_treeView ).release();
-  AuxWindow::deleteAuxWindow(m_spectrumManagerWindow);
+  AuxWindow::deleteAuxWindow( m_spectrumManagerWindow.get() );
   m_spectrumManagerWindow = nullptr;
   
   UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
@@ -6634,9 +6640,9 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   }//if( unModifiedFiles.size() )
 
   if( m_previousStatesDialog )
-    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+    handleCancelPreviousStatesDialog( m_previousStatesDialog.get() );
   
-  AuxWindow *window = new AuxWindow( WString::tr("smm-prev-states-window-title"),
+  AuxWindow *window = AuxWindow::make( WString::tr("smm-prev-states-window-title"),
                                     (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::EnableResize
                                      | AuxWindowProperties::TabletNotFullScreen
@@ -6677,7 +6683,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     snapshotsOwned.reset();
     auto_savedOwned.reset();
     if( window )
-      if( window ) window->removeFromParent();
+      AuxWindow::deleteAuxWindow( window );
     window = nullptr;
 
     WString msg = WString::tr("smm-err-prev-state-unexpected").arg( e.what() );
@@ -6691,7 +6697,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   if( !snapshots && !auto_saved )
   {
     assert( 0 );
-    if( window ) window->removeFromParent();
+    if( window ) AuxWindow::deleteAuxWindow( window );
     return;
   }
 
@@ -6946,7 +6952,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
                                          SpecUtils::ParserType parseType )
 {
   if( m_previousStatesDialog )
-    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+    handleCancelPreviousStatesDialog( m_previousStatesDialog.get() );
   
   const string origName = SpecUtils::filename( name );
   
@@ -6994,7 +7000,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
 int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload, std::shared_ptr<SpecMeas> &measurement )
 {
   if( m_previousStatesDialog )
-    handleCancelPreviousStatesDialog( m_previousStatesDialog );
+    handleCancelPreviousStatesDialog( m_previousStatesDialog.get() );
   
   const string fileName = upload->spoolFileName();
   const WString clientFileName = upload->clientFileName();
@@ -7151,7 +7157,7 @@ void SpecMeasManager::fileTooLarge( const ::int64_t size_tried )
 
 
 void SpecMeasManager::uploadSpectrum() {
-  new UploadBrowser(this/*, m_viewer*/);
+  AuxWindow::make<UploadBrowser>(this/*, m_viewer*/);
 }
 
 
@@ -7212,7 +7218,7 @@ void SpecMeasManager::startSaveSelected()
 void SpecMeasManager::browsePrevSpectraAndStatesDb()
 {
   // TODO: Make this be the same implementation as SpecMeasManager::showPreviousSpecFileUsesDialog; but to do that, need to make AutosavedSpectrumBrowser be a MVC widget so we dont put like a million elements into the DOM
-  DbFileBrowser *browser = new DbFileBrowser( this, m_viewer, nullptr );
+  DbFileBrowser *browser = AuxWindow::make<DbFileBrowser>( this, m_viewer, nullptr );
   
   UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )

@@ -376,7 +376,7 @@ SimpleDialog *displayMultimedia( const std::shared_ptr<const SpecMeas> &spec )
   wApp->useStyleSheet( "InterSpec_resources/MultimediaDisplay.css" );
   
   
-  auto dialog = new SimpleDialog();
+  auto dialog = SimpleDialog::make();
   //dialog->setModal( false ); //doesnt seem to have any effect
   dialog->addButton( WString::tr("Close") );
   

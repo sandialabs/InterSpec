@@ -37,8 +37,9 @@ namespace Wt
 
 class UnitsConverterTool : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  UnitsConverterTool();
   virtual ~UnitsConverterTool();
   
   /** Performs the actual conversion.
@@ -68,6 +69,9 @@ public:
   std::string encodeStateToUrl() const;
   
 protected:
+  // Constructor is protected; use AuxWindow::make<UnitsConverterTool>() to create.
+  UnitsConverterTool();
+
   void convert();
   
   Wt::WLineEdit *m_input;

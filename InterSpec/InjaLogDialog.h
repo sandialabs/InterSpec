@@ -61,6 +61,7 @@ namespace Wt
  */
 class InjaLogDialog : public SimpleDialog
 {
+  friend class SimpleDialog;
 public:
   /** Enum to specify the type of log content. */
   enum class LogType
@@ -76,6 +77,18 @@ public:
   static const char * const sm_txt_log_pre_wrapper;
   static const char * const sm_txt_log_post_wrapper;
 
+  virtual ~InjaLogDialog();
+
+  const std::string &current_content() const;
+  const std::string current_suggested_name() const;
+
+  /** Show or hide the toolbar containing the template selector and download button.
+   @param show If true, toolbar is shown; if false, toolbar is hidden
+   */
+  void setToolbarVisible( const bool show );
+
+protected:
+  // Constructor is protected; use SimpleDialog::make<InjaLogDialog>() to create.
   /** Constructor for InjaLogDialog.
 
    @param title The dialog title
@@ -96,17 +109,6 @@ public:
                  const nlohmann::json &data,
                  std::vector<std::tuple<Wt::WString, std::string, LogType, std::function<std::string(inja::Environment&, const nlohmann::json&)>>> template_options );
 
-  virtual ~InjaLogDialog();
-
-  const std::string &current_content() const;
-  const std::string current_suggested_name() const;
-
-  /** Show or hide the toolbar containing the template selector and download button.
-   @param show If true, toolbar is shown; if false, toolbar is hidden
-   */
-  void setToolbarVisible( const bool show );
-
-protected:
   /** Update the displayed content using the currently selected template. */
   void updateDisplay();
 

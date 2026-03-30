@@ -88,7 +88,7 @@ SimpleDialog *showAdvancedDialog()
 
   viewer->useMessageResourceBundle( "FitPeaksForNuclidesGui" );
 
-  FitPeaksAdvancedDialog *dlg = new FitPeaksAdvancedDialog( WString() );
+  FitPeaksAdvancedDialog *dlg = SimpleDialog::make<FitPeaksAdvancedDialog>( WString() );
   dlg->rejectWhenEscapePressed();
 
   return dlg;
@@ -238,7 +238,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
     config.skew_type = peak_fit_prefs->m_peak_skew_type;
 
   // Let user continue using app while fitting.
-  SimpleDialog *wait_dlg = new SimpleDialog( WString::tr("fpn-wait-title"),
+  SimpleDialog *wait_dlg = SimpleDialog::make( WString::tr("fpn-wait-title"),
                                              WString::tr("fpn-wait-content") );
   wait_dlg->rejectWhenEscapePressed();
   wait_dlg->addButton( WString::tr("Close") );
@@ -314,7 +314,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
       if( disp )
         disp->setFitSourcesButtonEnabled( true );
 
-      SimpleDialog *err = new SimpleDialog( WString::tr("fpn-error-title"),
+      SimpleDialog *err = SimpleDialog::make( WString::tr("fpn-error-title"),
                                             WString::tr("fpn-error-content").arg( e.what() ) );
       err->addButton( WString::tr("Okay") );
       wApp->triggerUpdate();
@@ -363,7 +363,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
         if( result->status != RelActCalcAuto::RelActAutoSolution::Status::Success )
         {
-          SimpleDialog *err = new SimpleDialog( WString::tr("fpn-error-title"),
+          SimpleDialog *err = SimpleDialog::make( WString::tr("fpn-error-title"),
                                                 WString::tr("fpn-error-content").arg( result->error_message ) );
           err->addButton( WString::tr("Okay") );
           wApp->triggerUpdate();
@@ -392,7 +392,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
               msg += Wt::WString::fromUTF8( w );
             }
           }
-          SimpleDialog *dlg = new SimpleDialog( WString::tr("fpn-result-title"), msg );
+          SimpleDialog *dlg = SimpleDialog::make( WString::tr("fpn-result-title"), msg );
           dlg->addButton( WString::tr("Okay") );
           wApp->triggerUpdate();
           return;
@@ -414,7 +414,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         }
 
         // Show result dialog with warnings
-        SimpleDialog *result_dlg = new SimpleDialog( WString::tr("fpn-result-title"), "" );
+        SimpleDialog *result_dlg = SimpleDialog::make( WString::tr("fpn-result-title"), "" );
         result_dlg->addStyleClass( "FitSourcesResultDialog" );
 
         Wt::WContainerWidget *contents = result_dlg->contents();

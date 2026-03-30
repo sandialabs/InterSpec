@@ -253,14 +253,8 @@ protected:
 
 class ExportSpecFileWindow : public SimpleDialog
 {
+  friend class SimpleDialog;
 public:
-  ExportSpecFileWindow( InterSpec *viewer );
-  
-  ExportSpecFileWindow( const std::shared_ptr<const SpecMeas> &spectrum,
-                       const std::set<int> &samples,
-                       const std::vector<std::string> &detectors,
-                       InterSpec *viewer );
-  
   void setSpecificSpectrum( const std::shared_ptr<const SpecMeas> &spectrum,
                            const std::set<int> &samples,
                            const std::vector<std::string> &detectors,
@@ -270,8 +264,16 @@ public:
   std::string encodeStateToUrl() const;
   
   void scheduleDelete();
+
 protected:
-  
+  // Constructor is protected; use SimpleDialog::make<ExportSpecFileWindow>() to create.
+  ExportSpecFileWindow( InterSpec *viewer );
+
+  ExportSpecFileWindow( const std::shared_ptr<const SpecMeas> &spectrum,
+                       const std::set<int> &samples,
+                       const std::vector<std::string> &detectors,
+                       InterSpec *viewer );
+
   ExportSpecFileTool *m_tool;
 };//class MoreNuclideInfoWindow
 

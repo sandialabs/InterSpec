@@ -62,8 +62,8 @@ class BatchGuiInputSpectrumFile;
 
 class BatchGuiDialog : public SimpleDialog
 {
+  friend class SimpleDialog;
 public:
-  BatchGuiDialog( FileDragUploadResource *uploadResource, const Wt::WString &title = "Batch Analysis" );
   virtual ~BatchGuiDialog();
 
   BatchGuiWidget *widget() { return m_widget; }
@@ -73,6 +73,9 @@ public:
   static BatchGuiDialog *createDialog( FileDragUploadResource *uploadResource );
 
 protected:
+  // Constructor is protected; use SimpleDialog::make<BatchGuiDialog>() to create.
+  BatchGuiDialog( FileDragUploadResource *uploadResource, const Wt::WString &title = "Batch Analysis" );
+
 
 private:
   BatchGuiWidget *m_widget;

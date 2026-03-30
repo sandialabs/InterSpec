@@ -2574,7 +2574,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     PeakModel *peakModel = viewer->peakModel();
     WSuggestionPopup *shieldSuggest = viewer->shieldingSuggester();
 
-    window = new AuxWindow( WString::tr("window-title-act-shield-fit"),
+    window = AuxWindow::make( WString::tr("window-title-act-shield-fit"),
                            (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
@@ -3641,7 +3641,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
   //  not be used by end-users.
   //Also, if you change the model any while this window is open - bad things will happen.
   
-  AuxWindow *window = new AuxWindow( "Input Truth Values",
+  AuxWindow *window = AuxWindow::make( "Input Truth Values",
                                      (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   
   WContainerWidget *contents = window->contents();
@@ -5111,7 +5111,7 @@ bool ShieldingSourceDisplay::checkForMissingBackgroundPeaks( const bool triggere
     energy_ss << std::fixed << std::setprecision( 1 ) << missing_energies[i] << " keV";
   }//for( each missing energy )
 
-  SimpleDialog *dialog = new SimpleDialog( WString::tr( "ssd-missing-back-peaks-title" ),
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr( "ssd-missing-back-peaks-title" ),
                                            WString::tr( "ssd-missing-back-peaks-msg" ).arg( energy_ss.str() ) );
 
   WCheckBox *add_all_cb = dialog->contents()->addNew<WCheckBox>( WString::tr( "ssd-btn-add-all-detectable" ) );
@@ -5235,7 +5235,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
 
   if( candidates_to_fit.empty() )
   {
-    SimpleDialog *dialog = new SimpleDialog( "", WString::tr( "ssd-no-new-back-peaks" ) );
+    SimpleDialog *dialog = SimpleDialog::make( "", WString::tr( "ssd-no-new-back-peaks" ) );
     dialog->addButton( WString::tr( "Okay" ) );
     if( triggeredFromFit )
       dialog->finished().connect( std::bind( [dofit](){ dofit(); } ) );
@@ -5265,7 +5265,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
 
   if( all_fit_peaks.empty() )
   {
-    SimpleDialog *dialog = new SimpleDialog( "", WString::tr( "ssd-no-new-back-peaks" ) );
+    SimpleDialog *dialog = SimpleDialog::make( "", WString::tr( "ssd-no-new-back-peaks" ) );
     dialog->addButton( WString::tr( "Okay" ) );
 
     if( triggeredFromFit )
@@ -5283,7 +5283,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
     max_energy = std::max( max_energy, fp.mean() + 4.0 * fp.sigma() );
   }//for( each fit peak )
 
-  SimpleDialog *dialog = new SimpleDialog( WString::tr( "ssd-back-peak-preview-title" ),
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr( "ssd-back-peak-preview-title" ),
                                            WString::tr( "ssd-back-peak-preview-msg" ) );
 
   // Override the default SimpleDialog size constraints so the chart can be large enough
@@ -6379,7 +6379,7 @@ void ShieldingSourceDisplay::showCalcLog()
 #endif
 
     // Create and show the dialog, store in m_logDiv
-    m_logDiv = new InjaLogDialog( WString::tr( "ssd-calc-log-html-title" ), data, templates );
+    m_logDiv = SimpleDialog::make<InjaLogDialog>( WString::tr( "ssd-calc-log-html-title" ), data, templates );
     m_logDiv->finished().connect( this, &ShieldingSourceDisplay::closeCalcLogWindow );
     m_logDiv->show();
 
@@ -6462,7 +6462,7 @@ const ShieldingSelect *ShieldingSourceDisplay::innerShielding( const ShieldingSe
 
 void ShieldingSourceDisplay::closeModelUploadWindow()
 {
-  AuxWindow::deleteAuxWindow( m_modelUploadWindow );
+  AuxWindow::deleteAuxWindow( m_modelUploadWindow.get() );
   m_modelUploadWindow = nullptr;
 }//void closeModelUploadWindow()
 
@@ -6545,7 +6545,7 @@ void ShieldingSourceDisplay::startModelUpload()
   if( m_modelUploadWindow )
     return;
   
-  m_modelUploadWindow = new AuxWindow( WString::tr("ssd-import-model-window-title"),
+  m_modelUploadWindow = AuxWindow::make( WString::tr("ssd-import-model-window-title"),
                       (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   
   WContainerWidget *contents = m_modelUploadWindow->contents();
@@ -6558,7 +6558,7 @@ void ShieldingSourceDisplay::startModelUpload()
   
   
   WPushButton *button = m_modelUploadWindow->addCloseButtonToFooter( WString::tr("Cancel") );
-  button->clicked().connect( m_modelUploadWindow, &AuxWindow::hide );
+  button->clicked().connect( m_modelUploadWindow.get(), &AuxWindow::hide );
   
   m_modelUploadWindow->centerWindow();
   m_modelUploadWindow->disableCollapse();
@@ -6777,7 +6777,7 @@ void ShieldingSourceDisplay::finishLoadModelFromDatabase( WSelectionBox *first_s
 
 void ShieldingSourceDisplay::closeBrowseDatabaseModelsWindow()
 {
-  AuxWindow::deleteAuxWindow( m_modelDbBrowseWindow );
+  AuxWindow::deleteAuxWindow( m_modelDbBrowseWindow.get() );
   m_modelDbBrowseWindow = nullptr;
 }//void closeBrowseDatabaseModelsWindow();
 
@@ -6792,7 +6792,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
   
   WTextArea *summary = NULL;
   WPushButton *accept = NULL, *cancel = NULL, *del = NULL;
-  m_modelDbBrowseWindow = new AuxWindow( WString::tr("ssd-prev-saved-window-title"),
+  m_modelDbBrowseWindow = AuxWindow::make( WString::tr("ssd-prev-saved-window-title"),
               (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   m_modelDbBrowseWindow->finished().connect( this, &ShieldingSourceDisplay::closeBrowseDatabaseModelsWindow );
   
@@ -6808,7 +6808,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     accept->disable();
 
     cancel = new WPushButton( WString::tr("Cancel") );
-    cancel->clicked().connect( m_modelDbBrowseWindow, &AuxWindow::hide );
+    cancel->clicked().connect( m_modelDbBrowseWindow.get(), &AuxWindow::hide );
 
     del = new WPushButton( WString::tr("Delete") );
     del->setIcon( "InterSpec_resources/images/minus_min_white.png" );
@@ -6980,9 +6980,9 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     if( del )
       delete del;
     
-    AuxWindow::deleteAuxWindow( m_modelDbBrowseWindow );
+    AuxWindow::deleteAuxWindow( m_modelDbBrowseWindow.get() );
     m_modelDbBrowseWindow = nullptr;
-    
+
     passMessage( WString::tr("ssd-err-creating-db-browser"), WarningWidget::WarningMsgHigh );
     cerr << "\n\nShieldingSourceDisplay::startBrowseDatabaseModels() caught: "
          << e.what() << endl << endl;
@@ -7055,7 +7055,7 @@ std::string ShieldingSourceDisplay::defaultModelDescription() const
 #if( USE_DB_TO_STORE_SPECTRA )
 void ShieldingSourceDisplay::closeSaveModelToDatabaseWindow()
 {
-  AuxWindow::deleteAuxWindow( m_modelDbSaveWindow );
+  AuxWindow::deleteAuxWindow( m_modelDbSaveWindow.get() );
   m_modelDbSaveWindow = nullptr;
 }//void closeSaveModelToDatabaseWindow()
 
@@ -7071,7 +7071,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   if( m_modelDbSaveWindow )
     return;
   
-  m_modelDbSaveWindow = new AuxWindow( WString::tr("ssd-save-model-to-db-window-title"),
+  m_modelDbSaveWindow = AuxWindow::make( WString::tr("ssd-save-model-to-db-window-title"),
                   (AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse) );

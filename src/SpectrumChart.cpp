@@ -1787,7 +1787,7 @@ SpectrumChart::~SpectrumChart()
 {
   if( m_legend )
   {
-    delete m_legend;
+    AuxWindow::deleteAuxWindow( m_legend.get() );
     m_legend = 0;
   }
 }//~SpectrumChart()
@@ -3562,7 +3562,7 @@ void SpectrumChart::renderFloatingLegend()
   {
     if( m_legend )
     {
-      delete m_legend;
+      AuxWindow::deleteAuxWindow( m_legend.get() );
       m_legend = 0;
     }//if( m_legend )
     
@@ -3573,7 +3573,7 @@ void SpectrumChart::renderFloatingLegend()
   
   if( !m_legend )
   {
-    m_legend = new AuxWindow( "");
+    m_legend = AuxWindow::make( "");
     m_legend->setResizable( false);
     m_legend->show();
     m_legend->disableCollapse();
@@ -4062,7 +4062,7 @@ void SpectrumChart::disableLegend()
   
   if( m_legend )
   {
-    delete m_legend;
+    AuxWindow::deleteAuxWindow( m_legend.get() );
     m_legend = 0;
     
     if( wApp )
@@ -4114,7 +4114,7 @@ void SpectrumChart::setHidden( bool hidden, const Wt::WAnimation &animation )
 
   if( m_legend )
   {
-    delete m_legend;
+    AuxWindow::deleteAuxWindow( m_legend.get() );
     m_legend = 0;
   }//if( m_legend )
 }//void setHidden( bool hidden, const Wt::WAnimation &animation )

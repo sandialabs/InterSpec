@@ -932,7 +932,7 @@ void RelEffFile::handleUserAskedRemove()
     return;
   }
   
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("ref-remove-drf-window-title"),
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ref-remove-drf-window-title"),
                                           WString::tr("ref-remove-drf-window-txt") );
   
   Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes") );
@@ -1065,7 +1065,7 @@ void RelEffFile::handleFileUpload()
   }//if( invalid file )
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("ref-save-drf-window-title"),
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ref-save-drf-window-title"),
                                 WString::tr("ref-save-drf-window-txt") );
   
   Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes") );
@@ -3034,7 +3034,7 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   
   const char *title_key = (drfs.size() == 1) ? "ds-use-drf" : "ds-select-drf";
   
-  SimpleDialog *dialog = new SimpleDialog( WString::tr(title_key) );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr(title_key) );
   dialog->addStyleClass( "DrfFileSelectDialog" );
   
   WPushButton *cancel = dialog->addButton( WString::tr("Cancel") );

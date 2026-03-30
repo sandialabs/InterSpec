@@ -146,17 +146,21 @@ protected:
 
 class GammaXsWindow : public AuxWindow
 {
+  friend class AuxWindow;
 /*
   This class creates a popup window to display the GammaXsGui.
   When the user closes the window all memmorry is cleaned up.
 */
 public:
+  virtual ~GammaXsWindow();
+
+  GammaXsGui *xstool();
+
+protected:
+  // Constructor is protected; use AuxWindow::make<GammaXsWindow>() to create.
   GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion,
                  InterSpec* viewer );
-  virtual ~GammaXsWindow();
-  
-  GammaXsGui *xstool();
-protected:
+
   
   GammaXsGui *m_tool;
 };//class GammaXsWindow

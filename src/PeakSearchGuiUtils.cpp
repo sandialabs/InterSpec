@@ -117,6 +117,8 @@ namespace
  */
 class PeakSelectorWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
   InterSpec *m_viewer;
   Wt::WTable *m_table;
   int m_previewChartColumn;
@@ -151,8 +153,9 @@ class PeakSelectorWindow : public AuxWindow
      searching for peaks or doing ID.
    */
   bool m_cancelOperation;
-  
-public:
+
+protected:
+  // Constructor is protected; use AuxWindow::make<PeakSelectorWindow>() to create.
   /** PeakSelectorWindow constructor.
    
    @param viewer The InterSpec instance to create this dialog for.
@@ -715,7 +718,8 @@ public:
         undoManager->addUndoRedoStep( undo, redo, "Reject automated peak search." );
     }// End handle undo when the dialog is showing, and the user hasnt accepted it
   }//PeakSelector constructor
-  
+
+public:
   //Only consider normal nuclides, and normal gammas (n xrays, or escape peaks)
   static bool eligible_for_rel_eff_chart( const shared_ptr<PeakDef> &p )
   {
@@ -1879,7 +1883,7 @@ void set_peaks_from_search( InterSpec *viewer,
   for( const auto &p : filtered_peaks )
     result_peaks.push_back( *p );
   
-  new PeakSelectorWindow( viewer, PeakSelectorWindowReason::PeakSearch, originalPeaks,
+  AuxWindow::make<PeakSelectorWindow>( viewer, PeakSelectorWindowReason::PeakSearch, originalPeaks,
                           originaldata, result_peaks, displayed );
   
   wApp->triggerUpdate();
@@ -2267,7 +2271,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   //  the app.
   const WString title = WString::tr("psgu-search-wait-title");
   const WString content = WString::tr("psgu-search-wait-content");
-  SimpleDialog *msg = new SimpleDialog( title, content );
+  SimpleDialog *msg = SimpleDialog::make( title, content );
   msg->rejectWhenEscapePressed();
   msg->addButton( WString::tr("Close") );
   
@@ -2780,7 +2784,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
   
   peakModel->setPeaks( result_peaks );
 
-  new PeakSelectorWindow( viewer, PeakSelectorWindowReason::NuclideId, orig_peaks,
+  AuxWindow::make<PeakSelectorWindow>( viewer, PeakSelectorWindowReason::NuclideId, orig_peaks,
                           foreground, result_peaks, displayed );
   
   wApp->triggerUpdate();
@@ -3179,7 +3183,7 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
       const WString title = WString::tr("psgu-fwhm-info-needed-title");
       const WString content = WString::tr( !!drf ? "psgu-fwhm-info-needed-has-det-eff" : "psgu-fwhm-info-needed-no-det-eff" );
       
-      SimpleDialog *msg = new SimpleDialog( title, content );
+      SimpleDialog *msg = SimpleDialog::make( title, content );
       // Setting object name of the SimpleDialog causes a javascript error - so we'll set
       //  the SimpleDialog contents name, and then get the dialog from that.
       //  This is all for undo/redo support, so we dont have to store a pointer to the dialog
@@ -4325,12 +4329,12 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
     {
       case PeakTemplateFitSrc::CsvFile:
         reason = PeakSelectorWindowReason::PeaksFromCsvFile;
-        new PeakSelectorWindow( interspec, reason, orig_peaks, data, fitpeaks, reflines );
+        AuxWindow::make<PeakSelectorWindow>( interspec, reason, orig_peaks, data, fitpeaks, reflines );
         break;
-        
+
       case PeakTemplateFitSrc::PreviousSpectrum:
         reason = PeakSelectorWindowReason::PeaksFromPreviousSpectrum;
-        new PeakSelectorWindow( interspec, reason, input_peaks, data, fitpeaks, reflines );
+        AuxWindow::make<PeakSelectorWindow>( interspec, reason, input_peaks, data, fitpeaks, reflines );
         break;
     }//switch( fitsrc )
 
@@ -4499,7 +4503,7 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
     vector<ReferenceLineInfo> reflines;
     
     const PeakSelectorWindowReason reason = PeakSelectorWindowReason::PeaksFromCsvFile; //PeaksFromPreviousSpectrum
-    new PeakSelectorWindow( interspec, reason, orig_peaks, data, fitpeaks, reflines );
+    AuxWindow::make<PeakSelectorWindow>( interspec, reason, orig_peaks, data, fitpeaks, reflines );
     
     wApp->triggerUpdate();
   } );

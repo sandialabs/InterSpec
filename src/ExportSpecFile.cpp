@@ -283,7 +283,7 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
                                          : "<p>Likely due to not being able to fit multiple spectra"
                                            " into a single QR code.</p>";
       
-      auto dialog = new SimpleDialog( WString::tr("esf-error-title"),
+      auto dialog = SimpleDialog::make( WString::tr("esf-error-title"),
                                      "<p>Spectrum could not be encoded to a QR code.</p>" + msg );
       dialog->addButton( WString::tr("Okay") );
       return;
@@ -297,7 +297,7 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
     displayQrDialog( urls, 0, successfullyDone, as_emailto, toogleEmailVsUri );
   }catch( std::exception &e )
   {
-    auto dialog = new SimpleDialog( WString::tr("esf-error-title"), WString::tr("esf-qr-encode-failed").arg(e.what()) );
+    auto dialog = SimpleDialog::make( WString::tr("esf-error-title"), WString::tr("esf-qr-encode-failed").arg(e.what()) );
     dialog->addButton( WString::tr("Okay") );
   }//try catch
 }//void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec, const bool as_emailto )
@@ -362,7 +362,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
     result = SpecUtils::url_encode_spectra_lossy( urlspec, 0, 1, max_chars );
   }catch( std::exception &e )
   {
-    SimpleDialog *dialog = new SimpleDialog( WString::tr("esf-error-title"),
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr("esf-error-title"),
       WString::tr("esf-qr-lossy-err") );
     dialog->addButton( WString::tr("Ok") );
     return;
@@ -370,7 +370,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
 
   if( result.m_urls.empty() )
   {
-    SimpleDialog *dialog = new SimpleDialog( WString::tr("esf-error-title"),
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr("esf-error-title"),
       WString::tr("esf-qr-lossy-err") );
     dialog->addButton( WString::tr("Ok") );
     return;
@@ -404,7 +404,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   }
   svg_size = std::min( svg_size, 640 );
 
-  SimpleDialog *window = new SimpleDialog( WString::tr("esf-lossy-qr-title"), "" );
+  SimpleDialog *window = SimpleDialog::make( WString::tr("esf-lossy-qr-title"), "" );
   window->rejectWhenEscapePressed();
   window->addButton( "Close" );
 
@@ -3620,7 +3620,7 @@ void ExportSpecFileTool::handleGenerateQrCode()
       displayLossyQrCode( urlspec, spec, successfullyDone );
   }catch( std::exception &e )
   {
-    auto dialog = new SimpleDialog( "Error", "Failed to encoded spectrum to a URI: " + string(e.what()) );
+    auto dialog = SimpleDialog::make( "Error", "Failed to encoded spectrum to a URI: " + string(e.what()) );
     dialog->addButton( "Ok" );
   }//try catch
 }//void handleGenerateQrCode()

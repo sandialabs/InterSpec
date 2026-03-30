@@ -38,8 +38,9 @@ namespace Wt
 
 class OneOverR2Calc : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  OneOverR2Calc();
   virtual ~OneOverR2Calc();
 
   void doCalc();
@@ -66,6 +67,9 @@ public:
   std::string encodeStateToUrl() const;
   
 protected:
+  // Constructor is protected; use AuxWindow::make<OneOverR2Calc>() to create.
+  OneOverR2Calc();
+
   void powerLawSelected();
   
 protected:

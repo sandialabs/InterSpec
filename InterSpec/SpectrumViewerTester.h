@@ -54,10 +54,14 @@ namespace SpecUtils
 
 class SpectrumViewerTesterWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  SpectrumViewerTesterWindow( InterSpec *viewer );
-  
   SpectrumViewerTester *m_tester;
+
+protected:
+  // Constructor is protected; use AuxWindow::make<SpectrumViewerTesterWindow>() to create.
+  SpectrumViewerTesterWindow( InterSpec *viewer );
 };//class SpectrumViewerTesterWindow
 
 

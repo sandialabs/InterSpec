@@ -536,6 +536,6 @@ ShieldingDiagramDialog *ShieldingDiagramDialog::createShieldingDiagram(
   double detectorDiameter
 )
 {
-  return new ShieldingDiagramDialog( shieldings, sources, geometry, detectorDistance, detectorDiameter );
+  return SimpleDialog::make<ShieldingDiagramDialog>( shieldings, sources, geometry, detectorDistance, detectorDiameter );
 }
 

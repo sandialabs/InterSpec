@@ -32,6 +32,7 @@
 #include <Wt/WSignal.h>
 #include <Wt/WContainerWidget.h>
 #include <Wt/WAbstractItemModel.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -120,7 +121,7 @@ class DecaySelectNuclide : public Wt::WContainerWidget
 protected:
   bool                          m_phone;
   Wt::WContainerWidget         *m_footer;
-  AuxWindow                    *m_auxWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_auxWindow;
   Wt::WSelectionBox            *m_elementSelection;
   Wt::WSelectionBox            *m_massSelection;
   Wt::WPushButton              *m_acceptButton;

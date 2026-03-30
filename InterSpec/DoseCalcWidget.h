@@ -64,15 +64,18 @@ namespace Wt
 
 class DoseCalcWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec* viewer );
-  
   virtual ~DoseCalcWindow();
 
   DoseCalcWidget *tool();
-  
+
 protected:
+  // Constructor is protected; use AuxWindow::make<DoseCalcWindow>() to create.
+  DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
+                  InterSpec* viewer );
+
   DoseCalcWidget *m_dose;
 };//class DoseCalcWindow
 

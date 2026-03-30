@@ -1464,7 +1464,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   if( m_graphicalRecal )
   {
-    AuxWindow::deleteAuxWindow( m_graphicalRecal );
+    AuxWindow::deleteAuxWindow( m_graphicalRecal.get() );
     m_graphicalRecal = nullptr;
   }//if( m_graphicalRecal )
   
@@ -2382,7 +2382,7 @@ std::shared_ptr<EnergyCalImp::CALpDownloadResource> EnergyCalTool::calpResources
 
 void EnergyCalTool::handleRequestToUploadCALp()
 {
-  SimpleDialog *dialog = new SimpleDialog();
+  SimpleDialog *dialog = SimpleDialog::make();
   WPushButton *closeButton = dialog->addButton( "Cancel" );
   WGridLayout *stretcher = static_cast<WGridLayout *>( dialog->contents()->setLayout( std::make_unique<WGridLayout>() ) );
   stretcher->setContentsMargins( 0, 0, 0, 0 );
@@ -2451,7 +2451,7 @@ void EnergyCalTool::handleRequestToUploadCALp()
   
   /*
    //In case we want to use AuxWindow instead of SimpleDialog
-   AuxWindow *window = new AuxWindow( "Import CALp file",
+   AuxWindow *window = AuxWindow::make( "Import CALp file",
    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
    | AuxWindowProperties::PhoneNotFullScreen
    | AuxWindowProperties::DisableCollapse
@@ -4423,7 +4423,7 @@ void EnergyCalTool::handleGraphicalRecalRequest( double xstart, double xfinish )
       m_graphicalRecal->setEnergies( xstart, xfinish );
     }else
     {
-      m_graphicalRecal = new EnergyCalGraphicalConfirm( xstart, xfinish, this,
+      m_graphicalRecal = AuxWindow::make<EnergyCalGraphicalConfirm>( xstart, xfinish, this,
                                     m_lastGraphicalRecal,
                                     EnergyCalGraphicalConfirm::RecalTypes(m_lastGraphicalRecalType),
                                     m_lastGraphicalRecalEnergy );
@@ -4441,7 +4441,7 @@ void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
 {
   if( m_graphicalRecal )
   {
-    AuxWindow::deleteAuxWindow( m_graphicalRecal );
+    AuxWindow::deleteAuxWindow( m_graphicalRecal.get() );
     m_graphicalRecal = nullptr;
   }//if( m_graphicalRecal )
   
@@ -5160,11 +5160,11 @@ void EnergyCalTool::moreActionBtnClicked( const MoreActionsIndex index )
 
   if( m_addActionWindow )
   {
-    AuxWindow::deleteAuxWindow( m_addActionWindow );
+    AuxWindow::deleteAuxWindow( m_addActionWindow.get() );
     m_addActionWindow = nullptr;
   }
   
-  m_addActionWindow = new EnergyCalAddActionsWindow( index, measToChange, this );
+  m_addActionWindow = AuxWindow::make<EnergyCalAddActionsWindow>( index, measToChange, this );
   m_addActionWindow->finished().connect( this, &EnergyCalTool::cancelMoreActionWindow );
   
   UndoRedoManager *undoManager = m_interspec->undoRedoManager();
@@ -5193,7 +5193,7 @@ void EnergyCalTool::cancelMoreActionWindow()
 {
   if( m_addActionWindow )
   {
-    AuxWindow::deleteAuxWindow( m_addActionWindow );
+    AuxWindow::deleteAuxWindow( m_addActionWindow.get() );
     m_addActionWindow = nullptr;
   }
 }//void cancelMoreActionWindow()

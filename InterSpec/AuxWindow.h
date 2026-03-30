@@ -30,6 +30,7 @@
 #include <Wt/WDialog.h>
 #include <Wt/WString.h>
 #include <Wt/WConfig.h>
+#include <Wt/WApplication.h>
 #include <Wt/WJavaScript.h>
 
 namespace Wt
@@ -130,16 +131,34 @@ W_DECLARE_OPERATORS_FOR_FLAGS(AuxWindowProperties);
 class AuxWindow : public Wt::WDialog
 {
 public:
-  //By default AuxWindow will be shown, centered in the window, at 50% of
-  //  browser size.  Wt will assume that the window is visible as well, for
-  //  the purposes of lazy loading of content.
-  AuxWindow( const Wt::WString &windowTitle, Wt::WFlags<AuxWindowProperties> properties = Wt::WFlags<AuxWindowProperties>{} );
+  /** Create an AuxWindow (or derived class) with proper Wt4 ownership.
+
+   The created window is owned by the WApplication instance via addChild().
+   Use AuxWindow::deleteAuxWindow() to destroy.
+
+   Example:
+   @code
+   AuxWindow *w = AuxWindow::make( "Example Window" );
+   w->rejectWhenEscapePressed();
+   w->finished().connect( [w](){ AuxWindow::deleteAuxWindow( w ); } );
+   @endcode
+  */
+  template<typename T = AuxWindow, typename... Args>
+  static T *make( Args&&... args )
+  {
+    // Use raw new (not make_unique) because constructor is protected;
+    //  the factory, as a member of AuxWindow, has access to the protected
+    //  constructor of T (as long as T derives from AuxWindow).
+    std::unique_ptr<T> ptr( new T( std::forward<Args>(args)... ) );
+    return Wt::WApplication::instance()->addChild( std::move( ptr ) );
+  }
+
   virtual ~AuxWindow();
 
-  
+
   //Override WDialog's setResizable
   void setResizable(bool resizable);
-    
+
   //Override WDialog's setModal
   void setModal(bool modal);
   //Override footer
@@ -147,12 +166,14 @@ public:
 
   //Override footer
 //  void resize(Wt::WLength width, Wt::WLength height);
-    
-  //deleteAuxWindow(...): just a convienience funtion to delete the window; ex.
-  // AuxWindow *w = new AuxWindow( "Example Window" );
-  // w->rejectWhenEscapePressed();
-  // w->setClosable( true );
-  // w->finished( boost::bind( &AuxWindow:::deleteAuxWindow, window ) );
+
+  /** Deletes the specified AuxWindow.
+
+   Properly handles Wt4 lifecycle: dismisses modal state, hides the dialog,
+   then removes from the WApplication child list (which destructs the window).
+
+   Safe to call from a `finished()` signal handler of the window being deleted.
+   */
   static void deleteAuxWindow( AuxWindow *window );
 
   /** A convenience function to call #deleteAuxWindow via binding to a signal. */
@@ -277,6 +298,16 @@ public:
   bool isPhone() const;
   
 protected:
+  /** Constructor is protected to enforce use of the AuxWindow::make() factory,
+   which ensures proper Wt4 widget ownership via WApplication::addChild().
+
+   By default AuxWindow will be shown, centered in the window, at 50% of
+   browser size.  Wt will assume that the window is visible as well, for
+   the purposes of lazy loading of content.
+  */
+  AuxWindow( const Wt::WString &windowTitle,
+             Wt::WFlags<AuxWindowProperties> properties = Wt::WFlags<AuxWindowProperties>{} );
+
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
 
 protected:

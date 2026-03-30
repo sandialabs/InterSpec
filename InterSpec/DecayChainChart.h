@@ -30,6 +30,7 @@
 
 #include <Wt/WPainter.h>
 #include <Wt/WPaintedWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 //Forward declarations
 namespace Wt
@@ -82,7 +83,7 @@ public:
    @returns Pointers to the created AuxWindow and DecayChainChart; they could
             be nullptr.
   */
-  static std::pair<AuxWindow *, DecayChainChart *>
+  static std::pair<Wt::Core::observing_ptr<AuxWindow>, DecayChainChart *>
     show_decay_chart_window( const SandiaDecay::Nuclide *const nuc,
       const DecayChainType type );
 
@@ -162,7 +163,7 @@ private:
    user double clicks on a nuclide), or the "decay through" decay chain.
    Will be nullptr when dialog isnt currently showing.
    */
-  AuxWindow *m_moreInfoDialog;
+  Wt::Core::observing_ptr<AuxWindow> m_moreInfoDialog;
   
   /** Signal emitted by #DecayChainChart::setNuclide when nuclide is actually
    changed.

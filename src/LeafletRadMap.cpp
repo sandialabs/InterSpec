@@ -80,7 +80,7 @@ namespace
                      const vector<string> &detector_names,
                      std::function<void(LeafletRadMapWindow *)> on_create )
   {
-    LeafletRadMapWindow *window = new LeafletRadMapWindow();
+    LeafletRadMapWindow *window = AuxWindow::make<LeafletRadMapWindow>();
     
     LeafletRadMap *gpsmap = window->map();
     gpsmap->displayMeasurementOnMap( meas, sample_numbers, detector_names );
@@ -124,7 +124,7 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
     msg.arg( "" );
   }
   
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("lrm-pre-warn-title") );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("lrm-pre-warn-title") );
   dialog->setWidth( 400 );
   
   WText *message = new WText( msg, dialog->contents() );
@@ -221,7 +221,7 @@ void LeafletRadMapWindow::handleTileLoadFailed()
   m_tileLoadWarningBtn = footer()->insertWidget( 0, std::make_unique<WPushButton>( WString::tr( "lrm-tile-load-btn" ) ) );
 
   m_tileLoadWarningBtn->clicked().connect( std::bind( [](){
-    SimpleDialog *dialog = new SimpleDialog( WString::tr( "lrm-tile-load-dialog-title"),
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr( "lrm-tile-load-dialog-title"),
                                             WString::tr( "lrm-tile-load-dialog-content" ) );
     dialog->addButton( WString::tr( "Okay" ) );
   } ) );

@@ -1568,7 +1568,7 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         
         if( updated_back_roi_peaks.empty() )
         {
-          SimpleDialog *dialog = new SimpleDialog( "", WString::tr("sac-error-no-background-peak") );
+          SimpleDialog *dialog = SimpleDialog::make( "", WString::tr("sac-error-no-background-peak") );
           dialog->addButton( WString::tr( "Okay" ) );
           m_backgroundSubtractCheck->setChecked( false );
           return;
@@ -1605,13 +1605,13 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         
         if( !background_peak )
         {
-          SimpleDialog *dialog = new SimpleDialog( "", WString::tr("sac-error-no-background-peak") );
+          SimpleDialog *dialog = SimpleDialog::make( "", WString::tr("sac-error-no-background-peak") );
           dialog->addButton( WString::tr( "Okay" ) );
           m_backgroundSubtractCheck->setChecked( false );
           return;
         }
 
-        SimpleDialog *dialog = new SimpleDialog( WString::tr("sac-use-fit-background-peak"), "" );
+        SimpleDialog *dialog = SimpleDialog::make( WString::tr("sac-use-fit-background-peak"), "" );
         
         D3SpectrumDisplayDiv *spectrum = dialog->contents()->addNew<D3SpectrumDisplayDiv>();
         spectrum->clicked().preventPropagation();
@@ -1638,7 +1638,7 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         no_btn->clicked().connect( m_backgroundSubtractCheck, &WCheckBox::setUnChecked );
       }catch( std::exception &e )
       {
-        SimpleDialog *dialog = new SimpleDialog( "", WString::tr("sac-error-fitting-background-peak").arg(e.what()) );
+        SimpleDialog *dialog = SimpleDialog::make( "", WString::tr("sac-error-fitting-background-peak").arg(e.what()) );
         dialog->addButton( WString::tr( "Okay" ) );
         m_backgroundSubtractCheck->setChecked( false );
         return;

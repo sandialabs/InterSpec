@@ -1260,12 +1260,16 @@ PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
    , m_nsmenuitem( 0 )
 #endif
 {
-  WAnchor *a = anchor();
-  if( a )
-  {
-    a->clicked().preventPropagation();
-    clicked().connect( this, &PopupDivMenuItem::nonAnchorClickHack );
-  }//if( a )
+  // In Wt 3, preventPropagation() on the anchor was needed to prevent double-firing.
+  //  In Wt 4, this prevents the click from reaching the WPopupMenu item selection logic,
+  //  so menu items with icons (PopupDivMenuItem) never trigger. Remove it for Wt 4.
+  //  The nonAnchorClickHack is also no longer needed since Wt 4 handles this properly.
+  // WAnchor *a = anchor();
+  // if( a )
+  // {
+  //   a->clicked().preventPropagation();
+  //   clicked().connect( this, &PopupDivMenuItem::nonAnchorClickHack );
+  // }//if( a )
 }//PopupDivMenuItem constructor
 
 

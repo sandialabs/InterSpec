@@ -41,6 +41,8 @@ namespace Wt
 
 class EnergyCalGraphicalConfirm : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
   enum RecalTypes
   {
@@ -48,16 +50,18 @@ public:
     /*kQuadratic,*/
     kDeviation, NumRecalTypes
   };//enum RecalTypes
-  
-  EnergyCalGraphicalConfirm( double lowe, double highe, EnergyCalTool *cal,
-                            time_t lastCal, RecalTypes lastType, float lastEnergy );
+
   virtual ~EnergyCalGraphicalConfirm();
   void apply();
   void setEnergies( double xstart, double xfinish );
   
 protected:
+  // Constructor is protected; use AuxWindow::make<EnergyCalGraphicalConfirm>() to create.
+  EnergyCalGraphicalConfirm( double lowe, double highe, EnergyCalTool *cal,
+                            time_t lastCal, RecalTypes lastType, float lastEnergy );
+
   EnergyCalTool *m_calibrator;
-  Wt::WButtonGroup *m_typeButtons;
+  std::shared_ptr<Wt::WButtonGroup> m_typeButtons;
   Wt::WCheckBox *m_foregroundOnly;
   NativeFloatSpinBox *m_startE, *m_finalE;
   Wt::WCheckBox *m_preserveLastCal;

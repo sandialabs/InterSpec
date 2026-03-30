@@ -1060,6 +1060,14 @@ InterSpec::InterSpec()
     }//switch( i )
   }//for( loop over right click menu items )
 
+  // Wt 4 workaround: add a hidden sentinel item at the end of the menu.
+  //  Without this, the last visible PopupDivMenuItem may not trigger its click signal,
+  //  possibly due to how WPopupMenu handles event delegation with hidden items.
+  {
+    PopupDivMenuItem *sentinel = m_rightClickMenu->addMenuItem( "" );
+    sentinel->setHidden( true );
+  }
+
   // For touch devices, give an obvious way to close the right-click menu since they cant simply
   //  leave with the mouse (although they could just tap somewhere).
   if( app && app->isMobile() && !m_rightClickMenu->isMobile() )
@@ -1250,7 +1258,7 @@ InterSpec::~InterSpec() noexcept(true)
   
   // Get rid of undo/redo, so we dont insert anything into them
   del_ptr_set_null( m_undo );
-  del_ptr_set_null( m_licenseWindow );
+  AuxWindow::deleteAuxWindow( m_licenseWindow.get() );
   
   try
   {
@@ -1284,7 +1292,7 @@ InterSpec::~InterSpec() noexcept(true)
     m_peakInfoDisplay = nullptr;
   }//if( m_peakInfoDisplay )
 
-  del_ptr_set_null( m_peakInfoWindow );
+  AuxWindow::deleteAuxWindow( m_peakInfoWindow.get() );
   
   if( m_energyCalTool )
   {
@@ -1294,10 +1302,10 @@ InterSpec::~InterSpec() noexcept(true)
     del_ptr_set_null( m_energyCalTool );
   }//if( m_energyCalTool )
   
-  del_ptr_set_null( m_energyCalWindow );
-  del_ptr_set_null( m_shieldingSourceFitWindow );
+  AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
+  AuxWindow::deleteAuxWindow( m_shieldingSourceFitWindow.get() );
   del_ptr_set_null( m_nuclideSearch );
-  del_ptr_set_null( m_nuclideSearchWindow );
+  AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
   
   if( m_referencePhotopeakLines )
   {
@@ -1308,7 +1316,7 @@ InterSpec::~InterSpec() noexcept(true)
     del_ptr_set_null( m_referencePhotopeakLines );
   }//if( m_referencePhotopeakLines )
   
-  del_ptr_set_null( m_referencePhotopeakLinesWindow );
+  AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
   
   handleWarningsWindowClose();
   del_ptr_set_null( m_warnings ); //WarningWidget isnt necessarily parented, so we do have to manually delete it
@@ -1468,7 +1476,7 @@ void InterSpec::layoutSizeChanged( int w, int h )
         if( m_fluxTool )
           deleteFluxTool();
         if( m_makeDrfTool )
-          handleCloseMakeDrfWindow( m_makeDrfTool );
+          handleCloseMakeDrfWindow( m_makeDrfTool.get() );
 #if( USE_LEAFLET_MAP )
         if( m_leafletWindow )
           programmaticallyCloseLeafletMap();
@@ -1504,7 +1512,7 @@ void InterSpec::layoutSizeChanged( int w, int h )
           deleteEnergyCalPreserveWindow();
 #if( USE_SEARCH_MODE_3D_CHART )
         if( m_3dViewWindow )
-          handle3DSearchModeChartClose( m_3dViewWindow );
+          handle3DSearchModeChartClose( m_3dViewWindow.get() );
 #endif
         if( m_riidDisplay )
           programmaticallyCloseRiidResults();
@@ -2638,7 +2646,7 @@ void InterSpec::handleRightClick( double energy, double counts,
 void InterSpec::createPeakEdit( double energy )
 {
   auto create_editor = [this]( double ene ){
-    m_peakEditWindow = new PeakEditWindow( ene, m_peakModel.get(), this );
+    m_peakEditWindow = AuxWindow::make<PeakEditWindow>( ene, m_peakModel.get(), this );
     m_peakEditWindow->editingDone().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->finished().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->resizeToFitOnScreen();
@@ -2646,7 +2654,7 @@ void InterSpec::createPeakEdit( double energy )
     PeakEdit *editor = m_peakEditWindow->peakEditor();
     if( !editor->isEditingValidPeak() )
     {
-      if( m_peakEditWindow ) m_peakEditWindow->removeFromParent();
+      if( m_peakEditWindow ) AuxWindow::deleteAuxWindow( m_peakEditWindow.get() );
       m_peakEditWindow = nullptr;
       return;
     }//if( !editor->isEditingValidPeak() )
@@ -2682,7 +2690,7 @@ void InterSpec::createPeakEdit( double energy )
     auto undo = [this](){
       if( m_peakEditWindow )
       {
-        if( m_peakEditWindow ) m_peakEditWindow->removeFromParent();
+        if( m_peakEditWindow ) AuxWindow::deleteAuxWindow( m_peakEditWindow.get() );
         m_peakEditWindow = nullptr;
       }
     };
@@ -2696,7 +2704,7 @@ void InterSpec::createPeakEdit( double energy )
 
 PeakEditWindow *InterSpec::peakEdit()
 {
-  return m_peakEditWindow;
+  return m_peakEditWindow.get();
 }
 
 
@@ -2713,7 +2721,7 @@ void InterSpec::deletePeakEdit()
     const double currentEnergy = editor ? editor->currentPeakEnergy() : 0.0;
     
     auto undo = [this, currentEnergy](){
-      m_peakEditWindow = new PeakEditWindow( currentEnergy, m_peakModel.get(), this );
+      m_peakEditWindow = AuxWindow::make<PeakEditWindow>( currentEnergy, m_peakModel.get(), this );
       m_peakEditWindow->editingDone().connect( this, &InterSpec::deletePeakEdit );
       m_peakEditWindow->finished().connect( this, &InterSpec::deletePeakEdit );
       m_peakEditWindow->resizeToFitOnScreen();
@@ -2726,7 +2734,7 @@ void InterSpec::deletePeakEdit()
     m_undo->addUndoRedoStep( undo, redo, "Close peak editor." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
   
-  if( m_peakEditWindow ) m_peakEditWindow->removeFromParent();
+  if( m_peakEditWindow ) AuxWindow::deleteAuxWindow( m_peakEditWindow.get() );
   m_peakEditWindow = nullptr;
 }//void deletePeakEdit()
 
@@ -2739,7 +2747,7 @@ void InterSpec::showFitSkewParamsWindow()
     return;
   }
 
-  m_fitSkewParamsWindow = new FitSkewParamsWindow( this );
+  m_fitSkewParamsWindow = AuxWindow::make<FitSkewParamsWindow>( this );
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -2762,7 +2770,7 @@ void InterSpec::closeFitSkewParamsWindow()
     m_undo->addUndoRedoStep( undo, redo, "Close fit skew params tool." );
   }
 
-  if( m_fitSkewParamsWindow ) m_fitSkewParamsWindow->removeFromParent();
+  if( m_fitSkewParamsWindow ) AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
   m_fitSkewParamsWindow = nullptr;
 }//void closeFitSkewParamsWindow()
 
@@ -2831,7 +2839,7 @@ void InterSpec::acceptFitSkewParamsWindow()
   }
 
   // Close the window without adding another undo step
-  if( m_fitSkewParamsWindow ) m_fitSkewParamsWindow->removeFromParent();
+  if( m_fitSkewParamsWindow ) AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
   m_fitSkewParamsWindow = nullptr;
 }//void acceptFitSkewParamsWindow()
 
@@ -2988,7 +2996,7 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
   {
     if( m_featureMarkersWindow )
     {
-      AuxWindow::deleteAuxWindow( m_featureMarkersWindow );
+      AuxWindow::deleteAuxWindow( m_featureMarkersWindow.get() );
       m_featureMarkersWindow = nullptr;
     }else
     {
@@ -3027,7 +3035,7 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
     m_referencePhotopeakLines->emphasizeFeatureMarker();
   }else
   {
-    m_featureMarkersWindow = new FeatureMarkerWindow( this );
+    m_featureMarkersWindow = AuxWindow::make<FeatureMarkerWindow>( this );
     m_featureMarkersWindow->finished().connect( [this](){ displayFeatureMarkerWindow( false ); } );
     
     widget = m_featureMarkersWindow->tool();
@@ -4787,7 +4795,7 @@ void InterSpec::osThemeChange( std::string name )
 void InterSpec::showColorThemeWindow()
 {
   //Takes ~5ms (on the server) to create a ColorThemeWindow.
-	ColorThemeWindow *window = new ColorThemeWindow(this);
+	ColorThemeWindow *window = AuxWindow::make<ColorThemeWindow>(this);
   
   window->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void showColorThemeWindow()
@@ -4801,7 +4809,7 @@ void InterSpec::showLicenseAndDisclaimersWindow()
     return;
   }
   
-  m_licenseWindow = new LicenseAndDisclaimersWindow( this );
+  m_licenseWindow = AuxWindow::make<LicenseAndDisclaimersWindow>( this );
   
   m_licenseWindow->finished().connect( this, &InterSpec::deleteLicenseAndDisclaimersWindow );
   
@@ -4822,7 +4830,7 @@ void InterSpec::startClearSession()
   if( !app )
     return;
   
-  SimpleDialog *window = new SimpleDialog( WString::tr("clear-session"),
+  SimpleDialog *window = SimpleDialog::make( WString::tr("clear-session"),
                                            WString::tr("clear-session-msg") );
   
   WPushButton *button = window->addButton( WString::tr("Yes") );
@@ -4863,7 +4871,7 @@ void InterSpec::deleteLicenseAndDisclaimersWindow()
   if( !m_licenseWindow )
     return;
   
-  AuxWindow::deleteAuxWindow( m_licenseWindow );
+  AuxWindow::deleteAuxWindow( m_licenseWindow.get() );
   m_licenseWindow = nullptr;
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -4889,7 +4897,7 @@ void InterSpec::showWelcomeDialogWorker( const bool force )
     };
   }//if( !force )
   
-  m_useInfoWindow = new UseInfoWindow( dontShowAgainCallback , this );
+  m_useInfoWindow = AuxWindow::make<UseInfoWindow>( dontShowAgainCallback , this );
 
   m_useInfoWindow->finished().connect( [this, force](){ deleteWelcomeDialog( force ); } );
   
@@ -4947,7 +4955,7 @@ void InterSpec::deleteWelcomeDialog( const bool addUndoRedoStep )
   if( !m_useInfoWindow )
     return;
   
-  AuxWindow::deleteAuxWindow( m_useInfoWindow );
+  AuxWindow::deleteAuxWindow( m_useInfoWindow.get() );
   m_useInfoWindow = nullptr;
   
   if( addUndoRedoStep && m_undo && m_undo->canAddUndoRedoNow() )
@@ -4963,7 +4971,7 @@ void InterSpec::deleteEnergyCalPreserveWindow()
 {
   if( m_preserveCalibWindow )
   {
-    if( m_preserveCalibWindow ) m_preserveCalibWindow->removeFromParent();
+    if( m_preserveCalibWindow ) AuxWindow::deleteAuxWindow( m_preserveCalibWindow.get() );
     m_preserveCalibWindow = nullptr;
   }
 }//void deleteEnergyCalPreserveWindow()
@@ -4977,7 +4985,7 @@ ExportSpecFileWindow *InterSpec::createExportSpectrumFileDialog()
   if( m_exportSpecFileWindow )
     return m_exportSpecFileWindow;
   
-  m_exportSpecFileWindow = new ExportSpecFileWindow( this );
+  m_exportSpecFileWindow = SimpleDialog::make<ExportSpecFileWindow>( this );
   m_exportSpecFileWindow->finished().connect( this, &InterSpec::handleExportSpectrumFileDialogClose );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -5027,9 +5035,9 @@ void InterSpec::handleExportSpectrumFileDialogClose()
 GammaCountDialog *InterSpec::showGammaCountDialog()
 {
   if( m_gammaCountDialog )
-    return m_gammaCountDialog;
+    return m_gammaCountDialog.get();
 
-  m_gammaCountDialog = new GammaCountDialog( this );
+  m_gammaCountDialog = AuxWindow::make<GammaCountDialog>( this );
   m_gammaCountDialog->finished().connect( this, &InterSpec::deleteGammaCountDialog );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -5039,7 +5047,7 @@ GammaCountDialog *InterSpec::showGammaCountDialog()
                             "Show Energy Range Sum." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
   
-  return m_gammaCountDialog;
+  return m_gammaCountDialog.get();
 }//GammaCountDialog *showGammaCountDialog()
 
 
@@ -5061,7 +5069,7 @@ void InterSpec::deleteGammaCountDialog()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Energy Range Sum." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
   
-  AuxWindow::deleteAuxWindow( m_gammaCountDialog );
+  AuxWindow::deleteAuxWindow( m_gammaCountDialog.get() );
   m_gammaCountDialog = nullptr;
 }//void deleteGammaCountDialog()
 
@@ -5075,7 +5083,7 @@ void InterSpec::showFileQueryDialog()
     return;
   
   
-  m_specFileQueryDialog = new AuxWindow( WString::tr("window-title-spec-file-query"), 
+  m_specFileQueryDialog = AuxWindow::make( WString::tr("window-title-spec-file-query"), 
                                         AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::SetCloseable );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
   //  size to be the min-size
@@ -5112,7 +5120,7 @@ void InterSpec::deleteFileQueryDialog()
 {
   if( !m_specFileQueryDialog )
     return;
-  if( m_specFileQueryDialog ) m_specFileQueryDialog->removeFromParent();
+  if( m_specFileQueryDialog ) AuxWindow::deleteAuxWindow( m_specFileQueryDialog.get() );
   m_specFileQueryDialog = 0;
 }//void deleteFileQueryDialog()
 #endif
@@ -5178,7 +5186,7 @@ void InterSpec::showWarningsWindow()
   
   if( !m_warningsWindow )
   {
-    m_warningsWindow = new AuxWindow( WString::tr("window-title-notification-log"),
+    m_warningsWindow = AuxWindow::make( WString::tr("window-title-notification-log"),
                   (AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize
@@ -5221,7 +5229,7 @@ void InterSpec::handleWarningsWindowClose()
   {
     // In Wt4, removeWidget returns unique_ptr; release() to keep m_warnings alive for re-use
     m_warningsWindow->stretcher()->removeWidget( m_warnings ).release();
-    AuxWindow::deleteAuxWindow( m_warningsWindow );
+    AuxWindow::deleteAuxWindow( m_warningsWindow.get() );
     m_warningsWindow = nullptr;
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -5246,7 +5254,7 @@ void InterSpec::showPeakInfoWindow()
   
   if( !m_peakInfoWindow )
   {
-    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"), AuxWindowProperties::SetCloseable );
+    m_peakInfoWindow = AuxWindow::make( WString::tr("window-title-peak-manager"), AuxWindowProperties::SetCloseable );
     m_peakInfoWindow->rejectWhenEscapePressed();
     WGridLayout *layout = m_peakInfoWindow->stretcher();
     layout->setContentsMargins( 0, 0, 0, 0 );
@@ -5302,7 +5310,7 @@ void InterSpec::handlePeakInfoClose()
     removed_ptr.release();
   }//if( m_toolsTabs )
   
-  if( m_peakInfoWindow ) m_peakInfoWindow->removeFromParent();
+  if( m_peakInfoWindow ) AuxWindow::deleteAuxWindow( m_peakInfoWindow.get() );
   m_peakInfoWindow = nullptr;
 }//void handlePeakInfoClose()
 
@@ -5729,7 +5737,7 @@ namespace
     const string path_to_tests = SpecUtils::append_path( TEST_SUITE_BASE_DIR, "analysis_tests" );
     const string filename = SpecUtils::append_path( path_to_tests, filesbox->currentText().toUTF8() );
     viewer->loadTestStateFromN42( filename );
-    if( window ) window->removeFromParent();
+    if( window ) AuxWindow::deleteAuxWindow( window );
   }
 }
 
@@ -5745,7 +5753,7 @@ void InterSpec::startN42TestStates()
     return;
   }//if( files.empty() )
   
-  AuxWindow *window = new AuxWindow( "Test State N42 Files", 
+  AuxWindow *window = AuxWindow::make( "Test State N42 Files", 
                                     AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse );
   window->resizeWindow( 450, 400 );
   
@@ -5784,7 +5792,7 @@ void InterSpec::startN42TestStates()
 
 void InterSpec::startStoreTestState()
 {
-  AuxWindow *window = new AuxWindow( "Store app test state to N42",
+  AuxWindow *window = AuxWindow::make( "Store app test state to N42",
                                     (AuxWindowProperties::IsModal
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::DisableCollapse) );
@@ -5888,7 +5896,7 @@ void InterSpec::stateSave()
 
 void InterSpec::stateSaveAs()
 {
-  AuxWindow *window = new AuxWindow( WString::tr("window-title-store-state-as"),
+  AuxWindow *window = AuxWindow::make( WString::tr("window-title-store-state-as"),
     (AuxWindowProperties::IsModal
       | AuxWindowProperties::TabletNotFullScreen
       | AuxWindowProperties::DisableCollapse) );
@@ -5954,7 +5962,7 @@ void InterSpec::stateSaveAs()
 //New method to save tag for snapshot
 void InterSpec::stateSaveTag()
 {
-  AuxWindow *window = new AuxWindow( WString::tr("window-title-tag-state"),
+  AuxWindow *window = AuxWindow::make( WString::tr("window-title-tag-state"),
                                     (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
   window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
@@ -6313,7 +6321,7 @@ void InterSpec::saveStateForEndOfSession()
 #if( USE_DB_TO_STORE_SPECTRA && INCLUDE_ANALYSIS_TEST_SUITE )
 void InterSpec::startStateTester()
 {
-  new SpectrumViewerTesterWindow( this );
+  AuxWindow::make<SpectrumViewerTesterWindow>( this );
 }//void startStateTester()
 #endif  //#if( INCLUDE_ANALYSIS_TEST_SUITE )
 
@@ -6788,7 +6796,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     {
       // In Wt4, removeWidget returns unique_ptr; release() to keep m_energyCalTool alive for re-use
       m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool ).release();
-      if( m_energyCalWindow ) m_energyCalWindow->removeFromParent();
+      if( m_energyCalWindow ) AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
       m_energyCalWindow = nullptr;
     }//if( m_energyCalWindow )
     
@@ -6830,7 +6838,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     }
       
     if( m_referencePhotopeakLinesWindow )
-      if( m_referencePhotopeakLinesWindow ) m_referencePhotopeakLinesWindow->removeFromParent();
+      if( m_referencePhotopeakLinesWindow ) AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
     m_referencePhotopeakLinesWindow = NULL;
       
     m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
@@ -6942,7 +6950,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_nuclideSearch->clearSearchEnergiesOnClient();
       // In Wt4, removeWidget returns unique_ptr; release() to keep m_nuclideSearch alive
       m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch ).release();
-      if( m_nuclideSearchWindow ) m_nuclideSearchWindow->removeFromParent();
+      if( m_nuclideSearchWindow ) AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
       m_nuclideSearchWindow = 0;
     }//if( m_nuclideSearchWindow )
 
@@ -7052,7 +7060,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     }
     
     if( m_referencePhotopeakLinesWindow )
-      if( m_referencePhotopeakLinesWindow ) m_referencePhotopeakLinesWindow->removeFromParent();
+      if( m_referencePhotopeakLinesWindow ) AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
     m_referencePhotopeakLinesWindow = nullptr;
     
     if( !refNucXmlState.empty() )
@@ -7551,7 +7559,7 @@ void InterSpec::handEnergyCalWindowClose()
   // In Wt4, removeWidget returns unique_ptr; release() to keep m_energyCalTool alive for re-use
   auto removed_cal = layout->removeWidget( m_energyCalTool );
 
-  AuxWindow::deleteAuxWindow( m_energyCalWindow );
+  AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
   m_energyCalWindow = nullptr;
 
   if( m_toolsTabs )
@@ -7598,13 +7606,13 @@ void InterSpec::showEnergyCalWindow()
   {
     if( !calToolPtr )
       calToolPtr = m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool );
-    if( m_energyCalWindow ) m_energyCalWindow->removeFromParent();
+    if( m_energyCalWindow ) AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
   }
 
   if( !calToolPtr )
     calToolPtr = std::unique_ptr<WWidget>( m_energyCalTool ); // unowned, wrap for addWidget
 
-  m_energyCalWindow = new AuxWindow( WString("window-title-energy-cal"),
+  m_energyCalWindow = AuxWindow::make( WString("window-title-energy-cal"),
                                     AuxWindowProperties::SetCloseable | AuxWindowProperties::TabletNotFullScreen );
   m_energyCalWindow->rejectWhenEscapePressed();
   m_energyCalWindow->stretcher()->addWidget( std::move(calToolPtr), 0, 0 );
@@ -7708,7 +7716,7 @@ void InterSpec::setHorizantalLines( bool show )
 
 void InterSpec::startHardBackgroundSub()
 {
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("window-title-hard-back-sub"),
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("window-title-hard-back-sub"),
                                           WString::tr("window-content-hard-back-sub") );
   
   // For some reason on Windows Electron version, the dialog does not expand out very wide - so lets
@@ -8574,7 +8582,7 @@ OneOverR2Calc *InterSpec::createOneOverR2Calculator()
 {
   if( !m_1overR2Calc )
   {
-    m_1overR2Calc = new OneOverR2Calc();
+    m_1overR2Calc = AuxWindow::make<OneOverR2Calc>();
     m_1overR2Calc->finished().connect( [this](){ deleteOneOverR2Calc(); } );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8589,7 +8597,7 @@ OneOverR2Calc *InterSpec::createOneOverR2Calculator()
   m_1overR2Calc->resizeToFitOnScreen();
   m_1overR2Calc->centerWindowHeavyHanded();
   
-  return m_1overR2Calc;
+  return m_1overR2Calc.get();
 }//void createOneOverR2Calculator()
 
 
@@ -8601,7 +8609,7 @@ void InterSpec::deleteOneOverR2Calc()
   const bool do_undo = (m_undo && m_undo->canAddUndoRedoNow());
   const string state_uri = do_undo ? m_1overR2Calc->encodeStateToUrl() : string();
   
-  AuxWindow::deleteAuxWindow( m_1overR2Calc );
+  AuxWindow::deleteAuxWindow( m_1overR2Calc.get() );
   m_1overR2Calc = nullptr;
   
   if( do_undo )
@@ -8621,7 +8629,7 @@ UnitsConverterTool *InterSpec::createUnitsConverterTool()
 {
   if( !m_unitsConverter )
   {
-    m_unitsConverter = new UnitsConverterTool();
+    m_unitsConverter = AuxWindow::make<UnitsConverterTool>();
     m_unitsConverter->finished().connect( [this](){ deleteUnitsConverterTool(); } );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8636,7 +8644,7 @@ UnitsConverterTool *InterSpec::createUnitsConverterTool()
   m_unitsConverter->resizeToFitOnScreen();
   m_unitsConverter->centerWindowHeavyHanded();
   
-  return m_unitsConverter;
+  return m_unitsConverter.get();
 }//void createUnitsConverterTool()
 
 
@@ -8648,7 +8656,7 @@ void InterSpec::deleteUnitsConverterTool()
   const bool do_undo = (m_undo && m_undo->canAddUndoRedoNow());
   const string state_uri = do_undo ? m_unitsConverter->encodeStateToUrl() : string();
   
-  AuxWindow::deleteAuxWindow( m_unitsConverter );
+  AuxWindow::deleteAuxWindow( m_unitsConverter.get() );
   m_unitsConverter = nullptr;
   
   if( do_undo )
@@ -8668,7 +8676,7 @@ FluxToolWindow *InterSpec::createFluxTool()
 {
   if( !m_fluxTool )
   {
-    m_fluxTool = new FluxToolWindow( this );
+    m_fluxTool = AuxWindow::make<FluxToolWindow>( this );
     m_fluxTool->finished().connect( [this](){ deleteFluxTool(); } );
   }
   
@@ -8683,7 +8691,7 @@ FluxToolWindow *InterSpec::createFluxTool()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show flux tool" );
   }//if( undo )
   
-  return m_fluxTool;
+  return m_fluxTool.get();
 }//void createFluxTool()
 
 
@@ -8695,7 +8703,7 @@ void InterSpec::deleteFluxTool()
   const bool do_undo = (m_undo && m_undo->canAddUndoRedoNow());
   const string state_uri = do_undo ? m_fluxTool->encodeStateToUrl() : string();
   
-  AuxWindow::deleteAuxWindow( m_fluxTool );
+  AuxWindow::deleteAuxWindow( m_fluxTool.get() );
   m_fluxTool = nullptr;
   
   if( do_undo )
@@ -8720,7 +8728,7 @@ DecayWindow *InterSpec::createDecayInfoWindow()
     initial_uri = m_decayInfoWindow->encodeStateToUrl();
   }else
   {
-    m_decayInfoWindow = new DecayWindow( this );
+    m_decayInfoWindow = AuxWindow::make<DecayWindow>( this );
     m_decayInfoWindow->finished().connect( [this](){ deleteDecayInfoWindow(); } );
   }
   
@@ -8769,17 +8777,17 @@ DecayWindow *InterSpec::createDecayInfoWindow()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show decay tool" );
   }//if( undo )
   
-  return m_decayInfoWindow;
+  return m_decayInfoWindow.get();
 }//void createDecayInfoWindow()
 
 
 MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow( const bool use_auto_fit_peaks )
 {
   if( m_addFwhmTool )
-    return m_addFwhmTool;
+    return m_addFwhmTool.get();
   
-  m_addFwhmTool = new MakeFwhmForDrfWindow( use_auto_fit_peaks );
-  m_addFwhmTool->tool()->updatedDrf().connect( m_addFwhmTool, &AuxWindow::hide );
+  m_addFwhmTool = AuxWindow::make<MakeFwhmForDrfWindow>( use_auto_fit_peaks );
+  m_addFwhmTool->tool()->updatedDrf().connect( m_addFwhmTool.get(), &AuxWindow::hide );
   m_addFwhmTool->finished().connect( [this](){ deleteFwhmFromForegroundWindow(); } );
 
   if( m_drfSelectWindow )
@@ -8796,7 +8804,7 @@ MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow( const bool use_auto_f
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show fit FWHM from foreground tool" );
   }//if( undo )
   
-  return m_addFwhmTool;
+  return m_addFwhmTool.get();
 }//MakeFwhmForDrfWindow *fwhmFromForegroundWindow()
 
 
@@ -8807,7 +8815,7 @@ void InterSpec::deleteFwhmFromForegroundWindow()
   
   shared_ptr<MakeFwhmForDrf::ToolState> state = m_addFwhmTool->tool()->currentState();
   
-  AuxWindow::deleteAuxWindow( m_addFwhmTool );
+  AuxWindow::deleteAuxWindow( m_addFwhmTool.get() );
   m_addFwhmTool = nullptr;
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -8852,11 +8860,11 @@ DetectionLimitWindow *InterSpec::createDetectionLimitTool()
 {
   if( !m_detectionLimitWindow )
   {
-    m_detectionLimitWindow = new DetectionLimitWindow( this, m_shieldingSuggestion );
+    m_detectionLimitWindow = AuxWindow::make<DetectionLimitWindow>( this, m_shieldingSuggestion );
     m_detectionLimitWindow->finished().connect( this, &InterSpec::handleDetectionLimitWindowClose );
   }//if( !m_detectionLimitWindow )
   
-  return m_detectionLimitWindow;
+  return m_detectionLimitWindow.get();
 }//DetectionLimitWindow *createDetectionLimitTool()
 
      
@@ -8866,7 +8874,7 @@ void InterSpec::handleDetectionLimitWindowClose()
   if( !m_detectionLimitWindow )
     return;
 
-  DetectionLimitWindow * const dialog = m_detectionLimitWindow;
+  DetectionLimitWindow * const dialog = m_detectionLimitWindow.get();
   m_detectionLimitWindow = nullptr;
   
   const bool canUndo = (m_undo && m_undo->canAddUndoRedoNow());
@@ -8897,7 +8905,7 @@ void InterSpec::programmaticallyCloseDetectionLimit()
   if( !m_detectionLimitWindow )
     return;
   
-  DetectionLimitWindow *dialog = m_detectionLimitWindow;
+  DetectionLimitWindow *dialog = m_detectionLimitWindow.get();
   m_detectionLimitWindow = nullptr; //Prevents undo/redo
   dialog->hide();
 }//void programmaticallyCloseDetectionLimit()
@@ -8906,12 +8914,12 @@ void InterSpec::programmaticallyCloseDetectionLimit()
 DetectionLimitSimpleWindow *InterSpec::showSimpleMdaWindow()
 {
   if( m_simpleMdaWindow )
-    return m_simpleMdaWindow;
-  
-  m_simpleMdaWindow = new DetectionLimitSimpleWindow( m_shieldingSuggestion, this );
+    return m_simpleMdaWindow.get();
+
+  m_simpleMdaWindow = AuxWindow::make<DetectionLimitSimpleWindow>( m_shieldingSuggestion, this );
   m_simpleMdaWindow->finished().connect( this, &InterSpec::handleSimpleMdaWindowClose );
-  
-  return m_simpleMdaWindow;
+
+  return m_simpleMdaWindow.get();
 }//DetectionLimitSimpleWindow *showSimpleMdaWindow()
 
 
@@ -8920,7 +8928,7 @@ void InterSpec::programmaticallyCloseSimpleMda()
   if( !m_simpleMdaWindow )
     return;
   
-  DetectionLimitSimpleWindow *dialog = m_simpleMdaWindow;
+  DetectionLimitSimpleWindow *dialog = m_simpleMdaWindow.get();
   m_simpleMdaWindow = nullptr; //Prevents undo/redo
   dialog->done( DialogCode::Accepted );
 }//void programmaticallyCloseSimpleMda()
@@ -8932,7 +8940,7 @@ void InterSpec::handleSimpleMdaWindowClose()
   if( !m_simpleMdaWindow )
     return;
 
-  DetectionLimitSimpleWindow * const dialog = m_simpleMdaWindow;
+  DetectionLimitSimpleWindow * const dialog = m_simpleMdaWindow.get();
   m_simpleMdaWindow = nullptr;
   
   const string state_uri = dialog->tool()->encodeStateToUrl();
@@ -8966,13 +8974,13 @@ void InterSpec::startAddPeakFromRightClick()
   const double energy = m_rightClickEnergy;
   const string ref_line_hint = m_rightClickRefLineHint;
   
-  AddNewPeakDialog *window = new AddNewPeakDialog( energy, ref_line_hint );
+  AddNewPeakDialog *window = AuxWindow::make<AddNewPeakDialog>( energy, ref_line_hint );
   window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto redo = [energy,ref_line_hint](){
-      AddNewPeakDialog *dlg = new AddNewPeakDialog( energy, ref_line_hint );
+      AddNewPeakDialog *dlg = AuxWindow::make<AddNewPeakDialog>( energy, ref_line_hint );
       dlg->finished().connect( [dlg](){ AuxWindow::deleteAuxWindow( dlg ); } );
     };
 
@@ -9103,12 +9111,12 @@ void InterSpec::startSimpleMdaFromRightClick()
 SimpleActivityCalcWindow *InterSpec::showSimpleActivityCalcWindow()
 {
   if( m_simpleActivityCalcWindow )
-    return m_simpleActivityCalcWindow;
+    return m_simpleActivityCalcWindow.get();
   
-  m_simpleActivityCalcWindow = new SimpleActivityCalcWindow( m_shieldingSuggestion, this );
+  m_simpleActivityCalcWindow = AuxWindow::make<SimpleActivityCalcWindow>( m_shieldingSuggestion, this );
   m_simpleActivityCalcWindow->finished().connect( this, &InterSpec::handleSimpleActivityCalcWindowClose );
   
-  return m_simpleActivityCalcWindow;
+  return m_simpleActivityCalcWindow.get();
 }//SimpleActivityCalcWindow *showSimpleActivityCalcWindow()
 
 void InterSpec::programmaticallyCloseSimpleActivityCalc()
@@ -9116,7 +9124,7 @@ void InterSpec::programmaticallyCloseSimpleActivityCalc()
   if( !m_simpleActivityCalcWindow )
     return;
   
-  SimpleActivityCalcWindow *dialog = m_simpleActivityCalcWindow;
+  SimpleActivityCalcWindow *dialog = m_simpleActivityCalcWindow.get();
   m_simpleActivityCalcWindow = nullptr;
   dialog->done( DialogCode::Accepted );
 }//void programmaticallyCloseSimpleActivityCalc()
@@ -9127,7 +9135,7 @@ void InterSpec::handleSimpleActivityCalcWindowClose()
   if( !m_simpleActivityCalcWindow )
     return;
 
-  SimpleActivityCalcWindow * const dialog = m_simpleActivityCalcWindow;
+  SimpleActivityCalcWindow * const dialog = m_simpleActivityCalcWindow.get();
   m_simpleActivityCalcWindow = nullptr;
   
   shared_ptr<const SimpleActivityCalcState> state = dialog->tool()->currentState();
@@ -9199,14 +9207,14 @@ void InterSpec::deleteDecayInfoWindow()
   
   
   if( m_decayInfoWindow )
-    AuxWindow::deleteAuxWindow( m_decayInfoWindow );
+    AuxWindow::deleteAuxWindow( m_decayInfoWindow.get() );
   m_decayInfoWindow = nullptr;
 }//void deleteDecayInfoWindow()
 
 
 void InterSpec::createFileParameterWindow( const SpecUtils::SpectrumType type )
 {
-  SpecFileSummary *window = new SpecFileSummary( type, this );
+  SpecFileSummary *window = AuxWindow::make<SpecFileSummary>( type, this );
   window->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void createFileParameterWindow()
 
@@ -9279,7 +9287,7 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   
   const set<int> &samples = displayedSamples( spectrum_type );
   
-  AuxWindow *window = new AuxWindow( "Map", AuxWindowProperties::EnableResize | AuxWindowProperties::DisableCollapse );
+  AuxWindow *window = AuxWindow::make( "Map", AuxWindowProperties::EnableResize | AuxWindowProperties::DisableCollapse );
   
   int w = 0.66*renderedWidth();
   int h = 0.8*renderedHeight();
@@ -9378,9 +9386,9 @@ void InterSpec::handleLeafletWarningWindowClose()
   WObject *signalSender = WObject::sender();
   SimpleDialog *dialogSender = dynamic_cast<SimpleDialog *>( signalSender );
   assert( dialogSender );
-  assert( !m_leafletWarning || (dialogSender == m_leafletWarning) );
-  
-  if( dialogSender == m_leafletWarning )
+  assert( !m_leafletWarning || (dialogSender == m_leafletWarning.get()) );
+
+  if( dialogSender == m_leafletWarning.get() )
     m_leafletWarning = nullptr;
 }//void handleLeafletWarningWindowClose()
 
@@ -9389,7 +9397,7 @@ void InterSpec::handleLeafletMapOpen( LeafletRadMapWindow *window )
 {
   if( m_leafletWindow )
   {
-    AuxWindow::deleteAuxWindow( m_leafletWindow );
+    AuxWindow::deleteAuxWindow( m_leafletWindow.get() );
     m_leafletWindow = nullptr;
   }
   
@@ -9425,7 +9433,7 @@ void InterSpec::programmaticallyCloseLeafletMap()
   if( !m_leafletWindow )
     return;
   
-  LeafletRadMapWindow *dialog = m_leafletWindow;
+  LeafletRadMapWindow *dialog = m_leafletWindow.get();
   m_leafletWindow = nullptr;
   AuxWindow::deleteAuxWindow( dialog );
 }//void programmaticallyCloseLeafletMap();
@@ -9436,7 +9444,7 @@ void InterSpec::programmaticallyCloseLeafletWarning()
   if( !m_leafletWarning )
     return;
   
-  SimpleDialog *dialog = m_leafletWarning;
+  SimpleDialog *dialog = m_leafletWarning.get();
   m_leafletWarning = nullptr;
   dialog->done( DialogCode::Accepted );
 }//void programmaticallyCloseLeafletWarning();
@@ -9448,9 +9456,9 @@ void InterSpec::handleLeafletMapClosed()
   LeafletRadMapWindow *mapSender = dynamic_cast<LeafletRadMapWindow *>( signalSender );
   
   assert( mapSender );
-  assert( !m_leafletWindow || (m_leafletWindow == mapSender) );
-  
-  if( m_leafletWindow && (mapSender == m_leafletWindow) && m_undo && m_undo->canAddUndoRedoNow() )
+  assert( !m_leafletWindow || (m_leafletWindow.get() == mapSender) );
+
+  if( m_leafletWindow && (mapSender == m_leafletWindow.get()) && m_undo && m_undo->canAddUndoRedoNow() )
   {
     using SpecUtils::SpectrumType;
     const shared_ptr<const SpecMeas> meas = m_leafletWindow->map()->measurement();
@@ -9488,7 +9496,7 @@ void InterSpec::create3DSearchModeChart()
   if( m_3dViewWindow )
     programmaticallyClose3DSearchModeChart();
   
-  m_3dViewWindow = new AuxWindow( WString::tr("window-title-3d"),
+  m_3dViewWindow = AuxWindow::make( WString::tr("window-title-3d"),
                                  (AuxWindowProperties::SetCloseable
                                   | AuxWindowProperties::EnableResize
                                   | AuxWindowProperties::TabletNotFullScreen) );
@@ -9507,14 +9515,14 @@ void InterSpec::create3DSearchModeChart()
   layout->addWidget( std::unique_ptr<WWidget>(chart), 0, 0 );
   
   Wt::WPushButton *closeButton = m_3dViewWindow->addCloseButtonToFooter( WString::tr("Close"),true);
-  closeButton->clicked().connect( m_3dViewWindow, &AuxWindow::hide );
+  closeButton->clicked().connect( m_3dViewWindow.get(), &AuxWindow::hide );
   
   m_3dViewWindow->show();
   m_3dViewWindow->setClosable( true );
   m_3dViewWindow->resizeScaledWindow( 0.7, 0.9 );
   m_3dViewWindow->centerWindow();
   m_3dViewWindow->setResizable( true );
-  m_3dViewWindow->finished().connect( [this]( ){ handle3DSearchModeChartClose( m_3dViewWindow ); } );
+  m_3dViewWindow->finished().connect( [this]( ){ handle3DSearchModeChartClose( m_3dViewWindow.get() ); } );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9530,7 +9538,7 @@ void InterSpec::programmaticallyClose3DSearchModeChart()
   if( !m_3dViewWindow )
     return;
   
-  AuxWindow *dialog = m_3dViewWindow;
+  AuxWindow *dialog = m_3dViewWindow.get();
   m_3dViewWindow = nullptr;
   AuxWindow::deleteAuxWindow( dialog );
 }//void programmaticallyClose3DSearchModeChart()
@@ -9538,8 +9546,8 @@ void InterSpec::programmaticallyClose3DSearchModeChart()
 
 void InterSpec::handle3DSearchModeChartClose( AuxWindow *window )
 {
-  assert( window == m_3dViewWindow );
-  if( (window == m_3dViewWindow) && window )
+  assert( window == m_3dViewWindow.get() );
+  if( (window == m_3dViewWindow.get()) && window )
   {
     m_3dViewWindow = nullptr;
     AuxWindow::deleteAuxWindow( window );
@@ -9597,7 +9605,7 @@ void InterSpec::programmaticallyCloseRiidResults()
   if( !m_riidDisplay )
     return;
   
-  SimpleDialog *dialog = m_riidDisplay;
+  SimpleDialog *dialog = m_riidDisplay.get();
   m_riidDisplay = nullptr;
   dialog->done( DialogCode::Accepted );
 }//void programmaticallyCloseRiidResults()
@@ -9609,7 +9617,7 @@ void InterSpec::showMultimedia( const SpecUtils::SpectrumType type )
     programmaticallyCloseMultimediaWindow();
   
   m_multimedia = displayMultimedia( measurment(type) );
-  m_multimedia->finished().connect( [this](){ handleMultimediaClose( m_multimedia ); } );
+  m_multimedia->finished().connect( [this](){ handleMultimediaClose( m_multimedia.get() ); } );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9622,7 +9630,7 @@ void InterSpec::showMultimedia( const SpecUtils::SpectrumType type )
 
 void InterSpec::handleMultimediaClose( SimpleDialog *dialog )
 {
-  if( dialog != m_multimedia )
+  if( dialog != m_multimedia.get() )
   {
     cerr << "InterSpec::handleMultimediaClose: dialog being closed is not m_multimedia; not doing anything" << endl;
     assert( !m_multimedia );
@@ -9643,7 +9651,7 @@ void InterSpec::handleMultimediaClose( SimpleDialog *dialog )
 
 void InterSpec::programmaticallyCloseMultimediaWindow()
 {
-  SimpleDialog *dialog = m_multimedia;
+  SimpleDialog *dialog = m_multimedia.get();
   m_multimedia = nullptr; //Set m_multimedia to nullptr so #handleMultimediaClose wont add undo/redo step
   if( dialog )
     dialog->done( Wt::DialogCode::Accepted );
@@ -9671,13 +9679,13 @@ void InterSpec::createTerminalWidget()
     //  handleToolTabClosed(), which will delete m_terminal when the user closes the tab.
   }else
   {
-    m_terminalWindow = new AuxWindow( WString::tr(TerminalTabTitleKey),
+    m_terminalWindow = AuxWindow::make( WString::tr(TerminalTabTitleKey),
                                      (AuxWindowProperties::SetCloseable
                                       | AuxWindowProperties::EnableResize
                                       | AuxWindowProperties::TabletNotFullScreen) );
     
     WPushButton *closeButton = m_terminalWindow->addCloseButtonToFooter();
-    closeButton->clicked().connect(m_terminalWindow, &AuxWindow::hide);
+    closeButton->clicked().connect(m_terminalWindow.get(), &AuxWindow::hide);
     
     AuxWindow::addHelpInFooter( m_terminalWindow->footer(), "terminal-dialog" );
     
@@ -9710,7 +9718,7 @@ void InterSpec::handleTerminalWindowClose()
 
   if( m_terminalWindow )
   {
-    AuxWindow::deleteAuxWindow( m_terminalWindow );
+    AuxWindow::deleteAuxWindow( m_terminalWindow.get() );
   }else
   {
     // In Wt4, if terminal is in a tab, removeTab returns ownership; use it to delete
@@ -9796,7 +9804,7 @@ void InterSpec::deleteRemoteRidWindow()
   
   m_remoteRidMenuItem->enable();
   
-  AuxWindow::deleteAuxWindow( m_remoteRidWindow );
+  AuxWindow::deleteAuxWindow( m_remoteRidWindow.get() );
   
   m_remoteRid = nullptr;
   m_remoteRidWindow = nullptr;
@@ -9834,7 +9842,7 @@ void InterSpec::handleAutoRemoteRidResultDialogClose()
 
 void InterSpec::programaticallyCloseAutoRemoteRidResultDialog()
 {
-  SimpleDialog *dialog = m_autoRemoteRidResultDialog;
+  SimpleDialog *dialog = m_autoRemoteRidResultDialog.get();
   
   //Set m_multimedia to m_autoRemoteRidResultDialog so #handleAutoRemoteRidResultDialogClose
   //  wont add undo/redo step
@@ -9913,7 +9921,7 @@ void InterSpec::handleRelActAutoClose()
   if( !m_relActAutoWindow )
     return;
   
-  if( m_relActAutoWindow ) m_relActAutoWindow->removeFromParent();
+  if( m_relActAutoWindow ) AuxWindow::deleteAuxWindow( m_relActAutoWindow.get() );
   m_relActAutoGui = nullptr;
   m_relActAutoWindow = nullptr;
 
@@ -9950,7 +9958,7 @@ RelActManualGui *InterSpec::createRelActManualWidget()
     //  handleToolTabClosed(), which will delete m_relActManualGui when the user closes the tab.
   }else
   {
-    m_relActManualWindow = new AuxWindow( WString::tr("window-title-peak-rel-eff"),
+    m_relActManualWindow = AuxWindow::make( WString::tr("window-title-peak-rel-eff"),
                                          (AuxWindowProperties::SetCloseable
                                           | AuxWindowProperties::EnableResize
                                           | AuxWindowProperties::TabletNotFullScreen) );
@@ -9969,7 +9977,7 @@ RelActManualGui *InterSpec::createRelActManualWidget()
     
     
     WPushButton *closeButton = m_relActManualWindow->addCloseButtonToFooter();
-    closeButton->clicked().connect(m_relActManualWindow, &AuxWindow::hide);
+    closeButton->clicked().connect(m_relActManualWindow.get(), &AuxWindow::hide);
   }//if( toolTabsVisible() )
   
   assert( m_relActManualMenuItem );
@@ -10032,7 +10040,7 @@ void InterSpec::handleRelActManualClose()
   
   if( m_relActManualWindow )
   {
-    AuxWindow::deleteAuxWindow( m_relActManualWindow );
+    AuxWindow::deleteAuxWindow( m_relActManualWindow.get() );
   }else
   {
     if( m_relActManualGui )
@@ -10367,7 +10375,7 @@ GammaXsWindow *InterSpec::showGammaXsTool()
 {
   if( !m_gammaXsToolWindow )
   {
-    m_gammaXsToolWindow = new GammaXsWindow( m_shieldingSuggestion, this );
+    m_gammaXsToolWindow = AuxWindow::make<GammaXsWindow>( m_shieldingSuggestion, this );
     m_gammaXsToolWindow->finished().connect( this, &InterSpec::deleteGammaXsTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -10382,7 +10390,7 @@ GammaXsWindow *InterSpec::showGammaXsTool()
     m_gammaXsToolWindow->centerWindowHeavyHanded();
   }
   
-  return m_gammaXsToolWindow;
+  return m_gammaXsToolWindow.get();
 }//showGammaXsTool()
 
 
@@ -10416,7 +10424,7 @@ void InterSpec::deleteGammaXsTool()
       m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close XS Tool" );
     }//if( m_undo && tool )
     
-    AuxWindow::deleteAuxWindow( m_gammaXsToolWindow );
+    AuxWindow::deleteAuxWindow( m_gammaXsToolWindow.get() );
   }//if( m_gammaXsToolWindow )
   
   m_gammaXsToolWindow = nullptr;
@@ -10427,7 +10435,7 @@ DoseCalcWindow *InterSpec::showDoseTool()
 {
   if( !m_doseCalcWindow )
   {
-    m_doseCalcWindow = new DoseCalcWindow( m_shieldingSuggestion, this );
+    m_doseCalcWindow = AuxWindow::make<DoseCalcWindow>( m_shieldingSuggestion, this );
     m_doseCalcWindow->finished().connect( this, &InterSpec::deleteDoseCalcTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -10442,7 +10450,7 @@ DoseCalcWindow *InterSpec::showDoseTool()
     m_doseCalcWindow->centerWindowHeavyHanded();
   }
   
-  return m_doseCalcWindow;
+  return m_doseCalcWindow.get();
 }//DoseCalcWindow *showDoseTool()
 
 
@@ -10477,7 +10485,7 @@ void InterSpec::deleteDoseCalcTool()
     
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Dose Tool" );
     
-    AuxWindow::deleteAuxWindow( m_doseCalcWindow );
+    AuxWindow::deleteAuxWindow( m_doseCalcWindow.get() );
   }
   m_doseCalcWindow = nullptr;
 }//void deleteDoseCalcTool();
@@ -10496,25 +10504,25 @@ MakeDrfWindow *InterSpec::showMakeDrfWindow()
         item->setDisabled( true );
     }//for( loop over "Tools" menu items )
     
-    m_makeDrfTool = new MakeDrfWindow( this, m_shieldingSuggestion );
-    m_makeDrfTool->finished().connect( [this](){ handleCloseMakeDrfWindow( m_makeDrfTool ); } );
+    m_makeDrfTool = AuxWindow::make<MakeDrfWindow>( this, m_shieldingSuggestion );
+    m_makeDrfTool->finished().connect( [this](){ handleCloseMakeDrfWindow( m_makeDrfTool.get() ); } );
     m_makeDrfTool->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
   }//if( !m_makeDrfTool )
   
-  return m_makeDrfTool;
+  return m_makeDrfTool.get();
 }//void showDrfSelectWindow()
 
 
 MakeDrfWindow *InterSpec::makeDrfWindow()
 {
-  return m_makeDrfTool;
+  return m_makeDrfTool.get();
 }
 
 
 void InterSpec::handleCloseMakeDrfWindow( MakeDrfWindow *window )
 {
-  assert( window == m_makeDrfTool );
-  if( !window || (window != m_makeDrfTool) )
+  assert( window == m_makeDrfTool.get() );
+  if( !window || (window != m_makeDrfTool.get()) )
     return;
   
   // Enable the "Make Detector Response" Tools menu item
@@ -10534,7 +10542,7 @@ DrfSelectWindow *InterSpec::showDrfSelectWindow()
 {
   auto redu = [this](){
     if( !m_drfSelectWindow )
-      m_drfSelectWindow = new DrfSelectWindow( this );
+      m_drfSelectWindow = AuxWindow::make<DrfSelectWindow>( this );
     else
       m_drfSelectWindow->show();
   };
@@ -10542,18 +10550,18 @@ DrfSelectWindow *InterSpec::showDrfSelectWindow()
   auto undo = [this](){
     if( m_drfSelectWindow )
     {
-      DrfSelectWindow *window = m_drfSelectWindow;
+      DrfSelectWindow *window = m_drfSelectWindow.get();
       m_drfSelectWindow = nullptr;
       AuxWindow::deleteAuxWindow( window );
     }
   };
-  
+
   redu();
   
   if( m_undo )
     m_undo->addUndoRedoStep( undo, redu, "Show DRF Select Window" );
   
-  return m_drfSelectWindow;
+  return m_drfSelectWindow.get();
 }//void showDrfSelectWindow()
 
 
@@ -10561,7 +10569,7 @@ void InterSpec::closeDrfSelectWindow()
 {
   auto undo = [this](){
     if( !m_drfSelectWindow )
-      m_drfSelectWindow = new DrfSelectWindow( this );
+      m_drfSelectWindow = AuxWindow::make<DrfSelectWindow>( this );
     else
       m_drfSelectWindow->show();
   };
@@ -10569,7 +10577,7 @@ void InterSpec::closeDrfSelectWindow()
   auto redo = [this](){
     if( m_drfSelectWindow )
     {
-      DrfSelectWindow *window = m_drfSelectWindow;
+      DrfSelectWindow *window = m_drfSelectWindow.get();
       m_drfSelectWindow = nullptr;
       AuxWindow::deleteAuxWindow( window );
     }
@@ -10591,7 +10599,7 @@ void InterSpec::showCompactFileManagerWindow()
     compact->handleSpectrumScale( a1, a2, a3 );
   } );
 
-  AuxWindow *window = new AuxWindow( WString::tr("window-title-compact-file"),
+  AuxWindow *window = AuxWindow::make( WString::tr("window-title-compact-file"),
                                     (AuxWindowProperties::SetCloseable |AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
   window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
@@ -10617,7 +10625,7 @@ void InterSpec::closeNuclideSearchWindow()
   // In Wt4, removeWidget returns unique_ptr; release() to keep m_nuclideSearch alive for re-use
   m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch ).release();
 
-  if( m_nuclideSearchWindow ) m_nuclideSearchWindow->removeFromParent();
+  if( m_nuclideSearchWindow ) AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
   m_nuclideSearchWindow = nullptr;
 
   if( m_toolsTabs )
@@ -10655,7 +10663,7 @@ void InterSpec::showNuclideSearchWindow()
   }
   
   
-  m_nuclideSearchWindow = new AuxWindow( WString::tr(NuclideSearchTabTitleKey),
+  m_nuclideSearchWindow = AuxWindow::make( WString::tr(NuclideSearchTabTitleKey),
                                         (AuxWindowProperties::TabletNotFullScreen
                                          | AuxWindowProperties::EnableResize
                                          | AuxWindowProperties::SetCloseable) );
@@ -10749,7 +10757,7 @@ void InterSpec::closeShieldingSourceFit()
   
   saveShieldingSourceModelToForegroundSpecMeas();
   
-  if( m_shieldingSourceFitWindow ) m_shieldingSourceFitWindow->removeFromParent();
+  if( m_shieldingSourceFitWindow ) AuxWindow::deleteAuxWindow( m_shieldingSourceFitWindow.get() );
   m_shieldingSourceFitWindow = nullptr;
   m_shieldingSourceFit = nullptr;
   
@@ -10773,7 +10781,7 @@ void InterSpec::showHelpWindow( const std::string &preselect )
     return;
   }//if( m_helpWindow )
   
-  m_helpWindow = new HelpSystem::HelpWindow( preselect );
+  m_helpWindow = AuxWindow::make<HelpSystem::HelpWindow>( preselect );
   m_helpWindow->finished().connect( this, &InterSpec::closeHelpWindow );
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
@@ -10794,7 +10802,7 @@ void InterSpec::closeHelpWindow()
   
   const string topic = m_helpWindow->currentTopic();
   
-  AuxWindow::deleteAuxWindow( m_helpWindow );
+  AuxWindow::deleteAuxWindow( m_helpWindow.get() );
   m_helpWindow = nullptr;
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
@@ -10839,7 +10847,7 @@ void InterSpec::showGammaLinesWindow()
     m_referencePhotopeakLines = nullptr;
   }//if( m_referencePhotopeakLines )
 
-  m_referencePhotopeakLinesWindow = new AuxWindow( WString::tr(GammaLinesTabTitleKey),
+  m_referencePhotopeakLinesWindow = AuxWindow::make( WString::tr(GammaLinesTabTitleKey),
                                                   (AuxWindowProperties::TabletNotFullScreen
                                                    | AuxWindowProperties::EnableResize
                                                    | AuxWindowProperties::SetCloseable)
@@ -10872,7 +10880,7 @@ void InterSpec::showGammaLinesWindow()
     m_referencePhotopeakLines->nuclidesCleared().connect( [closeButton](){ closeButton->setText( WString::tr("Close") ); } );
   }
   
-  closeButton->clicked().connect( m_referencePhotopeakLinesWindow, &AuxWindow::hide );
+  closeButton->clicked().connect( m_referencePhotopeakLinesWindow.get(), &AuxWindow::hide );
   m_referencePhotopeakLinesWindow->finished().connect( [this](){ closeGammaLinesWindow(); } );
   
   AuxWindow::addHelpInFooter( m_referencePhotopeakLinesWindow->footer(),
@@ -10927,7 +10935,7 @@ void InterSpec::closeGammaLinesWindow()
     m_referencePhotopeakLines = nullptr;
   }//if( m_referencePhotopeakLines )
 
-  if( m_referencePhotopeakLinesWindow ) m_referencePhotopeakLinesWindow->removeFromParent();
+  if( m_referencePhotopeakLinesWindow ) AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
   m_referencePhotopeakLinesWindow = nullptr;
 
   if( m_toolsTabs )
@@ -11929,14 +11937,14 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     {
       case SpecUtils::SpectrumType::Foreground:
         if( EnergyCalPreserveWindow::candidate(meas,previous) )
-          m_preserveCalibWindow = new EnergyCalPreserveWindow( meas, spec_type,
+          m_preserveCalibWindow = AuxWindow::make<EnergyCalPreserveWindow>( meas, spec_type,
                                          previous, spec_type, m_energyCalTool );
       break;
     
       case SpecUtils::SpectrumType::SecondForeground:
       case SpecUtils::SpectrumType::Background:
         if( EnergyCalPreserveWindow::candidate(meas,m_dataMeasurement) )
-          m_preserveCalibWindow = new EnergyCalPreserveWindow( meas, spec_type,
+          m_preserveCalibWindow = AuxWindow::make<EnergyCalPreserveWindow>( meas, spec_type,
                                                 m_dataMeasurement, SpecUtils::SpectrumType::Foreground,
                                                 m_energyCalTool );
       break;
@@ -12371,7 +12379,7 @@ void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
     filename += "...";
   }
   
-  SimpleDialog *dialog = new SimpleDialog( WString::fromUTF8(filename), WString::tr("prompt-how-open") );
+  SimpleDialog *dialog = SimpleDialog::make( WString::fromUTF8(filename), WString::tr("prompt-how-open") );
   WPushButton *button = dialog->addButton( WString::tr("Foreground") );
   button->clicked().connect( [this, meas, header](){ finishLoadUserFilesystemOpenedFile( meas, header, SpecUtils::SpectrumType::Foreground ); } );
   button->setFocus( true );
@@ -12621,14 +12629,14 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
 SimpleDialog *InterSpec::makeEnterAppUrlWindow()
 {
   if( m_enterUri )
-    return m_enterUri;
-  
+    return m_enterUri.get();
+
   m_enterUri = EnterAppUrlWindow::createEntryWindow( this );
   assert( m_enterUri );
   if( m_enterUri )
     m_enterUri->finished().connect( this, &InterSpec::handleAppUrlClosed );
-  
-  return m_enterUri;
+
+  return m_enterUri.get();
 }//SimpleDialog *makeEnterAppUrlWindow()
 
 

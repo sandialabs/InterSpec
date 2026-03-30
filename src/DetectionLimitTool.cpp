@@ -920,7 +920,7 @@ public:
     }catch( std::exception &e )
     {
       const string nuc_str = (m_nuclide ? m_nuclide->symbol : "null");
-      SimpleDialog *dialog = new SimpleDialog( 
+      SimpleDialog *dialog = SimpleDialog::make(
                                               WString::tr("dlt-err-computing-info").arg(nuc_str).arg(m_input.energy),
                                               WString::tr("dlt-err-computing-currie-info").arg(e.what()) );
       dialog->addButton( WString::tr("Close") );
@@ -1786,7 +1786,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
   const string energy_str = buffer;
   
   const string nuc_str = (nuclide ? (nuclide->symbol + " ") : "");
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("dlt-currie-info-dialog-title").arg(nuc_str).arg(energy_str) );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("dlt-currie-info-dialog-title").arg(nuc_str).arg(energy_str) );
   dialog->addButton( WString::tr("Close") );
   
   if( drf && !drf->isValid() )

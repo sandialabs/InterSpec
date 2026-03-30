@@ -415,15 +415,19 @@ protected:
 
 class DrfSelectWindow : public AuxWindow
 {
+  friend class AuxWindow;
 /*
   Provides a window that contains a DrfSelect
 */
 public:
-  DrfSelectWindow( InterSpec *viewer );
   virtual ~DrfSelectWindow();
 
   DrfSelect *widget();
+
 protected:
+  // Constructor is protected; use AuxWindow::make<DrfSelectWindow>() to create.
+  DrfSelectWindow( InterSpec *viewer );
+
   static void acceptAndDelete( DrfSelectWindow *window );
 
   DrfSelect *m_edit;

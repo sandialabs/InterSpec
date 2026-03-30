@@ -251,9 +251,8 @@ void SimpleDialog::startDeleteSelf()
 
 void SimpleDialog::deleteSelf()
 {
-  // Wt4_TODO: `delete this` is not the correct Wt4 pattern for dialogs. Dialogs should be owned
-  //            via WObject::addChild(std::make_unique<SimpleDialog>(...)) and removed via
-  //            removeChild(). Redesigning SimpleDialog lifetime management is required.
-  delete this;
+  // The SimpleDialog::make() factory gives ownership to wApp via addChild(),
+  //  so we use removeChild() to properly release and destruct this dialog.
+  Wt::WApplication::instance()->removeChild( this );
 }
 

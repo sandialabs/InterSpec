@@ -28,6 +28,7 @@
 #include <Wt/WString.h>
 #include <Wt/WModelIndex.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/AuxWindow.h"
@@ -54,13 +55,18 @@ namespace Wt
 
 class PeakEditWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
+  PeakEdit *peakEditor();
+  Wt::Signal<> &editingDone();
+
+protected:
+  // Constructor is protected; use AuxWindow::make<PeakEditWindow>() to create.
   PeakEditWindow( const double energy,
                   PeakModel *peakmodel,
                   InterSpec *viewer );
-  PeakEdit *peakEditor();
-  Wt::Signal<> &editingDone();
-protected:
+
   PeakEdit *m_edit;
 };//class PeakEditWindow
 
@@ -250,7 +256,7 @@ protected:
   
   Wt::Signal<> m_doneSignal;
   Wt::WContainerWidget *m_footer;
-  AuxWindow *m_aux;
+  Wt::Core::observing_ptr<AuxWindow> m_aux;
 };//class PeakEdit
 
 

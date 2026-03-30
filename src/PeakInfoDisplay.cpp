@@ -851,7 +851,7 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
     if( !display )
       return;
     
-    SimpleDialog *window = new SimpleDialog( "Erase All Peaks?", "" );
+    SimpleDialog *window = SimpleDialog::make( "Erase All Peaks?", "" );
     WPushButton *yes_button = window->addButton( "Yes" );
     WPushButton *no_button = window->addButton( "No" );
     
@@ -862,7 +862,7 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
    */
   
   
-  SimpleDialog *window = new SimpleDialog( WString::tr("pid-dialog-peak-erase"), "" );
+  SimpleDialog *window = SimpleDialog::make( WString::tr("pid-dialog-peak-erase"), "" );
   WPushButton *yes_button = window->addButton( WString::tr("Yes") );
   window->addButton( WString::tr("No") );
   
@@ -1028,7 +1028,7 @@ void PeakInfoDisplay::createNewPeak()
   
   const float initialEnergy = 0.5f*(xmin + xmax);
   
-  AddNewPeakDialog *window = new AddNewPeakDialog( initialEnergy, "" );
+  AddNewPeakDialog *window = AuxWindow::make<AddNewPeakDialog>( initialEnergy, "" );
   window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   // We'll make it so "undo" will close the window.

@@ -676,7 +676,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       auto buttonboxOwner = std::make_unique<WGroupBox>( WString::tr("sb-open-spectrum-as") );
       m_buttonbox = buttonboxOwner.get();
       m_buttonbox->setOffsets(10);
-      m_buttonGroup = m_buttonbox->addChild( std::make_unique<WButtonGroup>() );
+      m_buttonGroup = std::make_shared<WButtonGroup>();
 
       for( int i = 0; i < 3; ++i )
       {
@@ -879,7 +879,7 @@ void SnapshotBrowser::selectionChanged()
     if( m_editWindow )
     {
       if( m_editWindow )
-        AuxWindow::deleteAuxWindow(m_editWindow);
+        AuxWindow::deleteAuxWindow( m_editWindow.get() );
       m_editWindow = nullptr;
       //else //is edit dialog, in which case just delete the dialog
     }
@@ -898,7 +898,7 @@ void SnapshotBrowser::selectionChanged()
     
     if( m_editWindow )
     {
-      AuxWindow::deleteAuxWindow(m_editWindow);
+      AuxWindow::deleteAuxWindow( m_editWindow.get() );
       m_editWindow = nullptr;
     }
   }else //some node not found
@@ -924,7 +924,7 @@ void SnapshotBrowser::startDeleteSelected()
   if( selection.empty() )
   {
     if( m_editWindow )
-      AuxWindow::deleteAuxWindow(m_editWindow);
+      AuxWindow::deleteAuxWindow( m_editWindow.get() );
     m_editWindow = nullptr;
         
     return;
@@ -939,7 +939,7 @@ void SnapshotBrowser::startDeleteSelected()
   WString msg = WString::tr("sb-confirm-delete-msg").arg(name);
   
   // We will rely on the SimpleDialog covering everything else to know that the selection didnt change or anything...
-  SimpleDialog *dialog = new SimpleDialog( title, msg );
+  SimpleDialog *dialog = SimpleDialog::make( title, msg );
   
   dialog->addButton( WString::tr("No") );
   WPushButton *yes = dialog->addButton( WString::tr("Yes") );
@@ -963,7 +963,7 @@ void SnapshotBrowser::startEditSelected()
   {
     if( m_editWindow )
     {
-      AuxWindow::deleteAuxWindow(m_editWindow);
+      AuxWindow::deleteAuxWindow( m_editWindow.get() );
       m_editWindow = nullptr;
     }
     return;
@@ -983,9 +983,9 @@ void SnapshotBrowser::startEditSelected()
   
   const char *title = "Edit Title/Description";
   if( m_editWindow )
-    AuxWindow::deleteAuxWindow( m_editWindow );
+    AuxWindow::deleteAuxWindow( m_editWindow.get() );
   
-  m_editWindow = new AuxWindow( title,
+  m_editWindow = AuxWindow::make( title,
                                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                                 | AuxWindowProperties::DisableCollapse | AuxWindowProperties::PhoneNotFullScreen) );
   
@@ -1033,7 +1033,7 @@ void SnapshotBrowser::startEditSelected()
   yes->addStyleClass( "DialogClose" );
   yes->setFloatSide( Wt::Side::Right );
   
-  cancel->clicked().connect( m_editWindow, &AuxWindow::hide );
+  cancel->clicked().connect( m_editWindow.get(), &AuxWindow::hide );
   yes->clicked().connect( std::bind([this, nameEdit, state, description, node](){
     if( nameEdit->text().toUTF8().empty() ) //should happen
     {
@@ -1069,7 +1069,7 @@ void SnapshotBrowser::startEditSelected()
   nameEdit->textInput().connect( std::bind(haschanged) );
   description->textInput().connect( std::bind(haschanged) );
   
-  auto deleter = [this](){ AuxWindow::deleteAuxWindow( m_editWindow ); };
+  auto deleter = [this](){ AuxWindow::deleteAuxWindow( m_editWindow.get() ); };
   m_editWindow->finished().connect( std::bind( [deleter,this](){ deleter(); m_editWindow = nullptr; } ) );
   
   m_editWindow->show();
@@ -1155,7 +1155,7 @@ void SnapshotBrowser::deleteSelected()
   
   if( m_editWindow )
   {
-    AuxWindow::deleteAuxWindow(m_editWindow);
+    AuxWindow::deleteAuxWindow( m_editWindow.get() );
     m_editWindow = nullptr;
   }//if( m_editWindow )
 }//void deleteSelected()

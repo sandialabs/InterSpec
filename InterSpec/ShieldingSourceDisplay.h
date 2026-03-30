@@ -41,6 +41,7 @@
 #include <Wt/WModelIndex.h>
 #include <Wt/WContainerWidget.h>
 #include <Wt/WAbstractItemModel.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ShieldingSourceFitPlot.h"
@@ -811,10 +812,10 @@ protected:
   std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> m_peakCalcLogInfo;
   std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> m_lastFitResults;
   
-  AuxWindow *m_modelUploadWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_modelUploadWindow;
 #if( USE_DB_TO_STORE_SPECTRA )
-  AuxWindow *m_modelDbBrowseWindow;
-  AuxWindow *m_modelDbSaveWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_modelDbBrowseWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_modelDbSaveWindow;
 #endif
   
 

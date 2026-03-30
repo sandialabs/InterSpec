@@ -61,20 +61,23 @@ protected:
 
 class UseInfoWindow : public AuxWindow
 {
+  friend class AuxWindow;
   //UseInfoWindow:
   //  When user clicks closed, or finished, the window will be hidden and the
   //  finsished signal emitted, but not deleted
 public:
-  UseInfoWindow(std::function<void(bool)> showAgainCallback, InterSpec* viewer );
   ~UseInfoWindow();
   
 protected:
+  // Constructor is protected; use AuxWindow::make<UseInfoWindow>() to create.
+  UseInfoWindow( std::function<void(bool)> showAgainCallback, InterSpec *viewer );
+
   struct VideoInformation
   {
     std::string key, fileMP4, fileOGV;
     Wt::WString title;
   };
-  
+
 protected:
 
   void initVideoInfoMap();

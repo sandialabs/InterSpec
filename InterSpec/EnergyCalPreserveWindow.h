@@ -42,17 +42,20 @@ namespace SpecUtils{ enum class SpectrumType : int; }
  */
 class EnergyCalPreserveWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
   static bool candidate( std::shared_ptr<SpecMeas> newmeas, std::shared_ptr<SpecMeas> oldmeas );
   
 public:
+  virtual ~EnergyCalPreserveWindow();
+
+protected:
+  // Constructor is protected; use AuxWindow::make<EnergyCalPreserveWindow>() to create.
   EnergyCalPreserveWindow( std::shared_ptr<SpecMeas> newmeas, const SpecUtils::SpectrumType newtype,
                            std::shared_ptr<SpecMeas> oldmeas, const SpecUtils::SpectrumType oldtype,
                            EnergyCalTool *calibrator );
-  
-  virtual ~EnergyCalPreserveWindow();
-  
-protected:
+
   void propogateCalibrations();
   
   

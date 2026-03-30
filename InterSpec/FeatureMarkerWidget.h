@@ -46,9 +46,9 @@ namespace Wt
 
 class FeatureMarkerWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  FeatureMarkerWindow( InterSpec* viewer );
-  
   virtual ~FeatureMarkerWindow();
   
   /** Sets the display checkbox to specified state - does not emit signals, or propogate changes to the GUI. */
@@ -58,7 +58,11 @@ public:
   void setDisplayedComptonPeakAngle( const int angle );
   
   FeatureMarkerWidget *tool();
+
 protected:
+  // Constructor is protected; use AuxWindow::make<FeatureMarkerWindow>() to create.
+  FeatureMarkerWindow( InterSpec* viewer );
+
   FeatureMarkerWidget *m_feature;
 };//class FeatureMarkerWindow
 

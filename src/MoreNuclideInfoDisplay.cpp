@@ -216,10 +216,10 @@ MoreNuclideInfoDisplay::MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *cons
 
 void MoreNuclideInfoDisplay::handleDecayChartClose( AuxWindow *window )
 {
-  assert( window == m_decayWindow );
-  if( window != m_decayWindow )
+  assert( window == m_decayWindow.get() );
+  if( window != m_decayWindow.get() )
     cerr << "MoreNuclideInfoDisplay::handleDecayChartClose(...): passed in pointer ("
-         << window << ") not same as internal pointer (" << m_decayWindow << ")." << endl;
+         << window << ") not same as internal pointer (" << m_decayWindow.get() << ")." << endl;
   
   m_decayWindow = nullptr;
 }//void handleDecayChartClose( AuxWindow *window )
@@ -233,7 +233,7 @@ void MoreNuclideInfoDisplay::programmaticallyCloseDecayChart()
   {
     // Calling done seems to crash for some reason
     //m_decayWindow->done( Wt::DialogCode::Accepted );
-    AuxWindow::deleteAuxWindow( m_decayWindow );
+    AuxWindow::deleteAuxWindow( m_decayWindow.get() );
   }
   m_decayWindow = nullptr;
 }//void programmaticallyCloseDecayChart()
@@ -251,14 +251,13 @@ void MoreNuclideInfoDisplay::implementShowDecayCharts( const bool through )
     assert( !m_decayWindow );
   }
   
-  const pair<AuxWindow *, DecayChainChart *> results
-                         = DecayChainChart::show_decay_chart_window( nuc, type );
+  const auto results = DecayChainChart::show_decay_chart_window( nuc, type );
   
   m_decayWindow = results.first;
   
   if( m_decayWindow )
   {
-    AuxWindow * const decayWin = m_decayWindow;
+    AuxWindow * const decayWin = m_decayWindow.get();
     m_decayWindow->finished().connect( [this, decayWin](){ handleDecayChartClose( decayWin ); } );
   }
   

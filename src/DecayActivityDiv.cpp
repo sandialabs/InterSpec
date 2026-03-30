@@ -1473,12 +1473,14 @@ namespace
 
 class CsvDownloadGui : public AuxWindow
 {
+  friend class AuxWindow;
+
   DecayActivityDiv *m_parent;
   DecayCsvResource *m_csvResouce;
   WLineEdit *m_ageEdit;
-  
-public:
-  
+
+protected:
+  // Constructor is protected; use AuxWindow::make<CsvDownloadGui>() to create.
   CsvDownloadGui( DecayActivityDiv *parent )
   : AuxWindow( "CSV Export", (AuxWindowProperties::IsModal
                               | AuxWindowProperties::TabletNotFullScreen
@@ -1627,7 +1629,8 @@ public:
     show();
     centerWindow();
   }//CsvDownloadGui
-  
+
+public:
   void updateTimeSpan()
   {
     double timespan = 0.0;
@@ -1754,10 +1757,10 @@ void DecayActivityDiv::init()
   m_nuclidesAddedDiv               = new WContainerWidget();
   m_createNewNuclideButton         = new WPushButton( WString::tr("dad-add-nucs") );
   m_clearNuclidesButton            = new WPushButton( WString::tr(isPhone ? "Clear" : "dad-remove-all")  );
-  m_nuclideSelectDialog            = new AuxWindow( WString::tr("dad-sel-nuc-window-title"),
+  m_nuclideSelectDialog            = AuxWindow::make( WString::tr("dad-sel-nuc-window-title"),
                                     (AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
   
-  m_nuclideSelect                  = new DecaySelectNuclide( isPhone, m_nuclideSelectDialog );
+  m_nuclideSelect                  = new DecaySelectNuclide( isPhone, m_nuclideSelectDialog.get() );
   m_decayLegend                    = new WContainerWidget();
 
   m_chartTabWidget                 = new WTabWidget();
@@ -1808,7 +1811,7 @@ void DecayActivityDiv::init()
   m_createNewNuclideButton->clicked().connect( m_nuclideSelect,
                                    &DecaySelectNuclide::setNuclideSearchToFocus );
   
-  m_nuclideSelect->done().connect( m_nuclideSelectDialog, &AuxWindow::hide );
+  m_nuclideSelect->done().connect( m_nuclideSelectDialog.get(), &AuxWindow::hide );
   m_nuclideSelectDialog->finished().connect( this, &DecayActivityDiv::nuclideSelectDialogDone );
   m_nuclideSelectDialog->centerWindow();
   
@@ -2237,7 +2240,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
 void DecayActivityDiv::createCsvDownloadGui()
 {
   deleteCsvDownloadGui();
-  m_csvDownloadDialog = new CsvDownloadGui( this );
+  m_csvDownloadDialog = AuxWindow::make<CsvDownloadGui>( this );
 }//void createCsvDownloadGui()
 
 
@@ -2678,7 +2681,7 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
     m_moreInfoDialog->setWindowTitle( title );
   }else
   {
-    m_moreInfoDialog = new AuxWindow( title );
+    m_moreInfoDialog = AuxWindow::make( title );
     m_moreInfoDialog->setClosable( true );
     m_moreInfoDialog->disableCollapse();
     m_moreInfoDialog->rejectWhenEscapePressed();
@@ -2794,8 +2797,8 @@ void DecayActivityDiv::deleteMoreInfoDialog()
 {
   if( m_moreInfoDialog )
   {
-    if( m_moreInfoDialog ) m_moreInfoDialog->removeFromParent();
-    m_moreInfoDialog = 0;
+    if( m_moreInfoDialog ) AuxWindow::deleteAuxWindow( m_moreInfoDialog.get() );
+    m_moreInfoDialog = nullptr;
   }
 }//void deleteMoreInfoDialog()
 
@@ -3630,7 +3633,7 @@ DecayActivityDiv::~DecayActivityDiv()
     delete m_currentMixture;
 
   if( m_nuclideSelectDialog )
-    if( m_nuclideSelectDialog ) m_nuclideSelectDialog->removeFromParent();
+    if( m_nuclideSelectDialog ) AuxWindow::deleteAuxWindow( m_nuclideSelectDialog.get() );
   
   if( m_csvDownloadDialog )
     deleteCsvDownloadGui();

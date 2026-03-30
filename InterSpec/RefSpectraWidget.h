@@ -75,8 +75,8 @@ enum class RefSpectraWidgetSelectionType
 
 class RefSpectraDialog : public SimpleDialog
 {
+  friend class SimpleDialog;
 public:
-  RefSpectraDialog( const Wt::WString &title = "Reference Spectra" );
   virtual ~RefSpectraDialog();
 
   RefSpectraWidget *widget() { return m_widget; }
@@ -87,10 +87,13 @@ public:
    *  @param type The default spectrum type to load selected file as.
    *  @return A new RefSpectraDialog.
    */
-  static RefSpectraDialog *createDialog( const RefSpectraInitialBehaviour initialBehaviour, 
+  static RefSpectraDialog *createDialog( const RefSpectraInitialBehaviour initialBehaviour,
                                          const SpecUtils::SpectrumType type );
 
 protected:
+  // Constructor is protected; use SimpleDialog::make<RefSpectraDialog>() to create.
+  RefSpectraDialog( const Wt::WString &title = "Reference Spectra" );
+
   void handleSelectionChanged( RefSpectraWidgetSelectionType type );
 
 private:

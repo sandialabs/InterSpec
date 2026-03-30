@@ -56,12 +56,9 @@ class ColorThemeWidget;
  */
 class ColorThemeWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  /** ColorThemeWindow constructor
-   \param interspec Pointer to the owning InterSpec instance for this widget.
-          Must be valid.
-   */
-  ColorThemeWindow( InterSpec *interspec );
   virtual ~ColorThemeWindow();
   
   /** Called when the user selects a new theme. */
@@ -79,6 +76,13 @@ public:
   std::string currentThemeJson();
   
 protected:
+  // Constructor is protected; use AuxWindow::make<ColorThemeWindow>() to create.
+  /** ColorThemeWindow constructor
+   \param interspec Pointer to the owning InterSpec instance for this widget.
+          Must be valid.
+   */
+  ColorThemeWindow( InterSpec *interspec );
+
   /** Called when the user edits the current theme. */
   void themEditedCallback();
   

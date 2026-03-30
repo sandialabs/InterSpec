@@ -127,13 +127,18 @@ namespace Wt
 
 class DetectionLimitWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  DetectionLimitWindow( InterSpec *viewer,
-                             Wt::WSuggestionPopup *materialSuggest );
   virtual ~DetectionLimitWindow();
   
   DetectionLimitTool *tool();
+
 protected:
+  // Constructor is protected; use AuxWindow::make<DetectionLimitWindow>() to create.
+  DetectionLimitWindow( InterSpec *viewer,
+                             Wt::WSuggestionPopup *materialSuggest );
+
   DetectionLimitTool *m_tool;
 };//class DetectionLimitWindow
 

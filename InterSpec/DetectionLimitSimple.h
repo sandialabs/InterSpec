@@ -30,6 +30,7 @@
 #include <memory>
 
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -72,15 +73,18 @@ namespace DetectionLimitCalc
 
 class DetectionLimitSimpleWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  DetectionLimitSimpleWindow( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec* viewer );
-  
   virtual ~DetectionLimitSimpleWindow();
 
   DetectionLimitSimple *tool();
-  
+
 protected:
+  // Constructor is protected; use AuxWindow::make<DetectionLimitSimpleWindow>() to create.
+  DetectionLimitSimpleWindow( Wt::WSuggestionPopup *materialSuggestion,
+                  InterSpec *viewer );
+
   DetectionLimitSimple *m_tool;
 };//class DetectionLimitSimple
 
@@ -248,7 +252,7 @@ protected:
     Deconvolution = 1
   };
   
-  Wt::WButtonGroup *m_methodGroup;
+  std::shared_ptr<Wt::WButtonGroup> m_methodGroup;
   Wt::WText *m_methodDescription;
   
   
@@ -270,7 +274,7 @@ protected:
   Wt::WLabel *m_continuumTypeLabel;
   Wt::WComboBox *m_continuumType;
   
-  SimpleDialog *m_moreInfoWindow;
+  Wt::Core::observing_ptr<SimpleDialog> m_moreInfoWindow;
   
   const SandiaDecay::Nuclide *m_currentNuclide;
   double m_currentAge;

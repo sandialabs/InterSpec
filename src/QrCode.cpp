@@ -305,7 +305,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
       return nullptr;
     }
     
-    SimpleDialog *window = new SimpleDialog( title, "" );
+    SimpleDialog *window = SimpleDialog::make( title, "" );
     window->rejectWhenEscapePressed();
     window->addButton( "Close" );
     

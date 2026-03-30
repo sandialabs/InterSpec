@@ -49,13 +49,9 @@ namespace Wt
  */
 class LicenseAndDisclaimersWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  /** Constructor; meant to only be called from the InterSpec class, due to undo/redo actions assuming this.
-   
-   \param screen_width width in pixels of the screen
-   \param screen_height height in pixels of the screen
-   */
-  LicenseAndDisclaimersWindow( InterSpec *viewer );
   ~LicenseAndDisclaimersWindow();
   
   /** Handles the "path" component of an app URL.
@@ -64,6 +60,9 @@ public:
   bool handleAppUrlPath( const std::string &url_path );
   
 protected:
+  // Constructor is protected; use AuxWindow::make<LicenseAndDisclaimersWindow>() to create.
+  LicenseAndDisclaimersWindow( InterSpec *viewer );
+
   void itemCreator( const std::string &resource, Wt::WContainerWidget *parent, Wt::WString title );
   SideMenuItem *makeItem( const Wt::WString &title, const std::string &resource );
   

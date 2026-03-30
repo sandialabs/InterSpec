@@ -58,13 +58,16 @@ struct SrcLibLineInfo;
 /** Create a AuxWindow with the MakeDrf widget as the primary content. */
 class MakeDrfWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
+  MakeDrf *tool();
+
+protected:
+  // Constructor is protected; use AuxWindow::make<MakeDrfWindow>() to create.
   MakeDrfWindow( InterSpec *viewer,
                 Wt::WSuggestionPopup *materialSuggest );
-  
-  MakeDrf *tool();
-  
-protected:
+
   MakeDrf *m_tool;
 };//class MakeDrfWindow
 

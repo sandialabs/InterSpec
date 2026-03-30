@@ -99,7 +99,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   setEnergies( lowe, highe );
   
   
-  m_typeButtons = contents()->addChild( std::make_unique<WButtonGroup>() );
+  m_typeButtons = std::make_shared<WButtonGroup>();
   WGroupBox *buttonBox = contents()->addNew<WGroupBox>( "Parameter to adjust" );
   
   for( RecalTypes t = RecalTypes(0); t < NumRecalTypes; t = RecalTypes(t+1) )

@@ -164,11 +164,16 @@ protected:
  */
 class FitSkewParamsWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  FitSkewParamsWindow( InterSpec *viewer );
   virtual ~FitSkewParamsWindow();
 
   FitSkewParamsTool *tool();
+
+protected:
+  // Constructor is protected; use AuxWindow::make<FitSkewParamsWindow>() to create.
+  FitSkewParamsWindow( InterSpec *viewer );
 
 private:
   FitSkewParamsTool *m_tool;

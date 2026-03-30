@@ -25,6 +25,8 @@
 
 #include "InterSpec_config.h"
 
+#include <Wt/Core/observing_ptr.hpp>
+
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -106,7 +108,7 @@ protected:
   Wt::WPushButton  *m_loadSnapshotButton;
   Wt::WPushButton  *m_loadSpectraButton;
   Wt::WPushButton  *m_renameButton;
-  Wt::WButtonGroup *m_buttonGroup;
+  std::shared_ptr<Wt::WButtonGroup> m_buttonGroup;
   Wt::WGroupBox    *m_buttonbox;
   Wt::WTree        *m_snapshotTable;
   Wt::WText        *m_descriptionLabel;
@@ -115,7 +117,7 @@ protected:
   std::shared_ptr<SpectraFileHeader> m_header;
   
   Wt::Signal<> m_finished;
-  AuxWindow *m_editWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_editWindow;
   
   int m_nrows;
 };//class SnapshotBrowser
@@ -156,12 +158,16 @@ protected:
  */
 class DbFileBrowser : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
+  int numSnapshots() const;
+
+protected:
+  // Constructor is protected; use AuxWindow::make<DbFileBrowser>() to create.
   DbFileBrowser( SpecMeasManager *manager, InterSpec *viewer,
                  std::shared_ptr<SpectraFileHeader> header );
-  
-  int numSnapshots() const;
-protected:
+
   SnapshotBrowser *m_factory;
 };
 

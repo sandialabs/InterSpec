@@ -1811,7 +1811,7 @@ void MakeDrf::startSaveAs()
                                                | AuxWindowProperties::DisableCollapse);
   if( m_effEqnCoefs.empty() )
   {
-    AuxWindow *w = new AuxWindow( "Error", windowprop );
+    AuxWindow *w = AuxWindow::make( "Error", windowprop );
     WText *t = w->contents()->addNew<WText>( WString::fromUTF8("Sorry,&nbsp;DRF&nbsp;not&nbsp;valid."), Wt::TextFormat::XHTML );
     t->setInline( false );
     WPushButton *b = w->footer()->addNew<WPushButton>( WString::tr("Close") );
@@ -1831,7 +1831,7 @@ void MakeDrf::startSaveAs()
   //      - add in a interface to select previously characterized detectors, and
   //        also upload them
   
-  AuxWindow *w = new AuxWindow( WString::tr("md-export-window-title"), windowprop );
+  AuxWindow *w = AuxWindow::make( WString::tr("md-export-window-title"), windowprop );
 
   WTable *table = w->contents()->addNew<WTable>();
   table->addStyleClass( "MakeDrfSaveAsTable" );

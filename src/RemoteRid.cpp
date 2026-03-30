@@ -982,7 +982,7 @@ public:
         const string msg_html = msg_html_strm.str();
           
         wApp->useStyleSheet( "InterSpec_resources/RemoteRid.css" );
-        SimpleDialog *dialog = new SimpleDialog( WString::tr("rr-rid-results-window-title") );
+        SimpleDialog *dialog = SimpleDialog::make( WString::tr("rr-rid-results-window-title") );
         
         WText *contents = dialog->contents()->addNew<WText>( msg_html );
         contents->addStyleClass( "content RestRidResult" );
@@ -2265,7 +2265,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   
   wApp->useStyleSheet( "InterSpec_resources/RemoteRid.css" );
   
-  SimpleDialog *dialog = new SimpleDialog( "Warning" );
+  SimpleDialog *dialog = SimpleDialog::make( "Warning" );
   dialog->addStyleClass( "ExternalRidWarningDialog" );
   dialog->setWidth( 300 );
   
@@ -2306,7 +2306,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
 
 pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
 {
-  AuxWindow *window = new AuxWindow( WString::tr("window-title-external-rid"),
+  AuxWindow *window = AuxWindow::make( WString::tr("window-title-external-rid"),
                                     (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::TabletNotFullScreen)
@@ -2758,7 +2758,7 @@ void RemoteRid::handleAppUrl( std::string query_str )
   // No matter what value is given for "&none=...", or what other parameters are specified, we will try to reset things
   if( parts.count("NONE") || (url_path.empty() && exe_path.empty()) )
   {
-    SimpleDialog *dialog = new SimpleDialog( "Stop using External-RID?",
+    SimpleDialog *dialog = SimpleDialog::make( "Stop using External-RID?",
                                             "This will reset you External-RID preferences.<br />"
                                             "Any URL"
 #if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
@@ -2810,7 +2810,7 @@ void RemoteRid::handleAppUrl( std::string query_str )
   + (exe_path.empty() ? "service" : "executable") + " - it just blindly sends it your spectroscopy data."
   "<br />If you are unsure, select <b>No</b>.";
   
-  SimpleDialog *dialog = new SimpleDialog( title, desc );
+  SimpleDialog *dialog = SimpleDialog::make( title, desc );
   WPushButton *btn = dialog->addButton( "Yes" );
   
   const auto set_to_new_prefs = [exe_path,url_path,always_call,show_dialog](){

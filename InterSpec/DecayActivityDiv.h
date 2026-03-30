@@ -33,6 +33,7 @@
 #include <Wt/WEvent.h>
 #include <Wt/WConfig.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -185,7 +186,7 @@ public:
 
   Wt::WPushButton             *m_clearNuclidesButton;
 
-  AuxWindow                   *m_nuclideSelectDialog;
+  Wt::Core::observing_ptr<AuxWindow> m_nuclideSelectDialog;
   DecaySelectNuclide          *m_nuclideSelect;
 
   //Objects to actually display the chart of activities
@@ -195,7 +196,7 @@ public:
   
   DecayChainChart           *m_decayChainChart;
     
-  AuxWindow                   *m_moreInfoDialog;
+  Wt::Core::observing_ptr<AuxWindow> m_moreInfoDialog;
 
   Wt::WContainerWidget        *m_decayLegend;
 

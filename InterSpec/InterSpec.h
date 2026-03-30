@@ -33,6 +33,7 @@
 
 #include <Wt/Dbo/Dbo.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 //Without including InterSpecUser.h here, we get some weird issues with the
 //  DB optimistic versioning...
@@ -1395,7 +1396,7 @@ protected:
   Wt::Signal< Wt::WString, int > m_messageLogged;
   
   WarningWidget          *m_warnings;
-  AuxWindow              *m_warningsWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_warningsWindow;
   
   SpecMeasManager        *m_fileManager; // The file manager
   
@@ -1411,15 +1412,15 @@ protected:
   //  gets all messed up for some reason when m_peakInfoDisplay is removed
   //  and placed back in it.
   PeakInfoDisplay        *m_peakInfoDisplay;
-  AuxWindow              *m_peakInfoWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_peakInfoWindow;
 
   //m_peakEditWindow: used to ensure only one peak editor window is open at a
   //  time.  Will be null if no peak editor is open; valid if one is open.
-  PeakEditWindow *m_peakEditWindow;
+  Wt::Core::observing_ptr<PeakEditWindow> m_peakEditWindow;
 
   // Managed by showFitSkewParamsWindow/closeFitSkewParamsWindow/acceptFitSkewParamsWindow.
   // Null when no FitSkewParamsWindow is open.
-  FitSkewParamsWindow *m_fitSkewParamsWindow;
+  Wt::Core::observing_ptr<FitSkewParamsWindow> m_fitSkewParamsWindow;
   
   
   //m_currentToolsTab: used to track which tab is currently showing when the
@@ -1440,27 +1441,27 @@ protected:
 #endif
 
   EnergyCalTool          *m_energyCalTool;
-  AuxWindow              *m_energyCalWindow;
-  GammaCountDialog       *m_gammaCountDialog;
-  AuxWindow              *m_specFileQueryDialog;
+  Wt::Core::observing_ptr<AuxWindow> m_energyCalWindow;
+  Wt::Core::observing_ptr<GammaCountDialog> m_gammaCountDialog;
+  Wt::Core::observing_ptr<AuxWindow> m_specFileQueryDialog;
 
   Wt::WSuggestionPopup   *m_shieldingSuggestion;
   ShieldingSourceDisplay *m_shieldingSourceFit;
-  AuxWindow              *m_shieldingSourceFitWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_shieldingSourceFitWindow;
   
 #if( USE_REL_ACT_TOOL )
   RelActAutoGui          *m_relActAutoGui;
-  AuxWindow              *m_relActAutoWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_relActAutoWindow;
   PopupDivMenuItem       *m_relActAutoMenuItem;
   
   RelActManualGui        *m_relActManualGui;
-  AuxWindow              *m_relActManualWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_relActManualWindow;
   PopupDivMenuItem       *m_relActManualMenuItem;
 #endif
 
   //m_nuclideSearchWindow: only valid when in tool tabs are hidden, and the user
   //  currently has the window nuclide search window open.
-  AuxWindow              *m_nuclideSearchWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_nuclideSearchWindow;
   
   //m_nuclideSearchContainer: holds the nuclide search content in tab when tool
   //  tabs are visible.  Will be valid when in tool tabs visible, and null when
@@ -1580,13 +1581,13 @@ protected:
   /** A window that controls if S.E., D.E., Compton Peak, Compton Edge, or Sum
    Peaks are shown.  Is null when window is not showing.
    */
-  FeatureMarkerWindow *m_featureMarkersWindow;
+  Wt::Core::observing_ptr<FeatureMarkerWindow> m_featureMarkersWindow;
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
   PopupDivMenuItem *m_dynamicRefLineEnableMenuItem;
   PopupDivMenuItem *m_dynamicRefLineDisableMenuItem;
 
-  SimpleDialog *m_multimedia;
+  Wt::Core::observing_ptr<SimpleDialog> m_multimedia;
 
 #if( USE_REMOTE_RID )
   /** When the user has selected spectra to be sent off to external RID analysis, and results to
@@ -1595,27 +1596,27 @@ protected:
    \sa getAutoRemoteRidResultDialog
    \sa handleAutoRemoteRidResultDialogClose
    */
-  SimpleDialog *m_autoRemoteRidResultDialog;
+  Wt::Core::observing_ptr<SimpleDialog> m_autoRemoteRidResultDialog;
 #endif
   
-  GammaXsWindow *m_gammaXsToolWindow;
-  DoseCalcWindow *m_doseCalcWindow;
-  OneOverR2Calc *m_1overR2Calc;
-  UnitsConverterTool *m_unitsConverter;
-  FluxToolWindow *m_fluxTool;
-  MakeDrfWindow *m_makeDrfTool;
+  Wt::Core::observing_ptr<GammaXsWindow> m_gammaXsToolWindow;
+  Wt::Core::observing_ptr<DoseCalcWindow> m_doseCalcWindow;
+  Wt::Core::observing_ptr<OneOverR2Calc> m_1overR2Calc;
+  Wt::Core::observing_ptr<UnitsConverterTool> m_unitsConverter;
+  Wt::Core::observing_ptr<FluxToolWindow> m_fluxTool;
+  Wt::Core::observing_ptr<MakeDrfWindow> m_makeDrfTool;
   
   
 #if( USE_GOOGLE_MAP || USE_LEAFLET_MAP )
   PopupDivMenuItem *m_mapMenuItem;
   
 #if( USE_LEAFLET_MAP )
-  SimpleDialog *m_leafletWarning;
-  LeafletRadMapWindow *m_leafletWindow;
+  Wt::Core::observing_ptr<SimpleDialog> m_leafletWarning;
+  Wt::Core::observing_ptr<LeafletRadMapWindow> m_leafletWindow;
 #endif
 #endif
   
-  SimpleDialog *m_enterUri;
+  Wt::Core::observing_ptr<SimpleDialog> m_enterUri;
   
 #if( USE_SEARCH_MODE_3D_CHART )
   PopupDivMenuItem *m_searchMode3DChart;
@@ -1627,20 +1628,20 @@ protected:
 #if( USE_TERMINAL_WIDGET )
   PopupDivMenuItem *m_terminalMenuItem;
   TerminalWidget   *m_terminal;
-  AuxWindow        *m_terminalWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_terminalWindow;
 #endif
   
 #if( USE_REMOTE_RID )
   PopupDivMenuItem *m_remoteRidMenuItem;
   RemoteRid        *m_remoteRid;
-  AuxWindow        *m_remoteRidWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_remoteRidWindow;
 #endif
 
 #if( USE_DETECTION_LIMIT_TOOL )
-  DetectionLimitSimpleWindow *m_simpleMdaWindow;
-  DetectionLimitWindow *m_detectionLimitWindow;
+  Wt::Core::observing_ptr<DetectionLimitSimpleWindow> m_simpleMdaWindow;
+  Wt::Core::observing_ptr<DetectionLimitWindow> m_detectionLimitWindow;
 #endif
-  SimpleActivityCalcWindow *m_simpleActivityCalcWindow;
+  Wt::Core::observing_ptr<SimpleActivityCalcWindow> m_simpleActivityCalcWindow;
   
   std::set<int> m_excludedSamples;//these are samples that should not be displayed for the primary spectrum
   std::set<int> m_displayedSamples;
@@ -1667,44 +1668,44 @@ protected:
   //  nuclides, reactions or elements (ex "U235", "W", "Ge(n,n)") to see the
   //  reference photopeaks on the energy spectrum chart.
   ReferencePhotopeakDisplay *m_referencePhotopeakLines;
-  AuxWindow                 *m_referencePhotopeakLinesWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_referencePhotopeakLinesWindow;
   RefLineDynamic            *m_refLineDynamic;
 
-  HelpSystem::HelpWindow *m_helpWindow;
+  Wt::Core::observing_ptr<HelpSystem::HelpWindow> m_helpWindow;
   
   /** m_licenseWindow: pointer to window showing disclaimers, licenses, and
       other statements.  Will be nullptr if not showing.
    */
-  LicenseAndDisclaimersWindow *m_licenseWindow;
+  Wt::Core::observing_ptr<LicenseAndDisclaimersWindow> m_licenseWindow;
   
   //m_useInfoWindow: a pointer to the window initially shown when app starts up
   //  that allows you to select a previous work state or spectrum, or to watch
   //  the how-to movies.  Will be null if a window is currently not showing,
   //  and non-null if one is showing.  Is used to ensure only one window is open
   //  at a time.
-  UseInfoWindow *m_useInfoWindow;
+  Wt::Core::observing_ptr<UseInfoWindow> m_useInfoWindow;
   
   /** Used to make sure only one decay info window is shwoing, and also apply
    color changes when color theme is updated
    */
-  DecayWindow *m_decayInfoWindow;
+  Wt::Core::observing_ptr<DecayWindow> m_decayInfoWindow;
   
-  MakeFwhmForDrfWindow *m_addFwhmTool;
+  Wt::Core::observing_ptr<MakeFwhmForDrfWindow> m_addFwhmTool;
   
   //m_preserveCalibWindow: a pointer to the window that prompts the user if they
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
-  EnergyCalPreserveWindow *m_preserveCalibWindow;
+  Wt::Core::observing_ptr<EnergyCalPreserveWindow> m_preserveCalibWindow;
   
 #if( USE_SEARCH_MODE_3D_CHART )
   /** Pointer to window showing the Search Mode 3D data view. */
-  AuxWindow *m_3dViewWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_3dViewWindow;
 #endif
   
   /** Pointer to window created by the #showRiidResults function. */
-  SimpleDialog *m_riidDisplay;
+  Wt::Core::observing_ptr<SimpleDialog> m_riidDisplay;
   
-  DrfSelectWindow *m_drfSelectWindow;
+  Wt::Core::observing_ptr<DrfSelectWindow> m_drfSelectWindow;
   
   UndoRedoManager *m_undo;
   

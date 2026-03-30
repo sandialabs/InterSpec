@@ -152,12 +152,15 @@ protected:
  */
 class MakeFwhmForDrfWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too );
-  
   MakeFwhmForDrf *tool();
-  
+
 protected:
+  // Constructor is protected; use AuxWindow::make<MakeFwhmForDrfWindow>() to create.
+  MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too );
+
   MakeFwhmForDrf *m_tool;
 };//class MakeFwhmForDrfWindow
 

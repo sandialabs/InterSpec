@@ -47,8 +47,9 @@ namespace Wt
 
 class GammaCountDialog : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  GammaCountDialog( InterSpec *specViewer );
   virtual ~GammaCountDialog();
 
   //setEnergyRange(...): changes SpinBoxes, updates counts, and updates chart
@@ -74,6 +75,9 @@ public:
   std::string encodeStateToUrl() const;
   
 protected:
+  // Constructor is protected; use AuxWindow::make<GammaCountDialog>() to create.
+  GammaCountDialog( InterSpec *specViewer );
+
   void init();
   void emitFinished();
   void handleEnergyRangeChange();

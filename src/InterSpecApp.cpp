@@ -771,7 +771,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         if( promptLoad )
         {
           //Create a dialog asking if the user wants to pick up
-          AuxWindow *loadStateDialog = new AuxWindow( "Load previous state?", (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
+          AuxWindow *loadStateDialog = AuxWindow::make( "Load previous state?", (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
         
           WContainerWidget *dialogDiv = loadStateDialog->contents();
           
@@ -1300,10 +1300,11 @@ void InterSpecApp::notify( const Wt::WEvent& event )
     string msg = "There was an unexpected error, application state may be suspect: ";
     msg += e.what();
     svlog( msg, WarningWidget::WarningMsgHigh );
-    
+
     char message[512];
     snprintf( message, sizeof(message), "Uncaught exception in event loop: '%s'.", e.what() );
     Wt::log("error") << message;
+
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, message );
 #endif

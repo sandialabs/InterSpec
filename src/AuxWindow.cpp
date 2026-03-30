@@ -1418,16 +1418,31 @@ void AuxWindow::deleteAuxWindow( AuxWindow *window )
   if( !window )
     return;
 
-  // Wt 4: Must dismiss modal and hide the dialog first to clean up the dialog cover, then remove.
-  //  We always call setModal(false) if this was a modal dialog, even if already hidden,
-  //  because the Wt-dialogcover may still be present.
+  // In Wt 4, dialog lifecycle must be managed carefully:
+  //  1. Dismiss modal state so the dialog cover is properly updated
+  //  2. Hide the dialog through the proper WDialog path (which calls popDialog on the cover)
+  //  3. Remove from parent to destroy
+  //
+  // Note: this function is often called during a `finished()` signal handler of the window
+  //  being deleted (e.g., from the Close button). Destroying the window during its own signal
+  //  is generally safe in Wt 4 as long as the dialog cover is properly updated first.
+
   if( window->m_modalOrig )
     window->WDialog::setModal( false );
 
   if( !window->isHidden() )
+  {
+    // Use the AuxWindow::hide() path which calls WDialog::setHidden(true) to properly
+    //  trigger popDialog() on the DialogCover.
+    window->m_destructing = true;  // prevent emitReject() from firing finished() again
     window->WDialog::setHidden( true, WAnimation() );
+  }
 
-  window->removeFromParent();
+  // Use wApp->removeChild (not removeFromParent) because the factory
+  //  gives ownership to WApplication via addChild. removeFromParent goes
+  //  through domRoot_ which does not hold ownership for global widgets,
+  //  and would leak the object.
+  Wt::WApplication::instance()->removeChild( window );
 }//void deleteAuxWindow( AuxWindow *window )
 
 
@@ -1467,19 +1482,19 @@ void AuxWindow::show()
 {
     /* see if this brings welcome screen above hamburger? */
     doJavaScript( "Wt.WT.AuxWindowBringToFront('" + id() + "');" );
-    
+
     //Check original modal value, as modal doesn't work well with hide/show
-    if (m_modalOrig)
-        WDialog::setModal(true);
-  setHidden( false, WAnimation() );
+    if( m_modalOrig )
+      WDialog::setModal( true );
+    setHidden( false, WAnimation() );
 }//void show()
 
 
 void AuxWindow::hide()
 {
     //Check original modal value, as modal doesn't work well with hide/show
-    if (m_modalOrig)
-        WDialog::setModal(false);
+    if( m_modalOrig )
+      WDialog::setModal( false );
 
     setHidden( true, WAnimation() );
 }//void hide()
@@ -1516,43 +1531,44 @@ void AuxWindow::setHidden( bool hide, const WAnimation &/*animation*/ ) //TODO: 
   }//if( m_destructing )
 
   const bool changingState = (m_auxIsHidden != hide);
-  
+
   m_auxIsHidden = hide;
-  
+
   if( m_footer )
     m_footer->setHidden(hide); //Is this really necassary?
 
-//  WStringStream ss;
-//	ss << WT_CLASS << ".animateDisplay('" << id()
-//  << "'," << animation_.effects().value()
-//  << "," << animation_.timingFunction()
-//  << "," << animation_.duration()
-//  << ",'" << element.getProperty(PropertyStyleDisplay)
-//  << "');";
-//	element.callJavaScript(ss.str());
-  
   if( hide )
   {
     m_hideSlot->exec( "null", "{quietly: true}" );
-    
+
     if( changingState && m_escapeIsReject )
     {
       m_escapeConnection1.disconnect();
       m_escapeConnection2.disconnect();
     }//if( m_escapeIsReject )
-    
+
+    // In Wt 4, we must call WDialog::setHidden(true) so that the DialogCover's popDialog()
+    //  is called, which properly removes this dialog from the cover's stack and hides the
+    //  Wt-dialogcover overlay if no more modal dialogs remain.
+    //  Without this call, the dialog cover persists and blocks all user interaction.
+    WDialog::setHidden( true, WAnimation() );
+
     emitReject();
   }else
   {
+    // In Wt 4, call WDialog::setHidden(false) so the DialogCover's pushDialog() is called,
+    //  which properly manages the dialog stack and shows the cover for modal dialogs.
+    WDialog::setHidden( false, WAnimation() );
+
     m_showSlot->exec( "null", "{quietly: true}" );
-    
+
     if( changingState && m_escapeIsReject )
     {
       WWidget *impw = implementation();
       WTemplate *impl = dynamic_cast<WTemplate *>( impw );
       if( impl )
         m_escapeConnection1 = impl->escapePressed().connect(this, &AuxWindow::hide);
-      
+
       WApplication *app = WApplication::instance();
       if( app )
         m_escapeConnection2 = app->globalEscapePressed().connect(this, &AuxWindow::hide);
@@ -1643,39 +1659,3 @@ void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
   image->setAlternateText("Help");
   image->clicked().connect( [page](){ HelpSystem::createHelpWindow( page ); } );
 }
-//
-//void AuxWindow::openHelpWindow(std::string page,AuxWindow *parent)
-//{
-//  AuxWindow* m_helpWindow = new AuxWindow("Help", true);
-//  m_helpWindow->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, m_helpWindow ) );
-//  
-//  WBorderLayout* layout = new Wt::WBorderLayout();
-//  m_helpWindow->contents()->setLayout(layout);
-//
-//  WContainerWidget* m_helpWindowContent= new WContainerWidget();
-//  m_helpWindowContent->setOverflow( Overflow::Auto );
-//  
-//  layout->addWidget(m_helpWindowContent,Wt::WBorderLayout::Center);
-//  layout->setContentsMargins(0, 0, 0, 0);
-//  
-//  m_helpWindow->footer()->setStyleClass("modal-footer");
-//  WPushButton *closeButton = new WPushButton( "Close", m_helpWindow->footer() );
-//  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, m_helpWindow ) );
-//  closeButton->setFloatSide(Right);
-//  
-//  new WTemplate( WString::tr(page), m_helpWindowContent);
-// 
-//  m_helpWindow->footer()->setHeight(WLength(50,WLength::Unit::Pixel));
-//  m_helpWindow->rejectWhenEscapePressed();
-//  m_helpWindow->setMinimumSize( WLength(300, WLength::Unit::Pixel), WLength(300,WLength::Unit::Pixel));
-//  m_helpWindow->resize( WLength(500, WLength::Unit::Pixel), parent->height());
-//  m_helpWindow->setResizable( true );
-//  m_helpWindow->show();
-//  m_helpWindow->centerWindow();
-//
-//  //TODO: don't know why repositioning the parent to the top left
-//  //then reposition the help window with positionAt() doesn't work
-//  //
-//  //  parent->repositionWindow(50,50);
-//  //  m_helpWindow->positionAt(parent,Wt::Horizontal);
-//}

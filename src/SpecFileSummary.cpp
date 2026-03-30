@@ -606,7 +606,7 @@ void SpecFileSummary::showGoogleMap()
     return;
  
 
-  AuxWindow *window = new AuxWindow( "Google Map" );
+  AuxWindow *window = AuxWindow::make( "Google Map" );
   
   const int w = static_cast<int>(0.66*m_specViewer->renderedWidth());
   const int h = static_cast<int>(0.8*m_specViewer->renderedHeight());

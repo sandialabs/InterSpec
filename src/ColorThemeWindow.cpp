@@ -407,7 +407,7 @@ void ColorThemeWindow::removeThemeCallback()
   const WString name = item->text();
   const long long dbIndex = item->theme()->dbIndex;
   
-  AuxWindow *conf = new AuxWindow( WString::tr("ctw-delete-confirm-title").arg(name),
+  AuxWindow *conf = AuxWindow::make( WString::tr("ctw-delete-confirm-title").arg(name),
                                   AuxWindowProperties::DisableCollapse
                                   | AuxWindowProperties::IsModal
                                   | AuxWindowProperties::TabletNotFullScreen );
@@ -470,7 +470,7 @@ void ColorThemeWindow::uploadThemeCallback()
   //  spaghetti (e.g., get rid of nested lambdas, etc)
 
   //1) Make a dialog to allow user to select a file.
-  AuxWindow *window = new AuxWindow( WString::tr("ctw-upload-title"),
+  AuxWindow *window = AuxWindow::make( WString::tr("ctw-upload-title"),
                                     (AuxWindowProperties::IsModal
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::DisableCollapse
@@ -591,7 +591,7 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
   }
   
   WString content = WString::tr("ctw-save-changes-text").arg(m_edit->m_currentTheme->theme_name);
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("ctw-save-changes-title"), content );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ctw-save-changes-title"), content );
   
   
   WPushButton *discard = dialog->addButton( WString::tr("ctw-discard-btn") );

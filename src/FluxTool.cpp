@@ -1204,7 +1204,7 @@ void FluxToolWidget::init()
   WRadioButton *standardInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-standard") );
   WRadioButton *moreInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-more") );
 
-  m_displayLevelButtons = buttonBox->addChild( std::make_unique<WButtonGroup>() );
+  m_displayLevelButtons = std::make_shared<WButtonGroup>();
   m_displayLevelButtons->addButton( simpleInfo, static_cast<int>(DisplayInfoLevel::Simple) );
   m_displayLevelButtons->addButton( standardInfo, static_cast<int>(DisplayInfoLevel::Normal) );
   m_displayLevelButtons->addButton( moreInfo, static_cast<int>(DisplayInfoLevel::Extended) );

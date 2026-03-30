@@ -33,6 +33,7 @@
 #include <Wt/WDialog.h>
 #include <Wt/WContainerWidget.h>
 #include <Wt/WAbstractItemModel.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 // Forward Declarations
 class PeakDef;
@@ -75,7 +76,7 @@ protected:
   void updateCoefDisplay();
   
   EnergyCalTool *m_calibrator;
-  AuxWindow *m_parent;
+  Wt::Core::observing_ptr<AuxWindow> m_parent;
   std::shared_ptr<EnergyCalMultiFileModel> m_model;
   std::vector<Wt::WCheckBox *> m_fitFor;
   std::vector<Wt::WLineEdit *> m_coefvals;

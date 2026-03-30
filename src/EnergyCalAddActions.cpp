@@ -79,7 +79,7 @@ class ConvertCalTypeTool : public WContainerWidget
   AuxWindow * const m_parent;
   
   /** Will be non-nullptr only if m_sourceType==SpecUtils::EnergyCalType::LowerChannelEdge: */
-  WButtonGroup *m_group;
+  std::shared_ptr<WButtonGroup> m_group;
   WText *m_fitCoefTxt;
   
   WPushButton *m_cancel;
@@ -360,7 +360,7 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
       msg->addStyleClass( "ConvertToMsg" );
       msg->setInline( false );
 
-      m_group = addChild( std::make_unique<WButtonGroup>() );
+      m_group = std::make_shared<WButtonGroup>();
       WGroupBox *box = addNew<WGroupBox>();
 
       WRadioButton *btn = box->addNew<WRadioButton>( WString::tr("ecaa-linearize-rebin-counts") );

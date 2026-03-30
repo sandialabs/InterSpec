@@ -25,8 +25,11 @@
 
 #include "InterSpec_config.h"
 
+#include <memory>
+
 #include <Wt/WDialog.h>
 #include <Wt/WString.h>
+#include <Wt/WApplication.h>
 
 namespace Wt
 {
@@ -58,9 +61,19 @@ public:
   };//enum SimpleDialogProperties
 
 
-  SimpleDialog();
-  SimpleDialog( const Wt::WString &title );
-  SimpleDialog( const Wt::WString &title, const Wt::WString &content );
+  /** Create a SimpleDialog (or derived class) with proper Wt4 ownership.
+
+   The created dialog is owned by the WApplication instance via addChild().
+   The dialog will auto-delete when the user clicks a button or the dialog
+   is otherwise finished.
+  */
+  template<typename T = SimpleDialog, typename... Args>
+  static T *make( Args&&... args )
+  {
+    std::unique_ptr<T> ptr( new T( std::forward<Args>(args)... ) );
+    return Wt::WApplication::instance()->addChild( std::move( ptr ) );
+  }
+
   ~SimpleDialog();
   
   /** See notes for \c m_multipleBringToFront, but basically this is an over-ride to avoid
@@ -85,10 +98,17 @@ public:
   virtual void rejectWhenEscapePressed( bool enable = true );
   
 protected:
+  /** Constructors are protected to enforce use of the SimpleDialog::make() factory,
+   which ensures proper Wt4 widget ownership via WApplication::addChild().
+  */
+  SimpleDialog();
+  SimpleDialog( const Wt::WString &title );
+  SimpleDialog( const Wt::WString &title, const Wt::WString &content );
+
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
-  
+
   void init( const Wt::WString &title, const Wt::WString &content );
-  
+
 private:
   void startDeleteSelf();
   void deleteSelf();

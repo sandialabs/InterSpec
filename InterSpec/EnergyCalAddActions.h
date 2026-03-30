@@ -48,14 +48,17 @@ enum class MoreActionsIndex : int;
  */
 class EnergyCalAddActionsWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  EnergyCalAddActionsWindow( const MoreActionsIndex actionType,
-                             const std::vector<MeasToApplyCoefChangeTo> &measToChange,
-                             EnergyCalTool *calibrator );
-  
   virtual ~EnergyCalAddActionsWindow();
   
 protected:
+  // Constructor is protected; use AuxWindow::make<EnergyCalAddActionsWindow>() to create.
+  EnergyCalAddActionsWindow( const MoreActionsIndex actionType,
+                             const std::vector<MeasToApplyCoefChangeTo> &measToChange,
+                             EnergyCalTool *calibrator );
+
   const MoreActionsIndex m_actionType;
   std::shared_ptr<std::vector<MeasToApplyCoefChangeTo>> m_measToChange;
   EnergyCalTool *m_calibrator;

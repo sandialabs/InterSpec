@@ -323,7 +323,7 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     auto disp_owner = std::make_unique<RelActAutoGui>( viewer );
     disp = disp_owner.get();
 
-    window = new AuxWindow( WString::tr("raag-window-title"),
+    window = AuxWindow::make( WString::tr("raag-window-title"),
                             (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
@@ -3680,7 +3680,7 @@ void RelActAutoGui::handleSortEnergyRanges()
 
 void RelActAutoGui::handleClearAllEnergyRanges()
 {
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-clear-energy-ranges-title"), "&nbsp;" );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-clear-energy-ranges-title"), "&nbsp;" );
   WPushButton *yes = dialog->addButton( WString::tr("Yes") );
   dialog->addButton( WString::tr("No") );
   yes->clicked().connect( this, &RelActAutoGui::removeAllEnergyRanges );
@@ -3791,7 +3791,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   if( !solution || (solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
   {
     // TODO: just hide/disable the button untill we have a valid solution
-    SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-perform-action"),
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-perform-action"),
                                             "Sorry, a valid solution is needed before an energy range can be split." );
     dialog->addButton( WString::tr("Continue") );
     
@@ -3800,7 +3800,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   
   if( !energy_range || energy_range->isEmpty() )
   {
-    SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-perform-action"),
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-perform-action"),
                                             "Sorry, energy range is currently not valid." );
     dialog->addButton( WString::tr("Continue") );
     return;
@@ -3837,7 +3837,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     const WString msg = WString::tr("raag-energy-range-no-contributions")
                       .arg(formatNumber(lower_energy, 1))
                       .arg(formatNumber(upper_energy, 1));
-    SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-perform-action"), msg );
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-perform-action"), msg );
     dialog->addButton( WString::tr("Continue") );
     return;
   }//if( to_ranges.empty() )
@@ -3849,7 +3849,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
                     .arg(formatNumber(upper_energy, 1))
                     .arg(static_cast<int>(to_ranges.size()));
   
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-divide-energy-range-title"), msg );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-divide-energy-range-title"), msg );
   WPushButton *yes_button = dialog->addButton( WString::tr("Yes") );
   dialog->addButton( WString::tr("No") );
   
@@ -3860,7 +3860,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     const auto pos = std::find( begin(kids), end(kids), w );
     if( pos == end(kids) )
     {
-      SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-error"), WString::tr("raag-unexpected-error-finding-original")
+      SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-error"), WString::tr("raag-unexpected-error-finding-original")
                                               + " energy range - sorry, cant complete operation." );
       dialog->addButton( WString::tr("Continue") );
       return;
@@ -4162,7 +4162,7 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
                       .arg(background_part)
                       .arg(files_part);
   
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-apply-fit-energy-cal-title"), msg );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-apply-fit-energy-cal-title"), msg );
   WPushButton *yes = dialog->addButton( WString::tr("Yes") );
   dialog->addButton( WString::tr("No") );
   yes->clicked().connect( this, &RelActAutoGui::applyFitEnergyCalToSpecFile );
@@ -4308,7 +4308,7 @@ void RelActAutoGui::setPeaksToForeground()
   assert( m_solution && !m_solution->m_fit_peaks_in_spectrums_cal.empty() );
   if( !m_solution || m_solution->m_fit_peaks_in_spectrums_cal.empty() )
   {
-    SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-continue"), WString::tr("raag-no-peaks-in-solution") );
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-continue"), WString::tr("raag-no-peaks-in-solution") );
     dialog->addButton( WString::tr("Close") );
     return;
   }//if( no solution peaks )
@@ -4318,7 +4318,7 @@ void RelActAutoGui::setPeaksToForeground()
   if( !peak_model )
     return;
   
-  SimpleDialog *dialog = new SimpleDialog( "Use peaks with foreground?", "" );
+  SimpleDialog *dialog = SimpleDialog::make( "Use peaks with foreground?", "" );
   dialog->addStyleClass( "SetToPeaksDialog" );
   WText *message = dialog->contents()->addNew<WText>( WString::tr("raag-peaks-uncert-based-on-fit") );
   message->addStyleClass( "content" );
@@ -4942,7 +4942,7 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 
 void RelActAutoGui::handleRequestToUploadXmlConfig()
 {
-  SimpleDialog *dialog = new SimpleDialog();
+  SimpleDialog *dialog = SimpleDialog::make();
   WPushButton *closeButton = dialog->addButton( WString::tr("Cancel") );
   (void)closeButton;
   dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
@@ -5020,7 +5020,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
   
   /*
    //In case we want to use AuxWindow instead of SimpleDialog
-   AuxWindow *window = new AuxWindow( "Import CALp file",
+   AuxWindow *window = AuxWindow::make( "Import CALp file",
    (AuxWindowProperties::IsModal
    | AuxWindowProperties::PhoneNotFullScreen
    | AuxWindowProperties::DisableCollapse

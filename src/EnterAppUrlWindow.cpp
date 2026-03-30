@@ -70,7 +70,7 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   // Wt4_TODO: SimpleDialog self-deletes via `delete this`; in Wt4 dialogs should be owned via
   //            addChild(std::make_unique<SimpleDialog>(...)).  This requires redesigning
   //            SimpleDialog's lifetime management across the whole codebase.
-  SimpleDialog *window = new SimpleDialog( "Enter URL", "" );
+  SimpleDialog *window = SimpleDialog::make( "Enter URL", "" );
   
   WTextArea *text = window->contents()->addNew<WTextArea>();
   text->setObjectName( "txtarea" );
@@ -224,7 +224,7 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
     }catch( std::exception &e )
     {
       // Wt4_TODO: see note above about SimpleDialog ownership
-      SimpleDialog *errdialog = new SimpleDialog( "Error with entered URL", e.what() );
+      SimpleDialog *errdialog = SimpleDialog::make( "Error with entered URL", e.what() );
       errdialog->addButton( "Okay" );
     }
   }) );

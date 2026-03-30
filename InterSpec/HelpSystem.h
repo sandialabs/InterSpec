@@ -51,27 +51,31 @@ namespace HelpSystem
   
   class HelpWindow: public AuxWindow
   {
+    friend class AuxWindow;
+
   protected:
+    // Constructor is protected; use AuxWindow::make<HelpWindow>() to create.
+    HelpWindow(std::string preselect="");
+
     /** Store a map from the ID of topic, to the tree node for that topic. */
     //ToDo: a Boost.BiMap would be a lot better fit
     std::map<std::string, Wt::WTreeNode*> m_treeLookup;
-    
+
     /** Store a map from the ID of topic, to the name of XML file that holds
         its info.
      */
     std::map<std::string, std::string> m_contentLookup;
-    
+
     Wt::WContainerWidget* m_helpWindowContent;
     Wt::WTree* m_tree;
     Wt::WLineEdit *m_searchText;
     std::string m_displayedTopicName;
-    
+
     std::string m_helpLookupTable;
-    
+
     void setPathVisible( Wt::WTreeNode *parent );
-    
+
   public:
-    HelpWindow(std::string preselect="");
     ~HelpWindow();
     void selectHelpToShow();
     std::unique_ptr<Wt::WTemplate> getContentToDisplay( const std::string &tag ) const;

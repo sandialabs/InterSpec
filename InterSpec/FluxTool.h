@@ -72,9 +72,9 @@ namespace FluxToolImp
 
 class FluxToolWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  FluxToolWindow( InterSpec *viewer );
-  
   virtual ~FluxToolWindow();
   
   /** See #FluxToolWidget::handleAppUrl */
@@ -84,6 +84,9 @@ public:
   std::string encodeStateToUrl() const;
   
 protected:
+  // Constructor is protected; use AuxWindow::make<FluxToolWindow>() to create.
+  FluxToolWindow( InterSpec *viewer );
+
   FluxToolWidget *m_fluxTool;
   
   friend class FluxToolWidget;
@@ -195,7 +198,7 @@ protected:
   
   /** What columns to show. */
   DisplayInfoLevel m_displayInfoLevel;
-  Wt::WButtonGroup *m_displayLevelButtons;
+  std::shared_ptr<Wt::WButtonGroup> m_displayLevelButtons;
   
   Wt::Signal<> m_tableUpdated;
   

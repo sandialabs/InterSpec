@@ -47,6 +47,7 @@ class Shielding3DView;
 // Dialog class for displaying shielding diagrams with 2D/3D view switching
 class ShieldingDiagramDialog : public SimpleDialog
 {
+  friend class SimpleDialog;
 public:
   // Static factory method to create a dialog with 2D/3D view switcher
   static ShieldingDiagramDialog *createShieldingDiagram(
@@ -67,8 +68,8 @@ public:
                    double detectorDistance,
                    double detectorDiameter );
   
-private:
-  // Private constructor - use createShieldingDiagram() instead
+protected:
+  // Constructor is protected; use SimpleDialog::make<ShieldingDiagramDialog>() to create.
   ShieldingDiagramDialog(
                          const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                          const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
@@ -76,7 +77,8 @@ private:
                          double detectorDistance,
                          double detectorDiameter
                          );
-  
+
+private:
   void handleViewTypeToggle();
   
   Shielding2DView *m_2DView;

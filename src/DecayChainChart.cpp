@@ -317,12 +317,12 @@ DecayChainChart::DecayChainChart()
 }//DecayChainChart constructor
 
 
-pair<AuxWindow *, DecayChainChart *>
+pair<Wt::Core::observing_ptr<AuxWindow>, DecayChainChart *>
   DecayChainChart::show_decay_chart_window( const SandiaDecay::Nuclide *const nuc,
          const DecayChainChart::DecayChainType type )
 {
   if( !nuc )
-    return pair<AuxWindow *, DecayChainChart *>( nullptr, nullptr );
+    return { nullptr, nullptr };
 
   InterSpec::instance()->useMessageResourceBundle( "DecayActivity" );
   
@@ -338,7 +338,7 @@ pair<AuxWindow *, DecayChainChart *>
       break;
   }//switch( type )
   
-  AuxWindow *window = new AuxWindow( title, (AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) );
+  AuxWindow *window = AuxWindow::make( title, (AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) );
 
   WPushButton *close = window->addCloseButtonToFooter();
   close->clicked().connect( [window](){ window->hide(); } );
@@ -723,7 +723,7 @@ void DecayChainChart::showDecayParticleInfo( const std::string &csvIsotopeNames 
   
   deleteMoreInfoDialog();
   
-  m_moreInfoDialog = new AuxWindow( WString::tr("dcc-particle-window-title") );
+  m_moreInfoDialog = AuxWindow::make( WString::tr("dcc-particle-window-title") );
   m_moreInfoDialog->contents()->setMinimumSize(250, 80);
   m_moreInfoDialog->contents()->setMaximumSize(330, 400);
   m_moreInfoDialog->contents()->setOverflow(Wt::Overflow::Auto, Wt::Orientation::Vertical);
@@ -802,7 +802,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   | AuxWindowProperties::SetCloseable
   | AuxWindowProperties::EnableResize;
   
-  m_moreInfoDialog = new AuxWindow( WString::tr("dcc-decay-through-window-title").arg(nuclide->symbol), windowProp );
+  m_moreInfoDialog = AuxWindow::make( WString::tr("dcc-decay-through-window-title").arg(nuclide->symbol), windowProp );
   DecayChainChart *w = m_moreInfoDialog->stretcher()->addWidget( std::make_unique<DecayChainChart>(), 0, 0 );
   w->setNuclide( nuclide, m_useCurie, DecayChainChart::DecayChainType::DecayThrough );
   
@@ -823,7 +823,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
 void DecayChainChart::deleteMoreInfoDialog()
 {
   if( m_moreInfoDialog )
-    AuxWindow::deleteAuxWindow( m_moreInfoDialog );
+    AuxWindow::deleteAuxWindow( m_moreInfoDialog.get() );
   m_moreInfoDialog = nullptr;
 }//void deleteMoreInfoDialog()
 

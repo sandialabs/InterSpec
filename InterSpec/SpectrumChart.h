@@ -38,6 +38,7 @@
 #include <Wt/WAnimation.h>
 #include <Wt/WPaintDevice.h>
 #include <Wt/Chart/WCartesianChart.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpectrumDataModel.h"
@@ -482,7 +483,7 @@ protected:
   };//enum LegendType
   
   //m_legend: valid pointer only when m_legendType==FloatingLegend
-  AuxWindow *m_legend;
+  Wt::Core::observing_ptr<AuxWindow> m_legend;
   
   //m_legendType: indicates the type of legend that should be rendered.  Decided
   //  in enableLegend() based on the device type.

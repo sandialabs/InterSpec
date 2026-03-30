@@ -33,6 +33,7 @@
 #include <Wt/WColor.h>
 #include <Wt/WContainerWidget.h>
 #include <Wt/WAbstractItemModel.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -466,7 +467,7 @@ protected:
   //Wt::WPushButton *m_fitPeaks;
   
   Wt::WSplitButton *m_fitSourcesBtn;
-  SimpleDialog *m_fitSourcesAdvancedDialog;
+  Wt::Core::observing_ptr<SimpleDialog> m_fitSourcesAdvancedDialog;
 
   Wt::WPushButton *m_options_icon;
   Wt::WContainerWidget *m_options;

@@ -147,15 +147,18 @@ struct SimpleActivityCalcResult
 
 class SimpleActivityCalcWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  SimpleActivityCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec* viewer );
-  
   virtual ~SimpleActivityCalcWindow();
 
   SimpleActivityCalc *tool();
-  
+
 protected:
+  // Constructor is protected; use AuxWindow::make<SimpleActivityCalcWindow>() to create.
+  SimpleActivityCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
+                  InterSpec* viewer );
+
   SimpleActivityCalc *m_tool;
 };
 

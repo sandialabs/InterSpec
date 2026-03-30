@@ -61,6 +61,8 @@ namespace Wt
 
 class SpecFileSummary : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
   enum AllowModifyStatus { kAllowModify, kDontAllowModify };
 
@@ -86,10 +88,12 @@ public:
   };//enum EditableFields
 
 public:
-  SpecFileSummary( const SpecUtils::SpectrumType spec_type, InterSpec *specViewer );
   virtual ~SpecFileSummary();
 
 protected:
+  // Constructor is protected; use AuxWindow::make<SpecFileSummary>() to create.
+  SpecFileSummary( const SpecUtils::SpectrumType spec_type, InterSpec *specViewer );
+
   void init();
 
   void showRiidAnalysis();

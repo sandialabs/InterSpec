@@ -190,7 +190,7 @@ RefSpectraDialog *RefSpectraDialog::createDialog( const RefSpectraInitialBehavio
 {
   //WString title = WString::tr("rs-dialog-title");
   WString title;
-  RefSpectraDialog *dialog = new RefSpectraDialog( title );
+  RefSpectraDialog *dialog = SimpleDialog::make<RefSpectraDialog>( title );
   dialog->m_widget->setLoadSpectrumType( type );
 
   switch( initialBehaviour )
@@ -542,7 +542,7 @@ void RefSpectraWidget::setupUI()
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
 void RefSpectraWidget::startAddDirectory()
 {
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("rs-add-dir-dialog-title") );
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("rs-add-dir-dialog-title") );
   WPushButton *okBtn = dialog->addButton( WString::tr("Save") );
   WPushButton *cancelBtn = dialog->addButton( WString::tr("Cancel") );
 

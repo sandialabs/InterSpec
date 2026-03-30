@@ -31,6 +31,7 @@
 #include <vector>
 
 #include <Wt/WTemplate.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/SimpleDialog.h"
 
@@ -93,15 +94,14 @@ protected:
   bool m_displayTitle;
   Wt::Signal<const SandiaDecay::Nuclide *> m_nuclideChanged;
   
-  AuxWindow *m_decayWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_decayWindow;
 };//class MoreNuclideInfoDisplay
 
 
 class MoreNuclideInfoWindow : public SimpleDialog
 {
+  friend class SimpleDialog;
 public:
-  MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const nuc );
-
   void nuclideUpdated( const SandiaDecay::Nuclide *nuc );
   
   
@@ -109,7 +109,11 @@ public:
   const SandiaDecay::Nuclide *originalNuclide() const;
   
   MoreNuclideInfoDisplay *display();
+
 protected:
+  // Constructor is protected; use SimpleDialog::make<MoreNuclideInfoWindow>() to create.
+  MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const nuc );
+
   MoreNuclideInfoDisplay *m_display;
   
   const SandiaDecay::Nuclide *m_orig_nuc;

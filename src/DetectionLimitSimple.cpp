@@ -114,10 +114,10 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
 
   m_tool = contents()->addNew<DetectionLimitSimple>( materialSuggestion, viewer );
   m_tool->setHeight( WLength(100,WLength::Unit::Percentage) );
-  
+
   AuxWindow::addHelpInFooter( footer(), "simple-mda-dialog" );
-  
-  
+
+
 #if( USE_QR_CODES )
   WPushButton *qr_btn = footer()->addNew<WPushButton>();
   qr_btn->setText( WString::tr("QR Code") );
@@ -137,10 +137,9 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
   }) );
 #endif //USE_QR_CODES
 
-  
   WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
   closeButton->clicked().connect( this, &AuxWindow::hide );
-  
+
   show();
   
   // If we are loading this widget, as we  are creating the InterSpec session,
@@ -518,7 +517,7 @@ void DetectionLimitSimple::init()
 
   container->addNew<WLabel>( WString::tr("dls-calc-method") );
 
-  m_methodGroup = container->addChild( std::make_unique<WButtonGroup>() );
+  m_methodGroup = std::make_shared<WButtonGroup>();
   WRadioButton *currieBtn = container->addNew<WRadioButton>( WString::tr("dls-currie-tab-title") );
   m_methodGroup->addButton( currieBtn, static_cast<int>(MethodIds::Currie) );
 
@@ -1638,7 +1637,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   snprintf( buffer, sizeof(buffer), "%s%.2f keV {1}",
            (m_currentNuclide ? (m_currentNuclide->symbol + " ").c_str() : ""), energy );
   
-  SimpleDialog *dialog = new SimpleDialog( WString(buffer).arg(WString::tr("dls-Info")) );
+  SimpleDialog *dialog = SimpleDialog::make( WString(buffer).arg(WString::tr("dls-Info")) );
   dialog->addButton( WString::tr("Close") );
   
   WContainerWidget *contents = dialog->contents()->addNew<WContainerWidget>();
@@ -1933,14 +1932,14 @@ void DetectionLimitSimple::createMoreInfoWindow()
   }catch( std::exception &e )
   {
     assert( !m_moreInfoWindow );
-    m_moreInfoWindow = new SimpleDialog( WString::tr("dls-err-more-info-title"),
+    m_moreInfoWindow = SimpleDialog::make( WString::tr("dls-err-more-info-title"),
                                             WString::tr("dls-err-more-info-content").arg(e.what()) );
     m_moreInfoWindow->addButton( WString::tr("Close") );
   }//try / catch
   
   assert( m_moreInfoWindow );
   if( m_moreInfoWindow )
-    m_moreInfoWindow->finished().connect( [this, win=m_moreInfoWindow](){ handleMoreInfoWindowClose( win ); } );
+    m_moreInfoWindow->finished().connect( [this, win=m_moreInfoWindow.get()](){ handleMoreInfoWindowClose( win ); } );
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -1964,8 +1963,8 @@ void DetectionLimitSimple::createMoreInfoWindow()
 
 void DetectionLimitSimple::handleMoreInfoWindowClose( SimpleDialog *dialog )
 {
-  assert( dialog == m_moreInfoWindow );
-  SimpleDialog *current = m_moreInfoWindow;
+  assert( dialog == m_moreInfoWindow.get() );
+  SimpleDialog *current = m_moreInfoWindow.get();
   m_moreInfoWindow = nullptr;
   
   if( current && (current == dialog) )
@@ -1993,7 +1992,7 @@ void DetectionLimitSimple::handleMoreInfoWindowClose( SimpleDialog *dialog )
 
 void DetectionLimitSimple::programmaticallyCloseMoreInfoWindow()
 {
-  SimpleDialog *dialog = m_moreInfoWindow;
+  SimpleDialog *dialog = m_moreInfoWindow.get();
   m_moreInfoWindow = nullptr;
   
   if( dialog )

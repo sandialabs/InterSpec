@@ -101,13 +101,16 @@ namespace FitPeaksForNuclidesGui
 /** Advanced dialog for fitting peaks for nuclides: options, live preview, status. */
 class FitPeaksAdvancedDialog : public SimpleDialog
 {
+  friend class SimpleDialog;
 public:
-  FitPeaksAdvancedDialog( const Wt::WString &title );
   virtual ~FitPeaksAdvancedDialog();
 
   FitPeaksAdvancedWidget *widget() { return m_widget; }
 
 protected:
+  // Constructor is protected; use SimpleDialog::make<FitPeaksAdvancedDialog>() to create.
+  FitPeaksAdvancedDialog( const Wt::WString &title );
+
 
 private:
   void onAcceptClicked();

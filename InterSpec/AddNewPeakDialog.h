@@ -60,6 +60,8 @@ class NativeFloatSpinBox;
  */
 class AddNewPeakDialog : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
   static const float m_minfwhm;// = 0.05f;
   static const float m_maxfwhm;// = 450.0f;  //reasonable range of peak widths
@@ -100,9 +102,6 @@ protected:
   Wt::WText *m_chart;
   
 public:
-  
-  AddNewPeakDialog( const float initialEnergy, const std::string &ref_line_hint );
-  
   /** Estimates the peak FWHM to initially use for an energy.
    
    To get the FWHM:
@@ -115,6 +114,9 @@ public:
   float estimateFWHM( const float energy );
   
 protected:
+  // Constructor is protected; use AuxWindow::make<AddNewPeakDialog>() to create.
+  AddNewPeakDialog( const float initialEnergy, const std::string &ref_line_hint );
+
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   void updateCandidatePeakPreview();

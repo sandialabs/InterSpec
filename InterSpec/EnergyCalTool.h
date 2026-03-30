@@ -31,6 +31,7 @@
 #include <memory>
 
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -411,12 +412,12 @@ protected:
   time_t m_lastGraphicalRecal;  // \TODO: switch this to std::chrono::timepoint
   int m_lastGraphicalRecalType;
   float m_lastGraphicalRecalEnergy;
-  EnergyCalGraphicalConfirm *m_graphicalRecal;
+  Wt::Core::observing_ptr<EnergyCalGraphicalConfirm> m_graphicalRecal;
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];
   
-  EnergyCalAddActionsWindow *m_addActionWindow;
+  Wt::Core::observing_ptr<EnergyCalAddActionsWindow> m_addActionWindow;
   
   /*
    We could hook up to SpecMeas::aboutToBeDeleted() to know whene file is about to go-away, but this

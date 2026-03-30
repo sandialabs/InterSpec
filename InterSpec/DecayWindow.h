@@ -32,8 +32,9 @@ class DecayActivityDiv;
 
 class DecayWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  DecayWindow( InterSpec *viewer );
   virtual ~DecayWindow();
   
   void clearAllNuclides();
@@ -47,6 +48,9 @@ public:
   std::string encodeStateToUrl();
   
  protected:
+  // Constructor is protected; use AuxWindow::make<DecayWindow>() to create.
+  DecayWindow( InterSpec *viewer );
+
   DecayActivityDiv *m_activityDiv;
 };//class DecayWindow
 

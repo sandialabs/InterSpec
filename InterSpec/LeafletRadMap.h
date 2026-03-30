@@ -176,13 +176,18 @@ protected:
 /** This class creates a popup window to display the LeafletRadMap widget. */
 class LeafletRadMapWindow : public AuxWindow
 {
+  friend class AuxWindow;
+
 public:
-  LeafletRadMapWindow();
   virtual ~LeafletRadMapWindow();
 
   LeafletRadMap *map();
 
 protected:
+  // Constructor is protected; use AuxWindow::make<LeafletRadMapWindow>() to create.
+  LeafletRadMapWindow();
+
+
   void handleTileLoadFailed();
 
   LeafletRadMap *m_map;

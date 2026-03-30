@@ -42,6 +42,7 @@
 #include <Wt/WContainerWidget.h>
 #include <Wt/Dbo/SqlConnection.h>
 #include <Wt/WAbstractItemModel.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/SpecMeas.h"
@@ -505,7 +506,7 @@ private:
   void closeNonSpecFileDialog();
   
 protected:
-  AuxWindow *m_spectrumManagerWindow;
+  Wt::Core::observing_ptr<AuxWindow> m_spectrumManagerWindow;
   RowStretchTreeView    *m_treeView;
   std::shared_ptr<SpectraFileModel> m_fileModel;
   Wt::WFileUpload  *m_fileUpload;
@@ -535,7 +536,7 @@ protected:
   FileDragUploadResource *m_batchDragNDrop;
 #endif
   
-  SimpleDialog *m_multiUrlSpectrumDialog;
+  Wt::Core::observing_ptr<SimpleDialog> m_multiUrlSpectrumDialog;
   
   //m_sql same as m_viewer->sql();
   std::shared_ptr<DataBaseUtils::DbSession> m_sql;
@@ -544,14 +545,14 @@ protected:
   std::shared_ptr<bool> m_destructed;
   
   /** Dialog shown when user loads a file that has been previously either explicitly saved state, or automatically saved. */
-  AuxWindow *m_previousStatesDialog;
+  Wt::Core::observing_ptr<AuxWindow> m_previousStatesDialog;
   
   /** Dialog created when a file is uploading, from `handleDataRecievedStatus()`, letting the user know that something is going on.
    On the client-side there is an upload status that is shown, but for large files the upload status in JS can be significantly off from what
    the server is seeing, leading to a potentially long gap between the client-side status, and when the file actually finishes uploading and
    is being parsed (which another dialog will be shown for parsing large files) - so this dialog covers this time gap to keep the user informed.
    */
-  SimpleDialog *m_processingUploadDialog;
+  Wt::Core::observing_ptr<SimpleDialog> m_processingUploadDialog;
   
   /** Timer used to make sure the dialog is destroyed, even if upload stalls-out; reset in every call to `handleDataRecievedStatus()`,
    with a timeout of 30 seconds.
@@ -563,7 +564,7 @@ protected:
   std::unique_ptr<boost::asio::deadline_timer> m_processingUploadTimer;
 
   /** Dialog created when a non-spectrum file is dropped on the app. */
-  SimpleDialog *m_nonSpecFileDialog;
+  Wt::Core::observing_ptr<SimpleDialog> m_nonSpecFileDialog;
 
 #if( USE_BATCH_GUI_TOOLS )
   /** Dialog created when a batch of files is dropped on the app. */

@@ -193,7 +193,7 @@ void PeakFitDetPrefsGui::init()
     }
 
     // DRF lacks FWHM info - show dialog offering to fit FWHM or cancel
-    SimpleDialog *dialog = new SimpleDialog(
+    SimpleDialog *dialog = SimpleDialog::make(
       WString::tr( "pfdpg-no-fwhm-title" ),
       WString::tr( "pfdpg-no-fwhm-content" ));
 

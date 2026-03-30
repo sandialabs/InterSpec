@@ -394,7 +394,7 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
 
 SimpleDialog *showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spec )
 {
-  auto dialog = new SimpleDialog();
+  auto dialog = SimpleDialog::make();
   //dialog->setModal( false ); //doesnt seem to have any effect
   dialog->addButton( WString::tr("Close") );
   
