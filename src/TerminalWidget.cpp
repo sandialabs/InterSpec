@@ -81,7 +81,7 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
      m_enteredtxt( nullptr ),
      m_edit( nullptr )
 {
-  m_model = new TerminalModel( m_viewer);
+  m_model = std::make_shared<TerminalModel>( m_viewer );
 
   addStyleClass( "TerminalWidget" );
   
@@ -132,8 +132,7 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
   const PopupDivMenu::MenuType menutype = (viewer && viewer->isPhone())
                                         ? PopupDivMenu::MenuType::AppLevelMenu
                                         : PopupDivMenu::MenuType::TransientMenu;
-  // Wt4_TODO: PopupDivMenu constructor taking raw WPushButton* needs migration in PopupDiv
-  m_commandmenu = new PopupDivMenu( commandButton, menutype );   // pop-up menu for list of commands
+  m_commandmenu = addChild( std::make_unique<PopupDivMenu>( commandButton, menutype ) );
   m_commandmenu->addStyleClass( "command-menu" );
   m_commandmenu->addStyleClass( "command-menu-content" );
   m_commandmenu->addStyleClass( "command-menu-content a" );

@@ -202,24 +202,24 @@ fi #if boost.installed exists / else
 cd "${working_directory}"
 
 
-## Build zlib
+## Build zlib 1.3.2
 if [ -f "${working_directory}/zlib.installed" ]; then
     echo "zlib already installed (as indicated by existence of zlib.installed file) - skipping."
 else
-  _file_url="https://zlib.net/fossils/zlib-1.3.1.tar.gz"
-  _file_name="zlib-1.3.1.tar.gz"
-  _expected_sha256="9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
-  _src_dir="zlib-1.3.1"
-
-  download_file "${_file_url}" "${_file_name}" "${_expected_sha256}"
+  _src_dir="zlib-1.3.2"
+  # zlib version 1.3.2
+  _git_hash="da607da739fa6047df13e66a2af6b8bec7c2a498"
 
   if [ -d "${_src_dir}" ]; then
-    echo "zlib already unzipped, not doing again."
+    echo "zlib cloned - not doing it again."
+    cd "${_src_dir}"
   else
-    tar -xzvf "${_file_name}" # tar is an external dependency
+    git clone --recursive https://github.com/madler/zlib.git --branch master --single-branch --depth 1 "${_src_dir}"
+    cd "${_src_dir}"
+    git fetch --depth 1 origin ${_git_hash}
+    git checkout ${_git_hash}
+    git submodule update --init --recursive
   fi
-
-  cd "${_src_dir}"
 
   if [ -d build ]; then
     rm -r build
@@ -228,13 +228,13 @@ else
 
   mkdir build
   cd build
-  
+
   cmake -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_EXAMPLES=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" .. # cmake is an external dependency
   make -j${_ncore} install # make is an external dependency
   rm -rf ./*
   rm -f "${MY_WT_PREFIX}/lib/libz.so"
   rm -f "${MY_WT_PREFIX}/lib/libz.so.1"
-  rm -f "${MY_WT_PREFIX}/lib/libz.so.1.3.1"
+  rm -f "${MY_WT_PREFIX}/lib/libz.so.1.3.2"
 
   touch "${working_directory}/zlib.installed"
 fi #if zlib.installed exists / else
@@ -243,35 +243,22 @@ fi #if zlib.installed exists / else
 cd "${working_directory}"
 
 
-## Build Wt 3.7.1
+## Build Wt 4.12.6
 if [ -f "${working_directory}/wt.installed" ]; then
     echo "Wt already installed (as indicated by existence of wt.installed file) - skipping."
 else
-  _file_url="https://github.com/emweb/wt/archive/3.7.1.tar.gz"
-  _file_name="wt-3.7.1.tar.gz"
-  _expected_sha256="232a2f0a2f3c4174c96872ab15ef7bc0a544d9401486a4c496a6b37f27cc10e7"
-  _src_dir="wt-3.7.1"
-
-  download_file "${_file_url}" "${_file_name}" "${_expected_sha256}"
+  _src_dir="wt-4.12.6"
+  _git_hash="4d158458b06554192c63389e098ad03e5e35a713"
 
   if [ -d "${_src_dir}" ]; then
-    echo "Wt already unzipped, not doing again."
+    echo "Wt cloned - not doing it again."
+    cd "${_src_dir}"
   else
-    tar -xzvf "${_file_name}"
-  fi
-
-  cd "${_src_dir}"
-
-  if [ -f "wt.patched" ]; then
-    echo "Wt already patched, not doing again."
-  else
-    # git is an external dependency
-    if ! command -v git > /dev/null; then
-      echo "Error: git command not found. Please install it to apply patches."
-      exit 1
-    fi
-    git apply --reject --ignore-space-change --ignore-whitespace "${PATCH_DIR}/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch"
-    touch wt.patched
+    git clone --recursive https://github.com/emweb/wt.git --branch master --single-branch --depth 1 "${_src_dir}"
+    cd "${_src_dir}"
+    git fetch --depth 1 origin ${_git_hash}
+    git checkout ${_git_hash}
+    git submodule update --init --recursive
   fi
 
   if [ -d build ]; then
@@ -282,8 +269,7 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DWT_CMAKE_FINDER_INSTALL_DIR="${MY_WT_PREFIX}/share" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++17" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCONFIGURATION=data/config/wt_config_web.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -S ..
-  #make -j${_ncore} install
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DENABLE_FIREBIRD=OFF -DENABLE_MSSQLSERVER=OFF -DENABLE_OPENGL=ON -DENABLE_QT4=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_LIBWTTEST=ON -DENABLE_SAML=OFF -DENABLE_UNWIND=OFF -DHTTP_WITH_ZLIB=OFF -DCMAKE_CXX_STANDARD=17 -DCONFIGURATION=data/config/wt_config_web.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -S ..
   cmake --build . --config Release --target install --parallel ${_ncore}
 
   touch "${working_directory}/wt.installed"
@@ -300,18 +286,18 @@ else
   # Build Eigen, which is required by ceres-solver, and used a few other places
   # in InterSpec if its available
 
-  src_dir="eigen-3.x"
-  # Get trunk version as of 20250114 to pickup some compile issues for c++20 (minimizing how much history we download)
-  git_hash="2e76277bd049f7bec36b0f908c69734a42c5234f"
-  
-  if [ -d "${src_dir}" ]; then
+  _src_dir="eigen-5.x"
+  # Get version 5.0.1 (minimizing how much history we download)
+  _git_hash="bc3b39870ecb690a623a3f49149a358b95c5781d"
+
+  if [ -d "${_src_dir}" ]; then
     echo "Eigen cloned - not doing it again."
-    cd "${src_dir}"
+    cd "${_src_dir}"
   else
-    git clone --recursive https://gitlab.com/libeigen/eigen.git --branch master --single-branch --depth 1 "${src_dir}"
-    cd "${src_dir}"
-    git fetch --depth 1 origin ${git_hash}
-    git checkout ${git_hash}
+    git clone --recursive https://gitlab.com/libeigen/eigen.git --branch master --single-branch --depth 1 "${_src_dir}"
+    cd "${_src_dir}"
+    git fetch --depth 1 origin ${_git_hash}
+    git checkout ${_git_hash}
     git submodule update --init --recursive
   fi
 
@@ -332,6 +318,43 @@ fi #if Eigen.installed exists / else
 
 cd "${working_directory}"
 
+## Build Abseil
+if [ -f "${working_directory}/abseil.installed" ]; then
+    echo "Abseil already installed (as indicated by existence of abseil.installed file) - skipping."
+else
+  # Abseil is required by ceres-solver.
+  # Using LTS 20260107.1
+  _src_dir="abseil-cpp"
+  _git_hash="255c84dadd029fd8ad25c5efb5933e47beaa00c7"
+
+  if [ -d "${_src_dir}" ]; then
+    echo "Abseil cloned - not doing it again."
+    cd "${_src_dir}"
+  else
+    git clone --recursive https://github.com/abseil/abseil-cpp.git --branch master --single-branch --depth 1 "${_src_dir}"
+    cd "${_src_dir}"
+    git fetch --depth 1 origin ${_git_hash}
+    git checkout ${_git_hash}
+    git submodule update --init --recursive
+  fi
+
+  if [ -d build ]; then
+    rm -r build
+    echo "Deleted previous Abseil build directory."
+  fi
+
+  mkdir build
+  cd build
+
+  cmake -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DABSL_BUILD_TESTING=OFF -DABSL_USE_GOOGLETEST_HEAD=OFF -DCMAKE_CXX_STANDARD=17 -DBUILD_SHARED_LIBS=OFF ..
+  cmake --build . --config Release --target install --parallel ${_ncore}
+
+  touch "${working_directory}/abseil.installed"
+fi #if abseil.installed exists / else
+
+
+cd "${working_directory}"
+
 
 ## Build Ceres-Solver
 if [ -f "${working_directory}/Ceres.installed" ]; then
@@ -341,21 +364,25 @@ else
   # tool, and a small amount of the peak fitting.
   git clone --recursive https://github.com/ceres-solver/ceres-solver.git --branch master --single-branch --depth 1
   cd ceres-solver
-  # Get version 2.2.0, Oct 12, 2023 (minimizing how much history we download)
-  git fetch --depth 1 origin 85331393dc0dff09f6fb9903ab0c4bfa3e134b01
-  git checkout 85331393dc0dff09f6fb9903ab0c4bfa3e134b01
+  # Get HEAD version from Mar 22, 2026 (minimizing how much history we download)
+  git fetch --depth 1 origin 2f946a582ae4a9e7ee0492030ec12d9b1f3dbade
+  git checkout 2f946a582ae4a9e7ee0492030ec12d9b1f3dbade
   git submodule update --init --recursive
 
-  if [ -d build_macos ]; then
-    rm -r build_macos
-    echo "Deleted previous Ceres-Solver build_macos directory."
+  # Remove bundled abseil so Ceres uses the system-installed one (avoids CMake
+  # export-set errors when bundled abseil targets arent in the CeresExport set)
+  rm -rf third_party/abseil-cpp/*
+
+  if [ -d build_linux ]; then
+    rm -r build_linux
+    echo "Deleted previous Ceres-Solver build_linux directory."
   fi
 
-  mkdir build_macos
-  cd build_macos
+  mkdir build_linux
+  cd build_linux
 
-  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF ..
-  cmake --build . --config Release --target install -j 16
+  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_STANDARD=17 ..
+  cmake --build . --config Release --target install --parallel ${_ncore}
 
   touch "${working_directory}/Ceres.installed"
 fi #if Ceres.installed exists / else

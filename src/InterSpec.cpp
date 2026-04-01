@@ -1309,13 +1309,17 @@ InterSpec::~InterSpec() noexcept(true)
   
   if( m_referencePhotopeakLines )
   {
-    if( m_toolsTabs && m_toolsTabs->indexOf(m_referencePhotopeakLines)>=0 )
-      m_toolsTabs->removeTab( m_referencePhotopeakLines );
-    
     m_referencePhotopeakLines->clearAllLines();
-    del_ptr_set_null( m_referencePhotopeakLines );
+    if( m_toolsTabs && m_toolsTabs->indexOf(m_referencePhotopeakLines.get()) >= 0 )
+      m_toolsTabs->removeTab( m_referencePhotopeakLines.get() );
+    else
+    {
+      assert( m_referencePhotopeakLines->parent() );
+      m_referencePhotopeakLines->removeFromParent();
+    }
+    assert( !m_referencePhotopeakLines );
   }//if( m_referencePhotopeakLines )
-  
+
   AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
   
   handleWarningsWindowClose();
@@ -2230,7 +2234,7 @@ void InterSpec::handleLeftClick( double energy, double counts,
   
 #if( USE_TERMINAL_WIDGET )
   if( m_toolsTabs && m_terminal
-      && (m_toolsTabs->currentIndex() == m_toolsTabs->indexOf(m_terminal)) )
+      && (m_toolsTabs->currentIndex() == m_toolsTabs->indexOf(m_terminal.get())) )
   {
     m_terminal->chartClicked(energy,counts,pageX,pageY);
   }
@@ -2655,7 +2659,7 @@ void InterSpec::createPeakEdit( double energy )
     if( !editor->isEditingValidPeak() )
     {
       if( m_peakEditWindow ) AuxWindow::deleteAuxWindow( m_peakEditWindow.get() );
-      m_peakEditWindow = nullptr;
+      assert( !m_peakEditWindow );
       return;
     }//if( !editor->isEditingValidPeak() )
   };//
@@ -2690,8 +2694,8 @@ void InterSpec::createPeakEdit( double energy )
     auto undo = [this](){
       if( m_peakEditWindow )
       {
-        if( m_peakEditWindow ) AuxWindow::deleteAuxWindow( m_peakEditWindow.get() );
-        m_peakEditWindow = nullptr;
+        AuxWindow::deleteAuxWindow( m_peakEditWindow.get() );
+        assert( !m_peakEditWindow );
       }
     };
     
@@ -2735,7 +2739,7 @@ void InterSpec::deletePeakEdit()
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
   
   if( m_peakEditWindow ) AuxWindow::deleteAuxWindow( m_peakEditWindow.get() );
-  m_peakEditWindow = nullptr;
+  assert( !m_peakEditWindow );
 }//void deletePeakEdit()
 
 
@@ -2771,7 +2775,7 @@ void InterSpec::closeFitSkewParamsWindow()
   }
 
   if( m_fitSkewParamsWindow ) AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
-  m_fitSkewParamsWindow = nullptr;
+  assert( !m_fitSkewParamsWindow );
 }//void closeFitSkewParamsWindow()
 
 
@@ -2840,7 +2844,7 @@ void InterSpec::acceptFitSkewParamsWindow()
 
   // Close the window without adding another undo step
   if( m_fitSkewParamsWindow ) AuxWindow::deleteAuxWindow( m_fitSkewParamsWindow.get() );
-  m_fitSkewParamsWindow = nullptr;
+  assert( !m_fitSkewParamsWindow );
 }//void acceptFitSkewParamsWindow()
 
 
@@ -2982,7 +2986,7 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
       assert( m_toolsTabs );
       if( m_toolsTabs )
       {
-        const int index = m_toolsTabs->indexOf(m_referencePhotopeakLines);
+        const int index = m_toolsTabs->indexOf(m_referencePhotopeakLines.get());
         m_toolsTabs->setCurrentIndex( index );
         m_currentToolsTab = index;
       }
@@ -2997,7 +3001,7 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
     if( m_featureMarkersWindow )
     {
       AuxWindow::deleteAuxWindow( m_featureMarkersWindow.get() );
-      m_featureMarkersWindow = nullptr;
+      assert( !m_featureMarkersWindow );
     }else
     {
       assert( m_referencePhotopeakLines && m_referencePhotopeakLines->featureMarkerTool() );
@@ -3031,7 +3035,7 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
     widget = m_referencePhotopeakLines->showFeatureMarkerTool();
     assert( m_toolsTabs );
     if( m_toolsTabs )
-      m_toolsTabs->setCurrentIndex( m_toolsTabs->indexOf(m_referencePhotopeakLines) );
+      m_toolsTabs->setCurrentIndex( m_toolsTabs->indexOf(m_referencePhotopeakLines.get()) );
     m_referencePhotopeakLines->emphasizeFeatureMarker();
   }else
   {
@@ -3233,7 +3237,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
     if( !peak.hasSourceGammaAssigned() )
     {
       PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel.get(),
-                                                               spectrum, m_referencePhotopeakLines,
+                                                               spectrum, m_referencePhotopeakLines.get(),
                                                               m_colorPeaksBasedOnReferenceLines, showingEscape );
     }//if( !peak.hasSourceGammaAssigned() )
   
@@ -4334,13 +4338,13 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   #if( USE_TERMINAL_WIDGET )
           case UserState::kTerminalTab:
             if( m_terminal )
-              m_toolsTabs->setCurrentWidget( m_terminal );
+              m_toolsTabs->setCurrentWidget( m_terminal.get() );
             break;
   #endif
   #if( USE_REL_ACT_TOOL )
           case UserState::kRelActManualTab: 
             if( m_relActManualGui )
-              m_toolsTabs->setCurrentWidget( m_relActManualGui );
+              m_toolsTabs->setCurrentWidget( m_relActManualGui.get() );
             break;
   #endif
           case UserState::kNoTabs:  
@@ -4872,7 +4876,7 @@ void InterSpec::deleteLicenseAndDisclaimersWindow()
     return;
   
   AuxWindow::deleteAuxWindow( m_licenseWindow.get() );
-  m_licenseWindow = nullptr;
+  assert( !m_licenseWindow );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -4956,7 +4960,7 @@ void InterSpec::deleteWelcomeDialog( const bool addUndoRedoStep )
     return;
   
   AuxWindow::deleteAuxWindow( m_useInfoWindow.get() );
-  m_useInfoWindow = nullptr;
+  assert( !m_useInfoWindow );
   
   if( addUndoRedoStep && m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -4972,7 +4976,7 @@ void InterSpec::deleteEnergyCalPreserveWindow()
   if( m_preserveCalibWindow )
   {
     if( m_preserveCalibWindow ) AuxWindow::deleteAuxWindow( m_preserveCalibWindow.get() );
-    m_preserveCalibWindow = nullptr;
+    assert( !m_preserveCalibWindow );
   }
 }//void deleteEnergyCalPreserveWindow()
 
@@ -4983,26 +4987,26 @@ ExportSpecFileWindow *InterSpec::createExportSpectrumFileDialog()
   assert( !m_exportSpecFileWindow || (m_undo && m_undo->isInUndoOrRedo()) );
   
   if( m_exportSpecFileWindow )
-    return m_exportSpecFileWindow;
-  
+    return m_exportSpecFileWindow.get();
+
   m_exportSpecFileWindow = SimpleDialog::make<ExportSpecFileWindow>( this );
   m_exportSpecFileWindow->finished().connect( this, &InterSpec::handleExportSpectrumFileDialogClose );
-  
+
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this](){
       if( m_exportSpecFileWindow )
         m_exportSpecFileWindow->accept();
     };
-    
+
     auto redo = [this](){
       createExportSpectrumFileDialog();
     };
-    
+
     m_undo->addUndoRedoStep( undo, redo, "Show spectrum file export tool." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
-  
-  return m_exportSpecFileWindow;
+
+  return m_exportSpecFileWindow.get();
 }//void createExportSpectrumFileDialog()
 
 
@@ -5070,7 +5074,7 @@ void InterSpec::deleteGammaCountDialog()
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
   
   AuxWindow::deleteAuxWindow( m_gammaCountDialog.get() );
-  m_gammaCountDialog = nullptr;
+  assert( !m_gammaCountDialog );
 }//void deleteGammaCountDialog()
 
 
@@ -5230,7 +5234,7 @@ void InterSpec::handleWarningsWindowClose()
     // In Wt4, removeWidget returns unique_ptr; release() to keep m_warnings alive for re-use
     m_warningsWindow->stretcher()->removeWidget( m_warnings ).release();
     AuxWindow::deleteAuxWindow( m_warningsWindow.get() );
-    m_warningsWindow = nullptr;
+    assert( !m_warningsWindow );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
     {
@@ -5311,7 +5315,7 @@ void InterSpec::handlePeakInfoClose()
   }//if( m_toolsTabs )
   
   if( m_peakInfoWindow ) AuxWindow::deleteAuxWindow( m_peakInfoWindow.get() );
-  m_peakInfoWindow = nullptr;
+  assert( !m_peakInfoWindow );
 }//void handlePeakInfoClose()
 
 
@@ -6797,7 +6801,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       // In Wt4, removeWidget returns unique_ptr; release() to keep m_energyCalTool alive for re-use
       m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool ).release();
       if( m_energyCalWindow ) AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
-      m_energyCalWindow = nullptr;
+      assert( !m_energyCalWindow );
     }//if( m_energyCalWindow )
     
     m_toolsTabs = new WTabWidget();
@@ -6834,18 +6838,20 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_referencePhotopeakLines )
     {
       m_referencePhotopeakLines->clearAllLines();
-      delete m_referencePhotopeakLines;
+      assert( m_referencePhotopeakLines->parent() );
+      m_referencePhotopeakLines->removeFromParent();
+      assert( !m_referencePhotopeakLines );
     }
-      
+
     if( m_referencePhotopeakLinesWindow )
-      if( m_referencePhotopeakLinesWindow ) AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
-    m_referencePhotopeakLinesWindow = NULL;
-      
-    m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                              m_shieldingSuggestion,
-                                              this );
+      AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
+    assert( !m_referencePhotopeakLinesWindow );
+
+    std::unique_ptr<ReferencePhotopeakDisplay> refLines
+      = std::make_unique<ReferencePhotopeakDisplay>( m_spectrum, m_shieldingSuggestion, this );
+    m_referencePhotopeakLines = refLines.get();
     setReferenceLineColors( nullptr );
-    
+
     m_externalRidResultsRecieved.connect( [this]( std::shared_ptr<const ExternalRidResults> v ){
       m_referencePhotopeakLines->setExternalRidResults( v );
     } );
@@ -6859,11 +6865,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     m_referencePhotopeakLines->setNarrowPhoneLayout( phone );
     tabTitle = phone ? WString(): WString::tr(GammaLinesTabTitleKey);
-    WMenuItem *refPhotoTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_referencePhotopeakLines), tabTitle, TabLoadPolicy );
+    WMenuItem *refPhotoTab = m_toolsTabs->addTab( std::move(refLines), tabTitle, TabLoadPolicy );
     if( phone )
       refPhotoTab->setIcon( "InterSpec_resources/images/reflines.svg" );
 #else
-    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_referencePhotopeakLines), WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::move(refLines), WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
 #endif
 //   WString tooltip = WString::tr("app-tab-tt-ref-photopeak");
 //      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
@@ -6990,7 +6996,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //    "Uncaught exception in event loop: 'WContainerWidget: error parsing: undefined'."
     //  Just switching to a different tab seems to fix this.  I dont really know why it happens.
     if( wasShowingPeakManager && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay)) )
-      m_currentToolsTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
+      m_currentToolsTab = m_toolsTabs->indexOf(m_referencePhotopeakLines.get());
        
     if( (m_currentToolsTab >= 0) && (m_currentToolsTab < m_toolsTabs->count()) )
     {
@@ -6999,7 +7005,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     {
       //These next `setCurrentWidget(...)` lines will cause `handleToolTabChanged(...)` to be called
       if( phone || wasShowingPeakManager )
-        m_toolsTabs->setCurrentWidget( m_referencePhotopeakLines );
+        m_toolsTabs->setCurrentWidget( m_referencePhotopeakLines.get() );
       else
         m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
     }
@@ -7035,11 +7041,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 
 #if( USE_TERMINAL_WIDGET )
     if( m_terminal )
-    {
-      if( !m_terminalWindow )
-        m_toolsTabs->removeTab( m_terminal ).release();
       handleTerminalWindowClose();
-    }
 #endif
 
     m_nuclideSearch->clearSearchEnergiesOnClient();
@@ -7055,13 +7057,14 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_referencePhotopeakLines )
     {
       m_referencePhotopeakLines->clearAllLines();
-      delete m_referencePhotopeakLines;
-      m_referencePhotopeakLines = nullptr;
+      assert( m_referencePhotopeakLines->parent() );
+      m_referencePhotopeakLines->removeFromParent();
+      assert( !m_referencePhotopeakLines );
     }
-    
+
     if( m_referencePhotopeakLinesWindow )
-      if( m_referencePhotopeakLinesWindow ) AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
-    m_referencePhotopeakLinesWindow = nullptr;
+      AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
+    assert( !m_referencePhotopeakLinesWindow );
     
     if( !refNucXmlState.empty() )
     {
@@ -7560,7 +7563,7 @@ void InterSpec::handEnergyCalWindowClose()
   auto removed_cal = layout->removeWidget( m_energyCalTool );
 
   AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
-  m_energyCalWindow = nullptr;
+  assert( !m_energyCalWindow );
 
   if( m_toolsTabs )
   {
@@ -8003,7 +8006,7 @@ void InterSpec::setShowYAxisScalers( bool show )
 
 ReferencePhotopeakDisplay *InterSpec::referenceLinesWidget()
 {
-  return m_referencePhotopeakLines;
+  return m_referencePhotopeakLines.get();
 }
 
 IsotopeSearchByEnergy *InterSpec::nuclideSearch()
@@ -8610,7 +8613,7 @@ void InterSpec::deleteOneOverR2Calc()
   const string state_uri = do_undo ? m_1overR2Calc->encodeStateToUrl() : string();
   
   AuxWindow::deleteAuxWindow( m_1overR2Calc.get() );
-  m_1overR2Calc = nullptr;
+  assert( !m_1overR2Calc );
   
   if( do_undo )
   {
@@ -8657,7 +8660,7 @@ void InterSpec::deleteUnitsConverterTool()
   const string state_uri = do_undo ? m_unitsConverter->encodeStateToUrl() : string();
   
   AuxWindow::deleteAuxWindow( m_unitsConverter.get() );
-  m_unitsConverter = nullptr;
+  assert( !m_unitsConverter );
   
   if( do_undo )
   {
@@ -8704,7 +8707,7 @@ void InterSpec::deleteFluxTool()
   const string state_uri = do_undo ? m_fluxTool->encodeStateToUrl() : string();
   
   AuxWindow::deleteAuxWindow( m_fluxTool.get() );
-  m_fluxTool = nullptr;
+  assert( !m_fluxTool );
   
   if( do_undo )
   {
@@ -8816,7 +8819,7 @@ void InterSpec::deleteFwhmFromForegroundWindow()
   shared_ptr<MakeFwhmForDrf::ToolState> state = m_addFwhmTool->tool()->currentState();
   
   AuxWindow::deleteAuxWindow( m_addFwhmTool.get() );
-  m_addFwhmTool = nullptr;
+  assert( !m_addFwhmTool );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9208,7 +9211,7 @@ void InterSpec::deleteDecayInfoWindow()
   
   if( m_decayInfoWindow )
     AuxWindow::deleteAuxWindow( m_decayInfoWindow.get() );
-  m_decayInfoWindow = nullptr;
+  assert( !m_decayInfoWindow );
 }//void deleteDecayInfoWindow()
 
 
@@ -9398,7 +9401,7 @@ void InterSpec::handleLeafletMapOpen( LeafletRadMapWindow *window )
   if( m_leafletWindow )
   {
     AuxWindow::deleteAuxWindow( m_leafletWindow.get() );
-    m_leafletWindow = nullptr;
+    assert( !m_leafletWindow );
   }
   
   m_leafletWindow = window;
@@ -9552,8 +9555,8 @@ void InterSpec::handle3DSearchModeChartClose( AuxWindow *window )
     m_3dViewWindow = nullptr;
     AuxWindow::deleteAuxWindow( window );
   }
-  
-  m_3dViewWindow = nullptr;
+
+  assert( !m_3dViewWindow );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9664,17 +9667,18 @@ void InterSpec::createTerminalWidget()
   if( m_terminal )
     return;
   
-  m_terminal = new TerminalWidget( this );
+  std::unique_ptr<TerminalWidget> terminal = std::make_unique<TerminalWidget>( this );
+  m_terminal = terminal.get();
   m_terminal->focusText();
-  
+
   if( m_toolsTabs )
   {
-    WMenuItem *item = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_terminal), WString::tr(TerminalTabTitleKey) );
+    WMenuItem *item = m_toolsTabs->addTab( std::move(terminal), WString::tr(TerminalTabTitleKey) );
     item->setCloseable( true );
-    m_toolsTabs->setCurrentWidget( m_terminal );
+    m_toolsTabs->setCurrentWidget( m_terminal.get() );
     const int index = m_toolsTabs->currentIndex();
     m_toolsTabs->setTabToolTip( index, WString::tr("app-tab-tt-terminal") );
-    
+
     // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
     //  handleToolTabClosed(), which will delete m_terminal when the user closes the tab.
   }else
@@ -9683,12 +9687,12 @@ void InterSpec::createTerminalWidget()
                                      (AuxWindowProperties::SetCloseable
                                       | AuxWindowProperties::EnableResize
                                       | AuxWindowProperties::TabletNotFullScreen) );
-    
+
     WPushButton *closeButton = m_terminalWindow->addCloseButtonToFooter();
     closeButton->clicked().connect(m_terminalWindow.get(), &AuxWindow::hide);
-    
+
     AuxWindow::addHelpInFooter( m_terminalWindow->footer(), "terminal-dialog" );
-    
+
     m_terminalWindow->rejectWhenEscapePressed();
     m_terminalWindow->finished().connect( this, &InterSpec::handleTerminalWindowClose );
 
@@ -9698,8 +9702,8 @@ void InterSpec::createTerminalWidget()
       m_terminalWindow->resizeWindow( 0.95*m_renderedWidth, 0.25*m_renderedHeight );
       m_terminalWindow->centerWindow();
     }
-    
-    m_terminalWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_terminal), 0, 0 );
+
+    m_terminalWindow->stretcher()->addWidget( std::move(terminal), 0, 0 );
     
     // We shouldnt block undo/redo any time the terminal window is open
     //new UndoRedoManager::BlockGuiUndoRedo( m_terminalWindow ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
@@ -9721,19 +9725,19 @@ void InterSpec::handleTerminalWindowClose()
     AuxWindow::deleteAuxWindow( m_terminalWindow.get() );
   }else
   {
-    // In Wt4, if terminal is in a tab, removeTab returns ownership; use it to delete
-    if( m_toolsTabs && m_toolsTabs->indexOf(m_terminal) >= 0 )
+    if( m_toolsTabs && m_toolsTabs->indexOf(m_terminal.get()) >= 0 )
     {
-      m_toolsTabs->removeTab( m_terminal ); // returned unique_ptr deletes m_terminal
+      m_toolsTabs->removeTab( m_terminal.get() ); // returned unique_ptr deletes m_terminal
       m_toolsTabs->setCurrentIndex( 2 );
     }else
     {
-      delete m_terminal; // not in a tab, delete directly
+      assert( m_terminal->parent() );
+      m_terminal->removeFromParent(); // unique_ptr goes out of scope and deletes
     }
   }
 
-  m_terminal = nullptr;
-  m_terminalWindow = nullptr;
+  assert( !m_terminal );
+  assert( !m_terminalWindow );
 }//void handleTerminalWindowClose()
 #endif  //#if( USE_TERMINAL_WIDGET )
 
@@ -9741,7 +9745,7 @@ void InterSpec::handleTerminalWindowClose()
 #if( USE_REMOTE_RID )
 RemoteRid *InterSpec::remoteRid()
 {
-  return m_remoteRid;
+  return m_remoteRid.get();
 }
 
 void InterSpec::createRemoteRidWindow()
@@ -9805,9 +9809,9 @@ void InterSpec::deleteRemoteRidWindow()
   m_remoteRidMenuItem->enable();
   
   AuxWindow::deleteAuxWindow( m_remoteRidWindow.get() );
-  
-  m_remoteRid = nullptr;
-  m_remoteRidWindow = nullptr;
+
+  assert( !m_remoteRid );
+  assert( !m_remoteRidWindow );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9857,16 +9861,16 @@ void InterSpec::programaticallyCloseAutoRemoteRidResultDialog()
 RelActAutoGui *InterSpec::relActAutoWindow( const bool createIfNotOpen )
 {
   assert( (!m_relActAutoGui) == (!m_relActAutoWindow) );
-  
+
   if( !createIfNotOpen )
-    return m_relActAutoGui;
-  
+    return m_relActAutoGui.get();
+
   if( m_relActAutoGui )
-    return m_relActAutoGui;
+    return m_relActAutoGui.get();
   
   const std::pair<RelActAutoGui *,AuxWindow *> widgets = RelActAutoGui::createWindow( this );
   if( !widgets.first || !widgets.second )
-    return m_relActAutoGui;
+    return m_relActAutoGui.get();
   
   m_relActAutoGui = widgets.first;
   m_relActAutoWindow = widgets.second;
@@ -9904,8 +9908,8 @@ RelActAutoGui *InterSpec::relActAutoWindow( const bool createIfNotOpen )
   
   assert( m_relActAutoMenuItem );
   m_relActAutoMenuItem->disable();
-  
-  return m_relActAutoGui;
+
+  return m_relActAutoGui.get();
 }//RelActAutoGui *relActAutoWindow()
 
 
@@ -9922,8 +9926,8 @@ void InterSpec::handleRelActAutoClose()
     return;
   
   if( m_relActAutoWindow ) AuxWindow::deleteAuxWindow( m_relActAutoWindow.get() );
-  m_relActAutoGui = nullptr;
-  m_relActAutoWindow = nullptr;
+  assert( !m_relActAutoGui );
+  assert( !m_relActAutoWindow );
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
@@ -9940,20 +9944,21 @@ RelActManualGui *InterSpec::createRelActManualWidget()
   m_relActManualMenuItem->disable();
   
   if( m_relActManualGui )
-    return m_relActManualGui;
- 
+    return m_relActManualGui.get();
+
   const int origTab = m_toolsTabs ? m_toolsTabs->currentIndex() : -1;
-  
-  m_relActManualGui = new RelActManualGui( this );
-  
+
+  std::unique_ptr<RelActManualGui> relActManual = std::make_unique<RelActManualGui>( this );
+  m_relActManualGui = relActManual.get();
+
   if( m_toolsTabs )
   {
-    WMenuItem *item = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_relActManualGui), WString::tr(RelActManualTitleKey) );
+    WMenuItem *item = m_toolsTabs->addTab( std::move(relActManual), WString::tr(RelActManualTitleKey) );
     item->setCloseable( true );
-    m_toolsTabs->setCurrentWidget( m_relActManualGui );
+    m_toolsTabs->setCurrentWidget( m_relActManualGui.get() );
     const int index = m_toolsTabs->currentIndex();
     m_toolsTabs->setTabToolTip( index, WString::tr("app-tab-tt-rel-eff") );
-    
+
     // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
     //  handleToolTabClosed(), which will delete m_relActManualGui when the user closes the tab.
   }else
@@ -9962,18 +9967,18 @@ RelActManualGui *InterSpec::createRelActManualWidget()
                                          (AuxWindowProperties::SetCloseable
                                           | AuxWindowProperties::EnableResize
                                           | AuxWindowProperties::TabletNotFullScreen) );
-    
+
     m_relActManualWindow->rejectWhenEscapePressed();
     m_relActManualWindow->finished().connect( this, &InterSpec::handleRelActManualClose );
-    
+
     m_relActManualWindow->show();
     if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
     {
       m_relActManualWindow->resizeWindow( 0.95*m_renderedWidth, 0.80*m_renderedHeight );
       m_relActManualWindow->centerWindow();
     }
-    
-    m_relActManualWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_relActManualGui), 0, 0 );
+
+    m_relActManualWindow->stretcher()->addWidget( std::move(relActManual), 0, 0 );
     
     
     WPushButton *closeButton = m_relActManualWindow->addCloseButtonToFooter();
@@ -10005,11 +10010,8 @@ RelActManualGui *InterSpec::createRelActManualWidget()
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this, origTab](){
-      if( !m_relActManualWindow && m_relActManualGui )
-        m_toolsTabs->removeTab( m_relActManualGui ).release(); // release: handleRelActManualClose will delete
-      
       handleRelActManualClose();
-      
+
       if( (origTab >= 0) && m_toolsTabs )
         m_toolsTabs->setCurrentIndex( origTab );
     };
@@ -10018,7 +10020,7 @@ RelActManualGui *InterSpec::createRelActManualWidget()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from peaks' tool" );
   }//if( m_undo && !m_undo->canAddUndoRedoNow() )
   
-  return m_relActManualGui;
+  return m_relActManualGui.get();
 }//RelActManualGui *createRelActManualWidget()
 
 
@@ -10026,8 +10028,8 @@ RelActManualGui *InterSpec::relActManualWidget( const bool createIfNotOpen )
 {
   if( createIfNotOpen && !m_relActManualGui )
     return createRelActManualWidget();
-  
-  return m_relActManualGui;
+
+  return m_relActManualGui.get();
 }//RelActManualGui *relActManualWidget( const bool createIfNotOpen )
 
 
@@ -10045,19 +10047,21 @@ void InterSpec::handleRelActManualClose()
   {
     if( m_relActManualGui )
     {
-      // In Wt4, if in a tab, removeTab owns it; otherwise delete directly
-      if( m_toolsTabs && m_toolsTabs->indexOf(m_relActManualGui) >= 0 )
-        m_toolsTabs->removeTab( m_relActManualGui ); // unique_ptr deletes it
+      if( m_toolsTabs && m_toolsTabs->indexOf(m_relActManualGui.get()) >= 0 )
+        m_toolsTabs->removeTab( m_relActManualGui.get() ); // unique_ptr deletes it
       else
-        delete m_relActManualGui;
+      {
+        assert( m_relActManualGui->parent() );
+        m_relActManualGui->removeFromParent(); // unique_ptr goes out of scope and deletes
+      }
     }
 
     if( m_toolsTabs )
       m_toolsTabs->setCurrentIndex( 2 );
   }//if( m_relActManualWindow ) / else
-  
-  m_relActManualGui = nullptr;
-  m_relActManualWindow = nullptr;
+
+  assert( !m_relActManualGui );
+  assert( !m_relActManualWindow );
 
   assert( m_relActManualMenuItem );
   m_relActManualMenuItem->enable();
@@ -10108,10 +10112,10 @@ void InterSpec::handleToolTabClosed( const int tabnum )
   WWidget *w = m_toolsTabs->widget( tabnum );
   
 #if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
-  if( w == m_relActManualGui )
+  if( w == m_relActManualGui.get() )
   {
     handleRelActManualClose();
-  }else if( w == m_terminal )
+  }else if( w == m_terminal.get() )
   {
     handleTerminalWindowClose();
   }else
@@ -10119,7 +10123,7 @@ void InterSpec::handleToolTabClosed( const int tabnum )
     assert( 0 );
   }
 #elif( USE_TERMINAL_WIDGET )
-  if( w == m_terminal )
+  if( w == m_terminal.get() )
   {
     handleTerminalWindowClose();
   }else
@@ -10127,7 +10131,7 @@ void InterSpec::handleToolTabClosed( const int tabnum )
     assert( 0 );
   }
 #elif( USE_REL_ACT_TOOL )
-  if( w == m_relActManualGui )
+  if( w == m_relActManualGui.get() )
   {
     handleRelActManualClose();
   }else
@@ -10426,8 +10430,8 @@ void InterSpec::deleteGammaXsTool()
     
     AuxWindow::deleteAuxWindow( m_gammaXsToolWindow.get() );
   }//if( m_gammaXsToolWindow )
-  
-  m_gammaXsToolWindow = nullptr;
+
+  assert( !m_gammaXsToolWindow );
 }//void deleteGammaXsTool()
 
 
@@ -10487,7 +10491,7 @@ void InterSpec::deleteDoseCalcTool()
     
     AuxWindow::deleteAuxWindow( m_doseCalcWindow.get() );
   }
-  m_doseCalcWindow = nullptr;
+  assert( !m_doseCalcWindow );
 }//void deleteDoseCalcTool();
 
 
@@ -10626,7 +10630,7 @@ void InterSpec::closeNuclideSearchWindow()
   m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch ).release();
 
   if( m_nuclideSearchWindow ) AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
-  m_nuclideSearchWindow = nullptr;
+  assert( !m_nuclideSearchWindow );
 
   if( m_toolsTabs )
   {
@@ -10706,7 +10710,7 @@ void InterSpec::showNuclideSearchWindow()
 ShieldingSourceDisplay *InterSpec::shieldingSourceFit( const bool create_window )
 {
   if( m_shieldingSourceFit )
-    return m_shieldingSourceFit;
+    return m_shieldingSourceFit.get();
 
   // If create_window is false and window doesn't exist, return nullptr
   if( !create_window )
@@ -10727,7 +10731,7 @@ ShieldingSourceDisplay *InterSpec::shieldingSourceFit( const bool create_window 
     m_undo->addUndoRedoStep( undo, redo, "Open Activity/Shielding Fit tool" );
   }
 
-  return m_shieldingSourceFit;
+  return m_shieldingSourceFit.get();
 }//ShieldingSourceDisplay *shieldingSourceFit()
 
 
@@ -10758,8 +10762,8 @@ void InterSpec::closeShieldingSourceFit()
   saveShieldingSourceModelToForegroundSpecMeas();
   
   if( m_shieldingSourceFitWindow ) AuxWindow::deleteAuxWindow( m_shieldingSourceFitWindow.get() );
-  m_shieldingSourceFitWindow = nullptr;
-  m_shieldingSourceFit = nullptr;
+  assert( !m_shieldingSourceFitWindow );
+  assert( !m_shieldingSourceFit );
   
   if( m_undo && !m_undo->isInUndoOrRedo() )
   {
@@ -10803,7 +10807,7 @@ void InterSpec::closeHelpWindow()
   const string topic = m_helpWindow->currentTopic();
   
   AuxWindow::deleteAuxWindow( m_helpWindow.get() );
-  m_helpWindow = nullptr;
+  assert( !m_helpWindow );
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -10824,14 +10828,9 @@ void InterSpec::showGammaLinesWindow()
     return;
   }
 
-  if( m_toolsTabs && m_referencePhotopeakLines )
-  {
-    // In Wt4, removeTab returns unique_ptr; release so we can delete separately below
-    m_toolsTabs->removeTab( m_referencePhotopeakLines ).release();
-  }
-
   std::string xml_state;
 
+  // Serialize state and destroy old widget before creating new one
   if( m_referencePhotopeakLines )
   {
     const ReferenceLineInfo &lines = m_referencePhotopeakLines->currentlyShowingNuclide();
@@ -10843,8 +10842,15 @@ void InterSpec::showGammaLinesWindow()
     }
 
     m_referencePhotopeakLines->clearAllLines();
-    delete m_referencePhotopeakLines;
-    m_referencePhotopeakLines = nullptr;
+
+    if( m_toolsTabs && m_toolsTabs->indexOf(m_referencePhotopeakLines.get()) >= 0 )
+      m_toolsTabs->removeTab( m_referencePhotopeakLines.get() );
+    else
+    {
+      assert( m_referencePhotopeakLines->parent() );
+      m_referencePhotopeakLines->removeFromParent();
+    }
+    assert( !m_referencePhotopeakLines );
   }//if( m_referencePhotopeakLines )
 
   m_referencePhotopeakLinesWindow = AuxWindow::make( WString::tr(GammaLinesTabTitleKey),
@@ -10855,9 +10861,9 @@ void InterSpec::showGammaLinesWindow()
   m_referencePhotopeakLinesWindow->contents()->setOverflow(Overflow::Hidden);
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();
 
-  m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                               m_shieldingSuggestion,
-                                               this );
+  std::unique_ptr<ReferencePhotopeakDisplay> refLines
+    = std::make_unique<ReferencePhotopeakDisplay>( m_spectrum, m_shieldingSuggestion, this );
+  m_referencePhotopeakLines = refLines.get();
   setReferenceLineColors( nullptr );
 
   m_externalRidResultsRecieved.connect( [this]( std::shared_ptr<const ExternalRidResults> v ){
@@ -10870,7 +10876,7 @@ void InterSpec::showGammaLinesWindow()
   Wt::WGridLayout *layout = new Wt::WGridLayout();
   layout->setContentsMargins(5,5,5,5);
   m_referencePhotopeakLinesWindow->contents()->setLayout( std::unique_ptr<WLayout>(layout) );
-  layout->addWidget( std::unique_ptr<WWidget>(m_referencePhotopeakLines), 0, 0 );
+  layout->addWidget( std::move(refLines), 0, 0 );
 
   Wt::WPushButton *closeButton = m_referencePhotopeakLinesWindow->addCloseButtonToFooter( WString::tr("Close"),true);
   
@@ -10924,25 +10930,25 @@ void InterSpec::closeGammaLinesWindow()
          || m_referencePhotopeakLines->persistedNuclides().size() )
       m_referencePhotopeakLines->serialize( xmlstate );
     m_referencePhotopeakLines->clearAllLines();
-    if( m_toolsTabs && m_toolsTabs->indexOf( m_referencePhotopeakLines ) >= 0 )
+
+    if( m_toolsTabs && m_toolsTabs->indexOf(m_referencePhotopeakLines.get()) >= 0 )
+      m_toolsTabs->removeTab( m_referencePhotopeakLines.get() );
+    else
     {
-      // In Wt4, removeTab returns unique_ptr - let it handle deletion
-      m_toolsTabs->removeTab( m_referencePhotopeakLines );
-    }else
-    {
-      delete m_referencePhotopeakLines;
+      assert( m_referencePhotopeakLines->parent() );
+      m_referencePhotopeakLines->removeFromParent();
     }
-    m_referencePhotopeakLines = nullptr;
+    assert( !m_referencePhotopeakLines );
   }//if( m_referencePhotopeakLines )
 
   if( m_referencePhotopeakLinesWindow ) AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
-  m_referencePhotopeakLinesWindow = nullptr;
+  assert( !m_referencePhotopeakLinesWindow );
 
   if( m_toolsTabs )
   {
-    m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                                   m_shieldingSuggestion,
-                                                   this );
+    std::unique_ptr<ReferencePhotopeakDisplay> refLines
+      = std::make_unique<ReferencePhotopeakDisplay>( m_spectrum, m_shieldingSuggestion, this );
+    m_referencePhotopeakLines = refLines.get();
     setReferenceLineColors( nullptr );
 
     m_externalRidResultsRecieved.connect( [this]( std::shared_ptr<const ExternalRidResults> v ){
@@ -10954,7 +10960,7 @@ void InterSpec::closeGammaLinesWindow()
       m_referencePhotopeakLines->setNarrowPhoneLayout( true );
 #endif
 
-    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_referencePhotopeakLines), WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::move(refLines), WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
 
     if( xmlstate.size() )
       m_referencePhotopeakLines->deSerialize( xmlstate );
@@ -10977,7 +10983,7 @@ void InterSpec::handleToolTabChanged( int tab )
   const int prev_tab = m_currentToolsTab;
   
   auto handle_change = [this]( const int current_tab, const bool focus  ){
-    const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
+    const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines.get());
     const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
     const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
     

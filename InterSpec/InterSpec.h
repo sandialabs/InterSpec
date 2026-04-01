@@ -1446,15 +1446,15 @@ protected:
   Wt::Core::observing_ptr<AuxWindow> m_specFileQueryDialog;
 
   Wt::WSuggestionPopup   *m_shieldingSuggestion;
-  ShieldingSourceDisplay *m_shieldingSourceFit;
+  Wt::Core::observing_ptr<ShieldingSourceDisplay> m_shieldingSourceFit;
   Wt::Core::observing_ptr<AuxWindow> m_shieldingSourceFitWindow;
   
 #if( USE_REL_ACT_TOOL )
-  RelActAutoGui          *m_relActAutoGui;
+  Wt::Core::observing_ptr<RelActAutoGui> m_relActAutoGui;
   Wt::Core::observing_ptr<AuxWindow> m_relActAutoWindow;
   PopupDivMenuItem       *m_relActAutoMenuItem;
   
-  RelActManualGui        *m_relActManualGui;
+  Wt::Core::observing_ptr<RelActManualGui> m_relActManualGui;
   Wt::Core::observing_ptr<AuxWindow> m_relActManualWindow;
   PopupDivMenuItem       *m_relActManualMenuItem;
 #endif
@@ -1539,7 +1539,7 @@ protected:
   Wt::WMenuItem        *m_showPeakManager;
     
   PopupDivMenuItem *m_exportSpecFileMenu;
-  ExportSpecFileWindow *m_exportSpecFileWindow;
+  Wt::Core::observing_ptr<ExportSpecFileWindow> m_exportSpecFileWindow;
   
   //If I ever get the preference tracking stuff working better, I could probably
   //  eliminate the following variables
@@ -1627,13 +1627,13 @@ protected:
   
 #if( USE_TERMINAL_WIDGET )
   PopupDivMenuItem *m_terminalMenuItem;
-  TerminalWidget   *m_terminal;
+  Wt::Core::observing_ptr<TerminalWidget> m_terminal;
   Wt::Core::observing_ptr<AuxWindow> m_terminalWindow;
 #endif
   
 #if( USE_REMOTE_RID )
   PopupDivMenuItem *m_remoteRidMenuItem;
-  RemoteRid        *m_remoteRid;
+  Wt::Core::observing_ptr<RemoteRid> m_remoteRid;
   Wt::Core::observing_ptr<AuxWindow> m_remoteRidWindow;
 #endif
 
@@ -1667,7 +1667,7 @@ protected:
   //m_referencePhotopeakLines: is a pointer to the widget where you can type in
   //  nuclides, reactions or elements (ex "U235", "W", "Ge(n,n)") to see the
   //  reference photopeaks on the energy spectrum chart.
-  ReferencePhotopeakDisplay *m_referencePhotopeakLines;
+  Wt::Core::observing_ptr<ReferencePhotopeakDisplay> m_referencePhotopeakLines;
   Wt::Core::observing_ptr<AuxWindow> m_referencePhotopeakLinesWindow;
   RefLineDynamic            *m_refLineDynamic;
 

@@ -83,7 +83,7 @@ class TerminalWidget : public Wt::WContainerWidget
   void addHeaderToCommandSearchList( Wt::WMenuItem* header );
     
   private:
-  TerminalModel *m_model;
+  std::shared_ptr<TerminalModel> m_model;
   bool m_darkenState = false;
 
   std::vector< MenuItemTuple > m_commandMenuItems;

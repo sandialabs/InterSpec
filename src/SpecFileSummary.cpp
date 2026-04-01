@@ -270,29 +270,37 @@ void SpecFileSummary::init()
   overallLayout->setContentsMargins( 9, 0, 9, 0 );
 
   WRadioButton *button = nullptr;
-  WGroupBox *spectrumGroupBox = new WGroupBox( WString::tr("sfs-spectrum") );
+  std::unique_ptr<WGroupBox> spectrumGroupBoxOwner = std::make_unique<WGroupBox>( WString::tr("sfs-spectrum") );
+  WGroupBox *spectrumGroupBox = spectrumGroupBoxOwner.get();
   spectrumGroupBox->addStyleClass( "SpecSummChoose" );
+  // In Wt4, WGroupBox inside WGridLayout requires a layout to render children
+  WGridLayout *spectrumBoxLayout = spectrumGroupBox->setLayout( std::make_unique<WGridLayout>() );
+  spectrumBoxLayout->setContentsMargins( 0, 0, 0, 0 );
   m_spectraGroup = std::make_shared<WButtonGroup>();
-  button = spectrumGroupBox->addNew<WRadioButton>( WString::tr("Foreground") );
+  button = spectrumBoxLayout->addWidget( std::make_unique<WRadioButton>( WString::tr("Foreground") ), 0, 0 );
   button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Foreground) );
-  button = spectrumGroupBox->addNew<WRadioButton>( WString::tr("Secondary") );
+  button = spectrumBoxLayout->addWidget( std::make_unique<WRadioButton>( WString::tr("Secondary") ), 0, 1 );
   button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::SecondForeground) );
-  button = spectrumGroupBox->addNew<WRadioButton>( WString::tr("Background") );
+  button = spectrumBoxLayout->addWidget( std::make_unique<WRadioButton>( WString::tr("Background") ), 0, 2 );
   button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Background) );
   m_spectraGroup->setCheckedButton( m_spectraGroup->button( static_cast<int>(SpecUtils::SpectrumType::Foreground) ) );
   m_spectraGroup->checkedChanged().connect( this, &SpecFileSummary::handleSpectrumTypeChanged );
 
 
-  WGroupBox *editGroupBox = new WGroupBox( WString::tr("sfs-alow-edit-cb") );
+  std::unique_ptr<WGroupBox> editGroupBoxOwner = std::make_unique<WGroupBox>( WString::tr("sfs-alow-edit-cb") );
+  WGroupBox *editGroupBox = editGroupBoxOwner.get();
   editGroupBox->addStyleClass( "SpecSummAllowEdit" );
+  // In Wt4, WGroupBox inside WGridLayout requires a layout to render children
+  WGridLayout *editBoxLayout = editGroupBox->setLayout( std::make_unique<WGridLayout>() );
+  editBoxLayout->setContentsMargins( 0, 0, 0, 0 );
   m_allowEditGroup = std::make_shared<WButtonGroup>();
-  button = editGroupBox->addNew<WRadioButton>( WString::tr("Yes") );
+  button = editBoxLayout->addWidget( std::make_unique<WRadioButton>( WString::tr("Yes") ), 0, 0 );
   button->addStyleClass( "CbNoLineBreak" );
   m_allowEditGroup->addButton( button, kAllowModify );
-  button = editGroupBox->addNew<WRadioButton>( WString::tr("No") );
+  button = editBoxLayout->addWidget( std::make_unique<WRadioButton>( WString::tr("No") ), 0, 1 );
   button->addStyleClass( "CbNoLineBreak" );
   m_allowEditGroup->addButton( button, kDontAllowModify );
   m_allowEditGroup->setCheckedButton( m_allowEditGroup->button(kDontAllowModify) );
@@ -302,11 +310,11 @@ void SpecFileSummary::init()
   WContainerWidget *upperdiv = upperdivOwner.get();
   WGridLayout *upperlayout = upperdiv->setLayout( std::make_unique<WGridLayout>() );
   overallLayout->addWidget( std::move(upperdivOwner), 0, 0 );
-  upperlayout->addWidget( std::unique_ptr<WGroupBox>(spectrumGroupBox), 0, 0, 1, 1 );
-  upperlayout->addWidget( std::unique_ptr<WGroupBox>(editGroupBox), 0, 1, 1, 1 );
+  upperlayout->addWidget( std::move(spectrumGroupBoxOwner), 0, 0, 1, 1 );
+  upperlayout->addWidget( std::move(editGroupBoxOwner), 0, 1, 1, 1 );
   upperlayout->setColumnStretch( 1, 1 );
 
-  m_reloadSpectrum = editGroupBox->addNew<WPushButton>( WString::tr("sfs-update-display-btn") );
+  m_reloadSpectrum = editBoxLayout->addWidget( std::make_unique<WPushButton>( WString::tr("sfs-update-display-btn") ), 0, 2 );
   m_reloadSpectrum->setToolTip( WString::tr("sfs-tt-update-display") );
   m_reloadSpectrum->setIcon( WLink("InterSpec_resources/images/arrow_refresh.svg") );
   m_reloadSpectrum->clicked().connect( this, &SpecFileSummary::reloadCurrentSpectrum );

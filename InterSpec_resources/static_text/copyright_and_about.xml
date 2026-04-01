@@ -216,16 +216,22 @@ IT &quot;AS IS.&quot;
       <b>libpng</b> is <a href="https://spdx.org/licenses/libpng-2.0.html" target="_blank">PNG Reference Library License version 2</a> library.
       </div>
     </li>
-    <li><b><a href="http://ceres-solver.org" target="_blank">Ceres Solver</a></b> (version 2.1.0): Ceres Solver is an open source C++ library for modeling and solving large, complicated optimization problems.
+    <li><b><a href="http://ceres-solver.org" target="_blank">Ceres Solver</a></b>: Ceres Solver is an open source C++ library for modeling and solving large, complicated optimization problems.
       <div style="margin-left: 1em; font-size: small;">
-      <b>Ceres Solver</b> is used, for the the <em>Relative Efficiency</em> tools (&quot;Isotopics by nuclides&quot; and &quot;Isotopics from peaks&quot;); it may be used for peak-fitting as well in the future.
+      <b>Ceres Solver</b> is used for the the <em>Relative Efficiency</em> tools (&quot;Isotopics by nuclides&quot; and &quot;Isotopics from peaks&quot;); it may be used for peak-fitting as well in the future.
       <b>Ceres Solver</b> is <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank">BSD License</a> library.
       </div>
     </li>
-    <li><b><a href="https://eigen.tuxfamily.org/index.php" target="_blank">Eigen</a></b> (version 3.4.0): Eigen is a C++ template library for linear algebra: matrices, vectors, numerical solvers, and related algorithms.
+    <li><b><a href="https://eigen.tuxfamily.org/index.php" target="_blank">Eigen</a></b> (version 5.0.1): Eigen is a C++ template library for linear algebra: matrices, vectors, numerical solvers, and related algorithms.
       <div style="margin-left: 1em; font-size: small;">
-      <b>Eigen</b> is used used by the <b>Ceres Solver</b> library, as well as a few places within the <em>Relative Efficiency</em> tools for some matrix operations.
+      <b>Eigen</b> is used by the <b>Ceres Solver</b> library, as well as a few places within the <em>Relative Efficiency</em> tools for some matrix operations.
       <b>Eigen</b> is <a href="https://www.mozilla.org/en-US/MPL/2.0/" target="_blank">Mozilla Public License Version 2.0</a> library.
+      </div>
+    </li>
+    <li><b><a href="https://abseil.io/" target="_blank">Abseil</a></b> (LTS 20260107.1): an open-source collection of C++ code designed to augment the C++ standard library.
+      <div style="margin-left: 1em; font-size: small;">
+      <b>Abseil</b> is used as a dependency of the <b>Ceres Solver</b> library.
+      <b>Abseil</b> is <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank">Apache License 2.0</a> library.
       </div>
     </li>
     <li><b><a href="https://www.wxwidgets.org" target="_blank">wxWidgets</a></b> (version 3.2.1): wxWidgets is a C++ library that lets developers create applications for Windows, macOS, Linux and other platforms with a single code base.

@@ -613,10 +613,15 @@ padding-left:10px;
 .VerticalNavMenu a
 {
   cursor: pointer;
+  text-decoration: none;
 }
 
 
 /*fix the menu item links that the SRB CSS messes up*/
+ul.Wt-popupmenu > li > a {
+  text-decoration: none;
+}
+
 ul.Wt-popupmenu > li > a > span > span
 {
   font-weight: normal;
@@ -631,6 +636,7 @@ ul.Wt-popupmenu > li > label > span
 .Wt-suggest a
 {
   color: var(--interspec-text-color, black);
+  text-decoration: none;
 }
 
 .Wt-popupmenu .active
@@ -643,7 +649,7 @@ ul.Wt-popupmenu > li.active > a > span > span
  color: #E0F5FF;
 }
 
-ul.Wt-popupmenu > li > a > span > span:hover
+ul.Wt-popupmenu > li:hover > a > span > span
 {
  color: white;
 }
@@ -849,10 +855,7 @@ background-color: #909090;
   color:grey;
   text-decoration:underline;
   cursor:pointer;
-  border:1px solid var(--interspec-border-color, #e1e1e1);
-  -moz-border-radius: 5px;
-  -webkit-border-radius: 5px;
-  border-radius: 5px;
+  border: none;
 }
 
 
@@ -897,6 +900,7 @@ table { margin-bottom:0; }
 /* Links use CSS variable for theming */
 a, .InfoLink {
   color: var(--interspec-link-color, blue);
+  text-decoration: none;
 }
 
 /* Light buttons (link-style buttons) use link color */
@@ -922,7 +926,6 @@ button.Wt-btn.with-label.LightButton,
   color: var(--interspec-label-color, black);
 }
 
-a:hover { color:#E88400; border-bottom:none; }
   th, td { border: none; padding: 0; vertical-align: none; text-align: none; }
   
   
@@ -1447,6 +1450,7 @@ a:hover { color:#E88400; border-bottom:none; }
     white-space: nowrap;
     padding: 6px 9px 4px;
     color: var(--interspec-text-color, black);
+    text-decoration: none;
     border: 1px solid transparent;
     -moz-border-top-left-radius: .25rem;
     -webkit-border-top-left-radius: .25rem;
