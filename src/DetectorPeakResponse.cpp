@@ -946,9 +946,9 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   const istream::pos_type orig_pos = detDatFile.tellg();
   
   string line;
-  if( !SpecUtils::safe_get_line( detDatFile, line ) )
+  if( !SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) )
     throw std::runtime_error( "Couldnt read first line of Detector.dat" );
-  
+
   const bool is_xml = (line.find("xml") != string::npos);
   
   if( is_xml )
@@ -1044,10 +1044,10 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
         cerr << "\nError reading line \"" << line << "\"" << endl;
         continue;
       }
-    }while( SpecUtils::safe_get_line( detDatFile, line ) );
+    }while( SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) );
   }//if( is_xml ) / else
-  
-  
+
+
   if( detWidth<=0.0 || heightToWidth<=0.0 )
     throw runtime_error( "Couldnt find detector dimensions in the Detector.dat file" );
   
@@ -1290,8 +1290,8 @@ void DetectorPeakResponse::parseMultipleRelEffDrfCsv( std::istream &input,
     
     if( det )
       drfs.push_back( det );
-  }//while( SpecUtils::safe_get_line( input, line ) )
-  
+  }//while( SpecUtils::safe_get_line( input, line, 64 * 1024 ) )
+
   if( drfs.empty() )
   {
     // If we didnt read and DRFs, lets be nice and reset file location to where we started
@@ -2145,7 +2145,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     int val;
     if( !(stringstream(parts["ORIGIN"]) >> val) )
       throw runtime_error( "fromAppUrl: ORIGIN must be an integer value." );
-    
+
     drf_source = static_cast<DrfSource>( val );
     switch( drf_source )
     {
@@ -2585,7 +2585,7 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
   // Read all lines from the input
   vector<string> all_lines;
   string line;
-  while( SpecUtils::safe_get_line( input, line ) )
+  while( SpecUtils::safe_get_line( input, line, 64 * 1024 ) )
   {
     if( all_lines.size() > 5000 )
       throw runtime_error( "Efficiency CSV file has too many lines." );
@@ -2856,7 +2856,7 @@ void DetectorPeakResponse::parseDetectorDatGeometry( std::istream &detDatFile,
   const istream::pos_type orig_pos = detDatFile.tellg();
 
   string line;
-  if( !SpecUtils::safe_get_line( detDatFile, line ) )
+  if( !SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) )
     throw runtime_error( "Could not read first line of Detector.dat" );
 
   const bool is_xml = (line.find( "xml" ) != string::npos);
@@ -2928,7 +2928,7 @@ void DetectorPeakResponse::parseDetectorDatGeometry( std::istream &detDatFile,
       {
         continue;
       }
-    }while( SpecUtils::safe_get_line( detDatFile, line ) );
+    }while( SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) );
   }//if( is_xml ) / else
 
   if( (detWidth <= 0.0f) || (heightToWidth <= 0.0f) )
@@ -3545,15 +3545,24 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( (!node || !node->value()) && ((m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute)) )
     throw runtime_error( "DetectorPeakResponse missing DetectorDiameter node" );
   if( node && node->value() )
-    m_detectorDiameter = atof( node->value() );
-  else
+  {
+    if( !SpecUtils::parse_float( node->value(), node->value_size(), m_detectorDiameter ) )
+      throw runtime_error( "DetectorPeakResponse invalid DetectorDiameter value" );
+    if( IsInf(m_detectorDiameter) || IsNan(m_detectorDiameter) || (m_detectorDiameter < 0.0f) )
+      throw runtime_error( "DetectorPeakResponse DetectorDiameter out of range" );
+  }else
+  {
     m_detectorDiameter = 0.0;
+  }
 
   m_detectorSetback = 0.0;
   node = parent->first_node( "DetectorSetback", 15 );
   if( node && node->value() )
   {
-    m_detectorSetback = atof( node->value() );
+    if( !SpecUtils::parse_double( node->value(), node->value_size(), m_detectorSetback ) )
+      throw runtime_error( "DetectorPeakResponse invalid DetectorSetback value" );
+    if( IsInf(m_detectorSetback) || IsNan(m_detectorSetback) )
+      throw runtime_error( "DetectorPeakResponse DetectorSetback out of range" );
     if( m_detectorSetback < 0.0 )
       m_detectorSetback = 0.0;
   }//if( DetectorSetback node found )
@@ -3599,7 +3608,10 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   node = parent->first_node( "EfficiencyEnergyUnits", 21 );
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing EfficiencyEnergyUnits node" );
-  m_efficiencyEnergyUnits = atof( node->value() );
+  if( !SpecUtils::parse_float( node->value(), node->value_size(), m_efficiencyEnergyUnits ) )
+    throw runtime_error( "DetectorPeakResponse invalid EfficiencyEnergyUnits value" );
+  if( IsInf(m_efficiencyEnergyUnits) || IsNan(m_efficiencyEnergyUnits) || (m_efficiencyEnergyUnits <= 0.0f) )
+    throw runtime_error( "DetectorPeakResponse EfficiencyEnergyUnits out of range" );
   
   
   node = parent->first_node( "ResolutionForm", 14 );
@@ -3641,9 +3653,13 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   {
     node = parent->first_node( "ResolutionCoefficients", 22 );
     if( node && node->value() )
+    {
       SpecUtils::split_to_floats( node->value(), node->value_size(), m_resolutionCoeffs );
+      if( m_resolutionCoeffs.size() > 20 )
+        throw runtime_error( "DetectorPeakResponse: too many resolution coefficients" );
+    }
   }//if( m_resolutionForm != kNumResolutionFnctForm )
-  
+
   m_energyEfficiencies.clear();
   node = parent->first_node( "EnergyEfficiencies", 18 );
   if( node && node->value() )
@@ -3652,6 +3668,8 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     SpecUtils::split_to_floats( node->value(), node->value_size(), values );
     if( (values.size()%2) != 0 )
       throw runtime_error( "DetectorPeakResponse: invalid number of energy efficiency pairs" );
+    if( values.size() > 10000 )
+      throw runtime_error( "DetectorPeakResponse: too many energy efficiency pairs" );
     
     for( size_t i = 0; i < values.size(); i += 2 )
     {
@@ -3693,13 +3711,20 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   
   node = XML_FIRST_NODE(parent, "ExpOfLogPowerSeriesCoeffs");
   if( node && node->value() )
+  {
     SpecUtils::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesCoeffs );
-  
-  
+    if( m_expOfLogPowerSeriesCoeffs.size() > 25 )
+      throw runtime_error( "DetectorPeakResponse: too many ExpOfLogPowerSeries coefficients" );
+  }
+
   node = XML_FIRST_NODE(parent, "ExpOfLogPowerSeriesUncerts");
   if( node && node->value() )
+  {
     SpecUtils::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesUncerts );
-  
+    if( m_expOfLogPowerSeriesUncerts.size() > 25 )
+      throw runtime_error( "DetectorPeakResponse: too many ExpOfLogPowerSeries uncertainties" );
+  }
+
   if( !m_expOfLogPowerSeriesUncerts.empty()
      && (m_expOfLogPowerSeriesUncerts.size() != m_expOfLogPowerSeriesCoeffs.size()) )
     throw runtime_error( "DetectorPeakResponse number eff coeffs doesnt match number of uncerts" );
@@ -3732,15 +3757,27 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   
   node = parent->first_node( "LowerEnergy", 11 );
   if( node && node->value_size() )
-    m_lowerEnergy = atof( node->value() );
-  else
-    m_lowerEnergy = 0.0f;
-  
+  {
+    if( !SpecUtils::parse_double( node->value(), node->value_size(), m_lowerEnergy ) )
+      throw runtime_error( "DetectorPeakResponse invalid LowerEnergy value" );
+    if( IsInf(m_lowerEnergy) || IsNan(m_lowerEnergy) )
+      throw runtime_error( "DetectorPeakResponse LowerEnergy out of range" );
+  }else
+  {
+    m_lowerEnergy = 0.0;
+  }
+
   node = parent->first_node( "UpperEnergy", 11 );
   if( node && node->value_size() )
-    m_upperEnergy = atof( node->value() );
-  else
-    m_upperEnergy = 0.0f;
+  {
+    if( !SpecUtils::parse_double( node->value(), node->value_size(), m_upperEnergy ) )
+      throw runtime_error( "DetectorPeakResponse invalid UpperEnergy value" );
+    if( IsInf(m_upperEnergy) || IsNan(m_upperEnergy) )
+      throw runtime_error( "DetectorPeakResponse UpperEnergy out of range" );
+  }else
+  {
+    m_upperEnergy = 0.0;
+  }
   
   node = parent->first_node( "CreationTimeUtc", 15 );
   if( node && node->value_size() )

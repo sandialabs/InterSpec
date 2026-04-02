@@ -2162,16 +2162,9 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         const string tmpdir = SpecUtils::temp_dir();
         const string tmpname = SpecUtils::temp_file_name( "non_spec_file", tmpdir );
-        assert( !SpecUtils::is_file(tmpname) );
-        
-        if( SpecUtils::is_file(tmpname) )
-        {
-          cerr << "Unexpectedly tmp filename is a file: '" << tmpname << "'." << endl;
-          return;
-        }
-        
+
         bool wrote_tmp_file = false;
-          
+
         {//begin write tmp file
 #ifdef _WIN32
           const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(tmpname);

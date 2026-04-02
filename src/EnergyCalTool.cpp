@@ -2391,8 +2391,31 @@ void EnergyCalTool::handleRequestToUploadCALp()
     if( !measmn )
       return;
     
-    ifstream input( upload->spoolFileName().c_str(), ios::in | ios::binary );
-    
+    const string calp_spool_path = upload->spoolFileName();
+    const size_t calp_file_size = SpecUtils::file_size( calp_spool_path );
+    if( calp_file_size > 10 * 1024 * 1024 )
+    {
+      dialog->contents()->clear();
+      dialog->footer()->clear();
+
+      WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
+      WGridLayout *stretcher = new WGridLayout();
+      stretcher->setContentsMargins( 0, 0, 0, 0 );
+      dialog->contents()->setLayout( stretcher );
+      WText *title = new WText( WString::tr("ect-upload-CALp-to-large") );
+      title->addStyleClass( "title" );
+      stretcher->addWidget( title, 0, 0 );
+
+      return;
+    }
+
+#ifdef _WIN32
+    const std::wstring wcalp_path = SpecUtils::convert_from_utf8_to_utf16( calp_spool_path );
+    ifstream input( wcalp_path.c_str(), ios::in | ios::binary );
+#else
+    ifstream input( calp_spool_path.c_str(), ios::in | ios::binary );
+#endif
+
     if( !measmn->handleCALpFile( input, dialog, true ) )
     {
       dialog->contents()->clear();

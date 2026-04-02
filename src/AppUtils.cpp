@@ -420,10 +420,26 @@ bool locate_file( string &filename, const bool is_dir,
 bool showFileInOsFileBrowser( const std::string &filepath )
 {
   const bool isdir = SpecUtils::is_directory(filepath);
-  
+
   const string parentdir = isdir ? filepath : SpecUtils::parent_path(filepath);
   if( !SpecUtils::is_directory(parentdir) )
     return false;
+
+  // Helper to escape a string for use inside single-quotes in a POSIX shell command.
+  // Replaces each ' with '\'' (end quote, escaped literal quote, reopen quote).
+  // Only used on macOS and Linux where system() invokes /bin/sh.
+  auto shell_escape = []( const std::string &s ) -> std::string {
+    std::string escaped;
+    escaped.reserve( s.size() + 10 );
+    for( const char c : s )
+    {
+      if( c == '\'' )
+        escaped += "'\\''";
+      else
+        escaped += c;
+    }
+    return escaped;
+  };
   
 //#if( BUILD_AS_ELECTRON_APP )
   //  TODO: we could (should?) implement this as an electron specific function in InterSpecAddOn.cpp/.h or ElectronUtils.h/.cpp; either as dedicated function, or via InterSpecAddOn::send_nodejs_message - probably dedicated function would be best
@@ -472,7 +488,7 @@ bool showFileInOsFileBrowser( const std::string &filepath )
   int rval = rval ? 0 : 1;
   if( !success )
   {
-    const string command = "open -R '" + filepath + "'"; //The "-R" option reveals file in Finder, with it highlighted
+    const string command = "open -R '" + shell_escape(filepath) + "'";
     rval = system( command.c_str() );
   }
 #elif( __APPLE__ )
@@ -485,17 +501,17 @@ bool showFileInOsFileBrowser( const std::string &filepath )
   int rval = 0;
   if( isdir )
   {
-    const string command = "open -R '" + filepath + "'"; //The "-R" option reveals file in Finder, with it highlighted
+    const string command = "open -R '" + shell_escape(filepath) + "'";
     rval = system( command.c_str() );
   }else
   {
-    const string command = "open -R '" + filepath + "'"; //The "-R" option reveals file in Finder, with it highlighted
+    const string command = "open -R '" + shell_escape(filepath) + "'";
     rval = system( command.c_str() );
   }
 #else
   // See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_linux.cc
   #warning "xdg-open for parentdir has not been tested!"
-  const string command = "xdg-open '" + parentdir + "'";
+  const string command = "xdg-open '" + shell_escape(parentdir) + "'";
   const int rval = system( command.c_str() );
 #endif
   

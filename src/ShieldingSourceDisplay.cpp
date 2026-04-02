@@ -6466,7 +6466,11 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
   try
   {
     const std::string filename = upload->spoolFileName();
-    
+
+    const size_t filesize = SpecUtils::file_size( filename );
+    if( filesize > 50 * 1024 * 1024 )
+      throw runtime_error( "Uploaded file is too large (max 50 MB)." );
+
     std::vector<char> data;
     SpecUtils::load_file_data( filename.c_str(), data );
     
