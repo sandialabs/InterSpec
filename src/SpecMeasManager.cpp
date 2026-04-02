@@ -3551,8 +3551,9 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
     assert( parse_result.drf && parse_result.drf->isValid() );
     if( !parse_result.drf || !parse_result.drf->isValid() )
       throw std::logic_error( "parseEfficiencyCsvFile returned invalid DRF." );
-  }catch( std::exception & )
+  }catch( std::exception &e )
   {
+    cerr << "--- " << e.what() << " ---" << endl;
     input.seekg( start_pos );
     return false;
   }

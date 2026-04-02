@@ -2801,8 +2801,9 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
     if( IsNan( prev_eff ) || IsNan( this_eff ) || IsInf( prev_eff ) || IsInf( this_eff ) )
       throw runtime_error( "NaN or Inf efficiency in efficiency CSV." );
 
-    if( (prev_eff < 0.0f) || (this_eff < 0.0f) || (prev_eff > 1.0f) || (this_eff > 1.0f) )
-      throw runtime_error( "Efficiency value out of range [0, 1] in CSV." );
+    // We will let the efficiency go above 100% - this can happen in GADRAS, for reasons I dont totally understand
+    if( (prev_eff < 0.0f) || (this_eff < 0.0f) || (prev_eff > 1.2f) || (this_eff > 1.2f) )
+      throw runtime_error( "Efficiency value out of range [0, 1.2] in CSV." );
 
     // Allow very close energies (within ~1e-5 relative tolerance)
     if( fabs( prev_e - this_e ) < 1.0E-5f * std::max( fabs( this_e ), fabs( prev_e ) ) )
