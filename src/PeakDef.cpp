@@ -2709,9 +2709,15 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
       xml_node<char> *e_node = nuc_node->first_node("DecayGammaEnergy",16);
       xml_node<char> *type_node = nuc_node->first_node("DecayGammaType",14);
     
-      const bool isNormalNucTrans = (p_node && c_node && e_node && name_node->value()
+      if( !name_node || !name_node->value() )
+        throw runtime_error( "Missing nuclide Name node" );
+
+      if( !type_node || !type_node->value() )
+        throw runtime_error( "Missing DecayGammaType node" );
+
+      const bool isNormalNucTrans = (p_node && c_node && e_node
                                     && p_node->value() && c_node->value() && e_node->value());
-    
+
       bool gotGammaType = false;
       const char *typeval = type_node->value();
       const size_t typelen = type_node->value_size();
