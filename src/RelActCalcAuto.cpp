@@ -33,6 +33,7 @@
 #include <limits>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <algorithm>
 #include <functional>
@@ -5303,9 +5304,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //RelActAutoCostFcn::CeresStepSummaryCallback step_summary_callback( cost_functor.get() );
     //ceres_options.callbacks.push_back( &step_summary_callback );
     
-    // Setting ceres_options.num_threads >1 doesnt seem to do much (any?) good - so instead we do
-    //  some multiple threaded computations in RelActAutoSolution::eval(...)
-    ceres_options.num_threads = static_cast<int>( std::thread::hardware_concurrency(), 2 );
+    // Setting ceres_options.num_threads >1 doesnt seem to do much (any?) good
+    ceres_options.num_threads = static_cast<int>( std::max(std::thread::hardware_concurrency(), 2u) );
 
     cost_functor->m_solution_finished = false;
 
@@ -5885,7 +5885,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters, {}, &(solution.m_covariance) );
 
       fit_peaks.insert( end(fit_peaks), begin(these_peaks.peaks), end(these_peaks.peaks) );
-      
+
       if( num_rel_eff_curves > 1 )
       {
         shared_ptr<PeakContinuum> shared_continuum;
@@ -6061,7 +6061,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_peaks_without_back_sub = solution.m_fit_peaks_in_spectrums_cal;
     }
 
-
     // \c fit_peaks are in the original energy calibration of the spectrum, we may need to adjust
     //  them to match the new energy calibration
     if( new_cal != cost_functor->m_energy_cal )
@@ -6089,7 +6088,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_fit_peaks_for_each_curve = vector<vector<PeakDef>>{1, fit_peaks};
     else
       solution.m_fit_peaks_for_each_curve = fit_peaks_for_each_curve;
-    
+
     // Filter out peaks without sources from m_fit_peaks_for_each_curve
     filter_peaks_without_sources( solution.m_fit_peaks_for_each_curve, (new_cal == cost_functor->m_energy_cal) );
     
@@ -6582,7 +6581,51 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #endif
     
     //solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
-    
+
+    // Sort all peak vectors deterministically by mean energy, with tiebreakers
+    // on gamma energy, peak area, and source nuclide name.  The peak ordering
+    // from the solver depends on ROI processing order which may vary between
+    // runs, and downstream code can be sensitive to order.
+    const auto peak_order = []( const PeakDef &lhs, const PeakDef &rhs ) -> bool {
+      if( lhs.mean() != rhs.mean() )
+        return lhs.mean() < rhs.mean();
+
+      const bool lhs_has_src = lhs.hasSourceGammaAssigned();
+      const bool rhs_has_src = rhs.hasSourceGammaAssigned();
+      if( lhs_has_src != rhs_has_src )
+        return lhs_has_src > rhs_has_src;  // peaks with sources sort first
+
+      if( lhs_has_src )  // both have sources
+      {
+        const double lhs_ge = lhs.gammaParticleEnergy();
+        const double rhs_ge = rhs.gammaParticleEnergy();
+        if( lhs_ge != rhs_ge )
+          return lhs_ge < rhs_ge;
+      }
+
+      if( lhs.peakArea() != rhs.peakArea() )
+        return lhs.peakArea() < rhs.peakArea();
+
+      const SandiaDecay::Nuclide * const lhs_nuc = lhs.parentNuclide();
+      const SandiaDecay::Nuclide * const rhs_nuc = rhs.parentNuclide();
+      if( lhs_nuc != rhs_nuc )
+      {
+        if( !lhs_nuc ) return true;
+        if( !rhs_nuc ) return false;
+        return lhs_nuc->symbol < rhs_nuc->symbol;
+      }
+
+      return false;
+    };
+
+    std::sort( solution.m_fit_peaks.begin(), solution.m_fit_peaks.end(), peak_order );
+    std::sort( solution.m_fit_peaks_in_spectrums_cal.begin(), solution.m_fit_peaks_in_spectrums_cal.end(), peak_order );
+    std::sort( solution.m_peaks_without_back_sub.begin(), solution.m_peaks_without_back_sub.end(), peak_order );
+    for( vector<PeakDef> &v : solution.m_fit_peaks_for_each_curve )
+      std::sort( v.begin(), v.end(), peak_order );
+    for( vector<PeakDef> &v : solution.m_fit_peaks_in_spectrums_cal_for_each_curve )
+      std::sort( v.begin(), v.end(), peak_order );
+
     return solution;
   }//RelActCalcAuto::RelActAutoSolution solve_ceres( ceres::Problem &problem )
   
@@ -10061,7 +10104,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t tasks_completed = 0;
     std::string exception_msg;
     const size_t num_energy_ranges = m_energy_ranges.size();
-    
+
     for( size_t i = 0; i < num_energy_ranges; ++i )
     {
       boost::asio::post( m_pool,
@@ -10074,14 +10117,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           std::lock_guard<std::mutex> lock(cv_mutex);
           exception_msg = e.what();
         }
-        
-        
+
+
         std::lock_guard<std::mutex> lock(cv_mutex); //lock_guard is simpler than unique_lock, so use it here
         tasks_completed += 1;
         cv.notify_one();
       } );
     }//for( size_t i = 0; i < num_energy_ranges; ++i )
-    
+
     {//begin wait for things to finish
       std::unique_lock<std::mutex> lock(cv_mutex);
       cv.wait(lock, [num_energy_ranges,&tasks_completed]() -> bool {
@@ -12770,6 +12813,8 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
   {
     XML_FOREACH_CHILD( nuc_node, node, "NucInputInfo" )
     {
+      if( nuclides.size() > 500 )
+        throw runtime_error( "Too many NucInputInfo entries (max 500)" );
       RelActCalcAuto::NucInputInfo nuc;
       nuc.fromXml( nuc_node );
       nuclides.push_back( nuc );
@@ -12788,7 +12833,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( (rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) || rel_eff_order_node )
   {
     const string rel_eff_order_str = SpecUtils::xml_value_str( rel_eff_order_node );
-    if( !(stringstream(rel_eff_order_str) >> rel_eff_eqn_order) )
+    if( !(stringstream(rel_eff_order_str) >> rel_eff_eqn_order) || (rel_eff_eqn_order > 12) )
       throw runtime_error( "Invalid 'RelEffEqnOrder' value '" + rel_eff_order_str + "'" );
   }else
   {
@@ -12824,6 +12869,8 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
     {
       XML_FOREACH_CHILD( att_node, ext_atten_node, "PhysicalModelShield" )
       {
+        if( phys_model_external_atten.size() > 15 )
+          throw runtime_error( "Too many PhysicalModelShield entries (max 15)" );
         auto att = make_shared<RelActCalc::PhysicalModelShieldInput>();
         att->fromXml( att_node );
         phys_model_external_atten.push_back( att );
@@ -12873,6 +12920,8 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
   {
     XML_FOREACH_CHILD( constraint_node, act_ratio_constraints_node, "ActRatioConstraint" )
     {
+      if( act_ratio_constraints.size() > 100 )
+        throw runtime_error( "Too many ActRatioConstraint entries (max 100)" );
       ActRatioConstraint constraint;
       constraint.fromXml( constraint_node );
 

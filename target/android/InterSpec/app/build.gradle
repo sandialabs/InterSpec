@@ -1,62 +1,88 @@
 apply plugin: 'com.android.application'
 
-def keystore_file = local_props("keystore.location")
-def keystore_pword = local_props("keystore.password")
-def keystore_alias_name = local_props("keystore.alias.name")
-def keystore_alias_pword = local_props("keystore.alias.password")
+// Reads a build property from environment variable first, then local.properties fallback.
+// Returns null if neither source provides the value.
+def signing_prop(String envName, String propKey) {
+    def val = System.getenv(envName)
+    if( val != null && !val.isEmpty() )
+        return val
+
+    try {
+        Properties properties = new Properties()
+        def localPropsFile = project.rootProject.file('local.properties')
+        if( localPropsFile.exists() ) {
+            properties.load(localPropsFile.newDataInputStream())
+            val = properties.getProperty(propKey, null)
+        }
+    } catch( Exception e ) {
+        // local.properties missing or unreadable — not an error
+    }
+
+    return val
+}
+
+def keystore_file     = signing_prop("KEYSTORE_LOCATION", "keystore.location")
+def keystore_pword    = signing_prop("KEYSTORE_PASSWORD", "keystore.password")
+def keystore_alias    = signing_prop("KEYSTORE_ALIAS_NAME", "keystore.alias.name")
+def keystore_alias_pw = signing_prop("KEYSTORE_ALIAS_PASSWORD", "keystore.alias.password")
+
+def hasSigningConfig = (keystore_file != null && keystore_pword != null
+                        && keystore_alias != null && keystore_alias_pw != null)
+
+def leafletKey = signing_prop("LEAFLET_MAPS_KEY", "leaflet.maps.key")
+if( leafletKey == null || leafletKey.isEmpty() ) {
+    logger.warn("WARNING: LEAFLET_MAPS_KEY not set. Leaflet maps will not work at runtime. " +
+                "Set the LEAFLET_MAPS_KEY environment variable or add leaflet.maps.key to local.properties.")
+}
 
 
 android {
-    signingConfigs {
-        config {
-            keyAlias keystore_alias_name
-            keyPassword keystore_alias_pword
-            storeFile file(keystore_file)
-            storePassword keystore_pword
-        }
-    }
-
-    compileSdkVersion 34
-    ndkVersion '23.1.7779620'
-
-    defaultConfig {
-        applicationId "gov.sandia.interspec"
-        // Android 4 (Kit Kat) is level 19.  Android 6 (Marshmallow - e.x., Nexus 7) is level 23.
-        minSdkVersion 19
-        targetSdkVersion 34
-        versionCode 18
-        versionName "1.0.13"
- //       testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
-
-        signingConfig signingConfigs.config
-
-        externalNativeBuild {
-            cmake {
-                arguments "-DUSE_LEAFLET_MAP=ON -DLEAFLET_MAPS_KEY=AAPKab9e3ffd9d4b4e7cbe70f3c7220b13fdlpDy_YRIy2iLHFE6m9rGsgmQ85pP4Zn1fYaA54gDfCyh2BIC58BmCihxKjE6TjiZ"
+    if( hasSigningConfig ) {
+        signingConfigs {
+            config {
+                keyAlias keystore_alias
+                keyPassword keystore_alias_pw
+                storeFile file(keystore_file)
+                storePassword keystore_pword
             }
         }
     }
-//    buildFeatures {
-//        viewBinding true
-//    }
+
+    compileSdkVersion 35
+    ndkVersion '28.0.13004108'
+
+    defaultConfig {
+        applicationId "gov.sandia.interspec"
+        minSdkVersion 21
+        targetSdkVersion 35
+        versionCode 18
+        versionName "1.0.13"
+
+        if( hasSigningConfig ) {
+            signingConfig signingConfigs.config
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DUSE_LEAFLET_MAP=ON",
+                          "-DLEAFLET_MAPS_KEY=${leafletKey}",
+                          "-DANDROID_ARM_NEON=TRUE"
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
         debug {
-  //          signingConfig signingConfigs.config
         }
     }
-    //externalNativeBuild {
-    //    cmake {
-    //        path "../../../../CMakeLists.txt"
-    //    }
-    //}
+
     externalNativeBuild {
         cmake {
             path "../../CMakeLists.txt"
-            version "3.24.2"
         }
     }
 
@@ -65,23 +91,17 @@ android {
         arm8 {
             dimension 'cpuArch'
             ndk {
-                abiFilters 'arm64-v8a', 'armeabi-v7a'
-            }
-        }
-        x86_64 {
-            dimension 'cpuArch'
-            ndk {
-                abiFilters 'x86_64', 'x86'
+                abiFilters 'arm64-v8a'
             }
         }
         universal {
             dimension 'cpuArch'
-            // include all default ABIs. with NDK-r16,  it is:
-            //   armeabi-v7a, arm64-v8a, x86, x86_64
+            ndk {
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
         }
     }
     namespace 'gov.sandia.InterSpec'
-    //buildToolsVersion '27.0.3'
 }
 
 dependencies {
@@ -90,25 +110,16 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.3'
 }
 
-//------------------------------------------------------------
-def local_props(key) { // reads ~ value from local.properties
-    Properties properties = new Properties()
-    properties.load(project.rootProject.file('local.properties').newDataInputStream())
-    def val = properties.getProperty(key, null)
-    if (val == null)
-        throw new GradleException("""cant find value '${key}' in file 'local.properties'.  """)
-
-    return val
-}
-
 task makeAssets(type:Exec) {
     workingDir '../'
 
-    //on windows:
-    //commandLine 'cmd', '/c', 'stop.bat'
-
     //on linux
     commandLine './make_assets.sh'
+
+    // Skip if assets zip already exists (e.g., pre-built in Docker)
+    onlyIf {
+        !file('../InterSpec/app/src/main/assets/interspec-assets.zip').exists()
+    }
 }
 
 preBuild.dependsOn makeAssets
@@ -117,4 +128,3 @@ gradle.projectsEvaluated {
     assembleRelease.dependsOn makeAssets
     assembleDebug.dependsOn makeAssets
 }
-

@@ -63,18 +63,25 @@
   <!-- Buttons -->
   <message id="esf-export">Ekspor</message>
   <message id="esf-show-qr-code">Tampilkan kode QR</message>
-  
+  <message id="esf-lossless-qr">Tanpa kehilangan</message>
+  <message id="esf-lossless-qr-tt">Jika dicentang, data spektral tidak akan kehilangan informasi apa pun, tetapi untuk spektrum dengan jumlah kanal tinggi atau statistik tinggi, mungkin diperlukan beberapa kode QR. Jika tidak dicentang, kompresi lossy berbasis wavelet digunakan, yang kehilangan sebagian informasi tetapi memungkinkan penggunaan kode QR dengan lebih sedikit elemen, lebih banyak koreksi kesalahan, atau merepresentasikan spektrum apa pun dalam satu kode QR.</message>
+
   <!-- File info table headers -->
   <message id="esf-displayed-as">Ditampilkan Sebagai</message>
   <message id="esf-fore-abbrev">Lat. Depan</message>
   <message id="esf-back-abbrev">Lat. Belakang</message>
   <message id="esf-sec-abbrev">Sek</message>
-  
+
   <!-- QR Code dialog -->
   <message id="esf-next-qr-code">Kode QR berikutnya</message>
   <message id="esf-url-link">Link URL</message>
   <message id="esf-email-link">Link Email</message>
-  
+  <message id="esf-lossy-qr-title">Kode QR lossy dari spektrum</message>
+  <message id="esf-qr-error-tolerance">Toleransi Kesalahan QR:</message>
+  <message id="esf-qr-num-elements">Jml. Elemen QR:</message>
+  <message id="esf-qr-rmse-info">RMSE: {1}, Koefisien: {2}</message>
+  <message id="esf-qr-lossy-err">Tidak dapat menyesuaikan spektrum pada ukuran/toleransi QR ini</message>
+
   <!-- Error dialogs -->
   <message id="esf-error-title">Kesalahan</message>
   <message id="esf-qr-encode-failed">Gagal menampilkan spektrum sebagai kode QR: {1}</message>

@@ -242,6 +242,7 @@ protected:
   
 #if( USE_QR_CODES )
   Wt::WPushButton *m_show_qr_btn;
+  Wt::WCheckBox *m_lossless_qr_cb;
 #endif
   
   ExportSpecFileTool_imp::DownloadSpectrumResource *m_resource;

@@ -252,6 +252,13 @@ add_test( NAME TPeakModel
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_fitPeaksForSources test_fitPeaksForSources.cpp )
+target_link_libraries( test_fitPeaksForSources PRIVATE InterSpecLib )
+add_test( NAME TFitPeaksForSources
+  COMMAND $<TARGET_FILE:test_fitPeaksForSources> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_DetectorPeakResponse test_DetectorPeakResponse.cpp )
 target_link_libraries( test_DetectorPeakResponse PRIVATE InterSpecLib )
 add_test( NAME TDetectorPeakResponse
@@ -274,3 +281,4 @@ add_test( NAME TDetectorPeakResponse
 if( CMAKE_GENERATOR STREQUAL "Xcode" )
   add_custom_target( build_then_run_tests DEPENDS ALL_BUILD RUN_TESTS )
 endif( CMAKE_GENERATOR STREQUAL "Xcode" )
+

@@ -63,6 +63,8 @@
   <!-- Buttons -->
   <message id="esf-export">निर्यात</message>
   <message id="esf-show-qr-code">QR-कोड दिखाएं</message>
+  <message id="esf-lossless-qr">हानिरहित</message>
+  <message id="esf-lossless-qr-tt">चेक होने पर, स्पेक्ट्रल डेटा कोई जानकारी नहीं खोएगा, लेकिन उच्च चैनल संख्या या उच्च सांख्यिकी स्पेक्ट्रम के लिए, कई QR कोड की आवश्यकता हो सकती है। अनचेक होने पर, wavelet-आधारित हानिकारक संपीड़न का उपयोग किया जाता है, जो कुछ जानकारी खोता है लेकिन कम तत्वों, अधिक त्रुटि सुधार, या एकल QR कोड में किसी भी स्पेक्ट्रम को प्रदर्शित करने की अनुमति देता है।</message>
 
   <!-- File info table headers -->
   <message id="esf-displayed-as">इस रूप में प्रदर्शित</message>
@@ -74,6 +76,11 @@
   <message id="esf-next-qr-code">अगला QR कोड</message>
   <message id="esf-url-link">URL लिंक</message>
   <message id="esf-email-link">ईमेल लिंक</message>
+  <message id="esf-lossy-qr-title">स्पेक्ट्रम का हानिकारक QR-कोड</message>
+  <message id="esf-qr-error-tolerance">QR त्रुटि सहनशीलता:</message>
+  <message id="esf-qr-num-elements">QR तत्वों की संख्या:</message>
+  <message id="esf-qr-rmse-info">RMSE: {1}, गुणांक: {2}</message>
+  <message id="esf-qr-lossy-err">इस QR आकार/सहनशीलता पर स्पेक्ट्रम फिट नहीं किया जा सकता</message>
 
   <!-- Error dialogs -->
   <message id="esf-error-title">त्रुटि</message>

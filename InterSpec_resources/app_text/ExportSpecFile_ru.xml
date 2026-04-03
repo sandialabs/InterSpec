@@ -63,18 +63,25 @@
   <!-- Buttons -->
   <message id="esf-export">Экспорт</message>
   <message id="esf-show-qr-code">Показать QR-код</message>
-  
+  <message id="esf-lossless-qr">Без потерь</message>
+  <message id="esf-lossless-qr-tt">При отметке спектральные данные не потеряют никакой информации, но для спектров с большим числом каналов или высокой статистикой может потребоваться несколько QR-кодов. При снятой отметке используется сжатие с потерями на основе wavelet, которое теряет часть информации, но позволяет использовать QR-код с меньшим числом элементов, большей коррекцией ошибок или представить любой спектр в одном QR-коде.</message>
+
   <!-- File info table headers -->
   <message id="esf-displayed-as">Отображается как</message>
   <message id="esf-fore-abbrev">Пер.</message>
   <message id="esf-back-abbrev">Фон</message>
   <message id="esf-sec-abbrev">Втор</message>
-  
+
   <!-- QR Code dialog -->
   <message id="esf-next-qr-code">Следующий QR код</message>
   <message id="esf-url-link">URL ссылка</message>
   <message id="esf-email-link">Email ссылка</message>
-  
+  <message id="esf-lossy-qr-title">QR-код спектра с потерями</message>
+  <message id="esf-qr-error-tolerance">Допуск ошибки QR:</message>
+  <message id="esf-qr-num-elements">Кол. элементов QR:</message>
+  <message id="esf-qr-rmse-info">RMSE: {1}, Коэффициенты: {2}</message>
+  <message id="esf-qr-lossy-err">Невозможно подогнать спектр при данном размере/допуске QR</message>
+
   <!-- Error dialogs -->
   <message id="esf-error-title">Ошибка</message>
   <message id="esf-qr-encode-failed">Не удалось отобразить спектр как QR код: {1}</message>
