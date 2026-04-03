@@ -142,17 +142,29 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       if( clientAddress.find("127.0.0.1") == std::string::npos )
         throw runtime_error( "Opening via full path only allowed from localhost" );
 
+      // Limit the request body size to prevent memory exhaustion from huge requests
+      const size_t max_body_size = 64 * 1024; // 64KB is more than enough for a JSON path
       std::istreambuf_iterator<char> eos;
       string body(std::istreambuf_iterator<char>(request.in()), eos);
-      
+      if( body.size() > max_body_size )
+        throw runtime_error( "Request body too large" );
+
       Json::Object result;
       Json::parse( body, result );
       if( !result.contains("fullpath") )
         throw std::runtime_error( "Body JSON did not contain a 'fullpath' entry." );
       
       const WString wfullpath = result.get("fullpath");
-      const std::string fullpath = wfullpath.toUTF8();
-      
+      std::string fullpath = wfullpath.toUTF8();
+
+      // Resolve symlinks and ".." to prevent path traversal attacks
+      if( !SpecUtils::make_canonical_path( fullpath ) )
+        throw std::runtime_error( "Could not resolve file path" );
+
+      // Reject paths that contain ".." even after canonicalization, as a defense-in-depth measure
+      if( fullpath.find( ".." ) != std::string::npos )
+        throw std::runtime_error( "Invalid file path" );
+
       {// begin test if can read file
 #ifdef _WIN32
         const std::wstring wname = SpecUtils::convert_from_utf8_to_utf16( fullpath );

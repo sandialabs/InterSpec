@@ -72,27 +72,33 @@ namespace
       if( textStr.empty() )
         continue;
 
-      std::smatch matches;
-      std::regex range_expression( "(\\d+)\\s*(\\-|to|through)\\s*(\\d+)",
-                                  std::regex::ECMAScript | std::regex::icase );
-      if( std::regex_match( textStr, matches, range_expression ) )
+      try
       {
-        string firstStr = string( matches[1].first, matches[1].second );
-        string lastStr = string( matches[3].first, matches[3].second );
+        std::smatch matches;
+        std::regex range_expression( "(\\d+)\\s*(\\-|to|through)\\s*(\\d+)",
+                                    std::regex::ECMAScript | std::regex::icase );
+        if( std::regex_match( textStr, matches, range_expression ) )
+        {
+          string firstStr = string( matches[1].first, matches[1].second );
+          string lastStr = string( matches[3].first, matches[3].second );
 
-        int first = std::stoi( firstStr );
-        int last = std::stoi( lastStr );
-        if( last < first )
-          std::swap( last, first );
+          int first = std::stoi( firstStr );
+          int last = std::stoi( lastStr );
+          if( last < first )
+            std::swap( last, first );
 
-        for( int i = first; i <= last; ++i )
-          sampleNumToLoad.insert( i );
-      }else
+          for( int i = first; i <= last; ++i )
+            sampleNumToLoad.insert( i );
+        }else
+        {
+          const int sample = std::stoi( textStr );
+
+          sampleNumToLoad.insert( sample );
+        }//if( is sample range ) / else
+      }catch( std::exception & )
       {
-        const int sample = std::stoi( textStr );
-
-        sampleNumToLoad.insert( sample );
-      }//if( is sample range ) / else
+        throw runtime_error( "Invalid sample number: '" + textStr + "'" );
+      }
     }//for( string textStr : sampleranges )
     
     return sampleNumToLoad;

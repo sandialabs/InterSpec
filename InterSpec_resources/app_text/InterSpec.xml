@@ -248,6 +248,8 @@
   <message id="app-mi-edit-redo">Redo</message>
   <message id="app-mi-edit-save-png">Save Spectrum as PNG</message>
   <message id="app-mi-edit-save-svg">Save Spectrum as SVG</message>
+  <message id="app-mi-edit-save-tc-png">Save Time Chart as PNG</message>
+  <message id="app-mi-edit-save-tc-svg">Save Time Chart as SVG</message>
   <message id="app-mi-edit-enter-url">Enter URL</message>
 
   <!-- Items in the "View" menu -->

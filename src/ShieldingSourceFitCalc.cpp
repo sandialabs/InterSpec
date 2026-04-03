@@ -1971,6 +1971,13 @@ void fit_model( const std::string wtsession,
   assert( results );
   
   results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
+  results->distance = chi2Fcn->distance();
+  results->geometry = chi2Fcn->geometry();
+  results->foreground_peaks = chi2Fcn->peaks();
+  results->background_peaks = chi2Fcn->backgroundPeaks();
+  results->options = chi2Fcn->options();
+  results->initial_shieldings = chi2Fcn->initialShieldings();
+
   
   shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn::GuiProgressUpdateInfo> gui_progress_info;
   
@@ -2305,12 +2312,6 @@ void fit_model( const std::string wtsession,
     results->num_fcn_calls = minimum.NFcn();
     results->numDOF = ndof;
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
-    results->distance = chi2Fcn->distance();
-    results->geometry = chi2Fcn->geometry();
-    results->foreground_peaks = chi2Fcn->peaks();
-    results->background_peaks = chi2Fcn->backgroundPeaks();
-    results->options = chi2Fcn->options();
-    results->initial_shieldings = chi2Fcn->initialShieldings();
     
     
     {// Begin set fit source info

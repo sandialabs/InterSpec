@@ -5,8 +5,10 @@
 
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 #include <utility>
+#include <functional>
 
 //#include <boost/optional.hpp>
 
@@ -25,6 +27,7 @@ struct ColorTheme;
 namespace Wt
 {
   class WCssTextRule;
+  class WMemoryResource;
 }//namespace Wt
 
 namespace SpecUtils
@@ -81,7 +84,21 @@ public:
   void setHighlightedIntervals( const std::set<int> &sample_numbers,
                                 const SpecUtils::SpectrumType type );
   
-  void saveChartToPng( const std::string &filename );
+  void saveChartToImg( const std::string &filename, const bool asPng );
+
+  /** Callback type for asynchronous image capture. */
+  using ImageCaptureCallback = std::function<void( std::string base64Data,
+                                                    std::string mimeType,
+                                                    int widthPx, int heightPx )>;
+
+  /** Capture the chart as a base64-encoded image via JavaScript round-trip.
+   Follows the same pattern as D3SpectrumDisplayDiv::captureChartImage().
+   @param format "png", "jpeg", or "svg"
+   @param maxLongestSide Maximum dimension in pixels (0 = no resizing)
+   @param callback Called with the captured image data
+   */
+  void captureChartImage( const std::string &format, int maxLongestSide,
+                          ImageCaptureCallback callback );
 
   /** Signal when the user clicks on the chart.
    Gives the sample numebr user clicked on and a bitwise or of Wt::KeyboardModifiers.
@@ -346,7 +363,24 @@ protected:
   /** We will track the displayed sample number range, as well as real-time range, for undo/redo purposes. */
   std::array<int,2> m_displayedSampleNumbers;
   std::array<double,2> m_displayedTimes;
-  
+
+  /** JSignal for receiving captured image data from JavaScript, for captureChartImage(). */
+  std::unique_ptr<Wt::JSignal<std::string, std::string, int, int>> m_imageCapturedJS;
+
+  /** Pending callback for captureChartImage(). */
+  ImageCaptureCallback m_pendingImageCallback;
+
+  /** Resource for serving chart image downloads (WResource-based for wxWidgets compatibility). */
+  Wt::WMemoryResource *m_downloadResource;
+
+  /** Handler for the JSignal from JS when image capture completes. */
+  void handleImageCaptured( std::string base64, std::string mimeType, int w, int h );
+
+  /** Handles downloading an image captured by captureChartImage, for saveChartToImg. */
+  void handleChartImageForDownload( const std::string &filename,
+                                    std::string base64Data, std::string mimeType,
+                                    int widthPx, int heightPx );
+
   friend class D3TimeChartFilters;
 };//class D3TimeChart_h
 

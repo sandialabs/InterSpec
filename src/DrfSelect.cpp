@@ -4686,8 +4686,9 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
       
       if( xml_det->isValid() )
         det = xml_det;
-    }catch( std::exception & )
+    }catch( std::exception &e )
     {
+      cerr << "Failed to parse uploaded DRF XML: " << e.what() << endl;
     }
   }//if( !det )
   
@@ -4955,11 +4956,12 @@ void DrfSelect::handleEfficiencyCsvUpload()
 
       det = xml_det;
       can_accept = true;
-    }catch( std::exception & )
+    }catch( std::exception &e )
     {
+      cerr << "Failed to parse uploaded DRF XML: " << e.what() << endl;
     }
   }//if( !det )
-    
+
   if( !det )
   {
     passMessage( WString::tr("ds-err-invalid-csv-format"), WarningWidget::WarningMsgHigh );

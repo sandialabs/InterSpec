@@ -12960,6 +12960,8 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
   {
     XML_FOREACH_CHILD( nuc_node, node, "NucInputInfo" )
     {
+      if( nuclides.size() > 500 )
+        throw runtime_error( "Too many NucInputInfo entries (max 500)" );
       RelActCalcAuto::NucInputInfo nuc;
       nuc.fromXml( nuc_node );
       nuclides.push_back( nuc );
@@ -12978,7 +12980,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( (rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) || rel_eff_order_node )
   {
     const string rel_eff_order_str = SpecUtils::xml_value_str( rel_eff_order_node );
-    if( !(stringstream(rel_eff_order_str) >> rel_eff_eqn_order) )
+    if( !(stringstream(rel_eff_order_str) >> rel_eff_eqn_order) || (rel_eff_eqn_order > 12) )
       throw runtime_error( "Invalid 'RelEffEqnOrder' value '" + rel_eff_order_str + "'" );
   }else
   {
@@ -13014,6 +13016,8 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
     {
       XML_FOREACH_CHILD( att_node, ext_atten_node, "PhysicalModelShield" )
       {
+        if( phys_model_external_atten.size() > 15 )
+          throw runtime_error( "Too many PhysicalModelShield entries (max 15)" );
         auto att = make_shared<RelActCalc::PhysicalModelShieldInput>();
         att->fromXml( att_node );
         phys_model_external_atten.push_back( att );
@@ -13063,6 +13067,8 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
   {
     XML_FOREACH_CHILD( constraint_node, act_ratio_constraints_node, "ActRatioConstraint" )
     {
+      if( act_ratio_constraints.size() > 100 )
+        throw runtime_error( "Too many ActRatioConstraint entries (max 100)" );
       ActRatioConstraint constraint;
       constraint.fromXml( constraint_node );
 

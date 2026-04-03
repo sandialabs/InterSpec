@@ -4980,6 +4980,11 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
     try
     {
       const string xml_path = upload->spoolFileName();
+
+      const size_t filesize = SpecUtils::file_size( xml_path );
+      if( filesize > 50 * 1024 * 1024 )
+        throw runtime_error( "Uploaded file is too large (max 50 MB)." );
+
       rapidxml::file<char> input_file( xml_path.c_str() );;
       rapidxml::xml_document<char> doc;
       doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );

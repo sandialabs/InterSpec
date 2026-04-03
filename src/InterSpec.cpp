@@ -418,6 +418,8 @@ InterSpec::InterSpec()
     m_createTag( 0 ),
 #endif
     m_languagesSubMenu( nullptr ),
+    m_saveTimeChartPng( nullptr ),
+    m_saveTimeChartSvg( nullptr ),
     m_rightClickMenu( 0 ),
     m_rightClickEnergy( -DBL_MAX ),
     m_rightClickRefLineHint(),
@@ -6609,6 +6611,14 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
 
   saveitem = m_editMenuPopup->insertMenuItem( (m_undo ? 4 : -1), WString::tr("app-mi-edit-save-svg"), "", true );
   saveitem->triggered().connect( [this](){ saveChartToImg( true, false ); } );
+
+  m_saveTimeChartPng = m_editMenuPopup->addMenuItem( WString::tr("app-mi-edit-save-tc-png") );
+  m_saveTimeChartPng->triggered().connect( [this](){ saveChartToImg( false, true ); } );
+  m_saveTimeChartPng->setHidden( true );
+
+  m_saveTimeChartSvg = m_editMenuPopup->addMenuItem( WString::tr("app-mi-edit-save-tc-svg") );
+  m_saveTimeChartSvg->triggered().connect( [this](){ saveChartToImg( false, false ); } );
+  m_saveTimeChartSvg->setHidden( true );
 #endif
   
 #if( BUILD_AS_OSX_APP )
@@ -8480,19 +8490,43 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
   auto ppos = timestr.find('.');
   if( ppos != string::npos )
     timestr = timestr.substr(0,ppos);
-  filename += "_" + timestr + ((!spectrum || asPng) ? ".png" : ".svg");
-  
+  filename += "_" + timestr + (asPng ? ".png" : ".svg");
+
   string illegal_chars = "\\/:?\"<>|";
   SpecUtils::erase_any_character( filename, illegal_chars.c_str() );
-  
+
   if( spectrum )
   {
     m_spectrum->saveChartToImg( filename, asPng );
   }else
   {
-    m_timeSeries->saveChartToPng( filename );
+    m_timeSeries->saveChartToImg( filename, asPng );
   }
 }//saveSpectrumToPng()
+
+
+void InterSpec::captureSpectrumImage( const std::string &format, int maxLongestSide,
+                                       std::optional<std::pair<double,double>> energyRange,
+                                       std::optional<bool> yAxisLog,
+                                       std::function<void(std::string, std::string, int, int)> callback )
+{
+  if( !m_spectrum )
+    throw std::runtime_error( "captureSpectrumImage: no spectrum display available" );
+  m_spectrum->captureChartImage( format, maxLongestSide, energyRange, yAxisLog, std::move( callback ) );
+}//captureSpectrumImage(...)
+
+
+void InterSpec::captureTimeChartImage( const std::string &format, int maxLongestSide,
+                                       std::function<void(std::string, std::string, int, int)> callback )
+{
+  if( !m_timeSeries )
+    throw std::runtime_error( "captureTimeChartImage: no time chart available" );
+
+  if( m_timeSeries->isHidden() )
+    throw std::runtime_error( "captureTimeChartImage: time chart is not visible" );
+
+  m_timeSeries->captureChartImage( format, maxLongestSide, std::move( callback ) );
+}//captureTimeChartImage(...)
 
 
 double InterSpec::displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const
@@ -13437,6 +13471,11 @@ void InterSpec::displayTimeSeriesData()
     {
       m_timeSeries->setHidden( false );
       m_chartResizer->setHidden( m_timeSeries->isHidden() );
+
+      if( m_saveTimeChartPng )
+        m_saveTimeChartPng->setHidden( false );
+      if( m_saveTimeChartSvg )
+        m_saveTimeChartSvg->setHidden( false );
     }//if( m_timeSeries->isHidden() )
     
     const vector<string> det_to_use = detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
@@ -13463,6 +13502,11 @@ void InterSpec::displayTimeSeriesData()
     {
       m_timeSeries->setHidden( true );
       m_chartResizer->setHidden( m_timeSeries->isHidden() );
+
+      if( m_saveTimeChartPng )
+        m_saveTimeChartPng->setHidden( true );
+      if( m_saveTimeChartSvg )
+        m_saveTimeChartSvg->setHidden( true );
     }//if( !m_timeSeries->isHidden() )
   }//if( passthrough ) / else
 }//void displayTimeSeriesData()
