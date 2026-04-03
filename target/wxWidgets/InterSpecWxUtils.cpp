@@ -31,6 +31,7 @@
 #include <wx/filename.h>
 
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
 
 #include "InterSpecWxApp.h"
 #include "InterSpecWxUtils.h"
