@@ -2428,12 +2428,10 @@ void EnergyCalTool::handleRequestToUploadCALp()
       dialog->footer()->clear();
 
       WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
-      WGridLayout *stretcher = new WGridLayout();
+      WGridLayout *stretcher = dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
       stretcher->setContentsMargins( 0, 0, 0, 0 );
-      dialog->contents()->setLayout( stretcher );
-      WText *title = new WText( WString::tr("ect-upload-CALp-to-large") );
+      WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-upload-CALp-to-large") ), 0, 0 );
       title->addStyleClass( "title" );
-      stretcher->addWidget( title, 0, 0 );
 
       return;
     }
