@@ -12,7 +12,7 @@ To compile the InterSpec code, and package the Electron app, with the manually c
 npm install -g cmake-js 
 
 # For macOS only, you may want to define a deployment target
-export MACOSX_DEPLOYMENT_TARGET=10.13
+export MACOSX_DEPLOYMENT_TARGET=12.3
 
 cd /path/to/InterSpec/target/electron
 

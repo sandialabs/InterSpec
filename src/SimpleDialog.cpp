@@ -48,18 +48,20 @@ WT_DECLARE_WT_MEMBER
  (SimpleDialogBringToFront, Wt::JavaScriptFunction, "SimpleDialogBringToFront",
   function( id )
   {
-   const maxz = $('.Wt-dialog,.MobileMenuButton').get().reduce( function(result, item){
+   const maxz = Array.from(document.querySelectorAll('.Wt-dialog,.MobileMenuButton')).reduce( function(result, item){
      if( item.id === id ) return result;
-     const z = parseInt( $(item).css('z-index') );
+     const z = parseInt( getComputedStyle(item).zIndex );
      return isNaN(z) ? result : Math.max(result, z);
     }, 0);
-   
-   const z = parseInt( $('#'+id).css('z-index') );
-   
-   if( isNaN(z) || maxz >= z )
-     $('#'+id).css('z-index', maxz+1);
-   $('.window-controls-container').css('z-index', maxz + 2); //for wxWidgets and Electron builds
-   $('.suggestion').css('z-index', maxz+2);
+
+   const el = document.getElementById(id);
+   const z = el ? parseInt( getComputedStyle(el).zIndex ) : NaN;
+
+   if( el && (isNaN(z) || maxz >= z) )
+     el.style.zIndex = maxz + 1;
+   var wcc = document.querySelector('.window-controls-container');
+   if( wcc ) wcc.style.zIndex = maxz + 2; //for wxWidgets and Electron builds
+   document.querySelectorAll('.suggestion').forEach( function(s){ s.style.zIndex = maxz + 2; } );
  }
 );
 
@@ -222,7 +224,7 @@ Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt )
   // TODO: closing the dialog seems a little laggy; check if WDialog::hide is faster, or if we
   //       should stick to using the JS
   //b->clicked().connect( this, &WDialog::hide );
-  b->clicked().connect( "function(){$('#" + id() + "').hide(); $('.Wt-dialogcover').hide();}" );
+  b->clicked().connect( "function(){document.getElementById('" + id() + "').style.display='none'; document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});}" );
 
   b->clicked().connect( [this](){ done( Wt::DialogCode::Accepted ); } );
   return b;

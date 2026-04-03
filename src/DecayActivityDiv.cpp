@@ -1208,14 +1208,11 @@ namespace
       m_chart( chart ),
       m_legend( legend )
     {
-      const string chartref = "$('#" + m_chart->id() + "').get(0)";
-      const string legref = "$('#" + legend->id() + "')";
-      
       m_chart = addWidget( unique_ptr<DecayActivityChart>(chart) );
       m_legend = addWidget( unique_ptr<WContainerWidget>(legend) );
-      
+
       const string extraheight = isPhone ? "20" : "100";
-      
+
       const string js =
       """function(self, w, h,layout) {"
       ""  "if (!self.wtWidth || self.wtWidth!=w "
@@ -1223,11 +1220,12 @@ namespace
       ""    "self.wtWidth=w; self.wtHeight=h;"
       ""    "self.style.height=h + 'px';"
       ""  "}"
-      ""  "var child = $('#" + m_chart->id() + "').get(0);"
+      ""  "var child = document.getElementById('" + m_chart->id() + "');"
       ""  "if(child && child.wtResize){"
       ""     "child.wtResize(child,w,h,layout);"
       ""  "}else{ console.log('ChartAndLegendHolder: couldnt resize chart, please look into.'); }"
-      ""  + legref + ".css('max-height',(h-" + extraheight + ") +'px');"
+      ""  "var leg=document.getElementById('" + m_legend->id() + "');"
+      ""  "if(leg)leg.style.maxHeight=(h-" + extraheight + ")+'px';"
       "" "}";
       setJavaScriptMember( WT_RESIZE_JS, js );
     }//ChartAndLegendHolder constructor

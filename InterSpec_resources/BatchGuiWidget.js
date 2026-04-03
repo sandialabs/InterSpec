@@ -93,20 +93,21 @@ function BatchInputDropUploadSetup( target, uploadURL )
         target.classList.remove( "Uploading" );
         onDragOverEnd(null);
         // Clear the time-out timer, if we have one
-        clearTimeout( $('.Wt-domRoot').data('BatchUploadTimer') );
-        $('.Wt-domRoot').data( 'BatchUploadTimer', null );
+        clearTimeout( window._IS && window._IS.BatchUploadTimer );
+        if( window._IS ) window._IS.BatchUploadTimer = null;
         fileInput.value = '';
       };
 
 
       /* Lets set a 1-minute timeout so we will eventually remove the uploading cover if no traffic. */
       function setUploadTimer(){
-        clearTimeout( $('.Wt-domRoot').data('BatchUploadTimer') );
+        clearTimeout( window._IS && window._IS.BatchUploadTimer );
         const coverTimer = setTimeout( function(){
           console.error("The request to upload file timed out.");
           removeUploading();
         }, 60000 );
-        $('.Wt-domRoot').data( 'BatchUploadTimer', coverTimer );
+        window._IS = window._IS || {};
+        window._IS.BatchUploadTimer = coverTimer;
       };
 
       function errfcn(){
@@ -163,7 +164,7 @@ function BatchInputDropUploadSetup( target, uploadURL )
           if( (typeof file.path === "string") && file.path.length > 3 ){
             fspath = file.path;
           }else{
-            const fns = $(document).data('dragOverFilePaths');
+            const fns = window._IS && window._IS.dragOverFilePaths;
             if( fns && Array.isArray(fns.filenames) && fns.time && (Math.abs(fns.time - (new Date())) < 30000) ){
               for( let i = 0; i < fns.filenames.length; ++i ) {
                 if( encodeURIComponent(fns.filenames[i]).endsWith(filename_uri) ){
@@ -171,7 +172,7 @@ function BatchInputDropUploadSetup( target, uploadURL )
                   //remove this filename from the array, incase there are multiple files with same leaf-name, but diff paths
                   fns.filenames.splice(i,1);
                   if( fns.filenames.length === 0 )
-                    $(document).data('dragOverFilePaths', null);
+                    if( window._IS ) window._IS.dragOverFilePaths = null;
                   break;
                 }//if( native fn ends with browsers fn )
               }//for( loop over fns.filenames.length )

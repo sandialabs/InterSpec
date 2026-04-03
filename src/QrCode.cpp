@@ -89,11 +89,11 @@ WT_DECLARE_WT_MEMBER
     if( successful )
     {
       console.log('Copied text to clipboard via appending textarea to DOM');
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, success_msg );
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, success_msg );
     }else
     {
       console.warn('Failed to copy to clipboard using textarea');
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, fail_msg );
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, fail_msg );
     }
     
     return successful;
@@ -101,10 +101,10 @@ WT_DECLARE_WT_MEMBER
   
   navigator.clipboard.writeText(text).then(function() {
     console.log('Copying text to clipboard using async method.');
-    Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, success_msg );
+    Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, success_msg );
   }, function(err) {
     console.warn('Failed copying text to clipboard using async method.: ', err);
-    Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, fail_msg );
+    Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, fail_msg );
   });
 }
   );

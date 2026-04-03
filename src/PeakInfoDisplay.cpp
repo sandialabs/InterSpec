@@ -698,11 +698,12 @@ WT_DECLARE_WT_MEMBER
 (CopyPeakCsvDataToClipboard, Wt::JavaScriptFunction, "CopyPeakCsvDataToClipboard",
 function( sender, event, dataOwner, dataName )
 {
-  const csvData = $(dataOwner).data(dataName);
-  const htmlData = $(dataOwner).data(dataName + "Html");
+  const elData = dataOwner._isData || {};
+  const csvData = elData[dataName];
+  const htmlData = elData[dataName + "Html"];
   if( !csvData || !htmlData )
   {
-    Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+    Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
             'peakCsvCopy-error-No CSV data is available - if this is an error, please report to InterSpec@sandia.gov' );
     return;
   }
@@ -715,12 +716,12 @@ function( sender, event, dataOwner, dataName )
 
     navigator.clipboard.write([clipboardItem]).then(function() {
       console.log( 'Copied peak CSV using ClipboardItem method.' );
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
               'peakCsvCopy-success-Copied peaks CSV data to the pasteboard.' );
     }).catch(function(err) {
       console.warn( 'Failed to copy peak CSV using ClipboardItem method: ', err );
       
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
                   'peakCsvCopy-error-Unable to copy peak CSV info to the pasteboard - sorry.' );
     });
     
@@ -744,7 +745,7 @@ function( sender, event, dataOwner, dataName )
         
     if( didcopy ){
       console.log( 'Copied peak CSV using exec method.' );
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'peakCsvCopy-success-Copied CSV data to pasteboard.' );
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, 'peakCsvCopy-success-Copied CSV data to pasteboard.' );
       return;
     }else{
       console.warn( 'Failed copy as csv to e.clipboardData.setData' );
@@ -758,7 +759,7 @@ function( sender, event, dataOwner, dataName )
     const didCopyHtml = window.clipboardData.setData("text/html", htmlData);  // IE
     if( didCopyTxt && didCopyHtml ){
       console.log( 'Copied peak CSV using window.clipboardData.setData.' );
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
                 'peakCsvCopy-success-Copied CSV data to pasteboard as csv data.' );
       return;
     }else{
@@ -777,18 +778,18 @@ function( sender, event, dataOwner, dataName )
       if( copysuccess )
       {
         console.log( 'Copied peak CSV using document.execCommand("copy").' );
-        Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+        Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
                 'peakCsvCopy-success-Copied CSV data to pasteboard as text.' );
         return;
       }else
       {
         console.warn( 'Failed to copy peak CSV using document.execCommand("copy").' );
-        Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+        Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
                 'peakCsvCopy-error-Failed to copy CSV data to pasteboard as text.' );
       }
     } catch( ex ) {
       console.warn( 'Caught exception copying peak CSV using document.execCommand("copy").' );
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
               'peakCsvCopy-error-Failed to copy peak CSV info to the pasteboard - sorry.' );
     } finally {
       document.body.removeChild( temparea );
@@ -796,7 +797,7 @@ function( sender, event, dataOwner, dataName )
   }//if( document.queryCommandSupported && document.queryCommandSupported("copy") ) {
   
   console.log( 'Failed all methods to copy peak CSV.' );
-  Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+  Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
               'peakCsvCopy-error-Unable to copy peak CSV info to the pasteboard - sorry.' );
 }
 );
@@ -941,25 +942,29 @@ void PeakInfoDisplay::copyCsvPeakDataToClient()
   const string no_hdr_html_str = Wt::WWebWidget::jsStringLiteral(no_hdr_html.str(),'\'');
   const string compact_html_str = Wt::WWebWidget::jsStringLiteral(compact_html.str(),'\'');
   
-  doJavaScript( "$(" + jsRef() + ")"
-  ".data('CsvFullData'," + full_csv_str + ")"
-  ".data('CsvFullDataHtml'," + full_html_str + ")"
-  ".data('CsvNoHeaderData'," + no_hdr_csv_str + ")"
-  ".data('CsvNoHeaderDataHtml'," + no_hdr_html_str + ")"
-  ".data('CsvCompactData'," + compact_csv_str + ")"
-  ".data('CsvCompactDataHtml'," + compact_html_str + ");");
+  doJavaScript( "var _el=" + jsRef() + ";"
+  "_el._isData=_el._isData||{};"
+  "_el._isData.CsvFullData=" + full_csv_str + ";"
+  "_el._isData.CsvFullDataHtml=" + full_html_str + ";"
+  "_el._isData.CsvNoHeaderData=" + no_hdr_csv_str + ";"
+  "_el._isData.CsvNoHeaderDataHtml=" + no_hdr_html_str + ";"
+  "_el._isData.CsvCompactData=" + compact_csv_str + ";"
+  "_el._isData.CsvCompactDataHtml=" + compact_html_str + ";");
 }//void copyCsvPeakDataToClient()
 
 
 void PeakInfoDisplay::removeCsvPeakDatafromClient()
 {
   // We'll add a 1-second delay, to make sure everything is copied.
-  doJavaScript( "setTimeout( function(){ $(" + jsRef() + ").data('CsvFullData',null)"
-    ".data('CsvFullDataHtml',null)"
-    ".data('CsvNoHeaderData',null)"
-    ".data('CsvNoHeaderDataHtml',null)"
-    ".data('CsvCompactData',null)"
-    ".data('CsvCompactDataHtml',null); }, 1000 );" );
+  doJavaScript( "setTimeout( function(){ var _el=" + jsRef() + ";"
+    "if(_el&&_el._isData){"
+    "_el._isData.CsvFullData=null;"
+    "_el._isData.CsvFullDataHtml=null;"
+    "_el._isData.CsvNoHeaderData=null;"
+    "_el._isData.CsvNoHeaderDataHtml=null;"
+    "_el._isData.CsvCompactData=null;"
+    "_el._isData.CsvCompactDataHtml=null;}"
+    "}, 1000 );" );
 }//void removeCsvPeakDatafromClient()
 
 
@@ -1376,8 +1381,8 @@ void PeakInfoDisplay::init()
   
   WText *txt = bottomDiv->addNew<WText>( hintTxt );
   txt->addStyleClass( "PeakEditHint" );
-  const string show_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','visible');}catch(e){}}" );
-  const string hide_js( "function(object, event){try{$('#" + txt->id() + "').css('visibility','hidden');}catch(e){}}" );
+  const string show_js( "function(object, event){try{document.getElementById('" + txt->id() + "').style.visibility='visible';}catch(e){}}" );
+  const string hide_js( "function(object, event){try{document.getElementById('" + txt->id() + "').style.visibility='hidden';}catch(e){}}" );
   mouseWentOver().connect( show_js );
   mouseWentOut().connect( hide_js );
   txt->doJavaScript( "(" + hide_js + ")();" );

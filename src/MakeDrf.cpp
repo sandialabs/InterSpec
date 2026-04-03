@@ -685,10 +685,10 @@ namespace
       //  detail for the moment.
       //m_previewPopup->hidden().connect( boost::bind( &WPushButton::removeStyleClass, m_previewBtn, WString("active"), true ) );
       //m_previewPopup->hidden().connect( std::bind([this](){ m_previewBtn->removeStyleClass("active",true); }));
-      m_previewPopup->hidden().connect( [btn = m_previewBtn, js = "$('#" + m_previewBtn->id() + "').removeClass('active');"](){
+      m_previewPopup->hidden().connect( [btn = m_previewBtn, js = "document.getElementById('" + m_previewBtn->id() + "').classList.remove('active');"](){
         btn->doJavaScript( js );
       } );
-      m_previewPopup->shown().connect( [btn = m_previewBtn, js = "$('#" + m_previewBtn->id() + "').addClass('active');"](){
+      m_previewPopup->shown().connect( [btn = m_previewBtn, js = "document.getElementById('" + m_previewBtn->id() + "').classList.add('active');"](){
         btn->doJavaScript( js );
       } );
 #endif

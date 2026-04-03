@@ -164,8 +164,7 @@ public:
   //Override footer
   Wt::WContainerWidget* footer();
 
-  //Override footer
-//  void resize(Wt::WLength width, Wt::WLength height);
+
 
   /** Deletes the specified AuxWindow.
 
@@ -191,11 +190,6 @@ public:
    */
   virtual void setMaximumSize( const Wt::WLength &width, const Wt::WLength &height );
   
-  //The show(), hide(), and setHidden() functions call the javascript versions
-  //  of these functions, and do not modify Wt's view of if this window is shown
-  //  or not, which can be important since Wt uses lazy loading of contents.
-  //  If you wish to enable lazy loading (and then subsequent showing), use
-  //  the WDialog::setHidden() function.
   virtual void show();
   virtual void hide();
   virtual void expand(); //executes jsExpand()
@@ -255,12 +249,6 @@ public:
   //disableCollapse(): hides the icon, and clears the m_collapseSlot function
   void disableCollapse();
 
-  //The JSlot's dont modify Wt's server-side view of if it's is visible or not.
-  //  You can execute them by calling exec( "null", "{quietly: true}" );
-  //  where the quietly indicates dont have the client javascript code notify
-  //  the server of this call.
-  virtual Wt::JSlot &jsHide(); //expands window before hiding
-  virtual Wt::JSlot &jsShow(); //doesnt expand window if previously collapsed
   virtual Wt::JSlot &jsExpand();
   virtual Wt::JSlot &jsCollapse();
   virtual Wt::JSlot &jsToggleExpandState();
@@ -268,7 +256,6 @@ public:
   //Signals you can connect to to know when the window is
   //  opened/collapsed/expanded
   //  To listen for the window being closed, connect to the finished() signal.
-//  Wt::JSignal<> &closed();
   Wt::JSignal<> &opened();
   Wt::JSignal<> &collapsed();
   Wt::JSignal<> &expanded();
@@ -290,8 +277,6 @@ public:
   
   //Help button add to footer
   static void addHelpInFooter(Wt::WContainerWidget *footer, std::string page );
-//  static void openHelpWindow(std::string page,AuxWindow *parent);
-  
   void emitReject();
   
   /** Returns if dialog is customized for phones. */
@@ -320,23 +305,12 @@ protected:
 
   std::unique_ptr<Wt::JSlot>      m_collapseSlot;
   std::unique_ptr<Wt::JSlot>      m_expandSlot;
-  std::unique_ptr<Wt::JSlot>      m_showSlot;
-  std::unique_ptr<Wt::JSlot>      m_hideSlot;
   std::unique_ptr<Wt::JSlot>      m_toggleExpandedStatusSlot;
   std::unique_ptr<Wt::JSignal<> > m_closedSignal;
   std::unique_ptr<Wt::JSignal<> > m_openedSignal;
   std::unique_ptr<Wt::JSignal<> > m_collapsedSignal;
   std::unique_ptr<Wt::JSignal<> > m_expandedSignal;
 
-#define USE_NEW_AUXWINDOW_ISH 0
-#if( USE_NEW_AUXWINDOW_ISH )
-  std::unique_ptr<Wt::JSlot> m_repositionSlot;   //->exec(id(),"{top:5,left:10}");
-  std::unique_ptr<Wt::JSlot> m_centerSlot;       //->exec(id(),"null");
-  std::unique_ptr<Wt::JSlot> m_resizeSlot;       //->exec(id(),"{x:200,y:150}");
-  std::unique_ptr<Wt::JSlot> m_resizeScaledSlot; //->exec(id(),"{x:0.6,y:0.75}");
-#endif
-
-  
   Wt::WGridLayout *m_contentStretcher;
   
   bool m_destructing;

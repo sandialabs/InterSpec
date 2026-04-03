@@ -3,7 +3,7 @@ WT_DECLARE_WT_MEMBER
 function( id, edit ){
   //Called when button is pressed, to allow you to proccess the text in JS, before
   //  uploading to server (e.g. c++ land)
-  if( $(edit).hasClass("Wt-edit-emptyText") )
+  if( edit.classList.contains("Wt-edit-emptyText") )
   {
     console.log( "No text entered." );
     return;
@@ -12,7 +12,8 @@ function( id, edit ){
   console.log( "will emit lineentered signal" );
   // Wt.emit( id, {name: 'lineentered'}, "JS proccessed string: " + edit.value.replace(/e/g, "eeee") + "\nanswer!" );
   Wt.emit( id, {name: 'lineentered'}, edit.value );
- $(id).scrollTop += $(id).scrollHeight;
+ var el = document.getElementById(id);
+ if( el ) el.scrollTop = el.scrollHeight;
 }
 );
 
@@ -32,7 +33,7 @@ WT_DECLARE_WT_MEMBER
 (TerminalWidgetExampleClientJsFcn, Wt::JavaScriptFunction, "TerminalWidgetExampleClientJsFcn",
 function( edit ){
  console.log("TerminalWidgetExampleClientJsFcn being called");
-  if( $(edit).hasClass("Wt-edit-emptyText") )
+  if( edit.classList.contains("Wt-edit-emptyText") )
   {
     console.log( "No text entered." );
     return;
@@ -299,7 +300,7 @@ WT_DECLARE_WT_MEMBER
  function( edit, command ){
      edit.focus();
      
-     if( $(edit).hasClass("Wt-edit-emptyText")
+     if( edit.classList.contains("Wt-edit-emptyText")
          || command.toUpperCase().startsWith(edit.value.toUpperCase()) )
     {
          edit.value = command;

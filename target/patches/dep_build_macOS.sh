@@ -67,7 +67,7 @@ if [[ "$working_directory" == "$interspec_src"* ]]; then
   exit 1
 fi
 
-export MACOSX_DEPLOYMENT_TARGET=10.13 # MacOS High Sierra (2017, supported through 2020)
+export MACOSX_DEPLOYMENT_TARGET=12.3 # macOS Monterey (2022, Safari 15.4+)
 export MY_WT_PREFIX=$install_directory
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 

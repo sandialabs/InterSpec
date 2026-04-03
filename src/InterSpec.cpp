@@ -698,7 +698,7 @@ InterSpec::InterSpec()
     //Add this transparent overlay when mobile left menu slides in, so that
     // we can capture the click to hide the menu.  If this is not there, the
     // canvas will take over and not propagate the event to close the menu down.
-    doJavaScript( "$('body').append('<div class=\"mobilePopupMenuOverlay\" style=\"display: none;\"></div>');" );
+    doJavaScript( "document.body.insertAdjacentHTML('beforeend','<div class=\"mobilePopupMenuOverlay\" style=\"display: none;\"></div>');" );
     
     m_mobileBackButton = static_cast<WContainerWidget *>(wApp->domRoot())->addNew<WContainerWidget>();
     m_mobileBackButton->addStyleClass( "MobilePrevSample btn" );
@@ -1685,19 +1685,19 @@ void InterSpec::initDragNDrop()
 {
   LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsFileUploadFcn);
   
-  doJavaScript( "$('.Wt-domRoot').data('ForegroundUpUrl','" +
-               m_fileManager->foregroundDragNDrop()->url() + "');" );
-  
-  doJavaScript( "$('.Wt-domRoot').data('BackgroundUpUrl','" +
-               m_fileManager->backgroundDragNDrop()->url() + "');" );
-  
-  doJavaScript( "$('.Wt-domRoot').data('SecondUpUrl','" +
-               m_fileManager->secondForegroundDragNDrop()->url() + "');" );
-  
+  doJavaScript( "window._IS.ForegroundUpUrl='" +
+               m_fileManager->foregroundDragNDrop()->url() + "';" );
+
+  doJavaScript( "window._IS.BackgroundUpUrl='" +
+               m_fileManager->backgroundDragNDrop()->url() + "';" );
+
+  doJavaScript( "window._IS.SecondUpUrl='" +
+               m_fileManager->secondForegroundDragNDrop()->url() + "';" );
+
 #if( USE_BATCH_GUI_TOOLS )
-  doJavaScript( "$('.Wt-domRoot').data('BatchUploadEnabled', true);" );
-  doJavaScript( "$('.Wt-domRoot').data('BatchUpUrl','" +
-               m_fileManager->batchDragNDrop()->url() + "');" );
+  doJavaScript( "window._IS.BatchUploadEnabled=true;" );
+  doJavaScript( "window._IS.BatchUpUrl='" +
+               m_fileManager->batchDragNDrop()->url() + "';" );
 #endif
   doJavaScript( "Wt.WT.FileUploadFcn();" );
 }//void InterSpec::initDragNDrop()
@@ -8027,15 +8027,15 @@ PeakInfoDisplay *InterSpec::peakInfoDisplay()
 void InterSpec::dragEventWithFileContentsStarted()
 {
   //Set JS variable to indicate that this isnt a normal file drop on the browser
-  doJavaScript( "$('.Wt-domRoot').data('DropFileContents',true);" );
+  doJavaScript( "window._IS.DropFileContents=true;" );
 }
 
 
 void InterSpec::dragEventWithFileContentsFinished()
 { 
-  doJavaScript( "$('.Wt-domRoot').data('DropFileContents',false);"
-	            "$('#Uploader').remove();"
-				"$('.Wt-domRoot').data('IsDragging',false);"); 
+  doJavaScript( "window._IS.DropFileContents=false;"
+               "var u=document.getElementById('Uploader'); if(u) u.remove();"
+               "window._IS.IsDragging=false;" );
 }
 
 #endif ///#if( defined(WIN32) && BUILD_AS_ELECTRON_APP )
@@ -8233,8 +8233,8 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
                                 true, HelpSystem::ToolTipPosition::Right );
     
     const WString msg = WString("{1}"
-    "<div onclick=\"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'clearSession');"
-    "try{$(this.parentElement.parentElement).remove();}catch(e){}return false;\" "
+    "<div onclick=\"Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, 'clearSession');"
+    "try{this.parentElement.parentElement.remove();}catch(e){}return false;\" "
     "class=\"clearsession\"><span class=\"clearsessiontxt\">{2}</span></div>")
       .arg( WString::tr("warn-desktop-disp-switch") )
       .arg( WString::tr("warn-desktop-disp-switch-refresh") );
@@ -11986,9 +11986,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   {
     case SpecUtils::SpectrumType::Foreground:
       if( !!m_dataMeasurement && ((!m_dataMeasurement)!=(!previous)) )
-        doJavaScript( "$('.Wt-domRoot').data('HasForeground',1);" );
+        doJavaScript( "window._IS.HasForeground=1;" );
       else if( !m_dataMeasurement )
-        doJavaScript( "$('.Wt-domRoot').data('HasForeground',0);" );
+        doJavaScript( "window._IS.HasForeground=0;" );
     break;
     
     case SpecUtils::SpectrumType::SecondForeground: case SpecUtils::SpectrumType::Background:
@@ -12023,8 +12023,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       WString js = WString("{1}"
                  "<div onclick="
-                 "\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'showMap-{2}');"
-                 "try{$(this.parentElement.parentElement).remove();}catch(e){}"
+                 "\"Wt.emit( document.querySelector('.specviewer').id,{name:'miscSignal'}, 'showMap-{2}');"
+                 "try{this.parentElement.parentElement.remove();}catch(e){}"
                  "return false;\" "
                  "class=\"clearsession\">"
                  "<span class=\"clearsessiontxt\">{3}</span></div>"
@@ -12157,7 +12157,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       WString js = WString(
         "{1}: {2}"
-        "<div onclick=\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'showRiidAna-{3}');try{$(this.parentElement.parentElement).remove();}catch(e){} return false;\" class=\"clearsession\">"
+        "<div onclick=\"Wt.emit( document.querySelector('.specviewer').id,{name:'miscSignal'}, 'showRiidAna-{3}');try{this.parentElement.parentElement.remove();}catch(e){} return false;\" class=\"clearsession\">"
           "<span class=\"clearsessiontxt\">{4}</span>"
         "</div>")
       .arg( WString::tr("info-has-rid-txt") )
@@ -12284,7 +12284,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         const std::string type = SpecUtils::descriptionText(spec_type);
         WString js = WString(
           "{1}: "
-          "<div onclick=\"Wt.emit( $('.specviewer').attr('id'),{name:'miscSignal'}, 'showMultimedia-{2}');try{$(this.parentElement.parentElement).remove();}catch(e){} return false;\" class=\"clearsession\">"
+          "<div onclick=\"Wt.emit( document.querySelector('.specviewer').id,{name:'miscSignal'}, 'showMultimedia-{2}');try{this.parentElement.parentElement.remove();}catch(e){} return false;\" class=\"clearsession\">"
             "<span class=\"clearsessiontxt\">{3}</span>"
           "</div>")
         .arg( WString::tr("info-has-img-txt") )

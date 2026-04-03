@@ -117,25 +117,25 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   for( const string &path : acceptable_paths )
     enable_fcn += "|(.*\\/" + path + "\\/)";
   enable_fcn += ".+/i.test(value);"
-    "$(" + jsokay + ").prop('disabled', !matches);"
+    "(" + jsokay + ").disabled = !matches;"
   "}";
-  
+
   string validate_js = "function(textarea,event){ "
    "(" + enable_fcn + ")(textarea.value);"
   " }";
   text->keyWentUp().connect( validate_js );
-  
-  text->doJavaScript( "$(" + text->jsRef() + ").on('paste', function(){"
+
+  text->doJavaScript( "(" + text->jsRef() + ").addEventListener('paste', function(){"
       "setTimeout(function(){"
           "(" + enable_fcn + ")(" + text->jsRef() + ".value);"
       "},1);"
   "} );"
   );
-  
+
   // Dont disable okay button during undo/redo - would be better to validate after we might put text
   //  into the textarea - but not bothering to do it correctly, at the moment.
   if( !undoRedo || !undoRedo->isInUndoOrRedo() )
-    okay->doJavaScript( "$(" + jsokay + ").prop('disabled', true);" );
+    okay->doJavaScript( "(" + jsokay + ").disabled = true;" );
   
   // TODO: All this undo/redo stuff is still probably not quite right - could use a little more work
   

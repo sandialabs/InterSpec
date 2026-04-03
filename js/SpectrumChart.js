@@ -12,22 +12,22 @@ function( chartid )
     return;
   }
 
-  var spec = $('#'+chartid);
+  var spec = document.getElementById(chartid);
   if( !spec )
   {
     console.log( 'Couldnt get spec' );
     return;
   }
-  
-  var id = spec.data('legid');
-  
-  if( !id )
+
+  var legid = spec._isData ? spec._isData.legid : null;
+
+  if( !legid )
     return;
-  
-  var leg = $('#' + id );
-  if( !leg || leg.length === 0 )
+
+  var leg = document.getElementById(legid);
+  if( !leg )
   {
-    console.log( 'Couldnt get legend with id ' + id );
+    console.log( 'Couldnt get legend with id ' + legid );
     return;
   }
 
@@ -37,25 +37,29 @@ function( chartid )
     //Move the legend to the left top position, to give it a chance to fully
     //  render and expand its width to fit its contents before we ask for its
     //  width and stuff
-    leg.offset({ top: 0, left: 0, bottom: "", right: "" });
-    
+    leg.style.top = '0px';
+    leg.style.left = '0px';
+
     var toppx=0, leftpx=0;
-    var hiddenParent = Wt.WT.isHidden(spec.get(0));
+    var hiddenParent = Wt.WT.isHidden(spec);
 
     if( !hiddenParent )
     {
-      var specOffset = getOffset(spec.get(0));
-      toppx = specOffset.top + spec.data('LTM');
-      leftpx = specOffset.left + spec.outerWidth()
-               - leg.outerWidth()-spec.data('LRM');
+      var specOffset = getOffset(spec);
+      var LTM = spec._isData ? spec._isData.LTM : 0;
+      var LRM = spec._isData ? spec._isData.LRM : 0;
+      toppx = specOffset.top + LTM;
+      leftpx = specOffset.left + spec.offsetWidth
+               - leg.offsetWidth - LRM;
     }
 
-    leg.offset({ top: toppx, left: leftpx, bottom: "", right: "" });
+    leg.style.top = toppx + 'px';
+    leg.style.left = leftpx + 'px';
 
     if( hiddenParent )
-      leg.hide();
+      leg.style.display = 'none';
     else
-      leg.show();
+      leg.style.display = '';
   }catch(e)
   {
     console.log("Failed in AlignLegend: " + e);
@@ -88,7 +92,7 @@ WT_DECLARE_WT_MEMBER
 function(elid,filename)
 {
   try{
-    var canvas = $('#' + elid).find('canvas')[0];
+    var canvas = document.getElementById(elid).querySelector('canvas');
     if( canvas.length === 0 )
       throw 'Could not find canvas';
       

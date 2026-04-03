@@ -3582,16 +3582,15 @@ void SpectrumChart::renderFloatingLegend()
     m_legend->expanded().connect( this, &SpectrumChart::legendExpandedCallback);
     
     //Set the offsets so
-    const string jsthis = "$('#" + id() + "')";
     stringstream moveJs;
-    
-    //WRT == Widget Relative To
+
     //LTM == Legend Top Margin
     //LRM == Legend Right Margin
-    moveJs << "var s=" << jsthis << ";"
-    << "if(!s.data('LTM'))s.data('LTM'," << plotAreaPadding(Side::Top)+5 << ");"
-    << "if(!s.data('LRM'))s.data('LRM'," << plotAreaPadding(Side::Right)+5 << ");"
-    << jsthis  << ".data('legid','" << m_legend->id() << "');"
+    moveJs << "var s=document.getElementById('" << id() << "');"
+    << "s._isData = s._isData || {};"
+    << "if(!s._isData.LTM) s._isData.LTM = " << plotAreaPadding(Side::Top)+5 << ";"
+    << "if(!s._isData.LRM) s._isData.LRM = " << plotAreaPadding(Side::Right)+5 << ";"
+    << "s._isData.legid = '" << m_legend->id() << "';"
     << "Wt.WT.AlignLegend('" << id() << "');";
     doJavaScript( moveJs.str());
     
@@ -4066,7 +4065,7 @@ void SpectrumChart::disableLegend()
     m_legend = 0;
     
     if( wApp )
-      doJavaScript( "$('#" + id() + "').data('legid',null);" );
+      doJavaScript( "var el=document.getElementById('" + id() + "'); if(el && el._isData) el._isData.legid=null;" );
   }//if( m_legend )
   
   if( rerender )

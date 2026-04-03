@@ -70,46 +70,45 @@ function(id)
 {
   try
   {
-    const el = $("#" + id);
-    const cel = $("#" + id + " .body.AuxWindow-content");
+    const el = document.getElementById(id);
+    const cel = document.querySelector('#' + id + ' .body.AuxWindow-content');
     if( !el || !cel )
     {
       console.log( 'Error in resizeToFitOnScreen' );
       return;
     }
-    
-    const eel = el.get(0);
-    const ecel = cel.get(0);
+
     const ws = Wt.WT.windowSize();
-    
-    let h = el.height();
-    let w = el.width();
+
+    let h = el.offsetHeight;
+    let w = el.offsetWidth;
     const do_resize = ((h > ws.y) || (w > ws.x));
     if(h > ws.y)
     {
       h = ws.y - 10;
-      eel.style.top = '5px';
-      eel.style.bottom = "";
-      ecel.style.overflowY = "auto";
+      el.style.top = '5px';
+      el.style.bottom = "";
+      cel.style.overflowY = "auto";
     }
-    
+
     if(w > ws.x)
     {
       w = ws.x - 10;
-      eel.style.left = '5px';
-      eel.style.right = "";
-      ecel.style.overflowX = "auto";
+      el.style.left = '5px';
+      el.style.right = "";
+      cel.style.overflowX = "auto";
     }
-    
+
     if( do_resize )
     {
-      const was_centered = el.data('centered');
-      eel.wtObj.onresize(w, h, true);
-      
+      el._isData = el._isData || {};
+      const was_centered = el._isData.centered;
+      el.wtObj.onresize(w, h, true);
+
       if( was_centered )
-        Wt.WT.AuxWindowCenter( el.get(0) );
-      
-      el.data('centered', was_centered);
+        Wt.WT.AuxWindowCenter( el );
+
+      el._isData.centered = was_centered;
     }
   }catch(err){
     console.error( 'AuxWindowResizeToFitOnScreen error:', err );
@@ -118,31 +117,29 @@ function(id)
  );//WT_DECLARE_WT_MEMBER( AuxWindowResizeToFitOnScreen )
 
 
-#if( !USE_NEW_AUXWINDOW_ISH )
 WT_DECLARE_WT_MEMBER
 (AuxWindowCenter, Wt::JavaScriptFunction, "AuxWindowCenter",
 function( el )
 {
   try
   {
-    const jsthis = $(el);
     const olddispl = el.style.display;
     el.style.display = "";
     const ws = Wt.WT.windowSize();
-    const hh = Math.max(0,Math.round( ( ws.y - jsthis.height() ) / 2 ));
-    const hw = Math.max(0,Math.round( ( ws.x - jsthis.width() ) / 2 ));
-    
+    const hh = Math.max(0,Math.round( ( ws.y - el.offsetHeight ) / 2 ));
+    const hw = Math.max(0,Math.round( ( ws.x - el.offsetWidth ) / 2 ));
+
     el.style.top = hh+'px';
     el.style.left = hw+'px';
     el.style.display = olddispl;
-    $(el).data('centered', true);
+    el._isData = el._isData || {};
+    el._isData.centered = true;
   }catch(err)
   {
     console.log( "Failed in AuxWindowCenter: " + err );
   }
 }
 );
-#endif //#if( !USE_NEW_AUXWINDOW_ISH )
 
 
 
@@ -152,15 +149,17 @@ WT_DECLARE_WT_MEMBER
  function( id )
 {
   var maxz = 0;
-  $('.Wt-dialog,.MobileMenuButton').each( function(index, value){
-    let z = $(value).css('z-index');
-    //if( $(value).is(":visible") ) //seems to not be reliable, so leaving commented out.
+  document.querySelectorAll('.Wt-dialog,.MobileMenuButton').forEach( function(value){
+    let z = parseInt(getComputedStyle(value).zIndex) || 0;
+    //if( value.offsetParent !== null ) //seems to not be reliable, so leaving commented out.
     maxz = Math.max(maxz,z);
   } );
-  if( maxz > $('#'+id).css('z-index') )
-    $('#'+id).css('z-index',maxz+1);
-  $('.window-controls-container').css('z-index', maxz+1); //for wxWidgets and Electron builds
-  $('.suggestion').css('z-index',maxz+2); //This is for InterSpec::m_shieldingSuggestion
+  var idEl = document.getElementById(id);
+  var idZ = idEl ? (parseInt(getComputedStyle(idEl).zIndex) || 0) : 0;
+  if( maxz > idZ )
+  { if( idEl ) idEl.style.zIndex = maxz+1; }
+  document.querySelectorAll('.window-controls-container').forEach(function(e){ e.style.zIndex = maxz+1; }); //for wxWidgets and Electron builds
+  document.querySelectorAll('.suggestion').forEach(function(e){ e.style.zIndex = maxz+2; }); //This is for InterSpec::m_shieldingSuggestion
 }
 );
 
@@ -171,15 +170,16 @@ function( sender, event, id )
 {
   var e = event||window.event;
   var el = this.getElement(id);
-  var titlebar = $(el).find(".titlebar").first().get(0);
-  
-  if($(el).data('touchmoving') == null)
+  var titlebar = el.querySelector(".titlebar");
+
+  el._isData = el._isData || {};
+  if(el._isData.touchmoving == null)
   {
     Wt.WT.capture(titlebar);
     var touch = event.targetTouches[0];
-    $(el).data('dsx', touch.pageX);
-    $(el).data('dsy', touch.pageY);
-    $(el).data('touchmoving',true);
+    el._isData.dsx = touch.pageX;
+    el._isData.dsy = touch.pageY;
+    el._isData.touchmoving = true;
   }
 }
 );
@@ -190,13 +190,13 @@ function( sender, e, id )
 {
   if( e.targetTouches.length > 0 )
     return;
-  
+
   var el = this.getElement(id);
-  var titlebar = $(el).find(".titlebar").first().get(0);
-  $(el).data('dsx', null);
-  $(el).data('dsy', null);
+  el._isData = el._isData || {};
+  el._isData.dsx = null;
+  el._isData.dsy = null;
   Wt.WT.capture(null);
-  $(el).data('touchmoving',null);
+  el._isData.touchmoving = null;
 }
 );
 
@@ -208,14 +208,14 @@ function( sender, event, id )
 {
   var e = event||window.event;
   var el = this.getElement(id);
-  var titlebar = $(el).find(".titlebar").first().get(0);
-  
+
   if( e.targetTouches.length < 1 )
     return;
-  
-  if( $(el).data('touchmoving')==null )
+
+  el._isData = el._isData || {};
+  if( el._isData.touchmoving == null )
     return;
-  
+
   var touch = e.targetTouches[0];
   var nowxy = {}, wxy = {};
   nowxy.x = touch.pageX;
@@ -223,9 +223,9 @@ function( sender, event, id )
   wxy.x = touch.pageX;
   wxy.y = touch.pageY;
   var wsize = Wt.WT.windowSize();
-  
-  var dsx = $(el).data('dsx');
-  var dsy = $(el).data('dsy');
+
+  var dsx = el._isData.dsx;
+  var dsy = el._isData.dsy;
 
   if(wxy.x > 0 && wxy.x < wsize.x && wxy.y > 0 && wxy.y < wsize.y)
   {
@@ -233,9 +233,9 @@ function( sender, event, id )
     el.style.top = (Wt.WT.px(el, 'top') + nowxy.y - dsy) + 'px';
     el.style.right = "";
     el.style.bottom = "";
-    $(el).data('dsx', nowxy.x);
-    $(el).data('dsy', nowxy.y);
-    $(el).data('centered', false);
+    el._isData.dsx = nowxy.x;
+    el._isData.dsy = nowxy.y;
+    el._isData.centered = false;
   }
 }
 );
@@ -244,67 +244,68 @@ WT_DECLARE_WT_MEMBER
 (AuxWindowCollapse, Wt::JavaScriptFunction, "AuxWindowCollapse",
 function( sender, event, id, contentid, minId, maxId, fctncall )
 {
-  var jsthis = $('#'+id);
-  var jscontent = $('#'+contentid);
-  var jsfooter = jsthis.find('.modal-footer');
-  var dl = jsthis.children('.dialog-layout');
-  
-  var w = jsthis.width();
-  var h = jsthis.height();
-  var ch = jscontent.height();
-  var dlw = dl.width();
-  
-  if( jsfooter.length !== 0 )
-    ch += jsfooter.height();
-  
-  if( jscontent.is(':visible') )
+  var jsthis = document.getElementById(id);
+  var jscontent = document.getElementById(contentid);
+  if( !jsthis || !jscontent ) return;
+  jsthis._isData = jsthis._isData || {};
+  var jsfooter = jsthis.querySelector('.modal-footer');
+  var dl = jsthis.querySelector(':scope > .dialog-layout');
+
+  var w = jsthis.offsetWidth;
+  var h = jsthis.offsetHeight;
+  var ch = jscontent.offsetHeight;
+  var dlw = dl ? dl.offsetWidth : 0;
+
+  if( jsfooter )
+    ch += jsfooter.offsetHeight;
+
+  if( jscontent.offsetParent !== null && jscontent.style.display !== 'none' )
   {
-    var oldminheight = jsthis.css('min-height');
+    var oldminheight = jsthis.style.minHeight;
     if( oldminheight )
-      jsthis.data('oldminheight',oldminheight);
-    
-    if(jsthis.attr('style').indexOf(' width') !== -1)
-      jsthis.data('oldwidth',jsthis.width());
-    else
-      jsthis.data('oldwidth',null);
-    
-    if(jsthis.attr('style').indexOf(' height') !== -1)
-      jsthis.data('oldheight',jsthis.height());
-    else
-      jsthis.data('oldheight',null);
-    
-    if(dl.attr('style').indexOf(' height') !== -1)
-      jsthis.data('oldlayoutheight',dl.height());
-    else
-      jsthis.data('oldlayoutheight',null);
+      jsthis._isData.oldminheight = oldminheight;
 
-    if(dl.attr('style').indexOf(' width') !== -1)
-      jsthis.data('oldlayoutwidth',dl.width());
+    if(jsthis.getAttribute('style').indexOf(' width') !== -1)
+      jsthis._isData.oldwidth = jsthis.offsetWidth;
     else
-      jsthis.data('oldlayoutwidth',null);
-    
-    jscontent.hide();
-    jsfooter.hide();
+      jsthis._isData.oldwidth = null;
 
-    jsthis.width(w);
-    dl.width(dlw);
-    
-    //jsthis.height(Math.max(25, h-ch));
-    jsthis.css( 'height', "24px" );
-    jsthis.css ('min-height', "24px" );
-    dl.css( 'height', "24px" );
-    dl.css( 'min-height', "24px" );
-//    if( dl.get(0).wtResize )
-//      dl.get(0).wtResize(dl.get(0), dlw, 25);
-    
-    if( jsthis.hasClass('Wt-resizable'))
+    if(jsthis.getAttribute('style').indexOf(' height') !== -1)
+      jsthis._isData.oldheight = jsthis.offsetHeight;
+    else
+      jsthis._isData.oldheight = null;
+
+    if(dl && dl.getAttribute('style') && dl.getAttribute('style').indexOf(' height') !== -1)
+      jsthis._isData.oldlayoutheight = dl.offsetHeight;
+    else
+      jsthis._isData.oldlayoutheight = null;
+
+    if(dl && dl.getAttribute('style') && dl.getAttribute('style').indexOf(' width') !== -1)
+      jsthis._isData.oldlayoutwidth = dl.offsetWidth;
+    else
+      jsthis._isData.oldlayoutwidth = null;
+
+    jscontent.style.display = 'none';
+    if( jsfooter ) jsfooter.style.display = 'none';
+
+    jsthis.style.width = w + 'px';
+    if( dl ) dl.style.width = dlw + 'px';
+
+    //jsthis.style.height = Math.max(25, h-ch) + 'px';
+    jsthis.style.height = "24px";
+    jsthis.style.minHeight = "24px";
+    if( dl ){ dl.style.height = "24px"; dl.style.minHeight = "24px"; }
+//    if( dl.wtResize )
+//      dl.wtResize(dl, dlw, 25);
+
+    if( jsthis.classList.contains('Wt-resizable') )
     {
-      jsthis.addClass('Wt-resizableHolder');
-      jsthis.removeClass('Wt-resizable');
+      jsthis.classList.add('Wt-resizableHolder');
+      jsthis.classList.remove('Wt-resizable');
     }
     try{ fctncall(); }catch(e){}
-    $('#'+minId).hide();
-    $('#'+maxId).show();
+    var minEl = document.getElementById(minId); if( minEl ) minEl.style.display = 'none';
+    var maxEl = document.getElementById(maxId); if( maxEl ) maxEl.style.display = '';
   }
 }
 );
@@ -314,196 +315,65 @@ WT_DECLARE_WT_MEMBER
 (AuxWindowExpand, Wt::JavaScriptFunction, "AuxWindowExpand",
  function( sender, event, id, contentid, minId, maxId, fctncall )
 {
-  var jsthis = $('#'+id);
-  if( jsthis.length === 0 )
+  var jsthis = document.getElementById(id);
+  if( !jsthis )
     return;
-  
-  var jscontent = $('#'+contentid);
-  var dl = jsthis.children('.dialog-layout');
-  
-  if( jscontent.is(':hidden') )
+
+  jsthis._isData = jsthis._isData || {};
+  var jscontent = document.getElementById(contentid);
+  var dl = jsthis.querySelector(':scope > .dialog-layout');
+
+  if( jscontent && (jscontent.style.display === 'none' || jscontent.offsetParent === null) )
   {
-    if( jsthis.data('oldminheight') )
-      jsthis.css('min-height', jsthis.data('oldminheight') );
+    if( jsthis._isData.oldminheight )
+      jsthis.style.minHeight = jsthis._isData.oldminheight;
     else
-      jsthis.css('min-height', "" );
-    
-    if(jsthis.data('oldwidth'))
-      jsthis.css( 'width', jsthis.data('oldwidth') );
+      jsthis.style.minHeight = "";
+
+    if(jsthis._isData.oldwidth)
+      jsthis.style.width = jsthis._isData.oldwidth + 'px';
     else
-      jsthis.css( 'width', "" );
-    
-    if(jsthis.data('oldheight'))
-      jsthis.css( 'height', jsthis.data('oldheight') );
+      jsthis.style.width = "";
+
+    if(jsthis._isData.oldheight)
+      jsthis.style.height = jsthis._isData.oldheight + 'px';
     else
-      jsthis.css( 'height', "" );
-    
-    if( jsthis.data('oldlayoutheight') )
-      dl.css( 'height', jsthis.data('oldlayoutheight') );
+      jsthis.style.height = "";
+
+    if( jsthis._isData.oldlayoutheight )
+    { if( dl ) dl.style.height = jsthis._isData.oldlayoutheight + 'px'; }
     else
-      dl.css( 'height', "" );
-    if( jsthis.data('oldlayoutwidth') )
-      dl.css( 'width', jsthis.data('oldlayoutwidth') );
+    { if( dl ) dl.style.height = ""; }
+    if( jsthis._isData.oldlayoutwidth )
+    { if( dl ) dl.style.width = jsthis._isData.oldlayoutwidth + 'px'; }
     else
-      dl.css( 'width', "" );
-    
-    jsthis.data('oldwidth',null);
-    jsthis.data('oldheight',null);
-    jsthis.data('oldminheight',null);
-    jsthis.data('oldlayoutwidth',null);
-    jsthis.data('oldlayoutheight',null);
-    
-    if( jsthis.hasClass('Wt-resizableHolder'))
+    { if( dl ) dl.style.width = ""; }
+
+    jsthis._isData.oldwidth = null;
+    jsthis._isData.oldheight = null;
+    jsthis._isData.oldminheight = null;
+    jsthis._isData.oldlayoutwidth = null;
+    jsthis._isData.oldlayoutheight = null;
+
+    if( jsthis.classList.contains('Wt-resizableHolder') )
     {
-      jsthis.removeClass('Wt-resizableHolder');
-      jsthis.addClass('Wt-resizable');
+      jsthis.classList.remove('Wt-resizableHolder');
+      jsthis.classList.add('Wt-resizable');
     }
-    
-    jscontent.show();
-    jsthis.find('.modal-footer').show();
-    
-//    if( dl.get(0).wtResize )
-//      dl.get(0).wtResize(dl.get(0), dlw, 25);
-    
+
+    jscontent.style.display = '';
+    var mf = jsthis.querySelector('.modal-footer');
+    if( mf ) mf.style.display = '';
+
+//    if( dl && dl.wtResize )
+//      dl.wtResize(dl, dlw, 25);
+
     try{ fctncall(); }catch(e){}
-    $('#'+minId).show();
-    $('#'+maxId).hide();
+    var minEl = document.getElementById(minId); if( minEl ) minEl.style.display = '';
+    var maxEl = document.getElementById(maxId); if( maxEl ) maxEl.style.display = 'none';
   }
 }
 );
-
-WT_DECLARE_WT_MEMBER
-(AuxWindowHide, Wt::JavaScriptFunction, "AuxWindowHide",
- function( sender, event, id, fcntcall )
-{
-  var jsthis = $('#'+id);
-  if( jsthis.length === 0 )
-    return;
-  
-  var currleft = jsthis.offset().left;
-  var currtop = jsthis.offset().top;
-  
-  if( (typeof currleft !== null) && currleft > -999 )
-  {
-    try{if(!event || !event.quietly) fcntcall(); }catch(e){}
-  }
-  
-  var prevleft = jsthis.data('prevleft');
-  var prevtop = jsthis.data('prevtop');
-  if( !prevleft && prevleft!==0 )
-  {
-    jsthis.data('prevleft', currleft );
-    jsthis.data('prevtop', currtop );
-  }
-  
-  jsthis.offset( { top: -1999, left: -1999 } );
-  
-  jsthis.data('notshown',true);
-  
-//  if(!jsthis.is(':hidden') ){ try{if(!event || !event.quietly) fcntcall(); }catch(e){} }
-//  if( el )
-//  {
-//    var prevleft = jsthis.offset().left;
-//    var prevtop = jsthis.offset().top;
-//    jsthis.offset( { top: -999, left: -999 } );
-//    if( event.delay )
-//    {
-//      var prevleft = jsthis.offset().left;
-//      var prevtop = jsthis.offset().top;
-//      jsthis.offset( { top: -999, left: -999 } );
-      //XXX - hack, in order for things to render okay when we want to show the
-      //      File Manager, we have to let everythign render okay, before hiding
-      //      it the first time, but inorder for it to not pop-up and be visible
-      //      we first have to move it off the screen, and then move it back.
-//      setTimeout(
-//        function()
-//        {
-//          jsthis.offset( { left: prevleft, top: prevtop } );
-//          el.style.display = 'none';
-//        }, 50 );
-//    }else
-//    {
-//      el.style.display = "none";
-//    }
-//  }
-}
- );
-
-
-WT_DECLARE_WT_MEMBER
-(AuxWindowShow, Wt::JavaScriptFunction, "AuxWindowShow",
- function( sender, event, id, fcntcall )
-{
-  var jsthis = $('#'+id);
-  if( jsthis.length === 0 )
-    return;
-  
-  var prevleft = jsthis.data('prevleft');
-  var prevtop  = jsthis.data('prevtop');
-  var currleft = jsthis.offset().left;
-  var currtop  = jsthis.offset().top;
-  
-  if( prevleft || prevleft===0 )
-  {
-    try{if(!event || !event.quietly) fcntcall(); }catch(e){}
-    jsthis.offset( { top: prevtop, left: prevleft } );
-  }//else jsthis.offset( { top: null, left: null } );
-  
-  jsthis.data('prevleft', null );
-  jsthis.data('prevtop', null );
-
-//  var jsthis = $('#'+id);
-//  if( jsthis.is(':hidden') )
-//  {
-//    try{if(!event || !event.quietly) fcntcall();}catch(e){}
-//  }
-  
-  var el = jsthis.get(0);
-  
-  //Make sure the user can at least close the window
-  if( jsthis.height() > $(window).height() )
-  {
-    el.style.top = '0px';
-//    setTimeout( function(){
-//      el.style.top = '5px';
-//      jsthis.css("min-height",null);
-//      jsthis.css("height",Math.round(0.95*$(window).height()));
-//      jsthis.css("overflow-y", "auto");
-//    }, 100 );
-  }
-  
-  if( jsthis.width() > $(window).width() )
-  {
-    el.style.left = '0px';
-//    setTimeout( function(){
-//       el.style.left = '5px';
-//       jsthis.css("overflow-x", "auto");
-//       jsthis.css("min-width",null);
-//       jsthis.css("width",Math.round(0.95*$(window).width()));
-//      }, 100 );
-  }
-  
-  
-  if( el )
-  {
-    //see note below for the reason this js code block is necessary
-    //This next line is a hack to force things to be re-flowed to keep things from being 'sticky'
-    $('<style></style>').appendTo($(document.body)).remove();
-    if( jsthis.data('notshown') )
-    {
-      jsthis.data('notshown',false);
-      var ws = Wt.WT.windowSize();
-      el.style.marginLeft = '0px';
-      el.style.marginTop = '0px';
-      el.style.bottom = null; 
-      el.style.right = null;
-    }
-  }
-  
-  Wt.WT.AuxWindowBringToFront(id);
-}
- );
-
 
 #if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
 /** This JavaScript function sets a listener (only the first time it is called), that
@@ -514,52 +384,53 @@ WT_DECLARE_WT_MEMBER
 (AuxWindowOnDomResize, Wt::JavaScriptFunction, "AuxWindowOnDomResize",
 function()
 {
-  if( $('.Wt-domRoot').data('AWDomResize') )
+  if( window._IS.AWDomResize )
     return;
-  $('.Wt-domRoot').data('AWDomResize', true);
-  
+  window._IS.AWDomResize = true;
+
   window.addEventListener('resize', function(event) {
-    
+
     // If we created this resize event, via like Wt.WT.TriggerResizeEvent(), then return,
     //  there is nothing we should do here.
     if( !event.isTrusted )
       return;
-    
+
     // We will rate-limit this function to a max of every 100ms (a number pulled out of the air)
-    let resizeTO = $('.Wt-domRoot').data('ResizeTO');
+    let resizeTO = window._IS.ResizeTO;
     if(resizeTO) //If there is a pending event, dont disrupt it, let it keep ticking down
       return;
-    
+
     const timenow = new Date();
-    let lastTO = $('.Wt-domRoot').data('LastResizeTO');
+    let lastTO = window._IS.LastResizeTO;
     if( typeof lastTO === 'undefined' ) // No previous resize event
       lastTO = 0; //Would also be reasonable to set lastTO = timenow;
-    
+
     const dt = Math.max(0, 100 - (timenow - lastTO)); //
-    
+
     resizeTO = setTimeout(function() {
-      $('.Wt-domRoot').data('ResizeTO',null);  //Mark that there is not a pending event
-      $('.Wt-domRoot').data('LastResizeTO', new Date()); // Note when the event was processed
-      
+      window._IS.ResizeTO = null;  //Mark that there is not a pending event
+      window._IS.LastResizeTO = new Date(); // Note when the event was processed
+
       const matches = document.querySelectorAll(".Wt-dialog.AuxWindow");
       matches.forEach( function(dialog){
-        
+
         // Skip dealing with hidden AuxWindows
         if( (dialog.style.display === 'none') || (dialog.style.visibility === 'hidden') )
           return;
-        
+
         const ws = Wt.WT.windowSize();
-        const was_centered = $(dialog).data('centered');
+        dialog._isData = dialog._isData || {};
+        const was_centered = dialog._isData.centered;
         //console.log( 'Dialog id ', dialog.id, ' centered:', was_centered );
-        
+
         // Make sure window isnt bigger than our screen.
         //  Note that we are calling the Wt WDialog resize utility so this way the change will
         //  be propagated and scroll bars or whatever is needed will show up
-        const h = $(dialog).height();
-        const w = $(dialog).width();
+        const h = dialog.offsetHeight;
+        const w = dialog.offsetWidth;
         if( (h > ws.y) || (w > ws.x) )
           dialog.wtObj.onresize( Math.min(w, ws.x), Math.min(h, ws.y), true);
-        
+
         // And finally, center the window, if it was centered before
         if( was_centered )
         {
@@ -570,14 +441,14 @@ function()
           //  before resizing or centering
           //
           // TODO: track if user has it part way off screen, and if not, reposition so whole window is visible
-          const pos = $(dialog).position();
-          
+          const pos = {top: dialog.offsetTop, left: dialog.offsetLeft};
+
           if( pos.top > (ws.y - 25) ) //Title bar is approx 25 px
           {
             dialog.style.top = (ws.y - 25) + 'px';
             dialog.style.bottom = null;
           }
-          
+
           if( pos.left > (ws.x - 35) ) //Use 35px since the collapse icon could be blocking the first ~20 px of titlebar
           {
             dialog.style.left = (ws.x - 35) + 'px';
@@ -586,120 +457,13 @@ function()
         }
       });
     }, dt);
-    $('.Wt-domRoot').data('ResizeTO',resizeTO);
+    window._IS.ResizeTO = resizeTO;
   });
 }
 );//WT_DECLARE_WT_MEMBER( AuxWindowOnDomResize )
 #endif //#if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
 
 
-#if( USE_NEW_AUXWINDOW_ISH )
-WT_DECLARE_WT_MEMBER
-(AuxWindowScaleResize, Wt::JavaScriptFunction, "AuxWindowScaleResize",
- function( el, e )
-{
-  try
-  {
-    var xRatio = e.x;
-    var yRatio = e.y;
-    var jsthis = $(el);
-    var olddispl = el.style.display;
-    el.style.display="";
-    var ws = Wt.WT.windowSize();
-    jsthis.width( xRatio*ws.x );
-    jsthis.height( yRatio*ws.y );
-    /*  jsthis.data('notshown',true);*/
-    el.style.display = olddispl;
-  }catch(err)
-  {
-    console.log( "Failed AuxWindowScaleResize: " + err );
-  }
-}
- );
-
-
-
-WT_DECLARE_WT_MEMBER
-(AuxWindowResize, Wt::JavaScriptFunction, "AuxWindowResize",
- function( el, e )
-{
-  try
-  {
-    var jsthis = $(el);
-    var olddispl = el.style.display;
-    el.style.display="";
-    var ws = Wt.WT.windowSize();
-    jsthis.width( Math.min(e.x,0.95*ws.x) );
-    jsthis.height( Math.min(e.y,0.95*ws.y) );
-    jsthis.data('notshown',true);
-    el.style.display = olddispl;
-  }catch(err)
-  {
-    console.log( "Failed AuxWindowResize: " + err );
-  }
-}
- );
-
-
-WT_DECLARE_WT_MEMBER
-(AuxWindowCenter, Wt::JavaScriptFunction, "AuxWindowCenter",
- function( el, e )
-{
-  try
-  {
-    var jsthis = $(el);
-    var olddispl = el.style.display;
-    el.style.display="";
-    var ws = Wt.WT.windowSize();
-    var hh = Math.round( ( ws.y - jsthis.height() ) / 2 );
-    var hw = Math.round( ( ws.x - jsthis.width() ) / 2 );
-    if( hh < 0 )
-      hh = 0;
-    if( hw < 0 )
-      hw = 0;
-    if( jsthis.data('prevtop') )
-    {
-      jsthis.data( 'prevtop', hh );
-      jsthis.data( 'prevleft', hw );
-    }else
-    {
-      el.style.top = hh+'px';
-      el.style.left = hw+'px';
-    }
-    el.style.display = olddispl;
-  }catch(err)
-  {
-    console.log( "Failed in AuxWindowCenter: " + err );
-  }
-}
- );
-
-WT_DECLARE_WT_MEMBER
-(AuxWindowReposition, Wt::JavaScriptFunction, "AuxWindowReposition",
- function( el, e )
-{
-  try
-  {
-    var jsthis = $(el);
-    var olddispl = el.style.display;
-    el.style.display="";
-    if( jsthis.data('prevtop') )
-    {
-      jsthis.data( 'prevtop', e.top );
-      jsthis.data( 'prevleft', e.left );
-    }else
-    {
-      el.style.top = e.top + "px";
-      el.style.left = e.left + "px";
-    }
-    el.style.display = olddispl;
-  }catch(err)
-  {
-    console.log( "Failed in AuxWindowReposition: " + err );
-  }
-}
- );
-#endif
 
 
 AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowProperties> properties)
@@ -712,8 +476,6 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   m_closeIcon(NULL),
   m_collapseSlot(),
   m_expandSlot(),
-  m_showSlot(),
-  m_hideSlot(),
   m_toggleExpandedStatusSlot(),
   m_closedSignal(),
   m_openedSignal(),
@@ -736,19 +498,11 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowTitlebarHandleMove);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowTitlebarTouchEnd);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowTitlebarTouchStart);
-  LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowShow);
-  LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowHide);
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowCenter);
 
 #if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
   addStyleClass("AuxWindow");
   LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowOnDomResize);
-#endif
-
-#if( USE_NEW_AUXWINDOW_ISH )
-  LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowScaleResize);
-  LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowResize);
-  LOAD_JAVASCRIPT(wApp, "AuxWindow.cpp", "AuxWindow", wtjsAuxWindowReposition);
 #endif
 
 
@@ -779,9 +533,6 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     m_isTablet = true;
 
   m_isAndroid = (viewer && viewer->isAndroid());
-
-
-  //  setJavaScriptMember( "wtResize", "function(ignored,w,h){console.log('In My wtResize');}" );
 
   WContainerWidget* title = titleBar();
   WContainerWidget* content = contents();
@@ -832,8 +583,6 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     title->insertWidget(0, std::move(collapseIconOwner));
     title->insertWidget(0, std::move(expandIconOwner));
 
-    const string jsthis = "$('#" + id() + "')";
-    const string jscontent = "$('#" + content->id() + "')";
 
     fcntcall = "function(){"
       + m_collapsedSignal->createEventCall(id(), "null", {}) + "}";
@@ -863,14 +612,15 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     stringstream toggleExpandJs;
     toggleExpandJs << "function(s,e)"
       "{"
-      ""  "if(" << jscontent << ".is(':hidden') )"
-      ""   "{"
+      "var cel = document.getElementById('" << content->id() << "');"
+      "if( cel && (cel.style.display === 'none' || cel.offsetParent === null) )"
+      "{"
       "" << m_expandSlot->execJs("s", "e") << ";"
-      ""   "}"
-      ""  "else"
-      ""  "{"
-      ""  "" << m_collapseSlot->execJs("s", "e") << ";"
-      ""  "}"
+      "}"
+      "else"
+      "{"
+      "" << m_collapseSlot->execJs("s", "e") << ";"
+      "}"
       "}";
     m_toggleExpandedStatusSlot = std::make_unique<JSlot>(toggleExpandJs.str(), this);
     title->doubleClicked().connect(*m_toggleExpandedStatusSlot);
@@ -880,34 +630,17 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   m_titleText = title->addNew<WText>( windowTitle, Wt::TextFormat::XHTML );
   m_titleText->addStyleClass("titleVertMiddle");
 
-  fcntcall = "function(){" + m_closedSignal->createEventCall(id(), "null", {}) + "}";
-  m_hideSlot = std::make_unique<JSlot>("function(s,e){ Wt.WT.AuxWindowHide(s,e,'" + id()
-    + "'," + fcntcall + ");}", this);
-
-  fcntcall = "function(){" + m_openedSignal->createEventCall(id(), "null", {}) + "}";
-  m_showSlot = std::make_unique<JSlot>("function(s,e){ Wt.WT.AuxWindowShow(s,e,'"
-    + id() + "'," + fcntcall + ");}", this);
-
-#if( USE_NEW_AUXWINDOW_ISH )
-  m_repositionSlot = std::make_unique<JSlot>("function(s,e){Wt.WT.AuxWindowReposition(s,e);}", this);
-  m_centerSlot = std::make_unique<JSlot>("function(s,e){Wt.WT.AuxWindowCenter(s,e);}", this);
-  m_resizeSlot = std::make_unique<JSlot>("function(s,e){Wt.WT.AuxWindowResize(s,e);}", this);
-  m_resizeScaledSlot = std::make_unique<JSlot>("function(s,e){Wt.WT.AuxWindowScaleResize(s,e);}", this);
-#endif
-
   // Centering is done using either centerWindow() or repositionWindow()
-  m_closedSignal->connect( [this](){ setHidden( true, WAnimation() ); } );
-  m_openedSignal->connect( [this](){ setHidden( false, WAnimation() ); } );
 
   // We wont bring dialog to top, if the user clicked a button on the title (primarily
   //  for mobile, where we might have buttons in the title)
   const string bringToFront = "function(el){"
-    "if( el && el.target && !$(el.target).hasClass('Wt-btn') && !$(el.target).hasClass('FooterHelpBtn'))"
+    "if( el && el.target && !el.target.classList.contains('Wt-btn') && !el.target.classList.contains('FooterHelpBtn'))"
       "Wt.WT.AuxWindowBringToFront('" + id() + "');"
   "}";
-  title->clicked().connect(bringToFront);
-  title->mouseWentDown().connect(bringToFront); //XXX - doesnt seem to work
-  doJavaScript("$('#" + title->id() + "').mousedown(" + bringToFront + ");");
+  // Use addEventListener instead of mouseWentDown().connect() to avoid overwriting
+  // Wt's WDialog onmousedown drag handler on the titlebar element
+  doJavaScript("document.getElementById('" + title->id() + "').addEventListener('mousedown'," + bringToFront + ");");
 
   if( !m_isPhone )
   {
@@ -929,14 +662,10 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
 
   setOffsets(WLength(0, WLength::Unit::Pixel), Wt::Side::Left | Wt::Side::Top);
 
-  // By default it'll just spawn at 50% width and height of the host
-//  resizeScaledWindow( 0.5, 0.5 );
-
   //so the signals of all the descendant widgets will be connected
   WDialog::setHidden(false, WAnimation());
-  //  m_hideSlot->exec( "null", "{quietly:true, delay:5}" );
   if (m_expandIcon)
-    doJavaScript("$('#" + m_expandIcon->id() + "').hide();");
+    doJavaScript("document.getElementById('" + m_expandIcon->id() + "').style.display='none';");
 
 
   if (properties.test(AuxWindowProperties::IsHelpWindow))
@@ -1011,13 +740,13 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     //moved().connect( std::bind([js](){ wApp->doJavaScript( js ); }) );
     //resized().connect( std::bind([js](){ wApp->doJavaScript( js ); }) );
 
-    const string js = "$('#" + title->id() + "').mousedown( function(){"
-      "$('#" + id() + "').data('centered',false);"
+    const string js = "document.getElementById('" + title->id() + "').addEventListener('mousedown', function(){"
+      "var el=document.getElementById('" + id() + "'); el._isData = el._isData || {}; el._isData.centered = false;"
       "console.log('setting AuxWindow moved');"
-      "} );";
+      "});";
     doJavaScript(js);
 
-    title->touchMoved().connect("function(){$('#" + id() + "').data('centered',false);}"); //untested
+    title->touchMoved().connect("function(){var el=document.getElementById('" + id() + "'); el._isData = el._isData || {}; el._isData.centered = false;}"); //untested
   }
 #endif //AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE
 }//AuxWindow()
@@ -1047,25 +776,6 @@ void AuxWindow::render( Wt::WFlags<Wt::RenderFlag> flags )
       WContainerWidget* dialog_cover = dynamic_cast<WContainerWidget*>(coverw);
       if (dialog_cover && !dialog_cover->mouseWentDown().isConnected())
         dialog_cover->mouseWentDown().connect(wApp->javaScriptClass() + ".MouseDownOnDialogCover");
-
-      /*
-      // This next bit of JS accomplishes the same thing as the above, and being left commented
-      //  out until
-      const char* js = INLINE_JAVASCRIPT(
-        setTimeout(function() {
-        let c = $('.Wt-dialogcover');
-        if (!c.length || c.data('ClickConnected')) return;
-        c.data('ClickConnected', true);
-        c.on('mousedown', function(evt){
-          if ((evt.button != = 0) || (c[0].id != = evt.target.id) || (evt.pageY > 30)) return;
-          window.wx.postMessage('MouseDownInTitleBar');
-          evt.stopPropagation();
-          evt.preventDefault();
-        });
-      }, 100);
-      );
-      doJavaScript(js);
-      */
 #endif
 
       // Raise windows controls (minimize, maximize, close), to above the dialog-cover, so we 
@@ -1128,11 +838,7 @@ WContainerWidget* AuxWindow::footer()
 
 AuxWindow::~AuxWindow()
 {
-  WDialog::setModal( false ); //
-//  if( m_titleText )
-//    cerr << "AuxWindow destructing for: '"
-//         << m_titleText->text().toUTF8() << "'" << endl;
-  
+  WDialog::setModal( false );
   m_destructing = true;
 }//~AuxWindow()
 
@@ -1199,17 +905,9 @@ void AuxWindow::setClosable( bool closable )
     m_closeIcon = titleBar()->addNew<WText>();
     WApplication::instance()->theme()->apply(this, m_closeIcon,
                                               WidgetThemeRole::DialogCloseIcon);
-    //order of connections below matter
+    // Expand first (in case collapsed), then hide
     m_closeIcon->clicked().connect( *m_expandSlot );
-    m_closeIcon->clicked().connect( *m_hideSlot );
-    
-    //Trial Change 20181125: The m_hideSlot, when initiated from JS, will call
-    //          back to c++ causing AuxWindow::setHidden to be called, which
-    //          will then call emitReject(), so there *should* be no reason to
-    //          explicitly call emitReject() when the closeIcon is clicked, and
-    //          in fact the next line would cause the finished() signal to be
-    //          emmitted twice.  (all this should be removed after more testing)
-    //m_closeIcon->clicked().connect( this, &AuxWindow::emitReject );
+    m_closeIcon->clicked().connect( [this](){ hide(); } );
   }else
   {
     if( !m_closeIcon )
@@ -1280,27 +978,14 @@ void AuxWindow::centerWindow()
 {
   if( m_isPhone )
       return; //disable running calls after AuxWindow initialized to be mobile
-  
-#if( USE_NEW_AUXWINDOW_ISH )
-  m_centerSlot->exec(id(),"null");
-#else
+
   doJavaScript( "Wt.WT.AuxWindowCenter(" + this->jsRef() + ");" );
-#endif
 }
 
 void AuxWindow::centerWindowHeavyHanded()
 {
-  if( m_isPhone )
-    return;
-  
-  const string js = "var cntrfcn = function(){Wt.WT.AuxWindowCenter(" + this->jsRef() + ");};"
-  "cntrfcn();"
-  "setTimeout(cntrfcn,0);"
-  "setTimeout(cntrfcn,100);"
-  "setTimeout(cntrfcn,500);"
-  "setTimeout(function(){Wt.WT.AuxWindowResizeToFitOnScreen('" + id() + "');},500);";
-  
-  doJavaScript( js );
+  // Heavy-handed centering is no longer needed with Wt 4
+  centerWindow();
 }//void centerWindowHeavyHanded()
 
 
@@ -1309,18 +994,12 @@ std::string AuxWindow::repositionWindowJs( int x, int y )
   if( m_isPhone )
     return ""; //disable running calls after AuxWindow initialized to be mobile
   
-#if( USE_NEW_AUXWINDOW_ISH )
-  const string pos = "{top:" + std::to_string(y)
-  + ",left:" + std::to_string(x) + "}";
-  return m_repositionSlot->execJs( id(), pos );
-#else
   return string("var el = ") + this->jsRef() + ";"
   "var olddispl = el.style.display; el.style.display='';"
   + ((y==-32768) ? string() : "el.style.top = '"  + std::to_string(y) + "px';")
   + ((x==-32768) ? string() :  "el.style.left = '" + std::to_string(x) + "px';")
   + "el.style.display = olddispl;"
-  "$(el).data('centered', false);";
-#endif //#if( USE_NEW_AUXWINDOW_ISH )
+  "el._isData = el._isData || {}; el._isData.centered = false;";
 }//std::string repositionWindowJs( int x, int y )
 
 
@@ -1337,24 +1016,16 @@ void AuxWindow::resizeWindow( int width, int height )
   if( m_isPhone )
     return; //disable running calls after AuxWindow initialized to be mobile
     
-#if( USE_NEW_AUXWINDOW_ISH )
-  const string size = "{x:" + std::to_string(width)
-  + ",y:" + std::to_string(height) + "}";
-  m_resizeSlot->exec(id(),size);
-#else
-  const string jsthis = "$('#" + id() + "')";
   WStringStream sizeJs;
   sizeJs << "var el = " << this->jsRef() << ";"
          << "var olddispl = el.style.display; el.style.display='';"
          << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
   if( width > 0 )
-    sizeJs << jsthis << ".width( Math.min("  << width << ",0.95*ws.x) );";
+    sizeJs << "el.style.width = Math.round(Math.min(" << width << ",0.95*ws.x)) + 'px';";
   if( height > 0 )
-    sizeJs << jsthis << ".height( Math.min(" << height << ",0.95*ws.y) );";
-  sizeJs << jsthis << ".data('notshown',true);"
-         << "el.style.display = olddispl;";
+    sizeJs << "el.style.height = Math.round(Math.min(" << height << ",0.95*ws.y)) + 'px';";
+  sizeJs << "el.style.display = olddispl;";
   doJavaScript( sizeJs.str() );
-#endif//#if( USE_NEW_AUXWINDOW_ISH )
 } // void AuxWindow::resizeWindow( int width, int height )
 
 
@@ -1366,42 +1037,18 @@ std::string AuxWindow::resizeScaledWindowJs( double xRatio, double yRatio ) cons
   if( xRatio <= 0.0 && yRatio <= 0.0 )
     return "";
   
-#if( USE_NEW_AUXWINDOW_ISH )
-  const string size = "{x:" + std::to_string(xRatio)
-  + ",y:" + std::to_string(yRatio) + "}";
-  return m_resizeScaledSlot->execJs(id(),size);
-#else
-  const string jsthis = "$('#" + id() + "')";
-
   stringstream sizeJs;
   sizeJs << "var el = " << this->jsRef() << ";"
          << "var olddispl = el.style.display; el.style.display='';";
-//#if( IOS )
-//  //At app startup, the first "Welcome..." screen wont be sized correctly if we
-//  //  use the Wt.windowSize() method
-//  sizeJs << "var ww = window.screen.width;"
-//         << "var wh = window.screen.height;"
-//         << "if(window.orientation==90 || window.orientation==-90) wh = [ww, ww = wh][0];";
-  
-//  if( xRatio > 0.0 )
-//    sizeJs << "if(ww>2) " << jsthis << ".width( "  << xRatio << "*ww - 2 );";
-//  if( yRatio > 0.0 )
-//    sizeJs << "if(wh>2) " << jsthis << ".height( " << yRatio << "*wh - 2 );";
-//#else
   sizeJs << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
-  
-  //TODO: Currently assuming a border with of 1px always, should evaluate this
-  //TODO: would it be better to use $(window/document).width()/.height() below?
+
   if( xRatio > 0.0 )
-    sizeJs << "if(ws.x>2) " << jsthis << ".width( "  << xRatio << "*ws.x - 2 );";
+    sizeJs << "if(ws.x>2) el.style.width = Math.round(" << xRatio << "*ws.x - 2) + 'px';";
   if( yRatio > 0.0 )
-    sizeJs << "if(ws.y>2) " << jsthis << ".height( " << yRatio << "*ws.y - 2 );";
-//#endif
-  sizeJs << jsthis << ".data('notshown',true);"
-         << "el.style.display = olddispl;";
-  
+    sizeJs << "if(ws.y>2) el.style.height = Math.round(" << yRatio << "*ws.y - 2) + 'px';";
+  sizeJs << "el.style.display = olddispl;";
+
   return sizeJs.str();
-#endif  //#if( USE_NEW_AUXWINDOW_ISH )
 }//std::string resizeScaledWindowJs( double xRatio, double yRatio ) const
 
 void AuxWindow::resizeScaledWindow( double xRatio, double yRatio )
@@ -1454,7 +1101,6 @@ void AuxWindow::deleteSelf()
 
 void AuxWindow::rejectWhenEscapePressed( bool enable )
 {
-//  WDialog::rejectWhenEscapePressed( enable );
   if( enable == m_escapeIsReject )
     return;
   
@@ -1480,7 +1126,6 @@ void AuxWindow::rejectWhenEscapePressed( bool enable )
 
 void AuxWindow::show()
 {
-    /* see if this brings welcome screen above hamburger? */
     doJavaScript( "Wt.WT.AuxWindowBringToFront('" + id() + "');" );
 
     //Check original modal value, as modal doesn't work well with hide/show
@@ -1539,28 +1184,20 @@ void AuxWindow::setHidden( bool hide, const WAnimation &/*animation*/ ) //TODO: 
 
   if( hide )
   {
-    m_hideSlot->exec( "null", "{quietly: true}" );
-
     if( changingState && m_escapeIsReject )
     {
       m_escapeConnection1.disconnect();
       m_escapeConnection2.disconnect();
     }//if( m_escapeIsReject )
 
-    // In Wt 4, we must call WDialog::setHidden(true) so that the DialogCover's popDialog()
-    //  is called, which properly removes this dialog from the cover's stack and hides the
-    //  Wt-dialogcover overlay if no more modal dialogs remain.
-    //  Without this call, the dialog cover persists and blocks all user interaction.
     WDialog::setHidden( true, WAnimation() );
 
     emitReject();
   }else
   {
-    // In Wt 4, call WDialog::setHidden(false) so the DialogCover's pushDialog() is called,
-    //  which properly manages the dialog stack and shows the cover for modal dialogs.
     WDialog::setHidden( false, WAnimation() );
 
-    m_showSlot->exec( "null", "{quietly: true}" );
+    doJavaScript( "Wt.WT.AuxWindowBringToFront('" + id() + "');" );
 
     if( changingState && m_escapeIsReject )
     {
@@ -1594,18 +1231,6 @@ void AuxWindow::disableCollapse()
 
 
 
-JSlot &AuxWindow::jsHide()
-{
-  return *m_hideSlot;
-}
-
-
-JSlot &AuxWindow::jsShow()
-{
-  return *m_showSlot;
-}
-
-
 JSlot &AuxWindow::jsExpand()
 {
   return *m_expandSlot;
@@ -1622,12 +1247,6 @@ JSlot &AuxWindow::jsToggleExpandState()
 {
   return *m_toggleExpandedStatusSlot;
 }
-
-
-//JSignal<> &AuxWindow::closed()
-//{
-//  return *m_closedSignal;
-//}
 
 
 JSignal<> &AuxWindow::opened()

@@ -95,7 +95,8 @@ WT_DECLARE_WT_MEMBER
 (CopyFluxDataTextToClipboard, Wt::JavaScriptFunction, "CopyFluxDataTextToClipboard",
  function( sender, event, id )
 {
-  var text = $('#'+id).data('TableData');
+  var el = document.getElementById(id);
+  var text = el && el._isData ? el._isData.TableData : null;
   if( !text )
     return false;
   
@@ -1419,7 +1420,7 @@ void FluxToolWidget::refreshPeakTable()
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   stringstream pastebrdtxt;
   FluxToolImp::FluxCsvResource::data_to_strm( this, pastebrdtxt, true, m_displayInfoLevel );
-  m_copyBtn->doJavaScript( "$('#" + m_copyBtn->id() + "').data('TableData','" + pastebrdtxt.str() + "');" );
+  m_copyBtn->doJavaScript( "var el=document.getElementById('" + m_copyBtn->id() + "'); el._isData = el._isData || {}; el._isData.TableData = '" + pastebrdtxt.str() + "';" );
 #endif
   
   m_tableUpdated.emit();

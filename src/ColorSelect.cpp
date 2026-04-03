@@ -126,28 +126,30 @@ namespace
   (
     function(id,colorstr)
     {
-      var el = $('#'+id);
-      
+      var el = document.getElementById(id);
+      if( !el ) return;
+      el._isData = el._isData || {};
+
       var onChange = function(event){
         try{
-          if( el.data('color') === el.get(0).value )
+          if( el._isData.color === el.value )
           {
             console.log( "No change in color, returning" );
             return;
           }else
           {
-            el.data('color',el.get(0).value);
-            Wt.emit( id, {name: 'colorchange', eventObject: event}, el.get(0).value );
+            el._isData.color = el.value;
+            Wt.emit( id, {name: 'colorchange', eventObject: event}, el.value );
           }
         }catch(err){
           console.log( "Caught error in onChange" );
         }
       };
-      
+
       try
       {
-        el.data('color',colorstr);
-        el.get(0).addEventListener("input", onChange, false);  //is fired on the <input> element every time the color changes.
+        el._isData.color = colorstr;
+        el.addEventListener("input", onChange, false);  //is fired on the <input> element every time the color changes.
         //colorWell.addEventListener("change", updateAll, false);  //The change event is fired when the user dismisses the color picker.
       }catch(err){
         console.log( "Got error initing ColorSelect in JS" );

@@ -57,31 +57,27 @@ WT_DECLARE_WT_MEMBER
 (BringAboveDialogs, Wt::JavaScriptFunction, "BringAboveDialogs",
  function( id )
  {
-   let target = $('#'+id);
-   //if( target.length === 0 || !target.is(":visible") )
-   //  return;
-  
+   var target = document.getElementById(id);
+   if( !target )
+     return;
+
    /* bring above all dialogs and popup menus
-     $('#id').css('z-index') looks to return either a number _as a string_, or the string "auto"
+     getComputedStyle(el).zIndex returns either a number as a string, or the string "auto"
     */
-  
+
    let z = 0;
-   $('.Wt-dialog, .Wt-popup').each( function(i,v){
-     //This next commented-out jQuery check to see if it is visible seems to erroneously fail
-     //  sometimes; dont know if its semantics, or timing, but will keep commented out.
-     //if( $(v).is(":visible") ){
-       const popz = Number( $(v).css('z-index') );
+   document.querySelectorAll('.Wt-dialog, .Wt-popup').forEach( function(v){
+       const popz = Number( parseInt(getComputedStyle(v).zIndex) || 0 );
        if( (v.id !== id) && !isNaN(popz) )
          z = Math.max( z, popz );
-     //}
    });
-  
+
    if( z === 0 )
      return;
-  
-   const dialz = Number( target.css('z-index') );
+
+   const dialz = Number( parseInt(getComputedStyle(target).zIndex) || 0 );
    if( isNaN(dialz) || (z >= dialz) ){
-     target.css('z-index',z+1);
+     target.style.zIndex = z+1;
    }
 });
 
@@ -94,7 +90,7 @@ WT_DECLARE_WT_MEMBER
    if(!w) return;
    
    var t0 = (new Date()).valueOf();
-   var width = $(w).width();
+   var width = w.offsetWidth;
    w.style['top'] = '0px';
    (function slidein(){
      var t = (new Date()).valueOf();
@@ -103,41 +99,41 @@ WT_DECLARE_WT_MEMBER
      if(pos<0)
        setTimeout(slidein,1);
   })();
-   
-     
+
+
    var z = 0;
-   $('.Wt-dialog').each(function(i,v){z=Math.max(z,$(v).css('z-index'));});
-   $('.MobileMenuButton').each(function(i,v){z=Math.max(z,$(v).css('z-index'));});
-   $('.PopupDivMenu').each(function(i,v){z=Math.max(z,$(v).css('z-index'));});
-   if(z>$('#'+id).css('z-index'))
+   var wEl = document.getElementById(id);
+   document.querySelectorAll('.Wt-dialog').forEach(function(v){z=Math.max(z,parseInt(getComputedStyle(v).zIndex)||0);});
+   document.querySelectorAll('.MobileMenuButton').forEach(function(v){z=Math.max(z,parseInt(getComputedStyle(v).zIndex)||0);});
+   document.querySelectorAll('.PopupDivMenu').forEach(function(v){z=Math.max(z,parseInt(getComputedStyle(v).zIndex)||0);});
+   var elZ = wEl ? (parseInt(getComputedStyle(wEl).zIndex)||0) : 0;
+   if(z > elZ)
    {
        //if menu is below dialogs, set above, and also set overlay right below it
-       $('#'+id).css('z-index',z+2);
-       if ($('.mobilePopupMenuOverlay').is(':hidden'))
+       if(wEl) wEl.style.zIndex = z+2;
+       var overlay = document.querySelector('.mobilePopupMenuOverlay');
+       if (overlay && (overlay.offsetParent === null || overlay.style.display === 'none'))
        {
-           $('.mobilePopupMenuOverlay').css('z-index',z+1);
+           overlay.style.zIndex = z+1;
        } //check if the overlay is hidden already
-   } //z>$('#'+id).css('z-index')
+   } //z > elZ
    else
    {
-       if ($('.mobilePopupMenuOverlay').is(':hidden'))
+       var overlay = document.querySelector('.mobilePopupMenuOverlay');
+       if (overlay && (overlay.offsetParent === null || overlay.style.display === 'none'))
        {
-           $('.mobilePopupMenuOverlay').css('z-index',$('#'+id).css('z-index')-1);
-       } //$('.mobilePopupMenuOverlay').is(':hidden')
+           overlay.style.zIndex = elZ - 1;
+       }
    } //already above max z index, so not a problem.
-     
+
    //Immediately make sure none of items for this menu have the active class
-//   var k = w.childNodes;
-//   for(var i = 0; i<k.length;++i)
-//     if(k[i].className)
-//       k[i].className = k[i].className.replace(/\\bactive\\b/, "");
-   $(w).children('.active').removeClass("active");
-   
+   w.querySelectorAll(':scope > .active').forEach(function(ch){ ch.classList.remove("active"); });
+
    //make sure none of the items for any menu have the active class, but only
    //  after all the animations have occurred
    setTimeout( function(){
-     $('.PopupDivMenuPhone').each( function(){
-       $(this).children('.active').removeClass("active");
+     document.querySelectorAll('.PopupDivMenuPhone').forEach( function(el){
+       el.querySelectorAll(':scope > .active').forEach(function(ch){ ch.classList.remove("active"); });
      } );
    }, 500 );
  });
@@ -146,30 +142,48 @@ WT_DECLARE_WT_MEMBER(SetupHideOverlay, Wt::JavaScriptFunction, "SetupHideOverlay
 {
   function hideverything(e)
   {
-    var menus = $('.PopupDivMenuPhone');
-    if( !menus.is(e.target) // if the target of the click isn't the menus...
-        && menus.has(e.target).length === 0) // ... nor a descendant of the menus
+    var menus = document.querySelectorAll('.PopupDivMenuPhone');
+    var targetInMenu = false;
+    menus.forEach(function(m){
+      if( m === e.target || m.contains(e.target) )
+        targetInMenu = true;
+    });
+    if( !targetInMenu )
     {
       //slide menus out to the left and then hide
-      menus.each( function( index, el ){
-        var jel = $(el);
-        jel.children('.active').removeClass("active");
-        if( !jel.is(":visible") ) return;
-        
+      menus.forEach( function( el ){
+        el.querySelectorAll(':scope > .active').forEach(function(ch){ ch.classList.remove("active"); });
+        if( el.offsetParent === null ) return;
+
         //Scroll back to the top of the menu
-        jel.scrollTop(0);
-        
-        var a = -jel.width() - 10;
-        jel.animate({left: a+'px'}, {queue: false, duration: 255}, "linear", function(){jel.hide();});
+        el.scrollTop = 0;
+
+        var a = -el.offsetWidth - 10;
+        el.style.transition = 'left 255ms linear';
+        el.style.left = a + 'px';
+        var onEnd = function(){
+          el.style.display = 'none';
+          el.style.removeProperty('transition');
+          el.removeEventListener('transitionend', onEnd);
+        };
+        el.addEventListener('transitionend', onEnd);
       });
-          
-      $('.mobilePopupMenuOverlay').hide();
-      $(document).off("touchstart.mobileOverlay");  //unbind event listener
-    } //if(!menus.is(e.target)
+
+      var overlay = document.querySelector('.mobilePopupMenuOverlay');
+      if( overlay ) overlay.style.display = 'none';
+      // Abort the touchstart listener
+      if( window._IS && window._IS._mobileOverlayCtrl ){
+        window._IS._mobileOverlayCtrl.abort();
+        window._IS._mobileOverlayCtrl = null;
+      }
+    } //if( !targetInMenu )
   }//function hideverything(e)
-    
-  //define mobileOverlay namespace, so can easily remove event listener later
-  $(document).on("touchstart.mobileOverlay",hideverything);
+
+  // Abort any previous listener, then set up a new one via AbortController
+  if( !window._IS ) window._IS = {};
+  if( window._IS._mobileOverlayCtrl ) window._IS._mobileOverlayCtrl.abort();
+  window._IS._mobileOverlayCtrl = new AbortController();
+  document.addEventListener("touchstart", hideverything, {signal: window._IS._mobileOverlayCtrl.signal});
 });
 
 //XXX - this is a hack!  The Wt JavaScript function fitToWindow(...) doesnt
@@ -215,19 +229,18 @@ WT_DECLARE_WT_MEMBER
   if( !el || !btn || !wtapp )
     return; //shouldnt ever happen
   
-  let obj = jQuery.data(el, 'obj'); //Wt 3.3.4
-  if( !obj ) obj = el.wtObj; //Wt 3.7.1
+  let obj = el.wtObj;
   if( !obj ) console.log('parentMouseWentOver: !obj' );
-  
-  if( $('.PopupMenuParentButton.active').length === 0 ){
+
+  if( document.querySelectorAll('.PopupMenuParentButton.active').length === 0 ){
     if(obj) obj.setHidden(1); //do cleanup from the c++ popup( WPoint(....) ); call
     return; // No menus are showing, so dont do anything
   }
-  
+
   // Check if we are going from the menu, back to parent button (I think this is the only case
   // where the button has active class, and yet mouse is entering the parent button
-  const showing = $(btn).hasClass('active');
-  
+  const showing = btn.classList.contains('active');
+
   if( showing ){
     // Fixup 'popup( WPoint(-10000,-10000) );' call from C++  ...
     if (obj) obj.setHidden(0); //jic
@@ -235,35 +248,29 @@ WT_DECLARE_WT_MEMBER
     Wt.WT.BringAboveDialogs(el.id);
     return; //Nothing more to do
   }
-  
-  // Lets try to trigger the 'cancel' signal so C++ will know about things
-  //  - this doesnt work because the keydown event happens even if we put the below stuff in a
-  //    setTimeout(...) call
-  //"jQuery.event.trigger({ type : 'keydown', keyCode: 27 });"
-  
+
   //remove "active" class from all other buttons with style class "PopupMenuParentButton"
   //  The C++ aboutToHide() callback would do this anyway, but lets be a little more snappy
-  $('.PopupMenuParentButton.active').each(function(){
-    $(this).removeClass('active');
+  document.querySelectorAll('.PopupMenuParentButton.active').forEach(function(b){
+    b.classList.remove('active');
   });
-  
-  $('.PopupDivMenu.AppMenu.current').each(function(){
-    $(this).removeClass('current');
-    let thisobj = jQuery.data(this, 'obj'); //Wt 3.3.4
-    if( !thisobj ) thisobj = this.wtObj;    //Wt 3.7.1
+
+  document.querySelectorAll('.PopupDivMenu.AppMenu.current').forEach(function(m){
+    m.classList.remove('current');
+    let thisobj = m.wtObj;
     if(!thisobj)
       console.log( 'ParentMouseWentOver: !thisobj' );
-      
+
     if(thisobj)
       thisobj.setHidden(1);
     
     // Hide the menu, and emit the 'cancel' signal so the C++ will
-    this.style.display = 'none';
-    Wt.emit(this.id, 'cancel');
+    m.style.display = 'none';
+    Wt.emit(m.id, 'cancel');
   });
   
-  $(el).addClass('current');
-  $(btn).addClass('active');
+  el.classList.add('current');
+  btn.classList.add('active');
   if(obj) obj.setHidden(0);
   wtapp.positionAtWidget(el.id,btn.id,wtapp.Vertical);
   Wt.WT.BringAboveDialogs(el.id);
@@ -275,11 +282,10 @@ WT_DECLARE_WT_MEMBER
   function(elId, btnId, wtapp)
 {
   const el = document.getElementById(elId);
-  let obj = jQuery.data(el, "obj"); //Wt 3.3.4
-  if (!obj) obj = el.wtObj;  // Wt 3.7.1
+  let obj = el.wtObj;
   if (!obj) console.error("ParentClickedCleanupFromCpp: !obj");
 
-  const showing = $(el).hasClass("current");
+  const showing = el.classList.contains("current");
   if (showing && obj) {
     obj.setHidden(0);
     wtapp.positionAtWidget(el.id, btnId, wtapp.Vertical);
@@ -304,23 +310,24 @@ WT_DECLARE_WT_MEMBER
   if( !el || !btn || !wtapp )
     return; //shouldnt ever happen
   
-  let obj = jQuery.data(el, 'obj'); //Wt 3.3.4
-  if( !obj ) obj = el.wtObj;  // Wt 3.7.1
+  let obj = el.wtObj;
   if( !obj ) console.error('ParentClicked: !obj');
-  
-  const showing = $(btn).hasClass('active');  //el.style.display !== 'block'
+
+  if( !window._IS ) window._IS = {};
+
+  const showing = btn.classList.contains('active');  //el.style.display !== 'block'
   if( !showing ){
     //remove "active" class from all other buttons with style class "PopupMenuParentButton"
-    $('.PopupMenuParentButton.active').each(function(){
-      $(this).removeClass('active');
+    document.querySelectorAll('.PopupMenuParentButton.active').forEach(function(b){
+      b.classList.remove('active');
     });
 
-    $('.PopupDivMenu.AppMenu.current').each(function(){
-      $(this).removeClass('current');
+    document.querySelectorAll('.PopupDivMenu.AppMenu.current').forEach(function(m){
+      m.classList.remove('current');
     });
 
-    $(el).addClass('current');
-    $(btn).addClass('active');
+    el.classList.add('current');
+    btn.classList.add('active');
 
     // This next call (defined in WPopupMenu.js) binds signals to hide the menu on document mouse
     //  click or escape presses, as well as sets the menus display to 'block'
@@ -335,32 +342,40 @@ WT_DECLARE_WT_MEMBER
     //  classes.  We bind our own one-shot cleanup handlers to clear those immediately in JS,
     //  rather than waiting for the C++ aboutToHide() server round-trip.
     function menuDismissCleanup(){
-      $(document).off('click.menuCleanup keydown.menuCleanup');
+      if( window._IS._menuCleanupCtrl ){
+        window._IS._menuCleanupCtrl.abort();
+        window._IS._menuCleanupCtrl = null;
+      }
       // Only clean up if Wt's doHide already hid the menu
       if( el.style.display !== 'block' ){
-        $(el).removeClass('current');
-        $('.PopupMenuParentButton.active').removeClass('active');
+        el.classList.remove('current');
+        document.querySelectorAll('.PopupMenuParentButton.active').forEach(function(b){ b.classList.remove('active'); });
         Wt.WT._kbSubMenu = null;
       }
     }
     setTimeout(function(){
-      $(document).off('click.menuCleanup keydown.menuCleanup');
-      $(document).on('click.menuCleanup', function(){
+      if( window._IS._menuCleanupCtrl ) window._IS._menuCleanupCtrl.abort();
+      window._IS._menuCleanupCtrl = new AbortController();
+      var sig = window._IS._menuCleanupCtrl.signal;
+      document.addEventListener('click', function(){
         setTimeout(menuDismissCleanup, 1);
-      });
-      $(document).on('keydown.menuCleanup', function(evt){
+      }, {signal: sig});
+      document.addEventListener('keydown', function(evt){
         if( evt.keyCode === 27 )
           setTimeout(menuDismissCleanup, 1);
-      });
+      }, {signal: sig});
     }, 0);
   }else{
-    $(el).removeClass('current');
-    $(btn).removeClass('active');
+    el.classList.remove('current');
+    btn.classList.remove('active');
     Wt.WT._kbSubMenu = null;
 
     // This next call unbinds the document mouse click and escape press, and sets menu display to ''
     if(obj) obj.setHidden(1);
-    $(document).off('click.menuCleanup keydown.menuCleanup');
+    if( window._IS._menuCleanupCtrl ){
+      window._IS._menuCleanupCtrl.abort();
+      window._IS._menuCleanupCtrl = null;
+    }
   }
 });
 
@@ -377,11 +392,11 @@ WT_DECLARE_WT_MEMBER
     var li = children[i];
     if( li.tagName !== 'LI' )
       continue;
-    if( $(li).hasClass('Wt-separator') )
+    if( li.classList.contains('Wt-separator') )
       continue;
-    if( $(li).is(':hidden') )
+    if( li.offsetParent === null || li.style.display === 'none' )
       continue;
-    if( $(li).hasClass('Wt-disabled') )
+    if( li.classList.contains('Wt-disabled') )
       continue;
     items.push(li);
   }
@@ -400,15 +415,15 @@ WT_DECLARE_WT_MEMBER
 {
   var LEFT = 37, UP = 38, RIGHT = 39, DOWN = 40, ENTER = 13, SPACE = 32;
 
-  const $activeBtn = $('.PopupMenuParentButton.active');
-  if( $activeBtn.length === 0 )
+  var activeBtn = document.querySelector('.PopupMenuParentButton.active');
+  if( !activeBtn )
   {
     Wt.WT._kbSubMenu = null;
     return;
   }
 
-  const $currentMenu = $('.PopupDivMenu.AppMenu.current');
-  if( $currentMenu.length === 0 )
+  var currentMenu = document.querySelector('.PopupDivMenu.AppMenu.current');
+  if( !currentMenu )
   {
     Wt.WT._kbSubMenu = null;
     return;
@@ -416,9 +431,7 @@ WT_DECLARE_WT_MEMBER
 
   // Get the Wt popup menu JS object for a menu element
   const getObj = function( menuEl ){
-    let obj = jQuery.data(menuEl, 'obj');
-    if( !obj ) obj = menuEl.wtObj;
-    return obj;
+    return menuEl.wtObj || null;
   };
 
   // Get the submenu <ul> for a menu item <li>, using Wt's cached subMenu property,
@@ -451,7 +464,7 @@ WT_DECLARE_WT_MEMBER
   const closeKbSub = function(){
     if( kbSub )
     {
-      $(kbSub).find('> li.active').removeClass('active');
+      kbSub.querySelectorAll(':scope > li.active').forEach(function(li){ li.classList.remove('active'); });
       kbSub.style.display = 'none';
       Wt.WT._kbSubMenu = null;
       kbSub = null;
@@ -471,7 +484,7 @@ WT_DECLARE_WT_MEMBER
     if( sm.parentNode === li )
     {
       li.removeChild(sm);
-      $currentMenu[0].parentNode.appendChild(sm);
+      currentMenu.parentNode.appendChild(sm);
     }
     sm.parentItem = li;
     // wtapp is Wt.WT which has px(), positionAtWidget(), Horizontal, etc.
@@ -480,10 +493,10 @@ WT_DECLARE_WT_MEMBER
     Wt.WT.BringAboveDialogs(sm.id);
     Wt.WT.AdjustTopPos(sm.id);
 
-    $(sm).find('> li.active').removeClass('active');
+    sm.querySelectorAll(':scope > li.active').forEach(function(li){ li.classList.remove('active'); });
     var subItems = Wt.WT.MenuNavGetItems(sm);
     if( subItems.length > 0 )
-      $(subItems[0]).addClass('active');
+      subItems[0].classList.add('active');
 
     Wt.WT._kbSubMenu = sm;
     kbSub = sm;
@@ -497,10 +510,12 @@ WT_DECLARE_WT_MEMBER
     var obj = getObj(menuEl);
     if( obj ) obj.setHidden(1);
 
-    $(menuEl).removeClass('current');
-    var btnId = $(menuEl).attr('data-btn-id');
-    if( btnId )
-      $('#' + btnId).removeClass('active');
+    menuEl.classList.remove('current');
+    var btnId = menuEl.getAttribute('data-btn-id');
+    if( btnId ){
+      var btnEl = document.getElementById(btnId);
+      if( btnEl ) btnEl.classList.remove('active');
+    }
 
     menuEl.style.display = 'none';
     Wt.emit(menuEl.id, 'cancel');
@@ -520,11 +535,11 @@ WT_DECLARE_WT_MEMBER
     // If RIGHT pressed on a highlighted item that has a submenu, open it
     if( keyCode === RIGHT )
     {
-      var navMenu = inSubMenu ? kbSub : $currentMenu[0];
-      var $hl = $(navMenu).find('> li.active');
-      if( $hl.length > 0 && getSubmenu($hl[0]) )
+      var navMenu = inSubMenu ? kbSub : currentMenu;
+      var hl = navMenu.querySelector(':scope > li.active');
+      if( hl && getSubmenu(hl) )
       {
-        openKbSub($hl[0]);
+        openKbSub(hl);
         return;
       }
     }
@@ -533,39 +548,39 @@ WT_DECLARE_WT_MEMBER
     closeKbSub();
 
     // Use Wt's setOthersInactive to fully clear the old menu (removes all .active)
-    var oldObj = getObj($currentMenu[0]);
+    var oldObj = getObj(currentMenu);
     if( oldObj ) oldObj.setHidden(1);
-    $currentMenu[0].style.display = 'none';
+    currentMenu.style.display = 'none';
 
-    var $allBtns = $('.PopupMenuParentButton');
-    var currentIdx = $allBtns.index($activeBtn[0]);
+    var allBtns = Array.from(document.querySelectorAll('.PopupMenuParentButton'));
+    var currentIdx = allBtns.indexOf(activeBtn);
     var nextIdx;
     if( keyCode === LEFT )
-      nextIdx = (currentIdx - 1 + $allBtns.length) % $allBtns.length;
+      nextIdx = (currentIdx - 1 + allBtns.length) % allBtns.length;
     else
-      nextIdx = (currentIdx + 1) % $allBtns.length;
+      nextIdx = (currentIdx + 1) % allBtns.length;
 
-    var nextBtn = $allBtns.eq(nextIdx);
-    var nextMenuId = nextBtn.attr('data-menu-id');
+    var nextBtn = allBtns[nextIdx];
+    var nextMenuId = nextBtn.getAttribute('data-menu-id');
 
     if( nextMenuId )
-      Wt.WT.ParentMouseWentOver( nextMenuId, nextBtn.attr('id'), wtapp );
+      Wt.WT.ParentMouseWentOver( nextMenuId, nextBtn.id, wtapp );
     return;
   }
 
   if( keyCode === UP || keyCode === DOWN )
   {
-    var navMenu = inSubMenu ? kbSub : $currentMenu[0];
+    var navMenu = inSubMenu ? kbSub : currentMenu;
     var items = Wt.WT.MenuNavGetItems(navMenu);
     if( items.length === 0 )
       return;
 
     // Find currently highlighted item
-    var $allLi = $(navMenu).find('> li.active');
+    var activeLis = Array.from(navMenu.querySelectorAll(':scope > li.active'));
     var curIdx = -1;
     for( var i = 0; i < items.length; i++ )
     {
-      if( $allLi.index(items[i]) >= 0 )
+      if( activeLis.indexOf(items[i]) >= 0 )
       {
         curIdx = i;
         break;
@@ -573,7 +588,7 @@ WT_DECLARE_WT_MEMBER
     }
 
     // Remove highlight from all items in this menu
-    $allLi.removeClass('active');
+    activeLis.forEach(function(li){ li.classList.remove('active'); });
 
     // If navigating in parent menu and a keyboard submenu is open, close it
     if( !inSubMenu )
@@ -585,7 +600,7 @@ WT_DECLARE_WT_MEMBER
     else
       nextIdx = (curIdx <= 0) ? (items.length - 1) : (curIdx - 1);
 
-    $(items[nextIdx]).addClass('active');
+    items[nextIdx].classList.add('active');
 
     // Scroll into view if needed
     if( items[nextIdx].scrollIntoView )
@@ -595,37 +610,37 @@ WT_DECLARE_WT_MEMBER
 
   if( keyCode === ENTER || keyCode === SPACE )
   {
-    var navMenu = inSubMenu ? kbSub : $currentMenu[0];
-    var $hl = $(navMenu).find('> li.active');
-    if( $hl.length === 0 )
+    var navMenu = inSubMenu ? kbSub : currentMenu;
+    var hl = navMenu.querySelector(':scope > li.active');
+    if( !hl )
       return;
 
     // If the item has a submenu, open it (same as RIGHT arrow)
-    if( keyCode === ENTER && getSubmenu($hl[0]) )
+    if( keyCode === ENTER && getSubmenu(hl) )
     {
-      openKbSub($hl[0]);
+      openKbSub(hl);
       return;
     }
 
     // Check if this item contains a checkbox input
-    var $cb = $hl.find('input[type="checkbox"]');
-    if( $cb.length > 0 )
+    var cb = hl.querySelector('input[type="checkbox"]');
+    if( cb )
     {
       // Toggle the checkbox; dont close the menu
-      $cb[0].click();
+      cb.click();
       return;
     }
 
     // For non-checkbox items: close the menu, then activate
     if( keyCode === ENTER )
     {
-      closeMenu( $currentMenu[0] );
+      closeMenu( currentMenu );
 
-      var $anchor = $hl.find('a');
-      if( $anchor.length > 0 )
-        $anchor[0].click();
+      var anch = hl.querySelector('a');
+      if( anch )
+        anch.click();
       else
-        $hl[0].click();
+        hl.click();
     }
   }
 });
@@ -815,12 +830,12 @@ void PopupDivMenu::setHidden( bool hidden, const Wt::WAnimation &animation )
     {
       if( hasStyleClass("Root") )
       {
-        doJavaScript("$('.mobilePopupMenuOverlay').hide();");
-        doJavaScript("$(document).off(\"touchstart.mobileOverlay\");"); //unbind event listener
+        doJavaScript("{var o=document.querySelector('.mobilePopupMenuOverlay');if(o)o.style.display='none';}");
+        doJavaScript("if(window._IS&&window._IS._mobileOverlayCtrl){window._IS._mobileOverlayCtrl.abort();window._IS._mobileOverlayCtrl=null;}"); //unbind event listener
       }//hasStyleClass("Root") -- is the top parent
     }else
     {
-      doJavaScript("$('.mobilePopupMenuOverlay').show();");
+      doJavaScript("{var o=document.querySelector('.mobilePopupMenuOverlay');if(o)o.style.display='';}");
     }//if( hidden ) / else
     
     WCompositeWidget::setHidden(hidden, animation);
@@ -845,7 +860,7 @@ void PopupDivMenu::showMobile()
   
   if( m_mobile )
   {
-    doJavaScript("$('.mobilePopupMenuOverlay').show();");
+    doJavaScript("{var o=document.querySelector('.mobilePopupMenuOverlay');if(o)o.style.display='';}");
     doJavaScript( "Wt.WT.ShowPhone('" + id() + "');" );
     doJavaScript( "Wt.WT.SetupHideOverlay();" );
   }//if( m_mobile )
@@ -896,10 +911,10 @@ void PopupDivMenu::parentTouchStarted()
   popup( WPoint( -10000, -10000 ) );
     
   const string parent_clicked_js =
-    "const btn = $('#" + m_menuParentID + "');"
-    "const wasActive = btn.hasClass('active');"
+    "var btn = document.getElementById('" + m_menuParentID + "');"
+    "var wasActive = btn ? btn.classList.contains('active') : false;"
     "Wt.WT.ParentMouseWentOver('" + id() + "','" + m_menuParentID + "'," WT_CLASS ");"
-    "if( !wasActive) $('#" + m_menuParentID + "').removeClass('active');"
+    "if( !wasActive && btn) btn.classList.remove('active');"
     "Wt.WT.ParentClicked('" + id() + "','" + m_menuParentID + "'," WT_CLASS ");"
     ;
   doJavaScript( parent_clicked_js );
@@ -1144,10 +1159,10 @@ void PopupDivMenu::desktopDoHide()
 {
   assert( m_menuParent );
   
-  string js = "$('#" + id() + "').removeClass('current');";
+  string js = "{var e=document.getElementById('" + id() + "');if(e)e.classList.remove('current');}";
   if( !m_menuParentID.empty() )
-    js += "$('#" + m_menuParentID + "').removeClass('active');";
-  
+    js += "{var e=document.getElementById('" + m_menuParentID + "');if(e)e.classList.remove('active');}";
+
   doJavaScript( js );
 }//void PopupDivMenu::desktopDoHide()
 

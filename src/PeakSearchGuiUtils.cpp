@@ -3206,9 +3206,9 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
             
           if( d )
             d->done(Wt::DialogCode::Accepted);
-          wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
+          wApp->doJavaScript( "document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});" );
         };
-        
+
         UndoRedoManager *undoManager = interspec->undoRedoManager();
         if( undoManager && undoManager->canAddUndoRedoNow() )
           undoManager->addUndoRedoStep( undo, redo, "Cancel refit peak with DRF FWHM." );
@@ -3236,7 +3236,7 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
           SimpleDialog *d = dynamic_cast<SimpleDialog *>( ppp );
           if( d )
             d->done(Wt::DialogCode::Accepted);
-          wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
+          wApp->doJavaScript( "document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});" );
 
           MakeFwhmForDrfWindow *window = interspec->fwhmFromForegroundWindow(true);
           if( window )

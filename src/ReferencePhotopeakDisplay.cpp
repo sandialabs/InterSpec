@@ -2118,8 +2118,7 @@ void ReferencePhotopeakDisplay::refLineVerbosityPreferenceChangedCallback( int v
 void ReferencePhotopeakDisplay::emphasizeFeatureMarker()
 {
   if( m_featureMarkers )
-    m_featureMarkers->doJavaScript( "$('#" + m_featureMarkers->id() + "')"
-                              ".fadeIn(100).fadeOut(100).fadeIn(100).fadeOut(100).fadeIn(100);" );
+    m_featureMarkers->doJavaScript( "var el=document.getElementById('" + m_featureMarkers->id() + "'); el.classList.remove('interspec-flash'); void el.offsetWidth; el.classList.add('interspec-flash');" );
 }//void emphasizeFeatureMarker()
 
 

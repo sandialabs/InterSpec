@@ -593,17 +593,17 @@ void InterSpecWebFrame::handleOnFocus(wxFocusEvent& event)
   wxLogMessage("Got Focus");
   event.Skip();
 
-  RunScript("$('.app-titlebar').removeClass('inactive');");
+  RunScript("var _tb=document.querySelector('.app-titlebar');if(_tb)_tb.classList.remove('inactive');");
 }//void handleOnFocus(wxFocusEvent& event);
 
 void InterSpecWebFrame::handleFocusLost(wxFocusEvent& event)
 {
-  // We dont seem to ever really get here, except when we programitacly call minimize, 
+  // We dont seem to ever really get here, except when we programitacly call minimize,
   // or whatever - so detecting window losing/getting focus in the JS must work okay enough
   wxLogMessage("Lost Focus");
   event.Skip();
 
-  RunScript("$('.app-titlebar').addClass('inactive');");
+  RunScript("var _tb=document.querySelector('.app-titlebar');if(_tb)_tb.classList.add('inactive');");
 }//void handleFocusLost(wxFocusEvent& event);
 */
 
@@ -613,7 +613,7 @@ void InterSpecWebFrame::handleChildFocus(wxChildFocusEvent& evt)
   wxLogMessage("handleChildFocus");
 
   // This next line doesnt appear to be necassary
-  //RunScript("$('.app-titlebar').removeClass('inactive');");
+  //RunScript("var _tb=document.querySelector('.app-titlebar');if(_tb)_tb.classList.remove('inactive');");
 
   const auto app = dynamic_cast<InterSpecWxApp*>(wxApp::GetInstance());
   assert(app);

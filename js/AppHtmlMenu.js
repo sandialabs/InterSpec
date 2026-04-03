@@ -2,11 +2,11 @@ WT_DECLARE_WT_MEMBER
 (TitleBarChangeMaximized, Wt::JavaScriptFunction, "TitleBarChangeMaximized",
 function(maximized){
   if( maximized ){
-    $('.resizer.top,.resizer.left').hide();
-    $('.window-max-restore').removeClass('window-maximize').addClass('window-unmaximize');
+    document.querySelectorAll( '.resizer.top,.resizer.left' ).forEach( function( el ){ el.style.display = 'none'; } );
+    document.querySelectorAll( '.window-max-restore' ).forEach( function( el ){ el.classList.remove( 'window-maximize' ); el.classList.add( 'window-unmaximize' ); } );
   }else{
-    $('.resizer.top,.resizer.left').show();
-    $('.window-max-restore').removeClass('window-unmaximize').addClass('window-maximize');
+    document.querySelectorAll( '.resizer.top,.resizer.left' ).forEach( function( el ){ el.style.display = ''; } );
+    document.querySelectorAll( '.window-max-restore' ).forEach( function( el ){ el.classList.remove( 'window-unmaximize' ); el.classList.add( 'window-maximize' ); } );
   }
 
   let f = function(){ window.dispatchEvent(new Event('resize')); };
@@ -23,13 +23,15 @@ function(){
   if( Wt.WT.IsElectronInstance() ){
     // Nothing to do here - nodejs will call back later to set things up
   }else{
-    $(window).blur(function(){
-      $('.app-titlebar').addClass('inactive');
-    });
-  
-    $(window).focus(function(){
-      $('.app-titlebar').removeClass('inactive');
-    });
+    window.addEventListener( 'blur', function(){
+      var tb = document.querySelector( '.app-titlebar' );
+      if( tb ) tb.classList.add( 'inactive' );
+    } );
+
+    window.addEventListener( 'focus', function(){
+      var tb = document.querySelector( '.app-titlebar' );
+      if( tb ) tb.classList.remove( 'inactive' );
+    } );
                                   
     document.addEventListener('fullscreenchange', (event) => {
       if (document.fullscreenElement) {
@@ -48,13 +50,15 @@ function(){
 WT_DECLARE_WT_MEMBER
 (SetupAppTitleBar, Wt::JavaScriptFunction, "SetupAppTitleBar",
 function(){
-  $(window).blur(function(){
-    $('.app-titlebar').addClass('inactive');
-  });
+  window.addEventListener( 'blur', function(){
+    var tb = document.querySelector( '.app-titlebar' );
+    if( tb ) tb.classList.add( 'inactive' );
+  } );
 
-  $(window).focus(function(){
-    $('.app-titlebar').removeClass('inactive');
-  });
+  window.addEventListener( 'focus', function(){
+    var tb = document.querySelector( '.app-titlebar' );
+    if( tb ) tb.classList.remove( 'inactive' );
+  } );
                                 
   document.addEventListener('fullscreenchange', (event) => {
     if (document.fullscreenElement) {
@@ -79,9 +83,9 @@ function(){
     let webFrame = require('electron').webFrame;
     webFrame.setZoomFactor(1.0);
   }else{
-    $('body').css('zoom', 1.0);
+    document.body.style.zoom = 1.0;
   }
-  
+
   setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
 }
 );
@@ -91,7 +95,7 @@ function(){
 WT_DECLARE_WT_MEMBER
 (ResetPageZoom, Wt::JavaScriptFunction, "ResetPageZoom",
 function(){
-  $('body').css('zoom', 1.0);
+  document.body.style.zoom = 1.0;
   setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
 }
 );
@@ -109,9 +113,9 @@ function(){
     webFrame.setZoomLevel( level + 1 );
   }else{
     let current = 1.0;
-    if( $('body').css('zoom') ) 
-      current = parseFloat($('body').css('zoom'));
-    $('body').css('zoom', 1.05*current );
+    if( document.body.style.zoom )
+      current = parseFloat( document.body.style.zoom );
+    document.body.style.zoom = 1.05 * current;
   }
   setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
 }
@@ -123,9 +127,9 @@ WT_DECLARE_WT_MEMBER
 (IncreasePageZoom, Wt::JavaScriptFunction, "IncreasePageZoom",
 function(){
   let current = 1.0;
-  if( $('body').css('zoom') ) 
-    current = parseFloat($('body').css('zoom'));
-  $('body').css('zoom', 1.05*current );
+  if( document.body.style.zoom )
+    current = parseFloat( document.body.style.zoom );
+  document.body.style.zoom = 1.05 * current;
   setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
 }
 );
@@ -142,9 +146,9 @@ function(){
     webFrame.setZoomLevel( level - 1 );
   }else{
     let current = 1.0;
-    if( $('body').css('zoom') ) 
-      current = parseFloat($('body').css('zoom'));
-    $('body').css('zoom', 0.95*current);
+    if( document.body.style.zoom )
+      current = parseFloat( document.body.style.zoom );
+    document.body.style.zoom = 0.95 * current;
   }
   setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
 }
@@ -156,9 +160,9 @@ WT_DECLARE_WT_MEMBER
 (DecreasePageZoom, Wt::JavaScriptFunction, "DecreasePageZoom",
 function(){
   let current = 1.0;
-  if( $('body').css('zoom') ) 
-    current = parseFloat($('body').css('zoom'));
-  $('body').css('zoom', 0.95*current);
+  if( document.body.style.zoom )
+    current = parseFloat( document.body.style.zoom );
+  document.body.style.zoom = 0.95 * current;
   setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
 }
 );

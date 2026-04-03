@@ -3,7 +3,7 @@ WT_DECLARE_WT_MEMBER
 (FileUploadFcn, Wt::JavaScriptFunction, "FileUploadFcn",
 function()
 {
-  const target = $('.Wt-domRoot').get(0);
+  const target = document.querySelector('.Wt-domRoot');
   
   var urlIdFromName = function(name)
   {
@@ -31,7 +31,7 @@ function()
         return;
       }
       
-      if( $('.Wt-domRoot').data('BatchUploadOnly') )
+      if( window._IS.BatchUploadOnly )
         urlid = 'BatchUpUrl';
 
       let files_to_upload = [];
@@ -61,7 +61,7 @@ function()
             .map(uid => ({url: uid, file: toUpload[uid]}));
         }catch(error)
         {
-          if( $('.Wt-domRoot').data('BatchUploadEnabled') )
+          if( window._IS.BatchUploadEnabled )
           {
             // If batch upload is enabled, we'll just trigger that.
             urlid = 'BatchUpUrl';
@@ -74,7 +74,7 @@ function()
             + ' prefixed with "i-", "b-", "k-" or has back/fore/item/calib'
             + ' in the file name, and there is at most one of each spectrum type.';
             
-            Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, msg );
+            Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, msg );
             return;
           }
         }//try / catch
@@ -82,22 +82,23 @@ function()
       
       function removeUploading(){
         //console.log( 'removeUploading' );
-        $('#Uploading').remove();
-        
+        var upEl = document.getElementById('Uploading');
+        if( upEl ) upEl.remove();
+
         // Clear the time-out timer, if we have one
-        clearTimeout( $('.Wt-domRoot').data('UploadCoverTimer') );
-        $('.Wt-domRoot').data( 'UploadCoverTimer', null );
+        clearTimeout( window._IS.UploadCoverTimer );
+        window._IS.UploadCoverTimer = null;
       };
       
       
       /* Lets set a 1-minute timeout so we will eventually remove the uploading cover if no traffic. */
       function setUploadTimer(){
-        clearTimeout( $('.Wt-domRoot').data('UploadCoverTimer') );
+        clearTimeout( window._IS.UploadCoverTimer );
         const coverTimer = setTimeout( function(){
           console.error("The request to upload file timed out.");
           removeUploading();
         }, 60000 );
-        $('.Wt-domRoot').data( 'UploadCoverTimer', coverTimer );
+        window._IS.UploadCoverTimer = coverTimer;
       };
       
       function errfcn(){
@@ -111,7 +112,7 @@ function()
           removeUploading();
         }else{
           const thisUpload = files_to_upload.shift();
-          uploadFileToUrl( $(target).data(thisUpload.url), thisUpload.file, true );
+          uploadFileToUrl( window._IS[thisUpload.url], thisUpload.file, true );
         }
       };
       
@@ -135,7 +136,7 @@ function()
           if( (typeof file.path === "string") && file.path.length > 3 ){
             fspath = file.path;
           }else{
-            const fns = $(document).data('dragOverFilePaths');
+            const fns = window._IS.dragOverFilePaths;
             if( fns && Array.isArray(fns.filenames) && fns.time && (Math.abs(fns.time - (new Date())) < 30000) ){
               const filename_uri = encodeURIComponent(file.name);
               
@@ -147,7 +148,7 @@ function()
                   console.log( "Matched filenames: ", file.name, " vs ", fspath );
                   console.log( "Remaining files: ", fns.filenames );
                   if( fns.filenames.length === 0 )
-                    $(document).data('dragOverFilePaths', null);
+                    window._IS.dragOverFilePaths = null;
                   break;
                 }//if( native fn ends with browsers fn )
               }//for( loop over fns.filenames.length )
@@ -211,7 +212,8 @@ function()
             const currentTime = Date.now();
             if( (currentTime - lastUpdateTime) > 500 ){
               lastUpdateTime = currentTime;
-              $('#UploadingProgress').text( Math.trunc(100*pe.loaded/pe.total) + '%' );
+              var prog = document.getElementById('UploadingProgress');
+              if( prog ) prog.textContent = Math.trunc(100*pe.loaded/pe.total) + '%';
             }
           }
           setUploadTimer(); //reset the upload timer, since we have recieved some data
@@ -257,12 +259,13 @@ function()
       
       // Lets indicate to the user that something is going on; even on localhost, uploads speeds are
       //  only a few MB per second, so a sizable file can take quite a while.
-      $('<div id=\"Uploading\" class=\"Wt-dialogcover UploadProgressCover\">'
-      + '<div class=\"UpFileContents\"><div class=\"UpCenter\"><div class=\"UpDivTxt\">'
-      + '<div>Copying file into InterSpec</div>'
-      + '<div id=\"UploadingProgress\">--%</div>'
-      + '</div></div></div>'
-      + '</div>').appendTo(target);
+      target.insertAdjacentHTML('beforeend',
+        '<div id="Uploading" class="Wt-dialogcover UploadProgressCover">'
+        + '<div class="UpFileContents"><div class="UpCenter"><div class="UpDivTxt">'
+        + '<div>Copying file into InterSpec</div>'
+        + '<div id="UploadingProgress">--%</div>'
+        + '</div></div></div>'
+        + '</div>' );
       
       setUploadTimer();
     }catch(error)
@@ -273,101 +276,105 @@ function()
   
   target.addEventListener("dragover", function(event){
     event.preventDefault();
-    $(target).data('IsDragging',true);
+    window._IS.IsDragging = true;
   }, false);
   
   target.addEventListener("drop", function(event){
     event.preventDefault();
-    $('#Uploader').remove();
+    var u = document.getElementById('Uploader');
+    if( u ) u.remove();
   }, false);
   
   
   target.addEventListener("dragleave", function(event){
-    $(target).data('IsDragging',false);
-    var el=$(event.target);
-    el.removeClass("HasFile"); //dragenter is called before dragleave
-    var updiv = el.hasClass("UpDiv") ? el : el.parents(".UpDiv");
-    if( !updiv.hasClass("HasFile") && updiv.find(".HasFile").length===0 )
-    
-    if( $('.Wt-domRoot').data("HasForeground") )
-      updiv.removeClass('active');
-    
+    window._IS.IsDragging = false;
+    var el = event.target;
+    if( el.classList ) el.classList.remove("HasFile"); //dragenter is called before dragleave
+    var updiv = (el.classList && el.classList.contains("UpDiv")) ? el : el.closest(".UpDiv");
+    if( updiv && !updiv.classList.contains("HasFile") && updiv.querySelector(".HasFile") === null )
+
+    if( window._IS.HasForeground )
+      if( updiv ) updiv.classList.remove('active');
+
     //    if(event.relatedTarget===null)
-    //      $('#Uploader').remove();
-    
+    //      remove uploader
+
     //WebKit browsers dont seem to have a valid event.relatedTarget a lot of times
-    clearTimeout( $(target).data('DragTimer') );
+    clearTimeout( window._IS.DragTimer );
     var timeout = setTimeout( function(){
-      if( !$(target).data('IsDragging') ) $('#Uploader').remove();
+      if( !window._IS.IsDragging ){ var u = document.getElementById('Uploader'); if( u ) u.remove(); }
     }, 200 );
-    $(target).data('DragTimer',timeout);
-    
+    window._IS.DragTimer = timeout;
+
   }, false);
   
   
   target.addEventListener("dragenter", function(event){
 
       // If the "batch analysis" GUI is showing, then any file we drop will be uploaded to the batch upload URL.
-    if( $('.Wt-domRoot').data('BlockFileDrops') ){
+    if( window._IS.BlockFileDrops ){
       event.preventDefault();
       event.stopPropagation();
       return;
     }
 
-    var hasfore = $('.Wt-domRoot').data("HasForeground");
-    
-    var thisel=$(event.target);
-    $(target).data('IsDragging',true);
-    var updiv = thisel.hasClass("UpDiv") ? thisel : thisel.parents(".UpDiv");
-    
-    thisel.addClass("HasFile"); //dragenter is called before dragleave
-    
-    if( hasfore )
-      updiv.addClass("active");
+    var hasfore = window._IS.HasForeground;
 
-    const is_batch_upload = ((event.dataTransfer  && event.dataTransfer.items 
+    var thisel = event.target;
+    window._IS.IsDragging = true;
+    var updiv = (thisel.classList && thisel.classList.contains("UpDiv")) ? thisel : thisel.closest(".UpDiv");
+
+    if( thisel.classList ) thisel.classList.add("HasFile"); //dragenter is called before dragleave
+
+    if( hasfore && updiv )
+      updiv.classList.add("active");
+
+    const is_batch_upload = ((event.dataTransfer  && event.dataTransfer.items
                               && (event.dataTransfer.items.length > 2)
-                              && $('.Wt-domRoot').data('BatchUploadEnabled'))
-                            || $('.Wt-domRoot').data('BatchUploadOnly') );
+                              && window._IS.BatchUploadEnabled)
+                            || window._IS.BatchUploadOnly );
 
     //For windows Qt version of app, when someone drags from Outlook onto app, the file contents
     //  dropped and intercepted in the C++ WebViewWindow::dropEvent() function, instead
     //  of by the browser. The fact this is happening is indicated by the JS "DropFileContents"
     //  data; so we will treat this case a little special (no user choice of background, etc, sonce this would require work in Qt).
-    var fcdivtxt = '<div class=\"UpFileContents\"><div class=\"UpCenterDiv\"><div class=\"UpDivTxt\">Drop to Open</div></div></div>';
+    var fcdivtxt = '<div class="UpFileContents"><div class="UpCenterDiv"><div class="UpDivTxt">Drop to Open</div></div></div>';
 
-    var isDropContents = $('.Wt-domRoot').data("DropFileContents");
-    var el = $('#Uploader');
-    
-    if( is_batch_upload && (el.length > 0) )
+    var isDropContents = window._IS.DropFileContents;
+    var el = document.getElementById('Uploader');
+
+    if( is_batch_upload && el )
     {
-      var infodiv = $('.UpInfo');
-      infodiv.html("Will start batch tool.");
+      var infodiv = document.querySelector('.UpInfo');
+      if( infodiv ) infodiv.innerHTML = "Will start batch tool.";
 
       return;
-    }else if( !isDropContents && (el.length > 0) )
+    }else if( !isDropContents && el )
     {
-        var infodiv = $('.UpInfo');
-        if( hasfore || updiv.hasClass("UpForeground") )
+        var infodiv = document.querySelector('.UpInfo');
+        if( hasfore || (updiv && updiv.classList.contains("UpForeground")) )
         {
             if( event.target.id==="Uploader" )
-                infodiv.html("Defaulting to upload as Foreground");
+            { if( infodiv ) infodiv.innerHTML = "Defaulting to upload as Foreground"; }
             else
-                infodiv.html("Will open as " + updiv.find(".UpDivTxt").html() );
-          
+            {
+              var updivTxt = updiv ? updiv.querySelector(".UpDivTxt") : null;
+              if( infodiv ) infodiv.innerHTML = "Will open as " + (updivTxt ? updivTxt.innerHTML : "");
+            }
+
             /*Could add some text such as "Multiple files may be uploaded if the names contain information such as i-/item/fore/b-/back/bkg/k-/known/cal/check" */
         }else
         {
-            infodiv.html("Will open as the foreground spectrum since there is currently not one loaded");
+            if( infodiv ) infodiv.innerHTML = "Will open as the foreground spectrum since there is currently not one loaded";
         }
-      
+
         return;
-    }else if( el.length > 0 )
+    }else if( el )
     {
-      if( el.children('.UpFileContents').length < 1 )
+      if( !el.querySelector(':scope > .UpFileContents') )
       {
-        el.children().remove();
-        $(fcdivtxt).appendTo(el);
+        while( el.firstChild ) el.firstChild.remove();
+        el.insertAdjacentHTML('beforeend', fcdivtxt);
       }
 
       return;
@@ -377,80 +384,79 @@ function()
     //  But were it is available, we could customize it for CALp files, Det. Eff. files, etc .
     //const files = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : null;
     //const isCALp = (files && files.length === 1 && files[0].includes(".CALp"));
-    
-    
-    el = $('<div id=\"Uploader\" class=\"FileUploadCover\"></div>');
-    el.appendTo(target);
-    
-    
+
+
+    el = document.createElement('div');
+    el.id = 'Uploader';
+    el.className = 'FileUploadCover';
+    target.appendChild(el);
+
+
     if( is_batch_upload )
     {
-      let batch = $('<div class=\"UpDiv UpBatch active\"><div class=\"UpCenterDiv\"><div class=\"UpDivTxt\">Batch Upload</div></div></div>');
-      batch.appendTo(el);
+      el.insertAdjacentHTML('beforeend', '<div class="UpDiv UpBatch active"><div class="UpCenterDiv"><div class="UpDivTxt">Batch Upload</div></div></div>');
+      var batch = el.lastElementChild;
 
-      let info = $('<div class=\"UpInfoWrapper\"><div class=\"UpInfo\"></div></div>');
-      info.appendTo(batch);
+      batch.insertAdjacentHTML('beforeend', '<div class="UpInfoWrapper"><div class="UpInfo"></div></div>');
 
-      el.get(0).addEventListener("drop", function(event){
-      $('#Uploader').remove();
-      uploadFcn(event,'BatchUpUrl')
-    }, false);
+      el.addEventListener("drop", function(event){
+        var u = document.getElementById('Uploader'); if( u ) u.remove();
+        uploadFcn(event,'BatchUpUrl')
+      }, false);
 
       return;
     }
 
-    el.get(0).addEventListener("drop", function(event){
-      $('#Uploader').remove();
+    el.addEventListener("drop", function(event){
+      var u = document.getElementById('Uploader'); if( u ) u.remove();
       uploadFcn(event,'ForegroundUpUrl')
     }, false);
 
     if( isDropContents )
     {
-      $(fcdivtxt).appendTo(el);
+      el.insertAdjacentHTML('beforeend', fcdivtxt);
       return;
     }
-    
-    var up = $('<div class=\"UpDiv UpForeground\"><div class=\"UpCenterDiv\"><div class=\"UpDivTxt\">Foreground</div></div></div>');
-    up.appendTo(el);
-      
-    var back = $('<div class=\"UpDiv UpBackground\"><div class=\"UpCenterDiv\"><div class=\"UpDivTxt\">Background</div></div></div>');
-    back.appendTo(el);
-    
-    var sec = $('<div class=\"UpDiv Up2ndForeground\"><div class=\"UpCenterDiv\"><div class=\"UpDivTxt\">2<sup>nd</sup> Foreground</div></div></div>');
-    sec.appendTo(el);
-    
+
+    el.insertAdjacentHTML('beforeend', '<div class="UpDiv UpForeground"><div class="UpCenterDiv"><div class="UpDivTxt">Foreground</div></div></div>');
+    var up = el.lastElementChild;
+
+    el.insertAdjacentHTML('beforeend', '<div class="UpDiv UpBackground"><div class="UpCenterDiv"><div class="UpDivTxt">Background</div></div></div>');
+    var back = el.lastElementChild;
+
+    el.insertAdjacentHTML('beforeend', '<div class="UpDiv Up2ndForeground"><div class="UpCenterDiv"><div class="UpDivTxt">2<sup>nd</sup> Foreground</div></div></div>');
+    var sec = el.lastElementChild;
+
     var titletxt = "Drop file on how you want to view the spectrum";
     if( !hasfore )
       titletxt = "Drop file to view the spectrum";
-    
-    var title = $('<div class=\"UpInstrInfoWrapper\"><div class=\"UpInstr\">' + titletxt + '</div></div>');
-    title.appendTo(back);
-    
-    var info = $('<div class=\"UpInfoWrapper\"><div class=\"UpInfo\"></div></div>');
-    info.appendTo(back);
-      
-      
+
+    back.insertAdjacentHTML('beforeend', '<div class="UpInstrInfoWrapper"><div class="UpInstr">' + titletxt + '</div></div>');
+
+    back.insertAdjacentHTML('beforeend', '<div class="UpInfoWrapper"><div class="UpInfo"></div></div>');
+
+
     if( hasfore )
     {
-      up.get(0).addEventListener("drop", function(event){
-        $('#Uploader').remove();
+      up.addEventListener("drop", function(event){
+        var u = document.getElementById('Uploader'); if( u ) u.remove();
         uploadFcn(event,'ForegroundUpUrl')
       }, false);
-      back.get(0).addEventListener("drop", function(event){
-        $('#Uploader').remove();
+      back.addEventListener("drop", function(event){
+        var u = document.getElementById('Uploader'); if( u ) u.remove();
           uploadFcn(event,'BackgroundUpUrl')
       }, false);
-      sec.get(0).addEventListener("drop", function(event){
-        $('#Uploader').remove();
+      sec.addEventListener("drop", function(event){
+        var u = document.getElementById('Uploader'); if( u ) u.remove();
         uploadFcn(event,'SecondUpUrl')
       }, false);
     }else
     {
-      up.addClass("active");
-      back.find(".UpDivTxt").addClass("disabled");
-      sec.find(".UpDivTxt").addClass("disabled");
-      back.find(".UpCenterDiv").addClass("disabled");
-      sec.find(".UpCenterDiv").addClass("disabled");
+      up.classList.add("active");
+      back.querySelector(".UpDivTxt").classList.add("disabled");
+      sec.querySelector(".UpDivTxt").classList.add("disabled");
+      back.querySelector(".UpCenterDiv").classList.add("disabled");
+      sec.querySelector(".UpCenterDiv").classList.add("disabled");
     }
   }, false );
 }
@@ -478,15 +484,27 @@ function()
     
     switch( angle ) {
       case 0:
-        $(".Wt-domRoot").removeClass("LandscapeRight LandscapeLeft").addClass("Portrait");
+      {
+        const dr = document.querySelector(".Wt-domRoot");
+        dr.classList.remove("LandscapeRight", "LandscapeLeft");
+        dr.classList.add("Portrait");
+      }
       break;
-      
+
       case 90:
-        $(".Wt-domRoot").removeClass("LandscapeRight Portrait").addClass("LandscapeLeft");
+      {
+        const dr = document.querySelector(".Wt-domRoot");
+        dr.classList.remove("LandscapeRight", "Portrait");
+        dr.classList.add("LandscapeLeft");
+      }
       break;
-      
+
       case -90:
-        $(".Wt-domRoot").removeClass("LandscapeLeft Portrait").addClass("LandscapeRight");
+      {
+        const dr = document.querySelector(".Wt-domRoot");
+        dr.classList.remove("LandscapeLeft", "Portrait");
+        dr.classList.add("LandscapeRight");
+      }
       break;
       
       default:
@@ -540,17 +558,17 @@ function(id)
     if( !darkQ.matches && !lightQ.matches && !noPrefQ.matches )
       console.warn( 'No matches for color scheme found.' );
     
-    darkQ.addListener( function(e){
+    darkQ.addEventListener( 'change', function(e){
       if( e && e.matches )
         Wt.emit( id, {name: 'OsColorThemeChange' }, 'dark' );
     } );
-    
-    lightQ.addListener( function(e){
+
+    lightQ.addEventListener( 'change', function(e){
       if( e && e.matches )
         Wt.emit( id, {name: 'OsColorThemeChange' }, 'light' );
     } );
-    
-    noPrefQ.addListener( function(e){
+
+    noPrefQ.addEventListener( 'change', function(e){
       if( e && e.matches )
         Wt.emit( id, {name: 'OsColorThemeChange' }, 'no-preference' );
     } );
@@ -584,8 +602,8 @@ function(resizerid,elid) {
   function mousePos(e) {
     if( typeof e.clientX === "number" )
       return { x: e.clientX, y: e.clientY };
-    else if( e.originalEvent.touches )
-      return { x: e.originalEvent.touches[0].clientX, y: e.originalEvent.touches[0].clientY };
+    else if( e.touches )
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
     return null;
   }
       
@@ -594,28 +612,34 @@ function(resizerid,elid) {
     e.preventDefault();
   }
       
+  var flexController = null;
+
   function handleMouseDown(e) {
     const el = document.getElementById(elid);
-    const resizer = document.getElementById(resizerid);
-    
+
     startPosAndSize = mousePos(e);
     startPosAndSize.height = el.offsetHeight;
     el.style.flexBasis = startPosAndSize.height + 'px';
     el.style.flexShrink = el.style.flexGrow = 0;
-        
-    $(document).bind('mousemove.FlexResize', handleMouseMove);
-    $(document).bind('mouseup.FlexResize', handleMouseUp);
+
+    // Abort any previous drag-session listeners
+    if( flexController ) flexController.abort();
+    flexController = new AbortController();
+    var sig = flexController.signal;
+
+    document.addEventListener('mousemove', handleMouseMove, {signal: sig});
+    document.addEventListener('mouseup', handleMouseUp, {signal: sig});
     if( allowTouch ) {
-      $(document).bind('touchmove.FlexResize', handleMouseMove);
-      $(document).bind('touchend.FlexResize', handleMouseUp);
+      document.addEventListener('touchmove', handleMouseMove, {signal: sig});
+      document.addEventListener('touchend', handleMouseUp, {signal: sig});
     }
-    $(document).bind('selectstart.FlexResize', cancelEvent); // disable selection
+    document.addEventListener('selectstart', cancelEvent, {signal: sig}); // disable selection
   }
-      
+
   function handleMouseMove(e) {
     const pos = mousePos(e);
     const el = document.getElementById(elid);
-    
+
     // See if our hight has already gone too large for the parent, and if so, stop making it go so large.
     //const parent = el.parentNode;
     //const parentHeight = parent.height(); //This is useable inner height, after accounting for padding and such.
@@ -624,31 +648,31 @@ function(resizerid,elid) {
     //  const child = children[i];
     //  const minHeight = window.getComputedStyle(child,null).getPropertyValue("min-height");
     //}
-    
+
     const height = (startPosAndSize.height + startPosAndSize.y - pos.y);
-    
+
     el.style.flexBasis = height + 'px'
   }
-      
+
   function handleMouseUp(e) {
     // We could look at element above/bellow resizer, and got back to flex basline of zero but give the grows as the current ratio
-    
-    $(document).unbind('mousemove.FlexResize', handleMouseMove);
-    $(document).unbind('mouseup.FlexResize', handleMouseUp);
-        
-    if( allowTouch ) {
-      $(document).unbind('touchmove.FlexResize', handleMouseMove);
-      $(document).unbind('touchend.FlexResize', handleMouseUp);
-    }
-    $(document).unbind('selectstart.FlexResize', cancelEvent);
-                      
+
+    if( flexController ){ flexController.abort(); flexController = null; }
+
     return false;
   }
 
-  // Remove the bindings first, JIC this is a duplicate call to initialize the events
+  // Remove any previous bindings, JIC this is a duplicate call to initialize the events
   //  (it doesnt look like this happens, but current code to show/hide tool-tabs is pretty
   //   fragile, so the off is really just to make sure).
-  $('#' + resizerid).off('mousedown.FlexResize touchstart.FlexResize')
-                    .on('mousedown.FlexResize touchstart.FlexResize', handleMouseDown);
+  var resizerEl = document.getElementById(resizerid);
+  if( resizerEl )
+  {
+    // Store AbortController on the element for cleanup
+    if( resizerEl._flexInitCtrl ) resizerEl._flexInitCtrl.abort();
+    resizerEl._flexInitCtrl = new AbortController();
+    resizerEl.addEventListener('mousedown', handleMouseDown, {signal: resizerEl._flexInitCtrl.signal});
+    resizerEl.addEventListener('touchstart', handleMouseDown, {signal: resizerEl._flexInitCtrl.signal});
+  }
 }
 );

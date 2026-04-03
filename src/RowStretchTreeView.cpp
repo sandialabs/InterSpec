@@ -34,23 +34,26 @@ using namespace std;
 
 WT_DECLARE_WT_MEMBER(TreeViewCheckWidth, Wt::JavaScriptFunction, "TreeViewCheckWidth",
   function(el){
-    var p = $(el), w = -1, sw = -1;
-    if( p.data('noadj') )
+    var w = -1, sw = -1;
+    el._isData = el._isData || {};
+    if( el._isData.noadj )
       return;
-    
-    w = p.children().children('.cwidth').not('.Wt-header').children().width();
-    p.children().children('.cwidth').not('.Wt-header').each( function(i, val){
-      var t = $("<div/>");
-      $(val).append(t);
-      //get width not including scroll bar, in pxs.  We could maybye just get the child divs width, but appending to be safe to force the recompuation of width...
-      sw = Math.max( sw, val.offsetWidth - val.clientWidth );  //get scrollbar width
-      w = w > 0 ? Math.min(w,t.width()) : t.width();
+
+    var panels = el.querySelectorAll(':scope > * > .cwidth:not(.Wt-header)');
+    if( panels.length > 0 && panels[0].children.length > 0 )
+      w = panels[0].children[0].offsetWidth;
+    panels.forEach( function(val){
+      var t = document.createElement('div');
+      val.appendChild(t);
+      // Get width not including scroll bar, in pxs.
+      sw = Math.max( sw, val.offsetWidth - val.clientWidth );
+      w = w > 0 ? Math.min(w,t.offsetWidth) : t.offsetWidth;
       t.remove();
     } );
-    var oldw = p.data('RSTVW');
+    var oldw = el._isData.RSTVW;
     if( (!oldw || oldw !== w) && w !== 0 ){
       //console.log( 'Will emit w=' + w + ', sw=' + sw );
-      p.data('RSTVW',w);
+      el._isData.RSTVW = w;
       Wt.emit( el.id, {name: 'widthchanged'}, Math.round(w), Math.round(sw) );
     }
   }
@@ -83,13 +86,11 @@ RowStretchTreeView::RowStretchTreeView()
   //  as the header, so if scroll bars appear, that little area doesnt look
   //  weird.  Definitely a bit of a hack, but whatever for now.
   WStringStream backjs;
-  backjs << "$(" << jsRef() << ")"
-            ".prepend(\"<div style='position: absolute; width: 20px;"
+  backjs << jsRef() << ".insertAdjacentHTML('afterbegin',"
+            "\"<div style='position: absolute; width: 20px;"
             " height: " << headerHeight().toPixels() << "px; top: 0px;"
             " right: 0px; background-color: #EEEEEE;'></div>\");";
   doJavaScript( backjs.str() );
-  //doJavaScript( "$(" + jsRef() + ").css('background-color', '#EEEEEE');" );
-  //doJavaScript( "$(" + jsRef() + ").find('.Wt-header.headerrh.cwidth').each( function(i,o){ console.log(o); $(o).css('background-color', '#EEEEEE');} );" );
   
   //  this->setHeaderItemDelegate( new HeaderDelegate( this ) );
 };//RowStretchTreeView constructor
@@ -119,13 +120,14 @@ void RowStretchTreeView::rowsAddedCallback( Wt::WModelIndex index, int first, in
   
   //If we made it here, we will add scroll bars
   const int newwidth = m_rowWidthPx - m_scrollBarWidth;
-  doJavaScript( "$(" + jsRef() + ").data('noadj',true);" );
-  
+  doJavaScript( "var _el=" + jsRef() + ";_el._isData=_el._isData||{};_el._isData.noadj=true;" );
+
   widthChanged( newwidth, m_scrollBarWidth );
-  
+
   WStringStream js;
-  js << "$(" << jsRef() << ").data('RSTVW'," << newwidth << ");"
-     << "setTimeout( function(){$(" << jsRef() << ").data('noadj',false);"
+  js << "var _el=" << jsRef() << ";_el._isData=_el._isData||{};"
+     << "_el._isData.RSTVW=" << newwidth << ";"
+     << "setTimeout(function(){_el._isData.noadj=false;"
      << "Wt.WT.TreeViewCheckWidth(" << jsRef() << ");},0);";
   doJavaScript( js.str() );
 }//void rowsAddedCallback( Wt::WModelIndex index, int first, int last )
@@ -142,11 +144,12 @@ void RowStretchTreeView::rowsRemovedCallback( Wt::WModelIndex index, int first, 
   if( model()->rowCount() <= nrowsfit )
   {
     const int newwidth = m_rowWidthPx + m_scrollBarWidth;
-    doJavaScript( "$(" + jsRef() + ").data('noadj',true);" );
+    doJavaScript( "var _el=" + jsRef() + ";_el._isData=_el._isData||{};_el._isData.noadj=true;" );
     widthChanged( newwidth, -1 );
     WStringStream js;
-    js << "$(" << jsRef() << ").data('RSTVW'," << newwidth << ");"
-       << "setTimeout( function(){$(" << jsRef() << ").data('noadj',false);},0);";
+    js << "var _el=" << jsRef() << ";_el._isData=_el._isData||{};"
+       << "_el._isData.RSTVW=" << newwidth << ";"
+       << "setTimeout(function(){_el._isData.noadj=false;},0);";
     doJavaScript( js.str() );
   }
 }//void rowsRemovedCallback( Wt::WModelIndex index, int first, int last )
@@ -187,11 +190,7 @@ void RowStretchTreeView::render(	Wt::WFlags<Wt::RenderFlag> flags )
     //  is controlling the size of the item.
     setJavaScriptMember(WT_RESIZE_JS,
                         "function(self,w,h) {"
-#if( WT_VERSION < 0x3030400 )
-                        "$(self).data('obj').wtResize();"
-#else
                         "self.wtObj.wtResize();"
-#endif
                         "Wt.WT.TreeViewCheckWidth(" + jsRef() + ");"
                         "}");
   }//if( flags & RenderFull )
@@ -253,7 +252,7 @@ void RowStretchTreeView::widthChanged( int widthpx, int scrollbarWidth )
   const double remaniningWidth = m_rowWidthPx - nonSetWidthsTotal;
   const double multiple = (remaniningWidth - 7.0*nVisibleSetWidth) / setWidthTotal;
   
-  const string containerjs = "$(" + jsRef() + ").children().children('.cwidth').not('.Wt-header')";
+  const string containerjs = jsRef() + ".querySelectorAll(':scope > * > .cwidth:not(.Wt-header)')";
   
   if( multiple <= 1.0 )
   {
@@ -263,7 +262,7 @@ void RowStretchTreeView::widthChanged( int widthpx, int scrollbarWidth )
         WTreeView::setColumnWidth( vt.first, vt.second );
     }
     
-    doJavaScript( containerjs + ".css('overflow-x','auto');" );
+    doJavaScript( containerjs + ".forEach(function(e){e.style.overflowX='auto';});" );
     
     return;
   }//if( multiple <= 1.0 )
@@ -283,7 +282,7 @@ void RowStretchTreeView::widthChanged( int widthpx, int scrollbarWidth )
       WTreeView::setColumnWidth( col, WLength(w,WLength::Unit::Pixel) );
   }//for( const RowWidthMap::value_type &vt : m_nominalWidth )
   
-  doJavaScript( containerjs + ".css('overflow-x','hidden');" );
+  doJavaScript( containerjs + ".forEach(function(e){e.style.overflowX='hidden';});" );
 }//void RowStretchTreeView::widthChanged( double widthpx )
 
 

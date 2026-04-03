@@ -230,8 +230,11 @@ void InterSpecApp::setupDomEnvironment()
   doJavaScript( fixElectronJs, false );
 #endif //BUILD_AS_ELECTRON_APP
   
-  // Use newer version of jQuery than Wt uses by default
-  requireJQuery("InterSpec_resources/assets/js/jquery-3.6.0.min.js");
+  // Load jQuery (needed by qTip2, QueryBuilder2, and spectrum.js color picker)
+  require("InterSpec_resources/assets/js/jquery-3.6.0.min.js");
+
+  // Global state object for cross-file JS communication (replaces jQuery .data() on DOM elements)
+  doJavaScript( "window._IS = window._IS || {};", false );
   
   enableUpdates( true );
   
@@ -263,9 +266,6 @@ void InterSpecApp::setupDomEnvironment()
   //Leaving next line commented out as a reminder, for the moment, that we may need it
   //require("InterSpec_resources/assets/js/imagesloaded.pkg.min.js");
   
-  // For older browsers (primarily the WkWebView for macOS Mojave (10.14) and older).
-  require("InterSpec_resources/assets/js/resize-observer-polyfill/ResizeObserver.js", "ResizeObserver");
-  
   useStyleSheet( "InterSpec_resources/InterSpec.css" );
   doJavaScript( "if(typeof console==='undefined'){console={log:function(){}};}" );
   
@@ -280,9 +280,10 @@ void InterSpecApp::setupDomEnvironment()
     t.name = "viewport";
     t.content = "initial-scale=1.0, maximum-scale=1.0, user-scalable=no, height=device-height, width=device-width, viewport-fit=cover";
     document.getElementsByTagName('head')[0].appendChild(t);
-    $(document).on('blur', 'input, textarea', function() {
-      setTimeout(function(){ window.scrollTo(document.body.scrollLeft, document.body.scrollTop); }, 0);
-    });
+    document.addEventListener('blur', function(ev) {
+      if( ev.target && (ev.target.matches('input') || ev.target.matches('textarea')) )
+        setTimeout(function(){ window.scrollTo(document.body.scrollLeft, document.body.scrollTop); }, 0);
+    }, true);
   );
   
   doJavaScript( fix_ios_js );
@@ -333,8 +334,12 @@ void InterSpecApp::setupDomEnvironment()
     declareJavaScriptFunction("RaiseWinCntrlsAboveCover",
       "function(){ "
         "setTimeout(function(){"
-          "const z = $('.Wt-dialogcover').css('z-index');"
-          "if(z) $('.window-controls-container').css('z-index',z+1);"
+          "var dc = document.querySelector('.Wt-dialogcover');"
+          "if( dc ){"
+            "var z = parseInt(getComputedStyle(dc).zIndex) || 0;"
+            "var wcc = document.querySelector('.window-controls-container');"
+            "if( wcc ) wcc.style.zIndex = z + 1;"
+          "}"
         "},250);"
       "}"
     );
@@ -359,19 +364,20 @@ void InterSpecApp::setupDomEnvironment()
 
     // Activate menu bar for keyboard browsing (Ctrl/Cmd+I or F10)
     function activateMenuBar(){
-      if( $(".Wt-dialogcover").is(':visible') )
+      var dc = document.querySelector('.Wt-dialogcover');
+      if( dc && dc.offsetParent !== null )
         return;
-      var $firstBtn = $(".MenuLabel.PopupMenuParentButton").first();
-      if( !$firstBtn.length )
+      var firstBtn = document.querySelector('.MenuLabel.PopupMenuParentButton');
+      if( !firstBtn )
         return;
-      var menuId = $firstBtn.attr('data-menu-id');
+      var menuId = firstBtn.getAttribute('data-menu-id');
       if( !menuId )
         return;
       if( !Wt.WT || typeof Wt.WT.ParentClicked !== 'function' )
         return;
       e.preventDefault();
       e.stopPropagation();
-      Wt.WT.ParentClicked( menuId, $firstBtn.attr('id'), Wt.WT );
+      Wt.WT.ParentClicked( menuId, firstBtn.id, Wt.WT );
       setTimeout(function(){
         if( Wt.WT && typeof Wt.WT.MenuArrowNav === 'function' )
           Wt.WT.MenuArrowNav( 40, Wt.WT );
@@ -388,7 +394,7 @@ void InterSpecApp::setupDomEnvironment()
         case 's': // Store
         case 'l': // Log/Linear
         case 'e': case 'E': // Export file dialog
-          if( $(".Wt-dialogcover").is(':visible') ) // Dont do shortcut when there is a blocking-dialog showing
+          if( (function(){ var dc = document.querySelector('.Wt-dialogcover'); return dc && dc.offsetParent !== null; })() ) // Dont do shortcut when there is a blocking-dialog showing
             return;
           code = e.key.charCodeAt(0);
           break;
@@ -422,7 +428,7 @@ void InterSpecApp::setupDomEnvironment()
       }//switch( e.key )
 
       // No menus are active - dont handle
-      if( $(".MenuLabel.PopupMenuParentButton.active").length === 0 )
+      if( !document.querySelector('.MenuLabel.PopupMenuParentButton.active') )
         return;
 
       // Handle menu keyboard navigation entirely in JS (no server round-trip)
@@ -465,21 +471,21 @@ void InterSpecApp::setupDomEnvironment()
     
     //Prevent mobile from showing spinner
     const char *prevent_spinner_js = INLINE_JAVASCRIPT(
-      $("<style>").prop("type", "text/css")
-                  .html(".Wt-spinbox {background-image: inherit !important; \
-                         background-repeat: inherit  !important; \
-                         background-position: inherit  !important; \
-                         padding-right: inherit  !important; }")
-                  .appendTo("head");
+      var s = document.createElement('style');
+      s.textContent = '.Wt-spinbox {background-image: inherit !important; '
+        + 'background-repeat: inherit !important; '
+        + 'background-position: inherit !important; '
+        + 'padding-right: inherit !important; }';
+      document.head.appendChild(s);
     );
-    
+
     //Prevent mobile from hovering white
     const char *prevent_hovering_white = INLINE_JAVASCRIPT(
-      $("<style>").prop("type", "text/css")
-                  .html("ul.Wt-popupmenu > li > a > span > span:hover {color: black !important;}")
-                  .appendTo("head");
+      var s = document.createElement('style');
+      s.textContent = 'ul.Wt-popupmenu > li > a > span > span:hover {color: black !important;}';
+      document.head.appendChild(s);
     );
-    
+
     doJavaScript( prevent_spinner_js );
     doJavaScript( prevent_hovering_white );
   }//if( isMobile() )
@@ -840,9 +846,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         WStringStream js;
         js << "Resuming where you left off on " << state->name.toUTF8()
            << "<div onclick="
-        "\"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'clearSession');"
-        //"$('.qtip.jgrowl:visible:last').remove();"
-        "try{$(this.parentElement.parentElement).remove();}catch(e){}"
+        "\"Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, 'clearSession');"
+        "try{this.parentElement.parentElement.remove();}catch(e){}"
         "return false;\" "
         "class=\"clearsession\"><span class=\"clearsessiontxt\">Start Fresh Session</span></div>";
         
@@ -948,14 +953,14 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
        e.returnValue = txt;
      //    console.log( 'User tried navigating, refreshing, or closing' );
      //       window.onunload();
-     Wt.emit( $(document).data('AppId'),{name:'ThinkOfLeave'} );
+     Wt.emit( window._IS.AppId,{name:'ThinkOfLeave'} );
      console.log( "" );
      window.onunload();
-     //       Wt._p_.update( $(document).data('AppId'), 'ThinkOfLeave', {name:'ThinkOfLeave'}, false ); //doesnt seem to help, but I really dont know how to call it
+     //       Wt._p_.update( window._IS.AppId, 'ThinkOfLeave', {name:'ThinkOfLeave'}, false ); //doesnt seem to help, but I really dont know how to call it
      return txt;
    }
    );
-  doJavaScript( "$(document).data('AppId', '" + id() + "');" );
+  doJavaScript( "window._IS.AppId = '" + id() + "';" );
   doJavaScript( closejs );
 #endif
 #endif
@@ -1418,7 +1423,7 @@ void InterSpecApp::handleJavaScriptError( const std::string &errorText )
 void InterSpecApp::clearSession()
 {
   // Just in case there are any modal dialogs showing - the cover thing can be a little sticky
-  doJavaScript( "$('.Wt-dialogcover').hide();" );
+  doJavaScript( "document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});" );
   
 #if( USE_DB_TO_STORE_SPECTRA )
   try
@@ -1452,7 +1457,7 @@ void InterSpecApp::clearSession()
   // Set it so drag-n-drop of file will only allow loading foreground again,
   //  until you load a foreground (the previous set value wont have been updated
   //  when we do the reset).
-  doJavaScript( "$('.Wt-domRoot').data('HasForeground',0);" );
+  doJavaScript( "window._IS.HasForeground = 0;" );
 }//void clearSession()
 
 

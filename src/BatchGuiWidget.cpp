@@ -157,8 +157,8 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource )
 
   addStyleClass( "BatchGuiWidget" );
 
-  doJavaScript( "$('.Wt-domRoot').data('BlockFileDrops', true);" );
-  // doJavaScript( "$('.Wt-domRoot').data('BatchUploadOnly', true);" );
+  doJavaScript( "window._IS=window._IS||{};window._IS.BlockFileDrops=true;" );
+  // doJavaScript( "window._IS.BatchUploadOnly=true;" );
 
   interspec->saveShieldingSourceModelToForegroundSpecMeas();
 #if ( USE_REL_ACT_TOOL )
@@ -266,8 +266,8 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource )
 
 BatchGuiWidget::~BatchGuiWidget()
 {
-  wApp->doJavaScript( "$('.Wt-domRoot').data('BlockFileDrops', null);" );
-  // wApp->doJavaScript( "$('.Wt-domRoot').data('BatchUploadOnly', null);" );
+  wApp->doJavaScript( "if(window._IS)window._IS.BlockFileDrops=null;" );
+  // wApp->doJavaScript( "if(window._IS)window._IS.BatchUploadOnly=null;" );
   wApp->doJavaScript( "removeOnDragEnterDom(['" + m_input_files_container->id() + "']);" );
 }//~BatchGuiWidget()
 

@@ -1324,7 +1324,7 @@ void DoseCalcWidget::updateResultForGammaSource()
     }
     
     if( doflash )
-      doJavaScript( "$('#" + m_enterShieldingSelect->id() + "').fadeIn(100).fadeOut(100).fadeIn(100).fadeOut(100).fadeIn(100);" );
+      doJavaScript( "var el=document.getElementById('" + m_enterShieldingSelect->id() + "'); el.classList.remove('interspec-flash'); void el.offsetWidth; el.classList.add('interspec-flash');" );
   }catch(...)
   {
     

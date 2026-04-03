@@ -370,7 +370,7 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   function sendToInterSpec(evt, spectype, samples){
     // We attach the sigmal to InterSpec object, and not the actual map opbject because there is some issue with the
     //  signal being exposed when in an AuxWindow.
-    self.WtEmit( $('.InterSpec').get(0).id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
+    self.WtEmit( document.querySelector('.InterSpec').id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
     // If we want to go back to attaching to the `LeafletRadMap` instance, we would use:
     //  self.WtEmit( self.parent.id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
   }
@@ -983,7 +983,7 @@ LeafletRadMap.prototype._copyToClipboard = function( text ) {
 
   function notify( msg ) {
     if( window.Wt )
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, msg );
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, msg );
   }
 
   if( !navigator.clipboard )
@@ -1031,7 +1031,7 @@ LeafletRadMap.prototype.copyGoogleMapsUrl = function() {
   if( points.length === 0 )
   {
     if( window.Wt )
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
         'showMsg-info-' + (self.options.copyUrlNoGpsTxt || 'No GPS data.') );
     return;
   }
@@ -1066,7 +1066,7 @@ LeafletRadMap.prototype.copyBingMapsUrl = function() {
   if( points.length === 0 )
   {
     if( window.Wt )
-      Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'},
+      Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'},
         'showMsg-info-' + (self.options.copyUrlNoGpsTxt || 'No GPS data.') );
     return;
   }

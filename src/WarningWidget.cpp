@@ -407,7 +407,7 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
 #endif
       style = "qtip-blue qtip-riid";
       // remove all the other "show riid" results
-      strm << "$('.qtip.qtip-riid').remove();";
+      strm << "document.querySelectorAll('.qtip.qtip-riid').forEach(function(el){ el.remove(); });";
       break;
     
 #if( USE_REMOTE_RID )
@@ -415,7 +415,7 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
       header = "External RID Results";
       style = "qtip-blue qtip-ext-riid";
       // remove all the other external RID results
-      strm << "$('.qtip.qtip-ext-riid').remove();";
+      strm << "document.querySelectorAll('.qtip.qtip-ext-riid').forEach(function(el){ el.remove(); });";
       break;
 #endif
     

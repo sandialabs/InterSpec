@@ -343,7 +343,7 @@ public:
         "self.overlay.setMap(map);"
         "var sendGpsExtent = function() {try{"
         "var ulpx = new google.maps.Point(0,0);"
-        "var lrpx = new google.maps.Point($(self).width(),$(self).height());"
+        "var lrpx = new google.maps.Point(self.offsetWidth,self.offsetHeight);"
         "var ul = overlay.getProjection().fromContainerPixelToLatLng(ulpx);"
         "var lr = overlay.getProjection().fromContainerPixelToLatLng(lrpx);"
         "if(ul!==null&&lr!==null)"
@@ -421,24 +421,20 @@ public:
       //  mechanism of Wt, and instead use the browsers.
       //app->require(jsapi, "googlemapapi");
       
-      string errorLoadingFcn = "function(jqxhr, textStatus, errorThrown){"
+      string errorLoadingFcn = "function(errorThrown){"
       "var self = " + jsRef() + ";\n"
-      "console.log('loadin google maps api error thrown: ' + errorThrown + ', and text status: ' + textStatus);"
+      "console.log('loading google maps api error: ' + errorThrown);"
       "if(self)self.appendChild(document.createTextNode(\"Error loading google maps: \" + errorThrown + \". Check internet connection, or google maps key may be invalid\"));"
       "}";
-    
-      string successfcn = "function(data,textStatus,jqXHR){ $(window).data('HasLoadedGMaps',true); }";
-      
-      
-      doJavaScript( "if(!$(window).data('HasLoadedGMaps'))"
-                   " $.ajax({url: \"" + jsapi + "\","
-                   + " dataType: \"script\""
-                   + ", cache: true"
-                   + ", timeout: 5000"
-                   + ", error: " + errorLoadingFcn
-                   + ", success: " + successfcn
-                   + " });"
-                   + " else " + initFcn + "();" );
+
+      doJavaScript( "window._IS=window._IS||{};"
+                   "if(!window._IS.HasLoadedGMaps){"
+                   "var s=document.createElement('script');"
+                   "s.src=\"" + jsapi + "\";"
+                   "s.onload=function(){window._IS.HasLoadedGMaps=true;};"
+                   "s.onerror=function(){(" + errorLoadingFcn + ")('Script load failed');};"
+                   "document.head.appendChild(s);"
+                   "}else{" + initFcn + "();}" );
       //doJavaScript( "$.getScript(\"" + jsapi + "\");" );
     }//if( flags & RenderFull )
     

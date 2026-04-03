@@ -664,7 +664,7 @@ std::pair<float,float> DevPair::devPair() const
 
 void DevPair::visuallyIndicateChanged()
 {
-  doJavaScript( "$('#" + id() + "').fadeIn(100).fadeOut(100).fadeIn(100).fadeOut(100).fadeIn(100);" );
+  doJavaScript( "var el=document.getElementById('" + id() + "'); el.classList.remove('interspec-flash'); void el.offsetWidth; el.classList.add('interspec-flash');" );
 }//void visuallyIndicateChanged();
 
 

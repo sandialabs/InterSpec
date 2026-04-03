@@ -1,4 +1,14 @@
 
+/* Attention-flash animation, replaces jQuery fadeIn/fadeOut chain */
+@keyframes interspec-flash {
+  0%, 40%, 80% { opacity: 1; }
+  20%, 60% { opacity: 0; }
+  100% { opacity: 1; }
+}
+.interspec-flash {
+  animation: interspec-flash 0.5s ease;
+}
+
 body {
   /* Get rid of the annoying callout on webkit touch devices */
   -webkit-user-select: none !important;

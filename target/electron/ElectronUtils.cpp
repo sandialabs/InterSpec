@@ -72,11 +72,11 @@ bool requestNewCleanSession()
     string js;
     //Speed up loading by deferring calls to Menu.setApplicationMenu() until app
     //  is fully reloaded.
-    js += "$(window).data('HaveTriggeredMenuUpdate',null);";
-    
+    js += "window._IS=window._IS||{};window._IS.HaveTriggeredMenuUpdate=null;";
+
     //Just in case the page reload doesnt go through, make sure menus will get updated eventually
     //  (this shouldnt be necassary, right?)
-    js += "setTimeout(function(){$(window).data('HaveTriggeredMenuUpdate',true);},5000);";
+    js += "setTimeout(function(){window._IS=window._IS||{};window._IS.HaveTriggeredMenuUpdate=true;},5000);";
     
     wApp->doJavaScript(js);
 #endif
@@ -169,10 +169,10 @@ bool handle_message_from_nodejs( const std::string &session_token,
     app->doJavaScript( "Wt.WT.TitleBarChangeMaximized(false);" );
   }else if( msg_name == "OnBlur" )
   {
-    app->doJavaScript( "$('.app-titlebar').addClass('inactive');" );
+    app->doJavaScript( "var _tb=document.querySelector('.app-titlebar');if(_tb)_tb.classList.add('inactive');" );
   }else if( msg_name == "OnFocus" )
   {
-    app->doJavaScript( "$('.app-titlebar').removeClass('inactive');" );
+    app->doJavaScript( "var _tb=document.querySelector('.app-titlebar');if(_tb)_tb.classList.remove('inactive');" );
   }else if( msg_name == "OnLeaveFullScreen" )
   {
     cout << "Left to fullscreen." << endl;

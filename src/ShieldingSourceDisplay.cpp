@@ -505,7 +505,11 @@ WT_DECLARE_WT_MEMBER
 (ShowChi2Info, Wt::JavaScriptFunction, "ShowChi2Info",
 function(id,info)
 {
-  $("<div id=\"" + id + "inf\" class=\"ChartMouseOverInfo\"></div>").html(info).appendTo($('#'+id));
+  var d = document.createElement('div');
+  d.id = id + 'inf';
+  d.className = 'ChartMouseOverInfo';
+  d.innerHTML = info;
+  document.getElementById(id).appendChild(d);
 }
 );
 

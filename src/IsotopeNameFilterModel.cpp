@@ -831,8 +831,7 @@ void IsotopeNameFilterModel::setQuickTypeFixHackjs( Wt::WSuggestionPopup *popup 
     var addTryCatch = function( elid ){
       var dofix = function(elid){
         var el = Wt.WT.getElement(elid);
-        var self = el ? jQuery.data(el, 'obj') : null;
-        if( !self ) self = el ? el.wtObj : null;; //Wt 3.7.1
+        var self = el ? el.wtObj : null;
         if( !self ){ //Apparently not immediately available even though m_nuclideSuggest
                      //  should be in the DOM by the time this JS gets executed.
           setTimeout( function(){dofix(elid);}, 500 );
@@ -859,8 +858,7 @@ WT_DECLARE_WT_MEMBER(SetupEnterKeyMatchFix, Wt::JavaScriptFunction, "SetupEnterK
     var doSetup = function( popupElId, editElId ){
       var popupEl = Wt.WT.getElement( popupElId );
       var editEl = Wt.WT.getElement( editElId );
-      var popupObj = popupEl ? jQuery.data( popupEl, 'obj' ) : null;
-      if( !popupObj ) popupObj = popupEl ? popupEl.wtObj : null; //Wt 3.7.1
+      var popupObj = popupEl ? popupEl.wtObj : null;
       
       if( !popupObj || !editEl ){
         setTimeout( function(){ doSetup( popupElId, editElId ); }, 100 );

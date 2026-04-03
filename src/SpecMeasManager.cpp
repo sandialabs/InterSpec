@@ -1234,8 +1234,7 @@ protected:
     
     passMessage( WString::tr("uid-image-embed-conf"), WarningWidget::WarningMsgInfo );
           
-    //wApp->doJavaScript( "$('#" + dialog->id() + "').hide(); $('.Wt-dialogcover').hide();" );
-    wApp->doJavaScript( "$('.Wt-dialogcover').hide();" );
+    wApp->doJavaScript( "document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});" );
       
     m_close_parent_dialog();
   }//void embed_in_n42()
@@ -2633,7 +2632,7 @@ void SpecMeasManager::closeNonSpecFileDialog()
     return;
 
   const string dialog_id = m_nonSpecFileDialog->id();
-  wApp->doJavaScript( "$('#" + dialog_id + "').hide(); $('.Wt-dialogcover').hide();" );
+  wApp->doJavaScript( "document.getElementById('" + dialog_id + "').style.display='none'; document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});" );
   
   m_nonSpecFileDialog->accept(); //This will delete the dialog, and cause `m_nonSpecFileDialog` to be set to nullptr
   m_nonSpecFileDialog = nullptr;
