@@ -529,10 +529,12 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
       infoTxt->setText( WString::tr("esf-qr-lossy-err") );
       qrImage->hide();
     }
-  };
 
-  eclSelect->changed().connect( std::bind(doUpdate) );
-  verSelect->changed().connect( std::bind(doUpdate) );
+    wApp->triggerUpdate();
+  };//auto doUpdate lambda
+
+  eclSelect->activated().connect( std::bind(doUpdate) );
+  verSelect->activated().connect( std::bind(doUpdate) );
 
   // Buttons row
   WContainerWidget *btndiv = new WContainerWidget( window->contents() );

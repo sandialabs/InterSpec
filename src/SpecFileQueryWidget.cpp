@@ -1022,7 +1022,8 @@ protected:
   Wt::SortOrder m_sortorder;
   boost::any m_summary;
   std::vector<std::string> m_eventXmlColNames;
-  
+  std::string m_base_path;
+
   // LRU cache for parsed spectrum files (max 20 entries)
   struct LruCacheEntry
   {
@@ -1250,8 +1251,12 @@ public:
       }
     }
   }//void appendResults( std::shared_ptr< vector< vector<string> > > result )
-  
-  
+
+  void setbasePath( const std::string &basepath )
+  {
+    m_base_path = basepath;
+  }
+
   void setResult( std::shared_ptr< vector< vector<string> > > result )
   {
     if( m_result && m_result->size() )
@@ -1335,9 +1340,12 @@ public:
     if( (role == ToolTipRole ) && ((col == FileDataField::Filename) || (col == FileDataField::ParentPath)) )
     {
       // Get file path from Filename column (UserRole returns full path)
+      const std::string parentpath = fields[FileDataField::ParentPath];
       const std::string filepath = fields[FileDataField::Filename];
-      const std::string svg_html = generatePreviewSvg( filepath );
-      
+      const std::string rel_path = SpecUtils::append_path(parentpath, filepath);
+      const std::string full_path = SpecUtils::append_path(m_base_path, rel_path);
+      const std::string svg_html = generatePreviewSvg( full_path );
+
       return WString::fromUTF8( svg_html );
     }else if( role != DisplayRole )
     {
@@ -1504,7 +1512,10 @@ SpecFileQueryWidget::SpecFileQueryWidget( InterSpec *viewer, Wt::WContainerWidge
 SpecFileQueryWidget::~SpecFileQueryWidget()
 {
   m_widgetDeleted->store( true );
-  
+
+  if( m_stopUpdate )
+    m_stopUpdate->store( true );
+
   for( auto &c : m_path_caches )
   {
     if( c.second )  //should always be true
@@ -2018,8 +2029,8 @@ void SpecFileQueryWidget::setResultsStale()
   
   if( m_resultmodel->rowCount() )
     m_resultmodel->setResult( std::shared_ptr< vector< vector<string> > >() );
-    //m_resultmodel->removeRows( 0, m_resultmodel->rowCount() );
-  
+  m_resultmodel->setbasePath( "" );
+
   m_resultview->disable();
   m_csv->disable();
   
@@ -2534,7 +2545,8 @@ void SpecFileQueryWidget::searchRequestedCallback( const std::string &queryJson 
     m_numberResults->setText( "Updating results" );
     if( m_resultmodel->rowCount() )
       m_resultmodel->setResult( nullptr );
-    
+    m_resultmodel->setbasePath( basepath );
+
     unsigned long options = 0x0;
     if( recursive )
       options |= SearchRecursive;

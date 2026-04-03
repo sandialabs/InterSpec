@@ -3448,19 +3448,19 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
 {
   using namespace rapidxml;
   using ::rapidxml::internal::compare;
-  
+
   if( !parent )
     throw runtime_error( "DetectorPeakResponse::fromXml(...): invalid input" );
-  
+
   if( !compare( parent->name(), parent->name_size(), "DetectorPeakResponse", 20, false ) )
     throw std::logic_error( "DetectorPeakResponse::fromXml(...): invalid input node name" );
-  
+
   const xml_attribute<char> *att = parent->first_attribute( "version", 7 );
-  
+
   int version;
   if( !att || !att->value() || (sscanf(att->value(), "%i", &version)!=1) )
     throw runtime_error( "DetectorPeakResponse invalid version" );
-  
+
   if( version > sm_xmlSerializationVersion )
     throw runtime_error( "Invalid DetectorPeakResponse version" );
 
@@ -3468,13 +3468,13 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing Name node" );
   m_name = node->value();
-  
-  
+
+
   node = parent->first_node( "Description", 11 );
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing Description node" );
   m_description = node->value();
-  
+
 
 
   m_geomType = EffGeometryType::FarFieldIntrinsic;
@@ -3488,19 +3488,19 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     {
       m_geomType = EffGeometryType::FixedGeomTotalAct;
     }else if( !compare(node->value(), node->value_size(), "0", 1, false)
-            && !compare(node->value(), node->value_size(), "false", 5, false) )
+             && !compare(node->value(), node->value_size(), "false", 5, false) )
     {
       throw runtime_error( "DetectorPeakResponse invalid FixedGeometry ('"
                           + SpecUtils::xml_value_str(node) + "')" );
     }
   }//if( not "FixedGeometry" node )
-  
-  
+
+
   // Geometry node added 20231011 to describe geometry type
   node = parent->first_node( "Geometry", 8 );
   if( !node && (version >= 1) && (m_geomType != EffGeometryType::FixedGeomTotalAct) )
     throw runtime_error( "DetectorPeakResponse no Geometry node" );
-  
+
   if( node )
   {
     if( compare(node->value(), node->value_size(), "FAR-FIELD", 9, false) )
@@ -3571,40 +3571,55 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   node = parent->first_node( "EfficiencySource", 16 );
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing EfficiencySource node" );
-  
+
   if( compare(node->value(),node->value_size(),"GadrasEfficiencyDefintion",25,false)
      || compare(node->value(),node->value_size(),"DefaultGadrasDrf",16,false) )
+  {
     m_efficiencySource = DrfSource::DefaultGadrasDrf;
-  else if( compare(node->value(),node->value_size(),   "SimpleMassEfficiencyDefintion",29,false)
+  }else if( compare(node->value(),node->value_size(),   "SimpleMassEfficiencyDefintion",29,false)
            || compare(node->value(),node->value_size(),"RelativeEfficiencyDefintion",27,false)
            || compare(node->value(),node->value_size(),"UserAddedRelativeEfficiencyDrf",30,false) )
+  {
     m_efficiencySource = DrfSource::UserAddedRelativeEfficiencyDrf;
-  else if( compare(node->value(),node->value_size(),"DefaultRelativeEfficiencyDrf",28,false) )
+  }else if( compare(node->value(),node->value_size(),"DefaultRelativeEfficiencyDrf",28,false) )
+  {
     m_efficiencySource = DrfSource::DefaultRelativeEfficiencyDrf;
-  else if( compare(node->value(),node->value_size(),"UserUploadedEfficiencyCsv",25,false)
-          || compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false) )
+  }else if( compare(node->value(),node->value_size(),"UserUploadedEfficiencyCsv",25,false)
+          || compare(node->value(),node->value_size(),"UserImportedIntrisicEfficiencyDrf",33,false)
+          || compare(node->value(),node->value_size(),"UserImportedEfficiencyCsvDrf",28,false)  )
+  {
     m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
-  else if( compare(node->value(),node->value_size(),"UserEfficiencyEquationSpecified",31,false)
+  }else if( compare(node->value(),node->value_size(),"UserEfficiencyEquationSpecified",31,false)
           || compare(node->value(),node->value_size(),"UserSpecifiedFormulaDrf",23,false) )
+  {
     m_efficiencySource = DrfSource::UserSpecifiedFormulaDrf;
-  else if( compare(node->value(),node->value_size(),"UnknownEfficiencySource",23,false)
+  }else if( compare(node->value(),node->value_size(),"UnknownEfficiencySource",23,false)
           || compare(node->value(),node->value_size(),"UnknownDrfSource",16,false) )
+  {
     m_efficiencySource = DrfSource::UnknownDrfSource;
-  else if( compare(node->value(),node->value_size(),"UserAddedGadrasDrf",18,false) )
+  }else if( compare(node->value(),node->value_size(),"UserAddedGadrasDrf",18,false) )
+  {
     m_efficiencySource = DrfSource::UserAddedGadrasDrf;
-  else if( compare(node->value(),node->value_size(),"UserImportedGadrasDrf",21,false) )
+  }else if( compare(node->value(),node->value_size(),"UserImportedGadrasDrf",21,false) )
+  {
     m_efficiencySource = DrfSource::UserImportedGadrasDrf;
-  else if( compare(node->value(),node->value_size(),"UserCreatedDrf",14,false) )
+  }else if( compare(node->value(),node->value_size(),"UserCreatedDrf",14,false) )
+  {
     m_efficiencySource = UserCreatedDrf;
-  else if( compare(node->value(),node->value_size(),"FromSpectrumFileDrf",19,false) )
+  }else if( compare(node->value(),node->value_size(),"FromSpectrumFileDrf",19,false) )
+  {
     m_efficiencySource = FromSpectrumFileDrf;
-  else if( compare(node->value(),node->value_size(),"ISOCS",5,false) )
+  }else if( compare(node->value(),node->value_size(),"ISOCS",5,false) )
+  {
     m_efficiencySource = IsocsEcc;
-  else if( compare(node->value(),node->value_size(),"AngleOutx",9,false) )
+  }else if( compare(node->value(),node->value_size(),"AngleOutx",9,false) )
+  {
     m_efficiencySource = AngleOutx;
-  else
+  }else
+  {
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencySource value" );
-  
+  }
+
   
   node = parent->first_node( "EfficiencyEnergyUnits", 21 );
   if( !node || !node->value() )

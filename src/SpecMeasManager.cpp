@@ -3238,7 +3238,10 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   chart->setMinimumSize( 300, 175 );
   chart->resize( chartw, charth );
   chart->updateChart( det );
-  
+
+  if( det && (det->upperEnergy() > 10000.0) )
+    chart->setXAxisRange( std::max(det->lowerEnergy(),0.0), 4000.0 );
+
   const string name = Wt::Utils::htmlEncode( det->name() );
   const string desc = Wt::Utils::htmlEncode( det->description() );
     
@@ -3430,6 +3433,10 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       }//switch( geom_type )
         
       chart->updateChart( new_drf );
+
+      if( new_drf && (new_drf->upperEnergy() > 10000.0) )
+        chart->setXAxisRange( std::max(new_drf->lowerEnergy(),0.0), 4000.0 );
+
       accept->enable();
     }catch( std::exception & )
     {
@@ -3575,6 +3582,9 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
   chart->setMinimumSize( 300, 175 );
   chart->resize( chartw, charth );
   chart->updateChart( det );
+
+  if( det && (det->upperEnergy() > 10000.0) )
+    chart->setXAxisRange( std::max(det->lowerEnergy(),0.0), 4000.0 );
 
   const string name = Wt::Utils::htmlEncode( det->name() );
   const string desc = Wt::Utils::htmlEncode( det->description() );
@@ -3846,6 +3856,10 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
     {
       shared_ptr<DetectorPeakResponse> new_drf = create_drf_for_geom( geom_type );
       chart->updateChart( new_drf );
+
+      if( new_drf && (new_drf->upperEnergy() > 10000.0) )
+        chart->setXAxisRange( std::max(new_drf->lowerEnergy(),0.0), 4000.0 );
+
       accept->enable();
     }catch( std::exception & )
     {
