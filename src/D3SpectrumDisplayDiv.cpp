@@ -27,6 +27,7 @@
 #include <vector>
 #include <utility>
 
+#include <Wt/Utils>
 #include <Wt/WPoint>
 #include <Wt/WServer>
 #include <Wt/WLength>
@@ -35,6 +36,7 @@
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WStringStream>
+#include <Wt/WMemoryResource>
 #include <Wt/WContainerWidget>
 
 #include "SpecUtils/DateTime.h"
@@ -97,22 +99,109 @@ namespace
 }//namespace
 
 
+/** Shared JS helper that converts a SpectrumChartD3 or D3TimeChart to image data.
+
+ @param chart The JS chart object (must have getStaticSvg() and svg)
+ @param format "png", "jpeg", or "svg"
+ @param maxSize Maximum longest side in pixels (0 = no resize)
+ @param callback Function called with (base64Data, mimeType, widthPx, heightPx).
+        For SVG, the callback is called synchronously.
+        For PNG/JPEG, it is called asynchronously (from img.onload).
+ */
 WT_DECLARE_WT_MEMBER
-(SvgToImgDownload, Wt::JavaScriptFunction, "SvgToImgDownload",
- function(chart,filename,asPng)
+(ChartToImageData, Wt::JavaScriptFunction, "ChartToImageData",
+ function(chart, format, maxSize, callback)
 {
-  // To copy to the pasteboard, and use the Clipboard API, an https connection is required, so we would have to send the image blob back to C++-land, and then put it in the clipboard there; see git commit 0db92a30928a3d8 for the sketched out Clipboard API try.
   try
   {
-    // 'chart' is the JS SpectrumChartD3 object
-    // 'chart.chart' is the <div> that holds the spectrum
-    //  and chart.svg is a D3 array with one entry to the actual <svg> element
-    //console.log( 'In SvgToImgDownload: svgchart' );
+    var svgMarkup = chart.getStaticSvg();
+
+    // Compute chart dimensions (excluding slider chart and scaler widget)
+    var height = chart.svg.attr("height");
+    var width = chart.svg.attr("width");
+
+    if( chart.sliderChart && chart.size && chart.size.sliderChartHeight )
+      height -= chart.size.sliderChartHeight;
+    if( chart.scalerWidget )
+      width -= chart.scalerWidget.node().getBBox().width;
+
+    width = Math.round(width);
+    height = Math.round(height);
+
+    if( format === "svg" )
+    {
+      // For SVG, base64-encode the markup directly
+      callback( btoa(unescape(encodeURIComponent(svgMarkup))), "image/svg+xml", width, height );
+      return;
+    }
+
+    // Determine target canvas dimensions, respecting maxSize
+    var targetWidth = width;
+    var targetHeight = height;
+    if( maxSize > 0 && (width > maxSize || height > maxSize) )
+    {
+      var scale = maxSize / Math.max(width, height);
+      targetWidth = Math.round(width * scale);
+      targetHeight = Math.round(height * scale);
+    }
+
+    var canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    var ctx = canvas.getContext("2d");
+
+    // Fill with white background (the default theme has no SVG background fill, and without
+    //  this, Windows PNG viewer shows a black background)
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    var img = new Image();
+    var svgBlob = new Blob([svgMarkup], {type: "image/svg+xml"});
+    var url = window.URL.createObjectURL(svgBlob);
+
+    img.onerror = function(e){
+      console.log( 'ChartToImageData img.error: ' );
+      console.log(e);
+      window.URL.revokeObjectURL(url);
+      callback( null, null, 0, 0 );
+    };
+
+    img.onload = function() {
+      // Draw at target size (may be scaled down from original)
+      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      window.URL.revokeObjectURL(url);
+
+      var mimeType = (format === "jpeg") ? "image/jpeg" : "image/png";
+      var quality = (format === "jpeg") ? 0.85 : undefined;
+      var dataUrl = canvas.toDataURL(mimeType, quality);
+      canvas.remove();
+
+      // Strip the "data:<mime>;base64," prefix to get raw base64
+      var base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
+      callback( base64, mimeType, targetWidth, targetHeight );
+    };
+
+    img.src = url;
+  }catch(e){
+    console.log( 'ChartToImageData error: ' );
+    console.log( e );
+    callback( null, null, 0, 0 );
+  }
+}
+);
+
+
+/** Download chart as PNG or SVG file.  Uses ChartToImageData for the core conversion. */
+WT_DECLARE_WT_MEMBER
+(SvgToImgDownload, Wt::JavaScriptFunction, "SvgToImgDownload",
+ function(chart, filename, asPng)
+{
+  try
+  {
     if( filename.length === 0 )
-      filename = "spectrum." + (asPng ? "png" : "svg"); //ToDo: add in date/time or something.
-    
-    let svgMarkup = chart.getStaticSvg();
-    
+      filename = "spectrum." + (asPng ? "png" : "svg");
+
     // A heavy-duty version of element.click()
     function simulateClick( node ) {
       try {
@@ -125,72 +214,35 @@ WT_DECLARE_WT_MEMBER
         node.dispatchEvent(evt);
       }
     };// function simulateClick()
-    
-    if( !asPng )
-    {
-      var dl = document.createElement("a");
-      document.body.appendChild(dl);
-      dl.target = "_blank";
-      dl.setAttribute("href", "data:image/svg+xml," + encodeURIComponent(svgMarkup) );
-      dl.setAttribute("download", filename);
-      simulateClick(dl);
-      document.body.removeChild(dl);
-    }else
-    {
-      // The getStaticSvg() function does not include the energy slider chart, so we should
-      //  compensate for that height if its showing
-      let height = chart.svg.attr("height");
-      let width = chart.svg.attr("width");
-      
-      if( chart.sliderChart && chart.size && chart.size.sliderChartHeight )
-        height -= chart.size.sliderChartHeight;
-      
-      if( chart.scalerWidget )
-        width -= chart.scalerWidget.node().getBBox().width;
-      
-      var canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      chart.chart.appendChild(canvas);
-    
-      var ctx = canvas.getContext("2d");
-      
-      // The default style in InterSpec doesnt have a background for the SVG (but the dark theme
-      //  does), so start with a solid white background instead of no fill (the default PNG viewer
-      //  in Windows fills in a solid black background in this case, making the PNG look incorrect)
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      var img = new Image();
-      var svg = new Blob([svgMarkup], {type: "image/svg+xml"});
-      var url = window.URL.createObjectURL(svg);
-      
-      // JIC something is messed up we can see it in debug console for development
-      img.onerror = function(e){ console.log( 'img.error: '); console.log(e); };
-      
-      img.onload = function() {
-        ctx.drawImage(img, 0, 0);
-        window.URL.revokeObjectURL(url);
-      
-        var dt = canvas.toDataURL('image/png');
-        dt = dt.replace(/^data:image\\/[^;]*/, 'data:application/octet-stream');
-        dt = dt.replace(/^data:application\\/octet-stream/, 'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename='+filename);
-        canvas.remove();
-      
-        var link = document.createElement("a");
-        link.style.display = "none";
-        document.body.appendChild(link);
-        link.download = filename;
-        link.href = dt;
-        link.target="_blank";
-        simulateClick(link);
-      
-        window.URL.revokeObjectURL(link.href);
-        document.body.removeChild(link);
-      };
-      img.src = url;
-    }//if( !asPng ) / else
-    
+
+    var format = asPng ? "png" : "svg";
+
+    Wt.WT.ChartToImageData(chart, format, 0, function(base64, mimeType, w, h) {
+      if( !base64 )
+        return;
+
+      var dataUrl;
+      if( !asPng )
+      {
+        dataUrl = "data:image/svg+xml," + encodeURIComponent(atob(base64));
+      }else
+      {
+        dataUrl = "data:application/octet-stream;base64," + base64;
+        dataUrl = dataUrl.replace(/^data:application\\/octet-stream/,
+          'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename=' + filename);
+      }
+
+      var link = document.createElement("a");
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.download = filename;
+      link.href = dataUrl;
+      link.target = "_blank";
+      simulateClick(link);
+
+      window.URL.revokeObjectURL(link.href);
+      document.body.removeChild(link);
+    });
   }catch(e){
     console.log( 'Error saving PNG or SVG of spectrum: ' );
     console.log( e );
@@ -241,6 +293,9 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_legendClosedJS{ nullptr },
   m_sliderDisplayed{ nullptr },
   m_yAxisTypeChanged{ nullptr },
+  m_imageCapturedJS{ nullptr },
+  m_pendingImageCallback{},
+  m_downloadResource( nullptr ),
   //These next member variables are all the C++ signals for when events happen
   m_legendEnabledSignal( this ),
   m_legendDisabledSignal( this ),
@@ -972,7 +1027,15 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( m_renderFlags.testFlag(UpdateBackgroundPeaks) )
     setPeaksToClient( SpecUtils::SpectrumType::Background );
-  
+
+  // Apply any pending ROI data set via setRoiData() before the widget was rendered
+  if( !m_pendingRoiJson.empty() )
+  {
+    for( const auto &entry : m_pendingRoiJson )
+      doJavaScript( m_jsgraph + ".setRoiData(" + entry.second + ", '" + entry.first + "');" );
+    m_pendingRoiJson.clear();
+  }
+
   if( m_renderFlags.testFlag(UpdateHighlightRegions) )
     setHighlightRegionsToClient();
   
@@ -1476,6 +1539,31 @@ void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spe
   
   scheduleRender();
 }//void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
+
+
+void D3SpectrumDisplayDiv::setRoiData( const std::string &peak_json,
+                                       const SpecUtils::SpectrumType spectrum_type )
+{
+  std::string spectrum_name;
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::Foreground:       spectrum_name = "FOREGROUND"; break;
+    case SpecUtils::SpectrumType::SecondForeground:  spectrum_name = "SECONDARY"; break;
+    case SpecUtils::SpectrumType::Background:       spectrum_name = "BACKGROUND"; break;
+  }
+
+  const std::string &json = peak_json.empty() ? "[]" : peak_json;
+
+  if( isRendered() )
+  {
+    doJavaScript( m_jsgraph + ".setRoiData(" + json + ", '" + spectrum_name + "');" );
+  }else
+  {
+    // Store for application during render(), after spectrum data is sent
+    m_pendingRoiJson[spectrum_name] = json;
+    scheduleRender();
+  }
+}//void setRoiData(...)
 
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist, const bool keep_curent_xrange )
@@ -2343,19 +2431,140 @@ double D3SpectrumDisplayDiv::logYAxisMin() const
 
 void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bool asPng )
 {
-  // For now we grab CSS rules dynamically in the JS, which is tedious and error-prone, but we could
-  //  use the following to get (some of) the rules from C++ land.
-  //string cssrules;
-  //for( const auto &p : m_cssRules )
-  //  cssrules += p.second->selector() + "{ " + p.second->declarations() + " }  ";
-  //cout << "CSS rules: " << cssrules << endl;
-  
-  LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsSvgToImgDownload);
-  
-  if( isRendered() )
-    doJavaScript( "Wt.WT.SvgToImgDownload(" + m_jsgraph + ",'" + filename + "', "
-                  + string(asPng ? "true" : "false") + ");" );
-}//void saveChartToPng( const std::string &name )
+  if( !isRendered() )
+    return;
+
+  const std::string format = asPng ? "png" : "svg";
+  captureChartImage( format, 0, {}, {},
+    boost::bind( &D3SpectrumDisplayDiv::handleChartImageForDownload, this, filename,
+                 boost::placeholders::_1, boost::placeholders::_2,
+                 boost::placeholders::_3, boost::placeholders::_4 ) );
+}//void saveChartToImg( const std::string &name, const bool asPng )
+
+
+void D3SpectrumDisplayDiv::handleImageCaptured( std::string base64, std::string mimeType,
+                                                 int w, int h )
+{
+  ImageCaptureCallback cb;
+  std::swap( cb, m_pendingImageCallback );
+  if( cb )
+    cb( std::move( base64 ), std::move( mimeType ), w, h );
+}//void handleImageCaptured(...)
+
+
+void D3SpectrumDisplayDiv::handleChartImageForDownload( const std::string &filename,
+                                                         std::string base64Data,
+                                                         std::string mimeType,
+                                                         int, int )
+{
+  if( base64Data.empty() )
+    return;
+
+  const std::string decoded = Wt::Utils::base64Decode( base64Data );
+  const std::vector<unsigned char> data( decoded.begin(), decoded.end() );
+
+  if( !m_downloadResource )
+    m_downloadResource = new Wt::WMemoryResource( this );
+
+  m_downloadResource->setMimeType( mimeType );
+  m_downloadResource->setData( data );
+  m_downloadResource->suggestFileName( filename, Wt::WResource::Attachment );
+
+  doJavaScript( "window.open('" + m_downloadResource->url() + "', '_blank');" );
+
+  wApp->triggerUpdate();
+}//void handleChartImageForDownload(...)
+
+
+void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int maxLongestSide,
+                                               std::optional<std::pair<double,double>> energyRange,
+                                               std::optional<bool> yAxisLog,
+                                               ImageCaptureCallback callback )
+{
+  if( !callback )
+    throw std::runtime_error( "captureChartImage: callback must not be null" );
+
+  if( !isRendered() )
+    throw std::runtime_error( "captureChartImage: chart is not rendered" );
+
+  assert( !energyRange || (energyRange->first >= 0.0 && energyRange->second > energyRange->first) );
+
+  // Initialize the JSignal on first use
+  if( !m_imageCapturedJS )
+  {
+    m_imageCapturedJS.reset( new Wt::JSignal<std::string, std::string, int, int>( this, "imageCaptured", true ) );
+    m_imageCapturedJS->connect( boost::bind( &D3SpectrumDisplayDiv::handleImageCaptured, this,
+       boost::placeholders::_1, boost::placeholders::_2,
+       boost::placeholders::_3, boost::placeholders::_4 ) );
+  }//if( !m_imageCapturedJS )
+
+  m_pendingImageCallback = std::move( callback );
+
+  LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsChartToImageData);
+
+  const std::string emitJs = m_imageCapturedJS->createCall( "b64", "mime", "w", "h" );
+
+  // Build a single JS block that optionally zooms/changes y-scale, captures via
+  //  requestAnimationFrame, and restores
+  const bool changeRange = energyRange.has_value();
+  const bool changeYScale = yAxisLog.has_value();
+
+  std::string js;
+  js += "(function(){";
+  js += "var chart=" + m_jsgraph + ";";
+
+  if( changeRange )
+  {
+    js += "var savedDomain=chart.xScale.domain().slice();";
+    js += "chart.handleCancelAnimationZoom();";
+    js += "chart.setXAxisRange(" + std::to_string(energyRange->first) + "," + std::to_string(energyRange->second) + ",false,true);";
+  }
+
+  if( changeYScale )
+  {
+    js += "var savedYScale=chart.options.yscale;";
+    js += std::string("chart.") + (*yAxisLog ? "setLogY" : "setLinearY") + "();";
+  }
+
+  if( changeRange || changeYScale )
+  {
+    js += "chart.redraw()();";
+    if( changeRange )
+      js += "chart.updateFeatureMarkers(-1);";
+  }
+
+  // Use requestAnimationFrame so the chart re-renders before we capture
+  js += "requestAnimationFrame(function(){";
+  js += "Wt.WT.ChartToImageData(chart,'" + format + "'," + std::to_string(maxLongestSide)
+      + ",function(b64,mime,w,h){";
+
+  if( changeRange )
+  {
+    // Restore original x-axis range
+    js += "chart.handleCancelAnimationZoom();";
+    js += "chart.setXAxisRange(savedDomain[0],savedDomain[1],false,true);";
+  }
+
+  if( changeYScale )
+  {
+    // Restore original y-axis scale
+    js += "chart.setYAxisType(savedYScale);";
+  }
+
+  if( changeRange || changeYScale )
+  {
+    js += "chart.redraw()();";
+    if( changeRange )
+      js += "chart.updateFeatureMarkers(-1);";
+  }
+
+  js += emitJs + ";";
+  js += "});";  // end ChartToImageData callback
+  js += "});";  // end requestAnimationFrame
+  js += "})();"; // end IIFE
+
+  doJavaScript( js );
+}//void captureChartImage(...)
 
 
 void D3SpectrumDisplayDiv::setThumbnailMode()
