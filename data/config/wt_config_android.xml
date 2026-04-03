@@ -204,7 +204,7 @@
                The default value is 128K, which is more than enough for
                any interactive Wt event.
 	      -->
-	    <max-memory-request-size>128</max-memory-request-size>
+	    <max-memory-request-size>524288</max-memory-request-size>
 	</connector-isapi>
 
         <!-- Javascript debug options

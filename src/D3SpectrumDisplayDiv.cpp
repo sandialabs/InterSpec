@@ -2461,6 +2461,19 @@ void D3SpectrumDisplayDiv::handleChartImageForDownload( const std::string &filen
     return;
 
   const std::string decoded = Wt::Utils::base64Decode( base64Data );
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    const auto nativeHandler = InterSpecApp::nativeFileSaveHandler();
+    if( nativeHandler )
+    {
+      nativeHandler( decoded, filename );
+      return;
+    }
+  }
+#endif
+
   const std::vector<unsigned char> data( decoded.begin(), decoded.end() );
 
   if( !m_downloadResource )

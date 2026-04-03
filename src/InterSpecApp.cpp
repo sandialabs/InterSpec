@@ -119,6 +119,11 @@ namespace
   std::mutex ns_js_err_handler_mutex;
   std::function<void(std::string, std::string)> ns_js_err_handler;
 #endif
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  std::mutex ns_native_file_save_mutex;
+  std::function<void(std::string, std::string)> ns_native_file_save_handler;
+#endif
 }//namespace
 
 
@@ -1072,6 +1077,21 @@ void InterSpecApp::setJavascriptErrorHandler( std::function<void(std::string, st
   ns_js_err_handler = fctn;
 }
 #endif //#if(  BUILD_AS_WX_WIDGETS_APP )
+
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+void InterSpecApp::setNativeFileSaveHandler( std::function<void(std::string, std::string)> handler )
+{
+  std::lock_guard<std::mutex> lock( ns_native_file_save_mutex );
+  ns_native_file_save_handler = std::move( handler );
+}
+
+std::function<void(std::string, std::string)> InterSpecApp::nativeFileSaveHandler()
+{
+  std::lock_guard<std::mutex> lock( ns_native_file_save_mutex );
+  return ns_native_file_save_handler;
+}
+#endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 
 
 std::string InterSpecApp::userNameFromOS()
