@@ -559,9 +559,48 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     //[_InterSpecWebView willOpenMenu:<#(nonnull NSMenu *)#> withEvent:<#(nonnull NSEvent *)#>];
   }//if( allow_dev_tools )
   
+  InterSpecApp::setNativeFileSaveHandler( []( std::string data, std::string suggested_name ){
+    NSData *nsData = [NSData dataWithBytes:data.data() length:data.size()];
+    NSString *nsSuggestedName = [NSString stringWithUTF8String:suggested_name.c_str()];
+
+    dispatch_async( dispatch_get_main_queue(), ^{
+      NSSavePanel *savePanel = [NSSavePanel savePanel];
+      savePanel.title = @"Save Chart Image";
+      savePanel.prompt = @"Save";
+      savePanel.nameFieldStringValue = nsSuggestedName;
+      savePanel.canCreateDirectories = YES;
+
+      [savePanel beginWithCompletionHandler:^( NSModalResponse result ){
+        if( result != NSModalResponseOK )
+          return;
+
+        NSURL *destinationURL = savePanel.URL;
+        if( !destinationURL )
+          return;
+
+        NSError *writeError = nil;
+        const BOOL written = [nsData writeToURL:destinationURL
+                                        options:NSDataWritingAtomic
+                                          error:&writeError];
+        if( !written )
+        {
+          NSLog( @"Failed to save chart image: %@", writeError.localizedDescription );
+          dispatch_async( dispatch_get_main_queue(), ^{
+            NSAlert *alert = [[NSAlert alloc] init];
+            alert.messageText = @"Error Saving File";
+            alert.informativeText = writeError.localizedDescription;
+            alert.alertStyle = NSAlertStyleCritical;
+            [alert addButtonWithTitle:@"OK"];
+            [alert runModal];
+          } );
+        }//if( !written )
+      }];//beginWithCompletionHandler
+    } );//dispatch_async
+  } );//setNativeFileSaveHandler
+
   static const std::string argv0 = [[[NSBundle mainBundle] executablePath] UTF8String];
   const char *xml_config_path = "data/config/wt_config_osx.xml";
-  
+
   InterSpecServer::start_server( argv0.c_str(), user_data_dir.c_str(),
                                 base_dir.c_str(), xml_config_path, server_port );
   

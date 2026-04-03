@@ -691,6 +691,10 @@ InterSpecWxApp::InterSpecWxApp() :
       InterSpecWxUtils::handle_javascript_error( errormsg, app_token );
     } );
 
+    InterSpecApp::setNativeFileSaveHandler( []( std::string data, std::string suggested_name ){
+      InterSpecWxUtils::save_file_data( std::move( data ), std::move( suggested_name ) );
+    } );
+
 
     try
     {

@@ -423,8 +423,26 @@ JNIEXPORT
     //  encoded, rather than the system encoding.
     Wt::WString::setDefaultEncoding( Wt::UTF8 );
 
+    InterSpecApp::setNativeFileSaveHandler( []( std::string data, std::string suggested_name ){
+      const std::string tempFileName = SpecUtils::temp_file_name( suggested_name, SpecUtils::temp_dir() );
 
-    int serverPort = InterSpecServer::start_server( process_name.c_str(), userdatadir.c_str(), 
+      bool wrote_file = false;
+      {
+        std::ofstream tmp( tempFileName.c_str(), std::ios_base::binary | std::ios_base::out );
+        if( tmp.is_open() )
+        {
+          tmp.write( data.data(), data.size() );
+          wrote_file = tmp.good();
+        }
+      }
+
+      __android_log_print( ANDROID_LOG_INFO, "nativeFileSave",
+                           "Wrote chart image to: '%s' (success=%d)", tempFileName.c_str(), (int)wrote_file );
+
+      android_save_file_in_temp( wrote_file, tempFileName, suggested_name );
+    } );
+
+    int serverPort = InterSpecServer::start_server( process_name.c_str(), userdatadir.c_str(),
                                              basedir.c_str(), xml_config_path.c_str() );
 
     if( serverPort <= 0 )
