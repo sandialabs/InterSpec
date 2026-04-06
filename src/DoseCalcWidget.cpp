@@ -240,7 +240,7 @@ DoseCalcWindow::DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
-  qr_btn->clicked().connect( std::bind( [this](){
+  qr_btn->clicked().connect( this, [this](){
     try
     {
       const string url = "interspec://dose/" + Wt::Utils::urlEncode(m_dose->encodeStateToUrl());
@@ -250,7 +250,7 @@ DoseCalcWindow::DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
-  }) );
+  } );
   if( !viewer->isPhone() )
     footer()->addWidget( std::move(qr_btn_owned) );
 #endif //USE_QR_CODES
@@ -532,8 +532,8 @@ void DoseCalcWidget::init()
     }//switch( i )
     
     WMenuItem *item = m_menu->addItem( WString::tr(label_key) );
-    item->clicked().connect( [menu = m_menu, item](){ right_select_item( menu, item ); } );
-    item->triggered().connect( [this, i](){ handleQuantityClick( i ); } );
+    item->clicked().connect( this, [menu = m_menu, item](){ right_select_item( menu, item ); } );
+    item->triggered().connect( this, [this, i](){ handleQuantityClick( i ); } );
 
     m_enterWidgets[i] = enterLayout->addWidget( std::make_unique<WContainerWidget>(), i + 2, 0,
                                                  Wt::AlignmentFlag::Middle );
@@ -639,8 +639,8 @@ void DoseCalcWidget::init()
         m_activityEnter->setValidator( actValidator );
 //        actValidator->setBottom( 0.0 );
         m_activityEnter->setText( "100" );
-        m_activityEnter->blurred().connect( [this](){ updateResult(); } );
-        m_activityEnter->enterPressed().connect( [this](){ updateResult(); } );
+        m_activityEnter->blurred().connect( this, [this](){ updateResult(); } );
+        m_activityEnter->enterPressed().connect( this, [this](){ updateResult(); } );
 
         m_activityEnterUnits = m_enterWidgets[i]->addNew<WComboBox>();
 
@@ -675,8 +675,8 @@ void DoseCalcWidget::init()
         m_activityAnswer->setText( WString::fromUTF8(actstr) );
         m_activityAnswer->addStyleClass( "DoseAnswerTxt" );
         
-        m_activityEnterUnits->activated().connect( [this]( int ){ updateResult(); } );
-        m_activityAnswerUnits->activated().connect( [this]( int ){ updateResult(); } );
+        m_activityEnterUnits->activated().connect( this, [this]( int ){ updateResult(); } );
+        m_activityAnswerUnits->activated().connect( this, [this]( int ){ updateResult(); } );
         break;
       }//case Activity:
         
@@ -714,9 +714,9 @@ void DoseCalcWidget::init()
         m_distanceEnter->setValidator( distValidator );
         HelpSystem::attachToolTipOn( m_distanceEnter, WString::tr("dcw-tt-distance"), showToolTips );
 
-        m_distanceEnter->changed().connect( [this](){ updateResult(); } );
-        m_distanceEnter->blurred().connect( [this](){ updateResult(); } );
-        m_distanceEnter->enterPressed().connect( [this](){ updateResult(); } );
+        m_distanceEnter->changed().connect( this, [this](){ updateResult(); } );
+        m_distanceEnter->blurred().connect( this, [this](){ updateResult(); } );
+        m_distanceEnter->enterPressed().connect( this, [this](){ updateResult(); } );
         break;
       }//case Distance:
         
@@ -733,10 +733,10 @@ void DoseCalcWidget::init()
         m_answerShieldingSelect = m_answerWidgets[i]->addNew<ShieldingSelect>( m_materialSuggest );
         m_answerShieldingSelect->setSphericalThicknessEditEnabled(false);
         m_answerShieldingSelect->arealDensityEdit()->disable();
-        m_enterShieldingSelect->materialModified().connect( [this]( ShieldingSelect * ){ updateResult(); } );
-        m_enterShieldingSelect->materialChanged().connect( [this]( ShieldingSelect * ){ updateResult(); } );
-        m_answerShieldingSelect->materialModified().connect( [this]( ShieldingSelect * ){ updateResult(); } );
-        m_answerShieldingSelect->materialChanged().connect( [this]( ShieldingSelect * ){ updateResult(); } );
+        m_enterShieldingSelect->materialModified().connect( this, [this]( ShieldingSelect * ){ updateResult(); } );
+        m_enterShieldingSelect->materialChanged().connect( this, [this]( ShieldingSelect * ){ updateResult(); } );
+        m_answerShieldingSelect->materialModified().connect( this, [this]( ShieldingSelect * ){ updateResult(); } );
+        m_answerShieldingSelect->materialChanged().connect( this, [this]( ShieldingSelect * ){ updateResult(); } );
         
         if( isPhone )
         {

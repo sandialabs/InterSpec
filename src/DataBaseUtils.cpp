@@ -265,7 +265,7 @@ DbSession::DbSession()
       //Only make a keep alive timer if in a Wt event loop
       m_keepAliveTimer = new WTimer();
       m_keepAliveTimer->setInterval( 1000*60*60 );
-      m_keepAliveTimer->timeout().connect( [this](){ keepDbConnectionAlive(); } );
+      m_keepAliveTimer->timeout().connect( this, [this](){ keepDbConnectionAlive(); } );
       m_keepAliveTimer->start();
     }//if( wApp )
 #else

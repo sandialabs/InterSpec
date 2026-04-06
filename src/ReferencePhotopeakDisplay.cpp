@@ -932,12 +932,12 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   #endif
     nucInputLabel->setBuddy( m_nuclideEdit );
 
-  //  m_nuclideEdit->changed().connect( [this](){ handleIsotopeChange( false ); } );
-  //  m_nuclideEdit->blurred().connect( [this](){ handleIsotopeChange( false ); } );
-  //  m_nuclideEdit->enterPressed().connect( [this](){ handleIsotopeChange( false ); } );
-    m_nuclideEdit->changed().connect( [this](){ handleIsotopeChange( false ); } );
+  //  m_nuclideEdit->changed().connect( this, [this](){ handleIsotopeChange( false ); } );
+  //  m_nuclideEdit->blurred().connect( this, [this](){ handleIsotopeChange( false ); } );
+  //  m_nuclideEdit->enterPressed().connect( this, [this](){ handleIsotopeChange( false ); } );
+    m_nuclideEdit->changed().connect( this, [this](){ handleIsotopeChange( false ); } );
 
-  //  m_nuclideEdit->selected().connect( [this](){ handleIsotopeChange( false ); } );
+  //  m_nuclideEdit->selected().connect( this, [this](){ handleIsotopeChange( false ); } );
 
     auto persistLinesOwner = std::make_unique<WPushButton>( WString::tr("rpd-add-another-btn") );
     m_persistLines = persistLinesOwner.get();
@@ -1022,7 +1022,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
       //Get rid of the software keyboard on mobile devices.  It would be nice to
       //  simulate a screen tap on android devices as well, to get rid of system
       //  navigation UI
-      m_nuclideEdit->enterPressed().connect( [this](){ m_clearLines->setFocus( true ); } );
+      m_nuclideEdit->enterPressed().connect( this, [this](){ m_clearLines->setFocus( true ); } );
     }
 
     m_clearLines->clicked().connect( this, &ReferencePhotopeakDisplay::clearAllLines );
@@ -1076,8 +1076,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     {
       auto detDispOwner = std::make_unique<DetectorDisplay>( specViewer, specFileModel );
       m_detectorDisplay = detDispOwner.get();
-      specViewer->detectorChanged().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );
-      specViewer->detectorModified().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );
+      specViewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );
+      specViewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDrfChange( det ); } );
       specViewer->displayedSpectrumChanged().connect(this, &ReferencePhotopeakDisplay::handleSpectrumChange);
       lowerInputLayout->addWidget( std::move(detDispOwner), 1, 0 );
     }
@@ -1119,7 +1119,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
         hlRow->addWidget( std::move(w) );
       }
     }
-    m_colorSelect->cssColorChanged().connect( [this]( const Wt::WColor &color ){ userColorSelectCallback( color ); } );
+    m_colorSelect->cssColorChanged().connect( this, [this]( const Wt::WColor &color ){ userColorSelectCallback( color ); } );
     m_currentlyShowingNuclide.m_input.m_color = m_lineColors[0];
 
     m_options_icon = hlRow->addNew<WPushButton>();
@@ -1284,7 +1284,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
       featureMarkerCloseIcon->addStyleClass("closeicon-wtdefault");
       //A little convoluted, but we will have the InterSpec class tell us to close feature marker widget,
       //  so it can save its state, and update the app menu-item, and handle undo/redo.
-      featureMarkerCloseIcon->clicked().connect( [this](){ m_spectrumViewer->displayFeatureMarkerWindow( false ); } );
+      featureMarkerCloseIcon->clicked().connect( this, [this](){ m_spectrumViewer->displayFeatureMarkerWindow( false ); } );
     }
 
     auto particleViewOwner = std::make_unique<RowStretchTreeView>();
@@ -1314,7 +1314,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
     WContainerWidget *helpBtn = bottomRow->addNew<WContainerWidget>();
     helpBtn->addStyleClass("Wt-icon ContentHelpBtn RefGammaHelp");
-    helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "reference-gamma-lines-dialog" ); } );
+    helpBtn->clicked().connect( this, [](){ HelpSystem::createHelpWindow( "reference-gamma-lines-dialog" ); } );
 
     {
       auto fitSrcBtnOwner = std::make_unique<WSplitButton>( "&nbsp;" ); //Space is needed so Wt will add the ".with-label" style class
@@ -1333,12 +1333,12 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
       m_fitSourcesBtn->setMenu( std::move( fit_menu_ptr ) );
 
       WMenuItem *automatic_item = fit_menu->addItem( WString::tr("rpd-fit-sources-menu-auto") );
-      automatic_item->triggered().connect( [](){ FitPeaksForNuclidesGui::startFitSources( false ); } );
+      automatic_item->triggered().connect( this, [](){ FitPeaksForNuclidesGui::startFitSources( false ); } );
 
       WMenuItem *advanced_item = fit_menu->addItem( WString::tr("rpd-fit-sources-menu-advanced") );
       advanced_item->triggered().connect( this, &ReferencePhotopeakDisplay::showFitSourcesAdvancedDialog );
 
-      m_fitSourcesBtn->actionButton()->clicked().connect( [](){ FitPeaksForNuclidesGui::startFitSources( false ); } );
+      m_fitSourcesBtn->actionButton()->clicked().connect( this, [](){ FitPeaksForNuclidesGui::startFitSources( false ); } );
 
       bottomRow->addWidget( std::move(fitSrcBtnOwner) );
     }
@@ -1358,12 +1358,12 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
-    csvButton->clicked().connect( [csv](){ android_download_workaround(csv, "photopeak_ref_info.csv"); } );
+    csvButton->clicked().connect( this, [csv](){ android_download_workaround(csv, "photopeak_ref_info.csv"); } );
   #endif //ANDROID
 
   #endif // BUILD_AS_OSX_APP / else
 
-    csvButton->clicked().connect( [](){
+    csvButton->clicked().connect( this, [](){
       passMessage( WString::tr("rpd-csv-export-msg"), WarningWidget::WarningMsgInfo );
       //TODO: check about calling WarningWidget::displayPopupMessageUnsafe( msg, level, 5000 ); directly with a longer time for the message to hang around
     });
@@ -1747,9 +1747,9 @@ void ReferencePhotopeakDisplay::showFitSourcesAdvancedDialog()
 
   if( m_fitSourcesAdvancedDialog )
   {
-    m_fitSourcesAdvancedDialog->finished().connect( std::bind( [this](){
+    m_fitSourcesAdvancedDialog->finished().connect( this, [this](){
       m_fitSourcesAdvancedDialog = nullptr;
-    } ) );
+    } );
   }
 }//void showFitSourcesAdvancedDialog()
 
@@ -1847,7 +1847,7 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
     {
       RefLineInput input = userInput();
       input.m_input_txt = nucstr;
-      btn->clicked().connect( [this, input](){ updateDisplayFromInput( input ); } );
+      btn->clicked().connect( this, [this, input](){ updateDisplayFromInput( input ); } );
     }else
     {
       btn->disable();
@@ -2142,7 +2142,7 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
   }//if( m_nucInfoWindow )
   
   m_nucInfoWindow = SimpleDialog::make<MoreNuclideInfoWindow>( nuc );
-  m_nucInfoWindow->finished().connect( [this, win=m_nucInfoWindow](){ handleMoreInfoWindowClose( win ); } );
+  m_nucInfoWindow->finished().connect( this, [this, win=m_nucInfoWindow](){ handleMoreInfoWindowClose( win ); } );
 
   // All of this undo/redo stuff is a little over the top since we will only ever show one more-info
   //  window at a time, but oh well.
@@ -2163,7 +2163,7 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
       {
         assert( !m_nucInfoWindow );
         m_nucInfoWindow = SimpleDialog::make<MoreNuclideInfoWindow>( prev_orig_nuc );
-        m_nucInfoWindow->finished().connect( [this, win=m_nucInfoWindow](){ handleMoreInfoWindowClose( win ); } );
+        m_nucInfoWindow->finished().connect( this, [this, win=m_nucInfoWindow](){ handleMoreInfoWindowClose( win ); } );
         
         if( prev_current_nuc && (prev_orig_nuc != prev_current_nuc) )
         {
@@ -2184,7 +2184,7 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
       
       assert( !disp->moreInfoWindow() );
       disp->m_nucInfoWindow = SimpleDialog::make<MoreNuclideInfoWindow>( nuc );
-      disp->m_nucInfoWindow->finished().connect( [disp, win=disp->m_nucInfoWindow](){ disp->handleMoreInfoWindowClose( win ); } );
+      disp->m_nucInfoWindow->finished().connect( disp, [disp, win=disp->m_nucInfoWindow](){ disp->handleMoreInfoWindowClose( win ); } );
     };//redo
     
     undo_manager->addUndoRedoStep( undo, redo, "Show " + nuc->symbol + " more info window." );
@@ -2346,7 +2346,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
       {
         RefLineInput input = userInput();
         input.m_input_txt = riid.source_name();
-        btn->clicked().connect( [this, input](){ updateDisplayFromInput( input ); } );
+        btn->clicked().connect( this, [this, input](){ updateDisplayFromInput( input ); } );
       }else
       {
         btn->disable();
@@ -2373,7 +2373,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
     {
       WPushButton *btn = m_otherNucs->addNew<WPushButton>( prev.m_input_txt );
       btn->addStyleClass( "LinkBtn" );
-      btn->clicked().connect( [this, prev](){ updateDisplayFromInput( prev ); } );
+      btn->clicked().connect( this, [this, prev](){ updateDisplayFromInput( prev ); } );
     }
   }//if( !prev_nucs.empty() )
 }//void updateOtherNucsDisplay()

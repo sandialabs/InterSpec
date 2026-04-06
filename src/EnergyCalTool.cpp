@@ -689,7 +689,7 @@ DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
 
   WContainerWidget *addBtn = footer->addNew<WContainerWidget>();
   addBtn->addStyleClass( "Wt-icon AddDevPair" );
-  addBtn->clicked().connect( [this](){ newDevPair( true ); } );
+  addBtn->clicked().connect( this, [this](){ newDevPair( true ); } );
   addBtn->setToolTip( "Add another deviation pair" );
 }//DeviationPairDisplay constructor
 
@@ -860,12 +860,12 @@ void DeviationPairDisplay::setValidValues()
 DevPair *DeviationPairDisplay::newDevPair( const bool emitChangedNow )
 {
   DevPair *dev = new DevPair( m_pairs );
-  dev->m_delete->clicked().connect( [this, dev](){ removeDevPair( dev ); } );
+  dev->m_delete->clicked().connect( this, [this, dev](){ removeDevPair( dev ); } );
   //dev->m_energy->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
   //dev->m_offset->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
-  dev->m_energy->valueChanged().connect( [this]( double ){ emitChanged( UserFieldChanged::EnergyChanged ); } );
-  dev->m_offset->valueChanged().connect( [this]( double ){ emitChanged( UserFieldChanged::OffsetChanged ); } );
-  dev->m_energy->blurred().connect( [this](){ sortDisplayOrder( true ); } );
+  dev->m_energy->valueChanged().connect( this, [this]( double ){ emitChanged( UserFieldChanged::EnergyChanged ); } );
+  dev->m_offset->valueChanged().connect( this, [this]( double ){ emitChanged( UserFieldChanged::OffsetChanged ); } );
+  dev->m_energy->blurred().connect( this, [this](){ sortDisplayOrder( true ); } );
   
   if( emitChangedNow )
     emitChanged( UserFieldChanged::AddedDeviationPair );
@@ -1011,9 +1011,9 @@ public:
 
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
-    m_downloadCALp->clicked().connect( std::bind([this](){
+    m_downloadCALp->clicked().connect( this, [this](){
       android_download_workaround(m_tool->calpResources().get(), "energy_cal.CALp");
-    }) );
+    } );
 #endif //ANDROID
 
 #endif //#if( BUILD_AS_OSX_APP || IOS ) / #else
@@ -1608,7 +1608,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     
     WContainerWidget *holder = moreActionsList->addNew<WContainerWidget>();
     m_moreActions[static_cast<int>(index)] = holder->addNew<WAnchor>( WLink(), WString::tr(label) );
-    m_moreActions[static_cast<int>(index)]->clicked().connect( [this, index](){ moreActionBtnClicked( index ); } );
+    m_moreActions[static_cast<int>(index)]->clicked().connect( this, [this, index](){ moreActionBtnClicked( index ); } );
     
     assert( tooltip );
     if( tooltip )
@@ -1620,7 +1620,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
 
   WContainerWidget *helpBtn = btndiv->addNew<WContainerWidget>();
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-  helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "energy-calibration" ); } );
+  helpBtn->clicked().connect( this, [](){ HelpSystem::createHelpWindow( "energy-calibration" ); } );
 
 
 #if( !IMP_CALp_BTN_NEAR_COEFS )
@@ -1645,17 +1645,17 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_downloadCALp->clicked().connect( std::bind([this](){
+  m_downloadCALp->clicked().connect( this, [this](){
     android_download_workaround( m_calpResource.get(), "energy_cal.CALp");
-  }) );
+  } );
 #endif //ANDROID
   
 #endif
   m_downloadCALp->setText( "CALp" );
   
-  m_downloadCALp->clicked().connect( std::bind([this](){
+  m_downloadCALp->clicked().connect( this, [this](){
     m_interspec->logMessage( WString::tr("ect-export-CALp-msg"), WarningWidget::WarningMsgInfo );
-  }) );
+  } );
   HelpSystem::attachToolTipOn( m_downloadCALp, WString::tr("ect-tt-CALp"), showToolTips );
   
   m_downloadCALp->setHidden( true );
@@ -1746,8 +1746,8 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
         break;
     }//switch( index )
     
-    cb->checked().connect( [this, index](){ applyToCbChanged( index ); } );
-    cb->unChecked().connect( [this, index](){ applyToCbChanged( index ); } );
+    cb->checked().connect( this, [this, index](){ applyToCbChanged( index ); } );
+    cb->unChecked().connect( this, [this, index](){ applyToCbChanged( index ); } );
     
     m_applyToCbs[index] = cb;
   }//for( loop over ApplyToCbIndex )
@@ -1878,7 +1878,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_peakModel->rowsInserted().connect( this, &EnergyCalTool::updateFitButtonStatus );
   m_peakModel->layoutChanged().connect( this, &EnergyCalTool::updateFitButtonStatus );
   
-  m_interspec->displayedSpectrumChanged().connect( [this]( SpecUtils::SpectrumType a1,
+  m_interspec->displayedSpectrumChanged().connect( this, [this]( SpecUtils::SpectrumType a1,
       std::shared_ptr<SpecMeas> a2, std::set<int> a3, std::vector<std::string> a4 ){
     displayedSpectrumChanged( a1, a2, a3, a4 );
   } );
@@ -2398,7 +2398,7 @@ void EnergyCalTool::handleRequestToUploadCALp()
 
 
   WFileUpload *upload = stretcher->addWidget( std::make_unique<WFileUpload>(), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
-  upload->fileTooLarge().connect( std::bind( [=](){
+  upload->fileTooLarge().connect( upload, [=](){
     dialog->contents()->clear();
     dialog->footer()->clear();
     
@@ -2409,10 +2409,10 @@ void EnergyCalTool::handleRequestToUploadCALp()
       WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-upload-CALp-to-large") ), 0, 0 );
       title->addStyleClass( "title" );
     }
-  }) );
-  
+  } );
+
   upload->changed().connect( upload, &WFileUpload::upload );
-  upload->uploaded().connect( std::bind( [dialog,upload](){
+  upload->uploaded().connect( upload, [dialog,upload](){
     InterSpec *interspec = InterSpec::instance();
     SpecMeasManager *measmn = interspec ? interspec->fileManager() : nullptr;
     
@@ -2458,10 +2458,10 @@ void EnergyCalTool::handleRequestToUploadCALp()
       
       return;
     }//if( was not a valid CALp file )
-    
+
     //wApp->doJavaScript( "$('.Wt-dialogcover').hide();" ); // JIC
     //dialog->done( Wt::DialogCode::Accepted );
-  } ) );
+  } );
   
   InterSpec *interspec = InterSpec::instance();
   if( interspec && !interspec->isPhone() )
@@ -2486,9 +2486,9 @@ void EnergyCalTool::handleRequestToUploadCALp()
    window->centerWindow();
    
    WPushButton *close = window->addCloseButtonToFooter( "Cancel" );
-   close->clicked().connect( [window](){ window->hide(); } );
+   close->clicked().connect( window, [window](){ window->hide(); } );
 
-   window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+   window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
    // TODO: add link to relevant section of documentation
    //AuxWindow::addHelpInFooter( window->footer(), "energy-cal-CALp" );
@@ -4788,7 +4788,7 @@ void EnergyCalTool::doRefreshFromFiles()
 
       WMenuItem *item = m_specTypeMenu->addItem( WString::tr(spec_type_labels[i]), std::move(detMenuDivOwner), ContentLoading::Eager );
       //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-      item->clicked().connect( [item](){ item->select(); } );
+      item->clicked().connect( item, [item](){ item->select(); } );
       
       m_detectorMenu[i]->itemSelected().connect( this, &EnergyCalTool::updateFitButtonStatus );
     }//for( int i = 0; i < 3; ++i )
@@ -4907,7 +4907,7 @@ void EnergyCalTool::doRefreshFromFiles()
           EnergyCalImp::CalDisplay *calcontent = calcontentOwner.get();
           item = detMenu->addItem( displayname, std::move(calcontentOwner), ContentLoading::Eager );
           //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-          item->clicked().connect( [item](){ item->select(); } );
+          item->clicked().connect( item, [item](){ item->select(); } );
 
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
           calcontent->setFitButtonEnabled( canFitCeofs );

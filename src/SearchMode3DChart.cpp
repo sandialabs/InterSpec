@@ -121,8 +121,8 @@ void SearchMode3DChart::init()
   WCheckBox *logScaleCheckBox = new WCheckBox( "Log Scale", controlsDiv );
   logScaleCheckBox->addStyleClass( "GridFirstRow GridFithCol" );
   logScaleCheckBox->setChecked( false );
-  logScaleCheckBox->checked().connect( [this](){ setLogZ( true ); } );
-  logScaleCheckBox->unChecked().connect( [this](){ setLogZ( false ); } );
+  logScaleCheckBox->checked().connect( this, [this](){ setLogZ( true ); } );
+  logScaleCheckBox->unChecked().connect( this, [this](){ setLogZ( false ); } );
   */
   
   //Creates a editable textbox that allows users to input the minimum energy they are interested in
@@ -132,7 +132,7 @@ void SearchMode3DChart::init()
   m_inputMinEnergy->addStyleClass( "GridFirstRow GridSecondCol" );
   m_inputMinEnergy->setSpinnerHidden( true );
   label->setBuddy( m_inputMinEnergy );
-  m_inputMinEnergy->valueChanged().connect( [this](){ updateRange(); } );
+  m_inputMinEnergy->valueChanged().connect( this, [this](){ updateRange(); } );
 
   //Creates a editable textbox that allows users to input the maximum energy they are interested in
   label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-max-energy") );
@@ -141,7 +141,7 @@ void SearchMode3DChart::init()
   m_inputMaxEnergy->addStyleClass( "GridFirstRow GridFourthCol" );
   m_inputMaxEnergy->setSpinnerHidden( true );
   label->setBuddy( m_inputMaxEnergy );
-  m_inputMaxEnergy->valueChanged().connect( [this](){ updateRange(); } );
+  m_inputMaxEnergy->valueChanged().connect( this, [this](){ updateRange(); } );
 
   //Creates a editable textbox that allows users to input the minimum energy they are interested in
   label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-min-time") );
@@ -150,7 +150,7 @@ void SearchMode3DChart::init()
   m_inputMinTime->addStyleClass( "GridSecondRow GridSecondCol" );
   m_inputMinTime->setSpinnerHidden( true );
   label->setBuddy( m_inputMinTime );
-  m_inputMinTime->valueChanged().connect( [this](){ updateRange(); } );
+  m_inputMinTime->valueChanged().connect( this, [this](){ updateRange(); } );
 
   //Creates a editable textbox that allows users to input the maximum energy they are interested in
   label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-max-time") );
@@ -159,7 +159,7 @@ void SearchMode3DChart::init()
   m_inputMaxTime->addStyleClass( "GridSecondRow GridFourthCol" );
   m_inputMaxTime->setSpinnerHidden( true );
   label->setBuddy( m_inputMaxTime );
-  m_inputMaxTime->valueChanged().connect( [this](){ updateRange(); } );
+  m_inputMaxTime->valueChanged().connect( this, [this](){ updateRange(); } );
 
   WText *spacer = controlsDiv->addNew<WText>( "&nbsp;" );
   spacer->addStyleClass( "GridFirstRow GridFifthCol" );

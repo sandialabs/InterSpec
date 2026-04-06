@@ -278,7 +278,7 @@ m_chart( nullptr )
   closeButton->clicked().connect( this, &AuxWindow::hide );
   WPushButton *doAdd = footer()->addNew<WPushButton>( WString::tr("Add") );
   
-  doAdd->clicked().connect( [this](){
+  doAdd->clicked().connect( this, [this](){
     UndoRedoManager::PeakModelChange peak_undo_creator;
     m_viewer->addPeak( *m_candidatePeak, false, SpecUtils::SpectrumType::Foreground );
     this->hide();

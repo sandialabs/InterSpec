@@ -643,7 +643,7 @@ SimpleActivityCalcWindow::SimpleActivityCalcWindow( Wt::WSuggestionPopup *materi
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
-  qr_btn->clicked().connect( [this](){
+  qr_btn->clicked().connect( this, [this](){
     try
     {
       const string url = "interspec://simple-activity/?" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());
@@ -1634,7 +1634,7 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         
         WPushButton *okay_btn = dialog->addButton( WString::tr("Yes") );
         WPushButton *no_btn = dialog->addButton( WString::tr("No") );
-        okay_btn->clicked().connect( [this, background_peak](){ setFitBackgroundPeak( background_peak ); } );
+        okay_btn->clicked().connect( this, [this, background_peak](){ setFitBackgroundPeak( background_peak ); } );
         no_btn->clicked().connect( m_backgroundSubtractCheck, &WCheckBox::setUnChecked );
       }catch( std::exception &e )
       {

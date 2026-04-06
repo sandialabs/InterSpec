@@ -314,12 +314,12 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
 
   m_edit->setTextSize( 7 );
 
-  m_edit->enterPressed().connect( [parent, this](){ parent->doCloseEditor( this, true, false ); } );
-  m_edit->escapePressed().connect( [parent, this](){ parent->doCloseEditor( this, false, false ); } );
+  m_edit->enterPressed().connect( parent, [parent, this](){ parent->doCloseEditor( this, true, false ); } );
+  m_edit->escapePressed().connect( parent, [parent, this](){ parent->doCloseEditor( this, false, false ); } );
   m_edit->escapePressed().preventPropagation();
 
   if( closeOnBlur )
-    m_edit->blurred().connect( [this](){ handleBlur(); } );
+    m_edit->blurred().connect( this, [this](){ handleBlur(); } );
 
   if( flags.test( ViewItemRenderFlag::Focused ) )
     m_edit->setFocus();

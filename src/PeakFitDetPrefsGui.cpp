@@ -152,10 +152,10 @@ void PeakFitDetPrefsGui::init()
   m_detTypeCombo->addItem( WString::tr( "pfdpg-det-hpge" ));       // 5 => High
   m_detTypeCombo->addItem( WString::tr( "pfdpg-det-unknown" ));    // 6 => Unknown
   m_detTypeCombo->setCurrentIndex( 6);
-  m_detTypeCombo->activated().connect( std::bind( [this](){
+  m_detTypeCombo->activated().connect( this, [this](){
     if( !m_programmaticUpdate )
       userChangedValue();
-  }));
+  } );
 
 
   // FWHM method combo
@@ -168,7 +168,7 @@ void PeakFitDetPrefsGui::init()
   m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-det" ));         // 1 => DetFwhm
   m_fwhmMethodCombo->addItem( WString::tr( "pfdpg-fwhm-det-refine" ));  // 2 => DetPlusRefine
   m_fwhmMethodCombo->setCurrentIndex( 0);
-  m_fwhmMethodCombo->activated().connect( std::bind( [this](){
+  m_fwhmMethodCombo->activated().connect( this, [this](){
     if( m_programmaticUpdate )
       return;
 
@@ -204,23 +204,23 @@ void PeakFitDetPrefsGui::init()
       ? PeakFitDetPrefs::FwhmMethod::DetFwhm
       : PeakFitDetPrefs::FwhmMethod::DetPlusRefine;
 
-    cancelBtn->clicked().connect( std::bind( [this](){
+    cancelBtn->clicked().connect( this, [this](){
       m_programmaticUpdate = true;
       m_fwhmMethodCombo->setCurrentIndex( 0);
       m_programmaticUpdate = false;
-    }));
+    } );
 
-    fitBtn->clicked().connect( std::bind( [this, pending](){
+    fitBtn->clicked().connect( this, [this, pending](){
       m_pendingFwhmMethod = pending;
       m_programmaticUpdate = true;
       m_fwhmMethodCombo->setCurrentIndex( 0);
       m_programmaticUpdate = false;
       m_viewer->fwhmFromForegroundWindow( true);
-    }));
-  }));
+    } );
+  } );
 
   // When the DRF changes, check if we have a pending FWHM method to apply
-  m_viewer->detectorModified().connect( std::bind( [this]( std::shared_ptr<DetectorPeakResponse> ){
+  m_viewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> ){
     if( m_pendingFwhmMethod == PeakFitDetPrefs::FwhmMethod::Normal )
       return;
 
@@ -244,7 +244,7 @@ void PeakFitDetPrefsGui::init()
       // Still no FWHM - clear pending
       m_pendingFwhmMethod = PeakFitDetPrefs::FwhmMethod::Normal;
     }
-  }, std::placeholders::_1 ));
+  } );
 
 
   // Skew type combo
@@ -259,13 +259,13 @@ void PeakFitDetPrefsGui::init()
     m_skewTypeCombo->addItem( WString::fromUTF8( PeakDef::to_label( st ) ));
   }
   m_skewTypeCombo->setCurrentIndex( 0);
-  m_skewTypeCombo->activated().connect( std::bind( [this](){
+  m_skewTypeCombo->activated().connect( this, [this](){
     if( !m_programmaticUpdate )
     {
       updateSkewParamRows();
       userChangedValue();
     }
-  }));
+  } );
 
 
   // ROI-independent skew checkbox
@@ -273,7 +273,7 @@ void PeakFitDetPrefsGui::init()
   cbRow->addStyleClass( "PfdpgCheckRow");
   m_roiIndepCb = cbRow->addNew<WCheckBox>( WString::tr( "pfdpg-roi-indep-skew" ));
   m_roiIndepCb->setChecked( false);
-  m_roiIndepCb->changed().connect( std::bind( [this](){
+  m_roiIndepCb->changed().connect( this, [this](){
     if( !m_programmaticUpdate )
     {
       const bool hide = m_roiIndepCb->isChecked();
@@ -282,7 +282,7 @@ void PeakFitDetPrefsGui::init()
         m_fitSkewLink->setHidden( hide);
       userChangedValue();
     }
-  }));
+  } );
 
   // Skew parameters container (dynamic rows)
   m_skewParamsDiv = contentDiv->addNew<WContainerWidget>();
@@ -692,10 +692,10 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
       lowerSpin->addStyleClass( "PfdpgSpin");
       lowerSpin->setPlaceholderText( "fit");
       m_lowerSkewSpin[p] = lowerSpin;
-      lowerSpin->valueChanged().connect( std::bind( [this]( float ){
+      lowerSpin->valueChanged().connect( this, [this]( float ){
         if( !m_programmaticUpdate )
           userChangedValue();
-      }, std::placeholders::_1 ));
+      } );
 
       NativeFloatSpinBox *upperSpin = table->addNew<NativeFloatSpinBox>();
       upperSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
@@ -706,10 +706,10 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
       upperSpin->setPlaceholderText( "fit");
       
       m_upperSkewSpin[p] = upperSpin;
-      upperSpin->valueChanged().connect( std::bind( [this]( float ){
+      upperSpin->valueChanged().connect( this, [this]( float ){
         if( !m_programmaticUpdate )
           userChangedValue();
-      }, std::placeholders::_1 ));
+      } );
 
       if( !m_programmaticUpdate )
       {
@@ -737,10 +737,10 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
       valSpin->setPlaceholderText( "fit");
       
       m_lowerSkewSpin[p] = valSpin;
-      valSpin->valueChanged().connect( std::bind( [this]( float ){
+      valSpin->valueChanged().connect( this, [this]( float ){
         if( !m_programmaticUpdate )
           userChangedValue();
-      }, std::placeholders::_1 ));
+      } );
 
       if( !m_programmaticUpdate )
         valSpin->setValue( static_cast<float>(start_val));

@@ -217,10 +217,10 @@ void FitSkewParamsTool::initWidgets()
     m_skewTypeCombo->addItem( WString::fromUTF8( PeakDef::to_label( st ) ));
   }
   m_skewTypeCombo->setCurrentIndex( 0);
-  m_skewTypeCombo->activated().connect( std::bind( [this](){
+  m_skewTypeCombo->activated().connect( this, [this](){
     updateSkewParamRows();
     userEditedSkewValue();
-  }));
+  } );
 
   // Skew parameter rows container
   m_paramsDiv = controlsDiv->addNew<WContainerWidget>();
@@ -435,9 +435,9 @@ void FitSkewParamsTool::updateSkewParamRows()
       lowerSpin->addStyleClass( "FswSpin");
       lowerSpin->setValue( static_cast<float>( start_val ));
       m_lowerSpin[p] = lowerSpin;
-      lowerSpin->valueChanged().connect( std::bind( [this]( float ){
+      lowerSpin->valueChanged().connect( this, [this]( float ){
         userEditedSkewValue();
-      }, std::placeholders::_1 ));
+      } );
 
       // Upper spin
       NativeFloatSpinBox *upperSpin = table->addNew<NativeFloatSpinBox>();
@@ -447,9 +447,9 @@ void FitSkewParamsTool::updateSkewParamRows()
       upperSpin->addStyleClass( "FswSpin");
       upperSpin->setValue( static_cast<float>( start_val ));
       m_upperSpin[p] = upperSpin;
-      upperSpin->valueChanged().connect( std::bind( [this]( float ){
+      upperSpin->valueChanged().connect( this, [this]( float ){
         userEditedSkewValue();
-      }, std::placeholders::_1 ));
+      } );
 
       if( !tooltipText.empty() )
       {
@@ -469,9 +469,9 @@ void FitSkewParamsTool::updateSkewParamRows()
       valSpin->addStyleClass( hasEnergyDep ? "FswSpin FswSpinWide" : "FswSpin");
       valSpin->setValue( static_cast<float>( start_val ));
       m_lowerSpin[p] = valSpin;
-      valSpin->valueChanged().connect( std::bind( [this]( float ){
+      valSpin->valueChanged().connect( this, [this]( float ){
         userEditedSkewValue();
-      }, std::placeholders::_1 ));
+      } );
 
       if( !tooltipText.empty() )
       {
@@ -1071,17 +1071,17 @@ void FitSkewParamsTool::handleRightClick( double energy, double /*counts*/,
   {
     const PeakContinuum::OffsetType ot = static_cast<PeakContinuum::OffsetType>( t);
     WMenuItem *item = contMenu->addItem( WString::tr( PeakContinuum::offset_type_label_tr( ot ) ));
-    item->triggered().connect( std::bind( [this, t](){
+    item->triggered().connect( this, [this, t](){
       changeContinuumTypeNearEnergy( m_rightClickEnergy, t);
-    }));
+    } );
   }
   m_rightClickMenu->addMenu( WString::tr( "fsw-rclick-change-cont" ), std::move(contMenuOwned));
 
   // "Delete Peak" item
   WMenuItem *delItem = m_rightClickMenu->addItem( WString::tr( "fsw-rclick-delete-peak" ));
-  delItem->triggered().connect( std::bind( [this](){
+  delItem->triggered().connect( this, [this](){
     deletePeakNearEnergy( m_rightClickEnergy);
-  }));
+  } );
 
   m_rightClickMenu->popup( WPoint( pageX, pageY ));
 }//void handleRightClick(...)
@@ -1337,9 +1337,9 @@ FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
   m_acceptBtn->addStyleClass( "Wt-btn");
   m_acceptBtn->clicked().connect( viewer, &InterSpec::acceptFitSkewParamsWindow);
 
-  m_tool->resultUpdated().connect( std::bind( [this](){
+  m_tool->resultUpdated().connect( this, [this](){
     m_acceptBtn->setEnabled( m_tool->canAccept());
-  }));
+  } );
 
   resizeScaledWindow( 0.7, 0.7);
   centerWindow();

@@ -184,12 +184,12 @@ public:
     addField( m_algorithm_remarks, m_table, WString::tr("srria-remarks"), AlgorithmRemarks, 0 );
     
 #if( ENABLE_EDIT_RESULTS )
-    m_algorithm_name->changed().connect( [this](){ handleFieldUpdate( AlgorithmName ); } );
-    m_algorithm_version->changed().connect( [this](){ handleFieldUpdate( AlgorithmVersion ); } );
-    m_algorithm_creator->changed().connect( [this](){ handleFieldUpdate( AlgorithmCreator ); } );
-    m_algorithm_description->changed().connect( [this](){ handleFieldUpdate( AlgorithmDescription ); } );
-    m_algorithm_result_description->changed().connect( [this](){ handleFieldUpdate( AlgorithmResultDescription ); } );
-    m_algorithm_remarks->changed().connect( [this](){ handleFieldUpdate( AlgorithmRemarks ); } );
+    m_algorithm_name->changed().connect( this, [this](){ handleFieldUpdate( AlgorithmName ); } );
+    m_algorithm_version->changed().connect( this, [this](){ handleFieldUpdate( AlgorithmVersion ); } );
+    m_algorithm_creator->changed().connect( this, [this](){ handleFieldUpdate( AlgorithmCreator ); } );
+    m_algorithm_description->changed().connect( this, [this](){ handleFieldUpdate( AlgorithmDescription ); } );
+    m_algorithm_result_description->changed().connect( this, [this](){ handleFieldUpdate( AlgorithmResultDescription ); } );
+    m_algorithm_remarks->changed().connect( this, [this](){ handleFieldUpdate( AlgorithmRemarks ); } );
 #endif
   }//constructor
   

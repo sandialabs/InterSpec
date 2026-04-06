@@ -362,7 +362,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv()
   // Hook up the color theme callback to automatically update when the theme changes
   // This is a hopefully temporary workaround that right now, I think (but unverified) the JS expects the default
   //  peak color to be in the JSON - this needs to be checked on or updated for.
-  InterSpec::instance()->colorThemeChanged().connect( [this]( std::shared_ptr<const ColorTheme> theme ){ updateDefaultPeakColorForColorTheme( theme ); } );
+  InterSpec::instance()->colorThemeChanged().connect( this, [this]( std::shared_ptr<const ColorTheme> theme ){ updateDefaultPeakColorForColorTheme( theme ); } );
 
   //For development it may be useful to directly use the original JS/CSS files,
   //  but normally we should use the resources CMake will copy into
@@ -595,13 +595,13 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
   
   m_peakModel = model;
 
-  m_peakModel->dataChanged().connect(   [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
-  m_peakModel->rowsRemoved().connect(   [this]( Wt::WModelIndex, int, int ){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
-  m_peakModel->rowsInserted().connect(  [this]( Wt::WModelIndex, int, int ){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
-  m_peakModel->layoutChanged().connect( [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
-  m_peakModel->modelReset().connect(    [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
-  m_peakModel->backgroundPeaksChanged().connect( [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Background ); } );
-  m_peakModel->secondaryPeaksChanged().connect( [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::SecondForeground ); } );
+  m_peakModel->dataChanged().connect(   this, [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->rowsRemoved().connect(   this, [this]( Wt::WModelIndex, int, int ){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->rowsInserted().connect(  this, [this]( Wt::WModelIndex, int, int ){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->layoutChanged().connect( this, [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->modelReset().connect(    this, [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
+  m_peakModel->backgroundPeaksChanged().connect( this, [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Background ); } );
+  m_peakModel->secondaryPeaksChanged().connect( this, [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::SecondForeground ); } );
 }//void setPeakModel( PeakModel *model );
 
 
@@ -3357,15 +3357,15 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
             }
             
             
-            item->triggered().connect( std::bind( [=](){
+            item->triggered().connect( item, [=](){
               menu->setHidden( true );
-              
+
               if( i == npeakstry[best_choice] )
               {
                 //m_peakModel->addPeaks( shown_peaks );
                 return;
               }
-              
+
               try
               {
                 peakModel->removePeaks( added_peaks );
@@ -3374,10 +3374,10 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
                 cerr << "Unexpected error removing peaks - must not be a valid peak any more...: "
                      << e.what() << endl;
               }
-                
+
               if( i > 0 )
                 spectrum->dragCreateRoiCallback( lower_energy, upper_energy, static_cast<int>(i), true, window_xpx, window_ypx );
-            }) );
+            } );
           }//for( size_t i = 0; i < (shown_peaks.size() + 3); ++i )
           
           if( selecteditem )

@@ -203,7 +203,7 @@ namespace HelpSystem
       m_tree->setSelectionMode( Wt::SelectionMode::Single );
       m_tree->setMargin( WLength(0,WLength::Unit::Pixel) );
       m_tree->addStyleClass( "helpTree" );
-      m_tree->itemSelectionChanged().connect( [this](){ selectHelpToShow(); } );
+      m_tree->itemSelectionChanged().connect( this, [this](){ selectHelpToShow(); } );
       // We set m_tree here, so initialize() can use it
       // (initialize() will be called below after searchText is set up)
       initialize();
@@ -247,7 +247,7 @@ namespace HelpSystem
         ancor->setText( WString::tr("hw-welcome-link") );
         ancor->setStyleClass( "LinkBtn" );
         ancor->setFloatSide( Wt::Side::Right );
-        ancor->clicked().connect( [viewer](){ viewer->showWelcomeDialog( true ); } );
+        ancor->clicked().connect( viewer, [viewer](){ viewer->showWelcomeDialog( true ); } );
       }
       else
       {
@@ -255,14 +255,14 @@ namespace HelpSystem
         WAnchor *anchor = bottom->addNew<WAnchor>( WLink(), WString::tr("hw-tutorials-link") );
         anchor->setFloatSide( Wt::Side::Left );
         anchor->addStyleClass( "InfoLink" );
-        anchor->clicked().connect( [this](){ hide(); } );
-        anchor->clicked().connect( [viewer](){ viewer->showWelcomeDialog( true ); } );
+        anchor->clicked().connect( this, [this](){ hide(); } );
+        anchor->clicked().connect( viewer, [viewer](){ viewer->showWelcomeDialog( true ); } );
       }
     }//if( app && app->viewer() )
 
 
     WPushButton *ok = addCloseButtonToFooter();
-    ok->clicked().connect( [this](){ hide(); } );
+    ok->clicked().connect( this, [this](){ hide(); } );
     
     if( !preselect.empty() || (app && app->isMobile()) )  //Keep keyboard from popping up
       ok->setFocus();

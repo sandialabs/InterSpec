@@ -1860,11 +1860,11 @@ void SpectrumChart::setPeakModel( PeakModel *model )
   //Note that if you first remove rows from m_peakModel, then add some, then
   //  modify some data, all within one server callback, this will all only
   //  cause one update to be pushed to the user
-  m_peakModel->dataChanged().connect( [this]( const Wt::WModelIndex &a1, const Wt::WModelIndex &a2 ){
+  m_peakModel->dataChanged().connect( this, [this]( const Wt::WModelIndex &a1, const Wt::WModelIndex &a2 ){
     peakModelDataChanged( a1, a2);
   });
-  m_peakModel->rowsRemoved().connect( [this]( const Wt::WModelIndex &, int, int ){ update(); } );
-  m_peakModel->rowsInserted().connect( [this]( const Wt::WModelIndex &, int, int ){ update(); } );
+  m_peakModel->rowsRemoved().connect( this, [this]( const Wt::WModelIndex &, int, int ){ update(); } );
+  m_peakModel->rowsInserted().connect( this, [this]( const Wt::WModelIndex &, int, int ){ update(); } );
 }//void setPeakModel( PeakModel *model )
 
 

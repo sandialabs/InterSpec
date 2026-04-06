@@ -421,7 +421,7 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
     
   WPushButton *saveAs = window->footer()->addNew<WPushButton>( WString::tr("mffdw-use-fwhm-btn") );
   saveAs->clicked().connect( m_tool, &MakeFwhmForDrf::setToDrf );
-  m_tool->validationChanged().connect( [saveAs]( bool valid ){ saveAs->setEnabled( valid ); } );
+  m_tool->validationChanged().connect( saveAs, [saveAs]( bool valid ){ saveAs->setEnabled( valid ); } );
   // Maybe
   //m_tool->validationChanged().connect( std::bind([m_tool,saveAs](){
   //  saveAs->setEnabled( m_tool->isValidFwhm() );
@@ -586,7 +586,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
       sb->setText( "" );
       sb->setSpinnerHidden( true );
       sb->setWidth( 75 );
-      sb->valueChanged().connect( [this, i](){ coefficientManuallyChanged(i); } );
+      sb->valueChanged().connect( this, [this, i](){ coefficientManuallyChanged(i); } );
       sb->disable();
       parDiv->setHidden( (i > m_sqrtEqnOrder->currentIndex()) );
       m_parEdits.push_back( sb );

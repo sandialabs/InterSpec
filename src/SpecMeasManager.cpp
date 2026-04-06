@@ -385,9 +385,9 @@ namespace
         secondary->setInline( false );
         group->addButton( secondary, toint(SpectrumType::SecondForeground) );
         
-        group->checkedChanged().connect( std::bind( [this,group](){
+        group->checkedChanged().connect( this, [this,group](){
           m_type = typeFromInt( group->checkedId() );
-        } ) );
+        } );
       }//if( !noForeground )
 
     
@@ -423,7 +423,7 @@ namespace
       cancel->clicked().connect( this, &FileUploadDialog::userCanceled );
       m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
       m_fileUpload->uploaded().connect( this, &FileUploadDialog::finishUpload );
-      m_fileUpload->fileTooLarge().connect( [this]( const ::int64_t size_tried ){ toLarge( size_tried ); } );
+      m_fileUpload->fileTooLarge().connect( this, [this]( const ::int64_t size_tried ){ toLarge( size_tried ); } );
       m_specChangedConection = viewer->displayedSpectrumChanged().connect( this, &AuxWindow::emitReject );
       
       finished().connect( this, &FileUploadDialog::userCanceled );
@@ -508,9 +508,9 @@ void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls, const si
   if( (index + 1) < urls.size() )
   {
     WPushButton *btn = dialog->addButton( WString::tr("smm-next-qr") );
-    btn->clicked().connect( std::bind([=](){
+    btn->clicked().connect( btn, [=](){
       displayQrDialog( urls, index + 1, type );
-    }) );
+    } );
   }//if( (index + 1) < urls.size() )
 }//void displayQr( vector<QRSpectrum::QrCodeEncodedSpec> urls )
 
@@ -1176,7 +1176,7 @@ protected:
     
     SimpleDialog *dialog = SimpleDialog::make( title, content );
     WPushButton *btn = dialog->addButton( WString::tr("Yes") );
-    btn->clicked().connect( [this, cleaned_up_uris](){ apply_uris( cleaned_up_uris ); } );
+    btn->clicked().connect( this, [this, cleaned_up_uris](){ apply_uris( cleaned_up_uris ); } );
     btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
     
     btn = dialog->addButton( WString::tr("No") );
@@ -1316,7 +1316,7 @@ public:
     }//if( m_autoQrCodeSearch ) / else
     
     
-    m_qrDecodeSignal.connect( [this]( int num_qr, std::string b64_value ){ qr_check_result( num_qr, b64_value ); } );
+    m_qrDecodeSignal.connect( this, [this]( int num_qr, std::string b64_value ){ qr_check_result( num_qr, b64_value ); } );
     
     // We will draw the image to a canvas, and use that
     if( m_autoQrCodeSearch )
@@ -1330,7 +1330,7 @@ public:
       // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
       //  if image file is invalid, or a HEIC on Windows.
       m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ", 5); }" );
-      m_image->imageLoaded().connect( [this](){ m_qrCodeStatusTxt->setText( WString("Looking for QR-codes.") ); } );
+      m_image->imageLoaded().connect( this, [this](){ m_qrCodeStatusTxt->setText( WString("Looking for QR-codes.") ); } );
     }else
     {
       m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_from_canvas );
@@ -1383,22 +1383,22 @@ protected:
     auto fileUploadOwned = std::make_unique<WFileUpload>();
     WFileUpload *m_fileUpload = fileUploadOwned.get();
     m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
-    m_fileUpload->uploaded().connect( [this, m_fileUpload](){ m_manager->dataUploaded2( m_fileUpload, SpectrumType::Foreground ); } );
-    m_fileUpload->fileTooLarge().connect( []( const ::int64_t size_tried ){ SpecMeasManager::fileTooLarge( size_tried ); } );
+    m_fileUpload->uploaded().connect( this, [this, m_fileUpload](){ m_manager->dataUploaded2( m_fileUpload, SpectrumType::Foreground ); } );
+    m_fileUpload->fileTooLarge().connect( this, []( const ::int64_t size_tried ){ SpecMeasManager::fileTooLarge( size_tried ); } );
 
     auto uploadText2 = std::make_unique<WLabel>( WString::tr("background-label") );
     auto fileUpload2Owned = std::make_unique<WFileUpload>();
     WFileUpload *m_fileUpload2 = fileUpload2Owned.get();
     m_fileUpload2->changed().connect( m_fileUpload2, &Wt::WFileUpload::upload );
-    m_fileUpload2->uploaded().connect( [this, m_fileUpload2](){ m_manager->dataUploaded2( m_fileUpload2, SpectrumType::Background ); } );
-    m_fileUpload2->fileTooLarge().connect( []( const ::int64_t size_tried ){ SpecMeasManager::fileTooLarge( size_tried ); } );
+    m_fileUpload2->uploaded().connect( this, [this, m_fileUpload2](){ m_manager->dataUploaded2( m_fileUpload2, SpectrumType::Background ); } );
+    m_fileUpload2->fileTooLarge().connect( this, []( const ::int64_t size_tried ){ SpecMeasManager::fileTooLarge( size_tried ); } );
 
     auto uploadText3 = std::make_unique<WLabel>( WString::tr("secondary-label") );
     auto fileUpload3Owned = std::make_unique<WFileUpload>();
     WFileUpload *m_fileUpload3 = fileUpload3Owned.get();
     m_fileUpload3->changed().connect( m_fileUpload3, &Wt::WFileUpload::upload );
-    m_fileUpload3->uploaded().connect( [this, m_fileUpload3](){ m_manager->dataUploaded2( m_fileUpload3, SpectrumType::SecondForeground ); } );
-    m_fileUpload3->fileTooLarge().connect( []( const ::int64_t size_tried ){ SpecMeasManager::fileTooLarge( size_tried ); } );
+    m_fileUpload3->uploaded().connect( this, [this, m_fileUpload3](){ m_manager->dataUploaded2( m_fileUpload3, SpectrumType::SecondForeground ); } );
+    m_fileUpload3->fileTooLarge().connect( this, []( const ::int64_t size_tried ){ SpecMeasManager::fileTooLarge( size_tried ); } );
 
     layout->addWidget( std::move(uploadText), 0, 0 );
     layout->addWidget( std::move(fileUploadOwned), 0, 1 );
@@ -1410,12 +1410,12 @@ protected:
     
     
     WPushButton *cancel = addCloseButtonToFooter();
-    cancel->clicked().connect( [this](){ hide(); } );
+    cancel->clicked().connect( this, [this](){ hide(); } );
 
     layout->setRowStretch( 3, 1 );
 
     rejectWhenEscapePressed();
-    finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+    finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
     
     
     rejectWhenEscapePressed();
@@ -1481,7 +1481,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_treeView = new RowStretchTreeView();
   m_fileModel = std::make_shared<SpectraFileModel>();
   m_treeView->setModel( m_fileModel );
-  m_treeView->selectionChanged().connect( [this](){ selectionChanged(); } );
+  m_treeView->selectionChanged().connect( this, [this](){ selectionChanged(); } );
 
   // TODO: (20241028) it doesn't appear necessary to show and then delete the spectrum manager window - but leaving until after v1.0.13 release
   startSpectrumManager(); //initializes
@@ -1489,25 +1489,25 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     
   m_sql = viewer->sql();
 
-  m_foregroundDragNDrop->fileDrop().connect( [this]( const std::string &name, const std::string &spoolName ){
+  m_foregroundDragNDrop->fileDrop().connect( this, [this]( const std::string &name, const std::string &spoolName ){
     handleFileDrop( name, spoolName, SpectrumType::Foreground );
   } );
-  m_secondForegroundDragNDrop->fileDrop().connect( [this]( const std::string &name, const std::string &spoolName ){
+  m_secondForegroundDragNDrop->fileDrop().connect( this, [this]( const std::string &name, const std::string &spoolName ){
     handleFileDrop( name, spoolName, SpectrumType::SecondForeground );
   } );
-  m_backgroundDragNDrop->fileDrop().connect( [this]( const std::string &name, const std::string &spoolName ){
+  m_backgroundDragNDrop->fileDrop().connect( this, [this]( const std::string &name, const std::string &spoolName ){
     handleFileDrop( name, spoolName, SpectrumType::Background );
   } );
 
-  m_foregroundDragNDrop->dataReceived().connect( [this]( uint64_t num_bytes_recieved, uint64_t num_bytes_total ){
+  m_foregroundDragNDrop->dataReceived().connect( this, [this]( uint64_t num_bytes_recieved, uint64_t num_bytes_total ){
     handleDataRecievedStatus( num_bytes_recieved, num_bytes_total, SpectrumType::Foreground );
   } );
 
-  m_secondForegroundDragNDrop->dataReceived().connect( [this]( uint64_t num_bytes_recieved, uint64_t num_bytes_total ){
+  m_secondForegroundDragNDrop->dataReceived().connect( this, [this]( uint64_t num_bytes_recieved, uint64_t num_bytes_total ){
     handleDataRecievedStatus( num_bytes_recieved, num_bytes_total, SpectrumType::SecondForeground );
   } );
 
-  m_backgroundDragNDrop->dataReceived().connect( [this]( uint64_t num_bytes_recieved, uint64_t num_bytes_total ){
+  m_backgroundDragNDrop->dataReceived().connect( this, [this]( uint64_t num_bytes_recieved, uint64_t num_bytes_total ){
     handleDataRecievedStatus( num_bytes_recieved, num_bytes_total, SpectrumType::Background );
   } );
 
@@ -1542,9 +1542,9 @@ void SpecMeasManager::startSpectrumManager()
     WContainerWidget *title = m_spectrumManagerWindow->titleBar();
     title->addStyleClass( "SpectraFileManagerHeader" );
     
-    m_spectrumManagerWindow->finished().connect( [this](){ displayIsBeingHidden(); } );
-    // collapsed().connect( [this](){ displayIsBeingHidden(); } );
-    m_spectrumManagerWindow->expanded().connect( [this](){ displayIsBeingShown(); } );
+    m_spectrumManagerWindow->finished().connect( this, [this](){ displayIsBeingHidden(); } );
+    // collapsed().connect( this, [this](){ displayIsBeingHidden(); } );
+    m_spectrumManagerWindow->expanded().connect( this, [this](){ displayIsBeingShown(); } );
     
     auto uploadDivOwned = std::make_unique<WContainerWidget>();
     WContainerWidget *uploadDiv = uploadDivOwned.get();
@@ -1561,7 +1561,7 @@ void SpecMeasManager::startSpectrumManager()
 
 #if( USE_DB_TO_STORE_SPECTRA )
     Wt::WPushButton* importButton = uploadDiv->addNew<Wt::WPushButton>( WString::tr("app-mi-file-prev") );
-    importButton->clicked().connect( [this](){ browsePrevSpectraAndStatesDb(); } );
+    importButton->clicked().connect( this, [this](){ browsePrevSpectraAndStatesDb(); } );
     HelpSystem::attachToolTipOn(importButton, WString::tr("app-mi-tt-file-prev"),
                                 showToolTips, HelpSystem::ToolTipPosition::Bottom );
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
@@ -1597,7 +1597,7 @@ void SpecMeasManager::startSpectrumManager()
     
     // Make it so it can't be totally deformed
     //  setMinimumSize( 500, 400 );
-    m_spectrumManagerWindow->finished().connect( [this](){ deleteSpectrumManager(); } );
+    m_spectrumManagerWindow->finished().connect( this, [this](){ deleteSpectrumManager(); } );
     m_spectrumManagerWindow->rejectWhenEscapePressed();
     m_spectrumManagerWindow->resizeWindow( 800, 550 );
     m_spectrumManagerWindow->centerWindow();
@@ -1942,19 +1942,19 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     
     window->rejectWhenEscapePressed();
     Wt::WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"),true);
-    closeButton->clicked().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
-    window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+    closeButton->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
+    window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
     WPushButton *openButton = window->footer()->addNew<WPushButton>( WString::tr("smm-zip-display-btn") );
     openButton->disable();
     //selection->activated().connect( openButton, &WPushButton::enable );
     table->clicked().connect( openButton, &WPushButton::enable );
-    table->doubleClicked().connect( [this, spoolName, group, table, window]( const WModelIndex &index ){
+    table->doubleClicked().connect( this, [this, spoolName, group, table, window]( const WModelIndex &index ){
       extractAndOpenFromZip( spoolName, group.get(), table, window, index );
     } );
 
-    //openButton->clicked().connect( [this, spoolName, group, table, window](){ extractAndOpenFromZip( spoolName, type, selection, window ); } );
-    openButton->clicked().connect( [this, spoolName, group, table, window](){ extractAndOpenFromZip( spoolName, group.get(), table, window, WModelIndex() ); } );
+    //openButton->clicked().connect( this, [this, spoolName, group, table, window](){ extractAndOpenFromZip( spoolName, type, selection, window ); } );
+    openButton->clicked().connect( this, [this, spoolName, group, table, window](){ extractAndOpenFromZip( spoolName, group.get(), table, window, WModelIndex() ); } );
     
     window->centerWindow();
     window->disableCollapse();
@@ -2095,7 +2095,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   m_nonSpecFileDialog = dialog;
   
   // Hook up to finished() to clear m_nonSpecFileDialog when dialog closes
-  m_nonSpecFileDialog->finished().connect( [dialog]( Wt::DialogCode ){
+  m_nonSpecFileDialog->finished().connect( dialog, [dialog]( Wt::DialogCode ){
     InterSpec *interspec = InterSpec::instance();
     SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
     if( manager && manager->m_nonSpecFileDialog.get() == dialog )
@@ -2224,12 +2224,12 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         continue;
       }
       
-      btn->clicked().connect( std::bind([=](){
+      btn->clicked().connect( btn, [=](){
         // The `undo` call wont do anything, since it is currently bound to a now deleted dialog,
         //  but leaving in in case we upgrade things a bit in the future to have the dialog tracked
         //  by SpecMeasManager
         undoRedo->addUndoRedoStep( reOpenDialog, closeDialog, "Close non-spectrum file dialog." );
-      }) );
+      } );
     }//for( WWidget *w : btns )
   };//add_undo_redo
   
@@ -3167,7 +3167,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   
   dialog->addButton( WString::tr("No") ); //no further action necessary if user clicks no; dialog will close
   closeButton->setText( WString::tr("Yes") );
-  closeButton->clicked().connect( std::bind( applyLambda ) );
+  closeButton->clicked().connect( this, applyLambda );
   
   return true;
 }//void handleCALpFile( std::istream &input )
@@ -3527,12 +3527,12 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     }
   };//update_state lambda
   
-  geom_combo->activated().connect( std::bind(update_state) );
-  distance_edit->textInput().connect( std::bind(update_state) );
-  diameter_edit->textInput().connect( std::bind(update_state) );
-  
-  
-  accept->clicked().connect( std::bind( [=](){
+  geom_combo->activated().connect( this, update_state );
+  distance_edit->textInput().connect( this, update_state );
+  diameter_edit->textInput().connect( this, update_state );
+
+
+  accept->clicked().connect( this, [=](){
     const int index = geom_combo->currentIndex();
     const auto pos = index_to_geom.find(index);
     assert( pos != end(index_to_geom) );
@@ -3614,8 +3614,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       //  to the original detector.
       undoManager->addUndoRedoStep( undo, redo, is_outx ? "Change to ANGLE DRF" : "Change to ECC DRF" );
     }
-  }) );
-    
+  } );
+
   return true;
 }//bool handleEccFile( std::istream &input, SimpleDialog *dialog )
 
@@ -3800,7 +3800,7 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
   // Now that diameter_edit and update_field_visibility exist, connect the Detector.dat upload signal
   if( is_gadras && det_dat_upload )
   {
-    det_dat_upload->uploaded().connect( std::bind( [=](){
+    det_dat_upload->uploaded().connect( this, [=](){
       const std::string spool = det_dat_upload->spoolFileName();
       if( spool.empty() )
         return;
@@ -3839,7 +3839,7 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
         if( setback_text )
           setback_text->setText( "" );
       }
-    }) );
+    } );
   }//if( is_gadras && det_dat_upload )
 
   auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
@@ -3950,12 +3950,12 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
     }
   };//update_state lambda
 
-  geom_combo->activated().connect( std::bind( update_state ) );
-  distance_edit->textInput().connect( std::bind( update_state ) );
-  diameter_edit->textInput().connect( std::bind( update_state ) );
+  geom_combo->activated().connect( this, update_state );
+  distance_edit->textInput().connect( this, update_state );
+  diameter_edit->textInput().connect( this, update_state );
 
 
-  accept->clicked().connect( std::bind( [=](){
+  accept->clicked().connect( this, [=](){
     const int index = geom_combo->currentIndex();
     const auto pos = index_to_geom.find( index );
     assert( pos != end( index_to_geom ) );
@@ -4017,7 +4017,7 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
 
       undoManager->addUndoRedoStep( undo, redo, "Change to efficiency CSV DRF" );
     }
-  }) );
+  } );
 
   return true;
 }//bool handleEfficiencyCsvFile( std::istream &input, SimpleDialog *dialog )
@@ -4071,11 +4071,11 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     dialog->footer()->clear();
     dialog->addButton( WString::tr("Cancel") );
     WPushButton *btn = dialog->addButton( WString::tr("Yes") );
-    btn->clicked().connect( std::bind([this,data,test_state](){
+    btn->clicked().connect( this, [this,data,test_state](){
       InterSpec *viewer = InterSpec::instance();
       if( !viewer || !data )
         return;
-      
+
       try
       {
         ShieldingSourceDisplay *display = viewer->shieldingSourceFit();
@@ -4085,7 +4085,7 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
       {
         passMessage( WString::tr("smm-err-act-shield").arg(e.what()), WarningWidget::WarningMsgHigh );
       }
-    }) );
+    } );
   }catch( std::exception &e )
   {
     input.seekg( start_pos );
@@ -4138,10 +4138,10 @@ bool SpecMeasManager::handleSourceLibFile( std::istream &input, SimpleDialog *di
     };
     
     WPushButton *btn = dialog->addButton( WString::tr("Yes") );
-    btn->clicked().connect( std::bind([setter](){ setter(true); }) );
-    
+    btn->clicked().connect( this, [setter](){ setter(true); } );
+
     btn = dialog->addButton( WString::tr("No") );
-    btn->clicked().connect( std::bind([setter](){ setter(false); }) );
+    btn->clicked().connect( this, [setter](){ setter(false); } );
     
     dialog->addButton( WString::tr("Cancel") );
   }catch( std::exception &e )
@@ -5109,7 +5109,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
         btn_txt = Wt::Utils::htmlEncode( btn_txt );
           
         WPushButton *button = dialog->addButton( btn_txt );
-        button->clicked().connect( [this, dets, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+        button->clicked().connect( this, [this, dets, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
           selectVirtualDetectorChoice( dets, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
         } );
       };//add_button
@@ -5146,17 +5146,17 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
                                             WString::tr("smm-derived-window-txt") );
     WPushButton *button = dialog->addButton( WString::tr("smm-derived-all") );
     
-    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+    button->clicked().connect( this, [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
       selectDerivedDataChoice( DerivedDataToKeep::All, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
     } );
 
     button = dialog->addButton( WString::tr("smm-derived-raw") );
-    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+    button->clicked().connect( this, [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
       selectDerivedDataChoice( DerivedDataToKeep::RawOnly, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
     } );
 
     button = dialog->addButton( WString::tr("smm-derived-derived") );
-    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+    button->clicked().connect( this, [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
       selectDerivedDataChoice( DerivedDataToKeep::DerivedOnly, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
     } );
     
@@ -5191,8 +5191,8 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     WPushButton *button = cell->addNew<WPushButton>( WString::tr("smm-multiple-binnings-keep-all-btn") );
     button->setWidth( WLength(95.0,WLength::Unit::Percentage) );
   
-    button->clicked().connect( [dialog](){ dialog->reject(); } );
-    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+    button->clicked().connect( dialog, [dialog](){ dialog->reject(); } );
+    button->clicked().connect( this, [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
       selectEnergyBinning( string("Keep All"), header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
     } );
 
@@ -5210,10 +5210,10 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
       button = cell->addNew<WPushButton>( label );
       button->setWidth( WLength(95.0,WLength::Unit::Percentage) );
 
-      button->clicked().connect( [dialog](){ dialog->reject(); } );
+      button->clicked().connect( dialog, [dialog](){ dialog->reject(); } );
       //Note, using *iter instead of label below.
       const string cal_name = *iter;
-      button->clicked().connect( [this, cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+      button->clicked().connect( this, [this, cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
         selectEnergyBinning( cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
       } );
     }//for( loop over calibrations )
@@ -5225,7 +5225,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     msg->addStyleClass( "content" );
 
     WPushButton *button = dialog->addButton( WString::tr("smm-multiple-binnings-keep-all-btn") );
-    button->clicked().connect( [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+    button->clicked().connect( this, [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
       selectEnergyBinning( string("Keep All"), header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
     } );
 
@@ -5237,7 +5237,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
 
       button = dialog->addButton( label );
       const string cal_name = *iter;
-      button->clicked().connect( [this, cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
+      button->clicked().connect( this, [this, cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
         selectEnergyBinning( cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
       } );
     }//for( loop over calibrations )
@@ -6416,11 +6416,11 @@ WContainerWidget *SpecMeasManager::createButtonBar()
     auto setPopupOwned = std::make_unique<WPopupMenu>();
     WPopupMenu *setPopup = setPopupOwned.get();
     m_setAsForeground = setPopup->addItem( WString::tr("Foreground") );
-    m_setAsForeground->triggered().connect( [this](){ loadSelected( SpecUtils::SpectrumType::Foreground, true ); } );
+    m_setAsForeground->triggered().connect( this, [this](){ loadSelected( SpecUtils::SpectrumType::Foreground, true ); } );
     m_setAsBackground = setPopup->addItem( WString::tr("Background") );
-    m_setAsBackground->triggered().connect( [this](){ loadSelected( SpecUtils::SpectrumType::Background, true ); } );
+    m_setAsBackground->triggered().connect( this, [this](){ loadSelected( SpecUtils::SpectrumType::Background, true ); } );
     m_setAsSecForeground = setPopup->addItem( WString::tr("second-foreground") );
-    m_setAsSecForeground->triggered().connect( [this](){ loadSelected( SpecUtils::SpectrumType::SecondForeground, true ); } );
+    m_setAsSecForeground->triggered().connect( this, [this](){ loadSelected( SpecUtils::SpectrumType::SecondForeground, true ); } );
     m_setButton->setMenu( std::move(setPopupOwned) );
   }
   m_setButton->hide();
@@ -6432,21 +6432,21 @@ WContainerWidget *SpecMeasManager::createButtonBar()
   m_combineToNewFileButton->setToolTip( WString::tr("smm-tt-to-new-file") );
   m_combineToNewFileButton->addStyleClass("InvertInDark");
   m_combineToNewFileButton->setIcon( "InterSpec_resources/images/arrow_join.svg" );
-  m_combineToNewFileButton->clicked().connect( [this](){ newFileFromSelection(); } );
+  m_combineToNewFileButton->clicked().connect( this, [this](){ newFileFromSelection(); } );
   m_combineToNewFileButton->hide();
 
   m_subsetOfMeasToNewFileButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-as-new-file") );
   m_subsetOfMeasToNewFileButton->setToolTip( WString::tr("smm-tt-as-new-file") );
   m_subsetOfMeasToNewFileButton->addStyleClass("InvertInDark");
   m_subsetOfMeasToNewFileButton->setIcon( "InterSpec_resources/images/partial.svg" );
-  m_subsetOfMeasToNewFileButton->clicked().connect( [this](){ newFileFromSelection(); } );
+  m_subsetOfMeasToNewFileButton->clicked().connect( this, [this](){ newFileFromSelection(); } );
   m_subsetOfMeasToNewFileButton->hide();
 
   m_sumSpectraButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-sum-spectra") );
   m_sumSpectraButton->setToolTip( WString::tr("smm-tt-sum-spectra") );
   m_sumSpectraButton->addStyleClass("InvertInDark");
   m_sumSpectraButton->setIcon( "InterSpec_resources/images/sum_symbol.svg" );
-  m_sumSpectraButton->clicked().connect( [this](){ sumSelectedSpectra(); } );
+  m_sumSpectraButton->clicked().connect( this, [this](){ sumSelectedSpectra(); } );
   m_sumSpectraButton->hide();
 
   m_saveButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-export-btn") );
@@ -6455,7 +6455,7 @@ WContainerWidget *SpecMeasManager::createButtonBar()
 
   m_deleteButton = m_newDiv->addNew<WPushButton>( WString::tr("smm-unload-btn") );
   m_deleteButton->setIcon( "InterSpec_resources/images/minus_min_white.png" );
-  m_deleteButton->clicked().connect( [this](){ removeSelected(); } );
+  m_deleteButton->clicked().connect( this, [this](){ removeSelected(); } );
   m_deleteButton->hide();
 
   // ---- try new bar 2 ----
@@ -6469,19 +6469,19 @@ WContainerWidget *SpecMeasManager::createButtonBar()
 
   m_removeForeButton = m_newDiv2->addNew<WPushButton>( WString::tr("Foreground") );
 //      m_removeForeButton->setIcon( "InterSpec_resources/images/minus_min.png" );
-  m_removeForeButton->clicked().connect( [this](){ unDisplay( SpecUtils::SpectrumType::Foreground ); } );
+  m_removeForeButton->clicked().connect( this, [this](){ unDisplay( SpecUtils::SpectrumType::Foreground ); } );
   m_removeForeButton->setHidden( true, WAnimation() );
 //  m_removeForeButton->setHiddenKeepsGeometry( true );
 
   m_removeBackButton = m_newDiv2->addNew<WPushButton>( WString::tr("Background") );
 //          m_removeBackButton->setIcon( "InterSpec_resources/images/minus_min.png" );
-  m_removeBackButton->clicked().connect( [this](){ unDisplay( SpecUtils::SpectrumType::Background ); } );
+  m_removeBackButton->clicked().connect( this, [this](){ unDisplay( SpecUtils::SpectrumType::Background ); } );
   m_removeBackButton->setHidden( true, WAnimation() );
 //  m_removeBackButton->setHiddenKeepsGeometry( true );
 
   m_removeFore2Button = m_newDiv2->addNew<WPushButton>( WString::tr("second-foreground") );
 //              m_removeFore2Button->setIcon( "InterSpec_resources/images/minus_min.png" );
-  m_removeFore2Button->clicked().connect( [this](){ unDisplay( SpecUtils::SpectrumType::SecondForeground ); } );
+  m_removeFore2Button->clicked().connect( this, [this](){ unDisplay( SpecUtils::SpectrumType::SecondForeground ); } );
   m_removeFore2Button->setHidden( true, WAnimation() );
 //  m_removeFore2Button->setHiddenKeepsGeometry( true );
   
@@ -6671,18 +6671,18 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     {
       // TODO: pass userStatesWithFile into SnapshotBrowser
       snapshotsOwned = std::make_unique<SnapshotBrowser>( this, m_viewer, header );
-      snapshotsOwned->finished().connect( [this, window](){ handleClosePreviousStatesDialogAfterSelect( window ); } );
+      snapshotsOwned->finished().connect( this, [this, window](){ handleClosePreviousStatesDialogAfterSelect( window ); } );
     }//if( userStatesWithFile.size() )
 
 
     if( !modifiedFiles.empty() )
     {
       auto_savedOwned = std::make_unique<AutosavedSpectrumBrowser>( modifiedFiles, type, m_fileModel.get(), this, header );
-      auto_savedOwned->loadedASpectrum().connect( [this, window](){ handleClosePreviousStatesDialogAfterSelect( window ); } );
+      auto_savedOwned->loadedASpectrum().connect( this, [this, window](){ handleClosePreviousStatesDialogAfterSelect( window ); } );
 
       if( unModifiedFiles.empty() )
       {
-        window->finished().connect( [this, header](){ userCanceledResumeFromPreviousOpened( header ); } );
+        window->finished().connect( this, [this, header](){ userCanceledResumeFromPreviousOpened( header ); } );
       }
     }//if( !modifiedFiles.empty() )
   }catch( std::exception &e )
@@ -6742,7 +6742,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   window->show();
   
   m_previousStatesDialog = window;
-  window->finished().connect( [this, window](){ handleCancelPreviousStatesDialog( window ); } );
+  window->finished().connect( this, [this, window](){ handleCancelPreviousStatesDialog( window ); } );
   
   wApp->triggerUpdate();
 }//void showPreviousSpecFileUsesDialog(..)

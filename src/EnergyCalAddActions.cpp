@@ -304,7 +304,7 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
     if( parent )
     {
       auto close = parent->addCloseButtonToFooter();
-      close->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+      close->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
       parent->finished().connect( this, &ConvertCalTypeTool::handleFinish );
     }
     
@@ -413,8 +413,8 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
   m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
   m_accept = buttonDiv->addNew<WPushButton>( WString::tr("Accept") );
   
-  m_cancel->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
-  m_accept->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
+  m_cancel->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_accept->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
 }//ConvertCalTypeTool(...)
   
 
@@ -997,7 +997,7 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
     if( parent )
     {
       auto close = parent->addCloseButtonToFooter();
-      close->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+      close->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
       parent->finished().connect( this, &LinearizeCalTool::handleFinish );
     }
     
@@ -1104,8 +1104,8 @@ LinearizeCalTool::LinearizeCalTool( shared_ptr<vector<MeasToApplyCoefChangeTo>> 
   m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
   m_accept = buttonDiv->addNew<WPushButton>( WString::tr("Accept") );
   
-  m_cancel->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
-  m_accept->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
+  m_cancel->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_accept->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
 }//ConvertCalTypeTool(...)
   
   
@@ -1353,8 +1353,8 @@ CombineChannelsTool::CombineChannelsTool( shared_ptr<vector<MeasToApplyCoefChang
   m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
   m_accept = buttonDiv->addNew<WPushButton>( WString::tr("Accept") );
   
-  m_cancel->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
-  m_accept->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
+  m_cancel->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_accept->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
 }//CombineChannelsTool constructor
   
 
@@ -1542,7 +1542,7 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     if( parent )
     {
       auto close = parent->addCloseButtonToFooter();
-      close->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+      close->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
       parent->finished().connect( this, &TruncateChannelsTool::handleFinish );
     }
     
@@ -1593,7 +1593,7 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     lower->setRange( 0, static_cast<int>(maxChann - 1) );
     lower->setTextSize( input_nchar ); //doesnt seem to have an effect, but is showing up in the DOM
     lower->setWidth( input_width_px );
-    lower->valueChanged().connect( [this,lower](){ userUpdatedChannelCallback( lower ); } );
+    lower->valueChanged().connect( this, [this,lower](){ userUpdatedChannelCallback( lower ); } );
     label->setBuddy( lower );
 
     cell = table->elementAt( 1 + multiple, 0 );
@@ -1606,7 +1606,7 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
     upper->setRange( 0, static_cast<int>(maxChann - 1) );
     upper->setTextSize( input_nchar ); //doesnt seem to have an effect, but is showing up in the DOM
     upper->setWidth( input_width_px );
-    upper->valueChanged().connect( [this,upper](){ userUpdatedChannelCallback( upper ); } );
+    upper->valueChanged().connect( this, [this,upper](){ userUpdatedChannelCallback( upper ); } );
     label->setBuddy( upper );
 
 
@@ -1659,8 +1659,8 @@ TruncateChannelsTool::TruncateChannelsTool( shared_ptr<vector<MeasToApplyCoefCha
   m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
   m_accept = buttonDiv->addNew<WPushButton>( WString::tr("Accept") );
   
-  m_cancel->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
-  m_accept->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
+  m_cancel->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_accept->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
 }//TruncateChannelsTool constructor
 
 

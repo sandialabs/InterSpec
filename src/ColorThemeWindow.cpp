@@ -184,7 +184,7 @@ m_apply( nullptr )
   editDiv->addStyleClass( "ColorThemeEditContainer" );
 
   m_edit = editDiv->addNew<ColorThemeWidget>();
-  m_edit->edited().connect( [this](){ themEditedCallback(); } );
+  m_edit->edited().connect( this, [this](){ themEditedCallback(); } );
 
   m_edit->addStyleClass( "ColorThemeWindowContents" );
 
@@ -240,7 +240,7 @@ m_apply( nullptr )
 
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
-    download->clicked().connect( [downloadResource](){ android_download_workaround(downloadResource.get(), "color_theme.xml"); } );
+    download->clicked().connect( this, [downloadResource](){ android_download_workaround(downloadResource.get(), "color_theme.xml"); } );
 #endif //ANDROID
 
 #endif
@@ -277,11 +277,11 @@ m_apply( nullptr )
   m_save->setHiddenKeepsGeometry( true );
   m_apply->setHiddenKeepsGeometry( true );
 
-  m_save->clicked().connect( [this](){ saveCallback(); } );
-  m_apply->clicked().connect( [this](){ applyCallback(); } );
+  m_save->clicked().connect( this, [this](){ saveCallback(); } );
+  m_apply->clicked().connect( this, [this](){ applyCallback(); } );
   
   m_close = AuxWindow::addCloseButtonToFooter( WString::tr("Close"), true, foot );
-  m_close->clicked().connect( [this](){ AuxWindow::hide(); } );
+  m_close->clicked().connect( this, [this](){ AuxWindow::hide(); } );
 
   if( phone ) //Keep "Close" the left most item
     foot->addWidget( std::move(autoDarkCbOwner) );
@@ -306,7 +306,7 @@ m_apply( nullptr )
 
     auto itemOwner = std::make_unique<ThemeMenuItem>( name, std::move(p), false );
     ThemeMenuItem *item = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(itemOwner) ) );
-    item->clicked().connect( [this, item](){ selectItem( item ); } );
+    item->clicked().connect( this, [this, item](){ selectItem( item ); } );
 
     if( currentColorTheme && (currentColorTheme->theme_name == name) )
       currentItem = item;
@@ -323,7 +323,7 @@ m_apply( nullptr )
 
     auto itemOwner = std::make_unique<ThemeMenuItem>( name, std::move(p), true );
     ThemeMenuItem *item = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(itemOwner) ) );
-    item->clicked().connect( [this, item](){ selectItem( item ); } );
+    item->clicked().connect( this, [this, item](){ selectItem( item ); } );
 
     // Note: we cant just check the database for a matching index because app-states save the
     //   color theme JSON to a field in the database, not a link to the database entry.
@@ -348,9 +348,9 @@ m_apply( nullptr )
       m_apply->hide();
   }//if( currentItem )
 
-  m_menu->itemSelected().connect( [this]( Wt::WMenuItem *item ){ themeSelected( item ); } );
+  m_menu->itemSelected().connect( this, [this]( Wt::WMenuItem *item ){ themeSelected( item ); } );
 
-  finished().connect( [this](){ checkForSavesAndCleanUp(); } );
+  finished().connect( this, [this](){ checkForSavesAndCleanUp(); } );
   
   setClosable( true );
   show();
@@ -383,7 +383,7 @@ void ColorThemeWindow::cloneThemeCallback()
   auto newitemOwner = std::make_unique<ThemeMenuItem>( themename, std::move(newtheme), true );
   ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(newitemOwner) ) );
   m_menu->select( newitem );
-  newitem->clicked().connect( [this, newitem](){ selectItem( newitem ); } );
+  newitem->clicked().connect( this, [this, newitem](){ selectItem( newitem ); } );
   
   showOrHideApplyButton();
 }//void cloneThemeCallback()
@@ -448,11 +448,11 @@ void ColorThemeWindow::removeThemeCallback()
   cancel->setFloatSide( Wt::Side::Left );
 
   WPushButton *erase = bottom->addNew<WPushButton>( WString::tr("Yes") );
-  erase->clicked().connect( std::bind( doDelete ) );
+  erase->clicked().connect( this, doDelete );
   erase->setWidth( WLength(47.5,WLength::Unit::Percentage) );
   erase->setFloatSide( Wt::Side::Right );
 
-  conf->finished().connect( [conf](){ AuxWindow::deleteAuxWindow( conf ); } );
+  conf->finished().connect( conf, [conf](){ AuxWindow::deleteAuxWindow( conf ); } );
   
   conf->show();
   conf->rejectWhenEscapePressed();
@@ -479,13 +479,13 @@ void ColorThemeWindow::uploadThemeCallback()
   WContainerWidget *contents = window->contents();
   
   WPushButton *close = window->addCloseButtonToFooter( WString::tr("Cancel") );
-  close->clicked().connect( [window](){ window->hide(); } );
+  close->clicked().connect( window, [window](){ window->hide(); } );
 
   WFileUpload *upload = contents->addNew<WFileUpload>();
   upload->setInline( false );
 
   //2) Upload file and check size.  If to big, reject and display error message.
-  upload->uploaded().connect( [this,window,upload](){
+  upload->uploaded().connect( this, [this,window,upload](){
     const string filename = upload->spoolFileName();
     upload->hide();
     try
@@ -528,7 +528,7 @@ void ColorThemeWindow::uploadThemeCallback()
         ColorThemeWidget *edit = editParent->addNew<ColorThemeWidget>();
         edit->setTheme( theme.get(), false );
         WPushButton *yes = window->addCloseButtonToFooter( WString::tr("Yes") );
-        yes->clicked().connect( [=](){
+        yes->clicked().connect( this, [=](){
           //5) Add to database, and set as current theme to display
           std::unique_ptr<ColorTheme> newtheme = this->saveThemeToDb( theme.get() );
           if( newtheme )
@@ -536,7 +536,7 @@ void ColorThemeWindow::uploadThemeCallback()
             auto newitemOwner = std::make_unique<ThemeMenuItem>( newtheme->theme_name, std::move( newtheme ), true );
             ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(newitemOwner) ) );
             m_menu->select( newitem );
-            newitem->clicked().connect( [this, newitem](){ selectItem( newitem ); } );
+            newitem->clicked().connect( this, [this, newitem](){ selectItem( newitem ); } );
             m_apply->show();
           }else
           {
@@ -560,14 +560,14 @@ void ColorThemeWindow::uploadThemeCallback()
     }
   } );
 
-  upload->fileTooLarge().connect( [window,upload](){
+  upload->fileTooLarge().connect( window, [window,upload](){
     upload->hide();
     window->contents()->addNew<WText>( WString::tr("ctw-upload-too-large") );
   } );
   upload->changed().connect( upload, &WFileUpload::upload );
 
 
-  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+  window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
   window->show();
   window->resizeToFitOnScreen();
   window->centerWindow();
@@ -595,10 +595,10 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
   
   
   WPushButton *discard = dialog->addButton( WString::tr("ctw-discard-btn") );
-  discard->clicked().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+  discard->clicked().connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
 
   WPushButton *save = dialog->addButton( WString::tr("Save") );
-  save->clicked().connect( [this](){ saveAndDelete(); } );
+  save->clicked().connect( this, [this](){ saveAndDelete(); } );
 }//void checkForSavesAndCleanUp()
 
 

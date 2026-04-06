@@ -275,8 +275,8 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   m_use    = buttonDiv->addNew<WPushButton>( WString::tr("Use") );
 
   m_use->disable();
-  m_cancel->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
-  m_use->clicked().connect( [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
+  m_cancel->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_use->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
   m_fit->clicked().connect( this, &EnergyCalMultiFile::doFit );
   
   m_fitSumary->disable();
@@ -875,8 +875,8 @@ EnergyCalMultiFileModel::EnergyCalMultiFileModel( EnergyCalTool *calibrator )
   
   refreshData();
   
-  m_fileModel->rowsInserted().connect( [this]( const Wt::WModelIndex &, int, int ){ refreshData(); } );
-  m_fileModel->rowsRemoved().connect( [this]( const Wt::WModelIndex &, int, int ){ refreshData(); } );
+  m_fileModel->rowsInserted().connect( this, [this]( const Wt::WModelIndex &, int, int ){ refreshData(); } );
+  m_fileModel->rowsRemoved().connect( this, [this]( const Wt::WModelIndex &, int, int ){ refreshData(); } );
 
   //Should add in a listener here to the PeakModel to see if peaks are
   //  added/removed; this might necessitate tracking

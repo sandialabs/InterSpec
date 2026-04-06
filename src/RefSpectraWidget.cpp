@@ -123,7 +123,7 @@ RefSpectraDialog::RefSpectraDialog( const Wt::WString &title )
   m_loadBtn = addButton( WString::tr("Load") );
   m_loadBtn->clicked().connect( m_widget, &RefSpectraWidget::loadSelectedSpectrum );
   m_loadBtn->setDisabled( true );
-  m_widget->fileSelectionChangedSignal().connect( [this]( RefSpectraWidgetSelectionType type ){ handleSelectionChanged( type ); } );
+  m_widget->fileSelectionChangedSignal().connect( this, [this]( RefSpectraWidgetSelectionType type ){ handleSelectionChanged( type ); } );
 
   addButton( WString::tr("Cancel") );
   
@@ -370,8 +370,8 @@ void RefSpectraWidget::setupUI()
   //m_treeView->setMinimumSize( WLength(250), WLength::Auto );
   m_treeView->setModel( m_treeModel );
   m_treeView->selectionChanged().connect( this, &RefSpectraWidget::handleSelectionChanged );
-  m_treeView->collapsed().connect( [this]( const Wt::WModelIndex &index ){ handleCollapsed( index ); } );
-  m_treeView->expanded().connect( [this]( const Wt::WModelIndex &index ){ handleExpanded( index ); } );
+  m_treeView->collapsed().connect( this, [this]( const Wt::WModelIndex &index ){ handleCollapsed( index ); } );
+  m_treeView->expanded().connect( this, [this]( const Wt::WModelIndex &index ){ handleExpanded( index ); } );
   m_treeView->setSelectable( true );
   m_treeView->setSelectionMode( Wt::SelectionMode::Single );
   m_treeView->setColumnWidth( 0, WLength(250, WLength::Unit::Pixel) );
@@ -554,9 +554,9 @@ void RefSpectraWidget::startAddDirectory()
 
   DirectorySelector *dirSelector = contents->addNew<DirectorySelector>();
 
-  dirSelector->pathValidityChanged().connect( [okBtn]( bool valid ){ okBtn->setDisabled( !valid ); } );
+  dirSelector->pathValidityChanged().connect( okBtn, [okBtn]( bool valid ){ okBtn->setDisabled( !valid ); } );
 
-  okBtn->clicked().connect( [dirSelector, this](){
+  okBtn->clicked().connect( this, [dirSelector, this](){
     const std::string path = dirSelector->path();
     addDirectory( path );
   } );

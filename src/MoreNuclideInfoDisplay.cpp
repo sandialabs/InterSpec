@@ -258,7 +258,7 @@ void MoreNuclideInfoDisplay::implementShowDecayCharts( const bool through )
   if( m_decayWindow )
   {
     AuxWindow * const decayWin = m_decayWindow.get();
-    m_decayWindow->finished().connect( [this, decayWin](){ handleDecayChartClose( decayWin ); } );
+    m_decayWindow->finished().connect( this, [this, decayWin](){ handleDecayChartClose( decayWin ); } );
   }
   
   auto get_display = []() -> MoreNuclideInfoDisplay * {
@@ -270,7 +270,7 @@ void MoreNuclideInfoDisplay::implementShowDecayCharts( const bool through )
     return infoDisplay;
   };
   
-  m_decayWindow->finished().connect( std::bind( [through, get_display](){
+  m_decayWindow->finished().connect( this, [through, get_display](){
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( undoRedo && undoRedo->canAddUndoRedoNow() )
     {
@@ -279,16 +279,16 @@ void MoreNuclideInfoDisplay::implementShowDecayCharts( const bool through )
         if( disp )
           disp->implementShowDecayCharts( through );
       };
-      
+
       auto redo = [through, get_display](){
         MoreNuclideInfoDisplay *disp = get_display();
         if( disp )
           disp->programmaticallyCloseDecayChart();
       };
-      
+
       undoRedo->addUndoRedoStep( undo, redo, "" );
     }//if( disp && undoRedo && undoRedo->canAddUndoRedoNow() )
-  } ));
+  } );
   
 
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
@@ -387,7 +387,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
       auto anchorOwner = std::make_unique<WAnchor>();
       WAnchor *anchor = anchorOwner.get();
       anchor->setText( "&larr;" + prev->symbol );
-      anchor->clicked().connect( [this, prev, prev_history](){ setNuclide( prev, prev_history ); } );
+      anchor->clicked().connect( this, [this, prev, prev_history](){ setNuclide( prev, prev_history ); } );
       tmplt.bindWidget( "link-to-prev", std::move(anchorOwner) );
     }//if( !history.empty() )
     
@@ -511,7 +511,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
         const SandiaDecay::Nuclide *child = transition->child;
         WAnchor *anchor = cell->addNew<WAnchor>();
         anchor->setText( child->symbol );
-        anchor->clicked().connect( [this, child, history](){ setNuclide( child, history ); } );
+        anchor->clicked().connect( this, [this, child, history](){ setNuclide( child, history ); } );
 
         string txt = "(t<sub>1/2</sub>=" + PhysicalUnits::printToBestTimeUnits( transition->child->halfLife, 2 ) + ")";
         WText *t = cell->addNew<WText>( txt );
@@ -554,7 +554,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
           WTableCell *cell = decayFromTable->elementAt( row, 0 );
           WAnchor *anchor = cell->addNew<WAnchor>();
           anchor->setText( parentNuclide->symbol );
-          anchor->clicked().connect( [this, parentNuclide, history](){ setNuclide( parentNuclide, history ); } );
+          anchor->clicked().connect( this, [this, parentNuclide, history](){ setNuclide( parentNuclide, history ); } );
 
           string txt = "(t<sub>1/2</sub>=" + PhysicalUnits::printToBestTimeUnits( parentNuclide->halfLife, 2 ) + ")";
           WText *t = cell->addNew<WText>( txt );
@@ -599,7 +599,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
             {
               WAnchor *anchor = li->addNew<WAnchor>();
               anchor->setText( more_info->m_associated[i] );
-              anchor->clicked().connect( [this, associated, history](){ setNuclide( associated, history ); } );
+              anchor->clicked().connect( this, [this, associated, history](){ setNuclide( associated, history ); } );
 
               string txt = " (t<sub>1/2</sub>=" + PhysicalUnits::printToBestTimeUnits( associated->halfLife, 2 ) + ")";
               WText *t = li->addNew<WText>( txt );
@@ -700,7 +700,7 @@ MoreNuclideInfoWindow::MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const 
 {
   m_display = contents()->addNew<MoreNuclideInfoDisplay>( nuc, false );
 
-  m_display->nuclideChanged().connect( [this]( const SandiaDecay::Nuclide *nuc ){ nuclideUpdated( nuc ); } );
+  m_display->nuclideChanged().connect( this, [this]( const SandiaDecay::Nuclide *nuc ){ nuclideUpdated( nuc ); } );
   
   nuclideUpdated( nuc );
   

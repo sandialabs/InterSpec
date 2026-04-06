@@ -606,7 +606,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
       + ");}", this);
 
     m_expandIcon->clicked().connect(*m_expandSlot);
-    m_expandIcon->clicked().connect( [this](){ refresh(); } );
+    m_expandIcon->clicked().connect( this, [this](){ refresh(); } );
     m_expandedSignal->connect(*m_expandSlot);
 
     stringstream toggleExpandJs;
@@ -624,7 +624,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
       "}";
     m_toggleExpandedStatusSlot = std::make_unique<JSlot>(toggleExpandJs.str(), this);
     title->doubleClicked().connect(*m_toggleExpandedStatusSlot);
-    title->doubleClicked().connect( [this](){ refresh(); } );
+    title->doubleClicked().connect( this, [this](){ refresh(); } );
   }//if( m_isPhone ) ' else
 
   m_titleText = title->addNew<WText>( windowTitle, Wt::TextFormat::XHTML );
@@ -907,7 +907,7 @@ void AuxWindow::setClosable( bool closable )
                                               WidgetThemeRole::DialogCloseIcon);
     // Expand first (in case collapsed), then hide
     m_closeIcon->clicked().connect( *m_expandSlot );
-    m_closeIcon->clicked().connect( [this](){ hide(); } );
+    m_closeIcon->clicked().connect( this, [this](){ hide(); } );
   }else
   {
     if( !m_closeIcon )
@@ -1276,5 +1276,5 @@ void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
   image->setFloatSide( (viewer && viewer->isMobile()) ? Wt::Side::Right : Wt::Side::Left );
 
   image->setAlternateText("Help");
-  image->clicked().connect( [page](){ HelpSystem::createHelpWindow( page ); } );
+  image->clicked().connect( image, [page](){ HelpSystem::createHelpWindow( page ); } );
 }

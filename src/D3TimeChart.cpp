@@ -152,13 +152,13 @@ public:
     
     WContainerWidget *closeIcon = addNew<WContainerWidget>();
     closeIcon->addStyleClass( "closeicon-wtdefault" );
-    closeIcon->clicked().connect( [parent](){ parent->showFilters( false ); } );
+    closeIcon->clicked().connect( parent, [parent](){ parent->showFilters( false ); } );
 
 
     m_tabs = addNew<WTabWidget>();
     m_currentTab = 0;
     m_tabs->addStyleClass( "D3TimeFiltersTab" );
-    m_tabs->currentChanged().connect( [this]( int idx ){ userChangedTab( idx ); } );
+    m_tabs->currentChanged().connect( this, [this]( int idx ){ userChangedTab( idx ); } );
 
     auto interactOwner = std::make_unique<WContainerWidget>();
     WContainerWidget *interact = interactOwner.get();
@@ -240,7 +240,7 @@ public:
       }//switch( index )
 
       assert( item );
-      item->clicked().connect( [item](){ item->select(); } );
+      item->clicked().connect( item, [item](){ item->select(); } );
       item->triggered().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
     }//for( loop over InteracModeIndex index )
 
@@ -256,11 +256,11 @@ public:
     m_specTypeSelect = m_specTypeDiv->addNew<WMenu>();
     m_specTypeSelect->addStyleClass( "D3TimeInteractMenu D3TimeInteractSpecTypeMenu LightNavMenu" );
     item = m_specTypeSelect->addItem( "Fore." );
-    item->clicked().connect( [item](){ item->select(); } );
+    item->clicked().connect( item, [item](){ item->select(); } );
     item = m_specTypeSelect->addItem( "Back." );
-    item->clicked().connect( [item](){ item->select(); } );
+    item->clicked().connect( item, [item](){ item->select(); } );
     item = m_specTypeSelect->addItem( "Sec." );
-    item->clicked().connect( [item](){ item->select(); } );
+    item->clicked().connect( item, [item](){ item->select(); } );
     m_specTypeSelect->select( m_specTypeSelect->itemAt(0) );
     m_specTypeSelect->itemSelected().connect( this, &D3TimeChartFilters::handleInteractionModeChange );
 
@@ -1066,7 +1066,7 @@ void D3TimeChart::init()
 
   m_showOptionsIcon = addNew<WContainerWidget>();
   m_showOptionsIcon->setStyleClass( "RoundMenuIcon ShowD3TimeChartFilters InvertInDark" ); //Should have 'Wt-icon' style class too?
-  m_showOptionsIcon->clicked().connect( [this](){ showFilters( true ); } );
+  m_showOptionsIcon->clicked().connect( this, [this](){ showFilters( true ); } );
   
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
   defineJavaScript();

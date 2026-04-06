@@ -279,7 +279,7 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
       WMenuItem *item = menu->addItem( name, std::move(tabltw) );
 
       //Fix issue, if user doesnt click exactly on the <a> element
-      item->clicked().connect( [item](){ item->select(); } );
+      item->clicked().connect( item, [item](){ item->select(); } );
     }//for( const auto &nc : new_cals )
   }//if( new_cals.size == 1 ) / else
   

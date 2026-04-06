@@ -240,7 +240,7 @@ ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options )
     doJavaScript( init_js );
   }//if( m_usingNative ) / else
   
-  m_userSelectedColor.connect( [this]( const std::string &val ){ colorSetCallback( val ); } );
+  m_userSelectedColor.connect( this, [this]( const std::string &val ){ colorSetCallback( val ); } );
 }//ColorSelect(...)
 
 

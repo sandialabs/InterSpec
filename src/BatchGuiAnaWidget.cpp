@@ -1669,7 +1669,7 @@ FileConvertOpts::FileConvertOpts()
 
   auto addFormatItem = [this, &descrip_bundle, isMobile]( const char *label, SpecUtils::SaveSpectrumAsType type ){
     WMenuItem *item = m_format_menu->addItem( label );
-    item->clicked().connect( [this, item](){ right_select_item( m_format_menu, item ); } );
+    item->clicked().connect( this, [this, item](){ right_select_item( m_format_menu, item ); } );
     item->setData( reinterpret_cast<void *>(type) );
 
     if( !isMobile )

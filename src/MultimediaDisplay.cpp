@@ -173,9 +173,9 @@ public:
 
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
-    m_download->clicked().connect( std::bind([this](){
+    m_download->clicked().connect( this, [this](){
       android_download_workaround(m_resource.get(), "image_from_spec_file");
-    }) );
+    } );
 #endif //ANDROID
 #endif
     

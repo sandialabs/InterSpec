@@ -164,14 +164,14 @@ void FeatureMarkerWidget::init()
   m_escapePeaks = addNew<WCheckBox>( WString::tr("fmw-escape-peaks") );
   m_escapePeaks->setWordWrap( false );
   m_escapePeaks->addStyleClass( "CbNoLineBreak" );
-  m_escapePeaks->checked().connect( [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::EscapePeakMarker, true ); } );
-  m_escapePeaks->unChecked().connect( [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::EscapePeakMarker, false ); } );
+  m_escapePeaks->checked().connect( this, [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::EscapePeakMarker, true ); } );
+  m_escapePeaks->unChecked().connect( this, [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::EscapePeakMarker, false ); } );
 
   m_comptonPeak = addNew<WCheckBox>( WString::tr("fmw-compton-peak") );
   m_comptonPeak->setWordWrap( false );
   m_comptonPeak->addStyleClass( "CbNoLineBreak" );
-  m_comptonPeak->checked().connect( [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::ComptonPeakMarker, true ); } );
-  m_comptonPeak->unChecked().connect( [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::ComptonPeakMarker, false ); } );
+  m_comptonPeak->checked().connect( this, [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::ComptonPeakMarker, true ); } );
+  m_comptonPeak->unChecked().connect( this, [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::ComptonPeakMarker, false ); } );
 
   WContainerWidget *angleDiv = addNew<WContainerWidget>();
   angleDiv->addStyleClass( "AngleRow" );
@@ -193,15 +193,15 @@ void FeatureMarkerWidget::init()
   m_comptonEdge = addNew<WCheckBox>( WString::tr("fmw-compton-edge") );
   m_comptonEdge->setWordWrap( false );
   m_comptonEdge->addStyleClass( "CbNoLineBreak" );
-  m_comptonEdge->checked().connect( [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::ComptonEdgeMarker, true ); } );
-  m_comptonEdge->unChecked().connect( [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::ComptonEdgeMarker, false ); } );
+  m_comptonEdge->checked().connect( this, [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::ComptonEdgeMarker, true ); } );
+  m_comptonEdge->unChecked().connect( this, [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::ComptonEdgeMarker, false ); } );
 
 
   m_sumPeaks = addNew<WCheckBox>( WString::tr("fmw-sum-peak") );
   m_sumPeaks->setWordWrap( false );
   m_sumPeaks->addStyleClass( "CbNoLineBreak" );
-  m_sumPeaks->checked().connect( [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::SumPeakMarker, true ); } );
-  m_sumPeaks->unChecked().connect( [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::SumPeakMarker, false ); } );
+  m_sumPeaks->checked().connect( this, [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::SumPeakMarker, true ); } );
+  m_sumPeaks->unChecked().connect( this, [this](){ handleFeatureMarkerOptionChanged( FeatureMarkerType::SumPeakMarker, false ); } );
 }//init()
 
 

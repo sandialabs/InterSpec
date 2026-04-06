@@ -540,7 +540,7 @@ ColorThemeWidget::ColorThemeWidget()
     cell->addStyleClass( "GenericRefLineNumber" );
     cell = table->elementAt(i,1);
     m_referenceLineColor[i] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-    m_referenceLineColor[i]->cssColorChanged().connect( [this, i](){ genericRefLineColorChangedCallback( i ); } );
+    m_referenceLineColor[i]->cssColorChanged().connect( this, [this, i](){ genericRefLineColorChangedCallback( i ); } );
   }
 
   auto specificRefOwned = std::make_unique<WContainerWidget>();
@@ -584,14 +584,14 @@ ColorThemeWidget::ColorThemeWidget()
     m_specificRefLineName[i]->setAttributeValue( "ondragstart", "return false" );
     nuclideSuggest->forEdit( m_specificRefLineName[i], PopupTrigger::Editing );
     IsotopeNameFilterModel::setEnterKeyMatchFixJs( nuclideSuggest, m_specificRefLineName[i] );
-    m_specificRefLineName[i]->changed().connect( [this, i](){ specificRefLineSourceChangedCallback( i ); } );
-    m_specificRefLineName[i]->enterPressed().connect( [this, i](){ specificRefLineSourceChangedCallback( i ); } );
+    m_specificRefLineName[i]->changed().connect( this, [this, i](){ specificRefLineSourceChangedCallback( i ); } );
+    m_specificRefLineName[i]->enterPressed().connect( this, [this, i](){ specificRefLineSourceChangedCallback( i ); } );
 
     m_specificRefLineName[i]->addStyleClass( "SpecificRefLineInput" );
     cell = table->elementAt(i,1);
     cell->addStyleClass( "SpecificRefLineColorCell" );
     m_specificRefLineColor[i] = cell->addNew<ColorSelect>( ColorSelect::AllowNoColor );
-    m_specificRefLineColor[i]->cssColorChanged().connect( [this, i](){ specificRefLineColorChangedCallback( i ); } );
+    m_specificRefLineColor[i]->cssColorChanged().connect( this, [this, i](){ specificRefLineColorChangedCallback( i ); } );
     m_specificRefLineColor[i]->setColor( WColor() );
   }
   
@@ -728,48 +728,48 @@ ColorThemeWidget::ColorThemeWidget()
   cell->addNew<WText>(WString::tr("ctwidget-log-y-min-desc"));
   
   
-  m_themeTitle->changed().connect( [this](){ titleChangedCallback(); } );
-  m_themeDescription->changed().connect( [this](){ descriptionChangedCallback(); } );
-  m_peaksTakeRefLineColor->checked().connect( [this](){ peaksTakeRefLineColorChangedCallback(); } );
-  m_peaksTakeRefLineColor->unChecked().connect( [this](){ peaksTakeRefLineColorChangedCallback(); } );
+  m_themeTitle->changed().connect( this, [this](){ titleChangedCallback(); } );
+  m_themeDescription->changed().connect( this, [this](){ descriptionChangedCallback(); } );
+  m_peaksTakeRefLineColor->checked().connect( this, [this](){ peaksTakeRefLineColorChangedCallback(); } );
+  m_peaksTakeRefLineColor->unChecked().connect( this, [this](){ peaksTakeRefLineColorChangedCallback(); } );
 
-  m_peakLabelFontSize->activated().connect( [this]( int ){ peakLabelFontSizeChanged(); } );
-  m_peakLabelAngle->valueChanged().connect( [this]( double ){ peakLabelRotationChanged(); } );
-  m_logYAxisMin->valueChanged().connect( [this]( double ){ logYAxisMinValueChanged(); } );
+  m_peakLabelFontSize->activated().connect( this, [this]( int ){ peakLabelFontSizeChanged(); } );
+  m_peakLabelAngle->valueChanged().connect( this, [this]( double ){ peakLabelRotationChanged(); } );
+  m_logYAxisMin->valueChanged().connect( this, [this]( double ){ logYAxisMinValueChanged(); } );
 
-  m_nonChartAreaCssTheme->changed().connect( [this](){ nonChartAreaThemeChanged(); } );
+  m_nonChartAreaCssTheme->changed().connect( this, [this](){ nonChartAreaThemeChanged(); } );
 
-  m_specMarginSameAsBackground->checked().connect( [this](){ newColorSelectedCallback( SpectrumChartMargins ); } );
-  m_specMarginSameAsBackground->unChecked().connect( [this](){ newColorSelectedCallback( SpectrumChartMargins ); } );
+  m_specMarginSameAsBackground->checked().connect( this, [this](){ newColorSelectedCallback( SpectrumChartMargins ); } );
+  m_specMarginSameAsBackground->unChecked().connect( this, [this](){ newColorSelectedCallback( SpectrumChartMargins ); } );
 
-  m_timeMarginSameAsBackground->checked().connect( [this](){ newColorSelectedCallback( TimeChartMargins ); } );
-  m_timeMarginSameAsBackground->unChecked().connect( [this](){ newColorSelectedCallback( TimeChartMargins ); } );
+  m_timeMarginSameAsBackground->checked().connect( this, [this](){ newColorSelectedCallback( TimeChartMargins ); } );
+  m_timeMarginSameAsBackground->unChecked().connect( this, [this](){ newColorSelectedCallback( TimeChartMargins ); } );
 
   if( m_noSpectrumBackground )
   {
-    m_noSpectrumBackground->checked().connect( [this](){ newColorSelectedCallback( SpectrumChartBackground ); } );
-    m_noSpectrumBackground->unChecked().connect( [this](){ newColorSelectedCallback( SpectrumChartBackground ); } );
+    m_noSpectrumBackground->checked().connect( this, [this](){ newColorSelectedCallback( SpectrumChartBackground ); } );
+    m_noSpectrumBackground->unChecked().connect( this, [this](){ newColorSelectedCallback( SpectrumChartBackground ); } );
   }
 
   if( m_noSpectrumMargin )
-    m_noSpectrumMargin->changed().connect( [this](){ newColorSelectedCallback( TimeChartMargins ); } );
+    m_noSpectrumMargin->changed().connect( this, [this](){ newColorSelectedCallback( TimeChartMargins ); } );
 
   if( m_noTimeBackground )
   {
-    m_noTimeBackground->checked().connect( [this](){ newColorSelectedCallback( TimeChartBackground ); } );
-    m_noTimeBackground->unChecked().connect( [this](){ newColorSelectedCallback( TimeChartBackground ); } );
+    m_noTimeBackground->checked().connect( this, [this](){ newColorSelectedCallback( TimeChartBackground ); } );
+    m_noTimeBackground->unChecked().connect( this, [this](){ newColorSelectedCallback( TimeChartBackground ); } );
   }
 
   if( m_noTimeMargin )
   {
-    m_noTimeMargin->checked().connect( [this](){ newColorSelectedCallback( TimeChartMargins ); } );
-    m_noTimeMargin->unChecked().connect( [this](){ newColorSelectedCallback( TimeChartMargins ); } );
+    m_noTimeMargin->checked().connect( this, [this](){ newColorSelectedCallback( TimeChartMargins ); } );
+    m_noTimeMargin->unChecked().connect( this, [this](){ newColorSelectedCallback( TimeChartMargins ); } );
   }
 
 
 	for( SelectableColor color = SelectableColor(0); color < NumSelectableColors; color = SelectableColor(color + 1) )
 	{
-		m_colorSelects[color]->cssColorChanged().connect( [this, color](){ newColorSelectedCallback( color ); } );
+		m_colorSelects[color]->cssColorChanged().connect( this, [this, color](){ newColorSelectedCallback( color ); } );
 	}
 }//ColorThemeWidget( constructor )
 

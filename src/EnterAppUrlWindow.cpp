@@ -139,12 +139,12 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   
   // TODO: All this undo/redo stuff is still probably not quite right - could use a little more work
   
-  okay->clicked().connect( std::bind([viewer, text, acceptable_paths](){
-    
+  okay->clicked().connect( okay, [viewer, text, acceptable_paths](){
+
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
-    
+
     string uri = text->text().toUTF8();
-    
+
     // Remove control characters
     SpecUtils::erase_any_character( uri, "\n\r\t\b\f\a" );
     //
@@ -153,14 +153,14 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
     //uri.erase( std::remove_if(begin(uri), end(uri),
     //             [](char ch){return std::iscntrl(static_cast<unsigned char>(ch));}),
     //            end(uri) );
-    
+
     // Remove leading/trailing white spaces.
     //  Will leave spaces within uri for the moment though, as these could be valid if uri has
     //  already been uri-decoded
     SpecUtils::trim( uri );
-    
+
     viewer->handleAppUrlClosed();
-    
+
     if( undoRedo && undoRedo->canAddUndoRedoNow() )
     {
       // Note: if you loaded a spectrum file, through a "RadData G0" URI, then undo will be
@@ -175,12 +175,12 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
         if( t )
           t->setText( WString::fromUTF8(uri) );
       };
-      
+
       auto redo = [viewer,uri](){
         SimpleDialog *window = viewer->makeEnterAppUrlWindow();
         if( window )
           window->accept();
-        
+
         try
         {
           viewer->handleAppUrl( uri );
@@ -189,10 +189,10 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
           passMessage( "Error handling URL: " + string(e.what()), WarningWidget::WarningMsgHigh );
         }
       };//redo lamda
-      
+
       undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Enter URL Window" );
     }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
-    
+
     try
     {
       if( SpecUtils::istarts_with(uri, "interspec://") )
@@ -217,7 +217,7 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
             break;
           }//if( it != end(uri) )
         }//for( const string &path : acceptable_paths )
-       
+
         if( !found_sub )
           throw runtime_error( "URL must start with 'interspec://', 'raddata://', or have a /G0/ component." );
       }//
@@ -227,24 +227,24 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
       SimpleDialog *errdialog = SimpleDialog::make( "Error with entered URL", e.what() );
       errdialog->addButton( "Okay" );
     }
-  }) );
+  } );
   
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
   {
-    cancel->clicked().connect( std::bind([viewer,text](){
+    cancel->clicked().connect( cancel, [viewer,text](){
       viewer->handleAppUrlClosed();
-      
+
       UndoRedoManager *undoRedo = UndoRedoManager::instance();
-      
+
       if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
         return;
-      
+
       const string txtval = text->text().toUTF8();
       auto undo = [viewer,txtval](){
         SimpleDialog *window = viewer->makeEnterAppUrlWindow();
         if( !window )
           return;
-        
+
         WTextArea *t = dynamic_cast<WTextArea *>( window->contents()->find( "txtarea" ) );
         if( t )
           t->setText( WString::fromUTF8(txtval) );
@@ -255,9 +255,9 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
         if( window )
           window->accept();
       };
-      
+
       undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Enter URL" );
-    }) );
+    } );
     
     auto undo = [viewer](){
       SimpleDialog *window = viewer->makeEnterAppUrlWindow();

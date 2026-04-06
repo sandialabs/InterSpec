@@ -265,7 +265,7 @@ void GammaCountDialog::init()
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
-  qr_btn->clicked().connect( std::bind( [this](){
+  qr_btn->clicked().connect( this, [this](){
     try
     {
       const string url = "interspec://specsum/?" + Wt::Utils::urlEncode(encodeStateToUrl());
@@ -275,7 +275,7 @@ void GammaCountDialog::init()
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
-  }) );
+  } );
 #endif //USE_QR_CODES
  
   WPushButton *closeButton = addCloseButtonToFooter();

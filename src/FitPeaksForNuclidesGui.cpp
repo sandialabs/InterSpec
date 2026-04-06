@@ -568,7 +568,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         result_dlg->addButton( WString::tr("Cancel") );
         accept_btn->setFocus();
 
-        accept_btn->clicked().connect( std::bind( [viewer_c, result](){
+        accept_btn->clicked().connect( accept_btn, [viewer_c, result](){
           if( viewer_c )
           {
             PeakModel *peak_model = viewer_c->peakModel();
@@ -580,7 +580,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
               peak_model->addPeaks( result->observable_peaks );
             }
           }
-        } ) );
+        } );
         // Cancel button uses SimpleDialog's default close behavior.
 
         wApp->triggerUpdate();
@@ -925,22 +925,22 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget()
     m_txt_results = txtResultsOwned.get();
 
     WMenuItem *upper_item = m_upper_menu->addItem( WString::tr("fpn-tab-spectrum"), std::move(chartOwned) );
-    upper_item->clicked().connect( std::bind([this,upper_item](){
+    upper_item->clicked().connect( this, [this,upper_item](){
       m_upper_menu->select( upper_item );
       upper_item->triggered().emit( upper_item );
-    }) );
+    } );
 
     upper_item = m_upper_menu->addItem( WString::tr("fpn-tab-rel-eff"), std::move(relEffOwned) );
-    upper_item->clicked().connect( std::bind([this,upper_item](){
+    upper_item->clicked().connect( this, [this,upper_item](){
       m_upper_menu->select( upper_item );
       upper_item->triggered().emit( upper_item );
-    }) );
+    } );
 
     upper_item = m_upper_menu->addItem( WString::tr("fpn-tab-results"), std::move(txtResultsOwned) );
-    upper_item->clicked().connect( std::bind([this,upper_item](){
+    upper_item->clicked().connect( this, [this,upper_item](){
       m_upper_menu->select( upper_item );
       upper_item->triggered().emit( upper_item );
-    }) );
+    } );
   }
 
   m_upper_menu->select( static_cast<int>(0) );

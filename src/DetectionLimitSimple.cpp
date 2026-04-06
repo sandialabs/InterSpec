@@ -124,7 +124,7 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
-  qr_btn->clicked().connect( std::bind( [this](){
+  qr_btn->clicked().connect( this, [this](){
     try
     {
       const string url = "interspec://simple-mda/" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());
@@ -134,7 +134,7 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
-  }) );
+  } );
 #endif //USE_QR_CODES
 
   WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
@@ -275,7 +275,7 @@ void DetectionLimitSimple::init()
   m_spectrum->disableLegend();
   m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
   
-  m_spectrum->existingRoiEdgeDragUpdate().connect( [this]( double a, double b, double c, double d, const std::string &e, bool f ){
+  m_spectrum->existingRoiEdgeDragUpdate().connect( this, [this]( double a, double b, double c, double d, const std::string &e, bool f ){
     roiDraggedCallback( a, b, c, d, e, f );
   } );
   
@@ -408,8 +408,8 @@ void DetectionLimitSimple::init()
   SpectraFileModel *specFileModel = m_viewer->fileManager()->model();
   m_detectorDisplay = generalInput->addNew<DetectorDisplay>( m_viewer, specFileModel );
   m_detectorDisplay->addStyleClass( "DetectorDisplay GridFourthCol GridThirdRow GridSpanTwoCol GridSpanTwoRows GridVertCenter" );
-  m_viewer->detectorChanged().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
-  m_viewer->detectorModified().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
+  m_viewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
+  m_viewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
   
   
   
@@ -1939,7 +1939,7 @@ void DetectionLimitSimple::createMoreInfoWindow()
   
   assert( m_moreInfoWindow );
   if( m_moreInfoWindow )
-    m_moreInfoWindow->finished().connect( [this, win=m_moreInfoWindow.get()](){ handleMoreInfoWindowClose( win ); } );
+    m_moreInfoWindow->finished().connect( this, [this, win=m_moreInfoWindow.get()](){ handleMoreInfoWindowClose( win ); } );
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )

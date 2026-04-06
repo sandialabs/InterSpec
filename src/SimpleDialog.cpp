@@ -226,7 +226,7 @@ Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt )
   //b->clicked().connect( this, &WDialog::hide );
   b->clicked().connect( "function(){document.getElementById('" + id() + "').style.display='none'; document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});}" );
 
-  b->clicked().connect( [this](){ done( Wt::DialogCode::Accepted ); } );
+  b->clicked().connect( this, [this](){ done( Wt::DialogCode::Accepted ); } );
   return b;
 }//addButton(...)
 

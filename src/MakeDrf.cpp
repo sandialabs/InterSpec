@@ -506,12 +506,12 @@ namespace
         
         m_useForEffCb->setUnChecked();
         m_userBr->hide();
-        m_useForEffCb->checked().connect( std::bind( [this](){
+        m_useForEffCb->checked().connect( this, [this](){
           m_userBr->setHidden( !m_useForEffCb->isChecked() || m_isBackground );
-        } ) );
-        m_useForEffCb->unChecked().connect( std::bind( [this](){
+        } );
+        m_useForEffCb->unChecked().connect( this, [this](){
           m_userBr->setHidden( !m_useForEffCb->isChecked() || m_isBackground );
-        } ) );
+        } );
       }
       
       m_descTxt = addNew<WText>( WString::fromUTF8(buffer) );
@@ -542,7 +542,7 @@ namespace
       m_previewBtn->setIcon( "InterSpec_resources/images/peak_small.png" );
       //m_previewBtn = new WImage( "InterSpec_resources/images/peak_small.png", this );
       
-      m_previewBtn->clicked().connect( [this]( WMouseEvent a1 ){ togglePeakPreview( a1 ); } );
+      m_previewBtn->clicked().connect( this, [this]( WMouseEvent a1 ){ togglePeakPreview( a1 ); } );
     }//DrfPeak constructor;
     
     bool useForEffFit() const
@@ -685,10 +685,10 @@ namespace
       //  detail for the moment.
       //m_previewPopup->hidden().connect( boost::bind( &WPushButton::removeStyleClass, m_previewBtn, WString("active"), true ) );
       //m_previewPopup->hidden().connect( std::bind([this](){ m_previewBtn->removeStyleClass("active",true); }));
-      m_previewPopup->hidden().connect( [btn = m_previewBtn, js = "document.getElementById('" + m_previewBtn->id() + "').classList.remove('active');"](){
+      m_previewPopup->hidden().connect( this, [btn = m_previewBtn, js = "document.getElementById('" + m_previewBtn->id() + "').classList.remove('active');"](){
         btn->doJavaScript( js );
       } );
-      m_previewPopup->shown().connect( [btn = m_previewBtn, js = "document.getElementById('" + m_previewBtn->id() + "').classList.add('active');"](){
+      m_previewPopup->shown().connect( this, [btn = m_previewBtn, js = "document.getElementById('" + m_previewBtn->id() + "').classList.add('active');"](){
         btn->doJavaScript( js );
       } );
 #endif
@@ -1270,7 +1270,7 @@ namespace
           
           MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate, m_materialSuggest );
           src->setIsEffGeometryType( static_cast<int>(m_geometry_type) );
-          src->updated().connect( std::bind([this](){ m_srcInfoUpdated.emit(); }) );
+          src->updated().connect( this, [this](){ m_srcInfoUpdated.emit(); } );
           
           nucToWidget[n] = src;
         }//if( we dont have a source widget for a nuclide )
@@ -1396,7 +1396,7 @@ namespace
 
         ++nsamples;
         DrfSpecFileSample *sample = m_sampleWidgets->addNew<DrfSpecFileSample>( meas, peakSamps, materialSuggest, nullptr );
-        sample->srcInfoUpdated().connect( std::bind( [this](){ m_updated.emit(); }) );
+        sample->srcInfoUpdated().connect( this, [this](){ m_updated.emit(); } );
       }//for( const set<int> &peakSamps : sampsWithPeaks )
       
       if( nsamples < 2 )
@@ -1470,7 +1470,7 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer,
 
   WPushButton *saveAs = footer()->addNew<WPushButton>( WString::tr("md-export-btn") );
   saveAs->clicked().connect( m_tool, &MakeDrf::startSaveAs );
-  m_tool->intrinsicEfficiencyIsValid().connect( [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
+  m_tool->intrinsicEfficiencyIsValid().connect( saveAs, [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
   saveAs->disable();
     
   show();
@@ -1702,8 +1702,8 @@ MakeDrf::MakeDrf( InterSpec *viewer,
     m_chart->setXRange(m_chartLowerE->value(), m_chartUpperE->value());
   };
   
-  m_chartLowerE->changed().connect( std::bind(updateChartRange) );
-  m_chartUpperE->changed().connect( std::bind(updateChartRange) );
+  m_chartLowerE->changed().connect( this, updateChartRange );
+  m_chartUpperE->changed().connect( this, updateChartRange );
   m_chart->xRangeChanged().connect( this, &MakeDrf::chartEnergyRangeChangedCallback );
   
   auto fileHolderOwned = std::make_unique<WContainerWidget>();
@@ -1778,7 +1778,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
     for( DrfSpecFileSample *fs : fileWidget->fileSamples() )
     {
       for( DrfPeak *p : fs->peaks() )
-        p->m_peakPreviewShow.connect( [this]( DrfPeak *a1 ){ peakPreviewShown( a1 ); } );
+        p->m_peakPreviewShow.connect( this, [this]( DrfPeak *a1 ){ peakPreviewShown( a1 ); } );
     }
     
   }//for( loop over opened files )
@@ -1816,7 +1816,7 @@ void MakeDrf::startSaveAs()
     t->setInline( false );
     WPushButton *b = w->footer()->addNew<WPushButton>( WString::tr("Close") );
     b->clicked().connect( w, &AuxWindow::hide );
-    w->finished().connect( [w](Wt::DialogCode){ AuxWindow::deleteAuxWindow( w ); } );
+    w->finished().connect( w, [w](Wt::DialogCode){ AuxWindow::deleteAuxWindow( w ); } );
     w->rejectWhenEscapePressed();
     w->show();
     w->centerWindow();
@@ -1952,9 +1952,9 @@ void MakeDrf::startSaveAs()
     WAnchor *n42anchor = cell->addNew<WAnchor>( lnk, WString::fromUTF8("Export data as N42-2012 file.") );
     (void)n42anchor;
 #if( ANDROID )
-    n42anchor->clicked().connect( std::bind([n42Resource](){
+    n42anchor->clicked().connect( this, [n42Resource](){
       android_download_workaround(n42Resource, "drf_data.n42");
-    }) );
+    } );
 #endif
   }
   cell = table->elementAt(currentRow, 2);
@@ -1974,9 +1974,9 @@ void MakeDrf::startSaveAs()
     WAnchor *csvanchor = cell->addNew<WAnchor>( lnk, WString::tr("md-export-as-csv") );
     (void)csvanchor;
 #if( ANDROID )
-    csvanchor->clicked().connect( std::bind([csvResource](){
+    csvanchor->clicked().connect( this, [csvResource](){
       android_download_workaround(csvResource, "drf_data.csv");
-    }) );
+    } );
 #endif
   }
 
@@ -1998,9 +1998,9 @@ void MakeDrf::startSaveAs()
     WAnchor *refSheetAnchor = cell->addNew<WAnchor>( lnk, WString::tr("md-export-quick-ref") );
     (void)refSheetAnchor;
 #if( ANDROID )
-    refSheetAnchor->clicked().connect( std::bind([refSheetResource](){
+    refSheetAnchor->clicked().connect( this, [refSheetResource](){
       android_download_workaround(refSheetResource, "drf_ref.html");
-    }) );
+    } );
 #endif
   }
   cell = table->elementAt(currentRow, 2);
@@ -2012,17 +2012,17 @@ void MakeDrf::startSaveAs()
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  n42anchor->clicked().connect( std::bind([n42Resource](){
+  n42anchor->clicked().connect( this, [n42Resource](){
     android_download_workaround(n42Resource, "drf_data.n42");
-  }) );
-  
-  csvanchor->clicked().connect( std::bind([csvResource](){
+  } );
+
+  csvanchor->clicked().connect( this, [csvResource](){
     android_download_workaround(csvResource, "drf_data.csv");
-  }) );
-  
-  refSheetAnchor->clicked().connect( std::bind([refSheetResource](){
+  } );
+
+  refSheetAnchor->clicked().connect( this, [refSheetResource](){
     android_download_workaround(refSheetResource, "drf_ref.html");
-  }) );
+  } );
 #endif //ANDROID
   
   
@@ -2040,19 +2040,19 @@ void MakeDrf::startSaveAs()
     }
   };
   
-  name->changed().connect( std::bind(updateName) );
-  name->enterPressed().connect( std::bind(updateName) );
-  name->blurred().connect( std::bind(updateName) );
-  
-  
+  name->changed().connect( this, updateName );
+  name->enterPressed().connect( this, updateName );
+  name->blurred().connect( this, updateName );
+
+
   auto updateDesc = [description,csvResource,refSheetResource](){
     csvResource->setDescription( description->text().toUTF8() );
     refSheetResource->setDescription( description->text().toUTF8() );
   };
-  
-  description->changed().connect( std::bind(updateDesc) );
-  description->enterPressed().connect( std::bind(updateDesc) );
-  description->blurred().connect( std::bind(updateDesc) );
+
+  description->changed().connect( this, updateDesc );
+  description->enterPressed().connect( this, updateDesc );
+  description->blurred().connect( this, updateDesc );
 
   
   
@@ -2139,7 +2139,7 @@ void MakeDrf::startSaveAs()
   };//auto doSave
   
   WPushButton *save = w->addCloseButtonToFooter( WString::tr("Save") );
-  save->clicked().connect( std::bind(doSave) );
+  save->clicked().connect( this, doSave );
   save->disable();
   
   auto updateSaveBtn = [name,save,validator](){
@@ -2153,13 +2153,13 @@ void MakeDrf::startSaveAs()
     save->setEnabled( enable );
   };
   
-  name->validated().connect( std::bind(updateSaveBtn) );  //doesnt seem to ever get called...
-  //name->changed().connect( std::bind(updateSaveBtn) );
-  //name->enterPressed().connect( std::bind(updateSaveBtn) );
-  name->keyPressed().connect( std::bind(updateSaveBtn) ); //Uhg, I guess we'll just use this until I figure out whats wrong with above so save button will update in real time
+  name->validated().connect( this, updateSaveBtn );  //doesnt seem to ever get called...
+  //name->changed().connect( this, updateSaveBtn );
+  //name->enterPressed().connect( this, updateSaveBtn );
+  name->keyPressed().connect( this, updateSaveBtn ); //Uhg, I guess we'll just use this until I figure out whats wrong with above so save button will update in real time
   
   
-  w->finished().connect( [w](Wt::DialogCode){ AuxWindow::deleteAuxWindow( w ); } );
+  w->finished().connect( w, [w](Wt::DialogCode){ AuxWindow::deleteAuxWindow( w ); } );
   w->rejectWhenEscapePressed();
   w->show();
   w->centerWindow();

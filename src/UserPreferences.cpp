@@ -597,8 +597,8 @@ void UserPreferences::associateWidget( const std::string &name,
   
   viewer->preferences()->addCallbackWhenChanged( name, cb, &WCheckBox::setChecked );
 
-  cb->checked().connect( [name, viewer](){ UserPreferences::setBoolPreferenceValue( name, true, viewer ); } );
-  cb->unChecked().connect( [name, viewer](){ UserPreferences::setBoolPreferenceValue( name, false, viewer ); } );
+  cb->checked().connect( cb, [name, viewer](){ UserPreferences::setBoolPreferenceValue( name, true, viewer ); } );
+  cb->unChecked().connect( cb, [name, viewer](){ UserPreferences::setBoolPreferenceValue( name, false, viewer ); } );
   
   /*
    //We need to emit the checked() and unChecked() signals so that any side-effect

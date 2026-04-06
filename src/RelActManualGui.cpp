@@ -582,7 +582,7 @@ void RelActManualGui::init()
   WLabel *label = optionsList->elementAt(row, 0)->addNew<WLabel>( WString::tr("ramg-eqn-form-label") );
 
   m_relEffEqnForm = optionsList->elementAt(row, 1)->addNew<WComboBox>();
-  m_relEffEqnForm->activated().connect( [this](){ relEffEqnFormChanged( true ); } );
+  m_relEffEqnForm->activated().connect( this, [this](){ relEffEqnFormChanged( true ); } );
   
   HelpSystem::attachToolTipOn( {optionsList->elementAt(row,0), optionsList->elementAt(row,1)},
                               WString::tr("ramg-tt-eqn-form"), showToolTips );
@@ -757,7 +757,7 @@ void RelActManualGui::init()
 
   WContainerWidget *helpBtn = btndiv->addNew<WContainerWidget>();
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-  helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "rel-act-manual" ); } );
+  helpBtn->clicked().connect( this, [](){ HelpSystem::createHelpWindow( "rel-act-manual" ); } );
 
   m_htmlResource = std::make_shared<RelActManualReportResource>( this, m_interspec );
 
@@ -780,9 +780,9 @@ void RelActManualGui::init()
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_downloadHtmlReport->clicked().connect( std::bind([this](){
+  m_downloadHtmlReport->clicked().connect( this, [this](){
     android_download_workaround( m_htmlResource.get(), "rel_eff.html");
-  }) );
+  } );
 #endif //ANDROID
 #endif
   
@@ -931,7 +931,7 @@ void RelActManualGui::init()
   WMenuItem *item = m_resultMenu->addItem( WString::tr("ramg-mi-results"), std::move(resultsOwner) );
 
   // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
-  item->clicked().connect( [this,item](){
+  item->clicked().connect( this, [this,item](){
     m_resultMenu->select( item );
     item->triggered().emit( item );
   } );
@@ -943,7 +943,7 @@ void RelActManualGui::init()
   auto chartOwner = std::make_unique<RelEffChart>();
   m_chart = chartOwner.get();
   item = m_resultMenu->addItem( WString::tr("ramg-mi-chart"), std::move(chartOwner) );
-  item->clicked().connect( [this,item](){
+  item->clicked().connect( this, [this,item](){
     m_resultMenu->select( item );
     item->triggered().emit( item );
   } );

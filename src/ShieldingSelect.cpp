@@ -168,7 +168,7 @@ public:
     
     WPushButton *closeIcon = addNew<WPushButton>();
     closeIcon->addStyleClass( "closeicon-wtdefault GridThirdCol GridFirstRow" );
-    closeIcon->clicked().connect( [parent = m_parent, traceSrc = this](){ parent->removeTraceSourceWidget( traceSrc ); } );
+    closeIcon->clicked().connect( this, [parent = m_parent, traceSrc = this](){ parent->removeTraceSourceWidget( traceSrc ); } );
     closeIcon->setToolTip( "Remove this trace source." );
     
     
@@ -2380,8 +2380,8 @@ void ShieldingSelect::init()
   }//if( m_forFitting )
   
   
-  m_atomicNumberEdit->valueChanged().connect( [this]( double ){ handleMaterialChange(); } );
-  m_arealDensityEdit->valueChanged().connect( [this]( double ){ handleMaterialChange(); } );
+  m_atomicNumberEdit->valueChanged().connect( this, [this]( double ){ handleMaterialChange(); } );
+  m_arealDensityEdit->valueChanged().connect( this, [this]( double ){ handleMaterialChange(); } );
   
   m_atomicNumberEdit->valueChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
   m_arealDensityEdit->valueChanged().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
@@ -2418,9 +2418,9 @@ void ShieldingSelect::init()
     //  "}catch(e){}}";
     //  edit->changed().connect( focusjs );
 
-    edit->changed().connect( [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
-    edit->enterPressed().connect( [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
-    //edit->blurred().connect( [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
+    edit->changed().connect( this, [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
+    edit->enterPressed().connect( this, [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
+    //edit->blurred().connect( this, [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
 
     edit->changed().connect( this, &ShieldingSelect::handleMaterialChange );
     edit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
@@ -4111,8 +4111,8 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
 
     // The user input into mass fraction of this "other" non-src nuclide is disabled, so we
     //  dont need to hook it up to other_src_cb->handleIsotopicChange()....
-    other_src_cb->fitMassFractionChecked().connect( [this, iso, element](){ handleFitMassFractionChanged( true, iso, element ); } );
-    other_src_cb->fitMassFractionUnChecked().connect( [this, iso, element](){ handleFitMassFractionChanged( false, iso, element ); } );
+    other_src_cb->fitMassFractionChecked().connect( this, [this, iso, element](){ handleFitMassFractionChanged( true, iso, element ); } );
+    other_src_cb->fitMassFractionUnChecked().connect( this, [this, iso, element](){ handleFitMassFractionChanged( false, iso, element ); } );
     
     other_src_cb->fitMassFractionChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     other_src_cb->fitMassFractionUnChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
@@ -4123,12 +4123,12 @@ void ShieldingSelect::modelNuclideAdded( const SandiaDecay::Nuclide *iso )
   SourceCheckbox * const cb = cbUniq.get();
   isotopeDiv->insertWidget( isotopeDiv->count() - 1, std::move(cbUniq) );
   //isotopeDiv->insertBefore( cb, other_src_cb );
-  cb->checked().connect( [this, iso](){ isotopeCheckedCallback( iso ); } );
-  cb->unChecked().connect( [this, iso](){ isotopeUnCheckedCallback( iso ); } );
-  cb->massFractionChanged().connect( [this, iso]( float a1 ){ handleIsotopicChange( a1, iso ); } );
+  cb->checked().connect( this, [this, iso](){ isotopeCheckedCallback( iso ); } );
+  cb->unChecked().connect( this, [this, iso](){ isotopeUnCheckedCallback( iso ); } );
+  cb->massFractionChanged().connect( this, [this, iso]( float a1 ){ handleIsotopicChange( a1, iso ); } );
 
-  cb->fitMassFractionChecked().connect( [this, iso, element](){ handleFitMassFractionChanged( true, iso, element ); } );
-  cb->fitMassFractionUnChecked().connect( [this, iso, element](){ handleFitMassFractionChanged( false, iso, element ); } );
+  cb->fitMassFractionChecked().connect( this, [this, iso, element](){ handleFitMassFractionChanged( true, iso, element ); } );
+  cb->fitMassFractionUnChecked().connect( this, [this, iso, element](){ handleFitMassFractionChanged( false, iso, element ); } );
   
   handleIsotopicChange( static_cast<float>(massFrac), iso );
   handleFitMassFractionChanged( cb->fitMassFraction(), iso, element );

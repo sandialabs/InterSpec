@@ -822,7 +822,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
-  qr_btn->clicked().connect( std::bind( [this](){
+  qr_btn->clicked().connect( this, [this](){
     try
     {
       const string url = "interspec://flux/?" + Wt::Utils::urlEncode(m_fluxTool->encodeStateToUrl());
@@ -832,7 +832,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
-  }) );
+  } );
 #endif //USE_QR_CODES
 
   WContainerWidget *buttonDiv = footer();
@@ -859,9 +859,9 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  csvButton->clicked().connect( std::bind([csv](){
+  csvButton->clicked().connect( csvButton, [csv](){
     android_download_workaround(csv.get(), "flux.csv");
-  }) );
+  } );
 #endif //ANDROID
 
 #endif
@@ -874,7 +874,7 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
     csvButton->setDisabled( m_fluxTool->m_data.empty() );
   };
   
-  m_fluxTool->m_tableUpdated.connect( std::bind(enableDisableCsv) );
+  m_fluxTool->m_tableUpdated.connect( this, enableDisableCsv );
   csvButton->disable();
   
   show();
@@ -1141,8 +1141,8 @@ void FluxToolWidget::init()
     m_detector = distDetRow->elementAt(0,1)->addNew<DetectorDisplay>( m_interspec, specFileModel );
   }
   m_detector->addStyleClass( "FluxDet" );
-  m_interspec->detectorChanged().connect( [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
-  m_interspec->detectorModified().connect( [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
+  m_interspec->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
+  m_interspec->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
 
 
   PeakModel *peakmodel = m_interspec->peakModel();
@@ -1211,7 +1211,7 @@ void FluxToolWidget::init()
   m_displayLevelButtons->addButton( moreInfo, static_cast<int>(DisplayInfoLevel::Extended) );
   m_displayLevelButtons->setCheckedButton( m_narrowLayout ? simpleInfo : standardInfo );
 
-  m_displayLevelButtons->checkedChanged().connect( std::bind( [this](){
+  m_displayLevelButtons->checkedChanged().connect( this, [this](){
     const auto level = static_cast<DisplayInfoLevel>( m_displayLevelButtons->checkedId() );
 
     assert( (level == DisplayInfoLevel::Simple)
@@ -1219,7 +1219,7 @@ void FluxToolWidget::init()
            || (level == DisplayInfoLevel::Extended) );
 
     setDisplayInfoLevel( level, false );
-  }) );
+  } );
 
 
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
@@ -1239,7 +1239,7 @@ void FluxToolWidget::init()
     "Wt.emit( '" + id() + "', {name:'infocopied', eventObject:e}, success );"
   "}" );
 
-  m_infoCopied.connect( [this]( int a1 ){ tableCopiedToCliboardCallback( a1 ); } );
+  m_infoCopied.connect( this, [this]( int a1 ){ tableCopiedToCliboardCallback( a1 ); } );
 #endif
   
   setDisplayInfoLevel( m_narrowLayout ? DisplayInfoLevel::Simple : DisplayInfoLevel::Normal, true );

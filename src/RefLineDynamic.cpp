@@ -184,8 +184,8 @@ RefLineDynamic::RefLineDynamic( D3SpectrumDisplayDiv *chart, InterSpec *interspe
   m_active = UserPreferences::preferenceValue<bool>( "DynamicRefLine", m_interspec );
   m_interspec->preferences()->addCallbackWhenChanged( "DynamicRefLine", this, &RefLineDynamic::setActive );
     
-  m_interspec->hintPeaksSet().connect( [this]( const SpecUtils::SpectrumType t ){ autoSearchPeaksSet( t ); } );
-  m_interspec->displayedSpectrumChanged().connect( [this]( const SpecUtils::SpectrumType t,
+  m_interspec->hintPeaksSet().connect( this, [this]( const SpecUtils::SpectrumType t ){ autoSearchPeaksSet( t ); } );
+  m_interspec->displayedSpectrumChanged().connect( this, [this]( const SpecUtils::SpectrumType t,
     const std::shared_ptr<SpecMeas> &m, const std::set<int> &s, const std::vector<std::string> &d ){
       spectrumChanged( t, m, s, d );
   } );
@@ -197,9 +197,9 @@ RefLineDynamic::RefLineDynamic( D3SpectrumDisplayDiv *chart, InterSpec *interspe
   PeakModel * const pmodel = m_interspec->peakModel();
   if( pmodel )
   {
-    pmodel->rowsInserted().connect( [this](){ peaksAdded(); } );
-    pmodel->rowsRemoved().connect( [this](){ peaksRemoved(); } );
-    pmodel->dataChanged().connect( [this](){ peakModified(); } );
+    pmodel->rowsInserted().connect( this, [this](){ peaksAdded(); } );
+    pmodel->rowsRemoved().connect( this, [this](){ peaksRemoved(); } );
+    pmodel->dataChanged().connect( this, [this](){ peakModified(); } );
   }
 
   // TODO: We also need to update lines after an energy calbration is done

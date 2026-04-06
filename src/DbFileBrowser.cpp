@@ -485,11 +485,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
         assert( row );
         if( row )
         {
-          row->doubleClicked().connect( std::bind([this, spectrumLoaderCallback, spectraNode](){
+          row->doubleClicked().connect( this, [this, spectrumLoaderCallback, spectraNode](){
             const set<WTreeNode *> sets = m_snapshotTable->selectedNodes();
             if( !sets.empty() && ((*begin(sets)) == spectraNode) )
               spectrumLoaderCallback();
-          }) );
+          } );
         }//if( rowDiv )
         
         m_UserFileInDbLookup[spectraNode] = file;
@@ -535,7 +535,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       // Add ability to double click on a row to load this state
       if( rowDiv )
       {
-        rowDiv->doubleClicked().connect( std::bind([this,stateLoaderCallback,snapshotNode](){
+        rowDiv->doubleClicked().connect( this, [this,stateLoaderCallback,snapshotNode](){
           const set<WTreeNode *> sets = m_snapshotTable->selectedNodes();
           if( !sets.empty() && ((*begin(sets)) == snapshotNode) )
             stateLoaderCallback();
@@ -543,7 +543,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
           else
             log_developer_error( __func__, "Got double click on SnapshotBrowser state but that wasnt what was selected." );
 #endif
-        }) );
+        } );
       }//if( rowDiv )
       
       
@@ -700,11 +700,11 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     }
 
     m_loadSpectraButton = footer->addNew<WPushButton>( WString::tr("sb-load-spectrum-only") );
-    m_loadSpectraButton->clicked().connect( [this](){ loadSpectraSelected(); } );
+    m_loadSpectraButton->clicked().connect( this, [this](){ loadSpectraSelected(); } );
     m_loadSpectraButton->disable();
 
     m_loadSnapshotButton = footer->addNew<WPushButton>( WString::tr("sb-load-app-state") );
-    m_loadSnapshotButton->clicked().connect( [this](){ loadSnapshotSelected(); } );
+    m_loadSnapshotButton->clicked().connect( this, [this](){ loadSnapshotSelected(); } );
     m_loadSnapshotButton->setDefault(true);
     //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.svg" );
     m_loadSnapshotButton->disable();
@@ -810,7 +810,7 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
       WContainerWidget *rowDiv = label ? dynamic_cast<WContainerWidget *>( label->parent() ) : nullptr;
       if( rowDiv )
       {
-        rowDiv->doubleClicked().connect( std::bind([this,spectraNode](){
+        rowDiv->doubleClicked().connect( this, [this,spectraNode](){
           const set<WTreeNode *> sets = m_snapshotTable->selectedNodes();
           if( !sets.empty() && ((*begin(sets)) == spectraNode) )
             loadSpectraSelected();
@@ -818,7 +818,7 @@ void SnapshotBrowser::addSpectraNodes(Dbo::collection< Dbo::ptr<UserState> >::co
           else
             log_developer_error( __func__, "Got double click on SnapshotBrowser spectrum but that wasnt what was selected." );
 #endif
-        }) );
+        } );
       }//if( rowDive )
       
       
@@ -1034,13 +1034,13 @@ void SnapshotBrowser::startEditSelected()
   yes->setFloatSide( Wt::Side::Right );
   
   cancel->clicked().connect( m_editWindow.get(), &AuxWindow::hide );
-  yes->clicked().connect( std::bind([this, nameEdit, state, description, node](){
+  yes->clicked().connect( this, [this, nameEdit, state, description, node](){
     if( nameEdit->text().toUTF8().empty() ) //should happen
     {
       passMessage( WString::tr("sb-must-enter-name"), WarningWidget::WarningMsgHigh );
       return;
     }
-    
+
     try
     {
       DataBaseUtils::DbTransaction transaction( *m_session );
@@ -1054,9 +1054,9 @@ void SnapshotBrowser::startEditSelected()
     {
       passMessage( WString::tr("sb-err-modifying-state"), WarningWidget::WarningMsgHigh );
     }//try /catch
-    
+
     m_editWindow->hide();
-  }) );
+  } );
   
   //Need to update text when selection changes, currently relying on modal underlay to protect against this.
   //m_snapshotTable->itemSelectionChanged().connect(<#WObject *target#>, <#WObject::Method method#>)
@@ -1066,11 +1066,11 @@ void SnapshotBrowser::startEditSelected()
     yes->setEnabled( !nameEdit->text().toUTF8().empty() && (nameEdit->text()!=state->name || description->text()!=state->description) );
   };
   
-  nameEdit->textInput().connect( std::bind(haschanged) );
-  description->textInput().connect( std::bind(haschanged) );
+  nameEdit->textInput().connect( this, haschanged );
+  description->textInput().connect( this, haschanged );
   
   auto deleter = [this](){ AuxWindow::deleteAuxWindow( m_editWindow.get() ); };
-  m_editWindow->finished().connect( std::bind( [deleter,this](){ deleter(); m_editWindow = nullptr; } ) );
+  m_editWindow->finished().connect( this, [deleter,this](){ deleter(); m_editWindow = nullptr; } );
   
   m_editWindow->show();
   m_editWindow->centerWindow();

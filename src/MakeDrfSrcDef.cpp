@@ -436,7 +436,7 @@ void MakeDrfSrcDef::updateSourceLibNuclides()
       assert( src.m_nuclide == m_nuclide );
       
       WMenuItem *item = menu->addItem( src.m_source_name );
-      item->triggered().connect( [this, src](){ setSrcInfo( src ); } );
+      item->triggered().connect( this, [this, src](){ setSrcInfo( src ); } );
     }//for( const SrcLibLineInfo &src : m_lib_srcs_for_nuc )
   }//if( menu )
 }//void updateSourceLibNuclides()
@@ -660,7 +660,7 @@ void MakeDrfSrcDef::create()
   //  better than the alternative.
   m_lib_src_menu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
   m_lib_src_menu->setMaximumSize( WLength::Auto, WLength(15, WLength::Unit::FontEm) );
-  m_lib_src_btn->clicked().connect( [this]( const WMouseEvent &e ){ m_lib_src_menu->popup( e ); } );
+  m_lib_src_btn->clicked().connect( this, [this]( const WMouseEvent &e ){ m_lib_src_menu->popup( e ); } );
 #endif
   
   m_lib_src_menu->setAutoHide( true, 2500 );

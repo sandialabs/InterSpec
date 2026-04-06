@@ -188,9 +188,9 @@ std::string clean_uuid( string uuid )
     if( (index + 1) < urls.size() )
     {
       WPushButton *btn = dialog->addButton( WString::tr("esf-next-qr-code") );
-      btn->clicked().connect( std::bind([=](){
+      btn->clicked().connect( btn, [=](){
         displayQrDialog( urls, index + 1, successfullyDone, as_emailto, toogleEmailVsUri );
-      }) );
+      } );
     }else if( successfullyDone )
     {
       // We need to find the "Close" button here
@@ -209,7 +209,7 @@ std::string clean_uuid( string uuid )
       }//if( foot )
       assert( close );
       if( close )
-        close->clicked().connect( std::bind(successfullyDone) );
+        close->clicked().connect( close, successfullyDone );
     }//if( (index + 1) < urls.size() )
     
     if( toogleEmailVsUri )
@@ -219,7 +219,7 @@ std::string clean_uuid( string uuid )
       // Wt4: removeWidget returns unique_ptr; capture it to keep the widget alive, then reinsert
       auto btn_owner = dialog->footer()->removeWidget( btn );
       dialog->footer()->insertWidget( 0, std::move(btn_owner) );
-      btn->clicked().connect( std::bind(toogleEmailVsUri) );
+      btn->clicked().connect( btn, toogleEmailVsUri );
     }//if( toogleEmailVsUri )
   }//void displayQr( vector<QRSpectrum::QrCodeEncodedSpec> urls )
 
@@ -535,8 +535,8 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
     wApp->triggerUpdate();
   };//auto doUpdate lambda
 
-  eclSelect->activated().connect( std::bind(doUpdate) );
-  verSelect->activated().connect( std::bind(doUpdate) );
+  eclSelect->activated().connect( eclSelect, doUpdate );
+  verSelect->activated().connect( verSelect, doUpdate );
 
   // Buttons row
   WContainerWidget *btndiv = window->contents()->addNew<WContainerWidget>();
@@ -556,9 +556,9 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   }
   svgDownload->setStyleClass( "LinkBtn DownloadBtn" );
 #if( ANDROID )
-  svgDownload->clicked().connect( std::bind([svgResource](){
+  svgDownload->clicked().connect( svgDownload, [svgResource](){
     android_download_workaround( svgResource.get(), "qr_lossy.svg" );
-  }) );
+  } );
 #endif //ANDROID
 #endif
 
@@ -583,8 +583,8 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   auto updateJsUrl = [=](){
     wApp->doJavaScript( js_var + "=" + WString(*current_encoded_url).jsStringLiteral() + ";" );
   };
-  eclSelect->changed().connect( std::bind(updateJsUrl) );
-  verSelect->changed().connect( std::bind(updateJsUrl) );
+  eclSelect->changed().connect( eclSelect, updateJsUrl );
+  verSelect->changed().connect( verSelect, updateJsUrl );
 
   // Note: svgDownload and copyBtn are already children of btndiv (created via addNew above).
   //  In Wt4, order of widgets is determined by insertion order.
@@ -601,7 +601,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
         WPushButton *btn = dynamic_cast<WPushButton *>( child );
         if( btn )
         {
-          btn->clicked().connect( std::bind(successfullyDone) );
+          btn->clicked().connect( btn, successfullyDone );
           break;
         }
       }
@@ -1206,7 +1206,7 @@ void ExportSpecFileTool::init()
   
   auto addFormatItem = [this, &descrip_bundle, isMobile]( const char *label, SpecUtils::SaveSpectrumAsType type ){
     WMenuItem *item = m_formatMenu->addItem( WString::fromUTF8(label) );
-    item->clicked().connect( [this, item](){ right_select_item( m_formatMenu, item ); } );
+    item->clicked().connect( this, [this, item](){ right_select_item( m_formatMenu, item ); } );
     item->setData( reinterpret_cast<void *>(type) );
 
     if( !isMobile )
@@ -1271,18 +1271,18 @@ void ExportSpecFileTool::init()
 
   m_dispForeSamples = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-disp-foreground") );
   m_dispForeSamples->addStyleClass( "CbNoLineBreak" );
-  m_dispForeSamples->checked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Foreground ); } );
-  m_dispForeSamples->unChecked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Foreground ); } );
+  m_dispForeSamples->checked().connect( this, [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Foreground ); } );
+  m_dispForeSamples->unChecked().connect( this, [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Foreground ); } );
 
   m_dispBackSamples = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-disp-background") );
   m_dispBackSamples->addStyleClass( "CbNoLineBreak" );
-  m_dispBackSamples->checked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Background ); } );
-  m_dispBackSamples->unChecked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Background ); } );
+  m_dispBackSamples->checked().connect( this, [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Background ); } );
+  m_dispBackSamples->unChecked().connect( this, [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::Background ); } );
 
   m_dispSecondSamples = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-disp-secondary") );
   m_dispSecondSamples->addStyleClass( "CbNoLineBreak" );
-  m_dispSecondSamples->checked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::SecondForeground ); } );
-  m_dispSecondSamples->unChecked().connect( [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::SecondForeground ); } );
+  m_dispSecondSamples->checked().connect( this, [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::SecondForeground ); } );
+  m_dispSecondSamples->unChecked().connect( this, [this](){ handleDisplaySampleChanged( SpecUtils::SpectrumType::SecondForeground ); } );
   
   m_allSamples = m_samplesHolder->addNew<WCheckBox>( WString::tr("esf-all-samples") );
   m_allSamples->addStyleClass( "CbNoLineBreak" );
@@ -1445,13 +1445,13 @@ void ExportSpecFileTool::init()
 
   WPushButton *cancel_btn = btnsDiv->addNew<WPushButton>( WString::tr("Cancel") );
   cancel_btn->addStyleClass( "LightButton" );
-  cancel_btn->clicked().connect( [this](){ emitDone( false ); } );
+  cancel_btn->clicked().connect( this, [this](){ emitDone( false ); } );
   
   if( !m_resource )
   {
     m_resource = std::make_shared<ExportSpecFileTool_imp::DownloadSpectrumResource>( this );
     m_resource->setTakesUpdateLock( true );
-    m_resource->downloadFinished().connect( [this](){ emitDone( true ); } );
+    m_resource->downloadFinished().connect( this, [this](){ emitDone( true ); } );
   }//if( !m_resource )
   
   
@@ -1473,7 +1473,7 @@ void ExportSpecFileTool::init()
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_export_btn->clicked().connect( [this](){
+  m_export_btn->clicked().connect( this, [this](){
     string filename = m_resource->suggestedFileName().toUTF8();
     if( filename.empty() )
       filename = "spectrum_file";
@@ -4109,7 +4109,7 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
     setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 650.0) : 650.0, WLength::Unit::Pixel), WLength::Auto );
   }
   m_tool = contents()->addNew<ExportSpecFileTool>( viewer );
-  m_tool->done().connect( [this](bool){ accept(); } );
+  m_tool->done().connect( this, [this](bool){ accept(); } );
   
   if( viewer && viewer->isPhone() )
   {
@@ -4135,7 +4135,7 @@ void ExportSpecFileWindow::setSpecificSpectrum( const std::shared_ptr<const Spec
     m_tool = nullptr;
   }
   m_tool = contents()->addNew<ExportSpecFileTool>( spectrum, samples, detectors, viewer );
-  m_tool->done().connect( [this](bool){ accept(); } );
+  m_tool->done().connect( this, [this](bool){ accept(); } );
 }//void setSpecificSpectrum(...)
 
 

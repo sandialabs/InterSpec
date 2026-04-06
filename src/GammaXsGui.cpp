@@ -915,7 +915,7 @@ GammaXsWindow::GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion ,
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
-  qr_btn->clicked().connect( [this](){
+  qr_btn->clicked().connect( this, [this](){
     try
     {
       const string url = "interspec://gammaxs/?" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());

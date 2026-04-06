@@ -938,8 +938,8 @@ class DateLengthCalculator : public WContainerWidget
         updateInfo();
       };//doActivityUpdate lambda
       
-      activityEdit->changed().connect( std::bind( doActivityUpdate ) );
-      activityEdit->enterPressed().connect( std::bind( doActivityUpdate ) );
+      activityEdit->changed().connect( activityEdit, doActivityUpdate );
+      activityEdit->enterPressed().connect( activityEdit, doActivityUpdate );
       
       
       const string ageTxt = PhysicalUnitsLocalized::printToBestTimeUnits( nucinfo.age );
@@ -999,8 +999,8 @@ class DateLengthCalculator : public WContainerWidget
         updateInfo();
       };//doActivityUpdate lambda
       
-      ageEdit->changed().connect( std::bind( doAgeUpdate ) );
-      ageEdit->enterPressed().connect( std::bind( doAgeUpdate ) );
+      ageEdit->changed().connect( ageEdit, doAgeUpdate );
+      ageEdit->enterPressed().connect( ageEdit, doAgeUpdate );
     }//for( size_t i = 0; i < nucs.size(); ++i )
     
     auto checkUseCuries = [&nucs,db]( const SandiaDecay::NuclideActivityPair &nap ) -> bool {
@@ -1560,36 +1560,36 @@ protected:
     cb->setMargin( 5, Wt::Side::Left );
     cb->setChecked( true );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( [this](){ m_csvResouce->setGiveActivities( true ); } );
-    cb->unChecked().connect( [this](){ m_csvResouce->setGiveActivities( false ); } );
+    cb->checked().connect( this, [this](){ m_csvResouce->setGiveActivities( true ); } );
+    cb->unChecked().connect( this, [this](){ m_csvResouce->setGiveActivities( false ); } );
 
     el = table->elementAt(0,2);
     cb = el->addNew<WCheckBox>( "xrays" );
     cb->setMargin( 5, Wt::Side::Left );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( [this](){ m_csvResouce->setGiveXrays( true ); } );
-    cb->unChecked().connect( [this](){ m_csvResouce->setGiveXrays( false ); } );
+    cb->checked().connect( this, [this](){ m_csvResouce->setGiveXrays( true ); } );
+    cb->unChecked().connect( this, [this](){ m_csvResouce->setGiveXrays( false ); } );
 
     el = table->elementAt(0,3);
     cb = el->addNew<WCheckBox>( "gammas" );
     cb->setMargin( 5, Wt::Side::Left );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( [this](){ m_csvResouce->setGiveGammas( true ); } );
-    cb->unChecked().connect( [this](){ m_csvResouce->setGiveGammas( false ); } );
+    cb->checked().connect( this, [this](){ m_csvResouce->setGiveGammas( true ); } );
+    cb->unChecked().connect( this, [this](){ m_csvResouce->setGiveGammas( false ); } );
 
     el = table->elementAt(0,4);
     cb = el->addNew<WCheckBox>( "alphas" );
     cb->setMargin( 5, Wt::Side::Left );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( [this](){ m_csvResouce->setGiveAlphas( true ); } );
-    cb->unChecked().connect( [this](){ m_csvResouce->setGiveAlphas( false ); } );
+    cb->checked().connect( this, [this](){ m_csvResouce->setGiveAlphas( true ); } );
+    cb->unChecked().connect( this, [this](){ m_csvResouce->setGiveAlphas( false ); } );
 
     el = table->elementAt(0,5);
     cb = el->addNew<WCheckBox>( "betas" );
     cb->setMargin( 5, Wt::Side::Left );
     cb->addStyleClass( "CbNoLineBreak" );
-    cb->checked().connect( [this](){ m_csvResouce->setGiveBetas( true ); } );
-    cb->unChecked().connect( [this](){ m_csvResouce->setGiveBetas( false ); } );
+    cb->checked().connect( this, [this](){ m_csvResouce->setGiveBetas( true ); } );
+    cb->unChecked().connect( this, [this](){ m_csvResouce->setGiveBetas( false ); } );
     
     //table = new WTable( footer() );
     //table->setWidth( WLength(100,WLength::Unit::Percentage) );
@@ -1618,9 +1618,9 @@ protected:
         
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
-    csvancor->clicked().connect( std::bind([this](){
+    csvancor->clicked().connect( this, [this](){
       android_download_workaround(m_csvResouce, "nuc_decay.csv");
-    }) );
+    } );
 #endif //ANDROID
 
     
@@ -1805,7 +1805,7 @@ void DecayActivityDiv::init()
     m_nuclideSelectDialog->setMaximumSize( WLength::Auto, 0.9*m_viewer->renderedHeight() );
   
   m_nuclideSelectDialog->rejectWhenEscapePressed();
-  m_createNewNuclideButton->clicked().connect( [this](){ m_nuclideSelectDialog->show(); } );
+  m_createNewNuclideButton->clicked().connect( this, [this](){ m_nuclideSelectDialog->show(); } );
   m_createNewNuclideButton->clicked().connect( m_nuclideSelect,
                                    &DecaySelectNuclide::setNuclideSearchToFocus );
   
@@ -1815,7 +1815,7 @@ void DecayActivityDiv::init()
   
   m_nuclideSelectDialog->hide();
   
-  m_nuclideSelect->selected().connect( [this]( const NuclideSelectedInfo &info ){ addTheNuclide( info ); } );
+  m_nuclideSelect->selected().connect( this, [this]( const NuclideSelectedInfo &info ){ addTheNuclide( info ); } );
   m_clearNuclidesButton->clicked().connect( this, &DecayActivityDiv::clearAllNuclides );
   m_decayChart->clicked().connect( this, &DecayActivityDiv::decayChartClicked );
 
@@ -2164,8 +2164,8 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   WLabel *endLabel = displOptUpper->addNew<WLabel>( WString::tr("dad-time-span-label") );
   endLabel->setBuddy( m_displayTimeLength );
   displOptUpper->addWidget( unique_ptr<WLineEdit>(m_displayTimeLength) );
-  m_displayTimeLength->changed().connect( [this](){ refreshDecayDisplay( true ); } );
-  m_displayTimeLength->enterPressed().connect( [this](){ refreshDecayDisplay( true ); } );
+  m_displayTimeLength->changed().connect( this, [this](){ refreshDecayDisplay( true ); } );
+  m_displayTimeLength->enterPressed().connect( this, [this](){ refreshDecayDisplay( true ); } );
   
   
   const bool showToolTips = m_viewer ? UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
@@ -2214,7 +2214,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   }
   
   m_yAxisType->setCurrentIndex( ActivityAxis );
-  m_yAxisType->activated().connect( [this]( int ){ refreshDecayDisplay( true ); } );
+  m_yAxisType->activated().connect( this, [this]( int ){ refreshDecayDisplay( true ); } );
   
   if( !m_viewer->isPhone() )
   {
@@ -2228,7 +2228,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
     csvButton->clicked().connect( this, &DecayActivityDiv::createCsvDownloadGui );
   }
 
-  m_displayActivityUnitsCombo->changed().connect( [this](){ refreshDecayDisplay( true ); } );
+  m_displayActivityUnitsCombo->changed().connect( this, [this](){ refreshDecayDisplay( true ); } );
 
   return displayOptionsDiv;
 }//Wt::WContainerWidget *initDisplayOptionWidgets()
@@ -2451,14 +2451,14 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
   const SandiaDecay::Nuclide *nuc = db->nuclide( z, a );
   if( nuc )
   {
-    nuclide.display->clicked().connect( [this, nuc, useCurie](){
+    nuclide.display->clicked().connect( this, [this, nuc, useCurie](){
           m_decayChainChart->setNuclide( nuc, useCurie, DecayChainChart::DecayChainType::DecayFrom );
         } );
   }//if( nuc )
   
   {
     WContainerWidget *disp = nuclide.display;
-    nuclide.display->doubleClicked().connect( [this, disp](){ sourceNuclideDoubleClicked( disp ); } );
+    nuclide.display->doubleClicked().connect( this, [this, disp](){ sourceNuclideDoubleClicked( disp ); } );
   }
   nuclide.display->setToolTip( WString::tr("dad-tt-double-click") );
   
@@ -2472,7 +2472,7 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
     WContainerWidget *disp = nuclide.display;
     WPushButton *closeIcon = nuclide.display->addNew<WPushButton>();
     closeIcon->addStyleClass( "mycloseicon" );
-    closeIcon->clicked().connect( [this, disp](){ removeNuclide( disp ); } );
+    closeIcon->clicked().connect( this, [this, disp](){ removeNuclide( disp ); } );
   }
 
   m_nuclides.push_back( nuclide );
@@ -2683,10 +2683,10 @@ void DecayActivityDiv::displayMoreInfoPopup( const double time )
     m_moreInfoDialog->setClosable( true );
     m_moreInfoDialog->disableCollapse();
     m_moreInfoDialog->rejectWhenEscapePressed();
-    m_moreInfoDialog->finished().connect( [this](){ deleteMoreInfoDialog(); } );
+    m_moreInfoDialog->finished().connect( this, [this](){ deleteMoreInfoDialog(); } );
 
     WPushButton *ok = m_moreInfoDialog->addCloseButtonToFooter();
-    ok->clicked().connect( [this](){ deleteMoreInfoDialog(); } );
+    ok->clicked().connect( this, [this](){ deleteMoreInfoDialog(); } );
   }//if( m_moreInfoDialog ) / else
 
   m_moreInfoDialog->contents()->addWidget( unique_ptr<WWidget>(summary) );
@@ -3537,8 +3537,8 @@ void DecayActivityDiv::addDecaySeries()
       cb->setChecked( check );
       cb->addStyleClass( "ShowSeriesCb" );
       cb->setDisabled( (nColumns == 3) );
-      cb->checked().connect( [this, column](){ userSetShowSeries( column, true ); } );
-      cb->unChecked().connect( [this, column](){ userSetShowSeries( column, false ); } );
+      cb->checked().connect( this, [this, column](){ userSetShowSeries( column, true ); } );
+      cb->unChecked().connect( this, [this, column](){ userSetShowSeries( column, false ); } );
     }else
     {
       // itemOwned goes out of scope and is deleted

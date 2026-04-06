@@ -2958,13 +2958,13 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   
   m_fitModelButton = new WPushButton( WString::tr("ssd-perform-fit-btn") );
-  m_fitModelButton->clicked().connect( [this](){ doModelFit( true, true ); } );
+  m_fitModelButton->clicked().connect( this, [this](){ doModelFit( true, true ); } );
 
   m_fitProgressTxt = new WText();
   m_fitProgressTxt->hide();
   
   m_cancelfitModelButton = new WPushButton( WString::tr("ssd-cancel-fit") );
-  m_cancelfitModelButton->clicked().connect( [this](){ cancelModelFit(); } );
+  m_cancelfitModelButton->clicked().connect( this, [this](){ cancelModelFit(); } );
   m_cancelfitModelButton->hide();
   
   m_showLog = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-calc-log") );
@@ -2991,9 +2991,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  item->clicked().connect( std::bind([xmlResource](){
+  item->clicked().connect( this, [xmlResource](){
     android_download_workaround(xmlResource, "fit_model.xml");
-  }) );
+  } );
 #endif //ANDROID
   
   
@@ -3003,7 +3003,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
                           &ShieldingSourceDisplay::startBrowseDatabaseModels );
   
   item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-save-to-db") );
-  item->triggered().connect( [this](){ startSaveModelToDatabase( false ); } );
+  item->triggered().connect( this, [this](){ startSaveModelToDatabase( false ); } );
   
   m_saveAsNewModelInDb = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-clone-db-entry") );
   m_saveAsNewModelInDb->triggered().connect( this,
@@ -3019,7 +3019,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_chi2Plot->setContentMargins( 5, 5, 13, 5 ); //top, right, bottom, left
       
   // Connect to display mode change signal to update m_showChiOnChart
-  m_chi2Plot->displayModeChanged().connect( [this]( bool showChi ){ handleChi2ChartDisplayModeChanged( showChi ); } );
+  m_chi2Plot->displayModeChanged().connect( this, [this]( bool showChi ){ handleChi2ChartDisplayModeChanged( showChi ); } );
 
   //The next line is kinda inefficient because if all that changed was
   //  fit activity or fit age, then we dont really need to update the chi2 chart
@@ -3046,8 +3046,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_distanceEdit->changed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
   m_distanceEdit->enterPressed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
   
-  m_specViewer->detectorChanged().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
-  m_specViewer->detectorModified().connect( [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
+  m_specViewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
+  m_specViewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
   
   m_showChiOnChart = new SwitchCheckbox( "Mult.", "&chi;" );
   m_showChiOnChart->setChecked();
@@ -3061,8 +3061,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WCheckBox *allpeaks = allPeaksDiv->addNew<WCheckBox>( WString::tr("ssd-cb-all-peaks") );
   allpeaks->addStyleClass( "CbNoLineBreak AllPeaksCb" );
   allpeaks->setTristate( true );
-  allpeaks->changed().connect( [this, allpeaks](){ toggleUseAll( allpeaks ); } );
-  m_peakModel->dataChanged().connect( [this, allpeaks](){ updateAllPeaksCheckBox( allpeaks ); } );
+  allpeaks->changed().connect( this, [this, allpeaks](){ toggleUseAll( allpeaks ); } );
+  m_peakModel->dataChanged().connect( this, [this, allpeaks](){ updateAllPeaksCheckBox( allpeaks ); } );
   updateAllPeaksCheckBox( allpeaks ); //initialize
   
   
@@ -3725,10 +3725,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           fieldUpdate( value, SourceFitModel::Columns::kTruthActivity );
         };
         
-        value->changed().connect( std::bind(valueUpdate) );
-        value->enterPressed().connect( std::bind(valueUpdate) );
-        
-        
+        value->changed().connect( this, valueUpdate );
+        value->enterPressed().connect( this, valueUpdate );
+
+
         WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
         tolerance->setAutoComplete( false );
@@ -3741,9 +3741,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         auto toleranceUpdate = [fieldUpdate,tolerance](){
           fieldUpdate( tolerance, SourceFitModel::Columns::kTruthActivityTolerance );
         };
-        
-        tolerance->changed().connect( std::bind(toleranceUpdate) );
-        tolerance->enterPressed().connect( std::bind(toleranceUpdate) );
+
+        tolerance->changed().connect( this, toleranceUpdate );
+        tolerance->enterPressed().connect( this, toleranceUpdate );
       }//if( fitAct )
       
       
@@ -3765,10 +3765,10 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           fieldUpdate( value, SourceFitModel::Columns::kTruthAge );
         };
         
-        value->changed().connect( std::bind(valueUpdate) );
-        value->enterPressed().connect( std::bind(valueUpdate) );
-        
-        
+        value->changed().connect( this, valueUpdate );
+        value->enterPressed().connect( this, valueUpdate );
+
+
         WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
         tolerance->setAutoComplete( false );
@@ -3781,9 +3781,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
         auto toleranceUpdate = [fieldUpdate,tolerance](){
           fieldUpdate( tolerance, SourceFitModel::Columns::kTruthAgeTolerance );
         };
-        
-        tolerance->changed().connect( std::bind(toleranceUpdate) );
-        tolerance->enterPressed().connect( std::bind(toleranceUpdate) );
+
+        tolerance->changed().connect( this, toleranceUpdate );
+        tolerance->enterPressed().connect( this, toleranceUpdate );
       }//if( fitAge )
     }//for( int i = 0; i < nnuc; ++i )
     
@@ -3826,9 +3826,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
               value->setText( "" );
           };//updateVal(...)
           
-          value->changed().connect( std::bind(updateVal) );
-          value->enterPressed().connect( std::bind(updateVal) );
-          
+          value->changed().connect( this, updateVal );
+          value->enterPressed().connect( this, updateVal );
+
           WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
           tolerance->setAutoComplete( false );
@@ -3854,8 +3854,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           if( select->truthADTolerance )
             tolerance->setText( std::to_string(*select->truthADTolerance) );
 
-          tolerance->changed().connect( std::bind(updateTolerance) );
-          tolerance->enterPressed().connect( std::bind(updateTolerance) );
+          tolerance->changed().connect( this, updateTolerance );
+          tolerance->enterPressed().connect( this, updateTolerance );
         }//if( fit AD )
         
         if( select->fitAtomicNumber() )
@@ -3889,9 +3889,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
               value->setText( "" );
           };//updateVal(...)
           
-          value->changed().connect( std::bind(updateVal) );
-          value->enterPressed().connect( std::bind(updateVal) );
-          
+          value->changed().connect( this, updateVal );
+          value->enterPressed().connect( this, updateVal );
+
           WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
           tolerance->setAutoComplete( false );
@@ -3926,8 +3926,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           if( select->truthANTolerance )
             tolerance->setText( std::to_string(*select->truthANTolerance) );
           
-          tolerance->changed().connect( std::bind(updateTolerance) );
-          tolerance->enterPressed().connect( std::bind(updateTolerance) );
+          tolerance->changed().connect( this, updateTolerance );
+          tolerance->enterPressed().connect( this, updateTolerance );
         }//if( fit AN )
       }else
       {
@@ -4061,9 +4061,9 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
             }//try / catch
           };//updateVal(...)
           
-          value->changed().connect( std::bind(updateVal) );
-          value->enterPressed().connect( std::bind(updateVal) );
-          
+          value->changed().connect( this, updateVal );
+          value->enterPressed().connect( this, updateVal );
+
           WLineEdit *tolerance = table->elementAt(row, 2)->addNew<WLineEdit>();
 
           tolerance->setAutoComplete( false );
@@ -4102,8 +4102,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           if( *toleranceVal )
             tolerance->setText( PhysicalUnits::printToBestLengthUnits( **toleranceVal ) );
           
-          tolerance->changed().connect( std::bind(updateTolerance) );
-          tolerance->enterPressed().connect( std::bind(updateTolerance) );
+          tolerance->changed().connect( this, updateTolerance );
+          tolerance->enterPressed().connect( this, updateTolerance );
         };//setupLength lamda
         
         switch( geom )
@@ -4219,8 +4219,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
                 truthNucs[nuclide] = make_pair(truthval, truthtol);
               };//updateValAndTol(...)
               
-              value->valueChanged().connect( std::bind(updateValAndTol) );
-              tolerance->valueChanged().connect( std::bind(updateValAndTol) );
+              value->valueChanged().connect( this, updateValAndTol );
+              tolerance->valueChanged().connect( this, updateValAndTol );
             }//for( const pair<const SandiaDecay::Nuclide *,double> &mass_frac : currentMassFractions )
           }//for( const auto &el_nucfracs : el_currentMassFractions )
         }//if( select->fitForAnyMassFractions() )
@@ -4235,12 +4235,12 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
 
   
   WPushButton *button = window->addCloseButtonToFooter("Okay");
-  button->clicked().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+  button->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   window->centerWindow();
   window->disableCollapse();
   window->rejectWhenEscapePressed();
-  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+  window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
   window->resizeToFitOnScreen();
   window->show();
 }//showInputTruthValuesWindow()
@@ -5142,17 +5142,17 @@ bool ShieldingSourceDisplay::checkForMissingBackgroundPeaks( const bool triggere
 
   std::function<void()> dofit = [this](){ doModelFit( true, false ); };
 
-  no_btn->clicked().connect( std::bind( [setSkipTrueAndFit](){ setSkipTrueAndFit(); } ) );
+  no_btn->clicked().connect( this, [setSkipTrueAndFit](){ setSkipTrueAndFit(); } );
 
   std::function<void()> fitPeaks_all = [this, all_auto_copy, triggeredFromFit](){ fitAndPreviewBackgroundPeaks( all_auto_copy, triggeredFromFit ); };
   std::function<void()> fitPeaks_missing = [this, missing_copy, triggeredFromFit](){ fitAndPreviewBackgroundPeaks( missing_copy, triggeredFromFit ); };
 
-  add_btn->clicked().connect( std::bind( [this, add_all_cb, fitPeaks_all, fitPeaks_missing](){
+  add_btn->clicked().connect( this, [this, add_all_cb, fitPeaks_all, fitPeaks_missing](){
     if( add_all_cb->isChecked() )
       fitPeaks_all();
     else
       fitPeaks_missing();
-  }) );
+  } );
 
   return true;
 }//bool checkForMissingBackgroundPeaks( bool )
@@ -5249,7 +5249,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
     SimpleDialog *dialog = SimpleDialog::make( "", WString::tr( "ssd-no-new-back-peaks" ) );
     dialog->addButton( WString::tr( "Okay" ) );
     if( triggeredFromFit )
-      dialog->finished().connect( std::bind( [dofit](){ dofit(); } ) );
+      dialog->finished().connect( this, [dofit](){ dofit(); } );
 
     return;
   }//if( candidates_to_fit.empty() )
@@ -5280,7 +5280,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
     dialog->addButton( WString::tr( "Okay" ) );
 
     if( triggeredFromFit )
-      dialog->finished().connect( std::bind( [dofit](){ dofit(); } ) );
+      dialog->finished().connect( this, [dofit](){ dofit(); } );
 
     return;
   }//if( all_fit_peaks.empty() )
@@ -5359,10 +5359,10 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   WPushButton *cancel_btn = dialog->addButton( WString::tr( "Reject" ) );
 
   std::function<void()> add_peaks = [this, peaks_to_add, triggeredFromFit](){ addPeaksToBackgroundAndContinue( peaks_to_add, triggeredFromFit ); };
-  accept_btn->clicked().connect( std::bind( [add_peaks](){ add_peaks(); } ) );
+  accept_btn->clicked().connect( this, [add_peaks](){ add_peaks(); } );
 
   if( triggeredFromFit )
-    cancel_btn->clicked().connect( std::bind( [dofit](){ dofit(); } ) );
+    cancel_btn->clicked().connect( this, [dofit](){ dofit(); } );
 }//void fitAndPreviewBackgroundPeaks(...)
 
 
@@ -6567,8 +6567,8 @@ void ShieldingSourceDisplay::startModelUpload()
   WFileUpload *upload = contents->addNew<WFileUpload>();
   upload->setInline( false );
   
-  upload->uploaded().connect( [this, upload](){ finishModelUpload( upload ); } );
-  upload->fileTooLarge().connect( [this]( ::int64_t size ){ modelUploadError( size ); } );
+  upload->uploaded().connect( this, [this, upload](){ finishModelUpload( upload ); } );
+  upload->fileTooLarge().connect( this, [this]( ::int64_t size ){ modelUploadError( size ); } );
   upload->changed().connect( upload, &WFileUpload::upload );
   
   
@@ -6883,31 +6883,31 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
   
     if( selections[0] )
     {
-      selections[0]->activated().connect( [sel0=selections[0], sel1=selections[1], summary, accept, specViewer=m_specViewer]( int ){
+      selections[0]->activated().connect( this, [sel0=selections[0], sel1=selections[1], summary, accept, specViewer=m_specViewer]( int ){
         updateDescription( sel0, sel1, summary, accept, specViewer );
       } );
-      selections[0]->doubleClicked().connect( [this, sel0=selections[0], sel1=selections[1]]( Wt::WMouseEvent ){
+      selections[0]->doubleClicked().connect( this, [this, sel0=selections[0], sel1=selections[1]]( Wt::WMouseEvent ){
         finishLoadModelFromDatabase( sel0, sel1 );
       } );
-      accept->clicked().connect( [this, sel0=selections[0], sel1=selections[1]](){
+      accept->clicked().connect( this, [this, sel0=selections[0], sel1=selections[1]](){
         finishLoadModelFromDatabase( sel0, sel1 );
       } );
     }//if( selections[0] )
 
     if( selections[1] )
     {
-      selections[1]->activated().connect( [sel1=selections[1], sel0=selections[0], summary, accept, specViewer=m_specViewer]( int ){
+      selections[1]->activated().connect( this, [sel1=selections[1], sel0=selections[0], summary, accept, specViewer=m_specViewer]( int ){
         updateDescription( sel1, sel0, summary, accept, specViewer );
       } );
-      selections[1]->doubleClicked().connect( [this, sel1=selections[1], sel0=selections[0]]( Wt::WMouseEvent ){
+      selections[1]->doubleClicked().connect( this, [this, sel1=selections[1], sel0=selections[0]]( Wt::WMouseEvent ){
         finishLoadModelFromDatabase( sel1, sel0 );
       } );
-      accept->clicked().connect( [this, sel1=selections[1], sel0=selections[0]](){
+      accept->clicked().connect( this, [this, sel1=selections[1], sel0=selections[0]](){
         finishLoadModelFromDatabase( sel1, sel0 );
       } );
     }//if( selections[1] )
 
-    del->clicked().connect( [this, sel0=selections[0], sel1=selections[1]](){
+    del->clicked().connect( this, [this, sel0=selections[0], sel1=selections[1]](){
       removeModelFromDb( sel0, sel1 );
     } );
     
@@ -7121,7 +7121,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   if( descEdit->valueText().empty() )
     descEdit->setValueText( defaultModelDescription() );
   
-  nameEdit->enterPressed().connect( [descEdit](){ descEdit->setFocus( true ); } );
+  nameEdit->enterPressed().connect( descEdit, [descEdit](){ descEdit->setFocus( true ); } );
   
   descEdit->setTextSize( 32 );
   nameEdit->setTextSize( 32 );
@@ -7131,8 +7131,8 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
   WPushButton *button = m_modelDbSaveWindow->footer()->addNew<WPushButton>( WString::tr("Save") );
   button->setIcon( "InterSpec_resources/images/disk2.png" );
   
-  button->clicked().connect( [this, nameEdit, descEdit](){ finishGuiSaveModelToDatabase( nameEdit, descEdit ); } );
-  descEdit->enterPressed().connect( [button](){ button->setFocus( true ); } );
+  button->clicked().connect( this, [this, nameEdit, descEdit](){ finishGuiSaveModelToDatabase( nameEdit, descEdit ); } );
+  descEdit->enterPressed().connect( button, [button](){ button->setFocus( true ); } );
   
   
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
@@ -7838,8 +7838,8 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
   select->setFixedGeometry( det && det->isFixedGeometry() );
   
   
-  select->addShieldingBefore().connect( [this]( ShieldingSelect *sel ){ doAddShieldingBefore( sel ); } );
-  select->addShieldingAfter().connect( [this]( ShieldingSelect *sel ){ doAddShieldingAfter( sel ); } );
+  select->addShieldingBefore().connect( this, [this]( ShieldingSelect *sel ){ doAddShieldingBefore( sel ); } );
+  select->addShieldingAfter().connect( this, [this]( ShieldingSelect *sel ){ doAddShieldingAfter( sel ); } );
   
   //connect up signals of select and such
   select->m_arealDensityEdit->valueChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
@@ -7852,20 +7852,20 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
   select->materialModified().connect( this, &ShieldingSourceDisplay::materialModifiedCallback );
   select->materialChanged().connect( this, &ShieldingSourceDisplay::materialChangedCallback );
 
-  select->addingIsotopeAsSource().connect( [this, select]( const SandiaDecay::Nuclide *nuc, ShieldingSourceFitCalc::ModelSourceType type ){
+  select->addingIsotopeAsSource().connect( this, [this, select]( const SandiaDecay::Nuclide *nuc, ShieldingSourceFitCalc::ModelSourceType type ){
     isotopeIsBecomingVolumetricSourceCallback( select, nuc, type );
   } );
-  select->removingIsotopeAsSource().connect( [this, select]( const SandiaDecay::Nuclide *nuc, ShieldingSourceFitCalc::ModelSourceType type ){
+  select->removingIsotopeAsSource().connect( this, [this, select]( const SandiaDecay::Nuclide *nuc, ShieldingSourceFitCalc::ModelSourceType type ){
     isotopeRemovedAsVolumetricSourceCallback( select, nuc, type );
   } );
-  select->activityFromVolumeNeedUpdating().connect( [this]( ShieldingSelect *sel, const SandiaDecay::Nuclide *nuc ){
+  select->activityFromVolumeNeedUpdating().connect( this, [this]( ShieldingSelect *sel, const SandiaDecay::Nuclide *nuc ){
     updateActivityOfShieldingIsotope( sel, nuc );
   } );
 
   
   Signal<ShieldingSelect *, shared_ptr<const string>, shared_ptr<const string>> &
       undoSignal = select->userChangedStateSignal();
-  undoSignal.connect( [this]( ShieldingSelect *sel,
+  undoSignal.connect( this, [this]( ShieldingSelect *sel,
                               shared_ptr<const string> prev,
                               shared_ptr<const string> curr ){
     handleShieldingUndoRedoPoint( sel, prev, curr );

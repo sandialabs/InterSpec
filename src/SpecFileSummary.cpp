@@ -472,7 +472,7 @@ void SpecFileSummary::init()
     m_displaySampleDiv = sampleDivOwner.get();
     m_displaySampleDiv->addStyleClass( "displaySampleDiv" );
     m_prevSampleNumButton = m_displaySampleDiv->addNew<WImage>( "InterSpec_resources/images/previous_arrow.png" );
-    m_prevSampleNumButton->clicked().connect( [this](){ handleUserIncrementSampleNum( false ); } );
+    m_prevSampleNumButton->clicked().connect( this, [this](){ handleUserIncrementSampleNum( false ); } );
     m_displayedPreText = m_displaySampleDiv->addNew<WText>();
     m_displaySampleNumEdit = m_displaySampleDiv->addNew<WLineEdit>();
 
@@ -490,9 +490,9 @@ void SpecFileSummary::init()
     m_displaySampleNumEdit->setTextSize( 3 );
     m_displayedPostText = m_displaySampleDiv->addNew<WText>();
     m_nextSampleNumButton = m_displaySampleDiv->addNew<WImage>( "InterSpec_resources/images/next_arrow.png" );
-    m_nextSampleNumButton->clicked().connect( [this](){ handleUserIncrementSampleNum( true ); } );
-    m_displaySampleNumEdit->enterPressed().connect( [this](){ handleUserChangeSampleNum(); } );
-    m_displaySampleNumEdit->blurred().connect( [this](){ handleUserChangeSampleNum(); } );
+    m_nextSampleNumButton->clicked().connect( this, [this](){ handleUserIncrementSampleNum( true ); } );
+    m_displaySampleNumEdit->enterPressed().connect( this, [this](){ handleUserChangeSampleNum(); } );
+    m_displaySampleNumEdit->blurred().connect( this, [this](){ handleUserChangeSampleNum(); } );
     m_displaySampleDiv->setHiddenKeepsGeometry( false );
 
     measTable->addWidget( std::move(sampleDivOwner), measTable->rowCount(), 0, 1, measTable->columnCount(),
@@ -510,9 +510,9 @@ void SpecFileSummary::init()
 
   // Helper lambda to connect all three signals (changed, enterPressed, blurred) to handleFieldUpdate
   auto connectField = [this]( WFormWidget *w, EditableFields f ){
-    w->changed().connect( [this, f](){ handleFieldUpdate( f ); } );
-    w->enterPressed().connect( [this, f](){ handleFieldUpdate( f ); } );
-    w->blurred().connect( [this, f](){ handleFieldUpdate( f ); } );
+    w->changed().connect( this, [this, f](){ handleFieldUpdate( f ); } );
+    w->enterPressed().connect( this, [this, f](){ handleFieldUpdate( f ); } );
+    w->blurred().connect( this, [this, f](){ handleFieldUpdate( f ); } );
   };
 
   connectField( m_displayedLiveTime, kDisplayedLiveTime );
@@ -523,7 +523,7 @@ void SpecFileSummary::init()
   connectField( m_gpsTimeStamp, kPosition );
   connectField( m_title, kDescription );
 
-  m_source->activated().connect( [this]( int ){ handleFieldUpdate( kSourceType ); } );
+  m_source->activated().connect( this, [this]( int ){ handleFieldUpdate( kSourceType ); } );
 
   connectField( m_measurmentRemarks, kMeasurmentRemarks );
   connectField( m_fileRemarks, kFileRemarks );
@@ -540,12 +540,12 @@ void SpecFileSummary::init()
 
   handleSpectrumTypeChanged();
   handleAllowModifyStatusChange();
-  finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+  finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
 
   AuxWindow::addHelpInFooter( footer(), "file-parameters-dialog" );
 
   WPushButton *closeButton = addCloseButtonToFooter();
-  closeButton->clicked().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+  closeButton->clicked().connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
   
   holder->setMinimumSize( 780, 500 );
   holder->setWidth( WLength(100.0,WLength::Unit::Percentage) );
@@ -621,7 +621,7 @@ void SpecFileSummary::showGoogleMap()
   
  
   window->disableCollapse();
-  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+  window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
  // window->footer()->setStyleClass( "modal-footer" );
   window->footer()->setHeight(WLength(50,WLength::Unit::Pixel));
   WPushButton *closeButton = window->addCloseButtonToFooter();
@@ -632,7 +632,7 @@ void SpecFileSummary::showGoogleMap()
   GoogleMap *googlemap = layout->addWidget( std::make_unique<GoogleMap>( false ), 0, 0 );
   googlemap->addMarker( latitude, longitude );
   googlemap->adjustPanAndZoom();
-  googlemap->mapClicked().connect( [googlemap, latitude, longitude]( double lat, double lng ){
+  googlemap->mapClicked().connect( googlemap, [googlemap, latitude, longitude]( double lat, double lng ){
     updateCoordText( googlemap, lat, lng, latitude, longitude );
   } );
   window->resize( WLength(w), WLength(h) );

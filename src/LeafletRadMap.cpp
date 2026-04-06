@@ -133,22 +133,22 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   
   WCheckBox *cb = new WCheckBox( WString::tr("lrm-pre-warn-dont-ask"), dialog->contents() );
   cb->setInline( false );
-  cb->checked().connect( std::bind([cb](){
+  cb->checked().connect( cb, [cb](){
     InterSpec *viewer = InterSpec::instance();
     if( viewer )
       UserPreferences::setPreferenceValue("ShowMapDataWarning", !cb->isChecked(), viewer);
-  }) );
+  } );
   
   WPushButton *accept = dialog->addButton( WString::tr("lrm-pre-warn-proceed-btn") );
-  accept->clicked().connect( [meas, sample_numbers, detector_names, on_create](){
+  accept->clicked().connect( accept, [meas, sample_numbers, detector_names, on_create](){
     showMapWindow( meas, sample_numbers, detector_names, on_create );
   } );
   WPushButton *cancel = dialog->addButton( WString::tr("Cancel") );
-  cancel->clicked().connect( std::bind([](){
+  cancel->clicked().connect( cancel, [](){
     InterSpec *viewer = InterSpec::instance();
     if( viewer )
       UserPreferences::setPreferenceValue("ShowMapDataWarning", true, viewer);
-  }) );
+  } );
   accept->setFocus();
   
   return dialog;
@@ -176,7 +176,7 @@ LeafletRadMapWindow::LeafletRadMapWindow()
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
 
-  finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+  finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
   
   resizeScaledWindow( 0.8, 0.8 );
   
@@ -220,11 +220,11 @@ void LeafletRadMapWindow::handleTileLoadFailed()
 
   m_tileLoadWarningBtn = footer()->insertWidget( 0, std::make_unique<WPushButton>( WString::tr( "lrm-tile-load-btn" ) ) );
 
-  m_tileLoadWarningBtn->clicked().connect( std::bind( [](){
+  m_tileLoadWarningBtn->clicked().connect( m_tileLoadWarningBtn, [](){
     SimpleDialog *dialog = SimpleDialog::make( WString::tr( "lrm-tile-load-dialog-title"),
                                             WString::tr( "lrm-tile-load-dialog-content" ) );
     dialog->addButton( WString::tr( "Okay" ) );
-  } ) );
+  } );
 }//void LeafletRadMapWindow::handleTileLoadFailed()
 
 
@@ -282,7 +282,7 @@ LeafletRadMap::LeafletRadMap()
   wApp->require( "InterSpec_resources/LeafletRadMap.js" );
 
   
-  m_displaySamples.connect( [this]( const std::string &s1, const std::string &s2 ){
+  m_displaySamples.connect( this, [this]( const std::string &s1, const std::string &s2 ){
     handleLoadSamples( s1, s2 );
   } );
 

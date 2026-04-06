@@ -471,7 +471,7 @@ void GoogleMap::init()
   layout->setContentsMargins( 0, 0, 0, 0 );
 
   m_map = layout->addWidget( std::make_unique<SrbGoogleMap>( m_trackMapExtent ), 0, 0 );
-  m_map->clicked().connect( [this]( const Wt::WGoogleMap::Coordinate &coord ){
+  m_map->clicked().connect( this, [this]( const Wt::WGoogleMap::Coordinate &coord ){
     wasClicked( coord, m_clicked );
   } );
 

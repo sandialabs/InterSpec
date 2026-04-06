@@ -990,7 +990,7 @@ public:
         contents->setInline( false );
         
         WPushButton *btn = dialog->addButton( WString::tr("Close") );
-        btn->clicked().connect( std::bind( [rcode,result,m](){
+        btn->clicked().connect( btn, [rcode,result,m](){
           UndoRedoManager *undoRedo = UndoRedoManager::instance();
           if( undoRedo && undoRedo->canAddUndoRedoNow() )
           {
@@ -1002,16 +1002,16 @@ public:
             };
             undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Close external RID dialog" );
           }
-        } ) );//Close button clicked
+        } );//Close button clicked
           
         btn = dialog->addButton( WString::tr("rr-rid-tool-btn") );
-        btn->clicked().connect( std::bind([=](){
+        btn->clicked().connect( btn, [=](){
           InterSpec *interspec = InterSpec::instance();
           assert( interspec );
           if( !interspec )
             return;
           interspec->createRemoteRidWindow();
-          
+
           UndoRedoManager *undoRedo = UndoRedoManager::instance();
           if( undoRedo && undoRedo->canAddUndoRedoNow() )
           {
@@ -1031,7 +1031,7 @@ public:
             };
             undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Close external RID dialog" );
           }
-        }));//RID Tool button clicked
+        } );//RID Tool button clicked
         
         
         interspec->setAutoRemoteRidResultDialog( dialog );
@@ -2287,20 +2287,20 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   cb->setInline( false );
   
   Wt::WPushButton *btn = dialog->addButton( WString::tr("Cancel") );
-  btn->clicked().connect( std::bind([callback](){
+  btn->clicked().connect( btn, [callback](){
     if( callback )
       callback( nullptr, nullptr );
-  }) );
+  } );
   
   btn = dialog->addButton( WString::tr("Continue") );
-  btn->clicked().connect( std::bind([viewer,callback,cb](){
+  btn->clicked().connect( btn, [viewer,callback,cb](){
     if( cb->isChecked() )
       UserPreferences::setPreferenceValue("ExternalRidWarn", false, viewer );
       
     auto res = RemoteRid::createDialog( viewer );
     if( callback )
       callback( res.first, res.second );
-  }) );
+  } );
   
   return dialog;
 }//void startRemoteRidDialog( viewer, callback )
@@ -2330,7 +2330,7 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   qr_btn->clicked().preventPropagation();
-  qr_btn->clicked().connect( std::bind( [w](){
+  qr_btn->clicked().connect( qr_btn, [w](){
     try
     {
       const string url = "interspec://remoterid/?" + Wt::Utils::urlEncode(w->encodeStateToUrl());
@@ -2339,7 +2339,7 @@ pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
     {
       passMessage(WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
-  }) );
+  } );
 #endif //USE_QR_CODES
   
   return { window, w };
@@ -2391,20 +2391,20 @@ RemoteRid::RemoteRid( InterSpec *viewer )
     auto restRidOwner = std::make_unique<RestRidImp::ExternalRidWidget>( RestRidImp::ExternalRidWidget::ServiceType::Rest, this, viewer );
     WMenuItem *item = m_menu->addItem( "Remote URL", std::move(restRidOwner), ContentLoading::Eager );
     m_rest_rid = dynamic_cast<RestRidImp::ExternalRidWidget *>( item->contents() );
-    item->clicked().connect( std::bind([item,this](){
+    item->clicked().connect( this, [item,this](){
       m_menu->select( item );
       item->triggered().emit( item );
-    }) );
+    } );
   }
 
   {
     auto exeRidOwner = std::make_unique<RestRidImp::ExternalRidWidget>( RestRidImp::ExternalRidWidget::ServiceType::Exe, this, viewer );
     WMenuItem *item = m_menu->addItem( "Executable", std::move(exeRidOwner), ContentLoading::Eager );
     m_exe_rid = dynamic_cast<RestRidImp::ExternalRidWidget *>( item->contents() );
-    item->clicked().connect( std::bind([item,this](){
+    item->clicked().connect( this, [item,this](){
       m_menu->select( item );
       item->triggered().emit( item );
-    }) );
+    } );
   }
 
 
@@ -2436,7 +2436,7 @@ RemoteRid::RemoteRid( InterSpec *viewer )
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo )
   {
-    m_menu->itemSelected().connect( std::bind([](){
+    m_menu->itemSelected().connect( this, [](){
       UndoRedoManager *undoRedo = UndoRedoManager::instance();
       if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
         return;
@@ -2447,7 +2447,7 @@ RemoteRid::RemoteRid( InterSpec *viewer )
           rid->m_menu->select( rid->m_menu->currentIndex() ? 0 : 1 );
       };
       undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Change RID location menu" );
-    }) );
+    } );
   }//if( undoRedo )
   
 #else
@@ -2769,7 +2769,7 @@ void RemoteRid::handleAppUrl( std::string query_str )
                                             " you have entered will be removed, and the External-RID"
                                             " service will no longer be used." );
     WPushButton *cont = dialog->addButton( "Continue" );
-    cont->clicked().connect( std::bind([](){
+    cont->clicked().connect( cont, [](){
       InterSpec *interspec = InterSpec::instance();
       assert( interspec );
       if( !interspec )
@@ -2779,7 +2779,7 @@ void RemoteRid::handleAppUrl( std::string query_str )
       UserPreferences::setPreferenceValue( "ExternalRidUrl", string(), interspec );
       UserPreferences::setPreferenceValue( "ExternalRidExe", string(), interspec );
       passMessage( "External-RID preferences have been reset.", WarningWidget::WarningMsgInfo );
-    }) );
+    } );
     dialog->addButton( "Cancel" );
     
     return;
@@ -2881,14 +2881,14 @@ void RemoteRid::handleAppUrl( std::string query_str )
   };//set_to_old_prefs
   
   
-  btn->clicked().connect( std::bind([set_to_old_prefs,set_to_new_prefs](){
+  btn->clicked().connect( btn, [set_to_old_prefs,set_to_new_prefs](){
     set_to_new_prefs();
-    
+
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( !undoRedo || undoRedo->isInUndoOrRedo() )
       return;
     undoRedo->addUndoRedoStep( set_to_old_prefs, set_to_new_prefs, "Set Remote-RID from URI." );
-  }) );
+  } );
   
   dialog->addButton( "No" );
 }//void handleAppUrl( std::string query_str )

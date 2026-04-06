@@ -156,7 +156,7 @@ namespace
     const char *title = SpectrumViewerTester::tostr( type );
     auto itemOwner = std::make_unique<SideMenuItem>( title, std::move(wOwner) );
     SideMenuItem *item = itemOwner.get();
-    item->clicked().connect( [m, item](){ select_item( m, item ); } );
+    item->clicked().connect( item, [m, item](){ select_item( m, item ); } );
     m->addItem( std::move(itemOwner) );
 
     std::pair<SideMenuItem *, DeferredWidget< TestDisplayCreateFunction > *> p;
@@ -679,8 +679,8 @@ SpectrumViewerTesterWindow::SpectrumViewerTesterWindow( InterSpec *viewer )
     0, 0 );
   m_tester->setSizeHint( static_cast<int>(width), static_cast<int>(height) );
 
-  m_tester->m_done.connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
-  finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+  m_tester->m_done.connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
+  finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
 
   layout->setContentsMargins( 0, 0, 0, 0 );
   
@@ -1016,7 +1016,7 @@ SpectrumViewerTester::SpectrumViewerTester( InterSpec *viewer,
   m_overview->addStyleClass( "UseInfoItem" );
   auto overviewItemOwner = std::make_unique<SideMenuItem>( "Overview", std::move(overviewOwner) );
   SideMenuItem *overviewItem = overviewItemOwner.get();
-  overviewItem->clicked().connect( [this, overviewItem](){ select_item( m_sideMenu, overviewItem ); } );
+  overviewItem->clicked().connect( this, [this, overviewItem](){ select_item( m_sideMenu, overviewItem ); } );
 
   m_sideMenu->addItem( std::move(overviewItemOwner) );
   

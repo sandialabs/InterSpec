@@ -230,13 +230,13 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_selects[typeindex]->addStyleClass( "SpecFileSelect" );
     m_selects[typeindex]->setNoSelectionEnabled( true );
     m_selects[typeindex]->setCurrentIndex( -1 );
-    m_selects[typeindex]->activated().connect( [this, type]( int row ){ handleFileChangeRequest( row, type ); } );
+    m_selects[typeindex]->activated().connect( this, [this, type]( int row ){ handleFileChangeRequest( row, type ); } );
     m_clearFileSelection[typeindex] = comboRow->addNew<WPushButton>();
     m_clearFileSelection[typeindex]->addStyleClass( "closeicon-wtdefault" );
     m_clearFileSelection[typeindex]->setHiddenKeepsGeometry( true );
     m_clearFileSelection[typeindex]->hide();
     HelpSystem::attachToolTipOn( m_clearFileSelection[typeindex], WString::tr("cfm-tt-clear-spectrum"), showToolTips, HelpSystem::ToolTipPosition::Right );
-    m_clearFileSelection[typeindex]->clicked().connect( [this, type](){ handleClearFileSelection( type ); } );
+    m_clearFileSelection[typeindex]->clicked().connect( this, [this, type](){ handleClearFileSelection( type ); } );
 
     m_sampleDivs[typeindex] = wrapper->addNew<WContainerWidget>();
     m_sampleDivs[typeindex]->setStyleClass( "SampleSelectRow" );
@@ -317,15 +317,15 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       m_scaleValueTxt[typeindex]->setRange( 0.0, 1000000.0 );
       m_scaleValueTxt[typeindex]->addStyleClass( "SpecNormTxt" );
       m_scaleValueTxt[typeindex]->setFormatString( "%.4G" );
-      m_scaleValueTxt[typeindex]->valueChanged().connect( [this, type](){ handleUserEnterdScaleFactor( type ); } );
-      m_scaleValueTxt[typeindex]->mouseWheel().connect( [this, type]( WMouseEvent e ){ handleUserEnterdScaleFactorWheel( type, e ); } );
+      m_scaleValueTxt[typeindex]->valueChanged().connect( this, [this, type](){ handleUserEnterdScaleFactor( type ); } );
+      m_scaleValueTxt[typeindex]->mouseWheel().connect( this, [this, type]( WMouseEvent e ){ handleUserEnterdScaleFactorWheel( type, e ); } );
 
       HelpSystem::attachToolTipOn( m_scaleValueTxt[typeindex], WString::tr("cfm-tt-scale-factor"), showToolTips );
 
 
       m_rescaleByLiveTime[typeindex] = m_scaleValueRow[typeindex]->addNew<WPushButton>( WString::tr("cfm-norm-btn") );
       m_rescaleByLiveTime[typeindex]->hide();
-      m_rescaleByLiveTime[typeindex]->clicked().connect( [this, type](){ handleRenormalizeByLIveTime( type ); } );
+      m_rescaleByLiveTime[typeindex]->clicked().connect( this, [this, type](){ handleRenormalizeByLIveTime( type ); } );
       m_scaleValueTxt[typeindex]->disable();
     }//if( type == SpecUtils::SpectrumType::Foreground ) / else
 
@@ -334,19 +334,19 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 
     m_showRidIdResult[typeindex] = btndiv->addNew<WPushButton>( WString::tr("cfm-show-rid-result-btn") );
     m_showRidIdResult[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
-    m_showRidIdResult[typeindex]->clicked().connect( [this, type](){ m_interspec->showRiidResults( type ); } );
+    m_showRidIdResult[typeindex]->clicked().connect( this, [this, type](){ m_interspec->showRiidResults( type ); } );
     //HelpSystem::attachToolTipOn( m_showRidIdResult[typeindex], WString::tr("app-mi-tt-view-rid"), showToolTips );
     m_showRidIdResult[typeindex]->hide();
 
     m_showImage[typeindex] = btndiv->addNew<WPushButton>( WString::tr("cfm-show-image-btn") );
     m_showImage[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
-    m_showImage[typeindex]->clicked().connect( [this, type](){ m_interspec->showMultimedia( type ); } );
+    m_showImage[typeindex]->clicked().connect( this, [this, type](){ m_interspec->showMultimedia( type ); } );
     //HelpSystem::attachToolTipOn( m_showImage[typeindex], WString::tr("app-mi-tt-view-img"), showToolTips );
     m_showImage[typeindex]->hide();
 
     m_moreInfoBtn[typeindex] = btndiv->addNew<WPushButton>( WString::tr("cfm-more-info-btn") );
     m_moreInfoBtn[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
-    m_moreInfoBtn[typeindex]->clicked().connect( [this, type](){ m_interspec->createFileParameterWindow( type ); } );
+    m_moreInfoBtn[typeindex]->clicked().connect( this, [this, type](){ m_interspec->createFileParameterWindow( type ); } );
     m_moreInfoBtn[typeindex]->hide();
 
     //Lets add in a few more customizations based on the display type
@@ -361,7 +361,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
         //Foreground, add in Manager and Library buttons for quick access
         WContainerWidget *helpBtn = foregroundBtns->addNew<WContainerWidget>();
         helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-        helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "compact-file-manager" ); } );
+        helpBtn->clicked().connect( this, [](){ HelpSystem::createHelpWindow( "compact-file-manager" ); } );
 
         WPushButton *fileManagerBtn = foregroundBtns->addNew<WPushButton>( WString::tr("app-mi-file-manager") );
         fileManagerBtn->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
@@ -382,7 +382,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 
         m_swapSecondaryWithForegroundBtn = secondaryBtns->addNew<WPushButton>( WString::tr("cfm-swap-secondary-with-foreground-btn") );
         HelpSystem::attachToolTipOn( m_swapSecondaryWithForegroundBtn, WString::tr("cfm-tt-swap-secondary-with-foreground-btn"), showToolTips );
-        m_swapSecondaryWithForegroundBtn->clicked().connect( [this](){ handleSwapWithForeground( SpecUtils::SpectrumType::SecondForeground ); } );
+        m_swapSecondaryWithForegroundBtn->clicked().connect( this, [this](){ handleSwapWithForeground( SpecUtils::SpectrumType::SecondForeground ); } );
         m_swapSecondaryWithForegroundBtn->addStyleClass( "LinkBtn" );
         m_swapSecondaryWithForegroundBtn->hide();
 
@@ -405,7 +405,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 
         m_swapBackgroundWithForegroundBtn = backgroundBtns->addNew<WPushButton>( WString::tr("cfm-swap-back-with-foreground-btn") );
         HelpSystem::attachToolTipOn( m_swapBackgroundWithForegroundBtn, WString::tr("cfm-tt-swap-back-with-foreground-btn"), showToolTips );
-        m_swapBackgroundWithForegroundBtn->clicked().connect( [this](){ handleSwapWithForeground( SpecUtils::SpectrumType::Background ); } );
+        m_swapBackgroundWithForegroundBtn->clicked().connect( this, [this](){ handleSwapWithForeground( SpecUtils::SpectrumType::Background ); } );
         m_swapBackgroundWithForegroundBtn->addStyleClass( "LinkBtn" );
         m_swapBackgroundWithForegroundBtn->hide();
         break;
@@ -1100,7 +1100,7 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
     snprintf( buffer, sizeof(buffer), "%.4f,%.4f", hist->latitude(), hist->longitude() );
     WPushButton *gps = cell->addNew<WPushButton>( buffer );
     gps->addStyleClass( "LinkBtn GpsBtn" );
-    gps->clicked().connect( [this, type](){ m_interspec->createMapWindow( type, false ); } );
+    gps->clicked().connect( this, [this, type](){ m_interspec->createMapWindow( type, false ); } );
 
     snprintf( buffer, sizeof(buffer), "%.6f,%.6f - click to show a map", hist->latitude(), hist->longitude() );
     gps->setToolTip( buffer );

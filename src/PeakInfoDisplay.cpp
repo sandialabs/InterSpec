@@ -182,7 +182,7 @@ namespace
             m_color = addNew<ColorSelect>( ColorSelect::PrefferNative );
             setAttributeValue( "style", "margin: 0px; background-color: null;" );
             m_color->setAttributeValue("style", "height: 15px;" );
-            m_color->cssColorChanged().connect( [this]( const std::string &color ){ colorSelected( color ); } );
+            m_color->cssColorChanged().connect( this, [this]( const std::string &color ){ colorSelected( color ); } );
           }
           try
           {
@@ -222,7 +222,7 @@ namespace
     ColorDelegate()
       : WAbstractItemDelegate()
     {
-      closeEditor().connect( [this]( WWidget *w, bool save ){ doCloseEditor( w, save ); } );
+      closeEditor().connect( this, [this]( WWidget *w, bool save ){ doCloseEditor( w, save ); } );
     }
 
     virtual ~ColorDelegate(){}
@@ -390,11 +390,11 @@ protected:
       {
         auto changed = make_shared<bool>( false );
         auto keydownsig = make_shared<Wt::Signals::connection>();
-        e->blurred().connect( [this, w, e, eID = e->id(), changed](){
+        e->blurred().connect( this, [this, w, e, eID = e->id(), changed](){
           closeOnBlur( w, e, eID, changed );
         } );
 
-        *keydownsig = e->keyWentDown().connect( [this, e, eID = e->id(), changed, keydownsig]( WKeyEvent k ){
+        *keydownsig = e->keyWentDown().connect( this, [this, e, eID = e->id(), changed, keydownsig]( WKeyEvent k ){
           onKeyDown( e, eID, changed, keydownsig, k );
         } );
       }//if( e )
@@ -649,13 +649,13 @@ protected:
     WContainerWidget *containerRaw = container.get();
 
     // Close and save on explicit selection change
-    combo->changed().connect( [this, containerRaw, userSelected](){
+    combo->changed().connect( this, [this, containerRaw, userSelected](){
       (*userSelected) = true;
       doCloseEditor( containerRaw, true );
     } );
 
     // Close without saving on blur (e.g., switching tabs)
-    combo->blurred().connect( [this, containerRaw, userSelected](){
+    combo->blurred().connect( this, [this, containerRaw, userSelected](){
       if( !(*userSelected) )
         doCloseEditor( containerRaw, false );
     } );
@@ -856,7 +856,7 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
     WPushButton *yes_button = window->addButton( "Yes" );
     WPushButton *no_button = window->addButton( "No" );
     
-    yes_button->clicked().connect( [display](){ PeakInfoDisplay::removeAllPeaks( display ); } );
+    yes_button->clicked().connect( display, [display](){ PeakInfoDisplay::removeAllPeaks( display ); } );
   };
   
   make_dialog();
@@ -867,7 +867,7 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   WPushButton *yes_button = window->addButton( WString::tr("Yes") );
   window->addButton( WString::tr("No") );
   
-  yes_button->clicked().connect( [this](){ removeAllPeaks(); } );
+  yes_button->clicked().connect( this, [this](){ removeAllPeaks(); } );
 
 
   // We'll put an "undo" to close the dialog we just made - we could do a redo, but then making the
@@ -1034,7 +1034,7 @@ void PeakInfoDisplay::createNewPeak()
   const float initialEnergy = 0.5f*(xmin + xmax);
   
   AddNewPeakDialog *window = AuxWindow::make<AddNewPeakDialog>( initialEnergy, "" );
-  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+  window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   // We'll make it so "undo" will close the window.
   //  Not implementing "redo", as it will get complicated, and not super useful
@@ -1173,7 +1173,7 @@ void PeakInfoDisplay::init()
   m_infoView->setColumnHidden( PeakModel::kUseForShieldingSourceFit, true );
 
   m_infoView->setEditTriggers( EditTrigger::SingleClicked | EditTrigger::DoubleClicked );
-  blurred().connect( [this](){ m_infoView->closeEditors( true ); } );
+  blurred().connect( this, [this](){ m_infoView->closeEditors( true ); } );
   
   auto meanDelegate = std::make_shared<MeanDelegate>( m_model.get() );
   meanDelegate->setTextFormat( "%.2f" );
@@ -1244,8 +1244,8 @@ void PeakInfoDisplay::init()
 //  m_infoView->setSelectionMode( Wt::SingleSelection );
   m_infoView->setEditOptions( EditOption::SingleEditor );
 
-  //m_infoView->clicked().connect( [this]( Wt::WModelIndex index ){ enablePeakDelete( index ); } );
-  //m_infoView->doubleClicked().connect( [this]( Wt::WModelIndex index ){ enablePeakDelete( index ); } );
+  //m_infoView->clicked().connect( this, [this]( Wt::WModelIndex index ){ enablePeakDelete( index ); } );
+  //m_infoView->doubleClicked().connect( this, [this]( Wt::WModelIndex index ){ enablePeakDelete( index ); } );
 
   m_infoView->selectionChanged().connect( this, &PeakInfoDisplay::handleSelectionChanged );
 
@@ -1271,7 +1271,7 @@ void PeakInfoDisplay::init()
 
   WContainerWidget *helpBtn = bottomDiv->addNew<WContainerWidget>();
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn PeakInfoHlpBtn" );
-  helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "peak-manager" ); } );
+  helpBtn->clicked().connect( this, [](){ HelpSystem::createHelpWindow( "peak-manager" ); } );
 
   WContainerWidget *buttonsDiv = bottomDiv->addNew<WContainerWidget>();
   buttonsDiv->addStyleClass( "PeakInfoDisplayButtonsDiv" );
@@ -1281,7 +1281,7 @@ void PeakInfoDisplay::init()
   
   HelpSystem::attachToolTipOn( m_searchForPeaks, WString::tr("pid-tt-search-peaks-btn"),
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
-  m_searchForPeaks->clicked().connect( [this](){ PeakSearchGuiUtils::automated_search_for_peaks( m_viewer, true ); } );
+  m_searchForPeaks->clicked().connect( this, [this](){ PeakSearchGuiUtils::automated_search_for_peaks( m_viewer, true ); } );
 
   
   m_clearPeaksButton = buttonsDiv->addNew<WPushButton>( WString::tr("pid-clear-peaks-btn") );
@@ -1299,7 +1299,7 @@ void PeakInfoDisplay::init()
   //button->setMargin(WLength(2),Wt::Left|Wt::Right);
   HelpSystem::attachToolTipOn( m_nucFromRefButton, WString::tr("pid-tt-nuc-from-ref-btn"),
                               showToolTips , HelpSystem::ToolTipPosition::Top );
-  m_nucFromRefButton->clicked().connect( [this](){ assignNuclidesFromRefLines(); } );
+  m_nucFromRefButton->clicked().connect( this, [this](){ assignNuclidesFromRefLines(); } );
   m_nucFromRefButton->disable();
   
   auto enableDisableNucRef = [this](){
@@ -1309,10 +1309,10 @@ void PeakInfoDisplay::init()
     //Should check if any reference lines are showing for m_nucFromRefButton as well...
   };
   
-  m_model->dataChanged().connect( std::bind(enableDisableNucRef) );
-  m_model->rowsRemoved().connect( std::bind(enableDisableNucRef) );
-  m_model->rowsInserted().connect( std::bind(enableDisableNucRef) );
-  m_model->layoutChanged().connect( std::bind(enableDisableNucRef) );
+  m_model->dataChanged().connect( this, enableDisableNucRef );
+  m_model->rowsRemoved().connect( this, enableDisableNucRef );
+  m_model->rowsInserted().connect( this, enableDisableNucRef );
+  m_model->layoutChanged().connect( this, enableDisableNucRef );
   
 
   
@@ -1365,7 +1365,7 @@ void PeakInfoDisplay::init()
     WAbstractItemDelegate *delegate = delegatePtr.get();
     if( delegate && !uniqueDelegates.count(delegate) )
     {
-      delegate->closeEditor().connect( [this]( WWidget *, bool ){ disablePeakDelete(); } );
+      delegate->closeEditor().connect( this, [this]( WWidget *, bool ){ disablePeakDelete(); } );
       uniqueDelegates.insert( delegate );
     }
   }//for( int col = 0; col < m_model->columnCount(); ++col )
@@ -1451,9 +1451,9 @@ void PeakInfoDisplay::init()
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  csvButton->clicked().connect( std::bind([csv](){
+  csvButton->clicked().connect( csvButton, [csv](){
     android_download_workaround(csv, "photopeak_ref.csv");
-  }) );
+  } );
 #endif //ANDROID
 #endif //#if( BUILD_AS_OSX_APP || IOS ) / else
   
@@ -1466,10 +1466,10 @@ void PeakInfoDisplay::init()
     copyButton->setEnabled( enable );
   };
   
-  m_model->dataChanged().connect( std::bind(enableDisableCsv) );
-  m_model->rowsRemoved().connect( std::bind(enableDisableCsv) );
-  m_model->rowsInserted().connect( std::bind(enableDisableCsv) );
-  m_model->layoutChanged().connect( std::bind(enableDisableCsv) );
+  m_model->dataChanged().connect( this, enableDisableCsv );
+  m_model->rowsRemoved().connect( this, enableDisableCsv );
+  m_model->rowsInserted().connect( this, enableDisableCsv );
+  m_model->layoutChanged().connect( this, enableDisableCsv );
   
   HelpSystem::attachToolTipOn( csvButton, WString::tr("pid-tt-csv-export"), showToolTips );
 }//init()

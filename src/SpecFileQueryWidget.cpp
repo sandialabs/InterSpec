@@ -1731,8 +1731,8 @@ void SpecFileQueryWidget::init()
     "Wt.emit('" + id() + "', 'fileSearchRequested', resultjson);"
   "}" );
 
-  m_queryChanged.connect( [this]( std::string a1 ){ queryChangedCallback( a1 ); } );
-  m_searchRequested.connect( [this]( std::string a1 ){ searchRequestedCallback( a1 ); } );
+  m_queryChanged.connect( this, [this]( std::string a1 ){ queryChangedCallback( a1 ); } );
+  m_searchRequested.connect( this, [this]( std::string a1 ){ searchRequestedCallback( a1 ); } );
 
   m_update->disable();
   

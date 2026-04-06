@@ -311,8 +311,8 @@ void WarningWidget::createContent()
       const char *str = tostr( level );
       UserPreferences::associateWidget( str, warnToggle,  m_hostViewer );
 
-      warnToggle->checked().connect( [this, level](){ setActivity( level, false ); } );
-      warnToggle->unChecked().connect( [this, level](){ setActivity( level, true ); } );
+      warnToggle->checked().connect( this, [this, level](){ setActivity( level, false ); } );
+      warnToggle->unChecked().connect( this, [this, level](){ setActivity( level, true ); } );
     }//for( loop over
 
     m_layout->addWidget( std::make_unique<WLabel>("Hide notifications:"), 4, 1, Wt::AlignmentFlag::Right );
@@ -327,8 +327,8 @@ void WarningWidget::createContent()
       const char *str  = popupToStr( level );
       UserPreferences::associateWidget( str, warnToggle,  m_hostViewer );
 
-      warnToggle->checked().connect( [this, level](){ setPopupActivity( level, false ); } );
-      warnToggle->unChecked().connect( [this, level](){ setPopupActivity( level, true ); } );
+      warnToggle->checked().connect( this, [this, level](){ setPopupActivity( level, false ); } );
+      warnToggle->unChecked().connect( this, [this, level](){ setPopupActivity( level, true ); } );
     }//for( loop over
   } //!m_layout //Create UI for first time
 }//void WarningWidget::createContent()

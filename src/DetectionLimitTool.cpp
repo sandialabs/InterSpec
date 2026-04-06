@@ -954,7 +954,7 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
-  finished().connect( [this](){ AuxWindow::deleteAuxWindow( this ); } );
+  finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
   
   show();
   
@@ -1056,7 +1056,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
              adjust the ROI, and re-due our fit - we should probably do something more intuitive
              so the user knows whats going on.
    */
-  m_chart->existingRoiEdgeDragUpdate().connect( [this]( double a, double b, double c, double d, std::string e, bool f ){
+  m_chart->existingRoiEdgeDragUpdate().connect( this, [this]( double a, double b, double c, double d, std::string e, bool f ){
     roiDraggedCallback( a, b, c, d, e, f );
   } );
   
@@ -1173,8 +1173,8 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   SpectraFileModel *specFileModel = viewer->fileManager()->model();
   m_detectorDisplay = inputTable->addNew<DetectorDisplay>( viewer, specFileModel );
   m_detectorDisplay->addStyleClass( "GridThirdCol GridFirstRow" );
-  viewer->detectorChanged().connect( [this]( std::shared_ptr<DetectorPeakResponse> drf ){ handleDrfSelected( drf ); } );
-  viewer->detectorModified().connect( [this]( std::shared_ptr<DetectorPeakResponse> drf ){ handleDrfSelected( drf ); } );
+  viewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){ handleDrfSelected( drf ); } );
+  viewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){ handleDrfSelected( drf ); } );
 
 
   m_shieldingSelect = inputTable->addNew<ShieldingSelect>( m_materialSuggest );
@@ -1190,9 +1190,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   SwitchCheckbox *loglin = inputTable->addNew<SwitchCheckbox>( WString::tr("dlt-log"), WString::tr("dlt-lin") );
   loglin->addStyleClass( "MdaChartLogLin GridFourthCol GridFirstRow GridSpanTwoCol" );
-  loglin->unChecked().connect( [this](){ m_chart->setYAxisLog( true ); } );
-  loglin->checked().connect( [this](){ m_chart->setYAxisLog( false ); } );
-  m_chart->yAxisLogLinChanged().connect( [loglin]( bool isLog ){ loglin->setUnChecked( isLog ); } );
+  loglin->unChecked().connect( this, [this](){ m_chart->setYAxisLog( true ); } );
+  loglin->checked().connect( this, [this](){ m_chart->setYAxisLog( false ); } );
+  m_chart->yAxisLogLinChanged().connect( loglin, [loglin]( bool isLog ){ loglin->setUnChecked( isLog ); } );
   
   m_attenuateForAir = inputTable->addNew<WCheckBox>( WString::tr("dlt-attenuate-for-air") );
   m_attenuateForAir->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );

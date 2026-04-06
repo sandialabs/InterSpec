@@ -349,7 +349,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   
   m_search_category_select = m_searchConditionsColumn->addNew<WComboBox>();
   m_search_category_select->setStyleClass( "IsotopeSourceTypes" );
-  m_search_category_select->activated().connect( [this]( int ){ categoryChanged( true ); } );
+  m_search_category_select->activated().connect( this, [this]( int ){ categoryChanged( true ); } );
 
   WContainerWidget *searchOptions = m_searchConditionsColumn->addNew<WContainerWidget>();
   searchOptions->setStyleClass( "IsotopeSearchMinimums" );
@@ -357,7 +357,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 
   WContainerWidget *helpBtn = searchOptions->addNew<WContainerWidget>();
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-  helpBtn->clicked().connect( [](){ HelpSystem::createHelpWindow( "nuclide-search-dialog" ); } );
+  helpBtn->clicked().connect( this, [](){ HelpSystem::createHelpWindow( "nuclide-search-dialog" ); } );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
@@ -480,13 +480,13 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 
   // Add in one non-removable search energy
   SearchEnergy *enrgy = m_searchEnergies->addNew<SearchEnergy>();
-  enrgy->enter().connect( [this](){ startSearch( false ); } );
+  enrgy->enter().connect( this, [this](){ startSearch( false ); } );
   enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
-  enrgy->gotFocus().connect( [this, enrgy](){ searchEnergyRecievedFocus( enrgy ); } );
-  enrgy->remove().connect( [this, enrgy](){ removeSearchEnergy( enrgy ); } );
+  enrgy->gotFocus().connect( this, [this, enrgy](){ searchEnergyRecievedFocus( enrgy ); } );
+  enrgy->remove().connect( this, [this, enrgy](){ removeSearchEnergy( enrgy ); } );
   enrgy->addStyleClass( ActiveSearchEnergyClass );
   enrgy->disableRemove();
-  enrgy->changed().connect( [this](){ startSearch( false ); } );
+  enrgy->changed().connect( this, [this](){ startSearch( false ); } );
 
   // We could initialize filter types here, but instead we'll wait until first render, to slightly
   //  help out initial app render
@@ -558,11 +558,11 @@ IsotopeSearchByEnergy::SearchEnergy *IsotopeSearchByEnergy::addNewSearchEnergy()
     enrgy->disableAddAnother();
   
   SearchEnergy *enrgy = m_searchEnergies->addNew<SearchEnergy>();
-  enrgy->changed().connect( [this](){ startSearch( false ); } );
-  enrgy->enter().connect( [this](){ startSearch( false ); } );
-  enrgy->remove().connect( [this, enrgy](){ removeSearchEnergy( enrgy ); } );
+  enrgy->changed().connect( this, [this](){ startSearch( false ); } );
+  enrgy->enter().connect( this, [this](){ startSearch( false ); } );
+  enrgy->remove().connect( this, [this, enrgy](){ removeSearchEnergy( enrgy ); } );
   enrgy->addAnother().connect( this, &IsotopeSearchByEnergy::addSearchEnergy );
-  enrgy->gotFocus().connect( [this, enrgy](){ searchEnergyRecievedFocus( enrgy ); } );
+  enrgy->gotFocus().connect( this, [this, enrgy](){ searchEnergyRecievedFocus( enrgy ); } );
 //  m_search->changed().connect( this,
 //                          &IsotopeSearchByEnergy::loadSearchEnergiesToClient );
 //  m_search->enable();
@@ -1476,14 +1476,14 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
         {
           txt = WString::tr("isbe-assign-matching-peaks-no-id").arg( symbol );
           item = menu->addItem( txt );
-          item->triggered().connect( [this](){ assignPeaksNearReferenceLinesToSelectedNuclide( true ); } );
+          item->triggered().connect( this, [this](){ assignPeaksNearReferenceLinesToSelectedNuclide( true ); } );
         }//if( nPeaksNoIdOnNuc > nPeaksSearched )
         
         if( nPeaksOnNuc > nPeaksSearched )
         {
           txt = WString::tr("isbe-assign-all-matching-peaks").arg( symbol );
           item = menu->addItem( txt );
-          item->triggered().connect( [this](){ assignPeaksNearReferenceLinesToSelectedNuclide( false ); } );
+          item->triggered().connect( this, [this](){ assignPeaksNearReferenceLinesToSelectedNuclide( false ); } );
         }//if( nPeaksOnNuc > nPeaksSearched )
       }//if( !hide_menu_btn )
     }//if( menu )

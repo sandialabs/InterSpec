@@ -209,7 +209,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
 
   //Put in a footer with an Acknowledge that will accept this dialog
   WPushButton *close = addCloseButtonToFooter();
-  close->clicked().connect( [this](){ hide(); } );
+  close->clicked().connect( this, [this](){ hide(); } );
   
   resizeToFitOnScreen(); //jic
   centerWindow();
@@ -286,8 +286,8 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeItem( const WString &title, const
 
   auto itemOwner = std::make_unique<SideMenuItem>( title, std::move(wOwned) );
   SideMenuItem *item = itemOwner.get();
-  item->clicked().connect( [this, item](){ right_select_item( item ); } );
-  item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+  item->clicked().connect( this, [this, item](){ right_select_item( item ); } );
+  item->mouseWentDown().connect( this, [this, item](){ right_select_item( item ); } );
 
   m_menu->addItem( std::move(itemOwner) );
 
@@ -362,8 +362,8 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeLgplLicenseItem()
   auto itemOwner = std::make_unique<SideMenuItem>( WString::tr("ladw-mi-license"), std::move(wOwned) );
   SideMenuItem *item = itemOwner.get();
 
-  item->clicked().connect( [this, item](){ right_select_item( item ); } );
-  item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+  item->clicked().connect( this, [this, item](){ right_select_item( item ); } );
+  item->mouseWentDown().connect( this, [this, item](){ right_select_item( item ); } );
 
   m_menu->addItem( std::move(itemOwner) );
 
@@ -467,9 +467,9 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #endif
       showBtn->setText( WString::tr(txt_key) );
       showBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
-      showBtn->clicked().connect( std::bind([userDataDir](){
+      showBtn->clicked().connect( showBtn, [userDataDir](){
         AppUtils::showFileInOsFileBrowser(userDataDir);
-      }) );
+      } );
     }
 #endif
 
@@ -489,9 +489,9 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #endif
       showBtn->setText( WString::tr(txt_key) );
       showBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
-      showBtn->clicked().connect( std::bind([staticDataDir](){
+      showBtn->clicked().connect( showBtn, [staticDataDir](){
         AppUtils::showFileInOsFileBrowser(staticDataDir);
-      }) );
+      } );
     }
 #endif
 
@@ -581,8 +581,8 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
   auto itemOwner = std::make_unique<SideMenuItem>( WString::tr("ladw-mi-data"), std::move(wOwned) );
   SideMenuItem *item = itemOwner.get();
 
-  item->clicked().connect( [this, item](){ right_select_item( item ); } );
-  item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+  item->clicked().connect( this, [this, item](){ right_select_item( item ); } );
+  item->mouseWentDown().connect( this, [this, item](){ right_select_item( item ); } );
 
   m_menu->addItem( std::move(itemOwner) );
 

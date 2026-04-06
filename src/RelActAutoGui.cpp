@@ -558,44 +558,44 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
     m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
     m_spectrum->rightClicked().connect( this, &RelActAutoGui::handleRightClick );
     m_spectrum->shiftKeyDragged().connect( this, &RelActAutoGui::handleShiftDrag );
-    m_spectrum->doubleLeftClick().connect( [this]( double a1, double a2, std::string a3, Wt::WFlags<Wt::KeyboardModifier> a4 ){
+    m_spectrum->doubleLeftClick().connect( this, [this]( double a1, double a2, std::string a3, Wt::WFlags<Wt::KeyboardModifier> a4 ){
       handleDoubleLeftClick( a1, a2, a3, a4 );
     } );
 
     WMenuItem *item = m_upper_menu->addItem( WString::tr("raag-spec"), std::move(spectrum_owner) );
     // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
-    item->clicked().connect( std::bind([this,item](){
+    item->clicked().connect( this, [this,item](){
       m_upper_menu->select( item );
       item->triggered().emit( item );
-    }) );
+    } );
   }
 
   {
     auto rel_eff_owner = std::make_unique<RelEffChart>();
     m_rel_eff_chart = rel_eff_owner.get();
     WMenuItem *item = m_upper_menu->addItem( WString::tr("raag-rel-eff"), std::move(rel_eff_owner) );
-    item->clicked().connect( std::bind([this,item](){
+    item->clicked().connect( this, [this,item](){
       m_upper_menu->select( item );
       item->triggered().emit( item );
-    }) );
+    } );
   }
 
   {
     auto txt_results_owner = std::make_unique<RelActTxtResults>();
     m_txt_results = txt_results_owner.get();
     WMenuItem *item = m_upper_menu->addItem( WString::tr("raag-result"), std::move(txt_results_owner) );
-    item->clicked().connect( std::bind([this,item](){
+    item->clicked().connect( this, [this,item](){
       m_upper_menu->select( item );
       item->triggered().emit( item );
-    }) );
+    } );
   }
   
   m_upper_menu->select( static_cast<int>(0) );
   
-  m_interspec->spectrumScaleFactorChanged().connect( [this]( SpecUtils::SpectrumType a1, double ){
+  m_interspec->spectrumScaleFactorChanged().connect( this, [this]( SpecUtils::SpectrumType a1, double ){
     handleDisplayedSpectrumChange( a1 );
   } );
-  m_interspec->displayedSpectrumChanged().connect( [this]( SpecUtils::SpectrumType a1,
+  m_interspec->displayedSpectrumChanged().connect( this, [this]( SpecUtils::SpectrumType a1,
       std::shared_ptr<SpecMeas>, std::set<int>, std::vector<std::string> ){
     handleDisplayedSpectrumChange( a1 );
   } );
@@ -933,23 +933,23 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_apply_energy_cal_item->triggered().connect( this, &RelActAutoGui::startApplyFitEnergyCalToSpecFile );
   
   m_show_ref_lines_item = m_more_options_menu->addMenuItem( WString::tr("raag-show-ref-lines") );
-  m_show_ref_lines_item->triggered().connect( [this](){ handleShowRefLines( true ); } );
+  m_show_ref_lines_item->triggered().connect( this, [this](){ handleShowRefLines( true ); } );
 
   m_hide_ref_lines_item = m_more_options_menu->addMenuItem( WString::tr("raag-hide-ref-lines") );
-  m_hide_ref_lines_item->triggered().connect( [this](){ handleShowRefLines( false ); } );
+  m_hide_ref_lines_item->triggered().connect( this, [this](){ handleShowRefLines( false ); } );
   m_hide_ref_lines_item->setHidden( true );
   m_hide_ref_lines_item->setDisabled( true );
   
   m_set_peaks_foreground = m_more_options_menu->addMenuItem( WString::tr("raag-set-peaks-foreground") );
-  m_set_peaks_foreground->triggered().connect( [this](){ setPeaksToForeground(); } );
+  m_set_peaks_foreground->triggered().connect( this, [this](){ setPeaksToForeground(); } );
   m_set_peaks_foreground->setDisabled( true );
 
   m_show_background = m_more_options_menu->addMenuItem( WString::tr("raag-show-background") );
-  m_show_background->triggered().connect( [this](){ handleShowBackground( true ); } );
+  m_show_background->triggered().connect( this, [this](){ handleShowBackground( true ); } );
   m_show_background->setDisabled( true );
 
   m_hide_background = m_more_options_menu->addMenuItem( WString::tr("raag-hide-background") );
-  m_hide_background->triggered().connect( [this](){ handleShowBackground( false ); } );
+  m_hide_background->triggered().connect( this, [this](){ handleShowBackground( false ); } );
   m_hide_background->setDisabled( true );
 
   m_showing_background = UserPreferences::preferenceValue<bool>( "IsoByNucsShowBackground", m_interspec );
@@ -1064,7 +1064,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   WPushButton *add_free_peak_icon = free_peaks_footer->addNew<WPushButton>();
   add_free_peak_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_free_peak_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
-  add_free_peak_icon->clicked().connect( [this](){ handleAddFreePeak( 0.0, true, true ); } );
+  add_free_peak_icon->clicked().connect( this, [this](){ handleAddFreePeak( 0.0, true, true ); } );
 
   WPushButton *hide_free_peak = free_peaks_footer->addNew<WPushButton>( WString::tr("Close") );
   hide_free_peak->addStyleClass( "HideFreePeaks LightButton" );
@@ -1077,7 +1077,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   
     
   auto html_rsc = dynamic_cast<RelActAutoReportResource *>( m_html_download_rsc.get() );
-  m_solution_updated.connect( [html_rsc]( std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> a1 ){
+  m_solution_updated.connect( this, [html_rsc]( std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> a1 ){
     html_rsc->updateSolution( a1 );
   } );
   
@@ -1721,8 +1721,8 @@ void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
     
     energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     
-    energy_range->remove().connect( [this, energy_range](){ handleRemoveEnergy( static_cast<WWidget *>(energy_range) ); } );
-    energy_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+    energy_range->remove().connect( this, [this, energy_range](){ handleRemoveEnergy( static_cast<WWidget *>(energy_range) ); } );
+    energy_range->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
       handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
     } );
 
@@ -1875,8 +1875,8 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     
     RelActAutoGuiEnergyRange *new_roi_w = m_energy_ranges->addNew<RelActAutoGuiEnergyRange>();
     new_roi_w->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    new_roi_w->remove().connect( [this, new_roi_w](){ handleRemoveEnergy( static_cast<WWidget *>(new_roi_w) ); } );
-    new_roi_w->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+    new_roi_w->remove().connect( this, [this, new_roi_w](){ handleRemoveEnergy( static_cast<WWidget *>(new_roi_w) ); } );
+    new_roi_w->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
       handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
     } );
     new_roi_w->setFromRoiRange( new_roi );
@@ -2002,17 +2002,17 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
       type < PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
   {
     WMenuItem *item = continuum_menu->addItem( WString::tr(PeakContinuum::offset_type_label_tr(type)) );
-    item->triggered().connect( [range, type](){ range->setContinuumType( type ); } );
+    item->triggered().connect( this, [range, type](){ range->setContinuumType( type ); } );
     if( type == roi.continuum_type )
       item->setDisabled( true );
   }//for( loop over PeakContinuum::OffsetTypes )
   
   item = menu->addMenuItem( WString::tr("raag-remove-roi") );
-  item->triggered().connect( [this, range](){ handleRemoveEnergy( static_cast<WWidget *>(range) ); } );
+  item->triggered().connect( this, [this, range](){ handleRemoveEnergy( static_cast<WWidget *>(range) ); } );
 
   const WString split_text = WString::tr("raag-split-roi-at").arg(formatNumber(energy, 1));
   item = menu->addMenuItem( split_text );
-  item->triggered().connect( [this, range, energy](){ handleSplitEnergyRange( static_cast<WWidget *>(range), energy ); } );
+  item->triggered().connect( this, [this, range, energy](){ handleSplitEnergyRange( static_cast<WWidget *>(range), energy ); } );
 
   const char *item_label = "";
   if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
@@ -2020,13 +2020,13 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   else
     item_label = "Force full-range";
   item = menu->addMenuItem( item_label );
-  item->triggered().connect( [this, range](){ handleToggleForceFullRange( static_cast<WWidget *>(range) ); } );
+  item->triggered().connect( this, [this, range](){ handleToggleForceFullRange( static_cast<WWidget *>(range) ); } );
 
   // TODO: we could be a little more intelligent about when offering to combine ROIs
   if( range_to_left )
   {
     item = menu->addMenuItem( WString::tr("raag-combine-roi-left") );
-    item->triggered().connect( [this, range_to_left, range](){
+    item->triggered().connect( this, [this, range_to_left, range](){
       handleCombineRoi( static_cast<WWidget *>(range_to_left), static_cast<WWidget *>(range) );
     } );
   }//if( range_to_left )
@@ -2034,7 +2034,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   if( range_to_right )
   {
     item = menu->addMenuItem( WString::tr("raag-combine-roi-right") );
-    item->triggered().connect( [this, range, range_to_right](){
+    item->triggered().connect( this, [this, range, range_to_right](){
       handleCombineRoi( static_cast<WWidget *>(range), static_cast<WWidget *>(range_to_right) );
     } );
   }//if( range_to_right )
@@ -2042,7 +2042,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   // TODO: Add floating peak item
   const WString free_peak_text = WString::tr("raag-add-free-peak-at").arg(formatNumber(energy, 1));
   item = menu->addMenuItem( free_peak_text );
-  item->triggered().connect( [this, energy](){ handleAddFreePeak( energy, true, true ); } );
+  item->triggered().connect( this, [this, energy](){ handleAddFreePeak( energy, true, true ); } );
   
   
   if( is_phone )
@@ -2174,9 +2174,9 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
       RelActAutoGuiNuclide *nuc_widget = content->addNew<RelActAutoGuiNuclide>( this );
       nuc_widgets[nuc_index] = nuc_widget;
       nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
-      nuc_widget->remove().connect( [this, nuc_widget](){ handleRemoveNuclide( static_cast<WWidget *>(nuc_widget) ); } );
+      nuc_widget->remove().connect( this, [this, nuc_widget](){ handleRemoveNuclide( static_cast<WWidget *>(nuc_widget) ); } );
       nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
-      nuc_widget->age_changed().connect( [this]( RelActAutoGuiNuclide *a1 ){ handleNuclideAgeChanged( a1 ); } );
+      nuc_widget->age_changed().connect( this, [this]( RelActAutoGuiNuclide *a1 ){ handleNuclideAgeChanged( a1 ); } );
       nuc_widget->fromNucInputInfo( nuc );
     }//for( const size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
 
@@ -2222,8 +2222,8 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     
     energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     
-    energy_range->remove().connect( [this, energy_range](){ handleRemoveEnergy( static_cast<WWidget *>(energy_range) ); } );
-    energy_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+    energy_range->remove().connect( this, [this, energy_range](){ handleRemoveEnergy( static_cast<WWidget *>(energy_range) ); } );
+    energy_range->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
       handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
     } );
 
@@ -3564,9 +3564,9 @@ RelActAutoGuiNuclide *RelActAutoGui::addNuclideForRelEffCurve( const int rel_eff
   
   RelActAutoGuiNuclide *nuc_widget = nuc_container->addNew<RelActAutoGuiNuclide>( this );
   nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
-  nuc_widget->remove().connect( [this, nuc_widget](){ handleRemoveNuclide( static_cast<WWidget *>(nuc_widget) ); } );
+  nuc_widget->remove().connect( this, [this, nuc_widget](){ handleRemoveNuclide( static_cast<WWidget *>(nuc_widget) ); } );
   nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
-  nuc_widget->age_changed().connect( [this]( RelActAutoGuiNuclide *a1 ){ handleNuclideAgeChanged( a1 ); } );
+  nuc_widget->age_changed().connect( this, [this]( RelActAutoGuiNuclide *a1 ){ handleNuclideAgeChanged( a1 ); } );
   nuc_widget->setNuclideEditFocus();
   
   shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
@@ -3625,8 +3625,8 @@ void RelActAutoGui::handleAddEnergy()
   
   energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
   
-  energy_range->remove().connect( [this, energy_range](){ handleRemoveEnergy( static_cast<WWidget *>(energy_range) ); } );
-  energy_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+  energy_range->remove().connect( this, [this, energy_range](){ handleRemoveEnergy( static_cast<WWidget *>(energy_range) ); } );
+  energy_range->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
     handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
   } );
   if( nprev == 0 )
@@ -3875,8 +3875,8 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
       auto roi_owner = std::make_unique<RelActAutoGuiEnergyRange>();
       RelActAutoGuiEnergyRange *roi = roi_owner.get();
       roi->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-      roi->remove().connect( [this, roi](){ handleRemoveEnergy( static_cast<WWidget *>(roi) ); } );
-      roi->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+      roi->remove().connect( this, [this, roi](){ handleRemoveEnergy( static_cast<WWidget *>(roi) ); } );
+      roi->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
         handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
       } );
 
@@ -3894,7 +3894,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   };//on_yes lamda
   
   
-  yes_button->clicked().connect( std::bind(on_yes) );
+  yes_button->clicked().connect( this, on_yes );
 }//void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
 
 
@@ -3905,7 +3905,7 @@ void RelActAutoGui::handleAddFreePeak( const double energy, const bool constrain
   
   RelActAutoGuiFreePeak *peak = m_free_peaks->addNew<RelActAutoGuiFreePeak>();
   peak->updated().connect( this, &RelActAutoGui::handleFreePeakChange );
-  peak->remove().connect( [this, peak](){ handleRemoveFreePeak( static_cast<WWidget *>(peak) ); } );
+  peak->remove().connect( this, [this, peak](){ handleRemoveFreePeak( static_cast<WWidget *>(peak) ); } );
   peak->setEnergy( static_cast<float>(energy) );
   peak->setFwhmConstrained( constrain_fwhm );
   peak->setApplyEnergyCal( apply_cal );
@@ -3972,16 +3972,16 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     auto left_owner = std::make_unique<RelActAutoGuiEnergyRange>();
     RelActAutoGuiEnergyRange *left_range = left_owner.get();
     left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    left_range->remove().connect( [this, left_range](){ handleRemoveEnergy( static_cast<WWidget *>(left_range) ); } );
-    left_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+    left_range->remove().connect( this, [this, left_range](){ handleRemoveEnergy( static_cast<WWidget *>(left_range) ); } );
+    left_range->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
       handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
     } );
 
     auto right_owner = std::make_unique<RelActAutoGuiEnergyRange>();
     RelActAutoGuiEnergyRange *right_range = right_owner.get();
     right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    right_range->remove().connect( [this, right_range](){ handleRemoveEnergy( static_cast<WWidget *>(right_range) ); } );
-    right_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+    right_range->remove().connect( this, [this, right_range](){ handleRemoveEnergy( static_cast<WWidget *>(right_range) ); } );
+    right_range->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
       handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
     } );
 
@@ -3999,8 +3999,8 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     auto right_owner = std::make_unique<RelActAutoGuiEnergyRange>();
     RelActAutoGuiEnergyRange *right_range = right_owner.get();
     right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    right_range->remove().connect( [this, right_range](){ handleRemoveEnergy( static_cast<WWidget *>(right_range) ); } );
-    right_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+    right_range->remove().connect( this, [this, right_range](){ handleRemoveEnergy( static_cast<WWidget *>(right_range) ); } );
+    right_range->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
       handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
     } );
     right_range->setEnergyRange( upper_energy, roi.upper_energy );
@@ -4013,8 +4013,8 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     auto left_owner = std::make_unique<RelActAutoGuiEnergyRange>();
     RelActAutoGuiEnergyRange *left_range = left_owner.get();
     left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    left_range->remove().connect( [this, left_range](){ handleRemoveEnergy( static_cast<WWidget *>(left_range) ); } );
-    left_range->splitRangesRequested().connect( [this]( RelActAutoGuiEnergyRange *a1 ){
+    left_range->remove().connect( this, [this, left_range](){ handleRemoveEnergy( static_cast<WWidget *>(left_range) ); } );
+    left_range->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
       handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
     } );
     left_range->setFromRoiRange( roi );
@@ -4365,7 +4365,7 @@ void RelActAutoGui::setPeaksToForeground()
     //  think we need to update them here
   }//if( fitting energy cal )
   
-  yes->clicked().connect( std::bind([solution_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
+  yes->clicked().connect( this, [solution_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
     const bool replace_peaks = (!replace_or_add || replace_or_add->isChecked());
     
     InterSpec *interpsec = InterSpec::instance();
@@ -4524,16 +4524,16 @@ void RelActAutoGui::setPeaksToForeground()
     assert( peak_model );
     if( !peak_model )
       return;
-    
+
     if( replace_peaks )
       peak_model->setPeaks( final_peaks );
     else
       peak_model->addPeaks( final_peaks );
-    
+
     // Potential TODO: we could do something more sophisticated when adding peaks - kinda merge
     //  them like we do when we do a peak search, see the `PeakSelectorWindow` class constructor
     //  for how its done there
-  }) );
+  } );
   
 }//void setPeaksToForeground()
 
@@ -4613,30 +4613,30 @@ void RelActAutoGui::handleAddRelEffCurve()
   assert( item->contents() == static_cast<WWidget *>(rel_eff_curve) );
   
   // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
-  item->clicked().connect( std::bind([this,item](){
+  item->clicked().connect( this, [this,item](){
     m_rel_eff_opts_menu->select( item );
     item->triggered().emit( item );
-  }) );
+  } );
 
   rel_eff_curve->addRelEffCurve().connect( this, &RelActAutoGui::handleAddRelEffCurve );
-  rel_eff_curve->delRelEffCurve().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+  rel_eff_curve->delRelEffCurve().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
     handleDelRelEffCurve( a1 );
   } );
   rel_eff_curve->nameChanged().connect( this, &RelActAutoGui::handleRelEffCurveNameChanged );
-  rel_eff_curve->optionsChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+  rel_eff_curve->optionsChanged().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
     handleRelEffModelOptionsChanged( a1 );
   } );
-  rel_eff_curve->equationTypeChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+  rel_eff_curve->equationTypeChanged().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
     handleRelEffEqnTypeChanged( a1 );
   } );
-  rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+  rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
     handleSameHoerlOnAllCurvesChanged( a1 );
   } );
-  rel_eff_curve->sameExternalShieldingChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+  rel_eff_curve->sameExternalShieldingChanged().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
     handleSameExtShieldingOnAllCurvesChanged( a1 );
   } );
 
-  rel_eff_curve->shieldedByOtherCurvesChanged().connect( [this]( RelActAutoGuiRelEffOptions *a1 ){
+  rel_eff_curve->shieldedByOtherCurvesChanged().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
     handleShieldedByOtherCurvesChanged( a1 );
   } );
 
@@ -4903,9 +4903,9 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  btn->clicked().connect( std::bind([this](){
+  btn->clicked().connect( this, [this](){
     android_download_workaround( m_html_download_rsc.get(), "isotopics_by_nuclide.html");
-  }) );
+  } );
 #endif //ANDROID
 
   btn->setText( WString::tr("raag-html-report") );
@@ -4925,9 +4925,9 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  xmlbtn->clicked().connect( std::bind([this](){
+  xmlbtn->clicked().connect( this, [this](){
     android_download_workaround( m_xml_download_rsc.get(), "isotopics_by_nuclide_config.html");
-  }) );
+  } );
 #endif //ANDROID
 
 #endif
@@ -4961,7 +4961,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
   WFileUpload *upload = stretcher->addWidget( std::make_unique<WFileUpload>(),
                                               stretcher->rowCount(), 0,
                                               AlignmentFlag::Center | AlignmentFlag::Middle );
-  upload->fileTooLarge().connect( std::bind( [=](){
+  upload->fileTooLarge().connect( this, [=](){
     dialog->contents()->clear();
     dialog->footer()->clear();
 
@@ -4972,10 +4972,10 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
     inner_stretcher->setContentsMargins( 0, 0, 0, 0 );
     WText *inner_title = inner_stretcher->addWidget( std::make_unique<WText>( WString::tr("raag-file-too-large-title") ), 0, 0 );
     inner_title->addStyleClass( "title" );
-  }) );
+  } );
 
   upload->changed().connect( upload, &WFileUpload::upload );
-  upload->uploaded().connect( std::bind( [this,dialog,upload](){
+  upload->uploaded().connect( this, [this,dialog,upload](){
 
     try
     {
@@ -5012,7 +5012,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
 
     //wApp->doJavaScript( "$('.Wt-dialogcover').hide();" ); // JIC
     //dialog->done( Wt::DialogCode::Accepted );
-  } ) );
+  } );
 
   InterSpec *interspec = InterSpec::instance();
   if( interspec && !interspec->isPhone() )
@@ -5039,9 +5039,9 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
    window->centerWindow();
    
    WPushButton *close = window->addCloseButtonToFooter( WString::tr("Cancel") );
-   close->clicked().connect( [window](){ window->hide(); } );
+   close->clicked().connect( window, [window](){ window->hide(); } );
 
-   window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+   window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
    // TODO: add link to relevant section of documentation
    //AuxWindow::addHelpInFooter( window->footer(), "energy-cal-CALp" );

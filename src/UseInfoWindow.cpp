@@ -376,16 +376,16 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
 
       WFileUpload *upload = importLayout->addWidget( std::make_unique<WFileUpload>(), 1, 0, Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
 
-      upload->fileTooLarge().connect( std::bind( [desc,upload](){
+      upload->fileTooLarge().connect( upload, [desc,upload](){
         upload->hide();
         desc->setText( WString::tr("uiw-file-too-large") );
-      }) );
+      } );
 
-      upload->uploaded().connect( std::bind( [this,upload](){
+      upload->uploaded().connect( this, [this,upload](){
         const string filename = upload->spoolFileName();
         const string displayFileName = upload->clientFileName().toUTF8();
         m_viewer->userOpenFileFromFilesystem( filename, displayFileName );
-      } ) );
+      } );
 
       upload->changed().connect( upload, &WFileUpload::upload );
 
@@ -420,8 +420,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     anchor->addNew<WImage>( "InterSpec_resources/images/home_small.svg" )->addStyleClass( "WhiteIcon" );
   }
 
-  item->clicked().connect( [this, item](){ right_select_item( item ); } );
-  item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+  item->clicked().connect( this, [this, item](){ right_select_item( item ); } );
+  item->mouseWentDown().connect( this, [this, item](){ right_select_item( item ); } );
   m_menu->addItem( std::move(itemUptr) );
   
   
@@ -594,8 +594,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     {
       auto controlItemUptr = std::make_unique<SideMenuItem>( WString::tr("uiw-controls"), std::move(controlContainerUptr) );
       item = controlItemUptr.get();
-      item->clicked().connect( [this, item](){ right_select_item( item ); } );
-      item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+      item->clicked().connect( this, [this, item](){ right_select_item( item ); } );
+      item->mouseWentDown().connect( this, [this, item](){ right_select_item( item ); } );
       m_menu->addItem( std::move(controlItemUptr) );
     }
   } //isDesktop()
@@ -764,7 +764,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
     };//showLicenceAndTerms
     
-    more->clicked().connect( std::bind(showLicenceAndTerms) );
+    more->clicked().connect( more, showLicenceAndTerms );
     more->addStyleClass("InfoLink");
     layout->addWidget( std::move(moreUptr), 1, 0 );
 
@@ -800,7 +800,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
     };//auto showMoreInDepth
     
-    more->clicked().connect( std::bind(showMoreInDepth) );
+    more->clicked().connect( more, showMoreInDepth );
     more->addStyleClass("InfoLink");
     layout->addWidget( std::move(more2Uptr), 2, 0 );
   }
@@ -849,8 +849,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     }
 
 
-    showAgainCb->checked().connect( [showAgainCallback](){ showAgainCallback( true ); } );
-    showAgainCb->unChecked().connect( [showAgainCallback](){ showAgainCallback( false ); } );
+    showAgainCb->checked().connect( showAgainCb, [showAgainCallback](){ showAgainCallback( true ); } );
+    showAgainCb->unChecked().connect( showAgainCb, [showAgainCallback](){ showAgainCallback( false ); } );
     if( m_viewer->isMobile() )
     {
       showAgainCb->setFloatSide( Wt::Side::Right );
@@ -860,7 +860,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   }//if( !force )
   
   WPushButton *ok = addCloseButtonToFooter( WString::tr("Close") );
-  ok->clicked().connect( [this](){ hide(); } );
+  ok->clicked().connect( this, [this](){ hide(); } );
   
   if( viewer
      //&& (viewer->renderedWidth() > 715.0) //At initial app load we actually dont yet know client browser size; should maybe do check clientside.
@@ -1060,8 +1060,8 @@ SideMenuItem * UseInfoWindow::makeItem( const WString &title, const string &reso
 
   auto itemUptr = std::make_unique<SideMenuItem>( title, std::move(wUptr) );
   SideMenuItem *item = itemUptr.get();
-  item->clicked().connect( [this, item](){ right_select_item( item ); } );
-  item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+  item->clicked().connect( this, [this, item](){ right_select_item( item ); } );
+  item->mouseWentDown().connect( this, [this, item](){ right_select_item( item ); } );
 
   m_menu->addItem( std::move(itemUptr) );
 
@@ -1081,8 +1081,8 @@ SideMenuItem *UseInfoWindow::makeTextItem( const Wt::WString &title, const std::
 
   auto itemUptr = std::make_unique<SideMenuItem>( title, std::move(wUptr) );
   SideMenuItem *item = itemUptr.get();
-  item->clicked().connect( [this, item](){ right_select_item( item ); } );
-  item->mouseWentDown().connect( [this, item](){ right_select_item( item ); } );
+  item->clicked().connect( this, [this, item](){ right_select_item( item ); } );
+  item->mouseWentDown().connect( this, [this, item](){ right_select_item( item ); } );
 
   m_menu->addItem( std::move(itemUptr) );
 

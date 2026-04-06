@@ -280,8 +280,8 @@ DecayChainChart::DecayChainChart()
   
   InterSpec::instance()->useMessageResourceBundle( "DecayActivity" );
   
-  m_showDecayParticles.connect( [this]( const std::string &csv ){ showDecayParticleInfo( csv ); } );
-  m_showDecaysThrough.connect( [this]( const std::string &nuc ){ showDecaysThrough( nuc ); } );
+  m_showDecayParticles.connect( this, [this]( const std::string &csv ){ showDecayParticleInfo( csv ); } );
+  m_showDecaysThrough.connect( this, [this]( const std::string &nuc ){ showDecaysThrough( nuc ); } );
   
   
   //////////////
@@ -309,9 +309,9 @@ DecayChainChart::DecayChainChart()
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  csvButton->clicked().connect( std::bind([csv](){
+  csvButton->clicked().connect( csvButton, [csv](){
     android_download_workaround(csv, "decay_chain.html");
-  }) );
+  } );
 #endif //ANDROID
 #endif
 }//DecayChainChart constructor
@@ -341,9 +341,9 @@ pair<Wt::Core::observing_ptr<AuxWindow>, DecayChainChart *>
   AuxWindow *window = AuxWindow::make( title, (AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) );
 
   WPushButton *close = window->addCloseButtonToFooter();
-  close->clicked().connect( [window](){ window->hide(); } );
+  close->clicked().connect( window, [window](){ window->hide(); } );
   window->rejectWhenEscapePressed();
-  window->finished().connect( [window](){ AuxWindow::deleteAuxWindow( window ); } );
+  window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   WGridLayout *layout = window->stretcher();
   DecayChainChart *chart = layout->addWidget( std::make_unique<DecayChainChart>(), 0, 0 );

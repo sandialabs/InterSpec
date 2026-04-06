@@ -806,12 +806,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           };
         
           
-          cb->unChecked().connect( [changePromptPref](){ changePromptPref(false); } );
-          cb->checked().connect( [changePromptPref](){ changePromptPref(true); } );
+          cb->unChecked().connect( cb, [changePromptPref](){ changePromptPref(false); } );
+          cb->checked().connect( cb, [changePromptPref](){ changePromptPref(true); } );
           
           WPushButton *nobutton = loadStateDialog->addCloseButtonToFooter("No");
           
-          nobutton->clicked().connect( [this,cb,loadStateDialog,changeDoLoadPref](){
+          nobutton->clicked().connect( this, [this,cb,loadStateDialog,changeDoLoadPref](){
             if( cb->isChecked() )
               changeDoLoadPref(false);
             AuxWindow::deleteAuxWindow(loadStateDialog);
@@ -820,7 +820,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         
           WPushButton *yesbutton = loadStateDialog->addCloseButtonToFooter("Yes");
           
-          yesbutton->clicked().connect( [this,cb,state,loadStateDialog,changeDoLoadPref](){
+          yesbutton->clicked().connect( this, [this,cb,state,loadStateDialog,changeDoLoadPref](){
             if( cb->isChecked() )
               changeDoLoadPref(true);
             m_viewer->loadStateFromDb( state );
@@ -836,7 +836,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           loadStateDialog->centerWindow();
           loadStateDialog->disableCollapse();
           loadStateDialog->rejectWhenEscapePressed();
-          loadStateDialog->finished().connect( [loadStateDialog](){ AuxWindow::deleteAuxWindow(loadStateDialog); } );
+          loadStateDialog->finished().connect( loadStateDialog, [loadStateDialog](){ AuxWindow::deleteAuxWindow(loadStateDialog); } );
           loadStateDialog->show();
         }else
         {

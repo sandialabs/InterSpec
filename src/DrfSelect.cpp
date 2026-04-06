@@ -902,7 +902,7 @@ void RelEffFile::init()
     m_fileUpload = topdiv->addNew<WFileUpload>();
     m_fileUpload->setInline( false );
     m_fileUpload->uploaded().connect( this, &RelEffFile::handleFileUpload );
-    m_fileUpload->fileTooLarge().connect( []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
+    m_fileUpload->fileTooLarge().connect( this, []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
     m_fileUpload->changed().connect( m_fileUpload, &WFileUpload::upload );
   }//if( m_existingFilePath.size() )
 
@@ -939,7 +939,7 @@ void RelEffFile::handleUserAskedRemove()
   dialog->addButton( WString::tr("No") );
   
   string filepath = m_existingFilePath;
-  yes->clicked().connect( std::bind([filepath](){
+  yes->clicked().connect( yes, [filepath](){
     
     string pathToDel = SpecUtils::lexically_normalize_path(filepath);
     
@@ -979,7 +979,7 @@ void RelEffFile::handleUserAskedRemove()
     
     passMessage( WString::tr("ref-file-removed-toast").arg(SpecUtils::filename(pathToDel)),
                 WarningWidget::WarningMsgInfo );
-  }) );
+  } );
   
   
   delete this;
@@ -1660,7 +1660,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   HelpSystem::attachToolTipOn( m_deleteBtn, WString::tr("reds-tt-remove-gad-dir"),
                               showToolTips, HelpSystem::ToolTipPosition::Left );
   
-  m_deleteBtn->clicked().connect( [parentSelect, this](){ parentSelect->removeDirectory( this ); } );
+  m_deleteBtn->clicked().connect( this, [parentSelect, this](){ parentSelect->removeDirectory( this ); } );
   
   
 //If we wanted to actually select directories, could do similar to file query widget... which webkitdirectory no longer seems to work, so see file query widget use of electrons dialog
@@ -2344,7 +2344,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_efficiencyCsvUpload = uploadDetTab->addNew<WFileUpload>();
   m_efficiencyCsvUpload->setInline( false );
   m_efficiencyCsvUpload->uploaded().connect( this, &DrfSelect::handleEfficiencyCsvUpload );
-  m_efficiencyCsvUpload->fileTooLarge().connect( []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
+  m_efficiencyCsvUpload->fileTooLarge().connect( this, []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
   m_efficiencyCsvUpload->changed().connect( m_efficiencyCsvUpload, &WFileUpload::upload );
 
   m_efficiencyType = uploadDetTab->addNew<WComboBox>();
@@ -2418,8 +2418,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
   m_detectrDotDatLabel = m_detectrDiameterDiv->addNew<WLabel>( WString::tr("ds-gad-det-file-label") );
   m_detectorDotDatUpload = m_detectrDiameterDiv->addNew<WFileUpload>();
-  m_detectorDotDatUpload->uploaded().connect( [this](){ handleGadrasDetectorDotDatUpload(); } );
-  m_detectorDotDatUpload->fileTooLarge().connect( []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
+  m_detectorDotDatUpload->uploaded().connect( this, [this](){ handleGadrasDetectorDotDatUpload(); } );
+  m_detectorDotDatUpload->fileTooLarge().connect( this, []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
   m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
   m_detectrDotDatLabel->hide();
   m_detectorDotDatUpload->hide();
@@ -2482,8 +2482,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualFunctionName->setText( WString::tr("app-default-manual-det-name") );
   m_detectorManualFunctionName->setPlaceholderText( WString::tr("ds-manual-det-name-empty-txt") );
   m_detectorManualFunctionName->setInline(false);
-  //m_detectorManualFunctionName->keyWentUp().connect([this](){ verifyManualDefinition(); });
-  m_detectorManualFunctionName->textInput().connect([this](){ verifyManualDefinition(); });
+  //m_detectorManualFunctionName->keyWentUp().connect(this, [this](){ verifyManualDefinition(); });
+  m_detectorManualFunctionName->textInput().connect(this, [this](){ verifyManualDefinition(); });
 
   if( narrow_layout )
   {
@@ -2511,8 +2511,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //m_detectorManualFunctionText->setText( WString::tr("ds-manual-det-empty-fcn") );
   m_detectorManualFunctionText->setPlaceholderText( WString::tr("ds-manual-det-empty-fcn") );
   m_detectorManualFunctionText->setInline(false);
-  //m_detectorManualFunctionText->keyWentUp().connect([this](){ verifyManualDefinition(); });
-  m_detectorManualFunctionText->textInput().connect([this](){ verifyManualDefinition(); });
+  //m_detectorManualFunctionText->keyWentUp().connect(this, [this](){ verifyManualDefinition(); });
+  m_detectorManualFunctionText->textInput().connect(this, [this](){ verifyManualDefinition(); });
   
   if( narrow_layout )
   {
@@ -2533,7 +2533,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   button = energyContainer->addNew<WRadioButton>( WString::fromUTF8("MeV") );
   button->setMargin( 5, Wt::Side::Left );
   m_eqnEnergyGroup->addButton( button, 1 );
-  m_eqnEnergyGroup->checkedChanged().connect([this](){ verifyManualDefinition(); });
+  m_eqnEnergyGroup->checkedChanged().connect(this, [this](){ verifyManualDefinition(); });
   m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
     
   HelpSystem::attachToolTipOn( energyContainer, WString::tr("ds-tt-manual-energy-unit"),
@@ -2564,7 +2564,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorManualDescription->setWidth( WLength(100,WLength::Unit::Percentage) );
   }
   m_detectorManualDescription->setPlaceholderText( WString::tr("ds-tt-manual-desc") );
-  m_detectorManualDescription->changed().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualDescription->changed().connect(this, [this](){ verifyManualDefinition(); });
   
   m_detectorManualDescription->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -2581,10 +2581,10 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //m_detectorManualDiameterText->setText( diamtxt );
   m_detectorManualDiameterText->setPlaceholderText( diamtxt );
   m_detectorManualDiameterText->setValidator( distValidator );
-  m_detectorManualDiameterText->blurred().connect([this](){ verifyManualDefinition(); });
-  m_detectorManualDiameterText->enterPressed().connect([this](){ verifyManualDefinition(); });
-  //m_detectorManualDiameterText->keyWentUp().connect([this](){ verifyManualDefinition(); });
-  m_detectorManualDiameterText->textInput().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualDiameterText->blurred().connect(this, [this](){ verifyManualDefinition(); });
+  m_detectorManualDiameterText->enterPressed().connect(this, [this](){ verifyManualDefinition(); });
+  //m_detectorManualDiameterText->keyWentUp().connect(this, [this](){ verifyManualDefinition(); });
+  m_detectorManualDiameterText->textInput().connect(this, [this](){ verifyManualDefinition(); });
   
   
   m_detectorManualDiameterText->setAttributeValue( "ondragstart", "return false" );
@@ -2600,9 +2600,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   manualSetbackLabel->setBuddy( m_detectorManualSetbackText );
   m_detectorManualSetbackText->setValidator( distValidator );
   m_detectorManualSetbackText->setPlaceholderText( "0 cm" );
-  m_detectorManualSetbackText->blurred().connect([this](){ verifyManualDefinition(); });
-  m_detectorManualSetbackText->enterPressed().connect([this](){ verifyManualDefinition(); });
-  m_detectorManualSetbackText->textInput().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualSetbackText->blurred().connect(this, [this](){ verifyManualDefinition(); });
+  m_detectorManualSetbackText->enterPressed().connect(this, [this](){ verifyManualDefinition(); });
+  m_detectorManualSetbackText->textInput().connect(this, [this](){ verifyManualDefinition(); });
 
   m_detectorManualSetbackText->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -2623,7 +2623,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_detectorManualMinEnergy->setWidth( WLength(9,Wt::WLength::Unit::FontEx) );
   m_detectorManualMinEnergy->setText( "" );
   label->setBuddy( m_detectorManualMinEnergy );
-  m_detectorManualMinEnergy->valueChanged().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualMinEnergy->valueChanged().connect(this, [this](){ verifyManualDefinition(); });
   
   if( narrow_layout )
     cell = formulaTable->elementAt( formulaTable->rowCount(), 1 );
@@ -2644,7 +2644,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     label->setMargin( 10, Wt::Side::Left );
   }
 
-  m_detectorManualMaxEnergy->valueChanged().connect([this](){ verifyManualDefinition(); });
+  m_detectorManualMaxEnergy->valueChanged().connect(this, [this](){ verifyManualDefinition(); });
 
 
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
@@ -2677,8 +2677,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorManualDistText->setHiddenKeepsGeometry( true );
   m_detectorManualDistLabel->hide();
   m_detectorManualDistText->hide();
-  //m_detectorManualDistText->keyWentUp().connect([this](){ verifyManualDefinition(); });
-  m_detectorManualDistText->textInput().connect([this](){ verifyManualDefinition(); });
+  //m_detectorManualDistText->keyWentUp().connect(this, [this](){ verifyManualDefinition(); });
+  m_detectorManualDistText->textInput().connect(this, [this](){ verifyManualDefinition(); });
   
   
   if( narrow_layout )
@@ -2687,7 +2687,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //m_manualSetButton->setInline(false);
   m_manualSetButton->setFloatSide( Wt::Side::Right );
   //selfDefineLayout->setColumnStretch( 1, 1 );
-  m_manualSetButton->clicked().connect( [this](){ setFormulaDefineDetector(); } );
+  m_manualSetButton->clicked().connect( this, [this](){ setFormulaDefineDetector(); } );
     
   //-------------------------------------
   //--- 5)  Recent
@@ -2773,7 +2773,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   filter->addItem( WString::tr("ds-det-type-filter-N42") );
   filter->setCurrentIndex( 0 );
   
-  filter->changed().connect( std::bind( [filter,this,userid](){
+  filter->changed().connect( this, [filter,this,userid](){
     m_DBtable->setSelectedIndexes( WModelIndexSet() );
     m_deleteButton->disable();
     
@@ -2812,7 +2812,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     }
     
     m_DBtable->sortByColumn( 2, Wt::SortOrder::Descending );
-  } ) );
+  } );
 
     auto showLabelOwned = std::make_unique<WLabel>( WString::tr("ds-show-label") );
     WLabel *showLabel = showLabelOwned.get();
@@ -2831,19 +2831,19 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   //--------------------------------------------------------------------------------
 
   WMenuItem *item = m_drfTypeMenu->addItem( WString::tr("ds-mi-gadras"), std::move(gadrasDetSelectOwned) );
-  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
 
   item = m_drfTypeMenu->addItem( WString::tr("ds-mi-rel-eff"), std::move(relEffSelectOwned) );
-  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
 
   item = m_drfTypeMenu->addItem( WString::tr("ds-mi-import"), std::move(uploadDetTabOwned) );
-  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
 
   item = m_drfTypeMenu->addItem( WString::tr("ds-mi-formula"), std::move(formulaDivOwned) );
-  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
 
   item = m_drfTypeMenu->addItem( WString::tr("ds-mi-previous"), std::move(recentDivOwned) );
-  item->clicked().connect( [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+  item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
   
   //m_drfTypeStack->setHeight( WLength(185.0) );
   
@@ -2924,9 +2924,9 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_xmlDownload->clicked().connect( std::bind([xmlResource](){
+  m_xmlDownload->clicked().connect( m_xmlDownload, [xmlResource](){
     android_download_workaround(xmlResource.get(), "drf.xml");
-  }) );
+  } );
 #endif //ANDROID
 
 #endif
@@ -2940,14 +2940,14 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DrfXmlDownload" );
   
-  qr_btn->clicked().connect( std::bind( [this](){
-  
+  qr_btn->clicked().connect( this, [this](){
+
     if( !m_detector || !m_detector->isValid() )
     {
       passMessage( WString::tr("ds-no-drf-loaded"), WarningWidget::WarningMsgHigh );
       return;
     }
-  
+
     try
     {
       const string url = "interspec://drf/specify?" + Wt::Utils::urlEncode(m_detector->toAppUrl());
@@ -2957,7 +2957,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
-  }) );
+  } );
 #endif //USE_QR_CODES
   
   m_noDrfButton = secondFooter->addNew<WPushButton>( WString::tr("ds-no-det-btn") );
@@ -3144,7 +3144,7 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     for( auto drf : drfs )
       combo->addItem( drf->name() );
     combo->setCurrentIndex( 0 );
-    combo->activated().connect( std::bind(showDrf, std::placeholders::_1) );
+    combo->activated().connect( combo, [showDrf]( int arg ){ showDrf( arg ); } );
   }//if( drfs.size() > 1 )
 
   drfDescription->addStyleClass( "DrfFileSelectDrfDesc" );
@@ -3200,7 +3200,7 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   }//if( makeModelCb )
   
   
-  accept->clicked().connect( std::bind( [=](){
+  accept->clicked().connect( accept, [=](){
     auto drf = *selected_drf;
     auto interspec = InterSpec::instance();
     if( !drf || !interspec )
@@ -3233,7 +3233,7 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
         DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
       } ) );
     }//if( m_defaultForDetectorModel and is checked )
-  }) );
+  } );
   
   if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 50) )
   {
@@ -6103,8 +6103,8 @@ DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
   }
   stretcher()->setContentsMargins( 6, 2, 6, 0 );
   
-  m_edit->done().connect( [this](){ acceptAndDelete( this ); } );
-  finished().connect( [this]( Wt::DialogCode ){ acceptAndDelete( this ); } );
+  m_edit->done().connect( this, [this](){ acceptAndDelete( this ); } );
+  finished().connect( this, [this]( Wt::DialogCode ){ acceptAndDelete( this ); } );
   rejectWhenEscapePressed();
   
   show();

@@ -372,18 +372,18 @@ void PeakEdit::init()
 //    m_values[t]->changed().connect( boost::bind( &PeakEdit::checkIfDirty, this, t, false ) );
 //    m_uncertainties[t]->changed().connect( boost::bind( &PeakEdit::checkIfDirty, this, t, true ) );
     m_values[t]->textInput()
-            .connect( [this, t](){ checkIfDirty( t, false ); } );
+            .connect( this, [this, t](){ checkIfDirty( t, false ); } );
     m_values[t]->enterPressed()
-            .connect( [this, t](){ checkIfDirty( t, false ); } );
+            .connect( this, [this, t](){ checkIfDirty( t, false ); } );
     m_uncertainties[t]->textInput()
-            .connect( [this, t](){ checkIfDirty( t, true ); } );
+            .connect( this, [this, t](){ checkIfDirty( t, true ); } );
     m_uncertainties[t]->enterPressed()
-            .connect( [this, t](){ checkIfDirty( t, true ); } );
+            .connect( this, [this, t](){ checkIfDirty( t, true ); } );
 
     if( m_fitFors[t] )
     {
-      m_fitFors[t]->checked().connect( [this, t](){ fitTypeChanged( t ); } );
-      m_fitFors[t]->unChecked().connect( [this, t](){ fitTypeChanged( t ); } );
+      m_fitFors[t]->checked().connect( this, [this, t](){ fitTypeChanged( t ); } );
+      m_fitFors[t]->unChecked().connect( this, [this, t](){ fitTypeChanged( t ); } );
     }//if( m_fitFors[t] )
   }//for(...)
 
@@ -405,8 +405,8 @@ void PeakEdit::init()
       wApp->triggerUpdate();
     });
   };
-  m_viewer->detectorChanged().connect( std::bind(drfUpdater) );
-  m_viewer->detectorModified().connect( std::bind(drfUpdater) );
+  m_viewer->detectorChanged().connect( this, drfUpdater );
+  m_viewer->detectorModified().connect( this, drfUpdater );
   
   
   row = m_valueTable->rowAt( PeakEdit::PeakPars::SetContinuumToLinear + 1 );
@@ -418,7 +418,7 @@ void PeakEdit::init()
   HelpSystem::attachToolTipOn( m_resetLinearContinuum, WString::tr("pe-tt-btn-cont-to-linear"),
                               showToolTips, HelpSystem::ToolTipPosition::Right );
   row->setHidden( true );
-  m_resetLinearContinuum->clicked().connect( [this](){ estimateLinearContinuumFromData(); } );
+  m_resetLinearContinuum->clicked().connect( this, [this](){ estimateLinearContinuumFromData(); } );
   
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+1 );
@@ -479,21 +479,21 @@ void PeakEdit::init()
 #endif
   
   m_userLabel->setWidth( WLength(100,WLength::Unit::Percentage) );
-  m_userLabel->blurred().connect( [this](){ checkIfUserLabelDirty(); } );
-  m_userLabel->enterPressed().connect( [this](){ checkIfUserLabelDirty(); } );
-  m_userLabel->textInput().connect( [this](){ checkIfUserLabelDirty(); } );
+  m_userLabel->blurred().connect( this, [this](){ checkIfUserLabelDirty(); } );
+  m_userLabel->enterPressed().connect( this, [this](){ checkIfUserLabelDirty(); } );
+  m_userLabel->textInput().connect( this, [this](){ checkIfUserLabelDirty(); } );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+4 );
   label = row->elementAt(0)->addNew<WLabel>( WString::tr("pe-label-peak-color") );
   row->elementAt(1)->setColumnSpan(1);
   m_color = row->elementAt(1)->addNew<ColorSelect>( ColorSelect::AllowNoColor );
-  m_color->cssColorChanged().connect( [this](){ checkIfColorDirty(); } );
+  m_color->cssColorChanged().connect( this, [this](){ checkIfColorDirty(); } );
   row->elementAt(2)->setColumnSpan(2);
   m_applyColorForAllNuc = row->elementAt(2)->addNew<WCheckBox>( "dummy" ); //"dummy" is needed or else later custom labels wont render; Wt bug?
   m_applyColorForAllNuc->setHidden( true );
   m_applyColorForAllNuc->setUnChecked();
-  m_applyColorForAllNuc->checked().connect( [this](){ checkIfColorDirty(); } );
-  m_applyColorForAllNuc->unChecked().connect( [this](){ checkIfColorDirty(); } );
+  m_applyColorForAllNuc->checked().connect( this, [this](){ checkIfColorDirty(); } );
+  m_applyColorForAllNuc->unChecked().connect( this, [this](){ checkIfColorDirty(); } );
   
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+5 );
@@ -547,11 +547,11 @@ void PeakEdit::init()
 
   m_prevPeakInRoi = m_otherPeaksDiv->addNew<WPushButton>();
   m_prevPeakInRoi->setStyleClass( "PeakEditPreviousPeak" );
-  m_prevPeakInRoi->clicked().connect( [this](){ changeToNextPeakInRoi( true ); } );
+  m_prevPeakInRoi->clicked().connect( this, [this](){ changeToNextPeakInRoi( true ); } );
 
   m_nextPeakInRoi = m_otherPeaksDiv->addNew<WPushButton>();
   m_nextPeakInRoi->setStyleClass( "PeakEditNextPeak" );
-  m_nextPeakInRoi->clicked().connect( [this](){ changeToNextPeakInRoi( false ); } );
+  m_nextPeakInRoi->clicked().connect( this, [this](){ changeToNextPeakInRoi( false ); } );
   
   
   
@@ -569,7 +569,7 @@ void PeakEdit::init()
 //  deleteButton->setFloatSide( Wt::Right );
   
   m_cancel->clicked().connect( this, &PeakEdit::cancel );
-  m_refit->actionButton()->clicked().connect( [this](){ refit( RefitOption::Normal ); } );
+  m_refit->actionButton()->clicked().connect( this, [this](){ refit( RefitOption::Normal ); } );
   m_apply->clicked().connect(  this, &PeakEdit::apply  );
   m_accept->clicked().connect( this, &PeakEdit::accept );
   deleteButton->clicked().connect( this, &PeakEdit::deletePeak );
@@ -587,13 +587,13 @@ void PeakEdit::init()
     WPopupMenu *menu = menuOwner.get();
 
     WMenuItem *item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-standard") );
-    item->triggered().connect( [this](){ refit( RefitOption::Normal ); } );
+    item->triggered().connect( this, [this](){ refit( RefitOption::Normal ); } );
     item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-independent") );
-    item->triggered().connect( [this](){ refit( RefitOption::RoiIndependentFwhms ); } );
+    item->triggered().connect( this, [this](){ refit( RefitOption::RoiIndependentFwhms ); } );
     item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-fine") );
-    item->triggered().connect( [this](){ refit( RefitOption::RoiSmallRefinement ); } );
+    item->triggered().connect( this, [this](){ refit( RefitOption::RoiSmallRefinement ); } );
     item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-independent-fine") );
-    item->triggered().connect( [this](){ refit( RefitOption::RoiSmallRefinementIndependentFwhm ); } );
+    item->triggered().connect( this, [this](){ refit( RefitOption::RoiSmallRefinementIndependentFwhm ); } );
 
     m_refit->setMenu( std::move(menuOwner) );
   }else
@@ -601,13 +601,13 @@ void PeakEdit::init()
     PopupDivMenu *menu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu );
 
     PopupDivMenuItem *item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-standard") );
-    item->triggered().connect( [this](){ refit( RefitOption::Normal ); } );
+    item->triggered().connect( this, [this](){ refit( RefitOption::Normal ); } );
     item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-independent") );
-    item->triggered().connect( [this](){ refit( RefitOption::RoiIndependentFwhms ); } );
+    item->triggered().connect( this, [this](){ refit( RefitOption::RoiIndependentFwhms ); } );
     item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-fine") );
-    item->triggered().connect( [this](){ refit( RefitOption::RoiSmallRefinement ); } );
+    item->triggered().connect( this, [this](){ refit( RefitOption::RoiSmallRefinement ); } );
     item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-independent-fine") );
-    item->triggered().connect( [this](){ refit( RefitOption::RoiSmallRefinementIndependentFwhm ); } );
+    item->triggered().connect( this, [this](){ refit( RefitOption::RoiSmallRefinementIndependentFwhm ); } );
 
     // Wt4_TODO: PopupDivMenu ownership - check if setMenu takes unique_ptr or raw ptr
     m_refit->setMenu( std::unique_ptr<WPopupMenu>(menu) );

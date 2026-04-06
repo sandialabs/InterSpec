@@ -1118,13 +1118,13 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
   if( !closeMenuOnActivation )
   {
     item->setSelectable( false );
-    item->clicked().connect( [item](){ doTriggeredEmit( item ); } );
+    item->clicked().connect( item, [item](){ doTriggeredEmit( item ); } );
     item->clicked().preventPropagation();
     Wt::WAnchor *a = item->anchor();
     if( a )
     {
       item->anchor()->clicked().preventPropagation();
-      item->anchor()->clicked().connect( [item](){ doTriggeredEmit( item ); } );
+      item->anchor()->clicked().connect( item, [item](){ doTriggeredEmit( item ); } );
     }
   }
   

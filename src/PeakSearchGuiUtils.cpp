@@ -579,7 +579,7 @@ protected:
         {
           m_nuc_select_combos[i] = newNucCell->addNew<WComboBox>();
           m_nuc_select_combos[i]->setInline( false );
-          m_nuc_select_combos[i]->changed().connect( [this, i](){ nucSelectChanged( i ); } );
+          m_nuc_select_combos[i]->changed().connect( this, [this, i](){ nucSelectChanged( i ); } );
 
           // Only show the "Don't change" checkbox if this is a previously existing peak
           if( m_old_to_new_peaks[i].first )
@@ -587,8 +587,8 @@ protected:
             m_dont_change_nuc_cbs[i] = newNucCell->addNew<WCheckBox>( WString::tr("psw-dont-change") );
             m_dont_change_nuc_cbs[i]->addStyleClass( "DontAssignCb" );
             m_dont_change_nuc_cbs[i]->setInline( false );
-            m_dont_change_nuc_cbs[i]->checked().connect( [this, i](){ dontChangeNucCbChanged( i ); } );
-            m_dont_change_nuc_cbs[i]->unChecked().connect( [this, i](){ dontChangeNucCbChanged( i ); } );
+            m_dont_change_nuc_cbs[i]->checked().connect( this, [this, i](){ dontChangeNucCbChanged( i ); } );
+            m_dont_change_nuc_cbs[i]->unChecked().connect( this, [this, i](){ dontChangeNucCbChanged( i ); } );
           }//if( m_old_to_new_peaks[i].first )
         }else
         {
@@ -658,26 +658,26 @@ protected:
 #endif
     
     WPushButton *acceptButton = addCloseButtonToFooter( WString::tr("Accept"), true );
-    acceptButton->clicked().connect( [this](){ hide(); } );
+    acceptButton->clicked().connect( this, [this](){ hide(); } );
     
-    acceptButton->clicked().connect( std::bind( [viewer, orig_peaks, final_peaks](){
-      
+    acceptButton->clicked().connect( this, [viewer, orig_peaks, final_peaks](){
+
       auto undo = [viewer, orig_peaks](){
         PeakModel *pmodel = viewer->peakModel();
         if( pmodel )
           pmodel->setPeaks( orig_peaks );
       };
-      
+
       auto redo = [viewer, final_peaks](){
         PeakModel *pmodel = viewer->peakModel();
         if( pmodel )
           pmodel->setPeaks( final_peaks );
       };
-      
+
       UndoRedoManager *undoManager = viewer->undoRedoManager();
       if( undoManager )
         undoManager->addUndoRedoStep( undo, redo, "Accept automated peak search." );
-    } ) );
+    } );
                                                
     
     
@@ -691,7 +691,7 @@ protected:
       cancelButton = addCloseButtonToFooter( WString::tr("Cancel"), true );
     }
 
-    cancelButton->clicked().connect( [this](){ cancelOperation(); } );
+    cancelButton->clicked().connect( this, [this](){ cancelOperation(); } );
     
     finished().connect( this, &PeakSelectorWindow::doFinish );
     
@@ -3193,7 +3193,7 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
       WPushButton *yes_btn = msg->addButton( WString::tr("Yes") );
       WPushButton *no_btn = msg->addButton( WString::tr("No") );
       
-      no_btn->clicked().connect( std::bind([interspec,rightClickEnergy](){
+      no_btn->clicked().connect( no_btn, [interspec,rightClickEnergy](){
         auto undo = [interspec,rightClickEnergy](){
           refit_peaks_with_drf_fwhm( interspec, rightClickEnergy );
         };
@@ -3203,7 +3203,7 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
           WWidget *pp = p ? p->parent() : nullptr;
           WWidget *ppp = pp ? pp->parent() : nullptr;
           SimpleDialog *d = dynamic_cast<SimpleDialog *>( ppp );
-            
+
           if( d )
             d->done(Wt::DialogCode::Accepted);
           wApp->doJavaScript( "document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});" );
@@ -3212,10 +3212,10 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
         UndoRedoManager *undoManager = interspec->undoRedoManager();
         if( undoManager && undoManager->canAddUndoRedoNow() )
           undoManager->addUndoRedoStep( undo, redo, "Cancel refit peak with DRF FWHM." );
-      } ) );
+      } );
       
       
-      yes_btn->clicked().connect( std::bind( [interspec,rightClickEnergy](){
+      yes_btn->clicked().connect( yes_btn, [interspec,rightClickEnergy](){
         MakeFwhmForDrfWindow *window = interspec->fwhmFromForegroundWindow(true);
         if( window )
         {
@@ -3246,11 +3246,11 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
             );
           }//if( window )
         };
-        
+
         UndoRedoManager *undoManager = interspec->undoRedoManager();
         if( undoManager && undoManager->canAddUndoRedoNow() )
           undoManager->addUndoRedoStep( undo, redo, "Start fit FWHM function." );
-      } ) );
+      } );
       
       return;
     }//if( !drf || !drf->hasResolutionInfo() )

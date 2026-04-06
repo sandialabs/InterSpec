@@ -69,7 +69,7 @@ BatchGuiDialog::BatchGuiDialog( FileDragUploadResource *uploadResource, const Wt
   m_processBtn->setStyleClass( "simple-dialog-btn" );
   m_processBtn->clicked().connect( m_widget, &BatchGuiWidget::performAnalysis );
   m_processBtn->disable();
-  m_widget->canDoAnalysis().connect( [this]( bool enabled ){ m_processBtn->setEnabled( enabled ); } );
+  m_widget->canDoAnalysis().connect( this, [this]( bool enabled ){ m_processBtn->setEnabled( enabled ); } );
 
   addButton( WString::tr( "Close" ) );
 

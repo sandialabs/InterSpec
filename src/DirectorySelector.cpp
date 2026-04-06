@@ -146,7 +146,7 @@ void DirectorySelector::setupUI()
     m_pathDisplay->addStyleClass( "DirectorySelectorPathTxt" );
 
     m_selectButton = addNew<Wt::WPushButton>( Wt::WString::tr("ds-native-select-path-button") );
-    m_selectButton->clicked().connect( [this](){ handleNativeDirectorySelection(); } );
+    m_selectButton->clicked().connect( this, [this](){ handleNativeDirectorySelection(); } );
   }else
   {
     // Text input fallback UI
@@ -155,10 +155,10 @@ void DirectorySelector::setupUI()
     m_pathInput->setPlaceholderText( Wt::WString::tr("ds-txt-input-placeholder") );
 
     // Connect all the change events
-    m_pathInput->keyWentUp().connect( [this](){ handleTextInputChange(); } );
-    m_pathInput->enterPressed().connect( [this](){ handleTextInputChange(); } );
-    m_pathInput->blurred().connect( [this](){ handleTextInputChange(); } );
-    m_pathInput->changed().connect( [this](){ handleTextInputChange(); } );
+    m_pathInput->keyWentUp().connect( this, [this](){ handleTextInputChange(); } );
+    m_pathInput->enterPressed().connect( this, [this](){ handleTextInputChange(); } );
+    m_pathInput->blurred().connect( this, [this](){ handleTextInputChange(); } );
+    m_pathInput->changed().connect( this, [this](){ handleTextInputChange(); } );
   }
 }//void setupUI()
 

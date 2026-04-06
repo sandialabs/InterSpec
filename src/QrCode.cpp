@@ -409,31 +409,31 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     assert( sizeRow );
     WText *sizeTxt = sizeRow->addNew<WText>( sizeDesc );
     
-    eclSelect->changed().connect( std::bind([eclSelect, sizeTxt, url, svgResource](){
+    eclSelect->changed().connect( eclSelect, [eclSelect, sizeTxt, url, svgResource](){
       const int ecl = eclSelect->currentIndex();
       assert( ecl >= 0 && ecl <= 3 );
       if( ecl < 0 || ecl > 4 )
         return;
-      
+
       try
       {
         const tuple<string,int,ErrorCorrLevel> qr_svg
                                 = utf8_string_to_svg_qr( url, static_cast<ErrorCorrLevel>(ecl), 3 );
-        
+
         const string &qr_svg_str = get<0>(qr_svg);
         if( qr_svg_str.empty() )
           throw runtime_error( "Error creating SVG" );
-        
+
         const unsigned char *svg_begin = (unsigned char *) &(qr_svg_str[0]);
         const unsigned char *svg_end = svg_begin + qr_svg_str.size();
         const vector<unsigned char> svg_data( svg_begin, svg_end );
-        
+
         svgResource->setData( svg_data );
-        
+
         const int actualEcl = static_cast<int>( get<2>(qr_svg) );
         assert( actualEcl >= 0 && actualEcl <= 3 );
         eclSelect->setCurrentIndex( actualEcl );
-        
+
         const int qr_size = get<1>(qr_svg);
         const string sizeDesc = to_string(qr_size) + "x" + to_string(qr_size) + " elements";
         sizeTxt->setText( sizeDesc );
@@ -444,7 +444,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
         eclSelect->setCurrentIndex( -1 );
         passMessage( "Sorry, error setting tolerance level.", 3 );
       }//try / catch
-    }) );
+    } );
     
     
     if( !description.empty() )
@@ -501,9 +501,9 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
 
 #if( ANDROID )
     // Using hacked saving to temporary file in Android, instead of via network download of file.
-    svgDownload->clicked().connect( std::bind([svgResource](){
+    svgDownload->clicked().connect( svgDownload, [svgResource](){
       android_download_workaround(svgResource.get(), "qr.svg");
-    }) );
+    } );
 #endif //ANDROID
 
     svgDownload->setText( "SVG" );

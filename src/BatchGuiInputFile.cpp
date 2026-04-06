@@ -84,7 +84,7 @@ BatchGuiInputFile::BatchGuiInputFile( const std::string display_name,
 
   WContainerWidget *close_icon = addNew<WContainerWidget>();
   close_icon->addStyleClass( "closeicon-wtdefault" );
-  close_icon->clicked().connect( [this](){ requestRemoveSelf(); } );
+  close_icon->clicked().connect( this, [this](){ requestRemoveSelf(); } );
   close_icon->clicked().preventPropagation();
 }// BatchGuiInputFile constructor
 
@@ -152,7 +152,7 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
 
   WContainerWidget *close_icon = addNew<WContainerWidget>();
   close_icon->addStyleClass( "closeicon-wtdefault" );
-  close_icon->clicked().connect( [this](){ requestRemoveSelf(); } );
+  close_icon->clicked().connect( this, [this](){ requestRemoveSelf(); } );
   close_icon->clicked().preventPropagation();
 
   const string sessionid = wApp->sessionId();
