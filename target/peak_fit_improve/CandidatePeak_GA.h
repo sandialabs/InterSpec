@@ -78,7 +78,8 @@ namespace CandidatePeak_GA
    */
   CandidatePeakScore
   calculate_candidate_peak_score_for_source( const std::vector<PeakDef> &detected_peaks,
-                                             const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks );
+                                             const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks,
+                                             const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High );
 
   /** Corrects CandidatePeakScore fields to exclude escape peaks.
    *

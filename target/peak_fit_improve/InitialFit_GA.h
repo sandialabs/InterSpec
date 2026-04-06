@@ -86,7 +86,8 @@ struct PeakFindAndFitWeights
 PeakFindAndFitWeights calculate_peak_find_weights(
   const std::vector<PeakDef> &fit_peaks,
   const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks,
-  const double num_sigma_contribution = 1.5
+  const double num_sigma_contribution = 1.5,
+  const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High
 );
 
 

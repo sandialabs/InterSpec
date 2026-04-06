@@ -102,6 +102,16 @@ struct CombinedPeakFitScore
 namespace FitPeaksForNuclideDev
 {
   void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info );
+
+  /** Generates an HTML file with spectrum charts and orange vertical reference lines
+   showing the spectroscopic extent (from find_valid_energy_range) for each source.
+   No peak fitting is performed.
+
+   @param srcs_info The loaded source spectra data
+   @param detector_name The detector name, used for the output filename
+   */
+  void write_spectroscopic_extent_html( const std::vector<DataSrcInfo> &srcs_info,
+                                        const std::string &detector_name );
 }//namespace FitPeaksForNuclideDev
 
 #endif //FitPeaksForNuclideDev_h

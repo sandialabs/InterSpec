@@ -178,34 +178,48 @@ struct DataSrcInfo
 /** The weights and limits to apply to the various optimizations.
 
  These are all chosen using 'expert judgment', which means they may not be that well chosen.
+
+ Thresholds are now detector-type dependent: for NaI and other low-resolution detectors,
+ the nsigma thresholds need to be higher because wide peaks are harder to reliably distinguish
+ from continuum curvature, even when statistically significant.
  */
-namespace JudgmentFactors
+struct JudgmentThresholds
 {
   // Lets not worry about super-small peaks, even where there is little to no background
-  const double min_truth_peak_area = 5;
+  double min_truth_peak_area = 5;
 
   //Photopeak clusters below this next number of sigma will be discarded, since we really
   //  shouldnt find these peaks.
-  //  i.e., The threshold at which we will start punishing if a peak is not expected at this
-  //  threshold; these source photopeaks have already been removed.
+  double min_truth_nsigma = 1.0;
+
+  double def_want_nsigma = 4;          // Above this sigma, lets weight all peaks the same
+  double min_def_wanted_counts = 15;   // Below this area, we wont punish for not finding
+  double lower_want_nsigma = 2.5;      // Above this sigma, we will positively reward finding
+
+  double found_extra_punishment = 0.5;
+  double min_initial_fit_maybe_want_score = 0.25;
+  double initial_fit_extra_peak_punishment = 0.75;
+  double extra_add_fits_punishment = 1.0;
+
+  /** Returns the appropriate thresholds for a given detector resolution type. */
+  static const JudgmentThresholds &for_det_type( PeakFitUtils::CoarseResolutionType det_type );
+};//struct JudgmentThresholds
+
+
+/** Backward-compatible namespace alias providing the HPGe default thresholds.
+ Use `JudgmentThresholds::for_det_type(...)` for detector-specific thresholds.
+ */
+namespace JudgmentFactors
+{
+  // HPGe defaults (backwards compatibility for code that doesnt have det_type context)
+  const double min_truth_peak_area = 5;
   const double min_truth_nsigma = 1.0;
-
-  const double def_want_nsigma = 4;   // i.e., above 4 sigma, lets weight all peaks the same
-  const double min_def_wanted_counts = 15; //i.e., if expected peak area is below 15 counts, we wont punish for not finding
-  const double lower_want_nsigma = 2.5; // The number of sigma above which we will positively reward finding a peak
-  // Between `def_want_nsigma` and `lower_want_nsigma` we will linearly weight for not finding a peak
-
-  const double found_extra_punishment = 0.5; // 1/this-value gives the trade-off of finding extra peaks, verses not finding peaks
-
-  // When a peak between lower_want_nsigma and def_want_nsigma is found, the minimum value we should assign
+  const double def_want_nsigma = 4;
+  const double min_def_wanted_counts = 15;
+  const double lower_want_nsigma = 2.5;
+  const double found_extra_punishment = 0.5;
   const double min_initial_fit_maybe_want_score = 0.25;
-
-  // Cost for fitting an extra peak after the initial proper fit
   const double initial_fit_extra_peak_punishment = 0.75;
-
-  // Multiple for the fraction of additional candidates tried, that didnt stick around
-  //  E.g., with a value of 1.0, if 100% of tried peaks failed, this would be equivalent of not
-  //    finding one peaks
   const double extra_add_fits_punishment = 1.0;
 }//namespace JudgmentFactors
 

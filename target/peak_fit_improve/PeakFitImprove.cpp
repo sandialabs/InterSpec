@@ -99,6 +99,44 @@ namespace PeakFitImprove
 
 
 
+const JudgmentThresholds &JudgmentThresholds::for_det_type( PeakFitUtils::CoarseResolutionType det_type )
+{
+  static const JudgmentThresholds s_hpge_thresholds; // Uses defaults (HPGe values)
+
+  static const JudgmentThresholds s_low_res_thresholds = [](){
+    JudgmentThresholds t;
+    // For NaI and other low-resolution detectors, peaks need to be more prominent
+    //  to be reliably distinguishable from continuum curvature.
+    //  These values are chosen so that:
+    //  - Co56_Sh's 1563, 2212 keV peaks (not visible on NaI) are NOT "definitely wanted"
+    //  - Y88_Sh's 898, 1836 keV peaks (clearly visible on NaI) ARE "definitely wanted"
+    //  - Ho166m_Unsh's 16-27 keV x-rays (not visible on NaI) are NOT "definitely wanted"
+    t.def_want_nsigma = 8.0;
+    t.min_def_wanted_counts = 50;
+    t.lower_want_nsigma = 5.0;
+    t.min_truth_nsigma = 2.0;
+    t.min_truth_peak_area = 10;
+    return t;
+  }();
+
+  switch( det_type )
+  {
+    case PeakFitUtils::CoarseResolutionType::High:
+      return s_hpge_thresholds;
+
+    case PeakFitUtils::CoarseResolutionType::Low:
+    case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+    case PeakFitUtils::CoarseResolutionType::MedRes:
+    case PeakFitUtils::CoarseResolutionType::LaBr:
+    case PeakFitUtils::CoarseResolutionType::CZT:
+    case PeakFitUtils::CoarseResolutionType::Unknown:
+      return s_low_res_thresholds;
+  }//switch( det_type )
+
+  return s_hpge_thresholds;
+}//JudgmentThresholds::for_det_type
+
+
 // FindCandidateSettings::print() and to_json() are defined in PeakFitSpecImp.cpp
 // with all gene fields (including energy-adaptive, Compton, low-energy, PCGAP).
 
@@ -1061,7 +1099,8 @@ int main( int argc, char **argv )
     PeaksForNuclide,
     DetTypeClassify,
     ValidateDetType,
-    NuclideConfigGA
+    NuclideConfigGA,
+    SpectroscopicExtent
   };//enum class OptimizationAction : int
   
   OptimizationAction action;
@@ -1083,9 +1122,11 @@ int main( int argc, char **argv )
     action = OptimizationAction::ValidateDetType;
   else if( action_str == "NuclideConfigGA" )
     action = OptimizationAction::NuclideConfigGA;
+  else if( action_str == "SpectroscopicExtent" )
+    action = OptimizationAction::SpectroscopicExtent;
   else
   {
-    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide, DetTypeClassify, ValidateDetType, NuclideConfigGA" << endl;
+    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide, DetTypeClassify, ValidateDetType, NuclideConfigGA, SpectroscopicExtent" << endl;
     return -4;
   }
 
@@ -2642,6 +2683,14 @@ int main( int argc, char **argv )
            << ", cpu=" << (end_cpu - start_cpu) << "} seconds" << endl;
       break;
     }//case OptimizationAction::ValidateDetType:
+
+    case OptimizationAction::SpectroscopicExtent:
+    {
+      // Uncomment to generate spectroscopic extent visualization HTML:
+      //const string det_name = wanted_detectors.empty() ? "unknown" : wanted_detectors.front();
+      //FitPeaksForNuclideDev::write_spectroscopic_extent_html( input_srcs, det_name );
+      break;
+    }//case OptimizationAction::SpectroscopicExtent:
   }//switch( action )
 
 #if( defined(SpecUtils_USE_WT_THREADPOOL) )
