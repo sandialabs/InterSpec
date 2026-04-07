@@ -813,8 +813,8 @@ public:
    */
   void createMapWindow( const SpecUtils::SpectrumType spectrum_type, const bool noWarning );
   
-  /** Handles the closing of the Leaflet map warning window (sets `m_leafletWarning` to nullptr). */
-  void handleLeafletWarningWindowClose();
+  // handleLeafletWarningWindowClose() removed — m_leafletWarning is an observing_ptr
+  //  that auto-nulls when the dialog is destroyed.
   
   
   void handleLeafletMapOpen( LeafletRadMapWindow *window );

@@ -40,6 +40,7 @@
 #include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WGroupBox.h>
+#include <Wt/WVBoxLayout.h>
 #include <Wt/WMenuItem.h>
 #include <Wt/WResource.h>
 #include <Wt/WIOService.h>
@@ -345,7 +346,7 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     disp->addDownloadAndUploadLinks( window->footer() );
     
     WPushButton *closeButton = window->addCloseButtonToFooter();
-    closeButton->clicked().connect(window, &AuxWindow::hide);
+    closeButton->clicked().connect( window, &AuxWindow::hide );
     
     //window->rejectWhenEscapePressed();
     
@@ -381,8 +382,9 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     }
     
     window->centerWindow();
-    window->finished().connect( viewer, &InterSpec::closeShieldingSourceFit );
-    
+    // Note: the finished() signal is connected to InterSpec::handleRelActAutoClose()
+    //  in InterSpec::relActAutoWindow(), so we dont need to connect it here.
+
     window->WDialog::setHidden(false);
     window->show();
     window->centerWindow();
@@ -1088,10 +1090,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
 
 RelActAutoGui::~RelActAutoGui()
 {
-  // We need to manually manage any WPopupMenu's we create.
-  if( m_more_options_menu && wApp && wApp->domRoot() )
-    delete m_more_options_menu;
-  m_more_options_menu = nullptr;
+  // In Wt4, PopupDivMenu (WPopupMenu) is owned by the widget hierarchy.
+  //  Use removeFromParent() to properly remove and destroy it before the
+  //  rest of the widget tree is cleared by the base class destructor.
+  if( m_more_options_menu )
+    m_more_options_menu->removeFromParent();
   
   if( m_cancel_calc )
     m_cancel_calc->store( true );

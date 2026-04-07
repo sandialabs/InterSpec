@@ -105,6 +105,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
   wApp->useStyleSheet( "InterSpec_resources/GammaXsGui.css" );
 
   m_layout = setLayout( std::make_unique<WGridLayout>() );
+  m_layout->setColumnStretch( 1, 1 );
 
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
 
@@ -902,6 +903,10 @@ GammaXsWindow::GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion ,
   m_tool( nullptr )
 {
   rejectWhenEscapePressed( true );
+
+  // Wt4's WGridLayout uses absolute positioning; we need enough width for
+  //  the label, value, and unit columns to not overlap.
+  setMinimumSize( 420, WLength::Auto );
 
   contents()->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
 

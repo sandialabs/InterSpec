@@ -127,11 +127,11 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("lrm-pre-warn-title") );
   dialog->setWidth( 400 );
   
-  WText *message = new WText( msg, dialog->contents() );
+  WText *message = dialog->contents()->addNew<WText>( msg );
   message->addStyleClass( "content" );
   message->setInline( false );
-  
-  WCheckBox *cb = new WCheckBox( WString::tr("lrm-pre-warn-dont-ask"), dialog->contents() );
+
+  WCheckBox *cb = dialog->contents()->addNew<WCheckBox>( WString::tr("lrm-pre-warn-dont-ask") );
   cb->setInline( false );
   cb->checked().connect( cb, [cb](){
     InterSpec *viewer = InterSpec::instance();
@@ -241,7 +241,7 @@ LeafletRadMap::LeafletRadMap()
   // Attach signal to InterSpec instance, to avoid signal not being exposed when we should this in a AuxWindow
   m_displaySamples( /* this */ InterSpec::instance(), "loadSamples", false ),
   m_tileLoadFailed( InterSpec::instance(), "tileLoadFailed", false ),
-  m_loadSelected( this )
+  m_loadSelected()
 {
   //addStyleClass( "LeafletRadMap" );
   addStyleClass( "LeafletRadMapWidget" );
@@ -348,7 +348,7 @@ LeafletRadMap::LeafletRadMap()
   WImage *img = m_energy_range_row->addNew<WImage>();
   img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
   img->setStyleClass("Wt-icon EnergyFilterHelp");
-  img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+  img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
 
   HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::InstantAlways );
@@ -500,7 +500,7 @@ void LeafletRadMap::doJavaScript( const std::string& js )
 
 void LeafletRadMap::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
-  const bool renderFull = (flags & Wt::RenderFlag::RenderFull);
+  const bool renderFull = flags.test( Wt::RenderFlag::Full );
   
   WContainerWidget::render( flags );
   

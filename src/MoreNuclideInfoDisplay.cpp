@@ -701,10 +701,11 @@ MoreNuclideInfoWindow::MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const 
   m_display = contents()->addNew<MoreNuclideInfoDisplay>( nuc, false );
 
   m_display->nuclideChanged().connect( this, [this]( const SandiaDecay::Nuclide *nuc ){ nuclideUpdated( nuc ); } );
-  
+
   nuclideUpdated( nuc );
-  
+
   addButton( "Close" );
+  rejectWhenEscapePressed( true );
 }//MoreNuclideInfoWindow
 
 

@@ -887,7 +887,7 @@ public:
   WCheckBox *m_fit;
   NativeFloatSpinBox *m_value;
   
-  CoefDisplay( const size_t order, WContainerWidget *parent = nullptr )
+  CoefDisplay( const size_t order )
   : WContainerWidget(),
     m_order( order ),
     m_label( nullptr ),
@@ -1325,7 +1325,7 @@ public:
     
     for( ; coefnum < num_coef_disp; ++coefnum )
     {
-      CoefDisplay *disp = new CoefDisplay( coefnum, m_coefficients );
+      CoefDisplay *disp = m_coefficients->addNew<CoefDisplay>( coefnum );
       coef_disps[coefnum] = disp;
       const float value = (coefnum < coeffs.size()) ? coeffs[coefnum] : 0.0f;
       disp->m_value->setValue( value );

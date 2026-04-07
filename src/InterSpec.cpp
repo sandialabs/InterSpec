@@ -9402,8 +9402,8 @@ void InterSpec::createMapWindow( const SpecUtils::SpectrumType spectrum_type, co
   if( !m_leafletWarning )
     return;
     
-  m_leafletWarning->finished().connect( this, &InterSpec::handleLeafletWarningWindowClose );
-    
+  // m_leafletWarning is an observing_ptr, so it auto-nulls when the dialog is destroyed.
+
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     // Note: If the user clicks cancel on the warning screen, hitting undo will then be a blank
@@ -9418,16 +9418,8 @@ void InterSpec::createMapWindow( const SpecUtils::SpectrumType spectrum_type, co
 }//void createMapWindow( SpecUtils::SpectrumType spectrum_type )
 
 
-void InterSpec::handleLeafletWarningWindowClose()
-{
-  WObject *signalSender = WObject::sender();
-  SimpleDialog *dialogSender = dynamic_cast<SimpleDialog *>( signalSender );
-  assert( dialogSender );
-  assert( !m_leafletWarning || (dialogSender == m_leafletWarning.get()) );
-
-  if( dialogSender == m_leafletWarning.get() )
-    m_leafletWarning = nullptr;
-}//void handleLeafletWarningWindowClose()
+// handleLeafletWarningWindowClose() removed — m_leafletWarning is an observing_ptr
+//  that auto-nulls when the dialog is destroyed.
 
 
 void InterSpec::handleLeafletMapOpen( LeafletRadMapWindow *window )
@@ -9489,13 +9481,9 @@ void InterSpec::programmaticallyCloseLeafletWarning()
 
 void InterSpec::handleLeafletMapClosed()
 {
-  WObject *signalSender = WObject::sender();
-  LeafletRadMapWindow *mapSender = dynamic_cast<LeafletRadMapWindow *>( signalSender );
-  
-  assert( mapSender );
-  assert( !m_leafletWindow || (m_leafletWindow.get() == mapSender) );
-
-  if( m_leafletWindow && (mapSender == m_leafletWindow.get()) && m_undo && m_undo->canAddUndoRedoNow() )
+  // In Wt4, WObject::sender() was removed; this handler is only connected to
+  //  m_leafletWindow->finished(), so we use m_leafletWindow directly.
+  if( m_leafletWindow && m_undo && m_undo->canAddUndoRedoNow() )
   {
     using SpecUtils::SpectrumType;
     const shared_ptr<const SpecMeas> meas = m_leafletWindow->map()->measurement();
@@ -9951,14 +9939,23 @@ void InterSpec::handleRelActAutoClose()
 {
   assert( m_relActAutoMenuItem );
   m_relActAutoMenuItem->enable();
-  
+
   if( m_relActAutoGui )
     saveRelActAutoStateToForegroundSpecMeas();
-  
+
   assert( m_relActAutoWindow );
   if( !m_relActAutoWindow )
     return;
-  
+
+  // In Wt4, we cannot safely delete the AuxWindow from within a signal handler
+  //  of one of its child widgets (the close button), because AuxWindow::setHidden()
+  //  calls emitReject() which means the stack unwinds through deleted AuxWindow
+  //  methods, causing a crash.  Instead, hide the dialog immediately, then post
+  //  the actual deletion to the event loop with a short delay so it runs in a
+  //  clean stack frame.
+  //
+  // TODO: refactor AuxWindow to not call emitReject() from setHidden(), so we
+  //  can use the standard Wt4 pattern of done() + removeChild() from finished().
   if( m_relActAutoWindow ) AuxWindow::deleteAuxWindow( m_relActAutoWindow.get() );
   assert( !m_relActAutoGui );
   assert( !m_relActAutoWindow );

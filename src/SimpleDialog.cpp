@@ -157,7 +157,17 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   }else
   {
     setTitleBarEnabled( true );
-    //setWindowTitle( title ); //Dont use the default Wt <h4>Some Text...</h4> stuff
+    // Wt4's WDialog creates a caption WTemplate with an unbound ${title} variable
+    //  that renders as "??title??". Hide the caption element so it doesn't show;
+    //  we use our own m_title WText instead.
+    for( WWidget *child : titleBar()->children() )
+    {
+      if( dynamic_cast<WTemplate *>( child ) )
+      {
+        child->setHidden( true );
+        break;
+      }
+    }
     titleBar()->removeStyleClass( "titlebar" );  //Avoid the Wt changing of text color and such
     titleBar()->addStyleClass( "title" );
     m_title = titleBar()->addNew<WText>( title );

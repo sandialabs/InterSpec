@@ -32,6 +32,24 @@
   column-gap: 5px;
 }
 
+.ShieldingSelect .DimDiv
+{
+  padding: 3px;
+}
+
+.ShieldingSelect .DimEditRow
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+
+.ShieldingSelect .DimEditRow input[type="text"]
+{
+  flex: 1;
+}
+
 
 .ShieldingSelect .MaterialSummary
 {

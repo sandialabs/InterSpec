@@ -30,6 +30,7 @@
 #include <utility>
 
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/RelActCalcAuto.h"
 
@@ -430,13 +431,13 @@ protected:
   Wt::WCheckBox *m_use_fixed_skew;
 
   // Wt::WComboBox *m_u_pu_data_source;
-  PopupDivMenu *m_more_options_menu;
-  PopupDivMenuItem *m_apply_energy_cal_item;
-  PopupDivMenuItem *m_show_ref_lines_item;
-  PopupDivMenuItem *m_hide_ref_lines_item;
-  PopupDivMenuItem *m_set_peaks_foreground;
-  PopupDivMenuItem *m_show_background;
-  PopupDivMenuItem *m_hide_background;
+  Wt::Core::observing_ptr<PopupDivMenu> m_more_options_menu;
+  Wt::Core::observing_ptr<PopupDivMenuItem> m_apply_energy_cal_item;
+  Wt::Core::observing_ptr<PopupDivMenuItem> m_show_ref_lines_item;
+  Wt::Core::observing_ptr<PopupDivMenuItem> m_hide_ref_lines_item;
+  Wt::Core::observing_ptr<PopupDivMenuItem> m_set_peaks_foreground;
+  Wt::Core::observing_ptr<PopupDivMenuItem> m_show_background;
+  Wt::Core::observing_ptr<PopupDivMenuItem> m_hide_background;
   bool m_showing_background;
 
   /** If the user wants to show reference gamma lines, we'll use a #ReferencePhotopeakDisplay

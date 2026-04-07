@@ -2391,12 +2391,14 @@ void ShieldingSelect::init()
   distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   
   
-  // A lamda for setting up dimension edits for the various geometry dimensions
-  auto setupDimEdit = [this,distValidator]( const WString &labelTxt, WLineEdit *&edit, WCheckBox *&fitCb, WGridLayout *grid ){
-    const int row = grid->rowCount();
+  // A lambda for setting up dimension edits for the various geometry dimensions.
+  //  Uses CSS flex layout instead of WGridLayout to avoid Wt4's absolute-positioning
+  //  issue inside WStackedWidget (overflow:hidden clips zero-height layout containers).
+  auto setupDimEdit = [this,distValidator]( const WString &labelTxt, WLineEdit *&edit, WCheckBox *&fitCb, WContainerWidget *parent ){
+    WContainerWidget *row = parent->addNew<WContainerWidget>();
+    row->addStyleClass( "DimEditRow" );
 
-    auto labelUniq = std::make_unique<WLabel>( labelTxt );
-    WLabel * const label = labelUniq.get();
+    WLabel * const label = row->addNew<WLabel>( labelTxt );
 
     auto editUniq = std::make_unique<WLineEdit>( "1.0 cm" );
     edit = editUniq.get();
@@ -2410,58 +2412,40 @@ void ShieldingSelect::init()
 #endif
     label->setBuddy( edit );
 
-    //From a very brief experiment, it looks like the below JS would remove the uncertainty text,
-    //  however it appears when the server pushes the value of the edit to the client, the 'value'
-    //  tag of the element isnt updated... I have no clue.
-    //  const char *focusjs = "function(s,e){try{"
-    //  "s.value = s.value.replace('\\(.*\\)','').value.replace('  ',' ');"
-    //  "}catch(e){}}";
-    //  edit->changed().connect( focusjs );
-
     edit->changed().connect( this, [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
     edit->enterPressed().connect( this, [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
-    //edit->blurred().connect( this, [this, edit](){ removeUncertFromDistanceEdit( edit ); } );
 
     edit->changed().connect( this, &ShieldingSelect::handleMaterialChange );
     edit->enterPressed().connect( this, &ShieldingSelect::handleMaterialChange );
-    //edit->blurred().connect( this, &ShieldingSelect::handleMaterialChange );
 
     edit->changed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     edit->enterPressed().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
 
-    grid->addWidget( std::move(labelUniq), row, 0, AlignmentFlag::Middle );
+    row->addWidget( std::move(editUniq) );
 
     if( m_forFitting )
     {
-      //edit->setWidth( 150 );
-      grid->addWidget( std::move(editUniq), row, 1, AlignmentFlag::Middle );
-
       auto fitCbUniq = std::make_unique<WCheckBox>( WString::tr("Fit") );
       fitCb = fitCbUniq.get();
       fitCb->setChecked( false );
       fitCb->addStyleClass( "CbNoLineBreak" );
-      grid->addWidget( std::move(fitCbUniq), row, 2, AlignmentFlag::Middle | AlignmentFlag::Right );
+      row->addWidget( std::move(fitCbUniq) );
 
       fitCb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
       fitCb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
-    }else
-    {
-      grid->addWidget( std::move(editUniq), row, 1 );
-    }//if( m_forFitting ) / else
+    }//if( m_forFitting )
   };//setupDimEdit(...)
-  
-  
-  
+
+
+
   // Begin setting up spherical widgets
   m_sphericalDiv = m_dimensionsStack->addNew<WContainerWidget>();
-  WGridLayout *sphericalLayout = m_sphericalDiv->setLayout( std::make_unique<WGridLayout>() );
-  sphericalLayout->setContentsMargins( 3, 3, 3, 3 );
-  sphericalLayout->setColumnStretch( 1, 1 );
+  m_sphericalDiv->addStyleClass( "DimDiv" );
 
   const bool fistShield = (!m_shieldSrcDisp || !m_shieldSrcDisp->numberShieldings());
 
   const char *lbltxt_key = "ss-thickness"; //fistShield ? "Radius" : "Thickness";
-  setupDimEdit( WString::tr(lbltxt_key), m_thicknessEdit, m_fitThicknessCB, sphericalLayout );
+  setupDimEdit( WString::tr(lbltxt_key), m_thicknessEdit, m_fitThicknessCB, m_sphericalDiv );
 
   if( !m_forFitting )
   {
@@ -2470,34 +2454,32 @@ void ShieldingSelect::init()
     //       if geometry is cylindrical or rectangular, and (m_forFitting == false), then the
     //       material summary wont be visible.
     auto summaryUniq = this->removeWidget( m_materialSummary );
-    sphericalLayout->addWidget( std::move(summaryUniq), 0, 2, AlignmentFlag::Middle );
-    sphericalLayout->setColumnStretch( 2, 1 );
+    // Add material summary to the first (and only) DimEditRow in sphericalDiv
+    WContainerWidget *firstRow = dynamic_cast<WContainerWidget *>( m_sphericalDiv->children().front() );
+    if( firstRow )
+      firstRow->addWidget( std::move(summaryUniq) );
   }//if( !m_forFitting )
 
   // Begin setting up cylindrical widgets
   m_cylindricalDiv = m_dimensionsStack->addNew<WContainerWidget>();
-  WGridLayout *cylindricalLayout = m_cylindricalDiv->setLayout( std::make_unique<WGridLayout>() );
-  cylindricalLayout->setContentsMargins( 3, 3, 3, 3 );
-  cylindricalLayout->setColumnStretch( 1, 1 );
+  m_cylindricalDiv->addStyleClass( "DimDiv" );
 
   lbltxt_key = fistShield ? "ss-radius" : "ss-radial-thickness";
-  setupDimEdit( WString::tr(lbltxt_key), m_cylRadiusEdit, m_fitCylRadiusCB, cylindricalLayout );
+  setupDimEdit( WString::tr(lbltxt_key), m_cylRadiusEdit, m_fitCylRadiusCB, m_cylindricalDiv );
   lbltxt_key = fistShield ? "ss-half-length" : "ss-length-thickness";
-  setupDimEdit( WString::tr(lbltxt_key), m_cylLengthEdit, m_fitCylLengthCB, cylindricalLayout );
+  setupDimEdit( WString::tr(lbltxt_key), m_cylLengthEdit, m_fitCylLengthCB, m_cylindricalDiv );
 
 
   // Begin setting up rectangular widgets
   m_rectangularDiv = m_dimensionsStack->addNew<WContainerWidget>();
-  WGridLayout *rectangularLayout = m_rectangularDiv->setLayout( std::make_unique<WGridLayout>() );
-  rectangularLayout->setContentsMargins( 3, 3, 3, 3 );
-  rectangularLayout->setColumnStretch( 1, 1 );
+  m_rectangularDiv->addStyleClass( "DimDiv" );
 
   lbltxt_key = fistShield ? "ss-half-width"  : "ss-width-thickness";
-  setupDimEdit( WString::tr(lbltxt_key), m_rectWidthEdit, m_fitRectWidthCB, rectangularLayout );
+  setupDimEdit( WString::tr(lbltxt_key), m_rectWidthEdit, m_fitRectWidthCB, m_rectangularDiv );
   lbltxt_key = fistShield ? "ss-half-height" : "ss-height-thickness";
-  setupDimEdit( WString::tr(lbltxt_key), m_rectHeightEdit, m_fitRectHeightCB, rectangularLayout );
+  setupDimEdit( WString::tr(lbltxt_key), m_rectHeightEdit, m_fitRectHeightCB, m_rectangularDiv );
   lbltxt_key = fistShield ? "ss-half-depth"  : "ss-depth-thickness";
-  setupDimEdit( WString::tr(lbltxt_key), m_rectDepthEdit, m_fitRectDepthCB, rectangularLayout );
+  setupDimEdit( WString::tr(lbltxt_key), m_rectDepthEdit, m_fitRectDepthCB, m_rectangularDiv );
 
   // Finally we have to
   if( m_forFitting )
