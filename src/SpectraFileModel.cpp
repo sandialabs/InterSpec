@@ -53,7 +53,6 @@
 #include <Wt/WServer.h>
 #include <Wt/WIconPair.h>
 #include <Wt/WTreeView.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WResource.h>
 #include <Wt/WDateTime.h>
 #include <Wt/WPushButton.h>

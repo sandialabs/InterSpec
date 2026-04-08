@@ -45,7 +45,6 @@
 #include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WResource.h>
 #include <Wt/WSvgImage.h>
 #include <Wt/WIOService.h>
@@ -82,6 +81,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/BatchGuiAnaWidget.h"
 #include "InterSpec/DirectorySelector.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -192,7 +192,7 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
 {
   addStyleClass( "BatchGuiPeakFitWidget" );
 
-  m_exemplar_input = addNew<WGroupBox>( WString::tr( "bgw-exemplar-grp-title" ) );
+  m_exemplar_input = addNew<GroupBox>( WString::tr( "bgw-exemplar-grp-title" ) );
   m_exemplar_input->addStyleClass( "ExemplarToUseOpt" );
   m_use_current_foreground = m_exemplar_input->addNew<WCheckBox>( WString::tr( "bgw-exemplar-use-current-fore" ) );
   m_use_current_foreground->addStyleClass( "CbNoLineBreak" );
@@ -215,7 +215,7 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
 
 
   const bool have_back = !!InterSpec::instance()->displayedHistogram( SpecUtils::SpectrumType::Background );
-  m_background_input = addNew<WGroupBox>( WString::tr( "bgw-back-grp-title" ) );
+  m_background_input = addNew<GroupBox>( WString::tr( "bgw-back-grp-title" ) );
   m_background_input->addStyleClass( "ExemplarToUseOpt" );
 
   m_use_current_background = m_background_input->addNew<WCheckBox>( WString::tr( "bgw-back-use-current" ) );
@@ -336,7 +336,7 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
     m_peak_hypothesis_threshold, WString::tr( "bgw-peak-hypothesis-threshold-tt" ), showToolTips );
 
 
-  m_reports_container = addNew<WGroupBox>( WString::tr( "bgw-reports-grp-title" ) );
+  m_reports_container = addNew<GroupBox>( WString::tr( "bgw-reports-grp-title" ) );
   m_reports_container->addStyleClass( "ReportsContainer" );
   m_html_report = m_reports_container->addNew<Wt::WCheckBox>( WString::tr( "bgw-reports-write-html" ) );
   m_html_report->addStyleClass( "CbNoLineBreak" );
@@ -1185,7 +1185,7 @@ BatchGuiActShieldAnaWidget::BatchGuiActShieldAnaWidget()
   m_hard_background_sub->checked().connect( this, &BatchGuiActShieldAnaWidget::useHardBackgroundSubChanged );
   m_hard_background_sub->unChecked().connect( this, &BatchGuiActShieldAnaWidget::useHardBackgroundSubChanged );
 
-  m_detector_input = m_act_shield_container->addNew<WGroupBox>( WString::tr( "bgw-detector-input-label" ) );
+  m_detector_input = m_act_shield_container->addNew<GroupBox>( WString::tr( "bgw-detector-input-label" ) );
   m_detector_input->addStyleClass( "DetectorInputContainer" );
 
   m_use_detector_override = m_detector_input->addNew<WCheckBox>( WString::tr( "bgw-use-detector-override" ) );

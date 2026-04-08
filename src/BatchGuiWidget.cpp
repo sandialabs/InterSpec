@@ -30,7 +30,7 @@
 
 #include <Wt/WMenu.h>
 #include <Wt/WServer.h>
-#include <Wt/WGroupBox.h>
+#include <Wt/WText.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
@@ -41,6 +41,7 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/BatchGuiWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/BatchGuiAnaWidget.h"
@@ -166,7 +167,7 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource )
   interspec->saveRelActAutoStateToForegroundSpecMeas();
 #endif
   
-  Wt::WGroupBox *options_container = addNew<Wt::WGroupBox>( WString::tr( "bgw-type-select-label" ) );
+  GroupBox *options_container = addNew<GroupBox>( WString::tr( "bgw-type-select-label" ) );
   options_container->addStyleClass( "TypeSelectContainer" );
 
   // Note: In Wt3 menu was added to options_container via constructor, stack added after.
@@ -210,7 +211,7 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource )
   m_batch_type_menu->select( 0 );
   m_batch_type_menu->itemSelected().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
 
-  m_input_files_container = addNew<WGroupBox>( WString::tr( "bgw-input-files-label" ) );
+  m_input_files_container = addNew<GroupBox>( WString::tr( "bgw-input-files-label" ) );
   m_input_files_container->addStyleClass( "InputFilesContainer" );
 
   m_input_files_container->doJavaScript( "BatchInputDropUploadSetup(" + m_input_files_container->jsRef() +

@@ -48,7 +48,6 @@
 #include <Wt/WLabel.h>
 #include <Wt/WServer.h>
 #include <Wt/WPainter.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WResource.h>
 #include <Wt/WIOService.h>
@@ -111,6 +110,7 @@
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceDiagram.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 using namespace Wt;
@@ -3066,13 +3066,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   updateAllPeaksCheckBox( allpeaks ); //initialize
   
   
-  // WGroupBox in Wt 4 sets an internal layout that prevents addNew<>() children from rendering,
-  //  so we use a plain fieldset container with a manual legend element.
-  m_optionsDiv = new WContainerWidget();
-  m_optionsDiv->setHtmlTagName( "fieldset" );
+  m_optionsDiv = new GroupBox( WString::tr("ssd-options-title") );
   m_optionsDiv->addStyleClass( "FitOptions" );
-  WText *optionsLegend = m_optionsDiv->addNew<WText>( WString::tr("ssd-options-title") );
-  optionsLegend->setHtmlTagName( "legend" );
       
   //The ToolTip of WCheckBoxes is a bit finicky, and only works over the
   //  checkbox itself, so lets make it work over the label to, via lineDiv

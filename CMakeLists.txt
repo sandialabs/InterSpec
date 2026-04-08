@@ -275,6 +275,7 @@ set(sources
     src/MassAttenuationTool.cpp
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
+    src/GroupBox.cpp
     src/ShieldingSourceDisplay.cpp
     src/ShieldingSourceDiagram.cpp
     src/ShieldingSourceFitCalc.cpp

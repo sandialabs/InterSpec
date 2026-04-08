@@ -47,6 +47,7 @@ namespace Wt
 
 namespace SpecUtils{ enum class SpectrumType : int; }
 
+class GroupBox;
 class BatchGuiWidget;
 class BatchGuiAnaWidget;
 class DirectorySelector;
@@ -121,7 +122,7 @@ protected:
   BatchGuiAnaWidget *m_file_convert_opts;
   
 
-  Wt::WContainerWidget *m_input_files_container;
+  GroupBox *m_input_files_container;
 
   DirectorySelector *m_output_dir;
 

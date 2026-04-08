@@ -30,6 +30,7 @@
 #include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/MakeDrfFit.h"
 
 class PeakDef;
@@ -42,7 +43,7 @@ class PeakFitDetPrefsGui;
 namespace Wt
 {
   class WText;
-  class WGroupBox;
+
   class WComboBox;
   class WLineEdit;
   class WCheckBox;
@@ -184,7 +185,7 @@ protected:
   
   Wt::WContainerWidget *m_files;
   
-  Wt::WGroupBox *m_detDiamGroup;
+  GroupBox *m_detDiamGroup;
   
   Wt::WLineEdit *m_detDiameter;
   Wt::WLineEdit *m_detSetback;
@@ -193,7 +194,7 @@ protected:
   
   Wt::WCheckBox *m_showFwhmPoints;
   
-  Wt::WGroupBox *m_fwhmOptionGroup;
+  GroupBox *m_fwhmOptionGroup;
   
   Wt::WComboBox *m_fwhmEqnType;
   
@@ -203,7 +204,7 @@ protected:
   
   Wt::WComboBox *m_effEqnUnits;
   
-  Wt::WGroupBox *m_effOptionGroup;
+  GroupBox *m_effOptionGroup;
   
   Wt::WCheckBox *m_airAttenuate;
   

@@ -31,6 +31,8 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/SpectraFileModel.h"
 
+class GroupBox;
+
 namespace Wt
 {
   class WPushButton;
@@ -109,7 +111,7 @@ protected:
   Wt::WPushButton  *m_loadSpectraButton;
   Wt::WPushButton  *m_renameButton;
   std::shared_ptr<Wt::WButtonGroup> m_buttonGroup;
-  Wt::WGroupBox    *m_buttonbox;
+  GroupBox *m_buttonbox;
   Wt::WTree        *m_snapshotTable;
   Wt::WText        *m_descriptionLabel;
   Wt::WText        *m_timeLabel;

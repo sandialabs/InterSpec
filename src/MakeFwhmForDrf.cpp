@@ -26,10 +26,10 @@
 #include <vector>
 #include <algorithm>
 
+#include <Wt/WText.h>
 #include <Wt/WLabel.h>
 #include <Wt/WServer.h>
 #include <Wt/WComboBox.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WIOService.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
@@ -47,6 +47,7 @@
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -517,8 +518,8 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   optionsDiv->addStyleClass( "Options" );
 
   {
-    auto b = std::make_unique<WGroupBox>( WString::tr("mffd-eqn-type-label") );
-    WGroupBox *box = b.get();
+    auto b = std::make_unique<GroupBox>( WString::tr("mffd-eqn-type-label") );
+    GroupBox *box = b.get();
     box->addStyleClass( "OptDiv" );
     m_fwhmEqnType = box->addNew<WComboBox>();
     optionsDiv->addWidget( std::move(b) );
@@ -555,8 +556,8 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   m_fwhmEqnType->activated().connect( this, &MakeFwhmForDrf::handleFwhmEqnTypeChange );
   
   {
-    auto b = std::make_unique<WGroupBox>( WString::tr("mffd-num-terms-label") );
-    WGroupBox *box = b.get();
+    auto b = std::make_unique<GroupBox>( WString::tr("mffd-num-terms-label") );
+    GroupBox *box = b.get();
     box->addStyleClass( "OptDiv" );
     m_sqrtEqnOrder = box->addNew<WComboBox>();
     m_sqrtEqnOrder->addItem( "1" );
@@ -570,8 +571,8 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   }
   
   {
-    auto paramsDivOwner = std::make_unique<WGroupBox>( WString::tr("mffd-par-vals-label") );
-    WGroupBox *parametersDiv = paramsDivOwner.get();
+    auto paramsDivOwner = std::make_unique<GroupBox>( WString::tr("mffd-par-vals-label") );
+    GroupBox *parametersDiv = paramsDivOwner.get();
     //WContainerWidget *parametersDiv = new WContainerWidget();
     parametersDiv->addStyleClass( "Parameters" );
 

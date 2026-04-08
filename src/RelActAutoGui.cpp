@@ -39,7 +39,6 @@
 #include <Wt/WServer.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WVBoxLayout.h>
 #include <Wt/WMenuItem.h>
 #include <Wt/WResource.h>
@@ -69,6 +68,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
@@ -681,7 +681,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_status_indicator->hide();
   
   // We'll take care of the options that apply to all types of Rel Eff curves now.
-  WGroupBox *generalOptionsDiv = addNew<WGroupBox>( WString::tr("raag-spectrum-peak-options") );
+  GroupBox *generalOptionsDiv = addNew<GroupBox>( WString::tr("raag-spectrum-peak-options") );
   generalOptionsDiv->addStyleClass( "RelActAutoGeneralOptionsRow" );
 
   WContainerWidget *energyCalDiv = generalOptionsDiv->addNew<WContainerWidget>();
@@ -873,7 +873,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
     
   
-  WGroupBox *optionsDiv = addNew<WGroupBox>( WString::tr("raag-rel-eff-curve-options") );
+  GroupBox *optionsDiv = addNew<GroupBox>( WString::tr("raag-rel-eff-curve-options") );
   optionsDiv->addStyleClass( "RelActAutoOptions" );
 
   {
@@ -962,16 +962,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   WContainerWidget *bottomArea = addNew<WContainerWidget>();
   bottomArea->addStyleClass( "EnergiesAndNuclidesHolder" );
 
-  //WContainerWidget *nuclidesHolder = new WContainerWidget( bottomArea );
-  WGroupBox *nuclidesHolder = bottomArea->addNew<WGroupBox>( WString::tr("raag-nuclides") );
+  GroupBox *nuclidesHolder = bottomArea->addNew<GroupBox>( WString::tr("raag-nuclides") );
   nuclidesHolder->addStyleClass( "NuclidesHolder" );
 
-  //WContainerWidget *energiesHolder = new WContainerWidget( bottomArea );
-  WGroupBox *energiesHolder = bottomArea->addNew<WGroupBox>( WString::tr("raag-energy-ranges") );
+  GroupBox *energiesHolder = bottomArea->addNew<GroupBox>( WString::tr("raag-energy-ranges") );
   energiesHolder->addStyleClass( "EnergiesHolder" );
 
-  //m_free_peaks_container = new WContainerWidget( bottomArea );
-  m_free_peaks_container = bottomArea->addNew<WGroupBox>( WString::tr("raag-free-peaks") );
+  m_free_peaks_container = bottomArea->addNew<GroupBox>( WString::tr("raag-free-peaks") );
   m_free_peaks_container->addStyleClass( "FreePeaksHolder" );
   m_free_peaks_container->hide();
 

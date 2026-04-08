@@ -38,6 +38,7 @@
 
 // Forward declarations
 class SpecMeas;
+class GroupBox;
 class BatchGuiInputFile;
 class NativeFloatSpinBox;
 class DetectorPeakResponse;
@@ -88,13 +89,13 @@ class BatchGuiPeakFitWidget : public BatchGuiAnaWidget
 protected:
   Wt::WContainerWidget *m_peak_options_container = nullptr;
 
-  Wt::WContainerWidget *m_exemplar_input = nullptr;
+  GroupBox *m_exemplar_input = nullptr;
   Wt::WCheckBox *m_use_current_foreground = nullptr;
   Wt::WContainerWidget *m_exemplar_file_drop = nullptr;
   FileDragUploadResource *m_exemplar_file_resource = nullptr;
   std::shared_ptr<SpecMeas> m_uploaded_exemplar;
 
-  Wt::WContainerWidget *m_background_input = nullptr;
+  GroupBox *m_background_input = nullptr;
   Wt::WCheckBox *m_use_current_background = nullptr;
   Wt::WCheckBox *m_no_background = nullptr;
   Wt::WContainerWidget *m_background_file_drop = nullptr;
@@ -123,7 +124,7 @@ protected:
   Wt::WLabel *m_peak_hypothesis_threshold_label = nullptr;
   NativeFloatSpinBox *m_peak_hypothesis_threshold = nullptr;
 
-  Wt::WContainerWidget *m_reports_container = nullptr;
+  GroupBox *m_reports_container = nullptr;
   Wt::WCheckBox *m_html_report = nullptr;
   
   // Per-file custom report variables grouped together
@@ -177,7 +178,7 @@ protected:
   Wt::WCheckBox *m_hard_background_sub;
 
   // Detector response function upload
-  Wt::WContainerWidget *m_detector_input;
+  GroupBox *m_detector_input;
   Wt::WCheckBox *m_use_detector_override;
   Wt::WContainerWidget *m_detector_file_drop;
   FileDragUploadResource *m_detector_file_resource;

@@ -63,10 +63,8 @@
 #include <Wt/WIOService.h>
 #include <Wt/Chart/WAxis.h>
 
-#include <Wt/WGroupBox.h>
 #include <Wt/WResource.h>
 #include <Wt/WDateTime.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WBoxLayout.h>
@@ -137,6 +135,7 @@
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/FileDragUploadResource.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -368,7 +367,7 @@ namespace
 
       if( !noForeground )
       {
-        WGroupBox *buttons = layout->addWidget( std::make_unique<WGroupBox>( WString::tr("fud-btn-grp-title") ), layout->rowCount(), 0 );
+        GroupBox *buttons = layout->addWidget( std::make_unique<GroupBox>( WString::tr("fud-btn-grp-title") ), layout->rowCount(), 0 );
 
         auto group = std::make_shared<WButtonGroup>();
 

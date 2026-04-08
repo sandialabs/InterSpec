@@ -52,6 +52,7 @@ class PeakDef;
 struct Material;
 class PeakModel;
 class AuxWindow;
+class GroupBox;
 class InjaLogDialog;
 class ShieldingDiagramDialog;
 class MaterialDB;
@@ -793,7 +794,7 @@ protected:
   Wt::WCheckBox  *m_sameIsotopesAge;
   Wt::WCheckBox  *m_decayCorrect;
   SwitchCheckbox *m_showChiOnChart;
-  Wt::WContainerWidget *m_optionsDiv;
+  GroupBox *m_optionsDiv;
   /** This variable should be set to the same value as `m_clusterWidth`, but is around for undo/redo support. */
   double m_photopeak_cluster_sigma;
   bool m_multithread_computation;

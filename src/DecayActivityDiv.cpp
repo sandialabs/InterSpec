@@ -49,7 +49,6 @@
 #include <Wt/WSpinBox.h>
 #include <Wt/WDateEdit.h>
 #include <Wt/WCheckBox.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WResource.h>

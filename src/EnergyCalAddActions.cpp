@@ -33,7 +33,6 @@
 #include <Wt/WTable.h>
 #include <Wt/WSpinBox.h>
 #include <Wt/WCheckBox.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WTableCell.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
@@ -55,6 +54,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/EnergyCalMultiFile.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/EnergyCalAddActions.h"
 
 using namespace std;
@@ -361,7 +361,7 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
       msg->setInline( false );
 
       m_group = std::make_shared<WButtonGroup>();
-      WGroupBox *box = addNew<WGroupBox>();
+      GroupBox *box = addNew<GroupBox>();
 
       WRadioButton *btn = box->addNew<WRadioButton>( WString::tr("ecaa-linearize-rebin-counts") );
       HelpSystem::attachToolTipOn( btn, WString::tr("ecaa-tt-linearize-rebin"), showToolTips );

@@ -3,15 +3,14 @@
 
 #include "InterSpec_config.h"
 
-#include <Wt/WGroupBox.h>
-
-
-#include <Wt/WContainerWidget.h>
-#include <Wt/WLineEdit.h>
-#include <Wt/WCheckBox.h>
-#include <Wt/WStackedWidget.h>
 #include <Wt/WLabel.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WLineEdit.h>
+#include <Wt/WStackedWidget.h>
 #include <Wt/WSuggestionPopup.h>
+#include <Wt/WContainerWidget.h>
+
+#include "InterSpec/GroupBox.h"
 
 
 //Forward declarations
@@ -68,7 +67,7 @@ struct RelEffShieldState
  * Currently, the widget is not fully complete, and does not allow for all the options 
  * in the PhysicalModelShieldInput, like limiting range of fit AN and AD.
  */
-class RelEffShieldWidget : public Wt::WGroupBox
+class RelEffShieldWidget : public GroupBox
 {
 public:
 

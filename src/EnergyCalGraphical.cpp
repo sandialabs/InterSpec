@@ -31,11 +31,11 @@
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
 #include <Wt/WTable.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WButtonGroup.h>
 #include <Wt/WRadioButton.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/EnergyCalibration.h"
@@ -46,6 +46,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/EnergyCalGraphical.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 
@@ -100,7 +101,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   
   
   m_typeButtons = std::make_shared<WButtonGroup>();
-  WGroupBox *buttonBox = contents()->addNew<WGroupBox>( "Parameter to adjust" );
+  GroupBox *buttonBox = contents()->addNew<GroupBox>( "Parameter to adjust" );
   
   for( RecalTypes t = RecalTypes(0); t < NumRecalTypes; t = RecalTypes(t+1) )
   {

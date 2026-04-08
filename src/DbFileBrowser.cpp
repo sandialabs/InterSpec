@@ -28,7 +28,7 @@
 #include <Wt/Dbo/ptr.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WMenuItem.h>
-#include <Wt/WGroupBox.h>
+#include <Wt/WText.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WTreeNode.h>
 #include <Wt/WIconPair.h>
@@ -47,6 +47,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DbFileBrowser.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -673,7 +674,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     }
 
     {
-      auto buttonboxOwner = std::make_unique<WGroupBox>( WString::tr("sb-open-spectrum-as") );
+      auto buttonboxOwner = std::make_unique<GroupBox>( WString::tr("sb-open-spectrum-as") );
       m_buttonbox = buttonboxOwner.get();
       m_buttonbox->setOffsets(10);
       m_buttonGroup = std::make_shared<WButtonGroup>();

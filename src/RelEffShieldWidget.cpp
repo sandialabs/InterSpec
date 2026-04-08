@@ -25,8 +25,8 @@
 
 #include "rapidxml/rapidxml.hpp"
 
+#include <Wt/WText.h>
 #include <Wt/WCheckBox.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WApplication.h>
 #include <Wt/WStackedWidget.h>
@@ -42,6 +42,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/RelEffShieldWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -49,7 +50,7 @@ using namespace Wt;
 using namespace std;
 
 RelEffShieldWidget::RelEffShieldWidget( ShieldType type )
-  : Wt::WGroupBox( Wt::WString::tr(type == ShieldType::SelfAtten ? "resw-self-atten-title" : "resw-ext-atten-title") ),
+  : GroupBox( WString::tr(type == ShieldType::SelfAtten ? "resw-self-atten-title" : "resw-ext-atten-title") ),
   m_type(type),
   m_changed()
 {
@@ -57,7 +58,7 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type )
   InterSpec *interspec = InterSpec::instance();
   if( !interspec || !app )
     throw std::runtime_error( "RelEffShieldWidget: InterSpec instance not found" );
-    
+
   if( interspec )
     interspec->useMessageResourceBundle( "RelEffShieldWidget" );
 

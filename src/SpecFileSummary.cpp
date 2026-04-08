@@ -270,11 +270,10 @@ void SpecFileSummary::init()
   overallLayout->setContentsMargins( 9, 0, 9, 0 );
 
   WRadioButton *button = nullptr;
-  std::unique_ptr<WGroupBox> spectrumGroupBoxOwner = std::make_unique<WGroupBox>( WString::tr("sfs-spectrum") );
-  WGroupBox *spectrumGroupBox = spectrumGroupBoxOwner.get();
-  spectrumGroupBox->addStyleClass( "SpecSummChoose" );
-  // In Wt4, WGroupBox inside WGridLayout requires a layout to render children
-  WGridLayout *spectrumBoxLayout = spectrumGroupBox->setLayout( std::make_unique<WGridLayout>() );
+  std::unique_ptr<WGroupBox> spectrumWGroupBoxOwner = std::make_unique<WGroupBox>( WString::tr("sfs-spectrum") );
+  WGroupBox *spectrumWGroupBox = spectrumWGroupBoxOwner.get();
+  spectrumWGroupBox->addStyleClass( "SpecSummChoose" );
+  WGridLayout *spectrumBoxLayout = spectrumWGroupBox->setLayout( std::make_unique<WGridLayout>() );
   spectrumBoxLayout->setContentsMargins( 0, 0, 0, 0 );
   m_spectraGroup = std::make_shared<WButtonGroup>();
   button = spectrumBoxLayout->addWidget( std::make_unique<WRadioButton>( WString::tr("Foreground") ), 0, 0 );
@@ -290,11 +289,10 @@ void SpecFileSummary::init()
   m_spectraGroup->checkedChanged().connect( this, &SpecFileSummary::handleSpectrumTypeChanged );
 
 
-  std::unique_ptr<WGroupBox> editGroupBoxOwner = std::make_unique<WGroupBox>( WString::tr("sfs-alow-edit-cb") );
-  WGroupBox *editGroupBox = editGroupBoxOwner.get();
-  editGroupBox->addStyleClass( "SpecSummAllowEdit" );
-  // In Wt4, WGroupBox inside WGridLayout requires a layout to render children
-  WGridLayout *editBoxLayout = editGroupBox->setLayout( std::make_unique<WGridLayout>() );
+  std::unique_ptr<WGroupBox> editWGroupBoxOwner = std::make_unique<WGroupBox>( WString::tr("sfs-alow-edit-cb") );
+  WGroupBox *editWGroupBox = editWGroupBoxOwner.get();
+  editWGroupBox->addStyleClass( "SpecSummAllowEdit" );
+  WGridLayout *editBoxLayout = editWGroupBox->setLayout( std::make_unique<WGridLayout>() );
   editBoxLayout->setContentsMargins( 0, 0, 0, 0 );
   m_allowEditGroup = std::make_shared<WButtonGroup>();
   button = editBoxLayout->addWidget( std::make_unique<WRadioButton>( WString::tr("Yes") ), 0, 0 );
@@ -310,8 +308,8 @@ void SpecFileSummary::init()
   WContainerWidget *upperdiv = upperdivOwner.get();
   WGridLayout *upperlayout = upperdiv->setLayout( std::make_unique<WGridLayout>() );
   overallLayout->addWidget( std::move(upperdivOwner), 0, 0 );
-  upperlayout->addWidget( std::move(spectrumGroupBoxOwner), 0, 0, 1, 1 );
-  upperlayout->addWidget( std::move(editGroupBoxOwner), 0, 1, 1, 1 );
+  upperlayout->addWidget( std::move(spectrumWGroupBoxOwner), 0, 0, 1, 1 );
+  upperlayout->addWidget( std::move(editWGroupBoxOwner), 0, 1, 1, 1 );
   upperlayout->setColumnStretch( 1, 1 );
 
   m_reloadSpectrum = editBoxLayout->addWidget( std::make_unique<WPushButton>( WString::tr("sfs-update-display-btn") ), 0, 2 );

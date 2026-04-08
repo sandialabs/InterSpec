@@ -35,7 +35,6 @@
 #include <Wt/WLabel.h>
 #include <Wt/WServer.h>
 #include <Wt/WComboBox.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WMenuItem.h>
 #include <Wt/WResource.h>

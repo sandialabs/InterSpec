@@ -42,7 +42,7 @@
 #include <Wt/WLineEdit.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WSvgImage.h>
-#include <Wt/WGroupBox.h>
+
 #include <Wt/WTemplate.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WTableCell.h>
@@ -91,6 +91,7 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
@@ -1546,7 +1547,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   fitOptionsDiv->addStyleClass( "MakeDrfOptions" );
   upperLayout->addWidget( std::move(fitOptionsDivOwned), 0, 0, 2, 1 );
   
-  m_detDiamGroup = fitOptionsDiv->addNew<WGroupBox>( WString::tr("md-det-diam") );
+  m_detDiamGroup = fitOptionsDiv->addNew<GroupBox>( WString::tr("md-det-diam") );
   m_detDiameter = m_detDiamGroup->addNew<WLineEdit>();
   auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
   distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
@@ -1576,7 +1577,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_detSetback->setAttributeValue( "spellcheck", "off" );
 #endif
 
-  m_effOptionGroup = fitOptionsDiv->addNew<WGroupBox>( WString::tr("md-eff-type") );
+  m_effOptionGroup = fitOptionsDiv->addNew<GroupBox>( WString::tr("md-eff-type") );
   m_effEqnOrder = m_effOptionGroup->addNew<WComboBox>();
   m_effEqnOrder->setNoSelectionEnabled( true );
   m_effEqnOrder->setInline( false );
@@ -1607,7 +1608,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_geometry->activated().connect( this, &MakeDrf::handleFixedGeometryChanged );
   
   
-  m_fwhmOptionGroup = fitOptionsDiv->addNew<WGroupBox>( WString::tr("md-fwhm-eqn-form-label") );
+  m_fwhmOptionGroup = fitOptionsDiv->addNew<GroupBox>( WString::tr("md-fwhm-eqn-form-label") );
   m_fwhmEqnType = m_fwhmOptionGroup->addNew<WComboBox>();
   m_fwhmEqnType->setNoSelectionEnabled( true );
   m_fwhmEqnType->setInline( false );
@@ -1653,7 +1654,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_fwhmOptionGroup->hide();
   
 
-  WGroupBox *genOpts = fitOptionsDiv->addNew<WGroupBox>();
+  GroupBox *genOpts = fitOptionsDiv->addNew<GroupBox>();
   m_airAttenuate = genOpts->addNew<WCheckBox>( WString::tr("md-atten-for-air-cb") );
   m_airAttenuate->setChecked( true );
   m_airAttenuate->setInline( false );
@@ -1665,7 +1666,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   // Peak fit preferences (optional, embedded in DRF)
-  WGroupBox *peakFitPrefsGroup = fitOptionsDiv->addNew<WGroupBox>( WString::tr( "md-peak-fit-prefs-title" ) );
+  GroupBox *peakFitPrefsGroup = fitOptionsDiv->addNew<GroupBox>( WString::tr("md-peak-fit-prefs-title") );
   m_peakFitDetPrefsGui = peakFitPrefsGroup->addNew<PeakFitDetPrefsGui>( m_interspec, false );
 
 

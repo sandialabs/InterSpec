@@ -37,7 +37,6 @@
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WCheckBox.h>
-#include <Wt/WGroupBox.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
@@ -64,6 +63,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
@@ -106,7 +106,7 @@ double distance_of_input_text( const WLineEdit *edit )
 /**
  
  */
-class TraceSrcDisplay : public WGroupBox
+class TraceSrcDisplay : public GroupBox
 {
   const SandiaDecay::Nuclide *m_currentNuclide;
   
@@ -141,7 +141,7 @@ class TraceSrcDisplay : public WGroupBox
   
 public:
   TraceSrcDisplay( ShieldingSelect *parent )
-  : WGroupBox( WString::tr("ss-trace-source-title") ),
+  : GroupBox( WString::tr("ss-trace-source-title") ),
     m_currentNuclide( nullptr ),
     m_currentDisplayActivity( 0.0 ),
     m_currentTotalActivity( 0.0 ),
@@ -160,9 +160,9 @@ public:
   {
     wApp->useStyleSheet( "InterSpec_resources/ShieldingSelect.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
-    
+
     const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-    
+
     assert( !parent->isGenericMaterial() );
     addStyleClass( "TraceSrcDisplay" );
     
