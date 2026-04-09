@@ -516,14 +516,20 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   WContainerWidget *upper_div = addNew<WContainerWidget>();
   upper_div->addStyleClass( "RelActAutoUpperArea" );
 
-  WStackedWidget *upper_stack = upper_div->addNew<WStackedWidget>();
+  // Create the stack first (needed by WMenu constructor), but don't add to DOM yet
+  auto upper_stack_owner = std::make_unique<WStackedWidget>();
+  WStackedWidget *upper_stack = upper_stack_owner.get();
   upper_stack->addStyleClass( "UpperStack" );
   // Adding this transformation causes the "Rel. Eff." chart to resize wrong initially when you click to it
   //WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
   //upper_stack->setTransitionAnimation( animation, true );
 
+  // Menu must be added before the stack in the DOM so tabs appear on the left side
   m_upper_menu = upper_div->addNew<WMenu>( upper_stack );
   m_upper_menu->addStyleClass( "UpperMenu LightNavMenu" );
+
+  // Now add the stack to the DOM after the menu
+  upper_div->addWidget( std::move(upper_stack_owner) );
 
   
   {
