@@ -314,15 +314,33 @@ namespace
   }//try_update_hint_peak(...)
   
   
-  template<class T>
-  void del_ptr_set_null( T * &ptr )
+  // del_ptr_set_null template removed — all member pointers now use observing_ptr,
+  //  unique_ptr, or addChild/removeChild for Wt 4 lifetime management.
+
+  /** Takes a widget out of either a widget parent (via removeFromParent) or a WObject parent
+   (via removeChild), returning a unique_ptr<WWidget> suitable for addWidget/addTab.
+
+   Widgets parked via addChild (WObject ownership) have no widget parent, so removeFromParent
+   returns empty. This helper checks both paths.
+   */
+  std::unique_ptr<Wt::WWidget> take_widget( Wt::WObject *wobject_parent, Wt::WWidget *widget )
   {
-    if( ptr )
+    if( !widget )
+      return nullptr;
+
+    // If the widget has a widget-tree parent, removeFromParent handles it
+    if( widget->parent() )
+      return widget->removeFromParent();
+
+    // Otherwise it's parked as a WObject child — use removeChild + cast
+    if( wobject_parent )
     {
-      delete ptr;
-      ptr = nullptr;
+      std::unique_ptr<Wt::WObject> obj = wobject_parent->removeChild( widget );
+      return std::unique_ptr<Wt::WWidget>( static_cast<Wt::WWidget *>( obj.release() ) );
     }
-  }//void del_ptr_set_null( T * &ptr )
+
+    return nullptr;
+  }
   
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     /** A simple wrapper for holding the tool-tabs.
@@ -419,7 +437,7 @@ InterSpec::InterSpec()
     m_languagesSubMenu( nullptr ),
     m_saveTimeChartPng( nullptr ),
     m_saveTimeChartSvg( nullptr ),
-    m_rightClickMenu( 0 ),
+    m_rightClickMenu( nullptr ),
     m_rightClickEnergy( -DBL_MAX ),
     m_rightClickRefLineHint(),
     m_rightClickNuclideSuggestMenu( nullptr ),
@@ -588,7 +606,7 @@ InterSpec::InterSpec()
       m_user = m_sql->session()->add( std::make_unique<InterSpecUser>( username, type ) );
     }//if( m_user ) / else
   
-    m_preferences = new UserPreferences( this );
+    m_preferences = addChild( std::make_unique<UserPreferences>( this ) );
     
     m_user.modify()->startingNewSession();
     
@@ -613,7 +631,7 @@ InterSpec::InterSpec()
       /* && !app->isPhone()
       && (!app->isTablet() || UserPreferences::preferenceValue<bool>("TabletUseDesktopMenus", this)) */ )
   {
-    m_undo = new UndoRedoManager( this );
+    m_undo = addChild( std::make_unique<UndoRedoManager>( this ) );
     undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
   }//if( desktop interface )
     
@@ -650,10 +668,10 @@ InterSpec::InterSpec()
 
   // Set up the energy calibration tool
   m_energyCalTool = new EnergyCalTool( this, m_peakModel );
-  m_spectrum->rightMouseDragg().connect( m_energyCalTool, &EnergyCalTool::handleGraphicalRecalRequest );
-  displayedSpectrumChanged().connect( m_energyCalTool, &EnergyCalTool::displayedSpecChangedCallback );
-  m_fileManager = new SpecMeasManager( this );
-  
+  m_spectrum->rightMouseDragg().connect( m_energyCalTool.get(), &EnergyCalTool::handleGraphicalRecalRequest );
+  displayedSpectrumChanged().connect( m_energyCalTool.get(), &EnergyCalTool::displayedSpecChangedCallback );
+  m_fileManager = addChild( std::make_unique<SpecMeasManager>( this ) );
+
   m_peakInfoDisplay = new PeakInfoDisplay( this, m_spectrum, m_peakModel );
 
   initMaterialDbAndSuggestions();
@@ -662,7 +680,7 @@ InterSpec::InterSpec()
   if( !ReactionGammaServer::database() && ReactionGammaServer::init_error() )
     throw runtime_error( ReactionGammaServer::init_error() );
   
-  m_refLineDynamic = new RefLineDynamic( m_spectrum, this );
+  m_refLineDynamic = addChild( std::make_unique<RefLineDynamic>( m_spectrum, this ) );
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
@@ -683,7 +701,7 @@ InterSpec::InterSpec()
     m_mobileMenuButton->setZIndex( 8388635 );
    
     //hamburger
-    PopupDivMenu *popup = new PopupDivMenu( m_mobileMenuButton, PopupDivMenu::AppLevelMenu );
+    PopupDivMenu *popup = new PopupDivMenu( m_mobileMenuButton.get(), PopupDivMenu::AppLevelMenu );
     m_mobileMenuButton->removeStyleClass( "Wt-btn" );
     menuWidget = popup;
     
@@ -711,7 +729,7 @@ InterSpec::InterSpec()
   {
     m_menuDiv = new WContainerWidget();
     m_menuDiv->addStyleClass( "MenuBar" );
-    
+
     if( !isAppTitlebar )
     {
       menuWidget = m_menuDiv;
@@ -931,7 +949,7 @@ InterSpec::InterSpec()
   m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
   
 //  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, boost::placeholders::_1) );
-  m_rightClickMenu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
+  m_rightClickMenu = std::make_unique<PopupDivMenu>( nullptr, PopupDivMenu::TransientMenu );
   m_rightClickMenu->aboutToHide().connect( this, &InterSpec::rightClickMenuClosed );
   
   if( m_rightClickMenu->isMobile() )
@@ -1149,11 +1167,11 @@ InterSpec::InterSpec()
   
 #if( APP_MENU_STATELESS_FIX )
   // Make sure the menus get pre-loaded
-  PopupDivMenu::pre_render(m_fileMenuPopup);
-  PopupDivMenu::pre_render(m_editMenuPopup);
-  PopupDivMenu::pre_render(m_toolsMenuPopup);
-  PopupDivMenu::pre_render(m_helpMenuPopup);
-  PopupDivMenu::pre_render(m_displayOptionsPopupDiv);
+  PopupDivMenu::pre_render(m_fileMenuPopup.get());
+  PopupDivMenu::pre_render(m_editMenuPopup.get());
+  PopupDivMenu::pre_render(m_toolsMenuPopup.get());
+  PopupDivMenu::pre_render(m_helpMenuPopup.get());
+  PopupDivMenu::pre_render(m_displayOptionsPopupDiv.get());
 #endif
 }//InterSpec( constructor )
 
@@ -1253,7 +1271,8 @@ InterSpec::~InterSpec() noexcept(true)
 #endif
   
   // Get rid of undo/redo, so we dont insert anything into them
-  del_ptr_set_null( m_undo );
+  if( m_undo )
+    removeChild( m_undo.get() );
   AuxWindow::deleteAuxWindow( m_licenseWindow.get() );
   
   try
@@ -1272,35 +1291,37 @@ InterSpec::~InterSpec() noexcept(true)
 #endif
 
 
+  // Moveable widgets may be in a widget parent (tabs, window, domRoot) or free-standing
+  //  (after .release()). If parented, removeFromParent deletes them. If free-standing,
+  //  delete directly. observing_ptr auto-nulls in both cases.
   if( m_peakInfoDisplay )
   {
-    if( m_toolsTabs && m_toolsTabs->indexOf(m_peakInfoDisplay)>=0 )
-    {
-      // In Wt4, removeTab returns unique_ptr - let it go out of scope to delete the widget.
-      // Wt4_TODO: verify ownership semantics are correct here
-      m_toolsTabs->removeTab( m_peakInfoDisplay );
-    }else if( m_peakInfoWindow )
-    {
-      // removeWidget returns unique_ptr - let it destroy the widget
-      auto removed_ptr = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
-      assert( removed_ptr != nullptr );
-    }
-    m_peakInfoDisplay = nullptr;
-  }//if( m_peakInfoDisplay )
+    if( m_peakInfoDisplay->parent() )
+      m_peakInfoDisplay->removeFromParent();
+    else
+      delete m_peakInfoDisplay.get();
+  }
 
   AuxWindow::deleteAuxWindow( m_peakInfoWindow.get() );
-  
+
   if( m_energyCalTool )
   {
-    if( m_toolsTabs && m_toolsTabs->indexOf(m_energyCalTool)>=0 )
-      m_toolsTabs->removeTab( m_energyCalTool );
-    
-    del_ptr_set_null( m_energyCalTool );
-  }//if( m_energyCalTool )
-  
+    if( m_energyCalTool->parent() )
+      m_energyCalTool->removeFromParent();
+    else
+      delete m_energyCalTool.get();
+  }
+
   AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
   AuxWindow::deleteAuxWindow( m_shieldingSourceFitWindow.get() );
-  del_ptr_set_null( m_nuclideSearch );
+
+  if( m_nuclideSearch )
+  {
+    if( m_nuclideSearch->parent() )
+      m_nuclideSearch->removeFromParent();
+    else
+      delete m_nuclideSearch.get();
+  }
   AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
   
   if( m_referencePhotopeakLines )
@@ -1319,23 +1340,68 @@ InterSpec::~InterSpec() noexcept(true)
   AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
   
   handleWarningsWindowClose();
-  del_ptr_set_null( m_warnings ); //WarningWidget isnt necessarily parented, so we do have to manually delete it
+  if( m_warnings )
+  {
+    if( m_warnings->parent() )
+      m_warnings->removeFromParent();
+    else
+      delete m_warnings.get();
+  }
   
   deletePeakEdit();
   closeFitSkewParamsWindow();
   deleteGammaCountDialog();
 
-  // The following may be parented by app->domRoot()
-  del_ptr_set_null( m_mobileMenuButton );
-  del_ptr_set_null( m_mobileBackButton );
-  del_ptr_set_null( m_mobileForwardButton );
-  del_ptr_set_null( m_fileManager );
-  del_ptr_set_null( m_displayOptionsPopupDiv );
-  del_ptr_set_null( m_fileMenuPopup );
-  del_ptr_set_null( m_editMenuPopup );
-  del_ptr_set_null( m_toolsMenuPopup );
-  del_ptr_set_null( m_helpMenuPopup );
-  del_ptr_set_null( m_menuDiv );
+  // The following are parented by app->domRoot()
+  if( m_mobileMenuButton )
+    m_mobileMenuButton->removeFromParent();
+  if( m_mobileBackButton )
+    m_mobileBackButton->removeFromParent();
+  if( m_mobileForwardButton )
+    m_mobileForwardButton->removeFromParent();
+  if( m_fileManager )
+    removeChild( m_fileManager.get() );
+  // Popup menus: on desktop path, registered via addChild → removeChild.
+  //  On mobile path, owned by parent menu → removeFromParent.
+  if( m_displayOptionsPopupDiv )
+  {
+    if( m_displayOptionsPopupDiv->parent() )
+      m_displayOptionsPopupDiv->removeFromParent();
+    else
+      removeChild( m_displayOptionsPopupDiv.get() );
+  }
+  if( m_fileMenuPopup )
+  {
+    if( m_fileMenuPopup->parent() )
+      m_fileMenuPopup->removeFromParent();
+    else
+      removeChild( m_fileMenuPopup.get() );
+  }
+  if( m_editMenuPopup )
+  {
+    if( m_editMenuPopup->parent() )
+      m_editMenuPopup->removeFromParent();
+    else
+      removeChild( m_editMenuPopup.get() );
+  }
+  if( m_toolsMenuPopup )
+  {
+    if( m_toolsMenuPopup->parent() )
+      m_toolsMenuPopup->removeFromParent();
+    else
+      removeChild( m_toolsMenuPopup.get() );
+  }
+  if( m_helpMenuPopup )
+  {
+    if( m_helpMenuPopup->parent() )
+      m_helpMenuPopup->removeFromParent();
+    else
+      removeChild( m_helpMenuPopup.get() );
+  }
+  if( m_menuDiv )
+    m_menuDiv->removeFromParent();
+  if( m_charts )
+    m_charts->removeFromParent();
   
   try
   {
@@ -2235,7 +2301,7 @@ void InterSpec::handleLeftClick( double energy, double counts,
   }
 #endif
   
-  if( (m_toolsTabs && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay)))
+  if( (m_toolsTabs && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay.get())))
      || m_peakInfoWindow )
   {
     m_peakInfoDisplay->handleChartLeftClick( energy );
@@ -4851,7 +4917,7 @@ void InterSpec::startClearSession()
 
 UserPreferences *InterSpec::preferences()
 {
-  return m_preferences;
+  return m_preferences.get();
 }
 
 
@@ -5129,7 +5195,7 @@ void InterSpec::deleteFileQueryDialog()
 
 PopupDivMenu * InterSpec::displayOptionsPopupDiv()
 {
-  return m_displayOptionsPopupDiv;
+  return m_displayOptionsPopupDiv.get();
 }//WContainerWidget *displayOptionsPopupDiv()
 
 
@@ -5164,7 +5230,7 @@ void InterSpec::logMessage( const Wt::WString& message, int priority )
 
 WarningWidget *InterSpec::warningWidget()
 {
-  return m_warnings;
+  return m_warnings.get();
 }
 
 Wt::Signal< Wt::WString, int > &InterSpec::messageLogged()
@@ -5192,7 +5258,8 @@ void InterSpec::showWarningsWindow()
                    | AuxWindowProperties::SetCloseable) );
     m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Unit::Pixel), Wt::Side::Left | Wt::Side::Top );
     m_warningsWindow->rejectWhenEscapePressed();
-    m_warningsWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_warnings), 0, 0, 1, 1 );
+    m_warningsWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_warnings.get()), 0, 0, 1, 1 );
+    m_warnings->setHidden( false );
     m_warningsWindow->stretcher()->setContentsMargins(0,0,0,0);
     //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
     //  size to be the min-size
@@ -5226,8 +5293,7 @@ void InterSpec::handleWarningsWindowClose()
 {
   if( m_warningsWindow )
   {
-    // In Wt4, removeWidget returns unique_ptr; release() to keep m_warnings alive for re-use
-    m_warningsWindow->stretcher()->removeWidget( m_warnings ).release();
+    m_warningsWindow->stretcher()->removeWidget( m_warnings.get() ).release();
     AuxWindow::deleteAuxWindow( m_warningsWindow.get() );
     assert( !m_warningsWindow );
     
@@ -5246,7 +5312,7 @@ void InterSpec::showPeakInfoWindow()
   if( m_toolsTabs )
   {
     // We get here when user does hotkey (CNTRL, or Command)-2 (
-    m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+    m_toolsTabs->setCurrentWidget( m_peakInfoDisplay.get() );
     m_currentToolsTab = m_toolsTabs->currentIndex();
     return;
   }//if( m_toolsTabs )
@@ -5257,7 +5323,7 @@ void InterSpec::showPeakInfoWindow()
     m_peakInfoWindow->rejectWhenEscapePressed();
     WGridLayout *layout = m_peakInfoWindow->stretcher();
     layout->setContentsMargins( 0, 0, 0, 0 );
-    layout->addWidget( std::unique_ptr<WWidget>(m_peakInfoDisplay), 0, 0 );
+    layout->addWidget( std::unique_ptr<WWidget>(m_peakInfoDisplay.get()), 0, 0 );
     // If the "Peak Manager" tab hasnt been explicitly shown yet, then `m_peakInfoDisplay` will
     //  be hidden, so we need to explicitly show it.
     m_peakInfoDisplay->show();
@@ -5290,23 +5356,21 @@ void InterSpec::handlePeakInfoClose()
   if( !m_peakInfoWindow )
     return;
 
-  // In Wt4, removeWidget returns unique_ptr transferring ownership
-  auto removed_ptr = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
+  auto removed_ptr = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay.get() );
   assert( removed_ptr != nullptr );
 
   if( m_toolsTabs )
   {
-    if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
+    if( m_toolsTabs->indexOf(m_peakInfoDisplay.get()) < 0 )
     {
       m_toolsTabs->addTab( std::move(removed_ptr), WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
-      m_toolsTabs->setCurrentIndex( m_toolsTabs->indexOf(m_peakInfoDisplay) );
-    }//if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
+      m_toolsTabs->setCurrentIndex( m_toolsTabs->indexOf(m_peakInfoDisplay.get()) );
+    }//if( m_toolsTabs->indexOf(m_peakInfoDisplay.get()) < 0 )
     m_currentToolsTab = m_toolsTabs->currentIndex();
   }else
   {
-    // No tab widget - keep m_peakInfoDisplay alive via release() until explicitly deleted
-    // Wt4_TODO: clarify ownership when no tabs present
-    removed_ptr.release();
+    // Park in domRoot when no tabs present
+    addChild( std::move(removed_ptr) );
   }//if( m_toolsTabs )
   
   if( m_peakInfoWindow ) AuxWindow::deleteAuxWindow( m_peakInfoWindow.get() );
@@ -6347,7 +6411,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( menuname );
     button->addStyleClass( "MenuLabel" );
-    m_fileMenuPopup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
+    m_fileMenuPopup = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
   }else
   {
     m_fileMenuPopup = parentMenu->addPopupMenuItem( menuname );
@@ -6387,7 +6451,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     item = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-manager"), "InterSpec_resources/images/file_manager_small.png" );
     HelpSystem::attachToolTipOn(item, WString::tr("app-mi-tt-file-manager"), showToolTips );
     
-    item->triggered().connect( m_fileManager, &SpecMeasManager::startSpectrumManager );
+    item->triggered().connect( m_fileManager.get(), &SpecMeasManager::startSpectrumManager );
     
     m_fileMenuPopup->addSeparator();
     
@@ -6422,7 +6486,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     m_fileMenuPopup->addSeparator();
     
     item = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-prev") , "InterSpec_resources/images/db_small.png");
-    item->triggered().connect( m_fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
+    item->triggered().connect( m_fileManager.get(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
     HelpSystem::attachToolTipOn(item, WString::tr("app-mi-tt-file-prev"), showToolTips );
     
     m_fileMenuPopup->addSeparator();
@@ -6547,7 +6611,7 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( menuname );
     button->addStyleClass( "MenuLabel" );
-    m_editMenuPopup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
+    m_editMenuPopup = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
   }else
   {
     m_editMenuPopup = parentMenu->addPopupMenuItem( menuname );
@@ -6563,7 +6627,7 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
     
     PopupDivMenuItem *undoMenu = m_editMenuPopup->insertMenuItem( menuindex, WString::tr("app-mi-edit-undo"), "", true );
     undoMenu->setDisabled( true );
-    undoMenu->triggered().connect( m_undo, &UndoRedoManager::executeUndo );
+    undoMenu->triggered().connect( m_undo.get(), &UndoRedoManager::executeUndo );
 
 #if( BUILD_AS_OSX_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
@@ -6572,7 +6636,7 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
     
     PopupDivMenuItem *redoMenu = m_editMenuPopup->insertMenuItem( menuindex, WString::tr("app-mi-edit-redo"), "", true );
     redoMenu->setDisabled( true );
-    redoMenu->triggered().connect( m_undo, &UndoRedoManager::executeRedo );
+    redoMenu->triggered().connect( m_undo.get(), &UndoRedoManager::executeRedo );
     
     m_undo->undoMenuDisableUpdate().connect( undoMenu, [undoMenu]( const bool v ){ undoMenu->setDisabled( v ); } );
     m_undo->redoMenuDisableUpdate().connect( redoMenu, [redoMenu]( const bool v ){ redoMenu->setDisabled( v ); } );
@@ -6781,7 +6845,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   
   if( showToolTabs )
   { //We are showing the tool tabs
-    // In Wt4, removeWidget returns unique_ptr - release() to keep widgets alive for re-use
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv ).release();
 
@@ -6801,8 +6864,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     if( m_energyCalWindow )
     {
-      // In Wt4, removeWidget returns unique_ptr; release() to keep m_energyCalTool alive for re-use
-      m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool ).release();
+      m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool.get() ).release();
       if( m_energyCalWindow ) AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
       assert( !m_energyCalWindow );
     }//if( m_energyCalWindow )
@@ -6812,13 +6874,13 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     const CompactFileManager::DisplayMode cfmDispMode = phone ? CompactFileManager::Tabbed : CompactFileManager::LeftToRight;
-    CompactFileManager *compact = new CompactFileManager( m_fileManager, this, cfmDispMode );
+    CompactFileManager *compact = new CompactFileManager( m_fileManager.get(), this, cfmDispMode );
     WString tabTitle = phone ? WString() : WString::tr(FileTabTitleKey);
     WMenuItem *fileTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(compact), tabTitle, TabLoadPolicy );
     if( phone )
       fileTab->setIcon( "InterSpec_resources/images/spec_files.svg" );
 #else
-    CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
+    CompactFileManager *compact = new CompactFileManager( m_fileManager.get(), this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( std::unique_ptr<WWidget>(compact), WString::tr(FileTabTitleKey), TabLoadPolicy );
 #endif
     
@@ -6829,11 +6891,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     m_peakInfoDisplay->setNarrowPhoneLayout( phone );
     tabTitle = phone ? WString() : WString::tr(PeakInfoTabTitleKey);
-    WMenuItem *peakManTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_peakInfoDisplay), tabTitle, TabLoadPolicy );
+    WMenuItem *peakManTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_peakInfoDisplay.get()), tabTitle, TabLoadPolicy );
     if( phone )
       peakManTab->setIcon( "InterSpec_resources/images/peakmanager.svg" ); //
 #else
-    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_peakInfoDisplay), WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_peakInfoDisplay.get()), WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
 #endif
 //    WString tooltip = WString::tr("app-tab-tt-peak-manager");
 //    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
@@ -6886,12 +6948,12 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_energyCalTool->setWideLayout();
       
     tabTitle = phone ? WString() : WString::tr(CalibrationTabTitleKey);
-    WMenuItem *energyCalTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_energyCalTool), tabTitle, TabLoadPolicy );
+    WMenuItem *energyCalTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_energyCalTool.get()), tabTitle, TabLoadPolicy );
     if( phone )
       energyCalTab->setIcon( "InterSpec_resources/images/calibrate.svg" );
 #else
     m_energyCalTool->setWideLayout();
-    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_energyCalTool), WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_energyCalTool.get()), WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
 #endif
     
 //  WString tooltip = WString::tr("app-tab-tt-energy-cal");
@@ -6957,8 +7019,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_nuclideSearchWindow )
     {
       m_nuclideSearch->clearSearchEnergiesOnClient();
-      // In Wt4, removeWidget returns unique_ptr; release() to keep m_nuclideSearch alive
-      m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch ).release();
+      m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch.get() ).release();
       if( m_nuclideSearchWindow ) AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
       m_nuclideSearchWindow = 0;
     }//if( m_nuclideSearchWindow )
@@ -6969,7 +7030,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     WGridLayout *isoSearchLayout = new WGridLayout();
     m_nuclideSearchContainer->setLayout( std::unique_ptr<WLayout>(isoSearchLayout) );
     isoSearchLayout->setContentsMargins( 0, 0, 0, 0 );
-    isoSearchLayout->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch), 0, 0 );
+    isoSearchLayout->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch.get()), 0, 0 );
     m_nuclideSearchContainer->setMargin( 0 );
     m_nuclideSearchContainer->setPadding( 0 );
     isoSearchLayout->setRowStretch( 0, 1 );
@@ -6998,7 +7059,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //  window was showing when the user toggled to show tool tabs, then we get an exception:
     //    "Uncaught exception in event loop: 'WContainerWidget: error parsing: undefined'."
     //  Just switching to a different tab seems to fix this.  I dont really know why it happens.
-    if( wasShowingPeakManager && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay)) )
+    if( wasShowingPeakManager && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay.get())) )
       m_currentToolsTab = m_toolsTabs->indexOf(m_referencePhotopeakLines.get());
        
     if( (m_currentToolsTab >= 0) && (m_currentToolsTab < m_toolsTabs->count()) )
@@ -7010,11 +7071,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       if( phone || wasShowingPeakManager )
         m_toolsTabs->setCurrentWidget( m_referencePhotopeakLines.get() );
       else
-        m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+        m_toolsTabs->setCurrentWidget( m_peakInfoDisplay.get() );
     }
 #else
     //Make sure the current tab is the peak info display
-    m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+    m_toolsTabs->setCurrentWidget( m_peakInfoDisplay.get() );
 #endif
     
     if( m_referencePhotopeakLines && refNucXmlState.size() )
@@ -7022,19 +7083,18 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   }else
   {
     //We are hiding the tool tabs
-    // In Wt4, removeWidget/removeTab returns unique_ptr; release() to keep widgets alive for re-use
     m_layout->removeWidget( m_charts ).release();
 
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv ).release();
-    m_toolsTabs->removeTab( m_peakInfoDisplay ).release();
-    m_toolsTabs->removeTab( m_energyCalTool ).release();
+    m_toolsTabs->removeTab( m_peakInfoDisplay.get() ).release();
+    m_toolsTabs->removeTab( m_energyCalTool.get() ).release();
 
 #if( USE_REL_ACT_TOOL )
     if( m_relActManualGui )
     {
-      if( !m_relActManualWindow )
-        m_toolsTabs->removeTab( m_energyCalTool ).release();
+      if( !m_relActManualWindow && m_toolsTabs->indexOf(m_energyCalTool.get()) >= 0 )
+        m_toolsTabs->removeTab( m_energyCalTool.get() ).release();
       handleRelActManualClose();
     }//if( m_relActManualGui )
 
@@ -7049,8 +7109,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 
     m_nuclideSearch->clearSearchEnergiesOnClient();
     // Remove m_nuclideSearch from container before deleting container
-    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch ).release();
-    // removeTab returns unique_ptr which deletes m_nuclideSearchContainer; don't also delete manually
+    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch.get() ).release();
+    // removeTab returns unique_ptr which deletes m_nuclideSearchContainer
     m_toolsTabs->removeTab( m_nuclideSearchContainer );
     m_nuclideSearchContainer = nullptr;
     
@@ -7176,7 +7236,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-view") );
     button->addStyleClass( "MenuLabel" );
-    m_displayOptionsPopupDiv = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
+    m_displayOptionsPopupDiv = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
   }else
   {
     m_displayOptionsPopupDiv = parentMenu->addPopupMenuItem( WString::tr("app-menu-view") );
@@ -7199,7 +7259,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   
   m_displayOptionsPopupDiv->addSeparator();
 
-  addDetectorMenu( m_displayOptionsPopupDiv );
+  addDetectorMenu( m_displayOptionsPopupDiv.get() );
   
   m_displayOptionsPopupDiv->addSeparator();
   
@@ -7287,7 +7347,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   
   item->hide(); //we are already showing the legend
   
-  addPeakLabelSubMenu( m_displayOptionsPopupDiv ); //add Peak menu
+  addPeakLabelSubMenu( m_displayOptionsPopupDiv.get() ); //add Peak menu
   
   const bool showSlider = UserPreferences::preferenceValue<bool>( "ShowXAxisSlider", this );
   m_showXAxisSliderItems[0] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-show-slider"), "");
@@ -7562,8 +7622,7 @@ void InterSpec::handEnergyCalWindowClose()
     return;
   
   WGridLayout *layout = m_energyCalWindow->stretcher();
-  // In Wt4, removeWidget returns unique_ptr; release() to keep m_energyCalTool alive for re-use
-  auto removed_cal = layout->removeWidget( m_energyCalTool );
+  auto removed_cal = layout->removeWidget( m_energyCalTool.get() );
 
   AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
   assert( !m_energyCalWindow );
@@ -7571,26 +7630,27 @@ void InterSpec::handEnergyCalWindowClose()
   if( m_toolsTabs )
   {
     m_energyCalTool->setWideLayout();
-    if( m_toolsTabs->indexOf(m_energyCalTool) < 0 )
+    if( m_toolsTabs->indexOf(m_energyCalTool.get()) < 0 )
       m_toolsTabs->addTab( std::move(removed_cal), WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
 
     m_currentToolsTab = m_toolsTabs->currentIndex();
   }else
   {
-    removed_cal.release(); // Wt4_TODO: no tabs; ownership unclear, keep alive via raw ptr
+    // Park in domRoot when no tabs present
+    addChild( std::move(removed_cal) );
   }//if( m_toolsTabs )
 }//void handEnergyCalWindowClose()
 
 
 EnergyCalTool *InterSpec::energyCalTool()
 {
-  return m_energyCalTool;
+  return m_energyCalTool.get();
 }
 
 
 UndoRedoManager *InterSpec::undoRedoManager()
 {
-  return m_undo;
+  return m_undo.get();
 }//UndoRedoManager *undoRedoManager();
 
 
@@ -7602,21 +7662,21 @@ void InterSpec::showEnergyCalWindow()
     return;
   }
 
-  const int index = (m_toolsTabs ? m_toolsTabs->indexOf(m_energyCalTool) : -1);
+  const int index = (m_toolsTabs ? m_toolsTabs->indexOf(m_energyCalTool.get()) : -1);
 
   std::unique_ptr<WWidget> calToolPtr;
   if( index >= 0 )
-    calToolPtr = m_toolsTabs->removeTab( m_energyCalTool );
+    calToolPtr = m_toolsTabs->removeTab( m_energyCalTool.get() );
 
   if( m_energyCalWindow )
   {
     if( !calToolPtr )
-      calToolPtr = m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool );
+      calToolPtr = m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool.get() );
     if( m_energyCalWindow ) AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
   }
 
   if( !calToolPtr )
-    calToolPtr = std::unique_ptr<WWidget>( m_energyCalTool ); // unowned, wrap for addWidget
+    calToolPtr = take_widget( this, m_energyCalTool.get() );  // unpark
 
   m_energyCalWindow = AuxWindow::make( WString("window-title-energy-cal"),
                                     AuxWindowProperties::SetCloseable | AuxWindowProperties::TabletNotFullScreen );
@@ -8014,13 +8074,13 @@ ReferencePhotopeakDisplay *InterSpec::referenceLinesWidget()
 
 IsotopeSearchByEnergy *InterSpec::nuclideSearch()
 {
-  return m_nuclideSearch;
+  return m_nuclideSearch.get();
 }//IsotopeSearchByEnergy *nuclideSearch();
 
 
 PeakInfoDisplay *InterSpec::peakInfoDisplay()
 {
-  return m_peakInfoDisplay;
+  return m_peakInfoDisplay.get();
 }//PeakInfoDisplay *peakInfoDisplay();
 
 
@@ -8127,7 +8187,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-help") );
     button->addStyleClass( "MenuLabel" );
-    m_helpMenuPopup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
+    m_helpMenuPopup = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
   }else
   {
     m_helpMenuPopup = parentMenu->addPopupMenuItem( WString::tr("app-menu-help") );
@@ -10189,12 +10249,12 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-tools") );
     button->addStyleClass( "MenuLabel" );
-    popup = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
+    popup = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
   }else
   {
     popup = parentMenu->addPopupMenuItem( WString::tr("app-menu-tools") );
   }
-  
+
   m_toolsMenuPopup = popup;
   
   PopupDivMenuItem *item = NULL;
@@ -10620,7 +10680,7 @@ void InterSpec::closeDrfSelectWindow()
 
 void InterSpec::showCompactFileManagerWindow()
 {
- auto *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::Tabbed );
+ auto *compact = new CompactFileManager( m_fileManager.get(), this, CompactFileManager::Tabbed );
 
   m_spectrum->yAxisScaled().connect( compact, [compact]( const double a1, const double a2,
                                                const SpecUtils::SpectrumType a3 ){
@@ -10650,8 +10710,7 @@ void InterSpec::closeNuclideSearchWindow()
     return;
   
   m_nuclideSearch->clearSearchEnergiesOnClient();
-  // In Wt4, removeWidget returns unique_ptr; release() to keep m_nuclideSearch alive for re-use
-  m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch ).release();
+  m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch.get() ).release();
 
   if( m_nuclideSearchWindow ) AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
   assert( !m_nuclideSearchWindow );
@@ -10662,7 +10721,7 @@ void InterSpec::closeNuclideSearchWindow()
     WGridLayout *isotopeSearchGridLayout = new WGridLayout();
     m_nuclideSearchContainer->setLayout( std::unique_ptr<WLayout>(isotopeSearchGridLayout) );
 
-    isotopeSearchGridLayout->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch), 0, 0 );
+    isotopeSearchGridLayout->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch.get()), 0, 0 );
     isotopeSearchGridLayout->setRowStretch( 0, 1 );
     isotopeSearchGridLayout->setColumnStretch( 0, 1 );
 
@@ -10684,8 +10743,7 @@ void InterSpec::showNuclideSearchWindow()
   
   if( m_toolsTabs && m_nuclideSearchContainer )
   {
-    // In Wt4, removeWidget/removeTab return unique_ptr
-    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch ).release();
+    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch.get() ).release();
     m_toolsTabs->removeTab( m_nuclideSearchContainer ); // unique_ptr deletes m_nuclideSearchContainer
     m_nuclideSearchContainer = nullptr;
   }
@@ -10706,7 +10764,8 @@ void InterSpec::showNuclideSearchWindow()
   //}//if( isPhone() )
   
   m_nuclideSearchWindow->stretcher()->setContentsMargins( 0, 0, 0, 0 );
-  m_nuclideSearchWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch), 0, 0 );
+  m_nuclideSearchWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch.get()), 0, 0 );
+  m_nuclideSearch->setHidden( false );
   
   //We need to set the footer height explicitly, or else the window->resize()
   //  messes up.
@@ -11008,7 +11067,7 @@ void InterSpec::handleToolTabChanged( int tab )
   
   auto handle_change = [this]( const int current_tab, const bool focus  ){
     const int refTab = m_toolsTabs->indexOf(m_referencePhotopeakLines.get());
-    const int calibtab = m_toolsTabs->indexOf(m_energyCalTool);
+    const int calibtab = m_toolsTabs->indexOf(m_energyCalTool.get());
     const int searchTab = m_toolsTabs->indexOf(m_nuclideSearchContainer);
     
     InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
@@ -11077,7 +11136,7 @@ void InterSpec::handleToolTabChanged( int tab )
 
 SpecMeasManager *InterSpec::fileManager()
 {
-  return m_fileManager;
+  return m_fileManager.get();
 }
 
 
@@ -11101,7 +11160,7 @@ Wt::WSuggestionPopup *InterSpec::shieldingSuggester()
 
 RefLineDynamic *InterSpec::refLineDynamic()
 {
-  return m_refLineDynamic;
+  return m_refLineDynamic.get();
 }//
 
 Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorChanged()
@@ -11968,7 +12027,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       case SpecUtils::SpectrumType::Foreground:
         if( EnergyCalPreserveWindow::candidate(meas,previous) )
           m_preserveCalibWindow = AuxWindow::make<EnergyCalPreserveWindow>( meas, spec_type,
-                                         previous, spec_type, m_energyCalTool );
+                                         previous, spec_type, m_energyCalTool.get() );
       break;
     
       case SpecUtils::SpectrumType::SecondForeground:
@@ -11976,7 +12035,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         if( EnergyCalPreserveWindow::candidate(meas,m_dataMeasurement) )
           m_preserveCalibWindow = AuxWindow::make<EnergyCalPreserveWindow>( meas, spec_type,
                                                 m_dataMeasurement, SpecUtils::SpectrumType::Foreground,
-                                                m_energyCalTool );
+                                                m_energyCalTool.get() );
       break;
     };//switch( spec_type )
   

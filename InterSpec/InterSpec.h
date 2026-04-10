@@ -1398,37 +1398,37 @@ protected:
   
 protected:
   Wt::Dbo::ptr<InterSpecUser> m_user;
-  UserPreferences *m_preferences;
+  Wt::Core::observing_ptr<UserPreferences> m_preferences;
   
   std::shared_ptr<PeakModel> m_peakModel;
   D3SpectrumDisplayDiv *m_spectrum;
   D3TimeChart *m_timeSeries;
   
   PopupDivMenu *m_detectorToShowMenu;
-  Wt::WPushButton *m_mobileMenuButton;
-  Wt::WContainerWidget *m_mobileBackButton;
-  Wt::WContainerWidget *m_mobileForwardButton;
+  Wt::Core::observing_ptr<Wt::WPushButton> m_mobileMenuButton;
+  Wt::Core::observing_ptr<Wt::WContainerWidget> m_mobileBackButton;
+  Wt::Core::observing_ptr<Wt::WContainerWidget> m_mobileForwardButton;
   void handleUserIncrementSampleNum( SpecUtils::SpectrumType type, bool increment);
 
   Wt::Signal< Wt::WString, int > m_messageLogged;
   
-  WarningWidget          *m_warnings;
+  Wt::Core::observing_ptr<WarningWidget> m_warnings;
   Wt::Core::observing_ptr<AuxWindow> m_warningsWindow;
   
-  SpecMeasManager        *m_fileManager; // The file manager
+  Wt::Core::observing_ptr<SpecMeasManager> m_fileManager; // The file manager
   
   Wt::WGridLayout        *m_layout;
   
   Wt::WContainerWidget   *m_charts;
   Wt::WContainerWidget   *m_chartResizer;
   Wt::WGridLayout        *m_toolsLayout;
-  
-  Wt::WContainerWidget   *m_menuDiv; // The top menu bar.
+
+  Wt::WContainerWidget   *m_menuDiv; // The top menu bar. Owned by m_layout.
 
   //m_peakInfoWindow is deleted when tool tabs are shown because the layout
   //  gets all messed up for some reason when m_peakInfoDisplay is removed
   //  and placed back in it.
-  PeakInfoDisplay        *m_peakInfoDisplay;
+  Wt::Core::observing_ptr<PeakInfoDisplay> m_peakInfoDisplay;
   Wt::Core::observing_ptr<AuxWindow> m_peakInfoWindow;
 
   //m_peakEditWindow: used to ensure only one peak editor window is open at a
@@ -1457,7 +1457,7 @@ protected:
   int m_toolsTabsContentHeight;
 #endif
 
-  EnergyCalTool          *m_energyCalTool;
+  Wt::Core::observing_ptr<EnergyCalTool> m_energyCalTool;
   Wt::Core::observing_ptr<AuxWindow> m_energyCalWindow;
   Wt::Core::observing_ptr<GammaCountDialog> m_gammaCountDialog;
   Wt::Core::observing_ptr<AuxWindow> m_specFileQueryDialog;
@@ -1487,7 +1487,7 @@ protected:
   
   //m_nuclideSearch: Nuclide Search widget.  Will always be a valid pointer,
   //  although not always in the DOM (specifically when tool tabs are hidden).
-  IsotopeSearchByEnergy  *m_nuclideSearch;
+  Wt::Core::observing_ptr<IsotopeSearchByEnergy> m_nuclideSearch;
   
   //DataBaseUtils::DbSession is an indirect way to holds the Wt::Dbo::Session
   //  object associated with m_user.  This indirection forces you to use
@@ -1500,11 +1500,11 @@ protected:
   std::shared_ptr<DataBaseUtils::DbSession> m_sql;
   
   //This menu implementation uses something that visually looks like a WPopupMenuItem.
-  PopupDivMenu         *m_fileMenuPopup;
-  PopupDivMenu         *m_editMenuPopup;
-  PopupDivMenu         *m_toolsMenuPopup;
-  PopupDivMenu         *m_helpMenuPopup;
-  PopupDivMenu         *m_displayOptionsPopupDiv;
+  Wt::Core::observing_ptr<PopupDivMenu> m_fileMenuPopup;
+  Wt::Core::observing_ptr<PopupDivMenu> m_editMenuPopup;
+  Wt::Core::observing_ptr<PopupDivMenu> m_toolsMenuPopup;
+  Wt::Core::observing_ptr<PopupDivMenu> m_helpMenuPopup;
+  Wt::Core::observing_ptr<PopupDivMenu> m_displayOptionsPopupDiv;
   
 #if( USE_DB_TO_STORE_SPECTRA )
   PopupDivMenuItem *m_saveState;
@@ -1545,7 +1545,7 @@ protected:
     kNumRightClickItems
   };//enum RightClickItems
   
-  PopupDivMenu         *m_rightClickMenu;
+  std::unique_ptr<PopupDivMenu> m_rightClickMenu;
   double                m_rightClickEnergy;
   /** The ref-line info from the client-side when there is a right-click.  This may be a displayed reference line, or it could be a kinematic reference line, and is in the
    form like "Th232;S.E. of 2614.5 keV".
@@ -1689,7 +1689,7 @@ protected:
   //  reference photopeaks on the energy spectrum chart.
   Wt::Core::observing_ptr<ReferencePhotopeakDisplay> m_referencePhotopeakLines;
   Wt::Core::observing_ptr<AuxWindow> m_referencePhotopeakLinesWindow;
-  RefLineDynamic            *m_refLineDynamic;
+  Wt::Core::observing_ptr<RefLineDynamic> m_refLineDynamic;
 
   Wt::Core::observing_ptr<HelpSystem::HelpWindow> m_helpWindow;
   
@@ -1727,7 +1727,7 @@ protected:
   
   Wt::Core::observing_ptr<DrfSelectWindow> m_drfSelectWindow;
   
-  UndoRedoManager *m_undo;
+  Wt::Core::observing_ptr<UndoRedoManager> m_undo;
   
   //Current width and height are set in layoutSizeChanged(...).
   int m_renderedWidth;
