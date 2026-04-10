@@ -80,6 +80,12 @@ public:
   
   //PopupDivMenu constructor: if a menuParent is non null, then clicking on, or
   //  mouseing over the button will cause activation of this PopupDivMenu.
+  //
+  //  Ownership note: for TransientMenu with a menuParent, the constructor
+  //  transfers ownership to the button via WPushButton::setMenu(), so the
+  //  caller should use bare `new` (not addChild or addWidget) to avoid
+  //  creating a conflicting parent that would crash in ~WObject.
+  //  For AppLevelMenu, ownership is managed by the app-level menu system.
   PopupDivMenu( Wt::WPushButton *menuParent, const MenuType menutype );
   
   //~PopupDivMenu(): currently a no-op function

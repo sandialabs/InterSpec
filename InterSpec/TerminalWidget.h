@@ -38,7 +38,6 @@
 #include <Wt/WContainerWidget.h>
 
 #include "InterSpec/PopupDiv.h"
-#include "InterSpec/AuxWindow.h"
 #include "InterSpec/TerminalModel.h"
 
 //Forward declarations

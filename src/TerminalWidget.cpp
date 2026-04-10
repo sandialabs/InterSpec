@@ -53,6 +53,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PopupDiv.h"
 #include "InterSpec/TerminalWidget.h"
 #include "InterSpec/UserPreferences.h"
 
@@ -132,7 +133,12 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
   const PopupDivMenu::MenuType menutype = (viewer && viewer->isPhone())
                                         ? PopupDivMenu::MenuType::AppLevelMenu
                                         : PopupDivMenu::MenuType::TransientMenu;
-  m_commandmenu = addChild( std::make_unique<PopupDivMenu>( commandButton, menutype ) );
+
+  // Not a memory leak: for TransientMenu, the PopupDivMenu constructor transfers ownership
+  // to commandButton via WPushButton::setMenu(); for AppLevelMenu, ownership is managed by
+  // the app-level menu system.  Do not use addChild() here, as that creates a conflicting
+  // parent and causes a crash in ~WObject when TerminalWidget is destroyed.
+  m_commandmenu = new PopupDivMenu( commandButton, menutype );
   m_commandmenu->addStyleClass( "command-menu" );
   m_commandmenu->addStyleClass( "command-menu-content" );
   m_commandmenu->addStyleClass( "command-menu-content a" );
@@ -140,11 +146,9 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
   m_commandmenu->addStyleClass( "command-menu:hover .command-menu-content" );
   if( menutype == PopupDivMenu::MenuType::TransientMenu )
     m_commandmenu->setHeight( 250 );
-  
-    
-  // Wt4_TODO: PopupDivMenu::addWidget takes raw ptr - needs migration in PopupDiv
+
   m_commandmenu->addWidget( commandsearch_owner.release() );
-    
+
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
     
   for ( const TerminalModel::CommandHelperTuple s : m_model->commandsFunctionsList() ) {            // initialize the command menu with commands
@@ -224,6 +228,7 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
   m_buttonClickedSignal.reset( new JSignal<std::string>( this, "lineentered", true ) );
   m_buttonClickedSignal->connect( [this]( const std::string &arg ){ handleButtonClickedSignal( arg ); } );
 }//TerminalWidget
+
 
 void TerminalWidget::focusText()
 {
@@ -343,11 +348,46 @@ void TerminalWidget::handleButtonClickedSignal( std::string argument )
 
 void TerminalWidget::commandMenuSearchInput()
 {
-  // Wt4_TODO: This function removes items from the menu and then tries to re-add them.
-  //  In Wt4, WMenu::removeItem() returns a unique_ptr (destroying the item), making re-add
-  //  of the same raw pointer invalid (use-after-free). The entire filter approach needs to be
-  //  redesigned (e.g., use show/hide on items instead of remove/re-add).
-  //  For now this function is a no-op to avoid crashes.
+  const string searchText = m_commandsearch->text().toUTF8();
+
+  if( searchText.empty() )
+  {
+    // Show all items when search is cleared
+    for( const MenuItemTuple &item : m_commandMenuItems )
+      std::get<0>( item )->setHidden( false );
+    return;
+  }
+
+  // Build a case-insensitive regex from the search text
+  string pattern;
+  try
+  {
+    pattern = searchToRegexLiteral( searchText );
+  }catch( ... )
+  {
+    return;
+  }
+
+  const regex searchRegex( pattern, regex_constants::icase );
+
+  for( const MenuItemTuple &item : m_commandMenuItems )
+  {
+    WMenuItem *menuItem = std::get<0>( item );
+    const string &tags = std::get<1>( item );
+
+    if( menuItem->isSectionHeader() )
+    {
+      // Section headers are shown/hidden based on whether any following items match;
+      // for simplicity, hide them during filtering
+      menuItem->setHidden( true );
+      continue;
+    }
+
+    const string itemName = menuItem->text().toUTF8();
+    const bool matches = regex_search( itemName, searchRegex )
+                         || regex_search( tags, searchRegex );
+    menuItem->setHidden( !matches );
+  }
 }
 
 void TerminalWidget::commandMenuItemSelected( Wt::WMenuItem *item )

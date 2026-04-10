@@ -230,6 +230,28 @@ namespace
   bool sm_haveSetStaticDataDirectory = false;
   std::string ns_staticDataDirectory = "data";
 
+  /** Workaround for Wt 4.12.6 bug in WMenuItem::removeContents(): for ContentLoading::Eager
+   widgets, removeContents() resets oContents_ before contentsInStack() checks it, so the widget
+   is never removed from the internal WStackedWidget and removeTab() returns nullptr.
+   This helper ensures the widget is properly detached from its parent if removeTab() fails.
+
+   If `release` is true, the widget is left alive but orphaned (caller retains a separate reference).
+   If `release` is false, the returned unique_ptr (if non-null) will delete the widget when it
+   goes out of scope.
+   */
+  std::unique_ptr<Wt::WWidget> safeRemoveTab( Wt::WTabWidget *tabs, Wt::WWidget *w, const bool release )
+  {
+    assert( tabs && w );
+    std::unique_ptr<Wt::WWidget> result = tabs->removeTab( w );
+    if( !result && w && w->parent() )
+      result = w->parent()->removeWidget( w );
+
+    if( release )
+      result.release();
+
+    return result;
+  }//safeRemoveTab(...)
+
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   std::mutex ns_writableDataDirectoryMutex;
   std::string ns_writableDataDirectory = "";
@@ -1328,7 +1350,7 @@ InterSpec::~InterSpec() noexcept(true)
   {
     m_referencePhotopeakLines->clearAllLines();
     if( m_toolsTabs && m_toolsTabs->indexOf(m_referencePhotopeakLines.get()) >= 0 )
-      m_toolsTabs->removeTab( m_referencePhotopeakLines.get() );
+      safeRemoveTab( m_toolsTabs, m_referencePhotopeakLines.get(), false );
     else
     {
       assert( m_referencePhotopeakLines->parent() );
@@ -6918,7 +6940,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     setReferenceLineColors( nullptr );
 
     m_externalRidResultsRecieved.connect( this, [this]( std::shared_ptr<const ExternalRidResults> v ){
-      m_referencePhotopeakLines->setExternalRidResults( v );
+      if( m_referencePhotopeakLines )
+        m_referencePhotopeakLines->setExternalRidResults( v );
     } );
 
     //PreLoading is necessary on the m_referencePhotopeakLines widget, so that the
@@ -6983,7 +7006,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //  of the DOM, and references lost.  Maybe.
     m_timeSeries->refreshJs();
 #endif
-    
+
     //Without using the wrapper below, the tabs widget will change height, even
     //  if it is explicitly set, when different tabs are clicked (unless a
     //  manual resize is performed by the user first)
@@ -7053,6 +7076,16 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //  Activity tool
     m_toolsTabs->tabClosed().connect( this, [this]( const int a1 ){ handleToolTabClosed( a1 ); } );
 #endif
+
+#if( USE_TERMINAL_WIDGET )
+    // If terminal was open before hiding tabs, re-add it to the new tab widget
+    if( m_terminal )
+    {
+      WMenuItem *termTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_terminal.get()),
+                                                 WString::tr(TerminalTabTitleKey), TabLoadPolicy );
+      termTab->setCloseable( true );
+    }
+#endif
     
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     // If `m_currentToolsTab` is for `m_peakInfoDisplay`, and the floating peak info display
@@ -7087,31 +7120,42 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv ).release();
-    m_toolsTabs->removeTab( m_peakInfoDisplay.get() ).release();
-    m_toolsTabs->removeTab( m_energyCalTool.get() ).release();
+
+    safeRemoveTab( m_toolsTabs, m_peakInfoDisplay.get(), true );
+    safeRemoveTab( m_toolsTabs, m_energyCalTool.get(), true );
 
 #if( USE_REL_ACT_TOOL )
+    // Dont call handleRelActManualClose/handleRelActAutoClose during hide path — the Wt4
+    //  removeTab bug causes use-after-free if we try to delete tab contents here. Instead,
+    //  just re-enable menu items and let WTabWidget destruction clean up the widgets.
     if( m_relActManualGui )
     {
       if( !m_relActManualWindow && m_toolsTabs->indexOf(m_energyCalTool.get()) >= 0 )
-        m_toolsTabs->removeTab( m_energyCalTool.get() ).release();
-      handleRelActManualClose();
+        safeRemoveTab( m_toolsTabs, m_energyCalTool.get(), true );
+      if( m_relActManualWindow )
+        handleRelActManualClose();
+      else if( m_relActManualMenuItem )
+        m_relActManualMenuItem->enable();
     }//if( m_relActManualGui )
 
     if( m_relActAutoGui )
-      handleRelActAutoClose();
+      handleRelActAutoClose();  // Uses AuxWindow::deleteAuxWindow, not removeTab — safe
 #endif
 
 #if( USE_TERMINAL_WIDGET )
     if( m_terminal )
-      handleTerminalWindowClose();
+    {
+      safeRemoveTab( m_toolsTabs, m_terminal.get(), false );
+      if( m_terminalMenuItem )
+        m_terminalMenuItem->enable();
+    }
 #endif
 
     m_nuclideSearch->clearSearchEnergiesOnClient();
     // Remove m_nuclideSearch from container before deleting container
     m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch.get() ).release();
     // removeTab returns unique_ptr which deletes m_nuclideSearchContainer
-    m_toolsTabs->removeTab( m_nuclideSearchContainer );
+    safeRemoveTab( m_toolsTabs, m_nuclideSearchContainer, false );
     m_nuclideSearchContainer = nullptr;
     
     
@@ -7666,7 +7710,7 @@ void InterSpec::showEnergyCalWindow()
 
   std::unique_ptr<WWidget> calToolPtr;
   if( index >= 0 )
-    calToolPtr = m_toolsTabs->removeTab( m_energyCalTool.get() );
+    calToolPtr = safeRemoveTab( m_toolsTabs, m_energyCalTool.get(), false );
 
   if( m_energyCalWindow )
   {
@@ -9802,12 +9846,8 @@ void InterSpec::handleTerminalWindowClose()
   {
     if( m_toolsTabs && m_toolsTabs->indexOf(m_terminal.get()) >= 0 )
     {
-      m_toolsTabs->removeTab( m_terminal.get() ); // returned unique_ptr deletes m_terminal
+      safeRemoveTab( m_toolsTabs, m_terminal.get(), false );
       m_toolsTabs->setCurrentIndex( 2 );
-    }else
-    {
-      assert( m_terminal->parent() );
-      m_terminal->removeFromParent(); // unique_ptr goes out of scope and deletes
     }
   }
 
@@ -10132,7 +10172,7 @@ void InterSpec::handleRelActManualClose()
     if( m_relActManualGui )
     {
       if( m_toolsTabs && m_toolsTabs->indexOf(m_relActManualGui.get()) >= 0 )
-        m_toolsTabs->removeTab( m_relActManualGui.get() ); // unique_ptr deletes it
+        safeRemoveTab( m_toolsTabs, m_relActManualGui.get(), false ); // deletes it
       else
       {
         assert( m_relActManualGui->parent() );
@@ -10744,7 +10784,7 @@ void InterSpec::showNuclideSearchWindow()
   if( m_toolsTabs && m_nuclideSearchContainer )
   {
     m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch.get() ).release();
-    m_toolsTabs->removeTab( m_nuclideSearchContainer ); // unique_ptr deletes m_nuclideSearchContainer
+    safeRemoveTab( m_toolsTabs, m_nuclideSearchContainer, false ); // deletes m_nuclideSearchContainer
     m_nuclideSearchContainer = nullptr;
   }
   
@@ -10927,7 +10967,7 @@ void InterSpec::showGammaLinesWindow()
     m_referencePhotopeakLines->clearAllLines();
 
     if( m_toolsTabs && m_toolsTabs->indexOf(m_referencePhotopeakLines.get()) >= 0 )
-      m_toolsTabs->removeTab( m_referencePhotopeakLines.get() );
+      safeRemoveTab( m_toolsTabs, m_referencePhotopeakLines.get(), false );
     else
     {
       assert( m_referencePhotopeakLines->parent() );
@@ -11015,7 +11055,7 @@ void InterSpec::closeGammaLinesWindow()
     m_referencePhotopeakLines->clearAllLines();
 
     if( m_toolsTabs && m_toolsTabs->indexOf(m_referencePhotopeakLines.get()) >= 0 )
-      m_toolsTabs->removeTab( m_referencePhotopeakLines.get() );
+      safeRemoveTab( m_toolsTabs, m_referencePhotopeakLines.get(), false );
     else
     {
       assert( m_referencePhotopeakLines->parent() );
@@ -11035,7 +11075,8 @@ void InterSpec::closeGammaLinesWindow()
     setReferenceLineColors( nullptr );
 
     m_externalRidResultsRecieved.connect( this, [this]( std::shared_ptr<const ExternalRidResults> v ){
-      m_referencePhotopeakLines->setExternalRidResults( v );
+      if( m_referencePhotopeakLines )
+        m_referencePhotopeakLines->setExternalRidResults( v );
     } );
 
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
