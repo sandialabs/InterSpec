@@ -370,7 +370,6 @@ InterSpec::InterSpec()
     m_mobileMenuButton(0),
     m_mobileBackButton(0),
     m_mobileForwardButton(0),
-    m_notificationDiv(0),
     m_warnings( 0 ),
     m_warningsWindow( 0 ),
     m_fileManager( 0 ),
@@ -524,16 +523,11 @@ InterSpec::InterSpec()
   //make it so InterSpec::instance() wont return nullptr for calls from within this constructor
   app->m_viewer = this;
     
-  //for notification div
-  auto notificationDivPtr = std::make_unique<WContainerWidget>(); m_notificationDiv = notificationDivPtr.get();
-  m_notificationDiv->setStyleClass("qtipDiv");
-  m_notificationDiv->setId("qtip-growl-container");
-  
+  // For electron/wxWidgets builds, mark the toast container to offset below the in-app titlebar.
+  // The container itself is created by InterSpecToast.js on first use.
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
-  m_notificationDiv->addStyleClass( "belowMenu" );
+  app->doJavaScript( "InterSpecToast.addContainerClass('belowMenu');" );
 #endif
-  
-  app->root()->addWidget( std::move(notificationDivPtr) );
   
   app->hotkeySignal().connect( this, [this]( const unsigned int key ){ hotKeyPressed( key ); } );
   
@@ -1335,7 +1329,6 @@ InterSpec::~InterSpec() noexcept(true)
   del_ptr_set_null( m_mobileMenuButton );
   del_ptr_set_null( m_mobileBackButton );
   del_ptr_set_null( m_mobileForwardButton );
-  del_ptr_set_null( m_notificationDiv );
   del_ptr_set_null( m_fileManager );
   del_ptr_set_null( m_displayOptionsPopupDiv );
   del_ptr_set_null( m_fileMenuPopup );

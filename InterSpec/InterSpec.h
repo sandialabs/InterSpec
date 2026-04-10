@@ -1408,8 +1408,6 @@ protected:
   Wt::WPushButton *m_mobileMenuButton;
   Wt::WContainerWidget *m_mobileBackButton;
   Wt::WContainerWidget *m_mobileForwardButton;
-  Wt::WContainerWidget *m_notificationDiv; //has id="qtip-growl-container"
-  
   void handleUserIncrementSampleNum( SpecUtils::SpectrumType type, bool increment);
 
   Wt::Signal< Wt::WString, int > m_messageLogged;

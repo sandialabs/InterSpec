@@ -364,109 +364,74 @@ void WarningWidget::displayPopupMessageUnsafe( const Wt::WString &msg,
   if( num_millies <= 0 )
     num_millies = 5000;
   
-  WStringStream strm;
-  
-  //We need the properly escaped string (e.g., not single quotes or unintended backslases), so we
+  // We need the properly escaped string (e.g., not single quotes or unintended backslashes), so we
   //  will use WString::jsStringLiteral(). Note that this will also place a single quote around the
   //  string.
   const string val = msg.jsStringLiteral( '\'' );
-  string header, style;
-  
+
+  string header, toastType;
+
   switch( level )
   {
     case WarningMsgInfo:
       header = "Info";
-      style = "qtip-light";
-    break;
-      
+      toastType = "info";
+      break;
+
     case WarningMsgLow:
-      header = "Notice";
-      style = "qtip-plain";
-    break;
-      
     case WarningMsgMedium:
       header = "Notice";
-      style = "qtip-plain";
-    break;
-      
+      toastType = "notice";
+      break;
+
     case WarningMsgHigh:
       header = "Error";
-      style = "qtip-red";
-    break;
-      
+      toastType = "error";
+      break;
+
     case WarningMsgSave:
       header = "Save";
-      style = "qtip-green";
-    break;
-      
+      toastType = "save";
+      break;
+
     case WarningMsgShowOnBoardRiid:
 #if( USE_REMOTE_RID )
       header = "On-board RIID Results";
 #else
       header = "RIID Results";
 #endif
-      style = "qtip-blue qtip-riid";
-      // remove all the other "show riid" results
-      strm << "document.querySelectorAll('.qtip.qtip-riid').forEach(function(el){ el.remove(); });";
+      toastType = "riid";
       break;
-    
+
 #if( USE_REMOTE_RID )
     case WarningMsgExternalRiid:
       header = "External RID Results";
-      style = "qtip-blue qtip-ext-riid";
-      // remove all the other external RID results
-      strm << "document.querySelectorAll('.qtip.qtip-ext-riid').forEach(function(el){ el.remove(); });";
+      toastType = "riid";
       break;
 #endif
-    
+
     case NumWarningMsgType:
       throw std::runtime_error( "Invalid warning message requested" );
   }//switch( level )
-  
-  //Create popup notifications
-  strm << "var target = $('.qtip.jgrowl:visible:last'); $(document.body).qtip({ \
-      content: { \
-        title:  '<img style=\"vertical-align: middle; width: 16px;\" src=\\'" << string(iconUrl(level)) << "\\'/>&nbsp;&nbsp;" << header << "', \
-        text:   "<< val <<", \
-        button: true \
-      }, \
-      position: { \
-        container: $('#qtip-growl-container') \
-      }, \
-      show: { \
-        event: false, \
-        ready: true, \
-        delay: 500, \
-        effect: function() { \
-            $(this).stop(0, 1).animate({ height: 'toggle' }, 400, 'swing'); \
-        }, \
-      }, \
-      hide: { \
-        event:  false, \
-        effect: function(api) { \
-          $(this).stop(0, 1).animate({ height: 'toggle' }, 400, 'swing'); \
-        } \
-      }, \
-      style: { \
-        width: 250, \
-        classes: 'jgrowl qtip-rounded qtip-shadow "<< style <<"', \
-        tip: false \
-      }, \
-      events: { \
-        render: function(event, api) { \
-            if(!api.options.show.persistent) { \
-                $(this).bind('mouseover mouseout', function(e) { \
-                    var lifespan = " << num_millies << "; \
-                    clearTimeout(api.timer); \
-                    if (e.type !== 'mouseover') { \
-                        api.timer = setTimeout(function() { api.hide(e) }, lifespan); \
-                    } \
-                }).triggerHandler('mouseout'); \
-            } \
-        } \
-      } \
-  }).removeData('qtip');";
-  
+
+  WStringStream strm;
+
+  // For RIID messages, clear previous RIID toasts before showing a new one
+  if( (level == WarningMsgShowOnBoardRiid)
+#if( USE_REMOTE_RID )
+     || (level == WarningMsgExternalRiid)
+#endif
+     )
+  {
+    strm << "InterSpecToast.clearByClass('riid');";
+  }
+
+  strm << "InterSpecToast.show(" << val
+       << ",'" << toastType
+       << "'," << num_millies
+       << ",'" << header
+       << "','" << string( iconUrl(level) ) << "');";
+
   auto app = WApplication::instance();
   if( app )
     app->doJavaScript( strm.str() );

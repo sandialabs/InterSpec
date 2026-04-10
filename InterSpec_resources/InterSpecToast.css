@@ -1,0 +1,130 @@
+/* InterSpecToast.css: styles for the bespoke in-app toast notification system,
+   replacing qTip2 jGrowl-style notifications. */
+
+#toast-container {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 2000000000; /* must be above everything, including Wt dialogs */
+  pointer-events: none; /* allow clicks to pass through gaps between toasts */
+  max-width: 300px;
+}
+
+/* For electron/wxWidgets builds with in-app titlebar */
+#toast-container.belowMenu {
+  top: 35px;
+}
+
+.ispec-toast {
+  position: relative;
+  width: 250px;
+  margin: 0 0 5px 0;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  pointer-events: auto; /* re-enable pointer events on the toast itself */
+  opacity: 0;
+  max-height: 0;
+  transition: opacity 0.35s ease, max-height 0.35s ease, margin 0.35s ease;
+  font-size: 0.85em;
+  line-height: 1.35;
+}
+
+.ispec-toast.show {
+  opacity: 1;
+  max-height: 300px; /* large enough for any reasonable content */
+}
+
+.ispec-toast-title {
+  display: flex;
+  align-items: center;
+  padding: 5px 28px 4px 8px; /* right padding for close button */
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+.ispec-toast-title img {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.ispec-toast-close {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  background: none;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.6;
+  padding: 2px 4px;
+}
+
+.ispec-toast-close:hover {
+  opacity: 1;
+}
+
+.ispec-toast-body {
+  padding: 4px 8px 6px 8px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+
+/* Type-specific color schemes, matching the prior qTip2 notification colors */
+
+/* Info (WarningMsgInfo) - light/white */
+.ispec-toast-info {
+  background-color: white;
+  border-color: #E2E2E2;
+  color: #454545;
+}
+.ispec-toast-info .ispec-toast-title {
+  background-color: #f1f1f1;
+}
+
+/* Low/Medium notice (WarningMsgLow, WarningMsgMedium) - default/yellow */
+.ispec-toast-notice {
+  background-color: #FFFFA3;
+  border-color: #F1D031;
+  color: #555;
+}
+.ispec-toast-notice .ispec-toast-title {
+  background-color: #FFEF93;
+}
+
+/* Error (WarningMsgHigh) - red */
+.ispec-toast-error {
+  background-color: #F78B83;
+  border-color: #D95252;
+  color: #912323;
+}
+.ispec-toast-error .ispec-toast-title {
+  background-color: #F06D65;
+}
+
+/* Save (WarningMsgSave) - green */
+.ispec-toast-save {
+  background-color: #CAED9E;
+  border-color: #90D93F;
+  color: #3F6219;
+}
+.ispec-toast-save .ispec-toast-title {
+  background-color: #B0DE78;
+}
+
+/* RIID results (WarningMsgShowOnBoardRiid, WarningMsgExternalRiid) - blue */
+.ispec-toast-riid {
+  background-color: #E5F6FE;
+  border-color: #ADD9ED;
+  color: #5E99BD;
+}
+.ispec-toast-riid .ispec-toast-title {
+  background-color: #D0E9F5;
+}

@@ -267,6 +267,8 @@ void InterSpecApp::setupDomEnvironment()
   //require("InterSpec_resources/assets/js/imagesloaded.pkg.min.js");
   
   useStyleSheet( "InterSpec_resources/InterSpec.css" );
+  useStyleSheet( "InterSpec_resources/InterSpecToast.css" );
+  require( "InterSpec_resources/InterSpecToast.js" );
   doJavaScript( "if(typeof console==='undefined'){console={log:function(){}};}" );
   
   styleSheet().addRule( "input[type=\"text\"]", "font-size:0.95em;" );

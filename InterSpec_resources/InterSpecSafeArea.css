@@ -115,7 +115,7 @@ ul.PopupDivMenuPhone > li:last-of-type
   margin-bottom: 2px;
 }
 
-.Portrait #qtip-growl-container.qtipDiv:not(.belowMenu) {
+.Portrait #toast-container:not(.belowMenu) {
   top: max( calc(env(safe-area-inset-top) - 8px), 0px);
 }
 
