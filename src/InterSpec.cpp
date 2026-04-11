@@ -723,7 +723,7 @@ InterSpec::InterSpec()
     m_mobileMenuButton->setZIndex( 8388635 );
    
     //hamburger
-    PopupDivMenu *popup = new PopupDivMenu( m_mobileMenuButton.get(), PopupDivMenu::AppLevelMenu );
+    PopupDivMenu *popup = makeAppLevelMenu( m_mobileMenuButton.get() );
     m_mobileMenuButton->removeStyleClass( "Wt-btn" );
     menuWidget = popup;
     
@@ -971,7 +971,7 @@ InterSpec::InterSpec()
   m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
   
 //  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, boost::placeholders::_1) );
-  m_rightClickMenu = std::make_unique<PopupDivMenu>( nullptr, PopupDivMenu::TransientMenu );
+  m_rightClickMenu = std::make_unique<PopupDivMenu>();
   m_rightClickMenu->aboutToHide().connect( this, &InterSpec::rightClickMenuClosed );
   
   if( m_rightClickMenu->isMobile() )
@@ -6433,7 +6433,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( menuname );
     button->addStyleClass( "MenuLabel" );
-    m_fileMenuPopup = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
+    m_fileMenuPopup = makeAppLevelMenu( button );
   }else
   {
     m_fileMenuPopup = parentMenu->addPopupMenuItem( menuname );
@@ -6633,7 +6633,7 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( menuname );
     button->addStyleClass( "MenuLabel" );
-    m_editMenuPopup = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
+    m_editMenuPopup = makeAppLevelMenu( button );
   }else
   {
     m_editMenuPopup = parentMenu->addPopupMenuItem( menuname );
@@ -7280,7 +7280,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-view") );
     button->addStyleClass( "MenuLabel" );
-    m_displayOptionsPopupDiv = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
+    m_displayOptionsPopupDiv = makeAppLevelMenu( button );
   }else
   {
     m_displayOptionsPopupDiv = parentMenu->addPopupMenuItem( WString::tr("app-menu-view") );
@@ -7649,7 +7649,7 @@ void InterSpec::addDetectorMenu( WWidget *menuWidget )
     
     WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-mi-view-dets") );
     button->addStyleClass( "MenuLabel" );
-    m_detectorToShowMenu = new PopupDivMenu( button, PopupDivMenu::AppLevelMenu );
+    m_detectorToShowMenu = makeAppLevelMenu( button );
   }//if( parentPopup )
   
   if( m_detectorToShowMenu->parentItem() )
@@ -8231,7 +8231,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-help") );
     button->addStyleClass( "MenuLabel" );
-    m_helpMenuPopup = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
+    m_helpMenuPopup = makeAppLevelMenu( button );
   }else
   {
     m_helpMenuPopup = parentMenu->addPopupMenuItem( WString::tr("app-menu-help") );
@@ -10289,7 +10289,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   {
     WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-tools") );
     button->addStyleClass( "MenuLabel" );
-    popup = addChild( std::make_unique<PopupDivMenu>( button, PopupDivMenu::AppLevelMenu ) );
+    popup = makeAppLevelMenu( button );
   }else
   {
     popup = parentMenu->addPopupMenuItem( WString::tr("app-menu-tools") );

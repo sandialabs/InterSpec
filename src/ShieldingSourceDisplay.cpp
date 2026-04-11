@@ -2887,7 +2887,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   Wt::WPushButton *addItemMenubutton = new WPushButton();
   addItemMenubutton->setStyleClass( "RoundMenuIcon InvertInDark" );
   addItemMenubutton->clicked().preventPropagation();
-  m_addItemMenu = new PopupDivMenu( addItemMenubutton, PopupDivMenu::TransientMenu );
+  m_addItemMenu = makePopupMenu( addItemMenubutton );
 
   //this validates floating point numbers followed by a distance unit
   auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );

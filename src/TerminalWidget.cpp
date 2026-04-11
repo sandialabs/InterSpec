@@ -130,21 +130,17 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
   m_commandsearch->setMinimumSize(Wt::WLength::Auto, WLength(1.5,Wt::WLength::Unit::FontEm));
   m_commandsearch->setMargin(WLength(5,WLength::Unit::Pixel));
     
-  const PopupDivMenu::MenuType menutype = (viewer && viewer->isPhone())
-                                        ? PopupDivMenu::MenuType::AppLevelMenu
-                                        : PopupDivMenu::MenuType::TransientMenu;
+  if( viewer && viewer->isPhone() )
+    m_commandmenu = makeAppLevelMenu( commandButton );
+  else
+    m_commandmenu = makePopupMenu( commandButton );
 
-  // Not a memory leak: for TransientMenu, the PopupDivMenu constructor transfers ownership
-  // to commandButton via WPushButton::setMenu(); for AppLevelMenu, ownership is managed by
-  // the app-level menu system.  Do not use addChild() here, as that creates a conflicting
-  // parent and causes a crash in ~WObject when TerminalWidget is destroyed.
-  m_commandmenu = new PopupDivMenu( commandButton, menutype );
   m_commandmenu->addStyleClass( "command-menu" );
   m_commandmenu->addStyleClass( "command-menu-content" );
   m_commandmenu->addStyleClass( "command-menu-content a" );
   m_commandmenu->addStyleClass( "command-menu-content a:hover" );
   m_commandmenu->addStyleClass( "command-menu:hover .command-menu-content" );
-  if( menutype == PopupDivMenu::MenuType::TransientMenu )
+  if( !m_commandmenu->isMobile() )
     m_commandmenu->setHeight( 250 );
 
   m_commandmenu->addWidget( commandsearch_owner.release() );

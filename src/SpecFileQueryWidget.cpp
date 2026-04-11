@@ -1584,7 +1584,7 @@ void SpecFileQueryWidget::init()
   m_optionsBtn = linelayout->addWidget( std::make_unique<WPushButton>( WString::tr("sfqw-options") ), 0, 1, AlignmentFlag::Middle );
   m_optionsBtn->addStyleClass( "SpecFileQueryOptionsBtn" );
 
-  m_optionsMenu = new PopupDivMenu( m_optionsBtn, PopupDivMenu::MenuType::TransientMenu );
+  m_optionsMenu = makePopupMenu( m_optionsBtn );
   
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );

@@ -88,8 +88,8 @@ namespace
   {
     bool m_deleteWhenHidden;
   public:
-    DeleteOnClosePopupMenu( WPushButton *p, const PopupDivMenu::MenuType t )
-    : PopupDivMenu( p, t ), m_deleteWhenHidden( false ) {}
+    DeleteOnClosePopupMenu()
+    : PopupDivMenu(), m_deleteWhenHidden( false ) {}
     virtual ~DeleteOnClosePopupMenu(){}
     void markForDelete(){ m_deleteWhenHidden = true; }
     virtual void setHidden( bool hidden, const WAnimation &a = WAnimation() )
@@ -3323,7 +3323,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         //  select number of peaks.
         if( window_xpx >= 0 || window_ypx >= 0 )
         {
-          DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu( nullptr, PopupDivMenu::TransientMenu );
+          DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu();
           menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
 
           PopupDivMenuItem *item = nullptr, *selecteditem = nullptr;

@@ -28,6 +28,7 @@
 #include <Wt/WMenuItem.h>
 #include <Wt/WPopupMenu.h>
 
+class PopupDivMenu;
 class PopupDivMenuItem;
 
 namespace Wt
@@ -36,8 +37,39 @@ namespace Wt
   class WPushButton;
 }
 
+
+/** Creates an application-level PopupDivMenu (e.g., File, View, Tools, Help)
+ and wires it to the given menu-bar button.
+
+ On desktop: sets up stateless JS for instant display, hover-switching between
+ menus, and keyboard navigation.  On macOS with USE_OSX_NATIVE_MENU: creates a
+ native menu bar entry.  On phones: sets up slide-in animation with back/close.
+
+ Lifetime is managed by the button (via button->addChild()); the menu is
+ automatically destroyed when the button is destroyed.
+
+ @param button  The menu-bar button that will trigger this menu. Must not be null.
+ @return Non-owning pointer to the menu (lifetime managed by button).
+ */
+PopupDivMenu *makeAppLevelMenu( Wt::WPushButton *button );
+
+
+/** Creates a transient/dropdown PopupDivMenu and wires it to the given button.
+
+ The menu pops up on button click and auto-hides when the user clicks elsewhere
+ or selects an item.
+
+ Lifetime is managed by the button (via button->addChild()); the menu is
+ automatically destroyed when the button is destroyed.
+
+ @param button  The button that will trigger this popup menu. Must not be null.
+ @return Non-owning pointer to the menu (lifetime managed by button).
+ */
+PopupDivMenu *makePopupMenu( Wt::WPushButton *button );
+
+
 /* We want the application-level menus (i.e., "File", "View", "Tools", and "Help")
-to appear instantly when you click on the buttons, but by default Wt needs a 
+to appear instantly when you click on the buttons, but by default Wt needs a
 round-trip to C++ and back to JS, causing a slight (>100 ms), but perceptable delay.
 So instead if `APP_MENU_STATELESS_FIX` is defined, we'll fix things up so the
 menu will be shown using just JS, so the delay isnt perceptable.  However, because
@@ -61,35 +93,49 @@ class PopupDivMenu : public Wt::WPopupMenu
 public:
   enum MenuType
   {
-    //AppLevelMenu says the menu is for an applications level menu that should
-    //  be customized for the device.  E.g. for OS X is USE_OSX_NATIVE_MENU is
-    //  enabled, then this menu will get an entry on the OS X native toolbar.
-    //  For phones it will slide in from the left.
-    //For desktop style menus, you currently must still pass in a valid
-    //  WPushButton parent in order for the menu to be placed in the applicaiton
-    //  level menu role on OS X.  I'm not crazy about this somewhat ambigous
-    //  initialization, so how these menus are created should be re-visited.
+    //AppLevelMenu: application-level menus (e.g., File, View, Tools, Help).
+    //  On macOS with USE_OSX_NATIVE_MENU: gets native menu bar entry.
+    //  On phones: slides in from the left.
+    //  On desktop: uses stateless JS for instant display.
     AppLevelMenu,
-    
-    //TransientMenu: menu behaves as a popup, similar to WPopupMenu, but with
-    //  a few enhancments like poping up on mouse over the menuParent (if
-    //  specified).
-    //  XXX - specialization for phone not yet handled
+
+    //TransientMenu: popup/dropdown menu, similar to WPopupMenu, with a few
+    //  enhancements like auto-hide and z-index management.
     TransientMenu
   };//enum MenuType
-  
-  //PopupDivMenu constructor: if a menuParent is non null, then clicking on, or
-  //  mouseing over the button will cause activation of this PopupDivMenu.
-  //
-  //  Ownership note: for TransientMenu with a menuParent, the constructor
-  //  transfers ownership to the button via WPushButton::setMenu(), so the
-  //  caller should use bare `new` (not addChild or addWidget) to avoid
-  //  creating a conflicting parent that would crash in ~WObject.
-  //  For AppLevelMenu, ownership is managed by the app-level menu system.
-  PopupDivMenu( Wt::WPushButton *menuParent, const MenuType menutype );
-  
-  //~PopupDivMenu(): currently a no-op function
+
+  /** Construct a PopupDivMenu.  Does not wire up any button - call one of the
+   setup methods after construction, or use makeAppLevelMenu()/makePopupMenu().
+   */
+  PopupDivMenu( const MenuType menutype = TransientMenu );
+
   virtual ~PopupDivMenu();
+
+  /** Wire this menu as a transient popup on a button.
+   Does NOT transfer ownership - caller manages lifetime (e.g., via addChild).
+   Connects button click to popup() and sets up auto-hide and z-index fixing.
+   */
+  void setupAsTransientMenu( Wt::WPushButton *button );
+
+  /** Wire this menu to a button using standard Wt4 setMenu() ownership.
+   The button takes ownership of the menu.  Caller must NOT also addChild().
+   Returns raw pointer to the menu (owned by button).
+   */
+  static PopupDivMenu *setupAsButtonOwnedMenu( std::unique_ptr<PopupDivMenu> menu,
+                                                Wt::WPushButton *button );
+
+  /** Wire this menu as a desktop app-level menu on a button.
+   Sets up stateless JS click/hover/keyboard nav.
+   Also handles USE_OSX_NATIVE_MENU if enabled.
+   Caller manages lifetime (e.g., via addChild).
+   */
+  void setupAsAppMenu( Wt::WPushButton *button );
+
+  /** Wire this menu as a mobile slide-in menu on a button.
+   Sets up slide-in animation, back/close buttons, and overlay dismiss.
+   Caller manages lifetime.
+   */
+  void setupAsMobileMenu( Wt::WPushButton *button );
   
     
 #if( APP_MENU_STATELESS_FIX )
@@ -161,25 +207,19 @@ public:
   //  if the parent has been deleteed, or this widget reomved from it.
   Wt::WMenuItem *parentItem();
 
-  //
   void showMobile();
-  
-  
-  void setupDesktopMenuStuff();
-  
-  void parentClicked();
 
+  void parentClicked();
   void parentMouseWentOver();
-  
   void parentTouchStarted();
-  
+
   bool isMobile() const;
-  
+
   Wt::WPushButton *parentButton();
   
 protected:
+  void setupDesktopMenuStuff();
   void desktopDoHide();
-
   void mobileDoHide();
   void mobileHideMenuAndParents();
   

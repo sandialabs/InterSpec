@@ -344,7 +344,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   if( m_viewer->isMobile() )
     m_assignPeakToSelected->setMenu( std::make_unique<WPopupMenu>() );
   else
-    m_assignPeakToSelected->setMenu( std::make_unique<PopupDivMenu>( nullptr, PopupDivMenu::MenuType::TransientMenu) );
+    m_assignPeakToSelected->setMenu( std::make_unique<PopupDivMenu>() );
   // We will add relevant menu items to this button when the time comes
   
   m_search_category_select = m_searchConditionsColumn->addNew<WComboBox>();

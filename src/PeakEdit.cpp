@@ -598,7 +598,8 @@ void PeakEdit::init()
     m_refit->setMenu( std::move(menuOwner) );
   }else
   {
-    PopupDivMenu *menu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu );
+    auto menuOwner = std::make_unique<PopupDivMenu>();
+    PopupDivMenu *menu = menuOwner.get();
 
     PopupDivMenuItem *item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-standard") );
     item->triggered().connect( this, [this](){ refit( RefitOption::Normal ); } );
@@ -609,8 +610,8 @@ void PeakEdit::init()
     item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-independent-fine") );
     item->triggered().connect( this, [this](){ refit( RefitOption::RoiSmallRefinementIndependentFwhm ); } );
 
-    // Wt4_TODO: PopupDivMenu ownership - check if setMenu takes unique_ptr or raw ptr
-    m_refit->setMenu( std::unique_ptr<WPopupMenu>(menu) );
+    // WSplitButton::setMenu takes unique_ptr<WPopupMenu> - button owns the menu
+    m_refit->setMenu( std::move(menuOwner) );
   }//if( mobile ) / else
   
   if( m_refit->dropDownButton() )

@@ -648,20 +648,8 @@ void MakeDrfSrcDef::create()
   m_lib_src_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   m_lib_src_btn->setFloatSide( Wt::Side::Left );
   
-#if( WT_VERSION < 0x3070000 )
-  m_lib_src_menu = new PopupDivMenu( m_lib_src_btn, PopupDivMenu::TransientMenu );
-  m_lib_src_menu->setJavaScriptMember("wtNoReparent", "true");
-#else
-  // If we have the button own the popup menu, the menu will be placed in our current div holding
-  //  all src info, that may have a significant amount of scroll in it, so we will then have to
-  //  scroll this div, to see all the menu items, which is annoying.
-  //  So instead we'll make the menu a global widget, and just pop it up at the clicked location.
-  //  This is a little less than optimal, and make auto-hide of menu not quite as good, but maybe
-  //  better than the alternative.
-  m_lib_src_menu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
+  m_lib_src_menu = makePopupMenu( m_lib_src_btn );
   m_lib_src_menu->setMaximumSize( WLength::Auto, WLength(15, WLength::Unit::FontEm) );
-  m_lib_src_btn->clicked().connect( this, [this]( const WMouseEvent &e ){ m_lib_src_menu->popup( e ); } );
-#endif
   
   m_lib_src_menu->setAutoHide( true, 2500 );
   

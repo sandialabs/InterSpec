@@ -1328,7 +1328,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
       if( m_spectrumViewer && m_spectrumViewer->isMobile() )
         fit_menu_ptr = std::make_unique<WPopupMenu>();
       else
-        fit_menu_ptr = std::make_unique<PopupDivMenu>( nullptr, PopupDivMenu::MenuType::TransientMenu );
+        fit_menu_ptr = std::make_unique<PopupDivMenu>();
       WPopupMenu *fit_menu = fit_menu_ptr.get();
       m_fitSourcesBtn->setMenu( std::move( fit_menu_ptr ) );
 

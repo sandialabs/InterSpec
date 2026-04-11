@@ -1404,7 +1404,7 @@ void PeakInfoDisplay::init()
     copyButton->setMenu( std::move(menuOwner) );
   }else
   {
-    auto menuOwner = std::make_unique<PopupDivMenu>( nullptr, PopupDivMenu::MenuType::TransientMenu );
+    auto menuOwner = std::make_unique<PopupDivMenu>();
     copyMenu = menuOwner.get();
     copyButton->setMenu( std::move(menuOwner) );
   }

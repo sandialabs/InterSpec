@@ -646,35 +646,26 @@ WT_DECLARE_WT_MEMBER
 });
 
 
-PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
-                            const PopupDivMenu::MenuType menutype )
+PopupDivMenu::PopupDivMenu( const PopupDivMenu::MenuType menutype )
 : WPopupMenu(),
-  m_parentItem( 0 ),
-  m_menuParent( menuParent ),
-  m_menuParentID( menuParent ? menuParent->id() : string() ),
+  m_parentItem( nullptr ),
+  m_menuParent( nullptr ),
+  m_menuParentID(),
 #if(USE_OSX_NATIVE_MENU)
-  m_nsmenu( 0 ),
+  m_nsmenu( nullptr ),
 #endif
   m_mobile( false ),
   m_type( menutype )
 {
-#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
-  addStyleClass( "wt-no-reparent" );
-  setJavaScriptMember("wtNoReparent", "true");
-#endif
-  
   InterSpec *viewer = InterSpec::instance();
-  
   m_mobile = (viewer && viewer->isMobile());
-  
+
   if( m_mobile )
   {
     addStyleClass( "PopupDivMenuPhone" );
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "ShowPhone", wtjsShowPhone);
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "SetupHideOverlay", wtjsSetupHideOverlay);
-    
-    // Note: need to call this to reset the menus when a submenu is
-    //  selected/hidden.  No need to call triggered(), as it will be hidden too.
+
     aboutToHide().connect( this, &PopupDivMenu::mobileDoHide );
   }else
   {
@@ -682,57 +673,101 @@ PopupDivMenu::PopupDivMenu( Wt::WPushButton *menuParent,
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsBringAboveDialogs);
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAdjustTopPos);
   }//if( mobile ) / else
+}//PopupDivMenu( constructor )
+
+
+void PopupDivMenu::setupAsTransientMenu( Wt::WPushButton *button )
+{
+  assert( button );
+  m_menuParent = button;
+  m_menuParentID = button->id();
+
+  button->clicked().connect( this, [this](){
+    popup( m_menuParent, Wt::Orientation::Vertical );
+    doJavaScript( "Wt.WT.BringAboveDialogs('" + id() + "');" );
+  });
+
+  setAutoHide( true, 500 );
+}//void setupAsTransientMenu(...)
+
+
+PopupDivMenu *PopupDivMenu::setupAsButtonOwnedMenu( std::unique_ptr<PopupDivMenu> menu,
+                                                     Wt::WPushButton *button )
+{
+  assert( menu && button );
+  PopupDivMenu *ptr = menu.get();
+
+  ptr->m_menuParent = button;
+  ptr->m_menuParentID = button->id();
+
+  const string js = "function(){"
+    "Wt.WT.BringAboveDialogs('" + ptr->id() + "');"
+  "}";
+  button->clicked().connect( js );
+
+  button->setMenu( std::unique_ptr<WPopupMenu>( std::move(menu) ) );
+
+  return ptr;
+}//PopupDivMenu *setupAsButtonOwnedMenu(...)
+
+
+void PopupDivMenu::setupAsAppMenu( Wt::WPushButton *button )
+{
+  assert( button );
+  m_menuParent = button;
+  m_menuParentID = button->id();
 
 #if( USE_OSX_NATIVE_MENU )
-  const bool useNativeMenu = InterSpecApp::isPrimaryWindowInstance();
-#else
-  const bool useNativeMenu = false;
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    const string buttontxt = button->text().toUTF8();
+    if( buttontxt.length() )
+      m_nsmenu = addOsxMenu( this, buttontxt.c_str() );
+  }else
 #endif
-    
-  if( m_mobile)
   {
-    if( menuParent )
-    {
-      addPhoneBackItem( nullptr );
-      menuParent->clicked().connect( this, &PopupDivMenu::showMobile );
-    }//if( menuParent )
-  }else if( menuParent )
+    setupDesktopMenuStuff();
+  }
+}//void setupAsAppMenu(...)
+
+
+void PopupDivMenu::setupAsMobileMenu( Wt::WPushButton *button )
+{
+  m_menuParent = button;
+  m_menuParentID = button ? button->id() : string();
+
+  if( button )
   {
-#if(USE_OSX_NATIVE_MENU)
-    if( useNativeMenu && (menutype == AppLevelMenu) )
-    {
-      const string buttontxt = menuParent->text().toUTF8();
-      if( buttontxt.length() )
-        m_nsmenu = addOsxMenu( this, buttontxt.c_str() );
-    } //AppLevelMenu
-#endif
-      
-    if( !useNativeMenu && (menutype == AppLevelMenu) )
-    {
-      setupDesktopMenuStuff();
-    }else
-    {
-      // Wt4_TODO: setMenu takes unique_ptr in Wt 4 - this self-referential ownership needs rework
-      //  For now, we transfer ownership from our parent to the button
-      menuParent->setMenu( std::unique_ptr<WPopupMenu>( this ) );
-        
-      const string js = "function(){"
-        //"let fcn = function(){"
-          "Wt.WT.BringAboveDialogs('" + id() + "');"
-          "Wt.WT.AdjustTopPos('" + menuParent->id() + "');"
-        //"};"
-        //"fcn();"
-        //"setTimeout(fcn,10);"
-      "}";
-      
-      menuParent->clicked().connect( js );
-    }
-  }else //if( m_mobile) / else if( menuParent )
-  {
-    if( menutype != AppLevelMenu )
-      setAutoHide( true, 500 );
-  }//if( menuParent ) / else
-}//PopupDivMenu( constructor )
+    addPhoneBackItem( nullptr );
+    button->clicked().connect( this, &PopupDivMenu::showMobile );
+  }
+}//void setupAsMobileMenu(...)
+
+
+PopupDivMenu *makeAppLevelMenu( Wt::WPushButton *button )
+{
+  assert( button );
+
+  auto menu = std::make_unique<PopupDivMenu>( PopupDivMenu::AppLevelMenu );
+
+  if( menu->isMobile() )
+    menu->setupAsMobileMenu( button );
+  else
+    menu->setupAsAppMenu( button );
+
+  return button->addChild( std::move(menu) );
+}//PopupDivMenu *makeAppLevelMenu(...)
+
+
+PopupDivMenu *makePopupMenu( Wt::WPushButton *button )
+{
+  assert( button );
+
+  auto menu = std::make_unique<PopupDivMenu>();
+  menu->setupAsTransientMenu( button );
+
+  return button->addChild( std::move(menu) );
+}//PopupDivMenu *makePopupMenu(...)
 
 
 
@@ -1216,7 +1251,7 @@ PopupDivMenuItem *PopupDivMenu::addPhoneBackItem( PopupDivMenu *parent )
 PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
                                               const std::string &iconPath )
 {
-  PopupDivMenu* menu = new PopupDivMenu(nullptr, m_type );
+  PopupDivMenu* menu = new PopupDivMenu( m_type );
 
   if( m_mobile )
   {

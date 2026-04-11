@@ -1522,7 +1522,7 @@ void ShieldingSelect::setClosableAndAddable( bool closeable, WGridLayout *layout
     m_addIcon->setStyleClass( "ShieldingAdd Wt-icon" );
     m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.svg");
 
-    PopupDivMenu *popup = new PopupDivMenu( m_addIcon, PopupDivMenu::TransientMenu );
+    PopupDivMenu *popup = makePopupMenu( m_addIcon );
     PopupDivMenuItem *item = popup->addMenuItem( WString::tr("ss-add-shield-before") );
     item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
     item = popup->addMenuItem( WString::tr("ss-add-shield-after") );

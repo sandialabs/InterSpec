@@ -149,8 +149,8 @@ namespace
   {
     bool m_deleteWhenHidden;
   public:
-    DeleteOnClosePopupMenu( WPushButton *p, const PopupDivMenu::MenuType t )
-      : PopupDivMenu( p, t ), m_deleteWhenHidden( false ) {}
+    DeleteOnClosePopupMenu()
+      : PopupDivMenu(), m_deleteWhenHidden( false ) {}
     virtual ~DeleteOnClosePopupMenu(){}
     void markForDelete(){ m_deleteWhenHidden = true; }
     virtual void setHidden( bool hidden, const WAnimation &a = WAnimation() )
@@ -932,7 +932,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   more_btn->setIcon( "InterSpec_resources/images/more_menu_icon.svg" );
   more_btn->addStyleClass( "MoreMenuIcon Wt-icon" );
   
-  m_more_options_menu = new PopupDivMenu( more_btn, PopupDivMenu::TransientMenu );
+  m_more_options_menu = makePopupMenu( more_btn );
   const bool is_phone = false; //isPhone();
   if( is_phone )
     m_more_options_menu->addPhoneBackItem( nullptr );
@@ -1986,7 +1986,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   }//if( failed to find continuum )
   
   
-  DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu( nullptr, PopupDivMenu::TransientMenu );
+  DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu();
   menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
   menu->setPositionScheme( Wt::PositionScheme::Absolute );
   
