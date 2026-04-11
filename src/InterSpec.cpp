@@ -8033,8 +8033,6 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-prop-peak"),
                                  true, HelpSystem::ToolTipPosition::Right );
-    checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
-    checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
   }//end add "AskPropagatePeaks" to menu
 
 
@@ -8044,8 +8042,6 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-preserve-ene-cal"),
                                  true, HelpSystem::ToolTipPosition::Right );
-    checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
-    checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
   }//end add "AskPropagatePeaks" to menu
 
 
