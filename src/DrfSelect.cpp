@@ -139,16 +139,14 @@ namespace
   class UtcToLocalTimeDelegate : public Wt::WItemDelegate
   {
     int64_t m_now;
-    int m_timeZoneOffset;
+    std::chrono::minutes m_timeZoneOffset;
   public:
     UtcToLocalTimeDelegate()
     : WItemDelegate()
     {
       m_now = std::time(nullptr);
       if( wApp )
-        m_timeZoneOffset = static_cast<int>( wApp->environment().timeZoneOffset().count() );
-      else
-        m_timeZoneOffset = 0;
+        m_timeZoneOffset = wApp->environment().timeZoneOffset();
     }
     virtual ~UtcToLocalTimeDelegate(){}
     virtual std::unique_ptr<Wt::WWidget> update( Wt::WWidget *widget,
@@ -177,7 +175,7 @@ namespace
           if( val > 0 )
           {
             SpecUtils::time_point_t ptt = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::from_time_t( time_t(val) ) );
-            ptt += std::chrono::seconds( 60*m_timeZoneOffset );
+            ptt += m_timeZoneOffset;
             valstr = SpecUtils::to_common_string(ptt, true);
           }
 
@@ -1021,9 +1019,8 @@ void RelEffFile::handleSaveFileForLater()
     if( orig_extension.size() )
       filename = filename.substr( 0, filename.size() - orig_extension.size() );
     
-    const int offset = wApp->environment().timeZoneOffset().count();
     auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-    now += std::chrono::seconds(60*offset);
+    now += wApp->environment().timeZoneOffset();
     string timestr = SpecUtils::to_vax_string(now); //"2014-Sep-19 14:12:01.62"
     const string::size_type pos = timestr.find( ' ' );
     //std::string timestr = SpecUtils::to_extended_iso_string( now ); //"2014-04-14T14:12:01.621543"
@@ -3301,9 +3298,8 @@ void DrfSelect::handleUserChangedUploadedDrfName()
   string value = m_uploadedDetName->text().toUTF8();
   if( value.empty() )
   {
-    const int offset = wApp->environment().timeZoneOffset().count();
     auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-    now += std::chrono::seconds(60*offset);
+    now += wApp->environment().timeZoneOffset();
     value = SpecUtils::to_vax_string(now);
     m_uploadedDetName->setText( WString::fromUTF8(value) );
   }//if( value.empty() )
@@ -4363,9 +4359,8 @@ void DrfSelect::updateUserNameFromCurrentDetEff()
   //  Its something.
   if( userDrfFilename.size() < 15 )
   {
-    const int offset = wApp->environment().timeZoneOffset().count();
     auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-    now += chrono::seconds(60*offset);
+    now += wApp->environment().timeZoneOffset();
     userDrfFilename += " " + SpecUtils::to_vax_string(now);
   }
   

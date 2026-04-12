@@ -433,8 +433,8 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
         
         
         const WDateTime utcStartTime = WDateTime::fromTimePoint( user->firstAccessUTC() );
-        const chrono::minutes offset = app->environment().timeZoneOffset();
-        firstAccess = utcStartTime.addSecs( static_cast<int>(offset.count()) * 60 ).toString( "dd-MMM-yyyy" ).toUTF8();
+        const int tzOffsetSecs = static_cast<int>( app->environment().timeZoneOffset().count() ) * 60;
+        firstAccess = utcStartTime.addSecs( tzOffsetSecs ).toString( "dd-MMM-yyyy" ).toUTF8();
         
         // The alternative of using WLocalDateTime leaves the time in UTC...
         //const WLocalDateTime localStartTime = utcStartTime.toLocalTime();

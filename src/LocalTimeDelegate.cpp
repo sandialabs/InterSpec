@@ -76,8 +76,8 @@ std::unique_ptr<WWidget> LocalTimeDelegate::update( WWidget *widget,
   try
   {
     WDateTime val = Wt::cpp17::any_cast<WDateTime>( index.data() );
-    const int offsetSecs = 60 * static_cast<int>( m_timeZoneOffset.count() );
-    val = val.addSecs( offsetSecs );
+    const int tzOffsetSecs = static_cast<int>( m_timeZoneOffset.count() ) * 60;
+    val = val.addSecs( tzOffsetSecs );
     text->setText( val.toString( DATE_TIME_FORMAT_STR ) );
   }catch( std::exception &e )
   {

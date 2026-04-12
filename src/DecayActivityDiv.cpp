@@ -1845,9 +1845,9 @@ void DecayActivityDiv::init()
   //////////////////
   // tab widget
   const Wt::ContentLoading loadPolicy = Wt::ContentLoading::Lazy; //Wt::ContentLoading::Eager;
-  m_chartTabWidget->addTab( move(decayDivOwner), WString::tr("dad-mi-act-chart"), loadPolicy );
+  m_chartTabWidget->addTab( std::move(decayDivOwner), WString::tr("dad-mi-act-chart"), loadPolicy );
 
-  m_chartTabWidget->addTab( move(decayChainDivOwner), WString::tr("dad-mi-decay-chain"), loadPolicy );
+  m_chartTabWidget->addTab( std::move(decayChainDivOwner), WString::tr("dad-mi-decay-chain"), loadPolicy );
   m_chartTabWidget->currentChanged().connect( m_decayChainChart,
                                     &DecayChainChart::deleteMoreInfoDialog );
   m_decayChainChart->nuclideChanged().connect( this,
@@ -1862,7 +1862,7 @@ void DecayActivityDiv::init()
   {
     auto calcOwner = make_unique<DateLengthCalculator>( this );
     m_calc = calcOwner.get();
-    m_chartTabWidget->addTab( move(calcOwner), WString::tr("dad-mi-calc"), loadPolicy );
+    m_chartTabWidget->addTab( std::move(calcOwner), WString::tr("dad-mi-calc"), loadPolicy );
   }
 
 
@@ -3504,7 +3504,7 @@ void DecayActivityDiv::addDecaySeries()
 
     seriesOwned->setPen( pen );
 
-    m_decayChart->addSeries( move(seriesOwned) );
+    m_decayChart->addSeries( std::move(seriesOwned) );
   }//for( int column = 1; column < nElements; ++column )
   
   m_decayLegend->clear();
@@ -3531,7 +3531,7 @@ void DecayActivityDiv::addDecaySeries()
       ww->setInline( false );
       WCheckBox *cb = ww->insertWidget( 0, make_unique<WCheckBox>() );
       ww->addStyleClass( "LegendEntry" );
-      m_decayLegend->addWidget( move(itemOwned) );
+      m_decayLegend->addWidget( std::move(itemOwned) );
       const bool check = m_decayModel->showSeries( column );
       cb->setChecked( check );
       cb->addStyleClass( "ShowSeriesCb" );

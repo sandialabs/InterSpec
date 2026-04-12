@@ -3673,8 +3673,8 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   const WString diameter = ((geom_type == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic) || (diam > 0.0))
                               ? m_detDiameter->text() : WString("N/A");
   
-  const int offset = static_cast<int>( wApp->environment().timeZoneOffset().count() );
-  const WDateTime now = WDateTime::currentDateTime().addSecs(60*offset);
+  const int tzOffsetSecs = static_cast<int>( wApp->environment().timeZoneOffset().count() ) * 60;
+  const WDateTime now = WDateTime::currentDateTime().addSecs( tzOffsetSecs );
   const string date = now.date().toString("MMM d yyyy").toUTF8();
   
   // Energy range, m_chartLowerE, m_chartUpperE

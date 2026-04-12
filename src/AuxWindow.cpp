@@ -304,8 +304,8 @@ function( sender, event, id, contentid, minId, maxId, fctncall )
       jsthis.classList.remove('Wt-resizable');
     }
     try{ fctncall(); }catch(e){}
-    var minEl = document.getElementById(minId); if( minEl ) minEl.style.display = 'none';
-    var maxEl = document.getElementById(maxId); if( maxEl ) maxEl.style.display = '';
+    var minEl = document.getElementById(minId); if( minEl ) minEl.style.display = "none";
+    var maxEl = document.getElementById(maxId); if( maxEl ) maxEl.style.display = "";
   }
 }
 );
@@ -361,16 +361,16 @@ WT_DECLARE_WT_MEMBER
       jsthis.classList.add('Wt-resizable');
     }
 
-    jscontent.style.display = '';
-    var mf = jsthis.querySelector('.modal-footer');
-    if( mf ) mf.style.display = '';
+    jscontent.style.display = "";
+    var mf = jsthis.querySelector(".modal-footer");
+    if( mf ) mf.style.display = "";
 
 //    if( dl && dl.wtResize )
 //      dl.wtResize(dl, dlw, 25);
 
     try{ fctncall(); }catch(e){}
-    var minEl = document.getElementById(minId); if( minEl ) minEl.style.display = '';
-    var maxEl = document.getElementById(maxId); if( maxEl ) maxEl.style.display = 'none';
+    var minEl = document.getElementById(minId); if( minEl ) minEl.style.display = "";
+    var maxEl = document.getElementById(maxId); if( maxEl ) maxEl.style.display = "none";
   }
 }
 );

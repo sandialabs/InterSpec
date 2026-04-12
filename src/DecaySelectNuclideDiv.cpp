@@ -338,18 +338,18 @@ void DecaySelectNuclide::init()
 
   auto layoutOwned = make_unique<WGridLayout>();
   WGridLayout *layout = layoutOwned.get();
-  layout->addWidget( move(elSelOwned),    0, 0, 1, 1 );
-  layout->addWidget( move(massSelOwned),  0, 1, 1, 1 );
+  layout->addWidget( std::move(elSelOwned),    0, 0, 1, 1 );
+  layout->addWidget( std::move(massSelOwned),  0, 1, 1, 1 );
 
   layout->addWidget( make_unique<WLabel>( WString::tr("nuclide-label") ), 1, 0, 1, 1 );
-  layout->addWidget( move(isoSearchOwned),  1, 1, 1, 1 );
-  layout->addWidget( move(halfLifeOwned),   2, 0, 1, 2, Wt::AlignmentFlag::Center );
+  layout->addWidget( std::move(isoSearchOwned),  1, 1, 1, 1 );
+  layout->addWidget( std::move(halfLifeOwned),   2, 0, 1, 2, Wt::AlignmentFlag::Center );
 
   layout->addWidget( make_unique<WLabel>( WString::tr("activity-label") ), 3, 0, 1, 1 );
-  layout->addWidget( move(actEditOwned),    3, 1, 1, 1 );
+  layout->addWidget( std::move(actEditOwned),    3, 1, 1, 1 );
 
   layout->addWidget( make_unique<WLabel>( WString::tr("dcn-initial-age") ), 4, 0, 1, 1 );
-  layout->addWidget( move(ageEditOwned),    4, 1, 1, 1 );
+  layout->addWidget( std::move(ageEditOwned),    4, 1, 1, 1 );
 
 //  WContainerWidget *buttonDiv = new WContainerWidget();
 //  buttonDiv->addWidget( m_acceptButton );
@@ -357,7 +357,7 @@ void DecaySelectNuclide::init()
 //  layout->addWidget( buttonDiv,                 5, 0, 1, 3, Wt::AlignmentFlag::Left );
 
   layout->setRowStretch( 0, 1 );
-  WContainerWidget::setLayout( move(layoutOwned) );
+  WContainerWidget::setLayout( std::move(layoutOwned) );
 
   enableAcceptButton();
 }//void initNuclideMenu()

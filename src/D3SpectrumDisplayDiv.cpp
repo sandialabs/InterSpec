@@ -182,7 +182,7 @@ WT_DECLARE_WT_MEMBER
       canvas.remove();
 
       // Strip the "data:<mime>;base64," prefix to get raw base64
-      var base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
+      var base64 = dataUrl.replace(/^data:[^;]+;base64,/, "");
       callback( base64, mimeType, targetWidth, targetHeight );
     };
 

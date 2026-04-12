@@ -2726,11 +2726,9 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
   stringstream description;
   const chrono::system_clock::time_point utctime = chrono::system_clock::now();
   
-  int offset = 0;
   if( wApp )
   {
-    const int offset = wApp->environment().timeZoneOffset().count();
-    const chrono::system_clock::time_point localtime = utctime + std::chrono::seconds(60*offset);
+    const chrono::system_clock::time_point localtime = utctime + wApp->environment().timeZoneOffset();
     
     description << "Search performed at " << SpecUtils::to_extended_iso_string(std::chrono::time_point_cast<std::chrono::microseconds>(localtime) )
     << " local (" << SpecUtils::to_extended_iso_string(std::chrono::time_point_cast<std::chrono::microseconds>(utctime) )

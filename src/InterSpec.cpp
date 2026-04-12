@@ -5511,9 +5511,8 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
     if( !SpecUtils::is_directory( filepath ) )
       throw runtime_error( "CWD didnt contain a 'analysis_tests' folder as expected" );
       
-    const int offset = wApp->environment().timeZoneOffset();
-    auto localtime = chrono::time_point_cast<chrono::microseconds>(chrono::system_clock::now());
-    localtime += std::chrono::seconds(60*offset);
+    auto localtime = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+    localtime += wApp->environment().timeZoneOffset();
     
     string timestr = SpecUtils::to_iso_string( localtime );
     string::size_type period_pos = timestr.find_last_of( '.' );
@@ -8578,9 +8577,8 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
   if( !spectrum )
     filename += "_timechart";
   
-  const chrono::minutes offset = wApp->environment().timeZoneOffset();
   auto localtime = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-  localtime += offset;
+  localtime += wApp->environment().timeZoneOffset();
   
   std::string timestr = SpecUtils::to_iso_string( localtime );
   auto ppos = timestr.find('.');

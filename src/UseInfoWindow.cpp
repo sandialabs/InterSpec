@@ -278,10 +278,10 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       auto col2 = std::make_unique<Wt::WStandardItem>();
       col2->setData( ptype );
       vector<unique_ptr<WStandardItem>> row;
-      row.push_back( move(col0) );
-      row.push_back( move(col1) );
-      row.push_back( move(col2) );
-      m_messageModelSample->appendRow( move(row) );
+      row.push_back( std::move(col0) );
+      row.push_back( std::move(col1) );
+      row.push_back( std::move(col2) );
+      m_messageModelSample->appendRow( std::move(row) );
     };
 
     appendSampleRow( "Ba-133 (16k bin N42)",
@@ -994,7 +994,7 @@ void UseInfoWindow::itemCreator( const string &resource, Wt::WContainerWidget *p
 
 //    player->setTitle( videoinfo[i].title );
     m_players[title.toUTF8()] = player; //save this list of players so we can stop them
-    templ->bindWidget( videoinfo[i].key, move(playerOwned) );
+    templ->bindWidget( videoinfo[i].key, std::move(playerOwned) );
     
   }//for( size_t i = 0; i < videoinfo.size(); ++i )
 }//void UseInfoWindow::itemCreator( const string &resource, Wt::WContainerWidget *parent, WString title)
