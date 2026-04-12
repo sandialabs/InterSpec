@@ -88,8 +88,7 @@ namespace HelpSystem
     
     void populateTree(Wt::Json::Array &res, Wt::WTreeNode* parent);
     void initialize();
-    void handleArrowPress( const Wt::WKeyEvent e );
-    void handleKeyPressInSearch( const Wt::WKeyEvent e );
+    void handleKeyPressInSearch( const Wt::WKeyEvent &e );
     
     void setTopic( const std::string &preselect );
     const std::string &currentTopic() const;
@@ -103,59 +102,34 @@ namespace HelpSystem
   enum class ToolTipPrefOverride
   {
     AlwaysShow,
-    RespectPreference,
-    InstantAlways
+    RespectPreference
   };
   
-  enum class ToolTipPosition
-  {
-    Top,
-    Bottom,
-    Left,
-    Right
-  };
+  /** Creates a tooltip popup when the widget is moused over.
 
-  /** Creates a nice popup when the widget passed into this function gets focus, or is moused over.
-   
-   \param widget The widget to add the tooltip to
-   \param text The xhtml text to place in the tooltip.
+   Uses Wt's native XHTML tooltip system (ToolTip.js); tooltips are created on-demand
+   on hover and cleaned up automatically when the widget is destroyed.
+
+   \param widget The widget to add the tooltip to.
+   \param text The XHTML text to place in the tooltip.
    \param enableShowing Should correspond to the users "ShowTooltips" preference.  If false, tooltip wont be trigger-able.
-   \param pos The position, relative to the widget, to place the tooltip
-   \param forceShowing If, for this particular widget, the tooltip should always be shown when moused-over. despite what
-          enableShowing dictates
-   
-   Note: even if tooltip is not enabled, we still load it to the DOM, incase the user enables tooltips later - we could probably avoid
-   cluttering up the DOM by caching server-side, but we'll leave that for the future.
-   
-   Note: when the widget is deleted from memory, server-side, the tooltip will be removed from the DOM client-side.
+   \param forceShowing Controls whether this tooltip respects the global show/hide toggle.
+          `AlwaysShow` causes the tooltip to always be shown when moused-over, regardless of the
+          users preference. `RespectPreference` follows the `enableShowing` parameter and can be
+          toggled via `InterSpec::toggleToolTip()`.
    */
   void attachToolTipOn( Wt::WWebWidget* widget,
                        const Wt::WString &text,
                        const bool enableShowing,
-                       const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
                        const ToolTipPrefOverride forceShowing
                                             = HelpSystem::ToolTipPrefOverride::RespectPreference );
-  
-  /** Same as above, but attaches the same tooltip to multiple elements.
 
-   The lifetime of the tooltip is governed by the first element in the list.
-   */
+  /** Same as above, but attaches the same tooltip to multiple elements. */
   void attachToolTipOn( std::initializer_list<Wt::WWebWidget*> widgets,
                         const Wt::WString &text,
                         const bool enableShowing,
-                        const ToolTipPosition pos = HelpSystem::ToolTipPosition::Right,
                         const ToolTipPrefOverride forceShowing
                                   = HelpSystem::ToolTipPrefOverride::RespectPreference );
-
-  /** Removes tooltip previously attached to a widget.
-
-   Searches the widget's children for an RmHelpFromDom object and deletes it,
-   which triggers tooltip cleanup in the DOM via the RmHelpFromDom destructor.
-   Only removes first tooltip encountered.
-
-   \param widget The widget to remove tooltips from
-   */
-  void removeToolTipOn( Wt::WWebWidget* widget );
 
 } //namespace HelpSystem
 #endif //HelpSystem_h

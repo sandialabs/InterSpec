@@ -6,5 +6,6 @@
   <message id="hw-tutorials-link">チュートリアルと使用ヒント</message>
   <message id="hw-err-opening-xml">ヘルプページが見つかりません</message>
   <message id="hw-err-opening-json">'{1}'のヘルプJSONファイルを開けませんでした。</message>
+  <message id="hw-err-no-help-entry">'{1}'に対するヘルプ項目がありません。</message>
   <message id="hw-search-empty-text">検索</message>
 </messages>

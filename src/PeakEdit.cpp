@@ -416,7 +416,7 @@ void PeakEdit::init()
   m_resetLinearContinuum->addStyleClass( "LightButton PeakEditEstLinCont" );
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   HelpSystem::attachToolTipOn( m_resetLinearContinuum, WString::tr("pe-tt-btn-cont-to-linear"),
-                              showToolTips, HelpSystem::ToolTipPosition::Right );
+                              showToolTips );
   row->setHidden( true );
   m_resetLinearContinuum->clicked().connect( this, [this](){ estimateLinearContinuumFromData(); } );
   
@@ -1924,19 +1924,11 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
   }//for( int i = 0; i < 4; ++i )
 
   
-  auto removeRowTooltips = [&cell]( const int row_index ){
-    if( row_index < 0 || row_index >= 4 )
-      return;
-    for( int col = 0; col < 4; ++col )
-      HelpSystem::removeToolTipOn( cell[row_index][col] );
-  };//removeRowTooltips lambda
-
   auto attachRowTooltip = [&cell, showToolTips]( const int row_index, const WString &tooltipText ){
     if( row_index >= 0 && row_index < 4 )
       HelpSystem::attachToolTipOn( { cell[row_index][0], cell[row_index][1],
                                     cell[row_index][2], cell[row_index][3] },
-                                tooltipText, showToolTips,
-                                HelpSystem::ToolTipPosition::Right );
+                                tooltipText, showToolTips );
   };//attachRowTooltip lambda
 
 
@@ -1954,7 +1946,6 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       if( label[0] )
         label[0]->setText( WString::tr("pe-label-skew-bortel-tau") );
 
-      removeRowTooltips( 0 );
       attachRowTooltip( 0, WString::tr("pe-tt-skew-bortel-tau") );
       break;
 
@@ -1964,9 +1955,7 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       if( label[1] )
         label[1]->setText( WString::tr("pe-label-skew-crystalball-n") );
 
-      removeRowTooltips( 0 );
       attachRowTooltip( 0, WString::tr("pe-tt-skew-crystalball-alpha") );
-      removeRowTooltips( 1 );
       attachRowTooltip( 1, WString::tr("pe-tt-skew-crystalball-n") );
       break;
 
@@ -1980,13 +1969,9 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       if( label[3] )
         label[3]->setText( WString::tr("pe-label-skew-dscb-nhigh") );
 
-      removeRowTooltips( 0 );
       attachRowTooltip( 0, WString::tr("pe-tt-skew-dscb-alphalow") );
-      removeRowTooltips( 1 );
       attachRowTooltip( 1, WString::tr("pe-tt-skew-dscb-nlow") );
-      removeRowTooltips( 2 );
       attachRowTooltip( 2, WString::tr("pe-tt-skew-dscb-alphahigh") );
-      removeRowTooltips( 3 );
       attachRowTooltip( 3, WString::tr("pe-tt-skew-dscb-nhigh") );
       break;
 
@@ -1994,7 +1979,6 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       if( label[0] )
         label[0]->setText( WString::tr("pe-label-skew-gaussexp-k") );
 
-      removeRowTooltips( 0 );
       attachRowTooltip( 0, WString::tr("pe-tt-skew-gaussexp-k") );
       break;
 
@@ -2004,9 +1988,7 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       if( label[1] )
         label[1]->setText( WString::tr("pe-label-skew-expgaussexp-kh") );
 
-      removeRowTooltips( 0 );
       attachRowTooltip( 0, WString::tr("pe-tt-skew-expgaussexp-kl") );
-      removeRowTooltips( 1 );
       attachRowTooltip( 1, WString::tr("pe-tt-skew-expgaussexp-kh") );
       break;
 
@@ -2018,11 +2000,8 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       if( label[2] )
         label[2]->setText( WString::tr("pe-label-skew-voigtplusbortel-tau") );
 
-      removeRowTooltips( 0 );
       attachRowTooltip( 0, WString::tr("pe-tt-skew-voigtplusbortel-gamma") );
-      removeRowTooltips( 1 );
       attachRowTooltip( 1, WString::tr("pe-tt-skew-voigtplusbortel-r") );
-      removeRowTooltips( 2 );
       attachRowTooltip( 2, WString::tr("pe-tt-skew-voigtplusbortel-tau") );
       break;
 
@@ -2032,9 +2011,7 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       if( label[1] )
         label[1]->setText( WString::tr("pe-label-skew-gaussplusbortel-tau") );
 
-      removeRowTooltips( 0 );
       attachRowTooltip( 0, WString::tr("pe-tt-skew-gaussplusbortel-r") );
-      removeRowTooltips( 1 );
       attachRowTooltip( 1, WString::tr("pe-tt-skew-gaussplusbortel-tau") );
       break;
 
@@ -2046,11 +2023,8 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       if( label[2] )
         label[2]->setText( WString::tr("pe-label-skew-doublebortel-eta") );
 
-      removeRowTooltips( 0 );
       attachRowTooltip( 0, WString::tr("pe-tt-skew-doublebortel-tau1") );
-      removeRowTooltips( 1 );
       attachRowTooltip( 1, WString::tr("pe-tt-skew-doublebortel-deltatau2") );
-      removeRowTooltips( 2 );
       attachRowTooltip( 2, WString::tr("pe-tt-skew-doublebortel-eta") );
       break;
   }//switch( skewType )

@@ -707,7 +707,7 @@ public:
     const WString tooltip = WString::tr("dlt-cont-norm-tt");
     
     HelpSystem::attachToolTipOn( {label, m_decon_cont_norm_method},
-                                tooltip, showToolTips, HelpSystem::ToolTipPosition::Right,
+                                tooltip, showToolTips,
                                 HelpSystem::ToolTipPrefOverride::RespectPreference );
     
     if( m_input.decon_cont_norm_method == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges )
@@ -1125,7 +1125,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   HelpSystem::attachToolTipOn( {label, m_ageEdit},
-                              WString::tr("dlt-tt-age-edit"), showToolTips, HelpSystem::ToolTipPosition::Right,
+                              WString::tr("dlt-tt-age-edit"), showToolTips,
                               HelpSystem::ToolTipPrefOverride::RespectPreference );
   
   m_ageEdit->changed().connect( this, &DetectionLimitTool::handleUserAgeChange );
@@ -1886,8 +1886,8 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
       img->setStyleClass("Wt-icon GridFourthRow GridThirdCol GridJustifyEnd");
       img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
       
-      HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
-                                  HelpSystem::ToolTipPrefOverride::InstantAlways );
+      HelpSystem::attachToolTipOn( img, tt, true,
+                                  HelpSystem::ToolTipPrefOverride::AlwaysShow );
     };//addTooltipToRow
     
     

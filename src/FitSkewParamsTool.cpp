@@ -421,8 +421,7 @@ void FitSkewParamsTool::updateSkewParamRows()
 
     if( !tooltipText.empty() )
     {
-      HelpSystem::attachToolTipOn( paramLabel, tooltipText, true,
-                                   HelpSystem::ToolTipPosition::Right);
+      HelpSystem::attachToolTipOn( paramLabel, tooltipText, true );
     }
 
     if( energyDep )
@@ -453,10 +452,8 @@ void FitSkewParamsTool::updateSkewParamRows()
 
       if( !tooltipText.empty() )
       {
-        HelpSystem::attachToolTipOn( lowerSpin, tooltipText, true,
-                                     HelpSystem::ToolTipPosition::Right);
-        HelpSystem::attachToolTipOn( upperSpin, tooltipText, true,
-                                     HelpSystem::ToolTipPosition::Right);
+        HelpSystem::attachToolTipOn( lowerSpin, tooltipText, true );
+        HelpSystem::attachToolTipOn( upperSpin, tooltipText, true );
       }
     }
     else
@@ -475,8 +472,7 @@ void FitSkewParamsTool::updateSkewParamRows()
 
       if( !tooltipText.empty() )
       {
-        HelpSystem::attachToolTipOn( valSpin, tooltipText, true,
-                                     HelpSystem::ToolTipPosition::Right);
+        HelpSystem::attachToolTipOn( valSpin, tooltipText, true );
       }
     }
 

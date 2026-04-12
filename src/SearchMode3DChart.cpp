@@ -175,7 +175,7 @@ void SearchMode3DChart::init()
   m_timeDivisions->enterPressed().connect( this, &SearchMode3DChart::handleNumTimeDivsChanged );
   
   HelpSystem::attachToolTipOn( {label,m_timeDivisions}, WString::tr("sm3dc-tt-time-bins"),
-                              showToolTips, HelpSystem::ToolTipPosition::Left );
+                              showToolTips );
   
   label = controlsDiv->addNew<WLabel>( WString::tr("sm3dc-energy-bins") );
   label->addStyleClass( "GridSecondRow GridSixthCol" );
@@ -188,7 +188,7 @@ void SearchMode3DChart::init()
   m_energyDivisions->enterPressed().connect( this, &SearchMode3DChart::handleNumEnergyDivsChanged );
   
   HelpSystem::attachToolTipOn( {label,m_energyDivisions}, WString::tr("sm3dc-tt-energy-bins"),
-                              showToolTips, HelpSystem::ToolTipPosition::Left );
+                              showToolTips );
   
   m_viewer->displayedSpectrumChanged().connect(
     [this]( SpecUtils::SpectrumType type,

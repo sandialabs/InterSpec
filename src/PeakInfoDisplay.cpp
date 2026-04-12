@@ -1280,14 +1280,14 @@ void PeakInfoDisplay::init()
   m_searchForPeaks->setIcon( "InterSpec_resources/images/magnifier.png" );
   
   HelpSystem::attachToolTipOn( m_searchForPeaks, WString::tr("pid-tt-search-peaks-btn"),
-                              showToolTips, HelpSystem::ToolTipPosition::Top  );
+                              showToolTips );
   m_searchForPeaks->clicked().connect( this, [this](){ PeakSearchGuiUtils::automated_search_for_peaks( m_viewer, true ); } );
 
   
   m_clearPeaksButton = buttonsDiv->addNew<WPushButton>( WString::tr("pid-clear-peaks-btn") );
   HelpSystem::attachToolTipOn( m_clearPeaksButton, WString::tr("pid-tt-clear-peaks-btn"),
-                              showToolTips, HelpSystem::ToolTipPosition::Top  );
-  
+                              showToolTips );
+
   //m_clearPeaksButton->setMargin(WLength(2),Wt::Left);
   m_clearPeaksButton->clicked().connect( this, &PeakInfoDisplay::confirmRemoveAllPeaks );
   m_clearPeaksButton->disable();
@@ -1298,7 +1298,7 @@ void PeakInfoDisplay::init()
   
   //button->setMargin(WLength(2),Wt::Left|Wt::Right);
   HelpSystem::attachToolTipOn( m_nucFromRefButton, WString::tr("pid-tt-nuc-from-ref-btn"),
-                              showToolTips , HelpSystem::ToolTipPosition::Top );
+                              showToolTips );
   m_nucFromRefButton->clicked().connect( this, [this](){ assignNuclidesFromRefLines(); } );
   m_nucFromRefButton->disable();
   
@@ -1341,13 +1341,13 @@ void PeakInfoDisplay::init()
   {
     WPushButton *addPeak = buttonsDiv->addNew<WPushButton>( WString::tr("pid-add-peak-btn") );
     HelpSystem::attachToolTipOn( addPeak, WString::tr("pid-tt-add-peak-btn"),
-                                showToolTips, HelpSystem::ToolTipPosition::Top );
+                                showToolTips );
     addPeak->clicked().connect( this, &PeakInfoDisplay::createNewPeak );
     addPeak->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
 
     WPushButton *delPeak = buttonsDiv->addNew<WPushButton>( WString::tr("Delete") );
     HelpSystem::attachToolTipOn( delPeak, WString::tr("pid-tt-del-peaks"),
-                                showToolTips, HelpSystem::ToolTipPosition::Top  );
+                                showToolTips );
     delPeak->setHiddenKeepsGeometry( true );
     delPeak->clicked().connect( this, &PeakInfoDisplay::deleteSelectedPeak );
     delPeak->setIcon( "InterSpec_resources/images/minus_min_white.png" );

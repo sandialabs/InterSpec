@@ -240,8 +240,7 @@ void GammaCountDialog::init()
   m_nsigmaHelp->setHidden( true );
 
   HelpSystem::attachToolTipOn( m_nsigmaHelp, WString::tr("gcd-tt-n-sigma"), true,
-                              HelpSystem::ToolTipPosition::Right,
-                              HelpSystem::ToolTipPrefOverride::InstantAlways );
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   m_liveTimeScaleNote = answers->addNew<WText>( "", Wt::TextFormat::XHTML );
   m_liveTimeScaleNote->addStyleClass( "GridFifthRow GridFirstCol GridJustifyCenter GridSpanThreeCol line-above LiveTimeScaleNote" );  //""

@@ -2236,7 +2236,7 @@ void ShieldingSelect::init()
     m_toggleImage->addStyleClass( "Wt-icon" );
     m_toggleImage->clicked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
     HelpSystem::attachToolTipOn( m_toggleImage, WString::tr("ss-tt-shield-type-toggle"),
-                                showToolTips, HelpSystem::ToolTipPosition::Top );
+                                showToolTips );
     materialDivLayout->addWidget( std::move(toggleImgUniq), 0, 0, AlignmentFlag::Left );
   }
 
@@ -2272,7 +2272,7 @@ void ShieldingSelect::init()
   }
 
   HelpSystem::attachToolTipOn( m_materialEdit, material_name_tt,
-                              showToolTips, HelpSystem::ToolTipPosition::Top );
+                              showToolTips );
 
   if( m_materialSuggest )
     m_materialSuggest->forEdit( m_materialEdit,
@@ -2319,7 +2319,7 @@ void ShieldingSelect::init()
     else
       m_arealDensityEdit->setPlaceholderText( WString::tr("ss-areal-density-empty-txt") );
     HelpSystem::attachToolTipOn( {adLabel, m_arealDensityEdit}, WString::tr("ss-tt-areal-density"),
-                                showToolTips, HelpSystem::ToolTipPosition::Top );
+                                showToolTips );
     genericMatLayout->addWidget( std::move(adLabelUniq), 0, 2+m_forFitting, AlignmentFlag::Middle );
     genericMatLayout->addWidget( std::move(arealDensityEditUniq), 0, 3+m_forFitting, AlignmentFlag::Middle );
     genericMatLayout->setColumnStretch( 3+m_forFitting, 1 );
@@ -2357,7 +2357,7 @@ void ShieldingSelect::init()
     else
       m_atomicNumberEdit->setPlaceholderText( WString::tr("ss-atomic-number-empty-txt") );
     HelpSystem::attachToolTipOn( {anLabel, m_atomicNumberEdit}, WString::tr("ss-tt-atomic-number"),
-                                showToolTips, HelpSystem::ToolTipPosition::Top );
+                                showToolTips );
     genericMatLayout->addWidget( std::move(anLabelUniq), 0, 0, AlignmentFlag::Middle );
     genericMatLayout->addWidget( std::move(atomicNumberEditUniq), 0, 1, AlignmentFlag::Middle );
     genericMatLayout->setColumnStretch( 1, 1 );

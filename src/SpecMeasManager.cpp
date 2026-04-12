@@ -1307,7 +1307,7 @@ public:
     {
       m_qrCodeStatusTxt = btn_div->addNew<WText>();
       HelpSystem::attachToolTipOn( m_qrCodeStatusTxt, WString::tr("uid-tt-auto-qr"),
-                                  true, HelpSystem::ToolTipPosition::Right );
+                                  true );
     }else
     {
       m_checkForQrCodeBtn = btn_div->addNew<WPushButton>( WString::tr("uid-check-for-qr-btn") );
@@ -1554,7 +1554,7 @@ void SpecMeasManager::startSpectrumManager()
     Wt::WPushButton* uploadButton = uploadDiv->addNew<Wt::WPushButton>( WString::tr("app-mi-file-open") );
     uploadButton->clicked().connect(  this, &SpecMeasManager::uploadSpectrum );
     HelpSystem::attachToolTipOn(uploadButton, WString::tr("smm-tt-upload-file"),
-                                showToolTips, HelpSystem::ToolTipPosition::Bottom );
+                                showToolTips );
     uploadButton->setIcon( "InterSpec_resources/images/file_search.png" );
     uploadButton->setMargin(10, Wt::Side::Left);
 
@@ -1562,7 +1562,7 @@ void SpecMeasManager::startSpectrumManager()
     Wt::WPushButton* importButton = uploadDiv->addNew<Wt::WPushButton>( WString::tr("app-mi-file-prev") );
     importButton->clicked().connect( this, [this](){ browsePrevSpectraAndStatesDb(); } );
     HelpSystem::attachToolTipOn(importButton, WString::tr("app-mi-tt-file-prev"),
-                                showToolTips, HelpSystem::ToolTipPosition::Bottom );
+                                showToolTips );
     importButton->setIcon( "InterSpec_resources/images/db_small_white.png" );
     importButton->setMargin(2, Wt::Side::Left);
 

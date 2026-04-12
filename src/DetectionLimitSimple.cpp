@@ -482,8 +482,8 @@ void DetectionLimitSimple::init()
     img->resize( 16, 16 );  //setStyleClass("Wt-icon");
     img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
     const WString tt = WString::tr("dls-is-background-spectrum-tt");
-    HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
-                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+    HelpSystem::attachToolTipOn( img, tt, true,
+                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
   }
 
   m_continuumPriorLabel = generalInput->addNew<WLabel>( WString::tr("dls-decon-cont-norm-label") );

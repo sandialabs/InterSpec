@@ -1344,7 +1344,7 @@ void RelEffDetSelect::docreate()
   //holder->setToolTip( WString::tr("reds-tt-add-drf-btn") );
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   HelpSystem::attachToolTipOn( holder, WString::tr("reds-tt-add-drf-btn"),
-                              showToolTips, HelpSystem::ToolTipPosition::Left );
+                              showToolTips );
 
   WPushButton *addIcon = holder->addNew<WPushButton>();
   addIcon->setStyleClass( "DrfSelectAddFile Wt-icon" );
@@ -1439,7 +1439,7 @@ void GadrasDetSelect::docreate()
 #if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(IOS) )
   //footer->setToolTip( WString::tr("reds-tt-add-dir") );
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
-  HelpSystem::attachToolTipOn( footer, WString::tr("reds-tt-add-dir"), showToolTips, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( footer, WString::tr("reds-tt-add-dir"), showToolTips );
 
   WPushButton *addIcon = footer->addNew<WPushButton>();
   addIcon->setStyleClass( "DrfSelectAddFile Wt-icon" );
@@ -1658,8 +1658,8 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_deleteBtn->addStyleClass( "closeicon-wtdefault" );
   //m_deleteBtn->setToolTip( WString::tr("reds-tt-remove-gad-dir") );
   HelpSystem::attachToolTipOn( m_deleteBtn, WString::tr("reds-tt-remove-gad-dir"),
-                              showToolTips, HelpSystem::ToolTipPosition::Left );
-  
+                              showToolTips );
+
   m_deleteBtn->clicked().connect( this, [parentSelect, this](){ parentSelect->removeDirectory( this ); } );
   
   
@@ -1792,8 +1792,8 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_setDirectoryButton->disable();
   //m_setDirectoryButton->setToolTip( WString::tr("reds-tt-gad-set-dir") );
   HelpSystem::attachToolTipOn( m_setDirectoryButton, WString::tr("reds-tt-gad-set-dir"),
-                              showToolTips, HelpSystem::ToolTipPosition::Left );
-  
+                              showToolTips );
+
   m_setDirectoryButton->clicked().connect( this, &GadrasDirectory::dirPathChanged );
   
   //m_fileEdit->changed().connect( m_setFileButton, &WPushButton::enable );
@@ -2537,7 +2537,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_eqnEnergyGroup->setSelectedButtonIndex( 0 );
     
   HelpSystem::attachToolTipOn( energyContainer, WString::tr("ds-tt-manual-energy-unit"),
-                              showToolTips, HelpSystem::ToolTipPosition::Top );
+                              showToolTips );
 
   cell = formulaTable->elementAt( formulaTable->rowCount(), 0 );
   

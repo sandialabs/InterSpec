@@ -6,6 +6,7 @@
   <message id="hw-tutorials-link">教程和使用提示</message>
   <message id="hw-err-opening-xml">未找到帮助页面</message>
   <message id="hw-err-opening-json">无法在'{1}'打开帮助JSON文件。</message>
+  <message id="hw-err-no-help-entry">帮助中没有'{1}'的条目。</message>
   <message id="hw-search-empty-text">搜索</message>
 </messages>
 

@@ -6920,7 +6920,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_peakInfoDisplay.get()), WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
 #endif
 //    WString tooltip = WString::tr("app-tab-tt-peak-manager");
-//    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
+//    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips );
     
     if( m_referencePhotopeakLines )
     {
@@ -6960,7 +6960,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->addTab( std::move(refLines), WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
 #endif
 //   WString tooltip = WString::tr("app-tab-tt-ref-photopeak");
-//      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
+//      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTips );
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
     
@@ -6980,7 +6980,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
     
 //  WString tooltip = WString::tr("app-tab-tt-energy-cal");
-//  HelpSystem::attachToolTipOn( energyCalTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
+//  HelpSystem::attachToolTipOn( energyCalTab, tooltip, showToolTips );
     
     m_toolsLayout = new WGridLayout();
     m_toolsLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -7069,7 +7069,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_nuclideSearchContainer), WString::tr(NuclideSearchTabTitleKey), TabLoadPolicy );
 #endif
 //  WString tooltip = WString::tr("app-tab-tt-nuc-search");
-//  HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
+//  HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips );
     
 #if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
     // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
@@ -8278,7 +8278,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     UserPreferences::associateWidget( "ShowTooltips", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-show-tt"),
-                                true, HelpSystem::ToolTipPosition::Right );
+                                true );
     checkbox->checked().connect( this, [this](){ toggleToolTip( true ); } );
     checkbox->unChecked().connect( this, [this](){ toggleToolTip( false ); } );
   }//if( !isMobile() )
@@ -8288,21 +8288,17 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     UserPreferences::associateWidget( "AskPropagatePeaks", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-prop-peak"),
-                                 true, HelpSystem::ToolTipPosition::Right );
-    checkbox->checked().connect( this, [this](){ toggleToolTip( true ); } );
-    checkbox->unChecked().connect( this, [this](){ toggleToolTip( false ); } );
+                                 true );
   }//end add "AskPropagatePeaks" to menu
 
 
-  {//begin add "AskPropagatePeaks" to menu
+  {//begin add "AskPreserveEnergyCal" to menu
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-preserve-ene-cal") );
     UserPreferences::associateWidget( "AskPreserveEnergyCal", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-preserve-ene-cal"),
-                                 true, HelpSystem::ToolTipPosition::Right );
-    checkbox->checked().connect( this, [this](){ toggleToolTip( true ); } );
-    checkbox->unChecked().connect( this, [this](){ toggleToolTip( false ); } );
-  }//end add "AskPropagatePeaks" to menu
+                                 true );
+  }//end add "AskPreserveEnergyCal" to menu
 
 
   {//begin add "AutoAcceptFitSourcesPeaks"
@@ -8310,7 +8306,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     UserPreferences::associateWidget( "AutoAcceptFitSourcesPeaks", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-auto-accept-fit-sources"),
-                                 showToolTips, HelpSystem::ToolTipPosition::Right );
+                                 showToolTips );
   }//end add "AutoAcceptFitSourcesPeaks"
 
 
@@ -8319,7 +8315,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     UserPreferences::associateWidget( "DisplayBecquerel", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-disp-bq"),
-                                 true, HelpSystem::ToolTipPosition::Right );
+                                 true );
   }//end add "DisplayBecquerel"
     
   {//begin add "LoadDefaultDrf"
@@ -8327,7 +8323,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     UserPreferences::associateWidget( "LoadDefaultDrf", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-def-drfs"),
-                                true, HelpSystem::ToolTipPosition::Right );
+                                true );
   }//end add "LoadDefaultDrf"
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
@@ -8337,7 +8333,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     UserPreferences::associateWidget( "TabletUseDesktopMenus", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-desktop"),
-                                true, HelpSystem::ToolTipPosition::Right );
+                                true );
     
     const WString msg = WString("{1}"
     "<div onclick=\"Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, 'clearSession');"
@@ -8354,7 +8350,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   UserPreferences::associateWidget( "AutoDarkFromOs", autoDarkCb, this );
   item = subPopup->addWidget( autoDarkCb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-auto-dark"),
-                              true, HelpSystem::ToolTipPosition::Right );
+                              true );
   
   m_preferences->addCallbackWhenChanged( "AutoDarkFromOs", std::bind([](){
     InterSpec *viewer = InterSpec::instance();
@@ -8441,15 +8437,18 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 
 void InterSpec::toggleToolTip( const bool showToolTips )
 {
-  //update all existing qtips
-  if( showToolTips )
-  {
-    wApp->doJavaScript( "$('.qtip-rounded.canDisableTt').qtip('option', 'show.event', 'mouseenter');" );
-  }else
-  {
-    wApp->doJavaScript( "$('.qtip-rounded.canDisableTt').qtip('option', 'show.event', '');" );
-  }
-}//void toggleToolTip( const bool sticky )
+  // Toggle all RespectPreference tooltips via client-side JS.
+  // Widgets with 'canDisableTt' have Wt's ToolTip.js attached as el.toolTip;
+  // setVisibilityParams(forceShow, showOnHover) controls visibility without server round-trips.
+  wApp->doJavaScript(
+    "document.querySelectorAll('.canDisableTt').forEach(function(el){"
+      "if(el.toolTip){"
+        "el.toolTip.setVisibilityParams(false,"
+        + std::string( showToolTips ? "true" : "false" ) + ");"
+      "}"
+    "});"
+  );
+}//void toggleToolTip( const bool showToolTips )
 
 
 

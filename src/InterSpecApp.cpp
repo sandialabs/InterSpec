@@ -230,10 +230,7 @@ void InterSpecApp::setupDomEnvironment()
   doJavaScript( fixElectronJs, false );
 #endif //BUILD_AS_ELECTRON_APP
   
-  // Load jQuery (needed by qTip2, QueryBuilder2, and spectrum.js color picker)
-  require("InterSpec_resources/assets/js/jquery-3.6.0.min.js");
-
-  // Global state object for cross-file JS communication (replaces jQuery .data() on DOM elements)
+  // Global state object for cross-file JS communication
   doJavaScript( "window._IS = window._IS || {};", false );
   
   enableUpdates( true );
@@ -257,14 +254,6 @@ void InterSpecApp::setupDomEnvironment()
 #endif
   
   setCssTheme( "default" );  //"polished" is the other option
-  
-  //for qTip2
-  useStyleSheet( "InterSpec_resources/assets/js/qTip2-3.0.3/jquery.qtip.min.css" );
-  require("InterSpec_resources/assets/js/qTip2-3.0.3/jquery.qtip.min.js");
-  
-  //qTip2 has a dependancy on the imagesloaded plugin, but from a quick and niave test, it doesnt seem to be compulsory.
-  //Leaving next line commented out as a reminder, for the moment, that we may need it
-  //require("InterSpec_resources/assets/js/imagesloaded.pkg.min.js");
   
   useStyleSheet( "InterSpec_resources/InterSpec.css" );
   useStyleSheet( "InterSpec_resources/InterSpecToast.css" );

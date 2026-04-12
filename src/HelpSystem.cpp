@@ -64,35 +64,6 @@ using namespace Wt;
 
 namespace
 {
-  /** A class used to track when the widget that a qtip (tool tip created by
-      attachToolTipOn(..) ) is attached to, gets deleted.  When the original
-      widget gets deleted, we should delete the qtip from the client-side DOM.
-      Therefore, everytime we attach a qtip, we will create an instance of
-      RmHelpFromDom as the child of the widget getting the tooltip attached,
-      then from the destructor of RmHelpFromDom, we will issue the JS to cleanup
-      the DOM.  This all requires the 'id' of the qtip is set to the 'id' of
-      this class (the qtip library will append a 'qtip-' to the id, so there
-      will be no DOM conflicts).
-   */
-  class RmHelpFromDom : public Wt::WObject
-  {
-  public:
-    RmHelpFromDom()
-    : WObject()
-    {
-    }
-    
-    virtual ~RmHelpFromDom()
-    {
-      WApplication *app = wApp;
-      if( !app || !app->domRoot() )
-        return;
-      
-      const string js = "try{ $('#qtip-" + id() + "').qtip('destroy', true);}catch(error){}";  //I dont think try/catch is necessary, but JIC
-      app->doJavaScript( js );
-    }
-  };//RmHelpFromDom
-  
   /** Returns the contents of the localized, specified file, as a string.
    
    It doesn't directly open the file you specify, but uses the same logic as wt-3.7.1/src/Wt/WMessageResources.C
@@ -171,6 +142,7 @@ namespace HelpSystem
                  | AuxWindowProperties::IsHelpWindow
                  | AuxWindowProperties::EnableResize
                  | AuxWindowProperties::SetCloseable) ),
+     m_helpWindowContent( nullptr ),
      m_tree( nullptr ),
      m_searchText( nullptr )
   {
@@ -204,9 +176,6 @@ namespace HelpSystem
       m_tree->setMargin( WLength(0,WLength::Unit::Pixel) );
       m_tree->addStyleClass( "helpTree" );
       m_tree->itemSelectionChanged().connect( this, [this](){ selectHelpToShow(); } );
-      // We set m_tree here, so initialize() can use it
-      // (initialize() will be called below after searchText is set up)
-      initialize();
 
       auto contentOwner = std::make_unique<WContainerWidget>();
       m_helpWindowContent = contentOwner.get();
@@ -221,9 +190,12 @@ namespace HelpSystem
       m_searchText->setMargin( WLength(5,WLength::Unit::Pixel) );
       m_searchText->keyWentDown().connect( this, &HelpWindow::handleKeyPressInSearch );
 
+      // initialize() must be called after m_helpWindowContent and m_searchText are set up,
+      // since it calls m_tree->select() which triggers selectHelpToShow()
+      initialize();
+
       setTopic( preselect );
 
-      contents()->keyPressed().connect( this, &HelpWindow::handleArrowPress );
       WGridLayout *layout = stretcher();
       layout->addWidget( std::move(searchOwner), 0, 0 );
       layout->addWidget( std::move(treeOwner), 1, 0 );
@@ -291,7 +263,7 @@ namespace HelpSystem
     if( pos != end(m_treeLookup) )
       m_tree->select( pos->second ); // This will trigger the call to #HelpWindow::selectHelpToShow
     else
-      passMessage( "The help instructions does not have an entry for " + preselect, 2 );
+      passMessage( WString::tr("hw-err-no-help-entry").arg(preselect), 2 );
   }//void setTopic( const std::string &preselect )
   
   
@@ -301,123 +273,21 @@ namespace HelpSystem
   }//const std::string &currentTopic() const;
   
   
-  WTreeNode *first_child( WTreeNode *node )
-  {
-    const vector<WTreeNode *> &kids = node->childNodes();
-    
-    for( size_t i = 0; i < kids.size(); ++i )
-      if( kids[i]->isVisible() )
-        return first_child( kids[i] );
-    return node;
-  }
-  
-  void HelpWindow::handleArrowPress( const Wt::WKeyEvent e )
-  {
-    //This function not yet working!
-    const Wt::Key key = e.key();
-    
-    const set<WTreeNode *> &selected = m_tree->selectedNodes();
-    if( selected.empty() )
-    {
-      m_tree->select( first_child(m_tree->treeRoot()) );
-      return;
-    }
-    
-    WTreeNode *current = *selected.begin();
-    WTreeNode *parent = current->parentNode();
-    
-    if( !parent || (parent==m_tree->treeRoot()) )
-      return;
-    
-    const vector<WTreeNode *> &kids = current->childNodes();
-    const vector<WTreeNode *> &siblings = parent->childNodes();
-    const size_t pos = std::find(siblings.begin(), siblings.end(), current)
-                       - siblings.begin();
-    
-    switch( key )
-    {
-      case Wt::Key::Left:
-      {
-        m_tree->select( parent );
-        break;
-      }//case Wt::Key::Left:
-        
-      case Wt::Key::Up:
-      {
-        WTreeNode *toselect = parent;
-        
-        for( int index = static_cast<int>(pos) - 1; !toselect && index >= 0; --index )
-        {
-          if( siblings[index]->isVisible() )
-            toselect = siblings[index];
-        }
-        
-        m_tree->select( toselect );
-      }//case Wt::Key::Up:
-        
-      case Wt::Key::Right:
-      {
-        for( size_t i = 0; i < kids.size(); ++i )
-        {
-          if( kids[i]->isVisible() )
-          {
-            m_tree->select( kids[i] );
-            break;
-          }
-        }
-      }//case Wt::Key::Right:
-        
-      case Wt::Key::Down:
-      {
-        WTreeNode *firstkid = first_child( current );
-        
-        WTreeNode *toselect = (firstkid==current ? (WTreeNode *)0 : firstkid);
-        
-        for( size_t index = pos+1; !toselect && index < siblings.size(); ++index )
-          if( siblings[index]->isVisible() )
-            toselect = siblings[index];
-      
-        if( !toselect && parent->parentNode() )
-        {
-          const vector<WTreeNode *> &uncles = parent->parentNode()->childNodes();
-          const size_t pos = std::find(uncles.begin(), uncles.end(), parent)
-                             - uncles.begin();
-          for( size_t i = pos; !toselect && i < uncles.size(); ++i )
-          {
-            if( uncles[i]->isVisible() )
-              toselect = uncles[i];
-          }
-        }
-        
-        if( toselect )
-          m_tree->select( toselect );
-        
-        break;
-      }//case Wt::Key::Down:
-        
-      default:
-        break;
-    }//switch( key )
-  }//void HelpWindow::handleArrowPress( const Wt::Key key )
-  
-  void HelpWindow::handleKeyPressInSearch( const Wt::WKeyEvent e )
+  void HelpWindow::handleKeyPressInSearch( const Wt::WKeyEvent &e )
   {
     switch( e.key() )
     {
       case Wt::Key::Left: case Wt::Key::Up: case Wt::Key::Right: case Wt::Key::Down:
-        handleArrowPress( e );
-        break;
-      
       case Wt::Key::Home: case Wt::Key::Alt: case Wt::Key::Control:
       case Wt::Key::Shift: case Wt::Key::Tab: case Wt::Key::Unknown:
       case Wt::Key::PageUp: case Wt::Key::PageDown:
         return;
-        
+
       default:
         initialize();
         break;
     }//switch( e.key() )
-  }//void handleKeyPressInSearch( const Wt::WKeyEvent e )
+  }//void handleKeyPressInSearch( const Wt::WKeyEvent &e )
   
   void HelpWindow::initialize()
   {
@@ -438,7 +308,7 @@ namespace HelpSystem
       //Lets show the first result
       const vector<WTreeNode *> &kids = node->childNodes();
       if( !m_searchText->text().empty() && !kids.empty() )
-        m_tree->select( first_child( kids[0] ) );
+        m_tree->select( kids[0] );
     }catch( std::exception &e )
     {
       cerr << "showHelpDialog() caught: " << e.what() << endl
@@ -473,7 +343,7 @@ namespace HelpSystem
         topic_name = nameToNode.first;
         if( topic_name == m_displayedTopicName )
         {
-          cout << "Help content for '" << topic_name << "' should already be displayed." << endl;
+          cerr << "Help content for '" << topic_name << "' should already be displayed." << endl;
           return;
         }
 
@@ -715,39 +585,33 @@ namespace HelpSystem
   void HelpWindow::setPathVisible(Wt::WTreeNode* parent)
   {
     parent->setHidden(false);
-    if (parent->parentNode()!=NULL)
+    if( parent->parentNode() != nullptr )
       setPathVisible(parent->parentNode());
   }//  void HelpWindow::setPathVisible(WTreeNode* parent)
   
   
 
-  /*
-   Attach a tooltip onto a widget.  Depending on preference, it might show immediately.
-   
-   */
   void attachToolTipOn( Wt::WWebWidget* widget, const Wt::WString &text,
                         const bool enableShowing,
-                        const ToolTipPosition position,
                         const ToolTipPrefOverride forceShowing )
   {
-    attachToolTipOn( {widget}, text, enableShowing, position, forceShowing );
+    attachToolTipOn( {widget}, text, enableShowing, forceShowing );
   }
-  
+
   void attachToolTipOn( std::initializer_list<Wt::WWebWidget*> widgets,
                        const Wt::WString &text,
                         const bool enableShowing,
-                        const ToolTipPosition position,
                         const ToolTipPrefOverride forceShowing )
   {
     assert( widgets.size() );
     if( !widgets.size() )
       return;
-    
-    //if is gesture controlled, we do not want to add tooltips to objects
+
+    // No tooltips on touch-based interfaces
     InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-    if (app && app->isMobile())
+    if( app && app->isMobile() )
        return;
-    
+
 #if( USE_OSX_NATIVE_MENU )
     for( Wt::WWebWidget *w : widgets )
     {
@@ -759,86 +623,23 @@ namespace HelpSystem
       }//if( menuitem )
     }//for( Wt::WWebWidget *w : widgets )
 #endif
-    
-    //get the InterSpecApp so we can access the value set (from the preferences) whether
-    //we want to display the tooltips immediately for beginners.  Pro users also hide
-    //the tooltip when they start typing.
-    
+
     const bool overrideShow = (forceShowing == ToolTipPrefOverride::AlwaysShow);
-    const bool instantShow = (forceShowing == ToolTipPrefOverride::InstantAlways);
-    
-    //Create popup notifications
-    Wt::WStringStream strm;
-    
-    //need to escape the ' in the text message, and also remove new-lines from the string
-    std::string val = text.toUTF8();
-    boost::replace_all(val, "'", "\\'");
-    boost::replace_all( val, "\r", "" );
-    boost::replace_all( val, "\n", "" );
-    
-    string pos = "";
-    
-    switch( position )
-    {
-      case ToolTipPosition::Top:    pos = "my: 'bottom center', at: 'top center', "; break;
-      case ToolTipPosition::Bottom: pos = "my: 'top center', at: 'bottom center', "; break;
-      case ToolTipPosition::Right:  pos = "my: 'left center', at: 'right center', "; break;
-      case ToolTipPosition::Left:   pos = "my: 'right center', at: 'left center', "; break;
-    }//switch( position )
-    
-    string selector;
-    Wt::WWebWidget *first_widget = nullptr;
+
     for( Wt::WWebWidget *w : widgets )
     {
-      if( w )
-      {
-        if( !first_widget )
-          first_widget = w;
-        selector += (selector.empty() ? "#" : ",#") + w->id();
-      }
+      if( !w )
+        continue;
+
+      w->setToolTip( text, Wt::TextFormat::XHTML );
+      w->showToolTipOnHover( enableShowing || overrideShow );
+
+      // Mark widgets that respect the global tooltip preference toggle, so
+      // InterSpec::toggleToolTip() can find them via querySelectorAll('.canDisableTt')
+      if( !overrideShow )
+        w->addStyleClass( "canDisableTt" );
     }//for( Wt::WWebWidget *w : widgets )
-    
-    assert( first_widget );
-    if( !first_widget )
-      return;
-    
-    RmHelpFromDom *remover = first_widget->addChild( std::make_unique<RmHelpFromDom>() );
-    
-    //Note: need to pre-render, as toggling requires tooltip already rendered.
-    strm << "$('"<< selector <<"').qtip({ "
-        "id: '" << remover->id() << "',"
-        "prerender: true, "
-        "content:  { text: '" << val << "'}, "
-        "position: { " << pos <<
-                    "viewport: $(window), "
-                    "adjust: { "
-                        "method: 'flipinvert flipinvert', "
-                        "x:5} "
-                    "},"
-        "show:  {  event: '" << (enableShowing ? (string("mouseenter") + (overrideShow ? " focus" : "")) : string(""))
-                << "', delay: " << string(instantShow ? "0" : "500") << " },"
-        "hide:  {  fixed: true, event: 'mouseleave focusout" << string(instantShow ? "" : " keypress click") << "'  },"
-        "style: { classes: 'qtip-rounded qtip-shadow" << string(overrideShow ? "" : " canDisableTt") << "',"
-                  "tip: {"
-                        "corner: true, "
-                        "width: 18, "
-                        "height: 12}"
-                "}"
-        "});";
-    
-    first_widget->doJavaScript( strm.str() );
-  }//void attachToolTipOn( Wt::WWebWidget* widget, const std::string &text, bool force)
+  }//void attachToolTipOn(...)
 
-
-  void removeToolTipOn( WWebWidget* widget )
-  {
-    if( !widget )
-      return;
-
-    // Wt4_TODO: WObject::children() is no longer public in Wt4; RmHelpFromDom cleanup
-    // is now handled by the WObject child ownership when the parent widget is destroyed.
-    // A full fix would require storing a pointer to the RmHelpFromDom so it can be removed.
-    // For now, the tooltip cleanup from destroyed widgets still works via ~RmHelpFromDom.
-  }//void removeToolTipOn( WWebWidget* widget )
 
 } //namespace HelpSystem

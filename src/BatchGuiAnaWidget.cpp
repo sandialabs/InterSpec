@@ -1688,8 +1688,7 @@ FileConvertOpts::FileConvertOpts()
         img->setFloatSide( Wt::Side::Right );
 
         HelpSystem::attachToolTipOn( img, description, true,
-                                    HelpSystem::ToolTipPosition::Right,
-                                    HelpSystem::ToolTipPrefOverride::InstantAlways );
+                                    HelpSystem::ToolTipPrefOverride::AlwaysShow );
       }//if( we have the description of the file )
     }//if( !isMobile )
   };//addFormatItem lambda

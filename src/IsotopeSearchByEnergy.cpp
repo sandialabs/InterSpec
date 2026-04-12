@@ -368,7 +368,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 
   m_minBranchRatio = m_minBranchRatioDiv->addNew<NativeFloatSpinBox>();
   HelpSystem::attachToolTipOn( m_minBranchRatio, WString::tr("isbe-tt-min-br"),
-                              showToolTips , HelpSystem::ToolTipPosition::Top);
+                              showToolTips );
   
   m_minBranchRatio->setValue( m_minRelativeBr );
   m_minBranchRatio->setRange( 0.0f, 1.0f );
@@ -389,7 +389,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
 #endif
     
   HelpSystem::attachToolTipOn( {label,m_minHalfLife}, WString::tr("isbe-tt-min-hl"),
-                              showToolTips , HelpSystem::ToolTipPosition::Top );
+                              showToolTips );
 
   auto validator = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationRegex() );
   validator->setFlags(Wt::RegExpFlag::MatchCaseInsensitive);

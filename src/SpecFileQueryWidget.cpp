@@ -1533,6 +1533,7 @@ void SpecFileQueryWidget::init()
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/query-builder.default.min.css" );
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/QueryBuilderFakeBootstrap.css" );
   
+  wApp->require( "InterSpec_resources/assets/js/jquery-3.6.0.min.js" );
   wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/js/query-builder.standalone.min.js" );
   wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/i18n/query-builder.en.js" );
   
@@ -1589,7 +1590,7 @@ void SpecFileQueryWidget::init()
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
   const char *tooltip = "Recursively searches sub-directories or the selected directory.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip );
   
   m_recursive = item->checkBox();
   if( !m_recursive ) //This shouldnt ever happen, but JIC
@@ -1642,12 +1643,12 @@ void SpecFileQueryWidget::init()
 
   item = m_optionsMenu->addWidget( maxFileSizeDiv_owner.release() );
   tooltip = "Maximum size of file to attempt to parse as a spectrum file.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip );
   
   item = m_optionsMenu->addMenuItem( "pre-filter by extension" );
   item->setCheckable( true );
   tooltip = "Eliminates common file types (ex. zip, doc, avi, etc) from search to speed results up.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip );
   m_filterByExtension = item->checkBox();
   if( !m_filterByExtension ) //shouldnt ever happen
   {
@@ -1664,7 +1665,7 @@ void SpecFileQueryWidget::init()
   item = m_optionsMenu->addMenuItem( "filter duplicate files" );
   item->setCheckable( true );
   tooltip = "Filters duplicate spectrum files through use of a hash of spectral and meta-information.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip );
   m_filterUnique = item->checkBox();
   if( !m_filterUnique ) //shouldnt ever happen
   {
@@ -1685,7 +1686,7 @@ void SpecFileQueryWidget::init()
   item = m_optionsMenu->addMenuItem( "cache parse result" );
   item->setCheckable( true );
   tooltip = "Allows caching spectrum file parsing results for much faster subsequent searches of the same directory if you change search criteria.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip );
   m_cacheParseResults = item->checkBox();
   if( !m_cacheParseResults ) //shouldnt ever happen
   {
@@ -1704,7 +1705,7 @@ void SpecFileQueryWidget::init()
   item->setCheckable( true );
   tooltip = "Saves the results of parse caching to a file in the directory selected to be searched."
             " This allows the caching to persist across usages of this tool and InterSpec.";
-  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip, HelpSystem::ToolTipPosition::Left );
+  HelpSystem::attachToolTipOn( item, tooltip, instantToolTip );
   m_persistCacheResults = item->checkBox();
   if( !m_persistCacheResults ) //shouldnt ever happen
   {

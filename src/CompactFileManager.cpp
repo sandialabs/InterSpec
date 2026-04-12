@@ -235,7 +235,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_clearFileSelection[typeindex]->addStyleClass( "closeicon-wtdefault" );
     m_clearFileSelection[typeindex]->setHiddenKeepsGeometry( true );
     m_clearFileSelection[typeindex]->hide();
-    HelpSystem::attachToolTipOn( m_clearFileSelection[typeindex], WString::tr("cfm-tt-clear-spectrum"), showToolTips, HelpSystem::ToolTipPosition::Right );
+    HelpSystem::attachToolTipOn( m_clearFileSelection[typeindex], WString::tr("cfm-tt-clear-spectrum"), showToolTips );
     m_clearFileSelection[typeindex]->clicked().connect( this, [this, type](){ handleClearFileSelection( type ); } );
 
     m_sampleDivs[typeindex] = wrapper->addNew<WContainerWidget>();
@@ -259,7 +259,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
 #endif
     edit->setTextSize( 6 );
 
-    HelpSystem::attachToolTipOn( edit, WString::tr("cfm-tt-sample-num"), showToolTips, HelpSystem::ToolTipPosition::Bottom );
+    HelpSystem::attachToolTipOn( edit, WString::tr("cfm-tt-sample-num"), showToolTips );
 
     m_displaySampleNumEdits[typeindex] = edit;
 

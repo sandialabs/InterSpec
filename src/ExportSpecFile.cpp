@@ -1225,8 +1225,7 @@ void ExportSpecFileTool::init()
         img->setFloatSide( Wt::Side::Right );
 
         HelpSystem::attachToolTipOn( img, description, true,
-                                    HelpSystem::ToolTipPosition::Right,
-                                    HelpSystem::ToolTipPrefOverride::InstantAlways );
+                                    HelpSystem::ToolTipPrefOverride::AlwaysShow );
       }//if( we have the description of the file )
     }//if( !isMobile )
   };//addFormatItem lambda
@@ -1315,7 +1314,7 @@ void ExportSpecFileTool::init()
   
   
   WString tooltip = WString::tr("esf-custom-samples-tt");
-  HelpSystem::attachToolTipOn( m_customSamplesEdit, tooltip, showToolTips, HelpSystem::ToolTipPosition::Right );
+  HelpSystem::attachToolTipOn( m_customSamplesEdit, tooltip, showToolTips );
   
   m_customSamplesEdit->hide();
 
@@ -1340,7 +1339,6 @@ void ExportSpecFileTool::init()
   m_sumAllToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-to-single-record-tt");
   HelpSystem::attachToolTipOn( m_sumAllToSingleRecord, tooltip, true,
-                              HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumAllToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
   m_sumAllToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
@@ -1349,16 +1347,14 @@ void ExportSpecFileTool::init()
   m_sumForeToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-fore-to-single-record-tt");
   HelpSystem::attachToolTipOn( m_sumForeToSingleRecord, tooltip, true,
-                              HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumForeToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumForeToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
-  
+
   m_sumBackToSingleRecord = m_optionsHolder->addNew<WCheckBox>( WString::tr("esf-sum-back-to-single-record") );
   m_sumBackToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-back-to-single-record-tt");
   HelpSystem::attachToolTipOn( m_sumForeToSingleRecord, tooltip, true,
-                              HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumBackToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumBackToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
@@ -1372,7 +1368,6 @@ void ExportSpecFileTool::init()
   m_backSubFore->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-background-subtract-tt");
   HelpSystem::attachToolTipOn( m_backSubFore, tooltip, true,
-                              HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_backSubFore->checked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   m_backSubFore->unChecked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
@@ -1381,7 +1376,6 @@ void ExportSpecFileTool::init()
   m_sumDetsPerSample->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-det-per-sample-tt");
   HelpSystem::attachToolTipOn( m_sumDetsPerSample, tooltip, true,
-                              HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumDetsPerSample->checked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
   m_sumDetsPerSample->unChecked().connect( this, &ExportSpecFileTool::handleSumDetPerSampleChanged );
@@ -1391,7 +1385,6 @@ void ExportSpecFileTool::init()
   m_sumSamplesPerDets->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-samples-per-det-tt");
   HelpSystem::attachToolTipOn( m_sumSamplesPerDets, tooltip, true,
-                              HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumSamplesPerDets->checked().connect( this, &ExportSpecFileTool::handleSumSamplesPerDetChanged );
   m_sumSamplesPerDets->unChecked().connect( this, &ExportSpecFileTool::handleSumSamplesPerDetChanged );
@@ -1401,7 +1394,6 @@ void ExportSpecFileTool::init()
   m_excludeInterSpecInfo->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-remove-interspec-info-tt");
   HelpSystem::attachToolTipOn( m_excludeInterSpecInfo, tooltip, true,
-                              HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_excludeInterSpecInfo->checked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   m_excludeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
@@ -1416,7 +1408,6 @@ void ExportSpecFileTool::init()
   m_lossless_qr_cb->hide();
   tooltip = WString::tr("esf-lossless-qr-tt");
   HelpSystem::attachToolTipOn( m_lossless_qr_cb, tooltip, true,
-                              HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
 #endif
 

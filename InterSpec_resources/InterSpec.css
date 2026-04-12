@@ -1363,16 +1363,19 @@ button.Wt-btn.with-label.LightButton,
   }
   
   
-  .qtip-grey
+  /* Tooltip styling - overrides Wt default .Wt-tooltip */
+  .Wt-tooltip
   {
-    background-color: rgba(255, 255, 255, 0.96);
-    border-color: rgba(182, 182, 182, 0.7);
-    color: rgb(187, 187, 187)
-  }
-  
-  .qtip-titlebar
-  {
-    background-color:#B0DE78
+    max-width: 280px;
+    font-size: 10.5px;
+    line-height: 14px;
+    background-color: #FFFFA3;
+    border: 1px solid #F1D031;
+    border-radius: 5px;
+    box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.15);
+    padding: 5px 9px;
+    color: #555;
+    z-index: 200000;
   }
   
   /* Customize WTabWidget to look a little more modern/flat */

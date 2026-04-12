@@ -350,8 +350,8 @@ LeafletRadMap::LeafletRadMap()
   img->setStyleClass("Wt-icon EnergyFilterHelp");
   img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
 
-  HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
-                              HelpSystem::ToolTipPrefOverride::InstantAlways );
+  HelpSystem::attachToolTipOn( img, tt, true,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   m_energy_range_row->hide();
 }//LeafletRadMap

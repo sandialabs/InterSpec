@@ -6,6 +6,7 @@
   <message id="hw-tutorials-link">Tutorial dan petunjuk penggunaan</message>
   <message id="hw-err-opening-xml">Halaman Bantuan Tidak Ditemukan</message>
   <message id="hw-err-opening-json">Tidak dapat membuka file JSON bantuan di '{1}'.</message>
+  <message id="hw-err-no-help-entry">Bantuan tidak memiliki entri untuk '{1}'.</message>
   <message id="hw-search-empty-text">Cari</message>
 </messages>
 

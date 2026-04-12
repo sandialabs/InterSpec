@@ -148,3 +148,11 @@ ul.HeavyNavMenu > li.item:hover  {
 .app-titlebar.inactive, .app-titlebar.inactive button {
   background-color: rgb(50,50,51) !important;
 }
+
+/* Dark theme tooltip styling */
+.Wt-tooltip {
+  background-color: rgb(70, 70, 72);
+  border: 1px solid rgb(100, 100, 102);
+  color: rgb(220, 220, 220);
+  box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.4);
+}

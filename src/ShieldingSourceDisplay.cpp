@@ -2944,14 +2944,14 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WLabel *addShieldingLabel = new WLabel( WString::tr("ssd-add-shield-label") );
   m_addMaterialShielding = new WPushButton( WString::tr("Material") );
   HelpSystem::attachToolTipOn( m_addMaterialShielding, WString::tr("ssd-tt-add-shield"),
-                              showToolTips, HelpSystem::ToolTipPosition::Top  );
+                              showToolTips );
   m_addMaterialShielding->setIcon( "InterSpec_resources/images/shield_white.png" );
   m_addMaterialShielding->clicked().connect( this,
                                       &ShieldingSourceDisplay::doAddShielding );
   
   m_addGenericShielding = new WPushButton( WString::tr("ssd-generic-btn") );
   HelpSystem::attachToolTipOn( m_addGenericShielding, WString::tr("ssd-tt-generic"),
-                              showToolTips , HelpSystem::ToolTipPosition::Top );
+                              showToolTips );
   m_addGenericShielding->setIcon( "InterSpec_resources/images/atom_white.png" );
   m_addGenericShielding->clicked().connect( this,
                                      &ShieldingSourceDisplay::addGenericShielding );
@@ -3052,7 +3052,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showChiOnChart = new SwitchCheckbox( "Mult.", "&chi;" );
   m_showChiOnChart->setChecked();
   HelpSystem::attachToolTipOn( m_showChiOnChart, WString::tr("ssd-tt-chi2-switch"),
-                                  showToolTips, HelpSystem::ToolTipPosition::Right );
+                                  showToolTips );
   //m_showChiOnChart->setToolTip( WString::tr("ssd-tt-chi2-switch") );
   m_showChiOnChart->checked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
   m_showChiOnChart->unChecked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
@@ -3076,7 +3076,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_multiIsoPerPeak = lineDiv->addNew<WCheckBox>( WString::tr("ssd-multi-iso-per-peak") );
   m_multiIsoPerPeak->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-multi-iso-per-peak"),
-                                      showToolTips, HelpSystem::ToolTipPosition::Right );
+                                      showToolTips );
   m_multiIsoPerPeak->setChecked();
   m_multiIsoPerPeak->checked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
@@ -3091,7 +3091,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_clusterWidth->setSpinnerHidden();
   clusterWidthLabel->setBuddy( m_clusterWidth );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-cluster-width"),
-                                showToolTips, HelpSystem::ToolTipPosition::Right );
+                                showToolTips );
   m_clusterWidth->setValue( m_photopeak_cluster_sigma );
   m_clusterWidth->valueChanged().connect( this, &ShieldingSourceDisplay::clusterWidthChanged );
   m_clusterWidth->setDisabled( !m_multiIsoPerPeak->isChecked() );
@@ -3104,7 +3104,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_attenForAir->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-atten-for-air") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-atten-for-air"),
-                              showToolTips, HelpSystem::ToolTipPosition::Right );
+                              showToolTips );
   m_attenForAir->setChecked();
   m_attenForAir->checked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
   m_attenForAir->unChecked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
@@ -3116,7 +3116,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_backgroundPeakSub->addStyleClass( "CbNoLineBreak" );
   lineDiv->setToolTip( WString::tr("ssd-tt-sub-back-peaks") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-sub-back-peaks"),
-                                  showToolTips, HelpSystem::ToolTipPosition::Right );
+                                  showToolTips );
   m_backgroundPeakSub->checked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
   m_backgroundPeakSub->unChecked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
   
@@ -3127,7 +3127,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_sameIsotopesAge->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-same-el-same-age") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-same-el-same-age"),
-                                showToolTips, HelpSystem::ToolTipPosition::Right );
+                                showToolTips );
   bool account_for_decay_during_meas = false;
   m_sameIsotopesAge->setChecked( account_for_decay_during_meas );
   m_sameIsotopesAge->checked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
@@ -3140,7 +3140,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_decayCorrect->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-corr-for-decay") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-corr-for-decay"),
-                                showToolTips, HelpSystem::ToolTipPosition::Right );
+                                showToolTips );
   
   // We'll set decay correction on by default, only if the measurement time is at least
   //  0.5% (arbitrary) of any of the nuclide half-lives.

@@ -6,6 +6,7 @@
   <message id="hw-tutorials-link">Tutoriales y consejos de uso</message>
   <message id="hw-err-opening-xml">Página de ayuda no encontrada</message>
   <message id="hw-err-opening-json">No se pudo abrir archivo JSON de ayuda en '{1}'.</message>
+  <message id="hw-err-no-help-entry">La ayuda no tiene una entrada para '{1}'.</message>
   <message id="hw-search-empty-text">Buscar</message>
 </messages>
 

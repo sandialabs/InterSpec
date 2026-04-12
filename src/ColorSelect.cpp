@@ -173,6 +173,7 @@ ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options )
     doJavaScript( "var fcn = " + ns_init_js + "; fcn('" + id() + "','#000000');" );
   }else
   {
+    wApp->require( "InterSpec_resources/assets/js/jquery-3.6.0.min.js" );
     wApp->require( "InterSpec_resources/assets/js/spectrum_1.8.0/spectrum.min.js" );
     wApp->useStyleSheet( "InterSpec_resources/assets/js/spectrum_1.8.0/spectrum.min.css" );
 

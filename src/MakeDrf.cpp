@@ -1601,7 +1601,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_geometry->setCurrentIndex( 0 );
 
   HelpSystem::attachToolTipOn( m_geometry, WString::tr("md-tt-eff-interpret"),
-                              showToolTips, HelpSystem::ToolTipPosition::Right,
+                              showToolTips,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   
@@ -1662,7 +1662,7 @@ MakeDrf::MakeDrf( InterSpec *viewer,
   m_airAttenuate->checked().connect( this, &MakeDrf::handleSourcesUpdates );
   m_airAttenuate->unChecked().connect( this, &MakeDrf::handleSourcesUpdates );
   HelpSystem::attachToolTipOn( m_airAttenuate, WString::tr("md-tt-atten-for-air"),
-                              showToolTips, HelpSystem::ToolTipPosition::Right,
+                              showToolTips,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   // Peak fit preferences (optional, embedded in DRF)
@@ -1863,7 +1863,7 @@ void MakeDrf::startSaveAs()
   WImage *help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-name"), true,
-                              HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   cell = table->elementAt(1, 0);
   label = cell->addNew<WLabel>( WString::tr("Description") );
@@ -1877,7 +1877,7 @@ void MakeDrf::startSaveAs()
   help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-desc"), true,
-                              HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   std::shared_ptr<const SpecMeas> representative_meas;
   
@@ -1918,7 +1918,7 @@ void MakeDrf::startSaveAs()
       help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
       help->addStyleClass( "MakeDrfSaveHelp" );
       HelpSystem::attachToolTipOn( help, WString::tr("md-tt-make-default-serial"),
-                                  true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                                  true, HelpSystem::ToolTipPrefOverride::AlwaysShow );
     }//if( serial_number.size() )
     
     string model;
@@ -1937,7 +1937,7 @@ void MakeDrf::startSaveAs()
       help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
       help->addStyleClass( "MakeDrfSaveHelp" );
       HelpSystem::attachToolTipOn( help, WString::tr("md-tt-make-default-model"),
-                                  true, HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                                  true, HelpSystem::ToolTipPrefOverride::AlwaysShow );
     }//if( !model.empty() )
   }//if( representative_meas )
   
@@ -1962,7 +1962,7 @@ void MakeDrf::startSaveAs()
   help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-n42"), true,
-                  HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                  HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   currentRow = table->rowCount();
   cell = table->elementAt(currentRow, 0);
@@ -1985,7 +1985,7 @@ void MakeDrf::startSaveAs()
   help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-as-csv"), true,
-                  HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                  HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
 
   currentRow = table->rowCount();
@@ -2008,7 +2008,7 @@ void MakeDrf::startSaveAs()
   help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-quick-ref"), true,
-                  HelpSystem::ToolTipPosition::Left, HelpSystem::ToolTipPrefOverride::AlwaysShow );
+                  HelpSystem::ToolTipPrefOverride::AlwaysShow );
   
   
 #if( ANDROID )

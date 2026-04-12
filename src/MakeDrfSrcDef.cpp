@@ -657,7 +657,7 @@ void MakeDrfSrcDef::create()
   const char *tooltip = "Sources defined in Source.lib file in your users data directory.<br/>"
   "When clicked, this button will display a menu with all sources for this nuclide - and when"
   " on of the items is selected, its information will be populated.";
-  HelpSystem::attachToolTipOn( m_lib_src_btn, tooltip, showToolTips, HelpSystem::ToolTipPosition::Right );
+  HelpSystem::attachToolTipOn( m_lib_src_btn, tooltip, showToolTips );
   
   m_useAgeInfo = cell->addNew<WCheckBox>( WString::fromUTF8("Age?") );
   m_useAgeInfo->setFloatSide( Wt::Side::Right );
