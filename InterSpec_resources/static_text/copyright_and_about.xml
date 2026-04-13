@@ -175,10 +175,10 @@ IT &quot;AS IS.&quot;
       </div>
     </li>
 
-    <li><b><a href="https://bgrins.github.io/spectrum/" target="_blank">spectrum.js</a>:</b> The No Hassle jQuery Colorpicker.
+    <li><b><a href="https://github.com/mdbassit/Coloris" target="_blank">Coloris</a>:</b> A lightweight and elegant color picker.
       <div style="margin-left: 1em; font-size: small;">
-      <b>spectrum.js</b> is select colors throughout InterSpec when a native <code>HTML5</code> is not used.
-      <b>spectrum.js</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
+      <b>Coloris</b> is used to select colors throughout InterSpec.
+      <b>Coloris</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
       </div>
     </li>
 

@@ -852,7 +852,8 @@ background-color: #909090;
 
 
 button, button:hover,
-  .btn-group  /* WSplitButton spans */
+  .btn-group,  /* WSplitButton spans */
+  .clr-picker button.ColorisBtn  /* Coloris color picker Close/Clear buttons */
 {
   font-weight:bold;
   vertical-align: middle;
@@ -863,7 +864,7 @@ button, button:hover,
   height: 23px;
 }
 
-button:hover, .submit:hover {
+button:hover, .submit:hover, .clr-picker button.ColorisBtn:hover {
   color: #f2f2f2;
   border-style: solid;
   border:1px solid #e6e6e6;
