@@ -1014,7 +1014,14 @@ for( let path_string of process.argv ) {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.on('ready', function(){  
+app.on('ready', function(){
+  // On Windows, the default Electron application menu activates when the user presses Alt,
+  // stealing focus from the web content.  The Alt key is used as a modifier for spectrum
+  // interactions (e.g., Alt + double-click to fit a peak in the background spectrum),
+  // so we remove the default menu on non-macOS platforms.
+  if( process.platform !== 'darwin' )
+    Menu.setApplicationMenu( null );
+
   const process_name = require.main.filename;
   //actually process.cwd()==path.dirname(require.main.filename) when running using node from command line
 

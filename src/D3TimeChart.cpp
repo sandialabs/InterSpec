@@ -29,11 +29,14 @@
 #include <memory>
 #include <vector>
 #include <utility>
+#include <functional>
 
+#include <boost/bind.hpp>
 #include <boost/optional.hpp>
 
 #include "3rdparty/date/include/date/date.h"
 
+#include <Wt/Utils>
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
@@ -41,6 +44,7 @@
 #include <Wt/WJavaScript>
 #include <Wt/WApplication>
 #include <Wt/WStringStream>
+#include <Wt/WMemoryResource>
 #include <Wt/WContainerWidget>
 
 #include "SpecUtils/DateTime.h"
@@ -49,6 +53,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/D3TimeChart.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -1026,7 +1031,10 @@ D3TimeChart::D3TimeChart( Wt::WContainerWidget *parent )
   m_cssRules{},
   m_pendingJs{},
   m_displayedSampleNumbers{-1,-1},
-  m_displayedTimes{ 0.0, 0.0 }
+  m_displayedTimes{ 0.0, 0.0 },
+  m_imageCapturedJS{ nullptr },
+  m_pendingImageCallback{},
+  m_downloadResource( nullptr )
 {
 #if( !OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
   init();
@@ -2116,10 +2124,138 @@ void D3TimeChart::setHighlightRegionsToClient()
 }//setHighlightRegionsToClient()
 
 
-void D3TimeChart::saveChartToPng( const std::string &filename )
+void D3TimeChart::saveChartToImg( const std::string &filename, const bool asPng )
 {
-  // \TODO: implement - see D3SpectrumDisplayDiv for a starting point, although it isnt finished
-}//void saveChartToPng( const std::string &filename )
+  if( !isRendered() )
+    return;
+
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( !m_inited )
+    return;
+#endif
+
+  const std::string format = asPng ? "png" : "svg";
+  captureChartImage( format, 0,
+    boost::bind( &D3TimeChart::handleChartImageForDownload, this, filename,
+                 boost::placeholders::_1, boost::placeholders::_2,
+                 boost::placeholders::_3, boost::placeholders::_4 ) );
+}//void saveChartToImg( const std::string &filename, const bool asPng )
+
+
+void D3TimeChart::handleImageCaptured( std::string base64, std::string mimeType,
+                                        int w, int h )
+{
+  ImageCaptureCallback cb;
+  std::swap( cb, m_pendingImageCallback );
+  if( cb )
+    cb( std::move( base64 ), std::move( mimeType ), w, h );
+}//void handleImageCaptured(...)
+
+
+void D3TimeChart::handleChartImageForDownload( const std::string &filename,
+                                                std::string base64Data,
+                                                std::string mimeType,
+                                                int, int )
+{
+  if( base64Data.empty() )
+    return;
+
+  const std::string decoded = Wt::Utils::base64Decode( base64Data );
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    const auto nativeHandler = InterSpecApp::nativeFileSaveHandler();
+    if( nativeHandler )
+    {
+      nativeHandler( decoded, filename );
+      return;
+    }
+  }
+#endif
+
+  const std::vector<unsigned char> data( decoded.begin(), decoded.end() );
+
+  if( !m_downloadResource )
+    m_downloadResource = new Wt::WMemoryResource( this );
+
+  m_downloadResource->setMimeType( mimeType );
+  m_downloadResource->setData( data );
+  m_downloadResource->suggestFileName( filename, Wt::WResource::Attachment );
+
+  doJavaScript( "window.open('" + m_downloadResource->url() + "', '_blank');" );
+
+  wApp->triggerUpdate();
+}//void handleChartImageForDownload(...)
+
+
+void D3TimeChart::captureChartImage( const std::string &format, int maxLongestSide,
+                                     ImageCaptureCallback callback )
+{
+  if( !callback )
+    throw std::runtime_error( "captureChartImage: callback must not be null" );
+
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  if( !m_inited )
+    throw std::runtime_error( "captureChartImage: chart is not initialized" );
+#endif
+
+  // Initialize the JSignal on first use
+  if( !m_imageCapturedJS )
+  {
+    m_imageCapturedJS.reset( new Wt::JSignal<std::string, std::string, int, int>(
+      this, "timeChartImageCaptured", true ) );
+    m_imageCapturedJS->connect( boost::bind( &D3TimeChart::handleImageCaptured, this,
+       boost::placeholders::_1, boost::placeholders::_2,
+       boost::placeholders::_3, boost::placeholders::_4 ) );
+  }//if( !m_imageCapturedJS )
+
+  m_pendingImageCallback = std::move( callback );
+
+  const std::string emitJs = m_imageCapturedJS->createCall( "b64", "mime", "w", "h" );
+
+  // The Wt.WT.ChartToImageData function is normally defined in D3SpectrumDisplayDiv.cpp,
+  //  but may not be loaded yet. We define it inline if not already present.
+  std::string js;
+  js += "(function(){";
+
+  // Define ChartToImageData if not already available
+  js += "if(!Wt.WT.ChartToImageData){";
+  js += "Wt.WT.ChartToImageData=function(chart,format,maxSize,callback){";
+  js += "try{";
+  js += "var svgMarkup=chart.getStaticSvg();";
+  js += "var height=chart.svg.attr('height');";
+  js += "var width=chart.svg.attr('width');";
+  js += "if(chart.sliderChart&&chart.size&&chart.size.sliderChartHeight)height-=chart.size.sliderChartHeight;";
+  js += "if(chart.scalerWidget)width-=chart.scalerWidget.node().getBBox().width;";
+  js += "width=Math.round(width);height=Math.round(height);";
+  js += "if(format==='svg'){callback(btoa(unescape(encodeURIComponent(svgMarkup))),'image/svg+xml',width,height);return;}";
+  js += "var tw=width,th=height;";
+  js += "if(maxSize>0&&(width>maxSize||height>maxSize)){var s=maxSize/Math.max(width,height);tw=Math.round(width*s);th=Math.round(height*s);}";
+  js += "var canvas=document.createElement('canvas');canvas.width=tw;canvas.height=th;";
+  js += "var ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);";
+  js += "var img=new Image();var svgBlob=new Blob([svgMarkup],{type:'image/svg+xml'});var url=window.URL.createObjectURL(svgBlob);";
+  js += "img.onerror=function(e){window.URL.revokeObjectURL(url);callback(null,null,0,0);};";
+  js += "img.onload=function(){ctx.drawImage(img,0,0,tw,th);window.URL.revokeObjectURL(url);";
+  js += "var mimeType=(format==='jpeg')?'image/jpeg':'image/png';var quality=(format==='jpeg')?0.85:undefined;";
+  js += "var dataUrl=canvas.toDataURL(mimeType,quality);canvas.remove();";
+  js += "var base64=dataUrl.replace(/^data:[^;]+;base64,/,'');callback(base64,mimeType,tw,th);};";
+  js += "img.src=url;";
+  js += "}catch(e){console.log('ChartToImageData error:',e);callback(null,null,0,0);}";
+  js += "};"; // end function definition
+  js += "}";  // end if(!Wt.WT.ChartToImageData)
+
+  js += "var chart=" + m_jsgraph + ";";
+  js += "requestAnimationFrame(function(){";
+  js += "Wt.WT.ChartToImageData(chart,'" + format + "',"
+      + std::to_string( maxLongestSide ) + ",function(b64,mime,w,h){";
+  js += emitJs + ";";
+  js += "});";  // end ChartToImageData callback
+  js += "});";  // end requestAnimationFrame
+  js += "})();"; // end IIFE
+
+  doJavaScript( js );
+}//void captureChartImage(...)
 
 
 void D3TimeChart::scheduleRenderAll()

@@ -7,8 +7,11 @@
 #include <tuple>
 #include <chrono>
 #include <memory>
+#include <string>
 #include <vector>
 #include <utility>
+#include <optional>
+#include <functional>
 
 #include <Wt/WColor>
 #include <Wt/WEvent>
@@ -31,6 +34,7 @@ class RefLineDynamic;
 namespace Wt
 {
   class WCssTextRule;
+  class WMemoryResource;
 }//namespace Wt
 
 enum class FeatureMarkerType : int;
@@ -362,7 +366,13 @@ public:
    the data isn't set to client until after all JS is sent.
    */
   void setXAxisRange( const double minimum, const double maximum );
-  
+
+  /** Set peak ROI data directly from a JSON string (from PeakDef::peak_json).
+   Useful for displaying peaks without a PeakModel, e.g., in visual previews.
+   */
+  void setRoiData( const std::string &peak_json,
+                   const SpecUtils::SpectrumType spectrum_type );
+
   void setYAxisMinimum( const double minimum );
   void setYAxisMaximum( const double maximum );
   
@@ -443,7 +453,26 @@ public:
    the currently showing spectrum.  PNG or SVG generation is done client side.
    */
   void saveChartToImg( const std::string &name, const bool asPng );
-  
+
+  /** Callback for captureChartImage: receives base64 data (no prefix), mime type, width, height. */
+  using ImageCaptureCallback = std::function<void( std::string base64Data, std::string mimeType,
+                                                    int widthPx, int heightPx )>;
+
+  /** Capture the current chart as a base64-encoded image via JavaScript round-trip.
+
+   @param format Image format: "png", "jpeg", or "svg"
+   @param maxLongestSide Maximum size of longest side in pixels (0 = no resize)
+   @param energyRange If set, zoom to {min_keV, max_keV} before capture; nullopt = use current view.
+                      Original range is restored after capture.
+   @param yAxisLog If set, force log (true) or linear (false) y-axis; nullopt = no change.
+                   Original scale is restored after capture.
+   @param callback Called with the base64 image data, mime type, and dimensions when capture completes
+   */
+  void captureChartImage( const std::string &format, int maxLongestSide,
+                          std::optional<std::pair<double,double>> energyRange,
+                          std::optional<bool> yAxisLog,
+                          ImageCaptureCallback callback );
+
   void setThumbnailMode();
 protected:
 
@@ -585,7 +614,18 @@ protected:
   
   std::unique_ptr<Wt::JSignal<bool> > m_sliderDisplayed;
   std::unique_ptr<Wt::JSignal<std::string> > m_yAxisTypeChanged;
-  
+  std::unique_ptr<Wt::JSignal<std::string, std::string, int, int> > m_imageCapturedJS;
+  ImageCaptureCallback m_pendingImageCallback;
+  Wt::WMemoryResource *m_downloadResource;
+
+  /** Handler for the JSignal from JS when image capture completes. */
+  void handleImageCaptured( std::string base64, std::string mimeType, int w, int h );
+
+  /** Handles downloading an image captured by captureChartImage, for saveChartToImg. */
+  void handleChartImageForDownload( const std::string &filename,
+                                    std::string base64Data, std::string mimeType,
+                                    int widthPx, int heightPx );
+
   // Wt Signals
   //for all the bellow, the doubles are all the <x,y> coordinated of the action
   //  where x is in energy, and y is in counts.
@@ -720,7 +760,12 @@ protected:
      here as they will be options set to the D3 chart during first rendering.
    */
   std::vector<std::string> m_pendingJs;
-  
+
+  /** Pending ROI data from setRoiData() to be applied after foreground is rendered.
+   Map from spectrum type name ("FOREGROUND", etc.) to peak JSON string.
+   */
+  std::map<std::string, std::string> m_pendingRoiJson;
+
   /** Some variables to track when users drag the ROI edge. */
   std::chrono::steady_clock::time_point m_last_drag_time;
   std::shared_ptr<const PeakContinuum> m_continuum_being_drug;

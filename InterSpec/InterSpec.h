@@ -29,7 +29,10 @@
 #include <deque>
 #include <tuple>
 #include <memory>
+#include <string>
 #include <vector>
+#include <optional>
+#include <functional>
 
 #include <Wt/Dbo/Dbo>
 #include <Wt/WContainerWidget>
@@ -523,10 +526,26 @@ public:
           PNG or SVG for the time-series chart
    @param asPng if true, save as a PNG.  If false, save as a SVG
    
-   Note: currently only PNG is supported for time chart
    */
   void saveChartToImg( const bool spectrum, const bool asPng );
-  
+
+  /** Capture the spectrum chart as a base64-encoded image via JavaScript round-trip.
+   Delegates to D3SpectrumDisplayDiv::captureChartImage().
+   Callback receives: (base64Data, mimeType, widthPx, heightPx).
+   */
+  void captureSpectrumImage( const std::string &format, int maxLongestSide,
+                             std::optional<std::pair<double,double>> energyRange,
+                             std::optional<bool> yAxisLog,
+                             std::function<void(std::string, std::string, int, int)> callback );
+
+  /** Capture the time history chart as a base64-encoded image via JavaScript round-trip.
+   Delegates to D3TimeChart::captureChartImage().
+   Callback receives: (base64Data, mimeType, widthPx, heightPx).
+   @throws std::runtime_error if time chart is not available or not visible.
+   */
+  void captureTimeChartImage( const std::string &format, int maxLongestSide,
+                              std::function<void(std::string, std::string, int, int)> callback );
+
   //displayScaleFactor(...): the live time scale factor used by to display
   //  the histogram returned by displayedHistogram( spectrum_type ).
   double displayScaleFactor( SpecUtils::SpectrumType spectrum_type ) const;
@@ -1456,7 +1475,10 @@ protected:
 #endif
   
   PopupDivMenu *m_languagesSubMenu;
-  
+
+  PopupDivMenuItem *m_saveTimeChartPng;
+  PopupDivMenuItem *m_saveTimeChartSvg;
+
   enum RightClickItems
   {
     kPeakEdit,
