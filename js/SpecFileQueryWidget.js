@@ -12,14 +12,14 @@ function( divid, parentid, additional_filters )
       value: 'Acme'
     }]
   };
-  
+
   var is_valid_str = function(value,rule){
     if( rule.operator.type === 'equal' || rule.operator.type === 'not equal')
       return true;
-    
+
     if( !value || value.length < 1 )
       return "Search term can not be blank";
-    
+
     if( rule.operator.type === 'regex' )
     {
       try{
@@ -29,107 +29,33 @@ function( divid, parentid, additional_filters )
         return "Invalid regular expression: " + e.toString();
       }
     }
-    
+
     return true;
   };
-  
-  
+
+
   var timeValObj = {
     format: /\\s*((\\s*\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*\\s*(year|yr|y|day|d|hrs|hour|h|minutes|min|m|second|s|ms|microseconds|us|nanoseconds|ns)\\s*)|((\\+?\\d+:\\d\\d:\\d+(\\.\\d+)?)\\s*)\\s*)+/,
     messages: {
       format: 'Time durations can be specified like "3h 47m", "60s", "12:43:12.32", etc'
     }
   };
-  
-  var builder = $('#'+divid);
-  
-  builder.on('afterCreateRuleFilters.queryBuilder', function(rule,el) {
-    //We get here after a rule is created (which includes when you add a group that creates a rule by default)
-    //console.log( 'afterCreateRuleFilters.queryBuilder' );
-    //console.log(rule);
-    //console.log(el);
-    
-    el.$el.find('.rule-value-container input').on('change',function(){
-      builder.queryBuilder('validate');
-      console.log( 'validate on change' );
-    } );
-    
-    el.$el.find('.rule-value-container input').on('keypress',function(){
-      builder.queryBuilder('validate');
-      console.log( 'keypress on change' );
-    } );
-  });
-  
-  
+
+  var builderEl = document.getElementById( divid );
+  var qb = null;
+
   var doUpdateVal = function(){
-    var result = builder.queryBuilder('getRules',{ allow_invalid: true, skip_empty: true });
-    var resultjson = (!$.isEmptyObject(result)) ? JSON.stringify(result, null, 2) : 'empty';
-    var oldquery = builder.data('QueryJson');
+    if( !qb )
+      return;
+    var result = qb.getRules( { allow_invalid: true, skip_empty: true } );
+    var resultjson = (!result || Object.keys(result).length === 0) ? 'empty' : JSON.stringify(result, null, 2);
+    var oldquery = builderEl._QueryJson;
     if( oldquery !== resultjson )
     {
-      builder.data('QueryJson',resultjson);
+      builderEl._QueryJson = resultjson;
       Wt.emit(parentid, 'fileSearchQueryChanged', resultjson);
     }
   };
-  
-  //
-  builder.on('afterUpdateGroupCondition.queryBuilder afterUpdateRuleFilter.queryBuilder afterUpdateRuleOperator.queryBuilder afterUpdateRuleValue.queryBuilder', function(){
-    //We get here after values are updated/changed, basically validate 'on the fly'
-    doUpdateVal();
-  });
-  
-  //Validate after adding/removing/moving groups
-  builder.on('afterAddGroup.queryBuilder', function(event, group){
-    //if( more than one (group+rule) )
-    //   $('#'+group.id).find('.group-conditions').css('visibility','hidden');
-    //else $('#'+group.id).find('.group-conditions').css('visibility','visible');
-    //However, the left bar thing is still there...
-    //console.log('afterAddGroup.queryBuilder');
-    //console.log(group);
-    
-    doUpdateVal();
-  });
-  builder.on('afterDeleteGroup.queryBuilder', function(event, group){
-    //if( more than one (group+rule) )
-    //   $('#'+group.id).find('.group-conditions').css('visibility','hidden');
-    //else $('#'+group.id).find('.group-conditions').css('visibility','visible');
-    //console.log('afterDeleteGroup.queryBuilder');
-    //console.log(group);
-    doUpdateVal();
-  });
-  builder.on('afterMove.queryBuilder', function(event, node){ doUpdateVal(); });
-  
-  builder.on('afterDeleteRule.queryBuilder', function(event, group){
-    doUpdateVal();
-  });
-  
-  builder.on('getGroupTemplate.queryBuilder.filter', function(e, level) {
-    //console.log( 'On filter: ' + e.value );
-    //We get here when a group is added
-  });
-  
-  builder.on('afterUpdateRuleFilter.queryBuilder', function(e, rule) {
-    //We get here when field type is changed (e.g., from filename, to detector type).
-    //console.log( 'afterUpdateRuleFilter.queryBuilder' );
-    doUpdateVal();
-  });
-  
-  builder.on('afterUpdateRuleOperator.queryBuilder', function(e, rule) {
-    //We get here when the operator is updated (e.x., change from 'equal' to 'not equal')
-    console.log( 'afterUpdateRuleOperator.queryBuilder' );
-    doUpdateVal();
-  });
-  
-  builder.on('afterCreateRuleOperators.queryBuilder', function(e) {
-    //We get here when field type is changed (e.g., from filename, to detector type).
-    console.log( 'afterCreateRuleOperators.queryBuilder' );
-    doUpdateVal();
-  });
-  
-  builder.on('afterCreateRuleInput.queryBuilder', function(e, rule) { /* Looks to be called when the widget is created. */ });
-  builder.on('afterApplyRuleFlags.queryBuilder', function(e, rule) { /* We get here after nearly all operations. */ });
-  builder.on('afterSetRules.queryBuilder', function(e, rule) { /* Looks to be called when the widget is created. */ });
-
 
   var select_filters = [{
     id: 'Filename',
@@ -374,27 +300,11 @@ function( divid, parentid, additional_filters )
     validation: timeValObj,
     operators: ['greater','less','equal','not_equal']
   },{
-    // We could do:
-    //    type: 'datetime',
-    //    validation: {format:'YYYY/MM/DD HH:mm'},
-    // But this would require using moment.js, but since this is the only
-    //  place that uses that library, we'll just to the validation with
-    //  the regex, or server-side.
-    // Note: If we dont use client-side validation, and then the server will
-    //  do validation and display an appropriate error message, its just the
-    //  input field wont be red on invalid input (which is pretty minor, and
-    //  maybe the explicit error message is better).  Doing only server-side
-    //  validation also allow inputting a lot more flexible date formats.
     id: 'Start Time',
     label: 'Start Time',
     type: 'string',
     placeholder: 'YYYY/MM/DD HH:mm:ss',
     size: 65,
-    //validation: { format: /^([2][0]\\d{2}\\/([0]\\d|[1][0-2])\\/([0-2]\\d|[3][0-1]))$|^([2][0]\\d{2}\\/([0]\\d|[1][0-2])\\/([0-2]\\d|[3][0-1])(\\s([0-1]\\d|[2][0-3])\\:[0-5]\\d(\\:[0-5]\\d)?))?$/,
-    //  messages: {
-    //    format: 'Date/time durations can be specified like "2022/01/28", "2022/01/28 12:43:12", etc'
-    //  }
-    //},
     operators: ['equal','not_equal','less','greater']
   },{
     id: 'Num. Time Samples',
@@ -438,53 +348,38 @@ function( divid, parentid, additional_filters )
 
   if( additional_filters.length )
     select_filters = select_filters.concat(additional_filters);
-  
-  builder.queryBuilder({
-    //plugins: ['bt-tooltip-errors'],
-    
-    /*
-    icons: {
-      add_group: 'fas fa-plus-square',
-      add_rule: 'fas fa-plus-circle',
-      remove_group: 'fas fa-minus-square',
-      remove_rule: 'fas fa-minus-circle',
-      error: 'fas fa-exclamation-triangle'
-    },
-    */
-    operators: $.fn.queryBuilder.constructor.DEFAULTS.operators.concat([
+
+  qb = QueryBuilder.create( builderEl, {
+    operators: QueryBuilder.DEFAULTS.operators.concat([
       { type: 'regex',  nb_inputs: 1, multiple: false, apply_to: ['string'] },
       { type: 'begins with',  nb_inputs: 1, multiple: false, apply_to: ['string'] },
       { type: 'ends with',  nb_inputs: 1, multiple: false, apply_to: ['string'] },
       { type: 'not equal',  nb_inputs: 1, multiple: false, apply_to: ['string'] },
       { type: 'does not contain',  nb_inputs: 1, multiple: false, apply_to: ['string'] },
       { type: 'does not begin with',  nb_inputs: 1, multiple: false, apply_to: ['string'] },
-      { type: 'does not end with',  nb_inputs: 1, multiple: false, apply_to: ['string'] }/*,
-      { type: 'distance from',  nb_inputs: 2, multiple: false, apply_to: ['string'] }*/
+      { type: 'does not end with',  nb_inputs: 1, multiple: false, apply_to: ['string'] }
     ]),
-    
-    /*
-     Each entry in the 'filters' arra must have an 'id' field that exactly chantches
-     The string provided by #to_string(FileDataField).
-    */
-    
+
     filters: select_filters,
-    
-    rules: rules_basic
-  });
-  
-  
-  /*
-  $('#btn-get').on('click', function() {
-    var result = builder.queryBuilder('getRules');
-    
-    if (!$.isEmptyObject(result)) {
-      alert(JSON.stringify(result, null, 2));
+    rules: rules_basic,
+
+    events: {
+      'afterCreateRuleFilters': function(e, rule) {
+        rule.el.querySelectorAll('.rule-value-container input').forEach(function(input){
+          input.addEventListener('change', function(){ if(qb) qb.validate(); });
+          input.addEventListener('keypress', function(){ if(qb) qb.validate(); });
+        });
+      },
+      'afterUpdateGroupCondition': function(){ doUpdateVal(); },
+      'afterUpdateRuleFilter': function(){ doUpdateVal(); },
+      'afterUpdateRuleOperator': function(){ doUpdateVal(); },
+      'afterUpdateRuleValue': function(){ doUpdateVal(); },
+      'afterAddGroup': function(){ doUpdateVal(); },
+      'afterDeleteGroup': function(){ doUpdateVal(); },
+      'afterMove': function(){ doUpdateVal(); },
+      'afterDeleteRule': function(){ doUpdateVal(); },
+      'afterCreateRuleOperators': function(){ doUpdateVal(); }
     }
   });
-   */
 }
 );
-
-
-
-

@@ -1530,12 +1530,10 @@ void SpecFileQueryWidget::init()
   wApp->useStyleSheet( "InterSpec_resources/SpecFileQueryWidget.css" );
   m_viewer->useMessageResourceBundle( "SpecFileQueryWidget" );
   
-  wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/query-builder.default.min.css" );
-  wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/QueryBuilderFakeBootstrap.css" );
-  
-  wApp->require( "InterSpec_resources/assets/js/jquery-3.6.0.min.js" );
-  wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/js/query-builder.standalone.min.js" );
-  wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2/i18n/query-builder.en.js" );
+  wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2_no_jQuery/css/query-builder.default.min.css" );
+  wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2_no_jQuery/css/QueryBuilderFakeBootstrap.css" );
+
+  wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2_no_jQuery/js/query-builder.js" );
   
   LOAD_JAVASCRIPT(wApp, "js/SpecFileQueryWidget.js", "SpecFileQueryWidget", wtjsFileQueryInit);
   
@@ -1727,8 +1725,10 @@ void SpecFileQueryWidget::init()
   m_update = linelayout->addWidget( std::make_unique<WPushButton>( WString::tr("sfqw-update") ), 0, linelayout->columnCount() );
   m_update->clicked().connect(
   "function(){"
-    "var result = $('#" + m_conditions->id() + "').queryBuilder('getRules',{ allow_invalid: true });"
-    "var resultjson = (!$.isEmptyObject(result)) ? JSON.stringify(result, null, 2) : 'empty';"
+    "var el = document.getElementById('" + m_conditions->id() + "');"
+    "var qb = el._queryBuilder;"
+    "var result = qb.getRules({ allow_invalid: true });"
+    "var resultjson = (result && Object.keys(result).length > 0) ? JSON.stringify(result, null, 2) : 'empty';"
     "Wt.emit('" + id() + "', 'fileSearchRequested', resultjson);"
   "}" );
 
@@ -2552,7 +2552,7 @@ void SpecFileQueryWidget::searchRequestedCallback( const std::string &queryJson 
     // Then set 'readonly' flag to true
     //$('#builder').queryBuilder('setRules', rule);
     //  but for right now we'll just take the heavyhanded approach and manually siable all the widget.
-    doJavaScript( "$('#" + m_conditions->id() + "').find('select, input, button, .btn').prop('disabled',true).addClass('Wt-disabled');" );
+    doJavaScript( "document.getElementById('" + m_conditions->id() + "').querySelectorAll('select, input, button, .btn').forEach(function(e){e.disabled=true;e.classList.add('Wt-disabled');});" );
     
     m_csv->disable();
     m_optionsBtn->disable();
@@ -2612,7 +2612,7 @@ void SpecFileQueryWidget::finishUpdate( std::shared_ptr< std::vector< std::vecto
   m_csv->enable();
   m_optionsBtn->enable();
   m_optionsMenu->enable();
-  doJavaScript( "$('#" + m_conditions->id() + "').find('select, input, button, .btn').prop('disabled',false).removeClass('Wt-disabled');" );
+  doJavaScript( "document.getElementById('" + m_conditions->id() + "').querySelectorAll('select, input, button, .btn').forEach(function(e){e.disabled=false;e.classList.remove('Wt-disabled');});" );
   
   if( wasCanceled )
   {

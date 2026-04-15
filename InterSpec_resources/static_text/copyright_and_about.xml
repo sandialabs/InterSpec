@@ -147,12 +147,7 @@ IT &quot;AS IS.&quot;
       </div>
     </li>
 
-    <li><b><a href="https://jquery.org/" target="_blank">jQuery</a> 1.11.1:</b> javascript library.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>jQuery</b> is used to help deal with cross-browser idiosyncrasies in the client-side java script.
-        <b>jQuery</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>.
-      </div>
-    </li>
+    <!-- jQuery is no longer used by InterSpec -->
     <li><b><a href="http://qtip2.com/" target="_blank">qTip2</a> 2.2.0:</b> javascript library that provides tooltip and notification tools.
       <div style="margin-left: 1em; font-size: small;">
         <b>qTip2</b> is used to help make the content-rich tooltips, as well as the notifications within <b>InterSpec</b>.
@@ -167,10 +162,12 @@ IT &quot;AS IS.&quot;
       </div>
     </li>
 
-    <li><b><a href="https://querybuilder.js.org/" target="_blank">jQuery QueryBuilder</a>:</b> jQuery plugin for user friendly query/filter creator.
+    <li><b><a href="https://querybuilder.js.org/" target="_blank">QueryBuilder</a> (based on 2.5.2, converted to vanilla JS):</b> javascript library for user friendly query/filter creator.
       <div style="margin-left: 1em; font-size: small;">
        <b>QueryBuilder</b> is used to construct spectrum file queries.
-       <b>QueryBuilder</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
+       <b>QueryBuilder</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a>.
+       Originally by Damien "Mistic" Sorel; converted from jQuery to vanilla JavaScript using AI,
+       removing jQuery/doT.js/jquery-extendext dependencies and stripping unused features.
        (Windows, Linux, macOS builds only)
       </div>
     </li>
