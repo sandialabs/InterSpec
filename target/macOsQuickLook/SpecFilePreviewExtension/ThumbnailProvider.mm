@@ -38,7 +38,7 @@
   const CGSize maxSize = request.maximumSize;
   const CGFloat scale = request.scale;
 
-  // Use points for the PDF rendering
+  // Use points for rendering
   const float width_pt = (float)maxSize.width;
   const float height_pt = (float)maxSize.height;
 
@@ -64,12 +64,15 @@
     return;
   }
 
-  // Render spectrum to PDF
-  uint8_t *pdfData = NULL;
-  size_t pdfLen = 0;
   NSString *logoPath = [[NSBundle mainBundle] pathForResource:@"InterSpec128" ofType:@"png"];
   const char *logoCStr = logoPath ? [logoPath fileSystemRepresentation] : NULL;
 
+
+#if MACOS_QUICK_LOOK_USE_PDF
+
+  // Render spectrum to PDF
+  uint8_t *pdfData = NULL;
+  size_t pdfLen = 0;
   render_spec_file_to_pdf( &pdfData, &pdfLen, filePath, width_pt, height_pt, SpectrumThumbnail, logoCStr );
 
   if( !pdfData || pdfLen == 0 )
@@ -159,6 +162,38 @@
     }];
 
   handler( reply, nil );
+
+
+#else /* !MACOS_QUICK_LOOK_USE_PDF */
+
+  CGImageRef cgImage = render_spec_file_to_cgimage( filePath, width_pt, height_pt,
+                                                     SpectrumThumbnail, logoCStr );
+  if( !cgImage )
+  {
+    handler( nil, [NSError errorWithDomain:@"gov.sandia.SpecFileThumbnail"
+                                     code:2
+                                 userInfo:@{NSLocalizedDescriptionKey: @"Failed to render spectrum"}] );
+    return;
+  }
+
+  QLThumbnailReply *reply =
+    [QLThumbnailReply replyWithContextSize:CGSizeMake( width_pt, height_pt )
+                    currentContextDrawingBlock:^BOOL {
+      CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
+      if( !ctx )
+      {
+        CGImageRelease( cgImage );
+        return NO;
+      }
+
+      CGContextDrawImage( ctx, CGRectMake( 0, 0, width_pt, height_pt ), cgImage );
+      CGImageRelease( cgImage );
+      return YES;
+    }];
+
+  handler( reply, nil );
+
+#endif /* MACOS_QUICK_LOOK_USE_PDF */
 }
 
 @end

@@ -139,6 +139,25 @@ jobs:
               --sign "${MAC_SIGNING_IDENTITY}" \
               "${QUICKLOOK_PLUGIN}"
           fi
+
+          # Sign Quick Look appex extensions (nested bundles in Contents/PlugIns/)
+          APPEX_ENTITLEMENTS="${{ github.workspace }}/target/macOsQuickLook/SpecFilePreviewExtension/SpecFilePreview.entitlements"
+          if [ -d "${APP_BUNDLE}/Contents/PlugIns" ]; then
+            echo "Signing appex extensions..."
+            find "${APP_BUNDLE}/Contents/PlugIns" -type d -name "*.appex" | while read -r appex; do
+              APPEX_NAME=$(basename "${appex}" .appex)
+              echo "  Signing appex executable: ${APPEX_NAME}"
+              codesign --force --options runtime --timestamp \
+                --entitlements "${APPEX_ENTITLEMENTS}" \
+                --sign "${MAC_SIGNING_IDENTITY}" \
+                "${appex}/Contents/MacOS/${APPEX_NAME}"
+              echo "  Signing appex bundle: ${appex}"
+              codesign --force --options runtime --timestamp \
+                --entitlements "${APPEX_ENTITLEMENTS}" \
+                --sign "${MAC_SIGNING_IDENTITY}" \
+                "${appex}"
+            done
+          fi
           
           # Sign any frameworks in the bundle
           if [ -d "${APP_BUNDLE}/Contents/Frameworks" ]; then

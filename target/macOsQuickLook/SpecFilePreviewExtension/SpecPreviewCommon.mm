@@ -34,11 +34,15 @@
 #include <sstream>
 #include <iostream>
 
+#if MACOS_QUICK_LOOK_USE_PDF
 #include <hpdf.h>
+#include <Wt/WPdfImage>
+#else
+#include "CGPaintDevice.h"
+#endif
 
 #include <Wt/WFont>
 #include <Wt/WPainter>
-#include <Wt/WPdfImage>
 #include <Wt/WPainterPath>
 #include <Wt/Chart/WDataSeries>
 
@@ -68,6 +72,7 @@ namespace
   };
 
 
+#if MACOS_QUICK_LOOK_USE_PDF
   void HPDF_STDCALL hpdf_error_handler( HPDF_STATUS error_no, HPDF_STATUS detail_no, void * /*user_data*/ )
   {
     char buf[200];
@@ -75,6 +80,7 @@ namespace
               (unsigned int)error_no, (int)detail_no );
     throw std::runtime_error( buf );
   }//hpdf_error_handler(...)
+#endif
 
 
   /** A minimal subclass of SpectrumChart that can paint peaks without needing PeakModel.
@@ -128,7 +134,10 @@ namespace
       // Group gaussian peaks by shared continuum (same ROI)
       std::map<const PeakContinuum *, std::vector<std::shared_ptr<const PeakDef>>> continuum_groups;
       for( const auto &peak : gauspeaks )
-        continuum_groups[peak->continuum().get()].push_back( peak );
+      {
+        if( peak->continuum() )
+          continuum_groups[peak->continuum().get()].push_back( peak );
+      }
 
       for( auto &entry : continuum_groups )
       {
@@ -202,12 +211,14 @@ namespace
 
     if( thumbnail )
     {
-      // Thumbnail: axis lines visible, but no tick labels or titles
+      // Thumbnail: axis lines visible, but no tick labels or titles.
+      // setCompactAxis(true) subtracts 17px from the bottom padding,
+      // so set padding after calling it to get the desired values.
+      chart.setCompactAxis( true );
       chart.setPlotAreaPadding( 4, Wt::Left );
       chart.setPlotAreaPadding( 4, Wt::Bottom );
       chart.setPlotAreaPadding( 2, Wt::Right );
       chart.setPlotAreaPadding( 2, Wt::Top );
-      chart.setCompactAxis( true );
 
       // Hide tick labels but keep axis lines
       chart.axis( Chart::XAxis ).setLabelFormat( " " );
@@ -460,6 +471,153 @@ namespace
 }//anonymous namespace
 
 
+namespace
+{
+  /** Shared helper: loads spectrum file and determines foreground/background measurements.
+
+   @returns True on success, with foreground (and optionally background) populated.
+   */
+  bool load_spec_data( const char * const filename,
+                       std::shared_ptr<SpecMeas> &spec,
+                       std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                       std::shared_ptr<const SpecUtils::Measurement> &background,
+                       std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &peaks )
+  {
+    spec = std::make_shared<SpecMeas>();
+
+    if( !spec->load_file( filename, SpecUtils::ParserType::Auto, filename ) )
+    {
+      fprintf( stderr, "Failed to parse '%s' as a spectrum file.\n", filename );
+      return false;
+    }
+
+    if( !spec->num_measurements() )
+    {
+      fprintf( stderr, "No measurements in '%s'.\n", filename );
+      return false;
+    }
+
+    const std::set<int> &samplenums = spec->sample_numbers();
+
+    std::set<int> foreground_sample_numbers, background_sample_numbers;
+
+    // Determine foreground and background sample numbers
+    if( spec->passthrough() )
+    {
+      for( const int sample : samplenums )
+      {
+        bool occupied = false;
+        for( const int detnum : spec->detector_numbers() )
+        {
+          const auto m = spec->measurement( sample, detnum );
+          occupied = (occupied
+                      || (m && (m->occupied() == SpecUtils::OccupancyStatus::Occupied
+                                || m->source_type() == SpecUtils::SourceType::Foreground)));
+        }
+        if( occupied )
+          foreground_sample_numbers.insert( sample );
+        else
+          background_sample_numbers.insert( sample );
+      }
+    }else if( spec->num_measurements() == 1 || samplenums.size() == 1 )
+    {
+      foreground_sample_numbers = samplenums;
+    }else
+    {
+      bool hasBackground = false, hasForeground = false;
+      int childrow = -9999, backrow = -9999;
+
+      for( const int sample : samplenums )
+      {
+        bool has_meas = false;
+        SpecUtils::SourceType src_type = SpecUtils::SourceType::Unknown;
+        for( const int detnum : spec->detector_numbers() )
+        {
+          const auto m = spec->measurement( sample, detnum );
+          if( m && m->num_gamma_channels() )
+          {
+            has_meas = true;
+            src_type = m->source_type();
+          }
+        }
+
+        if( !has_meas )
+          continue;
+
+        switch( src_type )
+        {
+          case SpecUtils::SourceType::IntrinsicActivity:
+          case SpecUtils::SourceType::Calibration:
+            break;
+
+          case SpecUtils::SourceType::Foreground:
+            if( !hasForeground )
+            {
+              hasForeground = true;
+              childrow = sample;
+            }
+            break;
+
+          case SpecUtils::SourceType::Background:
+            if( !hasBackground )
+            {
+              hasBackground = true;
+              backrow = sample;
+            }
+            break;
+
+          case SpecUtils::SourceType::Unknown:
+            if( childrow < -999 )
+              childrow = sample;
+            break;
+        }//switch( src_type )
+      }//for( const int sample : samplenums )
+
+      if( childrow < -999 )
+        childrow = *samplenums.begin();
+
+      foreground_sample_numbers.insert( childrow );
+      if( hasBackground )
+        background_sample_numbers.insert( backrow );
+    }//if( passthrough ) / elif( single ) / else
+
+    if( foreground_sample_numbers.empty() )
+      swap( foreground_sample_numbers, background_sample_numbers );
+
+    if( foreground_sample_numbers.empty() )
+    {
+      fprintf( stderr, "No foreground measurements in '%s'.\n", filename );
+      return false;
+    }
+
+    const vector<string> &detectors_to_use = spec->detector_names();
+
+    if( foreground_sample_numbers.size() == 1 && detectors_to_use.size() == 1 )
+    {
+      foreground = spec->measurement( *foreground_sample_numbers.begin(), detectors_to_use.at( 0 ) );
+    }else
+    {
+      foreground = spec->sum_measurements( foreground_sample_numbers, detectors_to_use, nullptr );
+    }
+
+    if( !background_sample_numbers.empty() )
+      background = spec->sum_measurements( background_sample_numbers, detectors_to_use, nullptr );
+
+    if( !foreground )
+    {
+      fprintf( stderr, "No measurements in '%s'.\n", filename );
+      return false;
+    }
+
+    peaks = spec->peaks( foreground_sample_numbers );
+
+    return true;
+  }//load_spec_data(...)
+}//anonymous namespace
+
+
+#if MACOS_QUICK_LOOK_USE_PDF
+
 void render_spec_file_to_pdf( uint8_t **result, size_t *result_size,
                               const char * const filename,
                               const float width_pt, const float height_pt,
@@ -469,134 +627,12 @@ void render_spec_file_to_pdf( uint8_t **result, size_t *result_size,
   (*result) = nullptr;
   (*result_size) = 0;
 
-  auto spec = std::make_shared<SpecMeas>();
-
-  if( !spec->load_file( filename, SpecUtils::ParserType::Auto, filename ) )
-  {
-    fprintf( stderr, "Failed to parse '%s' as a spectrum file.\n", filename );
-    return;
-  }
-
-  if( !spec->num_measurements() )
-  {
-    fprintf( stderr, "No measurements in '%s'.\n", filename );
-    return;
-  }
-
-  const std::set<int> &samplenums = spec->sample_numbers();
-
-  std::set<int> foreground_sample_numbers, background_sample_numbers;
+  std::shared_ptr<SpecMeas> spec;
   std::shared_ptr<const SpecUtils::Measurement> foreground, background;
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks;
 
-  // Determine foreground and background sample numbers
-  if( spec->passthrough() )
-  {
-    for( const int sample : samplenums )
-    {
-      bool occupied = false;
-      for( const int detnum : spec->detector_numbers() )
-      {
-        const auto m = spec->measurement( sample, detnum );
-        occupied = (occupied
-                    || (m && (m->occupied() == SpecUtils::OccupancyStatus::Occupied
-                              || m->source_type() == SpecUtils::SourceType::Foreground)));
-      }
-      if( occupied )
-        foreground_sample_numbers.insert( sample );
-      else
-        background_sample_numbers.insert( sample );
-    }
-  }else if( spec->num_measurements() == 1 || samplenums.size() == 1 )
-  {
-    foreground_sample_numbers = samplenums;
-  }else
-  {
-    bool hasBackground = false, hasForeground = false;
-    int childrow = -9999, backrow = -9999;
-
-    for( const int sample : samplenums )
-    {
-      bool has_meas = false;
-      SpecUtils::SourceType type = SpecUtils::SourceType::Unknown;
-      for( const int detnum : spec->detector_numbers() )
-      {
-        const auto m = spec->measurement( sample, detnum );
-        if( m && m->num_gamma_channels() )
-        {
-          has_meas = true;
-          type = m->source_type();
-        }
-      }
-
-      if( !has_meas )
-        continue;
-
-      switch( type )
-      {
-        case SpecUtils::SourceType::IntrinsicActivity:
-        case SpecUtils::SourceType::Calibration:
-          break;
-
-        case SpecUtils::SourceType::Foreground:
-          if( !hasForeground )
-          {
-            hasForeground = true;
-            childrow = sample;
-          }
-          break;
-
-        case SpecUtils::SourceType::Background:
-          if( !hasBackground )
-          {
-            hasBackground = true;
-            backrow = sample;
-          }
-          break;
-
-        case SpecUtils::SourceType::Unknown:
-          if( childrow < -999 )
-            childrow = sample;
-          break;
-      }//switch( type )
-    }//for( const int sample : samplenums )
-
-    if( childrow < -999 )
-      childrow = *samplenums.begin();
-
-    foreground_sample_numbers.insert( childrow );
-    if( hasBackground )
-      background_sample_numbers.insert( backrow );
-  }//if( passthrough ) / elif( single ) / else
-
-  if( foreground_sample_numbers.empty() )
-    swap( foreground_sample_numbers, background_sample_numbers );
-
-  if( foreground_sample_numbers.empty() )
-  {
-    fprintf( stderr, "No foreground measurements in '%s'.\n", filename );
+  if( !load_spec_data( filename, spec, foreground, background, peaks ) )
     return;
-  }
-
-  const vector<string> &detectors_to_use = spec->detector_names();
-
-  if( foreground_sample_numbers.size() == 1 && detectors_to_use.size() == 1 )
-  {
-    foreground = spec->measurement( *foreground_sample_numbers.begin(), detectors_to_use.at( 0 ) );
-  }else
-  {
-    foreground = spec->sum_measurements( foreground_sample_numbers, detectors_to_use, nullptr );
-  }
-
-  if( !background_sample_numbers.empty() )
-    background = spec->sum_measurements( background_sample_numbers, detectors_to_use, nullptr );
-
-  if( !foreground )
-  {
-    fprintf( stderr, "No measurements in '%s'.\n", filename );
-    return;
-  }
-
-  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks = spec->peaks( foreground_sample_numbers );
 
   // Render to PDF
   // Use 1:1 point-to-pixel ratio; PDFView auto-scales to fit the window
@@ -634,8 +670,6 @@ void render_spec_file_to_pdf( uint8_t **result, size_t *result_size,
         throw runtime_error( "Failed in renderTimeSeries" );
     }else
     {
-      // For thumbnails: always render just the spectrum filling the full area
-      // For non-passthrough previews: same behavior
       const std::string logo = (logo_path ? logo_path : "");
       auto spectrum_img = std::make_shared<WPdfImage>( pdfdoc, pdfpage, 0, 0, width_px, height_px );
       if( !renderSpectrum( *spectrum_img, foreground, background, peaks, is_thumbnail, logo ) )
@@ -675,3 +709,61 @@ void render_spec_file_to_pdf( uint8_t **result, size_t *result_size,
     return;
   }
 }//render_spec_file_to_pdf(...)
+
+
+#else /* !MACOS_QUICK_LOOK_USE_PDF */
+
+
+CGImageRef render_spec_file_to_cgimage( const char * const filename,
+                                        const float width, const float height,
+                                        const enum SpecPreviewType type,
+                                        const char * const logo_path )
+{
+  std::shared_ptr<SpecMeas> spec;
+  std::shared_ptr<const SpecUtils::Measurement> foreground, background;
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks;
+
+  if( !load_spec_data( filename, spec, foreground, background, peaks ) )
+    return nullptr;
+
+  try
+  {
+    CGPaintDevice device( width, height );
+
+    // Fill with white background
+    CGContextRef ctx = device.cgContext();
+    CGContextSetRGBFillColor( ctx, 1.0, 1.0, 1.0, 1.0 );
+    CGContextFillRect( ctx, CGRectMake( 0, 0, width, height ) );
+
+    const bool is_thumbnail = (type == SpectrumThumbnail);
+
+    if( !is_thumbnail && spec->passthrough() )
+    {
+      // Preview of passthrough: spectrum on top 2/3, time series on bottom 1/3
+      const float spec_height = 2.0f * height / 3.0f;
+      const float time_height = height - spec_height;
+
+      CGPaintDevice specDevice( device, 0, 0, width, spec_height );
+      if( !renderSpectrum( specDevice, foreground, background, peaks, false ) )
+        throw std::runtime_error( "Failed in renderSpectrum for passthrough" );
+
+      CGPaintDevice timeDevice( device, 0, spec_height, width, time_height );
+      if( !renderTimeSeries( timeDevice, spec ) )
+        throw std::runtime_error( "Failed in renderTimeSeries" );
+    }else
+    {
+      const std::string logo = (logo_path ? logo_path : "");
+      if( !renderSpectrum( device, foreground, background, peaks, is_thumbnail, logo ) )
+        throw std::runtime_error( "Failed in renderSpectrum" );
+    }
+
+    return device.createCGImage();
+  }catch( std::exception &e )
+  {
+    fprintf( stderr, "Failed rendering CGImage: %s\n", e.what() );
+    return nullptr;
+  }
+}//render_spec_file_to_cgimage(...)
+
+
+#endif /* MACOS_QUICK_LOOK_USE_PDF */

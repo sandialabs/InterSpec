@@ -22,7 +22,11 @@
  */
 
 #import <Cocoa/Cocoa.h>
+#if MACOS_QUICK_LOOK_USE_PDF
 #import <Quartz/Quartz.h>
+#else
+#import <QuickLookUI/QuickLookUI.h>
+#endif
 
 #include "SpecPreviewCommon.h"
 
@@ -54,6 +58,8 @@
     return;
   }
 
+#if MACOS_QUICK_LOOK_USE_PDF
+
   // Render spectrum to PDF using the shared rendering code
   uint8_t *pdfData = NULL;
   size_t pdfLen = 0;
@@ -68,7 +74,8 @@
   }
 
   // Create PDFDocument from rendered data
-  NSData *nsData = [NSData dataWithBytesNoCopy:pdfData length:pdfLen freeWhenDone:YES];
+  NSData *nsData = [NSData dataWithBytes:pdfData length:pdfLen];
+  free( pdfData );
   PDFDocument *pdfDoc = [[PDFDocument alloc] initWithData:nsData];
 
   if( !pdfDoc )
@@ -86,6 +93,30 @@
   pdfView.document = pdfDoc;
   pdfView.displayMode = kPDFDisplaySinglePage;
   [self.view addSubview:pdfView];
+
+#else /* !MACOS_QUICK_LOOK_USE_PDF */
+
+  CGImageRef cgImage = render_spec_file_to_cgimage( filePath, 800, 600, SpectrumPreview, NULL );
+
+  if( !cgImage )
+  {
+    handler( [NSError errorWithDomain:@"gov.sandia.SpecFilePreview"
+                                code:2
+                            userInfo:@{NSLocalizedDescriptionKey: @"Failed to render spectrum"}] );
+    return;
+  }
+
+  NSImage *nsImage = [[NSImage alloc] initWithCGImage:cgImage
+                                                 size:NSMakeSize( 800, 600 )];
+  CGImageRelease( cgImage );
+
+  NSImageView *imageView = [NSImageView imageViewWithImage:nsImage];
+  imageView.frame = self.view.bounds;
+  imageView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  imageView.imageScaling = NSImageScaleProportionallyUpOrDown;
+  [self.view addSubview:imageView];
+
+#endif /* MACOS_QUICK_LOOK_USE_PDF */
 
   handler( nil );
 }
