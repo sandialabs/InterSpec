@@ -1054,7 +1054,84 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
   }//if( not a spectrum file )
   
   is_spectrum_file = true;
-  
+
+
+  // The following
+  {// BEGIN choose one energy calibration type for files that include multiple (mostly search-mode data)
+    const bool include_all_cal_spec = false;
+    const set<string> cals = meas.energy_cal_variants();
+
+    if( cals.size() > 1 && !include_all_cal_spec )
+    {
+      //Calibrations I've seen:
+      //"CmpEnCal", and "LinEnCal"
+      //"2.5MeV" vs "9MeV"
+      //{"EnergyCalibration", "LowEnergyCalibration", vs "FullEnergyCalibration"}
+
+      string prefered_variant;
+      for( const auto str : cals )
+      {
+        if( SpecUtils::icontains( str, "Lin") )
+          prefered_variant = str;
+        //else if( SpecUtils::iequals_ascii( str, "EnergyCalibration") )
+        //  prefered_variant = str;
+      }//for( const auto &str : cals )
+
+      if( prefered_variant.empty() )
+      {
+        auto getMev = []( string str ) -> double {
+          SpecUtils::to_lower_ascii(str);
+          size_t pos = str.find("mev");
+          if( pos == string::npos )
+            return -999.9;
+          str = str.substr(0,pos);
+          SpecUtils::trim( str );
+          for( size_t index = str.size(); index > 0; --index )
+          {
+            const char c = str[index-1];
+            if( !isdigit(c) && c != '.' && c!=',' )
+            {
+              str = str.substr(index);
+              break;
+            }
+          }
+
+          double val;
+          if( stringstream(str) >> val )
+            return val;
+
+          return -999.9;
+        };
+
+        double maxenergy = -999.9;
+        for( const auto str : cals )
+        {
+          const double energy = getMev(str);
+          if( (energy > 0.0) && (energy > maxenergy) )
+          {
+            maxenergy = energy;
+            prefered_variant = str;
+          }
+        }//for( const auto str : cals )
+
+      }//if( prefered_variant.empty() )
+
+      if( prefered_variant.size() )
+      {
+        meas.keep_energy_cal_variants( {prefered_variant} );
+      }else
+      {
+        cerr << "Couldn't identify a preferred energy variant out of {";
+        int calnum = 0;
+        for( const auto str : cals )
+          cerr << (calnum++ ? ", " : "") << str;
+        cerr << "} - so including all energy calibrations" << endl;
+      }
+    }//if( more than one calibration present, and we only want one )
+  }// END choose one energy calibration type for files that include multiple (mostly search-mode data)
+
+
+
   meas.set_filename( SpecUtils::filename(filepath) );
   
   filename = meas.filename();
