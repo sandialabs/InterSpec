@@ -4750,9 +4750,9 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 #else
   btn = new WPushButton( WString::tr("raag-xml-config"), parent );
   btn->setIcon( "InterSpec_resources/images/download_small.svg" );
+  btn->setLink( WLink( m_xml_download_rsc ) );
   btn->setLinkTarget( Wt::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
-  btn->setLink( WLink(m_xml_download_rsc) );
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
