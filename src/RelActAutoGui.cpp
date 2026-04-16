@@ -172,6 +172,7 @@ namespace
     {
       assert( m_app );
       assert( m_tool );
+      setTakesUpdateLock( true );
     }
   
     virtual ~RelActAutoReportResource()
@@ -256,6 +257,7 @@ namespace
     {
       assert( m_app );
       assert( m_tool );
+      setTakesUpdateLock( true );
     }
     
     virtual ~RelActAutoParamsResource()
