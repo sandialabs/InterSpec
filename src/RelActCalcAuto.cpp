@@ -5594,21 +5594,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       };//eval_with_constants lambda
       
       
-      // Evaluate the problem a few times, holding different sets of paramaters constant.
-      // The paramaters we currently have available to us to hold constant (could implement more), are:
-      //    hoerl_par_indexes, ene_cal_pars_indexes, fwhm_par_indexes, self_atten_par_indexes, ext_atten_par_indexs,ext_atten_par_indexs, non_phys_rel_eff_pars
-      //
-      // The
-      // - Fix {Ene. Cal., FWHM} - if Physical{Hoerl, shielding} else starting rel-eff-pars
-      // - if Physical{Hoerl}
-      // At each step, we will only take answer if better - otherwise reset parmaters to the before state.
-      //
-      // TODO: Check if for non-physical solution, holding starting rel-eff-pars constant helps
-      // TODO: Go through and refactor getting these parameters into a seperate function
-      //  Also, all the above getting of indexes is totally not tested.
-      //  Also, still need to give offset and scale for AD shielding - e.g., so zero doesnt mean no shielding
       eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars} );
-      
+
       if( !initial_par_vals_to_restore_after_initial_fit.empty() )
       {
         for( const pair<int,double> &intial_vals : initial_par_vals_to_restore_after_initial_fit )
