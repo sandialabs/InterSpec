@@ -32,6 +32,11 @@
 namespace InterSpecWxUtils
 {
   void handle_javascript_error( const std::string &error_msg, const std::string app_token );
+
+  /** Saves binary file data to a user-selected path using a native wxFileDialog.
+   Called from a Wt worker thread; dispatches to the wxWidgets main thread.
+  */
+  void save_file_data( std::string data, std::string suggested_name );
 }//namespace InterSpecWxUtils
 
 

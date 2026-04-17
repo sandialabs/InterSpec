@@ -173,6 +173,7 @@ namespace
     {
       assert( m_app );
       assert( m_tool );
+      setTakesUpdateLock( true );
     }
   
     virtual ~RelActAutoReportResource()
@@ -257,6 +258,7 @@ namespace
     {
       assert( m_app );
       assert( m_tool );
+      setTakesUpdateLock( true );
     }
     
     virtual ~RelActAutoParamsResource()
@@ -380,7 +382,7 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     }
     
     window->centerWindow();
-    window->finished().connect( viewer, &InterSpec::closeShieldingSourceFit );
+    window->finished().connect( viewer, &InterSpec::handleRelActAutoClose );
     
     window->WDialog::setHidden(false);
     window->show();
@@ -4869,9 +4871,9 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 #else
   btn = new WPushButton( WString::tr("raag-xml-config"), parent );
   btn->setIcon( "InterSpec_resources/images/download_small.svg" );
+  btn->setLink( WLink( m_xml_download_rsc ) );
   btn->setLinkTarget( Wt::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
-  btn->setLink( WLink(m_xml_download_rsc) );
   
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
@@ -4928,6 +4930,11 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
     try
     {
       const string xml_path = upload->spoolFileName();
+
+      const size_t filesize = SpecUtils::file_size( xml_path );
+      if( filesize > 50 * 1024 * 1024 )
+        throw runtime_error( "Uploaded file is too large (max 50 MB)." );
+
       rapidxml::file<char> input_file( xml_path.c_str() );;
       rapidxml::xml_document<char> doc;
       doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );

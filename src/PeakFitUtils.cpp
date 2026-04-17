@@ -381,10 +381,10 @@ bool is_likely_high_res( InterSpec *viewer )
     return false;
 
   std::shared_ptr<const SpecMeas> meas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
-  assert( meas );
+  //assert( meas );
 
   shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  assert( foreground );
+  //assert( foreground );
 
   if( !meas || !foreground || (foreground->num_gamma_channels() < 512) )
     return false;

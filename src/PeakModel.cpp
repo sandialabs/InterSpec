@@ -428,7 +428,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     
     const int nfields = static_cast<int>( fields.size() );
     
-    if( nfields < mean_index || nfields < area_index || nfields < fwhm_index )
+    if( nfields <= mean_index || nfields <= area_index || nfields <= fwhm_index )
       continue;
     
     try
@@ -709,16 +709,19 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
       }//if( new peak has a defined energy range )
       
       answer.push_back( peak );
+
+      if( answer.size() > 25000 )
+        throw runtime_error( "Too many peaks in CSV file (max 25000)." );
     }catch( std::exception &e )
     {
       throw runtime_error( "Invalid value on line '" + line + "', " + string(e.what()) );
     }//try / catch to parse a line into a peak
   }//while( SpecUtils::safe_get_line(csv, line, 2048) )
-  
-  
+
+
   if( answer.empty() )
     throw runtime_error( "No peak rows found in file." );
-  
+
   return answer;
 }//csv_to_candidate_fit_peaks(...)
 
@@ -758,9 +761,9 @@ vector<PeakDef> PeakModel::gadras_peak_csv_to_peaks( std::shared_ptr<const SpecU
     if( fields.empty() )
       continue;
     
-    if( fields.size() < 9 )
+    if( fields.size() < 4 )
       throw runtime_error( "Invalid Peak CSV header line: '" + line + "'" );
-    
+
     if( (fields[0] == "Energy(keV)") && (fields[1] == "sigma")
        && (fields[2] == "Rate(cps)") && (fields[3] == "sigma") )
     {
@@ -833,8 +836,11 @@ vector<PeakDef> PeakModel::gadras_peak_csv_to_peaks( std::shared_ptr<const SpecU
           fwhm_uncert = -1.0;
           
           const double live_time = ((fields.size() > 10) ? std::stod(fields[10]) : meas_live_time );
-          counts /= live_time;
-          counts_uncert /= live_time;
+          if( live_time > 0.0 )
+          {
+            counts /= live_time;
+            counts_uncert /= live_time;
+          }
           
           //const size_t peak_cps_index = 3, fwhm_percent_index = 5;
           //const size_t roi_total_counts_index = 6, roi_id_index = 7, filename_index = 8;
@@ -879,12 +885,15 @@ vector<PeakDef> PeakModel::gadras_peak_csv_to_peaks( std::shared_ptr<const SpecU
         info.setSigmaUncert( fwhm_uncert  / 2.35482f );
       
       answer.push_back( info );
+
+      if( answer.size() > 25000 )
+        throw runtime_error( "Too many peaks in CSV file (max 25000)." );
     }catch( std::exception &e )
     {
       throw runtime_error( "Invalid value on line '" + line + "', " + string(e.what()) );
     }//try / catch to parse a line into a peak
   }//while( SpecUtils::safe_get_line(csv, line, 2048) )
-  
+
   if( answer.empty() )
     throw runtime_error( "No peak rows found in file." );
   

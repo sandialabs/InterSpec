@@ -1075,14 +1075,16 @@ Shielding3DView.prototype.setData = function(data) {
       overlay.style.fontSize = '12px';
       overlay.style.pointerEvents = 'none'; // Let clicks pass through
       
-      var html = "<strong>Sources:</strong><br/>";
+      var header = document.createElement('strong');
+      header.textContent = 'Sources:';
+      overlay.appendChild(header);
       for (var i = 0; i < data.fitSources.length; i++) {
           var s = data.fitSources[i];
-          html += s.nuclide + " (" + s.type + "): " + s.activityPretty;
-          // if (s.activityUncert) html += " \u00B1 ...";
-          html += "<br/>";
+          overlay.appendChild(document.createElement('br'));
+          var line = document.createElement('span');
+          line.textContent = s.nuclide + " (" + s.type + "): " + s.activityPretty;
+          overlay.appendChild(line);
       }
-      overlay.innerHTML = html;
       container.appendChild(overlay);
   }
   

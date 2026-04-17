@@ -4158,3 +4158,122 @@ D3TimeChart.prototype.setUserInteractionMode = function (mode) {
   }
   this.reinitializeChart();
 };
+
+
+/**
+ * Returns a self-contained SVG markup string suitable for export as an image.
+ * Collects computed styles into a <defs><style> block so the SVG renders
+ * correctly outside the browser, and excludes the interaction_area overlay
+ * (mouse event rects, tooltip, selection highlight, etc.).
+ */
+D3TimeChart.prototype.getStaticSvg = function() {
+  try {
+    const w = this.svg.attr( "width" );
+    const h = this.svg.attr( "height" );
+
+    // Helper: query computed style for a selector
+    function getStyle( sel ) {
+      const el = document.querySelector( sel );
+      return el ? window.getComputedStyle( el ) : null;
+    }
+
+    // Helper: return a non-transparent fill, or null
+    function getSvgFill( sel ) {
+      const style = getStyle( sel );
+      const fill = style && style.fill ? style.fill : "";
+      const comps = fill.match( /\d+/g );
+      if( (comps && (comps.reduce( function( a, b ){ return parseFloat( a ) + parseFloat( b ); } ) > 0.01))
+         || (fill.length > 2 && fill.substring( 0, 1 ) === '#') )
+        return fill;
+      return null;
+    }
+
+    function getStroke( sel ) {
+      const s = getStyle( sel );
+      return s && s.stroke ? s.stroke : null;
+    }
+
+    // Determine SVG background from the page or chart-specific CSS rule
+    const domStyle = getStyle( '.Wt-domRoot' );
+    let domBackground = domStyle && domStyle.backgroundColor ? domStyle.backgroundColor : null;
+    if( domBackground ) {
+      const bgrndComps = domBackground.match( /\d+/g );
+      if( !bgrndComps
+        || ((bgrndComps.reduce( function( a, b ){ return parseFloat( a ) + parseFloat( b ); } ) < 0.01)
+        && (domBackground.length < 2 || domBackground.substring( 0, 1 ) === '#')) )
+        domBackground = null;
+    }
+
+    const svgStyle = getStyle( '#' + this.chart.id + ' > svg' );
+    const svgBack = svgStyle && svgStyle.background ? svgStyle.background : domBackground;
+    const chartAreaFill = getSvgFill( '#chartarea' + this.chart.id );
+
+    // Axis text fill (covers xaxistitle, yaxistitle, yaxis, yaxislabel, xaxis)
+    const axisTextStyle = getStyle( '.D3TimeChart .xaxistitle' );
+    const axisFill = axisTextStyle && axisTextStyle.fill ? axisTextStyle.fill : null;
+
+    // Axis line strokes (domain lines, tick marks)
+    const tickStroke = getStroke( '.D3TimeChart .xaxis > .tick > line' );
+
+    // Grid strokes
+    const gridTickStroke = getStroke( '.D3TimeChart .xgrid > .tick' );
+    const minorGridStroke = getStroke( '.D3TimeChart .minorgrid' );
+
+    // Occupancy line styles (from D3TimeChart.css)
+    const occLineStroke = getStroke( '.occupancy_start_line_group line' );
+    const occTextStyle = getStyle( '.occupancy_start_line_group text' );
+    const occTextFill = occTextStyle && occTextStyle.fill ? occTextStyle.fill : null;
+
+    // mouseInfo / mouseInfoBox (from SpectrumChartD3.css, shared)
+    const mouseInfoStyle = getStyle( '.mouseInfo' );
+    const mouseInfoFontSize = mouseInfoStyle && mouseInfoStyle.fontSize ? mouseInfoStyle.fontSize : null;
+    const mouseInfoBoxStyle = getStyle( '.mouseInfoBox' );
+    const mouseInfoBoxFill = mouseInfoBoxStyle && mouseInfoBoxStyle.fill ? mouseInfoBoxStyle.fill : null;
+    const mouseInfoBoxFillOpacity = mouseInfoBoxStyle && mouseInfoBoxStyle.fillOpacity ? mouseInfoBoxStyle.fillOpacity : null;
+
+    // Build the <defs><style> block
+    let svgDefs = '<defs><style type="text/css">\n'
+      + 'svg{ background: ' + (svgBack ? svgBack : 'rgb(255,255,255)') + '; }\n'
+      + '.chartarea{ fill: ' + (chartAreaFill ? chartAreaFill : 'rgba(0,0,0,0)') + '; }\n'
+      + (axisFill ? '.xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis, .xaxis > .tick > text, .yaxis > .tick > text { fill: ' + axisFill + '; }\n' : '')
+      + '.xaxis > .domain, .yaxis > .domain { fill: none; stroke-width: 1px; }\n'
+      + '.xaxis > .tick > line, .yaxis > .tick > line { stroke-width: 1px; }\n'
+      + (tickStroke ? '.xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick > line, .yaxistick { stroke: ' + tickStroke + '; }\n' : '')
+      + (gridTickStroke ? '.xgrid > .tick, .ygrid > .tick { stroke: ' + gridTickStroke + '; }\n' : '')
+      + (minorGridStroke ? '.minorgrid { stroke: ' + minorGridStroke + '; }\n' : '')
+      + (occLineStroke ? '.occupancy_start_line_group line, .occupancy_end_line_group line { stroke: ' + occLineStroke + '; stroke-width: 1; }\n' : '')
+      + (occTextFill ? '.occupancy_start_line_group text, .occupancy_end_line_group text { fill: ' + occTextFill + '; }\n' : '')
+      + (mouseInfoFontSize ? '.mouseInfo { font-size: ' + mouseInfoFontSize + '; }\n' : '')
+      + '.mouseInfoBox { '
+        + (mouseInfoBoxFill ? 'fill: ' + mouseInfoBoxFill + '; ' : '')
+        + (mouseInfoBoxFillOpacity ? 'fill-opacity: ' + mouseInfoBoxFillOpacity + '; ' : '')
+        + '}\n'
+      + '</style></defs>';
+
+    // Hide the interaction_area group (mouse event rects, selection highlight, tooltip)
+    this.rectG.style( "display", "none" );
+
+    // Inline fill:none and stroke-width on axis domain paths and tick lines,
+    //  since the external SpectrumChartD3.css rules are lost in standalone SVG export.
+    var domainPaths = this.svg.selectAll( ".xaxis > .domain, .yaxis > .domain" );
+    domainPaths.style( "fill", "none" ).style( "stroke-width", "1px" );
+    var tickLines = this.svg.selectAll( ".xaxis > .tick > line, .yaxis > .tick > line" );
+    tickLines.style( "stroke-width", "1px" );
+
+    const svgMarkup = '<svg xmlns="http://www.w3.org/2000/svg"'
+                    + ' width="' + w + '"'
+                    + ' height="' + h + '"'
+                    + '>'
+                    + svgDefs + this.svg.node().innerHTML.toString()
+                    + '</svg>';
+
+    // Restore the interaction_area group and remove inline axis styles
+    this.rectG.style( "display", null );
+    domainPaths.style( "fill", null ).style( "stroke-width", null );
+    tickLines.style( "stroke-width", null );
+
+    return svgMarkup;
+  } catch( e ) {
+    throw 'Error creating SVG time chart: ' + e;
+  }
+};//D3TimeChart.prototype.getStaticSvg

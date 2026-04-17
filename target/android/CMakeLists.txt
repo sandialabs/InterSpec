@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.15...3.23)
- 
+cmake_minimum_required(VERSION 3.20...3.31)
+
 set( SpecUtils_JAVA_SWIG OFF CACHE INTERNAL "" )
 set( SpecUtils_USE_WT_THREADPOOL ON CACHE INTERNAL "" )
 set( SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE INTERNAL "" )
@@ -23,16 +23,17 @@ set( TRY_TO_STATIC_LINK ON CACHE INTERNAL "" )
 set( MAX_SPECTRUM_MEMMORY_SIZE_MB 32 CACHE INTERNAL "" )
 set( USE_DB_TO_STORE_SPECTRA ON CACHE INTERNAL "" )
 set( USE_SPECRUM_FILE_QUERY_WIDGET OFF CACHE INTERNAL "" )
-# Building the RelAct tool currently fails for Android because of erroring finding Eigen (which should be fetched) - I didnt spend time trying to fix. 
+# Building the RelAct tool currently fails for Android because of erroring finding Eigen (which should be fetched) - I didnt spend time trying to fix.
 set( USE_REL_ACT_TOOL ON CACHE INTERNAL "" )
 set( USE_LEAFLET_MAP ON CACHE INTERNAL "" )
 
 
 message( "ANDROID_NDK_SYSROOT=${ANDROID_NDK_SYSROOT}")
 
-project( InterSpecAndroid VERSION 1.0.12 )
+project( InterSpecAndroid VERSION 1.0.13 )
 
-add_definitions( -DANDROID )
+# NDK r28 with minSdk 21 enables NEON by default for arm64-v8a.
+# The __ANDROID__ macro is defined by the NDK toolchain, so no need to add it manually.
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 

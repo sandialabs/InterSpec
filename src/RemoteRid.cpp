@@ -595,6 +595,7 @@ public:
     layout->addWidget( m_status_stack, 2, 0, 1, 2 );
     
     m_error = new WText();
+    m_error->setTextFormat( Wt::PlainText );
     m_error->addStyleClass( "RestRidError" );
     m_error->setInline( false );
     m_status_stack->addWidget( m_error );
@@ -1450,7 +1451,8 @@ public:
         for( const string &name : versions.names() )
         {
           const WString val = versions.get(name).toString();
-          infotxt += name + ": " + val.toUTF8() + "<br />";
+          infotxt += Wt::Utils::htmlEncode( name ) + ": "
+                   + Wt::Utils::htmlEncode( val.toUTF8() ) + "<br />";
         }
       }//if( result.contains("versions") )
       
@@ -1616,7 +1618,7 @@ public:
       *results = json_to_results( msg );
     }catch( std::exception &e )
     {
-      m_error->setText( "Error parsing analysis results: <code>" + string(e.what()) + "</code>" );
+      m_error->setText( "Error parsing analysis results: " + string(e.what()) );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
     }
     

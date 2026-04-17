@@ -16,6 +16,7 @@ set(USE_REL_ACT_TOOL ON CACHE INTERNAL "Enable Rel. Act. Tools" )
 set(USE_LEAFLET_MAP ON CACHE INTERNAL "Use leaflet map tool" )
 option( USE_BATCH_CLI_TOOLS "Enables command line batch processing." OFF )
 option( USE_BATCH_GUI_TOOLS "Enables GUI batch processing." ON )
+option( USE_MACOS_QUICK_LOOK "Build macOS Quick Look preview and thumbnail extensions." ON )
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../ InterSpecLib )
 
@@ -31,7 +32,7 @@ SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
 SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
 SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate corresponding value in Xcode
-set(MACOS_BUNDLE_VERSION_NUMBER 55)
+set(MACOS_BUNDLE_VERSION_NUMBER 56)
 
 
 SET( ${PRODUCT_NAME} "InterSpec" )
@@ -55,30 +56,13 @@ set_source_files_properties(${APP_ICONS} PROPERTIES MACOSX_PACKAGE_LOCATION "Res
 set( CMAKE_INSTALL_RPATH "@executable_path/../Frameworks" )
 set( CMAKE_BUILD_RPATH "@executable_path/../Frameworks" )
 
-# Xcode doesnt like having two bundles for some reason, so we will add the
-# QuickLook project as an external project and add it to the final application
-# at InterSpec.app/Contents/Library/QuickLook
-include(ExternalProject)
-ExternalProject_Add(SpecFilePreview
-    BINARY_DIR   "${CMAKE_BINARY_DIR}/SpecFilePreview"
-    URL ${CMAKE_CURRENT_SOURCE_DIR}/../macOsQuickLook/SpecFilePreview/SpecFilePreview/
-    CMAKE_GENERATOR   "Unix Makefiles"
-    CMAKE_CACHE_ARGS -DCMAKE_PREFIX_PATH:PATH=${CMAKE_PREFIX_PATH}
-                     #-DWt_INCLUDE_DIR:PATH=${Wt_INCLUDE_DIR}
-                     #-DBOOST_ROOT:PATH=${Boost_INCLUDE_DIR}/..
-                     -DInterSpec_BASE_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/../../
-                     #-DBOOST_INCLUDEDIR:PATH=${Boost_INCLUDE_DIR}
-                     -DCMAKE_BUILD_TYPE:STRING=RELEASE
-                     -DSpecUtils_ENABLE_D3_CHART:BOOL=OFF
-                     INSTALL_COMMAND   ""
-)
-
-# Add dummy command to let cmake know SpecFilePreview.qlgenerator isnt available
-# at configure time so it wont complain
-add_custom_command(
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator"
-    COMMAND ""
-)
+# Quick Look preview and thumbnail extensions (.appex) for macOS
+if( USE_MACOS_QUICK_LOOK )
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../macOsQuickLook/SpecFilePreviewExtension
+    ${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreviewExtension
+  )
+endif( USE_MACOS_QUICK_LOOK )
 
 
 #In order to copy all the needed resources to the "Archive" builds of Xcode,
@@ -119,9 +103,8 @@ add_custom_command(
 ADD_EXECUTABLE( InterSpecApp MACOSX_BUNDLE ${app_sources} ${APP_ICONS}
     ${DATA_RES_SOURCES} ${WT_RES_SOURCES} ${INTERSPEC_RES_SOURCES} ${EXAMPLE_RES_SOURCES} ${EN_LOCALIZATION_FILES}
     "${CMAKE_CURRENT_BINARY_DIR}/MainMenu.nib"
-    "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator"
 )
-    
+
 SET_TARGET_PROPERTIES( InterSpecApp PROPERTIES MACOSX_BUNDLE TRUE )
 #set_target_properties( InterSpecApp PROPERTIES SUFFIX "")
 set_target_properties(InterSpecApp PROPERTIES OUTPUT_NAME "InterSpec")
@@ -138,13 +121,26 @@ else()
   )
 endif()
 
-add_dependencies(InterSpecApp SpecFilePreview)
+if( USE_MACOS_QUICK_LOOK )
+  add_dependencies( InterSpecApp SpecFilePreview SpecFileThumbnail )
+
+  # Copy .appex bundles into PlugIns directory.
+  # CMake's TARGET_BUNDLE_DIR resolves to .app, but the XCODE_PRODUCT_TYPE override builds
+  #  .appex bundles.  So we compute the .appex path from the build output directory.
+  set( APPEX_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreviewExtension/$<CONFIG>" )
+  add_custom_command( TARGET InterSpecApp POST_BUILD
+    COMMAND mkdir -p "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/SpecFilePreview.appex"
+    COMMAND cp -a "${APPEX_OUTPUT_DIR}/SpecFilePreview.appex" "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/SpecFileThumbnail.appex"
+    COMMAND cp -a "${APPEX_OUTPUT_DIR}/SpecFileThumbnail.appex" "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/"
+  )
+endif( USE_MACOS_QUICK_LOOK )
 
 
-if( USE_BATCH_CLI_TOOLS )
-  add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../batch InterSpec_batch )
-  add_dependencies( InterSpecApp InterSpec_batch )
-  
+# When building with shared library (batch CLI tools or Quick Look extensions), copy the
+#  framework into the app bundle and set RPATH so the app can find it.
+if( USE_BATCH_CLI_TOOLS OR USE_MACOS_QUICK_LOOK )
   # It seems like $<TARGET_BUNDLE_DIR:InterSpecLib> is a symlink to the actual build location, so we
   #  need to copy the symlinks path, but also, preserve symlinks inside the bundle.  So we'll use
   #  Unix cp to do this, after getting where the symlink points to
@@ -155,6 +151,11 @@ if( USE_BATCH_CLI_TOOLS )
   # We want to look in InterSpec.app/Contents/Frameworks for InterSpecLib to link to
   set_target_properties( InterSpecApp PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks" )
   set_target_properties( InterSpecApp PROPERTIES BUILD_WITH_INSTALL_RPATH 1 INSTALL_NAME_DIR "@rpath" )
+endif( )
+
+if( USE_BATCH_CLI_TOOLS )
+  add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../batch InterSpec_batch )
+  add_dependencies( InterSpecApp InterSpec_batch )
 
   set_target_properties( InterSpec_batch PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks" )
   set_target_properties( InterSpec_batch PROPERTIES BUILD_WITH_INSTALL_RPATH 1 INSTALL_NAME_DIR "@rpath" )
@@ -176,10 +177,6 @@ endif( USE_BATCH_CLI_TOOLS )
 
 # set( RES_SOURCES_DIRS DATA_RES_SOURCES WT_RES_SOURCES INTERSPEC_RES_SOURCES EXAMPLE_RES_SOURCES EN_LOCALIZATION_FILES )
 # set( RES_DEST_DIRS data resources InterSpec_resources example_spectra en.lproj )
-
-set_property( SOURCE ${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreview/SpecFilePreview.qlgenerator
-    PROPERTY MACOSX_PACKAGE_LOCATION "Library/QuickLook/"
-)
 
 foreach(RES_FILE ${DATA_RES_SOURCES})
     #Get the relative path from the data-folder to the particular file
@@ -308,4 +305,14 @@ if( USE_BATCH_CLI_TOOLS )
   set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
   set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
 endif( USE_BATCH_CLI_TOOLS )
+
+if( USE_MACOS_QUICK_LOOK )
+  set_target_properties( SpecFilePreview PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${mac_signing_identity}" )
+  set_target_properties( SpecFilePreview PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
+  set_target_properties( SpecFilePreview PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
+
+  set_target_properties( SpecFileThumbnail PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${mac_signing_identity}" )
+  set_target_properties( SpecFileThumbnail PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
+  set_target_properties( SpecFileThumbnail PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
+endif( USE_MACOS_QUICK_LOOK )
 

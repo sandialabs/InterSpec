@@ -418,10 +418,11 @@ void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rap
         
         if( !energy_node || !energy_node->value()
            || !chi_node || !chi_node->value()
-           || !scale_node || !scale_node->value()
-           || !scale_uncert_node || !scale_uncert_node->value() )
+           || !scale_node || !scale_node->value() )
+        {
           throw runtime_error( "Invalid EvalPoint entry in Chi2Elements node" );
-        
+        }
+
         std::stringstream energy_stream;
         energy_stream.write( energy_node->value(), energy_node->value_size() );
         if( !(energy_stream >> point.energy) )
@@ -440,12 +441,18 @@ void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rap
         point.colorCss.clear();
         if( color_node && color_node->value() )
           point.colorCss.assign( color_node->value(), color_node->value() + color_node->value_size() );
-        
-        std::stringstream scale_uncert_stream;
-        scale_uncert_stream.write( scale_uncert_node->value(), scale_uncert_node->value_size() );
-        if( !(scale_uncert_stream >> point.scaleUncert) )
-          throw runtime_error( "Invalid ScaleUncert value in EvalPoint" );
-        
+
+        if( scale_uncert_node && scale_uncert_node->value() )
+        {
+          std::stringstream scale_uncert_stream;
+          scale_uncert_stream.write( scale_uncert_node->value(), scale_uncert_node->value_size() );
+          if( !(scale_uncert_stream >> point.scaleUncert) )
+            throw runtime_error( "Invalid ScaleUncert value in EvalPoint" );
+        }else
+        {
+          point.scaleUncert = -1.0;
+        }//if( scale_uncert_node && scale_uncert_node->value() ) / else
+
         info.evalPoints.push_back( point );
       }
     }
@@ -6485,7 +6492,11 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
   try
   {
     const std::string filename = upload->spoolFileName();
-    
+
+    const size_t filesize = SpecUtils::file_size( filename );
+    if( filesize > 50 * 1024 * 1024 )
+      throw runtime_error( "Uploaded file is too large (max 50 MB)." );
+
     std::vector<char> data;
     SpecUtils::load_file_data( filename.c_str(), data );
     

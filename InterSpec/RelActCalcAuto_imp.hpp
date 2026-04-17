@@ -141,11 +141,11 @@ struct PeakDefImp
    @param missing_frac The fraction of the peaks area you are okay not including; half this
           amount will be missing from both lower and upper distribution tails.
           A typical value might be like 1.0E-4 to get 99.99% of the peak.
-   @param max_num_fwhm If greater than zero, the energy range will be truncated to be this
-          amount of FWHMs from the mean, if the coverage would have the energy range go really
+   @param max_nsigma If greater than zero, the energy range will be truncated to be this
+          amount of gaussian sigmas from the mean, if the coverage would have the energy range go really
           far out.
    */
-  std::pair<double,double> peak_coverage_limits( const double missing_frac, const double max_num_fwhm )
+  std::pair<double,double> peak_coverage_limits( const double missing_frac, const double max_nsigma )
   {
     using namespace std;
 
@@ -190,77 +190,116 @@ struct PeakDefImp
       }
 
       case PeakDef::SkewType::Bortel:
-        vis_limits = PeakDists::bortel_coverage_limits( mean, sigma, skew_pars[0], missing_frac );
-        break;
+        try
+        {
+          vis_limits = PeakDists::bortel_coverage_limits( mean, sigma, skew_pars[0], missing_frac );
+        }catch( std::exception & )
+        {
+          // Bortel has a low-energy tail; go wide on the left, use Gaussian limit on the right
+          vis_limits.first = mean - 15.0*sigma;
+
+          const boost::math::normal_distribution gaus_dist( 1.0 );
+          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+        }
+      break;
 
       case PeakDef::SkewType::GaussExp:
-        vis_limits = PeakDists::gauss_exp_coverage_limits( mean, sigma, skew_pars[0], missing_frac );
+        try
+        {
+          vis_limits = PeakDists::gauss_exp_coverage_limits( mean, sigma, skew_pars[0], missing_frac );
+        }catch( std::exception & )
+        {
+          vis_limits.first = mean - 15.0*sigma;
+
+          const boost::math::normal_distribution gaus_dist( 1.0 );
+          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+        }
         break;
 
       case PeakDef::SkewType::CrystalBall:
         try
-      {
-        vis_limits = PeakDists::crystal_ball_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], missing_frac );
-      }catch( std::exception & )
-      {
-        // CB dist can have really long tail, causing the coverage limits to fail, because
-        //  of unreasonable values - in this case we'll just go way out
-        vis_limits.first = mean - 15.0*sigma;
+        {
+          vis_limits = PeakDists::crystal_ball_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], missing_frac );
+        }catch( std::exception & )
+        {
+          // CB dist can have really long tail, causing the coverage limits to fail, because
+          //  of unreasonable values - in this case we'll just go way out
+          vis_limits.first = mean - 20.0*sigma;
 
-        const boost::math::normal_distribution gaus_dist( 1.0 );
-        vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
-      }
-        break;
+          const boost::math::normal_distribution gaus_dist( 1.0 );
+          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+        }
+      break;
 
       case PeakDef::SkewType::ExpGaussExp:
-        vis_limits = PeakDists::exp_gauss_exp_coverage_limits( mean, sigma, skew_pars[0],
+        try
+        {
+          vis_limits = PeakDists::exp_gauss_exp_coverage_limits( mean, sigma, skew_pars[0],
                                                               skew_pars[1], missing_frac );
-        break;
+        }catch( std::exception & )
+        {
+          vis_limits.first  = mean - 15.0*sigma;
+          vis_limits.second = mean + 15.0*sigma;
+        }//try / catch
+      break;
 
       case PeakDef::SkewType::DoubleSidedCrystalBall:
         try
-      {
-        vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( mean, sigma, skew_pars[0],
+        {
+          vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( mean, sigma, skew_pars[0],
                                                                           skew_pars[1], skew_pars[2], skew_pars[3], missing_frac );
-      }catch( std::exception & )
-      {
-        // CB dist can have really long tail, causing the coverage limits to fail, because
-        //  of unreasonable values - in this case we'll just go way out
-        vis_limits.first  = mean - 15.0*sigma;
-        vis_limits.second = mean + 15.0*sigma;
-      }//try / catch
-        break;
+        }catch( std::exception & )
+        {
+          // CB dist can have really long tail, causing the coverage limits to fail, because
+          //  of unreasonable values - in this case we'll just go way out
+          vis_limits.first  = mean - 20.0*sigma;
+          vis_limits.second = mean + 20.0*sigma;
+        }//try / catch
+      break;
 
       case PeakDef::SkewType::VoigtPlusBortel:
+        try
+        {
         vis_limits = PeakDists::voigt_exp_coverage_limits( mean, sigma, skew_pars[0],
                                                             skew_pars[1], skew_pars[2], missing_frac );
-        break;
+        }catch( std::exception & )
+        {
+          vis_limits.first  = mean - 20.0*sigma;
+          vis_limits.second = mean + 20.0*sigma;
+        }//try / catch
+      break;
 
       case PeakDef::SkewType::GaussPlusBortel:
+        try
+        {
         vis_limits = PeakDists::gauss_plus_bortel_coverage_limits( mean, sigma, skew_pars[0],
                                                                     skew_pars[1], missing_frac );
-        break;
+        }catch( std::exception & )
+        {
+          vis_limits.first  = mean - 15.0*sigma;
+          vis_limits.second = mean + 15.0*sigma;
+        }//try / catch
+      break;
 
       case PeakDef::SkewType::DoubleBortel:
         try
-      {
-        vis_limits = PeakDists::double_bortel_coverage_limits( mean, sigma, skew_pars[0],
+        {
+          vis_limits = PeakDists::double_bortel_coverage_limits( mean, sigma, skew_pars[0],
                                                                 skew_pars[1], skew_pars[2], missing_frac );
-      }catch( std::exception & )
-      {
-        // Bortel has a low-energy tail; go wide on the left, use Gaussian limit on the right
-        vis_limits.first = mean - 15.0*sigma;
+        }catch( std::exception & )
+        {
+          vis_limits.first = mean - 15.0*sigma;
 
-        const boost::math::normal_distribution gaus_dist( 1.0 );
-        vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
-      }
-        break;
+          const boost::math::normal_distribution gaus_dist( 1.0 );
+          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+        }
+      break;
     }//switch( m_skew_type )
 
-    if( max_num_fwhm > 0.0 )
+    if( max_nsigma > 0.0 )
     {
-      vis_limits.first = (std::max)( vis_limits.first, mean - 2.35482*max_num_fwhm*sigma );
-      vis_limits.second = (std::min)( vis_limits.second, mean + 2.35482*max_num_fwhm*sigma );
+      vis_limits.first = (std::max)( vis_limits.first, mean - max_nsigma*sigma );
+      vis_limits.second = (std::min)( vis_limits.second, mean + max_nsigma*sigma );
     }//if( max_num_fwhm > 0.0 )
 
     return vis_limits;

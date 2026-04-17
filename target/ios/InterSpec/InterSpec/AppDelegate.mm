@@ -114,6 +114,27 @@ Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
     tempDir = @"/tmp";
   static const std::string tmpdirstr = [tempDir UTF8String];
   
+  InterSpecApp::setNativeFileSaveHandler( []( std::string data, std::string suggested_name ){
+    NSData *nsData = [NSData dataWithBytes:data.data() length:data.size()];
+    NSString *nsSuggestedName = [NSString stringWithUTF8String:suggested_name.c_str()];
+
+    NSString *tempDir = NSTemporaryDirectory();
+    if( tempDir == nil )
+      tempDir = @"/tmp";
+
+    NSString *tmpFile = [tempDir stringByAppendingPathComponent:nsSuggestedName];
+    if( ![nsData writeToFile:tmpFile atomically:YES] )
+    {
+      NSLog( @"setNativeFileSaveHandler: Failed to write temp file '%@'", tmpFile );
+      return;
+    }
+
+    dispatch_async( dispatch_get_main_queue(), ^{
+      AppDelegate *appDelegate = (AppDelegate *)[[UIApplication sharedApplication] delegate];
+      [appDelegate sendSpectrumFileToOtherApp:tmpFile];
+    } );
+  } );
+
   {
     static const char *argv0 = "--docroot";
     static const char *argv1 = ".";

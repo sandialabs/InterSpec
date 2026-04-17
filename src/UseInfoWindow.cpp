@@ -864,6 +864,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   
   WPushButton *ok = addCloseButtonToFooter( WString::tr("Close") );
   ok->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
+  ok->setFocus();
   
   if( viewer
      //&& (viewer->renderedWidth() > 715.0) //At initial app load we actually dont yet know client browser size; should maybe do check clientside.
@@ -895,7 +896,9 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     doJavaScript( js );
   }//if( viewer )
-  
+
+  // Remove initial focus from any widget so no visible focus is seen
+  doJavaScript( "setTimeout(function(){ if(document.activeElement) document.activeElement.blur(); },50);" );
 }//UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,InterSpec* viewer ):
 
 

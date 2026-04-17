@@ -9466,8 +9466,8 @@ vector<float> findPeaksByRelaxation( float *source,float *destVector, int ssize,
   
   i = (int)(7 * sigma + 0.5);
   i = 2 * i;
-  double *working_space = new double [7 * (ssize + i)];
-  for (j=0;j<7 * (ssize + i);j++) working_space[j] = 0;
+  vector<double> working_space_vec( 7 * (ssize + i), 0.0 );
+  double *working_space = working_space_vec.data();
   for(i = 0; i < size_ext; i++){
     if(i < shift){
       a = i - shift;
@@ -9576,9 +9576,8 @@ vector<float> findPeaksByRelaxation( float *source,float *destVector, int ssize,
       plocha += working_space[2 * size_ext + i];
     }
     if(maxch == 0) {
-      delete [] working_space;
       fPositionX.clear();
-      return fPositionX;;
+      return fPositionX;
     }
     
     nom = 1;
@@ -9828,7 +9827,6 @@ vector<float> findPeaksByRelaxation( float *source,float *destVector, int ssize,
   }
   
   for(i = 0; i < ssize; i++) destVector[i] = working_space[i + shift];
-  delete [] working_space;
   
   if(peak_index == fMaxPeaks)
     cerr << "findPeaksByRelaxation(...)\n\tPeak buffer full" << endl;
