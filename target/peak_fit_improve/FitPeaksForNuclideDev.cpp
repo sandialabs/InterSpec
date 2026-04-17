@@ -23,9 +23,11 @@
 
 #include "InterSpec_config.h"
 
+#include <atomic>
 #include <chrono>
 #include <random>
 #include <string>
+#include <thread>
 #include <fstream>
 #include <iomanip>
 #include <numeric>
@@ -205,38 +207,23 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
   const bool write_n42 = true;
 
-  // Initialize HTML output file (only if we're writing N42 files)
-  std::unique_ptr<ofstream> html_output;
-  size_t chart_counter = 0;  // For unique div IDs
+  // --- Phase 1: Map source names to nuclides and compute fit results in parallel ---
 
-  if( write_n42 )
+  // First, build the list of sources for each DataSrcInfo (serial, cheap)
+  struct FitInput
   {
-    html_output = std::make_unique<ofstream>( "relact_auto_peakfit_dev.html" );
-    try
-    {
-      D3SpectrumExport::write_html_page_header( *html_output, "RelActAuto Peak Fits", "InterSpec_resources" );
-    }catch( std::exception &e )
-    {
-      cerr << "\n\nError: " << e.what() << endl;
-      cerr << "You probably need to symbolically link InterSpec_resources to your CWD." << endl;
-      exit(1);
-    }
+    size_t src_index;
+    vector<RelActCalcAuto::SrcVariant> sources;
+  };
 
-    *html_output << "<body>" << endl;
-    *html_output << "<style>"
-      << ".TopLinesTable{ margin-top: 25px; margin-left: auto; margin-right: auto; border-collapse: collapse; border: 1px solid black; }" << endl
-      << "table, th, td{ border: 1px solid black; }" << endl
-      << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
-      << "</style>" << endl;
-  }
+  vector<FitInput> fit_inputs;
+  fit_inputs.reserve( srcs_info.size() );
 
-  for( const DataSrcInfo &src_info : srcs_info )
+  for( size_t si = 0; si < srcs_info.size(); ++si )
   {
-    const InjectSourceInfo &src = src_info.src_info;
-    assert( src.from_compact_data || (src.src_spectra.size() >= 12) );
-    assert( src.src_spectra.size() >= 1 );
+    const InjectSourceInfo &src = srcs_info[si].src_info;
     if( src.src_spectra.empty() )
-      throw runtime_error( "No measurements available." );
+      continue;
 
     string src_name = src.src_name;
     const auto underscore_pos = src_name.find( '_' );
@@ -258,7 +245,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
     if( src_name == "Tl201woTl202" )
     {
       sources.push_back( db->nuclide("Tl201"));
-      sources.push_back( db->nuclide("Tl202")); //I think it does actually have Tl202 in it
+      sources.push_back( db->nuclide("Tl202"));
     }else if( src_name == "Tl201wTl202" )
     {
       sources.push_back( db->nuclide("Tl201"));
@@ -306,22 +293,9 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
     {
       sources.push_back( db->nuclide("Xe133") );
       sources.push_back( db->nuclide("Xe133m") );
-    }else if( src_name == "Cf252" )
+    }else if( src_name == "Cf252" || src_name == "Am241Li" )
     {
-      sources.push_back( db->nuclide("Cf252") );
-      
-      const ReactionGamma * const rctn_db = ReactionGammaServer::database();
-      vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-      if( rctn_db )
-        rctn_db->gammas( "H(n,g)", possible_rctns );  //May throw exception if reaction name is invalid
-      assert( !possible_rctns.empty() );
-      if( !possible_rctns.empty() )
-        sources.push_back( possible_rctns[0].reaction );
-      
-      continue;
-    }else if( src_name == "Am241Li" )
-    {
-      continue;
+      continue; // Skip these sources
     }else
     {
       const SandiaDecay::Nuclide * const nuc = db->nuclide( src_name );
@@ -331,33 +305,114 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
         continue;
       }
       sources.push_back( nuc );
-      assert( nuc->symbol == src_name );
     }
 
-    assert( !sources.empty() && !RelActCalcAuto::is_null( sources.front() ) );
     if( sources.empty() || RelActCalcAuto::is_null( sources.front() ) )
-      throw runtime_error( "Failed to get a source" );
+      continue;
 
-    const shared_ptr<SpecUtils::SpecFile> &spec_file = src.spec_file;
-    const shared_ptr<const SpecUtils::Measurement> &foreground = src.src_spectra.front(); // TODO: we cold loop over all 16 of these histograms
+    fit_inputs.push_back( { si, std::move(sources) } );
+  }//for( loop over srcs_info to build fit_inputs )
+
+  // Compute fit results in parallel using a thread pool
+  const size_t num_parallel = std::min( static_cast<size_t>( 3 ), fit_inputs.size() );
+  vector<PeakFitResult> fit_results( fit_inputs.size() );
+  vector<string> fit_errors( fit_inputs.size() );
+
+  {
+    std::atomic<size_t> next_index( 0 );
+    auto worker = [&](){
+      while( true )
+      {
+        const size_t idx = next_index.fetch_add( 1 );
+        if( idx >= fit_inputs.size() )
+          break;
+
+        const FitInput &fi = fit_inputs[idx];
+        const DataSrcInfo &src_info = srcs_info[fi.src_index];
+        const InjectSourceInfo &src = src_info.src_info;
+
+        try
+        {
+          const shared_ptr<const SpecUtils::Measurement> &foreground = src.src_spectra.front();
+          const shared_ptr<const SpecUtils::Measurement> &long_background = src.long_background;
+          const shared_ptr<const DetectorPeakResponse> drf = nullptr;
+
+          std::shared_ptr<PeakFitDetPrefs> dev_prefs = std::make_shared<PeakFitDetPrefs>();
+          dev_prefs->m_det_type = src_info.det_type;
+
+          shared_ptr<const deque<shared_ptr<const PeakDef>>> dummy_origpeaks;
+          const vector<shared_ptr<const PeakDef>> auto_search_peaks
+            = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, drf, dummy_origpeaks, true, dev_prefs );
+
+          const PeakFitForNuclideConfig &config = PeakFitForNuclideConfig::default_config( src_info.det_type );
+          fit_results[idx] = FitPeaksForNuclideDev::fit_peaks_for_nuclides(
+            auto_search_peaks, foreground, fi.sources, long_background, drf, config, dev_prefs );
+        }
+        catch( const std::exception &e )
+        {
+          fit_errors[idx] = e.what();
+          fit_results[idx].status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+          fit_results[idx].error_message = e.what();
+        }
+      }//while( true )
+    };//worker lambda
+
+    vector<thread> threads;
+    for( size_t i = 0; i < num_parallel; ++i )
+      threads.emplace_back( worker );
+    for( auto &t : threads )
+      t.join();
+  }//parallel computation block
+
+  // --- Phase 2: Score results and write HTML (serial) ---
+
+  // Initialize HTML output file
+  std::unique_ptr<ofstream> html_output;
+  size_t chart_counter = 0;
+
+  if( write_n42 )
+  {
+    html_output = std::make_unique<ofstream>( "relact_auto_peakfit_dev.html" );
+    try
+    {
+      D3SpectrumExport::write_html_page_header( *html_output, "RelActAuto Peak Fits", "InterSpec_resources" );
+    }catch( std::exception &e )
+    {
+      cerr << "\n\nError: " << e.what() << endl;
+      cerr << "You probably need to symbolically link InterSpec_resources to your CWD." << endl;
+      exit(1);
+    }
+
+    *html_output << "<body>" << endl;
+    *html_output << "<style>"
+      << ".TopLinesTable{ margin-top: 25px; margin-left: auto; margin-right: auto; border-collapse: collapse; border: 1px solid black; }" << endl
+      << "table, th, td{ border: 1px solid black; }" << endl
+      << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
+      << "</style>" << endl;
+  }
+
+  for( size_t fi_idx = 0; fi_idx < fit_inputs.size(); ++fi_idx )
+  {
+    const FitInput &fi = fit_inputs[fi_idx];
+    const DataSrcInfo &src_info = srcs_info[fi.src_index];
+    const InjectSourceInfo &src = src_info.src_info;
+    const PeakFitResult &curve_results = fit_results[fi_idx];
+
+    const shared_ptr<const SpecUtils::Measurement> &foreground = src.src_spectra.front();
     const shared_ptr<const SpecUtils::Measurement> &long_background = src.long_background;
+    const shared_ptr<SpecUtils::SpecFile> &spec_file = src.spec_file;
 
-    const bool singleThreaded = false;
-    shared_ptr<const DetectorPeakResponse> drf = nullptr; //Probably
-
-    std::shared_ptr<PeakFitDetPrefs> dev_prefs = std::make_shared<PeakFitDetPrefs>();
-    dev_prefs->m_det_type = src_info.det_type;
+    string src_name = src.src_name;
+    {
+      const auto underscore_pos = src_name.find( '_' );
+      if( underscore_pos != string::npos )
+        src_name = src_name.substr( 0, underscore_pos );
+    }
 
     try
     {
-      shared_ptr<const deque<shared_ptr<const PeakDef>>> dummy_origpeaks;
-
-      const vector<shared_ptr<const PeakDef> > auto_search_peaks
-          = ExperimentalAutomatedPeakSearch::search_for_peaks( foreground, drf, dummy_origpeaks, singleThreaded, dev_prefs );
-
-      const PeakFitForNuclideConfig &config = PeakFitForNuclideConfig::default_config( src_info.det_type );
-      const PeakFitResult curve_results = FitPeaksForNuclideDev::fit_peaks_for_nuclides(
-        auto_search_peaks, foreground, sources, long_background, drf, config, dev_prefs );
+      if( !fit_errors[fi_idx].empty() )
+        throw std::runtime_error( fit_errors[fi_idx] );
 
       if( curve_results.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
         throw std::runtime_error( "fit_peaks_for_nuclides failed for all RelEff curve types: " + curve_results.error_message );
@@ -429,30 +484,67 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
 
       // How many sigma around a peak to consider for matching (default 1.5)
       const double num_sigma_contribution = 1.5;
-      
+
+      // Filter expected photopeaks: ignore low-energy peaks for scoring, unless the
+      //  source's primary (largest area) peak is itself below the threshold.
+      //  Below ~50 keV on NaI (30 keV on HPGe), peaks are unreliable due to poor
+      //  resolution, rapidly changing efficiency, and overlap with x-ray lines.
+      const double min_scoring_energy
+        = (src_info.det_type == PeakFitUtils::CoarseResolutionType::High) ? 30.0 : 50.0;
+
+      // Find the primary peak energy (highest area)
+      double primary_peak_energy = 0.0;
+      double primary_peak_area = 0.0;
+      for( const ExpectedPhotopeakInfo &ep : src_info.expected_signal_photopeaks )
+      {
+        if( ep.peak_area > primary_peak_area )
+        {
+          primary_peak_area = ep.peak_area;
+          primary_peak_energy = ep.effective_energy;
+        }
+      }
+
+      // Only apply the filter if the primary peak is above the threshold;
+      //  if the source's main feature is at low energy, we need to score those peaks.
+      std::vector<ExpectedPhotopeakInfo> scoring_photopeaks;
+      if( primary_peak_energy >= min_scoring_energy )
+      {
+        scoring_photopeaks.reserve( src_info.expected_signal_photopeaks.size() );
+        for( const ExpectedPhotopeakInfo &ep : src_info.expected_signal_photopeaks )
+        {
+          if( ep.effective_energy >= min_scoring_energy )
+            scoring_photopeaks.push_back( ep );
+        }
+      }
+      else
+      {
+        scoring_photopeaks = src_info.expected_signal_photopeaks;
+      }
+
       // Score the fit results using only signal photopeaks
       CombinedPeakFitScore combined_score;
 
       // Calculate FinalFitScore using refactored helper
       combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
-        fit_peaks, src_info.expected_signal_photopeaks, num_sigma_contribution
+        fit_peaks, scoring_photopeaks, num_sigma_contribution
       );
 
       // Calculate PeakFindAndFitWeights using refactored helper
       combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
-        fit_peaks, src_info.expected_signal_photopeaks, num_sigma_contribution
+        fit_peaks, scoring_photopeaks, num_sigma_contribution, src_info.det_type
       );
 
       // Calculate CandidatePeakScore using refactored helper
       combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
         fit_peaks,
-        src_info.expected_signal_photopeaks
+        scoring_photopeaks,
+        src_info.det_type
       );
 
       // Correct score to exclude escape peaks from penalty counts
       CandidatePeak_GA::correct_score_for_escape_peaks(
         combined_score.candidate_peak_score,
-        src_info.expected_signal_photopeaks
+        scoring_photopeaks
       );
 
       // Calculate combined final weight (simple sum)
@@ -963,7 +1055,7 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter-1 << R"del
       //throw std::runtime_error("Error in fit_peaks_for_nuclides: " + string(e.what()));
       cerr << e.what() << endl;
     }
-  }//for( const DataSrcInfo &src_info : srcs_info )
+  }//for( fi_idx over fit_inputs )
 
   // Print total score summary
   cout << endl << "========================================" << endl;
@@ -981,6 +1073,190 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter-1 << R"del
       cout << "Wrote HTML file: relact_auto_peakfit_dev.html with " << chart_counter << " charts" << endl;
   }
 }//void eval_peaks_for_nuclide( const DataSrcInfo &src_info )
+
+
+void write_spectroscopic_extent_html( const std::vector<DataSrcInfo> &srcs_info,
+                                      const std::string &detector_name )
+{
+  const string output_filename = "spectroscopic_extent_" + detector_name + ".html";
+
+  ofstream html_output( output_filename );
+  if( !html_output.is_open() )
+  {
+    cerr << "Error: could not open '" << output_filename << "' for writing." << endl;
+    return;
+  }
+
+  try
+  {
+    D3SpectrumExport::write_html_page_header( html_output, "Spectroscopic Extent - " + detector_name, "InterSpec_resources" );
+  }catch( std::exception &e )
+  {
+    cerr << "\n\nError: " << e.what() << endl;
+    cerr << "You probably need to symbolically link InterSpec_resources to your CWD." << endl;
+    return;
+  }
+
+  html_output << "<body>" << endl;
+  html_output << "<style>"
+    << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
+    << "</style>" << endl;
+
+  html_output << "<h2>Spectroscopic Extent: " << detector_name << "</h2>" << endl;
+
+  size_t chart_counter = 0;
+
+  for( const DataSrcInfo &src_info : srcs_info )
+  {
+    const InjectSourceInfo &src = src_info.src_info;
+    if( src.src_spectra.empty() )
+      continue;
+
+    const shared_ptr<const SpecUtils::Measurement> &foreground = src.src_spectra.front();
+    if( !foreground || (foreground->num_gamma_channels() < 16) )
+      continue;
+
+    // Call find_valid_energy_range
+    const pair<double,double> valid_range = FitPeaksForNuclides::find_valid_energy_range( foreground );
+    const double min_valid_energy = valid_range.first;
+    const double max_valid_energy = valid_range.second;
+
+    // Build reference lines for the extent boundaries
+    std::map<std::string, std::string> reference_lines_json;
+
+    if( (min_valid_energy > 0.0) && (max_valid_energy > min_valid_energy) )
+    {
+      // Minimum energy line
+      RefLineInput min_input;
+      min_input.m_input_txt = std::to_string( min_valid_energy ) + " keV";
+      min_input.m_color = Wt::WColor( 255, 165, 0 ); // Orange
+      min_input.m_showGammas = true;
+      min_input.m_showXrays = false;
+      min_input.m_showAlphas = false;
+      min_input.m_showBetas = false;
+      min_input.m_promptLinesOnly = false;
+      min_input.m_lower_br_cutt_off = 0.0;
+
+      std::shared_ptr<ReferenceLineInfo> min_ref = ReferenceLineInfo::generateRefLineInfo( min_input );
+      if( min_ref && min_ref->m_validity == ReferenceLineInfo::InputValidity::Valid )
+      {
+        std::string json;
+        min_ref->toJson( json );
+        reference_lines_json["Extent Min"] = json;
+      }
+
+      // Maximum energy line
+      RefLineInput max_input;
+      max_input.m_input_txt = std::to_string( max_valid_energy ) + " keV";
+      max_input.m_color = Wt::WColor( 255, 165, 0 ); // Orange
+      max_input.m_showGammas = true;
+      max_input.m_showXrays = false;
+      max_input.m_showAlphas = false;
+      max_input.m_showBetas = false;
+      max_input.m_promptLinesOnly = false;
+      max_input.m_lower_br_cutt_off = 0.0;
+
+      std::shared_ptr<ReferenceLineInfo> max_ref = ReferenceLineInfo::generateRefLineInfo( max_input );
+      if( max_ref && max_ref->m_validity == ReferenceLineInfo::InputValidity::Valid )
+      {
+        std::string json;
+        max_ref->toJson( json );
+        reference_lines_json["Extent Max"] = json;
+      }
+    }//if( valid range is reasonable )
+
+    // Chart options
+    const float xMin = static_cast<float>( foreground->gamma_energy_min() );
+    const float xMax = static_cast<float>( foreground->gamma_energy_max() );
+
+    const string title = src.src_name;
+
+    D3SpectrumExport::D3SpectrumChartOptions options(
+      title, "Energy (keV)", "Counts/Channel",
+      /*dataTitle=*/"", /*useLogYAxis=*/true,
+      /*showVerticalGridLines=*/false, /*showHorizontalGridLines=*/false,
+      /*legendEnabled=*/true, /*compactXAxis=*/true,
+      /*showPeakUserLabels=*/false, /*showPeakEnergyLabels=*/false,
+      /*showPeakNuclideLabels=*/false, /*showPeakNuclideEnergyLabels=*/false,
+      /*showEscapePeakMarker=*/false, /*showComptonPeakMarker=*/false,
+      /*showComptonEdgeMarker=*/false, /*showSumPeakMarker=*/false,
+      /*backgroundSubtract=*/false,
+      xMin, xMax, reference_lines_json
+    );
+
+    // Spectrum data
+    D3SpectrumExport::D3SpectrumOptions foreground_opts;
+    foreground_opts.line_color = "black";
+    foreground_opts.title = src.src_name;
+    foreground_opts.display_scale_factor = 1.0;
+    foreground_opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
+
+    const string div_id = "chart_" + std::to_string( chart_counter );
+    chart_counter++;
+
+    // Legend text with extent range
+    string legend_text = src.src_name;
+    if( (min_valid_energy > 0.0) && (max_valid_energy > min_valid_energy) )
+    {
+      legend_text += " [extent: " + std::to_string( static_cast<int>( min_valid_energy + 0.5 ) )
+                   + " - " + std::to_string( static_cast<int>( max_valid_energy + 0.5 ) ) + " keV]";
+    }
+    else
+    {
+      legend_text += " [no valid extent found]";
+    }
+
+    html_output << "<fieldset>" << endl
+      << "<legend>" << legend_text << "</legend>" << endl;
+    html_output << "<div id=\"" << div_id << "\" class=\"chart\" oncontextmenu=\"return false;\"></div>" << endl;
+    html_output << "<script>" << endl;
+
+    // Initialize chart
+    D3SpectrumExport::write_js_for_chart( html_output, div_id, options.m_dataTitle,
+                                          options.m_xAxisTitle, options.m_yAxisTitle );
+
+    // Set spectrum data
+    std::vector< std::pair<const SpecUtils::Measurement *, D3SpectrumExport::D3SpectrumOptions> > measurements;
+    measurements.emplace_back( foreground.get(), foreground_opts );
+
+    D3SpectrumExport::write_and_set_data_for_chart( html_output, div_id, measurements );
+
+    // Write resize handler
+    html_output << R"delim(
+const resizeChart)delim" << chart_counter - 1 << R"delim( = function(){
+  let height = window.innerHeight;
+  let width = document.documentElement.clientWidth;
+  let el = spec_chart_)delim" << div_id << R"delim(.chart;
+  el.style.width = 0.8*width + "px";
+  el.style.height = Math.min(500,Math.max(250, Math.min(0.4*width,height-175))) + "px";
+  el.style.marginLeft = 0.05*width + "px";
+  el.style.marginRight = 0.05*width + "px";
+  )delim"
+      << "  spec_chart_" << div_id << R"delim(.handleResize();
+};
+
+window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"delim();
+)delim" << endl;
+
+    // Set chart options (creates reference_lines_<div_id> variable)
+    D3SpectrumExport::write_set_options_for_chart( html_output, div_id, options );
+
+    // Apply reference lines
+    html_output << "spec_chart_" << div_id << ".setReferenceLines( reference_lines_" << div_id << " );" << endl;
+
+    // Trigger initial resize
+    html_output << "resizeChart" << chart_counter - 1 << "();" << endl;
+    html_output << "</script>" << endl;
+
+    html_output << "</fieldset>" << endl;
+  }//for( loop over srcs_info )
+
+  html_output << "</body>" << endl;
+  html_output << "</html>" << endl;
+  html_output.close();
+
+  cout << "Wrote " << output_filename << " with " << chart_counter << " charts." << endl;
+}//void write_spectroscopic_extent_html(...)
 
 
 }//namespace FitPeaksForNuclideDev

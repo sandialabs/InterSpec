@@ -53,6 +53,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/D3TimeChart.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -2164,6 +2165,19 @@ void D3TimeChart::handleChartImageForDownload( const std::string &filename,
     return;
 
   const std::string decoded = Wt::Utils::base64Decode( base64Data );
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    const auto nativeHandler = InterSpecApp::nativeFileSaveHandler();
+    if( nativeHandler )
+    {
+      nativeHandler( decoded, filename );
+      return;
+    }
+  }
+#endif
+
   const std::vector<unsigned char> data( decoded.begin(), decoded.end() );
 
   if( !m_downloadResource )

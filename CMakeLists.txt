@@ -169,11 +169,10 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
     "Amount of memory to allow spectra to take up before trying to offload them onto disk when not in use"
 )
 
-# If we are creating the normal InterSpec executable, and the InterSpec_batch executable,
-#  we will compile LibInterSpec as a shared library, so both exes can use it; otherwise
-#  we will create a static library, and statically link it into our final executable.
-#  (Electron doesnt need a separate exe for batch, and we dont care abour disk space for unit tests)
-if( USE_BATCH_CLI_TOOLS AND NOT BUILD_AS_ELECTRON_APP AND NOT BUILD_AS_UNIT_TEST_SUITE )
+# If we are creating the command-line batch exe, or macOS Quick Look extensions, we will compile
+# LibInterSpec as a shared library, so all exe's can use it.  Otherwise we'll statically link everything.
+#  (Electron doesnt need a separate exe for batch, and we dont care about disk space for unit tests)
+if( (USE_BATCH_CLI_TOOLS OR USE_MACOS_QUICK_LOOK) AND NOT BUILD_AS_ELECTRON_APP AND NOT BUILD_AS_UNIT_TEST_SUITE )
   set( INTERSPEC_LIB_TYPE SHARED )
   set( BUILD_LibInterSpec_SHARED ON )
 else()

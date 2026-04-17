@@ -2786,6 +2786,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         dpa.offset_limit = std::min( dist_limit, fwhm_limit );
 
+        // Cap the offset limit to 15 keV.  The FWHM-based limit is appropriate for HPGe
+        //  (FWHM ~2 keV), but for NaI the FWHM can be 60+ keV at 900 keV, which allows
+        //  physically unreasonable calibration shifts.  Real energy calibration errors
+        //  are typically a few keV at most, regardless of detector resolution.
+        dpa.offset_limit = std::min( dpa.offset_limit, 15.0 );
+
         // Ensure a reasonable minimum limit
         dpa.offset_limit = std::max( dpa.offset_limit, 0.1 );
       }
@@ -4828,7 +4834,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #endif
 
             if( nuc.min_rel_act.has_value()
-             && nuc.max_rel_act.has_value() 
+             && nuc.max_rel_act.has_value()
              && (nuc.min_rel_act.value() == nuc.max_rel_act.value()) )
             {
               constant_parameters.push_back( static_cast<int>(act_index) );
@@ -4838,6 +4844,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               if( nuc.max_rel_act.has_value() )
                 upper_bounds[act_index] = (nuc.max_rel_act.value() / rel_act_mult) + RelActAutoCostFcn::sm_activity_par_offset;
             }
+
           }//if( !succesfully_estimated_re_and_ra )
         }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
 
@@ -5519,7 +5526,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
        Will update `parameters` if solution is better than previous best solution, otherwise leaves them alone.
        */
       double initial_cost = std::numeric_limits<double>::max(), best_cost_val = std::numeric_limits<double>::max();
-      
+
       const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, ceres_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
         const vector<double> orig_parameters = parameters;
         vector<int> tmp_constant_parameters = constant_parameters;
@@ -5533,24 +5540,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               tmp_constant_parameters.push_back( static_cast<int>(index) );
           }
         }//for( const vector<size_t> &indices : indices_to_fix )
-        
+
         if( tmp_constant_parameters.empty() )
           return;
-        
+
         ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), tmp_constant_parameters );
         double *pars = &parameters[0];
         problem.SetManifold( pars, subset_manifold );
         ceres::Solver::Summary summary;
         ceres::Solve(ceres_options, &problem, &summary);
-        
+
         if( (initial_cost == std::numeric_limits<double>::max()) && (summary.initial_cost > 0.0) )
           initial_cost = summary.initial_cost;
-        
+
         bool solution_is_better = false;
         switch( summary.termination_type )
         {
           case ceres::CONVERGENCE:
           case ceres::USER_SUCCESS:
+          {
 #ifndef NDEBUG
             cout << "Pre-fit correction was successful with FinalCost="
             << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
@@ -5559,21 +5567,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #endif
             solution_is_better = (summary.final_cost < best_cost_val);
             break;
-            
+          }
+
           case ceres::NO_CONVERGENCE:
             cout << "Pre-fit correction did not converge" << endl;
             break;
-            
+
           case ceres::FAILURE:
             cout << "Pre-fit correction failed" << endl;
             break;
-            
+
           case ceres::USER_FAILURE:
             cout << "Pre-fit correction was user-cancelled" << endl;
             break;
         }//switch( summary.termination_type )
-        
-        
+
+
         if( solution_is_better )
         {
           best_cost_val = summary.final_cost;
@@ -5585,21 +5594,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       };//eval_with_constants lambda
       
       
-      // Evaluate the problem a few times, holding different sets of paramaters constant.
-      // The paramaters we currently have available to us to hold constant (could implement more), are:
-      //    hoerl_par_indexes, ene_cal_pars_indexes, fwhm_par_indexes, self_atten_par_indexes, ext_atten_par_indexs,ext_atten_par_indexs, non_phys_rel_eff_pars
-      //
-      // The
-      // - Fix {Ene. Cal., FWHM} - if Physical{Hoerl, shielding} else starting rel-eff-pars
-      // - if Physical{Hoerl}
-      // At each step, we will only take answer if better - otherwise reset parmaters to the before state.
-      //
-      // TODO: Check if for non-physical solution, holding starting rel-eff-pars constant helps
-      // TODO: Go through and refactor getting these parameters into a seperate function
-      //  Also, all the above getting of indexes is totally not tested.
-      //  Also, still need to give offset and scale for AD shielding - e.g., so zero doesnt mean no shielding
       eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars} );
-      
+
       if( !initial_par_vals_to_restore_after_initial_fit.empty() )
       {
         for( const pair<int,double> &intial_vals : initial_par_vals_to_restore_after_initial_fit )
@@ -5641,11 +5637,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
 
     ceres::Solver::Summary summary;
+
     ceres::Solve(ceres_options, &problem, &summary);
     //std::cout << summary.BriefReport() << "\n";
-    
+
     cost_functor->m_solution_finished = true;
-    
+
 #ifndef NDEBUG
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
@@ -9397,7 +9394,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                   || (m_options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall));
 
     const double missing_frac = is_crystal_ball ? 1.0E-3 : 1.0E-4;
-    const double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews
+    const double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews.  Note, sigma, not FWHM.
     const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
     const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
 
@@ -10371,6 +10368,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }catch( std::exception &e )
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
+      assert( 0 );//asserting because it seems returning false here can be really damaging to fit convergence, so lets try to eliminate asserts as much as possible
       return std::numeric_limits<double>::max();
     }
     
@@ -10403,6 +10401,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }catch( std::exception &e )
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
+      assert( 0 );//asserting because it seems returning false here can be really damaging to fit convergence, so lets try to eliminate asserts as much as possible
       return false;
     }
     

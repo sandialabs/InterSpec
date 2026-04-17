@@ -335,23 +335,33 @@ LeafletRadMap.prototype.updateMarkerLegend = function(){
       break;
   }//for( const m of self.markers )
   
-  self.markerLegendDiv.innerHTML = '';
-  
+  while( self.markerLegendDiv.firstChild )
+    self.markerLegendDiv.removeChild( self.markerLegendDiv.firstChild );
+
   // if we have only one type of marker, we dont need a legend
   if( (0 + have_fore + have_back + have_second + have_other) <= 1 )
     return;
-  
+
+  function addLegendEntry( parent, cssClass, label ){
+    var entry = document.createElement('div');
+    entry.className = 'LegEntry';
+    var marker = document.createElement('div');
+    marker.className = 'RadMapMarkerInner' + (cssClass ? ' ' + cssClass : '');
+    entry.appendChild( marker );
+    var txt = document.createElement('div');
+    txt.textContent = label;
+    entry.appendChild( txt );
+    parent.appendChild( entry );
+  }
+
   if( have_fore )
-    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsFore"></div><div>'
-                                      + self.options.foregroundTxt + '</div></div>';
+    addLegendEntry( self.markerLegendDiv, 'DispAsFore', self.options.foregroundTxt );
   if( have_back )
-    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsBack"></div><div>'
-                                      + self.options.backgroundTxt + '</div></div>';
+    addLegendEntry( self.markerLegendDiv, 'DispAsBack', self.options.backgroundTxt );
   if( have_second )
-    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner DispAsSecond"></div><div>'
-                                      + self.options.secondaryTxt + '</div></div>';
+    addLegendEntry( self.markerLegendDiv, 'DispAsSecond', self.options.secondaryTxt );
   if( have_other )
-    self.markerLegendDiv.innerHTML += '<div class="LegEntry"><div class="RadMapMarkerInner"></div><div>Not Displayed</div></div>';
+    addLegendEntry( self.markerLegendDiv, '', 'Not Displayed' );
   
   //self.markerLegendDiv.style.display = 'none';
 }//updateMarkerLegend(...)
@@ -362,7 +372,14 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   const wantedSamples = this.getSelectedSampleNumbers();
   
   if( wantedSamples.length === 0 ){
-    self.btnsDiv.innerHTML = '<div class="NoSamplesSel"><p>No measurements selected</p></div>';
+    while( self.btnsDiv.firstChild )
+      self.btnsDiv.removeChild( self.btnsDiv.firstChild );
+    var noSel = document.createElement('div');
+    noSel.className = 'NoSamplesSel';
+    var noSelP = document.createElement('p');
+    noSelP.textContent = 'No measurements selected';
+    noSel.appendChild( noSelP );
+    self.btnsDiv.appendChild( noSel );
     self._appendCopyMapBtns();
     return;
   }
@@ -375,17 +392,18 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
     //  self.WtEmit( self.parent.id, {name: 'loadSamples', eventObject: evt}, samples, spectype );
   }
 
-  self.btnsDiv.innerHTML = '';
+  while( self.btnsDiv.firstChild )
+    self.btnsDiv.removeChild( self.btnsDiv.firstChild );
 
   const msg = document.createElement('div');
   if( window.innerWidth < 675 )
-    msg.innerHTML = self.options.loadTxtShort + ":";
+    msg.textContent = self.options.loadTxtShort + ":";
   else
-    msg.innerHTML = self.options.loadTxt + " " + wantedSamples.length + " " + self.options.measurementsAsTxt + ":";
+    msg.textContent = self.options.loadTxt + " " + wantedSamples.length + " " + self.options.measurementsAsTxt + ":";
   self.btnsDiv.appendChild( msg );
 
   const foreground = document.createElement('button');
-  foreground.innerHTML = self.options.foregroundTxt;
+  foreground.textContent = self.options.foregroundTxt;
   foreground.classList.add("Wt-btn");
   foreground.classList.add("with-label");
   foreground.addEventListener("click", function(evt){
@@ -393,7 +411,7 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   });
 
   const background = document.createElement('button');
-  background.innerHTML = self.options.backgroundTxt;
+  background.textContent = self.options.backgroundTxt;
   background.classList.add("Wt-btn");
   background.classList.add("with-label");
   background.addEventListener("click", function(evt){
@@ -401,7 +419,7 @@ LeafletRadMap.prototype.handleUserDrawingUpdate = function(){
   });
 
   const secondary = document.createElement('button');
-  secondary.innerHTML = self.options.secondaryTxt;
+  secondary.textContent = self.options.secondaryTxt;
   secondary.classList.add("Wt-btn");
   secondary.classList.add("with-label");
   secondary.addEventListener("click", function(evt){
@@ -882,8 +900,14 @@ LeafletRadMap.prototype.refresh = function( dont_update_zoom ){
       mincps = Math.round(mincps)
 
 
-    self.legendUpperCps.innerHTML = maxcps + "<br />" + self.options.cpsText;
-    self.legendLowerCps.innerHTML = mincps + "<br />" + self.options.cpsText;
+    self.legendUpperCps.textContent = '';
+    self.legendUpperCps.appendChild( document.createTextNode(maxcps) );
+    self.legendUpperCps.appendChild( document.createElement('br') );
+    self.legendUpperCps.appendChild( document.createTextNode(self.options.cpsText) );
+    self.legendLowerCps.textContent = '';
+    self.legendLowerCps.appendChild( document.createTextNode(mincps) );
+    self.legendLowerCps.appendChild( document.createElement('br') );
+    self.legendLowerCps.appendChild( document.createTextNode(self.options.cpsText) );
 
     const width = self.legendCanvas.clientWidth;
     const height = self.legendCanvas.clientHeight;
@@ -916,12 +940,12 @@ LeafletRadMap.prototype._appendCopyMapBtns = function() {
   if( self.copyBtnsDiv.childElementCount === 0 && hasData )
   {
     const googleBtn = document.createElement( 'button' );
-    googleBtn.innerHTML = self.options.copyGoogleMapsTxt || 'Copy Google Maps URL';
+    googleBtn.textContent = self.options.copyGoogleMapsTxt || 'Copy Google Maps URL';
     googleBtn.classList.add( 'Wt-btn', 'LinkBtn' );
     googleBtn.addEventListener( 'click', function(){ self.copyGoogleMapsUrl(); } );
 
     const bingBtn = document.createElement( 'button' );
-    bingBtn.innerHTML = self.options.copyBingMapsTxt || 'Copy Bing Maps URL';
+    bingBtn.textContent = self.options.copyBingMapsTxt || 'Copy Bing Maps URL';
     bingBtn.classList.add( 'Wt-btn', 'LinkBtn' );
     bingBtn.addEventListener( 'click', function(){ self.copyBingMapsUrl(); } );
 

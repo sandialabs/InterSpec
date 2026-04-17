@@ -183,9 +183,48 @@ namespace InterSpecServer
     
     return WT_CONFIG_XML;
   }//std::string getWtConfigXml(int argc, char *argv[])
-  
-  
-  
+
+
+  /** Reads the max-memory-request-size value from the XML config file.
+   The XML value is in KiB; returns it converted to bytes for the HTTP connector command-line arg.
+   Returns empty string if not found or on error.
+  */
+  std::string getMaxMemoryRequestSizeBytes( const std::string &xml_config_path )
+  {
+    try
+    {
+      std::ifstream file( xml_config_path );
+      if( !file )
+        return "";
+
+      const std::string content( (std::istreambuf_iterator<char>( file )),
+                                  std::istreambuf_iterator<char>() );
+
+      const std::string open_tag = "<max-memory-request-size>";
+      const std::string close_tag = "</max-memory-request-size>";
+
+      const size_t start = content.find( open_tag );
+      if( start == std::string::npos )
+        return "";
+
+      const size_t val_start = start + open_tag.size();
+      const size_t end = content.find( close_tag, val_start );
+      if( end == std::string::npos )
+        return "";
+
+      const std::string kib_str = content.substr( val_start, end - val_start );
+      const int64_t kib = std::stoll( kib_str );
+      if( kib <= 0 )
+        return "";
+
+      return std::to_string( kib * 1024 );
+    }catch( ... )
+    {
+      return "";
+    }
+  }//std::string getMaxMemoryRequestSizeBytes(...)
+
+
   bool changeToBaseDir( int argc, char *argv[] )
   {
     for( int i = 1; i < argc; ++i )
@@ -270,17 +309,30 @@ namespace InterSpecServer
     char approot_param_name[]   = "--approot";   // approot is base-path to resources the application needs, like data, databases, etc.  Currently for InterSpec, this is same as docroot.
     char approot_param_value[]  = ".";
     char accesslog_param_value[]  = "--accesslog=-";  //quite down printing all the GET and POST and such
-    
-    char *argv_wthttp[] = { argv[0],
+
+    // The Wt HTTP connector only reads max-memory-request-size from command-line args,
+    //  not from the XML config, so we read it from the XML and pass it as an arg.
+    //  This value limits WebSocket frame size, which must be large enough for chart SVG data
+    //  sent via JSignal.
+    string max_mem_req_bytes = getMaxMemoryRequestSizeBytes( xml_config_path );
+    char max_mem_req_name[] = "--max-memory-request-size";
+
+    std::vector<char *> wthttp_args = { argv[0],
       httpaddr_param_name, httpaddr_param_value,
       httpport_param_name, httpport_param_value,
       docroot_param_name, docroot_param_value,
       approot_param_name, approot_param_value,
       accesslog_param_value
     };
-    const int argc_wthttp = sizeof(argv_wthttp)/sizeof(argv_wthttp[0]);
-    
-    ns_server->setServerConfiguration( argc_wthttp, argv_wthttp, WTHTTP_CONFIGURATION );
+
+    if( !max_mem_req_bytes.empty() )
+    {
+      wthttp_args.push_back( max_mem_req_name );
+      wthttp_args.push_back( &max_mem_req_bytes[0] );
+    }
+
+    ns_server->setServerConfiguration( static_cast<int>( wthttp_args.size() ),
+                                       wthttp_args.data(), WTHTTP_CONFIGURATION );
     
     ns_server->addEntryPoint( Wt::EntryPointType::Application, [createApplication](const Wt::WEnvironment &env){ return createAppForServer(env, createApplication); } );
     
@@ -372,18 +424,30 @@ void startWebServer( string name,
   char *approot_param_value  = &(basedir[0]);
   char accesslog_param_value[]  = "--accesslog=-";  //quite down printing all the GET and POST and such
 
-    
-  char *argv_wthttp[] = { exe_param_name,
+  // The Wt HTTP connector only reads max-memory-request-size from command-line args,
+  //  not from the XML config, so we read it from the XML and pass it as an arg.
+  //  This value limits WebSocket frame size, which must be large enough for chart SVG data
+  //  sent via JSignal.
+  string max_mem_req_bytes = getMaxMemoryRequestSizeBytes( xml_config_path );
+  char max_mem_req_name[] = "--max-memory-request-size";
+
+  std::vector<char *> wthttp_args = { exe_param_name,
     httpaddr_param_name, httpaddr_param_value,
     httpport_param_name, httpport_param_value,
     docroot_param_name, docroot_param_value,
     approot_param_name, approot_param_value,
     accesslog_param_value
   };
-  const int argc_wthttp = sizeof(argv_wthttp)/sizeof(argv_wthttp[0]);
-    
-  ns_server->setServerConfiguration( argc_wthttp, argv_wthttp, WTHTTP_CONFIGURATION );
-    
+
+  if( !max_mem_req_bytes.empty() )
+  {
+    wthttp_args.push_back( max_mem_req_name );
+    wthttp_args.push_back( &max_mem_req_bytes[0] );
+  }
+
+  ns_server->setServerConfiguration( static_cast<int>( wthttp_args.size() ),
+                                     wthttp_args.data(), WTHTTP_CONFIGURATION );
+
   ns_server->addEntryPoint( Wt::EntryPointType::Application, [](const Wt::WEnvironment &env){ return createAppForServer(env, create_application); } );
     
   if( !ns_server->start() )

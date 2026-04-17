@@ -1282,9 +1282,12 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 PeakFindAndFitWeights calculate_peak_find_weights(
   const std::vector<PeakDef> &fit_peaks,
   const std::vector<ExpectedPhotopeakInfo> &expected_photopeaks,
-  const double num_sigma_contribution )
+  const double num_sigma_contribution,
+  const PeakFitUtils::CoarseResolutionType det_type )
 {
   using namespace std;
+
+  const JudgmentThresholds &thresholds = JudgmentThresholds::for_det_type( det_type );
 
   vector<PeakDef> found_not_expected;
   map<const ExpectedPhotopeakInfo *,vector<PeakDef>> found_maybe_wanted, found_def_wanted;
@@ -1314,8 +1317,8 @@ PeakFindAndFitWeights calculate_peak_find_weights(
 
     if( nearest_expected_peak )
     {
-      if( (nearest_expected_peak->nsigma_over_background >= JudgmentFactors::def_want_nsigma)
-         && (nearest_expected_peak->peak_area > JudgmentFactors::min_def_wanted_counts) )
+      if( (nearest_expected_peak->nsigma_over_background >= thresholds.def_want_nsigma)
+         && (nearest_expected_peak->peak_area > thresholds.min_def_wanted_counts) )
       {
         found_def_wanted[nearest_expected_peak].push_back( found_peak );
       }else
@@ -1335,19 +1338,19 @@ PeakFindAndFitWeights calculate_peak_find_weights(
   for( const auto &pp : found_maybe_wanted )
   {
     const ExpectedPhotopeakInfo * epi = pp.first;
-    if( epi->nsigma_over_background > JudgmentFactors::lower_want_nsigma )
+    if( epi->nsigma_over_background > thresholds.lower_want_nsigma )
     {
-      if( epi->peak_area > JudgmentFactors::min_def_wanted_counts )
+      if( epi->peak_area > thresholds.min_def_wanted_counts )
       {
-        const double amount_short = JudgmentFactors::def_want_nsigma - epi->nsigma_over_background;
-        const double fraction_short = amount_short / (JudgmentFactors::def_want_nsigma - JudgmentFactors::lower_want_nsigma);
+        const double amount_short = thresholds.def_want_nsigma - epi->nsigma_over_background;
+        const double fraction_short = amount_short / (thresholds.def_want_nsigma - thresholds.lower_want_nsigma);
         assert( (fraction_short >= 0.0) && (fraction_short <= 1.0) );
-        score += JudgmentFactors::min_initial_fit_maybe_want_score + (1.0 - JudgmentFactors::min_initial_fit_maybe_want_score)*(1 - fraction_short);
+        score += thresholds.min_initial_fit_maybe_want_score + (1.0 - thresholds.min_initial_fit_maybe_want_score)*(1 - fraction_short);
       }else
       {
-        const double fraction_short = 1.0 - (epi->peak_area / JudgmentFactors::min_def_wanted_counts);
+        const double fraction_short = 1.0 - (epi->peak_area / thresholds.min_def_wanted_counts);
         assert( (fraction_short >= 0.0) && (fraction_short <= 1.0) );
-        score += JudgmentFactors::min_initial_fit_maybe_want_score + (1.0 - JudgmentFactors::min_initial_fit_maybe_want_score)*(1 - fraction_short);
+        score += thresholds.min_initial_fit_maybe_want_score + (1.0 - thresholds.min_initial_fit_maybe_want_score)*(1 - fraction_short);
       }
     }else
     {
@@ -1369,7 +1372,7 @@ PeakFindAndFitWeights calculate_peak_find_weights(
     }
   }
 
-  score -= JudgmentFactors::initial_fit_extra_peak_punishment * num_found_not_expected;
+  score -= thresholds.initial_fit_extra_peak_punishment * num_found_not_expected;
 
   // Calculate area weights (mean and median)
   const auto sum_area_weight = []( const map<const ExpectedPhotopeakInfo *,vector<PeakDef>> &data ) -> pair<double,double> {

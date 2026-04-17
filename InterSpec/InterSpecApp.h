@@ -34,7 +34,7 @@
 #include <Wt/WApplication.h>
 #include <Wt/WContainerWidget.h>
 
-#if(  BUILD_AS_WX_WIDGETS_APP )
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
 #include <functional>
 #endif
 
@@ -129,6 +129,19 @@ public:
 
 #if(  BUILD_AS_WX_WIDGETS_APP )
   static void setJavascriptErrorHandler( std::function<void(std::string, std::string)> fctn );
+#endif
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  /** Sets a callback to save binary file data using a native OS save-file dialog.
+
+   The callback receives already-decoded binary data and a suggested filename.
+   Called from a Wt worker thread, so implementations must dispatch to the
+   native UI thread before showing any dialogs.
+  */
+  static void setNativeFileSaveHandler( std::function<void(std::string, std::string)> handler );
+
+  /** Returns the currently set native file save handler, or empty function if not set. */
+  static std::function<void(std::string, std::string)> nativeFileSaveHandler();
 #endif
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )

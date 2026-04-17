@@ -522,6 +522,16 @@ WXLRESULT InterSpecWebFrame::MSWWindowProc(WXUINT nMsg, WXWPARAM wParam, WXLPARA
     lParam = -1;
     break;
   }
+  case WM_SYSCOMMAND:
+  {
+    // Prevent the system menu from activating when the user presses the Alt key.
+    // The Alt key is used as a modifier for spectrum interactions (e.g., Alt + double-click
+    // to fit a peak in the background spectrum), and letting the system menu activate
+    // would steal focus from the WebView.
+    if( (wParam & 0xFFF0) == SC_KEYMENU )
+      return 0;
+    break;
+  }
   case WM_NCCALCSIZE:
     if (wParam)
     {
