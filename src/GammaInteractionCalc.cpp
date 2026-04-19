@@ -6072,7 +6072,7 @@ vector<PeakResultPlotInfo>
               break;
           }//switch( m_geometry )
           
-          if( pastDetector )
+          if( pastDetector && !(m_detector && m_detector->isFixedGeometry()) )
             throw runtime_error( "energy_chi_contributions: radius > distance" );
           
           const double transLenCoef = transmition_length_coefficient( material.get(), calculator->m_energy );

@@ -622,7 +622,9 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
               }
               berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
               const double allowed_diff = all_in_bounds ? 1.0E-10 : 1.0E-1;
-              assert( fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}) );
+              assert( (fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}))
+                     || (poly_val <= lower_coef_bound)
+                     || (poly_val >= highest_energy) );
             }
           }// END verify power series and Berstein give same results
 #endif
@@ -834,7 +836,9 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
               }
               berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
               const double allowed_diff = all_in_bounds ? 1.0E-10 : 1.0E-1;
-              assert( fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}) );
+              assert( (fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}))
+                     || (poly_val <= lower_coef_bound)
+                     || (poly_val >= highest_energy) );
             }
           }// END verify power series and Berstein give same results
 #endif

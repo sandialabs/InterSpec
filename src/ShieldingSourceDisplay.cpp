@@ -5560,7 +5560,12 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
   //       degenerate cases.
   
   const GeometryType type = geometry();
-  
+
+  // For fixed-geometry DRFs, distance is not meaningful - shielding can be any thickness
+  const std::shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  if( det && det->isFixedGeometry() )
+    return;
+
   // Lets grab the shielding's we care about
   vector<ShieldingSelect *> shieldings;
   shieldings.reserve( m_shieldingSelects->children().size() );
