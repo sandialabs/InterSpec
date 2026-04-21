@@ -1883,24 +1883,27 @@ void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
     upper_ad = max_ad;
   }
   
+  // The offset/scale transform (see RelActCalc.h) keeps the Ceres parameter away from zero
+  //  even for a physical AD of 0, so the original "bump to 0.5 g/cm^2" defence is no longer
+  //  strictly required.  Leave it in for now; it's harmless and provides a well-behaved start
+  //  when users deliberately want the fit to explore non-zero AD.
   if( (ad == 0.0) && opt->fit_areal_density )
   {
-    ad = std::min( std::max( 0.5, lower_ad), upper_ad ); // We want something away from zero, because Ceres doesnt like zero values much - 0.5 is arbitrary
-    //  ad = 0.5*(lower_ad + upper_ad); //Something like 250 would be way too much
+    ad = std::min( std::max( 0.5, lower_ad), upper_ad );
   }
   if( (ad < 0.0) || (ad > max_ad) )
     throw runtime_error( "Self-atten AD is invalid" );
-  
-  pars[ad_index] = ad;
-  
+
+  pars[ad_index] = ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+
   if( opt->fit_areal_density )
   {
     // Check for limits
     if( (lower_ad < 0.0) || (upper_ad > max_ad) || (lower_ad >= upper_ad) )
       throw runtime_error( "Self-atten AD limits is invalid" );
-    
-    lower_bounds[ad_index] = lower_ad;
-    upper_bounds[ad_index] = upper_ad;
+
+    lower_bounds[ad_index] = lower_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+    upper_bounds[ad_index] = upper_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
   }else
   {
     constant_parameters.push_back( static_cast<int>(ad_index) );
@@ -3334,9 +3337,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const size_t par_idx = cost_functor->m_dev_pair_par_start_index + anchor.param_index;
           assert( par_idx < num_pars_initial );
 
-          parameters[par_idx] = 0.0;  // Start with no correction
-          lower_bounds[par_idx] = -anchor.offset_limit;
-          upper_bounds[par_idx] = anchor.offset_limit;
+          // See RelActCalc.h: physical_offset[keV] = (x - ns_dev_ceres_offset) * ns_dev_ceres_mult
+          parameters[par_idx] = RelActCalc::ns_dev_ceres_offset;  // physical 0 → ceres offset
+          lower_bounds[par_idx] = -anchor.offset_limit / RelActCalc::ns_dev_ceres_mult + RelActCalc::ns_dev_ceres_offset;
+          upper_bounds[par_idx] =  anchor.offset_limit / RelActCalc::ns_dev_ceres_mult + RelActCalc::ns_dev_ceres_offset;
         }
       }//for( loop over anchors )
 
@@ -3858,7 +3862,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               updated_ext_att->fit_areal_density = false;
               if( !updated_ext_att->material )
                 updated_ext_att->atomic_number = parameters[ext_att_index + 0] * RelActCalc::ns_an_ceres_mult;
-              updated_ext_att->areal_density = parameters[ext_att_index + 1] * PhysicalUnits::g_per_cm2;
+              updated_ext_att->areal_density = (parameters[ext_att_index + 1] - RelActCalc::ns_ad_ceres_offset)
+                                                * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
               
               manual_input.phys_model_external_attens[i] = updated_ext_att;
             }
@@ -3915,7 +3920,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 if( !input->material && input->fit_atomic_number )
                   input->atomic_number = parameters[outer_shield_start_index + 0] * RelActCalc::ns_an_ceres_mult;
                 if( input->fit_areal_density)
-                  input->areal_density = parameters[outer_shield_start_index + 1] * PhysicalUnits::g_per_cm2;
+                  input->areal_density = (parameters[outer_shield_start_index + 1] - RelActCalc::ns_ad_ceres_offset)
+                                         * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
 
                 input->fit_areal_density = false;
                 input->fit_atomic_number = false;
@@ -3938,7 +3944,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 if( !input->material && input->fit_atomic_number )
                   input->atomic_number = parameters[an_index + 0] * RelActCalc::ns_an_ceres_mult;
                 if( input->fit_areal_density)
-                  input->areal_density = parameters[an_index + 1] * PhysicalUnits::g_per_cm2;
+                  input->areal_density = (parameters[an_index + 1] - RelActCalc::ns_ad_ceres_offset)
+                                         * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
 
                 input->fit_areal_density = false;
                 input->fit_atomic_number = false;
@@ -4054,11 +4061,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const int ad_index = static_cast<int>( this_rel_eff_start + 1 );
 
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-              parameters[ad_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Areal density; both manual and auto RelEff use g/cm2
+              // Manual solution's AD is in g/cm^2; convert into Ceres parameter space.
+              const double manual_ad_phys = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+              parameters[ad_index] = manual_ad_phys / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
 
               if( self_atten.fit_areal_density )
               {
-                if( parameters[ad_index]  < 0.25 )
+                const double cur_ad_phys = (parameters[ad_index] - RelActCalc::ns_ad_ceres_offset)
+                                           * RelActCalc::ns_ad_ceres_mult;
+                if( cur_ad_phys < 0.25 )
                 {
                   double lower_ad = self_atten.lower_fit_areal_density / PhysicalUnits::g_per_cm2;
                   double upper_ad = self_atten.upper_fit_areal_density / PhysicalUnits::g_per_cm2;
@@ -4069,23 +4080,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                     upper_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
                   }
 
-                  //TODO: add and use the following variables for both Auto and Manual solutions
-                  //const double RelActCalc::ns_ad_ceres_offset = 1.0;
-                  //const double RelActCalc::ns_ad_ceres_multiple = 0.5;
-
                   const double reasonable_starting_ad = 2.5; //pretty arbitrary - just something away from zero
                   const double mid_allowed_ad = 0.5*(lower_ad + upper_ad);
                   const double starting_ad = std::max( std::min(mid_allowed_ad, reasonable_starting_ad), lower_ad );
 
-                  parameters[ad_index] = starting_ad;
+                  parameters[ad_index] = starting_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
                 }
 
                 initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_index, parameters[ad_index] );
               }else
               {
                 const double ad = self_atten.areal_density / PhysicalUnits::g_per_cm2;
-                assert( fabs(parameters[ad_index] - ad) < 0.1 );  //Areal density
-                parameters[ad_index] = ad; //JIC
+                const double expected_ceres = ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+                assert( fabs(parameters[ad_index] - expected_ceres) < 0.1 );
+                parameters[ad_index] = expected_ceres; //JIC
               }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density ) / else
 
               manual_index += 1;
@@ -4133,6 +4141,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
               const int ad_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 1 );
+              // ad_par here is in g/cm^2 (physical units).  We will convert to Ceres parameter
+              //  space when finally writing it to `parameters[...]`.
               double ad_par = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
 
               if( ext_att->fit_areal_density )
@@ -4148,10 +4158,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                     upper_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
                   }
 
-                  //TODO: add and use the following variables for both Auto and Manual solutions
-                  //const double RelActCalc::ns_ad_ceres_offset = 1.0;
-                  //const double RelActCalc::ns_ad_ceres_multiple = 0.5;
-
                   const double reasonable_starting_ad = 1.0; //pretty arbitrary - just something away from zero
                   const double mid_allowed_ad = 0.5*(lower_ad + upper_ad);
                   const double starting_ad = std::max( std::min(mid_allowed_ad, reasonable_starting_ad), lower_ad );
@@ -4165,11 +4171,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }else
               {
                 const double ad = ext_att->areal_density / PhysicalUnits::g_per_cm2;
-                assert( fabs(parameters[ad_par_index] - ad) < 0.1 );  //Areal density
-                parameters[ad_par_index] = ad; //JIC
+                const double expected_ceres = ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+                assert( fabs(parameters[ad_par_index] - expected_ceres) < 0.1 );
+                ad_par = ad;
               }//if( ext_att->fit_areal_density )
 
-              parameters[ad_par_index] = ad_par;
+              parameters[ad_par_index] = ad_par / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
 
               manual_index += 1;
             }//for( loop over options.phys_model_external_atten )
@@ -5861,7 +5868,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         double total_offset = anchor.initial_offset;
         if( anchor.is_fitted )
-          total_offset += parameters[cost_functor->m_dev_pair_par_start_index + anchor.param_index];
+        {
+          const double ceres_val = parameters[cost_functor->m_dev_pair_par_start_index + anchor.param_index];
+          total_offset += (ceres_val - RelActCalc::ns_dev_ceres_offset) * RelActCalc::ns_dev_ceres_mult;
+        }
         solution.m_deviation_pair_offsets.emplace_back( anchor.anchor_energy, total_offset );
       }
     }//if( deviation pairs were used )
@@ -6429,14 +6439,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           answer.areal_density_was_fit = input.fit_areal_density;
           if( input.fit_areal_density )
           {
-            answer.areal_density = these_rel_eff_coefficients[start_index + 1] * PhysicalUnits::g_per_cm2;
+            answer.areal_density = (these_rel_eff_coefficients[start_index + 1] - RelActCalc::ns_ad_ceres_offset)
+                                   * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
             assert( answer.areal_density >= 0.0 );
-            
+
             if( uncertainties.size() > (this_rel_eff_start_index + start_index + 1) )
-              answer.areal_density_uncert = uncertainties[this_rel_eff_start_index + start_index + 1] * PhysicalUnits::g_per_cm2; //or sqrt( m_rel_eff_covariance[start_index + 1][start_index + 1] )
+              answer.areal_density_uncert = uncertainties[this_rel_eff_start_index + start_index + 1]
+                                            * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
           }else
           {
-            assert( these_rel_eff_coefficients[start_index + 1] == (input.areal_density / PhysicalUnits::g_per_cm2) );
+            const double expected_ceres = (input.areal_density / PhysicalUnits::g_per_cm2)
+                                            / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+            assert( fabs(these_rel_eff_coefficients[start_index + 1] - expected_ceres) < 1.0e-6 );
             answer.areal_density = input.areal_density;
           }
           
@@ -7424,8 +7438,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( index < m_fwhm_par_start_index )
     {
-      // Its a deviation pair parameter
-      return 1.0;  // No scale factor for deviation pair parameters currently
+      // Its a deviation pair parameter - physical[keV] = (x - ns_dev_ceres_offset) * ns_dev_ceres_mult
+      return RelActCalc::ns_dev_ceres_mult;
     }
     
     if( index < m_rel_eff_par_start_index )
@@ -7465,14 +7479,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           if( sub_ind == 0 )
             return RelActCalc::ns_an_ceres_mult; //Atomic number
           if( sub_ind == 1 )
-            return 1.0; // We just use 1.0 for areal density right now
-        
+            return RelActCalc::ns_ad_ceres_mult; //Self-atten areal density
+
           if( sub_ind < (2 + 2*rel_eff_curve.phys_model_external_atten.size()) )
           {
             const size_t ext_atten_num = (sub_ind - 2) / 2;
             if( (sub_ind % 2) == 0 )
               return RelActCalc::ns_an_ceres_mult;
-            return 1.0; //AD
+            return RelActCalc::ns_ad_ceres_mult; //External-atten areal density
           }
 
           assert( sub_ind >= (2 + 2*rel_eff_curve.phys_model_external_atten.size()) );
@@ -8216,8 +8230,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack self-atten AN" );
       }
-      atten.areal_density = coeffs[rel_eff_start + 1] * PhysicalUnits::g_per_cm2;
-      
+      atten.areal_density = (coeffs[rel_eff_start + 1] - RelActCalc::ns_ad_ceres_offset)
+                            * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
+
       answer.self_atten = std::move(atten);
     }//if( rel_eff_curve.phys_model_self_atten )
     
@@ -8235,8 +8250,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack external AN" );
       }
-      atten.areal_density = coeffs[rel_eff_start + 2 + 2*ext_ind + 1] * PhysicalUnits::g_per_cm2;
-     
+      atten.areal_density = (coeffs[rel_eff_start + 2 + 2*ext_ind + 1] - RelActCalc::ns_ad_ceres_offset)
+                            * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
+
       answer.external_attens.push_back( std::move(atten) );
     }//for( loop over external attenuators )
     
@@ -8629,7 +8645,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( const RelActCalcAutoImp::DeviationPairAnchor &anchor : m_dev_pair_anchors )
     {
       const T offset = anchor.is_fitted
-        ? (x[m_dev_pair_par_start_index + anchor.param_index] + T(anchor.initial_offset))
+        ? ((x[m_dev_pair_par_start_index + anchor.param_index] - RelActCalc::ns_dev_ceres_offset)
+             * RelActCalc::ns_dev_ceres_mult + T(anchor.initial_offset))
         : T(anchor.initial_offset);
       adjusted_dev_pairs.emplace_back( anchor.anchor_energy, offset );
     }
@@ -9075,7 +9092,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         double offset = anchor.initial_offset;
         if( anchor.is_fitted )
-          offset += x[m_dev_pair_par_start_index + anchor.param_index];
+        {
+          const double ceres_val = x[m_dev_pair_par_start_index + anchor.param_index];
+          offset += (ceres_val - RelActCalc::ns_dev_ceres_offset) * RelActCalc::ns_dev_ceres_mult;
+        }
         adj_dev_pairs.emplace_back( anchor.anchor_energy, offset );
       }
     }else
