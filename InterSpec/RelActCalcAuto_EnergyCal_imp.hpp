@@ -58,7 +58,14 @@ namespace RelActCalcAutoImp
 template<typename T>
 struct CubicSplineNodeT
 {
-  double x;  // Anchor x-value (energy) - always double since these are fixed
+  /** Transformed anchor x-value (polynomial energy = anchor_energy - offset).
+   Kept as type T because for fitted deviation-pair anchors the fit parameter
+   controls the offset, and x = anchor_energy - offset depends on that parameter.
+   If node.x is stored as a scalar the jet derivative is lost, and the
+   derivative of h = energy - node.x in eval_cubic_spline silently drops the
+   dx/dparam contribution — producing wrong auto-diff gradients in exactly the
+   segments whose left endpoint is a fitted anchor. */
+  T x;
   T y;       // Value at anchor (can be Jet type for auto-diff)
   T a, b, c; // Polynomial coefficients: f(h) = a*h^3 + b*h^2 + c*h + y, where h = x - node.x
 };
@@ -295,7 +302,9 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
       for( size_t d = 0; d < nderiv; ++d )
         h.v[d] = dx_vals[i+1][d] - dx_vals[i][d];
 
-      nodes[i].x = x_vals[i];
+      nodes[i].x = T( x_vals[i] );
+      for( size_t d = 0; d < nderiv; ++d )
+        nodes[i].x.v[d] = dx_vals[i][d];
       nodes[i].y = deviation_pairs[i].second;
       nodes[i].a = (b_vals[i+1] - b_vals[i]) / (T(3.0) * h);
       nodes[i].b = b_vals[i];
@@ -303,7 +312,9 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
                  - (T(2.0) * b_vals[i] + b_vals[i+1]) * h / T(3.0);
     }
 
-    nodes[n-1].x = x_vals[n-1];
+    nodes[n-1].x = T( x_vals[n-1] );
+    for( size_t d = 0; d < nderiv; ++d )
+      nodes[n-1].x.v[d] = dx_vals[n-1][d];
     nodes[n-1].y = deviation_pairs[n-1].second;
     nodes[n-1].a = T(0.0);
     nodes[n-1].b = T(0.0);
@@ -336,9 +347,14 @@ T eval_cubic_spline( const T energy, const std::vector<CubicSplineNodeT<T>> &nod
   if( nodes.empty() )
     return T(0.0);
 
-  // Find the interval using binary search on x values
+  // Find the interval using binary search on x values (scalar comparison only)
   const auto it = std::upper_bound( nodes.begin(), nodes.end(), lookup_energy,
-    []( double e, const CubicSplineNodeT<T> &node ) { return e < node.x; } );
+    []( double e, const CubicSplineNodeT<T> &node ) {
+      if constexpr ( std::is_same_v<T, double> )
+        return e < node.x;
+      else
+        return e < node.x.a;
+    } );
 
   // Clamp to boundary y-values (matching SpecUtils::eval_cubic_spline behavior)
   if( it == nodes.begin() )
@@ -450,7 +466,7 @@ T correction_due_to_deviation_pairs( const T true_energy, const std::vector<Cubi
   std::vector<CubicSplineNodeT<double>> scalar_nodes( nodes.size() );
   for( size_t i = 0; i < nodes.size(); ++i )
   {
-    scalar_nodes[i].x = nodes[i].x;
+    scalar_nodes[i].x = get_scalar( nodes[i].x );
     scalar_nodes[i].y = get_scalar( nodes[i].y );
     scalar_nodes[i].a = get_scalar( nodes[i].a );
     scalar_nodes[i].b = get_scalar( nodes[i].b );
@@ -869,28 +885,14 @@ T find_polynomial_channel( const T energy,
   const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), coeffs, dev_pair_spline );
 
 
-  // Check if energy is in range
-  if( energy < (min)(e_low, e_high) || energy > (max)(e_low, e_high) )
-  {
-    // Extrapolate linearly
-    if( energy < (min)(e_low, e_high) )
-    {
-      T answer = e_low;
-      if constexpr ( !std::is_same_v<T, double> )
-        answer.a = 0.0;
-      else 
-        answer = 0.0;
-      return answer;
-    }else
-    {
-      T answer = e_high;
-      if constexpr ( !std::is_same_v<T, double> )
-        answer.a = static_cast<double>(nchannel - 1);
-      else 
-        answer = static_cast<double>(nchannel - 1);
-      return answer;
-    }
-  }
+  // Out-of-range energies are handled uniformly by the binary search below:
+  // it clamps the scalar channel to the search bounds (0 or nchannel-1), and
+  // for T=Jet the implicit-function-theorem recovery at the end of the else
+  // branch propagates the linear-extrapolation derivatives. An earlier
+  // explicit out-of-range clamp was removed because it produced Jets with
+  // the scalar overwritten to the boundary while `.v[d]` kept the derivatives
+  // of e_low/e_high — a Jet-invariant violation that corrupted the Jacobian
+  // column whenever a peak's adjusted energy momentarily landed out of range.
 
   // Binary search (and derivative-preserving implicit update for Jet types)
   if constexpr ( std::is_same_v<T, double> )
@@ -934,7 +936,7 @@ T find_polynomial_channel( const T energy,
     std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar( dev_pair_spline.size() );
     for( size_t i = 0; i < dev_pair_spline.size(); ++i )
     {
-      dev_pair_spline_scalar[i].x = dev_pair_spline[i].x;
+      dev_pair_spline_scalar[i].x = dev_pair_spline[i].x.a;
       dev_pair_spline_scalar[i].y = dev_pair_spline[i].y.a;
       dev_pair_spline_scalar[i].a = dev_pair_spline[i].a.a;
       dev_pair_spline_scalar[i].b = dev_pair_spline[i].b.a;
@@ -949,36 +951,10 @@ T find_polynomial_channel( const T energy,
     const double e_high_val = energy_at( static_cast<double>(nchannel) );
     const double energy_val = energy.a;
 
-    // Handle out-of-range energies with linear extrapolation (matching double version)
-    if( energy_val <= e_low_val )
-    {
-      const double bin_val = (energy_val - e_low_val) * static_cast<double>(nchannel) / coeffs[0].a;
-      T answer = T( bin_val );
-      // Propagate derivatives through the linear extrapolation
-      // bin = (E - E_low) * nchannel / C1
-      // d(bin)/d(param) = d(E)/d(param) * nchannel / C1 - (E - E_low) * nchannel / C1^2 * d(C1)/d(param)
-      const double nchan_over_c1 = static_cast<double>(nchannel) / coeffs[1].a;
-      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
-      {
-        answer.v[d] = energy.v[d] * nchan_over_c1
-                    - (energy_val - e_low_val) * nchan_over_c1 / coeffs[1].a * coeffs[1].v[d];
-      }
-      return answer;
-    }
-
-    if( energy_val >= e_high_val )
-    {
-      const double bin_val = static_cast<double>(nchannel)
-                           + (energy_val - e_high_val) * static_cast<double>(nchannel) / coeffs[1].a;
-      T answer = T( bin_val );
-      const double nchan_over_c1 = static_cast<double>(nchannel) / coeffs[1].a;
-      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
-      {
-        answer.v[d] = energy.v[d] * nchan_over_c1
-                    - (energy_val - e_high_val) * nchan_over_c1 / coeffs[1].a * coeffs[1].v[d];
-      }
-      return answer;
-    }
+    // Out-of-range energies are handled by the bounded binary search below:
+    // the scalar clamps to 0 or nchannel-1, and the IFT recovery after the
+    // loop propagates the correct linear-extrapolation derivatives via the
+    // probe-based denergy_dch (which equals C1*(1+S') at the boundary).
 
     double low = 0.0;
     double high = static_cast<double>(nchannel);
@@ -1021,13 +997,14 @@ T find_polynomial_channel( const T energy,
     std::vector<CubicSplineNodeT<T>> dev_pair_spline_const( dev_pair_spline.size() );
     for( size_t i = 0; i < dev_pair_spline.size(); ++i )
     {
-      dev_pair_spline_const[i].x = dev_pair_spline[i].x;
+      dev_pair_spline_const[i].x = T( dev_pair_spline[i].x.a );
       dev_pair_spline_const[i].y = T( dev_pair_spline[i].y.a );
       dev_pair_spline_const[i].a = T( dev_pair_spline[i].a.a );
       dev_pair_spline_const[i].b = T( dev_pair_spline[i].b.a );
       dev_pair_spline_const[i].c = T( dev_pair_spline[i].c.a );
       for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
       {
+        dev_pair_spline_const[i].x.v[d] = 0.0;
         dev_pair_spline_const[i].y.v[d] = 0.0;
         dev_pair_spline_const[i].a.v[d] = 0.0;
         dev_pair_spline_const[i].b.v[d] = 0.0;
@@ -1287,7 +1264,7 @@ T find_fullrangefraction_channel( const T energy,
     std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar;
     dev_pair_spline_scalar.reserve( dev_pair_spline.size() );
     for( const auto &node : dev_pair_spline )
-      dev_pair_spline_scalar.push_back( { node.x, node.y.a, node.a.a, node.b.a, node.c.a } );
+      dev_pair_spline_scalar.push_back( { node.x.a, node.y.a, node.a.a, node.b.a, node.c.a } );
 
     auto energy_at = [&coeffs_scalar,nchannel,&dev_pair_spline_scalar]( const double bin ) -> double {
       return fullrangefraction_energy( bin, coeffs_scalar, nchannel, dev_pair_spline_scalar );
@@ -1338,13 +1315,14 @@ T find_fullrangefraction_channel( const T energy,
     std::vector<CubicSplineNodeT<T>> dev_pair_spline_const( dev_pair_spline.size() );
     for( size_t i = 0; i < dev_pair_spline.size(); ++i )
     {
-      dev_pair_spline_const[i].x = dev_pair_spline[i].x;
+      dev_pair_spline_const[i].x = T( dev_pair_spline[i].x.a );
       dev_pair_spline_const[i].y = T( dev_pair_spline[i].y.a );
       dev_pair_spline_const[i].a = T( dev_pair_spline[i].a.a );
       dev_pair_spline_const[i].b = T( dev_pair_spline[i].b.a );
       dev_pair_spline_const[i].c = T( dev_pair_spline[i].c.a );
       for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
       {
+        dev_pair_spline_const[i].x.v[d] = 0.0;
         dev_pair_spline_const[i].y.v[d] = 0.0;
         dev_pair_spline_const[i].a.v[d] = 0.0;
         dev_pair_spline_const[i].b.v[d] = 0.0;
@@ -1474,25 +1452,58 @@ T find_lowerchannel_channel( const T energy,
     corrected_energy -= eval_cubic_spline( energy, dev_pair_spline );
 
   // Binary search to find the channel
-  // Find largest i such that channel_energies[i] <= corrected_energy
-  if( corrected_energy < static_cast<double>(channel_energies[0]) )
+  // Find largest i such that channel_energies[i] <= corrected_energy.
+  //
+  // Out-of-range handling: scalar is clamped to 0 or nchannel-1 (downstream
+  // LowerChannelEdge handler in apply_energy_cal_adjustment indexes
+  // channel_energies[] with the scalar, so it MUST be non-negative and
+  // bounded). Derivatives are propagated from the linear-extrapolation tangent
+  // using the local channel width as the slope, so Ceres can steer parameters
+  // that would move corrected_energy back into range.
+  double search_energy;
+  if constexpr ( std::is_same_v<T, double> )
+    search_energy = corrected_energy;
+  else
+    search_energy = corrected_energy.a;
+
+  if( search_energy < static_cast<double>(channel_energies[0]) )
   {
-    if constexpr ( !std::is_same_v<T, double> )
-      corrected_energy.a = 0.0;
-    else 
-      corrected_energy = 0.0;
-    return corrected_energy;
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      return T(0.0);
+    }
+    else
+    {
+      T answer;
+      answer.a = 0.0;
+      const double slope = 1.0
+        / ( static_cast<double>(channel_energies[1])
+          - static_cast<double>(channel_energies[0]) );
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+        answer.v[d] = corrected_energy.v[d] * slope;
+      return answer;
+    }
   }
 
-  if( corrected_energy >= static_cast<double>(channel_energies[nchannel]) )
+  if( search_energy >= static_cast<double>(channel_energies[nchannel]) )
   {
-    if constexpr ( !std::is_same_v<T, double> )
-      corrected_energy.a = static_cast<double>(nchannel - 1);
-    else 
-      corrected_energy = static_cast<double>(nchannel - 1);
-    return corrected_energy;
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      return T( static_cast<double>(nchannel - 1) );
+    }
+    else
+    {
+      T answer;
+      answer.a = static_cast<double>(nchannel - 1);
+      const double slope = 1.0
+        / ( static_cast<double>(channel_energies[nchannel])
+          - static_cast<double>(channel_energies[nchannel - 1]) );
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+        answer.v[d] = corrected_energy.v[d] * slope;
+      return answer;
+    }
   }
-  
+
   // Binary search
   size_t low = 0;
   size_t high = nchannel;
@@ -1501,7 +1512,7 @@ T find_lowerchannel_channel( const T energy,
   {
     const size_t mid = (low + high) / 2;
 
-    if( static_cast<double>(channel_energies[mid]) <= corrected_energy )
+    if( static_cast<double>(channel_energies[mid]) <= search_energy )
       low = mid;
     else
       high = mid;
@@ -1606,25 +1617,49 @@ T find_lowerchannel_channel( const T energy,
   else
     search_energy = unadjusted_energy.a;
 
-  // Binary search to find the channel
+  // Binary search to find the channel.
+  // Out-of-range handling: scalar is clamped to 0 or nchannel-1 (downstream
+  // LowerChannelEdge handler indexes channel_energies[] with the scalar).
+  // Derivatives are propagated from the linear-extrapolation tangent using
+  // the local channel width as the slope; this way Ceres sees a non-zero
+  // gradient that steers offset_adj / gain_adj / energy back toward the
+  // in-range region instead of stalling at the boundary.
   if( search_energy < static_cast<double>(channel_energies[0]) )
   {
-    T answer = unadjusted_energy;
-    if constexpr ( !std::is_same_v<T, double> )
-      answer.a = 0.0;
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      return T(0.0);
+    }
     else
-      answer = 0.0;
-    return answer;
+    {
+      T answer;
+      answer.a = 0.0;
+      const double slope = 1.0
+        / ( static_cast<double>(channel_energies[1])
+          - static_cast<double>(channel_energies[0]) );
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+        answer.v[d] = unadjusted_energy.v[d] * slope;
+      return answer;
+    }
   }
 
   if( search_energy >= static_cast<double>(channel_energies[nchannel]) )
   {
-    T answer = unadjusted_energy;
-    if constexpr ( !std::is_same_v<T, double> )
-      answer.a = static_cast<double>(nchannel - 1);
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      return T( static_cast<double>(nchannel - 1) );
+    }
     else
-      answer = static_cast<double>(nchannel - 1);
-    return answer;
+    {
+      T answer;
+      answer.a = static_cast<double>(nchannel - 1);
+      const double slope = 1.0
+        / ( static_cast<double>(channel_energies[nchannel])
+          - static_cast<double>(channel_energies[nchannel - 1]) );
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+        answer.v[d] = unadjusted_energy.v[d] * slope;
+      return answer;
+    }
   }
 
   // Binary search
