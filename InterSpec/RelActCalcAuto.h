@@ -38,6 +38,30 @@
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 #include "InterSpec/RelActCalc.h"
 
+/** When 1, ROI channel bounds (`first_channel` / `last_channel`) inside
+    `RelActAutoCostFcn::peaks_for_energy_range_imp` are computed once
+    from the spectrum's native energy calibration and do NOT drift as
+    fit parameters change. Peak means still shift with the energy-cal
+    parameters — just the integration window stays put. This removes
+    the 1-channel discrete slide that otherwise occurs at sub-ppm
+    EneOffset steps when the adjusted energy crosses a 0.5-fractional
+    channel threshold; those slides produce O(1) cost jumps (one
+    boundary-channel residual enters/leaves the sum) and break the LM
+    solver's trust-region model.
+
+    Set to 0 to restore the legacy behavior (bounds recomputed from
+    `apply_energy_cal_adjustment`-shifted energies every eval) for A/B
+    comparison while this change is being validated.
+
+    The `#define` lives in the public header so any future code that
+    ends up depending on the bound-drift semantics sees a consistent
+    value across TUs. At the moment only `src/RelActCalcAuto.cpp` acts
+    on it.
+ */
+#ifndef ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL
+#define ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL 1
+#endif
+
 // Forward declarations
 class DetectorPeakResponse;
 struct Material;

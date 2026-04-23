@@ -9185,15 +9185,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //  energy calibrations
     const T adjusted_lower_energy = apply_energy_cal_adjustment( range.lower_energy, x, cached_splines );
     const T adjusted_upper_energy = apply_energy_cal_adjustment( range.upper_energy, x, cached_splines );
-    
-    // TODO: Check this conversion from `Jet<>` to double doesnt mess anything up - I *think* this is _fine_...
+
     pair<size_t,size_t> channel_range;
+#if( ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL )
+    // Fix ROI channel bounds to the user-specified ROI energies evaluated
+    // against the spectrum's native calibration. These bounds do NOT
+    // depend on the fit parameters, so the integration window stays put
+    // as EneOffset/EneGain/Dev_* change — eliminating the 1-channel
+    // discrete slide (and attendant O(1) cost jump) that the legacy
+    // branch exhibits at sub-ppm parameter steps. Peak means continue
+    // to pick up the adjustment later in this function; only the
+    // window the residuals are summed over is anchored.
+    channel_range = range.channel_range( range.lower_energy, range.upper_energy, num_channels, m_energy_cal );
+#else
+    // Legacy behavior: channel bounds track the adjusted ROI energies.
+    // TODO: Check this conversion from `Jet<>` to double doesnt mess anything up - I *think* this is _fine_...
     if constexpr ( !std::is_same_v<T, double> )
       channel_range = range.channel_range( adjusted_lower_energy.a, adjusted_upper_energy.a, num_channels, m_energy_cal );
     else
       channel_range = range.channel_range( adjusted_lower_energy, adjusted_upper_energy, num_channels, m_energy_cal );
-
-    // TODO: find a problem that fails with energy range, and then try fixing the channels according to initial energy cal, and see if that works better
+#endif
 
     const size_t first_channel = channel_range.first;
     const size_t last_channel = channel_range.second;
@@ -9714,8 +9725,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       //     << range.upper_energy << "] keV." << endl;
       
       answer.no_gammas_in_range = true;
-      
+
+#if( ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL )
+      // Fallback dummy-peak centre must be consistent with the fixed
+      // ROI bounds: use the unadjusted midpoint so the dummy peak's
+      // mean is a compile-time constant w.r.t. fit parameters.
+      const T middle_energy = T( 0.5*(range.lower_energy + range.upper_energy) );
+#else
       const T middle_energy = 0.5*(adjusted_lower_energy + adjusted_upper_energy);
+#endif
       T middle_fwhm = fwhm( middle_energy, x );
       if( isinf(middle_fwhm) || isnan(middle_fwhm) )
         middle_fwhm = T(1.0); //arbitrary
@@ -9732,9 +9750,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     
     answer.continuum.m_type = range.continuum_type;
+#if( ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL )
+    // Anchor continuum to the unadjusted ROI bounds so its reference
+    // frame matches the fixed channel window. PeakFit::fit_continuum
+    // below evaluates the polynomial at each channel's native-cal
+    // energy; parameterising in (E - range.lower_energy) keeps the
+    // reference frame fixed too.
+    answer.continuum.m_lower_energy = T(range.lower_energy);
+    answer.continuum.m_upper_energy = T(range.upper_energy);
+    answer.continuum.m_reference_energy = T(range.lower_energy);
+#else
     answer.continuum.m_lower_energy = adjusted_lower_energy;
     answer.continuum.m_upper_energy = adjusted_upper_energy;
     answer.continuum.m_reference_energy = adjusted_lower_energy;
+#endif
     
     assert( !peaks.empty() );
     assert( num_channels == ((1 + last_channel) - first_channel) );
