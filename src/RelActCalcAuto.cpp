@@ -2834,7 +2834,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//setup_deviation_pair_anchors(...)
 
 
-  /** Solve the problem, using the Ceres optimizer. */
+  /** Solve the problem, using the Ceres optimizer.
+
+   TODO: currently we always live-time normalize the background spectrum - should add explicit argument for background normalization incase the user has set a custom one (e.g., bad or missing live time in a spectrum).
+   */
   static RelActCalcAuto::RelActAutoSolution solve_ceres( RelActCalcAuto::Options options,
                                                         std::shared_ptr<const SpecUtils::Measurement> foreground,
                                                         std::shared_ptr<const SpecUtils::Measurement> background,
@@ -5269,7 +5272,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }
     cout << "Starting with parameter volume of " << par_area << " from " << num_fit_par << " paramaters." << endl;
     // The below is pretty arbitrary - and only kinda sort optimized on one problem
-    ceres_options.initial_trust_region_radius = 100.0*std::min( std::max( par_area, 10.0 ), 10.0*num_fit_par );
+    ceres_options.initial_trust_region_radius = 100; //100.0*std::min( std::max( par_area, 10.0 ), 10.0*num_fit_par );
 
     ceres_options.max_trust_region_radius = 1e16;
 

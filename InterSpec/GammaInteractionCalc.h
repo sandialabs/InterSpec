@@ -756,6 +756,14 @@ public:
     
     std::shared_ptr<const SpecUtils::Measurement> foreground;
     std::shared_ptr<const SpecUtils::Measurement> background;
+
+    /** The background scale factor for the realtive peak areas.
+     Normally this is the live time dormalization factor (e.g., background real time divided by foreground real time), but the user may have
+     scaled the background for some bespoke reason, so we need to respect this for subtracting background peak areas.
+
+     If zero, negative, inf, or NaN, will use live-time scaling.
+     */
+    double background_sf = -1.0;
   };//struct ShieldSourceInput
 
   static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> create(
@@ -929,10 +937,13 @@ public:
   
   //setBackgroundPeaks(...): if you wish to correct for background counts, you
   //  can set that here.  The peaks you pass in should be the original
-  //  background peaks for the background; similarly for the live time.  This
-  //  function will scale peak areas/uncertainties for the live time
-  void setBackgroundPeaks( const std::vector<PeakDef> &peaks, double liveTime );
-  
+  //  background peaks for the background; similarly for the live time.
+  //  The `scale_factor` is normally the "live time" normalization factor
+  //  (e.g. foreground live time divided by background live time), but sometimes users use a custom
+  //  scale factor (wrong or missing live-times usually), so we will use this instead; if this is
+  //  zero, negative, inf, or NaN, we'll use live-time normalization to scale the peaks by.
+  void setBackgroundPeaks( const std::vector<PeakDef> &peaks, const double liveTime, const double scale_factor );
+
   
   /** The calculation status for ShieldingSourceChi2Fcn. */
   enum class CalcStatus : int
@@ -1112,7 +1123,10 @@ public:
                        const std::vector<double> &params ) const;
 
   const std::vector<PeakDef> &peaks() const;
+
+  /** Note: the `setBackgroundPeaks(...)` function has scaled these peaks by the background normalization factor. */
   const std::vector<PeakDef> &backgroundPeaks() const;
+  double backgroundNormalizationFactor() const;
 
   double distance() const;
   
@@ -1198,7 +1212,16 @@ protected:
   double m_liveTime;
 
   std::vector<PeakDef> m_peaks;
+
+  /** The live time normalization factor (or user overrided value) for the background spectrum. */
+  double m_backgroundPeakScale;
+
+  /** The peak area and area uncertainty have been scaled by `m_backgroundPeakScale` (see `setBackgroundPeaks(...)` function).
+   TODO: stop scaling peaks by this factor, and just use this factor during the computations.
+   */
   std::vector<PeakDef> m_backgroundPeaks;
+
+
   std::shared_ptr<const DetectorPeakResponse> m_detector;
   
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_initial_shieldings;

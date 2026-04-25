@@ -1061,7 +1061,10 @@ struct RelActAutoSolution
   /** The original foreground passed into `solve_ceres(...)`. */
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   
-  /** The original background passed into `solve_ceres(...)`. */
+  /** The original background passed into `solve_ceres(...)`.
+
+   TODO: right now always using live-time normalization - should account for user-set normalization (e.g., bad or unknown live times)
+   */
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   
   /** The final fit parameters. */
@@ -1421,6 +1424,8 @@ struct RelActAutoSolution
  
  @param rel_eff_order The number of energy dependent terms to have in the relative efficiency
         equation (e.g., one more parameter than this will be fit for).
+
+ TODO: right now live-time normalization is always used for background - but users may have overriden this for e.g., bad or unknown live-times
  */
 RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,

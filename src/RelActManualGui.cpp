@@ -102,6 +102,9 @@ const int RelActManualGui::sm_xmlSerializationMinorVersion = 1;
 
 namespace
 {
+
+const double s_back_sub_nsigma_near = 1.0; // Fairly arbitrary.  TODO: have this be a user settable value?
+
 struct DoWorkOnDestruct
 {
   std::function<void()> m_worker;
@@ -186,36 +189,74 @@ public:
       }//if( !solution )
       
       
-      PeakModel *peakModel = m_interspec->peakModel();
-      deque<PeakModel::PeakShrdPtr> all_peaks;
-      if( peakModel && peakModel->peaks() )
-        all_peaks = *peakModel->peaks();
-      
-      vector<shared_ptr<const PeakDef>> display_peaks;
-      
-      for( const shared_ptr<const PeakDef> &p : all_peaks )
+      PeakModel * const peakModel = m_interspec->peakModel();
+      shared_ptr<const SpecUtils::Measurement> background = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+      double back_sf = m_interspec->displayScaleFactor(SpecUtils::SpectrumType::Background);
+
+      std::unique_ptr<RelActManualGui::RelActCalcRawInput> raw_input;
+      try
       {
-        bool use_peak = false;
-        for( const auto &r : solution->m_input.peaks )
-        {
-          if( fabs(p->mean() - r.m_mean) < 1.0 )
-            use_peak = true;
-        }
-        
-        if( use_peak )
+        RelActManualGui::RelActCalcRawInput raw_info = m_tool->get_raw_info_for_calc_input();
+        raw_input = std::make_unique<RelActManualGui::RelActCalcRawInput>( std::move(raw_info) );
+      }catch( std::exception &e )
+      {
+        // SHouldnt happen, but could
+      }
+
+      // Lets get foregorund and maybe background peaks
+      vector<shared_ptr<const PeakDef>> display_peaks, back_peaks;
+      if( raw_input )
+      {
+        for( const auto &p : raw_input->peaks )
           display_peaks.push_back( p );
-      }//for( const shared_ptr<const PeakDef> &p : all_peaks )
-        
+
+        for( const auto &p : raw_input->background_peaks )
+          back_peaks.push_back( p );
+      }else
+      {
+        deque<PeakModel::PeakShrdPtr> all_peaks, all_background_peaks;
+        if( peakModel && peakModel->peaks() )
+          all_peaks = *peakModel->peaks();
+        if( peakModel && peakModel->peaks(SpecUtils::SpectrumType::Background) )
+          all_background_peaks = *peakModel->peaks(SpecUtils::SpectrumType::Background);
+
+        for( const shared_ptr<const PeakDef> &p : all_peaks )
+        {
+          bool use_peak = false, background_subtract = false;
+          for( size_t i = 0; !use_peak && (i < solution->m_input.peaks.size()); ++i )
+          {
+            use_peak = (fabs(p->mean() - solution->m_input.peaks[i].m_mean) < 1.0);
+            if( use_peak )
+              background_subtract = (fabs(p->amplitude() - solution->m_input.peaks[i].m_counts) > 1.0); //I dont think we have any other way to tell if we background subtracted or not
+          }//
+
+          if( !use_peak )
+            continue;
+
+          display_peaks.push_back( p );
+
+          if( background_subtract )
+          {
+            const double sigma = p->gausPeak() ? p->sigma() : 0.25*p->roiWidth();
+            for( const shared_ptr<const PeakDef> &back_peak : all_background_peaks )
+            {
+              if( (fabs(back_peak->mean() - p->mean()) < (s_back_sub_nsigma_near * sigma))
+                 && (std::find(begin(back_peaks), end(back_peaks), back_peak) == end(back_peaks)) )
+              {
+                back_peaks.push_back( back_peak );
+              }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
+            }//for( const PeakDef &peak : backPeaks )
+          }//if( background_ubtract )
+        }//for( const shared_ptr<const PeakDef> &p : all_peaks )
+      }// if( raw_input ) / else (to get peaks )
       
       string title;
       if( foreground && (foreground->title().length() > 0) )
         title = foreground->title();
       else
         title = orig_file_name;
-      
-      auto background = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
-      const double back_sf = m_interspec->displayScaleFactor(SpecUtils::SpectrumType::Background);
-      solution->print_html_report( response.out(), title, foreground, display_peaks, background, back_sf );
+
+      solution->print_html_report( response.out(), title, foreground, display_peaks, background, back_sf, back_peaks );
     }catch( std::exception &e )
     {
       cerr << "Error handling request for RelActManualReportResource: " << e.what() << endl;
@@ -1289,28 +1330,39 @@ RelActManualGui::RelActCalcRawInput RelActManualGui::get_raw_info_for_calc_input
   const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
   if( !peaks )
     throw runtime_error( "No foreground peaks not set/" );
-  
-  setup_input.peaks = *peaks;
-  
+
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> background_peaks = m_peakModel->peaks(SpecUtils::SpectrumType::Background);
+
+  for( const shared_ptr<const PeakDef> &p : *peaks )
+  {
+    if( !p || !(p->parentNuclide() || p->reaction()) || !p->useForManualRelEff() )
+      continue;
+
+    setup_input.peaks.push_back( p );
+
+    if( setup_input.state && setup_input.state->m_backgroundSubtract && background_peaks && !background_peaks->empty() )
+    {
+      const double sigma = p->gausPeak() ? p->sigma() : 0.25*p->roiWidth();
+
+      for( const shared_ptr<const PeakDef> &back_peak : *background_peaks )
+      {
+        // Check we havent already included this background peak
+        const auto pos = std::find( begin(setup_input.background_peaks), end(setup_input.background_peaks), back_peak );
+        if( pos != end(setup_input.background_peaks) )
+          continue;
+
+        if( fabs(back_peak->mean() - p->mean()) < (s_back_sub_nsigma_near * sigma) )
+          setup_input.background_peaks.push_back( back_peak );
+      }//for( const PeakDef &peak : backPeaks )
+    }//if( setup_input.state && setup_input.state->m_backgroundSubtract )
+  }//for( const shared_ptr<const PeakDef> &p : *peaks )
+
   setup_input.fore_spec = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   setup_input.back_spec = viewer->displayedHistogram(SpecUtils::SpectrumType::Background);
-  
-  const float background_live_time = setup_input.back_spec ? setup_input.back_spec->live_time() : 1.0f;
-  
-  const std::shared_ptr<const SpecMeas> back_meas = viewer->measurment(SpecUtils::SpectrumType::Background);
-  
-  
-  if( setup_input.state->m_backgroundSubtract
-     && setup_input.back_spec
-     && back_meas
-     && (background_live_time > 0.0) )
-  {
-    const auto &displayed = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
-    shared_ptr<const deque<shared_ptr<const PeakDef>>> backpeaks = back_meas->peaks( displayed );
-    if( backpeaks )
-      setup_input.background_peaks = *backpeaks;
-  }//if( background_sub && back_spec && back_meas )
-  
+
+  if( setup_input.state->m_backgroundSubtract && !setup_input.background_peaks.empty() )
+    setup_input.background_scale = viewer->displayScaleFactor(SpecUtils::SpectrumType::Background);
+
   const auto fore = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   if( fore )
     setup_input.detector = fore->detector();
@@ -1361,14 +1413,19 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
   
   const deque<shared_ptr<const PeakDef>> &peaks = setup_input.peaks;
   const deque<shared_ptr<const PeakDef>> &background_peaks = setup_input.background_peaks;
-  
+
   vector<GenericPeakInfo> peak_infos;
-  
-  const double back_sub_nsigma_near = 1.0; // Fairly arbitrary.  TODO: have this be a user settable value?
+
   const float foreground_live_time = fore_spec ? fore_spec->live_time() : 1.0f;
   const float background_live_time = back_spec ? back_spec->live_time() : 1.0f;
   const bool background_sub = state->m_backgroundSubtract;
-  
+
+  double background_scale = setup_input.background_scale;
+  if( !background_peaks.empty() && ((background_scale <= 0.0) || IsInf(background_scale) || IsNan(background_scale)) )
+    background_scale = foreground_live_time / background_live_time;
+  if( !background_peaks.empty() && ((background_scale <= 0.0) || IsInf(background_scale) || IsNan(background_scale)) )
+    background_scale = 1.0;
+
   double addUncert = -2.0;
   
   const AddUncert addUncertType = state->m_addUncertIndex;
@@ -1421,6 +1478,9 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
   set<int> src_atomic_numbers;
   for( const PeakModel::PeakShrdPtr &p : peaks )
   {
+    // `get_raw_info_for_calc_input()` should have already filtered peaks correctly to only include peaks that we want
+    assert( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() );
+
     if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
     {
       GenericPeakInfo peak;
@@ -1435,20 +1495,14 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
       if( background_sub )
       {
         const double sigma = p->gausPeak() ? p->sigma() : 0.25*p->roiWidth();
-        const double scale = foreground_live_time / background_live_time;
-        
+
         double back_counts = 0.0, back_uncert_2 = 0.0;
         for( const shared_ptr<const PeakDef> &back_peak : background_peaks )
         {
-          // In principle the peak shouldnt need to be a gaussian peak - but this has yet to be
-          //  tested
-          //if( !back_peak->gausPeak() )
-          //  continue;
-          
-          if( fabs(back_peak->mean() - p->mean()) < (back_sub_nsigma_near * sigma) )
+          if( fabs(back_peak->mean() - p->mean()) < (s_back_sub_nsigma_near * sigma) )
           {
-            back_counts += scale * back_peak->peakArea();
-            back_uncert_2 += scale * scale * back_peak->peakAreaUncert() * back_peak->peakAreaUncert();
+            back_counts += background_scale * back_peak->peakArea();
+            back_uncert_2 += background_scale * background_scale * back_peak->peakAreaUncert() * back_peak->peakAreaUncert();
           }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
         }//for( const PeakDef &peak : backPeaks )
         

@@ -290,6 +290,10 @@ public:
     std::shared_ptr<const GuiState> state;
     std::shared_ptr<const SpecUtils::Measurement> fore_spec, back_spec;
     std::deque<std::shared_ptr<const PeakDef>> peaks, background_peaks;
+    /** Normally the live-time normalization of the background spectrum, but users may override things if live-time info is missing/bad.
+     If negative, zero, inf. or NaN, will use live-time normalization.
+     */
+    double background_scale = -1.0;
     std::shared_ptr<const DetectorPeakResponse> detector;
   };//struct RelActCalcRawInput
 

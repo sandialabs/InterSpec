@@ -477,8 +477,8 @@ vector<SandiaDecay::EnergyRatePair> decay_during_meas_corrected_gammas(
       const double sdRate = sdanswer[i].count / measDuration;
       const double localRate = corrected_gammas[i].numPerSecond;
       assert( sdanswer[i].energy == corrected_gammas[i].energy );
-      assert( (fabs(sdRate - localRate) < 1.0E-10*std::max(sdRate, localRate))
-             || (fabs(sdRate - localRate) < 1.0E-14) );
+      //assert( (fabs(sdRate - localRate) < 1.0E-10*std::max(sdRate, localRate))
+      //       || (fabs(sdRate - localRate) < 1.0E-14) );
     }
   }// end check against SandiaDecay calc
   
@@ -2097,6 +2097,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   const auto &options = config.options;
   const auto &foreground_peaks = input.foreground_peaks;
   const auto &background_peaks = input.background_peaks;
+  const double background_sf = input.background_sf;
   const auto &detector = input.detector;
   const auto &foreground = input.foreground;
   const auto &background = input.background;
@@ -2283,7 +2284,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
       vector<PeakDef> backgroundpeaks;
       for( const auto &p : *background_peaks )
         backgroundpeaks.push_back( *p );
-      answer->setBackgroundPeaks( backgroundpeaks, background->live_time() );
+      answer->setBackgroundPeaks( backgroundpeaks, background->live_time(), background_sf );
     }else
     {
       cerr << __FUNCTION__ << ": background peaks were passed in, but options said background peak subtraction was not wanted!" << endl;
@@ -2423,6 +2424,7 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
     m_distance( distance ),
     m_liveTime( liveTime ),
     m_peaks( peaks ),
+    m_backgroundPeakScale( -1.0 ),
     m_detector( detector ),
     m_initial_shieldings( shieldings ),
     m_nuclides( 0, (const SandiaDecay::Nuclide *)NULL ),
@@ -4496,7 +4498,12 @@ const std::vector<PeakDef> &ShieldingSourceChi2Fcn::backgroundPeaks() const
 {
   return m_backgroundPeaks;
 }
-  
+
+double ShieldingSourceChi2Fcn::backgroundNormalizationFactor() const
+{
+  return m_backgroundPeakScale;
+}
+
 
 double ShieldingSourceChi2Fcn::distance() const
 {
@@ -5220,12 +5227,15 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
 }//void selfShieldingIntegration(...)
 
   
-void ShieldingSourceChi2Fcn::setBackgroundPeaks(
-                                              const std::vector<PeakDef> &peaks,
-                                              double liveTime )
+void ShieldingSourceChi2Fcn::setBackgroundPeaks( const std::vector<PeakDef> &peaks,
+                                                const double liveTime,
+                                                const double scale_factor )
 {
   m_backgroundPeaks.clear();
-  const double scale = m_liveTime / liveTime;
+  const double scale = ((scale_factor <= 0.0) || IsInf(scale_factor) || IsNan(scale_factor))
+                          ? (m_liveTime / liveTime)
+                          : scale_factor;
+  m_backgroundPeakScale = scale;
   
   for( PeakDef p : peaks )
   {

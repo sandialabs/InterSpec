@@ -721,7 +721,8 @@ struct RelEffSolution
                          std::shared_ptr<const SpecUtils::Measurement> spectrum,
                          std::vector<std::shared_ptr<const PeakDef>> spectrum_display_peaks,
                          std::shared_ptr<const SpecUtils::Measurement> background,
-                         double background_normalization
+                         double background_normalization,
+                         std::vector<std::shared_ptr<const PeakDef>> background_peaks
                          ) const;
   
   /** Makes a HTML table of the activity and mass fractions of all the nuclides.
