@@ -7293,7 +7293,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           assert( anchor.is_fitted );
           
           char buffer[32] = {'\0'};
-          snprintf( buffer, sizeof(buffer), "Dev_%.1f", m_dev_pair_anchors[dev_num + 1].anchor_energy );
+          snprintf( buffer, sizeof(buffer), "Dev_%.1f", anchor.anchor_energy );
           return buffer;
         }
       }//for( size_t dev_num = 0; dev_num < m_dev_pair_anchors.size(); ++dev_num )
@@ -8833,24 +8833,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             //  check for this.
             dev_pair_deriv_active = (max_dev_offset_deriv > 1.0e-16);
 
-            static int s_logged_energy_out_of_range = 0;
-            if( dev_pair_deriv_active && (s_logged_energy_out_of_range < 50) )
-            {
-              const T e_low = polynomial_energy( T(0.0), adj_coefs, adjusted_dev_spline );
-              const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), adj_coefs, adjusted_dev_spline );
-              const double e_low_val = e_low.a;
-              const double e_high_val = e_high.a;
-              if( (energy < std::min( e_low_val, e_high_val )) || (energy > std::max( e_low_val, e_high_val )) )
-              {
-                char buffer[256];
-                snprintf( buffer, sizeof(buffer),
-                  "apply_energy_cal_adjustment: energy %.6f outside adjusted range [%.6f, %.6f]",
-                  energy, std::min( e_low_val, e_high_val ), std::max( e_low_val, e_high_val ) );
-                log_developer_error( __func__, buffer );
-                s_logged_energy_out_of_range += 1;
-                assert( 0 );
-              }
-            }
+            // Out-of-range energies are not treated as a bug — find_polynomial_channel
+            // (and find_fullrangefraction_channel) extrapolate past the adjusted calibration range.
           }//if( using_paramaterized_deviations )
 
           double max_derivative = 0.0;
@@ -8986,26 +8970,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const std::vector<float> &ch_energies = *m_energy_cal->channel_energies();
         assert( ch_energies.size() > nchannel ); // LowerChannelEdge has nchannel+1 entries
         const T channel = find_lowerchannel_channel( T(energy), ch_energies, adjusted_dev_spline, offest_adj, gain_adj );
-
-        double ch_val;
-        if constexpr ( std::is_same_v<T, double> )
-          ch_val = channel;
-        else
-          ch_val = channel.a;
-        if( ch_val < 0.0 )
-        {
-          const double e0 = static_cast<double>( ch_energies[0] );
-          return T(e0) + eval_cubic_spline( T(e0), orig_dev_spline );
-        }
-        size_t low = static_cast<size_t>( std::floor( ch_val ) );
-        if( low >= nchannel )
-          low = nchannel - 1;
-        assert( (low + 1) < ch_energies.size() );
-        const double e_low = static_cast<double>( ch_energies[low] );
-        const double e_high = static_cast<double>( ch_energies[low + 1] );
-        const T fraction = channel - T( static_cast<double>(low) );
-        const T base = T(e_low) + T(e_high - e_low) * fraction;
-        return base + eval_cubic_spline( base, orig_dev_spline );
+        // `lowerchannel_energy` handles below-range / in-range / above-range
+        // regimes internally, with safe array access and linear extrapolation
+        // past the boundaries. It's the proper inverse of `find_lowerchannel_channel`.
+        return RelActCalcAutoImp::lowerchannel_energy( channel, ch_energies, orig_dev_spline );
       }//case LowerChannelEdge
 
       case SpecUtils::EnergyCalType::InvalidEquationType:
@@ -9177,17 +9145,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         const double channel = find_lowerchannel_channel( adjusted_energy, ch_energies, orig_dev_pairs );
 
-        double ch_val = channel;
-        if( ch_val < 0.0 )
-          ch_val = 0.0;
-        size_t low = static_cast<size_t>( std::floor( ch_val ) );
-        if( low >= nchannel )
-          low = nchannel - 1;
-        assert( (low + 1) < ch_energies.size() );
-        const double e_low = static_cast<double>( ch_energies[low] );
-        const double e_high = static_cast<double>( ch_energies[low + 1] );
-        const double fraction = channel - static_cast<double>( low );
-        const double e_base = e_low + (e_high - e_low) * fraction;
+        // lowerchannel_energy handles below/in/above-range regimes with safe
+        // array access. We pass an empty spline here because the offset/gain
+        // adjustment and adj_dev_spline are applied afterward (the spline
+        // that was used to invert was orig_dev_pairs, already consumed).
+        const std::vector<CubicSplineNodeT<double>> no_spline;
+        const double e_base = RelActCalcAutoImp::lowerchannel_energy( channel, ch_energies, no_spline );
         const double range_frac = (range > 0.0) ? ((e_base - lower_energy) / range) : 0.0;
         const double e_with_adj = e_base + offset_adj + range_frac * gain_adj;
         return e_with_adj + eval_cubic_spline( e_with_adj, adj_dev_spline );
@@ -9225,15 +9188,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //  energy calibrations
     const T adjusted_lower_energy = apply_energy_cal_adjustment( range.lower_energy, x, cached_splines );
     const T adjusted_upper_energy = apply_energy_cal_adjustment( range.upper_energy, x, cached_splines );
-    
-    // TODO: Check this conversion from `Jet<>` to double doesnt mess anything up - I *think* this is _fine_...
+
     pair<size_t,size_t> channel_range;
+#if( ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL )
+    // Fix ROI channel bounds to the user-specified ROI energies evaluated
+    // against the spectrum's native calibration. These bounds do NOT
+    // depend on the fit parameters, so the integration window stays put
+    // as EneOffset/EneGain/Dev_* change — eliminating the 1-channel
+    // discrete slide (and attendant O(1) cost jump) that the legacy
+    // branch exhibits at sub-ppm parameter steps. Peak means continue
+    // to pick up the adjustment later in this function; only the
+    // window the residuals are summed over is anchored.
+    channel_range = range.channel_range( range.lower_energy, range.upper_energy, num_channels, m_energy_cal );
+#else
+    // Legacy behavior: channel bounds track the adjusted ROI energies.
+    // TODO: Check this conversion from `Jet<>` to double doesnt mess anything up - I *think* this is _fine_...
     if constexpr ( !std::is_same_v<T, double> )
       channel_range = range.channel_range( adjusted_lower_energy.a, adjusted_upper_energy.a, num_channels, m_energy_cal );
     else
       channel_range = range.channel_range( adjusted_lower_energy, adjusted_upper_energy, num_channels, m_energy_cal );
-
-    // TODO: find a problem that fails with energy range, and then try fixing the channels according to initial energy cal, and see if that works better
+#endif
 
     const size_t first_channel = channel_range.first;
     const size_t last_channel = channel_range.second;
@@ -9754,8 +9728,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       //     << range.upper_energy << "] keV." << endl;
       
       answer.no_gammas_in_range = true;
-      
+
+#if( ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL )
+      // Fallback dummy-peak centre must be consistent with the fixed
+      // ROI bounds: use the unadjusted midpoint so the dummy peak's
+      // mean is a compile-time constant w.r.t. fit parameters.
+      const T middle_energy = T( 0.5*(range.lower_energy + range.upper_energy) );
+#else
       const T middle_energy = 0.5*(adjusted_lower_energy + adjusted_upper_energy);
+#endif
       T middle_fwhm = fwhm( middle_energy, x );
       if( isinf(middle_fwhm) || isnan(middle_fwhm) )
         middle_fwhm = T(1.0); //arbitrary
@@ -9772,9 +9753,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     
     answer.continuum.m_type = range.continuum_type;
+#if( ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL )
+    // Anchor continuum to the unadjusted ROI bounds so its reference
+    // frame matches the fixed channel window. PeakFit::fit_continuum
+    // below evaluates the polynomial at each channel's native-cal
+    // energy; parameterising in (E - range.lower_energy) keeps the
+    // reference frame fixed too.
+    answer.continuum.m_lower_energy = T(range.lower_energy);
+    answer.continuum.m_upper_energy = T(range.upper_energy);
+    answer.continuum.m_reference_energy = T(range.lower_energy);
+#else
     answer.continuum.m_lower_energy = adjusted_lower_energy;
     answer.continuum.m_upper_energy = adjusted_upper_energy;
     answer.continuum.m_reference_energy = adjusted_lower_energy;
+#endif
     
     assert( !peaks.empty() );
     assert( num_channels == ((1 + last_channel) - first_channel) );

@@ -58,7 +58,14 @@ namespace RelActCalcAutoImp
 template<typename T>
 struct CubicSplineNodeT
 {
-  double x;  // Anchor x-value (energy) - always double since these are fixed
+  /** Transformed anchor x-value (polynomial energy = anchor_energy - offset).
+   Kept as type T because for fitted deviation-pair anchors the fit parameter
+   controls the offset, and x = anchor_energy - offset depends on that parameter.
+   If node.x is stored as a scalar the jet derivative is lost, and the
+   derivative of h = energy - node.x in eval_cubic_spline silently drops the
+   dx/dparam contribution — producing wrong auto-diff gradients in exactly the
+   segments whose left endpoint is a fitted anchor. */
+  T x;
   T y;       // Value at anchor (can be Jet type for auto-diff)
   T a, b, c; // Polynomial coefficients: f(h) = a*h^3 + b*h^2 + c*h + y, where h = x - node.x
 };
@@ -295,7 +302,9 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
       for( size_t d = 0; d < nderiv; ++d )
         h.v[d] = dx_vals[i+1][d] - dx_vals[i][d];
 
-      nodes[i].x = x_vals[i];
+      nodes[i].x = T( x_vals[i] );
+      for( size_t d = 0; d < nderiv; ++d )
+        nodes[i].x.v[d] = dx_vals[i][d];
       nodes[i].y = deviation_pairs[i].second;
       nodes[i].a = (b_vals[i+1] - b_vals[i]) / (T(3.0) * h);
       nodes[i].b = b_vals[i];
@@ -303,7 +312,9 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
                  - (T(2.0) * b_vals[i] + b_vals[i+1]) * h / T(3.0);
     }
 
-    nodes[n-1].x = x_vals[n-1];
+    nodes[n-1].x = T( x_vals[n-1] );
+    for( size_t d = 0; d < nderiv; ++d )
+      nodes[n-1].x.v[d] = dx_vals[n-1][d];
     nodes[n-1].y = deviation_pairs[n-1].second;
     nodes[n-1].a = T(0.0);
     nodes[n-1].b = T(0.0);
@@ -336,9 +347,14 @@ T eval_cubic_spline( const T energy, const std::vector<CubicSplineNodeT<T>> &nod
   if( nodes.empty() )
     return T(0.0);
 
-  // Find the interval using binary search on x values
+  // Find the interval using binary search on x values (scalar comparison only)
   const auto it = std::upper_bound( nodes.begin(), nodes.end(), lookup_energy,
-    []( double e, const CubicSplineNodeT<T> &node ) { return e < node.x; } );
+    []( double e, const CubicSplineNodeT<T> &node ) {
+      if constexpr ( std::is_same_v<T, double> )
+        return e < node.x;
+      else
+        return e < node.x.a;
+    } );
 
   // Clamp to boundary y-values (matching SpecUtils::eval_cubic_spline behavior)
   if( it == nodes.begin() )
@@ -450,7 +466,7 @@ T correction_due_to_deviation_pairs( const T true_energy, const std::vector<Cubi
   std::vector<CubicSplineNodeT<double>> scalar_nodes( nodes.size() );
   for( size_t i = 0; i < nodes.size(); ++i )
   {
-    scalar_nodes[i].x = nodes[i].x;
+    scalar_nodes[i].x = get_scalar( nodes[i].x );
     scalar_nodes[i].y = get_scalar( nodes[i].y );
     scalar_nodes[i].a = get_scalar( nodes[i].a );
     scalar_nodes[i].b = get_scalar( nodes[i].b );
@@ -719,6 +735,75 @@ T fullrangefraction_energy( const T bin,
 }//fullrangefraction_energy(...)
 
 
+/** Helper function to evaluate lower-channel-edge energy calibration at a given
+ fractional channel.
+
+ For LowerChannelEdge calibration, `channel_energies[i]` is the lower edge of
+ channel `i` (size = nchannel + 1, last entry is upper edge of last channel).
+ Within `[0, nchannel-1]`, energy is a linear interpolation between
+ `channel_energies[low]` and `channel_energies[low+1]`. Outside the range, we
+ linearly extrapolate using the first (resp. last) channel's width, matching
+ the inverse `find_lowerchannel_channel` — so round-trip
+ `lowerchannel_energy(find_lowerchannel_channel(E)) ≈ E` holds for any real E.
+
+ Safe array access: the scalar of `channel` is used as the `size_t` index, clamped
+ to `[0, nchannel-1]`; the full Jet `channel` flows through the fraction/extrap
+ formula so derivatives propagate correctly.
+
+ @param channel The channel number (can be fractional; any real value)
+ @param channel_energies Lower channel edge energies (size = nchannel + 1)
+ @param dev_pair_spline The deviation pair spline nodes (optional)
+ @returns Energy in keV at the given channel
+ */
+template<typename T>
+T lowerchannel_energy( const T channel,
+                       const std::vector<float> &channel_energies,
+                       const std::vector<CubicSplineNodeT<T>> &dev_pair_spline )
+{
+  assert( channel_energies.size() >= 2 );
+  const size_t nchannel = channel_energies.size() - 1;
+
+  double ch_scalar;
+  if constexpr ( std::is_same_v<T, double> )
+    ch_scalar = channel;
+  else
+    ch_scalar = channel.a;
+
+  T base;
+  if( ch_scalar < 0.0 )
+  {
+    // Below-range: linear extrapolation using first channel's width.
+    const double e0 = static_cast<double>( channel_energies[0] );
+    const double width = static_cast<double>( channel_energies[1] )
+                       - static_cast<double>( channel_energies[0] );
+    base = T(e0) + T(width) * channel;  // channel < 0 → base < e0
+  }
+  else if( ch_scalar >= static_cast<double>(nchannel) )
+  {
+    // Above-range: linear extrapolation using last channel's width.
+    const double e_last = static_cast<double>( channel_energies[nchannel] );
+    const double width  = static_cast<double>( channel_energies[nchannel] )
+                        - static_cast<double>( channel_energies[nchannel - 1] );
+    base = T(e_last) + T(width) * (channel - T(static_cast<double>(nchannel)));
+  }
+  else
+  {
+    // In-range: scalar floor yields a valid size_t in [0, nchannel-1].
+    const size_t low = static_cast<size_t>( std::floor(ch_scalar) );
+    assert( (low + 1) < channel_energies.size() );
+    const double e_lo = static_cast<double>( channel_energies[low] );
+    const double e_hi = static_cast<double>( channel_energies[low + 1] );
+    const T fraction = channel - T(static_cast<double>(low));
+    base = T(e_lo) + T(e_hi - e_lo) * fraction;
+  }
+
+  if( !dev_pair_spline.empty() )
+    base += eval_cubic_spline( base, dev_pair_spline );
+
+  return base;
+}//lowerchannel_energy(...)
+
+
 /** Find the channel corresponding to a given energy for polynomial calibration.
 
  Templated version of SpecUtils::find_polynomial_channel that supports automatic differentiation.
@@ -862,154 +947,249 @@ T find_polynomial_channel( const T energy,
     }
   }
 
-  // For higher-order polynomials or with deviation pairs, use binary search
+  // For higher-order polynomials or with deviation pairs, use bisection.
+  // Unified algorithm handles in-range and out-of-range uniformly:
+  //   1. If `energy` is inside [min(e_low,e_high), max(...)], bisect on
+  //      [0, nchannel-1] as usual.
+  //   2. Else walk outward from the nearer boundary in geometric doublings
+  //      (1, 2, 4, ..., up to 10 steps). At each step, check monotonicity
+  //      (dE/dch same sign as at the starting boundary). When the polynomial
+  //      value brackets `energy`, bisect in that bracketed range.
+  //   3. If monotonicity breaks (turning point) or dE/dch is 0 at the boundary,
+  //      clamp at the safe side with a linear-extrap Jet derivative so Ceres
+  //      has a gradient pointing back into the monotonic region.
+  //
+  // The returned scalar is the TRUE polynomial inverse everywhere the inverse
+  // is well-defined. For T=Jet the IFT recovery at the end propagates
+  // derivatives; the same IFT path works for in-range and extended-range
+  // (continuous by construction).
 
-  // Find the energy range
   const T e_low = polynomial_energy( T(0.0), coeffs, dev_pair_spline );
   const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), coeffs, dev_pair_spline );
 
-
-  // Check if energy is in range
-  if( energy < (min)(e_low, e_high) || energy > (max)(e_low, e_high) )
+  // Scalar coefficients + scalar spline nodes for the scalar bisection.
+  std::vector<double> coeffs_scalar( coeffs.size(), 0.0 );
+  for( size_t i = 0; i < coeffs.size(); ++i )
   {
-    // Extrapolate linearly
-    if( energy < (min)(e_low, e_high) )
-    {
-      T answer = e_low;
-      if constexpr ( !std::is_same_v<T, double> )
-        answer.a = 0.0;
-      else 
-        answer = 0.0;
-      return answer;
-    }else
-    {
-      T answer = e_high;
-      if constexpr ( !std::is_same_v<T, double> )
-        answer.a = static_cast<double>(nchannel - 1);
-      else 
-        answer = static_cast<double>(nchannel - 1);
-      return answer;
-    }
+    if constexpr ( std::is_same_v<T, double> )
+      coeffs_scalar[i] = coeffs[i];
+    else
+      coeffs_scalar[i] = coeffs[i].a;
   }
 
-  // Binary search (and derivative-preserving implicit update for Jet types)
-  if constexpr ( std::is_same_v<T, double> )
+  std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar( dev_pair_spline.size() );
+  for( size_t i = 0; i < dev_pair_spline.size(); ++i )
   {
-    T low_ch(0.0);
-    T high_ch( static_cast<double>(nchannel - 1) );
-
-    const int max_iterations = 1000;
-    int niter = 0;
-
-    while( (high_ch - low_ch) > 1.0e-6 && niter < max_iterations )
+    if constexpr ( std::is_same_v<T, double> )
     {
-      const T mid_ch = 0.5 * (low_ch + high_ch);
-      const T e_mid = polynomial_energy( T(mid_ch), coeffs, dev_pair_spline );
-
-      if( abs(e_mid - energy) < accuracy )
-        return T(mid_ch);
-
-      if( (e_mid < energy && e_low < e_high) ||
-          (e_mid > energy && e_low > e_high) )
-      {
-        low_ch = mid_ch;
-      }
-      else
-      {
-        high_ch = mid_ch;
-      }
-
-      ++niter;
+      dev_pair_spline_scalar[i] = dev_pair_spline[i];
     }
-
-    return T(0.5 * (low_ch + high_ch));
-  }else
-  {
-    // Scalar binary search for the channel value.
-    std::vector<double> coeffs_scalar( coeffs.size(), 0.0 );
-    for( size_t i = 0; i < coeffs.size(); ++i )
-      coeffs_scalar[i] = coeffs[i].a;
-
-    // Extract scalar version of the pre-computed spline
-    std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar( dev_pair_spline.size() );
-    for( size_t i = 0; i < dev_pair_spline.size(); ++i )
+    else
     {
-      dev_pair_spline_scalar[i].x = dev_pair_spline[i].x;
+      dev_pair_spline_scalar[i].x = dev_pair_spline[i].x.a;
       dev_pair_spline_scalar[i].y = dev_pair_spline[i].y.a;
       dev_pair_spline_scalar[i].a = dev_pair_spline[i].a.a;
       dev_pair_spline_scalar[i].b = dev_pair_spline[i].b.a;
       dev_pair_spline_scalar[i].c = dev_pair_spline[i].c.a;
     }
+  }
 
-    auto energy_at = [&coeffs_scalar,&dev_pair_spline_scalar]( const double ch ) -> double {
-      return polynomial_energy( ch, coeffs_scalar, dev_pair_spline_scalar );
-    };
+  auto energy_at = [&coeffs_scalar,&dev_pair_spline_scalar]( const double ch ) -> double {
+    return polynomial_energy( ch, coeffs_scalar, dev_pair_spline_scalar );
+  };
 
-    const double e_low_val = energy_at( 0.0 );
-    const double e_high_val = energy_at( static_cast<double>(nchannel) );
-    const double energy_val = energy.a;
-
-    // Handle out-of-range energies with linear extrapolation (matching double version)
-    if( energy_val <= e_low_val )
+  // dE/dch using scalar coefficients. Ignores spline-slope contribution
+  // (spline is bounded near boundaries and clamps outside, so its effect on
+  // the overall monotonicity check is small for typical calibrations).
+  auto d_energy_d_ch_scalar = [&coeffs_scalar]( const double ch ) -> double {
+    double d = 0.0;
+    double ch_pow = 1.0;
+    for( size_t i = 1; i < coeffs_scalar.size(); ++i )
     {
-      const double bin_val = (energy_val - e_low_val) * static_cast<double>(nchannel) / coeffs[0].a;
-      T answer = T( bin_val );
-      // Propagate derivatives through the linear extrapolation
-      // bin = (E - E_low) * nchannel / C1
-      // d(bin)/d(param) = d(E)/d(param) * nchannel / C1 - (E - E_low) * nchannel / C1^2 * d(C1)/d(param)
-      const double nchan_over_c1 = static_cast<double>(nchannel) / coeffs[1].a;
-      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+      d += static_cast<double>(i) * coeffs_scalar[i] * ch_pow;
+      ch_pow *= ch;
+    }
+    return d;
+  };
+
+  double energy_scalar;
+  if constexpr ( std::is_same_v<T, double> )
+    energy_scalar = energy;
+  else
+    energy_scalar = energy.a;
+
+  const double e_lo_scalar = energy_at( 0.0 );
+  const double e_hi_scalar = energy_at( static_cast<double>(nchannel - 1) );
+  const double e_min = (std::min)( e_lo_scalar, e_hi_scalar );
+  const double e_max = (std::max)( e_lo_scalar, e_hi_scalar );
+
+  // Bisection range: start in-range, possibly expand outward below.
+  double search_lo = 0.0;
+  double search_hi = static_cast<double>(nchannel - 1);
+
+  // If a turning point is reached during out-of-range expansion, we clamp at
+  // `turning_safe` and return a Jet with linear-extrap derivative using
+  // `turning_slope` (= 1/reference_dEdch) applied to (energy - e_at_boundary).
+  bool turning_point_clamp = false;
+  double turning_safe = 0.0;
+  double turning_slope = 0.0;
+  double turning_boundary = 0.0;  // the boundary ch we walked from (0 or nchannel-1)
+
+  if( !(energy_scalar >= e_min && energy_scalar <= e_max) )
+  {
+    // Out-of-range: pick the boundary whose energy is closer to `energy_scalar`
+    // and walk from there in the direction that moves toward `energy_scalar`.
+    const double dist_lo = std::fabs( energy_scalar - e_lo_scalar );
+    const double dist_hi = std::fabs( energy_scalar - e_hi_scalar );
+    const double walk_boundary = (dist_lo <= dist_hi) ? 0.0 : static_cast<double>(nchannel - 1);
+    const double walk_e_ref = (dist_lo <= dist_hi) ? e_lo_scalar : e_hi_scalar;
+    const double reference_dEdch = d_energy_d_ch_scalar( walk_boundary );
+
+    if( std::fabs( reference_dEdch ) < 1.0e-300 )
+    {
+      // dE/dch = 0 at boundary (e.g. C1=0 pure quadratic at bin 0). No
+      // well-defined expansion direction; clamp here with zero derivative.
+      turning_point_clamp = true;
+      turning_safe = walk_boundary;
+      turning_slope = 0.0;
+      turning_boundary = walk_boundary;
+    }
+    else
+    {
+      // Step direction: we want energy_at(walk_boundary + step_dir * step) to
+      // move toward `energy_scalar`. d(energy)/dch has sign `reference_dEdch`;
+      // if energy_scalar < walk_e_ref we want energy to decrease, so step_dir
+      // has the opposite sign of reference_dEdch; and vice versa.
+      const double step_dir = ((energy_scalar < walk_e_ref) == (reference_dEdch > 0.0))
+                              ? -1.0 : +1.0;
+
+      double step = 1.0;
+      double last_walk = walk_boundary;
+      double last_e = walk_e_ref;
+      bool bracketed = false;
+
+      for( int i = 0; i < 10; ++i )  // max 10 doublings = 1024 bins past boundary
       {
-        answer.v[d] = energy.v[d] * nchan_over_c1
-                    - (energy_val - e_low_val) * nchan_over_c1 / coeffs[1].a * coeffs[1].v[d];
+        const double probe = last_walk + step_dir * step;
+        const double probe_dEdch = d_energy_d_ch_scalar( probe );
+
+        if( probe_dEdch * reference_dEdch <= 0.0 )
+        {
+          // Turning point in [last_walk, probe]. Bisect for it (60 iters =
+          // double-precision).
+          double safe = last_walk;
+          double unsafe = probe;
+          for( int j = 0; j < 60; ++j )
+          {
+            const double mid = 0.5 * (safe + unsafe);
+            if( d_energy_d_ch_scalar( mid ) * reference_dEdch > 0.0 )
+              safe = mid;
+            else
+              unsafe = mid;
+          }
+          turning_point_clamp = true;
+          turning_safe = safe;
+          turning_slope = 1.0 / reference_dEdch;
+          turning_boundary = walk_boundary;
+          break;
+        }
+
+        const double probe_e = energy_at( probe );
+        if( (last_e - energy_scalar) * (probe_e - energy_scalar) <= 0.0 )
+        {
+          if( step_dir > 0.0 )
+          {
+            search_lo = last_walk;
+            search_hi = probe;
+          }
+          else
+          {
+            search_lo = probe;
+            search_hi = last_walk;
+          }
+          bracketed = true;
+          break;
+        }
+
+        last_walk = probe;
+        last_e = probe_e;
+        step *= 2.0;
       }
+
+      if( !bracketed && !turning_point_clamp )
+      {
+        // Walked all 10 steps without bracketing or hitting a turning point.
+        // Unlikely for realistic cals (2^10 = 1024 bins); defensive clamp at
+        // last_walk with linear-extrap slope.
+        turning_point_clamp = true;
+        turning_safe = last_walk;
+        turning_slope = 1.0 / reference_dEdch;
+        turning_boundary = walk_boundary;
+      }
+    }
+  }//if( out-of-range expansion needed )
+
+  // Turning-point-clamp case: return scalar clamp with linear-extrap Jet.
+  if( turning_point_clamp )
+  {
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      return T( turning_safe );
+    }
+    else
+    {
+      T answer;
+      answer.a = turning_safe;
+      const T e_ref_jet = (turning_boundary == 0.0)
+                          ? e_low
+                          : e_high;
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+        answer.v[d] = turning_slope * (energy.v[d] - e_ref_jet.v[d]);
       return answer;
     }
+  }
 
-    if( energy_val >= e_high_val )
+  // Scalar bisection on [search_lo, search_hi].
+  const double e_at_search_lo = energy_at( search_lo );
+  const double e_at_search_hi = energy_at( search_hi );
+
+  double low = search_lo;
+  double high = search_hi;
+  const int max_iterations = 1000;
+  int niter = 0;
+  while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
+  {
+    const double mid = 0.5 * (low + high);
+    const double e_mid_val = energy_at( mid );
+    if( std::fabs( e_mid_val - energy_scalar ) < accuracy )
     {
-      const double bin_val = static_cast<double>(nchannel)
-                           + (energy_val - e_high_val) * static_cast<double>(nchannel) / coeffs[1].a;
-      T answer = T( bin_val );
-      const double nchan_over_c1 = static_cast<double>(nchannel) / coeffs[1].a;
-      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
-      {
-        answer.v[d] = energy.v[d] * nchan_over_c1
-                    - (energy_val - e_high_val) * nchan_over_c1 / coeffs[1].a * coeffs[1].v[d];
-      }
-      return answer;
+      low = mid;
+      high = mid;
+      break;
     }
 
-    double low = 0.0;
-    double high = static_cast<double>(nchannel);
-    const int max_iterations = 1000;
-    int niter = 0;
-    while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
+    if( ((e_mid_val < energy_scalar) && (e_at_search_lo < e_at_search_hi))
+        || ((e_mid_val > energy_scalar) && (e_at_search_lo > e_at_search_hi)) )
     {
-      const double mid = 0.5 * (low + high);
-      const double e_mid_val = energy_at( mid );
-      if( std::fabs( e_mid_val - energy_val ) < accuracy )
-      {
-        low = mid;
-        high = mid;
-        break;
-      }
-
-      if( ((e_mid_val < energy_val) && (e_low_val < e_high_val))
-          || ((e_mid_val > energy_val) && (e_low_val > e_high_val)) )
-      {
-        low = mid;
-      }else
-      {
-        high = mid;
-      }
-
-      ++niter;
+      low = mid;
+    }
+    else
+    {
+      high = mid;
     }
 
-    double ch_val = 0.5 * (low + high);
+    ++niter;
+  }
 
-    // Compute dE/dch using AD at fixed coefficients/spline nodes.
+  double ch_val = 0.5 * (low + high);
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    return T( ch_val );
+  }
+  else
+  {
+    // T=Jet: IFT recovery. Same path works for in-range and extended-range.
     std::vector<T> coeffs_const( coeffs.size(), T(0.0) );
     for( size_t i = 0; i < coeffs.size(); ++i )
     {
@@ -1021,13 +1201,14 @@ T find_polynomial_channel( const T energy,
     std::vector<CubicSplineNodeT<T>> dev_pair_spline_const( dev_pair_spline.size() );
     for( size_t i = 0; i < dev_pair_spline.size(); ++i )
     {
-      dev_pair_spline_const[i].x = dev_pair_spline[i].x;
+      dev_pair_spline_const[i].x = T( dev_pair_spline[i].x.a );
       dev_pair_spline_const[i].y = T( dev_pair_spline[i].y.a );
       dev_pair_spline_const[i].a = T( dev_pair_spline[i].a.a );
       dev_pair_spline_const[i].b = T( dev_pair_spline[i].b.a );
       dev_pair_spline_const[i].c = T( dev_pair_spline[i].c.a );
       for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
       {
+        dev_pair_spline_const[i].x.v[d] = 0.0;
         dev_pair_spline_const[i].y.v[d] = 0.0;
         dev_pair_spline_const[i].a.v[d] = 0.0;
         dev_pair_spline_const[i].b.v[d] = 0.0;
@@ -1044,7 +1225,7 @@ T find_polynomial_channel( const T energy,
 
     // Calculate the energy, that will have all the derivative information from the paramaters.
     const T f = polynomial_energy( T(ch_val), coeffs, dev_pair_spline ) - energy;
-    
+
     // Now use `dEnergy/dChannel` to propagate the derivative stuff from energy, to the channel values
     T answer = T( ch_val );
     if( std::fabs( denergy_dch ) > 1.0e-14 )
@@ -1189,7 +1370,13 @@ T find_fullrangefraction_channel( const T energy,
       const T discriminant = b*b - T(4.0)*a*c;
 
       if( discriminant < 0.0 )
-        return T(0.0);
+      {
+        // No real solution — energy is past the quadratic's extremum. Clamp at
+        // the vertex x = -C1/(2*C2) and return the corresponding bin. Jet
+        // arithmetic on -b/(2a) propagates derivatives consistently.
+        const T vertex_bin = T(static_cast<double>(nchannel)) * (-b) / (T(2.0) * a);
+        return vertex_bin;
+      }
 
       const T sqrt_disc = sqrt(discriminant);
       const T root1 = (-b + sqrt_disc) / (T(2.0) * a);
@@ -1199,134 +1386,229 @@ T find_fullrangefraction_channel( const T energy,
       const T bin1 = root1 * T(static_cast<double>(nchannel));
       const T bin2 = root2 * T(static_cast<double>(nchannel));
 
-      // Choose the root in valid range
-      const bool bin1_valid = (bin1 >= 0.0) && (bin1 < static_cast<double>(nchannel));
-      const bool bin2_valid = (bin2 >= 0.0) && (bin2 < static_cast<double>(nchannel));
+      // Pick the root closer to the linear-only solution (= on the same
+      // monotonic branch as the linear approximation of the quadratic near
+      // bin=0). This gives the true inverse whether or not either root is in
+      // [0, nchannel) — no silent T(0.0) return.
+      const T linear_sol = T(static_cast<double>(nchannel)) * (frf_energy - coeffs[0]) / coeffs[1];
+      const T dist1 = abs( bin1 - linear_sol );
+      const T dist2 = abs( bin2 - linear_sol );
+      return (dist1 < dist2) ? bin1 : bin2;
+    }
+  }
 
-      if( bin1_valid && !bin2_valid )
-        return bin1;
-      if( bin2_valid && !bin1_valid )
-        return bin2;
+  // For higher-order or with deviation pairs, use extended monotonic bisection.
+  // Same algorithm as find_polynomial_channel: in-range bisect on [0, nchannel-1],
+  // out-of-range walk-out in geometric doublings (10 steps max) until either
+  // bracketing or a turning point. For the C4-term case, the singularity near
+  // x = -1/60 naturally manifests as a dE/dbin sign flip (turning point),
+  // so the guard stops us before crossing the pole.
+  const T e_low = fullrangefraction_energy( T(0.0), coeffs, nchannel, dev_pair_spline );
+  const T e_high = fullrangefraction_energy( T(static_cast<double>(nchannel - 1)), coeffs, nchannel, dev_pair_spline );
 
-      // Both valid - choose closer to linear solution.
-      // Note: for Jet types, if dist1 ≈ dist2, the selected root could flip with
-      // small perturbations, creating a derivative discontinuity (see polynomial version).
-      if( bin1_valid && bin2_valid )
+  // Scalar coefficients + spline nodes for the scalar bisection.
+  std::vector<double> coeffs_scalar( coeffs.size(), 0.0 );
+  for( size_t i = 0; i < coeffs.size(); ++i )
+  {
+    if constexpr ( std::is_same_v<T, double> )
+      coeffs_scalar[i] = coeffs[i];
+    else
+      coeffs_scalar[i] = coeffs[i].a;
+  }
+
+  std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar;
+  dev_pair_spline_scalar.reserve( dev_pair_spline.size() );
+  for( const auto &node : dev_pair_spline )
+  {
+    if constexpr ( std::is_same_v<T, double> )
+      dev_pair_spline_scalar.push_back( { node.x, node.y, node.a, node.b, node.c } );
+    else
+      dev_pair_spline_scalar.push_back( { node.x.a, node.y.a, node.a.a, node.b.a, node.c.a } );
+  }
+
+  auto energy_at = [&coeffs_scalar, nchannel, &dev_pair_spline_scalar]( const double bin ) -> double {
+    return fullrangefraction_energy( bin, coeffs_scalar, nchannel, dev_pair_spline_scalar );
+  };
+
+  // dE/dbin using scalar coefficients. Handles the C4/(1+60x) singularity
+  // analytically so that the monotonicity check catches approaches to the pole.
+  auto d_energy_d_bin_scalar = [&coeffs_scalar, nchannel]( const double bin ) -> double {
+    const double nchan_d = static_cast<double>(nchannel);
+    const double x = bin / nchan_d;
+    const size_t npoly = (std::min)( coeffs_scalar.size(), size_t(4) );
+    double d = 0.0;
+    double x_pow = 1.0;
+    for( size_t i = 1; i < npoly; ++i )
+    {
+      d += static_cast<double>(i) * coeffs_scalar[i] * x_pow;
+      x_pow *= x;
+    }
+    if( coeffs_scalar.size() > 4 )
+    {
+      const double denom = 1.0 + 60.0 * x;
+      d += -60.0 * coeffs_scalar[4] / (denom * denom);
+    }
+    return d / nchan_d;  // divide by nchannel because x = bin/nchannel
+  };
+
+  double energy_scalar;
+  if constexpr ( std::is_same_v<T, double> )
+    energy_scalar = energy;
+  else
+    energy_scalar = energy.a;
+
+  const double e_lo_scalar = energy_at( 0.0 );
+  const double e_hi_scalar = energy_at( static_cast<double>(nchannel - 1) );
+  const double e_min = (std::min)( e_lo_scalar, e_hi_scalar );
+  const double e_max = (std::max)( e_lo_scalar, e_hi_scalar );
+
+  double search_lo = 0.0;
+  double search_hi = static_cast<double>(nchannel - 1);
+
+  bool turning_point_clamp = false;
+  double turning_safe = 0.0;
+  double turning_slope = 0.0;
+  double turning_boundary = 0.0;
+
+  if( !(energy_scalar >= e_min && energy_scalar <= e_max) )
+  {
+    const double dist_lo = std::fabs( energy_scalar - e_lo_scalar );
+    const double dist_hi = std::fabs( energy_scalar - e_hi_scalar );
+    const double walk_boundary = (dist_lo <= dist_hi) ? 0.0 : static_cast<double>(nchannel - 1);
+    const double walk_e_ref = (dist_lo <= dist_hi) ? e_lo_scalar : e_hi_scalar;
+    const double reference_dEdb = d_energy_d_bin_scalar( walk_boundary );
+
+    if( std::fabs( reference_dEdb ) < 1.0e-300 )
+    {
+      turning_point_clamp = true;
+      turning_safe = walk_boundary;
+      turning_slope = 0.0;
+      turning_boundary = walk_boundary;
+    }
+    else
+    {
+      const double step_dir = ((energy_scalar < walk_e_ref) == (reference_dEdb > 0.0))
+                              ? -1.0 : +1.0;
+
+      double step = 1.0;
+      double last_walk = walk_boundary;
+      double last_e = walk_e_ref;
+      bool bracketed = false;
+
+      for( int i = 0; i < 10; ++i )
       {
-        const T linear_sol = T(static_cast<double>(nchannel)) * (frf_energy - coeffs[0]) / coeffs[1];
-        const T dist1 = abs( bin1 - linear_sol );
-        const T dist2 = abs( bin2 - linear_sol );
+        const double probe = last_walk + step_dir * step;
+        const double probe_dEdb = d_energy_d_bin_scalar( probe );
 
-        return (dist1 < dist2) ? bin1 : bin2;
+        if( probe_dEdb * reference_dEdb <= 0.0 )
+        {
+          double safe = last_walk;
+          double unsafe = probe;
+          for( int j = 0; j < 60; ++j )
+          {
+            const double mid = 0.5 * (safe + unsafe);
+            if( d_energy_d_bin_scalar( mid ) * reference_dEdb > 0.0 )
+              safe = mid;
+            else
+              unsafe = mid;
+          }
+          turning_point_clamp = true;
+          turning_safe = safe;
+          turning_slope = 1.0 / reference_dEdb;
+          turning_boundary = walk_boundary;
+          break;
+        }
+
+        const double probe_e = energy_at( probe );
+        if( (last_e - energy_scalar) * (probe_e - energy_scalar) <= 0.0 )
+        {
+          if( step_dir > 0.0 )
+          {
+            search_lo = last_walk;
+            search_hi = probe;
+          }
+          else
+          {
+            search_lo = probe;
+            search_hi = last_walk;
+          }
+          bracketed = true;
+          break;
+        }
+
+        last_walk = probe;
+        last_e = probe_e;
+        step *= 2.0;
       }
 
-      return T(0.0);
+      if( !bracketed && !turning_point_clamp )
+      {
+        turning_point_clamp = true;
+        turning_safe = last_walk;
+        turning_slope = 1.0 / reference_dEdb;
+        turning_boundary = walk_boundary;
+      }
     }
   }
 
-  // For higher-order or with deviation pairs, use binary search
-  // Following SpecUtils::find_fullrangefraction_channel, evaluate at channel nchannel (not nchannel-1)
-  const T e_low = fullrangefraction_energy( T(0.0), coeffs, nchannel, dev_pair_spline );
-  const T e_high = fullrangefraction_energy( T(static_cast<double>(nchannel)), coeffs, nchannel, dev_pair_spline );
-
-  // Check if energy is outside the calibration range - extrapolate using just the gain.
-  // Skip this for FRF with C4 term, since the C4/(1+60x) rational term can make the
-  // energy function non-monotonic near bin=0 (dE/dx at x=0 includes -60*C4 contribution),
-  // so the boundary energy may not be the true extremum.
-  if( coeffs.size() <= 4 )
+  if( turning_point_clamp )
   {
-    if( energy <= e_low )
+    if constexpr ( std::is_same_v<T, double> )
     {
-      return (energy - e_low) * T(static_cast<double>(nchannel)) / coeffs[1];
+      return T( turning_safe );
     }
-
-    if( energy >= e_high )
+    else
     {
-      return T(static_cast<double>(nchannel)) + (energy - e_high) * T(static_cast<double>(nchannel)) / coeffs[1];
+      T answer;
+      answer.a = turning_safe;
+      const T e_ref_jet = (turning_boundary == 0.0) ? e_low : e_high;
+      for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
+        answer.v[d] = turning_slope * (energy.v[d] - e_ref_jet.v[d]);
+      return answer;
     }
   }
 
-  // Binary search (and derivative-preserving implicit update for Jet types)
+  // Scalar bisection on [search_lo, search_hi].
+  const double e_at_search_lo = energy_at( search_lo );
+  const double e_at_search_hi = energy_at( search_hi );
+
+  double low = search_lo;
+  double high = search_hi;
+  const int max_iterations = 1000;
+  int niter = 0;
+  while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
+  {
+    const double mid = 0.5 * (low + high);
+    const double e_mid_val = energy_at( mid );
+    if( std::fabs( e_mid_val - energy_scalar ) < accuracy )
+    {
+      low = mid;
+      high = mid;
+      break;
+    }
+
+    if( ((e_mid_val < energy_scalar) && (e_at_search_lo < e_at_search_hi))
+        || ((e_mid_val > energy_scalar) && (e_at_search_lo > e_at_search_hi)) )
+    {
+      low = mid;
+    }
+    else
+    {
+      high = mid;
+    }
+
+    ++niter;
+  }
+
+  double bin_val = 0.5 * (low + high);
+
   if constexpr ( std::is_same_v<T, double> )
   {
-    T low_bin( 0.0 );
-    T high_bin( static_cast<double>(nchannel) );
-
-    const int max_iterations = 1000;
-    int niter = 0;
-
-    while( ((high_bin - low_bin) > 1.0e-6) && niter < max_iterations )
-    {
-      const T mid_bin = 0.5 * (low_bin + high_bin);
-      const T e_mid = fullrangefraction_energy( mid_bin, coeffs, nchannel, dev_pair_spline );
-
-      if( abs(e_mid - energy) < accuracy )
-        return T(mid_bin);
-
-      if( ((e_mid < energy) && (e_low < e_high))
-          || ((e_mid > energy) && (e_low > e_high)) )
-      {
-        low_bin = mid_bin;
-      }
-      else
-      {
-        high_bin = mid_bin;
-      }
-
-      ++niter;
-    }
-
-    return T(0.5 * (low_bin + high_bin));
-  }else
+    return T( bin_val );
+  }
+  else
   {
-    std::vector<double> coeffs_scalar( coeffs.size(), 0.0 );
-    for( size_t i = 0; i < coeffs.size(); ++i )
-      coeffs_scalar[i] = coeffs[i].a;
-
-    // Extract scalar spline nodes from the Jet spline nodes
-    std::vector<CubicSplineNodeT<double>> dev_pair_spline_scalar;
-    dev_pair_spline_scalar.reserve( dev_pair_spline.size() );
-    for( const auto &node : dev_pair_spline )
-      dev_pair_spline_scalar.push_back( { node.x, node.y.a, node.a.a, node.b.a, node.c.a } );
-
-    auto energy_at = [&coeffs_scalar,nchannel,&dev_pair_spline_scalar]( const double bin ) -> double {
-      return fullrangefraction_energy( bin, coeffs_scalar, nchannel, dev_pair_spline_scalar );
-    };
-
-    const double e_low_val = energy_at( 0.0 );
-    const double e_high_val = energy_at( static_cast<double>(nchannel - 1) );
-    const double energy_val = energy.a;
-
-    double low = 0.0;
-    double high = static_cast<double>(nchannel - 1);
-    const int max_iterations = 1000;
-    int niter = 0;
-    while( ((high - low) > 1.0e-6) && (niter < max_iterations) )
-    {
-      const double mid = 0.5 * (low + high);
-      const double e_mid_val = energy_at( mid );
-      if( std::fabs( e_mid_val - energy_val ) < accuracy )
-      {
-        low = mid;
-        high = mid;
-        break;
-      }
-
-      if( ((e_mid_val < energy_val) && (e_low_val < e_high_val))
-          || ((e_mid_val > energy_val) && (e_low_val > e_high_val)) )
-      {
-        low = mid;
-      }else
-      {
-        high = mid;
-      }
-
-      ++niter;
-    }
-
-    double bin_val = 0.5 * (low + high);
-
-    // Compute dE/dbin using AD at fixed coefficients/spline nodes.
+    // T=Jet: IFT recovery. Same path works for in-range and extended-range.
     std::vector<T> coeffs_const( coeffs.size(), T(0.0) );
     for( size_t i = 0; i < coeffs.size(); ++i )
     {
@@ -1338,13 +1620,14 @@ T find_fullrangefraction_channel( const T energy,
     std::vector<CubicSplineNodeT<T>> dev_pair_spline_const( dev_pair_spline.size() );
     for( size_t i = 0; i < dev_pair_spline.size(); ++i )
     {
-      dev_pair_spline_const[i].x = dev_pair_spline[i].x;
+      dev_pair_spline_const[i].x = T( dev_pair_spline[i].x.a );
       dev_pair_spline_const[i].y = T( dev_pair_spline[i].y.a );
       dev_pair_spline_const[i].a = T( dev_pair_spline[i].a.a );
       dev_pair_spline_const[i].b = T( dev_pair_spline[i].b.a );
       dev_pair_spline_const[i].c = T( dev_pair_spline[i].c.a );
       for( size_t d = 0; d < static_cast<size_t>(T::DIMENSION); ++d )
       {
+        dev_pair_spline_const[i].x.v[d] = 0.0;
         dev_pair_spline_const[i].y.v[d] = 0.0;
         dev_pair_spline_const[i].a.v[d] = 0.0;
         dev_pair_spline_const[i].b.v[d] = 0.0;
@@ -1473,27 +1756,35 @@ T find_lowerchannel_channel( const T energy,
   if( !dev_pair_spline.empty() )
     corrected_energy -= eval_cubic_spline( energy, dev_pair_spline );
 
-  // Binary search to find the channel
-  // Find largest i such that channel_energies[i] <= corrected_energy
-  if( corrected_energy < static_cast<double>(channel_energies[0]) )
+  // Out-of-range handling: return the unclamped linear-extrapolation channel via
+  // Jet arithmetic, using the first (resp. last) channel's width as the slope.
+  // Downstream consumers should call `lowerchannel_energy()` which handles safe
+  // array indexing for them. This keeps find + eval as proper inverses across
+  // the entire real line, so round-trip holds everywhere.
+  double search_energy;
+  if constexpr ( std::is_same_v<T, double> )
+    search_energy = corrected_energy;
+  else
+    search_energy = corrected_energy.a;
+
+  if( search_energy < static_cast<double>(channel_energies[0]) )
   {
-    if constexpr ( !std::is_same_v<T, double> )
-      corrected_energy.a = 0.0;
-    else 
-      corrected_energy = 0.0;
-    return corrected_energy;
+    const double e0 = static_cast<double>( channel_energies[0] );
+    const double width = static_cast<double>( channel_energies[1] )
+                       - static_cast<double>( channel_energies[0] );
+    return (corrected_energy - T(e0)) / T(width);  // negative channel
   }
 
-  if( corrected_energy >= static_cast<double>(channel_energies[nchannel]) )
+  if( search_energy >= static_cast<double>(channel_energies[nchannel]) )
   {
-    if constexpr ( !std::is_same_v<T, double> )
-      corrected_energy.a = static_cast<double>(nchannel - 1);
-    else 
-      corrected_energy = static_cast<double>(nchannel - 1);
-    return corrected_energy;
+    const double e_last = static_cast<double>( channel_energies[nchannel] );
+    const double width  = static_cast<double>( channel_energies[nchannel] )
+                        - static_cast<double>( channel_energies[nchannel - 1] );
+    return T(static_cast<double>(nchannel))
+         + (corrected_energy - T(e_last)) / T(width);  // >= nchannel
   }
-  
-  // Binary search
+
+  // In-range binary search
   size_t low = 0;
   size_t high = nchannel;
 
@@ -1501,7 +1792,7 @@ T find_lowerchannel_channel( const T energy,
   {
     const size_t mid = (low + high) / 2;
 
-    if( static_cast<double>(channel_energies[mid]) <= corrected_energy )
+    if( static_cast<double>(channel_energies[mid]) <= search_energy )
       low = mid;
     else
       high = mid;
@@ -1606,25 +1897,24 @@ T find_lowerchannel_channel( const T energy,
   else
     search_energy = unadjusted_energy.a;
 
-  // Binary search to find the channel
+  // Out-of-range handling: unclamped linear extrapolation via Jet arithmetic
+  // using first/last channel width as the slope. Downstream should use
+  // lowerchannel_energy() to convert back to energy safely.
   if( search_energy < static_cast<double>(channel_energies[0]) )
   {
-    T answer = unadjusted_energy;
-    if constexpr ( !std::is_same_v<T, double> )
-      answer.a = 0.0;
-    else
-      answer = 0.0;
-    return answer;
+    const double e0 = static_cast<double>( channel_energies[0] );
+    const double width = static_cast<double>( channel_energies[1] )
+                       - static_cast<double>( channel_energies[0] );
+    return (unadjusted_energy - T(e0)) / T(width);
   }
 
   if( search_energy >= static_cast<double>(channel_energies[nchannel]) )
   {
-    T answer = unadjusted_energy;
-    if constexpr ( !std::is_same_v<T, double> )
-      answer.a = static_cast<double>(nchannel - 1);
-    else
-      answer = static_cast<double>(nchannel - 1);
-    return answer;
+    const double e_last = static_cast<double>( channel_energies[nchannel] );
+    const double width  = static_cast<double>( channel_energies[nchannel] )
+                        - static_cast<double>( channel_energies[nchannel - 1] );
+    return T(static_cast<double>(nchannel))
+         + (unadjusted_energy - T(e_last)) / T(width);
   }
 
   // Binary search
