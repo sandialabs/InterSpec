@@ -1902,7 +1902,16 @@ void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
     if( (lower_ad < 0.0) || (upper_ad > max_ad) || (lower_ad >= upper_ad) )
       throw runtime_error( "Self-atten AD limits is invalid" );
 
-    lower_bounds[ad_index] = lower_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+    // Loosen the Ceres-level lower bound by 1e-5 g/cm^2 below the user-specified physical lower bound. 
+    //  When `lower_ad == 0`, the optimizer would otherwise see the lower bound as a hard active constraint 
+    //  exactly at zero, which has been observed on some spectra to traps Levenberg-Marquardt at a non-global 
+    //  local minimum. 
+    //  Loosening by 1e-5 g/cm^2 is small enough never to change a user's answer (well below any measurable 
+    //  AD), small enough to stay safely above the `-1e-3` throw threshold in `eval_physical_model_eqn_imp` 
+    //  (when lower bound is 0.0), and removes the trap mechanism.
+    const double effective_lower_ad = lower_ad - 1.0e-5;
+
+    lower_bounds[ad_index] = effective_lower_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
     upper_bounds[ad_index] = upper_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
   }else
   {
@@ -5255,21 +5264,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //
     //  According to a LLM, the trust region is an area in the parameter space.
     //   So we will need to revisit this value if we scale the various parameters to be closer to reasonable.
-    size_t num_fit_par = 0;
-    double par_area = 1.0;
     for( size_t i = 0; i < parameters.size(); ++i )
     {
       const auto const_pos = std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) );
       if( const_pos == end(constant_parameters) )
-      {
-        num_fit_par += 1;
-        par_area *= (fabs(parameters[i]) > 1.0) ? std::min(10.0,fabs(parameters[i])) : 1.0;
         cout << "Starting value of " << cost_functor->parameter_name(i) << ": " << parameters[i] << endl;
-      }
     }
-    cout << "Starting with parameter volume of " << par_area << " from " << num_fit_par << " paramaters." << endl;
-    // The below is pretty arbitrary - and only kinda sort optimized on one problem
-    ceres_options.initial_trust_region_radius = 100.0*std::min( std::max( par_area, 10.0 ), 10.0*num_fit_par );
+
+    // Initial trust-region radius: Ceres library default of 1e4. An earlier
+    //  par_area-based heuristic produced values in [1e3, ~3.4e4] depending on
+    //  the problem; a sweep against a natural U exemplar (with the
+    //  setup_physical_model_shield_par bounds-loosening in place) showed all
+    //  values in the [1e3, 1e8] band give equivalent results, while values
+    //  below 1e3 risk the bounds-active local-minimum trap on shielding fits.
+    //  A fixed 1e4 is simpler and removes the per-problem heuristic.
+    ceres_options.initial_trust_region_radius = 1.0e4;
 
     ceres_options.max_trust_region_radius = 1e16;
 
@@ -5651,12 +5660,40 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const auto now_time = std::chrono::high_resolution_clock::now();
       const auto dt = 1.0*std::chrono::duration_cast<std::chrono::nanoseconds>(now_time - start_time).count();
       const double frac = cost_functor->m_nanoseconds_spent_in_eval / dt;
-      
+
       cout << "Spent " << 0.001*cost_functor->m_nanoseconds_spent_in_eval
       << " us in eval, and a total time of " << 0.001*dt << " us in fcnt - this is "
       << frac << " fraction of the time" << endl;
     }
-    
+
+
+    // Post-solve: clamp any Physical-Model shielding AD parameters that Ceres landed slightly below the 
+    // user-specified `lower_fit_areal_density`.
+    for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff = cost_functor->m_options.rel_eff_curves[rel_eff_index];
+      if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        continue;
+
+      const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter( rel_eff_index );
+
+      const auto clamp_ad_par = [&parameters]( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield,
+                                               const size_t ad_par_index ){
+        if( !shield || !shield->fit_areal_density )
+          return;
+        const double user_lower_ad_g_cm2 = shield->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+        const double user_lower_ceres = (user_lower_ad_g_cm2 / RelActCalc::ns_ad_ceres_mult)
+                                        + RelActCalc::ns_ad_ceres_offset;
+        if( parameters[ad_par_index] < user_lower_ceres )
+          parameters[ad_par_index] = user_lower_ceres;
+      };//clamp_ad_par lambda
+
+      clamp_ad_par( rel_eff.phys_model_self_atten, rel_eff_start + 1 );
+      for( size_t ext_i = 0; ext_i < rel_eff.phys_model_external_atten.size(); ++ext_i )
+        clamp_ad_par( rel_eff.phys_model_external_atten[ext_i], rel_eff_start + 2 + 2*ext_i + 1 );
+    }//for( each rel_eff_curve )
+
+
     ceres::Covariance::Options cov_options;
     // DENSE_SVD: accurate but slow (only to be used for small to moderate sized problems). Handles full-rank as well as rank deficient Jacobians.
     // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
@@ -5674,15 +5711,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       vector<pair<const double*, const double*> > covariance_blocks;
       covariance_blocks.emplace_back( pars, pars );
       
-      //auto add_cov_block = [&covariance_blocks, &pars]( size_t start, size_t num ){
-      //  for( size_t i = start; i < (start + num); ++i )
-      //    for( size_t j = start; j < i; ++j )
-      //      covariance_blocks.push_back( make_pair( pars + i, pars + j ) );
-      //};
-      
-      //add_cov_block( rel_eff_start, num_rel_eff_par );
-      //add_cov_block( acts_start, num_acts_par );
-      //add_cov_block( fwhm_start, num_fwhm_pars );
       solution.m_covariance.clear();
       solution.m_phys_units_cov.clear();
       solution.m_final_uncertainties.clear();
@@ -6441,7 +6469,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             answer.areal_density = (these_rel_eff_coefficients[start_index + 1] - RelActCalc::ns_ad_ceres_offset)
                                    * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
-            assert( answer.areal_density >= 0.0 );
+
+            // The Ceres-level lower bound is offset 1e-5 g/cm^2 below the user-specified physical lower bound 
+            //  (see setup_physical_model_shield_par); if in that loosening region, clamp the AD to physical region.
+            assert( answer.areal_density > -2.0e-5 * PhysicalUnits::g_per_cm2 );
+            if( answer.areal_density < 0.0 )
+              answer.areal_density = 0.0;
 
             if( uncertainties.size() > (this_rel_eff_start_index + start_index + 1) )
               answer.areal_density_uncert = uncertainties[this_rel_eff_start_index + start_index + 1]
@@ -10321,7 +10354,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }catch( std::exception &e )
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
-      assert( 0 );//asserting because it seems returning false here can be really damaging to fit convergence, so lets try to eliminate asserts as much as possible
+      
+      // Returning false tells Ceres the trial step failed; it will reject and shrink the trust region. 
       return false;
     }
     
