@@ -393,9 +393,9 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
       const string filename = solution.m_foreground->title();
       
       auto &spec_obj = json_data["foreground"];
-      
+
       const deque<std::shared_ptr<const PeakDef>> * const fit_peaks = nullptr;
-      BatchInfoLog::add_hist_to_json( json_data, false, 1.0, solution.m_foreground,  nullptr, sample_numbers, filename,  fit_peaks );
+      BatchInfoLog::add_hist_to_json( spec_obj, false, 1.0, solution.m_foreground,  nullptr, sample_numbers, filename,  fit_peaks );
     }
     
     // Add background spectrum data
@@ -407,10 +407,10 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
       
       const deque<shared_ptr<const PeakDef>> * const fit_peaks = nullptr;
 
-      // TODO: right now we always use live-time normalization for RelActCalcAuto - need to switch over to using the one cuttnely set app-wide, incase the user is using a custom one.
+      // TODO: right now we always use live-time normalization for RelActCalcAuto - need to switch over to using the one currently set app-wide, in case the user is using a custom one.
       double scale_factor = -1.0;
-      if( solution.m_foreground )
-        scale_factor = solution.m_background->live_time() / solution.m_foreground->live_time();
+      if( solution.m_foreground && solution.m_background )
+        scale_factor = solution.m_foreground->live_time() / solution.m_background->live_time();
       if( (scale_factor <= 0.0) || IsInf(scale_factor) || IsNan(scale_factor) )
         scale_factor = 1.0;
 
