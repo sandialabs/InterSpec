@@ -2843,7 +2843,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//setup_deviation_pair_anchors(...)
 
 
-  /** Solve the problem, using the Ceres optimizer. */
+  /** Solve the problem, using the Ceres optimizer.
+
+   TODO: currently we always live-time normalize the background spectrum - should add explicit argument for background normalization incase the user has set a custom one (e.g., bad or missing live time in a spectrum).
+   */
   static RelActCalcAuto::RelActAutoSolution solve_ceres( RelActCalcAuto::Options options,
                                                         std::shared_ptr<const SpecUtils::Measurement> foreground,
                                                         std::shared_ptr<const SpecUtils::Measurement> background,

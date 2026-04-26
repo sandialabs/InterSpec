@@ -1277,6 +1277,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   
   void add_hist_to_json( nlohmann::json &spec_obj,
                         const bool is_background,
+                        const double display_scale_factor,
                        const shared_ptr<const SpecUtils::Measurement> &spec_ptr,
                        const shared_ptr<const SpecMeas> &spec_file,
                        const std::set<int> &sample_numbers,
@@ -1301,12 +1302,14 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       const vector<shared_ptr<const PeakDef> > inpeaks( begin(fore_peaks), end(fore_peaks) );
       spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr, Wt::WColor(), 255 );
     }//if( fit_results.m_peak_fit_results )
-    
+
     //spec_json_options.line_color = "rgb(0,0,0)"; //black
     spec_json_options.peak_color = "rgba(0,51,255,0.6)";
     spec_json_options.title = "";
-    spec_json_options.display_scale_factor = 1.0;
-    spec_json_options.spectrum_type = SpecUtils::SpectrumType::Foreground;
+    spec_json_options.display_scale_factor = ((display_scale_factor > 0.0) && !IsNan(display_scale_factor) && !IsInf(display_scale_factor))
+                                               ? display_scale_factor
+                                               : 1.0;
+    spec_json_options.spectrum_type = is_background ? SpecUtils::SpectrumType::Background : SpecUtils::SpectrumType::Foreground;
     
     //We will only have foreground or background on this spectrum, so even if we say
     //  background ID is 2, instead of a negative number, things should be fine
@@ -1565,7 +1568,8 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       
       auto &spec_obj = data["foreground"];
       
-      add_hist_to_json( spec_obj, true, fit_results.spectrum,
+      add_hist_to_json( spec_obj, true, 1.0,
+                       fit_results.spectrum,
                        fit_results.measurement,
                        fit_results.sample_numbers,
                        SpecUtils::filename(fit_results.file_path),
@@ -1920,7 +1924,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     // For peak searches, background subtraction are always a hard channel-by-channel subtraction,
     //  and `fit_results.spectrum` is after the subtraction
     //if( fit_results.background )
-    //  add_hist_to_json( data["foreground"], true, fit_results.background, ... );
+    //  add_hist_to_json( data["foreground"], true, display_scale_factor, fit_results.background, ... );
     //options.background_subtract_file;
     
      //std::shared_ptr<const SpecMeas> exemplar;

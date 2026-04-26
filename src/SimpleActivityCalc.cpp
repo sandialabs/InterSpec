@@ -1902,7 +1902,10 @@ SimpleActivityCalcInput SimpleActivityCalc::createCalcInput() const
   
   if( !input.foreground )
     throw std::runtime_error( "Could not get foreground spectrum" );
-  
+
+  if( input.background )
+    input.background_sf = m_viewer->displayScaleFactor(SpecUtils::SpectrumType::Background);
+
   // Set up background peak if background subtract is checked
   if( m_backgroundSubtractCheck->isChecked() )
   {
@@ -2311,6 +2314,8 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     chi_input.background = input.background;
     chi_input.foreground_peaks = foreground_peaks;
     chi_input.background_peaks = background_peaks;
+    chi_input.background_sf = input.background_sf;
+
     pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
       GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     

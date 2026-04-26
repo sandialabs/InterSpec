@@ -118,6 +118,11 @@ struct SimpleActivityCalcInput
   SimpleActivityGeometryType geometryType = SimpleActivityGeometryType::Point;
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> shielding;
   double age = 0.0;
+
+  /** The background spectrum scale factor.  Usually this is usually the live-time normalization factor, but the user
+   may have custom-set this (e.g., if live-times werent accurate or known for a spectrum), so we will respect this.
+   */
+  double background_sf = -1.0;
 };//struct SimpleActivityCalcInput
 
 

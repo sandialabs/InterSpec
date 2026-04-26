@@ -415,7 +415,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     {
       auto &spec_obj = data["foreground"];
       
-      BatchInfoLog::add_hist_to_json( spec_obj, false, fit_results.m_foreground,
+      BatchInfoLog::add_hist_to_json( spec_obj, false, 1.0, fit_results.m_foreground,
                        fit_results.m_foreground_file,
                        fit_results.m_foreground_sample_numbers, fit_results.m_filename,
                        (fit_results.m_peak_fit_results ? &(fit_results.m_peak_fit_results->fit_peaks) : nullptr) );
@@ -429,14 +429,15 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       // We'll only add background file info, if different than foreground file
       shared_ptr<const SpecMeas> back_file = (fit_results.m_background_file != fit_results.m_foreground_file)
                                                       ? fit_results.m_background_file : nullptr;
-      
+      const double normalization = fit_results.m_foreground->live_time() / fit_results.m_background->live_time();
+
       auto &spec_obj = data["background"];
-      BatchInfoLog::add_hist_to_json( spec_obj, true, fit_results.m_background,
+      BatchInfoLog::add_hist_to_json( spec_obj, true, normalization, fit_results.m_background,
                        back_file,
                        fit_results.m_background_sample_numbers, filename,
                        (fit_results.m_background_peak_fit_results ? &(fit_results.m_background_peak_fit_results->fit_peaks) : nullptr) );
       
-      data["background"]["Normalization"] = fit_results.m_foreground->live_time() / fit_results.m_background->live_time();
+      data["background"]["Normalization"] = normalization;
     }//if( fit_results.m_background )
   
     
@@ -1487,6 +1488,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     chi_input.background = background;
     chi_input.foreground_peaks = foreground_peaks;
     chi_input.background_peaks = background_peaks;
+    chi_input.background_sf = -1.0; // default to use live-time scaling.
     pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
     GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     

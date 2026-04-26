@@ -405,7 +405,9 @@ void example_manual_phys_model()
 
   ofstream out_html( "manual_phys_model_result.html" );
   std::vector<std::shared_ptr<const PeakDef>> disp_peaks( orig_peaks->begin(), orig_peaks->end() );
-  sol.print_html_report( out_html, "Manual Phys Model", meas, disp_peaks, nullptr, 0.0 );
+  std::vector<std::shared_ptr<const PeakDef>> background_peaks;
+
+  sol.print_html_report( out_html, "Manual Phys Model", meas, disp_peaks, nullptr, 0.0, background_peaks );
 
 
   cout << "Solution: " << endl;

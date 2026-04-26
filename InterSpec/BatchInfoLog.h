@@ -187,6 +187,7 @@ namespace BatchInfoLog
   
   void add_hist_to_json( nlohmann::basic_json<> &data,
                        const bool is_background,
+                       const double display_scale_factor,
                        const std::shared_ptr<const SpecUtils::Measurement> &spec_ptr,
                        const std::shared_ptr<const SpecMeas> &spec_file,
                        const std::set<int> &sample_numbers,
