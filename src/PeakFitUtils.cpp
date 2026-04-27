@@ -230,6 +230,7 @@ bool is_likely_high_res( InterSpec *viewer )
     case SpecUtils::DetectorType::RadSeekerLaBr:
     case SpecUtils::DetectorType::VerifinderNaI:
     case SpecUtils::DetectorType::VerifinderLaBr:
+    case SpecUtils::DetectorType::H3D400:
     case SpecUtils::DetectorType::KromekD3S:
     case SpecUtils::DetectorType::Sam950:
     case SpecUtils::DetectorType::KromekD5:
