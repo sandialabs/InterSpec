@@ -10357,8 +10357,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }catch( std::exception &e )
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
-      
-      // Returning false tells Ceres the trial step failed; it will reject and shrink the trust region. 
+
+      // The throw threshold in `eval_physical_model_eqn_imp` is set generously
+      //  (-1e-3 g/cm^2 i.e. well below the bounds-loosening of -1e-5 g/cm^2);
+      //  reaching this branch under normal operation means something has gone
+      //  genuinely wrong, so assert loudly during development. Returning false
+      //  tells Ceres to reject the trial step and shrink the trust region,
+      //  which is the safe production-time recovery.
+      assert( 0 );
       return false;
     }
     
