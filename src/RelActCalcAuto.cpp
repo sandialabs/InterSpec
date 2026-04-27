@@ -11465,6 +11465,10 @@ bool Options::operator==( const Options &rhs ) const
     && (fwhm_form == rhs.fwhm_form)
     && (fwhm_estimation_method == rhs.fwhm_estimation_method)
     && (spectrum_title == rhs.spectrum_title)
+    && (foreground_filename == rhs.foreground_filename)
+    && (background_filename == rhs.background_filename)
+    && (foreground_sample_numbers == rhs.foreground_sample_numbers)
+    && (background_sample_numbers == rhs.background_sample_numbers)
     && (skew_type == rhs.skew_type)
     && (lorentzian_xrays == rhs.lorentzian_xrays)
     && (additional_br_uncert == rhs.additional_br_uncert)
@@ -11944,7 +11948,27 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   append_attrib( fwhm_estimation_method_node, "remark", "Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency" );
 
   append_string_node( base_node, "Title", spectrum_title );
-  
+
+  // Foreground / background spectrum-file metadata (added v3, 2026-04-27).  Older v2 XML omits
+  // these and the loader treats them as empty.  Sample numbers are written as a comma-separated
+  // string of ints; an empty list is omitted.
+  if( !foreground_filename.empty() )
+    append_string_node( base_node, "ForegroundFilename", foreground_filename );
+  if( !background_filename.empty() )
+    append_string_node( base_node, "BackgroundFilename", background_filename );
+  if( !foreground_sample_numbers.empty() )
+  {
+    string s;
+    for( int n : foreground_sample_numbers ) { if( !s.empty() ) s += ","; s += std::to_string(n); }
+    append_string_node( base_node, "ForegroundSampleNumbers", s );
+  }
+  if( !background_sample_numbers.empty() )
+  {
+    string s;
+    for( int n : background_sample_numbers ) { if( !s.empty() ) s += ","; s += std::to_string(n); }
+    append_string_node( base_node, "BackgroundSampleNumbers", s );
+  }
+
   append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
   append_bool_node( base_node, "LorentzianXrays", lorentzian_xrays );
 
@@ -11991,7 +12015,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw std::logic_error( "invalid input node name" );
     
     // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
-    static_assert( Options::sm_xmlSerializationVersion == 2,
+    static_assert( Options::sm_xmlSerializationVersion == 3,
                   "needs to be updated for new serialization version." );
     
     check_xml_version( parent, Options::sm_xmlSerializationVersion );
@@ -12033,7 +12057,30 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 
     const rapidxml::xml_node<char> *title_node = XML_FIRST_NODE( parent, "Title" );
     spectrum_title = SpecUtils::xml_value_str( title_node );
-    
+
+    // Foreground / background spec-file metadata added in v3 (2026-04-27).  All four are optional
+    // for backwards compatibility with v2 XML; an empty value means "unknown".
+    foreground_filename.clear();
+    background_filename.clear();
+    foreground_sample_numbers.clear();
+    background_sample_numbers.clear();
+    if( const rapidxml::xml_node<char> *n = XML_FIRST_NODE( parent, "ForegroundFilename" ) )
+      foreground_filename = SpecUtils::xml_value_str( n );
+    if( const rapidxml::xml_node<char> *n = XML_FIRST_NODE( parent, "BackgroundFilename" ) )
+      background_filename = SpecUtils::xml_value_str( n );
+    {
+      const auto parse_samples = []( const rapidxml::xml_node<char> *n, std::set<int> &out ){
+        if( !n ) return;
+        const string s = SpecUtils::xml_value_str( n );
+        std::vector<int> ints;
+        if( !SpecUtils::split_to_ints( s.c_str(), s.size(), ints ) )
+          return;
+        out.insert( ints.begin(), ints.end() );
+      };
+      parse_samples( XML_FIRST_NODE( parent, "ForegroundSampleNumbers" ), foreground_sample_numbers );
+      parse_samples( XML_FIRST_NODE( parent, "BackgroundSampleNumbers" ), background_sample_numbers );
+    }
+
     // skew_type added 20231111; we wont require it.
     skew_type = PeakDef::SkewType::NoSkew;
     const rapidxml::xml_node<char> *skew_node = XML_FIRST_NODE( parent, "SkewType" );
@@ -12137,6 +12184,67 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "Options::fromXml(): " + string(e.what()) );
   }
 }//void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
+void set_input_spec_info( Options &opts,
+                          const std::string &foreground_filename,
+                          const std::set<int> &foreground_total_samples,
+                          const std::set<int> &foreground_samples,
+                          const std::string &background_filename,
+                          const std::set<int> &background_total_samples,
+                          const std::set<int> &background_samples )
+{
+  opts.foreground_filename = foreground_filename;
+  opts.background_filename = background_filename;
+
+  // Same-file convenience: if foreground+background read from the same file, the "fg+bg cover
+  // every sample in the file" trivial case is meaningful and lets us suppress sample numbers
+  // for both sides.
+  const bool same_file = !foreground_filename.empty()
+                         && (foreground_filename == background_filename);
+
+  // Foreground side
+  {
+    const bool fg_uses_all = !foreground_total_samples.empty()
+                             && (foreground_samples == foreground_total_samples);
+
+    bool fg_plus_bg_cover_all = false;
+    if( same_file && !foreground_total_samples.empty() )
+    {
+      std::set<int> u = foreground_samples;
+      u.insert( background_samples.begin(), background_samples.end() );
+      fg_plus_bg_cover_all = (u == foreground_total_samples);
+    }
+
+    if( fg_uses_all || fg_plus_bg_cover_all )
+      opts.foreground_sample_numbers.clear();
+    else
+      opts.foreground_sample_numbers = foreground_samples;
+  }
+
+  // Background side -- skip if no background, otherwise apply the same rule.
+  if( background_filename.empty() && background_samples.empty() )
+  {
+    opts.background_sample_numbers.clear();
+  }else
+  {
+    const bool bg_uses_all = !background_total_samples.empty()
+                             && (background_samples == background_total_samples);
+
+    bool fg_plus_bg_cover_all = false;
+    if( same_file && !background_total_samples.empty() )
+    {
+      std::set<int> u = foreground_samples;
+      u.insert( background_samples.begin(), background_samples.end() );
+      fg_plus_bg_cover_all = (u == background_total_samples);
+    }
+
+    if( bg_uses_all || fg_plus_bg_cover_all )
+      opts.background_sample_numbers.clear();
+    else
+      opts.background_sample_numbers = background_samples;
+  }
+}//void set_input_spec_info(...)
 
 
 size_t num_parameters( const FwhmForm eqn_form )
@@ -17044,7 +17152,19 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
 
   if( lhs.spectrum_title != rhs.spectrum_title )
     throw std::runtime_error( "Spectrum title in lhs and rhs are not the same" );
-  
+
+  if( lhs.foreground_filename != rhs.foreground_filename )
+    throw std::runtime_error( "Foreground filename in lhs and rhs are not the same" );
+
+  if( lhs.background_filename != rhs.background_filename )
+    throw std::runtime_error( "Background filename in lhs and rhs are not the same" );
+
+  if( lhs.foreground_sample_numbers != rhs.foreground_sample_numbers )
+    throw std::runtime_error( "Foreground sample numbers in lhs and rhs are not the same" );
+
+  if( lhs.background_sample_numbers != rhs.background_sample_numbers )
+    throw std::runtime_error( "Background sample numbers in lhs and rhs are not the same" );
+
   if( lhs.skew_type != rhs.skew_type )
     throw std::runtime_error( "Skew type in lhs and rhs are not the same" );
 

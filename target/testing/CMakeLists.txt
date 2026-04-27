@@ -123,6 +123,13 @@ add_test( NAME TestRelEffAuto
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActAutoReport test_RelActAutoReport.cpp )
+target_link_libraries( test_RelActAutoReport PRIVATE InterSpecLib )
+add_test( NAME TRelActAutoReport
+  COMMAND $<TARGET_FILE:test_RelActAutoReport> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_PeakDists test_PeakDists.cpp )
 target_link_libraries( test_PeakDists PRIVATE InterSpecLib )
 add_test( NAME TPeakDists
