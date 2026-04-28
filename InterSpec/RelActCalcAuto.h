@@ -1426,7 +1426,7 @@ struct RelActAutoSolution
    
    Will be valid only if `m_options.additional_br_uncert > 0.0`.
   */
-  size_t m_add_br_uncert_start_index = std::numeric_limits<size_t>::max();
+  size_t m_add_br_uncert_start_index = (std::numeric_limits<size_t>::max)();
   
   /** The energy ranges cooresponding to the additional peak amplitude uncertainty paramaters.
    
