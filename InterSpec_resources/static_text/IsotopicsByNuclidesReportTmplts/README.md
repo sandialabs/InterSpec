@@ -3,12 +3,31 @@
 > **Intent.** This document is meant to be handed to an LLM together with a description of the
 > report a user wants. The LLM should produce a complete Inja template (`*.tmplt.html`,
 > `*.tmplt.txt`, `*.tmplt.csv`, `*.tmplt.md`, etc.) that consumes the JSON data documented below.
-> Two default templates ship in `InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/`
-> (`std_rel_eff_summary.tmplt.html` and `std_rel_eff_summary.tmplt.txt`); they are themselves
-> examples of what the LLM should produce.  The InterSpec code repository can be accessed at 
+> Three default templates ship in `InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/`
+> (`std_rel_eff_summary.tmplt.html`, `std_rel_eff_summary.tmplt.txt`, and
+> `std_multi_file_summary.tmplt.html`); they are themselves examples of what the LLM should
+> produce.  The InterSpec code repository can be accessed at
 > https://github.com/sandialabs/InterSpec/ .
 >
-> **Last updated:** 2026-04-26
+> **Two report flavours** are documented here:
+> - **Single-file (per-spectrum) report** — sections §1 through §10 — consumes the JSON returned
+>   by `RelActAutoReport::solution_to_json()` for one spectrum.  Used for both stand-alone
+>   single-spectrum reports and as the per-file pages of a batch run.
+> - **Multi-file batch summary report** — see §11 — consumes the JSON built by
+>   `BatchRelActAuto::run_in_files()` to summarise an N-file batch (each file's `solution_to_json`
+>   payload is nested under `Files[i]`).
+>
+> The two flavours map directly onto the InterSpec command-line and GUI as follows:
+>
+> | Flavour | CLI arg | GUI control (Batch dialog → Isotopics tab) | Built-in shorthand |
+> |---|---|---|---|
+> | **Per-file** | `--file-report-template` | "Custom Per-File" report uploader | `"html"`, `"txt"`, `"json"` |
+> | **Multi-file summary** | `--summary-report-template` | "Custom Summary" report uploader | `"html-summary"` (also accepted: `"summary"`) |
+>
+> Pass a custom-template filename or absolute path on either flag/uploader and InterSpec will
+> resolve it the same way it resolves the built-in shorthands (see §2).
+>
+> **Last updated:** 2026-04-27
 
 ## 1. What this is
 
@@ -19,17 +38,25 @@ relative-efficiency / relative-activity ("isotopics by nuclides") fit. Each temp
 JSON payload built by `RelActAutoReport::solution_to_json()` and produces a text artifact (HTML,
 plain text, CSV, Markdown, JSON, …).
 
-Two templates ship in `InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/` by
+The remainder of this document, sections §1 through §10, focuses on **single-file (per-spectrum)
+templates** — i.e. templates that consume the JSON for one solved spectrum.  For
+**multi-file batch-summary templates** (templates that consume an aggregate JSON containing all
+files in a batch), see [§11 below](#11-multi-file-batch-summary-templates).
+
+Three templates ship in `InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/` by
 default:
 
 | File | Purpose |
 |---|---|
-| `std_rel_eff_summary.tmplt.html` | Full HTML report with embedded D3 spectrum chart and rel-eff chart |
-| `std_rel_eff_summary.tmplt.txt` | Plain-text summary |
+| `std_rel_eff_summary.tmplt.html` | **Per-file** full HTML report with embedded D3 spectrum chart and rel-eff chart |
+| `std_rel_eff_summary.tmplt.txt` | **Per-file** plain-text summary |
+| `std_multi_file_summary.tmplt.html` | **Multi-file** batch-summary HTML report (see §11) |
 
 A user can drop their own `.tmplt.*` files into
-`InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/` (or into any directory they
-pass to the report API as `include_dir`) and select them at render time by passing the filename.
+`InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/` (or into the writable
+`<InterSpec::writableDataDirectory()>/IsotopicsByNuclidesReportTmplts/` directory, or into any
+directory they pass to the report API as `include_dir`) and select them at render time by passing
+the filename.
 
 ### 1.1 What the "isotopics by nuclides" tool does
 
@@ -167,10 +194,11 @@ The `tmplt` parameter is the only knob that picks the template; accepted values:
 | `tmplt` | What you get |
 |---|---|
 | `""` (the default) | the built-in HTML report (same as `"html"`) |
-| `"html"` | `std_rel_eff_summary.tmplt.html` |
-| `"txt"` or `"text"` | `std_rel_eff_summary.tmplt.txt` |
+| `"html"` | `std_rel_eff_summary.tmplt.html` (per-file) |
+| `"txt"` or `"text"` | `std_rel_eff_summary.tmplt.txt` (per-file) |
 | `"json"` | raw JSON dump of the data (skips Inja entirely) |
-| any other string | treated as a path: looked up in `include_dir` first (if non-empty), then as an absolute path, then in the default template directory - if you are creating a new template file, it will be specified using this option |
+| `"html-summary"` or `"summary"` | `std_multi_file_summary.tmplt.html` (multi-file batch summary; see §11) |
+| any other string | treated as a path: looked up in `include_dir` first (if non-empty), then in `<InterSpec::writableDataDirectory()>/IsotopicsByNuclidesReportTmplts/`, then as an absolute path, then in the default template directory - if you are creating a new template file, it will be specified using this option |
 
 The `include_dir` parameter is purely a search root for relative `tmplt` paths and for any
 `{% include %}` directives in user templates. Defaults to `""` (no user-side includes).
@@ -669,6 +697,7 @@ InterSpec ships Inja 3.x (in `external_libs/SpecUtils/3rdparty/inja/inja.hpp`). 
 {{ variable }}                              {# interpolate #}
 {{ object.field }}                          {# dotted access #}
 {{ array.0 }}                               {# numeric-literal indexing into an array #}
+{{ at(array, n) }}                          {# variable indexing - use this for `array[expr]` #}
 
 {% if status.success %} ok {% endif %}
 {% if foo %} ... {% else if bar %} ... {% else %} ... {% endif %}
@@ -678,6 +707,7 @@ InterSpec ships Inja 3.x (in `external_libs/SpecUtils/3rdparty/inja/inja.hpp`). 
     {% if loop.is_first %}-- first --{% endif %}
     {% if loop.is_last  %}-- last  --{% endif %}
     index = {{ loop.index }}                {# 0-based #}
+    {{ at(parent_array, loop.index).field }}{# variable index via at() #}
 {% endfor %}
 
 {% include "default-rel-act-auto-html-results" %}        {# named, pre-registered #}
@@ -699,10 +729,20 @@ follows it. To preserve a newline, use a non-block tag (e.g. wrap in `{{ "" }}`)
 These pitfalls have bitten us. Avoid them or work around them in `solution_to_json` rather than
 in templates:
 
-1. **No variable array indexing.** `arr[loop.index]` triggers a JSON-parse error in Inja's
-   expression evaluator. Cross-reference values by nesting them in the C++ JSON instead.
-   Example: `relative_activities[i].pu` is the per-curve Pu data, eliminating the need for
-   `pu_corrections[i]` indexing in the template.
+1. **Bracket array indexing (`arr[expr]`) doesn't work — use `at(arr, expr)` instead.**
+   `Files[loop.index]` triggers a JSON-parse error in Inja's expression evaluator, but the
+   built-in `at(array, index)` callback is fully supported (it's the documented Inja
+   variable-indexing accessor — see [pantor/inja](https://pantor.github.io/inja/)). For
+   numeric-literal indices, the dot form `arr.0` is shorter; for variables (`loop.index`,
+   the result of another callback, etc.) use `at`:
+   ```jinja
+   {{ at(Files, loop.index).Filename }}            {# fine #}
+   {{ at(curve_acts.nuclides, 0).name }}           {# also fine; equivalent to .nuclides.0.name #}
+   {{ Files[loop.index].Filename }}                {# DOES NOT WORK -- JSON parse error #}
+   ```
+   Cross-referencing through nested C++ JSON (e.g. `relative_activities[i].pu` already nests
+   the per-curve Pu data inside the per-curve relative-activities object) still avoids needing
+   the index altogether and is the cleaner choice when feasible.
 2. **Arithmetic in expressions can be silently dropped or wrong.** `nuc.total_mass_fraction * 100`
    has rendered as `1` instead of `100` in some contexts. Prefer the `pct(x)` callback (§6) or
    pre-compute a `_str` field server-side.
@@ -743,6 +783,7 @@ InterSpec-specific.
 
 | Callback | Args | Returns | Example |
 |---|---|---|---|
+| `at(array, index)` | `array, int` | element | `at(Files, loop.index).Filename` (variable indexing — see §5.1) |
 | `printFixed(value, decimals)` | `number, int` | string | `printFixed(p.energy, 2)` -> `"846.75"` |
 | `printCompact(value, sigfigs)` | `number, int` | string | `printCompact(amp, 6)` -> `"26178.9"` |
 | `pct(value)` or `pct(value, sigfigs)` | `number [, int]` | string | `pct(nuc.enrichment, 4)` -> `"99.33"` |
@@ -754,6 +795,12 @@ InterSpec-specific.
 | `length(arr)` | `array or string` | int | `length(warnings)` |
 
 ### How to use them
+
+- **`at(arr, idx)`** — array indexing with a *variable* index (e.g. `at(Files, loop.index)`,
+  `at(arr, idx + 1)`). Bracket form `arr[expr]` is not supported in expression position
+  (see §5.1). For numeric-literal indices the `arr.0` form is shorter; use `at()` whenever the
+  index is anything other than a constant. Returns the element by reference, so chaining is
+  fine: `{{ at(Files, loop.index).relative_activities.0.nuclides.0.name }}`.
 
 - **`printFixed(x, n)`** — fixed-point with `n` decimals. Use for angles, energies (keV), and
   any quantity where the column needs a stable number of decimals. `printFixed(846.7540283, 2)`
@@ -998,9 +1045,182 @@ Then provide:
 |---|---|
 | [`InterSpec/RelActAutoReport.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/RelActAutoReport.h) | Public API |
 | [`src/RelActAutoReport.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/RelActAutoReport.cpp) | `solution_to_json` + Inja env + render dispatch |
+| [`InterSpec/BatchRelActAuto.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/BatchRelActAuto.h) / [`src/BatchRelActAuto.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchRelActAuto.cpp) | Batch driver — builds the multi-file `summary_json` consumed by §11 |
 | [`src/BatchInfoLog.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchInfoLog.cpp) | Sibling module for shielding/source and peak-fit reports; `printFixed`/`printCompact` live here |
 
 To regenerate the JSON example for any solution, pass `tmplt = "json"` to `render_template`
 (or call `solution_to_json(sol).dump(2)` directly). The dump always contains the heavy JS/CSS
 asset blobs — pipe through `jq 'del(.assets, .spectrum_chart.set_js)'` (see §3.9) for a
 readable view.
+
+## 11. Multi-file batch-summary templates
+
+The single-file template you've been reading about for the last ten sections consumes the JSON
+returned by `RelActAutoReport::solution_to_json()` for **one** solved spectrum. When InterSpec
+runs a batch (CLI: `--batch-iso-from-nucs --input-file=… --input-file=…` or
+GUI: Batch dialog → "Isotopics" tab with multiple input files) it also produces an aggregate
+**summary** JSON that wraps each file's per-file JSON in a `Files[]` array.  The aggregate is
+consumed by a different family of templates — multi-file summary templates — selected via the
+`"html-summary"` / `"summary"` shorthand or by a custom filename passed to:
+
+| | CLI flag | GUI control |
+|---|---|---|
+| Default summary template | `--summary-report-template=html-summary` (also: `default`, `summary`) | "Custom Summary" report uploader on the Isotopics tab |
+
+The single bundled multi-file template,
+`std_multi_file_summary.tmplt.html`, opens with a one-line "Analyzed N files for 'Isotopics by
+Nuclides', with M succeeding and K failing" banner, then a per-file activity / enrichment summary
+table, then per-file detail sections (spectrum chart + rel-eff chart + isotopics tables).
+
+### 11.1 The multi-file JSON shape
+
+The aggregate `summary_json` that batch templates consume is built by
+`BatchRelActAuto::run_in_files()`. The shape is:
+
+```json
+{
+  "ExemplarFile": "exemplar.n42",
+  "ExemplarSampleNumbers": [1],
+  "InputFiles": [ "fg1.n42", "fg2.n42", ... ],
+  "NumFiles": 15,
+  "NumSucceeded": 13,
+  "NumFailed": 2,
+  "assets": { "D3_JS": …, "SpectrumChart_JS": …, "SpectrumChart_CSS": …, "RelEffPlot_JS": …, "RelEffPlot_CSS": … },
+  "Files": [
+    {
+      "Filepath":     "/abs/path/to/fg1.n42",
+      "Filename":     "fg1.n42",
+      "ParentDir":    "/abs/path/to",
+      "ResultCode":   "Success",                  // see BatchRelActAuto::ResultCode
+      "ResultCodeInt": 0,
+      "Success":      true,
+      "HasErrorMessage": false,
+      "ErrorMessage": "",                          // present only when HasErrorMessage
+      "HasWarnings":  false,
+      "Warnings":     ["…"],                       // present only when HasWarnings
+      "status":       { … },                       // ← every key from §3 (solution_to_json)
+      "spectrum_title": "…",
+      "rel_eff_curves": [ … ],
+      "relative_activities": [ … ],
+      "peaks": [ … ],
+      "spectrum_chart": { … },
+      "rel_eff_chart_json": "[…]"
+      // NOTE: no per-file `assets` here -- they're lifted to the top-level `assets`.
+    },
+    { … },
+    …
+  ],
+  "Warnings": [ "…", "…" ]
+}
+```
+
+| Top-level key | Type | Notes |
+|---|---|---|
+| `ExemplarFile` | string | Path of the exemplar N42 (or empty if a `--rel-eff-config-file` was used instead) |
+| `ExemplarSampleNumbers` | array of int | Optional: present only when sample-number disambiguation was supplied to the batch driver |
+| `InputFiles` | array of string | Verbatim copy of the input-file list passed on the command line / dropped on the GUI |
+| `NumFiles`, `NumSucceeded`, `NumFailed` | int | Counts. Pre-computed server-side for the multi-file template's banner |
+| `assets` | object | The heavy JS/CSS asset blobs (`D3_JS`, `SpectrumChart_JS`, `SpectrumChart_CSS`, `RelEffPlot_JS`, `RelEffPlot_CSS`) — **lifted out of each per-file solution and stored once at the top level** so the multi-file template can `{{ assets.D3_JS }}` etc. without duplicating hundreds of KB across N files. Mirrors the pattern used by `BatchActivity::fit_activities_in_files`. |
+| `Files` | array | One entry per input file. **Each entry's body is the per-file JSON** documented in §3 (`solution_to_json` output) — *minus* the `assets` block that was lifted up to the top level — plus the bookkeeping fields below |
+| `Warnings` | array of string | Whole-batch warnings emitted by `BatchRelActAuto::run_in_files` |
+
+#### Per-file bookkeeping fields (added to each `Files[i]`)
+
+| Field | Type | Notes |
+|---|---|---|
+| `Filename` | string | Basename of the input file (use this for table rows / per-file headings) |
+| `Filepath` | string | Absolute path that was given to the batch driver |
+| `ParentDir` | string | Directory containing `Filepath` |
+| `ResultCode` | string | One of `BatchRelActAuto::ResultCode`'s names: `Success`, `NoExemplar`, `CouldntOpenExemplar`, `ExemplarMissingRelActState`, `CouldntOpenStateOverride`, `CouldntOpenInputFile`, `CouldntOpenBackgroundFile`, `ForegroundSampleNumberUnderSpecified`, `BackgroundSampleNumberUnderSpecified`, `ExemplarUsesPhysModelButNoDrf`, `FwhmMethodNeedsDrfButNoneAvailable`, `SolveFailedToSetup`, `SolveFailedToSolve`, `SolveUserCanceled`, `SolveThrewException`, `UnknownStatus` |
+| `ResultCodeInt` | int | Numeric form of `ResultCode` |
+| `Success` | bool | Convenience: `(ResultCode == "Success")` |
+| `HasErrorMessage` | bool | True iff `ErrorMessage` is non-empty |
+| `ErrorMessage` | string | Present only when `HasErrorMessage` is true |
+| `HasWarnings` | bool | True iff `Warnings` is non-empty |
+| `Warnings` | array of string | Per-file warnings (also folded into the top-level `Warnings`) |
+
+The remaining keys inside each `Files[i]` are exactly those documented in §3
+(`solution_to_json` output) **except** for the `assets` block (lifted to top-level). So:
+`status`, `spectrum_title`, `rel_eff_curves`, `relative_activities`, `peaks`, `rois`,
+`energy_calibration`, `options`, `curve_options`, `foreground`, `background`, `detector`,
+`timing`, `warnings_html`, `timestamps`, `compile_timestamp`, `spectrum_chart`,
+`rel_eff_chart_json`, `have_multiple_rel_eff`, `live_time_s`, `chi2`, `dof`, `chi2_per_dof`,
+`chi2_str`, `chi2_per_dof_str`, `pu_corrections`, `ratios` — any pattern from §7 lifts cleanly
+into a multi-file template by prefixing the path with `file.` inside a `{% for file in Files %}`
+loop, *with the single exception that asset references stay top-level*.
+
+### 11.2 Things to know when authoring a multi-file template
+
+1. **Shared assets live at the top level.** The C++ side
+   (`BatchRelActAuto::run_in_files`) lifts the JS/CSS asset blobs out of each per-file
+   `solution_to_json` payload and stores **one** copy in `summary_json["assets"]`, then erases
+   the per-file `assets` field before pushing each entry into `Files[]`. So the template
+   embeds them at the top of the document via:
+   ```jinja
+   <script>{{ assets.D3_JS }}</script>
+   <style>{{ assets.SpectrumChart_CSS }}</style>
+   ```
+   **Do not** reach into `file.assets` or `Files.0.assets` — those keys don't exist on the
+   multi-file path. (For variable indexing into other arrays, use the `at()` callback — see
+   §5.1.)
+
+2. **Per-file IDs must be unique.** Spectrum charts use `Files[i].spectrum_chart.div_id` (the
+   C++ side already generates a per-call random suffix like `specchart_<16-hex-chars>` so the
+   id is unique even when multiple solutions are embedded on one page). Rel-eff plot IDs are
+   template-controlled — generate them with `loop.index`:
+   ```jinja
+   <div id="releffchart_{{ loop.index }}" class="…"></div>
+   <script>
+     const chart_{{ loop.index }} = new RelEffPlot("releffchart_{{ loop.index }}");
+     chart_{{ loop.index }}.setRelEffData({{ file.rel_eff_chart_json }});
+   </script>
+   ```
+
+3. **Always branch on `file.Success` before touching any per-file fit fields.** Failed files
+   still appear in `Files[]` (so `NumFiles` / the summary banner / top-level
+   `Files` length stays right) but their `relative_activities`, `peaks`, etc. will be
+   default-empty. The bundled template renders them as a "FAILED — ResultCode: ErrorMessage"
+   row in the summary table and a single failure paragraph in the per-file section.
+
+4. **Don't `safe_html(file.assets.*)` or `safe_html(rel_eff_chart_json)`.** Those are JS / CSS /
+   JSON literals meant to be interpolated raw inside `<script>` / `<style>` tags. Apply
+   `safe_html` only to user-supplied strings (`file.spectrum_title`, `file.ErrorMessage`,
+   warnings).
+
+### 11.3 Minimal multi-file CSV summary (example)
+
+A short multi-file template — one nuclide row per file per curve — useful when the user wants a
+spreadsheet-friendly batch summary:
+
+```jinja
+file,curve,nuclide,rel_activity,rel_activity_uncert,enrichment_pct,result_code
+{% for file in Files %}{% if file.Success %}{% for curve_acts in file.relative_activities %}{% for nuc in curve_acts.nuclides %}
+{{ file.Filename }},{{ curve_acts.curve_index }},{{ nuc.name }},{{ nuc.rel_activity }},{{ nuc.rel_activity_uncertainty }},{% if existsIn(nuc, "enrichment") %}{{ pct(nuc.enrichment, 6) }}{% endif %},{{ file.ResultCode }}{{ "" }}
+{% endfor %}{% endfor %}{% else %}
+{{ file.Filename }},,,,,,{{ file.ResultCode }}{{ "" }}
+{% endif %}{% endfor %}
+```
+
+The trailing `{{ "" }}` after each row guards the per-row newline against `set_trim_blocks`
+(see §5.7); the `{% else %}` branch emits one empty-cell row for failed files so every input
+appears at least once in the output.
+
+### 11.4 The bundled `std_multi_file_summary.tmplt.html`
+
+The production multi-file template ships at
+[`InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/std_multi_file_summary.tmplt.html`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/std_multi_file_summary.tmplt.html)
+and demonstrates the patterns from §11.2 in a complete report:
+
+- `Files.0.assets.*` pulled once at the top of `<head>`;
+- header line `Analyzed {{ NumFiles }} files for "Isotopics by Nuclides", with {{ NumSucceeded
+  }} succeeding and {{ NumFailed }} failing`;
+- a single combined activity / enrichment table whose rows are grouped by file (one bold
+  `file-row` separator above each file's nuclide rows);
+- per-file detail sections, each with its own spectrum chart + rel-eff chart (using
+  `loop.index` for the rel-eff div id) + Pu / activity / mass-ratio tables — i.e. a compact
+  version of `std_rel_eff_summary.tmplt.html` with `file.` prefixes added to every key access.
+
+When asked to author a fresh multi-file template, an LLM should follow §11.1's JSON schema and
+the four authoring rules in §11.2; if the user wants a particular sub-block (e.g. just the
+summary table, or just the per-file sections) the bundled template is a reasonable starting
+point to copy from.

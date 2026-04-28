@@ -64,6 +64,16 @@ namespace RelActAutoReport
    */
   std::string template_include_dir( const std::string &user_path );
 
+  /** Returns `<InterSpec::writableDataDirectory()>/IsotopicsByNuclidesReportTmplts/`
+   (with trailing path separator) if the writable data directory has been
+   initialised AND that subdirectory exists; otherwise returns "".
+   The CLI/GUI both fall back to this directory when looking up bare-filename
+   templates, so users can drop their own templates in there and reference them
+   by name without having to type a full path.  Safe to call from contexts
+   where `InterSpec::writableDataDirectory()` has not been set (e.g. unit tests).
+   */
+  std::string writable_template_dir();
+
   /** Returns an inja environment configured with:
    - the (optional) user template include directory as its search root
    - `set_trim_blocks(true)`

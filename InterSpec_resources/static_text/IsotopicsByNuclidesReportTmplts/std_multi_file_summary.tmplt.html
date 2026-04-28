@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Isotopics by Nuclides &mdash; Batch Summary</title>
+
+  {# Heavy JS/CSS asset blobs are stored once at the top level of summary_json
+     (lifted out of per-file JSON by BatchRelActAuto::run_in_files - see
+     §11.1 of README.md). #}
+  <script>
+{{ assets.D3_JS }}
+  </script>
+  <script>
+{{ assets.SpectrumChart_JS }}
+  </script>
+  <style>
+{{ assets.SpectrumChart_CSS }}
+  </style>
+  <style>
+{{ assets.RelEffPlot_CSS }}
+  </style>
+  <script>
+{{ assets.RelEffPlot_JS }}
+  </script>
+
+  <style>
+    body {
+      font-family: Arial;
+      margin: 0;
+      padding: 20px;
+    }
+    h1.title {
+      text-align: center;
+      padding: 10px;
+      margin: 0 0 10px 0;
+    }
+    .header-summary {
+      padding: 10px 20px;
+      font-size: medium;
+    }
+    .header-summary .fail-count {
+      color: #b00;
+    }
+    .header-summary .ok-count {
+      color: #060;
+    }
+    .file-summary-table {
+      margin: 10px 20px;
+      border-collapse: collapse;
+      border: 1px solid black;
+      width: calc(100% - 40px);
+    }
+    .file-summary-table th, .file-summary-table td {
+      padding: 4px 8px;
+      border: 1px solid #888;
+      text-align: left;
+    }
+    .file-summary-table th {
+      background: #eee;
+    }
+    .file-summary-table tr.file-row td {
+      background: #d6e9ff;
+      font-weight: bold;
+    }
+    .file-summary-table tr.fail-row td {
+      background: #ffe1e1;
+      color: #800;
+      font-weight: bold;
+    }
+    .per-file-section {
+      margin: 30px 0;
+      padding: 10px;
+      border-top: 2px solid #444;
+    }
+    .per-file-section h2 {
+      margin: 5px 0;
+      font-size: 1.2em;
+    }
+    .per-file-section .file-status-fail {
+      color: #b00;
+      font-size: 110%;
+      padding: 10px 0;
+    }
+    .per-file-section .charts-row {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-around;
+      overflow: none;
+    }
+    .resulttable {
+      margin-top: 10px;
+      table-layout: fixed;
+      border-collapse: collapse;
+      border: 1px solid black;
+    }
+    .resulttable th, .resulttable td {
+      padding-left: 5px;
+      padding-right: 5px;
+      border: 1px solid black;
+    }
+    .anatime {
+      padding-top: 10px;
+      text-align: center;
+      font: 12px Arial;
+    }
+    .SpecChart .chartarea { fill: white; }
+    .xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis, .xaxis > .tick > text, .yaxis > .tick > text {
+      fill: black;
+    }
+    .xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick > line, .yaxistick {
+      stroke: black;
+    }
+    .xgrid > .tick, .ygrid > .tick { stroke: #b3b3b3; }
+    .minorgrid { stroke: #e6e6e6; }
+  </style>
+</head>
+
+<body>
+
+<h1 class="title">Isotopics by Nuclides &mdash; Batch Summary</h1>
+
+<div class="header-summary">
+  Analyzed <strong>{{ NumFiles }} file{% if NumFiles == 1 %}{% else %}s{% endif %}</strong>
+  for &ldquo;Isotopics by Nuclides&rdquo;,
+  with <span class="ok-count">{{ NumSucceeded }} succeeding</span>
+  and <span class="fail-count">{{ NumFailed }} failing</span>.
+</div>
+
+{# ============================================================
+   Summary table: one block per file, listing the nuclide-level
+   relative activities and enrichments for each rel-eff curve.
+   ============================================================ #}
+<table class="file-summary-table">
+  <caption>Per-file relative activities and enrichments</caption>
+  <thead>
+    <tr>
+      <th scope="col">Nuclide</th>
+      <th scope="col">Curve</th>
+      <th scope="col">Rel. Activity (&plusmn;1&sigma;)</th>
+      <th scope="col">Total Mass Frac.</th>
+      <th scope="col">Enrichment</th>
+      <th scope="col">Enrichment 2&sigma; band</th>
+      <th scope="col">Det. Counts</th>
+    </tr>
+  </thead>
+  <tbody>
+{% for file in Files %}
+    <tr class="file-row"><td colspan="7">{{ file.Filename }}</td></tr>
+{% if file.Success %}
+{% for curve_acts in file.relative_activities %}
+{% for nuc in curve_acts.nuclides %}
+    <tr>
+      <td>{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}</td>
+      <td>{{ curve_acts.curve_index }}</td>
+      <td>{{ printCompact(nuc.rel_activity, 6) }} &plusmn; {{ printCompact(nuc.rel_activity_uncertainty, 6) }}</td>
+      <td>{% if existsIn(nuc, "total_mass_fraction") %}{{ pct(nuc.total_mass_fraction, 4) }}%{% else %}--{% endif %}</td>
+      <td>{% if existsIn(nuc, "enrichment") %}{{ pct(nuc.enrichment, 4) }}%{% else %}--{% endif %}</td>
+      <td>{% if existsIn(nuc, "has_enrichment_uncert") %}{% if nuc.has_enrichment_uncert %}{{ pct(nuc.enrichment_minus_2sigma, 4) }}% &ndash; {{ pct(nuc.enrichment_plus_2sigma, 4) }}%{% else %}--{% endif %}{% else %}--{% endif %}</td>
+      <td>{% if existsIn(nuc, "detector_counts") %}{{ printCompact(nuc.detector_counts, 6) }}{% else %}--{% endif %}</td>
+    </tr>
+{% endfor %}
+{% endfor %}
+{% else %}
+    <tr class="fail-row">
+      <td colspan="7">FAILED &mdash; {{ file.ResultCode }}{% if file.HasErrorMessage %}: {{ safe_html(file.ErrorMessage) }}{% endif %}</td>
+    </tr>
+{% endif %}
+{% endfor %}
+  </tbody>
+</table>
+
+
+{# ============================================================
+   Per-file detail sections.  Each successful fit gets its
+   spectrum chart + rel-eff chart + per-curve isotopics table.
+   ============================================================ #}
+{% for file in Files %}
+<div class="per-file-section">
+  <h2>{{ file.Filename }}</h2>
+
+{% if not file.Success %}
+  <div class="file-status-fail">
+    Fit failed &mdash; {{ file.ResultCode }}{% if file.HasErrorMessage %}: {{ safe_html(file.ErrorMessage) }}{% endif %}
+  </div>
+{% else %}
+
+  <div>
+    &chi;<sup>2</sup>={{ file.chi2_str }} and there were {{ file.dof }} DOF (&chi;<sup>2</sup>/dof={{ file.chi2_per_dof_str }})
+  </div>
+
+  <div class="charts-row" id="chartsdiv_{{ loop.index }}">
+{% if not file.spectrum_chart.have_spectrum %}
+    <div style="width: 10%"> </div>
+{% endif %}
+{% if file.spectrum_chart.have_spectrum %}
+    <div id="{{ file.spectrum_chart.div_id }}" style="height: 30vw; flex: 1 2; overflow: hidden;" class="SpecChart"></div>
+{% endif %}
+    <div id="releffchart_{{ loop.index }}" style="height: 30vw; flex: 1 2; overflow: hidden; font-size: 14px;"></div>
+{% if not file.spectrum_chart.have_spectrum %}
+    <div style="width: 15%"> </div>
+{% endif %}
+  </div>
+
+{% for curve in file.rel_eff_curves %}
+  <div style="margin: 10px 0;">Rel. Eff. Eqn{% if file.have_multiple_rel_eff %} {{ curve.index }}{% endif %}: y = {{ curve.equation_html }}</div>
+{% endfor %}
+
+{% for curve_acts in file.relative_activities %}
+{% if existsIn(curve_acts, "pu") %}
+{% if curve_acts.pu.rows %}
+  <table class="resulttable">
+    <caption>Plutonium mass fractions{% if file.have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
+    <thead><tr><th scope="col">Nuclide</th><th scope="col">Uncor. % Pu Mass</th><th scope="col">% Pu Mass</th><th scope="col">1-&sigma; Uncert</th></tr></thead>
+    <tbody>
+{% for row in curve_acts.pu.rows %}
+      <tr><td>{{ row.nuclide }}{% if row.is_by_corr %} (by corr){% endif %}</td>{% if row.is_by_corr %}<td></td>{% else %}<td>{{ pct(row.uncorrected_mass_frac, 4) }}</td>{% endif %}<td>{{ pct(row.mass_frac, 4) }}</td>{% if row.mass_frac_uncert >= 0 %}<td>{{ pct(row.mass_frac_uncert, 4) }}</td>{% else %}<td></td>{% endif %}</tr>
+{% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+{% endif %}
+
+  <table class="resulttable">
+    <caption>Relative activities and mass fractions{% if file.have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
+    <thead><tr><th scope="col">Nuclide</th><th scope="col">Rel. Act.</th><th scope="col">Total Mass Frac.</th><th scope="col">Enrichment</th><th scope="col">Enrich 2&sigma;</th><th scope="col">Det. Counts</th><th scope="col">Age</th></tr></thead>
+    <tbody>
+{% for nuc in curve_acts.nuclides %}
+      <tr><td>{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}</td><td>{{ printCompact(nuc.rel_activity, 6) }} &plusmn; {{ printCompact(nuc.rel_activity_uncertainty, 6) }}</td>{% if existsIn(nuc, "total_mass_fraction") %}<td>{{ pct(nuc.total_mass_fraction, 4) }}%</td>{% if existsIn(nuc, "enrichment") %}<td>{{ pct(nuc.enrichment, 4) }}%</td>{% if nuc.has_enrichment_uncert %}<td>{{ pct(nuc.enrichment_minus_2sigma, 4) }}%, {{ pct(nuc.enrichment_plus_2sigma, 4) }}%</td>{% else %}<td>--</td>{% endif %}{% else %}<td>--</td><td>--</td>{% endif %}{% else %}<td></td><td></td><td></td>{% endif %}{% if existsIn(nuc, "detector_counts") %}<td>{{ printCompact(nuc.detector_counts, 6) }}</td>{% else %}<td></td>{% endif %}{% if existsIn(nuc, "age_str") %}<td>{{ nuc.age_str }}</td>{% else %}<td>--</td>{% endif %}</tr>
+{% endfor %}
+    </tbody>
+  </table>
+{% endfor %}
+
+{# Per-file rel-eff chart wiring + spectrum chart wiring #}
+  <script>
+    (function(){
+      const rel_eff_data_{{ loop.index }} = {{ file.rel_eff_chart_json }};
+      const chart_{{ loop.index }} = new RelEffPlot("releffchart_{{ loop.index }}");
+      chart_{{ loop.index }}.setRelEffData(rel_eff_data_{{ loop.index }});
+    })();
+  </script>
+{% if file.spectrum_chart.have_spectrum %}
+  <script>
+{{ file.spectrum_chart.set_js }}
+  </script>
+{% endif %}
+{% endif %}
+</div>
+{% endfor %}
+
+<div class="anatime">
+  Analysis performed {{ Files.0.timestamps.local }} ({{ Files.0.timestamps.utc }} UTC)
+</div>
+
+</body>
+</html>

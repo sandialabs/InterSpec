@@ -27,6 +27,7 @@
 #include <cmath>
 #include <chrono>
 #include <ctime>
+#include <random>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -271,6 +272,28 @@ string template_include_dir( const string &user_path )
 }
 
 
+string writable_template_dir()
+{
+  // InterSpec::writableDataDirectory() throws if not initialised (e.g. in unit
+  // tests), so guard with a try.  Also return "" if the directory does not yet
+  // exist, since enumeration would just return nothing anyway.
+  string base;
+  try
+  {
+    base = InterSpec::writableDataDirectory();
+  }catch( std::exception & )
+  {
+    return "";
+  }
+  if( base.empty() )
+    return "";
+  const string tmplt_dir = SpecUtils::append_path( base, "IsotopicsByNuclidesReportTmplts" );
+  if( !SpecUtils::is_directory(tmplt_dir) )
+    return "";
+  return tmplt_dir + ns_path_sep;
+}
+
+
 vector<pair<string,string>> load_spectrum_chart_js_and_css()
 {
   // Reuse BatchInfoLog's identical helper.
@@ -359,6 +382,7 @@ inja::Environment get_default_inja_env( const string &tmplt_dir )
     const string default_dir = default_template_dir();
     const string html_path = SpecUtils::append_path( default_dir, "std_rel_eff_summary.tmplt.html" );
     const string txt_path  = SpecUtils::append_path( default_dir, "std_rel_eff_summary.tmplt.txt" );
+    const string multi_html_path = SpecUtils::append_path( default_dir, "std_multi_file_summary.tmplt.html" );
 
     if( SpecUtils::is_file(html_path) )
     {
@@ -369,6 +393,11 @@ inja::Environment get_default_inja_env( const string &tmplt_dir )
     {
       inja::Template txt_tmplt = sub_env.parse_template( txt_path );
       env.include_template( "default-rel-act-auto-txt-results", txt_tmplt );
+    }
+    if( SpecUtils::is_file(multi_html_path) )
+    {
+      inja::Template multi_tmplt = sub_env.parse_template( multi_html_path );
+      env.include_template( "default-rel-act-auto-html-multi-file-summary", multi_tmplt );
     }
   }catch( const std::exception &e )
   {
@@ -1100,20 +1129,33 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       // calls, getElementById, etc.).  Templates must place a <div> with this id where they
       // want the chart to render -- the id is exposed as `spectrum_chart.div_id` so they don't
       // have to hard-code the literal string themselves.
-      const string spec_div_id = "specchart";
+      // We append a random suffix so multiple solutions can render side-by-side on the same
+      // HTML page (e.g. the multi-file batch summary in §11 of the README) without their
+      // spectrum charts colliding.
+      string spec_div_id;
+      {
+        thread_local std::mt19937_64 rng( std::random_device{}() );
+        std::uniform_int_distribution<uint64_t> dist;
+        std::ostringstream oss;
+        oss << "specchart_" << std::hex << std::setw(16) << std::setfill('0') << dist(rng);
+        spec_div_id = oss.str();
+      }
 
       stringstream set_js_str;
       D3SpectrumExport::write_js_for_chart( set_js_str, spec_div_id, "", "Energy (keV)", "Counts" );
 
+      // Suffix the observer var so multiple per-call set_js blocks can coexist on the same page
+      // without colliding on this top-level `let` (the chart-specific helpers from
+      // D3SpectrumExport are already suffixed via spec_div_id).
       set_js_str <<
-      "  let spec_observer = new ResizeObserver(entries => {\n"
+      "  let spec_observer_" << spec_div_id << " = new ResizeObserver(entries => {\n"
       "    for (let entry of entries) {\n"
       "      if (entry.target && (entry.target.id === \"" << spec_div_id << "\")) {\n"
       "        spec_chart_" << spec_div_id << ".handleResize(false);\n"
       "      }\n"
       "    }\n"
       "  });\n"
-      "  spec_observer.observe( document.getElementById(\"" << spec_div_id << "\") );\n";
+      "  spec_observer_" << spec_div_id << ".observe( document.getElementById(\"" << spec_div_id << "\") );\n";
 
       D3SpectrumExport::D3SpectrumChartOptions chart_options;
       chart_options.m_useLogYAxis = true;
@@ -1205,12 +1247,22 @@ namespace
     if( SpecUtils::iequals_ascii(t, "html") ) return { "html", "" };
     if( SpecUtils::iequals_ascii(t, "txt") || SpecUtils::iequals_ascii(t, "text") ) return { "txt", "" };
     if( SpecUtils::iequals_ascii(t, "json") ) return { "json", "" };
+    if( SpecUtils::iequals_ascii(t, "html-summary") || SpecUtils::iequals_ascii(t, "summary") ) return { "html-summary", "" };
 
-    // Treat as a filename - try user dir, then absolute path, then default dir.
+    // Treat as a filename - try, in order: user-supplied include dir, the
+    // user's writable IsotopicsByNuclidesReportTmplts/ dir, an absolute path,
+    // then the bundled default dir.
     const string tmplt_dir = template_include_dir( include_dir );
     if( !tmplt_dir.empty() )
     {
       const string full = SpecUtils::append_path( tmplt_dir, t );
+      if( SpecUtils::is_file(full) )
+        return { "", full };
+    }
+    const string user_dir = writable_template_dir();
+    if( !user_dir.empty() )
+    {
+      const string full = SpecUtils::append_path( user_dir, t );
       if( SpecUtils::is_file(full) )
         return { "", full };
     }
@@ -1242,9 +1294,75 @@ string render_template( inja::Environment &env,
     return env.render( "{% include \"default-rel-act-auto-html-results\" %}", data );
   if( tmplt.first == "txt" )
     return env.render( "{% include \"default-rel-act-auto-txt-results\" %}", data );
+  if( tmplt.first == "html-summary" )
+    return env.render( "{% include \"default-rel-act-auto-html-multi-file-summary\" %}", data );
 
-  // Filename path: parse and render via the caller's env.
-  inja::Template parsed = env.parse_template( tmplt.second );
+  // Filename path.  We can't just call `env.parse_template(full_path)`: Inja's
+  // parse_template does `env.input_path + filename` unconditionally, so passing
+  // a full path while the env was built with a non-empty input_path produces
+  // garbage like "/include_dir//tmp/foo.tmplt.html".
+  //
+  // Two cases:
+  //   1) The user explicitly named a `--report-template-include-dir`. We
+  //      require the resolved template path to live under it (otherwise their
+  //      `{% include %}` directives will resolve against the wrong directory),
+  //      and pass the relative-to-include-dir name to `parse_template`.
+  //   2) Otherwise, we read the file content ourselves and feed it to
+  //      `env.parse(string)`.  This sidesteps Inja's path-prepending entirely;
+  //      `{% include %}` directives still resolve against the env's input_path
+  //      (which is whatever the caller built the env with -- typically the
+  //      bundled default dir).
+  // Canonicalize so the prefix-check below works on symlinked paths
+  // (notably macOS, where `/tmp` -> `/private/tmp`).
+  string full_path = tmplt.second;
+  {
+    string canon = full_path;
+    if( SpecUtils::make_canonical_path(canon) )
+      full_path = canon;
+  }
+
+  const bool explicit_include_dir
+      = !include_dir.empty()
+      && !SpecUtils::iequals_ascii(include_dir, "none")
+      && !SpecUtils::iequals_ascii(include_dir, "default");
+
+  if( explicit_include_dir )
+  {
+    string include_canon = include_dir;
+    if( !SpecUtils::make_canonical_path(include_canon) )
+      throw runtime_error( "RelActAutoReport: include directory '" + include_dir
+                           + "' does not exist or is not accessible." );
+    if( !include_canon.empty() && include_canon.back() != ns_path_sep )
+      include_canon += ns_path_sep;
+
+    if( !SpecUtils::starts_with(full_path, include_canon.c_str()) )
+      throw runtime_error( "RelActAutoReport: template '" + full_path
+                          + "' is not under the specified include directory '"
+                          + include_canon + "'.  Either pass a template path under that"
+                          " directory, or omit --report-template-include-dir to let it be"
+                          " inferred from the template's parent directory." );
+
+    const string relative_name = full_path.substr( include_canon.size() );
+    inja::Template parsed = env.parse_template( relative_name );
+    return env.render( parsed, data );
+  }
+
+  // No user-specified include_dir -- read file content directly so Inja's
+  // input_path is irrelevant for the top-level template.
+  std::vector<char> content;
+  try
+  {
+    SpecUtils::load_file_data( full_path.c_str(), content );
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "RelActAutoReport: could not read template '" + full_path
+                        + "': " + e.what() );
+  }
+  if( !content.empty() && content.back() == '\0' )
+    content.pop_back();
+  const std::string content_str( content.begin(), content.end() );
+
+  inja::Template parsed = env.parse( content_str );
   return env.render( parsed, data );
 }
 
