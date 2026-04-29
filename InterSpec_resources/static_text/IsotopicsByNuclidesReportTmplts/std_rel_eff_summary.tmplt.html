@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>{{ options.spectrum_title }}</title>
+
+    <script>
+{{ assets.D3_JS }}
+    </script>
+
+    <script>
+{{ assets.SpectrumChart_JS }}
+    </script>
+
+    <style>
+        body {
+            font: Arial;
+        }
+
+        .title {
+            padding: 10px;
+            text-align: center;
+        }
+
+        .results {
+            padding: 10px;
+            font-size: medium;
+        }
+
+        .nuctable, .peaktable, .massratiotable {
+        }
+
+        .resulttable {
+            margin-top: 15px;
+            table-layout: fixed;
+            border-collapse: collapse;
+            border: 1px solid black;
+        }
+
+        .resulttable th, .resulttable td {
+            padding-left: 5px;
+            padding-right: 5px;
+            border: 1px solid black;
+        }
+
+        .energycal {
+          margin: 10px;
+          border: 1px solid black;
+        }
+
+        .optionstable {
+          margin-top: 15px;
+          text-align: left;
+        }
+
+        .optionstable th, .optionstable td {
+          padding-left: 5px;
+          padding-right: 5px;
+        }
+
+        .releffeqn {
+            margin: 10px;
+        }
+
+        .warnings {
+          margin-top: 15px;
+          margin-left: 10px;
+          margin-right: 10px;
+          padding: 5px;
+          border: 1px solid yellow;
+        }
+
+        .warningline {
+          margin-top: 5px;
+        }
+
+        .anacommand, .unusednucs {
+          margin-top: 15px;
+          padding-left: 10px;
+          padding-right: 10px;
+        }
+
+        .anatime {
+            padding-top: 10px;
+            text-align: center;
+            font: 12px Arial;
+        }
+
+        .anacomputetime {
+          padding-top: 10px;
+          font: 12px Arial;
+        }
+    </style>
+
+    <style>
+{{ assets.SpectrumChart_CSS }}
+    </style>
+
+    <style>
+      .SpecChart .chartarea{
+        fill: white;
+      }
+
+      .xaxistitle, .yaxistitle, .yaxis, .yaxislabel, .xaxis, .xaxis > .tick > text, .yaxis > .tick > text {
+        fill: black;
+      }
+
+      .xaxis > .domain, .yaxis > .domain, .xaxis > .tick > line, .yaxis > .tick > line, .yaxistick {
+        stroke: black;
+      }
+
+      .xgrid > .tick, .ygrid > .tick{
+        stroke: #b3b3b3;
+      }
+
+      .minorgrid{
+        stroke: #e6e6e6;
+      }
+    </style>
+
+    <style>
+{{ assets.RelEffPlot_CSS }}
+    </style>
+
+    <script>
+{{ assets.RelEffPlot_JS }}
+    </script>
+</head>
+
+<body>
+    <h1 class="title">{{ options.spectrum_title }}</h1>
+
+    <div id="chartsdiv" style="display: flex; flex-direction: row; justify-content: space-around; overflow: none;">
+{% if not spectrum_chart.have_spectrum %}
+        <div style="width: 10%"> </div>
+{% endif %}
+{% if spectrum_chart.have_spectrum %}
+        <div id="{{ spectrum_chart.div_id }}" style="height: 30vw; flex: 1 2; overflow: hidden;" class="SpecChart"></div>
+{% endif %}
+        <div id="releffchart" style="height: 30vw; flex: 1 2; overflow: hidden; font-size: 14px;"></div>
+{% if not spectrum_chart.have_spectrum %}
+        <div style="width: 15%"> </div>
+{% endif %}
+    </div>
+
+    <div class="results">
+{% if status.success %}
+<div>&chi;<sup>2</sup>={{ chi2_str }} and there were {{ dof }} DOF (&chi;<sup>2</sup>/dof={{ chi2_per_dof_str }})</div>
+{% else %}
+<div style="color: red; font-size: 150%;">Calculation failed, {{ status.fail_reason }}: {{ status.error_message }}</div>
+{% endif %}
+
+{% for curve in rel_eff_curves %}
+<div class="releffeqn">Rel. Eff. Eqn{% if have_multiple_rel_eff %} {{ curve.index }}{% endif %}: y = {{ curve.equation_html }}</div>
+{% endfor %}
+
+{# ---- Per-curve sections (Pu tables, activity table, ratio table) ---- #}
+{% for curve_acts in relative_activities %}
+{% if existsIn(curve_acts, "pu") %}
+{% if curve_acts.pu.rows %}
+<table class="nuctable resulttable">
+  <caption>Plutonium mass fractions{% if have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
+  <thead><tr> <th scope="col">Nuclide</th> <th scope="col">Uncor. % Pu Mass</th> <th scope="col">% Pu Mass</th> <th scope="col">1-&sigma; Uncert</th> </tr></thead>
+  <tbody>
+{% for row in curve_acts.pu.rows %}
+  <tr><td>{{ row.nuclide }}{% if row.is_by_corr %} (by corr){% endif %}</td>{% if row.is_by_corr %}<td></td>{% else %}<td>{{ pct(row.uncorrected_mass_frac, 4) }}</td>{% endif %}<td>{{ pct(row.mass_frac, 4) }}</td>{% if row.mass_frac_uncert >= 0 %}<td>{{ pct(row.mass_frac_uncert, 4) }}</td>{% else %}<td></td>{% endif %}</tr>
+{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if existsIn(curve_acts.pu, "back_decayed") %}
+<table class="nuctable resulttable">
+  <caption>Plutonium mass fractions at T=0{% if have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
+  <thead><tr> <th scope="col">Nuclide</th> <th scope="col">% Pu Mass</th> </tr></thead>
+  <tbody>
+{% for brow in curve_acts.pu.back_decayed %}
+  <tr><td>{{ brow.nuclide }}</td><td>{{ pct(brow.mass_frac, 4) }}</td></tr>
+{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+<table class="nuctable resulttable">
+  <caption>Relative activities and mass fractions{% if have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
+  <thead><tr> <th scope="col">Nuclide</th> <th scope="col">Rel. Act.</th> <th scope="col">Total Mas Frac.</th> <th scope="col">Enrichment</th> <th scope="col">Enrich 2&sigma;</th> <th scope="col">Det. Counts</th> <th scope="col">Age</th> </tr></thead>
+  <tbody>
+{% for nuc in curve_acts.nuclides %}
+  <tr><td>{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}</td><td>{{ printCompact(nuc.rel_activity, 6) }} &plusmn; {{ printCompact(nuc.rel_activity_uncertainty, 6) }}</td>{% if existsIn(nuc, "total_mass_fraction") %}<td>{{ pct(nuc.total_mass_fraction, 4) }}%</td>{% if existsIn(nuc, "enrichment") %}<td>{{ pct(nuc.enrichment, 4) }}%</td>{% if nuc.has_enrichment_uncert %}<td>{{ pct(nuc.enrichment_minus_2sigma, 4) }}%, {{ pct(nuc.enrichment_plus_2sigma, 4) }}%</td>{% else %}<td>--</td>{% endif %}{% else %}<td>--</td><td>--</td>{% endif %}{% else %}<td></td><td></td><td></td>{% endif %}{% if existsIn(nuc, "detector_counts") %}<td>{{ printCompact(nuc.detector_counts, 6) }}</td>{% else %}<td></td>{% endif %}{% if existsIn(nuc, "age_str") %}<td>{{ nuc.age_str }}</td>{% else %}<td> -- </td>{% endif %}</tr>
+{% endfor %}
+  </tbody>
+</table>
+
+{% if existsIn(curve_acts, "ratios") %}
+{% if curve_acts.ratios.pairs %}
+<table class="massratiotable resulttable">
+  <caption>Mass and Activity Ratios.{% if have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
+  <thead><tr><th scope="col">Nuclides</th><th scope="col">Mass Ratio</th><th scope="col">Activity Ratio</th><th scope="col">Uncertainty</th></tr></thead>
+  <tbody>
+{% for pair in curve_acts.ratios.pairs %}
+<tr><td>{{ pair.numerator }}/{{ pair.denominator }}</td><td>{{ pair.mass_ratio_str }}</td><td>{{ pair.activity_ratio_str }}</td><td>{{ pair.uncert_pct_str }}</td></tr>
+<tr><td>{{ pair.denominator }}/{{ pair.numerator }}</td><td>{{ pair.mass_ratio_inv_str }}</td><td>{{ pair.activity_ratio_inv_str }}</td><td>{{ pair.uncert_inv_pct_str }}</td></tr>
+{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endfor %}
+
+{# ---- Per-peak table ---- #}
+<table class="peaktable resulttable">
+  <caption>Peaks fit in analysis.</caption>
+  <thead><tr><th scope="col">Energy (keV)</th><th scope="col">Nuclide</th><th scope="col">Yield</th>{% if have_multiple_rel_eff %}<th scope="col">Rel. Eff. #</th>{% endif %}<th scope="col">Amp</th><th scope="col">&Delta;Amp</th><th scope="col">CPS/Yield</th><th scope="col">Rel Eff</th><th scope="col">&Delta;Rel Eff</th><th scope="col">Cont. Type</th><th scope="col">Cont. Range</th></tr></thead>
+  <tbody>
+{% for p in peaks %}
+{% if p.is_floating %}
+  <tr><td>{{ printFixed(p.energy, 2) }}</td><td></td><td></td>{% if have_multiple_rel_eff %}<td></td>{% endif %}<td>{{ printCompact(p.amplitude, 6) }}</td><td>{{ printCompact(p.amplitude_uncertainty / p.amplitude, 6) }}</td><td></td><td></td><td></td><td>{{ p.continuum.type }}</td><td>{{ printFixed(p.continuum.lower_energy, 1) }}-{{ printFixed(p.continuum.upper_energy, 1) }}</td></tr>
+{% else %}
+  <tr><td>{{ printFixed(p.energy, 2) }}</td><td>{{ p.nuclide }}</td><td>{{ printCompact(p.yield, 3) }}</td>{% if have_multiple_rel_eff %}<td>{{ p.rel_eff_index }}</td>{% endif %}<td>{{ printCompact(p.amplitude, 3) }}</td><td>{{ printCompact(p.amplitude_uncertainty_percent, 2) }}%</td><td>{{ printCompact(p.cps_over_yield, 3) }}</td><td>{{ printCompact(p.fit_rel_eff, 6) }}</td><td>{{ printCompact(p.fit_rel_eff_uncert_pct, 2) }}%</td><td>{{ p.continuum.type }}</td><td>{{ printFixed(p.continuum.lower_energy, 1) }}-{{ printFixed(p.continuum.upper_energy, 1) }}</td></tr>
+{% endif %}
+{% endfor %}
+  </tbody>
+</table>
+
+{# ---- Energy calibration ---- #}
+{% if energy_calibration.was_fit %}
+{% if energy_calibration.adjustments %}
+<div class="energycal">
+Fit{% for adj in energy_calibration.adjustments %}{% if not loop.is_first %} and{% endif %} {{ adj.type_long }} of {{ printCompact(adj.physical_value, 6) }} {{ adj.units }}{% endfor %}.
+{% if energy_calibration.deviation_pair_offsets %}
+<div>
+  DevPairs=[{% for dev in energy_calibration.deviation_pair_offsets %}{% if not loop.is_first %}, {% endif %}{{ dev.display }}{% endfor %}].
+</div>
+{% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+{# ---- Options table ---- #}
+<div class="anacommand">
+<table class="optionstable">
+  <caption>Options used for analysis.</caption>
+  <tr><th scope="row">energy_cal_type</th><td><code>{{ options.energy_cal_type }}</code></td></tr>
+{% for co in curve_options %}
+  <tr><th scope="row">nucs_of_el_same_age</th><td><code>{% if co.nucs_of_el_same_age %}1{% else %}0{% endif %}</code></td></tr>
+  <tr><th scope="row">rel_eff_eqn_type</th><td><code>{{ co.rel_eff_eqn_type }}</code></td></tr>
+{% if existsIn(co, "rel_eff_eqn_order") %}
+  <tr><th scope="row">rel_eff_eqn_order</th><td><code>{{ co.rel_eff_eqn_order }}</code></td></tr>
+{% endif %}
+{% endfor %}
+  <tr><th scope="row">fwhm_form</th><td><code>{{ options.fwhm_form }}</code></td></tr>
+</table>
+</div>
+
+{# ---- Warnings ---- #}
+{% if warnings_html %}
+<div class="warnings">
+<h3>Warnings</h3>
+{% for w in warnings_html %}
+<div class="warningline">{{ w }}</div>
+{% endfor %}
+</div>
+{% endif %}
+
+{# ---- Computation timing + analysis timestamps ---- #}
+{% if existsIn(timing, "duration_str") %}
+<div class="anacomputetime">Computation took {{ timing.duration_str }} with {{ timing.solve_calls }} function calls to solve, and {{ timing.cov_calls }} more for covariance
+</div>
+{% endif %}
+
+<div class="anatime">Analysis performed {{ timestamps.local }} ({{ timestamps.utc }} UTC), with code compiled {{ compile_timestamp }}</div>
+    </div>
+
+    <script>
+        const rel_eff_data = {{ rel_eff_chart_json }};
+
+        let chart = new RelEffPlot("releffchart");
+        chart.setRelEffData(rel_eff_data);
+
+        var olddivhight = 0;
+        let divobserver = new ResizeObserver(entries => {
+          for (let entry of entries) {
+            if (entry.target && (entry.target.id === "chartsdiv")) {
+              let w, h;
+              if (entry.contentBoxSize) {
+                const contentBoxSize = Array.isArray(entry.contentBoxSize) ? entry.contentBoxSize[0] : entry.contentBoxSize;
+                w = contentBoxSize.width;
+                h = contentBoxSize.height;
+              } else {
+                w = entry.contentRect.width;
+                h = entry.contentRect.height;
+              }
+
+              let new_height = Math.max( 100, Math.min( 0.5*window.innerHeight, 0.75*w ) );
+              if( Math.abs(new_height - olddivhight) > 2 )
+              {
+                olddivhight = new_height;
+                let el = document.getElementById("chartsdiv");
+                el.style.height = new_height + "px";
+                for (let i = 0; i < el.children.length; i++) {
+                  el.children[i].style.height = new_height + "px";
+                }
+              }
+            }
+          }
+        });
+        divobserver.observe( document.getElementById("chartsdiv") );
+
+        let rel_eff_observer = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                if (entry.target && (entry.target.id === "releffchart")) {
+                    chart.handleResize();
+                }
+            }
+        });
+        rel_eff_observer.observe(chart.chart);
+    </script>
+
+{% if spectrum_chart.have_spectrum %}
+    <script>
+{{ spectrum_chart.set_js }}
+    </script>
+{% endif %}
+
+</body>
+</html>

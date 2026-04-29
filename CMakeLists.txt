@@ -572,6 +572,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActAutoGuiFreePeak.cpp
         src/RelActAutoReport.cpp
         src/RelActAutoDev.cpp
+        src/BatchRelActAuto.cpp
         src/ShieldingSourceFitPlot.cpp
   )
   
@@ -595,6 +596,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActAutoGuiFreePeak.h
         InterSpec/RelActAutoReport.h
         InterSpec/RelActAutoDev.h
+        InterSpec/BatchRelActAuto.h
   )
 endif( USE_REL_ACT_TOOL )
 

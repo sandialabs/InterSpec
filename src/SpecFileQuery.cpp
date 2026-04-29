@@ -1152,6 +1152,7 @@ namespace SpecFileQuery
           case SpecUtils::DetectorType::RadSeekerLaBr:
           case SpecUtils::DetectorType::VerifinderNaI:
           case SpecUtils::DetectorType::VerifinderLaBr:
+          case SpecUtils::DetectorType::H3D400:
           case SpecUtils::DetectorType::KromekD3S:
           case SpecUtils::DetectorType::KromekD5:
           case SpecUtils::DetectorType::KromekGR1:

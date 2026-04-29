@@ -1,0 +1,149 @@
+<RelActCalcAuto version="0">
+	<Options version="2">
+		<FitEnergyCal>false</FitEnergyCal>
+		<EnergyCalFitType remark="Possible values: NoFit, LinearFit, NonLinearFit">NoFit</EnergyCalFitType>
+		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6">Berstein_4</FwhmForm>
+		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
+		<Title>Foreground</Title>
+		<SkewType>NoSkew</SkewType>
+		<LorentzianXrays>false</LorentzianXrays>
+		<AddUncert>0.00000000e+00</AddUncert>
+		<RelEffCurveInputs>
+			<RelEffCurveInput version="0">
+				<Name>Curve 0</Name>
+				<NucInputInfoList>
+					<NucInputInfo version="0">
+						<Nuclide>Eu152</Nuclide>
+						<Age>33.8431766160 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#00B9FF</PeakColorCss>
+					</NucInputInfo>
+				</NucInputInfoList>
+				<NucsOfElSameAge>false</NucsOfElSameAge>
+				<RelEffEqnType remark='Possible values: Possible values: LnX, LnY, LnXLnY, "FRAM Empirical", "FRAM Physical"'>LnX</RelEffEqnType>
+				<RelEffEqnOrder>3</RelEffEqnOrder>
+			</RelEffCurveInput>
+		</RelEffCurveInputs>
+		<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>
+		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<RoiRangeList>
+			<RoiRange version="0">
+				<LowerEnergy>1.13957207e+02</LowerEnergy>
+				<UpperEnergy>1.28592636e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>3.40810211e+02</LowerEnergy>
+				<UpperEnergy>3.48128265e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.41286346e+02</LowerEnergy>
+				<UpperEnergy>2.48604202e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>7.74691833e+02</LowerEnergy>
+				<UpperEnergy>7.83019836e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>8.63338135e+02</LowerEnergy>
+				<UpperEnergy>8.71661499e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>9.59273865e+02</LowerEnergy>
+				<UpperEnergy>9.68081116e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.07833997e+03</LowerEnergy>
+				<UpperEnergy>1.09567004e+03</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.10251001e+03</LowerEnergy>
+				<UpperEnergy>1.12192004e+03</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.39954333e+03</LowerEnergy>
+				<UpperEnergy>1.41322034e+03</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.29356567e+03</LowerEnergy>
+				<UpperEnergy>1.30430872e+03</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.20810571e+03</LowerEnergy>
+				<UpperEnergy>1.21738538e+03</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>4.40351349e+02</LowerEnergy>
+				<UpperEnergy>4.47673706e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>4.07652283e+02</LowerEnergy>
+				<UpperEnergy>4.14972107e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>3.64228027e+02</LowerEnergy>
+				<UpperEnergy>3.71546234e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>Fixed</RangeLimitType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+		</RoiRangeList>
+		<BackgroundSubtract>false</BackgroundSubtract>
+		<ShowRefGammaLines>true</ShowRefGammaLines>
+		<LowerDisplayEnergy>-0.320000</LowerDisplayEnergy>
+		<UpperDisplayEnergy>5291.748737</UpperDisplayEnergy>
+	</Options>
+</RelActCalcAuto>
+

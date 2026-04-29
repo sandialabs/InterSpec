@@ -26,6 +26,7 @@
 #include <tuple>
 #include <vector>
 #include <optional>
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
@@ -245,11 +246,20 @@ T eval_physical_model_eqn_imp( const double energy,
       mu = get_atten_coef_for_an( self_atten->atomic_number, energyf );
     
     T areal_density = self_atten->areal_density;
-    
-    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) ); // If using numeric-diff, and AD has value of zero, we may get negative values here during differentiation
-    if( (areal_density <= -1.0E-3) || isnan(areal_density) || isinf(areal_density) )
-      throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
-    
+
+    // `setup_physical_model_shield_par` loosens the Ceres-level lower bound
+    //  on AD by 1e-5 g/cm^2 to escape an active-bound LM trap. The optimizer
+    //  may consequently evaluate at AD slightly below the user's bound.
+    //  `areal_density` is in PhysicalUnits here, so the test for "grossly
+    //  negative" multiplies by `g_per_cm2` to compare in physical units.
+    //  Threshold of -1e-3 g/cm^2 is well above the loosening (-1e-5) so
+    //  the cost function never returns false on legitimate optimizer
+    //  exploration; only catches truly pathological values.
+    assert( !isinf(areal_density) );
+    if( (areal_density <= -1.0e-3 * PhysicalUnits::g_per_cm2)
+        || isnan(areal_density) || isinf(areal_density) )
+      throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0 - got value " );
+
     if( areal_density < 0.0 )
       areal_density = fmax(areal_density, 0.0);
 
@@ -292,11 +302,16 @@ T eval_physical_model_eqn_imp( const double energy,
       mu = get_atten_coef_for_an( ext_atten.atomic_number, energyf );
     
     T areal_density = ext_atten.areal_density;
-    
-    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) );
-    if( (areal_density <= -1.0E-3) || isnan(areal_density) || isinf(areal_density) )
+
+    // See note in self-atten branch above: threshold is in PhysicalUnits;
+    //  -1e-3 g/cm^2 is comfortably above the bounds-loosening of -1e-5 g/cm^2,
+    //  so the cost function does not return false on normal optimizer
+    //  exploration near the loosened bound.
+    assert( !isinf(areal_density) );
+    if( (areal_density <= -1.0e-3 * PhysicalUnits::g_per_cm2)
+        || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
-    
+
     if( areal_density < 0.0 )
       areal_density = fmax(areal_density, 0.0);
 
@@ -304,7 +319,9 @@ T eval_physical_model_eqn_imp( const double energy,
     if( mu < 0.0 )
       mu = fmax(mu, 0.0);
 
-    assert( ext_atten.areal_density >= 0.0 );
+    // Local areal_density was clamped to >= 0 above; original ext_atten value
+    //  may be slightly negative due to bounds-loosening.
+    assert( areal_density >= 0.0 );
 
     if( (mu >= 0.0) && (areal_density >= 0.0) )
       answer *= exp( -mu * areal_density );

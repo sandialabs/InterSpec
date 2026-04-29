@@ -115,6 +115,9 @@ protected:
   Wt::WStackedWidget *m_options_stack;
   BatchGuiAnaWidget *m_act_shield_ana_opts;
   BatchGuiAnaWidget *m_peak_fit_opts;
+#if( USE_REL_ACT_TOOL )
+  BatchGuiAnaWidget *m_iso_from_nucs_opts;
+#endif
   BatchGuiAnaWidget *m_file_convert_opts;
   
 

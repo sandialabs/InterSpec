@@ -750,6 +750,28 @@ struct Options
 
   /** Optional title of the spectrum; used as title in HTML and text summaries. */
   std::string spectrum_title;
+
+  /** Optional filename (no path) of the spectrum file the foreground was loaded from.
+   Used in reports.  Empty if not known. */
+  std::string foreground_filename;
+
+  /** Optional filename (no path) of the spectrum file the background was loaded from.
+   Used in reports.  Empty if no background, or filename not known. */
+  std::string background_filename;
+
+  /** Sample numbers within `foreground_filename` that make up the foreground.
+
+   Reports use this to disambiguate which samples were summed for the foreground.  Convention:
+   leave empty when the sample structure is trivial (the file has only one sample, or the
+   foreground + background together cover every sample in the file).  Reports omit the
+   "Samples: {…}" annotation when this is empty.  See `set_input_spec_info(...)` for the
+   helper that applies this rule.
+   */
+  std::set<int> foreground_sample_numbers;
+
+  /** Sample numbers within `background_filename` that make up the background.  Same
+   non-empty-iff-non-trivial convention as `foreground_sample_numbers`. */
+  std::set<int> background_sample_numbers;
   
   
   /** Peak skew to apply to the entire spectrum.
@@ -828,7 +850,10 @@ struct Options
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
    - 20250130: incremented to 2 to handle multiple rel eff curves; can read backward compatible, but not write.
    */
-  static const int sm_xmlSerializationVersion = 2;
+  /** XML serialization version. v3 (2026-04-27) added `foreground_filename`,
+   `background_filename`, `foreground_sample_numbers`, and `background_sample_numbers`. v2
+   XML still parses (the new fields default to empty / no samples). */
+  static const int sm_xmlSerializationVersion = 3;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
@@ -847,6 +872,33 @@ struct Options
   static void equalEnough( const Options &lhs, const Options &rhs );
 #endif
 };//struct Options
+
+
+/** Populates `opts.foreground_filename / foreground_sample_numbers` (and the background equivalents)
+ with the trivial-omit rule applied for sample numbers.
+
+ Sample-number fields are left empty when "the file's sample structure is trivial":
+   - the foreground uses every sample in its file (single-sample file falls into this case), or
+   - the foreground and background share the same file and together use every sample in it.
+ In either case reports omit the "Samples: {…}" annotation.
+
+ Background fields are skipped entirely when `background_filename` is empty.
+
+ @param opts                       Options to fill.  Existing `spectrum_title` and other fields are unchanged.
+ @param foreground_filename        File the foreground was loaded from (basename, no path); empty if unknown.
+ @param foreground_total_samples   Every sample number present in the foreground file (i.e. `SpecMeas::sample_numbers()`).
+ @param foreground_samples         Sample numbers actually used to produce the foreground spectrum.
+ @param background_filename        File the background was loaded from; empty if no background.
+ @param background_total_samples   Every sample number present in the background file.
+ @param background_samples         Sample numbers actually used to produce the background spectrum.
+ */
+void set_input_spec_info( Options &opts,
+                          const std::string &foreground_filename,
+                          const std::set<int> &foreground_total_samples,
+                          const std::set<int> &foreground_samples,
+                          const std::string &background_filename,
+                          const std::set<int> &background_total_samples,
+                          const std::set<int> &background_samples );
 
 /** Struct to a sources fit relative activity.*/
 struct NuclideRelAct
@@ -1374,7 +1426,7 @@ struct RelActAutoSolution
    
    Will be valid only if `m_options.additional_br_uncert > 0.0`.
   */
-  size_t m_add_br_uncert_start_index = std::numeric_limits<size_t>::max();
+  size_t m_add_br_uncert_start_index = (std::numeric_limits<size_t>::max)();
   
   /** The energy ranges cooresponding to the additional peak amplitude uncertainty paramaters.
    

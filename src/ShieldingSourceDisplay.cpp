@@ -6201,24 +6201,26 @@ void ShieldingSourceDisplay::showCalcLog()
 
       // `m_lastFitResults->background_peaks` were scaled for normalization time (see `ShieldingSourceChi2Fcn::setBackgroundPeaks(...)`)
       //  (We _should_ change this in the future).
+      // `background_normalization_factor` is only set when there are background peaks; if
+      //  there are none (e.g., background spectrum loaded but no peaks fit) it remains -1.0.
       double back_norm = m_lastFitResults->background_normalization_factor;
-      assert( (back_norm > 0.0) && !IsInf(back_norm) && !IsNan(back_norm) );
+      const bool back_norm_valid = (back_norm > 0.0) && !IsInf(back_norm) && !IsNan(back_norm);
+      assert( m_lastFitResults->background_peaks.empty() || back_norm_valid );
 
-      for( PeakDef peak : m_lastFitResults->background_peaks )
+      if( back_norm_valid )
       {
-        if( (back_norm > 0.0) && !IsInf(back_norm) && !IsNan(back_norm) )
+        for( PeakDef peak : m_lastFitResults->background_peaks )
         {
           peak.setPeakArea( peak.peakArea() / back_norm );
           peak.setPeakAreaUncert( peak.peakAreaUncert() / back_norm );
-        }//if( (back_norm > 0.0) && !IsInf(back_norm) && !IsNan(back_norm) )
-
-        back_peaks_deque.push_back( make_shared<const PeakDef>(peak) );
-      }//for( PeakDef peak : m_lastFitResults->background_peaks )
+          back_peaks_deque.push_back( make_shared<const PeakDef>(peak) );
+        }//for( PeakDef peak : m_lastFitResults->background_peaks )
+      }//if( back_norm_valid )
 
       BatchInfoLog::add_hist_to_json( spec_obj, true, back_norm, background, back_file,
                                        background_samples, back_filename, &back_peaks_deque );
 
-      if( (back_norm <= 0.0) || IsInf(back_norm) || IsNan(back_norm) ) //JIC - dont actually expect
+      if( !back_norm_valid )
         back_norm = foreground->live_time() / background->live_time();
 
       data["background"]["Normalization"] = back_norm;

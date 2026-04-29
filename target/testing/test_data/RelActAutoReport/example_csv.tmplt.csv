@@ -1,0 +1,4 @@
+nuclide,curve,rel_activity,rel_activity_uncert,enrichment_pct,detector_counts
+{% for curve_acts in relative_activities %}{% for nuc in curve_acts.nuclides %}
+{{ nuc.name }},{{ curve_acts.curve_index }},{{ nuc.rel_activity }},{{ nuc.rel_activity_uncertainty }},{% if existsIn(nuc, "enrichment") %}{{ pct(nuc.enrichment, 6) }}{% endif %},{% if existsIn(nuc, "detector_counts") %}{{ nuc.detector_counts }}{% endif %}{{ "" }}
+{% endfor %}{% endfor %}

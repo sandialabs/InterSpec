@@ -1902,7 +1902,16 @@ void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
     if( (lower_ad < 0.0) || (upper_ad > max_ad) || (lower_ad >= upper_ad) )
       throw runtime_error( "Self-atten AD limits is invalid" );
 
-    lower_bounds[ad_index] = lower_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+    // Loosen the Ceres-level lower bound by 1e-5 g/cm^2 below the user-specified physical lower bound. 
+    //  When `lower_ad == 0`, the optimizer would otherwise see the lower bound as a hard active constraint 
+    //  exactly at zero, which has been observed on some spectra to traps Levenberg-Marquardt at a non-global 
+    //  local minimum. 
+    //  Loosening by 1e-5 g/cm^2 is small enough never to change a user's answer (well below any measurable 
+    //  AD), small enough to stay safely above the `-1e-3` throw threshold in `eval_physical_model_eqn_imp` 
+    //  (when lower bound is 0.0), and removes the trap mechanism.
+    const double effective_lower_ad = lower_ad - 1.0e-5;
+
+    lower_bounds[ad_index] = effective_lower_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
     upper_bounds[ad_index] = upper_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
   }else
   {
@@ -5258,21 +5267,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //
     //  According to a LLM, the trust region is an area in the parameter space.
     //   So we will need to revisit this value if we scale the various parameters to be closer to reasonable.
-    size_t num_fit_par = 0;
-    double par_area = 1.0;
     for( size_t i = 0; i < parameters.size(); ++i )
     {
       const auto const_pos = std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) );
       if( const_pos == end(constant_parameters) )
-      {
-        num_fit_par += 1;
-        par_area *= (fabs(parameters[i]) > 1.0) ? std::min(10.0,fabs(parameters[i])) : 1.0;
         cout << "Starting value of " << cost_functor->parameter_name(i) << ": " << parameters[i] << endl;
-      }
     }
-    cout << "Starting with parameter volume of " << par_area << " from " << num_fit_par << " paramaters." << endl;
-    // The below is pretty arbitrary - and only kinda sort optimized on one problem
-    ceres_options.initial_trust_region_radius = 100; //100.0*std::min( std::max( par_area, 10.0 ), 10.0*num_fit_par );
+
+    // Initial trust-region radius: Ceres library default of 1e4. An earlier
+    //  par_area-based heuristic produced values in [1e3, ~3.4e4] depending on
+    //  the problem; a sweep against a natural U exemplar (with the
+    //  setup_physical_model_shield_par bounds-loosening in place) showed all
+    //  values in the [1e3, 1e8] band give equivalent results, while values
+    //  below 1e3 risk the bounds-active local-minimum trap on shielding fits.
+    //  A fixed 1e4 is simpler and removes the per-problem heuristic.
+    ceres_options.initial_trust_region_radius = 1.0e4;
 
     ceres_options.max_trust_region_radius = 1e16;
 
@@ -5654,12 +5663,40 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const auto now_time = std::chrono::high_resolution_clock::now();
       const auto dt = 1.0*std::chrono::duration_cast<std::chrono::nanoseconds>(now_time - start_time).count();
       const double frac = cost_functor->m_nanoseconds_spent_in_eval / dt;
-      
+
       cout << "Spent " << 0.001*cost_functor->m_nanoseconds_spent_in_eval
       << " us in eval, and a total time of " << 0.001*dt << " us in fcnt - this is "
       << frac << " fraction of the time" << endl;
     }
-    
+
+
+    // Post-solve: clamp any Physical-Model shielding AD parameters that Ceres landed slightly below the 
+    // user-specified `lower_fit_areal_density`.
+    for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff = cost_functor->m_options.rel_eff_curves[rel_eff_index];
+      if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        continue;
+
+      const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter( rel_eff_index );
+
+      const auto clamp_ad_par = [&parameters]( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield,
+                                               const size_t ad_par_index ){
+        if( !shield || !shield->fit_areal_density )
+          return;
+        const double user_lower_ad_g_cm2 = shield->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+        const double user_lower_ceres = (user_lower_ad_g_cm2 / RelActCalc::ns_ad_ceres_mult)
+                                        + RelActCalc::ns_ad_ceres_offset;
+        if( parameters[ad_par_index] < user_lower_ceres )
+          parameters[ad_par_index] = user_lower_ceres;
+      };//clamp_ad_par lambda
+
+      clamp_ad_par( rel_eff.phys_model_self_atten, rel_eff_start + 1 );
+      for( size_t ext_i = 0; ext_i < rel_eff.phys_model_external_atten.size(); ++ext_i )
+        clamp_ad_par( rel_eff.phys_model_external_atten[ext_i], rel_eff_start + 2 + 2*ext_i + 1 );
+    }//for( each rel_eff_curve )
+
+
     ceres::Covariance::Options cov_options;
     // DENSE_SVD: accurate but slow (only to be used for small to moderate sized problems). Handles full-rank as well as rank deficient Jacobians.
     // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
@@ -5677,15 +5714,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       vector<pair<const double*, const double*> > covariance_blocks;
       covariance_blocks.emplace_back( pars, pars );
       
-      //auto add_cov_block = [&covariance_blocks, &pars]( size_t start, size_t num ){
-      //  for( size_t i = start; i < (start + num); ++i )
-      //    for( size_t j = start; j < i; ++j )
-      //      covariance_blocks.push_back( make_pair( pars + i, pars + j ) );
-      //};
-      
-      //add_cov_block( rel_eff_start, num_rel_eff_par );
-      //add_cov_block( acts_start, num_acts_par );
-      //add_cov_block( fwhm_start, num_fwhm_pars );
       solution.m_covariance.clear();
       solution.m_phys_units_cov.clear();
       solution.m_final_uncertainties.clear();
@@ -6444,7 +6472,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             answer.areal_density = (these_rel_eff_coefficients[start_index + 1] - RelActCalc::ns_ad_ceres_offset)
                                    * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
-            assert( answer.areal_density >= 0.0 );
+
+            // The Ceres-level lower bound is offset 1e-5 g/cm^2 below the user-specified physical lower bound 
+            //  (see setup_physical_model_shield_par); if in that loosening region, clamp the AD to physical region.
+            assert( answer.areal_density > -2.0e-5 * PhysicalUnits::g_per_cm2 );
+            if( answer.areal_density < 0.0 )
+              answer.areal_density = 0.0;
 
             if( uncertainties.size() > (this_rel_eff_start_index + start_index + 1) )
               answer.areal_density_uncert = uncertainties[this_rel_eff_start_index + start_index + 1]
@@ -10324,7 +10357,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }catch( std::exception &e )
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
-      assert( 0 );//asserting because it seems returning false here can be really damaging to fit convergence, so lets try to eliminate asserts as much as possible
+
+      // The throw threshold in `eval_physical_model_eqn_imp` is set generously
+      //  (-1e-3 g/cm^2 i.e. well below the bounds-loosening of -1e-5 g/cm^2);
+      //  reaching this branch under normal operation means something has gone
+      //  genuinely wrong, so assert loudly during development. Returning false
+      //  tells Ceres to reject the trial step and shrink the trust region,
+      //  which is the safe production-time recovery.
+      assert( 0 );
       return false;
     }
     
@@ -11431,6 +11471,10 @@ bool Options::operator==( const Options &rhs ) const
     && (fwhm_form == rhs.fwhm_form)
     && (fwhm_estimation_method == rhs.fwhm_estimation_method)
     && (spectrum_title == rhs.spectrum_title)
+    && (foreground_filename == rhs.foreground_filename)
+    && (background_filename == rhs.background_filename)
+    && (foreground_sample_numbers == rhs.foreground_sample_numbers)
+    && (background_sample_numbers == rhs.background_sample_numbers)
     && (skew_type == rhs.skew_type)
     && (lorentzian_xrays == rhs.lorentzian_xrays)
     && (additional_br_uncert == rhs.additional_br_uncert)
@@ -11910,7 +11954,27 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   append_attrib( fwhm_estimation_method_node, "remark", "Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency" );
 
   append_string_node( base_node, "Title", spectrum_title );
-  
+
+  // Foreground / background spectrum-file metadata (added v3, 2026-04-27).  Older v2 XML omits
+  // these and the loader treats them as empty.  Sample numbers are written as a comma-separated
+  // string of ints; an empty list is omitted.
+  if( !foreground_filename.empty() )
+    append_string_node( base_node, "ForegroundFilename", foreground_filename );
+  if( !background_filename.empty() )
+    append_string_node( base_node, "BackgroundFilename", background_filename );
+  if( !foreground_sample_numbers.empty() )
+  {
+    string s;
+    for( int n : foreground_sample_numbers ) { if( !s.empty() ) s += ","; s += std::to_string(n); }
+    append_string_node( base_node, "ForegroundSampleNumbers", s );
+  }
+  if( !background_sample_numbers.empty() )
+  {
+    string s;
+    for( int n : background_sample_numbers ) { if( !s.empty() ) s += ","; s += std::to_string(n); }
+    append_string_node( base_node, "BackgroundSampleNumbers", s );
+  }
+
   append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
   append_bool_node( base_node, "LorentzianXrays", lorentzian_xrays );
 
@@ -11957,7 +12021,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw std::logic_error( "invalid input node name" );
     
     // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
-    static_assert( Options::sm_xmlSerializationVersion == 2,
+    static_assert( Options::sm_xmlSerializationVersion == 3,
                   "needs to be updated for new serialization version." );
     
     check_xml_version( parent, Options::sm_xmlSerializationVersion );
@@ -11999,7 +12063,30 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 
     const rapidxml::xml_node<char> *title_node = XML_FIRST_NODE( parent, "Title" );
     spectrum_title = SpecUtils::xml_value_str( title_node );
-    
+
+    // Foreground / background spec-file metadata added in v3 (2026-04-27).  All four are optional
+    // for backwards compatibility with v2 XML; an empty value means "unknown".
+    foreground_filename.clear();
+    background_filename.clear();
+    foreground_sample_numbers.clear();
+    background_sample_numbers.clear();
+    if( const rapidxml::xml_node<char> *n = XML_FIRST_NODE( parent, "ForegroundFilename" ) )
+      foreground_filename = SpecUtils::xml_value_str( n );
+    if( const rapidxml::xml_node<char> *n = XML_FIRST_NODE( parent, "BackgroundFilename" ) )
+      background_filename = SpecUtils::xml_value_str( n );
+    {
+      const auto parse_samples = []( const rapidxml::xml_node<char> *n, std::set<int> &out ){
+        if( !n ) return;
+        const string s = SpecUtils::xml_value_str( n );
+        std::vector<int> ints;
+        if( !SpecUtils::split_to_ints( s.c_str(), s.size(), ints ) )
+          return;
+        out.insert( ints.begin(), ints.end() );
+      };
+      parse_samples( XML_FIRST_NODE( parent, "ForegroundSampleNumbers" ), foreground_sample_numbers );
+      parse_samples( XML_FIRST_NODE( parent, "BackgroundSampleNumbers" ), background_sample_numbers );
+    }
+
     // skew_type added 20231111; we wont require it.
     skew_type = PeakDef::SkewType::NoSkew;
     const rapidxml::xml_node<char> *skew_node = XML_FIRST_NODE( parent, "SkewType" );
@@ -12103,6 +12190,67 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "Options::fromXml(): " + string(e.what()) );
   }
 }//void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
+void set_input_spec_info( Options &opts,
+                          const std::string &foreground_filename,
+                          const std::set<int> &foreground_total_samples,
+                          const std::set<int> &foreground_samples,
+                          const std::string &background_filename,
+                          const std::set<int> &background_total_samples,
+                          const std::set<int> &background_samples )
+{
+  opts.foreground_filename = foreground_filename;
+  opts.background_filename = background_filename;
+
+  // Same-file convenience: if foreground+background read from the same file, the "fg+bg cover
+  // every sample in the file" trivial case is meaningful and lets us suppress sample numbers
+  // for both sides.
+  const bool same_file = !foreground_filename.empty()
+                         && (foreground_filename == background_filename);
+
+  // Foreground side
+  {
+    const bool fg_uses_all = !foreground_total_samples.empty()
+                             && (foreground_samples == foreground_total_samples);
+
+    bool fg_plus_bg_cover_all = false;
+    if( same_file && !foreground_total_samples.empty() )
+    {
+      std::set<int> u = foreground_samples;
+      u.insert( background_samples.begin(), background_samples.end() );
+      fg_plus_bg_cover_all = (u == foreground_total_samples);
+    }
+
+    if( fg_uses_all || fg_plus_bg_cover_all )
+      opts.foreground_sample_numbers.clear();
+    else
+      opts.foreground_sample_numbers = foreground_samples;
+  }
+
+  // Background side -- skip if no background, otherwise apply the same rule.
+  if( background_filename.empty() && background_samples.empty() )
+  {
+    opts.background_sample_numbers.clear();
+  }else
+  {
+    const bool bg_uses_all = !background_total_samples.empty()
+                             && (background_samples == background_total_samples);
+
+    bool fg_plus_bg_cover_all = false;
+    if( same_file && !background_total_samples.empty() )
+    {
+      std::set<int> u = foreground_samples;
+      u.insert( background_samples.begin(), background_samples.end() );
+      fg_plus_bg_cover_all = (u == background_total_samples);
+    }
+
+    if( bg_uses_all || fg_plus_bg_cover_all )
+      opts.background_sample_numbers.clear();
+    else
+      opts.background_sample_numbers = background_samples;
+  }
+}//void set_input_spec_info(...)
 
 
 size_t num_parameters( const FwhmForm eqn_form )
@@ -17010,7 +17158,19 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
 
   if( lhs.spectrum_title != rhs.spectrum_title )
     throw std::runtime_error( "Spectrum title in lhs and rhs are not the same" );
-  
+
+  if( lhs.foreground_filename != rhs.foreground_filename )
+    throw std::runtime_error( "Foreground filename in lhs and rhs are not the same" );
+
+  if( lhs.background_filename != rhs.background_filename )
+    throw std::runtime_error( "Background filename in lhs and rhs are not the same" );
+
+  if( lhs.foreground_sample_numbers != rhs.foreground_sample_numbers )
+    throw std::runtime_error( "Foreground sample numbers in lhs and rhs are not the same" );
+
+  if( lhs.background_sample_numbers != rhs.background_sample_numbers )
+    throw std::runtime_error( "Background sample numbers in lhs and rhs are not the same" );
+
   if( lhs.skew_type != rhs.skew_type )
     throw std::runtime_error( "Skew type in lhs and rhs are not the same" );
 

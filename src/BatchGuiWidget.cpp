@@ -186,8 +186,14 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   item = new WMenuItem( WString::tr( "bgw-peak-fit-opts-label" ), m_peak_fit_opts, WMenuItem::LoadPolicy::PreLoading );
   m_peak_fit_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
   m_batch_type_menu->addItem( item );
-  
-  
+
+#if( USE_REL_ACT_TOOL )
+  m_iso_from_nucs_opts = new BatchGuiIsotopicsByNuclidesWidget();
+  item = new WMenuItem( WString::tr( "bgw-iso-from-nucs-opts-label" ), m_iso_from_nucs_opts, WMenuItem::LoadPolicy::PreLoading );
+  m_iso_from_nucs_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
+  m_batch_type_menu->addItem( item );
+#endif
+
   m_file_convert_opts = new FileConvertOpts();
   item = new WMenuItem( WString::tr( "bgw-file-convert-opts-label" ), m_file_convert_opts, WMenuItem::LoadPolicy::PreLoading );
   m_file_convert_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
