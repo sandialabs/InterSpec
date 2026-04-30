@@ -48,14 +48,6 @@ option(
     "Selects options appropriate for the web in the future"
     OFF
 )
-option(
-    BUILD_FOR_CONTAINER_LIBC
-    "Configures the executable to be run as a Docker app in a libc-based container"
-)
-option(
-    BUILD_FOR_CONTAINER_MUSL
-    "Configures the executable to be run as a Docker app in a musl-based container"
-)
 if( hasParent )
   option( BUILD_AS_LOCAL_SERVER "Build for use as a server for localhost" OFF )
 else( hasParent )
