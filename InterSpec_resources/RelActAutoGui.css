@@ -442,7 +442,7 @@ padding-bottom: 1px;
   gap: 10px;
   padding: 5px;
   
-  overflow-y: hidden;
+  overflow: hidden;
 }
 
 .RelActAutoGui .NuclidesHolder,
