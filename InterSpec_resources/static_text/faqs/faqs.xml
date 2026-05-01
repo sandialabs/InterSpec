@@ -1376,6 +1376,60 @@
   </message>
 
   
+  <message id="customize-nuclide-search-categories" title="Customizing &quot;Nuclide Search&quot; categories">
+    <p>
+      The drop-down on the &quot;<b>Nuclide Search</b>&quot; tab that lets you restrict
+      results to a category - e.g. &quot;<b>Nuclides + X-rays</b>&quot;,
+      &quot;<b>Nuclides, X-rays, Reactions</b>&quot;, &quot;<b>Fluorescence x-rays</b>&quot;,
+      &quot;<b>Reactions</b>&quot;, &quot;<b>Medical Nuclides</b>&quot;,
+      &quot;<b>Industrial Nuclides</b>&quot;, &quot;<b>SNM</b>&quot;,
+      &quot;<b>NORM</b>&quot;, &quot;<b>Field Encountered Sources</b>&quot;, etc. -
+      is populated from the file
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/NuclideSearchCatagories.xml">data/NuclideSearchCatagories.xml</a>
+      that ships with <code>InterSpec</code>.  (The first entry,
+      &quot;<b>Nuclides + X-rays</b>&quot;, is hard-coded into <code>InterSpec</code>
+      itself and is always present.)
+    </p>
+    <p>
+      You can add your own categories - for example, a &quot;<b>My Favorites</b>&quot;
+      list restricted to a handful of nuclides you care about, a category limited to a
+      specific set of reactions, or a tighter half-life / branching-ratio threshold.  To
+      do so, copy the shipped <code>XML</code> file into the apps user data directory (see
+      <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b> for this location), edit
+      it, and restart <code>InterSpec</code>.  The user-data copy is loaded <em>after</em>
+      the built-in one, so your custom categories are <em>appended</em> to the existing
+      drop-down rather than replacing it.
+    </p>
+    <p>
+      Each <code>&lt;NucSearchCategory&gt;</code> entry can:
+      <ul>
+        <li>Choose what to search over: nuclide gammas / decay x-rays
+          (<code>AllowNucGammas</code>), element fluorescence x-rays
+          (<code>AllowFluorXrays</code>), nuclear reactions (<code>AllowReactions</code>),
+          alpha energies (<code>AllowAlphas</code>), or beta endpoints
+          (<code>AllowBetas</code>).
+        </li>
+        <li>Set a minimum relative branching ratio (<code>MinBr</code>) and/or minimum
+          half-life (<code>MinHl</code>).
+        </li>
+        <li>Restrict to a specific list of nuclides, elements, or reactions via the
+          <code>&lt;Nuclides&gt;</code>, <code>&lt;Elements&gt;</code>, and
+          <code>&lt;Reactions&gt;</code> sub-elements.  Use the same names you would type
+          into the &quot;Reference Photopeak&quot; tool.
+        </li>
+        <li>Optionally exclude progeny (<code>NoProgeny</code>), so only the parent
+          nuclide is considered.
+        </li>
+      </ul>
+    </p>
+    <p>
+      For full details and worked examples, see the comments in the shipped
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/NuclideSearchCatagories.xml">data/NuclideSearchCatagories.xml</a>
+      file.
+    </p>
+  </message>
+
+
   <message id="search-profile" title="How the &quot;Profile&quot; ordering is defined when searching for nuclides">
     <p>
       On the &quot;Nuclide Search&quot; tab, when you search on an energy, by default the results
