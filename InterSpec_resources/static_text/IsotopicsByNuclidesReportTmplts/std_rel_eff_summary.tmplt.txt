@@ -1,0 +1,58 @@
+{% if status.success %}
+Solution was successfully found.
+{% else if status.status_code == 1 %}
+Problem was not initialized.
+{% else if status.status_code == 2 %}
+Failed to setup problem.
+{% else if status.status_code == 3 %}
+Failed to solve problem.
+{% else if status.status_code == 4 %}
+User cancelled calculation.
+{% endif %}
+{% if length(status.error_message) > 0 %}
+
+Error: {{ status.error_message }}
+{% endif %}
+{% if length(warnings) > 0 %}
+
+{% for w in warnings %}
+Warning: {{ w }}
+{% endfor %}
+{% endif %}
+{% if status.success %}
+
+{% for curve in rel_eff_curves %}
+Rel. Eff. Eqn.{% if have_multiple_rel_eff %} {{ curve.index }}{% endif %}: y = {{ curve.equation_text }}
+{% endfor %}
+{% if energy_calibration.was_fit %}
+Energy calibration was fit for: {% for adj in energy_calibration.adjustments %}{% if not loop.is_first %}, {% endif %}{{ adj.type }}={{ printCompact(adj.physical_value, 6) }} {{ adj.units }}{% endfor %}{% if length(energy_calibration.deviation_pair_offsets) > 0 %}. DevPairs=[{% for dev in energy_calibration.deviation_pair_offsets %}{% if not loop.is_first %}, {% endif %}{{ dev.display }}{% endfor %}]{% endif %}
+{% endif %}
+{% for curve_acts in relative_activities %}
+
+{% if existsIn(curve_acts, "ratios") %}
+{% if length(curve_acts.ratios.pairs) > 0 %}
+Activity ratios{% if have_multiple_rel_eff %} {{ curve_acts.curve_index }}{% endif %}:
+{% for pair in curve_acts.ratios.pairs %}
+    {{ pair.numerator }} / {{ pair.denominator }}	act: {{ pair.activity_ratio_str }}{% if existsIn(pair, "mass_ratio_str") %},	mass: {{ pair.mass_ratio_str }}{% endif %}
+	{{ pair.denominator }} / {{ pair.numerator }}	act: {{ pair.activity_ratio_inv_str }}{% if existsIn(pair, "mass_ratio_inv_str") %},	mass: {{ pair.mass_ratio_inv_str }}{% endif %}
+{% endfor %}
+
+{% endif %}
+{% endif %}
+Relative Activities{% if have_multiple_rel_eff %} {{ curve_acts.curve_index }}{% endif %}:
+{% for nuc in curve_acts.nuclides %}
+    {{ nuc.name }} act: {{ printCompact(nuc.rel_activity, 5) }} +- {{ printCompact(nuc.rel_activity_uncertainty, 5) }}
+{% endfor %}
+{% if existsIn(curve_acts, "pu") %}
+
+Plutonium Enrichment{% if have_multiple_rel_eff %} {{ curve_acts.curve_index }}{% endif %}:
+{% for row in curve_acts.pu.rows %}
+    {{ row.nuclide }}{% if row.is_by_corr %} (by corr): {% else %}: {% endif %}{{ pct(row.mass_frac, 4) }}%{% if row.mass_frac_uncert >= 0 %} ± {{ pct(row.mass_frac_uncert, 4) }}%{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if existsIn(timing, "duration_str") %}
+
+Computation took {{ timing.duration_str }} with {{ timing.solve_calls }} function calls to solve, and {{ timing.cov_calls }} more for covariance
+{% endif %}

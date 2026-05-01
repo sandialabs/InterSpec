@@ -31,12 +31,18 @@
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/AppUtils.h"
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/BatchCommandLine.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#if( USE_REL_ACT_TOOL )
+#include "InterSpec/RelActCalc.h"
+#include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/BatchRelActAuto.h"
+#endif
 
 using namespace std;
 
@@ -120,6 +126,9 @@ int run_batch_command( int argc, char **argv )
   cl_desc.add_options()
   ("batch-peak-fit", "Batch-fit peaks.")
   ("batch-act-fit", "Batch shielding/source fit.")
+#if( USE_REL_ACT_TOOL )
+  ("batch-iso-from-nucs", "Batch isotopics-by-nuclides (RelActCalcAuto) analysis.")
+#endif
   ;
   
   po::variables_map cl_vm;
@@ -144,13 +153,22 @@ int run_batch_command( int argc, char **argv )
   
   const bool batch_peak_fit = cl_vm.count("batch-peak-fit");
   const bool batch_act_fit = cl_vm.count("batch-act-fit");
-  
+#if( USE_REL_ACT_TOOL )
+  const bool batch_iso_from_nucs = cl_vm.count("batch-iso-from-nucs");
+#else
+  const bool batch_iso_from_nucs = false;
+#endif
+
+  const int num_subcommands = (batch_peak_fit ? 1 : 0)
+                              + (batch_act_fit ? 1 : 0)
+                              + (batch_iso_from_nucs ? 1 : 0);
+
   if( batch_peak_fit || batch_act_fit )
   {
     try
     {
-      if( batch_peak_fit && batch_act_fit )
-        throw std::runtime_error( "You may not specify both 'batch-peak-fit' and 'batch-act-fit'." );
+      if( num_subcommands > 1 )
+        throw std::runtime_error( "You may specify only one of 'batch-peak-fit', 'batch-act-fit', and 'batch-iso-from-nucs'." );
       
       bool output_stdout, fit_all_peaks, refit_energy_cal, write_n42_with_results;
       bool use_exemplar_energy_cal, use_exemplar_energy_cal_for_background;
@@ -286,12 +304,18 @@ int run_batch_command( int argc, char **argv )
       po::options_description activity_cl_desc("Activity-fit options", term_width, min_description_length);
       activity_cl_desc.add_options()
       ("drf-file",  po::value<string>(&drf_file)->default_value(""),
-                    "Path to a file containing DRF to use (overrides DRF contained in exemplar N42 file)")
+                    "Path to a file containing DRF to use (overrides DRF contained in exemplar N42 file)."
+                    "  Synonym: --det-eff-file.")
+      ("det-eff-file", po::value<string>(&drf_file),
+                    "Synonym for --drf-file.")
       ("drf-name",  po::value<string>(&drf_name)->default_value(""),
                     "The name of a DRF to use; either within the file specified by 'drf-file'"
                     " (which may have multiple DRFs)"
                     ", or built-in, or previously used in InterSpec "
-                    "(overrides DRF contained in exemplar N42 file).")
+                    "(overrides DRF contained in exemplar N42 file)."
+                    "  Synonym: --det-eff-name.")
+      ("det-eff-name", po::value<string>(&drf_name),
+                    "Synonym for --drf-name.")
       ("distance", po::value<string>(&distance_override)->default_value(""),
                   "Optional distance to override default distance in exemplar.\n\t"
                   "Can not be specified with fixed geometry detector responses.\n\t"
@@ -531,10 +555,264 @@ int run_batch_command( int argc, char **argv )
       successful = false;
       cerr << "Error performing batch analysis: " << e.what() << endl;
     }
-  }else
+  }
+#if( USE_REL_ACT_TOOL )
+  else if( batch_iso_from_nucs )
+  {
+    try
+    {
+      if( num_subcommands > 1 )
+        throw std::runtime_error( "You may specify only one of 'batch-peak-fit', 'batch-act-fit', and 'batch-iso-from-nucs'." );
+
+      string ini_file_path, exemplar_path, exemplar_samples;
+      string out_dir, background_sub_file, background_samples;
+      string template_include_dir;
+      string rel_eff_config_file, drf_file, drf_name;
+      string energy_cal_type_str, fwhm_form_str, skew_type_str;
+      string background_subtract_str;
+      vector<string> input_files, report_templates, summary_report_templates;
+      bool to_stdout, write_n42_with_results, overwrite_output_files, create_json_output;
+
+      po::options_description iso_cl_desc("Allowed batch isotopics-by-nuclides options", term_width, min_description_length);
+      iso_cl_desc.add_options()
+      ("help,h", "Produce help message")
+      ("ini-file,i", po::value<string>(&ini_file_path)->default_value(""),
+        "Path to INI file with command-line option defaults.\n"
+        "If not specified, will look for \"InterSpec_batch.ini\" in the current directory.")
+      ("exemplar", po::value<string>(&exemplar_path)->default_value(""),
+        "N42-2012 file with stored RelActCalcAuto state and (optionally) detector"
+        " response function.  May be omitted if --rel-eff-config-file is supplied.")
+      ("exemplar-sample-nums", po::value<string>(&exemplar_samples)->default_value(""),
+        "Sample numbers in the exemplar file to use (e.g. \"1-3,8\")."
+        " Usually a single sample number.")
+      ("input-file", po::value<vector<string>>(&input_files)->multitoken(),
+        "One or more spectrum files to analyse.  Directories are expanded recursively.")
+      ("out-dir", po::value<string>(&out_dir)->default_value(""),
+        "Directory to write reports to; if empty, no files are written.")
+      ("overwrite-output-files", po::value<bool>(&overwrite_output_files)->implicit_value(true)->default_value(false),
+        "Allow overwriting existing report files.")
+      ("write-n42-with-results", po::value<bool>(&write_n42_with_results)->implicit_value(true)->default_value(false),
+        "Currently a placeholder - reserved for future use.")
+      ("result-json-output", po::value<bool>(&create_json_output)->implicit_value(true)->default_value(false),
+        "Write the JSON used by the report templates to a file.")
+      ("print", po::value<bool>(&to_stdout)->implicit_value(true)->default_value(false),
+        "Print non-HTML rendered report templates to stdout.")
+      ("back-sub-file", po::value<string>(&background_sub_file)->default_value(""),
+        "Path to a background spectrum file.  Overrides any background stored in the exemplar"
+        " and forces background subtraction on.")
+      ("background-sample-nums", po::value<string>(&background_samples)->default_value(""),
+        "Sample numbers in the background file to use; only applicable if --back-sub-file"
+        " is supplied.")
+      ("file-report-template", po::value<vector<string>>(&report_templates)->multitoken(),
+        "Per-file report template(s) - filename, absolute path, or shorthand"
+        " (\"html\"/\"txt\"/\"json\"/\"default\"/\"none\").")
+      ("summary-report-template", po::value<vector<string>>(&summary_report_templates)->multitoken(),
+        "Summary report template(s) - same accepted values as --file-report-template.")
+      ("report-template-include-dir", po::value<string>(&template_include_dir)->default_value("default"),
+        "Directory containing report templates.  Special values \"default\" and \"none\".")
+      ("rel-eff-config-file", po::value<string>(&rel_eff_config_file)->default_value(""),
+        "Path to a stand-alone <RelActCalcAuto> XML file (e.g. exported from the GUI"
+        " or written by hand) describing the rel-eff configuration.  When supplied,"
+        " fully replaces the RelActAutoGuiState that would otherwise be loaded from"
+        " the exemplar.")
+      ("drf-file", po::value<string>(&drf_file)->default_value(""),
+        "Path to a file containing a DRF to use (overrides any DRF inside the exemplar)."
+        " Synonym: --det-eff-file.")
+      ("det-eff-file", po::value<string>(&drf_file),
+        "Synonym for --drf-file.")
+      ("drf-name", po::value<string>(&drf_name)->default_value(""),
+        "Name of a DRF to use (within --drf-file, built-in, or previously seen in"
+        " InterSpec).  Synonym: --det-eff-name.")
+      ("det-eff-name", po::value<string>(&drf_name),
+        "Synonym for --drf-name.")
+      ("energy-cal-type", po::value<string>(&energy_cal_type_str)->default_value(""),
+        "Override the exemplar's energy-cal fit type.  One of \"none\", \"linear\", \"nonlinear\".")
+      ("background-subtract", po::value<string>(&background_subtract_str)->default_value(""),
+        "Override whether background subtraction is performed.  One of \"true\", \"false\".")
+      ("fwhm-form", po::value<string>(&fwhm_form_str)->default_value(""),
+        "Override the exemplar's FWHM form.  See RelActCalcAuto::FwhmForm for accepted values"
+        " (e.g. \"Gadras\", \"Polynomial_2\", \"Berstein_4\").")
+      ("skew-type", po::value<string>(&skew_type_str)->default_value(""),
+        "Override the exemplar's peak skew type.  See PeakDef::SkewType for accepted values.")
+      ;
+
+      try
+      {
+        po::parsed_options parsed_iso_opts
+            = po::command_line_parser(argc,argv)
+              .allow_unregistered()
+              .options(iso_cl_desc)
+              .run();
+        po::store( parsed_iso_opts, cl_vm );
+
+        if( ini_file_path.empty() && SpecUtils::is_file("InterSpec_batch.ini") )
+          ini_file_path = "InterSpec_batch.ini";
+
+        if( !ini_file_path.empty() )
+        {
+          try
+          {
+            ifstream input( ini_file_path.c_str() );
+            if( !input )
+              throw runtime_error( "Could not open config file '" + ini_file_path + "'" );
+            po::store( po::parse_config_file( input, iso_cl_desc, true ), cl_vm );
+            std::cout << "Using settings from '" << ini_file_path << "'" << endl;
+          }catch( std::exception &e )
+          {
+            std::cerr << "Error reading INI file: " << e.what() << " - skipping." << std::endl;
+          }
+        }
+
+        po::notify( cl_vm );
+      }catch( std::exception &e )
+      {
+        std::cerr << "Command-line argument error: " << e.what() << std::endl << std::endl;
+        std::cout << iso_cl_desc << std::endl;
+        return 1;
+      }
+
+      if( cl_vm.count("help") )
+      {
+        std::cout << "Available command-line options for batch isotopics-by-nuclides analysis:\n";
+        std::cout << iso_cl_desc << std::endl;
+        return 0;
+      }
+
+      if( exemplar_path.empty() && rel_eff_config_file.empty() )
+        throw runtime_error( "You must specify either --exemplar or --rel-eff-config-file." );
+
+      if( input_files.empty() )
+        throw runtime_error( "No input files specified." );
+
+      // Expand directories
+      vector<string> expanded_input_files;
+      for( const string &f : input_files )
+      {
+        if( SpecUtils::is_directory(f) )
+        {
+          const vector<string> sub = SpecUtils::recursive_ls(f);
+          expanded_input_files.insert( end(expanded_input_files), begin(sub), end(sub) );
+        }else
+        {
+          expanded_input_files.push_back( f );
+        }
+      }
+
+      set<int> exemplar_sample_nums;
+      if( !exemplar_samples.empty() )
+        exemplar_sample_nums = sequenceStrToSampleNums( exemplar_samples );
+
+      set<int> background_sample_nums;
+      if( !background_samples.empty() )
+        background_sample_nums = sequenceStrToSampleNums( background_samples );
+      if( !background_sample_nums.empty() && background_sub_file.empty() )
+        throw runtime_error( "You can not specify background sample numbers without specifying --back-sub-file." );
+
+      // Default to a sensible HTML report when output target is set but no template was given.
+      if( report_templates.empty() && (to_stdout || !out_dir.empty()) )
+        report_templates.push_back( "default" );
+      if( summary_report_templates.empty() && (to_stdout || !out_dir.empty()) )
+        summary_report_templates.push_back( "default" );
+
+      auto resolve_default = [](vector<string> &args, const vector<string> &def_args){
+        const auto eq = []( const string &v ){ return SpecUtils::iequals_ascii(v, "default"); };
+        const size_t num_defaults = std::count_if( begin(args), end(args), eq );
+        args.erase( std::remove_if( begin(args), end(args), eq), end(args) );
+        if( num_defaults )
+          args.insert( end(args), begin(def_args), end(def_args) );
+
+        const auto want_none = [](const string &v){ return SpecUtils::iequals_ascii(v, "none"); };
+        if( std::count_if( begin(args), end(args), want_none) )
+          args.clear();
+      };
+      resolve_default( report_templates, {"html"} );
+      resolve_default( summary_report_templates, {"html"} );
+
+      if( out_dir.empty() && !summary_report_templates.empty() )
+        throw runtime_error( "You must provide an output directory if specifying any summary report templates." );
+
+      // Build options
+      BatchRelActAuto::Options options;
+      options.output_dir = out_dir;
+      options.overwrite_output_files = overwrite_output_files;
+      options.to_stdout = to_stdout;
+      options.write_n42_with_results = write_n42_with_results;
+      options.create_json_output = create_json_output;
+      options.report_templates = report_templates;
+      options.summary_report_templates = summary_report_templates;
+      options.template_include_dir = template_include_dir;
+      options.background_subtract_file = background_sub_file;
+      options.background_subtract_samples = background_sample_nums;
+
+      // DRF override (loaded via the same helper used by batch-act-fit)
+      options.drf_override = BatchActivity::init_drf_from_name( drf_file, drf_name );
+
+      // Rel-eff config (state) override
+      if( !rel_eff_config_file.empty() )
+        options.state_override = BatchRelActAuto::load_state_from_xml_file( rel_eff_config_file );
+
+      // Scalar overrides
+      if( !energy_cal_type_str.empty() )
+      {
+        const string lower = SpecUtils::to_lower_ascii_copy( energy_cal_type_str );
+        if( lower == "none" || lower == "nofit" )
+          options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+        else if( lower == "linear" || lower == "linearfit" )
+          options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::LinearFit;
+        else if( lower == "nonlinear" || lower == "nonlinearfit" )
+          options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NonLinearFit;
+        else
+          throw runtime_error( "Invalid --energy-cal-type '" + energy_cal_type_str
+                               + "'.  Use 'none', 'linear', or 'nonlinear'." );
+      }
+
+      if( !fwhm_form_str.empty() )
+      {
+        try
+        {
+          options.fwhm_form = RelActCalcAuto::fwhm_form_from_str( fwhm_form_str.c_str() );
+        }catch( std::exception &e )
+        {
+          throw runtime_error( "Invalid --fwhm-form '" + fwhm_form_str + "': " + e.what() );
+        }
+      }
+
+      if( !skew_type_str.empty() )
+      {
+        try
+        {
+          options.skew_type = PeakDef::skew_from_string( skew_type_str );
+        }catch( std::exception &e )
+        {
+          throw runtime_error( "Invalid --skew-type '" + skew_type_str + "': " + e.what() );
+        }
+      }
+
+      if( !background_subtract_str.empty() )
+      {
+        const string lower = SpecUtils::to_lower_ascii_copy( background_subtract_str );
+        if( lower == "true" || lower == "1" || lower == "yes" || lower == "on" )
+          options.background_subtract = true;
+        else if( lower == "false" || lower == "0" || lower == "no" || lower == "off" )
+          options.background_subtract = false;
+        else
+          throw runtime_error( "Invalid --background-subtract '" + background_subtract_str
+                               + "'.  Use 'true' or 'false'." );
+      }
+
+      BatchRelActAuto::run_in_files( exemplar_path, nullptr, exemplar_sample_nums,
+                                     expanded_input_files, {}, options, nullptr );
+    }catch( std::exception &e )
+    {
+      successful = false;
+      cerr << "Error performing batch isotopics-by-nuclides analysis: " << e.what() << endl;
+    }
+  }
+#endif //USE_REL_ACT_TOOL
+  else
   {
     successful = false;
-    cerr << "Please specify either 'batch-peak-fit', or 'batch-act-fit'" << endl;
+    cerr << "Please specify one of 'batch-peak-fit', 'batch-act-fit', or 'batch-iso-from-nucs'" << endl;
   }//if( batch_peak_fit || batch_act_fit )
   
 

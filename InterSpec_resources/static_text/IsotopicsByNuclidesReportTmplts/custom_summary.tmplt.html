@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Isotopics Report - {{ safe_html(spectrum_title) }}</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: #222;
+    margin: 1.5em 2em;
+    max-width: 1000px;
+  }
+  h1 {
+    font-size: 1.3em;
+    margin: 0 0 0.2em 0;
+    border-bottom: 1px solid #888;
+    padding-bottom: 0.2em;
+  }
+  h2 {
+    font-size: 1.05em;
+    margin: 1.4em 0 0.4em 0;
+    color: #335;
+    border-bottom: 1px dotted #aac;
+    padding-bottom: 0.15em;
+  }
+  h3 {
+    font-size: 0.95em;
+    margin: 0.8em 0 0.3em 0;
+    color: #557;
+  }
+  .header-meta {
+    font-size: 0.9em;
+    color: #555;
+    margin-bottom: 0.6em;
+  }
+  .header-meta span {
+    margin-right: 1.4em;
+  }
+  table {
+    border-collapse: collapse;
+    margin: 0.3em 0 0.8em 0;
+    font-size: 0.92em;
+  }
+  th, td {
+    border: 1px solid #cdd;
+    padding: 3px 8px;
+    text-align: right;
+    vertical-align: top;
+  }
+  th {
+    background: #eef2f6;
+    font-weight: 600;
+    text-align: center;
+  }
+  td.txt, th.txt {
+    text-align: left;
+  }
+  tr.floating td {
+    color: #888;
+    font-style: italic;
+  }
+  .nowrap {
+    white-space: nowrap;
+  }
+  .empty-note {
+    color: #777;
+    font-style: italic;
+    margin: 0.2em 0 0.6em 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Isotopics-by-Nuclides Report &mdash; {{ safe_html(spectrum_title) }}</h1>
+<div class="header-meta">
+  <span><strong>&chi;&sup2;/dof:</strong> {{ chi2_str }} / {{ dof }} = {{ chi2_per_dof_str }}</span>
+  <span><strong>Peaks fit:</strong> {{ length(peaks) }}</span>
+</div>
+
+<h2>Relative Activities</h2>
+{% for curve_acts in relative_activities %}
+  {% if have_multiple_rel_eff %}
+    <h3>Curve {{ curve_acts.curve_index }}</h3>
+  {% endif %}
+  <table>
+    <thead>
+      <tr>
+        <th class="txt">Nuclide</th>
+        <th>Relative Activity</th>
+        <th>Age</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for nuc in curve_acts.nuclides %}
+      <tr>
+        <td class="txt">{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}</td>
+        <td class="nowrap">{{ printCompact(nuc.rel_activity, 6) }} &plusmn; {{ printCompact(nuc.rel_activity_uncertainty, 4) }}</td>
+        <td class="nowrap">
+          {% if existsIn(nuc, "age_str") %}{{ nuc.age_str }}{% else %}--{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endfor %}
+
+<h2>Per-Element Mass-Fraction Breakdown</h2>
+{% set any_multi_element = false %}
+{% for curve_acts in relative_activities %}
+  {% for nuc in curve_acts.nuclides %}
+    {% if existsIn(nuc, "enrichment") %}
+      {% if nuc.enrichment <= 0.999 %}
+        {% if loop.is_first %}
+          {% if have_multiple_rel_eff %}
+<h3>Curve {{ curve_acts.curve_index }}</h3>
+          {% endif %}
+<table>
+  <thead>
+    <tr>
+      <th class="txt">Nuclide</th>
+      <th>Mass Fraction of Element</th>
+    </tr>
+  </thead>
+  <tbody>
+        {% endif %}
+    <tr>
+      <td class="txt">{{ nuc.name }}</td>
+      <td class="nowrap">{{ pct(nuc.enrichment, 4) }}%
+        {% if nuc.has_enrichment_uncert %} &plusmn; {{ pct(nuc.enrichment_uncert, 3) }}%{% endif %}
+      </td>
+    </tr>
+        {% if loop.is_last %}
+  </tbody>
+</table>
+        {% endif %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+
+<h2>Fitted Peaks</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Energy (keV)</th>
+      <th class="txt">Nuclide</th>
+      <th>Peak Area</th>
+      <th>Fit Rel. Eff.</th>
+      <th>ROI (keV)</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in peaks %}
+    <tr{% if p.is_floating %} class="floating"{% endif %}>
+      <td class="nowrap">{{ printFixed(p.energy, 2) }}</td>
+      <td class="txt">
+        {% if p.is_floating %}&mdash;{% else %}{{ p.nuclide }}{% endif %}
+      </td>
+      <td class="nowrap">{{ printCompact(p.amplitude, 6) }} &plusmn; {{ printCompact(p.amplitude_uncertainty_percent, 3) }}%</td>
+      <td class="nowrap">
+        {% if p.is_floating %}
+          &mdash;
+        {% else %}
+          {% if p.fit_rel_eff >= 0 %}{{ printCompact(p.fit_rel_eff, 5) }}{% else %}&mdash;{% endif %}
+        {% endif %}
+      </td>
+      <td class="nowrap">{{ printFixed(p.continuum.lower_energy, 1) }}&ndash;{{ printFixed(p.continuum.upper_energy, 1) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+</body>
+</html>

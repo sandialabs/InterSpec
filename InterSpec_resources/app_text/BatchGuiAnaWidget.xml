@@ -135,6 +135,16 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   <message id="bgw-override-distance">Override Distance</message>
   <message id="bgw-distance-label">Distance:</message>
   
+  <!-- Isotopics-by-nuclides analysis strings -->
+  <message id="bgw-rel-eff-config-label">Rel. Eff. Config Override</message>
+  <message id="bgw-use-rel-eff-config-override">Use custom rel-eff config (XML)</message>
+  <message id="bgw-iso-override-energy-cal">Override energy-cal type</message>
+  <message id="bgw-iso-override-fwhm-form">Override FWHM form</message>
+  <message id="bgw-iso-override-skew-type">Override skew type</message>
+  <message id="bgw-no-ana-iso-no-state-or-exemplar">No exemplar with stored RelActCalcAuto state, and no rel-eff config XML supplied.</message>
+  <message id="bgw-no-ana-iso-no-state-in-exemplar">Exemplar has no stored RelActCalcAuto state - either use a different exemplar or supply a rel-eff config XML.</message>
+  <message id="bgw-no-ana-iso-need-drf">A detector response function is required (Physical-model rel-eff curve or DRF-seeded FWHM method) but none is available.</message>
+
   <!-- Error and completion messages -->
   <message id="bgw-no-exemplar-msg">No exemplar spectrum is available. Please select a foreground spectrum or upload an exemplar file.</message>
 </messages> 

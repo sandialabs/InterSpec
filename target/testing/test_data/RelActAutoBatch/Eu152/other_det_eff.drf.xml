@@ -1,0 +1,22 @@
+<DetectorPeakResponse version="3">
+	<Name>ORTEC Detective-EX200_LANL_050cm (55%)</Name>
+	<Description>85 x 30-mm, SimpleMass - from Relative Eff. File</Description>
+	<DetectorDiameter>8.50000000E+01</DetectorDiameter>
+	<DetectorSetback>5.00000000E+00</DetectorSetback>
+	<EfficiencySource>UserAddedRelativeEfficiencyDrf</EfficiencySource>
+	<EfficiencyEnergyUnits>1000</EfficiencyEnergyUnits>
+	<ResolutionForm>Undefined</ResolutionForm>
+	<EfficiencyForm>ExpOfLogPowerSeries</EfficiencyForm>
+	<ExpOfLogPowerSeriesCoeffs>-8.47293 -0.868574 0.0642071 -0.0598394 -0.0555386 -0.00359457</ExpOfLogPowerSeriesCoeffs>
+	<Hash>14405408577563435828</Hash>
+	<ParentHash>0</ParentHash>
+	<Flags>0</Flags>
+	<LowerEnergy>5.95000000E+01</LowerEnergy>
+	<UpperEnergy>3.00000000E+03</UpperEnergy>
+	<Geometry>FAR-FIELD-ABSOLUTE</Geometry>
+	<AbsoluteEfficiencyDistance>5.00000000E+02</AbsoluteEfficiencyDistance>
+	<AbsEffCorrectForAirAtten>1</AbsEffCorrectForAirAtten>
+	<CreationTimeUtc>1777322180</CreationTimeUtc>
+	<LastUsedTimeUtc>1777322180</LastUsedTimeUtc>
+</DetectorPeakResponse>
+

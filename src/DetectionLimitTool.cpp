@@ -31,6 +31,7 @@
 #include <boost/math/tools/minima.hpp>
 #include <boost/math/distributions/chi_squared.hpp>
 
+#include <Wt/Utils>
 #include <Wt/WText>
 #include <Wt/WImage>
 #include <Wt/WLabel>
@@ -2155,6 +2156,8 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
             if( result.source_counts < 0 )
               nom_counts_str = WString::tr("dlt-lt-zero-counts").toUTF8();
 
+            nom_counts_str = Wt::Utils::htmlEncode( nom_counts_str, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
+
             nom_counts_str += " <span style=\"font-size: smaller;\">" + WString::tr("dlt-below-lc").toUTF8() + "</span>";
             cell = table->elementAt( table->rowCount(), 0 );
             new WText( obs_counts_label, cell );
@@ -2172,6 +2175,8 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
               if( nominal_act < 0 )
                 nom_act_str = WString::tr("dlt-lt-zero-activity").arg(PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
                           + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom )).toUTF8();
+
+              nom_act_str = Wt::Utils::htmlEncode( nom_act_str, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
 
               nom_act_str += " <span style=\"font-size: smaller;\">" + WString::tr("dlt-below-lc").toUTF8() + "</span>";
               cell = table->elementAt( table->rowCount(), 0 );
