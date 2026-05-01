@@ -12,7 +12,7 @@ To compile the InterSpec code, and package the Electron app, with the manually c
 npm install -g cmake-js 
 
 # For macOS only, you may want to define a deployment target
-export MACOSX_DEPLOYMENT_TARGET=10.13
+export MACOSX_DEPLOYMENT_TARGET=11.0
 
 cd /path/to/InterSpec/target/electron
 
@@ -61,13 +61,15 @@ npm start
 
 
 # To create a packaged version of InterSpec, you
-# need to install electron-packager
-npm install electron-packager
+# need to install @electron/packager
+npm install --save-dev @electron/packager
 
 
 # Then to actually create the distributable package, run on of the following
 # (assuming your build directory is 'build_macos', 'build_win', or 'build_linux', 
 #  otherwise you need to edit path in package.json)
+# Note: package-mac produces an arm64 (Apple Silicon) build; Intel macOS is no
+# longer supported.
 npm run package-mac
 npm run package-win
 npm run package-linux
@@ -78,15 +80,16 @@ cp ../../NOTICE.html ./release-builds/InterSpec-PLATFORM-x64/
 The resulting Electron package seems to run fine on a number of Linux distributions, but to run on some systems you may need to install a couple packages from the package manager on the end-user system:
 
 ```bash
-apt-get install libnss3
-apt-get install libxss1
+apt-get install libnss3 libxss1 libasound2 libdrm2 libgbm1 libgtk-3-0 libxkbcommon0 libatk-bridge2.0-0 libcups2
 ```
 
-If you are cross-compiling, you can, for example, build the Linux package from macOS using a command like 
+If you are cross-compiling, you can, for example, build the Linux package from macOS using a command like
 
 ```bash
 npm --target_arch=x64 --target_platform=linux run package-linux
 ```
+
+Note: cross-compiling to macOS arm64 from a Linux host is not supported here, as our native addon needs an arm64 toolchain in addition to whatever `@electron/packager` would do.
 
 
 ## Building with CMake fetched and compiled dependencies
@@ -112,7 +115,7 @@ cd /interspec/target/electron/
 npm install -g cmake-js
 npm install --save-dev node-addon-api --arch=x64
 npm install electron --arch=x64
-npm install electron-packager
+npm install --save-dev @electron/packager
 
 # Configure and build the node-add-on shared library
 #  This step may take half and hour or more to clone into the Boost and Wt github repos, and 
@@ -144,7 +147,7 @@ cd build_interspec
 git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_linux_electron_build
 mkdir build_electron
 mkdir build_working_dir
-docker run --rm -it -v `pwd`/InterSpec_code:/interspec -v `pwd`/build_electron/:/build_app -v `pwd`/build_working_dir:/build_working_dir quay.io/pypa/manylinux2014_x86_64:latest /interspec/target/electron/Docker/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
+docker run --rm -it -v `pwd`/InterSpec_code:/interspec -v `pwd`/build_electron/:/build_app -v `pwd`/build_working_dir:/build_working_dir quay.io/pypa/manylinux_2_28_x86_64:latest /interspec/target/electron/Docker/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
 #Then results will then be in build_working_dir/InterSpec-linux-x64
 ```
 
@@ -155,11 +158,12 @@ git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_linux_
 cd InterSpec_linux_electron_build/
 
 # Grab the the oldest (currently) supported manylinux image to your machine
-docker pull quay.io/pypa/manylinux2014_x86_64:latest
+# (Electron 28+ requires glibc 2.28, so we use manylinux_2_28)
+docker pull quay.io/pypa/manylinux_2_28_x86_64:latest
 
 # Start a shell session within the image, mapping the InterSpec source 
 #  directory to /interspec.  We'll also map port 8081 for testing.
-docker run --rm -it -v `pwd`:/interspec quay.io/pypa/manylinux2014_x86_64:latest bash
+docker run --rm -it -v `pwd`:/interspec quay.io/pypa/manylinux_2_28_x86_64:latest bash
 
 # Get the dependancies we need to build InterSpec
 yum update
@@ -176,7 +180,7 @@ npm install cmake-js -g
 npm install --save-dev node-addon-api --arch=x64
 npm install node-api-headers
 npm install electron --arch=x64
-npm install electron-packager
+npm install --save-dev @electron/packager
 
 
 # This next command will take like 10 or 20 minutes to clone into the boost and Wt repositories
@@ -195,8 +199,44 @@ cp ../../NOTICE.html ./release-builds/InterSpec-linux-x64/
 ```
 
 
+## Minimum supported OS
+Electron 41 sets these floors for end-user systems:
+- macOS 11+ (Big Sur), Apple Silicon (arm64) only — Intel macOS is not built.
+- Windows 10 1809 (build 17763) or newer, x64 only — ia32 / 32-bit Windows is no longer built (Electron dropped it after Electron 21).
+- Linux x64 with glibc 2.28+ — RHEL 8, Ubuntu 20.04+, Fedora 30+, Debian 11+. Older distros (CentOS 7, Ubuntu 18.04, etc.) are not supported.
+
+
+## Code signing & notarization (macOS)
+The `npm run package-mac` script signs and notarizes the produced `.app` in one shot via `@electron/packager` (which delegates to `@electron/osx-sign` and `@electron/notarize`).
+
+### One-time setup: store the notarization credential in the macOS keychain
+Apple's `notarytool` reads notarization credentials from a named profile in the login keychain, so the Apple-ID password never has to live in environment variables, shell history, or build scripts.
+
+```bash
+xcrun notarytool store-credentials "interspec-notary" \
+  --apple-id <your-apple-id> \
+  --team-id <YOUR_TEAM_ID> \
+  --password <app-specific-password>
+```
+
+Generate the app-specific password at <https://appleid.apple.com/> → "Sign-In and Security" → "App-Specific Passwords"; do **not** use your iCloud password. The first time you run `store-credentials` macOS will prompt for your login-keychain password (i.e. your Mac account password) so it can encrypt the credential at rest. After that, no further prompts.
+
+To use a different profile name (e.g. when sharing a build machine), pass it via the `NOTARY_KEYCHAIN_PROFILE` env var when running the package script; both `package-mac` and `codesign-electron.sh` read it.
+
+### Signing identity
+The signing certificate isn't a secret in the same way and is identified by name, so it's still passed via env var:
+
+| Variable | Purpose |
+| --- | --- |
+| `OSX_SIGN_IDENTITY` | Developer ID Application identity (e.g. `Developer ID Application: Your Org (TEAMID)`). |
+| `NOTARY_KEYCHAIN_PROFILE` | (optional) Keychain profile name. Defaults to `interspec-notary`. |
+
+### Re-signing an existing bundle
+For one-off re-signing of an existing bundle (out-of-band from the packaging step), `target/electron/macOS/codesign-electron.sh path/to/InterSpec.app` is a thin wrapper around the same tooling and uses the same keychain profile.
+
+
 ## Linux Considerations
-The `InterSpec` module is really a shared library that node.js loads, therefore you need the `-fPIC` C/C++ compiler flag enabled not just for the `InterSpec` code, but for all of the static libraries you link it against, including boost, Wt, and zlib - which isnt the default when compiling static libraries for any of them, so when building them you may want to add `-fPIC -std=c++11` flags to the flags.
+The `InterSpec` module is really a shared library that node.js loads, therefore you need the `-fPIC` C/C++ compiler flag enabled not just for the `InterSpec` code, but for all of the static libraries you link it against, including boost, Wt, and zlib - which isnt the default when compiling static libraries for any of them, so when building them you may want to add `-fPIC` to the flags.
 
 
 ## Future Work
