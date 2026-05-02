@@ -14,7 +14,7 @@ trap 'handle_error $LINENO' ERR
 #  - build working directory mapped to /build_working_dir
 # For example: ./build_app.sh /interspec /build_app /build_working_dir
 # 
-# This script is intended to be run from within the `quay.io/pypa/manylinux2014_x86_64` Docker image, for example, to build InterSpec you could
+# This script is intended to be run from within the `quay.io/pypa/manylinux_2_28_x86_64` Docker image (Electron 28+ requires glibc 2.28+), for example, to build InterSpec you could
 #  cd /tmp
 #  mkdir build_interspec
 #  cd build_interspec
@@ -48,7 +48,7 @@ yum update -y
 yum install -y npm zip
 # Use the 'n' package to install a fairly modern version of npm, by default we are on like version 6 or 8, which is too old to run some of the packages we need
 npm install -g n
-n 20.18.0
+n 22.11.0
 # Just in case, make sure to pick up latest node version
 hash -r
 # The default version of npm in manylinux_2_28_x86_64 is 6.14.11, which doesnt support the `exec` command, so we'll locally install a newer version of npm
@@ -61,7 +61,7 @@ npm install -g cmake-js
 echo "Will install local npm packages"
 npm install --save-dev node-addon-api --arch=x64
 npm install electron --arch=x64
-npm install --save-dev electron-packager
+npm install --save-dev @electron/packager
 
 echo "CWD"
 pwd

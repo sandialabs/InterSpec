@@ -48,14 +48,6 @@ option(
     "Selects options appropriate for the web in the future"
     OFF
 )
-option(
-    BUILD_FOR_CONTAINER_LIBC
-    "Configures the executable to be run as a Docker app in a libc-based container"
-)
-option(
-    BUILD_FOR_CONTAINER_MUSL
-    "Configures the executable to be run as a Docker app in a musl-based container"
-)
 if( hasParent )
   option( BUILD_AS_LOCAL_SERVER "Build for use as a server for localhost" OFF )
 else( hasParent )
@@ -579,6 +571,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActAutoGuiFreePeak.cpp
         src/RelActAutoReport.cpp
         src/RelActAutoDev.cpp
+        src/BatchRelActAuto.cpp
         src/ShieldingSourceFitPlot.cpp
   )
   
@@ -602,6 +595,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActAutoGuiFreePeak.h
         InterSpec/RelActAutoReport.h
         InterSpec/RelActAutoDev.h
+        InterSpec/BatchRelActAuto.h
   )
 endif( USE_REL_ACT_TOOL )
 
@@ -750,7 +744,7 @@ SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
 if(WIN32)
   target_compile_options( InterSpecLib PUBLIC /bigobj )
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
+  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS -D NOMINMAX )
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
         
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )

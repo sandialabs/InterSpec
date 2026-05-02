@@ -1,0 +1,5 @@
+Energy (keV)  Nuclide   Yield     Amplitude        FitRelEff   Cont. range
+------------  --------  --------  ---------------  ----------  -----------------
+{% for p in peaks %}
+{{ printFixed(p.energy, 2) }}        {% if p.is_floating %}--        {% else %}{{ p.nuclide }}    {% endif %}{% if p.is_floating %}--          {% else %}{{ printCompact(p.yield, 3) }}    {% endif %}{{ printCompact(p.amplitude, 6) }} ± {{ printCompact(p.amplitude_uncertainty_percent, 2) }}%   {% if p.is_floating %}--          {% else %}{{ printCompact(p.fit_rel_eff, 6) }}    {% endif %}{{ printFixed(p.continuum.lower_energy, 1) }}–{{ printFixed(p.continuum.upper_energy, 1) }}
+{% endfor %}

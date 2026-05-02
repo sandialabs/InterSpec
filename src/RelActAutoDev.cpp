@@ -33,6 +33,8 @@
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 
+#include "ceres/jet.h"
+
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -49,6 +51,7 @@
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/RelActCalcAuto_EnergyCal_imp.hpp"
 
 using namespace std;
 
@@ -403,7 +406,9 @@ void example_manual_phys_model()
 
   ofstream out_html( "manual_phys_model_result.html" );
   std::vector<std::shared_ptr<const PeakDef>> disp_peaks( orig_peaks->begin(), orig_peaks->end() );
-  sol.print_html_report( out_html, "Manual Phys Model", meas, disp_peaks, nullptr, 0.0 );
+  std::vector<std::shared_ptr<const PeakDef>> background_peaks;
+
+  sol.print_html_report( out_html, "Manual Phys Model", meas, disp_peaks, nullptr, 0.0, background_peaks );
 
 
   cout << "Solution: " << endl;
@@ -1891,8 +1896,235 @@ void leu_heu_ana()
 }//void leu_heu_ana()
 
 
+/** Reproducer for the RelActAuto free-Fe-shielding χ² bug.
+
+ Reads the natural-U spectrum `unat.n42` (contains foreground, background, and the DRF used
+ in the GUI) and the `HPGe U (120-1001 keV)` preset, and performs two fits:
+
+   Run A: preset as-is (external Fe "fit" enabled).  Currently produces > 1.2 % enrichment
+          and χ²/dof ≈ 411/241 despite Fe converging near zero - this is the symptom.
+   Run B: same preset with Fe forced to 0 mm and not fit.  Produces χ²/dof ≈ 186/243.
+
+ The free-parameter fit (Run A) cannot legitimately have worse χ² than Run B, since Run B's
+ solution is in Run A's feasible set.  Run A is therefore terminating above the true minimum,
+ and this function prints enough information to start bisecting why.
+*/
+void unat_hpge_fe_example()
+{
+  using namespace std;
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string specfile_path = "/Users/wcjohns/coding/InterSpec_master/unat.n42";
+  const string preset_xml_path = SpecUtils::append_path( data_dir, "rel_act/HPGe U (120-1001 keV).xml" );
+
+  // -- Load spectrum --
+  auto specmeas = make_shared<SpecMeas>();
+  if( !specmeas->load_file( specfile_path, SpecUtils::ParserType::Auto ) )
+  {
+    cerr << "unat_hpge_fe_example: failed to load '" << specfile_path << "' - aborting." << endl;
+    return;
+  }
+
+  shared_ptr<const SpecUtils::Measurement> foreground;
+  shared_ptr<const SpecUtils::Measurement> background;
+  for( const shared_ptr<const SpecUtils::Measurement> &m : specmeas->measurements() )
+  {
+    if( !m )
+      continue;
+    if( m->source_type() == SpecUtils::SourceType::Background )
+      background = m;
+    else if( !foreground )
+      foreground = m;
+  }
+  assert( foreground );
+  if( !foreground )
+  {
+    cerr << "unat_hpge_fe_example: no foreground measurement in '" << specfile_path << "' - aborting." << endl;
+    return;
+  }
+
+  shared_ptr<const DetectorPeakResponse> det = specmeas->detector();
+  assert( det );
+  if( !det )
+  {
+    cerr << "unat_hpge_fe_example: no detector in '" << specfile_path << "' - aborting." << endl;
+    return;
+  }
+
+  // -- Load preset XML --
+  // The file object owns the buffer that rapidxml parses in-place, so it must outlive
+  // every access to setup_doc.
+  std::unique_ptr<rapidxml::file<char>> setup_input_file;
+  rapidxml::xml_document<char> setup_doc;
+  try
+  {
+    setup_input_file = std::make_unique<rapidxml::file<char>>( preset_xml_path.c_str() );
+    setup_doc.parse<rapidxml::parse_trim_whitespace>( setup_input_file->data() );
+  }catch( const std::exception &e )
+  {
+    cerr << "unat_hpge_fe_example: failed to parse '" << preset_xml_path << "': " << e.what() << endl;
+    return;
+  }
+
+  const rapidxml::xml_node<char> *setup_base_node = setup_doc.first_node( "RelActCalcAuto" );
+  assert( setup_base_node );
+  if( !setup_base_node )
+  {
+    cerr << "unat_hpge_fe_example: preset XML missing RelActCalcAuto root node - aborting." << endl;
+    return;
+  }
+
+  RelActCalcAuto::RelActAutoGuiState state_A;
+  try
+  {
+    state_A.deSerialize( setup_base_node );
+  }catch( const std::exception &e )
+  {
+    cerr << "unat_hpge_fe_example: deSerialize failed: " << e.what() << endl;
+    return;
+  }
+
+  // Deep copy for Run B (the Options struct owns shared_ptr shields; we'll make a new one).
+  RelActCalcAuto::RelActAutoGuiState state_B = state_A;
+
+  // Helper to print the key numbers from a solution.
+  const auto summarize = []( const char *label, const RelActCalcAuto::RelActAutoSolution &sol,
+                             const SandiaDecay::Nuclide *u235 )
+  {
+    cout << "\n==== " << label << " ====" << endl;
+    cout << "  Status:               " << static_cast<int>(sol.m_status) << endl;
+    if( !sol.m_error_message.empty() )
+      cout << "  Error message:        " << sol.m_error_message << endl;
+    cout << "  chi2:                 " << sol.m_chi2 << endl;
+    cout << "  dof:                  " << sol.m_dof << endl;
+    if( sol.m_dof > 0 )
+      cout << "  chi2/dof:             " << (sol.m_chi2 / static_cast<double>(sol.m_dof)) << endl;
+    cout << "  num function evals:   " << sol.m_num_function_eval_solution << endl;
+
+    for( size_t re_i = 0; re_i < sol.m_rel_activities.size(); ++re_i )
+    {
+      pair<double,std::optional<double>> enrich = sol.mass_enrichment_fraction( u235, re_i );
+      cout << "  U-235 enrichment[" << re_i << "]: " << (100.0*enrich.first) << " %";
+      if( enrich.second.has_value() )
+        cout << "  (± " << (100.0*(*enrich.second)) << " %)";
+      cout << endl;
+    }
+
+    for( size_t re_i = 0; re_i < sol.m_phys_model_results.size(); ++re_i )
+    {
+      const auto &phys = sol.m_phys_model_results[re_i];
+      if( !phys.has_value() )
+        continue;
+
+      if( phys->self_atten.has_value() )
+      {
+        const auto &s = *phys->self_atten;
+        const double ad_gpcm2 = s.areal_density / PhysicalUnits::g_per_cm2;
+        cout << "  self-atten AD:        " << ad_gpcm2 << " g/cm^2";
+        if( s.material )
+          cout << "  (" << (s.areal_density / s.material->density) / PhysicalUnits::mm << " mm " << s.material->name << ")";
+        cout << endl;
+      }
+      for( size_t ext_i = 0; ext_i < phys->ext_shields.size(); ++ext_i )
+      {
+        const auto &e = phys->ext_shields[ext_i];
+        const double ad_gpcm2 = e.areal_density / PhysicalUnits::g_per_cm2;
+        cout << "  ext-atten[" << ext_i << "] AD:      " << ad_gpcm2 << " g/cm^2";
+        if( e.material )
+          cout << "  (" << (e.areal_density / e.material->density) / PhysicalUnits::mm << " mm " << e.material->name << ")";
+        cout << "  [fit=" << (e.areal_density_was_fit ? "yes" : "no") << "]" << endl;
+      }
+      if( phys->hoerl_b.has_value() || phys->hoerl_c.has_value() )
+      {
+        cout << "  Hoerl b=" << (phys->hoerl_b.has_value() ? *phys->hoerl_b : 0.0)
+             << ", c=" << (phys->hoerl_c.has_value() ? *phys->hoerl_c : 1.0) << endl;
+      }
+    }
+    cout.flush();
+  };
+
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  assert( u235 );
+
+  // --- Run A: preset as-supplied ---
+  cout << "\n================================================================" << endl;
+  cout << "Run A: HPGe U (120-1001 keV) preset as-is (Fe external fit enabled)" << endl;
+  cout << "================================================================" << endl;
+  const RelActCalcAuto::RelActAutoSolution sol_A = RelActCalcAuto::solve(
+      state_A.options, foreground, background, det, {},
+      PeakFitUtils::CoarseResolutionType::High, nullptr );
+  summarize( "Run A result", sol_A, u235 );
+
+  pair<double,std::optional<double>> enrich_A = sol_A.mass_enrichment_fraction( u235, 0 );
+  const double enrich_A_frac = enrich_A.first;
+  const double chi2_A = sol_A.m_chi2;
+  const size_t dof_A = sol_A.m_dof;
+
+  // --- Run B: force external Fe to 0 and not-fit ---
+  // Walk the external attens and, for each, rebuild as zero-thickness, not-fit shield.
+  if( !state_B.options.rel_eff_curves.empty() )
+  {
+    auto &curve = state_B.options.rel_eff_curves[0];
+    for( shared_ptr<const RelActCalc::PhysicalModelShieldInput> &ext : curve.phys_model_external_atten )
+    {
+      if( !ext )
+        continue;
+      auto modified = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext );
+      modified->areal_density = 0.0;
+      modified->fit_areal_density = false;
+      modified->lower_fit_areal_density = 0.0;
+      modified->upper_fit_areal_density = 0.0;
+      ext = modified;
+    }
+  }
+
+  cout << "\n================================================================" << endl;
+  cout << "Run B: same preset, external shielding forced to 0 and not-fit" << endl;
+  cout << "================================================================" << endl;
+  const RelActCalcAuto::RelActAutoSolution sol_B = RelActCalcAuto::solve(
+      state_B.options, foreground, background, det, {},
+      PeakFitUtils::CoarseResolutionType::High, nullptr );
+  summarize( "Run B result", sol_B, u235 );
+
+  const double enrich_B_frac = sol_B.mass_enrichment_fraction( u235, 0 ).first;
+  const double chi2_B = sol_B.m_chi2;
+  const size_t dof_B = sol_B.m_dof;
+
+  cout << "\n================================================================" << endl;
+  cout << "Summary" << endl;
+  cout << "================================================================" << endl;
+  cout << "Run A (Fe fit):    enrichment = " << (100.0*enrich_A_frac) << " %"
+       << ",  chi2/dof = " << chi2_A << "/" << dof_A
+       << " = " << (dof_A > 0 ? chi2_A/dof_A : 0.0) << endl;
+  cout << "Run B (Fe fixed):  enrichment = " << (100.0*enrich_B_frac) << " %"
+       << ",  chi2/dof = " << chi2_B << "/" << dof_B
+       << " = " << (dof_B > 0 ? chi2_B/dof_B : 0.0) << endl;
+
+  // Symptom asserts - these document the current (buggy) behavior so we know the reproducer is live.
+  // User observed ~1.87% enrichment in the GUI for Run A; threshold at 1.2% gives headroom for minor variance.
+  if( enrich_A_frac <= 0.012 )
+    cerr << "WARNING: Run A enrichment <= 1.2% - symptom may not be reproducing." << endl;
+  assert( enrich_A_frac > 0.012 );
+
+  // Run B chi2 should be notably lower than Run A chi2 - the whole point of the reproducer.
+  if( chi2_B >= 0.6 * chi2_A )
+    cerr << "WARNING: Run B chi2 is not notably better than Run A - bug may not be reproducing." << endl;
+  assert( chi2_B < 0.6 * chi2_A );
+
+  cout << "\nReproducer verified: Run A has higher chi2 than Run B by factor of "
+       << (chi2_A / std::max( 1.0, chi2_B )) << endl;
+}//void unat_hpge_fe_example()
+
+
+
 int dev_code()
 {
+  unat_hpge_fe_example();
+  return 1;
+
   check_auto_nuclide_constraints_checks();
   check_manual_nuclide_constraints_checks();
   check_auto_hoerl_and_ext_shield_checks();

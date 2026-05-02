@@ -42,6 +42,7 @@ AGENT.md
 .svnignore
 .bin
 .vs
+.claude
 WtsRsrcs
 XcodeFiles
 build
@@ -116,4 +117,5 @@ target/macOsQuickLook/SpecFilePreview/SpecFilePreview.xcodeproj/project.xcworksp
 
 target/wxWidgets/3rd_party
 .devcontainer/devcontainer.json
+/devcontainer_prefix/
 *.bak

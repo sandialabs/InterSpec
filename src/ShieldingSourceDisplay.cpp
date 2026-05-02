@@ -3627,9 +3627,12 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
   chi_input.detector = detector;
   chi_input.foreground = foreground;
   chi_input.background = background;
+  if( background )
+    chi_input.background_sf = m_specViewer->displayScaleFactor( SpecUtils::SpectrumType::Background );
   chi_input.foreground_peaks.assign( peaks->begin(), peaks->end() );
   chi_input.background_peaks = background_peaks;
-  
+
+
   return GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 }//pair<ShieldingSourceChi2Fcn,ROOT::Minuit2::MnUserParameters> shieldingFitnessFcn()
 
@@ -5579,7 +5582,12 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
   //       degenerate cases.
   
   const GeometryType type = geometry();
-  
+
+  // For fixed-geometry DRFs, distance is not meaningful - shielding can be any thickness
+  const std::shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  if( det && det->isFixedGeometry() )
+    return;
+
   // Lets grab the shielding's we care about
   vector<ShieldingSelect *> shieldings;
   shieldings.reserve( m_shieldingSelects->children().size() );
@@ -6197,7 +6205,7 @@ void ShieldingSourceDisplay::showCalcLog()
       deque<std::shared_ptr<const PeakDef>> fore_peaks_deque;
       for( const PeakDef &peak : m_lastFitResults->foreground_peaks )
         fore_peaks_deque.push_back( make_shared<const PeakDef>( peak ) );
-      BatchInfoLog::add_hist_to_json( spec_obj, false, foreground, foreground_file,
+      BatchInfoLog::add_hist_to_json( spec_obj, false, 1.0, foreground, foreground_file,
                                        foreground_samples, filename, &fore_peaks_deque );
     }
 
@@ -6209,13 +6217,33 @@ void ShieldingSourceDisplay::showCalcLog()
 
       auto &spec_obj = data["background"];
       deque<std::shared_ptr<const PeakDef>> back_peaks_deque;
-      for( const PeakDef &peak : m_lastFitResults->background_peaks )
-        back_peaks_deque.push_back( make_shared<const PeakDef>( peak ) );
-      BatchInfoLog::add_hist_to_json( spec_obj, true, background, back_file,
+
+      // `m_lastFitResults->background_peaks` were scaled for normalization time (see `ShieldingSourceChi2Fcn::setBackgroundPeaks(...)`)
+      //  (We _should_ change this in the future).
+      // `background_normalization_factor` is only set when there are background peaks; if
+      //  there are none (e.g., background spectrum loaded but no peaks fit) it remains -1.0.
+      double back_norm = m_lastFitResults->background_normalization_factor;
+      const bool back_norm_valid = (back_norm > 0.0) && !IsInf(back_norm) && !IsNan(back_norm);
+      assert( m_lastFitResults->background_peaks.empty() || back_norm_valid );
+
+      if( back_norm_valid )
+      {
+        for( PeakDef peak : m_lastFitResults->background_peaks )
+        {
+          peak.setPeakArea( peak.peakArea() / back_norm );
+          peak.setPeakAreaUncert( peak.peakAreaUncert() / back_norm );
+          back_peaks_deque.push_back( make_shared<const PeakDef>(peak) );
+        }//for( PeakDef peak : m_lastFitResults->background_peaks )
+      }//if( back_norm_valid )
+
+      BatchInfoLog::add_hist_to_json( spec_obj, true, back_norm, background, back_file,
                                        background_samples, back_filename, &back_peaks_deque );
 
-      data["background"]["Normalization"] = foreground->live_time() / background->live_time();
-    }
+      if( !back_norm_valid )
+        back_norm = foreground->live_time() / background->live_time();
+
+      data["background"]["Normalization"] = back_norm;
+    }//if( background )
 
     // Add activity fit options
     BatchInfoLog::add_act_shield_fit_options_to_json( m_lastFitResults->options, m_lastFitResults->distance,

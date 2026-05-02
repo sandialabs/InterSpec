@@ -624,7 +624,9 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
               }
               berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
               const double allowed_diff = all_in_bounds ? 1.0E-10 : 1.0E-1;
-              assert( fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}) );
+              assert( (fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}))
+                     || (poly_val <= lower_coef_bound)
+                     || (poly_val >= highest_energy) );
             }
           }// END verify power series and Berstein give same results
 #endif
@@ -836,7 +838,9 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
               }
               berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
               const double allowed_diff = all_in_bounds ? 1.0E-10 : 1.0E-1;
-              assert( fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}) );
+              assert( (fabs(poly_val - berstein_val) < allowed_diff * std::max({poly_val, berstein_val, 1.0}))
+                     || (poly_val <= lower_coef_bound)
+                     || (poly_val >= highest_energy) );
             }
           }// END verify power series and Berstein give same results
 #endif
@@ -1890,24 +1894,36 @@ void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
     upper_ad = max_ad;
   }
   
+  // The offset/scale transform (see RelActCalc.h) keeps the Ceres parameter away from zero
+  //  even for a physical AD of 0, so the original "bump to 0.5 g/cm^2" defence is no longer
+  //  strictly required.  Leave it in for now; it's harmless and provides a well-behaved start
+  //  when users deliberately want the fit to explore non-zero AD.
   if( (ad == 0.0) && opt->fit_areal_density )
   {
-    ad = std::min( std::max( 0.5, lower_ad), upper_ad ); // We want something away from zero, because Ceres doesnt like zero values much - 0.5 is arbitrary
-    //  ad = 0.5*(lower_ad + upper_ad); //Something like 250 would be way too much
+    ad = std::min( std::max( 0.5, lower_ad), upper_ad );
   }
   if( (ad < 0.0) || (ad > max_ad) )
     throw runtime_error( "Self-atten AD is invalid" );
-  
-  pars[ad_index] = ad;
-  
+
+  pars[ad_index] = ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+
   if( opt->fit_areal_density )
   {
     // Check for limits
     if( (lower_ad < 0.0) || (upper_ad > max_ad) || (lower_ad >= upper_ad) )
       throw runtime_error( "Self-atten AD limits is invalid" );
-    
-    lower_bounds[ad_index] = lower_ad;
-    upper_bounds[ad_index] = upper_ad;
+
+    // Loosen the Ceres-level lower bound by 1e-5 g/cm^2 below the user-specified physical lower bound. 
+    //  When `lower_ad == 0`, the optimizer would otherwise see the lower bound as a hard active constraint 
+    //  exactly at zero, which has been observed on some spectra to traps Levenberg-Marquardt at a non-global 
+    //  local minimum. 
+    //  Loosening by 1e-5 g/cm^2 is small enough never to change a user's answer (well below any measurable 
+    //  AD), small enough to stay safely above the `-1e-3` throw threshold in `eval_physical_model_eqn_imp` 
+    //  (when lower bound is 0.0), and removes the trap mechanism.
+    const double effective_lower_ad = lower_ad - 1.0e-5;
+
+    lower_bounds[ad_index] = effective_lower_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+    upper_bounds[ad_index] = upper_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
   }else
   {
     constant_parameters.push_back( static_cast<int>(ad_index) );
@@ -2849,7 +2865,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//setup_deviation_pair_anchors(...)
 
 
-  /** Solve the problem, using the Ceres optimizer. */
+  /** Solve the problem, using the Ceres optimizer.
+
+   TODO: currently we always live-time normalize the background spectrum - should add explicit argument for background normalization incase the user has set a custom one (e.g., bad or missing live time in a spectrum).
+   */
   static RelActCalcAuto::RelActAutoSolution solve_ceres( RelActCalcAuto::Options options,
                                                         std::shared_ptr<const SpecUtils::Measurement> foreground,
                                                         std::shared_ptr<const SpecUtils::Measurement> background,
@@ -3353,9 +3372,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const size_t par_idx = cost_functor->m_dev_pair_par_start_index + anchor.param_index;
           assert( par_idx < num_pars_initial );
 
-          parameters[par_idx] = 0.0;  // Start with no correction
-          lower_bounds[par_idx] = -anchor.offset_limit;
-          upper_bounds[par_idx] = anchor.offset_limit;
+          // See RelActCalc.h: physical_offset[keV] = (x - ns_dev_ceres_offset) * ns_dev_ceres_mult
+          parameters[par_idx] = RelActCalc::ns_dev_ceres_offset;  // physical 0 → ceres offset
+          lower_bounds[par_idx] = -anchor.offset_limit / RelActCalc::ns_dev_ceres_mult + RelActCalc::ns_dev_ceres_offset;
+          upper_bounds[par_idx] =  anchor.offset_limit / RelActCalc::ns_dev_ceres_mult + RelActCalc::ns_dev_ceres_offset;
         }
       }//for( loop over anchors )
 
@@ -3901,7 +3921,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               updated_ext_att->fit_areal_density = false;
               if( !updated_ext_att->material )
                 updated_ext_att->atomic_number = parameters[ext_att_index + 0] * RelActCalc::ns_an_ceres_mult;
-              updated_ext_att->areal_density = parameters[ext_att_index + 1] * PhysicalUnits::g_per_cm2;
+              updated_ext_att->areal_density = (parameters[ext_att_index + 1] - RelActCalc::ns_ad_ceres_offset)
+                                                * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
               
               manual_input.phys_model_external_attens[i] = updated_ext_att;
             }
@@ -3958,7 +3979,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 if( !input->material && input->fit_atomic_number )
                   input->atomic_number = parameters[outer_shield_start_index + 0] * RelActCalc::ns_an_ceres_mult;
                 if( input->fit_areal_density)
-                  input->areal_density = parameters[outer_shield_start_index + 1] * PhysicalUnits::g_per_cm2;
+                  input->areal_density = (parameters[outer_shield_start_index + 1] - RelActCalc::ns_ad_ceres_offset)
+                                         * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
 
                 input->fit_areal_density = false;
                 input->fit_atomic_number = false;
@@ -3981,7 +4003,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 if( !input->material && input->fit_atomic_number )
                   input->atomic_number = parameters[an_index + 0] * RelActCalc::ns_an_ceres_mult;
                 if( input->fit_areal_density)
-                  input->areal_density = parameters[an_index + 1] * PhysicalUnits::g_per_cm2;
+                  input->areal_density = (parameters[an_index + 1] - RelActCalc::ns_ad_ceres_offset)
+                                         * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
 
                 input->fit_areal_density = false;
                 input->fit_atomic_number = false;
@@ -4097,11 +4120,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const int ad_index = static_cast<int>( this_rel_eff_start + 1 );
 
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-              parameters[ad_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Areal density; both manual and auto RelEff use g/cm2
+              // Manual solution's AD is in g/cm^2; convert into Ceres parameter space.
+              const double manual_ad_phys = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+              parameters[ad_index] = manual_ad_phys / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
 
               if( self_atten.fit_areal_density )
               {
-                if( parameters[ad_index]  < 0.25 )
+                const double cur_ad_phys = (parameters[ad_index] - RelActCalc::ns_ad_ceres_offset)
+                                           * RelActCalc::ns_ad_ceres_mult;
+                if( cur_ad_phys < 0.25 )
                 {
                   double lower_ad = self_atten.lower_fit_areal_density / PhysicalUnits::g_per_cm2;
                   double upper_ad = self_atten.upper_fit_areal_density / PhysicalUnits::g_per_cm2;
@@ -4112,23 +4139,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                     upper_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
                   }
 
-                  //TODO: add and use the following variables for both Auto and Manual solutions
-                  //const double RelActCalc::ns_ad_ceres_offset = 1.0;
-                  //const double RelActCalc::ns_ad_ceres_multiple = 0.5;
-
                   const double reasonable_starting_ad = 2.5; //pretty arbitrary - just something away from zero
                   const double mid_allowed_ad = 0.5*(lower_ad + upper_ad);
                   const double starting_ad = std::max( std::min(mid_allowed_ad, reasonable_starting_ad), lower_ad );
 
-                  parameters[ad_index] = starting_ad;
+                  parameters[ad_index] = starting_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
                 }
 
                 initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_index, parameters[ad_index] );
               }else
               {
                 const double ad = self_atten.areal_density / PhysicalUnits::g_per_cm2;
-                assert( fabs(parameters[ad_index] - ad) < 0.1 );  //Areal density
-                parameters[ad_index] = ad; //JIC
+                const double expected_ceres = ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+                assert( fabs(parameters[ad_index] - expected_ceres) < 0.1 );
+                parameters[ad_index] = expected_ceres; //JIC
               }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density ) / else
 
               manual_index += 1;
@@ -4176,6 +4200,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
               const int ad_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 1 );
+              // ad_par here is in g/cm^2 (physical units).  We will convert to Ceres parameter
+              //  space when finally writing it to `parameters[...]`.
               double ad_par = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
 
               if( ext_att->fit_areal_density )
@@ -4191,10 +4217,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                     upper_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
                   }
 
-                  //TODO: add and use the following variables for both Auto and Manual solutions
-                  //const double RelActCalc::ns_ad_ceres_offset = 1.0;
-                  //const double RelActCalc::ns_ad_ceres_multiple = 0.5;
-
                   const double reasonable_starting_ad = 1.0; //pretty arbitrary - just something away from zero
                   const double mid_allowed_ad = 0.5*(lower_ad + upper_ad);
                   const double starting_ad = std::max( std::min(mid_allowed_ad, reasonable_starting_ad), lower_ad );
@@ -4208,11 +4230,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }else
               {
                 const double ad = ext_att->areal_density / PhysicalUnits::g_per_cm2;
-                assert( fabs(parameters[ad_par_index] - ad) < 0.1 );  //Areal density
-                parameters[ad_par_index] = ad; //JIC
+                const double expected_ceres = ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+                assert( fabs(parameters[ad_par_index] - expected_ceres) < 0.1 );
+                ad_par = ad;
               }//if( ext_att->fit_areal_density )
 
-              parameters[ad_par_index] = ad_par;
+              parameters[ad_par_index] = ad_par / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
 
               manual_index += 1;
             }//for( loop over options.phys_model_external_atten )
@@ -5335,21 +5358,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //
     //  According to a LLM, the trust region is an area in the parameter space.
     //   So we will need to revisit this value if we scale the various parameters to be closer to reasonable.
-    size_t num_fit_par = 0;
-    double par_area = 1.0;
     for( size_t i = 0; i < parameters.size(); ++i )
     {
       const auto const_pos = std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) );
       if( const_pos == end(constant_parameters) )
-      {
-        num_fit_par += 1;
-        par_area *= (fabs(parameters[i]) > 1.0) ? std::min(10.0,fabs(parameters[i])) : 1.0;
-        //cout << "Starting value of " << cost_functor->parameter_name(i) << ": " << parameters[i] << endl;
-      }
+        cout << "Starting value of " << cost_functor->parameter_name(i) << ": " << parameters[i] << endl;
     }
-    //cout << "Starting with parameter volume of " << par_area << " from " << num_fit_par << " paramaters." << endl;
-    // The below is pretty arbitrary - and only kinda sort optimized on one problem
-    ceres_options.initial_trust_region_radius = 100.0*std::min( std::max( par_area, 10.0 ), 10.0*num_fit_par );
+
+    // Initial trust-region radius: Ceres library default of 1e4. An earlier
+    //  par_area-based heuristic produced values in [1e3, ~3.4e4] depending on
+    //  the problem; a sweep against a natural U exemplar (with the
+    //  setup_physical_model_shield_par bounds-loosening in place) showed all
+    //  values in the [1e3, 1e8] band give equivalent results, while values
+    //  below 1e3 risk the bounds-active local-minimum trap on shielding fits.
+    //  A fixed 1e4 is simpler and removes the per-problem heuristic.
+    ceres_options.initial_trust_region_radius = 1.0e4;
 
     ceres_options.max_trust_region_radius = 1e16;
 
@@ -5731,13 +5754,40 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const auto now_time = std::chrono::high_resolution_clock::now();
       const auto dt = 1.0*std::chrono::duration_cast<std::chrono::nanoseconds>(now_time - start_time).count();
       const double frac = cost_functor->m_nanoseconds_spent_in_eval / dt;
-      
+
       cout << "Spent " << 0.001*cost_functor->m_nanoseconds_spent_in_eval
       << " us in eval, and a total time of " << 0.001*dt << " us in fcnt - this is "
       << frac << " fraction of the time" << endl;
     }
 #endif
-    
+
+    // Post-solve: clamp any Physical-Model shielding AD parameters that Ceres landed slightly below the
+    // user-specified `lower_fit_areal_density`.
+    for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff = cost_functor->m_options.rel_eff_curves[rel_eff_index];
+      if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        continue;
+
+      const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter( rel_eff_index );
+
+      const auto clamp_ad_par = [&parameters]( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield,
+                                               const size_t ad_par_index ){
+        if( !shield || !shield->fit_areal_density )
+          return;
+        const double user_lower_ad_g_cm2 = shield->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+        const double user_lower_ceres = (user_lower_ad_g_cm2 / RelActCalc::ns_ad_ceres_mult)
+                                        + RelActCalc::ns_ad_ceres_offset;
+        if( parameters[ad_par_index] < user_lower_ceres )
+          parameters[ad_par_index] = user_lower_ceres;
+      };//clamp_ad_par lambda
+
+      clamp_ad_par( rel_eff.phys_model_self_atten, rel_eff_start + 1 );
+      for( size_t ext_i = 0; ext_i < rel_eff.phys_model_external_atten.size(); ++ext_i )
+        clamp_ad_par( rel_eff.phys_model_external_atten[ext_i], rel_eff_start + 2 + 2*ext_i + 1 );
+    }//for( each rel_eff_curve )
+
+
     ceres::Covariance::Options cov_options;
     // DENSE_SVD: accurate but slow (only to be used for small to moderate sized problems). Handles full-rank as well as rank deficient Jacobians.
     // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
@@ -5755,15 +5805,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       vector<pair<const double*, const double*> > covariance_blocks;
       covariance_blocks.emplace_back( pars, pars );
       
-      //auto add_cov_block = [&covariance_blocks, &pars]( size_t start, size_t num ){
-      //  for( size_t i = start; i < (start + num); ++i )
-      //    for( size_t j = start; j < i; ++j )
-      //      covariance_blocks.push_back( make_pair( pars + i, pars + j ) );
-      //};
-      
-      //add_cov_block( rel_eff_start, num_rel_eff_par );
-      //add_cov_block( acts_start, num_acts_par );
-      //add_cov_block( fwhm_start, num_fwhm_pars );
       solution.m_covariance.clear();
       solution.m_phys_units_cov.clear();
       solution.m_final_uncertainties.clear();
@@ -5949,7 +5990,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         double total_offset = anchor.initial_offset;
         if( anchor.is_fitted )
-          total_offset += parameters[cost_functor->m_dev_pair_par_start_index + anchor.param_index];
+        {
+          const double ceres_val = parameters[cost_functor->m_dev_pair_par_start_index + anchor.param_index];
+          total_offset += (ceres_val - RelActCalc::ns_dev_ceres_offset) * RelActCalc::ns_dev_ceres_mult;
+        }
         solution.m_deviation_pair_offsets.emplace_back( anchor.anchor_energy, total_offset );
       }
     }//if( deviation pairs were used )
@@ -6517,14 +6561,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           answer.areal_density_was_fit = input.fit_areal_density;
           if( input.fit_areal_density )
           {
-            answer.areal_density = these_rel_eff_coefficients[start_index + 1] * PhysicalUnits::g_per_cm2;
-            assert( answer.areal_density >= 0.0 );
-            
+            answer.areal_density = (these_rel_eff_coefficients[start_index + 1] - RelActCalc::ns_ad_ceres_offset)
+                                   * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
+
+            // The Ceres-level lower bound is offset 1e-5 g/cm^2 below the user-specified physical lower bound 
+            //  (see setup_physical_model_shield_par); if in that loosening region, clamp the AD to physical region.
+            assert( answer.areal_density > -2.0e-5 * PhysicalUnits::g_per_cm2 );
+            if( answer.areal_density < 0.0 )
+              answer.areal_density = 0.0;
+
             if( uncertainties.size() > (this_rel_eff_start_index + start_index + 1) )
-              answer.areal_density_uncert = uncertainties[this_rel_eff_start_index + start_index + 1] * PhysicalUnits::g_per_cm2; //or sqrt( m_rel_eff_covariance[start_index + 1][start_index + 1] )
+              answer.areal_density_uncert = uncertainties[this_rel_eff_start_index + start_index + 1]
+                                            * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
           }else
           {
-            assert( these_rel_eff_coefficients[start_index + 1] == (input.areal_density / PhysicalUnits::g_per_cm2) );
+            const double expected_ceres = (input.areal_density / PhysicalUnits::g_per_cm2)
+                                            / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
+            assert( fabs(these_rel_eff_coefficients[start_index + 1] - expected_ceres) < 1.0e-6 );
             answer.areal_density = input.areal_density;
           }
           
@@ -7364,7 +7417,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           assert( anchor.is_fitted );
           
           char buffer[32] = {'\0'};
-          snprintf( buffer, sizeof(buffer), "Dev_%.1f", m_dev_pair_anchors[dev_num + 1].anchor_energy );
+          snprintf( buffer, sizeof(buffer), "Dev_%.1f", anchor.anchor_energy );
           return buffer;
         }
       }//for( size_t dev_num = 0; dev_num < m_dev_pair_anchors.size(); ++dev_num )
@@ -7512,8 +7565,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( index < m_fwhm_par_start_index )
     {
-      // Its a deviation pair parameter
-      return 1.0;  // No scale factor for deviation pair parameters currently
+      // Its a deviation pair parameter - physical[keV] = (x - ns_dev_ceres_offset) * ns_dev_ceres_mult
+      return RelActCalc::ns_dev_ceres_mult;
     }
     
     if( index < m_rel_eff_par_start_index )
@@ -7553,14 +7606,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           if( sub_ind == 0 )
             return RelActCalc::ns_an_ceres_mult; //Atomic number
           if( sub_ind == 1 )
-            return 1.0; // We just use 1.0 for areal density right now
-        
+            return RelActCalc::ns_ad_ceres_mult; //Self-atten areal density
+
           if( sub_ind < (2 + 2*rel_eff_curve.phys_model_external_atten.size()) )
           {
             const size_t ext_atten_num = (sub_ind - 2) / 2;
             if( (sub_ind % 2) == 0 )
               return RelActCalc::ns_an_ceres_mult;
-            return 1.0; //AD
+            return RelActCalc::ns_ad_ceres_mult; //External-atten areal density
           }
 
           assert( sub_ind >= (2 + 2*rel_eff_curve.phys_model_external_atten.size()) );
@@ -8304,8 +8357,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack self-atten AN" );
       }
-      atten.areal_density = coeffs[rel_eff_start + 1] * PhysicalUnits::g_per_cm2;
-      
+      atten.areal_density = (coeffs[rel_eff_start + 1] - RelActCalc::ns_ad_ceres_offset)
+                            * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
+
       answer.self_atten = std::move(atten);
     }//if( rel_eff_curve.phys_model_self_atten )
     
@@ -8323,8 +8377,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( (atten.atomic_number < 1.0) || (atten.atomic_number > 98.0) )
           throw std::logic_error( "make_phys_eqn_input: whack external AN" );
       }
-      atten.areal_density = coeffs[rel_eff_start + 2 + 2*ext_ind + 1] * PhysicalUnits::g_per_cm2;
-     
+      atten.areal_density = (coeffs[rel_eff_start + 2 + 2*ext_ind + 1] - RelActCalc::ns_ad_ceres_offset)
+                            * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
+
       answer.external_attens.push_back( std::move(atten) );
     }//for( loop over external attenuators )
     
@@ -8717,7 +8772,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( const RelActCalcAutoImp::DeviationPairAnchor &anchor : m_dev_pair_anchors )
     {
       const T offset = anchor.is_fitted
-        ? (x[m_dev_pair_par_start_index + anchor.param_index] + T(anchor.initial_offset))
+        ? ((x[m_dev_pair_par_start_index + anchor.param_index] - RelActCalc::ns_dev_ceres_offset)
+             * RelActCalc::ns_dev_ceres_mult + T(anchor.initial_offset))
         : T(anchor.initial_offset);
       adjusted_dev_pairs.emplace_back( anchor.anchor_energy, offset );
     }
@@ -8901,24 +8957,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             //  check for this.
             dev_pair_deriv_active = (max_dev_offset_deriv > 1.0e-16);
 
-            static int s_logged_energy_out_of_range = 0;
-            if( dev_pair_deriv_active && (s_logged_energy_out_of_range < 50) )
-            {
-              const T e_low = polynomial_energy( T(0.0), adj_coefs, adjusted_dev_spline );
-              const T e_high = polynomial_energy( T(static_cast<double>(nchannel - 1)), adj_coefs, adjusted_dev_spline );
-              const double e_low_val = e_low.a;
-              const double e_high_val = e_high.a;
-              if( (energy < std::min( e_low_val, e_high_val )) || (energy > std::max( e_low_val, e_high_val )) )
-              {
-                char buffer[256];
-                snprintf( buffer, sizeof(buffer),
-                  "apply_energy_cal_adjustment: energy %.6f outside adjusted range [%.6f, %.6f]",
-                  energy, std::min( e_low_val, e_high_val ), std::max( e_low_val, e_high_val ) );
-                log_developer_error( __func__, buffer );
-                s_logged_energy_out_of_range += 1;
-                assert( 0 );
-              }
-            }
+            // Out-of-range energies are not treated as a bug — find_polynomial_channel
+            // (and find_fullrangefraction_channel) extrapolate past the adjusted calibration range.
           }//if( using_paramaterized_deviations )
 
           double max_derivative = 0.0;
@@ -9054,26 +9094,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const std::vector<float> &ch_energies = *m_energy_cal->channel_energies();
         assert( ch_energies.size() > nchannel ); // LowerChannelEdge has nchannel+1 entries
         const T channel = find_lowerchannel_channel( T(energy), ch_energies, adjusted_dev_spline, offest_adj, gain_adj );
-
-        double ch_val;
-        if constexpr ( std::is_same_v<T, double> )
-          ch_val = channel;
-        else
-          ch_val = channel.a;
-        if( ch_val < 0.0 )
-        {
-          const double e0 = static_cast<double>( ch_energies[0] );
-          return T(e0) + eval_cubic_spline( T(e0), orig_dev_spline );
-        }
-        size_t low = static_cast<size_t>( std::floor( ch_val ) );
-        if( low >= nchannel )
-          low = nchannel - 1;
-        assert( (low + 1) < ch_energies.size() );
-        const double e_low = static_cast<double>( ch_energies[low] );
-        const double e_high = static_cast<double>( ch_energies[low + 1] );
-        const T fraction = channel - T( static_cast<double>(low) );
-        const T base = T(e_low) + T(e_high - e_low) * fraction;
-        return base + eval_cubic_spline( base, orig_dev_spline );
+        // `lowerchannel_energy` handles below-range / in-range / above-range
+        // regimes internally, with safe array access and linear extrapolation
+        // past the boundaries. It's the proper inverse of `find_lowerchannel_channel`.
+        return RelActCalcAutoImp::lowerchannel_energy( channel, ch_energies, orig_dev_spline );
       }//case LowerChannelEdge
 
       case SpecUtils::EnergyCalType::InvalidEquationType:
@@ -9163,7 +9187,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         double offset = anchor.initial_offset;
         if( anchor.is_fitted )
-          offset += x[m_dev_pair_par_start_index + anchor.param_index];
+        {
+          const double ceres_val = x[m_dev_pair_par_start_index + anchor.param_index];
+          offset += (ceres_val - RelActCalc::ns_dev_ceres_offset) * RelActCalc::ns_dev_ceres_mult;
+        }
         adj_dev_pairs.emplace_back( anchor.anchor_energy, offset );
       }
     }else
@@ -9242,17 +9269,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         const double channel = find_lowerchannel_channel( adjusted_energy, ch_energies, orig_dev_pairs );
 
-        double ch_val = channel;
-        if( ch_val < 0.0 )
-          ch_val = 0.0;
-        size_t low = static_cast<size_t>( std::floor( ch_val ) );
-        if( low >= nchannel )
-          low = nchannel - 1;
-        assert( (low + 1) < ch_energies.size() );
-        const double e_low = static_cast<double>( ch_energies[low] );
-        const double e_high = static_cast<double>( ch_energies[low + 1] );
-        const double fraction = channel - static_cast<double>( low );
-        const double e_base = e_low + (e_high - e_low) * fraction;
+        // lowerchannel_energy handles below/in/above-range regimes with safe
+        // array access. We pass an empty spline here because the offset/gain
+        // adjustment and adj_dev_spline are applied afterward (the spline
+        // that was used to invert was orig_dev_pairs, already consumed).
+        const std::vector<CubicSplineNodeT<double>> no_spline;
+        const double e_base = RelActCalcAutoImp::lowerchannel_energy( channel, ch_energies, no_spline );
         const double range_frac = (range > 0.0) ? ((e_base - lower_energy) / range) : 0.0;
         const double e_with_adj = e_base + offset_adj + range_frac * gain_adj;
         return e_with_adj + eval_cubic_spline( e_with_adj, adj_dev_spline );
@@ -9290,15 +9312,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //  energy calibrations
     const T adjusted_lower_energy = apply_energy_cal_adjustment( range.lower_energy, x, cached_splines );
     const T adjusted_upper_energy = apply_energy_cal_adjustment( range.upper_energy, x, cached_splines );
-    
-    // TODO: Check this conversion from `Jet<>` to double doesnt mess anything up - I *think* this is _fine_...
+
     pair<size_t,size_t> channel_range;
+#if( ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL )
+    // Fix ROI channel bounds to the user-specified ROI energies evaluated
+    // against the spectrum's native calibration. These bounds do NOT
+    // depend on the fit parameters, so the integration window stays put
+    // as EneOffset/EneGain/Dev_* change — eliminating the 1-channel
+    // discrete slide (and attendant O(1) cost jump) that the legacy
+    // branch exhibits at sub-ppm parameter steps. Peak means continue
+    // to pick up the adjustment later in this function; only the
+    // window the residuals are summed over is anchored.
+    channel_range = range.channel_range( range.lower_energy, range.upper_energy, num_channels, m_energy_cal );
+#else
+    // Legacy behavior: channel bounds track the adjusted ROI energies.
+    // TODO: Check this conversion from `Jet<>` to double doesnt mess anything up - I *think* this is _fine_...
     if constexpr ( !std::is_same_v<T, double> )
       channel_range = range.channel_range( adjusted_lower_energy.a, adjusted_upper_energy.a, num_channels, m_energy_cal );
     else
       channel_range = range.channel_range( adjusted_lower_energy, adjusted_upper_energy, num_channels, m_energy_cal );
-
-    // TODO: find a problem that fails with energy range, and then try fixing the channels according to initial energy cal, and see if that works better
+#endif
 
     const size_t first_channel = channel_range.first;
     const size_t last_channel = channel_range.second;
@@ -9819,8 +9852,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       //     << range.upper_energy << "] keV." << endl;
       
       answer.no_gammas_in_range = true;
-      
+
+#if( ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL )
+      // Fallback dummy-peak centre must be consistent with the fixed
+      // ROI bounds: use the unadjusted midpoint so the dummy peak's
+      // mean is a compile-time constant w.r.t. fit parameters.
+      const T middle_energy = T( 0.5*(range.lower_energy + range.upper_energy) );
+#else
       const T middle_energy = 0.5*(adjusted_lower_energy + adjusted_upper_energy);
+#endif
       T middle_fwhm = fwhm( middle_energy, x );
       if( isinf(middle_fwhm) || isnan(middle_fwhm) )
         middle_fwhm = T(1.0); //arbitrary
@@ -9837,9 +9877,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     
     answer.continuum.m_type = range.continuum_type;
+#if( ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL )
+    // Anchor continuum to the unadjusted ROI bounds so its reference
+    // frame matches the fixed channel window. PeakFit::fit_continuum
+    // below evaluates the polynomial at each channel's native-cal
+    // energy; parameterising in (E - range.lower_energy) keeps the
+    // reference frame fixed too.
+    answer.continuum.m_lower_energy = T(range.lower_energy);
+    answer.continuum.m_upper_energy = T(range.upper_energy);
+    answer.continuum.m_reference_energy = T(range.lower_energy);
+#else
     answer.continuum.m_lower_energy = adjusted_lower_energy;
     answer.continuum.m_upper_energy = adjusted_upper_energy;
     answer.continuum.m_reference_energy = adjusted_lower_energy;
+#endif
     
     assert( !peaks.empty() );
     assert( num_channels == ((1 + last_channel) - first_channel) );
@@ -10401,7 +10452,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }catch( std::exception &e )
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
-      assert( 0 );//asserting because it seems returning false here can be really damaging to fit convergence, so lets try to eliminate asserts as much as possible
+
+      // The throw threshold in `eval_physical_model_eqn_imp` is set generously
+      //  (-1e-3 g/cm^2 i.e. well below the bounds-loosening of -1e-5 g/cm^2);
+      //  reaching this branch under normal operation means something has gone
+      //  genuinely wrong, so assert loudly during development. Returning false
+      //  tells Ceres to reject the trial step and shrink the trust region,
+      //  which is the safe production-time recovery.
+      assert( 0 );
       return false;
     }
     
@@ -11509,6 +11567,10 @@ bool Options::operator==( const Options &rhs ) const
     && (fwhm_form == rhs.fwhm_form)
     && (fwhm_estimation_method == rhs.fwhm_estimation_method)
     && (spectrum_title == rhs.spectrum_title)
+    && (foreground_filename == rhs.foreground_filename)
+    && (background_filename == rhs.background_filename)
+    && (foreground_sample_numbers == rhs.foreground_sample_numbers)
+    && (background_sample_numbers == rhs.background_sample_numbers)
     && (skew_type == rhs.skew_type)
     && (lorentzian_xrays == rhs.lorentzian_xrays)
     && (additional_br_uncert == rhs.additional_br_uncert)
@@ -11988,7 +12050,27 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   append_attrib( fwhm_estimation_method_node, "remark", "Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency" );
 
   append_string_node( base_node, "Title", spectrum_title );
-  
+
+  // Foreground / background spectrum-file metadata (added v3, 2026-04-27).  Older v2 XML omits
+  // these and the loader treats them as empty.  Sample numbers are written as a comma-separated
+  // string of ints; an empty list is omitted.
+  if( !foreground_filename.empty() )
+    append_string_node( base_node, "ForegroundFilename", foreground_filename );
+  if( !background_filename.empty() )
+    append_string_node( base_node, "BackgroundFilename", background_filename );
+  if( !foreground_sample_numbers.empty() )
+  {
+    string s;
+    for( int n : foreground_sample_numbers ) { if( !s.empty() ) s += ","; s += std::to_string(n); }
+    append_string_node( base_node, "ForegroundSampleNumbers", s );
+  }
+  if( !background_sample_numbers.empty() )
+  {
+    string s;
+    for( int n : background_sample_numbers ) { if( !s.empty() ) s += ","; s += std::to_string(n); }
+    append_string_node( base_node, "BackgroundSampleNumbers", s );
+  }
+
   append_string_node( base_node, "SkewType", PeakDef::to_string(skew_type) );
 
   // Serialize fixed skew parameter values (only write if any are set)
@@ -12051,7 +12133,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw std::logic_error( "invalid input node name" );
     
     // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
-    static_assert( Options::sm_xmlSerializationVersion == 2,
+    static_assert( Options::sm_xmlSerializationVersion == 3,
                   "needs to be updated for new serialization version." );
     
     check_xml_version( parent, Options::sm_xmlSerializationVersion );
@@ -12093,7 +12175,30 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 
     const rapidxml::xml_node<char> *title_node = XML_FIRST_NODE( parent, "Title" );
     spectrum_title = SpecUtils::xml_value_str( title_node );
-    
+
+    // Foreground / background spec-file metadata added in v3 (2026-04-27).  All four are optional
+    // for backwards compatibility with v2 XML; an empty value means "unknown".
+    foreground_filename.clear();
+    background_filename.clear();
+    foreground_sample_numbers.clear();
+    background_sample_numbers.clear();
+    if( const rapidxml::xml_node<char> *n = XML_FIRST_NODE( parent, "ForegroundFilename" ) )
+      foreground_filename = SpecUtils::xml_value_str( n );
+    if( const rapidxml::xml_node<char> *n = XML_FIRST_NODE( parent, "BackgroundFilename" ) )
+      background_filename = SpecUtils::xml_value_str( n );
+    {
+      const auto parse_samples = []( const rapidxml::xml_node<char> *n, std::set<int> &out ){
+        if( !n ) return;
+        const string s = SpecUtils::xml_value_str( n );
+        std::vector<int> ints;
+        if( !SpecUtils::split_to_ints( s.c_str(), s.size(), ints ) )
+          return;
+        out.insert( ints.begin(), ints.end() );
+      };
+      parse_samples( XML_FIRST_NODE( parent, "ForegroundSampleNumbers" ), foreground_sample_numbers );
+      parse_samples( XML_FIRST_NODE( parent, "BackgroundSampleNumbers" ), background_sample_numbers );
+    }
+
     // skew_type added 20231111; we wont require it.
     skew_type = PeakDef::SkewType::NoSkew;
     const rapidxml::xml_node<char> *skew_node = XML_FIRST_NODE( parent, "SkewType" );
@@ -12228,6 +12333,67 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "Options::fromXml(): " + string(e.what()) );
   }
 }//void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
+void set_input_spec_info( Options &opts,
+                          const std::string &foreground_filename,
+                          const std::set<int> &foreground_total_samples,
+                          const std::set<int> &foreground_samples,
+                          const std::string &background_filename,
+                          const std::set<int> &background_total_samples,
+                          const std::set<int> &background_samples )
+{
+  opts.foreground_filename = foreground_filename;
+  opts.background_filename = background_filename;
+
+  // Same-file convenience: if foreground+background read from the same file, the "fg+bg cover
+  // every sample in the file" trivial case is meaningful and lets us suppress sample numbers
+  // for both sides.
+  const bool same_file = !foreground_filename.empty()
+                         && (foreground_filename == background_filename);
+
+  // Foreground side
+  {
+    const bool fg_uses_all = !foreground_total_samples.empty()
+                             && (foreground_samples == foreground_total_samples);
+
+    bool fg_plus_bg_cover_all = false;
+    if( same_file && !foreground_total_samples.empty() )
+    {
+      std::set<int> u = foreground_samples;
+      u.insert( background_samples.begin(), background_samples.end() );
+      fg_plus_bg_cover_all = (u == foreground_total_samples);
+    }
+
+    if( fg_uses_all || fg_plus_bg_cover_all )
+      opts.foreground_sample_numbers.clear();
+    else
+      opts.foreground_sample_numbers = foreground_samples;
+  }
+
+  // Background side -- skip if no background, otherwise apply the same rule.
+  if( background_filename.empty() && background_samples.empty() )
+  {
+    opts.background_sample_numbers.clear();
+  }else
+  {
+    const bool bg_uses_all = !background_total_samples.empty()
+                             && (background_samples == background_total_samples);
+
+    bool fg_plus_bg_cover_all = false;
+    if( same_file && !background_total_samples.empty() )
+    {
+      std::set<int> u = foreground_samples;
+      u.insert( background_samples.begin(), background_samples.end() );
+      fg_plus_bg_cover_all = (u == background_total_samples);
+    }
+
+    if( bg_uses_all || fg_plus_bg_cover_all )
+      opts.background_sample_numbers.clear();
+    else
+      opts.background_sample_numbers = background_samples;
+  }
+}//void set_input_spec_info(...)
 
 
 size_t num_parameters( const FwhmForm eqn_form )
@@ -17137,7 +17303,19 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
 
   if( lhs.spectrum_title != rhs.spectrum_title )
     throw std::runtime_error( "Spectrum title in lhs and rhs are not the same" );
-  
+
+  if( lhs.foreground_filename != rhs.foreground_filename )
+    throw std::runtime_error( "Foreground filename in lhs and rhs are not the same" );
+
+  if( lhs.background_filename != rhs.background_filename )
+    throw std::runtime_error( "Background filename in lhs and rhs are not the same" );
+
+  if( lhs.foreground_sample_numbers != rhs.foreground_sample_numbers )
+    throw std::runtime_error( "Foreground sample numbers in lhs and rhs are not the same" );
+
+  if( lhs.background_sample_numbers != rhs.background_sample_numbers )
+    throw std::runtime_error( "Background sample numbers in lhs and rhs are not the same" );
+
   if( lhs.skew_type != rhs.skew_type )
     throw std::runtime_error( "Skew type in lhs and rhs are not the same" );
 

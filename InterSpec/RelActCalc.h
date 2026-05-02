@@ -346,22 +346,44 @@ struct PhysicalModelShieldInput
 };//struct PhysicalModelShieldInput
 
 
-/** Since AN ranges from 1 to ~100, we'll scale AN by this amount in the Ceres solver. 
+/** Since AN ranges from 1 to ~100, we'll scale AN by this amount in the Ceres solver.
  * Center around 50
  * Aim to have the parameter between0.1 and 10.0.
- * 
+ *
 */
 const double ns_an_ceres_mult = 50;
 
 /**
- Offsets and multipliers for Hoerl function paramaters, when going from Ceres to value to be evaluated, e.x.: 
+ Offsets and multipliers for Hoerl function paramaters, when going from Ceres to value to be evaluated, e.x.:
   b = (x[b_index] - ns_decay_hoerl_b_offset) * ns_decay_hoerl_b_multiple
   c = (x[c_index] - ns_decay_hoerl_c_offset) * ns_decay_hoerl_c_multiple
  */
-const double ns_decay_hoerl_b_offset = 1.0;   
+const double ns_decay_hoerl_b_offset = 1.0;
 const double ns_decay_hoerl_b_multiple = 1.0;
 const double ns_decay_hoerl_c_offset = 0.0;
 const double ns_decay_hoerl_c_multiple = 1.0;
+
+/** Areal density (g/cm^2) is rescaled and offset in Ceres parameter space so its magnitude
+ is comparable to the other fit parameters, and its value is kept away from zero (Ceres is
+ poorly behaved when a parameter sits at exactly zero / at a bound).
+
+   physical_AD[g/cm^2] = (x[ad_index] - ns_ad_ceres_offset) * ns_ad_ceres_mult
+   x[ad_index]         =  physical_AD / ns_ad_ceres_mult + ns_ad_ceres_offset
+
+ The common case is AD < ~50 g/cm^2, which with these values lives in ceres [0.5, 2.5].
+ */
+const double ns_ad_ceres_offset = 0.5;
+const double ns_ad_ceres_mult = 25.0;
+
+/** Deviation-pair offsets (keV) rescaled and offset similarly.  Parameter is symmetric and
+ may be negative; the offset just keeps the (physical=0) start point away from zero in
+ Ceres space.
+
+   physical_offset[keV] = (x[par] - ns_dev_ceres_offset) * ns_dev_ceres_mult
+   x[par]               =  physical_offset / ns_dev_ceres_mult + ns_dev_ceres_offset
+ */
+const double ns_dev_ceres_offset = 0.5;
+const double ns_dev_ceres_mult = 3.0;
 
 
 template<typename T = double>
