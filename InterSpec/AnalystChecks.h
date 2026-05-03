@@ -25,11 +25,12 @@
 
 #include "InterSpec_config.h"
 
+#include <deque>
 #include <string>
 #include <vector>
-#include <optional>
 #include <memory>
 #include <variant>
+#include <optional>
 
 #include "SpecUtils/SpecFile.h"
 
@@ -417,6 +418,137 @@ namespace AnalystChecks
    @throws std::runtime_error if InterSpec is null, no spectrum loaded, or other errors occur
    */
   InterSpec_API SumPeakCheckStatus sum_peak_check( const SumPeakCheckOptions &options, InterSpec *interspec );
+
+
+  /** Confidence that a candidate peak is a Compton-scatter feature of another peak. */
+  enum class ComptonScatterConfidence
+  {
+    No,
+    Unlikely,
+    Likely,
+    VeryLikely
+  };//enum class ComptonScatterConfidence
+
+  const char* to_string( ComptonScatterConfidence c );
+
+  /** Type of Compton-scatter feature identified.
+
+   ComptonPeak corresponds to a "backscatter peak" in standard gamma-spectroscopy
+   literature (Knoll Ch. 10.2; Gilmore §2.2.3): a photon scatters off material
+   in front of the detector at angle theta and the reduced-energy photon
+   photopeaks in the detector at E' = E_p / ( 1 + (E_p/m_e c^2)(1 - cos theta) ).
+   Distinct peaks form near 180 deg due to kinematic focusing.
+
+   ComptonEdge is the maximum energy *deposited* in the detector when an
+   incoming photon Compton-scatters near 180 deg inside the crystal and the
+   scattered photon escapes: E_edge = E_p * 2 alpha / ( 1 + 2 alpha ), with
+   alpha = E_p / m_e c^2.  The edge is a step/shoulder rather than a true peak,
+   so a Gaussian fit on the edge is necessarily an artifact.
+
+   ComptonPeakOrEdge is used near E_p ~ 256 keV (m_e c^2 / 2), where the
+   backscatter peak and the Compton-edge fall close together (E_bs + E_edge = E_p).
+   */
+  enum class ComptonScatterType
+  {
+    None,
+    ComptonPeak,
+    ComptonEdge,
+    ComptonPeakOrEdge
+  };//enum class ComptonScatterType
+
+  const char* to_string( ComptonScatterType t );
+
+  /** Information about the matched parent peak when a candidate peak is
+   identified as a Compton-scatter feature.  All numeric fields are zero and
+   userLabel is empty when no scatter match was found.
+   */
+  struct ComptonScatterParentInfo
+  {
+    std::shared_ptr<const PeakDef> parentPeak;
+    double parentEnergy = 0.0;   // keV
+    double parentFwhm = 0.0;     // keV
+    double scatterAngle = 0.0;   // degrees; 0 for pure ComptonEdge matches
+    double areaFraction = 0.0;   // candidateArea / parentArea
+    std::optional<std::string> userLabel;  // e.g. "Compton scatter from Co60 1332.50 keV peak"
+  };//struct ComptonScatterParentInfo
+
+  /** Options for compton_peak_check. */
+  struct ComptonPeakCheckOptions
+  {
+    double energy = 0.0;                                                       // keV
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
+  };//struct ComptonPeakCheckOptions
+
+  /** Results of Compton-scatter analysis for a candidate peak. */
+  struct ComptonPeakCheckStatus
+  {
+    ComptonScatterConfidence confidence = ComptonScatterConfidence::No;
+    ComptonScatterType type = ComptonScatterType::None;
+
+    // Populated only when confidence != No.
+    std::optional<ComptonScatterParentInfo> parentInfo;
+
+    // Candidate-peak diagnostics; zero if no peak was found near `energy`.
+    double candidateMean = 0.0;
+    double candidateFwhm = 0.0;
+
+    // FWHM the detector would give at candidateMean.  -1 if the cheap-path
+    // (DRF resolution info or cached automatedSearchPeaks) was unavailable
+    // and a sqrt(E)-vs-parent FWHM fallback was used instead.
+    double expectedDetectorFwhm = 0.0;
+
+    // Parent peak area / continuum integral over its ROI, when a parent matched.
+    double parentSignalToContinuum = 0.0;
+
+    // Tolerance used to find candidate peak near input energy (keV)
+    double searchWindow = 0.0;
+  };//struct ComptonPeakCheckStatus
+
+  /** Check if `candidate` is a Compton-scatter feature (backscatter peak or
+   Compton edge) of a higher-energy peak in `user_peaks`.
+
+   Worker-thread-safe overload: takes already-fetched parameters and does not
+   touch any InterSpec session state, so it may be called from a worker thread
+   (e.g., from inside `IsotopeId::populateCandidateNuclides`).
+
+   For each `user_peaks` entry above `candidate->mean()`, inverts the
+   Compton-scattering kinematic for cos(theta) and computes the Compton-edge
+   energy; picks the parent with the smallest energy-match residual.  The FWHM
+   criterion uses `detector->peakResolutionFWHM(...)` when
+   `detector->hasResolutionInfo()` is true, otherwise falls back to a sqrt(E)
+   scaling of the matched parent's measured FWHM (HPGe ~ sqrt(a + bE),
+   NaI ~ sqrt(E)).
+
+   Confidence is the conservative minimum across five buckets: FWHM ratio,
+   area fraction (candidate/parent), parent peak signal-to-continuum, scatter
+   angle, and energy-match tightness.  Hard-No guards include parent area
+   <= candidate area, area_fraction > 0.5, and fwhm_ratio < 1.15.
+
+   @param candidate   The peak being tested.  Must be a Gaussian-fit user peak.
+   @param user_peaks  All user peaks in the spectrum (parents are searched here).
+   @param spectrum    The displayed histogram, used to integrate the parent's continuum.
+   @param detector    Optional; if non-null and carrying resolution info, used for FWHM check.
+   @return ComptonPeakCheckStatus with confidence, scatter type, and parent info.
+           confidence == No / type == None when no kinematic match is found or
+           any hard-No guard fails.
+   */
+  InterSpec_API ComptonPeakCheckStatus compton_peak_check(
+      const std::shared_ptr<const PeakDef> &candidate,
+      const std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > &user_peaks,
+      const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+      const std::shared_ptr<const DetectorPeakResponse> &detector );
+
+  /** Main-thread wrapper around the worker-safe overload above.
+
+   Fetches the user peaks, spectrum, and detector for `options.specType` from
+   `interspec`, locates the user peak nearest `options.energy`, and delegates
+   to the worker-safe overload.
+
+   @param options    Candidate energy and which spectrum to use.
+   @param interspec  Pointer to the InterSpec session containing the spectrum.
+   @throws std::runtime_error if InterSpec is null or no spectrum is loaded.
+   */
+  InterSpec_API ComptonPeakCheckStatus compton_peak_check( const ComptonPeakCheckOptions &options, InterSpec *interspec );
 
 } // namespace AnalystChecks
 

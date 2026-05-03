@@ -41,6 +41,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/AnalystChecks.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -1229,10 +1230,18 @@ void findCharacteristics( vector<string> &characteristicnucs,
 
 void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
                             std::shared_ptr<const PeakDef> peak,
-                            std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > allpeaks )
+                            std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > allpeaks,
+                            const PeakFitUtils::CoarseResolutionType det_type )
 {
   if( !peak || !allpeaks )
     return;
+
+  // Pair-production threshold: parent gamma must be above ~1022 keV (2 m_e c^2)
+  // for an escape peak to physically exist; for low-resolution detectors the
+  // escapes are not practically detectable until well above that, so use the
+  // empirical thresholds also used in RefLineDynamic.cpp and AnalystChecks.cpp.
+  const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
+  const double pair_prod_thresh = isHPGe ? 1255.0 : 2585.0;
   
   const ReactionGamma *reactionDb = NULL;
   vector<const ReactionGamma::Reaction *> suggest_reactions;
@@ -1302,7 +1311,7 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
         }//if( candidateE > minenergy && candidateE < maxenergy )
       }//if( trans )
       
-      if( mean > 510.99
+      if( ((mean + 510.99) > pair_prod_thresh)
           && (p->sourceGammaType() == PeakDef::NormalGamma
                || p->sourceGammaType() == PeakDef::SingleEscapeGamma) )
       {
@@ -1331,7 +1340,8 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
         }//if( trans )
       }//if( mean > 510.99 )
       
-      if( p->sourceGammaType() == PeakDef::NormalGamma )
+      if( ((mean + 2.0*510.99) > pair_prod_thresh)
+          && (p->sourceGammaType() == PeakDef::NormalGamma) )
       {
         PeakDef::findNearestPhotopeak( nuc, mean+2.0*510.99, sigma, false, -1.0, trans, index, type );
         if( trans )
@@ -1510,9 +1520,16 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
   //TODO: should probably add in some error logging or something
   if( !data || !peak || !candidates || doupdate.empty() )
     return;
-  
+
+  // Determine detector resolution once; used to gate escape-peak suggestions on
+  // the pair-production threshold (escapes can't physically exist when the
+  // proposed parent is below ~1022 keV, and on low-resolution detectors aren't
+  // practically detectable until well above that).
+  const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
+  const double pair_prod_thresh = isHPGe ? 1255.0 : 2585.0;
+
   char buffer[128];
-  
+
   //we will use 'entries' to make sure we dont have duplicates
   set<string> entries;
   vector<string> suggestednucs, characteristicnucs, otherpeaksnucs;
@@ -1568,7 +1585,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
   
   if( userpeaks )
     pool.post( boost::bind( &isotopesFromOtherPeaks,
-                           boost::ref(otherpeaksnucs), peak, userpeaks ) );
+                           boost::ref(otherpeaksnucs), peak, userpeaks, det_type ) );
   
   const char *modifier = "";
   switch( peak->sourceGammaType() )
@@ -1692,8 +1709,10 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
     const bool singleEscape = (fabs((pmean-mean) - 510.99) < tolerance);
     const bool doubleEscape = (fabs((pmean-mean) - 2.*510.99) < tolerance);
     const bool normal = (p->sourceGammaType() == PeakDef::NormalGamma);
-    
-    if( normal && (singleEscape || doubleEscape) )
+
+    // Parent peak must be above the pair-production threshold for an escape
+    // peak to physically exist.
+    if( normal && (singleEscape || doubleEscape) && (pmean > pair_prod_thresh) )
     {
       char buffer[128];
       const char *prefix = singleEscape ? "S.E." : "D.E.";
@@ -1732,8 +1751,31 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
     candidates->insert( candidates->end(), escapes.begin(), escapes.end() );
     candidates->push_back( "" );
   }//if( escapes.size() )
-  
-  
+
+  // Compton-scatter artifact check.  Uses the worker-safe overload so it can
+  // run on this background thread without touching InterSpec session state.
+  // The `(` ... `)` wrap matches the S.E./D.E./Sum convention above so the
+  // entry is disabled by updateRightClickNuclidesMenu(...).
+  {
+    const AnalystChecks::ComptonPeakCheckStatus compton
+                  = AnalystChecks::compton_peak_check( peak, userpeaks, data, detector );
+    if( compton.parentInfo
+        && (compton.confidence == AnalystChecks::ComptonScatterConfidence::Likely
+            || compton.confidence == AnalystChecks::ComptonScatterConfidence::VeryLikely)
+        && compton.parentInfo->userLabel.has_value() )
+    {
+      char compton_buf[192];
+      snprintf( compton_buf, sizeof(compton_buf), "(%s)",
+                compton.parentInfo->userLabel.value().c_str() );
+      if( !std::count( candidates->begin(), candidates->end(), compton_buf ) )
+      {
+        candidates->push_back( compton_buf );
+        entries.insert( compton_buf );
+        candidates->push_back( "" );
+      }
+    }
+  }
+
   //Now look for possible sum peak combinations, and let the user know of the
   //  possiblity (but selecting them wont do any good)
   //TODO: Extend this to check for peaks of identified nuclides who are

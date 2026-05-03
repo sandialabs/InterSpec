@@ -137,7 +137,8 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
 //Called from populateCandidateNuclides(...).
 void isotopesFromOtherPeaks( std::vector<std::string> &otherpeaknucs,
                             std::shared_ptr<const PeakDef> peak,
-                            std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > allpeaks );
+                            std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > allpeaks,
+                            const PeakFitUtils::CoarseResolutionType det_type );
 
   
 //findCharacteristics(): Looks for gamma lines near 'peak' in

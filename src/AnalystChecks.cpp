@@ -2699,4 +2699,430 @@ namespace AnalystChecks
     return result;
   }//SumPeakCheckStatus sum_peak_check( const SumPeakCheckOptions &options, InterSpec *interspec )
 
+
+  const char* to_string( ComptonScatterConfidence c )
+  {
+    switch( c )
+    {
+      case ComptonScatterConfidence::No:         return "No";
+      case ComptonScatterConfidence::Unlikely:   return "Unlikely";
+      case ComptonScatterConfidence::Likely:     return "Likely";
+      case ComptonScatterConfidence::VeryLikely: return "VeryLikely";
+    }
+    return "Unknown";
+  }//const char* to_string( ComptonScatterConfidence c )
+
+
+  const char* to_string( ComptonScatterType t )
+  {
+    switch( t )
+    {
+      case ComptonScatterType::None:               return "None";
+      case ComptonScatterType::ComptonPeak:        return "ComptonPeak";
+      case ComptonScatterType::ComptonEdge:        return "ComptonEdge";
+      case ComptonScatterType::ComptonPeakOrEdge: return "ComptonPeakOrEdge";
+    }
+    return "Unknown";
+  }//const char* to_string( ComptonScatterType t )
+
+
+  ComptonPeakCheckStatus compton_peak_check(
+      const shared_ptr<const PeakDef> &candidate,
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> &user_peaks,
+      const shared_ptr<const SpecUtils::Measurement> &spectrum,
+      const shared_ptr<const DetectorPeakResponse> &detector )
+  {
+    ComptonPeakCheckStatus result;
+
+    if( !candidate || !candidate->gausPeak() || !user_peaks || user_peaks->empty() )
+      return result;
+
+    const double electron_rest_mass = 510.9989; // keV; matches escape_peak_check at AnalystChecks.cpp:2025
+
+    result.candidateMean = candidate->mean();
+    result.candidateFwhm = candidate->fwhm();
+    const double cand_amp = candidate->amplitude();
+
+    // Cheap-path FWHM only: use DRF resolution info if available; otherwise
+    // -1 sentinel triggers the sqrt(E)-vs-parent fallback below.
+    double expected_det_fwhm = -1.0;
+    if( detector && detector->hasResolutionInfo() )
+    {
+      try
+      {
+        expected_det_fwhm = detector->peakResolutionFWHM( static_cast<float>(candidate->mean()) );
+      }catch( std::exception & )
+      {
+        expected_det_fwhm = -1.0;
+      }
+    }
+    result.expectedDetectorFwhm = expected_det_fwhm;
+
+    // Search higher-energy user peaks for kinematic match.
+    struct ParentMatch
+    {
+      shared_ptr<const PeakDef> parent;
+      ComptonScatterType type = ComptonScatterType::None;
+      double scatter_angle_deg = 0.0;
+      double energy_match_score = std::numeric_limits<double>::max(); // |dE| / candidateFwhm
+    };
+
+    // Hoist candidate-side constants out of the parent loop and guard against
+    // a degenerate zero-mean candidate (would divide by zero in the kinematic
+    // inversion below).
+    const double Eprime = candidate->mean();
+    const double cand_fwhm = std::max( candidate->fwhm(), 1e-6 );
+    if( Eprime <= 0.0 )
+      return result;
+
+    ParentMatch best;
+
+    for( const shared_ptr<const PeakDef> &p : *user_peaks )
+    {
+      if( !p || !p->gausPeak() || (p == candidate) )
+        continue;
+      if( p->mean() <= Eprime + 0.5*cand_fwhm )
+        continue;
+
+      const double Ep = p->mean();
+      const double alpha = Ep / electron_rest_mass;
+
+      // Energy-distance window for accepting a candidate as a kinematic match.
+      // Detector resolution at the feature energy is roughly the parent's FWHM
+      // (HPGe ~constant, NaI ~sqrt(E)) and the candidate's own FWHM bounds the
+      // centroid uncertainty for broad backscatter / edge fits, so take the
+      // looser of the two scaled appropriately.
+      const double match_window = std::max( 2.5 * p->fwhm(), 1.25 * cand_fwhm );
+
+      // Kinematic ComptonPeak inversion:
+      //   E' = Ep / ( 1 + alpha (1 - cos theta) )
+      //     => cos theta = 1 - (1/alpha)*( Ep/E' - 1 )
+      const double cos_theta_raw = 1.0 - (1.0/alpha) * ( Ep / Eprime - 1.0 );
+
+      double dE_peak_keV = std::numeric_limits<double>::max();
+      double theta_deg = 0.0;
+      if( cos_theta_raw >= -1.0 && cos_theta_raw <= 1.0 )
+      {
+        // Geometrically possible scatter angle.
+        const double Eprime_at_theta = Ep / ( 1.0 + alpha*(1.0 - cos_theta_raw) );
+        dE_peak_keV = std::abs( Eprime - Eprime_at_theta );
+        theta_deg = std::acos( cos_theta_raw ) * 180.0 / 3.14159265358979323846;
+      }else if( cos_theta_raw < -1.0 && Ep > 100.0 )
+      {
+        // Candidate is below the kinematic minimum (E_bs at theta=180 deg).
+        // Multiple-scatter buildup and broad-peak fit effects can pull the
+        // centroid below E_bs; treat as a backscatter (theta=180) match.
+        // Gate on Ep > 100 keV: below ~100 keV the kinematic separation
+        // E_p - E_bs collapses (e.g., 18 keV at Ep=80, 12 keV at Ep=60), so
+        // backscatter and parent are no longer distinguishable features and
+        // any candidate near E_bs is more plausibly a different real peak.
+        const double E_bs = Ep / (1.0 + 2.0*alpha);
+        dE_peak_keV = std::abs( Eprime - E_bs );
+        theta_deg = 180.0;
+      }// (cos_theta_raw > 1 is impossible given the parent-above-candidate filter.)
+
+      const double dpeak = dE_peak_keV / cand_fwhm;  // bucket_match scoring stays in candidate-FWHM units
+
+      // ComptonEdge: E_edge = Ep * 2 alpha / ( 1 + 2 alpha )
+      const double E_edge = Ep * 2.0 * alpha / ( 1.0 + 2.0 * alpha );
+      const double dE_edge_keV = std::abs( Eprime - E_edge );
+      const double dedge = dE_edge_keV / cand_fwhm;
+
+      ComptonScatterType this_type = ComptonScatterType::None;
+      double this_score = std::numeric_limits<double>::max();
+      double this_angle = 0.0;
+      const bool peak_in_window = (dE_peak_keV <= match_window);
+      const bool edge_in_window = (dE_edge_keV <= match_window);
+      if( peak_in_window && edge_in_window
+          && (Ep >= 200.0) && (Ep <= 320.0) )
+      {
+        this_type = ComptonScatterType::ComptonPeakOrEdge;
+        this_score = std::min( dpeak, dedge );
+        this_angle = theta_deg;  // 180 deg if below-kinematic branch matched
+      }else if( peak_in_window && (!edge_in_window || dpeak <= dedge) )
+      {
+        this_type = ComptonScatterType::ComptonPeak;
+        this_score = dpeak;
+        this_angle = theta_deg;
+      }else if( edge_in_window )
+      {
+        this_type = ComptonScatterType::ComptonEdge;
+        this_score = dedge;
+        this_angle = 180.0;
+      }else
+      {
+        continue;
+      }
+
+      if( this_score < best.energy_match_score )
+      {
+        best.parent = p;
+        best.type = this_type;
+        best.scatter_angle_deg = this_angle;
+        best.energy_match_score = this_score;
+      }
+    }//for( each potential parent )
+
+    if( !best.parent )
+      return result;
+
+    const shared_ptr<const PeakDef> parent = best.parent;
+    const double parent_amp = parent->amplitude();
+
+    // Hard guard: parent must be at least as large as candidate.
+    if( parent_amp <= cand_amp )
+      return result;
+
+    const double area_fraction = (parent_amp > 0.0) ? (cand_amp / parent_amp) : 0.0;
+    if( area_fraction > 0.5 )
+      return result;
+
+    // FWHM check.  Two parallel metrics:
+    //   - ratio (cand/expected): captures resolution-relative broadening.
+    //     Informative for HPGe where physics broadening (a few keV from
+    //     angular spread, multiple-scatter buildup) dominates the small
+    //     detector resolution and yields large ratios.
+    //   - absolute excess (cand - expected) in keV: captures physically
+    //     meaningful absolute broadening.  At low-resolution detectors (NaI)
+    //     the detector FWHM dominates the total in quadrature so the same
+    //     physics-driven broadening yields only a modest ratio (~1.1-1.4),
+    //     but the absolute keV excess is still meaningful.
+    // We bucket both, then take the more confident verdict.
+    //
+    // Detector FWHM at the candidate energy: prefer DRF cheap-path; otherwise
+    // sqrt(E)-scale parent FWHM (HPGe ~ sqrt(a+bE), NaI ~ sqrt(E)).
+    double expected_at_cand = expected_det_fwhm;
+    if( expected_at_cand <= 0.0 )
+    {
+      const double pmean = parent->mean();
+      const double pfwhm = parent->fwhm();
+      expected_at_cand = (pmean > 0.0)
+                          ? pfwhm * std::sqrt( candidate->mean() / pmean )
+                          : pfwhm;
+    }
+
+    const double fwhm_ratio = (expected_at_cand > 0.0)
+                              ? (candidate->fwhm() / expected_at_cand)
+                              : 0.0;
+    const double fwhm_excess_keV = std::max( 0.0, candidate->fwhm() - expected_at_cand );
+
+    // Hard guard: a real photopeak (ratio close to 1, near-zero absolute excess)
+    // is rejected.  Require failure on BOTH axes to bail out.
+    if( fwhm_ratio < 1.15 && fwhm_excess_keV < 0.5 )
+      return result;
+
+    // Parent S/C ratio over a FWHM-scaled window centred on the parent.
+    // Using the full continuum ROI would include continuum far from the peak
+    // (especially for wide multi-peak ROIs), giving a misleadingly low ratio;
+    // a +/- FWHM window captures the peak's main body and the continuum
+    // immediately under it.  We also collect all peaks sharing the continuum
+    // so CDF-step continuum integrations get the correct sibling contributions.
+    double parent_sc = 0.0;
+    assert( parent->continuum() );
+    if( parent->continuum() )
+    {
+      const shared_ptr<const PeakContinuum> pcont = parent->continuum();
+
+      const double parent_mean = parent->mean();
+      const double parent_fwhm = parent->fwhm();
+      const double sc_lower = parent_mean - parent_fwhm;
+      const double sc_upper = parent_mean + parent_fwhm;
+      
+      // The peak list only affects offset_integral for step continua.  For
+      // polynomial / linear / etc. types the peak list is ignored by the
+      // integration routine, so skip the sibling-peak scan in that case.
+      std::vector<const PeakDef *> roi_peaks;
+      if( PeakContinuum::is_step_continuum( pcont->type() ) )
+      {
+        roi_peaks.reserve( 4 );
+        for( const shared_ptr<const PeakDef> &q : *user_peaks )
+        {
+          if( q && (q->continuum() == pcont) )
+            roi_peaks.push_back( q.get() );
+        }
+      }
+      if( roi_peaks.empty() )
+        roi_peaks.push_back( parent.get() );
+      
+      try
+      {
+        const double cont_integral = pcont->offset_integral( sc_lower, sc_upper, spectrum, roi_peaks.data(), roi_peaks.size() );
+        if( cont_integral > 0.0 )
+          parent_sc = parent_amp / cont_integral;
+      }catch( std::exception & )
+      {
+        parent_sc = 0.0;
+      }
+    }
+    result.parentSignalToContinuum = parent_sc;
+
+    // Bucket each criterion conservatively; final confidence = min over criteria.
+    // FWHM bucket: take the more confident of two parallel verdicts (ratio
+    // and absolute keV excess).  See FWHM-check comment above for rationale.
+    auto bucket_fwhm = []( double r, double excess_keV ) {
+      ComptonScatterConfidence ratio_b = ComptonScatterConfidence::No;
+      if(      r >= 2.00 ) ratio_b = ComptonScatterConfidence::VeryLikely;
+      else if( r >= 1.40 ) ratio_b = ComptonScatterConfidence::Likely;
+      else if( r >= 1.15 ) ratio_b = ComptonScatterConfidence::Unlikely;
+
+      ComptonScatterConfidence excess_b = ComptonScatterConfidence::No;
+      if(      excess_keV >= 5.0 ) excess_b = ComptonScatterConfidence::VeryLikely;
+      else if( excess_keV >= 2.0 ) excess_b = ComptonScatterConfidence::Likely;
+      else if( excess_keV >= 0.5 ) excess_b = ComptonScatterConfidence::Unlikely;
+
+      return (static_cast<int>(ratio_b) >= static_cast<int>(excess_b)) ? ratio_b : excess_b;
+    };
+    auto bucket_area = []( double f ) {
+      if( f >= 0.02 && f <= 0.20 ) return ComptonScatterConfidence::VeryLikely;
+      if( f >= 0.005 && f <= 0.30 ) return ComptonScatterConfidence::Likely;
+      if( f < 0.005 || (f > 0.30 && f <= 0.50) ) return ComptonScatterConfidence::Unlikely;
+      return ComptonScatterConfidence::No;
+    };
+    auto bucket_sc = []( double s ) {
+      if( s >= 3.0 ) return ComptonScatterConfidence::VeryLikely;
+      if( s >= 1.0 ) return ComptonScatterConfidence::Likely;
+      if( s >= 0.3 ) return ComptonScatterConfidence::Unlikely;
+      return ComptonScatterConfidence::No;
+    };
+    auto bucket_angle = [&]( double theta_deg ) {
+      if( best.type == ComptonScatterType::ComptonEdge )
+        return ComptonScatterConfidence::VeryLikely; // angle implicit in edge match
+      // Thresholds loosened to accommodate angle uncertainty from ~0.5 FWHM
+      // drift in the candidate mean (continuum-shape effects on broad scatter
+      // peaks).  In the typical scatter kinematic regime dtheta/dE' is several
+      // deg/keV, so a half-FWHM drift in fitted mean translates to tens of
+      // deg of angle uncertainty -- tight angle bins would be too fragile.
+      if( theta_deg >= 120.0 ) return ComptonScatterConfidence::VeryLikely;
+      if( theta_deg >=  75.0 ) return ComptonScatterConfidence::Likely;
+      if( theta_deg >=  30.0 ) return ComptonScatterConfidence::Unlikely;
+      return ComptonScatterConfidence::No;
+    };
+    auto bucket_match = []( double s ) {
+      if( s <= 0.5 ) return ComptonScatterConfidence::VeryLikely;
+      if( s <= 1.0 ) return ComptonScatterConfidence::Likely;
+      if( s <= 2.0 ) return ComptonScatterConfidence::Unlikely;
+      return ComptonScatterConfidence::No;
+    };
+
+    const ComptonScatterConfidence fwhm_b = bucket_fwhm( fwhm_ratio, fwhm_excess_keV );
+
+    const ComptonScatterConfidence buckets[] = {
+      fwhm_b,
+      bucket_area( area_fraction ),
+      bucket_sc( parent_sc ),
+      bucket_angle( best.scatter_angle_deg ),
+      bucket_match( best.energy_match_score ),
+    };
+
+    ComptonScatterConfidence overall = ComptonScatterConfidence::VeryLikely;
+    for( const ComptonScatterConfidence b : buckets )
+    {
+      if( static_cast<int>(b) < static_cast<int>(overall) )
+        overall = b;
+    }
+
+    // FWHM floor-raiser: a candidate that is much wider than detector
+    // resolution is hard to explain as a real photopeak, so strong FWHM
+    // evidence lifts the overall verdict by one tier.  We still respect a
+    // hard No on any other axis -- a No anywhere keeps the overall as No.
+    if( overall != ComptonScatterConfidence::No )
+    {
+      ComptonScatterConfidence floor = ComptonScatterConfidence::No;
+      if( fwhm_b == ComptonScatterConfidence::VeryLikely )
+        floor = ComptonScatterConfidence::Likely;
+      else if( fwhm_b == ComptonScatterConfidence::Likely )
+        floor = ComptonScatterConfidence::Unlikely;
+      if( static_cast<int>(floor) > static_cast<int>(overall) )
+        overall = floor;
+    }
+
+    result.confidence = overall;
+    result.type = best.type;
+
+    char label_buf[160];
+    if( parent->parentNuclide() )
+    {
+      snprintf( label_buf, sizeof(label_buf), "Compton scatter from %s %.2f keV peak",
+                parent->parentNuclide()->symbol.c_str(), parent->mean() );
+    }else if( parent->reaction() )
+    {
+      snprintf( label_buf, sizeof(label_buf), "Compton scatter from %s %.2f keV peak",
+                parent->reaction()->name().c_str(), parent->mean() );
+    }else
+    {
+      snprintf( label_buf, sizeof(label_buf), "Compton scatter from %.2f keV peak", parent->mean() );
+    }
+
+    ComptonScatterParentInfo pinfo;
+    pinfo.parentPeak = parent;
+    pinfo.parentEnergy = parent->mean();
+    pinfo.parentFwhm = parent->fwhm();
+    pinfo.scatterAngle = best.scatter_angle_deg;
+    pinfo.areaFraction = area_fraction;
+    pinfo.userLabel = string( label_buf );
+    result.parentInfo = pinfo;
+
+    return result;
+  }//ComptonPeakCheckStatus compton_peak_check( candidate, user_peaks, spectrum, detector )
+
+
+  ComptonPeakCheckStatus compton_peak_check( const ComptonPeakCheckOptions &options, InterSpec *interspec )
+  {
+    if( !interspec )
+      throw runtime_error( "compton_peak_check: No InterSpec session available" );
+
+    shared_ptr<SpecMeas> meas = interspec->measurment( options.specType );
+    if( !meas )
+      throw runtime_error( "compton_peak_check: No measurement loaded for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+
+    shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram( options.specType );
+    if( !spectrum )
+      throw runtime_error( "compton_peak_check: No spectrum displayed for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+
+    PeakModel *peak_model = interspec->peakModel();
+    if( !peak_model )
+      return ComptonPeakCheckStatus{};
+
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> user_peaks
+                                                  = peak_model->peaks( options.specType );
+    if( !user_peaks || user_peaks->empty() )
+      return ComptonPeakCheckStatus{};
+
+    // Find the candidate peak: nearest user peak to options.energy.
+    shared_ptr<const PeakDef> candidate;
+    double smallest_diff = std::numeric_limits<double>::max();
+    for( const shared_ptr<const PeakDef> &p : *user_peaks )
+    {
+      if( !p || !p->gausPeak() )
+        continue;
+      const double diff = std::abs( p->mean() - options.energy );
+      if( diff < smallest_diff )
+      {
+        smallest_diff = diff;
+        candidate = p;
+      }
+    }
+
+    if( !candidate )
+      return ComptonPeakCheckStatus{};
+
+    const double tol = std::max( 0.5, candidate->fwhm() );
+
+    if( smallest_diff > tol )
+    {
+      ComptonPeakCheckStatus empty;
+      empty.searchWindow = tol;
+      return empty;
+    }
+
+    ComptonPeakCheckStatus result = compton_peak_check( candidate, user_peaks, spectrum,
+                                                        meas->detector() );
+    result.searchWindow = tol;
+    return result;
+  }//ComptonPeakCheckStatus compton_peak_check( const ComptonPeakCheckOptions &options, InterSpec *interspec )
+
 } // namespace AnalystChecks
