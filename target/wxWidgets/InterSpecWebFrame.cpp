@@ -958,10 +958,11 @@ void InterSpecWebFrame::OnNewWindow(wxWebViewEvent& evt)
       if (client->get(url_str.utf8_string()))
       {
         wxLogMessage("Have started GET for download");
-      }
-      else
+      }else
       {
         wxLogMessage("Error calling Get for download URL");
+        delete client;
+        client = nullptr;
       }
 
       /*

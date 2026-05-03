@@ -46,7 +46,10 @@ if( NOT InterSpec_FETCH_DEPENDENCIES )
   # with wxWidgets I compile with CMake on Windows, so we'll keep compiling
   # as a subdirectory for now... 
   set( wxWidgets_USE_STATIC ON CACHE BOOL "" )
-  find_package( wxWidgets REQUIRED core base webview stc )
+  # `net` is needed for wxTCPServer/wxTCPClient, which is the backend of
+  #  wxWidgets IPC (wxServer/wxClient) on Unix. Without it, single-instance
+  #  open-file forwarding silently fails on Linux multilib builds.
+  find_package( wxWidgets REQUIRED core base net webview stc )
 
 #  set(wxBUILD_SHARED OFF CACHE BOOL "")
 #  if(WIN32)
@@ -136,7 +139,6 @@ else( InterSpec_FETCH_DEPENDENCIES )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_JS_LIB} InterSpecLib )
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "InterSpec")
 
 # Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."
@@ -156,7 +158,7 @@ if( APPLE )
   
   set( CPACK_GENERATOR "ZIP;DragNDrop" )
   set( CPACK_BINARY_ZIP ON )
-  set( CPACK_BINARY_DRAGNDROP, ON )
+  set( CPACK_BINARY_DRAGNDROP ON )
   
   set( CPACK_BUNDLE_NAME "InterSpec.app" )
   set( CPACK_BUNDLE_ICON "${CMAKE_CURRENT_SOURCE_DIR}/../osx/InterSpec.icns" )

@@ -424,21 +424,24 @@ namespace InterSpecAddOn
     }
     
     ns_message_to_node_js_callback->Acquire();
-    
+
     //BlockingCall only blocks while putting into work queue - it does not block until the work
-    //  is done, so we need to amke sure the next array will stick around for long enough, hence
-    //  the call to new;  the \c call_msg_send_in_node function will take care of deleting it.
-    std::array<std::string,3> *value = new std::array<std::string,3>{session_token,msg_name,msg_data};
-    napi_status status = ns_message_to_node_js_callback->BlockingCall(value);
-    
+    //  is done, so we need to make sure the data will stick around long enough; the worker
+    //  call_msg_send_in_node takes ownership and deletes it.  If BlockingCall fails to enqueue,
+    //  the worker is never invoked, so we must delete it ourselves to avoid a leak.
+    std::unique_ptr<std::array<std::string,3>> value(
+        new std::array<std::string,3>{session_token, msg_name, msg_data} );
+    const napi_status status = ns_message_to_node_js_callback->BlockingCall( value.get() );
+
     ns_message_to_node_js_callback->Release();
-    
+
     if( status == napi_ok )
     {
+      value.release(); // ownership transferred to call_msg_send_in_node
       std::cout << "InterSpecAddOn::send_nodejs_message: successfully called JS for msg_name=" << msg_name << std::endl;
       return true;
     }
-    
+
     std::cerr << "InterSpecAddOn::send_nodejs_message: failed call to JS for msg_name=" << msg_name << std::endl;
     return false;
     
@@ -591,7 +594,7 @@ namespace InterSpecAddOn
         }catch( std::exception &e )
         {
           std::cerr << "Failed to set static data directory: " << e.what() << std::endl;
-          Napi::Number::New( env, -7 );
+          return Napi::Number::New( env, -7 );
         }
       }//if( !docroot.empty() )
 
