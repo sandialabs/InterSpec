@@ -2945,9 +2945,10 @@ void testfile( const string &filename, vector<string> &result,
     
     if( testresult )
       result = get_result_fields( *db_test_info, base_search_dir, database->xml_filters() );
-  }catch( ... )
+  }catch( std::exception& e)
   {
     cerr << "Caught exception testing file: " << filename << endl;
+    cerr << "Caught exception: " << e.what() << std::endl;
   }
 }//testfile
 

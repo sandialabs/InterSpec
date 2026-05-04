@@ -1716,9 +1716,12 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
   
   
   // ============= FARM: Isotopics via FRAM =============
-  if( farm_options.enable_farm_analysis && farm_options.enable_fram_isotopics
-      && !farm_options.fram_exe_path.empty() && farm_foreground
-     && highres && (do_u_enrich || do_pu_enrich) )
+  if( farm_options.enable_farm_analysis && 
+      farm_options.enable_fram_isotopics && 
+      !farm_options.fram_exe_path.empty() && 
+      farm_foreground && 
+      highres && 
+      (do_u_enrich || do_pu_enrich) )
   {
     shared_ptr<SpecUtils::SpecFile> fram_spec = make_shared<SpecUtils::SpecFile>( meas );
     fram_spec->remove_measurements( fram_spec->measurements() );
@@ -1731,7 +1734,6 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
       fram_back->remove_measurements( fram_back->measurements() );
       fram_back->add_measurement( farm_background, true );
     }
-
     const Farm::EnrichmentResults fram_result = Farm::run_fram_isotopics(
             farm_options.fram_exe_path, farm_options.fram_output_path, fram_spec, fram_back, do_u_enrich, do_pu_enrich );
     isotopics_json.push_back( fram_result.toJson() );
