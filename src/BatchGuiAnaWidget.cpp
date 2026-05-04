@@ -2119,19 +2119,11 @@ std::pair<bool,Wt::WString> BatchGuiIsotopicsByNuclidesWidget::canDoAnalysis() c
 
   if( resolved_state )
   {
-    const shared_ptr<const DetectorPeakResponse> det = detector();
-    bool needs_drf = false;
-    for( const RelActCalcAuto::RelEffCurveInput &c : resolved_state->options.rel_eff_curves )
-    {
-      if( c.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-      { needs_drf = true; break; }
-    }
     const RelActCalcAuto::FwhmEstimationMethod fwhm_m = resolved_state->options.fwhm_estimation_method;
-    if( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency
-        || fwhm_m == RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency )
-      needs_drf = true;
+    const bool needs_drf = ( ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+                             || ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency ) );
 
-    if( needs_drf && !det )
+    if( needs_drf && !detector() )
       return { false, WString::tr("bgw-no-ana-iso-need-drf") };
   }
 

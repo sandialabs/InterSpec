@@ -544,23 +544,13 @@ Result run_on_file( const std::string &exemplar_filename,
   if( !drf && cached_exemplar )
     drf = cached_exemplar->detector();
 
-  if( !drf )
+  if( !drf && fwhm_method_requires_drf( state->options.fwhm_estimation_method )  )
   {
-    if( state_uses_phys_model( *state ) )
-    {
-      result.m_error_msg = "The exemplar / state has a Physical-model relative-efficiency"
-                           " curve, but no detector response function was provided.";
-      result.m_result_code = ResultCode::ExemplarUsesPhysModelButNoDrf;
-      return result;
-    }
-    if( fwhm_method_requires_drf( state->options.fwhm_estimation_method ) )
-    {
-      result.m_error_msg = "The exemplar / state's FwhmEstimationMethod is "
-                            + string( RelActCalcAuto::to_str(state->options.fwhm_estimation_method) )
-                           + ", which requires a DRF, but none was provided.";
-      result.m_result_code = ResultCode::FwhmMethodNeedsDrfButNoneAvailable;
-      return result;
-    }
+    result.m_error_msg = "The exemplar / state's FwhmEstimationMethod is "
+                          + string( RelActCalcAuto::to_str(state->options.fwhm_estimation_method) )
+                         + ", which requires a DRF, but none was provided.";
+    result.m_result_code = ResultCode::FwhmMethodNeedsDrfButNoneAvailable;
+    return result;
   }
 
   // ---- 7. Solve --------------------------------------------------------------
