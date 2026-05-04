@@ -42,7 +42,7 @@ class SimpleActivityCalc;
 class DetectorPeakResponse;
 class DetectorDisplay;
 class MaterialDB;
-class GadrasScatterTable;
+class GadrasShieldScatter;
 
 namespace Wt
 {
@@ -197,7 +197,7 @@ public:
   static std::string to_str( SimpleActivityGeometryType type );
   
   static SimpleActivityCalcResult performCalculation( const SimpleActivityCalcInput& input,
-                                                     const GadrasScatterTable * const scatter = nullptr );
+                                                     const GadrasShieldScatter * const scatter = nullptr );
   
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );

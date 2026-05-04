@@ -69,7 +69,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/GadrasSpecFunc.h"
+#include "InterSpec/GadrasShieldScatter.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -104,12 +104,12 @@ namespace
   
   std::mutex sm_scatter_mutex;
   bool sm_tried_init_scatter = false;
-  shared_ptr<const GadrasScatterTable> sm_scatter;
+  shared_ptr<const GadrasShieldScatter> sm_scatter;
 #if( USE_GADRAS_SCATTER_CLEANUP_SCHEDULING )
   std::unique_ptr<boost::asio::deadline_timer> sm_cleanup_timer;
 #endif
 
-  shared_ptr<const GadrasScatterTable> get_scatter_table()
+  shared_ptr<const GadrasShieldScatter> get_scatter_table()
   {
     std::lock_guard<std::mutex> lock( sm_scatter_mutex );
     if( sm_tried_init_scatter )
@@ -131,14 +131,14 @@ namespace
     
     try
     {
-      const string data = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
-      sm_scatter = make_shared<GadrasScatterTable>( data );
+      const string data = SpecUtils::append_path( InterSpec::staticDataDirectory(), "sandia.shieldscatter.db" );
+      sm_scatter = make_shared<GadrasShieldScatter>( data );
     }catch( std::exception &e )
     {
       cerr << "SimpleActivityCalc: Failed to init GADRAS scatter object: " << e.what() << endl;
     }
     return sm_scatter;
-  }//shared_ptr<const GadrasScatterTable> get_scatter_table()
+  }//shared_ptr<const GadrasShieldScatter> get_scatter_table()
   
   
   void free_scatter_table_worker()
@@ -1745,7 +1745,7 @@ void SimpleActivityCalc::updateResult()
   
   try
   {
-    shared_ptr<const GadrasScatterTable> scatter = get_scatter_table();
+    shared_ptr<const GadrasShieldScatter> scatter = get_scatter_table();
     
     const SimpleActivityCalcInput input = createCalcInput();
     const SimpleActivityCalcResult result = performCalculation( input, scatter.get() );
@@ -2074,7 +2074,7 @@ SimpleActivityCalcInput SimpleActivityCalc::createCalcInput() const
 
 
 SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleActivityCalcInput& input,
-                                                                const GadrasScatterTable * const scatter )
+                                                                const GadrasShieldScatter * const scatter )
 {
   SimpleActivityCalcResult result;
   
