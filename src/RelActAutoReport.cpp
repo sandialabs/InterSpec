@@ -1321,43 +1321,46 @@ string render_template( inja::Environment &env,
       full_path = canon;
   }
 
-  const bool explicit_include_dir
-      = !include_dir.empty()
-      && !SpecUtils::iequals_ascii(include_dir, "none")
-      && !SpecUtils::iequals_ascii(include_dir, "default");
-
-  if( explicit_include_dir )
-  {
-    string include_canon = include_dir;
-    if( !SpecUtils::make_canonical_path(include_canon) )
-      throw runtime_error( "RelActAutoReport: include directory '" + include_dir
-                           + "' does not exist or is not accessible." );
-    if( !include_canon.empty() && include_canon.back() != ns_path_sep )
-      include_canon += ns_path_sep;
-
-    if( !SpecUtils::starts_with(full_path, include_canon.c_str()) )
-      throw runtime_error( "RelActAutoReport: template '" + full_path
-                          + "' is not under the specified include directory '"
-                          + include_canon + "'.  Either pass a template path under that"
-                          " directory, or omit --report-template-include-dir to let it be"
-                          " inferred from the template's parent directory." );
-
-    const string relative_name = full_path.substr( include_canon.size() );
-    inja::Template parsed = env.parse_template( relative_name );
-    return env.render( parsed, data );
-  }
-
-  // No user-specified include_dir -- read file content directly so Inja's
-  // input_path is irrelevant for the top-level template.
+  
+  // Read the template file directly and feed to env.parse().  We avoid
+  // env.parse_template(name) because Inja resolves it against env.input_path,
+  // which the caller's env may not have set up to match the template's directory.
   std::vector<char> content;
   try
   {
     SpecUtils::load_file_data( full_path.c_str(), content );
   }catch( std::exception &e )
   {
+    // Okay - we'll try using `env` to read the file - we're desperate here
+    const bool explicit_include_dir
+      = !include_dir.empty()
+      && !SpecUtils::iequals_ascii(include_dir, "none")
+      && !SpecUtils::iequals_ascii(include_dir, "default");
+
+    if( explicit_include_dir )
+    {
+      string include_canon = include_dir;
+      if( !SpecUtils::make_canonical_path(include_canon) )
+        throw runtime_error( "RelActAutoReport: include directory '" + include_dir
+                           + "' does not exist or is not accessible." );
+      if( !include_canon.empty() && include_canon.back() != ns_path_sep )
+        include_canon += ns_path_sep;
+
+      if( !SpecUtils::starts_with(full_path, include_canon.c_str()) )
+        throw runtime_error( "RelActAutoReport: template '" + full_path
+                            + "' is not under the specified include directory '"
+                            + include_canon + "'.  Either pass a template path under that"
+                            " directory, or omit --report-template-include-dir to let it be"
+                            " inferred from the template's parent directory." );
+      const string relative_name = full_path.substr( include_canon.size() );
+      inja::Template parsed = env.parse_template( relative_name );
+      return env.render( parsed, data );
+    }//if( explicit_include_dir )
+
     throw runtime_error( "RelActAutoReport: could not read template '" + full_path
                         + "': " + e.what() );
-  }
+  }//try / catch 
+
   if( !content.empty() && content.back() == '\0' )
     content.pop_back();
   const std::string content_str( content.begin(), content.end() );

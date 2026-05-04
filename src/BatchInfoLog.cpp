@@ -199,17 +199,37 @@ namespace BatchInfoLog
     //Also see: `WServer::instance()->appRoot()`, which isnt valid right now
     const string app_root = SpecUtils::append_path( static_data_dir, ".." );
     const string docroot  = SpecUtils::append_path( app_root, "InterSpec_resources" );
-    
+
+    // d3.v3.min.js and SpectrumChartD3.{js,css} are deployed from
+    // external_libs/SpecUtils/d3_resources/ into the build's InterSpec_resources/ at build
+    // time (not committed to source).  In the unit-test build the staticDataDirectory points
+    // at the source tree, so the deployed files may not be there yet — fall back to the
+    // SpecUtils source location so tests can still embed the assets.
+    const auto pick_path = [&docroot,&app_root]( const string &filename ) -> string {
+      const string deployed = SpecUtils::append_path( docroot, filename );
+#if( BUILD_AS_UNIT_TEST_SUITE )
+      if( !SpecUtils::is_file(deployed) )
+      {
+        const string src = SpecUtils::append_path(
+          SpecUtils::append_path( app_root, "external_libs/SpecUtils/d3_resources" ),
+          filename );
+        if( SpecUtils::is_file(src) )
+          return src;
+      }
+#endif
+      return deployed;
+    };
+
     const string sc_js_fn = SpecUtils::is_file( SpecUtils::append_path( docroot, "SpectrumChartD3.min.js") )
                             ? "SpectrumChartD3.min.js" : "SpectrumChartD3.js";
     const string sc_css_fn = SpecUtils::is_file( SpecUtils::append_path( docroot, "SpectrumChartD3.min.css") )
                             ? "SpectrumChartD3.min.css" : "SpectrumChartD3.css";
-    
-    string d3_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
-    
-    string sc_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_js_fn ) );
-    string sc_css = AppUtils::file_contents( SpecUtils::append_path( docroot, sc_css_fn ) );
-    
+
+    string d3_js  = AppUtils::file_contents( pick_path( "d3.v3.min.js" ) );
+
+    string sc_js  = AppUtils::file_contents( pick_path( sc_js_fn ) );
+    string sc_css = AppUtils::file_contents( pick_path( sc_css_fn ) );
+
     answer.emplace_back( "D3_JS", std::move(d3_js) );
     answer.emplace_back( "SpectrumChart_JS", std::move(sc_js) );
     answer.emplace_back( "SpectrumChart_CSS", std::move(sc_css) );
@@ -232,7 +252,20 @@ namespace BatchInfoLog
     const string app_root = SpecUtils::append_path( static_data_dir, ".." );
     const string docroot  = SpecUtils::append_path( app_root, "InterSpec_resources" );
 
-    string d3_js = AppUtils::file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
+    // d3.v3.min.js is deployed from external_libs/SpecUtils/d3_resources/ at build time;
+    // see load_spectrum_chart_js_and_css() for the BUILD_AS_UNIT_TEST_SUITE rationale.
+    string d3_js_path = SpecUtils::append_path( docroot, "d3.v3.min.js" );
+#if( BUILD_AS_UNIT_TEST_SUITE )
+    if( !SpecUtils::is_file(d3_js_path) )
+    {
+      const string src = SpecUtils::append_path(
+        SpecUtils::append_path( app_root, "external_libs/SpecUtils/d3_resources" ),
+        "d3.v3.min.js" );
+      if( SpecUtils::is_file(src) )
+        d3_js_path = src;
+    }
+#endif
+    string d3_js = AppUtils::file_contents( d3_js_path );
 
     string plot_js  = AppUtils::file_contents( SpecUtils::append_path( docroot, "ShieldingSourceFitPlot.js" ) );
     string plot_css = AppUtils::file_contents( SpecUtils::append_path( docroot, "ShieldingSourceFitPlot.css" ) );
