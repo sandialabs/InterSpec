@@ -84,7 +84,9 @@ extern "C"
   /** Returns 0 if authorized but not alive, 1 if session is alive, -1 if dead, -2 if nor authorized. */
   LIB_INTERFACE(int) interspec_remove_allowed_session_token( const char *session_token );
   
-  /** Returns 1 if session with specified token is alive, otherwise 0 */
+  /** Returns 1 if a session with the specified token is loaded (alive),
+   * 0 otherwise (unknown token, authorized but not yet loaded, or dead).
+   */
   LIB_INTERFACE(int) interspec_session_is_alive( const char *session_token );
   
   /** Open one or more files from the filesystem.  For macOS this would be

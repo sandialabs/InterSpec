@@ -33,7 +33,9 @@
 
 #include "wx/ipc.h"
 #include "wx/timer.h"
+#include "wx/utils.h"
 #include "wx/config.h"
+#include "wx/filefn.h"
 #include "wx/msgdlg.h"
 #include "wx/cmdline.h"
 #include "wx/filename.h"
@@ -42,9 +44,11 @@
 #endif
 #include "wx/stdpaths.h"
 #include "wx/hyperlink.h"
+#include "wx/webview.h"
 
 #include <Wt/Json/Array>
 #include <Wt/Json/Value>
+#include <Wt/Json/Parser>
 #include <Wt/Json/Serializer>
 
 #include "InterSpecWxApp.h"
@@ -190,6 +194,31 @@ namespace
 #ifndef __APPLE__
 class IpcServer;
 
+/** Returns a per-user, per-build IPC service name that both client and server
+ must use the same value of, so the IPC actually connects.
+
+ On Windows this is the DDE service name.  On Linux/Unix it is a filesystem
+ path used as a Unix-domain socket - wxWidgets' IPC framework accepts either a
+ numeric port or a filename for the service argument, and a filename avoids the
+ multi-user / multi-build collisions of a fixed TCP port.
+ */
+static wxString compute_ipc_service_name()
+{
+  const wxString suffix = wxGetUserId()
+                          + "-" + std::to_string( AppUtils::compile_date_as_int() );
+#ifdef _WIN32
+  return "InterSpecIPC-" + suffix;
+#else
+  // Prefer XDG_RUNTIME_DIR (per-user, tmpfs, auto-cleaned at logout); fall back
+  // to /tmp.  The uid in the filename guards against shared /tmp collisions.
+  wxString dir;
+  if( !wxGetEnv( "XDG_RUNTIME_DIR", &dir ) || dir.IsEmpty() )
+    dir = "/tmp";
+  return dir + "/InterSpecIPC-" + suffix + ".sock";
+#endif
+}//wxString compute_ipc_service_name()
+
+
 class IpcConnection : public wxConnection
 {
 public:
@@ -198,25 +227,26 @@ public:
 
   virtual bool OnExec(const wxString& topic, const wxString& data)
   {
-    // Server gets messages here when client uses the Execute
-    //  TODO: send this information on to wxApp to actually use the information
-    wxLogMessage("Have recieved message on server topic='%s', data='%s'", topic, data);
+    wxLogMessage("Received IPC message on server topic='%s', data='%s'", topic, data);
 
+    InterSpecWxApp * const app = dynamic_cast<InterSpecWxApp*>(wxApp::GetInstance());
+    assert( app );
+    if( !app )
+      return false;
 
-    assert( (topic == "FileToOpen") || (topic == "OpenNewWindow"));
-    auto app = dynamic_cast<InterSpecWxApp*>(wxApp::GetInstance());
-
-    if (topic == "FileToOpen")
+    if( topic == "FileToOpen" )
     {
       app->handle_open_file_message(data.utf8_string());
     }
-    else if (topic == "OpenNewWindow")
+    else if( topic == "OpenNewWindow" )
     {
       app->new_app_window();
     }
     else
     {
-      assert(0);
+      // OnAcceptConnection should already have rejected unknown topics.
+      assert( 0 );
+      return false;
     }
 
     return true;
@@ -233,6 +263,11 @@ public:
 
   virtual wxConnectionBase* OnAcceptConnection(const wxString& topic) wxOVERRIDE
   {
+    if( (topic != "FileToOpen") && (topic != "OpenNewWindow") )
+    {
+      wxLogWarning( "InterSpec: rejecting IPC connection for unknown topic '%s'", topic );
+      return nullptr;
+    }
     return new IpcConnection();
   }
 };
@@ -391,8 +426,21 @@ InterSpecWxApp::InterSpecWxApp() :
 
     const wxString& token = active_frame->app_token();
 
-    //["/path/to/some/file","/some/other/file","interspec://drf/define?..."]
-    // TODO: use Wt::JSON to make sure this message is proper JSON, etc
+    // Expected payload: ["/path/to/some/file","/some/other/file","interspec://drf/define?..."]
+    // Validate at this layer so a malformed message doesn't trigger a user-facing
+    // "issue opening" dialog further down — it's a developer/IPC bug, not a file issue.
+    try
+    {
+      Wt::Json::Value parsed;
+      Wt::Json::parse( message, parsed );
+      if( parsed.type() != Wt::Json::ArrayType )
+        throw std::runtime_error( "IPC payload was not a JSON array" );
+    }catch( std::exception &e )
+    {
+      wxLogError( "InterSpec: ignoring malformed IPC open-file payload: %s", e.what() );
+      return;
+    }
+
     const int status = InterSpecServer::open_file_in_session(token.utf8_string().c_str(), message.c_str());
 
     active_frame->Show();
@@ -583,24 +631,17 @@ InterSpecWxApp::InterSpecWxApp() :
 #ifndef __APPLE__
   bool InterSpecWxApp::check_single_instance()
   {
-    // Under Unix, the service name may be either an integer port identifier 
-    //  in which case an Internet domain socket will be used for the communications, 
-    //  or a valid file name (which shouldn't exist and will be deleted afterwards)
-    //  in which case a Unix domain socket is created.
-    wxString serverName = "InterSpecIPC";
-#ifndef _WIN32
-    serverName = "7072";
-#endif
+    const wxString service = compute_ipc_service_name();
 
-    // Make sure were the only instance running
-    //  (is this per user, or per computer? Double check)
+    // Make sure were the only instance running.
     m_checker = new wxSingleInstanceChecker();
 
-    // By default wxWidgets uses the name `GetAppName() + '-' + wxGetUserId()` - however, 
-    // the Electron version of the app uses the same thing, so we'll modify this one a 
+    // By default wxWidgets uses the name `GetAppName() + '-' + wxGetUserId()` - however,
+    // the Electron version of the app uses the same thing, so we'll modify this one a
     //  little by appending build date, so this way if you want, you can have two different
-    //  builds of InterSpec running
-    const wxString app_name = GetAppName() + '-' + wxGetUserId() 
+    //  builds of InterSpec running.  The IPC service name above is keyed off the same
+    //  per-user/per-build suffix so client and server always agree.
+    const wxString app_name = GetAppName() + '-' + wxGetUserId()
                               + "-" + std::to_string(AppUtils::compile_date_as_int());
     const bool did_create = m_checker->Create( app_name );
 
@@ -610,29 +651,18 @@ InterSpecWxApp::InterSpecWxApp() :
 
     if( did_create && m_checker->IsAnotherRunning() )
     {
-      // Here is where we would request the existing instance to open a file, or open a new window.
-      //wxLogError(_("Another program instance is already running, aborting."));
-
-      // Use https://docs.wxwidgets.org/3.0/overview_ipc.html to message other session
-
-      delete m_checker; // OnExit() won't be called if we return false
-      m_checker = nullptr;
-
       size_t n_valid_args = 0;
       Wt::Json::Array msg_json;
       for( size_t i = 0; i < m_command_line_args.size(); ++i )
       {
         std::string arg = m_command_line_args[i].utf8_string();
 
-        if( SpecUtils::istarts_with( arg, "interspec:" ) 
+        if( SpecUtils::istarts_with( arg, "interspec:" )
           || SpecUtils::istarts_with( arg, "raddata://g" ) )
         {
           n_valid_args += 1;
         }else
         {
-          // We could use SpecUtils to make canonical, but we'll use the wx stuff, just to try it out
-          // arg = SpecUtils::make_canonical_path(arg)
-
           wxFileName fname( m_command_line_args[i] );
           if( fname.IsOk() && fname.IsFileReadable() )
             n_valid_args += 1;
@@ -644,28 +674,57 @@ InterSpecWxApp::InterSpecWxApp() :
         msg_json.push_back( Wt::Json::Value( Wt::WString::fromUTF8( arg ) ) );
       }//for (size_t i = 0; i < m_command_line_args.size(); ++i)
 
-      // Right now we will open a new Window if there are no file or URI arguments,
-      //  or we will open the files and/or URI.
-
+      // Open a new window if there are no file/URI arguments, otherwise hand
+      // the files/URIs off to the running instance.
       const char *topic = n_valid_args ? "FileToOpen" : "OpenNewWindow";
-      std::string message = Wt::Json::serialize( msg_json, 0 );
+      const std::string message = Wt::Json::serialize( msg_json, 0 );
 
       IpcClient client;
-      IpcConnection *connection = (IpcConnection *)client.MakeConnection( "localhost", serverName, topic );
+      IpcConnection *connection = static_cast<IpcConnection *>(
+        client.MakeConnection( "localhost", service, topic ) );
 
-      connection->Execute( message.c_str(), message.size() + 1 );
-      connection->Disconnect();
-      delete connection;
+      if( connection )
+      {
+        connection->Execute( message.c_str(), message.size() + 1 );
+        connection->Disconnect();
+        delete connection;
 
-      return false;  //OnExit wont be called.
+        delete m_checker; // OnExit() won't be called when we return false
+        m_checker = nullptr;
+        return false;
+      }
+
+      // Connection to the running instance failed - the other process is alive
+      // (the single-instance checker says so) but its IPC channel is unreachable
+      // (stale, crashed listener, or similar).  Fall through and start as an
+      // independent instance so the user isn't locked out.  Server creation
+      // below will likely also fail (the other instance still owns the name),
+      // and that path is now also handled gracefully.
+      wxLogError( "InterSpec: another instance is running but its IPC channel "
+                  "is unreachable (service '%s'). Starting an independent instance.",
+                  service );
     }//if( did_create && m_checker->IsAnotherRunning() )
 
 
     m_ipc_server = new IpcServer();
 
+#ifndef _WIN32
+    // On Unix the service name is a Unix-domain socket path.  A leftover socket
+    // from a prior crashed run will make Create() fail.  The single-instance
+    // checker has already confirmed no live peer (or we wouldn't be here), so
+    // it's safe to clear a stale file.
+    if( wxFileName::FileExists( service ) )
+      wxRemoveFile( service );
+#endif
 
-    if( !m_ipc_server->Create( "InterSpecIPC" ) )
-      wxMessageBox( "Error", "Error creating IPC server" );
+    if( !m_ipc_server->Create( service ) )
+    {
+      wxLogError( "InterSpec: failed to create IPC server on '%s'; "
+                  "open-file forwarding from secondary instances will not work.",
+                  service );
+      delete m_ipc_server;
+      m_ipc_server = nullptr;
+    }
 
     return true;
   }//bool check_single_instance();
@@ -768,8 +827,33 @@ InterSpecWxApp::InterSpecWxApp() :
 */
 
 
+#ifdef _WIN32
+    // The Edge backend is compiled in (the #error directives in wxMain.cpp
+    // and InterSpecWebFrame.cpp guarantee that), but the Microsoft Edge
+    // WebView2 *Runtime* is a separate component - bundled with Win11, but
+    // optional on Win10.  Detect a missing runtime up front and direct the
+    // user to the installer rather than letting them face an opaque error
+    // when the web view fails to construct.
+    if( !wxWebView::IsBackendAvailable( wxWebViewBackendEdge ) )
+    {
+      const wxString download_url = "https://developer.microsoft.com/en-us/microsoft-edge/webview2/";
+      wxMessageDialog dlg( nullptr,
+        "InterSpec requires the Microsoft Edge WebView2 Runtime to display its user interface, "
+        "but it doesn't appear to be installed on this computer.\n\n"
+        "The runtime ships with Windows 11, but on older Windows 10 installs it must be "
+        "installed separately.\n\n"
+        "Would you like to open the download page now?",
+        "Microsoft Edge WebView2 Runtime is required",
+        wxYES_NO | wxICON_ERROR | wxSTAY_ON_TOP );
+      dlg.SetExtendedMessage( "Download URL: " + download_url );
+      if( dlg.ShowModal() == wxID_YES )
+        wxLaunchDefaultBrowser( download_url );
+      return false; //OnExit wont be called.
+    }
+#endif
+
 #ifndef __APPLE__
-    // Check if any other instance is running.  
+    // Check if any other instance is running.
     //  If so, vmessage that instance and return from here.
     if( sm_single_instance && !check_single_instance() )
       return false; //OnExit wont be called.

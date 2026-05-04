@@ -11,29 +11,27 @@
   "scripts": {
     "install": "cmake-js compile",
     "start": "electron ./build_macOS/app/",
-    "package-mac": "electron-packager ./build_macos/app --overwrite --platform=darwin --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=macOS/InterSpec.icns --prune=true --out=release-builds --binaries=InterSpec.exe --extendInfo=macOS/Info.plist --entitlements=macOS/entitlements.mac.plist --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
-    "package-win": "electron-packager ./build_win/app InterSpec --overwrite --platform=win32 --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=LICENSE.md --ignore=README.md",
-    "package-win32": "electron-packager ./build_win_x86/app InterSpec --overwrite --platform=win32 --arch=ia32 --protocol=interspec --protocol-name=\"InterSpec\" --icon=windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=LICENSE.md --ignore=README.md",
-    "package-linux": "electron-packager ./build_linux/app InterSpec --overwrite --platform=linux --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=linux/InterSpec_desktop_icon_256x256.png --prune=true --out=release-builds --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
-    "package-manylinux": "electron-packager ./build_manylinux_electron/app InterSpec --overwrite --platform=linux --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --icon=linux/InterSpec_desktop_icon_256x256.png --prune=true --out=release-builds --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md"
+    "package-mac": "electron-packager ./build_macos/app --overwrite --platform=darwin --arch=arm64 --protocol=interspec --protocol-name=\"InterSpec\" --protocol=raddata --protocol-name=\"InterSpec\" --icon=macOS/InterSpec.icns --prune=true --out=release-builds --extendInfo=macOS/Info.plist --app-bundle-id=gov.sandia.InterSpec --osx-sign.identity=\"$OSX_SIGN_IDENTITY\" --osx-sign.entitlements=macOS/entitlements.mac.plist --osx-sign.entitlements-inherit=macOS/entitlements.mac.plist --osx-sign.hardenedRuntime=true --osx-notarize.keychainProfile=\"${NOTARY_KEYCHAIN_PROFILE:-interspec-notary}\" --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
+    "package-win": "electron-packager ./build_win/app InterSpec --overwrite --platform=win32 --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --protocol=raddata --protocol-name=\"InterSpec\" --icon=windows/icon.ico --prune=true --out=release-builds --version-string.CompanyName=\"Sandia National Laboratories\" --version-string.FileDescription=\"nuclear spectroscopy analysis program\" --version-string.ProductName=\"InterSpec\" --ignore=LICENSE.md --ignore=README.md",
+    "package-linux": "electron-packager ./build_linux/app InterSpec --overwrite --platform=linux --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --protocol=raddata --protocol-name=\"InterSpec\" --icon=linux/InterSpec_desktop_icon_256x256.png --prune=true --out=release-builds --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md",
+    "package-manylinux": "electron-packager ./build_manylinux_electron/app InterSpec --overwrite --platform=linux --arch=x64 --protocol=interspec --protocol-name=\"InterSpec\" --protocol=raddata --protocol-name=\"InterSpec\" --icon=linux/InterSpec_desktop_icon_256x256.png --prune=true --out=release-builds --ignore=copy_resources.* --ignore=LICENSE.md --ignore=README.md"
   },
   "author": {
     "name": "William Johnson",
     "email": "wcjohns@sandia.gov"
   },
   "license": "LGPL-2.1-only",
-  "dependencies": {
-    "cmake-js": "^7.0.0",
-    "node-api-headers": "^1.3.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "electron": "^13.6.9",
-    "electron-packager": "^17.1.2",
+    "cmake-js": "^7.0.0",
+    "node-api-headers": "^1.3.0",
+    "electron": "^41.0.0",
+    "@electron/packager": "^18.4.0",
     "node-addon-api": "^6.1.0"
   },
   "binary": {
     "napi_versions": [
-      4
+      6
     ]
   }
 }

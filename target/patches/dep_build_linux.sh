@@ -355,7 +355,7 @@ else
   cd build_macos
 
   cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF ..
-  cmake --build . --config Release --target install -j 16
+  cmake --build . --config Release --target install --parallel ${_ncore}
 
   touch "${working_directory}/Ceres.installed"
 fi #if Ceres.installed exists / else
