@@ -739,7 +739,7 @@ SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
 if(WIN32)
   target_compile_options( InterSpecLib PUBLIC /bigobj )
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS -D NOMINMAX )
+  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
         
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
@@ -837,51 +837,15 @@ if(WIN32)
     
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
 else(WIN32)
-  # Wt 3.7.1 ships no CMake targets, so CMake cannot see that Wt depends on
-  # Boost. For static linking, the linker resolves symbols left-to-right, so
-  # Wt must appear before Boost in the link command.
-  #
-  # Solution: create IMPORTED targets for every Wt archive and attach Boost as
-  # their INTERFACE_LINK_LIBRARIES.  CMake's DFS then naturally produces the
-  # correct order — each Wt library is emitted, followed by the Boost
-  # libraries that satisfy Wt's unresolved references.
-  set( _wt_boost_deps
-    Boost::thread Boost::date_time Boost::system Boost::filesystem
-    Boost::program_options Boost::regex Boost::random ${CMAKE_DL_LIBS}
-  )
-
-  add_library( Wt::Wt           STATIC IMPORTED GLOBAL )
-  add_library( Wt::WtDbo        STATIC IMPORTED GLOBAL )
-  add_library( Wt::WtDboSqlite3 STATIC IMPORTED GLOBAL )
-  add_library( Wt::WtTest       STATIC IMPORTED GLOBAL )
-  add_library( Wt::WtHttp       STATIC IMPORTED GLOBAL )
-
-  set_target_properties( Wt::Wt PROPERTIES
-    IMPORTED_LOCATION "${Wt_LIBRARY}"
-    INTERFACE_LINK_LIBRARIES "${_wt_boost_deps}"
-  )
-  set_target_properties( Wt::WtDbo PROPERTIES
-    IMPORTED_LOCATION "${Wt_DBO_LIBRARY}"
-  )
-  set_target_properties( Wt::WtDboSqlite3 PROPERTIES
-    IMPORTED_LOCATION "${Wt_DBOSQLITE3_LIBRARY}"
-  )
-  set_target_properties( Wt::WtTest PROPERTIES
-    IMPORTED_LOCATION "${Wt_TEST_LIBRARY}"
-  )
-  if( Wt_HTTP_LIBRARY )
-    set_target_properties( Wt::WtHttp PROPERTIES
-      IMPORTED_LOCATION "${Wt_HTTP_LIBRARY}"
-    )
-  endif()
-
   if( BUILD_AS_UNIT_TEST_SUITE )
-    target_link_libraries( InterSpecLib PUBLIC Wt::WtTest )
-  else()
-    target_link_libraries( InterSpecLib PUBLIC Wt::WtHttp )
-  endif()
-  target_link_libraries( InterSpecLib PUBLIC Wt::Wt Wt::WtDbo Wt::WtDboSqlite3 )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
+  else( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_HTTP_LIBRARY})
+  endif( BUILD_AS_UNIT_TEST_SUITE )
+  
+  target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
 endif(WIN32)
+
 
 
 target_link_libraries(
@@ -893,17 +857,17 @@ target_link_libraries(
     Minuit2::Minuit2
     Cuba-3.0
     muparserx
+    Boost::thread
+    Boost::date_time
+    Boost::system
+    Boost::filesystem
+    Boost::program_options
+    Boost::regex
+    Boost::random
     ZLIB::ZLIB
     Eigen3::Eigen
     Ceres::ceres
-    $<$<BOOL:${WIN32}>:Boost::thread>
-    $<$<BOOL:${WIN32}>:Boost::date_time>
-    $<$<BOOL:${WIN32}>:Boost::system>
-    $<$<BOOL:${WIN32}>:Boost::filesystem>
-    $<$<BOOL:${WIN32}>:Boost::program_options>
-    $<$<BOOL:${WIN32}>:Boost::regex>
-    $<$<BOOL:${WIN32}>:Boost::random>
-    $<$<BOOL:${WIN32}>:${CMAKE_DL_LIBS}>
+    ${CMAKE_DL_LIBS}
 )
 
 
@@ -1083,11 +1047,8 @@ list( APPEND OTHER_InterSpec_SUPPORT_FILES
      ${STATIC_ADD_CSS_FILES}
      ${STATIC_HTML_TMPLTS_FILES}
      ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/static_text/help.json
+     ${CMAKE_CURRENT_SOURCE_DIR}/README.md
   )
-
-if( EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/README.md" )
-  list( APPEND OTHER_InterSpec_SUPPORT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" )
-endif()
 
 add_custom_target(interspec_resources SOURCES ${OTHER_InterSpec_SUPPORT_FILES})
 
