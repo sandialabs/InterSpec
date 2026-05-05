@@ -1285,7 +1285,11 @@ struct PeakFitDiffCostFunction
     assert( num_skew_pars == fit_parameter.size() );
     assert( num_skew_pars == starting_value.size() );
 
-    const size_t num_fit_continuum_pars = m_use_lls_for_cont ? size_t(0) : PeakContinuum::num_parameters( m_offset_type );
+    const bool cdf_step_lls = m_use_lls_for_cont && PeakContinuum::is_peak_cdf_step_continuum( m_offset_type )
+                              && (m_offset_type != PeakContinuum::BiLinearStepCDF);
+    const size_t num_fit_continuum_pars = m_use_lls_for_cont
+      ? (cdf_step_lls ? size_t(1) : size_t(0))
+      : PeakContinuum::num_parameters( m_offset_type );
 
     for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
     {
