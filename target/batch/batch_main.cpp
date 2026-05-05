@@ -58,6 +58,9 @@ int main( int argc, char *argv[] )
 #endif
   std::string user_data_dir, docroot;
   bool batch_peak_fit = false, batch_act_fit = false;
+#if( USE_REL_ACT_TOOL )
+  bool batch_iso_from_nucs = false;
+#endif
   
   namespace po = boost::program_options;
   
@@ -81,6 +84,12 @@ int main( int argc, char *argv[] )
    "Batch shielding/source fit.\n"
    "\tUse '--batch-act-fit --help' to see available options."
    )
+#if( USE_REL_ACT_TOOL )
+  ("batch-iso-from-nucs", po::value<bool>(&batch_iso_from_nucs)->implicit_value(true)->default_value(false),
+   "Batch isotopics-by-nuclides (RelActCalcAuto) analysis.\n"
+   "\tUse '--batch-iso-from-nucs --help' to see available options."
+   )
+#endif
   ;
   
   po::variables_map cl_vm;
@@ -101,7 +110,11 @@ int main( int argc, char *argv[] )
     return 1;
   }//try catch
 
+#if( USE_REL_ACT_TOOL )
+  const bool is_batch = (batch_peak_fit || batch_act_fit || batch_iso_from_nucs);
+#else
   const bool is_batch = (batch_peak_fit || batch_act_fit);
+#endif
   
   if( cl_vm.count("help") )
   {
@@ -119,8 +132,14 @@ int main( int argc, char *argv[] )
   
   if( !is_batch )
   {
+#if( USE_REL_ACT_TOOL )
+    std::cerr << "You must specify to use 'batch-peak-fit', 'batch-act-fit',"
+                 " or 'batch-iso-from-nucs'.\n"
+              << "With additional available options of:\n";
+#else
     std::cerr << "You must specify to use either 'batch-peak-fit', or 'batch-act-fit'.\n"
               << "With additional available options of:\n";
+#endif
     std::cout << cl_desc << std::endl;
     
     return EXIT_FAILURE;

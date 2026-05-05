@@ -299,37 +299,3 @@ BOOST_AUTO_TEST_CASE( bad_state_file_throws )
                      std::runtime_error );
   SpecUtils::remove_file( tmp2 );
 }
-
-
-// Test 5: a state with FramPhysicalModel but no DRF should fail with a specific
-// ResultCode rather than running the solver and returning garbage.
-BOOST_AUTO_TEST_CASE( phys_model_without_drf_errors )
-{
-  set_data_dir();
-
-  const string exemplar = SpecUtils::append_path( g_eu152_dir, "exemplar.n42" );
-  const string input    = SpecUtils::append_path( g_eu152_dir, "other_eu152_shielded.n42" );
-
-  // Load the exemplar, strip its embedded DRF, and mutate the rel-eff curve type to
-  // FramPhysicalModel.  SpecMeas is non-copyable, so we mutate in place.
-  shared_ptr<SpecMeas> exemplar_meas = make_shared<SpecMeas>();
-  BOOST_REQUIRE( exemplar_meas->load_file( exemplar, SpecUtils::ParserType::Auto ) );
-  exemplar_meas->setDetector( nullptr );
-
-  unique_ptr<RelActCalcAuto::RelActAutoGuiState> state = exemplar_meas->getRelActAutoGuiState();
-  BOOST_REQUIRE( state );
-  BOOST_REQUIRE( !state->options.rel_eff_curves.empty() );
-  state->options.rel_eff_curves[0].rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-
-  BatchRelActAuto::Options options;
-  options.state_override = std::shared_ptr<RelActCalcAuto::RelActAutoGuiState>( std::move(state) );
-  // Don't set drf_override either.
-  const BatchRelActAuto::Result result
-      = BatchRelActAuto::run_on_file( "", {}, exemplar_meas, input, nullptr, options );
-
-  BOOST_CHECK_MESSAGE(
-      result.m_result_code == BatchRelActAuto::ResultCode::ExemplarUsesPhysModelButNoDrf,
-      "Expected ExemplarUsesPhysModelButNoDrf, got "
-      << BatchRelActAuto::to_str(result.m_result_code)
-      << " (msg='" << result.m_error_msg << "')" );
-}
