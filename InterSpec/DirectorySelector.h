@@ -64,7 +64,7 @@ using WxNativeDirectoryPickerFn = std::function<void(
 
     Call once at app startup (e.g. from InterSpecWxApp::OnInit).  Pass an
     empty callback to clear the registration. */
-void set_wx_native_directory_picker( WxNativeDirectoryPickerFn callback );
+InterSpec_API void set_wx_native_directory_picker( WxNativeDirectoryPickerFn callback );
 #endif
 
 /** A widget for selecting directory paths that provides both native file dialogs 

@@ -33,6 +33,13 @@
 //#include <boost/test/unit_test.hpp>
 #include <boost/test/included/unit_test.hpp>
 
+// `<windows.h>` (pulled in transitively on MSVC) defines `min`/`max` as macros
+// that break later `std::min`/`std::max` calls.
+#if ( defined( WIN32 ) )
+#undef min
+#undef max
+#endif
+
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
