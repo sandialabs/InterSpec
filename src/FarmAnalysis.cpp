@@ -455,6 +455,8 @@ EnrichmentResults run_relact_isotopics(
 EnrichmentResults run_fram_isotopics(
     const std::string &fram_exe_path,
     const std::string &fram_output_path,
+    const bool use_v6,
+    const bool use_v7,
     std::shared_ptr<const SpecUtils::SpecFile> foreground,
     std::shared_ptr<const SpecUtils::SpecFile> background,
     const bool is_uranium,
@@ -471,12 +473,14 @@ EnrichmentResults run_fram_isotopics(
   if( fram_exe_path.empty() )
   {
     result.warnings.push_back( "FRAM executable path not specified" );
+    std::cout << "FRAM executable path not specified" << std::endl;
     return result;
   }
 
   if( !SpecUtils::is_file( fram_exe_path ) )
   {
     result.warnings.push_back( "FRAM executable not found: " + fram_exe_path );
+    std::cout << "FRAM executable not found: " << std::endl;
     return result;
   }
 
@@ -484,13 +488,15 @@ EnrichmentResults run_fram_isotopics(
   if( !foreground || (foreground->num_measurements() != 1) )
   {
     result.warnings.push_back( "FRAM computation input not expected number of records." );
+    std::cout << "FRAM computation input not expected number of records." << std::endl;
     return result;
   }
 
   assert( !background || (background->num_measurements() == 1) );
-  if( background && (background->num_measurements() != 1) );
+  if( background && (background->num_measurements() != 1) )
   {
     result.warnings.push_back( "FRAM computation input background not expected number of records." );
+    std::cout << "FRAM computation input background not expected number of records." << std::endl;
     return result;
   }
 
@@ -506,6 +512,7 @@ EnrichmentResults run_fram_isotopics(
   }catch( std::exception &e )
   {
     result.warnings.push_back( "FRAM computation error: failed to write temporary foreground file: " + string(e.what()) );
+    std::cout << "FRAM computation error: failed to write temporary foreground file: " << std::endl;
     return result;
   }
 
@@ -521,6 +528,7 @@ EnrichmentResults run_fram_isotopics(
     }catch( std::exception &e )
     {
       result.warnings.push_back( "FRAM computation error: failed to write temporary background file: " + string(e.what()) );
+      std::cout << "FRAM computation error: failed to write temporary background file: " << std::endl;
       return result;
     }
   }//if( background )
@@ -534,6 +542,7 @@ EnrichmentResults run_fram_isotopics(
   if( !cal || !cal->valid() )
   {
     result.warnings.push_back( "FRAM computation error: energy calibration is invalid" );
+    std::cout << "FRAM computation error: energy calibration is invalid" << std::endl;
     return result;
   }
 
@@ -574,14 +583,40 @@ EnrichmentResults run_fram_isotopics(
   result.warnings.push_back( "FRAM integration not yet implemented - user to fill in details" );
 
   // To execute the FRAM exe, a rough sketch is:
-  /*
-   std::vector<std::string> arguments;
-   arguments.push_back( "--offset=" + std::to_string(energy_gain) );
-   arguments.push_back( "--gain=" + std::to_string(energy_gain) );
-   arguments.push_back( "--foreground='" + fram_fore_tmp + "'" );
-   if( !fram_back_tmp.empty() )
-    arguments.push_back( "--background='" + fram_back_tmp + "'" );
-   //...
+  
+  std::vector<std::string> arguments;
+  //input spectrum file
+  arguments.push_back("/i");
+  arguments.push_back(fram_fore_tmp);
+  //parameter set xxxmake work fo 5.1 amd 6.1xxx
+  arguments.push_back("/p");
+  if(is_plutonium  && !is_uranium)
+  {
+    arguments.push_back("HPGe_Pu_120-420");
+  }
+  else if(is_uranium && !is_plutonium)
+  {
+    arguments.push_back("HPGe_ULEU_120-1010");
+  }
+  else if(is_plutonium && is_uranium)
+  {
+    arguments.push_back("HPGe_PuMOX_120-420");
+  }
+  else
+  {
+    arguments.push_back("HPGe_Pu_120-420");
+  }
+  //energy calibration
+  arguments.push_back("/g");
+  arguments.push_back(std::to_string(energy_gain));
+  //use auto analysis
+  arguments.push_back("/a");
+  arguments.push_back("1");
+  //arguments.push_back( "--gain=" + std::to_string(energy_gain) );
+
+  // if( !fram_back_tmp.empty() )
+  //  arguments.push_back( "--background='" + fram_back_tmp + "'" );
+  // //...
 
    namespace bp = boost::process;
 
@@ -589,7 +624,8 @@ EnrichmentResults run_fram_isotopics(
    bp::ipstream proc_stdout, proc_stderr;
 
 #ifdef _WIN32
-   bp::child c( fram_exe_path, bp::args(arguments), bp::start_dir(exe_parent),
+   bp::child c( fram_exe_path, 
+                bp::args(arguments), bp::start_dir(exe_parent),
                 bp::std_out > proc_stdout, bp::std_err > proc_stderr,
                 bp::windows::create_no_window );
 #else
@@ -604,17 +640,17 @@ EnrichmentResults run_fram_isotopics(
 
    const int result_code = c.exit_code();
 
-   if( (result_code != EXIT_SUCCESS) && (!error.empty() || output.empty()) )
-   {
-     nlohmann::json err_json;
-     err_json["error"] = error.empty() ? "FRAM returned non-zero exit code" : error;
-     err_json["exit_code"] = result_code;
-     return err_json.dump();
-   }
+   //if( (result_code != EXIT_SUCCESS) && (!error.empty() || output.empty()) )
+   //{
+   //  nlohmann::json err_json;
+   //  err_json["error"] = error.empty() ? "FRAM returned non-zero exit code" : error;
+   //  err_json["exit_code"] = result_code;
+   //  return err_json.dump();
+   //}
 
    // TODO: Populate result.nuclide_results from parsed output
-   result = ...
-   */
+  // result = ...
+
 
 
   //Note: NuclideResult::nuclide should be in format "U235", "Pu239", etc, for consistent search results

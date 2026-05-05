@@ -1812,7 +1812,14 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
       fram_back->add_measurement( farm_background, true );
     }
     const Farm::EnrichmentResults fram_result = Farm::run_fram_isotopics(
-            farm_options.fram_exe_path, farm_options.fram_output_path, fram_spec, fram_back, do_u_enrich, do_pu_enrich );
+                                                farm_options.fram_exe_path, 
+                                                farm_options.fram_output_path,
+                                                farm_options.fram_v6,
+                                                farm_options.fram_v7, 
+                                                fram_spec, 
+                                                fram_back, 
+                                                do_u_enrich, 
+                                                do_pu_enrich );
     isotopics_json.push_back( fram_result.toJson() );
   }
   

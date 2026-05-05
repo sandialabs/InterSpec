@@ -1046,6 +1046,7 @@ namespace
         case FileDataField::FramUIsotopics:
         case FileDataField::FramPuIsotopics:
         {
+          row[f] = "Test Pu";
           if( !meas.isotopics_result_json.empty() )
           {
             try

@@ -100,6 +100,8 @@ EnrichmentResults run_relact_isotopics(
 EnrichmentResults run_fram_isotopics(
     const std::string &fram_exe_path,
     const std::string &fram_output_path,
+    const bool use_v6,
+    const bool use_v7,
     std::shared_ptr<const SpecUtils::SpecFile> foreground,
     std::shared_ptr<const SpecUtils::SpecFile> background,
     const bool is_uranium,
