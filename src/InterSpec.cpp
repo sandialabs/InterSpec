@@ -6995,12 +6995,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 
 #if( USE_REL_ACT_TOOL )
     if( m_relActManualGui )
-    {
-      if( !m_relActManualWindow )
-        m_toolsTabs->removeTab( m_energyCalTool );
-      handleRelActManualClose();
-    }//if( m_relActManualGui )
-    
+      handleRelActManualClose(); // handleRelActManualClose() now removes the tab itself when in tabs-mode.
+
     if( m_relActAutoGui )
       handleRelActAutoClose();
 #endif
@@ -10050,8 +10046,16 @@ void InterSpec::handleRelActManualClose()
   }else
   {
     if( m_relActManualGui )
+    {
+      // Wt 3.7.1's WTabWidget::closeTab() only hides the tab and emits tabClosed_; it does NOT
+      //  remove the tab from its internal vectors.  We must explicitly removeTab() before
+      //  deleting, otherwise a stale (zombie) tab entry remains and becomes visible the next
+      //  time the tool is reopened.
+      if( m_toolsTabs && (m_toolsTabs->indexOf(m_relActManualGui) >= 0) )
+        m_toolsTabs->removeTab( m_relActManualGui );
       delete m_relActManualGui;
-    
+    }
+
     if( m_toolsTabs )
       m_toolsTabs->setCurrentIndex( 2 );
   }//if( m_relActManualWindow ) / else

@@ -37,7 +37,7 @@ class MaterialDB;
 class DoseCalcWidget;
 class InterSpec;
 class ShieldingSelect;
-class GadrasScatterTable;
+class GadrasShieldScatter;
 class NuclideSourceEnter;
 
 
@@ -99,7 +99,7 @@ public:
    half-way reasonable.
    Throws exception with a descriptive message if there is an issue.
    */
-  static void runtime_sanity_checks( const GadrasScatterTable * const scatter );
+  static void runtime_sanity_checks( const GadrasShieldScatter * const scatter );
   
   /** Handles receiving a "deep-link" url starting with "interspec://dose/act?...".
    
@@ -146,7 +146,7 @@ protected:
   //  PhysicalUnits.
   double currentDose();
   
-  std::unique_ptr<GadrasScatterTable> m_scatter;
+  std::unique_ptr<GadrasShieldScatter> m_scatter;
   
   InterSpec *m_viewer;
   Wt::WSuggestionPopup *m_materialSuggest;

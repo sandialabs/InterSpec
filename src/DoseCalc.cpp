@@ -35,7 +35,7 @@
 #include "InterSpec/DoseCalc.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/GadrasSpecFunc.h"
+#include "InterSpec/GadrasShieldScatter.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -114,7 +114,7 @@ namespace DoseCalc
                                     const float areal_density,
                                     const float atomic_number,
                                     const float distance,
-                                    const GadrasScatterTable &scatter )
+                                    const GadrasShieldScatter &scatter )
   {
     if( energies.empty() || (intensity.size() != energies.size()) )
       throw runtime_error( "gamma_dose_with_shielding(): No gamma lines to calculate dose from." );

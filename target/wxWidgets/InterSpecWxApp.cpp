@@ -46,10 +46,7 @@
 #include "wx/hyperlink.h"
 #include "wx/webview.h"
 
-#include <Wt/Json/Array>
-#include <Wt/Json/Value>
-#include <Wt/Json/Parser>
-#include <Wt/Json/Serializer>
+#include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 #include "InterSpecWxApp.h"
 #include "InterSpecWebFrame.h"
@@ -431,9 +428,8 @@ InterSpecWxApp::InterSpecWxApp() :
     // "issue opening" dialog further down — it's a developer/IPC bug, not a file issue.
     try
     {
-      Wt::Json::Value parsed;
-      Wt::Json::parse( message, parsed );
-      if( parsed.type() != Wt::Json::ArrayType )
+      const nlohmann::json parsed = nlohmann::json::parse( message );
+      if( !parsed.is_array() )
         throw std::runtime_error( "IPC payload was not a JSON array" );
     }catch( std::exception &e )
     {
@@ -592,18 +588,8 @@ InterSpecWxApp::InterSpecWxApp() :
       "\n\nPlease report to InterSpec@sandia.gov, along with what you were doing when this error occured." );
     dialog.ShowModal();
 
-    /*
-    // TODO: Make a custom dialog with a URL they can click on to send an email bug report.
-     wxHyperlinkCtrl *hyperlink = new wxHyperlinkCtrl( &dialog, -1,
-      "Click here to email",
-      "mailto:interspec@sandia.gov?subject=InterSpec%20bug:%20Fatal%20JS%20Error&body=" + Wt::Utils::urlEncode(error_msg)
-      );
-    wxDialog dialog( frame, -1, caption, wxDefaultPosition, wxDefaultSize, wxICON_ERROR | wxSTAY_ON_TOP, "dialogBox" );
-    wxSizer *btnSizer = dialog.CreateButtonSizer( wxOK );
-    wxSizer *txtSizer = dialog.CreateTextSizer( message )
-    ...
-    dialog.ShowModal();
-    */
+    // TODO: Make a custom dialog with a URL the user can click on to send an
+    //       email bug report (mailto: with percent-encoded body).
 
     if( frame )
       frame->Close();
@@ -652,7 +638,7 @@ InterSpecWxApp::InterSpecWxApp() :
     if( did_create && m_checker->IsAnotherRunning() )
     {
       size_t n_valid_args = 0;
-      Wt::Json::Array msg_json;
+      nlohmann::json msg_json = nlohmann::json::array();
       for( size_t i = 0; i < m_command_line_args.size(); ++i )
       {
         std::string arg = m_command_line_args[i].utf8_string();
@@ -671,13 +657,13 @@ InterSpecWxApp::InterSpecWxApp() :
             arg = fname.GetAbsolutePath().utf8_string();
         }//if( not a interspec:// URI )
 
-        msg_json.push_back( Wt::Json::Value( Wt::WString::fromUTF8( arg ) ) );
+        msg_json.push_back( arg );
       }//for (size_t i = 0; i < m_command_line_args.size(); ++i)
 
       // Open a new window if there are no file/URI arguments, otherwise hand
       // the files/URIs off to the running instance.
       const char *topic = n_valid_args ? "FileToOpen" : "OpenNewWindow";
-      const std::string message = Wt::Json::serialize( msg_json, 0 );
+      const std::string message = msg_json.dump();
 
       IpcClient client;
       IpcConnection *connection = static_cast<IpcConnection *>(
@@ -753,6 +739,13 @@ InterSpecWxApp::InterSpecWxApp() :
     InterSpecApp::setNativeFileSaveHandler( []( std::string data, std::string suggested_name ){
       InterSpecWxUtils::save_file_data( std::move( data ), std::move( suggested_name ) );
     } );
+
+    // Register the wx native directory picker into LibInterSpec's
+    // DirectorySelector.  Must happen on the executable side because
+    // wxWidgets is statically linked separately into the dylib and the
+    // executable, so wx static state (e.g. wxApp::ms_appInstance) does not
+    // survive crossing that boundary.
+    InterSpecWxUtils::register_native_directory_picker();
 
 
     try

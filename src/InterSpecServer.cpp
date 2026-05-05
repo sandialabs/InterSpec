@@ -41,6 +41,7 @@
 #include <Wt/WResource>
 #include <Wt/WIOService>
 #include <Wt/Http/Client>
+#include <Wt/Http/Message>
 #include <Wt/Utils>
 #include <Wt/Http/Response>
 #include <Wt/Dbo/Dbo>
@@ -51,6 +52,7 @@
 #include <Wt/Json/Parser>
 
 
+#include <boost/bind/bind.hpp>
 #include <boost/filesystem.hpp>
 
 #include "SpecUtils/SpecFile.h"
@@ -1050,6 +1052,79 @@ void clear_file_to_open_on_load( const std::string &session_token )
   if( pos != end(ns_sessions) )
     ns_sessions.erase( pos );
 }//void clear_file_to_open_on_load( const std::string &session_token )
+
+
+void download_to_native_save( const std::string &url )
+{
+  Wt::WServer * const server = get_wt_server();
+  if( !server )
+  {
+    Wt::log("error") << "download_to_native_save: no Wt server running for url='" << url << "'";
+    return;
+  }
+
+  std::function<void(std::string,std::string)> save_handler
+                                       = InterSpecApp::nativeFileSaveHandler();
+  if( !save_handler )
+  {
+    Wt::log("error") << "download_to_native_save: no native file-save handler registered for url='" << url << "'";
+    return;
+  }
+
+  Wt::Http::Client * const client = new Wt::Http::Client( server->ioService() );
+  client->setTimeout( 10 );
+  client->setMaximumResponseSize( 512 * 1024 * 1024 );
+
+  // boost::bind wraps the lambda so it adapts to the 6-arg boost::function
+  // signature that Wt::Signal::connect (via boost::signals2) requires; the
+  // unused trailing args become Wt::NoClass placeholders.  The explicit
+  // `<void>` is needed because boost::bind can't deduce a lambda's return.
+  client->done().connect( boost::bind<void>(
+    [client, save_handler]( const boost::system::error_code &err,
+                            const Wt::Http::Message &response )
+  {
+    const std::unique_ptr<Wt::Http::Client> client_owner( client );
+
+    if( err )
+    {
+      Wt::log("error") << "download_to_native_save: " << err.message();
+      return;
+    }
+
+    if( response.status() != 200 )
+    {
+      Wt::log("error") << "download_to_native_save: HTTP status " << response.status();
+      return;
+    }
+
+    // Parse Content-Disposition for the suggested filename, e.g.
+    //  attachment;filename="Ba133_gammas.csv";filename*=UTF-8''Ba133_gammas.csv
+    std::string filename = "download";
+    const std::string * const disp = response.getHeader( "Content-Disposition" );
+    if( disp )
+    {
+      std::vector<std::string> fields;
+      SpecUtils::split( fields, *disp, ";" );
+      for( std::string val : fields )
+      {
+        SpecUtils::trim( val );
+        if( SpecUtils::istarts_with( val, "filename=" ) )
+        {
+          filename = val.substr( 9 );
+          SpecUtils::erase_any_character( filename, "'\\/:?\"<>|" );
+        }
+      }
+    }//if( disp )
+
+    save_handler( response.body(), filename );
+  }, boost::placeholders::_1, boost::placeholders::_2 ) );
+
+  if( !client->get( url ) )
+  {
+    Wt::log("error") << "download_to_native_save: get() failed for url='" << url << "'";
+    delete client;
+  }
+}//void download_to_native_save( const std::string &url )
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
   
   

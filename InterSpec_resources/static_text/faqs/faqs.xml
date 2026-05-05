@@ -1429,6 +1429,44 @@
     </p>
   </message>
 
+  <message id="customize-rel-act-auto-presets" title="Adding your own &quot;Isotopics by nuclide&quot; presets">
+    <p>
+      The &quot;<b>Presets</b>&quot; drop-down at the top of the
+      &quot;<b>Isotopics by nuclide</b>&quot; tool is populated from the XML files
+      shipped in
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/data/rel_act">data/rel_act/</a>
+      (for example
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/rel_act/HPGe%20Pu%20(120-420%20KeV).xml">HPGe Pu (120-420 KeV).xml</a>).
+      The built-in entries cover HPGe plutonium and uranium analyses across a few
+      common energy ranges, each pre-configured with reasonable nuclides, ages,
+      energy ranges, and rel-eff / FWHM options.
+    </p>
+    <p>
+      You can add your own presets.  Create a sub-directory named
+      <code>rel_act</code> inside the apps user data directory
+      (see <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b> for this
+      location), drop one or more <code>.xml</code> preset files into it, and
+      restart <code>InterSpec</code>.  Each file becomes an additional entry in
+      the &quot;<b>Presets</b>&quot; drop-down, prefixed with
+      &quot;<b>User:</b>&quot; followed by the file name.  User presets are loaded
+      <em>after</em> the built-in ones, so they are appended to the existing list
+      rather than replacing it.
+    </p>
+    <p>
+      The easiest way to produce one of these XML files is to configure the tool
+      the way you want it (rel-eff curve type, energy ranges, nuclides, ages,
+      FWHM form, options, etc.), and then click the
+      &quot;<b>XML Config</b>&quot; export button to save the current state.
+      You may also start from a copy of one of the shipped files in
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/data/rel_act">data/rel_act/</a>
+      and edit it.  The optional top-level
+      <code>&lt;Description&gt;</code> element is shown to the user when the
+      preset is selected, so it is worth filling in with a short note about
+      what the preset is intended for and any constraints (e.g. detector type
+      or energy range required).
+    </p>
+  </message>
+
 
   <message id="search-profile" title="How the &quot;Profile&quot; ordering is defined when searching for nuclides">
     <p>

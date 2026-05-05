@@ -67,7 +67,6 @@ const char *to_str( const ResultCode code )
     case ResultCode::CouldntOpenBackgroundFile:            return "CouldntOpenBackgroundFile";
     case ResultCode::ForegroundSampleNumberUnderSpecified: return "ForegroundSampleNumberUnderSpecified";
     case ResultCode::BackgroundSampleNumberUnderSpecified: return "BackgroundSampleNumberUnderSpecified";
-    case ResultCode::ExemplarUsesPhysModelButNoDrf:        return "ExemplarUsesPhysModelButNoDrf";
     case ResultCode::FwhmMethodNeedsDrfButNoneAvailable:   return "FwhmMethodNeedsDrfButNoneAvailable";
     case ResultCode::SolveFailedToSetup:                   return "SolveFailedToSetup";
     case ResultCode::SolveFailedToSolve:                   return "SolveFailedToSolve";
@@ -219,19 +218,6 @@ static shared_ptr<const SpecUtils::Measurement>
     return nullptr;
   }
 }//extract_measurement(...)
-
-
-// Returns true iff the resolved state requires a DRF for one of its rel-eff
-// curves to use Physical-model.
-static bool state_uses_phys_model( const RelActCalcAuto::RelActAutoGuiState &state )
-{
-  for( const RelActCalcAuto::RelEffCurveInput &c : state.options.rel_eff_curves )
-  {
-    if( c.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-      return true;
-  }
-  return false;
-}
 
 
 static bool fwhm_method_requires_drf( const RelActCalcAuto::FwhmEstimationMethod m )
@@ -546,23 +532,13 @@ Result run_on_file( const std::string &exemplar_filename,
   if( !drf && cached_exemplar )
     drf = cached_exemplar->detector();
 
-  if( !drf )
+  if( !drf && fwhm_method_requires_drf( state->options.fwhm_estimation_method )  )
   {
-    if( state_uses_phys_model( *state ) )
-    {
-      result.m_error_msg = "The exemplar / state has a Physical-model relative-efficiency"
-                           " curve, but no detector response function was provided.";
-      result.m_result_code = ResultCode::ExemplarUsesPhysModelButNoDrf;
-      return result;
-    }
-    if( fwhm_method_requires_drf( state->options.fwhm_estimation_method ) )
-    {
-      result.m_error_msg = "The exemplar / state's FwhmEstimationMethod is "
-                            + string( RelActCalcAuto::to_str(state->options.fwhm_estimation_method) )
-                           + ", which requires a DRF, but none was provided.";
-      result.m_result_code = ResultCode::FwhmMethodNeedsDrfButNoneAvailable;
-      return result;
-    }
+    result.m_error_msg = "The exemplar / state's FwhmEstimationMethod is "
+                          + string( RelActCalcAuto::to_str(state->options.fwhm_estimation_method) )
+                         + ", which requires a DRF, but none was provided.";
+    result.m_result_code = ResultCode::FwhmMethodNeedsDrfButNoneAvailable;
+    return result;
   }
 
   // ---- 7. Solve --------------------------------------------------------------

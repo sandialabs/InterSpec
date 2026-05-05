@@ -113,7 +113,6 @@ namespace BatchRelActAuto
     CouldntOpenBackgroundFile,
     ForegroundSampleNumberUnderSpecified,
     BackgroundSampleNumberUnderSpecified,
-    ExemplarUsesPhysModelButNoDrf,
     FwhmMethodNeedsDrfButNoneAvailable,
     SolveFailedToSetup,
     SolveFailedToSolve,

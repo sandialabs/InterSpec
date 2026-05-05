@@ -34,11 +34,11 @@
 
 namespace MassAttenuation
 {
-  /** Sets the base directory that the 'em_xs_data' dir and GadrasContinuum.lib
-      should be in.  Defaults to 'data' but incase you cant change current
-      working directory to somewhere you can give a relative path to, use this
-      function.  You can only call this function before getting any
-      cross-sections, or else exception will be thrown.
+  /** Sets the base directory that the 'em_xs_data' dir should be in.
+      Defaults to 'data' but incase you cant change current working directory
+      to somewhere you can give a relative path to, use this function.
+      You can only call this function before getting any cross-sections,
+      or else exception will be thrown.
    */
 #ifdef _WIN32
   void set_data_directory( const std::wstring &dir );

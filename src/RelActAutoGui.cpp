@@ -382,8 +382,8 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     }
     
     window->centerWindow();
-    window->finished().connect( viewer, &InterSpec::handleRelActAutoClose );
-    
+    // finished() is connected by the caller (InterSpec::relActAutoWindow); do not
+    // duplicate the slot here, otherwise handleRelActAutoClose runs twice on close.
     window->WDialog::setHidden(false);
     window->show();
     window->centerWindow();

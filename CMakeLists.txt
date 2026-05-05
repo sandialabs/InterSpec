@@ -299,7 +299,7 @@ set(sources
     src/DataBaseVersionUpgrade.cpp
     src/DataBaseUtils.cpp
     src/Integrate.cpp
-    src/GadrasSpecFunc.cpp
+    src/GadrasShieldScatter.cpp
     src/DoseCalc.cpp
     src/DoseCalcWidget.cpp
     src/GadrasGamFileParser.cpp
@@ -425,7 +425,7 @@ set(headers
     InterSpec/DataBaseVersionUpgrade.h
     InterSpec/DataBaseUtils.h
     InterSpec/Integrate.h
-    InterSpec/GadrasSpecFunc.h
+    InterSpec/GadrasShieldScatter.h
     InterSpec/DoseCalc.h
     InterSpec/DoseCalcWidget.h
     InterSpec/GadrasGamFileParser.h
@@ -629,7 +629,10 @@ endif( (NOT IOS) AND (NOT ANDROID) AND (NOT BUILD_FOR_WEB_DEPLOYMENT) )
 if( BUILD_AS_OSX_APP )
   list( APPEND sources target/osx/macOsUtils.mm target/osx/NativeMenu.mm )
   list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
-endif( BUILD_AS_OSX_APP )
+elseif( APPLE AND BUILD_AS_WX_WIDGETS_APP )
+  list( APPEND sources target/osx/macOsUtils.mm )
+  list( APPEND headers target/osx/macOsUtils.h )
+endif()
 
 
 #Copy D3 resources into InterSpec_resources directory at compile time
@@ -744,7 +747,7 @@ SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
 if(WIN32)
   target_compile_options( InterSpecLib PUBLIC /bigobj )
   #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS -D NOMINMAX )
+  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
         
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
@@ -876,7 +879,7 @@ target_link_libraries(
 )
 
 
-if( BUILD_AS_OSX_APP )
+if( BUILD_AS_OSX_APP OR (APPLE AND BUILD_AS_WX_WIDGETS_APP) )
   FIND_LIBRARY(COCOA_LIBRARY Cocoa)
   FIND_LIBRARY(COREDATA_LIBRARY CoreData)
   FIND_LIBRARY(APPKIT_LIBRARY AppKit)
@@ -884,13 +887,10 @@ if( BUILD_AS_OSX_APP )
 
   MARK_AS_ADVANCED( COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
 
-  target_link_libraries( InterSpecLib PUBLIC
-    ${COCOA_LIBRARY}
-    ${APPKIT_LIBRARY}
-    ${COREDATA_LIBRARY}
-    ${FOUNDATION_LIBRARY}
-  )
-  
+  target_link_libraries( InterSpecLib PUBLIC ${COCOA_LIBRARY} ${APPKIT_LIBRARY} ${COREDATA_LIBRARY} ${FOUNDATION_LIBRARY} )
+endif()
+
+if( BUILD_AS_OSX_APP )
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     set_target_properties( InterSpecLib PROPERTIES
       FRAMEWORK TRUE
