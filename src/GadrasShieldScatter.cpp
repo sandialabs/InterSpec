@@ -726,7 +726,8 @@ namespace
 
     for( double &v : scatter )
     {
-      if( std::isnan( v ) )
+      // Parens defeat MSVC's `isnan` function-like macro from `<math.h>`.
+      if( (std::isnan)( v ) )
         v = 0.0;
       v = std::max( 0.0, v );
     }

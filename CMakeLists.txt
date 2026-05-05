@@ -295,7 +295,6 @@ set(sources
     src/DataBaseVersionUpgrade.cpp
     src/DataBaseUtils.cpp
     src/Integrate.cpp
-    src/GadrasSpecFunc.cpp
     src/GadrasShieldScatter.cpp
     src/DoseCalc.cpp
     src/DoseCalcWidget.cpp
@@ -419,7 +418,6 @@ set(headers
     InterSpec/DataBaseVersionUpgrade.h
     InterSpec/DataBaseUtils.h
     InterSpec/Integrate.h
-    InterSpec/GadrasSpecFunc.h
     InterSpec/GadrasShieldScatter.h
     InterSpec/DoseCalc.h
     InterSpec/DoseCalcWidget.h

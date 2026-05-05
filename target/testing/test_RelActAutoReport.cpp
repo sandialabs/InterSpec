@@ -31,6 +31,13 @@
 #define BOOST_TEST_MODULE RelActAutoReport_suite
 #include <boost/test/included/unit_test.hpp>
 
+// `<windows.h>` (pulled in transitively on MSVC) defines `min`/`max` as macros
+// that break `std::min`/`std::max` calls inside the vendored inja headers.
+#if ( defined( WIN32 ) )
+#undef min
+#undef max
+#endif
+
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 #include "SpecUtils/SpecFile.h"

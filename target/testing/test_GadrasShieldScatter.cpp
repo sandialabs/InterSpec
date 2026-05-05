@@ -37,7 +37,6 @@
 #include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/InterSpec.h"
-#include "InterSpec/GadrasSpecFunc.h"
 #include "InterSpec/GadrasShieldScatter.h"
 
 
@@ -79,30 +78,9 @@ namespace
   }
 
 
-  // Sum the total scatter intensity in `bins`.
-  float sum_bins( const vector<float> &bins )
-  {
-    float s = 0.0f;
-    for( float v : bins )
-      s += v;
-    return s;
-  }
-
-
-  bool any_bad( const vector<float> &bins )
-  {
-    for( float v : bins )
-    {
-      if( !std::isfinite( v ) || v < 0.0f )
-        return true;
-    }
-    return false;
-  }
 }//anonymous namespace
 
 
-// One global pair, loaded once.
-static unique_ptr<GadrasScatterTable> g_old;
 static unique_ptr<GadrasShieldScatter> g_new;
 static bool g_loaded = false;
 
@@ -113,18 +91,14 @@ static void ensure_loaded()
     return;
   g_loaded = true;
 
-  const string data_dir_old = find_data_dir( "GadrasContinuum.lib" );
-  const string data_dir_new = find_data_dir( "sandia.shieldscatter.db" );
-  const string old_file = SpecUtils::append_path( data_dir_old, "GadrasContinuum.lib" );
-  const string new_file = SpecUtils::append_path( data_dir_new, "sandia.shieldscatter.db" );
+  const string data_dir = find_data_dir( "sandia.shieldscatter.db" );
+  const string new_file = SpecUtils::append_path( data_dir, "sandia.shieldscatter.db" );
 
-  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( old_file ), "Missing " << old_file );
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( new_file ), "Missing " << new_file );
 
-  // The new wrapper needs MassAttenuationTool, which needs the static data dir.
-  BOOST_REQUIRE_NO_THROW( InterSpec::setStaticDataDirectory( data_dir_old ) );
+  // GadrasShieldScatter needs MassAttenuationTool, which needs the static data dir.
+  BOOST_REQUIRE_NO_THROW( InterSpec::setStaticDataDirectory( data_dir ) );
 
-  BOOST_REQUIRE_NO_THROW( g_old.reset( new GadrasScatterTable( old_file ) ) );
   BOOST_REQUIRE_NO_THROW( g_new.reset( new GadrasShieldScatter( new_file ) ) );
 }
 
@@ -132,104 +106,8 @@ static void ensure_loaded()
 BOOST_AUTO_TEST_CASE( LoadFiles )
 {
   ensure_loaded();
-  BOOST_REQUIRE( g_old );
   BOOST_REQUIRE( g_new );
   BOOST_CHECK( g_new->groupCount() > 0 );
-}
-
-
-// Compare uncollided transmission and total scatter integral for a sweep over
-// (material, areal density, source energy). Both implementations share the
-// same TransmissionH() helper internally, so transmission should match very
-// closely; the scatter algorithms differ substantially so we accept order-of-
-// magnitude agreement.
-BOOST_AUTO_TEST_CASE( CompareAirFePb )
-{
-  ensure_loaded();
-
-  BOOST_REQUIRE( g_old );
-  BOOST_REQUIRE( g_new );
-  
-  struct Mat
-  {
-    const char *name;
-    float Z;
-    vector<float> ads;  // g/cm^2
-  };
-
-  const Mat materials[] = {
-    { "Air", 7.36f, { 0.1f, 0.5f, 2.0f } },
-    { "Fe",  26.0f, { 1.0f, 5.0f, 20.0f, 50.0f } },
-    { "Pb",  82.0f, { 1.0f, 5.0f, 20.0f, 50.0f } }
-  };
-
-  const float energies[] = { 60.0f, 122.0f, 356.0f, 661.7f, 1173.0f, 1332.0f, 2614.0f };
-
-  size_t cells_compared = 0;
-  for( const Mat &m : materials )
-  {
-    for( float ad : m.ads )
-    {
-      for( float E : energies )
-      {
-        // Build a 1024-bin linear binning to maxE (the same shape DoseCalc uses).
-        const float maxE = E + 100.0f;
-        const size_t nbins = 1024;
-        vector<float> binning( nbins );
-        for( size_t i = 0; i < nbins; ++i )
-          binning[i] = ( maxE * static_cast<float>( i ) ) / static_cast<float>( nbins - 1 );
-
-        vector<float> ans_old, ans_new;
-        const float trans_old = g_old->getContinuum( ans_old, E, 1.0f, m.Z, ad, 0.0f, binning );
-        const float trans_new = g_new->getContinuum( ans_new, E, 1.0f, m.Z, ad, 0.0f, binning );
-
-        BOOST_CHECK_MESSAGE( !any_bad( ans_old ),
-          "Old scatter has NaN/neg for " << m.name << " AD=" << ad << " E=" << E );
-        BOOST_CHECK_MESSAGE( !any_bad( ans_new ),
-          "New scatter has NaN/neg for " << m.name << " AD=" << ad << " E=" << E );
-
-        // Transmission: should match within 2% relative; both share the same
-        // TransmissionH helper so this would only fail if one implementation
-        // changed how it scales the return value.
-        if( trans_old > 1e-12f && trans_new > 1e-12f )
-        {
-          const float rel = std::abs( trans_old - trans_new )
-                            / std::max( trans_old, trans_new );
-          BOOST_CHECK_MESSAGE( rel < 0.02f,
-            "Transmission disagree for " << m.name << " AD=" << ad << " E=" << E
-              << ": old=" << trans_old << " new=" << trans_new );
-        }
-
-        // Scatter integral: algorithm differs significantly between the two
-        // (different table, different energy mesh, different geometry model).
-        // We just require they're in the same order of magnitude when both
-        // produce nonzero output, and that neither is wildly larger than the
-        // unattenuated source intensity (1.0).
-        const float sum_old = sum_bins( ans_old );
-        const float sum_new = sum_bins( ans_new );
-
-        BOOST_CHECK_MESSAGE( sum_old < 10.0f,
-          "Old scatter integral too large: " << m.name << " AD=" << ad
-            << " E=" << E << " sum=" << sum_old );
-        BOOST_CHECK_MESSAGE( sum_new < 10.0f,
-          "New scatter integral too large: " << m.name << " AD=" << ad
-            << " E=" << E << " sum=" << sum_new );
-
-        if( sum_old > 1e-6f && sum_new > 1e-6f )
-        {
-          const float ratio = sum_new / sum_old;
-          BOOST_CHECK_MESSAGE( ratio > 0.05f && ratio < 20.0f,
-            "Scatter integrals differ by >20x for " << m.name << " AD=" << ad
-              << " E=" << E << ": old=" << sum_old << " new=" << sum_new );
-        }
-
-        ++cells_compared;
-      }//for energies
-    }//for ads
-  }//for materials
-
-  BOOST_CHECK( cells_compared > 0 );
-  BOOST_TEST_MESSAGE( "Compared " << cells_compared << " (material, AD, energy) cells." );
 }
 
 
@@ -240,7 +118,6 @@ BOOST_AUTO_TEST_CASE( ShapeFactorEndpoints )
 {
   ensure_loaded();
 
-  BOOST_REQUIRE( g_old );
   BOOST_REQUIRE( g_new );
 
   vector<double> point_scatter, slab_scatter;
@@ -277,9 +154,8 @@ BOOST_AUTO_TEST_CASE( ZeroShielding )
 {
   ensure_loaded();
 
-  BOOST_REQUIRE( g_old );
   BOOST_REQUIRE( g_new );
-  
+
   vector<double> scatter;
   g_new->computeShieldScatter( 661.7, 26.0, 0.0, 0.0, 0.0, scatter );
 

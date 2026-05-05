@@ -29,15 +29,12 @@
 
 
 /** Computes the scattered continuum reaching a detector from a shielded
- point gamma source, using GADRAS's modern shielding-scatter table
+ point gamma source, using GADRAS's shielding-scatter table
  (`sandia.shieldscatter.db`).
 
- Parallel to GadrasScatterTable, which uses the legacy `GadrasContinuum.lib`
- file. The two classes are intentionally interchangeable for InterSpec's
- dose-calc / activity-calc usage; the new model interpolates a richer
- 5-D log-scaled table (energy, Z, areal density, hydrogen mass fraction,
- output group) and supports geometry blending between point/basis/slab
- source-in-shield configurations.
+ The model interpolates a 5-D log-scaled table (energy, Z, areal density,
+ hydrogen mass fraction, output group) and supports geometry blending
+ between point/basis/slab source-in-shield configurations.
  */
 class GadrasShieldScatter
 {
