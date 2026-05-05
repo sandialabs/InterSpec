@@ -30,9 +30,11 @@
 
 #include <Wt/WLabel>
 #include <Wt/WText>
+#include <Wt/WServer>
 #include <Wt/WLineEdit>
 #include <Wt/WPushButton>
 #include <Wt/WString>
+#include <Wt/WApplication>
 
 #include "SpecUtils/Filesystem.h"
 
@@ -256,30 +258,39 @@ void DirectorySelector::handleNativeDirectorySelection()
                                        "Select directory.",
                                        electron_callback );
 #elif( BUILD_AS_WX_WIDGETS_APP )
-  // DEBUG: write a visible diagnostic into the path widget on every click so
-  // we can confirm the click handler is reaching this branch on Windows.
-  // Replace "[DirPicker click N]" with the registered-vs-empty status.
-  {
-    const char * const status = s_wx_native_directory_picker
-      ? "[DirPicker click - picker IS registered, calling it]"
-      : "[DirPicker click - ERROR: picker is NULL, registration didn't happen]";
-    if( m_pathInput )
-      m_pathInput->setText( Wt::WString::fromUTF8(status) );
-    if( m_pathDisplay )
-      m_pathDisplay->setText( Wt::WString::fromUTF8(status) );
-  }
-
-  if( s_wx_native_directory_picker )
-  {
-    s_wx_native_directory_picker( "Select Directory",
-                                  "Select directory.",
-                                  on_select_callback );
-  }else
+  if( !s_wx_native_directory_picker )
   {
     std::cerr << "DirectorySelector: wx native directory picker has not been"
                  " registered - call set_wx_native_directory_picker() at app startup."
               << std::endl;
+    return;
   }
+
+  // The wx executable's browse_for_directory invokes its result callback
+  // directly on the wx main thread (synchronously, after the dialog closes).
+  // We have to bounce that result back into the Wt session ourselves - and
+  // crucially, the WServer::post call below has to happen from code compiled
+  // into LibInterSpec, because Wt is statically linked separately into the
+  // dylib and the executable, so each binary has its own WServer::instance()
+  // pointer (the executable's is null).
+  Wt::WApplication * const wapp = wApp;
+  const std::string session_id = wapp ? wapp->sessionId() : std::string();
+
+  auto wx_result_callback = [on_select_callback, session_id]( const std::vector<std::string> &paths ){
+    Wt::WServer * const server = Wt::WServer::instance();
+    if( !server || session_id.empty() )
+      return;
+    server->post( session_id, [on_select_callback, paths](){
+      on_select_callback( paths );
+      Wt::WApplication * const app = Wt::WApplication::instance();
+      if( app )
+        app->triggerUpdate();
+    } );
+  };
+
+  s_wx_native_directory_picker( "Select Directory",
+                                "Select directory.",
+                                wx_result_callback );
 #else
   static_assert( BUILD_AS_OSX_APP, "Need to update preprocessor ifs" );
   const bool canChooseFiles = false;
