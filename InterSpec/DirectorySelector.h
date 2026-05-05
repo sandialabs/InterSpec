@@ -47,11 +47,18 @@ static_assert( false, "DirectorySelector is not supported on this platform" );
 
 #if( BUILD_AS_WX_WIDGETS_APP )
 /** Type of the native directory-picker callback registered by the wxWidgets
-    executable.  See set_wx_native_directory_picker(). */
-using WxNativeDirectoryPickerFn = std::function<void(
+    executable.  See set_wx_native_directory_picker().
+
+    Intentionally a plain function pointer (not std::function) so the value
+    stored long-term in LibInterSpec's static is just an address, with no ABI
+    concerns crossing the DLL boundary on Windows.  On Windows MSVC builds
+    use /MT (static CRT) by default, and storing a moved-in std::function in
+    a DLL static can silently misbehave when the EXE and DLL each have their
+    own CRT copy. */
+using WxNativeDirectoryPickerFn = void (*)(
   const std::string & /*title*/,
   const std::string & /*message*/,
-  std::function<void(const std::vector<std::string> &)> /*on_done*/ )>;
+  std::function<void(const std::vector<std::string> &)> /*on_done*/ );
 
 /** Register the wxWidgets native directory picker.
 

@@ -52,16 +52,16 @@ namespace
 {
   // The wxWidgets directory picker is defined in the wx executable target
   // (where wxApp::ms_appInstance is valid) and registered into LibInterSpec
-  // at startup via set_wx_native_directory_picker().  Keeping this as a
-  // simple file-static avoids any wx headers/symbols leaking into LibInterSpec
-  // - wxWidgets is statically linked separately into the dylib and the
-  // executable, so wx static state does not survive the boundary.
-  WxNativeDirectoryPickerFn s_wx_native_directory_picker;
+  // at startup via set_wx_native_directory_picker().  This is a plain
+  // function pointer (not std::function) so the value stored here is just an
+  // address - no ABI concerns crossing the DLL boundary on Windows /MT
+  // builds where the EXE and DLL have separate CRT copies.
+  WxNativeDirectoryPickerFn s_wx_native_directory_picker = nullptr;
 }//namespace
 
 void set_wx_native_directory_picker( WxNativeDirectoryPickerFn callback )
 {
-  s_wx_native_directory_picker = std::move( callback );
+  s_wx_native_directory_picker = callback;
 }
 #endif // BUILD_AS_WX_WIDGETS_APP
 
