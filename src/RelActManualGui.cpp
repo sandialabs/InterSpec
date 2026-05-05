@@ -708,6 +708,7 @@ void RelActManualGui::init()
                               WString::tr("ramg-tt-phys-model-use-hoerl"), showToolTips );
   m_physModelUseHoerl->addStyleClass( "PhysModelUseHoerl" );
   m_physModelUseHoerlHolder = optionsList->rowAt(row);
+  m_physModelUseHoerlHolder->hide(); //Default eqn form is LnX, so hide the Hoerl row at construction; relEffEqnFormChanged() keeps it in sync after that.
 
   row = optionsList->rowCount();
   label = new WLabel( WString::tr("ramg-yield-info-label"), optionsList->elementAt(row, 0) );

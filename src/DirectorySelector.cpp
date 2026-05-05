@@ -256,6 +256,19 @@ void DirectorySelector::handleNativeDirectorySelection()
                                        "Select directory.",
                                        electron_callback );
 #elif( BUILD_AS_WX_WIDGETS_APP )
+  // DEBUG: write a visible diagnostic into the path widget on every click so
+  // we can confirm the click handler is reaching this branch on Windows.
+  // Replace "[DirPicker click N]" with the registered-vs-empty status.
+  {
+    const char * const status = s_wx_native_directory_picker
+      ? "[DirPicker click - picker IS registered, calling it]"
+      : "[DirPicker click - ERROR: picker is NULL, registration didn't happen]";
+    if( m_pathInput )
+      m_pathInput->setText( Wt::WString::fromUTF8(status) );
+    if( m_pathDisplay )
+      m_pathDisplay->setText( Wt::WString::fromUTF8(status) );
+  }
+
   if( s_wx_native_directory_picker )
   {
     s_wx_native_directory_picker( "Select Directory",

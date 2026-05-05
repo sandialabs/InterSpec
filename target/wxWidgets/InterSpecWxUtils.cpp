@@ -118,30 +118,41 @@ namespace InterSpecWxUtils
                              const std::string &message,
                              std::function<void(const std::vector<std::string> &)> callback )
   {
+    wxLogMessage( "[DirPicker] browse_for_directory: entered" );
+
     Wt::WApplication * const app = Wt::WApplication::instance();
     if( !app || !callback )
+    {
+      wxLogMessage( "[DirPicker] browse_for_directory: bailing - app=%p callback=%d",
+                    static_cast<const void*>(app), callback ? 1 : 0 );
       return;
+    }
 
     const std::string session_id = app->sessionId();
+    wxLogMessage( "[DirPicker] browse_for_directory: session_id=%s", session_id );
 
     wxApp * const wxapp = dynamic_cast<wxApp *>( wxApp::GetInstance() );
     if( !wxapp )
     {
-      wxLogError( "InterSpecWxUtils::browse_for_directory: failed to get wxApp" );
+      wxLogMessage( "[DirPicker] browse_for_directory: dynamic_cast<wxApp> returned null (GetInstance=%p)",
+                    static_cast<const void*>(wxApp::GetInstance()) );
       return;
     }
 
     wxWindow * const topWindow = wxapp->GetTopWindow();
     if( !topWindow )
     {
-      wxLogError( "InterSpecWxUtils::browse_for_directory: failed to get top window" );
+      wxLogMessage( "[DirPicker] browse_for_directory: GetTopWindow returned null" );
       return;
     }
+
+    wxLogMessage( "[DirPicker] browse_for_directory: posting CallAfter" );
 
     // Dispatch to the wx main UI thread for the dialog; post the result back to the Wt session.
     topWindow->GetEventHandler()->CallAfter(
       [title, message, callback, session_id, topWindow]()
     {
+      wxLogMessage( "[DirPicker] CallAfter lambda running on main thread" );
       wxConfigBase * const config = wxConfigBase::Get( true );
       wxString defaultDir = config->Read( "/LastSaveDir", wxString( "" ) );
       if( !defaultDir.empty() )
@@ -159,8 +170,12 @@ namespace InterSpecWxUtils
       if( !title.empty() )
         dlg.SetTitle( wxString::FromUTF8( title ) );
 
+      wxLogMessage( "[DirPicker] about to ShowModal (defaultDir='%s')", defaultDir );
+      const int modal_rc = dlg.ShowModal();
+      wxLogMessage( "[DirPicker] ShowModal returned %d (wxID_OK=%d)", modal_rc, (int)wxID_OK );
+
       std::vector<std::string> paths;
-      if( dlg.ShowModal() == wxID_OK )
+      if( modal_rc == wxID_OK )
       {
         const wxString chosen = dlg.GetPath();
         paths.push_back( std::string( chosen.utf8_str() ) );
@@ -170,8 +185,12 @@ namespace InterSpecWxUtils
       // Post the result back to the Wt session thread.
       Wt::WServer * const server = Wt::WServer::instance();
       if( !server )
+      {
+        wxLogMessage( "[DirPicker] Wt::WServer::instance() returned null" );
         return;
+      }
 
+      wxLogMessage( "[DirPicker] posting result back to Wt session (paths=%zu)", paths.size() );
       server->post( session_id, [callback, paths](){
         Wt::WApplication * const app = Wt::WApplication::instance();
         if( !app )
@@ -185,6 +204,8 @@ namespace InterSpecWxUtils
 
   void register_native_directory_picker()
   {
+    wxLogMessage( "[DirPicker] register_native_directory_picker: calling setter" );
     set_wx_native_directory_picker( &browse_for_directory );
+    wxLogMessage( "[DirPicker] register_native_directory_picker: setter returned" );
   }
 }//namespace InterSpecWxUtils
