@@ -80,7 +80,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/DoseCalcWidget.h"
-#include "InterSpec/GadrasSpecFunc.h"
+#include "InterSpec/GadrasShieldScatter.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
@@ -120,7 +120,7 @@ namespace
     const float m_atomic_number;
     const double m_user_entered_dose;
     const double m_distance;
-    const GadrasScatterTable &m_scatter;
+    const GadrasShieldScatter &m_scatter;
 
     
   public:
@@ -130,7 +130,7 @@ namespace
                         const float atomic_number,
                         const double user_entered_dose,
                         const double distance,
-                        const GadrasScatterTable &scatter )
+                        const GadrasShieldScatter &scatter )
       : m_energies( energies ),
         m_intensities( intensities ),
         m_atomic_number( atomic_number ),
@@ -167,7 +167,7 @@ namespace
   double fit_ad( const vector<float> &energies, const vector<float> &intensities,
                 const float atomic_number, const double user_entered_dose,
                 const double distance,
-                const GadrasScatterTable &scatter )
+                const GadrasShieldScatter &scatter )
   {
     const double dose_no_shielding = DoseCalc::gamma_dose_with_shielding( energies, intensities, 0.0, atomic_number, distance, scatter );
     
@@ -344,9 +344,9 @@ void DoseCalcWidget::init()
   
   try
   {
-    string continuumData = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
-    
-    m_scatter.reset( new GadrasScatterTable( continuumData ) );
+    string continuumData = SpecUtils::append_path( InterSpec::staticDataDirectory(), "sandia.shieldscatter.db" );
+
+    m_scatter.reset( new GadrasShieldScatter( continuumData ) );
   }catch( std::exception &e )
   {
     WString msg = "<div><b>Error initializing resources:</b></div><div>";
@@ -1030,7 +1030,7 @@ std::string DoseCalcWidget::encodeStateToUrl() const
 }//std::string encodeStateToUrl() const;
 
 
-void DoseCalcWidget::runtime_sanity_checks( const GadrasScatterTable * const scatter )
+void DoseCalcWidget::runtime_sanity_checks( const GadrasShieldScatter * const scatter )
 {
   if( !scatter )
     throw runtime_error( "Full spectrum transport source matrix not initiated." );
@@ -1073,13 +1073,13 @@ void DoseCalcWidget::runtime_sanity_checks( const GadrasScatterTable * const sca
                            + PhysicalUnits::printToBestEquivalentDoseRateUnits(expected,4,false)
                            + ".  Not performing further tests.");
   };//check_nuc lambda
-  
+
   string nuclide = "Co60";
   double age = 0.5*PhysicalUnits::year;
   float distance = 100.0*PhysicalUnits::cm;
   float areal_density = 0.0f;
   float atomic_number = 26.0f;
-  double expected = 115.42E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 115.4
+  double expected = 115.4210E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //GADRAS gives 115.07
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
   
@@ -1088,15 +1088,15 @@ void DoseCalcWidget::runtime_sanity_checks( const GadrasScatterTable * const sca
   distance = 100.0*PhysicalUnits::cm;
   areal_density = 0.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
   atomic_number = 26.0f;
-  expected = 29.70E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 29.7 uRem/h
+  expected = 29.6987E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //GADRAS gives 29.52 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
   areal_density = 5.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
-  expected = 25.19E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 23.9 uRem/h
+  expected = 25.4660E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //GADRAS gives 25.34 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
   areal_density = 50.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
-  expected = 2.59E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 0.842 uRem/h
+  expected = 2.9512E-6 * PhysicalUnits::rem/PhysicalUnits::hour;  //GADRAS gives 2.90 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
   
@@ -1105,11 +1105,11 @@ void DoseCalcWidget::runtime_sanity_checks( const GadrasScatterTable * const sca
   distance = 100.0*PhysicalUnits::cm;
   areal_density = 0.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
   atomic_number = 60.0f;
-  expected = 1.86E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 1.8 uRem/h
+  expected = 1.8638E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //GADRAS gives 1.81 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
-  
+
   areal_density = 2.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
-  expected = 2.34E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 0.78 uRem/h
+  expected = 0.8020508E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //GADRAS gives 0.79658 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
   
@@ -1118,16 +1118,22 @@ void DoseCalcWidget::runtime_sanity_checks( const GadrasScatterTable * const sca
   distance = 10.0 * static_cast<float>(PhysicalUnits::cm);
   areal_density = 13.0f * static_cast<float>( PhysicalUnits::gram / PhysicalUnits::cm2 );
   atomic_number = 5.0f;
-  expected = 7.66E-3 * PhysicalUnits::rem/PhysicalUnits::hour;  //Other program gives 6.1 uRem/h
+  expected = 7.5218E-3 * PhysicalUnits::rem/PhysicalUnits::hour;  //GADRAS gives 6.97 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
-  
+  age = 0.0*PhysicalUnits::year;
+  distance = 10.0 * static_cast<float>(PhysicalUnits::cm);
+  areal_density = 0.0;
+  expected = 10.81E-3 * PhysicalUnits::rem/PhysicalUnits::hour;  //GADRAS gives 10.8176 mRem/h
+  check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
+
+
   nuclide = "F18";
   age = 0.0*PhysicalUnits::year;
   distance = 200.0*PhysicalUnits::cm;
   areal_density = 0.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
   atomic_number = 5.0f;
-  expected = 13.29E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 13.3 uRem/h
+  expected = 13.2870E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //GADRAS gives 13.19 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
   
@@ -1137,11 +1143,11 @@ void DoseCalcWidget::runtime_sanity_checks( const GadrasScatterTable * const sca
   distance = 10.0*PhysicalUnits::cm;
   areal_density = 0.0f * PhysicalUnits::gram / PhysicalUnits::cm2;
   atomic_number = 82.0f;
-  expected = 2.44E-3 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 2.4 mRem/h
+  expected = 2.4430E-3 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 2.44 mRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
   areal_density = 10.0f * static_cast<float>(PhysicalUnits::gram / PhysicalUnits::cm2);
-  expected = 134.09E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 111 uRem/h
+  expected = 134.0646E-6 * PhysicalUnits::rem/PhysicalUnits::hour; //Other program gives 129.76 uRem/h
   check_nuc( nuclide, age, distance, areal_density, atomic_number, expected );
   
   

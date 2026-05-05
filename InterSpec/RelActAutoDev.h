@@ -23,6 +23,9 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include <string>
+#include <cstddef>
+
 #include "InterSpec_config.h"
 
 
@@ -30,6 +33,18 @@
 namespace RelActAutoDev
 {
   int dev_code();
+
+  enum class IdbMaterialType { Uranium, Plutonium, MOX };
+
+  /** Runs RelActCalcAuto::solve on each HPGe spectrum in idb_dir, comparing results
+   against the known mass fractions in metadata_xml_path. Writes a single HTML
+   summary to output_html_path. Processes at most max_spectra HPGe spectra
+   (pass std::numeric_limits<size_t>::max() to process all). */
+  void run_idb_comparison( const std::string &idb_dir,
+                           const std::string &metadata_xml_path,
+                           IdbMaterialType material_type,
+                           const std::string &output_html_path,
+                           size_t max_spectra = 15 );
 }//namespace RelActAutoDev
 
 

@@ -40,7 +40,7 @@
 #include "InterSpec/DoseCalc.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/DoseCalcWidget.h"
-#include "InterSpec/GadrasSpecFunc.h"
+#include "InterSpec/GadrasShieldScatter.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 
@@ -97,8 +97,8 @@ string find_data_dir( const string file )
 
 BOOST_AUTO_TEST_CASE( RuntimeSanityChecks )
 {
-  const string data_dir = find_data_dir( "GadrasContinuum.lib" );
-  const string scatter_file = SpecUtils::append_path( data_dir, "GadrasContinuum.lib" );
+  const string data_dir = find_data_dir( "sandia.shieldscatter.db" );
+  const string scatter_file = SpecUtils::append_path( data_dir, "sandia.shieldscatter.db" );
   
   
   const string decay_xml = find_data_dir( "sandia.decay.xml" );
@@ -115,8 +115,8 @@ BOOST_AUTO_TEST_CASE( RuntimeSanityChecks )
   
   BOOST_REQUIRE( SpecUtils::is_file(scatter_file) );
   
-  std::unique_ptr<GadrasScatterTable> scatter_table;
-  BOOST_REQUIRE_NO_THROW( scatter_table.reset( new GadrasScatterTable(scatter_file) ) );
+  std::unique_ptr<GadrasShieldScatter> scatter_table;
+  BOOST_REQUIRE_NO_THROW( scatter_table.reset( new GadrasShieldScatter(scatter_file) ) );
   
   try
   {

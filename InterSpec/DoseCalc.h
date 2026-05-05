@@ -33,7 +33,7 @@ class MaterialDB;
 class DoseCalcWidget;
 class InterSpec;
 class ShieldingSelect;
-class GadrasScatterTable;
+class GadrasShieldScatter;
 
 
 namespace Wt
@@ -105,7 +105,7 @@ namespace DoseCalc
           have to divide by g/cm2 to print out g/cm2) of shielding
    \param atomic_number Atomic numberof the shielding
    \param distance Distance from center of source to location of interest
-   \param scatter The GadrasScatterTable object to use to create the continuum
+   \param scatter The GadrasShieldScatter object to use to create the continuum
    
    \returns Returns dose in units of PhysicalUnits.  That is, to convert
             into a human readable dose at a given distance, you would divide
@@ -116,6 +116,6 @@ namespace DoseCalc
                                     const float areal_density,
                                     const float atomic_number,
                                     const float distance,
-                                    const GadrasScatterTable &scatter );
+                                    const GadrasShieldScatter &scatter );
 }//namespace DoseCalc
 #endif //DoseCalc_h
