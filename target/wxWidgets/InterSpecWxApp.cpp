@@ -754,6 +754,13 @@ InterSpecWxApp::InterSpecWxApp() :
       InterSpecWxUtils::save_file_data( std::move( data ), std::move( suggested_name ) );
     } );
 
+    // Register the wx native directory picker into LibInterSpec's
+    // DirectorySelector.  Must happen on the executable side because
+    // wxWidgets is statically linked separately into the dylib and the
+    // executable, so wx static state (e.g. wxApp::ms_appInstance) does not
+    // survive crossing that boundary.
+    InterSpecWxUtils::register_native_directory_picker();
+
 
     try
     {

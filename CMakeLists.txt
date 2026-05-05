@@ -622,7 +622,10 @@ endif( (NOT IOS) AND (NOT ANDROID) AND (NOT BUILD_FOR_WEB_DEPLOYMENT) )
 if( BUILD_AS_OSX_APP )
   list( APPEND sources target/osx/macOsUtils.mm target/osx/NativeMenu.mm )
   list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
-endif( BUILD_AS_OSX_APP )
+elseif( APPLE AND BUILD_AS_WX_WIDGETS_APP )
+  list( APPEND sources target/osx/macOsUtils.mm )
+  list( APPEND headers target/osx/macOsUtils.h )
+endif()
 
 
 #Copy D3 resources into InterSpec_resources directory at compile time
@@ -869,7 +872,7 @@ target_link_libraries(
 )
 
 
-if( BUILD_AS_OSX_APP )
+if( BUILD_AS_OSX_APP OR (APPLE AND BUILD_AS_WX_WIDGETS_APP) )
   FIND_LIBRARY(COCOA_LIBRARY Cocoa)
   FIND_LIBRARY(COREDATA_LIBRARY CoreData)
   FIND_LIBRARY(APPKIT_LIBRARY AppKit)
@@ -877,13 +880,10 @@ if( BUILD_AS_OSX_APP )
 
   MARK_AS_ADVANCED( COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
 
-  target_link_libraries( InterSpecLib PUBLIC
-    ${COCOA_LIBRARY}
-    ${APPKIT_LIBRARY}
-    ${COREDATA_LIBRARY}
-    ${FOUNDATION_LIBRARY}
-  )
-  
+  target_link_libraries( InterSpecLib PUBLIC ${COCOA_LIBRARY} ${APPKIT_LIBRARY} ${COREDATA_LIBRARY} ${FOUNDATION_LIBRARY} )
+endif()
+
+if( BUILD_AS_OSX_APP )
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     set_target_properties( InterSpecLib PROPERTIES
       FRAMEWORK TRUE

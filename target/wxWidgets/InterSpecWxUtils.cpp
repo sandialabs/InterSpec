@@ -26,12 +26,18 @@
 #include <wx/file.h>
 #include <wx/log.h>
 #include <wx/filedlg.h>
+#include <wx/dirdlg.h>
 #include <wx/msgdlg.h>
 #include <wx/config.h>
 #include <wx/filename.h>
 
+#include <Wt/WServer>
+#include <Wt/WApplication>
+
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+
+#include "InterSpec/DirectorySelector.h"
 
 #include "InterSpecWxApp.h"
 #include "InterSpecWxUtils.h"
@@ -106,4 +112,79 @@ namespace InterSpecWxUtils
       wxLogMessage( "Saved file: %s", savePath );
     } );
   }//void save_file_data(...)
+
+
+  void browse_for_directory( const std::string &title,
+                             const std::string &message,
+                             std::function<void(const std::vector<std::string> &)> callback )
+  {
+    Wt::WApplication * const app = Wt::WApplication::instance();
+    if( !app || !callback )
+      return;
+
+    const std::string session_id = app->sessionId();
+
+    wxApp * const wxapp = dynamic_cast<wxApp *>( wxApp::GetInstance() );
+    if( !wxapp )
+    {
+      wxLogError( "InterSpecWxUtils::browse_for_directory: failed to get wxApp" );
+      return;
+    }
+
+    wxWindow * const topWindow = wxapp->GetTopWindow();
+    if( !topWindow )
+    {
+      wxLogError( "InterSpecWxUtils::browse_for_directory: failed to get top window" );
+      return;
+    }
+
+    // Dispatch to the wx main UI thread for the dialog; post the result back to the Wt session.
+    topWindow->GetEventHandler()->CallAfter(
+      [title, message, callback, session_id, topWindow]()
+    {
+      wxConfigBase * const config = wxConfigBase::Get( true );
+      wxString defaultDir = config->Read( "/LastSaveDir", wxString( "" ) );
+      if( !defaultDir.empty() )
+      {
+        wxFileName defDirFile = wxFileName::DirName( defaultDir );
+        if( !defDirFile.IsOk() || !defDirFile.DirExists() )
+          defaultDir = "";
+      }
+
+      const wxString prompt = message.empty() ? wxString::FromUTF8( title )
+                                              : wxString::FromUTF8( message );
+
+      wxDirDialog dlg( topWindow, prompt, defaultDir,
+                       wxDD_DEFAULT_STYLE | wxDD_DIR_MUST_EXIST );
+      if( !title.empty() )
+        dlg.SetTitle( wxString::FromUTF8( title ) );
+
+      std::vector<std::string> paths;
+      if( dlg.ShowModal() == wxID_OK )
+      {
+        const wxString chosen = dlg.GetPath();
+        paths.push_back( std::string( chosen.utf8_str() ) );
+        config->Write( "/LastSaveDir", chosen );
+      }
+
+      // Post the result back to the Wt session thread.
+      Wt::WServer * const server = Wt::WServer::instance();
+      if( !server )
+        return;
+
+      server->post( session_id, [callback, paths](){
+        Wt::WApplication * const app = Wt::WApplication::instance();
+        if( !app )
+          return;
+        callback( paths );
+        app->triggerUpdate();
+      } );
+    } );
+  }//void browse_for_directory(...)
+
+
+  void register_native_directory_picker()
+  {
+    set_wx_native_directory_picker( &browse_for_directory );
+  }
 }//namespace InterSpecWxUtils
