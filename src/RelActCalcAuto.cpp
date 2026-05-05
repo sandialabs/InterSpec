@@ -12154,7 +12154,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent, "RoiRangeList");
     if( !node && parent->parent() )
     {
-      assert( get_int_attribute(parent, "version") <= 2 );
+      //assert( get_int_attribute(parent, "version") <= 2 ); - states with no ROIs saved will also end up here
       node = XML_FIRST_NODE( parent->parent(), "RoiRangeList" );
     }
     
@@ -12172,7 +12172,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     node = XML_FIRST_NODE(parent, "FloatingPeakList");
     if( !node && parent->parent() )
     {
-      assert( get_int_attribute(parent, "version") <= 2 );
+      //assert( get_int_attribute(parent, "version") <= 2 ); - states with no ROIs saved will also end up here
       node = XML_FIRST_NODE( parent->parent(), "FloatingPeakList" );
     }
     

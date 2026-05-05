@@ -38,27 +38,9 @@ class wxIdleEvent;
 class wxCloseEvent;
 class wxFocusEvent;
 class wxMouseEvent;
-class wxThreadEvent;
 class wxWebViewEvent;
 class wxMaximizeEvent;
 class wxChildFocusEvent;
-
-
-namespace Wt
-{
-  namespace Http
-  {
-    class Client;
-    class Message;
-  }
-}
-namespace boost
-{
-  namespace system
-  {
-    class error_code;
-  }
-}
 
 
 class InterSpecWebFrame : public wxFrame
@@ -91,12 +73,20 @@ public:
   const wxString& app_token() const;
 
 
-  void handle_download_response(Wt::Http::Client* client, const boost::system::error_code& err, const Wt::Http::Message& response);
-  void handle_self_event(wxThreadEvent& evt);
-
-
   /* Stop hack to use HTML titlebar to move window around when #m_dragging_window is true. */
   void handle_mouse_up(wxMouseEvent& evt);
+
+private:
+  /** Dispatch a click on a `target="_blank"` link: download via the DLL for
+   localhost URLs, hand off to the OS default app for mailto/external URLs.
+
+   Called from both #OnNavigationRequest (which is needed on macOS WKWebView,
+   where `wxEVT_WEBVIEW_NEWWINDOW` does not reliably fire for `target="_blank"`
+   link activations) and #OnNewWindow (which is the path Windows Edge takes).
+   #m_last_target_blank_url dedupes the two paths when both fire. */
+  void handle_target_blank_url( const wxString &url_str );
+
+public:
 
   /* Hack to use HTML titlebar to move window around, when #m_dragging_window is true. */
   void handle_mouse_move(wxMouseEvent& evt);
@@ -128,6 +118,12 @@ private:
   wxPoint m_mouse_down_pos;
 
   bool m_currently_maximized;
+
+  /** Last URL handled by #handle_target_blank_url, used to dedupe between
+   wxEVT_WEBVIEW_NAVIGATING and wxEVT_WEBVIEW_NEWWINDOW (Windows Edge fires
+   both for the same link click; macOS WKWebView only fires NAVIGATING).
+   Cleared via CallAfter so the same link can be re-clicked. */
+  wxString m_last_target_blank_url;
 };//class InterSpecWebFrame
 
 

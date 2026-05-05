@@ -27,13 +27,6 @@
 #include <random>
 #include <numeric>
 
-#include <boost/system/error_code.hpp>
-
-#include <Wt/WServer>
-#include <Wt/WIOService>
-#include <Wt/Http/Client>
-#include <Wt/Http/Message>
-
 #include "wx/fileconf.h"
 #include "wx/artprov.h"
 #include "wx/cmdline.h"
@@ -497,7 +490,6 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   // 
   // The EVT_CHILD_FOCUS does seem to reliably trigger
   Bind(wxEVT_CHILD_FOCUS, &InterSpecWebFrame::handleChildFocus, this);
-  Bind(wxEVT_THREAD, &InterSpecWebFrame::handle_self_event, this);
 
   //
   Bind(wxEVT_MOTION, &InterSpecWebFrame::handle_mouse_move, this);
@@ -694,10 +686,22 @@ void InterSpecWebFrame::OnIdle(wxIdleEvent& WXUNUSED(evt))
   */
 void InterSpecWebFrame::OnNavigationRequest(wxWebViewEvent& evt)
 {
-   wxLogMessage("Navigation request to '%s' (target='%s'), CurrentUrl=%s", 
+   wxLogMessage("Navigation request to '%s' (target='%s'), CurrentUrl=%s",
     evt.GetURL(), evt.GetTarget(), m_browser->GetCurrentURL() );
-  
+
    const wxString &new_url = evt.GetURL();
+
+   // Intercept target="_blank" link clicks here.  On macOS WKWebView,
+   // wxEVT_WEBVIEW_NEWWINDOW does not reliably fire for these (the click is
+   // handed to a subframe and dropped, so the save-as never appears); we
+   // must catch it at the NAVIGATING stage.  On Windows Edge, NEWWINDOW
+   // also fires for the same click — handle_target_blank_url() dedupes.
+   if( evt.GetTarget() == "_blank" )
+   {
+     handle_target_blank_url( new_url );
+     evt.Veto();
+     return;
+   }
 
   //If we don't want to handle navigation then veto the event and navigation
   //will not take place, we also need to stop the loading animation
@@ -771,283 +775,129 @@ void InterSpecWebFrame::OnDocumentLoaded(wxWebViewEvent& evt)
   if (evt.GetURL() == m_browser->GetCurrentURL())
   {
     wxLogMessage("%s", "Document loaded; url='" + evt.GetURL() + "'");
+
+    // Route "open in new window" / download requests back over the wx
+    // script-message bridge.  This is the only reliable path on macOS
+    // WKWebView, where these requests bypass both wxEVT_WEBVIEW_NAVIGATING
+    // and wxEVT_WEBVIEW_NEWWINDOW (WKWebView dispatches them through
+    // WKUIDelegate.createWebViewWithConfiguration, which the wx macOS
+    // backend does not surface).  On Windows Edge the existing C++ handlers
+    // also fire — handle_target_blank_url() dedupes either way.
+    //
+    // We intercept two paths:
+    //   - window.open(...) — Wt 3.7.1's WPushButton + setLinkTarget(
+    //     TargetNewWindow) emits `function(){window.open("…");}` (see
+    //     wt-3.7.1_src_code/src/Wt/WPushButton.C:298), which never produces
+    //     an anchor element.
+    //   - clicks on actual `<a target="_blank">` (defensive — used by
+    //     WAnchor and a few other Wt widgets).
+    //
+    // IIFE-with-flag pattern guards against multiple installs across reloads.
+    m_browser->RunScriptAsync(
+      "(function(){"
+      "if(window.__interspecWxLinkHook)return;"
+      "window.__interspecWxLinkHook=true;"
+      "function route(href){"
+        "try{"
+          "var u=new URL(href,document.baseURI);"
+          "if(u.hostname==='127.0.0.1'||u.hostname==='localhost'){"
+            "window.wx.postMessage('DownloadUrl:'+u.href);return true;"
+          "}"
+          "if(u.protocol==='mailto:'||u.protocol==='http:'||u.protocol==='https:'){"
+            "window.wx.postMessage('OpenExternal:'+u.href);return true;"
+          "}"
+        "}catch(err){}"
+        "return false;"
+      "}"
+      "var origOpen=window.open;"
+      "window.open=function(url){"
+        "if(url&&route(url))return null;"
+        "return origOpen.apply(window,arguments);"
+      "};"
+      "document.addEventListener('click',function(e){"
+        "var el=e.target;"
+        "while(el&&el.tagName!=='A')el=el.parentElement;"
+        "if(!el||el.target!=='_blank'||!el.href)return;"
+        "if(route(el.href)){e.preventDefault();e.stopPropagation();}"
+      "},true);"
+      "})();" );
   }
   UpdateState();
 }
 
 
-void InterSpecWebFrame::handle_self_event(wxThreadEvent& evt)
-{
-  wxLogMessage("In handle_self_event" );
-  const wxString str_val = evt.GetString();
-
-  if (str_val != "Wt::Http::Message")
-  {
-    wxLogError("InterSpecWebFrame::handle_self_event: Unrecognized event type: %s", str_val );
-    return;
-  }
-
-  Wt::Http::Message* response_ptr = evt.GetPayload< Wt::Http::Message*>();
-  assert(response_ptr);
-  if (!response_ptr)
-  {
-    wxLogError("InterSpecWebFrame::handle_self_event: unexpected nullptr msg" );
-    return;
-  }
-
-  std::unique_ptr<Wt::Http::Message> response_owner(response_ptr);
-  const Wt::Http::Message& response = *response_ptr;
-
-  std::string filename = "filename";
-  const std::string* disposition_value = response.getHeader("Content-Disposition");
-  if (disposition_value)
-  {
-    //attachment;filename="Ba133_gammas.csv";filename*=UTF-8''Ba133_gammas.csv
-
-    std::vector<std::string> fields;
-    SpecUtils::split(fields, *disposition_value, ";");
-    for (std::string val : fields)
-    {
-      SpecUtils::trim(val);
-      if (SpecUtils::istarts_with(val, "filename="))
-      {
-        filename = val.substr(9);
-        SpecUtils::erase_any_character(filename, "'\\/:?\"<>|");
-      }
-    }//for (std::string val : fields)
-
-  }//if(disposition_value )
-
-  const std::string* type_value = response.getHeader("Content-Type");
-  if (type_value)
-  {
-    // "text/csv"
-  }
-
-  wxString ext = SpecUtils::file_extension(filename);
-  if (!ext.empty())
-    ext = "*" + ext;
-
-  wxConfigBase* config = wxConfigBase::Get(true);
-  wxString defaultDir = config->Read("/LastSaveDir", wxString(""));
-  if (!defaultDir.empty())
-  {
-    wxFileName defDirFile(defaultDir);
-    if (!defDirFile.IsOk() || !defDirFile.DirExists() || !defDirFile.IsDirWritable())
-      defaultDir = "";
-  }
-
-  wxFileDialog saveFileDialog(this, _("Save file"), defaultDir, filename,
-    ext, wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
-  if (saveFileDialog.ShowModal() == wxID_CANCEL)
-  {
-    wxLogMessage("User canceled saving file");
-    return;     // the user changed idea...
-  }
-
-  // save the current contents in the file;
-  // this can be done with e.g. wxWidgets output streams:
-  const wxString savePath = saveFileDialog.GetPath();
-  wxFileOutputStream output_stream(savePath);
-  if (!output_stream.IsOk())
-  {
-    wxLogError("Cannot save current contents in file '%s'.", saveFileDialog.GetPath());
-    return;
-  }
-
-  std::string body = response.body();
-  output_stream.Write(body.c_str(), body.size());
-
-  if (!output_stream.IsOk())
-  {
-    wxLogError("Error writing output stream.");
-  }
-  else
-  {
-    wxFileName lastSaveName(savePath);
-    wxString lastSavePath = lastSaveName.GetPath();
-    config->Write("/LastSaveDir", lastSavePath);
-    wxLogMessage("Saved file: %s", saveFileDialog.GetPath().c_str());
-  }
-  output_stream.Close();
-}//void handle_self_event(wxThreadEvent& evt)
-
-
-
-void InterSpecWebFrame::handle_download_response(Wt::Http::Client* client, const boost::system::error_code &err, const Wt::Http::Message& response) {
-  // TODO: should we be in a the MAIN thread here?  Cause I think we're in a Wt owned Asio thread, I would guess 
-
-  //
-  std::unique_ptr<Wt::Http::Client> client_ptr(client);
-
-  if (!err) 
-  {
-    if (response.status() == 200) 
-    {
-      // Doing the Save As dialog here in this thread seems to work, but it isnt the proper thing 
-      //  to do (we should be in wxWidgets main thread), so we'll post an event to be handled in
-      //  the main thread.
-      wxThreadEvent* evt = new wxThreadEvent();
-      Wt::Http::Message* msg_copy = new Wt::Http::Message(response);
-      evt->SetString("Wt::Http::Message");
-      evt->SetPayload(msg_copy);
-      this->QueueEvent(evt);
-    }
-    else
-    {
-      wxLogMessage("Http::Client invalis response code: %i", response.status());
-    }//if (response.status() == 200)  / else
-  }
-  else {
-    Wt::log("error") << "Http::Client error: " << err.message();
-    wxLogMessage("Http::Client error: %s", err.message().c_str());
-  }
-
-}
-
 /**
-  * On new window, we veto to stop extra windows appearing
+  * Most target="_blank" link clicks are intercepted in OnNavigationRequest
+  * (which vetoes), but Windows Edge still fires NEWWINDOW for the same click
+  * — handle_target_blank_url() dedupes via m_last_target_blank_url.
   */
 void InterSpecWebFrame::OnNewWindow(wxWebViewEvent& evt)
 {
-  // I guess we would handle downloads and stuff here?
-  
   const wxString url_str = evt.GetURL();
-  wxURI uri(url_str);
+  wxLogMessage("OnNewWindow type=%i, url=%s, target=%s",
+               int(evt.GetNavigationAction()), url_str.c_str(), evt.GetTarget().c_str());
 
-  const wxString& server = uri.GetServer(); //"http://<server>/mypath"
-  const wxString& path = uri.GetPath();//"http://mysite.com<path>"
-  const wxString& port = uri.GetPort();//"http://mysite.com:<port>"
-  const wxString& query = uri.GetQuery();//"http://mysite.com/mypath?<query>"
-  const wxString& scheme = uri.GetScheme(); //e.x., http, "<scheme>://mysite.com"
+  if( evt.GetNavigationAction() == wxWEBVIEW_NAV_ACTION_USER )
+    handle_target_blank_url( url_str );
+  else
+    wxLogMessage("Ignoring non-user OnNewWindow event");
+  UpdateState();
+}
 
-  wxLogMessage("OnNewWindow type=%i, url=%s", int(evt.GetNavigationAction()), url_str.c_str());
 
-  if (evt.GetNavigationAction() == wxWEBVIEW_NAV_ACTION_USER)
+void InterSpecWebFrame::handle_target_blank_url( const wxString &url_str )
+{
+  if( url_str == m_last_target_blank_url )
   {
-    // This logic is roughly the same as for the macOS app, see AppDelegate.mm
-    if ((path.find("request=redirect&url=http") != wxString::npos)
+    wxLogMessage("Skipping duplicate target='_blank' dispatch for '%s'", url_str.c_str());
+    return;
+  }
+  m_last_target_blank_url = url_str;
+  // Clear after the current event-loop drain so the same link can be re-clicked.
+  CallAfter( [this, url_str]() {
+    if( m_last_target_blank_url == url_str )
+      m_last_target_blank_url.clear();
+  } );
+
+  const wxURI uri( url_str );
+  const wxString &server = uri.GetServer();
+  const wxString &path   = uri.GetPath();
+  const wxString &scheme = uri.GetScheme();
+
+  // Mirrors target/osx/AppDelegate.mm decidePolicyForNavigationAction.
+  if( (path.find("request=redirect&url=http") != wxString::npos)
       || (scheme == "mailto")
-      || (uri.HasServer() && (server != "127.0.0.1") && (server != "localhost"))
-      )
-    {
-      //external url or email
-      const bool launched = wxLaunchDefaultBrowser(url_str);
-      if (launched)
-        wxLogMessage("Launched '%s' in other application.", url_str.utf8_string().c_str());
-      else
-        wxLogMessage("Failed to launch '%s' in other application.", url_str.utf8_string().c_str());
-    }
-    else if ( uri.HasServer() && (server == "127.0.0.1" || server == "localhost"))
-    {
-      //CSV, spectrum file, JSON file, etc
-      wxLogMessage("%s", "File to save; url='" + evt.GetURL() + "', target='" + evt.GetTarget() + "'");
-      
-      // If we are linking against LibInterSpec dynamically, and using the static runtime on Windows
-      //  (default build option), we cant call `Wt::WServer::instance()`, since its in a different
-      //  runtime, and we'll get nullptr back.
-      Wt::WServer *server = InterSpecServer::get_wt_server();
-      
-      assert(server);
-      Wt::Http::Client* client = new Wt::Http::Client( server->ioService() );
-      client->setTimeout(10);
-      client->setMaximumResponseSize(512 * 1024 * 1024);
-
-      client->done().connect( boost::bind(&InterSpecWebFrame::handle_download_response, this, client, boost::placeholders::_1, boost::placeholders::_2) );
-
-      if (client->get(url_str.utf8_string()))
-      {
-        wxLogMessage("Have started GET for download");
-      }else
-      {
-        wxLogMessage("Error calling Get for download URL");
-        delete client;
-        client = nullptr;
-      }
-
-      /*
-      wxFileDialog
-        saveFileDialog(this, _("Save XYZ file"), "", "",
-          "XYZ files (*.xyz)|*.xyz", wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
-      if (saveFileDialog.ShowModal() == wxID_CANCEL)
-        return;     // the user changed idea...
-
-      // save the current contents in the file;
-      // this can be done with e.g. wxWidgets output streams:
-      wxFileOutputStream output_stream(saveFileDialog.GetPath());
-      if (!output_stream.IsOk())
-      {
-        wxLogError("Cannot save current contents in file '%s'.", saveFileDialog.GetPath());
-        return;
-      }
-      */
-      
-      /*
-      wxHTTP get;
-      get.SetHeader(_T("Content-type"), _T("text/html; charset=utf-8"));
-      get.SetTimeout(10); // 10 seconds of timeout instead of 10 minutes ...
-      while (!get.Connect( m_url ))
-      {
-        wxLogMessage("Error connecting." );
-        wxSleep(5);
-      }
-   -  wxInputStream *httpStream = get.GetInputStream(path);
-
-      if (get.GetError() == wxPROTO_NOERR)
-      {
-        wxString res;
-        wxStringOutputStream out_stream(&res);
-        httpStream->Read(out_stream);
-
-        wxString summary = "File size: " + std::to_string(res.size()) + ", headers:\n";
-       
-        wxMessageBox(res);
-      }
-      else
-      {
-        wxMessageBox(_T("Unable to connect!"));
-      }
-
-      wxDELETE(httpStream);
-      get.Close();
-      */
-      
-
-      /*
-      wxURL url(url_str);
-      if (url.GetError() == wxURL_NOERR)
-      {
-        wxString htmldata;
-        wxInputStream* in = url.GetInputStream();
-
-        if (in && in->IsOk())
-        {
-          wxStringOutputStream html_stream(&htmldata);
-          in->Read(html_stream);
-          wxLogMessage(htmldata);
-        }
-        delete in;
-      }
-      */
-    }
-    else if ((!uri.HasServer() && (url_str.find("data:application/octet-stream") != wxString::npos))
-      || (!uri.HasServer() && (url_str.find("data:image/svg+xml") != wxString::npos)))
-    {
-      // Edge seems to automatically download these to the Downloads directory. 
-      wxLogMessage("Got a data:image/svg+xml or data:application/octet-stream URL we're not handling atm" );
-    }
-
+      || (uri.HasServer() && (server != "127.0.0.1") && (server != "localhost")) )
+  {
+    const bool launched = wxLaunchDefaultBrowser( url_str );
+    wxLogMessage( launched ? "Launched '%s' in other application."
+                           : "Failed to launch '%s' in other application.",
+                  url_str.utf8_string().c_str() );
+  }
+  else if( uri.HasServer() && (server == "127.0.0.1" || server == "localhost") )
+  {
+    // CSV, spectrum file, JSON file, etc.  The fetch and Wt-side response
+    // handling lives in LibInterSpec; the bytes are routed back through the
+    // registered native file-save handler (set in InterSpecWxApp::OnInit),
+    // which hops to the wx GUI thread before showing wxFileDialog.  This
+    // keeps Wt symbols out of the wx EXE.
+    wxLogMessage( "File to save; url='%s'", url_str.c_str() );
+    InterSpecServer::download_to_native_save( url_str.utf8_string() );
+  }
+  else if( !uri.HasServer()
+           && (url_str.find("data:application/octet-stream") != wxString::npos
+               || url_str.find("data:image/svg+xml") != wxString::npos) )
+  {
+    // Windows Edge auto-downloads these to ~/Downloads; macOS WKWebView does
+    // not — but we don't have a clean intercept yet, so just log.
+    wxLogMessage( "Unhandled data: URL: %s", url_str.utf8_string().c_str() );
   }
   else
   {
-    wxLogMessage("%s", "Unknown OnNewWindow event: url='" + evt.GetURL() + "', target='" + evt.GetTarget() + "', NavAction: "+ std::to_string(evt.GetNavigationAction()) );
-  }// etc
-
-  
-
-
-  UpdateState();
+    wxLogMessage( "Unhandled target='_blank' URL: %s", url_str.utf8_string().c_str() );
+  }
 }
+
 
 void InterSpecWebFrame::OnTitleChanged(wxWebViewEvent& evt)
 {
@@ -1138,7 +988,16 @@ void InterSpecWebFrame::OnScriptMessage(wxWebViewEvent& evt)
     const int dx = pos.x - origin.x;
     const int dy = pos.y - origin.y;
     m_mouse_down_pos = wxPoint(dx, dy);
-  }else
+  }
+  else if (msg.StartsWith("DownloadUrl:") || msg.StartsWith("OpenExternal:"))
+  {
+    // From the JS click hook installed in OnDocumentLoaded.  The "DownloadUrl"
+    // and "OpenExternal" tags are informational — handle_target_blank_url()
+    // re-classifies based on URL host/scheme, matching the C++ fallback.
+    const size_t colon = msg.find(':');
+    handle_target_blank_url( msg.Mid(colon + 1) );
+  }
+  else
   {
     wxLogMessage("Unrecognized message from JS: '%s'.", msg.utf8_string().c_str());
   }
