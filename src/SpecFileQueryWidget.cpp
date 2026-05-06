@@ -2045,10 +2045,12 @@ void SpecFileQueryWidget::setResultsStale()
   
   m_optionsBtn->enable();
   m_optionsMenu->enable();
-  
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   if( m_openSelectedDir )
     m_openSelectedDir->disable();
-  
+#endif
+
   if( m_loadSelectedFile )
     m_loadSelectedFile->disable();
   
@@ -3003,8 +3005,8 @@ void SpecFileQueryWidget::selectionChanged()
   const bool sel = (m_resultview->selectedIndexes().size() == 1);
   if( m_loadSelectedFile )
     m_loadSelectedFile->setEnabled( sel );
-  
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER )
+
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   if( m_openSelectedDir )
     m_openSelectedDir->setEnabled( sel );
 #endif
