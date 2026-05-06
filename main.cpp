@@ -48,7 +48,7 @@
 #endif
 
 //#if( USE_REL_ACT_TOOL )
-//#include "InterSpec/RelActAutoDev.h"
+#include "InterSpec/RelActAutoDev.h"
 //#endif
 
 int main( int argc, char **argv )
@@ -71,7 +71,7 @@ int main( int argc, char **argv )
   std::string docroot, wt_config, user_data_dir;
   
 #if( USE_BATCH_CLI_TOOLS )
-  bool batch_peak_fit = false, batch_act_fit = false;
+  bool batch_peak_fit = false, batch_act_fit = false, batch_iso_from_nucs = false;
 #endif
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
@@ -120,6 +120,10 @@ int main( int argc, char **argv )
      "Batch shielding/source fit.\n"
      "\tUse '--batch-act-fit --help' to see available options."
   )
+  ("batch-iso-from-nucs", po::value<bool>(&batch_iso_from_nucs)->implicit_value(true)->default_value(false),
+     "Batch isotopics-by-nuclides (RelActCalcAuto) analysis.\n"
+     "\tUse '--batch-iso-from-nucs --help' to see available options."
+  )
 #endif
   ;
   
@@ -145,7 +149,7 @@ int main( int argc, char **argv )
   
   
 #if( USE_BATCH_CLI_TOOLS )
-  const bool is_batch = (batch_peak_fit || batch_act_fit);
+  const bool is_batch = (batch_peak_fit || batch_act_fit || batch_iso_from_nucs);
 #else
   const bool is_batch = false;
 #endif

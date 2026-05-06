@@ -1700,8 +1700,10 @@ void ReferencePhotopeakDisplay::updateFitSourcesButtonState()
       case ReferenceLineInfo::SourceType::CustomEnergy:
       case ReferenceLineInfo::SourceType::OneOffSrcLines:
       case ReferenceLineInfo::SourceType::FissionRefLines:
-        return false;
+        break;
     }//switch( source_type )
+
+    return false;
   };
   
   size_t nsources = 0;

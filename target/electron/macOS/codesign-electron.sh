@@ -1,46 +1,67 @@
 #!/bin/bash
+#
+# Sign and notarize a packaged InterSpec.app on macOS using @electron/osx-sign
+# and @electron/notarize. Replaces the legacy hand-rolled codesign loop, which
+# stopped tracking the changing list of frameworks Electron ships.
+#
+# Usage:
+#   codesign-electron.sh path/to/InterSpec.app
+#
+# Required setup (one-time):
+#   xcrun notarytool store-credentials "interspec-notary" \
+#     --apple-id <your-apple-id> \
+#     --team-id <YOUR_TEAM_ID> \
+#     --password <app-specific-password>
+#
+#   This stores the notarization credential in the macOS login keychain
+#   under the profile name "interspec-notary".  No Apple-ID password is
+#   ever passed via env vars, command-line, or shell history after that.
+#
+# Required environment variables:
+#   OSX_SIGN_IDENTITY              Developer ID Application identity
+#                                  (e.g. "Developer ID Application: ...")
+#
+# Optional environment variables:
+#   NOTARY_KEYCHAIN_PROFILE        Override the keychain profile name
+#                                  (default: "interspec-notary")
+#
+# The `npm run package-mac` script invokes signing+notarization inline via
+# @electron/packager flags using the same keychain profile; this script is
+# provided for re-signing an existing .app bundle out of band (e.g., after
+# a manual edit).
 
-#from https://gist.github.com/jorangreef/27e708c67b7e6746a98a 
+set -euo pipefail
 
-# Invoke this script with a relative '.app' path, for example:
-# codesign-electron.sh "darwin-x64/Electron.app"
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 path/to/InterSpec.app" >&2
+  exit 1
+fi
 
-# 1. Run the following command to get a list of identities:
-# security find-identity
-
-# 2. Now set the value of the identity variable below to the identity you want to use:
-identity="6QEGZNWVR8"
-
-#app="$PWD/$1"
 app="$1"
 
-echo "Signing..."
-# When you sign frameworks, you have to sign a specific version.
-# For example, you have to sign "Electron Framework.framework/Versions/A"
-# Signing the top level folder ("Electron Framework.framework") will fail.
-# Signing "Electron Framework.framework/Versions/Current" will also fail (because it is a symbolic link).
-# Apple recommends NOT using --deep, but rather signing each item explictly (which is how XCode does it).
-# Other scripts sometimes resign items multiple times in the process because of --deep which is slow.
-# The following signs the bare minimum needed to get Gatekeeper acceptance.
-# If you renamed "Electron Helper.app",  "Electron Helper EH.app" and "Electron Helper NP.app" then rename below.
-codesign --verbose --sign "$identity" "$app/Contents/Frameworks/Electron Framework.framework/Versions/A"
-codesign --verbose --sign "$identity" "$app/Contents/Frameworks/Electron Helper EH.app"
-codesign --verbose --sign "$identity" "$app/Contents/Frameworks/Electron Helper NP.app"
-codesign --verbose --sign "$identity" "$app/Contents/Frameworks/Electron Helper.app"
-codesign --verbose --sign "$identity" "$app/Contents/Frameworks/Mantle.framework/Versions/A"
-codesign --verbose --sign "$identity" "$app/Contents/Frameworks/ReactiveCocoa.framework/Versions/A"
-codesign --verbose --sign "$identity" "$app/Contents/Frameworks/Squirrel.framework/Versions/A"
-codesign --verbose --sign "$identity" "$app/Contents/MacOS/InterSpec"
-codesign --verbose --sign "$identity" "$app"
+: "${OSX_SIGN_IDENTITY:?OSX_SIGN_IDENTITY env var is required}"
+notary_profile="${NOTARY_KEYCHAIN_PROFILE:-interspec-notary}"
 
-# This will often pass, even if Gatekeeper fails.
-echo ""
-echo "Verifying signatures..."
-codesign --verify --deep --display --verbose=4 "$app"
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+entitlements="${script_dir}/entitlements.mac.plist"
 
-# This is what really counts and what the user will see.
-echo ""
-echo "Veriyfing Gatekeeper acceptance..."
-spctl --ignore-cache --no-cache --assess --type execute --verbose=4 "$app"
+echo "Signing ${app} with @electron/osx-sign..."
+npx --yes @electron/osx-sign "${app}" \
+  --identity="${OSX_SIGN_IDENTITY}" \
+  --hardened-runtime \
+  --entitlements="${entitlements}" \
+  --entitlements-inherit="${entitlements}" \
+  --gatekeeper-assess=false
 
-# Thanks to http://jbavari.github.io/blog/2015/08/14/codesigning-electron-applications/
+echo "Verifying codesign..."
+codesign --verify --deep --display --verbose=4 "${app}"
+
+echo "Notarizing ${app} with @electron/notarize (keychain profile: ${notary_profile})..."
+npx --yes @electron/notarize \
+  --app-path="${app}" \
+  --keychain-profile="${notary_profile}"
+
+echo "Verifying Gatekeeper acceptance..."
+spctl --ignore-cache --no-cache --assess --type execute --verbose=4 "${app}"
+
+echo "Done."

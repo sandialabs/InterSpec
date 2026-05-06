@@ -4232,7 +4232,8 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
                                        shared_ptr<const SpecUtils::Measurement> spectrum,
                                        vector<shared_ptr<const PeakDef>> display_peaks,
                                        shared_ptr<const SpecUtils::Measurement> background,
-                                       double background_normalization ) const
+                                       double background_normalization,
+                                       vector<shared_ptr<const PeakDef>> background_peaks ) const
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   assert( db );
@@ -4584,7 +4585,10 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       spec_options.spectrum_type = SpecUtils::SpectrumType::Background;
       spec_options.line_color = "steelblue";
       spec_options.display_scale_factor = 1.0;
-      
+      if( !background_peaks.empty() )
+        spec_options.peaks_json = PeakDef::peak_json( background_peaks, background, Wt::WColor(0,51,255), 255 );
+
+
       if( (background_normalization <= 0.0f)
          || IsNan(background_normalization)
          || IsInf(background_normalization) )

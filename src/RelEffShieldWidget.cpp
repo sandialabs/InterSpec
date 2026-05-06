@@ -635,7 +635,7 @@ std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldWidget::fitInp
         s->areal_density = thick * s->material->density;
     }else
     {
-      s->areal_density = 1.25*PhysicalUnits::g_per_cm2; //Arbitrary default value, just to make sure it's not zero, btu also not to go wild incase last fit value was big
+      s->areal_density = 1.25*PhysicalUnits::g_per_cm2; //Arbitrary default value, just to make sure it's not zero, but also not to go wild incase last fit value was big
     }
   }else
   {

@@ -36,21 +36,24 @@
 #if __APPLE__
 #include "TargetConditionals.h"
 #endif
-#include <Wt/WApplication.h>
+#include <Wt/Utils.h>
 #include <Wt/WServer.h>
+#include <Wt/Dbo/Dbo.h>
 #include <Wt/WResource.h>
 #include <Wt/WIOService.h>
-#include <Wt/Http/Client.h>
-#include <Wt/Utils.h>
-#include <Wt/Http/Response.h>
-#include <Wt/Dbo/Dbo.h>
-#include <Wt/Dbo/WtSqlTraits.h>
-#include <Wt/Dbo/backend/Sqlite3.h>
+#include <Wt/WApplication.h>
 #include <Wt/Json/Array.h>
 #include <Wt/Json/Object.h>
 #include <Wt/Json/Parser.h>
+#include <Wt/Http/Client.h>
+#include <Wt/Http/Message.h>
+#include <Wt/Http/Response.h>
+#include <Wt/AsioWrapper/system_error.hpp>
+#include <Wt/Dbo/WtSqlTraits.h>
+#include <Wt/Dbo/backend/Sqlite3.h>
 
 
+#include <boost/bind/bind.hpp>
 #include <boost/filesystem.hpp>
 
 #include "SpecUtils/SpecFile.h"
@@ -1049,6 +1052,75 @@ void clear_file_to_open_on_load( const std::string &session_token )
   if( pos != end(ns_sessions) )
     ns_sessions.erase( pos );
 }//void clear_file_to_open_on_load( const std::string &session_token )
+
+
+void download_to_native_save( const std::string &url )
+{
+  Wt::WServer * const server = get_wt_server();
+  if( !server )
+  {
+    Wt::log("error") << "download_to_native_save: no Wt server running for url='" << url << "'";
+    return;
+  }
+
+  std::function<void(std::string,std::string)> save_handler
+                                       = InterSpecApp::nativeFileSaveHandler();
+  if( !save_handler )
+  {
+    Wt::log("error") << "download_to_native_save: no native file-save handler registered for url='" << url << "'";
+    return;
+  }
+
+  Wt::Http::Client * const client = new Wt::Http::Client( server->ioService() );
+  client->setTimeout( std::chrono::seconds(10) );
+  client->setMaximumResponseSize( 512 * 1024 * 1024 );
+
+  client->done().connect(
+    [client, save_handler]( Wt::AsioWrapper::error_code err,
+                            Wt::Http::Message response )
+  {
+    const std::unique_ptr<Wt::Http::Client> client_owner( client );
+
+    if( err )
+    {
+      Wt::log("error") << "download_to_native_save: " << err.message();
+      return;
+    }
+
+    if( response.status() != 200 )
+    {
+      Wt::log("error") << "download_to_native_save: HTTP status " << response.status();
+      return;
+    }
+
+    // Parse Content-Disposition for the suggested filename, e.g.
+    //  attachment;filename="Ba133_gammas.csv";filename*=UTF-8''Ba133_gammas.csv
+    std::string filename = "download";
+    const std::string * const disp = response.getHeader( "Content-Disposition" );
+    if( disp )
+    {
+      std::vector<std::string> fields;
+      SpecUtils::split( fields, *disp, ";" );
+      for( std::string val : fields )
+      {
+        SpecUtils::trim( val );
+        if( SpecUtils::istarts_with( val, "filename=" ) )
+        {
+          filename = val.substr( 9 );
+          SpecUtils::erase_any_character( filename, "'\\/:?\"<>|" );
+        }
+      }
+    }//if( disp )
+
+    save_handler( response.body(), filename );
+  } );
+
+  if( !client->get( url ) )
+  {
+    Wt::log("error") << "download_to_native_save: get() failed for url='" << url << "'";
+    delete client;
+  }
+}//void download_to_native_save( const std::string &url )
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
   
   

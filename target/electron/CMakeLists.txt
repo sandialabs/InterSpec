@@ -1,12 +1,21 @@
-# Require CMake 3.15 to use MSVC_RUNTIME_LIBRARY
-cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 cmake_policy(SET CMP0091 NEW)
 cmake_policy(SET CMP0042 NEW)
 cmake_policy(SET CMP0167 NEW)
 
 project( InterSpecAddOn )
 
-add_definitions(-DNAPI_VERSION=4)
+# Several InterSpec sub-dependencies (notably Minuit2) declare unconditional
+# install() rules that, with the default CMAKE_INSTALL_PREFIX of /usr/local,
+# would write into system include/lib directories during `--target install`.
+# We don't ship those headers — only the contents of build_dir/app — so
+# redirect the prefix into the build tree unless the user has set their own.
+if( CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT )
+  set( CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/_install" CACHE PATH
+       "InterSpecAddOn redirects the default prefix into the build tree" FORCE )
+endif()
+
+add_definitions(-DNAPI_VERSION=6)
 
 include_directories(${CMAKE_JS_INC})
 
@@ -23,7 +32,7 @@ set( USE_REL_ACT_TOOL ON CACHE BOOL "Enables using map tool" )
 
 IF(WIN32)
   add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142
-  add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS ) #0x0601==Win7
+  add_definitions(-D _WIN32_WINNT=0x0A00 -D WINVER=0x0A00 -D _SCL_SECURE_NO_WARNINGS ) #0x0A00==Win10 (Electron 41 requires Win10 1809+)
 ENDIF(WIN32)
 
 if(MSVC)
@@ -45,32 +54,22 @@ set( SOURCE_FILES InterSpecAddOn.cpp InterSpecAddOn.h ElectronUtils.cpp Electron
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${CMAKE_JS_SRC})
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_JS_LIB} InterSpecLib )
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
 
 
-# If we are are running cmake from a random directory, and not the same place `node_modules` is at,
-#   we should search aroung a bit.
-#  We'll allow user to specify `InterSpec_NODE_MODULE_DIR` or set the environment variable 
-#  `NODE_MODULES_PARENT_DIR` to help with this
-IF(WIN32)
-  execute_process( COMMAND cmd /C cd OUTPUT_VARIABLE CWD OUTPUT_STRIP_TRAILING_WHITESPACE )
-ELSE(WIN32)
-  execute_process( COMMAND pwd OUTPUT_VARIABLE CWD OUTPUT_STRIP_TRAILING_WHITESPACE )
-ENDIF(WIN32)
-
-find_file( NODE_ADDON_API_DIR napi.h 
-  PATHS 
+# cmake-js usually invokes us from the directory containing `node_modules`, but
+# the build can also be configured from arbitrary out-of-tree dirs (Docker,
+# packagers, IDEs). The cache variable `InterSpec_NODE_MODULE_DIR` and the env
+# var `NODE_MODULES_PARENT_DIR` let those callers point us at the right tree.
+find_file( NODE_ADDON_API_DIR napi.h
+  PATHS
     node_modules/node-addon-api
     ${CMAKE_CURRENT_SOURCE_DIR}/node_modules/node-addon-api
     ${InterSpec_NODE_MODULE_DIR}/node_modules/node-addon-api
     ${InterSpec_NODE_MODULE_DIR}/node-addon-api
     ${InterSpec_NODE_MODULE_DIR}/..
-    ./node_modules/node-addon-api
     ../node_modules/node-addon-api
-    ${CWD}
-    ${CWD}/node_modules/node-addon-api
     $ENV{NODE_MODULES_PARENT_DIR}/node_modules/node-addon-api
-    /build_working_dir/node_modules/node-addon-api
   PATH_SUFFIXES include
 )
 

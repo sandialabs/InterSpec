@@ -109,8 +109,166 @@ To show reference lines for multiple nuclides at once:
 <div>
 
 In addition to displaying gammas for any non-stable nuclide, you can also display:
+
 <ul>
+  <li>
+    <b>Element x-rays</b> - type the element symbol (or the element name) into the
+    &quot;<b>Nuclide</b>&quot; field, e.g. &quot;<b>U</b>&quot;, &quot;<b>Pb</b>&quot;,
+    &quot;<b>Fe</b>&quot;.  The fluorescence x-rays for that element will be shown.  You may
+    also append &quot;xray&quot; or &quot;x-ray&quot; (e.g. &quot;<b>U xray</b>&quot;).
+  </li>
+  <li>
+    <b>Background</b> - type &quot;<b>background</b>&quot; to show the gamma and x-ray lines from a representative natural
+    background composed of K-40, Th-232, U-238, U-235, and Ra-226 (with the latter four
+    aged appropriately and transported through soil).
+  </li>
+  <li>
+    <b>Custom energies</b> - type a number with energy units (e.g.
+    &quot;<b>661 keV</b>&quot; or &quot;<b>1.46 MeV</b>&quot;) to display a single line
+    at that energy.  Useful when you just want a marker at a specific energy.  If
+    &quot;Show Escape Peaks&quot; is enabled and the energy exceeds 1022 keV, the single
+    and double-escape lines are also shown.
+  </li>
+  <li>
+    <b>Nuclear reactions</b> - type the reaction in the form
+    &quot;<b>Target(in,out)</b>&quot;, e.g. &quot;<b>H(n,g)</b>&quot;,
+    &quot;<b>Fe(n,g)</b>&quot;, &quot;<b>Be9(a,n)</b>&quot;,
+    &quot;<b>B10(n,a)</b>&quot;, &quot;<b>N14(a,p)</b>&quot;,
+    &quot;<b>Fe(n,n)</b>&quot;, &quot;<b>Fe(a,a)</b>&quot;.  Particle codes
+    are <code>n</code> = neutron, <code>a</code> = alpha, <code>p</code> = proton,
+    <code>g</code> = gamma.  Supported reaction types are <em>(a,n)</em>, <em>(n,a)</em>,
+    <em>(a,p)</em>, <em>(n,g)</em> (neutron capture), <em>(n,n)</em> (neutron inelastic
+    scatter), and <em>(a,a)</em> (alpha inelastic scatter).
+  </li>
+  <li>
+    <b>Fission product spectra</b> - type
+    &quot;<b>Fission</b> <em>nuclide</em> <em>type</em>, <em>buildup</em>&quot;,
+    e.g. &quot;<b>Fission U235 Thermal, 1d buildup</b>&quot;,
+    &quot;<b>Fission U233 Fast, 1d buildup</b>&quot;,
+    &quot;<b>Fission U238 14 MeV, 1h buildup</b>&quot;, or for spontaneous fission either
+    &quot;<b>Cf252 + Spontaneous Fission</b>&quot; or
+    &quot;<b>Fission Cf252 Spontaneous</b>&quot;.  Fission types are <em>Thermal</em>,
+    <em>Fast</em>, <em>14 MeV</em>, and <em>Spontaneous</em>.  After the fission event,
+    the resulting fission products decay (and ingrow) for the specified buildup time, and
+    the resulting gamma/x-ray spectrum is shown.  Independent fission yields are available
+    for <b>U-233</b>, <b>U-235</b>, <b>U-238</b>, <b>Pu-239</b>, <b>Pu-241</b>,
+    <b>Np-237</b>, <b>Am-241</b>, <b>Cm-244</b>, <b>Cm-248</b>, and <b>Cf-252</b>.  
+    The &quot;<code>Age</code>&quot; entered in the tool is the time since fission stopped (e.g., how long the built up fission products are decayed for).
+  </li>
+  <li>
+    <b>Built-in U / Pu isotopic mixtures</b> - the file
+    <code>data/add_ref_line.xml</code> ships several preset named mixtures you can type
+    directly into the &quot;<b>Nuclide</b>&quot; field, including
+    &quot;<b>U depleted</b>&quot;, &quot;<b>U natural</b>&quot;,
+    &quot;<b>U 3% enriched</b>&quot;,
+    &quot;<b>Pu low burnup</b>&quot;, &quot;<b>Pu high burnup</b>&quot;, and
+    &quot;<b>Pu heat source</b>&quot;.  See &quot;<em>Adding Your Own Sources</em>&quot;
+    below for more.
+  </li>
+  <li>
+    <b>Built-in named source-line sets</b> - also defined in
+    <code>data/add_ref_line.xml</code>: &quot;<b>U-iso</b>&quot; and
+    &quot;<b>Pu-iso</b>&quot; provide curated sets of recommended uranium and plutonium
+    peaks (typically used as starting points for isotopic analysis), and
+    &quot;<b>HPGe(n,n)</b>&quot; provides germanium-detector inelastic-scatter lines.
+  </li>
+  <li>
+    <b>User-defined sources</b> - you can add your own named single-source line lists
+    or nuclide mixtures that show up alongside the built-in ones.  See
+    &quot;<em>Adding Your Own Sources</em>&quot; below.
+  </li>
 </ul>
+
+</div>
+
+
+<div align="center">
+<h2 id="custom_ref_sources"><b>Adding Your Own Sources</b></h2>
+</div>
+<div>
+<p>
+The list of sources you can enter into the &quot;<b>Nuclide</b>&quot; field on this tab
+is not limited to the built-in nuclides, x-rays, and reactions.  <b>InterSpec</b> ships
+with a file
+<a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/add_ref_line.xml">data/add_ref_line.xml</a>
+that defines additional named sources, including useful entries such as
+&quot;<b>Pu low burnup</b>&quot;, &quot;<b>Pu high burnup</b>&quot;,
+&quot;<b>Pu heat source</b>&quot;, &quot;<b>U depleted</b>&quot;,
+&quot;<b>U natural</b>&quot;, &quot;<b>U 3% enriched</b>&quot;,
+&quot;<b>U-iso</b>&quot;, and &quot;<b>Pu-iso</b>&quot;.
+Type any of these names into the &quot;<b>Nuclide</b>&quot; field to use them.
+</p>
+
+<p>
+You can also define your own.  To do so, copy the shipped file into the apps user data
+directory (see <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b> for this
+location), edit it, and restart <b>InterSpec</b>.  The user-data copy is loaded
+<em>after</em> the built-in one, so your custom sources are added to the existing list
+(rather than replacing it); using the same name as a built-in source will override that
+built-in entry.
+</p>
+
+<p>
+Two source types are supported:
+<ul>
+  <li><code>SourceLines</code>: a named list of explicit energy and branching-ratio
+    pairs.  Individual lines may optionally be associated with a nuclide (so a peak fit
+    near the line is assigned that nuclide), given a per-line color, or marked to ignore
+    detector efficiency / shielding for the purposes of line display.
+  </li>
+  <li><code>NucMixture</code>: a named mixture of nuclides at specified relative
+    activities, with per-nuclide colors and optional age offsets.  When entered into
+    this tab the mixture's nuclide lines are displayed, and peaks fit near them are
+    associated with the underlying nuclide (not the mixture name).
+  </li>
+</ul>
+</p>
+
+<p>
+For the full list of attributes (<em>default-age</em>, <em>reference-age</em>,
+<em>age-offset</em>, <em>color</em>, <em>atten</em>, <em>info</em>, <em>nuc</em>, etc.),
+and worked examples, see the comments in the shipped
+<a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/add_ref_line.xml">data/add_ref_line.xml</a>
+file.
+</p>
+
+</div>
+
+
+<div align="center">
+<h2 id="dynamic_ref_lines"><b>Dynamic Reference Lines</b></h2>
+</div>
+<div>
+<p>
+In addition to the reference photopeak lines you enter explicitly in this tool,
+<b>InterSpec</b> can also display <em>Dynamic Reference Lines</em> that intelligently
+update as you move your mouse on the spectrum.  These lines can be a great way to
+quickly identify peaks, especially when many sources are present.<br />
+Toggle them via <b>Menu</b>&rarr;<b>View</b>&rarr;&quot;<b>Show Dynamic Reference Lines</b>&quot;
+(and &quot;<b>Hide Dynamic Reference Lines</b>&quot; to turn off).
+</p>
+
+<p>
+The set of sources used for the dynamic lines is partially defined by the file
+<a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/dynamic_ref_lines.xml">data/dynamic_ref_lines.xml</a>
+that ships with <b>InterSpec</b>.  To customize this set - for example, to
+add nuclides relevant to your work, change default ages, set per-source colors or
+shielding, or define custom mixtures - copy the shipped file into the apps
+user data directory (see <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b>
+for this location), edit it, and restart <b>InterSpec</b>.  If a copy is present in
+the user data directory it is loaded in place of the built-in one, so your
+customizations completely replace the default list.
+</p>
+
+<p>
+For additional information on creating <code>IndividualSource</code>,
+<code>SourceLines</code>, and <code>NucMixture</code> entries, and on per-source
+attributes such as <em>default-age</em>, <em>color</em>, <em>shield-material</em>,
+<em>shield-thickness</em>, <em>weight</em>, and <em>is-background</em>, please see
+the
+<a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/add_ref_line.xml">data/add_ref_line.xml</a>
+file.
+</p>
 
 </div>
 

@@ -12,6 +12,15 @@ set( USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "Enable Spectrum File Query Wid
 set( USE_BATCH_CLI_TOOLS ON CACHE BOOL "Enables command line batch processing." )
 set( USE_BATCH_GUI_TOOLS ON CACHE BOOL "Enables GUI batch processing." )
 
+if( APPLE )
+  # Without an explicit deployment target the build picks up whatever SDK
+  # version is current (e.g. macOS 26.2), which then refuses to launch on
+  # older systems.  Match target/osx/CMakeLists.txt and target the same
+  # baseline as the macOS native build.  Bump if the installed wxWidgets
+  # requires a newer macOS.
+  set( CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE INTERNAL "macOS deployment target" )
+endif()
+
 IF(WIN32)
   add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142
   add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS ) #0x0601==Win7
@@ -48,7 +57,10 @@ if( NOT InterSpec_FETCH_DEPENDENCIES )
   # with wxWidgets I compile with CMake on Windows, so we'll keep compiling
   # as a subdirectory for now... 
   set( wxWidgets_USE_STATIC ON CACHE BOOL "" )
-  find_package( wxWidgets REQUIRED core base webview stc )
+  # `net` is needed for wxTCPServer/wxTCPClient, which is the backend of
+  #  wxWidgets IPC (wxServer/wxClient) on Unix. Without it, single-instance
+  #  open-file forwarding silently fails on Linux multilib builds.
+  find_package( wxWidgets REQUIRED core base net webview stc )
 
 #  set(wxBUILD_SHARED OFF CACHE BOOL "")
 #  if(WIN32)
@@ -99,7 +111,63 @@ list(APPEND sources
   wxMain.cpp
 )
 
+if( APPLE )
+  # Bundle data/, InterSpec_resources/, and Wt resources into InterSpec.app at
+  # build time (not just install time) so Xcode "Run" can launch the app
+  # without first running `cmake --install`.  Mirrors target/osx/CMakeLists.txt.
+  file( GLOB_RECURSE DATA_RES_SOURCES      "${CMAKE_CURRENT_SOURCE_DIR}/../../data/*" )
+  file( GLOB_RECURSE INTERSPEC_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources/*" )
+  file( GLOB_RECURSE WT_RES_SOURCES        "${WT_RESOURCES_DIRECTORY}/*" )
+
+  list( APPEND sources
+    ${DATA_RES_SOURCES}
+    ${INTERSPEC_RES_SOURCES}
+    ${WT_RES_SOURCES}
+  )
+endif( APPLE )
+
 add_executable(${PROJECT_NAME} ${EXE_TYPE} ${sources})
+
+if( APPLE )
+  # Place each globbed resource at the right relative location inside the
+  # .app bundle's Contents/Resources directory.
+  foreach( RES_FILE ${DATA_RES_SOURCES} )
+    file( RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../data" "${RES_FILE}" )
+    get_filename_component( RES_PATH "${RES_PATH}" DIRECTORY )
+    set_property( SOURCE "${RES_FILE}"
+      PROPERTY MACOSX_PACKAGE_LOCATION "Resources/data/${RES_PATH}" )
+    source_group( "Resources/data/${RES_PATH}" FILES "${RES_FILE}" )
+  endforeach()
+
+  foreach( RES_FILE ${INTERSPEC_RES_SOURCES} )
+    file( RELATIVE_PATH RES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources" "${RES_FILE}" )
+    get_filename_component( RES_PATH "${RES_PATH}" DIRECTORY )
+    set_property( SOURCE "${RES_FILE}"
+      PROPERTY MACOSX_PACKAGE_LOCATION "Resources/InterSpec_resources/${RES_PATH}" )
+    source_group( "Resources/InterSpec_resources/${RES_PATH}" FILES "${RES_FILE}" )
+  endforeach()
+
+  foreach( RES_FILE ${WT_RES_SOURCES} )
+    file( RELATIVE_PATH RES_PATH "${WT_RESOURCES_DIRECTORY}" "${RES_FILE}" )
+    get_filename_component( RES_PATH "${RES_PATH}" DIRECTORY )
+    set_property( SOURCE "${RES_FILE}"
+      PROPERTY MACOSX_PACKAGE_LOCATION "Resources/resources/${RES_PATH}" )
+    source_group( "Resources/resources/${RES_PATH}" FILES "${RES_FILE}" )
+  endforeach()
+
+  # Bundle metadata so wxStandardPaths and macOS treat the app consistently.
+  # The macOS native build uses gov.sandia.macOS.InterSpec; distinguish the
+  # wxWidgets variant so they can coexist on the same system.
+  set_target_properties( ${PROJECT_NAME} PROPERTIES
+    MACOSX_BUNDLE                              TRUE
+    MACOSX_BUNDLE_BUNDLE_NAME                  "InterSpec"
+    MACOSX_BUNDLE_GUI_IDENTIFIER               "gov.sandia.wxWidgets.InterSpec"
+    MACOSX_BUNDLE_BUNDLE_VERSION               "${INTERSPEC_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING         "${INTERSPEC_VERSION}"
+    MACOSX_BUNDLE_INFO_STRING                  "InterSpec - Sandia National Laboratories"
+    MACOSX_BUNDLE_COPYRIGHT                    "© Sandia National Laboratories"
+  )
+endif( APPLE )
 
 
 if( USE_BATCH_CLI_TOOLS )
@@ -115,6 +183,29 @@ if( USE_BATCH_CLI_TOOLS )
       $<TARGET_FILE:InterSpecLib>
       $<TARGET_FILE_DIR:${PROJECT_NAME}>)
   endif(WIN32)
+
+  if(APPLE)
+    # Copy the InterSpec dylib into InterSpec.app/Contents/Frameworks/ so the
+    # bundle is self-contained and runnable from anywhere (not dependent on
+    # the build-tree rpath).  The rpath is set on the executable below.
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:InterSpecLib>
+        $<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/
+    )
+
+    # InterSpecLib is built with install_name @rpath/InterSpec.dylib, so the
+    # executable just needs an LC_RPATH entry pointing at Contents/Frameworks.
+    # BUILD_WITH_INSTALL_RPATH bakes the install rpath into the binary at
+    # link time so launching from the build tree works the same as launching
+    # from /Applications.
+    set_target_properties( ${PROJECT_NAME} PROPERTIES
+      INSTALL_RPATH "@executable_path/../Frameworks"
+      BUILD_WITH_INSTALL_RPATH 1
+    )
+  endif(APPLE)
 endif( USE_BATCH_CLI_TOOLS )
 
 if( InterSpec_FETCH_DEPENDENCIES )
@@ -138,7 +229,6 @@ else( InterSpec_FETCH_DEPENDENCIES )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_JS_LIB} InterSpecLib )
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "InterSpec")
 
 # Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."
@@ -158,7 +248,7 @@ if( APPLE )
   
   set( CPACK_GENERATOR "ZIP;DragNDrop" )
   set( CPACK_BINARY_ZIP ON )
-  set( CPACK_BINARY_DRAGNDROP, ON )
+  set( CPACK_BINARY_DRAGNDROP ON )
   
   set( CPACK_BUNDLE_NAME "InterSpec.app" )
   set( CPACK_BUNDLE_ICON "${CMAKE_CURRENT_SOURCE_DIR}/../osx/InterSpec.icns" )

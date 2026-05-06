@@ -26,6 +26,8 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <vector>
+#include <functional>
 
 // This header / src could be eliminated now- but will leave in till we're sure we dont need something like this
 
@@ -37,6 +39,24 @@ namespace InterSpecWxUtils
    Called from a Wt worker thread; dispatches to the wxWidgets main thread.
   */
   void save_file_data( std::string data, std::string suggested_name );
+
+  /** Opens a native wxDirDialog and invokes `callback` on the Wt session
+      thread with the selected path (single-element vector) or an empty
+      vector if the user cancelled.
+      Must be called from a Wt event-loop thread.
+  */
+  void browse_for_directory( const std::string &title,
+                             const std::string &message,
+                             std::function<void(const std::vector<std::string> &)> callback );
+
+  /** Registers browse_for_directory as the wx native directory picker for
+      LibInterSpec's DirectorySelector widget.  Must be called once, from the
+      wx executable, after the wxApp instance has been constructed (e.g. from
+      InterSpecWxApp::OnInit).  Cannot be done from inside LibInterSpec
+      because wxWidgets is statically linked separately into the dylib and
+      the executable, so wx static state does not survive that boundary.
+  */
+  void register_native_directory_picker();
 }//namespace InterSpecWxUtils
 
 

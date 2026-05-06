@@ -1239,6 +1239,82 @@
     ...
   </message>
 -->
+  <message id="customize-ref-photopeak-sources" title="Adding your own sources to the Reference Photopeak tab">
+    <p>
+      The list of sources you can enter on the &quot;<b>Reference Photopeak</b>&quot; tab
+      is not limited to the built-in nuclides, x-rays, and reactions.  <code>InterSpec</code>
+      ships with a file
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/add_ref_line.xml">data/add_ref_line.xml</a>
+      that defines additional named sources you can type directly into the &quot;<b>Nuclide</b>&quot;
+      field on that tab.  By default this includes useful entries such as
+      &quot;<b>Pu low burnup</b>&quot;, &quot;<b>Pu high burnup</b>&quot;,
+      &quot;<b>Pu heat source</b>&quot;, &quot;<b>U depleted</b>&quot;,
+      &quot;<b>U natural</b>&quot;, &quot;<b>U 3% enriched</b>&quot;,
+      &quot;<b>U 93.3% enriched</b>&quot;, &quot;<b>U-iso</b>&quot;, &quot;<b>Pu-iso</b>&quot;,
+      and others.
+    </p>
+    <p>
+      You can also define your own.  To do so, copy the shipped file into the apps user
+      data directory (see <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b>
+      for this location), edit it, and restart <code>InterSpec</code>.  The user-data
+      copy is loaded <em>after</em> the built-in one, so your custom sources are added
+      to the existing list (rather than replacing it); using the same name as a built-in
+      source will override that built-in entry.
+    </p>
+    <p>
+      Two source types are supported:
+      <ul>
+        <li><code>SourceLines</code>: a named list of explicit energy and branching-ratio
+          pairs.  Individual lines may optionally be associated with a nuclide (so a peak
+          fit near the line is assigned that nuclide), given a per-line color, or marked
+          to ignore detector efficiency / shielding for the purposes of line display.
+        </li>
+        <li><code>NucMixture</code>: a named mixture of nuclides at specified relative
+          activities, with per-nuclide colors and optional age offsets.  When entered into
+          the &quot;<b>Reference Photopeak</b>&quot; tab the mixture's nuclide lines are
+          displayed, and peaks fit near them are associated with the underlying nuclide
+          (not the mixture name).
+        </li>
+      </ul>
+    </p>
+    <p>
+      For the full list of attributes (<em>default-age</em>, <em>reference-age</em>,
+      <em>age-offset</em>, <em>color</em>, <em>atten</em>, <em>info</em>, <em>nuc</em>,
+      etc.), and worked examples, see the comments in the shipped
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/add_ref_line.xml">data/add_ref_line.xml</a>
+      file.
+    </p>
+  </message>
+
+  <message id="customize-dynamic-ref-lines" title="Customizing Dynamic Reference Lines">
+    <p>
+      In addition to the reference photopeak lines you enter explicitly on the
+      &quot;<b>Reference Photopeak</b>&quot; tab, <code>InterSpec</code> can also display
+      <em>Dynamic Reference Lines</em> that intelligently update as you move your mouse on the spectrum.  
+      These lines can be a great way to quickly identify peaks, especially when many sources are present.<br />
+      Toggle them via <b>Menu</b>&rarr;<b>View</b>&rarr;&quot;<b>Show Dynamic Reference Lines</b>&quot;
+      (and &quot;<b>Hide Dynamic Reference Lines</b>&quot; to turn off).
+    </p>
+    <p>
+      The set of sources used for the dynamic lines are partually defined by the file
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/dynamic_ref_lines.xml">data/dynamic_ref_lines.xml</a>
+      that ships with <code>InterSpec</code>.  To customize this set - for example,
+      to add nuclides relevant to your work, change default ages, set per-source colors,
+      or define custom mixtures - copy the shipped file into the apps user data
+      directory (see <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b> for this
+      location), edit it, and restart <code>InterSpec</code>.  If a copy is present in
+      the user data directory it is loaded in place of the built-in one, so your
+      customizations completely replace the default list.
+    </p>
+    <p>
+      For additional information on creating, <code>IndividualSource</code>, <code>SourceLines</code>, <code>NucMixture</code>,
+      and per-source attributes such as <em>default-age</em>, <em>color</em>,
+      <em>shield-material</em>, <em>shield-thickness</em>, <em>weight</em>, and
+      <em>is-background</em>, please see the
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/add_ref_line.xml">data/add_ref_line.xml</a> file.
+    </p>
+  </message>
+
   <message id="multi-ref-lines" title="Showing multiple reference photopeak reference lines at once">
     You can show the reference photopeak lines for multiple nuclides and/or reaction at once, by first 
     inputting the first nuclide into the <b>Reference Photopeak</b> tab, then clicking the 
@@ -1300,6 +1376,98 @@
   </message>
 
   
+  <message id="customize-nuclide-search-categories" title="Customizing &quot;Nuclide Search&quot; categories">
+    <p>
+      The drop-down on the &quot;<b>Nuclide Search</b>&quot; tab that lets you restrict
+      results to a category - e.g. &quot;<b>Nuclides + X-rays</b>&quot;,
+      &quot;<b>Nuclides, X-rays, Reactions</b>&quot;, &quot;<b>Fluorescence x-rays</b>&quot;,
+      &quot;<b>Reactions</b>&quot;, &quot;<b>Medical Nuclides</b>&quot;,
+      &quot;<b>Industrial Nuclides</b>&quot;, &quot;<b>SNM</b>&quot;,
+      &quot;<b>NORM</b>&quot;, &quot;<b>Field Encountered Sources</b>&quot;, etc. -
+      is populated from the file
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/NuclideSearchCatagories.xml">data/NuclideSearchCatagories.xml</a>
+      that ships with <code>InterSpec</code>.  (The first entry,
+      &quot;<b>Nuclides + X-rays</b>&quot;, is hard-coded into <code>InterSpec</code>
+      itself and is always present.)
+    </p>
+    <p>
+      You can add your own categories - for example, a &quot;<b>My Favorites</b>&quot;
+      list restricted to a handful of nuclides you care about, a category limited to a
+      specific set of reactions, or a tighter half-life / branching-ratio threshold.  To
+      do so, copy the shipped <code>XML</code> file into the apps user data directory (see
+      <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b> for this location), edit
+      it, and restart <code>InterSpec</code>.  The user-data copy is loaded <em>after</em>
+      the built-in one, so your custom categories are <em>appended</em> to the existing
+      drop-down rather than replacing it.
+    </p>
+    <p>
+      Each <code>&lt;NucSearchCategory&gt;</code> entry can:
+      <ul>
+        <li>Choose what to search over: nuclide gammas / decay x-rays
+          (<code>AllowNucGammas</code>), element fluorescence x-rays
+          (<code>AllowFluorXrays</code>), nuclear reactions (<code>AllowReactions</code>),
+          alpha energies (<code>AllowAlphas</code>), or beta endpoints
+          (<code>AllowBetas</code>).
+        </li>
+        <li>Set a minimum relative branching ratio (<code>MinBr</code>) and/or minimum
+          half-life (<code>MinHl</code>).
+        </li>
+        <li>Restrict to a specific list of nuclides, elements, or reactions via the
+          <code>&lt;Nuclides&gt;</code>, <code>&lt;Elements&gt;</code>, and
+          <code>&lt;Reactions&gt;</code> sub-elements.  Use the same names you would type
+          into the &quot;Reference Photopeak&quot; tool.
+        </li>
+        <li>Optionally exclude progeny (<code>NoProgeny</code>), so only the parent
+          nuclide is considered.
+        </li>
+      </ul>
+    </p>
+    <p>
+      For full details and worked examples, see the comments in the shipped
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/NuclideSearchCatagories.xml">data/NuclideSearchCatagories.xml</a>
+      file.
+    </p>
+  </message>
+
+  <message id="customize-rel-act-auto-presets" title="Adding your own &quot;Isotopics by nuclide&quot; presets">
+    <p>
+      The &quot;<b>Presets</b>&quot; drop-down at the top of the
+      &quot;<b>Isotopics by nuclide</b>&quot; tool is populated from the XML files
+      shipped in
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/data/rel_act">data/rel_act/</a>
+      (for example
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/rel_act/HPGe%20Pu%20(120-420%20KeV).xml">HPGe Pu (120-420 KeV).xml</a>).
+      The built-in entries cover HPGe plutonium and uranium analyses across a few
+      common energy ranges, each pre-configured with reasonable nuclides, ages,
+      energy ranges, and rel-eff / FWHM options.
+    </p>
+    <p>
+      You can add your own presets.  Create a sub-directory named
+      <code>rel_act</code> inside the apps user data directory
+      (see <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b> for this
+      location), drop one or more <code>.xml</code> preset files into it, and
+      restart <code>InterSpec</code>.  Each file becomes an additional entry in
+      the &quot;<b>Presets</b>&quot; drop-down, prefixed with
+      &quot;<b>User:</b>&quot; followed by the file name.  User presets are loaded
+      <em>after</em> the built-in ones, so they are appended to the existing list
+      rather than replacing it.
+    </p>
+    <p>
+      The easiest way to produce one of these XML files is to configure the tool
+      the way you want it (rel-eff curve type, energy ranges, nuclides, ages,
+      FWHM form, options, etc.), and then click the
+      &quot;<b>XML Config</b>&quot; export button to save the current state.
+      You may also start from a copy of one of the shipped files in
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/data/rel_act">data/rel_act/</a>
+      and edit it.  The optional top-level
+      <code>&lt;Description&gt;</code> element is shown to the user when the
+      preset is selected, so it is worth filling in with a short note about
+      what the preset is intended for and any constraints (e.g. detector type
+      or energy range required).
+    </p>
+  </message>
+
+
   <message id="search-profile" title="How the &quot;Profile&quot; ordering is defined when searching for nuclides">
     <p>
       On the &quot;Nuclide Search&quot; tab, when you search on an energy, by default the results

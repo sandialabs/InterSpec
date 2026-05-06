@@ -27,6 +27,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <vector>
 #include <functional>
 
 #include <Wt/WContainerWidget.h>
@@ -42,6 +43,35 @@ namespace Wt
 
 #if( defined(IOS) || defined(ANDROID) || BUILD_FOR_WEB_DEPLOYMENT )
 static_assert( false, "DirectorySelector is not supported on this platform" );
+#endif
+
+#if( BUILD_AS_WX_WIDGETS_APP )
+/** Type of the native directory-picker callback registered by the wxWidgets
+    executable.  See set_wx_native_directory_picker().
+
+    Intentionally a plain function pointer (not std::function) so the value
+    stored long-term in LibInterSpec's static is just an address, with no ABI
+    concerns crossing the DLL boundary on Windows.  On Windows MSVC builds
+    use /MT (static CRT) by default, and storing a moved-in std::function in
+    a DLL static can silently misbehave when the EXE and DLL each have their
+    own CRT copy. */
+using WxNativeDirectoryPickerFn = void (*)(
+  const std::string & /*title*/,
+  const std::string & /*message*/,
+  std::function<void(const std::vector<std::string> &)> /*on_done*/ );
+
+/** Register the wxWidgets native directory picker.
+
+    This indirection exists because, in the wxWidgets desktop build, wxWidgets
+    is statically linked separately into the dylib and the executable, so wx
+    static state (e.g. wxApp::ms_appInstance) does not survive crossing the
+    boundary.  Defining the picker in the executable target and registering it
+    here lets DirectorySelector (which lives in LibInterSpec) invoke it
+    without ever dereferencing wx symbols itself.
+
+    Call once at app startup (e.g. from InterSpecWxApp::OnInit).  Pass an
+    empty callback to clear the registration. */
+InterSpec_API void set_wx_native_directory_picker( WxNativeDirectoryPickerFn callback );
 #endif
 
 /** A widget for selecting directory paths that provides both native file dialogs 
@@ -143,6 +173,13 @@ private:
   Wt::Signal<bool> m_pathValidityChanged;
   
   bool m_useNativeDialog;
+
+  /** Whether the path widget is an editable WLineEdit (true) or a read-only
+      WText (false).  Read-only on macOS when a native picker is in use,
+      because the macOS native build is sandboxed and typed paths don't grant
+      security-scoped access - the user must pick via NSOpenPanel.  Editable
+      everywhere else so users can also paste/type a path. */
+  bool m_useEditableField;
 };
 
 #endif // DirectorySelector_h 

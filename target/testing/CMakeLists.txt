@@ -125,6 +125,20 @@ add_test( NAME TestRelEffAuto
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActAutoReport test_RelActAutoReport.cpp )
+target_link_libraries( test_RelActAutoReport PRIVATE InterSpecLib )
+add_test( NAME TRelActAutoReport
+  COMMAND $<TARGET_FILE:test_RelActAutoReport> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_BatchRelActAuto test_BatchRelActAuto.cpp )
+target_link_libraries( test_BatchRelActAuto PRIVATE InterSpecLib )
+add_test( NAME TBatchRelActAuto
+  COMMAND $<TARGET_FILE:test_BatchRelActAuto> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_PeakDists test_PeakDists.cpp )
 target_link_libraries( test_PeakDists PRIVATE InterSpecLib )
 add_test( NAME TPeakDists
@@ -279,6 +293,13 @@ add_executable( test_PeakFitDetPrefs test_PeakFitDetPrefs.cpp )
 target_link_libraries( test_PeakFitDetPrefs PRIVATE InterSpecLib )
 add_test( NAME TPeakFitDetPrefs
   COMMAND $<TARGET_FILE:test_PeakFitDetPrefs> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_GadrasShieldScatter test_GadrasShieldScatter.cpp )
+target_link_libraries( test_GadrasShieldScatter PRIVATE InterSpecLib )
+add_test( NAME TGadrasShieldScatter
+  COMMAND $<TARGET_FILE:test_GadrasShieldScatter> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

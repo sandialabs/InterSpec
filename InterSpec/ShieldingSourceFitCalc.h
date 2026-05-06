@@ -358,7 +358,12 @@ namespace ShieldingSourceFitCalc
     double distance;
     GammaInteractionCalc::GeometryType geometry;
     std::vector<PeakDef> foreground_peaks;
+    /**  Note: these have been scaled by live time normalization factor (or user could have set thier own scale factor) - see `ShieldingSourceChi2Fcn::setBackgroundPeaks(...)`.
+     So if you are going to plot these peaks, you need to un-scale the area and area uncert
+     */
     std::vector<PeakDef> background_peaks;
+    double background_normalization_factor = -1.0;
+
     std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
     std::vector<ShieldingSourceFitCalc::FitShieldingInfo> final_shieldings;
     

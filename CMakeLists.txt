@@ -51,14 +51,6 @@ option(
     "Selects options appropriate for the web in the future"
     OFF
 )
-option(
-    BUILD_FOR_CONTAINER_LIBC
-    "Configures the executable to be run as a Docker app in a libc-based container"
-)
-option(
-    BUILD_FOR_CONTAINER_MUSL
-    "Configures the executable to be run as a Docker app in a musl-based container"
-)
 if( hasParent )
   option( BUILD_AS_LOCAL_SERVER "Build for use as a server for localhost" OFF )
 else( hasParent )
@@ -331,7 +323,7 @@ set(sources
     src/DataBaseVersionUpgrade.cpp
     src/DataBaseUtils.cpp
     src/Integrate.cpp
-    src/GadrasSpecFunc.cpp
+    src/GadrasShieldScatter.cpp
     src/DoseCalc.cpp
     src/DoseCalcWidget.cpp
     src/GadrasGamFileParser.cpp
@@ -457,7 +449,7 @@ set(headers
     InterSpec/DataBaseVersionUpgrade.h
     InterSpec/DataBaseUtils.h
     InterSpec/Integrate.h
-    InterSpec/GadrasSpecFunc.h
+    InterSpec/GadrasShieldScatter.h
     InterSpec/DoseCalc.h
     InterSpec/DoseCalcWidget.h
     InterSpec/GadrasGamFileParser.h
@@ -603,6 +595,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActAutoGuiFreePeak.cpp
         src/RelActAutoReport.cpp
         src/RelActAutoDev.cpp
+        src/BatchRelActAuto.cpp
         src/ShieldingSourceFitPlot.cpp
   )
   
@@ -626,6 +619,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActAutoGuiFreePeak.h
         InterSpec/RelActAutoReport.h
         InterSpec/RelActAutoDev.h
+        InterSpec/BatchRelActAuto.h
   )
 endif( USE_REL_ACT_TOOL )
 
@@ -659,7 +653,10 @@ endif( (NOT IOS) AND (NOT ANDROID) AND (NOT BUILD_FOR_WEB_DEPLOYMENT) )
 if( BUILD_AS_OSX_APP )
   list( APPEND sources target/osx/macOsUtils.mm target/osx/NativeMenu.mm )
   list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
-endif( BUILD_AS_OSX_APP )
+elseif( APPLE AND BUILD_AS_WX_WIDGETS_APP )
+  list( APPEND sources target/osx/macOsUtils.mm )
+  list( APPEND headers target/osx/macOsUtils.h )
+endif()
 
 
 #Copy D3 resources into InterSpec_resources directory at compile time
@@ -867,7 +864,7 @@ else( InterSpec_FETCH_DEPENDENCIES )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 
-if( BUILD_AS_OSX_APP )
+if( BUILD_AS_OSX_APP OR (APPLE AND BUILD_AS_WX_WIDGETS_APP) )
   FIND_LIBRARY(COCOA_LIBRARY Cocoa)
   FIND_LIBRARY(COREDATA_LIBRARY CoreData)
   FIND_LIBRARY(APPKIT_LIBRARY AppKit)
@@ -875,13 +872,10 @@ if( BUILD_AS_OSX_APP )
 
   MARK_AS_ADVANCED( COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
 
-  target_link_libraries( InterSpecLib PUBLIC
-    ${COCOA_LIBRARY}
-    ${APPKIT_LIBRARY}
-    ${COREDATA_LIBRARY}
-    ${FOUNDATION_LIBRARY}
-  )
-  
+  target_link_libraries( InterSpecLib PUBLIC ${COCOA_LIBRARY} ${APPKIT_LIBRARY} ${COREDATA_LIBRARY} ${FOUNDATION_LIBRARY} )
+endif()
+
+if( BUILD_AS_OSX_APP )
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     set_target_properties( InterSpecLib PROPERTIES
       FRAMEWORK TRUE

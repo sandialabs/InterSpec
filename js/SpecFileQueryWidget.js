@@ -151,7 +151,8 @@ function( divid, parentid, additional_filters )
       46: 'KromekD5',
       47: 'KromekGR1',
       48: 'Raysid',
-      49: 'Unknown'
+      49: 'H3D-400 (M400/A400/H400/S400)',
+      50: 'Unknown'
     },
     operators: ['equal']
   },{

@@ -25,6 +25,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <cstdlib>
 #include <iostream>
 
 #include <boost/program_options.hpp>
@@ -39,7 +40,7 @@
 #include "InterSpec/BatchCommandLine.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || defined(__APPLE__) )
 #include "target/osx/macOsUtils.h"
 #endif
 
@@ -57,6 +58,9 @@ int main( int argc, char *argv[] )
 #endif
   std::string user_data_dir, docroot;
   bool batch_peak_fit = false, batch_act_fit = false;
+#if( USE_REL_ACT_TOOL )
+  bool batch_iso_from_nucs = false;
+#endif
   
   namespace po = boost::program_options;
   
@@ -80,6 +84,12 @@ int main( int argc, char *argv[] )
    "Batch shielding/source fit.\n"
    "\tUse '--batch-act-fit --help' to see available options."
    )
+#if( USE_REL_ACT_TOOL )
+  ("batch-iso-from-nucs", po::value<bool>(&batch_iso_from_nucs)->implicit_value(true)->default_value(false),
+   "Batch isotopics-by-nuclides (RelActCalcAuto) analysis.\n"
+   "\tUse '--batch-iso-from-nucs --help' to see available options."
+   )
+#endif
   ;
   
   po::variables_map cl_vm;
@@ -100,7 +110,11 @@ int main( int argc, char *argv[] )
     return 1;
   }//try catch
 
+#if( USE_REL_ACT_TOOL )
+  const bool is_batch = (batch_peak_fit || batch_act_fit || batch_iso_from_nucs);
+#else
   const bool is_batch = (batch_peak_fit || batch_act_fit);
+#endif
   
   if( cl_vm.count("help") )
   {
@@ -118,8 +132,14 @@ int main( int argc, char *argv[] )
   
   if( !is_batch )
   {
+#if( USE_REL_ACT_TOOL )
+    std::cerr << "You must specify to use 'batch-peak-fit', 'batch-act-fit',"
+                 " or 'batch-iso-from-nucs'.\n"
+              << "With additional available options of:\n";
+#else
     std::cerr << "You must specify to use either 'batch-peak-fit', or 'batch-act-fit'.\n"
               << "With additional available options of:\n";
+#endif
     std::cout << cl_desc << std::endl;
     
     return EXIT_FAILURE;
@@ -176,7 +196,7 @@ int main( int argc, char *argv[] )
   
   if( user_data_dir.empty() )
   {
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || defined(__APPLE__) )
     user_data_dir = macOsUtils::user_data_dir();
     if( !SpecUtils::is_directory(user_data_dir) )
     {
@@ -188,7 +208,53 @@ int main( int argc, char *argv[] )
 #elif defined(_WIN32)
     user_data_dir = AppUtils::user_data_dir();
 #else
-should fix this for linux
+    // Linux: try directories in priority order, falling through to the next
+    // candidate if the previous one does not exist.  The --userdatadir flag
+    // overrides this when sharing with a specific install.
+    //
+    // Priority:
+    //   1. ~/.local/share/InterSpec        - wxWidgets GUI default
+    //                                        (wxStandardPaths::GetUserDataDir,
+    //                                        XDG-style, app name "InterSpec").
+    //   2. ~/.config/InterSpecAddOn        - target/electron GUI default
+    //                                        (Electron's app.getPath('userData')).
+    //   3. ~/.local/share/sandia.InterSpec - plain XDG with "sandia.InterSpec".
+    {
+      const char * const xdg_data   = std::getenv( "XDG_DATA_HOME" );
+      const char * const xdg_config = std::getenv( "XDG_CONFIG_HOME" );
+      const char * const home       = std::getenv( "HOME" );
+
+      const std::string data_base = (xdg_data && xdg_data[0])
+        ? std::string( xdg_data )
+        : ((home && home[0]) ? SpecUtils::append_path( home, ".local/share" )
+                             : std::string());
+      const std::string config_base = (xdg_config && xdg_config[0])
+        ? std::string( xdg_config )
+        : ((home && home[0]) ? SpecUtils::append_path( home, ".config" )
+                             : std::string());
+
+      const std::string candidates[] = {
+        data_base.empty()   ? std::string() : SpecUtils::append_path( data_base,   "InterSpec" ),
+        config_base.empty() ? std::string() : SpecUtils::append_path( config_base, "InterSpecAddOn" ),
+        data_base.empty()   ? std::string() : SpecUtils::append_path( data_base,   "sandia.InterSpec" ),
+      };
+
+      for( const std::string &c : candidates )
+      {
+        if( !c.empty() && SpecUtils::is_directory(c) )
+        {
+          user_data_dir = c;
+          break;
+        }
+      }
+
+      if( user_data_dir.empty() )
+      {
+        std::cerr << "Warning: not setting user data directory, to what the GUI version of InterSpec"
+        " uses - use the '--userdatadir' option to set this if you would like to share detectors,"
+        " or other files." << std::endl;
+      }
+    }
 #endif
   }//if( user_data_dir.empty() )
   

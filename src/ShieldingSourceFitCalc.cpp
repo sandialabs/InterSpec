@@ -1975,6 +1975,8 @@ void fit_model( const std::string wtsession,
   results->geometry = chi2Fcn->geometry();
   results->foreground_peaks = chi2Fcn->peaks();
   results->background_peaks = chi2Fcn->backgroundPeaks();
+  results->background_normalization_factor = chi2Fcn->backgroundNormalizationFactor();
+
   results->options = chi2Fcn->options();
   results->initial_shieldings = chi2Fcn->initialShieldings();
 

@@ -293,7 +293,8 @@ namespace
                 case 46: val = static_cast<int>(SpecUtils::DetectorType::KromekD5); break;
                 case 47: val = static_cast<int>(SpecUtils::DetectorType::KromekGR1); break;
                 case 48: val = static_cast<int>(SpecUtils::DetectorType::Raysid); break;
-                case 49: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
+                case 49: val = static_cast<int>(SpecUtils::DetectorType::H3D400); break;
+                case 50: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
 
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
@@ -2055,21 +2056,26 @@ void SpecFileQueryWidget::setResultsStale()
   
   //Validate logic, and give hint if something wrong, or else
   bool queryvalid = true;
+  bool queryEmpty = false;
   string errormsg;
   try
   {
-    queryFromJson( m_queryJson, m_eventXmlFilters );
+    const SpecFileQuery::SpecLogicTest test = queryFromJson( m_queryJson, m_eventXmlFilters );
+    queryEmpty = test.summary().empty();
   }catch( std::exception &e )
   {
     errormsg = e.what();
     queryvalid = false;
   }
-  
+
   if( queryvalid )
   {
     m_numberResults->removeStyleClass( "SpecFileQueryErrorTxt" );
     m_update->enable();
-    m_numberResults->setText( "Tap Update to refresh results" );
+    if( queryEmpty )
+      m_numberResults->setText( "No filter conditions - will match all files" );
+    else
+      m_numberResults->setText( "Tap Update to refresh results" );
   }else
   {
     m_numberResults->setText( errormsg );
@@ -2482,33 +2488,41 @@ SpecFileQuery::SpecLogicTest SpecFileQueryWidget::queryFromJson( const std::stri
                 const std::vector<EventXmlFilterInfo> &eventXml )
 {
   SpecFileQuery::SpecLogicTest test;
-  
+
+  // An empty query (no conditions) is valid - it matches all files.
+  // m_queryJson is empty on initial widget construction; the JS layer sends the
+  // literal string "empty" if QueryBuilder ever returns an empty object (in
+  // practice unreachable, but handled defensively).
+  if( queryJson.empty() || SpecUtils::istarts_with(queryJson, "empty") )
+    return test;
+
   try
   {
-    if( SpecUtils::istarts_with(queryJson, "empty") )
-      throw runtime_error( "<p>Unable to translate query into test logic.</p>"
-                            "<p>Please take a screenshot of query and send to "
-                            "<a href=\"mailto:interspec@sandia.gov\" target=\"_blank\">interspec@sandia.gov</a></p>" );
-  
     Json::Object q;
     Wt::Json::parse( queryJson, q );
-  
-    const auto &valid = q.get("valid");
-  
-    if( valid.isNull() )
-      throw std::runtime_error( "Query logic is not formated as expected." );
-  
-    if( !valid )
-      throw std::runtime_error( "Query is currently not valid, please fix errors." );
-  
+
     const Json::Value &baseCond = q.get( "condition" );
     const Json::Array &baseRules = q.get( "rules" );
-  
-    if( baseCond.isNull() || baseRules==Json::Array::Empty ) //shouldnt ever happen
-      throw std::runtime_error( "Error converting query to search logic: case condition or rules not avaialble" );
-  
+
+    // No rules => match all files (return default-constructed empty test).
+    // QueryBuilder marks an empty rule set as valid:false, so this check must
+    // come before the valid:false check below.
+    if( baseRules == Json::Array::Empty )
+      return test;
+
+    const Json::Value &valid = q.get("valid");
+
+    if( valid.isNull() )
+      throw std::runtime_error( "Query logic is not formated as expected." );
+
+    if( !valid )
+      throw std::runtime_error( "Query is currently not valid, please fix errors." );
+
+    if( baseCond.isNull() ) //shouldnt happen when rules are present
+      throw std::runtime_error( "Error converting query to search logic: condition not available" );
+
     add_logic( test, baseCond, baseRules, eventXml );
-  
+
     test.isvalid();  //throws exception giving description of issue
   }catch( Wt::Json::ParseError &e )
   {
@@ -2517,7 +2531,7 @@ SpecFileQuery::SpecLogicTest SpecFileQueryWidget::queryFromJson( const std::stri
   {
     throw;
   }//try /catch
-  
+
   return test;
 }//SpecFileQuery::SpecLogicTest SpecFileQueryWidget::queryFromJson( const std::string &json )
 

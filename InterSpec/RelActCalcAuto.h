@@ -40,6 +40,30 @@
 
 namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
 
+/** When 1, ROI channel bounds (`first_channel` / `last_channel`) inside
+    `RelActAutoCostFcn::peaks_for_energy_range_imp` are computed once
+    from the spectrum's native energy calibration and do NOT drift as
+    fit parameters change. Peak means still shift with the energy-cal
+    parameters — just the integration window stays put. This removes
+    the 1-channel discrete slide that otherwise occurs at sub-ppm
+    EneOffset steps when the adjusted energy crosses a 0.5-fractional
+    channel threshold; those slides produce O(1) cost jumps (one
+    boundary-channel residual enters/leaves the sum) and break the LM
+    solver's trust-region model.
+
+    Set to 0 to restore the legacy behavior (bounds recomputed from
+    `apply_energy_cal_adjustment`-shifted energies every eval) for A/B
+    comparison while this change is being validated.
+
+    The `#define` lives in the public header so any future code that
+    ends up depending on the bound-drift semantics sees a consistent
+    value across TUs. At the moment only `src/RelActCalcAuto.cpp` acts
+    on it.
+ */
+#ifndef ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL
+#define ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL 1
+#endif
+
 // Forward declarations
 class DetectorPeakResponse;
 struct Material;
@@ -728,6 +752,28 @@ struct Options
 
   /** Optional title of the spectrum; used as title in HTML and text summaries. */
   std::string spectrum_title;
+
+  /** Optional filename (no path) of the spectrum file the foreground was loaded from.
+   Used in reports.  Empty if not known. */
+  std::string foreground_filename;
+
+  /** Optional filename (no path) of the spectrum file the background was loaded from.
+   Used in reports.  Empty if no background, or filename not known. */
+  std::string background_filename;
+
+  /** Sample numbers within `foreground_filename` that make up the foreground.
+
+   Reports use this to disambiguate which samples were summed for the foreground.  Convention:
+   leave empty when the sample structure is trivial (the file has only one sample, or the
+   foreground + background together cover every sample in the file).  Reports omit the
+   "Samples: {…}" annotation when this is empty.  See `set_input_spec_info(...)` for the
+   helper that applies this rule.
+   */
+  std::set<int> foreground_sample_numbers;
+
+  /** Sample numbers within `background_filename` that make up the background.  Same
+   non-empty-iff-non-trivial convention as `foreground_sample_numbers`. */
+  std::set<int> background_sample_numbers;
   
   
   /** Peak skew to apply to the entire spectrum.
@@ -820,7 +866,10 @@ struct Options
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
    - 20250130: incremented to 2 to handle multiple rel eff curves; can read backward compatible, but not write.
    */
-  static const int sm_xmlSerializationVersion = 2;
+  /** XML serialization version. v3 (2026-04-27) added `foreground_filename`,
+   `background_filename`, `foreground_sample_numbers`, and `background_sample_numbers`. v2
+   XML still parses (the new fields default to empty / no samples). */
+  static const int sm_xmlSerializationVersion = 3;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
@@ -839,6 +888,33 @@ struct Options
   static void equalEnough( const Options &lhs, const Options &rhs );
 #endif
 };//struct Options
+
+
+/** Populates `opts.foreground_filename / foreground_sample_numbers` (and the background equivalents)
+ with the trivial-omit rule applied for sample numbers.
+
+ Sample-number fields are left empty when "the file's sample structure is trivial":
+   - the foreground uses every sample in its file (single-sample file falls into this case), or
+   - the foreground and background share the same file and together use every sample in it.
+ In either case reports omit the "Samples: {…}" annotation.
+
+ Background fields are skipped entirely when `background_filename` is empty.
+
+ @param opts                       Options to fill.  Existing `spectrum_title` and other fields are unchanged.
+ @param foreground_filename        File the foreground was loaded from (basename, no path); empty if unknown.
+ @param foreground_total_samples   Every sample number present in the foreground file (i.e. `SpecMeas::sample_numbers()`).
+ @param foreground_samples         Sample numbers actually used to produce the foreground spectrum.
+ @param background_filename        File the background was loaded from; empty if no background.
+ @param background_total_samples   Every sample number present in the background file.
+ @param background_samples         Sample numbers actually used to produce the background spectrum.
+ */
+void set_input_spec_info( Options &opts,
+                          const std::string &foreground_filename,
+                          const std::set<int> &foreground_total_samples,
+                          const std::set<int> &foreground_samples,
+                          const std::string &background_filename,
+                          const std::set<int> &background_total_samples,
+                          const std::set<int> &background_samples );
 
 /** Struct to a sources fit relative activity.*/
 struct NuclideRelAct
@@ -1077,7 +1153,10 @@ struct RelActAutoSolution
   /** The original foreground passed into `solve_ceres(...)`. */
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   
-  /** The original background passed into `solve_ceres(...)`. */
+  /** The original background passed into `solve_ceres(...)`.
+
+   TODO: right now always using live-time normalization - should account for user-set normalization (e.g., bad or unknown live times)
+   */
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   
   /** The final fit parameters. */
@@ -1363,7 +1442,7 @@ struct RelActAutoSolution
    
    Will be valid only if `m_options.additional_br_uncert > 0.0`.
   */
-  size_t m_add_br_uncert_start_index = std::numeric_limits<size_t>::max();
+  size_t m_add_br_uncert_start_index = (std::numeric_limits<size_t>::max)();
   
   /** The energy ranges cooresponding to the additional peak amplitude uncertainty paramaters.
    
@@ -1437,6 +1516,8 @@ struct RelActAutoSolution
  
  @param rel_eff_order The number of energy dependent terms to have in the relative efficiency
         equation (e.g., one more parameter than this will be fit for).
+
+ TODO: right now live-time normalization is always used for background - but users may have overriden this for e.g., bad or unknown live-times
  */
 RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,

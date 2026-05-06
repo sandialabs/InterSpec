@@ -23,19 +23,26 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <set>
 #include <regex>
 #include <memory>
 #include <vector>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 
+#include "ceres/jet.h"
+
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
@@ -44,11 +51,15 @@
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/BatchActivity.h"
 #include "InterSpec/RelActAutoDev.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/RelActAutoReport.h"
+#include "InterSpec/BatchRelActAuto.h"
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/RelActCalcAuto_EnergyCal_imp.hpp"
 
 using namespace std;
 
@@ -403,7 +414,9 @@ void example_manual_phys_model()
 
   ofstream out_html( "manual_phys_model_result.html" );
   std::vector<std::shared_ptr<const PeakDef>> disp_peaks( orig_peaks->begin(), orig_peaks->end() );
-  sol.print_html_report( out_html, "Manual Phys Model", meas, disp_peaks, nullptr, 0.0 );
+  std::vector<std::shared_ptr<const PeakDef>> background_peaks;
+
+  sol.print_html_report( out_html, "Manual Phys Model", meas, disp_peaks, nullptr, 0.0, background_peaks );
 
 
   cout << "Solution: " << endl;
@@ -1891,8 +1904,247 @@ void leu_heu_ana()
 }//void leu_heu_ana()
 
 
+/** Reproducer for the RelActAuto free-Fe-shielding χ² bug.
+
+ Reads the natural-U spectrum `unat.n42` (contains foreground, background, and the DRF used
+ in the GUI) and the `HPGe U (120-1001 keV)` preset, and performs two fits:
+
+   Run A: preset as-is (external Fe "fit" enabled).  Currently produces > 1.2 % enrichment
+          and χ²/dof ≈ 411/241 despite Fe converging near zero - this is the symptom.
+   Run B: same preset with Fe forced to 0 mm and not fit.  Produces χ²/dof ≈ 186/243.
+
+ The free-parameter fit (Run A) cannot legitimately have worse χ² than Run B, since Run B's
+ solution is in Run A's feasible set.  Run A is therefore terminating above the true minimum,
+ and this function prints enough information to start bisecting why.
+*/
+void unat_hpge_fe_example()
+{
+  using namespace std;
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string specfile_path = "/Users/wcjohns/coding/InterSpec_master/unat.n42";
+  const string preset_xml_path = SpecUtils::append_path( data_dir, "rel_act/HPGe U (120-1001 keV).xml" );
+
+  // -- Load spectrum --
+  auto specmeas = make_shared<SpecMeas>();
+  if( !specmeas->load_file( specfile_path, SpecUtils::ParserType::Auto ) )
+  {
+    cerr << "unat_hpge_fe_example: failed to load '" << specfile_path << "' - aborting." << endl;
+    return;
+  }
+
+  shared_ptr<const SpecUtils::Measurement> foreground;
+  shared_ptr<const SpecUtils::Measurement> background;
+  for( const shared_ptr<const SpecUtils::Measurement> &m : specmeas->measurements() )
+  {
+    if( !m )
+      continue;
+    if( m->source_type() == SpecUtils::SourceType::Background )
+      background = m;
+    else if( !foreground )
+      foreground = m;
+  }
+  assert( foreground );
+  if( !foreground )
+  {
+    cerr << "unat_hpge_fe_example: no foreground measurement in '" << specfile_path << "' - aborting." << endl;
+    return;
+  }
+
+  shared_ptr<const DetectorPeakResponse> det = specmeas->detector();
+  assert( det );
+  if( !det )
+  {
+    cerr << "unat_hpge_fe_example: no detector in '" << specfile_path << "' - aborting." << endl;
+    return;
+  }
+
+  // -- Load preset XML --
+  // The file object owns the buffer that rapidxml parses in-place, so it must outlive
+  // every access to setup_doc.
+  std::unique_ptr<rapidxml::file<char>> setup_input_file;
+  rapidxml::xml_document<char> setup_doc;
+  try
+  {
+    setup_input_file = std::make_unique<rapidxml::file<char>>( preset_xml_path.c_str() );
+    setup_doc.parse<rapidxml::parse_trim_whitespace>( setup_input_file->data() );
+  }catch( const std::exception &e )
+  {
+    cerr << "unat_hpge_fe_example: failed to parse '" << preset_xml_path << "': " << e.what() << endl;
+    return;
+  }
+
+  const rapidxml::xml_node<char> *setup_base_node = setup_doc.first_node( "RelActCalcAuto" );
+  assert( setup_base_node );
+  if( !setup_base_node )
+  {
+    cerr << "unat_hpge_fe_example: preset XML missing RelActCalcAuto root node - aborting." << endl;
+    return;
+  }
+
+  RelActCalcAuto::RelActAutoGuiState state_A;
+  try
+  {
+    state_A.deSerialize( setup_base_node );
+  }catch( const std::exception &e )
+  {
+    cerr << "unat_hpge_fe_example: deSerialize failed: " << e.what() << endl;
+    return;
+  }
+
+  // Deep copy for Run B (the Options struct owns shared_ptr shields; we'll make a new one).
+  RelActCalcAuto::RelActAutoGuiState state_B = state_A;
+
+  // Helper to print the key numbers from a solution.
+  const auto summarize = []( const char *label, const RelActCalcAuto::RelActAutoSolution &sol,
+                             const SandiaDecay::Nuclide *u235 )
+  {
+    cout << "\n==== " << label << " ====" << endl;
+    cout << "  Status:               " << static_cast<int>(sol.m_status) << endl;
+    if( !sol.m_error_message.empty() )
+      cout << "  Error message:        " << sol.m_error_message << endl;
+    cout << "  chi2:                 " << sol.m_chi2 << endl;
+    cout << "  dof:                  " << sol.m_dof << endl;
+    if( sol.m_dof > 0 )
+      cout << "  chi2/dof:             " << (sol.m_chi2 / static_cast<double>(sol.m_dof)) << endl;
+    cout << "  num function evals:   " << sol.m_num_function_eval_solution << endl;
+
+    for( size_t re_i = 0; re_i < sol.m_rel_activities.size(); ++re_i )
+    {
+      pair<double,std::optional<double>> enrich = sol.mass_enrichment_fraction( u235, re_i );
+      cout << "  U-235 enrichment[" << re_i << "]: " << (100.0*enrich.first) << " %";
+      if( enrich.second.has_value() )
+        cout << "  (± " << (100.0*(*enrich.second)) << " %)";
+      cout << endl;
+    }
+
+    for( size_t re_i = 0; re_i < sol.m_phys_model_results.size(); ++re_i )
+    {
+      const auto &phys = sol.m_phys_model_results[re_i];
+      if( !phys.has_value() )
+        continue;
+
+      if( phys->self_atten.has_value() )
+      {
+        const auto &s = *phys->self_atten;
+        const double ad_gpcm2 = s.areal_density / PhysicalUnits::g_per_cm2;
+        cout << "  self-atten AD:        " << ad_gpcm2 << " g/cm^2";
+        if( s.material )
+          cout << "  (" << (s.areal_density / s.material->density) / PhysicalUnits::mm << " mm " << s.material->name << ")";
+        cout << endl;
+      }
+      for( size_t ext_i = 0; ext_i < phys->ext_shields.size(); ++ext_i )
+      {
+        const auto &e = phys->ext_shields[ext_i];
+        const double ad_gpcm2 = e.areal_density / PhysicalUnits::g_per_cm2;
+        cout << "  ext-atten[" << ext_i << "] AD:      " << ad_gpcm2 << " g/cm^2";
+        if( e.material )
+          cout << "  (" << (e.areal_density / e.material->density) / PhysicalUnits::mm << " mm " << e.material->name << ")";
+        cout << "  [fit=" << (e.areal_density_was_fit ? "yes" : "no") << "]" << endl;
+      }
+      if( phys->hoerl_b.has_value() || phys->hoerl_c.has_value() )
+      {
+        cout << "  Hoerl b=" << (phys->hoerl_b.has_value() ? *phys->hoerl_b : 0.0)
+             << ", c=" << (phys->hoerl_c.has_value() ? *phys->hoerl_c : 1.0) << endl;
+      }
+    }
+    cout.flush();
+  };
+
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  assert( u235 );
+
+  // --- Run A: preset as-supplied ---
+  cout << "\n================================================================" << endl;
+  cout << "Run A: HPGe U (120-1001 keV) preset as-is (Fe external fit enabled)" << endl;
+  cout << "================================================================" << endl;
+  const RelActCalcAuto::RelActAutoSolution sol_A = RelActCalcAuto::solve(
+      state_A.options, foreground, background, det, {},
+      PeakFitUtils::CoarseResolutionType::High, nullptr );
+  summarize( "Run A result", sol_A, u235 );
+
+  pair<double,std::optional<double>> enrich_A = sol_A.mass_enrichment_fraction( u235, 0 );
+  const double enrich_A_frac = enrich_A.first;
+  const double chi2_A = sol_A.m_chi2;
+  const size_t dof_A = sol_A.m_dof;
+
+  // --- Run B: force external Fe to 0 and not-fit ---
+  // Walk the external attens and, for each, rebuild as zero-thickness, not-fit shield.
+  if( !state_B.options.rel_eff_curves.empty() )
+  {
+    auto &curve = state_B.options.rel_eff_curves[0];
+    for( shared_ptr<const RelActCalc::PhysicalModelShieldInput> &ext : curve.phys_model_external_atten )
+    {
+      if( !ext )
+        continue;
+      auto modified = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext );
+      modified->areal_density = 0.0;
+      modified->fit_areal_density = false;
+      modified->lower_fit_areal_density = 0.0;
+      modified->upper_fit_areal_density = 0.0;
+      ext = modified;
+    }
+  }
+
+  cout << "\n================================================================" << endl;
+  cout << "Run B: same preset, external shielding forced to 0 and not-fit" << endl;
+  cout << "================================================================" << endl;
+  const RelActCalcAuto::RelActAutoSolution sol_B = RelActCalcAuto::solve(
+      state_B.options, foreground, background, det, {},
+      PeakFitUtils::CoarseResolutionType::High, nullptr );
+  summarize( "Run B result", sol_B, u235 );
+
+  const double enrich_B_frac = sol_B.mass_enrichment_fraction( u235, 0 ).first;
+  const double chi2_B = sol_B.m_chi2;
+  const size_t dof_B = sol_B.m_dof;
+
+  cout << "\n================================================================" << endl;
+  cout << "Summary" << endl;
+  cout << "================================================================" << endl;
+  cout << "Run A (Fe fit):    enrichment = " << (100.0*enrich_A_frac) << " %"
+       << ",  chi2/dof = " << chi2_A << "/" << dof_A
+       << " = " << (dof_A > 0 ? chi2_A/dof_A : 0.0) << endl;
+  cout << "Run B (Fe fixed):  enrichment = " << (100.0*enrich_B_frac) << " %"
+       << ",  chi2/dof = " << chi2_B << "/" << dof_B
+       << " = " << (dof_B > 0 ? chi2_B/dof_B : 0.0) << endl;
+
+  // Symptom asserts - these document the current (buggy) behavior so we know the reproducer is live.
+  // User observed ~1.87% enrichment in the GUI for Run A; threshold at 1.2% gives headroom for minor variance.
+  if( enrich_A_frac <= 0.012 )
+    cerr << "WARNING: Run A enrichment <= 1.2% - symptom may not be reproducing." << endl;
+  assert( enrich_A_frac > 0.012 );
+
+  // Run B chi2 should be notably lower than Run A chi2 - the whole point of the reproducer.
+  if( chi2_B >= 0.6 * chi2_A )
+    cerr << "WARNING: Run B chi2 is not notably better than Run A - bug may not be reproducing." << endl;
+  assert( chi2_B < 0.6 * chi2_A );
+
+  cout << "\nReproducer verified: Run A has higher chi2 than Run B by factor of "
+       << (chi2_A / std::max( 1.0, chi2_B )) << endl;
+}//void unat_hpge_fe_example()
+
+
+
 int dev_code()
 {
+  // IDB enrichment comparison
+  {
+    const std::string docroot = SpecUtils::append_path( InterSpec::staticDataDirectory(), ".." );
+    const std::string idb_u_dir   = SpecUtils::append_path( docroot, "IDB_U" );
+    const std::string idb_u_meta  = SpecUtils::append_path( idb_u_dir, "IDB_U_metadata.xml" );
+    const std::string idb_pu_dir  = SpecUtils::append_path( docroot, "IDB_Pu" );
+    const std::string idb_pu_meta = SpecUtils::append_path( idb_pu_dir, "IDB_Pu_metadata.xml" );
+    run_idb_comparison( idb_u_dir, idb_u_meta, IdbMaterialType::Uranium,    "IDB_U_comparison.html" );
+    run_idb_comparison( idb_pu_dir, idb_pu_meta, IdbMaterialType::Plutonium, "IDB_Pu_comparison.html" );
+    return 0;
+  }
+
+  unat_hpge_fe_example();
+  return 1;
+
   check_auto_nuclide_constraints_checks();
   check_manual_nuclide_constraints_checks();
   check_auto_hoerl_and_ext_shield_checks();
@@ -2096,7 +2348,621 @@ int dev_code()
   ofstream out_html( "result.html" );
   solution.print_summary( cout );
   solution.print_html_report( out_html );
-  
+
   return 1;
 }//int dev_code()
+
+
+namespace
+{
+  // Convert XML isotope name "234U" → SandiaDecay format "U234"
+  std::string xml_to_sandia_nuc( const std::string &xml )
+  {
+    size_t i = 0;
+    while( i < xml.size() && std::isdigit( static_cast<unsigned char>( xml[i] ) ) )
+      ++i;
+    return xml.substr( i ) + xml.substr( 0, i );
+  }
+
+
+  // Resolve a config file: try as-is, then under {staticDataDir}/rel_act/
+  std::string resolve_rel_eff_config( const std::string &value )
+  {
+    if( value.empty() )
+      throw std::runtime_error( "Empty RelActConfigFile value" );
+    if( SpecUtils::is_file( value ) )
+      return value;
+    const std::string rel_act_dir = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act" );
+    const std::string full = SpecUtils::append_path( rel_act_dir, value );
+    if( SpecUtils::is_file( full ) )
+      return full;
+    throw std::runtime_error( "Cannot find config file '" + value + "'" );
+  }
+
+
+  // Load DRF from a tag value: try as file path, then as built-in name
+  std::shared_ptr<DetectorPeakResponse> load_drf_from_tag( const std::string &value )
+  {
+    if( value.empty() )
+      return nullptr;
+    try
+    {
+      return BatchActivity::init_drf_from_name( value, "" );
+    }
+    catch( ... ) {}
+
+    try
+    {
+      return BatchActivity::init_drf_from_name( "", value );
+    }
+    catch( ... ) {}
+
+    std::cerr << "Warning: could not load DRF from tag value '" << value << "'\n";
+    return nullptr;
+  }
+
+
+  std::string extract_head_content( const std::string &html )
+  {
+    const size_t h1 = html.find( "<head>" );
+    const size_t h2 = html.find( "</head>" );
+    if( h1 == std::string::npos || h2 == std::string::npos || h2 < h1 )
+      return "";
+    return html.substr( h1 + 6, h2 - h1 - 6 );
+  }
+
+
+  std::string extract_body_content( const std::string &html )
+  {
+    const size_t b1 = html.find( "<body>" );
+    const size_t b2 = html.rfind( "</body>" );
+    if( b1 == std::string::npos || b2 == std::string::npos || b2 < b1 )
+      return html;
+    return html.substr( b1 + 6, b2 - b1 - 6 );
+  }
+
+
+  // Replace the two hardcoded rel-eff chart IDs and wrap the init script in an IIFE
+  // so variables don't leak into global scope when multiple reports are on one page.
+  void fix_html_for_embedding( std::string &body, const int spec_id )
+  {
+    const std::string prefix = "s" + std::to_string( spec_id ) + "_";
+
+    SpecUtils::ireplace_all( body, "\"chartsdiv\"",   ( "\"" + prefix + "chartsdiv\""  ).c_str() );
+    SpecUtils::ireplace_all( body, "\"releffchart\"", ( "\"" + prefix + "releffchart\"" ).c_str() );
+
+    // Wrap the RelEffPlot init <script> block in an IIFE to scope its variables
+    const std::string marker = "new RelEffPlot(";
+    const size_t marker_pos = body.find( marker );
+    if( marker_pos == std::string::npos )
+      return;
+
+    const size_t script_open = body.rfind( "<script>", marker_pos );
+    if( script_open == std::string::npos )
+      return;
+
+    const size_t content_start = script_open + 8;  // skip "<script>"
+    const size_t script_close = body.find( "</script>", content_start );
+    if( script_close == std::string::npos )
+      return;
+
+    const std::string old_content = body.substr( content_start, script_close - content_start );
+    const std::string new_content = "\n(function(){\n" + old_content + "})();\n";
+    body.replace( content_start, script_close - content_start, new_content );
+  }
+
+
+  std::string pct_diff_bg_color( const double pct_diff )
+  {
+    const double abs_diff = std::abs( pct_diff );
+    if( abs_diff < 5.0 )  return "#c8e6c9"; // green
+    if( abs_diff < 15.0 ) return "#fff9c4"; // yellow
+    return "#ffccbc";                        // red
+  }
+
+
+  // Format a non-negative double; returns "&mdash;" when v < 0 (sentinel for "not available")
+  std::string fmt( const double v, const int decimals = 4 )
+  {
+    if( v < 0.0 )
+      return "&mdash;";
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision( decimals ) << v;
+    return oss.str();
+  }
+
+  // Format a signed double (e.g. percent difference — can legitimately be negative)
+  std::string fmt_signed( const double v, const int decimals = 2 )
+  {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision( decimals ) << v;
+    return oss.str();
+  }
+}//anonymous namespace
+
+
+void run_idb_comparison( const std::string &idb_dir,
+                         const std::string &metadata_xml_path,
+                         IdbMaterialType material_type,
+                         const std::string &output_html_path,
+                         size_t max_spectra )
+{
+  const bool is_uranium   = (material_type == IdbMaterialType::Uranium);
+  const bool is_plutonium = (material_type == IdbMaterialType::Plutonium);
+  const std::string material_name = is_uranium ? "Uranium" : (is_plutonium ? "Plutonium" : "MOX");
+  const std::string primary_nuc   = is_uranium ? "U235" : "Pu240";
+
+  const std::string default_config_name = is_uranium
+      ? "HPGe U (120-1001 keV).xml"
+      : "HPGe Pu (120-780 keV).xml";
+
+  const std::string default_config_path = resolve_rel_eff_config( default_config_name );
+
+  // Ordered list of nuclides for table columns
+  const std::vector<std::string> nuclide_cols = is_uranium
+      ? std::vector<std::string>{ "U234", "U235", "U236", "U238" }
+      : std::vector<std::string>{ "Pu238", "Pu239", "Pu240", "Pu241", "Pu242", "Am241" };
+
+  // ---- Parse metadata XML ----
+  std::vector<char> xml_data;
+  try
+  {
+    SpecUtils::load_file_data( metadata_xml_path.c_str(), xml_data );
+  }
+  catch( std::exception &e )
+  {
+    throw std::runtime_error( "Failed to read metadata XML '" + metadata_xml_path + "': " + e.what() );
+  }
+
+  rapidxml::xml_document<char> doc;
+  try
+  {
+    doc.parse<rapidxml::parse_trim_whitespace>( &xml_data[0] );
+  }
+  catch( std::exception &e )
+  {
+    throw std::runtime_error( "Failed to parse metadata XML '" + metadata_xml_path + "': " + e.what() );
+  }
+
+  const rapidxml::xml_node<char> *root = doc.first_node();
+  if( !root )
+    throw std::runtime_error( "Empty metadata XML" );
+
+  // ---- Collect HPGe entries (up to max_spectra) ----
+  struct SpectrumEntry
+  {
+    int id;
+    std::string filename;
+    std::string det_eff_tag;      // from <DetectorEfficiency>
+    std::string config_file_tag;  // from <RelActConfigFile>
+    std::map<std::string, double> known_mass_fracs;  // SandiaDecay format → wt%
+  };
+
+  std::vector<SpectrumEntry> entries;
+
+  for( const rapidxml::xml_node<char> *sn = root->first_node( "spectrum" );
+       sn; sn = sn->next_sibling( "spectrum" ) )
+  {
+    if( entries.size() >= max_spectra )
+      break;
+
+    const rapidxml::xml_attribute<char> *id_attr   = sn->first_attribute( "id" );
+    const rapidxml::xml_attribute<char> *file_attr = sn->first_attribute( "file" );
+    if( !id_attr || !file_attr )
+      continue;
+
+    const rapidxml::xml_node<char> *det_type_node = sn->first_node( "Detector_type" );
+    if( !det_type_node || !SpecUtils::iequals_ascii( det_type_node->value(), "HPGe" ) )
+      continue;
+
+    const rapidxml::xml_node<char> *fracs_node =
+        sn->first_node( "decay_corrected_mass_fractions_wt_pct" );
+    if( !fracs_node )
+      continue;
+
+    SpectrumEntry entry;
+    entry.id       = std::stoi( id_attr->value() );
+    entry.filename = file_attr->value();
+
+    for( const rapidxml::xml_node<char> *iso = fracs_node->first_node( "isotope" );
+         iso; iso = iso->next_sibling( "isotope" ) )
+    {
+      const rapidxml::xml_attribute<char> *name_attr = iso->first_attribute( "name" );
+      if( !name_attr || !iso->value() )
+        continue;
+      try
+      {
+        entry.known_mass_fracs[xml_to_sandia_nuc( name_attr->value() )] =
+            std::stod( iso->value() );
+      }
+      catch( ... ) {}
+    }
+
+    const rapidxml::xml_node<char> *det_eff_node    = sn->first_node( "DetectorEfficiency" );
+    const rapidxml::xml_node<char> *config_file_node = sn->first_node( "RelActConfigFile" );
+    if( det_eff_node    && det_eff_node->value() )    entry.det_eff_tag      = det_eff_node->value();
+    if( config_file_node && config_file_node->value() ) entry.config_file_tag = config_file_node->value();
+
+    entries.push_back( std::move( entry ) );
+  }//for each <spectrum>
+
+  std::cout << "Found " << entries.size() << " HPGe spectra to process in "
+            << metadata_xml_path << "\n";
+
+  // ---- Process each spectrum ----
+  struct SpectrumResult
+  {
+    SpectrumEntry entry;
+    std::string   drf_name;
+    std::string   rel_eff_xml_used;
+    std::string   error_msg;
+    std::shared_ptr<RelActCalcAuto::RelActAutoSolution> solution;
+    std::map<std::string, std::pair<double, double>> fit_fracs;  // nuclide → (wt%, unc_wt%)
+    double fit_age_s     = -1.0;
+    double fit_age_unc_s = -1.0;
+  };
+
+  std::vector<SpectrumResult> results;
+  results.reserve( entries.size() );
+
+  for( const SpectrumEntry &entry : entries )
+  {
+    SpectrumResult result;
+    result.entry = entry;
+
+    std::cout << "  ID " << entry.id << ": " << entry.filename << " ... " << std::flush;
+
+    try
+    {
+      // Resolve config file and load state
+      const std::string config_path = entry.config_file_tag.empty()
+          ? default_config_path
+          : resolve_rel_eff_config( entry.config_file_tag );
+      result.rel_eff_xml_used = config_path;
+
+      const std::shared_ptr<RelActCalcAuto::RelActAutoGuiState> state =
+          BatchRelActAuto::load_state_from_xml_file( config_path );
+
+      RelActCalcAuto::Options options = state->options;
+      options.foreground_filename = SpecUtils::filename( entry.filename );
+
+      // Load DRF if tag present
+      std::shared_ptr<DetectorPeakResponse> drf;
+      if( !entry.det_eff_tag.empty() )
+        drf = load_drf_from_tag( entry.det_eff_tag );
+      if( drf )
+        result.drf_name = drf->name();
+
+      // Load the spectrum file
+      const std::string spec_path = SpecUtils::append_path( idb_dir, entry.filename );
+      SpecMeas spec_meas;
+      if( !spec_meas.load_file( spec_path, SpecUtils::ParserType::Auto, spec_path ) )
+        throw std::runtime_error( "Could not load spectrum file '" + spec_path + "'" );
+
+      const std::shared_ptr<const SpecUtils::Measurement> foreground =
+          spec_meas.sum_measurements( spec_meas.sample_numbers(),
+                                      spec_meas.detector_names(), nullptr );
+      if( !foreground || foreground->num_gamma_channels() < 16 )
+        throw std::runtime_error( "Spectrum has too few gamma channels" );
+
+      // Solve - this dev path filters to Detector_type=="HPGe" above (line ~2555),
+      // so the coarse resolution is High.
+      RelActCalcAuto::RelActAutoSolution sol = RelActCalcAuto::solve(
+          options, foreground, nullptr, drf, {}, PeakFitUtils::CoarseResolutionType::High );
+
+      if( sol.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+        throw std::runtime_error( "Solve failed: " + sol.m_error_message );
+
+      result.solution = std::make_shared<RelActCalcAuto::RelActAutoSolution>( std::move( sol ) );
+
+      // Extract fit enrichment fractions
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      for( const auto &kv : entry.known_mass_fracs )
+      {
+        const SandiaDecay::Nuclide *nuc = db->nuclide( kv.first );
+        if( !nuc )
+          continue;
+        try
+        {
+          const std::pair<double, std::optional<double>> frac_unc =
+              result.solution->mass_enrichment_fraction( nuc, 0 );
+          const double unc = frac_unc.second.has_value() ? frac_unc.second.value() : -1.0;
+          result.fit_fracs[kv.first] = { frac_unc.first * 100.0, unc >= 0.0 ? unc * 100.0 : -1.0 };
+        }
+        catch( ... ) {}
+      }
+
+      // Find fit age (first nuclide with age_was_fit)
+      if( !result.solution->m_rel_activities.empty() )
+      {
+        for( const RelActCalcAuto::NuclideRelAct &nra : result.solution->m_rel_activities[0] )
+        {
+          if( nra.age_was_fit && nra.age > 0.0 )
+          {
+            result.fit_age_s     = nra.age;
+            result.fit_age_unc_s = nra.age_uncertainty;
+            break;
+          }
+        }
+      }
+
+      std::cout << "OK\n";
+    }
+    catch( std::exception &e )
+    {
+      result.error_msg = e.what();
+      std::cout << "FAILED: " << e.what() << "\n";
+    }
+
+    results.push_back( std::move( result ) );
+  }//for each entry
+
+  // ---- Generate HTML ----
+  inja::Environment inja_env = RelActAutoReport::get_default_inja_env( "" );
+
+  // Render per-spectrum HTML and extract head/body parts
+  std::string shared_head;
+  struct SectionHtml
+  {
+    int         id;
+    std::string body;  // empty on render failure
+  };
+  std::vector<SectionHtml> sections;
+  sections.reserve( results.size() );
+
+  for( const SpectrumResult &result : results )
+  {
+    SectionHtml sec;
+    sec.id = result.entry.id;
+
+    if( result.solution )
+    {
+      try
+      {
+        const nlohmann::json data = RelActAutoReport::solution_to_json( *result.solution );
+        std::string full_html = RelActAutoReport::render_template( inja_env, data, "html", "" );
+
+        if( shared_head.empty() )
+        {
+          shared_head = extract_head_content( full_html );
+          // Update the title for the combined page
+          const size_t t1 = shared_head.find( "<title>" );
+          const size_t t2 = shared_head.find( "</title>" );
+          if( t1 != std::string::npos && t2 != std::string::npos && t2 > t1 )
+          {
+            shared_head = shared_head.substr( 0, t1 + 7 )
+                        + "IDB " + material_name + " Enrichment Comparison"
+                        + shared_head.substr( t2 );
+          }
+        }
+
+        std::string body = extract_body_content( full_html );
+        fix_html_for_embedding( body, result.entry.id );
+        sec.body = std::move( body );
+      }
+      catch( std::exception &e )
+      {
+        sec.body = "<p><em>HTML rendering failed: " + std::string( e.what() ) + "</em></p>";
+      }
+    }
+
+    sections.push_back( std::move( sec ) );
+  }
+
+  // Write combined HTML
+  std::ofstream html_out( output_html_path );
+  if( !html_out.is_open() )
+    throw std::runtime_error( "Cannot open output file '" + output_html_path + "'" );
+
+  html_out << "<!DOCTYPE html>\n<html>\n<head>\n";
+  if( !shared_head.empty() )
+  {
+    html_out << shared_head << "\n";
+  }
+  else
+  {
+    html_out << "<meta charset=\"UTF-8\">\n"
+             << "<title>IDB " << material_name << " Enrichment Comparison</title>\n";
+  }
+  // Additional CSS for the comparison tables
+  html_out << "<style>\n"
+           << "  .cmp-table { border-collapse: collapse; margin: 10px 0; font-size: 0.9em; }\n"
+           << "  .cmp-table th, .cmp-table td { padding: 4px 8px; border: 1px solid #aaa; text-align: right; }\n"
+           << "  .cmp-table th { background: #e0e0e0; text-align: center; }\n"
+           << "  .cmp-table td.label { text-align: left; }\n"
+           << "  .spec-section { margin: 20px 0; border: 1px solid #ccc; padding: 10px; }\n"
+           << "  .spec-section h2 { margin-top: 0; font-size: 1.1em; }\n"
+           << "  summary { font-size: 1.05em; font-weight: bold; cursor: pointer; }\n"
+           << "</style>\n";
+  html_out << "</head>\n<body>\n";
+
+  html_out << "<h1>IDB " << material_name << " Enrichment Comparison</h1>\n";
+  html_out << "<p>Processed <b>" << results.size() << "</b> HPGe spectra. "
+           << "Default config: <code>" << default_config_name << "</code></p>\n";
+
+  // ---- Summary table ----
+  html_out << "<h2>Summary</h2>\n"
+           << "<table class=\"cmp-table\">\n<thead>\n<tr>\n"
+           << "  <th>ID</th><th>File</th>\n";
+  for( const std::string &nuc : nuclide_cols )
+    html_out << "  <th>Known " << nuc << " %</th>\n";
+  html_out << "  <th>Fit " << primary_nuc << " %</th>\n"
+           << "  <th>±1σ</th>\n"
+           << "  <th>" << primary_nuc << " % diff</th>\n"
+           << "  <th>Status</th>\n"
+           << "</tr>\n</thead>\n<tbody>\n";
+
+  for( const SpectrumResult &result : results )
+  {
+    const std::string link = "#spec_" + std::to_string( result.entry.id );
+
+    if( !result.error_msg.empty() )
+    {
+      const int ncols = static_cast<int>( nuclide_cols.size() ) + 4;
+      html_out << "<tr style=\"background:#e0e0e0\">\n"
+               << "  <td><a href=\"" << link << "\">" << result.entry.id << "</a></td>\n"
+               << "  <td>" << result.entry.filename << "</td>\n"
+               << "  <td colspan=\"" << ncols << "\">" << result.error_msg << "</td>\n"
+               << "</tr>\n";
+      continue;
+    }
+
+    // Known fractions
+    std::string known_primary = "";
+    double known_primary_val = -1.0;
+    {
+      const auto it = result.entry.known_mass_fracs.find( primary_nuc );
+      if( it != result.entry.known_mass_fracs.end() )
+      {
+        known_primary_val = it->second;
+        known_primary = fmt( known_primary_val, 4 );
+      }
+    }
+
+    // Fit primary fraction
+    double fit_primary_val = -1.0;
+    double fit_primary_unc  = -1.0;
+    {
+      const auto it = result.fit_fracs.find( primary_nuc );
+      if( it != result.fit_fracs.end() )
+      {
+        fit_primary_val = it->second.first;
+        fit_primary_unc = it->second.second;
+      }
+    }
+
+    double pct_diff = 0.0;
+    bool   have_diff = false;
+    if( fit_primary_val >= 0.0 && known_primary_val > 0.0 )
+    {
+      pct_diff  = (fit_primary_val - known_primary_val) / known_primary_val * 100.0;
+      have_diff = true;
+    }
+
+    const std::string bg = have_diff ? pct_diff_bg_color( pct_diff ) : "#e0e0e0";
+
+    html_out << "<tr style=\"background:" << bg << "\">\n"
+             << "  <td><a href=\"" << link << "\">" << result.entry.id << "</a></td>\n"
+             << "  <td>" << result.entry.filename << "</td>\n";
+
+    for( const std::string &nuc : nuclide_cols )
+    {
+      const auto it = result.entry.known_mass_fracs.find( nuc );
+      if( it != result.entry.known_mass_fracs.end() )
+        html_out << "  <td>" << fmt( it->second, 4 ) << "</td>\n";
+      else
+        html_out << "  <td>&mdash;</td>\n";
+    }
+
+    html_out << "  <td>" << fmt( fit_primary_val, 4 ) << "</td>\n"
+             << "  <td>" << fmt( fit_primary_unc,  4 ) << "</td>\n"
+             << "  <td>" << (have_diff ? fmt_signed( pct_diff, 2 ) : "&mdash;") << "</td>\n"
+             << "  <td style=\"color:green\">OK</td>\n"
+             << "</tr>\n";
+  }//for each result
+
+  html_out << "</tbody>\n</table>\n";
+
+  // ---- Per-spectrum detail sections ----
+  html_out << "<h2>Spectrum Details</h2>\n";
+
+  for( size_t i = 0; i < results.size(); ++i )
+  {
+    const SpectrumResult &result = results[i];
+    const SectionHtml    &sec    = sections[i];
+
+    html_out << "<div id=\"spec_" << result.entry.id << "\" class=\"spec-section\">\n"
+             << "<details>\n"
+             << "<summary>ID " << result.entry.id << ": " << result.entry.filename;
+
+    // Show primary nuclide summary in the details label
+    {
+      const auto known_it = result.entry.known_mass_fracs.find( primary_nuc );
+      const auto fit_it   = result.fit_fracs.find( primary_nuc );
+      if( known_it != result.entry.known_mass_fracs.end() )
+        html_out << " &mdash; known " << primary_nuc << "=" << fmt( known_it->second, 4 ) << "%";
+      if( fit_it != result.fit_fracs.end() && fit_it->second.first >= 0.0 )
+        html_out << ", fit=" << fmt( fit_it->second.first, 4 ) << "%";
+    }
+    html_out << "</summary>\n";
+
+    // Header info
+    html_out << "<p>\n"
+             << "  <b>DRF:</b> " << (result.drf_name.empty() ? "<em>none</em>" : result.drf_name)
+             << " &nbsp; <b>RelEff config:</b> <code>"
+             << SpecUtils::filename( result.rel_eff_xml_used ) << "</code>\n"
+             << "</p>\n";
+
+    if( !result.error_msg.empty() )
+    {
+      html_out << "<p style=\"color:red\"><b>Error:</b> " << result.error_msg << "</p>\n";
+    }
+    else
+    {
+      // Mass fraction comparison table
+      html_out << "<table class=\"cmp-table\">\n"
+               << "<thead><tr>"
+               << "<th>Nuclide</th><th>Known wt%</th><th>Fit wt%</th>"
+               << "<th>±1σ wt%</th><th>% Diff</th>"
+               << "</tr></thead>\n<tbody>\n";
+
+      for( const std::string &nuc : nuclide_cols )
+      {
+        const auto known_it = result.entry.known_mass_fracs.find( nuc );
+        const auto fit_it   = result.fit_fracs.find( nuc );
+
+        const double known_val = (known_it != result.entry.known_mass_fracs.end())
+            ? known_it->second : -1.0;
+        const double fit_val   = (fit_it != result.fit_fracs.end())
+            ? fit_it->second.first : -1.0;
+        const double fit_unc   = (fit_it != result.fit_fracs.end())
+            ? fit_it->second.second : -1.0;
+
+        double  row_pct_diff  = 0.0;
+        bool    have_row_diff = false;
+        if( fit_val >= 0.0 && known_val > 0.0 )
+        {
+          row_pct_diff  = (fit_val - known_val) / known_val * 100.0;
+          have_row_diff = true;
+        }
+
+        const std::string row_bg = have_row_diff ? pct_diff_bg_color( row_pct_diff ) : "";
+        const std::string style_attr = row_bg.empty() ? "" : " style=\"background:" + row_bg + "\"";
+
+        html_out << "<tr" << style_attr << ">"
+                 << "<td class=\"label\">" << nuc << "</td>"
+                 << "<td>" << fmt( known_val, 4 ) << "</td>"
+                 << "<td>" << fmt( fit_val,   4 ) << "</td>"
+                 << "<td>" << fmt( fit_unc,   4 ) << "</td>"
+                 << "<td>" << (have_row_diff ? fmt_signed( row_pct_diff, 2 ) : "&mdash;") << "</td>"
+                 << "</tr>\n";
+      }//for each nuclide column
+
+      // Fit age row (Pu/MOX only, or any time age was fit)
+      if( result.fit_age_s > 0.0 )
+      {
+        const std::string age_str = PhysicalUnits::printToBestTimeUnits( result.fit_age_s );
+        const std::string unc_str = (result.fit_age_unc_s > 0.0)
+            ? PhysicalUnits::printToBestTimeUnits( result.fit_age_unc_s )
+            : "&mdash;";
+        html_out << "<tr><td class=\"label\" colspan=\"2\">Fit age</td>"
+                 << "<td colspan=\"2\">" << age_str << "</td>"
+                 << "<td>±" << unc_str << "</td></tr>\n";
+      }
+
+      html_out << "</tbody></table>\n";
+
+      // Embedded per-spectrum report (charts + tables from render_template)
+      if( !sec.body.empty() )
+        html_out << sec.body << "\n";
+    }//if no error
+
+    html_out << "</details>\n</div>\n\n";
+  }//for each result section
+
+  html_out << "</body>\n</html>\n";
+
+  std::cout << "\nWrote comparison report to: " << output_html_path << "\n";
+}//void run_idb_comparison(...)
+
 }//namespace RelActAutoDev

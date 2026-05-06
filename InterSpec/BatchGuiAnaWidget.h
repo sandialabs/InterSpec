@@ -35,6 +35,14 @@
 
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/BatchActivity.h"
+#if( USE_REL_ACT_TOOL )
+#include "InterSpec/BatchRelActAuto.h"
+#endif
+
+namespace Wt
+{
+  class WComboBox;
+}
 
 // Forward declarations
 class SpecMeas;
@@ -249,18 +257,72 @@ public:
 };//class FileConvertOpts
 
 
-/*
-class RelActAutoOpts : public Wt::WContainerWidget
+#if( USE_REL_ACT_TOOL )
+/** Batch GUI tab for isotopics-by-nuclides (RelActCalcAuto) analysis.
+
+ Inherits from `BatchGuiPeakFitWidget` to reuse exemplar/background file-drop,
+ the report-template uploaders, and the worker-thread + InjaLogDialog plumbing.
+ The peak-fit-only controls (fit_all_peaks, peak thresholds, refit-energy-cal,
+ etc.) are hidden in the constructor since they don't apply to RelActCalcAuto.
+
+ Adds:
+   - DRF override (file drop) - same pattern as BatchGuiActShieldAnaWidget
+   - Rel-eff config XML override (file drop) - stand-alone
+     `<RelActCalcAuto>` XML, which when supplied fully replaces the exemplar's
+     stored RelActAutoGuiState
+   - Override comboboxes for energy-cal-type, fwhm-form, skew-type (each
+     gated by an "override" checkbox).
+ */
+class BatchGuiIsotopicsByNuclidesWidget : public BatchGuiPeakFitWidget
 {
+protected:
+  Wt::WContainerWidget *m_iso_container = nullptr;
+
+  // Detector response function override
+  Wt::WContainerWidget *m_detector_input = nullptr;
+  Wt::WCheckBox *m_use_detector_override = nullptr;
+  Wt::WContainerWidget *m_detector_file_drop = nullptr;
+  FileDragUploadResource *m_detector_file_resource = nullptr;
+  std::shared_ptr<DetectorPeakResponse> m_uploaded_detector;
+
+  // Rel-eff config XML override
+  Wt::WContainerWidget *m_rel_eff_config_input = nullptr;
+  Wt::WCheckBox *m_use_rel_eff_config_override = nullptr;
+  Wt::WContainerWidget *m_rel_eff_config_file_drop = nullptr;
+  FileDragUploadResource *m_rel_eff_config_file_resource = nullptr;
+  std::shared_ptr<RelActCalcAuto::RelActAutoGuiState> m_uploaded_rel_eff_config;
+
+  // Scalar overrides
+  Wt::WCheckBox *m_override_energy_cal_type = nullptr;
+  Wt::WComboBox *m_energy_cal_type_combo = nullptr;
+  Wt::WCheckBox *m_override_fwhm_form = nullptr;
+  Wt::WComboBox *m_fwhm_form_combo = nullptr;
+  Wt::WCheckBox *m_override_skew_type = nullptr;
+  Wt::WComboBox *m_skew_type_combo = nullptr;
+
 public:
-  RelActAutoOpts( Wt::WContainerWidget *parent )
-    : Wt::WContainerWidget( parent )
-  {
-    addStyleClass( "RelActAutoOpts" );
+  BatchGuiIsotopicsByNuclidesWidget();
 
-    new WText( "RelActAutoOpts", this );
-  }
-};//RelActAutoOpts
-*/
+  ~BatchGuiIsotopicsByNuclidesWidget();
 
-#endif // BatchGuiAnaWidget_h 
+  BatchRelActAuto::Options getIsotopicsOptions() const;
+
+  std::shared_ptr<const DetectorPeakResponse> detector() const;
+
+  virtual void performAnalysis( const std::vector<std::tuple<std::string, std::string, std::shared_ptr<const SpecMeas>>> &input_files,
+                                const std::string &output_dir ) override;
+
+  virtual std::pair<bool,Wt::WString> canDoAnalysis() const override;
+
+  virtual void optionsChanged() override;
+
+  void useDetectorOverrideChanged();
+  void useRelEffConfigOverrideChanged();
+  void detectorUploaded( const std::string &, const std::string & );
+  void relEffConfigUploaded( const std::string &, const std::string & );
+  void handle_remove_detector_upload( BatchGuiInputFile *input );
+  void handle_remove_rel_eff_config_upload( BatchGuiInputFile *input );
+};
+#endif // USE_REL_ACT_TOOL
+
+#endif // BatchGuiAnaWidget_h

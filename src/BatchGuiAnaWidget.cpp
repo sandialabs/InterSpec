@@ -88,6 +88,14 @@
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/FileDragUploadResource.h"
+
+#if( USE_REL_ACT_TOOL )
+#include "rapidxml/rapidxml.hpp"
+#include "InterSpec/RelActCalc.h"
+#include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/BatchRelActAuto.h"
+#include "InterSpec/RelActAutoReport.h"
+#endif
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/ReferenceLineInfo.h"
@@ -1637,6 +1645,657 @@ BatchGuiActShieldAnaWidget::~BatchGuiActShieldAnaWidget()
 {
   wApp->doJavaScript( "removeOnDragEnterDom(['" + m_detector_file_drop->id() + "']);" );
 }
+
+
+#if( USE_REL_ACT_TOOL )
+
+namespace
+{
+  // Try to parse a file as a stand-alone DetectorPeakResponse XML file.
+  // Returns nullptr if the file is not a `<DetectorPeakResponse>` XML.
+  shared_ptr<DetectorPeakResponse> try_parse_drf_xml_file( const std::string &path )
+  {
+    if( !SpecUtils::is_file(path) )
+      return nullptr;
+    try
+    {
+      vector<char> data;
+      SpecUtils::load_file_data( path.c_str(), data );
+      if( data.empty() )
+        return nullptr;
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_trim_whitespace>( &data[0] );
+      const rapidxml::xml_node<char> *root = doc.first_node( "DetectorPeakResponse" );
+      if( !root )
+        return nullptr;
+      auto drf = make_shared<DetectorPeakResponse>();
+      drf->fromXml( root );
+      return drf;
+    }catch( std::exception & )
+    {
+      return nullptr;
+    }
+  }
+}//namespace
+
+
+BatchGuiIsotopicsByNuclidesWidget::BatchGuiIsotopicsByNuclidesWidget()
+: BatchGuiPeakFitWidget()
+{
+  addStyleClass( "BatchGuiIsotopicsByNuclidesWidget" );
+
+  // Hide peak-fit-only controls that don't apply to RelActCalcAuto.
+  m_fit_all_peaks->setChecked( false );
+  m_fit_all_peaks->hide();
+  m_refit_energy_cal->setChecked( false );
+  m_refit_energy_cal->hide();
+  m_use_exemplar_energy_cal->setChecked( false );
+  m_use_exemplar_energy_cal->hide();
+  m_use_exemplar_energy_cal_for_background->setChecked( false );
+  m_use_exemplar_energy_cal_for_background->hide();
+  m_show_nonfit_peaks->setChecked( false );
+  m_show_nonfit_peaks->hide();
+  m_create_csv_output->setChecked( false );
+  m_create_csv_output->hide();
+  m_concatenate_to_n42->setChecked( false );
+  m_concatenate_to_n42->hide();
+  m_use_existing_background_peaks->setChecked( false );
+  m_use_existing_background_peaks->hide();
+  if( m_peak_stat_threshold_container )
+    m_peak_stat_threshold_container->hide();
+  if( m_peak_hypothesis_threshold_container )
+    m_peak_hypothesis_threshold_container->hide();
+
+  {
+    auto isoCont = std::make_unique<Wt::WContainerWidget>();
+    isoCont->addStyleClass( "IsotopicsOptionsContainer" );
+    const int back_area_index = indexOf( m_background_input );
+    m_iso_container = isoCont.get();
+    insertWidget( back_area_index + 1, std::move(isoCont) );
+  }
+
+  // Detector (DRF) override
+  m_detector_input = m_iso_container->addNew<GroupBox>( WString::tr( "bgw-detector-input-label" ) );
+  m_detector_input->addStyleClass( "DetectorInputContainer" );
+
+  m_use_detector_override = m_detector_input->addNew<WCheckBox>( WString::tr( "bgw-use-detector-override" ) );
+  m_use_detector_override->addStyleClass( "CbNoLineBreak" );
+  m_use_detector_override->setChecked( false );
+  m_use_detector_override->checked().connect( this, &BatchGuiIsotopicsByNuclidesWidget::useDetectorOverrideChanged );
+  m_use_detector_override->unChecked().connect( this, &BatchGuiIsotopicsByNuclidesWidget::useDetectorOverrideChanged );
+
+  m_detector_file_drop = m_detector_input->addNew<WContainerWidget>();
+  m_detector_file_drop->addStyleClass( "DetectorFileDrop EmptyDetectorUpload" );
+  m_detector_file_drop->setHidden( true );
+
+  m_detector_file_resource = m_detector_file_drop->addChild( std::make_unique<FileDragUploadResource>() );
+  m_detector_file_drop->doJavaScript( "BatchInputDropUploadSetup(" + m_detector_file_drop->jsRef()
+                                       + ", '" + m_detector_file_resource->url() + "');" );
+  doJavaScript( "setupOnDragEnterDom(['" + m_detector_file_drop->id() + "']);" );
+  m_detector_file_resource->fileDrop().connect(
+    [this]( const std::string &a, const std::string &b ){ detectorUploaded( a, b ); } );
+
+  // Rel-eff config XML override
+  m_rel_eff_config_input = m_iso_container->addNew<GroupBox>( WString::tr( "bgw-rel-eff-config-label" ) );
+  m_rel_eff_config_input->addStyleClass( "RelEffConfigInputContainer" );
+
+  m_use_rel_eff_config_override = m_rel_eff_config_input->addNew<WCheckBox>(
+      WString::tr( "bgw-use-rel-eff-config-override" ) );
+  m_use_rel_eff_config_override->addStyleClass( "CbNoLineBreak" );
+  m_use_rel_eff_config_override->setChecked( false );
+  m_use_rel_eff_config_override->checked().connect( this,
+      &BatchGuiIsotopicsByNuclidesWidget::useRelEffConfigOverrideChanged );
+  m_use_rel_eff_config_override->unChecked().connect( this,
+      &BatchGuiIsotopicsByNuclidesWidget::useRelEffConfigOverrideChanged );
+
+  m_rel_eff_config_file_drop = m_rel_eff_config_input->addNew<WContainerWidget>();
+  m_rel_eff_config_file_drop->addStyleClass( "DetectorFileDrop EmptyDetectorUpload" );
+  m_rel_eff_config_file_drop->setHidden( true );
+
+  m_rel_eff_config_file_resource = m_rel_eff_config_file_drop->addChild(
+      std::make_unique<FileDragUploadResource>() );
+  m_rel_eff_config_file_drop->doJavaScript( "BatchInputDropUploadSetup("
+      + m_rel_eff_config_file_drop->jsRef() + ", '"
+      + m_rel_eff_config_file_resource->url() + "');" );
+  doJavaScript( "setupOnDragEnterDom(['" + m_rel_eff_config_file_drop->id() + "']);" );
+  m_rel_eff_config_file_resource->fileDrop().connect(
+    [this]( const std::string &a, const std::string &b ){ relEffConfigUploaded( a, b ); } );
+
+  // Scalar override comboboxes (each gated by a checkbox)
+  WContainerWidget *energy_cal_row = m_iso_container->addNew<WContainerWidget>();
+  energy_cal_row->addStyleClass( "OverrideRow" );
+  m_override_energy_cal_type = energy_cal_row->addNew<WCheckBox>(
+      WString::tr( "bgw-iso-override-energy-cal" ) );
+  m_override_energy_cal_type->addStyleClass( "CbNoLineBreak" );
+  m_energy_cal_type_combo = energy_cal_row->addNew<WComboBox>();
+  m_energy_cal_type_combo->addItem( "NoFit" );
+  m_energy_cal_type_combo->addItem( "LinearFit" );
+  m_energy_cal_type_combo->addItem( "NonLinearFit" );
+  m_energy_cal_type_combo->setHidden( true );
+  m_override_energy_cal_type->checked().connect( this, &BatchGuiIsotopicsByNuclidesWidget::optionsChanged );
+  m_override_energy_cal_type->unChecked().connect( this, &BatchGuiIsotopicsByNuclidesWidget::optionsChanged );
+
+  WContainerWidget *fwhm_row = m_iso_container->addNew<WContainerWidget>();
+  fwhm_row->addStyleClass( "OverrideRow" );
+  m_override_fwhm_form = fwhm_row->addNew<WCheckBox>( WString::tr( "bgw-iso-override-fwhm-form" ) );
+  m_override_fwhm_form->addStyleClass( "CbNoLineBreak" );
+  m_fwhm_form_combo = fwhm_row->addNew<WComboBox>();
+  for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmForm::NotApplicable); ++i )
+    m_fwhm_form_combo->addItem( RelActCalcAuto::to_str( static_cast<RelActCalcAuto::FwhmForm>(i) ) );
+  m_fwhm_form_combo->setHidden( true );
+  m_override_fwhm_form->checked().connect( this, &BatchGuiIsotopicsByNuclidesWidget::optionsChanged );
+  m_override_fwhm_form->unChecked().connect( this, &BatchGuiIsotopicsByNuclidesWidget::optionsChanged );
+
+  WContainerWidget *skew_row = m_iso_container->addNew<WContainerWidget>();
+  skew_row->addStyleClass( "OverrideRow" );
+  m_override_skew_type = skew_row->addNew<WCheckBox>( WString::tr( "bgw-iso-override-skew-type" ) );
+  m_override_skew_type->addStyleClass( "CbNoLineBreak" );
+  m_skew_type_combo = skew_row->addNew<WComboBox>();
+  for( int i = 0; i <= static_cast<int>(PeakDef::SkewType::DoubleSidedCrystalBall); ++i )
+    m_skew_type_combo->addItem( PeakDef::to_string( static_cast<PeakDef::SkewType>(i) ) );
+  m_skew_type_combo->setHidden( true );
+  m_override_skew_type->checked().connect( this, &BatchGuiIsotopicsByNuclidesWidget::optionsChanged );
+  m_override_skew_type->unChecked().connect( this, &BatchGuiIsotopicsByNuclidesWidget::optionsChanged );
+
+  optionsChanged();
+}//BatchGuiIsotopicsByNuclidesWidget()
+
+
+BatchGuiIsotopicsByNuclidesWidget::~BatchGuiIsotopicsByNuclidesWidget()
+{
+  if( m_detector_file_drop )
+    wApp->doJavaScript( "removeOnDragEnterDom(['" + m_detector_file_drop->id() + "']);" );
+  if( m_rel_eff_config_file_drop )
+    wApp->doJavaScript( "removeOnDragEnterDom(['" + m_rel_eff_config_file_drop->id() + "']);" );
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> BatchGuiIsotopicsByNuclidesWidget::detector() const
+{
+  if( m_use_detector_override->isChecked() && m_uploaded_detector )
+    return m_uploaded_detector;
+
+  if( m_use_current_foreground->isChecked() )
+  {
+    InterSpec *interspec = InterSpec::instance();
+    if( !interspec )
+      return nullptr;
+    const shared_ptr<SpecMeas> spec_meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    if( spec_meas )
+      return spec_meas->detector();
+  }
+
+  for( Wt::WWidget *child : m_exemplar_file_drop->children() )
+  {
+    BatchGuiInputSpectrumFile *input_file = dynamic_cast<BatchGuiInputSpectrumFile *>( child );
+    const shared_ptr<SpecMeas> spec_meas = input_file ? input_file->spec_meas() : nullptr;
+    if( spec_meas )
+      return spec_meas->detector();
+  }
+
+  return nullptr;
+}
+
+
+void BatchGuiIsotopicsByNuclidesWidget::useDetectorOverrideChanged()
+{
+  m_detector_file_drop->setHidden( !m_use_detector_override->isChecked() );
+  if( !m_use_detector_override->isChecked() )
+  {
+    m_detector_file_drop->clear();
+    m_uploaded_detector.reset();
+    if( !m_detector_file_drop->hasStyleClass( "EmptyDetectorUpload" ) )
+      m_detector_file_drop->addStyleClass( "EmptyDetectorUpload" );
+  }
+  optionsChanged();
+}
+
+
+void BatchGuiIsotopicsByNuclidesWidget::useRelEffConfigOverrideChanged()
+{
+  m_rel_eff_config_file_drop->setHidden( !m_use_rel_eff_config_override->isChecked() );
+  if( !m_use_rel_eff_config_override->isChecked() )
+  {
+    m_rel_eff_config_file_drop->clear();
+    m_uploaded_rel_eff_config.reset();
+    if( !m_rel_eff_config_file_drop->hasStyleClass( "EmptyDetectorUpload" ) )
+      m_rel_eff_config_file_drop->addStyleClass( "EmptyDetectorUpload" );
+  }
+  optionsChanged();
+}
+
+
+void BatchGuiIsotopicsByNuclidesWidget::detectorUploaded( const std::string &, const std::string & )
+{
+  const vector<tuple<string, string, bool>> spooled = m_detector_file_resource->takeSpooledFiles();
+  if( spooled.empty() )
+    return;
+
+  m_detector_file_drop->clear();
+  m_uploaded_detector.reset();
+
+  for( const auto &file : spooled )
+  {
+    const string &display_name = std::get<0>( file );
+    const string &path_to_file = std::get<1>( file );
+    const bool should_delete = std::get<2>( file );
+
+    shared_ptr<DetectorPeakResponse> drf;
+    try
+    {
+      drf = BatchActivity::init_drf_from_name( path_to_file, "" );
+    }catch( std::exception & )
+    {
+      // Fall through to DRF-XML parser below.
+    }
+    if( !drf )
+      drf = try_parse_drf_xml_file( path_to_file );
+
+    if( drf )
+    {
+      m_uploaded_detector = drf;
+      BatchGuiInputFile *input
+          = m_detector_file_drop->addNew<BatchGuiInputFile>( display_name, path_to_file, should_delete );
+      input->remove_self_request().connect(
+          [this]( BatchGuiInputFile *inp ){ handle_remove_detector_upload( inp ); } );
+      break;
+    }else if( should_delete )
+    {
+      SpecUtils::remove_file( path_to_file );
+    }
+  }
+
+  // Clean up any leftover spooled files we didn't use
+  for( size_t i = 1; i < spooled.size(); ++i )
+  {
+    if( get<2>( spooled[i] ) )
+      SpecUtils::remove_file( std::get<1>( spooled[i] ) );
+  }
+
+  const bool empty = m_detector_file_drop->children().empty();
+  if( empty && !m_detector_file_drop->hasStyleClass( "EmptyDetectorUpload" ) )
+    m_detector_file_drop->addStyleClass( "EmptyDetectorUpload" );
+  else if( !empty && m_detector_file_drop->hasStyleClass( "EmptyDetectorUpload" ) )
+    m_detector_file_drop->removeStyleClass( "EmptyDetectorUpload" );
+
+  optionsChanged();
+}
+
+
+void BatchGuiIsotopicsByNuclidesWidget::relEffConfigUploaded( const std::string &, const std::string & )
+{
+  const vector<tuple<string, string, bool>> spooled = m_rel_eff_config_file_resource->takeSpooledFiles();
+  if( spooled.empty() )
+    return;
+
+  m_rel_eff_config_file_drop->clear();
+  m_uploaded_rel_eff_config.reset();
+
+  for( const auto &file : spooled )
+  {
+    const string &display_name = std::get<0>( file );
+    const string &path_to_file = std::get<1>( file );
+    const bool should_delete = std::get<2>( file );
+
+    shared_ptr<RelActCalcAuto::RelActAutoGuiState> state;
+    try
+    {
+      state = BatchRelActAuto::load_state_from_xml_file( path_to_file );
+    }catch( std::exception & )
+    {
+      // Will fall through and clean up below.
+    }
+
+    if( state )
+    {
+      m_uploaded_rel_eff_config = state;
+      BatchGuiInputFile *input
+          = m_rel_eff_config_file_drop->addNew<BatchGuiInputFile>( display_name, path_to_file, should_delete );
+      input->remove_self_request().connect(
+          [this]( BatchGuiInputFile *inp ){ handle_remove_rel_eff_config_upload( inp ); } );
+      break;
+    }else if( should_delete )
+    {
+      SpecUtils::remove_file( path_to_file );
+    }
+  }
+
+  for( size_t i = 1; i < spooled.size(); ++i )
+  {
+    if( get<2>( spooled[i] ) )
+      SpecUtils::remove_file( std::get<1>( spooled[i] ) );
+  }
+
+  const bool empty = m_rel_eff_config_file_drop->children().empty();
+  if( empty && !m_rel_eff_config_file_drop->hasStyleClass( "EmptyDetectorUpload" ) )
+    m_rel_eff_config_file_drop->addStyleClass( "EmptyDetectorUpload" );
+  else if( !empty && m_rel_eff_config_file_drop->hasStyleClass( "EmptyDetectorUpload" ) )
+    m_rel_eff_config_file_drop->removeStyleClass( "EmptyDetectorUpload" );
+
+  optionsChanged();
+}
+
+
+void BatchGuiIsotopicsByNuclidesWidget::handle_remove_detector_upload( BatchGuiInputFile *input )
+{
+  if( input && input->parent() )
+    input->parent()->removeWidget( input );
+  m_uploaded_detector.reset();
+  if( !m_detector_file_drop->hasStyleClass( "EmptyDetectorUpload" ) )
+    m_detector_file_drop->addStyleClass( "EmptyDetectorUpload" );
+  optionsChanged();
+}
+
+
+void BatchGuiIsotopicsByNuclidesWidget::handle_remove_rel_eff_config_upload( BatchGuiInputFile *input )
+{
+  if( input && input->parent() )
+    input->parent()->removeWidget( input );
+  m_uploaded_rel_eff_config.reset();
+  if( !m_rel_eff_config_file_drop->hasStyleClass( "EmptyDetectorUpload" ) )
+    m_rel_eff_config_file_drop->addStyleClass( "EmptyDetectorUpload" );
+  optionsChanged();
+}
+
+
+BatchRelActAuto::Options BatchGuiIsotopicsByNuclidesWidget::getIsotopicsOptions() const
+{
+  BatchRelActAuto::Options options;
+
+  // Output bookkeeping (cribbed from BatchPeakFitOptions equivalents)
+  options.overwrite_output_files = m_overwrite_output_files->isChecked();
+  options.write_n42_with_results = m_write_n42_with_results->isChecked();
+  options.create_json_output = m_create_json_output->isChecked();
+
+  // Reports - default to "html" per-file + "html" summary; users with custom
+  // template uploaders override by checking those checkboxes.
+  if( m_html_report->isChecked() )
+  {
+    options.report_templates.push_back( "html" );
+    options.summary_report_templates.push_back( "html" );
+  }
+
+  if( m_per_file_custom_report && m_per_file_custom_report->isChecked() )
+  {
+    for( Wt::WWidget *child : m_per_file_custom_report_container->children() )
+    {
+      BatchGuiInputFile *f = dynamic_cast<BatchGuiInputFile *>( child );
+      if( f )
+        options.report_templates.push_back( f->path_to_file() );
+    }
+  }
+  if( m_summary_custom_report && m_summary_custom_report->isChecked() )
+  {
+    for( Wt::WWidget *child : m_summary_custom_report_container->children() )
+    {
+      BatchGuiInputFile *f = dynamic_cast<BatchGuiInputFile *>( child );
+      if( f )
+        options.summary_report_templates.push_back( f->path_to_file() );
+    }
+  }
+
+  // Background plumbing
+  if( m_no_background->isChecked() )
+  {
+    options.background_subtract = false;
+  }else
+  {
+    const tuple<shared_ptr<const SpecMeas>, string, set<int>> bg = get_background();
+    const shared_ptr<const SpecMeas> &bg_meas = std::get<0>( bg );
+    if( bg_meas )
+    {
+      options.background_subtract_file = std::get<1>( bg );
+      options.background_subtract_samples = std::get<2>( bg );
+      options.cached_background_subtract_spec = std::const_pointer_cast<SpecMeas>( bg_meas );
+      options.background_subtract = true;
+    }
+    // else: leave both unset → defer to exemplar/state
+  }
+
+  // Overrides
+  if( m_use_detector_override->isChecked() && m_uploaded_detector )
+    options.drf_override = m_uploaded_detector;
+  if( m_use_rel_eff_config_override->isChecked() && m_uploaded_rel_eff_config )
+    options.state_override = m_uploaded_rel_eff_config;
+
+  if( m_override_energy_cal_type->isChecked() )
+    options.energy_cal_type = static_cast<RelActCalcAuto::EnergyCalFitType>(
+        m_energy_cal_type_combo->currentIndex() );
+  if( m_override_fwhm_form->isChecked() )
+    options.fwhm_form = static_cast<RelActCalcAuto::FwhmForm>( m_fwhm_form_combo->currentIndex() );
+  if( m_override_skew_type->isChecked() )
+    options.skew_type = static_cast<PeakDef::SkewType>( m_skew_type_combo->currentIndex() );
+
+  return options;
+}
+
+
+std::pair<bool,Wt::WString> BatchGuiIsotopicsByNuclidesWidget::canDoAnalysis() const
+{
+  // We deliberately don't call `BatchGuiPeakFitWidget::canDoAnalysis()`: it
+  // requires the exemplar to carry peaks, which RelActCalcAuto exemplars don't
+  // — they carry a stored `<RelActCalcAuto>` state instead.
+
+  // Either an exemplar with a stored state OR an uploaded rel-eff config XML.
+  const bool have_state_override = (m_use_rel_eff_config_override->isChecked()
+                                    && m_uploaded_rel_eff_config);
+  if( !have_state_override )
+  {
+    const tuple<shared_ptr<SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
+    const shared_ptr<SpecMeas> &exemplar = std::get<0>( exemplar_info );
+    if( !exemplar )
+      return { false, WString::tr("bgw-no-ana-iso-no-state-or-exemplar") };
+    unique_ptr<RelActCalcAuto::RelActAutoGuiState> state = exemplar->getRelActAutoGuiState();
+    if( !state )
+      return { false, WString::tr("bgw-no-ana-iso-no-state-in-exemplar") };
+  }
+
+  // Background: must have a usable choice (no-background, current background,
+  // or an uploaded background file).  Mirrors the relevant slice of
+  // `BatchGuiPeakFitWidget::canDoAnalysis()`.
+  bool back_okay = m_no_background->isChecked();
+  if( !back_okay && m_use_current_background->isChecked() )
+    back_okay = !!( InterSpec::instance()->displayedHistogram( SpecUtils::SpectrumType::Background ) );
+  if( !back_okay && !m_use_current_background->isChecked() && !m_no_background->isChecked() )
+  {
+    for( Wt::WWidget *child : m_background_file_drop->children() )
+    {
+      BatchGuiInputSpectrumFile *f = dynamic_cast<BatchGuiInputSpectrumFile *>( child );
+      if( f && f->spec_meas() )
+      {
+        back_okay = true;
+        break;
+      }
+    }
+  }
+  if( !back_okay )
+    return { false, WString::tr("bgw-no-ana-peak-fit-bad-background") };
+
+  // Physical-model rel-eff curve requires a DRF.
+  shared_ptr<RelActCalcAuto::RelActAutoGuiState> resolved_state;
+  if( have_state_override )
+  {
+    resolved_state = m_uploaded_rel_eff_config;
+  }else
+  {
+    const tuple<shared_ptr<SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
+    const shared_ptr<SpecMeas> &exemplar = std::get<0>( exemplar_info );
+    if( exemplar )
+    {
+      unique_ptr<RelActCalcAuto::RelActAutoGuiState> tmp = exemplar->getRelActAutoGuiState();
+      if( tmp )
+        resolved_state.reset( tmp.release() );
+    }
+  }
+
+  if( resolved_state )
+  {
+    const RelActCalcAuto::FwhmEstimationMethod fwhm_m = resolved_state->options.fwhm_estimation_method;
+    const bool needs_drf = ( ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+                             || ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency ) );
+
+    if( needs_drf && !detector() )
+      return { false, WString::tr("bgw-no-ana-iso-need-drf") };
+  }
+
+  return { true, WString() };
+}
+
+
+void BatchGuiIsotopicsByNuclidesWidget::optionsChanged()
+{
+  BatchGuiPeakFitWidget::optionsChanged();
+
+  // The parent's optionsChanged() re-shows several peak-fit-only controls
+  // every time it runs (m_show_nonfit_peaks, m_use_existing_background_peaks,
+  // m_use_exemplar_energy_cal_for_background, m_peak_*_threshold_container,
+  // m_refit_energy_cal).  We hide them in the constructor, but have to hide
+  // them here too so they stay hidden across user interactions.
+  m_refit_energy_cal->hide();
+  m_use_exemplar_energy_cal->hide();
+  m_use_exemplar_energy_cal_for_background->hide();
+  m_show_nonfit_peaks->hide();
+  m_create_csv_output->hide();
+  m_concatenate_to_n42->hide();
+  m_use_existing_background_peaks->hide();
+  if( m_peak_stat_threshold_container )
+    m_peak_stat_threshold_container->hide();
+  if( m_peak_hypothesis_threshold_container )
+    m_peak_hypothesis_threshold_container->hide();
+
+  if( m_energy_cal_type_combo )
+    m_energy_cal_type_combo->setHidden( !m_override_energy_cal_type->isChecked() );
+  if( m_fwhm_form_combo )
+    m_fwhm_form_combo->setHidden( !m_override_fwhm_form->isChecked() );
+  if( m_skew_type_combo )
+    m_skew_type_combo->setHidden( !m_override_skew_type->isChecked() );
+}
+
+
+void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
+    const vector<tuple<string, string, std::shared_ptr<const SpecMeas>>> &input_files,
+    const string &output_dir )
+{
+  BatchRelActAuto::Options options = getIsotopicsOptions();
+  options.output_dir = output_dir;
+
+  const tuple<shared_ptr<SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
+  const shared_ptr<SpecMeas> &exemplar = std::get<0>( exemplar_info );
+  const string &exemplar_filename = std::get<1>( exemplar_info );
+  const set<int> &exemplar_samples = std::get<2>( exemplar_info );
+
+  // Either the exemplar must exist or a state-override must be supplied.
+  if( !exemplar && !options.state_override )
+  {
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr("bgw-error-analysis-title"),
+                                                WString::tr("bgw-no-exemplar-msg") );
+    dialog->addStyleClass( "BatchAnalysisErrorDialog" );
+    dialog->addButton( WString::tr("Okay") );
+    return;
+  }
+
+  vector<string> file_names;
+  vector<shared_ptr<SpecMeas>> input_files_meas;
+  for( size_t i = 0; i < input_files.size(); ++i )
+  {
+    const string &display_name = std::get<0>( input_files[i] );
+    const shared_ptr<const SpecMeas> &spec_meas = std::get<2>( input_files[i] );
+    if( !spec_meas )
+      continue;
+    shared_ptr<SpecMeas> meas_copy = make_shared<SpecMeas>();
+    meas_copy->uniqueCopyContents( *spec_meas );
+    meas_copy->set_filename( display_name );
+    file_names.push_back( display_name );
+    input_files_meas.push_back( meas_copy );
+  }
+
+  shared_ptr<BatchRelActAuto::Summary> summary_results = make_shared<BatchRelActAuto::Summary>();
+
+  const string sessionid = Wt::WApplication::instance()->sessionId();
+  auto error_msg = make_shared<string>();
+
+  SimpleDialog *waiting_dialog = SimpleDialog::make( WString::tr("bgw-performing-work-title"),
+                                                      WString::tr("bgw-performing-work-msg") );
+  waiting_dialog->addButton( WString::tr("Close") );
+  std::function<void(void)> close_waiting_dialog =
+    [waiting_dialog](){ waiting_dialog->done( Wt::DialogCode::Accepted ); };
+
+  std::function<void(void)> show_error_dialog = [error_msg, close_waiting_dialog]()
+  {
+    close_waiting_dialog();
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr("bgw-error-analysis-title"),
+                                                WString::tr("bgw-error-analysis-msg").arg( *error_msg ) );
+    dialog->addStyleClass( "BatchAnalysisErrorDialog" );
+    dialog->addButton( WString::tr("Okay") );
+    wApp->triggerUpdate();
+  };
+
+  std::function<void(void)> update_gui_fcn = [close_waiting_dialog, summary_results]()
+  {
+    close_waiting_dialog();
+
+    // Render against the full multi-file summary (handles N>=1 files via the
+    // bundled `html-summary` template that walks `data["Files"]`).
+    nlohmann::json render_payload = nlohmann::json::parse( summary_results->summary_json );
+
+    // The InjaLogDialog passes us its own `inja::Environment` (built with
+    // `BatchInfoLog::get_default_inja_env`, which doesn't know about
+    // `default-rel-act-auto-html-multi-file-summary`), so we ignore that and
+    // build our own RelActAuto-aware env inside the lambda.
+    vector<tuple<WString, string, InjaLogDialog::LogType,
+                 function<string(inja::Environment&, const nlohmann::json&)>>> templates;
+    templates.push_back( make_tuple(
+      WString( "Isotopics Report" ),
+      "_iso_summary.html",
+      InjaLogDialog::LogType::Html,
+      []( inja::Environment &/*ignored*/, const nlohmann::json &data ) -> string {
+        inja::Environment my_env = RelActAutoReport::get_default_inja_env( "" );
+        return RelActAutoReport::render_template( my_env, data, "html-summary", "" );
+      }
+    ) );
+
+    InjaLogDialog *dialog = SimpleDialog::make<InjaLogDialog>( WString::tr("bgw-analysis-summary-title"),
+                                                                render_payload, templates );
+    dialog->setToolbarVisible( false );
+    dialog->show();
+
+    if( !summary_results->warnings.empty() )
+    {
+      SimpleDialog *warnings_dialog = SimpleDialog::make( WString::tr("bgw-warning-title") );
+      warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
+      WContainerWidget *contents = warnings_dialog->contents();
+      contents->setList( true, false );
+      for( const string &warn_msg : summary_results->warnings )
+      {
+        WContainerWidget *item = contents->addNew<WContainerWidget>();
+        item->addNew<WText>( warn_msg );
+      }
+      warnings_dialog->addButton( WString::tr("Okay") );
+    }
+    wApp->triggerUpdate();
+  };
+
+  std::function<void(void)> do_work_fcn
+      = [exemplar_filename, exemplar, exemplar_samples, file_names, input_files_meas,
+         options, summary_results, error_msg, update_gui_fcn, show_error_dialog, sessionid]()
+  {
+    try
+    {
+      BatchRelActAuto::run_in_files( exemplar_filename, exemplar, exemplar_samples,
+                                     file_names, input_files_meas, options,
+                                     summary_results.get() );
+      WServer::instance()->post( sessionid, update_gui_fcn );
+    }catch( std::exception &e )
+    {
+      *error_msg = e.what();
+      WServer::instance()->post( sessionid, show_error_dialog );
+    }
+  };
+
+  WServer::instance()->ioService().boost::asio::io_service::post( do_work_fcn );
+}//performAnalysis(...)
+
+#endif // USE_REL_ACT_TOOL
 
 
 FileConvertOpts::FileConvertOpts()

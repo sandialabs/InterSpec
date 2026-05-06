@@ -5571,7 +5571,10 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
       case SpecUtils::DetectorType::VerifinderLaBr:
         //return { }
         break;
-        
+
+      case SpecUtils::DetectorType::H3D400:
+        return { "H3D-400", "H3D 400", "H3D M400", "H3D A400", "H3D H400", "H3D S400" };
+
       case SpecUtils::DetectorType::KromekD3S:
         return { "D3S", "Kromek D3S", "D3", "Kromek D3S", "Kromek D3" };
 
@@ -5790,6 +5793,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     
     case DetectorType::VerifinderNaI:              name = "Verifinder-NaI"; break;
     case DetectorType::VerifinderLaBr:             name = "Verifinder-LaBr3"; break;
+    case DetectorType::H3D400:                     name = "CZT_H3D_M400_ORNL_25cm"; break;
       
     case DetectorType::IdentiFinderR500NaI:        name = "IdentiFINDER-R500-NaI";   break;
     case DetectorType::IdentiFinderR500LaBr:       name = "IdentiFINDER-R500-LaBr3"; break;

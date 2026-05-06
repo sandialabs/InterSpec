@@ -266,6 +266,22 @@ namespace InterSpecServer
    loading the file/url again later
    */
   InterSpec_API void clear_file_to_open_on_load( const std::string &session_token );
+
+  /** Asynchronously fetches `url` from the embedded Wt server's I/O service
+   and routes the response body to the registered native file-save handler
+   (see `InterSpecApp::setNativeFileSaveHandler`).
+
+   Returns immediately. The fetch runs on a Wt I/O thread; the registered
+   save handler is invoked from that thread with `(body, suggested_filename)`,
+   and is responsible for any GUI-thread hop.
+
+   Suitable for the desktop "user clicked a download link in the embedded
+   WebView" flow.  No-op (with error log) if no native save handler is
+   registered, or on HTTP/transport failure.
+
+   Timeout: 10 s.  Maximum response size: 512 MiB.
+   */
+  InterSpec_API void download_to_native_save( const std::string &url );
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 
   

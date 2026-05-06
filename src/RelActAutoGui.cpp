@@ -384,8 +384,8 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     }
     
     window->centerWindow();
-    // Note: the finished() signal is connected to InterSpec::handleRelActAutoClose()
-    //  in InterSpec::relActAutoWindow(), so we dont need to connect it here.
+    // finished() is connected by the caller (InterSpec::relActAutoWindow); do not
+    // duplicate the slot here, otherwise handleRelActAutoClose runs twice on close.
 
     window->WDialog::setHidden(false);
     window->show();
@@ -1305,6 +1305,22 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     options.spectrum_title = fore->title();
   else if( meas && !meas->filename().empty() )
     options.spectrum_title = meas->filename();
+
+  // Populate foreground/background filename + sample numbers (with the trivial-omit rule
+  // applied for samples).
+  {
+    const shared_ptr<const SpecMeas> back_meas
+                                = m_interspec->measurment( SpecUtils::SpectrumType::Background );
+    const string fg_filename = meas ? meas->filename() : string();
+    const string bg_filename = back_meas ? back_meas->filename() : string();
+    const set<int> fg_total = meas ? meas->sample_numbers() : set<int>();
+    const set<int> bg_total = back_meas ? back_meas->sample_numbers() : set<int>();
+    const set<int> fg_samples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
+    const set<int> bg_samples = m_interspec->displayedSamples( SpecUtils::SpectrumType::Background );
+    RelActCalcAuto::set_input_spec_info( options,
+                                         fg_filename, fg_total, fg_samples,
+                                         bg_filename, bg_total, bg_samples );
+  }
   
   options.skew_type = currentSkewType();
   options.lorentzian_xrays = (m_lorentzian_xrays_enabled && m_lorentzian_xrays->isChecked());

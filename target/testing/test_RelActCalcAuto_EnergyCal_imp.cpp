@@ -252,7 +252,7 @@ BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_CloseToLegacyJet )
 
   for( size_t i = 0; i < legacy_nodes.size(); ++i )
   {
-    BOOST_CHECK_SMALL( std::fabs( legacy_nodes[i].x - full_nodes[i].x ), 1.0e-10 );
+    BOOST_CHECK_SMALL( std::fabs( legacy_nodes[i].x.a - full_nodes[i].x.a ), 1.0e-10 );
     BOOST_CHECK_SMALL( std::fabs( legacy_nodes[i].y.a - full_nodes[i].y.a ), 1.0e-12 );
     BOOST_CHECK_SMALL( std::fabs( legacy_nodes[i].a.a - full_nodes[i].a.a ), 1.0e-8 );
     BOOST_CHECK_SMALL( std::fabs( legacy_nodes[i].b.a - full_nodes[i].b.a ), 1.0e-8 );
@@ -348,7 +348,7 @@ BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_AtKnotEnergies )
 
   for( size_t i = 0; i < legacy_nodes.size(); ++i )
   {
-    const double knot = legacy_nodes[i].x;
+    const double knot = legacy_nodes[i].x.a;
     update_stats( knot - eps );
     update_stats( knot );
     update_stats( knot + eps );
@@ -1288,5 +1288,643 @@ BOOST_AUTO_TEST_CASE( EdgeCases )
                                                         std::vector<std::pair<double,double>>{} );
     const double expected_low = -100.0 / 3.0;  // Analytical solution for E = 0 + 3*ch
     BOOST_CHECK_CLOSE( low_channel, expected_low, 0.01 );
+  }
+}
+
+
+// =====================================================================
+// Pathological / out-of-range coverage for find_*_channel.
+//
+// The three find_*_channel templates handle out-of-range inputs differently:
+//  - Polynomial and FRF: return a (possibly negative or > nchannel) channel
+//    via linear extrapolation, so that downstream polynomial_energy /
+//    fullrangefraction_energy can re-evaluate and place the peak at its
+//    extrapolated spectrum position. Peaks far outside end up with tiny
+//    Gaussian contribution in any ROI, as desired.
+//  - Polynomial additionally guards against non-monotonic cubics so the
+//    downstream polynomial_energy stays well-defined.
+//  - LowerChannelEdge: scalar is CLAMPED to [0, nchannel-1] because
+//    downstream indexes channel_energies[] via size_t; derivative is still
+//    propagated via the local channel-width slope so Ceres gets a useful
+//    gradient pointing back toward the in-range region.
+// =====================================================================
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_OutOfRange_BelowLowerBound )
+{
+  // Use 4 non-zero coefficients to force the binary-search path (the linear
+  // and quadratic analytical paths don't have the historical clamp bug).
+  // Effectively linear: E = 10 + 0.5*ch + 1e-8*ch^2 + 1e-11*ch^3
+  const size_t nchannel = 1000;
+  const std::vector<double> coeffs = { 10.0, 0.5, 1.0e-8, 1.0e-11 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+
+  const double e_low = coeffs[0];  // ≈ 10
+  const double energy = 5.0;        // below e_low
+
+  const double channel = find_polynomial_channel( energy, coeffs, nchannel, no_dev_pairs );
+
+  // Unclamped: scalar should be ~ -10 (linear extrap), NOT 0.
+  BOOST_CHECK( channel < 0.0 );
+  BOOST_CHECK( std::isfinite(channel) );
+
+  // Round-trip: polynomial_energy(channel) should reproduce input.
+  const double round_trip = polynomial_energy( channel, coeffs,
+                                               std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>>{} );
+  BOOST_CHECK_SMALL( std::fabs(round_trip - energy), 1.0e-3 );
+
+  // Jet derivative wrt energy should match central FD of scalar calls.
+  using Jet1 = ceres::Jet<double,1>;
+  std::vector<Jet1> coeffs_jet;
+  coeffs_jet.reserve( coeffs.size() );
+  for( const double c : coeffs )
+  {
+    Jet1 cj( c );
+    cj.v[0] = 0.0;
+    coeffs_jet.push_back( cj );
+  }
+  const std::vector<std::pair<double,Jet1>> no_dev_pairs_jet;
+
+  Jet1 energy_jet( energy );
+  energy_jet.v[0] = 1.0;
+  const Jet1 channel_jet = find_polynomial_channel( energy_jet, coeffs_jet, nchannel, no_dev_pairs_jet );
+
+  // Scalar parts agree within the binary-search tolerance (accuracy=0.001 keV
+  // translates to ~0.002 channels for C1=0.5).
+  BOOST_CHECK_SMALL( std::fabs(channel_jet.a - channel), 1.0e-2 );
+
+  // Jet derivative wrt energy should match analytical 1/C1 (the polynomial is
+  // effectively linear out here; C2, C3 contributions are negligible).
+  const double expected_dch_dE = 1.0 / coeffs[1];
+  BOOST_CHECK_SMALL( std::fabs(channel_jet.v[0] - expected_dch_dE), 1.0e-6 );
+}
+
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_OutOfRange_AboveUpperBound )
+{
+  const size_t nchannel = 1000;
+  const std::vector<double> coeffs = { 10.0, 0.5, 1.0e-8, 1.0e-11 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+
+  const double e_high = polynomial_energy( static_cast<double>(nchannel - 1), coeffs,
+                                           std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>>{} );
+  // Well above e_high (~509.5) but within the 10-doubling walk-out budget.
+  const double energy = 600.0;
+  BOOST_CHECK( energy > e_high );
+
+  const double channel = find_polynomial_channel( energy, coeffs, nchannel, no_dev_pairs );
+
+  // Unclamped: scalar should be > nchannel-1 (true inverse), NOT capped.
+  BOOST_CHECK( channel > static_cast<double>(nchannel - 1) );
+  BOOST_CHECK( std::isfinite(channel) );
+
+  const double round_trip = polynomial_energy( channel, coeffs,
+                                               std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>>{} );
+  // True-inverse round-trip: accuracy limited by bisection tolerance (0.001 keV).
+  BOOST_CHECK_SMALL( std::fabs(round_trip - energy), 1.0e-3 );
+
+  using Jet1 = ceres::Jet<double,1>;
+  std::vector<Jet1> coeffs_jet;
+  coeffs_jet.reserve( coeffs.size() );
+  for( const double c : coeffs )
+  {
+    Jet1 cj( c );
+    cj.v[0] = 0.0;
+    coeffs_jet.push_back( cj );
+  }
+  const std::vector<std::pair<double,Jet1>> no_dev_pairs_jet;
+
+  Jet1 energy_jet( energy );
+  energy_jet.v[0] = 1.0;
+  const Jet1 channel_jet = find_polynomial_channel( energy_jet, coeffs_jet, nchannel, no_dev_pairs_jet );
+
+  BOOST_CHECK_SMALL( std::fabs(channel_jet.a - channel), 1.0e-2 );
+
+  // Analytical IFT: d(bin)/d(E) = 1 / (C1 + 2*C2*bin + 3*C3*bin^2) evaluated at
+  // the returned channel.
+  const double dE_dch = coeffs[1] + 2.0*coeffs[2]*channel + 3.0*coeffs[3]*channel*channel;
+  const double expected_dch_dE = 1.0 / dE_dch;
+  BOOST_CHECK_SMALL( std::fabs(channel_jet.v[0] - expected_dch_dE), 1.0e-4 );
+}
+
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_OutOfRange_BoundaryContinuity )
+{
+  // Jet derivative wrt energy should agree on both sides of the e_low boundary.
+  using Jet1 = ceres::Jet<double,1>;
+
+  const size_t nchannel = 1000;
+  const std::vector<double> coeffs = { 10.0, 0.5, 1.0e-8, 1.0e-11 };
+  const double e_low = coeffs[0];  // ≈ 10
+
+  std::vector<Jet1> coeffs_jet;
+  coeffs_jet.reserve( coeffs.size() );
+  for( const double c : coeffs )
+  {
+    Jet1 cj( c );
+    cj.v[0] = 0.0;
+    coeffs_jet.push_back( cj );
+  }
+  const std::vector<std::pair<double,Jet1>> no_dev_pairs_jet;
+
+  const double eps = 1.0e-4;
+
+  Jet1 e_in( e_low + eps );
+  e_in.v[0] = 1.0;
+  const Jet1 ch_in = find_polynomial_channel( e_in, coeffs_jet, nchannel, no_dev_pairs_jet );
+
+  Jet1 e_out( e_low - eps );
+  e_out.v[0] = 1.0;
+  const Jet1 ch_out = find_polynomial_channel( e_out, coeffs_jet, nchannel, no_dev_pairs_jet );
+
+  // Derivatives should agree to first order in eps.
+  const double denom = std::max( std::fabs(ch_in.v[0]), std::fabs(ch_out.v[0]) );
+  BOOST_CHECK_LE( std::fabs(ch_in.v[0] - ch_out.v[0]) / std::max(denom, 1.0e-12), 1.0e-3 );
+}
+
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_NonMonotonicGuard )
+{
+  // Pathological cubic: coeffs = {10, 0.1, 0.001, 1e-6}.
+  //   dE/dch = 0.1 + 0.002*ch + 3e-6*ch^2.
+  // For ch > 0 dE/dch is positive everywhere. For ch < 0 there is a root:
+  //   ch ≈ (-0.002 + sqrt(4e-6 - 1.2e-6)) / (6e-6) ≈ -55.
+  // So the polynomial is monotonic-increasing on ch > -55, non-monotonic beyond.
+  //
+  // With these 4 non-zero coefficients, find_polynomial_channel takes the
+  // binary-search + guard path (not an analytical root).
+  const size_t nchannel = 1000;
+  const std::vector<double> coeffs = { 10.0, 0.1, 0.001, 1.0e-6 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+
+  // Query well below e_low = 10 so the naive linear extrap `(E - C0)/C1`
+  // lands past the turning point at -55:
+  //   energy = 4 → extrap = -60 (past -55, non-monotonic)
+  const double energy = 4.0;
+  const double channel = find_polynomial_channel( energy, coeffs, nchannel, no_dev_pairs );
+
+  // Guard invariant: channel stays on the monotonic side (ch > -55).
+  BOOST_CHECK( std::isfinite(channel) );
+  BOOST_CHECK( channel > -60.0 );  // not past the naive extrap
+  BOOST_CHECK( channel >= -56.0 ); // bisected back to the monotonic side
+  BOOST_CHECK( channel < 0.0 );    // still below the in-range region
+
+  // Jet path: derivative should still reflect the linear-extrap slope 1/C1 = 10.
+  using Jet1 = ceres::Jet<double,1>;
+  std::vector<Jet1> coeffs_jet;
+  coeffs_jet.reserve( coeffs.size() );
+  for( const double c : coeffs )
+  {
+    Jet1 cj( c );
+    cj.v[0] = 0.0;
+    coeffs_jet.push_back( cj );
+  }
+  const std::vector<std::pair<double,Jet1>> no_dev_pairs_jet;
+
+  Jet1 energy_jet( energy );
+  energy_jet.v[0] = 1.0;
+  const Jet1 channel_jet = find_polynomial_channel( energy_jet, coeffs_jet, nchannel, no_dev_pairs_jet );
+  BOOST_CHECK( std::isfinite(channel_jet.a) );
+  BOOST_CHECK( std::isfinite(channel_jet.v[0]) );
+  // d(channel)/d(energy) should be positive (bumping energy up moves the
+  // clamped channel toward the monotonic in-range region).
+  BOOST_CHECK( channel_jet.v[0] > 0.0 );
+  BOOST_CHECK_SMALL( std::fabs(channel_jet.v[0] - 1.0 / coeffs[1]), 0.1 );
+}
+
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_FarOutOfRange )
+{
+  // Typical well-conditioned polynomial; extrapolate WAY out of range and
+  // verify we get finite values with reasonable round-trip error.
+  const size_t nchannel = 1000;
+  const std::vector<double> coeffs = { 10.0, 0.5, 1.0e-8, 1.0e-11 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+
+  // Within the 10-doubling walk-out budget (2^10 = 1024 bins past boundary).
+  // Linear extrap of energy=-250 with C1=0.5 gives ~-520 bins — well inside.
+  const double energy = -250.0;
+  const double channel = find_polynomial_channel( energy, coeffs, nchannel, no_dev_pairs );
+  BOOST_CHECK( std::isfinite(channel) );
+  BOOST_CHECK( channel < 0.0 );
+
+  // True-inverse round-trip: accuracy limited by bisection tolerance (0.001 keV).
+  const double round_trip = polynomial_energy( channel, coeffs,
+                                               std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>>{} );
+  BOOST_CHECK_SMALL( std::fabs(round_trip - energy), 1.0e-3 );
+
+  using Jet1 = ceres::Jet<double,1>;
+  std::vector<Jet1> coeffs_jet;
+  coeffs_jet.reserve( coeffs.size() );
+  for( const double c : coeffs )
+  {
+    Jet1 cj( c );
+    cj.v[0] = 0.0;
+    coeffs_jet.push_back( cj );
+  }
+  const std::vector<std::pair<double,Jet1>> no_dev_pairs_jet;
+
+  Jet1 energy_jet( energy );
+  energy_jet.v[0] = 1.0;
+  const Jet1 channel_jet = find_polynomial_channel( energy_jet, coeffs_jet, nchannel, no_dev_pairs_jet );
+  BOOST_CHECK( std::isfinite(channel_jet.a) );
+  BOOST_CHECK( std::isfinite(channel_jet.v[0]) );
+  // Jet derivative should be positive (lower input energy → more negative channel,
+  // so d(channel)/d(energy) > 0).
+  BOOST_CHECK( channel_jet.v[0] > 0.0 );
+}
+
+
+BOOST_AUTO_TEST_CASE( FullRangeFraction_OutOfRange_RoundTrip )
+{
+  // FRF out-of-range uses the existing (unchanged) linear-extrap short-circuit
+  // for coeffs.size() <= 4. Regression guard: verify round-trip makes sense.
+  const size_t nchannel = 1024;
+  const std::vector<double> coeffs = { 0.0, 3000.0 };  // Simple linear FRF
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+
+  for( const double energy : { -50.0, 3500.0 } )
+  {
+    const double channel = find_fullrangefraction_channel( energy, coeffs, nchannel, no_dev_pairs );
+    BOOST_CHECK( std::isfinite(channel) );
+
+    const double round_trip = fullrangefraction_energy( channel, coeffs, nchannel,
+                                                        std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>>{} );
+    BOOST_CHECK_SMALL( std::fabs(round_trip - energy), 1.0e-3 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( LowerChannelEdge_OutOfRange_Extrapolates )
+{
+  // LowerChannelEdge extrapolates linearly past the boundaries using the
+  // first/last channel width. Downstream consumers (lowerchannel_energy) handle
+  // safe array indexing themselves, so find_lowerchannel_channel returns the
+  // natural unclamped channel.
+  const size_t nchannel = 10;
+  const std::vector<float> channel_energies = {
+    0.0f, 100.0f, 250.0f, 450.0f, 700.0f, 1000.0f,
+    1350.0f, 1750.0f, 2200.0f, 2700.0f, 3000.0f };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+
+  // Below-range: E = -500, first width = 100 → channel = (−500 − 0) / 100 = −5
+  {
+    const double channel = find_lowerchannel_channel( -500.0, channel_energies, no_dev_pairs );
+    BOOST_CHECK_CLOSE( channel, -5.0, 1.0e-6 );
+  }
+
+  // Above-range: E = 5000, last width = 300 → channel = 10 + (5000 − 3000)/300 = 16.6666...
+  {
+    const double channel = find_lowerchannel_channel( 5000.0, channel_energies, no_dev_pairs );
+    const double expected = static_cast<double>(nchannel) + (5000.0 - 3000.0) / (3000.0 - 2700.0);
+    BOOST_CHECK_CLOSE( channel, expected, 1.0e-6 );
+  }
+
+  // Adjustment-overload below-range
+  {
+    const double channel = find_lowerchannel_channel( -500.0, channel_energies, no_dev_pairs,
+                                                      0.0, 0.0 );
+    BOOST_CHECK_CLOSE( channel, -5.0, 1.0e-6 );
+  }
+
+  // Adjustment-overload above-range
+  {
+    const double channel = find_lowerchannel_channel( 5000.0, channel_energies, no_dev_pairs,
+                                                      0.0, 0.0 );
+    const double expected = static_cast<double>(nchannel) + (5000.0 - 3000.0) / (3000.0 - 2700.0);
+    BOOST_CHECK_CLOSE( channel, expected, 1.0e-6 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( LowerChannelEdge_OutOfRange_JetDerivativeFlows )
+{
+  // Jet derivative of the linear-extrapolated channel should equal the local
+  // channel-width slope so Ceres has a meaningful gradient pointing toward the
+  // in-range region.
+  using Jet1 = ceres::Jet<double,1>;
+
+  const size_t nchannel = 10;
+  const std::vector<float> channel_energies = {
+    0.0f, 100.0f, 250.0f, 450.0f, 700.0f, 1000.0f,
+    1350.0f, 1750.0f, 2200.0f, 2700.0f, 3000.0f };
+  const std::vector<std::pair<double,Jet1>> no_dev_pairs_jet;
+
+  // Below-range: scalar −5, slope 1/100
+  {
+    Jet1 energy_jet( -500.0 );
+    energy_jet.v[0] = 1.0;
+    const Jet1 ch = find_lowerchannel_channel( energy_jet, channel_energies, no_dev_pairs_jet, 0.001 );
+
+    BOOST_CHECK_CLOSE( ch.a, -5.0, 1.0e-6 );
+    const double expected_slope = 1.0 / (channel_energies[1] - channel_energies[0]);
+    BOOST_CHECK_SMALL( std::fabs(ch.v[0] - expected_slope), 1.0e-9 );
+  }
+
+  // Above-range: scalar > nchannel-1, slope 1/last-width
+  {
+    Jet1 energy_jet( 5000.0 );
+    energy_jet.v[0] = 1.0;
+    const Jet1 ch = find_lowerchannel_channel( energy_jet, channel_energies, no_dev_pairs_jet, 0.001 );
+
+    const double expected_scalar = static_cast<double>(nchannel)
+      + (5000.0 - 3000.0) / (3000.0 - 2700.0);
+    BOOST_CHECK_CLOSE( ch.a, expected_scalar, 1.0e-6 );
+    const double expected_slope = 1.0 /
+      (static_cast<double>(channel_energies[nchannel])
+       - static_cast<double>(channel_energies[nchannel - 1]));
+    BOOST_CHECK_SMALL( std::fabs(ch.v[0] - expected_slope), 1.0e-9 );
+  }
+
+  // Adjustment-overload below-range
+  {
+    Jet1 energy_jet( -500.0 );
+    energy_jet.v[0] = 1.0;
+    Jet1 zero_jet( 0.0 );
+    zero_jet.v[0] = 0.0;
+    const Jet1 ch = find_lowerchannel_channel( energy_jet, channel_energies, no_dev_pairs_jet,
+                                               zero_jet, zero_jet, 0.001 );
+    BOOST_CHECK_CLOSE( ch.a, -5.0, 1.0e-6 );
+    BOOST_CHECK( std::isfinite(ch.v[0]) );
+    BOOST_CHECK( ch.v[0] > 0.0 );
+  }
+}
+
+
+// =====================================================================
+// Pathological & round-trip coverage for the unified extended-bisection
+// algorithm (polynomial + FRF) and the new lowerchannel_energy() helper.
+// =====================================================================
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_PureQuadratic )
+{
+  // Pure quadratic: E = 5 + 0 * ch + 0.002 * ch^2.
+  // C1 = 0 means linear-extrap `(E - C0)/C1` would divide by zero. The unified
+  // algorithm detects `dE/dch = 0` at the boundary and clamps there. For E >= 5
+  // the in-range bisection still works (ascending on [0, nchannel-1]).
+  const size_t nchannel = 1000;
+  const std::vector<double> coeffs = { 5.0, 0.0, 0.002 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+
+  // Energy at bin 0 = C0 = 5, at bin 500 = 5 + 0 + 500 = 505. Query in-range:
+  {
+    const double energy = 100.0;
+    const double channel = find_polynomial_channel( energy, coeffs, nchannel, no_dev_pairs );
+    BOOST_CHECK( std::isfinite(channel) );
+    BOOST_CHECK( channel > 0.0 );
+    // Analytical: bin = sqrt((E - C0)/C2) = sqrt(95/0.002) ≈ 218.
+    BOOST_CHECK_CLOSE( channel, std::sqrt(95.0 / 0.002), 0.1 );
+  }
+
+  // Query below C0 = 5 (below the parabola's vertex): no real inverse. Unified
+  // algorithm clamps at boundary ch=0. Must not NaN/inf or divide by zero.
+  {
+    const double energy = 3.0;  // below vertex
+    const double channel = find_polynomial_channel( energy, coeffs, nchannel, no_dev_pairs );
+    BOOST_CHECK( std::isfinite(channel) );
+    BOOST_CHECK_CLOSE( channel, 0.0, 1.0 );  // clamped at vertex
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_ExtendedBisection_RoundTrip_Dense )
+{
+  // Well-conditioned cubic. Sample a dense grid of energies and verify the
+  // true-inverse round-trip `polynomial_energy(find(E)) ≈ E` to bisection
+  // tolerance (0.001 keV) for energies inside the range AND moderately out of
+  // range.
+  const size_t nchannel = 1000;
+  const std::vector<double> coeffs = { 10.0, 0.5, 1.0e-8, 1.0e-11 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>> no_spline;
+
+  const double e_low = polynomial_energy( 0.0, coeffs, no_spline );          // ≈ 10
+  const double e_high = polynomial_energy( static_cast<double>(nchannel - 1),
+                                           coeffs, no_spline );              // ≈ 509.5
+
+  // Dense grid, spanning [-250 keV, e_low+epsilon, ..., e_high-epsilon, +750 keV]
+  // (out-of-range bounds kept within the 10-doubling walk budget).
+  for( double energy : { -250.0, -100.0, -10.0, e_low + 1e-6, e_low + 100.0,
+                         0.5 * (e_low + e_high), e_high - 100.0,
+                         e_high - 1e-6, e_high + 50.0, e_high + 200.0, 750.0 } )
+  {
+    const double channel = find_polynomial_channel( energy, coeffs, nchannel, no_dev_pairs );
+    const double round_trip = polynomial_energy( channel, coeffs, no_spline );
+    BOOST_CHECK_SMALL( std::fabs(round_trip - energy), 1.0e-3 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_RoundTrip_ChannelEnergyChannel )
+{
+  // For a well-conditioned cubic, sampling channels inside AND moderately
+  // outside [0, nchannel-1] should round-trip cleanly:
+  //   find_polynomial_channel( polynomial_energy(ch) ) ≈ ch.
+  const size_t nchannel = 1000;
+  const std::vector<double> coeffs = { 10.0, 0.5, 1.0e-8, 1.0e-11 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>> no_spline;
+
+  for( double ch : { -500.0, -10.0, -0.5, 0.0, 1.0, 100.0, 500.0, 999.0, 1000.0, 1500.0 } )
+  {
+    const double E = polynomial_energy( ch, coeffs, no_spline );
+    const double ch_back = find_polynomial_channel( E, coeffs, nchannel, no_dev_pairs );
+    // Bisection accuracy 0.001 keV / C1(=0.5) = ~0.002 channels.
+    BOOST_CHECK_SMALL( std::fabs(ch_back - ch), 0.01 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( FullRangeFraction_QuadraticBothRootsOutOfRange )
+{
+  // Concave-down quadratic FRF. At some query energy, both quadratic roots
+  // fall outside [0, nchannel). The OLD code silently returned T(0.0); the NEW
+  // code picks the root closer to the linear approximation, giving a sensible
+  // extrapolated channel and a clean round-trip.
+  const size_t nchannel = 1000;
+  // Choose C2 so that for some energy both roots are out of range.
+  // FRF: E = C0 + C1*x + C2*x^2 with x = bin/nchannel.
+  // E_vertex = C0 - C1^2/(4*C2). For C0=10, C1=3000, C2=-500: vertex at x=3,
+  // E_vertex = 10 + 4500 = 4510. Query E > E_vertex gives no real solution.
+  const std::vector<double> coeffs = { 10.0, 3000.0, -500.0 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>> no_spline;
+
+  const double e_low = fullrangefraction_energy( 0.0, coeffs, nchannel, no_spline );
+  const double e_max_reachable = fullrangefraction_energy( static_cast<double>(nchannel - 1),
+                                                           coeffs, nchannel, no_spline );
+
+  // Query at e_low (trivial in-range reachable) round-trips.
+  {
+    const double channel = find_fullrangefraction_channel( e_low, coeffs, nchannel, no_dev_pairs );
+    const double rt = fullrangefraction_energy( channel, coeffs, nchannel, no_spline );
+    BOOST_CHECK_SMALL( std::fabs(rt - e_low), 1.0e-3 );
+  }
+
+  // Query at 100 keV (well in range).
+  {
+    const double channel = find_fullrangefraction_channel( 100.0, coeffs, nchannel, no_dev_pairs );
+    BOOST_CHECK( std::isfinite(channel) );
+  }
+
+  // Query at e_max_reachable - 10.0 (in range near the monotonic-edge).
+  {
+    const double query = e_max_reachable - 10.0;
+    const double channel = find_fullrangefraction_channel( query, coeffs, nchannel, no_dev_pairs );
+    BOOST_CHECK( std::isfinite(channel) );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( FullRangeFraction_WithC4_OutOfRange )
+{
+  // FRF with 5 coefficients (C4 term: C4/(1+60x)). Query moderately out of
+  // range. Previously returned noise from niter-exit; now returns a true-
+  // inverse via extended bisection (bounded by the C4 pole at x = -1/60).
+  const size_t nchannel = 1024;
+  const std::vector<double> coeffs = { 0.0, 3000.0, 0.0, 0.0, 10.0 };  // ~linear with small C4 correction
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>> no_spline;
+
+  // In-range query round-trips.
+  {
+    const double energy = 1500.0;
+    const double channel = find_fullrangefraction_channel( energy, coeffs, nchannel, no_dev_pairs );
+    const double rt = fullrangefraction_energy( channel, coeffs, nchannel, no_spline );
+    BOOST_CHECK_SMALL( std::fabs(rt - energy), 1.0e-3 );
+  }
+
+  // Above-range query: beyond e_high ≈ 3000 but within walk-out budget.
+  {
+    const double energy = 3500.0;
+    const double channel = find_fullrangefraction_channel( energy, coeffs, nchannel, no_dev_pairs );
+    BOOST_CHECK( std::isfinite(channel) );
+    const double rt = fullrangefraction_energy( channel, coeffs, nchannel, no_spline );
+    BOOST_CHECK_SMALL( std::fabs(rt - energy), 1.0e-3 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( FullRangeFraction_RoundTrip_Dense )
+{
+  // Dense round-trip grid for both directions (E→CH→E and CH→E→CH),
+  // covering in-range and out-of-range for a typical linear FRF.
+  const size_t nchannel = 1024;
+  const std::vector<double> coeffs = { 0.0, 3000.0 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>> no_spline;
+
+  // E → CH → E
+  for( double E : { -100.0, 0.0, 0.01, 10.0, 1500.0, 2999.99, 3000.0, 3500.0 } )
+  {
+    const double ch = find_fullrangefraction_channel( E, coeffs, nchannel, no_dev_pairs );
+    const double rt = fullrangefraction_energy( ch, coeffs, nchannel, no_spline );
+    BOOST_CHECK_SMALL( std::fabs(rt - E), 1.0e-3 );
+  }
+
+  // CH → E → CH
+  for( double ch : { -500.0, -10.0, 0.0, 1.0, 512.0, 1023.0, 1024.0, 1500.0 } )
+  {
+    const double E = fullrangefraction_energy( ch, coeffs, nchannel, no_spline );
+    const double ch_back = find_fullrangefraction_channel( E, coeffs, nchannel, no_dev_pairs );
+    BOOST_CHECK_SMALL( std::fabs(ch_back - ch), 1.0e-2 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( LowerChannelEdge_RoundTrip_Dense )
+{
+  // LowerChannelEdge is piecewise-linear with first/last channel widths
+  // extended linearly beyond the boundaries. Round-trip should hold exactly
+  // everywhere (no turning points possible given monotonic channel_energies).
+  const size_t nchannel = 20;
+  std::vector<float> channel_energies;
+  channel_energies.reserve( nchannel + 1 );
+  // Slightly non-uniform widths to exercise the fraction interpolation.
+  for( size_t i = 0; i <= nchannel; ++i )
+    channel_energies.push_back( static_cast<float>(i * i * 0.5 + i * 3.0) );
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>> no_spline;
+
+  // E → CH → E
+  const double e_low = channel_energies[0];
+  const double e_high = channel_energies[nchannel];
+  for( double E : { e_low - 100.0, e_low - 5.0, e_low, e_low + 0.5,
+                    0.5 * (e_low + e_high), e_high - 1.0, e_high, e_high + 200.0 } )
+  {
+    const double ch = find_lowerchannel_channel( E, channel_energies, no_dev_pairs );
+    const double rt = RelActCalcAutoImp::lowerchannel_energy( ch, channel_energies, no_spline );
+    BOOST_CHECK_SMALL( std::fabs(rt - E), 1.0e-9 );  // exact linear interpolation
+  }
+
+  // CH → E → CH
+  for( double ch : { -10.0, -0.3, 0.0, 0.5, 10.0,
+                     static_cast<double>(nchannel - 1),
+                     static_cast<double>(nchannel), static_cast<double>(nchannel) + 5.0 } )
+  {
+    const double E = RelActCalcAutoImp::lowerchannel_energy( ch, channel_energies, no_spline );
+    const double ch_back = find_lowerchannel_channel( E, channel_energies, no_dev_pairs );
+    BOOST_CHECK_SMALL( std::fabs(ch_back - ch), 1.0e-9 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( LowerChannelEdge_BoundaryContinuity )
+{
+  // Jet derivative wrt energy should agree on both sides of e_low and e_high
+  // (LowerChannelEdge's "inverse" is piecewise linear everywhere — no
+  // discontinuities at boundaries because first/last channel widths ARE
+  // the extrapolation slopes).
+  using Jet1 = ceres::Jet<double,1>;
+
+  const size_t nchannel = 10;
+  const std::vector<float> channel_energies = {
+    0.0f, 100.0f, 250.0f, 450.0f, 700.0f, 1000.0f,
+    1350.0f, 1750.0f, 2200.0f, 2700.0f, 3000.0f };
+  const std::vector<std::pair<double,Jet1>> no_dev_pairs_jet;
+
+  const double eps = 1.0e-4;
+
+  // Around e_low = 0:
+  {
+    Jet1 e_in( 0.0 + eps );  e_in.v[0] = 1.0;
+    const Jet1 ch_in = find_lowerchannel_channel( e_in, channel_energies, no_dev_pairs_jet, 0.001 );
+    Jet1 e_out( 0.0 - eps ); e_out.v[0] = 1.0;
+    const Jet1 ch_out = find_lowerchannel_channel( e_out, channel_energies, no_dev_pairs_jet, 0.001 );
+    // Both sides use the same first-channel width (100). Slope = 1/100 on both.
+    BOOST_CHECK_SMALL( std::fabs(ch_in.v[0] - ch_out.v[0]), 1.0e-12 );
+    BOOST_CHECK_SMALL( std::fabs(ch_in.v[0] - 0.01), 1.0e-12 );
+  }
+
+  // Around e_high = 3000:
+  {
+    Jet1 e_in( 3000.0 - eps );  e_in.v[0] = 1.0;
+    const Jet1 ch_in = find_lowerchannel_channel( e_in, channel_energies, no_dev_pairs_jet, 0.001 );
+    Jet1 e_out( 3000.0 + eps ); e_out.v[0] = 1.0;
+    const Jet1 ch_out = find_lowerchannel_channel( e_out, channel_energies, no_dev_pairs_jet, 0.001 );
+    // Last-channel width = 300. Slope = 1/300.
+    BOOST_CHECK_SMALL( std::fabs(ch_in.v[0] - ch_out.v[0]), 1.0e-12 );
+    BOOST_CHECK_SMALL( std::fabs(ch_in.v[0] - (1.0/300.0)), 1.0e-12 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( LowerChannelEnergy_StandaloneRoundTrip )
+{
+  // Sanity check of the standalone lowerchannel_energy() helper against
+  // find_lowerchannel_channel over a grid (mirrors the existing
+  // polynomial/FRF roundtrip tests).
+  const size_t nchannel = 15;
+  std::vector<float> channel_energies;
+  channel_energies.reserve( nchannel + 1 );
+  for( size_t i = 0; i <= nchannel; ++i )
+    channel_energies.push_back( static_cast<float>(10.0 + 50.0 * i + 0.5 * i * i) );
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>> no_spline;
+
+  for( double ch = -5.0; ch <= static_cast<double>(nchannel) + 5.0; ch += 0.5 )
+  {
+    const double E = RelActCalcAutoImp::lowerchannel_energy( ch, channel_energies, no_spline );
+    const double ch_back = find_lowerchannel_channel( E, channel_energies, no_dev_pairs );
+    BOOST_CHECK_SMALL( std::fabs(ch_back - ch), 1.0e-9 );
   }
 }

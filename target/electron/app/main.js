@@ -127,20 +127,19 @@ if( !gotTheLock )
 
   
   app.on('open-url', (event, url) => {
-    //dialog.showErrorBox('Welcome Back', `You arrived from: ${url}`)
-    // TODO: this function totally untested 
-    console.log( `'open-url' totally untested: url: ${url}` );
+    event.preventDefault();
+    console.log( `'open-url': url: ${url}` );
 
-    if( path_string.toLowerCase().startsWith("interspec://") 
-        || path_string.toLowerCase().startsWith("raddata://g0/") )
-    {
-      let window = (openWindows.length ? openWindows[openWindows.length-1] : null);
+    const lower = url.toLowerCase();
+    if( !lower.startsWith("interspec://") && !lower.startsWith("raddata://g0/") )
+      return;
 
-      if( window )
-        interspec.openAppUrl( window.appSessionToken, JSON.stringify( [url] ) );
-      else
-        appendInitialFileToLoad(url);
-    }
+    let window = (openWindows.length ? openWindows[openWindows.length-1] : null);
+
+    if( window && window.pageHasLoaded && window.appHasLoadConfirmed )
+      interspec.openAppUrl( window.appSessionToken, url );
+    else
+      appendInitialFileToLoad(url);
   })
 }//if (!gotTheLock) /
 
@@ -220,66 +219,50 @@ function checkWindowPosition(state) {
   //Adapted from https://github.com/Sethorax/electron-window-state-manager/blob/master/src/lib/windowState.js (20171121)
   //  Not the best.  Should find which screen we're currently (mostly) on and shrink
   //  window to fit that display.
-  
-  var primaryDisplay = electron.screen.getPrimaryDisplay();
-  
-  if( (typeof state.width !== 'undefined') && state.width!==null && state.width > primaryDisplay.bounds.width )
+
+  const primaryDisplay = electron.screen.getPrimaryDisplay();
+
+  if( (typeof state.width !== 'undefined') && state.width !== null && state.width > primaryDisplay.bounds.width )
     state.width = primaryDisplay.bounds.width - 10;
-    
-  if( (typeof state.height !== 'undefined') && state.height!==null && state.height > primaryDisplay.bounds.height )
+
+  if( (typeof state.height !== 'undefined') && state.height !== null && state.height > primaryDisplay.bounds.height )
     state.height = primaryDisplay.bounds.height - 20;
-    
+
   //Check if window is in bounds of primary display
   if( (typeof state.x !== 'undefined')
       && (typeof state.y !== 'undefined')
-      && (typeof state.x !== 'undefined')
       && (typeof state.width !== 'undefined')
       && (typeof state.height !== 'undefined')
       && state.x >= 0 && state.y >= 0
       && state.x < primaryDisplay.bounds.width
       && state.y < primaryDisplay.bounds.height)
-    return
-  
-  //Find all external displays
-  var externalDisplays = electron.screen.getAllDisplays().find((display) => {
+    return;
+
+  //Check if window is in bounds of any non-primary display
+  const externalDisplays = electron.screen.getAllDisplays().filter((display) => {
     return display.bounds.x !== 0 || display.bounds.y !== 0;
   });
-    
-  //Check if there are external displays present
-  if( externalDisplays ) {
-    //Create an array if it is a single display
-    if (typeof externalDisplays.length === 'undefined') {
-      let singleExternal = externalDisplays;
-      externalDisplays = [];
-      externalDisplays.push(singleExternal);
-    }
-      
-    //Iterate over each display
-    for (let i = 0; i < externalDisplays.length; i++) {
-      let display = externalDisplays[i];
-      
-    //Check if window is in bounds of this external display
+
+  for( const display of externalDisplays ){
     if( state.x >= display.bounds.x && state.y >= display.bounds.y
         && state.x < (display.bounds.x + display.bounds.width)
-        && state.y < (display.bounds.y + display.bounds.height)){
-          return
-        }
-    }
-  }//if( externalDisplays )
-  
+        && state.y < (display.bounds.y + display.bounds.height) )
+      return;
+  }
+
   //If we made it here, bounds are not valid
-  let primaryDisplayBounds = electron.screen.getPrimaryDisplay().bounds;
-  state.width = 0.85*primaryDisplayBounds.width;
-  state.height = 0.85*primaryDisplayBounds.height;
-  state.x = 0.025*state.width;
-  state.y = 0.025*state.height;
-};
+  const primaryDisplayBounds = primaryDisplay.bounds;
+  state.width = 0.85 * primaryDisplayBounds.width;
+  state.height = 0.85 * primaryDisplayBounds.height;
+  state.x = 0.025 * state.width;
+  state.y = 0.025 * state.height;
+}
 
 //Load single file or an array of files
 function load_file(window, filename){
   if( !filename )
     return;
-      
+
   if( !window.appHasLoadConfirmed || !window.pageHasLoaded ){
 
     appendInitialFileToLoad( filename );
@@ -288,10 +271,13 @@ function load_file(window, filename){
     return;
   }
 
-  var msg = "openfile=" + JSON.stringify(filename);
-  console.log( "" + (typeof filename)+ "To IPC Sending: " +  msg );
+  // The native side expects a JSON array of file paths; normalize a single
+  // string to a one-element array so JSON.stringify produces the right shape.
+  const files_array = Array.isArray(filename) ? filename : [filename];
+  const files_json = JSON.stringify(files_array);
+  console.log( "To IPC Sending: openfile=" + files_json );
 
-  interspec.openFile( window.appSessionToken, JSON.stringify(filename) );
+  interspec.openFile( window.appSessionToken, files_json );
 }
 
 
@@ -334,12 +320,6 @@ if( process.platform == 'darwin' ) {
   }
 }
 
-app.on('open-url', function (event,url) {
-   event.preventDefault()
-   //...
-})
-
-
 /**
  * @returns Returns object with options from; default options overriden first
  * by what is specified in data/desktop_app_settings.json, then 
@@ -377,7 +357,7 @@ function get_interspec_options(){
       if( config.hasOwnProperty('RestorePreviousSession') ){
         if( typeof config.RestorePreviousSession !== "boolean" )
           throw new Error("RestorePreviousSession must be boolean");
-        settings.restoreSession = !config.RestorePreviousSession;
+        settings.restoreSession = config.RestorePreviousSession;
       }
 
       if( config.hasOwnProperty('AllowTokenFreeSessions') ){
@@ -417,7 +397,7 @@ function get_interspec_options(){
 };//function get_interspec_options()
 
 const userdata = app.getPath('userData');
-var guiOtionsPath = path.join(userdata, "init.json");
+var guiOptionsPath = path.join(userdata, "init.json");
 let allowRestorePath = path.join(userdata, "do_restore");
 const app_options = get_interspec_options();
 
@@ -445,7 +425,7 @@ function createWindow() {
   let guiConfig = {};
   try 
   {
-    guiConfig = JSON.parse(fs.readFileSync(guiOtionsPath, 'utf8'));
+    guiConfig = JSON.parse(fs.readFileSync(guiOptionsPath, 'utf8'));
   }catch(e) 
   {
   }
@@ -472,7 +452,7 @@ function createWindow() {
   //To get nodeIntegration to work, there is som JS hacks in
   //  InterSpecApp::setupDomEnvironment()
   windowPrefs.frame = (process.platform == 'darwin');
-  windowPrefs.webPreferences = { nodeIntegration: false, contextIsolation: true, nativeWindowOpen: true, spellcheck: false };
+  windowPrefs.webPreferences = { nodeIntegration: false, contextIsolation: true, spellcheck: false };
 
   // Create the new window
   let newWindow = new BrowserWindow( windowPrefs );
@@ -486,13 +466,9 @@ function createWindow() {
   // Set an indicator if the InterSpec app has loaded, as messaged to us through out C++ code
   newWindow.appHasLoadConfirmed = false;
   
-  // Add new window to the end (i.e., the most recently used) openWindows array
-  openWindows.push( newWindow );
-
-  console.log( 'Adding window ' + newWindow.windowNumber + ' to active windows.' );
-
+  // Only restore the previous session for the very first window of the app launch.
   let allowRestore = false;
-  if( !openWindows.length )
+  if( openWindows.length === 0 )
   {
     try
     {
@@ -501,18 +477,23 @@ function createWindow() {
         allowRestore = true;
         fs.unlinkSync( allowRestorePath );
       }
-    }catch(e) 
+    }catch(e)
     {
       console.error( 'Exception checking on/deleting allow reload path ("' + allowRestorePath + '"): ' + e );
     }
   }//if( no other windows are open )
+
+  // Add new window to the end (i.e., the most recently used) openWindows array
+  openWindows.push( newWindow );
+
+  console.log( 'Adding window ' + newWindow.windowNumber + ' to active windows.' );
   
   
-  let hasSetInialUrl = false;
+  let hasSetInitialUrl = false;
   
   let setInitialUrl = function(){
     
-    hasSetInialUrl = true;
+    hasSetInitialUrl = true;
     
     if( interspec_url ) {
       const session_token_buf = crypto.randomBytes(16);
@@ -575,6 +556,8 @@ function createWindow() {
   
   let ses = newWindow.webContents.session;
   ses.setProxy( proxy_options ).then( function(){
+    if( hasSetInitialUrl )
+      return;
     console.log('Bypassing proxy for local');
     setInitialUrl();
   } );
@@ -582,7 +565,7 @@ function createWindow() {
   
   //JIC setProxy(...) doesnt call the callback or something... probably not actually needed.
   setTimeout( function() {
-    if( !hasSetInialUrl ){
+    if( !hasSetInitialUrl ){
       console.log('ses.setProxy Took longer than 500ms.');
       setInitialUrl();
     }
@@ -606,7 +589,7 @@ function createWindow() {
     //Could tell InterSpec to save user place...
     
     console.log( "Writing config: " + JSON.stringify(guiConfig) );
-    fs.writeFileSync(guiOtionsPath, JSON.stringify(guiConfig));
+    fs.writeFileSync(guiOptionsPath, JSON.stringify(guiConfig));
 
     // Dereference the window object
     console.log( 'Removing window ' + newWindow.windowNumber + ' from active windows.' );
@@ -804,12 +787,8 @@ function createWindow() {
     console.log( "Unhandled did-fail-load event!" );
   })
  
-  newWindow.webContents.on('did-get-redirect-request', function(event,oldURL,newURL,isMainFrame,httpResponseCode,requestMethod,referrer,headers){
-    console.log( 'did-get-redirect-request from ' + oldURL + ' to ' + newURL );
-  });
-
-  newWindow.webContents.on('crashed', function(event,killed){
-    console.log('renderer process ' + (killed ? 'killed' : 'crashed') );
+  newWindow.webContents.on('render-process-gone', function(event, details){
+    console.log('renderer process gone: reason=' + details.reason + ', exitCode=' + details.exitCode);
   });
   
   

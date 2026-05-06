@@ -198,6 +198,17 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource )
                                 Wt::ContentLoading::Eager );
   }
 
+#if( USE_REL_ACT_TOOL )
+  {
+    auto iso_owner = std::make_unique<BatchGuiIsotopicsByNuclidesWidget>();
+    m_iso_from_nucs_opts = iso_owner.get();
+    m_iso_from_nucs_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
+    m_batch_type_menu->addItem( WString::tr( "bgw-iso-from-nucs-opts-label" ),
+                                std::move( iso_owner ),
+                                Wt::ContentLoading::Eager );
+  }
+#endif
+
   {
     auto file_convert_owner = std::make_unique<FileConvertOpts>();
     m_file_convert_opts = file_convert_owner.get();
