@@ -450,7 +450,21 @@ Result run_on_file( const std::string &exemplar_filename,
           background_sample_numbers = options.background_subtract_samples;
         }else
         {
-          const int n = find_single_sample( source, SpecUtils::SourceType::Background );
+          // When the user supplies a separate spectrum file as the background,
+          // detector operators typically save it as a regular foreground/unknown
+          // measurement (most file formats don't carry a "Background" source-type
+          // tag at all).  Only when foreground and background share the same file,
+          // or when the source is the exemplar (which carries an explicitly tagged
+          // Background record alongside its foreground), should we look for a
+          // Background-tagged record.  find_single_sample's existing fallback
+          // covers single-sample files regardless of tag.  Mirrors the call-site
+          // logic in BatchActivity.
+          const bool prefer_background_tag = (source == specfile)
+                                             || (source == cached_exemplar);
+          const SpecUtils::SourceType wanted = prefer_background_tag
+                                                ? SpecUtils::SourceType::Background
+                                                : SpecUtils::SourceType::Foreground;
+          const int n = find_single_sample( source, wanted );
           background_sample_numbers.insert( n );
         }
         background = extract_measurement( source, background_sample_numbers );
