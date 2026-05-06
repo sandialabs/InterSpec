@@ -1353,9 +1353,17 @@ public:
       if( col == FileDataField::Filename )
       {
         if( role == UserRole )
-          return WString::fromUTF8(fields[col]);
-        else if( role == DisplayRole )
+        {
+          const std::string parentpath = fields[FileDataField::ParentPath];
+          const std::string filepath = fields[FileDataField::Filename];
+          const std::string rel_path = SpecUtils::append_path(parentpath, filepath);
+          const std::string full_path = SpecUtils::append_path(m_base_path, rel_path);
+
+          return WString::fromUTF8(full_path);
+        }else if( role == DisplayRole )
+        {
           return WString::fromUTF8(SpecUtils::filename(fields[col]));
+        }
       }
       return boost::any();
     }
