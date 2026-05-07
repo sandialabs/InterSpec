@@ -1018,7 +1018,9 @@ void SpecFileInfoToQuery::reset()
 }//void SpecFileInfoToQuery::reset()
 
 
-void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const Farm::FarmOptions &farm_options, MaterialDB *materialDB )
+void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, 
+                                               const Farm::FarmOptions &farm_options, 
+                                               MaterialDB *materialDB )
 {
   reset();
   
@@ -1811,7 +1813,7 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
       fram_back->remove_measurements( fram_back->measurements() );
       fram_back->add_measurement( farm_background, true );
     }
-    const Farm::EnrichmentResults fram_result = Farm::run_fram_isotopics(
+    const FRAMResults fram_result = Farm::run_fram_isotopics(
                                                 farm_options.fram_exe_path, 
                                                 farm_options.fram_output_path,
                                                 farm_options.fram_v6,
@@ -1820,11 +1822,15 @@ void SpecFileInfoToQuery::fill_info_from_file( const std::string filepath, const
                                                 fram_back, 
                                                 do_u_enrich, 
                                                 do_pu_enrich );
-    isotopics_json.push_back( fram_result.toJson() );
+    json j = fram_result; //ADL automaticlly does conversion
+    isotopics_json.push_back( j );
+    //isotopics_result_json = j.dump();
   }
   
   if( !isotopics_json.empty() )
+  {
     isotopics_result_json = isotopics_json.dump();
+  }
 
   // ============= FARM: Write Fertilized N42 =============
   if( farm_options.enable_farm_analysis && farm_options.write_fertilized_n42 && farm_foreground )

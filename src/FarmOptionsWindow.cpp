@@ -387,7 +387,7 @@ std::optional<std::filesystem::path> FarmOptionsWindow::findLatestFramExe(int re
   const char* pf86 = std::getenv("ProgramFiles(x86)");
   if (!pf86) 
   {
-      return std::nullopt;
+    return std::nullopt;
   }
   std::filesystem::path root = pf86;
   std::regex framRegex(R"(^FRAM(\d)(\d+)$)", std::regex::icase);
@@ -440,7 +440,7 @@ std::optional<std::filesystem::path> FarmOptionsWindow::findLatestFramOutputDir(
     int minor = std::stoi(match[2].str());
     if (major != requestedMajor) 
     {
-        continue;
+      continue;
     }
     if (minor > bestMinor) 
     {

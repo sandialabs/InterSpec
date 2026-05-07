@@ -41,6 +41,8 @@
 
 #include "InterSpec/FarmOptions.h"
 
+#include "FramResults.h"
+
 class MaterialDB;
 
 

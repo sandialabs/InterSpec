@@ -2,10 +2,12 @@
 #define FarmAnalysis_h
 
 #include "InterSpec_config.h"
+#include "FramResults.h"
 
 #include <string>
 #include <memory>
 #include <vector>
+#include <filesystem>
 
 // Forward declarations
 class PeakDef;
@@ -97,7 +99,7 @@ EnrichmentResults run_relact_isotopics(
  @param is_uranium true for uranium, false for plutonium
  @returns EnrichmentResults struct (check warnings for errors)
  */
-EnrichmentResults run_fram_isotopics(
+FRAMResults run_fram_isotopics(
     const std::string &fram_exe_path,
     const std::string &fram_output_path,
     const bool use_v6,
@@ -127,6 +129,11 @@ void write_fertilized_n42(
     const std::string &original_file_path,
     const SpecUtils::SpecFile &meas,
     const SpecFileInfoToQuery &info );
+
+/**
+ * Parse FRAM JSON results file into custom struct
+ **/
+FRAMResults parse_FRAM_json(std::filesystem::path a_filePath);
 
 } // namespace Farm
 

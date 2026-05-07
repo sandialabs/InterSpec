@@ -1042,35 +1042,90 @@ namespace
         }
 
         case FileDataField::RelActUIsotopics:
-        case FileDataField::RelActPuIsotopics:
-        case FileDataField::FramUIsotopics:
-        case FileDataField::FramPuIsotopics:
         {
-          row[f] = "Test Pu";
+          row[f] = "Test RelAct U";
+          break;
+        }
+
+        case FileDataField::RelActPuIsotopics:
+        {
+          row[f] = "Test RelAct Pu";
+          break;
+        }
+
+        case FileDataField::FramUIsotopics:
+        {
           if( !meas.isotopics_result_json.empty() )
           {
             try
             {
-              const bool is_relact = (f == FileDataField::RelActUIsotopics
-                                      || f == FileDataField::RelActPuIsotopics);
-              const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
-              const std::string target = (f == FileDataField::RelActUIsotopics
-                                          || f == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
-
+              //const bool is_relact = (f == FileDataField::RelActUIsotopics || 
+              //                        f == FileDataField::RelActPuIsotopics);
+              //const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
+              //const std::string target = (f == FileDataField::RelActUIsotopics || 
+              //                            f == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
               const nlohmann::json results = nlohmann::json::parse( meas.isotopics_result_json );
               for( const nlohmann::json &res : results )
               {
-                if( res.value( "analysis_program", std::string() ) != prog )
-                  continue;
-                if( !res.contains( "nuclide_results" ) )
-                  continue;
-
-                for( const nlohmann::json &nuc : res["nuclide_results"] )
+                //if( res.value( "m_analysis_program", std::string() ) != prog )
+                //{
+                //  std::cout << "m_analysis_program continue" <<std::endl;
+                //  continue;
+                //}
+                if( !res.contains( "Isotopics" ) )
                 {
-                  if( nuc.value( "nuclide", std::string() ) != target )
+                  continue;
+                }
+                for( const nlohmann::json &nuc : res["Isotopics"] )
+                {
+                  if( nuc.value( "nuclide", std::string() ) != "U235" ) 
+                  {
                     continue;
+                  }
                   char buff[64];
-                  snprintf( buff, sizeof(buff), "%.4g%%", 100.0 * nuc.value( "mass_fraction", 0.0 ) );
+                  snprintf( buff, sizeof(buff), "%.4g%%", nuc.value( "mass_percent", 0.0 ) );
+                  row[f] = buff;
+                  break;
+                }
+                break;  // Use first matching program entry
+              }
+            }
+            catch( ... ) {}
+          }
+          break;
+        }
+
+        case FileDataField::FramPuIsotopics:
+        {
+          if( !meas.isotopics_result_json.empty() )
+          {
+            try
+            {
+              //const bool is_relact = (f == FileDataField::RelActUIsotopics || 
+              //                        f == FileDataField::RelActPuIsotopics);
+              //const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
+              //const std::string target = (f == FileDataField::RelActUIsotopics || 
+              //                            f == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
+              const nlohmann::json results = nlohmann::json::parse( meas.isotopics_result_json );
+              for( const nlohmann::json &res : results )
+              {
+                //if( res.value( "m_analysis_program", std::string() ) != prog )
+                //{
+                //  std::cout << "m_analysis_program continue" <<std::endl;
+                //  continue;
+                //}
+                if( !res.contains( "Isotopics" ) )
+                {
+                  continue;
+                }
+                for( const nlohmann::json &nuc : res["Isotopics"] )
+                {
+                  if( nuc.value( "nuclide", std::string() ) != "Pu240" ) 
+                  {
+                    continue;
+                  }
+                  char buff[64];
+                  snprintf( buff, sizeof(buff), "%.4g%%", nuc.value( "mass_percent", 0.0 ) );
                   row[f] = buff;
                   break;
                 }
@@ -1652,8 +1707,8 @@ public:
       case FileDataField::GadrasChi2:                 return WString("GADRAS Chi2");
       case FileDataField::RelActUIsotopics:           return WString("RelAct U Isotopics");
       case FileDataField::RelActPuIsotopics:          return WString("RelAct Pu Isotopics");
-      case FileDataField::FramUIsotopics:             return WString("FRAM U Isotopics");
-      case FileDataField::FramPuIsotopics:            return WString("FRAM Pu Isotopics");
+      case FileDataField::FramUIsotopics:             return WString("FRAM U235 %");
+      case FileDataField::FramPuIsotopics:            return WString("FRAM Pu240 %");
       case FileDataField::SpectrumMean:               return WString("Spectrum Mean (keV)");
       case FileDataField::SpectrumVariance:           return WString("Spectrum Variance");
       case FileDataField::SpectrumStandardDeviation: return WString("Spectrum Std Dev");

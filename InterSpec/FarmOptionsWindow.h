@@ -114,7 +114,7 @@ private:
    * Search the Program Files (x86) directory and return path to latest
    * release of requested major version.
    * e.g. User has 6.1, 7.1, and 7.2 installed
-   * User selects v7 check box
+   * User selects v7 radio button
    * Will return path to 7.2 executable
    **/
   std::optional<std::filesystem::path> findLatestFramExe(int requestedMajor);

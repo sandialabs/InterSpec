@@ -452,7 +452,7 @@ EnrichmentResults run_relact_isotopics(
 }//run_relact_isotopics(...)
 
 
-EnrichmentResults run_fram_isotopics(
+FRAMResults run_fram_isotopics(
     const std::string &fram_exe_path,
     const std::string &fram_output_path,
     const bool use_v6,
@@ -462,44 +462,46 @@ EnrichmentResults run_fram_isotopics(
     const bool is_uranium,
     const bool is_plutonium )
 {
-  EnrichmentResults result;
-  result.analysis_program = "FRAM";
-  result.analysis_time = std::time( nullptr );
+  //Each time FRAM runs it writes results to AnalysisResults.json
+  //With multithreading, we get race collsions where multiple threads
+  //are trying to read and write to this same file. 
+  //Fix is to lock with mutex 
+  static std::mutex s_fram_mutex;
+  std::lock_guard<std::mutex> lock(s_fram_mutex);
 
-  // TODO: Implement FRAM executable calling
-  // The user will fill in the details of the call and output parsing
-  // Placeholder structure:
+  FRAMResults result;
+  //result.analysis_program = "FRAM";
+  //result.analysis_time = std::time( nullptr );
 
   if( fram_exe_path.empty() )
   {
-    result.warnings.push_back( "FRAM executable path not specified" );
-    std::cout << "FRAM executable path not specified" << std::endl;
+    //result.warnings.push_back( "FRAM executable path not specified" );
+    std::cerr << "FRAM executable path not specified" << std::endl;
     return result;
   }
 
   if( !SpecUtils::is_file( fram_exe_path ) )
   {
-    result.warnings.push_back( "FRAM executable not found: " + fram_exe_path );
-    std::cout << "FRAM executable not found: " << std::endl;
+    //result.warnings.push_back( "FRAM executable not found: " + fram_exe_path );
+    std::cerr << "FRAM executable not found: " << std::endl;
     return result;
   }
 
   assert( foreground && (foreground->num_measurements() == 1) );
   if( !foreground || (foreground->num_measurements() != 1) )
   {
-    result.warnings.push_back( "FRAM computation input not expected number of records." );
-    std::cout << "FRAM computation input not expected number of records." << std::endl;
+    //result.warnings.push_back( "FRAM computation input not expected number of records." );
+    std::cerr << "FRAM computation input not expected number of records." << std::endl;
     return result;
   }
 
   assert( !background || (background->num_measurements() == 1) );
   if( background && (background->num_measurements() != 1) )
   {
-    result.warnings.push_back( "FRAM computation input background not expected number of records." );
-    std::cout << "FRAM computation input background not expected number of records." << std::endl;
+    //result.warnings.push_back( "FRAM computation input background not expected number of records." );
+    std::cerr << "FRAM computation input background not expected number of records." << std::endl;
     return result;
   }
-
 
   // Write a temp N42 for FRAM input
   const SpecUtils::SaveSpectrumAsType output_format = SpecUtils::SaveSpectrumAsType::SpcBinaryInt;
@@ -511,8 +513,8 @@ EnrichmentResults run_fram_isotopics(
     foreground->write_to_file( fram_fore_tmp, output_format );
   }catch( std::exception &e )
   {
-    result.warnings.push_back( "FRAM computation error: failed to write temporary foreground file: " + string(e.what()) );
-    std::cout << "FRAM computation error: failed to write temporary foreground file: " << std::endl;
+    //result.warnings.push_back( "FRAM computation error: failed to write temporary foreground file: " + string(e.what()) );
+    std::cerr << "FRAM computation error: failed to write temporary foreground file: " << std::endl;
     return result;
   }
 
@@ -527,8 +529,8 @@ EnrichmentResults run_fram_isotopics(
       background->write_to_file( fram_back_tmp, output_format );
     }catch( std::exception &e )
     {
-      result.warnings.push_back( "FRAM computation error: failed to write temporary background file: " + string(e.what()) );
-      std::cout << "FRAM computation error: failed to write temporary background file: " << std::endl;
+      //result.warnings.push_back( "FRAM computation error: failed to write temporary background file: " + string(e.what()) );
+      std::cerr << "FRAM computation error: failed to write temporary background file: " << std::endl;
       return result;
     }
   }//if( background )
@@ -541,8 +543,8 @@ EnrichmentResults run_fram_isotopics(
   const shared_ptr<const SpecUtils::EnergyCalibration> cal = fore_spec->energy_calibration();
   if( !cal || !cal->valid() )
   {
-    result.warnings.push_back( "FRAM computation error: energy calibration is invalid" );
-    std::cout << "FRAM computation error: energy calibration is invalid" << std::endl;
+    //result.warnings.push_back( "FRAM computation error: energy calibration is invalid" );
+    std::cerr << "FRAM computation error: energy calibration is invalid" << std::endl;
     return result;
   }
 
@@ -579,16 +581,13 @@ EnrichmentResults run_fram_isotopics(
   // Energy offset: energy_offset
   // Energy gain: energy_gain
   // Type of isotopics: is_uranium, is_plutonium (both may be true)
-
-  result.warnings.push_back( "FRAM integration not yet implemented - user to fill in details" );
-
-  // To execute the FRAM exe, a rough sketch is:
   
   std::vector<std::string> arguments;
   //input spectrum file
   arguments.push_back("/i");
   arguments.push_back(fram_fore_tmp);
-  //parameter set xxxmake work fo 5.1 amd 6.1xxx
+  //parameter set 
+  //xxxmake work fo 7.1 amd 6.1xxx
   arguments.push_back("/p");
   if(is_plutonium  && !is_uranium)
   {
@@ -604,7 +603,7 @@ EnrichmentResults run_fram_isotopics(
   }
   else
   {
-    arguments.push_back("HPGe_Pu_120-420");
+    arguments.push_back("HPGe_ULEU_120-1010");
   }
   //energy calibration
   arguments.push_back("/g");
@@ -618,45 +617,48 @@ EnrichmentResults run_fram_isotopics(
   //  arguments.push_back( "--background='" + fram_back_tmp + "'" );
   // //...
 
-   namespace bp = boost::process;
+  namespace bp = boost::process;
 
-   const boost::filesystem::path exe_parent = boost::filesystem::path(fram_exe_path).parent_path();
-   bp::ipstream proc_stdout, proc_stderr;
+  const boost::filesystem::path exe_parent = boost::filesystem::path(fram_exe_path).parent_path();
+  bp::ipstream proc_stdout, proc_stderr;
 
 #ifdef _WIN32
-   bp::child c( fram_exe_path, 
-                bp::args(arguments), bp::start_dir(exe_parent),
-                bp::std_out > proc_stdout, bp::std_err > proc_stderr,
-                bp::windows::create_no_window );
+  bp::child c( fram_exe_path, 
+               bp::args(arguments), bp::start_dir(exe_parent),
+               bp::std_out > proc_stdout, bp::std_err > proc_stderr,
+               bp::windows::create_no_window );
 #else
-   bp::child c( fram_exe_path, bp::args(arguments), bp::start_dir(exe_parent),
+  bp::child c( fram_exe_path, bp::args(arguments), bp::start_dir(exe_parent),
                 bp::std_out > proc_stdout, bp::std_err > proc_stderr );
 #endif
 
-   c.wait();
+  c.wait();
 
-   std::string output( std::istreambuf_iterator<char>(proc_stdout), {} );
-   std::string error( std::istreambuf_iterator<char>(proc_stderr), {} );
+  std::string output( std::istreambuf_iterator<char>(proc_stdout), {} );
+  std::string error( std::istreambuf_iterator<char>(proc_stderr), {} );
 
-   const int result_code = c.exit_code();
+  const int result_code = c.exit_code();
 
-   //if( (result_code != EXIT_SUCCESS) && (!error.empty() || output.empty()) )
-   //{
-   //  nlohmann::json err_json;
-   //  err_json["error"] = error.empty() ? "FRAM returned non-zero exit code" : error;
-   //  err_json["exit_code"] = result_code;
-   //  return err_json.dump();
-   //}
+  if( (result_code != EXIT_SUCCESS) && (!error.empty() || output.empty()) )
+  {
+    nlohmann::json err_json;
+    err_json["error"] = error.empty() ? "FRAM returned non-zero exit code" : error;
+    err_json["exit_code"] = result_code;
+    return result;//blank
+  }
 
-   // TODO: Populate result.nuclide_results from parsed output
-  // result = ...
-
-
-
-  //Note: NuclideResult::nuclide should be in format "U235", "Pu239", etc, for consistent search results
+  //std::string framJsonPathStr = fram_output_path + "\\AnalysisResults.json";
+  //std::filesystem::path framJsonPath(framJsonPathStr);
+  //find and convert the AnalysisResults.json into a FRAMResults object
+  std::filesystem::path framJsonPath = std::filesystem::path(fram_output_path) / "AnalysisResults.json";
+  result = parse_FRAM_json(framJsonPath);
+  result.m_FRAMHeader.m_analysis_program = "FRAM";
 
   // Clean up temp file
   assert( SpecUtils::is_file( fram_fore_tmp ) );
+  if( !fram_fore_tmp.empty() )
+  SpecUtils::remove_file( fram_fore_tmp );
+  assert( SpecUtils::is_file( fram_back_tmp ) );
   if( !fram_back_tmp.empty() )
     SpecUtils::remove_file( fram_back_tmp );
 
@@ -864,4 +866,52 @@ void write_fertilized_n42(
     output_meas.write_2012_N42( out );
 }//write_fertilized_n42(...)
 
+
+FRAMResults parse_FRAM_json(std::filesystem::path a_filePath)
+{
+  ////make sure the file exists
+  //if (!std::filesystem::exists(a_filePath)) 
+  //{
+  //  std::cout << "ParameterSets.json not found. File created" << std::endl;
+  //  //return false;
+  //}
+  ////Now that the file definitely exists, open it
+  //std::ifstream input_file(a_filePath);
+  //if (!input_file.is_open()) 
+  //{
+  //  std::cout << "Error: Could not open AnalysisResults.json" << std::endl;
+  //  //return false;
+  //}
+  ////implicit else due to return
+  //json data;
+  ////Make sure the json parses
+  //try 
+  //{
+  //  data = json::parse(input_file);
+  //  std::cout << "AnalysisResults.json parsed successfully" << std::endl;
+  //} 
+  //catch (const json::parse_error& e) 
+  //{
+  //  std::cerr << "Failed to parse AnalysisResults.json: " << e.what();
+  //  std::cerr << "Error byte position: " << e.byte << std::endl;
+  //  //return false;
+  //}
+  ////Automatically convert the JSON array into a FRAMResults object
+  ////ADL finds the from_json function
+  //return data.get<FRAMResults>();
+  FRAMResults result;
+
+  if (!std::filesystem::exists(a_filePath))
+    throw std::runtime_error("FRAM AnalysisResults.json does not exist: " + a_filePath.string());
+
+  std::ifstream input_file(a_filePath);
+  if (!input_file.is_open())
+    throw std::runtime_error("Could not open FRAM AnalysisResults.json: " + a_filePath.string());
+
+  nlohmann::json data = nlohmann::json::parse(input_file);
+  return data.get<FRAMResults>();
+}
+
 } // namespace Farm
+
+
