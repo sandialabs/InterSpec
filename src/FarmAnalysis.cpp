@@ -603,15 +603,17 @@ FRAMResults run_fram_isotopics(
   }
   else
   {
-    arguments.push_back("HPGe_ULEU_120-1010");
+    //shouldn't happen due to if( ) before run_fram_isotopics() call 
+    //in SpecFileInfoToQuery::fill_info_from_file()
+    return result;
   }
   //energy calibration
   arguments.push_back("/g");
   arguments.push_back(std::to_string(energy_gain));
+  arguments.push_back(std::to_string(energy_offset));
   //use auto analysis
   arguments.push_back("/a");
   arguments.push_back("1");
-  //arguments.push_back( "--gain=" + std::to_string(energy_gain) );
 
   // if( !fram_back_tmp.empty() )
   //  arguments.push_back( "--background='" + fram_back_tmp + "'" );
@@ -647,8 +649,6 @@ FRAMResults run_fram_isotopics(
     return result;//blank
   }
 
-  //std::string framJsonPathStr = fram_output_path + "\\AnalysisResults.json";
-  //std::filesystem::path framJsonPath(framJsonPathStr);
   //find and convert the AnalysisResults.json into a FRAMResults object
   std::filesystem::path framJsonPath = std::filesystem::path(fram_output_path) / "AnalysisResults.json";
   result = parse_FRAM_json(framJsonPath);
@@ -869,36 +869,6 @@ void write_fertilized_n42(
 
 FRAMResults parse_FRAM_json(std::filesystem::path a_filePath)
 {
-  ////make sure the file exists
-  //if (!std::filesystem::exists(a_filePath)) 
-  //{
-  //  std::cout << "ParameterSets.json not found. File created" << std::endl;
-  //  //return false;
-  //}
-  ////Now that the file definitely exists, open it
-  //std::ifstream input_file(a_filePath);
-  //if (!input_file.is_open()) 
-  //{
-  //  std::cout << "Error: Could not open AnalysisResults.json" << std::endl;
-  //  //return false;
-  //}
-  ////implicit else due to return
-  //json data;
-  ////Make sure the json parses
-  //try 
-  //{
-  //  data = json::parse(input_file);
-  //  std::cout << "AnalysisResults.json parsed successfully" << std::endl;
-  //} 
-  //catch (const json::parse_error& e) 
-  //{
-  //  std::cerr << "Failed to parse AnalysisResults.json: " << e.what();
-  //  std::cerr << "Error byte position: " << e.byte << std::endl;
-  //  //return false;
-  //}
-  ////Automatically convert the JSON array into a FRAMResults object
-  ////ADL finds the from_json function
-  //return data.get<FRAMResults>();
   FRAMResults result;
 
   if (!std::filesystem::exists(a_filePath))

@@ -989,31 +989,67 @@ namespace SpecFileQuery
       case FileDataField::RelActUIsotopics:
       case FileDataField::RelActPuIsotopics:
       case FileDataField::FramUIsotopics:
+      {
+        if( meas.isotopics_result_json.empty() )
+          return false;
+        try
+        {
+          //const bool is_relact = (m_searchField == FileDataField::RelActUIsotopics
+          //                        || m_searchField == FileDataField::RelActPuIsotopics);
+          //const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
+          //const std::string target = (m_searchField == FileDataField::RelActUIsotopics
+          //                            || m_searchField == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
+          const nlohmann::json results = nlohmann::json::parse( meas.isotopics_result_json );
+          for( const nlohmann::json &res : results )
+          {
+            //if( res.value( "analysis_program", std::string() ) != prog )
+            //  continue;
+            if( !res.contains( "Isotopics" ) )
+              continue;
+
+            for( const nlohmann::json &nuc : res["Isotopics"] )
+            {
+              if( nuc.value( "nuclide", std::string() ) != "U235" )
+                continue;
+              const double mass_pct = nuc.value( "mass_percent", 0.0 );
+              switch( m_compareType )
+              {
+                case ValueIsExact:       return (std::fabs( mass_pct - m_numeric ) < 0.001);
+                case ValueIsNotEqual:    return (std::fabs( mass_pct - m_numeric ) >= 0.001);
+                case ValueIsLessThan:    return (mass_pct < m_numeric);
+                case ValueIsGreaterThan: return (mass_pct > m_numeric);
+              }
+            }
+          }
+        }
+        catch( ... ) {}
+        return false;
+      }
+
       case FileDataField::FramPuIsotopics:
       {
         if( meas.isotopics_result_json.empty() )
           return false;
         try
         {
-          const bool is_relact = (m_searchField == FileDataField::RelActUIsotopics
-                                  || m_searchField == FileDataField::RelActPuIsotopics);
-          const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
-          const std::string target = (m_searchField == FileDataField::RelActUIsotopics
-                                      || m_searchField == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
-
+          //const bool is_relact = (m_searchField == FileDataField::RelActUIsotopics
+          //                        || m_searchField == FileDataField::RelActPuIsotopics);
+          //const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
+          //const std::string target = (m_searchField == FileDataField::RelActUIsotopics
+          //                            || m_searchField == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
           const nlohmann::json results = nlohmann::json::parse( meas.isotopics_result_json );
           for( const nlohmann::json &res : results )
           {
-            if( res.value( "analysis_program", std::string() ) != prog )
-              continue;
-            if( !res.contains( "nuclide_results" ) )
+            //if( res.value( "analysis_program", std::string() ) != prog )
+            //  continue;
+            if( !res.contains( "Isotopics" ) )
               continue;
 
-            for( const nlohmann::json &nuc : res["nuclide_results"] )
+            for( const nlohmann::json &nuc : res["Isotopics"] )
             {
-              if( nuc.value( "nuclide", std::string() ) != target )
+              if( nuc.value( "nuclide", std::string() ) != "Pu240" )
                 continue;
-              const double mass_pct = 100.0 * nuc.value( "mass_fraction", 0.0 );
+              const double mass_pct = nuc.value( "mass_percent", 0.0 );
               switch( m_compareType )
               {
                 case ValueIsExact:       return (std::fabs( mass_pct - m_numeric ) < 0.001);
