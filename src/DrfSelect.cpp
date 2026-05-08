@@ -926,7 +926,11 @@ void RelEffFile::handleUserAskedRemove()
 {
   if( m_existingFilePath.empty() )
   {
-    delete this;
+    // The parent container (`m_files` of RelEffDetSelect) owns this widget via
+    //  `addNew<RelEffFile>`; in Wt4 we must not `delete this` or the parent's
+    //  unique_ptr would double-free. `removeFromParent()` returns a unique_ptr
+    //  whose destruction here properly destroys this widget.
+    removeFromParent();
     return;
   }
   
@@ -978,9 +982,11 @@ void RelEffFile::handleUserAskedRemove()
     passMessage( WString::tr("ref-file-removed-toast").arg(SpecUtils::filename(pathToDel)),
                 WarningWidget::WarningMsgInfo );
   } );
-  
-  
-  delete this;
+
+
+  // Same as the empty-path branch above: parent owns us; use removeFromParent
+  //  so the parent's unique_ptr is the one that actually destroys this widget.
+  removeFromParent();
 }//void RelEffFile::handleUserAskedRemove()
 
 void RelEffFile::handleSaveFileForLater()

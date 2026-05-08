@@ -73,7 +73,7 @@ enum AuxWindowProperties
   SetCloseable = 0x20,
   
   /** Enables resize.
-   
+
    Note: currently there is a bug in Wt 3.3.4 that results in the window not
    being allowed to be resized smaller than the initial size, unless minimum
    width is explicitly specified before setting window resizable.
@@ -81,7 +81,18 @@ enum AuxWindowProperties
    the window.
    This can be overridden by you later.
    */
-  EnableResize = 0x40
+  EnableResize = 0x40,
+
+  /** Construct the window in the hidden state.
+
+   Without this flag the AuxWindow constructor calls show() so the dialog appears
+   immediately on construction.  In Wt4, calling hide() after construction does not
+   reliably hide the dialog (the visible state set during construction can survive into
+   the first render).  Use this flag for windows that are created up-front but should
+   only become visible later (e.g. an "Add nuclide" sub-dialog that is opened from a
+   button on its parent).
+   */
+  StartHidden = 0x80
 };//enum AuxWindowProperties
 
 W_DECLARE_OPERATORS_FOR_FLAGS(AuxWindowProperties);
@@ -314,7 +325,14 @@ protected:
   Wt::WGridLayout *m_contentStretcher;
   
   bool m_destructing;
-  
+
+  /** Set to true while a deferred `finished()` emission (queued by `emitReject()`)
+   is pending in the application's event loop. Used to coalesce multiple
+   `setHidden(true)` calls into a single deferred emit. The flag is cleared
+   when the deferred lambda fires.
+   */
+  bool m_pendingReject;
+
   bool m_escapeIsReject;
   Wt::Signals::connection m_escapeConnection1, m_escapeConnection2;
   

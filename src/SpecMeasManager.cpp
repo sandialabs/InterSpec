@@ -4826,11 +4826,16 @@ void SpecMeasManager::startQuickUpload()
 {
   auto window = AuxWindow::make<FileUploadDialog>( m_viewer, this );
   UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
-  
+
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
   {
+    // Capture via observing_ptr so undo is a no-op if the dialog was already closed.
     // We wont use a redo step, because this would be a bit weird to redo.
-    undoRedo->addUndoRedoStep( [window](){ window->hide(); }, nullptr, "Show file upload dialog" );
+    Wt::Core::observing_ptr<FileUploadDialog> obsWin = window;
+    undoRedo->addUndoRedoStep( [obsWin](){
+      if( obsWin )
+        obsWin->hide();
+    }, nullptr, "Show file upload dialog" );
   }
 }//void startQuickUpload( SpecUtils::SpectrumType type )
 
@@ -7224,11 +7229,16 @@ void SpecMeasManager::browsePrevSpectraAndStatesDb()
 {
   // TODO: Make this be the same implementation as SpecMeasManager::showPreviousSpecFileUsesDialog; but to do that, need to make AutosavedSpectrumBrowser be a MVC widget so we dont put like a million elements into the DOM
   DbFileBrowser *browser = AuxWindow::make<DbFileBrowser>( this, m_viewer, nullptr );
-  
+
   UndoRedoManager *undoRedo = m_viewer->undoRedoManager();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
   {
-    undoRedo->addUndoRedoStep( [browser](){ browser->hide(); }, nullptr, "Show browse previous spectra." );
+    // Capture via observing_ptr so undo is a no-op if the browser was already closed.
+    Wt::Core::observing_ptr<DbFileBrowser> obsBrowser = browser;
+    undoRedo->addUndoRedoStep( [obsBrowser](){
+      if( obsBrowser )
+        obsBrowser->hide();
+    }, nullptr, "Show browse previous spectra." );
   }//if( add undo )
 }//void browsePrevSpectraAndStatesDb()
 

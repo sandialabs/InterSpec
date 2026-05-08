@@ -305,6 +305,13 @@ void DecaySelectNuclide::init()
   m_elementSelection->setSelectionMode( Wt::SelectionMode::Single );
   m_massSelection->setNoSelectionEnabled( true );
   m_elementSelection->setNoSelectionEnabled( true );
+
+  // Wt4's WGridLayout (used below) sizes columns by absolute positioning derived from the
+  // dialog's auto-size width.  Without an explicit minimum, the element list ends up only wide
+  // enough for "hydrog" / "potassi" rather than the full element name.  Set min-widths so the
+  // grid layout reserves enough room for full element names and 4-digit mass numbers.
+  m_elementSelection->setMinimumSize( WLength(95, WLength::Unit::Pixel), WLength::Auto );
+  m_massSelection->setMinimumSize( WLength(60, WLength::Unit::Pixel), WLength::Auto );
   
   
   m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("Add") );

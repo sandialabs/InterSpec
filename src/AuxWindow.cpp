@@ -35,8 +35,10 @@
 #include <Wt/WJavaScript.h>
 #include <Wt/WEnvironment.h>
 #include <Wt/WApplication.h>
+#include <Wt/WServer.h>
 #include <Wt/WStringStream.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
@@ -483,6 +485,7 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   m_expandedSignal(),
   m_contentStretcher(NULL),
   m_destructing(false),
+  m_pendingReject(false),
   m_escapeIsReject(false),
   m_isPhone(false),
   m_isTablet(false),
@@ -719,7 +722,26 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
     centerWindowHeavyHanded();
   }
 
-  show();
+  if( properties.test(AuxWindowProperties::StartHidden) )
+  {
+    // Caller wants the dialog to be invisible until they explicitly call show().
+    // In Wt4, setHidden(true) here does not reliably suppress the first paint — the rendered
+    // DOM ends up with visibility:visible.  Force-hide via a one-shot JS snippet.  Use only
+    // visibility (not display:none) so child layouts still get measured for first render;
+    // otherwise inner WGridLayout-positioned widgets end up with no width when shown later.
+    WDialog::setHidden( true, WAnimation() );
+    m_auxIsHidden = true;
+    // Run after the dialog's own DOM element has been appended (it doesn't exist when this
+    // doJavaScript fires synchronously during construction).  setTimeout(..,0) defers to the
+    // next macrotask, which is past the initial render append.
+    doJavaScript( "setTimeout(function(){"
+                    "var el=document.getElementById('" + id() + "');"
+                    "if(el) el.style.visibility='hidden';"
+                  "},0);" );
+  }else
+  {
+    show();
+  }
 
 #if( AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE )
   doJavaScript("Wt.WT.AuxWindowOnDomResize();");
@@ -845,7 +867,36 @@ AuxWindow::~AuxWindow()
 
 void AuxWindow::emitReject()
 {
-  finished().emit( Wt::DialogCode::Rejected );
+  // Defer the finished() emission to the next event loop iteration. Wt3 emitted
+  //  this signal synchronously from setHidden(true), which was safe because Wt3
+  //  dialog teardown deferred deletion. Wt4's `finished()` -> `deleteAuxWindow` ->
+  //  `removeChild` chain destroys the AuxWindow synchronously, so emitting from
+  //  inside our own setHidden() stack frame leaves the unwind running through a
+  //  destroyed AuxWindow (Issue 17 use-after-free family). Deferring lets the
+  //  setHidden() frame return before any handler runs.
+  if( m_destructing || m_pendingReject )
+    return;
+  m_pendingReject = true;
+
+  WApplication * const app = wApp;
+  if( !app )
+    return;
+  const string sessionId = app->sessionId();
+  Wt::Core::observing_ptr<AuxWindow> obsThis = this;
+  WServer::instance()->post( sessionId, [obsThis, sessionId](){
+    if( !obsThis )
+      return;  // dialog already destroyed (e.g. via deleteAuxWindow before we fired)
+    WApplication * const a = WApplication::instance();
+    if( !a || (a->sessionId() != sessionId) )
+      return;
+    obsThis->m_pendingReject = false;
+    if( obsThis->m_destructing )
+      return;  // a deleteAuxWindow path raced ahead; nothing to emit
+    if( !obsThis->isHidden() )
+      return;  // dialog was re-shown before our deferred emit; suppress stale reject
+    obsThis->finished().emit( Wt::DialogCode::Rejected );
+    a->triggerUpdate();
+  });
 }
 
 bool AuxWindow::isPhone() const
@@ -1131,6 +1182,10 @@ void AuxWindow::show()
     //Check original modal value, as modal doesn't work well with hide/show
     if( m_modalOrig )
       WDialog::setModal( true );
+    // If the window was constructed with StartHidden, the initial-render JS snippet forced
+    // visibility:hidden on the DOM element.  Undo that here so the next paint shows the dialog.
+    doJavaScript( "(function(){var el=document.getElementById('" + id() + "');"
+                    "if(el){el.style.visibility='';}})();" );
     setHidden( false, WAnimation() );
 }//void show()
 

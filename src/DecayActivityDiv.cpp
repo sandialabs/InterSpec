@@ -1755,7 +1755,9 @@ void DecayActivityDiv::init()
   m_createNewNuclideButton         = new WPushButton( WString::tr("dad-add-nucs") );
   m_clearNuclidesButton            = new WPushButton( WString::tr(isPhone ? "Clear" : "dad-remove-all")  );
   m_nuclideSelectDialog            = AuxWindow::make( WString::tr("dad-sel-nuc-window-title"),
-                                    (AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
+                                    (AuxWindowProperties::TabletNotFullScreen
+                                     | AuxWindowProperties::DisableCollapse
+                                     | AuxWindowProperties::StartHidden) );
   
   m_nuclideSelect                  = new DecaySelectNuclide( isPhone, m_nuclideSelectDialog.get() );
   m_decayLegend                    = new WContainerWidget();
@@ -1804,15 +1806,18 @@ void DecayActivityDiv::init()
     m_nuclideSelectDialog->setMaximumSize( WLength::Auto, 0.9*m_viewer->renderedHeight() );
   
   m_nuclideSelectDialog->rejectWhenEscapePressed();
-  m_createNewNuclideButton->clicked().connect( this, [this](){ m_nuclideSelectDialog->show(); } );
+  m_createNewNuclideButton->clicked().connect( this, [this](){
+    m_nuclideSelectDialog->show();
+    m_nuclideSelectDialog->centerWindow();
+  } );
   m_createNewNuclideButton->clicked().connect( m_nuclideSelect,
                                    &DecaySelectNuclide::setNuclideSearchToFocus );
-  
+
   m_nuclideSelect->done().connect( m_nuclideSelectDialog.get(), &AuxWindow::hide );
   m_nuclideSelectDialog->finished().connect( this, &DecayActivityDiv::nuclideSelectDialogDone );
-  m_nuclideSelectDialog->centerWindow();
-  
-  m_nuclideSelectDialog->hide();
+  // Dialog starts hidden via AuxWindowProperties::StartHidden — no explicit hide() here.
+  // centerWindow() is called from the show() handler above (centerWindow only works once
+  // the dialog is visible).
   
   m_nuclideSelect->selected().connect( this, [this]( const NuclideSelectedInfo &info ){ addTheNuclide( info ); } );
   m_clearNuclidesButton->clicked().connect( this, &DecayActivityDiv::clearAllNuclides );

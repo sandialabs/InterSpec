@@ -14,11 +14,23 @@
 {
   /* line-height: 20px; */
   padding: 20px 20px 6px;
-   
+
   text-align: center;
   font-weight: 700;
   font-size: x-large;
   user-select: none;
+}
+
+/* Wt4's default theme applies a dark-grey background and white text to .Wt-dialog .titlebar
+   (see Wt's wt.css).  SimpleDialog wants a plain white-background heading, so override it.
+   The C++ also tries to removeStyleClass("titlebar") but Wt's theme re-adds it on render,
+   so the CSS override is the reliable fix.  Selector includes .Wt-dialog to outrank Wt's
+   own rule on specificity. */
+.Wt-dialog.simple-dialog .titlebar
+{
+  background: transparent;
+  color: inherit;
+  padding: 0;
 }
 
 /* The parent of .title, .body and .footer can be selected as below.

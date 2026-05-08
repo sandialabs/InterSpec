@@ -1071,7 +1071,7 @@ public:
       m_devPairs->setHeight( 100 );
     }
     
-    m_devPairs->changed().connect( [tool = m_tool, calDisp = this]( int a1 ){
+    m_devPairs->changed().connect( this, [tool = m_tool, calDisp = this]( int a1 ){
       tool->userChangedDeviationPair( calDisp, a1 );
     } );
   }//CalDisplay( constructor )
@@ -1339,7 +1339,7 @@ public:
                than everything can keep up, and just generally poor working), so for now I have
                disabled these spinners via #NativeFloatSpinBox::setSpinnerHidden()
        */
-      disp->m_value->valueChanged().connect( [tool = m_tool, coefnum, calDisp = this]( double ){
+      disp->m_value->valueChanged().connect( this, [tool = m_tool, coefnum, calDisp = this]( double ){
         tool->userChangedCoefficient( coefnum, calDisp );
       } );
     }

@@ -357,18 +357,28 @@ button.Wt-btn.LightButton, .btn-group.LightButton
   display: none;
 }
 
-.modal-footer 
+/* Selector specificity (0,3,0) is needed to beat Wt4's default theme rule
+ * `.Wt-dialog .footer { padding: 4px 6px 4px }`, which applies because Wt4
+ * re-adds the "footer" class to the dialog footer even after AuxWindow sets
+ * the class to just "modal-footer", and Wt's stylesheet is loaded after
+ * InterSpec.css so equal-specificity rules in the Wt theme would win on
+ * source order.  In Wt4 the WDialog's WVBoxLayout also inlines
+ * `height: auto; flex: 1 1 auto;` on the footer, so we use min-height (with
+ * box-sizing: border-box so padding fits inside 45px) to keep the footer the
+ * same height as in Wt3.
+ */
+.AuxWindow.Wt-dialog .modal-footer
 {
   padding-top: 13px;
   padding-left: 10px;
   padding-right: 10px;
-  
+
   margin-bottom: 5px;
   text-align: right;
   white-space:nowrap;
-  /* height: 50px; */
-/*  border: 2px solid green;*/
-/*  background-color: #f5f5f5; */
+  height: 45px;
+  min-height: 45px;
+  box-sizing: border-box;
   border-top: 1px solid #ddd;
   -webkit-border-radius: 0 0 0px 0px;
      -moz-border-radius: 0 0 0px 0px;
@@ -829,16 +839,35 @@ width: 16px;
 height: 16px;
 }
 
+/* In Wt3 the WDialog children are absolutely positioned, so an explicit height
+ * works; in Wt4 the WDialog wraps its title/body/footer in a WVBoxLayout
+ * (flexbox) that inlines `height: auto; flex: 1 1 auto` on the titlebar,
+ * overriding `height`.  Use min-height so the title bar is at least 25px in
+ * either layout.
+ */
 .titlebar
 {
 width:auto;
 padding: 0px;
 height: 25px;
+min-height: 25px;
 }
 
 .titlebar:hover
 {
 background-color: #909090;
+}
+
+/* Wt4's default theme adds `.Wt-hrh2 { background-color: #CCC }` (the horizontal
+ * row-resize handle between the chart and the tool tabs) which Wt3's theme did
+ * not have, making the splitter much more visually prominent than in Wt3.
+ * Restore the Wt3 look by making it transparent so only the centered
+ * splitter-v.png glyph is visible.  Hover still highlights via the theme's
+ * `.Wt-hrh2:hover { background-color: #EEE }` rule.
+ */
+.Wt-hrh2
+{
+  background-color: transparent;
 }
 
 

@@ -6449,8 +6449,14 @@ void ShieldingSourceDisplay::closeCalcLogWindow()
   if( !m_logDiv )
     return;
 
-  // Delete the InjaLogDialog (it's a SimpleDialog, which is a WDialog subclass)
-  delete m_logDiv;
+  // SimpleDialog::make() gave ownership to WApplication and connected
+  //  finished() -> startDeleteSelf() (which posts a deferred removeChild).
+  //  We must NOT delete here: when closeCalcLogWindow() runs as a finished()
+  //  handler, startDeleteSelf has already been queued, and a synchronous
+  //  delete would double-free. Just clear our observer pointer; the deferred
+  //  removeChild will destroy the dialog. If we ever need to close the log
+  //  programmatically, call m_logDiv->done(...) instead and let the same
+  //  finished() chain handle teardown.
   m_logDiv = nullptr;
 
   UndoRedoManager *undoRedo = UndoRedoManager::instance();

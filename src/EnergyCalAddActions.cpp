@@ -191,40 +191,43 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
   if( interspec )
     interspec->useMessageResourceBundle( "EnergyCalAddActions" );
   
+  // In Wt4, AuxWindow::stretcher() uses a WGridLayout with absolute-positioned children and
+  // overflow:hidden on the container, which prevents the dialog from auto-sizing to its content
+  // (the dialog ends up sized to its title-bar width and content gets clipped).  These dialogs
+  // are simple block-flow content, so we use contents() directly so the dialog auto-sizes to its
+  // natural content width.
   switch( m_actionType )
   {
     case MoreActionsIndex::Linearize:
       AuxWindow::setWindowTitle( WString::tr("ecaa-linearize-title") );
-      stretcher()->addWidget( std::make_unique<LinearizeCalTool>( m_measToChange, m_calibrator, this ), 0, 0 );
+      contents()->addNew<LinearizeCalTool>( m_measToChange, m_calibrator, this );
       break;
 
     case MoreActionsIndex::Truncate:
       AuxWindow::setWindowTitle( WString::tr("ecaa-truncate-title") );
-      stretcher()->addWidget( std::make_unique<TruncateChannelsTool>( m_measToChange, m_calibrator, this ), 0, 0 );
+      contents()->addNew<TruncateChannelsTool>( m_measToChange, m_calibrator, this );
       break;
 
     case MoreActionsIndex::CombineChannels:
       AuxWindow::setWindowTitle( WString::tr("ecaa-combine-title") );
-      stretcher()->addWidget( std::make_unique<CombineChannelsTool>( m_measToChange, m_calibrator, this ), 0, 0 );
+      contents()->addNew<CombineChannelsTool>( m_measToChange, m_calibrator, this );
       break;
 
     case MoreActionsIndex::ConvertToFrf:
-      setWidth( WLength(425.0, WLength::Unit::Pixel) );
       AuxWindow::setWindowTitle( WString::tr("ecaa-convert-frf-title") );
-      stretcher()->addWidget( std::make_unique<ConvertCalTypeTool>( SpecUtils::EnergyCalType::FullRangeFraction, m_measToChange, m_calibrator, this ), 0, 0 );
+      contents()->addNew<ConvertCalTypeTool>( SpecUtils::EnergyCalType::FullRangeFraction, m_measToChange, m_calibrator, this );
       break;
 
     case MoreActionsIndex::ConvertToPoly:
-      setWidth( WLength(425.0, WLength::Unit::Pixel) );
       AuxWindow::setWindowTitle( WString::tr("ecaa-convert-poly-title") );
-      stretcher()->addWidget( std::make_unique<ConvertCalTypeTool>( SpecUtils::EnergyCalType::Polynomial, m_measToChange, m_calibrator, this ), 0, 0 );
+      contents()->addNew<ConvertCalTypeTool>( SpecUtils::EnergyCalType::Polynomial, m_measToChange, m_calibrator, this );
       break;
 
     case MoreActionsIndex::MultipleFilesCal:
       AuxWindow::setWindowTitle( WString::tr("ecaa-multi-file-title") );
-      stretcher()->addWidget( std::make_unique<EnergyCalMultiFile>( m_calibrator, this ), 0, 0 );
+      contents()->addNew<EnergyCalMultiFile>( m_calibrator, this );
       break;
-      
+
     case MoreActionsIndex::NumMoreActionsIndex:
       break;
   }//switch( m_actionType )

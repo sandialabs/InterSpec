@@ -48,6 +48,7 @@
 #include <Wt/WApplication.h>
 #include <Wt/WEnvironment.h>
 #include <Wt/WItemDelegate.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "SpecUtils/Filesystem.h"
 
@@ -874,7 +875,15 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   //  undo becomes a bit harder... good enough, I guess
   UndoRedoManager *undoManager = m_viewer ? m_viewer->undoRedoManager() : nullptr;
   if( undoManager )
-    undoManager->addUndoRedoStep( [window](){ window->done( Wt::DialogCode::Accepted ); }, nullptr, "Click clear all peaks." );
+  {
+    // Capture an observing_ptr so we don't deref a freed dialog if the user closed it
+    //  (which already deletes via SimpleDialog::startDeleteSelf) before triggering undo.
+    Wt::Core::observing_ptr<SimpleDialog> obsWin = window;
+    undoManager->addUndoRedoStep( [obsWin](){
+      if( obsWin )
+        obsWin->done( Wt::DialogCode::Accepted );
+    }, nullptr, "Click clear all peaks." );
+  }
 }//void confirmRemoveAllPeaks()
 
 
@@ -1042,7 +1051,13 @@ void PeakInfoDisplay::createNewPeak()
   UndoRedoManager *undoManager = viewer ? viewer->undoRedoManager() : nullptr;
   if( undoManager )
   {
-    undoManager->addUndoRedoStep( [window](){ AuxWindow::deleteAuxWindow( window ); }, nullptr , "Open add peak dialog." );
+    // Capture via observing_ptr so undo is a no-op (rather than a UAF) if the user
+    //  closed the dialog before triggering undo.
+    Wt::Core::observing_ptr<AddNewPeakDialog> obsWin = window;
+    undoManager->addUndoRedoStep( [obsWin](){
+      if( obsWin )
+        AuxWindow::deleteAuxWindow( obsWin.get() );
+    }, nullptr, "Open add peak dialog." );
   }//if( undoManager )
 }//createNewPeak()
 

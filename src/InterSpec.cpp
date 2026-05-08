@@ -941,6 +941,21 @@ InterSpec::InterSpec()
   
   setLayout( std::unique_ptr<WLayout>(m_layout) );
 
+  // Workaround for Wt 4.12.6 layout bug in StdGridLayoutImpl2.js: when a row
+  // is made resizable via setRowResizable(), the measure pass reserves
+  // SPACING + 2*RESIZE_HANDLE_MARGIN per handle, but the position pass only
+  // consumes SPACING + RESIZE_HANDLE_MARGIN, leaking RESIZE_HANDLE_MARGIN (5px)
+  // out the bottom of the layout.  Returning a negative otherPadding from
+  // wtGetPS for the vertical direction grows cSize by that amount, letting the
+  // stretchable cell absorb the leak.  Counts Wt-hrh2 children dynamically so
+  // it correctly reports 0 when no row is resizable.
+  setJavaScriptMember( "wtGetPS",
+    "function(c,w,d,r){"
+      "if(d!==1)return 0;"
+      "var n=w.querySelectorAll(':scope > .Wt-hrh2').length;"
+      "return -n*5;"
+    "}" );
+
   if( m_menuDiv )
     m_layout->addWidget( std::unique_ptr<WWidget>(m_menuDiv), m_layout->rowCount(), 0 );
   m_layout->addWidget( std::unique_ptr<WWidget>(m_charts), m_layout->rowCount(), 0 );
@@ -10037,15 +10052,9 @@ void InterSpec::handleRelActAutoClose()
   if( !m_relActAutoWindow )
     return;
 
-  // In Wt4, we cannot safely delete the AuxWindow from within a signal handler
-  //  of one of its child widgets (the close button), because AuxWindow::setHidden()
-  //  calls emitReject() which means the stack unwinds through deleted AuxWindow
-  //  methods, causing a crash.  Instead, hide the dialog immediately, then post
-  //  the actual deletion to the event loop with a short delay so it runs in a
-  //  clean stack frame.
-  //
-  // TODO: refactor AuxWindow to not call emitReject() from setHidden(), so we
-  //  can use the standard Wt4 pattern of done() + removeChild() from finished().
+  // AuxWindow::emitReject() now defers the finished() emission to the event
+  //  loop (see src/AuxWindow.cpp), so by the time we get here the setHidden()
+  //  stack frame has already unwound and it is safe to deleteAuxWindow.
   if( m_relActAutoWindow ) AuxWindow::deleteAuxWindow( m_relActAutoWindow.get() );
   assert( !m_relActAutoGui );
   assert( !m_relActAutoWindow );
