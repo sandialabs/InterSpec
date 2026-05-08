@@ -36,6 +36,25 @@
   display: grid;
 }
 
+.DetectionLimitTool .ScaleEntryDiv
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  column-gap: 5px;
+  /* Let the cell shrink to its grid columns so the flex child can compute its width. */
+  min-width: 0;
+}
+
+.DetectionLimitTool .ScaleEntryDiv input[type="text"]
+{
+  /* Fill the remaining space alongside the checkbox + help icon; min-width:0 lets
+     the input shrink below its intrinsic content width so nothing overflows. */
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
 
 .DetectionLimitTool .MdaResults
 {

@@ -3,7 +3,11 @@
   <!-- dlt- is short for DetectionLimitTool
   -->
   <message id="dlt-window-title">Detection Confidence Tool</message>
-  
+
+  <!-- QR code dialog strings -->
+  <message id="dlt-qr-tool-state-title">Detection Confidence Tool State</message>
+  <message id="dlt-qr-tool-state-txt">Current state of the Detection Confidence tool.</message>
+
   <!-- MdaPeakRow strings -->
   <message id="dlt-use-for-multi-peak">Use for multi-peak</message>
   <message id="dlt-roi-lower-label">ROI Lower:</message>
@@ -40,7 +44,7 @@
   <message id="dlt-detected-activity-tt">Detected activity, using just this Region Of Interests,
     and the observed excess of counts, as well as the
     statistical confidence interval.</message>
-  <message id="dlt-limit-lt-zero"><![CDATA[Limit: < 0{1}]]></message>
+  <message id="dlt-limit-lt-zero">Limit: &lt; 0{1}</message>
   <message id="dlt-sig-fewer-counts">(sig. fewer counts in ROI than predicted)</message>
   <message id="dlt-fewer-counts-tt">Significantly fewer counts were observed in the
     Region Of Interest, than predicted by the neighboring channels.</message>
@@ -61,6 +65,21 @@
     </div>
   </message>
   <message id="dlt-attenuate-for-air">Attenuate for air</message>
+  <message id="dlt-scale-spectrum-cb">Scale Time:</message>
+  <message id="dlt-scale-spectrum-empty-text">e.g. 5 min</message>
+  <message id="dlt-scale-spectrum-tt">
+    Compute the limit you would expect from a measurement of the entered real time, treating the
+    current spectrum as a per-second rate estimate.  Channel counts are scaled by
+    (entered real time) / (current spectrum real time), and the live time is scaled by the same
+    ratio so the dead-time fraction is preserved.
+    <p>
+      Most accurate when scaling to a shorter or comparable dwell time; for much longer dwells
+      the result is optimistic, since the rate-estimate uncertainty exceeds the projected
+      Poisson noise.
+    </p>
+  </message>
+  <message id="dlt-err-bad-scale-time">Invalid scale time - expected something like '5 min', '300 s', or '00:05:00'.</message>
+  <message id="dlt-err-zero-realtime">Cannot scale: foreground spectrum has zero real time.</message>
   <message id="dlt-shield-empty-text">shielding material</message>
   <message id="dlt-activity-limit">Activity Limit</message>
   <message id="dlt-distance-limit">Distance Limit</message>

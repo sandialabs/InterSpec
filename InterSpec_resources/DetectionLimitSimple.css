@@ -120,6 +120,23 @@
   column-gap: 5px;
 }
 
+.DetectionLimitSimple .ScaleEntryDiv {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  column-gap: 5px;
+  /* Let this cell shrink to its grid column so the flex child can compute its width. */
+  min-width: 0;
+}
+
+.DetectionLimitSimple .ScaleEntryDiv input[type="text"] {
+  /* Fill the column alongside the help icon; min-width:0 lets it shrink below its
+     intrinsic content width so the input + icon never overflow the grid column. */
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
 .DeconvMoreInfo {
   display: flex;
   flex-direction: column;

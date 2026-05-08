@@ -492,7 +492,24 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
                         const double min_search_quantity,
                         const double max_search_quantity,
                         const bool useCurie );
-  
+
+
+/** Returns a copy of `input` whose channel counts, live_time, and real_time are linearly
+ scaled by `new_real_time / input->real_time()`, so the Measurement appears to have been
+ taken for `new_real_time` seconds at the same per-channel rate and the same dead-time
+ fraction.
+
+ Used by the MDA / detection-confidence tools to answer "what would the limit be if my
+ spectrum had been taken for a different dwell time?".  Counts are scaled to the expected
+ value at the new dwell; the calc downstream treats them as Poisson with variance equal
+ to the (scaled) count, which is appropriate for projecting a fresh measurement.
+
+ Throws if `input` is null, `input->real_time() <= 0`, or `new_real_time <= 0`.
+ */
+std::shared_ptr<const SpecUtils::Measurement>
+scale_spectrum_for_dwell( const std::shared_ptr<const SpecUtils::Measurement> &input,
+                          const float new_real_time );
+
 }//namespace DetectionLimitCalc
 
 

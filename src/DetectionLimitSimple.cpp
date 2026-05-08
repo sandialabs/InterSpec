@@ -62,6 +62,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
@@ -469,9 +470,10 @@ void DetectionLimitSimple::init()
   m_isBackgroundDiv = new WContainerWidget( generalInput );
   m_isBackgroundDiv->addStyleClass( "BackCbDiv GridFirstCol GridSeventhRow GridVertCenter GridSpanTwoCol" );
   m_isBackgroundSpectrum = new WCheckBox( WString::tr("dls-is-background-spectrum-cb"), m_isBackgroundDiv );
+  m_isBackgroundSpectrum->addStyleClass( "CbNoLineBreak" );
   m_isBackgroundSpectrum->checked().connect( this, &DetectionLimitSimple::handleNoSignalPresentChanged );
   m_isBackgroundSpectrum->unChecked().connect( this, &DetectionLimitSimple::handleNoSignalPresentChanged );
-  
+
   {
     m_isBackgroundSpectrum->setWordWrap( false );
     WImage *img = new WImage( m_isBackgroundDiv );
@@ -481,6 +483,51 @@ void DetectionLimitSimple::init()
     WString tt = WString::tr("dls-is-background-spectrum-tt");
     HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
                                 HelpSystem::ToolTipPrefOverride::InstantAlways );
+  }
+
+  // "Scale" controls on the right side of row 7, so they coexist with both the
+  //  background checkbox (cols 1-2) and the deconvolution-only continuum controls
+  //  (cols 1-2 and 4-5).  Scale is visible regardless of method.
+  
+  m_scaleSpectrumCb = new WCheckBox( WString::tr("dls-scale-spectrum-cb"), generalInput );
+  m_scaleSpectrumCb->addStyleClass( "CbNoLineBreak GridFourthCol GridSeventhRow GridVertCenter" );
+  m_scaleSpectrumCb->checked().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
+  m_scaleSpectrumCb->unChecked().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
+
+  Wt::WContainerWidget *scaleEntryDiv = new WContainerWidget( generalInput );
+  scaleEntryDiv->addStyleClass( "ScaleEntryDiv GridFifthCol GridSeventhRow GridVertCenter" );
+  m_scaleSpectrumTime = new WLineEdit( scaleEntryDiv );
+  m_scaleSpectrumTime->setEmptyText( WString::tr("dls-scale-spectrum-empty-text") );
+  m_scaleSpectrumTime->setDisabled( true );
+  {
+    WRegExpValidator *scaleTimeValidator
+              = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), m_scaleSpectrumTime );
+    scaleTimeValidator->setFlags( Wt::MatchCaseInsensitive );
+    m_scaleSpectrumTime->setValidator( scaleTimeValidator );
+  }
+  m_scaleSpectrumTime->changed().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
+  m_scaleSpectrumTime->blurred().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
+  m_scaleSpectrumTime->enterPressed().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
+
+  {
+    WImage *img = new WImage( scaleEntryDiv );
+    img->setImageLink( Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+    img->resize( 16, 16 );
+    img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+    HelpSystem::attachToolTipOn( img, WString::tr("dls-scale-spectrum-tt"), true,
+                                HelpSystem::ToolTipPosition::Left,
+                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+  }
+
+  // Pre-fill the disabled input with the current foreground's real time.
+  {
+    const shared_ptr<const SpecUtils::Measurement> hist
+                          = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    if( hist && (hist->real_time() > 0.0f) )
+      m_scaleSpectrumTime->setText( WString::fromUTF8(
+          PhysicalUnits::printToBestTimeUnits( hist->real_time(), 3 ) ) );
+    else
+      m_scaleSpectrumCb->setDisabled( true );
   }
   
   m_continuumPriorLabel = new WLabel( WString::tr("dls-decon-cont-norm-label"), generalInput );
@@ -772,6 +819,61 @@ void DetectionLimitSimple::handleDeconContinuumTypeChange()
   scheduleRender();
 }//void handleDeconContinuumTypeChange()
 
+
+void DetectionLimitSimple::handleScaleSpectrumChanged()
+{
+  const bool checked = m_scaleSpectrumCb->isChecked();
+  m_scaleSpectrumTime->setEnabled( checked );
+
+  // Whenever the field is empty (whitespace counts), or the checkbox is off,
+  // repopulate it with the current foreground's real time so the displayed
+  // value is always meaningful and `currentEffectiveForeground()` won't see an
+  // empty string.
+  const bool field_empty
+              = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() ).empty();
+  if( !checked || field_empty )
+  {
+    const shared_ptr<const SpecUtils::Measurement> hist
+                          = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    if( hist && (hist->real_time() > 0.0f) )
+      m_scaleSpectrumTime->setText( WString::fromUTF8(
+          PhysicalUnits::printToBestTimeUnits( hist->real_time(), 3 ) ) );
+    else if( !checked )
+      m_scaleSpectrumTime->setText( "" );
+  }
+
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void handleScaleSpectrumChanged()
+
+
+shared_ptr<const SpecUtils::Measurement> DetectionLimitSimple::currentEffectiveForeground() const
+{
+  shared_ptr<const SpecUtils::Measurement> hist
+                          = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  if( !hist || !m_scaleSpectrumCb || !m_scaleSpectrumCb->isChecked() )
+    return hist;
+
+  if( hist->real_time() <= 0.0f )
+    return hist;
+
+  // An empty / whitespace-only field means "no scaling requested" - return the
+  // raw foreground rather than letting stringToTimeDuration throw.
+  const string txt = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() );
+  if( txt.empty() )
+    return hist;
+
+  const double t = PhysicalUnits::stringToTimeDuration( txt ); //throws on parse error
+  if( t <= 0.0 )
+    throw runtime_error( WString::tr("dls-err-bad-scale-time").toUTF8() );
+
+  return DetectionLimitCalc::scale_spectrum_for_dwell( hist, static_cast<float>(t) );
+}//currentEffectiveForeground()
+
+
 DetectionLimitSimple::~DetectionLimitSimple()
 {
   //nothing to do here
@@ -866,8 +968,15 @@ void DetectionLimitSimple::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   if( m_renderFlags.testFlag(RenderActions::UpdateDisplayedSpectrum) )
   {
-    shared_ptr<const SpecUtils::Measurement> hist 
-                                = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const SpecUtils::Measurement> hist;
+    try
+    {
+      hist = currentEffectiveForeground();
+    }catch( std::exception & )
+    {
+      // Bad scale time string; fall back to raw foreground for display.
+      hist = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    }
     m_spectrum->setData( hist, true );
   }//if( update displayed spectrum )
   
@@ -1172,8 +1281,54 @@ void DetectionLimitSimple::handleSelectDetectorRequested()
 }//void handleSelectDetectorRequested()
 
 
-void DetectionLimitSimple::handleSpectrumChanged()
+void DetectionLimitSimple::handleSpectrumChanged( const SpecUtils::SpectrumType type )
 {
+  // Background/secondary changes don't affect this tool's foreground-driven state, and
+  // re-running the FWHM/ROI re-estimate on those would silently mutate the user's ROI.
+  if( type != SpecUtils::SpectrumType::Foreground )
+    return;
+
+  // Update Scale-input behavior to track the new foreground.
+  if( m_scaleSpectrumCb )
+  {
+    const shared_ptr<const SpecUtils::Measurement> hist
+                          = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const bool has_real_time = (hist && (hist->real_time() > 0.0f));
+
+    if( !has_real_time )
+    {
+      // Can't compute a sensible scale ratio - turn the feature off until a usable
+      //  spectrum is loaded.
+      m_scaleSpectrumCb->setChecked( false );
+      m_scaleSpectrumCb->setDisabled( true );
+      m_scaleSpectrumTime->setDisabled( true );
+      m_scaleSpectrumTime->setText( "" );
+    }else
+    {
+      m_scaleSpectrumCb->setDisabled( false );
+      // Only auto-overwrite the field when the user is NOT actively scaling - otherwise
+      //  preserve what they typed so they can compare the same target dwell across spectra.
+      if( !m_scaleSpectrumCb->isChecked() )
+      {
+        m_scaleSpectrumTime->setText( WString::fromUTF8(
+            PhysicalUnits::printToBestTimeUnits( hist->real_time(), 3 ) ) );
+      }
+    }
+  }
+
+  // The new foreground may have a different resolution and/or DRF, so recenter the
+  // ROI and re-estimate FWHM the same way handleGammaChanged() does - otherwise the
+  // calc runs the new spectrum's counts through the previous spectrum's peak shape
+  // and side-channel widths, and the limit comes out wildly wrong.
+  if( m_currentEnergy > 10.0f )
+  {
+    const float fwhm
+              = std::max( 0.1f, PeakSearchGuiUtils::estimate_FWHM_of_foreground(m_currentEnergy) );
+    m_lowerRoi->setValue( m_currentEnergy - 0.5*m_numFwhmWide*fwhm );
+    m_upperRoi->setValue( m_currentEnergy + 0.5*m_numFwhmWide*fwhm );
+  }
+  setFwhmFromEstimate();
+
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
@@ -1555,7 +1710,7 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       m_peakModel->setPeaks( fit_peaks );
       m_resultTxt->setText( result_txt );
       m_moreInfoButton->show();
-      
+
       //m_currentDeconResults->foundUpperDisplay = false;
       //m_currentDeconResults->upperDisplayRange = 0.0;
       //m_currentDeconResults->foundLowerDisplay = false;
@@ -1563,6 +1718,22 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       //std::vector<std::pair<double,double>> m_currentDeconResults->chi2s;
     }//if( no valid result
   }//if( currently doing Currie-style limit ) / else
+
+  // If a scale factor is active, tip the user off via a small live-time marker
+  //  appended to the result text - so it's not silently using a different dwell.
+  if( m_scaleSpectrumCb && m_scaleSpectrumCb->isChecked()
+     && (m_currentCurrieResults || m_currentDeconResults) )
+  {
+    shared_ptr<const SpecUtils::Measurement> scaled;
+    try { scaled = currentEffectiveForeground(); } catch( std::exception & ){}
+
+    if( scaled && (scaled->live_time() > 0.0f) )
+    {
+      const WString postfix = WString::tr("dls-result-scaled-postfix")
+          .arg( PhysicalUnits::printToBestTimeUnits( scaled->live_time(), 3 ) );
+      m_resultTxt->setText( m_resultTxt->text() + postfix );
+    }
+  }
 }//void updateSpectrumDecorationsAndResultText()
 
 
@@ -1933,8 +2104,32 @@ void DetectionLimitSimple::createMoreInfoWindow()
                                             WString::tr("dls-err-more-info-content").arg(e.what()) );
     m_moreInfoWindow->addButton( WString::tr("Close") );
   }//try / catch
-  
+
   assert( m_moreInfoWindow );
+
+  // Make the scale factor obvious in the more-info dialog so the user knows the
+  //  numbers are for the scaled-to dwell, not the literal measurement live time.
+  if( m_moreInfoWindow && m_scaleSpectrumCb && m_scaleSpectrumCb->isChecked() )
+  {
+    const shared_ptr<const SpecUtils::Measurement> raw_hist
+                          = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const SpecUtils::Measurement> scaled;
+    try { scaled = currentEffectiveForeground(); } catch( std::exception & ){}
+
+    if( raw_hist && scaled && (raw_hist->real_time() > 0.0f) && (scaled->real_time() > 0.0f) )
+    {
+      const double ratio = static_cast<double>(scaled->real_time()) / static_cast<double>(raw_hist->real_time());
+      WText *note = new WText( WString::tr("dls-scale-more-info-note")
+                              .arg( PhysicalUnits::printToBestTimeUnits(scaled->real_time(), 3) )
+                              .arg( PhysicalUnits::printToBestTimeUnits(scaled->live_time(), 3) )
+                              .arg( SpecUtils::printCompact(ratio, 3) )
+                              .arg( PhysicalUnits::printToBestTimeUnits(raw_hist->real_time(), 3) ) );
+      note->addStyleClass( "ScaleMoreInfoNote" );
+      note->setInline( false );
+      m_moreInfoWindow->contents()->insertWidget( 0, note );
+    }
+  }
+
   if( m_moreInfoWindow )
     m_moreInfoWindow->finished().connect( boost::bind(&DetectionLimitSimple::handleMoreInfoWindowClose, this, m_moreInfoWindow) );
   
@@ -2018,10 +2213,19 @@ void DetectionLimitSimple::updateResult()
   {
     m_fitFwhmBtn->hide();
     
-    std::shared_ptr<const SpecUtils::Measurement> hist = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    // Route through currentEffectiveForeground() so the empty-string-as-unscaled
+    // logic stays in one place and the calc here matches what the chart shows.
+    std::shared_ptr<const SpecUtils::Measurement> hist;
+    try
+    {
+      hist = currentEffectiveForeground();
+    }catch( std::exception & )
+    {
+      throw runtime_error( WString::tr("dls-err-bad-scale-time").toUTF8() );
+    }
     if( !hist || (hist->num_gamma_channels() < 7) )
       throw runtime_error( "No foreground spectrum loaded." );
-    
+
     const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
     
     const float roi_lower_energy = m_lowerRoi->value();
@@ -2603,6 +2807,45 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
     if( (qpos->second == "0") || SpecUtils::iequals_ascii(qpos->second, "NO") || SpecUtils::iequals_ascii(qpos->second, "FALSE") )
       m_allGammasInRoi = false;
   }//if( URI contains 'ALLGAMMA' )
+
+  // Restore "Scale to dwell" state.  Encoded as an absolute target dwell (e.g. "60s",
+  //  "5 min") so the targeted dwell is preserved regardless of which foreground is
+  //  loaded at decode time.  Presence implies checkbox on; any failure leaves it off.
+  qpos = values.find( "SCALE" );
+  if( qpos != end(values) && m_scaleSpectrumCb )
+  {
+    bool ok = false;
+    try
+    {
+      const double t = PhysicalUnits::stringToTimeDuration( qpos->second );
+      if( t > 0.0 )
+      {
+        m_scaleSpectrumCb->setChecked( true );
+        m_scaleSpectrumTime->setEnabled( true );
+        m_scaleSpectrumTime->setText( WString::fromUTF8(
+            PhysicalUnits::printToBestTimeUnits( t, 4 ) ) );
+        ok = true;
+      }
+    }catch( std::exception & ){ }
+
+    if( !ok )
+    {
+      cerr << "Invalid 'SCALE' value: '" << qpos->second << "'" << endl;
+      m_scaleSpectrumCb->setChecked( false );
+      m_scaleSpectrumTime->setEnabled( false );
+      // handleSpectrumChanged()/init() will refresh the disabled text on the next render.
+    }
+  }else if( m_scaleSpectrumCb )
+  {
+    // No SCALE in URL - ensure the checkbox is off (and the disabled text gets repopulated).
+    m_scaleSpectrumCb->setChecked( false );
+    m_scaleSpectrumTime->setEnabled( false );
+    const shared_ptr<const SpecUtils::Measurement> hist
+                          = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    if( hist && (hist->real_time() > 0.0f) )
+      m_scaleSpectrumTime->setText( WString::fromUTF8(
+          PhysicalUnits::printToBestTimeUnits( hist->real_time(), 3 ) ) );
+  }
   
   // Set render flags... JIC
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
@@ -2740,7 +2983,23 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
   
   if( !m_allGammasInRoi )
     answer += "&ALLGAMMA=0";
-  
+
+  // Encode scale as the absolute target dwell (in seconds), so reloading the URL against
+  //  a different foreground preserves "the dwell I asked about" rather than rescaling it.
+  //  Use printCompact (no units) for the seconds-value to keep the URL field free of spaces.
+  if( m_scaleSpectrumCb && m_scaleSpectrumCb->isChecked() )
+  {
+    try
+    {
+      const double t = PhysicalUnits::stringToTimeDuration( m_scaleSpectrumTime->text().toUTF8() );
+      if( t > 0.0 )
+        answer += "&SCALE=" + SpecUtils::printCompact( t / PhysicalUnits::second, 6 ) + "s";
+    }catch( std::exception & )
+    {
+      // Invalid time string - skip; result is reflected by SCALE absent from URL.
+    }
+  }
+
   return answer;
 }//std::string encodeStateToUrl() const;
 
