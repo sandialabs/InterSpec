@@ -24,9 +24,11 @@
 #include "InterSpec_config.h"
 
 #include <deque>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
+#include <limits>
 #include <fstream>
 #include <algorithm>
 
@@ -819,7 +821,13 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
       SpecUtils::split_to_floats( samples_node->value(), samples_node->value_size(), contents );
       set<int> samplenums;
       for( const float t : contents )
+      {
+        if( !std::isfinite(t)
+           || (t < static_cast<float>(std::numeric_limits<int>::min()))
+           || (t > static_cast<float>(std::numeric_limits<int>::max())) )
+          throw runtime_error( "PeakSet samples contains a non-finite or out-of-range value." );
         samplenums.insert( samplenums.end(), static_cast<int>(t) );
+      }
     
       PeakDequeShrdPtr peaks = std::make_shared<PeakDeque>();
     

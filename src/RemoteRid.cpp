@@ -512,7 +512,9 @@ public:
   {
     assert( m_remote_rid );
     assert( interspec );
-    
+    if( !m_remote_rid || !interspec )
+      throw std::runtime_error( "ExternalRidWidget constructed with null RemoteRid or InterSpec" );
+
     addStyleClass( "ExternalRidWidget" );
     
     WGridLayout *layout = new WGridLayout( this );
@@ -871,8 +873,14 @@ protected:
   void receiveExeAnalysis( std::shared_ptr<int> rcode, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
   {
     assert( rcode && result && m );
-    assert( WApplication::instance() );
-    
+    if( !rcode || !result || !m )
+      return;
+
+    WApplication * const app = WApplication::instance();
+    assert( app );
+    if( !app )
+      return;
+
     std::lock_guard<mutex> lock( *m );
     
     const int code = *rcode;
@@ -884,8 +892,8 @@ protected:
     {
       handleResultResponseError( res );
     }
-    
-    wApp->triggerUpdate();
+
+    app->triggerUpdate();
   }//void receiveExeAnalysis( std::shared_ptr<string> result )
 #endif  //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 
@@ -965,7 +973,7 @@ public:
         
         const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
         assert( db );
-        if( results )
+        if( results && db )
         {
           for( auto &iso : results->isotopes )
           {
@@ -1190,9 +1198,16 @@ public:
     }//end writing temp file
     
     arguments.push_back( tmpfilename );
-    
-    
-    const string appsession = WApplication::instance()->sessionId();
+
+
+    WApplication * const app = WApplication::instance();
+    if( !app )
+    {
+      assert( 0 );
+      SpecUtils::remove_file( tmpfilename );
+      return;
+    }
+    const string appsession = app->sessionId();
     auto result = std::make_shared<string>();
     auto rcode = std::make_shared<int>(-1);
     auto m = make_shared<mutex>();
@@ -1278,8 +1293,14 @@ public:
   void receiveExeDrfInfo( std::shared_ptr<int> success, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
   {
     assert( success && result && m );
-    assert( WApplication::instance() );
-    
+    if( !success || !result || !m )
+      return;
+
+    WApplication * const app = WApplication::instance();
+    assert( app );
+    if( !app )
+      return;
+
     std::lock_guard<mutex> lock( *m );
     
     const int successval = *success;
@@ -1293,16 +1314,22 @@ public:
     {
       handleInfoResponseError( res );
     }
-    
-    wApp->triggerUpdate();
+
+    app->triggerUpdate();
   }//void receiveExeDrfInfo( std::shared_ptr<string> result )
   
   
   void requestExeInfo()
   {
     const string exe_path = m_url->text().toUTF8();
-    
-    const string appsession = WApplication::instance()->sessionId();
+
+    WApplication * const app = WApplication::instance();
+    if( !app )
+    {
+      assert( 0 );
+      return;
+    }
+    const string appsession = app->sessionId();
     auto result = std::make_shared<string>();
     auto success = std::make_shared<int>(0);
     auto m = make_shared<mutex>();
@@ -2108,6 +2135,8 @@ m_app( WApplication::instance() ),
 m_interspec( interspec )
 {
   assert( m_app && m_interspec );
+  if( !m_app || !m_interspec )
+    throw std::runtime_error( "RestRidInputResource constructed outside of a Wt session" );
 }
 
 RestRidInputResource::~RestRidInputResource()

@@ -4305,6 +4305,13 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     {
       try
       {
+        // Cap at 256 KB - this blob holds a small number of named user prefs,
+        //  not arbitrary data, so legitimate sizes are well under 1 KB.  The
+        //  limit prevents a malicious or corrupted DB row from spinning the
+        //  JSON parser on a multi-MB string.
+        if( entry->userOptionsJson.size() > 256 * 1024 )
+          throw runtime_error( "userOptionsJson is too large to parse" );
+
         Json::Value userOptionsVal( Json::ArrayType );
         Json::parse( entry->userOptionsJson, userOptionsVal );
         //cerr << "Parsed User Options, but not doing anything with them" << endl;

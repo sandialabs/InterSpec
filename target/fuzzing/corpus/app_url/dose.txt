@@ -1,0 +1,1 @@
+interspec://dose/?ver=1&nuclide=Cs137&activity=1uCi&distance=100cm

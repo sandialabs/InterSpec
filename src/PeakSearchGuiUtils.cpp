@@ -3508,12 +3508,15 @@ float estimate_FWHM_of_foreground( const float energy )
   }
     
   std::shared_ptr<SpecMeas> specmeas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
-    
+
   std::shared_ptr<DetectorPeakResponse> drf = specmeas ? specmeas->detector() : nullptr;
   if( drf && drf->hasResolutionInfo() )
     return drf->peakResolutionFWHM(energy);
-    
-    
+
+  // Below here we use `specmeas` directly, so bail if there's no foreground.
+  if( !specmeas )
+    return PeakFitUtils::hpge_fwhm_fcn( energy );
+
   // Check auto-fit peaks
   const set<int> &dispSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
   auto hintPeaks = specmeas->automatedSearchPeaks( dispSamples );

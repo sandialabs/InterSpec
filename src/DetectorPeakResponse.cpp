@@ -169,7 +169,8 @@ namespace
         answer.push_back( vf );
       }else
       {
-        assert( 0 );
+        // Malformed URL component - caller validates the returned vector size
+        //  and throws an appropriate runtime_error.
         cerr << "Failed in from_url_flt_array: '" << val << "'" << endl;
         return {};
       }
@@ -1214,8 +1215,14 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
 
     vector<float> coefs;
     for( int i = 3; i < 11; ++i )
-      coefs.push_back( static_cast<float>( std::stod( fields[i] ) ) );
-    
+    {
+      double coef = 0.0;
+      if( !SpecUtils::parse_double( fields[i].c_str(), fields[i].size(), coef ) )
+        throw runtime_error( "DRF coefficient column " + std::to_string(i)
+                            + ": expected a number, but got '" + fields[i] + "'" );
+      coefs.push_back( static_cast<float>(coef) );
+    }
+
     //Get rid of the zero coefficients
     for( size_t i = coefs.size()-1; i > 0; --i )
     {
@@ -1225,9 +1232,14 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
         break;
       }
     }//for( size_t i = coefs.size()-1; i > 0; --i )
-    
-    const float dist = static_cast<float>( std::stod(fields[14])*PhysicalUnits::cm );
-    const float diam = 2.0f*static_cast<float>( std::stod(fields[15])*PhysicalUnits::cm );
+
+    double dist_val = 0.0, diam_val = 0.0;
+    if( !SpecUtils::parse_double( fields[14].c_str(), fields[14].size(), dist_val ) )
+      throw runtime_error( "DRF distance: expected a number, but got '" + fields[14] + "'" );
+    if( !SpecUtils::parse_double( fields[15].c_str(), fields[15].size(), diam_val ) )
+      throw runtime_error( "DRF diameter: expected a number, but got '" + fields[15] + "'" );
+    const float dist = static_cast<float>( dist_val * PhysicalUnits::cm );
+    const float diam = 2.0f * static_cast<float>( diam_val * PhysicalUnits::cm );
     const float eunits = static_cast<float>( PhysicalUnits::MeV );
     
     string description = fields[2] + " - from Relative Eff. File";
@@ -2146,27 +2158,31 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     if( !(stringstream(parts["ORIGIN"]) >> val) )
       throw runtime_error( "fromAppUrl: ORIGIN must be an integer value." );
 
-    drf_source = static_cast<DrfSource>( val );
-    switch( drf_source )
+    // Validate `val` against the DrfSource enumerators *before* casting.  Casting
+    //  an out-of-range int to the enum is undefined behavior (UBSan flags it),
+    //  even though every valid case is handled below - a single 'default:throw'
+    //  after the cast is too late.
+    switch( val )
     {
-      case DrfSource::UnknownDrfSource:
-      case DrfSource::DefaultGadrasDrf:
-      case DrfSource::UserAddedGadrasDrf:
-      case DrfSource::UserAddedRelativeEfficiencyDrf:
-      case DrfSource::DefaultRelativeEfficiencyDrf:
-      case DrfSource::UserImportedIntrisicEfficiencyDrf:
-      case DrfSource::UserImportedGadrasDrf:
-      case DrfSource::UserSpecifiedFormulaDrf:
-      case DrfSource::UserCreatedDrf:
-      case DrfSource::FromSpectrumFileDrf:
-      case DrfSource::IsocsEcc:
-      case DrfSource::AngleOutx:
-      case DrfSource::UserImportedEfficiencyCsvDrf:
+      case static_cast<int>(DrfSource::UnknownDrfSource):
+      case static_cast<int>(DrfSource::DefaultGadrasDrf):
+      case static_cast<int>(DrfSource::UserAddedGadrasDrf):
+      case static_cast<int>(DrfSource::UserAddedRelativeEfficiencyDrf):
+      case static_cast<int>(DrfSource::DefaultRelativeEfficiencyDrf):
+      case static_cast<int>(DrfSource::UserImportedIntrisicEfficiencyDrf):
+      case static_cast<int>(DrfSource::UserImportedGadrasDrf):
+      case static_cast<int>(DrfSource::UserSpecifiedFormulaDrf):
+      case static_cast<int>(DrfSource::UserCreatedDrf):
+      case static_cast<int>(DrfSource::FromSpectrumFileDrf):
+      case static_cast<int>(DrfSource::IsocsEcc):
+      case static_cast<int>(DrfSource::AngleOutx):
+      case static_cast<int>(DrfSource::UserImportedEfficiencyCsvDrf):
+        drf_source = static_cast<DrfSource>( val );
         break;
-      
+
       default:
         throw runtime_error( "fromAppUrl: invalid ORIGIN value." );
-    }//switch( static_cast<DrfSource>( val ) )
+    }//switch( val )
   }//if( parts.count("ORIGIN") )
        
   if( parts.count("HASH") )
@@ -4369,6 +4385,14 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
                                                 ResolutionFnctForm fcnFrm,
                                                 const std::vector<float> &pars )
 {
+  // Clamp energy to >= 10 keV.  Below that the resolution forms are physically
+  //  ill-defined (e.g. kSqrtEnergyPlusInverse divides by energy) and the FWHM
+  //  at a few keV doesn't carry useful information for our use cases.  Treat
+  //  any sub-10-keV input as if it were 10 keV.
+  const float min_energy = 10.0f * static_cast<float>( PhysicalUnits::keV );
+  if( energy < min_energy )
+    energy = min_energy;
+
   switch( fcnFrm )
   {
     case kGadrasResolutionFcn:

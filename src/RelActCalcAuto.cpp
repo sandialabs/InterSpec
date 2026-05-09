@@ -12185,6 +12185,24 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
         floating_peaks.push_back( peak );
       }
     }//if( <FloatingPeakList> )
+
+    // Cross-curve references in RelEffCurveInput::shielded_by_other_phys_model_curve_shieldings
+    //  store indices into rel_eff_curves.  Validate now that all curves are loaded;
+    //  otherwise an out-of-range index (from a malicious or corrupt state file) will
+    //  hit an OOB vector access at fit time (where the only previous guard was an
+    //  assert that compiles out in release builds).
+    for( size_t curve_index = 0; curve_index < rel_eff_curves.size(); ++curve_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &curve = rel_eff_curves[curve_index];
+      for( const size_t other_index : curve.shielded_by_other_phys_model_curve_shieldings )
+      {
+        if( other_index >= rel_eff_curves.size() )
+          throw runtime_error( "Options::fromXml(): RelEffCurve " + std::to_string(curve_index)
+                              + " references out-of-range curve index "
+                              + std::to_string(other_index) + " (only "
+                              + std::to_string(rel_eff_curves.size()) + " curves loaded)." );
+      }
+    }
   }catch( std::exception &e )
   {
     throw runtime_error( "Options::fromXml(): " + string(e.what()) );

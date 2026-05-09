@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RadInstrumentData n42DocUUID="" xmlns="http://physics.nist.gov/N42/2011/N42" n42DocDateTime="2026-05-09T04:50:16.746325Z">
+	<RadInstrumentDataCreatorName>InterSpec</RadInstrumentDataCreatorName>
+	<RadInstrumentInformation id="InstInfo1">
+		<RadInstrumentManufacturerName>unknown</RadInstrumentManufacturerName>
+		<RadInstrumentModelName>IdentiFINDER-NG</RadInstrumentModelName>
+		<RadInstrumentClassCode>Other</RadInstrumentClassCode>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Software</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>InterSpec</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>InterSpecN42Serialization</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>5</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+	</RadInstrumentInformation>
+	<RadDetectorInformation id="unamed">
+		<RadDetectorCategoryCode>Gamma</RadDetectorCategoryCode>
+		<RadDetectorKindCode>NaI</RadDetectorKindCode>
+	</RadDetectorInformation>
+	<EnergyCalibration id="EnergyCal0">
+		<CoefficientValues>-0.209999993 2.9746089 0</CoefficientValues>
+		<EnergyValues>32 60 81 122 239 356 661 834 1332 1836 2614</EnergyValues>
+		<EnergyDeviationValues>-1 -2.5 -2 1 0 2 5 8 15 16 0</EnergyDeviationValues>
+	</EnergyCalibration>
+	<RadMeasurement id="Sample1">
+		<MeasurementClassCode>Foreground</MeasurementClassCode>
+		<StartDateTime>2013-12-26T21:15:00Z</StartDateTime>
+		<RealTimeDuration>PT1801.959961S</RealTimeDuration>
+		<Spectrum energyCalibrationReference="EnergyCal0" radDetectorInformationReference="unamed" id="Sample1Det0Spectrum">
+			<Remark>Title: I131 Phantom</Remark>
+			<LiveTimeDuration>PT1800.000000S</LiveTimeDuration>
+			<ChannelData compressionCode="CountedZeroes">0 2 1 65 742 1865 2200 2349 2598 3468 4907 4542 3692 3403 3606 3994 4576 4969 5519 5897 6330 6650 7202 7429 7942 8244 8443 8297 8344 8198 8110 8227 8285 8424 8410 8414 8278 8293 8413 8344 8403 8356 8175 8279 8363 8316 8299 8348 8375 8358 8298 8403 7983 7982 7724 7666 7534 7549 7355 7457 7444 7268 7113 6852 6664 6282 6023 5781 5564 5345 5123 4737 4802 4572 4475 4394 4355 4214 3957 3967 4010 3856 3831 3659 3647 3552 3484 3373 3330 3496 3593 3592 3554 3630 3531 3482 3490 3356 3134 3147 3010 2879 2753 2696 2582 2576 2574 2599 2592 2550 2601 2792 2917 3145 3593 4030 4535 5115 5950 6479 6907 7044 7064 6889 6487 5886 5115 4196 3485 2752 2139 1766 1310 1143 1035 880 805 847 819 777 833 799 789 775 757 756 769 713 761 691 679 617 628 644 531 586 513 485 476 437 398 421 375 402 343 342 315 326 325 318 315 290 294 314 295 246 251 266 232 245 212 211 209 230 195 230 221 189 206 205 189 200 194 237 207 211 214 236 270 261 267 297 309 353 378 457 517 610 729 801 952 1177 1240 1510 1757 1875 2009 2282 2381 2506 2660 2648 2704 2585 2643 2364 2222 2087 1824 1586 1347 1178 983 890 705 556 470 346 297 239 210 166 153 140 98 101 85 93 92 77 80 69 69 60 62 41 45 47 42 43 47 46 34 55 45 47 35 54 30 35 30 37 28 28 28 30 42 26 33 25 27 29 35 39 39 38 32 31 28 40 32 30 39 34 27 29 48 34 29 43 31 33 30 49 42 41 33 46 35 37 40 40 37 31 30 50 28 28 33 30 36 32 27 47 32 36 32 23 35 33 21 30 30 36 29 22 22 26 26 31 25 23 24 22 21 31 24 19 19 15 24 25 25 27 26 24 25 18 21 20 24 18 20 22 18 19 22 24 23 21 29 12 30 34 28 21 21 28 14 23 22 22 28 28 22 12 33 25 16 19 17 30 13 18 20 17 13 21 26 20 16 16 22 17 18 16 13 12 11 20 25 16 21 16 22 19 16 11 21 14 14 13 17 9 7 15 8 18 8 14 17 11 13 4 12 7 16 16 12 10 10 10 6 6 6 11 8 13 8 9 10 14 6 13 8 14 8 10 12 6 11 11 10 12 14 7 19 10 10 11 19 18 20 17 16 18 14 31 25 34 43 38 30 33 34 35 45 43 51 43 40 36 41 42 43 38 23 33 34 29 36 29 22 26 26 16 24 22 14 9 10 8 12 11 10 7 10 8 4 10 7 3 6 7 6 8 5 6 4 6 5 2 7 13 3 4 14 4 9 5 1 7 9 4 5 10 8 6 5 6 2 4 3 6 2 3 4 1 3 2 3 4 4 4 5 4 3 7 1 5 7 7 5 4 3 3 7 6 7 6 5 5 3 7 5 5 7 1 3 5 5 4 4 3 8 5 7 2 7 2 6 5 4 2 4 1 3 3 3 5 4 4 1 4 3 1 2 4 2 3 3 4 5 4 6 2 5 0 1 3 2 2 1 2 3 3 3 7 2 2 1 3 2 1 0 1 1 2 4 4 1 2 3 2 4 4 5 6 2 5 2 3 2 2 1 2 1 5 3 5 2 0 1 3 4 1 4 2 0 1 3 2 5 0 1 3 3 0 1 3 4 3 1 2 4 1 2 1 1 3 2 3 4 2 3 2 4 4 5 6 5 3 4 3 3 6 1 3 6 7 2 3 3 6 3 3 6 1 3 3 1 1 4 5 1 4 3 6 2 5 2 8 2 1 3 5 3 3 1 3 3 3 3 6 5 3 2 3 1 2 2 5 1 3 3 1 3 0 2 1 0 2 4 3 3 4 2 1 1 2 4 1 3 0 1 2 3 1 1 1 1 3 1 1 3 1 3 1 1 2 5 1 3 2 0 1 2 4 1 0 3 2 4 2 1 2 0 1 2 0 2 1 0 1 2 2 1 1 1 0 1 2 1 1 0 1 1 1 1 0 1 2 0 2 1 1 0 1 1 3 1 0 1 4 0 2 3 2 0 2 1 6 1 0 2 5 2 1 1 5 4 1 3 2 1 3 4 8 6 3 5 2 5 3 3 6 4 4 4 3 4 3 10 4 6 1 6 9 4 6 3 5 6 4 3 2 4 6 3 4 1 5 5 3 2 1 2 1 0 2 1 1 0 2 1 0 1 1 0 1 1 1 0 3 1 1 0 1 1 0 3 1 1 0 2 1 0 1 1 0 10 1 0 1 1 1 0 1 1 1 0 4 1 1 0 1 2 1 0 7 1 0 1 2 1 0 9 1 0 1 1 0 4 2 0 2 1 0 2 1 1 0 1 1 0 5 1 1 0 2 1 0 2 1 0 1 1 0 6 1 0 5 1</ChannelData>
+		</Spectrum>
+		<RadDetectorState radDetectorInformationReference="unamed">
+			<Remark>InterSpec could not determine detector state.</Remark>
+		</RadDetectorState>
+	</RadMeasurement>
+	<RadMeasurement id="Sample2">
+		<MeasurementClassCode>Background</MeasurementClassCode>
+		<StartDateTime>2013-12-26T21:15:00Z</StartDateTime>
+		<RealTimeDuration>PT1800.699951S</RealTimeDuration>
+		<Spectrum energyCalibrationReference="EnergyCal0" radDetectorInformationReference="unamed" id="Sample2Det0Spectrum">
+			<Remark>Title: Background</Remark>
+			<LiveTimeDuration>PT1800.000000S</LiveTimeDuration>
+			<ChannelData compressionCode="CountedZeroes">0 2 1 20 228 619 731 746 825 1339 2666 2544 1571 1134 1057 1106 1364 1557 1549 1779 1901 1990 2108 2273 2270 2317 2371 2369 2294 2382 2294 2275 2220 2244 2208 2273 2286 2250 2247 2263 2269 2186 2269 2271 2292 2205 2169 2105 2201 2169 2068 2149 2116 2115 2083 2184 2146 2228 2236 2329 2380 2512 2492 2471 2346 2278 2195 2054 2015 1873 1915 1770 1737 1732 1653 1692 1653 1628 1582 1553 1486 1415 1454 1402 1323 1327 1272 1185 1205 1127 1151 1080 1105 1084 1096 1085 961 984 1046 1042 924 941 947 951 851 875 850 910 821 860 850 829 836 818 853 834 781 774 757 746 763 768 735 685 677 683 674 647 654 640 678 686 655 664 666 637 681 711 678 672 681 662 640 655 691 685 627 664 611 617 570 590 564 522 549 503 443 452 399 384 377 324 343 291 267 298 296 259 253 249 231 242 202 229 230 188 193 220 191 184 207 194 156 178 168 184 172 185 163 166 151 199 171 195 171 189 169 193 198 175 201 228 224 242 279 312 375 433 540 651 779 861 1062 1261 1432 1633 1952 1932 2199 2367 2420 2451 2589 2529 2373 2352 2089 1915 1779 1599 1384 1200 995 812 642 491 409 339 224 186 164 151 98 81 64 51 53 49 46 51 48 37 35 41 43 36 35 44 29 42 37 45 40 39 38 25 33 35 42 44 36 31 40 27 37 34 33 36 38 36 25 28 40 33 25 33 26 44 31 36 28 34 35 29 34 38 23 33 30 31 29 40 38 45 44 32 43 37 37 30 36 36 33 35 42 34 42 33 31 39 31 31 35 41 25 37 36 36 31 23 29 28 23 33 28 34 32 24 27 24 17 20 19 23 18 20 23 27 24 16 16 24 17 19 25 23 18 22 27 21 21 22 29 19 24 27 17 23 21 21 21 28 29 20 24 24 23 13 23 17 19 23 22 24 18 17 20 22 16 22 20 15 21 20 25 20 17 21 16 12 20 23 21 16 13 5 17 26 17 17 23 11 10 11 17 16 17 12 12 12 11 16 11 12 13 12 10 14 13 8 4 11 11 10 10 9 10 9 10 6 12 10 8 11 14 8 9 6 6 7 8 8 3 10 13 11 7 10 11 8 12 9 15 8 9 20 21 10 7 17 13 16 20 23 13 15 22 21 32 27 33 29 36 53 39 42 34 49 50 42 42 34 46 43 24 38 30 47 33 34 20 29 20 25 17 26 21 18 14 11 14 9 17 8 10 10 7 9 7 4 7 9 8 7 10 10 6 6 11 7 6 13 8 13 7 7 10 8 4 5 5 5 5 3 6 10 8 8 6 6 4 5 7 3 1 3 2 3 3 6 7 5 5 5 3 5 5 5 3 3 7 6 1 3 4 7 3 6 5 4 3 6 5 8 9 8 9 2 4 1 5 1 4 2 7 9 2 4 8 4 9 5 3 6 7 4 2 1 1 4 1 0 1 7 5 3 6 4 2 7 3 5 1 2 4 6 4 3 0 1 3 4 1 5 4 4 2 4 3 6 2 3 2 4 2 6 2 3 2 5 3 1 5 2 2 5 1 8 3 6 0 1 3 3 3 6 3 4 1 1 3 4 4 3 7 1 4 1 5 3 1 5 3 5 2 2 3 2 1 1 1 6 3 0 1 3 1 2 1 3 3 3 4 2 4 4 5 6 1 0 1 7 5 3 3 4 2 6 5 4 3 9 2 4 3 3 5 4 4 5 6 6 0 1 7 3 3 6 1 3 4 2 1 1 4 2 3 4 4 3 2 6 6 2 1 4 3 4 2 4 1 3 1 0 1 3 1 2 2 3 1 3 3 1 1 2 4 4 0 1 2 4 2 2 1 1 2 3 1 0 1 1 3 2 2 0 1 1 3 0 3 2 1 0 1 1 1 4 0 1 6 3 2 1 0 1 2 1 2 1 0 2 1 1 0 2 1 3 1 1 1 2 2 0 4 1 1 0 1 1 1 0 1 1 2 1 3 2 1 1 3 3 1 1 0 2 2 1 3 3 0 1 2 0 1 1 3 0 1 1 3 2 1 1 2 3 5 5 1 5 5 4 8 10 5 7 4 4 5 5 5 4 6 5 5 8 10 2 6 2 2 2 5 2 4 4 3 5 5 4 3 3 3 1 2 1 1 2 1 2 1 1 2 1 1 1 1 3 0 1 1 0 3 2 0 4 1 0 1 1 1 0 7 1 0 3 1 1 1 0 12 1 0 16 1 0 9 2 0 4 1 0 2 2 0 9 1 0 6 1 1 1 0 1 1 1 0 13</ChannelData>
+		</Spectrum>
+		<RadDetectorState radDetectorInformationReference="unamed">
+			<Remark>InterSpec could not determine detector state.</Remark>
+		</RadDetectorState>
+	</RadMeasurement>
+	<DHS:InterSpec version="1">
+		<DisplayedSampleNumbers>1</DisplayedSampleNumbers>
+		<DisplayedDetectors>
+			<DetectorName>&quot;&quot;</DetectorName>
+		</DisplayedDetectors>
+		<DisplayType>Foreground</DisplayType>
+		<Peaks version="2">
+			<PeakContinuum version="0" id="1">
+				<Type>Linear</Type>
+				<LowerEnergy>2.39243103e+02</LowerEnergy>
+				<UpperEnergy>3.23609314e+02</UpperEnergy>
+				<ReferenceEnergy>2.39243103e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.30110720e+03 -5.89078035e+00</Values>
+					<Uncertainties>7.76299850e+00 1.37673439e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="1" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="1">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">2.82727919e+02 1.00061458e-02</Centroid>
+				<Width fit="true">8.98087301e+00 9.46204994e-01</Width>
+				<Amplitude fit="true">3.00807879e+03 2.37815015e+02</Amplitude>
+				<LandauAmplitude fit="true" remark="Deprecated element">0.00000000e+00 -1.00000000e+00</LandauAmplitude>
+				<LandauMode fit="true" remark="Deprecated element">0.00000000e+00 -1.00000000e+00</LandauMode>
+				<LandauSigma fit="true" remark="Deprecated element">0.00000000e+00 -1.00000000e+00</LandauSigma>
+				<Chi2 fit="false">2.31450205e+00 -1.00000000e+00</Chi2>
+				<LineColor>#00b9ff</LineColor>
+				<Nuclide>
+					<Name>I131</Name>
+					<DecayParent>I131</DecayParent>
+					<DecayChild>Xe131</DecayChild>
+					<DecayGammaEnergy>2.84309998e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="2">
+				<Type>Linear</Type>
+				<LowerEnergy>2.99160461e+02</LowerEnergy>
+				<UpperEnergy>4.11976624e+02</UpperEnergy>
+				<ReferenceEnergy>2.99160461e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>9.62261696e+02 -6.49034983e+00</Values>
+					<Uncertainties>5.55603846e+00 6.81438702e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="2" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="2">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">3.65464096e+02 7.72937063e-04</Centroid>
+				<Width fit="true">1.40576832e+01 9.21158203e-02</Width>
+				<Amplitude fit="true">6.45743051e+04 3.61406045e+02</Amplitude>
+				<LandauAmplitude fit="true" remark="Deprecated element">0.00000000e+00 -1.00000000e+00</LandauAmplitude>
+				<LandauMode fit="true" remark="Deprecated element">0.00000000e+00 -1.00000000e+00</LandauMode>
+				<LandauSigma fit="true" remark="Deprecated element">0.00000000e+00 -1.00000000e+00</LandauSigma>
+				<Chi2 fit="false">2.71231732e+00 -1.00000000e+00</Chi2>
+				<LineColor>#00b9ff</LineColor>
+				<Nuclide>
+					<Name>I131</Name>
+					<DecayParent>I131</DecayParent>
+					<DecayChild>Xe131</DecayChild>
+					<DecayGammaEnergy>3.64489990e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakSet source="UserPeaks">
+				<SampleNumbers>1</SampleNumbers>
+				<PeakIds>1 2</PeakIds>
+			</PeakSet>
+		</Peaks>
+		<DetectorPeakResponse version="3">
+			<Name>ICx/FLIR IdentiFINDER-NGH (10%)</Name>
+			<Description>NGH - from Relative Eff. File</Description>
+			<DetectorDiameter>3.55999985E+01</DetectorDiameter>
+			<EfficiencySource>DefaultRelativeEfficiencyDrf</EfficiencySource>
+			<EfficiencyEnergyUnits>1000</EfficiencyEnergyUnits>
+			<ResolutionForm>Undefined</ResolutionForm>
+			<EfficiencyForm>ExpOfLogPowerSeries</EfficiencyForm>
+			<ExpOfLogPowerSeriesCoeffs>-10.0226 -1.1967 -0.1079 0.0955 0.0381 0.0065</ExpOfLogPowerSeriesCoeffs>
+			<Hash>7893821926101182293</Hash>
+			<ParentHash>0</ParentHash>
+			<Flags>0</Flags>
+			<Geometry>FAR-FIELD-ABSOLUTE</Geometry>
+			<AbsoluteEfficiencyDistance>5.00000000E+02</AbsoluteEfficiencyDistance>
+			<AbsEffCorrectForAirAtten>1</AbsEffCorrectForAirAtten>
+			<CreationTimeUtc>1778302105</CreationTimeUtc>
+			<LastUsedTimeUtc>1778302105</LastUsedTimeUtc>
+		</DetectorPeakResponse>
+		<ShieldingSourceFit version="0.1">
+			<Geometry>Spherical</Geometry>
+			<MultipleIsotopesPerPeak>1</MultipleIsotopesPerPeak>
+			<AttenuateForAir>1</AttenuateForAir>
+			<DecayCorrect>0</DecayCorrect>
+			<MultithreadComputation>1</MultithreadComputation>
+			<BackgroundPeakSubtraction>0</BackgroundPeakSubtraction>
+			<SameAgeIsotopes>0</SameAgeIsotopes>
+			<PhotopeakClusterSigma>1.25</PhotopeakClusterSigma>
+			<ShowChiOnChart>1</ShowChiOnChart>
+			<Distance>1.000000 m</Distance>
+			<Shieldings>
+				<Shielding version="0.2">
+					<ForFitting>1</ForFitting>
+					<Geometry>Spherical</Geometry>
+					<Material>
+						<Name>Fe (iron)</Name>
+						<Thickness Fit="0" Remark="SphericalThickness">1.000000000 cm</Thickness>
+						<SphericalThickness Fit="0">1.000000000 cm</SphericalThickness>
+						<TraceSource>
+							<Nuclide>I131</Nuclide>
+							<DisplayActivity>62.772238085166 uCi</DisplayActivity>
+							<TraceActivityType>TotalActivity</TraceActivityType>
+							<AllowFitting>1</AllowFitting>
+						</TraceSource>
+					</Material>
+				</Shielding>
+			</Shieldings>
+			<Nuclides>
+				<Nuclide>
+					<Name>I131</Name>
+					<ShieldingDeterminedActivity>0</ShieldingDeterminedActivity>
+					<SourceType>Trace</SourceType>
+					<Activity>
+						<Value Fit="1">2322572.809151</Value>
+						<Uncertainty>12988.468503</Uncertainty>
+					</Activity>
+					<Age>
+						<Value Fit="0">1733442.500000</Value>
+					</Age>
+					<!--AgeIsFittable is deprecated; retained for backward compatibility-->
+					<AgeIsFittable>1</AgeIsFittable>
+				</Nuclide>
+			</Nuclides>
+			<Peaks>
+				<Peak Use="1">
+					<Nuclide>I131</Nuclide>
+					<Energy>284.309998</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>I131</Nuclide>
+					<Energy>364.489990</Energy>
+				</Peak>
+			</Peaks>
+			<Chi2Elements>
+				<Chi2>108.975785</Chi2>
+				<NumParamFit>1</NumParamFit>
+				<EvaluatedEnergies>
+					<EvalPoint>
+						<Energy>284.309998</Energy>
+						<Chi>-10.352426</Chi>
+						<Scale>0.549919</Scale>
+						<Color>#00b9ff</Color>
+						<ScaleUncert>0.043476</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>364.489990</Energy>
+						<Chi>1.342781</Chi>
+						<Scale>1.007572</Scale>
+						<Color>#00b9ff</Color>
+						<ScaleUncert>0.005639</ScaleUncert>
+					</EvalPoint>
+				</EvaluatedEnergies>
+			</Chi2Elements>
+		</ShieldingSourceFit>
+		<RelActCalcAuto version="0">
+			<Options version="2">
+				<FitEnergyCal>false</FitEnergyCal>
+				<EnergyCalFitType remark="Possible values: NoFit, LinearFit, NonLinearFit">NoFit</EnergyCalFitType>
+				<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6">SqrtEnergyPlusInverse</FwhmForm>
+				<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
+				<Title>Foreground</Title>
+				<SkewType>NoSkew</SkewType>
+				<LorentzianXrays>false</LorentzianXrays>
+				<AddUncert>0.00000000e+00</AddUncert>
+				<RelEffCurveInputs>
+					<RelEffCurveInput version="0">
+						<Name>Curve 0</Name>
+						<NucInputInfoList>
+							<NucInputInfo version="0">
+								<Nuclide>I131</Nuclide>
+								<Age>20.0629918981 d</Age>
+								<FitAge>false</FitAge>
+								<PeakColorCss>#00B9FF</PeakColorCss>
+							</NucInputInfo>
+						</NucInputInfoList>
+						<NucsOfElSameAge>false</NucsOfElSameAge>
+						<RelEffEqnType remark='Possible values: Possible values: LnX, LnY, LnXLnY, "FRAM Empirical", "FRAM Physical"'>LnX</RelEffEqnType>
+						<RelEffEqnOrder>3</RelEffEqnOrder>
+					</RelEffCurveInput>
+				</RelEffCurveInputs>
+				<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>
+				<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+				<RoiRangeList>
+					<RoiRange version="0">
+						<LowerEnergy>2.52479538e+02</LowerEnergy>
+						<UpperEnergy>4.11976990e+02</UpperEnergy>
+						<ContinuumType>Linear</ContinuumType>
+						<RangeLimitType>Fixed</RangeLimitType>
+						<ForceFullRange>true</ForceFullRange>
+						<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+					</RoiRange>
+					<RoiRange version="0">
+						<LowerEnergy>5.29022339e+02</LowerEnergy>
+						<UpperEnergy>8.02887878e+02</UpperEnergy>
+						<ContinuumType>Linear</ContinuumType>
+						<RangeLimitType>Fixed</RangeLimitType>
+						<ForceFullRange>true</ForceFullRange>
+						<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+					</RoiRange>
+				</RoiRangeList>
+				<BackgroundSubtract>true</BackgroundSubtract>
+				<ShowRefGammaLines>true</ShowRefGammaLines>
+				<LowerDisplayEnergy>-1.210000</LowerDisplayEnergy>
+				<UpperDisplayEnergy>1558.416937</UpperDisplayEnergy>
+			</Options>
+		</RelActCalcAuto>
+		<FileName>I131 Phantom</FileName>
+	</DHS:InterSpec>
+</RadInstrumentData>
+
