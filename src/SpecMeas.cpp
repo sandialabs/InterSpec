@@ -1492,8 +1492,8 @@ void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
     try
     {
       vector<float> coeffs = reader.GetShapeCalibration();
-      while( coeffs.empty() && (coeffs.back() == 0.0f) )
-        coeffs.resize( coeffs.size() - 1 );
+      while( !coeffs.empty() && (coeffs.back() == 0.0f) )
+        coeffs.pop_back();
 
       if( coeffs.size() == 2 )
       {

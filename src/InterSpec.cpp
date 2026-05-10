@@ -4335,9 +4335,24 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           if( std::find(begin(prefs_to_load), end(prefs_to_load), name) == end(prefs_to_load) )
             continue;
           
+          // Validate the int is a known UserOption::DataType before casting --
+          // out-of-range cast to an unscoped enum is UB.  The validation switch
+          // and the dispatch switch below both list every enumerator: if a new
+          // DataType is added, -Wswitch will flag the dispatch switch (since
+          // it has no default), and unknown values from the DB will be rejected
+          // here at load time.
           const int type = obj.get("type");
-          const UserOption::DataType datatype = UserOption::DataType( type );
-          
+          UserOption::DataType datatype;
+          switch( type )
+          {
+            case UserOption::String:  datatype = UserOption::String;  break;
+            case UserOption::Decimal: datatype = UserOption::Decimal; break;
+            case UserOption::Integer: datatype = UserOption::Integer; break;
+            case UserOption::Boolean: datatype = UserOption::Boolean; break;
+            default:
+              throw runtime_error( "invalid UserOption type " + std::to_string(type) );
+          }
+
           switch( datatype )
           {
             case UserOption::String:
@@ -4345,26 +4360,27 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
               const std::string value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
               break;
-            }//case UserOption::Boolean:
-              
+            }//case UserOption::String:
+
             case UserOption::Decimal:
             {
               const double value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
               break;
-            }//case UserOption::Boolean:
-              
+            }//case UserOption::Decimal:
+
             case UserOption::Integer:
             {
               const int value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
               break;
-            }//case UserOption::Boolean:
-              
+            }//case UserOption::Integer:
+
             case UserOption::Boolean:
             {
               const bool value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
+              break;
             }//case UserOption::Boolean:
           }//switch( datatype )
         }//for( size_t i = 0; i < userOptions.size(); ++i )

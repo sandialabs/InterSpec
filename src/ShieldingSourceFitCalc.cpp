@@ -267,16 +267,18 @@ void SourceFitDef::deSerialize( const ::rapidxml::xml_node<char> *src_node )
     throw runtime_error( "Missing necessary age element for sources XML" );
   
   const rapidxml::xml_node<> *age_value_node = age_node->first_node( "Value", 5 );
+  if( !age_value_node )
+    throw runtime_error( "Missing <Value> child of <Age> in sources XML" );
+
   const rapidxml::xml_attribute<char> *fit_age_attr = age_value_node->first_attribute( "Fit", 3 );
   const rapidxml::xml_attribute<char> *age_defining_attr = age_value_node->first_attribute( "AgeDefiningNuclide", 18 );
   if( !age_defining_attr )
     age_defining_attr = age_value_node->first_attribute( "AgeMaster", 9 ); //sm_xmlSerializationVersion
-  
-  
-  if( !activity_value_node || !activity_value_node->value()
-      || !age_value_node || !age_value_node->value()
+
+
+  if( !activity_value_node->value()
+      || !age_value_node->value()
       || !fit_activity_attr || !fit_activity_attr->value()
-      || !age_value_node || !age_value_node->value()
       || !fit_age_attr || !fit_age_attr->value() )
     throw runtime_error( "Missing/invalid node for sources XML" );
   
