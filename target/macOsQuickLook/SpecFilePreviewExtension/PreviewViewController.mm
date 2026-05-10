@@ -22,11 +22,7 @@
  */
 
 #import <Cocoa/Cocoa.h>
-#if MACOS_QUICK_LOOK_USE_PDF
-#import <Quartz/Quartz.h>
-#else
 #import <QuickLookUI/QuickLookUI.h>
-#endif
 
 #include "SpecPreviewCommon.h"
 
@@ -58,44 +54,6 @@
     return;
   }
 
-#if MACOS_QUICK_LOOK_USE_PDF
-
-  // Render spectrum to PDF using the shared rendering code
-  uint8_t *pdfData = NULL;
-  size_t pdfLen = 0;
-  render_spec_file_to_pdf( &pdfData, &pdfLen, filePath, 800, 600, SpectrumPreview, NULL );
-
-  if( !pdfData || pdfLen == 0 )
-  {
-    handler( [NSError errorWithDomain:@"gov.sandia.SpecFilePreview"
-                                code:2
-                            userInfo:@{NSLocalizedDescriptionKey: @"Failed to render spectrum"}] );
-    return;
-  }
-
-  // Create PDFDocument from rendered data
-  NSData *nsData = [NSData dataWithBytes:pdfData length:pdfLen];
-  free( pdfData );
-  PDFDocument *pdfDoc = [[PDFDocument alloc] initWithData:nsData];
-
-  if( !pdfDoc )
-  {
-    handler( [NSError errorWithDomain:@"gov.sandia.SpecFilePreview"
-                                code:3
-                            userInfo:@{NSLocalizedDescriptionKey: @"Failed to create PDF document"}] );
-    return;
-  }
-
-  // Display in a PDFView (native, works in Quick Look view bridge)
-  PDFView *pdfView = [[PDFView alloc] initWithFrame:self.view.bounds];
-  pdfView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-  pdfView.autoScales = YES;
-  pdfView.document = pdfDoc;
-  pdfView.displayMode = kPDFDisplaySinglePage;
-  [self.view addSubview:pdfView];
-
-#else /* !MACOS_QUICK_LOOK_USE_PDF */
-
   CGImageRef cgImage = render_spec_file_to_cgimage( filePath, 800, 600, SpectrumPreview, NULL );
 
   if( !cgImage )
@@ -115,8 +73,6 @@
   imageView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   imageView.imageScaling = NSImageScaleProportionallyUpOrDown;
   [self.view addSubview:imageView];
-
-#endif /* MACOS_QUICK_LOOK_USE_PDF */
 
   handler( nil );
 }

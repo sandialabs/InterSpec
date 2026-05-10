@@ -33,8 +33,7 @@
 
 /** A Wt::WPaintDevice backed by a macOS CGBitmapContext and Core Text.
 
- Provides raster rendering of Wt painter output using native macOS graphics,
- eliminating the need for libharu/WPdfImage for bitmap output.
+ Provides raster rendering of Wt painter output using native macOS graphics.
 
  Two construction modes:
  - Primary: creates and owns a CGBitmapContext of the given dimensions.

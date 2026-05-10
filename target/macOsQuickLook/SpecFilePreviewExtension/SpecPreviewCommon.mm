@@ -34,12 +34,7 @@
 #include <sstream>
 #include <iostream>
 
-#if MACOS_QUICK_LOOK_USE_PDF
-#include <hpdf.h>
-#include <Wt/WPdfImage>
-#else
 #include "CGPaintDevice.h"
-#endif
 
 #include <Wt/WFont>
 #include <Wt/WPainter>
@@ -70,17 +65,6 @@ namespace
     CompactSpecRender,
     LargeSpecRender
   };
-
-
-#if MACOS_QUICK_LOOK_USE_PDF
-  void HPDF_STDCALL hpdf_error_handler( HPDF_STATUS error_no, HPDF_STATUS detail_no, void * /*user_data*/ )
-  {
-    char buf[200];
-    snprintf( buf, sizeof( buf ), "PDF image error: error_no=%04X, detail_no=%d",
-              (unsigned int)error_no, (int)detail_no );
-    throw std::runtime_error( buf );
-  }//hpdf_error_handler(...)
-#endif
 
 
   /** A minimal subclass of SpectrumChart that can paint peaks without needing PeakModel.
@@ -616,104 +600,6 @@ namespace
 }//anonymous namespace
 
 
-#if MACOS_QUICK_LOOK_USE_PDF
-
-void render_spec_file_to_pdf( uint8_t **result, size_t *result_size,
-                              const char * const filename,
-                              const float width_pt, const float height_pt,
-                              const enum SpecPreviewType type,
-                              const char * const logo_path )
-{
-  (*result) = nullptr;
-  (*result_size) = 0;
-
-  std::shared_ptr<SpecMeas> spec;
-  std::shared_ptr<const SpecUtils::Measurement> foreground, background;
-  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks;
-
-  if( !load_spec_data( filename, spec, foreground, background, peaks ) )
-    return;
-
-  // Render to PDF
-  // Use 1:1 point-to-pixel ratio; PDFView auto-scales to fit the window
-  const float width_px = width_pt;
-  const float height_px = height_pt;
-
-  HPDF_Doc pdfdoc = nullptr;
-
-  try
-  {
-    pdfdoc = HPDF_New( hpdf_error_handler, nullptr );
-    if( !pdfdoc )
-      throw std::runtime_error( "Could not create libharu document." );
-
-    HPDF_SetCompressionMode( pdfdoc, HPDF_COMP_ALL );
-    HPDF_Page pdfpage = HPDF_AddPage( pdfdoc );
-    HPDF_Page_SetWidth( pdfpage, width_px );
-    HPDF_Page_SetHeight( pdfpage, height_px );
-    HPDF_Page_GSave( pdfpage );
-    HPDF_UseUTFEncodings( pdfdoc );
-
-    const bool is_thumbnail = (type == SpectrumThumbnail);
-
-    if( !is_thumbnail && spec->passthrough() )
-    {
-      // Preview of passthrough: spectrum on top 2/3, time series on bottom 1/3
-      const float spec_height_px = 2.0f * height_px / 3.0f;
-
-      auto spectrum_img = std::make_shared<WPdfImage>( pdfdoc, pdfpage, 0, -spec_height_px / 2.0f, width_px, spec_height_px );
-      if( !renderSpectrum( *spectrum_img, foreground, background, peaks, false ) )
-        throw runtime_error( "Failed in renderSpectrum for passthrough" );
-
-      auto time_img = std::make_shared<WPdfImage>( pdfdoc, pdfpage, 0, 0, width_px, spec_height_px / 2.0f );
-      if( !renderTimeSeries( *time_img, spec ) )
-        throw runtime_error( "Failed in renderTimeSeries" );
-    }else
-    {
-      const std::string logo = (logo_path ? logo_path : "");
-      auto spectrum_img = std::make_shared<WPdfImage>( pdfdoc, pdfpage, 0, 0, width_px, height_px );
-      if( !renderSpectrum( *spectrum_img, foreground, background, peaks, is_thumbnail, logo ) )
-        throw runtime_error( "Failed in renderSpectrum" );
-    }
-
-    // Stream PDF to buffer
-    static_assert( sizeof( HPDF_BYTE ) == 1, "HPDF_BYTE must be exactly one byte" );
-    vector<HPDF_BYTE> resultdata;
-    HPDF_SaveToStream( pdfdoc );
-    HPDF_ResetStream( pdfdoc );
-
-    for( ;; )
-    {
-      HPDF_BYTE buf[4096];
-      HPDF_UINT32 siz = 4096;
-      HPDF_ReadFromStream( pdfdoc, buf, &siz );
-      if( siz == 0 )
-        break;
-      resultdata.insert( resultdata.end(), buf, buf + siz );
-    }
-
-    if( resultdata.empty() )
-      throw std::runtime_error( "Failed to stream PDF" );
-
-    HPDF_Free( pdfdoc );
-    pdfdoc = nullptr;
-
-    (*result) = (uint8_t *)malloc( resultdata.size() );
-    memcpy( (*result), &(resultdata[0]), resultdata.size() );
-    (*result_size) = resultdata.size();
-  }catch( std::exception &e )
-  {
-    fprintf( stderr, "Failed rendering PDF: %s\n", e.what() );
-    if( pdfdoc )
-      HPDF_Free( pdfdoc );
-    return;
-  }
-}//render_spec_file_to_pdf(...)
-
-
-#else /* !MACOS_QUICK_LOOK_USE_PDF */
-
-
 CGImageRef render_spec_file_to_cgimage( const char * const filename,
                                         const float width, const float height,
                                         const enum SpecPreviewType type,
@@ -764,6 +650,3 @@ CGImageRef render_spec_file_to_cgimage( const char * const filename,
     return nullptr;
   }
 }//render_spec_file_to_cgimage(...)
-
-
-#endif /* MACOS_QUICK_LOOK_USE_PDF */

@@ -5,10 +5,6 @@ project( SpecFilePreviewExtensions )
 # The InterSpec source root directory
 set( InterSpec_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../.." )
 
-# Set to 1 to use the old libharu/WPdfImage rendering path,
-# or 0 to use the native Core Graphics CGPaintDevice path.
-option( MACOS_QUICK_LOOK_USE_PDF "Use libharu PDF rendering for Quick Look (vs native CG)" OFF )
-
 # --- Quick Look Preview Extension ---
 # App extensions must be executables (MH_EXECUTE), not bundles (MH_BUNDLE).
 add_executable( SpecFilePreview
@@ -30,10 +26,6 @@ set_target_properties( SpecFilePreview PROPERTIES
   # The framework is at Contents/Frameworks/
   INSTALL_RPATH "@executable_path/../../../../Frameworks"
   BUILD_WITH_INSTALL_RPATH TRUE
-)
-
-target_compile_definitions( SpecFilePreview PRIVATE
-  MACOS_QUICK_LOOK_USE_PDF=$<BOOL:${MACOS_QUICK_LOOK_USE_PDF}>
 )
 
 target_link_libraries( SpecFilePreview PRIVATE
@@ -66,10 +58,6 @@ set_target_properties( SpecFileThumbnail PROPERTIES
   XCODE_PRODUCT_TYPE "com.apple.product-type.app-extension"
   INSTALL_RPATH "@executable_path/../../../../Frameworks"
   BUILD_WITH_INSTALL_RPATH TRUE
-)
-
-target_compile_definitions( SpecFileThumbnail PRIVATE
-  MACOS_QUICK_LOOK_USE_PDF=$<BOOL:${MACOS_QUICK_LOOK_USE_PDF}>
 )
 
 target_link_libraries( SpecFileThumbnail PRIVATE

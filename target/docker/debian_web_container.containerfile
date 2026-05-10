@@ -27,7 +27,7 @@ ARG tag=master \
 ARG hostdepdir=true \
 ARG hostbuilddir=true \
 WORKDIR /work
-#libhpdf-dev libfcgi-dev freeglut3-dev libpango1.0-dev libglew-dev libopenblas-dev liblapack-dev libgmp-dev libmpfr-dev
+#libfcgi-dev freeglut3-dev libpango1.0-dev libglew-dev libopenblas-dev liblapack-dev libgmp-dev libmpfr-dev
 # RUN statements are broken up to allow loading cached images for debugging
 RUN --mount=type=bind,target=/mnt/host,rw    \
     apt update && apt upgrade -y && apt install -y --no-install-recommends \

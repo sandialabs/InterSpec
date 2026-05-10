@@ -68,104 +68,6 @@
   const char *logoCStr = logoPath ? [logoPath fileSystemRepresentation] : NULL;
 
 
-#if MACOS_QUICK_LOOK_USE_PDF
-
-  // Render spectrum to PDF
-  uint8_t *pdfData = NULL;
-  size_t pdfLen = 0;
-  render_spec_file_to_pdf( &pdfData, &pdfLen, filePath, width_pt, height_pt, SpectrumThumbnail, logoCStr );
-
-  if( !pdfData || pdfLen == 0 )
-  {
-    handler( nil, [NSError errorWithDomain:@"gov.sandia.SpecFileThumbnail"
-                                     code:2
-                                 userInfo:@{NSLocalizedDescriptionKey: @"Failed to render spectrum"}] );
-    return;
-  }
-
-  // Create a CGPDFDocument from the PDF data
-  NSData *nsData = [NSData dataWithBytesNoCopy:pdfData length:pdfLen freeWhenDone:YES];
-  CGDataProviderRef dataProvider = CGDataProviderCreateWithCFData( (__bridge CFDataRef)nsData );
-
-  if( !dataProvider )
-  {
-    handler( nil, [NSError errorWithDomain:@"gov.sandia.SpecFileThumbnail"
-                                     code:3
-                                 userInfo:@{NSLocalizedDescriptionKey: @"Failed to create PDF data provider"}] );
-    return;
-  }
-
-  CGPDFDocumentRef pdfDoc = CGPDFDocumentCreateWithProvider( dataProvider );
-  CGDataProviderRelease( dataProvider );
-
-  if( !pdfDoc )
-  {
-    handler( nil, [NSError errorWithDomain:@"gov.sandia.SpecFileThumbnail"
-                                     code:4
-                                 userInfo:@{NSLocalizedDescriptionKey: @"Failed to create PDF document"}] );
-    return;
-  }
-
-  CGPDFPageRef pdfPage = CGPDFDocumentGetPage( pdfDoc, 1 );
-  if( !pdfPage )
-  {
-    CGPDFDocumentRelease( pdfDoc );
-    handler( nil, [NSError errorWithDomain:@"gov.sandia.SpecFileThumbnail"
-                                     code:5
-                                 userInfo:@{NSLocalizedDescriptionKey: @"No pages in PDF"}] );
-    return;
-  }
-
-  // Get the PDF page dimensions to compute the drawing rect
-  const CGRect mediaBox = CGPDFPageGetBoxRect( pdfPage, kCGPDFMediaBox );
-  const CGFloat pdfWidth = CGRectGetWidth( mediaBox );
-  const CGFloat pdfHeight = CGRectGetHeight( mediaBox );
-
-  // Compute the context size (maintain aspect ratio within maxSize)
-  CGFloat contextWidth = maxSize.width;
-  CGFloat contextHeight = maxSize.height;
-  if( pdfWidth > 0 && pdfHeight > 0 )
-  {
-    const CGFloat aspect = pdfWidth / pdfHeight;
-    if( contextWidth / contextHeight > aspect )
-      contextWidth = contextHeight * aspect;
-    else
-      contextHeight = contextWidth / aspect;
-  }
-
-  // Retain pdfDoc for use in the drawing block; release it when done
-  CGPDFDocumentRetain( pdfDoc );
-
-  QLThumbnailReply *reply =
-    [QLThumbnailReply replyWithContextSize:CGSizeMake( contextWidth, contextHeight )
-                                 currentContextDrawingBlock:^BOOL {
-      CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
-      if( !ctx )
-      {
-        CGPDFDocumentRelease( pdfDoc );
-        return NO;
-      }
-
-      // Fill with white background
-      CGContextSetRGBFillColor( ctx, 1.0, 1.0, 1.0, 1.0 );
-      CGContextFillRect( ctx, CGRectMake( 0, 0, contextWidth, contextHeight ) );
-
-      // Use CGPDFPageGetDrawingTransform to properly handle all PDF coordinate transforms
-      const CGRect drawRect = CGRectMake( 0, 0, contextWidth, contextHeight );
-      const CGAffineTransform pdfTransform = CGPDFPageGetDrawingTransform( pdfPage, kCGPDFMediaBox, drawRect, 0, true );
-      CGContextConcatCTM( ctx, pdfTransform );
-
-      CGContextDrawPDFPage( ctx, pdfPage );
-
-      CGPDFDocumentRelease( pdfDoc );
-      return YES;
-    }];
-
-  handler( reply, nil );
-
-
-#else /* !MACOS_QUICK_LOOK_USE_PDF */
-
   CGImageRef cgImage = render_spec_file_to_cgimage( filePath, width_pt, height_pt,
                                                      SpectrumThumbnail, logoCStr );
   if( !cgImage )
@@ -192,8 +94,6 @@
     }];
 
   handler( reply, nil );
-
-#endif /* MACOS_QUICK_LOOK_USE_PDF */
 }
 
 @end

@@ -38,32 +38,9 @@ extern "C" {
   };
 
 
-#if MACOS_QUICK_LOOK_USE_PDF
-
-  /** Renders a spectrum file to PDF for use as a Quick Look preview or thumbnail.
-
-   @param result Will be set to a malloc'd buffer containing PDF data. Caller must free().
-   @param result_size Will be set to the byte length of the result buffer. Zero on failure.
-   @param filename Path to the spectrum file to render.
-   @param width_pt Width in points for the rendered image.
-   @param height_pt Height in points for the rendered image.
-   @param type SpectrumPreview for full preview (axes, titles, time series for passthrough),
-          or SpectrumThumbnail for compact rendering (no axes/titles, spectrum only).
-   @param logo_path Path to logo PNG for thumbnail watermark, or NULL to skip.
-   */
-  void render_spec_file_to_pdf( uint8_t **result, size_t *result_size,
-                                const char * const filename,
-                                const float width_pt, const float height_pt,
-                                const enum SpecPreviewType type,
-                                const char * const logo_path );
-
-#else /* !MACOS_QUICK_LOOK_USE_PDF */
-
 #include <CoreGraphics/CoreGraphics.h>
 
   /** Renders a spectrum file to a CGImage for Quick Look preview or thumbnail.
-
-   Uses native Core Graphics rendering (no libharu dependency).
 
    @param filename Path to the spectrum file to render.
    @param width Width in pixels for the rendered image.
@@ -77,8 +54,6 @@ extern "C" {
                                           const float width, const float height,
                                           const enum SpecPreviewType type,
                                           const char * const logo_path );
-
-#endif /* MACOS_QUICK_LOOK_USE_PDF */
 
 #ifdef __cplusplus
 }

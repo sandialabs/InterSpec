@@ -229,17 +229,13 @@ rem     GOTO :cmderr
     
     
 rem Build/install Wt 
-set WT_DIR=wt-3.7.1
+set WT_DIR=wt-4.12.6
+set WT_GIT_HASH=4d158458b06554192c63389e098ad03e5e35a713
 set WT_BUILT_FILE=built_%WT_DIR%
-
-rem git clone https://github.com/emweb/wt.git %WT_DIR%
-rem cd %WT_DIR%
-rem git checkout b84925215d2b45879cf20c0cb340c4e7960d0c53
-rem 
 
 if not exist %WT_BUILT_FILE% (
     if not exist %WT_DIR% (
-        git clone https://github.com/emweb/wt.git %WT_DIR% && (
+        git clone --recursive https://github.com/emweb/wt.git --branch master --single-branch --depth 1 %WT_DIR% && (
             echo Cloned into Wt
         ) || (
             echo "Failed to clone into Wt"
@@ -248,31 +244,36 @@ if not exist %WT_BUILT_FILE% (
 
         cd %WT_DIR%
 
-        rem checkout Wt 3.7.1
-        git checkout b84925215d2b45879cf20c0cb340c4e7960d0c53 && (
-            echo Checked out Wt 3.7.1
+        git fetch --depth 1 origin %WT_GIT_HASH% && (
+            echo Fetched Wt 4.12.6
         ) || (
-            echo "Failed to checkout wanted commit"
+            echo "Failed to fetch wanted Wt commit"
             GOTO :cmderr
         )
 
-        echo About to patch Wt
-        git apply --reject --ignore-space-change --ignore-whitespace "%PATCH_DIR%\wt\3.7.1\NormalBuild\wt_3.7.1_git.patch" && (
-            echo Patched Wt
+        git checkout %WT_GIT_HASH% && (
+            echo Checked out Wt 4.12.6
         ) || (
-            echo "Failed to patch Wt"
+            echo "Failed to checkout wanted Wt commit"
+            GOTO :cmderr
+        )
+
+        git submodule update --init --recursive && (
+            echo Updated Wt submodules
+        ) || (
+            echo "Failed to update Wt submodules"
             GOTO :cmderr
         )
     ) else (
-        echo %WT_DIR% already cloned and patched
+        echo %WT_DIR% already cloned
         cd %WT_DIR%
     )
-    
+
 
     mkdir build_msvc2022
     cd build_msvc2022
 
-    cmake -A Win32 -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%MY_PREFIX%" -DBoost_INCLUDE_DIR="%MY_PREFIX%/include" -DBOOST_PREFIX="%MY_PREFIX%" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="%MY_PREFIX%" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++11" -DINSTALL_FINDWT_CMAKE_FILE=OFF -DCONFIGURATION=data/config/wt_config_electron.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="%MY_PREFIX%/etc/wt" -DBoost_USE_STATIC_RUNTIME=ON .. && (
+    cmake -A Win32 -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%MY_PREFIX%" -DBoost_INCLUDE_DIR="%MY_PREFIX%/include" -DBOOST_PREFIX="%MY_PREFIX%" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="%MY_PREFIX%" -DENABLE_HARU=OFF -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DENABLE_FIREBIRD=OFF -DENABLE_MSSQLSERVER=OFF -DENABLE_OPENGL=ON -DENABLE_QT4=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_LIBWTTEST=ON -DENABLE_SAML=OFF -DENABLE_UNWIND=OFF -DHTTP_WITH_ZLIB=OFF -DCMAKE_CXX_STANDARD=17 -DCONFIGURATION=data/config/wt_config_electron.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="%MY_PREFIX%/etc/wt" -DBoost_USE_STATIC_RUNTIME=ON .. && (
         echo configured Wt
     ) || (
         echo "Failed to cmake configure Wt"

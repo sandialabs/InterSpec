@@ -3,7 +3,7 @@
 In order to create the [Electron]([https://electronjs.org/](https://electronjs.org/) packaged version of `InterSpec`, we create a node add-on that contains all the C++ code, and then request to start the `InterSpec` server from [main.js](app/main.js).  To create the add-on we use [cmake-js](https://www.npmjs.com/package/cmake-js) to build things, and [node-addon-api](https://www.npmjs.com/package/node-addon-api) to actually interface the C++ to JS.
 
 
-You can either manually build the InterSpec dependencies (boost, Wt, zlib, and for macOS libpng and libharu), or you can have CMake fetch and build these dependencies.  Having CMake fetch and build the dependencies takes maybe an hour to build things the first time (however, only a couple minutes of this requires your attention) and then subsequent builds are a couple minutes; if you plan to make a substantial number of changes and re-compilations, then the manually built dependencies will yield a slightly faster compile time after each change.
+You can either manually build the InterSpec dependencies (boost, Wt, zlib), or you can have CMake fetch and build these dependencies.  Having CMake fetch and build the dependencies takes maybe an hour to build things the first time (however, only a couple minutes of this requires your attention) and then subsequent builds are a couple minutes; if you plan to make a substantial number of changes and re-compilations, then the manually built dependencies will yield a slightly faster compile time after each change.
 
 ## Building with manually compiled dependencies
 To compile the InterSpec code, and package the Electron app, with the manually compiled dependencies (see [patches/README.md](../patches/README.md) for instructions), the following commands are a good base to start with:
@@ -25,7 +25,7 @@ cmake-js
 # Or to have a little more control over things
 cmake-js --generator "Visual Studio 17 2022" \
          --architecture x64 --arch=x64 \
-         --CDCMAKE_PREFIX_PATH=C://Path/To/Wt_3.7.1_prefix \
+         --CDCMAKE_PREFIX_PATH=C://Path/To/Wt_4.12.6_prefix \
          --CDBoost_USE_STATIC_RUNTIME=ON \
          --CDCMAKE_BUILD_TYPE="Release" \
          --CDLEAFLET_MAPS_KEY="..." \
@@ -95,7 +95,7 @@ Note: cross-compiling to macOS arm64 from a Linux host is not supported here, as
 ## Building with CMake fetched and compiled dependencies
 The following commands will compile and package the InterSpec code, starting from the Fedora 35 Docker image; there is nothing special about Fedora, and any of the distributions compatible with npm, node.js, and Electron should work.
 
-Using the CMake FetchContent will fail on macOS because it currently doesnt fetch/build libpng and libharu, but otherwise it seems to work well on Windows, and various flavors of Linux.
+Note: CMake FetchContent currently fails on both macOS and Linux during Wt's configure step. The FetchContent boost super-project is cloned with `GIT_SHALLOW ON`, but `boostorg/boost`'s library submodules don't populate cleanly that way, and Wt's `WtFindBoost.txt` uses the legacy `FindBoost.cmake` module which won't pick up the FetchContent boost even when present. For now, use the manually compiled dependencies path above. (Tracked separately from the libharu cleanup.)
 
 ```bash
 # From host OS terminal - grab InterSpec source code

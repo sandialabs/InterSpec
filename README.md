@@ -71,10 +71,9 @@ At a minimum, you will need a C++14 compiler, and [cmake](https://cmake.org/).
 
 Then to build, you can choose one of two methods to build the code:
 1. Use [cmake](https://cmake.org/) to fetch and build the prerequisites for you, by specifying the `InterSpec_FETCH_DEPENDENCIES` CMake option to `ON`.  This option requires having [git](https://git-scm.com) installed, but is generally the easier of the two options.
-2. Build the prerequisites yourself.  This option is faster if you plan to rebuild the code many times, as CMake will have less libraries to deal with internally,.  You will need to build the following libraries from source (see the instructions in the [patches](/target/patches/) directory):
-      * [Wt](https://www.webtoolkit.eu/wt) version 3.7.1.  Some patches are included in the [patches](https://github.com/sandialabs/InterSpec/tree/master/target/patches/) directory.
+2. Build the prerequisites yourself.  This option is faster if you plan to rebuild the code many times, as CMake will have less libraries to deal with internally,.  You will need to build the following libraries from source (see the build scripts in the [patches](/target/patches/) directory):
+      * [Wt](https://www.webtoolkit.eu/wt) version 4.12.6.
       * [boost](https://www.boost.org/) version 1.78 is
-      * The macOS app also requires [libharu](https://github.com/libharu/libharu), and [libpng](http://www.libpng.org/pub/png/libpng.html).
 
 
 Included in this repository are some additional C++ libraries that will be built as part of building InterSpecs code.  

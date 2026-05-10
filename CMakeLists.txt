@@ -230,21 +230,6 @@ else( InterSpec_FETCH_DEPENDENCIES )
   find_package( Eigen3 3.4...6.0 REQUIRED NO_MODULE )
   find_package( Ceres REQUIRED )
 
-  # libharu (HPDF) does not install a CMake config, but Wt::Wt depends on
-  # the HPDF::HPDF target.  We must create it before calling find_package(wt).
-  if( NOT TARGET HPDF::HPDF )
-    find_library( HPDF_LIB_PATH NAMES hpdf hpdfs REQUIRED )
-    find_path( HPDF_INCLUDE_PATH NAMES hpdf.h REQUIRED )
-    find_package( PNG REQUIRED )
-
-    add_library( HPDF::HPDF STATIC IMPORTED )
-    set_target_properties( HPDF::HPDF PROPERTIES
-      IMPORTED_LOCATION "${HPDF_LIB_PATH}"
-      INTERFACE_INCLUDE_DIRECTORIES "${HPDF_INCLUDE_PATH}"
-      INTERFACE_LINK_LIBRARIES "PNG::PNG;ZLIB::ZLIB"
-    )
-  endif( NOT TARGET HPDF::HPDF )
-
   # Find Wt 4 via its installed CMake config
   find_package( wt CONFIG REQUIRED )
 
@@ -914,19 +899,6 @@ endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 if(MSVC AND (NOT hasParent))
   set_target_properties( InterSpecExe PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 endif(MSVC AND (NOT hasParent))
-
-# For pre-installed Wt 4, HPDF and PNG are linked transitively through Wt::Wt -> HPDF::HPDF.
-# For FetchContent builds, we may need explicit linking.
-if( InterSpec_FETCH_DEPENDENCIES )
-  FIND_LIBRARY( HPDF_LIBRARY NAME hpdf hpdfs HINTS ${Wt_INCLUDE_DIR}/../lib )
-  if( HPDF_LIBRARY )
-    target_link_libraries( InterSpecLib PUBLIC ${HPDF_LIBRARY} )
-    FIND_LIBRARY( PNG_LIBRARY NAME png HINTS ${Wt_INCLUDE_DIR}/../lib )
-    if( PNG_LIBRARY )
-      target_link_libraries( InterSpecLib PUBLIC ${PNG_LIBRARY} )
-    endif( PNG_LIBRARY )
-  endif( HPDF_LIBRARY )
-endif( InterSpec_FETCH_DEPENDENCIES )
 
 #bellow is what I need to get things working 20131120 for statically linked
 if(TRY_TO_STATIC_LINK)

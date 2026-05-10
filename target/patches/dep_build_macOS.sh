@@ -197,95 +197,6 @@ fi #if boost.installed exists / else
 cd "${working_directory}"
 
 
-## Build libpng
-if [ -f "${working_directory}/libpng.installed" ]; then
-    echo "libpng already installed (as indicated by existance of libpng.installed file) - skipping."
-else
-  # libpng is only necessary if you are going to build the macOS packaged app, with the Quick Look utility that provides previews of spectrum files in the Finder and various places throughout the OS.
-  # We will build once for arm64, and then x86_64 and lipo the libraries together to create a fat library.
-  file_url="http://prdownloads.sourceforge.net/libpng/libpng-1.6.48.tar.gz"
-  file_name="libpng-1.6.48.tar.gz"
-  expected_sha256="68f3d83a79d81dfcb0a439d62b411aa257bb4973d7c67cd1ff8bdf8d011538cd"
-  src_dir="libpng-1.6.48"
-
-  download_file "${file_url}" "${file_name}" "${expected_sha256}"
-
-
-  if [ -d "${src_dir}" ]; then
-    echo "libpng already unzipped, not doing again."
-  else
-    tar -xzvf "${file_name}"
-  fi
-  
-  cd "${src_dir}"
-
-  if [ -d build ]; then
-    rm -r build
-    echo "Deleted previous libpng build directory."
-  fi
-
-  mkdir build
-  cd build
-
-  # First build for arm64 (-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" doesnt seem to work)
-  # For linking, when built on x86, you may get linking errors on ARM, so you can add -DPNG_HARDWARE_OPTIMIZATIONS=OFF to fix this up (and remove -DPNG_ARM_NEON=on)
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DPNG_SHARED=OFF -DPNG_FRAMEWORK=OFF -DPNG_HARDWARE_OPTIMIZATIONS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_OSX_ARCHITECTURES="arm64" ..
-  make -j$(sysctl -n hw.ncpu) install
-  rm -rf ./*
-
-  # Then build for x86_64
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DPNG_SHARED=OFF  -DPNG_FRAMEWORK=OFF -DPNG_HARDWARE_OPTIMIZATIONS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_OSX_ARCHITECTURES="x86_64" ..
-  make -j$(sysctl -n hw.ncpu)
-
-  # And now lipo the libraries together
-  mkdir universal
-  lipo -create -arch x86_64 libpng16.a -arch arm64 "${MY_WT_PREFIX}/lib/libpng16.a" -output universal/libpng16.a
-  cp universal/libpng16.a "${MY_WT_PREFIX}/lib/"
-
-  touch "${working_directory}/libpng.installed"
-fi #if libpng.installe exists / else
-
-cd "${working_directory}"
-
-
-## Build libharu 2.4.6
-if [ -f "${working_directory}/libharu.installed" ]; then
-    echo "libharu already installed (as indicated by existance of libharu.installed file) - skipping."
-else
-  # libharu is only necessary if you are going to build the macOS packaged app, with the Quick Look utility.
-  src_dir="libharu-2.4.6"
-  git_hash="3467749fd1c0ab6ca6ed424d053b1ea53c1bf67c"
-
-  if [ -d "${src_dir}" ]; then
-    echo "libharu cloned - not doing it again."
-    cd "${src_dir}"
-  else
-    git clone --recursive https://github.com/libharu/libharu.git --branch master --single-branch --depth 1 "${src_dir}"
-    cd "${src_dir}"
-    git fetch --depth 1 origin ${git_hash}
-    git checkout ${git_hash}
-    git submodule update --init --recursive
-  fi
-
-  if [ -d build ]; then
-    rm -r build
-    echo "Deleted previous libharu build directory."
-  fi
-
-  mkdir build
-  cd build
-
-  # CMake will take care of building for x86_64 and arm64 at the same time
-  cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DPNG_LIBRARY_RELEASE=${MY_WT_PREFIX}/lib/libpng.a -DPNG_PNG_INCLUDE_DIR=${MY_WT_PREFIX}/include -DCMAKE_INSTALL_PREFIX=${MY_WT_PREFIX} -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
-  make -j$(sysctl -n hw.ncpu) install
-
-  touch "${working_directory}/libharu.installed"
-fi #if libharu.installed exists / else
-
-
-cd "${working_directory}"
-
-
 ## Build Wt 4.12.6
 if [ -f "${working_directory}/wt.installed" ]; then
     echo "Wt already installed (as indicated by existance of wt.installed file) - skipping."
@@ -312,7 +223,7 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DENABLE_FIREBIRD=OFF -DENABLE_MSSQLSERVER=OFF -DENABLE_OPENGL=ON -DENABLE_QT4=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_LIBWTTEST=ON -DENABLE_SAML=OFF -DENABLE_UNWIND=OFF -DHTTP_WITH_ZLIB=OFF -DCMAKE_CXX_STANDARD=17 -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DENABLE_HARU=OFF -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DENABLE_FIREBIRD=OFF -DENABLE_MSSQLSERVER=OFF -DENABLE_OPENGL=ON -DENABLE_QT4=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_LIBWTTEST=ON -DENABLE_SAML=OFF -DENABLE_UNWIND=OFF -DHTTP_WITH_ZLIB=OFF -DCMAKE_CXX_STANDARD=17 -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
   make -j$(sysctl -n hw.ncpu) install
   touch "${working_directory}/wt.installed"
 fi #if wt.installed exists / else

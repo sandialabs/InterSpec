@@ -187,24 +187,10 @@ IT &quot;AS IS.&quot;
     </li>
 
 
-    <li><b><a href="https://github.com/libharu/libharu" target="_blank">libHaru</a>:</b> free PDF library.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>libHaru</b> is used for the macOS build to help provide the <em>Quick Look</em> preview of spectrum files inside the <em>Finder</em>.
-        <b>libHaru</b> is <a href="https://zlib.net/zlib_license.html" target="_blank">ZLIB licensed</a> library.
-      </div>
-    </li>
-
     <li><b><a href="https://www.nayuki.io/page/qr-code-generator-library" target="_blank">QR Code generator library</a>:</b> Multiple programming language QR code generator.
       <div style="margin-left: 1em; font-size: small;">
         <b>QR Code generator library</b> is used to generate QR codes throughout InterSpec; notably to represent detector response functions.
         <b>QR Code generator library</b> is <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> library.
-      </div>
-    </li>
-
-    <li><b><a href="http://www.libpng.org/pub/png/libpng.html" target="_blank">libpng</a></b>: libpng is the official PNG reference library.
-      <div style="margin-left: 1em; font-size: small;">
-      <b>libpng</b> is only on the macOS app build as part of rendering spectrum file previews in the Finder.
-      <b>libpng</b> is <a href="https://spdx.org/licenses/libpng-2.0.html" target="_blank">PNG Reference Library License version 2</a> library.
       </div>
     </li>
     <li><b><a href="http://ceres-solver.org" target="_blank">Ceres Solver</a></b>: Ceres Solver is an open source C++ library for modeling and solving large, complicated optimization problems.

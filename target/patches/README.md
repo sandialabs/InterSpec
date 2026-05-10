@@ -79,7 +79,7 @@ set http_proxy=http://your-proxy:port
 set https_proxy=http://your-proxy:port
 
 # Set where we want all the libraries installed to
-set MY_PREFIX=C:\install\msvc2022\x64\wt_3.7.1_prefix
+set MY_PREFIX=C:\install\msvc2022\x64\wt_4.12.6_prefix
 
 # Run script to compile all the libraries
 dep_build_msvc2022.bat C:\temp\interspec_prereq_build %MY_PREFIX%
@@ -99,7 +99,7 @@ Example `CMakeSettings.json` contents:
       "inheritEnvironments": [ "msvc_x64_x64" ],
       "buildRoot": "${projectDir}\\out\\build\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
-      "cmakeCommandArgs": "-DCMAKE_PREFIX_PATH=\"C:\\install\\msvc2022\\x64\\wt_3.7.1_prefix\"",
+      "cmakeCommandArgs": "-DCMAKE_PREFIX_PATH=\"C:\\install\\msvc2022\\x64\\wt_4.12.6_prefix\"",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "variables": [
