@@ -124,12 +124,6 @@ color: white;
 background-color: #909090;
 }
 
-.ScoreDisplayText
-{
-border:1px solid #e1e1e1; 
-}
-
-
 .ScoreDisplayNotes
 {
 border:1px solid #e1e1e1; 
@@ -218,11 +212,6 @@ width: 100%;
 {
 }
 
-
-.ScoreLabel
-{
-font-weight:bold;
-}
 
 .OverallStaticScoreBox
 {

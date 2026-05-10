@@ -23,12 +23,6 @@ cursor: default;
 }
 
 
-.SrbSelectNuclide
-{
-  
-}
-
-
 .DecayActivityChartDiv, .DecayActivityChartDiv
 {
   position: static;
@@ -106,24 +100,6 @@ cursor: default;
   flex-shrink: 1;
 }
 
-.m_parentNuclidesDiv
-{
-  border: 1px solid #888888;
-  padding-top: 5px;
-  padding-bottom: 5px;
-  margin-left: 2px;
-  margin-right: 2px;
-  -moz-border-radius: 8px;
-  border-radius: 8px;
-}
-
-.m_nuclidesAddedDiv
-{
-  margin: 4px;
-  padding: 4px;
-}
-
-
 .Nuclide /*this is what contains the info about nuclides added*/
 {
   border: 1px solid #888888;
@@ -156,38 +132,6 @@ cursor: default;
 }
 
 
-.m_createNewNuclideButton
-{
-  margin-left: 5px;
-}
-
-
-.m_clearNuclidesButton  /*need to float right*/
-{
-  float: right;
-  margin-right: 5px;
-}
-
-
-
-.m_createNewNuclideButton:hover
-{
-  margin-left: 5px;
-}
-
-
-.m_clearNuclidesButton:hover
-{
-  margin-right: 5px;
-}
-
-
-
-.m_elementSelection
-{
-  
-}
-
 .DisplayActivityUnitsCombo
 {
   margin-right: 15px;
@@ -195,11 +139,6 @@ cursor: default;
 .DisplayActivityUnitsComboPhone
 {
   margin-right: 5px;
-}
-
-.m_massSelection
-{
-  
 }
 
 .DecayChartYaxisTypeLabel
@@ -243,64 +182,6 @@ cursor: default;
 }
 
 
-.displayInitialLoadPopup
-{
-  width: 150ex;
-  padding: 5px;
-}
-
-.m_fracActivityToEndAtEdit
-{
-  
-}
-
-
-.m_numTimeUnitsToDisplayEdit
-{
-  
-}
-
-
-.m_timeUnitsToDispUnitsCombo
-{
-  margin-right: 12px;
-}
-
-
-.m_nuclideActivityEdit
-{
-  
-}
-
-
-.m_massSelection
-{
-  
-}
-
-
-.m_acceptButton
-{
-  
-}
-
-
-.m_activityInputUnitsCombo
-{
-  
-}
-
-
-.m_nuclideActivityEdit
-{
-  
-}
-
-.m_nuclideAgeEdit
-{
-  
-}
-
 .BeforeDecayNucInfoTable
 {
  margin-bottom: 10px;
@@ -332,7 +213,7 @@ cursor: default;
   border-top: none;
 }
 
-.DecayChart, .m_decayChainChart
+.DecayChart
 {
 /*  border: solid 1px;*/
 /*  margin-right: 12px;*/
@@ -343,30 +224,9 @@ cursor: default;
   
 }
 
-.photopeakDiv, .decayChainDiv
+.decayChainDiv
 {
 }
-
-.sliderDiv
-{
-  text-align: center;
-  /*border: solid 1px;*/
-  padding-bottom: 5px;
-}
-
-
-.photpeakOptionsDiv
-{
-}
-
-
-.photpeakShieldingDiv
-{
-  margin-left: 1.5em;
-  border: 1px inset;
-  padding: 4px;
-}
-
 
 .NuclideInfo
 {
@@ -396,12 +256,6 @@ cursor: default;
 .nuclideInformation
 {
   
-}
-
-
-.photopeakMoreInfoButton
-{
-  float: right;
 }
 
 

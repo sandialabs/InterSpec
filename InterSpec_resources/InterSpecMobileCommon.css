@@ -109,22 +109,6 @@
   border: 1px solid rgba(0,0,0,0) !important;
 }
 
-.modal-footer.MobileConfirmFooter
-{
-  padding-top: 0px;
-  padding-bottom: 0px;
-}
-
-.ModalConfirmBtn, .ModalConfirmBtn:hover
-{
-  /* Button in the footer (not header) of mobile confirmation windows. */
-  border: none;
-  padding: 0;
-  margin: 0;
-  color: rgb(0,122,255);
-  text-decoration: underline;
-  height: 100%
-}
 
 
 .SideMenuPhone > li
@@ -176,11 +160,6 @@ ul.HorizontalMenu > li {
 
 
 
-
-
-.IsotopePeaksMobileWindowContents
-{
-}
 
 
 .HeavyNavMenuPhone > .itemselected

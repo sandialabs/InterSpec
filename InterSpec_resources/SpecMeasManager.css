@@ -43,18 +43,9 @@
 }
 
 
-.QuickSaveAsDialog
-{
-}
-
 .uploadDiv {
   margin-bottom: 5px;
 }
-
-.PreviousDbDialogContents
-{
-}
-
 
 .FilesInZipTable
 {
@@ -72,11 +63,6 @@
 .ShowPrevSpecFileUses .PrefCb
 {
   margin-left: 20px;
-}
-
-.SaveSpecTagLabel
-{
-  font-weight: bold;
 }
 
 .NonSpecDialogBody
@@ -160,12 +146,6 @@ button.LinkBtn.NonSpecQrCodeBtn.Wt-btn.with-label
   padding-left: 5px;
   padding-bottom: 2px;
   padding-top: 2px;
-}
-
-.simple-dialog.EccDrfDialog .EccDrfTypeBtn
-{
-  display: block;
-  margin-bottom: 5px;
 }
 
 .simple-dialog.EccDrfDialog .EccDrfDefaultCbs

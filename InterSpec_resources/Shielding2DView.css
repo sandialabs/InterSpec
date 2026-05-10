@@ -56,16 +56,6 @@
   stroke-width: 2px;
 }
 
-.generic-layer-line {
-    fill: none;
-    stroke-width: 2px;
-}
-
-.label-text {
-    font-family: sans-serif;
-    font-size: 12px;
-    fill: var(--d3spec-text-color, black);
-}
 
 .label-line {
     stroke: var(--d3spec-text-color, black);

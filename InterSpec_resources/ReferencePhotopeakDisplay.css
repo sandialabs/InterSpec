@@ -106,10 +106,6 @@
     flex-direction: column;
 }
 
-.ReferencePhotopeakDisplay .OtherNucs .OtherNucsHeader {
-  flex: 0 0 content;
-}
-
 .ReferencePhotopeakDisplay .OtherNucs .OtherNucsContent {
   margin-top: 0px;
   flex: 1 0;
@@ -253,16 +249,3 @@
   margin-bottom: 8px;
 }
 
-.rpd-fit-sources-warnings-header
-{
-  font-weight: bold;
-  margin-top: 8px;
-  margin-bottom: 4px;
-}
-
-.rpd-fit-sources-warning
-{
-  margin-left: 12px;
-  margin-bottom: 2px;
-  font-size: 0.9em;
-}

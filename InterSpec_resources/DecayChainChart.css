@@ -10,16 +10,6 @@
 
 
 
-.DecayChainChartIsotope
-{
-  user-select: none;
-  -moz-user-select: none;
-  -webkit-user-select: none;
-
-  -webkit-touch-callout: none;
-}
-
-
 /* .ParentDecaysContent{ border: 1px solid red; } */
 /* .ParentDecayNuc{ border: 1px solid #73AD21; } */
 /* .ParentDecayNuc.HasIso{ background: green; } */
@@ -43,11 +33,6 @@
 .DecayChartNuc
 {
   cursor: pointer;
-}
-
-.DecayChartNucRect
-{
-  
 }
 
 txt.DecayChartNuc
@@ -82,11 +67,6 @@ line.DecayLine.selected
 rect.DecayChartNuc.MousedOver
 {
   stroke-width: 2px;
-}
-
-.DecayChartNucTxt.MousedOver
-{
-  font-weight: bold;
 }
 
 .NucInfoTxt

@@ -787,14 +787,6 @@ button.Wt-btn.LinkBtn.Wt-disabled, button.Wt-btn.LinkBtn.Wt-disabled:hover
   bottom:0px;
 }
 
-.WarningMsg
-{
-  padding: 2px;
-  overflow-x: hidden;
-}
-
-
-
 .PreserveLastCalCb
 {
   margin-left: 1.0em;
@@ -802,7 +794,7 @@ button.Wt-btn.LinkBtn.Wt-disabled, button.Wt-btn.LinkBtn.Wt-disabled:hover
 
 
 
-.AuxWindow-content, .AuxWindow-footer
+.AuxWindow-content
 {
 padding: 0px;
 /*border: 2px solid red;*/

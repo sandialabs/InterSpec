@@ -45,21 +45,13 @@
   margin-bottom: 3px;
 }
 
-.CalculationLog
-{
-  white-space: pre;
-  font-family: monospace;
-  display: block;
-  overflow: auto;
-}
-
-.CalcLogLink, .InfoLink
+.InfoLink
 {
   color:grey;
 }
 
 
-.CalcLogLink:hover, .InfoLink:hover
+.InfoLink:hover
 {
   color:blue;
 }

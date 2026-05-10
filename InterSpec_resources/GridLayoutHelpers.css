@@ -13,7 +13,7 @@
   justify-self: stretch;
 }
 
-.GridJustifyCenter, .GridHorCenter
+.GridJustifyCenter
 {
   justify-self: center;
 }
@@ -58,20 +58,6 @@
   grid-column-start: 8; 
 }
 
-.GridNinthCol
-{
-  grid-column-start: 9;
-}
-
-.GridTenthCol
-{
-  grid-column-start: 10;
-}
-
-.GridEleventhCol
-{
-  grid-column-start: 11;
-}
 
 
 .GridFirstRow
@@ -119,11 +105,6 @@
   grid-row-start: 9;
 }
 
-.GridTenthRow
-{
-  grid-row-start: 9;
-}
-
 .GridSpanTwoCol
 {
   grid-column-end: span 2;
@@ -148,12 +129,6 @@
 {
   grid-row-end: span 2;
 }
-
-.GridSpanThreeRows
-{
-  grid-row-end: span 3;
-}
-
 
 .GridVertCenter
 {

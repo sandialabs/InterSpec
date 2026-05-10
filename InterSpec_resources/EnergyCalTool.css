@@ -460,13 +460,6 @@ color: #E0F5FF;
 }
 
 
-.DevPairHeader
-{
-  border-bottom: 1px solid #e1e1e1;
-  flex-shrink: 0;
-}
-
-
 .DevOffset, .DevEnergy
 {
 /*  width:60px;*/

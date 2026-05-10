@@ -269,10 +269,6 @@ div.DispType div.ScaleFactorRow{
   max-width: calc(100% - 20px); /* Even if filename is really long, keep the select from getting wider than the width we have. */
 }
 
-.CompactFileManager .SpecFileSelectClearBtn {
-  
-}
-
 .CompactFileManager .SpecLeg {
   
 }

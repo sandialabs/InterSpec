@@ -82,18 +82,6 @@
 }
 
 
-.DetectionLimitTool .UserInputTable td
-{
-  padding-top:5px;
-  padding-bottom:5px;
-  padding-right:10px;
-}
-
-.DetectionLimitTool .UserInputTable td:first-child
-{
-  padding-left:15px;
-}
-
 .MdaErrMsg
 {
   color: red;
