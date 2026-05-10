@@ -832,10 +832,10 @@ if( InterSpec_FETCH_DEPENDENCIES )
       wtdbo
   )
 
-  target_include_directories( InterSpecLib
+  target_include_directories( InterSpecLib SYSTEM
     PUBLIC
       ${wt_BINARY_DIR}
-      ${boost_SOURCE_DIR}/libs/numeric/ublas/include
+      ${INTERSPEC_FETCH_BOOST_INCLUDES}
   )
 else( InterSpec_FETCH_DEPENDENCIES )
   # Wt 4 modern CMake targets; include dirs and transitive deps are automatic
