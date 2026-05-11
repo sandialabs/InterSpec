@@ -996,8 +996,11 @@ public:
 
 #if( IMP_CALp_BTN_NEAR_COEFS )
 #if( BUILD_AS_OSX_APP || IOS )
-    m_downloadCALp = btndiv->addNew<WAnchor>( WLink(m_tool->calpResources()) );
-    m_downloadCALp->setTarget( Wt::LinkTarget::NewWindow );
+    {
+      WLink calpLink( m_tool->calpResources() );
+      calpLink.setTarget( Wt::LinkTarget::NewWindow );
+      m_downloadCALp = btndiv->addNew<WAnchor>( calpLink );
+    }
     m_downloadCALp->setStyleClass( "LinkBtn DownloadLink" );
 #else
     m_downloadCALp = btndiv->addNew<WPushButton>();
@@ -1630,8 +1633,11 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_uploadCALp->clicked().connect( this, &EnergyCalTool::handleRequestToUploadCALp );
 
 #if( BUILD_AS_OSX_APP || IOS )
-  m_downloadCALp = btndiv->addNew<WAnchor>( WLink(m_calpResource) );
-  m_downloadCALp->setTarget( Wt::LinkTarget::NewWindow );
+  {
+    WLink calpLink( m_calpResource );
+    calpLink.setTarget( Wt::LinkTarget::NewWindow );
+    m_downloadCALp = btndiv->addNew<WAnchor>( calpLink );
+  }
   m_downloadCALp->setStyleClass( "LinkBtn DownloadLink CALp" );
 #else
   m_downloadCALp = btndiv->addNew<WPushButton>();

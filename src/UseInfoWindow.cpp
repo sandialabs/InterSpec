@@ -618,9 +618,10 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     controlContainer->setLayout(controlLayout);
     WAnchor* anchor = new WAnchor();
-    anchor->setLink(WLink("InterSpec_resources/static_text/InteractionCheatSheet.pdf"));
+    WLink cheatLink("InterSpec_resources/static_text/InteractionCheatSheet.pdf");
+    cheatLink.setTarget( Wt::LinkTarget::NewWindow );
+    anchor->setLink(cheatLink);
     //anchor->setImage(new WImage("InterSpec_resources/images/pdf_page.png"));
-    anchor->setTarget( Wt::TargetNewWindow );
     anchor->setText(WString::tr("uiw-cheat-sheet"));
 
     auto cheatTxt = new WText(WString::tr("uiw-cheat-sheet-desc"));

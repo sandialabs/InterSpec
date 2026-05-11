@@ -1732,11 +1732,11 @@ public:
 #else
     switch( m_url->validate() )
     {
-      case Wt::WValidator::Invalid:
-      case Wt::WValidator::InvalidEmpty:
+      case Wt::ValidationState::Invalid:
+      case Wt::ValidationState::InvalidEmpty:
         return false;
 
-      case Wt::WValidator::Valid:
+      case Wt::ValidationState::Valid:
         return true;
     }//switch( m_url->validate() )
 #endif

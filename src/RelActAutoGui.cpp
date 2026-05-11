@@ -4901,7 +4901,7 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   {
     WLink html_lnk( m_html_download_rsc );
     html_lnk.setTarget( LinkTarget::NewWindow );
-    WAnchor *btn = new WAnchor( html_lnk, parent );
+    WAnchor *btn = parent->addNew<WAnchor>( html_lnk );
     btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
     btn->setText( WString::tr("raag-html-report") );
     m_calc_started.connect( btn, &WWidget::disable );
@@ -4911,7 +4911,7 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   {
     WLink xml_lnk( m_xml_download_rsc );
     xml_lnk.setTarget( LinkTarget::NewWindow );
-    WAnchor *btn = new WAnchor( xml_lnk, parent );
+    WAnchor *btn = parent->addNew<WAnchor>( xml_lnk );
     btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
     btn->setText( WString::tr("raag-xml-config") );
   }

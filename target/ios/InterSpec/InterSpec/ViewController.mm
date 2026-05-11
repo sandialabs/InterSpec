@@ -37,7 +37,7 @@
 #include <fstream>
 #include <iostream>
 
-#include <Wt/WServer>
+#include <Wt/WServer.h>
 
 #include <boost/thread.hpp>
 #include <boost/algorithm/string.hpp>
@@ -62,9 +62,9 @@
 @implementation ViewController
 
 
-Wt::WApplication *createApplication(const Wt::WEnvironment& env)
+std::unique_ptr<Wt::WApplication> createApplication(const Wt::WEnvironment& env)
 {
-  return new InterSpecApp( env );
+  return std::make_unique<InterSpecApp>( env );
 }
 
 

@@ -156,10 +156,12 @@ public:
       UserPreferences::associateWidget( "AutoShowSpecMultimedia", cb, interspec );
     
 #if( BUILD_AS_OSX_APP || IOS )
-    m_download = footer->addNew<WAnchor>( WLink(m_resource) );
-    m_download->setTarget( AnchorTarget::TargetNewWindow );
+    {
+      WLink lnk( m_resource );
+      lnk.setTarget( LinkTarget::NewWindow );
+      m_download = footer->addNew<WAnchor>( lnk );
+    }
     m_download->setStyleClass( "LinkBtn DownloadLink" );
-    m_download->setTarget( AnchorTarget::TargetNewWindow ); //TargetDownload
     m_download->setText( "Save..." );
 #else
     m_download = footer->addNew<WPushButton>();

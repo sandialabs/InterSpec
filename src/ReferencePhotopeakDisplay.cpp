@@ -1347,8 +1347,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     csv->setTakesUpdateLock( true );
 
   #if( BUILD_AS_OSX_APP || IOS )
-    WAnchor *csvButton = bottomRow->addNew<WAnchor>( WLink(csv) );
-    csvButton->setTarget( Wt::LinkTarget::NewWindow );
+    WLink csvLink(csv);
+    csvLink.setTarget( Wt::LinkTarget::NewWindow );
+    WAnchor *csvButton = bottomRow->addNew<WAnchor>( csvLink );
     csvButton->setStyleClass( "LinkBtn DownloadLink RefGammaCsv" );
   #else
     WPushButton *csvButton = bottomRow->addNew<WPushButton>();

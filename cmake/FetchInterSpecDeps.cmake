@@ -217,16 +217,19 @@ FetchContent_Declare(
 )
 
 
+# Suppress install rules from Wt (and other subdeps) to avoid export set
+# errors from references to boost/abseil targets not in the same export set.
+# Both branches need this: the boost super-repo's per-lib targets (boost_thread,
+# boost_filesystem, boost_headers, ...) are not in Wt's install export set, so
+# Wt's `install(EXPORT ...)` fails at CMake Generate time without it.
+set( _prev_skip_install_rules ${CMAKE_SKIP_INSTALL_RULES} )
+set( CMAKE_SKIP_INSTALL_RULES ON )
+
 if( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
   # We will explicitly populate Wt and boost, rather than using this next line, so this way when the user
   #  builds the install target (e.g., for electron build), it wont install stuff to /usr/local
   FetchContent_MakeAvailable( wt boost )
 else( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
-  # Suppress install rules from Wt (and other subdeps) to avoid export set
-  # errors from references to boost/abseil targets not in the same export set
-  set( _prev_skip_install_rules ${CMAKE_SKIP_INSTALL_RULES} )
-  set( CMAKE_SKIP_INSTALL_RULES ON )
-
   FetchContent_GetProperties(wt)
   if(NOT wt_POPULATED)
     FetchContent_Populate(wt)

@@ -92,9 +92,9 @@
 
 
 
-Wt::WApplication *createThisApplication(const Wt::WEnvironment& env)
+std::unique_ptr<Wt::WApplication> createThisApplication(const Wt::WEnvironment& env)
 {
-  return new InterSpecApp( env );
+  return std::make_unique<InterSpecApp>( env );
 }
 
 + (void)initialize
