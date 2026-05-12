@@ -9,7 +9,7 @@ cd InterSpec/target/ios/InterSpec
 mkdir build-iphoneos; cd build-iphoneos
 
 unset MACOSX_DEPLOYMENT_TARGET
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../3rd_party/ios-cmake/ios.toolchain.cmake -DPLATFORM=OS64 -DIOS_DEPLOYMENT_TARGET=15.0 -DDEPLOYMENT_TARGET=15.0 -DENABLE_BITCODE_INT=OFF -DENABLE_BITCODE=OFF ..
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../3rd_party/ios-cmake/ios.toolchain.cmake -DPLATFORM=OS64 -DIOS_DEPLOYMENT_TARGET=16.4 -DDEPLOYMENT_TARGET=16.4 -DENABLE_BITCODE_INT=OFF -DENABLE_BITCODE=OFF ..
 # Note that ceres-solver-src/CMakeLists.txt by default defines -mllvm, which is not compatible with bitcode, unless you set ENABLE_BITCODE=ON; I'm not sure if -mllvm is actually going through to the final executable abd being used (so if we do use it, maybe define it upfront in our CMakeLists.txt)
 
 cmake --build . --config Release -j8
@@ -21,7 +21,7 @@ cp -R _deps/wt-src/resources ./WtsRsrcs
 # Now (optionally) build for simulator
 mkdir build-iphonesimulator; cd build-iphonesimulator
 unset MACOSX_DEPLOYMENT_TARGET
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../3rd_party/ios-cmake/ios.toolchain.cmake -DPLATFORM=SIMULATOR64 -DIOS_DEPLOYMENT_TARGET=15.0 -DDEPLOYMENT_TARGET=15.0 -DENABLE_BITCODE_INT=OFF -DENABLE_BITCODE=OFF ..
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../3rd_party/ios-cmake/ios.toolchain.cmake -DPLATFORM=SIMULATOR64 -DIOS_DEPLOYMENT_TARGET=16.4 -DDEPLOYMENT_TARGET=16.4 -DENABLE_BITCODE_INT=OFF -DENABLE_BITCODE=OFF ..
 cmake --build . --config Release -j8
 cp -R _deps/wt-src/resources ./WtsRsrcs
 ```

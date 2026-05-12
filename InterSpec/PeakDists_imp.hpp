@@ -1394,6 +1394,7 @@ void photopeak_function_integral( const T mean,
 
 
 #if( __cplusplus >= 202002L )
+template <typename ContType, typename T>
 void offset_integral( const ContType &cont,
                      const float *energies,
                      T *channels,

@@ -11,7 +11,7 @@ get_directory_property(hasParent PARENT_DIRECTORY)
 
 if( NOT hasParent )
   # These options have not been tested
-  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
   set( BUILD_AS_WX_WIDGETS_APP ON CACHE BOOL "Set to build wxWidget target" )
@@ -43,7 +43,7 @@ set( sources batch_main.cpp )
 add_executable( InterSpec_batch ${sources} )
 
 target_link_libraries( InterSpec_batch PUBLIC InterSpecLib )
-set_target_properties( InterSpec_batch PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
+set_target_properties( InterSpec_batch PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
 set_target_properties( InterSpec_batch PROPERTIES OUTPUT_NAME "InterSpec_batch" )
 
 # Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."

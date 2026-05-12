@@ -12,7 +12,7 @@ To compile the InterSpec code, and package the Electron app, with the manually c
 npm install -g cmake-js 
 
 # For macOS only, you may want to define a deployment target
-export MACOSX_DEPLOYMENT_TARGET=12.3
+export MACOSX_DEPLOYMENT_TARGET=13.3
 
 cd /path/to/InterSpec/target/electron
 
@@ -201,7 +201,7 @@ cp ../../NOTICE.html ./release-builds/InterSpec-linux-x64/
 
 ## Minimum supported OS
 Electron 41 sets these floors for end-user systems:
-- macOS 11+ (Big Sur), Apple Silicon (arm64) only — Intel macOS is not built.
+- macOS 13.3+ (Ventura), Apple Silicon (arm64) only — Intel macOS is not built. (InterSpec's own C++20 deployment target sets this floor; Electron 41 itself supports back to macOS 11.)
 - Windows 10 1809 (build 17763) or newer, x64 only — ia32 / 32-bit Windows is no longer built (Electron dropped it after Electron 21).
 - Linux x64 with glibc 2.28+ — RHEL 8, Ubuntu 20.04+, Fedora 30+, Debian 11+. Older distros (CentOS 7, Ubuntu 18.04, etc.) are not supported.
 

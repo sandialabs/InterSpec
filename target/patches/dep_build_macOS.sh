@@ -67,7 +67,7 @@ if [[ "$working_directory" == "$interspec_src"* ]]; then
   exit 1
 fi
 
-export MACOSX_DEPLOYMENT_TARGET=12.3 # macOS Monterey (2022, Safari 15.4+)
+export MACOSX_DEPLOYMENT_TARGET=13.3 # macOS Ventura (2023); required for C++20 libc++ features (std::format, std::ranges, std::jthread, <chrono> calendaring)
 export MY_WT_PREFIX=$install_directory
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
@@ -167,13 +167,13 @@ else
     fi # if b2 already built / else
 
     # build and stage boost for arm64
-    ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++17 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch arm64  -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch arm64 -std=c++17 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
+    ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch arm64  -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch arm64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
 
     # copy arm libraries to a separate directory
     mkdir -p arm64 && cp stage/lib/libboost_* arm64/
 
     # build boost for x86_64 and install it (we'll copy over the libraries later)
-    ./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++17 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch x86_64 -std=c++17 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -a install
+    ./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch x86_64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -a install
 
     # move x86 libraries to a seperate directory
     mkdir x86_64 && mv ${MY_WT_PREFIX}/lib/libboost_* x86_64/
@@ -223,7 +223,10 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DENABLE_HARU=OFF -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DENABLE_FIREBIRD=OFF -DENABLE_MSSQLSERVER=OFF -DENABLE_OPENGL=ON -DENABLE_QT4=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_LIBWTTEST=ON -DENABLE_SAML=OFF -DENABLE_UNWIND=OFF -DHTTP_WITH_ZLIB=OFF -DCMAKE_CXX_STANDARD=17 -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
+  # Force Wt to use its bundled Howard Hinnant date library for time-zone support.
+  # Apples libc++ does not yet ship a complete C++20 <chrono> tzdb (no std::chrono::time_zone),
+  # so the default WT_CPP20_DATE_TZ_IMPLEMENTATION=std (auto-selected when CMAKE_CXX_STANDARD>=20) fails to build.
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DENABLE_HARU=OFF -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DENABLE_FIREBIRD=OFF -DENABLE_MSSQLSERVER=OFF -DENABLE_OPENGL=ON -DENABLE_QT4=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_LIBWTTEST=ON -DENABLE_SAML=OFF -DENABLE_UNWIND=OFF -DHTTP_WITH_ZLIB=OFF -DCMAKE_CXX_STANDARD=20 -DWT_CPP20_DATE_TZ_IMPLEMENTATION=date -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
   make -j$(sysctl -n hw.ncpu) install
   touch "${working_directory}/wt.installed"
 fi #if wt.installed exists / else
@@ -299,7 +302,7 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DABSL_BUILD_TESTING=OFF -DABSL_USE_GOOGLETEST_HEAD=OFF -DCMAKE_CXX_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+  cmake -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DABSL_BUILD_TESTING=OFF -DABSL_USE_GOOGLETEST_HEAD=OFF -DCMAKE_CXX_STANDARD=20 -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
   cmake --build . --config Release --target install -j $(sysctl -n hw.ncpu)
 
   touch "${working_directory}/abseil.installed"
@@ -333,7 +336,7 @@ else
   mkdir build_macos
   cd build_macos
 
-  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_STANDARD=17 -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_STANDARD=20 -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
   # Build single-threaded to avoid lipo race conditions with universal binary builds
   cmake --build . --config Release --target install -j1
 

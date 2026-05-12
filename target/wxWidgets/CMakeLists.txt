@@ -16,9 +16,10 @@ if( APPLE )
   # Without an explicit deployment target the build picks up whatever SDK
   # version is current (e.g. macOS 26.2), which then refuses to launch on
   # older systems.  Match target/osx/CMakeLists.txt and target the same
-  # baseline as the macOS native build.  Bump if the installed wxWidgets
-  # requires a newer macOS.
-  set( CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE INTERNAL "macOS deployment target" )
+  # baseline as the macOS native build (Ventura 13.3, required for the
+  # C++20 libc++ features used elsewhere in the project).  Bump if the
+  # installed wxWidgets requires a newer macOS.
+  set( CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE INTERNAL "macOS deployment target" )
 endif()
 
 IF(WIN32)
@@ -27,7 +28,7 @@ IF(WIN32)
 ENDIF(WIN32)
  
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if( APPLE )

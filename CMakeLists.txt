@@ -3,9 +3,14 @@
 # Use the installed BoostConfig.cmake instead of the removed FindBoost module
 cmake_policy(SET CMP0167 NEW)
 
+# Default macOS deployment target, if not explicitly specified, so Xcode doesn't fall back to the default SDK version
+if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING "macOS deployment target")
+endif()
+
 project(InterSpec VERSION 1.0.14)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 

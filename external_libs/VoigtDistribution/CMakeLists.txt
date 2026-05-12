@@ -1,10 +1,16 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(VoigtDistribution)
+# When built standalone, pick a sensible default C++ standard.  When consumed
+# as a subdirectory (e.g. inside InterSpec) the parent project's setting is
+# inherited.  The real minimum the headers need (cxx_std_17 for `if constexpr`
+# and `std::is_same_v`) is declared on the INTERFACE target below and
+# propagates to consumers.
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+endif()
 
-# Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+project(VoigtDistribution)
 
 # Option to build unit tests
 option(BUILD_VOIGT_TESTS "Build unit tests for VoigtDistribution" OFF)
@@ -18,6 +24,8 @@ target_include_directories(VoigtDistribution INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
+# Headers use `if constexpr` and `std::is_same_v`, so consumers must be C++17+.
+target_compile_features(VoigtDistribution INTERFACE cxx_std_17)
 
 if(BUILD_VOIGT_TESTS)
     # Add unit tests subdirectory

@@ -12,7 +12,7 @@ set( InterSpec_IOS ON CACHE INTERNAL "" )
 set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
 
 
-#set( CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
+#set( CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "16.4"
 #        CACHE STRING "Set the minimum deployment target value."
 #        FORCE
 #    )
