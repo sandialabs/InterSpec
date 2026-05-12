@@ -42,6 +42,8 @@
 
 #include "InterSpec/SpecFileQuery.h"
 #include "InterSpec/SpecFileQueryDbCache.h"
+#include "InterSpec/FramPopupBox.h"
+#include "InterSpec/FramPopupDelegate.h"
 
 class InterSpec;
 
@@ -203,7 +205,8 @@ protected:
   
   ResultTableModel *m_resultmodel;
   RowStretchTreeView *m_resultview;
-  
+  FRAMPopupBox* m_framPopup;
+  Wt::WAbstractItemModel* m_framModel;
   DirectorySelector *m_baseLocation;
 
   
