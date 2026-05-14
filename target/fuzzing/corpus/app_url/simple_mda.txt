@@ -1,0 +1,1 @@
+interspec://simple-mda/currie?nuc=Cs137&energy=661&dist=100cm&ver=1

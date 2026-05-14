@@ -167,7 +167,6 @@ protected:  /* Command methods (complete actions on Spectrum, cannot be used wit
     typedef std::pair<std::string, CommandType> CommandPair;
     std::string commandRegexStr = std::string("^(default*)\\(([\\s*\\S*\\s*]*)\\)$");  // initial command regex; this changes everytime new command is issued
     
-    static double* addImplicitVariable(const char* variable, void* pUserData);
     std::string assignVariable(const std::string& input);
     
     // Commands (these have no return values; instead output strings of info after the command)

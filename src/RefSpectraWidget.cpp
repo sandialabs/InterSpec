@@ -956,6 +956,13 @@ void RefSpectraWidget::handleSelectionChanged()
             }
           }//if( SpecUtils::file_size( file ) < 10*1024 )
           
+          // The readme file is from a user-selected directory and may contain untrusted
+          //  HTML/JS.  Wt::XHTMLText runs Wt::Utils::removeScript() at WText construction
+          //  (see WText::RichText::checkWellFormed in the Wt source), which strips bad
+          //  tags (script/iframe/object/embed/style/...) and bad attributes (on*, data*,
+          //  javascript:/vbscript:/data: URLs, ...).  If the file is not well-formed
+          //  XHTML (e.g. a plain-text readme with stray '<' characters), Wt falls back
+          //  to PlainText mode which HTML-escapes the content.  Either way, safe.
           Wt::WText *text = new Wt::WText( file_data, Wt::XHTMLText, m_dirInfoContainer );
           text->addStyleClass( "DirReadmeText" );
         }else

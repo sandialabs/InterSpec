@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <vector>
+#include <cassert>
 #include <iostream>
 #include <stdexcept>
 
@@ -1900,10 +1901,54 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   
   result.bestCh2Text = buffer;
   result.chi2s = chi2s;
-  
+
   return result;
 };//get_activity_or_distance_limits(...).
-  
-  
+
+
+shared_ptr<const SpecUtils::Measurement>
+scale_spectrum_for_dwell( const shared_ptr<const SpecUtils::Measurement> &input,
+                          const float new_real_time )
+{
+  if( !input )
+    throw runtime_error( "scale_spectrum_for_dwell: null input." );
+  if( input->real_time() <= 0.0f )
+    throw runtime_error( "scale_spectrum_for_dwell: input has non-positive real time." );
+  if( new_real_time <= 0.0f )
+    throw runtime_error( "scale_spectrum_for_dwell: new real time must be > 0." );
+
+  const shared_ptr<const vector<float>> orig_counts = input->gamma_counts();
+  if( !orig_counts )
+    throw runtime_error( "scale_spectrum_for_dwell: input has no gamma counts." );
+
+  // Channel count must match the existing energy calibration so that
+  // SpecUtils::Measurement::set_gamma_counts() preserves the calibration; otherwise
+  // it silently drops it.
+  const shared_ptr<const SpecUtils::EnergyCalibration> cal = input->energy_calibration();
+  if( cal && cal->num_channels() && (orig_counts->size() != cal->num_channels()) )
+    throw runtime_error( "scale_spectrum_for_dwell: input gamma_counts size does not match calibration." );
+
+  const double ratio = static_cast<double>(new_real_time) / static_cast<double>(input->real_time());
+
+  shared_ptr<SpecUtils::Measurement> scaled = make_shared<SpecUtils::Measurement>( *input );
+
+  shared_ptr<vector<float>> new_counts = make_shared<vector<float>>( orig_counts->size() );
+  for( size_t i = 0; i < orig_counts->size(); ++i )
+  {
+    const double v = static_cast<double>( (*orig_counts)[i] ) * ratio;
+    (*new_counts)[i] = static_cast<float>( v );
+  }
+  assert( new_counts->size() == orig_counts->size() );
+
+  // A zero input live_time will produce a zero scaled live_time; downstream
+  // counts-per-bq math (which multiplies by spec->live_time()) will then
+  // silently zero out.  Caller is responsible for handling that case.
+  const float new_live_time = static_cast<float>( input->live_time() * ratio );
+  scaled->set_gamma_counts( new_counts, new_live_time, new_real_time );
+
+  return scaled;
+}//scale_spectrum_for_dwell(...)
+
+
 }//namespace DetectionLimitCalc
 

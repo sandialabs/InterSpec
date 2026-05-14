@@ -741,8 +741,12 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
     Wt::Json::parse( sourcestr, q );
     
     const Json::Array &basearray = q;
-    
-    
+
+    // The realistic max is < 50 filter definitions per query.  Cap to bound
+    //  parse time on malicious filter JSON.
+    if( basearray.size() > 256 )
+      throw runtime_error( "Event XML query JSON has too many filter entries." );
+
     int arraypos = 0;
     string base_node_test;
     for( const Json::Value &val : basearray )
@@ -841,7 +845,14 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       if( operators.isNull() || operators.type()!=Json::ArrayType )
         throw runtime_error( "The Event XML query condition '" + info.m_label
                             + "' does not have the property 'operators' defined as an array of strings." );
-      
+
+      // The realistic max is < 10 (count of allowed_ops below).  Cap at 64 to
+      //  reject obviously malicious filter JSON that tries to spin the parser.
+      const auto &operators_array = static_cast<const Json::Array &>(operators);
+      if( operators_array.size() > 64 )
+        throw runtime_error( "The Event XML query condition '" + info.m_label
+                            + "' has too many entries in its 'operators' array." );
+
       const string str_allowed_ops[] = { "contains", "equal", "not equal",
         "does not contain", "begins with", "does not begin with", "ends with",
         "does not end with", "regex"
@@ -849,7 +860,7 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
       const string discrete_allowed_ops[] = { "equal", "not equal" };
       const string date_allowed_ops[] = { "greater","less","equal","not_equal" };
       
-      for( const Json::Value &op : static_cast<const Json::Array &>(operators) )
+      for( const Json::Value &op : operators_array )
       {
         if( op.type() != Json::StringType )
           throw runtime_error( "The Event XML query condition '" + info.m_label
@@ -869,11 +880,13 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
             if( std::find(begin(discrete_allowed_ops), end(discrete_allowed_ops), strval) == end(discrete_allowed_ops) )
               throw runtime_error( "The Event XML query condition '" + info.m_label
                                   + "' has an invalid 'operators' entry for a select ('" + strval + "')." );
-            
+            break;
+
           case EventXmlFilterInfo::InputType::Date:
             if( std::find(begin(date_allowed_ops), end(date_allowed_ops), strval) == end(date_allowed_ops) )
               throw runtime_error( "The Event XML query condition '" + info.m_label
                                   + "' has an invalid 'operators' entry for a date ('" + strval + "')." );
+            break;
         }//switch( info.m_type )
         
         info.m_operators.push_back( strval );
@@ -896,8 +909,13 @@ std::vector<EventXmlFilterInfo> EventXmlFilterInfo::parseJsonString( const std::
             throw runtime_error( "The Event XML query condition '" + info.m_label
                                 + "' does not have the property 'discreet_options' defined as an array of strings "
                                 "(required since a type=='select' specified)." );
-          
-          for( const Json::Value &op : static_cast<const Json::Array &>(discreetops) )
+
+          const auto &discreetops_array = static_cast<const Json::Array &>(discreetops);
+          if( discreetops_array.size() > 1024 )
+            throw runtime_error( "The Event XML query condition '" + info.m_label
+                                + "' has too many entries in its 'discreet_options' array." );
+
+          for( const Json::Value &op : discreetops_array )
           {
             if( op.type() != Json::StringType )
               throw runtime_error( "The Event XML query condition '" + info.m_label

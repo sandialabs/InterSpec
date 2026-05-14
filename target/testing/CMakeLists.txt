@@ -302,3 +302,8 @@ if( CMAKE_GENERATOR STREQUAL "Xcode" )
   add_custom_target( build_then_run_tests DEPENDS ALL_BUILD RUN_TESTS )
 endif( CMAKE_GENERATOR STREQUAL "Xcode" )
 
+# libFuzzer-based fuzz harnesses live in a separate, standalone CMake project at
+# target/fuzzing/ - they cannot be mixed with the unit-test build because the
+# sanitizer-instrumented InterSpecLib does not link cleanly with un-instrumented
+# test binaries.  See target/fuzzing/README.md.
+

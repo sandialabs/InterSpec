@@ -1,0 +1,3 @@
+Energy(keV),sigma,Rate(cps),sigma,FWHM(keV),sigma,Leakage(1/s),Centroid,FileName,RecordIdx,Title,DateTime
+185.7,0.05,1.23,0.05,1.0,0.05,0.0,185.7,test,0,test,2024-01-01T00:00:00
+1001.0,0.10,0.50,0.05,2.5,0.05,0.0,1001.0,test,0,test,2024-01-01T00:00:00

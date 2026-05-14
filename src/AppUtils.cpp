@@ -54,6 +54,10 @@
 
 #include <boost/filesystem.hpp>  //for boost::filesystem::is_symlink and read_symlink
 
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+#include <boost/process.hpp>     //for boost::process::child in showFileInOsFileBrowser
+#endif
+
 #include <Wt/WLocale>
 #include <Wt/WApplication>
 
@@ -417,6 +421,25 @@ bool locate_file( string &filename, const bool is_dir,
 }//bool locate_file( ... )
   
   
+// Spawns `cmd` with the given arguments, without going through a shell.
+// Returns the child's exit status, or -1 on spawn/wait failure.
+// Avoids the shell-escaping pitfalls of system().
+static int run_no_shell( const std::string &cmd, const std::vector<std::string> &args )
+{
+  try
+  {
+    namespace bp = boost::process;
+    bp::child c( bp::search_path(cmd), bp::args(args) );
+    c.wait();
+    return c.exit_code();
+  }catch( const std::exception &e )
+  {
+    std::cerr << "run_no_shell: failed to launch '" << cmd << "': " << e.what() << "\n";
+    return -1;
+  }
+}
+
+
 bool showFileInOsFileBrowser( const std::string &filepath )
 {
   const bool isdir = SpecUtils::is_directory(filepath);
@@ -425,22 +448,6 @@ bool showFileInOsFileBrowser( const std::string &filepath )
   if( !SpecUtils::is_directory(parentdir) )
     return false;
 
-  // Helper to escape a string for use inside single-quotes in a POSIX shell command.
-  // Replaces each ' with '\'' (end quote, escaped literal quote, reopen quote).
-  // Only used on macOS and Linux where system() invokes /bin/sh.
-  auto shell_escape = []( const std::string &s ) -> std::string {
-    std::string escaped;
-    escaped.reserve( s.size() + 10 );
-    for( const char c : s )
-    {
-      if( c == '\'' )
-        escaped += "'\\''";
-      else
-        escaped += c;
-    }
-    return escaped;
-  };
-  
 //#if( BUILD_AS_ELECTRON_APP )
   //  TODO: we could (should?) implement this as an electron specific function in InterSpecAddOn.cpp/.h or ElectronUtils.h/.cpp; either as dedicated function, or via InterSpecAddOn::send_nodejs_message - probably dedicated function would be best
   // In node.js, we can do this via:
@@ -485,12 +492,9 @@ bool showFileInOsFileBrowser( const std::string &filepath )
     success = macOsUtils::openFinderToPath( filepath );
   else
     success = macOsUtils::showFileInFinder( filepath );
-  int rval = rval ? 0 : 1;
+  int rval = success ? 0 : 1;
   if( !success )
-  {
-    const string command = "open -R '" + shell_escape(filepath) + "'";
-    rval = system( command.c_str() );
-  }
+    rval = run_no_shell( "open", { "-R", filepath } );
 #elif( __APPLE__ )
   //  See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_mac.mm for how this could/should be implemented, at least for BUILD_AS_OSX_APP
   // But the gist of it is:
@@ -498,21 +502,12 @@ bool showFileInOsFileBrowser( const std::string &filepath )
   // NSURL *nsurl_filepath = [NSURL fileURLWithPath:nsstr_filepath];
   // [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ nsurl_filepath ]];
   // Should probably add to target/osx/macOsUtils.h/.mm
-  int rval = 0;
-  if( isdir )
-  {
-    const string command = "open -R '" + shell_escape(filepath) + "'";
-    rval = system( command.c_str() );
-  }else
-  {
-    const string command = "open -R '" + shell_escape(filepath) + "'";
-    rval = system( command.c_str() );
-  }
+  const int rval = run_no_shell( "open", { "-R", filepath } );
 #else
   // See https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/platform_util_linux.cc
-  #warning "xdg-open for parentdir has not been tested!"
-  const string command = "xdg-open '" + shell_escape(parentdir) + "'";
-  const int rval = system( command.c_str() );
+  // Selecting a specific file in the file manager is not standard across Linux DEs;
+  //  open the containing directory instead.
+  const int rval = run_no_shell( "xdg-open", { parentdir } );
 #endif
   
   return (rval == 0);

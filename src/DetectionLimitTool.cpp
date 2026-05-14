@@ -51,12 +51,17 @@
 #include <Wt/Json/Serializer>
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/D3SpectrumExport.h"
 
 
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
+#if( USE_QR_CODES )
+#include "InterSpec/QrCode.h"
+#endif
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
@@ -69,6 +74,7 @@
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
@@ -795,9 +801,11 @@ public:
     setRoiStart( input.roi_start );
     setRoiEnd( input.roi_end );
     
-    m_continuum->disable();
-    m_decon_cont_norm_method->disable();
-    
+    const bool use = m_input.use_for_likelihood;
+    const bool fixed_at_edges = (m_input.decon_cont_norm_method == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges);
+    m_decon_cont_norm_method->setEnabled( use );
+    m_continuum->setEnabled( use && !fixed_at_edges );
+
     setSimplePoisonTxt();
     
     //Right now we are just having DetectionLimitTool completely refresh on activity units change,
@@ -952,9 +960,27 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
   content->addWidget( m_tool );
   
   AuxWindow::addHelpInFooter( footer(), "detection-confidence-tool" );
-  
-  //WContainerWidget *buttonDiv = footer();
-  
+
+#if( USE_QR_CODES )
+  WPushButton *qr_btn = new WPushButton( footer() );
+  qr_btn->setText( WString::tr("QR Code") );
+  qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
+  qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
+  qr_btn->clicked().preventPropagation();
+  qr_btn->clicked().connect( std::bind( [this](){
+    try
+    {
+      const string url = "interspec://detection-limit/?"
+                       + Wt::Utils::urlEncode( m_tool->encodeStateToUrl() );
+      QrCode::displayTxtAsQrCode( url, WString::tr("dlt-qr-tool-state-title"),
+                                 WString::tr("dlt-qr-tool-state-txt") );
+    }catch( std::exception &e )
+    {
+      passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }) );
+#endif //USE_QR_CODES
+
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
@@ -1019,7 +1045,10 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_bestChi2Act( nullptr ),
     m_upperLimit( nullptr ),
     m_errorMsg( nullptr ),
-    m_fitFwhmBtn( nullptr )
+    m_fitFwhmBtn( nullptr ),
+    m_origSpec( nullptr ),
+    m_scaleSpectrumCb( nullptr ),
+    m_scaleSpectrumTime( nullptr )
 {
   WApplication * const app = wApp;
   assert( app );
@@ -1198,7 +1227,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_chart->yAxisLogLinChanged().connect( boost::bind( &SwitchCheckbox::setUnChecked, loglin, boost::placeholders::_1 ) );
   
   m_attenuateForAir = new WCheckBox( WString::tr("dlt-attenuate-for-air"), inputTable );
-  m_attenuateForAir->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
+  m_attenuateForAir->addStyleClass( "CbNoLineBreak GridFourthCol GridSecondRow GridSpanTwoCol" );
   m_attenuateForAir->setChecked( true );
   m_attenuateForAir->checked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
   m_attenuateForAir->unChecked().connect(this, &DetectionLimitTool::handleUserChangedUseAirAttenuate );
@@ -1270,24 +1299,52 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   }//for( loop over confidence levels )
   
   m_confidenceLevel->setCurrentIndex( ConfidenceLevel::NinetyFivePercent );
-  
+
   m_confidenceLevel->activated().connect(this, &DetectionLimitTool::handleUserChangedConfidenceLevel );
-  
-  
-  const auto primaryMeas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
-  auto spec = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-  if( primaryMeas && spec )
+
+
+  // "Scale" controls - lets the user query the limits at a different dwell time
+  //  than the loaded spectrum.  Cols 6-7 of row 3 are the only free cells in the
+  //  input grid: checkbox in col 6, and a flex div in col 7 sharing space between
+  //  the text input and the help icon (mirrors the Simple MDA layout).
+  m_scaleSpectrumCb = new WCheckBox( WString::tr("dlt-scale-spectrum-cb"), inputTable );
+  m_scaleSpectrumCb->setWordWrap( false );
+  m_scaleSpectrumCb->addStyleClass( "CbNoLineBreak GridSixthCol GridThirdRow GridVertCenter" );
+  m_scaleSpectrumCb->checked().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
+  m_scaleSpectrumCb->unChecked().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
+
+  WContainerWidget *scaleDiv = new WContainerWidget( inputTable );
+  scaleDiv->addStyleClass( "ScaleEntryDiv GridSeventhCol GridThirdRow GridVertCenter" );
+
+  m_scaleSpectrumTime = new WLineEdit( scaleDiv );
+  m_scaleSpectrumTime->setEmptyText( WString::tr("dlt-scale-spectrum-empty-text") );
+  m_scaleSpectrumTime->setDisabled( true );
   {
-    //Make a copy of things so we dont mess the real stuff up - eventually we may want to
-    //  Fully copy the SpecMeas 
-    auto ourspec = make_shared<SpecUtils::Measurement>( *spec );
-    ourspec->set_detector_name( "Aa1" );
-    m_our_meas = make_shared<SpecMeas>();
-    m_our_meas->setDetector( primaryMeas->detector() );
-    m_our_meas->add_measurement( ourspec, true );
-    m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()}, SpecUtils::SpectrumType::Foreground );
-    m_chart->setData( ourspec, false );
-  }//if( spec )
+    WRegExpValidator *scaleTimeValidator
+              = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), m_scaleSpectrumTime );
+    scaleTimeValidator->setFlags( Wt::MatchCaseInsensitive );
+    m_scaleSpectrumTime->setValidator( scaleTimeValidator );
+  }
+  m_scaleSpectrumTime->changed().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
+  m_scaleSpectrumTime->blurred().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
+  m_scaleSpectrumTime->enterPressed().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
+
+  {
+    WImage *img = new WImage( scaleDiv );
+    img->setImageLink( Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+    img->resize( 16, 16 );
+    img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+    HelpSystem::attachToolTipOn( img, WString::tr("dlt-scale-spectrum-tt"), true,
+                                HelpSystem::ToolTipPosition::Left,
+                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+  }
+
+
+  if( !loadCurrentForeground() )
+    m_scaleSpectrumCb->setDisabled( true );
+
+  // Track the foreground so swaps in the main window propagate into this tool.
+  m_interspec->displayedSpectrumChanged().connect( this, &DetectionLimitTool::handleForegroundChanged );
 
   m_results = new WContainerWidget( upperCharts );
   m_results->addStyleClass( "MdaResults" );
@@ -2540,6 +2597,138 @@ void DetectionLimitTool::handleUserChangedUseAirAttenuate()
 }
 
 
+bool DetectionLimitTool::loadCurrentForeground()
+{
+  const shared_ptr<SpecMeas> primaryMeas
+                          = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<const SpecUtils::Measurement> spec
+                          = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  if( !primaryMeas || !spec )
+    return false;
+
+  // Make a copy so this tool can't perturb the user's measurement; eventually
+  // we may want to fully copy the SpecMeas.
+  shared_ptr<SpecUtils::Measurement> ourspec = make_shared<SpecUtils::Measurement>( *spec );
+  ourspec->set_detector_name( "Aa1" );
+  m_our_meas = make_shared<SpecMeas>();
+  m_our_meas->setDetector( primaryMeas->detector() );
+  m_our_meas->add_measurement( ourspec, true );
+  m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()},
+                                    SpecUtils::SpectrumType::Foreground );
+  m_chart->setData( ourspec, false );
+  m_origSpec = ourspec;
+
+  // Refresh Scale-input state to track the new foreground.  Mirror the
+  // DetectionLimitSimple behavior: if the field is empty, or the user is not
+  // currently scaling, repopulate with the new real time; preserve a typed-in
+  // target dwell when the user is actively scaling so they can compare across
+  // spectra.
+  if( m_scaleSpectrumCb && m_scaleSpectrumTime )
+  {
+    if( ourspec->real_time() > 0.0f )
+    {
+      m_scaleSpectrumCb->setDisabled( false );
+      const bool field_empty
+                  = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() ).empty();
+      if( !m_scaleSpectrumCb->isChecked() || field_empty )
+      {
+        m_scaleSpectrumTime->setText( WString::fromUTF8(
+            PhysicalUnits::printToBestTimeUnits( ourspec->real_time(), 3 ) ) );
+      }
+    }else
+    {
+      m_scaleSpectrumCb->setChecked( false );
+      m_scaleSpectrumCb->setDisabled( true );
+      m_scaleSpectrumTime->setEnabled( false );
+      m_scaleSpectrumTime->setText( "" );
+    }
+  }
+
+  return true;
+}//loadCurrentForeground()
+
+
+void DetectionLimitTool::handleForegroundChanged( const SpecUtils::SpectrumType type )
+{
+  if( type != SpecUtils::SpectrumType::Foreground )
+    return;
+
+  // If the new foreground is null, leave the prior state in place so the user
+  // can keep working with what they had open.
+  if( !loadCurrentForeground() )
+    return;
+
+  // Rerun the chart's effective-spectrum logic and the calc against the new
+  // foreground.  If Scale is on but the time string no longer parses against
+  // the new spectrum, fall back to the unscaled foreground.
+  shared_ptr<const SpecUtils::Measurement> eff;
+  try { eff = effectiveSpectrum(); } catch( std::exception & ) {}
+  if( !eff )
+    eff = m_origSpec;
+  if( eff )
+    m_chart->setData( eff, false );
+
+  handleInputChange();
+}//handleForegroundChanged()
+
+
+void DetectionLimitTool::handleScaleSpectrumChanged()
+{
+  if( !m_scaleSpectrumCb )
+    return;
+
+  const bool checked = m_scaleSpectrumCb->isChecked();
+  m_scaleSpectrumTime->setEnabled( checked );
+
+  // Whenever the field is empty (whitespace-only counts), or the checkbox is off,
+  // repopulate it with the current foreground's real time so the displayed value
+  // is always meaningful and `effectiveSpectrum()` won't see an empty string.
+  const bool field_empty
+              = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() ).empty();
+  if( (!checked || field_empty) && m_origSpec && (m_origSpec->real_time() > 0.0f) )
+  {
+    m_scaleSpectrumTime->setText( WString::fromUTF8(
+        PhysicalUnits::printToBestTimeUnits( m_origSpec->real_time(), 3 ) ) );
+  }
+
+  // Update the chart so the user sees the scaled spectrum, then recompute.
+  shared_ptr<const SpecUtils::Measurement> eff;
+  try { eff = effectiveSpectrum(); } catch( std::exception & ) {}
+  if( !eff )
+    eff = m_origSpec;
+  if( eff )
+    m_chart->setData( eff, false );
+
+  handleInputChange();
+}//handleScaleSpectrumChanged()
+
+
+shared_ptr<const SpecUtils::Measurement> DetectionLimitTool::effectiveSpectrum() const
+{
+  if( !m_origSpec )
+    return nullptr;
+
+  if( !m_scaleSpectrumCb || !m_scaleSpectrumCb->isChecked() )
+    return m_origSpec;
+
+  if( m_origSpec->real_time() <= 0.0f )
+    return m_origSpec;
+
+  // An empty / whitespace-only field means "no scaling requested" - return the raw
+  // foreground rather than letting stringToTimeDuration throw.  The handler
+  // repopulates the field on focus events so this is mostly a transient state.
+  const string txt = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() );
+  if( txt.empty() )
+    return m_origSpec;
+
+  const double t = PhysicalUnits::stringToTimeDuration( txt );
+  if( t <= 0.0 )
+    throw runtime_error( WString::tr("dlt-err-bad-scale-time").toUTF8() );
+
+  return DetectionLimitCalc::scale_spectrum_for_dwell( m_origSpec, static_cast<float>(t) );
+}//effectiveSpectrum()
+
+
 void DetectionLimitTool::handleUserChangedToComputeActOrDist()
 {
   const bool distanceLimit = m_distOrActivity->isChecked();
@@ -2816,7 +3005,17 @@ void DetectionLimitTool::handleInputChange()
   m_errorMsg->setText( "&nbsp;" );
   m_errorMsg->hide();
   
-  auto spec = m_chart->data();
+  shared_ptr<const SpecUtils::Measurement> spec;
+  try
+  {
+    spec = effectiveSpectrum();
+  }catch( std::exception &e )
+  {
+    m_errorMsg->setText( WString::fromUTF8(e.what()) );
+    m_errorMsg->show();
+    return;
+  }
+
   if( !m_our_meas || !spec )
   {
     m_errorMsg->setText( WString::tr("dlt-err-no-data") );
@@ -3120,15 +3319,409 @@ void DetectionLimitTool::scheduleCalcUpdate()
 
 std::string DetectionLimitTool::encodeStateToUrl() const
 {
-  cerr << "`DetectionLimitTool::encodeStateToUrl()`: Not Implemented - returning empty string!!!" << endl;
-  return "";
-}
+  // Format mirrors DetectionLimitSimple's encoder: raw (non-url-encoded) text values,
+  //  '&' separating fields, '=' separating key from value.  Caller is expected to wrap
+  //  with `Wt::Utils::urlEncode` before stuffing into a URI.  Per-row state for each
+  //  `MdaPeakRow` is emitted as `ROW<i>=...` with `,`/`:` as inner separators.  The
+  //  shielding state is appended last via the `&SHIELD=&` sentinel pattern from
+  //  `DoseCalcWidget` so the nested ShieldingSelect URL (which contains its own '&'/'='
+  //  separators) round-trips intact.
+
+  string answer = "VER=1";
+
+  if( m_currentNuclide )
+  {
+    answer += "&NUC=" + m_currentNuclide->symbol;
+
+    const string origAge = m_ageEdit->text().toUTF8();
+    if( !origAge.empty() )
+    {
+      answer += "&AGE=";
+
+      // Make sure the age string is in English so it round-trips on a system with a
+      //  different locale.  If the current text already parses against English units,
+      //  use it as-is; otherwise emit the parsed value formatted in English.
+      try
+      {
+        PhysicalUnits::stringToTimeDurationPossibleHalfLife( origAge, m_currentNuclide->halfLife );
+        answer += origAge;
+      }catch( std::exception & )
+      {
+        int num_sig_fig = 0;
+        for( const char &c : origAge )
+          num_sig_fig += ((c >= '0') && (c <= '9'));
+        num_sig_fig = std::max( 3, num_sig_fig );
+        answer += PhysicalUnits::printToBestTimeUnits( m_currentAge, num_sig_fig );
+      }
+    }//if( !origAge.empty() )
+  }//if( m_currentNuclide )
+
+  const LimitType type = limitType();
+  answer += "&LIM=";
+  answer += (type == LimitType::Distance) ? "DIST" : "ACT";
+
+  if( m_distanceForActivityLimit && !m_distanceForActivityLimit->text().empty() )
+    answer += "&DIST=" + m_distanceForActivityLimit->text().toUTF8();
+
+  if( m_activityForDistanceLimit && !m_activityForDistanceLimit->text().empty() )
+    answer += "&ACT=" + m_activityForDistanceLimit->text().toUTF8();
+
+  if( m_displayActivity && !m_displayActivity->text().empty() )
+    answer += "&DISPACT=" + m_displayActivity->text().toUTF8();
+
+  if( m_displayDistance && !m_displayDistance->text().empty() )
+    answer += "&DISPDIST=" + m_displayDistance->text().toUTF8();
+
+  answer += "&CL=";
+  switch( ConfidenceLevel( m_confidenceLevel->currentIndex() ) )
+  {
+    case NinetyFivePercent:    answer += "95"; break;
+    case NinetyNinePercent:    answer += "99"; break;
+    case OneSigma:             answer += "1";  break;
+    case TwoSigma:             answer += "2";  break;
+    case ThreeSigma:           answer += "3";  break;
+    case FourSigma:            answer += "4";  break;
+    case FiveSigma:            answer += "5";  break;
+    case NumConfidenceLevel:   assert( 0 );    break;
+  }//switch( m_confidenceLevel->currentIndex() )
+
+  if( m_minRelIntensity )
+  {
+    const float minInt = m_minRelIntensity->value();
+    if( !IsNan(minInt) && !IsInf(minInt) && (minInt >= 0.0f) )
+      answer += "&MININT=" + SpecUtils::printCompact( minInt, 6 );
+  }
+
+  if( m_attenuateForAir )
+    answer += string("&AIRATTN=") + (m_attenuateForAir->isChecked() ? "1" : "0");
+
+  // Scale-to-dwell - encoded as the absolute target dwell in seconds, so reloading the
+  //  URL against a different foreground preserves "the dwell I asked about".
+  if( m_scaleSpectrumCb && m_scaleSpectrumCb->isChecked() && m_scaleSpectrumTime )
+  {
+    try
+    {
+      const double t = PhysicalUnits::stringToTimeDuration( m_scaleSpectrumTime->text().toUTF8() );
+      if( t > 0.0 )
+        answer += "&SCALE=" + SpecUtils::printCompact( t / PhysicalUnits::second, 6 ) + "s";
+    }catch( std::exception & )
+    {
+      // Invalid time string - skip; SCALE absent from URL signals "off".
+    }
+  }//if( scale-to-dwell active )
+
+  // Per-row state.  Emit ROW<i> only when the row deviates from the freshly-computed
+  //  defaults (use_for_likelihood=false, num_side_channels=4, decon_cont_norm=Floating,
+  //  decon_continuum_type=Linear, ROI = energy +/- 1.25*FWHM).
+  size_t row_index = 0;
+  for( WWidget *w : m_peaks->children() )
+  {
+    const MdaPeakRow * const rw = dynamic_cast<const MdaPeakRow *>( w );
+    if( !rw )
+      continue;
+
+    const MdaPeakRowInput &in = rw->input();
+
+    const bool nondefault_discrete
+              = in.use_for_likelihood
+             || (in.num_side_channels != 4)
+             || (in.decon_cont_norm_method != DetectionLimitCalc::DeconContinuumNorm::Floating)
+             || (in.decon_continuum_type != PeakContinuum::OffsetType::Linear);
+
+    bool roi_modified = false;
+    if( in.drf && in.drf->hasResolutionInfo() )
+    {
+      const float fwhm = in.drf->peakResolutionFWHM( in.energy );
+      if( fwhm > 0.0f )
+      {
+        const float def_lo = static_cast<float>( in.energy - 1.25*fwhm );
+        const float def_hi = static_cast<float>( in.energy + 1.25*fwhm );
+        const float tol = std::max( 0.1f*fwhm, 0.1f );
+        roi_modified = (std::fabs(in.roi_start - def_lo) > tol)
+                    || (std::fabs(in.roi_end   - def_hi) > tol);
+      }
+    }//if( drf has resolution info )
+
+    if( !nondefault_discrete && !roi_modified )
+      continue;
+
+    answer += "&ROW" + std::to_string(row_index++) + "=";
+    answer += "E:"  + SpecUtils::printCompact( in.energy, 6 );
+    answer += ",U:" + string( in.use_for_likelihood ? "1" : "0" );
+    answer += ",L:" + SpecUtils::printCompact( in.roi_start, 6 );
+    answer += ",H:" + SpecUtils::printCompact( in.roi_end, 6 );
+    answer += ",N:" + std::to_string( in.num_side_channels );
+
+    answer += ",CN:";
+    switch( in.decon_cont_norm_method )
+    {
+      case DetectionLimitCalc::DeconContinuumNorm::Floating:           answer += "FLOAT"; break;
+      case DetectionLimitCalc::DeconContinuumNorm::FixedByEdges:       answer += "EDGES"; break;
+      case DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange:   answer += "FULL";  break;
+    }//switch( in.decon_cont_norm_method )
+
+    answer += ",CT:";
+    switch( in.decon_continuum_type )
+    {
+      case PeakContinuum::OffsetType::Linear:    answer += "LIN";  break;
+      case PeakContinuum::OffsetType::Quadratic: answer += "QUAD"; break;
+      default:
+        // MdaPeakRow's UI only exposes Linear/Quadratic; if a future code path stores
+        // a different type in m_input.decon_continuum_type, surface it loudly so the
+        // missing case gets added rather than silently round-tripping as Linear.
+        assert( 0 );
+        answer += "LIN";
+        break;
+    }//switch( in.decon_continuum_type )
+  }//for( child of m_peaks )
+
+  // Shielding goes last (sentinel pattern from DoseCalcWidget); skip if no shielding.
+  if( m_shieldingSelect && !m_shieldingSelect->isNoShielding() )
+    answer += "&SHIELD=&" + m_shieldingSelect->encodeStateToUrl();
+
+  return answer;
+}//std::string DetectionLimitTool::encodeStateToUrl() const
 
 
 void DetectionLimitTool::handleAppUrl( std::string query_str )
 {
-  throw runtime_error( "DetectionLimitTool::handleAppUrl(...) not implemented!" );
-}
+  // Forgiving parser: required fields throw, but missing/invalid optional fields just
+  //  log to cerr and fall back to defaults.  Mirrors DetectionLimitSimple::handleAppUrl.
+
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+  // Pull off the trailing "&SHIELD=&<raw shielding URL>" before tokenizing the query.
+  //  See DoseCalcWidget::handleAppUrl for the precedent of this sentinel pattern.
+  string shielding_uri;
+  const string shield_marker = "&SHIELD=&";
+  const size_t shieldpos = query_str.find( shield_marker );
+  if( shieldpos != string::npos )
+  {
+    shielding_uri = query_str.substr( shieldpos + shield_marker.size() );
+    query_str.resize( shieldpos );
+  }
+
+  const map<string,string> values = AppUtils::query_str_key_values( query_str );
+
+  auto qpos = values.find( "VER" );
+  const string ver = ((qpos != end(values)) && !qpos->second.empty()) ? qpos->second : "1";
+  if( (ver != "1") && !SpecUtils::istarts_with(ver, "1.") )
+    throw runtime_error( "DetectionLimitTool::handleAppUrl: invalid URI version '" + ver + "'" );
+
+  // --- Apply scalar widget values (no signal handlers fire from programmatic setText/setChecked/etc).
+  qpos = values.find( "LIM" );
+  if( qpos != end(values) && m_distOrActivity )
+  {
+    if( SpecUtils::iequals_ascii(qpos->second, "DIST") )
+      m_distOrActivity->setChecked();
+    else if( SpecUtils::iequals_ascii(qpos->second, "ACT") )
+      m_distOrActivity->setUnChecked();
+    else
+      cerr << "DetectionLimitTool::handleAppUrl: invalid 'LIM' value '" << qpos->second << "'" << endl;
+  }
+
+  qpos = values.find( "DIST" );
+  if( qpos != end(values) && m_distanceForActivityLimit )
+    m_distanceForActivityLimit->setText( WString::fromUTF8(qpos->second) );
+
+  qpos = values.find( "ACT" );
+  if( qpos != end(values) && m_activityForDistanceLimit )
+    m_activityForDistanceLimit->setText( WString::fromUTF8(qpos->second) );
+
+  qpos = values.find( "DISPACT" );
+  if( qpos != end(values) && m_displayActivity )
+    m_displayActivity->setText( WString::fromUTF8(qpos->second) );
+
+  qpos = values.find( "DISPDIST" );
+  if( qpos != end(values) && m_displayDistance )
+    m_displayDistance->setText( WString::fromUTF8(qpos->second) );
+
+  qpos = values.find( "CL" );
+  if( qpos != end(values) && m_confidenceLevel )
+  {
+    int cl = -1;
+    if( qpos->second == "95" )      cl = NinetyFivePercent;
+    else if( qpos->second == "99" ) cl = NinetyNinePercent;
+    else if( qpos->second == "1" )  cl = OneSigma;
+    else if( qpos->second == "2" )  cl = TwoSigma;
+    else if( qpos->second == "3" )  cl = ThreeSigma;
+    else if( qpos->second == "4" )  cl = FourSigma;
+    else if( qpos->second == "5" )  cl = FiveSigma;
+
+    if( cl >= 0 )
+      m_confidenceLevel->setCurrentIndex( cl );
+    else
+      cerr << "DetectionLimitTool::handleAppUrl: invalid 'CL' value '" << qpos->second << "'" << endl;
+  }
+
+  qpos = values.find( "AIRATTN" );
+  if( qpos != end(values) && m_attenuateForAir )
+  {
+    const bool on = (qpos->second == "1") || SpecUtils::iequals_ascii(qpos->second, "YES")
+                                          || SpecUtils::iequals_ascii(qpos->second, "TRUE");
+    m_attenuateForAir->setChecked( on );
+  }
+
+  // --- Shielding.  Apply now so subsequent rebuilds see the right shielding state.
+  if( m_shieldingSelect )
+  {
+    if( shielding_uri.empty() )
+    {
+      m_shieldingSelect->setToNoShielding();
+    }else
+    {
+      try
+      {
+        m_shieldingSelect->handleAppUrl( shielding_uri );
+      }catch( std::exception &e )
+      {
+        cerr << "DetectionLimitTool::handleAppUrl: shielding decode failed: " << e.what() << endl;
+        m_shieldingSelect->setToNoShielding();
+      }
+    }
+  }//if( m_shieldingSelect )
+
+  // --- Scale-to-dwell.  Encoded as an absolute target dwell (e.g. "60s", "5 min").
+  qpos = values.find( "SCALE" );
+  bool scale_set_ok = false;
+  if( qpos != end(values) && m_scaleSpectrumCb && m_scaleSpectrumTime )
+  {
+    try
+    {
+      const double t = PhysicalUnits::stringToTimeDuration( qpos->second );
+      if( t > 0.0 )
+      {
+        m_scaleSpectrumCb->setChecked( true );
+        m_scaleSpectrumTime->setEnabled( true );
+        m_scaleSpectrumTime->setText( WString::fromUTF8(
+            PhysicalUnits::printToBestTimeUnits( t, 4 ) ) );
+        scale_set_ok = true;
+      }
+    }catch( std::exception & ){ }
+
+    if( !scale_set_ok )
+      cerr << "DetectionLimitTool::handleAppUrl: invalid 'SCALE' value '" << qpos->second << "'" << endl;
+  }
+  if( !scale_set_ok && m_scaleSpectrumCb && m_scaleSpectrumTime )
+  {
+    m_scaleSpectrumCb->setChecked( false );
+    m_scaleSpectrumTime->setEnabled( false );
+    if( m_origSpec && (m_origSpec->real_time() > 0.0f) )
+      m_scaleSpectrumTime->setText( WString::fromUTF8(
+          PhysicalUnits::printToBestTimeUnits( m_origSpec->real_time(), 3 ) ) );
+  }
+
+  // --- Per-row state.  Pre-populate `m_previousRoiValues` from any ROW<i> entries so the
+  //  upcoming row rebuild (triggered by `handleNuclideChange`) picks them up automatically.
+  //  Clearing `m_peaks` first prevents `handleInputChange`'s save-loop from overwriting our
+  //  pre-populated entries with the (about-to-be-discarded) prior rows' state.
+  for( const auto &kv : values )
+  {
+    if( !SpecUtils::istarts_with(kv.first, "ROW") )
+      continue;
+
+    MdaPeakRowInput row_input;
+    row_input.use_for_likelihood = false;
+    row_input.num_side_channels = 4;
+    row_input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
+    row_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+    row_input.energy = -1.0f;
+    row_input.roi_start = 0.0f;
+    row_input.roi_end = 0.0f;
+
+    vector<string> fields;
+    SpecUtils::split( fields, kv.second, "," );
+    for( string field : fields )
+    {
+      SpecUtils::trim( field );
+      const size_t colon = field.find( ':' );
+      if( (colon == string::npos) || (colon == 0) )
+        continue;
+      string sub_key = field.substr( 0, colon );
+      SpecUtils::to_upper_ascii( sub_key );
+      const string sub_val = field.substr( colon + 1 );
+
+      try
+      {
+        if( sub_key == "E" )
+          row_input.energy = std::stof( sub_val );
+        else if( sub_key == "U" )
+          row_input.use_for_likelihood = (sub_val == "1");
+        else if( sub_key == "L" )
+          row_input.roi_start = std::stof( sub_val );
+        else if( sub_key == "H" )
+          row_input.roi_end = std::stof( sub_val );
+        else if( sub_key == "N" )
+          row_input.num_side_channels = static_cast<size_t>( std::max(0, std::stoi(sub_val)) );
+        else if( sub_key == "CN" )
+        {
+          if( SpecUtils::iequals_ascii(sub_val, "FLOAT") )
+            row_input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
+          else if( SpecUtils::iequals_ascii(sub_val, "EDGES") )
+            row_input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByEdges;
+          else if( SpecUtils::iequals_ascii(sub_val, "FULL") )
+            row_input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange;
+        }else if( sub_key == "CT" )
+        {
+          if( SpecUtils::iequals_ascii(sub_val, "LIN") )
+            row_input.decon_continuum_type = PeakContinuum::OffsetType::Linear;
+          else if( SpecUtils::iequals_ascii(sub_val, "QUAD") )
+            row_input.decon_continuum_type = PeakContinuum::OffsetType::Quadratic;
+        }
+      }catch( std::exception &e )
+      {
+        cerr << "DetectionLimitTool::handleAppUrl: invalid ROW field '" << field
+             << "': " << e.what() << endl;
+      }
+    }//for( field of comma-separated ROW value )
+
+    if( row_input.energy > 0.0f )
+      m_previousRoiValues[row_input.energy] = row_input;
+  }//for( ROW<i> entries )
+
+  if( m_peaks )
+    m_peaks->clear();
+
+  // --- Nuclide + age last, since handleNuclideChange triggers handleInputChange which
+  //  rebuilds rows from `m_previousRoiValues` (now containing our URL data).  Note: a
+  //  new-nuclide change resets m_minRelIntensity to a tool-computed default, so we apply
+  //  any URL MININT after this step.
+  qpos = values.find( "NUC" );
+  const string nuc_text = (qpos != end(values)) ? qpos->second : string();
+  if( m_nuclideEdit )
+    m_nuclideEdit->setText( WString::fromUTF8(nuc_text) );
+
+  qpos = values.find( "AGE" );
+  if( qpos != end(values) && m_ageEdit )
+    m_ageEdit->setText( WString::fromUTF8(qpos->second) );
+
+  // Parse nuclide text -> set m_currentNuclide/m_currentAge.  This may trigger
+  //  handleInputChange internally (rebuilding rows from m_previousRoiValues), but if
+  //  the nuclide+age are unchanged it early-returns - so we always follow up with an
+  //  explicit handleInputChange to guarantee the cleared m_peaks gets repopulated.
+  handleNuclideChange( false );
+
+  // --- MININT applied after nuclide change so it isn't overwritten by the auto-default
+  //  computed in handleNuclideChange's calcAndSetDefaultMinRelativeIntensity().
+  qpos = values.find( "MININT" );
+  if( qpos != end(values) && m_minRelIntensity )
+  {
+    try
+    {
+      const float v = std::stof( qpos->second );
+      if( !IsNan(v) && !IsInf(v) && (v >= 0.0f) && (v < 1.0f) )
+        m_minRelIntensity->setValue( v );
+    }catch( std::exception &e )
+    {
+      cerr << "DetectionLimitTool::handleAppUrl: invalid MININT '" << qpos->second
+           << "': " << e.what() << endl;
+    }
+  }
+
+  // Final rebuild: guarantees rows reflect URL state regardless of which path the
+  //  upstream handlers took.
+  handleInputChange();
+}//void DetectionLimitTool::handleAppUrl( std::string query_str )
 
 
 void DetectionLimitTool::doCalc()
@@ -3367,14 +3960,23 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
                                                                   std::vector<PeakDef> &peaks )
 {
   peaks.clear();
-  
-  auto spec = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+
+  shared_ptr<const SpecUtils::Measurement> spec;
+  try
+  {
+    spec = effectiveSpectrum();
+  }catch( std::exception &e )
+  {
+    cerr << "getComputeForActivityInput: bad scale - " << e.what() << endl;
+    return nullptr;
+  }
+
   if( !spec )
   {
     cerr << "No displayed histogram!" << endl;
     return nullptr;
   }
-  
+
   auto input = make_shared<DetectionLimitCalc::DeconComputeInput>();
   input->measurement = spec;
   input->drf = detector();
@@ -3515,10 +4117,12 @@ void DetectionLimitTool::setRefLinesAndGetLineInfo()
   if( !m_currentNuclide )
     return;
   
+  // m_chart->data() may be a Scale-to-dwell scaled copy of m_origSpec; only the
+  // energy axis (channel count + calibration) is consumed below, so this is OK.
   auto spec = m_chart->data();
   if( !m_our_meas || !spec )
     return;
-    
+
   std::shared_ptr<const DetectorPeakResponse> drf = detector();
   if( !drf || !drf->hasResolutionInfo() || !drf->isValid() )
     return;

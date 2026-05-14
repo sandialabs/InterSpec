@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RadInstrumentData xmlns="http://physics.nist.gov/N42/2011/N42">
+  <RadMeasurement id="m1">
+    <Spectrum id="s1">
+      <LiveTimeDuration>PT60S</LiveTimeDuration>
+      <ChannelData compressionCode="None">10 20 30 40 50 60 70 80 90 100</ChannelData>
+    </Spectrum>
+  </RadMeasurement>
+</RadInstrumentData>
