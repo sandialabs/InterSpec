@@ -559,6 +559,11 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
 
 SpecMeas::~SpecMeas()
 {
+  // Signal any in-flight peak search workers that they should abort on their
+  //  next cooperative check.  The workers hold their own shared_ptr to the
+  //  atomic, so flipping it here is safe even though `this` is being destroyed.
+  cancel_in_progress_peak_search();
+
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
 
 //  cerr << "About to delete " << filename()
@@ -580,6 +585,27 @@ SpecMeas::~SpecMeas()
 //  if( has_unique )
 //    cerr << "\nSpecMeas destructing unique copy of '" << filename_ << "'" << endl;
 }//SpecMeas destructor
+
+
+std::shared_ptr<std::atomic<bool>> SpecMeas::peak_search_cancel_flag() const
+{
+  std::lock_guard<std::mutex> lock( m_peakSearchCanceledMutex );
+  if( !m_peakSearchCanceled )
+    m_peakSearchCanceled = std::make_shared<std::atomic<bool>>( false );
+  return m_peakSearchCanceled;
+}//peak_search_cancel_flag()
+
+
+void SpecMeas::cancel_in_progress_peak_search()
+{
+  std::shared_ptr<std::atomic<bool>> flag;
+  {
+    std::lock_guard<std::mutex> lock( m_peakSearchCanceledMutex );
+    flag = m_peakSearchCanceled;
+  }
+  if( flag )
+    flag->store( true, std::memory_order_release );
+}//cancel_in_progress_peak_search()
 
 
 void SpecMeas::save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,

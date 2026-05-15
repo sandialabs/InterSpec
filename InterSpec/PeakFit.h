@@ -27,6 +27,8 @@
 
 #include <deque>
 #include <tuple>
+#include <atomic>
+#include <memory>
 #include <vector>
 
 #include "Minuit2/FCNBase.h"
@@ -272,7 +274,8 @@ std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                             const std::vector<std::shared_ptr<const PeakDef>> &existing_peaks,
                             std::shared_ptr<const DetectorPeakResponse> drf,
                             const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &auto_search_peaks,
-                            const bool isHPGe );
+                            const bool isHPGe,
+                            std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
 
 //refitPeaksThatShareROI: intended to refit peaks fit for by
 //  searchForPeakFromUser(...), for instance when you modify the ROI range.
@@ -455,12 +458,17 @@ bool chi2_significance_test( const PeakDef &peak,
 
 namespace ExperimentalAutomatedPeakSearch
 {
+  /** Optional cancellation token.  When non-null and `*cancel_flag == true` the
+   search aborts at its next cooperative check point and returns the peaks fit
+   so far.  See `SpecMeas::peak_search_cancel_flag()`.
+   */
   std::vector<std::shared_ptr<const PeakDef> >
               search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
                                 const std::shared_ptr<const DetectorPeakResponse> drf,
                                 std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > origpeaks,
                                 const bool singleThreaded,
-                               const bool isHPGe );
+                                const bool isHPGe,
+                                std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
 }//namespace ExperimentalAutomatedPeakSearch
 
 

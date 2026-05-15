@@ -2281,18 +2281,23 @@ void automated_search_for_peaks( InterSpec *viewer,
   shared_ptr<const DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
 
   const bool isHPGe = PeakFitUtils::is_likely_high_res( viewer );
-  
+
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )
     return;
-  
+
   std::weak_ptr<const SpecUtils::Measurement> weakdata = dataPtr;
   const string seshid = wApp->sessionId();
-  
+
+  // Grab the SpecMeas's persistent cancel token so this search aborts cleanly
+  //  when the SpecMeas is destroyed or `InterSpec::~InterSpec` flips the flag.
+  std::shared_ptr<const std::atomic<bool>> cancel_flag
+    = foreground ? foreground->peak_search_cancel_flag() : nullptr;
+
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
     search_for_peaks_worker( weakdata, drf, startingPeaks, displayed, setColor,
-                            searchresults, callback, seshid, false, isHPGe );
-    
+                            searchresults, callback, seshid, false, isHPGe, cancel_flag );
+
   } ) );
 }//void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks )
 
@@ -2808,14 +2813,15 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                boost::function<void(void)> callback,
                                const std::string sessionID,
                                const bool singleThread,
-                               const bool isHPGe )
+                               const bool isHPGe,
+                               std::shared_ptr<const std::atomic<bool>> cancel_flag )
 {
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )  //shouldnt ever happen,
     return;
-  
+
   std::shared_ptr<const SpecUtils::Measurement> data = weak_data.lock();
-  
+
   if( !data || !resultpeaks )
   {
     server->post( sessionID, callback );
@@ -2826,7 +2832,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
 
   try
   {
-    *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe );
+    *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe, cancel_flag );
     *results = assign_srcs_from_ref_lines( data, *results, displayed, setColor, false, true );
   }catch( std::exception &e )
   {

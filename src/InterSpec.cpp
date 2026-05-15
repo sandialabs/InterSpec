@@ -1249,7 +1249,20 @@ InterSpec::~InterSpec() noexcept(true)
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
 #endif
-  
+
+  // Signal any in-flight automated peak search workers to abort.  The SpecMeas
+  //  objects may outlive this InterSpec (they're owned by SpecMeasManager and
+  //  by the worker), so we flip the cancel token here too rather than relying
+  //  solely on `~SpecMeas` to do it.  The Ceres `IterationCallback` and the
+  //  outer-loop check in `search_for_peaks_*` see the change within one LM
+  //  iteration, so the io_service drains promptly and `WServer::stop()` on
+  //  the wxWidgets shutdown path doesn't hang.
+  for( const shared_ptr<SpecMeas> &m : { m_dataMeasurement, m_secondDataMeasurement, m_backgroundMeasurement } )
+  {
+    if( m )
+      m->cancel_in_progress_peak_search();
+  }
+
   // Get rid of undo/redo, so we dont insert anything into them
   del_ptr_set_null( m_undo );
   del_ptr_set_null( m_licenseWindow );
@@ -12788,14 +12801,20 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
     drf = m_dataMeasurement->detector();
   
   weak_ptr<SpecMeas> spectrum = data;
-  
+
   boost::function<void(void)> callback = wApp->bind( boost::bind(&InterSpec::setHintPeaks,
                 this, spectrum, samples, origPeaks, searchresults
   ) );
-  
+
+  // Grab the SpecMeas's persistent cancel token; the worker will check it at
+  //  each cooperative point and inside the Ceres `IterationCallback`.  When
+  //  this `InterSpec` is destroyed (or the SpecMeas itself is destroyed) the
+  //  token is flipped to `true` and the worker bails within ~1 LM iteration.
+  std::shared_ptr<const std::atomic<bool>> cancel_flag = data->peak_search_cancel_flag();
+
   boost::function<void(void)> worker = [=](){
     PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, false, isHPGe );
+                                                callback, sessionId, false, isHPGe, cancel_flag );
   };
   
 

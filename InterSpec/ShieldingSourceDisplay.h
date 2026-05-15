@@ -27,6 +27,7 @@
 
 #include <map>
 #include <mutex>
+#include <future>
 #include <utility>
 #include <string>
 #include <vector>
@@ -825,6 +826,16 @@ protected:
   
   std::mutex m_currentFitFcnMutex;  //protects the shared_ptr only, not the object it points to
   std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> m_currentFitFcn;
+
+  /** Set when a fit is launched in a background thread so the destructor (and other
+   teardown paths) can wait for the worker on `WServer::ioService()` to fully
+   return before this widget's memory is freed.  Without this, `cancelFit()`
+   only signals the chi2 function to throw at its next `DoEval` - the worker
+   thread itself may still be unwinding the Minuit2 call stack and posting
+   completion callbacks when `~ShieldingSourceDisplay` returns, which can
+   keep `WServer::stop()` from draining on shutdown.
+   */
+  std::shared_future<void> m_currentFitFuture;
   
   //A class to draw the chi2 distribution of the fit to activity/shielding.
   static const int sm_xmlSerializationMajorVersion;

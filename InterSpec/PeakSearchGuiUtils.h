@@ -27,6 +27,7 @@
 
 #include <deque>
 #include <tuple>
+#include <atomic>
 #include <memory>
 #include <vector>
 #include <string>
@@ -162,7 +163,8 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                boost::function<void(void)> callback,
                                const std::string sessionID,
                                const bool singleThread,
-                               const bool isHPGe );
+                               const bool isHPGe,
+                               std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
   
 /** Assigns peak nuclides/xrays/reactions from the reference photopeak lines by
    modifying the peaks passed in.  
