@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <memory>
 #include <vector>
 #include <utility>
@@ -1018,7 +1019,10 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( m_renderFlags.testFlag(UpdateForegroundSpectrum) )
     renderForegroundToClient();
-  
+
+  if( m_renderFlags.testFlag(UpdateTemplates) )
+    renderTemplatesToClient();
+
   if( m_renderFlags.testFlag(UpdateForegroundPeaks) )
     setPeaksToClient( SpecUtils::SpectrumType::Foreground );
   
@@ -1098,6 +1102,7 @@ std::string D3SpectrumDisplayDiv::localizedStringsJson() const
   "comptonPeakAngle: " + WString::tr("d3sdd-comptonPeakAngle").jsStringLiteral() + ",\n\t"        // "{1}° Compton Peak"
   "candidates: " + WString::tr("d3sdd-candidates").jsStringLiteral() + ",\n\t"                    // "Candidates:"
   "useArrowsToSelect: " + WString::tr("d3sdd-use-arrows-to-select").jsStringLiteral() + ",\n\t"   // "(use ↑ and ↓ to select)"
+  "templateDefaultTitle: " + WString::tr("d3sdd-templateDefaultTitle").jsStringLiteral() + ",\n\t" // "Template"
   "}";
   
   // In JS, probably need to call: `self.handleResize( false );`
@@ -1725,6 +1730,26 @@ void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> his
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> background );
 
 
+void D3SpectrumDisplayDiv::setTemplates( std::vector<TemplateSpec> templates )
+{
+  // If we have no templates and aren't setting any, skip pushing anything to the client.
+  if( m_templates.empty() && templates.empty() )
+    return;
+
+  m_templates = std::move(templates);
+  scheduleUpdateTemplates();
+}//void D3SpectrumDisplayDiv::setTemplates(...)
+
+
+void D3SpectrumDisplayDiv::clearTemplates()
+{
+  if( m_templates.empty() )
+    return;
+  m_templates.clear();
+  scheduleUpdateTemplates();
+}//void D3SpectrumDisplayDiv::clearTemplates()
+
+
 void D3SpectrumDisplayDiv::visibleRange( double &xmin, double &xmax,
                                       double &ymin, double &ymax ) const
 {
@@ -1954,6 +1979,13 @@ void D3SpectrumDisplayDiv::scheduleUpdateSecondData()
 }
 
 
+void D3SpectrumDisplayDiv::scheduleUpdateTemplates()
+{
+  m_renderFlags |= UpdateTemplates;
+  scheduleRender();
+}
+
+
 void D3SpectrumDisplayDiv::renderForegroundToClient()
 {
   const std::shared_ptr<const Measurement> &data_hist = m_foreground;
@@ -2096,6 +2128,63 @@ void D3SpectrumDisplayDiv::renderSecondDataToClient()
   else
     m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::updateSecondData()
+
+
+void D3SpectrumDisplayDiv::renderTemplatesToClient()
+{
+  string js;
+
+  if( !m_templates.empty() )
+  {
+    // Build a measurements-style vector for write_and_set_data_for_chart's templates argument.
+    // We pass an empty `measurements` so we don't disturb whichever spectra are already on the chart.
+    std::ostringstream ostr;
+    std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > no_measurements;
+    std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > templates;
+    templates.reserve( m_templates.size() );
+
+    for( const TemplateSpec &t : m_templates )
+    {
+      if( !t.meas )
+        continue;
+
+      D3SpectrumExport::D3SpectrumOptions opts;
+      opts.title = t.title;
+      if( !t.color.isDefault() )
+        opts.line_color = t.color.cssText();
+      opts.display_scale_factor = ((t.scaleFactor > 0.0) && std::isfinite(t.scaleFactor)) ? t.scaleFactor : 1.0;
+      // spectrum_type isn't used in the template writer, but set to Foreground as a harmless default.
+      opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
+      templates.push_back( std::make_pair( t.meas.get(), opts ) );
+    }
+
+    if( D3SpectrumExport::write_and_set_data_for_chart( ostr, id(), no_measurements, templates ) )
+    {
+      // write_and_set_data_for_chart emits both the `var data_<id> = {...}` and a `setData(...)` call.
+      // We want the data declaration but need to deliver it via the chart's setTemplates(...) entry point,
+      // so we strip everything from the "spec_chart_" marker onward and append our own JS call.
+      // If the marker is missing for any reason, fail safe by clearing templates rather than risking
+      // the emitted setData(...) wiping the currently-loaded spectra.
+      string data = ostr.str();
+      const size_t index = data.find( "spec_chart_" );
+      if( index != string::npos ){
+        data = data.substr( 0, index );
+        js = data + m_jsgraph + ".setTemplates(data_" + id() + ");";
+      }else{
+        js = m_jsgraph + ".setTemplates(null);";
+      }
+    }
+  }else
+  {
+    // Clear templates on the chart.
+    js = m_jsgraph + ".setTemplates(null);";
+  }//if( !m_templates.empty() ) / else
+
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//void D3SpectrumDisplayDiv::renderTemplatesToClient()
 
 
 void D3SpectrumDisplayDiv::applyColorTheme( std::shared_ptr<const ColorTheme> theme )
