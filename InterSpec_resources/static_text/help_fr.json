@@ -152,6 +152,12 @@
         "keywords":"MDA Detectable simple"
       },
       {
+        "id":"dynamic-mda-dialog",
+        "title": "MDA Dynamique",
+        "help-xml":"dynamic_mda_help.xml",
+        "keywords":"MDA Detectable dynamic passthrough drive past speed distance closest approach activity moving"
+      },
+      {
         "id": "color-theme-dialog",
         "title": "Couleurs/Thème",
         "help-xml": "color_theme_dialog_help.xml",

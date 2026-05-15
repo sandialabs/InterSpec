@@ -25,17 +25,28 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
+#include <string>
 #include <memory>
+#include <vector>
 #include <ostream>
+#include <utility>
 
 #include "InterSpec/PeakDef.h"
 
 // Forward declarations
+struct Material;
 struct DetectorPeakResponse;
 
 namespace SpecUtils
 {
 class Measurement;
+class SpecFile;
+}
+
+namespace SandiaDecay
+{
+  class Nuclide;
 }
 
 namespace SpecUtils
@@ -492,7 +503,219 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
                         const double min_search_quantity,
                         const double max_search_quantity,
                         const bool useCurie );
-  
+
+
+// ---------------------------------------------------------------------------
+// Dynamic MDA: Currie-style limit for a moving point source (or moving
+// detector).  Source moves in a straight line past the detector at constant
+// speed `v` with distance-of-closest-approach `d0`.  Counts are integrated
+// over a short transit window `T_w` centered on closest approach, and the
+// decision threshold is set against a "false-positives per hour" budget,
+// since the system is implicitly running many windows.
+// ---------------------------------------------------------------------------
+
+/** Result of inverting the gross-counts Currie test with separate α / β. */
+struct CurrieLcLd
+{
+  /** Decision threshold (counts above continuum). */
+  double L_c;
+  /** Detection limit (counts above continuum). */
+  double L_d;
+  /** Continuum uncertainty σ_B used in derivation. */
+  double sigma_B;
+};//struct CurrieLcLd
+
+/** Solves the Currie L_c / L_d with separate k_α, k_β and (optional) relative
+ uncertainty u_rel.  Iterative when u_rel > 0.
+
+ @param B          Expected continuum counts under the peak.
+ @param sigma_B    Uncertainty on B from side-channel extrapolation (already
+                   including the Poisson term).
+ @param k_alpha    Φ⁻¹(1 − α), where α is the per-trial false-positive prob.
+ @param k_beta     Φ⁻¹(detection_probability).
+ @param u_rel      Relative uncertainty from DRF / distance (0 if none).
+ */
+CurrieLcLd currie_lc_ld( const double B,
+                         const double sigma_B,
+                         const double k_alpha,
+                         const double k_beta,
+                         const double u_rel );
+
+
+/** Inputs to the Dynamic MDA calculator.
+
+ Exactly one of `speed_m_per_s`, `dca_m`, `activity_bq` must be left
+ zero or negative — that quantity is the one to be solved for.  The
+ other two are inputs.
+
+ TODO:
+ - move physical quantities to all use PhysicalUnits units
+ */
+struct DynamicMdaInput
+{
+  /** Background spectrum used to estimate B and σ_B in the ROI. */
+  std::shared_ptr<const SpecUtils::Measurement> background_spectrum;
+
+  /** Detector response (may be a fixed-geometry DRF, in which case the
+   integral over r(t) degenerates to intrinsicEff · T_w). */
+  std::shared_ptr<const DetectorPeakResponse> drf;
+
+  /** Source nuclide (may be null; in that case branch_ratio is used as-is). */
+  const SandiaDecay::Nuclide *nuclide;
+  /** Age of the source, in seconds (used for branching ratio computation
+   when nuclide is non-null and branch_ratio is non-positive). */
+  double age;
+
+  /** Photopeak energy, in keV. */
+  float gamma_energy;
+
+  /** Number of gammas emitted per source decay at `gamma_energy`.
+   If non-positive and nuclide is non-null, this is computed from the
+   nuclide / age at call time. */
+  double branch_ratio;
+
+  /** ROI lower/upper energies (keV). */
+  float roi_lower_energy, roi_upper_energy;
+
+  /** Number of channels above/below ROI for side-channel continuum.  Set
+   both to zero to use the ROI itself as the continuum estimate. */
+  size_t num_lower_side_channels, num_upper_side_channels;
+
+  /** Probability of correctly detecting a real source at the limit (β). */
+  double detection_probability;
+
+  /** False-positive budget across the scenario, expressed as expected
+   per-hour count (e.g., 1.0 means "at most one false alarm per hour"). */
+  double max_false_positives_per_hour;
+
+  /** Additional relative uncertainty (u_rel) on DRF / distance — folded
+   into L_d iteratively. */
+  double additional_uncertainty;
+
+  /** Source speed (m/s).  Zero/negative ⇒ unknown to solve for. */
+  double speed_m_per_s;
+  /** Distance of closest approach (m).  Zero/negative ⇒ unknown to solve for. */
+  double dca_m;
+  /** Source activity (Bq).  Zero/negative ⇒ unknown to solve for. */
+  double activity_bq;
+
+  /** Window length (s).  If <= 0, auto = 2.784 · dca / speed. */
+  double window_length_s;
+
+  /** If true and `sample_period_s > 0`, T_w is rounded to a whole number of
+   samples. */
+  bool snap_window_to_samples;
+
+  /** Median per-sample real time of the passthrough foreground; 0 if no
+   passthrough loaded. */
+  double sample_period_s;
+
+  /** Stride between consecutive windows (s).  Required > 0.  Caller should
+   pre-convert "samples per step" to seconds. */
+  double window_stride_s;
+
+  /** Optional shielding directly at the source.  When `shielding_generic` is
+   true, the AN/AD pair defines the shielding; otherwise `shielding_material`
+   (non-null) and `shielding_thickness` (PhysicalUnits internal length units)
+   are used.  Transmission is treated as a constant multiplier at
+   `gamma_energy`, independent of `r(t)`. */
+  bool shielding_generic;
+  double shielding_atomic_number;     // 1..100
+  double shielding_areal_density;     // PhysicalUnits internal (mass per area)
+  std::shared_ptr<const Material> shielding_material;
+  double shielding_thickness;         // PhysicalUnits internal length units
+
+  DynamicMdaInput();
+};//struct DynamicMdaInput
+
+
+/** Result of `compute_dynamic_mda`. */
+struct DynamicMdaResult
+{
+  DynamicMdaInput input;
+
+  /** All three filled in: the two passed in, and the one that was solved for. */
+  double speed_m_per_s;
+  double dca_m;
+  double activity_bq;
+
+  /** Final T_w (after the auto-or-snap step). */
+  double window_length_s;
+  double window_stride_s;
+
+  /** N_per_hour = 3600 / T_step. */
+  double trials_per_hour;
+
+  /** α = F_per_hour / N_per_hour. */
+  double per_trial_alpha;
+  /** Φ⁻¹(1 − α). */
+  double k_alpha;
+  /** Φ⁻¹(detection_probability). */
+  double k_beta;
+
+  /** Expected continuum counts under the peak in T_w. */
+  double background_counts_in_window;
+  /** ∫ DRF::eff(E, r(t)) · exp(-μ_air · r(t)) dt over T_w, times branch ratio. */
+  double signal_counts_per_bq;
+
+  /** L_c / L_d / σ_B in counts. */
+  CurrieLcLd thresholds;
+
+  /** Diagnostic sweep for plotting (quantity, A·S − L_d).  May be empty
+   if the unknown is `activity_bq`. */
+  std::vector<std::pair<double,double>> sweep;
+
+  /** Non-empty if a bracket / bisection issue prevented a solution. */
+  std::string warning;
+
+  DynamicMdaResult();
+};//struct DynamicMdaResult
+
+
+/** Compute the Dynamic MDA.  Throws on invalid inputs. */
+DynamicMdaResult compute_dynamic_mda( const DynamicMdaInput &input );
+
+
+/** One window-level "hit" from the search-mode sliding window. */
+struct DynamicSearchHit
+{
+  int first_sample, last_sample;       // inclusive
+  double window_start_s;               // seconds since first measurement
+  double window_real_time_s;           // sum of real_time over window
+  double counts_in_roi;
+  double expected_background;
+  double decision_threshold;           // L_c scaled to this window
+  double excess_counts;                // counts_in_roi - expected_background
+  double n_sigma_excess;               // excess_counts / sqrt(expected_background + sigmaB^2)
+};//struct DynamicSearchHit
+
+struct DynamicSearchResult
+{
+  std::vector<DynamicSearchHit> hits;
+  size_t total_windows_evaluated;
+  std::string warning;
+
+  DynamicSearchResult();
+};//struct DynamicSearchResult
+
+/** Slide a window over the passthrough/foreground spectrum and flag windows
+ whose ROI excess exceeds the decision threshold derived from
+ `mda_result.thresholds.L_c` (scaled by window real time).
+
+ @param file               The spec file to search.
+ @param detectors          Detectors to sum (empty ⇒ all gamma detectors).
+ @param background_samples Samples to sum into the background rate; if empty
+                           and `mda_result.input.background_spectrum` is set,
+                           that measurement is used instead.
+ @param mda_result         Result of `compute_dynamic_mda`, which carries
+                           ROI / window / threshold / DRF info.
+ */
+DynamicSearchResult search_passthrough_for_source(
+    const std::shared_ptr<const SpecUtils::SpecFile> &file,
+    const std::vector<std::string> &detectors,
+    const std::set<int> &background_samples,
+    const DynamicMdaResult &mda_result );
+
 }//namespace DetectionLimitCalc
 
 

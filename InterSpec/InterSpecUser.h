@@ -120,7 +120,7 @@ class InterSpecUser;
 //The database this InterSpec is using; if higher than database registry, will
 //  automatically update tables at next execution
 //  See DataBaseVersionUpgrade.cpp/.h
-#define DB_SCHEMA_VERSION 12
+#define DB_SCHEMA_VERSION 13
 
 
 namespace Wt
@@ -757,6 +757,7 @@ struct UserState
 #if( USE_DETECTION_LIMIT_TOOL )
   , kShowingDetectionSens   = 0x080000
   , kShowingSimpleMda       = 0x100000
+  , kShowingDynamicMda      = 0x200000
 #endif //USE_DETECTION_LIMIT_TOOL
   };//enum ShownDisplayFeatures
   
@@ -821,6 +822,7 @@ struct UserState
   std::string fluxToolUri;
   std::string detectionSensitivityToolUri;
   std::string simpleMdaUri;
+  std::string dynamicMdaUri;
   
   int showingMarkers;        //bitwise or of FeatureMarkers (not implemented yet)
   int disabledNotifications; //bitwise or of (0x1<<WarningWidget::WarningMsgLevel)
@@ -891,6 +893,7 @@ struct UserState
     Wt::Dbo::field( a, fluxToolUri, "FluxToolUri" );
     Wt::Dbo::field( a, detectionSensitivityToolUri, "DetectionSensitivityToolUri" );
     Wt::Dbo::field( a, simpleMdaUri, "SimpleMdaUri" );
+    Wt::Dbo::field( a, dynamicMdaUri, "DynamicMdaUri" );
   }//void persist( Action &a )
 };//struct UserState
 

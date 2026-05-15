@@ -155,6 +155,12 @@
         "keywords":"MDA Detectable simple"
       },
       {
+        "id":"dynamic-mda-dialog",
+        "title": "Dynamic MDA",
+        "help-xml":"dynamic_mda_help.xml",
+        "keywords":"MDA Detectable dynamic passthrough drive past speed distance closest approach activity moving"
+      },
+      {
         "id":"simple-activity-calc",
         "title": "Simple Activity Calculator",
         "help-xml":"simple_activity_calc_help.xml",

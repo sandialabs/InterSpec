@@ -1,0 +1,19 @@
+<div align="center">
+  <h1 id="dynamic-mda-dialog"><b>Dynamic Minimum Detectable Activity Tool</b> </h1>
+<hr />
+</div>
+<p>
+The Dynamic MDA tool models a radiation detector being driven past a (possibly hypothetical) point source along a straight line.  The detector integrates counts over a short transit window centered on the point of closest approach.
+</p>
+<p>
+The Calculator tab solves the inverse problem: given any two of {source activity, distance of closest approach, speed}, it finds the third at the user-selected confidence level and false-positives-per-hour budget.
+</p>
+<p>
+The Search tab slides a fixed window across a passthrough / search-mode spectrum file and flags windows whose ROI excess exceeds the per-trial decision threshold derived from the Calculator settings.
+</p>
+<p>
+The decision threshold L<sub>c</sub> is set so that, with no source present, the expected number of windows incorrectly exceeding it is at most the user-specified false-positives per hour.  Reducing the false-positive budget or increasing the stride produces a more conservative threshold (and a larger MDA).
+</p>
+<p>
+Note: a fixed-geometry detector response function (DRF) cannot be used with this tool, because the dynamic-MDA model fundamentally assumes the source distance varies with time.
+</p>

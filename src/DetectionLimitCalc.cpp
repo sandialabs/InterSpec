@@ -33,6 +33,8 @@
 #include <boost/math/distributions/chi_squared.hpp>
 
 
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/EnergyCalibration.h"
@@ -815,7 +817,7 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
   result.first_peak_region_channel = channels.first;
   result.last_peak_region_channel = channels.second;
   
-  if( result.first_peak_region_channel < (input.num_lower_side_channels + 1) )
+  if( result.first_peak_region_channel < input.num_lower_side_channels )
     throw std::runtime_error( "mda_counts_calc: lower peak region is outside spectrum energy range" );
   
   if( input.num_lower_side_channels == 0 )
@@ -1900,10 +1902,860 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   
   result.bestCh2Text = buffer;
   result.chi2s = chi2s;
-  
+
   return result;
 };//get_activity_or_distance_limits(...).
-  
-  
+
+
+// ===========================================================================
+// Dynamic MDA: gross-counts Currie limit for a moving point source.
+// See the plan at /Users/wcjohns/.claude/plans/please-see-the-plan-floofy-owl.md
+// ===========================================================================
+
+namespace
+{
+  /** Holds the side-channel-derived continuum estimate for a single window.
+   The combined σ_B (folding extrapolation σ + Poisson on B) is computed at
+   window scale by the caller, since the same continuum is rescaled to many
+   window lengths. */
+  struct ContinuumEstimate
+  {
+    double peak_region_counts;      // raw counts in ROI
+    double peak_continuum_counts;   // B (estimated continuum counts in ROI)
+    double peak_continuum_uncert;   // σ from side-channel extrapolation only
+  };//struct ContinuumEstimate
+
+  /** Estimate the continuum under the peak in `[roi_lower_energy, roi_upper_energy]`
+   from `num_*_side_channels` channels above/below the ROI of `spec`.
+   Mirrors the relevant block of `currie_mda_calc`. */
+  ContinuumEstimate estimate_continuum_from_sides(
+      const SpecUtils::Measurement &spec,
+      const float roi_lower_energy,
+      const float roi_upper_energy,
+      const size_t num_lower_side_channels,
+      const size_t num_upper_side_channels )
+  {
+    using namespace SpecUtils;
+
+    const std::shared_ptr<const EnergyCalibration> cal = spec.energy_calibration();
+    if( !cal || !cal->valid() || !spec.gamma_counts() )
+      throw std::runtime_error( "estimate_continuum_from_sides: invalid spectrum" );
+
+    const size_t nchannel = cal->num_channels();
+
+    // Aliasing shared_ptr with no-op deleter: safe today because round_roi_to_channels
+    // does not retain the pointer.  Do not pass this to anything that stores it.
+    const std::pair<size_t,size_t> channels = DetectionLimitCalc::round_roi_to_channels(
+        std::shared_ptr<const Measurement>( &spec, [](const Measurement *){} ),
+        roi_lower_energy, roi_upper_energy );
+    const size_t first_peak = channels.first;
+    const size_t last_peak  = channels.second;
+
+    if( first_peak < num_lower_side_channels )
+      throw std::runtime_error( "estimate_continuum_from_sides: lower side channels off spectrum" );
+
+    double lower_cont_counts = 0.0, upper_cont_counts = 0.0;
+    double lower_cont_width = 1.0, upper_cont_width = 1.0;
+    size_t first_lower = 0, last_lower = 0;
+    size_t first_upper = 0, last_upper = 0;
+
+    if( num_lower_side_channels > 0 )
+    {
+      last_lower  = first_peak - 1;
+      first_lower = last_lower - num_lower_side_channels + 1;
+      lower_cont_counts = spec.gamma_channels_sum( first_lower, last_lower );
+      lower_cont_width = spec.gamma_channel_upper(last_lower) - spec.gamma_channel_lower(first_lower);
+    }
+
+    if( num_upper_side_channels > 0 )
+    {
+      first_upper = last_peak + 1;
+      last_upper  = first_upper + num_upper_side_channels - 1;
+      if( last_upper >= nchannel )
+        throw std::runtime_error( "estimate_continuum_from_sides: upper side channels off spectrum" );
+      upper_cont_counts = spec.gamma_channels_sum( first_upper, last_upper );
+      upper_cont_width = spec.gamma_channel_upper(last_upper) - spec.gamma_channel_lower(first_upper);
+    }
+
+    ContinuumEstimate result;
+    result.peak_region_counts = spec.gamma_channels_sum( first_peak, last_peak );
+
+    const double peak_area_width = spec.gamma_channel_upper(last_peak) - spec.gamma_channel_lower(first_peak);
+
+    if( (num_lower_side_channels == 0) && (num_upper_side_channels == 0) )
+    {
+      // Degenerate case: continuum estimated from the ROI itself.
+      result.peak_continuum_counts = result.peak_region_counts;
+      result.peak_continuum_uncert = std::sqrt( std::max(0.0, result.peak_region_counts) );
+    }
+    else if( num_lower_side_channels == 0 )
+    {
+      const double dens = upper_cont_counts / upper_cont_width;
+      result.peak_continuum_counts = dens * peak_area_width;
+      const double dens_uncert = (upper_cont_counts <= 0.0) ? 0.0 : (dens / std::sqrt(upper_cont_counts));
+      result.peak_continuum_uncert = dens_uncert * peak_area_width;
+    }
+    else if( num_upper_side_channels == 0 )
+    {
+      const double dens = lower_cont_counts / lower_cont_width;
+      result.peak_continuum_counts = dens * peak_area_width;
+      const double dens_uncert = (lower_cont_counts <= 0.0) ? 0.0 : (dens / std::sqrt(lower_cont_counts));
+      result.peak_continuum_uncert = dens_uncert * peak_area_width;
+    }
+    else
+    {
+      const double low_dens = lower_cont_counts / lower_cont_width;
+      const double upp_dens = upper_cont_counts / upper_cont_width;
+      const double low_uncert = (lower_cont_counts <= 0.0) ? 0.0 : (low_dens / std::sqrt(lower_cont_counts));
+      const double upp_uncert = (upper_cont_counts <= 0.0) ? 0.0 : (upp_dens / std::sqrt(upper_cont_counts));
+
+      const double mid_dens = 0.5 * (low_dens + upp_dens);
+      const double mid_uncert = 0.5 * std::sqrt( low_uncert*low_uncert + upp_uncert*upp_uncert );
+      const double frac_uncert = (mid_dens > 0.0) ? (mid_uncert / mid_dens) : 1.0;
+      result.peak_continuum_counts = mid_dens * peak_area_width;
+      result.peak_continuum_uncert = result.peak_continuum_counts * frac_uncert;
+    }
+
+    return result;
+  }//estimate_continuum_from_sides(...)
+
+
+  /** Composite Simpson's rule integration over a smooth integrand. */
+  template<class F>
+  double simpson_integrate( const double a, const double b, const int n_intervals, F f )
+  {
+    int n = std::max( 2, n_intervals );
+    if( (n % 2) == 1 )
+      n += 1;
+    const double h = (b - a) / static_cast<double>(n);
+    double sum = f(a) + f(b);
+    for( int i = 1; i < n; ++i )
+    {
+      const double x = a + i*h;
+      sum += ((i % 2) == 0 ? 2.0 : 4.0) * f(x);
+    }
+    return sum * h / 3.0;
+  }//simpson_integrate
+
+
+  /** Computes ∫_{-Tw/2}^{Tw/2} eff(E, r(t)) · exp(-μ_air·r(t)) dt, with
+   r(t) = sqrt(d0² + (v·t)²). */
+  double signal_time_integral( const DetectorPeakResponse &drf,
+                               const float gamma_energy,
+                               const double v,         // m/s
+                               const double d0,        // m
+                               const double T_w )      // s
+  {
+    if( T_w <= 0.0 )
+      return 0.0;
+
+    // Fixed-geometry DRFs are rejected upstream in compute_dynamic_mda; a passthrough
+    // measurement is fundamentally not the fixed-geometry calibration scenario.
+    assert( !drf.isFixedGeometry() );
+
+    // mu_internal has units of [1/L_internal]; converting r from meters to
+    // internal length units (1 m = PhysicalUnits::meter internal units) gives
+    // a dimensionless exponent.
+    const double mu_internal
+        = static_cast<double>( GammaInteractionCalc::transmission_length_coefficient_air( gamma_energy ) );
+
+    const double d0_clamp = std::max( 1.0e-3, d0 );  // 1 mm guard against r=0
+
+    auto integrand = [&drf, gamma_energy, v, d0_clamp, mu_internal]( const double t ) -> double
+    {
+      const double r_m = std::sqrt( d0_clamp*d0_clamp + v*t*v*t );
+      const double r_internal = r_m * PhysicalUnits::meter;
+      const double eff = drf.efficiency( gamma_energy, r_internal );
+      const double mu_r = mu_internal * r_internal;
+      return eff * std::exp( -mu_r );
+    };//integrand
+
+    // Integrand has FWHM ≈ d0/v in t (from the 1/r² inverse-square envelope around
+    // closest approach).  Scale intervals so we have ≥ 20 intervals per FWHM,
+    // and the total window crosses ~50 intervals at the auto T_w = 2.78·d0/v.
+    // Clamp to [101, 4001] to bound cost.
+    int n = 101;
+    if( v > 0.0 )
+    {
+      const double fwhm = d0_clamp / v;
+      const double target = 20.0 * (T_w / fwhm);
+      n = std::max( 101, std::min( 4001, static_cast<int>( std::ceil( target ) ) ) );
+    }
+
+    return simpson_integrate( -0.5*T_w, 0.5*T_w, n, integrand );
+  }//signal_time_integral(...)
+
+
+  /** Resolve branching ratio at `gamma_energy` for a given nuclide / age,
+   summed over all photons / gammas / x-rays within `roi_lower..roi_upper`.
+   Returns 0 if nuclide is null. */
+  double branch_ratio_for_nuclide( const SandiaDecay::Nuclide *nuc,
+                                   const double age,
+                                   const float roi_lower,
+                                   const float roi_upper )
+  {
+    if( !nuc )
+      return 0.0;
+
+    SandiaDecay::NuclideMixture mix;
+    const double dummy = 1.0; // 1 Bq
+    mix.addAgedNuclideByActivity( nuc, dummy, age );
+
+    std::vector<SandiaDecay::EnergyRatePair> photons
+        = mix.xrays( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+    const std::vector<SandiaDecay::EnergyRatePair> gammas
+        = mix.gammas( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
+    photons.insert( end(photons), begin(gammas), end(gammas) );
+
+    double br = 0.0;
+    for( const SandiaDecay::EnergyRatePair &erp : photons )
+    {
+      if( (erp.energy >= roi_lower) && (erp.energy <= roi_upper) )
+        br += erp.numPerSecond / dummy;
+    }
+    return br;
+  }//branch_ratio_for_nuclide(...)
+
+
+  double resolve_window_length( const DetectionLimitCalc::DynamicMdaInput &in,
+                                const double v, const double d0 )
+  {
+    double T_w = in.window_length_s;
+    if( T_w <= 0.0 )
+    {
+      if( (v > 0.0) && (d0 > 0.0) )
+        T_w = 2.784 * d0 / v;
+      else
+        T_w = 1.0;
+    }
+    if( in.snap_window_to_samples && (in.sample_period_s > 0.0) )
+    {
+      const double nsamp = std::max( 1.0, std::round( T_w / in.sample_period_s ) );
+      T_w = nsamp * in.sample_period_s;
+    }
+    return T_w;
+  }//resolve_window_length(...)
+
+}//anonymous namespace
+
+
+CurrieLcLd currie_lc_ld( const double B,
+                         const double sigma_B,
+                         const double k_alpha,
+                         const double k_beta,
+                         const double u_rel )
+{
+  // L_c is the gross-counts decision threshold (AQ-48 eqn 128 / Currie 1968 L_c):
+  //   L_c = k_α · σ_B
+  // L_d is the true signal level we can reliably detect (AQ-48 eqn 129/130 / L_d):
+  //   L_d satisfies  L_d - L_c = k_β · σ(at L_d)
+  // where σ²(at L_d) = σ_B² + L_d + (u_rel · L_d)², i.e. side-channel variance
+  // (already includes Poisson on B in σ_B), plus Poisson on the signal counts L_d,
+  // plus a relative uncertainty u_rel on L_d from DRF / distance / geometry.
+  //
+  // The existing `currie_mda_calc` uses the closed-form solution of that quadratic
+  // valid only when k_α = k_β = k (AQ-48 eqn 129):
+  //   L_d = (2·L_c + k²) / (1 - k²·u_rel²)
+  // For the dynamic-MDA scenario we generally have k_α ≠ k_β (k_α comes from the
+  // false-positive-per-hour budget divided by trials/hour; k_β from the user CL),
+  // so we solve iteratively.  Treating L_d as the unknown in:
+  //     (L_d - L_c) = k_β · sqrt( σ_B² + L_d + u_rel²·L_d² )
+  // expanding and grouping like terms gives a quadratic that we solve by fixed-point
+  // iteration: at u_rel = 0 the closed form is
+  //     L_d = L_c + k_β²/2 + k_β · sqrt(L_c + k_β²/4 + B)   (with σ_B² = B)
+  // and for u_rel > 0 we plug L_d into the relative-uncertainty term and iterate.
+  //
+  // Caveat (worth a future audit before turning u_rel on for real users): in the
+  // symmetric-k limit, the fixed-point iteration here reduces to a denominator
+  // of (1 - k⁴·u²) rather than the AQ-48 (1 - k²·u²) — the extra factor of k_β²
+  // comes from carrying the u_rel·L_d term inside the k_β·sqrt(...) rather than
+  // outside it.  GUI passes u_rel = 0 today, so user-visible impact is zero.
+
+  CurrieLcLd result;
+  result.sigma_B = sigma_B;
+  result.L_c = k_alpha * sigma_B;
+
+  const double kbeta2 = k_beta * k_beta;
+  double L_d = result.L_c + 0.5*kbeta2
+             + k_beta * std::sqrt( std::max(0.0, result.L_c + 0.25*kbeta2 + B) );
+
+  if( u_rel > 0.0 )
+  {
+    for( int iter = 0; iter < 25; ++iter )
+    {
+      const double prev = L_d;
+      const double extra = (k_beta * u_rel * L_d) * (k_beta * u_rel * L_d);
+      const double inside = std::max( 0.0, result.L_c + 0.25*kbeta2 + B + extra );
+      L_d = result.L_c + 0.5*kbeta2 + k_beta * std::sqrt( inside );
+      if( fabs(L_d - prev) < 1.0e-6 * std::max(1.0, fabs(L_d)) )
+        break;
+    }
+  }//if( u_rel > 0.0 )
+
+  result.L_d = L_d;
+  return result;
+}//currie_lc_ld(...)
+
+
+DynamicMdaInput::DynamicMdaInput()
+ : background_spectrum( nullptr ),
+   drf( nullptr ),
+   nuclide( nullptr ),
+   age( 0.0 ),
+   gamma_energy( 0.0f ),
+   branch_ratio( 0.0 ),
+   roi_lower_energy( 0.0f ),
+   roi_upper_energy( 0.0f ),
+   num_lower_side_channels( 4 ),
+   num_upper_side_channels( 4 ),
+   detection_probability( 0.95 ),
+   max_false_positives_per_hour( 1.0 ),
+   additional_uncertainty( 0.0 ),
+   speed_m_per_s( 0.0 ),
+   dca_m( 0.0 ),
+   activity_bq( 0.0 ),
+   window_length_s( 0.0 ),
+   snap_window_to_samples( false ),
+   sample_period_s( 0.0 ),
+   window_stride_s( 1.0 ),
+   shielding_generic( false ),
+   shielding_atomic_number( 0.0 ),
+   shielding_areal_density( 0.0 ),
+   shielding_material( nullptr ),
+   shielding_thickness( 0.0 )
+{
+}
+
+
+DynamicMdaResult::DynamicMdaResult()
+ : input(),
+   speed_m_per_s( 0.0 ),
+   dca_m( 0.0 ),
+   activity_bq( 0.0 ),
+   window_length_s( 0.0 ),
+   window_stride_s( 0.0 ),
+   trials_per_hour( 0.0 ),
+   per_trial_alpha( 0.0 ),
+   k_alpha( 0.0 ),
+   k_beta( 0.0 ),
+   background_counts_in_window( 0.0 ),
+   signal_counts_per_bq( 0.0 ),
+   thresholds{ 0.0, 0.0, 0.0 },
+   sweep(),
+   warning()
+{
+}
+
+
+DynamicSearchResult::DynamicSearchResult()
+ : hits(),
+   total_windows_evaluated( 0 ),
+   warning()
+{
+}
+
+
+DynamicMdaResult compute_dynamic_mda( const DynamicMdaInput &input )
+{
+  using std::isfinite;
+
+  // ------------------- Validate ------------------------------------------
+  if( !input.background_spectrum )
+    throw std::runtime_error( "compute_dynamic_mda: no background spectrum" );
+
+  if( !input.drf || !input.drf->isValid() )
+    throw std::runtime_error( "compute_dynamic_mda: no valid DRF" );
+
+  if( input.drf->isFixedGeometry() )
+    throw std::runtime_error( "compute_dynamic_mda: fixed-geometry DRFs are not supported"
+                              " (the dynamic-MDA model assumes the source moves past the detector)" );
+
+  if( input.gamma_energy <= 0.0f )
+    throw std::runtime_error( "compute_dynamic_mda: invalid gamma_energy" );
+
+  if( !(input.roi_upper_energy > input.roi_lower_energy) )
+    throw std::runtime_error( "compute_dynamic_mda: roi_upper must exceed roi_lower" );
+
+  // detection_probability < 0.5 would yield k_beta < 0 (unphysical "detect with worse than coin-flip odds").
+  if( (input.detection_probability <= 0.5) || (input.detection_probability >= 1.0) )
+    throw std::runtime_error( "compute_dynamic_mda: detection_probability must be in (0.5, 1)" );
+
+  if( !(input.max_false_positives_per_hour > 0.0) )
+    throw std::runtime_error( "compute_dynamic_mda: max_false_positives_per_hour must be > 0" );
+
+  if( !(input.window_stride_s > 0.0) )
+    throw std::runtime_error( "compute_dynamic_mda: window_stride_s must be > 0" );
+
+  if( !(input.additional_uncertainty >= 0.0) || (input.additional_uncertainty >= 1.0) )
+    throw std::runtime_error( "compute_dynamic_mda: additional_uncertainty must be in [0, 1)" );
+
+  // Exactly one of speed/dca/activity must be the unknown.
+  const bool solve_speed    = !(input.speed_m_per_s > 0.0);
+  const bool solve_dca      = !(input.dca_m > 0.0);
+  const bool solve_activity = !(input.activity_bq > 0.0);
+  const int num_unknown = int(solve_speed) + int(solve_dca) + int(solve_activity);
+  if( num_unknown != 1 )
+    throw std::runtime_error( "compute_dynamic_mda: exactly one of speed / dca / activity must be left zero/negative" );
+
+  // ------------------- Resolve branching ratio ---------------------------
+  double br = input.branch_ratio;
+  if( !(br > 0.0) && input.nuclide )
+    br = branch_ratio_for_nuclide( input.nuclide, input.age,
+                                   input.roi_lower_energy, input.roi_upper_energy );
+  if( !(br > 0.0) )
+    br = 1.0; // pure BR=1 mode
+
+  // ------------------- Source shielding transmission ---------------------
+  // Shielding sits at the source and is independent of r(t), so we treat it
+  // as a constant multiplier on the per-Bq photon count.
+  double shield_transmission = 1.0;
+  if( input.shielding_generic )
+  {
+    if( (input.shielding_atomic_number >= 1.0) && (input.shielding_areal_density > 0.0) )
+    {
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic(
+          static_cast<float>(input.shielding_atomic_number),
+          static_cast<float>(input.shielding_areal_density),
+          input.gamma_energy );
+      shield_transmission = std::exp( -mu );
+    }
+  }
+  else if( input.shielding_material && (input.shielding_thickness > 0.0) )
+  {
+    const double mu = GammaInteractionCalc::transmition_coefficient_material(
+        input.shielding_material.get(),
+        input.gamma_energy,
+        static_cast<float>(input.shielding_thickness) );
+    shield_transmission = std::exp( -mu );
+  }
+
+  // ------------------- Continuum from background spectrum ----------------
+  const ContinuumEstimate cont = estimate_continuum_from_sides(
+      *input.background_spectrum,
+      input.roi_lower_energy, input.roi_upper_energy,
+      input.num_lower_side_channels, input.num_upper_side_channels );
+
+  const double bg_live_time = input.background_spectrum->live_time();
+  if( !(bg_live_time > 0.0) )
+    throw std::runtime_error( "compute_dynamic_mda: background live time is zero" );
+
+  const double B_per_sec = cont.peak_continuum_counts / bg_live_time;
+  const double sigB_frac = (cont.peak_continuum_counts > 0.0)
+                           ? (cont.peak_continuum_uncert / cont.peak_continuum_counts)
+                           : 0.0;
+
+  // ------------------- Trials / k-factors --------------------------------
+  typedef boost::math::policies::policy<boost::math::policies::digits10<6>> my_pol_6;
+  const boost::math::normal_distribution<double, my_pol_6> gaus( 0.0, 1.0 );
+
+  std::string warning;
+
+  // Per-trial α and k_α depend on the effective stride.  If the user's stride is
+  // shorter than the window, consecutive windows overlap and trials are correlated;
+  // clamp the effective stride to T_w so N_per_hour ≤ 3600/T_w.  Since T_w can
+  // itself depend on the bisection unknown, we evaluate α inside `compute_for_vd`.
+  const double k_beta = boost::math::quantile( gaus, input.detection_probability );
+
+  bool stride_clamp_engaged = false;
+  bool alpha_high_clamp_engaged = false;
+  bool alpha_low_clamp_engaged = false;
+
+  // Planning-value k_alpha for the result struct (recomputed at the resolved T_w).
+  double k_alpha_planning = 0.0;
+  double alpha_planning = 0.0;
+  double N_per_hour_planning = 0.0;
+
+  // ------------------- Helper: compute things for a given (v, d0) --------
+  auto compute_for_vd = [&]( const double v, const double d0,
+                             double &T_w, double &B_w, double &S_per_Bq, CurrieLcLd &thresh )
+  {
+    T_w = resolve_window_length( input, v, d0 );
+
+    // Effective stride: clamp to ≥ T_w so windows do not overlap (would otherwise
+    // overcount independent trials and inflate the MDA).
+    double eff_stride = input.window_stride_s;
+    if( eff_stride < T_w )
+    {
+      eff_stride = T_w;
+      stride_clamp_engaged = true;
+    }
+
+    const double N_per_hour = 3600.0 / eff_stride;
+    const double raw_alpha = input.max_false_positives_per_hour / N_per_hour;
+    double alpha = std::min( 0.5, std::max( 1.0e-12, raw_alpha ) );
+    if( raw_alpha >= 0.5 ) alpha_high_clamp_engaged = true;
+    else if( raw_alpha < 1.0e-12 ) alpha_low_clamp_engaged = true;
+
+    const double k_alpha = boost::math::quantile( gaus, 1.0 - alpha );
+
+    // Per-window B scales linearly with T_w.
+    B_w = std::max( 0.0, B_per_sec * T_w );
+    const double sigma_extrap = sigB_frac * B_w;        // continuum extrapolation σ
+    const double sigma_B = std::sqrt( sigma_extrap*sigma_extrap + B_w );
+
+    thresh = currie_lc_ld( B_w, sigma_B, k_alpha, k_beta, input.additional_uncertainty );
+
+    S_per_Bq = br * shield_transmission
+             * signal_time_integral( *input.drf, input.gamma_energy, v, d0, T_w );
+
+    // Record planning-values for the result.  In the bisection path these are
+    // overwritten until the final evaluation lands on the solution.
+    k_alpha_planning = k_alpha;
+    alpha_planning = alpha;
+    N_per_hour_planning = N_per_hour;
+  };//compute_for_vd
+
+  // ------------------- Solve ---------------------------------------------
+  double v = input.speed_m_per_s;
+  double d0 = input.dca_m;
+  double A = input.activity_bq;
+  double T_w = 0.0, B_w = 0.0, S_per_Bq = 0.0;
+  CurrieLcLd thresh{ 0.0, 0.0, 0.0 };
+  std::vector<std::pair<double,double>> sweep;
+
+  if( solve_activity )
+  {
+    compute_for_vd( v, d0, T_w, B_w, S_per_Bq, thresh );
+    if( S_per_Bq <= 0.0 )
+    {
+      if( !warning.empty() ) warning += "  ";
+      warning += "S_per_Bq evaluated to zero (geometry/DRF rejected the source).";
+      A = 0.0;
+    }
+    else
+    {
+      A = thresh.L_d / S_per_Bq;
+    }
+  }
+  else
+  {
+    // Solve for the unknown (speed or DCA).  Function f(x) = A·S_per_Bq(x) - L_d(x)
+    // transitions from negative (no detection) to positive as the geometry becomes
+    // more favorable.  The MDA value is the largest x at which f(x) >= 0.
+    //
+    // Brackets per plan:
+    double lo, hi;
+    if( solve_speed )
+    {
+      lo = 0.05;
+      hi = 50.0;
+    }
+    else  // solve_dca
+    {
+      lo = 0.01;
+      hi = 1000.0;
+    }
+
+    auto eval = [&]( const double x ) -> double
+    {
+      double Tw, Bw, S; CurrieLcLd th{0.0,0.0,0.0};
+      if( solve_speed )
+        compute_for_vd( x, d0, Tw, Bw, S, th );
+      else
+        compute_for_vd( v, x, Tw, Bw, S, th );
+      return A * S - th.L_d;
+    };
+
+    // Build the diagnostic sweep first; this also lets us sanity-check that f
+    // crosses zero at most once across the bracket.
+    const int N = 40;
+    sweep.reserve( N + 1 );
+    int sign_changes = 0;
+    double prev_f = 0.0;
+    for( int i = 0; i <= N; ++i )
+    {
+      const double t = i / double(N);
+      const double x = lo * std::pow( hi / lo, t );  // log-space
+      const double fx = eval(x);
+      if( (i > 0) && ((prev_f >= 0.0) != (fx >= 0.0)) )
+        ++sign_changes;
+      prev_f = fx;
+      sweep.emplace_back( x, fx );
+    }
+
+    const double f_lo = sweep.front().second;
+    const double f_hi = sweep.back().second;
+
+    if( sign_changes == 0 )
+    {
+      if( !warning.empty() ) warning += "  ";
+      warning += "Solver bracket contains no sign change — solution outside ["
+              + std::to_string(lo) + ", " + std::to_string(hi)
+              + "]; reporting the closest bracket endpoint as a marginal value.";
+      const double x_result = (f_lo > 0.0) ? hi : lo;
+      if( solve_speed )
+        v = x_result;
+      else
+        d0 = x_result;
+      compute_for_vd( v, d0, T_w, B_w, S_per_Bq, thresh );
+    }
+    else
+    {
+      if( sign_changes > 1 )
+      {
+        if( !warning.empty() ) warning += "  ";
+        warning += "Solver found multiple sign changes in the sweep — f(x) is not"
+                   " monotonic in the unknown; using the first crossing.";
+      }
+
+      // Find the first bracket [a, b] in the sweep where f changes sign.
+      double a = lo, b = hi;
+      for( size_t i = 1; i < sweep.size(); ++i )
+      {
+        if( (sweep[i-1].second >= 0.0) != (sweep[i].second >= 0.0) )
+        {
+          a = sweep[i-1].first;
+          b = sweep[i].first;
+          break;
+        }
+      }
+
+      // Tolerance: stop once the bracket is within 0.01% of its midpoint, or 80 iterations.
+      const double rel_tol = 1.0e-4;
+      auto term = [rel_tol]( double lo_v, double hi_v ){
+        return (hi_v - lo_v) < rel_tol * std::max(1.0, hi_v);
+      };
+      boost::uintmax_t max_iter = 80;
+      const std::pair<double,double> root = boost::math::tools::bisect( eval, a, b, term, max_iter );
+      const double x_result = 0.5 * (root.first + root.second);
+
+      if( solve_speed )
+        v = x_result;
+      else
+        d0 = x_result;
+      compute_for_vd( v, d0, T_w, B_w, S_per_Bq, thresh );
+    }
+  }//if( solve_activity ) / else
+
+  // Now that compute_for_vd has run on the final (v, d0), surface clamp warnings.
+  if( alpha_high_clamp_engaged )
+  {
+    if( !warning.empty() ) warning += "  ";
+    warning += "False-positive budget exceeds 50% of trials (alpha clamped to 0.5; k_alpha=0):"
+               " decision threshold is degenerate.  Reduce 'false positives per hour' or increase stride.";
+  }
+  else if( alpha_low_clamp_engaged )
+  {
+    if( !warning.empty() ) warning += "  ";
+    warning += "False-positive budget is extremely small (alpha clamped to 1e-12); k_alpha is impractical.";
+  }
+  if( stride_clamp_engaged )
+  {
+    if( !warning.empty() ) warning += "  ";
+    warning += "Window stride was below window length; clamped to T_w (consecutive windows would otherwise overlap).";
+  }
+  if( d0 < 0.01 )
+  {
+    if( !warning.empty() ) warning += "  ";
+    warning += "Distance of closest approach is < 1 cm; the point-source / inverse-square geometry is unphysical here.";
+  }
+
+  DynamicMdaResult out;
+  out.input = input;
+  out.speed_m_per_s = v;
+  out.dca_m = d0;
+  out.activity_bq = A;
+  out.window_length_s = T_w;
+  // Report the effective stride actually used.  If the user's stride was clamped
+  // up to T_w, that's the meaningful value for downstream search/display.
+  out.window_stride_s = std::max( input.window_stride_s, T_w );
+  out.trials_per_hour = N_per_hour_planning;
+  out.per_trial_alpha = alpha_planning;
+  out.k_alpha = k_alpha_planning;
+  out.k_beta = k_beta;
+  out.background_counts_in_window = B_w;
+  out.signal_counts_per_bq = S_per_Bq;
+  out.thresholds = thresh;
+  out.sweep = std::move(sweep);
+  out.warning = warning;
+  return out;
+}//compute_dynamic_mda(...)
+
+
+DynamicSearchResult search_passthrough_for_source(
+    const std::shared_ptr<const SpecUtils::SpecFile> &file,
+    const std::vector<std::string> &detectors,
+    const std::set<int> &background_samples,
+    const DynamicMdaResult &mda_result )
+{
+  using namespace SpecUtils;
+  DynamicSearchResult out;
+
+  if( !file )
+    throw std::runtime_error( "search_passthrough_for_source: null spec file" );
+
+  const double T_w = mda_result.window_length_s;
+  const double T_step = mda_result.window_stride_s;
+  if( !(T_w > 0.0) || !(T_step > 0.0) )
+    throw std::runtime_error( "search_passthrough_for_source: invalid window/stride" );
+
+  // Determine the per-second background rate in the ROI.
+  double B_per_sec = 0.0;
+  double sigB_frac = 0.0;
+
+  std::shared_ptr<const Measurement> bg_meas;
+  if( !background_samples.empty() )
+  {
+    bg_meas = file->sum_measurements( background_samples, detectors, nullptr );
+  }
+  else if( mda_result.input.background_spectrum )
+  {
+    bg_meas = mda_result.input.background_spectrum;
+  }
+
+  if( !bg_meas || !(bg_meas->live_time() > 0.0f) )
+  {
+    out.warning = "No usable background spectrum for search.";
+    return out;
+  }
+
+  try
+  {
+    const ContinuumEstimate cont = estimate_continuum_from_sides(
+        *bg_meas,
+        mda_result.input.roi_lower_energy, mda_result.input.roi_upper_energy,
+        mda_result.input.num_lower_side_channels, mda_result.input.num_upper_side_channels );
+    B_per_sec = cont.peak_continuum_counts / bg_meas->live_time();
+    sigB_frac = (cont.peak_continuum_counts > 0.0)
+                ? (cont.peak_continuum_uncert / cont.peak_continuum_counts)
+                : 0.0;
+  }catch( std::exception &e )
+  {
+    out.warning = std::string("Background continuum estimation failed: ") + e.what();
+    return out;
+  }
+
+  const std::vector<int> sample_nums( file->sample_numbers().begin(),
+                                      file->sample_numbers().end() );
+  if( sample_nums.empty() )
+    return out;
+
+  std::vector<std::string> dets = detectors;
+  if( dets.empty() )
+    dets = file->gamma_detector_names();
+
+  // Pre-compute per-sample real time and ROI counts.  For the common
+  // single-detector case we iterate raw Measurement pointers directly (cheap);
+  // for multi-detector files we fall back to sum_measurements.
+  std::vector<double> sample_real_time( sample_nums.size(), 0.0 );
+  std::vector<double> sample_roi_counts( sample_nums.size(), 0.0 );
+
+  const float roi_lo = mda_result.input.roi_lower_energy;
+  const float roi_hi = mda_result.input.roi_upper_energy;
+  const bool single_det = (dets.size() == 1);
+
+  for( size_t i = 0; i < sample_nums.size(); ++i )
+  {
+    if( single_det )
+    {
+      const std::shared_ptr<const Measurement> m = file->measurement( sample_nums[i], dets.front() );
+      if( !m )
+        continue;
+      sample_real_time[i] = m->real_time();
+      const std::shared_ptr<const EnergyCalibration> cal = m->energy_calibration();
+      if( !cal || !cal->valid() )
+        continue;
+      try
+      {
+        sample_roi_counts[i] = m->gamma_integral( roi_lo, roi_hi );
+      }catch( std::exception & )
+      {
+        sample_roi_counts[i] = 0.0;
+      }
+    }
+    else
+    {
+      // Multi-detector: sum across detectors.  This still allocates, but only
+      // when there is actually more than one gamma detector to sum.
+      double rt = 0.0, cnts = 0.0;
+      for( const std::string &det : dets )
+      {
+        const std::shared_ptr<const Measurement> m = file->measurement( sample_nums[i], det );
+        if( !m )
+          continue;
+        rt = std::max( rt, static_cast<double>(m->real_time()) );  // representative, not summed
+        const std::shared_ptr<const EnergyCalibration> cal = m->energy_calibration();
+        if( !cal || !cal->valid() )
+          continue;
+        try
+        {
+          cnts += m->gamma_integral( roi_lo, roi_hi );
+        }catch( std::exception & ) {}
+      }
+      sample_real_time[i] = rt;
+      sample_roi_counts[i] = cnts;
+    }
+  }//for( each sample )
+
+  // Determine the per-sample period (median real_time of non-zero entries).
+  double sample_period = mda_result.input.sample_period_s;
+  if( !(sample_period > 0.0) )
+  {
+    std::vector<double> rts;
+    rts.reserve( sample_real_time.size() );
+    for( const double v : sample_real_time )
+      if( v > 0.0 )
+        rts.push_back( v );
+    if( !rts.empty() )
+    {
+      std::sort( rts.begin(), rts.end() );
+      sample_period = rts[ rts.size()/2 ];
+    }
+  }
+  if( !(sample_period > 0.0) )
+    sample_period = 1.0;
+
+  const size_t requested_samples_per_window = static_cast<size_t>( std::round( T_w / sample_period ) );
+  const size_t samples_per_window = std::max<size_t>( 1, requested_samples_per_window );
+  const size_t samples_per_step = std::max<size_t>( 1,
+      static_cast<size_t>( std::round( T_step / sample_period ) ) );
+
+  if( requested_samples_per_window == 0 )
+    out.warning = "Window length is shorter than the spec file's sample period;"
+                  " realized window snapped to one sample, so the effective T_w is larger than requested.";
+
+  // Slide the window.
+  std::vector<double> cum_t( sample_nums.size() + 1, 0.0 );
+  for( size_t i = 0; i < sample_nums.size(); ++i )
+    cum_t[i+1] = cum_t[i] + sample_real_time[i];
+
+  for( size_t i = 0; (i + samples_per_window) <= sample_nums.size(); i += samples_per_step )
+  {
+    const size_t j = i + samples_per_window - 1;
+    double win_counts = 0.0, win_rt = 0.0;
+    for( size_t k = i; k <= j; ++k )
+    {
+      win_counts += sample_roi_counts[k];
+      win_rt     += sample_real_time[k];
+    }
+    out.total_windows_evaluated += 1;
+    if( win_rt <= 0.0 )
+      continue;
+
+    const double Bw = std::max( 0.0, B_per_sec * win_rt );
+    const double sigExtrap = sigB_frac * Bw;
+    const double sigma_B = std::sqrt( sigExtrap*sigExtrap + Bw );
+    const double L_c = mda_result.k_alpha * sigma_B;
+    const double excess = win_counts - Bw;
+    if( excess > L_c )
+    {
+      DynamicSearchHit hit;
+      hit.first_sample = sample_nums[i];
+      hit.last_sample  = sample_nums[j];
+      hit.window_start_s = cum_t[i];
+      hit.window_real_time_s = win_rt;
+      hit.counts_in_roi = win_counts;
+      hit.expected_background = Bw;
+      hit.decision_threshold = L_c;
+      hit.excess_counts = excess;
+      hit.n_sigma_excess = (sigma_B > 0.0) ? (excess / sigma_B) : 0.0;
+      out.hits.push_back( hit );
+    }
+  }//for( window i )
+
+  return out;
+}//search_passthrough_for_source(...)
+
+
 }//namespace DetectionLimitCalc
 

@@ -1,0 +1,127 @@
+/* Dynamic MDA tool — layout for the Calculator tab.
+ *
+ * Each (label, input) pair is wrapped in a `.DynMdaFieldRow` so the label
+ * stays on the same line as its input, vertically centered.  The .SolveForRow,
+ * .WindowRow, and .StrideRow are sibling rows for radio-driven groups.
+ */
+
+.DetectionLimitDynamic {
+  padding: 6px 8px;
+}
+
+/* GeneralInput stacks its child input-lines vertically; each .DynMdaInputLine
+   is a horizontal flex container of (label+input) field cells that wraps
+   when the window is narrow.  GeometryRow keeps the original side-by-side
+   flow used by the Calculator tab's geometry inputs. */
+.DetectionLimitDynamic .GeneralInput {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.DetectionLimitDynamic .GeometryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 8px;
+}
+
+.DetectionLimitDynamic .DynMdaInputLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  /* gap: 6px 14px; */
+  justify-content: space-between;
+}
+
+.DetectionLimitDynamic .DynMdaFieldRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.DetectionLimitDynamic .DynMdaFieldRow > label {
+  white-space: nowrap;
+}
+
+/* Shielding cell sits next to the detector display; remove the inner
+   ShieldingSelect's default margins so it lines up vertically. */
+.DetectionLimitDynamic .DynMdaShieldingRow > .ShieldingSelect {
+  margin: 0;
+}
+
+.DetectionLimitDynamic .SolveForRow,
+.DetectionLimitDynamic .WindowRow,
+.DetectionLimitDynamic .StrideRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+/* Chart at top of the tool.
+ * Fixing both the ChartArea container and the D3SpectrumDisplayDiv to an
+ * explicit height prevents the ResizeObserver-driven D3 chart from
+ * feedback-growing without bound. */
+.DetectionLimitDynamic .ChartArea {
+  width: 100%;
+  height: 220px;
+  border: 1px solid #e1e1e1;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+.DetectionLimitDynamic .ChartArea > .D3SpectrumDisplayDiv {
+  width: 100%;
+  height: 100%;
+}
+
+.DetectionLimitDynamic .TrialsAlphaTxt {
+  margin-top: 4px;
+  font-size: 0.9em;
+  color: #555;
+}
+
+.DetectionLimitDynamic .StrideDerived {
+  font-size: 0.9em;
+  color: #555;
+}
+
+.DetectionLimitDynamic .ResultsTxtArea {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+}
+
+.DetectionLimitDynamic .ErrMsg {
+  color: #b00;
+  margin-top: 4px;
+}
+
+.DetectionLimitDynamic .SearchInfo {
+  margin-bottom: 6px;
+  font-size: 0.9em;
+}
+
+.DetectionLimitDynamic .CalculatorTab,
+.DetectionLimitDynamic .SearchTab {
+  padding: 6px 4px;
+}
+
+.DynamicMdaMoreInfoTable td {
+  padding: 2px 12px 2px 0;
+}
+
+.DynamicMdaMoreInfoTable td:first-child {
+  font-weight: bold;
+}
+
+.MdaSweepCsv {
+  font-family: monospace;
+  font-size: 0.85em;
+  margin-top: 8px;
+  white-space: pre;
+}

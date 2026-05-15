@@ -178,6 +178,7 @@
 #if( USE_DETECTION_LIMIT_TOOL )
 #include "InterSpec/DetectionLimitTool.h"
 #include "InterSpec/DetectionLimitSimple.h"
+#include "InterSpec/DetectionLimitDynamic.h"
 #endif
 #include "InterSpec/SimpleActivityCalc.h"
 
@@ -517,6 +518,7 @@ InterSpec::InterSpec()
 #endif
 #if( USE_DETECTION_LIMIT_TOOL )
   m_simpleMdaWindow( nullptr ),
+  m_dynamicMdaWindow( nullptr ),
   m_detectionLimitWindow( nullptr ),
 #endif
   m_simpleActivityCalcWindow( nullptr ),
@@ -3715,6 +3717,12 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->shownDisplayFeatures |= UserState::kShowingSimpleMda;
       entry.modify()->simpleMdaUri = m_simpleMdaWindow->tool()->encodeStateToUrl();
     }//if( m_simpleMdaWindow )
+
+    if( m_dynamicMdaWindow && m_dynamicMdaWindow->tool() )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingDynamicMda;
+      entry.modify()->dynamicMdaUri = m_dynamicMdaWindow->tool()->encodeStateToUrl();
+    }//if( m_dynamicMdaWindow )
 #endif
         
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
@@ -4391,6 +4399,20 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         cerr << "Failed to set MDA GUI state with error: " << e.what() << endl;
       }
     }//if( m_simpleMdaWindow )
+
+    if( (entry->shownDisplayFeatures & UserState::kShowingDynamicMda)
+       && !entry->dynamicMdaUri.empty() )
+    {
+      try
+      {
+        DetectionLimitDynamicWindow *dialog = showDynamicMdaWindow();
+        if( dialog && dialog->tool() )
+          dialog->tool()->handleAppUrl( entry->dynamicMdaUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set Dynamic MDA GUI state with error: " << e.what() << endl;
+      }
+    }//if( m_dynamicMdaWindow )
 #endif
     
     
@@ -9088,11 +9110,11 @@ void InterSpec::handleSimpleMdaWindowClose()
 
   DetectionLimitSimpleWindow * const dialog = m_simpleMdaWindow.get();
   m_simpleMdaWindow = nullptr;
-  
+
   const string state_uri = dialog->tool()->encodeStateToUrl();
-  
+
   AuxWindow::deleteAuxWindow( dialog );
-  
+
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     // We'll just assume results for the foreground was showing, so we dont have to pass this around
@@ -9106,6 +9128,55 @@ void InterSpec::handleSimpleMdaWindowClose()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple MDA" );
   }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleSimpleMdaWindowClose()
+
+
+DetectionLimitDynamicWindow *InterSpec::showDynamicMdaWindow()
+{
+  if( m_dynamicMdaWindow )
+    return m_dynamicMdaWindow.get();
+
+  m_dynamicMdaWindow = AuxWindow::make<DetectionLimitDynamicWindow>( this );
+  m_dynamicMdaWindow->finished().connect( this, &InterSpec::handleDynamicMdaWindowClose );
+
+  return m_dynamicMdaWindow.get();
+}//showDynamicMdaWindow()
+
+
+void InterSpec::programmaticallyCloseDynamicMda()
+{
+  if( !m_dynamicMdaWindow )
+    return;
+
+  DetectionLimitDynamicWindow *dialog = m_dynamicMdaWindow.get();
+  m_dynamicMdaWindow = nullptr; //Prevents undo/redo
+  dialog->done( DialogCode::Accepted );
+}//programmaticallyCloseDynamicMda()
+
+
+void InterSpec::handleDynamicMdaWindowClose()
+{
+  // In Wt4, WObject::sender() was removed; use m_dynamicMdaWindow directly.
+  if( !m_dynamicMdaWindow )
+    return;
+
+  DetectionLimitDynamicWindow * const dialog = m_dynamicMdaWindow.get();
+  m_dynamicMdaWindow = nullptr;
+
+  const string state_uri = dialog->tool() ? dialog->tool()->encodeStateToUrl() : string();
+
+  AuxWindow::deleteAuxWindow( dialog );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this,state_uri](){
+      DetectionLimitDynamicWindow *tool = showDynamicMdaWindow();
+      if( tool && tool->tool() && !state_uri.empty() )
+        tool->tool()->handleAppUrl( state_uri );
+    };
+    auto redo = [this](){ programmaticallyCloseDynamicMda(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Dynamic MDA" );
+  }
+}//handleDynamicMdaWindowClose()
 
 
 void InterSpec::fitNewPeakNotInRoiFromRightClick()
@@ -10362,6 +10433,10 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
     item = popup->addMenuItem( WString::tr("app-mi-tools-mda") );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-mda"), showToolTips );
     item->triggered().connect( this, [this](){ showDetectionLimitTool( string() ); } );
+
+    item = popup->addMenuItem( WString::tr("app-mi-tools-dynamic-mda") );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-dynamic-mda"), showToolTips );
+    item->triggered().connect( this, [this](){ showDynamicMdaWindow(); } );
   }//if( !isPhone() )
 #endif
   
@@ -12728,13 +12803,13 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     string prev_state;
     if( m_simpleMdaWindow )
       prev_state = m_simpleMdaWindow->tool()->encodeStateToUrl();
-    
+
     auto create_window = [this, url](){
       DetectionLimitSimpleWindow *tool = showSimpleMdaWindow();
       if( tool )
         tool->tool()->handleAppUrl( url );
     };//create_window lambda
-    
+
     if( m_undo && m_undo->canAddUndoRedoNow() )
     {
       auto undo = [this,prev_state](){
@@ -12743,15 +12818,44 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
           DetectionLimitSimpleWindow *tool = showSimpleMdaWindow();
           if( tool )
             tool->tool()->handleAppUrl( prev_state );
-        }else 
+        }else
         {
           programmaticallyCloseSimpleMda();
         }
       };//undo lambda
-      
+
       m_undo->addUndoRedoStep( std::move(undo), create_window, "Show Simple MDA URI" );
     }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
-    
+
+    create_window();
+  }else if( SpecUtils::iequals_ascii(host,"dynamic-mda") )
+  {
+    string prev_state;
+    if( m_dynamicMdaWindow && m_dynamicMdaWindow->tool() )
+      prev_state = m_dynamicMdaWindow->tool()->encodeStateToUrl();
+
+    auto create_window = [this, url](){
+      DetectionLimitDynamicWindow *win = showDynamicMdaWindow();
+      if( win && win->tool() )
+        win->tool()->handleAppUrl( url );
+    };
+
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this,prev_state](){
+        if( !prev_state.empty() )
+        {
+          DetectionLimitDynamicWindow *win = showDynamicMdaWindow();
+          if( win && win->tool() )
+            win->tool()->handleAppUrl( prev_state );
+        }else
+        {
+          programmaticallyCloseDynamicMda();
+        }
+      };
+      m_undo->addUndoRedoStep( std::move(undo), create_window, "Show Dynamic MDA URI" );
+    }
+
     create_window();
   }
 #endif //USE_DETECTION_LIMIT_TOOL

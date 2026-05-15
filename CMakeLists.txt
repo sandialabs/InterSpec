@@ -535,8 +535,8 @@ if(USE_TERMINAL_WIDGET)
 endif(USE_TERMINAL_WIDGET)
 
 if(USE_DETECTION_LIMIT_TOOL)
-    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp src/DetectionLimitSimple.cpp )
-    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h InterSpec/DetectionLimitSimple.h )
+    list( APPEND sources src/DetectionLimitCalc.cpp src/DetectionLimitTool.cpp src/DetectionLimitSimple.cpp src/DetectionLimitDynamic.cpp )
+    list( APPEND headers InterSpec/DetectionLimitCalc.h InterSpec/DetectionLimitTool.h InterSpec/DetectionLimitSimple.h InterSpec/DetectionLimitDynamic.h )
 endif(USE_DETECTION_LIMIT_TOOL)
 
 if(USE_QR_CODES)

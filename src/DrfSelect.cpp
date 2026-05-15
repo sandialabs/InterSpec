@@ -1650,8 +1650,6 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
 #else
-  m_directoryEdit->setAttributeValue( "ondragstart", "return false" );
-  
   auto interspec = InterSpec::instance();
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec );
   
@@ -1784,6 +1782,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   
   m_directoryEdit = topdiv->addNew<WLineEdit>( Wt::WString::fromUTF8(directory) );
   m_directoryEdit->setTextSize( 48 );
+  m_directoryEdit->setAttributeValue( "ondragstart", "return false" );
 
 #if( BUILD_AS_OSX_APP || IOS )
   m_directoryEdit->setAttributeValue( "autocorrect", "off" );

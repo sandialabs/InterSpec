@@ -91,6 +91,7 @@ class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
+class DetectionLimitDynamicWindow;
 class SimpleActivityCalcWindow;
 class LicenseAndDisclaimersWindow;
 namespace HelpSystem{ class HelpWindow; }
@@ -980,6 +981,10 @@ public:
   DetectionLimitSimpleWindow *showSimpleMdaWindow();
   void handleSimpleMdaWindowClose();
   void programmaticallyCloseSimpleMda();
+
+  DetectionLimitDynamicWindow *showDynamicMdaWindow();
+  void handleDynamicMdaWindowClose();
+  void programmaticallyCloseDynamicMda();
 #endif //USE_DETECTION_LIMIT_TOOL
   
   SimpleActivityCalcWindow *showSimpleActivityCalcWindow();
@@ -1659,6 +1664,7 @@ protected:
 
 #if( USE_DETECTION_LIMIT_TOOL )
   Wt::Core::observing_ptr<DetectionLimitSimpleWindow> m_simpleMdaWindow;
+  Wt::Core::observing_ptr<DetectionLimitDynamicWindow> m_dynamicMdaWindow;
   Wt::Core::observing_ptr<DetectionLimitWindow> m_detectionLimitWindow;
 #endif
   Wt::Core::observing_ptr<SimpleActivityCalcWindow> m_simpleActivityCalcWindow;

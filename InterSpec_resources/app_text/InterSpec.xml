@@ -164,6 +164,7 @@
   <message id="window-title-help">InterSpec Help</message>
   <message id="window-title-simple-mda">Simple Minimum Detectable Activity Calculation</message>
   <message id="window-title-peak-editor">Peak Editor</message>
+  <message id="window-title-dynamic-mda">Dynamic MDA</message>
   
 
   <!-- The names of the tool-tabs at the bottom of the app -->
@@ -338,7 +339,13 @@
   <message id="app-mi-tools-nuc-decay">Nuclide Decay Info</message>
   <message id="app-mi-tt-tools-nuc-decay">Allows user to obtain advanced information about activities, gamma/alpha/beta production rates, decay chain, and descendant nuclides.</message>
   <message id="app-mi-tools-mda">Detection Confidence Tool</message>
-  <message id="app-mi-tt-tools-mda">Provides an upper activity estimate for nuclides</message>
+  <message id="app-mi-tt-tools-mda">Provides an upper activity or distance limit for nuclides, potentually using multiple peaks.</message>
+  <message id="app-mi-tools-dynamic-mda">Dynamic MDA</message>
+  <message id="app-mi-tt-tools-dynamic-mda">
+    Calculates minimum detectable activity for a moving source (or moving detector),
+    integrating counts over a transit window, with a per-trial false-positive-per-hour budget.
+    Also provides a search-mode that slides the same window across a loaded passthrough.
+  </message>
   <message id="app-mi-tools-select-drf">Detector Response Select</message>
   <message id="app-mi-tt-tools-select-drf">Allows user to change the detector response function.</message>
   <message id="app-mi-tools-make-drf">Make Detector Response</message>

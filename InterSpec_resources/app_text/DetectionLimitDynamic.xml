@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="dlsd-tab-calculator">Calculator</message>
+  <message id="dlsd-tab-search">Search loaded file</message>
+
+  <message id="dlsd-gamma-label">Gamma:</message>
+  <message id="dlsd-cl-label">Confidence Level:</message>
+  <message id="dlsd-fp-per-hour-label">Max FP / hour:</message>
+  <message id="dlsd-tt-fp-per-hour">Maximum false-positive detections per hour of search.
+
+The decision threshold is scaled so that, with no source present, the expected number of windows incorrectly exceeding it is at most this value per hour of running.  Smaller values give a more conservative threshold (and a larger MDA).</message>
+  <message id="dlsd-roi-lower-label">ROI Lower:</message>
+  <message id="dlsd-roi-upper-label">ROI Upper:</message>
+  <message id="dlsd-num-side-channel-label">Side Channels:</message>
+  <message id="dlsd-shielding-empty-text">no shielding</message>
+
+  <message id="dlsd-solve-for-label">Solve for:</message>
+  <message id="dlsd-solve-activity">Activity</message>
+  <message id="dlsd-solve-speed">Max Speed</message>
+  <message id="dlsd-solve-dca">Max DCA</message>
+
+  <message id="dlsd-speed-label">Speed:</message>
+  <message id="dlsd-dca-label">Closest Approach:</message>
+  <message id="dlsd-activity-label">Activity:</message>
+
+  <message id="dlsd-window-len-label">Window length:</message>
+  <message id="dlsd-window-auto">Auto (≈2.78·d₀/v)</message>
+  <message id="dlsd-window-manual">Manual</message>
+
+  <message id="dlsd-stride-label">Stride:</message>
+  <message id="dlsd-stride-seconds">Seconds</message>
+  <message id="dlsd-stride-samples">Samples/step</message>
+
+  <message id="dlsd-snap-samples">Snap window to whole samples</message>
+
+  <message id="dlsd-more-info">further details...</message>
+  <message id="dlsd-more-info-title">Dynamic MDA — details</message>
+
+  <message id="dlsd-run-search">Run search</message>
+  <message id="dlsd-no-foreground">No foreground spectrum loaded.</message>
+  <message id="dlsd-search-no-mda">Compute the MDA on the Calculator tab first.</message>
+  <message id="dlsd-search-no-foreground">No foreground spectrum is loaded to search.</message>
+
+  <message id="dlsd-hit-col-first-sample">First sample</message>
+  <message id="dlsd-hit-col-last-sample">Last sample</message>
+  <message id="dlsd-hit-col-time">Start t</message>
+  <message id="dlsd-hit-col-real-time">Real time</message>
+  <message id="dlsd-hit-col-counts">Counts</message>
+  <message id="dlsd-hit-col-bg">B</message>
+  <message id="dlsd-hit-col-lc">L_c</message>
+  <message id="dlsd-hit-col-sigma">N σ</message>
+
+  <message id="dlsd-roi-changed-no-gamma">Changing the ROI excluded primary gamma — not changing.</message>
+
+  <!-- Confidence-level combo items -->
+  <message id="dlsd-cl-1sigma">1σ (68.2%)</message>
+  <message id="dlsd-cl-2sigma">2σ (95.4%)</message>
+  <message id="dlsd-cl-3sigma">3σ (99.7%)</message>
+
+  <!-- Search-tab info and summary -->
+  <message id="dlsd-search-info-template">{1} passthrough: {2}, sample period ≈ {3} s</message>
+  <message id="dlsd-yes">yes</message>
+  <message id="dlsd-no">no</message>
+  <message id="dlsd-search-running">Running search…</message>
+  <message id="dlsd-search-summary">{1} hit(s) over {2} windows (T_w={3} s, T_step={4} s)</message>
+
+  <!-- Trials display -->
+  <message id="dlsd-trials-line">Trials/hr: {1} &amp;nbsp;&amp;nbsp; α: {2} &amp;nbsp;&amp;nbsp; k&lt;sub&gt;α&lt;/sub&gt;: {3} &amp;nbsp;&amp;nbsp; k&lt;sub&gt;β&lt;/sub&gt;: {4}</message>
+
+  <!-- Stride-derived display -->
+  <message id="dlsd-stride-derived">= {1} s (period {2} s)</message>
+
+  <!-- Input placeholders -->
+  <message id="dlsd-activity-placeholder">e.g. 1 uCi</message>
+
+  <!-- Calc-input validation error messages (caught and displayed) -->
+  <message id="dlsd-err-invalid-speed">Invalid speed: {1}</message>
+  <message id="dlsd-err-invalid-distance">Invalid distance: {1}</message>
+  <message id="dlsd-err-no-activity">Please enter the source activity (e.g. 1 uCi)</message>
+  <message id="dlsd-err-invalid-activity">Invalid activity: {1}</message>
+  <message id="dlsd-err-invalid-window-length">Invalid window length: {1}</message>
+  <message id="dlsd-err-invalid-stride">Invalid stride: {1}</message>
+
+  <!-- Result line templates (variants for each solve-for mode) -->
+  <message id="dlsd-result-solve-activity">At v={1} m/s, d₀={2} m, MDA ≈ &lt;b&gt;{3}&lt;/b&gt; @ {4}% CL with ≤ {5} FP/hr</message>
+  <message id="dlsd-result-solve-speed">At A={1}, d₀={2} m, max detectable speed ≈ &lt;b&gt;{3} m/s&lt;/b&gt; @ {4}% CL</message>
+  <message id="dlsd-result-solve-dca">At A={1}, v={2} m/s, max DCA ≈ &lt;b&gt;{3} m&lt;/b&gt; @ {4}% CL</message>
+
+  <!-- More-info dialog labels -->
+  <message id="dlsd-mi-tw">T_w</message>
+  <message id="dlsd-mi-tstep">T_step</message>
+  <message id="dlsd-mi-trials-hr">Trials/hr</message>
+  <message id="dlsd-mi-alpha-trial">Per-trial α</message>
+  <message id="dlsd-mi-k-alpha">k_α</message>
+  <message id="dlsd-mi-k-beta">k_β</message>
+  <message id="dlsd-mi-b-counts">B (counts)</message>
+  <message id="dlsd-mi-sigma-b">σ_B (counts)</message>
+  <message id="dlsd-mi-lc">L_c (counts)</message>
+  <message id="dlsd-mi-ld">L_d (counts)</message>
+  <message id="dlsd-mi-s-per-bq">S per Bq</message>
+  <message id="dlsd-mi-activity">Activity</message>
+  <message id="dlsd-mi-x-fx">x, f(x)</message>
+</messages>
