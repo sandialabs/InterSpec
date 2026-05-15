@@ -3094,6 +3094,8 @@ namespace AnalystChecks
       }
     }
 
+    // TODO: If the energy doesnt match a user peak, look in the auto-search peaks, or maybe even try to fit a peak.  If fitting a peak, we may want to do it in a way that really broad features of HPGe will get captured.
+
     if( !candidate )
       return ComptonPeakCheckStatus{};
 

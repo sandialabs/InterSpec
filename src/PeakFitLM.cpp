@@ -325,9 +325,15 @@ struct PeakFitDiffCostFunction
     const double num_skew = PeakDef::num_skew_parameters( m_skew_type );
     const bool cdf_step_coeff = PeakContinuum::is_peak_cdf_step_continuum( m_offset_type )
                                && (m_offset_type != PeakContinuum::BiLinearStepCDF);
-    const size_t num_fit_continuum_pars = m_use_lls_for_cont
-      ? (cdf_step_coeff ? size_t(1) : size_t(0))
-      : PeakContinuum::num_parameters( m_offset_type );
+
+    // Continuum parameters consume DOF whether they are fit directly by the LM optimizer
+    //  or solved for via linear least squares: in either case they are degrees of freedom
+    //  the data is being used to constrain.  Count the ones not pinned by fitFor=false,
+    //  plus any internal CDF-step coefficient.
+    size_t num_fit_continuum_pars = (cdf_step_coeff ? size_t(1) : size_t(0));
+    for( const bool do_fit_par : m_starting_peaks[0]->continuum()->fitForParameter() )
+      num_fit_continuum_pars += (do_fit_par ? size_t(1) : size_t(0));
+
     const double num_sigmas_fit = number_sigma_parameters();
 
     // fixed sigmas are handled by just not having them included in the parameters, so we wont
@@ -339,14 +345,6 @@ struct PeakFitDiffCostFunction
       num_fixed_pars += !p->fitFor(PeakDef::Mean);
     }
 
-    // Get the number of fixed continuum parameters.
-    if( !m_use_lls_for_cont )
-    {
-      for( const bool do_fit_par : m_starting_peaks[0]->continuum()->fitForParameter() )
-        num_fixed_pars += !do_fit_par;
-    }
-
-    // TODO: MultiPeakFitChi2Fcn::dof() adds 1 to the degrees of freedom - not quite sure why that is, at the moment, or if we should do this here.
     return num_channels - 2.0*m_num_peaks + num_fixed_pars - num_sigmas_fit - num_fit_continuum_pars;
   }//double dof() const
   

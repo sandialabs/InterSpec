@@ -5961,30 +5961,28 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
     nfitamp += p->fitFor(PeakDef::CoefficientType::GaussAmplitude);
   }
 
-  dof = 1.0*(endchannel - startchannel);// - 2.0 - 1.0*(peaks.size()-1);// - 1.0*continuum->type();
-  
-  //We fit the amplitudes independantly
-  dof -= nfitamp;
+  // FWHMs across an ROI are tied via a linear relation sigma(E) = a + b*E by default,
+  //  so the FWHM cost is at most 2 parameters per ROI (matches the LM default in
+  //  PeakFitLMChi2Fcn::number_sigma_parameters()).  The independent-FWHM refit option
+  //  is rare and not distinguishable here, so we always assume the linked convention.
+  const int num_sigmas_fit = std::min( nfitsigma, 2 );
 
-  //The means are kinda, sorta, independent
-  dof -= nfitmean;
-  
-  //We fit with the sigmas tied together, with a max of two parameters to control across the whole
-  //  ROI - actually its a bit more complicated than this, but good enough for right now
-  dof -= std::min( nfitsigma, 2 );
-  
+  // Continuum parameters consume DOF whether they are fit by the optimizer directly
+  //  or solved analytically via linear least squares.  CDF-step continua (except
+  //  BiLinearStepCDF) carry an additional internal step-coefficient parameter.
+  const bool cdf_step_coeff = PeakContinuum::is_peak_cdf_step_continuum( continuum->type() )
+                              && (continuum->type() != PeakContinuum::BiLinearStepCDF);
+  int num_fit_continuum_pars = cdf_step_coeff ? 1 : 0;
   for( const bool fit : continuum->fitForParameter() )
-    dof -= (fit ? 1.0 : 0.0);
-  
-  dof -= 1.0;
-  
+    num_fit_continuum_pars += (fit ? 1 : 0);
+
+  // Mirror PeakFitLMChi2Fcn::dof() so the chi2/DOF stamped here matches what the
+  //  LM-based fitters (e.g. refit) stamp for the same peak configuration.
+  const double num_channels = 1.0 + endchannel - startchannel;
+  dof = num_channels - nfitamp - nfitmean - num_sigmas_fit - num_fit_continuum_pars;
+
   if( dof < 1.0 )
     dof = 1.0;
-  
-  /// \TODO: (20200718) more accurately calculate the DOF
-  
-  //Note: Previous to 20200718, we used the following formula for DOF... not quite sure why:
-  //  1.0*(endchannel - startchannel) - 2.0 - 1.0*(peaks.size()-1); - 1.0*continuum->type();
 }//get_chi2_and_dof_for_roi(...)
 
 
