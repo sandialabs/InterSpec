@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 
-project( InterSpecApp VERSION 1.0.13 )
+project( InterSpecApp VERSION 1.0.14 )
 
 if(POLICY CMP0114)
   # Add @rpath to the install_name of shared libraries and frameworks that are part of a macOS application bundle.
@@ -32,7 +32,7 @@ SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
 SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
 SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate corresponding value in Xcode
-set(MACOS_BUNDLE_VERSION_NUMBER 56)
+set(MACOS_BUNDLE_VERSION_NUMBER 58)
 
 
 SET( ${PRODUCT_NAME} "InterSpec" )
