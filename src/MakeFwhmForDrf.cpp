@@ -681,17 +681,23 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     return;
   
   m_currently_searching = true;
-  
+
   const string seshid = wApp->sessionId();
   const shared_ptr<const DetectorPeakResponse> drf = m_orig_drf;
-    
+
+  // Grab the SpecMeas's persistent peak-search cancel token so this worker can
+  //  be interrupted on widget/session teardown.  See `SpecMeas::peak_search_cancel_flag`.
+  shared_ptr<SpecMeas> foreground_meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  std::shared_ptr<const std::atomic<bool>> cancel_flag
+    = foreground_meas ? foreground_meas->peak_search_cancel_flag() : nullptr;
+
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
     const bool singleThread = false;
     auto existingPeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
     existingPeaks->insert( end(*existingPeaks), begin(user_peaks), end(user_peaks) );
-    
-    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, isHPGe );
-    
+
+    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, isHPGe, cancel_flag );
+
     Wt::WServer *server = Wt::WServer::instance();
     if( server )
       server->post( seshid, callback );

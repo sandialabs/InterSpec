@@ -3457,15 +3457,23 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
 
   // If a background fit is still in flight, wait for the worker on
   //  `WServer::ioService()` to fully return.  `cancelFit()` causes
-  //  `DoEval` to throw `CancelException` at the next chi2 evaluation, so the
-  //  wait is bounded by one chi2 eval's worth of time.  Doing this here
-  //  prevents the worker from continuing to access freed widget memory and
-  //  ensures the io_service can drain on application shutdown.
+  //  `DoEval` to throw `CancelException` at the next chi2 evaluation, so in
+  //  the normal case this returns in well under a second.  We cap the wait so
+  //  that if anything goes pear-shaped (e.g., the worker is somehow blocked
+  //  on a thread we'd need to release ourselves) the destructor still returns
+  //  in bounded time instead of hanging.  10s is generous compared to the
+  //  expected sub-second turnaround.
   if( fit_future.valid() )
   {
     try
     {
-      fit_future.wait();
+      const std::future_status status = fit_future.wait_for( std::chrono::seconds(10) );
+      if( status != std::future_status::ready )
+      {
+        cerr << "~ShieldingSourceDisplay: timed out waiting for in-flight"
+             << " ShieldingSourceFitCalc::fit_model worker to exit; proceeding"
+             << " with destruction anyway." << endl;
+      }
     }catch( ... )
     {
       cerr << "Exception waiting on m_currentFitFuture in ~ShieldingSourceDisplay" << endl;

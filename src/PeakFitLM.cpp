@@ -1664,6 +1664,12 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
   if( coFitPeaks.empty() )
     throw runtime_error( "fit_peaks_in_roi_LM: empty input peaks." );
 
+  // Early bail-out: if cancellation has already been signaled before we set up
+  //  the Ceres problem, don't waste time building it just to abort on the
+  //  first iteration.
+  if( cancel_flag && cancel_flag->load( std::memory_order_relaxed ) )
+    return {};
+
   // Lets make sure all coFitPeaks share a continuum.
   for( size_t i = 1; i < coFitPeaks.size(); ++i )
   {
@@ -1832,13 +1838,17 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     //  automated peak search during application shutdown), wire up an iteration
     //  callback so the solver bails within one LM step rather than running out
     //  the full `max_solver_time_in_seconds`.  Ceres reports `USER_FAILURE` on
-    //  return, which is treated like any other terminal failure below.
+    //  return; the termination switch below short-circuits the retry paths
+    //  when that failure was caused by cancellation.
+    // Note: `update_state_every_iteration` is NOT needed - Ceres invokes
+    //  `IterationCallback` at the end of every iteration regardless; that flag
+    //  only controls whether parameter blocks are written back before the
+    //  callback runs, and the callback doesn't read parameters.
     std::unique_ptr<CancelIterationCallback> cancel_callback;
     if( cancel_flag )
     {
       cancel_callback.reset( new CancelIterationCallback( cancel_flag ) );
       options.callbacks.push_back( cancel_callback.get() );
-      options.update_state_every_iteration = true;
     }
 
     // Default value of `max_num_consecutive_invalid_steps` is 5, however, if we are re-fitting a peak who already has
@@ -1860,6 +1870,14 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
 #endif
 
+    // If cancellation triggered `SOLVER_ABORT` (which Ceres reports as
+    //  `USER_FAILURE`), short-circuit the NO_CONVERGENCE/FAILURE retry paths.
+    //  Both retry paths re-invoke `ceres::Solve` with the same callback list,
+    //  so without this check we'd just immediately abort again and end up
+    //  throwing from the inner `USER_FAILURE` case anyway.
+    if( cancel_flag && cancel_flag->load( std::memory_order_relaxed ) )
+      return {};
+
     string failure_reason;
 
     switch( summary.termination_type )
@@ -1867,7 +1885,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
       case ceres::CONVERGENCE:
       case ceres::USER_SUCCESS:
         break;
-        
+
       case ceres::NO_CONVERGENCE:
       {
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
