@@ -1758,7 +1758,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
   // entry is disabled by updateRightClickNuclidesMenu(...).
   {
     const AnalystChecks::ComptonPeakCheckStatus compton
-                  = AnalystChecks::compton_peak_check( peak, userpeaks, data, detector );
+                  = AnalystChecks::compton_peak_check( peak, allpeaks, data, detector );
     if( compton.parentInfo
         && (compton.confidence == AnalystChecks::ComptonScatterConfidence::Likely
             || compton.confidence == AnalystChecks::ComptonScatterConfidence::VeryLikely)

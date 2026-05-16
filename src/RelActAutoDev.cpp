@@ -2646,8 +2646,10 @@ void run_idb_comparison( const std::string &idb_dir,
         throw std::runtime_error( "Spectrum has too few gamma channels" );
 
       // Solve
+      const PeakFitUtils::CoarseResolutionType det_type
+          = PeakFitUtils::coarse_det_type( foreground, nullptr );
       RelActCalcAuto::RelActAutoSolution sol = RelActCalcAuto::solve(
-          options, foreground, nullptr, drf, {}, nullptr );
+          options, foreground, nullptr, drf, {}, det_type, nullptr );
 
       if( sol.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
         throw std::runtime_error( "Solve failed: " + sol.m_error_message );

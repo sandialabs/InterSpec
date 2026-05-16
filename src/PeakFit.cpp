@@ -133,26 +133,46 @@ namespace
 
 namespace ExperimentalAutomatedPeakSearch
 {
-  
+
+namespace
+{
+  /** Cooperative cancellation check used throughout the peak-search call graph.
+   `nullptr` token == never canceled.  Loaded with relaxed ordering since the
+   only thing the reader does on success is bail out of a loop.
+   */
+  inline bool is_search_canceled( const std::shared_ptr<const std::atomic<bool>> &f )
+  {
+    return f && f->load( std::memory_order_relaxed );
+  }
+}//namespace
+
 bool largerByAmplitude( const std::shared_ptr<const PeakDef> &lhs, const std::shared_ptr<const PeakDef> &rhs )
 {
   return lhs->amplitude() > rhs->amplitude();
 }
-  
-  
+
+
 void do_peak_automated_searchfit( const double x,
                                   const std::shared_ptr<const Measurement> &meas,
                                   const std::shared_ptr<const DetectorPeakResponse> &drf,
                                   const PeakShrdVec &inpeaks,
                                   std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
-                                  std::pair< PeakShrdVec, PeakShrdVec > &answer )
+                                  std::pair< PeakShrdVec, PeakShrdVec > &answer,
+                                  const std::shared_ptr<const std::atomic<bool>> &cancel_flag )
 {
+  if( is_search_canceled( cancel_flag ) )
+  {
+    answer.first.clear();
+    answer.second.clear();
+    return;
+  }
+
   try
   {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     DebugLog(cout) << "Will try fitting peak clicked on at " << x << "\n";
 #endif
-    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf, nullptr, fitPrefs );
+    answer = searchForPeakFromUser( x, -1.0, meas, inpeaks, drf, nullptr, fitPrefs, cancel_flag );
   }catch( std::exception &e )
   {
     cerr << "do_peak_searchfit(...): caught unexpected exception: '" << e.what()
@@ -167,9 +187,13 @@ void do_peak_automated_searchfit( const double x,
 std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highres(
                           const std::shared_ptr<const Measurement> meas,
                           std::vector<std::shared_ptr<const PeakDef> > input,
-                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
+                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                          const std::shared_ptr<const std::atomic<bool>> &cancel_flag )
 {
   if( !meas )
+    return input;
+
+  if( is_search_canceled( cancel_flag ) )
     return input;
   
   const size_t npeaks = input.size();
@@ -233,15 +257,24 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
   }
 
   std::vector<std::shared_ptr<const PeakDef> > answer;
-  
+
   for( size_t i = 0; i < npeaks; ++i )
   {
+    if( is_search_canceled( cancel_flag ) )
+    {
+      // Return whatever we've kept so far, plus the remaining unprocessed peaks
+      // un-evaluated.  Cancellation should not destroy data.
+      for( size_t j = i; j < npeaks; ++j )
+        answer.push_back( input[j] );
+      return answer;
+    }
+
     if( fabs(511.0 - input[i]->mean()) < 10.0 )
     {
       answer.push_back( input[i] );
       continue;
     }
-    
+
     const double mean = input[i]->mean();
     const double width = det.peakResolutionFWHM( mean );
     const double fracerror = fabs(width - input[i]->fwhm()) / std::min(input[i]->fwhm(), width);
@@ -287,8 +320,8 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
 
         PeakShrdVec onepeak( 1, input[i] );
         pair< PeakShrdVec, PeakShrdVec > twoPeaksPlus, twoPeaksMinus;
-        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr, nullptr, fitPrefs );
-        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr, nullptr, fitPrefs );
+        twoPeaksPlus = searchForPeakFromUser( m + s, -1.0, meas, onepeak, nullptr, nullptr, fitPrefs, cancel_flag );
+        twoPeaksMinus = searchForPeakFromUser( m - s, -1.0, meas, onepeak, nullptr, nullptr, fitPrefs, cancel_flag );
         
         if( twoPeaksPlus.first.size() == 2 && twoPeaksMinus.first.size() == 2 )
         {
@@ -356,7 +389,8 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
                                        const std::shared_ptr<const Measurement> meas,
                                        const std::shared_ptr<const DetectorPeakResponse> &drf,
                                        std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
-                                       std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
+                                       std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                                       const std::shared_ptr<const std::atomic<bool>> &cancel_flag )
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
@@ -417,9 +451,31 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
       candidates.push_back( p );
   }//if( !fitpeakvec.empty() ) / else
 
-  
+
+  // Sanity cap on the outer loop.  Each iteration should remove all the
+  //  `candidatesBeingFitFor` entries from `candidates`, so in normal operation
+  //  this completes in well under `initialcandidates.size()` iterations.  The
+  //  cap is a defense-in-depth guard against an unexpected logic regression
+  //  causing the loop to spin without making progress.
+  const size_t max_outer_iterations = 2 * initialcandidates.size() + 16;
+  size_t outer_iter = 0;
+
   while( !candidates.empty() )
   {
+    if( is_search_canceled( cancel_flag ) )
+      return fitpeakvec;
+
+    if( ++outer_iter > max_outer_iterations )
+    {
+      cerr << "search_for_peaks_multithread: aborting after " << outer_iter
+           << " outer iterations (initial candidates: " << initialcandidates.size()
+           << ", remaining: " << candidates.size() << ")" << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "outer-loop iteration cap exceeded" );
+#endif
+      break;
+    }
+
     std::sort( candidates.begin(), candidates.end(), &largerByAmplitude );
     
     //So this is kinda messy.  If we select a candidate peak for fitting, we
@@ -493,15 +549,19 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
         [mean, fitPrefs, &res,
          meas_cref = std::as_const(meas),
          drf_cref = std::as_const(drf),
-         fitpeakvec_cref = std::as_const(fitpeakvec)
+         fitpeakvec_cref = std::as_const(fitpeakvec),
+         cancel_flag
         ](){
-          do_peak_automated_searchfit( mean, meas_cref, drf_cref, fitpeakvec_cref, fitPrefs, res );
+          do_peak_automated_searchfit( mean, meas_cref, drf_cref, fitpeakvec_cref, fitPrefs, res, cancel_flag );
         }
       );
     }//for( size_t i = 0; i < candidatesBeingFitFor.size(); ++i )
 
 
     pool.join();
+
+    if( is_search_canceled( cancel_flag ) )
+      return fitpeakvec;
     
     //const double end_cpu_time = SpecUtils::get_cpu_time();
     //const double end_wall_time = SpecUtils::get_wall_time();
@@ -546,9 +606,12 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     candidates.swap( nextcandidates );
   }//while( !candidates.empty() )
   
+  if( is_search_canceled( cancel_flag ) )
+    return fitpeakvec;
+
   const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec );
   if( detResolution == PeakFitUtils::CoarseResolutionType::High )
-    fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec, fitPrefs );
+    fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec, fitPrefs, cancel_flag );
 
   return fitpeakvec;
 }//search_for_peaks_multithread(...)
@@ -559,7 +622,8 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
                         const std::shared_ptr<const Measurement> meas,
                         const std::shared_ptr<const DetectorPeakResponse> &drf,
                         std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
-                        std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
+                        std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                        const std::shared_ptr<const std::atomic<bool>> &cancel_flag )
 {
   typedef std::shared_ptr<PeakDef> PeakPtr;
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
@@ -572,6 +636,10 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
   size_t lower_channel = 0, upper_channel = 0;
   vector<PeakPtr> candidates
    = secondDerivativePeakCanidatesWithROI( meas, fitPrefs, lower_channel, upper_channel );
+
+  const size_t initial_candidate_count = candidates.size();
+  const size_t max_outer_iterations = 2 * initial_candidate_count + 16;
+  size_t outer_iter = 0;
   
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   {
@@ -594,13 +662,27 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
   
   while( !candidates.empty() )
   {
+    if( is_search_canceled( cancel_flag ) )
+      return fitpeakvec;
+
+    if( ++outer_iter > max_outer_iterations )
+    {
+      cerr << "search_for_peaks_singlethread: aborting after " << outer_iter
+           << " outer iterations (initial candidates: " << initial_candidate_count
+           << ", remaining: " << candidates.size() << ")" << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, "outer-loop iteration cap exceeded" );
+#endif
+      break;
+    }
+
     size_t largest_index = 0;
     for( size_t i = 1; i < candidates.size(); ++i )
     {
       if( candidates[i]->amplitude() > candidates[largest_index]->amplitude() )
         largest_index = i;
     }//for( size_t i = 1; i < candidates.size(); ++i )
-    
+
     const PeakDef p = *candidates[largest_index];
     candidates.erase( candidates.begin() + largest_index );
     
@@ -625,7 +707,7 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
 #endif
     
     pair< PeakShrdVec, PeakShrdVec > results;
-    do_peak_automated_searchfit( p.mean(), meas, drf, fitpeakvec, fitPrefs, results );
+    do_peak_automated_searchfit( p.mean(), meas, drf, fitpeakvec, fitPrefs, results, cancel_flag );
     
     const PeakShrdVec &toadd = results.first;
     const PeakShrdVec &toremove = results.second;
@@ -646,9 +728,12 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
               &PeakDef::lessThanByMeanShrdPtr );
   }//while( !candidates.empty() )
   
+  if( is_search_canceled( cancel_flag ) )
+    return fitpeakvec;
+
   const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec );
   if( detResolution == PeakFitUtils::CoarseResolutionType::High )
-    fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec, fitPrefs );
+    fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec, fitPrefs, cancel_flag );
 
   return fitpeakvec;
 }//search_for_peaks_singlethread(...)
@@ -659,14 +744,15 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks(
                               const std::shared_ptr<const DetectorPeakResponse> drf,
                               std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > origpeaks,
                               const bool singleThreaded,
-                              std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
+                              std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                              std::shared_ptr<const std::atomic<bool>> cancel_flag )
 {
   vector<std::shared_ptr<const PeakDef> > answer;
 
   if( singleThreaded )
-    answer = search_for_peaks_singlethread( meas, drf, origpeaks, fitPrefs );
+    answer = search_for_peaks_singlethread( meas, drf, origpeaks, fitPrefs, cancel_flag );
   else
-    answer = search_for_peaks_multithread( meas, drf, origpeaks, fitPrefs );
+    answer = search_for_peaks_multithread( meas, drf, origpeaks, fitPrefs, cancel_flag );
 
   return answer;
 }
@@ -5013,7 +5099,8 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                                                         const PeakShrdVec &inpeaks,
                                                         std::shared_ptr<const DetectorPeakResponse> drf,
                                                        const std::shared_ptr<const std::deque<shared_ptr<const PeakDef>>> &auto_search_peaks,
-                                                       std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
+                                                       std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                                                       std::shared_ptr<const std::atomic<bool>> cancel_flag )
 {
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
 
@@ -5109,7 +5196,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   PeakShrdVec lmInitialfitpeaks;
   PeakFitLM::fit_peak_for_user_click_LM( lmInitialfitpeaks, dataH, coFitPeaks,
                              mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0],
-                             fitPrefs, drf );
+                             fitPrefs, drf, cancel_flag );
   
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
   const auto t4 = std::chrono::high_resolution_clock::now();
@@ -5234,7 +5321,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       initialfitpeaks.clear();
       PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, dataH, coFitPeaks,
                                  mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0],
-                                 fitPrefs, drf );
+                                 fitPrefs, drf, cancel_flag );
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
@@ -6091,30 +6178,28 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
     nfitamp += p->fitFor(PeakDef::CoefficientType::GaussAmplitude);
   }
 
-  dof = 1.0*(endchannel - startchannel);// - 2.0 - 1.0*(peaks.size()-1);// - 1.0*continuum->type();
-  
-  //We fit the amplitudes independantly
-  dof -= nfitamp;
+  // FWHMs across an ROI are tied via a linear relation sigma(E) = a + b*E by default,
+  //  so the FWHM cost is at most 2 parameters per ROI (matches the LM default in
+  //  PeakFitLMChi2Fcn::number_sigma_parameters()).  The independent-FWHM refit option
+  //  is rare and not distinguishable here, so we always assume the linked convention.
+  const int num_sigmas_fit = std::min( nfitsigma, 2 );
 
-  //The means are kinda, sorta, independent
-  dof -= nfitmean;
-  
-  //We fit with the sigmas tied together, with a max of two parameters to control across the whole
-  //  ROI - actually its a bit more complicated than this, but good enough for right now
-  dof -= std::min( nfitsigma, 2 );
-  
+  // Continuum parameters consume DOF whether they are fit by the optimizer directly
+  //  or solved analytically via linear least squares.  CDF-step continua (except
+  //  BiLinearStepCDF) carry an additional internal step-coefficient parameter.
+  const bool cdf_step_coeff = PeakContinuum::is_peak_cdf_step_continuum( continuum->type() )
+                              && (continuum->type() != PeakContinuum::BiLinearStepCDF);
+  int num_fit_continuum_pars = cdf_step_coeff ? 1 : 0;
   for( const bool fit : continuum->fitForParameter() )
-    dof -= (fit ? 1.0 : 0.0);
-  
-  dof -= 1.0;
-  
+    num_fit_continuum_pars += (fit ? 1 : 0);
+
+  // Mirror PeakFitLMChi2Fcn::dof() so the chi2/DOF stamped here matches what the
+  //  LM-based fitters (e.g. refit) stamp for the same peak configuration.
+  const double num_channels = 1.0 + endchannel - startchannel;
+  dof = num_channels - nfitamp - nfitmean - num_sigmas_fit - num_fit_continuum_pars;
+
   if( dof < 1.0 )
     dof = 1.0;
-  
-  /// \TODO: (20200718) more accurately calculate the DOF
-  
-  //Note: Previous to 20200718, we used the following formula for DOF... not quite sure why:
-  //  1.0*(endchannel - startchannel) - 2.0 - 1.0*(peaks.size()-1); - 1.0*continuum->type();
 }//get_chi2_and_dof_for_roi(...)
 
 

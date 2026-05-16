@@ -665,7 +665,8 @@ public:
         auto specmeas = make_shared<SpecMeas>();
         {
           shared_ptr<SpecUtils::SpecFile> specfile = SpecUtils::to_spec_file( specs );
-          reinterpret_cast<SpecUtils::SpecFile &>( *specmeas ) = *specfile;
+          // Copy only the SpecFile base subobject; SpecMeas-specific state is left at defaults.
+          static_cast<SpecUtils::SpecFile &>( *specmeas ) = *specfile;
         }
         
         m_manager->multiSpectrumDialogDone();

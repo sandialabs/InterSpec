@@ -2644,10 +2644,16 @@ void PeakEdit::apply()
     shared_ptr<const PeakContinuum> orig_continuum_ptr = m_currentPeak.continuum();
     const PeakContinuum orig_continuum = *orig_continuum_ptr;
     shared_ptr<PeakContinuum> continuum = make_shared<PeakContinuum>( orig_continuum );
-    
+
+    // Track whether any change that affects the chi2 vs. data was made; if so, we
+    //  recompute the ROI's Chi2/DOF below before refreshing the dialog.  Nuclide/x-ray/
+    //  reaction, color, user-label, and uncertainty-only edits do NOT count.
+    bool quantity_changed = false;
+
     const PeakContinuum::OffsetType offset = PeakContinuum::OffsetType(m_continuumType->currentIndex());
     if( offset != continuum->type() )
     {
+      quantity_changed = true;
       continuum->setType( offset );
       
       switch( offset )
@@ -2702,6 +2708,7 @@ void PeakEdit::apply()
     const PeakDef::SkewType skewType = PeakDef::SkewType( m_skewType->currentIndex() );
     if( skewType != m_currentPeak.skewType() )
     {
+      quantity_changed = true;
       bool valid_skew = false;
       switch( skewType )
       {
@@ -2782,6 +2789,7 @@ void PeakEdit::apply()
             if( val < 0.0 )
               val = -val;
             m_currentPeak.setPeakArea( val );
+            quantity_changed = true;
             break;
             
           case PeakEdit::Sigma:
@@ -2798,6 +2806,7 @@ void PeakEdit::apply()
           case PeakEdit::SkewPar2:
           case PeakEdit::SkewPar3:
             m_currentPeak.set_coefficient( val, row_to_peak_coef_type(t) );
+            quantity_changed = true;
             break;
             
           case PeakEdit::OffsetPolynomial0:
@@ -2808,6 +2817,7 @@ void PeakEdit::apply()
             continuum->setPolynomialCoef( t-OffsetPolynomial0, val );
             if( m_currentPeak.type()==PeakDef::DataDefined )
               setAmplitudeForDataDefinedPeak();
+            quantity_changed = true;
             break;
             
           case PeakEdit::RangeStartEnergy:
@@ -2825,7 +2835,8 @@ void PeakEdit::apply()
             
             if( m_currentPeak.type() == PeakDef::DataDefined )
               setAmplitudeForDataDefinedPeak();
-            
+
+            quantity_changed = true;
             break;
           }//case RangeStartEnergy/RangeEndEnergy
             
@@ -2931,6 +2942,7 @@ void PeakEdit::apply()
     //  changes a continuum type/polynomial-coefficient AND peak type
     if( m_peakType->currentIndex() != m_currentPeak.type() )
     {
+      quantity_changed = true;
       m_currentPeak.m_type = PeakDef::DefintionType(m_peakType->currentIndex());
       
       switch( m_peakType->currentIndex() )
@@ -3106,10 +3118,62 @@ void PeakEdit::apply()
       m_peakIndex = m_viewer->addPeak( m_currentPeak, false, SpecUtils::SpectrumType::Foreground );
       m_currentPeak = *m_peakModel->peak( m_peakIndex );
     }//if( orig_continuum != *m_currentPeak.continuum() )
-    
+
+    // If a peak-shape/continuum/ROI/type quantity changed, recompute Chi2/DOF for
+    //  the ROI now that the new peak(s) are in the model.  Chi2/DOF is a ROI-wide
+    //  quantity stored on each peak in the ROI, so update them all.  Nuclide,
+    //  color, label, and uncertainty-only edits do not trigger this path.
+    if( quantity_changed )
+    {
+      const std::shared_ptr<const SpecUtils::Measurement> data
+          = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+
+      // m_peakIndex may be stale after the continuum-type branch removed/re-added
+      //  peaks above; fall back to locating the edited peak by its mean.
+      PeakModel::PeakShrdPtr current_in_model;
+      try
+      {
+        if( m_peakIndex.isValid() )
+          current_in_model = m_peakModel->peak( m_peakIndex );
+      }catch( std::exception & ){}
+
+      if( !current_in_model && (m_currentPeak.mean() > 0.0) )
+      {
+        const PeakModel::PeakShrdPtr nearest = m_peakModel->nearestPeak( m_currentPeak.mean() );
+        if( nearest && (fabs(nearest->mean() - m_currentPeak.mean()) < 0.001) )
+          current_in_model = nearest;
+      }
+
+      if( data && current_in_model && current_in_model->gausPeak() )
+      {
+        const std::vector<std::shared_ptr<const PeakDef>> roi_peaks
+            = m_peakModel->peaksSharingRoi( current_in_model );
+
+        std::vector<PeakDef> peaks_copy;
+        peaks_copy.reserve( roi_peaks.size() );
+        for( const std::shared_ptr<const PeakDef> &p : roi_peaks )
+          peaks_copy.push_back( *p );
+
+        // set_chi2_dof groups by continuum and writes the new Chi2DOF onto each peak.
+        set_chi2_dof( data, peaks_copy, 0, peaks_copy.size() );
+
+        // Swap the ROI peaks for the updated copies carrying the new Chi2DOF.
+        m_peakModel->updatePeaks( roi_peaks, peaks_copy );
+
+        // Refresh our local copy of the edited peak; m_peakIndex will be
+        //  re-resolved in refreshPeakInfo() (which falls back to nearestPeak).
+        if( m_currentPeak.mean() > 0.0 )
+        {
+          const PeakModel::PeakShrdPtr re_nearest = m_peakModel->nearestPeak( m_currentPeak.mean() );
+          if( re_nearest && (fabs(re_nearest->mean() - m_currentPeak.mean()) < 0.001) )
+            m_currentPeak = *re_nearest;
+        }
+      }//if( data && current_in_model && current_in_model->gausPeak() )
+    }//if( quantity_changed )
+
     m_energy = m_currentPeak.mean();
     m_blockInfoRefresh = false;
-    
+
     refreshPeakInfo();
     
     const double ending_energy = m_energy;

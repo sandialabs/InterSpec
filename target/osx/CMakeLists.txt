@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 
-project( InterSpecApp VERSION 1.0.13 )
+project( InterSpecApp VERSION 1.0.14 )
 
 if(POLICY CMP0114)
   # Add @rpath to the install_name of shared libraries and frameworks that are part of a macOS application bundle.
@@ -32,7 +32,7 @@ SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
 SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
 SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate corresponding value in Xcode
-set(MACOS_BUNDLE_VERSION_NUMBER 56)
+set(MACOS_BUNDLE_VERSION_NUMBER 58)
 
 
 SET( ${PRODUCT_NAME} "InterSpec" )
@@ -127,13 +127,17 @@ if( USE_MACOS_QUICK_LOOK )
   # Copy .appex bundles into PlugIns directory.
   # CMake's TARGET_BUNDLE_DIR resolves to .app, but the XCODE_PRODUCT_TYPE override builds
   #  .appex bundles.  So we compute the .appex path from the build output directory.
+  # Use `ditto` rather than `cp -a` because during Xcode "Product -> Archive" the per-config
+  #  product directory contains symlinks into the archive intermediates; `cp -a` would preserve
+  #  those symlinks (yielding dangling links inside the .app), whereas `ditto` follows the
+  #  top-level symlink while preserving bundle metadata.
   set( APPEX_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/SpecFilePreviewExtension/$<CONFIG>" )
   add_custom_command( TARGET InterSpecApp POST_BUILD
     COMMAND mkdir -p "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/SpecFilePreview.appex"
-    COMMAND cp -a "${APPEX_OUTPUT_DIR}/SpecFilePreview.appex" "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/"
+    COMMAND ditto "${APPEX_OUTPUT_DIR}/SpecFilePreview.appex" "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/SpecFilePreview.appex"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/SpecFileThumbnail.appex"
-    COMMAND cp -a "${APPEX_OUTPUT_DIR}/SpecFileThumbnail.appex" "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/"
+    COMMAND ditto "${APPEX_OUTPUT_DIR}/SpecFileThumbnail.appex" "$<TARGET_BUNDLE_DIR:InterSpecApp>/Contents/PlugIns/SpecFileThumbnail.appex"
   )
 endif( USE_MACOS_QUICK_LOOK )
 

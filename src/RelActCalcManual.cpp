@@ -6274,8 +6274,15 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
     case PeakCsvFormat::Unknown:
       throw runtime_error( "Not a peak CSV file." );
   }//switch( csv_format )
-  
-  
+
+
+  // Validate the column indices we'll use are reachable in the minimum
+  //  field count we'll later require for each row (at least 9 fields).
+  //  Indices that are 0 (unused / not-applicable) are allowed.
+  const size_t required_fields = std::max( static_cast<size_t>(9),
+        std::max({ energy_index, amplitude_index, amplitude_sigma_index, fwhm_kev_index })
+        + 1 );
+
   vector<RelActCalcManual::GenericPeakInfo> answer;
   
   while( std::getline(csv, line) )
@@ -6290,18 +6297,25 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
     const size_t nfields = fields.size();
     if( nfields == 0 )
       continue;
-    
-    if( nfields < 9 )
+
+    if( nfields < required_fields )
       throw runtime_error( "Encountered line in GADRAS CSV file with only "
                           + std::to_string(nfields) + " fields.\n\tLine: \"" + line + "\"" );
     
     try
     {
+      auto parse_field = []( const std::string &field, const char *what ) -> double {
+        double val = 0.0;
+        if( !SpecUtils::parse_double( field.c_str(), field.size(), val ) )
+          throw runtime_error( std::string(what) + ": expected a number, but got '" + field + "'" );
+        return val;
+      };
+
       RelActCalcManual::GenericPeakInfo info;
-      info.m_mean = info.m_energy = std::stod( fields[energy_index] );
-      info.m_fwhm = stod( fields[fwhm_kev_index] );
-      info.m_counts = std::stod( fields[amplitude_index] );
-      info.m_counts_uncert = std::stod( fields[amplitude_sigma_index] );
+      info.m_mean = info.m_energy = parse_field( fields[energy_index], "energy" );
+      info.m_fwhm = parse_field( fields[fwhm_kev_index], "FWHM" );
+      info.m_counts = parse_field( fields[amplitude_index], "amplitude" );
+      info.m_counts_uncert = parse_field( fields[amplitude_sigma_index], "amplitude uncertainty" );
       
       //cout << "Found peak at " << info.m_energy << " keV"
       //     << ", with Amp=" << info.m_counts << " +- " << info.m_counts_uncert
@@ -6321,7 +6335,11 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
         if( !nuc )
           throw runtime_error( "Invalid Nuclide ID: " + fields[nuclide_index] );
         
-        const double nuc_energy = stod( fields[nuclide_energy_index] );
+        double nuc_energy = 0.0;
+        if( !SpecUtils::parse_double( fields[nuclide_energy_index].c_str(),
+                                      fields[nuclide_energy_index].size(), nuc_energy ) )
+          throw runtime_error( "nuclide energy: expected a number, but got '"
+                              + fields[nuclide_energy_index] + "'" );
         info.m_energy = nuc_energy;
         
         const double age = PeakDef::defaultDecayTime( nuc, nullptr );

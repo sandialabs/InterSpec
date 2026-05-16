@@ -22,11 +22,14 @@ RelEffPlot = function (elem,options) {
   // Initialize custom colors with defaults
   this.customColors = ["#cfced2", "#a9ebdd", "#fd8273"];
       
-  // Set the dimensions of the canvas / graph
+  // Set the dimensions of the canvas / graph.
+  // The container may not yet have been laid out (zero or sub-margin size) when the
+  //  constructor runs - clamp so we never feed negative values to SVG attributes.
+  //  A subsequent handleResize / setRelEffData call will set the real geometry.
   const parentWidth = this.chart.clientWidth;
   const parentHeight = this.chart.clientHeight;
-  const chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right;
-  const chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom;
+  const chartAreaWidth = Math.max( 0, parentWidth - this.options.margins.left - this.options.margins.right );
+  const chartAreaHeight = Math.max( 0, parentHeight - this.options.margins.top - this.options.margins.bottom );
 
   // Setup the tooltip
   this.tooltip = d3.select(this.chart).append("div")
@@ -234,8 +237,8 @@ RelEffPlot.prototype.updateZoomBox = function(startX, currentX, zoomingIn) {
     zoomText.text("Zoom Out");
   }
   
-  const chartAreaHeight = this.yScale.range()[0]; // Get the height from y scale range
-  
+  const chartAreaHeight = Math.max( 0, this.yScale.range()[0] ); // Get the height from y scale range
+
   zoomBox
     .attr("x", minX)
     .attr("y", 0)
@@ -641,10 +644,10 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   let yticks = this.chartArea.selectAll('.yAxis');
   let ytickw = yticks.empty() ? 37 : Math.max(37, d3.max(yticks[0], function (t) { return d3.select(t).node().getBBox().width; })); //If we have no labels, we'll get like 7 px, so will require at least 37 px, which is the nominal value we should get
 
-  let chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right - ytitleh - ytickw;
-  let chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh - chi2_txt_pad;
+  let chartAreaWidth = Math.max( 0, parentWidth - this.options.margins.left - this.options.margins.right - ytitleh - ytickw );
+  let chartAreaHeight = Math.max( 0, parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh - chi2_txt_pad );
 
-  const num_eqn_points = chartAreaWidth / 4;
+  const num_eqn_points = Math.max( 1, Math.floor( chartAreaWidth / 4 ) );
 
   // Find min/max values across all datasets
   let min_x = Number.MAX_VALUE;
@@ -746,9 +749,10 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   yticks = this.chartArea.selectAll('.yAxis');
   ytickw = yticks.empty() ? 7 : d3.max(yticks[0], function(t){ return d3.select(t).node().getBBox().width; });
           
-  chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right - ytitleh - ytickw;
-  chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh - chi2_txt_pad;
-    
+  // Clamp to non-negative - the container may not yet be laid out, and SVG attrs reject negative values.
+  chartAreaWidth = Math.max( 0, parentWidth - this.options.margins.left - this.options.margins.right - ytitleh - ytickw );
+  chartAreaHeight = Math.max( 0, parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh - chi2_txt_pad );
+
   this.xScale.range([0, chartAreaWidth]);
   this.yScale.range([chartAreaHeight, 0]);
        
@@ -1139,9 +1143,9 @@ RelEffPlot.prototype.handleResize = function () {
   if (this.mouseCapture) {
     const parentWidth = this.chart.clientWidth;
     const parentHeight = this.chart.clientHeight;
-    const chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right;
-    const chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom;
-    
+    const chartAreaWidth = Math.max( 0, parentWidth - this.options.margins.left - this.options.margins.right );
+    const chartAreaHeight = Math.max( 0, parentHeight - this.options.margins.top - this.options.margins.bottom );
+
     this.mouseCapture
       .attr("width", chartAreaWidth)
       .attr("height", chartAreaHeight);

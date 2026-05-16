@@ -20,6 +20,25 @@
       The option to choose side-channels adjacent to the peak-region becomes no-longer relevant, so will be hidden.
     </p>
   </message>
+  <message id="dls-scale-spectrum-cb">Scale Time:</message>
+  <message id="dls-scale-spectrum-empty-text">e.g. 5 min</message>
+  <message id="dls-scale-spectrum-tt">
+    Compute the limit you would expect from a measurement of the entered real time, treating the
+    current spectrum as a per-second rate estimate.  When checked, channel counts are scaled by
+    (entered real time) / (current spectrum real time), and the live time is scaled by the same
+    ratio so the dead-time fraction is preserved.
+    <p>
+      Most accurate when scaling to a shorter or comparable dwell time; for much longer dwells
+      the result is optimistic, since the rate-estimate uncertainty exceeds the projected
+      Poisson noise.
+    </p>
+  </message>
+  <message id="dls-err-bad-scale-time">Invalid scale time - expected something like '5 min', '300 s', or '00:05:00'.</message>
+  <message id="dls-err-zero-realtime">Cannot scale: foreground spectrum has zero real time.</message>
+  <message id="dls-result-scaled-postfix"> (LT={1})</message>
+  <message id="dls-scale-more-info-note">
+    Scaled to real time {1} (live time {2}, ratio &times;{3} of measurement real time {4}).
+  </message>
   <message id="dls-cont-norm-unknown">Floating</message>
   <message id="dls-cont-norm-not-present">As no signal</message>
   <message id="dls-cont-norm-fixed-by-sides">From sides</message>

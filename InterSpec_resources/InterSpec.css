@@ -32,7 +32,8 @@ textarea, select {
   background-color: var(--interspec-input-background, white);
 }
 
-textarea:disabled, select:disabled, button:disabled {
+textarea:disabled, select:disabled, button:disabled,
+input[type="text"]:disabled, input[type="number"]:disabled {
   opacity: 0.4;
 }
 

@@ -27,6 +27,8 @@
 
 #include <set>
 #include <deque>
+#include <mutex>
+#include <atomic>
 #include <memory>
 
 #include <Wt/WSignal>
@@ -170,6 +172,25 @@ public:
   //aboutToBeDeleted(): signal emitted right before object destructions - useful
   //  if you want to serialize changes to disk
   Wt::Signal<> &aboutToBeDeleted();
+
+  /** Returns the cancellation token for any peak searches launched on this
+   `SpecMeas`.  The token is created lazily on first call (initial value `false`)
+   and is shared by every concurrent peak-search worker for this object - a
+   single call to `cancel_in_progress_peak_search()` aborts all of them.
+
+   Convention: `*token == true` means "cancel".  The token is one-way: once
+   flipped to true it stays true, which is fine because we only ever flip it
+   when this `SpecMeas` (or the `InterSpec` it is loaded into) is being torn
+   down.
+   */
+  std::shared_ptr<std::atomic<bool>> peak_search_cancel_flag() const;
+
+  /** If a cancel token has been created, sets `*m_peakSearchCanceled = true`.
+   Any in-flight peak search worker that holds a `shared_ptr` to the same token
+   will observe the change at its next cooperative check point and return.
+   Safe to call multiple times.
+   */
+  void cancel_in_progress_peak_search();
 
   
   static void save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,
@@ -430,6 +451,15 @@ protected:
 #endif
   
   Wt::Signal<> m_aboutToBeDeleted;
+
+  /** Cancellation token shared with any in-flight peak search workers.
+   `nullptr` until the first call to `peak_search_cancel_flag()`.  Convention is
+   `true` = cancel.  Protected by `m_peakSearchCanceledMutex` for thread-safe
+   lazy creation; the atomic itself takes care of concurrent reads/writes once
+   created.
+   */
+  mutable std::shared_ptr<std::atomic<bool>> m_peakSearchCanceled;
+  mutable std::mutex m_peakSearchCanceledMutex;
   
   /** ToDo/hack: we are currently using sample numbers to match peaks fit by
    InterSpec up to specific Measurement's.  This variable tells us if we need

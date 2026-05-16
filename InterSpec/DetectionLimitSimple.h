@@ -61,6 +61,12 @@ namespace SandiaDecay
   struct Transition;
 }
 
+namespace SpecUtils
+{
+  class Measurement;
+  enum class SpectrumType : int;
+}
+
 
 namespace DetectionLimitCalc
 {
@@ -157,7 +163,7 @@ protected:
   
   void handleSelectDetectorRequested();
   
-  void handleSpectrumChanged();
+  void handleSpectrumChanged( const SpecUtils::SpectrumType type );
   
   void handleUserChangedRoi();
   
@@ -169,6 +175,18 @@ protected:
   void handleDeconPriorChange();
   void handleNoSignalPresentChanged();
   void handleDeconContinuumTypeChange();
+
+  /** Toggles enabled state of the scale time input, repopulates the field with
+   the current foreground real time when the checkbox is off OR when the field is
+   empty (so the displayed value is always meaningful), and schedules a recompute. */
+  void handleScaleSpectrumChanged();
+
+  /** Returns the foreground (or scaled foreground if Scale is active and the
+   time string parses to a positive value).  Returns the raw foreground if
+   `m_scaleSpectrumCb` is null/unchecked, the spectrum has no real time, or the
+   field is empty / whitespace-only.  Throws only if Scale is enabled and the
+   field contains a non-empty but unparseable / non-positive value. */
+  std::shared_ptr<const SpecUtils::Measurement> currentEffectiveForeground() const;
   
   void updateSpectrumDecorationsAndResultText();
   
@@ -270,6 +288,14 @@ protected:
   Wt::WComboBox *m_continuumPrior;
   Wt::WLabel *m_continuumTypeLabel;
   Wt::WComboBox *m_continuumType;
+
+  /** "Scale to dwell" controls.  When checked, calculations and chart use the
+   foreground spectrum scaled to `m_scaleSpectrumTime`'s value (parsed as a
+   real-time duration via `PhysicalUnits::stringToTimeDuration`).  When
+   unchecked, `m_scaleSpectrumTime` shows the current foreground's real time
+   for reference and is disabled. */
+  Wt::WCheckBox        *m_scaleSpectrumCb;
+  Wt::WLineEdit        *m_scaleSpectrumTime;
   
   SimpleDialog *m_moreInfoWindow;
   

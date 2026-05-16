@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <vector>
+#include <atomic>
 #include <memory>
 #include <utility>
 
@@ -137,6 +138,13 @@ enum PeakFitLMOptions
 
 };//enum PeakFitLMOptions
 
+/** Fits a peak following a user click (or the automated peak search using the same
+ entry point).
+
+ If `cancel_flag` is non-null and `*cancel_flag == true`, the Ceres minimizer aborts
+ at its next iteration callback (returning empty results).  Used so the automated
+ peak search can be interrupted promptly during application shutdown.
+ */
 void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &results,
                                 const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                                 const std::vector< std::shared_ptr<const PeakDef> > &coFitPeaks,
@@ -145,7 +153,8 @@ void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &
                                 const float roiLowerEnergy,
                                 const float roiUpperEnergy,
                                 const std::shared_ptr<const PeakFitDetPrefs> &fitPrefs,
-                                const std::shared_ptr<const DetectorPeakResponse> &drf );
+                                const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
 
 /** Analog of `void fitPeaks(...)`, but using the Ceres based L-M fit method.
 
@@ -197,7 +206,8 @@ std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_roi_LM(
                                    const std::vector<std::shared_ptr<const PeakDef>> coFitPeaks,
                                    const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                                    const PeakFitUtils::CoarseResolutionType det_type,
-                                   const Wt::WFlags<PeakFitLMOptions> fit_options = 0 );
+                                   const Wt::WFlags<PeakFitLMOptions> fit_options = 0,
+                                   std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
 
 /** Refit peaks that share an ROI.
  * @param data The data to fit

@@ -1252,7 +1252,20 @@ InterSpec::~InterSpec() noexcept(true)
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
 #endif
-  
+
+  // Signal any in-flight automated peak search workers to abort.  The SpecMeas
+  //  objects may outlive this InterSpec (they're owned by SpecMeasManager and
+  //  by the worker), so we flip the cancel token here too rather than relying
+  //  solely on `~SpecMeas` to do it.  The Ceres `IterationCallback` and the
+  //  outer-loop check in `search_for_peaks_*` see the change within one LM
+  //  iteration, so the io_service drains promptly and `WServer::stop()` on
+  //  the wxWidgets shutdown path doesn't hang.
+  for( const shared_ptr<SpecMeas> &m : { m_dataMeasurement, m_secondDataMeasurement, m_backgroundMeasurement } )
+  {
+    if( m )
+      m->cancel_in_progress_peak_search();
+  }
+
   // Get rid of undo/redo, so we dont insert anything into them
   del_ptr_set_null( m_undo );
   del_ptr_set_null( m_licenseWindow );
@@ -4418,6 +4431,13 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     {
       try
       {
+        // Cap at 256 KB - this blob holds a small number of named user prefs,
+        //  not arbitrary data, so legitimate sizes are well under 1 KB.  The
+        //  limit prevents a malicious or corrupted DB row from spinning the
+        //  JSON parser on a multi-MB string.
+        if( entry->userOptionsJson.size() > 256 * 1024 )
+          throw runtime_error( "userOptionsJson is too large to parse" );
+
         Json::Value userOptionsVal( Json::ArrayType );
         Json::parse( entry->userOptionsJson, userOptionsVal );
         //cerr << "Parsed User Options, but not doing anything with them" << endl;
@@ -4441,9 +4461,24 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           if( std::find(begin(prefs_to_load), end(prefs_to_load), name) == end(prefs_to_load) )
             continue;
           
+          // Validate the int is a known UserOption::DataType before casting --
+          // out-of-range cast to an unscoped enum is UB.  The validation switch
+          // and the dispatch switch below both list every enumerator: if a new
+          // DataType is added, -Wswitch will flag the dispatch switch (since
+          // it has no default), and unknown values from the DB will be rejected
+          // here at load time.
           const int type = obj.get("type");
-          const UserOption::DataType datatype = UserOption::DataType( type );
-          
+          UserOption::DataType datatype;
+          switch( type )
+          {
+            case UserOption::String:  datatype = UserOption::String;  break;
+            case UserOption::Decimal: datatype = UserOption::Decimal; break;
+            case UserOption::Integer: datatype = UserOption::Integer; break;
+            case UserOption::Boolean: datatype = UserOption::Boolean; break;
+            default:
+              throw runtime_error( "invalid UserOption type " + std::to_string(type) );
+          }
+
           switch( datatype )
           {
             case UserOption::String:
@@ -4451,26 +4486,27 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
               const std::string value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
               break;
-            }//case UserOption::Boolean:
-              
+            }//case UserOption::String:
+
             case UserOption::Decimal:
             {
               const double value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
               break;
-            }//case UserOption::Boolean:
-              
+            }//case UserOption::Decimal:
+
             case UserOption::Integer:
             {
               const int value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
               break;
-            }//case UserOption::Boolean:
-              
+            }//case UserOption::Integer:
+
             case UserOption::Boolean:
             {
               const bool value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
+              break;
             }//case UserOption::Boolean:
           }//switch( datatype )
         }//for( size_t i = 0; i < userOptions.size(); ++i )
@@ -12991,9 +13027,15 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                 this, spectrum, samples, origPeaks, searchresults, updateDetTypeGuess
   ) );
 
+  // Grab the SpecMeas's persistent cancel token; the worker will check it at
+  //  each cooperative point and inside the Ceres `IterationCallback`.  When
+  //  this `InterSpec` is destroyed (or the SpecMeas itself is destroyed) the
+  //  token is flipped to `true` and the worker bails within ~1 LM iteration.
+  std::shared_ptr<const std::atomic<bool>> cancel_flag = data->peak_search_cancel_flag();
+
   boost::function<void(void)> worker = [=](){
     PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, false, fitPrefs );
+                                                callback, sessionId, false, fitPrefs, cancel_flag );
   };
   
 

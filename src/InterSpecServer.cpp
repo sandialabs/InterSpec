@@ -1054,6 +1054,7 @@ void clear_file_to_open_on_load( const std::string &session_token )
 }//void clear_file_to_open_on_load( const std::string &session_token )
 
 
+#if( !BUILD_AS_UNIT_TEST_SUITE )
 void download_to_native_save( const std::string &url )
 {
   Wt::WServer * const server = get_wt_server();
@@ -1125,6 +1126,7 @@ void download_to_native_save( const std::string &url )
     delete client;
   }
 }//void download_to_native_save( const std::string &url )
+#endif // !BUILD_AS_UNIT_TEST_SUITE
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
   
   
