@@ -83,6 +83,17 @@
   height: 100%;
 }
 
+/* Without `min-width: 0`, the flex item's default `min-width: auto` resolves
+   to the SVG spectrum's pixel width, so the stack cannot shrink below the
+   chart's current size when the AuxWindow is dragged narrower. The other two
+   tabs (RelEffChart, RelActTxtResults) don't hit this because their content
+   has small min-content; the spectrum's SVG does not. */
+.RelActAutoGui .UpperStack
+{
+  min-width: 0;
+  overflow: hidden;
+}
+
 .RelActAutoGui .D3SpectrumDisplayDiv, .RelActAutoGui .RelEffChart,  .RelActAutoGui .RelActTxtResults
 {
   height: 100%;
