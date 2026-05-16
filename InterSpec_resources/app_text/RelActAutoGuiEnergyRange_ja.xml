@@ -3,9 +3,9 @@
   <!-- raager- is short for RelActAutoGuiEnergyRange -->
   
   <!-- Labels -->
-  <message id="raager-lower-energy">下限エネルギー</message>
-  <message id="raager-upper-energy">上限エネルギー</message>
-  <message id="raager-continuum-type">連続成分タイプ:</message>
+  <message id="raager-lower-energy">下限</message>
+  <message id="raager-upper-energy">上限</message>
+  <message id="raager-continuum-type">連続成分:</message>
   
   <!-- Checkboxes -->
   <message id="raager-force-full-range">全範囲強制</message>

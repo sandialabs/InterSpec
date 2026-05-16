@@ -323,12 +323,15 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
   {
     disp = new RelActAutoGui( viewer );
     
-    window = new AuxWindow( WString::tr("raag-window-title"), 
+    window = new AuxWindow( WString::tr("raag-window-title"),
                             (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
-    // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
-    //  will be called first, which will then default to using the initial size as minimum allowable
-    window->setMinimumSize( 800, 480 );
-    window->setResizable( true );
+    if( !viewer->isPhone() )
+    {
+      // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
+      //  will be called first, which will then default to using the initial size as minimum allowable
+      window->setMinimumSize( 800, 480 );
+      window->setResizable( true );
+    }//if( !viewer->isPhone() )
     window->contents()->setOffsets(WLength(0,WLength::Pixel));
     
     disp->setHeight( WLength(100, WLength::Percentage) );
@@ -340,12 +343,21 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     //window->stretcher()->setContentsMargins(0,0,0,0);
     //    window->footer()->resize(WLength::Auto, WLength(50.0));
     
-    AuxWindow::addHelpInFooter( window->footer(), "rel-act-dialog" );
-    
-    disp->addDownloadAndUploadLinks( window->footer() );
-    
-    WPushButton *closeButton = window->addCloseButtonToFooter();
-    closeButton->clicked().connect(window, &AuxWindow::hide);
+    // On phone, the close button is float:left (a back arrow) and should appear leftmost,
+    // so add it before the help link and download/upload links.
+    if( viewer->isPhone() )
+    {
+      WPushButton *closeButton = window->addCloseButtonToFooter();
+      closeButton->clicked().connect(window, &AuxWindow::hide);
+      AuxWindow::addHelpInFooter( window->footer(), "rel-act-dialog" );
+      disp->addDownloadAndUploadLinks( window->footer() );
+    }else
+    {
+      AuxWindow::addHelpInFooter( window->footer(), "rel-act-dialog" );
+      disp->addDownloadAndUploadLinks( window->footer() );
+      WPushButton *closeButton = window->addCloseButtonToFooter();
+      closeButton->clicked().connect(window, &AuxWindow::hide);
+    }//if( phone ) / else
     
     //window->rejectWhenEscapePressed();
     
@@ -501,9 +513,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     
   wApp->useStyleSheet( "InterSpec_resources/RelActAutoGui.css" );
   wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
-  
+
   addStyleClass( "RelActAutoGui" );
-  
+
+  const bool isPhone = m_interspec->isPhone();
+  if( isPhone )
+    addStyleClass( "Phone" );
+
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
   //WText *alpha_warning = new WText( "This tool is under active development - this is an early preview", this );
@@ -680,7 +696,20 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_status_indicator = new WText( WString::tr("raag-calculating"), presetDiv );
   m_status_indicator->addStyleClass( "RelActAutoStatusMsg" );
   m_status_indicator->hide();
-  
+
+  if( isPhone )
+  {
+    // On phone, show the status / chi2 / error line ABOVE the preset combo.
+    // Wt's insertWidget is a no-op if the widget is already in the container,
+    // so remove first and then insert at the front.
+    presetDiv->removeWidget( m_error_msg );
+    presetDiv->removeWidget( m_fit_chi2_msg );
+    presetDiv->removeWidget( m_status_indicator );
+    presetDiv->insertWidget( 0, m_status_indicator );
+    presetDiv->insertWidget( 0, m_fit_chi2_msg );
+    presetDiv->insertWidget( 0, m_error_msg );
+  }//if( isPhone )
+
   // We'll take care of the options that apply to all types of Rel Eff curves now.
   WGroupBox *generalOptionsDiv = new WGroupBox( WString::tr("raag-spectrum-peak-options"), this );
   generalOptionsDiv->addStyleClass( "RelActAutoGeneralOptionsRow" );
@@ -909,9 +938,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   more_btn->addStyleClass( "MoreMenuIcon Wt-icon" );
   
   m_more_options_menu = new PopupDivMenu( more_btn, PopupDivMenu::TransientMenu );
-  const bool is_phone = false; //isPhone();
-  if( is_phone )
-    m_more_options_menu->addPhoneBackItem( nullptr );
+  // Note: on phones, PopupDivMenu's constructor automatically inserts a Close back-item
+  // when given a menuParent — don't add another or it appears twice.
   
   m_apply_energy_cal_item = m_more_options_menu->addMenuItem( WString::tr("raag-apply-energy-cal") );
   m_apply_energy_cal_item->triggered().connect( this, &RelActAutoGui::startApplyFitEnergyCalToSpecFile );
@@ -1063,6 +1091,52 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   m_render_flags |= RenderActions::UpdateSpectra;
   m_render_flags |= RenderActions::UpdateCalculations;
+
+  if( isPhone )
+  {
+    // Re-organize the layout for phone: collapse the side-by-side Nuclides / Energy Ranges /
+    // Free Peaks holders and the Options group-boxes into three horizontal sub-tabs.
+    WStackedWidget * const phoneSubStack = new WStackedWidget();
+    phoneSubStack->addStyleClass( "PhoneSubStack" );
+    WMenu * const phoneSubMenu = new WMenu( phoneSubStack, Wt::Horizontal );
+    phoneSubMenu->addStyleClass( "PhoneSubTabs LightNavMenu" );
+
+    WContainerWidget * const optionsPanel = new WContainerWidget();
+    optionsPanel->addStyleClass( "PhoneOptionsPanel" );
+    optionsPanel->addWidget( generalOptionsDiv );
+    optionsPanel->addWidget( optionsDiv );
+
+    WContainerWidget * const nucsPanel = new WContainerWidget();
+    nucsPanel->addStyleClass( "PhoneNucsPanel" );
+    nucsPanel->addWidget( nuclidesHolder );
+
+    WContainerWidget * const roisPanel = new WContainerWidget();
+    roisPanel->addStyleClass( "PhoneRoisPanel" );
+    roisPanel->addWidget( energiesHolder );
+    roisPanel->addWidget( m_free_peaks_container );
+
+    // When outside the link area is clicked, the item doesnt get selected,
+    // so we'll work around this for each sub-tab (same pattern as UpperMenu above).
+    const auto addSubTab = [phoneSubMenu]( const Wt::WString &text, Wt::WWidget *content ) -> WMenuItem* {
+      WMenuItem * const it = phoneSubMenu->addItem( text, content );
+      it->clicked().connect( std::bind([phoneSubMenu, it](){
+        phoneSubMenu->select( it );
+        it->triggered().emit( it );
+      }) );
+      return it;
+    };
+
+    addSubTab( WString::tr("raag-subtab-options"), optionsPanel );
+    addSubTab( WString::tr("raag-subtab-nucs"),    nucsPanel    );
+    addSubTab( WString::tr("raag-subtab-rois"),    roisPanel    );
+    phoneSubMenu->select( 0 );
+
+    addWidget( phoneSubMenu );
+    addWidget( phoneSubStack );
+
+    removeWidget( bottomArea );
+    delete bottomArea;
+  }//if( isPhone )
 }//RelActAutoGui constructor
   
 
@@ -1111,8 +1185,13 @@ void RelActAutoGui::addUndoRedoStep()
     RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
     if( gui && prev_state )
     {
-      gui->deSerialize( *prev_state );
+      // Clear before deSerialize: satisfies the deSerialize invariant. The end of deSerialize
+      //  also clears AddUndoRedoStep, so the post-undo render will not capture a new step.
       gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
+      gui->deSerialize( *prev_state );
+      // Because the next render will NOT call addUndoRedoStep (the flag is clear), we update
+      //  m_currentGuiState here so subsequent edits compare against the correct baseline.
+      gui->m_currentGuiState = prev_state;
     }
   };
 
@@ -1121,8 +1200,9 @@ void RelActAutoGui::addUndoRedoStep()
     RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
     if( gui && current_state )
     {
-      gui->deSerialize( *current_state );
       gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
+      gui->deSerialize( *current_state );
+      gui->m_currentGuiState = current_state;
     }
   };
   
@@ -1964,8 +2044,8 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   menu->setPositionScheme( Wt::Absolute );
   
   PopupDivMenuItem *item = nullptr;
-  
-  const bool is_phone = false; //isPhone();
+
+  const bool is_phone = m_interspec->isPhone();
   if( is_phone )
     item = menu->addPhoneBackItem( nullptr );
   
@@ -2355,7 +2435,9 @@ void RelActAutoGui::serialize( RelActCalcAuto::RelActAutoGuiState &state ) const
 void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
 {
   // m_currentGuiState is only set after the first render(), so if it is set,
-  //  we are in active use - and AddUndoRedoStep should not be set during undo/redo execution.
+  //  we are in active use - and AddUndoRedoStep should not be set when entering deSerialize.
+  //  Callers in active use must either clear the flag before calling (e.g. undo/redo lambdas)
+  //  or set it after deSerialize returns (e.g. handlePresetChange).
   //  During initial load (e.g., loadStateFromDb), m_currentGuiState is null, and flags may be set.
   assert( !m_currentGuiState || !m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) );
 
@@ -2403,6 +2485,13 @@ void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state
     m_render_flags |= RenderActions::ChartToDefaultRange;
 
   scheduleRender();
+
+  // setCalcOptionsGui above invokes user-action handlers (handleNuclidesChanged, handleAddFreePeak,
+  //  handleHideFreePeaks, etc.) that each set AddUndoRedoStep on m_render_flags. Loading a state
+  //  is not itself a user edit, so we clear that side-effect here: the next render must not capture
+  //  an undo step from this load. Callers that DO want an undo step (e.g. handlePresetChange) set
+  //  AddUndoRedoStep again after deSerialize returns.
+  m_render_flags.clear( RenderActions::AddUndoRedoStep );
 }//void deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
 
 
@@ -2457,7 +2546,14 @@ void RelActAutoGui::handlePresetChange()
   // Right now this function just handles setting GUI to default values, but eventually it will
   //  check if the user is in a modified parameter set, and if so save it to memory, so it can go
   //  back to it later
-  
+  //
+  // TODO: undo/redo currently reverts the analysis state (energy ranges, nuclides, options) but
+  //  does NOT revert the preset selector itself. `RelActAutoGuiState` (RelActCalcAuto.h) does not
+  //  carry `m_current_preset_index` or the dropdown selection, so after Ctrl-Z the dropdown still
+  //  displays the newly-chosen preset name even though the underlying state has been reverted.
+  //  Fix by either adding the preset index to `RelActAutoGuiState`, or wrapping preset changes in
+  //  a custom undo step that also restores the dropdown.
+
   const int index = m_presets->currentIndex();
   if( index == m_current_preset_index )
     return;
@@ -2466,22 +2562,23 @@ void RelActAutoGui::handlePresetChange()
   m_render_flags |= RenderActions::UpdateEnergyRanges;
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::ChartToDefaultRange;
-  m_render_flags |= RenderActions::AddUndoRedoStep;
+  // AddUndoRedoStep is set at each exit, AFTER any setGuiStateFromXml call, so that the deSerialize
+  //  invariant (no AddUndoRedoStep on entry when m_currentGuiState is non-null) holds.
   scheduleRender();
 
   if( m_current_preset_index >= static_cast<int>(m_preset_paths.size()) )
     m_previous_presets[m_current_preset_index] = guiStateToXml();
-  
+
   m_current_preset_index = index;
-  
+
   m_energy_ranges->clear();
-  
+
   while( m_rel_eff_opts_menu->count() > 1 )
   {
     RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( m_rel_eff_opts_menu->count() - 1 );
     assert( opts );
     handleDelRelEffCurve( opts );
-  } 
+  }
 
   assert( m_rel_eff_opts_menu->count() == 1 );
   assert( m_rel_eff_nuclides_menu->count() == 1 );
@@ -2498,28 +2595,31 @@ void RelActAutoGui::handlePresetChange()
   if( index <= 0 )
   {
     // Clear everything out!
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     return;
   }
-  
+
   if( index >= m_preset_paths.size() )
   {
     // TODO: let users download config, or clone them
-    
+
     const auto iter = m_previous_presets.find(index);
     if( iter == std::end(m_previous_presets) )
     {
       passMessage( WString::tr("raag-expected-state-info").arg(m_presets->currentText()), WarningWidget::WarningMsgHigh );
-      
+
+      m_render_flags |= RenderActions::AddUndoRedoStep;
       return;
     }//if( iter == std::end(m_previous_presets) )
-    
+
     if( !iter->second )
     {
       passMessage( WString::tr("raag-state-info-not-saved").arg(m_presets->currentText()), WarningWidget::WarningMsgHigh );
-      
+
+      m_render_flags |= RenderActions::AddUndoRedoStep;
       return;
     }//if( !iter->second )
-    
+
     try
     {
       setGuiStateFromXml( iter->second.get() );
@@ -2528,23 +2628,24 @@ void RelActAutoGui::handlePresetChange()
       passMessage( WString::tr("raag-error-deserializing").arg(e.what()),
                   WarningWidget::WarningMsgHigh );
     }
-    
+
+    m_render_flags |= RenderActions::AddUndoRedoStep;
     return;
   }//if( index >= m_preset_paths.size() )
-  
+
   assert( index < m_preset_paths.size() && (index > 0) );
   if( index >= m_preset_paths.size() || (index <= 0) )
     throw runtime_error( "RelActAutoGui::handlePresetChange: invalid selection index " );
 
   unique_ptr<rapidxml::file<char>> input_file; // define file out here to keep in scope for catch
-  
+
   try
   {
     const string xml_path = m_preset_paths[index];
     input_file.reset( new rapidxml::file<char>( xml_path.c_str() ) );
     rapidxml::xml_document<char> doc;
     doc.parse<rapidxml::parse_trim_whitespace>( input_file->data() );
-   
+
     setGuiStateFromXml( &doc );
   }catch( rapidxml::parse_error &e )
   {
@@ -2557,12 +2658,14 @@ void RelActAutoGui::handlePresetChange()
         end_pos += 1;
       msg += "<br />&nbsp;&nbsp;At: " + std::string(position, end_pos);
     }//if( position )
-    
+
     passMessage( msg, WarningWidget::WarningMsgHigh );
   }catch( std::exception &e )
   {
     passMessage( WString::tr("raag-error-loading-preset").arg(e.what()), WarningWidget::WarningMsgHigh );
   }//try / cat to read the XML
+
+  m_render_flags |= RenderActions::AddUndoRedoStep;
 }//void RelActAutoGui::handlePresetChange()
 
 

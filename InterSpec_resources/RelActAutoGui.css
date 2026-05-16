@@ -872,3 +872,304 @@ a.DownloadLink.RelActDownload > span
   border: 1px solid grey;
   background: yellow;
 }
+
+
+/* ========== PHONE LAYOUT OVERRIDES ========== */
+
+.RelActAutoGui.Phone
+{
+  height: 100%;
+}
+
+.RelActAutoGui.Phone .RelActAutoUpperArea
+{
+  height: 35%;
+  min-height: 200px;
+  max-height: 320px;
+  flex: 0 0 auto;
+}
+
+/* Tighten the vertical Spec/Rel.Eff/Result tabs on phone */
+.RelActAutoGui.Phone .RelActAutoUpperArea > ul.UpperMenu
+{
+  max-width: 25px;
+}
+
+.RelActAutoGui.Phone .PresetsRow
+{
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 4px 5px;
+  flex: 0 0 auto;
+}
+
+.RelActAutoGui.Phone .PresetsRow .RelActAutoUserNote
+{
+  max-width: 120px;
+  flex: 0 1 auto;
+}
+
+/* chi2 / error / status messages get a full-width row of their own.
+   Their DOM position (above the preset combo) is set in C++ for phone. */
+.RelActAutoGui.Phone .PresetsRow .RelActAutoChi2Msg,
+.RelActAutoGui.Phone .PresetsRow .RelActAutoErrMsg,
+.RelActAutoGui.Phone .PresetsRow .RelActAutoStatusMsg
+{
+  flex: 1 0 100%;
+  white-space: normal;
+  text-align: center;
+}
+
+/* Defensive: the desktop side-by-side holder is removed from DOM on phone,
+   but hide it as a fallback if a future change leaves it around. */
+.RelActAutoGui.Phone .EnergiesAndNuclidesHolder
+{
+  display: none;
+}
+
+.RelActAutoGui.Phone ul.PhoneSubTabs
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  border-bottom: 1px solid #ccc;
+  flex: 0 0 auto;
+}
+
+.RelActAutoGui.Phone ul.PhoneSubTabs li
+{
+  flex: 1 1 0;
+  text-align: center;
+  padding: 10px 6px;
+  font-size: 14px;
+  font-weight: bold;
+  /* Override vertical writing-mode used by .UpperMenu li / .RelEffCurveOptsMenu li */
+  writing-mode: horizontal-tb;
+  transform: none;
+  height: auto;
+  display: block;
+}
+
+.RelActAutoGui.Phone ul.PhoneSubTabs li
+{
+  border-bottom: 2px solid transparent;
+}
+.RelActAutoGui.Phone ul.PhoneSubTabs li.itemselected,
+.RelActAutoGui.Phone ul.PhoneSubTabs li.Wt-selected,
+.RelActAutoGui.Phone ul.PhoneSubTabs li.active
+{
+  border-bottom-color: #2a6cb0;
+}
+
+.RelActAutoGui.Phone .PhoneSubStack
+{
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+.RelActAutoGui.Phone .PhoneOptionsPanel,
+.RelActAutoGui.Phone .PhoneNucsPanel,
+.RelActAutoGui.Phone .PhoneRoisPanel
+{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+}
+
+.RelActAutoGui.Phone .RelActAutoGeneralOptionsRow
+{
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.RelActAutoGui.Phone .RelActAutoGeneralOptionsRow > *
+{
+  width: 100%;
+}
+
+.RelActAutoGui.Phone .RelActAutoOptions
+{
+  width: 100%;
+}
+
+.RelActAutoGui.Phone .RelEffCurveOptsStack
+{
+  height: auto;
+  min-height: 70px;
+}
+
+.RelActAutoGui.Phone .RelEffCurveOptions
+{
+  flex-wrap: wrap;
+}
+
+.RelActAutoGui.Phone .NuclidesHolder,
+.RelActAutoGui.Phone .EnergiesHolder,
+.RelActAutoGui.Phone .FreePeaksHolder
+{
+  flex: 0 0 auto;
+  flex-basis: auto;
+  width: 100%;
+}
+
+/* PhoneSubStack is the only scroll region; nested scrollers would conflict. */
+.RelActAutoGui.Phone .EnergyNucContent,
+.RelActAutoGui.Phone .RelEffNuclidesStack
+{
+  overflow: visible;
+  flex: 0 0 auto;
+}
+
+.RelActAutoGui.Phone .MoreMenuIcon,
+.RelActAutoGui.Phone .MoreMenuIcon:hover
+{
+  width: 32px;
+  height: 32px;
+  top: max(env(safe-area-inset-top, 0px), 4px);
+  right: 4px;
+  z-index: 5;
+}
+
+.RelActAutoGui.Phone .AddEnergyRangeOrNuc,
+.RelActAutoGui.Phone .DeleteEnergyRangeOrNuc,
+.RelActAutoGui.Phone .SortEneRanges
+{
+  width: 28px;
+  height: 28px;
+}
+
+.RelActAutoGui.Phone .ShowFreePeaks,
+.RelActAutoGui.Phone .HideFreePeaks,
+.RelActAutoGui.Phone .ClearEnergyRanges
+{
+  height: 32px;
+  font-size: 90%;
+}
+
+/* Stack the nuclide card vertically on phone so each row is wide enough to read.
+   Row 1: Nuclide label + input + color picker + delete icon
+   Row 2: Age container (Age label/input + Fit Age + optional min/max edits)
+          -- m_age_range_container is reparented into m_age_container in C++ on phone
+   Row 3: Rel.Act / MassFrac summary -- always reserves a line so card height is stable */
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .UpperRow
+{
+  flex-wrap: wrap;
+  height: auto;
+  row-gap: 4px;
+}
+
+/* Align the "Nuclide:" and "Age:" labels at the same x and give their inputs
+   the same width so the rows line up. */
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .UpperRow > label,
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .RelActAutoGuiNuclideAgeContainer > label
+{
+  min-width: 60px;
+}
+
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .UpperRow > input[type="text"],
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .RelActAutoGuiNuclideAgeContainer > input[type="text"]
+{
+  width: 100px !important;
+}
+
+/* Keep the color picker as a small square */
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .RelActAutGuiNuclideColorSelect,
+.RelActAutoGui.Phone .RelActAutoGuiNuclide input[type="color"]
+{
+  width: 35px !important;
+  flex: 0 0 auto;
+}
+
+/* Keep the color picker and delete button on the same row as the Nuclide input,
+   pushed to the right via margin-left: auto on the first of the pair. */
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .UpperRow > .RelActAutGuiNuclideColorSelect,
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .UpperRow > .DeleteEnergyRangeOrNuc
+{
+  order: 2;
+}
+
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .UpperRow > .RelActAutGuiNuclideColorSelect
+{
+  margin-left: auto;
+}
+
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .RelActAutoGuiNuclideAgeContainer
+{
+  order: 3;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 4px 5px;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .RelActAutoGuiNuclideAgeContainer .NucAgeRangeContainer
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .RelActAutoGuiNuclideSummaryText
+{
+  order: 4;
+  flex: 1 0 100%;
+  margin-left: 0;
+  min-height: 1.2em;
+  text-align: right;
+  white-space: normal;
+  display: block;
+}
+
+.RelActAutoGui.Phone .RelActAutoGuiNuclide .RelActAutoGuiNuclideSummaryText:empty::before
+{
+  content: "\00a0";
+}
+
+/* Physical-model Rel.Eff. options: stack DetectorDisplay, options column,
+   self-attenuation, and external-attenuation widgets as separate rows so
+   each is wide enough to actually read on a phone. */
+.RelActAutoGui.Phone .PhysicalModelOpts
+{
+  flex-direction: column;
+  gap: 8px;
+}
+
+.RelActAutoGui.Phone .PhysicalModelOpts .PhysicalModelOptRow
+{
+  transform: none;
+  width: 100%;
+  gap: 6px;
+}
+
+.RelActAutoGui.Phone .PhysicalModelOpts .PhysicalModelOptRow > .DetectorDisplay
+{
+  width: 100%;
+}
+
+.RelActAutoGui.Phone .PhysicalModelOpts .PhysicalModelShields
+{
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.RelActAutoGui.Phone .PhysicalModelOpts .PhysicalModelOptRow .PhysOptionCb
+{
+  transform: none;
+}
+
+.RelActAutoGui.Phone .PhysicalModelOpts .PhysicalModelOptRow .PhysOptionCbDiv
+{
+  grid-template-columns: 1fr;
+}

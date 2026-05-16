@@ -1768,6 +1768,17 @@ bool InterSpecApp::isMobile() const
   return true;
 #endif
 
+  // Honor URL-param overrides so forcing phone/tablet also implies mobile.
+  {
+    const Http::ParameterMap &parmap = environment().getParameterMap();
+    Http::ParameterMap::const_iterator iter = parmap.find( "isphone" );
+    if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
+      return true;
+    iter = parmap.find( "istablet" );
+    if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
+      return true;
+  }
+
   const WEnvironment &env = environment();
   const bool isMob = (   env.agentIsMobileWebKit()
                       || env.agentIsIEMobile()
@@ -1806,15 +1817,14 @@ bool InterSpecApp::isAndroid() const
 bool InterSpecApp::isPhone() const
 {
   const WEnvironment &env = environment();
-  
-#if( IOS )
-  // TODO: we could enable this for all builds, to help with testing; if we do, add this equiv code to isMobile()
+
+  // Allow forcing phone mode via URL param on any build (useful for testing the mobile layout
+  // from a desktop browser). Forcing tablet should also propagate through isMobile() below.
   const Http::ParameterMap &parmap = environment().getParameterMap();
   const Http::ParameterMap::const_iterator iter = parmap.find( "isphone" );
   if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
     return true;
-#endif
-  
+
   return ( env.userAgent().find("iPhone") != std::string::npos
            || env.userAgent().find("iPod") != std::string::npos
            || (env.userAgent().find("Android") != std::string::npos
@@ -1826,14 +1836,11 @@ bool InterSpecApp::isPhone() const
 bool InterSpecApp::isTablet() const
 {
   const WEnvironment &env = environment();
-  
-#if( IOS )
-  // TODO: we could enable this for all builds, to help with testing; if we do, add this equiv code to isMobile()
+
   const Http::ParameterMap &parmap = environment().getParameterMap();
   const Http::ParameterMap::const_iterator iter = parmap.find( "istablet" );
   if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
     return true;
-#endif
   
   const string &agent = env.userAgent();
     

@@ -47,7 +47,12 @@
   <message id="raag-spec">Spec.</message>
   <message id="raag-rel-eff">Rel. Eff.</message>
   <message id="raag-result">Result</message>
-  
+
+  <!-- Phone sub-tab labels -->
+  <message id="raag-subtab-options">Options</message>
+  <message id="raag-subtab-nucs">Nuclides</message>
+  <message id="raag-subtab-rois">Energy Ranges</message>
+
   <!-- Menu Items -->
   <message id="raag-apply-energy-cal">Apply Energy Cal</message>
   <message id="raag-show-ref-lines">Show Ref. Gamma Lines</message>
