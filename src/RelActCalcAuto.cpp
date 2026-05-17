@@ -16782,7 +16782,7 @@ RelActAutoSolution solve( const Options options,
         for( const NuclideRelAct &rel_act : rel_acts )
         {
           assert( !is_null(rel_act.source) );
-          if( !is_null(rel_act.source) )
+          if( is_null(rel_act.source) )
             continue;
 
           const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(rel_act.source);
