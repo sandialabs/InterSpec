@@ -2058,7 +2058,7 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
     }else if( n.element )
     {
       src_ptr = static_cast<const void *>(n.element);
-      name = n.element->name;
+      name = n.element->symbol;
     }else if( n.reaction )
     {
       src_ptr = static_cast<const void *>(n.reaction);

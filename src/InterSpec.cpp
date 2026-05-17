@@ -10216,13 +10216,13 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::shieldingSourceFit, this, true ) );
  
 #if( USE_REL_ACT_TOOL )
-  // The Relative Efficiency tools are not specialized to display on phones yet.
+  // RelActAuto is phone-capable; the manual Rel. Eff. tool is not yet.
+  m_relActAutoMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-nuc") );
+  HelpSystem::attachToolTipOn( m_relActAutoMenuItem, WString::tr("app-mi-tt-tools-iso-by-nuc") , showToolTips );
+  m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::relActAutoWindow, this, true ) );
+
   if( !isPhone() )
   {
-    m_relActAutoMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-nuc") );
-    HelpSystem::attachToolTipOn( m_relActAutoMenuItem, WString::tr("app-mi-tt-tools-iso-by-nuc") , showToolTips );
-    m_relActAutoMenuItem->triggered().connect( boost::bind( &InterSpec::relActAutoWindow, this, true ) );
-    
     m_relActManualMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-peak") );
     HelpSystem::attachToolTipOn( m_relActManualMenuItem, WString::tr("app-mi-tt-tools-iso-by-peak") , showToolTips );
     m_relActManualMenuItem->triggered().connect( boost::bind( &InterSpec::createRelActManualWidget, this ) );

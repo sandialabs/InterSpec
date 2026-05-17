@@ -3,9 +3,9 @@
   <!-- raager- is short for RelActAutoGuiEnergyRange -->
 
   <!-- Labels -->
-  <message id="raager-lower-energy">Alsó energia</message>
-  <message id="raager-upper-energy">Felső energia</message>
-  <message id="raager-continuum-type">Kontinuum típus:</message>
+  <message id="raager-lower-energy">Alsó</message>
+  <message id="raager-upper-energy">Felső</message>
+  <message id="raager-continuum-type">Kontinuum:</message>
 
   <!-- Checkboxes -->
   <message id="raager-force-full-range">Teljes tartomány kényszerítése</message>

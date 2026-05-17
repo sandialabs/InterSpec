@@ -3,9 +3,9 @@
   <!-- raager- is short for RelActAutoGuiEnergyRange -->
 
   <!-- Labels -->
-  <message id="raager-lower-energy">निचली ऊर्जा</message>
-  <message id="raager-upper-energy">ऊपरी ऊर्जा</message>
-  <message id="raager-continuum-type">सतत प्रकार:</message>
+  <message id="raager-lower-energy">निचली</message>
+  <message id="raager-upper-energy">ऊपरी</message>
+  <message id="raager-continuum-type">सतत:</message>
 
   <!-- Checkboxes -->
   <message id="raager-force-full-range">पूर्ण-सीमा बाध्य करें</message>
