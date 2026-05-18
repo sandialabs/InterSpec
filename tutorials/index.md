@@ -1,8 +1,10 @@
 # Tutorials
 
 ## Newer features (Sep 2025)
-This presentation is an update to the [Sep 2024](#newer-features-sep-2024) presentation, adding some additional features and improvements from the last year.
-* [20250910_InterSpec_notable_features.pptx](https://github.com/sandialabs/InterSpec/releases/download/20250910/20250910_InterSpec_notable_features_SAND2025-11239PE.pptx) (135 MB)
+This presentation briefly covers some of the more useful features added or improved in InterSpec over the last few years.
+* Current: [20260519_some_useful_InterSpec_features_SAND2026-21108PE.pptx](https://github.com/sandialabs/InterSpec/releases/download/v1.0.14_rc1/20260519_some_useful_InterSpec_features_SAND2026-21108PE.pptx) (171 MB)
+* Previous version from Sep 2025: [20250910_InterSpec_notable_features.pptx](https://github.com/sandialabs/InterSpec/releases/download/20250910/20250910_InterSpec_notable_features_SAND2025-11239PE.pptx) (135 MB)
+* Version from August 2024: [20240912_InterSpec_newer_features.pptx](https://github.com/sandialabs/InterSpec/releases/download/20240911/20240912_InterSpec_newer_features.pptx) (110 MB); spectra use available from [spectra.zip](https://github.com/sandialabs/InterSpec/releases/download/20240911/spectra.zip).
 
 
 ## Enrichment and "Isotopics by nuclides" tool (Sep 2025)
@@ -27,16 +29,6 @@ there is now a batch analysis tool starting with [InterSpec v1.0.13](https://git
 This presentation and example spectra will get you started using this capability.
 * [20250611_InterSpec_batch_processing_instructions_rev2.pdf](batch_analysis/20250611_InterSpec_batch_processing_instructions_rev2.pdf) (8 MB)
 * [in-situ_example.zip](batch_analysis/in-situ_example.zip)
-
-
-## Newer features (Sep 2024)
-This presentation briefly covers some of the more useful features added to InterSpec over the last couple years.
-* [20240912_InterSpec_newer_features.pptx](https://github.com/sandialabs/InterSpec/releases/download/20240911/20240912_InterSpec_newer_features.pptx) (110 MB)
-* [spectra.zip](https://github.com/sandialabs/InterSpec/releases/download/20240911/spectra.zip)
-
-A notable omission from this presentation is the Relative Efficiency Analysis tool, which you can find a presentation on below.
-
-Some other features and notes are also available in the release notes [here](https://sandialabs.github.io/InterSpec/releases/).
 
 
 ## Relative Efficiency Analysis 
