@@ -29,7 +29,7 @@
   <message id="rr-requesting-ana">বিশ্লেষণ অনুরোধ করছে</message>
   <message id="rr-err-no-spec">কোনো প্রদর্শিত স্পেকট্রাম নেই</message>
   <message id="rr-requesting-service-info">সেবা তথ্য অনুরোধ করছে।</message>
-  <message id="rr-error-parsing-service-info">সেবা তথ্য ফলাফল পার্স করতে ত্রুটি: <code></code></message>
+  <message id="rr-error-parsing-service-info">সেবা তথ্য ফলাফল পার্স করতে ত্রুটি: <code>{1}</code></message>
   <message id="rr-incorrect-url">ভুল URL বা ইন্টারনেট নেই।</message>
   <message id="rr-err-requesting-service-info">সেবা তথ্য পুনরুদ্ধার করতে ত্রুটি: <code>{1}</code></message>
 </messages>

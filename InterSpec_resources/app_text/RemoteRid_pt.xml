@@ -29,7 +29,7 @@
   <message id="rr-requesting-ana">Solicitando análise</message>
   <message id="rr-err-no-spec">Nenhum espectro exibido</message>
   <message id="rr-requesting-service-info">Solicitando informações de serviço.</message>
-  <message id="rr-error-parsing-service-info">Erro ao analisar resultados de informações de serviço: <code></code></message>
+  <message id="rr-error-parsing-service-info">Erro ao analisar resultados de informações de serviço: <code>{1}</code></message>
   <message id="rr-incorrect-url">URL incorreta ou sem internet.</message>
   <message id="rr-err-requesting-service-info">Erro ao recuperar informações de serviço: <code>{1}</code></message>
 </messages>

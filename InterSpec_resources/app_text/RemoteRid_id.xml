@@ -29,7 +29,7 @@
   <message id="rr-requesting-ana">Meminta analisis</message>
   <message id="rr-err-no-spec">Tidak ada spektrum yang ditampilkan</message>
   <message id="rr-requesting-service-info">Meminta informasi layanan.</message>
-  <message id="rr-error-parsing-service-info">Kesalahan mem-parse hasil informasi layanan: <code></code></message>
+  <message id="rr-error-parsing-service-info">Kesalahan mem-parse hasil informasi layanan: <code>{1}</code></message>
   <message id="rr-incorrect-url">URL salah atau tidak ada internet.</message>
   <message id="rr-err-requesting-service-info">Kesalahan mengambil informasi layanan: <code>{1}</code></message>
 </messages>
