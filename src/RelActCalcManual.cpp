@@ -3020,10 +3020,13 @@ double RelEffSolution::activity_ratio_uncert( const size_t iso1_index, const siz
   
   // TODO: I think this is the right way to compute ratio, taking into account correlations, given
   //       we actually fit for the values that multiplied m_activity_norms[],... need to double check
+  // The correlation term can drive the radicand negative for strongly correlated isotopes;
+  // clamp to zero rather than producing NaN.
   const double uncert = fabs(ratio)
-  * sqrt( (cov_1_1 / fit_act_1 / fit_act_1)
-         + (cov_2_2 / fit_act_2 / fit_act_2)
-         - (2.0 * cov_1_2 / fit_act_1 / fit_act_2) );
+  * sqrt( std::max( 0.0,
+                    (cov_1_1 / fit_act_1 / fit_act_1)
+                    + (cov_2_2 / fit_act_2 / fit_act_2)
+                    - (2.0 * cov_1_2 / fit_act_1 / fit_act_2) ) );
   
 #ifndef NDEBUG
   {// Begin print out comparison between this result, and if we hadnt taken into account correlation
@@ -3124,7 +3127,7 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   //  though).
   const double norm_for_nuc = m_activity_norms[nuc_index] / nuc_mult;
   const double cov_nuc_nuc = nuc_mult*nuc_mult*m_nonlin_covariance[nuc_index][nuc_index];
-  const double sqrt_cov_nuc_nuc = sqrt(cov_nuc_nuc);
+  const double sqrt_cov_nuc_nuc = sqrt( std::max(0.0, cov_nuc_nuc) );
   //const double fit_act_for_nuc = m_rel_activities[nuc_index].m_rel_activity / norm_for_nuc;
   
   // Check that relative activity uncertainties have been computed compatible with what we are
@@ -3663,7 +3666,13 @@ double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( uncert_sq >= 0.0 );
-      
+
+      // Mirror the throw pattern used at the FramPhysicalModel exit below: a negative
+      // squared uncertainty means the covariance matrix is non-positive-definite, which is
+      // a real failure, not numerical noise we should silently round to zero.
+      if( uncert_sq < 0.0 )
+        throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: negative squared uncertainty." );
+
       return sqrt(uncert_sq);
     }//case RelEffEqnForm::LnX:
       
@@ -5355,7 +5364,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
         if( !is_constrolled && !mass_frac_constraint )
         {
           const double rel_act_norm = cost_functor->m_rel_act_norms[i];
-          rel_act.m_rel_activity_uncert = rel_act_norm * std::sqrt( solution.m_nonlin_covariance[i][i] );
+          rel_act.m_rel_activity_uncert = rel_act_norm * std::sqrt( std::max(0.0, solution.m_nonlin_covariance[i][i]) );
         }
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
         else if( mass_frac_constraint )
@@ -5366,7 +5375,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
           }else
           {
             // `m_nonlin_covariance` elements have already been multiplied by the derivative RelAct wrt RelAct parameter
-            rel_act.m_rel_activity_uncert = std::sqrt( solution.m_nonlin_covariance[i][i] );
+            rel_act.m_rel_activity_uncert = std::sqrt( std::max(0.0, solution.m_nonlin_covariance[i][i]) );
           }
         }
 #endif
@@ -5383,7 +5392,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
           const bool found_controller = cost_functor->walk_to_controlling_nuclide( ultimate_controller_index, multiple );
           assert( found_controller );
 
-          const double par_uncert = std::sqrt( solution.m_nonlin_covariance[ultimate_controller_index][ultimate_controller_index] );
+          const double par_uncert = std::sqrt( std::max(0.0, solution.m_nonlin_covariance[ultimate_controller_index][ultimate_controller_index]) );
           rel_act.m_rel_activity_uncert = multiple * cost_functor->m_rel_act_norms[ultimate_controller_index] * par_uncert;
           assert( (fabs(rel_act.m_rel_activity - multiple*cost_functor->relative_activity( cost_functor->m_isotopes[ultimate_controller_index], parameters )) < 1.0E-5*rel_act.m_rel_activity)
                   || (fabs(rel_act.m_rel_activity - multiple*cost_functor->relative_activity( cost_functor->m_isotopes[ultimate_controller_index], parameters )) < 1.0E-3) );
@@ -5422,7 +5431,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
                      || (solution.m_nonlin_covariance[shield_index][shield_index] == 0.0) );
               
               if( orig_opt.fit_atomic_number )
-                shield_result->m_atomic_number_uncert = sqrt( solution.m_nonlin_covariance[shield_index][shield_index] ) * RelActCalc::ns_an_ceres_mult;
+                shield_result->m_atomic_number_uncert = sqrt( std::max(0.0, solution.m_nonlin_covariance[shield_index][shield_index]) ) * RelActCalc::ns_an_ceres_mult;
             }//if( !solution.m_nonlin_covariance.empty()  )
           
             shield_index += 1;
@@ -5441,7 +5450,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
           //        || (solution.m_nonlin_covariance[shield_index][shield_index] == 0.0) );
           
           if( orig_opt.fit_areal_density )
-            shield_result->m_areal_density_uncert = sqrt( solution.m_nonlin_covariance[shield_index][shield_index] ) * PhysicalUnits::g_per_cm2;
+            shield_result->m_areal_density_uncert = sqrt( std::max(0.0, solution.m_nonlin_covariance[shield_index][shield_index]) ) * PhysicalUnits::g_per_cm2;
         }//if( !solution.m_nonlin_covariance.empty()  )
         
         shield_index += 1; //increment for areal density

@@ -404,7 +404,7 @@ std::string printToBestActivityUnitsWithUncert( double activity,
   else if( activity < 1.0 )
     snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E3), (uncert*1.0E3), "m" );
   else if( activity < 1.0E3 )
-    snprintf(buffer, sizeof(buffer), formatflag, activity, "" );
+    snprintf(buffer, sizeof(buffer), formatflag, activity, uncert, "" );
   else if( activity < 1.0E6 )
     snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-3), (uncert*1.0E-3), "k" );
   else if( activity < 1.0E9 )

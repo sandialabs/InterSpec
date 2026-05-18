@@ -354,8 +354,9 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( uncert_sq >= 0.0 );
-      
-      return sqrt(uncert_sq);
+
+      // Clamp tiny negatives from numerical noise so we never return NaN in release builds.
+      return std::sqrt( std::max(0.0, uncert_sq) );
     }//case RelEffEqnForm::LnX:
       
       
@@ -389,8 +390,8 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( log_uncert_sq >= 0.0 );
-      
-      return eval_val * sqrt(log_uncert_sq);
+
+      return eval_val * std::sqrt( std::max(0.0, log_uncert_sq) );
     }//case RelEffEqnForm::LnY:
       
     case RelEffEqnForm::LnXLnY:
@@ -412,8 +413,8 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( log_uncert_sq >= 0.0 );
-      
-      return eval_val * sqrt(log_uncert_sq);
+
+      return eval_val * std::sqrt( std::max(0.0, log_uncert_sq) );
     }//case RelEffEqnForm::LnXLnY:
       
     case RelEffEqnForm::FramEmpirical:
@@ -453,8 +454,8 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( log_uncert_sq >= 0.0 );
-      
-      return eval_val * sqrt(log_uncert_sq);
+
+      return eval_val * std::sqrt( std::max(0.0, log_uncert_sq) );
     }//case RelEffEqnForm::FramEmpirical:
       
     case RelEffEqnForm::FramPhysicalModel:
