@@ -5458,33 +5458,95 @@ void SpecMeasManager::displayFile( int row,
 
     case SpecUtils::SpectrumType::Background:
     {
-      int nspectra_header = static_cast<int>( header->m_samples.size() );
+      const int nspectra_header = static_cast<int>( header->m_samples.size() );
 
       if( nspectra_header > 1 )
       {
-        bool foundBackground = false;
+        // If the file being loaded as the background is a *different* file from the
+        //  currently displayed foreground, prefer this file's Foreground record.  A common
+        //  workflow is to take a representative background as a foreground-style measurement
+        //  in its own file - in that file the tagged "Background" record is often an
+        //  irrelevant factory/internal background while the "Foreground" record is the
+        //  measurement the user actually wants treated as background.  If the file being
+        //  loaded is the same file as the current foreground, keep the original behavior
+        //  of preferring the file's Background record.
+        const std::shared_ptr<SpecMeas> fore_meas
+                            = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+        const bool different_file = ( !fore_meas || (fore_meas != measement_ptr) );
+
+        int foreRow = -1, backRow = -1, unknownRow = -1;
         for( int sample = 0; sample < nspectra_header; ++sample )
         {
           const SpectraHeader &spectra = header->m_samples[sample];
-          foundBackground = (spectra.spectra_type == SpecUtils::SourceType::Background);
-          if( foundBackground )
+          switch( spectra.spectra_type )
           {
-            warningmsgLevel = max( WarningWidget::WarningMsgLow, warningmsgLevel );
-            warningmsg << WString::tr("smm-multi-spectra-using-back").toUTF8();
-            selected.clear();
-            selected.insert( index.child(sample,0) );
-            break;
-          }//if( foundBackground )
-        } // for( int sample = 0; sample < nsamples; ++sample )
+            case SpecUtils::SourceType::Foreground:
+              if( foreRow < 0 )
+                foreRow = sample;
+              break;
 
-        if( !foundBackground )
+            case SpecUtils::SourceType::Background:
+              if( backRow < 0 )
+                backRow = sample;
+              break;
+
+            case SpecUtils::SourceType::Unknown:
+              if( unknownRow < 0 )
+                unknownRow = sample;
+              break;
+
+            case SpecUtils::SourceType::IntrinsicActivity:
+            case SpecUtils::SourceType::Calibration:
+              // never auto-pick these for the background slot
+              break;
+          }//switch( spectra.spectra_type )
+        }//for( int sample = 0; sample < nspectra_header; ++sample )
+
+        // Pick the record:
+        //  Same file as foreground (unchanged):  Background -> (fallback to first sample)
+        //  Different file (new):                 Foreground -> Unknown -> Background
+        //                                        -> (fallback to first sample)
+        int chosenRow = -1;
+        const char *warning_key = nullptr;
+
+        if( different_file )
         {
-          warningmsgLevel = max(WarningWidget::WarningMsgHigh, warningmsgLevel );
+          if( foreRow >= 0 )
+          {
+            chosenRow = foreRow;
+            warning_key = "smm-multi-spectra-using-fore-as-back";
+          }else if( unknownRow >= 0 )
+          {
+            chosenRow = unknownRow;
+            warning_key = "smm-multi-spectra-using-first";
+          }else if( backRow >= 0 )
+          {
+            chosenRow = backRow;
+            warning_key = "smm-multi-spectra-using-back";
+          }
+        }else if( backRow >= 0 )
+        {
+          chosenRow = backRow;
+          warning_key = "smm-multi-spectra-using-back";
+        }//if( different_file ) / else
+
+        if( chosenRow >= 0 )
+        {
+          warningmsgLevel = max( WarningWidget::WarningMsgLow, warningmsgLevel );
+          WString msg = WString::tr( warning_key );
+          if( strcmp( warning_key, "smm-multi-spectra-using-first" ) == 0 )
+            msg.arg( nspectra_header );
+          warningmsg << msg.toUTF8();
+          selected.clear();
+          selected.insert( index.child(chosenRow,0) );
+        }else
+        {
+          warningmsgLevel = max( WarningWidget::WarningMsgHigh, warningmsgLevel );
           warningmsg << WString::tr("smm-multi-spectra-using-first").arg(nspectra_header).toUTF8();
           selected.clear();
           selected.insert( index.child(0,0) );
-        }//if( !foundBackground )
-      } // if( !passthrough && (nsamples > 1) )
+        }//if( chosenRow >= 0 ) / else
+      } // if( nspectra_header > 1 )
       break;
     } // case SpecUtils::SpectrumType::Background:
   } // switch( type )

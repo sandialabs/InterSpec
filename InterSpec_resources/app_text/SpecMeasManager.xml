@@ -247,6 +247,7 @@
   <message id="smm-multi-cal-it">It</message>
   <message id="smm-multi-cal-they">They</message>
   <message id="smm-multi-spectra-using-back">File has multiple spectra, so only the background spectrum has been displayed.</message>
+  <message id="smm-multi-spectra-using-fore-as-back">File has multiple spectra; using its foreground record as the background spectrum.</message>
   <message id="smm-multi-spectra-using-first">The uploaded file contained {1} samples so
     <br />
     am displaying the first one.
