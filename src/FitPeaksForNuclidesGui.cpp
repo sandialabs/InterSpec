@@ -77,6 +77,117 @@ using namespace std;
 using namespace Wt;
 
 
+namespace
+{
+  // NORM nuclides that count as background when matching a Background-type reference line.
+  const std::vector<std::string> &norm_nuclide_symbols()
+  {
+    static const std::vector<std::string> kSymbols{ "U238", "Ra226", "U235", "Th232", "K40" };
+    return kSymbols;
+  }
+
+  // Applies reference-line colors to peaks in place.
+  // Matching priority per peak: direct nuclide / x-ray / reaction, then NuclideMixture component,
+  // then Background-source NORM. Color priority: per-component NuclideMixture color, then the
+  // ref line's m_input color, then the display's source-color cache, then a generic rotation.
+  void apply_reference_line_colors_to_peaks( std::vector<PeakDef> &peaks,
+                                             const std::vector<ReferenceLineInfo> &ref_lines,
+                                             ReferencePhotopeakDisplay *disp )
+  {
+    if( !disp )
+      return;
+
+    for( PeakDef &peak : peaks )
+    {
+      std::string src_name;
+      if( peak.parentNuclide() )
+        src_name = peak.parentNuclide()->symbol;
+      else if( peak.xrayElement() )
+        src_name = peak.xrayElement()->symbol;
+      else if( peak.reaction() )
+        src_name = peak.reaction()->name();
+      if( src_name.empty() )
+        continue;
+
+      for( const ReferenceLineInfo &ref_info : ref_lines )
+      {
+        bool matches = false;
+        Wt::WColor nuc_mix_comp_color;
+
+        if( ref_info.m_nuclide && peak.parentNuclide() == ref_info.m_nuclide )
+          matches = true;
+        if( !matches && ref_info.m_element && peak.xrayElement() == ref_info.m_element )
+          matches = true;
+        if( !matches && peak.reaction() && ref_info.m_reactions.count( peak.reaction() ) > 0 )
+          matches = true;
+        if( !matches
+            && peak.parentNuclide()
+            && (ref_info.m_source_type == ReferenceLineInfo::SourceType::NuclideMixture)
+            && ref_info.m_nuc_mix )
+        {
+          for( const ReferenceLinePredef::NucMixComp &comp : ref_info.m_nuc_mix->m_components )
+          {
+            if( comp.m_nuclide == peak.parentNuclide() )
+            {
+              matches = true;
+              nuc_mix_comp_color = comp.m_color;
+              break;
+            }
+          }
+        }
+        if( !matches
+            && (ref_info.m_source_type == ReferenceLineInfo::SourceType::Background)
+            && peak.parentNuclide() )
+        {
+          for( const std::string &sym : norm_nuclide_symbols() )
+          {
+            if( peak.parentNuclide()->symbol == sym )
+            {
+              matches = true;
+              break;
+            }
+          }
+        }
+
+        if( !matches )
+          continue;
+
+        std::string ref_src;
+        if( ref_info.m_nuclide )
+          ref_src = ref_info.m_nuclide->symbol;
+        else if( ref_info.m_element )
+          ref_src = ref_info.m_element->symbol;
+        else if( !ref_info.m_reactions.empty() )
+        {
+          const ReactionGamma::Reaction *rctn = *ref_info.m_reactions.begin();
+          if( rctn )
+            ref_src = rctn->name();
+        }
+        else if( (ref_info.m_source_type == ReferenceLineInfo::SourceType::Background)
+                 && peak.parentNuclide() )
+        {
+          ref_src = peak.parentNuclide()->symbol;
+        }
+
+        Wt::WColor color = nuc_mix_comp_color.isDefault() ? ref_info.m_input.m_color : nuc_mix_comp_color;
+        if( color.isDefault() && !ref_src.empty() )
+          color = disp->suggestColorForSource( ref_src );
+        if( color.isDefault() && !ref_src.empty() )
+        {
+          color = disp->nextGenericSourceColor();
+          if( !color.isDefault() )
+            disp->updateColorCacheForSource( ref_src, color );
+        }
+        if( !color.isDefault() )
+          peak.setLineColor( color );
+
+        break;
+      }//for( const ReferenceLineInfo &ref_info : ref_lines )
+    }//for( PeakDef &peak : peaks )
+  }//apply_reference_line_colors_to_peaks
+}//anonymous namespace
+
+
 namespace FitPeaksForNuclidesGui
 {
 
@@ -233,9 +344,15 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
 
   // Let user continue using app while fitting.
+  wApp->useStyleSheet( "InterSpec_resources/FitPeaksForNuclidesGui.css" );
   SimpleDialog *wait_dlg = new SimpleDialog( WString::tr("fpn-wait-title"),
                                              WString::tr("fpn-wait-content") );
   wait_dlg->rejectWhenEscapePressed();
+
+  Wt::WText *dev_note = new Wt::WText( WString::tr("fpn-wait-dev-note"), wait_dlg->contents() );
+  dev_note->setInline( false );
+  dev_note->addStyleClass( "fpn-wait-dev-note" );
+
   wait_dlg->addButton( WString::tr("Close") );
 
   // Disable button to prevent repeats while running.
@@ -399,6 +516,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           PeakModel *peak_model = viewer_c->peakModel();
           if( peak_model )
           {
+            apply_reference_line_colors_to_peaks( result->observable_peaks, ref_lines_for_display, disp );
             UndoRedoManager::PeakModelChange peak_undo_creator;
             if( !result->original_peaks_to_remove.empty() )
               peak_model->removePeaks( result->original_peaks_to_remove );
@@ -471,87 +589,15 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         preview_model->setForeground( current_fg );
         spectrum->setPeakModel( preview_model );
 
-        // Get existing peaks and add new ones, setting colors based on source
+        apply_reference_line_colors_to_peaks( result->observable_peaks, ref_lines_for_display, disp );
+
         std::vector<PeakDef> preview_peaks;
         PeakModel *peak_model = viewer_c->peakModel();
         if( peak_model )
           preview_peaks = peak_model->peakVec();
-
-        // Add new peaks and assign colors based on their source
-        for( PeakDef &peak : result->observable_peaks )
-        {
-          // Determine source name from peak
-          std::string src_name;
-          if( peak.parentNuclide() )
-            src_name = peak.parentNuclide()->symbol;
-          else if( peak.xrayElement() )
-            src_name = peak.xrayElement()->symbol;
-          else if( peak.reaction() )
-            src_name = peak.reaction()->name();
-
-          // Find matching ReferenceLineInfo to get color
-          if( !src_name.empty() && disp )
-          {
-            for( const ReferenceLineInfo &ref_info : ref_lines_for_display )
-            {
-              bool matches = false;
-              Wt::WColor nuc_mix_comp_color;
-              if( ref_info.m_nuclide && peak.parentNuclide() == ref_info.m_nuclide )
-                matches = true;
-              if( !matches && ref_info.m_element && peak.xrayElement() == ref_info.m_element )
-                matches = true;
-              if( !matches && peak.reaction() && ref_info.m_reactions.count( peak.reaction() ) > 0 )
-                matches = true;
-              if( !matches
-                 && peak.parentNuclide()
-                 && (ref_info.m_source_type == ReferenceLineInfo::SourceType::NuclideMixture)
-                 && ref_info.m_nuc_mix )
-              {
-                for( const ReferenceLinePredef::NucMixComp &comp : ref_info.m_nuc_mix->m_components )
-                {
-                  if( comp.m_nuclide == peak.parentNuclide() )
-                  {
-                    matches = true;
-                    nuc_mix_comp_color = comp.m_color;
-                    break;
-                  }
-                }
-              }
-
-              if( matches )
-              {
-                // Get source name for color lookup
-                std::string ref_src;
-                if( ref_info.m_nuclide )
-                  ref_src = ref_info.m_nuclide->symbol;
-                else if( ref_info.m_element )
-                  ref_src = ref_info.m_element->symbol;
-                else if( !ref_info.m_reactions.empty() )
-                {
-                  const ReactionGamma::Reaction *rctn = *ref_info.m_reactions.begin();
-                  if( rctn )
-                    ref_src = rctn->name();
-                }
-
-                // Per-component color from NuclideMixture takes priority
-                Wt::WColor color = nuc_mix_comp_color.isDefault() ? ref_info.m_input.m_color : nuc_mix_comp_color;
-                if( color.isDefault() && !ref_src.empty() )
-                  color = disp->suggestColorForSource( ref_src );
-                if( color.isDefault() && !ref_src.empty() )
-                {
-                  color = disp->nextGenericSourceColor();
-                  if( !color.isDefault() )
-                    disp->updateColorCacheForSource( ref_src, color );
-                }
-                if( !color.isDefault() )
-                  peak.setLineColor( color );
-                break;
-              }
-            }
-          }
-
-          preview_peaks.push_back( peak );
-        }
+        preview_peaks.insert( preview_peaks.end(),
+                              result->observable_peaks.begin(),
+                              result->observable_peaks.end() );
 
         preview_model->addPeaks( preview_peaks );
 
@@ -998,86 +1044,7 @@ void FitPeaksAdvancedWidget::acceptResult()
       ref_lines_to_use.push_back( *bg_ref );
   }
 
-  static const std::vector<std::string> norm_nuclide_symbols{ "U238", "Ra226", "U235", "Th232", "K40" };
-
-  for( PeakDef &peak : peaks_to_add )
-  {
-    std::string src_name;
-    if( peak.parentNuclide() )
-      src_name = peak.parentNuclide()->symbol;
-    else if( peak.xrayElement() )
-      src_name = peak.xrayElement()->symbol;
-    else if( peak.reaction() )
-      src_name = peak.reaction()->name();
-    if( src_name.empty() || !disp )
-      continue;
-    for( const ReferenceLineInfo &ref_info : ref_lines_to_use )
-    {
-      bool matches = false;
-      Wt::WColor nuc_mix_comp_color;
-      if( ref_info.m_nuclide && peak.parentNuclide() == ref_info.m_nuclide )
-        matches = true;
-      if( !matches && ref_info.m_element && peak.xrayElement() == ref_info.m_element )
-        matches = true;
-      if( !matches && peak.reaction() && ref_info.m_reactions.count( peak.reaction() ) > 0 )
-        matches = true;
-      if( !matches && peak.parentNuclide()
-          && ref_info.m_source_type == ReferenceLineInfo::SourceType::NuclideMixture
-          && ref_info.m_nuc_mix )
-      {
-        for( const ReferenceLinePredef::NucMixComp &comp : ref_info.m_nuc_mix->m_components )
-        {
-          if( comp.m_nuclide == peak.parentNuclide() )
-          {
-            matches = true;
-            nuc_mix_comp_color = comp.m_color;
-            break;
-          }
-        }
-      }
-      if( !matches && ref_info.m_source_type == ReferenceLineInfo::SourceType::Background
-          && peak.parentNuclide() )
-      {
-        for( const std::string &sym : norm_nuclide_symbols )
-        {
-          if( peak.parentNuclide()->symbol == sym )
-          {
-            matches = true;
-            break;
-          }
-        }
-      }
-      if( matches )
-      {
-        std::string ref_src;
-        if( ref_info.m_nuclide )
-          ref_src = ref_info.m_nuclide->symbol;
-        else if( ref_info.m_element )
-          ref_src = ref_info.m_element->symbol;
-        else if( !ref_info.m_reactions.empty() )
-        {
-          const ReactionGamma::Reaction *rctn = *ref_info.m_reactions.begin();
-          if( rctn )
-            ref_src = rctn->name();
-        }
-        else if( ref_info.m_source_type == ReferenceLineInfo::SourceType::Background
-                 && peak.parentNuclide() )
-          ref_src = peak.parentNuclide()->symbol;
-        Wt::WColor color = nuc_mix_comp_color.isDefault() ? ref_info.m_input.m_color : nuc_mix_comp_color;
-        if( color.isDefault() && !ref_src.empty() )
-          color = disp->suggestColorForSource( ref_src );
-        if( color.isDefault() && !ref_src.empty() )
-        {
-          color = disp->nextGenericSourceColor();
-          if( !color.isDefault() )
-            disp->updateColorCacheForSource( ref_src, color );
-        }
-        if( !color.isDefault() )
-          peak.setLineColor( color );
-        break;
-      }
-    }
-  }
+  apply_reference_line_colors_to_peaks( peaks_to_add, ref_lines_to_use, disp );
   peak_model->addPeaks( peaks_to_add );
 }
 

@@ -5,6 +5,16 @@
   max-height: 95vh;
 }
 
+/* Development notice on the Fit Source wait dialog and the Advanced dialog */
+.fpn-wait-dev-note
+{
+  display: block;
+  margin-top: 0.6em;
+  color: #856404;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
 .simple-dialog.FitPeaksAdvancedDialog .body
 {
   max-height: calc( 95vh - 90px );
