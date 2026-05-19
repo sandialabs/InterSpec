@@ -597,7 +597,6 @@ public:
     layout->addWidget( m_status_stack, 2, 0, 1, 2 );
     
     m_error = new WText();
-    m_error->setTextFormat( Wt::PlainText );
     m_error->addStyleClass( "RestRidError" );
     m_error->setInline( false );
     m_status_stack->addWidget( m_error );
@@ -1150,7 +1149,7 @@ public:
       if( parent )
       {
         parent->m_status_stack->setCurrentIndex( parent->m_status_stack->indexOf(parent->m_error) );
-        parent->m_error->setText(  WString::tr("rr-err-locating-exe").arg(exe_path) );
+        parent->m_error->setText( WString::tr("rr-err-locating-exe").arg( Wt::Utils::htmlEncode(exe_path) ) );
       }else
       {
         cerr << __func__ << ": Error locating executable: '" + exe_path + "'" << endl;
@@ -1503,32 +1502,32 @@ public:
     {
       m_current_drf_index = -1;
       m_drf_select->clear();
-      m_retrieve_drfs_btn->disable();
+      m_retrieve_drfs_btn->enable();
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
       m_result->setText( "" );
       m_status->setText( "" );
-      m_error->setText( WString::tr("rr-error-parsing-service-info").arg(e.what()) );
+      m_error->setText( WString::tr("rr-error-parsing-service-info").arg( Wt::Utils::htmlEncode(std::string(e.what())) ) );
     }//try / catch
   }//void handleInfoResponse()
   
   
   void handleInfoResponseError( std::string msg )
   {
-    WString errtxt = WString::fromUTF8( msg );
+    WString errtxt = WString::fromUTF8( Wt::Utils::htmlEncode(msg) );
     m_current_drf_index = -1;
     m_drf_select->clear();
     m_drf_stack->setCurrentIndex( 0 );
-    m_retrieve_drfs_btn->disable();
+    m_retrieve_drfs_btn->enable();
     m_result->setText( "" );
     m_status->setText( "" );
-    
+
     if( SpecUtils::icontains( msg , "Failed to fetch") //chrome
        || SpecUtils::icontains( msg , "Load failed")   //Safari
        || SpecUtils::icontains( msg , "NetworkError when attempting") ) //Firefox
     {
       errtxt = WString::tr("rr-incorrect-url");
     }
-    
+
     m_error->setText( WString::tr("rr-err-requesting-service-info").arg(errtxt) );
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleInfoResponseError()
@@ -1645,26 +1644,26 @@ public:
       *results = json_to_results( msg );
     }catch( std::exception &e )
     {
-      m_error->setText( "Error parsing analysis results: " + string(e.what()) );
+      m_error->setText( "Error parsing analysis results: " + Wt::Utils::htmlEncode(std::string(e.what())) );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
     }
-    
+
     try
     {
       if( !results->errorMessage.empty() )
         throw runtime_error( "Analysis service returned error message: " + results->errorMessage );
-      
+
       WStringStream rslttxt;
       rslttxt << "<div class=\"ResultLabel\">Results:</div>";
       generateResultHtml( rslttxt, *results );
-      
+
       m_result->setText( rslttxt.str() );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_result) );
-      
+
       m_interspec->externalRidResultsRecieved().emit( results );
     }catch( std::exception &e )
     {
-      m_error->setText( e.what() );
+      m_error->setText( Wt::Utils::htmlEncode(std::string(e.what())) );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
     }
   }//void handleResultResponse()
@@ -1675,15 +1674,15 @@ public:
     m_submit->enable();
     m_result->setText( "" );
     m_status->setText( "" );
-    
+
     if( SpecUtils::icontains( msg , "Failed to fetch") //chrome
        || SpecUtils::icontains( msg , "Load failed")   //Safari
        || SpecUtils::icontains( msg , "NetworkError when attempting") ) //Firefox
     {
       msg = "incorrect URL or no internet.";
     }
-    
-    m_error->setText( msg );
+
+    m_error->setText( Wt::Utils::htmlEncode(msg) );
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleResultResponseError()
   

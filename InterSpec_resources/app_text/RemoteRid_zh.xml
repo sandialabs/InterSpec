@@ -29,7 +29,7 @@
   <message id="rr-requesting-ana">请求分析</message>
   <message id="rr-err-no-spec">无显示的谱</message>
   <message id="rr-requesting-service-info">请求服务信息。</message>
-  <message id="rr-error-parsing-service-info">解析服务信息结果时出错：<code></code></message>
+  <message id="rr-error-parsing-service-info">解析服务信息结果时出错：<code>{1}</code></message>
   <message id="rr-incorrect-url">URL不正确或没有互联网。</message>
   <message id="rr-err-requesting-service-info">检索服务信息时出错：<code>{1}</code></message>
 </messages>
