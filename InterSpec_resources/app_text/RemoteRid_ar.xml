@@ -29,7 +29,7 @@
   <message id="rr-requesting-ana">طلب التحليل</message>
   <message id="rr-err-no-spec">لا يوجد طيف معروض</message>
   <message id="rr-requesting-service-info">طلب معلومات الخدمة.</message>
-  <message id="rr-error-parsing-service-info">خطأ في تحليل نتائج معلومات الخدمة: <code></code></message>
+  <message id="rr-error-parsing-service-info">خطأ في تحليل نتائج معلومات الخدمة: <code>{1}</code></message>
   <message id="rr-incorrect-url">URL غير صحيح أو لا يوجد إنترنت.</message>
   <message id="rr-err-requesting-service-info">خطأ في استرداد معلومات الخدمة: <code>{1}</code></message>
 </messages>

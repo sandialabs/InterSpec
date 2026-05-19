@@ -29,7 +29,7 @@
   <message id="rr-requesting-ana">Запрос анализа</message>
   <message id="rr-err-no-spec">Нет отображаемого спектра</message>
   <message id="rr-requesting-service-info">Запрос информации сервиса.</message>
-  <message id="rr-error-parsing-service-info">Ошибка разбора результатов информации сервиса: <code></code></message>
+  <message id="rr-error-parsing-service-info">Ошибка разбора результатов информации сервиса: <code>{1}</code></message>
   <message id="rr-incorrect-url">неправильный URL или нет интернета.</message>
   <message id="rr-err-requesting-service-info">Ошибка получения информации сервиса: <code>{1}</code></message>
 </messages>

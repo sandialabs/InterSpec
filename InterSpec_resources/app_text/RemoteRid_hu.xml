@@ -29,7 +29,7 @@
   <message id="rr-requesting-ana">Elemzés kérése</message>
   <message id="rr-err-no-spec">Nincs megjelenített spektrum</message>
   <message id="rr-requesting-service-info">Szolgáltatási információ lekérése.</message>
-  <message id="rr-error-parsing-service-info">Hiba a szolgáltatási információ feldolgozásakor: <code></code></message>
+  <message id="rr-error-parsing-service-info">Hiba a szolgáltatási információ feldolgozásakor: <code>{1}</code></message>
   <message id="rr-incorrect-url">helytelen URL vagy nincs internetkapcsolat.</message>
   <message id="rr-err-requesting-service-info">Hiba a szolgáltatási információ lekérésekor: <code>{1}</code></message>
 </messages>

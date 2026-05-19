@@ -127,10 +127,11 @@ double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const std::v
         efficiency equation coefficients; i.e., as computed using the least 
         linear squares method - not as computed by ceres.
 
- Can not be called for `RelEffEqnForm::FramPhysicalModel`, will throw exception 
+ Can not be called for `RelEffEqnForm::FramPhysicalModel`, will throw exception
  - see `RelEffSolution::rel_eff_eqn_uncert(...)`.
- 
- TODO: this function can return NaN values - when the square uncertainty is negative...
+
+ Tiny-negative squared uncertainties (numerical noise from the covariance
+ matrix) are clamped to zero rather than producing NaN.
  */
 double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
                              const std::vector<double> &coefs,
