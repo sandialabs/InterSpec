@@ -2195,6 +2195,7 @@ PeakDef combine_peaks( const std::vector<const PeakDef *> &peaks_to_combine )
   double sum_area_mean = 0.0;
   double sum_area_sigma = 0.0;
   double sum_uncert_sq = 0.0;
+  double sum_means = 0.0, sum_sigmas = 0.0;
 
   for( const PeakDef *peak : peaks_to_combine )
   {
@@ -2209,6 +2210,8 @@ PeakDef combine_peaks( const std::vector<const PeakDef *> &peaks_to_combine )
     sum_area_mean += area * peak->mean();
     sum_area_sigma += area * peak->sigma();
     sum_uncert_sq += uncert * uncert;
+    sum_means += peak->mean();
+    sum_sigmas += peak->sigma();
 
     if( area > dominant->peakArea() )
       dominant = peak;
@@ -2219,10 +2222,19 @@ PeakDef combine_peaks( const std::vector<const PeakDef *> &peaks_to_combine )
   PeakDef combined = *dominant;
 
   // Update the gaussian parameters to the combined values
-  combined.setMean( sum_area_mean / total_area );
-  combined.setSigma( sum_area_sigma / total_area );
   combined.setPeakArea( total_area );
   combined.setPeakAreaUncert( std::sqrt( sum_uncert_sq ) );
+
+  if( total_area > 0.0 )
+  {
+    combined.setMean( sum_area_mean / total_area );
+    combined.setSigma( sum_area_sigma / total_area );
+  }else
+  {
+    combined.setMean( sum_means / peaks_to_combine.size() );
+    combined.setSigma( sum_sigmas / peaks_to_combine.size() );
+  }
+
 
   return combined;
 }//combine_peaks
