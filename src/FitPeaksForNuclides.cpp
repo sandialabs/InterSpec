@@ -2165,9 +2165,12 @@ RoiSignificanceResult compute_roi_chi2_significance(
   result.chi2_reduction = result.chi2_continuum_only - result.chi2_with_peaks;
   result.passes_chi2_test = (result.chi2_reduction >= min_chi2_reduction);
 
-  // Compute peak significance for each peak: peak_area / sqrt(continuum)
-  // For each peak, integrate the continuum between mean ± 1 FWHM
-  // Peak amplitude in this range is ~97.93% of total (for a Gaussian, erf(2.355/sqrt(2)) ≈ 0.9793)
+  // Compute peak significance for each peak: peak_area / sqrt(peak_area + continuum)
+  // This is a Poisson detection significance over ±1 FWHM that includes both the
+  // continuum's noise and the peak's own Poisson noise.  A bare peak/sqrt(continuum)
+  // form is overoptimistic when the peak is comparable to or larger than the
+  // continuum (e.g. high-energy ROIs with very low background), where the peak's
+  // own Poisson noise is the dominant uncertainty contribution.
   const double fwhm_coverage_fraction = 0.9793;
 
   for( const std::shared_ptr<const PeakDef> &peak : peaks_in_roi )
@@ -2182,17 +2185,17 @@ RoiSignificanceResult compute_roi_chi2_significance(
     if( !peak_cont )
       continue;
 
-    // Continuum integral, with a minimum of 1.0 to avoid division issues
-    double cont_integral_raw = 0.0;
-    cont_integral_raw = peak_cont->offset_integral( peak_lower, peak_upper, data, peaks_in_roi );
-    const double continuum_integral = std::max( 1.0, cont_integral_raw );
+    const double cont_integral_raw
+      = peak_cont->offset_integral( peak_lower, peak_upper, data, peaks_in_roi );
+    const double continuum_integral = std::max( 0.0, cont_integral_raw );
 
     // Peak amplitude in the ±1 FWHM range
-    const double peak_amp_in_range = peak->amplitude() * fwhm_coverage_fraction;
+    const double peak_amp_in_range = std::max( 0.0, peak->amplitude() * fwhm_coverage_fraction );
 
-    // Significance = peak_area / sqrt(continuum)
-    const double peak_sig = peak_amp_in_range / std::sqrt( continuum_integral );
-    
+    // Total counts under +/- 1 FWHM (peak + continuum), floor 1.0 to avoid div-by-zero.
+    const double total_in_range = std::max( 1.0, peak_amp_in_range + continuum_integral );
+    const double peak_sig = peak_amp_in_range / std::sqrt( total_in_range );
+
     if( peak_sig > result.max_peak_significance )
       result.max_peak_significance = peak_sig;
   }//for( loop over peaks in ROI )
@@ -3063,6 +3066,70 @@ std::vector<PeakDef> compute_observable_peaks(
       std::cout << "compute_observable_peaks: No overlapping ROIs detected" << std::endl;
   }//if( should_debug_print() )
 #endif
+
+  // Drop orphan 511 keV peaks: an unattributed peak near the annihilation
+  // energy whose ROI contains no source-attributed peak is almost certainly
+  // ambient annihilation in the background and shouldn't be claimed.
+  // Sources whose 511 peak IS attributed (e.g. F-18) and ROIs that also
+  // contain another source-attributed peak (e.g. NORM Bi-214 at 511) are
+  // unaffected.
+  {
+    const double annihilation_energy = 510.9989;
+    const double energy_tolerance = 2.0;
+
+    auto has_source = []( const PeakDef &p ) -> bool {
+      return p.hasSourceGammaAssigned() || p.parentNuclide()
+             || p.xrayElement() || p.reaction();
+    };
+
+    // Identify each ROI's peaks via shared continuum pointer identity.
+    std::map<std::shared_ptr<const PeakContinuum>, std::vector<size_t>> roi_indices;
+    for( size_t i = 0; i < observable_peaks.size(); ++i )
+      roi_indices[ observable_peaks[i].continuum() ].push_back( i );
+
+    std::vector<bool> to_remove( observable_peaks.size(), false );
+    for( const auto &entry : roi_indices )
+    {
+      const std::vector<size_t> &idxs = entry.second;
+
+      bool any_source_in_roi = false;
+      for( size_t i : idxs )
+        any_source_in_roi = any_source_in_roi || has_source( observable_peaks[i] );
+
+      if( any_source_in_roi )
+        continue;  // ROI has at least one attributed peak; keep everything
+
+      for( size_t i : idxs )
+      {
+        const PeakDef &p = observable_peaks[i];
+        if( std::fabs( p.mean() - annihilation_energy ) < energy_tolerance
+            && !has_source(p) )
+        {
+          to_remove[i] = true;
+          if( should_debug_print() )
+          {
+            std::cout << "compute_observable_peaks: dropping orphan 511 peak at "
+                 << p.mean() << " keV (no source in ROI ["
+                 << (p.continuum() ? p.continuum()->lowerEnergy() : 0.0) << ", "
+                 << (p.continuum() ? p.continuum()->upperEnergy() : 0.0) << "])"
+                 << std::endl;
+          }
+        }
+      }
+    }
+
+    if( std::any_of( begin(to_remove), end(to_remove), []( bool b ){ return b; } ) )
+    {
+      std::vector<PeakDef> kept;
+      kept.reserve( observable_peaks.size() );
+      for( size_t i = 0; i < observable_peaks.size(); ++i )
+      {
+        if( !to_remove[i] )
+          kept.push_back( std::move(observable_peaks[i]) );
+      }
+      observable_peaks = std::move(kept);
+    }
+  }
 
   return observable_peaks;
 }//compute_observable_peaks
@@ -5405,6 +5472,22 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
 
     if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
       throw std::runtime_error( "Failed to fit initial RelActCalcManual::RelEffSolution: " + manual_solution.m_error_message );
+
+    // Reject extremely bad fits.  If matched peaks can't be reconciled with any
+    // smooth relative-efficiency curve, the source(s) probably aren't really
+    // present and we should treat this the same as a hard failure so the caller
+    // falls back to `estimate_initial_rois_fallback`.
+    const double final_chi2_dof
+      = manual_solution.m_chi2 / std::max( manual_solution.m_dof, 1 );
+    if( final_chi2_dof > config.initial_manual_rel_eff_max_chi2_dof )
+    {
+      throw std::runtime_error(
+        "Initial RelActCalcManual::RelEffSolution chi2/dof="
+        + std::to_string(final_chi2_dof)
+        + " exceeds threshold "
+        + std::to_string(config.initial_manual_rel_eff_max_chi2_dof)
+        + " - matched peaks are not consistent with the source(s) being present" );
+    }
 
     if( should_debug_print() )
     {

@@ -67,3 +67,8 @@ if( CMAKE_GENERATOR STREQUAL "Xcode" )
     XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
   )
 endif( CMAKE_GENERATOR STREQUAL "Xcode" )
+
+
+add_executable( Eu152BackgroundDebug Eu152BackgroundDebug.cpp )
+target_link_libraries( Eu152BackgroundDebug PRIVATE InterSpecLib )
+target_include_directories( Eu152BackgroundDebug PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" )

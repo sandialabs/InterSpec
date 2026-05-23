@@ -230,6 +230,13 @@ struct PeakFitForNuclideConfig
   // Fields for RelActAuto options configuration - this is only used for optimiziation work - it is supersceeded by `FitSrcPeaksOptions::DoNotVaryEnergyCal
   bool fit_energy_cal = true;
 
+  // Maximum acceptable chi2/dof for the initial RelActCalcManual rel-eff solution
+  // (after retry, if any).  When the matched-peaks fit can't reach this quality the
+  // source(s) are likely not actually present in the spectrum; the manual rel-eff
+  // step is treated as failed and the caller falls back to `estimate_initial_rois_fallback`.
+  // Set to a large value (e.g. 1e6) to effectively disable the cap.
+  double initial_manual_rel_eff_max_chi2_dof = 25.0;
+
   // ROI significance threshold for iterative refinement
   // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
   // The chi2 with peaks must be at least this much lower than chi2 with continuum-only
