@@ -71,6 +71,13 @@ export MACOSX_DEPLOYMENT_TARGET=13.3 # macOS Ventura (2023); required for C++20 
 export MY_WT_PREFIX=$install_directory
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
+# Optional: also build wxWidgets (off by default).  wxWidgets is only needed when
+# building the target/wxWidgets desktop-app form; the local web-server and Electron
+# targets do not require it.  Override by editing this line, or run with:
+#   BUILD_WXWIDGETS=1 ./dep_build_macOS.sh <src> <build> <install>
+BUILD_WXWIDGETS=${BUILD_WXWIDGETS:-0}
+echo "BUILD_WXWIDGETS=${BUILD_WXWIDGETS} (set to 1 to also build wxWidgets)"
+
 
 # Define a function to download a file and check its hash
 download_file() {
@@ -266,7 +273,7 @@ else
   cd build
 
   cmake -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_BUILD_TYPE=Release -DEIGEN_MPL2_ONLY=1 -DEIGEN_BUILD_SHARED_LIBS=OFF -DEIGEN_BUILD_DOC=OFF -DEIGEN_BUILD_TESTING=OFF ..
-  cmake --build . --config Release --target install
+  cmake --build . --config Release --target install -j $(sysctl -n hw.ncpu)
 
   touch "${working_directory}/Eigen.installed"
 fi #if Eigen.installed exists / else
@@ -338,11 +345,78 @@ else
 
   cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_STANDARD=20 -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
   # Build single-threaded to avoid lipo race conditions with universal binary builds
-  cmake --build . --config Release --target install -j1
+  cmake --build . --config Release --target install -j $(sysctl -n hw.ncpu)
 
   touch "${working_directory}/Ceres.installed"
 fi #if Ceres.installed exists / else
 
 cd "${working_directory}"
+
+
+## Build wxWidgets 3.2.1 (optional; needed only by the target/wxWidgets desktop-app form).
+## Matches the version used by target/patches/dep_build_msvc2022.bat so the API surface stays
+## consistent between platforms.
+if [ "${BUILD_WXWIDGETS}" != "1" ]; then
+    echo "Skipping wxWidgets build (set BUILD_WXWIDGETS=1 to enable)."
+elif [ -f "${working_directory}/wxWidgets.installed" ]; then
+    echo "wxWidgets already installed (as indicated by existence of wxWidgets.installed file) - skipping."
+else
+  file_url="https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1/wxWidgets-3.2.1.zip"
+  file_name="wxWidgets-3.2.1.zip"
+  expected_sha256="cc8868c3c8ec4eddaf659a8b81589a3d83126d5afde012350f61031a607a56d8"
+  src_dir="wxWidgets-3.2.1"
+  # The wxWidgets source tree contains its own top-level "build/" directory
+  # (build/cmake/main.cmake, build/bakefiles/version.bkl, ...) so we must not
+  # use that name as our CMake binary directory or we'd clobber required sources.
+  build_dir="wxWidgets-3.2.1-build"
+
+  # The release zip does not contain a top-level directory, so create one and extract into it
+  # (mirrors how target/patches/dep_build_msvc2022.bat lays things out).
+  if [ -d "${src_dir}" ]; then
+    echo "wxWidgets already extracted - not doing again."
+    cd "${src_dir}"
+  else
+    mkdir -p "${src_dir}"
+    cd "${src_dir}"
+    download_file "${file_url}" "${file_name}" "${expected_sha256}"
+    unzip -q "${file_name}"
+
+    # Patch bundled libpng 1.6.x: it #include's the Classic Mac OS <fp.h> when
+    # TARGET_OS_MAC is defined, which fails on modern macOS.  Upstream libpng
+    # dropped this branch in 1.6.40 -- do the equivalent fix in-place.
+    /usr/bin/sed -i '' 's|defined(__SC__) || defined(TARGET_OS_MAC)|defined(__SC__)|' src/png/pngpriv.h
+  fi
+
+  cd "${working_directory}"
+  if [ -d "${build_dir}" ]; then
+    rm -r "${build_dir}"
+    echo "Deleted previous wxWidgets build directory."
+  fi
+
+  mkdir "${build_dir}"
+  cd "${build_dir}"
+
+  # Universal binary, static link, minimal extras.  On macOS wxWidgets' webview backend is WebKit
+  # (system framework); wxUSE_WEBVIEW and wxUSE_STC are needed by target/wxWidgets'
+  # find_package(wxWidgets REQUIRED core base net webview stc).
+  cmake -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" \
+        -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+        -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" \
+        -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" \
+        -DwxBUILD_SHARED=OFF \
+        -DwxBUILD_TESTS=OFF \
+        -DwxBUILD_SAMPLES=OFF \
+        -DwxBUILD_DEMOS=OFF \
+        -DwxUSE_WEBVIEW=ON \
+        -DwxUSE_STC=ON \
+        "${working_directory}/${src_dir}"
+  cmake --build . --config Release --target install -j $(sysctl -n hw.ncpu)
+
+  touch "${working_directory}/wxWidgets.installed"
+fi #if wxWidgets.installed exists / else
+
+cd "${working_directory}"
+
 
 echo "Have successfully installed all libraries to ${install_directory}"
