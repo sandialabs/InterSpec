@@ -821,7 +821,6 @@ const std::vector<DecayParticleModel::RowData> &DecayParticleModel::rowData() co
 
 ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
                                             D3SpectrumDisplayDiv *chart,
-                                            WSuggestionPopup *materialSuggest,
                                             InterSpec *specViewer )
   : WContainerWidget(),
     m_chart( chart ),
@@ -862,7 +861,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_external_results{},
     m_featureMarkerColumn( nullptr ),
     m_detectorDisplay( NULL ),
-    m_materialSuggest( materialSuggest ),
     m_shieldingSelect( NULL ),
     m_particleView( NULL ),
     m_particleModel( NULL ),
@@ -1083,7 +1081,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     }
 
     {
-      auto shieldOwner = std::make_unique<ShieldingSelect>( m_materialSuggest );
+      auto shieldOwner = std::make_unique<ShieldingSelect>();
       m_shieldingSelect = shieldOwner.get();
       m_shieldingSelect->materialEdit()->setPlaceholderText( WString("<{1}>").arg( WString::tr("rpd-shield-mat") ) );
       m_shieldingSelect->materialChanged().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );

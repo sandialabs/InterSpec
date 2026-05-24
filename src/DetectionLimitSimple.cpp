@@ -101,8 +101,7 @@ namespace
 }//namespace
 
 
-DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *materialSuggestion,
-                                InterSpec *viewer )
+DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-simple-mda"),
             (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
@@ -112,7 +111,7 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
 
   rejectWhenEscapePressed( true );
 
-  m_tool = contents()->addNew<DetectionLimitSimple>( materialSuggestion, viewer );
+  m_tool = contents()->addNew<DetectionLimitSimple>( viewer );
   m_tool->setHeight( WLength(100,WLength::Unit::Percentage) );
 
   AuxWindow::addHelpInFooter( footer(), "simple-mda-dialog" );
@@ -178,11 +177,9 @@ DetectionLimitSimple *DetectionLimitSimpleWindow::tool()
 
 
 
-DetectionLimitSimple::DetectionLimitSimple( Wt::WSuggestionPopup *materialSuggestion,
-                                 InterSpec *specViewer )
+DetectionLimitSimple::DetectionLimitSimple( InterSpec *specViewer )
  : WContainerWidget(),
   m_viewer( specViewer ),
-  m_materialSuggest( materialSuggestion ),
   m_spectrum( nullptr ),
   m_peakModel( nullptr ),
   m_resultTxt( nullptr ),

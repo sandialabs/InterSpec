@@ -432,7 +432,6 @@ InterSpec::InterSpec()
     m_energyCalWindow( 0 ),
     m_gammaCountDialog( 0 ),
     m_specFileQueryDialog( 0 ),
-    m_shieldingSuggestion( 0 ),
     m_shieldingSourceFit( 0 ),
     m_shieldingSourceFitWindow( 0 ),
 #if( USE_REL_ACT_TOOL )
@@ -696,8 +695,14 @@ InterSpec::InterSpec()
 
   m_peakInfoDisplay = new PeakInfoDisplay( this, m_spectrum, m_peakModel );
 
-  initMaterialDbAndSuggestions();
-  
+  if( !MaterialDB::initialized() )
+  {
+    const string &err = MaterialDB::init_error();
+    if( !err.empty() )
+      passMessage( WString::fromUTF8( "Error initializing material database: " + err ),
+                   WarningWidget::WarningMsgHigh );
+  }
+
   // Check that the reaction database initialized, before we use it in RefLineDynamic
   if( !ReactionGammaServer::database() && ReactionGammaServer::init_error() )
     throw runtime_error( ReactionGammaServer::init_error() );
@@ -6949,7 +6954,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     assert( !m_referencePhotopeakLinesWindow );
 
     std::unique_ptr<ReferencePhotopeakDisplay> refLines
-      = std::make_unique<ReferencePhotopeakDisplay>( m_spectrum, m_shieldingSuggestion, this );
+      = std::make_unique<ReferencePhotopeakDisplay>( m_spectrum, this );
     m_referencePhotopeakLines = refLines.get();
     setReferenceLineColors( nullptr );
 
@@ -9006,7 +9011,7 @@ DetectionLimitWindow *InterSpec::createDetectionLimitTool()
 {
   if( !m_detectionLimitWindow )
   {
-    m_detectionLimitWindow = AuxWindow::make<DetectionLimitWindow>( this, m_shieldingSuggestion );
+    m_detectionLimitWindow = AuxWindow::make<DetectionLimitWindow>( this );
     m_detectionLimitWindow->finished().connect( this, &InterSpec::handleDetectionLimitWindowClose );
   }//if( !m_detectionLimitWindow )
   
@@ -9062,7 +9067,7 @@ DetectionLimitSimpleWindow *InterSpec::showSimpleMdaWindow()
   if( m_simpleMdaWindow )
     return m_simpleMdaWindow.get();
 
-  m_simpleMdaWindow = AuxWindow::make<DetectionLimitSimpleWindow>( m_shieldingSuggestion, this );
+  m_simpleMdaWindow = AuxWindow::make<DetectionLimitSimpleWindow>( this );
   m_simpleMdaWindow->finished().connect( this, &InterSpec::handleSimpleMdaWindowClose );
 
   return m_simpleMdaWindow.get();
@@ -9259,7 +9264,7 @@ SimpleActivityCalcWindow *InterSpec::showSimpleActivityCalcWindow()
   if( m_simpleActivityCalcWindow )
     return m_simpleActivityCalcWindow.get();
   
-  m_simpleActivityCalcWindow = AuxWindow::make<SimpleActivityCalcWindow>( m_shieldingSuggestion, this );
+  m_simpleActivityCalcWindow = AuxWindow::make<SimpleActivityCalcWindow>( this );
   m_simpleActivityCalcWindow->finished().connect( this, &InterSpec::handleSimpleActivityCalcWindowClose );
   
   return m_simpleActivityCalcWindow.get();
@@ -10426,90 +10431,11 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 
 
 
-void InterSpec::pushMaterialSuggestionsToUsers()
-{
-  if( !m_shieldingSuggestion )
-    throw runtime_error( "pushMaterialSuggestionsToUsers(): you must"
-                        " call initMaterialDbAndSuggestions() first." );
-
-  if( !MaterialDB::initialized() )
-  {
-    const string &err = MaterialDB::init_error();
-    if( !err.empty() )
-    {
-      passMessage( WString::fromUTF8( "Error initializing material database: " + err ),
-                   WarningWidget::WarningMsgHigh );
-    }
-    return;
-  }//if( !MaterialDB::initialized() )
-
-  const std::shared_ptr<const MaterialDB> matDb = MaterialDB::instance();
-  const vector<std::shared_ptr<const Material>> &mats = matDb->materials();
-  for( const std::shared_ptr<const Material> &mat : mats )
-  {
-    const string &name = mat->name;
-    const string &desc = mat->description;
-
-    // Lets filter out things like "PuO2 - X.X% Pu240 Plutonium dioxide", since
-    //  InterSpec doesnt make used of this enrichment anywhere; but we'll leave
-    //  in the material database incase a shielding used it or something in the
-    //  past.
-    const string::size_type name_pos = name.find( "% Pu" );
-    if( name_pos != string::npos )
-      continue;
-
-    const string::size_type desc_pos = desc.find( "% Pu" );
-    if( desc_pos != string::npos )
-      continue;
-
-    m_shieldingSuggestion->addSuggestion( name, name );
-    if( SpecUtils::iequals_ascii( name, desc ) )
-      continue;
-
-    const string::size_type sub_pos = SpecUtils::ifind_substr_ascii( name, desc.c_str() );
-    if( sub_pos == string::npos )
-      m_shieldingSuggestion->addSuggestion( desc, desc );
-  }//for( const shared_ptr<const Material> &mat : mats )
-
-  wApp->triggerUpdate();
-}//void pushMaterialSuggestionsToUsers()
-
-
-
-void InterSpec::initMaterialDbAndSuggestions()
-{
-  if( !m_shieldingSuggestion )
-  {
-    WSuggestionPopup::Options popupOptions;
-    popupOptions.highlightBeginTag  = "<b>";          //Open tag to highlight a match in a suggestion.
-    popupOptions.highlightEndTag    = "</b>";         //Close tag to highlight a match in a suggestion.
-    popupOptions.listSeparator      = '\0';            //(char) When editing a list of values, the separator used for different items.
-    popupOptions.whitespace         = "";       //When editing a value, the whitespace characters ignored before the current value.
-    //popupOptions.wordSeparators     = "-_., ;()";     //To show suggestions based on matches of the edited value with parts of the suggestion.
-    popupOptions.wordStartRegexp = "\\s|^|\\(|\\<";       // Instead of using .wordSeparators, we will use the regex option to start matching at whitespaces, start of line, open-paren, and boundaries of words (probably a bit duplicative).
-    popupOptions.appendReplacedText = "";             //
-
-    // We may want to parent `m_shieldingSuggestion...
-
-    m_shieldingSuggestion = addNew<WSuggestionPopup>( popupOptions );
-
-    m_shieldingSuggestion->addStyleClass("suggestion");
-#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
-    m_shieldingSuggestion->setJavaScriptMember("wtNoReparent", "true");
-#endif
-    m_shieldingSuggestion->setFilterLength( 0 );
-    m_shieldingSuggestion->setMaximumSize( WLength::Auto, WLength(15, WLength::Unit::FontEm) );
-  }//if( !m_shieldingSuggestion )
-
-  pushMaterialSuggestionsToUsers();
-}//void InterSpec::initMaterialDbAndSuggestions()
-
-
 GammaXsWindow *InterSpec::showGammaXsTool()
 {
   if( !m_gammaXsToolWindow )
   {
-    m_gammaXsToolWindow = AuxWindow::make<GammaXsWindow>( m_shieldingSuggestion, this );
+    m_gammaXsToolWindow = AuxWindow::make<GammaXsWindow>( this );
     m_gammaXsToolWindow->finished().connect( this, &InterSpec::deleteGammaXsTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -10569,7 +10495,7 @@ DoseCalcWindow *InterSpec::showDoseTool()
 {
   if( !m_doseCalcWindow )
   {
-    m_doseCalcWindow = AuxWindow::make<DoseCalcWindow>( m_shieldingSuggestion, this );
+    m_doseCalcWindow = AuxWindow::make<DoseCalcWindow>( this );
     m_doseCalcWindow->finished().connect( this, &InterSpec::deleteDoseCalcTool );
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -10638,7 +10564,7 @@ MakeDrfWindow *InterSpec::showMakeDrfWindow()
         item->setDisabled( true );
     }//for( loop over "Tools" menu items )
     
-    m_makeDrfTool = AuxWindow::make<MakeDrfWindow>( this, m_shieldingSuggestion );
+    m_makeDrfTool = AuxWindow::make<MakeDrfWindow>( this );
     m_makeDrfTool->finished().connect( this, [this](){ handleCloseMakeDrfWindow( m_makeDrfTool.get() ); } );
     m_makeDrfTool->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
   }//if( !m_makeDrfTool )
@@ -10991,7 +10917,7 @@ void InterSpec::showGammaLinesWindow()
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();
 
   std::unique_ptr<ReferencePhotopeakDisplay> refLines
-    = std::make_unique<ReferencePhotopeakDisplay>( m_spectrum, m_shieldingSuggestion, this );
+    = std::make_unique<ReferencePhotopeakDisplay>( m_spectrum, this );
   m_referencePhotopeakLines = refLines.get();
   setReferenceLineColors( nullptr );
 
@@ -11076,7 +11002,7 @@ void InterSpec::closeGammaLinesWindow()
   if( m_toolsTabs )
   {
     std::unique_ptr<ReferencePhotopeakDisplay> refLines
-      = std::make_unique<ReferencePhotopeakDisplay>( m_spectrum, m_shieldingSuggestion, this );
+      = std::make_unique<ReferencePhotopeakDisplay>( m_spectrum, this );
     m_referencePhotopeakLines = refLines.get();
     setReferenceLineColors( nullptr );
 
@@ -11196,12 +11122,6 @@ PeakModel *InterSpec::peakModel()
 std::shared_ptr<PeakModel> InterSpec::peakModelShared()
 {
   return m_peakModel;
-}
-
-
-Wt::WSuggestionPopup *InterSpec::shieldingSuggester()
-{
-  return m_shieldingSuggestion;
 }
 
 

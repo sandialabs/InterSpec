@@ -54,6 +54,7 @@ namespace SandiaDecay
 
 class MaterialDB;
 class DetectorDisplay;
+class ShieldMaterialSuggestion;
 
 class GammaXsGui : public Wt::WContainerWidget
 {
@@ -63,8 +64,7 @@ class GammaXsGui : public Wt::WContainerWidget
 public:
   //GammaXsGui(...) assumes `tool` is valid and remains accessible throughout
   //  the life of the GammaXsGui - also assumes no multithread issues with it
-  GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
-              InterSpec *specViewer );
+  GammaXsGui( InterSpec *specViewer );
   virtual ~GammaXsGui();
   
   void updateDetectorCalc();
@@ -107,7 +107,7 @@ protected:
   Wt::WLineEdit *m_energyEdit;
   std::shared_ptr<Wt::WDoubleValidator> m_energyValidator;
   Wt::WLineEdit *m_materialEdit;
-  Wt::WSuggestionPopup *m_materialSuggestion; //not owned by this object
+  ShieldMaterialSuggestion *m_materialSuggestion; //owned by this widget; created in constructor
   Wt::WText *m_effectiveZ;
 
   Wt::WText *m_totalAttenuation;
@@ -158,8 +158,7 @@ public:
 
 protected:
   // Constructor is protected; use AuxWindow::make<GammaXsWindow>() to create.
-  GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion,
-                 InterSpec* viewer );
+  GammaXsWindow( InterSpec* viewer );
 
   
   GammaXsGui *m_tool;

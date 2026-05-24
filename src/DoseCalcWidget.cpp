@@ -218,8 +218,7 @@ namespace
 
 
 
-DoseCalcWindow::DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
-                                InterSpec *viewer )
+DoseCalcWindow::DoseCalcWindow( InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-dose-calc"),
             (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
@@ -227,7 +226,7 @@ DoseCalcWindow::DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
 {
   rejectWhenEscapePressed( true );
 
-  m_dose = contents()->addNew<DoseCalcWidget>( materialSuggestion, viewer );
+  m_dose = contents()->addNew<DoseCalcWidget>( viewer );
   m_dose->setHeight( WLength(100,WLength::Unit::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "dose-dialog" );
@@ -297,11 +296,9 @@ DoseCalcWidget *DoseCalcWindow::tool()
 
 
 
-DoseCalcWidget::DoseCalcWidget( Wt::WSuggestionPopup *materialSuggestion,
-                                 InterSpec *specViewer )
+DoseCalcWidget::DoseCalcWidget( InterSpec *specViewer )
  : WContainerWidget(),
    m_viewer( specViewer ),
-   m_materialSuggest( materialSuggestion ),
    m_enterShieldingSelect( NULL ),
    m_answerShieldingSelect( NULL ),
    m_gammaSource( NULL ),
@@ -729,8 +726,8 @@ void DoseCalcWidget::init()
           shieldingLabel->setInline( false );
         }
 
-        m_enterShieldingSelect = m_enterWidgets[i]->addNew<ShieldingSelect>( m_materialSuggest );
-        m_answerShieldingSelect = m_answerWidgets[i]->addNew<ShieldingSelect>( m_materialSuggest );
+        m_enterShieldingSelect = m_enterWidgets[i]->addNew<ShieldingSelect>();
+        m_answerShieldingSelect = m_answerWidgets[i]->addNew<ShieldingSelect>();
         m_answerShieldingSelect->setSphericalThicknessEditEnabled(false);
         m_answerShieldingSelect->arealDensityEdit()->disable();
         m_enterShieldingSelect->materialModified().connect( this, [this]( ShieldingSelect * ){ updateResult(); } );

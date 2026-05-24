@@ -145,10 +145,8 @@ protected:
 class ReferencePhotopeakDisplay : public Wt::WContainerWidget
 {
 public:
-  ReferencePhotopeakDisplay(
-                        D3SpectrumDisplayDiv *chart,
-                        Wt::WSuggestionPopup *materialSuggest,
-                        InterSpec *specViewer );
+  ReferencePhotopeakDisplay( D3SpectrumDisplayDiv *chart,
+                             InterSpec *specViewer );
   virtual ~ReferencePhotopeakDisplay();
 
   void setFocusToIsotopeEdit();
@@ -500,7 +498,6 @@ protected:
   Wt::WContainerWidget *m_featureMarkerColumn;
   
   DetectorDisplay *m_detectorDisplay;
-  Wt::WSuggestionPopup *m_materialSuggest;  //not owned by this object
   ShieldingSelect *m_shieldingSelect;
 
   Wt::WTreeView *m_particleView;

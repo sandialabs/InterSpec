@@ -65,6 +65,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/ShieldMaterialSuggestion.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -1418,14 +1419,14 @@ void SourceCheckbox::handleFitMassFractionChanged()
 }
 
 
-ShieldingSelect::ShieldingSelect( Wt::WSuggestionPopup *materialSuggest )
+ShieldingSelect::ShieldingSelect()
 : WContainerWidget(),
   m_toggleImage( nullptr ),
   m_shieldSrcDisp( nullptr ),
   m_forFitting( false ),
   m_sourceModel( nullptr ),
   m_geometry( GeometryType::Spherical ),
-  m_materialSuggest( materialSuggest ),
+  m_materialSuggest( nullptr ),
   m_materialEdit( nullptr ),
   m_isGenericMaterial( false ),
   m_materialSummary( nullptr ),
@@ -1462,7 +1463,6 @@ ShieldingSelect::ShieldingSelect( Wt::WSuggestionPopup *materialSuggest )
 
 
 ShieldingSelect::ShieldingSelect( SourceFitModel *sourceModel,
-                                  Wt::WSuggestionPopup *materialSuggest,
                                   const ShieldingSourceDisplay *shieldSource )
   : WContainerWidget(),
     m_toggleImage( nullptr ),
@@ -1470,7 +1470,7 @@ ShieldingSelect::ShieldingSelect( SourceFitModel *sourceModel,
     m_forFitting( (shieldSource != nullptr) ),
     m_sourceModel( sourceModel ),
     m_geometry( GeometryType::Spherical ),
-    m_materialSuggest( materialSuggest ),
+    m_materialSuggest( nullptr ),
     m_materialEdit( nullptr ),
     m_isGenericMaterial( false ),
     m_materialSummary( nullptr ),
@@ -2274,9 +2274,9 @@ void ShieldingSelect::init()
   HelpSystem::attachToolTipOn( m_materialEdit, material_name_tt,
                               showToolTips );
 
-  if( m_materialSuggest )
-    m_materialSuggest->forEdit( m_materialEdit,
-                   PopupTrigger::Editing | PopupTrigger::DropDownIcon );
+  m_materialSuggest = addChild( std::make_unique<ShieldMaterialSuggestion>() );
+  m_materialSuggest->forEdit( m_materialEdit,
+                 PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
   if( m_forFitting )
   {
@@ -2506,37 +2506,8 @@ void ShieldingSelect::init()
 
 ShieldingSelect::~ShieldingSelect()
 {
-  if( m_materialSuggest && m_materialEdit )
-  {
-    // We will double check that m_materialSuggest is still owned by the InterSpec instance.
-    //  If this ShieldingSelect is in a WDialog, it may be destructing after the InterSpec instance
-    //  destructs!  In that case, we shouldnt access `m_materialSuggest`, as its already been
-    //  deleted.
-    InterSpec *interspec = InterSpec::instance();
-    if( interspec )
-    {
-      const vector<WWidget *> &kids = interspec->WContainerWidget::children();
-      // kids.size() is usually just 2 or 3, so this isnt that heavy of an operation.
-      auto pos = std::find( begin(kids), end(kids), static_cast<WWidget *>(m_materialSuggest) );
-      if( pos != end(kids) )
-      {
-        // We get here, for example, when you manually close the Activity/Shielding fit window (or
-        //  remove a shielding from within it).
-        m_materialSuggest->removeEdit( m_materialEdit );
-      }else
-      {
-        // I dont think we get here - but I'll leave the assert in, just to see
-        //  -- we get here sometimes if DoseCalc tool is showing and we clear the session
-        cerr << "~ShieldingSelect(): Suggest not in DOM, not removing edit from suggestion" << endl;
-//        assert( 0 );
-      }
-    }else
-    {
-      // We get here when you close a tab, or the window or whatever (e.g., WApplication is being
-      //  destructed); I think because WApplication::instance() is nullptr, so so is `interspec`
-    }
-  }//if( m_materialSuggest && m_materialEdit )
-  
+  // m_materialSuggest is owned by this widget (added via addChild in init()); Wt's
+  //  parent destruction handles cleanup of the popup and its JS bindings.
 }//~ShieldingSelect()
 
 
@@ -3476,16 +3447,7 @@ std::shared_ptr<const Material> ShieldingSelect::material( const std::string &te
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     std::shared_ptr<const Material> mat = MaterialDB::materialFromChemicalFormula( text, db );
     if( mat && m_materialSuggest )
-    {
-      // Check if this suggestion already exists before adding
-      std::shared_ptr<Wt::WAbstractItemModel> mdl = m_materialSuggest->model();
-      const Wt::WString suggName = Wt::WString::fromUTF8( mat->name );
-      bool alreadyHave = false;
-      for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
-        alreadyHave = (Wt::asString( mdl->data( row, 0 ) ) == suggName);
-      if( !alreadyHave )
-        m_materialSuggest->addSuggestion( mat->name, mat->name );
-    }
+      m_materialSuggest->addFormulaMaterial( mat->name );
     if( mat )
       return mat;
   }catch(...)
@@ -5477,7 +5439,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
   {
     const string uri = encodeStateToUrl();
     
-    ShieldingSelect test( m_sourceModel, m_materialSuggest, m_shieldSrcDisp  );
+    ShieldingSelect test( m_sourceModel, m_shieldSrcDisp  );
     test.handleAppUrl( uri );
     testShieldingSelectPartiallySameAsOrig( test );
   }catch( std::exception &e )
@@ -5494,7 +5456,7 @@ void ShieldingSelect::serialize( rapidxml::xml_node<char> *parent_node ) const
    //  on them being inserted into m_shieldSrcDisp
   try
   {
-    ShieldingSelect test( m_sourceModel, m_materialSuggest, m_shieldSrcDisp );
+    ShieldingSelect test( m_sourceModel, m_shieldSrcDisp );
     test.deSerialize(added_node);
     testShieldingSelectPartiallySameAsOrig( test );
   }catch( std::exception &e )

@@ -933,8 +933,7 @@ public:
 
 
 
-DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
-                                                     WSuggestionPopup *materialSuggest )
+DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer )
 : AuxWindow( WString::tr("dlt-window-title"),
   (AuxWindowProperties::TabletNotFullScreen
    | AuxWindowProperties::SetCloseable
@@ -946,7 +945,7 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
 
   WContainerWidget *content = contents();
   content->addStyleClass( "DetectionLimitWindowContent" );
-  m_tool = content->addNew<DetectionLimitTool>( viewer, materialSuggest );
+  m_tool = content->addNew<DetectionLimitTool>( viewer );
   
   AuxWindow::addHelpInFooter( footer(), "detection-confidence-tool" );
   
@@ -983,8 +982,7 @@ DetectionLimitTool *DetectionLimitWindow::tool()
 
 
 
-DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
-                                                  Wt::WSuggestionPopup *materialSuggest )
+DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   : WContainerWidget(),
     m_interspec( viewer ),
     m_needsUpdate( true ),
@@ -1001,7 +999,6 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_distanceLabel( nullptr ),
     m_distanceForActivityLimit( nullptr ),
     m_activityForDistanceLimit( nullptr ),
-    m_materialSuggest( materialSuggest ),
     m_shieldingSelect( nullptr ),
     m_minRelIntensity( nullptr ),
     m_attenuateForAir( nullptr ),
@@ -1178,7 +1175,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   viewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){ handleDrfSelected( drf ); } );
 
 
-  m_shieldingSelect = inputTable->addNew<ShieldingSelect>( m_materialSuggest );
+  m_shieldingSelect = inputTable->addNew<ShieldingSelect>();
   m_shieldingSelect->addStyleClass( "GridThirdCol GridSecondRow GridSpanTwoRows" );
   m_shieldingSelect->materialEdit()->setPlaceholderText( WString("<{1}>").arg( WString::tr("dlt-shield-empty-text") ) );
 

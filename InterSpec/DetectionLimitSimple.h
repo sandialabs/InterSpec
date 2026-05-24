@@ -82,8 +82,7 @@ public:
 
 protected:
   // Constructor is protected; use AuxWindow::make<DetectionLimitSimpleWindow>() to create.
-  DetectionLimitSimpleWindow( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec *viewer );
+  DetectionLimitSimpleWindow( InterSpec *viewer );
 
   DetectionLimitSimple *m_tool;
 };//class DetectionLimitSimple
@@ -95,8 +94,7 @@ class DetectionLimitSimple : public Wt::WContainerWidget
 {
 public:
   
-  DetectionLimitSimple( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec *specViewer );
+  DetectionLimitSimple( InterSpec *specViewer );
   
   
   virtual ~DetectionLimitSimple();
@@ -199,7 +197,6 @@ protected:
   
   
   InterSpec *m_viewer;
-  Wt::WSuggestionPopup *m_materialSuggest;
   // ShieldingSelect *m_enterShieldingSelect;
   
   Wt::WStackedWidget *m_chartErrMsgStack;

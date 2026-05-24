@@ -44,6 +44,7 @@
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/RelEffShieldWidget.h"
+#include "InterSpec/ShieldMaterialSuggestion.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 using namespace Wt;
@@ -81,9 +82,8 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type )
 
   m_materialEdit = m_materialFrame->addNew<Wt::WLineEdit>();
   m_materialEdit->addStyleClass("GridSecondCol GridFirstRow");
-  m_materialSuggest = interspec->shieldingSuggester();
-  if( m_materialSuggest )
-    m_materialSuggest->forEdit( m_materialEdit, PopupTrigger::Editing | PopupTrigger::DropDownIcon );
+  m_materialSuggest = addChild( std::make_unique<ShieldMaterialSuggestion>() );
+  m_materialSuggest->forEdit( m_materialEdit, PopupTrigger::Editing | PopupTrigger::DropDownIcon );
   m_materialEdit->changed().connect( this, &RelEffShieldWidget::materialUpdated );
   m_materialEdit->enterPressed().connect( this, &RelEffShieldWidget::materialUpdated );
 
@@ -153,13 +153,8 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type )
 
 RelEffShieldWidget::~RelEffShieldWidget()
 {
-  InterSpec *interspec = InterSpec::instance();
-  if( !interspec )
-    return;
-    
-  // Check that m_materialSuggest is still the active suggester before calling removeEdit.
-  if( interspec->shieldingSuggester() == m_materialSuggest )
-    m_materialSuggest->removeEdit( m_materialEdit );
+  // m_materialSuggest is owned by this widget (added via addChild in the
+  //  constructor); Wt's parent destruction handles cleanup.
 }//~RelEffShieldWidget()
 
 
@@ -196,26 +191,11 @@ std::shared_ptr<const Material> RelEffShieldWidget::material( const std::string 
     //material wasnt in the database
   }
 
-  //See if 'text' is a chemical formula, if so add it to possible suggestions
+  //See if 'text' is a chemical formula
   try
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     std::shared_ptr<const Material> mat = MaterialDB::materialFromChemicalFormula( text, db );
-
-    // Update the material suggestions widget, if we are in an InterSpec
-    InterSpec *interspec = InterSpec::instance();
-    Wt::WSuggestionPopup *suggester = interspec ? interspec->shieldingSuggester() : nullptr;
-    if( suggester )
-    {
-      // Check if this suggestion already exists before adding
-      Wt::WAbstractItemModel *mdl = suggester->model().get();
-      const Wt::WString suggName = Wt::WString::fromUTF8( mat->name );
-      bool alreadyHave = false;
-      for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
-        alreadyHave = (Wt::asString( mdl->data( row, 0 ) ) == suggName);
-      if( !alreadyHave )
-        suggester->addSuggestion( mat->name, mat->name );
-    }
     return mat;
   }catch(...)
   {

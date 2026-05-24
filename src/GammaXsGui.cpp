@@ -46,6 +46,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/ShieldMaterialSuggestion.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
@@ -65,13 +66,12 @@ using namespace Wt;
 using namespace std;
 
 
-GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
-                        InterSpec* viewer )
+GammaXsGui::GammaXsGui( InterSpec* viewer )
   : WContainerWidget(),
     m_energyEdit( nullptr ),
     m_energyValidator( nullptr ),
     m_materialEdit( nullptr ),
-    m_materialSuggestion( materialSuggestion ),
+    m_materialSuggestion( nullptr ),
     m_effectiveZ( nullptr ),
     m_totalAttenuation( nullptr ),
     m_compton( nullptr ),
@@ -155,6 +155,7 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
     m_layout->addWidget( std::move(edit), row, 1, 1, 2 );
   }
   HelpSystem::attachToolTipOn( {matLabel, m_materialEdit}, WString::tr("gxsg-tt-material"), showToolTips );
+  m_materialSuggestion = addChild( std::make_unique<ShieldMaterialSuggestion>() );
   m_materialSuggestion->forEdit( m_materialEdit,
                   PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
@@ -414,7 +415,8 @@ GammaXsGui::GammaXsGui( Wt::WSuggestionPopup *materialSuggestion,
 
 GammaXsGui::~GammaXsGui()
 {
-  m_materialSuggestion->removeEdit( m_materialEdit );
+  // m_materialSuggestion is owned by this widget (added via addChild); Wt's
+  //  parent destruction handles cleanup of the popup and its JS bindings.
 }//~GammaXsGui()
 
 
@@ -530,15 +532,8 @@ vector<pair<const SandiaDecay::Element *, float> > GammaXsGui::parseMaterial()
     try
     {
       material = MaterialDB::materialFromChemicalFormula( text, db );
-
-      // Check if this suggestion already exists before adding
-      std::shared_ptr<Wt::WAbstractItemModel> mdl = m_materialSuggestion->model();
-      const Wt::WString suggName = Wt::WString::fromUTF8( material->name );
-      bool alreadyHave = false;
-      for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
-        alreadyHave = (Wt::asString( mdl->data( row, 0 ) ) == suggName);
-      if( !alreadyHave )
-        m_materialSuggestion->addSuggestion( material->name, material->name );
+      if( material )
+        m_materialSuggestion->addFormulaMaterial( material->name );
     }catch(...){}
   }//if( !material )
 
@@ -894,8 +889,7 @@ void GammaXsGui::checkAndAddUndoRedo()
 }//void checkAndAddUndoRedo();
 
 
-GammaXsWindow::GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion ,
-                              InterSpec* viewer)
+GammaXsWindow::GammaXsWindow( InterSpec* viewer )
   : AuxWindow( WString::tr("window-title-xs-calc"),
               (AuxWindowProperties::PhoneNotFullScreen
                | AuxWindowProperties::SetCloseable
@@ -910,7 +904,7 @@ GammaXsWindow::GammaXsWindow( Wt::WSuggestionPopup *materialSuggestion ,
 
   contents()->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
 
-  m_tool = contents()->addNew<GammaXsGui>( materialSuggestion, viewer );
+  m_tool = contents()->addNew<GammaXsGui>( viewer );
   
   AuxWindow::addHelpInFooter( footer(), "gamma-xs-dialog" );
   

@@ -700,17 +700,6 @@ public:
   void showNuclideSearchWindow();
   
   
-  /** Initializes `m_shieldingSuggestion` and populates it with material names
-   from the MaterialDB singleton.
-   */
-  void initMaterialDbAndSuggestions();
-
-  /** Fills `m_shieldingSuggestion` with material names from the MaterialDB singleton,
-   and pushes the update to the user.
-   Should be called from the application event loop.
-   */
-  void pushMaterialSuggestionsToUsers();
-  
   GammaXsWindow *showGammaXsTool();
   void deleteGammaXsTool();
   
@@ -760,13 +749,6 @@ public:
   PeakModel *peakModel();
   std::shared_ptr<PeakModel> peakModelShared();
 
-  /** The suggestion pop-up widget for shielding names; used globally for all shielding name inputs
-   so that there is not duplicate copies of the widget in the DOM.
-
-   Object will be alive as long as *this.
-   */
-  Wt::WSuggestionPopup *shieldingSuggester();
-  
   /** The RefLineDynamic class. */
   RefLineDynamic *refLineDynamic();
   
@@ -1462,7 +1444,6 @@ protected:
   Wt::Core::observing_ptr<GammaCountDialog> m_gammaCountDialog;
   Wt::Core::observing_ptr<AuxWindow> m_specFileQueryDialog;
 
-  Wt::WSuggestionPopup   *m_shieldingSuggestion;
   Wt::Core::observing_ptr<ShieldingSourceDisplay> m_shieldingSourceFit;
   Wt::Core::observing_ptr<AuxWindow> m_shieldingSourceFitWindow;
   

@@ -139,8 +139,7 @@ class MakeDrfSrcDef : public Wt::WContainerWidget
 {
 public:
   MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
-                 const boost::posix_time::ptime &measDate,
-                 Wt::WSuggestionPopup *materialSuggest );
+                 const boost::posix_time::ptime &measDate );
   
   virtual ~MakeDrfSrcDef();
   
@@ -294,11 +293,7 @@ protected:
   /** The name of the nuclide this source represents. */
   const SandiaDecay::Nuclide *m_nuclide;
   
-  /** The material suggestion widget shared everywhere within InterSpec.
-      Not owned by this object.
-   */
-  Wt::WSuggestionPopup *m_materialSuggest;
-  
+
   /** Display of the nuclide. */
   Wt::WText *m_nuclideLabel;
   

@@ -161,7 +161,7 @@ WT_DECLARE_WT_MEMBER
   if( maxz > idZ )
   { if( idEl ) idEl.style.zIndex = maxz+1; }
   document.querySelectorAll('.window-controls-container').forEach(function(e){ e.style.zIndex = maxz+1; }); //for wxWidgets and Electron builds
-  document.querySelectorAll('.suggestion').forEach(function(e){ e.style.zIndex = maxz+2; }); //This is for InterSpec::m_shieldingSuggestion
+  document.querySelectorAll('.suggestion').forEach(function(e){ e.style.zIndex = maxz+2; }); //For any ShieldMaterialSuggestion popups
 }
 );
 

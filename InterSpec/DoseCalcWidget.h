@@ -73,8 +73,7 @@ public:
 
 protected:
   // Constructor is protected; use AuxWindow::make<DoseCalcWindow>() to create.
-  DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec* viewer );
+  DoseCalcWindow( InterSpec* viewer );
 
   DoseCalcWidget *m_dose;
 };//class DoseCalcWindow
@@ -90,9 +89,8 @@ protected:
 class DoseCalcWidget : public Wt::WContainerWidget
 {
 public:
-  
-  DoseCalcWidget( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec *specViewer );
+
+  DoseCalcWidget( InterSpec *specViewer );
   
   
   virtual ~DoseCalcWidget();
@@ -151,7 +149,6 @@ protected:
   std::unique_ptr<GadrasShieldScatter> m_scatter;
   
   InterSpec *m_viewer;
-  Wt::WSuggestionPopup *m_materialSuggest;
   ShieldingSelect *m_enterShieldingSelect;
   ShieldingSelect *m_answerShieldingSelect;
 

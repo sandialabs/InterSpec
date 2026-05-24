@@ -2583,7 +2583,6 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
   try
   {
     PeakModel *peakModel = viewer->peakModel();
-    WSuggestionPopup *shieldSuggest = viewer->shieldingSuggester();
 
     window = AuxWindow::make( WString::tr("window-title-act-shield-fit"),
                            (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
@@ -2596,7 +2595,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     }
 
     window->contents()->setOffsets(WLength(0,WLength::Unit::Pixel));
-    disp = window->stretcher()->addWidget( std::make_unique<ShieldingSourceDisplay>( peakModel, viewer, shieldSuggest ), 0, 0 );
+    disp = window->stretcher()->addWidget( std::make_unique<ShieldingSourceDisplay>( peakModel, viewer ), 0, 0 );
     window->stretcher()->setContentsMargins(0,0,0,0);
   //    window->footer()->resize(WLength::Auto, WLength(50.0));
       
@@ -2715,8 +2714,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
 
 
 ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
-                                                InterSpec *specViewer,
-                                                WSuggestionPopup *matSuggest )
+                                                InterSpec *specViewer )
   : WContainerWidget(),
     m_chi2ChartNeedsUpdating( true ),
     m_width( 0 ),
@@ -2739,7 +2737,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
 #if( USE_DB_TO_STORE_SPECTRA )
     m_saveAsNewModelInDb( nullptr ),
 #endif
-    m_materialSuggest( matSuggest ),
     m_shieldingSelects( nullptr ),
     m_geometryLabel( nullptr ),
     m_prevGeometry( GammaInteractionCalc::GeometryType::Spherical ),
@@ -7854,7 +7851,7 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
   
   m_modifiedThisForeground = true;
   
-  ShieldingSelect *select = new ShieldingSelect( m_sourceModel, m_materialSuggest, this );
+  ShieldingSelect *select = new ShieldingSelect( m_sourceModel, this );
 
   if( before && m_shieldingSelects->indexOf(before) >= 0 )
     m_shieldingSelects->insertBefore( std::unique_ptr<WWidget>(select), before );

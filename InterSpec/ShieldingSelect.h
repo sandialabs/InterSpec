@@ -76,6 +76,7 @@ class SourceFitModel;
 class TraceSrcDisplay;
 class NativeFloatSpinBox;
 class ShieldingSourceDisplay;
+class ShieldMaterialSuggestion;
 
 namespace GammaInteractionCalc
 {
@@ -136,17 +137,13 @@ public:
   /** ShieldingSelect constructor for use when you arent fitting material thickness or AN/AD - e.g., everywhere except in
    ShieldingSourceDisplay.
    */
-  ShieldingSelect( Wt::WSuggestionPopup *materialSuggest );
+  ShieldingSelect();
 
   //ShieldingSelect constructor: if forFitting==true, then the checkboxes
   //  that tell if a quantity should be fit for, are constructed.  if
   //  forFitting==false, then any calls; also if true then cursor focus will
   //  to the material edit
-  //
-  //  If materialSuggest does not have an object name, one will be assigned to
-  //  it, to allow safe removing of the suggest from the edit in the destructor.
   ShieldingSelect( SourceFitModel *sourceModel,
-                   Wt::WSuggestionPopup *materialSuggest,
                    const ShieldingSourceDisplay *shieldSource );
   
   virtual ~ShieldingSelect();
@@ -689,7 +686,7 @@ protected:
   
   GammaInteractionCalc::GeometryType m_geometry;
 
-  Wt::WSuggestionPopup *m_materialSuggest;  //Not owned by this object
+  ShieldMaterialSuggestion *m_materialSuggest;  //Owned by this widget; created in constructor.
   
   Wt::WLineEdit *m_materialEdit;
   bool m_isGenericMaterial;

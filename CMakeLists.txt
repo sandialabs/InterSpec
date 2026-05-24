@@ -261,6 +261,7 @@ set(sources
     src/ShieldingSourceDiagram.cpp
     src/ShieldingSourceFitCalc.cpp
     src/ShieldingSelect.cpp
+    src/ShieldMaterialSuggestion.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
     src/ReferenceLinePredef.cpp
@@ -387,6 +388,7 @@ set(headers
     InterSpec/ShieldingSourceDiagram.h
     InterSpec/ShieldingSourceFitCalc.h
     InterSpec/ShieldingSelect.h
+    InterSpec/ShieldMaterialSuggestion.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
     InterSpec/ReferenceLinePredef.h

@@ -66,8 +66,7 @@ public:
 
 protected:
   // Constructor is protected; use AuxWindow::make<MakeDrfWindow>() to create.
-  MakeDrfWindow( InterSpec *viewer,
-                Wt::WSuggestionPopup *materialSuggest );
+  MakeDrfWindow( InterSpec *viewer );
 
   MakeDrf *m_tool;
 };//class MakeDrfWindow
@@ -76,8 +75,7 @@ protected:
 class MakeDrf : public Wt::WContainerWidget
 {
 public:
-  MakeDrf( InterSpec *viewer,
-           Wt::WSuggestionPopup *materialSuggest );
+  MakeDrf( InterSpec *viewer );
   
   virtual ~MakeDrf();
   
@@ -172,7 +170,6 @@ protected:
 
   
   InterSpec *m_interspec;
-  Wt::WSuggestionPopup *m_materialSuggest;
   
   Wt::Signal<bool> m_intrinsicEfficiencyIsValid;
   

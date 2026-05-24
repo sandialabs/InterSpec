@@ -27,6 +27,7 @@ struct Material;
 class MaterialDB;
 class SwitchCheckbox;
 class NativeFloatSpinBox;
+class ShieldMaterialSuggestion;
 
 namespace rapidxml
 {
@@ -123,7 +124,7 @@ private:
   Wt::WStackedWidget *m_stackedWidget;
   Wt::WContainerWidget *m_materialFrame;
   Wt::WLineEdit *m_materialEdit;
-  Wt::WSuggestionPopup *m_materialSuggest;
+  ShieldMaterialSuggestion *m_materialSuggest;
   Wt::WLineEdit *m_thicknessEdit;
   Wt::WCheckBox *m_fitThickness;
   Wt::WContainerWidget *m_parametersFrame;

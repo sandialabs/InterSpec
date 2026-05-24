@@ -136,8 +136,7 @@ public:
 
 protected:
   // Constructor is protected; use AuxWindow::make<DetectionLimitWindow>() to create.
-  DetectionLimitWindow( InterSpec *viewer,
-                             Wt::WSuggestionPopup *materialSuggest );
+  DetectionLimitWindow( InterSpec *viewer );
 
   DetectionLimitTool *m_tool;
 };//class DetectionLimitWindow
@@ -154,8 +153,7 @@ public:
   };
   
 public:
-  DetectionLimitTool( InterSpec *viewer,
-                          Wt::WSuggestionPopup *materialSuggest );
+  DetectionLimitTool( InterSpec *viewer );
   
   virtual ~DetectionLimitTool();
   
@@ -380,7 +378,6 @@ protected:
   
   Wt::WLineEdit *m_activityForDistanceLimit;
   
-  Wt::WSuggestionPopup *m_materialSuggest;  //not owned by this object
   ShieldingSelect *m_shieldingSelect;
   
   NativeFloatSpinBox *m_minRelIntensity;

@@ -328,8 +328,7 @@ class ShieldingSourceDisplay : public Wt::WContainerWidget
 {
 public:
   ShieldingSourceDisplay( PeakModel *peakModel,
-                          InterSpec *specViewer,
-                          Wt::WSuggestionPopup *materialSuggest );
+                          InterSpec *specViewer );
   
   /** Creates a AuxWindow with a ShieldingSourceDisplay in it.
    
@@ -771,8 +770,6 @@ protected:
 #endif
   
   Wt::Dbo::ptr<ShieldingSourceModel> m_modelInDb;
-  
-  Wt::WSuggestionPopup *m_materialSuggest;
 
   //m_shieldingSelects: contains objects of class ShieldingSelect
   Wt::WContainerWidget *m_shieldingSelects;

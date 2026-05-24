@@ -5382,9 +5382,7 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
   {
     if( !m_photopeak_widget )
     {
-      Wt::WSuggestionPopup *materialSuggest = nullptr;
-      m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, materialSuggest,
-                                                              m_interspec ) );
+      m_photopeak_widget.reset( new ReferencePhotopeakDisplay( m_spectrum, m_interspec ) );
       
       // We need to set peaks getting assigned ref. line color, or else our call to
       //  #setColorsForSpecificSources will be useless.

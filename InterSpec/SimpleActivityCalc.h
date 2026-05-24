@@ -161,8 +161,7 @@ public:
 
 protected:
   // Constructor is protected; use AuxWindow::make<SimpleActivityCalcWindow>() to create.
-  SimpleActivityCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec* viewer );
+  SimpleActivityCalcWindow( InterSpec* viewer );
 
   SimpleActivityCalc *m_tool;
 };
@@ -176,8 +175,7 @@ class SimpleActivityCalc : public Wt::WContainerWidget
 {
 public:
   
-  SimpleActivityCalc( Wt::WSuggestionPopup *materialSuggestion,
-                  InterSpec *specViewer );
+  SimpleActivityCalc( InterSpec *specViewer );
   
   virtual ~SimpleActivityCalc();
   
@@ -246,7 +244,6 @@ protected:
   bool m_haveRendered;
   
   InterSpec *m_viewer;
-  Wt::WSuggestionPopup *m_materialSuggest;
   
   Wt::WComboBox *m_peakSelect;
   Wt::WText *m_nuclideInfo;

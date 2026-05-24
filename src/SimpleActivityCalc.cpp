@@ -622,8 +622,7 @@ void SimpleActivityCalcState::equalEnough( const SimpleActivityCalcState &lhs, c
 }//void SimpleActivityCalcState::equalEnough( const SimpleActivityCalcState &lhs, const SimpleActivityCalcState &rhs )
 #endif
 
-SimpleActivityCalcWindow::SimpleActivityCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
-                                                  InterSpec* viewer )
+SimpleActivityCalcWindow::SimpleActivityCalcWindow( InterSpec* viewer )
 : AuxWindow( WString::tr("simple-activity-calc-title"),
             (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
@@ -632,7 +631,7 @@ SimpleActivityCalcWindow::SimpleActivityCalcWindow( Wt::WSuggestionPopup *materi
 {
   setModal( false );
 
-  m_tool = contents()->addNew<SimpleActivityCalc>( materialSuggestion, viewer );
+  m_tool = contents()->addNew<SimpleActivityCalc>( viewer );
 
   AuxWindow::addHelpInFooter( footer(), "simple-activity-calc" );
 
@@ -686,13 +685,11 @@ SimpleActivityCalc *SimpleActivityCalcWindow::tool()
   return m_tool;
 }
 
-SimpleActivityCalc::SimpleActivityCalc( Wt::WSuggestionPopup *materialSuggestion,
-                                      InterSpec *specViewer )
+SimpleActivityCalc::SimpleActivityCalc( InterSpec *specViewer )
 : WContainerWidget(),
   m_renderFlags(),
   m_haveRendered( false ),
   m_viewer( specViewer ),
-  m_materialSuggest( materialSuggestion ),
   m_peakSelect( nullptr ),
   m_nuclideInfo( nullptr ),
   m_ageEdit( nullptr ),
@@ -776,7 +773,7 @@ void SimpleActivityCalc::init()
   shieldingRow->addStyleClass( "row" );
   WLabel *shieldingLabel = shieldingRow->addNew<WLabel>( WString::tr("sac-shielding-label") );
   shieldingLabel->addStyleClass( "label" );
-  m_shieldingSelect = shieldingRow->addNew<ShieldingSelect>( m_materialSuggest );
+  m_shieldingSelect = shieldingRow->addNew<ShieldingSelect>();
   //m_shieldingSelect->addStyleClass( "input" );
   m_shieldingSelect->materialChanged().connect( this, &SimpleActivityCalc::handleShieldingChanged );
   m_shieldingSelect->materialModified().connect( this, &SimpleActivityCalc::handleShieldingChanged );

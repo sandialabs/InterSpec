@@ -328,12 +328,10 @@ std::vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_all_libs()
 
 
 MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
-              const boost::posix_time::ptime &measDate,
-              Wt::WSuggestionPopup *materialSuggest )
+              const boost::posix_time::ptime &measDate )
 : WContainerWidget(),
   m_table( nullptr ),
   m_nuclide( nuc ),
-  m_materialSuggest( materialSuggest ),
   m_nuclideLabel( nullptr ),
   m_distanceLabel( nullptr ),
   m_distanceEdit( nullptr ),
@@ -676,7 +674,7 @@ void MakeDrfSrcDef::create()
   cell = m_table->elementAt(sm_shield_material_row,0);
   cell->setColumnSpan( 2 );
   
-  m_shieldingSelect = cell->addNew<ShieldingSelect>( m_materialSuggest );
+  m_shieldingSelect = cell->addNew<ShieldingSelect>();
   m_shieldingSelect->materialModified().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
   m_shieldingSelect->materialChanged().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
   m_shieldingSelect->addingIsotopeAsSource().connect( this, &MakeDrfSrcDef::handleUserChangedShielding );
