@@ -53,8 +53,17 @@ prepare_wt_resources() {
 
   echo "==> Fetching Wt ${WT_TAG} source for resources directory..."
   mkdir -p "${wt_cache}"
-  git clone --depth=1 --branch "${WT_TAG}" \
-    https://github.com/emweb/wt.git "${wt_cache}/wt-src" 2>/dev/null || true
+  if ! git clone --depth=1 --branch "${WT_TAG}" \
+      https://github.com/emweb/wt.git "${wt_cache}/wt-src"; then
+    echo "ERROR: git clone of Wt ${WT_TAG} failed -- check network/proxy configuration." >&2
+    rm -rf "${wt_cache}/wt-src"
+    exit 1
+  fi
+  if [ ! -d "${wt_cache}/wt-src/resources" ]; then
+    echo "ERROR: Wt clone succeeded but resources/ is missing at ${wt_cache}/wt-src" >&2
+    rm -rf "${wt_cache}/wt-src"
+    exit 1
+  fi
   cp -r "${wt_cache}/wt-src/resources" "${wt_cache}/resources"
   rm -rf "${wt_cache}/wt-src"
   echo "==> Wt resources cached at ${wt_cache}/resources"

@@ -39,12 +39,9 @@
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/WarningWidget.h"
-
-#if( BUILD_AS_WX_WIDGETS_APP || BUILD_AS_ELECTRON_APP )
-#include "InterSpec/InterSpecApp.h"
-#endif
 
 
 using namespace std;
@@ -754,6 +751,18 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
 
   const bool isPhone = viewer ? viewer->isPhone() : false;
   const bool isTablet = viewer ? viewer->isTablet() : false;
+
+  // On any touch device (phones and tablets, including a tablet running with the "Desktop
+  // Interface" preference enabled), suppress Wt's default WDialog behavior of focusing the
+  // first focusable widget on render.  When that first widget is a text input -- which is
+  // the case for many tool dialogs (Peak Editor, Flux Tool, etc.) -- the on-screen keyboard
+  // pops up immediately and covers half the dialog, which is a poor UX.  On desktop the
+  // initial focus is helpful (you can start typing right away), so leave the default there.
+  // We use InterSpecApp::isMobile() (user-agent based) rather than viewer->isMobile() so
+  // this fix still applies on tablets where TabletUseDesktopMenus is on.
+  InterSpecApp * const app = dynamic_cast<InterSpecApp *>( wApp );
+  if( app && app->isMobile() )
+    setAutoFocus( false );
 
   const bool isPhoneNotFullScreen = properties.testFlag(AuxWindowProperties::PhoneNotFullScreen);
   const bool isTabletNotFullScreen = properties.testFlag(AuxWindowProperties::TabletNotFullScreen);

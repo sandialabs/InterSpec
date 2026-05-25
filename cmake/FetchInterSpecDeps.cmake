@@ -226,8 +226,12 @@ FetchContent_MakeAvailable( eigen )
 #endif()
   
   # For Android and iOS, we need to force the path information for Eigen, for some reason.
+  # Eigen's FetchContent build writes Eigen3Config.cmake directly into ${eigen_BINARY_DIR}
+  # (not into share/eigen3/cmake/), so point Eigen3_DIR there.  CMAKE_PREFIX_PATH is also
+  # set so any downstream find_package(Eigen3 ...) succeeds even if it ignores Eigen3_DIR.
 set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
-set( Eigen3_DIR "${eigen_BINARY_DIR}/share/eigen3/cmake/" CACHE PATH "Path to Eigen3Config.cmake" )  #${eigen_SOURCE_DIR}
+set( Eigen3_DIR "${eigen_BINARY_DIR}" CACHE PATH "Path to Eigen3Config.cmake" FORCE )
+list( APPEND CMAKE_PREFIX_PATH "${eigen_BINARY_DIR}" )
 
   # Set some Google Ceres options; both to allow compiling without further dependencies, and
   #  avoid some things we dont need

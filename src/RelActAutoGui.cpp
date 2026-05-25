@@ -105,11 +105,6 @@
 using namespace Wt;
 using namespace std;
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 namespace
 {
   /** Helper function to format numeric values consistently for localization.
@@ -4847,12 +4842,6 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   btn->setLinkTarget( Wt::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
 
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  btn->clicked().connect( std::bind([this](){
-    android_download_workaround( m_html_download_rsc, "isotopics_by_nuclide.html");
-  }) );
-#endif //ANDROID
 #endif
 
   btn->setText( WString::tr("raag-html-report") );
@@ -4872,13 +4861,6 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   btn->setLink( WLink( m_xml_download_rsc ) );
   btn->setLinkTarget( Wt::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
-  
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  btn->clicked().connect( std::bind([this](){
-    android_download_workaround( m_xml_download_rsc, "isotopics_by_nuclide_config.html");
-  }) );
-#endif //ANDROID
   
 #endif
 

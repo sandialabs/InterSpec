@@ -47,11 +47,6 @@
 using namespace std;
 using namespace Wt;
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 namespace
 {
 
@@ -164,12 +159,6 @@ public:
     m_download->setLinkTarget( Wt::TargetNewWindow ); //TargetDownload
     m_download->setStyleClass( "LinkBtn DownloadBtn" );
     
-#if( ANDROID )
-    // Using hacked saving to temporary file in Android, instead of via network download of file.
-    m_download->clicked().connect( std::bind([this](){
-      android_download_workaround(m_resource, "image_from_spec_file");
-    }) );
-#endif //ANDROID
 #endif
     
     m_download->setToolTip( WString::tr("smmd-tt-export-image-file"), Wt::PlainText );

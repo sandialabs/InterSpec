@@ -76,11 +76,6 @@ using namespace Wt;
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 namespace
 {
   const char *productname( const SandiaDecay::ProductType &type )
@@ -300,12 +295,6 @@ DecayChainChart::DecayChainChart( WContainerWidget *parent  )
   csvButton->setLinkTarget( Wt::TargetNewWindow );
   csvButton->setStyleClass( "LinkBtn DownloadBtn DecayChainDnldBtn" );
   
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  csvButton->clicked().connect( std::bind([csv](){
-    android_download_workaround(csv, "decay_chain.html");
-  }) );
-#endif //ANDROID
 #endif
   
   csvButton->setText( "HTML" );
