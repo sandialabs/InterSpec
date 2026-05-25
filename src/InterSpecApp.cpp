@@ -509,6 +509,7 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
+    wApp->useStyleSheet( "InterSpec_resources/OneOverR2Calc.css" );
     // anything else relevant?
     wApp->triggerUpdate();
   } );

@@ -12,7 +12,13 @@ set( InterSpec_IOS ON CACHE INTERNAL "" )
 set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
 
 
-#set( CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
+# Minimum iOS deployment target is 13.0 (required because SpecUtils' bundled
+# inja templating header pulls in <filesystem>, which Apple's libc++ marks
+# unavailable for iOS < 13.0). The actual setting that takes effect comes from
+# either the cmake invocation (-DIOS_DEPLOYMENT_TARGET=13.0 / -DDEPLOYMENT_TARGET=13.0
+# via the ios.toolchain.cmake) and the IPHONEOS_DEPLOYMENT_TARGET in the
+# InterSpec.xcodeproj. If you bump one, bump all of them.
+#set( CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "13.0"
 #        CACHE STRING "Set the minimum deployment target value."
 #        FORCE
 #    )

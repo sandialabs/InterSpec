@@ -231,8 +231,7 @@ DoseCalcWindow::DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
   m_dose->setHeight( WLength(100,WLength::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "dose-dialog" );
-  
-  
+
 #if( USE_QR_CODES )
   WPushButton *qr_btn = new WPushButton();
   qr_btn->setText( WString::tr("QR Code") );
@@ -250,19 +249,23 @@ DoseCalcWindow::DoseCalcWindow( Wt::WSuggestionPopup *materialSuggestion,
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
-  if( !viewer->isPhone() )
+
+  // On fullscreen-on-phone, Close (MobileBackBtn) and QR both float left, so the one earlier
+  // in the DOM is leftmost.  Put Close first there so it ends up on the far left;
+  // for non-fullscreen layouts, QR goes between Help (left) and Close (right).
+  if( !isPhone() )
     footer()->addWidget( qr_btn );
 #endif //USE_QR_CODES
 
-  
-  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"), true );
   closeButton->clicked().connect( this, &AuxWindow::hide );
-  
+
 #if( USE_QR_CODES )
-  if( viewer->isPhone() )
+  if( isPhone() )
     footer()->addWidget( qr_btn );
 #endif
-  
+
+
   show();
   
   // If we are loading this widget, as we  are creating the InterSpec session,

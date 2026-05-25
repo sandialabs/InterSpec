@@ -29,7 +29,7 @@ set( USE_LEAFLET_MAP ON CACHE INTERNAL "" )
 
 message( "ANDROID_NDK_SYSROOT=${ANDROID_NDK_SYSROOT}")
 
-project( InterSpecAndroid VERSION 1.0.13 )
+project( InterSpecAndroid VERSION 1.0.14 )
 
 # NDK r28 with minSdk 21 enables NEON by default for arm64-v8a.
 # The __ANDROID__ macro is defined by the NDK toolchain, so no need to add it manually.

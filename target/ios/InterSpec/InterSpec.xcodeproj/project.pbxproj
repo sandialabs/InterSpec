@@ -249,7 +249,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
@@ -277,7 +277,7 @@
 					"$(SYMROOT)/../../../build_ios/",
 					"$(SYMROOT)/../../../build_ios/external_libs/SpecUtils/",
 				);
-				IPHONEOS_DEPLOYMENT_TARGET = 10.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
@@ -301,7 +301,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
@@ -321,7 +321,7 @@
 					"$(SYMROOT)/../../../build_ios/",
 					"$(SYMROOT)/../../../build_ios/external_libs/SpecUtils/",
 				);
-				IPHONEOS_DEPLOYMENT_TARGET = 10.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_CFLAGS = (
@@ -348,7 +348,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
@@ -397,7 +397,7 @@
 				);
 				INFOPLIST_FILE = "InterSpec/InterSpec-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				IPHONEOS_DEPLOYMENT_TARGET = 11.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/build-iphoneos",
@@ -415,7 +415,8 @@
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils/libSpecUtils.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SandiaDecay/libSandiaDecay.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/muparserx-4.0.7/libmuparserx.a",
-					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Minuit2/libminuit2.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Minuit2/src/libMinuit2.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Minuit2/src/math/libMinuit2Math.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Cuba-3.0/libCuba-3.0.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/ceres-solver-build/lib/libceres.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/libwt.a",
@@ -452,7 +453,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
@@ -501,7 +502,7 @@
 				);
 				INFOPLIST_FILE = "InterSpec/InterSpec-Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				IPHONEOS_DEPLOYMENT_TARGET = 11.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/build-iphoneos",
@@ -519,7 +520,8 @@
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils/libSpecUtils.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SandiaDecay/libSandiaDecay.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/muparserx-4.0.7/libmuparserx.a",
-					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Minuit2/libminuit2.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Minuit2/src/libMinuit2.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Minuit2/src/math/libMinuit2Math.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/Cuba-3.0/libCuba-3.0.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/ceres-solver-build/lib/libceres.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/wt-build/src/libwt.a",
