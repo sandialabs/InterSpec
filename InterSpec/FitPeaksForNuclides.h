@@ -328,6 +328,25 @@ private:
 };//struct PeakFitForNuclideConfig
 
 
+/** Returns true if the source should be excluded from the peak_fit_improve
+ GA's background-false-positive penalty.
+
+ True for the canonical NORM nuclides (K40, Ra226, U235, U238, Th232), any
+ nuclide whose decay-chain ancestors include U235, U238, or Th232, and a
+ hand-curated extras list (initially U232, U233, F18) maintained alongside
+ the implementation.
+
+ False for elements (xrays) and reactions - they have no decay chain to
+ test against.  Adjust the implementation if specific elements/reactions
+ ever need exclusion.
+ */
+bool is_norm_like_for_ga( const RelActCalcAuto::SrcVariant &src );
+
+/** Returns true if `energy_kev` is within `tolerance_kev` of any commonly-
+ observed NORM gamma or NORM-element K-xray line.  Used by the GA's
+ background-fit penalty to suppress false positives where a source's
+ gamma happens to land on a real NORM peak in the background. */
+bool is_near_strong_norm_gamma( double energy_kev, double tolerance_kev );
 
 
 /** Options for fitting the peaks of nuclides.

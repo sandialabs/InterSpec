@@ -37,7 +37,9 @@
 #include <iostream>
 #include <thread>
 
+#include <boost/asio/post.hpp>
 #include <boost/program_options.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <boost/math/constants/constants.hpp>
 
 //#include "/external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
@@ -1013,7 +1015,10 @@ int main( int argc, char **argv )
   double ga_mutation_rate = 0.4;
   double ga_mutate_threshold = 0.15;
   double ga_crossover_threshold = -1.0; // Will be set based on action if not specified
-  
+  bool background_fit_trial_arg = false;
+  string chi2_cap_mode_str = "fixed";
+  double chi2_cap_fixed_value = 25.0;
+
   po::options_description desc( "Allowed options" );
   desc.add_options()
     ("help,h", "produce help message")
@@ -1038,7 +1043,19 @@ int main( int argc, char **argv )
     ("subsample", po::value<size_t>(), "Use every Nth source entry (e.g. 10 = use 1/10th of data)")
     ("detector", po::value<string>(), "Specific detector name to load (e.g. Verifinder-SN23N). Overrides --det-type.")
     ("city", po::value<string>(), "City/location to load (e.g. Livermore, Baltimore, Denver)")
-    ("source-nuclide", po::value<string>(), "Comma-separated source nuclide prefixes to include (e.g. Ba133,Co60). Matches if src_name starts with the prefix.");
+    ("source-nuclide", po::value<string>(), "Comma-separated source nuclide prefixes to include (e.g. Ba133,Co60). Matches if src_name starts with the prefix.")
+    ("background-fit-trial", po::bool_switch( &background_fit_trial_arg ),
+       "Run a background-fit trial for each non-NORM-like source: also fit "
+       "the long_background spectrum with the source(s) and penalize the "
+       "score (weighted 0.25x) by source-attributed peaks that survive the "
+       "511/<30 keV/NORM-overlap filters.  Default off.")
+    ("rel-eff-chi2-cap-mode", po::value<string>( &chi2_cap_mode_str )->default_value( chi2_cap_mode_str ),
+       "How initial_manual_rel_eff_max_chi2_dof is treated: 'disabled' (cap "
+       "never fires), 'fixed' (use --rel-eff-chi2-cap-value), 'ga-optimized' "
+       "(GA picks the cap as a gene).  Default 'fixed'.")
+    ("rel-eff-chi2-cap-value", po::value<double>( &chi2_cap_fixed_value )->default_value( chi2_cap_fixed_value ),
+       "Fixed value for initial_manual_rel_eff_max_chi2_dof.  Used only when "
+       "--rel-eff-chi2-cap-mode=fixed.");
   
   po::variables_map vm;
   
@@ -1089,6 +1106,23 @@ int main( int argc, char **argv )
   PeakFitImprove::sm_ga_mutation_rate = ga_mutation_rate;
   PeakFitImprove::sm_ga_mutate_threshold = ga_mutate_threshold;
   PeakFitImprove::sm_ga_crossover_threshold = ga_crossover_threshold;
+
+  // Background-fit trial + chi2/dof cap mode (Refinement plan: CLI configurability)
+  NuclideConfig_GA::sm_do_background_fit_trial = background_fit_trial_arg;
+
+  if( chi2_cap_mode_str == "disabled" )
+    NuclideConfig_GA::sm_rel_eff_chi2_cap_mode = NuclideConfig_GA::RelEffChi2CapMode::Disabled;
+  else if( chi2_cap_mode_str == "fixed" )
+    NuclideConfig_GA::sm_rel_eff_chi2_cap_mode = NuclideConfig_GA::RelEffChi2CapMode::Fixed;
+  else if( chi2_cap_mode_str == "ga-optimized" )
+    NuclideConfig_GA::sm_rel_eff_chi2_cap_mode = NuclideConfig_GA::RelEffChi2CapMode::GAOptimized;
+  else
+  {
+    cerr << "Error: --rel-eff-chi2-cap-mode must be 'disabled', 'fixed', or 'ga-optimized' (got '"
+         << chi2_cap_mode_str << "')." << endl;
+    return -6;
+  }
+  NuclideConfig_GA::sm_rel_eff_chi2_cap_fixed_value = chi2_cap_fixed_value;
   
   // Parse action enum
   enum class OptimizationAction : int
@@ -1696,12 +1730,19 @@ int main( int argc, char **argv )
 
       const double num_sigma_contribution = 1.5;
 
-      // The GA evaluation function: given a config, score it across all precomputed spectra
-      const auto ga_eval = [&precomputed, num_sigma_contribution]( const FitPeaksForNuclides::PeakFitForNuclideConfig &config ) -> double
+      // The GA evaluation function: given a config, score it across all precomputed spectra.
+      // Per-individual parallelism is controlled by --num-threads-per-individual; the per-spectrum
+      // tasks write into pre-sized slots so summation order is independent of completion order.
+      // The two out-params receive the foreground-only and raw bg-penalty totals so reporting
+      // can show the breakdown when --background-fit-trial is on.
+      const auto ga_eval = [&precomputed, num_sigma_contribution](
+          const FitPeaksForNuclides::PeakFitForNuclideConfig &config,
+          double *out_fg, double *out_bg ) -> double
       {
-        double total_score = 0.0;
-
-        for( const NuclideConfig_GA::PrecomputedNuclideData &pd : precomputed )
+        // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
+        // Called from both the serial and parallel paths below; safe to invoke concurrently.
+        const auto score_one_spectrum = [&config, num_sigma_contribution](
+            const NuclideConfig_GA::PrecomputedNuclideData &pd ) -> std::pair<double,double>
         {
           Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
           if( NuclideConfig_GA::sm_background_mode == NuclideConfig_GA::BackgroundMode::NoBackgroundFitNorm )
@@ -1716,14 +1757,10 @@ int main( int argc, char **argv )
               pd.background, pd.drf, options, config, pd.peak_fit_prefs );
 
             if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
-            {
-              total_score += 100.0;  // Penalty for failed fits
-              continue;
-            }
+              return { 100.0, 0.0 };  // Penalty for failed foreground fits, no bg attempted
 
             const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
 
-            // Score the results using the same combined scoring
             CombinedPeakFitScore combined_score;
             combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
               fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
@@ -1734,19 +1771,64 @@ int main( int argc, char **argv )
             CandidatePeak_GA::correct_score_for_escape_peaks(
               combined_score.candidate_peak_score, pd.src_info->expected_signal_photopeaks );
 
-            combined_score.final_weight = combined_score.initial_fit_weights.find_weight
-                                        + combined_score.final_fit_score.total_weight
-                                        + combined_score.candidate_peak_score.score;
+            const double fg_score = combined_score.initial_fit_weights.find_weight
+                                  + combined_score.final_fit_score.total_weight
+                                  + combined_score.candidate_peak_score.score;
 
-            total_score += combined_score.final_weight;
+            // Background-false-positive penalty.  No-op (returns 0) when
+            // sm_do_background_fit_trial is false or background_auto_search_peaks
+            // is empty for this entry.
+            const double bg_raw = NuclideConfig_GA::compute_background_fit_penalty(
+                pd, config, NuclideConfig_GA::sm_background_mode, /*detail_out=*/nullptr );
+
+            return { fg_score, bg_raw };
           }
           catch( const std::exception & )
           {
-            total_score += 100.0;  // Penalty for exceptions
+            return { 100.0, 0.0 };  // Penalty for exceptions
           }
-        }//for( pd : precomputed )
+        };//score_one_spectrum lambda
 
-        return total_score;
+        const size_t inner_threads = std::max<size_t>( 1, PeakFitImprove::sm_num_threads_per_individual );
+
+        double total_fg = 0.0, total_bg = 0.0;
+
+        if( inner_threads <= 1 )
+        {
+          for( const NuclideConfig_GA::PrecomputedNuclideData &pd : precomputed )
+          {
+            const auto [fg, bg] = score_one_spectrum( pd );
+            total_fg += fg;
+            total_bg += bg;
+          }
+        }
+        else
+        {
+          // Parallel path: each task writes into its own slot, then we sum in
+          // spectrum-index order so the result is independent of thread count.
+          std::vector<std::pair<double,double>> partials( precomputed.size(), {0.0, 0.0} );
+          {
+            boost::asio::thread_pool pool( inner_threads );
+            for( size_t i = 0; i < precomputed.size(); ++i )
+            {
+              boost::asio::post( pool, [i, &precomputed, &partials, &score_one_spectrum]()
+              {
+                partials[i] = score_one_spectrum( precomputed[i] );
+              } );
+            }
+            pool.join();
+          }
+          for( const auto &p : partials )
+          {
+            total_fg += p.first;
+            total_bg += p.second;
+          }
+        }
+
+        if( out_fg ) *out_fg = total_fg;
+        if( out_bg ) *out_bg = total_bg;
+
+        return total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg;
       };//ga_eval lambda
 
       // Run the GA

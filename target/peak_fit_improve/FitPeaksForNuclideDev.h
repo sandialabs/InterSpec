@@ -67,6 +67,13 @@ struct CombinedPeakFitScore
    */
   double final_weight = 0.0;
 
+  /** Sum of livetime-normalized per-peak significances of source-attributed
+   * peaks fit in the long_background spectrum (non-NORM sources only),
+   * post per-spectrum cap.  Unweighted - final_weight already includes
+   * the weighted contribution.  Zero when all sources are NORM-like or
+   * no background is available. */
+  double background_fit_penalty = 0.0;
+
   std::string print( const std::string &varname ) const
   {
     std::string answer;
@@ -93,6 +100,7 @@ struct CombinedPeakFitScore
 
     answer += "\n=== " + varname + " - Combined Metrics ===\n";
     answer += varname + ".final_weight = " + std::to_string( final_weight ) + "\n";
+    answer += varname + ".background_fit_penalty = " + std::to_string( background_fit_penalty ) + "\n";
 
     return answer;
   }//print(...)
