@@ -1141,7 +1141,7 @@
   </message>
 
   <message id="how-compile" title="How to compile &lt;code&gt;InterSpec&lt;/code&gt; from source">
-    The <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/patches">InterSpec/target/patches</a> 
+    The <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/dep_build">InterSpec/target/dep_build</a> 
     directory in the code (available at <a target="_blank" href="https://github.com/sandialabs/InterSpec">https://github.com/sandialabs/InterSpec</a>)
     provides instructions for this.
   </message>

@@ -63,7 +63,7 @@
 #include "InterSpec/AppUtils.h"
 
 #if( BUILD_AS_OSX_APP )
-#include "target/osx/macOsUtils.h" // for macOsUtils::showFileInFinder(filepath)
+#include "target/macos/macOsUtils.h" // for macOsUtils::showFileInFinder(filepath)
 #endif
 
 
@@ -497,7 +497,7 @@ bool showFileInOsFileBrowser( const std::string &filepath )
   // NSString *nsstr_filepath = @(filepath.c_str());
   // NSURL *nsurl_filepath = [NSURL fileURLWithPath:nsstr_filepath];
   // [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ nsurl_filepath ]];
-  // Should probably add to target/osx/macOsUtils.h/.mm
+  // Should probably add to target/macos/macOsUtils.h/.mm
   int rval = 0;
   if( isdir )
   {

@@ -54,7 +54,7 @@
 
 #if( USE_OSX_NATIVE_MENU )
 #include "InterSpec/PopupDiv.h"
-#include "target/osx/NativeMenu.h"
+#include "target/macos/NativeMenu.h"
 #endif
 
 

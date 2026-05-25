@@ -66,7 +66,7 @@
 #endif
 
 #if BUILD_AS_OSX_APP
-#include "target/osx/macOsUtils.h"
+#include "target/macos/macOsUtils.h"
 #endif
 
 using namespace Wt;

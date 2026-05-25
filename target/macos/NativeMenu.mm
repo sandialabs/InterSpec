@@ -15,12 +15,12 @@
 #undef require
 #endif
 
-#include <Wt/WServer>
-#include <Wt/WCheckBox>
-#include <Wt/WApplication>
+#include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WApplication.h>
 
 #include "InterSpec/PopupDiv.h"
-#include "target/osx/NativeMenu.h"
+#include "target/macos/NativeMenu.h"
 #include "InterSpec/InterSpecApp.h"
 
 
@@ -114,21 +114,26 @@ void doemitcheck( Wt::WCheckBox *cb, PopupDivMenuItem *item, const bool checked 
 
 - (void) clicked {
   if( m_item )
-    Wt::WServer::instance()->post( m_appid, boost::bind( &doemit, m_item ) );
+  {
+    PopupDivMenuItem * const item = m_item;
+    Wt::WServer::instance()->post( m_appid, [item](){ doemit( item ); } );
+  }
 }
 
 
 - (void) toggleChecked {
   if( !m_cb )
     return;
+  Wt::WCheckBox * const cb = m_cb;
+  PopupDivMenuItem * const item = m_item;
   if( [m_nsitem state] == NSOffState )
   {
     [m_nsitem setState:NSOnState];
-    Wt::WServer::instance()->post( m_appid, boost::bind( &doemitcheck, m_cb, m_item, true ) );
+    Wt::WServer::instance()->post( m_appid, [cb, item](){ doemitcheck( cb, item, true ); } );
   }else
   {
     [m_nsitem setState:NSOffState];
-    Wt::WServer::instance()->post( m_appid, boost::bind( &doemitcheck, m_cb, m_item, false ) );
+    Wt::WServer::instance()->post( m_appid, [cb, item](){ doemitcheck( cb, item, false ); } );
   }
 }
 

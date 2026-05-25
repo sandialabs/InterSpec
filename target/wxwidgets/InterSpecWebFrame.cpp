@@ -864,7 +864,7 @@ void InterSpecWebFrame::handle_target_blank_url( const wxString &url_str )
   const wxString &path   = uri.GetPath();
   const wxString &scheme = uri.GetScheme();
 
-  // Mirrors target/osx/AppDelegate.mm decidePolicyForNavigationAction.
+  // Mirrors target/macos/AppDelegate.mm decidePolicyForNavigationAction.
   if( (path.find("request=redirect&url=http") != wxString::npos)
       || (scheme == "mailto")
       || (uri.HasServer() && (server != "127.0.0.1") && (server != "localhost")) )

@@ -30,22 +30,23 @@
 
 #include <ImageIO/ImageIO.h>
 
-#include <Wt/WPen>
-#include <Wt/WBrush>
-#include <Wt/WColor>
-#include <Wt/WRectF>
-#include <Wt/WPointF>
-#include <Wt/WPainter>
-#include <Wt/WTransform>
-#include <Wt/WPainterPath>
-#include <Wt/WFontMetrics>
+#include <Wt/WPen.h>
+#include <Wt/WBrush.h>
+#include <Wt/WColor.h>
+#include <Wt/WRectF.h>
+#include <Wt/WPointF.h>
+#include <Wt/WPainter.h>
+#include <Wt/WTransform.h>
+#include <Wt/WPainterPath.h>
+#include <Wt/WFontMetrics.h>
+#include <Wt/WAbstractDataInfo.h>
 
 using namespace Wt;
 
 
 CGPaintDevice::CGPaintDevice( double width, double height )
-  : m_width( WLength( width, WLength::Pixel ) )
-  , m_height( WLength( height, WLength::Pixel ) )
+  : m_width( WLength( width, LengthUnit::Pixel ) )
+  , m_height( WLength( height, LengthUnit::Pixel ) )
   , m_painter( nullptr )
   , m_ctx( nullptr )
   , m_ownsContext( true )
@@ -71,8 +72,8 @@ CGPaintDevice::CGPaintDevice( double width, double height )
 CGPaintDevice::CGPaintDevice( CGPaintDevice &parent,
                               double x, double y,
                               double width, double height )
-  : m_width( WLength( width, WLength::Pixel ) )
-  , m_height( WLength( height, WLength::Pixel ) )
+  : m_width( WLength( width, LengthUnit::Pixel ) )
+  , m_height( WLength( height, LengthUnit::Pixel ) )
   , m_painter( nullptr )
   , m_ctx( parent.m_ctx )
   , m_ownsContext( false )
@@ -109,9 +110,9 @@ CGContextRef CGPaintDevice::cgContext() const
 }//cgContext()
 
 
-WFlags<WPaintDevice::FeatureFlag> CGPaintDevice::features() const
+WFlags<PaintDeviceFeatureFlag> CGPaintDevice::features() const
 {
-  return HasFontMetrics;
+  return PaintDeviceFeatureFlag::FontMetrics;
 }
 
 
@@ -186,9 +187,9 @@ void CGPaintDevice::applyTransform( const WTransform &t )
 }//applyTransform(...)
 
 
-void CGPaintDevice::setChanged( WFlags<ChangeFlag> flags )
+void CGPaintDevice::setChanged( WFlags<PainterChangeFlag> flags )
 {
-  if( flags & (Transform | Clipping) )
+  if( flags.test(PainterChangeFlag::Transform) || flags.test(PainterChangeFlag::Clipping) )
   {
     // Restore to the clean per-frame state, then re-save for next change
     CGContextRestoreGState( m_ctx );
@@ -208,14 +209,14 @@ void CGPaintDevice::setChanged( WFlags<ChangeFlag> flags )
     applyTransform( m_painter->combinedTransform() );
 
     // After transform change, must re-apply pen/brush/font
-    flags = Pen | Brush | Font;
+    flags = PainterChangeFlag::Pen | PainterChangeFlag::Brush | PainterChangeFlag::Font;
   }
 
-  if( flags & Pen )
+  if( flags.test(PainterChangeFlag::Pen) )
   {
     const WPen &pen = m_painter->pen();
 
-    if( pen.style() != NoPen )
+    if( pen.style() != PenStyle::None )
     {
       const WColor &c = pen.color();
       CGContextSetRGBStrokeColor( m_ctx,
@@ -228,44 +229,44 @@ void CGPaintDevice::setChanged( WFlags<ChangeFlag> flags )
 
       switch( pen.capStyle() )
       {
-        case FlatCap:   CGContextSetLineCap( m_ctx, kCGLineCapButt );   break;
-        case SquareCap: CGContextSetLineCap( m_ctx, kCGLineCapSquare ); break;
-        case RoundCap:  CGContextSetLineCap( m_ctx, kCGLineCapRound );  break;
+        case PenCapStyle::Flat:   CGContextSetLineCap( m_ctx, kCGLineCapButt );   break;
+        case PenCapStyle::Square: CGContextSetLineCap( m_ctx, kCGLineCapSquare ); break;
+        case PenCapStyle::Round:  CGContextSetLineCap( m_ctx, kCGLineCapRound );  break;
       }
 
       switch( pen.joinStyle() )
       {
-        case MiterJoin: CGContextSetLineJoin( m_ctx, kCGLineJoinMiter ); break;
-        case BevelJoin: CGContextSetLineJoin( m_ctx, kCGLineJoinBevel ); break;
-        case RoundJoin: CGContextSetLineJoin( m_ctx, kCGLineJoinRound ); break;
+        case PenJoinStyle::Miter: CGContextSetLineJoin( m_ctx, kCGLineJoinMiter ); break;
+        case PenJoinStyle::Bevel: CGContextSetLineJoin( m_ctx, kCGLineJoinBevel ); break;
+        case PenJoinStyle::Round: CGContextSetLineJoin( m_ctx, kCGLineJoinRound ); break;
       }
 
       switch( pen.style() )
       {
-        case NoPen:
+        case PenStyle::None:
           break;
-        case SolidLine:
+        case PenStyle::SolidLine:
           CGContextSetLineDash( m_ctx, 0, nullptr, 0 );
           break;
-        case DashLine:
+        case PenStyle::DashLine:
         {
           const CGFloat pattern[] = { 4.0, 2.0 };
           CGContextSetLineDash( m_ctx, 0, pattern, 2 );
           break;
         }
-        case DotLine:
+        case PenStyle::DotLine:
         {
           const CGFloat pattern[] = { 1.0, 2.0 };
           CGContextSetLineDash( m_ctx, 0, pattern, 2 );
           break;
         }
-        case DashDotLine:
+        case PenStyle::DashDotLine:
         {
           const CGFloat pattern[] = { 4.0, 2.0, 1.0, 2.0 };
           CGContextSetLineDash( m_ctx, 0, pattern, 4 );
           break;
         }
-        case DashDotDotLine:
+        case PenStyle::DashDotDotLine:
         {
           const CGFloat pattern[] = { 4.0, 2.0, 1.0, 2.0, 1.0, 2.0 };
           CGContextSetLineDash( m_ctx, 0, pattern, 6 );
@@ -273,12 +274,12 @@ void CGPaintDevice::setChanged( WFlags<ChangeFlag> flags )
         }
       }//switch( pen.style() )
     }
-  }//if( flags & Pen )
+  }//if( flags & PainterChangeFlag::Pen )
 
-  if( flags & Brush )
+  if( flags.test(PainterChangeFlag::Brush) )
   {
     const WBrush &brush = m_painter->brush();
-    if( brush.style() != NoBrush )
+    if( brush.style() != BrushStyle::None )
     {
       const WColor &c = brush.color();
       CGContextSetRGBFillColor( m_ctx,
@@ -287,7 +288,7 @@ void CGPaintDevice::setChanged( WFlags<ChangeFlag> flags )
     }
   }
 
-  if( flags & Font )
+  if( flags.test(PainterChangeFlag::Font) )
   {
     updateFont( m_painter->font() );
   }
@@ -296,7 +297,7 @@ void CGPaintDevice::setChanged( WFlags<ChangeFlag> flags )
 
 void CGPaintDevice::drawLine( double x1, double y1, double x2, double y2 )
 {
-  if( m_painter->pen().style() == NoPen )
+  if( m_painter->pen().style() == PenStyle::None )
     return;
 
   CGContextBeginPath( m_ctx );
@@ -313,7 +314,7 @@ void CGPaintDevice::drawPlainPath( const WPainterPath &path )
 
   const std::vector<WPainterPath::Segment> &segments = path.segments();
 
-  if( !segments.empty() && segments[0].type() != WPainterPath::Segment::MoveTo )
+  if( !segments.empty() && segments[0].type() != MoveTo )
     CGContextMoveToPoint( m_ctx, 0, 0 );
 
   for( size_t i = 0; i < segments.size(); ++i )
@@ -322,15 +323,15 @@ void CGPaintDevice::drawPlainPath( const WPainterPath &path )
 
     switch( s.type() )
     {
-      case WPainterPath::Segment::MoveTo:
+      case MoveTo:
         CGContextMoveToPoint( m_ctx, s.x(), s.y() );
         break;
 
-      case WPainterPath::Segment::LineTo:
+      case LineTo:
         CGContextAddLineToPoint( m_ctx, s.x(), s.y() );
         break;
 
-      case WPainterPath::Segment::CubicC1:
+      case CubicC1:
       {
         const double x1 = s.x();
         const double y1 = s.y();
@@ -343,12 +344,12 @@ void CGPaintDevice::drawPlainPath( const WPainterPath &path )
         break;
       }
 
-      case WPainterPath::Segment::CubicC2:
-      case WPainterPath::Segment::CubicEnd:
+      case CubicC2:
+      case CubicEnd:
         assert( false );
         break;
 
-      case WPainterPath::Segment::ArcC:
+      case ArcC:
       {
         const double cx = s.x();
         const double cy = s.y();
@@ -374,12 +375,12 @@ void CGPaintDevice::drawPlainPath( const WPainterPath &path )
         break;
       }
 
-      case WPainterPath::Segment::ArcR:
-      case WPainterPath::Segment::ArcAngleSweep:
+      case ArcR:
+      case ArcAngleSweep:
         assert( false );
         break;
 
-      case WPainterPath::Segment::QuadC:
+      case QuadC:
       {
         const double cpx = s.x();
         const double cpy = s.y();
@@ -390,7 +391,7 @@ void CGPaintDevice::drawPlainPath( const WPainterPath &path )
         break;
       }
 
-      case WPainterPath::Segment::QuadEnd:
+      case QuadEnd:
         assert( false );
         break;
     }//switch( s.type() )
@@ -400,8 +401,8 @@ void CGPaintDevice::drawPlainPath( const WPainterPath &path )
 
 void CGPaintDevice::strokeAndFillPath()
 {
-  const bool hasStroke = (m_painter->pen().style() != NoPen);
-  const bool hasFill = (m_painter->brush().style() != NoBrush);
+  const bool hasStroke = (m_painter->pen().style() != PenStyle::None);
+  const bool hasFill = (m_painter->brush().style() != BrushStyle::None);
 
   if( hasStroke && hasFill )
     CGContextDrawPath( m_ctx, kCGPathFillStroke );
@@ -420,6 +421,14 @@ void CGPaintDevice::drawPath( const WPainterPath &path )
   drawPlainPath( path );
   strokeAndFillPath();
 }//drawPath(...)
+
+
+void CGPaintDevice::drawRect( const WRectF &rectangle )
+{
+  WPainterPath path;
+  path.addRect( rectangle );
+  drawPath( path );
+}//drawRect(...)
 
 
 void CGPaintDevice::drawArc( const WRectF &rect, double startAngle, double spanAngle )
@@ -498,6 +507,17 @@ void CGPaintDevice::drawImage( const WRectF &rect, const std::string &imageUri,
 }//drawImage(...)
 
 
+void CGPaintDevice::drawImage( const WRectF &rect, const WAbstractDataInfo *imageInfo,
+                                int imgWidth, int imgHeight,
+                                const WRectF &sourceRect )
+{
+  // The QuickLook code paths only construct WPainter::Image via the file-path
+  // ctor, so the painter dispatches to the string-URI overload above; this
+  // overload exists only to satisfy the Wt 4 pure-virtual contract.
+  assert( false );
+}//drawImage(WAbstractDataInfo*)
+
+
 CTFontRef CGPaintDevice::createCTFont( const WFont &font )
 {
   CFStringRef familyName = nullptr;
@@ -527,11 +547,11 @@ CTFontRef CGPaintDevice::createCTFont( const WFont &font )
   {
     switch( font.genericFamily() )
     {
-      case WFont::Serif:     familyName = CFSTR( "Times New Roman" ); CFRetain( familyName ); break;
-      case WFont::Monospace: familyName = CFSTR( "Courier" );         CFRetain( familyName ); break;
-      case WFont::Cursive:   familyName = CFSTR( "Apple Chancery" );  CFRetain( familyName ); break;
-      case WFont::Fantasy:   familyName = CFSTR( "Papyrus" );         CFRetain( familyName ); break;
-      default:               familyName = CFSTR( "Helvetica" );       CFRetain( familyName ); break;
+      case FontFamily::Serif:     familyName = CFSTR( "Times New Roman" ); CFRetain( familyName ); break;
+      case FontFamily::Monospace: familyName = CFSTR( "Courier" );         CFRetain( familyName ); break;
+      case FontFamily::Cursive:   familyName = CFSTR( "Apple Chancery" );  CFRetain( familyName ); break;
+      case FontFamily::Fantasy:   familyName = CFSTR( "Papyrus" );         CFRetain( familyName ); break;
+      default:                    familyName = CFSTR( "Helvetica" );       CFRetain( familyName ); break;
     }
   }
 
@@ -544,9 +564,9 @@ CTFontRef CGPaintDevice::createCTFont( const WFont &font )
 
   // Apply bold/italic traits
   CTFontSymbolicTraits desiredTraits = 0;
-  if( font.style() == WFont::Italic || font.style() == WFont::Oblique )
+  if( font.style() == FontStyle::Italic || font.style() == FontStyle::Oblique )
     desiredTraits |= kCTFontItalicTrait;
-  if( font.weight() == WFont::Bold || font.weight() == WFont::Bolder )
+  if( font.weight() == FontWeight::Bold || font.weight() == FontWeight::Bolder )
     desiredTraits |= kCTFontBoldTrait;
 
   if( desiredTraits != 0 )
@@ -634,25 +654,24 @@ void CGPaintDevice::drawText( const WRectF &rect, WFlags<AlignmentFlag> flags,
   const double textWidth = CTLineGetTypographicBounds( line, &ascent, &descent, &leading );
 
   // Horizontal alignment
-  const AlignmentFlag hAlign = static_cast<AlignmentFlag>( flags & AlignHorizontalMask );
-  double textX = rect.left();
-  switch( hAlign )
-  {
-    case AlignRight:  textX = rect.right() - textWidth;          break;
-    case AlignCenter: textX = rect.center().x() - textWidth / 2; break;
-    default:          textX = rect.left();                        break;
-  }
+  const WFlags<AlignmentFlag> hAlign = flags & AlignHorizontalMask;
+  double textX;
+  if( hAlign.test( AlignmentFlag::Right ) )
+    textX = rect.right() - textWidth;
+  else if( hAlign.test( AlignmentFlag::Center ) )
+    textX = rect.center().x() - textWidth / 2;
+  else
+    textX = rect.left();
 
   // Vertical alignment
-  const AlignmentFlag vAlign = static_cast<AlignmentFlag>( flags & AlignVerticalMask );
-  double textY = rect.top();
-  switch( vAlign )
-  {
-    case AlignTop:    textY = rect.top() + ascent;                        break;
-    case AlignMiddle: textY = rect.center().y() + (ascent - descent) / 2; break;
-    case AlignBottom: textY = rect.bottom() - descent;                    break;
-    default:          textY = rect.top() + ascent;                        break;
-  }
+  const WFlags<AlignmentFlag> vAlign = flags & AlignVerticalMask;
+  double textY;
+  if( vAlign.test( AlignmentFlag::Middle ) )
+    textY = rect.center().y() + (ascent - descent) / 2;
+  else if( vAlign.test( AlignmentFlag::Bottom ) )
+    textY = rect.bottom() - descent;
+  else
+    textY = rect.top() + ascent;
 
   // Core Text draws text with Y-up baseline coordinates.
   // In our flipped coordinate system, we must un-flip locally for text rendering.

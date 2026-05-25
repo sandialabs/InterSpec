@@ -37,7 +37,7 @@ So to build for Linux from scratch, you could
 ```bash
 cd /path/to/code
 git clone --recursive https://github.com/sandialabs/interspec/ InterSpec
-./InterSpec/target/patches/dep_build_linux.sh ./InterSpec /tmp/interspec_prefix_build /home/user/code/InterSpec_prefix
+./InterSpec/target/dep_build/dep_build_linux.sh ./InterSpec /tmp/interspec_prefix_build /home/user/code/InterSpec_prefix
 
 cd InterSpec
 mkdir build
@@ -72,7 +72,7 @@ cd C:\Path\To\Put\InterSpec\Code
 git clone --recursive https://github.com/sandialabs/interspec/
 
 # Change CWD to one with compile script
-cd interspec\target\patches
+cd interspec\target\dep_build
 
 # Optionally set environment variables for the proxy (only if you are behind one)
 set http_proxy=http://your-proxy:port
@@ -130,7 +130,7 @@ You can now build a local web server:
 cd ~/development
 git clone --recursive https://github.com/sandialabs/interspec/
 cd interspec
-./InterSpec/target/patches/dep_build_linux.sh . /tmp/interspec_prefix_build ~/development/InterSpec_prefix
+./InterSpec/target/dep_build/dep_build_linux.sh . /tmp/interspec_prefix_build ~/development/InterSpec_prefix
 mkdir build; cd build
 
 cmake -DCMAKE_PREFIX_PATH=~/development/InterSpec_prefix -DBUILD_AS_LOCAL_SERVER=ON -DUSE_BATCH_CLI_TOOLS=OFF -DUSE_BATCH_GUI_TOOLS=OFF ..

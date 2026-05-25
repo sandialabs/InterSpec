@@ -93,7 +93,7 @@
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/ColorTheme.h"
 
-#include "js/SpecFileQueryWidget.js"
+#include "src/js_inline/SpecFileQueryWidget.js"
 
 
 #if( BUILD_AS_ELECTRON_APP )
@@ -102,7 +102,7 @@
 
 
 #if( BUILD_AS_OSX_APP )
-#include "target/osx/macOsUtils.h"
+#include "target/macos/macOsUtils.h"
 #endif
 
 
@@ -1536,7 +1536,7 @@ void SpecFileQueryWidget::init()
 
   wApp->require( "InterSpec_resources/assets/js/QueryBuilder2.5.2_no_jQuery/js/query-builder.js" );
   
-  LOAD_JAVASCRIPT(wApp, "js/SpecFileQueryWidget.js", "SpecFileQueryWidget", wtjsFileQueryInit);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/SpecFileQueryWidget.js", "SpecFileQueryWidget", wtjsFileQueryInit);
   
   const string addfilters = prepareEventXmlFilters();
   

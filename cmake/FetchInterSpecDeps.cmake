@@ -53,17 +53,6 @@ set( BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries" )
 
 # TODO: set BOOST libraries to not build, like wave, beast, wserialization, etc
 
-# CMAKE_CURRENT_SOURCE_DIR could either be project base directory, or a target
-#  directory, so we will search for the patch files to apply
-find_file( ZLIB_PATCH_FILE "zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch"
-  PATHS "${CMAKE_CURRENT_SOURCE_DIR}/target/patches"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../target/patches"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../target/patches"
-  REQUIRED
-  NO_DEFAULT_PATH
-  NO_CMAKE_FIND_ROOT_PATH
-)
-
 # set( FETCHCONTENT_QUIET FALSE )
 
 # ---- Boost 1.84.0 ----
@@ -199,6 +188,12 @@ set( ENABLE_SAML OFF CACHE INTERNAL "" )
 set( ENABLE_UNWIND OFF CACHE INTERNAL "" )
 set( HTTP_WITH_ZLIB OFF CACHE INTERNAL "" )
 
+# Apple's libc++ on iOS (and older macOS) does not ship `std::chrono::time_zone`,
+# so force Wt to use the bundled Howard Hinnant `date` library instead of the
+# standard-library implementation. This matches what the manual dep_build_*.sh
+# scripts pass, and is required for the iOS build.
+set( WT_CPP20_DATE_TZ_IMPLEMENTATION "date" CACHE STRING "" FORCE )
+
 set(LOCAL_WT_DIR "${CMAKE_BINARY_DIR}/_deps/wt-src")
 if(EXISTS "${LOCAL_WT_DIR}/CMakeLists.txt")
   message(STATUS "Using local Wt from ${LOCAL_WT_DIR}")
@@ -253,35 +248,30 @@ endif( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
 
 # macOS, iOS, and Android all have zlib already - we dont need to build it
 if( NOT APPLE AND NOT ANDROID )
-  set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries")
+  set( BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries" )
+  set( ZLIB_BUILD_EXAMPLES OFF CACHE INTERNAL "Skip zlib examples/tests" )
 
   FetchContent_Declare(
     zlib
     GIT_REPOSITORY https://github.com/madler/zlib.git
-    GIT_TAG        21767c654d31d2dccdde4330529775c6c5fd5389 # 1.2.12
+    GIT_TAG        v1.3.1
     GIT_SHALLOW    ON
-
-    PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${ZLIB_PATCH_FILE} || ${GIT_EXECUTABLE} apply --reject --ignore-space-change --ignore-whitespace ${ZLIB_PATCH_FILE}
-    #PATCH_COMMAND patch -p1 < ${ZLIB_PATCH_FILE} || true
   )
 
   FetchContent_GetProperties(zlib)
-  if(NOT zlib_POPULATED)
+  if( NOT zlib_POPULATED )
     FetchContent_Populate(zlib)
-    add_subdirectory(${zlib_SOURCE_DIR} ${zlib_BINARY_DIR} EXCLUDE_FROM_ALL)
+    add_subdirectory( ${zlib_SOURCE_DIR} ${zlib_BINARY_DIR} EXCLUDE_FROM_ALL )
   endif()
 
   FetchContent_MakeAvailable( zlib )
 
-  if( ZLIB::zlib )
-    # Hmmm, not sure if we ever actually get here
-    add_library( ZLIB::ZLIB ALIAS ZLIB::zlib )
-  elseif( NOT ZLIB::ZLIB )
-    # On Linux, we seem to always get here, so we'll just hack things.
-    #  I must not understand the export(...) cmake stuff of the sub-project - oh well for now.
-    add_library( ZLIB::ZLIB ALIAS zlib )
-    set( ZLIB_LIBRARY zlib CACHE INTERNAL "set zlib static lib" )
-    set( ZLIB_INCLUDE_DIR "${zlib_BINARY_DIR}" CACHE INTERNAL "set zlib include dir" )
+  # Upstream zlib (1.3.x) names its static library target `zlibstatic` (the shared one is `zlib`).
+  # We want consumers using the standard `ZLIB::ZLIB` interface to get the static build.
+  if( NOT TARGET ZLIB::ZLIB )
+    add_library( ZLIB::ZLIB ALIAS zlibstatic )
+    set( ZLIB_LIBRARY zlibstatic CACHE INTERNAL "set zlib static lib" )
+    set( ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}" CACHE INTERNAL "set zlib include dirs" )
   endif()
 endif( NOT APPLE AND NOT ANDROID )
 

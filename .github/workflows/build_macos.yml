@@ -58,13 +58,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.DEPS_PREFIX_DIR }}
-          key: macos-deps-${{ hashFiles('target/patches/dep_build_macOS.sh', 'target/patches/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch') }}
+          key: macos-deps-${{ hashFiles('target/dep_build/dep_build_macOS.sh') }}
 
       - name: Build dependency prefix
         if: steps.cache-macos-deps.outputs.cache-hit != 'true'
         run: |
-          chmod +x target/patches/dep_build_macOS.sh
-          ./target/patches/dep_build_macOS.sh "${{ github.workspace }}" "${DEPS_BUILD_DIR}" "${DEPS_PREFIX_DIR}"
+          chmod +x target/dep_build/dep_build_macOS.sh
+          ./target/dep_build/dep_build_macOS.sh "${{ github.workspace }}" "${DEPS_BUILD_DIR}" "${DEPS_PREFIX_DIR}"
 
       - name: Import signing certificate
         env:
@@ -99,7 +99,7 @@ jobs:
         env:
           LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
         run: |
-          cmake -S "${{ github.workspace }}/target/osx" \
+          cmake -S "${{ github.workspace }}/target/macos" \
             -B "${BUILD_DIR}" \
             -G Xcode \
             -DCMAKE_PREFIX_PATH="${DEPS_PREFIX_DIR}" \
@@ -141,7 +141,7 @@ jobs:
           fi
 
           # Sign Quick Look appex extensions (nested bundles in Contents/PlugIns/)
-          APPEX_ENTITLEMENTS="${{ github.workspace }}/target/macOsQuickLook/SpecFilePreviewExtension/SpecFilePreview.entitlements"
+          APPEX_ENTITLEMENTS="${{ github.workspace }}/target/macos/quicklook/SpecFilePreviewExtension/SpecFilePreview.entitlements"
           if [ -d "${APP_BUNDLE}/Contents/PlugIns" ]; then
             echo "Signing appex extensions..."
             find "${APP_BUNDLE}/Contents/PlugIns" -type d -name "*.appex" | while read -r appex; do
@@ -192,7 +192,7 @@ jobs:
           # Sign the main app bundle (without --deep since we signed nested components)
           echo "Signing main app bundle..."
           codesign --force --options runtime --timestamp \
-            --entitlements "${{ github.workspace }}/target/osx/InterSpec.entitlements" \
+            --entitlements "${{ github.workspace }}/target/macos/InterSpec.entitlements" \
             --sign "${MAC_SIGNING_IDENTITY}" \
             "${APP_BUNDLE}"
           

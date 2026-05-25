@@ -1016,7 +1016,7 @@
   </message>
 
   <message id="how-compile" title="Как скомпилировать &lt;code&gt;InterSpec&lt;/code&gt; из исходного кода">
-    Каталог <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/patches">InterSpec/target/patches</a> 
+    Каталог <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/dep_build">InterSpec/target/dep_build</a> 
     в коде (доступен по адресу <a target="_blank" href="https://github.com/sandialabs/InterSpec">https://github.com/sandialabs/InterSpec</a>)
     содержит инструкции для этого.
   </message>

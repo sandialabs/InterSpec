@@ -194,11 +194,11 @@
 #endif
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP)
-#include "js/AppHtmlMenu.js"
+#include "src/js_inline/AppHtmlMenu.js"
 #endif
 
 #if( BUILD_AS_WX_WIDGETS_APP )
-#include "target/wxWidgets/InterSpecWxUtils.h"
+#include "target/wxwidgets/InterSpecWxUtils.h"
 #endif 
 
 #if( USE_REMOTE_RID )
@@ -211,7 +211,7 @@
 #endif
 
 
-#include "js/InterSpec.js"
+#include "src/js_inline/InterSpec.js"
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
@@ -666,7 +666,7 @@ InterSpec::InterSpec()
     m_spectrum->setCompactAxis( true );
     m_timeSeries->setCompactAxis( true );
     
-    LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsDoOrientationChange);
+    LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsDoOrientationChange);
     
     const char *js = INLINE_JAVASCRIPT(
       window.addEventListener("orientationchange", Wt.WT.DoOrientationChange );
@@ -775,50 +775,50 @@ InterSpec::InterSpec()
       m_menuDiv->addStyleClass( "app-titlebar" );
       m_menuDiv->setHeight( 30 );
       
-      WContainerWidget *dragRegion = new WContainerWidget( m_menuDiv );
+      WContainerWidget *dragRegion = m_menuDiv->addNew<WContainerWidget>();
       dragRegion->addStyleClass( "app-titlebar-drag-region" );
-      
+
       //Add InterSpec icon to left side of menubar
-      WContainerWidget *appIcon = new WContainerWidget( m_menuDiv );
+      WContainerWidget *appIcon = m_menuDiv->addNew<WContainerWidget>();
       appIcon->addStyleClass( "window-appicon" );
-      
-      menuWidget = new WContainerWidget( m_menuDiv );
+
+      menuWidget = m_menuDiv->addNew<WContainerWidget>();
       menuWidget->addStyleClass( "AppMenuBtns" );
       menuWidget->setAttributeValue( "role", "menubar" );
-      
-      WText *menuTitle = new WText( "InterSpec", m_menuDiv );
+
+      WText *menuTitle = m_menuDiv->addNew<WText>( "InterSpec" );
       menuTitle->setInline( false );
       menuTitle->addStyleClass( "window-title" );
-      
-      WContainerWidget *titleStretcher = new WContainerWidget( m_menuDiv );
+
+      WContainerWidget *titleStretcher = m_menuDiv->addNew<WContainerWidget>();
       titleStretcher->addStyleClass( "titlebar-stretcher" );
-      
-      WContainerWidget *windowControls = new WContainerWidget( m_menuDiv );
+
+      WContainerWidget *windowControls = m_menuDiv->addNew<WContainerWidget>();
       windowControls->addStyleClass( "window-controls-container" );
-      
-      WContainerWidget *iconDiv = new WContainerWidget( windowControls );
+
+      WContainerWidget *iconDiv = windowControls->addNew<WContainerWidget>();
       iconDiv->addStyleClass( "window-icon-bg" );
-      WContainerWidget *minimizeIcon = new WContainerWidget( iconDiv );
+      WContainerWidget *minimizeIcon = iconDiv->addNew<WContainerWidget>();
       minimizeIcon->addStyleClass( "window-icon window-minimize InvertInDark" );
-      
-      iconDiv = new WContainerWidget( windowControls );
+
+      iconDiv = windowControls->addNew<WContainerWidget>();
       iconDiv->addStyleClass( "window-icon-bg" );
-      WContainerWidget *maximizeIcon = new WContainerWidget( iconDiv );
+      WContainerWidget *maximizeIcon = iconDiv->addNew<WContainerWidget>();
       maximizeIcon->addStyleClass( "window-icon window-max-restore window-maximize InvertInDark" );
-      
-      iconDiv = new WContainerWidget( windowControls );
+
+      iconDiv = windowControls->addNew<WContainerWidget>();
       iconDiv->addStyleClass( "window-icon-bg" );
-      WContainerWidget *closeIcon = new WContainerWidget( iconDiv );
+      WContainerWidget *closeIcon = iconDiv->addNew<WContainerWidget>();
       closeIcon->addStyleClass( "window-icon window-close InvertInDark" );
-  
-      WContainerWidget *resizer = new WContainerWidget( m_menuDiv );
+
+      WContainerWidget *resizer = m_menuDiv->addNew<WContainerWidget>();
       resizer->addStyleClass( "resizer top" );
-      
-      resizer = new WContainerWidget( m_menuDiv );
+
+      resizer = m_menuDiv->addNew<WContainerWidget>();
       resizer->addStyleClass( "resizer left" );
       
-      LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsSetupAppTitleBar);
-      LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsTitleBarChangeMaximized);
+      LOAD_JAVASCRIPT(wApp, "src/js_inline/AppHtmlMenu.js", "AppHtmlMenu", wtjsSetupAppTitleBar);
+      LOAD_JAVASCRIPT(wApp, "src/js_inline/AppHtmlMenu.js", "AppHtmlMenu", wtjsTitleBarChangeMaximized);
       
       doJavaScript( "Wt.WT.SetupAppTitleBar();" );
       
@@ -936,7 +936,7 @@ InterSpec::InterSpec()
   
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
   
-  LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
   m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartResizer->id() + "','" + m_timeSeries->id() + "');" );
   
   m_layout = new WGridLayout();
@@ -1786,7 +1786,7 @@ void InterSpec::changeLocale( std::string languageCode )
 
 void InterSpec::initDragNDrop()
 {
-  LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsFileUploadFcn);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsFileUploadFcn);
   
   doJavaScript( "window._IS.ForegroundUpUrl='" +
                m_fileManager->foregroundDragNDrop()->url() + "';" );
@@ -7617,9 +7617,9 @@ void InterSpec::addViewMenu( WWidget *parent )
   PopupDivMenuItem *zoomInItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-zin") ); //Ctrl+Shift+=
   PopupDivMenuItem *zoomOutItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-zout") ); //Ctrl+-
 
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
-  LOAD_JAVASCRIPT(wApp, "js/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
   
   resetZoomItem->triggered().connect( this, []{
     wApp->doJavaScript( "Wt.WT.ResetPageZoom();" );
@@ -11447,8 +11447,8 @@ void InterSpec::initOsColorThemeChangeDetect()
   m_osColorThemeChange.reset( new JSignal<std::string>( this, "OsColorThemeChange", false ) );
   m_osColorThemeChange->connect( [this]( const std::string &v ){ osThemeChange( v ); } );
   
-  LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsDetectOsColorThemeJs);
-  LOAD_JAVASCRIPT(wApp, "js/InterSpec.js", "InterSpec", wtjsSetupOsColorThemeChangeJs);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsDetectOsColorThemeJs);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsSetupOsColorThemeChangeJs);
   
   doJavaScript( "Wt.WT.DetectOsColorThemeJs('" + id() + "')" );
   doJavaScript( "Wt.WT.SetupOsColorThemeChangeJs('" + id() + "')" );

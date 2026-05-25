@@ -33,10 +33,10 @@
 #include <iostream>
 #include <condition_variable>
 
-#include <Wt/WString>
-#include <Wt/WResource>
-#include <Wt/WApplication>
-#include <Wt/WEnvironment>
+#include <Wt/WString.h>
+#include <Wt/WResource.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
 
 #include "InterSpec/InterSpec.h"
 #include "SpecUtils/Filesystem.h"
@@ -419,9 +419,7 @@ JNIEXPORT
 
     std::cout << std::endl;
   
-    //Make it so WString defaults to assuming std::string or char * are UTF8
-    //  encoded, rather than the system encoding.
-    Wt::WString::setDefaultEncoding( Wt::UTF8 );
+    // Wt 4: WString is always UTF-8, setDefaultEncoding removed
 
     InterSpecApp::setNativeFileSaveHandler( []( std::string data, std::string suggested_name ){
       const std::string tempFileName = SpecUtils::temp_file_name( suggested_name, SpecUtils::temp_dir() );

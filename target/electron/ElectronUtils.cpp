@@ -33,9 +33,9 @@
 #include <string>
 #include <memory>
 
-#include <Wt/WServer>
-#include <Wt/WIOService>
-#include <Wt/WApplication>
+#include <Wt/WServer.h>
+#include <Wt/WIOService.h>
+#include <Wt/WApplication.h>
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SerialToDetectorModel.h"

@@ -75,7 +75,7 @@ typedef Wt::Chart::WCartesianChart ChartRenderHelper_t;
 #include "InterSpec/SpectrumDataModel.h"
 #include "InterSpec/ReferenceLineInfo.h"
 
-#include "js/SpectrumChart.js"
+#include "src/js_inline/SpectrumChart.js"
 
 using namespace std;
 using namespace Wt;
@@ -4003,7 +4003,7 @@ void SpectrumChart::paintEvent( WPaintDevice *paintDevice )
     //m_paintedLegendWidth is -100 if we have never made it here, so lets
     //  indicate we have made it here
     m_paintedLegendWidth = -1.0f;
-    LOAD_JAVASCRIPT(wApp, "js/SpectrumChart.js", "SpectrumChart", wtjsDrawnLegendTextMetric);
+    LOAD_JAVASCRIPT(wApp, "src/js_inline/SpectrumChart.js", "SpectrumChart", wtjsDrawnLegendTextMetric);
     
     m_legendTextMetric.reset( new JSignal<float>( this, "LegendTextMetric" ));
     m_legendTextMetric->connect( [this]( float a1 ){ legendTextSizeCallback( a1); } );
@@ -4098,7 +4098,7 @@ void SpectrumChart::enableLegend( const bool forceMobileStyle )
   
   if( wtapp )
   {
-    LOAD_JAVASCRIPT(wtapp, "js/SpectrumChart.js", "SpectrumChart", wtjsAlignLegend);
+    LOAD_JAVASCRIPT(wtapp, "src/js_inline/SpectrumChart.js", "SpectrumChart", wtjsAlignLegend);
   }
   
   m_legendType = FloatingLegend;
@@ -4273,7 +4273,7 @@ void SpectrumChart::setTextColor( const Wt::WColor &color )
 
 void SpectrumChart::saveChartToPng( const std::string &filename )
 {
-  LOAD_JAVASCRIPT(wApp, "js/SpectrumChart.js", "SpectrumChart", wtjsCanvasToPngDownload);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/SpectrumChart.js", "SpectrumChart", wtjsCanvasToPngDownload);
   
   doJavaScript( "Wt.WT.CanvasToPngDownload('" + id() + "','" + filename +"');" );
 }//void saveChartToPng( const std::string &name )

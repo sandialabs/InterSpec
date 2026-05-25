@@ -15,7 +15,7 @@ set( USE_BATCH_GUI_TOOLS ON CACHE BOOL "Enables GUI batch processing." )
 if( APPLE )
   # Without an explicit deployment target the build picks up whatever SDK
   # version is current (e.g. macOS 26.2), which then refuses to launch on
-  # older systems.  Match target/osx/CMakeLists.txt and target the same
+  # older systems.  Match target/macos/CMakeLists.txt and target the same
   # baseline as the macOS native build (Ventura 13.3, required for the
   # C++20 libc++ features used elsewhere in the project).  Bump if the
   # installed wxWidgets requires a newer macOS.
@@ -115,7 +115,7 @@ list(APPEND sources
 if( APPLE )
   # Bundle data/, InterSpec_resources/, and Wt resources into InterSpec.app at
   # build time (not just install time) so Xcode "Run" can launch the app
-  # without first running `cmake --install`.  Mirrors target/osx/CMakeLists.txt.
+  # without first running `cmake --install`.  Mirrors target/macos/CMakeLists.txt.
   file( GLOB_RECURSE DATA_RES_SOURCES      "${CMAKE_CURRENT_SOURCE_DIR}/../../data/*" )
   file( GLOB_RECURSE INTERSPEC_RES_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../../InterSpec_resources/*" )
   file( GLOB_RECURSE WT_RES_SOURCES        "${WT_RESOURCES_DIRECTORY}/*" )

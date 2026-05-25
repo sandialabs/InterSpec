@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.20...3.31)
 
 set( SpecUtils_JAVA_SWIG OFF CACHE INTERNAL "" )
-set( SpecUtils_USE_WT_THREADPOOL ON CACHE INTERNAL "" )
 set( SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE INTERNAL "" )
 
 set( ANDROID_CPP_FEATURES "rtti exceptions" CACHE INTERNAL "" )

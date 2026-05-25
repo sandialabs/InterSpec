@@ -368,8 +368,8 @@ set(sources
     src/BatchPeak.cpp
     src/BatchActivity.cpp
     src/BatchInfoLog.cpp
-    js/SpectrumChart.js
-    js/InterSpec.js
+    src/js_inline/SpectrumChart.js
+    src/js_inline/InterSpec.js
 )
 
 set(headers
@@ -532,7 +532,7 @@ if(USE_SEARCH_MODE_3D_CHART)
 endif(USE_SEARCH_MODE_3D_CHART)
 
 if(USE_TERMINAL_WIDGET)
-    list( APPEND sources src/TerminalModel.cpp src/TerminalWidget.cpp js/TerminalWidget.js )
+    list( APPEND sources src/TerminalModel.cpp src/TerminalWidget.cpp src/js_inline/TerminalWidget.js )
     list( APPEND headers InterSpec/TerminalModel.h InterSpec/TerminalWidget.h )
 endif(USE_TERMINAL_WIDGET)
 
@@ -560,7 +560,7 @@ if(USE_SPECRUM_FILE_QUERY_WIDGET)
         
   list( APPEND sources src/SpecFileQuery.cpp src/SpecFileQueryWidget.cpp src/SpecFileQueryDbCache.cpp )
   list( APPEND headers InterSpec/SpecFileQuery.h InterSpec/SpecFileQueryWidget.h InterSpec/SpecFileQueryDbCache.h )
-  list( APPEND sources js/SpecFileQueryWidget.js )
+  list( APPEND sources src/js_inline/SpecFileQueryWidget.js )
 endif(USE_SPECRUM_FILE_QUERY_WIDGET)
 
 
@@ -643,11 +643,11 @@ endif( (NOT IOS) AND (NOT ANDROID) AND (NOT BUILD_FOR_WEB_DEPLOYMENT) )
 
 
 if( BUILD_AS_OSX_APP )
-  list( APPEND sources target/osx/macOsUtils.mm target/osx/NativeMenu.mm )
-  list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
+  list( APPEND sources target/macos/macOsUtils.mm target/macos/NativeMenu.mm )
+  list( APPEND headers target/macos/macOsUtils.h target/macos/NativeMenu.h )
 elseif( APPLE AND BUILD_AS_WX_WIDGETS_APP )
-  list( APPEND sources target/osx/macOsUtils.mm )
-  list( APPEND headers target/osx/macOsUtils.h )
+  list( APPEND sources target/macos/macOsUtils.mm )
+  list( APPEND headers target/macos/macOsUtils.h )
 endif()
 
 

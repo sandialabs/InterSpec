@@ -38,7 +38,7 @@ if [ $? -ne 0 ] || [ -z "$interspec_src" ]; then
     exit 1
 fi
 
-PATCH_DIR="${interspec_src}/target/patches/"
+PATCH_DIR="${interspec_src}/target/dep_build/patches/"
 if [ ! -d "${PATCH_DIR}" ]; then
   echo "The InterSpec patch directory at '${PATCH_DIR}' is invalid."
   exit 1

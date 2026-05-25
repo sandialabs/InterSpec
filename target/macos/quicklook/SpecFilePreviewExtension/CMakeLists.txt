@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 project( SpecFilePreviewExtensions )
 
 # The InterSpec source root directory
-set( InterSpec_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../.." )
+set( InterSpec_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." )
 
 # --- Quick Look Preview Extension ---
 # App extensions must be executables (MH_EXECUTE), not bundles (MH_BUNDLE).

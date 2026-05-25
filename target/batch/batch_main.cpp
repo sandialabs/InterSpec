@@ -41,7 +41,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 
 #if( BUILD_AS_OSX_APP || defined(__APPLE__) )
-#include "target/osx/macOsUtils.h"
+#include "target/macos/macOsUtils.h"
 #endif
 
 static_assert( USE_BATCH_CLI_TOOLS, "You must have USE_BATCH_CLI_TOOLS enabled to build this code" );

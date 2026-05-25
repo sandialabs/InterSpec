@@ -22,7 +22,7 @@ if [ ! -d "$1" ]; then
 fi
 
 interspec_src=$(realpath "$1")
-PATCH_DIR="${interspec_src}/target/patches/"
+PATCH_DIR="${interspec_src}/target/dep_build/patches/"
 if [ ! -d "${PATCH_DIR}" ]; then
   echo "The InterSpec patch directory at '${PATCH_DIR}' is invalid."
   exit 1
@@ -72,7 +72,7 @@ export MY_WT_PREFIX=$install_directory
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
 # Optional: also build wxWidgets (off by default).  wxWidgets is only needed when
-# building the target/wxWidgets desktop-app form; the local web-server and Electron
+# building the target/wxwidgets desktop-app form; the local web-server and Electron
 # targets do not require it.  Override by editing this line, or run with:
 #   BUILD_WXWIDGETS=1 ./dep_build_macOS.sh <src> <build> <install>
 BUILD_WXWIDGETS=${BUILD_WXWIDGETS:-0}
@@ -353,8 +353,8 @@ fi #if Ceres.installed exists / else
 cd "${working_directory}"
 
 
-## Build wxWidgets 3.2.1 (optional; needed only by the target/wxWidgets desktop-app form).
-## Matches the version used by target/patches/dep_build_msvc2022.bat so the API surface stays
+## Build wxWidgets 3.2.1 (optional; needed only by the target/wxwidgets desktop-app form).
+## Matches the version used by target/dep_build/dep_build_msvc2022.bat so the API surface stays
 ## consistent between platforms.
 if [ "${BUILD_WXWIDGETS}" != "1" ]; then
     echo "Skipping wxWidgets build (set BUILD_WXWIDGETS=1 to enable)."
@@ -371,7 +371,7 @@ else
   build_dir="wxWidgets-3.2.1-build"
 
   # The release zip does not contain a top-level directory, so create one and extract into it
-  # (mirrors how target/patches/dep_build_msvc2022.bat lays things out).
+  # (mirrors how target/dep_build/dep_build_msvc2022.bat lays things out).
   if [ -d "${src_dir}" ]; then
     echo "wxWidgets already extracted - not doing again."
     cd "${src_dir}"
@@ -397,7 +397,7 @@ else
   cd "${build_dir}"
 
   # Universal binary, static link, minimal extras.  On macOS wxWidgets' webview backend is WebKit
-  # (system framework); wxUSE_WEBVIEW and wxUSE_STC are needed by target/wxWidgets'
+  # (system framework); wxUSE_WEBVIEW and wxUSE_STC are needed by target/wxwidgets'
   # find_package(wxWidgets REQUIRED core base net webview stc).
   cmake -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" \

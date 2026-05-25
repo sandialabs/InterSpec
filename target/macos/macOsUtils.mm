@@ -30,10 +30,10 @@
 #import <AppKit/NSWorkspace.h>    //NSWorkspace
 #import <Foundation/Foundation.h> //NSFileManager, NSBundle, NSURL
 
-#include <Wt/WServer>
-#include <Wt/WApplication>
+#include <Wt/WServer.h>
+#include <Wt/WApplication.h>
 
-#include "target/osx/macOsUtils.h"
+#include "target/macos/macOsUtils.h"
 
 namespace macOsUtils
 {

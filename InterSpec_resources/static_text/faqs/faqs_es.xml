@@ -1017,7 +1017,7 @@
   </message>
 
   <message id="how-compile" title="Cómo compilar &lt;code&gt;InterSpec&lt;/code&gt; desde el código fuente">
-    El directorio <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/patches">InterSpec/target/patches</a>
+    El directorio <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/dep_build">InterSpec/target/dep_build</a>
     en el código (disponible en <a target="_blank" href="https://github.com/sandialabs/InterSpec">https://github.com/sandialabs/InterSpec</a>)
     proporciona instrucciones para esto.
   </message>

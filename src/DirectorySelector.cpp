@@ -46,7 +46,7 @@
 #endif
 
 #if( BUILD_AS_OSX_APP )
-#include "target/osx/macOsUtils.h"
+#include "target/macos/macOsUtils.h"
 #endif
 
 #if( BUILD_AS_WX_WIDGETS_APP )

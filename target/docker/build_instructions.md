@@ -61,7 +61,7 @@ apk add --no-cache alpine-sdk cmake patch linux-headers suitesparse-dev patch cu
 cmake -B ./build_alpine -DInterSpec_FETCH_DEPENDENCIES=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_FOR_WEB_DEPLOYMENT=ON -DUSE_REL_ACT_TOOL=ON -DBUILD_AS_LOCAL_SERVER=OFF -DBoost_INCLUDE_DIR=./build/_deps/boost-src/libs -DUSE_SEARCH_MODE_3D_CHART=ON -DUSE_QR_CODES=ON -DUSE_DETECTION_LIMIT_TOOL=ON -DUSE_BATCH_CLI_TOOLS=OFF -DUSE_BATCH_GUI_TOOLS=OFF -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" ./src/
 
 # Or if you prefer, you can build a "prefix" you can use in later Docker sessions, via:
-#./target/patches/dep_build_linux.sh /work/src/ /tmp/ /work/src/alpine_prefix
+#./target/dep_build/dep_build_linux.sh /work/src/ /tmp/ /work/src/alpine_prefix
 # cmake -B ./build_alpine -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_PREFIX_PATH=/work/src/alpine_prefix .....
 
 cmake --build build_alpine -j8

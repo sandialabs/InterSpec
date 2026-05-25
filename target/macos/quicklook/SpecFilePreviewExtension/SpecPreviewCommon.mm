@@ -36,10 +36,10 @@
 
 #include "CGPaintDevice.h"
 
-#include <Wt/WFont>
-#include <Wt/WPainter>
-#include <Wt/WPainterPath>
-#include <Wt/Chart/WDataSeries>
+#include <Wt/WFont.h>
+#include <Wt/WPainter.h>
+#include <Wt/WPainterPath.h>
+#include <Wt/Chart/WDataSeries.h>
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakDef.h"
@@ -99,8 +99,8 @@ namespace
         return;
 
       // Get the data model to check axis ranges
-      const double minx = axis( Chart::XAxis ).minimum();
-      const double maxx = axis( Chart::XAxis ).maximum();
+      const double minx = axis( Chart::Axis::X ).minimum();
+      const double maxx = axis( Chart::Axis::X ).maximum();
 
       std::vector<std::shared_ptr<const PeakDef>> gauspeaks, nongauspeaks;
 
@@ -163,20 +163,20 @@ namespace
     std::shared_ptr<const SpecUtils::Measurement> meas = foreground;
     std::shared_ptr<const SpecUtils::Measurement> back = background;
 
-    SpectrumDataModel dataModel;
+    auto dataModel = std::make_shared<SpectrumDataModel>();
     PreviewSpectrumChart chart;
-    chart.setModel( &dataModel );
+    chart.setModel( dataModel );
     chart.setDirectPeaks( peaks );
 
-    dataModel.setDataHistogram( meas );
+    dataModel->setDataHistogram( meas );
     if( back )
     {
-      dataModel.setBackgroundHistogram( back );
+      dataModel->setBackgroundHistogram( back );
       if( meas->live_time() > 0.0f && back->live_time() > 0.0f )
-        dataModel.setBackgroundDataScaleFactor( meas->live_time() / back->live_time() );
+        dataModel->setBackgroundDataScaleFactor( meas->live_time() / back->live_time() );
     }
 
-    vector<Chart::WDataSeries> series = dataModel.suggestDataSeries();
+    vector<Chart::WDataSeries> series = dataModel->suggestDataSeries();
 
     if( thumbnail )
     {
@@ -189,9 +189,13 @@ namespace
       }
     }
 
-    chart.setSeries( series );
+    std::vector<std::unique_ptr<Chart::WDataSeries>> seriesPtrs;
+    seriesPtrs.reserve( series.size() );
+    for( Chart::WDataSeries &s : series )
+      seriesPtrs.push_back( std::make_unique<Chart::WDataSeries>( std::move(s) ) );
+    chart.setSeries( std::move(seriesPtrs) );
 
-    chart.setPlotAreaPadding( 0, Wt::Top );
+    chart.setPlotAreaPadding( 0, Wt::Side::Top );
 
     if( thumbnail )
     {
@@ -199,34 +203,34 @@ namespace
       // setCompactAxis(true) subtracts 17px from the bottom padding,
       // so set padding after calling it to get the desired values.
       chart.setCompactAxis( true );
-      chart.setPlotAreaPadding( 4, Wt::Left );
-      chart.setPlotAreaPadding( 4, Wt::Bottom );
-      chart.setPlotAreaPadding( 2, Wt::Right );
-      chart.setPlotAreaPadding( 2, Wt::Top );
+      chart.setPlotAreaPadding( 4, Wt::Side::Left );
+      chart.setPlotAreaPadding( 4, Wt::Side::Bottom );
+      chart.setPlotAreaPadding( 2, Wt::Side::Right );
+      chart.setPlotAreaPadding( 2, Wt::Side::Top );
 
       // Hide tick labels but keep axis lines
-      chart.axis( Chart::XAxis ).setLabelFormat( " " );
-      chart.axis( Chart::YAxis ).setLabelFormat( " " );
+      chart.axis( Chart::Axis::X ).setLabelFormat( " " );
+      chart.axis( Chart::Axis::Y1 ).setLabelFormat( " " );
     }else
     {
       const SpecRenderType render_type = ((width < 641) ? CompactSpecRender : LargeSpecRender);
 
-      WFont labelFont = chart.axis( Chart::YAxis ).labelFont();
+      WFont labelFont = chart.axis( Chart::Axis::Y1 ).labelFont();
       WFont titleFont = chart.titleFont();
 
       switch( render_type )
       {
         case LargeSpecRender:
           labelFont.setSize( WLength( ns_large_render_font_size ) );
-          chart.setPlotAreaPadding( 62, Wt::Left );
-          chart.setPlotAreaPadding( 42, Wt::Bottom );
-          chart.setPlotAreaPadding( 10, Wt::Right );
+          chart.setPlotAreaPadding( 62, Wt::Side::Left );
+          chart.setPlotAreaPadding( 42, Wt::Side::Bottom );
+          chart.setPlotAreaPadding( 10, Wt::Side::Right );
           if( title.size() )
           {
-            chart.setPlotAreaPadding( ns_large_render_font_size + 4, Wt::Top );
+            chart.setPlotAreaPadding( ns_large_render_font_size + 4, Wt::Side::Top );
             titleFont.setSize( ns_large_render_font_size );
           }
-          chart.axis( Chart::XAxis ).setTitle( "Energy (keV)" );
+          chart.axis( Chart::Axis::X ).setTitle( "Energy (keV)" );
           chart.setCompactAxis( false );
           if( title.size() )
             chart.setTitle( title );
@@ -234,19 +238,19 @@ namespace
 
         case CompactSpecRender:
           labelFont.setSize( WLength( ns_compact_render_font_size ) );
-          chart.setPlotAreaPadding( 5, Wt::Left );
-          chart.setPlotAreaPadding( 20, Wt::Bottom );
-          chart.setPlotAreaPadding( 0, Wt::Right );
+          chart.setPlotAreaPadding( 5, Wt::Side::Left );
+          chart.setPlotAreaPadding( 20, Wt::Side::Bottom );
+          chart.setPlotAreaPadding( 0, Wt::Side::Right );
           titleFont.setSize( ns_compact_render_font_size );
-          chart.axis( Chart::XAxis ).setTitle( "(keV)" );
+          chart.axis( Chart::Axis::X ).setTitle( "(keV)" );
           chart.setCompactAxis( true );
           break;
       }//switch( render_type )
 
-      chart.axis( Chart::XAxis ).setLabelFont( labelFont );
-      chart.axis( Chart::YAxis ).setLabelFont( labelFont );
-      chart.axis( Chart::XAxis ).setTitleFont( labelFont );
-      chart.axis( Chart::YAxis ).setTitleFont( labelFont );
+      chart.axis( Chart::Axis::X ).setLabelFont( labelFont );
+      chart.axis( Chart::Axis::Y1 ).setLabelFont( labelFont );
+      chart.axis( Chart::Axis::X ).setTitleFont( labelFont );
+      chart.axis( Chart::Axis::Y1 ).setTitleFont( labelFont );
       chart.setTitleFont( titleFont );
     }//if( thumbnail ) / else
 
@@ -257,21 +261,21 @@ namespace
 
     const size_t displayednbin = meas->find_gamma_channel( upperx ) - meas->find_gamma_channel( lowx );
     const int plotAreaWidth = static_cast<int>( image.width().toPixels() )
-                              - chart.plotAreaPadding( Left )
-                              - chart.plotAreaPadding( Right );
+                              - chart.plotAreaPadding( Side::Left )
+                              - chart.plotAreaPadding( Side::Right );
     const float bins_per_pixel = float( displayednbin ) / float( plotAreaWidth );
     const int factor = max( static_cast<int>( ceil( bins_per_pixel / 2 ) ), 1 );
-    dataModel.setRebinFactor( factor );
+    dataModel->setRebinFactor( factor );
 
-    chart.setYAxisScale( Wt::Chart::LogScale );
+    chart.setYAxisScale( Wt::Chart::AxisScale::Log );
     chart.setAutoYAxisRange();
 
     if( !thumbnail && (width >= 641) )
     {
       if( factor == 1 )
-        chart.axis( Chart::YAxis ).setTitle( "Counts Per Channel" );
+        chart.axis( Chart::Axis::Y1 ).setTitle( "Counts Per Channel" );
       else
-        chart.axis( Chart::YAxis ).setTitle( "Counts Per " + std::to_string( factor ) + " Channels" );
+        chart.axis( Chart::Axis::Y1 ).setTitle( "Counts Per " + std::to_string( factor ) + " Channels" );
     }
 
     WPainter p( &image );
@@ -375,46 +379,46 @@ namespace
     gammaH->set_energy_calibration( timecal );
     neutronH->set_energy_calibration( timecal );
 
-    SpectrumDataModel dataModel;
+    auto dataModel = std::make_shared<SpectrumDataModel>();
     PreviewSpectrumChart chart;
-    chart.setModel( &dataModel );
-    chart.setPlotAreaPadding( 0, Wt::Top );
+    chart.setModel( dataModel );
+    chart.setPlotAreaPadding( 0, Wt::Side::Top );
 
-    WFont labelFont = chart.axis( Chart::YAxis ).labelFont();
+    WFont labelFont = chart.axis( Chart::Axis::Y1 ).labelFont();
 
     switch( render_type )
     {
       case LargeSpecRender:
         labelFont.setSize( WLength( ns_large_render_font_size ) );
-        chart.setPlotAreaPadding( 62, Wt::Left );
-        chart.setPlotAreaPadding( 42, Wt::Bottom );
-        chart.setPlotAreaPadding( (contained_neutrons ? 20 : 5), Wt::Right );
-        chart.axis( Chart::XAxis ).setTitle( "Time (s)" );
+        chart.setPlotAreaPadding( 62, Wt::Side::Left );
+        chart.setPlotAreaPadding( 42, Wt::Side::Bottom );
+        chart.setPlotAreaPadding( (contained_neutrons ? 20 : 5), Wt::Side::Right );
+        chart.axis( Chart::Axis::X ).setTitle( "Time (s)" );
         chart.setCompactAxis( false );
         break;
 
       case CompactSpecRender:
         labelFont.setSize( WLength( ns_compact_render_font_size ) );
-        chart.setPlotAreaPadding( 5, Wt::Left );
-        chart.setPlotAreaPadding( 20, Wt::Bottom );
-        chart.setPlotAreaPadding( 5, Wt::Right );
-        chart.axis( Chart::XAxis ).setTitle( "(sec.)" );
+        chart.setPlotAreaPadding( 5, Wt::Side::Left );
+        chart.setPlotAreaPadding( 20, Wt::Side::Bottom );
+        chart.setPlotAreaPadding( 5, Wt::Side::Right );
+        chart.axis( Chart::Axis::X ).setTitle( "(sec.)" );
         chart.setCompactAxis( true );
         break;
     }//switch( render_type )
 
-    chart.axis( Chart::XAxis ).setLabelFont( labelFont );
-    chart.axis( Chart::YAxis ).setLabelFont( labelFont );
-    chart.axis( Chart::Y2Axis ).setLabelFont( labelFont );
-    chart.axis( Chart::XAxis ).setTitleFont( labelFont );
-    chart.axis( Chart::YAxis ).setTitleFont( labelFont );
-    chart.axis( Chart::Y2Axis ).setTitleFont( labelFont );
+    chart.axis( Chart::Axis::X ).setLabelFont( labelFont );
+    chart.axis( Chart::Axis::Y1 ).setLabelFont( labelFont );
+    chart.axis( Chart::Axis::Y2 ).setLabelFont( labelFont );
+    chart.axis( Chart::Axis::X ).setTitleFont( labelFont );
+    chart.axis( Chart::Axis::Y1 ).setTitleFont( labelFont );
+    chart.axis( Chart::Axis::Y2 ).setTitleFont( labelFont );
 
-    dataModel.setDataHistogram( gammaH );
+    dataModel->setDataHistogram( gammaH );
     if( contained_neutrons )
     {
-      dataModel.setSecondDataHistogram( neutronH, true );
-      chart.axis( Chart::Y2Axis ).setVisible( true );
+      dataModel->setSecondDataHistogram( neutronH, true );
+      chart.axis( Chart::Axis::Y2 ).setVisible( true );
     }
 
     // Highlight occupied time regions
@@ -438,13 +442,17 @@ namespace
 
     chart.setTimeHighLightRegions( timeranges, SpectrumChart::ForegroundHighlight );
 
-    const vector<Chart::WDataSeries> series = dataModel.suggestDataSeries();
-    chart.setSeries( series );
+    vector<Chart::WDataSeries> series = dataModel->suggestDataSeries();
+    std::vector<std::unique_ptr<Chart::WDataSeries>> seriesPtrs;
+    seriesPtrs.reserve( series.size() );
+    for( Chart::WDataSeries &s : series )
+      seriesPtrs.push_back( std::make_unique<Chart::WDataSeries>( std::move(s) ) );
+    chart.setSeries( std::move(seriesPtrs) );
 
     chart.setXAxisRange( time_values->at( 0 ), time_values->back() );
-    chart.axis( Chart::YAxis ).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
+    chart.axis( Chart::Axis::Y1 ).setAutoLimits( Chart::AxisValue::Minimum | Chart::AxisValue::Maximum );
     if( contained_neutrons )
-      chart.axis( Chart::Y2Axis ).setAutoLimits( Chart::MinimumValue | Chart::MaximumValue );
+      chart.axis( Chart::Axis::Y2 ).setAutoLimits( Chart::AxisValue::Minimum | Chart::AxisValue::Maximum );
 
     WPainter p( &image );
     chart.paint( p );

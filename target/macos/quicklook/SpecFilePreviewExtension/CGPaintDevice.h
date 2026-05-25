@@ -27,9 +27,14 @@
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreText/CoreText.h>
 
-#include <Wt/WFont>
-#include <Wt/WLength>
-#include <Wt/WPaintDevice>
+#include <Wt/WFont.h>
+#include <Wt/WLength.h>
+#include <Wt/WPaintDevice.h>
+
+namespace Wt
+{
+  class WAbstractDataInfo;
+}
 
 /** A Wt::WPaintDevice backed by a macOS CGBitmapContext and Core Text.
 
@@ -72,12 +77,15 @@ public:
   Wt::WFlags<FeatureFlag> features() const override;
   Wt::WLength width() const override;
   Wt::WLength height() const override;
-  void setChanged( Wt::WFlags<ChangeFlag> flags ) override;
+  void setChanged( Wt::WFlags<Wt::PainterChangeFlag> flags ) override;
   void drawArc( const Wt::WRectF &rect, double startAngle, double spanAngle ) override;
   void drawImage( const Wt::WRectF &rect, const std::string &imageUri,
                   int imgWidth, int imgHeight, const Wt::WRectF &sourceRect ) override;
+  void drawImage( const Wt::WRectF &rect, const Wt::WAbstractDataInfo *imageInfo,
+                  int imgWidth, int imgHeight, const Wt::WRectF &sourceRect ) override;
   void drawLine( double x1, double y1, double x2, double y2 ) override;
   void drawPath( const Wt::WPainterPath &path ) override;
+  void drawRect( const Wt::WRectF &rectangle ) override;
   void drawText( const Wt::WRectF &rect, Wt::WFlags<Wt::AlignmentFlag> flags,
                  Wt::TextFlag textFlag, const Wt::WString &text,
                  const Wt::WPointF *clipPoint ) override;

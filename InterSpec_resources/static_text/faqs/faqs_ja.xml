@@ -1026,7 +1026,7 @@
   </message>
 
   <message id="how-compile" title="&lt;code&gt;InterSpec&lt;/code&gt;をソースからコンパイルする方法">
-    コード内の<a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/patches">InterSpec/target/patches</a>
+    コード内の<a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/dep_build">InterSpec/target/dep_build</a>
     ディレクトリ（<a target="_blank" href="https://github.com/sandialabs/InterSpec">https://github.com/sandialabs/InterSpec</a>で入手可能）が
     このための手順を提供しています。
   </message>

@@ -57,7 +57,7 @@
 #include "InterSpec/TerminalWidget.h"
 #include "InterSpec/UserPreferences.h"
 
-#include "js/TerminalWidget.js"
+#include "src/js_inline/TerminalWidget.js"
 
 
 // The regex in GCC 4.8.x does not have working regex
@@ -189,27 +189,27 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
   //An example of creating a javascript function you can    call client side (no
   //  round trip to server). See js/TerminalWidget.js for function
   //  implementation.
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetInit );
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetDarken);
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetLighten);
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetHandleEnterKey);
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetSaveInput);
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetAccessNextInput);
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetAccessPreviousInput);
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetSelectFirstArgument);
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetCommandMenuItemSelected);
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetChartClicked );
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetInit );
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetDarken);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetLighten);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetHandleEnterKey);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetSaveInput);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetAccessNextInput);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetAccessPreviousInput);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetSelectFirstArgument);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetCommandMenuItemSelected);
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetChartClicked );
   
   //An example of calling the above function, from the c++
   doJavaScript( "Wt.WT.TerminalWidgetInit();" );
 
   //An example of calling a client side JavaScript function, based on a
   //  client side interaction, without the round-trip to the server.
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetExampleClientJsFcn );
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetExampleClientJsFcn );
   button->clicked().connect( "function(sender,event){Wt.WT.TerminalWidgetExampleClientJsFcn('" + id() + "'," + m_edit->jsRef() + ");}" );
     
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetKeyPressed );
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetKeyDown );
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetKeyPressed );
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsTerminalWidgetKeyDown );
 
   m_edit->enterPressed().connect( this, &TerminalWidget::handleEnterKey );
   m_edit->keyPressed().connect( "function(sender,event){Wt.WT.TerminalWidgetKeyPressed(" + m_edit->jsRef() + ", event);}" );
@@ -218,7 +218,7 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
   
   //An example of using javascript signal slot so you can process the entered
   //  text in javascript before uploading to the server (c++)
-  LOAD_JAVASCRIPT(wApp, "js/TerminalWidget.js", "TerminalWidget", wtjsButtonClickedJsSlot );
+  LOAD_JAVASCRIPT(wApp, "src/js_inline/TerminalWidget.js", "TerminalWidget", wtjsButtonClickedJsSlot );
   const string slotjs = "function(sender,event){Wt.WT.ButtonClickedJsSlot('" + id() + "'," + m_edit->jsRef() + ");}";
   button->clicked().connect( slotjs );
   m_buttonClickedSignal.reset( new JSignal<std::string>( this, "lineentered", true ) );

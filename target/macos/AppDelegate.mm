@@ -40,10 +40,10 @@
 #undef require
 #endif
 
-#include <Wt/WString>
-#include <Wt/Json/Array>
-#include <Wt/Json/Value>
-#include <Wt/Json/Serializer>
+#include <Wt/WString.h>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Serializer.h>
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"

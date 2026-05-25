@@ -1180,7 +1180,7 @@ void download_to_native_save( const std::string &url )
       if( base.contains( "ProxySetting" ) )
       {
         const Wt::Json::Value &val = base.get( "ProxySetting" );
-        if( val.type() != Wt::Json::Type::StringType )
+        if( val.type() != Wt::Json::Type::String )
           throw runtime_error( "ProxySetting must be a string value" );
         config.m_proxy = val.orIfNull("");
       }
@@ -1189,7 +1189,7 @@ void download_to_native_save( const std::string &url )
       if( base.contains( "HttpPortToServeOn" ) )
       {
         const Wt::Json::Value &val = base.get( "HttpPortToServeOn" );
-        if( val.type() != Wt::Json::Type::NumberType )
+        if( val.type() != Wt::Json::Type::Number )
           throw runtime_error( "HttpPortToServeOn must be a non-negative integer" );
         const int port = val.toNumber().orIfNull( 0 );
         if( (port < 0) || (port > std::numeric_limits<unsigned short int>::max()) )
@@ -1201,7 +1201,7 @@ void download_to_native_save( const std::string &url )
       if( base.contains( "AllowTokenFreeSessions" ) )
       {
         const Wt::Json::Value &val = base.get( "AllowTokenFreeSessions" );
-        if( val.type() != Wt::Json::Type::BoolType )
+        if( val.type() != Wt::Json::Type::Bool )
           throw runtime_error( "AllowTokenFreeSessions must be boolean" );
        
         config.m_require_token = !val.toBool();
@@ -1210,7 +1210,7 @@ void download_to_native_save( const std::string &url )
       if( base.contains( "RestorePreviousSession" ) )
       {
         const Wt::Json::Value &val = base.get( "RestorePreviousSession" );
-        if( val.type() != Wt::Json::Type::BoolType )
+        if( val.type() != Wt::Json::Type::Bool )
           throw runtime_error( "RestorePreviousSession must be boolean" );
 
         config.m_allow_restore = val.toBool();
@@ -1219,7 +1219,7 @@ void download_to_native_save( const std::string &url )
       if( base.contains( "OpenDevTools" ) )
       {
         const Wt::Json::Value &val = base.get( "OpenDevTools" );
-        if( val.type() != Wt::Json::Type::BoolType )
+        if( val.type() != Wt::Json::Type::Bool )
           throw runtime_error( "OpenDevTools must be boolean" );
 
         config.m_open_dev_tools = val.toBool();
@@ -1229,7 +1229,7 @@ void download_to_native_save( const std::string &url )
       if( base.contains( "ArcGisKey" ) )
       {
         const Wt::Json::Value &val = base.get( "ArcGisKey" );
-        if( val.type() != Wt::Json::Type::StringType )
+        if( val.type() != Wt::Json::Type::String )
           throw runtime_error( "ArcGisKey must be string" );
 
         config.m_arcgis_key = val.orIfNull("");
@@ -1239,7 +1239,7 @@ void download_to_native_save( const std::string &url )
       if( base.contains( "MaxUndoSteps" ) )
       {
         const Wt::Json::Value &val = base.get( "MaxUndoSteps" );
-        if( val.type() != Wt::Json::Type::NumberType )
+        if( val.type() != Wt::Json::Type::Number )
           throw runtime_error( "MaxUndoSteps must be a number" );
        
         config.m_max_undo_steps = val.toNumber();

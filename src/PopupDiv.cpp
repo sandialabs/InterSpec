@@ -41,7 +41,7 @@
 #include "InterSpec/InterSpecApp.h"
 
 #if(USE_OSX_NATIVE_MENU)
-#include "target/osx/NativeMenu.h"
+#include "target/macos/NativeMenu.h"
 #endif
 
 using namespace Wt;
@@ -1276,7 +1276,7 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     }
     
 #if( BUILD_AS_ELECTRON_APP )
-    menu->setMargin( 25, Wt::Top );
+    menu->setMargin( 25, Wt::Side::Top );
 #endif
     
     // In Wt4, addMenu takes unique_ptr<WMenu>; raw pointer `menu` remains valid after transfer

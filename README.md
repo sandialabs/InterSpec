@@ -22,39 +22,63 @@ A brief getting started guide can be found in [brief_ana_overview_InterSpec_Oct2
 Release notes, tutorials, and example problems can be found at [https://sandialabs.github.io/InterSpec/releases/](https://sandialabs.github.io/InterSpec/releases/).
 
 ## Some Screen Shots
-![W187 peak fit example](/support/imgs/overview_W187.png?raw=true "Easy to use user interface.")
+![W187 peak fit example](/docs/images/overview_W187.png?raw=true "Easy to use user interface.")
 
 Interactions with the chart are fast and natural.  Peak fitting is as easy as double clicking where 
 you want a peak fit, or there is an automated option that is especially useful for HPGe detectors.
 
-![Activity Fit Tool](/support/imgs/th232_activity_fit.png?raw=true "Advanced fitting for nuclide activity, age, and shielding")
+![Activity Fit Tool](/docs/images/th232_activity_fit.png?raw=true "Advanced fitting for nuclide activity, age, and shielding")
 
 Can fit for activities and shielding for multiple nuclides at once, taking into account interferences, ages, self-attenuation, etc.  A large shielding database is included, or generic shielding can be used.  
 
-![Ho166m and Eu152 peak fit example](/support/imgs/ho166m_eu152_ex.png?raw=true "Advanced peak fitting")
+![Ho166m and Eu152 peak fit example](/docs/images/ho166m_eu152_ex.png?raw=true "Advanced peak fitting")
 
 Easily fit overlapping peaks.  Photopeak sources are assigned to peaks for easy activity/shielding fitting or energy calibration.
 
 
-![Nuclear decay chart](/support/imgs/nuc_decay_chart_example.png?raw=true "Nuclear decay calculations")
+![Nuclear decay chart](/docs/images/nuc_decay_chart_example.png?raw=true "Nuclear decay calculations")
 
 Includes an extensive database of nuclides.  Nuclide aging is performed on-the-fly throughout the app to allow adjusting or fitting for ages.
 
 
-![Nuclear decay chain](/support/imgs/nuc_decay_chain_example.png?raw=true "Decay chain visualization/reference")
+![Nuclear decay chain](/docs/images/nuc_decay_chain_example.png?raw=true "Decay chain visualization/reference")
 Lots of useful tools.
 
 
-![Nuclide identification by energy](/support/imgs/nuclide_id_help.png?raw=true "Nuclide identification by energy")
+![Nuclide identification by energy](/docs/images/nuclide_id_help.png?raw=true "Nuclide identification by energy")
 
 Searching for nuclides by energy, by default, takes into acount peak amplitudes and other peaks in the spectrum (even if you havent fit for them)
 to order results in an intelligent way.
 
 
-![Dose calculation example](/support/imgs/dose_calculator.png?raw=true "Dose calculator")
+![Dose calculation example](/docs/images/dose_calculator.png?raw=true "Dose calculator")
 
 You can go from source activity to dose, or from measured dose to source activity, or shielding amount.  
 
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| `InterSpec/` | Public C++ headers (one per class, flat layout) |
+| `src/` | C++ implementations matching headers in `InterSpec/` |
+| `src/js_inline/` | JavaScript that is `#include`d into C++ and embedded in the executable via Wt's `LOAD_JAVASCRIPT` macro (not served as web assets) |
+| `InterSpec_resources/` | Web assets served at runtime: CSS, runtime JS (D3, chart code, theme scripts), HTML templates, images, and `app_text/` for i18n |
+| `data/` | Nuclear data, detector response definitions, material libraries, reference spectra, Wt config files |
+| `cmake/` | CMake toolchain files, dependency-fetching logic, JS/CSS deployment helpers |
+| `external_libs/` | Third-party libraries — `SpecUtils`, `SandiaDecay`, `QR-Code-generator` are git submodules; the rest (`Cuba-3.0`, `Minuit2`, `muparserx-4.0.7`, `pugixml-1.9`, `VoigtDistribution`) are vendored copies |
+| `target/macos/` | macOS native (Cocoa) desktop app, including the `quicklook/` Spotlight/Finder preview extension |
+| `target/wxwidgets/` | wxWidgets-based desktop app for Windows / Linux / macOS |
+| `target/electron/` | Electron-based desktop app (Node.js native addon) |
+| `target/ios/` | iOS / iPadOS app |
+| `target/android/` | Android app (Gradle + JNI) |
+| `target/batch/` | Command-line batch processing tool |
+| `target/testing/` | Unit-test suite (built independently) |
+| `target/docker/` | Containerfiles for reproducible builds and CI |
+| `target/dep_build/` | Scripts that build a "prefix" directory of dependencies (Boost, Wt, Eigen, Ceres, zlib) for offline / fast-rebuild workflows; plus the patches those scripts apply |
+| `target/macos/quicklook/`, `target/peak_fit_improve/`, `target/sharedlib/`, `target/example_code/` | See per-directory READMEs |
+| `docs/` | Project documentation and screenshots used by this README |
+| `example_spectra/` | Sample N42 spectra for testing and demos |
 
 ## Building from source
 
@@ -71,7 +95,7 @@ At a minimum, you will need a C++14 compiler, and [cmake](https://cmake.org/).
 
 Then to build, you can choose one of two methods to build the code:
 1. Use [cmake](https://cmake.org/) to fetch and build the prerequisites for you, by specifying the `InterSpec_FETCH_DEPENDENCIES` CMake option to `ON`.  This option requires having [git](https://git-scm.com) installed, but is generally the easier of the two options.
-2. Build the prerequisites yourself.  This option is faster if you plan to rebuild the code many times, as CMake will have less libraries to deal with internally,.  You will need to build the following libraries from source (see the build scripts in the [patches](/target/patches/) directory):
+2. Build the prerequisites yourself.  This option is faster if you plan to rebuild the code many times, as CMake will have less libraries to deal with internally,.  You will need to build the following libraries from source (see the build scripts in the [dep_build](/target/dep_build/) directory):
       * [Wt](https://www.webtoolkit.eu/wt) version 4.12.6.
       * [boost](https://www.boost.org/) version 1.78 is
 
@@ -83,7 +107,7 @@ These libraries include
 [muparserx](https://github.com/beltoforion/muparserx), [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library), [pugixml](https://pugixml.org)
 and [rapidxml](http://rapidxml.sourceforge.net/), which are in the
 [external_libs](https://github.com/sandialabs/interspec/tree/master/external_libs) directory, while 
-the [js](https://github.com/sandialabs/interspec/tree/master/js) directory contains some ECMAScript libraries, including
+the [InterSpec_resources](https://github.com/sandialabs/interspec/tree/master/InterSpec_resources) directory contains the ECMAScript libraries served as web assets, including
 [jQuery](https://jquery.org),
 [qTip2](https://github.com/qTip2/qTip2), and
 [D3](https://d3js.org).

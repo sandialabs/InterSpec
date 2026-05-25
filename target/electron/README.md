@@ -6,7 +6,7 @@ In order to create the [Electron]([https://electronjs.org/](https://electronjs.o
 You can either manually build the InterSpec dependencies (boost, Wt, zlib), or you can have CMake fetch and build these dependencies.  Having CMake fetch and build the dependencies takes maybe an hour to build things the first time (however, only a couple minutes of this requires your attention) and then subsequent builds are a couple minutes; if you plan to make a substantial number of changes and re-compilations, then the manually built dependencies will yield a slightly faster compile time after each change.
 
 ## Building with manually compiled dependencies
-To compile the InterSpec code, and package the Electron app, with the manually compiled dependencies (see [patches/README.md](../patches/README.md) for instructions), the following commands are a good base to start with:
+To compile the InterSpec code, and package the Electron app, with the manually compiled dependencies (see [dep_build/README.md](../dep_build/README.md) for instructions), the following commands are a good base to start with:
 
 ```bash
 npm install -g cmake-js 

@@ -76,7 +76,7 @@
 #endif
 
 #if( BUILD_AS_OSX_APP )
-#include "target/osx/macOsUtils.h"
+#include "target/macos/macOsUtils.h"
 #endif
 
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
@@ -983,7 +983,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   //                Not sure how to fix this, atm
   m_sucessfullyLoadedSignal.reset( new Wt::JSignal<>( m_viewer, "SucessfullyLoadedConf", false ) );
   m_sucessfullyLoadedSignal->connect( this, &InterSpecApp::loadSuccesfullCallback );
-  doJavaScript( "setTimeout(function(){" + m_sucessfullyLoadedSignal->createCall() + "}, 250);" );
+  doJavaScript( "setTimeout(function(){" + m_sucessfullyLoadedSignal->createCall({}) + "}, 250);" );
 #endif
   
   // The user can override the mobile setting for tablets, so we'll fix-up what CSS we load here.
