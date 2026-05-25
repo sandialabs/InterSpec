@@ -476,7 +476,6 @@ ScalarType fit_amp_and_offset_imp( const float *x,
   // step_coeff is only used for FlatStepCDF/LinearStepCDF; for other types it should be zero
   assert( cdf_step_coeff || (step_coeff == ScalarType(0.0)) );
 
-  using namespace boost::numeric;
   const size_t npeaks = sigmas.size();
 
   const Eigen::Index num_poly_terms = static_cast<Eigen::Index>( num_polynomial_terms  );

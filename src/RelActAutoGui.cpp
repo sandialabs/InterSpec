@@ -4830,7 +4830,11 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 {
   if( !parent )
     return;
-  
+
+  const bool isPhone = m_interspec && m_interspec->isPhone();
+  const char * const html_label_key = isPhone ? "raag-html-report-short" : "raag-html-report";
+  const char * const xml_label_key  = isPhone ? "raag-xml-config-short"  : "raag-xml-config";
+
 #if( BUILD_AS_OSX_APP || IOS )
   WAnchor *btn = new WAnchor( WLink(m_html_download_rsc), parent );
   btn->setTarget( AnchorTarget::TargetNewWindow );
@@ -4844,24 +4848,24 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 
 #endif
 
-  btn->setText( WString::tr("raag-html-report") );
-  
+  btn->setText( WString::tr(html_label_key) );
+
   m_calc_started.connect( btn, &WWidget::disable );
   m_calc_failed.connect( btn, &WWidget::disable );
   m_calc_successful.connect( btn, &WWidget::enable );
-  
+
 #if( BUILD_AS_OSX_APP || IOS )
   btn = new WAnchor( WLink(m_xml_download_rsc), parent );
   btn->setTarget( AnchorTarget::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
-  btn->setText( WString::tr("raag-xml-config") );
+  btn->setText( WString::tr(xml_label_key) );
 #else
-  btn = new WPushButton( WString::tr("raag-xml-config"), parent );
+  btn = new WPushButton( WString::tr(xml_label_key), parent );
   btn->setIcon( "InterSpec_resources/images/download_small.svg" );
   btn->setLink( WLink( m_xml_download_rsc ) );
   btn->setLinkTarget( Wt::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
-  
+
 #endif
 
   // TODO: add XML upload...

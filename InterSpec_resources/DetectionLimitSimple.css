@@ -164,3 +164,70 @@
   border-spacing: 5px 5px;
 }
 
+
+/* Phone-only: shrink inputs, let DetectorDisplay take its own row, allow the
+   result text to grow when it wraps instead of clipping at 41px. */
+.IsPhone .DetectionLimitSimple .ResultsTxtArea {
+  height: auto;
+  min-height: 41px;
+}
+
+.IsPhone .DetectionLimitSimple .GeneralInput > input { width: 75px; }
+.IsPhone .DetectionLimitSimple .GeneralInput > select { width: 80px; }
+.IsPhone .DetectionLimitSimple .GeneralInput input.Wt-spinbox { width: 55px; }
+
+/* On phone we insert a dedicated row 3 for the DetectorDisplay, on the right side,
+   and shift everything else in rows 3-9 down by one row to make room. */
+.IsPhone .DetectionLimitSimple .GeneralInput .GridThirdRow { grid-row-start: 4; }
+.IsPhone .DetectionLimitSimple .GeneralInput .GridFourthRow { grid-row-start: 5; }
+.IsPhone .DetectionLimitSimple .GeneralInput .GridFifthRow { grid-row-start: 6; }
+.IsPhone .DetectionLimitSimple .GeneralInput .GridSixthRow { grid-row-start: 7; }
+.IsPhone .DetectionLimitSimple .GeneralInput .GridSeventhRow { grid-row-start: 8; }
+.IsPhone .DetectionLimitSimple .GeneralInput .GridEighthRow { grid-row-start: 9; }
+.IsPhone .DetectionLimitSimple .GeneralInput .GridNinthRow { grid-row-start: 10; }
+
+/* Pin the DetectorDisplay back to row 3 (overrides the GridThirdRow shift above).
+   It spans every column to claim the whole row, but min-width:0 + overflow:hidden
+   stop its intrinsic content width from forcing the grid wider than the viewport.
+   "1 / span 5" (not "1 / -1") because the grid has no explicit grid-template-columns
+   on phone, so the implicit columns aren't reached by the -1 line. */
+.IsPhone .DetectionLimitSimple .GeneralInput .DetectorDisplay {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  grid-column: 1 / span 5;
+  grid-row: 3 / span 1;
+  overflow: hidden;
+}
+
+.IsPhone .DetectionLimitSimple .GeneralInput {
+  margin-left: 6px;
+  margin-right: 6px;
+}
+
+/* Shrink the Scale-Time entry so it fits the narrower phone column. */
+.IsPhone .DetectionLimitSimple .ScaleEntryDiv input[type="text"] {
+  max-width: 75px;
+}
+
+/* The default chart title is 1.5em, which overflows the phone screen for the
+   "Peak for upper bound of X counts @Y CL" string.  Drop it to 1em on phone,
+   and translateY to lift the title text up so it sits near the top of the
+   padded area instead of touching the chart plot below it.  (The chart's JS
+   positions <text class="title"> with an alphabetic baseline near the top of
+   the SVG, so the rendered glyphs hang downward into the plot area — shifting
+   up moves the glyphs into the padding-top whitespace we add below.) */
+.IsPhone .DetectionLimitSimple .SpectrumChartD3 .title {
+  font-size: 1em;
+  transform: translateY(-5px);
+}
+
+/* Expand the chart container vertically on phone: 8px padding-top for title
+   breathing room, and 15px margin-bottom (vs the desktop 5px) so the chart
+   doesn't crowd the result text below. box-sizing: content-box is the default,
+   so the 200px chart drawing area is preserved -- the padding adds outside it. */
+.IsPhone .DetectionLimitSimple .D3SpectrumDisplayDiv {
+  box-sizing: content-box;
+  padding-top: 8px;
+  margin-bottom: 15px;
+}

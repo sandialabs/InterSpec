@@ -1028,7 +1028,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::makePeakFromRightClickHaveOwnContinuum );
         break;
         
-#if( USE_DETECTION_LIMIT_TOOL )
+      // The next three are no-peak items, but are general-purpose (fit/add/search) and
+      // are always built regardless of USE_DETECTION_LIMIT_TOOL.
       case kFitNewPeakNotInRoi:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-fit-new-peak") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::fitNewPeakNotInRoiFromRightClick );
@@ -1041,6 +1042,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-search-energy") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::searchOnEnergyFromRightClick );
       break;
+
+#if( USE_DETECTION_LIMIT_TOOL )
       case kSimpleMda:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-simple-mda") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startSimpleMdaFromRightClick );
@@ -2251,10 +2254,11 @@ void InterSpec::handleRightClick( double energy, double counts,
   
   shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
 
-#if( !USE_DETECTION_LIMIT_TOOL )
-  if( !peaks || !peak )
+  // The no-peak menu items (kFitNewPeakNotInRoi, kAddPeakNotInRoi, kSearchEnergy) are
+  // always built; kSimpleMda/kSimpleActivityCalc are built only when USE_DETECTION_LIMIT_TOOL
+  // is on.  Bail only when there's truly nothing meaningful to show.
+  if( !peaks )
     return;
-#endif
   
   //We actually need to make a copy of peaks since we will post to outside the
   //  main thread where the deque is expected to remain constant, however, the
@@ -2535,33 +2539,34 @@ void InterSpec::handleRightClick( double energy, double counts,
         break;
       }//kMakeOwnContinuum
         
-#if( USE_DETECTION_LIMIT_TOOL )
+      // General-purpose no-peak items (always built):
       case kFitNewPeakNotInRoi:
       {
         m_rightClickMenutItems[i]->setHidden( !!peak );
-        
+
         if( !peak )
           m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-fit-new-peak").arg(energy_str) );
-        
+
         break;
       }//case kFitNewPeakNotInRoi:
-        
+
       case kAddPeakNotInRoi:
       {
         m_rightClickMenutItems[i]->setHidden( !!peak ); //"Add peak..."
         break;
       }//case kAddPeakNotInRoi:
-      
+
       case kSearchEnergy:
       {
         m_rightClickMenutItems[i]->setHidden( !!peak );
-        
+
         if( !peak )
           m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-search-energy").arg(energy_str) ); //"Search near {1} keV"
-        
+
         break;
       }//case kSearchEnergy:
-        
+
+#if( USE_DETECTION_LIMIT_TOOL )
       case kSimpleMda:
       {
         m_rightClickMenutItems[i]->setHidden( !!peak );
@@ -4849,7 +4854,7 @@ void InterSpec::deleteWelcomeDialog( const bool addUndoRedoStep )
 {
   if( !m_useInfoWindow )
     return;
-  
+
   AuxWindow::deleteAuxWindow( m_useInfoWindow );
   m_useInfoWindow = nullptr;
   
@@ -8881,8 +8886,11 @@ void InterSpec::handleSimpleMdaWindowClose()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple MDA" );
   }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleSimpleMdaWindowClose()
+#endif //USE_DETECTION_LIMIT_TOOL
 
 
+// General-purpose right-click handlers — always available; do not depend on the
+// detection-limit tool being built.
 void InterSpec::fitNewPeakNotInRoiFromRightClick()
 {
   searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint, 0 );
@@ -8958,6 +8966,7 @@ void InterSpec::searchOnEnergyFromRightClick()
 }//void searchOnEnergyFromRightClick()
 
 
+#if( USE_DETECTION_LIMIT_TOOL )
 void InterSpec::startSimpleMdaFromRightClick()
 {
   string prevState;
@@ -11416,7 +11425,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
                              const Wt::WFlags<SetSpectrumOptions> options )
 {
   UndoRedoManager::BlockUndoRedoInserts blocker;
-  
+
   const int spectypeindex = static_cast<int>( spec_type );
   
   vector< boost::function<void(void)> > furtherworkers;
@@ -12811,7 +12820,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
     PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
                                                 callback, sessionId, false, isHPGe, cancel_flag );
   };
-  
+
 
   if( m_findingHintPeaks )
   {

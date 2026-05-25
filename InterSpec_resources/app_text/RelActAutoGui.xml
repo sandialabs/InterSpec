@@ -84,7 +84,9 @@
   <message id="raag-add-free-peaks">add free peaks</message>
   <message id="raag-clear-all-ranges">clear all ranges</message>
   <message id="raag-html-report">HTML Report</message>
+  <message id="raag-html-report-short">HTML</message>
   <message id="raag-xml-config">XML Config</message>
+  <message id="raag-xml-config-short">XML</message>
   
   <!-- Dialog titles and messages -->
   <message id="raag-clear-energy-ranges-title">Clear energy ranges?</message>

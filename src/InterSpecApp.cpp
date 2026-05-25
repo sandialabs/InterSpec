@@ -277,21 +277,25 @@ void InterSpecApp::setupDomEnvironment()
   styleSheet().addRule( "input[type=\"text\"]", "font-size:0.95em;" );
   styleSheet().addRule( "button[type=\"button\"]", "font-size:0.9em;" );
   
-  //This is needed to fix keyboard hiding in iOS
-#if(IOS || ANDROID)
-  //TODO: this can be added to wt_config.xml instead
-  const char *fix_ios_js = INLINE_JAVASCRIPT(
-    var t=document.createElement('meta');
-    t.name = "viewport";
-    t.content = "initial-scale=1.0, maximum-scale=1.0, user-scalable=no, height=device-height, width=device-width, viewport-fit=cover";
-    document.getElementsByTagName('head')[0].appendChild(t);
-    $(document).on('blur', 'input, textarea', function() {
-      setTimeout(function(){ window.scrollTo(document.body.scrollLeft, document.body.scrollTop); }, 0);
-    });
-  );
-  
-  doJavaScript( fix_ios_js );
-#endif
+  // Inject a phone-appropriate viewport meta tag (and iOS keyboard-hiding fix) for any
+  // mobile session. isMobile() covers iOS/Android builds, mobile-UA hits to a desktop build,
+  // and ?isphone=1 / ?istablet=1 URL overrides used for emulating phones from desktop browsers.
+  // Without the viewport meta, mobile browsers render at the legacy 980 CSS px fallback width.
+  if( isMobile() )
+  {
+    //TODO: this can be added to wt_config.xml instead
+    const char *fix_mobile_js = INLINE_JAVASCRIPT(
+      var t=document.createElement('meta');
+      t.name = "viewport";
+      t.content = "initial-scale=1.0, maximum-scale=1.0, user-scalable=no, height=device-height, width=device-width, viewport-fit=cover";
+      document.getElementsByTagName('head')[0].appendChild(t);
+      $(document).on('blur', 'input, textarea', function() {
+        setTimeout(function(){ window.scrollTo(document.body.scrollLeft, document.body.scrollTop); }, 0);
+      });
+    );
+
+    doJavaScript( fix_mobile_js );
+  }
   
 #if( BUILD_AS_OSX_APP && !PERFORM_DEVELOPER_CHECKS )
   domRoot()->setAttributeValue( "oncontextmenu", "return false;" );

@@ -844,12 +844,16 @@ a.DownloadLink.RelActDownload > span
 }
 
 /* On phones, the AuxWindow footer must fit Back + HTML Report + XML Config + Upload + Help
-   on a single row. Compact the download/upload buttons so the upload icon doesn't wrap. */
+   on a single row. Compact the download/upload buttons so the upload icon doesn't wrap.
+   !important on font-size because ".IsPhone.Portrait .PhoneAuxWindowHeader button" in
+   InterSpecMobileCommon.css has equal specificity (0,3,1) on the non-hover state and
+   would otherwise win and cause a size-jitter every time the cursor enters/leaves the
+   button (since our :hover variant has 0,3,1 too and wins on hover by source order). */
 .IsPhone .DownloadBtn.RelActDownload, .IsPhone .DownloadBtn.RelActDownload:hover,
 .IsPhone .DownloadLink.RelActDownload, .IsPhone .DownloadLink.RelActDownload:hover,
 .IsPhone .UploadBtn.RelActDownload, .IsPhone .UploadBtn.RelActDownload:hover
 {
-  font-size: 12px;
+  font-size: 12px !important;
   margin-left: 1px;
   margin-right: 1px;
 }

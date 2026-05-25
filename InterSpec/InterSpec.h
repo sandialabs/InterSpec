@@ -1011,10 +1011,13 @@ protected:
   void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
                             std::vector<boost::function<void(void)> > workers );
   
-#if( USE_DETECTION_LIMIT_TOOL )
+  // Available in the chart's right-click menu regardless of USE_DETECTION_LIMIT_TOOL,
+  // since these are general-purpose peak / search actions, not DL-tool features.
   void fitNewPeakNotInRoiFromRightClick();
   void startAddPeakFromRightClick();
   void searchOnEnergyFromRightClick();
+
+#if( USE_DETECTION_LIMIT_TOOL )
   void startSimpleMdaFromRightClick();
 #endif //USE_DETECTION_LIMIT_TOOL
   
@@ -1496,14 +1499,17 @@ protected:
     kShareContinuumWithRightPeak,
     kMakeOwnContinuum,
 
-#if( USE_DETECTION_LIMIT_TOOL )
+    // Shown only when the click was NOT on a peak.  General-purpose actions are
+    // available regardless of USE_DETECTION_LIMIT_TOOL; the simple MDA / activity-calc
+    // items are gated on it.
     kFitNewPeakNotInRoi,
     kAddPeakNotInRoi,
     kSearchEnergy,
+#if( USE_DETECTION_LIMIT_TOOL )
     kSimpleMda,
     kSimpleActivityCalc,
 #endif
-    
+
     kNumRightClickItems
   };//enum RightClickItems
   
