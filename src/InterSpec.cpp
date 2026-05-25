@@ -219,11 +219,6 @@ using namespace Wt;
 using namespace std;
 
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 namespace
 {
   std::mutex ns_staticDataDirectoryMutex;

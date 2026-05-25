@@ -113,7 +113,15 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
 
   m_edit->setId( "m_edit" );
   m_edit->setObjectName( "m_edit" );
-  m_edit->setFocus( true );
+  // Auto-focus on desktop only.  On a touch device focusing the input would pop the
+  // on-screen keyboard the moment the Terminal opens, which covers the output area
+  // before the user has typed anything.  Same rationale applies to the post-Enter
+  // refocus calls below.  InterSpecApp::isMobile() is user-agent based and ignores
+  // the "TabletUseDesktopMenus" preference, so this stays off on tablets too.
+  InterSpecApp * const interspec_app = dynamic_cast<InterSpecApp *>( wApp );
+  const bool is_mobile = (interspec_app && interspec_app->isMobile());
+  if( !is_mobile )
+    m_edit->setFocus( true );
   m_edit->setPlaceholderText( "Enter your command/expression here." );
   layout->addWidget( std::move(edit_owner), 1, 1, 0, 1 );
 
@@ -228,6 +236,11 @@ TerminalWidget::TerminalWidget( InterSpec *viewer )
 
 void TerminalWidget::focusText()
 {
+    // Skip on touch devices: focusing pops the on-screen keyboard.  Desktop users still
+    // get the convenient auto-refocus.
+    InterSpecApp * const interspec_app = dynamic_cast<InterSpecApp *>( wApp );
+    if( interspec_app && interspec_app->isMobile() )
+      return;
     m_edit->setFocus( true );
 }//focusText()
 
@@ -302,14 +315,22 @@ void TerminalWidget::handleEnterKey()
     doJavaScript(m_enteredtxt->jsRef() + ".value += " + "'  ' + " + Wt::WString( output ).jsStringLiteral() + ";");
   
     m_edit->setText( "" );
-    m_edit->setFocus( true );
-    
+
+    // Re-focus the input after a command so the user can chain keystrokes -- but only on
+    // desktop.  On touch the focus would re-summon the on-screen keyboard each time, even
+    // if the user just wants to read output.
+    InterSpecApp * const interspec_app = dynamic_cast<InterSpecApp *>( wApp );
+    const bool is_mobile = (interspec_app && interspec_app->isMobile());
+    if( !is_mobile )
+      m_edit->setFocus( true );
+
     // Scroll down to bottom of text
     wApp->doJavaScript(m_enteredtxt->jsRef() + ".scrollTop += " + m_enteredtxt->jsRef() + ".scrollHeight;");
 
     m_edit->setText( "" );
-    m_edit->setFocus( true );
-    
+    if( !is_mobile )
+      m_edit->setFocus( true );
+
 }//void handleEnterKey()
 
 
@@ -336,8 +357,13 @@ void TerminalWidget::handleButtonClickedSignal( std::string argument )
     doJavaScript(m_enteredtxt->jsRef() + ".value += " + "'  ' + " + Wt::WString( output ).jsStringLiteral() + ";");
     
     m_edit->setText( "" );
-    m_edit->setFocus( true );
-    
+    // Skip re-focus on touch devices -- see handleEnterKey() for rationale.
+    {
+      InterSpecApp * const interspec_app = dynamic_cast<InterSpecApp *>( wApp );
+      if( !interspec_app || !interspec_app->isMobile() )
+        m_edit->setFocus( true );
+    }
+
     // Scroll down to bottom of text
     wApp->doJavaScript(m_enteredtxt->jsRef() + ".scrollTop += " + m_enteredtxt->jsRef() + ".scrollHeight;");
 }//void handleButtonClickedSignal( std::string argument )

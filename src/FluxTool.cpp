@@ -82,12 +82,6 @@ using namespace std;
 using namespace Wt;
 
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
-
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
 
 // See also CopyUrlToClipboard in QrCode.cpp
@@ -856,14 +850,6 @@ FluxToolWindow::FluxToolWindow( InterSpec *viewer )
   csvLink.setTarget( LinkTarget::NewWindow );
   csvButton->setLink( csvLink );
   csvButton->setStyleClass( "LinkBtn DownloadBtn" );
-
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  csvButton->clicked().connect( csvButton, [csv](){
-    android_download_workaround(csv.get(), "flux.csv");
-  } );
-#endif //ANDROID
-
 #endif
 
   csvButton->setText( WString::tr("CSV") );

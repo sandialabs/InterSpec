@@ -96,11 +96,6 @@
 using namespace std;
 using namespace Wt;
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 namespace
 {
   void right_select_item( WMenu *menu, WMenuItem *item )
@@ -555,11 +550,6 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
     svgDownload->setLink( lnk );
   }
   svgDownload->setStyleClass( "LinkBtn DownloadBtn" );
-#if( ANDROID )
-  svgDownload->clicked().connect( svgDownload, [svgResource](){
-    android_download_workaround( svgResource.get(), "qr_lossy.svg" );
-  } );
-#endif //ANDROID
 #endif
 
   WPushButton *copyBtn = btndiv->addNew<WPushButton>( "Copy url to clipboard" );
@@ -1461,16 +1451,6 @@ void ExportSpecFileTool::init()
     m_export_btn->setLink( lnk );
   }
   m_export_btn->setStyleClass( "LightButton LinkBtn DownloadBtn ExportSpecExportBtn" );
-
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_export_btn->clicked().connect( this, [this](){
-    string filename = m_resource->suggestedFileName().toUTF8();
-    if( filename.empty() )
-      filename = "spectrum_file";
-    android_download_workaround( m_resource.get(), filename );
-  } );
-#endif //ANDROID
 #endif
   
   m_export_btn->setText( WString::tr("esf-export") );

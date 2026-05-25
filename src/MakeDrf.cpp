@@ -107,12 +107,6 @@ using namespace std;
 using namespace Wt;
 
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
-
 namespace
 {
   //const float ns_NaI3x3IntrinsicEff_661 = 0.422605; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
@@ -2001,22 +1995,6 @@ void MakeDrf::startSaveAs()
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-quick-ref"), true,
                   HelpSystem::ToolTipPrefOverride::AlwaysShow );
-  
-  
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  n42anchor->clicked().connect( this, [n42Resource](){
-    android_download_workaround(n42Resource, "drf_data.n42");
-  } );
-
-  csvanchor->clicked().connect( this, [csvResource](){
-    android_download_workaround(csvResource, "drf_data.csv");
-  } );
-
-  refSheetAnchor->clicked().connect( this, [refSheetResource](){
-    android_download_workaround(refSheetResource, "drf_ref.html");
-  } );
-#endif //ANDROID
   
   
   auto updateName = [name,csvResource,n42Resource,refSheetResource](){

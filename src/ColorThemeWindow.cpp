@@ -56,11 +56,6 @@
 using namespace std;
 using namespace Wt;
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 namespace
 {
   //Equiv to SideMenuItem in UseInfoWindow.h, but reimplemented here for potential styling
@@ -237,12 +232,6 @@ m_apply( nullptr )
     download->setIcon( "InterSpec_resources/images/download_small.svg" );
     download->setLink( downloadLink );
     download->setStyleClass( "LinkBtn DownloadBtn DownloadColorTheme" );
-
-#if( ANDROID )
-    // Using hacked saving to temporary file in Android, instead of via network download of file.
-    download->clicked().connect( this, [downloadResource](){ android_download_workaround(downloadResource.get(), "color_theme.xml"); } );
-#endif //ANDROID
-
 #endif
 
     HelpSystem::attachToolTipOn( {download}, WString::tr("ctw-download-tooltip"), true );

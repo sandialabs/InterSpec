@@ -107,11 +107,6 @@
 using namespace Wt;
 using namespace std;
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 namespace
 {
   /** Helper function to format numeric values consistently for localization.
@@ -4925,13 +4920,6 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   }
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
 
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  btn->clicked().connect( this, [this](){
-    android_download_workaround( m_html_download_rsc.get(), "isotopics_by_nuclide.html");
-  } );
-#endif //ANDROID
-
   btn->setText( WString::tr("raag-html-report") );
 
   m_calc_started.connect( btn, &WWidget::disable );
@@ -4946,14 +4934,6 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
     xmlbtn->setLink( xml_lnk );
   }
   xmlbtn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
-
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  xmlbtn->clicked().connect( this, [this](){
-    android_download_workaround( m_xml_download_rsc.get(), "isotopics_by_nuclide_config.html");
-  } );
-#endif //ANDROID
-
 #endif
 
   // TODO: add XML upload...

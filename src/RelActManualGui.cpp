@@ -91,11 +91,6 @@
 using namespace Wt;
 using namespace std;
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 const int RelActManualGui::sm_xmlSerializationMajorVersion = 0;
 const int RelActManualGui::sm_xmlSerializationMinorVersion = 1;
 
@@ -818,13 +813,6 @@ void RelActManualGui::init()
     m_downloadHtmlReport->setLink( lnk );
   }
   m_downloadHtmlReport->setStyleClass( "LinkBtn DownloadBtn CALp" );
-
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  m_downloadHtmlReport->clicked().connect( this, [this](){
-    android_download_workaround( m_htmlResource.get(), "rel_eff.html");
-  } );
-#endif //ANDROID
 #endif
   
   m_downloadHtmlReport->setText( WString::tr("ramg-html-export-label") );

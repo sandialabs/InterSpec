@@ -35,6 +35,7 @@
 
 #include <regex>
 #include <tuple>
+#include <cstring>
 #include <vector>
 #include <memory>
 #include <stdio.h>
@@ -788,10 +789,35 @@ TerminalModel::InputType TerminalModel::inputType(const std::string& input)
 }
 
 // Evalutes inputted string into a result string
+// Replace Unicode math symbols with the ASCII equivalents muparserx understands.
+// On-screen keyboards (especially the Android Samsung keyboard) often present these as the
+// "natural" math symbols when the user picks them from a math/symbols panel, so they show up
+// in input where the user expected a plain * or / to work.  Done as a UTF-8 byte replacement
+// so we don't need a Unicode-aware string library here.
+static void normalize_math_unicode( std::string &s )
+{
+    struct { const char *from; char to; } map[] = {
+        { "\xC3\x97",     '*' }, // U+00D7 MULTIPLICATION SIGN
+        { "\xC3\xB7",     '/' }, // U+00F7 DIVISION SIGN
+        { "\xE2\x88\x92", '-' }, // U+2212 MINUS SIGN
+        { "\xE2\x88\x97", '*' }, // U+2217 ASTERISK OPERATOR
+        { "\xE2\x88\x95", '/' }, // U+2215 DIVISION SLASH
+    };
+    for( const auto &m : map ) {
+        const size_t flen = std::strlen( m.from );
+        size_t pos = 0;
+        while( (pos = s.find( m.from, pos )) != std::string::npos ) {
+            s.replace( pos, flen, 1, m.to );
+            pos += 1;
+        }
+    }
+}
+
 std::string TerminalModel::evaluate(std::string input)
 {
     SpecUtils::trim(input);
-    
+    normalize_math_unicode(input);
+
     if (!input.empty()) {
         const TerminalModel::InputType type = inputType(input);             // Get input-type of user's input
         

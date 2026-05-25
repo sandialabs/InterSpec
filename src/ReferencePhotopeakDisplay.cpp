@@ -97,11 +97,6 @@ using namespace Wt;
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 const int ReferencePhotopeakDisplay::sm_xmlSerializationVersion = 0;
 
 const int DecayParticleModel::RowData::XRayDecayMode = 1000;

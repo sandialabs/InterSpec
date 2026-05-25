@@ -163,12 +163,6 @@ using namespace Wt;
 using namespace std;
 
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
-
 const int ForeBtnInd = 0;//static_cast<int>(SpecUtils::SpectrumType::Foreground);
 const int BackBtnInd = 1;//static_cast<int>(SpecUtils::SpectrumType::Background);
 const int SecondBtnInd = 2;//static_cast<int>(SpecUtils::SpectrumType::SecondForeground);

@@ -89,12 +89,6 @@ using namespace std;
 using namespace PhysicalUnits;
 
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
-
 namespace
 {
   string remove_space_copy( string input )
@@ -1615,14 +1609,6 @@ protected:
     //button->setLink( WLink(m_csvResouce) );
     //button->setLinkTarget( Wt::TargetNewWindow );
         
-#if( ANDROID )
-    // Using hacked saving to temporary file in Android, instead of via network download of file.
-    csvancor->clicked().connect( this, [this](){
-      android_download_workaround(m_csvResouce, "nuc_decay.csv");
-    } );
-#endif //ANDROID
-
-    
     show();
     centerWindow();
   }//CsvDownloadGui

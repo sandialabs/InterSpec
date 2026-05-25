@@ -51,11 +51,6 @@
 using namespace Wt;
 using namespace std;
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
-
 
 namespace
 {
@@ -498,14 +493,6 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
       svgDownload->setLink( lnk );
     }
     svgDownload->setStyleClass( "LinkBtn DownloadBtn" );
-
-#if( ANDROID )
-    // Using hacked saving to temporary file in Android, instead of via network download of file.
-    svgDownload->clicked().connect( svgDownload, [svgResource](){
-      android_download_workaround(svgResource.get(), "qr.svg");
-    } );
-#endif //ANDROID
-
     svgDownload->setText( "SVG" );
     svgDownload->setFloatSide( Wt::Side::Right );
 #endif

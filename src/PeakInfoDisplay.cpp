@@ -85,10 +85,6 @@ using namespace Wt;
 using namespace std;
 
 
-#if( ANDROID )
-// Defined in target/android/android.cpp
-extern void android_download_workaround( Wt::WResource *resource, std::string description );
-#endif
 
 
 namespace
@@ -1463,13 +1459,6 @@ void PeakInfoDisplay::init()
     csvButton->setLink( lnk );
   }
   csvButton->setStyleClass( "LinkBtn DownloadBtn" );
-  
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  csvButton->clicked().connect( csvButton, [csv](){
-    android_download_workaround(csv, "photopeak_ref.csv");
-  } );
-#endif //ANDROID
 #endif //#if( BUILD_AS_OSX_APP || IOS ) / else
   
   csvButton->setText( WString::tr("CSV") );

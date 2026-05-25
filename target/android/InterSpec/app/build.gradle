@@ -55,8 +55,8 @@ android {
         applicationId "gov.sandia.interspec"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 18
-        versionName "1.0.13"
+        versionCode 19
+        versionName "1.0.14"
 
         if( hasSigningConfig ) {
             signingConfig signingConfigs.config
@@ -78,6 +78,15 @@ android {
         }
         debug {
         }
+    }
+
+    // Keep interspec-assets.zip stored uncompressed in the APK.  This lets the runtime call
+    // AssetManager.openFd() on it (which only works for uncompressed assets) so we can read
+    // its size in O(1) at startup to decide whether to re-extract.  Without this, openFd
+    // throws FileNotFoundException("This file can not be opened as a file descriptor; it is
+    // probably compressed") and we fall back to a slow stream-and-count.
+    androidResources {
+        noCompress 'zip'
     }
 
     externalNativeBuild {
