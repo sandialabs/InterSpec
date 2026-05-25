@@ -270,7 +270,26 @@ answer.  You can add your own templates for data formatting to the log dialog
 by creating a directory named <code>act_shield_fit_templates</code>, in the
 application data directory (see "<em>About InterSpec...</em>" &rarr; "<em>Data</em>", and then user data storage directory),
 and then saving the template(s) with "<code>tmplt.</code>", "<code>template.</code>", or "<code>inja.</code>" in the filename, for example "<code>my_report.tmplt.csv</code>".
-See the documentation on batch analysis reports for more information about acceptable report format (or you can start with <code>InterSpec_resources/static_text/ShieldSourceFitLog/std_fit_log.tmplt.txt</code> or <code>InterSpec_resources/static_text/ShieldSourceFitLog/act_fit.tmplt.html</code> and modify those to get what you want).
+Drop a file into <code>act_shield_fit_templates/</code> and it will appear automatically in the
+&quot;Calculation Log&quot; template dropdown the next time you open the tool.
+
+<p>
+Templates are written in the <a target="_blank" href="https://github.com/pantor/inja">Inja</a> templating
+language and consume a JSON data model built from the fit results.  A complete
+field reference and authoring guide is shipped at
+<a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/InterSpec_resources/static_text/ShieldSourceFitLog/README.md"><code>InterSpec_resources/static_text/ShieldSourceFitLog/README.md</code></a>
+(also covers the batch peak-fit templates).  You can also start from any of the bundled
+templates &mdash; e.g. <code>std_fit_log.tmplt.txt</code> or <code>act_fit.tmplt.html</code> in the same
+directory &mdash; and modify them.
+</p>
+
+<p>
+The README is written specifically to be pasted into a web-based AI chatbot
+(ChatGPT, Claude, Gemini, etc.) along with a plain-English description of the report
+you want.  The chatbot will produce a complete Inja template that you can save into
+the <code>act_shield_fit_templates/</code> directory above and use immediately.  If the
+chatbot has web access, you can also point it at the README's GitHub URL above.
+</p>
 
 
 <p>This menu also provides facilities to save/load/export/import model files; note, if you export a model file, you can drag-n-drop this XML file back on to InterSpec to automatically open the <em>Activity/Shielding Fit</em> tool, instead of having to use this menu to import the model.</p>

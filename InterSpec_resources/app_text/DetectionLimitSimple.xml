@@ -6,13 +6,18 @@
   <message id="dls-select-drf-btn">Select detector...</message>
   <message id="dls-further-details-link">further details...</message>
   <message id="dls-conf-level-label">Confidence Level:</message>
+  <message id="dls-conf-level-label-short">C.L.:</message>
   <message id="dls-roi-lower-label">ROI Lower:</message>
+  <message id="dls-roi-lower-label-short">Lower:</message>
   <message id="dls-roi-upper-label">ROI Upper:</message>
+  <message id="dls-roi-upper-label-short">Upper:</message>
   <message id="dls-num-side-channel-label">Num Side Chan.:</message>
+  <message id="dls-num-side-channel-label-short"># Side Ch.:</message>
   <message id="dls-fwhm-label">FWHM:</message>
   <message id="dls-gamma-label">Gamma:</message>
   <message id="dls-decon-cont-norm-label">Cont. Norm:</message>
   <message id="dls-is-background-spectrum-cb">Background spectrum</message>
+  <message id="dls-is-background-spectrum-cb-short">Is Back.</message>
   <message id="dls-is-background-spectrum-tt">
     Checking this option asserts that there is no signal present in this spectrum.
     <p>
@@ -21,6 +26,7 @@
     </p>
   </message>
   <message id="dls-scale-spectrum-cb">Scale Time:</message>
+  <message id="dls-scale-spectrum-cb-short">Scale 🕐</message>
   <message id="dls-scale-spectrum-empty-text">e.g. 5 min</message>
   <message id="dls-scale-spectrum-tt">
     Compute the limit you would expect from a measurement of the entered real time, treating the

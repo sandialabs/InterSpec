@@ -117,10 +117,9 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
   m_tool->setHeight( WLength(100,WLength::Percentage) );
   
   AuxWindow::addHelpInFooter( footer(), "simple-mda-dialog" );
-  
-  
+
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = new WPushButton();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -136,11 +135,21 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
+
+  // On fullscreen-on-phone, Close (MobileBackBtn) and QR both float left, so the one earlier
+  // in the DOM is leftmost.  Put Close first there so it ends up on the far left;
+  // for non-fullscreen layouts, QR goes between Help (left) and Close (right).
+  if( !isPhone() )
+    footer()->addWidget( qr_btn );
 #endif //USE_QR_CODES
 
-  
-  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"), true );
   closeButton->clicked().connect( this, &AuxWindow::hide );
+
+#if( USE_QR_CODES )
+  if( isPhone() )
+    footer()->addWidget( qr_btn );
+#endif
   
   show();
   
@@ -237,13 +246,14 @@ DetectionLimitSimple::DetectionLimitSimple( Wt::WSuggestionPopup *materialSugges
 void DetectionLimitSimple::init()
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-  
+
   wApp->useStyleSheet( "InterSpec_resources/DetectionLimitSimple.css" );
   m_viewer->useMessageResourceBundle( "DetectionLimitSimple" );
-      
+
   addStyleClass( "DetectionLimitSimple" );
- 
+
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool isPhone = m_viewer && m_viewer->isPhone();
   
   WContainerWidget *resultsDiv = new WContainerWidget( this );
   resultsDiv->addStyleClass( "ResultsArea" );
@@ -374,7 +384,7 @@ void DetectionLimitSimple::init()
   
   
   // Add confidence select
-  WLabel *confidenceLabel = new WLabel( WString::tr("dls-conf-level-label"), generalInput );
+  WLabel *confidenceLabel = new WLabel( WString::tr(isPhone ? "dls-conf-level-label-short" : "dls-conf-level-label"), generalInput );
   confidenceLabel->addStyleClass( "GridFourthCol GridSecondRow GridVertCenter" );
   m_confidenceLevel = new WComboBox( generalInput );
   m_confidenceLevel->addStyleClass( "GridFifthCol GridSecondRow ClComboBox" );
@@ -411,15 +421,15 @@ void DetectionLimitSimple::init()
   
   
   
-  WLabel *lowerRoiLabel = new WLabel( WString::tr("dls-roi-lower-label"), generalInput );
+  WLabel *lowerRoiLabel = new WLabel( WString::tr(isPhone ? "dls-roi-lower-label-short" : "dls-roi-lower-label"), generalInput );
   lowerRoiLabel->addStyleClass( "GridFirstCol GridFourthRow GridVertCenter" );
-  
+
   m_lowerRoi = new NativeFloatSpinBox( generalInput );
   m_lowerRoi->setSpinnerHidden();
   lowerRoiLabel->setBuddy( m_lowerRoi );
   m_lowerRoi->addStyleClass( "GridSecondCol GridFourthRow" );
-  
-  WLabel *upperRoiLabel = new WLabel( WString::tr("dls-roi-upper-label"), generalInput );
+
+  WLabel *upperRoiLabel = new WLabel( WString::tr(isPhone ? "dls-roi-upper-label-short" : "dls-roi-upper-label"), generalInput );
   upperRoiLabel->addStyleClass( "GridFirstCol GridFifthRow GridVertCenter" );
   
   m_upperRoi = new NativeFloatSpinBox( generalInput );
@@ -431,7 +441,7 @@ void DetectionLimitSimple::init()
   m_upperRoi->valueChanged().connect( this, &DetectionLimitSimple::handleUserChangedRoi );
   
   // Num Side Channel
-  m_numSideChannelLabel = new WLabel( WString::tr("dls-num-side-channel-label"), generalInput );
+  m_numSideChannelLabel = new WLabel( WString::tr(isPhone ? "dls-num-side-channel-label-short" : "dls-num-side-channel-label"), generalInput );
   m_numSideChannelLabel->addStyleClass( "GridFourthCol GridFifthRow GridVertCenter" );
   m_numSideChannel = new WSpinBox( generalInput );
   m_numSideChannel->addStyleClass( "GridFifthCol GridFifthRow" );
@@ -469,7 +479,7 @@ void DetectionLimitSimple::init()
   
   m_isBackgroundDiv = new WContainerWidget( generalInput );
   m_isBackgroundDiv->addStyleClass( "BackCbDiv GridFirstCol GridSeventhRow GridVertCenter GridSpanTwoCol" );
-  m_isBackgroundSpectrum = new WCheckBox( WString::tr("dls-is-background-spectrum-cb"), m_isBackgroundDiv );
+  m_isBackgroundSpectrum = new WCheckBox( WString::tr(isPhone ? "dls-is-background-spectrum-cb-short" : "dls-is-background-spectrum-cb"), m_isBackgroundDiv );
   m_isBackgroundSpectrum->addStyleClass( "CbNoLineBreak" );
   m_isBackgroundSpectrum->checked().connect( this, &DetectionLimitSimple::handleNoSignalPresentChanged );
   m_isBackgroundSpectrum->unChecked().connect( this, &DetectionLimitSimple::handleNoSignalPresentChanged );
@@ -489,8 +499,9 @@ void DetectionLimitSimple::init()
   //  background checkbox (cols 1-2) and the deconvolution-only continuum controls
   //  (cols 1-2 and 4-5).  Scale is visible regardless of method.
   
-  m_scaleSpectrumCb = new WCheckBox( WString::tr("dls-scale-spectrum-cb"), generalInput );
+  m_scaleSpectrumCb = new WCheckBox( WString::tr(isPhone ? "dls-scale-spectrum-cb-short" : "dls-scale-spectrum-cb"), generalInput );
   m_scaleSpectrumCb->addStyleClass( "CbNoLineBreak GridFourthCol GridSeventhRow GridVertCenter" );
+  m_scaleSpectrumCb->setWordWrap( false );
   m_scaleSpectrumCb->checked().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
   m_scaleSpectrumCb->unChecked().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
 

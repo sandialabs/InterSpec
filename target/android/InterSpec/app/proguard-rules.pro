@@ -1,21 +1,29 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
+# ProGuard / R8 rules for InterSpec.
 #
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# minifyEnabled is currently false in app/build.gradle so these rules are not consulted at
+# build time -- but the keep set has to be correct *before* anyone turns minification on,
+# otherwise the first release build under R8 will silently strip JNI symbols and the JS
+# bridge methods and the resulting APK will UnsatisfiedLinkError on startup.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep the whole InterSpec Activity package by name so:
+#  - JNI symbol resolution can find Java_gov_sandia_InterSpec_InterSpec_* methods, and
+#  - the Activity class name embedded in AndroidManifest.xml still resolves at runtime.
+-keep class gov.sandia.InterSpec.** { *; }
+-keepnames class gov.sandia.InterSpec.**
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Native methods (the `native` keyword) must keep their original name/signature so the JVM
+# can match them against the JNI exports in libInterSpecAppLib.so.
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# @JavascriptInterface-annotated methods are called reflectively from JS running inside the
+# WebView; if R8 renames or drops them the JS bridge stops working.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Stack-trace line numbers in crash reports are much more useful than nothing; this keeps
+# them without exposing the original source filename.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

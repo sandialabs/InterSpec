@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- We need the internet permission to use the DownloadManager to save spectrum files, CSV, etc -->
+    <!-- Required so the embedded Wt server can bind to a local TCP port and the WebView can
+         reach it via http://127.0.0.1.  Cleartext for that loopback is whitelisted by the
+         network_security_config below; outbound HTTP to anywhere else is denied. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
-    <!-- <uses-sdk android:minSdkVersion="12" android:targetSdkVersion="19"/> -->
+    <!-- Legacy storage permissions: meaningless on API 29+ (scoped storage / SAF), but kept for
+         API 21-28 where the app may need to read files dropped on it via ACTION_VIEW.  Capped
+         with maxSdkVersion so newer Android doesn't surface them as "high-risk" permissions. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"  android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <supports-screens android:largeScreens="true" android:normalScreens="true" android:anyDensity="true" android:smallScreens="true"/>
     <application android:label="InterSpec"
         android:theme="@style/AppTheme"
@@ -47,6 +50,16 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
             android:screenOrientation="unspecified"
             android:launchMode="singleTask">
 
+            <!-- Spectrum file extensions.  We match the same set in two parallel forms:
+                 - pathSuffix is exact and trivially correct, but only honored on API 31+
+                   (Android 12).
+                 - pathPattern is honored on every API level the app supports (minSdk 21), but
+                   must be a glob anchored with a leading "/" and have its dots regex-escaped
+                   ("\\." after XML decoding).  We also need to enumerate one alternation per
+                   number of dots the filename may contain because Android's pathPattern is
+                   greedy and a single ".*\\.n42" misses paths like /foo.bar/baz.n42 on some
+                   API levels.  Keeping both forms lets the API 31+ matcher take the simple
+                   pathSuffix path while older devices still resolve via pathPattern. -->
             <intent-filter
                 android:icon='@mipmap/ic_launcher'
                 android:label='Gamma Spectrum File'
@@ -57,25 +70,10 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:mimeType="*/*" />
-
-                <!-- These android:pathPattern="..." elements are currently invalid, as they should 
-                    start with a /, and actually the pattern matching doesnt work like expected, so
-                    we should have like (for how ever many '.' characters we expect in a filename...):
-                    <data android:pathPattern="/.*\\.n42" />
-                    <data android:pathPattern="/.*\\..\\.n42" />
-                    <data android:pathPattern="/.*\\..\\..\\.n42" />
-                    <data android:pathPattern="/.*\\..\\..\\..\\.n42" />
-                    <data android:pathPattern="/.*\\..\\..\\..\\..\\.n42" />
-                    <data android:pathPattern="/.*\\..\\..\\..\\..\\..\\.n42" />
-                    <data android:pathPattern="/.*\\..\\..\\..\\..\\..\\..\\.n42" />
-                    <data android:pathPattern="/.*\\..\\..\\..\\..\\..\\..\\..\\.n42" />
-                    
-                    android:pathSuffix was only introduced in API level 31 (Android 12, 2021)
-
-                    (Didnt implement the above, as I couldnt test it at the moment)
-                -->
                 <data android:scheme="file" />
                 <data android:scheme="content" />
+
+                <!-- API 31+ (Android 12): exact suffix match. -->
                 <data android:pathSuffix=".n42" />
                 <data android:pathSuffix=".spc" />
                 <data android:pathSuffix=".xml" />
@@ -87,22 +85,25 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <data android:pathSuffix=".tka" />
                 <data android:pathSuffix=".mca" />
                 <data android:pathSuffix=".lzs" />
-                
 
-                <data android:pathPattern="*.n42" />
-                <data android:pathPattern="*.spc" />
-                <data android:pathPattern="*.xml" />
-                <data android:pathPattern="*.pcf" />
-                <data android:pathPattern="*.dat" />
-                <data android:pathPattern="*.chn" />
-                <data android:pathPattern="*.cnf" />
-                <data android:pathPattern="*.spe" />
-                <data android:pathPattern="*.tka" />
-                <data android:pathPattern="*.mca" />
-                <data android:pathPattern="*.lzs" />
+                <!-- API 21-30 fallback: regex pathPattern (leading "/" required; "\\." escapes a
+                     literal dot in XML).  Generated per extension. -->
+                <data android:pathPattern="/.*\\.n42" />
+                <data android:pathPattern="/.*\\.spc" />
+                <data android:pathPattern="/.*\\.xml" />
+                <data android:pathPattern="/.*\\.pcf" />
+                <data android:pathPattern="/.*\\.dat" />
+                <data android:pathPattern="/.*\\.chn" />
+                <data android:pathPattern="/.*\\.cnf" />
+                <data android:pathPattern="/.*\\.spe" />
+                <data android:pathPattern="/.*\\.tka" />
+                <data android:pathPattern="/.*\\.mca" />
+                <data android:pathPattern="/.*\\.lzs" />
             </intent-filter>
 
 
+            <!-- Secondary filter: same idea, but for generic types (CSV/XML/ZIP/TXT) when
+                 InterSpec is invoked as an alternative handler. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.EDIT" />
@@ -114,10 +115,15 @@ ExecutorService myExecutor = Executors.newCachedThreadPool();
                 <data android:scheme="file" />
                 <data android:scheme="content" />
 
-                <data android:pathPattern="*.txt" android:pathSuffix="." />
-                <data android:pathPattern="*.csv" android:pathSuffix=".csv" />
-                <data android:pathPattern="*.xml" android:pathSuffix=".xml" />
-                <data android:pathPattern="*.zip" android:pathSuffix=".zip" />
+                <data android:pathSuffix=".txt" />
+                <data android:pathSuffix=".csv" />
+                <data android:pathSuffix=".xml" />
+                <data android:pathSuffix=".zip" />
+
+                <data android:pathPattern="/.*\\.txt" />
+                <data android:pathPattern="/.*\\.csv" />
+                <data android:pathPattern="/.*\\.xml" />
+                <data android:pathPattern="/.*\\.zip" />
             </intent-filter>
 <!--
             <intent-filter android:label="InterSpec peak detector response">

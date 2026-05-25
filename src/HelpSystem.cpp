@@ -49,6 +49,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UndoRedoManager.h"
 
@@ -751,7 +752,27 @@ namespace HelpSystem
     //if is gesture controlled, we do not want to add tooltips to objects
     InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
     if (app && app->isMobile())
+    {
+       // qTip2 tooltips don't trigger from touch events, so a help icon ("?") that
+       // relies on hover/focus is dead on mobile.  For widgets that explicitly want
+       // their help text shown unconditionally (InstantAlways), wire up a click
+       // handler that pops a SimpleDialog with the same text.
+       if( forceShowing == ToolTipPrefOverride::InstantAlways )
+       {
+         for( Wt::WWebWidget *w : widgets )
+         {
+           Wt::WInteractWidget *iw = dynamic_cast<Wt::WInteractWidget *>( w );
+           if( !iw )
+             continue;
+           const Wt::WString tip_text = text;
+           iw->clicked().connect( std::bind( [tip_text](){
+             SimpleDialog *dialog = new SimpleDialog( Wt::WString(), tip_text );
+             dialog->addButton( Wt::WString::tr("Close") );
+           } ) );
+         }
+       }
        return;
+    }
     
 #if( USE_OSX_NATIVE_MENU )
     for( Wt::WWebWidget *w : widgets )

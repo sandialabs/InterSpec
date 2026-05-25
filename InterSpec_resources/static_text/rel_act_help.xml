@@ -12,3 +12,31 @@ Please see use instructions and information
 at <a href="https://sandialabs.github.io/InterSpec/tutorials/#enrichment-and-isotopics-by-nuclides-tool-sep-2025" target="_blank">https://sandialabs.github.io/InterSpec/tutorials/#enrichment-and-isotopics-by-nuclides-tool-sep-2025</a>
 </div>
 
+
+<div style="display:table-row">
+<h4>Custom report templates</h4>
+<p>
+The HTML, plain-text, CSV, etc. reports this tool produces &mdash; both in the GUI's
+&quot;<em>Export</em>&quot; menu and from the batch CLI (<code>--file-report-template</code> /
+<code>--summary-report-template</code>) &mdash; are rendered from
+<a target="_blank" href="https://github.com/pantor/inja">Inja</a> templates that consume
+a JSON data model built from the fit solution.  You can add your own templates by
+creating a sub-directory named <code>IsotopicsByNuclidesReportTmplts</code> inside the app's
+user data directory (see <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b> for
+this location) and dropping <code>.tmplt.*</code> files into it.  Templates placed there
+become available to the batch CLI by filename.
+</p>
+
+<p>
+A complete field reference and authoring guide is shipped at
+<a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/README.md"><code>InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/README.md</code></a>.
+It is written specifically to be pasted into a web-based AI chatbot (ChatGPT, Claude,
+Gemini, etc.) along with a plain-English description of the report you want; the
+chatbot will produce a complete Inja template that you can save into the
+<code>IsotopicsByNuclidesReportTmplts/</code> directory above.  You can also start from
+one of the bundled templates in the same directory
+(<code>std_rel_eff_summary.tmplt.html</code>, <code>std_rel_eff_summary.tmplt.txt</code>,
+or <code>std_multi_file_summary.tmplt.html</code>) and modify it.
+</p>
+</div>
+
