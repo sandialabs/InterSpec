@@ -48,7 +48,7 @@ extern "C"
    
    All input paths should be UTF-8.
    \param basedir has only been tested to be a directory relative to CWD, i.e, "."
-   \param xml_config_path has only been tested to be a directory relative to CWD, i.e, "./data/config/wt_config_electron.xml"
+   \param xml_config_path has only been tested to be a directory relative to CWD, i.e, "./data/config/wt_config_desktop.xml"
    \param server_port_num Port number to serve on; if 0, a random high-number port will be chosen
    ToDo: Make sure basedir and xml_config_path all work okay on Windows - maybe consider making them relative (in the JS probably)
    */

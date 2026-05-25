@@ -1202,7 +1202,7 @@ int main( int argc, char **argv )
 #if( defined(SpecUtils_USE_WT_THREADPOOL) )
   // We need to start the WServer so we can populat the thread pool.
   const string docroot = ".";
-  const string wt_config = "data/config/wt_config_localweb.xml";
+  const string wt_config = "data/config/wt_config_desktop.xml";
   const int rval = InterSpecServer::start_server( argv[0], "user_data",
                                                    docroot.c_str(),
                                                    wt_config.c_str(),

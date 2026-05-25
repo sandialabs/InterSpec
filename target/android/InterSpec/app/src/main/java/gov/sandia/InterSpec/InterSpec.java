@@ -1016,7 +1016,7 @@ public class InterSpec extends AppCompatActivity
     if( userDataDir.isEmpty() )
       userDataDir = activity.getFilesDir().getAbsolutePath();
 
-    String xml_config_path = wtAssetsDir + "/data/config/wt_config_android.xml";
+    String xml_config_path = wtAssetsDir + "/data/config/wt_config_mobile.xml";
 
     // TODO: need to change wt_error_log.log to go into cache directory
 

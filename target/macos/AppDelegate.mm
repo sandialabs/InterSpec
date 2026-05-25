@@ -599,7 +599,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   } );//setNativeFileSaveHandler
 
   static const std::string argv0 = [[[NSBundle mainBundle] executablePath] UTF8String];
-  const char *xml_config_path = "data/config/wt_config_osx.xml";
+  const char *xml_config_path = "data/config/wt_config_desktop.xml";
 
   InterSpecServer::start_server( argv0.c_str(), user_data_dir.c_str(),
                                 base_dir.c_str(), xml_config_path, server_port );

@@ -1081,7 +1081,7 @@
   <message id="max-file-size" title="أقصى حجم ملف يمكن فتحه">
     بشكل افتراضي، يبلغ أقصى حجم لملف طيف يمكن فتحه في إصدار Windows من <code>InterSpec</code>
     512 ميجابايت. ومع ذلك، إذا كنت بحاجة إلى فتح ملف أكبر، فيمكنك تحرير
-    عنصر "max-memory-request-size" في ملف <code>InterSpec\data\config\wt_config_wx.xml</code>، لزيادة هذا
+    عنصر "max-memory-request-size" في ملف <code>InterSpec\data\config\wt_config_desktop.xml</code>، لزيادة هذا
     (لا يوجد حقًا حد صارم للحجم، ولكن يتم التحليل في الذاكرة، لذلك ستستهلك الملفات
     الكبيرة جدًا ذاكرة الوصول العشوائي الخاصة بك).<br />
     يمكنك أيضًا محاولة ضغط الملف في ملف مضغوط، وإذا كان أقل من 512 ميجابايت، فيمكنك فتحه في

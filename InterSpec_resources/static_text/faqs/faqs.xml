@@ -1205,7 +1205,7 @@
   <message id="max-file-size" title="Maximum file size that can be opened">
     By default the largest spectrum file that can be opened in the Windows version of <code>InterSpec</code>
     is 512 MB.  However, if you need to open a larger file you can edit the &quot;max-memory-request-size&quot;
-    element of the <code>InterSpec\data\config\wt_config_wx.xml</code> file, to increase this
+    element of the <code>InterSpec\data\config\wt_config_desktop.xml</code> file, to increase this
     (there isn't really a hard limit on the size, but the parsing is done in-memory, so really large
     files will eat up your ram).<br />
     You could also try compressing the file into a zip file, and if that is below 512 MB, you can then open it in 

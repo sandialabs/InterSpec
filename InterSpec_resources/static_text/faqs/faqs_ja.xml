@@ -1091,7 +1091,7 @@
   <message id="max-file-size" title="開ける最大ファイルサイズ">
     デフォルトでは、Windows版の<code>InterSpec</code>で開ける最大のスペクトルファイルは
     512 MBです。しかし、より大きなファイルを開く必要がある場合は、
-    <code>InterSpec\data\config\wt_config_wx.xml</code>ファイルの「max-memory-request-size」
+    <code>InterSpec\data\config\wt_config_desktop.xml</code>ファイルの「max-memory-request-size」
     要素を編集して、これを増やすことができます
     （サイズに厳密な制限はありませんが、解析はインメモリで行われるため、非常に大きな
     ファイルはRAMを消費します）。<br />

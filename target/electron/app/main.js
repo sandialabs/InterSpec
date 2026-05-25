@@ -1018,7 +1018,7 @@ app.on('ready', function(){
   interspec.setMessageToNodeJsCallback( messageToNodeJs );
   interspec.setBrowseForDirectoryCallback( browseForDirectory );
   
-  const xml_config_path = path.join(basedir, "data/config/wt_config_electron.xml");
+  const xml_config_path = path.join(basedir, "data/config/wt_config_desktop.xml");
   let portnum = app_options.httpPort;
   
   try 

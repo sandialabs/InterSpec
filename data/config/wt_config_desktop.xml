@@ -1,0 +1,153 @@
+<!--
+    InterSpec Wt configuration: single-user native deployment.
+
+    Used by:
+      - macOS native app  (target/macos/AppDelegate.mm)
+      - Electron desktop  (target/electron/app/main.js)
+      - wxWidgets desktop (target/wxwidgets/InterSpecWxApp.cpp)
+      - Local dev server  (./InterSpec with HTTP port arg)
+      - Shared-library demo (target/sharedlib/runInterSpec.py)
+
+    Compared to wt_config_web.xml: no session timeouts, single worker
+    thread, much larger upload cap (512 MiB to cover the biggest spectrum
+    files), quieter logging, and no HTTP security headers (the server is
+    bound to localhost - no reverse proxy in the picture).
+
+    Derived from the Wt 4.12.6 example config. Defaults that match the
+    reference are left explicit so intent is obvious at audit time.
+  -->
+<server>
+
+    <application-settings location="*">
+
+        <session-management>
+            <shared-process>
+                <num-processes>1</num-processes>
+            </shared-process>
+
+            <tracking>URL</tracking>
+            <reload-is-new-session>true</reload-is-new-session>
+
+            <!-- -1 disables the timer: a desktop session stays alive until the
+                 user closes the window. -->
+            <timeout>-1</timeout>
+            <!-- idle-timeout omitted (disabled) for the same reason. -->
+
+            <bootstrap-timeout>10</bootstrap-timeout>
+            <server-push-timeout>50</server-push-timeout>
+        </session-management>
+
+        <connector-fcgi>
+            <valgrind-path></valgrind-path>
+            <run-directory>/var/run/wt</run-directory>
+        </connector-fcgi>
+
+        <connector-isapi>
+            <max-memory-request-size>128</max-memory-request-size>
+        </connector-isapi>
+
+        <debug>false</debug>
+        <debug-level>framework</debug-level>
+
+        <log-file></log-file>
+        <!-- Suppress info/debug noise but keep errors/warnings/secure. The
+             previous osx/electron configs used "-*" which silenced everything
+             including errors - that was too quiet. -->
+        <log-config>-* -debug -info +error +warning +secure</log-config>
+
+        <!-- 512 MiB cap on POST bodies. InterSpec spectrum files can be large
+             (N42, PCF, multi-detector lists); the desktop app trusts itself. -->
+        <max-request-size>524288</max-request-size>
+
+        <max-formdata-size>5120</max-formdata-size>
+        <max-pending-events>1000</max-pending-events>
+
+        <!-- num-threads: controls Wt's own WIOService pool. This pool
+             handles HTTP requests, WServer::post() callbacks, reentrant
+             WDialog::exec() event loops, and WResource handlers. It does
+             NOT run peak fits or RelAct fits - those use their own private
+             boost::asio::thread_pool sized to physical cores (see
+             PeakFitLM.cpp, RelActCalcAuto.cpp), independent of this value
+             on every platform.
+             A baseline of 4 is enough for a single-user desktop session.
+             On non-GCD builds (Linux/Windows local-dev, wxWidgets, Electron,
+             Android) InterSpecServer::startWebServer() raises this to
+             max(4, std::thread::hardware_concurrency()) as cheap headroom
+             for concurrent UI events and nested event loops.
+             On builds where ThreadPool_USING_GCD is defined (Apple + clang)
+             the override is skipped, since per-task dispatch through GCD is
+             the preferred concurrency primitive on Apple platforms. -->
+        <num-threads>4</num-threads>
+
+        <session-id-length>16</session-id-length>
+
+        <plain-ajax-sessions-ratio-limit>1</plain-ajax-sessions-ratio-limit>
+        <sessions-threshold-for-dos-protection>100</sessions-threshold-for-dos-protection>
+        <ajax-puzzle>false</ajax-puzzle>
+
+        <strict-event-serialization>false</strict-event-serialization>
+
+        <!-- See wt_config_web.xml for the rationale on disabling WebSockets. -->
+        <web-sockets>false</web-sockets>
+
+        <webgl-detection>true</webgl-detection>
+
+        <redirect-message>Load basic HTML</redirect-message>
+
+        <!-- No reverse proxy in front of a localhost-bound desktop app; leave
+             trusted-proxy-config empty so X-Forwarded-* headers are ignored. -->
+        <trusted-proxy-config>
+            <original-ip-header>X-Forwarded-For</original-ip-header>
+            <trusted-proxies>
+            </trusted-proxies>
+        </trusted-proxy-config>
+
+        <inline-css>true</inline-css>
+
+        <indicator-timeout>500</indicator-timeout>
+        <double-click-timeout>200</double-click-timeout>
+
+        <user-agents type="ajax" mode="black-list">
+        </user-agents>
+
+        <!-- Bot list intentionally empty: the desktop server is reachable only
+             on 127.0.0.1, so no real bot will ever connect. -->
+        <user-agents type="bot">
+        </user-agents>
+
+        <UA-Compatible></UA-Compatible>
+
+        <progressive-bootstrap>false</progressive-bootstrap>
+        <delay-load-at-boot>true</delay-load-at-boot>
+        <session-id-cookie>false</session-id-cookie>
+        <cookie-checks>true</cookie-checks>
+
+        <!-- No <http-headers> block: desktop deployments don't go through a
+             reverse proxy, the WebView is local, and the security headers
+             primarily protect against cross-origin browser attacks. -->
+
+        <x-frame-same-origin>true</x-frame-same-origin>
+
+        <use-script-nonce>false</use-script-nonce>
+
+        <serve-private-resources-to-bots>false</serve-private-resources-to-bots>
+        <bot-resources-path>wt-temp</bot-resources-path>
+        <max-auto-removable-public-resources>1000</max-auto-removable-public-resources>
+
+        <allowed-origins>
+        </allowed-origins>
+
+        <properties>
+            <property name="resourcesURL">resources/</property>
+
+            <property name="favicon">InterSpec_resources/favicon.ico</property>
+
+            <!-- <property name="leafletJSURL">https://unpkg.com/leaflet@1.5.1/dist/leaflet.js</property> -->
+            <!-- <property name="leafletCSSURL">https://unpkg.com/leaflet@1.5.1/dist/leaflet.css</property> -->
+
+            <!-- <property name="google_api_key"></property> -->
+        </properties>
+
+    </application-settings>
+
+</server>

@@ -97,7 +97,7 @@ int main( int argc, char **argv )
   ("userdatadir", po::value<std::string>(&user_data_dir),
    "The directory to store user data to, or to look in for custom user data (serial_to_model.csv, etc)."
    )
-  ("config", po::value<std::string>(&wt_config),
+  ("config,c", po::value<std::string>(&wt_config),
    "The Wt config XML file to use."
    )
   ("docroot", po::value<std::string>(&docroot),
@@ -262,7 +262,7 @@ int main( int argc, char **argv )
     docroot = ".";
   
   if( wt_config.empty() )
-    wt_config = SpecUtils::append_path( docroot, "data/config/wt_config_localweb.xml" );
+    wt_config = SpecUtils::append_path( docroot, "data/config/wt_config_desktop.xml" );
 #endif
   
   if( cl_vm.count("static-data-dir") )

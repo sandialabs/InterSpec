@@ -1080,7 +1080,7 @@
   <message id="max-file-size" title="Taille de fichier maximale qui peut être ouverte">
     Par défaut, le plus grand fichier de spectre qui peut être ouvert dans la version Windows d'<code>InterSpec</code>
     est de 512 Mo. Cependant, si vous avez besoin d'ouvrir un fichier plus grand, vous pouvez modifier l'élément
-    &quot;max-memory-request-size&quot; du fichier <code>InterSpec\data\config\wt_config_wx.xml</code>, pour l'augmenter
+    &quot;max-memory-request-size&quot; du fichier <code>InterSpec\data\config\wt_config_desktop.xml</code>, pour l'augmenter
     (il n'y a pas vraiment de limite stricte sur la taille, mais l'analyse est faite en mémoire, donc les fichiers très volumineux
     consommeront votre RAM).<br />
     Vous pouvez également essayer de compresser le fichier dans un fichier zip, et si celui-ci est inférieur à 512 Mo, vous pouvez alors l'ouvrir dans 

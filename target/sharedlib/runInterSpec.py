@@ -20,7 +20,7 @@ interspec = CDLL( sharedLibFileName )
 process_name = "InterSpec"
 user_data_dir = "userdata"
 basedir = "."
-xml_config_path = "data/config/wt_config_electron.xml"
+xml_config_path = "data/config/wt_config_desktop.xml"
 port = interspec.interspec_start_server( process_name, user_data_dir, basedir, xml_config_path )
 
 # First method to open a file: just include the file path in the URL

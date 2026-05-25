@@ -153,7 +153,7 @@ cmake --build . --config Release
 
 If all goes well, InterSpec default to building an executable that when ran from the command line, starts a local web server, you can access then access from your browser.  To run InterSpec, use a command like:
 ```
-./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_localweb.xml
+./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_desktop.xml
 ```
 and then point your browser to [http://localhost:8080](http://localhost:8080).
 

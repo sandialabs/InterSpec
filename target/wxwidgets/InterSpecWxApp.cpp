@@ -855,7 +855,7 @@ InterSpecWxApp::InterSpecWxApp() :
     // Start Wt Server, etc
     //bool InterSpecServer::changeToBaseDir(int argc, char* argv[]);
 
-    std::string xml_config_path = SpecUtils::append_path(sm_base_dir, "data/config/wt_config_wx.xml" );
+    std::string xml_config_path = SpecUtils::append_path(sm_base_dir, "data/config/wt_config_desktop.xml" );
 
     const int host_port = InterSpecServer::start_server( "InterSpec", 
                                                          sm_user_data_dir.c_str(), 

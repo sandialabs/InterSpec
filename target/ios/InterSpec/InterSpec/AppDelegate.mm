@@ -139,7 +139,7 @@ std::unique_ptr<Wt::WApplication> createThisApplication(const Wt::WEnvironment& 
     static const char *argv0 = "--docroot";
     static const char *argv1 = ".";
     static const char *argv4 = "-c";
-    static const char *argv5 = "./data/config/wt_config_ios.xml";
+    static const char *argv5 = "./data/config/wt_config_mobile.xml";
     static const char *argv6 = "--accesslog=-";
     static const char *argv7 = "--tempdir";
     static const char *argv8 = tmpdirstr.c_str();

@@ -1,0 +1,138 @@
+<!--
+    InterSpec Wt configuration: iOS and Android in-app server.
+
+    Used by:
+      - iOS native app    (target/ios/InterSpec/InterSpec/AppDelegate.mm,
+                           target/ios/InterSpec/InterSpec/ViewController.mm)
+      - Android native    (target/android/.../gov/sandia/InterSpec/InterSpec.java)
+
+    Compared to wt_config_desktop.xml the only meaningful difference is a
+    much larger max-request-size to accommodate spectrum uploads going
+    through the embedded WebView's POST round-trip.
+
+    Derived from the Wt 4.12.6 example config.
+  -->
+<server>
+
+    <application-settings location="*">
+
+        <session-management>
+            <shared-process>
+                <num-processes>1</num-processes>
+            </shared-process>
+
+            <tracking>URL</tracking>
+            <reload-is-new-session>true</reload-is-new-session>
+
+            <!-- -1: session lives as long as the app process. -->
+            <timeout>-1</timeout>
+
+            <bootstrap-timeout>10</bootstrap-timeout>
+
+            <!-- 50 s long-poll refresh. The previous iOS config used 5000 here,
+                 which (because the unit is seconds, not ms as the comment in
+                 some old places implied) was an 83-minute poll cycle. The Wt
+                 default of 50s works fine on cellular networks. -->
+            <server-push-timeout>50</server-push-timeout>
+        </session-management>
+
+        <connector-fcgi>
+            <valgrind-path></valgrind-path>
+            <run-directory>/var/run/wt</run-directory>
+        </connector-fcgi>
+
+        <connector-isapi>
+            <max-memory-request-size>128</max-memory-request-size>
+        </connector-isapi>
+
+        <debug>false</debug>
+        <debug-level>framework</debug-level>
+
+        <log-file></log-file>
+        <log-config>-* -debug -info +error +warning +secure</log-config>
+
+        <!-- ~10 GiB cap; preserves the iOS value from before. Mobile uploads
+             happen entirely in-process (WebView -> local server), so a high
+             cap is fine. -->
+        <max-request-size>10240000</max-request-size>
+
+        <max-formdata-size>5120</max-formdata-size>
+        <max-pending-events>1000</max-pending-events>
+
+        <!-- num-threads: baseline of 4 always (a handful of extra threads
+             is cheap and keeps the UI responsive when one is briefly
+             blocked).
+             Android raises this to max(4, std::thread::hardware_concurrency())
+             at runtime via InterSpecServer::startWebServer().
+             iOS keeps the value here because its SpecUtilsAsync::ThreadPool
+             is backed by GCD (ThreadPool_USING_GCD), so heavy work is
+             dispatched via Grand Central Dispatch rather than Wt's pool.
+             (iOS also goes through a different startup path,
+             InterSpecServer::startServer, that doesn't apply the override
+             regardless.) -->
+        <num-threads>4</num-threads>
+
+        <session-id-length>16</session-id-length>
+
+        <plain-ajax-sessions-ratio-limit>1</plain-ajax-sessions-ratio-limit>
+        <sessions-threshold-for-dos-protection>100</sessions-threshold-for-dos-protection>
+        <ajax-puzzle>false</ajax-puzzle>
+
+        <strict-event-serialization>false</strict-event-serialization>
+
+        <!-- See wt_config_web.xml for the rationale on disabling WebSockets. -->
+        <web-sockets>false</web-sockets>
+
+        <webgl-detection>true</webgl-detection>
+
+        <redirect-message>Load basic HTML</redirect-message>
+
+        <trusted-proxy-config>
+            <original-ip-header>X-Forwarded-For</original-ip-header>
+            <trusted-proxies>
+            </trusted-proxies>
+        </trusted-proxy-config>
+
+        <inline-css>true</inline-css>
+
+        <indicator-timeout>500</indicator-timeout>
+        <double-click-timeout>200</double-click-timeout>
+
+        <user-agents type="ajax" mode="black-list">
+        </user-agents>
+
+        <user-agents type="bot">
+        </user-agents>
+
+        <UA-Compatible></UA-Compatible>
+
+        <progressive-bootstrap>false</progressive-bootstrap>
+        <delay-load-at-boot>true</delay-load-at-boot>
+        <session-id-cookie>false</session-id-cookie>
+        <cookie-checks>true</cookie-checks>
+
+        <x-frame-same-origin>true</x-frame-same-origin>
+
+        <use-script-nonce>false</use-script-nonce>
+
+        <serve-private-resources-to-bots>false</serve-private-resources-to-bots>
+        <bot-resources-path>wt-temp</bot-resources-path>
+        <max-auto-removable-public-resources>1000</max-auto-removable-public-resources>
+
+        <allowed-origins>
+        </allowed-origins>
+
+        <properties>
+            <property name="resourcesURL">resources/</property>
+
+            <property name="favicon">InterSpec_resources/favicon.ico</property>
+
+            <!-- <property name="leafletJSURL">https://unpkg.com/leaflet@1.5.1/dist/leaflet.js</property> -->
+            <!-- <property name="leafletCSSURL">https://unpkg.com/leaflet@1.5.1/dist/leaflet.css</property> -->
+
+            <!-- <property name="google_api_key"></property> -->
+        </properties>
+
+    </application-settings>
+
+</server>

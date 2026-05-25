@@ -15,7 +15,7 @@ mdkir build_fetch
 cd build_fetch
 cmake -DInterSpec_FETCH_DEPENDENCIES=ON -DBUILD_AS_LOCAL_SERVER=ON -DUSE_BATCH_CLI_TOOLS=OFF -DUSE_BATCH_GUI_TOOLS=OFF ..
 cmake --build . -j4
-./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_localweb.xml
+./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_desktop.xml
 ```
 
 
@@ -50,7 +50,7 @@ cmake --build . -j4  #or `make -j4 `
 ln -s ../external_libs/SpecUtils/d3_resources ./external_libs/
 # (this is so you can edit d3_resources/SpectrumChartD3.js and see changes without doing a file copy)
 
-./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_localweb.xml
+./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_desktop.xml
 
 # You can now point your browser to http://127.0.0.1:8080
 ```
@@ -142,7 +142,7 @@ ln -s ../external_libs/SpecUtils/d3_resources ./external_libs/
 # (this is so you can edit d3_resources/SpectrumChartD3.js and see changes without doing a file copy)
 
 # And if all went well you can run the executable using the command:
-./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_localweb.xml
+./bin/InterSpec.exe --docroot . --http-address 127.0.0.1 --http-port 8080 -c ./data/config/wt_config_desktop.xml
 
 # And then point your browser to http://localhost:8080 to access the application
 ```

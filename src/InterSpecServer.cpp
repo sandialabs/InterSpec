@@ -27,10 +27,12 @@
 #include <mutex>
 #include <string>
 #include <chrono>
+#include <thread>
 #include <fstream>
 #include <cstdlib>
 #include <stdlib.h>
 #include <iostream>
+#include <algorithm>
 
 
 #if __APPLE__
@@ -59,6 +61,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/SerialToDetectorModel.h"
 
 #include "InterSpec/InterSpec.h"
@@ -165,18 +168,13 @@ namespace InterSpecServer
     }//for( int i = 0; i < argc; ++i )
     
 #if( BUILD_OSX_APP )
-    if( boost::filesystem::exists( "data/config/wt_config_osx.xml" ) )
-      return (boost::filesystem::current_path() / boost::filesystem::path("data/config/wt_config_osx.xml")).string<std::string>();
+    if( boost::filesystem::exists( "data/config/wt_config_desktop.xml" ) )
+      return (boost::filesystem::current_path() / boost::filesystem::path("data/config/wt_config_desktop.xml")).string<std::string>();
 #endif
-    
-#if( ANDROID )
-    if( boost::filesystem::exists( "data/config/wt_config_android.xml" ) )
-      return (boost::filesystem::current_path() / boost::filesystem::path("data/config/wt_config_android.xml")).string<std::string>();
-#endif
-    
-#if( IOS )
-    if( boost::filesystem::exists( "data/config/wt_config_ios.xml" ) )
-      return (boost::filesystem::current_path() / boost::filesystem::path("data/config/wt_config_ios.xml")).string<std::string>();
+
+#if( ANDROID || IOS )
+    if( boost::filesystem::exists( "data/config/wt_config_mobile.xml" ) )
+      return (boost::filesystem::current_path() / boost::filesystem::path("data/config/wt_config_mobile.xml")).string<std::string>();
 #endif
     
     if( boost::filesystem::exists( "wt_config.xml" ) )
@@ -448,11 +446,31 @@ void startWebServer( string name,
     wthttp_args.push_back( &max_mem_req_bytes[0] );
   }
 
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(ThreadPool_USING_GCD) )
+  // Override the XML's <num-threads> with max(4, hardware_concurrency()) so
+  // single-user builds get enough Wt worker threads for parallel peak fits,
+  // shielding/source fits, etc. on modern multi-core CPUs.
+  //   - BUILD_FOR_WEB_DEPLOYMENT keeps the XML value so deployers can
+  //     over-provision threads for concurrent request load.
+  //   - Builds where SpecUtilsAsync::ThreadPool is backed by GCD (Apple +
+  //     clang, see SpecUtilsAsync.h) dispatch heavy work via Grand Central
+  //     Dispatch, so extra Wt threads aren't useful. This currently covers
+  //     macOS native, iOS, and the macOS wxWidgets variant.
+  // The wthttp connector treats --threads as authoritative over the XML's
+  // <num-threads> (see Wt http/WServer.C: setNumThreads is only re-applied
+  // when threads() != -1).
+  char threads_arg_name[] = "--threads";
+  const unsigned int hw_threads = std::thread::hardware_concurrency();
+  string threads_arg_value = std::to_string( std::max( 4u, hw_threads ) );
+  wthttp_args.push_back( threads_arg_name );
+  wthttp_args.push_back( &threads_arg_value[0] );
+#endif
+
   ns_server->setServerConfiguration( static_cast<int>( wthttp_args.size() ),
                                      wthttp_args.data(), WTHTTP_CONFIGURATION );
 
   ns_server->addEntryPoint( Wt::EntryPointType::Application, [](const Wt::WEnvironment &env){ return createAppForServer(env, create_application); } );
-    
+
   if( !ns_server->start() )
     throw std::runtime_error( "Failed to start Wt server" );
       

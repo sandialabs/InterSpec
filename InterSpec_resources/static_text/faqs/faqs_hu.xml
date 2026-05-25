@@ -1081,7 +1081,7 @@
   <message id="max-file-size" title="Maximális megnyitható fájlméret">
     Alapértelmezés szerint az <code>InterSpec</code> Windows verziójában megnyitható legnagyobb spektrumfájl
     512 MB. Azonban, ha nagyobb fájlt kell megnyitnia, szerkesztheti a &quot;max-memory-request-size&quot;
-    elemet a <code>InterSpec\data\config\wt_config_wx.xml</code> fájlban, hogy ezt megnövelje
+    elemet a <code>InterSpec\data\config\wt_config_desktop.xml</code> fájlban, hogy ezt megnövelje
     (nincs igazán kemény korlát a méretre, de az elemzés memóriában történik, így a nagyon nagy
     fájlok felemésztik a RAM-ot).<br />
     Megpróbálhatja a fájlt egy zip fájlba tömöríteni is, és ha az 512 MB alatt van, akkor megnyithatja az 
