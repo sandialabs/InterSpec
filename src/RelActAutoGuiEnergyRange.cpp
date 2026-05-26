@@ -61,8 +61,10 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange()
   
   wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
   
-  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-  
+  InterSpec * const interspec = InterSpec::instance();
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec );
+  const bool isPhone = interspec && interspec->isPhone();
+
   WLabel *label = addNew<WLabel>( WString::tr("raager-lower-energy") );
   label->addStyleClass( "GridFirstCol GridFirstRow" );
 
@@ -88,7 +90,7 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange()
   m_lower_energy->valueChanged().connect( this, &RelActAutoGuiEnergyRange::handleEnergyChange );
   m_upper_energy->valueChanged().connect( this, &RelActAutoGuiEnergyRange::handleEnergyChange );
 
-  label = addNew<WLabel>( WString::tr("raager-continuum-type") );
+  label = addNew<WLabel>( WString::tr(isPhone ? "raager-continuum-type-short" : "raager-continuum-type") );
   label->addStyleClass( "GridFourthCol GridFirstRow" );
   m_continuum_type = addNew<WComboBox>();
   m_continuum_type->addStyleClass( "GridFifthCol GridFirstRow" );

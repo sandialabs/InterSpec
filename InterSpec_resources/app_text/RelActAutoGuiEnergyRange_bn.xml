@@ -3,9 +3,9 @@
   <!-- raager- is short for RelActAutoGuiEnergyRange -->
 
   <!-- Labels -->
-  <message id="raager-lower-energy">নিম্ন শক্তি</message>
-  <message id="raager-upper-energy">উচ্চ শক্তি</message>
-  <message id="raager-continuum-type">কন্টিনিউয়াম টাইপ:</message>
+  <message id="raager-lower-energy">নিম্ন</message>
+  <message id="raager-upper-energy">উচ্চ</message>
+  <message id="raager-continuum-type">কন্টিনিউয়াম:</message>
 
   <!-- Checkboxes -->
   <message id="raager-force-full-range">সম্পূর্ণ-পরিসর বাধ্য করুন</message>

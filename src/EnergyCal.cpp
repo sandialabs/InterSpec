@@ -704,7 +704,7 @@ EnergyCal::translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<
       const float newneg2sigma = new_cal->energy_for_channel( oldneg2sigmabin );
       const float newpos2sigma = new_cal->energy_for_channel( oldpos2sigmabin );
       
-      const float strech = 0.25f*(newpos2sigma - newneg2sigma) / oldSigma;
+      float strech = 0.25f*(newpos2sigma - newneg2sigma) / oldSigma;
       
       if( IsNan(strech) || IsInf(strech) )
       {
@@ -713,7 +713,8 @@ EnergyCal::translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<
         " mean";
         log_developer_error( __func__, msg );
 #endif
-        throw runtime_error( "translatePeaksForCalibrationChange: found an invalid stretch" );
+        //throw runtime_error( "translatePeaksForCalibrationChange: found an invalid stretch" );
+        strech = 1.0f; //JIC - dont expect to happen unless `oldSigma` is 0, or the input peak is invalid.
       }//if( IsNan(strech) || IsInf(strech) )
       
 #if( PERFORM_DEVELOPER_CHECKS )

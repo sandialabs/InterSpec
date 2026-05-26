@@ -29,7 +29,7 @@
   <message id="rr-requesting-ana">解析を要求中</message>
   <message id="rr-err-no-spec">表示されたスペクトルがありません</message>
   <message id="rr-requesting-service-info">サービス情報を要求中。</message>
-  <message id="rr-error-parsing-service-info">サービス情報結果の解析エラー: <code></code></message>
+  <message id="rr-error-parsing-service-info">サービス情報結果の解析エラー: <code>{1}</code></message>
   <message id="rr-incorrect-url">URLが間違っているかインターネットがありません。</message>
   <message id="rr-err-requesting-service-info">サービス情報取得エラー: <code>{1}</code></message>
 </messages>

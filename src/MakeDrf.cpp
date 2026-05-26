@@ -1995,8 +1995,8 @@ void MakeDrf::startSaveAs()
   help->addStyleClass( "MakeDrfSaveHelp" );
   HelpSystem::attachToolTipOn( help, WString::tr("md-tt-export-quick-ref"), true,
                   HelpSystem::ToolTipPrefOverride::AlwaysShow );
-  
-  
+
+
   auto updateName = [name,csvResource,n42Resource,refSheetResource](){
     if( name->validate() == Wt::ValidationState::Valid )
     {

@@ -64,6 +64,7 @@
   <message id="fpn-no-data">There is no foreground spectrum to fit peaks on.</message>
   <message id="fpn-wait-title">Fitting peaks</message>
   <message id="fpn-wait-content">This may take a minute. You can continue using the app.</message>
+  <message id="fpn-wait-dev-note">Note: This feature is currently in development.</message>
   <message id="fpn-stale">Spectrum changed before fit completed; discarding results.</message>
 
   <message id="fpn-error-title">Fit failed</message>

@@ -1468,6 +1468,71 @@
   </message>
 
 
+  <message id="customize-report-templates" title="Customizing the output / report format">
+    <p>
+      The &quot;<b>Activity/Shielding Fit</b>&quot; tool's <em>Calculation Log</em> dialog, the
+      &quot;<b>Isotopics by nuclides</b>&quot; tool's <em>Export</em> menu, and the batch
+      command-line tools (<code>--batch-act-fit</code> and <code>--batch-peak-fit</code>) all
+      render their reports from <a target="_blank" href="https://github.com/pantor/inja">Inja</a>
+      templates that consume a JSON data model built from the fit results.  You can drop your
+      own template files alongside the built-ins to produce reports formatted exactly the way
+      you want &mdash; CSV columns in your preferred order, plain-text logs matching another
+      lab's house style, Markdown summaries for a report, HTML with custom branding, etc.
+    </p>
+
+    <p>
+      Where to put your custom template files (create the sub-directory if it does not
+      exist; you can find the parent &quot;user data directory&quot; via
+      <b>Help</b>&rarr;<b>About InterSpec...</b>&rarr;<b>Data</b>):
+    </p>
+    <ul>
+      <li>
+        For the &quot;<b>Activity/Shielding Fit</b>&quot; tool (and the batch peak-fit tool):
+        drop <code>.tmplt.*</code> files into
+        <code>&lt;user data&gt;/act_shield_fit_templates/</code>.  Files dropped here appear
+        automatically in the <em>Calculation Log</em> template dropdown the next time you
+        open the tool.  Recognised filename tokens are <code>tmplt.</code>,
+        <code>template.</code>, or <code>inja.</code> (e.g. <code>my_report.tmplt.csv</code>).
+      </li>
+      <li>
+        For the &quot;<b>Isotopics by nuclides</b>&quot; tool: drop <code>.tmplt.*</code> files
+        into <code>&lt;user data&gt;/IsotopicsByNuclidesReportTmplts/</code>.  These are
+        consumed by the batch CLI via <code>--file-report-template</code> and
+        <code>--summary-report-template</code>.
+      </li>
+    </ul>
+
+    <p>
+      Each template directory ships a <code>README.md</code> in the InterSpec repository
+      that documents the complete JSON data model, the Inja syntax that works (and the
+      gotchas that do not), the custom formatting callbacks, and several example templates:
+    </p>
+    <ul>
+      <li>
+        <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/InterSpec_resources/static_text/ShieldSourceFitLog/README.md"><code>InterSpec_resources/static_text/ShieldSourceFitLog/README.md</code></a>
+        &mdash; activity / shielding fit and batch peak-fit.
+      </li>
+      <li>
+        <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/README.md"><code>InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/README.md</code></a>
+        &mdash; isotopics by nuclides (relative-efficiency / relative-activity).
+      </li>
+    </ul>
+
+    <p>
+      <b>Tip &mdash; using an AI chatbot.</b>  Both README files are written specifically
+      so you can give them to a web-based AI chatbot (ChatGPT, Claude, Gemini, etc.)
+      along with a plain-English description of the report you want, and have it produce a
+      complete, ready-to-use Inja template.  Save the chatbot's output into the appropriate
+      directory above and the next render will pick it up (the <b>Activity/Shielding Fit</b>
+      tool will show it in its template dropdown automatically; for batch CLI runs, pass
+      the filename to <code>--file-report-template</code>).  If the chatbot has web access,
+      pointing it at the README's GitHub URL above works equally well.  You can also start
+      from any of the bundled <code>*.tmplt.*</code> files shipped in each directory and
+      hand-edit them.
+    </p>
+  </message>
+
+
   <message id="search-profile" title="How the &quot;Profile&quot; ordering is defined when searching for nuclides">
     <p>
       On the &quot;Nuclide Search&quot; tab, when you search on an energy, by default the results

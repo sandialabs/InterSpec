@@ -69,13 +69,26 @@ using namespace std;
 namespace NuclideConfig_GA
 {
 
-// Module-level state for the GA (following InitialFit_GA pattern)
-static std::function<double( const PeakFitForNuclideConfig & )> ns_ga_eval_fcn;
+// Runtime flags set from CLI in PeakFitImprove main().  Default values
+// preserve the pre-CLI behavior of these features.
+bool sm_do_background_fit_trial = false;
+RelEffChi2CapMode sm_rel_eff_chi2_cap_mode = RelEffChi2CapMode::Fixed;
+double sm_rel_eff_chi2_cap_fixed_value = 25.0;
+
+// Module-level state for the GA (following InitialFit_GA pattern).
+// The GA evaluator is wrapped to also return the foreground-only and raw
+// background-penalty components, so per-individual breakdowns can be
+// surfaced in reporting when sm_do_background_fit_trial is enabled.
+static std::function<double( const PeakFitForNuclideConfig &, double *, double * )> ns_ga_eval_fcn;
 static std::atomic<size_t> ns_num_evals_this_generation{0};
 static bool sm_has_been_called = false;
 static bool sm_set_best_genes = false;
 static NuclideConfigSolution sm_best_genes;
 static double sm_best_total_cost = std::numeric_limits<double>::max();
+// Cached breakdown of the best-ever individual.  Only populated when
+// sm_do_background_fit_trial is true (otherwise best_fg == best_total_cost).
+static double sm_best_fg_cost = 0.0;
+static double sm_best_bg_cost = 0.0;
 static std::ofstream sm_output_file;
 
 // Store precomputed data pointer for use by SO_report_generation
@@ -223,6 +236,31 @@ std::vector<PrecomputedNuclideData> precompute_nuclide_data(
     pd.auto_search_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks(
       pd.foreground, pd.drf, dummy_origpeaks, singleThreaded, pd.peak_fit_prefs );
 
+    // Background auto-search peaks for the GA background-false-positive penalty.
+    // Gated on sm_do_background_fit_trial (CLI flag) - default off, so we skip
+    // the expensive bg auto-search entirely unless the user opted in.  When
+    // enabled we still only compute for entries that have a long_background
+    // and at least one non-NORM-like source (otherwise the penalty path is a
+    // no-op).
+    if( sm_do_background_fit_trial && src.long_background )
+    {
+      bool any_non_norm = false;
+      for( const RelActCalcAuto::SrcVariant &s : pd.sources )
+      {
+        if( !FitPeaksForNuclides::is_norm_like_for_ga( s ) )
+        {
+          any_non_norm = true;
+          break;
+        }
+      }
+
+      if( any_non_norm )
+      {
+        pd.background_auto_search_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks(
+          src.long_background, pd.drf, dummy_origpeaks, singleThreaded, pd.peak_fit_prefs );
+      }
+    }
+
     result.push_back( std::move( pd ) );
 
     if( ((i + 1) % 10) == 0 || (i + 1) == srcs_info.size() )
@@ -233,6 +271,131 @@ std::vector<PrecomputedNuclideData> precompute_nuclide_data(
 
   return result;
 }//precompute_nuclide_data
+
+
+double compute_background_fit_penalty(
+    const PrecomputedNuclideData &pd,
+    const PeakFitForNuclideConfig &config,
+    const BackgroundMode bg_mode,
+    BackgroundFitDetail *detail_out )
+{
+  // Reset out-detail (caller may reuse).
+  if( detail_out )
+    *detail_out = BackgroundFitDetail{};
+
+  // Skip if there's nothing to evaluate.
+  if( pd.background_auto_search_peaks.empty() )
+    return 0.0;
+
+  const std::shared_ptr<const SpecUtils::Measurement> &long_bg
+    = pd.src_info ? pd.src_info->src_info.long_background : nullptr;
+  if( !long_bg )
+    return 0.0;
+
+  // The background fit treats long_background AS the foreground.  We
+  // cannot subtract long_background from itself, so we pass nullptr for
+  // the bg argument regardless of the global BackgroundMode.  We do mirror
+  // NoBackgroundFitNorm by also fitting NORM peaks when that mode is set,
+  // so the config is exercised consistently with the foreground pass.
+  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
+  if( bg_mode == BackgroundMode::NoBackgroundFitNorm )
+    options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
+
+  const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
+
+  FitPeaksForNuclides::PeakFitResult result;
+  try
+  {
+    result = FitPeaksForNuclides::fit_peaks_for_nuclides(
+      pd.background_auto_search_peaks, long_bg, pd.sources, user_peaks,
+      /*long_background=*/nullptr, pd.drf, options, config, pd.peak_fit_prefs );
+  }catch( const std::exception &e )
+  {
+    if( detail_out )
+    {
+      detail_out->error_message = std::string("exception: ") + e.what();
+      detail_out->penalty = sm_background_fit_penalty_per_spectrum_cap;
+    }
+    return sm_background_fit_penalty_per_spectrum_cap;
+  }
+
+  if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+  {
+    if( detail_out )
+    {
+      detail_out->error_message = "fit status != Success: " + result.error_message;
+      detail_out->penalty = sm_background_fit_penalty_per_spectrum_cap;
+    }
+    return sm_background_fit_penalty_per_spectrum_cap;
+  }
+
+  // Livetime normalization: a 3000s long_background gives ~sqrt(10)x the
+  // significance of the same false-positive in a 300s foreground.  Divide
+  // each peak's sig by sqrt(bg_lt / fg_lt) BEFORE the 7.5 cap.
+  const double fg_lt = pd.foreground ? pd.foreground->live_time() : 1.0;
+  const double bg_lt = long_bg->live_time();
+  const double lt_ratio = (fg_lt > 0.0 && bg_lt > 0.0) ? (bg_lt / fg_lt) : 1.0;
+  const double lt_norm = std::sqrt( std::max( lt_ratio, 1.0e-9 ) );
+
+  // Per-peak filter thresholds:
+  //   - peaks below low_energy_cutoff_kev are skipped (xrays / scatter are
+  //     too easily generated in any spectrum to be a reliable signal)
+  //   - peaks within annihilation_window_kev of 511.0 are skipped (ambient
+  //     annihilation; sources with 511 in their gammas mis-attribute it)
+  //   - peaks within ~1 FWHM of a strong NORM gamma are skipped (the bg
+  //     peak is likely a real NORM peak the fit attributed to the source)
+  constexpr double low_energy_cutoff_kev   = 30.0;
+  constexpr double annihilation_kev        = 510.9989;
+  constexpr double annihilation_window_kev = 2.0;
+
+  double raw_penalty = 0.0;
+
+  for( const PeakDef &peak : result.observable_peaks )
+  {
+    const SandiaDecay::Nuclide * const nuc = peak.parentNuclide();
+    if( !nuc )
+      continue;  // Floating / unattributed peaks (e.g. background 511) don't count.
+
+    const double area = peak.amplitude();
+    const double area_uncert = peak.amplitudeUncert();
+    const double sig = (area_uncert > 0.0)
+      ? (area / area_uncert)
+      : ((area > 0.0) ? std::sqrt(area) : 0.0);
+    const double sig_norm = sig / lt_norm;
+    const double capped_sig = std::min( 7.5, std::max( 0.0, sig_norm ) );
+
+    const double mean = peak.mean();
+    const double fwhm = peak.fwhm();
+
+    // Build suppression reason in priority order.
+    std::string reason;
+    if( FitPeaksForNuclides::is_norm_like_for_ga( RelActCalcAuto::SrcVariant( nuc ) ) )
+      reason = "norm-like";
+    else if( mean < low_energy_cutoff_kev )
+      reason = "below 30 keV";
+    else if( std::fabs( mean - annihilation_kev ) < annihilation_window_kev )
+      reason = "near 511 keV";
+    else if( FitPeaksForNuclides::is_near_strong_norm_gamma( mean, std::max(0.5, fwhm) ) )
+      reason = "near NORM line";
+
+    if( detail_out )
+    {
+      detail_out->source_attributed_peaks.push_back( peak );
+      detail_out->normalized_significances.push_back( sig_norm );
+      detail_out->suppression_reasons.push_back( reason );
+    }
+
+    if( reason.empty() )
+      raw_penalty += capped_sig;
+  }
+
+  const double penalty = std::min( raw_penalty, sm_background_fit_penalty_per_spectrum_cap );
+
+  if( detail_out )
+    detail_out->penalty = penalty;
+
+  return penalty;
+}//compute_background_fit_penalty
 
 
 std::string NuclideConfigSolution::to_string( const std::string &separator ) const
@@ -292,9 +455,26 @@ std::string NuclideConfigSolution::to_string( const std::string &separator ) con
       << "observable_peak_final_significance_threshold=" << observable_peak_final_significance_threshold << separator
       << "step_cont_min_peak_area=" << step_cont_min_peak_area << separator
       << "step_cont_min_peak_significance=" << step_cont_min_peak_significance << separator
-      << "step_cont_left_right_nsigma=" << step_cont_left_right_nsigma;
+      << "step_cont_left_right_nsigma=" << step_cont_left_right_nsigma << separator
+      << "initial_manual_rel_eff_max_chi2_dof=" << initial_manual_rel_eff_max_chi2_dof;
   return oss.str();
 }//NuclideConfigSolution::to_string
+
+// Resolves the effective initial_manual_rel_eff_max_chi2_dof based on the
+// CLI mode.  In Disabled mode the cap is set high enough that the throw at
+// src/FitPeaksForNuclides.cpp:5594 effectively never fires.  In Fixed mode
+// the CLI-provided value is used.  In GAOptimized mode the gene's value is
+// used directly.
+static double resolve_chi2_dof_cap( const NuclideConfigSolution &p )
+{
+  switch( sm_rel_eff_chi2_cap_mode )
+  {
+    case RelEffChi2CapMode::Disabled:    return 1.0e6;
+    case RelEffChi2CapMode::Fixed:       return sm_rel_eff_chi2_cap_fixed_value;
+    case RelEffChi2CapMode::GAOptimized: return p.initial_manual_rel_eff_max_chi2_dof;
+  }
+  return sm_rel_eff_chi2_cap_fixed_value;
+}//resolve_chi2_dof_cap
 
 
 PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
@@ -377,6 +557,10 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
   config.step_cont_min_peak_area = p.step_cont_min_peak_area;
   config.step_cont_min_peak_significance = p.step_cont_min_peak_significance;
   config.step_cont_left_right_nsigma = p.step_cont_left_right_nsigma;
+
+  // Manual rel-eff chi2/dof cap: resolved from the CLI mode + (when
+  // GA-optimized) the gene value.
+  config.initial_manual_rel_eff_max_chi2_dof = resolve_chi2_dof_cap( p );
 
   // skew_type is not GA-optimized - leave at default (NoSkew)
   // Caller should override per detector type (e.g., DoubleSidedCrystalBall for CZT)
@@ -484,6 +668,21 @@ void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rn
   p.step_cont_min_peak_significance = 5.0 + 95.0 * rnd01();
   p.step_cont_left_right_nsigma = 1.0 + 7.0 * rnd01();
 
+  // Manual rel-eff chi2/dof cap.  Only randomize when GAOptimized; otherwise
+  // genes_to_settings will override this with the CLI-resolved value.
+  // Log-uniform in [5, 1000] gives the GA the freedom to effectively disable
+  // the cut by picking a large value.
+  if( sm_rel_eff_chi2_cap_mode == RelEffChi2CapMode::GAOptimized )
+  {
+    const double log_min = std::log( 5.0 );
+    const double log_max = std::log( 1000.0 );
+    p.initial_manual_rel_eff_max_chi2_dof = std::exp( log_min + (log_max - log_min) * rnd01() );
+  }
+  else
+  {
+    p.initial_manual_rel_eff_max_chi2_dof = sm_rel_eff_chi2_cap_fixed_value;
+  }
+
   // skew_type is not GA-optimized
 }//init_genes
 
@@ -492,7 +691,10 @@ bool eval_solution( const NuclideConfigSolution &p, NuclideConfigCost &c )
 {
   const PeakFitForNuclideConfig config = genes_to_settings( p );
 
-  c.objective1 = ns_ga_eval_fcn( config );
+  double fg = 0.0, bg = 0.0;
+  c.objective1 = ns_ga_eval_fcn( config, &fg, &bg );
+  c.objective_fg = fg;
+  c.objective_bg = bg;
 
   ns_num_evals_this_generation += 1;
   if( (ns_num_evals_this_generation % 10) == 0 )
@@ -633,6 +835,13 @@ NuclideConfigSolution mutate( const NuclideConfigSolution &X_base,
     MUTATE_DOUBLE( step_cont_min_peak_significance, 5.0, 100.0 )
     MUTATE_DOUBLE( step_cont_left_right_nsigma, 1.0, 8.0 )
 
+    // Manual rel-eff chi2/dof cap - only meaningful when GAOptimized.  When
+    // Fixed/Disabled, the gene value is ignored by resolve_chi2_dof_cap().
+    if( sm_rel_eff_chi2_cap_mode == RelEffChi2CapMode::GAOptimized )
+    {
+      MUTATE_DOUBLE( initial_manual_rel_eff_max_chi2_dof, 5.0, 1000.0 )
+    }
+
   } while( !in_range );
 
   return X_new;
@@ -741,6 +950,12 @@ NuclideConfigSolution crossover( const NuclideConfigSolution &X1,
   CROSSOVER_DOUBLE( step_cont_min_peak_significance )
   CROSSOVER_DOUBLE( step_cont_left_right_nsigma )
 
+  // Manual rel-eff chi2/dof cap - only crossed when GAOptimized.
+  if( sm_rel_eff_chi2_cap_mode == RelEffChi2CapMode::GAOptimized )
+  {
+    CROSSOVER_DOUBLE( initial_manual_rel_eff_max_chi2_dof )
+  }
+
   return X_new;
 }//crossover
 
@@ -769,18 +984,66 @@ void SO_report_generation( int generation_number,
     sm_best_total_cost = last_generation.best_total_cost;
   }
 
-  sm_output_file
-    << generation_number << "\t"
-    << last_generation.average_cost << "\t"
-    << last_generation.best_total_cost << "\t"
-    << "{" << best_genes.to_string( ", " ) << "}"
-    << "\t" << (best_yet ? "BestYet" : "NoImprovement")
-    << "\n\n";
+  // When the bg trial is enabled, the best individual's fg/bg breakdown is
+  // useful to report.  openGA only exposes `objective1` via best_total_cost,
+  // so we re-evaluate the best genes once on each best-yet generation to
+  // capture the components, then cache them in static state so subsequent
+  // non-best-yet generations can still report the correct (carried-over)
+  // best-ever breakdown.  This costs one extra GA eval per *new best*
+  // generation - acceptable.
+  if( sm_do_background_fit_trial && best_yet )
+  {
+    try
+    {
+      const PeakFitForNuclideConfig best_config = genes_to_settings( best_genes );
+      double fg = 0.0, bg = 0.0;
+      ns_ga_eval_fcn( best_config, &fg, &bg );
+      sm_best_fg_cost = fg;
+      sm_best_bg_cost = bg;
+    }catch( const std::exception &e )
+    {
+      cerr << "Warning: failed to re-evaluate best individual for fg/bg breakdown: "
+           << e.what() << endl;
+    }
+  }
+  const double best_fg = sm_do_background_fit_trial ? sm_best_fg_cost : last_generation.best_total_cost;
+  const double best_bg = sm_do_background_fit_trial ? sm_best_bg_cost : 0.0;
+
+  if( sm_do_background_fit_trial )
+  {
+    sm_output_file
+      << generation_number << "\t"
+      << last_generation.average_cost << "\t"
+      << last_generation.best_total_cost << "\t"
+      << best_fg << "\t"
+      << best_bg << "\t"
+      << "{" << best_genes.to_string( ", " ) << "}"
+      << "\t" << (best_yet ? "BestYet" : "NoImprovement")
+      << "\n\n";
+  }
+  else
+  {
+    sm_output_file
+      << generation_number << "\t"
+      << last_generation.average_cost << "\t"
+      << last_generation.best_total_cost << "\t"
+      << "{" << best_genes.to_string( ", " ) << "}"
+      << "\t" << (best_yet ? "BestYet" : "NoImprovement")
+      << "\n\n";
+  }
 
   cout
     << "Generation [" << generation_number << "], "
-    << "Best=" << last_generation.best_total_cost << ", "
-    << "Average=" << last_generation.average_cost << ", "
+    << "Best=" << last_generation.best_total_cost;
+  if( sm_do_background_fit_trial )
+  {
+    const double weighted_bg = sm_background_fit_penalty_weight * best_bg;
+    cout << " (fg=" << best_fg
+         << ", bg_raw=" << best_bg
+         << ", weighted_bg=" << weighted_bg
+         << ", combined=" << (best_fg + weighted_bg) << ")";
+  }
+  cout << ", Average=" << last_generation.average_cost << ", "
     << (best_yet ? "Best generation yet" : "no improvement")
     << "\n  Best genes: {\n\t" << best_genes.to_string( "\n\t" ) << "\n}\n"
     << "Exe_time=" << last_generation.exe_time
@@ -838,6 +1101,8 @@ void write_results_html_and_n42(
 
   size_t chart_counter = 0;
   double total_score = 0.0;
+  double total_fg = 0.0;
+  double total_bg_raw = 0.0;
 
   const double num_sigma_contribution = 1.5;
 
@@ -879,6 +1144,19 @@ void write_results_html_and_n42(
       combined_score.final_weight = combined_score.initial_fit_weights.find_weight
                                   + combined_score.final_fit_score.total_weight
                                   + combined_score.candidate_peak_score.score;
+      const double fg_only_for_source = combined_score.final_weight;
+      total_fg += fg_only_for_source;
+
+      // Background false-positive penalty (with diagnostic detail for HTML).
+      // compute_background_fit_penalty short-circuits to 0 when
+      // sm_do_background_fit_trial is false.
+      BackgroundFitDetail bg_detail;
+      combined_score.background_fit_penalty
+        = compute_background_fit_penalty( pd, config, bg_mode, &bg_detail );
+      total_bg_raw += combined_score.background_fit_penalty;
+      combined_score.final_weight
+        += sm_background_fit_penalty_weight * combined_score.background_fit_penalty;
+
       total_score += combined_score.final_weight;
 
       // Write N42 file
@@ -1068,6 +1346,145 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"d
                    << ", Candidate: " << combined_score.candidate_peak_score.score << "</p>" << endl;
         html_output << "<p>Missing peaks: " << combined_score.candidate_peak_score.num_def_wanted_not_found
                    << ", Extra peaks: " << combined_score.candidate_peak_score.num_extra_peaks << "</p>" << endl;
+
+        // Background-fit penalty section (only shown if computed; suppressed
+        // when all sources for this entry are NORM-like or no long_background).
+        if( !pd.background_auto_search_peaks.empty() )
+        {
+          const double weighted = sm_background_fit_penalty_weight * combined_score.background_fit_penalty;
+          html_output << "<p><b>Background-fit penalty:</b> "
+                     << combined_score.background_fit_penalty
+                     << " (weighted contribution to score: " << weighted << ")";
+          if( !bg_detail.error_message.empty() )
+            html_output << " &mdash; " << bg_detail.error_message;
+          html_output << "</p>" << endl;
+
+          if( !bg_detail.source_attributed_peaks.empty() )
+          {
+            html_output << "<table style=\"border-collapse: collapse; margin: 5px auto;\">"
+                       << "<tr><th>Energy (keV)</th><th>Area</th><th>AreaUncert</th>"
+                       << "<th>Sig (norm)</th><th>Source</th>"
+                       << "<th>Suppressed?</th></tr>" << endl;
+            for( size_t i = 0; i < bg_detail.source_attributed_peaks.size(); ++i )
+            {
+              const PeakDef &bp = bg_detail.source_attributed_peaks[i];
+              const SandiaDecay::Nuclide * const nuc = bp.parentNuclide();
+              const std::string nuc_sym = nuc ? nuc->symbol : std::string("(none)");
+              const double sn = (i < bg_detail.normalized_significances.size())
+                                ? bg_detail.normalized_significances[i] : 0.0;
+              const std::string &reason = (i < bg_detail.suppression_reasons.size())
+                                ? bg_detail.suppression_reasons[i] : std::string();
+              const std::string reason_html
+                = reason.empty() ? std::string("<b>counted</b>") : reason;
+              html_output << "<tr><td>" << bp.mean()
+                         << "</td><td>" << bp.amplitude()
+                         << "</td><td>" << bp.amplitudeUncert()
+                         << "</td><td>" << sn
+                         << "</td><td>" << nuc_sym
+                         << "</td><td>" << reason_html << "</td></tr>" << endl;
+            }
+            html_output << "</table>" << endl;
+          }
+
+          // ---- Background-fit diagnostic chart -----------------------------
+          // Render the long_background spectrum with the source-attributed
+          // peaks overlaid, so the user can visually verify the false
+          // positives.  Only emit when the bg trial is enabled AND we have
+          // peaks to show.
+          const std::shared_ptr<const SpecUtils::Measurement> &long_bg
+            = pd.src_info ? pd.src_info->src_info.long_background : nullptr;
+          if( sm_do_background_fit_trial
+              && long_bg
+              && !bg_detail.source_attributed_peaks.empty() )
+          {
+            html_output
+              << "<h4 style=\"color:darkred; margin-top: 15px;\">"
+              << "Background-fit diagnostic: peaks the source (" << src_name
+              << ") attributed to the long-background spectrum (red overlay = false-positive candidates)"
+              << "</h4>" << endl;
+
+            // Determine an energy window around the bg-fit peaks for the
+            // chart's x-axis.  Pad by 30 keV on either side, clamped to the
+            // bg spectrum's extent.
+            float bg_xmin = static_cast<float>( long_bg->gamma_energy_min() );
+            float bg_xmax = static_cast<float>( long_bg->gamma_energy_max() );
+            {
+              double e_lo = std::numeric_limits<double>::max();
+              double e_hi = std::numeric_limits<double>::lowest();
+              for( const PeakDef &bp : bg_detail.source_attributed_peaks )
+              {
+                e_lo = std::min( e_lo, bp.mean() );
+                e_hi = std::max( e_hi, bp.mean() );
+              }
+              if( e_lo <= e_hi )
+              {
+                bg_xmin = std::max( bg_xmin, static_cast<float>( e_lo - 30.0 ) );
+                bg_xmax = std::min( bg_xmax, static_cast<float>( e_hi + 30.0 ) );
+              }
+            }
+
+            const string bg_div_id = "chart_" + std::to_string( chart_counter );
+            chart_counter++;
+
+            const string bg_title = src_name + " — long_background (false positives)";
+            D3SpectrumExport::D3SpectrumChartOptions bg_chart_options(
+              bg_title, "Energy (keV)", "Counts/Channel",
+              "", true, false, false, true, true,
+              false, false, false, false, false, false,
+              false, false, false, bg_xmin, bg_xmax,
+              std::map<std::string,std::string>{} );
+
+            D3SpectrumExport::D3SpectrumOptions bg_only_opts;
+            bg_only_opts.line_color = "steelblue";
+            bg_only_opts.title = "long_background";
+            bg_only_opts.display_scale_factor = 1.0;
+            bg_only_opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
+
+            std::vector<std::shared_ptr<const PeakDef>> bg_fit_peaks_ptrs;
+            bg_fit_peaks_ptrs.reserve( bg_detail.source_attributed_peaks.size() );
+            for( const PeakDef &bp : bg_detail.source_attributed_peaks )
+              bg_fit_peaks_ptrs.push_back( std::make_shared<PeakDef>( bp ) );
+            bg_only_opts.peaks_json = PeakDef::peak_json(
+              bg_fit_peaks_ptrs, long_bg, Wt::WColor("red"), false );
+
+            html_output << "<div id=\"" << bg_div_id
+                        << "\" class=\"chart\" oncontextmenu=\"return false;\""
+                        << " style=\"border: 1px solid darkred;\"></div>" << endl;
+            html_output << "<script>" << endl;
+
+            D3SpectrumExport::write_js_for_chart(
+              html_output, bg_div_id,
+              bg_chart_options.m_dataTitle,
+              bg_chart_options.m_xAxisTitle,
+              bg_chart_options.m_yAxisTitle );
+
+            std::vector<std::pair<const SpecUtils::Measurement *, D3SpectrumExport::D3SpectrumOptions>> bg_measurements;
+            bg_measurements.emplace_back( long_bg.get(), bg_only_opts );
+
+            D3SpectrumExport::write_and_set_data_for_chart( html_output, bg_div_id, bg_measurements );
+
+            html_output << R"delim(
+const resizeChart)delim" << chart_counter - 1 << R"delim( = function(){
+  let height = window.innerHeight;
+  let width = document.documentElement.clientWidth;
+  let el = spec_chart_)delim" << bg_div_id << R"delim(.chart;
+  el.style.width = 0.8*width + "px";
+  el.style.height = Math.min(400,Math.max(200, Math.min(0.3*width,height-175))) + "px";
+  el.style.marginLeft = 0.05*width + "px";
+  el.style.marginRight = 0.05*width + "px";
+  )delim"
+              << "  spec_chart_" << bg_div_id << R"delim(.handleResize();
+};
+
+window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"delim();
+)delim" << endl;
+
+            D3SpectrumExport::write_set_options_for_chart( html_output, bg_div_id, bg_chart_options );
+            html_output << "resizeChart" << chart_counter - 1 << "();" << endl;
+            html_output << "</script>" << endl;
+          }//bg diagnostic chart
+        }//if( background_auto_search_peaks present )
+
         html_output << "</div>" << endl;
 
         html_output << "</fieldset>" << endl;
@@ -1080,7 +1497,22 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"d
     }
   }//for( const PrecomputedNuclideData &pd : precomputed )
 
-  html_output << "<h2 style=\"text-align: center;\">Total Score: " << total_score << "</h2>" << endl;
+  if( sm_do_background_fit_trial )
+  {
+    const double weighted_bg = sm_background_fit_penalty_weight * total_bg_raw;
+    html_output << "<h2 style=\"text-align: center;\">Total Score: " << total_score
+                << "</h2>" << endl;
+    html_output << "<p style=\"text-align: center;\">"
+                << "foreground only = " << total_fg
+                << "  &nbsp;|&nbsp;  background penalty (raw) = " << total_bg_raw
+                << "  &nbsp;|&nbsp;  weighted bg contribution = " << weighted_bg
+                << "  &nbsp;|&nbsp;  combined = fg + 0.25 * bg = " << total_score
+                << "</p>" << endl;
+  }
+  else
+  {
+    html_output << "<h2 style=\"text-align: center;\">Total Score: " << total_score << "</h2>" << endl;
+  }
   html_output << "</body>" << endl;
   html_output << "</html>" << endl;
   html_output.close();
@@ -1089,7 +1521,7 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"d
 
 PeakFitForNuclideConfig do_nuclide_config_ga(
   const std::vector<PrecomputedNuclideData> &precomputed,
-  std::function<double( const PeakFitForNuclideConfig & )> ga_eval_fcn )
+  std::function<double( const PeakFitForNuclideConfig &, double *, double * )> ga_eval_fcn )
 {
   assert( !sm_has_been_called );
   if( sm_has_been_called )
@@ -1108,7 +1540,15 @@ PeakFitForNuclideConfig do_nuclide_config_ga(
   sm_precomputed_ptr = &precomputed;
 
   sm_output_file.open( "nuclide_config_ga_results.txt" );
-  sm_output_file << "step" << "\t" << "cost_avg" << "\t" << "cost_best" << "\t" << "solution_best" << "\n";
+  if( sm_do_background_fit_trial )
+  {
+    sm_output_file << "step\tcost_avg\tcost_best\tfg_best\tbg_best_raw"
+                   << "\tsolution_best\tstatus\n";
+  }
+  else
+  {
+    sm_output_file << "step\tcost_avg\tcost_best\tsolution_best\tstatus\n";
+  }
 
   EA::Chronometer timer;
   timer.tic();

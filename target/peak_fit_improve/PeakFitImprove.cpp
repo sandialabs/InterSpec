@@ -37,7 +37,9 @@
 #include <iostream>
 #include <thread>
 
+#include <boost/asio/post.hpp>
 #include <boost/program_options.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <boost/math/constants/constants.hpp>
 
 //#include "/external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
@@ -66,6 +68,7 @@
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/AnalystChecks.h"
 #include "InterSpec/PeakFitSpecImp.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/ReferenceLineInfo.h"
@@ -287,98 +290,10 @@ PeakTruthInfo::PeakTruthInfo( const std::string &line )
 }//PeakTruthInfo(...)
 
 
-void create_n42_peak_fits_for_dir( const string &dir )
+void create_n42_peak_fits_for_dir( const string &dir,
+                                   const PeakFitUtils::CoarseResolutionType det_type
+                                       = PeakFitUtils::CoarseResolutionType::High )
 {
-  const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High;
-
-  //Generation [48], Best=-19.7537, Average=-19.7535, Best genes:
-  //Using all live time and HPGe detectors, and cities - 20250912
-  const FindCandidateSettings hpge_candidate_settings = ([](){
-    FindCandidateSettings settings;
-    settings.num_smooth_side_channels = 3;
-    settings.smooth_polynomial_order = 2;
-    settings.threshold_FOM = 1.25;
-    settings.more_scrutiny_FOM_threshold = 2.5;
-    settings.pos_sum_threshold_sf = 0.119178;
-    settings.num_chan_fluctuate = 1;
-    settings.more_scrutiny_coarser_FOM = 3.001943;
-    settings.more_scrutiny_min_dev_from_line = 6.816465;
-    settings.amp_to_apply_line_test_below = 6.000000;
-    return settings;
-  })();
-
-  const InitialPeakFindSettings hpge_initial_fit_settings = ([](){
-    InitialPeakFindSettings settings;
-    settings.initial_stat_threshold = 3.5;
-    settings.initial_hypothesis_threshold = 0.5;
-    settings.initial_min_nsigma_roi = 2.246770;
-    settings.initial_max_nsigma_roi = 6.378162;
-    settings.fwhm_fcn_form = InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs;
-    settings.search_roi_nsigma_deficit = 4.241748;
-    //settings.search_stat_threshold = 8.051485;
-    settings.search_hypothesis_threshold= 3.342207;
-    settings.search_stat_significance = 2.025582;
-    settings.ROI_add_nsigma_required = 3.526017;
-    settings.ROI_add_chi2dof_improve = 0.45;
-    return settings;
-  })();
-
-  // Not final settings
-  const FinalPeakFitSettings hpge_final_fit_settings = ([](){
-    FinalPeakFitSettings settings;
-
-    settings.require_combine_num_fwhm_near = 2.0;
-    settings.not_allow_combine_num_fwhm_near = 4.0;
-    settings.cont_type_peak_nsigma_threshold = 40.450658;
-    settings.cont_type_left_right_nsigma = 8.423588;
-    settings.cont_poly_order_increase_chi2dof_required = 0.671733;
-    settings.cont_step_type_increase_chi2dof_required = 0.312514;
-    settings.skew_nsigma = 8.359958;
-    settings.left_residual_sum_min_to_try_skew = 2.878255;
-    settings.right_residual_sum_min_to_try_skew = 0.158640;
-    settings.skew_improve_chi2_dof_threshold = 1.016935;
-    settings.roi_extent_low_num_fwhm_base_highstat = 1.5;
-    settings.roi_extent_high_num_fwhm_base_highstat = 1.5;
-    settings.roi_extent_low_num_fwhm_base_lowstat = 1.5;
-    settings.roi_extent_high_num_fwhm_base_lowstat = 1.5;
-    settings.high_stat_threshold = 15.0;
-    settings.roi_extent_low_num_fwhm_extra = 1.5;
-    settings.roi_extent_high_num_fwhm_extra = 1.5;
-    settings.roi_end_second_deriv_thresh = 3.5;
-    settings.break_multi_roi_up_continuum_away_sigma = 5;
-    settings.break_multi_roi_up_required_chi2dof_improve = 0.5;
-
-    return settings;
-  })();
-
-
-
-  auto do_fit_peaks = [&hpge_candidate_settings, &hpge_initial_fit_settings, &hpge_final_fit_settings, det_type]
-                        ( const shared_ptr<const SpecUtils::Measurement> &spectrum )
-                      -> vector<PeakDef>
-  {
-    const bool multithread = true;
-    size_t num_add_candidates_fit_for = 0, num_add_candidates_accepted = 0; //Only for eval purposes
-    const vector<PeakDef> initial_peaks = InitialFit_GA::initial_peak_find_and_fit( hpge_initial_fit_settings,
-                                                                                   hpge_candidate_settings,
-                                                                                   spectrum, det_type,
-                                                                                   multithread,
-                                                                                   num_add_candidates_fit_for,
-                                                                                   num_add_candidates_accepted);
-    //return initial_peaks;
-
-    cout << "Input into final_peak_fit:" << endl;
-    for( const PeakDef &p : initial_peaks )
-      cout << "    {" << p.mean() << ", " << p.fwhm() << ", " << p.lowerX() << "-" << p.upperX() << "}" << endl;
-    cout << endl;
-
-    const vector<PeakDef> fit_peaks = FinalFit_GA::final_peak_fit( initial_peaks, hpge_final_fit_settings, det_type,
-                                                                  spectrum, multithread );
-
-    return fit_peaks;
-  };//do_fit_peaks
-
-
   ofstream output( dir + "/peak_fits.html" );
 
   // Lu177m_Unsh is probably the best test of settings...
@@ -394,61 +309,149 @@ void create_n42_peak_fits_for_dir( const string &dir )
   << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
   << "</style>" << endl;
 
-  vector<string> files = SpecUtils::recursive_ls( dir, ".csv" );
+  vector<string> files = SpecUtils::recursive_ls( dir, ".pcf" );
+  {
+    const vector<string> csv_files = SpecUtils::recursive_ls( dir, ".csv" );
+    for( const string &f : csv_files )
+    {
+      if( !SpecUtils::icontains( f, ".peaks.CSV" )
+          && !SpecUtils::icontains( f, "_truth.csv" ) )
+        files.push_back( f );
+    }
+  }
 
   for( size_t i = 0; i < files.size(); ++i )
   {
     const string filename = files[i];
 
-    if( SpecUtils::icontains(filename, ".peaks.CSV") )
+    if( SpecUtils::icontains(filename, ".peaks.CSV")
+        || SpecUtils::icontains(filename, "_truth.csv") )
       continue;
-
-    //if( !SpecUtils::icontains(filename, "spec_8h.csv") )
-    //  continue;
-
 
     SpecMeas meas;
     const bool loaded = meas.load_file(filename, SpecUtils::ParserType::Auto );
-    if( !loaded || (meas.num_measurements() != 1) )
+    if( !loaded || (meas.num_measurements() < 1) )
     {
-      cerr << "Failed to load '" << filename << "'" << endl;
-      exit(1);
+      cerr << "Failed to load '" << filename << "' (skipping)" << endl;
+      continue;
     }
 
-    const shared_ptr<const SpecUtils::Measurement> spectrum_orig = meas.measurement_at_index( 0 );
-    assert( spectrum_orig );
-    //meas.set_live_time( 1.0, spectrum );
-    //meas.set_real_time( 1.0, spectrum );
-
-    const shared_ptr<const vector<float>> &counts_ptr = spectrum_orig->gamma_channel_contents();
-    const vector<float> &counts_orig = *counts_ptr;
-    float min_counts = 1.0E8;
-    for( const float &c : counts_orig )
+    // Multi-measurement files (e.g. PCFs with 16 sub-spectra) are handled
+    // by taking only the first gamma measurement, to keep HTML output tractable.
+    shared_ptr<const SpecUtils::Measurement> spectrum_orig;
+    for( size_t mi = 0; mi < meas.num_measurements(); ++mi )
     {
-      if( c > 0.5f )
-        min_counts = std::min( min_counts, c );
+      const shared_ptr<const SpecUtils::Measurement> m = meas.measurement_at_index( mi );
+      if( m && m->gamma_channel_contents() && !m->gamma_channel_contents()->empty() )
+      {
+        spectrum_orig = m;
+        break;
+      }
     }
-    shared_ptr<vector<float>> scaled_cnts = make_unique<vector<float>>( counts_orig );
-    for( float &c : *scaled_cnts )
-      c /= min_counts;
+    if( !spectrum_orig )
+    {
+      cerr << "No gamma measurement in '" << filename << "' (skipping)" << endl;
+      continue;
+    }
 
-    shared_ptr<SpecUtils::Measurement> spectrum = make_shared<SpecUtils::Measurement>( *spectrum_orig );
-    spectrum->set_gamma_counts( scaled_cnts, 1.0f, 1.0f );
+    // Use the unscaled spectrum directly so the Compton check's Poisson
+    // significance tests see real counts (the previous min-count scaling
+    // here was for a GA-based fitter that we're no longer using).
+    const std::shared_ptr<const SpecUtils::Measurement> spectrum = spectrum_orig;
 
-    meas.remove_measurement( spectrum_orig, false );
-    meas.add_measurement( spectrum, true );
+    std::shared_ptr<PeakFitDetPrefs> peak_fit_prefs = std::make_shared<PeakFitDetPrefs>();
+    peak_fit_prefs->m_det_type = det_type;
 
+    vector<shared_ptr<const PeakDef>> initial_fit_peaks_ptrs;
+    try
+    {
+      initial_fit_peaks_ptrs = ExperimentalAutomatedPeakSearch::search_for_peaks(
+          spectrum, nullptr, nullptr, true, peak_fit_prefs );
+    }catch( const std::exception &e )
+    {
+      cerr << "Peak search failed for '" << filename << "': " << e.what() << " (continuing)" << endl;
+      continue;
+    }
 
-    const vector<PeakDef> fit_peaks = do_fit_peaks( spectrum );
-    vector<shared_ptr<const PeakDef>> fit_peaks_ptrs;
+    std::deque<std::shared_ptr<const PeakDef>> initial_peaks_dq( initial_fit_peaks_ptrs.begin(), initial_fit_peaks_ptrs.end() );
+
+    if( i < 3 )
+    {
+      cout << "  [diag] " << SpecUtils::filename(filename)
+           << ": fit_peaks.size()=" << initial_fit_peaks_ptrs.size()
+           << "  spectrum live_time=" << spectrum->live_time()
+           << "  gamma_count_sum=" << spectrum->gamma_count_sum() << endl;
+      for( size_t k = 0; k < std::min<size_t>( 5, initial_fit_peaks_ptrs.size() ); ++k )
+        cout << "    peak " << k << ": mean=" << initial_fit_peaks_ptrs[k]->mean()
+             << " amp=" << initial_fit_peaks_ptrs[k]->amplitude()
+             << " fwhm=" << initial_fit_peaks_ptrs[k]->fwhm() << endl;
+    }
+
+    // Run Compton-peak check on each fitted peak; stamp userLabel for any
+    // Unlikely/Likely/VeryLikely Compton hit (skip only "No").
+    const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> user_peaks_const
+        = std::make_shared<const std::deque<std::shared_ptr<const PeakDef>>>( initial_peaks_dq );
+
+    size_t n_compton_hits = 0;
     std::deque<std::shared_ptr<const PeakDef>> peaks_dq;
-    for( const PeakDef &p : fit_peaks )
+    vector<shared_ptr<const PeakDef>> fit_peaks_ptrs;
+    for( const std::shared_ptr<const PeakDef> &p : initial_peaks_dq )
     {
-      auto np = make_shared<PeakDef>(p);
-      fit_peaks_ptrs.push_back( np );
-      peaks_dq.push_back( np );
+      const AnalystChecks::ComptonPeakCheckStatus status
+          = AnalystChecks::compton_peak_check( p, user_peaks_const, spectrum, nullptr );
+
+      const bool is_compton
+          = ( status.confidence != AnalystChecks::ComptonScatterConfidence::No );
+
+      if( is_compton )
+      {
+        n_compton_hits += 1;
+        const char *confStr = "?";
+        switch( status.confidence )
+        {
+          case AnalystChecks::ComptonScatterConfidence::No:         confStr = "No";         break;
+          case AnalystChecks::ComptonScatterConfidence::Unlikely:   confStr = "Unlikely";   break;
+          case AnalystChecks::ComptonScatterConfidence::Likely:     confStr = "Likely";     break;
+          case AnalystChecks::ComptonScatterConfidence::VeryLikely: confStr = "VeryLikely"; break;
+        }
+
+        std::string base_label;
+        if( status.parentInfo && status.parentInfo->userLabel.has_value() )
+        {
+          base_label = status.parentInfo->userLabel.value();
+        }else
+        {
+          const double parentE = status.parentInfo ? status.parentInfo->parentEnergy : 0.0;
+          const char *typeStr = "Compton";
+          switch( status.type )
+          {
+            case AnalystChecks::ComptonScatterType::ComptonPeak:       typeStr = "Backscatter"; break;
+            case AnalystChecks::ComptonScatterType::ComptonEdge:       typeStr = "Compton edge"; break;
+            case AnalystChecks::ComptonScatterType::ComptonPeakOrEdge: typeStr = "Compton (peak/edge)"; break;
+            default: break;
+          }
+          char buf[128];
+          snprintf( buf, sizeof(buf), "%s from %.1f keV", typeStr, parentE );
+          base_label = buf;
+        }
+
+        const std::string label = std::string( "[" ) + confStr + "] " + base_label;
+
+        std::shared_ptr<PeakDef> relabeled = std::make_shared<PeakDef>( *p );
+        relabeled->setUserLabel( label );
+        peaks_dq.push_back( relabeled );
+        fit_peaks_ptrs.push_back( relabeled );
+      }else
+      {
+        peaks_dq.push_back( p );
+        fit_peaks_ptrs.push_back( p );
+      }
     }
 
+    if( n_compton_hits > 0 )
+      cout << "  " << SpecUtils::filename(filename) << ": "
+           << n_compton_hits << "/" << initial_peaks_dq.size()
+           << " peaks flagged as Compton" << endl;
 
     meas.setPeaks( peaks_dq, {spectrum->sample_number()} );
 
@@ -466,7 +469,7 @@ void create_n42_peak_fits_for_dir( const string &dir )
     std::string dataTitle = "";
     bool useLogYAxis = true, showVerticalGridLines = false, showHorizontalGridLines = false;
     bool legendEnabled = true, compactXAxis = true;
-    bool showPeakUserLabels = false, showPeakEnergyLabels = false, showPeakNuclideLabels = false, showPeakNuclideEnergyLabels = false;
+    bool showPeakUserLabels = true, showPeakEnergyLabels = false, showPeakNuclideLabels = false, showPeakNuclideEnergyLabels = false;
     bool showEscapePeakMarker = false, showComptonPeakMarker = false, showComptonEdgeMarker = false, showSumPeakMarker = false;
     bool backgroundSubtract = false;
     float xMin = 0, xMax = 3000;
@@ -535,11 +538,11 @@ void create_n42_peak_fits_for_dir( const string &dir )
 
 
     output << "<table class=\"TopLinesTable\" style=\"\">" << endl;
-    output << "<tr><th>Fit Energy (keV)</th><th>Fit Area</th><th>FitAreaUncert</th><th>ROI Lower</th><th>ROI Upper</th></tr>" << endl;
+    output << "<tr><th>Fit Energy (keV)</th><th>Fit Area</th><th>FitAreaUncert</th><th>ROI Lower</th><th>ROI Upper</th><th>User Label</th></tr>" << endl;
     output << "<caption>Top gamma lines in spectrum</caption>" << endl;
-    for( size_t i = 0; i < fit_peaks.size(); ++i )
+    for( size_t i = 0; i < fit_peaks_ptrs.size(); ++i )
     {
-      const PeakDef &p = fit_peaks[i];
+      const PeakDef &p = *fit_peaks_ptrs[i];
 
       output << "<tr>"
       << "<td>" << p.mean() << "</td>"
@@ -547,6 +550,7 @@ void create_n42_peak_fits_for_dir( const string &dir )
       << "<td>" << p.amplitudeUncert() << "</td>"
       << "<td>" << p.lowerX() << "</td>"
       << "<td>" << p.upperX() << "</td>"
+      << "<td>" << p.userLabel() << "</td>"
       << "</tr>"
       << endl;
     }
@@ -1011,7 +1015,10 @@ int main( int argc, char **argv )
   double ga_mutation_rate = 0.4;
   double ga_mutate_threshold = 0.15;
   double ga_crossover_threshold = -1.0; // Will be set based on action if not specified
-  
+  bool background_fit_trial_arg = false;
+  string chi2_cap_mode_str = "fixed";
+  double chi2_cap_fixed_value = 25.0;
+
   po::options_description desc( "Allowed options" );
   desc.add_options()
     ("help,h", "produce help message")
@@ -1036,7 +1043,19 @@ int main( int argc, char **argv )
     ("subsample", po::value<size_t>(), "Use every Nth source entry (e.g. 10 = use 1/10th of data)")
     ("detector", po::value<string>(), "Specific detector name to load (e.g. Verifinder-SN23N). Overrides --det-type.")
     ("city", po::value<string>(), "City/location to load (e.g. Livermore, Baltimore, Denver)")
-    ("source-nuclide", po::value<string>(), "Comma-separated source nuclide prefixes to include (e.g. Ba133,Co60). Matches if src_name starts with the prefix.");
+    ("source-nuclide", po::value<string>(), "Comma-separated source nuclide prefixes to include (e.g. Ba133,Co60). Matches if src_name starts with the prefix.")
+    ("background-fit-trial", po::bool_switch( &background_fit_trial_arg ),
+       "Run a background-fit trial for each non-NORM-like source: also fit "
+       "the long_background spectrum with the source(s) and penalize the "
+       "score (weighted 0.25x) by source-attributed peaks that survive the "
+       "511/<30 keV/NORM-overlap filters.  Default off.")
+    ("rel-eff-chi2-cap-mode", po::value<string>( &chi2_cap_mode_str )->default_value( chi2_cap_mode_str ),
+       "How initial_manual_rel_eff_max_chi2_dof is treated: 'disabled' (cap "
+       "never fires), 'fixed' (use --rel-eff-chi2-cap-value), 'ga-optimized' "
+       "(GA picks the cap as a gene).  Default 'fixed'.")
+    ("rel-eff-chi2-cap-value", po::value<double>( &chi2_cap_fixed_value )->default_value( chi2_cap_fixed_value ),
+       "Fixed value for initial_manual_rel_eff_max_chi2_dof.  Used only when "
+       "--rel-eff-chi2-cap-mode=fixed.");
   
   po::variables_map vm;
   
@@ -1087,6 +1106,23 @@ int main( int argc, char **argv )
   PeakFitImprove::sm_ga_mutation_rate = ga_mutation_rate;
   PeakFitImprove::sm_ga_mutate_threshold = ga_mutate_threshold;
   PeakFitImprove::sm_ga_crossover_threshold = ga_crossover_threshold;
+
+  // Background-fit trial + chi2/dof cap mode (Refinement plan: CLI configurability)
+  NuclideConfig_GA::sm_do_background_fit_trial = background_fit_trial_arg;
+
+  if( chi2_cap_mode_str == "disabled" )
+    NuclideConfig_GA::sm_rel_eff_chi2_cap_mode = NuclideConfig_GA::RelEffChi2CapMode::Disabled;
+  else if( chi2_cap_mode_str == "fixed" )
+    NuclideConfig_GA::sm_rel_eff_chi2_cap_mode = NuclideConfig_GA::RelEffChi2CapMode::Fixed;
+  else if( chi2_cap_mode_str == "ga-optimized" )
+    NuclideConfig_GA::sm_rel_eff_chi2_cap_mode = NuclideConfig_GA::RelEffChi2CapMode::GAOptimized;
+  else
+  {
+    cerr << "Error: --rel-eff-chi2-cap-mode must be 'disabled', 'fixed', or 'ga-optimized' (got '"
+         << chi2_cap_mode_str << "')." << endl;
+    return -6;
+  }
+  NuclideConfig_GA::sm_rel_eff_chi2_cap_fixed_value = chi2_cap_fixed_value;
   
   // Parse action enum
   enum class OptimizationAction : int
@@ -1694,12 +1730,19 @@ int main( int argc, char **argv )
 
       const double num_sigma_contribution = 1.5;
 
-      // The GA evaluation function: given a config, score it across all precomputed spectra
-      const auto ga_eval = [&precomputed, num_sigma_contribution]( const FitPeaksForNuclides::PeakFitForNuclideConfig &config ) -> double
+      // The GA evaluation function: given a config, score it across all precomputed spectra.
+      // Per-individual parallelism is controlled by --num-threads-per-individual; the per-spectrum
+      // tasks write into pre-sized slots so summation order is independent of completion order.
+      // The two out-params receive the foreground-only and raw bg-penalty totals so reporting
+      // can show the breakdown when --background-fit-trial is on.
+      const auto ga_eval = [&precomputed, num_sigma_contribution](
+          const FitPeaksForNuclides::PeakFitForNuclideConfig &config,
+          double *out_fg, double *out_bg ) -> double
       {
-        double total_score = 0.0;
-
-        for( const NuclideConfig_GA::PrecomputedNuclideData &pd : precomputed )
+        // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
+        // Called from both the serial and parallel paths below; safe to invoke concurrently.
+        const auto score_one_spectrum = [&config, num_sigma_contribution](
+            const NuclideConfig_GA::PrecomputedNuclideData &pd ) -> std::pair<double,double>
         {
           Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
           if( NuclideConfig_GA::sm_background_mode == NuclideConfig_GA::BackgroundMode::NoBackgroundFitNorm )
@@ -1714,14 +1757,10 @@ int main( int argc, char **argv )
               pd.background, pd.drf, options, config, pd.peak_fit_prefs );
 
             if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
-            {
-              total_score += 100.0;  // Penalty for failed fits
-              continue;
-            }
+              return { 100.0, 0.0 };  // Penalty for failed foreground fits, no bg attempted
 
             const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
 
-            // Score the results using the same combined scoring
             CombinedPeakFitScore combined_score;
             combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
               fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
@@ -1732,19 +1771,64 @@ int main( int argc, char **argv )
             CandidatePeak_GA::correct_score_for_escape_peaks(
               combined_score.candidate_peak_score, pd.src_info->expected_signal_photopeaks );
 
-            combined_score.final_weight = combined_score.initial_fit_weights.find_weight
-                                        + combined_score.final_fit_score.total_weight
-                                        + combined_score.candidate_peak_score.score;
+            const double fg_score = combined_score.initial_fit_weights.find_weight
+                                  + combined_score.final_fit_score.total_weight
+                                  + combined_score.candidate_peak_score.score;
 
-            total_score += combined_score.final_weight;
+            // Background-false-positive penalty.  No-op (returns 0) when
+            // sm_do_background_fit_trial is false or background_auto_search_peaks
+            // is empty for this entry.
+            const double bg_raw = NuclideConfig_GA::compute_background_fit_penalty(
+                pd, config, NuclideConfig_GA::sm_background_mode, /*detail_out=*/nullptr );
+
+            return { fg_score, bg_raw };
           }
           catch( const std::exception & )
           {
-            total_score += 100.0;  // Penalty for exceptions
+            return { 100.0, 0.0 };  // Penalty for exceptions
           }
-        }//for( pd : precomputed )
+        };//score_one_spectrum lambda
 
-        return total_score;
+        const size_t inner_threads = std::max<size_t>( 1, PeakFitImprove::sm_num_threads_per_individual );
+
+        double total_fg = 0.0, total_bg = 0.0;
+
+        if( inner_threads <= 1 )
+        {
+          for( const NuclideConfig_GA::PrecomputedNuclideData &pd : precomputed )
+          {
+            const auto [fg, bg] = score_one_spectrum( pd );
+            total_fg += fg;
+            total_bg += bg;
+          }
+        }
+        else
+        {
+          // Parallel path: each task writes into its own slot, then we sum in
+          // spectrum-index order so the result is independent of thread count.
+          std::vector<std::pair<double,double>> partials( precomputed.size(), {0.0, 0.0} );
+          {
+            boost::asio::thread_pool pool( inner_threads );
+            for( size_t i = 0; i < precomputed.size(); ++i )
+            {
+              boost::asio::post( pool, [i, &precomputed, &partials, &score_one_spectrum]()
+              {
+                partials[i] = score_one_spectrum( precomputed[i] );
+              } );
+            }
+            pool.join();
+          }
+          for( const auto &p : partials )
+          {
+            total_fg += p.first;
+            total_bg += p.second;
+          }
+        }
+
+        if( out_fg ) *out_fg = total_fg;
+        if( out_bg ) *out_bg = total_bg;
+
+        return total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg;
       };//ga_eval lambda
 
       // Run the GA
@@ -2044,6 +2128,39 @@ int main( int argc, char **argv )
       
     case OptimizationAction::CodeDev:
     {
+      // One-off Compton-peak-check visual test: run create_n42_peak_fits_for_dir
+      // over Livermore 300s/1800s data for the 5 listed detectors, with the
+      // Compton-peak-check pass labeling fitted peaks. Inspect the per-dir
+      // peak_fits.html to verify which peaks the checker flags.
+      {
+        const std::string base = data_base_dir;
+        const std::vector<std::tuple<std::string, PeakFitUtils::CoarseResolutionType>> cases = {
+          { base + "/Detective-X/Livermore/300_seconds",        PeakFitUtils::CoarseResolutionType::High        },
+          { base + "/Detective-X/Livermore/1800_seconds",       PeakFitUtils::CoarseResolutionType::High        },
+          { base + "/IdentiFINDER-R425/Livermore/300_seconds",  PeakFitUtils::CoarseResolutionType::LowOrMedRes },
+          { base + "/IdentiFINDER-R425/Livermore/1800_seconds", PeakFitUtils::CoarseResolutionType::LowOrMedRes },
+          { base + "/D3S/Livermore/300_seconds",                PeakFitUtils::CoarseResolutionType::LowOrMedRes },
+          { base + "/D3S/Livermore/1800_seconds",               PeakFitUtils::CoarseResolutionType::LowOrMedRes },
+          { base + "/IdentiFINDER-LaBr3/Livermore/300_seconds", PeakFitUtils::CoarseResolutionType::LowOrMedRes },
+          { base + "/IdentiFINDER-LaBr3/Livermore/1800_seconds",PeakFitUtils::CoarseResolutionType::LowOrMedRes },
+          { base + "/nanoRaider/Livermore/300_seconds",         PeakFitUtils::CoarseResolutionType::LowOrMedRes },
+          { base + "/nanoRaider/Livermore/1800_seconds",        PeakFitUtils::CoarseResolutionType::LowOrMedRes },
+        };
+
+        for( const auto &c : cases )
+        {
+          const std::string &path = std::get<0>( c );
+          if( !SpecUtils::is_directory( path ) )
+          {
+            std::cerr << "Skipping missing directory: " << path << std::endl;
+            continue;
+          }
+          std::cout << "\n=== Processing " << path << " ===" << std::endl;
+          create_n42_peak_fits_for_dir( path, std::get<1>( c ) );
+        }
+        return 0;
+      }
+
       //create_n42_peak_fits_for_dir( "/Users/wcjohns/Downloads/spec 2" );
       //create_n42_peak_fits( inject_sets, input_srcs );
 

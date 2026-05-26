@@ -27,7 +27,7 @@
   <message id="rr-requesting-ana">Demande d'analyse</message>
   <message id="rr-err-no-spec">Aucun spectre affiché</message>
   <message id="rr-requesting-service-info">Demande d'informations sur le service.</message>
-  <message id="rr-error-parsing-service-info">Erreur lors de l'analyse des résultats des informations sur le service : <code></code></message>
+  <message id="rr-error-parsing-service-info">Erreur lors de l'analyse des résultats des informations sur le service : <code>{1}</code></message>
   <message id="rr-incorrect-url">URL incorrecte ou pas d'Internet.</message>
   <message id="rr-err-requesting-service-info">Erreur lors de la récupération des informations sur le service : <code>{1}</code></message>
 </messages>

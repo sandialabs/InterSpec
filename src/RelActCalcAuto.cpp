@@ -12328,6 +12328,24 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
         floating_peaks.push_back( peak );
       }
     }//if( <FloatingPeakList> )
+
+    // Cross-curve references in RelEffCurveInput::shielded_by_other_phys_model_curve_shieldings
+    //  store indices into rel_eff_curves.  Validate now that all curves are loaded;
+    //  otherwise an out-of-range index (from a malicious or corrupt state file) will
+    //  hit an OOB vector access at fit time (where the only previous guard was an
+    //  assert that compiles out in release builds).
+    for( size_t curve_index = 0; curve_index < rel_eff_curves.size(); ++curve_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &curve = rel_eff_curves[curve_index];
+      for( const size_t other_index : curve.shielded_by_other_phys_model_curve_shieldings )
+      {
+        if( other_index >= rel_eff_curves.size() )
+          throw runtime_error( "Options::fromXml(): RelEffCurve " + std::to_string(curve_index)
+                              + " references out-of-range curve index "
+                              + std::to_string(other_index) + " (only "
+                              + std::to_string(rel_eff_curves.size()) + " curves loaded)." );
+      }
+    }
   }catch( std::exception &e )
   {
     throw runtime_error( "Options::fromXml(): " + string(e.what()) );
@@ -14572,16 +14590,24 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       }
         
       const double rel_act = nuc_info->rel_activity;
-      const double cps_over_yield = info.amplitude() / (yield * live_time);
-      const double meas_rel_eff = info.amplitude() / (yield * rel_act * live_time);
-      
+      const double nan_val = std::numeric_limits<double>::quiet_NaN();
+      // Guard against zero yield (no matching gamma branching ratio) or zero relative
+      // efficiency at the edge of the fit's energy range. NaN renders as "nan" via %G,
+      // which is acceptable per the report's formatting conventions.
+      const double cps_denom = yield * live_time;
+      const double rel_eff_denom = yield * rel_act * live_time;
+      const double cps_over_yield = (cps_denom != 0.0) ? (info.amplitude() / cps_denom) : nan_val;
+      const double meas_rel_eff = (rel_eff_denom != 0.0) ? (info.amplitude() / rel_eff_denom) : nan_val;
+
       double fit_rel_eff = -1.0, fit_rel_eff_uncert = -1.0;
       try
       {
         // First we'll try to get RelEff with uncert - and then if that fails we'll skip the uncert.
         const pair<double,double> rel_eff_uncert = relative_efficiency_with_uncert( energy, rel_eff_index );
         fit_rel_eff = rel_eff_uncert.first;
-        fit_rel_eff_uncert = rel_eff_uncert.second / rel_eff_uncert.first;
+        fit_rel_eff_uncert = (rel_eff_uncert.first != 0.0)
+                               ? (rel_eff_uncert.second / rel_eff_uncert.first)
+                               : nan_val;
       }catch( std::exception & )
       {
         try
@@ -14607,12 +14633,16 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                  "<td>%.1f-%.1f</td>" // continuum range
                  "</tr>\n"s;
 
+      const double amp_rel_uncert = (info.amplitude() != 0.0)
+                                      ? (info.amplitudeUncert() / info.amplitude())
+                                      : nan_val;
+
       snprintf(buffer, sizeof(buffer), format_str.c_str(),
                  energy,
                  nuc->symbol.c_str(),
                  yield,
                  info.amplitude(),
-                 info.amplitudeUncert() / info.amplitude(),
+                 amp_rel_uncert,
                  cps_over_yield,
                  fit_rel_eff,
                  100*fit_rel_eff_uncert,
@@ -15622,6 +15652,12 @@ double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, siz
   // Check denominator is not zero
   if( fabs(den_activity) < std::numeric_limits<double>::epsilon() )
     throw std::logic_error( "activity_ratio_uncertainty: denominator activity is zero" );
+
+  // Numerator zero is just as bad: every fractional-uncertainty term below divides by
+  // num_activity (lines using uncert_frac_2_num and corr_term_2), and the inverse-ratio
+  // fallback further down also divides by num_activity.
+  if( fabs(num_activity) < std::numeric_limits<double>::epsilon() )
+    throw std::logic_error( "activity_ratio_uncertainty: numerator activity is zero" );
   
   // Get covariance elements
   const double var_num = m_phys_units_cov[num_activity_param_index][num_activity_param_index];
@@ -16650,16 +16686,28 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     double total_roi_signal_counts = 0.0;
     for( size_t i = 0; i < fit_amps.size(); ++i )
       total_roi_signal_counts += std::max(0.0, fit_amps[i]);
-    
+
+    const double nan_val = std::numeric_limits<double>::quiet_NaN();
+
     for( size_t i = 0; i < fit_amps.size(); ++i )
     {
-      double scale_factor_for_cluster = fit_amps[i] / effective_amps[i];
-      const double rel_uncert = fit_amp_uncert[i] / fit_amps[i];
+      // For ObsEff display fields, use NaN when a denominator is zero (preserves the
+      // "undefined" meaning rather than collapsing it to 0). For peak amplitude rescaling
+      // below, fall back to a finite scale so peak amplitudes stay numeric (the cluster
+      // has no signal in that case, so multiplying by 0 gives the right answer anyway).
+      const double scale_factor_for_cluster = (effective_amps[i] != 0.0)
+                                                ? (fit_amps[i] / effective_amps[i])
+                                                : nan_val;
+      const double rel_uncert = (fit_amps[i] != 0.0)
+                                  ? (fit_amp_uncert[i] / fit_amps[i])
+                                  : nan_val;
+      const double peak_scale = std::isfinite(scale_factor_for_cluster) ? scale_factor_for_cluster : 0.0;
+      const double peak_rel_uncert = std::isfinite(rel_uncert) ? rel_uncert : 0.0;
       //cout << "For range [" << clusters[i].first << ", " << clusters[i].second << "], SF=" << scale_factor_for_cluster
       //<< ", uncert=" << rel_uncert << endl;
 
       const vector<pair<size_t,size_t>> &range_peak_indices = peak_indices[i];
-      
+
       for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
       {
         RelActCalcAuto::RelActAutoSolution::ObsEff eff;
@@ -16668,7 +16716,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
         eff.observed_efficiency = eff.orig_solution_eff * scale_factor_for_cluster;
         eff.observed_scale_factor = scale_factor_for_cluster;
         eff.observed_efficiency_uncert = eff.observed_efficiency * rel_uncert;
-        eff.num_sigma_significance = fit_amps[i] / fit_amp_uncert[i];
+        eff.num_sigma_significance = (fit_amp_uncert[i] != 0.0)
+                                       ? (fit_amps[i] / fit_amp_uncert[i])
+                                       : nan_val;
         eff.cluster_lower_energy = clusters[i].first;
         eff.roi_upper_energy = clusters[i].second;
         eff.fit_clustered_peak_amplitude = fit_amps[i];
@@ -16676,7 +16726,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
         eff.initial_clustered_peak_amplitude = effective_amps[i];
 
         eff.effective_sigma = effective_sigmas[i];
-        eff.fraction_roi_counts = fit_amps[i] / total_roi_signal_counts;
+        eff.fraction_roi_counts = (total_roi_signal_counts != 0.0)
+                                    ? (fit_amps[i] / total_roi_signal_counts)
+                                    : nan_val;
         eff.within_roi = (((effective_means[i] - eff.effective_sigma) >= roi.lower_energy)
                           && ((effective_means[i] + eff.effective_sigma) <= roi.upper_energy));
 
@@ -16690,8 +16742,8 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
           const size_t peak_index = re_peak_ind.second;
           
           PeakDef new_peak = solution.m_fit_peaks_for_each_curve[rel_eff_index][peak_index];
-          new_peak.setAmplitude( new_peak.amplitude() * scale_factor_for_cluster );
-          new_peak.setAmplitudeUncert( rel_uncert * new_peak.amplitude() );
+          new_peak.setAmplitude( new_peak.amplitude() * peak_scale );
+          new_peak.setAmplitudeUncert( peak_rel_uncert * new_peak.amplitude() );
           new_peak.setContinuum( new_continuum );
           eff.fit_peaks.push_back( new_peak );
 
@@ -16909,7 +16961,7 @@ RelActAutoSolution solve( const Options options,
         for( const NuclideRelAct &rel_act : rel_acts )
         {
           assert( !is_null(rel_act.source) );
-          if( !is_null(rel_act.source) )
+          if( is_null(rel_act.source) )
             continue;
 
           const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(rel_act.source);

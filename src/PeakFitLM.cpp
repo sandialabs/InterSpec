@@ -64,6 +64,29 @@ using namespace std;
 
 namespace
 {
+/** Ceres iteration callback that aborts the solve when the cancellation token
+ flips to true.  Holds a `shared_ptr` to the atomic so the flag is kept alive
+ even if the originating `SpecMeas` is destroyed mid-fit.
+ */
+class CancelIterationCallback : public ceres::IterationCallback
+{
+  std::shared_ptr<const std::atomic<bool>> m_cancel_flag;
+
+public:
+  explicit CancelIterationCallback( std::shared_ptr<const std::atomic<bool>> flag )
+    : m_cancel_flag( std::move(flag) )
+  {
+  }
+
+  ceres::CallbackReturnType operator()( const ceres::IterationSummary & ) override
+  {
+    if( m_cancel_flag && m_cancel_flag->load( std::memory_order_relaxed ) )
+      return ceres::SOLVER_ABORT;
+    return ceres::SOLVER_CONTINUE;
+  }
+};//class CancelIterationCallback
+
+
 /** To make the code of `PeakFitDiffCostFunction` work with either `PeakDef`
  or `RelActCalcAuto::PeakDefImp<T>`, we'll add in a few interface functions
  */
@@ -1937,7 +1960,8 @@ public:
 vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<const PeakDef>> coFitPeaks,
                                                       const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                                                       const PeakFitUtils::CoarseResolutionType det_type,
-                                                      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options )
+                                                      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
+                                                      std::shared_ptr<const std::atomic<bool>> cancel_flag )
 {
   /** For this first go, we will have Ceres fit for things.
 
@@ -1952,6 +1976,12 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
 
   if( coFitPeaks.empty() )
     throw runtime_error( "fit_peaks_in_roi_LM: empty input peaks." );
+
+  // Early bail-out: if cancellation has already been signaled before we set up
+  //  the Ceres problem, don't waste time building it just to abort on the
+  //  first iteration.
+  if( cancel_flag && cancel_flag->load( std::memory_order_relaxed ) )
+    return {};
 
   // Lets make sure all coFitPeaks share a continuum.
   for( size_t i = 1; i < coFitPeaks.size(); ++i )
@@ -2117,6 +2147,23 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     options.parameter_tolerance = 1e-11; //Default value is 1e-8.  Using 1e-11, so its usually the function tolerance that terminates things.
     options.num_threads = 1; //Probably wont have much/any effect
 
+    // Cooperative cancellation: if a `cancel_flag` was provided (e.g., by the
+    //  automated peak search during application shutdown), wire up an iteration
+    //  callback so the solver bails within one LM step rather than running out
+    //  the full `max_solver_time_in_seconds`.  Ceres reports `USER_FAILURE` on
+    //  return; the termination switch below short-circuits the retry paths
+    //  when that failure was caused by cancellation.
+    // Note: `update_state_every_iteration` is NOT needed - Ceres invokes
+    //  `IterationCallback` at the end of every iteration regardless; that flag
+    //  only controls whether parameter blocks are written back before the
+    //  callback runs, and the callback doesn't read parameters.
+    std::unique_ptr<CancelIterationCallback> cancel_callback;
+    if( cancel_flag )
+    {
+      cancel_callback.reset( new CancelIterationCallback( cancel_flag ) );
+      options.callbacks.push_back( cancel_callback.get() );
+    }
+
     // Default value of `max_num_consecutive_invalid_steps` is 5, however, if we are re-fitting a peak who already has
     //  near perfect values, occasionally the fit fails with the devault values - I guess the trust-region is just so
     //  far off (but I dont really know - this is just a guess), but if we increase this value to 10, the fit seems
@@ -2136,6 +2183,14 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
 #endif
 
+    // If cancellation triggered `SOLVER_ABORT` (which Ceres reports as
+    //  `USER_FAILURE`), short-circuit the NO_CONVERGENCE/FAILURE retry paths.
+    //  Both retry paths re-invoke `ceres::Solve` with the same callback list,
+    //  so without this check we'd just immediately abort again and end up
+    //  throwing from the inner `USER_FAILURE` case anyway.
+    if( cancel_flag && cancel_flag->load( std::memory_order_relaxed ) )
+      return {};
+
     string failure_reason;
 
     switch( summary.termination_type )
@@ -2143,7 +2198,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
       case ceres::CONVERGENCE:
       case ceres::USER_SUCCESS:
         break;
-        
+
       case ceres::NO_CONVERGENCE:
       {
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
@@ -2343,7 +2398,8 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
                              const float roiLowerEnergy,
                              const float roiUpperEnergy,
                              const std::shared_ptr<const PeakFitDetPrefs> &fitPrefs,
-                             const std::shared_ptr<const DetectorPeakResponse> &drf )
+                             const std::shared_ptr<const DetectorPeakResponse> &drf,
+                             std::shared_ptr<const std::atomic<bool>> cancel_flag )
 {
   vector<shared_ptr<const PeakDef>> coFitPeaks = coFitPeaksInput;
 
@@ -2487,7 +2543,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
 
   try
   {
-    results = fit_peaks_in_roi_LM( coFitPeaks, dataH, det_type, fit_options );
+    results = fit_peaks_in_roi_LM( coFitPeaks, dataH, det_type, fit_options, cancel_flag );
   }catch( std::exception &e )
   {
     results.clear();

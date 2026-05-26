@@ -1,0 +1,1 @@
+interspec://drf/specify?V=1&NAME=test&DIAM=5.0

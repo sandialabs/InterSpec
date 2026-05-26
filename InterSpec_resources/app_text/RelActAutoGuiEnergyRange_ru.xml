@@ -3,9 +3,9 @@
   <!-- raager- is short for RelActAutoGuiEnergyRange -->
   
   <!-- Labels -->
-  <message id="raager-lower-energy">Нижняя энергия</message>
-  <message id="raager-upper-energy">Верхняя энергия</message>
-  <message id="raager-continuum-type">Тип континуума:</message>
+  <message id="raager-lower-energy">Нижняя</message>
+  <message id="raager-upper-energy">Верхняя</message>
+  <message id="raager-continuum-type">Континуум:</message>
   
   <!-- Checkboxes -->
   <message id="raager-force-full-range">Принуд. полн. диапазон</message>

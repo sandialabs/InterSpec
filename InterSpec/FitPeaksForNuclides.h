@@ -230,6 +230,13 @@ struct PeakFitForNuclideConfig
   // Fields for RelActAuto options configuration - this is only used for optimiziation work - it is supersceeded by `FitSrcPeaksOptions::DoNotVaryEnergyCal
   bool fit_energy_cal = true;
 
+  // Maximum acceptable chi2/dof for the initial RelActCalcManual rel-eff solution
+  // (after retry, if any).  When the matched-peaks fit can't reach this quality the
+  // source(s) are likely not actually present in the spectrum; the manual rel-eff
+  // step is treated as failed and the caller falls back to `estimate_initial_rois_fallback`.
+  // Set to a large value (e.g. 1e6) to effectively disable the cap.
+  double initial_manual_rel_eff_max_chi2_dof = 25.0;
+
   // ROI significance threshold for iterative refinement
   // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
   // The chi2 with peaks must be at least this much lower than chi2 with continuum-only
@@ -321,6 +328,25 @@ private:
 };//struct PeakFitForNuclideConfig
 
 
+/** Returns true if the source should be excluded from the peak_fit_improve
+ GA's background-false-positive penalty.
+
+ True for the canonical NORM nuclides (K40, Ra226, U235, U238, Th232), any
+ nuclide whose decay-chain ancestors include U235, U238, or Th232, and a
+ hand-curated extras list (initially U232, U233, F18) maintained alongside
+ the implementation.
+
+ False for elements (xrays) and reactions - they have no decay chain to
+ test against.  Adjust the implementation if specific elements/reactions
+ ever need exclusion.
+ */
+bool is_norm_like_for_ga( const RelActCalcAuto::SrcVariant &src );
+
+/** Returns true if `energy_kev` is within `tolerance_kev` of any commonly-
+ observed NORM gamma or NORM-element K-xray line.  Used by the GA's
+ background-fit penalty to suppress false positives where a source's
+ gamma happens to land on a real NORM peak in the background. */
+bool is_near_strong_norm_gamma( double energy_kev, double tolerance_kev );
 
 
 /** Options for fitting the peaks of nuclides.

@@ -2311,9 +2311,14 @@ void automated_search_for_peaks( InterSpec *viewer,
   std::weak_ptr<const SpecUtils::Measurement> weakdata = dataPtr;
   const string seshid = wApp->sessionId();
 
+  // Grab the SpecMeas's persistent cancel token so this search aborts cleanly
+  //  when the SpecMeas is destroyed or `InterSpec::~InterSpec` flips the flag.
+  std::shared_ptr<const std::atomic<bool>> cancel_flag
+    = foreground ? foreground->peak_search_cancel_flag() : nullptr;
+
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
     search_for_peaks_worker( weakdata, drf, startingPeaks, displayed, setColor,
-                            searchresults, callback, seshid, false, fitPrefs );
+                            searchresults, callback, seshid, false, fitPrefs, cancel_flag );
 
     // Apply FWHM method to search results if needed
     assert( fitPrefs );
@@ -2850,14 +2855,15 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
                                std::function<void(void)> callback,
                                const std::string sessionID,
                                const bool singleThread,
-                               std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
+                               std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                               std::shared_ptr<const std::atomic<bool>> cancel_flag )
 {
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )  //shouldnt ever happen,
     return;
-  
+
   std::shared_ptr<const SpecUtils::Measurement> data = weak_data.lock();
-  
+
   if( !data || !resultpeaks )
   {
     server->post( sessionID, callback );
@@ -2868,7 +2874,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
 
   try
   {
-    *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, fitPrefs );
+    *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, fitPrefs, cancel_flag );
     *results = assign_srcs_from_ref_lines( data, *results, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
@@ -3577,12 +3583,15 @@ float estimate_FWHM_of_foreground( const float energy )
   }
     
   std::shared_ptr<SpecMeas> specmeas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
-    
+
   std::shared_ptr<DetectorPeakResponse> drf = specmeas ? specmeas->detector() : nullptr;
   if( drf && drf->hasResolutionInfo() )
     return drf->peakResolutionFWHM(energy);
-    
-    
+
+  // Below here we use `specmeas` directly, so bail if there's no foreground.
+  if( !specmeas )
+    return PeakFitUtils::hpge_fwhm_fcn( energy );
+
   // Check auto-fit peaks
   const set<int> &dispSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
   auto hintPeaks = specmeas->automatedSearchPeaks( dispSamples );

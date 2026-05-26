@@ -268,22 +268,26 @@ void InterSpecApp::setupDomEnvironment()
   styleSheet().addRule( "input[type=\"text\"]", "font-size:0.95em;" );
   styleSheet().addRule( "button[type=\"button\"]", "font-size:0.9em;" );
   
-  //This is needed to fix keyboard hiding in iOS
-#if(IOS || ANDROID)
-  //TODO: this can be added to wt_config.xml instead
-  const char *fix_ios_js = INLINE_JAVASCRIPT(
-    var t=document.createElement('meta');
-    t.name = "viewport";
-    t.content = "initial-scale=1.0, maximum-scale=1.0, user-scalable=no, height=device-height, width=device-width, viewport-fit=cover";
-    document.getElementsByTagName('head')[0].appendChild(t);
-    document.addEventListener('blur', function(ev) {
-      if( ev.target && (ev.target.matches('input') || ev.target.matches('textarea')) )
-        setTimeout(function(){ window.scrollTo(document.body.scrollLeft, document.body.scrollTop); }, 0);
-    }, true);
-  );
-  
-  doJavaScript( fix_ios_js );
-#endif
+  // Inject a phone-appropriate viewport meta tag (and iOS keyboard-hiding fix) for any
+  // mobile session. isMobile() covers iOS/Android builds, mobile-UA hits to a desktop build,
+  // and ?isphone=1 / ?istablet=1 URL overrides used for emulating phones from desktop browsers.
+  // Without the viewport meta, mobile browsers render at the legacy 980 CSS px fallback width.
+  if( isMobile() )
+  {
+    //TODO: this can be added to wt_config.xml instead
+    const char *fix_mobile_js = INLINE_JAVASCRIPT(
+      var t=document.createElement('meta');
+      t.name = "viewport";
+      t.content = "initial-scale=1.0, maximum-scale=1.0, user-scalable=no, height=device-height, width=device-width, viewport-fit=cover";
+      document.getElementsByTagName('head')[0].appendChild(t);
+      document.addEventListener('blur', function(ev) {
+        if( ev.target && (ev.target.matches('input') || ev.target.matches('textarea')) )
+          setTimeout(function(){ window.scrollTo(document.body.scrollLeft, document.body.scrollTop); }, 0);
+      }, true);
+    );
+
+    doJavaScript( fix_mobile_js );
+  }
   
 #if( BUILD_AS_OSX_APP && !PERFORM_DEVELOPER_CHECKS )
   domRoot()->setAttributeValue( "oncontextmenu", "return false;" );
@@ -506,6 +510,7 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
+    wApp->useStyleSheet( "InterSpec_resources/OneOverR2Calc.css" );
     // anything else relevant?
     wApp->triggerUpdate();
   } );
@@ -1762,6 +1767,17 @@ bool InterSpecApp::isMobile() const
   return true;
 #endif
 
+  // Honor URL-param overrides so forcing phone/tablet also implies mobile.
+  {
+    const Http::ParameterMap &parmap = environment().getParameterMap();
+    Http::ParameterMap::const_iterator iter = parmap.find( "isphone" );
+    if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
+      return true;
+    iter = parmap.find( "istablet" );
+    if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
+      return true;
+  }
+
   const WEnvironment &env = environment();
   const bool isMob = (   env.agentIsMobileWebKit()
                       || env.agentIsIEMobile()
@@ -1800,15 +1816,14 @@ bool InterSpecApp::isAndroid() const
 bool InterSpecApp::isPhone() const
 {
   const WEnvironment &env = environment();
-  
-#if( IOS )
-  // TODO: we could enable this for all builds, to help with testing; if we do, add this equiv code to isMobile()
+
+  // Allow forcing phone mode via URL param on any build (useful for testing the mobile layout
+  // from a desktop browser). Forcing tablet should also propagate through isMobile() below.
   const Http::ParameterMap &parmap = environment().getParameterMap();
   const Http::ParameterMap::const_iterator iter = parmap.find( "isphone" );
   if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
     return true;
-#endif
-  
+
   return ( env.userAgent().find("iPhone") != std::string::npos
            || env.userAgent().find("iPod") != std::string::npos
            || (env.userAgent().find("Android") != std::string::npos
@@ -1820,14 +1835,11 @@ bool InterSpecApp::isPhone() const
 bool InterSpecApp::isTablet() const
 {
   const WEnvironment &env = environment();
-  
-#if( IOS )
-  // TODO: we could enable this for all builds, to help with testing; if we do, add this equiv code to isMobile()
+
   const Http::ParameterMap &parmap = environment().getParameterMap();
   const Http::ParameterMap::const_iterator iter = parmap.find( "istablet" );
   if( (iter != parmap.end()) && iter->second.size() && (iter->second[0] == "1") )
     return true;
-#endif
   
   const string &agent = env.userAgent();
     

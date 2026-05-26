@@ -3,9 +3,9 @@
   <!-- raager- is short for RelActAutoGuiEnergyRange -->
   
   <!-- Labels -->
-  <message id="raager-lower-energy">Energía inferior</message>
-  <message id="raager-upper-energy">Energía superior</message>
-  <message id="raager-continuum-type">Tipo continuo:</message>
+  <message id="raager-lower-energy">Inferior</message>
+  <message id="raager-upper-energy">Superior</message>
+  <message id="raager-continuum-type">Continuo:</message>
   
   <!-- Checkboxes -->
   <message id="raager-force-full-range">Forzar rango completo</message>

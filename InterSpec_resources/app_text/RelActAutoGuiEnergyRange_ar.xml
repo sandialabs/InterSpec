@@ -3,9 +3,9 @@
   <!-- raager- is short for RelActAutoGuiEnergyRange -->
   
   <!-- Labels -->
-  <message id="raager-lower-energy">الطاقة الدنيا</message>
-  <message id="raager-upper-energy">الطاقة العليا</message>
-  <message id="raager-continuum-type">نوع المتصل:</message>
+  <message id="raager-lower-energy">الدنيا</message>
+  <message id="raager-upper-energy">العليا</message>
+  <message id="raager-continuum-type">المتصل:</message>
   
   <!-- Checkboxes -->
   <message id="raager-force-full-range">فرض النطاق الكامل</message>

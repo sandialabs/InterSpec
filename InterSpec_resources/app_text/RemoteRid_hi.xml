@@ -29,7 +29,7 @@
   <message id="rr-requesting-ana">विश्लेषण का अनुरोध कर रहा है</message>
   <message id="rr-err-no-spec">कोई प्रदर्शित स्पेक्ट्रम नहीं</message>
   <message id="rr-requesting-service-info">सेवा जानकारी का अनुरोध कर रहा है।</message>
-  <message id="rr-error-parsing-service-info">सेवा जानकारी परिणामों को पार्स करने में त्रुटि: <code></code></message>
+  <message id="rr-error-parsing-service-info">सेवा जानकारी परिणामों को पार्स करने में त्रुटि: <code>{1}</code></message>
   <message id="rr-incorrect-url">गलत URL या इंटरनेट नहीं।</message>
   <message id="rr-err-requesting-service-info">सेवा जानकारी पुनर्प्राप्त करने में त्रुटि: <code>{1}</code></message>
 </messages>

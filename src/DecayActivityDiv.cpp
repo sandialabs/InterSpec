@@ -1916,7 +1916,10 @@ void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
     if( isNucKey(key) )
     {
       num_nucs += 1;
-      last_nuc_index = i;
+      // Index into `field_values`, NOT `query_args` - empty/whitespace-only
+      //  query args are `continue`'d above so the two index spaces drift.  Using
+      //  i here would cause an OOB read when swapped below.
+      last_nuc_index = field_values.size() - 1;
     }
   }//for( string comp : query_args )
   

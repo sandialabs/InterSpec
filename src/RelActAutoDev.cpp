@@ -2645,7 +2645,7 @@ void run_idb_comparison( const std::string &idb_dir,
       if( !foreground || foreground->num_gamma_channels() < 16 )
         throw std::runtime_error( "Spectrum has too few gamma channels" );
 
-      // Solve - this dev path filters to Detector_type=="HPGe" above (line ~2555),
+      // Solve - this dev path filters to Detector_type=="HPGe" above,
       // so the coarse resolution is High.
       RelActCalcAuto::RelActAutoSolution sol = RelActCalcAuto::solve(
           options, foreground, nullptr, drf, {}, PeakFitUtils::CoarseResolutionType::High );

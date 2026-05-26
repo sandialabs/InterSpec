@@ -3429,6 +3429,7 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
 
 ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
 {
+  std::shared_future<void> fit_future;
   {//begin make sure calculation is cancelled
     std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
     if( m_currentFitFcn )
@@ -3441,8 +3442,35 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
         cerr << "Caught exception call m_currentFitFcn->cancelFit(), which probably shouldnt happen" << endl;
       }
     }
+    fit_future = m_currentFitFuture;
   }//end make sure calculation is cancelled
-  
+
+  // If a background fit is still in flight, wait for the worker on
+  //  `WServer::ioService()` to fully return.  `cancelFit()` causes
+  //  `DoEval` to throw `CancelException` at the next chi2 evaluation, so in
+  //  the normal case this returns in well under a second.  We cap the wait so
+  //  that if anything goes pear-shaped (e.g., the worker is somehow blocked
+  //  on a thread we'd need to release ourselves) the destructor still returns
+  //  in bounded time instead of hanging.  10s is generous compared to the
+  //  expected sub-second turnaround.
+  if( fit_future.valid() )
+  {
+    try
+    {
+      const std::future_status status = fit_future.wait_for( std::chrono::seconds(10) );
+      if( status != std::future_status::ready )
+      {
+        cerr << "~ShieldingSourceDisplay: timed out waiting for in-flight"
+             << " ShieldingSourceFitCalc::fit_model worker to exit; proceeding"
+             << " with destruction anyway." << endl;
+      }
+    }catch( ... )
+    {
+      cerr << "Exception waiting on m_currentFitFuture in ~ShieldingSourceDisplay" << endl;
+    }
+  }
+
+
   if( m_addItemMenu )
   {
     if( m_addItemMenu ) m_addItemMenu->removeFromParent();
@@ -9180,14 +9208,29 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
   if( fitInBackground )
   {
     Wt::WServer *server = Wt::WServer::instance();
-    server->ioService().boost::asio::io_service::post( [sessionid, chi2Fcn, inputPrams, progress, progress_updater, results, gui_updater](){
-      ShieldingSourceFitCalc::fit_model( sessionid, chi2Fcn, inputPrams, progress, progress_updater, results, gui_updater );
-    } );
+    // Wrap the fit in a packaged_task so the destructor can wait on its
+    //  future and guarantee the worker has fully returned before this widget
+    //  is freed.  Heap-allocated via shared_ptr because the lambda dispatched
+    //  to the io_service may outlive any local stack.
+    auto task = std::make_shared<std::packaged_task<void()>>(
+      [sessionid, chi2Fcn, inputPrams, progress, progress_updater, results, gui_updater]()
+      {
+        ShieldingSourceFitCalc::fit_model( sessionid, chi2Fcn, inputPrams,
+                                           progress, progress_updater,
+                                           results, gui_updater );
+      } );
+
+    {
+      std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
+      m_currentFitFuture = task->get_future().share();
+    }
+
+    server->ioService().boost::asio::io_service::post( [task](){ (*task)(); } );
   }else
   {
     ShieldingSourceFitCalc::fit_model( sessionid, chi2Fcn, inputPrams, progress, progress_updater, results, gui_updater );
   }
-  
+
   return results;
 }//void doModelFit()
 

@@ -1083,7 +1083,8 @@ InterSpec::InterSpec()
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::makePeakFromRightClickHaveOwnContinuum );
         break;
         
-#if( USE_DETECTION_LIMIT_TOOL )
+      // The next three are no-peak items, but are general-purpose (fit/add/search) and
+      // are always built regardless of USE_DETECTION_LIMIT_TOOL.
       case kFitNewPeakNotInRoi:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-fit-new-peak") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::fitNewPeakNotInRoiFromRightClick );
@@ -1096,6 +1097,8 @@ InterSpec::InterSpec()
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-search-energy") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::searchOnEnergyFromRightClick );
       break;
+
+#if( USE_DETECTION_LIMIT_TOOL )
       case kSimpleMda:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-simple-mda") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startSimpleMdaFromRightClick );
@@ -1306,7 +1309,20 @@ InterSpec::~InterSpec() noexcept(true)
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
 #endif
-  
+
+  // Signal any in-flight automated peak search workers to abort.  The SpecMeas
+  //  objects may outlive this InterSpec (they're owned by SpecMeasManager and
+  //  by the worker), so we flip the cancel token here too rather than relying
+  //  solely on `~SpecMeas` to do it.  The Ceres `IterationCallback` and the
+  //  outer-loop check in `search_for_peaks_*` see the change within one LM
+  //  iteration, so the io_service drains promptly and `WServer::stop()` on
+  //  the wxWidgets shutdown path doesn't hang.
+  for( const shared_ptr<SpecMeas> &m : { m_dataMeasurement, m_secondDataMeasurement, m_backgroundMeasurement } )
+  {
+    if( m )
+      m->cancel_in_progress_peak_search();
+  }
+
   // Get rid of undo/redo, so we dont insert anything into them
   if( m_undo )
     removeChild( m_undo.get() );
@@ -2362,10 +2378,11 @@ void InterSpec::handleRightClick( double energy, double counts,
   
   shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
 
-#if( !USE_DETECTION_LIMIT_TOOL )
-  if( !peaks || !peak )
+  // The no-peak menu items (kFitNewPeakNotInRoi, kAddPeakNotInRoi, kSearchEnergy) are
+  // always built; kSimpleMda/kSimpleActivityCalc are built only when USE_DETECTION_LIMIT_TOOL
+  // is on.  Bail only when there's truly nothing meaningful to show.
+  if( !peaks )
     return;
-#endif
   
   //We actually need to make a copy of peaks since we will post to outside the
   //  main thread where the deque is expected to remain constant, however, the
@@ -2659,33 +2676,34 @@ void InterSpec::handleRightClick( double energy, double counts,
         break;
       }//kMakeOwnContinuum
         
-#if( USE_DETECTION_LIMIT_TOOL )
+      // General-purpose no-peak items (always built):
       case kFitNewPeakNotInRoi:
       {
         m_rightClickMenutItems[i]->setHidden( !!peak );
-        
+
         if( !peak )
           m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-fit-new-peak").arg(energy_str) );
-        
+
         break;
       }//case kFitNewPeakNotInRoi:
-        
+
       case kAddPeakNotInRoi:
       {
         m_rightClickMenutItems[i]->setHidden( !!peak ); //"Add peak..."
         break;
       }//case kAddPeakNotInRoi:
-      
+
       case kSearchEnergy:
       {
         m_rightClickMenutItems[i]->setHidden( !!peak );
-        
+
         if( !peak )
           m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-search-energy").arg(energy_str) ); //"Search near {1} keV"
-        
+
         break;
       }//case kSearchEnergy:
-        
+
+#if( USE_DETECTION_LIMIT_TOOL )
       case kSimpleMda:
       {
         m_rightClickMenutItems[i]->setHidden( !!peak );
@@ -4541,6 +4559,13 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     {
       try
       {
+        // Cap at 256 KB - this blob holds a small number of named user prefs,
+        //  not arbitrary data, so legitimate sizes are well under 1 KB.  The
+        //  limit prevents a malicious or corrupted DB row from spinning the
+        //  JSON parser on a multi-MB string.
+        if( entry->userOptionsJson.size() > 256 * 1024 )
+          throw runtime_error( "userOptionsJson is too large to parse" );
+
         Json::Value userOptionsVal( Json::Type::Array );
         Json::parse( entry->userOptionsJson, userOptionsVal );
         //cerr << "Parsed User Options, but not doing anything with them" << endl;
@@ -4564,9 +4589,24 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           if( std::find(begin(prefs_to_load), end(prefs_to_load), name) == end(prefs_to_load) )
             continue;
           
+          // Validate the int is a known UserOption::DataType before casting --
+          // out-of-range cast to an unscoped enum is UB.  The validation switch
+          // and the dispatch switch below both list every enumerator: if a new
+          // DataType is added, -Wswitch will flag the dispatch switch (since
+          // it has no default), and unknown values from the DB will be rejected
+          // here at load time.
           const int type = obj.get("type");
-          const UserOption::DataType datatype = UserOption::DataType( type );
-          
+          UserOption::DataType datatype;
+          switch( type )
+          {
+            case UserOption::String:  datatype = UserOption::String;  break;
+            case UserOption::Decimal: datatype = UserOption::Decimal; break;
+            case UserOption::Integer: datatype = UserOption::Integer; break;
+            case UserOption::Boolean: datatype = UserOption::Boolean; break;
+            default:
+              throw runtime_error( "invalid UserOption type " + std::to_string(type) );
+          }
+
           switch( datatype )
           {
             case UserOption::String:
@@ -4574,26 +4614,27 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
               const std::string value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
               break;
-            }//case UserOption::Boolean:
-              
+            }//case UserOption::String:
+
             case UserOption::Decimal:
             {
               const double value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
               break;
-            }//case UserOption::Boolean:
-              
+            }//case UserOption::Decimal:
+
             case UserOption::Integer:
             {
               const int value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
               break;
-            }//case UserOption::Boolean:
-              
+            }//case UserOption::Integer:
+
             case UserOption::Boolean:
             {
               const bool value = obj.get("value");
               UserPreferences::setPreferenceValue( name, value, this );
+              break;
             }//case UserOption::Boolean:
           }//switch( datatype )
         }//for( size_t i = 0; i < userOptions.size(); ++i )
@@ -5056,7 +5097,7 @@ void InterSpec::deleteWelcomeDialog( const bool addUndoRedoStep )
 {
   if( !m_useInfoWindow )
     return;
-  
+
   AuxWindow::deleteAuxWindow( m_useInfoWindow.get() );
   assert( !m_useInfoWindow );
   
@@ -9106,8 +9147,11 @@ void InterSpec::handleSimpleMdaWindowClose()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple MDA" );
   }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleSimpleMdaWindowClose()
+#endif //USE_DETECTION_LIMIT_TOOL
 
 
+// General-purpose right-click handlers — always available; do not depend on the
+// detection-limit tool being built.
 void InterSpec::fitNewPeakNotInRoiFromRightClick()
 {
   searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint, {} );
@@ -9184,6 +9228,7 @@ void InterSpec::searchOnEnergyFromRightClick()
 }//void searchOnEnergyFromRightClick()
 
 
+#if( USE_DETECTION_LIMIT_TOOL )
 void InterSpec::startSimpleMdaFromRightClick()
 {
   string prevState;
@@ -10310,13 +10355,13 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, [this](){ shieldingSourceFit( true ); } );
  
 #if( USE_REL_ACT_TOOL )
-  // The Relative Efficiency tools are not specialized to display on phones yet.
+  // RelActAuto is phone-capable; the manual Rel. Eff. tool is not yet.
+  m_relActAutoMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-nuc") );
+  HelpSystem::attachToolTipOn( m_relActAutoMenuItem, WString::tr("app-mi-tt-tools-iso-by-nuc") , showToolTips );
+  m_relActAutoMenuItem->triggered().connect( this, [this](){ relActAutoWindow( true ); } );
+
   if( !isPhone() )
   {
-    m_relActAutoMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-nuc") );
-    HelpSystem::attachToolTipOn( m_relActAutoMenuItem, WString::tr("app-mi-tt-tools-iso-by-nuc") , showToolTips );
-    m_relActAutoMenuItem->triggered().connect( this, [this](){ relActAutoWindow( true ); } );
-    
     m_relActManualMenuItem = popup->addMenuItem( WString::tr("app-mi-tools-iso-by-peak") );
     HelpSystem::attachToolTipOn( m_relActManualMenuItem, WString::tr("app-mi-tt-tools-iso-by-peak") , showToolTips );
     m_relActManualMenuItem->triggered().connect( this, [this](){ createRelActManualWidget(); } );
@@ -11651,7 +11696,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
                              const Wt::WFlags<SetSpectrumOptions> options )
 {
   UndoRedoManager::BlockUndoRedoInserts blocker;
-  
+
   const int spectypeindex = static_cast<int>( spec_type );
   
   vector< std::function<void(void)> > furtherworkers;
@@ -13073,11 +13118,17 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
     setHintPeaks( spectrum, samples, origPeaks, searchresults, updateDetTypeGuess );
   };
 
+  // Grab the SpecMeas's persistent cancel token; the worker will check it at
+  //  each cooperative point and inside the Ceres `IterationCallback`.  When
+  //  this `InterSpec` is destroyed (or the SpecMeas itself is destroyed) the
+  //  token is flipped to `true` and the worker bails within ~1 LM iteration.
+  std::shared_ptr<const std::atomic<bool>> cancel_flag = data->peak_search_cancel_flag();
+
   std::function<void(void)> worker = [=](){
     PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, false, fitPrefs );
+                                                callback, sessionId, false, fitPrefs, cancel_flag );
   };
-  
+
 
   if( m_findingHintPeaks )
   {

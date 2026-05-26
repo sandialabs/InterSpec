@@ -202,7 +202,7 @@ OneOverR2Calc::OneOverR2Calc()
   } );
 #endif //USE_QR_CODES
   
-  WPushButton *closeButton = addCloseButtonToFooter();
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"), true );
   closeButton->clicked().connect( this, [this](){ hide(); } );
   
   rejectWhenEscapePressed();
@@ -235,14 +235,11 @@ OneOverR2Calc::OneOverR2Calc()
       app->getSafeAreaInsets( orientation, safeAreas[0], safeAreas[1], safeAreas[2], safeAreas[3] );
 #endif
       //repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
-      
-      // TODO: right now hardcoding width because otherwise width will go to like full-screen
-      const double width = std::min( 325, ((w > 100) ? (w - 10) : 325) );
+
       const double height = h - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f);
-      setMaximumSize( width, height );
-      
-      /* ToDo: get safe offsets in c++ land, and then also convert other AuxWindows that are modal on phone to resize correctly. */
-      /* Do same for Gamma XS Calc. And Energy Range Sum*/
+      setMaximumSize( WLength::Auto, height );
+
+      resizeToFitOnScreen();
       centerWindowHeavyHanded();
     }
   }else

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<gamma_detector>
+  <weight_range_lower><value>0</value></weight_range_lower>
+  <weight_range_upper><value>3000</value></weight_range_upper>
+  <dimensions>
+    <width><value>5.85</value></width>
+    <height_to_width_ratio><value>1.0</value></height_to_width_ratio>
+  </dimensions>
+  <peak_shape>
+    <fwhm_offset><value>1.55</value></fwhm_offset>
+    <fwhm_at_661keV><value>0.25</value></fwhm_at_661keV>
+    <fwhm_power><value>0.35</value></fwhm_power>
+  </peak_shape>
+  <setback><value>0.5</value></setback>
+</gamma_detector>

@@ -49,6 +49,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UndoRedoManager.h"
 
@@ -611,6 +612,7 @@ namespace HelpSystem
     InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
     if( app && app->isMobile() )
        return;
+
 
 #if( USE_OSX_NATIVE_MENU )
     for( Wt::WWebWidget *w : widgets )

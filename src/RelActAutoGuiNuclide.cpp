@@ -838,7 +838,14 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
 
   WContainerWidget *spacer = m_lower_container->addNew<WContainerWidget>();
   spacer->addStyleClass( "RelActAutoSpacer" );
-  
+
+
+  // On phone, group min/max age edits inside the age container so age + Fit Age
+  // checkbox + min/max all live on one (potentially wrapping) row, freeing up
+  // the upper row for the color picker and delete icon.
+  InterSpec * const isPhoneInterspec = InterSpec::instance();
+  if( isPhoneInterspec && isPhoneInterspec->isPhone() )
+    m_age_container->addWidget( m_age_range_container->removeFromParent() );
 
   // Hide the age stuff by default, until a nuclide is selected
   m_age_container->hide();

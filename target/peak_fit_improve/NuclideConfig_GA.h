@@ -73,6 +73,34 @@ enum class BackgroundMode : int
  */
 constexpr BackgroundMode sm_background_mode = BackgroundMode::BackgroundSubtracted;
 
+/** Weight applied to the background-fit-false-positive penalty before it is
+ added to a per-spectrum's combined score.  0.25 makes background false
+ positives ~1/4 as important as foreground accuracy. */
+constexpr double sm_background_fit_penalty_weight = 0.25;
+
+/** How the manual-rel-eff chi2/dof cap is treated by the GA. */
+enum class RelEffChi2CapMode : int { Disabled, Fixed, GAOptimized };
+
+/** Whether to run the bg-fit-false-positive trial in addition to the
+ foreground fit.  Set from CLI in main(). */
+extern bool sm_do_background_fit_trial;
+
+/** Mode for `PeakFitForNuclideConfig::initial_manual_rel_eff_max_chi2_dof`.
+ Disabled    - cap is set to a sentinel large value (gate never fires)
+ Fixed       - cap = sm_rel_eff_chi2_cap_fixed_value
+ GAOptimized - cap is a gene the GA optimizes (range 5..1000 log-uniform) */
+extern RelEffChi2CapMode sm_rel_eff_chi2_cap_mode;
+
+/** Cap value used when sm_rel_eff_chi2_cap_mode == Fixed. */
+extern double sm_rel_eff_chi2_cap_fixed_value;
+
+/** Cap on the raw (pre-weight) per-spectrum background-fit penalty so a
+ single spectrum's false-positive cluster (or fit failure) cannot dominate
+ total_score.  30.0 is roughly the typical magnitude of a per-spectrum
+ foreground score contribution; combined with the 0.25 weight, this bounds
+ the per-spectrum penalty contribution at 7.5. */
+constexpr double sm_background_fit_penalty_per_spectrum_cap = 30.0;
+
 
 /** Holds precomputed data for each spectrum, so the expensive search_for_peaks call is done once. */
 struct PrecomputedNuclideData
@@ -92,6 +120,11 @@ struct PrecomputedNuclideData
   /** Background (may be nullptr depending on BackgroundMode). */
   std::shared_ptr<const SpecUtils::Measurement> background;
 
+  /** Precomputed auto-search peaks on the long_background spectrum, for the
+   GA background-false-positive penalty path.  Empty when all of `sources`
+   are NORM-like (per `is_norm_like_for_ga`) or when long_background is null. */
+  std::vector<std::shared_ptr<const PeakDef>> background_auto_search_peaks;
+
   /** DRF (may be nullptr). */
   std::shared_ptr<const DetectorPeakResponse> drf;
 
@@ -101,6 +134,61 @@ struct PrecomputedNuclideData
   /** PeakFitDetPrefs with the correct m_det_type set. */
   std::shared_ptr<PeakFitDetPrefs> peak_fit_prefs;
 };//struct PrecomputedNuclideData
+
+
+/** Per-spectrum diagnostic detail for the background-fit penalty path.
+ Populated by `compute_background_fit_penalty` when a non-null pointer is
+ supplied; used by the HTML reporter to show which sources fit peaks in
+ their backgrounds and at what significance. */
+struct BackgroundFitDetail
+{
+  /** All peaks attributed to a source in the background fit.  Suppressed
+   ones are recorded so the HTML can render them for sanity but they do
+   not contribute to `penalty`. */
+  std::vector<PeakDef> source_attributed_peaks;
+
+  /** Per-peak normalized significance (post livetime normalization,
+   pre-7.5 cap), parallel to `source_attributed_peaks`. */
+  std::vector<double> normalized_significances;
+
+  /** Per-peak suppression reason, parallel to `source_attributed_peaks`.
+   Empty string means the peak contributed to `penalty`.  Non-empty
+   values describe why the peak was excluded:
+     "norm-like"       - the peak's source is in the NORM-like list
+     "below 30 keV"    - low-energy filter (xrays / scatter)
+     "near 511 keV"    - within 2 keV of annihilation energy
+     "near NORM line"  - within ~1 FWHM of a strong NORM gamma */
+  std::vector<std::string> suppression_reasons;
+
+  /** Final per-spectrum penalty, post-cap.  Zero if all sources are
+   NORM-like or background_auto_search_peaks is empty. */
+  double penalty = 0.0;
+
+  /** Set if the background fit failed; penalty is set to the per-spectrum
+   cap in that case. */
+  std::string error_message;
+};//struct BackgroundFitDetail
+
+
+/** Computes the background-fit penalty for a single PrecomputedNuclideData.
+
+ Runs `fit_peaks_for_nuclides` against the long_background spectrum (as the
+ foreground argument, with no further background subtraction) using the
+ given `config`, and sums livetime-normalized per-peak significances of
+ source-attributed peaks for any source that is not NORM-like.  The result
+ is capped at `sm_background_fit_penalty_per_spectrum_cap`.
+
+ Returns 0.0 if all sources are NORM-like or `background_auto_search_peaks`
+ is empty.  On fit failure or exception, returns the per-spectrum cap.
+
+ If `detail_out` is non-null, populates it with the per-peak diagnostic
+ detail for HTML rendering.
+ */
+double compute_background_fit_penalty(
+    const PrecomputedNuclideData &pd,
+    const PeakFitForNuclideConfig &config,
+    BackgroundMode bg_mode,
+    BackgroundFitDetail *detail_out );
 
 
 /** Resolve a source name (from DataSrcInfo) to a vector of SrcVariant (nuclides, elements, reactions).
@@ -212,13 +300,27 @@ struct NuclideConfigSolution
   // Note: skew_type is NOT optimized by GA - it is manually chosen per detector type
   // (e.g., NoSkew for most detectors, DoubleSidedCrystalBall for CZT)
 
+  // --- Manual rel-eff chi2/dof cap (only varied when sm_rel_eff_chi2_cap_mode == GAOptimized) ---
+  // Otherwise this field is overridden by resolve_chi2_dof_cap() at genes_to_settings time.
+  double initial_manual_rel_eff_max_chi2_dof;
+
   std::string to_string( const std::string &separator ) const;
 };//struct NuclideConfigSolution
 
 
 struct NuclideConfigCost
 {
+  /** Combined optimization objective: `objective_fg + sm_background_fit_penalty_weight * objective_bg`.
+   This is what openGA actually minimizes. */
   double objective1;
+
+  /** Foreground-only contribution to the cost (summed across all spectra).
+   Equals `objective1` when sm_do_background_fit_trial is false. */
+  double objective_fg;
+
+  /** Raw, un-weighted background-fit penalty summed across all spectra.
+   Zero when sm_do_background_fit_trial is false. */
+  double objective_bg;
 };//struct NuclideConfigCost
 
 
@@ -252,11 +354,15 @@ void SO_report_generation( int generation_number,
 /** Run the GA optimization. Returns the best PeakFitForNuclideConfig found.
 
  @param precomputed The precomputed data for all spectra.
- @param ga_eval_fcn Function that takes a PeakFitForNuclideConfig and returns a cost (lower is better).
+ @param ga_eval_fcn Function that takes a PeakFitForNuclideConfig and two
+        optional out-pointers (foreground-only and raw-bg-penalty totals).
+        Returns the combined cost (lower is better).  The out-pointers are
+        used to surface the breakdown in reporting.  If `sm_do_background_fit_trial`
+        is false, the bg component is always 0 and combined == foreground.
  */
 PeakFitForNuclideConfig do_nuclide_config_ga(
   const std::vector<PrecomputedNuclideData> &precomputed,
-  std::function<double( const PeakFitForNuclideConfig & )> ga_eval_fcn );
+  std::function<double( const PeakFitForNuclideConfig &, double *, double * )> ga_eval_fcn );
 
 }//namespace NuclideConfig_GA
 

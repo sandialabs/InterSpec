@@ -404,7 +404,7 @@ std::string printToBestActivityUnitsWithUncert( double activity,
   else if( activity < 1.0 )
     snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E3), (uncert*1.0E3), "m" );
   else if( activity < 1.0E3 )
-    snprintf(buffer, sizeof(buffer), formatflag, activity, "" );
+    snprintf(buffer, sizeof(buffer), formatflag, activity, uncert, "" );
   else if( activity < 1.0E6 )
     snprintf(buffer, sizeof(buffer), formatflag, (activity*1.0E-3), (uncert*1.0E-3), "k" );
   else if( activity < 1.0E9 )
@@ -1482,10 +1482,32 @@ double stringToEnergy( const std::string &str, const double keV_def )
 
 std::string printValueWithUncertainty( double value, double uncert, size_t unsigfig )
 {
-  // We will explicitly round value/uncert, 
+  // We will explicitly round value/uncert,
   //cout << "Value=" << value << ", uncert=" << uncert << ", nsigfig=" << nsigfig << endl;
   const int nsigfig = std::max(1,static_cast<int>(unsigfig));
-  
+
+  // The normalize-then-round path below requires value != 0; log10(0) = -inf, and the
+  //  subsequent 0 * inf produces NaN, yielding "nan ± nan".  Handle the zero-value case
+  //  directly so callers (e.g. activity/ratio reporters, peak CPS) never see NaN strings.
+  if( value == 0.0 )
+  {
+    char buffer[64] = {'\0'};
+    if( uncert == 0.0 )
+    {
+      snprintf( buffer, sizeof(buffer), "0 \xC2\xB1 0" );
+    }else
+    {
+      // Round uncert to nsigfig digits using its own scale.
+      const double uncertorder = std::floor( std::log10(std::fabs(uncert)) );
+      const double uncertnorm = std::pow( 10.0, -uncertorder );
+      double rounduncert = std::fabs(uncert) * uncertnorm;
+      rounduncert = std::floor(rounduncert * std::pow(10.0,nsigfig-1) + 0.5) / std::pow(10.0,nsigfig-1);
+      rounduncert /= uncertnorm;
+      snprintf( buffer, sizeof(buffer), "0 \xC2\xB1 %.*g", nsigfig, rounduncert );
+    }
+    return buffer;
+  }
+
   //Get the exponent
   double valorder = std::floor( std::log10(value) );  //1.2345E-06 will give value -6
   //cout << "\tvalorder=" << valorder << endl;

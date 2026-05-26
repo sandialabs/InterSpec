@@ -199,8 +199,10 @@ protected:
   Wt::WPushButton *m_update;
   Wt::WPushButton *m_cancelUpdate;
   Wt::WPushButton *m_loadSelectedFile;
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   Wt::WPushButton *m_openSelectedDir;
-  
+#endif
+
   ResultTableModel *m_resultmodel;
   RowStretchTreeView *m_resultview;
   

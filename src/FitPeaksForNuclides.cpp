@@ -41,6 +41,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <array>
 #include <tuple>
 #include <vector>
 
@@ -795,6 +796,117 @@ std::vector<RelActCalcAuto::NucInputInfo> get_norm_sources(
 
   return norm_sources;
 }//get_norm_sources(...)
+
+
+// Nuclides that should be treated as NORM-like for the peak-fit-improve GA
+// background-false-positive penalty, but are not the canonical five NORM
+// nuclides handled by get_norm_sources().  These either share many of their
+// peaks with NORM lines (e.g. U232/U233 overlap with U238/Th232 chain), or
+// produce only the annihilation line (F18) which the broader 511 keV
+// handling already controls.  This list is policy, not physics — extend it
+// as the 1-generation diagnostic identifies more sources that systematically
+// fit peaks on backgrounds.
+static const std::array<const char *, 3> sk_norm_like_extras = {
+  "U232", "U233", "F18"
+};
+
+bool is_norm_like_for_ga( const RelActCalcAuto::SrcVariant &src )
+{
+  // Elements (xrays) and reactions have no decay chain to test; treat as
+  // not NORM-like.  If a future use case needs to exclude particular
+  // elements/reactions, add them here.
+  const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( src );
+  if( !nuc )
+    return false;
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    return false;
+
+  // Hand-curated extras (string compare against the nuclide symbol).
+  for( const char * const sym : sk_norm_like_extras )
+  {
+    if( nuc->symbol == sym )
+      return true;
+  }
+
+  // Decay-chain test: forebearers() is recursive and self-seeds with `this`,
+  // so this also covers U238/U235/Th232 themselves.  K40 is included as a
+  // separate ancestor check since it has no parents in SandiaDecay.
+  const SandiaDecay::Nuclide * const u238  = db->nuclide( "U238" );
+  const SandiaDecay::Nuclide * const u235  = db->nuclide( "U235" );
+  const SandiaDecay::Nuclide * const th232 = db->nuclide( "Th232" );
+  const SandiaDecay::Nuclide * const k40   = db->nuclide( "K40" );
+
+  if( nuc == k40 )
+    return true;
+
+  const std::vector<const SandiaDecay::Nuclide *> ancestors = nuc->forebearers();
+  for( const SandiaDecay::Nuclide * const ancestor : ancestors )
+  {
+    if( ancestor == u238 || ancestor == u235 || ancestor == th232 )
+      return true;
+  }
+
+  return false;
+}//is_norm_like_for_ga(...)
+
+
+// Strong gamma + xray lines from NORM nuclides and their decay chains that
+// commonly appear in ambient backgrounds.  Used by the GA's background-fit
+// penalty to suppress false-positive penalties when a source's gamma
+// happens to coincide with a real NORM peak the fit is actually explaining.
+// Hand-curated from K-40 + U-238 chain (Pb-214/Bi-214) + Th-232 chain
+// (Ac-228/Tl-208/Bi-212) + Pa-234m + Ra-226 + Th-234 + Pb/Bi/Tl K-xrays.
+// Keep sorted (we don't strictly require it, but it helps readers and
+// future binary-search optimizations).
+static const std::array<double, 51> sk_strong_norm_gamma_energies_kev = {
+  // Pb/Bi/Tl K x-rays (NORM-chain element fluorescence)
+   70.83,  72.81,  72.87,  74.81,  74.97,  77.10,  84.94,
+  // Th-234 (U-238 chain)
+   63.29,  92.38,  92.80,
+  // Ac-228 (Th-232 chain), Pb-214/Bi-214 mix at low energy
+  129.07,
+  // U-235 (top lines - also in is_norm_like_for_ga decay test, listed for
+  // mis-attribution overlap on non-U235 sources)
+  143.76, 163.36, 185.72, 205.31,
+  // Ra-226 itself
+  186.21,
+  // Ac-228 (Th-232 chain)
+  209.25, 270.24,
+  // Tl-208 (Th-232 chain)
+  277.36,
+  // Pb-214 (Ra-226 chain)
+  241.99, 258.87, 295.22, 351.93,
+  // Ac-228
+  328.00, 338.32, 463.00, 562.50,
+  // Tl-208
+  583.19,
+  // Bi-214 (Ra-226 chain)
+  609.31, 768.36, 806.17, 934.06,
+  1120.29, 1238.11, 1377.67, 1407.98, 1509.21, 1661.27, 1764.49, 2204.21,
+  // Bi-212 (Th-232 chain)
+  727.33, 785.37, 1620.50,
+  // Ac-228
+  755.32, 794.95, 911.20, 968.97,
+  // Tl-208 high-energy
+  860.56, 2614.51,
+  // Pa-234m (U-238 chain)
+  1001.03,
+  // K-40
+  1460.82
+};
+
+bool is_near_strong_norm_gamma( const double energy_kev, const double tolerance_kev )
+{
+  const double tol = std::max( 0.1, tolerance_kev );
+  for( const double ne : sk_strong_norm_gamma_energies_kev )
+  {
+    if( std::fabs( ne - energy_kev ) < tol )
+      return true;
+  }
+  return false;
+}//is_near_strong_norm_gamma(...)
 
 
 /** Add a floating peak at 511 keV if appropriate conditions are met.
@@ -2165,9 +2277,12 @@ RoiSignificanceResult compute_roi_chi2_significance(
   result.chi2_reduction = result.chi2_continuum_only - result.chi2_with_peaks;
   result.passes_chi2_test = (result.chi2_reduction >= min_chi2_reduction);
 
-  // Compute peak significance for each peak: peak_area / sqrt(continuum)
-  // For each peak, integrate the continuum between mean ± 1 FWHM
-  // Peak amplitude in this range is ~97.93% of total (for a Gaussian, erf(2.355/sqrt(2)) ≈ 0.9793)
+  // Compute peak significance for each peak: peak_area / sqrt(peak_area + continuum)
+  // This is a Poisson detection significance over ±1 FWHM that includes both the
+  // continuum's noise and the peak's own Poisson noise.  A bare peak/sqrt(continuum)
+  // form is overoptimistic when the peak is comparable to or larger than the
+  // continuum (e.g. high-energy ROIs with very low background), where the peak's
+  // own Poisson noise is the dominant uncertainty contribution.
   const double fwhm_coverage_fraction = 0.9793;
 
   for( const std::shared_ptr<const PeakDef> &peak : peaks_in_roi )
@@ -2182,17 +2297,17 @@ RoiSignificanceResult compute_roi_chi2_significance(
     if( !peak_cont )
       continue;
 
-    // Continuum integral, with a minimum of 1.0 to avoid division issues
-    double cont_integral_raw = 0.0;
-    cont_integral_raw = peak_cont->offset_integral( peak_lower, peak_upper, data, peaks_in_roi );
-    const double continuum_integral = std::max( 1.0, cont_integral_raw );
+    const double cont_integral_raw
+      = peak_cont->offset_integral( peak_lower, peak_upper, data, peaks_in_roi );
+    const double continuum_integral = std::max( 0.0, cont_integral_raw );
 
     // Peak amplitude in the ±1 FWHM range
-    const double peak_amp_in_range = peak->amplitude() * fwhm_coverage_fraction;
+    const double peak_amp_in_range = std::max( 0.0, peak->amplitude() * fwhm_coverage_fraction );
 
-    // Significance = peak_area / sqrt(continuum)
-    const double peak_sig = peak_amp_in_range / std::sqrt( continuum_integral );
-    
+    // Total counts under +/- 1 FWHM (peak + continuum), floor 1.0 to avoid div-by-zero.
+    const double total_in_range = std::max( 1.0, peak_amp_in_range + continuum_integral );
+    const double peak_sig = peak_amp_in_range / std::sqrt( total_in_range );
+
     if( peak_sig > result.max_peak_significance )
       result.max_peak_significance = peak_sig;
   }//for( loop over peaks in ROI )
@@ -2330,6 +2445,7 @@ PeakDef combine_peaks( const std::vector<const PeakDef *> &peaks_to_combine )
   double sum_area_mean = 0.0;
   double sum_area_sigma = 0.0;
   double sum_uncert_sq = 0.0;
+  double sum_means = 0.0, sum_sigmas = 0.0;
 
   for( const PeakDef *peak : peaks_to_combine )
   {
@@ -2344,6 +2460,8 @@ PeakDef combine_peaks( const std::vector<const PeakDef *> &peaks_to_combine )
     sum_area_mean += area * peak->mean();
     sum_area_sigma += area * peak->sigma();
     sum_uncert_sq += uncert * uncert;
+    sum_means += peak->mean();
+    sum_sigmas += peak->sigma();
 
     if( area > dominant->peakArea() )
       dominant = peak;
@@ -2354,10 +2472,19 @@ PeakDef combine_peaks( const std::vector<const PeakDef *> &peaks_to_combine )
   PeakDef combined = *dominant;
 
   // Update the gaussian parameters to the combined values
-  combined.setMean( sum_area_mean / total_area );
-  combined.setSigma( sum_area_sigma / total_area );
   combined.setPeakArea( total_area );
   combined.setPeakAreaUncert( std::sqrt( sum_uncert_sq ) );
+
+  if( total_area > 0.0 )
+  {
+    combined.setMean( sum_area_mean / total_area );
+    combined.setSigma( sum_area_sigma / total_area );
+  }else
+  {
+    combined.setMean( sum_means / peaks_to_combine.size() );
+    combined.setSigma( sum_sigmas / peaks_to_combine.size() );
+  }
+
 
   return combined;
 }//combine_peaks
@@ -3063,6 +3190,70 @@ std::vector<PeakDef> compute_observable_peaks(
       std::cout << "compute_observable_peaks: No overlapping ROIs detected" << std::endl;
   }//if( should_debug_print() )
 #endif
+
+  // Drop orphan 511 keV peaks: an unattributed peak near the annihilation
+  // energy whose ROI contains no source-attributed peak is almost certainly
+  // ambient annihilation in the background and shouldn't be claimed.
+  // Sources whose 511 peak IS attributed (e.g. F-18) and ROIs that also
+  // contain another source-attributed peak (e.g. NORM Bi-214 at 511) are
+  // unaffected.
+  {
+    const double annihilation_energy = 510.9989;
+    const double energy_tolerance = 2.0;
+
+    auto has_source = []( const PeakDef &p ) -> bool {
+      return p.hasSourceGammaAssigned() || p.parentNuclide()
+             || p.xrayElement() || p.reaction();
+    };
+
+    // Identify each ROI's peaks via shared continuum pointer identity.
+    std::map<std::shared_ptr<const PeakContinuum>, std::vector<size_t>> roi_indices;
+    for( size_t i = 0; i < observable_peaks.size(); ++i )
+      roi_indices[ observable_peaks[i].continuum() ].push_back( i );
+
+    std::vector<bool> to_remove( observable_peaks.size(), false );
+    for( const auto &entry : roi_indices )
+    {
+      const std::vector<size_t> &idxs = entry.second;
+
+      bool any_source_in_roi = false;
+      for( size_t i : idxs )
+        any_source_in_roi = any_source_in_roi || has_source( observable_peaks[i] );
+
+      if( any_source_in_roi )
+        continue;  // ROI has at least one attributed peak; keep everything
+
+      for( size_t i : idxs )
+      {
+        const PeakDef &p = observable_peaks[i];
+        if( std::fabs( p.mean() - annihilation_energy ) < energy_tolerance
+            && !has_source(p) )
+        {
+          to_remove[i] = true;
+          if( should_debug_print() )
+          {
+            std::cout << "compute_observable_peaks: dropping orphan 511 peak at "
+                 << p.mean() << " keV (no source in ROI ["
+                 << (p.continuum() ? p.continuum()->lowerEnergy() : 0.0) << ", "
+                 << (p.continuum() ? p.continuum()->upperEnergy() : 0.0) << "])"
+                 << std::endl;
+          }
+        }
+      }
+    }
+
+    if( std::any_of( begin(to_remove), end(to_remove), []( bool b ){ return b; } ) )
+    {
+      std::vector<PeakDef> kept;
+      kept.reserve( observable_peaks.size() );
+      for( size_t i = 0; i < observable_peaks.size(); ++i )
+      {
+        if( !to_remove[i] )
+          kept.push_back( std::move(observable_peaks[i]) );
+      }
+      observable_peaks = std::move(kept);
+    }
+  }
 
   return observable_peaks;
 }//compute_observable_peaks
@@ -5405,6 +5596,22 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
 
     if( manual_solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
       throw std::runtime_error( "Failed to fit initial RelActCalcManual::RelEffSolution: " + manual_solution.m_error_message );
+
+    // Reject extremely bad fits.  If matched peaks can't be reconciled with any
+    // smooth relative-efficiency curve, the source(s) probably aren't really
+    // present and we should treat this the same as a hard failure so the caller
+    // falls back to `estimate_initial_rois_fallback`.
+    const double final_chi2_dof
+      = manual_solution.m_chi2 / std::max( manual_solution.m_dof, 1 );
+    if( final_chi2_dof > config.initial_manual_rel_eff_max_chi2_dof )
+    {
+      throw std::runtime_error(
+        "Initial RelActCalcManual::RelEffSolution chi2/dof="
+        + std::to_string(final_chi2_dof)
+        + " exceeds threshold "
+        + std::to_string(config.initial_manual_rel_eff_max_chi2_dof)
+        + " - matched peaks are not consistent with the source(s) being present" );
+    }
 
     if( should_debug_print() )
     {

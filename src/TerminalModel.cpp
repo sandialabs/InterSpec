@@ -2282,26 +2282,6 @@ std::string TerminalModel::assignVariable(const std::string& input)
 }
 
 
-// Can use this to allow implicit variable declarations inside calculator
-// Eg.  x is not defined yet by the user
-//      User inputs: 'x + 2'    ----> result is 2, x implicitly defined and equals 0
-double* TerminalModel::addImplicitVariable(const char* variable, void* pUserData)
-{
-    static double valBuff[100];     // array of m_variables held inside class
-    static int iVal = -1;           // amount of m_variables allowed
-    
-    std::cout << " Adding variable: " << variable << " \\ (slots left: " << 99-(++iVal) << ")" << std::endl;
-    valBuff[iVal] = 0;
-//    m_variables.insert ( std::pair<std::string,mup::Value*> ( variable, new mup::Value(0) ) );
-    
-    if (iVal >= 99)
-        throw mup::ParserError("Variable buffer overflow.");
-    
-    return &valBuff[iVal];
-}
-
-
-
 // - Helper Methods
 // Determines if a given energy is within a certain range in or near a peak.
 bool TerminalModel::energyIsWithinPeak( PeakModel::PeakShrdPtr peak, const double energy )

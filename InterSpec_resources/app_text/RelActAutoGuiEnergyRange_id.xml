@@ -3,9 +3,9 @@
   <!-- raager- is short for RelActAutoGuiEnergyRange -->
   
   <!-- Labels -->
-  <message id="raager-lower-energy">Energi Bawah</message>
-  <message id="raager-upper-energy">Energi Atas</message>
-  <message id="raager-continuum-type">Jenis Kontinum:</message>
+  <message id="raager-lower-energy">Bawah</message>
+  <message id="raager-upper-energy">Atas</message>
+  <message id="raager-continuum-type">Kontinum:</message>
   
   <!-- Checkboxes -->
   <message id="raager-force-full-range">Paksa rentang penuh</message>

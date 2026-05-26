@@ -1,0 +1,1 @@
+interspec://detection-limit?V=1&nuc=Cs137&energy=661.7&dist=100cm

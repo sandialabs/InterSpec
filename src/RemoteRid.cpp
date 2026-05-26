@@ -513,7 +513,9 @@ public:
   {
     assert( m_remote_rid );
     assert( interspec );
-    
+    if( !m_remote_rid || !interspec )
+      throw std::runtime_error( "ExternalRidWidget constructed with null RemoteRid or InterSpec" );
+
     addStyleClass( "ExternalRidWidget" );
     
     WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
@@ -590,7 +592,6 @@ public:
     m_status_stack->addStyleClass( "RestRidInfoStack" );
 
     m_error = m_status_stack->addNew<WText>();
-    m_error->setTextFormat( Wt::TextFormat::Plain );
     m_error->addStyleClass( "RestRidError" );
     m_error->setInline( false );
 
@@ -859,8 +860,14 @@ protected:
   void receiveExeAnalysis( std::shared_ptr<int> rcode, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
   {
     assert( rcode && result && m );
-    assert( WApplication::instance() );
-    
+    if( !rcode || !result || !m )
+      return;
+
+    WApplication * const app = WApplication::instance();
+    assert( app );
+    if( !app )
+      return;
+
     std::lock_guard<mutex> lock( *m );
     
     const int code = *rcode;
@@ -872,8 +879,8 @@ protected:
     {
       handleResultResponseError( res );
     }
-    
-    wApp->triggerUpdate();
+
+    app->triggerUpdate();
   }//void receiveExeAnalysis( std::shared_ptr<string> result )
 #endif  //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 
@@ -953,7 +960,7 @@ public:
         
         const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
         assert( db );
-        if( results )
+        if( results && db )
         {
           for( auto &iso : results->isotopes )
           {
@@ -1130,7 +1137,7 @@ public:
       if( parent )
       {
         parent->m_status_stack->setCurrentIndex( parent->m_status_stack->indexOf(parent->m_error) );
-        parent->m_error->setText(  WString::tr("rr-err-locating-exe").arg(exe_path) );
+        parent->m_error->setText( WString::tr("rr-err-locating-exe").arg( Wt::Utils::htmlEncode(exe_path) ) );
       }else
       {
         cerr << __func__ << ": Error locating executable: '" + exe_path + "'" << endl;
@@ -1178,9 +1185,16 @@ public:
     }//end writing temp file
     
     arguments.push_back( tmpfilename );
-    
-    
-    const string appsession = WApplication::instance()->sessionId();
+
+
+    WApplication * const app = WApplication::instance();
+    if( !app )
+    {
+      assert( 0 );
+      SpecUtils::remove_file( tmpfilename );
+      return;
+    }
+    const string appsession = app->sessionId();
     auto result = std::make_shared<string>();
     auto rcode = std::make_shared<int>(-1);
     auto m = make_shared<mutex>();
@@ -1266,8 +1280,14 @@ public:
   void receiveExeDrfInfo( std::shared_ptr<int> success, std::shared_ptr<string> result, std::shared_ptr<std::mutex> m )
   {
     assert( success && result && m );
-    assert( WApplication::instance() );
-    
+    if( !success || !result || !m )
+      return;
+
+    WApplication * const app = WApplication::instance();
+    assert( app );
+    if( !app )
+      return;
+
     std::lock_guard<mutex> lock( *m );
     
     const int successval = *success;
@@ -1281,16 +1301,22 @@ public:
     {
       handleInfoResponseError( res );
     }
-    
-    wApp->triggerUpdate();
+
+    app->triggerUpdate();
   }//void receiveExeDrfInfo( std::shared_ptr<string> result )
   
   
   void requestExeInfo()
   {
     const string exe_path = m_url->text().toUTF8();
-    
-    const string appsession = WApplication::instance()->sessionId();
+
+    WApplication * const app = WApplication::instance();
+    if( !app )
+    {
+      assert( 0 );
+      return;
+    }
+    const string appsession = app->sessionId();
     auto result = std::make_shared<string>();
     auto success = std::make_shared<int>(0);
     auto m = make_shared<mutex>();
@@ -1464,32 +1490,32 @@ public:
     {
       m_current_drf_index = -1;
       m_drf_select->clear();
-      m_retrieve_drfs_btn->disable();
+      m_retrieve_drfs_btn->enable();
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
       m_result->setText( "" );
       m_status->setText( "" );
-      m_error->setText( WString::tr("rr-error-parsing-service-info").arg(e.what()) );
+      m_error->setText( WString::tr("rr-error-parsing-service-info").arg( Wt::Utils::htmlEncode(std::string(e.what())) ) );
     }//try / catch
   }//void handleInfoResponse()
   
   
   void handleInfoResponseError( std::string msg )
   {
-    WString errtxt = WString::fromUTF8( msg );
+    WString errtxt = WString::fromUTF8( Wt::Utils::htmlEncode(msg) );
     m_current_drf_index = -1;
     m_drf_select->clear();
     m_drf_stack->setCurrentIndex( 0 );
-    m_retrieve_drfs_btn->disable();
+    m_retrieve_drfs_btn->enable();
     m_result->setText( "" );
     m_status->setText( "" );
-    
+
     if( SpecUtils::icontains( msg , "Failed to fetch") //chrome
        || SpecUtils::icontains( msg , "Load failed")   //Safari
        || SpecUtils::icontains( msg , "NetworkError when attempting") ) //Firefox
     {
       errtxt = WString::tr("rr-incorrect-url");
     }
-    
+
     m_error->setText( WString::tr("rr-err-requesting-service-info").arg(errtxt) );
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleInfoResponseError()
@@ -1606,26 +1632,26 @@ public:
       *results = json_to_results( msg );
     }catch( std::exception &e )
     {
-      m_error->setText( "Error parsing analysis results: " + string(e.what()) );
+      m_error->setText( "Error parsing analysis results: " + Wt::Utils::htmlEncode(std::string(e.what())) );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
     }
-    
+
     try
     {
       if( !results->errorMessage.empty() )
         throw runtime_error( "Analysis service returned error message: " + results->errorMessage );
-      
+
       WStringStream rslttxt;
       rslttxt << "<div class=\"ResultLabel\">Results:</div>";
       generateResultHtml( rslttxt, *results );
-      
+
       m_result->setText( rslttxt.str() );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_result) );
-      
+
       m_interspec->externalRidResultsRecieved().emit( results );
     }catch( std::exception &e )
     {
-      m_error->setText( e.what() );
+      m_error->setText( Wt::Utils::htmlEncode(std::string(e.what())) );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
     }
   }//void handleResultResponse()
@@ -1636,15 +1662,15 @@ public:
     m_submit->enable();
     m_result->setText( "" );
     m_status->setText( "" );
-    
+
     if( SpecUtils::icontains( msg , "Failed to fetch") //chrome
        || SpecUtils::icontains( msg , "Load failed")   //Safari
        || SpecUtils::icontains( msg , "NetworkError when attempting") ) //Firefox
     {
       msg = "incorrect URL or no internet.";
     }
-    
-    m_error->setText( msg );
+
+    m_error->setText( Wt::Utils::htmlEncode(msg) );
     m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_error) );
   }//void handleResultResponseError()
   
@@ -2102,6 +2128,8 @@ m_app( WApplication::instance() ),
 m_interspec( interspec )
 {
   assert( m_app && m_interspec );
+  if( !m_app || !m_interspec )
+    throw std::runtime_error( "RestRidInputResource constructed outside of a Wt session" );
 }
 
 RestRidInputResource::~RestRidInputResource()

@@ -267,6 +267,7 @@ namespace InterSpecServer
    */
   InterSpec_API void clear_file_to_open_on_load( const std::string &session_token );
 
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   /** Asynchronously fetches `url` from the embedded Wt server's I/O service
    and routes the response body to the registered native file-save handler
    (see `InterSpecApp::setNativeFileSaveHandler`).
@@ -282,6 +283,7 @@ namespace InterSpecServer
    Timeout: 10 s.  Maximum response size: 512 MiB.
    */
   InterSpec_API void download_to_native_save( const std::string &url );
+#endif // !BUILD_AS_UNIT_TEST_SUITE
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 
   

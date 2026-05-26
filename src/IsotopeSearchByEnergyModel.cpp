@@ -1291,7 +1291,11 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
       const auto data = workingspace->displayed_measurement;
       auto userpeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(user_peaks), end(user_peaks) );
       const bool singleThreaded = false;
-      auto_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, workingspace->detector_response_function, userpeaksdeque, singleThreaded, workingspace->fitPrefs );
+      // Grab the SpecMeas's persistent peak-search cancel token so this worker
+      //  can be interrupted on shutdown.  See `SpecMeas::peak_search_cancel_flag`.
+      std::shared_ptr<const std::atomic<bool>> cancel_flag
+        = workingspace->foreground->peak_search_cancel_flag();
+      auto_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, workingspace->detector_response_function, userpeaksdeque, singleThreaded, workingspace->fitPrefs, cancel_flag );
       
       std::shared_ptr<SpecMeas> foreground = workingspace->foreground;
       const set<int> samplenums = workingspace->foreground_samplenums;

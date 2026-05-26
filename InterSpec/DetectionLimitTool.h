@@ -36,7 +36,7 @@
 /** TODO:
  - [x] Every update seems to trigger a layout resize that causes the chart to grow.
  - [ ] The MdaPeakRow (i.e., each gamma) should probably be like a WPanel that has just the "Use for Likilihood" checkbox in the title, as well as the currie MDA summary text, but then can be expanded to show the other settings
- - [ ] Could allow entering a scale factor for spectrum; this is like you have a 5 minute background, but are interested in a 60s dwell
+ - [x] Could allow entering a scale factor for spectrum; this is like you have a 5 minute background, but are interested in a 60s dwell
  - [ ] Have a little pop-up window or something that gives full information for Curie calculation
  - [ ] Add in a Curie style MDA calculator where you enter limits, BR, and stuff and get out counts and such
  - [ ] The likelihood based estimate does not seem to be reliable yet
@@ -107,6 +107,7 @@ namespace DetectionLimitCalc
 namespace SpecUtils
 {
   class Measurement;
+  enum class SpectrumType : int;
 };//namespace SpecUtils
 
 namespace SandiaDecay
@@ -291,7 +292,32 @@ protected:
   void handleFitFwhmRequested();
   
   void handleInputChange();
-  
+
+  /** Connected to `InterSpec::displayedSpectrumChanged()`.  When the foreground
+   changes to a non-null spectrum, rebuilds `m_our_meas` / `m_origSpec` / chart
+   from the new foreground (mirroring the constructor's seed logic), refreshes
+   the Scale field housekeeping, and triggers a recompute.  When the new
+   foreground is null, the previous state is left in place so the user can
+   continue viewing what they had open. */
+  void handleForegroundChanged( const SpecUtils::SpectrumType type );
+
+  /** Rebuilds `m_our_meas`, `m_origSpec`, and the chart from the currently
+   displayed foreground.  Returns true if a new foreground was loaded. */
+  bool loadCurrentForeground();
+
+  /** Toggles enabled state of the scale time input, repopulates the field with
+   `m_origSpec`'s real time when the checkbox is off OR the field is empty (so
+   the displayed value is always meaningful), refreshes the chart to show the
+   effective spectrum, and triggers a recompute. */
+  void handleScaleSpectrumChanged();
+
+  /** Returns the original foreground (`m_origSpec`), or the scaled version if the
+   Scale checkbox is on and the field contains a parseable positive time.  Returns
+   `m_origSpec` unchanged if the checkbox is off, the spectrum has no real time, or
+   the field is empty / whitespace-only.  Throws only if Scale is on and the field
+   contains a non-empty but unparseable / non-positive value. */
+  std::shared_ptr<const SpecUtils::Measurement> effectiveSpectrum() const;
+
   /** Gets DRF from GUI widget, and if that isnt valid, gets it from the spectrum. */
   std::shared_ptr<const DetectorPeakResponse> detector();
   
@@ -414,8 +440,19 @@ protected:
   Wt::WPushButton *m_fitFwhmBtn;
   
   std::shared_ptr<SpecMeas> m_our_meas;
+
+  /** A copy of the foreground Measurement we were initialized with - kept around
+   so that the Scale feature can compute a fresh scaled copy from a stable source
+   regardless of what is currently displayed on the chart. */
+  std::shared_ptr<const SpecUtils::Measurement> m_origSpec;
+
+  /** "Scale to dwell" controls.  When checked, the chart and calculations use the
+   foreground scaled by `(m_scaleSpectrumTime real time) / m_origSpec->real_time()`. */
+  Wt::WCheckBox *m_scaleSpectrumCb;
+  Wt::WLineEdit *m_scaleSpectrumTime;
+
   Wt::WContainerWidget *m_peaks;
-  
+
 public:
   
   // We want to preserve user changes to ROIs across nuclide changes, so we'll cache all

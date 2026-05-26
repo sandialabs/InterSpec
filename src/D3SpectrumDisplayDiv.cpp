@@ -541,11 +541,50 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     m_yAxisTypeChanged->connect( [this]( string a ){ yAxisTypeChangedCallback( a ); } );
   }//if( !m_xRangeChangedJS )
   
+  // Close any open InterSpec popup menu (top-bar app menus + spectrum right-click menu) when
+  // the chart is pressed.  The chart's own mousedown/touchstart preventDefault+stopPropagation,
+  // so Wt's document-level outside-click detector never sees the press; we attach a capture-
+  // phase listener so this runs before the chart's bubble-phase handlers.  This is InterSpec-
+  // specific UX (PopupMenuParentButton / PopupDivMenu.AppMenu classes), so it lives here
+  // rather than polluting the generic SpectrumChartD3 library.
+  doJavaScript(
+    "(function(){"
+      "var el=" + jsRef() + ";"
+      "if(!el||el._popupCloserBound) return;"
+      "el._popupCloserBound=true;"
+      "var close=function(){"
+        "try{"
+          "if(typeof jQuery!=='undefined'){"
+            "jQuery('.PopupMenuParentButton.active').removeClass('active');"
+            "jQuery('.PopupDivMenu.AppMenu.current').each(function(){"
+              "var m=this;jQuery(m).removeClass('current');"
+              "var o=jQuery.data(m,'obj')||m.wtObj;"
+              "if(o&&typeof o.setHidden==='function') o.setHidden(1);"
+              "m.style.display='none';"
+              "if(typeof Wt!=='undefined'&&Wt.emit) Wt.emit(m.id,'cancel');"
+            "});"
+          "}"
+          "var ms=document.querySelectorAll('.Wt-popupmenu');"
+          "for(var i=0;i<ms.length;i++){"
+            "var m=ms[i];"
+            "if(m.style&&m.style.display!=='none'&&m.offsetParent!==null){"
+              "var o=(typeof jQuery!=='undefined'&&jQuery.data(m,'obj'))||m.wtObj;"
+              "if(o&&typeof o.setHidden==='function') o.setHidden(1);"
+              "else m.style.display='none';"
+            "}"
+          "}"
+        "}catch(e){}"
+      "};"
+      "el.addEventListener('mousedown',close,true);"
+      "el.addEventListener('touchstart',close,true);"
+    "})();"
+  );
+
   for( const string &js : m_pendingJs )
     doJavaScript( js );
   m_pendingJs.clear();
   m_pendingJs.shrink_to_fit();
-  
+
   //I think x and y ranges should be taken care of via m_pendingJs... untested
   //m_xAxisMinimum, m_xAxisMaximum, m_yAxisMinimum, m_yAxisMaximum;
 }//void defineJavaScript()

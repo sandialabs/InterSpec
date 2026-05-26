@@ -926,7 +926,7 @@ GammaXsWindow::GammaXsWindow( InterSpec* viewer )
   } );
 #endif //USE_QR_CODES
   
-  WPushButton *closeButton = addCloseButtonToFooter();
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"), true );
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
   int w = viewer->renderedWidth();

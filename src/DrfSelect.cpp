@@ -4179,7 +4179,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseInterSpecRelEffCsvFile( co
       const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
       const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
       
-      if( (fixed_geom_col >= 0) && (static_cast<int>(fields.size()) >= fixed_geom_col) )
+      if( (fixed_geom_col >= 0) && (static_cast<int>(fields.size()) > fixed_geom_col) )
       {
         fixed_geometry |= (SpecUtils::icontains( fields[fixed_geom_col], "1")
                            || SpecUtils::icontains( fields[fixed_geom_col], "yes")

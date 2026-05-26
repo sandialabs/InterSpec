@@ -24,9 +24,11 @@
 #include "InterSpec_config.h"
 
 #include <deque>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
+#include <limits>
 #include <fstream>
 #include <algorithm>
 #include <functional>
@@ -562,6 +564,11 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
 
 SpecMeas::~SpecMeas()
 {
+  // Signal any in-flight peak search workers that they should abort on their
+  //  next cooperative check.  The workers hold their own shared_ptr to the
+  //  atomic, so flipping it here is safe even though `this` is being destroyed.
+  cancel_in_progress_peak_search();
+
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
 
 //  cerr << "About to delete " << filename()
@@ -583,6 +590,27 @@ SpecMeas::~SpecMeas()
 //  if( has_unique )
 //    cerr << "\nSpecMeas destructing unique copy of '" << filename_ << "'" << endl;
 }//SpecMeas destructor
+
+
+std::shared_ptr<std::atomic<bool>> SpecMeas::peak_search_cancel_flag() const
+{
+  std::lock_guard<std::mutex> lock( m_peakSearchCanceledMutex );
+  if( !m_peakSearchCanceled )
+    m_peakSearchCanceled = std::make_shared<std::atomic<bool>>( false );
+  return m_peakSearchCanceled;
+}//peak_search_cancel_flag()
+
+
+void SpecMeas::cancel_in_progress_peak_search()
+{
+  std::shared_ptr<std::atomic<bool>> flag;
+  {
+    std::lock_guard<std::mutex> lock( m_peakSearchCanceledMutex );
+    flag = m_peakSearchCanceled;
+  }
+  if( flag )
+    flag->store( true, std::memory_order_release );
+}//cancel_in_progress_peak_search()
 
 
 void SpecMeas::save2012N42FileInClientThread( std::shared_ptr<SpecMeas> info,
@@ -826,7 +854,13 @@ void SpecMeas::addPeaksFromXml( const ::rapidxml::xml_node<char> *peaksnode )
       SpecUtils::split_to_floats( samples_node->value(), samples_node->value_size(), contents );
       set<int> samplenums;
       for( const float t : contents )
+      {
+        if( !std::isfinite(t)
+           || (t < static_cast<float>(std::numeric_limits<int>::min()))
+           || (t > static_cast<float>(std::numeric_limits<int>::max())) )
+          throw runtime_error( "PeakSet samples contains a non-finite or out-of-range value." );
         samplenums.insert( samplenums.end(), static_cast<int>(t) );
+      }
     
       PeakDequeShrdPtr peaks = std::make_shared<PeakDeque>();
     
@@ -1491,8 +1525,8 @@ void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
     try
     {
       vector<float> coeffs = reader.GetShapeCalibration();
-      while( coeffs.empty() && (coeffs.back() == 0.0f) )
-        coeffs.resize( coeffs.size() - 1 );
+      while( !coeffs.empty() && (coeffs.back() == 0.0f) )
+        coeffs.pop_back();
 
       if( coeffs.size() == 2 )
       {

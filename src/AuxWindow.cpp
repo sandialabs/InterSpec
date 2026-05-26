@@ -1333,11 +1333,14 @@ JSignal<> &AuxWindow::expanded()
 
 void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
 {
-  InterSpec *viewer = InterSpec::instance();
-  
   Wt::WImage *image = footer->addNew<Wt::WImage>( Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
   image->setStyleClass("Wt-icon FooterHelpBtn");
-  image->setFloatSide( (viewer && viewer->isMobile()) ? Wt::Side::Right : Wt::Side::Left );
+
+  // Phone-fullscreen AuxWindows place the footer in the title bar with Close (MobileBackBtn)
+  // floated left, so the help icon belongs on the far right.  All other dialogs - including
+  // non-fullscreen dialogs on phones - follow the desktop convention with help on the left.
+  const bool isPhoneFullScreenFooter = footer && footer->hasStyleClass("PhoneAuxWindowFooter");
+  image->setFloatSide( isPhoneFullScreenFooter ? Wt::Side::Right : Wt::Side::Left );
 
   image->setAlternateText("Help");
   image->clicked().connect( image, [page](){ HelpSystem::createHelpWindow( page ); } );
