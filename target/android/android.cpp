@@ -525,3 +525,18 @@ JNIEXPORT jint JNICALL Java_gov_sandia_InterSpec_InterSpec_setInitialFileToLoad
 }
 
 }  // extern "C"
+
+
+// Wt 4's src/http/Android.C contains a `runMainAndCleanup` helper that calls
+// `extern "C" int main(int, const char**)`.  That helper is only invoked
+// through Wt's own JNI entry point (`Java_eu_webtoolkit_android_WtAndroid_startwt`)
+// which InterSpec doesn't use -- we drive the embedded server via our own
+// JNI bridge above -- but Android.C.o still gets pulled into libInterSpecAppLib.so
+// because WServer::WServer references `preventRemoveOfSymbolsDuringLinking()`
+// from the same TU.  So we have to supply a dummy `main` to satisfy the linker.
+// It is unreachable at runtime; assert if anything ever calls it.
+int main( int /*argc*/, const char ** /*argv*/ )
+{
+  assert( 0 );
+  return -1;
+}

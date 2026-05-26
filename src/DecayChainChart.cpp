@@ -301,13 +301,6 @@ DecayChainChart::DecayChainChart()
   csvButton->setText( "HTML" );
   csvButton->setObjectName( "htmldownload" );
   csvButton->hide();
-
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  csvButton->clicked().connect( csvButton, [csv](){
-    android_download_workaround(csv, "decay_chain.html");
-  } );
-#endif //ANDROID
 #endif
 }//DecayChainChart constructor
 

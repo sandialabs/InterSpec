@@ -1350,11 +1350,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     { WLink lnk(csv); lnk.setTarget( Wt::LinkTarget::NewWindow ); csvButton->setLink( lnk ); }
     csvButton->setStyleClass( "LinkBtn DownloadBtn RefGammaCsv" );
 
-  #if( ANDROID )
-    // Using hacked saving to temporary file in Android, instead of via network download of file.
-    csvButton->clicked().connect( this, [csv](){ android_download_workaround(csv, "photopeak_ref_info.csv"); } );
-  #endif //ANDROID
-
   #endif // BUILD_AS_OSX_APP / else
 
     csvButton->clicked().connect( this, [](){

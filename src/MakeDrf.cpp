@@ -1938,11 +1938,6 @@ void MakeDrf::startSaveAs()
     lnk.setTarget( Wt::LinkTarget::NewWindow );
     WAnchor *n42anchor = cell->addNew<WAnchor>( lnk, WString::fromUTF8("Export data as N42-2012 file.") );
     (void)n42anchor;
-#if( ANDROID )
-    n42anchor->clicked().connect( this, [n42Resource](){
-      android_download_workaround(n42Resource, "drf_data.n42");
-    } );
-#endif
   }
   cell = table->elementAt(currentRow, 2);
   help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );
@@ -1960,11 +1955,6 @@ void MakeDrf::startSaveAs()
     lnk.setTarget( Wt::LinkTarget::NewWindow );
     WAnchor *csvanchor = cell->addNew<WAnchor>( lnk, WString::tr("md-export-as-csv") );
     (void)csvanchor;
-#if( ANDROID )
-    csvanchor->clicked().connect( this, [csvResource](){
-      android_download_workaround(csvResource, "drf_data.csv");
-    } );
-#endif
   }
 
   cell = table->elementAt(currentRow, 2);
@@ -1984,11 +1974,6 @@ void MakeDrf::startSaveAs()
     lnk.setTarget( Wt::LinkTarget::NewWindow );
     WAnchor *refSheetAnchor = cell->addNew<WAnchor>( lnk, WString::tr("md-export-quick-ref") );
     (void)refSheetAnchor;
-#if( ANDROID )
-    refSheetAnchor->clicked().connect( this, [refSheetResource](){
-      android_download_workaround(refSheetResource, "drf_ref.html");
-    } );
-#endif
   }
   cell = table->elementAt(currentRow, 2);
   help = cell->addNew<WImage>( Wt::WLink("InterSpec_resources/images/help_mobile.svg") );

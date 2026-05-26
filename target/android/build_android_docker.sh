@@ -118,30 +118,27 @@ cmd_build() {
 
   echo "==> Starting Gradle build: assemble${Flavor} bundle${Flavor}..."
 
+  # Mount the repo at /work matching its on-host layout so Gradle's
+  # `path "../../CMakeLists.txt"` (relative to InterSpec/app) resolves to
+  # target/android/CMakeLists.txt -- which is where the Android-specific
+  # CMake options (InterSpec_FETCH_DEPENDENCIES=ON etc.) are set.
+  # The whole repo is mounted read-only; the InterSpec project subdir is
+  # overlaid writable so Gradle can write local.properties etc., and
+  # app/.cxx and app/build are bind-mounted from the host cache so
+  # CMake/native object files survive between runs.
   docker run --rm \
-    -v "${REPO_ROOT}:/src:ro" \
-    -v "${SCRIPT_DIR}/InterSpec:/work/InterSpec" \
+    -v "${REPO_ROOT}:/work:ro" \
+    -v "${SCRIPT_DIR}/InterSpec:/work/target/android/InterSpec" \
     -v "${CACHE_DIR}/gradle:/root/.gradle" \
-    -v "${CACHE_DIR}/app-cxx:/work/InterSpec/app/.cxx" \
-    -v "${CACHE_DIR}/app-build:/work/InterSpec/app/build" \
+    -v "${CACHE_DIR}/app-cxx:/work/target/android/InterSpec/app/.cxx" \
+    -v "${CACHE_DIR}/app-build:/work/target/android/InterSpec/app/build" \
     -v "${CACHE_DIR}/wt-resources:/cache/wt-resources:ro" \
     "${signing_env[@]}" \
     "${leaflet_env[@]}" \
     -e "WT_RESOURCES_DIR=${wt_res_dir}" \
-    -w /work/InterSpec \
+    -w /work/target/android/InterSpec \
     "${IMAGE_NAME}" \
     bash -c "
-      # Point the CMakeLists.txt to the read-only source mount
-      # The gradle project's CMakeLists.txt path is relative: ../../CMakeLists.txt
-      # which resolves to /work/CMakeLists.txt — we need to symlink /work's parent dirs
-      ln -sfn /src/target /work/target 2>/dev/null || true
-      ln -sfn /src/CMakeLists.txt /work/CMakeLists.txt 2>/dev/null || true
-      ln -sfn /src/InterSpec_resources /work/InterSpec_resources 2>/dev/null || true
-      ln -sfn /src/src /work/src 2>/dev/null || true
-      ln -sfn /src/external_libs /work/external_libs 2>/dev/null || true
-      ln -sfn /src/data /work/data 2>/dev/null || true
-      ln -sfn /src/example_spectra /work/example_spectra 2>/dev/null || true
-
       # Create the local.properties that Gradle needs
       echo 'sdk.dir=/opt/android-sdk' > local.properties
 
@@ -165,12 +162,12 @@ cmd_shell() {
   mkdir -p "${CACHE_DIR}/app-build"
 
   docker run --rm -it \
-    -v "${REPO_ROOT}:/src:ro" \
-    -v "${SCRIPT_DIR}/InterSpec:/work/InterSpec" \
+    -v "${REPO_ROOT}:/work:ro" \
+    -v "${SCRIPT_DIR}/InterSpec:/work/target/android/InterSpec" \
     -v "${CACHE_DIR}/gradle:/root/.gradle" \
-    -v "${CACHE_DIR}/app-cxx:/work/InterSpec/app/.cxx" \
-    -v "${CACHE_DIR}/app-build:/work/InterSpec/app/build" \
-    -w /work/InterSpec \
+    -v "${CACHE_DIR}/app-cxx:/work/target/android/InterSpec/app/.cxx" \
+    -v "${CACHE_DIR}/app-build:/work/target/android/InterSpec/app/build" \
+    -w /work/target/android/InterSpec \
     "${IMAGE_NAME}" \
     bash
 }

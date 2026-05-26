@@ -19,6 +19,15 @@ and **local** (Android Studio or command-line Gradle).
 | compileSdk       | 35                      |
 | minSdk           | 21 (Android 5.0)        |
 | JDK              | 17                      |
+| CMake            | 3.22.1 (bundled in AGP) |
+
+> **CMake floor (May 2026):** The Android build uses the CMake 3.22.1 that
+> ships with the Android Gradle Plugin / NDK toolchain. As a result the root
+> `CMakeLists.txt` must remain compatible with 3.22.1: any newer policies
+> (e.g. CMP0167 for the legacy `FindBoost` deprecation) need to be guarded
+> with `if(POLICY ...)` so they don't error on the SDK-bundled CMake. If you
+> raise the desktop floor, leave the Android build path on the 3.22.1-safe
+> code path or bump AGP/NDK to one that ships a newer CMake.
 
 ### Product Flavors
 

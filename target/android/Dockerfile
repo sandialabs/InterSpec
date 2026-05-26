@@ -3,8 +3,22 @@ FROM ubuntu:24.04
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# System dependencies.
+#
+# On arm64 hosts we still need x86_64 glibc available so that the Android
+# build-tools (aapt2 etc.), which Google ships as linux-x86_64 binaries
+# only, can be transparently run by Rosetta/qemu/OrbStack.  Without
+# libc6:amd64 the dynamic loader /lib64/ld-linux-x86-64.so.2 is missing
+# and Gradle's aapt2 daemon fails with "Dynamic loader not found".
+RUN dpkg --add-architecture amd64 \
+    # arm64 Ubuntu's default sources point at ports.ubuntu.com, which
+    # only carries arm64/ppc64el/s390x.  Rewrite Ubuntu 24.04's deb822
+    # sources file to constrain ports.ubuntu.com to arm64 and add
+    # archive.ubuntu.com for amd64/i386 so libc6:amd64 (the dynamic
+    # loader Rosetta/OrbStack needs to run x86_64 binaries) can install.
+    && rm -f /etc/apt/sources.list.d/ubuntu.sources \
+    && printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports/\nSuites: noble noble-updates noble-security noble-backports\nComponents: main restricted universe multiverse\nArchitectures: arm64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://archive.ubuntu.com/ubuntu/\nSuites: noble noble-updates noble-security\nComponents: main universe\nArchitectures: amd64 i386\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' > /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
     openjdk-17-jdk-headless \
     git \
     cmake \
@@ -14,7 +28,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    libc6:amd64 \
+    libstdc++6:amd64 \
+    zlib1g:amd64 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/lib/jvm/java-17-openjdk-* /usr/lib/jvm/java-17-openjdk
 
 # Android SDK + NDK
 ENV ANDROID_HOME=/opt/android-sdk
@@ -33,6 +51,8 @@ RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" && \
         "build-tools;35.0.0" \
         "ndk;28.0.13004108"
 
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+# openjdk-17-jdk-headless installs to /usr/lib/jvm/java-17-openjdk-<arch>
+# (amd64 or arm64). The symlink above resolves both to a stable path.
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 
 WORKDIR /work

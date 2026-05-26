@@ -5002,23 +5002,11 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   const char * const xml_label_key  = isPhone ? "raag-xml-config-short"  : "raag-xml-config";
 
 #if( BUILD_AS_OSX_APP || IOS )
-  {
-    WLink html_lnk( m_html_download_rsc );
-    html_lnk.setTarget( LinkTarget::NewWindow );
-    WAnchor *btn = parent->addNew<WAnchor>( html_lnk );
-    btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
-    btn->setText( WString::tr(html_label_key) );
-    m_calc_started.connect( btn, &WWidget::disable );
-    m_calc_failed.connect( btn, &WWidget::disable );
-    m_calc_successful.connect( btn, &WWidget::enable );
-  }
-  {
-    WLink xml_lnk( m_xml_download_rsc );
-    xml_lnk.setTarget( LinkTarget::NewWindow );
-    WAnchor *btn = parent->addNew<WAnchor>( xml_lnk );
-    btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
-    btn->setText( WString::tr(xml_label_key) );
-  }
+  WLink html_lnk( m_html_download_rsc );
+  html_lnk.setTarget( LinkTarget::NewWindow );
+  WAnchor *btn = parent->addNew<WAnchor>( html_lnk );
+  btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
+  btn->setText( WString::tr(html_label_key) );
 #else
   WPushButton *btn = parent->addNew<WPushButton>();
   btn->setIcon( "InterSpec_resources/images/download_small.svg" );

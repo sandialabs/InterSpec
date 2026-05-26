@@ -1,7 +1,11 @@
  cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
-# Use the installed BoostConfig.cmake instead of the removed FindBoost module
-cmake_policy(SET CMP0167 NEW)
+# Use the installed BoostConfig.cmake instead of the removed FindBoost module.
+# CMP0167 was introduced in CMake 3.30; older CMake (e.g. the Android SDK's
+# bundled 3.22.1) doesn't know about it, so guard the SET.
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
 
 # Default macOS deployment target, if not explicitly specified, so Xcode doesn't fall back to the default SDK version
 if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)

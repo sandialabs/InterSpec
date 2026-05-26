@@ -125,9 +125,12 @@ task makeAssets(type:Exec) {
     //on linux
     commandLine './make_assets.sh'
 
-    // Skip if assets zip already exists (e.g., pre-built in Docker)
+    // Skip if assets zip already exists (e.g., pre-built on the host before
+    // launching the Docker container).  Gradle file() resolves against the
+    // project dir (target/android/InterSpec/app), so this points at
+    // target/android/InterSpec/app/src/main/assets/interspec-assets.zip.
     onlyIf {
-        !file('../InterSpec/app/src/main/assets/interspec-assets.zip').exists()
+        !file('src/main/assets/interspec-assets.zip').exists()
     }
 }
 
