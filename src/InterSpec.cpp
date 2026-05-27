@@ -55,6 +55,7 @@
 #include <Wt/WIOService.h>
 #include <Wt/WTabWidget.h>
 #include <Wt/WPopupMenu.h>
+#include <Wt/Http/Cookie.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WJavaScript.h>
@@ -564,7 +565,8 @@ InterSpec::InterSpec()
       auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
       username = "user-" + SpecUtils::to_iso_string(now)
                  + "-" + std::to_string( std::hash<std::string>{}(wApp->sessionId()) );
-      wApp->setCookie( "SpectrumViewerUUID", username, 3600*24*365 );
+      const Wt::Http::Cookie cookie( "SpectrumViewerUUID", username, std::chrono::seconds(3600*24*365) );
+      wApp->setCookie( cookie );
     }//if( cookie_val ) / else
   }//if( no username )
 
@@ -7531,11 +7533,11 @@ void InterSpec::addViewMenu( WWidget *parent )
     };
     m_undo->addUndoRedoStep( toggle_kin_ref, toggle_kin_ref, "Toggle dynamic Reference Lines" );
   };
-  m_dynamicRefLineEnableMenuItem->triggered().connect( this, [=](){
+  m_dynamicRefLineEnableMenuItem->triggered().connect( this, [this,undo_redo_enable_kin_ref](){
     UserPreferences::setPreferenceValue<bool>("DynamicRefLine", true, this);
     undo_redo_enable_kin_ref();
   } );
-  m_dynamicRefLineDisableMenuItem->triggered().connect( this, [=](){
+  m_dynamicRefLineDisableMenuItem->triggered().connect( this, [this,undo_redo_enable_kin_ref](){
     UserPreferences::setPreferenceValue<bool>("DynamicRefLine", false, this);
     undo_redo_enable_kin_ref();
   } );

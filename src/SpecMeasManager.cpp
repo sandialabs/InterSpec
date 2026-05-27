@@ -933,10 +933,12 @@ protected:
   JSignal<int,std::string> m_qrDecodeSignal;
   std::function<void()> m_close_parent_dialog;
   
-  /** We'll make some (lifetime safe) cleanup function to delete sub-dialogs
-    created from this widget, when this widget destructs.
-    The functions put in `m_cleanups` need to be made with `wApp->bind( boost::bind(WWidget...) )`
-    so we dont try to delete widgets that have already been deleted.
+  /** Cleanup functions for sub-dialogs (e.g., QR-scan result dialogs) spawned by this
+    widget, run from the destructor.  Each lambda must capture a
+    `Wt::Core::observing_ptr<SimpleDialog>` (not a raw pointer) so it safely no-ops if
+    the user already dismissed that sub-dialog — `SimpleDialog` self-destructs on
+    `finished()`, so by the time this widget dies, those dialogs may already be gone.
+    (Pre-Wt4 this was achieved via `wApp->bind( boost::bind(...) )`, which Wt4 removed.)
    */
   vector<std::function<void()>> m_cleanups;
   
@@ -1091,9 +1093,14 @@ protected:
       
       SimpleDialog *dialog = SimpleDialog::make( title, content );
       dialog->addButton( WString::tr("Okay") );
-      
-      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
-      m_cleanups.push_back( [dialog](){ dialog->done( Wt::DialogCode::Accepted ); } );
+
+      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling.
+      // observing_ptr auto-nulls if the user already dismissed `dialog`.
+      Wt::Core::observing_ptr<SimpleDialog> dlg_obs( dialog );
+      m_cleanups.push_back( [dlg_obs](){
+        if( dlg_obs )
+          dlg_obs->done( Wt::DialogCode::Accepted );
+      } );
 
       return;
     }//if( num_qr <= 0 )
@@ -1140,9 +1147,14 @@ protected:
       
       SimpleDialog *dialog = SimpleDialog::make( WString::tr("uid-invalid-uri"), content );
       dialog->addButton( WString::tr("Okay") );
-      
-      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
-      m_cleanups.push_back( [dialog](){ dialog->done( Wt::DialogCode::Accepted ); } );
+
+      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling.
+      // observing_ptr auto-nulls if the user already dismissed `dialog`.
+      Wt::Core::observing_ptr<SimpleDialog> dlg_obs( dialog );
+      m_cleanups.push_back( [dlg_obs](){
+        if( dlg_obs )
+          dlg_obs->done( Wt::DialogCode::Accepted );
+      } );
 
       return;
     }//if( cleaned_up_uris.size() != initial_uris.size() )
@@ -1175,9 +1187,14 @@ protected:
     btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
     
     btn = dialog->addButton( WString::tr("No") );
-    
-    // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
-    m_cleanups.push_back( [dialog](){ dialog->done( Wt::DialogCode::Accepted ); } );
+
+    // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling.
+    // observing_ptr auto-nulls if the user already dismissed `dialog`.
+    Wt::Core::observing_ptr<SimpleDialog> dlg_obs( dialog );
+    m_cleanups.push_back( [dlg_obs](){
+      if( dlg_obs )
+        dlg_obs->done( Wt::DialogCode::Accepted );
+    } );
   }//void qr_check_result( const int num_qr, const string b64_value )
   
   
@@ -1255,7 +1272,14 @@ public:
   m_qrCodeStatusTxt( nullptr ),
   m_qrDecodeSignal( this, "QrDecodedFromImg", false)
   {
-    m_close_parent_dialog = [dialog](){ dialog->done( Wt::DialogCode::Accepted ); };
+    // Capture the parent dialog by observing_ptr.  In normal operation the parent
+    // outlives this child widget (children destruct first), but using observing_ptr
+    // keeps the capture safe if that invariant is ever broken.
+    Wt::Core::observing_ptr<SimpleDialog> parent_obs( dialog );
+    m_close_parent_dialog = [parent_obs](){
+      if( parent_obs )
+        parent_obs->done( Wt::DialogCode::Accepted );
+    };
 
     // Incase we find a QR code in the image, lets avoid `dialog` being called to front of view
     //  multiple times, which can cause some jank since there will be a dialog asking if the
@@ -1295,6 +1319,15 @@ public:
     m_image->setImageLink( WLink(m_resource->url()) );
     m_image->addStyleClass( "NonSpecImgFile" );
     addWidget( std::move(imageOwned) );
+
+    // Wt centers the dialog at first render, when the image hasn't loaded yet and
+    // the dialog is still title-height only.  Once the image arrives the dialog
+    // grows downward from that origin, ending up well below center.  Re-trigger
+    // centerDialog on the parent SimpleDialog once the <img> reports it has loaded.
+    m_image->imageLoaded().connect( "function(){"
+      "const dlg = document.getElementById('" + dialog->id() + "');"
+      "if(dlg && dlg.wtObj && dlg.wtObj.centerDialog) dlg.wtObj.centerDialog();"
+    "}" );
 
     WContainerWidget *btn_div = addNew<WContainerWidget>();
     btn_div->addStyleClass( "ImgFileBtnBar" );
@@ -2396,7 +2429,13 @@ void SpecMeasManager::closeNonSpecFileDialog()
     return;
 
   const string dialog_id = m_nonSpecFileDialog->id();
-  wApp->doJavaScript( "document.getElementById('" + dialog_id + "').style.display='none'; document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});" );
+  // The dialog-hide and cover-hide JS are queued for the next client response.  Wt's own
+  // teardown of the dialog (triggered by `accept()` below) may also run `Wt.remove(<id>)`
+  // in the same response — and may emit it *before* this snippet — so guard the
+  // getElementById result against null.
+  wApp->doJavaScript( "{var d=document.getElementById('" + dialog_id + "');"
+                      " if(d) d.style.display='none';"
+                      " document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});}" );
 
   // `accept()` synchronously fires `finished()`, whose handlers will (a) null out
   // `m_nonSpecFileDialog` (the lambda registered when the dialog was created) and
@@ -4540,11 +4579,32 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   //  `WApplication::instance()` is null until `UpdateLock` binds it.  Only the
   //  session-thread completion captures the dialog (via observing_ptr, so the
   //  dismiss is a safe no-op if the user closed it meanwhile).
+  //
+  // We also capture the SpecMeasManager's destruction sentinels by value: when
+  // the user clears the session between scheduling this lambda and the IO
+  // worker picking it up, `this` becomes dangling.  Lock order is UpdateLock
+  // first, then destruct mutex — matching the destructor, which always runs
+  // under the session-thread's UpdateLock.  While we hold UpdateLock the
+  // destructor cannot proceed, so once the destructed-check passes, `this`
+  // is safe for the rest of this call.
   Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
   Wt::WApplication * const app = wApp;
+  std::shared_ptr<std::mutex> destruct_mutex = m_destructMutex;
+  std::shared_ptr<bool> destructed = m_destructed;
+
   AppUtils::run_on_ioservice(
-    [this, name, spoolName, type, app]()
+    [this, name, spoolName, type, app, destruct_mutex, destructed]()
     {
+      Wt::WApplication::UpdateLock lock( app );
+      if( !lock )
+        return;
+
+      {
+        std::lock_guard<std::mutex> guard( *destruct_mutex );
+        if( *destructed )
+          return;
+      }
+
       handleFileDropWorker( name, spoolName, type, app );
     },
     [dialog_obs]()
