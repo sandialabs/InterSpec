@@ -30,6 +30,8 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <fstream>
+#include <functional>
 
 #include <Wt/WAny.h>
 #include <boost/asio/deadline_timer.hpp>
@@ -516,6 +518,140 @@ private:
   void deleteSpectrumManager();
   Wt::WContainerWidget *createTreeViewDiv();
   void closeNonSpecFileDialog();
+
+  /** Categorizes a file dropped on the app, when it could not be parsed as a spectrum file.
+
+   Classification is done from the first 1024 bytes of the file only; it never opens dialogs,
+   posts to the io_service, or reads past the header.  The dispatcher in `handleNonSpectrumFile`
+   uses the result to route to the appropriate handler, which may still ultimately reject the
+   file (e.g., header looks like XML, but `parseEccFile` then fails).
+   */
+  enum class NonSpecFileKind
+  {
+    Unknown,             ///< no match — caller should return false to indicate file not handled
+    Empty,               ///< <128 bytes; user has already been notified
+    ReadFailed,          ///< initial header read failed; user has already been notified
+    Icd2,                ///< N42 with ICD2 markers
+    ArchiveZip,          ///< zip / xlsx / docx / apk / etc
+    ArchiveOther,        ///< rar, tar, 7z, gz
+    Document,            ///< pdf, ps, tif
+    Image,               ///< gif, jpg, png, bmp, svg, heic
+    PeakCsvInterSpec,    ///< PeakEasy/InterSpec peak CSV
+    PeakCsvGadras,       ///< GADRAS peak CSV
+    PeakFitDetPrefsXml,
+    DrfRelEffCsv,        ///< single-DRF InterSpec rel-eff CSV
+    DrfXml,              ///< single <DetectorPeakResponse> XML
+    DrfMultipleCsv,      ///< multi-DRF rel-eff CSV
+    DrfGammaQuantCsv,
+    CalpFile,
+    RelActAutoXml,
+    EccOrOutxFile,       ///< ISOCS .ECC or ANGLE .outx
+    EfficiencyCsv,       ///< GADRAS Efficiency.csv / gamEff CSV / Run_effoutput
+    ShieldingSourceXml,
+    SourceLib
+  };
+
+  struct NonSpecFileClassification
+  {
+    NonSpecFileKind kind = NonSpecFileKind::Unknown;
+    /** Set only when `kind == Image`; static-storage MIME-type string. */
+    const char *imageMimeType = nullptr;
+  };
+
+  /** Classify a candidate non-spectrum file from its first \p headerLen bytes.
+
+   Pure content-based classification — no app state (foreground / open windows) is considered.
+   The dispatcher in `handleNonSpectrumFile` gates state-dependent kinds (peak CSV, CALp,
+   RelActAuto, Source.lib) after classification.
+
+   @param header   Pointer to a buffer holding the first \p headerLen bytes of the file.
+   @param headerLen Number of valid bytes in \p header (≤ 1024 by convention).
+   @param fileSize Full file size in bytes.
+   */
+  NonSpecFileClassification classifyNonSpecFileHeader(
+      const uint8_t *header, size_t headerLen, size_t fileSize ) const;
+
+  /** Creates an empty `SimpleDialog`, registers it as `m_nonSpecFileDialog` (replacing any
+   prior instance via `closeNonSpecFileDialog`), wires the `finished()` signal to clear the
+   member, and adds the standard Close button.  Returns the new dialog.
+
+   No title, body, or undo/redo step is added; callers do that.
+   */
+  SimpleDialog *createBareNonSpecDialog();
+
+  /** Creates (or replaces) `m_nonSpecFileDialog` with the standard "Not a spectrum file" title,
+   the supplied body text, and a Close button, and registers the undo/redo step that re-opens
+   the dialog on redo (memory-cached file data for files ≤10 MB).
+
+   \p infile is borrowed and only used synchronously within this call; the helper does not
+   retain a reference past return.
+   */
+  SimpleDialog *showNonSpecInfoDialog( const Wt::WString &bodyText,
+                                       const std::string &displayName,
+                                       size_t fileSize,
+                                       std::ifstream &infile,
+                                       SpecUtils::SpectrumType type );
+
+  /** Like \c showNonSpecInfoDialog but uses \c UploadedImgDisplay as the body. */
+  SimpleDialog *showImageDialog( const std::string &displayName,
+                                 const char *mimeType,
+                                 size_t fileSize,
+                                 std::ifstream &infile,
+                                 SpecUtils::SpectrumType type );
+
+  /** Creates an empty `SimpleDialog`, registers it as `m_nonSpecFileDialog`, and invokes
+   \p body with the new dialog.  If \p body returns true, the dialog is left in whatever state
+   the body set it to and an undo/redo step is registered when \p registerUndoRedoOnSuccess is
+   true.  If \p body returns false, the dialog is torn down cleanly via
+   `closeNonSpecFileDialog()` and this method returns false.
+
+   \p infile is borrowed and only used synchronously within this call; the helper does not
+   retain a reference past return.  The \p body callable is expected to do the same.
+   */
+  bool runWithNonSpecDialog( const std::string &displayName,
+                             size_t fileSize,
+                             std::ifstream &infile,
+                             SpecUtils::SpectrumType type,
+                             bool registerUndoRedoOnSuccess,
+                             std::function<bool(SimpleDialog *)> body );
+
+  /** Reads a CSV of candidate peaks (PeakEasy/InterSpec or GADRAS format) and queues a peak
+   fit against the current foreground.  No dialog is shown on success; on parse failure, the
+   standard info dialog is shown with the error text.
+
+   \p infile is borrowed and only used synchronously within this call.
+   */
+  bool tryFitPeaksFromCsv( NonSpecFileKind kind,
+                           std::ifstream &infile,
+                           const std::string &displayName,
+                           size_t fileSize,
+                           SpecUtils::SpectrumType type );
+
+  /** Reads a standalone `<PeakFitDetPrefs>` XML and applies it to the current foreground.
+   Returns true on success, false on parse failure (so the caller can fall through to other
+   classification candidates if any).  Resets the stream on failure.
+   */
+  bool tryLoadPeakFitDetPrefsXml( std::ifstream &infile );
+
+  /** Reads an InterSpec rel-eff CSV DRF or a `<DetectorPeakResponse>` XML and offers it to
+   the user as a DRF.  Returns true if a DRF was offered; false if parsing failed.
+   */
+  bool tryLoadSingleDrf( NonSpecFileKind kind,
+                         const std::string &fileLocation,
+                         std::ifstream &infile );
+
+  /** Registers an undo/redo step on the currently active `m_nonSpecFileDialog` such that
+   undo closes the dialog and redo re-opens it.  For files ≤10 MB, file data is cached in
+   memory so the redo can re-invoke `handleNonSpectrumFile` against a temporary file; for
+   files >64 KB, the cached data is dropped after 5 minutes to bound memory usage.
+
+   No-op if no `UndoRedoManager` is available.
+   */
+  void registerNonSpecDialogUndoRedo( SimpleDialog *dialog,
+                                      const std::string &displayName,
+                                      size_t fileSize,
+                                      std::ifstream &infile,
+                                      SpecUtils::SpectrumType type );
   
 protected:
   Wt::Core::observing_ptr<AuxWindow> m_spectrumManagerWindow;

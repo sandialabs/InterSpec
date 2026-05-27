@@ -705,16 +705,20 @@ protected:
     
     
     {// Begin handle undo when the dialog is showing, and the user hasnt accepted it
-      // In Wt4, wApp->bind() was removed; undo/redo is called from app session context already
-      auto undo = [this](){
-        cancelOperation();
+      // The undo step may outlive the dialog (e.g., user accepts, then undoes past the
+      // "Accept" step into this "Reject" step).  Capture an observing_ptr so that if the
+      // dialog has already been destroyed via deleteAuxWindow, the undo is a safe no-op.
+      Wt::Core::observing_ptr<PeakSelectorWindow> self_obs( this );
+      auto undo = [self_obs](){
+        if( self_obs )
+          self_obs->cancelOperation();
       };
       auto redo = [](){
         //We just wont do anything - we could create a PeakSelectorWindow, but we will
         //  have to avoid undo<-->redo cycles, etc, so it makes the most sense to just
         //  skip redo, and use that effort making other actions better.
       };
-      
+
       UndoRedoManager *undoManager = viewer->undoRedoManager();
       if( undoManager )
         undoManager->addUndoRedoStep( undo, redo, "Reject automated peak search." );

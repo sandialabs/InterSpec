@@ -1628,9 +1628,9 @@ SpecMeasManager::~SpecMeasManager()
   std::lock_guard<std::mutex> lock( *m_destructMutex );
   
   (*m_destructed) = true;
-  
+
   if( m_nonSpecFileDialog )
-    if( m_nonSpecFileDialog ) m_nonSpecFileDialog->removeFromParent();
+    closeNonSpecFileDialog();
 } // SpecMeasManager::~SpecMeasManager()
 
 
@@ -1974,44 +1974,28 @@ bool check_magic_number( const uint8_t (&magic_num)[N], const uint8_t (&data)[M]
 }
 
 
-bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
-                                             const std::string &fileLocation,
-                                             SpecUtils::SpectrumType type )
+SpecMeasManager::NonSpecFileClassification
+SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
+                                            const size_t headerLen,
+                                            const size_t fileSize ) const
 {
-#ifdef _WIN32
-  const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(fileLocation);
-  std::ifstream infile( wpathstr.c_str(), ios::in | ios::binary );
-#else
-  std::ifstream infile( fileLocation.c_str(), ios::in | ios::binary );
-#endif
-  
-  if( !infile )
-    return false;
- 
-  //get the filesize
-  infile.seekg(0, ios::end);
-  const size_t filesize = infile.tellg();
-  infile.seekg(0);
-  
-  if( filesize <= 128 )
-  {
-    passMessage( WString::tr("smm-empty-file"), 2 );
-    return true;
-  }
-  
-  uint8_t data[1024] = { 0x0 };
-  
-  if( !infile.read( (char *)data, std::min(sizeof(data), filesize) ) )
-  {
-    passMessage( WString::tr("smm-failed-reading-nonspec-file"), 2 );
-    return true;
-  }
-  infile.seekg(0);
-  
-  //Case insensitive search of 'term' in the header 'data'
-  auto position_in_header = [&data]( const std::string &term ) -> int {
-    const char * const char_start = (const char *)data;
-    const char * const char_end = (const char *)(data + boost::size(data));
+  NonSpecFileClassification result;
+
+  // --- Case-insensitive search of `term` in the header buffer. ---
+  auto header_contains = [header, headerLen]( const std::string &term ) -> bool {
+    const char * const char_start = (const char *)header;
+    const char * const char_end = char_start + headerLen;
+    const auto pos = std::search( char_start, char_end, begin(term), end(term),
+                                 [](unsigned char a, unsigned char b) -> bool {
+      return (std::tolower(a) == std::tolower(b));
+    } );
+    return (pos != char_end);
+  };
+
+  // --- Case-sensitive search; returns byte offset or -1. ---
+  auto position_in_header = [header, headerLen]( const std::string &term ) -> int {
+    const char * const char_start = (const char *)header;
+    const char * const char_end = char_start + headerLen;
     const auto pos = std::search( char_start, char_end, begin(term), end(term),
                                  [](unsigned char a, unsigned char b) -> bool {
       return (a == b);
@@ -2019,23 +2003,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     if( pos == char_end )
       return -1;
     return static_cast<int>( pos - char_start );
-  };//position_in_header lambda
-  
-  auto header_contains = [&data]( const std::string &term ) -> bool {
-    const char * const char_start = (const char *)data;
-    const char * const char_end = (const char *)(data + boost::size(data));
-    const auto pos = std::search( char_start, char_end, begin(term), end(term),
-                                 [](unsigned char a, unsigned char b) -> bool {
-      return (std::tolower(a) == std::tolower(b));
-    } );
-    return (pos != char_end);
-  };//header_contains lambda
+  };
 
-  // Case-insensitive check that both terms appear on the same comma/tab-delimited line
-  //  within the header data.
-  auto header_line_has_both = [&data]( const std::string &term1, const std::string &term2 ) -> bool {
-    const char *buf = (const char *)data;
-    size_t buf_len = strnlen( buf, boost::size(data) );
+  // --- Both `term1` and `term2` appear on the same comma/tab-delimited line. ---
+  auto header_line_has_both = [header, headerLen]( const std::string &term1,
+                                                   const std::string &term2 ) -> bool {
+    const char *buf = (const char *)header;
+    size_t buf_len = strnlen( buf, headerLen );
 
     // Skip past UTF-8 BOM if present
     if( (buf_len >= 3)
@@ -2059,7 +2033,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
       if( fields.size() < 2 )
         continue;
 
-      // Check if any field starts with term1, and any field starts with term2
       bool has_term1 = false, has_term2 = false;
       for( const string &field : fields )
       {
@@ -2072,185 +2045,33 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
 
       if( has_term1 && has_term2 )
         return true;
-    }//for( each line )
-
+    }
     return false;
-  };//header_line_has_both lambda
+  };
 
-  // SpecMeasManager will keep track of this next dialog, so we can do undo/redo a little better
-  SimpleDialog *dialog = SimpleDialog::make();
-  
-  if( m_nonSpecFileDialog )
+  // Matches `magic` against the start of the header (case sensitive).
+  auto starts_with_bytes = [header, headerLen]( const uint8_t *magic, size_t magic_len ) -> bool {
+    return (headerLen >= magic_len) && (0 == memcmp(header, magic, magic_len));
+  };
+
+  // --- ICD2 check: an XML file containing N42-derivative-of-ICD2 markers. ---
+  //  Has to come before generic XML/CSV/DRF detection because ICD2 files contain '<' early on
+  //  and could otherwise be misclassified as a DRF XML, etc.
+  if( std::find( header, header + headerLen, uint8_t(60) /* '<' */ ) != (header + headerLen) )
   {
-    if( m_nonSpecFileDialog ) m_nonSpecFileDialog->removeFromParent(); //The `destroyed()` signal will set `m_nonSpecFileDialog` to nullptr
-    cerr << "m_nonSpecFileDialog was not nullptr" << endl;
-  }
-  assert( !m_nonSpecFileDialog );
-  
-  m_nonSpecFileDialog = dialog;
-  
-  // Hook up to finished() to clear m_nonSpecFileDialog when dialog closes
-  m_nonSpecFileDialog->finished().connect( dialog, [dialog]( Wt::DialogCode ){
-    InterSpec *interspec = InterSpec::instance();
-    SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
-    if( manager && manager->m_nonSpecFileDialog.get() == dialog )
-      manager->m_nonSpecFileDialog = nullptr;
-  } );
-  
-  dialog->addButton( WString::tr("Close") );
-  WContainerWidget *contents = dialog->contents();
-  contents->addStyleClass( "NonSpecDialogBody" );
-  WText *title = contents->addNew<WText>( WString::tr("smm-not-spec-file") );
-  title->addStyleClass( "title" );
-  
-  auto add_undo_redo = [dialog, displayName, filesize, &infile, type](){
-    UndoRedoManager *undoRedo = UndoRedoManager::instance();
-    if( !undoRedo )
-      return;
-    
-    auto closeDialog = [](){
-      InterSpec *interspec = InterSpec::instance();
-      SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
-      assert( manager );
-      if( manager )
-        manager->closeNonSpecFileDialog();
-    };
-    
-    std::function<void()> reOpenDialog;
-    
-    // If input size isnt too horrible large, we'll save it in memory and create a redo point
-    if( filesize <= 10*1024*1024 )
-    {
-      infile.clear();
-      infile.seekg(0, std::ios::beg);
-        
-      auto file_data = make_shared<vector<uint8_t>>( filesize, '\0' );
-      infile.read( (char *)(&((*file_data)[0])), static_cast<streamsize>(filesize) );
-      infile.clear();
-      infile.seekg(0, std::ios::beg);
-      
-      // If file is more than 64 kb (arbitrarily chosen), we will only keep the data in memory for
-      //  ~5 minutes
-      std::weak_ptr<vector<uint8_t>> wk_ptr = file_data;
-      if( filesize > 64*1024 )
-      {
-        shared_ptr<vector<uint8_t>> data_ptr = file_data;
-        file_data = nullptr;
-        
-        auto clear_mem = [data_ptr](){
-          cout << "Clearing memory of file: " << data_ptr.use_count() << endl;
-        };
-        
-        WServer::instance()->schedule( std::chrono::milliseconds(5*60*1000), wApp->sessionId(), clear_mem, clear_mem );
-      }//if( filesize > 64*1024 )
-      
-      const std::string dispname = displayName;
-      
-      reOpenDialog = [wk_ptr, file_data, dispname, type](){
-        
-        shared_ptr<vector<uint8_t>> data_ptr = wk_ptr.lock();
-        if( !data_ptr )
-        {
-          cout << "Was NOT able to get `file_data` - must have been cleared in memory" << endl;
-          return;
-        }else
-        {
-          // Not sure if we need to force the compiler to potentially keep `file_data` around
-          cout << "file_data.use_count=" << file_data.use_count() << endl;
-        }
-        
-        InterSpec *interspec = InterSpec::instance();
-        SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
-        assert( interspec && manager );
-        if( !manager )
-          return;
-        
-        const string tmpdir = SpecUtils::temp_dir();
-        const string tmpname = SpecUtils::temp_file_name( "non_spec_file", tmpdir );
-
-        bool wrote_tmp_file = false;
-
-        {//begin write tmp file
-#ifdef _WIN32
-          const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(tmpname);
-          ofstream outfilestrm( wtmpfile.c_str(), ios::out | ios::binary );
-#else
-          ofstream outfilestrm( tmpname.c_str(), ios::out | ios::binary );
-#endif
-          wrote_tmp_file = (outfilestrm
-                              && outfilestrm.write( (char *)data_ptr->data(), data_ptr->size()) );
-        }//end write tmp file
-          
-        if( wrote_tmp_file )
-        {
-          try
-          {
-            manager->handleNonSpectrumFile( dispname, tmpname, type );
-          }catch( std::exception &e )
-          {
-            cerr << "Unexpected exception from `handleNonSpectrumFile(...)`" << endl;
-          }
-            
-          SpecUtils::remove_file( tmpname );
-        }else
-        {
-          cerr << "Failed to write '" << dispname << "' to temporary file." << endl;
-        }
-      };//redo lambda
-    }//if( filesize <= 256*1024 )
-    
-    if( undoRedo->canAddUndoRedoNow() )
-      undoRedo->addUndoRedoStep( closeDialog, reOpenDialog, "Open non-spectrum file dialog." );
-    
-    // Find close/cancel button
-    vector<WWidget *> btns;
-    if( dialog->footer() )
-      btns = dialog->footer()->children();
-    for( WWidget *w : btns )
-    {
-      WPushButton *btn = dynamic_cast<WPushButton *>( w );
-      if( !btn || ((btn->text().key() != "Close") && (btn->text().key() != "Cancel")) )
-      {
-        // TODO: We could add this undo/redo step for all buttons, so in the case the
-        //       user accepted the DRF, or peaks to fit, or whatever, that action should already
-        //       be hooked up to undo/redo, but right now if we hooked it up, they would have to do
-        //       undo again...  maybe when we aggregate multiple undo/redo steps into a single one
-        //       every WApplication event loop, then we can enable this.
-        continue;
-      }
-      
-      btn->clicked().connect( btn, [=](){
-        // The `undo` call wont do anything, since it is currently bound to a now deleted dialog,
-        //  but leaving in in case we upgrade things a bit in the future to have the dialog tracked
-        //  by SpecMeasManager
-        undoRedo->addUndoRedoStep( reOpenDialog, closeDialog, "Close non-spectrum file dialog." );
-      } );
-    }//for( WWidget *w : btns )
-  };//add_undo_redo
-  
-  //Check if ICD2 file
-  if( std::find( boost::begin(data), boost::end(data), uint8_t(60)) != boost::end(data) )
-  {
-    string datastr;
-    datastr.resize( boost::size(data) + 1, '\0' );
-    memcpy( &(datastr[0]), (const char *)&data[0], boost::size(data) );
-    
-    if( SpecUtils::icontains( datastr, "n42ns:")
+    string datastr( (const char *)header, headerLen );
+    if( SpecUtils::icontains( datastr, "n42ns:" )
        || SpecUtils::icontains( datastr, "AnalysisResults" )
        || SpecUtils::icontains( datastr, "AlarmInformation" )
        || SpecUtils::icontains( datastr, "DNDOARSchema" )
-       || SpecUtils::icontains( datastr, "DNDOEWSchema" )
-       || SpecUtils::icontains( datastr, "DNDOARSchema" ) )
+       || SpecUtils::icontains( datastr, "DNDOEWSchema" ) )
     {
-      WText *t = contents->addNew<WText>( WString::tr("smm-icd2") );
-      t->addStyleClass( "NonSpecOtherFile" );
-      add_undo_redo();
-      return true;
+      result.kind = NonSpecFileKind::Icd2;
+      return result;
     }
-  }//if( might be ICD2 )
-  
-  
-  
+  }
+
+  // --- Magic-number checks for compressed/archive/image/document formats. ---
   const uint8_t zip_mn[]    = { 0x50, 0x4B, 0x03, 0x04 };
   const uint8_t rar4_mn[]   = { 0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00 };
   const uint8_t rar5_mn[]   = { 0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00 };
@@ -2258,8 +2079,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const uint8_t zip7_mn[]   = { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C };
   const uint8_t gz_mn[]     = { 0x1F, 0x8B };
 
-  
-  //\sa Wt::Utils::guessImageMimeTypeData(...)
   const uint8_t gifold_mn[] = { 0x47, 0x49, 0x46, 0x38, 0x37, 0x61 };
   const uint8_t gifnew_mn[] = { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61 };
   const uint8_t tiffle_mn[] = { 0x49, 0x49, 0x2A, 0x00 };
@@ -2271,360 +2090,722 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const uint8_t jpeg5_mn[]  = { 0x69, 0x66, 0x00, 0x00 };
   const uint8_t png_mn[]    = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
   const uint8_t bmp_mn[]    = { 0x42, 0x4D };
-  const uint8_t heic_mn[]     = { 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63 }; //HEIC (apple) pictures have "ftypheic" at offset 4
-  
+  // HEIC pictures have "ftypheic" at offset 4
+  const uint8_t heic_mn[]   = { 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63 };
+
   const uint8_t pdf_mn[]    = { 0x25, 0x50, 0x44, 0x46 };
   const uint8_t ps_mn[]     = { 0x25, 0x21, 0x50, 0x53 };
-  
-  const bool iszip = check_magic_number( data, zip_mn );
-  
-  const bool israr = (check_magic_number( data, rar4_mn ) || check_magic_number( data, rar5_mn ));
-  const bool istar = check_magic_number( data, tar_mn );
-  const bool iszip7 = check_magic_number( data, zip7_mn );
-  const bool isgz = check_magic_number( data, gz_mn );
-  
-  const bool ispdf = check_magic_number( data, pdf_mn );
-  const bool isps = check_magic_number( data, ps_mn );
-  const bool istif = (check_magic_number( data, tiffle_mn ) || check_magic_number( data, tiffbe_mn ));
-  
-  const bool isgif = (check_magic_number( data, gifold_mn ) || check_magic_number( data, gifnew_mn ));
-  const bool isjpg = (check_magic_number( data, jpeg1_mn )
-                      || check_magic_number( data, jpeg2_mn )
-                      || check_magic_number( data, jpeg3_mn )
-                      || check_magic_number( data, jpeg4_mn )
-                      || check_magic_number( data, jpeg5_mn ));
-  const bool ispng = check_magic_number( data, png_mn );
-  const bool isbmp = check_magic_number( data, bmp_mn );
+
+  if( starts_with_bytes( zip_mn, sizeof(zip_mn) ) )
+  {
+    result.kind = NonSpecFileKind::ArchiveZip;
+    return result;
+  }
+
+  if( starts_with_bytes( rar4_mn, sizeof(rar4_mn) )
+     || starts_with_bytes( rar5_mn, sizeof(rar5_mn) )
+     || starts_with_bytes( tar_mn,  sizeof(tar_mn) )
+     || starts_with_bytes( zip7_mn, sizeof(zip7_mn) )
+     || starts_with_bytes( gz_mn,   sizeof(gz_mn) ) )
+  {
+    result.kind = NonSpecFileKind::ArchiveOther;
+    return result;
+  }
+
+  if( starts_with_bytes( pdf_mn, sizeof(pdf_mn) )
+     || starts_with_bytes( ps_mn, sizeof(ps_mn) )
+     || starts_with_bytes( tiffle_mn, sizeof(tiffle_mn) )
+     || starts_with_bytes( tiffbe_mn, sizeof(tiffbe_mn) ) )
+  {
+    result.kind = NonSpecFileKind::Document;
+    return result;
+  }
+
+  const bool isgif = (starts_with_bytes( gifold_mn, sizeof(gifold_mn) )
+                      || starts_with_bytes( gifnew_mn, sizeof(gifnew_mn) ));
+  const bool isjpg = (starts_with_bytes( jpeg1_mn, sizeof(jpeg1_mn) )
+                      || starts_with_bytes( jpeg2_mn, sizeof(jpeg2_mn) )
+                      || starts_with_bytes( jpeg3_mn, sizeof(jpeg3_mn) )
+                      || starts_with_bytes( jpeg4_mn, sizeof(jpeg4_mn) )
+                      || starts_with_bytes( jpeg5_mn, sizeof(jpeg5_mn) ));
+  const bool ispng = starts_with_bytes( png_mn, sizeof(png_mn) );
+  const bool isbmp = starts_with_bytes( bmp_mn, sizeof(bmp_mn) );
   const bool issvg = header_contains( "<svg" );
-  const bool isheic = (0 == memcmp( heic_mn, data + 4, sizeof(heic_mn) ));
-  
-  
-  // Wt::Utils::guessImageMimeTypeData(<#const std::vector<unsigned char> &header#>)
-  
-  if( iszip )
-  {
-    //zip (but can be xlsx, pptx, docx, odp, jar, apk) 50 4B 03 04
-    WText *t = contents->addNew<WText>( WString::tr("smm-invalid-zip") );
-    t->addStyleClass( "NonSpecOtherFile" );
-    
-    add_undo_redo();
-    return true;
-  }//if( iszip )
-  
-  if( israr || istar || iszip7 || isgz )
-  {
-    WText *t = contents->addNew<WText>( WString::tr("smm-unsupported-archive") );
-    t->addStyleClass( "NonSpecOtherFile" );
-    
-    add_undo_redo();
-    
-    return true;
-  }//if( israr || istar || iszip7 || isgz )
-  
-  
-  if( ispdf | isps | istif )
-  {
-    WText *t = contents->addNew<WText>( WString::tr("smm-unsupported-document") );
-    t->addStyleClass( "NonSpecOtherFile" );
-    
-    add_undo_redo();
-    
-    return true;
-  }//if( ispdf | isps | istif )
-  
-  
+  const bool isheic = (headerLen >= 4 + sizeof(heic_mn))
+                       && (0 == memcmp( heic_mn, header + 4, sizeof(heic_mn) ));
+
   if( isgif || isjpg || ispng || isbmp || issvg || isheic )
   {
-    const bool decode_raw = (isgif || isjpg || ispng);
-    
-    const char *mimetype = "";
-    if( isgif ) mimetype = "image/gif";
-    else if( isjpg ) mimetype = "image/jpeg";
-    else if( ispng ) mimetype = "image/png";
-    else if( isbmp ) mimetype = "image/bmp";
-    else if( issvg ) mimetype = "image/svg+xml";
-    else if( isheic ) mimetype = "image/heic";
-    
-    title->setText( WString::tr("smm-image-file") );
-    
-    dialog->contents()->addNew<UploadedImgDisplay>( m_viewer, displayName, mimetype, filesize, infile, dialog, type );
-    
-    add_undo_redo();
-    
-    return true;
-  }//if( isgif || isjpg || ispng || isbmp )
+    result.kind = NonSpecFileKind::Image;
+    if( isgif )       result.imageMimeType = "image/gif";
+    else if( isjpg )  result.imageMimeType = "image/jpeg";
+    else if( ispng )  result.imageMimeType = "image/png";
+    else if( isbmp )  result.imageMimeType = "image/bmp";
+    else if( issvg )  result.imageMimeType = "image/svg+xml";
+    else if( isheic ) result.imageMimeType = "image/heic";
+    return result;
+  }
 
-  //Check if CSV giving peak ROIs.
-  auto currdata = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  
-  const bool possible_peak_csv = ( currdata
-                                  //&& SpecUtils::icontains( SpecUtils::file_extension(displayName), "csv" )
-                                  && header_contains("Centroid")
+  // --- Peak CSV (InterSpec/PeakEasy or GADRAS). State-gate (currdata) is checked by caller. ---
+  const bool possible_peak_csv = ( header_contains("Centroid")
                                   && header_contains("Net_Area")
                                   && header_contains("FWHM") );
-  
-  const bool possible_gadras_peak_csv = ( currdata
-                                  //&& SpecUtils::icontains( SpecUtils::file_extension(displayName), "csv" )
-                                  && header_contains("Energy(keV)")
+
+  const bool possible_gadras_peak_csv = ( header_contains("Energy(keV)")
                                   && header_contains("Rate(cps)")
                                   && header_contains("FWHM(keV)")
-                                  && header_contains("Centroid"));
-  
-  
-  if( possible_peak_csv || possible_gadras_peak_csv )
+                                  && header_contains("Centroid") );
+
+  if( possible_gadras_peak_csv )
   {
-    try
-    {
-      const std::string seessionid = wApp->sessionId();
-      const vector<PeakDef> orig_peaks = m_viewer->peakModel()->peakVec();
-      
-      if( possible_peak_csv )
-      {
-        const vector<PeakDef> candidate_peaks
-                                      = PeakModel::csv_to_candidate_fit_peaks(currdata, infile);
-        
-        // For peaks from a InterSpec/PeakEasy CSV file, we will re-fit the peaks, as in practice
-        //  they might not be from this exact spectrum file.
-        shared_ptr<SpecMeas> fgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-        shared_ptr<const PeakFitDetPrefs> csvFitPrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
-        if( !csvFitPrefs && fgMeas && fgMeas->detector() )
-          csvFitPrefs = fgMeas->detector()->peakFitDetPrefs();
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, csvFitPrefs, seessionid](){
-          PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
-                                                 orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, csvFitPrefs, seessionid );
-        } ) );
-      }else
-      {
-        assert( possible_gadras_peak_csv );
-        
-        const vector<PeakDef> candidate_peaks = PeakModel::gadras_peak_csv_to_peaks(currdata, infile);
-        
-        shared_ptr<SpecMeas> gadrasFgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
-        shared_ptr<const PeakFitDetPrefs> gadrasFitPrefs = gadrasFgMeas ? gadrasFgMeas->peakFitDetPrefs() : nullptr;
-        shared_ptr<const DetectorPeakResponse> gadrasDrf = gadrasFgMeas ? gadrasFgMeas->detector() : nullptr;
-        if( !gadrasFitPrefs && gadrasDrf )
-          gadrasFitPrefs = gadrasDrf->peakFitDetPrefs();
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=, gadrasFitPrefs=gadrasFitPrefs](){
-          PeakSearchGuiUtils::prepare_and_add_gadras_peaks( currdata, candidate_peaks,
-                                                 orig_peaks, gadrasFitPrefs, gadrasDrf, seessionid );
-        } ) );
-      }//if( possible_peak_csv )
-      
-      
-      delete dialog;
+    result.kind = NonSpecFileKind::PeakCsvGadras;
+    return result;
+  }
+  if( possible_peak_csv )
+  {
+    result.kind = NonSpecFileKind::PeakCsvInterSpec;
+    return result;
+  }
 
-      return true;
-    }catch( exception &e )
-    {
-      WText *errort = contents->addNew<WText>( WString::tr("smm-invalid-peak-csv") );
-      errort->addStyleClass( "NonSpecError" );
-
-      errort = contents->addNew<WText>( string(e.what()) );
-      errort->setAttributeValue( "style", "color: red; " );
-      
-      add_undo_redo();
-      
-      return true;
-    }//try / catch get candidate peaks )
-  }//if( we could possible care about propagating peaks from a CSV file )
-  
-  
-  // Check if this is a standalone PeakFitDetPrefs XML file.
+  // --- Standalone PeakFitDetPrefs XML ---
   {
     const int pfp_pos = position_in_header( "<PeakFitDetPrefs" );
-    if( (pfp_pos >= 0) && (pfp_pos <= 20) && (filesize < 10*1024) )
+    if( (pfp_pos >= 0) && (pfp_pos <= 20) && (fileSize < 10*1024) )
     {
-      try
-      {
-        rapidxml::file<char> input_file( infile );
-        rapidxml::xml_document<char> doc;
-        doc.parse<rapidxml::parse_default>( input_file.data() );
-
-        const rapidxml::xml_node<char> *node = doc.first_node( "PeakFitDetPrefs" );
-        if( !node )
-          throw runtime_error( "No PeakFitDetPrefs node" );
-
-        shared_ptr<PeakFitDetPrefs> prefs = make_shared<PeakFitDetPrefs>();
-        prefs->fromXml( node );
-        prefs->m_source = PeakFitDetPrefs::LoadingSource::UserInputInGui;
-
-        shared_ptr<SpecMeas> foreground = m_viewer
-          ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
-          : nullptr;
-
-        if( !foreground )
-        {
-          passMessage( WString::tr( "smm-no-foreground-for-prefs" ), 2 );
-        }
-        else
-        {
-          foreground->setPeakFitDetPrefs( prefs );
-          m_viewer->peakFitDetPrefsChanged().emit();
-          passMessage( WString::tr( "smm-loaded-peak-fit-prefs" ), 0 );
-        }
-
-        delete dialog;
-        return true;
-      }catch( std::exception & )
-      {
-        // Not a valid PeakFitDetPrefs XML - fall through to other checks
-        infile.clear();
-        infile.seekg( 0 );
-      }
-    }//if( candidate PeakFitDetPrefs XML )
-  }
-
-  // Check if this is an InterSpec exported DRF CSV, or XML file.
-  const bool rel_eff_csv_drf = header_contains( "# Detector Response Function" );
-  const int xml_drf_pos = position_in_header( "<DetectorPeakResponse" );
-  
-  if( rel_eff_csv_drf || ((xml_drf_pos >= 0) && (xml_drf_pos <= 20)) )
-  {
-    shared_ptr<DetectorPeakResponse> det;
-    
-    if( rel_eff_csv_drf )
-    {
-      det = DrfSelect::parseInterSpecRelEffCsvFile( fileLocation );
-    }else
-    {
-      try
-      {
-        if( filesize > 100*1024 ) //if larger than 100 KB, probably not a DRF
-          throw runtime_error( "To large to be XML file" );
-          
-        rapidxml::file<char> input_file( infile );
-        
-        rapidxml::xml_document<char> doc;
-        doc.parse<rapidxml::parse_default>( input_file.data() );
-        auto *node = doc.first_node( "DetectorPeakResponse" );
-        if( !node )
-          throw runtime_error( "No DetectorPeakResponse node" );
-        
-        det = make_shared<DetectorPeakResponse>();
-        det->fromXml( node );
-      }catch( std::exception &e )
-      {
-        det.reset();
-        log("info") << "Failed to parse perspective XML DRF file as DRF: " << e.what();
-      }
-    }//if( rel_eff_csv_drf ) / else XML DRF
-    
-    if( det && det->isValid() )
-    {
-      // TODO: generate a eff plot, and basic info, and display; probably by refactoring DrfSelect::updateChart()
-      // TODO: Ask user if they want to use DRF; if so save to `InterSpec::writableDataDirectory() + "UploadedDrfs"`
-      // TODO: handle GADRAS style Efficiency.csv files
-      // TODO: allow users to rename the DRF.
-      
-      const string name = Wt::Utils::htmlEncode( det->name() );
-      DrfSelect::createChooseDrfDialog( {det}, WString::tr("smm-file-is-drf").arg(name), "" );
-      
-      delete dialog;
-      
-      return true;
+      result.kind = NonSpecFileKind::PeakFitDetPrefsXml;
+      return result;
     }
-  }//if( maybe a drf )
-  
-  
-  // Check if this is TSV/CSV file containing multiple DRFs
-  if( header_contains( "Relative Eff" )
-     && handleMultipleDrfCsv(infile, displayName, fileLocation) )
-  {
-    delete dialog;
-    return true;
   }
-  
-  // Check if this is TSV/CSV file containing multiple DRFs
-  if( header_contains( "Detector ID" )
-     && handleGammaQuantDrfCsv(infile, displayName, fileLocation) )
+
+  // --- Single DRF: InterSpec rel-eff CSV or <DetectorPeakResponse> XML ---
+  if( header_contains( "# Detector Response Function" ) )
   {
-    delete dialog;
-    return true;
+    result.kind = NonSpecFileKind::DrfRelEffCsv;
+    return result;
   }
-  
-  // Check if this is a PeakEasy CALp file
-  if( currdata
-     && header_contains( "CALp File" )
-     && handleCALpFile(infile, dialog, false) )
   {
-    return true;
+    const int xml_drf_pos = position_in_header( "<DetectorPeakResponse" );
+    if( (xml_drf_pos >= 0) && (xml_drf_pos <= 20) )
+    {
+      result.kind = NonSpecFileKind::DrfXml;
+      return result;
+    }
   }
-  
+
+  // --- Multi-DRF / GammaQuant DRF CSV ---
+  if( header_contains( "Relative Eff" ) )
+  {
+    result.kind = NonSpecFileKind::DrfMultipleCsv;
+    return result;
+  }
+  if( header_contains( "Detector ID" ) )
+  {
+    result.kind = NonSpecFileKind::DrfGammaQuantCsv;
+    return result;
+  }
+
+  // --- CALp file. State-gate (currdata) is checked by caller. ---
+  if( header_contains( "CALp File" ) )
+  {
+    result.kind = NonSpecFileKind::CalpFile;
+    return result;
+  }
+
 #if( USE_REL_ACT_TOOL )
-  if( currdata
-     && header_contains( "<RelActCalcAuto " )
-     && handleRelActAutoXmlFile(infile, dialog) )
+  // --- Isotopics-by-nuclide RelActCalcAuto XML.  State-gate (currdata) checked by caller. ---
+  if( header_contains( "<RelActCalcAuto " ) )
   {
-    return true;
+    result.kind = NonSpecFileKind::RelActAutoXml;
+    return result;
   }
 #endif
-  
-  // Check if a .ECC file from ISOCS, or a .outx file from ANGLE
-  if( (header_contains("SGI_template") || header_contains("ISOCS_file_name")
-       || header_contains("<angle"))
-     && handleEccFile(infile, dialog) )
+
+  // --- ISOCS .ECC file, or ANGLE .outx file ---
+  if( header_contains("SGI_template") || header_contains("ISOCS_file_name")
+     || header_contains("<angle") )
   {
-    add_undo_redo();
+    result.kind = NonSpecFileKind::EccOrOutxFile;
+    return result;
+  }
 
-    return true;
-  }//if( a .ECC file from ISOCS, or .outx from ANGLE )
-
-  // Check if this is an efficiency CSV file - require both an energy-like and efficiency-like
-  //  column name on the same comma/tab-delimited line in the header.
-  if( (header_line_has_both("en", "eff")    // e.g., "Energy, Efficiency" or "Energy[keV],...,Eff,..."
-       || header_contains("energy,peak,pcom") )   // GADRAS Efficiency.csv
-     && handleEfficiencyCsvFile(infile, dialog) )
+  // --- Efficiency CSV: GADRAS Efficiency.csv / gamEff CSV / Run_effoutput CSV ---
+  if( header_line_has_both("en", "eff")
+     || header_contains("energy,peak,pcom") )
   {
-    add_undo_redo();
-    return true;
-  }//if( an efficiency CSV file )
+    result.kind = NonSpecFileKind::EfficiencyCsv;
+    return result;
+  }
 
+  // --- Shielding/Source fit XML ---
   if( header_contains("<ShieldingSourceFit") && header_contains("<Geometry")
-     && (filesize > 128) && (filesize < 1024*1024)
-     && handleShieldingSourceFile(infile, dialog) )
+     && (fileSize > 128) && (fileSize < 1024*1024) )
   {
-    add_undo_redo();
-    
-    return true;
-  }//if( Shielding/Source fit XML file )
+    result.kind = NonSpecFileKind::ShieldingSourceXml;
+    return result;
+  }
 
-  if( m_viewer->makeDrfWindow() )
+  // --- Source.lib (last-ditch heuristic check; state-gate on MakeDRF window is in caller). ---
   {
-    //Check if source lib file.  These are text files, with each line defining a source,
-    //  and looking like:
-    //  "22NA_01551910  5.107E+04  25-Aug-2022 Some Remarks
-    string datastr;
-    datastr.resize( boost::size(data) + 1, '\0' );
-    memcpy( &(datastr[0]), (const char *)&data[0], boost::size(data) );
-    
-    stringstream strm(datastr);
-    if( SrcLibLineInfo::is_candidate_src_lib( strm )
-       && handleSourceLibFile(infile, dialog) )
+    const string datastr( (const char *)header, headerLen );
+    stringstream strm( datastr );
+    if( SrcLibLineInfo::is_candidate_src_lib( strm ) )
     {
-      return true;
-    }//if( candidate source lib file )
-    
-  }//if( m_viewer->makeDrfWindow() )
+      result.kind = NonSpecFileKind::SourceLib;
+      return result;
+    }
+  }
 
-  
-  delete dialog;
-  
+  return result;  // Unknown
+}
+
+
+bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
+                                             const std::string &fileLocation,
+                                             SpecUtils::SpectrumType type )
+{
+#ifdef _WIN32
+  const std::wstring wpathstr = SpecUtils::convert_from_utf8_to_utf16(fileLocation);
+  std::ifstream infile( wpathstr.c_str(), ios::in | ios::binary );
+#else
+  std::ifstream infile( fileLocation.c_str(), ios::in | ios::binary );
+#endif
+
+  if( !infile )
+    return false;
+
+  infile.seekg( 0, ios::end );
+  const size_t filesize = infile.tellg();
+  infile.seekg( 0 );
+
+  if( filesize <= 128 )
+  {
+    passMessage( WString::tr("smm-empty-file"), 2 );
+    return true;
+  }
+
+  uint8_t header[1024] = { 0x0 };
+  const size_t headerLen = std::min( sizeof(header), filesize );
+
+  if( !infile.read( (char *)header, headerLen ) )
+  {
+    passMessage( WString::tr("smm-failed-reading-nonspec-file"), 2 );
+    return true;
+  }
+  infile.seekg( 0 );
+
+  const NonSpecFileClassification cls
+                = classifyNonSpecFileHeader( header, headerLen, filesize );
+
+  const shared_ptr<const SpecUtils::Measurement> currdata
+                = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+
+  switch( cls.kind )
+  {
+    case NonSpecFileKind::Empty:
+    case NonSpecFileKind::ReadFailed:
+      // Already handled above; here only for switch exhaustiveness.
+      return true;
+
+    case NonSpecFileKind::Icd2:
+      showNonSpecInfoDialog( WString::tr("smm-icd2"), displayName, filesize, infile, type );
+      return true;
+
+    case NonSpecFileKind::ArchiveZip:
+      showNonSpecInfoDialog( WString::tr("smm-invalid-zip"), displayName, filesize, infile, type );
+      return true;
+
+    case NonSpecFileKind::ArchiveOther:
+      showNonSpecInfoDialog( WString::tr("smm-unsupported-archive"), displayName, filesize, infile, type );
+      return true;
+
+    case NonSpecFileKind::Document:
+      showNonSpecInfoDialog( WString::tr("smm-unsupported-document"), displayName, filesize, infile, type );
+      return true;
+
+    case NonSpecFileKind::Image:
+      showImageDialog( displayName, cls.imageMimeType, filesize, infile, type );
+      return true;
+
+    case NonSpecFileKind::PeakCsvInterSpec:
+    case NonSpecFileKind::PeakCsvGadras:
+      if( !currdata )
+        return false;
+      return tryFitPeaksFromCsv( cls.kind, infile, displayName, filesize, type );
+
+    case NonSpecFileKind::PeakFitDetPrefsXml:
+      return tryLoadPeakFitDetPrefsXml( infile );
+
+    case NonSpecFileKind::DrfRelEffCsv:
+    case NonSpecFileKind::DrfXml:
+      return tryLoadSingleDrf( cls.kind, fileLocation, infile );
+
+    case NonSpecFileKind::DrfMultipleCsv:
+      return handleMultipleDrfCsv( infile, displayName, fileLocation );
+
+    case NonSpecFileKind::DrfGammaQuantCsv:
+      return handleGammaQuantDrfCsv( infile, displayName, fileLocation );
+
+    case NonSpecFileKind::CalpFile:
+      if( !currdata )
+        return false;
+      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
+        [this, &infile]( SimpleDialog *d ){ return handleCALpFile( infile, d, false ); } );
+
+#if( USE_REL_ACT_TOOL )
+    case NonSpecFileKind::RelActAutoXml:
+      if( !currdata )
+        return false;
+      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
+        [this, &infile]( SimpleDialog *d ){ return handleRelActAutoXmlFile( infile, d ); } );
+#endif
+
+    case NonSpecFileKind::EccOrOutxFile:
+      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
+        [this, &infile]( SimpleDialog *d ){ return handleEccFile( infile, d ); } );
+
+    case NonSpecFileKind::EfficiencyCsv:
+      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
+        [this, &infile]( SimpleDialog *d ){ return handleEfficiencyCsvFile( infile, d ); } );
+
+    case NonSpecFileKind::ShieldingSourceXml:
+      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
+        [this, &infile]( SimpleDialog *d ){ return handleShieldingSourceFile( infile, d ); } );
+
+    case NonSpecFileKind::SourceLib:
+      if( !m_viewer->makeDrfWindow() )
+        return false;
+      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
+        [this, &infile]( SimpleDialog *d ){ return handleSourceLibFile( infile, d ); } );
+
+#if( !USE_REL_ACT_TOOL )
+    case NonSpecFileKind::RelActAutoXml:
+      return false;  // Should not occur — classifier skips this kind when USE_REL_ACT_TOOL is off.
+#endif
+
+    case NonSpecFileKind::Unknown:
+      return false;
+  }
   return false;
-}//void handleNonSpectrumFile(...)
+}//bool handleNonSpectrumFile(...)
+
 
 
 void SpecMeasManager::closeNonSpecFileDialog()
 {
-  //assert( m_nonSpecFileDialog );
   if( !m_nonSpecFileDialog )
     return;
 
   const string dialog_id = m_nonSpecFileDialog->id();
   wApp->doJavaScript( "document.getElementById('" + dialog_id + "').style.display='none'; document.querySelectorAll('.Wt-dialogcover').forEach(function(e){e.style.display='none';});" );
-  
-  m_nonSpecFileDialog->accept(); //This will delete the dialog, and cause `m_nonSpecFileDialog` to be set to nullptr
-  m_nonSpecFileDialog = nullptr;
+
+  // `accept()` synchronously fires `finished()`, whose handlers will (a) null out
+  // `m_nonSpecFileDialog` (the lambda registered when the dialog was created) and
+  // (b) schedule `SimpleDialog::deleteSelf` via WServer::post.  No explicit
+  // `= nullptr;` is needed here — the observing_ptr auto-clears.
+  m_nonSpecFileDialog->accept();
 }//void closeNonSpecFileDialog()
+
+
+void SpecMeasManager::registerNonSpecDialogUndoRedo( SimpleDialog *dialog,
+                                                     const std::string &displayName,
+                                                     const size_t fileSize,
+                                                     std::ifstream &infile,
+                                                     const SpecUtils::SpectrumType type )
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo )
+    return;
+
+  auto closeDialog = [](){
+    InterSpec *interspec = InterSpec::instance();
+    SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
+    assert( manager );
+    if( manager )
+      manager->closeNonSpecFileDialog();
+  };
+
+  std::function<void()> reOpenDialog;
+
+  // If input size isnt too horrible large, we'll save it in memory and create a redo point
+  if( fileSize <= 10*1024*1024 )
+  {
+    infile.clear();
+    infile.seekg(0, std::ios::beg);
+
+    auto file_data = make_shared<vector<uint8_t>>( fileSize, '\0' );
+    infile.read( (char *)(&((*file_data)[0])), static_cast<streamsize>(fileSize) );
+    infile.clear();
+    infile.seekg(0, std::ios::beg);
+
+    // If file is more than 64 kb (arbitrarily chosen), we will only keep the data in memory for
+    //  ~5 minutes
+    std::weak_ptr<vector<uint8_t>> wk_ptr = file_data;
+    if( fileSize > 64*1024 )
+    {
+      shared_ptr<vector<uint8_t>> data_ptr = file_data;
+      file_data = nullptr;
+
+      auto clear_mem = [data_ptr](){
+        cout << "Clearing memory of file: " << data_ptr.use_count() << endl;
+      };
+
+      WServer::instance()->schedule( std::chrono::milliseconds(5*60*1000), wApp->sessionId(), clear_mem, clear_mem );
+    }
+
+    const std::string dispname = displayName;
+
+    reOpenDialog = [wk_ptr, file_data, dispname, type](){
+      shared_ptr<vector<uint8_t>> data_ptr = wk_ptr.lock();
+      if( !data_ptr )
+      {
+        cout << "Was NOT able to get `file_data` - must have been cleared in memory" << endl;
+        return;
+      }else
+      {
+        // Not sure if we need to force the compiler to potentially keep `file_data` around
+        cout << "file_data.use_count=" << file_data.use_count() << endl;
+      }
+
+      InterSpec *interspec = InterSpec::instance();
+      SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
+      assert( interspec && manager );
+      if( !manager )
+        return;
+
+      const string tmpdir = SpecUtils::temp_dir();
+      const string tmpname = SpecUtils::temp_file_name( "non_spec_file", tmpdir );
+
+      bool wrote_tmp_file = false;
+
+      {
+#ifdef _WIN32
+        const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(tmpname);
+        ofstream outfilestrm( wtmpfile.c_str(), ios::out | ios::binary );
+#else
+        ofstream outfilestrm( tmpname.c_str(), ios::out | ios::binary );
+#endif
+        wrote_tmp_file = (outfilestrm
+                            && outfilestrm.write( (char *)data_ptr->data(), data_ptr->size()) );
+      }
+
+      if( wrote_tmp_file )
+      {
+        try
+        {
+          manager->handleNonSpectrumFile( dispname, tmpname, type );
+        }catch( std::exception &e )
+        {
+          cerr << "Unexpected exception from `handleNonSpectrumFile(...)`" << endl;
+        }
+
+        SpecUtils::remove_file( tmpname );
+      }else
+      {
+        cerr << "Failed to write '" << dispname << "' to temporary file." << endl;
+      }
+    };//reOpenDialog
+  }//if( fileSize <= 10 MB )
+
+  if( undoRedo->canAddUndoRedoNow() )
+    undoRedo->addUndoRedoStep( closeDialog, reOpenDialog, "Open non-spectrum file dialog." );
+
+  // Find close/cancel button to register the inverse step when the user actively closes.
+  vector<WWidget *> btns;
+  if( dialog->footer() )
+    btns = dialog->footer()->children();
+  for( WWidget *w : btns )
+  {
+    WPushButton *btn = dynamic_cast<WPushButton *>( w );
+    if( !btn || ((btn->text().key() != "Close") && (btn->text().key() != "Cancel")) )
+    {
+      // TODO: We could add this undo/redo step for all buttons, so in the case the
+      //       user accepted the DRF, or peaks to fit, or whatever, that action should already
+      //       be hooked up to undo/redo, but right now if we hooked it up, they would have to
+      //       do undo again...  maybe when we aggregate multiple undo/redo steps into a single
+      //       one every WApplication event loop, then we can enable this.
+      continue;
+    }
+
+    btn->clicked().connect( btn, [=](){
+      // The `undo` call wont do anything, since it is currently bound to a now deleted dialog,
+      //  but leaving in in case we upgrade things a bit in the future to have the dialog tracked
+      //  by SpecMeasManager.
+      undoRedo->addUndoRedoStep( reOpenDialog, closeDialog, "Close non-spectrum file dialog." );
+    } );
+  }//for( WWidget *w : btns )
+}//registerNonSpecDialogUndoRedo
+
+
+SimpleDialog *SpecMeasManager::createBareNonSpecDialog()
+{
+  if( m_nonSpecFileDialog )
+    closeNonSpecFileDialog();
+
+  SimpleDialog *dialog = SimpleDialog::make();
+  m_nonSpecFileDialog = dialog;
+
+  m_nonSpecFileDialog->finished().connect( dialog, [dialog]( Wt::DialogCode ){
+    InterSpec *interspec = InterSpec::instance();
+    SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
+    if( manager && manager->m_nonSpecFileDialog.get() == dialog )
+      manager->m_nonSpecFileDialog = nullptr;
+  } );
+
+  return dialog;
+}//createBareNonSpecDialog()
+
+
+SimpleDialog *SpecMeasManager::showNonSpecInfoDialog( const Wt::WString &bodyText,
+                                                      const std::string &displayName,
+                                                      const size_t fileSize,
+                                                      std::ifstream &infile,
+                                                      const SpecUtils::SpectrumType type )
+{
+  SimpleDialog *dialog = createBareNonSpecDialog();
+
+  dialog->addButton( WString::tr("Close") );
+
+  WContainerWidget *contents = dialog->contents();
+  contents->addStyleClass( "NonSpecDialogBody" );
+
+  WText *title = contents->addNew<WText>( WString::tr("smm-not-spec-file") );
+  title->addStyleClass( "title" );
+
+  WText *body = contents->addNew<WText>( bodyText );
+  body->addStyleClass( "NonSpecOtherFile" );
+
+  registerNonSpecDialogUndoRedo( dialog, displayName, fileSize, infile, type );
+
+  return dialog;
+}//showNonSpecInfoDialog(...)
+
+
+SimpleDialog *SpecMeasManager::showImageDialog( const std::string &displayName,
+                                                const char *mimeType,
+                                                const size_t fileSize,
+                                                std::ifstream &infile,
+                                                const SpecUtils::SpectrumType type )
+{
+  SimpleDialog *dialog = createBareNonSpecDialog();
+
+  dialog->addButton( WString::tr("Close") );
+
+  WContainerWidget *contents = dialog->contents();
+  contents->addStyleClass( "NonSpecDialogBody" );
+
+  WText *title = contents->addNew<WText>( WString::tr("smm-image-file") );
+  title->addStyleClass( "title" );
+
+  contents->addNew<UploadedImgDisplay>( m_viewer, displayName, mimeType, fileSize, infile, dialog, type );
+
+  registerNonSpecDialogUndoRedo( dialog, displayName, fileSize, infile, type );
+
+  return dialog;
+}//showImageDialog(...)
+
+
+bool SpecMeasManager::runWithNonSpecDialog( const std::string &displayName,
+                                            const size_t fileSize,
+                                            std::ifstream &infile,
+                                            const SpecUtils::SpectrumType type,
+                                            const bool registerUndoRedoOnSuccess,
+                                            std::function<bool(SimpleDialog *)> body )
+{
+  SimpleDialog *dialog = createBareNonSpecDialog();
+
+  const bool accepted = body( dialog );
+
+  if( !accepted )
+  {
+    closeNonSpecFileDialog();
+    return false;
+  }
+
+  if( registerUndoRedoOnSuccess )
+    registerNonSpecDialogUndoRedo( dialog, displayName, fileSize, infile, type );
+
+  return true;
+}//runWithNonSpecDialog(...)
+
+
+bool SpecMeasManager::tryFitPeaksFromCsv( const NonSpecFileKind kind,
+                                          std::ifstream &infile,
+                                          const std::string &displayName,
+                                          const size_t fileSize,
+                                          const SpecUtils::SpectrumType type )
+{
+  const shared_ptr<const SpecUtils::Measurement> currdata
+                      = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  assert( currdata );  // caller gates on foreground presence
+  if( !currdata )
+    return false;
+
+  try
+  {
+    const std::string sessionid = wApp->sessionId();
+    const vector<PeakDef> orig_peaks = m_viewer->peakModel()->peakVec();
+
+    if( kind == NonSpecFileKind::PeakCsvInterSpec )
+    {
+      const vector<PeakDef> candidate_peaks
+                              = PeakModel::csv_to_candidate_fit_peaks( currdata, infile );
+
+      // For peaks from a InterSpec/PeakEasy CSV file, we re-fit the peaks, as in practice
+      //  they might not be from this exact spectrum file.
+      const shared_ptr<SpecMeas> fgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+      shared_ptr<const PeakFitDetPrefs> csvFitPrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
+      if( !csvFitPrefs && fgMeas && fgMeas->detector() )
+        csvFitPrefs = fgMeas->detector()->peakFitDetPrefs();
+      Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, csvFitPrefs, sessionid](){
+        PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
+                                               orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, csvFitPrefs, sessionid );
+      } ) );
+    }
+    else
+    {
+      assert( kind == NonSpecFileKind::PeakCsvGadras );
+
+      const vector<PeakDef> candidate_peaks = PeakModel::gadras_peak_csv_to_peaks( currdata, infile );
+
+      const shared_ptr<SpecMeas> gadrasFgMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+      shared_ptr<const PeakFitDetPrefs> gadrasFitPrefs = gadrasFgMeas ? gadrasFgMeas->peakFitDetPrefs() : nullptr;
+      const shared_ptr<const DetectorPeakResponse> gadrasDrf = gadrasFgMeas ? gadrasFgMeas->detector() : nullptr;
+      if( !gadrasFitPrefs && gadrasDrf )
+        gadrasFitPrefs = gadrasDrf->peakFitDetPrefs();
+      Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=, gadrasFitPrefs=gadrasFitPrefs](){
+        PeakSearchGuiUtils::prepare_and_add_gadras_peaks( currdata, candidate_peaks,
+                                               orig_peaks, gadrasFitPrefs, gadrasDrf, sessionid );
+      } ) );
+    }
+
+    return true;
+  }
+  catch( std::exception &e )
+  {
+    // Parse failure — show a dialog with the standard "Not a spectrum file" title plus the
+    // error text styled in red, and register the undo/redo step so the user can redo to
+    // re-see the error.
+    SimpleDialog *dialog = createBareNonSpecDialog();
+    dialog->addButton( WString::tr("Close") );
+
+    WContainerWidget *contents = dialog->contents();
+    contents->addStyleClass( "NonSpecDialogBody" );
+
+    WText *title = contents->addNew<WText>( WString::tr("smm-not-spec-file") );
+    title->addStyleClass( "title" );
+
+    WText *errort = contents->addNew<WText>( WString::tr("smm-invalid-peak-csv") );
+    errort->addStyleClass( "NonSpecError" );
+
+    WText *detail = contents->addNew<WText>( string(e.what()) );
+    detail->setAttributeValue( "style", "color: red; " );
+
+    registerNonSpecDialogUndoRedo( dialog, displayName, fileSize, infile, type );
+
+    return true;
+  }
+}//tryFitPeaksFromCsv(...)
+
+
+bool SpecMeasManager::tryLoadPeakFitDetPrefsXml( std::ifstream &infile )
+{
+  try
+  {
+    rapidxml::file<char> input_file( infile );
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_default>( input_file.data() );
+
+    const rapidxml::xml_node<char> *node = doc.first_node( "PeakFitDetPrefs" );
+    if( !node )
+      throw runtime_error( "No PeakFitDetPrefs node" );
+
+    shared_ptr<PeakFitDetPrefs> prefs = make_shared<PeakFitDetPrefs>();
+    prefs->fromXml( node );
+    prefs->m_source = PeakFitDetPrefs::LoadingSource::UserInputInGui;
+
+    const shared_ptr<SpecMeas> foreground = m_viewer
+        ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground )
+        : nullptr;
+
+    if( !foreground )
+    {
+      passMessage( WString::tr( "smm-no-foreground-for-prefs" ), 2 );
+    }
+    else
+    {
+      foreground->setPeakFitDetPrefs( prefs );
+      m_viewer->peakFitDetPrefsChanged().emit();
+      passMessage( WString::tr( "smm-loaded-peak-fit-prefs" ), 0 );
+    }
+
+    return true;
+  }
+  catch( std::exception & )
+  {
+    infile.clear();
+    infile.seekg( 0 );
+    return false;
+  }
+}//tryLoadPeakFitDetPrefsXml(...)
+
+
+bool SpecMeasManager::tryLoadSingleDrf( const NonSpecFileKind kind,
+                                        const std::string &fileLocation,
+                                        std::ifstream &infile )
+{
+  shared_ptr<DetectorPeakResponse> det;
+
+  if( kind == NonSpecFileKind::DrfRelEffCsv )
+  {
+    det = DrfSelect::parseInterSpecRelEffCsvFile( fileLocation );
+  }
+  else
+  {
+    assert( kind == NonSpecFileKind::DrfXml );
+
+    // Re-read fileSize from the stream; the classifier checked the marker offset only.
+    infile.clear();
+    infile.seekg( 0, ios::end );
+    const size_t filesize = static_cast<size_t>( infile.tellg() );
+    infile.clear();
+    infile.seekg( 0 );
+
+    try
+    {
+      if( filesize > 100*1024 )  // if larger than 100 KB, probably not a DRF
+        throw runtime_error( "To large to be XML file" );
+
+      rapidxml::file<char> input_file( infile );
+
+      rapidxml::xml_document<char> doc;
+      doc.parse<rapidxml::parse_default>( input_file.data() );
+      const rapidxml::xml_node<char> *node = doc.first_node( "DetectorPeakResponse" );
+      if( !node )
+        throw runtime_error( "No DetectorPeakResponse node" );
+
+      det = make_shared<DetectorPeakResponse>();
+      det->fromXml( node );
+    }
+    catch( std::exception &e )
+    {
+      det.reset();
+      log("info") << "Failed to parse perspective XML DRF file as DRF: " << e.what();
+    }
+  }
+
+  if( !det || !det->isValid() )
+    return false;
+
+  // TODO: generate a eff plot, and basic info, and display; probably by refactoring DrfSelect::updateChart()
+  // TODO: Ask user if they want to use DRF; if so save to `InterSpec::writableDataDirectory() + "UploadedDrfs"`
+  // TODO: handle GADRAS style Efficiency.csv files
+  // TODO: allow users to rename the DRF.
+
+  const string name = Wt::Utils::htmlEncode( det->name() );
+  DrfSelect::createChooseDrfDialog( {det}, WString::tr("smm-file-is-drf").arg(name), "" );
+
+  return true;
+}//tryLoadSingleDrf(...)
 
 
 bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
@@ -2792,14 +2973,17 @@ bool SpecMeasManager::handleGammaQuantDrfCsv( std::istream &input,
 
 bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog, bool autoApply )
 {
+  // Replace whatever the dialog currently holds with our standard CALp frame:
+  // an empty WGridLayout under a "Not a spectrum file" title, plus a Close button.
+  // The clear() calls are no-ops when called from `runWithNonSpecDialog` (which passes a
+  // bare dialog) but are essential when called from EnergyCalTool's CALp-upload dialog
+  // (which arrives pre-populated with "Select a CALp file" / a file upload).
   WGridLayout *stretcher = nullptr;
   WPushButton *closeButton = nullptr;
-  
-  // Make a lamda to clear dialog, if we are going to alter it
-  auto clear_dialog = [&](){
+  auto build_dialog_frame = [&](){
     dialog->contents()->clear();
     dialog->footer()->clear();
-    
+
     closeButton = dialog->addButton( WString::tr("Close") );
     auto stretcherOwned = std::make_unique<WGridLayout>();
     stretcher = stretcherOwned.get();
@@ -2810,86 +2994,74 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     dialog->contents()->setOverflow( Overflow::Hidden, Wt::Orientation::Horizontal );
 
     dialog->contents()->setLayout( std::move(stretcherOwned) );
-    auto titleOwned = std::make_unique<WText>( WString::tr("smm-not-spec-file") );
-    titleOwned->addStyleClass( "title" );
-    stretcher->addWidget( std::move(titleOwned), 0, 0 );
-  };//clear_dialog lamda
-  
-  
-  auto currdata = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    WText *titleText = stretcher->addWidget( std::make_unique<WText>( WString::tr("smm-not-spec-file") ), 0, 0 );
+    titleText->addStyleClass( "title" );
+  };//build_dialog_frame lambda
+
+  // Helper: add a centered WText row to the stretcher.
+  auto add_centered_text = [&]( const WString &msg ){
+    WText *t = stretcher->addWidget( std::make_unique<WText>( msg ), stretcher->rowCount(), 0,
+                                      Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
+    t->setTextAlignment( Wt::AlignmentFlag::Center );
+    return t;
+  };
+
+
+  const shared_ptr<const SpecUtils::Measurement> currdata
+                = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   if( !currdata )
   {
-    clear_dialog();
-    assert( stretcher && closeButton );
-    
-    auto tOwned = std::make_unique<WText>( WString::tr("smm-CALp-no-fore") );
-    WText *t = tOwned.get();
-    stretcher->addWidget( std::move(tOwned), stretcher->rowCount(), 0,
-                          Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
-    t->setTextAlignment( Wt::AlignmentFlag::Center );
-    
+    build_dialog_frame();
+    add_centered_text( WString::tr("smm-CALp-no-fore") );
     return true;
-  }//if( !currdata )
-  
-  set<string> fore_gamma_dets;
+  }
+
   const shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
   const set<int> &fore_samples = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
   const vector<string> fore_dets = m_viewer->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
-  
+
   if( !foreground )
     return false;
 
   bool any_new_cal_is_poly_ish = false;
   const size_t num_display_channel = currdata->num_gamma_channels();
   map<string,shared_ptr<const SpecUtils::EnergyCalibration>> det_to_cal;
-  
+
   const std::streampos start_pos = infile.tellg();
-  
+
   while( infile.good() )
   {
     string name;
-    
+
     // Note that num_display_channel is for the displayed data - the individual detectors may
     //  have different numbers of channels - we'll fix this up after initially loading the cal
     //  (we need to know the detectors name the cal is for in order to fix it up)
     shared_ptr<SpecUtils::EnergyCalibration> cal;
-    
+
     try
     {
       cal = SpecUtils::energy_cal_from_CALp_file( infile, num_display_channel, name );
       assert( cal && cal->valid() );
-    }catch( std::exception &e )
+    }
+    catch( std::exception & )
     {
       // Display message to user to let them know it was a CALp file, but we couldn't use it.
-      //  TODO: improve this error message with details, ex if it was a lower-channel-energy CALp, and number of channels didnt match, we should display this to the user
-      
-      if( det_to_cal.empty() /* && SpecUtils::iends_with( displayName, "CALp" ) */ )
+      //  TODO: improve this error message with details, ex if it was a lower-channel-energy CALp,
+      //  and number of channels didnt match, we should display this to the user.
+      if( det_to_cal.empty() )
       {
         infile.seekg( start_pos, ios::beg );
-        
-        clear_dialog();
-        assert( stretcher && closeButton );
-        
-        auto tOwned = std::make_unique<WText>( WString::tr("smm-CALp-invalid") );
-        WText *t = tOwned.get();
-        stretcher->addWidget( std::move(tOwned), stretcher->rowCount(), 0,
-                              Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
-        t->setTextAlignment( Wt::AlignmentFlag::Center );
+
+        build_dialog_frame();
+        add_centered_text( WString::tr("smm-CALp-invalid") );
         dialog->contents()->setOverflow( Overflow::Visible,
                                          Wt::Orientation::Horizontal | Wt::Orientation::Vertical );
         return true;
-      }//if( we didnt get any calibrations )
-      
+      }
+
       break;
     }//try / catch
 
-    
-    if( !cal->valid() )
-    {
-      assert( 0 );
-      continue;
-    }
-    
     // The calibration may not be for the correct number of channels, for files that have detectors
     //  with different num channels; we'll check for this here and fix the calibration up for this
     //  case.
@@ -2898,94 +3070,164 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     {
       for( const int sample_num : fore_samples )
       {
-        const auto m = foreground->measurement(sample_num, name);
+        const shared_ptr<const SpecUtils::Measurement> m = foreground->measurement( sample_num, name );
         const size_t nchan = m ? m->num_gamma_channels() : size_t(0);
-        if( nchan > 3 )
+        if( nchan <= 3 )
+          continue;
+
+        if( nchan != num_display_channel )
         {
-          if( nchan != num_display_channel )
+          try
           {
-            try
+            switch( cal->type() )
             {
-              switch( cal->type() )
-              {
-                case SpecUtils::EnergyCalType::Polynomial:
-                case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-                  cal->set_polynomial( nchan, cal->coefficients(), cal->deviation_pairs() );
-                  break;
-                  
-                case SpecUtils::EnergyCalType::FullRangeFraction:
-                  cal->set_full_range_fraction( nchan, cal->coefficients(), cal->deviation_pairs() );
-                  break;
-                  
-                case SpecUtils::EnergyCalType::LowerChannelEdge:
-                case SpecUtils::EnergyCalType::InvalidEquationType:
-                  break;
-              }//switch( cal->type() )
-            }catch( std::exception &e )
-            {
-              cerr << "Failed to change number of channels for energy calibration: " << e.what() << endl;
+              case SpecUtils::EnergyCalType::Polynomial:
+              case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+                cal->set_polynomial( nchan, cal->coefficients(), cal->deviation_pairs() );
+                break;
+
+              case SpecUtils::EnergyCalType::FullRangeFraction:
+                cal->set_full_range_fraction( nchan, cal->coefficients(), cal->deviation_pairs() );
+                break;
+
+              case SpecUtils::EnergyCalType::LowerChannelEdge:
+              case SpecUtils::EnergyCalType::InvalidEquationType:
+                break;
             }
-          }//if( m->num_gamma_channels() != num_display_channel )
-          
-          break;
-        }//if( nchan > 3 )
-      }//for( const int sample_num : fore_samples )
+          }
+          catch( std::exception &e )
+          {
+            cerr << "Failed to change number of channels for energy calibration: " << e.what() << endl;
+          }
+        }//if( nchan != num_display_channel )
+
+        break;
+      }//for( sample_num )
     }//if( !name.empty() )
-    
+
     det_to_cal[name] = cal;
-  }//while( true )
-  
+  }//while( infile.good() )
+
   if( det_to_cal.empty() )
   {
     infile.seekg( start_pos, ios::beg );
     return false;
   }
-  
-  clear_dialog();
-  assert( stretcher && closeButton );
 
-  
-  // We will grab calibrations from our current foreground, to slightly better inform the user
-  //  TODO: do a similar thing for background and secondary spectra.
-  
+
+  // Decide which checkboxes (if any) we will need to present.  When `autoApply` is true and
+  // no checkboxes are needed, we can short-circuit and apply the calibration without ever
+  // building the dialog UI.
+  const shared_ptr<SpecMeas> back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
+  const shared_ptr<SpecMeas> second = m_viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
+
+  const bool needDisplaySamplesOnlyCb = (fore_samples.size() != foreground->sample_numbers().size());
+  const bool needApplyForegroundCb = ((back && (back != foreground)) || (second && (second != foreground)));
+  const bool needApplyBackgroundCb = (back && (back != foreground));
+  const bool needApplySecondaryCb = (second && (second != foreground) && (second != back));
+  const bool anyCheckboxes = (needDisplaySamplesOnlyCb || needApplyForegroundCb
+                              || needApplyBackgroundCb || needApplySecondaryCb);
+
+
+  // applyCalibration: applied either auto (no UI) or via the "Yes" button.  `cbs` carries the
+  // four optional checkbox pointers; when null, the corresponding spectrum gets the calibration
+  // unconditionally (foreground) or not at all (background/secondary).
+  struct ApplyCbs
+  {
+    WCheckBox *displaySamplesOnly = nullptr;
+    WCheckBox *foreground = nullptr;
+    WCheckBox *background = nullptr;
+    WCheckBox *secondary = nullptr;
+  };
+
+  auto applyCalibration = [det_to_cal]( const ApplyCbs &cbs ){
+    InterSpec *interspec = InterSpec::instance();
+    if( !interspec )
+      return;
+
+    int napplied = 0;
+
+    try
+    {
+      const bool all_detectors = true; // TODO: give user option whether to apply to all detectors or not
+      const bool all_samples = (!cbs.displaySamplesOnly || !cbs.displaySamplesOnly->isChecked());
+
+      EnergyCalTool *caltool = interspec->energyCalTool();
+      assert( caltool );
+      if( !caltool )
+        throw runtime_error( "Invalid EnergyCalTool" );
+
+      if( !cbs.foreground || cbs.foreground->isChecked() )
+      {
+        caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::Foreground, all_detectors, all_samples );
+        napplied += 1;
+      }
+
+      if( cbs.background && cbs.background->isChecked() )
+      {
+        caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::Background, all_detectors, all_samples );
+        napplied += 1;
+      }
+
+      if( cbs.secondary && cbs.secondary->isChecked() )
+      {
+        caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::SecondForeground, all_detectors, all_samples );
+        napplied += 1;
+      }
+    }
+    catch( std::exception &e )
+    {
+      const char *key = (napplied == 1) ? "smm-CALp-err-applying-single" : "smm-CALp-err-applying-mult";
+      passMessage( WString::tr(key).arg( e.what() ), WarningWidget::WarningMsgHigh );
+    }
+  };//applyCalibration lambda
+
+
+  if( autoApply && !anyCheckboxes )
+  {
+    applyCalibration( ApplyCbs{} );
+    dialog->done( Wt::DialogCode::Accepted );
+    return true;
+  }
+
+
+  // Build the description that goes between the title and the checkboxes.
   set<shared_ptr<const SpecUtils::EnergyCalibration>> fore_energy_cals;
-  //map<string,set<shared_ptr<const SpecUtils::EnergyCalibration>>> fore_meas_cals;
-  
+  set<string> fore_gamma_dets;
+
   for( const string &det_name : fore_dets )
   {
     for( const int sample : fore_samples )
     {
-      const auto m = foreground->measurement( sample, det_name );
-      if( m && m->num_gamma_channels() > 3 )
+      const shared_ptr<const SpecUtils::Measurement> m = foreground->measurement( sample, det_name );
+      if( m && (m->num_gamma_channels() > 3) )
       {
         fore_gamma_dets.insert( m->detector_name() );
         fore_energy_cals.insert( m->energy_calibration() );
-        //fore_meas_cals[det_name].insert( m->energy_calibration() );
       }
-    }//for( const int sample : fore_samples )
-  }//for( const string &det_name : fore_dets )
-  
+    }
+  }
+
   bool have_cal_for_all_dets = true;
   for( const string &det_name : fore_gamma_dets )
   {
-    if( !det_to_cal.count(det_name) )
+    if( !det_to_cal.count( det_name ) )
       have_cal_for_all_dets = false;
   }
-  
+
   // If we only have one calibration for our current data, or only one named detector, lets not
   //  care about matching names up exactly.
   if( (det_to_cal.size() == 1) && ((fore_energy_cals.size() == 1) || (fore_dets.size() == 1)) )
     have_cal_for_all_dets = true;
-  
-  WString msg = WString::tr("smm-CALp-contains-energy-cal");
-  
-  
+
+  WString msg = WString::tr( "smm-CALp-contains-energy-cal" );
+
   if( (det_to_cal.size() == 1) && det_to_cal.begin()->second )
   {
-    shared_ptr<const SpecUtils::EnergyCalibration> cal = det_to_cal.begin()->second;
+    const shared_ptr<const SpecUtils::EnergyCalibration> cal = det_to_cal.begin()->second;
     assert( cal );
     const SpecUtils::EnergyCalType type = cal->type();
-    
+
     switch( type )
     {
       case SpecUtils::EnergyCalType::Polynomial:
@@ -2995,33 +3237,31 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
         any_new_cal_is_poly_ish = true;
 
         msg += "<p>";
-        if( type == SpecUtils::EnergyCalType::FullRangeFraction )
-          msg += "FullRangeFrac:";
-        else
-          msg += "Polynomial:";
-        
+        msg += (type == SpecUtils::EnergyCalType::FullRangeFraction) ? "FullRangeFrac:" : "Polynomial:";
+
         for( size_t i = 0; i < cal->coefficients().size() && i < 4; ++i )
           msg += SpecUtils::printCompact( cal->coefficients()[i], 4 );
         if( cal->coefficients().size() > 4 )
           msg += "...";
-        
+
         if( cal->deviation_pairs().size() )
-          msg += "<br />Plus " + std::to_string(cal->deviation_pairs().size()) + " deviation pairs";
-        
+          msg += "<br />Plus " + std::to_string( cal->deviation_pairs().size() ) + " deviation pairs";
+
         msg += "</p>";
         break;
-      }//case polynomial or FRF
-        
+      }
+
       case SpecUtils::EnergyCalType::LowerChannelEdge:
         msg += "<p>Lower channel energies.</p>";
         break;
-      
+
       case SpecUtils::EnergyCalType::InvalidEquationType:
         break;
-    }//switch( type )
-  }else
+    }
+  }
+  else
   {
-    msg += WString::tr("smm-CALp-multi-dets").arg( static_cast<int>(det_to_cal.size()) );
+    msg += WString::tr( "smm-CALp-multi-dets" ).arg( static_cast<int>(det_to_cal.size()) );
 
     for( const auto &name_cal : det_to_cal )
     {
@@ -3029,142 +3269,55 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
                                   && name_cal.second->valid()
                                   && (name_cal.second->type() != SpecUtils::EnergyCalType::LowerChannelEdge));
     }
-  }//if( (det_to_cal.size() == 1) && det_to_cal.begin()->second ) / else
+  }
 
   if( !have_cal_for_all_dets )
     msg += WString::tr( (det_to_cal.size() == 1) ? "smm-warn-single-for-multi" : "smm-warn-multi-for-single" );
-  
-  auto tOwned = std::make_unique<WText>( msg );
-  WText *t = tOwned.get();
-  stretcher->addWidget( std::move(tOwned), stretcher->rowCount(), 0,
-                        Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
-  t->setTextAlignment( Wt::AlignmentFlag::Center );
-  
-  WCheckBox *applyOnlyCurrentlyVisible = nullptr;
-  WCheckBox *applyForeground = nullptr, *applyBackground = nullptr, *applySecondary = nullptr;
-  
-  if( fore_samples.size() != foreground->sample_numbers().size() )
-  {
-    auto cbOwned0 = std::make_unique<WCheckBox>( WString::tr("smm-CALp-cb-disp-samples-only") );
-    applyOnlyCurrentlyVisible = cbOwned0.get();
-    applyOnlyCurrentlyVisible->addStyleClass( "CbNoLineBreak" );
-    stretcher->addWidget( std::move(cbOwned0), stretcher->rowCount(), 0, Wt::AlignmentFlag::Left );
-  }//if( not displaying all foreground samples )
-  
-  const auto back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
-  const auto second = m_viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
-  
-  //Only have
-  if( (back && (back != foreground)) || (second && (second != foreground)) )
-  {
-    auto cbOwned1 = std::make_unique<WCheckBox>( WString::tr("smm-CALp-cb-apply-to-fore") );
-    applyForeground = cbOwned1.get();
-    applyForeground->setChecked( true );
-    applyForeground->addStyleClass( "CbNoLineBreak" );
-    stretcher->addWidget( std::move(cbOwned1), stretcher->rowCount(), 0, Wt::AlignmentFlag::Left );
-  }
-  
-  if( back && (back != foreground) )
-  {
-    auto cbOwned2 = std::make_unique<WCheckBox>( WString::tr("smm-CALp-cb-apply-to-back") );
-    applyBackground = cbOwned2.get();
-    applyBackground->setChecked( true );
-    applyBackground->addStyleClass( "CbNoLineBreak" );
-    stretcher->addWidget( std::move(cbOwned2), stretcher->rowCount(), 0, Wt::AlignmentFlag::Left );
-  }
-  
-  if( second && (second != foreground) && (second != back) )
-  {
-    auto cbOwned3 = std::make_unique<WCheckBox>( WString::tr("smm-CALp-cb-apply-to-second") );
-    applySecondary = cbOwned3.get();
-    applySecondary->setChecked( true );
-    applySecondary->addStyleClass( "CbNoLineBreak" );
-    stretcher->addWidget( std::move(cbOwned3), stretcher->rowCount(), 0, Wt::AlignmentFlag::Left );
-  }
-  
-  
-  {
-    auto tOwned2 = std::make_unique<WText>( WString::tr("smm-CALp-like-to-use") );
-    t = tOwned2.get();
-    stretcher->addWidget( std::move(tOwned2), stretcher->rowCount(), 0,
-                          Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
-    t->setTextAlignment( Wt::AlignmentFlag::Center );
-  }
 
-  // Sometimes detectors that provide lower channel energy calibration wont have a consistent binning
-  //  structure, but the uploaded CALp may be assuming that, so we'll give a warning in this case.
-  if( currdata
-     && currdata->energy_calibration()
+
+  // Build the UI.
+  build_dialog_frame();
+  add_centered_text( msg );
+
+  ApplyCbs cbs;
+
+  auto add_checkbox = [&]( const char *labelKey, bool initChecked ) -> WCheckBox * {
+    WCheckBox *cb = stretcher->addWidget( std::make_unique<WCheckBox>( WString::tr(labelKey) ),
+                                           stretcher->rowCount(), 0, Wt::AlignmentFlag::Left );
+    cb->addStyleClass( "CbNoLineBreak" );
+    cb->setChecked( initChecked );
+    return cb;
+  };
+
+  if( needDisplaySamplesOnlyCb )
+    cbs.displaySamplesOnly = add_checkbox( "smm-CALp-cb-disp-samples-only", false );
+  if( needApplyForegroundCb )
+    cbs.foreground = add_checkbox( "smm-CALp-cb-apply-to-fore", true );
+  if( needApplyBackgroundCb )
+    cbs.background = add_checkbox( "smm-CALp-cb-apply-to-back", true );
+  if( needApplySecondaryCb )
+    cbs.secondary = add_checkbox( "smm-CALp-cb-apply-to-second", true );
+
+  add_centered_text( WString::tr("smm-CALp-like-to-use") );
+
+  // Sometimes detectors that provide lower channel energy calibration wont have a consistent
+  // binning structure, but the uploaded CALp may be assuming that, so we'll give a warning here.
+  if( currdata->energy_calibration()
      && (currdata->energy_calibration()->type() == SpecUtils::EnergyCalType::LowerChannelEdge)
      && any_new_cal_is_poly_ish )
   {
-    auto tOwned3 = std::make_unique<WText>( WString::tr("smm-CALp-prev-is-channel-lower-energy") );
-    t = tOwned3.get();
-    stretcher->addWidget( std::move(tOwned3), stretcher->rowCount(), 0,
-                          Wt::AlignmentFlag::Center | Wt::AlignmentFlag::Middle );
-    t->setTextAlignment( Wt::AlignmentFlag::Center );
+    add_centered_text( WString::tr("smm-CALp-prev-is-channel-lower-energy") );
   }
 
   dialog->contents()->addStyleClass( "CALp" );
   // TODO: ask if they want to update deviation pairs - maybe?
-  
-  const auto applyLambda = [=](){
-    InterSpec *interspec = InterSpec::instance();
-    if( !interspec )
-      return;
-    
-    
-    int napplied = 0;
-    
-    try
-    {
-      const bool all_detectors = true; // TODO: give user option wether to apply to all detectors or not
-      const bool all_samples = (!applyOnlyCurrentlyVisible
-                                || !applyOnlyCurrentlyVisible->isChecked());
-      
-      EnergyCalTool *caltool = interspec->energyCalTool();
-      assert( caltool ); //should always be valid
-      if( !caltool )
-        throw runtime_error( "Invalid EnergyCalTool" );
-      
-      if( !applyForeground || applyForeground->isChecked() )
-      {
-        caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::Foreground, all_detectors, all_samples );
-        napplied += 1;
-      }
-      
-      if( applyBackground && applyBackground->isChecked() )
-      {
-        caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::Background, all_detectors, all_samples );
-        napplied += 1;
-      }
-      
-      if( applySecondary && applySecondary->isChecked() )
-      {
-        caltool->applyCALpEnergyCal( det_to_cal, SpecUtils::SpectrumType::SecondForeground, all_detectors, all_samples );
-        napplied += 1;
-      }
-    }catch( std::exception &e )
-    {
-      const char *key = (napplied == 1) ? "smm-CALp-err-applying-single" : "smm-CALp-err-applying-mult";
-      passMessage( WString::tr(key).arg( e.what() ), WarningWidget::WarningMsgHigh );
-    }//try / catch
-  };//applyLambda(...)
-  
-  
-  if( autoApply && !applyOnlyCurrentlyVisible && !applyForeground && !applyBackground && !applySecondary )
-  {
-    applyLambda();
-    dialog->done( Wt::DialogCode::Accepted );
-    return true;
-  }
-  
+
   dialog->addButton( WString::tr("No") ); //no further action necessary if user clicks no; dialog will close
   closeButton->setText( WString::tr("Yes") );
-  closeButton->clicked().connect( this, applyLambda );
-  
+  closeButton->clicked().connect( this, [applyCalibration, cbs](){ applyCalibration( cbs ); } );
+
   return true;
-}//void handleCALpFile( std::istream &input )
+}//bool handleCALpFile(...)
 
 
 #if( USE_REL_ACT_TOOL )
@@ -3218,11 +3371,9 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
   {
     error_msg = WString::tr("smm-err-load-iso-by-nuc").arg( e.what() ).toUTF8();
   }//try / cat to read the XML
-  
-  
-  dialog->contents()->clear();
-  dialog->footer()->clear();
-    
+
+
+  // Dialog arrives empty from the dispatcher (runWithNonSpecDialog).
   WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
   auto stretcherOwned2 = std::make_unique<WGridLayout>();
   WGridLayout *stretcher = stretcherOwned2.get();
@@ -3291,12 +3442,11 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   }//if( !det )
   
   dialog->addStyleClass( "EccDrfDialog" );
-  
+
   assert( dialog );
-  
-  dialog->contents()->clear();
-  dialog->footer()->clear();
-  
+
+  // Dialog arrives empty from the dispatcher (runWithNonSpecDialog).
+
   int chartw = 350, charth = 200;
   if( m_viewer->renderedWidth() > 500 )
     chartw = std::min( ((3*m_viewer->renderedWidth()/4) - 50), 500 );
@@ -3639,8 +3789,7 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
 
   dialog->addStyleClass( "EccDrfDialog" );
 
-  dialog->contents()->clear();
-  dialog->footer()->clear();
+  // Dialog arrives empty from the dispatcher (runWithNonSpecDialog).
 
   int chartw = 350, charth = 200;
   if( m_viewer->renderedWidth() > 500 )
@@ -4048,9 +4197,8 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     test_state.deSerialize( xml_doc->first_node() );
     
     assert( dialog );
-    dialog->contents()->clear();
-    dialog->footer()->clear();
-    
+    // Dialog arrives empty from the dispatcher (runWithNonSpecDialog).
+
     WText *title = dialog->contents()->addNew<WText>( WString::tr("smm-act-shield-xml") );
     title->addStyleClass( "title" );
     title->setInline( false );
@@ -4058,8 +4206,7 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     WText *content = dialog->contents()->addNew<WText>( WString::tr("smm-act-shield-use") );
     content->addStyleClass( "content" );
     content->setInline( false );
-    
-    dialog->footer()->clear();
+
     dialog->addButton( WString::tr("Cancel") );
     WPushButton *btn = dialog->addButton( WString::tr("Yes") );
     btn->clicked().connect( this, [this,data,test_state](){
@@ -4107,9 +4254,8 @@ bool SpecMeasManager::handleSourceLibFile( std::istream &input, SimpleDialog *di
       src_ptrs.push_back( make_shared<SrcLibLineInfo>(info) );
     
     assert( dialog );
-    dialog->contents()->clear();
-    dialog->footer()->clear();
-    
+    // Dialog arrives empty from the dispatcher (runWithNonSpecDialog).
+
     WText *title = dialog->contents()->addNew<WText>( WString::tr("smm-source-lib-title") );
     title->addStyleClass( "title" );
     title->setInline( false );
@@ -4117,9 +4263,7 @@ bool SpecMeasManager::handleSourceLibFile( std::istream &input, SimpleDialog *di
     WText *content = dialog->contents()->addNew<WText>( WString::tr("smm-source-source-use") );
     content->addStyleClass( "content" );
     content->setInline( false );
-    
-    dialog->footer()->clear();
-    
+
     auto setter = [src_ptrs]( const bool autopopulate ){
       InterSpec *viewer = InterSpec::instance();
       MakeDrfWindow *tool = viewer ? viewer->makeDrfWindow() : nullptr;

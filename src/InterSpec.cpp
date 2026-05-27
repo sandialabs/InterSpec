@@ -4904,8 +4904,10 @@ void InterSpec::showLicenseAndDisclaimersWindow()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    // In Wt4, WApplication::bind() was removed; lambda passed directly
-    auto undo = [this](){ m_licenseWindow->accept(); };
+    // `m_licenseWindow` is an observing_ptr that auto-nulls on dialog destruction, so the
+    // undo must guard against it before dereferencing — the user can close the dialog
+    // before triggering undo.
+    auto undo = [this](){ if( m_licenseWindow ) m_licenseWindow->accept(); };
     // We wont have redo show the dialog again, because then the closer functionoid wont work, and
     //  it isnt worth making the SimpleDialog a member variable of the InterSpec class.
     m_undo->addUndoRedoStep( std::move(undo), nullptr, "Show disclaimers, credits, and contact window." );
@@ -4930,8 +4932,10 @@ void InterSpec::startClearSession()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    // In Wt4, WApplication::bind() was removed; lambda passed directly
-    auto closer = [window](){ window->accept(); };
+    // Capture an observing_ptr so the undo is a no-op if the dialog has been dismissed
+    // (SimpleDialog self-destructs on `finished()` once any button is clicked).
+    Wt::Core::observing_ptr<SimpleDialog> win_obs( window );
+    auto closer = [win_obs](){ if( win_obs ) win_obs->accept(); };
     // We wont have redo show the dialog again, because then the closer functionoid wont work, and
     //  it isnt worth making the SimpleDialog a member variable of the InterSpec class.
     m_undo->addUndoRedoStep( closer, nullptr, "Show clear session dialog" );
@@ -6042,8 +6046,10 @@ void InterSpec::stateSaveAs()
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    // In Wt4, WApplication::bind() was removed; lambda passed directly
-    auto closer = [window](){ window->hide(); };
+    // Capture an observing_ptr so the undo is a no-op if the dialog has already been
+    // closed (Cancel/Save both call `AuxWindow::deleteAuxWindow(window)`).
+    Wt::Core::observing_ptr<AuxWindow> win_obs( window );
+    auto closer = [win_obs](){ if( win_obs ) win_obs->hide(); };
     m_undo->addUndoRedoStep( closer, nullptr, "Show save-as dialog." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void stateSaveAs()
@@ -6092,8 +6098,10 @@ void InterSpec::stateSaveTag()
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    // In Wt4, WApplication::bind() was removed; lambda passed directly
-    auto closer = [window](){ window->hide(); };
+    // Capture an observing_ptr so the undo is a no-op if the dialog has already been
+    // closed (Cancel/Tag both call `AuxWindow::deleteAuxWindow(window)`).
+    Wt::Core::observing_ptr<AuxWindow> win_obs( window );
+    auto closer = [win_obs](){ if( win_obs ) win_obs->hide(); };
     m_undo->addUndoRedoStep( closer, nullptr, "Show save-tag dialog." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void stateSaveTag()
@@ -9143,8 +9151,10 @@ void InterSpec::startAddPeakFromRightClick()
       dlg->finished().connect( dlg, [dlg](){ AuxWindow::deleteAuxWindow( dlg ); } );
     };
 
-    // In Wt4, WApplication::bind() was removed; lambda passed directly
-    auto closer = [window](){ AuxWindow::deleteAuxWindow( window ); };
+    // Capture an observing_ptr so the undo is a no-op if the dialog was already closed
+    // (its `finished()` signal already calls `AuxWindow::deleteAuxWindow(window)`).
+    Wt::Core::observing_ptr<AddNewPeakDialog> win_obs( window );
+    auto closer = [win_obs](){ if( win_obs ) AuxWindow::deleteAuxWindow( win_obs.get() ); };
     m_undo->addUndoRedoStep( closer, redo , "Start add peak dialog." );
   }//if( undo )
 }//void startAddPeakFromRightClick()

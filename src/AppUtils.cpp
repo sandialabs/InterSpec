@@ -636,7 +636,9 @@ void run_on_ioservice( std::function<void()> work,
 
   const std::string sessionId = app->sessionId();
 
-  Wt::WServer::instance()->ioService().post(
+  // Qualified call bypasses WIOService::post()'s internal strand (which would
+  // otherwise serialize all background work).  See WIOService::schedule().
+  Wt::WServer::instance()->ioService().boost::asio::io_service::post(
     [work = std::move(work),
      done = std::move(on_session_complete),
      sessionId]() mutable
