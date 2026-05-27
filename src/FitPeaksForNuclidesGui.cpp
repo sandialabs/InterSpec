@@ -49,6 +49,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
@@ -364,17 +365,9 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
   // Disable button to prevent repeats while running.
   ref_disp->setFitSourcesButtonEnabled( false );
 
-  // Capture via observing_ptr so the deferred close lambda (run in stage C, after a
-  //  worker thread completes) is a safe no-op if the user dismissed the dialog meanwhile.
+  // Captured into only the session-thread completion lambda below; the
+  // background worker never references the dialog.
   Wt::Core::observing_ptr<SimpleDialog> wait_dlg_obs( wait_dlg );
-  std::function<void(void)> close_wait = [wait_dlg_obs](){ if( wait_dlg_obs ) wait_dlg_obs->accept(); };
-
-  Wt::WServer *server = Wt::WServer::instance();
-  if( !server )
-  {
-    ref_disp->setFitSourcesButtonEnabled( true );
-    return;
-  }
 
   // Create copies of measurements on GUI thread for background work.
   std::shared_ptr<SpecUtils::Measurement> fg_copy = std::make_shared<SpecUtils::Measurement>( *foreground );
@@ -382,7 +375,6 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
                                  ? std::make_shared<SpecUtils::Measurement>( *background ) : nullptr;
 
   std::weak_ptr<const SpecUtils::Measurement> weak_foreground = foreground;
-  const std::string sessionid = wApp->sessionId();
 
   // Store ReferenceLineInfo objects for later display and color mapping
   std::vector<ReferenceLineInfo> ref_lines_for_display;
@@ -396,12 +388,17 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
   std::shared_ptr<FitPeaksForNuclides::PeakFitResult> result = std::make_shared<FitPeaksForNuclides::PeakFitResult>();
 
-  // Stage A: GUI thread - detect peaks using AnalystChecks
-  WServer::instance()->post( sessionid, [=](){
+  // Stage A — input collection on the session thread.  Deferred via WServer::post
+  //  so the "please wait" dialog has a chance to render before we start work.
+  Wt::WServer::instance()->post( wApp->sessionId(),
+    [viewer, wait_dlg_obs, fg_copy, bg_copy, weak_foreground, ref_lines_for_display,
+     base_nucs, drf_input, options, config, peak_fit_prefs, result]()
+  {
     InterSpec *viewer_a = InterSpec::instance();
     if( !wApp || !viewer_a )
     {
-      close_wait();
+      if( wait_dlg_obs )
+        wait_dlg_obs->accept();
       ReferencePhotopeakDisplay *disp = viewer_a ? viewer_a->referenceLinesWidget() : nullptr;
       if( disp )
         disp->setFitSourcesButtonEnabled( true );
@@ -429,41 +426,45 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
       }
     }catch( std::exception &e )
     {
-      // Failed to detect peaks - show error and return
-      close_wait();
-      ReferencePhotopeakDisplay *disp = viewer_a ? viewer_a->referenceLinesWidget() : nullptr;
+      if( wait_dlg_obs )
+        wait_dlg_obs->accept();
+      ReferencePhotopeakDisplay *disp = viewer_a->referenceLinesWidget();
       if( disp )
         disp->setFitSourcesButtonEnabled( true );
 
       SimpleDialog *err = SimpleDialog::make( WString::tr("fpn-error-title"),
                                             WString::tr("fpn-error-content").arg( e.what() ) );
       err->addButton( WString::tr("Okay") );
-      wApp->triggerUpdate();
       return;
     }
 
-    // Stage B: Background thread - perform peak fitting
-    server->ioService().boost::asio::io_service::post( std::bind( [=](){
-      // Note: PeakFitResult does not currently initialize `status`, so set it here.
-      result->status = RelActCalcAuto::RelActAutoSolution::Status::Success;
-      result->error_message.clear();
-
-      try
+    // Stages B + C — worker on the IO thread, completion back on the session thread.
+    AppUtils::run_on_ioservice(
+      // Worker (background): perform peak fit, capture status/error into `*result`.
+      [auto_search_peaks, fg_copy, base_nucs, user_peaks, bg_copy, drf_input,
+       options, config, peak_fit_prefs, result]()
       {
-        *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy, base_nucs, user_peaks, bg_copy, drf_input, options, config, peak_fit_prefs );
-      }catch( std::exception &e )
+        result->status = RelActCalcAuto::RelActAutoSolution::Status::Success;
+        result->error_message.clear();
+        try
+        {
+          *result = FitPeaksForNuclides::fit_peaks_for_nuclides( auto_search_peaks, fg_copy,
+                          base_nucs, user_peaks, bg_copy, drf_input, options, config, peak_fit_prefs );
+        }catch( std::exception &e )
+        {
+          result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+          result->error_message = std::string("Fit failed: ") + e.what();
+        }catch( ... )
+        {
+          result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+          result->error_message = "Fit failed with unknown error";
+        }
+      },
+      // Completion (session thread): dismiss wait dialog, dispatch on result.
+      [result, wait_dlg_obs, weak_foreground, ref_lines_for_display]()
       {
-        result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
-        result->error_message = std::string("Fit failed: ") + e.what();
-      }catch( ... )
-      {
-        result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
-        result->error_message = "Fit failed with unknown error";
-      }
-
-      // Stage C: GUI thread - handle results
-      WServer::instance()->post( sessionid, [=](){
-        close_wait();
+        if( wait_dlg_obs )
+          wait_dlg_obs->accept();
 
         InterSpec *viewer_c = InterSpec::instance();
         ReferencePhotopeakDisplay *disp = viewer_c ? viewer_c->referenceLinesWidget() : nullptr;
@@ -478,7 +479,6 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         if( !current_fg || viewer_c->displayedHistogram(SpecUtils::SpectrumType::Foreground) != current_fg )
         {
           passMessage( WString::tr("fpn-stale"), WarningWidget::WarningMsgInfo );
-          wApp->triggerUpdate();
           return;
         }
 
@@ -487,7 +487,6 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           SimpleDialog *err = SimpleDialog::make( WString::tr("fpn-error-title"),
                                                 WString::tr("fpn-error-content").arg( result->error_message ) );
           err->addButton( WString::tr("Okay") );
-          wApp->triggerUpdate();
           return;
         }
 
@@ -515,7 +514,6 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           }
           SimpleDialog *dlg = SimpleDialog::make( WString::tr("fpn-result-title"), msg );
           dlg->addButton( WString::tr("Okay") );
-          wApp->triggerUpdate();
           return;
         }
 
@@ -531,7 +529,6 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
             peak_model->addPeaks( result->observable_peaks );
           }
           passMessage( WString::tr("fpn-auto-accepted"), WarningWidget::WarningMsgInfo );
-          wApp->triggerUpdate();
           return;
         }
 
@@ -632,10 +629,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           }
         } );
         // Cancel button uses SimpleDialog's default close behavior.
-
-        wApp->triggerUpdate();
       } );
-    } ) );
   } );
 }//void startFitSources(...)
 

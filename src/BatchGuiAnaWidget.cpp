@@ -174,6 +174,14 @@ namespace
 
 // BatchReportResource class moved to InjaLogDialog.cpp
 
+  void show_batch_analysis_error( const std::string &error_msg )
+  {
+    SimpleDialog *dialog = SimpleDialog::make( WString::tr( "bgw-error-analysis-title" ),
+                                              WString::tr( "bgw-error-analysis-msg" ).arg( error_msg ) );
+    dialog->addStyleClass( "BatchAnalysisErrorDialog" );
+    dialog->addButton( WString::tr( "Okay" ) );
+  }
+
 }// namespace
 
 
@@ -977,114 +985,81 @@ void BatchGuiPeakFitWidget::performAnalysis(
     spec_files.push_back( spec_copy );
   }// for( size_t i = 0; i < input_files.size(); ++i )
 
-  // We need to do the work off the main GUI thread, so we need to post the work to the server.
-  const string sessionid = Wt::WApplication::instance()->sessionId();
   auto error_msg = make_shared<string>();
   auto results = make_shared<BatchPeak::BatchPeakFitSummary>();
 
   SimpleDialog *waiting_dialog =
     SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
-  // Capture via observing_ptr so the deferred close lambda safely no-ops if the
-  //  user dismissed the dialog before the worker finishes.
+  // Captured into only the completion lambda; the worker never references it.
   Wt::Core::observing_ptr<SimpleDialog> waiting_dialog_obs( waiting_dialog );
-  std::function<void( void )> close_waiting_dialog =
-    [waiting_dialog_obs](){ if( waiting_dialog_obs ) waiting_dialog_obs->done( Wt::DialogCode::Accepted ); };
 
-
-  std::function<void( void )> show_error_dialog = [error_msg, close_waiting_dialog]()
-  {
-    close_waiting_dialog();
-    SimpleDialog *dialog = SimpleDialog::make( WString::tr( "bgw-error-analysis-title" ),
-                                             WString::tr( "bgw-error-analysis-msg" ).arg( *error_msg ) );
-    dialog->addStyleClass( "BatchAnalysisErrorDialog" );
-    dialog->addButton( WString::tr( "Okay" ) );
-    wApp->triggerUpdate();
-  };
-
-  std::function<void( void )> update_gui_fcn = [results, options, close_waiting_dialog]()
-  {
-    close_waiting_dialog();
-
-    // Parse the JSON data
-    nlohmann::json summary_json = nlohmann::json::parse( results->summary_json );
-
-    // Create template options vector
-    vector<tuple<WString, string, InjaLogDialog::LogType, function<string(inja::Environment&, const nlohmann::json&)>>> templates;
-    templates.push_back( make_tuple(
-      Wt::WString( "Analysis Report" ), //wont be shown, as we'll hide th tool-bar
-      "_peak_fit_summary.html",
-      InjaLogDialog::LogType::Html,
-      [options]( inja::Environment &env, const nlohmann::json &data ) -> string {
-        return BatchInfoLog::render_template( "html", env, BatchInfoLog::TemplateRenderType::PeakFitSummary, options, data );
-      }
-    ) );
-
-    // Create and show the dialog
-    InjaLogDialog *dialog = SimpleDialog::make<InjaLogDialog>( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
-    dialog->setToolbarVisible( false );
-    dialog->show();
-
-
-    if( !results->warnings.empty() )
+  AppUtils::run_on_ioservice(
+    [exemplar_filename, exemplar, exemplar_samples, file_names, spec_files, options, results, error_msg]()
     {
-      SimpleDialog *warnings_dialog = SimpleDialog::make( WString::tr( "bgw-warning-title" ) );
-      warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
-
-      InterSpec *interspec = InterSpec::instance();
-      const int app_width = interspec->renderedWidth();
-      const double warn_width = std::min( 450, (app_width > 100) ? app_width : 450 );
-      warnings_dialog->setMinimumSize( WLength(warn_width,WLength::Unit::Pixel), WLength::Auto );
-
-      WContainerWidget *contents = warnings_dialog->contents();
-      contents->setList( true, false );
-      set<string> seen_warnings;
-
-      for( const string &warn_msg : results->warnings )
+      try
       {
-        // Avoid duplicate warnings
-        if( seen_warnings.count(warn_msg) )
-          continue;
-        seen_warnings.insert( warn_msg );
+        BatchPeak::fit_peaks_in_files( exemplar_filename, exemplar, exemplar_samples,
+                                       file_names, spec_files, options, results.get() );
+      }catch( std::exception &e )
+      {
+        *error_msg = e.what();
+      }
+    },
+    [results, error_msg, options, waiting_dialog_obs]()
+    {
+      if( waiting_dialog_obs )
+        waiting_dialog_obs->done( Wt::DialogCode::Accepted );
 
-        WContainerWidget *item = contents->addNew<WContainerWidget>();
-        item->addNew<WText>( warn_msg );
+      if( !error_msg->empty() )
+      {
+        show_batch_analysis_error( *error_msg );
+        return;
       }
 
-      warnings_dialog->addButton( WString::tr( "Okay" ) );
-    }// if( !results.warnings.empty() )
+      nlohmann::json summary_json = nlohmann::json::parse( results->summary_json );
 
-    wApp->triggerUpdate();
-  };// update_gui_fcn lambda
+      vector<tuple<WString, string, InjaLogDialog::LogType, function<string(inja::Environment&, const nlohmann::json&)>>> templates;
+      templates.push_back( make_tuple(
+        Wt::WString( "Analysis Report" ), //wont be shown, as we'll hide th tool-bar
+        "_peak_fit_summary.html",
+        InjaLogDialog::LogType::Html,
+        [options]( inja::Environment &env, const nlohmann::json &data ) -> string {
+          return BatchInfoLog::render_template( "html", env, BatchInfoLog::TemplateRenderType::PeakFitSummary, options, data );
+        }
+      ) );
 
+      InjaLogDialog *dialog = SimpleDialog::make<InjaLogDialog>( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
+      dialog->setToolbarVisible( false );
+      dialog->show();
 
-  std::function<void( void )> do_work_fcn = [exemplar_filename,
-                                             exemplar,
-                                             exemplar_samples,
-                                             file_names,
-                                             spec_files,
-                                             options,
-                                             results,
-                                             error_msg,
-                                             update_gui_fcn,
-                                             show_error_dialog,
-                                             sessionid]()
-  {
-    try
-    {
-      BatchPeak::fit_peaks_in_files(
-        exemplar_filename, exemplar, exemplar_samples, file_names, spec_files, options, results.get() );
+      if( !results->warnings.empty() )
+      {
+        SimpleDialog *warnings_dialog = SimpleDialog::make( WString::tr( "bgw-warning-title" ) );
+        warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
 
-      WServer::instance()->post( sessionid, update_gui_fcn );
-    } catch( std::exception &e )
-    {
-      *error_msg = e.what();
-      WServer::instance()->post( sessionid, show_error_dialog );
-    }
-  };// do_work_fcn lambda
+        InterSpec *interspec = InterSpec::instance();
+        const int app_width = interspec->renderedWidth();
+        const double warn_width = std::min( 450, (app_width > 100) ? app_width : 450 );
+        warnings_dialog->setMinimumSize( WLength(warn_width,WLength::Unit::Pixel), WLength::Auto );
 
-  // Do the peak fitting work in a non-gui thread.
-  WServer::instance()->ioService().boost::asio::io_service::post( do_work_fcn );
+        WContainerWidget *contents = warnings_dialog->contents();
+        contents->setList( true, false );
+        set<string> seen_warnings;
+
+        for( const string &warn_msg : results->warnings )
+        {
+          if( seen_warnings.count(warn_msg) )
+            continue;
+          seen_warnings.insert( warn_msg );
+
+          WContainerWidget *item = contents->addNew<WContainerWidget>();
+          item->addNew<WText>( warn_msg );
+        }
+
+        warnings_dialog->addButton( WString::tr( "Okay" ) );
+      }
+    } );
 }// performAnalysis(...)
 
 std::pair<bool,Wt::WString> BatchGuiPeakFitWidget::canDoAnalysis() const
@@ -1321,98 +1296,70 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   shared_ptr<BatchActivity::BatchActivityFitSummary> summary_results =
     make_shared<BatchActivity::BatchActivityFitSummary>();
 
-  // We need to do the work off the main GUI thread, so we need to post the work to the server.
-  const string sessionid = Wt::WApplication::instance()->sessionId();
   auto error_msg = make_shared<string>();
 
   SimpleDialog *waiting_dialog =
     SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
-  // Capture via observing_ptr so the deferred close lambda safely no-ops if the
-  //  user dismissed the dialog before the worker finishes.
   Wt::Core::observing_ptr<SimpleDialog> waiting_dialog_obs( waiting_dialog );
-  std::function<void( void )> close_waiting_dialog =
-    [waiting_dialog_obs](){ if( waiting_dialog_obs ) waiting_dialog_obs->done( Wt::DialogCode::Accepted ); };
 
-  std::function<void( void )> show_error_dialog = [error_msg, close_waiting_dialog]()
-  {
-    close_waiting_dialog();
-    SimpleDialog *dialog = SimpleDialog::make( WString::tr( "bgw-error-analysis-title" ),
-                                             WString::tr( "bgw-error-analysis-msg" ).arg( *error_msg ) );
-    dialog->addStyleClass( "BatchAnalysisErrorDialog" );
-    dialog->addButton( WString::tr( "Okay" ) );
-    wApp->triggerUpdate();
-  };
-
-  std::function<void( void )> update_gui_fcn = [close_waiting_dialog, summary_results, options]()
-  {
-    close_waiting_dialog();
-
-    // Parse the JSON data
-    nlohmann::json summary_json = nlohmann::json::parse( summary_results->summary_json );
-
-    // Create template options vector
-    vector<tuple<WString, string, InjaLogDialog::LogType, function<string(inja::Environment&, const nlohmann::json&)>>> templates;
-    templates.push_back( make_tuple(
-      Wt::WString( "Analysis Report" ), //wont be shown, as we'll hide th tool-bar
-      "_act_shield_summary.html",
-      InjaLogDialog::LogType::Html,
-      [options]( inja::Environment &env, const nlohmann::json &data ) -> string {
-        return BatchInfoLog::render_template( "html", env, BatchInfoLog::TemplateRenderType::ActShieldSummary, options, data );
-      }
-    ) );
-
-    // Create and show the dialog
-    InjaLogDialog *dialog = SimpleDialog::make<InjaLogDialog>( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
-    dialog->setToolbarVisible( false );
-    dialog->show();
-
-
-    if( !summary_results->warnings.empty() )
+  AppUtils::run_on_ioservice(
+    [exemplar_filename, exemplar, exemplar_samples, file_names, input_files_meas, options,
+     summary_results, error_msg]()
     {
-      SimpleDialog *warnings_dialog = SimpleDialog::make( WString::tr( "bgw-warning-title" ) );
-      warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
-
-      WContainerWidget *contents = warnings_dialog->contents();
-      contents->setList( true, false );
-      for( const string &warn_msg : summary_results->warnings )
+      try
       {
-        WContainerWidget *item = contents->addNew<WContainerWidget>();
-        item->addNew<WText>( warn_msg );
+        BatchActivity::fit_activities_in_files( exemplar_filename, exemplar, exemplar_samples,
+                                                file_names, input_files_meas, options,
+                                                summary_results.get() );
+      }catch( std::exception &e )
+      {
+        *error_msg = e.what();
+      }
+    },
+    [summary_results, error_msg, options, waiting_dialog_obs]()
+    {
+      if( waiting_dialog_obs )
+        waiting_dialog_obs->done( Wt::DialogCode::Accepted );
+
+      if( !error_msg->empty() )
+      {
+        show_batch_analysis_error( *error_msg );
+        return;
       }
 
-      warnings_dialog->addButton( WString::tr( "Okay" ) );
-    }// if( !results.warnings.empty() )
+      nlohmann::json summary_json = nlohmann::json::parse( summary_results->summary_json );
 
-    wApp->triggerUpdate();
-  };// update_gui_fcn lambda
+      vector<tuple<WString, string, InjaLogDialog::LogType, function<string(inja::Environment&, const nlohmann::json&)>>> templates;
+      templates.push_back( make_tuple(
+        Wt::WString( "Analysis Report" ),
+        "_act_shield_summary.html",
+        InjaLogDialog::LogType::Html,
+        [options]( inja::Environment &env, const nlohmann::json &data ) -> string {
+          return BatchInfoLog::render_template( "html", env, BatchInfoLog::TemplateRenderType::ActShieldSummary, options, data );
+        }
+      ) );
 
-  std::function<void( void )> do_work_fcn = [exemplar_filename,
-                                             exemplar,
-                                             exemplar_samples,
-                                             file_names,
-                                             input_files_meas,
-                                             options,
-                                             summary_results,
-                                             error_msg,
-                                             update_gui_fcn,
-                                             show_error_dialog,
-                                             sessionid]()
-  {
-    try
-    {
-      BatchActivity::fit_activities_in_files(
-        exemplar_filename, exemplar, exemplar_samples, file_names, input_files_meas, options, summary_results.get() );
-      WServer::instance()->post( sessionid, update_gui_fcn );
-    } catch( std::exception &e )
-    {
-      *error_msg = e.what();
-      WServer::instance()->post( sessionid, show_error_dialog );
-    }
-  };// do_work_fcn lambda
+      InjaLogDialog *dialog = SimpleDialog::make<InjaLogDialog>( WString::tr( "bgw-analysis-summary-title" ), summary_json, templates );
+      dialog->setToolbarVisible( false );
+      dialog->show();
 
-  // Do the activity fitting work in a non-gui thread.
-  WServer::instance()->ioService().boost::asio::io_service::post( do_work_fcn );
+      if( !summary_results->warnings.empty() )
+      {
+        SimpleDialog *warnings_dialog = SimpleDialog::make( WString::tr( "bgw-warning-title" ) );
+        warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
+
+        WContainerWidget *contents = warnings_dialog->contents();
+        contents->setList( true, false );
+        for( const string &warn_msg : summary_results->warnings )
+        {
+          WContainerWidget *item = contents->addNew<WContainerWidget>();
+          item->addNew<WText>( warn_msg );
+        }
+
+        warnings_dialog->addButton( WString::tr( "Okay" ) );
+      }
+    } );
 }// performAnalysis(...)
 
 pair<bool,Wt::WString> BatchGuiActShieldAnaWidget::canDoAnalysis() const
@@ -2218,91 +2165,77 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
 
   shared_ptr<BatchRelActAuto::Summary> summary_results = make_shared<BatchRelActAuto::Summary>();
 
-  const string sessionid = Wt::WApplication::instance()->sessionId();
   auto error_msg = make_shared<string>();
 
   SimpleDialog *waiting_dialog = SimpleDialog::make( WString::tr("bgw-performing-work-title"),
                                                       WString::tr("bgw-performing-work-msg") );
   waiting_dialog->addButton( WString::tr("Close") );
-  // Capture via observing_ptr so the deferred close lambda safely no-ops if the
-  //  user dismissed the dialog before the worker finishes.
   Wt::Core::observing_ptr<SimpleDialog> waiting_dialog_obs( waiting_dialog );
-  std::function<void(void)> close_waiting_dialog =
-    [waiting_dialog_obs](){ if( waiting_dialog_obs ) waiting_dialog_obs->done( Wt::DialogCode::Accepted ); };
 
-  std::function<void(void)> show_error_dialog = [error_msg, close_waiting_dialog]()
-  {
-    close_waiting_dialog();
-    SimpleDialog *dialog = SimpleDialog::make( WString::tr("bgw-error-analysis-title"),
-                                                WString::tr("bgw-error-analysis-msg").arg( *error_msg ) );
-    dialog->addStyleClass( "BatchAnalysisErrorDialog" );
-    dialog->addButton( WString::tr("Okay") );
-    wApp->triggerUpdate();
-  };
-
-  std::function<void(void)> update_gui_fcn = [close_waiting_dialog, summary_results]()
-  {
-    close_waiting_dialog();
-
-    // Render against the full multi-file summary (handles N>=1 files via the
-    // bundled `html-summary` template that walks `data["Files"]`).
-    nlohmann::json render_payload = nlohmann::json::parse( summary_results->summary_json );
-
-    // The InjaLogDialog passes us its own `inja::Environment` (built with
-    // `BatchInfoLog::get_default_inja_env`, which doesn't know about
-    // `default-rel-act-auto-html-multi-file-summary`), so we ignore that and
-    // build our own RelActAuto-aware env inside the lambda.
-    vector<tuple<WString, string, InjaLogDialog::LogType,
-                 function<string(inja::Environment&, const nlohmann::json&)>>> templates;
-    templates.push_back( make_tuple(
-      WString( "Isotopics Report" ),
-      "_iso_summary.html",
-      InjaLogDialog::LogType::Html,
-      []( inja::Environment &/*ignored*/, const nlohmann::json &data ) -> string {
-        inja::Environment my_env = RelActAutoReport::get_default_inja_env( "" );
-        return RelActAutoReport::render_template( my_env, data, "html-summary", "" );
-      }
-    ) );
-
-    InjaLogDialog *dialog = SimpleDialog::make<InjaLogDialog>( WString::tr("bgw-analysis-summary-title"),
-                                                                render_payload, templates );
-    dialog->setToolbarVisible( false );
-    dialog->show();
-
-    if( !summary_results->warnings.empty() )
+  AppUtils::run_on_ioservice(
+    [exemplar_filename, exemplar, exemplar_samples, file_names, input_files_meas,
+     options, summary_results, error_msg]()
     {
-      SimpleDialog *warnings_dialog = SimpleDialog::make( WString::tr("bgw-warning-title") );
-      warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
-      WContainerWidget *contents = warnings_dialog->contents();
-      contents->setList( true, false );
-      for( const string &warn_msg : summary_results->warnings )
+      try
       {
-        WContainerWidget *item = contents->addNew<WContainerWidget>();
-        item->addNew<WText>( warn_msg );
+        BatchRelActAuto::run_in_files( exemplar_filename, exemplar, exemplar_samples,
+                                       file_names, input_files_meas, options,
+                                       summary_results.get() );
+      }catch( std::exception &e )
+      {
+        *error_msg = e.what();
       }
-      warnings_dialog->addButton( WString::tr("Okay") );
-    }
-    wApp->triggerUpdate();
-  };
-
-  std::function<void(void)> do_work_fcn
-      = [exemplar_filename, exemplar, exemplar_samples, file_names, input_files_meas,
-         options, summary_results, error_msg, update_gui_fcn, show_error_dialog, sessionid]()
-  {
-    try
+    },
+    [summary_results, error_msg, waiting_dialog_obs]()
     {
-      BatchRelActAuto::run_in_files( exemplar_filename, exemplar, exemplar_samples,
-                                     file_names, input_files_meas, options,
-                                     summary_results.get() );
-      WServer::instance()->post( sessionid, update_gui_fcn );
-    }catch( std::exception &e )
-    {
-      *error_msg = e.what();
-      WServer::instance()->post( sessionid, show_error_dialog );
-    }
-  };
+      if( waiting_dialog_obs )
+        waiting_dialog_obs->done( Wt::DialogCode::Accepted );
 
-  WServer::instance()->ioService().boost::asio::io_service::post( do_work_fcn );
+      if( !error_msg->empty() )
+      {
+        show_batch_analysis_error( *error_msg );
+        return;
+      }
+
+      // Render against the full multi-file summary (handles N>=1 files via the
+      // bundled `html-summary` template that walks `data["Files"]`).
+      nlohmann::json render_payload = nlohmann::json::parse( summary_results->summary_json );
+
+      // The InjaLogDialog passes us its own `inja::Environment` (built with
+      // `BatchInfoLog::get_default_inja_env`, which doesn't know about
+      // `default-rel-act-auto-html-multi-file-summary`), so we ignore that and
+      // build our own RelActAuto-aware env inside the lambda.
+      vector<tuple<WString, string, InjaLogDialog::LogType,
+                   function<string(inja::Environment&, const nlohmann::json&)>>> templates;
+      templates.push_back( make_tuple(
+        WString( "Isotopics Report" ),
+        "_iso_summary.html",
+        InjaLogDialog::LogType::Html,
+        []( inja::Environment &/*ignored*/, const nlohmann::json &data ) -> string {
+          inja::Environment my_env = RelActAutoReport::get_default_inja_env( "" );
+          return RelActAutoReport::render_template( my_env, data, "html-summary", "" );
+        }
+      ) );
+
+      InjaLogDialog *dialog = SimpleDialog::make<InjaLogDialog>( WString::tr("bgw-analysis-summary-title"),
+                                                                  render_payload, templates );
+      dialog->setToolbarVisible( false );
+      dialog->show();
+
+      if( !summary_results->warnings.empty() )
+      {
+        SimpleDialog *warnings_dialog = SimpleDialog::make( WString::tr("bgw-warning-title") );
+        warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
+        WContainerWidget *contents = warnings_dialog->contents();
+        contents->setList( true, false );
+        for( const string &warn_msg : summary_results->warnings )
+        {
+          WContainerWidget *item = contents->addNew<WContainerWidget>();
+          item->addNew<WText>( warn_msg );
+        }
+        warnings_dialog->addButton( WString::tr("Okay") );
+      }
+    } );
 }//performAnalysis(...)
 
 #endif // USE_REL_ACT_TOOL

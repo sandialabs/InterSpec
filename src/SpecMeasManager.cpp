@@ -109,6 +109,7 @@
 
 
 #include "InterSpec/MakeDrf.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -1718,8 +1719,8 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
       nbytewritten = read_file_from_zip( zipfilestrm, headers[fileInZip], tmpfilestrm );
     }
     
-    handleFileDropWorker( fileInZip, tmpfile, type, nullptr, wApp );
-    
+    handleFileDropWorker( fileInZip, tmpfile, type, wApp );
+
     SpecUtils::remove_file( tmpfile );
   }catch( std::exception & )
   {
@@ -1892,7 +1893,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
       {
         nbytes = ZipArchive::read_file_from_zip( zipfilestrm,
                                         headers.begin()->second, tmpfilestrm );
-        handleFileDropWorker( fileInZip, tmpfile.string<string>(), type, nullptr, nullptr );
+        handleFileDropWorker( fileInZip, tmpfile.string<string>(), type, Wt::WApplication::instance() );
       }catch( std::exception & )
       {
       }
@@ -4295,45 +4296,31 @@ void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uin
 void SpecMeasManager::handleFileDropWorker( const std::string &name,
                      const std::string &spoolName,
                      SpecUtils::SpectrumType type,
-                     SimpleDialog *dialog,
                      Wt::WApplication *app )
 {
-  // We are outside of the application loop here - we could parse the spectrum file here, instead
-  //  of during the loop - but this
-  
+  // May run on the IO service worker thread (the large-file path in
+  //  handleFileDrop posts us there); on that thread `WApplication::instance()`
+  //  is null until `UpdateLock` binds it, so the caller passes `app` in.
+  //  The caller owns any "please wait" UI and dismisses it from its
+  //  completion lambda; this worker does not.
   if( !app )
-    app = WApplication::instance();
-  
+    app = Wt::WApplication::instance();
   WApplication::UpdateLock lock( app );
- 
+
   if( app && !lock )
   {
     cerr << "\n\nFailed to get WApplication::UpdateLock in "
             "SpecMeasManager::handleFileDropWorker(...) - this really shouldnt happen.\n" << endl;
     return;
   }//if( !lock )
- 
+
   assert( WApplication::instance() );
 
-  // Capture an observing_ptr to the dialog so the posted dismissal lambda is a safe
-  //  no-op if the dialog was destroyed between scope-exit registration and execution
-  //  (the posted lambda runs later, in the session's event loop).
-  Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
-
-  // Make sure we trigger a app update
-  BOOST_SCOPE_EXIT(app,dialog_obs){
-    // TODO: there is a bit of a delay between upload completing, and showing the dialog - should check into that
-    // TODO: check that the dialog is actually deleted correctly in all cases.
-    if( dialog_obs )
-    {
-      WServer::instance()->post( wApp->sessionId(), [dialog_obs](){
-        if( dialog_obs )
-          dialog_obs->accept();
-        WApplication::instance()->triggerUpdate();
-      } );
-    }//if( dialog_obs )
-
-    WApplication::instance()->triggerUpdate();
+  // Flush UI updates on return.
+  BOOST_SCOPE_EXIT(void){
+    Wt::WApplication *a = Wt::WApplication::instance();
+    if( a )
+      a->triggerUpdate();
   } BOOST_SCOPE_EXIT_END
   
  
@@ -4395,29 +4382,32 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   if( (SpecUtils::file_size(spoolName) < 512*1024)
      && !SpecUtils::iends_with(name, ".csv") && !SpecUtils::iends_with(name, ".txt") )
   {
-    handleFileDropWorker( name, spoolName, type, nullptr, wApp );
+    handleFileDropWorker( name, spoolName, type, wApp );
     return;
   }
-  
+
   // Its a larger file - display a message letting the user know its being parsed.
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("smm-window-title-parsing"),
                                  WString::tr("smm-window-msg-parsing") );
 
   wApp->triggerUpdate();
 
-// When using WServer::instance()->post(...) it seems the "Parsing File" isnt always shown, but
-//  posting to the ioService and explicitly taking the WApplication::UpdateLock seems to work a
-//  little more reliable - I didnt look into why this is, or how true it is
-//  WServer::instance()->post( wApp->sessionId(),
-//                             boost::bind( &SpecMeasManager::handleFileDropWorker, this,
-//                                          name, spoolName, type, dialog, wApp ) );
-
-  // Capture an observing_ptr; pass through .get() so the worker (and its BOOST_SCOPE_EXIT)
-  //  sees nullptr if the dialog was somehow destroyed before the worker runs.
+  // Capture `app` here on the session thread; on the IO service worker thread
+  //  `WApplication::instance()` is null until `UpdateLock` binds it.  Only the
+  //  session-thread completion captures the dialog (via observing_ptr, so the
+  //  dismiss is a safe no-op if the user closed it meanwhile).
   Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
-  WServer::instance()->ioService().boost::asio::io_service::post( [this, name, spoolName, type, dialog_obs, app = wApp](){
-    handleFileDropWorker( name, spoolName, type, dialog_obs.get(), app );
-  } );
+  Wt::WApplication * const app = wApp;
+  AppUtils::run_on_ioservice(
+    [this, name, spoolName, type, app]()
+    {
+      handleFileDropWorker( name, spoolName, type, app );
+    },
+    [dialog_obs]()
+    {
+      if( dialog_obs )
+        dialog_obs->accept();
+    } );
 }//handleFileDrop(...)
 
 

@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <functional>
 
 
 namespace AppUtils
@@ -139,6 +140,27 @@ namespace AppUtils
    @returns The full path to the localized XML file that exists, or the base + ".xml" as fallback
    */
   InterSpec_API std::string find_localized_xml_file( const std::string &resource_base );
+
+  /** Posts `work` to the Wt IO service worker pool.  When it returns (or throws),
+   posts `on_session_complete` back to the originating Wt session; the completion
+   runs under the session's `WApplication::UpdateLock` (acquired automatically by
+   `Wt::WServer::post`) and `WApplication::triggerUpdate()` is called after it.
+
+   The session id is captured at call time from `Wt::WApplication::instance()`.
+   If the session has gone away by the time work completes, Wt drops the
+   completion silently.
+
+   `work` should handle its own exceptions (typically by stashing a message in
+   shared state the completion can inspect).  Anything that leaks is caught here
+   so the IO thread is not poisoned; the completion still runs.
+
+   Intended use is to decouple long-running background work from the
+   "please wait" `SimpleDialog` shown during it: the dialog is owned by the
+   call site, captured (via `Wt::Core::observing_ptr`) into only the completion
+   lambda, and the worker never references it.
+   */
+  InterSpec_API void run_on_ioservice( std::function<void()> work,
+                                       std::function<void()> on_session_complete );
   
 #ifdef _WIN32
 /** Get command line arguments encoded as UTF-8.

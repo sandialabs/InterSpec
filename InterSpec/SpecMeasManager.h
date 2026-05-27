@@ -439,10 +439,22 @@ public:
                        const std::string &spoolName,
                        SpecUtils::SpectrumType type );
   
+  /** Parses + displays a dropped/uploaded spectrum file.
+
+   May run on the IO service worker thread (from `handleFileDrop`'s
+   large-file path), or directly on the session thread.  Always acquires a
+   `WApplication::UpdateLock` internally before touching session state.
+
+   `app` must be captured by the caller from the session thread — on the IO
+   service thread `WApplication::instance()` is null, so the worker cannot
+   obtain it itself.
+
+   The caller is responsible for any "please wait" UI feedback and for
+   dismissing it when this returns (see `handleFileDrop`).
+   */
   void handleFileDropWorker( const std::string &name,
                        const std::string &spoolName,
                        SpecUtils::SpectrumType type,
-                       SimpleDialog *dialog,
                        Wt::WApplication *app );
 
 #if( USE_BATCH_GUI_TOOLS )

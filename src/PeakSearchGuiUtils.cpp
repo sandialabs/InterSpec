@@ -51,6 +51,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
@@ -1808,23 +1809,22 @@ void set_peaks_from_search( InterSpec *viewer,
                             vector<ReferenceLineInfo> displayed,
                             std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > peaks,
                             std::shared_ptr<const SpecUtils::Measurement> originaldata,
-                            std::vector<PeakDef> originalPeaks,
-                            std::function<void(void)> guiupdater )
+                            std::vector<PeakDef> originalPeaks )
 {
   if( !viewer )
     return;
-  
+
   viewer->useMessageResourceBundle( "PeakSearchGuiUtils" );
-  
+
   auto currentdata = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-  
+
   if( (currentdata != originaldata) || !peaks )
   {
     passMessage( WString::tr("psgu-peaks-not-updated-no-change-msg"), WarningWidget::WarningMsgHigh );
     viewer->automatedPeakSearchCompleted();
     return;
   }
-  
+
 
   vector<std::shared_ptr<const PeakDef> > filtered_peaks;
   for( size_t i = 0; i < peaks->size(); ++i )
@@ -1833,14 +1833,11 @@ void set_peaks_from_search( InterSpec *viewer,
     if( fabs(p->mean()) > 0.1 && fabs(p->amplitude()) > 0.1 )
       filtered_peaks.push_back( p );
   }
-  
+
   PeakModel *peakModel = viewer->peakModel();
-  
+
   peakModel->setPeaks( filtered_peaks );
-  
-  if( guiupdater )
-    guiupdater();
-  
+
   viewer->automatedPeakSearchCompleted();
   
   passMessage( WString::tr("psgu-peaks-updated-msg"), WarningWidget::WarningMsgInfo );
@@ -2275,76 +2272,73 @@ void automated_search_for_peaks( InterSpec *viewer,
   SimpleDialog *msg = SimpleDialog::make( title, content );
   msg->rejectWhenEscapePressed();
   msg->addButton( WString::tr("Close") );
-  
+
+  // Captured into only the completion lambda (session thread).  The worker
+  // never references the dialog, so it is fine for the user to dismiss the
+  // wait dialog mid-search.
+  Wt::Core::observing_ptr<SimpleDialog> msg_obs( msg );
+
   //Make it so users cant keep clicking the search button
   viewer->automatedPeakSearchStarted();
-  
+
   const auto originalPeaks = peakModel->peakVec();
   auto startingPeaks = peakModel->peaks();
-  
+
   if( !keep_old_peaks )
     startingPeaks.reset();
-  
-  // In Wt4, wApp->bind() is removed.  The callbacks below are posted back to the
-  //  session by search_for_peaks_worker (which already uses server->post), so
-  //  they will execute in session context without needing bind().
-  // Capture msg via observing_ptr so the lambda is a safe no-op if the user
-  //  dismissed the dialog (Escape or footer Close) before the search completes.
-  Wt::Core::observing_ptr<SimpleDialog> msg_obs( msg );
-  std::function<void(void)> guiupdater = [msg_obs](){ if( msg_obs ) msg_obs->accept(); };
 
-  //The results of the peak search will be placed into the vector pointed to
-  // by searchresults, which is why both 'callback' and below and
-  // search_for_peaks_worker(...) get a shared pointer to this vector.
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
 
-  std::function<void(void)> callback
-                          = [viewer, displayed, searchresults, dataPtr, originalPeaks, guiupdater](){
-                              set_peaks_from_search( viewer, displayed, searchresults, dataPtr, originalPeaks, guiupdater );
-                            };
-  
   auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   shared_ptr<const DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
 
   shared_ptr<const PeakFitDetPrefs> fitPrefs = foreground ? foreground->peakFitDetPrefs() : nullptr;
 
-  Wt::WServer *server = Wt::WServer::instance();
-  if( !server )
-    return;
-
   std::weak_ptr<const SpecUtils::Measurement> weakdata = dataPtr;
-  const string seshid = wApp->sessionId();
 
   // Grab the SpecMeas's persistent cancel token so this search aborts cleanly
   //  when the SpecMeas is destroyed or `InterSpec::~InterSpec` flips the flag.
   std::shared_ptr<const std::atomic<bool>> cancel_flag
     = foreground ? foreground->peak_search_cancel_flag() : nullptr;
 
-  server->ioService().boost::asio::io_service::post( std::bind( [=](){
-    search_for_peaks_worker( weakdata, drf, startingPeaks, displayed, setColor,
-                            searchresults, callback, seshid, false, fitPrefs, cancel_flag );
-
-    // Apply FWHM method to search results if needed
-    assert( fitPrefs );
-    if( fitPrefs && searchresults
-       && (fitPrefs->m_fwhm_method != PeakFitDetPrefs::FwhmMethod::Normal)
-       && drf && drf->hasResolutionInfo() )
+  AppUtils::run_on_ioservice(
+    // Worker: pure background work; passes empty callback/sessionID so
+    // search_for_peaks_worker fills `*searchresults` directly and does not
+    // post anything back itself.
+    [weakdata, drf, startingPeaks, displayed, setColor, searchresults, fitPrefs, cancel_flag]()
     {
-      Wt::WFlags<PeakFitLM::PeakFitLMOptions> fwhm_options;
-      for( shared_ptr<const PeakDef> &peak : *searchresults )
+      search_for_peaks_worker( weakdata, drf, startingPeaks, displayed, setColor,
+                              searchresults, std::function<void(void)>{}, std::string{},
+                              false, fitPrefs, cancel_flag );
+
+      // Apply FWHM method to search results if needed
+      assert( fitPrefs );
+      if( fitPrefs && searchresults
+         && (fitPrefs->m_fwhm_method != PeakFitDetPrefs::FwhmMethod::Normal)
+         && drf && drf->hasResolutionInfo() )
       {
-        shared_ptr<PeakDef> mutablePeak = make_shared<PeakDef>( *peak );
-        const float energy = static_cast<float>( mutablePeak->mean() );
-        const double drf_sigma = drf->peakResolutionSigma( energy );
-        mutablePeak->setSigma( drf_sigma );
+        for( shared_ptr<const PeakDef> &peak : *searchresults )
+        {
+          shared_ptr<PeakDef> mutablePeak = make_shared<PeakDef>( *peak );
+          const float energy = static_cast<float>( mutablePeak->mean() );
+          const double drf_sigma = drf->peakResolutionSigma( energy );
+          mutablePeak->setSigma( drf_sigma );
 
-        if( fitPrefs->m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetFwhm )
-          mutablePeak->setFitFor( PeakDef::CoefficientType::Sigma, false );
+          if( fitPrefs->m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetFwhm )
+            mutablePeak->setFitFor( PeakDef::CoefficientType::Sigma, false );
 
-        peak = mutablePeak;
-      }//for( each peak )
-    }//if( need to apply FWHM method )
-  } ) );
+          peak = mutablePeak;
+        }//for( each peak )
+      }//if( need to apply FWHM method )
+    },
+    // Completion (session thread, UpdateLock already held by Wt::WServer::post):
+    // dismiss the wait dialog if it still exists, then dispatch results.
+    [viewer, displayed, searchresults, dataPtr, originalPeaks, msg_obs]()
+    {
+      if( msg_obs )
+        msg_obs->accept();
+      set_peaks_from_search( viewer, displayed, searchresults, dataPtr, originalPeaks );
+    } );
 }//void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks )
 
 
@@ -2868,9 +2862,15 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
 
   std::shared_ptr<const SpecUtils::Measurement> data = weak_data.lock();
 
+  // When `sessionID` is empty the caller (e.g. AppUtils::run_on_ioservice) owns
+  // result delivery and posting completion back to the session; we just fill
+  // `*resultpeaks` and return.
+  const bool post_back = !sessionID.empty() && static_cast<bool>(callback);
+
   if( !data || !resultpeaks )
   {
-    server->post( sessionID, callback );
+    if( post_back )
+      server->post( sessionID, callback );
     return;
   }
 
@@ -2885,7 +2885,7 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
     string msg = "InterSpec::search_for_peaks_worker(): caught exception: '";
     msg += e.what();
     msg += "'";
-    
+
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, msg.c_str() );
 #else
@@ -2893,30 +2893,17 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
 #endif
   }//try / catch
 
-  //assert( 0 );
-  //throw runtime_error( "Need to implement search for peaks worker." );
-
-  if( results && !results->empty() )
+  if( post_back )
   {
-    try
-    {
-      //DetectorPeakResponse::ResolutionFnctForm fwhm_type = ...;
-      //const int sqrtEqnOrder = ...;
-      //auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(*results), end(*results) );
-
-      //vector<float> result, uncerts;
-      //const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type, sqrtEqnOrder, result, uncerts );
-    }catch( std::exception &e )
-    {
-
-    }
+    server->post( sessionID, [callback,results,resultpeaks](){
+      if( resultpeaks )
+        *resultpeaks = *results;
+      callback();
+    } );
+  }else
+  {
+    *resultpeaks = *results;
   }
-
-  server->post( sessionID, [callback,results,resultpeaks](){
-    if( resultpeaks )
-      *resultpeaks = *results;
-    callback();
-  } );
 }//void search_for_peaks_worker(...)
 
   

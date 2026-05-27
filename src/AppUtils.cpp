@@ -59,6 +59,8 @@
 #endif
 
 #include <Wt/WLocale.h>
+#include <Wt/WServer.h>
+#include <Wt/WIOService.h>
 #include <Wt/WApplication.h>
 
 #include "SpecUtils/Filesystem.h"
@@ -623,6 +625,46 @@ std::string user_data_dir()
   return utf8Str;
 }//std::string AppUtils::user_data_dir()
 #endif
+
+void run_on_ioservice( std::function<void()> work,
+                       std::function<void()> on_session_complete )
+{
+  Wt::WApplication * const app = Wt::WApplication::instance();
+  assert( app );
+  if( !app )
+    return;
+
+  const std::string sessionId = app->sessionId();
+
+  Wt::WServer::instance()->ioService().post(
+    [work = std::move(work),
+     done = std::move(on_session_complete),
+     sessionId]() mutable
+  {
+    try
+    {
+      if( work )
+        work();
+    }catch( std::exception &e )
+    {
+      std::cerr << "AppUtils::run_on_ioservice worker threw: " << e.what() << std::endl;
+    }catch( ... )
+    {
+      std::cerr << "AppUtils::run_on_ioservice worker threw unknown exception" << std::endl;
+    }
+
+    Wt::WServer::instance()->post( sessionId,
+      [done = std::move(done)]()
+    {
+      if( done )
+        done();
+      Wt::WApplication *session_app = Wt::WApplication::instance();
+      if( session_app )
+        session_app->triggerUpdate();
+    } );
+  } );
+}//run_on_ioservice(...)
+
 
 std::string find_localized_xml_file( const std::string &resource_base )
 {
