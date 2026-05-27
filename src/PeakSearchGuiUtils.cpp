@@ -42,6 +42,7 @@
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
+#include <Wt/Core/observing_ptr.hpp>
 #include <Wt/Chart/WDataSeries.h>
 
 #include "SpecUtils/SpecFile.h"
@@ -2287,7 +2288,10 @@ void automated_search_for_peaks( InterSpec *viewer,
   // In Wt4, wApp->bind() is removed.  The callbacks below are posted back to the
   //  session by search_for_peaks_worker (which already uses server->post), so
   //  they will execute in session context without needing bind().
-  std::function<void(void)> guiupdater = [msg](){ msg->accept(); };
+  // Capture msg via observing_ptr so the lambda is a safe no-op if the user
+  //  dismissed the dialog (Escape or footer Close) before the search completes.
+  Wt::Core::observing_ptr<SimpleDialog> msg_obs( msg );
+  std::function<void(void)> guiupdater = [msg_obs](){ if( msg_obs ) msg_obs->accept(); };
 
   //The results of the peak search will be placed into the vector pointed to
   // by searchresults, which is why both 'callback' and below and

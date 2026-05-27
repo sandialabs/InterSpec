@@ -75,7 +75,7 @@ public:
   }
 
   ~SimpleDialog();
-  
+
   /** See notes for \c m_multipleBringToFront, but basically this is an over-ride to avoid
    jank when creating multiple SimpleDialogs at the same time (or close together anyway).
    

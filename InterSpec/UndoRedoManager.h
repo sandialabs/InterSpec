@@ -100,6 +100,12 @@ public:
    - If you capture any shared pointers, particularly to SpecMeas objects, keep in mind you could create dependency
       cycles that could cause the object to never destruct, even if all other shared pointers are gone.  Using std::weak_ptr<SpecMeas>
       can help with this.
+   - Do NOT capture raw pointers (or `Wt::Core::observing_ptr`s) to tool windows or tool widgets
+      (e.g. `AuxWindow*`, `EnergyCalTool*`, `PeakInfoDisplay*`, ...). The instance that exists when the
+      step is added may not be the instance that exists when undo/redo fires — the tool may have been
+      closed and reopened in between. Instead, the lambdas must look the tool back up through
+      `InterSpec::instance()` (or a captured `InterSpec*`) via its `showXxxTool()` / `closeXxxTool()`
+      accessor, which is responsible for re-creating or finding the current instance.
    */
   void addUndoRedoStep( std::function<void()> undo,
                         std::function<void()> redo,

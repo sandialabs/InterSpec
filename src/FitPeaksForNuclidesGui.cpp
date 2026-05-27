@@ -44,6 +44,7 @@
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
 #include <Wt/WStackedWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -363,7 +364,10 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
   // Disable button to prevent repeats while running.
   ref_disp->setFitSourcesButtonEnabled( false );
 
-  std::function<void(void)> close_wait = [wait_dlg](){ wait_dlg->accept(); };
+  // Capture via observing_ptr so the deferred close lambda (run in stage C, after a
+  //  worker thread completes) is a safe no-op if the user dismissed the dialog meanwhile.
+  Wt::Core::observing_ptr<SimpleDialog> wait_dlg_obs( wait_dlg );
+  std::function<void(void)> close_wait = [wait_dlg_obs](){ if( wait_dlg_obs ) wait_dlg_obs->accept(); };
 
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )

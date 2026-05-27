@@ -1410,9 +1410,6 @@ protected:
 
   Wt::WContainerWidget   *m_menuDiv; // The top menu bar. Owned by m_layout.
 
-  //m_peakInfoWindow is deleted when tool tabs are shown because the layout
-  //  gets all messed up for some reason when m_peakInfoDisplay is removed
-  //  and placed back in it.
   Wt::Core::observing_ptr<PeakInfoDisplay> m_peakInfoDisplay;
   Wt::Core::observing_ptr<AuxWindow> m_peakInfoWindow;
 

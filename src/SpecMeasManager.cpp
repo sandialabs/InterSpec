@@ -4219,7 +4219,7 @@ void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uin
     Wt::WServer *server = Wt::WServer::instance();
     if( !server )
       return;
-    
+
     if( m_processingUploadTimer )
     {
       boost::system::error_code ec;
@@ -4228,13 +4228,16 @@ void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uin
         cerr << "SpecMeasManager::handleDataRecievedStatus(): error cancelling timer: " << ec.message() << endl;
       m_processingUploadTimer.reset();
     }//if( m_processingUploadTimer )
-    
+
     const std::string sessionId = app->sessionId();
     m_processingUploadTimer = make_unique<boost::asio::deadline_timer>( server->ioService() );
     m_processingUploadTimer->expires_from_now( boost::posix_time::seconds(120) );
-    m_processingUploadTimer->async_wait( [this, dialog, app, sessionId, server]( const boost::system::error_code &ec ){
+    // Capture an observing_ptr so the deferred timer callback safely no-ops if the
+    //  dialog was destroyed before the timer fires.
+    Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
+    m_processingUploadTimer->async_wait( [this, dialog_obs, app, sessionId, server]( const boost::system::error_code &ec ){
       if( !ec )
-        server->post( sessionId, [this, dialog, app](){ checkCloseUploadDialog( dialog, app ); } );
+        server->post( sessionId, [this, dialog_obs, app](){ checkCloseUploadDialog( dialog_obs.get(), app ); } );
     } );
   };//make_timer lamda
   
@@ -4311,22 +4314,25 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   }//if( !lock )
  
   assert( WApplication::instance() );
-  
+
+  // Capture an observing_ptr to the dialog so the posted dismissal lambda is a safe
+  //  no-op if the dialog was destroyed between scope-exit registration and execution
+  //  (the posted lambda runs later, in the session's event loop).
+  Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
+
   // Make sure we trigger a app update
-  BOOST_SCOPE_EXIT(app,dialog){
-    
+  BOOST_SCOPE_EXIT(app,dialog_obs){
     // TODO: there is a bit of a delay between upload completing, and showing the dialog - should check into that
     // TODO: check that the dialog is actually deleted correctly in all cases.
-    if( dialog )
+    if( dialog_obs )
     {
-      auto accept = [dialog](){ dialog->accept(); };
-      WServer::instance()->post( wApp->sessionId(), std::bind([accept](){
-        accept();
+      WServer::instance()->post( wApp->sessionId(), [dialog_obs](){
+        if( dialog_obs )
+          dialog_obs->accept();
         WApplication::instance()->triggerUpdate();
-      }) );
-      dialog = nullptr;
-    }//if( dialog )
-    
+      } );
+    }//if( dialog_obs )
+
     WApplication::instance()->triggerUpdate();
   } BOOST_SCOPE_EXIT_END
   
@@ -4394,20 +4400,23 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   }
   
   // Its a larger file - display a message letting the user know its being parsed.
-  auto dialog = SimpleDialog::make( WString::tr("smm-window-title-parsing"),
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("smm-window-title-parsing"),
                                  WString::tr("smm-window-msg-parsing") );
-  
+
   wApp->triggerUpdate();
-  
+
 // When using WServer::instance()->post(...) it seems the "Parsing File" isnt always shown, but
 //  posting to the ioService and explicitly taking the WApplication::UpdateLock seems to work a
 //  little more reliable - I didnt look into why this is, or how true it is
 //  WServer::instance()->post( wApp->sessionId(),
 //                             boost::bind( &SpecMeasManager::handleFileDropWorker, this,
 //                                          name, spoolName, type, dialog, wApp ) );
-  
-  WServer::instance()->ioService().boost::asio::io_service::post( [this, name, spoolName, type, dialog, app = wApp](){
-    handleFileDropWorker( name, spoolName, type, dialog, app );
+
+  // Capture an observing_ptr; pass through .get() so the worker (and its BOOST_SCOPE_EXIT)
+  //  sees nullptr if the dialog was somehow destroyed before the worker runs.
+  Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
+  WServer::instance()->ioService().boost::asio::io_service::post( [this, name, spoolName, type, dialog_obs, app = wApp](){
+    handleFileDropWorker( name, spoolName, type, dialog_obs.get(), app );
   } );
 }//handleFileDrop(...)
 

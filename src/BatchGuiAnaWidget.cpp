@@ -51,6 +51,7 @@
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
+#include <Wt/Core/observing_ptr.hpp>
 #include <Wt/Http/Request.h>
 #include <Wt/Http/Response.h>
 #include <Wt/WStackedWidget.h>
@@ -984,8 +985,11 @@ void BatchGuiPeakFitWidget::performAnalysis(
   SimpleDialog *waiting_dialog =
     SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
+  // Capture via observing_ptr so the deferred close lambda safely no-ops if the
+  //  user dismissed the dialog before the worker finishes.
+  Wt::Core::observing_ptr<SimpleDialog> waiting_dialog_obs( waiting_dialog );
   std::function<void( void )> close_waiting_dialog =
-    [waiting_dialog](){ waiting_dialog->done( Wt::DialogCode::Accepted ); };
+    [waiting_dialog_obs](){ if( waiting_dialog_obs ) waiting_dialog_obs->done( Wt::DialogCode::Accepted ); };
 
 
   std::function<void( void )> show_error_dialog = [error_msg, close_waiting_dialog]()
@@ -1324,8 +1328,11 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   SimpleDialog *waiting_dialog =
     SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
+  // Capture via observing_ptr so the deferred close lambda safely no-ops if the
+  //  user dismissed the dialog before the worker finishes.
+  Wt::Core::observing_ptr<SimpleDialog> waiting_dialog_obs( waiting_dialog );
   std::function<void( void )> close_waiting_dialog =
-    [waiting_dialog](){ waiting_dialog->done( Wt::DialogCode::Accepted ); };
+    [waiting_dialog_obs](){ if( waiting_dialog_obs ) waiting_dialog_obs->done( Wt::DialogCode::Accepted ); };
 
   std::function<void( void )> show_error_dialog = [error_msg, close_waiting_dialog]()
   {
@@ -2217,8 +2224,11 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
   SimpleDialog *waiting_dialog = SimpleDialog::make( WString::tr("bgw-performing-work-title"),
                                                       WString::tr("bgw-performing-work-msg") );
   waiting_dialog->addButton( WString::tr("Close") );
+  // Capture via observing_ptr so the deferred close lambda safely no-ops if the
+  //  user dismissed the dialog before the worker finishes.
+  Wt::Core::observing_ptr<SimpleDialog> waiting_dialog_obs( waiting_dialog );
   std::function<void(void)> close_waiting_dialog =
-    [waiting_dialog](){ waiting_dialog->done( Wt::DialogCode::Accepted ); };
+    [waiting_dialog_obs](){ if( waiting_dialog_obs ) waiting_dialog_obs->done( Wt::DialogCode::Accepted ); };
 
   std::function<void(void)> show_error_dialog = [error_msg, close_waiting_dialog]()
   {

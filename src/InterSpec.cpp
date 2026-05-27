@@ -334,31 +334,7 @@ namespace
   // del_ptr_set_null template removed — all member pointers now use observing_ptr,
   //  unique_ptr, or addChild/removeChild for Wt 4 lifetime management.
 
-  /** Takes a widget out of either a widget parent (via removeFromParent) or a WObject parent
-   (via removeChild), returning a unique_ptr<WWidget> suitable for addWidget/addTab.
 
-   Widgets parked via addChild (WObject ownership) have no widget parent, so removeFromParent
-   returns empty. This helper checks both paths.
-   */
-  std::unique_ptr<Wt::WWidget> take_widget( Wt::WObject *wobject_parent, Wt::WWidget *widget )
-  {
-    if( !widget )
-      return nullptr;
-
-    // If the widget has a widget-tree parent, removeFromParent handles it
-    if( widget->parent() )
-      return widget->removeFromParent();
-
-    // Otherwise it's parked as a WObject child — use removeChild + cast
-    if( wobject_parent )
-    {
-      std::unique_ptr<Wt::WObject> obj = wobject_parent->removeChild( widget );
-      return std::unique_ptr<Wt::WWidget>( static_cast<Wt::WWidget *>( obj.release() ) );
-    }
-
-    return nullptr;
-  }
-  
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     /** A simple wrapper for holding the tool-tabs.
      When/if the user resizes the tool-tabs height, this function will call back and let the
@@ -677,18 +653,18 @@ InterSpec::InterSpec()
   m_spectrum->existingRoiEdgeDragUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork );
   m_spectrum->dragCreateRoiUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performDragCreateRoiWork );
   
-  m_nuclideSearch = new IsotopeSearchByEnergy( this, m_spectrum );
+  m_nuclideSearch = addChild( std::make_unique<IsotopeSearchByEnergy>( this, m_spectrum ) );
   m_nuclideSearch->setLoadLaterWhenInvisible(true);
 
-  m_warnings = new WarningWidget( this );
+  m_warnings = addChild( std::make_unique<WarningWidget>( this ) );
 
   // Set up the energy calibration tool
-  m_energyCalTool = new EnergyCalTool( this, m_peakModel );
+  m_energyCalTool = addChild( std::make_unique<EnergyCalTool>( this, m_peakModel ) );
   m_spectrum->rightMouseDragg().connect( m_energyCalTool.get(), &EnergyCalTool::handleGraphicalRecalRequest );
   displayedSpectrumChanged().connect( m_energyCalTool.get(), &EnergyCalTool::displayedSpecChangedCallback );
   m_fileManager = addChild( std::make_unique<SpecMeasManager>( this ) );
 
-  m_peakInfoDisplay = new PeakInfoDisplay( this, m_spectrum, m_peakModel );
+  m_peakInfoDisplay = addChild( std::make_unique<PeakInfoDisplay>( this, m_spectrum, m_peakModel ) );
 
   if( !MaterialDB::initialized() )
   {
@@ -1347,34 +1323,11 @@ InterSpec::~InterSpec() noexcept(true)
   // Moveable widgets may be in a widget parent (tabs, window, domRoot) or free-standing
   //  (after .release()). If parented, removeFromParent deletes them. If free-standing,
   //  delete directly. observing_ptr auto-nulls in both cases.
-  if( m_peakInfoDisplay )
-  {
-    if( m_peakInfoDisplay->parent() )
-      m_peakInfoDisplay->removeFromParent();
-    else
-      delete m_peakInfoDisplay.get();
-  }
-
   AuxWindow::deleteAuxWindow( m_peakInfoWindow.get() );
-
-  if( m_energyCalTool )
-  {
-    if( m_energyCalTool->parent() )
-      m_energyCalTool->removeFromParent();
-    else
-      delete m_energyCalTool.get();
-  }
 
   AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
   AuxWindow::deleteAuxWindow( m_shieldingSourceFitWindow.get() );
 
-  if( m_nuclideSearch )
-  {
-    if( m_nuclideSearch->parent() )
-      m_nuclideSearch->removeFromParent();
-    else
-      delete m_nuclideSearch.get();
-  }
   AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
   
   if( m_referencePhotopeakLines )
@@ -1393,13 +1346,6 @@ InterSpec::~InterSpec() noexcept(true)
   AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
   
   handleWarningsWindowClose();
-  if( m_warnings )
-  {
-    if( m_warnings->parent() )
-      m_warnings->removeFromParent();
-    else
-      delete m_warnings.get();
-  }
   
   deletePeakEdit();
   closeFitSkewParamsWindow();
@@ -5336,7 +5282,9 @@ void InterSpec::showWarningsWindow()
                    | AuxWindowProperties::SetCloseable) );
     m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Unit::Pixel), Wt::Side::Left | Wt::Side::Top );
     m_warningsWindow->rejectWhenEscapePressed();
-    m_warningsWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_warnings.get()), 0, 0, 1, 1 );
+    std::unique_ptr<WarningWidget> warnings_taken = removeChild( m_warnings.get() );
+    assert( warnings_taken );
+    m_warningsWindow->stretcher()->addWidget( std::move(warnings_taken), 0, 0, 1, 1 );
     m_warnings->setHidden( false );
     m_warningsWindow->stretcher()->setContentsMargins(0,0,0,0);
     //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
@@ -5371,7 +5319,7 @@ void InterSpec::handleWarningsWindowClose()
 {
   if( m_warningsWindow )
   {
-    m_warningsWindow->stretcher()->removeWidget( m_warnings.get() ).release();
+    addChild( m_warningsWindow->stretcher()->removeWidget( m_warnings.get() ) );
     AuxWindow::deleteAuxWindow( m_warningsWindow.get() );
     assert( !m_warningsWindow );
     
@@ -5401,7 +5349,9 @@ void InterSpec::showPeakInfoWindow()
     m_peakInfoWindow->rejectWhenEscapePressed();
     WGridLayout *layout = m_peakInfoWindow->stretcher();
     layout->setContentsMargins( 0, 0, 0, 0 );
-    layout->addWidget( std::unique_ptr<WWidget>(m_peakInfoDisplay.get()), 0, 0 );
+    std::unique_ptr<PeakInfoDisplay> taken = removeChild( m_peakInfoDisplay.get() );
+    assert( taken );
+    layout->addWidget( std::move(taken), 0, 0 );
     // If the "Peak Manager" tab hasnt been explicitly shown yet, then `m_peakInfoDisplay` will
     //  be hidden, so we need to explicitly show it.
     m_peakInfoDisplay->show();
@@ -6941,8 +6891,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     
     if( m_energyCalWindow )
     {
-      m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool.get() ).release();
-      if( m_energyCalWindow ) AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
+      addChild( m_energyCalWindow->stretcher()->removeWidget( m_energyCalTool.get() ) );
+      AuxWindow::deleteAuxWindow( m_energyCalWindow.get() );
       assert( !m_energyCalWindow );
     }//if( m_energyCalWindow )
     
@@ -6968,11 +6918,11 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     m_peakInfoDisplay->setNarrowPhoneLayout( phone );
     tabTitle = phone ? WString() : WString::tr(PeakInfoTabTitleKey);
-    WMenuItem *peakManTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_peakInfoDisplay.get()), tabTitle, TabLoadPolicy );
+    WMenuItem *peakManTab = m_toolsTabs->addTab( removeChild( m_peakInfoDisplay.get() ), tabTitle, TabLoadPolicy );
     if( phone )
       peakManTab->setIcon( "InterSpec_resources/images/peakmanager.svg" ); //
 #else
-    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_peakInfoDisplay.get()), WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( removeChild( m_peakInfoDisplay.get() ), WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
 #endif
 //    WString tooltip = WString::tr("app-tab-tt-peak-manager");
 //    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips );
@@ -7026,12 +6976,12 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       m_energyCalTool->setWideLayout();
       
     tabTitle = phone ? WString() : WString::tr(CalibrationTabTitleKey);
-    WMenuItem *energyCalTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_energyCalTool.get()), tabTitle, TabLoadPolicy );
+    WMenuItem *energyCalTab = m_toolsTabs->addTab( removeChild( m_energyCalTool.get() ), tabTitle, TabLoadPolicy );
     if( phone )
       energyCalTab->setIcon( "InterSpec_resources/images/calibrate.svg" );
 #else
     m_energyCalTool->setWideLayout();
-    m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_energyCalTool.get()), WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
+    m_toolsTabs->addTab( removeChild( m_energyCalTool.get() ), WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
 #endif
     
 //  WString tooltip = WString::tr("app-tab-tt-energy-cal");
@@ -7094,13 +7044,18 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_layout->addWidget( std::unique_ptr<WWidget>(toolsWrapper), ++row, 0 );
     m_layout->setRowStretch( row, 0 );
 
+    std::unique_ptr<WWidget> nuclide_search_widget;
     if( m_nuclideSearchWindow )
     {
       m_nuclideSearch->clearSearchEnergiesOnClient();
-      m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch.get() ).release();
-      if( m_nuclideSearchWindow ) AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
-      m_nuclideSearchWindow = 0;
+      nuclide_search_widget = m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch.get() );
+      AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
+      assert( !m_nuclideSearchWindow );
     }//if( m_nuclideSearchWindow )
+
+    if( !nuclide_search_widget )
+      nuclide_search_widget = removeChild( m_nuclideSearch.get() );
+    assert( nuclide_search_widget );
 
     assert( !m_nuclideSearchContainer );
 
@@ -7108,7 +7063,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     WGridLayout *isoSearchLayout = new WGridLayout();
     m_nuclideSearchContainer->setLayout( std::unique_ptr<WLayout>(isoSearchLayout) );
     isoSearchLayout->setContentsMargins( 0, 0, 0, 0 );
-    isoSearchLayout->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch.get()), 0, 0 );
+    isoSearchLayout->addWidget( std::move(nuclide_search_widget), 0, 0 );
     m_nuclideSearchContainer->setMargin( 0 );
     m_nuclideSearchContainer->setPadding( 0 );
     isoSearchLayout->setRowStretch( 0, 1 );
@@ -7133,10 +7088,21 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
 
 #if( USE_TERMINAL_WIDGET )
-    // If terminal was open before hiding tabs, re-add it to the new tab widget
+    // If terminal was open before hiding tabs, re-add it to the new tab widget.
+    //  When tabs are hidden m_terminal lives in m_terminalWindow's stretcher; take it back.
     if( m_terminal )
     {
-      WMenuItem *termTab = m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_terminal.get()),
+      std::unique_ptr<WWidget> terminal_widget;
+      if( m_terminalWindow )
+      {
+        terminal_widget = m_terminalWindow->stretcher()->removeWidget( m_terminal.get() );
+        AuxWindow::deleteAuxWindow( m_terminalWindow.get() );
+      }else
+      {
+        terminal_widget = removeChild( m_terminal.get() );
+      }
+      assert( terminal_widget );
+      WMenuItem *termTab = m_toolsTabs->addTab( std::move(terminal_widget),
                                                  WString::tr(TerminalTabTitleKey), TabLoadPolicy );
       termTab->setCloseable( true );
     }
@@ -7176,8 +7142,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv )
       m_layout->removeWidget( m_menuDiv ).release();
 
-    safeRemoveTab( m_toolsTabs, m_peakInfoDisplay.get(), true );
-    safeRemoveTab( m_toolsTabs, m_energyCalTool.get(), true );
+    addChild( safeRemoveTab( m_toolsTabs, m_peakInfoDisplay.get(), false ) );
+    addChild( safeRemoveTab( m_toolsTabs, m_energyCalTool.get(), false ) );
 
 #if( USE_REL_ACT_TOOL )
     // Dont call handleRelActManualClose/handleRelActAutoClose during hide path — the Wt4
@@ -7186,7 +7152,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_relActManualGui )
     {
       if( !m_relActManualWindow && m_toolsTabs->indexOf(m_energyCalTool.get()) >= 0 )
-        safeRemoveTab( m_toolsTabs, m_energyCalTool.get(), true );
+        addChild( safeRemoveTab( m_toolsTabs, m_energyCalTool.get(), false ) );
       if( m_relActManualWindow )
         handleRelActManualClose();
       else if( m_relActManualMenuItem )
@@ -7207,8 +7173,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
 
     m_nuclideSearch->clearSearchEnergiesOnClient();
-    // Remove m_nuclideSearch from container before deleting container
-    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch.get() ).release();
+    // Re-park m_nuclideSearch as a WObject child of InterSpec before destroying the container.
+    addChild( m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch.get() ) );
     // removeTab returns unique_ptr which deletes m_nuclideSearchContainer
     safeRemoveTab( m_toolsTabs, m_nuclideSearchContainer, false );
     m_nuclideSearchContainer = nullptr;
@@ -7775,9 +7741,9 @@ void InterSpec::showEnergyCalWindow()
   }
 
   if( !calToolPtr )
-    calToolPtr = take_widget( this, m_energyCalTool.get() );  // unpark
+    calToolPtr = removeChild( m_energyCalTool.get() );
 
-  m_energyCalWindow = AuxWindow::make( WString("window-title-energy-cal"),
+  m_energyCalWindow = AuxWindow::make( WString::tr("window-title-energy-cal"),
                                     AuxWindowProperties::SetCloseable | AuxWindowProperties::TabletNotFullScreen );
   m_energyCalWindow->rejectWhenEscapePressed();
   m_energyCalWindow->stretcher()->addWidget( std::move(calToolPtr), 0, 0 );
@@ -8452,19 +8418,22 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
       vector<string> parts;
       SpecUtils::split( parts, lang, "-" );
       
+      const WLocale &currentLocale = wApp->locale();
       const string &lang_code = !parts.empty() ? parts[0] : lang;
       if( !lang_code.empty() )
       {
-        string language;
-        if( wApp->messageResourceBundle().resolveKey( "lang-" + lang_code, language ) )
-          label = language;
+        const Wt::LocalizedString language
+                = wApp->messageResourceBundle().resolveKey( currentLocale, "lang-" + lang_code );
+        if( language.success )
+          label = language.value;
       }//if( !lang_code.empty() )
-      
+
       if( (parts.size() > 1) && !parts[1].empty() )
       {
-        string country;
-        if( wApp->messageResourceBundle().resolveKey( "country-" + parts[1], country ) )
-          label += ", " + country;
+        const Wt::LocalizedString country
+                = wApp->messageResourceBundle().resolveKey( currentLocale, "country-" + parts[1] );
+        if( country.success )
+          label += ", " + country.value;
       }//if( (parts.size() > 1) && !parts[1].empty() )
       
       item = m_languagesSubMenu->addMenuItem( label );
@@ -10720,11 +10689,12 @@ void InterSpec::closeNuclideSearchWindow()
 {
   if( !m_nuclideSearchWindow )
     return;
-  
-  m_nuclideSearch->clearSearchEnergiesOnClient();
-  m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch.get() ).release();
 
-  if( m_nuclideSearchWindow ) AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
+  m_nuclideSearch->clearSearchEnergiesOnClient();
+  std::unique_ptr<WWidget> nuclide_search_widget
+    = m_nuclideSearchWindow->stretcher()->removeWidget( m_nuclideSearch.get() );
+
+  AuxWindow::deleteAuxWindow( m_nuclideSearchWindow.get() );
   assert( !m_nuclideSearchWindow );
 
   if( m_toolsTabs )
@@ -10733,13 +10703,16 @@ void InterSpec::closeNuclideSearchWindow()
     WGridLayout *isotopeSearchGridLayout = new WGridLayout();
     m_nuclideSearchContainer->setLayout( std::unique_ptr<WLayout>(isotopeSearchGridLayout) );
 
-    isotopeSearchGridLayout->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch.get()), 0, 0 );
+    isotopeSearchGridLayout->addWidget( std::move(nuclide_search_widget), 0, 0 );
     isotopeSearchGridLayout->setRowStretch( 0, 1 );
     isotopeSearchGridLayout->setColumnStretch( 0, 1 );
 
     m_toolsTabs->addTab( std::unique_ptr<WWidget>(m_nuclideSearchContainer), WString::tr(NuclideSearchTabTitleKey), TabLoadPolicy );
     m_currentToolsTab = m_toolsTabs->currentIndex();
-  }//if( m_toolsTabs )
+  }else
+  {
+    addChild( std::move(nuclide_search_widget) );
+  }
 }//void closeNuclideSearchWindow()
 
 void InterSpec::showNuclideSearchWindow()
@@ -10753,14 +10726,18 @@ void InterSpec::showNuclideSearchWindow()
     return;
   }//if( m_nuclideSearchWindow )
   
+  std::unique_ptr<WWidget> nuclide_search_widget;
   if( m_toolsTabs && m_nuclideSearchContainer )
   {
-    m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch.get() ).release();
+    nuclide_search_widget = m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch.get() );
     safeRemoveTab( m_toolsTabs, m_nuclideSearchContainer, false ); // deletes m_nuclideSearchContainer
     m_nuclideSearchContainer = nullptr;
   }
-  
-  
+
+  if( !nuclide_search_widget )
+    nuclide_search_widget = removeChild( m_nuclideSearch.get() );
+  assert( nuclide_search_widget );
+
   m_nuclideSearchWindow = AuxWindow::make( WString::tr(NuclideSearchTabTitleKey),
                                         (AuxWindowProperties::TabletNotFullScreen
                                          | AuxWindowProperties::EnableResize
@@ -10768,15 +10745,15 @@ void InterSpec::showNuclideSearchWindow()
   m_nuclideSearchWindow->contents()->setOverflow(Wt::Overflow::Hidden);
   m_nuclideSearchWindow->finished().connect( this, [this](){ closeNuclideSearchWindow(); } );
   m_nuclideSearchWindow->rejectWhenEscapePressed();
-  
+
   //if( isMobile() )
   //{
   //  m_nuclideSearchWindow->contents()->setPadding( 0 );
   //  m_nuclideSearchWindow->contents()->setMargin( 0 );
   //}//if( isPhone() )
-  
+
   m_nuclideSearchWindow->stretcher()->setContentsMargins( 0, 0, 0, 0 );
-  m_nuclideSearchWindow->stretcher()->addWidget( std::unique_ptr<WWidget>(m_nuclideSearch.get()), 0, 0 );
+  m_nuclideSearchWindow->stretcher()->addWidget( std::move(nuclide_search_widget), 0, 0 );
   m_nuclideSearch->setHidden( false );
   
   //We need to set the footer height explicitly, or else the window->resize()
