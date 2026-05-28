@@ -940,14 +940,26 @@ class CalDisplay : public WContainerWidget
   shared_ptr<const SpecUtils::EnergyCalibration> m_cal;
 
 public:
-  /** Convenience accessor for the LCE baseline for this CalDisplay's (spectrum_type, detector_name).
-   The baseline lives on EnergyCalTool (so it survives this CalDisplay being recreated on every
-   calibration change), and is captured/updated inside updateToGui below.
+  /** Convenience accessor: returns the "original" calibration for this CalDisplay's
+   (spectrum_type, detector_name) — i.e. the calibration the measurement had at the moment its
+   SpecMeas was first loaded as that spectrum type. Lives on EnergyCalTool and is populated by
+   `captureOriginalCalibrationsIfNeeded` from the displayedSpectrumChanged signal.
+   */
+  shared_ptr<const SpecUtils::EnergyCalibration> originalCalibration() const
+  {
+    return m_tool ? m_tool->originalCalibrationFor( m_cal_type, m_det_name )
+                  : shared_ptr<const SpecUtils::EnergyCalibration>{};
+  }
+
+  /** Convenience: lower-channel-edges of the original calibration, used by the LowerChannelEdge
+   UI to compute displayed offset/gain deltas. Returns nullptr if there is no original cal or
+   if it has no channel_energies vector.
    */
   shared_ptr<const vector<float>> lceBaselineEdges() const
   {
-    return m_tool ? m_tool->lceBaselineFor( m_cal_type, m_det_name )
-                  : shared_ptr<const vector<float>>{};
+    const auto cal = originalCalibration();
+    return cal ? cal->channel_energies()
+               : shared_ptr<const vector<float>>{};
   }
 
 
@@ -1303,71 +1315,44 @@ public:
 
     // For LowerChannelEdge, the calibration stores per-channel energies (not coefficients).
     // We synthesize a two-coefficient [offset, gain] view such that
-    //   current_edge[i] = offset + gain * (baseline[i] - baseline[0])
-    // The `baseline` is owned by EnergyCalTool (keyed by (spectrum_type, detector_name)) so it
-    // survives this widget being recreated on every cal change, keeping the displayed gain
-    // meaningful (1.1 stays 1.1) instead of collapsing back to 1.0 after every apply.
+    //   current_edge[i] = baseline[0] + offset + gain * (baseline[i] - baseline[0])
+    // where `baseline` is the calibration the spectrum had at first load (captured in
+    // `EnergyCalTool::captureOriginalCalibrationsIfNeeded`, lives on m_tool keyed by
+    // (spectrum_type, detector_name)). Displayed values: offset = 0 means "no shift",
+    // gain = 1 means "identity span". Both persist across user edits since the baseline is
+    // never overwritten by the edit/fit cycle.
     vector<float> lce_coeffs;
     if( isLowerChannelEdge )
     {
       const auto current_edges_ptr = m_cal->channel_energies();
       const bool have_current = current_edges_ptr && (current_edges_ptr->size() >= 2);
 
-      shared_ptr<const vector<float>> baseline_ptr = m_tool
-          ? m_tool->lceBaselineFor( m_cal_type, m_det_name )
-          : shared_ptr<const vector<float>>{};
+      const auto baseline_cal = originalCalibration();
+      const auto baseline_ptr = baseline_cal ? baseline_cal->channel_energies()
+                                             : shared_ptr<const vector<float>>{};
 
-      // Decide whether to (re)capture the baseline: if absent, wrong size, or the current edges
-      // are NOT an affine transform of the existing baseline (within tolerance), capture a
-      // fresh baseline from the current calibration.
-      bool refresh = !have_current
-                     || !baseline_ptr
-                     || (baseline_ptr->size() != current_edges_ptr->size());
-
-      if( !refresh )
-      {
-        const vector<float> &cur = *current_edges_ptr;
-        const vector<float> &base = *baseline_ptr;
-        const double base_span = static_cast<double>(base.back()) - static_cast<double>(base.front());
-        if( std::fabs(base_span) < 1e-6 )
-        {
-          refresh = true;
-        }else
-        {
-          const double cand_offset = cur.front();
-          const double cand_gain = (static_cast<double>(cur.back()) - cand_offset) / base_span;
-          const size_t mid = cur.size() / 2;
-          const double expected_mid = cand_offset + cand_gain
-                                      * (static_cast<double>(base[mid]) - static_cast<double>(base.front()));
-          const double tol = std::max( 1e-4, 1e-5 * std::fabs(base_span) );
-          if( std::fabs(static_cast<double>(cur[mid]) - expected_mid) > tol )
-            refresh = true;
-        }
-      }
-
-      if( refresh && have_current && m_tool )
-      {
-        m_tool->setLceBaselineFor( m_cal_type, m_det_name, current_edges_ptr );
-        baseline_ptr = current_edges_ptr;
-      }
-
-      if( baseline_ptr && baseline_ptr->size() >= 2 && have_current )
+      if( baseline_ptr && baseline_ptr->size() >= 2 && have_current
+          && (baseline_ptr->size() == current_edges_ptr->size()) )
       {
         const vector<float> &base = *baseline_ptr;
-        const double base_span = static_cast<double>(base.back()) - static_cast<double>(base.front());
-        // Displayed offset is the delta from baseline (0 = no shift); gain is the span ratio
-        // (1 = identity).
+        const double base_span = static_cast<double>(base.back())
+                                 - static_cast<double>(base.front());
         const float offset_delta = static_cast<float>(
-            static_cast<double>(current_edges_ptr->front()) - static_cast<double>(base.front()) );
+            static_cast<double>(current_edges_ptr->front())
+            - static_cast<double>(base.front()) );
         const float gain = (std::fabs(base_span) > 1e-6)
             ? static_cast<float>(
-                (static_cast<double>(current_edges_ptr->back()) - static_cast<double>(current_edges_ptr->front()))
+                (static_cast<double>(current_edges_ptr->back())
+                 - static_cast<double>(current_edges_ptr->front()))
                 / base_span )
             : 1.0f;
         lce_coeffs = { offset_delta, gain };
-      }else
+      }
+      else
       {
-        // No usable baseline yet — display identity (no shift, no gain change).
+        // No usable baseline (shouldn't normally happen since captureOriginalCalibrations runs
+        // on the displayedSpectrumChanged signal before this CalDisplay is rendered). Display
+        // identity so the user at least sees something sensible.
         lce_coeffs = { 0.0f, 1.0f };
       }
     }
@@ -2001,22 +1986,77 @@ EnergyCalTool::~EnergyCalTool()
 }
 
 
-std::shared_ptr<const std::vector<float>>
-EnergyCalTool::lceBaselineFor( const SpecUtils::SpectrumType type, const std::string &detname ) const
+std::shared_ptr<const SpecUtils::EnergyCalibration>
+EnergyCalTool::originalCalibrationFor( const SpecUtils::SpectrumType type,
+                                       const std::string &detname ) const
 {
-  const auto it = m_lce_baselines.find( std::make_pair(type, detname) );
-  return (it == m_lce_baselines.end()) ? std::shared_ptr<const std::vector<float>>{} : it->second;
+  const auto it = m_originalCalibrations.find( std::make_pair(type, detname) );
+  return (it == m_originalCalibrations.end())
+           ? std::shared_ptr<const SpecUtils::EnergyCalibration>{}
+           : it->second;
 }
 
 
-void EnergyCalTool::setLceBaselineFor( const SpecUtils::SpectrumType type,
-                                       const std::string &detname,
-                                       std::shared_ptr<const std::vector<float>> baseline )
+void EnergyCalTool::captureOriginalCalibrationsIfNeeded( const SpecUtils::SpectrumType type,
+                                                        const std::shared_ptr<SpecMeas> &meas )
 {
-  if( baseline )
-    m_lce_baselines[std::make_pair(type, detname)] = std::move(baseline);
-  else
-    m_lce_baselines.erase( std::make_pair(type, detname) );
+  const size_t idx = static_cast<size_t>( type );
+  if( idx >= 3 )
+    return;
+
+  std::cerr << "[captureOriginalCalibrationsIfNeeded] type=" << static_cast<int>(type)
+            << " meas=" << meas.get()
+            << " prev=" << m_originalCalSpecMeas[idx].get()
+            << " nmeas=" << (meas ? meas->measurements().size() : 0)
+            << std::endl;
+
+  // If a different SpecMeas is now under this spectrum type, clear all entries for this type
+  // and re-capture. If the same SpecMeas is back (e.g., sample/detector display change), keep
+  // the existing entries — they represent the calibration at first-load time, which is the
+  // anchor we want to preserve across user edits.
+  if( m_originalCalSpecMeas[idx].get() != meas.get() )
+  {
+    for( auto it = m_originalCalibrations.begin(); it != m_originalCalibrations.end(); )
+    {
+      if( it->first.first == type )
+        it = m_originalCalibrations.erase( it );
+      else
+        ++it;
+    }
+    m_originalCalSpecMeas[idx] = meas;
+  }
+
+  if( !meas )
+    return;
+
+  // Fill in entries for every detector we see in this SpecMeas, but never replace an existing
+  // entry (so the "original" stays the first cal we ever saw for that detector).
+  // NOTE: Many file formats don't explicitly name their detector — CSV/TXT, single-detector
+  // N42 stubs, etc. In those cases `detector_name()` is the empty string, which is a perfectly
+  // valid map key (it matches what `CalDisplay::m_det_name` ends up holding, via the file's
+  // `gamma_detector_names()` returning {""}). Do *not* skip empty detector names here.
+  for( const auto &m : meas->measurements() )
+  {
+    if( !m )
+      continue;
+
+    const std::string &detname = m->detector_name();
+
+    const auto key = std::make_pair( type, detname );
+    if( m_originalCalibrations.count( key ) )
+      continue;
+
+    const auto &cal = m->energy_calibration();
+    if( !cal || !cal->valid() )
+      continue;
+
+    m_originalCalibrations[key] = cal;
+    std::cerr << "  captured (" << static_cast<int>(type) << ", det='" << detname
+              << "') cal type=" << static_cast<int>(cal->type())
+              << " nch=" << cal->num_channels()
+              << " ce_size=" << (cal->channel_energies() ? cal->channel_energies()->size() : 0)
+              << std::endl;
+  }
 }
 
 
@@ -4506,7 +4546,14 @@ void EnergyCalTool::fitCoefficients()
       std::vector<float> baseline_edges;
       if( isLowerChannelEdge )
       {
+        const auto baseline_cal = caldisp->originalCalibration();
         const auto baseline_ptr = caldisp->lceBaselineEdges();
+        std::cerr << "[fitCoefficients LCE start] caldisp type=" << static_cast<int>(caldisp->spectrumType())
+                  << " detname='" << caldisp->detectorName() << "'"
+                  << " baseline_cal=" << baseline_cal.get()
+                  << " baseline_ptr=" << baseline_ptr.get()
+                  << " baseline.size=" << (baseline_ptr ? baseline_ptr->size() : 0)
+                  << " nchannel=" << nchannel << std::endl;
         if( !baseline_ptr || baseline_ptr->size() != (nchannel + 1) )
           throw runtime_error( "LowerChannelEdge baseline not available." );
         baseline_edges = *baseline_ptr;
@@ -4564,6 +4611,11 @@ void EnergyCalTool::fitCoefficients()
           std::vector<float> new_edges( baseline_edges.size(), 0.0f );
           for( size_t i = 0; i < new_edges.size(); ++i )
             new_edges[i] = base0 + offset_delta + gain * (baseline_edges[i] - base0);
+          std::cerr << "[fitCoefficients LCE] applied offset=" << offset_delta
+                    << " gain=" << gain
+                    << " base0=" << base0
+                    << " baseline.size=" << baseline_edges.size()
+                    << " nchannel=" << nchannel << std::endl;
           answer->set_lower_channel_energy( nchannel, std::move(new_edges) );
           break;
         }
@@ -4639,15 +4691,18 @@ void EnergyCalTool::updateCALpButtonsStatus()
 #endif
 
 
-void EnergyCalTool::displayedSpecChangedCallback( const SpecUtils::SpectrumType,
-                                                  const std::shared_ptr<SpecMeas>,
+void EnergyCalTool::displayedSpecChangedCallback( const SpecUtils::SpectrumType type,
+                                                  const std::shared_ptr<SpecMeas> meas,
                                                   const std::set<int>,
                                                   const std::vector<std::string> )
 {
   /// \TODO: set the various m_applyToCbs if it is a new spectrum being shown.
-  /// \TODO: if this is the first time seeing a SpecMeas, cache all of its energy calibration
-  ///        information
-  
+
+  // Capture the calibration each detector had at first sight as the spectrum's "original".
+  // This is what the LowerChannelEdge UI uses to compute the displayed offset/gain deltas,
+  // and is the natural anchor for a future "Reset to original calibration" action.
+  captureOriginalCalibrationsIfNeeded( type, meas );
+
   // \TODO: we could maybe save a little time by inspecting what was changed, but the added
   //        complexity probably isnt worth it, so we'll skip this.
   refreshGuiFromFiles();

@@ -828,9 +828,7 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
   using namespace SpecUtils;
   
   if( !orig_cal || !new_cal || !other_cal
-     || !orig_cal->valid() || !new_cal->valid() || !other_cal->valid()
-     || (orig_cal->type() == EnergyCalType::LowerChannelEdge)
-     || (new_cal->type() == EnergyCalType::LowerChannelEdge) )
+     || !orig_cal->valid() || !new_cal->valid() || !other_cal->valid() )
     throw runtime_error( "EnergyCal::propogate_energy_cal_change invalid input" );
   
   if( orig_cal == new_cal )
@@ -881,6 +879,60 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
   }//if( other_cal->type() == EnergyCalType::LowerChannelEdge )
 
   
+  // LowerChannelEdge foreground propagating to a poly / FRF measurement: the displayed LCE
+  // change is always a 2-parameter affine of the loaded edges (offset + gain — that's what the
+  // UI exposes), so we don't need the full channel-matching dance below. Just shift the other
+  // cal's offset by the same energy delta and multiply its linear term by the same gain ratio.
+  // Higher-order coefficients are left alone (they represent intrinsic non-linearity of the
+  // other detector that shouldn't change when the displayed detector's offset/gain is nudged).
+  if( orig_cal->type() == EnergyCalType::LowerChannelEdge )
+  {
+    const auto orig_edges = orig_cal->channel_energies();
+    const auto new_edges  = (new_cal->type() == EnergyCalType::LowerChannelEdge)
+                              ? new_cal->channel_energies()
+                              : shared_ptr<const vector<float>>{};
+    if( !orig_edges || orig_edges->size() < 2 || !new_edges || new_edges->size() < 2
+        || (orig_edges->size() != new_edges->size()) )
+      throw runtime_error( "EnergyCal::propogate_energy_cal_change: LowerChannelEdge edges missing or size mismatch" );
+
+    const double orig_span = static_cast<double>(orig_edges->back())
+                             - static_cast<double>(orig_edges->front());
+    const double new_span = static_cast<double>(new_edges->back())
+                            - static_cast<double>(new_edges->front());
+    const double offset_delta = static_cast<double>(new_edges->front())
+                                - static_cast<double>(orig_edges->front());
+    const double gain_factor = (std::fabs(orig_span) > 1e-6) ? (new_span / orig_span) : 1.0;
+
+    vector<float> new_other_coefs = other_cal->coefficients();
+    if( new_other_coefs.empty() )
+      new_other_coefs.push_back( 0.0f );
+    new_other_coefs[0] = static_cast<float>( static_cast<double>(new_other_coefs[0]) + offset_delta );
+    if( new_other_coefs.size() >= 2 )
+      new_other_coefs[1] = static_cast<float>( static_cast<double>(new_other_coefs[1]) * gain_factor );
+
+    const auto &dev_pairs = other_cal->deviation_pairs();
+    switch( other_cal->type() )
+    {
+      case EnergyCalType::Polynomial:
+      case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        answer->set_polynomial( other_num_channel, new_other_coefs, dev_pairs );
+        break;
+
+      case EnergyCalType::FullRangeFraction:
+        answer->set_full_range_fraction( other_num_channel, new_other_coefs, dev_pairs );
+        break;
+
+      case EnergyCalType::LowerChannelEdge:
+      case EnergyCalType::InvalidEquationType:
+        assert( 0 );
+        break;
+    }//switch( other_cal->type() )
+
+    return answer;
+  }//if( orig_cal is LowerChannelEdge )
+
+  // At this point both `orig_cal` and `new_cal` are poly / FRF, and `other_cal` is poly / FRF
+  // too (LowerChannelEdge other_cal returned above).
   assert( (orig_cal->type() == EnergyCalType::FullRangeFraction)
           || (orig_cal->type() == EnergyCalType::Polynomial)
           || (orig_cal->type() == EnergyCalType::UnspecifiedUsingDefaultPolynomial) );
@@ -912,7 +964,7 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
         new_disp_energy = fullrangefraction_energy( display_channel, new_disp_coefs, new_num_channel, new_disp_devs );
         break;
       }//case orig_cal was FRF
-        
+
       case EnergyCalType::Polynomial:
       case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       {
@@ -920,9 +972,11 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
         new_disp_energy = polynomial_energy( display_channel, new_disp_coefs, new_disp_devs );
         break;
       }//case: orig_cal was Poly
-        
+
       case EnergyCalType::LowerChannelEdge:
       case EnergyCalType::InvalidEquationType:
+        // LowerChannelEdge handled by the early-return block above; InvalidEquationType
+        // rejected by the up-front validity check.
         assert( 0 );
         break;
     }//switch( orig_cal->type() )

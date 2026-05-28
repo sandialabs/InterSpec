@@ -419,30 +419,44 @@ protected:
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];
 
-  /** Per-(spectrum_type, detector_name) baseline lower-channel-edge vectors for LowerChannelEdge
-   calibrations. Used to compute the displayed offset/gain via
-     current_edge[i] = offset + gain * (baseline[i] - baseline[0])
-   and persisted at the EnergyCalTool level so the baseline survives the CalDisplay widget being
-   recreated on every calibration change. The map is keyed by (spectrum type, detector name); the
-   value's affine relation to the current calibration's edges is verified and refreshed when
-   loading a new spectrum or after non-affine cal changes.
+  /** Per-(spectrum_type, detector_name) "original" energy calibration — the calibration the
+   measurement had at the moment the SpecMeas was first loaded as that spectrum type. Captured
+   in `displayedSpecChangedCallback` whenever a different SpecMeas appears for a given type;
+   left untouched on subsequent sample/detector display changes and on subsequent user
+   calibration edits. Persisted at the EnergyCalTool level so the entry survives CalDisplay
+   widget re-creation on every cal change.
+
+   Currently used by the LowerChannelEdge UI to compute the displayed offset/gain as a delta
+   from the original cal's channel edges. Storing the full EnergyCalibration (rather than just
+   the lower-channel-edges) generalizes naturally to a future "Reset to original calibration"
+   action and to delta-from-original display for Polynomial/FRF.
+
+   For each `SpectrumType`, `m_originalCalSpecMeas` records which SpecMeas the entries belong
+   to; when that pointer changes (new spectrum loaded), entries for that type are cleared and
+   re-captured.
    */
   std::map<std::pair<SpecUtils::SpectrumType, std::string>,
-           std::shared_ptr<const std::vector<float>>> m_lce_baselines;
+           std::shared_ptr<const SpecUtils::EnergyCalibration>> m_originalCalibrations;
+  std::shared_ptr<SpecMeas> m_originalCalSpecMeas[3];
 
 public:
-  /** Look up the LCE baseline for the given (spectrum_type, detector_name). Returns nullptr if
-   no baseline has been registered for that pair.
+  /** Look up the original calibration for the given (spectrum_type, detector_name). Returns
+   nullptr if no calibration has been registered for that pair (e.g., no file loaded for that
+   spectrum type, or the detector was not present at load time).
    */
-  std::shared_ptr<const std::vector<float>>
-    lceBaselineFor( const SpecUtils::SpectrumType type, const std::string &detname ) const;
-
-  /** Register / replace the LCE baseline for the given (spectrum_type, detector_name). */
-  void setLceBaselineFor( const SpecUtils::SpectrumType type,
-                          const std::string &detname,
-                          std::shared_ptr<const std::vector<float>> baseline );
+  std::shared_ptr<const SpecUtils::EnergyCalibration>
+    originalCalibrationFor( const SpecUtils::SpectrumType type, const std::string &detname ) const;
 
 private:
+  /** If `meas` is a different SpecMeas than the one we last captured originals for under this
+   `type`, clear all entries for `type` and capture each detector's `energy_calibration()` as
+   the new "original". If `meas` matches the previously-captured one, only fill in entries for
+   detectors we hadn't yet seen.
+
+   Called from `displayedSpecChangedCallback`.
+   */
+  void captureOriginalCalibrationsIfNeeded( const SpecUtils::SpectrumType type,
+                                            const std::shared_ptr<SpecMeas> &meas );
   
   Wt::Core::observing_ptr<EnergyCalAddActionsWindow> m_addActionWindow;
   
