@@ -1,3 +1,526 @@
+# InterSpec v1.0.14 Release Notes (June 2026)
+
+<div style="text-align: right;">SAND2026-21613O</div>
+
+**Release date:** June 2026
+
+**Previous release:** v1.0.13 (March 7, 2025)
+<br/>
+<br/>
+InterSpec v1.0.14 is a significant update spanning approximately 730 commits to InterSpec, 90 commits to SpecUtils, and 4 commits to SandiaDecay. Highlights include a new Simple Activity Calculator, a graphical batch analysis tool for processing multiple spectrum files, major enhancements to the "Isotopics by nuclides" tool (including multiple relative efficiency curves, fluorescent x-rays, reactions, new constraint types, and improved calculations), a new Reference Spectra widget, Voigt peak shape support, improvements to peak fitting, dynamically displayed reference lines, as well as translations into many additional languages.
+<br/>
+Nearly all new features, and many fixes are thanks to user requests, feedback, or contributions.
+<br/>
+Please email InterSpec@sandia.gov with any bug reports, issues, or other support.
+
+
+---
+
+## New Features
+
+### Batch Analysis GUI
+<div style="float: right; width: 320px; margin: 0 0 1em 1em; text-align: center;">
+  <img src="v1.0.14/batch_ana.gif" alt="Example use of graphical batch analysis tool to fit a source's activity in multiple files." width="320" />
+  <div style="color: gray; font-size: 0.9em;">
+    Example use of graphical batch analysis tool to fit a source's activity in multiple files.
+  </div>
+</div>
+
+A new graphical batch analysis tool has been added. When multiple spectrum files are dragged onto the application, a batch analysis dialog is presented, allowing users to process all of the files at once from within the application, without needing to use the command line.
+
+- Supports batch peak fitting, batch activity/shielding fitting, batch isotopics, and file format conversion.
+- Drag-and-drop file input area with interactive thumbnail spectrum previews for uploaded files.
+- Option to sum all input files into a single spectrum, or concatenate all spectrum files into a single output file.
+- Batch peak fitting can output an N42 file containing the spectrum and peak fits for each input file; concatenated output is sorted by acquisition time.
+- HTML summary with warnings is displayed after batch analysis completes.
+- Users can create custom report templates; see [InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/README.md](https://github.com/sandialabs/InterSpec/blob/master/InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/README.md) and [InterSpec_resources/static_text/ShieldSourceFitLog/README.md](https://github.com/sandialabs/InterSpec/blob/master/InterSpec_resources/static_text/ShieldSourceFitLog/README.md) for more information about making your own report templates.
+
+<div style="clear: both;"></div>
+
+
+### Isotopics by Nuclides Enhancements
+<div style="float: right; width: 320px; margin: 0 0 1em 1em; text-align: center;">
+  <img src="v1.0.14/isotopics_by_nuclides_PuCZT.jpg" alt="Example of using the Isotopics by Nuclides tool." width="320" />
+  <div style="color: gray; font-size: 0.9em;">
+    Example of using the <em>Isotopics by Nuclides</em> to determine the plutonium enrichment from a CZT spectrum.
+  </div>
+</div>
+
+The "Isotopics by nuclides" tool has received major improvements:
+
+- **Multiple Relative Efficiency curves**: The GUI now supports defining multiple Rel. Eff. curves, each with its own stack of nuclides. The Rel. Eff. chart plots all curves with distinct colors, and the HTML report includes charts for each curve.
+- **Fluorescent x-rays and nuclear reactions**: These can now be included as source types in calculations, in addition to nuclides.
+- **Activity ratio constraints**: Users can constrain the ratio of activities between nuclides in the fit.
+- **Mass fraction constraints**: Users can constrain mass fractions for nuclides in the fit, with uncertainty reporting.
+- **Same Hoerl / External shielding constraints**: Option to use the same Hoerl function and/or external attenuators across multiple Rel. Eff. curves.
+- **FWHM estimation method**: Users can now select the FWHM determination method (from detector response, from data, or fit as parameter) in the GUI.
+- **Age fitting**: Age range fitting is now fully working in the GUI, with improved consistency when "Same Z, Same Age" is checked.
+- **Nuclide contribution display**: Each nuclide's percent contribution to a peak is now shown on the Rel. Eff. chart.
+- **Rel. Eff. equation display**: The relative efficiency equation is now shown in the GUI.
+- **Background spectrum**: Option to show/hide the background spectrum on the display.
+- **Lorentzian x-ray option**: Added option to use Lorentzian natural linewidths for x-ray peaks in calculations.
+- **Non-linear energy calibration**: Added optional fitting of deviation pairs as part of the energy calibration - this is especially useful for HPGe spectra where even small non-linearities or errors in nuclear data can have a large impact on the χ2.
+- **Pu-242 correction**: Implemented Pu-242 by correlation method, with corrected and uncorrected values preserved in the solution. Removed considering Am-241 as a Pu isotope, and added back-decaying Pu mixtures to T=0 in the HTML report.
+- **Uncertainties**: Added mass fraction uncertainty, activity ratio uncertainty, and Rel. Eff. function uncertainty reporting.
+- **Templated HTML reports**: Results can now be templated using Inja for custom report formatting - see ee [InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/README.md](https://github.com/sandialabs/InterSpec/blob/master/InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/README.md).
+- **Undo/redo support**: Added undo/redo support to the GUI.
+- **Improved color handling**: Default nuclide color selection now checks the Reference Photopeaks widget and the spectrum's peaks for existing color assignments before choosing new colors.
+- Many improvements and fixes to the calculation code to make successfully finding the optimal solution much reliable.
+
+<div style="clear: both;"></div>
+
+
+### Reference Spectra Widget
+<div style="float: right; width: 320px; margin: 0 0 1em 1em; text-align: center;">
+  <img src="v1.0.14/ref_spectra_widget.jpg" alt="Reference spectrum widget." width="320" />
+  <div style="color: gray; font-size: 0.9em;">
+    The reference spectra widget - includes over 200 of common field nuclides for a variety of mobile detection systems.
+  </div>
+</div>
+
+A new tool for loading and comparing reference spectra has been added. This allows users to browse directories of reference spectra and display them as interactive thumbnail charts alongside the main spectrum for easy comparison, and then load into the main part of the application for further analysis or comparison.  For a variety of mobile detectors, the tool includes over 200 high-fidelity simulation spectra that represent source that are likely to be found in the field.
+
+<div style="clear: both;"></div>
+
+
+### Simple Activity Calculator
+<div style="float: right; width: 320px; margin: 0 0 1em 1em; text-align: center;">
+  <img src="v1.0.14/quick_activity.gif" alt="Simple activity calculator screenshot." width="320" />
+  <div style="color: gray; font-size: 0.9em;">
+    Example use of the Simple Activity Calculator by just right clicking on a peak, selecting the tool, and then entering the distance.
+  </div>
+</div>
+
+A new "Simple Activity Calculator" tool has been added for quick, straightforward activity estimations from a single peak. Features include:
+- Calculates activity from a selected peak, using the detector response function, distance, and optional shielding.
+- Includes dose computation at the specified distance.
+- Background subtraction support, with automatic fitting of a peak in the background spectrum when the background checkbox is checked.
+- State can be saved/loaded via app URI.
+- Allows assuming its a point source, infinite plane, a trace source, or self attenuated source.
+
+To use just right-click on a peak, and select "<em>Quick &lt;nuclide&gt; Activity...</em>".
+
+<div style="clear: both;"></div>
+
+### Fit Peaks for Source
+<div style="float: right; width: 320px; margin: 0 0 1em 1em; text-align: center;">
+  <img src="v1.0.14/fit_peaks_for_source.gif" alt="Fit peaks for source example" width="320" />
+  <div style="color: gray; font-size: 0.9em;">
+    Example use of the <em>Fit Peaks for Source</em> tool to fit La140 peaks in a spectrum.
+  </div>
+</div>
+
+A beta version of a "Fit Source" capability has been added, accessible from the <em>Reference Photopeaks</em> tab. This tool automatically fits peaks in the spectrum for a given nuclide/source, using the expected gamma lines and relative efficiencies to guide the fitting. Features include:
+- Fits all expected peaks for one or more sources, creating ROIs where needed.
+- Uses relative efficiency optimization to iteratively improve fits, and take into account nearby or interfering gammas or peaks to properly resolve observable peaks.
+- Using the drop-down on the right-side of the button, you can use the advanced dialog to:
+    - Option to also fit NORM background peaks alongside source peaks.
+    - Option to fit peaks in background and secondary spectra.
+    - Advanced options for controlling continuum type, peak skew, and clustering behavior.
+    - Rel. Eff. chart display for the fit results.
+
+<div style="clear: both;"></div>
+
+### Peak Fitting Improvements
+- **Ceres-based peak fitting**: Peak fitting has been upgraded to use the [Ceres solver](http://ceres-solver.org) with automatic differentiation, providing improved fitting robustness and the ability to analytically differentiate through peak skew models and energy calibration.
+- **New peak skew types**: Added three new peak skew models:
+    - **Voigt+Exp*Gauss** (VoigtPlusBortel): A Voigt profile (Gaussian convolved with Lorentzian) mixed with Exp*Gauss, intended for fitting x-ray peaks on HPGe detectors where natural atomic linewidth, detector resolution, and incomplete charge collection all contribute. Lorentzian width is automatically set from known x-ray natural linewidths when selected in the Peak Editor.
+    - **Gauss+Exp*Gauss** (GaussPlusBortel): A weighted mixture of Gaussian and Exp*Gauss, useful when the exponential tail is less prominent.
+    - **Double Exp*Gauss** (DoubleBortel): Convolution of Gaussian with a weighted sum of two left-sided exponentials, from the original Bortels & Collaers (1987) formulation.
+- **X-ray natural linewidth data**: Added a comprehensive database of x-ray natural linewidths (Lorentzian HWHM) and Doppler broadening data for elements Z=1-98, used to set the Lorentzian component for Voigt peak fitting.
+- **New stepped continuum types**: Added "Flat Step (CDF)", "Linear Step (CDF)" and "Bi-linear Step (CDF)" continuum types. These are conceptually the same as the non <em>CDF</em> version, but use the peaks distribution to compute the step, instead of the data - this results in the "flat" step actually being flat, and "linear" be a straight line on each side of the peak; previously for small peaks on a large continuum, the these continuum types would possible be not flat, or not straight.  Future versions of <em>InterSpec</em> will use these new types as the default, and deprecate or remove the original implementation. 
+- **Low-resolution detector support**: Peak fitting now uses different configurations for HPGe vs. non-HPGe (e.g., NaI, CZT) detectors, improving automatic peak fitting for low-resolution spectra.
+- **Peak fitting options in right-click menu**: Users can now access additional peak fitting options (ex. add peak, use drf FWHM, etc) directly from the right-click context menu when refitting a peak, as well as from the Peak Editor.
+- **Peak Manager editing**: ROI bounds and continuum type can now be edited directly in the Peak Manager (or similar) table.
+- **Double-click to fit peaks in background/secondary**: Holding <code>ALT</code> while double-clicking on the spectrum chart will fit a peak in the background spectrum; holding SHIFT will fit in the secondary spectrum.
+
+
+### Kinematic Reference Lines
+<div style="float: right; width: 320px; margin: 0 0 1em 1em; text-align: center;">
+  <img src="v1.0.14/dynamic_ref_lines.gif" alt="Dynamic ref line preview" width="320" />
+  <div style="color: gray; font-size: 0.9em;">
+    Dynamic reference line tool being used to quickly identify peaks sources.
+  </div>
+</div>
+
+Added support for displaying kinematic reference lines for nuclear reactions on the spectrum chart - the reference lines intelligently update based on the mouse location.  When multiple candidates exist at an energy, the display cycles through them automatically (every 2 seconds) or via arrow keys. A single left-click stops the cycling or advances to the next candidate.  If you fit a peak while the dynamic reference line is showing, the peak will automatically be associated with that source.  See the "FAQs" tab in the Welcome dialog for how to customize sources that can be shown, or probability of showing for a specific source.
+
+<div style="clear: both;"></div>
+
+
+### Spectrum Files Tab Improvements
+
+<div style="margin-left: auto; margin-right: auto; width: 480px; margin: 0 0 1em 1em; text-align: center;">
+  <img src="v1.0.14/CompactFileManager.jpg" alt="Spectrum Files tab" width="480" />
+  <div style="color: gray; font-size: 0.9em;">
+    Dynamic reference line tool being used to quickly identify peaks sources.
+  </div>
+</div>
+
+- Added buttons to the <em>Spectrum Files</em> tab to swap the background or secondary spectrum with the foreground spectrum.
+- Added buttons to quickly clear the displayed spectra for each spectrum type (foreground, background, secondary).
+
+
+
+### Activity/Shielding Fit Improvements
+- Replaced the Wt-based chi-squared chart with a new D3.js-based chart, with improved tooltips and interactivity.
+- Added ability for users to create custom HTML calculation logs using Inja templates.
+- Added ability to adjust photopeak clustering from the Activity/Shielding Fit tool.
+- Added multiple report templates and the ability to create your own template (see the "<em>Calculation Log</em>" item in the three-dot menu in upper-right of tool).
+- Added interactive 2D and 3D diagrams of the fit model, to help make sure everything is setup as expected - see the "<em>Show Model Diagram</em>" in the three-dot menu in upper-right of tool.
+
+
+<div style="margin-left: auto; margin-right: auto; width: 640px; margin: 0 0 1em 1em; text-align: center;">
+  <img src="v1.0.14/shielding_pi.jpg" alt="Spectrum Files tab" width="300" />
+  <img src="v1.0.14/shielding_3D.jpg" alt="Spectrum Files tab" width="300" />
+  <div style="color: gray; font-size: 0.9em;">
+    Pi diagram and 3D view of source/shielding setup.  The detector can be hidden from these diagrams, and they are also interactive, giving more information on mouse over.
+  </div>
+</div>
+
+
+
+### Isotopics from Peaks Improvements
+- Now shows fraction of counts in each peak when multiple nuclides contribute to the HTML report.
+- Added decay x-ray support.
+- Added mass fraction range constraints.
+- Improved error reporting when number of fit parameters exceeds number of peaks.
+- Various other improvements
+
+
+
+### Other New Features
+- **Reference line display options**: Added option to display Reference Photopeak lines with "major" lines extending full-height of the chart as a dashed line, or to just have the dashed line for the currently moused-over reference line.  Also added a thickness option as well.
+- **Spontaneous fission reference lines**: Added spontaneous fission product buildup/lines for Cf-252, Cm-244, and Cm-248.
+- **Energy calibration preservation option**: Added user option to check if the current energy calibration should be preserved when switching spectrum files.
+- **Nuclide Decay Info**: Users can now enter a negative duration in the Nuclide Decay Info tool to back-calculate (e.g., Pu mixtures to T=0).
+- **Nuclide Search**: Added search by energy for un-aged nuclides. Changed table header from "Parent" to "Nuclide" for clarity.
+- **Detector Efficiency Import**: Several additional CSV-based detector efficiency file formats can now be read. The efficiency CSV files can now be be drag-and-dropped onto the application to create the detector efficiency function. Added "absolute efficiency" type.
+- **Common detector efficiencies bundled**: A set of common detector efficiency functions are now included with the application.
+- **DRF chart improvements**: The Detector Response Function selection chart has been re-implemented in D3.js. Improved the y-axis scaling, label formatting, and display of small or "flat" efficiency curves.
+- **Angle .outx files**: Added parsing of Angle .outx detector characterization files.
+- **Maps tool**: Added buttons to copy a URL to open the current location in Google Maps or Bing Maps. Added initial implementation of energy range filtering for map markers.
+- **QR code reading**: Improved QR code scanning robustness by trying multiple image processing approaches.
+- **Materials database**: Added materials from the "Compendium of Material Composition Data for Radiation Transport Modeling." Filtered out shielding material options that don't make sense.
+- **Peak CSV export**: Added column to indicate if a peak is Gaussian or data-defined.
+- **Gamma XS Calculator**: Result text fields are now selectable for copy/paste.
+- **SimpleDialog**: Users can now select text in SimpleDialog contents for copy/paste. Escape key now properly closes SimpleDialogs.
+- **Spectrum Files tab**: File summary information can now be selected/copied.
+- **CALp warning**: Added warning when applying a CALp energy calibration to a lower-channel-count spectrum.
+- **Peak info tooltip**: X-ray and reaction information is now shown in the peak info tooltip when hovering over a peak (previously only showed nuclide info).
+- **CSS variables for theming**: Converted many application colors to CSS variables, improving color theming customizability and consistency. These colors can be set in the Color Theme tool.
+- **Detection Confidence Tool**: Added "counts" information to the Currie detection limit "more info" dialog even when activity information is available.
+- **Spectrum File Query Tool**: Spectrum file previews are now shown as tooltips when hovering over results.
+- **Menu keyboard navigation**: Application menus are now navigable via arrow keys (handled entirely in JS). Menu checkboxes can be toggled with space/enter. App menu can be activated with Cmd/Ctrl+I.
+- **Non-foreground peak display/fit/interaction**: Peaks in background and secondary chart are now displayed, and you can also interact with peaks in non-foreground (background/secondary) spectra on the chart, as well as fit peaks in the background/secondary spectrum by holding the<code>Alt</code> or <code>Shift</code> keys, respectively when double clicking on the spectrum.
+- Added a detector setback field for detector efficiency functions.
+- Native directory selector for Spectrum File Query tool, Reference Spectrum tool, and a few other places.
+- Update scatter corrections for dose calculations to use an updated library from <code>GADRAS</code>.
+
+
+### Internationalization
+- Added full AI-generated translations for: Russian, Japanese, French, Portuguese, Bengali, Indonesian, Hindi, Arabic, Hungarian (with user-contributed refinements), and Mandarin Chinese.
+- Added full AI-generated  translation.
+- Localized the Isotopics by nuclides GUI, Detection Confidence Tool, and Activity/Shielding Fit chart.
+- Improved translation of labels with colons across the application.
+
+If you have suggestions for your preferred language, please send them to InterSpec@sandia.gov - they would be greatly appreciated.
+
+### Spectrum File Format Improvements (SpecUtils)
+- **CNF file improvements**: Better error handling, energy calibration fixes for files with multiple ACQP blocks, extraction of k-edge information, more lenient calibration parameter validation.
+- **PHD files**: Energy calibration is now read from PHD files, with polynomial coefficient fitting.
+- **SPE files**: Added reading of "SPEC_CAL" section; more forgiving parsing of SPC files using `=` instead of `:`.
+- **Detector type detection**: Added detection of Radiacode (renamed to RadiaCodeCsI10), Raysid, KromekGR1, and KromekD5 detector models.
+- **URI spectrum format**: Enabled on macOS and Linux (previously Windows only).
+- **RSI N42 messages**: Support for N42 messages embedded within another XML message from specific RSI systems.
+- **Misc additional spectrum file formats added**: including IEC 61455, and various SpectraLine formats
+- A number of other fixes and improvements in reading spectrum files in
+
+### Nuclear Data (SandiaDecay)
+- U-235 gamma branching ratios updated for 345.9 keV and 387.82 keV gammas, based on values from LA-UR-23-29851 (Dave Mercer, LANL).
+- Added ability to compute decay-corrected decay particle sums for given time intervals.
+
+---
+
+## Bug Fixes
+
+### InterSpec
+- Fixed wrong activity types assigned in activity/shielding fit results for trace sources.
+- Fixed user-reported bug where batch peak fitting results were not including some clearly fittable peaks.
+- Fixed batch peak fitting failure when live time is zero.
+- Fixed concatenated batch peak fit output file having peaks get out of sync/reordered.
+- Fixed custom batch template results having a random name instead of the name of the template.
+- Fixed nuclide suggestion popup not showing nuclides for elements without x-ray fluorescence data.
+- Fixed Reference Lines not updating when text is cleared after persisting another nuclide.
+- Fixed example spectra from Welcome dialog not loading on macOS app.
+- Fixed saving HTML spectrum files failing on macOS app.
+- Fixed uploading multiple files via drag-and-drop on macOS/Electron.
+- Fixed batch upload not working correctly in Safari.
+- Fixed bug on time-history chart where neutron counts were using gamma real time.
+- Fixed using incorrect data uncertainties when fitting peaks/continuum with background-subtracted data.
+- Fixed peaks migrating left/right of each other during fitting, producing invalid Gaussian sigmas.
+- Fixed Nuclide Search not including decay x-rays when searching by energy (long-standing bug).
+- Fixed URL for full-spectrum service in External RID tool help.
+- Fixed server NIC address being ignored for web deployment.
+- Fixed N42 files with extra null bytes at end of file not parsing.
+- Fixed `double_sided_crystal_ball_coverage_limits` needing to iteratively find the distribution's upper bound.
+- Improved error message when files are too large to save to the database.
+- Added waiting message (instead of a nonsensical error message) when fitting FWHM from spectrum.
+- Improved numerical stability of cylinder intersection calculations in 3D shielding view.
+- Fixed PeakEditor skew parameter fit-for values not being obeyed after changing a peak's skew type.
+- Fixed Peak Manager table editing for Mean/FWHM values.
+- Fixed "You've opened this spectrum file before" dialog not always having localized strings.
+- Fixed text input field backgrounds staying black when switching from dark to light color theme.
+- Fixed macOS file-saving issue (N42/XML/HTML) reported in issue #49, caused by migration from NSURLDownload to NSURLSession.
+- Potentually fix a user reported error of InterSpec taking up 100% of a CPU core, even after closing the window. 
+
+Many other small issues fixed or improved.
+
+### SpecUtils
+- Fixed CNF energy calibration not being read for files with multiple ACQP blocks.
+- Fixed horizontal mouse wheel not working when spectrum was panned to the far left or right.
+- Fixed potential instability when mapping deviation-pair-corrected energy back to true energy.
+- Fixed energy calibration in CSV input being in eV units (now auto-detected and converted to keV).
+- Fixed N42 files with extra null bytes at end of file not parsing.
+- Fixed handling of energies outside the valid range when calling `find_fullrangefraction_channel`.
+- Fixed unintended copy of vectors in spectrum processing.
+
+---
+
+## Developer / Deployment Changes
+- **Docker / Container Build**: Functional Alpine Linux and Debian container builds for web deployment, with GitHub Actions CI for container builds. Improved container size optimization and build scripts for Linux dependency building.
+- **macOS CI/CD**: Added GitHub Actions workflow for macOS app builds.
+- **CAMIO library** (SpecUtils): New abstraction layer for reading and writing Canberra CAM/CNF files, improving robustness and maintainability.
+- **CNF file writing** (SpecUtils): Ability to create CNF files with PROC blocks.
+- **SpecUtils Python, C, C#, Node.js, Java bindings**: Added or improved these wrappers to allow using the spectrum file parsing code from other programming languages.
+
+
+
+
+
+
+# InterSpec v1.0.13 Release Notes (March 2025)
+
+<div style="text-align: right;">SAND2026-21613O</div>
+**Release date:** March 5, 2025
+
+**Previous release:** v1.0.12 (May 5, 2024)
+
+InterSpec v1.0.13 is a major update spanning approximately 380 commits to InterSpec, 137 commits to SpecUtils, and 13 commits to SandiaDecay. Highlights include comprehensive internationalization of the application (with French translations), a new Simple MDA detection limit tool, significant improvements to mobile/portrait mode, expanded batch analysis capabilities with report templating, and numerous improvements to the database state management system.
+
+---
+
+## New Features
+
+### Internationalization
+- Internationalized nearly every UI component in the application, including the spectrum chart, Peak Editor, Activity/Shielding Fit, Energy Calibration, Reference Photopeaks, Nuclide Decay Chart, Dose Calculator, Gamma XS Calculator, 1/r² Calculator, Flux Tool, Units Converter, Isotopics from Peaks, Detector Response Function tools, Spectrum File Manager, and more.
+- Added French translations for all application text.
+- Localized time duration input and output (parsing and display).
+- Language menu now shows language names instead of locale codes.
+
+### Simple MDA (Minimum Detectable Activity) Tool
+<div style="float: right; width: 320px; margin: 0 0 1em 1em; text-align: center;">
+  <img src="v1.0.14/quick_mda.gif" alt="Preview of the Quick MDA tool" width="320" />
+  <div style="color: gray; font-size: 0.9em;">
+    The <em>Quick MDA</em> tool is started by right-clicking on a spectrum; if reference photopeak lines are being displayed, the nuclide and energy gamma will already be filled out.
+  </div>
+</div>
+
+A simplified single-peak MDA tool has been added, and can be accessed by right-clicking on the spectrum, outside of any ROIs.  If you are showing reference photopeak lines, the nuclide and energy will be filled out in the tool.  Users can adjust the ROI used by the text fields, or the standard dragging of roi edges on the displayed chart.  Users can also adjust the confidence level, number of side channels, or if it should use the standard <em>Currie</em>, or more advanced <em>Deconvolution</em> methods.  The peak that would be expected at the computed limit is displayed for reference, and there is a "further details..." link that provides additional information about the ROI and calculation, along with descriptions.
+
+
+<div style="clear: both;"></div>
+
+
+### Database and State Management Overhaul
+- Improved consistency and reliability of auto-saving work, manual state storage, tag management, and end-of-session state saving.
+- Added browsing of auto-saved spectra (not part of user states) in the database state browser.
+- Application now tracks active use time (updated approximately every minute).
+- Added menu item to manually update end-of-session state (development builds).
+
+### Batch Analysis Improvements
+- Added inja-based report templating for batch peak fits and activity/shielding fit results.
+- Added JSON output option for batch analysis.
+- Added INI file support for default batch command line options.
+- Added energy calibration fit logging, measurement start time, live time, and real time to output templates.
+- Added individual source contributions to peaks in activity fit result logging.
+- Added batch command line capability to the Electron version of the app (Linux).
+- Added background spectrum peaks and background-subtracted peaks to exported peak CSV files.
+- Added peak statistical and shape thresholds to batch fitting.
+- Added "real time" column to peak CSV export.
+
+### Mobile and Portrait Mode
+- Added vertical/portrait mode support for phones (iOS and Android).
+- Improved display layout for most tools in portrait mode on phones.
+- Improved soft-keyboard handling on Android.
+- Made dialogs close when phone rotates orientation.
+- Android app can now accept files sent from other apps.
+- Improved file export dialog layout for mobile.
+
+### CI/CD
+- Added GitHub Actions workflows for Linux and Windows Electron builds - in addition to running unit tests on every push to GitHub, an automated bleeding edge build is created for Windows and Linux, that you can download from https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge .
+- Added Docker-based build system for Linux Electron app.
+
+### Spectrum Chart Improvements
+- Converted chart colors to use CSS variables, enabling better theming.
+- Added peak label size and rotation as part of the color theme.
+- Added option for compact x-axis to be separate for when the energy slider chart is/isn't showing.
+- Added icons to show/hide the energy slider chart.
+- Double-clicking y-axis title now toggles log/linear scale; double-clicking x-axis title toggles energy strip chart.
+- Added option to set minimum displayed log y-axis value (for channels with zero or negative counts).
+
+### Activity/Shielding Fit Improvements
+- Changed self-attenuating source mass fraction to be of the entire material, not per-element.
+- Fixed fitting mass fractions for nuclides of multiple elements in self-attenuating sources.
+- Added showing individual source contributions to peaks in fit results.
+- Added activity uncertainty display for trace and self-attenuating sources.
+- Added peak area uncertainty to peak info table.
+
+### Relative Activity Tools
+- Added chi²/dof and enrichment text to Rel. Eff. chart.
+- Changed manual Rel. Eff. plot to show peak mean instead of assigned energy (useful when peaks are close together).
+- Added background subtraction option to Rel. Act. Manual tool state XML.
+- State of Act/Shield and Rel. Act. Manual widgets now saved to SpecMeas when exporting spectrum files.
+
+### Decay Chart
+- Dynamic opacity for decay branch arrows/lines: branches with BR less than 0.001 have reduced opacity, and rare branches (< 1E-5 BR) have even lighter opacity, to improve visual clarity. As suggested in [issue #40](https://github.com/sandialabs/InterSpec/issues/40).
+
+### Other New Features
+- Added option to show single and double escape peak reference lines; peak energy input now accepts "S.E." and "D.E." notation.
+- QR code support: File > Open > Browse now works with image files containing QR codes.
+- Added undo/redo step for clearing reference photopeak lines.
+- Added file RIID summary to Spectrum File Manager table, and additional information to the "Spectrum Files" tab.
+- Added ability to copy peak CSV data to pasteboard/clipboard.
+- Moved `UserPreferences` to a dedicated class.
+- Added ability to parse GammaQuant-derived detector efficiency function CSV files.
+- Added Source.lib file support for detector characterization, including GUI link and multi-source storage in remarks.
+- Added showing data and app directories in OS file explorer (Finder/Explorer).
+- Peak FWHM lower limit adjusted for high-resolution detectors, now allowing down to approximately 6 channels.
+- Made peak area and FWHM fields not editable for non-Gaussian peaks.
+- Corrected spelling of "Currie" (the limit method) vs. "Curie" (the activity unit) throughout the application.
+- Feature Marker window is now displayed as a column in the Reference Photopeak tool.
+- U-iso and Pu-iso reference line energies updated to match SandiaDecay values for better auto-peak-search assignment.
+- Pu-iso reference lines changed to include Am-241 as part of the Pu-241 decay chain.
+- Updated `more_nuclide_info.xml` to include more medical sources.
+- Added tooltip display options.
+- Removed dependency on moment.js.
+- Updated to C++17 (replaced deprecated `ios::streampos` with `ios::pos_type`, etc.).
+- Updated Boost to 1.85 for CMake "Fetch" builds.
+- Added additional alpha reactions for reference lines.
+- Added standalone command-line batch analysis executable, with CMake build system support for macOS and Windows.
+- Input URIs in "Enter URL" dialog now have line-breaks and control characters stripped.
+- Improved heuristic for when to use background included with a foreground file.
+- Added support for spectra with y-values less than one.
+- Added macOS pre-requisite build/install script.
+- D3 time chart load optimization enabled.
+- Removed use of `SpectrumDataModel` from `D3SpectrumDisplayDiv` and `PeakModel` (internal cleanup).
+
+### SpecUtils
+- **Python bindings** via nanobind, with CI builds for Linux, Windows, and macOS, and PyPI publishing.
+- **C bindings** (C-API) for SpecFile, Measurement, and EnergyCalibration, with examples and unit tests.
+- Added support for Russian CSV spectrum file format.
+- Added support for .JAC spectrum files.
+- Added support for Radiacode RC-103G detector.
+- PCF format: increased channel limit to 128k; added tag character support.
+- Reference photopeak lines can now have individually specified colors.
+- Added peak label placement via simulated annealing.
+- Added dashed line drawing for S.E. and D.E. reference lines.
+- Added option for highlight regions to fill area under the data curve with optional text.
+- Chart localization support for SpectrumChartD3.js.
+- Chart JS now supports small y-values (largest visible value ≤ 1.0).
+- Switched to always using zero compression in N42-2012 files for consistency.
+- Added ability to change sample numbers of Measurements in SpecFile.
+- Added `valid_utf8()` string utility function.
+- Converted from `boost::unit_test` to `doctest` for testing.
+- Made Boost number parsing optional.
+- Added GitHub Actions CI testing.
+
+### SandiaDecay
+- U-235 branching ratios updated for the 345.9 keV and 387.82 keV gammas, based on values from LA-UR-23-29851.
+- Added decay-corrected decay particle sum computation for given time intervals.
+- Added `addAgedNuclideByNumAtoms()` function with examples.
+- Fixed `internalIndexNumber` mixing atomic mass and atomic number.
+- Removed duplicate nuclides from XML data.
+
+---
+
+## Bug Fixes
+
+### InterSpec
+- Fix calculating shielding from dose.
+- Fix Nuclide Decay Info tool showing all nuclides as stable (regression from internationalization). Closes [issue #39](https://github.com/sandialabs/InterSpec/issues/39).
+- Fix right-click context menu failure for data-defined peaks.
+- Fix deserializing FixedGeometry detector efficiency functions from XML.
+- Fix Electron directory browsing in the file query tool.
+- Fix peak fit CSV summary column headers missing a column.
+- Fix spectrum export error when summing partial file records (invalid sample numbers).
+- Fix decay chart axis title.
+- Fix trace source exception for non-exponential distribution types.
+- Fix "Isotopes of same element same age" checkbox not displaying in Activity/Shielding fit.
+- Fix app hanging on exit.
+- Fix setting chart y-range from terminal widget not being fully obeyed.
+- Fix potential crash in peak search dialog when Rel. Eff. Act. chart has not been shown.
+- Fix WCheckBox text alignment (text and checkbox staying on same line).
+- Fix loading Activity/Shielding models with custom formula materials.
+- Fix reading ZIP files where no compression is used.
+- Fix double-sided crystal ball distribution not plotting full x-range for large skew values.
+- Fix infinite recursion when setting boolean user options.
+- Fix native menu items on macOS.
+- Fix reference photopeaks not persisting when switching tool tab display mode.
+- Fix energy calibration not being correctly applied to RelCalcAuto HTML report.
+- Fix mass attenuation coefficient function calls using element-specific version when fractional version was intended.
+- Fix mass fraction uncertainty range to account for the covariance matrix.
+- Fix potential issue saving snapshot to database.
+- Fix nuclide mass printed in Activity/Shielding fit log.
+- Fix batch analysis with background subtraction when exemplar did not use background subtraction.
+- Fix peak fits where one or more channels had small but non-zero counts.
+- Fix crash when exporting peak CSV on wxWidgets build.
+- Fix out-of-bounds access in peak fit code.
+- Fix character display issue in Rel. Act. HTML reports.
+- Fix time-chart highlights not resizing when chart resizes.
+- Fix time-chart not displaying after hiding and re-showing tool tabs.
+- Fix templating sometimes not working for trace sources.
+- Fix welcome screen example spectra load button not showing on iOS/Android.
+- Fix error message not being properly localized.
+- Fix bug in CSV output of making a detector response function.
+- Fix erroneous error messages when distance units are not included in shielding thickness input.
+- Fix mass ratio uncertainty being wrong in "Isotopics from peaks" tool.
+- Fix exporting sub-set of samples from a file: peaks in N42 output were assigned wrong sample numbers.
+- Fix multiplying instead of dividing mm units in distance calculations.
+- Fix printing out distance in RID result dialog.
+- Fix potential issue when creating estimated FWHM functional form (NaN FWHM causing indeterminate sort order).
+- Fix bugs related to fixed geometry efficiency functions.
+- Fix corner case in creating PeakDef JSON.
+- Fix `DecayParticleModel::less_than(...)` to be better behaved for sorting.
+- Fix bug in assigning detector efficiency function.
+- Fix "Energy" field label typo.
+- Fix Toast message giving instrument RID results, and update preferences when loading app state.
+- Fix user options being lost in current session when a refresh or re-read from the database was triggered.
+- Fix Peak Info widget not displaying, or causing issues when toggling tool tab visibility.
+- Fix output N42 file not having updated energy calibration after batch fitting.
+
+### SpecUtils
+- Fix parsing Lynx CSV files.
+- Fix PHD format parsing (allow first channel 0).
+- Fix peak drawings having visual glitch.
+- Fix spectrum scalers on chart not matching spectrum line colors.
+- Fix SPC files: allow negative first/last channel values. Related to [issue #38](https://github.com/sandialabs/SpecUtils/issues/38).
+- Fix extra semicolon in HTML output.
+- Fix second and later URI spectra not getting energy calibration from first spectrum.
+- Fix x-axis slider chart being attached to wrong SVG element in DOM.
+- Fix neutron live time not being quoted in spectrum JSON.
+- Fix Radiacode deadtime (changed to 5 µs).
+- Fix hashing of -0.0 floats/doubles and strings.
+- Fix exporting static SVG of spectrum chart styling.
+- Fix async issues on macOS/iOS.
+- Fix issue not parsing neutron information on some SPE files.
+- Fix renaming detectors when there are more than two energy calibration variants.
+- Fix multiple highlight regions not displaying correctly.
+- Fix y-axis label padding/size computation.
+- Account for one detector model sometimes giving non-unique file UUIDs.
+
+
+
 # InterSpec v1.0.12 release notes (May 2024)
 
 <div style="text-align: right;">SAND2024-05524O</div>
