@@ -667,7 +667,7 @@ protected:
   WContainerWidget *m_files; //holds the RelEffFile objects..
   
 public:
-  RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent = 0 );
+  RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit );
   
   virtual ~RelEffDetSelect(){}
   
@@ -800,7 +800,7 @@ protected:
   WContainerWidget *m_directories; //holds the GadrasDirectory objects..
   
 public:
-  GadrasDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent = 0 );
+  GadrasDetSelect( InterSpec *interspec, DrfSelect *detedit );
   
   virtual ~GadrasDetSelect(){}
   
@@ -1251,7 +1251,7 @@ const std::vector<std::shared_ptr<DetectorPeakResponse> > &RelEffFile::available
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////   Begin RelEffDetSelect implementation   //////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent )
+RelEffDetSelect::RelEffDetSelect( InterSpec *interspec, DrfSelect *detedit )
     : WContainerWidget(),
       m_interspec( interspec ),
       m_drfSelect( detedit ),
@@ -1399,7 +1399,7 @@ void RelEffDetSelect::load()
 
 
 ///************************ Begin Need to implement for GADRAS **************/////
-GadrasDetSelect::GadrasDetSelect( InterSpec *interspec, DrfSelect *detedit, WContainerWidget *parent )
+GadrasDetSelect::GadrasDetSelect( InterSpec *interspec, DrfSelect *detedit )
   : WContainerWidget(),
     m_interspec( interspec ),
     m_drfSelect( detedit ),
