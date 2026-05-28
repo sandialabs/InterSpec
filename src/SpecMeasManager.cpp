@@ -2088,8 +2088,8 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
   };
 
   // --- ICD2 check: an XML file containing N42-derivative-of-ICD2 markers. ---
-  //  Has to come before generic XML/CSV/DRF detection because ICD2 files contain '<' early on
-  //  and could otherwise be misclassified as a DRF XML, etc.
+  //  Treated as unambiguous: ICD2 files contain '<' early on and would otherwise be
+  //  misclassified as a DRF/ShieldingSource XML.  Return immediately with one candidate.
   if( std::find( header, header + headerLen, uint8_t(60) /* '<' */ ) != (header + headerLen) )
   {
     string datastr( (const char *)header, headerLen );
@@ -2099,7 +2099,7 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
        || SpecUtils::icontains( datastr, "DNDOARSchema" )
        || SpecUtils::icontains( datastr, "DNDOEWSchema" ) )
     {
-      result.kind = NonSpecFileKind::Icd2;
+      result.candidates.push_back( NonSpecFileKind::Icd2 );
       return result;
     }
   }
@@ -2129,9 +2129,10 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
   const uint8_t pdf_mn[]    = { 0x25, 0x50, 0x44, 0x46 };
   const uint8_t ps_mn[]     = { 0x25, 0x21, 0x50, 0x53 };
 
+  // Binary magic-number matches are unambiguous: return immediately with a single candidate.
   if( starts_with_bytes( zip_mn, sizeof(zip_mn) ) )
   {
-    result.kind = NonSpecFileKind::ArchiveZip;
+    result.candidates.push_back( NonSpecFileKind::ArchiveZip );
     return result;
   }
 
@@ -2141,7 +2142,7 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
      || starts_with_bytes( zip7_mn, sizeof(zip7_mn) )
      || starts_with_bytes( gz_mn,   sizeof(gz_mn) ) )
   {
-    result.kind = NonSpecFileKind::ArchiveOther;
+    result.candidates.push_back( NonSpecFileKind::ArchiveOther );
     return result;
   }
 
@@ -2150,7 +2151,7 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
      || starts_with_bytes( tiffle_mn, sizeof(tiffle_mn) )
      || starts_with_bytes( tiffbe_mn, sizeof(tiffbe_mn) ) )
   {
-    result.kind = NonSpecFileKind::Document;
+    result.candidates.push_back( NonSpecFileKind::Document );
     return result;
   }
 
@@ -2169,7 +2170,7 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
 
   if( isgif || isjpg || ispng || isbmp || issvg || isheic )
   {
-    result.kind = NonSpecFileKind::Image;
+    result.candidates.push_back( NonSpecFileKind::Image );
     if( isgif )       result.imageMimeType = "image/gif";
     else if( isjpg )  result.imageMimeType = "image/jpeg";
     else if( ispng )  result.imageMimeType = "image/png";
@@ -2179,116 +2180,89 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
     return result;
   }
 
+  // Below: content-pattern matches (XML markers / CSV column patterns / heuristic text
+  // checks).  Each match is appended to `candidates` in priority order; the dispatcher
+  // will try them in turn, advancing on parse-failure (handler returning `false`).
+
   // --- Peak CSV (InterSpec/PeakEasy or GADRAS). State-gate (currdata) is checked by caller. ---
-  const bool possible_peak_csv = ( header_contains("Centroid")
-                                  && header_contains("Net_Area")
-                                  && header_contains("FWHM") );
-
-  const bool possible_gadras_peak_csv = ( header_contains("Energy(keV)")
-                                  && header_contains("Rate(cps)")
-                                  && header_contains("FWHM(keV)")
-                                  && header_contains("Centroid") );
-
-  if( possible_gadras_peak_csv )
+  if( header_contains("Energy(keV)")
+     && header_contains("Rate(cps)")
+     && header_contains("FWHM(keV)")
+     && header_contains("Centroid") )
   {
-    result.kind = NonSpecFileKind::PeakCsvGadras;
-    return result;
+    result.candidates.push_back( NonSpecFileKind::PeakCsvGadras );
   }
-  if( possible_peak_csv )
+  if( header_contains("Centroid")
+     && header_contains("Net_Area")
+     && header_contains("FWHM") )
   {
-    result.kind = NonSpecFileKind::PeakCsvInterSpec;
-    return result;
+    result.candidates.push_back( NonSpecFileKind::PeakCsvInterSpec );
   }
 
   // --- Standalone PeakFitDetPrefs XML ---
   {
     const int pfp_pos = position_in_header( "<PeakFitDetPrefs" );
     if( (pfp_pos >= 0) && (pfp_pos <= 20) && (fileSize < 10*1024) )
-    {
-      result.kind = NonSpecFileKind::PeakFitDetPrefsXml;
-      return result;
-    }
+      result.candidates.push_back( NonSpecFileKind::PeakFitDetPrefsXml );
   }
 
   // --- Single DRF: InterSpec rel-eff CSV or <DetectorPeakResponse> XML ---
   if( header_contains( "# Detector Response Function" ) )
-  {
-    result.kind = NonSpecFileKind::DrfRelEffCsv;
-    return result;
-  }
+    result.candidates.push_back( NonSpecFileKind::DrfRelEffCsv );
+
   {
     const int xml_drf_pos = position_in_header( "<DetectorPeakResponse" );
     if( (xml_drf_pos >= 0) && (xml_drf_pos <= 20) )
-    {
-      result.kind = NonSpecFileKind::DrfXml;
-      return result;
-    }
+      result.candidates.push_back( NonSpecFileKind::DrfXml );
   }
 
   // --- Multi-DRF / GammaQuant DRF CSV ---
   if( header_contains( "Relative Eff" ) )
-  {
-    result.kind = NonSpecFileKind::DrfMultipleCsv;
-    return result;
-  }
+    result.candidates.push_back( NonSpecFileKind::DrfMultipleCsv );
+
   if( header_contains( "Detector ID" ) )
-  {
-    result.kind = NonSpecFileKind::DrfGammaQuantCsv;
-    return result;
-  }
+    result.candidates.push_back( NonSpecFileKind::DrfGammaQuantCsv );
 
   // --- CALp file. State-gate (currdata) is checked by caller. ---
   if( header_contains( "CALp File" ) )
-  {
-    result.kind = NonSpecFileKind::CalpFile;
-    return result;
-  }
+    result.candidates.push_back( NonSpecFileKind::CalpFile );
 
 #if( USE_REL_ACT_TOOL )
   // --- Isotopics-by-nuclide RelActCalcAuto XML.  State-gate (currdata) checked by caller. ---
   if( header_contains( "<RelActCalcAuto " ) )
-  {
-    result.kind = NonSpecFileKind::RelActAutoXml;
-    return result;
-  }
+    result.candidates.push_back( NonSpecFileKind::RelActAutoXml );
 #endif
 
   // --- ISOCS .ECC file, or ANGLE .outx file ---
   if( header_contains("SGI_template") || header_contains("ISOCS_file_name")
      || header_contains("<angle") )
   {
-    result.kind = NonSpecFileKind::EccOrOutxFile;
-    return result;
+    result.candidates.push_back( NonSpecFileKind::EccOrOutxFile );
   }
 
   // --- Efficiency CSV: GADRAS Efficiency.csv / gamEff CSV / Run_effoutput CSV ---
   if( header_line_has_both("en", "eff")
      || header_contains("energy,peak,pcom") )
   {
-    result.kind = NonSpecFileKind::EfficiencyCsv;
-    return result;
+    result.candidates.push_back( NonSpecFileKind::EfficiencyCsv );
   }
 
   // --- Shielding/Source fit XML ---
   if( header_contains("<ShieldingSourceFit") && header_contains("<Geometry")
      && (fileSize > 128) && (fileSize < 1024*1024) )
   {
-    result.kind = NonSpecFileKind::ShieldingSourceXml;
-    return result;
+    result.candidates.push_back( NonSpecFileKind::ShieldingSourceXml );
   }
 
-  // --- Source.lib (last-ditch heuristic check; state-gate on MakeDRF window is in caller). ---
+  // --- Source.lib (last-ditch heuristic; state-gate on MakeDRF window is in caller). ---
   {
     const string datastr( (const char *)header, headerLen );
     stringstream strm( datastr );
     if( SrcLibLineInfo::is_candidate_src_lib( strm ) )
-    {
-      result.kind = NonSpecFileKind::SourceLib;
-      return result;
-    }
+      result.candidates.push_back( NonSpecFileKind::SourceLib );
   }
 
-  return result;  // Unknown
+  return result;
 }
 
 
@@ -2332,92 +2306,123 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   const shared_ptr<const SpecUtils::Measurement> currdata
                 = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
 
-  switch( cls.kind )
+  // Dispatch loop: classifier produced an ordered list of candidate kinds.  Each iteration
+  // tries one candidate; if its handler returns `false` (parse failed or state gate not met),
+  // we reset the stream and try the next.  This preserves the pre-refactor fall-through
+  // behavior — most real files match only one kind, but ambiguous content-pattern matches
+  // (e.g., file that looks like both an XML DRF and an XML PeakFitDetPrefs) cleanly cascade.
+  for( const NonSpecFileKind kind : cls.candidates )
   {
-    case NonSpecFileKind::Empty:
-    case NonSpecFileKind::ReadFailed:
-      // Already handled above; here only for switch exhaustiveness.
-      return true;
+    // Reset stream before each attempt.  Handlers leave it in arbitrary state.
+    infile.clear();
+    infile.seekg( 0 );
 
-    case NonSpecFileKind::Icd2:
-      showNonSpecInfoDialog( WString::tr("smm-icd2"), displayName, filesize, infile, type );
-      return true;
+    bool handled = false;
+    switch( kind )
+    {
+      case NonSpecFileKind::Icd2:
+        showNonSpecInfoDialog( WString::tr("smm-icd2"), displayName, filesize, infile, type );
+        handled = true;
+        break;
 
-    case NonSpecFileKind::ArchiveZip:
-      showNonSpecInfoDialog( WString::tr("smm-invalid-zip"), displayName, filesize, infile, type );
-      return true;
+      case NonSpecFileKind::ArchiveZip:
+        showNonSpecInfoDialog( WString::tr("smm-invalid-zip"), displayName, filesize, infile, type );
+        handled = true;
+        break;
 
-    case NonSpecFileKind::ArchiveOther:
-      showNonSpecInfoDialog( WString::tr("smm-unsupported-archive"), displayName, filesize, infile, type );
-      return true;
+      case NonSpecFileKind::ArchiveOther:
+        showNonSpecInfoDialog( WString::tr("smm-unsupported-archive"), displayName, filesize, infile, type );
+        handled = true;
+        break;
 
-    case NonSpecFileKind::Document:
-      showNonSpecInfoDialog( WString::tr("smm-unsupported-document"), displayName, filesize, infile, type );
-      return true;
+      case NonSpecFileKind::Document:
+        showNonSpecInfoDialog( WString::tr("smm-unsupported-document"), displayName, filesize, infile, type );
+        handled = true;
+        break;
 
-    case NonSpecFileKind::Image:
-      showImageDialog( displayName, cls.imageMimeType, filesize, infile, type );
-      return true;
+      case NonSpecFileKind::Image:
+        showImageDialog( displayName, cls.imageMimeType, filesize, infile, type );
+        handled = true;
+        break;
 
-    case NonSpecFileKind::PeakCsvInterSpec:
-    case NonSpecFileKind::PeakCsvGadras:
-      if( !currdata )
-        return false;
-      return tryFitPeaksFromCsv( cls.kind, infile, displayName, filesize, type );
+      case NonSpecFileKind::PeakCsvInterSpec:
+      case NonSpecFileKind::PeakCsvGadras:
+        if( currdata )
+          handled = tryFitPeaksFromCsv( kind, infile, displayName, filesize, type );
+        break;
 
-    case NonSpecFileKind::PeakFitDetPrefsXml:
-      return tryLoadPeakFitDetPrefsXml( infile );
+      case NonSpecFileKind::PeakFitDetPrefsXml:
+        handled = tryLoadPeakFitDetPrefsXml( infile );
+        break;
 
-    case NonSpecFileKind::DrfRelEffCsv:
-    case NonSpecFileKind::DrfXml:
-      return tryLoadSingleDrf( cls.kind, fileLocation, infile );
+      case NonSpecFileKind::DrfRelEffCsv:
+      case NonSpecFileKind::DrfXml:
+        handled = tryLoadSingleDrf( kind, fileLocation, infile );
+        break;
 
-    case NonSpecFileKind::DrfMultipleCsv:
-      return handleMultipleDrfCsv( infile, displayName, fileLocation );
+      case NonSpecFileKind::DrfMultipleCsv:
+        handled = handleMultipleDrfCsv( infile, displayName, fileLocation );
+        break;
 
-    case NonSpecFileKind::DrfGammaQuantCsv:
-      return handleGammaQuantDrfCsv( infile, displayName, fileLocation );
+      case NonSpecFileKind::DrfGammaQuantCsv:
+        handled = handleGammaQuantDrfCsv( infile, displayName, fileLocation );
+        break;
 
-    case NonSpecFileKind::CalpFile:
-      if( !currdata )
-        return false;
-      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
-        [this, &infile]( SimpleDialog *d ){ return handleCALpFile( infile, d, false ); } );
+      case NonSpecFileKind::CalpFile:
+        if( currdata )
+        {
+          handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
+            [this, &infile]( SimpleDialog *d ){ return handleCALpFile( infile, d, false ); } );
+        }
+        break;
 
 #if( USE_REL_ACT_TOOL )
-    case NonSpecFileKind::RelActAutoXml:
-      if( !currdata )
-        return false;
-      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
-        [this, &infile]( SimpleDialog *d ){ return handleRelActAutoXmlFile( infile, d ); } );
+      case NonSpecFileKind::RelActAutoXml:
+        if( currdata )
+        {
+          handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
+            [this, &infile]( SimpleDialog *d ){ return handleRelActAutoXmlFile( infile, d ); } );
+        }
+        break;
+#else
+      case NonSpecFileKind::RelActAutoXml:
+        break;  // Classifier never produces this kind when USE_REL_ACT_TOOL is off.
 #endif
 
-    case NonSpecFileKind::EccOrOutxFile:
-      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
-        [this, &infile]( SimpleDialog *d ){ return handleEccFile( infile, d ); } );
+      case NonSpecFileKind::EccOrOutxFile:
+        handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
+          [this, &infile]( SimpleDialog *d ){ return handleEccFile( infile, d ); } );
+        break;
 
-    case NonSpecFileKind::EfficiencyCsv:
-      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
-        [this, &infile]( SimpleDialog *d ){ return handleEfficiencyCsvFile( infile, d ); } );
+      case NonSpecFileKind::EfficiencyCsv:
+        handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
+          [this, &infile]( SimpleDialog *d ){ return handleEfficiencyCsvFile( infile, d ); } );
+        break;
 
-    case NonSpecFileKind::ShieldingSourceXml:
-      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
-        [this, &infile]( SimpleDialog *d ){ return handleShieldingSourceFile( infile, d ); } );
+      case NonSpecFileKind::ShieldingSourceXml:
+        handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
+          [this, &infile]( SimpleDialog *d ){ return handleShieldingSourceFile( infile, d ); } );
+        break;
 
-    case NonSpecFileKind::SourceLib:
-      if( !m_viewer->makeDrfWindow() )
-        return false;
-      return runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
-        [this, &infile]( SimpleDialog *d ){ return handleSourceLibFile( infile, d ); } );
+      case NonSpecFileKind::SourceLib:
+        if( m_viewer->makeDrfWindow() )
+        {
+          handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
+            [this, &infile]( SimpleDialog *d ){ return handleSourceLibFile( infile, d ); } );
+        }
+        break;
 
-#if( !USE_REL_ACT_TOOL )
-    case NonSpecFileKind::RelActAutoXml:
-      return false;  // Should not occur — classifier skips this kind when USE_REL_ACT_TOOL is off.
-#endif
+      case NonSpecFileKind::Empty:
+      case NonSpecFileKind::ReadFailed:
+      case NonSpecFileKind::Unknown:
+        // Classifier never appends these to `candidates`.
+        break;
+    }//switch( kind )
 
-    case NonSpecFileKind::Unknown:
-      return false;
-  }
+    if( handled )
+      return true;
+  }//for( each candidate )
+
   return false;
 }//bool handleNonSpectrumFile(...)
 
@@ -2684,6 +2689,16 @@ bool SpecMeasManager::tryFitPeaksFromCsv( const NonSpecFileKind kind,
     const std::string sessionid = wApp->sessionId();
     const vector<PeakDef> orig_peaks = m_viewer->peakModel()->peakVec();
 
+    // Capture destruction sentinels by value: the io_service tasks below run later,
+    // after this function returns and UpdateLock is released.  If the user clears the
+    // session in the meantime, `this` (SpecMeasManager) is dangling.  The sentinels
+    // survive (they're shared_ptr's) and gate the work.  `fit_template_peaks` and
+    // `prepare_and_add_gadras_peaks` resolve the live `InterSpec *` inside their own
+    // `WServer::post(sessionid, ...)` callbacks rather than carrying a pointer across
+    // threads, so no `m_viewer` capture is needed here.
+    std::shared_ptr<std::mutex> destruct_mutex = m_destructMutex;
+    std::shared_ptr<bool> destructed = m_destructed;
+
     if( kind == NonSpecFileKind::PeakCsvInterSpec )
     {
       const vector<PeakDef> candidate_peaks
@@ -2695,10 +2710,16 @@ bool SpecMeasManager::tryFitPeaksFromCsv( const NonSpecFileKind kind,
       shared_ptr<const PeakFitDetPrefs> csvFitPrefs = fgMeas ? fgMeas->peakFitDetPrefs() : nullptr;
       if( !csvFitPrefs && fgMeas && fgMeas->detector() )
         csvFitPrefs = fgMeas->detector()->peakFitDetPrefs();
-      Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, csvFitPrefs, sessionid](){
-        PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
+      Wt::WServer::instance()->ioService().boost::asio::io_service::post(
+        [currdata, candidate_peaks, orig_peaks, csvFitPrefs, sessionid,
+         destruct_mutex, destructed]()
+      {
+        std::lock_guard<std::mutex> guard( *destruct_mutex );
+        if( *destructed )
+          return;
+        PeakSearchGuiUtils::fit_template_peaks( currdata, candidate_peaks,
                                                orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, csvFitPrefs, sessionid );
-      } ) );
+      } );
     }
     else
     {
@@ -2711,10 +2732,16 @@ bool SpecMeasManager::tryFitPeaksFromCsv( const NonSpecFileKind kind,
       const shared_ptr<const DetectorPeakResponse> gadrasDrf = gadrasFgMeas ? gadrasFgMeas->detector() : nullptr;
       if( !gadrasFitPrefs && gadrasDrf )
         gadrasFitPrefs = gadrasDrf->peakFitDetPrefs();
-      Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=, gadrasFitPrefs=gadrasFitPrefs](){
+      Wt::WServer::instance()->ioService().boost::asio::io_service::post(
+        [currdata, candidate_peaks, orig_peaks, gadrasFitPrefs, gadrasDrf, sessionid,
+         destruct_mutex, destructed]()
+      {
+        std::lock_guard<std::mutex> guard( *destruct_mutex );
+        if( *destructed )
+          return;
         PeakSearchGuiUtils::prepare_and_add_gadras_peaks( currdata, candidate_peaks,
                                                orig_peaks, gadrasFitPrefs, gadrasDrf, sessionid );
-      } ) );
+      } );
     }
 
     return true;

@@ -25,10 +25,12 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
 #include <memory>
+#include <utility>
 
 #include <Wt/WContainerWidget.h>
 #include <Wt/Core/observing_ptr.hpp>
@@ -416,6 +418,31 @@ protected:
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];
+
+  /** Per-(spectrum_type, detector_name) baseline lower-channel-edge vectors for LowerChannelEdge
+   calibrations. Used to compute the displayed offset/gain via
+     current_edge[i] = offset + gain * (baseline[i] - baseline[0])
+   and persisted at the EnergyCalTool level so the baseline survives the CalDisplay widget being
+   recreated on every calibration change. The map is keyed by (spectrum type, detector name); the
+   value's affine relation to the current calibration's edges is verified and refreshed when
+   loading a new spectrum or after non-affine cal changes.
+   */
+  std::map<std::pair<SpecUtils::SpectrumType, std::string>,
+           std::shared_ptr<const std::vector<float>>> m_lce_baselines;
+
+public:
+  /** Look up the LCE baseline for the given (spectrum_type, detector_name). Returns nullptr if
+   no baseline has been registered for that pair.
+   */
+  std::shared_ptr<const std::vector<float>>
+    lceBaselineFor( const SpecUtils::SpectrumType type, const std::string &detname ) const;
+
+  /** Register / replace the LCE baseline for the given (spectrum_type, detector_name). */
+  void setLceBaselineFor( const SpecUtils::SpectrumType type,
+                          const std::string &detname,
+                          std::shared_ptr<const std::vector<float>> baseline );
+
+private:
   
   Wt::Core::observing_ptr<EnergyCalAddActionsWindow> m_addActionWindow;
   

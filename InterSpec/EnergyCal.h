@@ -89,10 +89,6 @@ double fit_energy_cal_frf( const std::vector<EnergyCal::RecalPeakInfo> &peakinfo
                            std::vector<float> &coefs,
                            std::vector<float> &coefs_uncert );
 
-/// \TODO: we could probably make a fit_energy_cal_lower_channel_energies that adjusts the offset
-///        and gain equivalents for lower channel energy defined calibrations.
-
-
 /** Given the lower channel energies, will determine the best polynomial coeffcients to reproduce
  the binning.
  
@@ -123,31 +119,44 @@ double fit_full_range_fraction_from_channel_energies( const size_t ncoeffs,
                                              std::vector<float> &coefs );
 
 
-/** Uses Minuit2 to fit for calibration coefficients.
- 
- 
+/** Uses Ceres (Levenberg-Marquardt, automatic differentiation) to fit calibration coefficients.
+
+ This is the fallback path when #fit_energy_cal_poly / #fit_energy_cal_frf fail (e.g., due to
+ deviation pairs interacting awkwardly with the linear least-squares formulation).  It is also
+ the only entry point for #SpecUtils::EnergyCalType::LowerChannelEdge, which has no LLS form:
+ LowerChannelEdge fits a *relative* offset/gain pair such that
+
+   new_lower_edge[i] = baseline_lower_edge[0] + offset
+                       + gain * (baseline_lower_edge[i] - baseline_lower_edge[0])
+
+ where `offset` is the energy delta applied at channel 0 (0 means no shift) and `gain` is the
+ span multiplier (1 means identity). This matches the values displayed to the user. The caller
+ is responsible for materializing the new lower-channel-edge vector from the returned
+ (offset, gain) and the baseline.
+
  Throws exception on error.
- 
- @param peakinfos Relevant information collected from peaks.
- @param fitfor Whether to fit for each coefficient.  This vector must be sized
-        for the number of coefficients in the calabration equation (e.g.,
-        calibration order).  A true value for an index indicates fit for the
-        coefficient.  If any value is false (i.e. dont fit for that parameter)
-        then the 'coefs' parameter must be exactly the same size as this vector
-        and the value at the corresponding index will be used for that parameter.
+
+ @param peakInfo Relevant information collected from peaks.
  @param nchannels The number of gamma channels in the spectrum the calibration is being evaluated
         for.  Must be at least 7.
- @param eqnType The type of energy calibration being fit for; must be either polynomial or FRF.
+ @param eqnType The type of energy calibration being fit for; Polynomial, FullRangeFraction,
+        UnspecifiedUsingDefaultPolynomial, or LowerChannelEdge.
+ @param fitfor Whether to fit for each coefficient.  This vector must be sized
+        for the number of coefficients in the calibration equation (for LowerChannelEdge: 2).
+        A true value for an index indicates fit for the coefficient; a false value holds the
+        starting value fixed.
  @param startingCoefs The starting value of energy coefficients - must be same size as 'fitfor'.
- @param dev_pairs The non-linear deviation pairs.
+        For LowerChannelEdge: [offset, gain] with size 2.
+ @param devpair The non-linear deviation pairs (must be empty for LowerChannelEdge).
  @param coefs Provides the fit coeficients for the energy calibration.
- @param coefs_uncert The uncertainties on the fit parameters.
- @param warning_msg If warnings were encountered (like it isnt a great fit), they will be placed
-        here.  Will be empty if all looks good.
- @returns Chi2 of the found solution.
- 
- \deprecated Please use #fit_energy_cal_poly.  This function is around while #fit_energy_cal_poly
-             continues to be tested.
+ @param coefs_uncert The uncertainties on the fit parameters (extracted via Ceres covariance with
+        DENSE_SVD).  Fixed parameters get uncertainty 0.
+ @param warning_msg If warnings were encountered (e.g. no full convergence, covariance not
+        computable), they will be placed here.  Will be empty if all looks good.
+ @param lower_channel_edges Required iff eqnType == LowerChannelEdge; must be the baseline
+        lower-channel-edge vector with size nchannels+1.  Must be empty for the other
+        calibration types.
+ @returns Chi2 of the found solution (= 2 * Ceres final_cost).
  */
 double fit_energy_cal_iterative( const std::vector<EnergyCal::RecalPeakInfo> &peakInfo,
                                  const size_t nchannels,
@@ -157,7 +166,8 @@ double fit_energy_cal_iterative( const std::vector<EnergyCal::RecalPeakInfo> &pe
                                  const std::vector<std::pair<float,float>> &devpair,
                                  std::vector<float> &coefs,
                                  std::vector<float> &coefs_uncert,
-                                 std::string &warning_msg );
+                                 std::string &warning_msg,
+                                 const std::vector<float> &lower_channel_edges = {} );
 
 
 

@@ -396,9 +396,8 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
 
   assert( fitPrefs );
-  const bool isHPGe = fitPrefs
-    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : (PeakFitUtils::coarse_det_type( meas, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
+  const bool isHPGe = (PeakFitUtils::effective_det_type( fitPrefs, meas, nullptr )
+                       == PeakFitUtils::CoarseResolutionType::High);
 
   size_t lower_channel = 0, upper_channel = 0;
   //    ExperimentalPeakSearch::find_spectroscopic_extent( meas, lower_channel, upper_channel );
@@ -629,9 +628,8 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
   typedef std::shared_ptr<const PeakDef> PeakConstPtr;
 
   assert( fitPrefs );
-  const bool isHPGe = fitPrefs
-    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : (PeakFitUtils::coarse_det_type( meas, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
+  const bool isHPGe = (PeakFitUtils::effective_det_type( fitPrefs, meas, nullptr )
+                       == PeakFitUtils::CoarseResolutionType::High);
 
   size_t lower_channel = 0, upper_channel = 0;
   vector<PeakPtr> candidates
@@ -1035,9 +1033,8 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           double &chi2 )
 {
   assert( fitPrefs );
-  const PeakFitUtils::CoarseResolutionType det_type = fitPrefs
-    ? fitPrefs->m_det_type
-    : PeakFitUtils::coarse_det_type( dataH, nullptr );
+  const PeakFitUtils::CoarseResolutionType det_type
+    = PeakFitUtils::effective_det_type( fitPrefs, dataH, nullptr );
   const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
 
   if( method != FromInputPeaks )
@@ -3068,9 +3065,8 @@ void get_candidate_peak_estimates_for_user_click(
                                  const PeakShrdVec &inpeaks )
 {
   assert( fitPrefs );
-  const PeakFitUtils::CoarseResolutionType det_type = fitPrefs
-    ? fitPrefs->m_det_type
-    : PeakFitUtils::coarse_det_type( dataH, nullptr );
+  const PeakFitUtils::CoarseResolutionType det_type
+    = PeakFitUtils::effective_det_type( fitPrefs, dataH, nullptr );
   const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
 
   typedef std::shared_ptr<PeakDef> PeakPtr;
@@ -3257,9 +3253,8 @@ void fit_peak_for_user_click( PeakShrdVec &results,
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
 
   assert( fitPrefs );
-  const PeakFitUtils::CoarseResolutionType det_type = fitPrefs
-    ? fitPrefs->m_det_type
-    : PeakFitUtils::coarse_det_type( dataH, nullptr );
+  const PeakFitUtils::CoarseResolutionType det_type
+    = PeakFitUtils::effective_det_type( fitPrefs, dataH, nullptr );
   const bool isHPGe = (det_type == PeakFitUtils::CoarseResolutionType::High);
 
   assert( !lowerEnergies.empty() );
@@ -5102,9 +5097,8 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   typedef std::shared_ptr<const PeakDef> PeakDefShrdPtr;
 
   assert( fitPrefs );
-  const bool isHPGe = fitPrefs
-    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : (PeakFitUtils::coarse_det_type( dataH, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
+  const bool isHPGe = (PeakFitUtils::effective_det_type( fitPrefs, dataH, nullptr )
+                       == PeakFitUtils::CoarseResolutionType::High);
 
   if( !dataH || !dataH->num_gamma_channels() )
     return pair<PeakShrdVec,PeakShrdVec>();
@@ -5375,9 +5369,8 @@ void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> dat
                                    std::vector< std::tuple<float,float,float> > &results )
 {
   assert( fitPrefs );
-  const bool isHPGe = fitPrefs
-    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : (PeakFitUtils::coarse_det_type( data, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
+  const bool isHPGe = (PeakFitUtils::effective_det_type( fitPrefs, data, nullptr )
+                       == PeakFitUtils::CoarseResolutionType::High);
 
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   //If we're debuging things, lets make sure we printout information from just
@@ -5715,9 +5708,8 @@ std::vector<std::shared_ptr<PeakDef> > secondDerivativePeakCanidatesWithROI( std
                                                           size_t end_channel )
 {
   assert( fitPrefs );
-  const bool isHPGe = fitPrefs
-    ? (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::High)
-    : (PeakFitUtils::coarse_det_type( dataH, nullptr ) == PeakFitUtils::CoarseResolutionType::High);
+  const bool isHPGe = (PeakFitUtils::effective_det_type( fitPrefs, dataH, nullptr )
+                       == PeakFitUtils::CoarseResolutionType::High);
 
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
   //If we're debuging things, lets make sure we printout information from just

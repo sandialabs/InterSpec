@@ -232,7 +232,9 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
     
     EnergyCal::RecalPeakInfo recalpeak;
     recalpeak.peakMean = peak.mean();
-    recalpeak.peakMeanUncert = peak.meanUncert();
+    recalpeak.peakMeanUncert = max( peak.meanUncert(), 0.25 );
+    if( IsInf(recalpeak.peakMeanUncert) || IsNan(recalpeak.peakMeanUncert) )
+      recalpeak.peakMeanUncert = 0.5;
     recalpeak.peakMeanBinNumber = orig_cal->channel_for_energy( peak.mean() );
     recalpeak.photopeakEnergy = peak.gammaParticleEnergy();
     

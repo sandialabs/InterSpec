@@ -646,4 +646,15 @@ CoarseResolutionType coarse_det_type(
 }//coarse_det_type
 
 
+CoarseResolutionType effective_det_type(
+  const std::shared_ptr<const PeakFitDetPrefs> &prefs,
+  const std::shared_ptr<const SpecUtils::Measurement> &meas,
+  const std::shared_ptr<const SpecMeas> &spec )
+{
+  if( prefs && (prefs->m_det_type != CoarseResolutionType::Unknown) )
+    return prefs->m_det_type;
+  return coarse_det_type( meas, spec );
+}
+
+
 }//namespace PeakFitUtils

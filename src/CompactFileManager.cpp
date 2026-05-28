@@ -773,9 +773,32 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
                                   const std::vector<std::string> &detectors )
 {
   const int typeindex = static_cast<int>( spectrum_type );
-  
+
   if( typeindex < 0 || typeindex >= 3 )
     throw runtime_error( "CompactFileManager::handleDisplayChange() - totally unexpected error" );
+
+  // Defensive null guard: the raw widget pointers in this class have been observed to be NULL
+  // mid-session (Wt4 lifetime issue under investigation), and dereferencing them downstream
+  // produces SIGSEGV at NULL. Bail early if the core ones aren't present rather than crash.
+  if( !m_titles[typeindex]
+     || !m_summaryTables[typeindex]
+     || !m_sampleDivs[typeindex]
+     || !m_selects[typeindex]
+     || !m_displayedPreTexts[typeindex]
+     || !m_displayedPostTexts[typeindex]
+     || !m_displaySampleNumEdits[typeindex]
+     || !m_spectrumLineLegend[typeindex]
+     || !m_showRidIdResult[typeindex]
+     || !m_showImage[typeindex]
+     || !m_moreInfoBtn[typeindex]
+     || !m_clearFileSelection[typeindex]
+     || !m_nextSampleNumButtons[typeindex]
+     || !m_prevSampleNumButtons[typeindex] )
+  {
+    std::cerr << "CompactFileManager::handleDisplayChange: stale/missing widget pointer for"
+              << " typeindex=" << typeindex << "; skipping UI update to avoid SIGSEGV." << std::endl;
+    return;
+  }
 
   m_titles[typeindex]->hide();
   m_summaryTables[typeindex]->hide();

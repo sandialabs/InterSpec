@@ -57,6 +57,7 @@ class PopupDivMenu;
 class SimpleDialog;
 class EnergyCalTool;
 class GammaXsWindow;
+class AddNewPeakDialog;
 class MakeDrfWindow;
 class OneOverR2Calc;
 class SpectrumChart;
@@ -1028,6 +1029,16 @@ protected:
   void startAddPeakFromRightClick();
   void searchOnEnergyFromRightClick();
 
+  /** Opens (or re-shows) the "Add New Peak" dialog seeded at \p energy.  Replaces any
+   currently-open instance.  Returns the dialog pointer.  Stored on `m_addPeakDialog`
+   so undo/redo can address the *current* dialog rather than capturing a possibly-stale
+   pointer at undo-step registration time.
+   */
+  AddNewPeakDialog *showAddPeakDialog( float energy, std::string ref_line_hint );
+
+  /** Closes the currently-open "Add New Peak" dialog, if any.  Idempotent. */
+  void closeAddPeakDialog();
+
 #if( USE_DETECTION_LIMIT_TOOL )
   void startSimpleMdaFromRightClick();
 #endif //USE_DETECTION_LIMIT_TOOL
@@ -1416,6 +1427,13 @@ protected:
   //m_peakEditWindow: used to ensure only one peak editor window is open at a
   //  time.  Will be null if no peak editor is open; valid if one is open.
   Wt::Core::observing_ptr<PeakEditWindow> m_peakEditWindow;
+
+  /** Tracks the currently-open "Add New Peak" dialog (Cat-A pattern; see CLAUDE.md).
+   Null when no dialog is open.  Managed by `showAddPeakDialog` / `closeAddPeakDialog`
+   so undo/redo can address the *current* dialog rather than the one that existed at
+   undo-step registration time.
+   */
+  Wt::Core::observing_ptr<AddNewPeakDialog> m_addPeakDialog;
 
   // Managed by showFitSkewParamsWindow/closeFitSkewParamsWindow/acceptFitSkewParamsWindow.
   // Null when no FitSkewParamsWindow is open.

@@ -393,6 +393,7 @@ InterSpec::InterSpec()
     m_peakInfoDisplay( 0 ),
     m_peakInfoWindow( 0 ),
     m_peakEditWindow( 0 ),
+    m_addPeakDialog( nullptr ),
     m_fitSkewParamsWindow( nullptr ),
     m_currentToolsTab( -1 ),
     m_handlingToolTabChange( false ),
@@ -1348,9 +1349,10 @@ InterSpec::~InterSpec() noexcept(true)
   AuxWindow::deleteAuxWindow( m_referencePhotopeakLinesWindow.get() );
   
   handleWarningsWindowClose();
-  
+
   deletePeakEdit();
   closeFitSkewParamsWindow();
+  closeAddPeakDialog();
   deleteGammaCountDialog();
 
   // The following are parented by app->domRoot()
@@ -2500,7 +2502,7 @@ void InterSpec::handleRightClick( double energy, double counts,
             const std::shared_ptr<const PeakFitDetPrefs> fitPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
             assert( fitPrefs );
             const PeakFitUtils::CoarseResolutionType det_type
-              = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( hist, meas );
+              = PeakFitUtils::effective_det_type( fitPrefs, hist, meas );
 
             std::function<void(void)> worker = [=](){
               IsotopeId::populateCandidateNuclides( hist, peak, hintpeaks,
@@ -8002,7 +8004,7 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
         std::shared_ptr<const PeakFitDetPrefs> fitPrefs = fore ? fore->peakFitDetPrefs() : nullptr;
         assert( fitPrefs );
         const PeakFitUtils::CoarseResolutionType detType
-          = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( newspec, fore );
+          = PeakFitUtils::effective_det_type( fitPrefs, newspec, fore );
 
         const double lowE = newspec->gamma_energy_min();
         const double upE = newspec->gamma_energy_max();
@@ -9139,27 +9141,53 @@ void InterSpec::fitNewPeakNotInRoiFromRightClick()
 
 void InterSpec::startAddPeakFromRightClick()
 {
-  // TODO: add AddNewPeakDialog pointer to InterSpec class, like other tools, to fully support undo/redo, and everything.
-  const double energy = m_rightClickEnergy;
+  const float energy = m_rightClickEnergy;
   const string ref_line_hint = m_rightClickRefLineHint;
-  
-  AddNewPeakDialog *window = AuxWindow::make<AddNewPeakDialog>( energy, ref_line_hint );
-  window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
+
+  showAddPeakDialog( energy, ref_line_hint );
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto redo = [energy,ref_line_hint](){
-      AddNewPeakDialog *dlg = AuxWindow::make<AddNewPeakDialog>( energy, ref_line_hint );
-      dlg->finished().connect( dlg, [dlg](){ AuxWindow::deleteAuxWindow( dlg ); } );
+    // Look the dialog up at execution time via `closeAddPeakDialog` / `showAddPeakDialog`
+    // so undo/redo always addresses the *current* dialog (per CLAUDE.md "Undo/redo
+    // discipline").  Capturing the dialog pointer here would go stale across
+    // undo→redo→undo cycles, since `redo` creates a fresh instance.
+    auto undo = [](){
+      InterSpec *interspec = InterSpec::instance();
+      if( interspec )
+        interspec->closeAddPeakDialog();
     };
-
-    // Capture an observing_ptr so the undo is a no-op if the dialog was already closed
-    // (its `finished()` signal already calls `AuxWindow::deleteAuxWindow(window)`).
-    Wt::Core::observing_ptr<AddNewPeakDialog> win_obs( window );
-    auto closer = [win_obs](){ if( win_obs ) AuxWindow::deleteAuxWindow( win_obs.get() ); };
-    m_undo->addUndoRedoStep( closer, redo , "Start add peak dialog." );
+    auto redo = [energy, ref_line_hint](){
+      InterSpec *interspec = InterSpec::instance();
+      if( interspec )
+        interspec->showAddPeakDialog( energy, ref_line_hint );
+    };
+    m_undo->addUndoRedoStep( undo, redo, "Start add peak dialog." );
   }//if( undo )
 }//void startAddPeakFromRightClick()
+
+
+AddNewPeakDialog *InterSpec::showAddPeakDialog( const float energy, std::string ref_line_hint )
+{
+  // Per Cat-A pattern (CLAUDE.md): close any prior instance and create a fresh dialog
+  // seeded at the requested energy.  We always recreate rather than re-using the
+  // existing dialog so the seeded energy / reference-line hint take effect.
+  if( m_addPeakDialog )
+    closeAddPeakDialog();
+
+  m_addPeakDialog = AuxWindow::make<AddNewPeakDialog>( energy, ref_line_hint );
+  m_addPeakDialog->finished().connect( this, &InterSpec::closeAddPeakDialog );
+  return m_addPeakDialog.get();
+}//AddNewPeakDialog *showAddPeakDialog(...)
+
+
+void InterSpec::closeAddPeakDialog()
+{
+  if( !m_addPeakDialog )
+    return;
+  AuxWindow::deleteAuxWindow( m_addPeakDialog.get() );
+  assert( !m_addPeakDialog );
+}//void closeAddPeakDialog()
 
 
 void InterSpec::searchOnEnergyFromRightClick()
@@ -11535,7 +11563,10 @@ void InterSpec::determinePeakFitDetPrefs( shared_ptr<SpecMeas> meas,
     }
   }
 
-  // 5. Guess from spectral data (stub - currently returns nullptr)
+  // 5. Guess from spectral data (stub - currently returns nullptr). NOTE: the peak-fit entry
+  //  points (e.g. fit_peak_from_double_click) do a lazy synchronous classification when
+  //  m_det_type == Unknown at fit time, which avoids running the candidate-peak scan on every
+  //  spectrum load and keeps the async hint-peak search free to refine via fitted-peak FWHM.
   // {
   //   auto display = meas->sum_measurements( {}, meas->detector_names() );
   //   auto prefs = PeakFitDetPrefs::guessFromSpectralData( display );
@@ -12002,8 +12033,8 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       std::shared_ptr<const PeakFitDetPrefs> propFitPrefs = m_dataMeasurement ? m_dataMeasurement->peakFitDetPrefs() : nullptr;
       if( !propFitPrefs && m_dataMeasurement && m_dataMeasurement->detector() )
         propFitPrefs = m_dataMeasurement->detector()->peakFitDetPrefs();
-      propigate_peaks_fcns = [this, input_peaks, original_peaks, propFitPrefs, sessionid]( std::shared_ptr<const SpecUtils::Measurement> data ){
-        PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
+      propigate_peaks_fcns = [input_peaks, original_peaks, propFitPrefs, sessionid]( std::shared_ptr<const SpecUtils::Measurement> data ){
+        PeakSearchGuiUtils::fit_template_peaks( data, input_peaks, original_peaks,
                        PeakSearchGuiUtils::PeakTemplateFitSrc::PreviousSpectrum,
                        propFitPrefs, sessionid );
       };
@@ -13223,7 +13254,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
         prefs->m_source = PeakFitDetPrefs::LoadingSource::FromSpectralData;
         m_dataMeasurement->setPeakFitDetPrefs( prefs );
         m_peakFitDetPrefsChanged.emit();
-        
+
         // TODO: we should launch a re-fit of the hint peak search...
       }
     }//

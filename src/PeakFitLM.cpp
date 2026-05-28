@@ -2408,14 +2408,17 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
 
   std::shared_ptr<PeakDef> candidatepeak = std::make_shared<PeakDef>(mean0, sigma0, area0);
 
-  PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::Unknown;
+  // If the load-time prefs left m_det_type == Unknown, fall back to classifying from the
+  // spectrum so the fitter has a usable det_type (otherwise narrow HPGe peaks get fit with
+  // low-res defaults and rejected).
+  PeakFitUtils::CoarseResolutionType det_type
+    = PeakFitUtils::effective_det_type( fitPrefs, dataH, nullptr );
 
   // Apply skew type from fitPrefs to the candidate peak, overriding any
   //  skew type inferred from existing nearby peaks.
   assert( fitPrefs );
   if( fitPrefs )
   {
-    det_type = fitPrefs->m_det_type;
     candidatepeak->setSkewType( fitPrefs->m_peak_skew_type );
 
     const size_t num_prefs_skew

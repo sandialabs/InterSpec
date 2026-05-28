@@ -33,6 +33,7 @@
 class PeakDef;
 class SpecMeas;
 class InterSpec;
+class PeakFitDetPrefs;
 namespace SpecUtils
 {
   class Measurement;
@@ -134,6 +135,26 @@ CoarseResolutionType classify_det_type(
  @return The classified detector resolution type
  */
 CoarseResolutionType coarse_det_type(
+  const std::shared_ptr<const SpecUtils::Measurement> &meas,
+  const std::shared_ptr<const SpecMeas> &spec );
+
+
+/** Returns the effective detector resolution type for use in peak fitting.
+
+ Returns `prefs->m_det_type` when `prefs` is non-null and has a known (non-Unknown) det_type.
+ Otherwise (null prefs, or prefs with `m_det_type == Unknown`) classifies from the spectrum
+ data via `coarse_det_type(meas, spec)`.
+
+ Use this at peak-fit entry points (double-click, ctrl-drag, refit, etc.) so that loaded
+ files with no detector metadata (e.g. CSV) don't carry `Unknown` all the way into the
+ fitter — which would have it use generic low-res defaults and reject narrow HPGe peaks.
+
+ @param prefs The (possibly null) PeakFitDetPrefs from the SpecMeas / DRF.
+ @param meas  The displayed gamma measurement (for FWHM-based fallback classification).
+ @param spec  The SpecMeas (for detector_type/instrument-string-based classification).
+ */
+CoarseResolutionType effective_det_type(
+  const std::shared_ptr<const PeakFitDetPrefs> &prefs,
   const std::shared_ptr<const SpecUtils::Measurement> &meas,
   const std::shared_ptr<const SpecMeas> &spec );
 }//namespace PeakFitUtils

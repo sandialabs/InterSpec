@@ -938,8 +938,19 @@ class CalDisplay : public WContainerWidget
 #endif
   
   shared_ptr<const SpecUtils::EnergyCalibration> m_cal;
-  
+
 public:
+  /** Convenience accessor for the LCE baseline for this CalDisplay's (spectrum_type, detector_name).
+   The baseline lives on EnergyCalTool (so it survives this CalDisplay being recreated on every
+   calibration change), and is captured/updated inside updateToGui below.
+   */
+  shared_ptr<const vector<float>> lceBaselineEdges() const
+  {
+    return m_tool ? m_tool->lceBaselineFor( m_cal_type, m_det_name )
+                  : shared_ptr<const vector<float>>{};
+  }
+
+
   CalDisplay( EnergyCalTool *tool,
              const SpecUtils::SpectrumType type,
              const std::string &detname,
@@ -1166,6 +1177,7 @@ public:
   
   void updateToGui( const shared_ptr<const SpecUtils::EnergyCalibration> &cal )
   {
+
 #if( HIDE_EMPTY_DEV_PAIRS )
     const bool hadCal = !!m_cal;
 #endif
@@ -1181,10 +1193,10 @@ public:
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::FullRangeFraction:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
         fitCoeffsVisible = true;
         break;
-        
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
+
       case SpecUtils::EnergyCalType::InvalidEquationType:
         fitCoeffsVisible = false;
         break;
@@ -1227,9 +1239,10 @@ public:
     
     m_type->setText( typetxt );
     
+    const bool isLowerChannelEdge = (m_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge);
+
     switch( m_cal->type() )
     {
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
       case SpecUtils::EnergyCalType::InvalidEquationType:
         m_coefficients->clear();
         m_devPairs->setDeviationPairs( {} );
@@ -1245,13 +1258,31 @@ public:
             m_convertMsg->setInline( false );
           }
         }//if( !m_convertMsg )
-        
+
 #if( HIDE_EMPTY_DEV_PAIRS )
         m_addPairs->setHidden( true );
         m_devPairs->setHidden( true );
 #endif
         return;
-              
+
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        // LowerChannelEdge has no deviation pairs in InterSpec; keep the pair editor hidden but
+        // still render editable offset/gain coefficient rows (handled below).
+        m_devPairs->setDeviationPairs( {} );
+        if( !m_devPairs->isHidden() )
+          m_devPairs->hide();
+#if( HIDE_EMPTY_DEV_PAIRS )
+        m_addPairs->setHidden( true );
+        m_devPairs->setHidden( true );
+#endif
+        if( m_convertMsg )
+        {
+          if( auto pp = dynamic_cast<WContainerWidget *>( m_convertMsg->parent() ) )
+            pp->removeWidget( m_convertMsg );
+          m_convertMsg = nullptr;
+        }
+        break;
+
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::FullRangeFraction:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
@@ -1267,25 +1298,105 @@ public:
         }
         break;
     }//switch( m_cal->type() )
-    
+
     const auto &devpairs = m_cal->deviation_pairs();
-    const vector<float> &coeffs = m_cal->coefficients();
-    
+
+    // For LowerChannelEdge, the calibration stores per-channel energies (not coefficients).
+    // We synthesize a two-coefficient [offset, gain] view such that
+    //   current_edge[i] = offset + gain * (baseline[i] - baseline[0])
+    // The `baseline` is owned by EnergyCalTool (keyed by (spectrum_type, detector_name)) so it
+    // survives this widget being recreated on every cal change, keeping the displayed gain
+    // meaningful (1.1 stays 1.1) instead of collapsing back to 1.0 after every apply.
+    vector<float> lce_coeffs;
+    if( isLowerChannelEdge )
+    {
+      const auto current_edges_ptr = m_cal->channel_energies();
+      const bool have_current = current_edges_ptr && (current_edges_ptr->size() >= 2);
+
+      shared_ptr<const vector<float>> baseline_ptr = m_tool
+          ? m_tool->lceBaselineFor( m_cal_type, m_det_name )
+          : shared_ptr<const vector<float>>{};
+
+      // Decide whether to (re)capture the baseline: if absent, wrong size, or the current edges
+      // are NOT an affine transform of the existing baseline (within tolerance), capture a
+      // fresh baseline from the current calibration.
+      bool refresh = !have_current
+                     || !baseline_ptr
+                     || (baseline_ptr->size() != current_edges_ptr->size());
+
+      if( !refresh )
+      {
+        const vector<float> &cur = *current_edges_ptr;
+        const vector<float> &base = *baseline_ptr;
+        const double base_span = static_cast<double>(base.back()) - static_cast<double>(base.front());
+        if( std::fabs(base_span) < 1e-6 )
+        {
+          refresh = true;
+        }else
+        {
+          const double cand_offset = cur.front();
+          const double cand_gain = (static_cast<double>(cur.back()) - cand_offset) / base_span;
+          const size_t mid = cur.size() / 2;
+          const double expected_mid = cand_offset + cand_gain
+                                      * (static_cast<double>(base[mid]) - static_cast<double>(base.front()));
+          const double tol = std::max( 1e-4, 1e-5 * std::fabs(base_span) );
+          if( std::fabs(static_cast<double>(cur[mid]) - expected_mid) > tol )
+            refresh = true;
+        }
+      }
+
+      if( refresh && have_current && m_tool )
+      {
+        m_tool->setLceBaselineFor( m_cal_type, m_det_name, current_edges_ptr );
+        baseline_ptr = current_edges_ptr;
+      }
+
+      if( baseline_ptr && baseline_ptr->size() >= 2 && have_current )
+      {
+        const vector<float> &base = *baseline_ptr;
+        const double base_span = static_cast<double>(base.back()) - static_cast<double>(base.front());
+        // Displayed offset is the delta from baseline (0 = no shift); gain is the span ratio
+        // (1 = identity).
+        const float offset_delta = static_cast<float>(
+            static_cast<double>(current_edges_ptr->front()) - static_cast<double>(base.front()) );
+        const float gain = (std::fabs(base_span) > 1e-6)
+            ? static_cast<float>(
+                (static_cast<double>(current_edges_ptr->back()) - static_cast<double>(current_edges_ptr->front()))
+                / base_span )
+            : 1.0f;
+        lce_coeffs = { offset_delta, gain };
+      }else
+      {
+        // No usable baseline yet — display identity (no shift, no gain change).
+        lce_coeffs = { 0.0f, 1.0f };
+      }
+    }
+
+    const vector<float> &coeffs = isLowerChannelEdge ? lce_coeffs : m_cal->coefficients();
+
 #if( HIDE_EMPTY_DEV_PAIRS )
     // Once deviation pairs are showing, we will leave them showing, even if there are no deviation
     //  pairs; this is because if you click to add deviation pairs, dont add any, then adjust the
     //  the gain, the deviation pair display getting hidden, causing a layout update, is really
-    //  jarring.
-    const auto anim = hadCal ? WAnimation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200) : WAnimation{};
-    if( m_devPairs->isHidden() && !devpairs.empty() )
-      m_devPairs->setHidden( false, anim );
-    m_addPairs->setHidden( !m_devPairs->isHidden(), anim );
+    //  jarring. Skip this for LowerChannelEdge (dev pairs are not editable for that type).
+    if( !isLowerChannelEdge )
+    {
+      const auto anim = hadCal ? WAnimation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200) : WAnimation{};
+      if( m_devPairs->isHidden() && !devpairs.empty() )
+        m_devPairs->setHidden( false, anim );
+      m_addPairs->setHidden( !m_devPairs->isHidden(), anim );
+    }
 #endif
-    
-    m_devPairs->setDeviationPairs( devpairs );
+
+    if( !isLowerChannelEdge )
+      m_devPairs->setDeviationPairs( devpairs );
     //m_devPairs->changed().connect( std::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this) );
-    
-    const size_t num_coef_disp = std::max( coeffs.size(), sm_min_coef_display );
+
+    // For LowerChannelEdge show exactly 2 rows (offset, gain); polynomial/FRF use the
+    // standard minimum so higher-order rows remain available for fitting.
+    const size_t num_coef_disp = isLowerChannelEdge
+        ? size_t(2)
+        : std::max( coeffs.size(), sm_min_coef_display );
     vector<CoefDisplay *> coef_disps( num_coef_disp, nullptr );
     
     size_t coefnum = 0;
@@ -1888,7 +1999,26 @@ void EnergyCalTool::setTallLayout()
 EnergyCalTool::~EnergyCalTool()
 {
 }
-  
+
+
+std::shared_ptr<const std::vector<float>>
+EnergyCalTool::lceBaselineFor( const SpecUtils::SpectrumType type, const std::string &detname ) const
+{
+  const auto it = m_lce_baselines.find( std::make_pair(type, detname) );
+  return (it == m_lce_baselines.end()) ? std::shared_ptr<const std::vector<float>>{} : it->second;
+}
+
+
+void EnergyCalTool::setLceBaselineFor( const SpecUtils::SpectrumType type,
+                                       const std::string &detname,
+                                       std::shared_ptr<const std::vector<float>> baseline )
+{
+  if( baseline )
+    m_lce_baselines[std::make_pair(type, detname)] = std::move(baseline);
+  else
+    m_lce_baselines.erase( std::make_pair(type, detname) );
+}
+
 
 set<string> EnergyCalTool::gammaDetectorsForDisplayedSamples( const SpecUtils::SpectrumType type )
 {
@@ -2568,34 +2698,54 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
             new_meas_cal = new_disp_cal;
           }else if( isOffsetOnly )
           {
-            const vector<float> &new_disp_coefs = new_disp_cal->coefficients();
-            const vector<float> &prev_disp_coefs = disp_prev_cal->coefficients();
+            // Offset-only changes propagate as a scalar shift of the energy axis. Compute the
+            // shift from the displayed calibration in a way that works for any cal type
+            // (LowerChannelEdge has an empty coefficients() vector, so we use lower_energy()).
+            const float new_lower = new_disp_cal->lower_energy();
+            const float prev_lower = disp_prev_cal->lower_energy();
+            const float offset_delta = new_lower - prev_lower;
+
             const vector<pair<float,float>> &dev_pairs = meas_old_cal->deviation_pairs();
-            
-            vector<float> new_coefs = meas_old_cal->coefficients();
-            new_coefs[0] += (new_disp_coefs[0] - prev_disp_coefs[0]);
-            
+
             auto cal = make_shared<EnergyCalibration>();
             switch( meas_old_cal->type() )
             {
               case SpecUtils::EnergyCalType::Polynomial:
               case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+              {
+                vector<float> new_coefs = meas_old_cal->coefficients();
+                if( new_coefs.empty() ) new_coefs.push_back( 0.0f );
+                new_coefs[0] += offset_delta;
                 cal->set_polynomial( meas_old_cal->num_channels(), new_coefs, dev_pairs );
                 break;
-                
+              }
+
               case SpecUtils::EnergyCalType::FullRangeFraction:
+              {
+                vector<float> new_coefs = meas_old_cal->coefficients();
+                if( new_coefs.empty() ) new_coefs.push_back( 0.0f );
+                new_coefs[0] += offset_delta;
                 cal->set_full_range_fraction( meas_old_cal->num_channels(), new_coefs, dev_pairs );
                 break;
-                
+              }
+
               case SpecUtils::EnergyCalType::LowerChannelEdge:
-                cal->set_lower_channel_energy( meas_old_cal->num_channels(), new_coefs ); //eh, whatever
+              {
+                const auto edges_ptr = meas_old_cal->channel_energies();
+                if( !edges_ptr || edges_ptr->empty() )
+                  throw runtime_error( "LowerChannelEdge calibration missing channel energies." );
+                vector<float> new_edges = *edges_ptr;
+                for( float &e : new_edges )
+                  e += offset_delta;
+                cal->set_lower_channel_energy( meas_old_cal->num_channels(), std::move(new_edges) );
                 break;
-                
+              }
+
               case SpecUtils::EnergyCalType::InvalidEquationType:
                 assert( 0 );
                 break;
             }//switch( meas_old_cal->type() )
-            
+
             new_meas_cal = cal;
           }else
           {
@@ -3513,8 +3663,10 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
 {
   //cout << "EnergyCalTool::userChangedCoefficient" << endl;
   using namespace SpecUtils;
-  assert( coefnum < 10 );  //If we ever allow lower channel energy adjustment this will need to be removed
-  
+  // LowerChannelEdge exposes exactly two coefficients (offset, gain); Polynomial/FRF cap out far
+  // below 10 in practice.
+  assert( coefnum < 10 );
+
   shared_ptr<const EnergyCalibration> disp_prev_cal = display->lastSetCalibration();
   if( !disp_prev_cal )
   {
@@ -3575,17 +3727,32 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   vector<float> dispcoefs = display->displayedCoefficents();
   if( dispcoefs.size() <= coefnum )
     dispcoefs.resize( coefnum+1, 0.0f );
-  
-  vector<float> prev_disp_coefs = disp_prev_cal->coefficients();
-  if( prev_disp_coefs.size() <= coefnum )
-    prev_disp_coefs.resize( coefnum+1, 0.0f );
-  
-  vector<float> new_disp_coefs = prev_disp_coefs;
-  new_disp_coefs[coefnum] = dispcoefs[coefnum];
-  
+
   const size_t dispnchannel = disp_prev_cal->num_channels();
   const auto &disp_dev_pairs = disp_prev_cal->deviation_pairs();
-  
+  const bool isLowerChannelEdge
+      = (disp_prev_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge);
+
+  // For Polynomial/FRF we patch only the changed coefficient onto the previous coefficients;
+  // for LowerChannelEdge the displayed [offset, gain] *replace* the identity transform, so we
+  // use them in full.
+  vector<float> new_disp_coefs;
+  if( isLowerChannelEdge )
+  {
+    if( dispcoefs.size() < 2 ) dispcoefs.resize( 2, 0.0f );
+    if( dispcoefs[1] == 0.0f ) dispcoefs[1] = 1.0f; // gain == 0 would invert/zero the axis
+    new_disp_coefs = { dispcoefs[0], dispcoefs[1] };
+  }
+  else
+  {
+    vector<float> prev_disp_coefs = disp_prev_cal->coefficients();
+    if( prev_disp_coefs.size() <= coefnum )
+      prev_disp_coefs.resize( coefnum+1, 0.0f );
+
+    new_disp_coefs = prev_disp_coefs;
+    new_disp_coefs[coefnum] = dispcoefs[coefnum];
+  }
+
   shared_ptr<const EnergyCalibration> new_disp_cal;
   try
   {
@@ -3596,23 +3763,42 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
         cal->set_polynomial( dispnchannel, new_disp_coefs, disp_dev_pairs );
         break;
-        
+
       case SpecUtils::EnergyCalType::FullRangeFraction:
         cal->set_full_range_fraction( dispnchannel, new_disp_coefs, disp_dev_pairs );
         break;
-      
+
       case SpecUtils::EnergyCalType::LowerChannelEdge:
+      {
+        // The displayed offset is a *delta* (0 = no shift from baseline) and the displayed gain
+        // is a *ratio* (1 = identity). Build the new lower-channel-edge vector accordingly:
+        //   new_edge[i] = baseline[0] + offset_delta + gain * (baseline[i] - baseline[0])
+        // The baseline lives on EnergyCalTool, so it survives this CalDisplay being recreated.
+        const auto baseline_ptr = display->lceBaselineEdges();
+        if( !baseline_ptr || baseline_ptr->size() != (dispnchannel + 1) )
+          throw runtime_error( "LowerChannelEdge baseline not available." );
+        const std::vector<float> &baseline = *baseline_ptr;
+        const float offset_delta = new_disp_coefs[0];
+        const float gain = new_disp_coefs[1];
+        const float base0 = baseline.front();
+        std::vector<float> new_edges( baseline.size(), 0.0f );
+        for( size_t i = 0; i < new_edges.size(); ++i )
+          new_edges[i] = base0 + offset_delta + gain * (baseline[i] - base0);
+        cal->set_lower_channel_energy( dispnchannel, std::move(new_edges) );
+        break;
+      }
+
       case SpecUtils::EnergyCalType::InvalidEquationType:
         throw runtime_error( "Invalid calibration type changed?  Something is way wack." );
         break;
     }//switch( disp_prev_cal->type() )
-    
+
     new_disp_cal = cal;
   }catch( std::exception &e )
   {
     display->updateToGui( disp_prev_cal );
     m_interspec->logMessage( WString::tr("ect-change-made-invalid").arg("").arg(e.what()), 2 );
-    
+
     return;
   }//try / catch to create new_disp_cal
   
@@ -4088,13 +4274,13 @@ bool EnergyCalTool::canDoEnergyFit()
   auto cal = caldisp->lastSetCalibration();
   switch( cal->type() )
   {
-    case SpecUtils::EnergyCalType::LowerChannelEdge:
     case SpecUtils::EnergyCalType::InvalidEquationType:
       return false;
-      
+
     case SpecUtils::EnergyCalType::Polynomial:
     case SpecUtils::EnergyCalType::FullRangeFraction:
     case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+    case SpecUtils::EnergyCalType::LowerChannelEdge:
       break;
   }//switch( cal->type() )
   
@@ -4173,13 +4359,13 @@ void EnergyCalTool::fitCoefficients()
     
     switch( original_cal->type() )
     {
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
       case SpecUtils::EnergyCalType::InvalidEquationType:
         throw runtime_error( "Unexpected calibration type from display" ); //shouldnt ever happen, but JIC
-        
+
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::FullRangeFraction:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
         break;
     }//switch( cal->type() )
     
@@ -4226,99 +4412,162 @@ void EnergyCalTool::fitCoefficients()
       throw runtime_error( WString::tr("ect-err-not-enough-peaks").toUTF8() );
     
     auto answer = make_shared<SpecUtils::EnergyCalibration>();
-    
-    const size_t eqn_order = std::max( original_cal->coefficients().size(), (*orders_to_fit.rbegin()) + 1 );
+
+    const bool isLowerChannelEdge
+        = (original_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge);
+
+    // LowerChannelEdge has exactly two fittable parameters (offset, gain); everything else uses
+    // the coefficient order implied by the current cal and the highest checked fit-coefficient.
+    const size_t eqn_order = isLowerChannelEdge
+        ? size_t(2)
+        : std::max( original_cal->coefficients().size(), (*orders_to_fit.rbegin()) + 1 );
     const size_t nchannel = original_cal->num_channels();
     const auto &devpairs = original_cal->deviation_pairs();
-    
+
     double chi2 = -999;
-    
-    try
+
+    // Phase 1: try the fast LLS path for Polynomial/FRF. LowerChannelEdge has no LLS analogue,
+    // so we skip this phase and let it fall through to the Ceres fallback below.
+    if( !isLowerChannelEdge )
+    {
+      try
+      {
+        vector<bool> fitfor( eqn_order, false );
+
+        for( auto order : orders_to_fit )
+        {
+          assert( order < fitfor.size() );
+          fitfor[order] = true;
+        }
+
+        vector<float> coefficent_uncerts;
+        vector<float> coefficents = original_cal->coefficients();
+        if( coefficents.size() < eqn_order )
+          coefficents.resize( eqn_order, 0.0f );
+
+        switch ( original_cal->type() )
+        {
+          case SpecUtils::EnergyCalType::Polynomial:
+          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+            chi2 = EnergyCal::fit_energy_cal_poly( peakInfos, fitfor, nchannel, devpairs,
+                                                  coefficents, coefficent_uncerts );
+            answer->set_polynomial( nchannel, coefficents, devpairs );
+            break;
+
+          case SpecUtils::EnergyCalType::FullRangeFraction:
+            chi2 = EnergyCal::fit_energy_cal_frf( peakInfos, fitfor, nchannel, devpairs,
+                                                 coefficents, coefficent_uncerts );
+            answer->set_full_range_fraction( nchannel, coefficents, devpairs );
+            break;
+
+          case SpecUtils::EnergyCalType::LowerChannelEdge:
+          case SpecUtils::EnergyCalType::InvalidEquationType:
+            throw runtime_error( "Didnt expect lower channel or invalid eqn type." );
+            break;
+        }//switch ( original_cal->type() )
+
+        //Print some developer info to terminal
+        stringstream msg;
+        msg << "\nfit_energy_cal_poly gave chi2=" << chi2 << " with coefs={";
+        for( size_t i = 0; i < coefficents.size(); ++i )
+          msg << coefficents[i] << "+-" << coefficent_uncerts[i] << ", ";
+        msg << "}\n";
+        cout << msg.str() << endl;
+
+      }catch( std::exception &e )
+      {
+        cerr << "fit_energy_cal_poly threw: " << e.what() << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+        char buffer[512] = { '\0' };
+        snprintf( buffer, sizeof(buffer)-1, "fit_energy_cal_poly threw: %s", e.what() );
+        log_developer_error( __func__, buffer );
+#endif
+      }//try / catch fit for coefficents using least linear squares
+    }//if( !isLowerChannelEdge )
+
+
+    if( !answer->valid() )
     {
       vector<bool> fitfor( eqn_order, false );
-      
+
       for( auto order : orders_to_fit )
       {
         assert( order < fitfor.size() );
         fitfor[order] = true;
       }
-      
-      vector<float> coefficent_uncerts;
-      vector<float> coefficents = original_cal->coefficients();
-      if( coefficents.size() < eqn_order )
-        coefficents.resize( eqn_order, 0.0f );
-      
-      switch ( original_cal->type() )
+
+      // Starting coefficients: for LowerChannelEdge the fit returns *relative* offset/gain
+      // (offset = delta from baseline[0], gain = span multiplier; identity = (0, 1)). We seed
+      // the fit with whatever the user currently has in the UI, computed by inverting the
+      // affine transform between baseline and current edges.
+      // Polynomial/FRF start from whatever the current calibration already has (zero-padded
+      // if needed).
+      vector<float> calib_coefs;
+      std::vector<float> baseline_edges;
+      if( isLowerChannelEdge )
       {
-        case SpecUtils::EnergyCalType::Polynomial:
-        case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-          chi2 = EnergyCal::fit_energy_cal_poly( peakInfos, fitfor, nchannel, devpairs,
-                                                coefficents, coefficent_uncerts );
-          answer->set_polynomial( nchannel, coefficents, devpairs );
-          break;
-          
-        case SpecUtils::EnergyCalType::FullRangeFraction:
-          chi2 = EnergyCal::fit_energy_cal_frf( peakInfos, fitfor, nchannel, devpairs,
-                                               coefficents, coefficent_uncerts );
-          answer->set_full_range_fraction( nchannel, coefficents, devpairs );
-          break;
-          
-        case SpecUtils::EnergyCalType::LowerChannelEdge:
-        case SpecUtils::EnergyCalType::InvalidEquationType:
-          throw runtime_error( "Didnt expect lower channel or invalid eqn type." );
-          break;
-      }//switch ( original_cal->type() )
-      
-      //Print some developer info to terminal
-      stringstream msg;
-      msg << "\nfit_energy_cal_poly gave chi2=" << chi2 << " with coefs={";
-      for( size_t i = 0; i < coefficents.size(); ++i )
-        msg << coefficents[i] << "+-" << coefficent_uncerts[i] << ", ";
-      msg << "}\n";
-      cout << msg.str() << endl;
-      
-    }catch( std::exception &e )
-    {
-      cerr << "fit_energy_cal_poly threw: " << e.what() << endl;
-#if( PERFORM_DEVELOPER_CHECKS )
-      char buffer[512] = { '\0' };
-      snprintf( buffer, sizeof(buffer)-1, "fit_energy_cal_poly threw: %s", e.what() );
-      log_developer_error( __func__, buffer );
-#endif
-    }//try / catch fit for coefficents using least linear squares
-    
-    
-    if( !answer->valid() )
-    {
-      vector<bool> fitfor( eqn_order, false );
-      
-      for( auto order : orders_to_fit )
-        fitfor[order] = true;
-      
-      vector<float> calib_coefs = original_cal->coefficients();
-      if( calib_coefs.size() < eqn_order )
-        calib_coefs.resize( eqn_order, 0.0f );
-      
+        const auto baseline_ptr = caldisp->lceBaselineEdges();
+        if( !baseline_ptr || baseline_ptr->size() != (nchannel + 1) )
+          throw runtime_error( "LowerChannelEdge baseline not available." );
+        baseline_edges = *baseline_ptr;
+
+        const auto current_edges_ptr = original_cal->channel_energies();
+        if( !current_edges_ptr || current_edges_ptr->size() != (nchannel + 1) )
+          throw runtime_error( "LowerChannelEdge calibration missing channel energies." );
+        const double base_span = static_cast<double>(baseline_edges.back()) - static_cast<double>(baseline_edges.front());
+        const float start_offset = static_cast<float>(
+            static_cast<double>(current_edges_ptr->front())
+            - static_cast<double>(baseline_edges.front()) );
+        const float start_gain = (std::fabs(base_span) > 1e-6)
+            ? static_cast<float>(
+                (static_cast<double>(current_edges_ptr->back()) - static_cast<double>(current_edges_ptr->front()))
+                / base_span )
+            : 1.0f;
+        calib_coefs = { start_offset, start_gain };
+      }
+      else
+      {
+        calib_coefs = original_cal->coefficients();
+        if( calib_coefs.size() < eqn_order )
+          calib_coefs.resize( eqn_order, 0.0f );
+      }
+
       std::string warning_msg;
       std::vector<float> coefs, coefs_uncert;
       chi2 = EnergyCal::fit_energy_cal_iterative( peakInfos, nchannel, original_cal->type(), fitfor,
-                                          calib_coefs, devpairs, coefs, coefs_uncert, warning_msg );
-      
+                                          calib_coefs, devpairs, coefs, coefs_uncert, warning_msg,
+                                          baseline_edges );
+
       if( warning_msg.size() )
         m_interspec->logMessage( warning_msg, 3 );
-      
+
       switch ( original_cal->type() )
       {
         case SpecUtils::EnergyCalType::Polynomial:
         case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
           answer->set_polynomial( nchannel, coefs, devpairs );
           break;
-          
+
         case SpecUtils::EnergyCalType::FullRangeFraction:
           answer->set_full_range_fraction( nchannel, coefs, devpairs );
           break;
-          
+
         case SpecUtils::EnergyCalType::LowerChannelEdge:
+        {
+          // The fit returns relative offset/gain (offset = delta from baseline[0], gain = span
+          // multiplier). Materialize the new lower-channel-edges via
+          //   new[i] = baseline[0] + offset_delta + gain * (baseline[i] - baseline[0]).
+          assert( coefs.size() == 2 );
+          const float offset_delta = coefs[0];
+          const float gain = coefs[1];
+          const float base0 = baseline_edges.front();
+          std::vector<float> new_edges( baseline_edges.size(), 0.0f );
+          for( size_t i = 0; i < new_edges.size(); ++i )
+            new_edges[i] = base0 + offset_delta + gain * (baseline_edges[i] - base0);
+          answer->set_lower_channel_energy( nchannel, std::move(new_edges) );
+          break;
+        }
+
         case SpecUtils::EnergyCalType::InvalidEquationType:
           assert( 0 );
           break;

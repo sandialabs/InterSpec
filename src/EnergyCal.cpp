@@ -36,20 +36,7 @@
 
 #include "Eigen/Dense"
 
-
-//Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/MnMinos.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/CombinedMinimizer.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnUserParameterState.h"
-
+#include "ceres/ceres.h"
 
 #include "InterSpec/PeakDef.h"
 #include "SpecUtils/SpecFile.h"
@@ -57,6 +44,7 @@
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/EnergyCalibration.h"
+#include "InterSpec/RelActCalcAuto_EnergyCal_imp.hpp"
 
 using namespace std;
 
@@ -253,111 +241,135 @@ double fit_from_channel_energies_imp( const size_t ncoeffs, const vector<float> 
 
 
 
-/** As an alternative to #fit_energy_cal_poly (for use when, e.g., that fails)
- This class allows using Minuit to find energy calibration coefficients.
- This class may eventually go away after #fit_energy_cal_poly is tested enough.
+/** Stride for Ceres autodiff (max expected number of fit parameters).
+ If exceeded, Ceres handles it by chunking - just slightly less efficient.
+ Energy cal fits are small (poly/FRF order ≤ 5, LowerChannelEdge fits 2 params).
  */
-class PolyCalibCoefMinFcn
-  : public ROOT::Minuit2::FCNBase
+constexpr int sm_energy_cal_ceres_stride = 8;
+
+
+/** Linear interpolation of the baseline lower-channel-edge vector at fractional channel `channel`,
+ transformed by the relative affine model
+   new[i] = baseline[i] + offset + (gain - 1) * (baseline[i] - baseline[0])
+          = baseline[0] + offset + gain * (baseline[i] - baseline[0])
+ where `offset` is the *delta* applied at channel 0 (so 0 means no shift) and `gain` is a
+ multiplier on the energy span (so 1 means identity). This matches the values shown to the
+ user in the EnergyCalTool UI.
+
+ `baseline` has `nchannel + 1` entries (last entry is upper edge of last channel).
+ Extrapolation outside `[0, nchannel]` uses the first/last channel width.
+ Auto-diff gradient flows through `offset` and `gain`; the baseline values are constants.
+ */
+template<typename T>
+T predicted_lce_energy( const T &offset,
+                        const T &gain,
+                        const double channel,
+                        const std::vector<float> &baseline )
 {
-public:
-  PolyCalibCoefMinFcn( const vector<EnergyCal::RecalPeakInfo> &peakInfo,
-                       const size_t nbin,
-                       SpecUtils::EnergyCalType eqnType,
-                       const std::vector< std::pair<float,float> > &devpair )
-  : ROOT::Minuit2::FCNBase(),
-  m_nbin( nbin ),
-  m_eqnType( eqnType ),
-  m_peakInfo( peakInfo ),
-  m_devpair( devpair )
+  assert( baseline.size() >= 2 );
+  const size_t nchannel = baseline.size() - 1;
+  const double base0 = static_cast<double>( baseline[0] );
+
+  double base_at_channel;
+  if( channel < 0.0 )
   {
-    switch( m_eqnType )
-    {
-      case SpecUtils::EnergyCalType::Polynomial:
-      case SpecUtils::EnergyCalType::FullRangeFraction:
-      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-        break;
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
-      case SpecUtils::EnergyCalType::InvalidEquationType:
-        throw runtime_error( "PolyCalibCoefMinFcn can only wotrk with Full "
-                            "Range Fraction and Polynomial binnings" );
-        break;
-    }
-  }//PolyCalibCoefMinFcn( constructor )
-  
-  virtual ~PolyCalibCoefMinFcn(){}
-  
-  virtual double Up() const { return 1.0; }
-  
-  virtual double operator()( const std::vector<double> &coef ) const
+    const double e0 = static_cast<double>( baseline[0] );
+    const double width = static_cast<double>( baseline[1] ) - e0;
+    base_at_channel = e0 + width * channel;
+  }
+  else if( channel >= static_cast<double>(nchannel) )
   {
-    double chi2 = 0.0;
-    
-    vector<float> float_coef;
-    for( const double d : coef )
+    const double e_last = static_cast<double>( baseline[nchannel] );
+    const double width  = e_last - static_cast<double>( baseline[nchannel - 1] );
+    base_at_channel = e_last + width * (channel - static_cast<double>(nchannel));
+  }
+  else
+  {
+    const size_t low = static_cast<size_t>( std::floor(channel) );
+    assert( (low + 1) < baseline.size() );
+    const double e_lo = static_cast<double>( baseline[low] );
+    const double e_hi = static_cast<double>( baseline[low + 1] );
+    const double frac = channel - static_cast<double>(low);
+    base_at_channel = e_lo + (e_hi - e_lo) * frac;
+  }
+
+  return T(base0) + offset + gain * T( base_at_channel - base0 );
+}//predicted_lce_energy(...)
+
+
+/** Ceres autodiff cost functor for fitting energy calibration coefficients.
+
+ Handles Polynomial, FullRangeFraction (with deviation pairs via the templated cubic spline in
+ RelActCalcAuto_EnergyCal_imp.hpp), and LowerChannelEdge (with offset/gain affine transform of a
+ baseline lower-channel-edge vector — `params[0] = offset`, `params[1] = gain`).
+
+ Each residual i is `(predicted_energy_i - photopeak_energy_i) / uncert_i`, so Ceres' final cost
+ `0.5 * sum(r_i^2)` equals half the Minuit-style chi-squared. The caller returns `2*final_cost`
+ to preserve the chi2 return contract.
+ */
+struct EnergyCalFitCost
+{
+  SpecUtils::EnergyCalType m_eqnType;
+  size_t m_nchannel;
+  size_t m_npars;
+  std::vector<EnergyCal::RecalPeakInfo> m_peakInfo;
+  std::vector<std::pair<float,float>> m_dev_pairs;
+  std::vector<float> m_baseline_lce_edges; // only populated when m_eqnType == LowerChannelEdge
+
+  template<typename T>
+  bool operator()( T const * const * parameters, T *residuals ) const
+  {
+    const T * const pars = parameters[0];
+
+    if( m_eqnType == SpecUtils::EnergyCalType::LowerChannelEdge )
     {
-      if( IsInf(d) || IsNan(d) )
+      for( size_t i = 0; i < m_peakInfo.size(); ++i )
       {
-        fprintf( stderr, "PolyCalibCoefMinFcn::operator() found invalid input parameter\n" );
-        return 99999999.0;
+        const T predE = predicted_lce_energy<T>( pars[0], pars[1],
+                                                 m_peakInfo[i].peakMeanBinNumber,
+                                                 m_baseline_lce_edges );
+        const double w = (m_peakInfo[i].peakMeanUncert <= 0.0) ? 1.0 : m_peakInfo[i].peakMeanUncert;
+        residuals[i] = (predE - T(m_peakInfo[i].photopeakEnergy)) / T(w);
       }
-      
-      float_coef.push_back( static_cast<float>(d) );
-    }//for( const double d : coef )
-    
-    double nearend, end, begin, nearbegin;
+      return true;
+    }
+
+    // Build templated dev-pair spline. Anchors are constant doubles, so the offsets
+    // are wrapped as T(0)-derivative jets — gradient flows only through `pars`.
+    std::vector<std::pair<double,T>> dev_pairs_T;
+    dev_pairs_T.reserve( m_dev_pairs.size() );
+    for( const auto &dp : m_dev_pairs )
+      dev_pairs_T.emplace_back( static_cast<double>(dp.first), T(static_cast<double>(dp.second)) );
+    const std::vector<RelActCalcAutoImp::CubicSplineNodeT<T>> spline
+      = RelActCalcAutoImp::create_cubic_spline( dev_pairs_T );
+
+    std::vector<T> coefs( pars, pars + m_npars );
+
     if( m_eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
     {
-      nearend   = SpecUtils::fullrangefraction_energy( m_nbin-2, float_coef, m_nbin, m_devpair );
-      end       = SpecUtils::fullrangefraction_energy( m_nbin-1, float_coef, m_nbin, m_devpair );
-      begin     = SpecUtils::fullrangefraction_energy( 0, float_coef, m_nbin, m_devpair );
-      nearbegin = SpecUtils::fullrangefraction_energy( 1, float_coef, m_nbin, m_devpair );
-    }else
-    {
-      assert( m_eqnType == SpecUtils::EnergyCalType::Polynomial
-             || m_eqnType == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial );
-      
-      nearend   = SpecUtils::polynomial_energy( m_nbin-2, float_coef, m_devpair );
-      end       = SpecUtils::polynomial_energy( m_nbin-1, float_coef, m_devpair );
-      begin     = SpecUtils::polynomial_energy( 0, float_coef, m_devpair );
-      nearbegin = SpecUtils::polynomial_energy( 1, float_coef, m_devpair );
-    }//if( FRF ) / else ( Poly )
-    
-    
-    if( (nearend >= end) || (begin >= nearbegin) )
-    {
-      fprintf( stderr, "Got nearend=%f, end=%f, begin=%f, nearbegin=%f\n", nearend, end, begin, nearbegin );
-      return 99999999.0;
-    }//if( almostLastEnergy > lastEnergy )
-    
-    for( const EnergyCal::RecalPeakInfo &info : m_peakInfo )
-    {
-      double predictedMean;
-      
-      if( m_eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
-        predictedMean = SpecUtils::fullrangefraction_energy( info.peakMeanBinNumber, float_coef, m_nbin, m_devpair );
-      else
-        predictedMean = SpecUtils::polynomial_energy( info.peakMeanBinNumber, float_coef, m_devpair );
-      
-      double uncert = ((info.peakMeanUncert<=0.0) ? 1.0 : info.peakMeanUncert );
-      chi2 += pow(predictedMean - info.photopeakEnergy, 2.0 ) / (uncert*uncert);
-    }//for( const &RecalPeakInfo info : peakInfo )
-    
-    if( IsInf(chi2) || IsNan(chi2) )
-    {
-      fprintf( stderr, "PolyCalibCoefMinFcn::operator(): invalid result Chi2\n" );
-      return 1000.0;
+      for( size_t i = 0; i < m_peakInfo.size(); ++i )
+      {
+        const T predE = RelActCalcAutoImp::fullrangefraction_energy<T>(
+          T(m_peakInfo[i].peakMeanBinNumber), coefs, m_nchannel, spline );
+        const double w = (m_peakInfo[i].peakMeanUncert <= 0.0) ? 1.0 : m_peakInfo[i].peakMeanUncert;
+        residuals[i] = (predE - T(m_peakInfo[i].photopeakEnergy)) / T(w);
+      }
     }
-    
-    return chi2;
-  }//double operator()
-  
-protected:
-  size_t m_nbin;
-  SpecUtils::EnergyCalType m_eqnType;
-  std::vector<EnergyCal::RecalPeakInfo> m_peakInfo;
-  std::vector< std::pair<float,float> > m_devpair;
-};//class PolyCalibCoefMinFcn
+    else
+    {
+      // Polynomial or UnspecifiedUsingDefaultPolynomial
+      for( size_t i = 0; i < m_peakInfo.size(); ++i )
+      {
+        const T predE = RelActCalcAutoImp::polynomial_energy<T>(
+          T(m_peakInfo[i].peakMeanBinNumber), coefs, spline );
+        const double w = (m_peakInfo[i].peakMeanUncert <= 0.0) ? 1.0 : m_peakInfo[i].peakMeanUncert;
+        residuals[i] = (predE - T(m_peakInfo[i].photopeakEnergy)) / T(w);
+      }
+    }
+
+    return true;
+  }//operator()
+};//struct EnergyCalFitCost
 
 }//namespace
 
@@ -416,151 +428,188 @@ double EnergyCal::fit_energy_cal_iterative( const std::vector<EnergyCal::RecalPe
                                            const std::vector<std::pair<float,float>> &devpair,
                                            std::vector<float> &coefs,
                                            std::vector<float> &coefs_uncert,
-                                           std::string &warning_msg )
+                                           std::string &warning_msg,
+                                           const std::vector<float> &lower_channel_edges )
 {
   coefs.clear();
   coefs_uncert.clear();
   warning_msg.clear();
-  
+
   if( peakInfo.size() < 1 )
     throw runtime_error( "fit_energy_cal_iterative: no peaks specified" );
-  
+
   const size_t npars = startingCoefs.size();
-  
+
   if( npars < 2 )
-    throw runtime_error( "fit_energy_cal_iterative: must be at least coefficients" );
-  
+    throw runtime_error( "fit_energy_cal_iterative: must be at least two coefficients" );
+
   if( fitfor.size() != npars )
     throw runtime_error( "fit_energy_cal_iterative: fitfor.size() != startingCoefs.size()" );
-  
+
   switch( eqnType )
   {
-    
     case SpecUtils::EnergyCalType::Polynomial:
     case SpecUtils::EnergyCalType::FullRangeFraction:
     case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      if( !lower_channel_edges.empty() )
+        throw runtime_error( "fit_energy_cal_iterative: lower_channel_edges must be empty for"
+                             " Polynomial/FullRangeFraction calibrations" );
       break;
+
     case SpecUtils::EnergyCalType::LowerChannelEdge:
+      if( npars != 2 )
+        throw runtime_error( "fit_energy_cal_iterative: LowerChannelEdge requires exactly 2"
+                             " coefficients (offset, gain)" );
+      if( lower_channel_edges.size() != (nbin + 1) )
+        throw runtime_error( "fit_energy_cal_iterative: lower_channel_edges size must equal"
+                             " nchannels + 1 for LowerChannelEdge fits" );
+      break;
+
     case SpecUtils::EnergyCalType::InvalidEquationType:
-      throw runtime_error( "fit_energy_cal_iterative: must be either Polynomial or"
-                           " FullRangeFraction calibration type" );
+      throw runtime_error( "fit_energy_cal_iterative: invalid calibration type" );
       break;
   }//switch( eqnType )
-  
+
   if( nbin < 7 )
     throw runtime_error( "fit_energy_cal_iterative: you must have at least 7 channels" );
-  
+
   const size_t nfit = std::accumulate( begin(fitfor), end(fitfor), size_t(0) );
-  //const size_t nfit = ([&]() -> size_t { size_t i = 0; for( auto f : fitfor ) i += f; return i; })();
-  
+
   if( nfit < 1 )
     throw runtime_error( "fit_energy_cal_iterative: must fit for at least one coefficient" );
-  
-  PolyCalibCoefMinFcn chi2Fcn( peakInfo, nbin, eqnType, devpair );
-  ROOT::Minuit2::MnUserParameters inputPrams;
-    
+
+  if( nfit > peakInfo.size() )
+    throw runtime_error( "fit_energy_cal_iterative: must have at least as many peaks as"
+                         " coefficients being fit for" );
+
+  EnergyCalFitCost *cost_functor = new EnergyCalFitCost();
+  cost_functor->m_eqnType = eqnType;
+  cost_functor->m_nchannel = nbin;
+  cost_functor->m_npars = npars;
+  cost_functor->m_peakInfo = peakInfo;
+  cost_functor->m_dev_pairs = devpair;
+  if( eqnType == SpecUtils::EnergyCalType::LowerChannelEdge )
+    cost_functor->m_baseline_lce_edges = lower_channel_edges;
+
+  ceres::DynamicAutoDiffCostFunction<EnergyCalFitCost,sm_energy_cal_ceres_stride> *cost_function
+    = new ceres::DynamicAutoDiffCostFunction<EnergyCalFitCost,sm_energy_cal_ceres_stride>(
+        cost_functor, ceres::TAKE_OWNERSHIP );
+  cost_function->AddParameterBlock( static_cast<int>(npars) );
+  cost_function->SetNumResiduals( static_cast<int>(peakInfo.size()) );
+
+  std::vector<double> parameters( npars, 0.0 );
+  for( size_t i = 0; i < npars; ++i )
+    parameters[i] = static_cast<double>( startingCoefs[i] );
+
+  ceres::Problem problem;
+  problem.AddResidualBlock( cost_function, nullptr, parameters.data() );
+
+  // Hold fixed parameters constant via SubsetManifold.
+  std::vector<int> constant_indices;
   for( size_t i = 0; i < npars; ++i )
   {
-    string name = std::to_string( i );
-    double delta = 1.0/pow( static_cast<double>(nbin), static_cast<double>(i) );
-    if( eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
-    {
-      switch( i )
-      {
-        case 0: delta = 0.5; break;
-        case 1: delta = 1.0; break;
-        default:
-          delta = 1.0 / std::pow( 10.0, static_cast<double>(i-1) );
-          break;
-      }//switch( i )
-    }//if( FullRangeFraction )
-        
-    if( fitfor[i] )
-      inputPrams.Add( name, startingCoefs[i], delta );
-    else
-      inputPrams.Add( name, startingCoefs[i] );
-        
-    if( i == 1 && fitfor[i] )
-      inputPrams.SetLowerLimit( name, 0.0 );
-  }//for( size_t i = 0; i < sm_numCoefs; ++i )
-        
-    
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-  ROOT::Minuit2::MnStrategy strategy( 1 ); //0 low, 1 medium, >=2 high
-    
-  const int nvarpars = inputPrams.VariableParameters();
-  const unsigned int maxFcnCall = 200 + 100*nvarpars + 5*nvarpars*nvarpars;
-  const double tolerance = 0.05; //0.05 * peakInfos.size();
-    
-  ROOT::Minuit2::CombinedMinimizer fitter;
-  ROOT::Minuit2::FunctionMinimum minimum
-    = fitter.Minimize( chi2Fcn, inputParamState,
-                      strategy, maxFcnCall, tolerance );
-    
-  //Not sure why Minuit2 doesnt like converging on the minumum verry well, but
-  //  rather than showing the user an error message, we'll give it anither try
-  if( minimum.IsAboveMaxEdm() )
+    if( !fitfor[i] )
+      constant_indices.push_back( static_cast<int>(i) );
+  }
+  if( !constant_indices.empty() && (constant_indices.size() < npars) )
   {
-    ROOT::Minuit2::MnMigrad fitter( chi2Fcn, inputParamState, strategy );
-    minimum = fitter( maxFcnCall, tolerance );
-  }//if( minimum.IsAboveMaxEdm() )
-    
-  if( !minimum.IsValid() )
+    ceres::Manifold *subset = new ceres::SubsetManifold( static_cast<int>(npars), constant_indices );
+    problem.SetManifold( parameters.data(), subset );
+  }
+
+  // Bound the linear/gain term (index 1) to be strictly positive when it is being fit.
+  // For polynomial/FRF this preserves the Minuit2 lower-limit at 0.0; for LowerChannelEdge the
+  // 'gain' multiplier must also stay positive to avoid an inverted energy axis.
+  if( fitfor[1] )
+    problem.SetParameterLowerBound( parameters.data(), 1, 0.0 );
+
+  ceres::Solver::Options options;
+  options.linear_solver_type = ceres::DENSE_QR;
+  options.minimizer_type = ceres::TRUST_REGION;
+  options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+  options.use_nonmonotonic_steps = true;
+  options.max_num_iterations = 200;
+  options.function_tolerance = 1e-10;
+  options.parameter_tolerance = 1e-12;
+  options.logging_type = ceres::SILENT;
+  options.minimizer_progress_to_stdout = false;
+
+  ceres::Solver::Summary summary;
+  ceres::Solve( options, &problem, &summary );
+
+  if( summary.termination_type == ceres::FAILURE
+      || summary.termination_type == ceres::USER_FAILURE )
   {
-    if( !minimum.HasValidCovariance() || !minimum.HasValidParameters() )
-    {
-      string msg = "Fit for calibration parameters failed.";
-      bool fithigher = false;
-      for( size_t i = 2; i < npars; ++i )
-        fithigher |= fitfor[i];
-      
-      if( fithigher )
-        msg += " you might try not fitting for quadratic or higher terms.";
-      
-      throw runtime_error( msg );
-    }//if( we are really messed up )
-    
-    cerr << minimum << endl;
-    
-    warning_msg = "Warning: calibration coefficient fit results "
-    "may be invalid, please check, and if necessary "
-    "revert this calibration instead.";
-    
-    if( minimum.IsAboveMaxEdm() )
-    {
-      warning_msg += " The estimated distance to optimal calibration parameters is "
-      "too large.";
-      
-      cerr << "EDM=" << minimum.Edm() << ", tolerance=" << tolerance << ", npeaks=" << peakInfo.size() << endl;
-    }
-    if( minimum.HasReachedCallLimit() )
-      warning_msg += " To many calls to chi2 routine were made.";
-  }//if( !minimum.IsValid() )
-  
-  const ROOT::Minuit2::MnUserParameters &fitPrams = minimum.UserState().Parameters();
-  const vector<double> parValues = fitPrams.Params();
-  const vector<double> parErrors = fitPrams.Errors();
-  assert( parValues.size() == npars );
-  assert( parValues.size() == parErrors.size() );
-  
-  for( size_t i = 0; i < parValues.size(); ++i )
+    throw runtime_error( "Fit for calibration parameters failed: " + summary.message );
+  }
+
+  for( size_t i = 0; i < npars; ++i )
   {
-    if( IsInf(parValues[i]) || IsNan(parValues[i]) )
+    if( std::isinf(parameters[i]) || std::isnan(parameters[i]) )
       throw runtime_error( "Invalid calibration parameter from fit :(" );
   }
-  
-  string mmsg = "Minuit fit gave pars={";
-  for( size_t i = 0; i < parValues.size(); ++i )
+
+  if( summary.termination_type == ceres::NO_CONVERGENCE )
   {
-    coefs.push_back( static_cast<float>(parValues[i]) );
-    coefs_uncert.push_back( static_cast<float>(parErrors[i]) );
-    
-    mmsg += std::to_string(parValues[i]) + "+-" + std::to_string(parErrors[i]) + ", ";
-  }//
-  mmsg += "}\n\n";
-  cout << mmsg;
-  
-  return minimum.Fval();
+    warning_msg = "Warning: calibration coefficient fit did not fully converge; please check"
+                  " the result, and revert this calibration if necessary.";
+    bool fithigher = false;
+    for( size_t i = 2; i < npars; ++i )
+      fithigher |= fitfor[i];
+    if( fithigher )
+      warning_msg += " You might try not fitting for quadratic or higher terms.";
+  }
+
+  // Extract parameter uncertainties from the covariance matrix.
+  std::vector<double> uncerts( npars, 0.0 );
+  if( nfit < npars || nfit > 0 )
+  {
+    ceres::Covariance::Options cov_options;
+    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
+    cov_options.min_reciprocal_condition_number = 1e-14;
+    cov_options.null_space_rank = -1;
+
+    ceres::Covariance covariance( cov_options );
+    std::vector<std::pair<const double*,const double*>> cov_blocks;
+    cov_blocks.emplace_back( parameters.data(), parameters.data() );
+
+    if( covariance.Compute( cov_blocks, &problem ) )
+    {
+      std::vector<double> row_major( npars * npars, 0.0 );
+      const std::vector<const double*> blocks( 1, parameters.data() );
+      if( covariance.GetCovarianceMatrix( blocks, row_major.data() ) )
+      {
+        for( size_t i = 0; i < npars; ++i )
+        {
+          const double v = row_major[i * npars + i];
+          uncerts[i] = (v > 0.0) ? std::sqrt(v) : 0.0;
+        }
+      }
+    }
+    else
+    {
+      if( !warning_msg.empty() ) warning_msg += " ";
+      warning_msg += "Could not compute parameter uncertainties (covariance was rank-deficient).";
+    }
+  }
+
+  // Zero uncertainties on fixed parameters (they were not fit).
+  for( size_t i = 0; i < npars; ++i )
+  {
+    if( !fitfor[i] )
+      uncerts[i] = 0.0;
+  }
+
+  coefs.resize( npars, 0.0f );
+  coefs_uncert.resize( npars, 0.0f );
+  for( size_t i = 0; i < npars; ++i )
+  {
+    coefs[i] = static_cast<float>( parameters[i] );
+    coefs_uncert[i] = static_cast<float>( uncerts[i] );
+  }
+
+  // Ceres minimizes 0.5 * sum(r_i^2); chi^2 = sum(r_i^2) = 2 * final_cost.
+  return 2.0 * summary.final_cost;
 }//fit_energy_cal_iterative(...)
 
 

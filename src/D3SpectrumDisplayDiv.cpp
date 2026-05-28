@@ -3115,7 +3115,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
     fitPrefs = detector->peakFitDetPrefs();
   assert( fitPrefs );
   const PeakFitUtils::CoarseResolutionType det_type
-    = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( foreground, meas );
+    = PeakFitUtils::effective_det_type( fitPrefs, foreground, meas );
 
   std::vector<std::shared_ptr<const PeakDef>> prev_shown_peaks = m_last_being_added_peaks;
 
@@ -3287,7 +3287,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
 
         prefs_options |= PeakFitLM::SmallAmplitudeRefinementOnly;
         const vector<shared_ptr<const PeakDef>> refit
-          = refitPeaksThatShareROI( foreground, detector, constPeaks, fitPrefs->m_det_type, prefs_options );
+          = refitPeaksThatShareROI( foreground, detector, constPeaks, det_type, prefs_options );
 
         if( !refit.empty() )
         {

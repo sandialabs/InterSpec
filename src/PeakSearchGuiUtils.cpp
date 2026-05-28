@@ -2078,7 +2078,10 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   }
 
   assert( fitPrefs );
-  // searchForPeakFromUser handles null fitPrefs via is_high_res fallback
+  // searchForPeakFromUser (and the routines it calls) consult fitPrefs->m_det_type via
+  // PeakFitUtils::effective_det_type, which falls back to a synchronous candidate-peak FWHM
+  // classification when m_det_type is Unknown — this is primarily useful right after a spectrum is
+  // loaded, and the more expensive check hasnt completed yet.
 
   vector<shared_ptr<const PeakDef>> origPeaks, nearbyOrigPeaks;
 
@@ -3063,7 +3066,7 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
         fitPrefs = detector->peakFitDetPrefs();
       assert( fitPrefs );
       const PeakFitUtils::CoarseResolutionType det_type
-        = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+        = PeakFitUtils::effective_det_type( fitPrefs, data, foreground );
 
       result = refitPeaksThatShareROI( data, detector, peaksInRoi, det_type, fit_options );
       
@@ -3102,7 +3105,7 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
 
     assert( refitPrefs );
     const PeakFitUtils::CoarseResolutionType refitDetType
-      = refitPrefs ? refitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+      = PeakFitUtils::effective_det_type( refitPrefs, data, foreground );
 
     WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
     
@@ -3297,7 +3300,7 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
         drfFitPrefs = detector->peakFitDetPrefs();
       assert( drfFitPrefs );
       const PeakFitUtils::CoarseResolutionType drfDetType
-        = drfFitPrefs ? drfFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+        = PeakFitUtils::effective_det_type( drfFitPrefs, data, foreground );
 
       vector<shared_ptr<const PeakDef>> result = refitPeaksThatShareROI( data, detector, peaksInRoi, drfDetType, fit_options );
 
@@ -3328,7 +3331,7 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
     if( !drfFallbackPrefs && drf )
       drfFallbackPrefs = drf->peakFitDetPrefs();
     const PeakFitUtils::CoarseResolutionType drfFallbackDetType
-      = drfFallbackPrefs ? drfFallbackPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+      = PeakFitUtils::effective_det_type( drfFallbackPrefs, data, foreground );
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                  hypothesis_threshold, inputPeak, data, fit_options, drfFallbackDetType );
     if( outputPeak.size() != inputPeak.size() )
@@ -3712,7 +3715,7 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec,
         ppFitPrefs = detector->peakFitDetPrefs();
       assert( ppFitPrefs );
       const PeakFitUtils::CoarseResolutionType ppDetType
-        = ppFitPrefs ? ppFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+        = PeakFitUtils::effective_det_type( ppFitPrefs, data, foreground );
 
       vector<shared_ptr<const PeakDef>> result = refitPeaksThatShareROI( data, detector, peaksInRoi, ppDetType, fit_options );
 
@@ -3747,7 +3750,7 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec,
         ppFallbackPrefs = det->peakFitDetPrefs();
     }
     const PeakFitUtils::CoarseResolutionType ppDetType
-      = ppFallbackPrefs ? ppFallbackPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+      = PeakFitUtils::effective_det_type( ppFallbackPrefs, data, foreground );
     vector<PeakDef> outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                hypothesis_threshold, inputPeak, data, fit_options, ppDetType );
     if( outputPeak.size() != inputPeak.size() )
@@ -3903,7 +3906,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
         contFitPrefs = detector->peakFitDetPrefs();
       assert( contFitPrefs );
       const PeakFitUtils::CoarseResolutionType contDetType
-        = contFitPrefs ? contFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+        = PeakFitUtils::effective_det_type( contFitPrefs, data, foreground );
 
       const vector<shared_ptr<const PeakDef>> result
                                 = refitPeaksThatShareROI( data, detector, newCandidatePeaks, contDetType, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
@@ -3949,7 +3952,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       if( !contFitPrefs && foreground->detector() )
         contFitPrefs = foreground->detector()->peakFitDetPrefs();
       const PeakFitUtils::CoarseResolutionType contDetType2
-        = contFitPrefs ? contFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+        = PeakFitUtils::effective_det_type( contFitPrefs, data, foreground );
       outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                    hypothesis_threshold, inputPeak, data, fit_options, contDetType2 );
 
@@ -4150,7 +4153,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
         skewFitPrefs = detector->peakFitDetPrefs();
       assert( skewFitPrefs );
       const PeakFitUtils::CoarseResolutionType skewDetType
-        = skewFitPrefs ? skewFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+        = PeakFitUtils::effective_det_type( skewFitPrefs, data, foreground );
 
       const vector<shared_ptr<const PeakDef>> result
                                 = refitPeaksThatShareROI( data, detector, newCandidatePeaks, skewDetType, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
@@ -4193,7 +4196,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
       if( !skewFitPrefs && foreground->detector() )
         skewFitPrefs = foreground->detector()->peakFitDetPrefs();
       const PeakFitUtils::CoarseResolutionType skewDetType2
-        = skewFitPrefs ? skewFitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, foreground );
+        = PeakFitUtils::effective_det_type( skewFitPrefs, data, foreground );
       outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
                                    hypothesis_threshold, inputPeak, data, fit_options, skewDetType2 );
 
@@ -4226,7 +4229,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
 }//change_skew_type_from_right_click(...)
   
 
-void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::Measurement> data,
+void fit_template_peaks( std::shared_ptr<const SpecUtils::Measurement> data,
                          std::vector<PeakDef> input_peaks,
                          std::vector<PeakDef> orig_peaks,
                          const PeakTemplateFitSrc fitsrc,
@@ -4241,7 +4244,7 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
 
   assert( fitPrefs );
   const PeakFitUtils::CoarseResolutionType templateDetType
-    = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, nullptr );
+    = PeakFitUtils::effective_det_type( fitPrefs, data, nullptr );
 
   unique_copy_continuum( input_peaks );
   
@@ -4320,14 +4323,21 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
     return;
   
   WServer::instance()->post( sessionid, [=](){
-    
-    //Check if a new spectrum has been loaded while the peaks were being fit.
-    //  If so, dont try to propogate the fit peaks.
-    if( !wApp || (interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground) != data) )
+    // We are now on the session's main Wt thread; resolve the live InterSpec instance
+    // here rather than carrying a pointer across threads.  Returns null if the session
+    // is no longer alive or the InterSpec widget tree has been torn down (e.g., by a
+    // Clear Session that races with this background fit).
+    InterSpec *interspec = InterSpec::instance();
+    if( !interspec )
       return;
-    
+
+    // Check if a new spectrum has been loaded while the peaks were being fit.
+    //  If so, dont try to propogate the fit peaks.
+    if( interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground) != data )
+      return;
+
     vector<ReferenceLineInfo> reflines;
-    
+
     PeakSelectorWindowReason reason;
     switch( fitsrc )
     {
@@ -4366,7 +4376,7 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
 
   assert( fitPrefs );
   const PeakFitUtils::CoarseResolutionType gadrasDetType
-    = fitPrefs ? fitPrefs->m_det_type : PeakFitUtils::coarse_det_type( data, nullptr );
+    = PeakFitUtils::effective_det_type( fitPrefs, data, nullptr );
 
   unique_copy_continuum( gadras_peaks );
   

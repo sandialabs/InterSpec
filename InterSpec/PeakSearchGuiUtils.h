@@ -337,8 +337,13 @@ enum class PeakTemplateFitSrc
 
 /** Fits the template peaks to the passed in data, and then will open a dialog
   to allow the user to select what peaks they want to keep.
- 
- @param interspec Application instance this work is being performed for.
+
+ Performs the (CPU-bound) fitting on the calling thread; results are then posted to
+ the session given by \p sessionid via `WServer::post`, where the dialog is constructed.
+ The session-thread post resolves the live `InterSpec *` via `InterSpec::instance()`,
+ so this function does not take or capture an `InterSpec` pointer.  This makes the
+ pointer's lifetime explicit: it is only ever read on the main Wt thread.
+
  @param data The gamma spectrum to fit the peaks to.  Must be valid spectrum.
  @param template_peaks Candidate peaks to fit.  The peak continuum and amplitude
         will be estimated based off of the data before fitting incase they are
@@ -352,11 +357,10 @@ enum class PeakTemplateFitSrc
  @param fitsrc The source of the template peaks.  Either from a previous
         spectrum or a peak CSV file.  Effects how results are displayed.
  @param sessionid The WApplication session ID to post to, to display results.
- 
+
  As of 20191028 not particularly well tested.
  */
-void fit_template_peaks( InterSpec *interspec,
-                         std::shared_ptr<const SpecUtils::Measurement> data,
+void fit_template_peaks( std::shared_ptr<const SpecUtils::Measurement> data,
                          std::vector<PeakDef> template_peaks,
                          std::vector<PeakDef> original_peaks,
                          const PeakTemplateFitSrc fitsrc,

@@ -553,8 +553,19 @@ private:
 
   struct NonSpecFileClassification
   {
-    NonSpecFileKind kind = NonSpecFileKind::Unknown;
-    /** Set only when `kind == Image`; static-storage MIME-type string. */
+    /** Ordered list of candidate kinds, most-likely first.  The dispatcher in
+     `handleNonSpectrumFile` tries each in turn until one returns "handled" (`true`).
+     Empty when the file isn't recognized.
+
+     Most real files match exactly one kind; the list form exists so that header-pattern
+     overlaps (e.g., a file that looks XML and also vaguely matches a CSV column pattern)
+     don't silently commit to the first guess.  If a handler returns `false`
+     ("this isn't actually my file type"), the dispatcher resets the stream and tries
+     the next candidate.
+     */
+    std::vector<NonSpecFileKind> candidates;
+
+    /** Set only when `Image` is among the candidates; static-storage MIME-type string. */
     const char *imageMimeType = nullptr;
   };
 
@@ -563,6 +574,11 @@ private:
    Pure content-based classification — no app state (foreground / open windows) is considered.
    The dispatcher in `handleNonSpectrumFile` gates state-dependent kinds (peak CSV, CALp,
    RelActAuto, Source.lib) after classification.
+
+   For binary/unambiguous formats (archives, images, documents, ICD2 N42), the result has
+   exactly one candidate.  For content-pattern formats (XML, CSV column patterns), every
+   matching pattern is appended in priority order so the dispatcher can fall through on
+   parse failure.
 
    @param header   Pointer to a buffer holding the first \p headerLen bytes of the file.
    @param headerLen Number of valid bytes in \p header (≤ 1024 by convention).

@@ -30,6 +30,7 @@
 #include <boost/test/included/unit_test.hpp>
 
 #include "InterSpec/EnergyCal.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 namespace 
 {
@@ -973,4 +974,263 @@ BOOST_AUTO_TEST_CASE( test_fit_energy_cal_frf_consistency )
       BOOST_CHECK_CLOSE( coefs[2], 200.0f, 10.0 );  // Should recover quadratic term
     }
   }
+}
+
+
+// -------------------- fit_energy_cal_iterative (Ceres backend) tests --------------------
+
+// Verify Ceres-based polynomial fit recovers a quadratic calibration starting from perturbed
+// coefficients. Mirrors test_fit_energy_cal_poly_quadratic but exercises the fallback path.
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_iterative_ceres_poly )
+{
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+
+  const std::vector<double> channels = { 50.0, 150.0, 300.0, 500.0, 800.0 };
+  const std::vector<double> coeffs_true = { 5.0, 1.8, 0.001 };
+
+  for( double channel : channels )
+  {
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = channel;
+    peak.peakMeanUncert = 0.5;
+    peak.photopeakEnergy = coeffs_true[0] + coeffs_true[1] * channel + coeffs_true[2] * channel * channel;
+    peaks.push_back( peak );
+  }
+
+  std::vector<bool> fitfor = { true, true, true };
+  const size_t nchannels = 1024;
+  std::vector<std::pair<float,float>> dev_pairs;
+  std::vector<float> starting_coefs = { 5.5f, 1.7f, 0.0009f };  // ~5% perturbed
+  std::vector<float> coefs, uncert;
+  std::string warning_msg;
+
+  const double chi2 = EnergyCal::fit_energy_cal_iterative( peaks, nchannels,
+      SpecUtils::EnergyCalType::Polynomial, fitfor, starting_coefs, dev_pairs,
+      coefs, uncert, warning_msg );
+
+  BOOST_REQUIRE_EQUAL( coefs.size(), 3u );
+  BOOST_REQUIRE_EQUAL( uncert.size(), 3u );
+  BOOST_CHECK_CLOSE( coefs[0], 5.0f, 0.5 );
+  BOOST_CHECK_CLOSE( coefs[1], 1.8f, 0.5 );
+  BOOST_CHECK_CLOSE( coefs[2], 0.001f, 5.0 );
+  BOOST_CHECK_SMALL( chi2, 1e-4 );
+  BOOST_CHECK( warning_msg.empty() );
+  BOOST_CHECK_GT( uncert[0], 0.0f );
+  BOOST_CHECK_GT( uncert[1], 0.0f );
+}
+
+
+// Verify Ceres-based FullRangeFraction fit recovers a quadratic FRF calibration.
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_iterative_ceres_frf )
+{
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+
+  const size_t nchannels = 1024;
+  const std::vector<double> channels = { 80.0, 200.0, 400.0, 600.0, 900.0 };
+  const std::vector<double> coeffs_true = { 50.0, 1200.0, 75.0 };
+
+  for( double channel : channels )
+  {
+    const double x = channel / nchannels;
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = channel;
+    peak.peakMeanUncert = 0.5;
+    peak.photopeakEnergy = coeffs_true[0] + coeffs_true[1] * x + coeffs_true[2] * x * x;
+    peaks.push_back( peak );
+  }
+
+  std::vector<bool> fitfor = { true, true, true };
+  std::vector<std::pair<float,float>> dev_pairs;
+  std::vector<float> starting_coefs = { 55.0f, 1100.0f, 50.0f };
+  std::vector<float> coefs, uncert;
+  std::string warning_msg;
+
+  const double chi2 = EnergyCal::fit_energy_cal_iterative( peaks, nchannels,
+      SpecUtils::EnergyCalType::FullRangeFraction, fitfor, starting_coefs, dev_pairs,
+      coefs, uncert, warning_msg );
+
+  BOOST_REQUIRE_EQUAL( coefs.size(), 3u );
+  BOOST_CHECK_CLOSE( coefs[0], 50.0f, 1.0 );
+  BOOST_CHECK_CLOSE( coefs[1], 1200.0f, 1.0 );
+  BOOST_CHECK_CLOSE( coefs[2], 75.0f, 5.0 );
+  BOOST_CHECK_SMALL( chi2, 1e-3 );
+}
+
+
+// Verify that fixing a coefficient leaves it untouched and returns zero uncertainty for it.
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_iterative_fixed_coef )
+{
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+
+  const std::vector<double> channels = { 50.0, 150.0, 300.0, 500.0 };
+  const std::vector<double> coeffs_true = { 5.0, 1.8, 0.001 };
+
+  for( double channel : channels )
+  {
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = channel;
+    peak.peakMeanUncert = 0.5;
+    peak.photopeakEnergy = coeffs_true[0] + coeffs_true[1] * channel + coeffs_true[2] * channel * channel;
+    peaks.push_back( peak );
+  }
+
+  std::vector<bool> fitfor = { true, true, false };  // hold quadratic fixed at its starting value
+  const size_t nchannels = 1024;
+  std::vector<std::pair<float,float>> dev_pairs;
+  std::vector<float> starting_coefs = { 4.5f, 1.85f, 0.001f }; // quadratic is the truth value
+  std::vector<float> coefs, uncert;
+  std::string warning_msg;
+
+  EnergyCal::fit_energy_cal_iterative( peaks, nchannels,
+      SpecUtils::EnergyCalType::Polynomial, fitfor, starting_coefs, dev_pairs,
+      coefs, uncert, warning_msg );
+
+  BOOST_REQUIRE_EQUAL( coefs.size(), 3u );
+  BOOST_REQUIRE_EQUAL( uncert.size(), 3u );
+  BOOST_CHECK_CLOSE( coefs[2], 0.001f, 1e-3 );      // unchanged
+  BOOST_CHECK_SMALL( uncert[2], 1e-6f );             // fixed → zero uncertainty
+  BOOST_CHECK_CLOSE( coefs[0], 5.0f, 0.5 );
+  BOOST_CHECK_CLOSE( coefs[1], 1.8f, 0.5 );
+}
+
+
+// LowerChannelEdge: offset-only shift. Build a non-linear baseline (quadratic-ish), simulate
+// peaks at +0.7 keV shifted energies, and verify the Ceres fit recovers offset_delta=0.7 and
+// gain=1.0 (held fixed at 1.0 via fitfor=[true,false]). Offset is the *delta* from the baseline
+// (0 = no shift), so the recovered value should be approximately the applied shift in keV.
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_iterative_lower_channel_edge_offset_only )
+{
+  const size_t nchannels = 512;
+  std::vector<float> baseline( nchannels + 1, 0.0f );
+  // Non-linear baseline: E = 10 + 3*ch + 0.0005*ch^2
+  for( size_t i = 0; i <= nchannels; ++i )
+  {
+    const double ch = static_cast<double>(i);
+    baseline[i] = static_cast<float>( 10.0 + 3.0 * ch + 0.0005 * ch * ch );
+  }
+
+  const double applied_offset_shift = 0.7;  // keV
+  const std::vector<double> peak_channels = { 25.0, 100.0, 250.0, 400.0 };
+
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+  for( double channel : peak_channels )
+  {
+    // Linear interp of baseline at fractional channel
+    const size_t low = static_cast<size_t>( std::floor(channel) );
+    const double frac = channel - static_cast<double>(low);
+    const double base_E = baseline[low] + (baseline[low+1] - baseline[low]) * frac;
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = channel;
+    peak.peakMeanUncert = 0.3;
+    peak.photopeakEnergy = base_E + applied_offset_shift;  // pretend the true peak energy is shifted
+    peaks.push_back( peak );
+  }
+
+  // Starting at identity: offset_delta=0, gain=1; fit offset only.
+  std::vector<bool> fitfor = { true, false };
+  std::vector<float> starting_coefs = { 0.0f, 1.0f };
+  std::vector<std::pair<float,float>> dev_pairs;  // LCE has none
+  std::vector<float> coefs, uncert;
+  std::string warning_msg;
+
+  EnergyCal::fit_energy_cal_iterative( peaks, nchannels,
+      SpecUtils::EnergyCalType::LowerChannelEdge, fitfor, starting_coefs, dev_pairs,
+      coefs, uncert, warning_msg, baseline );
+
+  BOOST_REQUIRE_EQUAL( coefs.size(), 2u );
+  BOOST_CHECK_CLOSE( coefs[0], static_cast<float>(applied_offset_shift), 1.0 );
+  BOOST_CHECK_CLOSE( coefs[1], 1.0f, 1e-3 );   // gain held fixed at identity
+  BOOST_CHECK_SMALL( uncert[1], 1e-6f );        // fixed → zero uncertainty
+  BOOST_CHECK_GT( uncert[0], 0.0f );
+}
+
+
+// LowerChannelEdge: simultaneous offset and gain fit. The simulated peaks lie at the energies of
+// an affine-transformed baseline (offset_delta=+0.5, gain=1.003); the fit must recover both.
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_iterative_lower_channel_edge_offset_and_gain )
+{
+  const size_t nchannels = 512;
+  std::vector<float> baseline( nchannels + 1, 0.0f );
+  for( size_t i = 0; i <= nchannels; ++i )
+  {
+    const double ch = static_cast<double>(i);
+    baseline[i] = static_cast<float>( 5.0 + 2.5 * ch + 0.0003 * ch * ch );
+  }
+
+  const float true_offset_delta = 0.5f;
+  const float true_gain = 1.003f;
+  const std::vector<double> peak_channels = { 30.0, 90.0, 180.0, 300.0, 450.0 };
+
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+  for( double channel : peak_channels )
+  {
+    const size_t low = static_cast<size_t>( std::floor(channel) );
+    const double frac = channel - static_cast<double>(low);
+    const double base_E = baseline[low] + (baseline[low+1] - baseline[low]) * frac;
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = channel;
+    peak.peakMeanUncert = 0.3;
+    // True peak energy under the affine transform of baseline:
+    //   true_E = baseline[0] + offset_delta + gain * (base_E - baseline[0])
+    peak.photopeakEnergy = baseline.front() + true_offset_delta
+                           + true_gain * (base_E - baseline.front());
+    peaks.push_back( peak );
+  }
+
+  std::vector<bool> fitfor = { true, true };
+  std::vector<float> starting_coefs = { 0.0f, 1.0f };
+  std::vector<std::pair<float,float>> dev_pairs;
+  std::vector<float> coefs, uncert;
+  std::string warning_msg;
+
+  EnergyCal::fit_energy_cal_iterative( peaks, nchannels,
+      SpecUtils::EnergyCalType::LowerChannelEdge, fitfor, starting_coefs, dev_pairs,
+      coefs, uncert, warning_msg, baseline );
+
+  BOOST_REQUIRE_EQUAL( coefs.size(), 2u );
+  BOOST_CHECK_CLOSE( coefs[0], true_offset_delta, 5.0 );
+  BOOST_CHECK_CLOSE( coefs[1], true_gain, 0.05 );
+  BOOST_CHECK_GT( uncert[0], 0.0f );
+  BOOST_CHECK_GT( uncert[1], 0.0f );
+}
+
+
+// fit_energy_cal_iterative input validation: LowerChannelEdge requires baseline edges and 2 coefs.
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_iterative_input_validation )
+{
+  const size_t nchannels = 512;
+
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+  EnergyCal::RecalPeakInfo peak;
+  peak.peakMeanBinNumber = 100.0;
+  peak.peakMean = 100.0;
+  peak.peakMeanUncert = 0.5;
+  peak.photopeakEnergy = 661.7;
+  peaks.push_back( peak );
+
+  std::vector<float> starting_coefs = { 0.0f, 3.0f };
+  std::vector<bool> fitfor = { true, true };
+  std::vector<std::pair<float,float>> dev_pairs;
+  std::vector<float> coefs, uncert;
+  std::string warning_msg;
+
+  // LowerChannelEdge with missing baseline → throws.
+  BOOST_CHECK_THROW(
+      EnergyCal::fit_energy_cal_iterative( peaks, nchannels,
+          SpecUtils::EnergyCalType::LowerChannelEdge, fitfor, starting_coefs, dev_pairs,
+          coefs, uncert, warning_msg ),
+      std::runtime_error );
+
+  // Polynomial with non-empty baseline → throws.
+  std::vector<float> stray_baseline( nchannels + 1, 0.0f );
+  BOOST_CHECK_THROW(
+      EnergyCal::fit_energy_cal_iterative( peaks, nchannels,
+          SpecUtils::EnergyCalType::Polynomial, fitfor, starting_coefs, dev_pairs,
+          coefs, uncert, warning_msg, stray_baseline ),
+      std::runtime_error );
 }
