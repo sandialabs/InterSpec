@@ -328,6 +328,292 @@ BOOST_AUTO_TEST_CASE( Ba133_10gcm2_10cm )
 
 
 // ------------------------------------------------------------------------
+// fit_areal_density: shape-of-dose scan and round-trip tests.
+//
+// The inverse "find AD that yields target dose" is implemented in
+// DoseCalc::fit_areal_density. Two things drive the test design:
+//
+//  1) Dose-rate vs AD is not guaranteed monotone — scatter buildup can
+//     raise dose at small AD before attenuation drives it down. The
+//     DoseMonotonicityScan test below empirically measures the shape and
+//     fails if any (source, material) pair shows extra extrema past the
+//     dose maximum, which would invalidate the bracket-on-the-attenuation-
+//     branch strategy.
+//
+//  2) Round-trip tests pick ADs comfortably above the largest observed
+//     dose-maximum AD (typically << 1 g/cm^2) so the input AD lies on
+//     the monotone-decreasing branch and fit_areal_density's answer
+//     should match.
+// ------------------------------------------------------------------------
+
+namespace
+{
+  // Build a 100 uCi aged source's photon list, the same convention used
+  // throughout the rest of this file. The get_scatter() call ensures the
+  // shared decay DB is initialized — required when running this test in
+  // isolation (e.g. --run_test=FitAd_*), since the DB setup lives inside
+  // get_scatter().
+  static void build_source_photons( const std::string &nuclabel,
+                                    const double age,
+                                    std::vector<float> &energies,
+                                    std::vector<float> &intensities )
+  {
+    (void)get_scatter();
+    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+    BOOST_REQUIRE_MESSAGE( db, "Nuclide database not initiated" );
+    const SandiaDecay::Nuclide *nuc = db->nuclide( nuclabel );
+    BOOST_REQUIRE_MESSAGE( nuc, "Could not retrieve '" + nuclabel + "'" );
+
+    SandiaDecay::NuclideMixture mix;
+    mix.addAgedNuclideByActivity( nuc, 100.0E-6 * SandiaDecay::curie, age );
+
+    energies.clear();
+    intensities.clear();
+    for( const auto &p : mix.photons( 0 ) )
+    {
+      energies.push_back( p.energy );
+      intensities.push_back( p.numPerSecond );
+    }
+  }
+
+  // Round-trip helper: compute the "true" dose at (an, ad, distance) using
+  // the forward model, then verify fit_areal_density recovers that ad.
+  // Tolerance: 0.05 g/cm^2 absolute or 0.5% relative, whichever is looser.
+  // (May be loosened temporarily while the Minuit2 implementation is the
+  //  backing fit; will tighten back once the boost-bisect rewrite lands.)
+  static void check_fit_ad( const std::string &nuclabel,
+                            const double age,
+                            const float distance,
+                            const float atomic_number,
+                            const float input_ad_g_cm2,
+                            const double abs_tol_g_cm2 = 0.05,
+                            const double rel_tol = 0.005 )
+  {
+    std::vector<float> energies, intensities;
+    build_source_photons( nuclabel, age, energies, intensities );
+
+    const GadrasShieldScatter * const scatter = get_scatter();
+    BOOST_REQUIRE( scatter );
+
+    const float input_ad_internal
+      = input_ad_g_cm2 * static_cast<float>( PhysicalUnits::gram / PhysicalUnits::cm2 );
+    const double target_dose = DoseCalc::gamma_dose_with_shielding(
+                                    energies, intensities,
+                                    input_ad_internal, atomic_number,
+                                    distance, *scatter );
+
+    double recovered_internal = 0.0;
+    BOOST_REQUIRE_NO_THROW(
+      recovered_internal = DoseCalc::fit_areal_density(
+                                energies, intensities, atomic_number,
+                                target_dose, distance, *scatter ) );
+
+    const double recovered_g_cm2
+      = recovered_internal * PhysicalUnits::cm2 / PhysicalUnits::gram;
+    const double abs_diff = std::abs( recovered_g_cm2 - input_ad_g_cm2 );
+    const double rel_diff = ( input_ad_g_cm2 > 0.0 )
+                            ? abs_diff / input_ad_g_cm2 : abs_diff;
+
+    BOOST_CHECK_MESSAGE( abs_diff <= abs_tol_g_cm2 || rel_diff <= rel_tol,
+      nuclabel << " AN=" << atomic_number
+        << " input_AD=" << input_ad_g_cm2 << " g/cm2"
+        << " distance=" << PhysicalUnits::printToBestLengthUnits( distance )
+        << ": target_dose="
+        << PhysicalUnits::printToBestEquivalentDoseRateUnits( target_dose, 4, false )
+        << " recovered_AD=" << recovered_g_cm2 << " g/cm2"
+        << " abs_diff=" << abs_diff
+        << " rel_diff=" << rel_diff );
+  }
+}//namespace
+
+
+// Empirical study + permanent regression guard for dose(AD) shape.
+// Scans dose vs AD over a fine grid for 4 sources x 4 shielding materials
+// and reports:
+//   - the AD at which dose is maximum (the post-buildup peak)
+//   - the buildup factor dose_max / dose(0)
+//   - the number of local extrema past the maximum (expect 0).
+// If any (source, material) pair shows extra extrema past the maximum,
+// the test fails — that would invalidate the "bisect on the descending
+// branch" strategy used by fit_areal_density.
+BOOST_AUTO_TEST_CASE( DoseMonotonicityScan )
+{
+  const GadrasShieldScatter * const scatter = get_scatter();
+  BOOST_REQUIRE( scatter );
+
+  struct Source { std::string nuclabel; double age; };
+  const Source sources[] = {
+    { "Cs137",  0.5 * PhysicalUnits::year },
+    { "Am241",  0.0 },
+    { "Ir192",  0.0 },
+    { "Co60",   0.5 * PhysicalUnits::year },
+  };
+  const float ans[] = { 6.0f, 13.0f, 26.0f, 82.0f };  // C, Al, Fe, Pb
+  const float distance = 100.0f * PhysicalUnits::cm;
+  const double max_ad_g_cm2 = scatter->maxArealDensity() - 5.0;
+
+  // Fine linear grid [0, 1] g/cm^2 in 0.005 steps, plus log grid (1, max].
+  std::vector<double> ad_grid;
+  for( int i = 0; i <= 200; ++i )
+    ad_grid.push_back( i * 0.005 );
+  for( int i = 1; i <= 100; ++i )
+    ad_grid.push_back( std::exp( std::log(1.0) + (std::log(max_ad_g_cm2) - std::log(1.0)) * i / 100 ) );
+
+  for( const auto &src : sources )
+  {
+    std::vector<float> energies, intensities;
+    build_source_photons( src.nuclabel, src.age, energies, intensities );
+
+    for( const float an : ans )
+    {
+      std::vector<double> doses; doses.reserve( ad_grid.size() );
+      for( const double ad : ad_grid )
+      {
+        const float ad_internal = static_cast<float>(
+            ad * PhysicalUnits::gram / PhysicalUnits::cm2 );
+        doses.push_back( DoseCalc::gamma_dose_with_shielding(
+            energies, intensities, ad_internal, an, distance, *scatter ) );
+      }
+
+      size_t i_max = 0;
+      for( size_t i = 1; i < doses.size(); ++i )
+        if( doses[i] > doses[i_max] ) i_max = i;
+
+      int n_extrema_after_max = 0;
+      for( size_t i = i_max + 1; i + 1 < doses.size(); ++i )
+        if( ( doses[i] > doses[i-1] && doses[i] > doses[i+1] )
+         || ( doses[i] < doses[i-1] && doses[i] < doses[i+1] ) )
+          ++n_extrema_after_max;
+
+      const double buildup_factor = doses[i_max] / doses[0];
+
+      BOOST_TEST_MESSAGE( src.nuclabel << " Z=" << an
+        << "  AD_of_max=" << ad_grid[i_max] << " g/cm2"
+        << "  buildup=" << buildup_factor
+        << "  n_extrema_after_max=" << n_extrema_after_max );
+
+      BOOST_CHECK_MESSAGE( n_extrema_after_max == 0,
+        "dose(AD) has extra extrema after the maximum for "
+        << src.nuclabel << " Z=" << an
+        << " (n_extrema_after_max=" << n_extrema_after_max << ")" );
+    }
+  }
+}
+
+
+// Round-trip tests: feed the "true" dose computed at (Z, AD) into
+// fit_areal_density and verify it recovers AD.
+//
+// All chosen ADs lie comfortably above the largest expected buildup peak
+// (~0.5 g/cm^2 worst case for Co60 / Cs137 through Pb), so the input AD
+// is on the monotone-decreasing branch where the inverse is well-defined.
+
+BOOST_AUTO_TEST_CASE( FitAd_Cs137_Al_2gcm2_100cm )
+{
+  check_fit_ad( "Cs137", 0.5 * PhysicalUnits::year,
+                100.0f * PhysicalUnits::cm, 13.0f, 2.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Cs137_Fe_5gcm2_100cm )
+{
+  check_fit_ad( "Cs137", 0.5 * PhysicalUnits::year,
+                100.0f * PhysicalUnits::cm, 26.0f, 5.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Cs137_Fe_50gcm2_100cm )
+{
+  check_fit_ad( "Cs137", 0.5 * PhysicalUnits::year,
+                100.0f * PhysicalUnits::cm, 26.0f, 50.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Cs137_Sn_30gcm2_100cm )
+{
+  check_fit_ad( "Cs137", 0.5 * PhysicalUnits::year,
+                100.0f * PhysicalUnits::cm, 50.0f, 30.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Cs137_Pb_150gcm2_100cm )
+{
+  check_fit_ad( "Cs137", 0.5 * PhysicalUnits::year,
+                100.0f * PhysicalUnits::cm, 82.0f, 150.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Am241_Al_2gcm2_100cm )
+{
+  check_fit_ad( "Am241", 0.0, 100.0f * PhysicalUnits::cm, 13.0f, 2.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Am241_Fe_10gcm2_100cm )
+{
+  check_fit_ad( "Am241", 0.0, 100.0f * PhysicalUnits::cm, 26.0f, 10.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Am241_Pb_2gcm2_100cm )
+{
+  check_fit_ad( "Am241", 0.0, 100.0f * PhysicalUnits::cm, 82.0f, 2.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Ir192_Al_5gcm2_100cm )
+{
+  check_fit_ad( "Ir192", 0.0, 100.0f * PhysicalUnits::cm, 13.0f, 5.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Ir192_Fe_20gcm2_100cm )
+{
+  check_fit_ad( "Ir192", 0.0, 100.0f * PhysicalUnits::cm, 26.0f, 20.0f );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Ir192_Pb_50gcm2_100cm )
+{
+  check_fit_ad( "Ir192", 0.0, 100.0f * PhysicalUnits::cm, 82.0f, 50.0f );
+}
+
+
+// Error-path tests.
+
+BOOST_AUTO_TEST_CASE( FitAd_Throws_Target_Above_Reachable )
+{
+  std::vector<float> energies, intensities;
+  build_source_photons( "Cs137", 0.5 * PhysicalUnits::year, energies, intensities );
+
+  const GadrasShieldScatter * const scatter = get_scatter();
+  BOOST_REQUIRE( scatter );
+
+  const float distance = 100.0f * PhysicalUnits::cm;
+  const double unshielded = DoseCalc::gamma_dose_with_shielding(
+      energies, intensities, 0.0f, 26.0f, distance, *scatter );
+
+  // Ask for 10x the unshielded dose — must throw.
+  BOOST_CHECK_THROW(
+    DoseCalc::fit_areal_density( energies, intensities, 26.0f,
+                                 10.0 * unshielded, distance, *scatter ),
+    std::runtime_error );
+}
+
+BOOST_AUTO_TEST_CASE( FitAd_Throws_Target_Below_MaxAd )
+{
+  std::vector<float> energies, intensities;
+  build_source_photons( "Cs137", 0.5 * PhysicalUnits::year, energies, intensities );
+
+  const GadrasShieldScatter * const scatter = get_scatter();
+  BOOST_REQUIRE( scatter );
+
+  const float distance = 100.0f * PhysicalUnits::cm;
+  const double max_ad_g_cm2 = scatter->maxArealDensity() - 5.0;
+  const float ad_internal = static_cast<float>(
+      max_ad_g_cm2 * PhysicalUnits::gram / PhysicalUnits::cm2 );
+  const double min_reachable = DoseCalc::gamma_dose_with_shielding(
+      energies, intensities, ad_internal, 26.0f, distance, *scatter );
+
+  // Ask for 0.1x the min reachable dose — must throw.
+  BOOST_CHECK_THROW(
+    DoseCalc::fit_areal_density( energies, intensities, 26.0f,
+                                 0.1 * min_reachable, distance, *scatter ),
+    std::runtime_error );
+}
+
+
+// ------------------------------------------------------------------------
 // Dose-formatting checks. printToBestEquivalentDoseRateUnits uses snprintf
 // with %.2f, whose trailing-zero behaviour can vary between platforms; the
 // values below were chosen so the formatted output is platform-stable.

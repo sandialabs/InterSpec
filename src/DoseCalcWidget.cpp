@@ -23,7 +23,6 @@
 
 #include "InterSpec_config.h"
 
-#include <limits>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -47,23 +46,6 @@
 #include <Wt/WDoubleValidator.h>
 #include <Wt/WSuggestionPopup.h>
 #include <Wt/WRegExpValidator.h>
-
-
-#include "Math/IFunction.h"
-#include "Minuit2/FCNBase.h"
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinos.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
-#include "Minuit2/CombinedMinimizer.h"
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -112,115 +94,6 @@ namespace
     item->triggered().emit( item ); //
   }
   
-  class FitShieldingAdChi2
-  : public ROOT::Minuit2::FCNBase
-  {
-    const vector<float> &m_energies;
-    const vector<float> &m_intensities;
-    const float m_atomic_number;
-    const double m_user_entered_dose;
-    const double m_distance;
-    const GadrasShieldScatter &m_scatter;
-
-    
-  public:
-    
-    FitShieldingAdChi2( const vector<float> &energies,
-                        const vector<float> &intensities,
-                        const float atomic_number,
-                        const double user_entered_dose,
-                        const double distance,
-                        const GadrasShieldScatter &scatter )
-      : m_energies( energies ),
-        m_intensities( intensities ),
-        m_atomic_number( atomic_number ),
-        m_user_entered_dose( user_entered_dose ),
-        m_distance( distance ),
-        m_scatter( scatter )
-    {
-    }
-    
-    virtual double Up() const { return 1.0; }
-    size_t nfitPars() const { return 1; }
-    
-    virtual double operator()( const std::vector<double> &params ) const
-    {
-      assert( params.size() == 1 );
-      try
-      {
-        const double ad = params[0] * PhysicalUnits::g / PhysicalUnits::cm2;
-        const double dose = DoseCalc::gamma_dose_with_shielding( m_energies, m_intensities, ad, m_atomic_number, m_distance, m_scatter );
-        
-        //return difference in micro-rem per hour from the target
-        return fabs(dose - m_user_entered_dose) * 1000000.0 * PhysicalUnits::hour / PhysicalUnits::rem;
-      }catch( std::exception & )
-      {
-        // Can happen if ad is outside [0, m_scatter.maxArealDensity()] -
-        // gamma_dose_with_shielding throws there.
-      }
-      
-      return std::numeric_limits<double>::max();
-    }
-  };//class FitShieldingAdChi2
-
-  
-  
-  double fit_ad( const vector<float> &energies, const vector<float> &intensities,
-                const float atomic_number, const double user_entered_dose,
-                const double distance,
-                const GadrasShieldScatter &scatter )
-  {
-    const double dose_no_shielding = DoseCalc::gamma_dose_with_shielding( energies, intensities, 0.0, atomic_number, distance, scatter );
-    
-    if( dose_no_shielding < user_entered_dose )
-      throw runtime_error( "Dose from source specified is less than"
-                          " entered dose, even with out shielding." );
-    
-    FitShieldingAdChi2 chi2Fcn( energies, intensities,
-                                atomic_number, user_entered_dose, distance,
-                                scatter );
-    
-    ROOT::Minuit2::MnUserParameters inputPrams;
-    inputPrams.Add( "AD", 20, 5 );
-    inputPrams.SetLowerLimit( "AD", 0.0 );
-    inputPrams.SetUpperLimit( "AD", 500.0 );
-
-    ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-    ROOT::Minuit2::MnStrategy strategy( 1 ); //0 low, 1 medium, >=2 high
-    
-    const unsigned int maxFcnCall = 1000;
-    const double tolerance = 1.0;
-    ROOT::Minuit2::CombinedMinimizer fitter;
-    ROOT::Minuit2::FunctionMinimum minimum
-    = fitter.Minimize( chi2Fcn, inputParamState,
-                      strategy, maxFcnCall, tolerance );
-    
-    //Not sure why Minuit2 doesnt like converging on the minumum verry well, but
-    //  rather than showing the user an error message, we'll give it anither try
-    if( minimum.IsAboveMaxEdm() )
-    {
-      ROOT::Minuit2::MnMigrad fitter( chi2Fcn, inputParamState, strategy );
-      minimum = fitter( maxFcnCall, tolerance );
-    }//if( minimum.IsAboveMaxEdm() )
-    
-    if( !minimum.IsValid() )
-      throw runtime_error( WString::tr("dcw-err-failed-fit-AD").toUTF8() );
-    
-    const ROOT::Minuit2::MnUserParameters params = minimum.UserState().Parameters();
-    const vector<double> pars = params.Params();
-    cerr << "Fit " << pars[0] << " g/cm2 with EDM " << minimum.Edm() << endl;
-    
-    // Keep the post-fit rejection a few g/cm^2 below the database max so
-    // Minuit has headroom near the bound; a fit that lands right at the
-    // table top is unphysical and usually means the dose target cannot be
-    // met within the supported shielding range.
-    const double max_ad = scatter.maxArealDensity() - 5.0;
-    if( pars[0] > max_ad )
-      throw runtime_error( "Over " + std::to_string(max_ad)
-                           + " g/cm2 shielding is required - can not compute." );
-    
-    return pars[0] * PhysicalUnits::g / PhysicalUnits::cm2;
-  }//double fit_ad()
 }//namespace
 
 
@@ -1640,7 +1513,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         }//if( shielding_an < 1.0 )
       
       
-        const double adfit = fit_ad( energies, intensities, shielding_an, user_entered_dose, distance, *m_scatter );
+        const double adfit = DoseCalc::fit_areal_density( energies, intensities, shielding_an, user_entered_dose, distance, *m_scatter );
         
         if( isGeneric )
         {

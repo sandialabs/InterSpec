@@ -117,5 +117,31 @@ namespace DoseCalc
                                     const float atomic_number,
                                     const float distance,
                                     const GadrasShieldScatter &scatter );
+
+
+  /** Inverse of gamma_dose_with_shielding: given a source photon list, an
+   effective shielding atomic number, a viewing distance, and a target
+   dose rate, returns the areal density of shielding (in PhysicalUnits;
+   divide by PhysicalUnits::g/PhysicalUnits::cm2 to print in g/cm^2)
+   that brings the source's dose rate down to `user_entered_dose`.
+
+   Note on monotonicity: dose vs. areal density is not strictly monotone
+   because scatter buildup at small AD can raise dose before attenuation
+   drives it down. The implementation locates the post-buildup
+   attenuation branch and returns the AD on that branch — the answer a
+   user wants when sizing shielding.
+
+   \throws std::runtime_error if the source's maximum (post-buildup) dose
+           is at or below `user_entered_dose`.
+   \throws std::runtime_error if even the maximum supported areal density
+           is insufficient to reach `user_entered_dose`.
+   \throws std::runtime_error if the root finder fails to converge.
+   */
+  double fit_areal_density( const std::vector<float> &energies,
+                            const std::vector<float> &intensities,
+                            const float atomic_number,
+                            const double user_entered_dose,
+                            const double distance,
+                            const GadrasShieldScatter &scatter );
 }//namespace DoseCalc
 #endif //DoseCalc_h

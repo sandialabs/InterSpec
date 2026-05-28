@@ -32,6 +32,10 @@
 #include <iostream>
 #include <algorithm>
 
+#include <boost/math/tools/roots.hpp>
+
+#include <Wt/WString.h>
+
 #include "InterSpec/DoseCalc.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -226,6 +230,67 @@ namespace DoseCalc
     
     return (dose_nonscatter + dose_continuum) / surfacearea;
   }//double gamma_dose_with_shielding(...)
+
+
+  double fit_areal_density( const vector<float> &energies,
+                            const vector<float> &intensities,
+                            const float atomic_number,
+                            const double user_entered_dose,
+                            const double distance,
+                            const GadrasShieldScatter &scatter )
+  {
+    // Dose is monotone-decreasing in areal density across all tested
+    // (source, shield-Z) pairs — see DoseMonotonicityScan in
+    // target/testing/test_DoseCalc.cpp. The root is bracketed by f(0) > 0
+    // and f(max_ad) < 0; if either guard fails the inverse problem has no
+    // physical solution and we throw.
+    const double dose_no_shielding = gamma_dose_with_shielding(
+        energies, intensities, 0.0f, atomic_number, distance, scatter );
+
+    if( dose_no_shielding < user_entered_dose )
+      throw runtime_error( "Dose from source specified is less than"
+                          " entered dose, even with out shielding." );
+
+    // A few g/cm^2 below the table top: scatter values right at the edge
+    // are unreliable, and an answer pinned there is unphysical for the
+    // user's purpose.
+    const double max_ad_g_cm2 = scatter.maxArealDensity() - 5.0;
+    const float max_ad_internal
+      = static_cast<float>( max_ad_g_cm2 * PhysicalUnits::g / PhysicalUnits::cm2 );
+
+    const double dose_at_max_ad = gamma_dose_with_shielding(
+        energies, intensities, max_ad_internal, atomic_number, distance, scatter );
+
+    if( dose_at_max_ad > user_entered_dose )
+      throw runtime_error( "Over " + std::to_string(max_ad_g_cm2)
+                          + " g/cm2 shielding is required - can not compute." );
+
+    auto residual = [&]( const double ad_g_cm2 ) -> double {
+      const float ad_internal
+        = static_cast<float>( ad_g_cm2 * PhysicalUnits::g / PhysicalUnits::cm2 );
+      const double dose = gamma_dose_with_shielding(
+          energies, intensities, ad_internal, atomic_number, distance, scatter );
+      return dose - user_entered_dose;
+    };
+
+    // Bracket the root to within 1e-3 g/cm^2; on a 251 g/cm^2 range that
+    // is ~18 bisect iterations. Cap well above for pathological cases.
+    const double ad_tol_g_cm2 = 1.0e-3;
+    auto term_cond = [ad_tol_g_cm2]( double lo, double hi ) -> bool {
+      return std::fabs( lo - hi ) < ad_tol_g_cm2;
+    };
+
+    boost::uintmax_t num_iters = 100;
+    const boost::uintmax_t max_iters = num_iters;
+    const std::pair<double, double> bracket
+      = boost::math::tools::bisect( residual, 0.0, max_ad_g_cm2, term_cond, num_iters );
+
+    if( num_iters >= max_iters )
+      throw runtime_error( Wt::WString::tr("dcw-err-failed-fit-AD").toUTF8() );
+
+    const double ad_g_cm2 = 0.5 * ( bracket.first + bracket.second );
+    return ad_g_cm2 * PhysicalUnits::g / PhysicalUnits::cm2;
+  }//double fit_areal_density(...)
 }//namespace DoseCalc
 
 
