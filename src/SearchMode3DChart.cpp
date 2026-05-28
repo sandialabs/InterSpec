@@ -190,7 +190,7 @@ void SearchMode3DChart::init()
   HelpSystem::attachToolTipOn( {label,m_energyDivisions}, WString::tr("sm3dc-tt-energy-bins"),
                               showToolTips );
   
-  m_viewer->displayedSpectrumChanged().connect(
+  m_viewer->displayedSpectrumChanged().connect( this,
     [this]( SpecUtils::SpectrumType type,
             const std::shared_ptr<SpecMeas> &meas,
             const std::set<int> &samples,

@@ -249,7 +249,7 @@ void GammaCountDialog::init()
   
   m_lowerEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
   m_upperEnergy->valueChanged().connect( this, &GammaCountDialog::handleEnergyRangeChange );
-  m_specViewer->displayedSpectrumChanged().connect(
+  m_specViewer->displayedSpectrumChanged().connect( this,
     [this]( SpecUtils::SpectrumType type,
             const std::shared_ptr<SpecMeas> &meas,
             const std::set<int> &samples,

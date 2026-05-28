@@ -420,7 +420,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
   // Lastly, hook up the update handler so it'll keep it posted.
   m_files->rowsInserted().connect( this, &CompactFileManager::refreshContents );
   m_files->rowsRemoved().connect( this, &CompactFileManager::refreshContents );
-  hostViewer->displayedSpectrumChanged().connect(
+  hostViewer->displayedSpectrumChanged().connect( this,
                           [this]( SpecUtils::SpectrumType t, std::shared_ptr<SpecMeas> m,
                                   std::set<int> s, std::vector<std::string> d ){
                             handleDisplayChange( t, m, s, d );
@@ -777,9 +777,10 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
   if( typeindex < 0 || typeindex >= 3 )
     throw runtime_error( "CompactFileManager::handleDisplayChange() - totally unexpected error" );
 
-  // Defensive null guard: the raw widget pointers in this class have been observed to be NULL
-  // mid-session (Wt4 lifetime issue under investigation), and dereferencing them downstream
-  // produces SIGSEGV at NULL. Bail early if the core ones aren't present rather than crash.
+  // Defense-in-depth tripwire: with the `this,`-receiver fix on the displayedSpectrumChanged
+  // connection in the constructor, this guard should never fire under supported flows. Kept
+  // to catch regressions if a future signal connection is added without a WObject receiver
+  // (which is what produced this crash before the fix at the constructor).
   if( !m_titles[typeindex]
      || !m_summaryTables[typeindex]
      || !m_sampleDivs[typeindex]

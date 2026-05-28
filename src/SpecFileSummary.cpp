@@ -500,7 +500,7 @@ void SpecFileSummary::init()
   overallLayout->setRowStretch( 1, 1 );
   overallLayout->setRowStretch( 2, 1 );
 
-  m_specViewer->displayedSpectrumChanged().connect(
+  m_specViewer->displayedSpectrumChanged().connect( this,
                 [this]( SpecUtils::SpectrumType t, std::shared_ptr<SpecMeas> m,
                         std::set<int> s, std::vector<std::string> d ){
                   handleSpectrumChange( t, m, s, d );
