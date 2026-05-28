@@ -9,9 +9,11 @@
 <br/>
 InterSpec v1.0.14 is a significant update spanning approximately 730 commits to InterSpec, 90 commits to SpecUtils, and 4 commits to SandiaDecay. Highlights include a new Simple Activity Calculator, a graphical batch analysis tool for processing multiple spectrum files, major enhancements to the "Isotopics by nuclides" tool (including multiple relative efficiency curves, fluorescent x-rays, reactions, new constraint types, and improved calculations), a new Reference Spectra widget, Voigt peak shape support, improvements to peak fitting, dynamically displayed reference lines, as well as translations into many additional languages.
 <br/>
+<br/>
 Nearly all new features, and many fixes are thanks to user requests, feedback, or contributions.
 <br/>
-Please email InterSpec@sandia.gov with any bug reports, issues, or other support.
+<br/>
+Please email <a href="InterSpec@sandia.gov">InterSpec@sandia.gov</a> with any bug reports, issues, or other support.
 
 
 ---

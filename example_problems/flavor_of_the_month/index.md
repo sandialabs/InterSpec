@@ -38,3 +38,15 @@ Please see one of the following documents for the questions:
 Spectrum files referenced from the document are available in:
 * [N42 Format Files Preferred.zip](202603/N42 Format Files Preferred.zip).
 * [SPE Format Files Use Only If Necessary.zip](202603/SPE Format Files Use Only If Necessary.zip).
+
+
+## May 2026
+
+Please see one of the following documents for the questions:
+* [NSDD Flavor Drill May 2026 LA-UR-26-23840.docx](202605/NSDD Flavor Drill May 2026 LA-UR-26-23840.docx)
+* [NSDD Flavor Drill May 2026 LA-UR-26-23840.pdf](202605/NSDD Flavor Drill May 2026 LA-UR-26-23840.pdf)
+* Online form with automatic grading: to be updated later
+
+
+Spectrum files referenced from the document are available in:
+* [Files for May 2026 Drill.zip](202605/Files for May 2026 Drill.zip).
