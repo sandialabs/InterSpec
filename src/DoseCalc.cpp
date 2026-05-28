@@ -129,9 +129,18 @@ namespace DoseCalc
     if( distance <= 0.0 )
       throw runtime_error( "gamma_dose_with_shielding(): Distance must be greater than zero." );
     
+    // The upper areal-density bound comes from the scatter database itself
+    // (sandia.shieldscatter.db). Values above this would be extrapolated in
+    // log-scaled scatter space, so we reject them rather than returning a
+    // bogus dose.
+    const double max_ad = scatter.maxArealDensity();
     if( atomic_number < 1 || atomic_number > 98
-        || areal_density < 0.0 || (areal_density*PhysicalUnits::cm2/PhysicalUnits::g) > 240.0f )
-      throw runtime_error( "gamma_dose_with_shielding(): Invalid shielding; atomic number must be between 1 and 98, and areal density between zero and 240 g/cm2." );
+        || areal_density < 0.0
+        || (areal_density*PhysicalUnits::cm2/PhysicalUnits::g) > max_ad )
+      throw runtime_error( "gamma_dose_with_shielding(): Invalid shielding;"
+                           " atomic number must be between 1 and 98, and areal"
+                           " density between zero and " + std::to_string(max_ad)
+                           + " g/cm2." );
     
     //Calculate atomic number and areal density, taking into account how the air
     //  effects the shielding.

@@ -33,6 +33,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <cassert>
 #include <fstream>
 #include <stdexcept>
 #include <algorithm>
@@ -805,6 +806,28 @@ void GadrasShieldScatter::groupBounds( const double sourceEnergy,
   const double scalar = sourceEnergy / static_cast<double>( gc );
   for( int i = 0; i < gc + 1; ++i )
     bounds[i] = scalar * i;
+}
+
+
+double GadrasShieldScatter::maxArealDensity() const
+{
+  const ShieldScatterDb &db = m_db->db;
+  assert( !db.arealDensities.empty() );
+  // Current sandia.shieldscatter.db (May 2026): 256.0 g/cm^2. If a future
+  // db ships with a different upper bound, update the header docs to match.
+  assert( std::abs( db.arealDensities.back() - 256.0 ) < 1.0E-6 );
+  return db.arealDensities.back();
+}
+
+
+double GadrasShieldScatter::maxAtomicNumber() const
+{
+  const ShieldScatterDb &db = m_db->db;
+  assert( !db.atomicNumbers.empty() );
+  // Current sandia.shieldscatter.db (May 2026): 94 (Pu). If a future db
+  // ships with a different upper bound, update the header docs to match.
+  assert( std::abs( db.atomicNumbers.back() - 94.0 ) < 1.0E-6 );
+  return db.atomicNumbers.back();
 }
 
 

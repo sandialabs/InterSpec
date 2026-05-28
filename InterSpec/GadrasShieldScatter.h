@@ -95,6 +95,22 @@ public:
   void groupBounds( const double sourceEnergy,
                     std::vector<double> &bounds ) const;
 
+  /** Maximum tabulated areal density (g/cm^2) in the scatter database.
+   Values above this are extrapolated in log-scaled scatter space and
+   become unreliable; callers that validate user input should reject
+   areal densities above this bound.
+   Current value (sandia.shieldscatter.db, May 2026): 256.0 g/cm^2.
+   */
+  double maxArealDensity() const;
+
+  /** Maximum tabulated atomic number (Z) in the scatter database.
+   `computeShieldScatter`/`getContinuum` internally clamp larger Z to
+   this value, so callers can use it to validate input and report the
+   clamp to the user instead of silently accepting it.
+   Current value (sandia.shieldscatter.db, May 2026): 94 (Pu).
+   */
+  double maxAtomicNumber() const;
+
 private:
   // Internal database; defined in the .cpp file.
   struct Database;

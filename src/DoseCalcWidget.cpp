@@ -155,7 +155,8 @@ namespace
         return fabs(dose - m_user_entered_dose) * 1000000.0 * PhysicalUnits::hour / PhysicalUnits::rem;
       }catch( std::exception & )
       {
-        // Can happen if ad is outside of [0,240]
+        // Can happen if ad is outside [0, m_scatter.maxArealDensity()] -
+        // gamma_dose_with_shielding throws there.
       }
       
       return std::numeric_limits<double>::max();
@@ -209,8 +210,14 @@ namespace
     const vector<double> pars = params.Params();
     cerr << "Fit " << pars[0] << " g/cm2 with EDM " << minimum.Edm() << endl;
     
-    if( pars[0] > 235.0 )
-      throw runtime_error( "Over 235 g/cm2 shielding is required - can not compute." );
+    // Keep the post-fit rejection a few g/cm^2 below the database max so
+    // Minuit has headroom near the bound; a fit that lands right at the
+    // table top is unphysical and usually means the dose target cannot be
+    // met within the supported shielding range.
+    const double max_ad = scatter.maxArealDensity() - 5.0;
+    if( pars[0] > max_ad )
+      throw runtime_error( "Over " + std::to_string(max_ad)
+                           + " g/cm2 shielding is required - can not compute." );
     
     return pars[0] * PhysicalUnits::g / PhysicalUnits::cm2;
   }//double fit_ad()
