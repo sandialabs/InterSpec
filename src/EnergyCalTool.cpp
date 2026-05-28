@@ -402,7 +402,7 @@ namespace EnergyCalImp
   class DevPair : public Wt::WContainerWidget
   {
   protected:
-    DevPair( Wt::WContainerWidget *parent = 0 );
+    DevPair();
     void setDevPair( const std::pair<float,float> &d );
     std::pair<float,float> devPair() const;
     void visuallyIndicateChanged();
@@ -415,7 +415,7 @@ namespace EnergyCalImp
   class DeviationPairDisplay : public Wt::WContainerWidget
   {
   public:
-    DeviationPairDisplay( Wt::WContainerWidget *parent = 0 );
+    DeviationPairDisplay();
     void setDeviationPairs( std::vector< std::pair<float,float> > d );
     std::vector< std::pair<float,float> > deviationPairs() const;
     void removeDevPair( DevPair *devpair );
@@ -599,7 +599,7 @@ public:
 };//class CalFileDownloadResource
 
 
-DevPair::DevPair( Wt::WContainerWidget *parent )
+DevPair::DevPair()
   : WContainerWidget()
 {
   WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
@@ -662,7 +662,7 @@ void DevPair::visuallyIndicateChanged()
 }//void visuallyIndicateChanged();
 
 
-DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
+DeviationPairDisplay::DeviationPairDisplay()
   : WContainerWidget()
     //, m_msg( nullptr )
 {
@@ -853,7 +853,10 @@ void DeviationPairDisplay::setValidValues()
 
 DevPair *DeviationPairDisplay::newDevPair( const bool emitChangedNow )
 {
-  DevPair *dev = new DevPair( m_pairs );
+  // Wt 4 no longer auto-parents WContainerWidget via a ctor argument; the friend
+  //  relationship lets us call DevPair's protected ctor directly here.
+  std::unique_ptr<DevPair> devOwned( new DevPair() );
+  DevPair *dev = m_pairs->addWidget( std::move(devOwned) );
   dev->m_delete->clicked().connect( this, [this, dev](){ removeDevPair( dev ); } );
   //dev->m_energy->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
   //dev->m_offset->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
@@ -2004,12 +2007,6 @@ void EnergyCalTool::captureOriginalCalibrationsIfNeeded( const SpecUtils::Spectr
   if( idx >= 3 )
     return;
 
-  std::cerr << "[captureOriginalCalibrationsIfNeeded] type=" << static_cast<int>(type)
-            << " meas=" << meas.get()
-            << " prev=" << m_originalCalSpecMeas[idx].get()
-            << " nmeas=" << (meas ? meas->measurements().size() : 0)
-            << std::endl;
-
   // If a different SpecMeas is now under this spectrum type, clear all entries for this type
   // and re-capture. If the same SpecMeas is back (e.g., sample/detector display change), keep
   // the existing entries — they represent the calibration at first-load time, which is the
@@ -2051,11 +2048,6 @@ void EnergyCalTool::captureOriginalCalibrationsIfNeeded( const SpecUtils::Spectr
       continue;
 
     m_originalCalibrations[key] = cal;
-    std::cerr << "  captured (" << static_cast<int>(type) << ", det='" << detname
-              << "') cal type=" << static_cast<int>(cal->type())
-              << " nch=" << cal->num_channels()
-              << " ce_size=" << (cal->channel_energies() ? cal->channel_energies()->size() : 0)
-              << std::endl;
   }
 }
 
@@ -4546,14 +4538,7 @@ void EnergyCalTool::fitCoefficients()
       std::vector<float> baseline_edges;
       if( isLowerChannelEdge )
       {
-        const auto baseline_cal = caldisp->originalCalibration();
         const auto baseline_ptr = caldisp->lceBaselineEdges();
-        std::cerr << "[fitCoefficients LCE start] caldisp type=" << static_cast<int>(caldisp->spectrumType())
-                  << " detname='" << caldisp->detectorName() << "'"
-                  << " baseline_cal=" << baseline_cal.get()
-                  << " baseline_ptr=" << baseline_ptr.get()
-                  << " baseline.size=" << (baseline_ptr ? baseline_ptr->size() : 0)
-                  << " nchannel=" << nchannel << std::endl;
         if( !baseline_ptr || baseline_ptr->size() != (nchannel + 1) )
           throw runtime_error( "LowerChannelEdge baseline not available." );
         baseline_edges = *baseline_ptr;
@@ -4611,11 +4596,6 @@ void EnergyCalTool::fitCoefficients()
           std::vector<float> new_edges( baseline_edges.size(), 0.0f );
           for( size_t i = 0; i < new_edges.size(); ++i )
             new_edges[i] = base0 + offset_delta + gain * (baseline_edges[i] - base0);
-          std::cerr << "[fitCoefficients LCE] applied offset=" << offset_delta
-                    << " gain=" << gain
-                    << " base0=" << base0
-                    << " baseline.size=" << baseline_edges.size()
-                    << " nchannel=" << nchannel << std::endl;
           answer->set_lower_channel_energy( nchannel, std::move(new_edges) );
           break;
         }
