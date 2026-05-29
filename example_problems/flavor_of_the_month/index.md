@@ -45,7 +45,7 @@ Spectrum files referenced from the document are available in:
 Please see one of the following documents for the questions:
 * [NSDD Flavor Drill May 2026 LA-UR-26-23840.docx](202605/NSDD Flavor Drill May 2026 LA-UR-26-23840.docx)
 * [NSDD Flavor Drill May 2026 LA-UR-26-23840.pdf](202605/NSDD Flavor Drill May 2026 LA-UR-26-23840.pdf)
-* Online form with automatic grading: to be updated later
+* Online form with automatic grading: [here](https://forms.office.com/g/n8K9axJ9Yk).
 
 
 Spectrum files referenced from the document are available in:
