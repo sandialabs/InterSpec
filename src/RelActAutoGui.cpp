@@ -223,7 +223,7 @@ namespace
         if( !m_solution )
         {
           response.out() << "<!DOCTYPE html>\n"
-          "\t<head><meta charset=\"utf-8\"><title>No <em>Isotopics by nuclide</em> solution available</title></head>"
+          "\t<head><meta charset=\"utf-8\"><title>No <em>Isotopics by nuclides</em> solution available</title></head>"
           "\t<body>"
           "\t\tSorry - no solution currently available."
           "\t</body>"

@@ -102,7 +102,7 @@
   
   <!-- Upload dialog -->
   <message id="raag-import-xml-config-title">Import XML config file</message>
-  <message id="raag-select-isotopics-xml-file">Select the <em>Isotopics by nuclide</em> XML file to use</message>
+  <message id="raag-select-isotopics-xml-file">Select the <em>Isotopics by nuclides</em> XML file to use</message>
   <message id="raag-file-too-large-title">File to large to upload</message>
   <message id="raag-drag-drop-note">
     <p style="font-size: small;">Note: you can also drag-n-drop the XML config files onto InterSpec</p>
@@ -153,6 +153,6 @@
   <message id="raag-error-deserializing">Error de-serializing tool state: {1}</message>
   <message id="raag-error-loading-preset">Error loading preset: {1}</message>
   <message id="raag-error-applying-energy-cal">Error applying energy calibration: {1}</message>
-  <message id="raag-error-loading-xml-config">Error loading <em>Isotopics by nuclide</em> XML config file: {1}</message>
+  <message id="raag-error-loading-xml-config">Error loading <em>Isotopics by nuclides</em> XML config file: {1}</message>
   
 </messages>

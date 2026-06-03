@@ -124,9 +124,9 @@
   </message>
 
   <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
-  <message id="smm-err-load-iso-by-nuc">Error loading <em>Isotopics by nuclide</em> XML config file: {1}</message>
+  <message id="smm-err-load-iso-by-nuc">Error loading <em>Isotopics by nuclides</em> XML config file: {1}</message>
   <message id="smm-err-load-xml-iso-by-nuc">Error parsing config XML: {1}{2}</message>
-  <message id="smm-err-iso-by-nuc-window-title">Invalid <em>Isotopics by nuclide</em> XML config file.</message>
+  <message id="smm-err-iso-by-nuc-window-title">Invalid <em>Isotopics by nuclides</em> XML config file.</message>
   <message id="smm-ecc-curve">ISOCS Efficiency Calibration Curve DRF</message>
   <message id="smm-ecc-how-to-interpret">How to interpret</message>
   <message id="smm-ecc-far-field">Far Field DRF</message>

@@ -1429,10 +1429,10 @@
     </p>
   </message>
 
-  <message id="customize-rel-act-auto-presets" title="Adding your own &quot;Isotopics by nuclide&quot; presets">
+  <message id="customize-rel-act-auto-presets" title="Adding your own &quot;Isotopics by nuclides&quot; presets">
     <p>
       The &quot;<b>Presets</b>&quot; drop-down at the top of the
-      &quot;<b>Isotopics by nuclide</b>&quot; tool is populated from the XML files
+      &quot;<b>Isotopics by nuclides</b>&quot; tool is populated from the XML files
       shipped in
       <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/data/rel_act">data/rel_act/</a>
       (for example
