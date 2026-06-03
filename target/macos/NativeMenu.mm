@@ -1,4 +1,5 @@
 #include <set>
+#include <atomic>
 #include <iostream>
 
 #include <AppKit/NSCell.h>
@@ -62,14 +63,22 @@ void doemitcheck( Wt::WCheckBox *cb, PopupDivMenuItem *item, const bool checked 
 
 @interface Target :NSObject {
   std::string m_appid;
-  Wt::WCheckBox *m_cb;
-  PopupDivMenuItem *m_item;
+  // Atomic so they can be nulled from the session thread (invalidate, when the Wt widget is
+  //  destroyed) while AppKit reads them on the main thread, without a torn read / UAF.
+  std::atomic<Wt::WCheckBox *> m_cb;
+  std::atomic<PopupDivMenuItem *> m_item;
+  // Cached enabled state, pushed from the session thread (initWith.../setCachedEnabled) and read by
+  //  validateMenuItem on the AppKit main thread - so validateMenuItem never dereferences the Wt
+  //  widget (which would be a cross-thread data race / use-after-free).
+  std::atomic<bool> m_enabled;
   NSMenuItem *m_nsitem;
 }
 - (id) initWithItem: (PopupDivMenuItem*)item;
 - (id) initWithCb: (Wt::WCheckBox *)cb;
 - (void) setNSItem: (NSMenuItem *)item;
 - (void) setWtItem: (PopupDivMenuItem *)item;
+- (void) setCachedEnabled: (bool)enabled;
+- (void) invalidate;
 - (void) clicked;
 - (void) toggleChecked;
 @end
@@ -80,16 +89,19 @@ void doemitcheck( Wt::WCheckBox *cb, PopupDivMenuItem *item, const bool checked 
 }
 
 - (id) initWithItem: (PopupDivMenuItem*)wtItem {
-  m_cb = 0;
-  m_item = wtItem;
+  // Runs on the Wt session thread during menu construction, so reading the widget is safe here.
+  m_cb.store( nullptr );
+  m_item.store( wtItem );
+  m_enabled.store( wtItem && wtItem->isEnabled() );
   m_nsitem = 0;
   m_appid = Wt::WApplication::instance()->sessionId();
   return self;
 }
 
 - (id) initWithCb: (Wt::WCheckBox*)cb {
-  m_cb = cb;
-  m_item = 0;
+  m_cb.store( cb );
+  m_item.store( nullptr );
+  m_enabled.store( cb && cb->isEnabled() );
   m_nsitem = 0;
   m_appid = Wt::WApplication::instance()->sessionId();
   return self;
@@ -100,32 +112,42 @@ void doemitcheck( Wt::WCheckBox *cb, PopupDivMenuItem *item, const bool checked 
 }
 
 - (void) setWtItem: (PopupDivMenuItem *)item {
-  m_item = item;
+  m_item.store( item );
+  if( item )
+    m_enabled.store( item->isEnabled() );
+}
+
+- (void) setCachedEnabled: (bool)enabled {
+  m_enabled.store( enabled );
+}
+
+- (void) invalidate {
+  // Called (from the session thread) when the owning Wt widget is being destroyed.  After this the
+  //  Target no longer references the widget, so the AppKit-thread methods below safely no-op.
+  m_item.store( nullptr );
+  m_cb.store( nullptr );
+  m_enabled.store( false );
 }
 
 - (BOOL) validateMenuItem: (NSMenuItem*)menuItem {
-  // This is called when the menu is shown.
-  if( m_item )
-    return m_item->isEnabled();
-  if( m_cb )
-    return m_cb->isEnabled();
-  return NO;
+  // Called by AppKit on the main thread whenever the menu is about to display.  Read the cached
+  //  enabled flag instead of dereferencing the Wt widget (which lives on, and is mutated/destroyed
+  //  by, the session thread) - this avoids a cross-thread data race and a use-after-free.
+  return m_enabled.load() ? YES : NO;
 }
 
 - (void) clicked {
-  if( m_item )
-  {
-    PopupDivMenuItem * const item = m_item;
+  PopupDivMenuItem * const item = m_item.load();
+  if( item )
     Wt::WServer::instance()->post( m_appid, [item](){ doemit( item ); } );
-  }
 }
 
 
 - (void) toggleChecked {
-  if( !m_cb )
+  Wt::WCheckBox * const cb = m_cb.load();
+  if( !cb )
     return;
-  Wt::WCheckBox * const cb = m_cb;
-  PopupDivMenuItem * const item = m_item;
+  PopupDivMenuItem * const item = m_item.load();
   if( [m_nsitem state] == NSOffState )
   {
     [m_nsitem setState:NSOnState];
@@ -432,6 +454,33 @@ void setOsxMenuItemHidden( void *item, bool hidden )
     [i setHidden:hidden];
   } );
 }//void setOsxMenuItemHidden( void *item, bool hidden )
+
+
+void invalidateOsxMenuItemTarget( void *item )
+{
+  if( !item )
+    return;
+
+  NSMenuItem *i = (NSMenuItem *)item;
+  id tgt = [i target];
+  // Only touches the Target's std::atomics, so it is safe to call from the session thread without
+  //  hopping to the main queue (avoids deadlock/quit-hang); the NSMenuItem's target is set once and
+  //  the Target object itself outlives the menu item.
+  if( tgt && [tgt isKindOfClass:[Target class]] )
+    [(Target *)tgt invalidate];
+}//void invalidateOsxMenuItemTarget( void *item )
+
+
+void setOsxMenuItemTargetEnabled( void *item, bool enabled )
+{
+  if( !item )
+    return;
+
+  NSMenuItem *i = (NSMenuItem *)item;
+  id tgt = [i target];
+  if( tgt && [tgt isKindOfClass:[Target class]] )
+    [(Target *)tgt setCachedEnabled:enabled];
+}//void setOsxMenuItemTargetEnabled( void *item, bool enabled )
 
 
 

@@ -171,7 +171,7 @@ private:
   Wt::WText *m_title;
   Wt::WMenu *m_upper_menu;
   D3SpectrumDisplayDiv *m_chart;
-  PeakModel *m_chart_peak_model;
+  std::shared_ptr<PeakModel> m_chart_peak_model;
   RelEffChart *m_rel_eff_chart;
   RelActTxtResults *m_txt_results;
   Wt::WText *m_status;

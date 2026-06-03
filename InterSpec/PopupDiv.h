@@ -278,6 +278,9 @@ public:
   void *getNsMenuItem();
   virtual void setHidden( bool hidden,
                           const Wt::WAnimation &animation = Wt::WAnimation() );
+  // Keep the native menu item's cached enabled state (read by validateMenuItem on the AppKit
+  //  thread) in sync with this widget's enabled state.
+  virtual void setDisabled( bool disabled ) override;
 #endif
   
 protected:

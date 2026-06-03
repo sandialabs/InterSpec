@@ -204,7 +204,7 @@ public:
    @param peaks Peaks to place on the plot; if empty, will create a peak using `gammas_per_bq`, and FWHM from drf
    */
   static void update_spectrum_for_currie_result( D3SpectrumDisplayDiv *chart,
-                                         PeakModel *pmodel,
+                                         const std::shared_ptr<PeakModel> &pmodel,
                                          const DetectionLimitCalc::CurrieMdaInput &input,
                                          const DetectionLimitCalc::CurrieMdaResult * const result,
                                          std::shared_ptr<const DetectorPeakResponse> drf,
@@ -377,7 +377,7 @@ protected:
   bool m_needsUpdate;
   
   D3SpectrumDisplayDiv *m_chart;
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   
   Wt::WLineEdit *m_nuclideEdit;
   Wt::WLineEdit *m_ageEdit;

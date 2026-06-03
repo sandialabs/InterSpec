@@ -64,7 +64,7 @@ public:
 protected:
   // Constructor is protected; use AuxWindow::make<PeakEditWindow>() to create.
   PeakEditWindow( const double energy,
-                  PeakModel *peakmodel,
+                  std::shared_ptr<PeakModel> peakmodel,
                   InterSpec *viewer );
 
   PeakEdit *m_edit;
@@ -111,7 +111,7 @@ public:
   
 public:
   PeakEdit( const double energy,
-            PeakModel *peakModel,
+            std::shared_ptr<PeakModel> peakModel,
             InterSpec *viewer,
             AuxWindow* aux = 0 );
   virtual ~PeakEdit();
@@ -200,7 +200,7 @@ protected:
   void estimateLinearContinuumFromData();
 protected:
   double m_energy;
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   InterSpec *m_viewer;
   
   Wt::WModelIndex m_peakIndex;

@@ -1201,8 +1201,17 @@ public:
     std::function<void()> doUpdateFcn;
     
     if( parent )
-      doUpdateFcn = [parent, rcode, result, m](){ parent->receiveExeAnalysis( rcode, result, m ); };
-    else
+    {
+      // Wt4: the worker re-posts this to the session thread; `parent` may be destroyed (Remote RID
+      //  window closed) by then.  Re-resolve via findById() instead of capturing a raw pointer -
+      //  thread-safe (plain id string; the std::function is copied onto the worker thread).
+      const string parentid = parent->id();
+      doUpdateFcn = [parentid, rcode, result, m](){
+        ExternalRidWidget *p = dynamic_cast<ExternalRidWidget *>( wApp->domRoot() ? wApp->domRoot()->findById(parentid) : nullptr );
+        if( p )
+          p->receiveExeAnalysis( rcode, result, m );
+      };
+    }else
       doUpdateFcn = [rcode, result, m](){ ExternalRidWidget::displayAutoRidAnaResult( rcode, result, m ); };
     
     auto commandRunner = [tmpfilename,exe_path,arguments,doUpdateFcn,rcode,result,m,appsession](){
@@ -1320,7 +1329,14 @@ public:
     auto result = std::make_shared<string>();
     auto success = std::make_shared<int>(0);
     auto m = make_shared<mutex>();
-    auto doUpdateFcn = std::function<void()>( [this, success, result, m](){ receiveExeDrfInfo( success, result, m ); } );
+    // Wt4: the worker re-posts this to the session thread; this widget may be destroyed (Remote RID
+    //  window closed) by then.  Re-resolve via findById() instead of capturing a raw `this` (thread-safe).
+    const string thisid = id();
+    auto doUpdateFcn = std::function<void()>( [thisid, success, result, m](){
+      ExternalRidWidget *self = dynamic_cast<ExternalRidWidget *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+      if( self )
+        self->receiveExeDrfInfo( success, result, m );
+    } );
     
     auto commandRunner = [exe_path,doUpdateFcn,result,success,m,appsession](){
       try

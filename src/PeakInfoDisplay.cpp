@@ -43,11 +43,14 @@
 #include <Wt/WPopupMenu.h>
 #include <Wt/WTableCell.h>
 #include <Wt/WTabWidget.h>
+#include <Wt/WResource.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WApplication.h>
 #include <Wt/WEnvironment.h>
 #include <Wt/WItemDelegate.h>
+#include <Wt/Http/Request.h>
+#include <Wt/Http/Response.h>
 #include <Wt/Core/observing_ptr.hpp>
 
 #include "SpecUtils/Filesystem.h"
@@ -89,6 +92,68 @@ using namespace std;
 
 namespace
 {
+  /** Serves a `PeakModel`'s current peaks as a CSV download.
+
+   The download link/anchor co-owns this resource (a `WLink` holds the `shared_ptr<WResource>`), and the
+   resource co-owns the `PeakModel`, so the model survives any in-flight request - `handleRequest` runs on
+   a background I/O thread.  Mirrors the `MakeDrf` `CsvDrfDownloadResource` pattern.  The CSV content
+   itself is produced by `PeakModel::writePeaksCsv()`; this is just the thin HTTP-delivery shell, which is
+   why it lives here with its only consumer rather than in the (view-agnostic) `PeakModel`.
+   */
+  class PeakCsvResource : public Wt::WResource
+  {
+  public:
+    PeakCsvResource( std::shared_ptr<PeakModel> model )
+      : WResource(),
+        m_model( std::move(model) ),
+        m_app( WApplication::instance() )
+    {
+      assert( m_model );
+      assert( m_app );
+    }
+
+    virtual ~PeakCsvResource()
+    {
+      beingDeleted();
+    }
+
+  private:
+    std::shared_ptr<PeakModel> m_model;
+    WApplication *m_app;
+
+    virtual void handleRequest( const Http::Request &/*request*/, Http::Response &response )
+    {
+      WApplication::UpdateLock lock( m_app );
+      if( !lock )
+      {
+        m_app->log("error") << "Failed to WApplication::UpdateLock in PeakCsvResource.";
+        response.out() << "Error grabbing application lock to form peak CSV resource; please report to InterSpec@sandia.gov.";
+        response.setStatus( 500 );
+        assert( 0 );
+        return;
+      }//if( !lock )
+
+      // Filename comes from the foreground spectrum file (a view concern); the CSV content itself is
+      //  produced by the model.
+      std::shared_ptr<SpecMeas> meas = m_model->measurement( SpecUtils::SpectrumType::Foreground ).lock();
+      std::string filename = "peaks.CSV";
+      if( meas && !meas->filename().empty() )
+      {
+        filename = "peaks_" + meas->filename();
+        const std::string::size_type pos = filename.find_last_of( "." );
+        if( pos != std::string::npos )
+          filename = filename.substr( 0, pos );
+        filename += ".CSV";
+      }//if( meas && !meas->filename().empty() )
+
+      suggestFileName( filename, ContentDisposition::Attachment );
+      response.setMimeType( "text/csv" );
+
+      m_model->writePeaksCsv( response.out() );
+    }//void handleRequest(...)
+  };//class PeakCsvResource
+
+
 #if( ALLOW_PEAK_COLOR_DELEGATE )
   class ColorDelegate : public Wt::WAbstractItemDelegate
   {
@@ -897,13 +962,13 @@ void PeakInfoDisplay::removeAllPeaks()
   
   auto undo = [orig_peaks](){
     InterSpec *viewer = InterSpec::instance();
-    PeakModel *pmodel = viewer ? viewer->peakModel() : nullptr;
+    const std::shared_ptr<PeakModel> pmodel = viewer ? viewer->peakModel() : nullptr;
     if( pmodel )
       pmodel->setPeaks( orig_peaks );
   };
   auto redo = [](){
     InterSpec *viewer = InterSpec::instance();
-    PeakModel *pmodel = viewer ? viewer->peakModel() : nullptr;
+    const std::shared_ptr<PeakModel> pmodel = viewer ? viewer->peakModel() : nullptr;
     if( pmodel )
       pmodel->removeAllPeaks();
   };
@@ -1444,9 +1509,12 @@ void PeakInfoDisplay::init()
   //HelpSystem::attachToolTipOn( compactCopyMenuItem, WString::tr("pid-tt-csv-export"), showToolTips );
   
   
-  WResource *csv = m_model->peakCsvResource();
+  // The peak CSV download resource is owned by the link/anchor below (the `WLink` co-owns the
+  //  `shared_ptr<WResource>`), not by the model - see the file-local `PeakCsvResource` above.  It
+  //  co-owns the `PeakModel` so the model survives any in-flight request.
+  std::shared_ptr<PeakCsvResource> csv = std::make_shared<PeakCsvResource>( m_model );
 #if( BUILD_AS_OSX_APP || IOS )
-  WLink csvAnchorLink( csv->url() );
+  WLink csvAnchorLink( csv );
   csvAnchorLink.setTarget( Wt::LinkTarget::NewWindow );
   WAnchor *csvButton = csvDiv->addNew<WAnchor>( csvAnchorLink );
   csvButton->setStyleClass( "LinkBtn DownloadLink" );
@@ -1454,7 +1522,7 @@ void PeakInfoDisplay::init()
   WPushButton *csvButton = csvDiv->addNew<WPushButton>();
   csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
   {
-    WLink lnk( csv->url() );
+    WLink lnk( csv );
     lnk.setTarget( Wt::LinkTarget::NewWindow );
     csvButton->setLink( lnk );
   }

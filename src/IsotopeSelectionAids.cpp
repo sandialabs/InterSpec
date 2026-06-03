@@ -37,6 +37,7 @@
 #include <Wt/WEnvironment.h>
 #include <Wt/WSuggestionPopup.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 #include <Wt/WAbstractItemModel.h>
 #include <Wt/WAbstractItemDelegate.h>
 
@@ -456,13 +457,21 @@ void PhotopeakDelegate::EditWidget::handleBlur()
   // We need to introduce a delay to handling the blur, incase the user clicked on an item in
   //  the suggestion popup, in which case the blur signal will be processed before the click
   //  signal, which will result in the clicked on entry *not* filling out the cell
-  PhotopeakDelegate *parent = m_parent;
-  PhotopeakDelegate::EditWidget *self = this;
-  
-  // We will protect against either this function, or m_parent getting deleted
+  // We must protect against this EditWidget (and hence m_parent) being deleted before the callback
+  //  scheduled 250ms later fires on the session thread.  Wt4: re-resolve this widget via findById()
+  //  rather than capturing a raw `this` - this is thread-safe (we capture a plain id string; the
+  //  scheduled std::function is copied across threads, so an observing_ptr would race), and we reach
+  //  m_parent through the re-resolved live `self`.  Avoids use-after-free.
   const string sessionId = wApp->sessionId();
-  std::function<void()> parent_closer = [parent, self](){ parent->doCloseEditor( self, true, true ); };
-  std::function<void()> self_closer = [this, parent_closer](){ handleBlurWorker( parent_closer ); };
+  const string selfid = id();
+  std::function<void()> self_closer = [selfid](){
+    EditWidget *self = dynamic_cast<EditWidget *>( wApp->domRoot() ? wApp->domRoot()->findById(selfid) : nullptr );
+    if( self && self->m_parent )
+    {
+      self->m_parent->doCloseEditor( self, true, true );
+      wApp->triggerUpdate();
+    }
+  };
 
   WServer::instance()->schedule( std::chrono::milliseconds(250), sessionId, self_closer );
 }//void PhotopeakDelegate::EditWidget::handleBlur()

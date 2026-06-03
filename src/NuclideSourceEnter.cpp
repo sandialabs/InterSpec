@@ -414,7 +414,7 @@ NuclideSourceEnter::NuclideSourceEnter( const bool showHalfLife, const bool show
   HelpSystem::attachToolTipOn( {ageLabel, m_nuclideAgeEdit},
                               WString::tr("dcw-tt-age-edit"), showToolTips );
   
-  m_controller = new NuclideSourceEnterController( m_nuclideEdit, m_nuclideAgeEdit, m_halfLifeTxt );
+  m_controller = addChild( std::make_unique<NuclideSourceEnterController>( m_nuclideEdit, m_nuclideAgeEdit, m_halfLifeTxt ) );
 }//NuclideSourceEnter constructor
 
 

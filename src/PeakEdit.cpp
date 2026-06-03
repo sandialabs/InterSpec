@@ -86,7 +86,7 @@ namespace
 
 
 PeakEditWindow::PeakEditWindow( const double energy,
-                                PeakModel *peakmodel,
+                                std::shared_ptr<PeakModel> peakmodel,
                                 InterSpec *viewer )
   : AuxWindow( WString::tr("window-title-peak-editor"), AuxWindowProperties::PhoneNotFullScreen | AuxWindowProperties::DisableCollapse  )
 {
@@ -157,7 +157,7 @@ PeakDef::CoefficientType PeakEdit::row_to_peak_coef_type( const PeakEdit::PeakPa
 
 
 PeakEdit::PeakEdit( const double energy,
-                    PeakModel *peakmodel,
+                    std::shared_ptr<PeakModel> peakmodel,
                     InterSpec *viewer,
                     AuxWindow *aux )
   : WContainerWidget(),

@@ -28,8 +28,8 @@
 #include <deque>
 #include <vector>
 #include <memory>
+#include <iosfwd>
 
-#include <Wt/WResource.h>
 #include <Wt/WModelIndex.h>
 #include <Wt/Chart/WDataSeries.h>
 #include <Wt/WAbstractItemModel.h>
@@ -95,7 +95,16 @@ public:
   typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
 
 public:
-  PeakModel();
+  /** Factory for `PeakModel`.
+
+   `PeakModel` is always owned via `std::shared_ptr` (the constructor is private), so it can be shared
+   without ownership ambiguity between the spectrum chart(s), the peak table view, and the various tools
+   that display peaks.  Whatever is handed a model (e.g. a chart via `setPeakModel`) co-owns it for as
+   long as it references it, which eliminates the dangling-`PeakModel*` footgun of the old raw-pointer
+   ownership.
+   */
+  static std::shared_ptr<PeakModel> create();
+
   virtual ~PeakModel();
 
   /** Sets the foreground spectrum - necessary for stepped continua. */
@@ -395,7 +404,15 @@ public:
   bool isWithinRange( const PeakDef &peak ) const;
   bool isOutOfRange( const PeakDef &peak ) const;  //conveinience function
 
-  Wt::WResource *peakCsvResource();
+  /** Writes the current foreground peaks (in display sort order), with the displayed background peaks
+   if present, as CSV to the given stream - the same format produced by `write_peak_csv` /
+   `write_for_and_back_peak_csv` and parsed by `csv_to_candidate_fit_peaks`.
+
+   This is the data side of the peak CSV download; the thin `WResource`/HTTP shell that exposes it lives
+   with its only consumer in `PeakInfoDisplay`, so this model header stays free of any `WResource`
+   dependency.
+   */
+  void writePeaksCsv( std::ostream &out ) const;
 
   //notifySpecMeasOfPeakChange(): The SpecMeas which the m_peaks actually
   //  belongs to needs to be notified when peaks are added/removed/modified, so
@@ -454,7 +471,12 @@ public:
                              std::string background_specfilename,
                              const std::deque<std::shared_ptr<const PeakDef>> *background_peaks,
                              const std::shared_ptr<const SpecUtils::Measurement> &background );
-  
+
+private:
+  /** Private constructor - `PeakModel` is always created via `PeakModel::create()` so it is owned by a
+   `std::shared_ptr`.  See the factory for rationale. */
+  PeakModel();
+
 protected:
   
   /** Adds a new peak to the model, returning the inserted peak and its index.
@@ -500,28 +522,6 @@ protected:
   //  for user visualization purposes
   std::deque< PeakShrdPtr > m_sortedPeaks;
 
-  class PeakCsvResource;
-  PeakCsvResource *m_csvResource;
-
-  class PeakCsvResource : public Wt::WResource
-  {
-    //Simple class to allow downloading of peak info as a CSV file - compatible
-    //  with other major peak analysis tool pair
-  public:
-    PeakCsvResource( PeakModel *parent );
-    virtual ~PeakCsvResource();
-
-  private:
-    PeakModel *m_model;
-    Wt::WApplication *m_app;
-    
-    
-    virtual void handleRequest( const Wt::Http::Request &request,
-                                Wt::Http::Response &response );
-  };//class PeakCsvResource : public Wt::WResource
-
-  
-  friend class PeakCsvResource;
 };//class PeakModel
 
 #endif //PeakModel_h

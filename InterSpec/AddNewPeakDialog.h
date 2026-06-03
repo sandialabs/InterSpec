@@ -77,7 +77,7 @@ protected:
   
   
   InterSpec *m_viewer;
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   bool m_isPhone;
   std::shared_ptr<const SpecUtils::Measurement> m_meas;
   

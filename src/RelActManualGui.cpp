@@ -183,7 +183,7 @@ public:
       }//if( !solution )
       
       
-      PeakModel * const peakModel = m_interspec->peakModel();
+      const std::shared_ptr<PeakModel> peakModel = m_interspec->peakModel();
       shared_ptr<const SpecUtils::Measurement> background = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
       double back_sf = m_interspec->displayScaleFactor(SpecUtils::SpectrumType::Background);
 
@@ -542,7 +542,7 @@ RelActManualGui::RelActManualGui( InterSpec *viewer )
   m_backgroundSubtractHolder( nullptr ),
   m_downloadHtmlReport( nullptr ),
   m_peakTableColumn( nullptr ),
-  m_peakModel( viewer ? viewer->peakModelShared() : nullptr ),
+  m_peakModel( viewer ? viewer->peakModel() : nullptr ),
   m_nuclidesDisp( nullptr ),
   m_nucColumnTitle( nullptr ),
   m_physicalModelShields( nullptr ),
@@ -1859,11 +1859,22 @@ void RelActManualGui::calculateSolution()
     const RelActCalcRawInput raw_info = get_raw_info_for_calc_input();
 
     const string sessionId = wApp->sessionId();
+    // Wt4: the post-back below runs on the session thread later; this tool may have been closed by
+    //  then.  Re-resolve via findById() instead of capturing a raw `this` -> avoids use-after-free.
+    const string thisid = id();
     auto solution = make_shared<RelActCalcManual::RelEffSolution>();
-    std::function<void()> updater = [this, solution](){ updateGuiWithResults( solution ); };
+    std::function<void()> updater = [thisid, solution](){
+      RelActManualGui *self = dynamic_cast<RelActManualGui *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+      if( self )
+        self->updateGuiWithResults( solution );
+    };
 
     auto errmsg = make_shared<WString>();
-    std::function<void()> err_updater = [this, errmsg](){ updateGuiWithError( errmsg ); };
+    std::function<void()> err_updater = [thisid, errmsg](){
+      RelActManualGui *self = dynamic_cast<RelActManualGui *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+      if( self )
+        self->updateGuiWithError( errmsg );
+    };
     
     // We could almost call `prepare_calc_input(...)` off the GUI thread, and I think the only
     //  impact would be warning messages wouldnt be localized.
@@ -2452,7 +2463,7 @@ void RelActManualGui::updateNuclides()
   
   set<const SandiaDecay::Nuclide *> nucs_in_peaks;
   set<const ReactionGamma::Reaction *> reactions_in_peaks;
-  PeakModel *peakModel = m_interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakModel = m_interspec->peakModel();
   const auto peaks = peakModel ? peakModel->peaks() : nullptr;
   if( peaks )
   {
@@ -2779,7 +2790,7 @@ RelActCalcManual::PeakCsvInput::NucDataSrc RelActManualGui::nucDataSrc() const
   
   if( srcData != RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay )
   {
-    PeakModel *peakModel = m_interspec->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_interspec->peakModel();
     const auto peaks = peakModel ? peakModel->peaks() : nullptr;
     if( peaks )
     {

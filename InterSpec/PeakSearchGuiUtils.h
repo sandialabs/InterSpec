@@ -139,7 +139,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
    if it finds a better match given that there is a new peak in the region.
   */
 void assign_nuclide_from_reference_lines( PeakDef &peak,
-                                          PeakModel *peakModel,
+                                          const std::shared_ptr<PeakModel> &peakModel,
                                           const std::shared_ptr<const SpecUtils::Measurement> &data,
                                           const ReferencePhotopeakDisplay *refLineDisp,
                                           const bool colorPeaksBasedOnReferenceLines,

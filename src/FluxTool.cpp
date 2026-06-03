@@ -1131,7 +1131,7 @@ void FluxToolWidget::init()
   m_interspec->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> a1 ){ handleDrfChange( a1 ); } );
 
 
-  PeakModel *peakmodel = m_interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
   assert( peakmodel );
   peakmodel->dataChanged().connect( this, &FluxToolWidget::setTableNeedsUpdating );
   peakmodel->rowsRemoved().connect( this, &FluxToolWidget::setTableNeedsUpdating );
@@ -1286,7 +1286,7 @@ void FluxToolWidget::setTableNeedsUpdating()
 
 void FluxToolWidget::refreshPeakTable()
 {
-  PeakModel *peakmodel = m_interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
   
   m_nucNames.clear();
   m_data.clear();

@@ -153,7 +153,7 @@ public:
   
   
   
-  void setPeakModel( PeakModel *model );
+  void setPeakModel( std::shared_ptr<PeakModel> model );
   
   void setData( std::shared_ptr<const SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
   void setSecondData( std::shared_ptr<const SpecUtils::Measurement> hist );
@@ -532,8 +532,10 @@ protected:
   };//enum D3RenderActions
   
   Wt::WFlags<D3RenderActions> m_renderFlags;
-  
-  PeakModel *m_peakModel;
+
+  /** The peak model this chart displays.  Co-owned (shared_ptr) so the model cannot dangle while the
+   chart still references it - see `PeakModel::create()`. */
+  std::shared_ptr<PeakModel> m_peakModel;
   
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   std::shared_ptr<const SpecUtils::Measurement> m_secondary;

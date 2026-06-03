@@ -2094,7 +2094,10 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     try
     {
       const bool isMeV = (efficiencyEnergyUnits > 10.0f);
-      auto expression = std::make_shared<FormulaWrapper>( m_efficiencyFormula, isMeV );
+      // Use the just-parsed `eqn`, not m_efficiencyFormula, which is still empty here (it is only
+      //  assigned from `eqn` later, ~line 2268) - building the wrapper from the empty member
+      //  silently produced an invalid efficiency function.
+      auto expression = std::make_shared<FormulaWrapper>( eqn, isMeV );
       efficiencyFcn = [expression]( float energy ) -> float {
         return expression->efficiency( energy );
       };

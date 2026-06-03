@@ -298,7 +298,7 @@ void DetectionLimitSimple::init()
   //m_spectrum->setData( hist, true );
   //m_spectrum->setXAxisRange( lower_lower_energy - 0.5*dx, upper_upper_energy + 0.5*dx );
   
-  m_peakModel = m_spectrum->addChild( std::make_unique<PeakModel>() );
+  m_peakModel = PeakModel::create();
   m_peakModel->setNoSpecMeasBacking();
   m_spectrum->setPeakModel( m_peakModel );
 
@@ -2205,7 +2205,10 @@ void DetectionLimitSimple::programmaticallyCloseMoreInfoWindow()
     // Note: dialog wont emit the finished() signal
     if( dialog->isModal() )
       dialog->setModal(false);
-    delete dialog;
+    // Wt4: SimpleDialog is owned by wApp via addChild() - `delete dialog` would leave a dangling
+    //  owning unique_ptr in wApp (double-free at session teardown).  removeChild() returns that
+    //  unique_ptr, destroying the dialog exactly once.
+    wApp->removeChild( dialog );
   }//if( dialog )
 }//void programmaticallyCloseMoreInfoWindow()
 

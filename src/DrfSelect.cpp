@@ -935,7 +935,9 @@ void RelEffFile::handleUserAskedRemove()
   dialog->addButton( WString::tr("No") );
   
   string filepath = m_existingFilePath;
-  yes->clicked().connect( yes, [filepath](){
+  // Only remove this entry on confirmation (Yes), not unconditionally below.  Connect to `this` so
+  //  the handler auto-disconnects if this widget is destroyed before the dialog is answered.
+  yes->clicked().connect( this, [this, filepath](){
     
     string pathToDel = SpecUtils::lexically_normalize_path(filepath);
     
@@ -975,12 +977,11 @@ void RelEffFile::handleUserAskedRemove()
     
     passMessage( WString::tr("ref-file-removed-toast").arg(SpecUtils::filename(pathToDel)),
                 WarningWidget::WarningMsgInfo );
+
+    // Confirmed: remove this entry.  Parent owns us; removeFromParent() returns the owning
+    //  unique_ptr that destroys this widget (must be the last statement - `this` is gone after).
+    removeFromParent();
   } );
-
-
-  // Same as the empty-path branch above: parent owns us; use removeFromParent
-  //  so the parent's unique_ptr is the one that actually destroys this widget.
-  removeFromParent();
 }//void RelEffFile::handleUserAskedRemove()
 
 void RelEffFile::handleSaveFileForLater()
@@ -1571,7 +1572,8 @@ void GadrasDetSelect::removeDirectory( GadrasDirectory *dirWidget )
   {
     if( dynamic_cast<GadrasDirectory *>(w) == dirWidget )
     {
-      delete w;
+      // Wt4: m_directories owns this child via a unique_ptr - `delete w` would double-free.
+      m_directories->removeWidget( w );
       break;
     }
   }//for( WWidget *w : m_files->children() )
@@ -1644,8 +1646,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
 #else
-  m_directoryEdit->setAttributeValue( "ondragstart", "return false" );
-  
+  // (m_directoryEdit is created further below; setting its attribute here was a null-pointer deref.)
   auto interspec = InterSpec::instance();
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec );
   
@@ -1778,6 +1779,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   
   m_directoryEdit = topdiv->addNew<WLineEdit>( Wt::WString::fromUTF8(directory) );
   m_directoryEdit->setTextSize( 48 );
+  m_directoryEdit->setAttributeValue( "ondragstart", "return false" ); // moved from top of ctor (was a null deref)
 
 #if( BUILD_AS_OSX_APP || IOS )
   m_directoryEdit->setAttributeValue( "autocorrect", "off" );

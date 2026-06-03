@@ -1570,7 +1570,7 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
   std::map<string,vector<WColor>> answer;
   
   shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks;
-  PeakModel *peakModel = m_spectrumViewer->peakModel();
+  const std::shared_ptr<PeakModel> peakModel = m_spectrumViewer->peakModel();
   if( peakModel )
     peaks = peakModel->peaks();
   
@@ -2023,7 +2023,8 @@ void ReferencePhotopeakDisplay::removeFeatureMarkerTool()
   if( !m_featureMarkers )
     return;
   
-  delete m_featureMarkers;
+  // Wt4: m_featureMarkerColumn owns m_featureMarkers via a unique_ptr - `delete` would double-free.
+  m_featureMarkerColumn->removeWidget( m_featureMarkers );
   m_featureMarkers = nullptr;
   m_featureMarkerColumn->hide();
   m_showFeatureMarkers->setChecked( false );
@@ -2140,21 +2141,24 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
   UndoRedoManager *undo_manager = UndoRedoManager::instance();
   if( undo_manager && undo_manager->canAddUndoRedoNow() )
   {
-    auto undo = [this, prev_orig_nuc, prev_current_nuc](){
+    auto undo = [prev_orig_nuc, prev_current_nuc](){
+      // Wt4/undo-redo: never capture `this` (the tool instance at registration time may differ from
+      //  the one at execution time) - look the widget up via InterSpec and operate through `disp`
+      //  (the redo lambda below already does this correctly).
       InterSpec *interspec = InterSpec::instance();
       ReferencePhotopeakDisplay *disp = interspec ? interspec->referenceLinesWidget() : nullptr;
       assert( disp );
       MoreNuclideInfoWindow *window = disp ? disp->moreInfoWindow() : nullptr;
       if( !window )
         return;
-      
+
       window->done(Wt::DialogCode::Accepted);
-      
+
       if( prev_orig_nuc )
       {
-        assert( !m_nucInfoWindow );
-        m_nucInfoWindow = SimpleDialog::make<MoreNuclideInfoWindow>( prev_orig_nuc );
-        m_nucInfoWindow->finished().connect( this, [this, win=m_nucInfoWindow](){ handleMoreInfoWindowClose( win ); } );
+        assert( !disp->m_nucInfoWindow );
+        disp->m_nucInfoWindow = SimpleDialog::make<MoreNuclideInfoWindow>( prev_orig_nuc );
+        disp->m_nucInfoWindow->finished().connect( disp, [disp, win=disp->m_nucInfoWindow](){ disp->handleMoreInfoWindowClose( win ); } );
         
         if( prev_current_nuc && (prev_orig_nuc != prev_current_nuc) )
         {
@@ -2163,7 +2167,7 @@ void ReferencePhotopeakDisplay::showMoreInfoWindow()
       }//if( prev_orig_nuc )
     };//undo
     
-    auto redo = [this, nuc](){
+    auto redo = [nuc](){  // Wt4/undo-redo: look the widget up via InterSpec, don't capture `this`.
       InterSpec *interspec = InterSpec::instance();
       ReferencePhotopeakDisplay *disp = interspec ? interspec->referenceLinesWidget() : nullptr;
       assert( disp );

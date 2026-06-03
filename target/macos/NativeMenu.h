@@ -65,6 +65,17 @@ void removeOsxMenuItem( void *item, void *menu );
 //setOsxMenuItemHidden(): sets the NSMenuItem passed in to hidden.
 void setOsxMenuItemHidden( void *item, bool hidden );
 
+//invalidateOsxMenuItemTarget(): clears the raw Wt pointers cached in the NSMenuItem's Target so the
+//  Target (which is read on the AppKit main thread by validateMenuItem/clicked/toggleChecked) can no
+//  longer dereference a destroyed PopupDivMenuItem/WCheckBox.  MUST be called from the owning
+//  PopupDivMenuItem's destructor (on the session thread) before the widget memory is freed.
+void invalidateOsxMenuItemTarget( void *item );
+
+//setOsxMenuItemTargetEnabled(): updates the cached enabled flag that validateMenuItem reads on the
+//  AppKit thread (so it never has to dereference the Wt widget).  Call from the session thread when
+//  the PopupDivMenuItem's enabled state changes.
+void setOsxMenuItemTargetEnabled( void *item, bool enabled );
+
 //addOsxMenuItemToolTip(): adds tool tip to the NSMenuItem
 void addOsxMenuItemToolTip( void *item, const char *tooltip );
 

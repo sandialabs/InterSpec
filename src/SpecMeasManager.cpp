@@ -1664,6 +1664,15 @@ SpecMeasManager::~SpecMeasManager()
 
   if( m_nonSpecFileDialog )
     closeNonSpecFileDialog();
+
+  // Wt4: these WResources have no parent ctor arg and are not owned elsewhere; free them here so the
+  //  resources (and any temp files they hold) don't leak for the life of the process.
+  delete m_foregroundDragNDrop;
+  delete m_secondForegroundDragNDrop;
+  delete m_backgroundDragNDrop;
+#if( USE_BATCH_GUI_TOOLS )
+  delete m_batchDragNDrop;
+#endif
 } // SpecMeasManager::~SpecMeasManager()
 
 

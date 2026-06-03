@@ -834,7 +834,7 @@ void SimpleActivityCalc::init()
     m_viewer->displayedSpectrumChanged().connect( this, &SimpleActivityCalc::handleSpectrumChanged );
     
     // Connect to PeakModel signals to detect peak changes
-    PeakModel *peakModel = m_viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
     if( peakModel )
     {
       peakModel->dataChanged().connect( this, &SimpleActivityCalc::handlePeaksChanged );
@@ -1615,7 +1615,7 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         spectrum->setThumbnailMode();
         spectrum->resize( 250, 200 );
         spectrum->setData( background, false );
-        PeakModel *pmodel = spectrum->addChild( std::make_unique<PeakModel>() );
+        const std::shared_ptr<PeakModel> pmodel = PeakModel::create();
         pmodel->setNoSpecMeasBacking();
         pmodel->setForeground( background );
         spectrum->setPeakModel( pmodel );
@@ -1624,9 +1624,16 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
 
         // Setting the x-axis range now doesnt seem to work, so we'll "post" it - which seems to work
         spectrum->setXAxisRange( lower_x - 0.5*dx, upper_x + 0.5*dx );
-        WServer::instance()->schedule( std::chrono::milliseconds(100), wApp->sessionId(), [spectrum, lower_x, upper_x, dx](){
-          spectrum->setXAxisRange( lower_x - 0.5*dx, upper_x + 0.5*dx );
-          wApp->triggerUpdate();
+        // Wt4: this dialog (and its `spectrum`) may be dismissed before this 100ms callback fires;
+        //  re-resolve via findById() instead of capturing the raw pointer -> avoids use-after-free.
+        const string spectrumid = spectrum->id();
+        WServer::instance()->schedule( std::chrono::milliseconds(100), wApp->sessionId(), [spectrumid, lower_x, upper_x, dx](){
+          D3SpectrumDisplayDiv *spectrum = dynamic_cast<D3SpectrumDisplayDiv *>( wApp->domRoot() ? wApp->domRoot()->findById(spectrumid) : nullptr );
+          if( spectrum )
+          {
+            spectrum->setXAxisRange( lower_x - 0.5*dx, upper_x + 0.5*dx );
+            wApp->triggerUpdate();
+          }
         } );
         
         WPushButton *okay_btn = dialog->addButton( WString::tr("Yes") );

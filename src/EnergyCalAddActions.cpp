@@ -608,7 +608,7 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
   
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
-  PeakModel *peakmodel = viewer->peakModel();
+  const std::shared_ptr<PeakModel> peakmodel = viewer->peakModel();
   assert( peakmodel );
   
   const auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);

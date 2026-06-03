@@ -128,7 +128,7 @@ protected:
 
   // Spectrum display
   D3SpectrumDisplayDiv *m_chart;
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   std::shared_ptr<const SpecUtils::Measurement> m_spectrum;
 
   // Controls

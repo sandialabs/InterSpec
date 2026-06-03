@@ -1724,7 +1724,7 @@ SpectrumChart::SpectrumChart()
 : Wt::Chart::WCartesianChart(),
   m_widthInPixels( 0 ),
   m_heightInPixels ( 0 ),
-  m_peakModel( NULL ),
+  m_peakModel( nullptr ),
   m_defaultPeakColor( ns_default_peakFillColor ),
   m_occupiedMarkerColor( ns_default_occupiedTimeColor ),
   m_timeHighlightColors{ ns_defaultTimeHighlightColors[0], ns_defaultTimeHighlightColors[1], ns_defaultTimeHighlightColors[2] },
@@ -1846,17 +1846,18 @@ void SpectrumChart::peakModelDataChanged( const WModelIndex &topLeft,
 }//void peakModelDataChanged(...)
 
 
-void SpectrumChart::setPeakModel( PeakModel *model )
+void SpectrumChart::setPeakModel( std::shared_ptr<PeakModel> model )
 {
   if( m_peakModel )
     throw runtime_error( "SpectrumChart::setPeakModel(...): a model has "
                          "already been set");
-  
+
   if( !model )
     throw runtime_error( "SpectrumChart::setPeakModel(...): invalid input model");
-  
-  m_peakModel = model;
-  
+
+  // Co-own the model for as long as this chart references it (no dangling `PeakModel*`).
+  m_peakModel = std::move( model );
+
   //Note that if you first remove rows from m_peakModel, then add some, then
   //  modify some data, all within one server callback, this will all only
   //  cause one update to be pushed to the user
@@ -1865,7 +1866,7 @@ void SpectrumChart::setPeakModel( PeakModel *model )
   });
   m_peakModel->rowsRemoved().connect( this, [this]( const Wt::WModelIndex &, int, int ){ update(); } );
   m_peakModel->rowsInserted().connect( this, [this]( const Wt::WModelIndex &, int, int ){ update(); } );
-}//void setPeakModel( PeakModel *model )
+}//void setPeakModel( std::shared_ptr<PeakModel> model )
 
 
 void SpectrumChart::setXAxisUnits( SpectrumChart::XAxisUnits units )

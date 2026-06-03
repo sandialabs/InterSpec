@@ -235,13 +235,29 @@ void DirectorySelector::handleNativeDirectorySelection()
     return;
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
-  auto on_select_callback = [this]( const std::vector<std::string> &paths ){
+  // Wt4: the native picker may invoke this callback on a non-session thread (AppKit/Electron) and/or
+  //  after this DirectorySelector is destroyed.  Marshal onto the session thread via WServer::post
+  //  and re-resolve `this` via findById() (thread-safe; capturing a raw `this` or an observing_ptr
+  //  would be a use-after-free / cross-thread race).  WServer::instance() resolves to LibInterSpec's
+  //  server here (this code is in the dylib), as required for the wx/Electron executables.
+  const std::string thisid = id();
+  const std::string callback_session_id = wApp ? wApp->sessionId() : std::string();
+  auto on_select_callback = [thisid, callback_session_id]( const std::vector<std::string> &paths ){
     assert( paths.empty() || (paths.size() == 1) );
-    // If the user cancelled (paths empty), leave the previously selected
-    // path unchanged.  setPath() routes the new value to whichever path
-    // widget is shown (line edit or read-only text).
-    if( !paths.empty() )
-      setPath( paths[0], true );
+    // If the user cancelled (paths empty), leave the previously selected path unchanged.
+    if( paths.empty() )
+      return;
+    Wt::WServer * const server = Wt::WServer::instance();
+    if( !server || callback_session_id.empty() )
+      return;
+    server->post( callback_session_id, [thisid, paths](){
+      DirectorySelector *self = dynamic_cast<DirectorySelector *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+      if( self )
+      {
+        self->setPath( paths[0], true ); // routes to whichever path widget is shown
+        wApp->triggerUpdate();
+      }
+    } );
   };
 
 #if( BUILD_AS_ELECTRON_APP )

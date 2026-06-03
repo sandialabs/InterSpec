@@ -662,7 +662,7 @@ vector<shared_ptr<const PeakDef>> MakeFwhmForDrf::get_user_peaks()
 {
   vector<shared_ptr<const PeakDef>> user_peaks;
   
-  PeakModel *peakModel = m_interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakModel = m_interspec->peakModel();
   assert( peakModel );
   if( !peakModel )
     return user_peaks; //shouldnt happen
@@ -694,8 +694,15 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
   //The results of the peak search will be placed into the vector pointed to by searchresults
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
     
+  // Wt4: the worker re-posts this to the session thread; this widget/dialog may be closed by then.
+  //  Re-resolve via findById() (thread-safe) instead of capturing a raw `this` -> avoids UAF.
+  const string thisid = id();
   std::function<void(void)> callback
-    = [this, user_peaks, searchresults](){ setPeaksFromAutoSearch( user_peaks, searchresults ); };
+    = [thisid, user_peaks, searchresults](){
+        MakeFwhmForDrf *self = dynamic_cast<MakeFwhmForDrf *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+        if( self )
+          self->setPeaksFromAutoSearch( user_peaks, searchresults );
+      };
     
   
   Wt::WServer *server = Wt::WServer::instance();

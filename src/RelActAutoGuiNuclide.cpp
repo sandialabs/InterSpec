@@ -921,7 +921,7 @@ Wt::WColor RelActAutoGuiNuclide::getColorForSource( const RelActCalcAuto::SrcVar
 
   // Check peaks for the same source, and if so, use that color
   InterSpec * const interspec = InterSpec::instance();
-  const PeakModel * const pmodel = interspec->peakModel();
+  const std::shared_ptr<const PeakModel> pmodel = interspec->peakModel();
   assert( pmodel );
 
   const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = pmodel->peaks();

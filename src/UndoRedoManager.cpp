@@ -164,7 +164,7 @@ void UndoRedoManager::PeakModelChange::setToCurrentPeaks()
   start_secondary_peaks.clear();
   
   // Get foreground peaks from PeakModel
-  PeakModel *pmodel = interspec->peakModel();
+  const std::shared_ptr<PeakModel> pmodel = interspec->peakModel();
   assert( pmodel );
   if( pmodel )
   {
@@ -244,7 +244,7 @@ UndoRedoManager::PeakModelChange::~PeakModelChange()
   
   // Get final foreground peaks
   vector<shared_ptr<const PeakDef>> final_peaks;
-  PeakModel *pmodel = interspec->peakModel();
+  const std::shared_ptr<PeakModel> pmodel = interspec->peakModel();
   assert( pmodel );
   if( pmodel )
   {
@@ -320,7 +320,7 @@ UndoRedoManager::PeakModelChange::~PeakModelChange()
     // Restore foreground peaks
     if( foreground_changed )
     {
-      PeakModel *pmodel = viewer->peakModel();
+      const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
       assert( pmodel );
       if( pmodel )
         pmodel->setPeaks( is_undo ? starting_peaks : final_peaks );

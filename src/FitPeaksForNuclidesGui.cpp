@@ -417,7 +417,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
       // Capture current user peaks (by shared_ptr) for DoNotUseExistingRois / ExistingPeaksAsFreePeak.
       // These are the exact pointers in PeakModel, preserving identity for later removal.
-      PeakModel *pm = viewer_a->peakModel();
+      const std::shared_ptr<PeakModel> pm = viewer_a->peakModel();
       if( pm )
       {
         const std::shared_ptr<const std::deque<PeakModel::PeakShrdPtr>> current_peaks = pm->peaks();
@@ -519,7 +519,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
         if( auto_accept )
         {
-          PeakModel *peak_model = viewer_c->peakModel();
+          const std::shared_ptr<PeakModel> peak_model = viewer_c->peakModel();
           if( peak_model )
           {
             apply_reference_line_colors_to_peaks( result->observable_peaks, ref_lines_for_display, disp );
@@ -589,7 +589,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           }
         }
 
-        PeakModel *preview_model = spectrum->addChild( std::make_unique<PeakModel>() );
+        const std::shared_ptr<PeakModel> preview_model = PeakModel::create();
         preview_model->setNoSpecMeasBacking();
         preview_model->setForeground( current_fg );
         spectrum->setPeakModel( preview_model );
@@ -597,7 +597,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         apply_reference_line_colors_to_peaks( result->observable_peaks, ref_lines_for_display, disp );
 
         std::vector<PeakDef> preview_peaks;
-        PeakModel *peak_model = viewer_c->peakModel();
+        const std::shared_ptr<PeakModel> peak_model = viewer_c->peakModel();
         if( peak_model )
           preview_peaks = peak_model->peakVec();
         preview_peaks.insert( preview_peaks.end(),
@@ -618,7 +618,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         accept_btn->clicked().connect( accept_btn, [viewer_c, result](){
           if( viewer_c )
           {
-            PeakModel *peak_model = viewer_c->peakModel();
+            const std::shared_ptr<PeakModel> peak_model = viewer_c->peakModel();
             if( peak_model )
             {
               UndoRedoManager::PeakModelChange peak_undo_creator;
@@ -912,7 +912,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget()
       m_ref_lines.push_back( info );
   }
 
-  PeakModel *pm = viewer->peakModel();
+  const std::shared_ptr<PeakModel> pm = viewer->peakModel();
   if( pm )
   {
     std::shared_ptr<const std::deque<PeakModel::PeakShrdPtr>> current_peaks = pm->peaks();
@@ -957,7 +957,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget()
       m_chart->setReferncePhotoPeakLines( ref_info );
       m_chart->persistCurrentReferncePhotoPeakLines();
     }
-    m_chart_peak_model = m_chart->addChild( std::make_unique<PeakModel>() );
+    m_chart_peak_model = PeakModel::create();
     m_chart_peak_model->setNoSpecMeasBacking();
     m_chart_peak_model->setForeground( m_fg_copy );
     m_chart->setPeakModel( m_chart_peak_model );
@@ -1025,7 +1025,7 @@ void FitPeaksAdvancedWidget::acceptResult()
   if( !viewer )
     return;
   ReferencePhotopeakDisplay *disp = viewer->referenceLinesWidget();
-  PeakModel *peak_model = viewer->peakModel();
+  const std::shared_ptr<PeakModel> peak_model = viewer->peakModel();
   if( !peak_model )
     return;
   UndoRedoManager::PeakModelChange peak_undo_creator;
@@ -1156,8 +1156,27 @@ void FitPeaksAdvancedWidget::startComputation()
   std::vector<std::shared_ptr<const PeakDef>> peaks_to_use( m_auto_search_peaks->begin(), m_auto_search_peaks->end() );
   std::shared_ptr<FitPeaksForNuclides::PeakFitResult> result = std::make_shared<FitPeaksForNuclides::PeakFitResult>();
   std::shared_ptr<std::string> error_msg = std::make_shared<std::string>();
-  auto gui_update = [this, result, cancel_calc, calc_number](){ updateFromResult( result, cancel_calc, calc_number ); };
-  auto gui_error = [this, error_msg, cancel_calc](){ handleCalcError( error_msg, cancel_calc ); };
+
+  // Wt4: the worker (below) runs on a thread-pool thread and the post-backs run on the session
+  //  thread; this widget can be destroyed before either runs.  (1) Copy the inputs the worker needs
+  //  into locals so it never dereferences `this`; (2) re-resolve the widget via findById() in the
+  //  post-backs instead of capturing a raw `this`.  Both avoid use-after-free.
+  const std::string thisid = id();
+  const auto fg_copy = m_fg_copy;
+  const auto base_nucs = m_base_nucs;
+  const auto user_peaks = m_user_peaks;
+  const auto drf = m_drf;
+
+  auto gui_update = [thisid, result, cancel_calc, calc_number](){
+    FitPeaksAdvancedWidget *self = dynamic_cast<FitPeaksAdvancedWidget *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+    if( self )
+      self->updateFromResult( result, cancel_calc, calc_number );
+  };
+  auto gui_error = [thisid, error_msg, cancel_calc](){
+    FitPeaksAdvancedWidget *self = dynamic_cast<FitPeaksAdvancedWidget *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+    if( self )
+      self->handleCalcError( error_msg, cancel_calc );
+  };
 
   std::shared_ptr<SpecUtils::Measurement> bg_to_use = m_bg_copy;
   if( m_opt_use_background && !m_opt_use_background->isChecked() )
@@ -1179,8 +1198,8 @@ void FitPeaksAdvancedWidget::startComputation()
   auto worker = [=](){
     try
     {
-      *result = FitPeaksForNuclides::fit_peaks_for_nuclides( peaks_to_use, m_fg_copy, m_base_nucs, m_user_peaks,
-                                                            bg_to_use, m_drf, options, config, fit_prefs_to_use );
+      *result = FitPeaksForNuclides::fit_peaks_for_nuclides( peaks_to_use, fg_copy, base_nucs, user_peaks,
+                                                            bg_to_use, drf, options, config, fit_prefs_to_use );
       WServer::instance()->post( sessionid, [=](){
         WApplication *app = WApplication::instance();
         if( app )
@@ -1306,7 +1325,7 @@ void FitPeaksAdvancedWidget::updateFromResult( std::shared_ptr<FitPeaksForNuclid
 
     if( !m_chart_peak_model )
     {
-      m_chart_peak_model = m_chart->addChild( std::make_unique<PeakModel>() );
+      m_chart_peak_model = PeakModel::create();
       m_chart_peak_model->setNoSpecMeasBacking();
       m_chart_peak_model->setForeground( m_fg_copy );
       m_chart->setPeakModel( m_chart_peak_model );

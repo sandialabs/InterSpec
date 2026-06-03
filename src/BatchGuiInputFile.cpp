@@ -158,8 +158,18 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
   const string sessionid = wApp->sessionId();
   std::shared_ptr<int> status_ptr = make_shared<int>( 0 );
   std::shared_ptr<SpecMeas> spec_meas = make_shared<SpecMeas>();
+  // Wt4: this callback fires ~1s later on the session thread; this widget (it lives in a SimpleDialog
+  //  and can be removed by the user) may be gone by then.  Re-resolve via findById() instead of
+  //  capturing a raw `this`.  (findById is thread-safe here - we capture a plain id string and only
+  //  touch wApp on the session thread; an observing_ptr would race, as the std::function is copied
+  //  onto the worker thread by WServer::schedule.)  Avoids use-after-free.
+  const string thisid = id();
   std::function<void( void )> updateGuiCallback =
-    [this, spec_meas, status_ptr](){ set_spectrum( spec_meas, status_ptr ); };
+    [thisid, spec_meas, status_ptr](){
+      BatchGuiInputSpectrumFile *self = dynamic_cast<BatchGuiInputSpectrumFile *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+      if( self )
+        self->set_spectrum( spec_meas, status_ptr );
+    };
 
   WServer::instance()->ioService().boost::asio::io_service::post(
     [updateGuiCallback, spec_meas, status_ptr, display_name, path_to_file, sessionid]()

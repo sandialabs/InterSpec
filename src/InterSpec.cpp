@@ -630,7 +630,7 @@ InterSpec::InterSpec()
     undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
   }//if( desktop interface )
     
-  m_peakModel = std::make_shared<PeakModel>();
+  m_peakModel = PeakModel::create();
   m_spectrum   = new D3SpectrumDisplayDiv();
   m_timeSeries = new D3TimeChart();
   
@@ -652,7 +652,7 @@ InterSpec::InterSpec()
     doJavaScript( js );
   }//if( isMobile() )
   
-  m_spectrum->setPeakModel( m_peakModel.get() );
+  m_spectrum->setPeakModel( m_peakModel );
   m_spectrum->existingRoiEdgeDragUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork );
   m_spectrum->dragCreateRoiUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performDragCreateRoiWork );
   
@@ -2716,7 +2716,7 @@ void InterSpec::handleRightClick( double energy, double counts,
 void InterSpec::createPeakEdit( double energy )
 {
   auto create_editor = [this]( double ene ){
-    m_peakEditWindow = AuxWindow::make<PeakEditWindow>( ene, m_peakModel.get(), this );
+    m_peakEditWindow = AuxWindow::make<PeakEditWindow>( ene, m_peakModel, this );
     m_peakEditWindow->editingDone().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->finished().connect( this, &InterSpec::deletePeakEdit );
     m_peakEditWindow->resizeToFitOnScreen();
@@ -2791,7 +2791,7 @@ void InterSpec::deletePeakEdit()
     const double currentEnergy = editor ? editor->currentPeakEnergy() : 0.0;
     
     auto undo = [this, currentEnergy](){
-      m_peakEditWindow = AuxWindow::make<PeakEditWindow>( currentEnergy, m_peakModel.get(), this );
+      m_peakEditWindow = AuxWindow::make<PeakEditWindow>( currentEnergy, m_peakModel, this );
       m_peakEditWindow->editingDone().connect( this, &InterSpec::deletePeakEdit );
       m_peakEditWindow->finished().connect( this, &InterSpec::deletePeakEdit );
       m_peakEditWindow->resizeToFitOnScreen();
@@ -2858,7 +2858,7 @@ void InterSpec::acceptFitSkewParamsWindow()
   shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
   const shared_ptr<const PeakFitDetPrefs> oldPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
 
-  PeakModel *pm = peakModel();
+  const std::shared_ptr<PeakModel> pm = peakModel();
   const shared_ptr<const deque<PeakModel::PeakShrdPtr>> oldPeaksDeque = pm ? pm->peaks() : nullptr;
   vector<shared_ptr<const PeakDef>> oldPeaks;
   if( oldPeaksDeque )
@@ -2895,7 +2895,7 @@ void InterSpec::acceptFitSkewParamsWindow()
         if( viewer )
         {
           viewer->peakFitDetPrefsChanged().emit();
-          PeakModel *peakModel = viewer->peakModel();
+          const std::shared_ptr<PeakModel> peakModel = viewer->peakModel();
           if( peakModel )
             peakModel->setPeaks( is_undo ? oldPeaks : newPeaks );
         }
@@ -3302,7 +3302,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
   {
     if( !peak.hasSourceGammaAssigned() )
     {
-      PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel.get(),
+      PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
                                                                spectrum, m_referencePhotopeakLines.get(),
                                                               m_colorPeaksBasedOnReferenceLines, showingEscape );
     }//if( !peak.hasSourceGammaAssigned() )
@@ -11170,13 +11170,7 @@ SpecMeasManager *InterSpec::fileManager()
 }
 
 
-PeakModel *InterSpec::peakModel()
-{
-  return m_peakModel.get();
-}
-
-
-std::shared_ptr<PeakModel> InterSpec::peakModelShared()
+std::shared_ptr<PeakModel> InterSpec::peakModel()
 {
   return m_peakModel;
 }

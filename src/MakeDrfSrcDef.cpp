@@ -370,11 +370,6 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
 
 MakeDrfSrcDef::~MakeDrfSrcDef()
 {
-#if( WT_VERSION >= 0x3070000 )
-  if( m_lib_src_menu )
-    delete m_lib_src_menu;
-  m_lib_src_menu = nullptr;
-#endif
 }
 
 

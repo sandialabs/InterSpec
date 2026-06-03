@@ -291,7 +291,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
                                       std::shared_ptr<const SpecUtils::Measurement> meas,
                                       std::istream &csv )
 {
-  //Info that will be parsed is based on PeakModel::PeakCsvResource::handleRequest(...)
+  //Info that will be parsed is based on PeakModel::writePeaksCsv(...)
   //  with a few small accommodations for how other programs may save peak CSVs.
   
   using SpecUtils::trim_copy;
@@ -902,61 +902,19 @@ vector<PeakDef> PeakModel::gadras_peak_csv_to_peaks( std::shared_ptr<const SpecU
 
 
 
-PeakModel::PeakCsvResource::PeakCsvResource( PeakModel *parent )
-  : WResource(),
-    m_model( parent ),
-    m_app( WApplication::instance() )
+void PeakModel::writePeaksCsv( std::ostream &out ) const
 {
-  assert( m_app );
-}
-
-
-PeakModel::PeakCsvResource::~PeakCsvResource()
-{
-  beingDeleted();
-}
-
-
-
-
-void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*request*/,
-                                                Wt::Http::Response& response )
-{
-  WApplication::UpdateLock lock( m_app );
-  
-  if( !lock )
-  {
-    log("error") << "Failed to WApplication::UpdateLock in PeakCsvResource.";
-    response.out() << "Error grabbing application lock to form PeakCsvResource resource; please report to InterSpec@sandia.gov.";
-    response.setStatus(500);
-    assert( 0 );
-    return;
-  }//if( !lock )
-  
   //If you update the fields or headers of this function, you should also update
   //  PeakModel::csv_to_candidate_fit_peaks(...)
-  
-  std::shared_ptr<SpecMeas> meas = m_model->m_measurment.lock();
-  string filename = "peaks.CSV", specfilename = "Unknown";
-  if( meas && !meas->filename().empty() )
-  {
-    specfilename = meas->filename();
-    filename = "peaks_" + specfilename;
-    const string::size_type pos = filename.find_last_of( "." );
-    if( pos != string::npos )
-      filename = filename.substr( 0, pos );
-    filename += ".CSV";
-  }//if( meas && !meas->filename().empty() )
-    
-  suggestFileName( filename, ContentDisposition::Attachment ); //WResource::NoDisposition
 
-  response.setMimeType( "text/csv" );
-
-  if( !m_model || !m_model->m_peaks )
+  if( !m_peaks )
     return;
 
-  const shared_ptr<const SpecUtils::Measurement> &data = m_model->m_foreground;
-  
+  std::shared_ptr<SpecMeas> meas = m_measurment.lock();
+  const string specfilename = (meas && !meas->filename().empty()) ? meas->filename() : string("Unknown");
+
+  const shared_ptr<const SpecUtils::Measurement> &data = m_foreground;
+
   string backfilename;
   shared_ptr<const SpecUtils::Measurement> background;
   shared_ptr<const deque<shared_ptr<const PeakDef>>> background_peaks;
@@ -973,23 +931,27 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
       background_peaks = bmeas->peaks( samples );
     }//if( bmeas )
   }//if( interspec )
-  
-  
+
   if( background && background_peaks && !background_peaks->empty() )
   {
-    PeakModel::write_for_and_back_peak_csv( response.out(), specfilename,
-                                        PeakModel::PeakCsvType::Full, m_model->m_sortedPeaks, data,
-                                        backfilename, background_peaks.get(), background );
+    write_for_and_back_peak_csv( out, specfilename, PeakCsvType::Full, m_sortedPeaks, data,
+                                 backfilename, background_peaks.get(), background );
   }else
   {
-    PeakModel::write_peak_csv( response.out(), specfilename, PeakModel::PeakCsvType::Full,
-                              m_model->m_sortedPeaks, data );
+    write_peak_csv( out, specfilename, PeakCsvType::Full, m_sortedPeaks, data );
   }
-}//void handleRequest(...)
+}//void PeakModel::writePeaksCsv( std::ostream &out ) const
 
 
 
 
+
+
+std::shared_ptr<PeakModel> PeakModel::create()
+{
+  // Private ctor, so cannot use std::make_shared here.
+  return std::shared_ptr<PeakModel>( new PeakModel() );
+}//PeakModel::create()
 
 
 PeakModel::PeakModel()
@@ -998,14 +960,16 @@ PeakModel::PeakModel()
     m_backgroundPeaksChanged(),
     m_secondaryPeaksChanged(),
     m_sortColumn( kMean ),
-    m_sortOrder( Wt::SortOrder::Ascending ),
-    m_csvResource( NULL )
+    m_sortOrder( Wt::SortOrder::Ascending )
 {
   auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
   if( app )
     app->useMessageResourceBundle( "PeakModel" );
 
-  m_csvResource = new PeakCsvResource( this );
+  // The peak CSV download resource is not owned by the model; the thin HTTP shell lives with its only
+  //  consumer in `PeakInfoDisplay` (a file-local `PeakCsvResource` owned by the download link), and calls
+  //  `PeakModel::writePeaksCsv()` for the content.  Keeping the shell out of the model means transient/
+  //  preview models do not allocate a resource that is never used, and this header needs no `WResource`.
 }//PeakModel constructor
 
 PeakModel::~PeakModel()
@@ -1317,12 +1281,6 @@ bool PeakModel::isWithinRange( const PeakDef &peak ) const
 bool PeakModel::isOutOfRange( const PeakDef &peak ) const
 {
   return !isWithinRange( peak );
-}
-
-
-WResource *PeakModel::peakCsvResource()
-{
-  return m_csvResource;
 }
 
 

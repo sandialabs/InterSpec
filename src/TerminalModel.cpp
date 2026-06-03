@@ -1995,7 +1995,7 @@ std::string TerminalModel::searchforPeak( const std::string& arguments )
     try {
         const double energy = m_parser->Eval().GetFloat();
         
-        PeakModel *peakModel = m_viewer->peakModel();
+        const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
         
         if ( !peakModel )
             throw mup::ParserError( "Peak model is not set." );
@@ -2037,7 +2037,7 @@ std::string TerminalModel::deletePeak( const std::string& arguments )
     try {
         const double energy = m_parser->Eval().GetFloat();
         
-        PeakModel *peakModel = m_viewer->peakModel();
+        const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
         if (!peakModel)
             return "Error: Peak model is not set.";
         
@@ -2073,7 +2073,7 @@ std::string TerminalModel::refitPeak ( const std::string& argument )
     try {
         const double energy = m_parser->Eval().GetFloat();
         
-        PeakModel *peakModel = m_viewer->peakModel();
+        const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
         PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
         
         if ( !peak )
@@ -2126,7 +2126,7 @@ double TerminalModel::peakArea( const double argument )
 {
     const double energy = argument;
     
-    PeakModel *peakModel = m_viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
     PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
     
     return peak && energyIsWithinPeak( peak, energy ) ? peak->peakArea() : 0;
@@ -2139,7 +2139,7 @@ double TerminalModel::peakMean( const double argument )
 {
     const double energy = argument;
     
-    PeakModel *peakModel = m_viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
     PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
     
     return peak && energyIsWithinPeak( peak, energy ) ? peak->mean() : 0;
@@ -2152,7 +2152,7 @@ double TerminalModel::peakFwhm( const double argument )
 {
     const double energy = argument;
     
-    PeakModel *peakModel = m_viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
     PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
     
     return peak && energyIsWithinPeak( peak, energy ) ? peak->fwhm() : 0;
@@ -2165,7 +2165,7 @@ double TerminalModel::peakAmp( const double argument )
 {
     const double energy = argument;
     
-    PeakModel *peakModel = m_viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
     PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
     
     return peak && energyIsWithinPeak( peak, energy ) ? peak->amplitude() : 0;
@@ -2178,7 +2178,7 @@ double TerminalModel::peakSigma( const double argument )
 {
     const double energy = argument;
     
-    PeakModel *peakModel = m_viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
     PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
     
     if ( peak && energyIsWithinPeak( peak, energy ) ) {
@@ -2196,7 +2196,7 @@ double TerminalModel::peakChi2dof ( const double argument )
 {
     const double energy = argument;
     
-    PeakModel *peakModel = m_viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
     PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
     
     return peak && energyIsWithinPeak( peak, energy ) ? peak->chi2dof() : 0;
@@ -2209,7 +2209,7 @@ double TerminalModel::peakGaussianIntegral ( const double argument, const double
 {
     const double energy = argument;
     
-    PeakModel *peakModel = m_viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
     PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
     
     return peak && energyIsWithinPeak( peak, energy ) ? peak->gauss_integral( x0, x1 ) : 0;

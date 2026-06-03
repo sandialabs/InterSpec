@@ -869,7 +869,9 @@ namespace
       int npeaks = 0;
       for( auto peak : *peaks )
       {
-        DrfPeak *p = new DrfPeak( peak, livetime, summed_meas, m_peaks );
+        // Wt4: the DrfPeak ctor ignores its (commented-out) parent arg, so `new DrfPeak(...)`
+        //  would be orphaned (leaked + never rendered).  addNew<> constructs and parents it to m_peaks.
+        DrfPeak *p = m_peaks->addNew<DrfPeak>( peak, livetime, summed_meas );
         ++npeaks;
         p->m_useForEffCb->changed().connect( this, &DrfSpecFileSample::refreshSourcesVisible );
         if( p->m_userBr )
@@ -1260,7 +1262,9 @@ namespace
             }//for( const int sample : m_samples )
           }//for( size_t i = 0; i < detNames.size(); ++i )
           
-          MakeDrfSrcDef *src = new MakeDrfSrcDef( n, measDate );
+          // Wt4: MakeDrfSrcDef has no parent ctor arg, so `new MakeDrfSrcDef(...)` would be orphaned
+          //  (leaked + never rendered).  addNew<> constructs and parents it to m_sources.
+          MakeDrfSrcDef *src = m_sources->addNew<MakeDrfSrcDef>( n, measDate );
           src->setIsEffGeometryType( static_cast<int>(m_geometry_type) );
           src->updated().connect( this, [this](){ m_srcInfoUpdated.emit(); } );
           

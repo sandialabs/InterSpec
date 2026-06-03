@@ -520,9 +520,11 @@ void RelActAutoGuiRelEffOptions::setRelEffCurveInput( const RelActCalcAuto::RelE
     const size_t num_ext_atten = std::max( size_t(1), rel_eff.phys_model_external_atten.size() );
 
     // Remove any extra external attenuation widgets
+    // Wt4: m_phys_ext_attens owns these children via unique_ptr - `delete` would double-free.
+    //  (iterating a copy of children(), so mutating the live container in the loop is safe)
     const vector<WWidget *> starting_ext_atten_widgets = m_phys_ext_attens->children();
     for( size_t i = num_ext_atten; i < starting_ext_atten_widgets.size(); ++i )
-      delete starting_ext_atten_widgets[i];
+      m_phys_ext_attens->removeWidget( starting_ext_atten_widgets[i] );
 
     // Reset the state of any remaining external attenuation widgets (JIC - probably dont really need to do this)
     for( int i = 0; i < m_phys_ext_attens->children().size(); ++i )

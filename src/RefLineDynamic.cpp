@@ -194,7 +194,7 @@ RefLineDynamic::RefLineDynamic( D3SpectrumDisplayDiv *chart, InterSpec *interspe
     [this]( const std::shared_ptr<const ExternalRidResults> &r ){ autoRidResultsRecieved( r ); } );
   m_interspec->colorThemeChanged().connect(
     [this]( const std::shared_ptr<const ColorTheme> &t ){ colorThemeChanged( t ); } );
-  PeakModel * const pmodel = m_interspec->peakModel();
+  const std::shared_ptr<PeakModel> pmodel = m_interspec->peakModel();
   if( pmodel )
   {
     pmodel->rowsInserted().connect( this, [this](){ peaksAdded(); } );
@@ -697,7 +697,7 @@ void RefLineDynamic::startUpdateLines()
                                   ? background_meas->peaks(background_samples)
                                   : nullptr;
   
-  PeakModel * const pmodel = m_interspec->peakModel();
+  const std::shared_ptr<PeakModel> pmodel = m_interspec->peakModel();
   const shared_ptr<const deque<shared_ptr<const PeakDef>>> user_foreground_peaks_gui = pmodel ? pmodel->peaks() : nullptr;
   
   const shared_ptr<const deque<shared_ptr<const PeakDef>>> user_foreground_peaks = user_foreground_peaks_gui

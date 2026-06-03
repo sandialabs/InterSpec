@@ -1665,7 +1665,7 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer )
   m_moreInfoDialog( NULL ),
   m_decayLegend( NULL ),
   m_calc( NULL ),
-  m_csvDownloadDialog( NULL ),
+  m_csvDownloadDialog( nullptr ),
   m_currentTimeUnits( -1.0 ),
   m_currentTimeRange( -1.0 ),
   m_currentNumXPoints( 250 ),
@@ -2239,7 +2239,7 @@ void DecayActivityDiv::deleteCsvDownloadGui()
 {
   if( m_csvDownloadDialog )
   {
-    AuxWindow *dialog = m_csvDownloadDialog;
+    AuxWindow *dialog = m_csvDownloadDialog.get();
     m_csvDownloadDialog = nullptr;
     AuxWindow::deleteAuxWindow( dialog );
   }

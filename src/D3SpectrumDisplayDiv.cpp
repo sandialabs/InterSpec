@@ -627,12 +627,14 @@ bool D3SpectrumDisplayDiv::isAxisCompacted() const
   return m_compactAxis;
 }
 
-void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
+void D3SpectrumDisplayDiv::setPeakModel( std::shared_ptr<PeakModel> model )
 {
   if( !model )
     throw runtime_error( "setPeakModel(...): invalid input model" );
-  
-  m_peakModel = model;
+
+  // Co-own the model for as long as this chart references it (eliminates the dangling-`PeakModel*`
+  //  footgun of the previous raw pointer).
+  m_peakModel = std::move( model );
 
   m_peakModel->dataChanged().connect(   this, [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
   m_peakModel->rowsRemoved().connect(   this, [this]( Wt::WModelIndex, int, int ){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
@@ -641,7 +643,7 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
   m_peakModel->modelReset().connect(    this, [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Foreground ); } );
   m_peakModel->backgroundPeaksChanged().connect( this, [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::Background ); } );
   m_peakModel->secondaryPeaksChanged().connect( this, [this](){ schedulePeakRedraw( SpecUtils::SpectrumType::SecondForeground ); } );
-}//void setPeakModel( PeakModel *model );
+}//void setPeakModel( std::shared_ptr<PeakModel> model );
 
 
 bool D3SpectrumDisplayDiv::legendIsEnabled() const
@@ -3097,7 +3099,9 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
   if( !viewer )
     return;
   
-  PeakModel *peakModel = spectrum->m_peakModel;
+  // Captured into the background fit worker below; co-owning the model (shared_ptr) keeps it alive for
+  //  the duration of the async fit even if the chart/model owner goes away mid-fit.
+  const std::shared_ptr<PeakModel> peakModel = spectrum->m_peakModel;
   std::shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment(SpecUtils::SpectrumType::Foreground) : nullptr;
   std::shared_ptr<const DetectorPeakResponse> detector = meas ? meas->detector() : nullptr;
 
@@ -3160,7 +3164,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       if( nForcedPeaks > 0 && nForcedPeaks < 10 )
       {
         npeakstry.push_back( nForcedPeaks );
-      }else if( !isfinal || spectrum->m_last_being_added_peaks.empty() ) //if `isfinal`, and we have peaks already cached, dont refit peaks (avoids slight delay)
+      }else if( !isfinal || prev_shown_peaks.empty() ) //if `isfinal`, and we have peaks already cached, dont refit peaks (avoids slight delay). Wt4: use the prev_shown_peaks copy captured above, not the live spectrum->m_last_being_added_peaks, which this worker may read off the session thread (data race).
       {
         if( nPeaks > 1 && ncores > 1 )
           npeakstry.push_back( nPeaks - 1 );
@@ -3375,8 +3379,19 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         //  select number of peaks.
         if( window_xpx >= 0 || window_ypx >= 0 )
         {
-          DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu();
-          menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
+          // Wt4: own the menu via the spectrum widget (addChild) so it can't leak as an ownerless
+          //  global widget, and remove it (deferred, routed through the owner) when it hides.  The
+          //  old `new` + setHidden `delete this` both double-freed (wApp owns popups) and, per the
+          //  observed leak, often never fired.
+          DeleteOnClosePopupMenu *menu = spectrum->addChild( std::make_unique<DeleteOnClosePopupMenu>() );
+          const string menuownerid = spectrum->id();
+          menu->aboutToHide().connect( menu, [menuownerid, menu](){
+            WServer::instance()->post( wApp->sessionId(), [menuownerid, menu](){
+              D3SpectrumDisplayDiv *owner = dynamic_cast<D3SpectrumDisplayDiv *>( wApp->domRoot() ? wApp->domRoot()->findById(menuownerid) : nullptr );
+              if( owner )
+                owner->removeChild( menu );  // owner alive => menu (its child) alive; frees it exactly once
+            } );
+          } );
 
           PopupDivMenuItem *item = nullptr, *selecteditem = nullptr;
           

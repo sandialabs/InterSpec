@@ -137,7 +137,7 @@ public:
   SpectrumChart();
   virtual ~SpectrumChart();
 
-  void setPeakModel( PeakModel *model );
+  void setPeakModel( std::shared_ptr<PeakModel> model );
   
   //Note: do not overide height() and width() or else when used in a stretching
   //      layout side will get really messed up after the first painting
@@ -437,7 +437,7 @@ protected:
   double m_widthInPixels;        //The width of the chart in pixels
   double m_heightInPixels;       //The height of the chart in pixels
   
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   Wt::WColor m_defaultPeakColor;
   
   /** The vertical lines (and text) that mark the beggining and end of an

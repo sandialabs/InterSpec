@@ -461,6 +461,10 @@ namespace
      : WResource(),
        m_model( model )
     {
+      // Wt4: handleRequest() runs on an I/O worker thread; reading the live m_model there races the
+      //  session thread.  setTakesUpdateLock() makes Wt hold the session's UpdateLock for the
+      //  duration of the request, serializing it with session-thread model mutations.
+      setTakesUpdateLock( true );
     }
     
     virtual ~ResultCsvResource()

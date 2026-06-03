@@ -92,7 +92,7 @@ namespace
   const WString ActiveSearchEnergyClass = "ActiveSearchEnergy";
   
   /** Returns peaks that were likely used to enter search energies from. */
-  vector<PeakModel::PeakShrdPtr> peaks_searched( const PeakModel * const pmodel,
+  vector<PeakModel::PeakShrdPtr> peaks_searched( const std::shared_ptr<const PeakModel> &pmodel,
                                                  const vector<IsotopeSearchByEnergy::SearchEnergy *> &searches )
   {
     if( !pmodel )
@@ -1066,7 +1066,12 @@ void IsotopeSearchByEnergy::removeSearchEnergy( IsotopeSearchByEnergy::SearchEne
   else if( !searchW.empty() )
     searchW[0]->enableRemove();
   
-  delete energy;
+  // Wt4: m_searchEnergies owns this child via a unique_ptr (so `delete energy` would double-free),
+  //  and we are inside `energy`'s own remove() signal emission - detach it now (so startSearch sees
+  //  the updated set) but defer destruction until the emit unwinds, else we free the emitting signal
+  //  (use-after-free).
+  std::shared_ptr<Wt::WWidget> doomed( m_searchEnergies->removeWidget( energy ).release() );
+  Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
   startSearch( false );
 }//void removeSearchEnergy( SearchEnergy *energy )
 
@@ -1497,7 +1502,7 @@ void IsotopeSearchByEnergy::resultSelectionChanged()
 
 int IsotopeSearchByEnergy::numSearchEnergiesOnPeaks()
 {
-  PeakModel *pmodel = m_viewer ? m_viewer->peakModel() : nullptr;
+  const std::shared_ptr<PeakModel> pmodel = m_viewer ? m_viewer->peakModel() : nullptr;
   assert( pmodel );
   
   const vector<PeakModel::PeakShrdPtr> peaks = peaks_searched( pmodel, searches() );
@@ -1508,7 +1513,7 @@ int IsotopeSearchByEnergy::numSearchEnergiesOnPeaks()
 
 int IsotopeSearchByEnergy::numCurrentNuclideLinesOnPeaks( const bool require_peaks_with_no_id )
 {
-  PeakModel *pmodel = m_viewer ? m_viewer->peakModel() : nullptr;
+  const std::shared_ptr<PeakModel> pmodel = m_viewer ? m_viewer->peakModel() : nullptr;
   if( !pmodel )
     return 0;
   
@@ -1628,7 +1633,7 @@ void IsotopeSearchByEnergy::assignSearchedOnPeaksToSelectedNuclide()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
   
-  PeakModel *pmodel = m_viewer ? m_viewer->peakModel() : nullptr;
+  const std::shared_ptr<PeakModel> pmodel = m_viewer ? m_viewer->peakModel() : nullptr;
   assert( pmodel );
   if( !pmodel )
     return;

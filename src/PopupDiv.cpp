@@ -1326,6 +1326,11 @@ PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
 PopupDivMenuItem::~PopupDivMenuItem()
 {
 #if( USE_OSX_NATIVE_MENU )
+  // Invalidate the NSMenuItem's Target (clears its raw pointers to this widget / our WCheckBox)
+  //  synchronously, BEFORE this widget's memory is freed, so the AppKit main thread can no longer
+  //  dereference us in validateMenuItem/clicked/toggleChecked after we're gone.
+  if( m_nsmenuitem )
+    invalidateOsxMenuItemTarget( m_nsmenuitem );
   if( m_nsmenu && m_nsmenuitem )
     removeOsxMenuItem( m_nsmenuitem, m_nsmenu );
 #endif
@@ -1351,6 +1356,15 @@ void PopupDivMenuItem::setHidden( bool hidden, const Wt::WAnimation &animation )
   WMenuItem::setHidden( hidden, animation );
   if( m_nsmenuitem )
     setOsxMenuItemHidden( m_nsmenuitem, hidden );
+}
+
+void PopupDivMenuItem::setDisabled( bool disabled )
+{
+  WMenuItem::setDisabled( disabled );
+  // Push the new enabled state to the native menu item's Target so validateMenuItem (AppKit thread)
+  //  reflects it without having to dereference this widget.
+  if( m_nsmenuitem )
+    setOsxMenuItemTargetEnabled( m_nsmenuitem, !disabled );
 }
 #endif //USE_OSX_NATIVE_MENU
 

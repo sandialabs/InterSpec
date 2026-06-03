@@ -500,7 +500,7 @@ void refit_peaks(  )
 {
   try
   {
-    PeakModel * const model = interspec->peakModel();
+    const std::shared_ptr<PeakModel> model = interspec->peakModel();
     const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
     

@@ -251,8 +251,9 @@ void FitSkewParamsTool::initWidgets()
     m_chart->setData( m_spectrum, false);
   }
 
-  // Create standalone PeakModel for the chart
-  m_peakModel = new PeakModel();
+  // Create PeakModel for the chart, owned by this tool (Wt4: setPeakModel() is non-owning, so a
+  //  raw `new PeakModel()` leaked every time the tool was opened).
+  m_peakModel = PeakModel::create();
   m_peakModel->setNoSpecMeasBacking();
   if( m_spectrum )
     m_peakModel->setForeground( m_spectrum);
@@ -643,6 +644,10 @@ void FitSkewParamsTool::doFit()
   shared_ptr<PeakFitLM::FitPeaksResults> results
     = make_shared<PeakFitLM::FitPeaksResults>();
 
+  // Wt4: capture this widget's id (not a raw `this`) so the GUI post-back can re-resolve it via
+  //  findById() - this tool can be closed mid-fit, and WServer::post only guards the session.
+  const string thisid = id();
+
   // Run fit in background thread
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
     if( cancelFlag->load() )
@@ -669,8 +674,13 @@ void FitSkewParamsTool::doFit()
       results->error_message = "Fit failed with unknown error";
     }
 
-    // Post results back to GUI thread; safe even if session was destroyed
-    WServer::instance()->post( sessionId, [this, results, cancelFlag](){ handleFitResults( results, cancelFlag); });
+    // Post results back to GUI thread; re-resolve the tool via findById() (it may have been closed
+    //  mid-fit - WServer::post only guards the session, not this widget) -> avoids use-after-free.
+    WServer::instance()->post( sessionId, [thisid, results, cancelFlag](){
+      FitSkewParamsTool *self = dynamic_cast<FitSkewParamsTool *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+      if( self )
+        self->handleFitResults( results, cancelFlag );
+    });
   }));
 }//void doFit()
 
@@ -836,7 +846,7 @@ void FitSkewParamsTool::acceptResults()
   // Optionally refit analysis peaks with the new skew parameters
   if( m_updatePeaksCb->isChecked() )
   {
-    PeakModel *peakModel = m_viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
     const shared_ptr<const deque<PeakModel::PeakShrdPtr>> currentPeaks
       = peakModel ? peakModel->peaks() : nullptr;
     const shared_ptr<const SpecUtils::Measurement> data
@@ -1052,11 +1062,12 @@ void FitSkewParamsTool::handleRightClick( double energy, double /*counts*/,
 
   m_rightClickEnergy = energy;
 
-  // Build context menu
+  // Build context menu (owned by this tool; Wt4: a bare `new WPopupMenu()` was an ownerless global
+  //  widget that leaked on every right-click, and removeFromParent() is a no-op for global widgets).
   if( m_rightClickMenu )
-    if( m_rightClickMenu ) m_rightClickMenu->removeFromParent();
+    removeChild( m_rightClickMenu );
 
-  m_rightClickMenu = new WPopupMenu();
+  m_rightClickMenu = addChild( std::make_unique<WPopupMenu>() );
 
   // "Change Continuum" submenu
   auto contMenuOwned = std::make_unique<WPopupMenu>();

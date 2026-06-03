@@ -1094,7 +1094,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
 
   //m_chart->xAxisSliderShown().connect(...)
   
-  m_peakModel = addChild( std::make_unique<PeakModel>() );
+  m_peakModel = PeakModel::create();
   m_chart->setPeakModel( m_peakModel );
 
   // Create the user-input area under the spectrum and liklihood chart
@@ -1478,7 +1478,7 @@ DetectionLimitTool::~DetectionLimitTool()
 
 
 void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv *chart,
-                                       PeakModel *pmodel,
+                                       const std::shared_ptr<PeakModel> &pmodel,
                                        const DetectionLimitCalc::CurrieMdaInput &input,
                                        const DetectionLimitCalc::CurrieMdaResult * const result,
                                        std::shared_ptr<const DetectorPeakResponse> drf,
@@ -1915,7 +1915,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     
     //TODO: set no interaction, and implement drawing the various areas...
     
-    PeakModel *pmodel = chart->addChild( make_unique<PeakModel>() );
+    const std::shared_ptr<PeakModel> pmodel = PeakModel::create();
     pmodel->setNoSpecMeasBacking();
     chart->setPeakModel( pmodel );
     pmodel->setForeground( hist );

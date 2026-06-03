@@ -356,7 +356,7 @@ protected:
   Wt::WText *m_status_indicator;
   
   D3SpectrumDisplayDiv *m_spectrum;
-  PeakModel *m_peak_model;
+  std::shared_ptr<PeakModel> m_peak_model;
   RelEffChart *m_rel_eff_chart;
   RelActTxtResults *m_txt_results;
   Wt::WMenu *m_upper_menu;

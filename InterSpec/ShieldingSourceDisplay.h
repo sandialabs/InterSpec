@@ -157,10 +157,10 @@ public:
   };//enum Columns
 
 
-  //SourceFitModel constructor: the peakModel pointer must be valid.
+  //SourceFitModel constructor: the peakModel must be valid.
   //  'sameAgeIsotopes' specifies whether isotopes of the same element should be
   //  forced to have the same age.
-  SourceFitModel( PeakModel *peakModel,
+  SourceFitModel( std::shared_ptr<PeakModel> peakModel,
                   const bool sameAgeIsotopes );
   virtual ~SourceFitModel();
 
@@ -311,7 +311,7 @@ protected:
   Wt::SortOrder m_sortOrder;
   Columns m_sortColumn;
   bool m_displayCuries;
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   std::vector<ShieldingSourceFitCalc::SourceFitDef> m_nuclides;
   bool m_sameAgeForIsotopes;
   DetectorPeakResponse::EffGeometryType m_det_type;
@@ -328,7 +328,7 @@ protected:
 class ShieldingSourceDisplay : public Wt::WContainerWidget
 {
 public:
-  ShieldingSourceDisplay( PeakModel *peakModel,
+  ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakModel,
                           InterSpec *specViewer );
   
   /** Creates a AuxWindow with a ShieldingSourceDisplay in it.
@@ -744,7 +744,7 @@ protected:
   //  tracked.
   bool m_modifiedThisForeground;
 
-  PeakModel *m_peakModel;       //belongs to m_specViewer, not *this
+  std::shared_ptr<PeakModel> m_peakModel;       //the main model owned by m_specViewer; co-owned here
   InterSpec *m_specViewer;
   SourceFitModel *m_sourceModel;
 

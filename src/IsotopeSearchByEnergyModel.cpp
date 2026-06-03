@@ -1260,15 +1260,6 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
     using SandiaDecay::Nuclide;
     using SandiaDecay::EnergyIntensityPair;
     
-    const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-    const vector<const SandiaDecay::Element *> &elements = db->elements();
-    
-    //Get x-rays with at least one of the energies
-    map<const SandiaDecay::Element *, vector<EnergyIntensityPair> > filteredXrays;
-    for( const Element *el : elements )
-      for( const EnergyIntensityPair &xray : el->xrays )
-        filteredXrays[el].push_back( xray );
-    
     //Get reactions with at least one of the energies
     const ReactionGamma *rctnDb = ReactionGammaServer::database();
     vector<ReactionGamma::ReactionPhotopeak> reactions;

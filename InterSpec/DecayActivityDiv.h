@@ -202,7 +202,9 @@ public:
 
   DateLengthCalculator *m_calc;
   
-  CsvDownloadGui *m_csvDownloadDialog; //null if not displayed
+  // Wt4: observing_ptr auto-nulls if the dialog is destroyed (e.g. closed by the user), so the raw
+  //  pointer can't dangle (matches m_nuclideSelectDialog / m_moreInfoDialog above).
+  Wt::Core::observing_ptr<AuxWindow> m_csvDownloadDialog; //null if not displayed
   
   //Below are variable updated by refreshDecayDisplay() that reflect the current
   // stuff being showed by m_decayChart.  They are only used in

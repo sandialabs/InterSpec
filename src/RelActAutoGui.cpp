@@ -109,6 +109,31 @@ using namespace std;
 
 namespace
 {
+  /** Detach `child` from its parent now, but destroy it on the NEXT event-loop iteration.
+
+   Required when a widget is removed in response to its OWN signal (e.g. a row's `remove()` signal):
+   destroying it synchronously would free the emitting signal while Wt is still emitting it, which is
+   a use-after-free.  Detaching immediately keeps the model/UI in sync; the returned unique_ptr is
+   kept alive in a posted task and dropped (destroying the widget) once the emit has unwound.
+   */
+  void removeWidgetLater( Wt::WContainerWidget *parent, Wt::WWidget *child )
+  {
+    if( !parent || !child )
+      return;
+    std::shared_ptr<Wt::WWidget> doomed( parent->removeWidget(child).release() );
+    Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
+  }
+
+  /** Same as above, but for a widget whose parent isn't conveniently in scope. */
+  void removeWidgetLater( Wt::WWidget *child )
+  {
+    if( !child )
+      return;
+    std::shared_ptr<Wt::WWidget> doomed( child->removeFromParent().release() );
+    Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
+  }
+
+
   /** Helper function to format numeric values consistently for localization.
    * 
    * \param value The numeric value to format
@@ -402,10 +427,11 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     passMessage( WString::tr("raag-error-creating-tool").arg(e.what()),
                 WarningWidget::WarningMsgHigh );
     
-    if( disp )
-      delete disp;
+    // Wt4: `disp` is owned either by `disp_owner` (if we threw before addWidget, it was
+    //  already destroyed during stack unwinding) or by `window->contents()` (after addWidget,
+    //  destroyed by deleteAuxWindow below) - an explicit `delete disp` would double-free.
     disp = nullptr;
-    
+
     if( window )
       AuxWindow::deleteAuxWindow( window );
     window = nullptr;
@@ -568,12 +594,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
     const int ref_line_verbosity = std::max(0, std::min(2, UserPreferences::preferenceValue<int>( "RefLineVerbosity", m_interspec) ));
     m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
 
-    auto peak_model_owner = std::make_unique<PeakModel>();
-    m_peak_model = peak_model_owner.get();
+    m_peak_model = PeakModel::create();
     m_peak_model->setNoSpecMeasBacking();
+    // The model is owned by this widget's `m_peak_model` (shared_ptr) and co-owned by the chart.
     m_spectrum->setPeakModel( m_peak_model );
-    // PeakModel lifetime is managed by this widget
-    addChild( std::move(peak_model_owner) );
 
     m_spectrum->existingRoiEdgeDragUpdate().connect( this, &RelActAutoGui::handleRoiDrag );
     m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
@@ -2457,7 +2481,9 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
   }
   new_roi.continuum_type = std::max( lroi.continuum_type, rroi.continuum_type );
   
-  delete right_range;
+  // Wt4: detach now, destroy after the current signal emit unwinds (avoids double-free and freeing
+  //  an emitting signal).
+  removeWidgetLater( m_energy_ranges, right_range );
   right_roi = nullptr;
   right_range = nullptr;
   
@@ -3863,8 +3889,11 @@ void RelActAutoGui::handleRemoveFreePeak( Wt::WWidget *w )
   }
   
   assert( dynamic_cast<RelActAutoGuiFreePeak *>(w) );
-  
-  delete w;
+
+  // Wt4: m_free_peaks owns this child via a unique_ptr (so `delete w` would double-free), and we are
+  //  inside `w`'s own remove() signal emission - detach now, destroy after the emit unwinds (else we
+  //  free the emitting signal -> use-after-free).
+  removeWidgetLater( m_free_peaks, w );
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
@@ -3889,8 +3918,10 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
   }
   
   assert( dynamic_cast<RelActAutoGuiEnergyRange *>(w) );
-  
-  delete w;
+
+  // Wt4: m_energy_ranges owns this child via a unique_ptr (so `delete w` would double-free); detach
+  //  now and destroy after the current signal emit unwinds (avoids freeing an emitting signal).
+  removeWidgetLater( m_energy_ranges, w );
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateEnergyRanges;
@@ -3991,9 +4022,11 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     }//
     
     const int orig_w_index = static_cast<int>( pos - begin(kids) );
-    
-    delete w;
-    
+
+    // Wt4: detach now, destroy after the current event/emit unwinds (avoids double-free / freeing an
+    //  emitting signal).
+    removeWidgetLater( m_energy_ranges, w );
+
     for( const RelActCalcAuto::RoiRange &range : to_ranges )
     {
       auto roi_owner = std::make_unique<RelActAutoGuiEnergyRange>();
@@ -4073,8 +4106,10 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     assert( 0 );
     return;
   }
-  
-  delete w;
+
+  // Wt4: m_energy_ranges owns this child via a unique_ptr (so `delete w` would double-free); detach
+  //  now and destroy after the current signal emit unwinds (avoids freeing an emitting signal).
+  removeWidgetLater( m_energy_ranges, w );
   
   // Check if we want the whole energy range removed
   if( (lower_energy <= roi.lower_energy) && (upper_energy >= roi.upper_energy) )
@@ -4187,7 +4222,9 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
     return;
   }
   
-  delete w;
+  // Wt4: w's parent owns it via a unique_ptr (so `delete w` would double-free), and we are inside
+  //  `w`'s own remove() signal emission - detach now, destroy after the emit unwinds.
+  removeWidgetLater( w );
 
   for( int rel_eff_index = 0; rel_eff_index < num_rel_effs; ++rel_eff_index )
   {
@@ -4324,7 +4361,7 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     if( !tool )
     {
       ownEnergyCal = true;
-      tool = new EnergyCalTool( m_interspec, m_interspec->peakModelShared() );
+      tool = new EnergyCalTool( m_interspec, m_interspec->peakModel() );
     }
     
     MeasToApplyCoefChangeTo fore, back;
@@ -4437,7 +4474,7 @@ void RelActAutoGui::setPeaksToForeground()
     return;
   }//if( no solution peaks )
   
-  PeakModel *peak_model = m_interspec->peakModel();
+  const std::shared_ptr<PeakModel> peak_model = m_interspec->peakModel();
   assert( peak_model );
   if( !peak_model )
     return;
@@ -4644,7 +4681,7 @@ void RelActAutoGui::setPeaksToForeground()
       final_peaks = solution_peaks;
     }
     
-    PeakModel *peak_model = interpsec->peakModel();
+    const std::shared_ptr<PeakModel> peak_model = interpsec->peakModel();
     assert( peak_model );
     if( !peak_model )
       return;
@@ -4844,20 +4881,27 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   if( !item )
     return;
 
-  // In Wt 4, removeItem() returns a unique_ptr that auto-deletes the item
-  m_rel_eff_opts_menu->removeItem( item );
-  delete curve;
+  // Wt4: removeItem() returns a unique_ptr owning the item AND (via the item) its contents `curve`.
+  //  We are inside `curve`'s own delRelEffCurve() signal emission, so destroying it synchronously
+  //  would free the emitting signal (use-after-free) - detach now, defer destruction past the emit.
+  //  (An explicit `delete curve` would also double-free.)
+  {
+    std::shared_ptr<Wt::WMenuItem> doomed( m_rel_eff_opts_menu->removeItem( item ).release() );
+    Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
+  }
 
   WMenuItem *nuc_item = m_rel_eff_nuclides_menu->itemAt( index_to_remove );
   assert( nuc_item );
   if( nuc_item )
   {
-    WContainerWidget *nuc_content = dynamic_cast<WContainerWidget *>( nuc_item->contents() );
-    assert( nuc_content );
+    assert( dynamic_cast<WContainerWidget *>( nuc_item->contents() ) );
 
-    m_rel_eff_nuclides_menu->removeItem( nuc_item );
-    delete nuc_content;
-    delete nuc_item;
+    // Wt4: removeItem() owns the item and its contents (nuc_content); defer its destruction too, to
+    //  match the opts item above (explicit deletes would double-free).
+    {
+      std::shared_ptr<Wt::WMenuItem> doomed( m_rel_eff_nuclides_menu->removeItem( nuc_item ).release() );
+      Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
+    }
     nuc_item = nullptr;
   }
 
@@ -5710,11 +5754,19 @@ void RelActAutoGui::startUpdatingCalculation()
   auto solution = make_shared<RelActCalcAuto::RelActAutoSolution>();
   auto error_msg = make_shared<string>();
   
-  auto gui_update_callback = std::function<void()>( [this, solution, cancel_calc, calc_number = m_calc_number](){
-    updateFromCalc( solution, cancel_calc, calc_number );
+  // Wt4: these callbacks fire on the session thread after the calc finishes; this RelActAutoGui may
+  //  have been closed/destroyed by then (the `if(app)` check only confirms the session is alive, not
+  //  this widget).  Re-resolve via findById() rather than capturing a raw `this` -> avoids UAF.
+  const string thisid = id();
+  auto gui_update_callback = std::function<void()>( [thisid, solution, cancel_calc, calc_number = m_calc_number](){
+    RelActAutoGui *self = dynamic_cast<RelActAutoGui *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+    if( self )
+      self->updateFromCalc( solution, cancel_calc, calc_number );
   } );
-  auto error_callback = std::function<void()>( [this, error_msg, cancel_calc](){
-    handleCalcException( error_msg, cancel_calc );
+  auto error_callback = std::function<void()>( [thisid, error_msg, cancel_calc](){
+    RelActAutoGui *self = dynamic_cast<RelActAutoGui *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+    if( self )
+      self->handleCalcException( error_msg, cancel_calc );
   } );
 
   PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High;

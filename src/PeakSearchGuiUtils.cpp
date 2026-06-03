@@ -665,13 +665,13 @@ protected:
     acceptButton->clicked().connect( this, [viewer, orig_peaks, final_peaks](){
 
       auto undo = [viewer, orig_peaks](){
-        PeakModel *pmodel = viewer->peakModel();
+        const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
         if( pmodel )
           pmodel->setPeaks( orig_peaks );
       };
 
       auto redo = [viewer, final_peaks](){
-        PeakModel *pmodel = viewer->peakModel();
+        const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
         if( pmodel )
           pmodel->setPeaks( final_peaks );
       };
@@ -1838,7 +1838,7 @@ void set_peaks_from_search( InterSpec *viewer,
       filtered_peaks.push_back( p );
   }
 
-  PeakModel *peakModel = viewer->peakModel();
+  const std::shared_ptr<PeakModel> peakModel = viewer->peakModel();
 
   peakModel->setPeaks( filtered_peaks );
 
@@ -1919,7 +1919,7 @@ namespace PeakSearchGuiUtils
     std::unique_ptr<SpectrumChart> chart( new SpectrumChart() );
     chart->setWidth( width );
     chart->setHeight( height );
-    PeakModel *peakmodel = chart->addChild( std::make_unique<PeakModel>() );
+    const std::shared_ptr<PeakModel> peakmodel = PeakModel::create();
     auto dataModel = std::make_shared<SpectrumDataModel>();
 
     chart->setModel( dataModel );
@@ -2053,7 +2053,7 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
                                 std::string ref_line_name,
                                 const SpecUtils::SpectrumType spec_type )
 {
-  PeakModel *pmodel = interspec ? interspec->peakModel() : nullptr;
+  const std::shared_ptr<PeakModel> pmodel = interspec ? interspec->peakModel() : nullptr;
   assert( pmodel );
   if( !pmodel )
     return;
@@ -2802,7 +2802,7 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
   
   
 void assign_nuclide_from_reference_lines( PeakDef &peak,
-                                       PeakModel *peakModel,
+                                       const std::shared_ptr<PeakModel> &peakModel,
                                        const std::shared_ptr<const SpecUtils::Measurement> &data,
                                        const ReferencePhotopeakDisplay *refLineDisp,
                                        const bool setColor,
@@ -3021,7 +3021,7 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
   
   try
   {
-    PeakModel * const model = interspec->peakModel();
+    const std::shared_ptr<PeakModel> model = interspec->peakModel();
     const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
     
@@ -3170,7 +3170,7 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
   {
     interspec->useMessageResourceBundle( "PeakSearchGuiUtils" );
     
-    PeakModel * const model = interspec->peakModel();
+    const std::shared_ptr<PeakModel> model = interspec->peakModel();
     const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
     
@@ -3560,7 +3560,7 @@ float estimate_FWHM_of_foreground( const float energy )
   if( !viewer )
     return 0.0f;
   
-  PeakModel *peakmodel = viewer->peakModel();
+  const std::shared_ptr<PeakModel> peakmodel = viewer->peakModel();
   assert( peakmodel );
   if( !peakmodel )
     return 0.0f;
@@ -3659,7 +3659,7 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec,
   {
     interspec->useMessageResourceBundle( "PeakSearchGuiUtils" );
     
-    PeakModel * const model = interspec->peakModel();
+    const std::shared_ptr<PeakModel> model = interspec->peakModel();
     const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
     
@@ -3820,7 +3820,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       return;
     }//if( !valid_offset )
     
-    PeakModel * const model = interspec->peakModel();
+    const std::shared_ptr<PeakModel> model = interspec->peakModel();
     const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
     
@@ -4023,7 +4023,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
       return;
     }//if( !valid_offset )
     
-    PeakModel * const model = interspec->peakModel();
+    const std::shared_ptr<PeakModel> model = interspec->peakModel();
     const shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     const shared_ptr<const SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground);
     

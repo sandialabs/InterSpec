@@ -292,7 +292,14 @@ void BatchGuiWidget::handleFileDrop( const std::string &, const std::string & )
 {
   const vector<tuple<string, string, bool>> dropped_files = m_uploadResource->takeSpooledFiles();
   //addInputFiles( dropped_files );
-  std::function<void()> worker = [this, dropped_files](){ addInputFiles( dropped_files ); };
+  // Wt4: this fires ~25ms later on the session thread; re-resolve via findById() (thread-safe)
+  //  instead of capturing a raw `this` -> avoids use-after-free if this widget is destroyed first.
+  const string thisid = id();
+  std::function<void()> worker = [thisid, dropped_files](){
+    BatchGuiWidget *self = dynamic_cast<BatchGuiWidget *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+    if( self )
+      self->addInputFiles( dropped_files );
+  };
   WServer::instance()->schedule( std::chrono::milliseconds(25), wApp->sessionId(), worker );
   wApp->triggerUpdate();
 }

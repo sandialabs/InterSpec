@@ -222,7 +222,7 @@ protected:
   Wt::WPushButton *m_fitFwhmBtn;
   
   D3SpectrumDisplayDiv *m_spectrum;
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
 
   Wt::WText *m_resultTxt;
   

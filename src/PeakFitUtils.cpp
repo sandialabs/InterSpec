@@ -375,7 +375,7 @@ bool is_likely_high_res( InterSpec *viewer )
   assert( wApp );
   assert( viewer );
 
-  PeakModel *peakModel = viewer->peakModel();
+  const std::shared_ptr<PeakModel> peakModel = viewer->peakModel();
   assert( peakModel );
   if( !peakModel )
     return false;

@@ -285,7 +285,7 @@ void UserPreferences::addCallbackWhenChanged( const std::string &name,
   if( !signal )
     signal = std::make_shared<Wt::Signal<bool>>();
 
-  signal->connect( [target, method]( bool v ){ (target->*method)( v ); } );
+  signal->connect( target, method );
 }//addCallbackWhenChanged(...)
 
 
@@ -314,7 +314,7 @@ void UserPreferences::addIntCallbackWhenChanged( const std::string &name,
   if( !signal )
     signal = std::make_shared<Wt::Signal<int>>();
 
-  signal->connect( [target, method]( int v ){ (target->*method)( v ); } );
+  signal->connect( target, method );
 }//addIntCallbackWhenChanged(...)
 
 #endif //UserPrefernces_h

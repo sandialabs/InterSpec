@@ -556,7 +556,7 @@ namespace
       m_display->serialize( &doc );
       rapidxml::print( response.out(), doc, 0 );
     }
-  };//class PeakCsvResource : public Wt::WResource
+  };//class StringDownloadResource
   
   
   /** Struct that saves the ShieldingSourceDisplay state to XML, when this struct is first constructed, and then again
@@ -702,7 +702,7 @@ namespace
 
 
 
-SourceFitModel::SourceFitModel( PeakModel *peakModel,
+SourceFitModel::SourceFitModel( std::shared_ptr<PeakModel> peakModel,
                                 const bool sameAgeIsotopes )
   : WAbstractItemModel(),
     m_sortOrder( Wt::SortOrder::Ascending ),
@@ -2576,7 +2576,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
   
   try
   {
-    PeakModel *peakModel = viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = viewer->peakModel();
 
     window = AuxWindow::make( WString::tr("window-title-act-shield-fit"),
                            (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
@@ -2692,22 +2692,22 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
   {
     passMessage( WString::tr("ssd-error-create-tool").tr(e.what()), WarningWidget::WarningMsgHigh );
     
-    if( disp )
-      delete disp;
+    // Wt4: `disp` is owned by window->stretcher() once added (line ~2592); deleteAuxWindow(window)
+    //  below destroys it - an explicit `delete disp` would double-free.
     disp = nullptr;
-    
+
     if( window )
       AuxWindow::deleteAuxWindow( window );
     window = nullptr;
   }//try / catch
-  
+
   return make_pair( disp, window );
 }//createWindow( InterSpec *viewer  )
 
 
 
 
-ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
+ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakModel,
                                                 InterSpec *specViewer )
   : WContainerWidget(),
     m_chi2ChartNeedsUpdating( true ),
@@ -2780,7 +2780,9 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   
   m_peakView->setAlternatingRowColors( true );
   m_peakView->setEditTriggers( EditTrigger::SingleClicked | EditTrigger::DoubleClicked );
-  m_peakView->setModel( std::shared_ptr<WAbstractItemModel>( m_peakModel, []( WAbstractItemModel * ){} ) );
+  // m_peakModel is a shared_ptr<PeakModel>; the view co-owns it directly (the old no-op-deleter alias
+  //  was only needed when m_peakModel was a raw pointer).
+  m_peakView->setModel( m_peakModel );
   m_peakView->addStyleClass( "PeakView" );
 
   for( PeakModel::Columns col = PeakModel::Columns(0);
@@ -3477,8 +3479,11 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
     m_addItemMenu = NULL;
   }//if( m_addItemMenu )
   
+  // Wt4: m_diagramDialog is a SimpleDialog owned by wApp via addChild(); removeFromParent() is a
+  //  no-op for a global widget and would leak it (and can leave a modal cover stuck).  removeChild()
+  //  on the true owner (wApp) destroys it exactly once.
   if( m_diagramDialog )
-    if( m_diagramDialog ) m_diagramDialog->removeFromParent();
+    wApp->removeChild( m_diagramDialog );
   m_diagramDialog = nullptr;
   
   closeModelUploadWindow();
@@ -5321,7 +5326,9 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   spectrum->resize( chart_w, chart_h );
   spectrum->setData( back_hist, false );
 
-  PeakModel *pmodel = new PeakModel();
+  // Owned by the dialog's spectrum chart (setPeakModel() is non-owning); a raw `new` here leaked a
+  //  PeakModel every time this preview dialog was shown.  Matches every other transient PeakModel.
+  const std::shared_ptr<PeakModel> pmodel = PeakModel::create();
   pmodel->setNoSpecMeasBacking();
   pmodel->setForeground( back_hist );
   spectrum->setPeakModel( pmodel );
@@ -6998,6 +7005,11 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
         delete summary;
         summary = NULL;
       }
+      if( del )  // not shown when there are no models to delete; would otherwise leak (unparented)
+      {
+        delete del;
+        del = NULL;
+      }
     }//if( nfileprev[0] || nfileprev[1] )
     
     m_modelDbBrowseWindow->rejectWhenEscapePressed();
@@ -7026,15 +7038,18 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
     }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
   }catch( std::exception &e )
   {
-    if( accept )
+    // Wt4: any of these buttons already added to the window's footer/contents are owned by it,
+    //  and deleteAuxWindow() below destroys them.  Only delete the ones still orphaned (no parent
+    //  yet, e.g. if we threw before adding them); deleting a parented one would double-free.
+    if( accept && !accept->parent() )
       delete accept;
-    if( cancel )
+    if( cancel && !cancel->parent() )
       delete cancel;
-    if( summary )
-     delete summary;
-    if( del )
+    if( summary && !summary->parent() )
+      delete summary;
+    if( del && !del->parent() )
       delete del;
-    
+
     AuxWindow::deleteAuxWindow( m_modelDbBrowseWindow.get() );
     m_modelDbBrowseWindow = nullptr;
 
@@ -7516,9 +7531,9 @@ void ShieldingSourceDisplay::reset( const bool set_use_peaks_false )
   const vector<WWidget *> shieldings = m_shieldingSelects->children();
   for( WWidget *child : shieldings )
   {
-    const ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( child );
-    if( select )
-      delete select;
+    // Wt4: m_shieldingSelects owns each child via a unique_ptr - `delete` would double-free.
+    if( dynamic_cast<ShieldingSelect *>( child ) )
+      m_shieldingSelects->removeWidget( child );
   }//for( WWebWidget *child : shieldings )
   
   if( set_use_peaks_false )
@@ -8368,26 +8383,35 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
   m_modifiedThisForeground = true;
   
   bool foundShielding = false;
-  const vector<WWidget *> &children = m_shieldingSelects->children();
+  // Iterate a copy and pointer-compare (don't dynamic_cast every entry): we mutate the live
+  //  children() below, and `select` is the widget we were handed.
+  const vector<WWidget *> children = m_shieldingSelects->children();
   for( WWidget *widget : children )
   {
-    ShieldingSelect *shielding = dynamic_cast<ShieldingSelect *>( widget );
-    if( shielding == select )
+    if( widget == select )
     {
-      delete shielding;
+      // Wt4: m_shieldingSelects owns this child via a unique_ptr (so `delete` would double-free),
+      //  AND we are currently inside `select`'s own remove() signal emission - destroying it now
+      //  would free that signal while it is still emitting (use-after-free).  So detach it from the
+      //  container now (so the model/UI updates immediately) but defer its destruction to the next
+      //  event-loop iteration, by which time the emit has unwound.
+      std::shared_ptr<Wt::WWidget> removed( m_shieldingSelects->removeWidget( widget ).release() );
+      Wt::WServer::instance()->post( wApp->sessionId(), [removed](){ /* destroyed with this lambda */ } );
       handleShieldingChange();
       foundShielding = true;
       break;
-    }//if( shielding == select )
+    }//if( widget == select )
   }//for( WWidget *widget : children )
 
-  // Now go through and update if we can add a trace source to the other shieldings
-  for( WWidget *widget : children )
+  // Now go through and update if we can add a trace source to the other shieldings (re-fetch the
+  //  live children, which no longer includes the just-removed one).
+  const vector<WWidget *> remaining = m_shieldingSelects->children();
+  for( WWidget *widget : remaining )
   {
     ShieldingSelect *shielding = dynamic_cast<ShieldingSelect *>( widget );
     if( shielding )
       shielding->setTraceSourceBtnStatus();
-  }//for( WWidget *widget : children )
+  }//for( WWidget *widget : remaining )
   
   assert( foundShielding );
   if( !foundShielding )
@@ -9199,10 +9223,23 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
   results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
   
   auto progress = std::make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
-  std::function<void()> progress_updater = [this, progress](){ updateGuiWithModelFitProgress( progress ); };
 
-  // In Wt 4, wApp->bind() no longer exists; lambdas are used directly
-  std::function<void()> gui_updater = [this, results](){ updateGuiWithModelFitResults( results ); };
+  // Wt4: these updaters are dispatched to the session thread via WServer::post() from fit_model(),
+  //  possibly after this widget is destroyed (the dtor waits for the worker thread, but updaters
+  //  already queued to the session thread can still run post-destruction).  Re-resolve via
+  //  findById() instead of capturing a raw `this` -> avoids use-after-free.
+  const string thisid = id();
+  std::function<void()> progress_updater = [thisid, progress](){
+    ShieldingSourceDisplay *self = dynamic_cast<ShieldingSourceDisplay *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+    if( self )
+      self->updateGuiWithModelFitProgress( progress );
+  };
+
+  std::function<void()> gui_updater = [thisid, results](){
+    ShieldingSourceDisplay *self = dynamic_cast<ShieldingSourceDisplay *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
+    if( self )
+      self->updateGuiWithModelFitResults( results );
+  };
   
   const string sessionid = wApp->sessionId();
   if( fitInBackground )

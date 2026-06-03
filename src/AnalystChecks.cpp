@@ -599,7 +599,7 @@ namespace AnalystChecks
       }
     }//if( options.source.has_value() )
     
-    PeakModel *pmodel = interspec->peakModel();
+    const std::shared_ptr<PeakModel> pmodel = interspec->peakModel();
     assert( pmodel );
     if( !options.doNotAddToAnalysisPeaks && pmodel )
     {
@@ -1145,7 +1145,7 @@ namespace AnalystChecks
       //  to atomically replace the affected peaks while preserving unrelated ones.
       if( !options.doNotAddPeaksToUserSession && !result.fitPeaks.empty() )
       {
-        PeakModel * const pmodel = interspec->peakModel();
+        const std::shared_ptr<PeakModel> pmodel = interspec->peakModel();
         if( pmodel )
         {
           std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> existing_peaks
@@ -1521,7 +1521,7 @@ namespace AnalystChecks
       throw runtime_error( "edit_analysis_peak: No InterSpec session available" );
 
     // Get the PeakModel for the specified spectrum type
-    PeakModel *peakModel = interspec->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = interspec->peakModel();
     if( !peakModel )
       throw runtime_error( "edit_analysis_peak: No peak model available" );
 
@@ -3083,7 +3083,7 @@ namespace AnalystChecks
                           + string(SpecUtils::descriptionText(options.specType))
                           + " spectrum" );
 
-    PeakModel *peak_model = interspec->peakModel();
+    const std::shared_ptr<PeakModel> peak_model = interspec->peakModel();
     if( !peak_model )
       return ComptonPeakCheckStatus{};
 

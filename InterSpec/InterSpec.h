@@ -747,8 +747,13 @@ public:
 
   SpecMeasManager *fileManager();
   
-  PeakModel *peakModel();
-  std::shared_ptr<PeakModel> peakModelShared();
+  /** The foreground peak model.
+
+   `PeakModel` is always `shared_ptr`-owned (see `PeakModel::create()`); this returns the shared owner so
+   callers can co-own it where they need to hold it across time (charts, tools), or just dereference it for
+   a momentary borrow.  There is intentionally no raw-pointer accessor.
+   */
+  std::shared_ptr<PeakModel> peakModel();
 
   /** The RefLineDynamic class. */
   RefLineDynamic *refLineDynamic();

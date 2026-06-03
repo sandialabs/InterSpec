@@ -375,7 +375,9 @@ void InjaLogDialog::updateDisplay()
 
   } catch( nlohmann::json::parse_error &e )
   {
-    const std::string error_msg = "<p>" + Wt::WString::tr( "ild-json-parse-error" ).arg( std::string( e.what() ) ).toUTF8() + "</p>";
+    // htmlEncode the exception text - it is rendered as UnsafeXHTML below and may echo
+    //  user-supplied template/JSON content containing markup (otherwise an XSS vector).
+    const std::string error_msg = "<p>" + Wt::WString::tr( "ild-json-parse-error" ).arg( Wt::Utils::htmlEncode( std::string( e.what() ) ) ).toUTF8() + "</p>";
     m_iframe_holder->setText( error_msg );
     m_iframe_holder->setTextFormat( Wt::TextFormat::UnsafeXHTML );
     m_iframe_holder->removeStyleClass( "InjaLogDialogIFrameHolder" );
@@ -385,7 +387,7 @@ void InjaLogDialog::updateDisplay()
   {
     const std::string error_msg = "<p>" +
                                   Wt::WString::tr( "ild-inja-error" )
-                                    .arg( e.message )
+                                    .arg( Wt::Utils::htmlEncode( e.message ) ) // encoded: rendered as UnsafeXHTML below
                                     .arg( std::to_string( e.location.line ) )
                                     .arg( std::to_string( e.location.column ) )
                                     .toUTF8() +
@@ -398,7 +400,7 @@ void InjaLogDialog::updateDisplay()
 
   } catch( std::exception &e )
   {
-    const std::string error_msg = "<p>" + Wt::WString::tr( "ild-misc-error" ).arg( std::string( e.what() ) ).toUTF8() + "</p>";
+    const std::string error_msg = "<p>" + Wt::WString::tr( "ild-misc-error" ).arg( Wt::Utils::htmlEncode( std::string( e.what() ) ) ).toUTF8() + "</p>";
     m_iframe_holder->setText( error_msg );
     m_iframe_holder->setTextFormat( Wt::TextFormat::UnsafeXHTML );
     m_iframe_holder->removeStyleClass( "InjaLogDialogIFrameHolder" );
