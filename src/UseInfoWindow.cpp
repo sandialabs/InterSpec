@@ -332,7 +332,11 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
 
 
     //m_messageModelSample->setHeaderData(  0, Horizontal, WString("Example Spectra"), DisplayRole );
-    m_tableSample = samplesLayout->addWidget( std::make_unique<RowStretchTreeView>(), 0, 0 );
+
+    // Construct unparented, fully configure, then move into the layout last — matches the
+    // working pattern in RefSpectraWidget.cpp:367-398 (and how this code worked in Wt3).
+    auto tableSampleOwner = std::make_unique<RowStretchTreeView>();
+    m_tableSample = tableSampleOwner.get();
     m_tableSample->setRootIsDecorated( false ); //makes the tree look like a table! :)
     m_tableSample->setHeaderHeight( 0 );
     m_tableSample->addStyleClass( "DbSpecFileSelectTable" );
@@ -357,14 +361,18 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     m_tableSample->setSelectionMode( Wt::SelectionMode::Single );
     m_tableSample->setEditTriggers( Wt::EditTrigger::None );
 
+    // Install the SampleSpecRow delegate only on the visible column. Columns 1 and 2 are
+    // hidden, so leaving them on the default WItemDelegate avoids building (and connecting
+    // m_load->clicked() to) two extra widget trees per row.
     auto sampleDelegate = std::make_shared<SampleSpectrumDelegate>( this );
-    m_tableSample->setItemDelegate( sampleDelegate );
+    m_tableSample->setItemDelegateForColumn( 0, sampleDelegate );
 
-    samplesLayout->setRowStretch(0,1);
-    samplesLayout->setColumnStretch(0,1);
-    
     m_tableSample->selectionChanged().connect( this, &UseInfoWindow::handleSampleSelectionChanged );
     m_tableSample->doubleClicked().connect( this, &UseInfoWindow::handleSampleDoubleClicked );
+
+    samplesLayout->addWidget( std::move(tableSampleOwner), 0, 0 );
+    samplesLayout->setRowStretch(0,1);
+    samplesLayout->setColumnStretch(0,1);
     
     
     //Import tab
@@ -395,7 +403,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
       
     const int sampleIndex = tabW->indexOf(samplesContainer);
-    
+
 #if( !USE_DB_TO_STORE_SPECTRA )
     tabW->setCurrentIndex( sampleIndex );
 #else

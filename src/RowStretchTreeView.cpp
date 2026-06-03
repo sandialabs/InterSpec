@@ -193,6 +193,25 @@ void RowStretchTreeView::render(	Wt::WFlags<Wt::RenderFlag> flags )
                         "self.wtObj.wtResize();"
                         "Wt.WT.TreeViewCheckWidth(" + jsRef() + ");"
                         "}");
+
+    // Work around a Wt 4.12.6 hidden-tab bug: whenever any tree view in the app resizes,
+    // WTreeView's JS calls FixComputedSize() on *every* registered tree view, pinning its
+    // inline max/min-width to its current clientWidth.  For a tree view sitting in a tab/stack
+    // that is not currently shown, clientWidth is 0, so it gets stuck at max-width:0 (zero
+    // width, no visible rows) and is never un-pinned (the un-pin only runs in that tree view's
+    // own wtResize, which doesn't fire while it stays hidden).  Make FixComputedSize a no-op
+    // while this element is hidden so the bad zero-width pin can never be set; once the tab is
+    // shown the layout's already-correct width applies.  unfixComputedSize() self-guards, so
+    // calling it while hidden is safe and clears any stale pin from an ordering race.
+    doJavaScript( "var el=" + jsRef() + ";"
+                  "if(el && el.wtObj && !el.wtObj._rstvFcsPatched){"
+                    "el.wtObj._rstvFcsPatched=true;"
+                    "var origFix=el.wtObj.FixComputedSize;"
+                    "el.wtObj.FixComputedSize=function(){"
+                      "if(Wt.WT.isHidden(el)){ el.wtObj.unfixComputedSize(); return; }"
+                      "return origFix.apply(this,arguments);"
+                    "};"
+                  "}" );
   }//if( flags & RenderFull )
   
   //If we added enough entries such that a scroll bar will now apear, we will
