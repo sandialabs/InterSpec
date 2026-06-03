@@ -541,6 +541,17 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         SimpleDialog *result_dlg = SimpleDialog::make( WString::tr("fpn-result-title"), "" );
         result_dlg->addStyleClass( "FitSourcesResultDialog" );
 
+        // Phone/narrow-screen styling hooks (mirrors FitPeaksAdvancedDialog): -phone whenever
+        // isPhone(), -portrait when the viewport is narrow (renderedWidth < 480).
+        const bool res_is_phone = viewer_c->isPhone();
+        const bool res_narrow = res_is_phone
+            || ( (viewer_c->renderedWidth() > 100) && (viewer_c->renderedWidth() < 480) );
+        if( res_is_phone )
+          result_dlg->addStyleClass( "FitSourcesResultDialog-phone" );
+        if( (viewer_c->renderedWidth() > 100) && (viewer_c->renderedHeight() > 100)
+            && (viewer_c->renderedWidth() < 480) )
+          result_dlg->addStyleClass( "FitSourcesResultDialog-portrait" );
+
         Wt::WContainerWidget *contents = result_dlg->contents();
         contents->addStyleClass( "FitSourcesResultContents" );
 
@@ -552,19 +563,28 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         summary_text->addStyleClass( "FitSourcesSummary" );
         summary_text->setInline( false );
 
-        // Size chart dynamically based on rendered dimensions
+        // Size the chart to a comfortable width, then (below) size the dialog to match it so
+        // the summary/warnings don't stretch the dialog far wider than the chart.
         int chartw = 420, charth = 260;
-        if( viewer_c->renderedWidth() > 500 )
-          chartw = std::min( ((3*viewer_c->renderedWidth()/4) - 50), 600 );
+        if( viewer_c->renderedWidth() > 100 )
+        {
+          if( res_narrow )  // phone/narrow: fit the chart to the dialog width (~85vw minus padding)
+            chartw = std::max( 150, std::min( 600, ((85*viewer_c->renderedWidth())/100) - 40 ) );
+          else              // desktop/tablet: a comfortable width, capped
+            chartw = std::max( 300, std::min( 700, ((95*viewer_c->renderedWidth())/100) - 60 ) );
+        }
         if( viewer_c->renderedHeight() > 400 )
           charth = std::min( viewer_c->renderedHeight()/3, (4*chartw)/7 );
-        chartw = std::max( chartw, 300 );
-        charth = std::max( charth, 200 );
+        charth = std::max( charth, res_narrow ? 150 : 200 );
+
+        // Keep the dialog only about as wide as the (fixed-width) chart, plus the SimpleDialog
+        // body's 15px left/right padding, so the chart and dialog widths line up.
+        result_dlg->setMaximumSize( Wt::WLength(chartw + 30), Wt::WLength::Auto );
 
         D3SpectrumDisplayDiv *spectrum = contents->addNew<D3SpectrumDisplayDiv>();
         spectrum->clicked().preventPropagation();
         spectrum->setThumbnailMode();
-        spectrum->setMinimumSize( 300, 200 );
+        spectrum->setMinimumSize( res_narrow ? 150 : 300, res_narrow ? 150 : 200 );
         spectrum->resize( chartw, charth );
         spectrum->setData( current_fg, false );
 
@@ -968,7 +988,12 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget()
     m_chart = chartOwned.get();
     m_chart->clicked().preventPropagation();
     m_chart->setThumbnailMode();
-    m_chart->setMinimumSize( 300, 200 );
+    // On narrow/portrait screens, let the thumbnail chart shrink below the desktop
+    // 300px floor so the flex row (40px tab menu + chart) fits the dialog width
+    // instead of overflowing to the right.  Mirrors the dialog's "portrait" predicate.
+    const bool narrow = viewer->isPhone()
+                        || ( (viewer->renderedWidth() > 100) && (viewer->renderedWidth() < 480) );
+    m_chart->setMinimumSize( narrow ? 150 : 300, narrow ? 150 : 200 );
     m_chart->setData( m_fg_copy, false );
     for( const ReferenceLineInfo &ref_info : m_ref_lines )
     {
@@ -1500,6 +1525,13 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
       HelpSystem::attachToolTipOn( {lbl, input}, tooltip, show_tool_tips );
   };
 
+  // On phones, use shortened option labels so rows fit the narrow width; the
+  // tooltips keep the full explanation.  Falls back to the full label off-phone.
+  const bool phone_labels = ( viewer && viewer->isPhone() );
+  auto trOpt = [phone_labels]( const char * const full_key, const char * const short_key ) -> WString {
+    return WString::tr( phone_labels ? short_key : full_key );
+  };
+
   const bool has_existing_peaks = !m_user_peaks.empty();
   std::set<std::shared_ptr<const PeakContinuum>> distinct_rois;
   for( const std::shared_ptr<const PeakDef> &p : m_user_peaks )
@@ -1522,19 +1554,19 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
 
   if( has_existing_peaks )
   {
-    m_opt_existing_as_free = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-existing-as-free") );
+    m_opt_existing_as_free = checkboxes_container->addNew<WCheckBox>( trOpt("fpn-opt-existing-as-free","fpn-opt-existing-as-free-phone") );
     m_opt_existing_as_free->setChecked( false );
     m_opt_existing_as_free->changed().connect( this, &FitPeaksAdvancedWidget::onExistingAsFreeChanged );
     HelpSystem::attachToolTipOn( m_opt_existing_as_free, WString::tr("fpn-opt-tt-existing-as-free"), show_tool_tips );
   }
 
-  m_opt_dont_vary_energy_cal = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-dont-vary-energy-cal") );
+  m_opt_dont_vary_energy_cal = checkboxes_container->addNew<WCheckBox>( trOpt("fpn-opt-dont-vary-energy-cal","fpn-opt-dont-vary-energy-cal-phone") );
   m_opt_dont_vary_energy_cal->setChecked( false );
   m_opt_dont_vary_energy_cal->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   m_opt_dont_vary_energy_cal->changed().connect( this, &FitPeaksAdvancedWidget::onDontVaryEnergyCalChanged );
   HelpSystem::attachToolTipOn( m_opt_dont_vary_energy_cal, WString::tr("fpn-opt-tt-dont-vary-energy-cal"), show_tool_tips );
 
-  m_opt_dont_refine_energy_cal = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-dont-refine-energy-cal") );
+  m_opt_dont_refine_energy_cal = checkboxes_container->addNew<WCheckBox>( trOpt("fpn-opt-dont-refine-energy-cal","fpn-opt-dont-refine-energy-cal-phone") );
   m_opt_dont_refine_energy_cal->setChecked( false );
   m_opt_dont_refine_energy_cal->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
   HelpSystem::attachToolTipOn( m_opt_dont_refine_energy_cal, WString::tr("fpn-opt-tt-dont-refine-energy-cal"), show_tool_tips );
@@ -1556,7 +1588,7 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
 
   if( m_bg_copy )
   {
-    m_opt_use_background = checkboxes_container->addNew<WCheckBox>( WString::tr("fpn-opt-use-background") );
+    m_opt_use_background = checkboxes_container->addNew<WCheckBox>( trOpt("fpn-opt-use-background","fpn-opt-use-background-phone") );
     m_opt_use_background->setChecked( true );
     m_opt_use_background->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
     HelpSystem::attachToolTipOn( m_opt_use_background, WString::tr("fpn-opt-tt-use-background"), show_tool_tips );
@@ -1574,7 +1606,7 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
     roi_chi2->setValue( static_cast<float>( config.roi_significance_min_chi2_reduction ) );
     roi_chi2->setRange( 0.1f, 1000.f );
     roi_chi2->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-    add_form_row( WString::tr("fpn-opt-roi-min-chi2-red"), roi_chi2.release(), WString::tr("fpn-opt-tt-roi-min-chi2-red") );
+    add_form_row( trOpt("fpn-opt-roi-min-chi2-red","fpn-opt-roi-min-chi2-red-phone"), roi_chi2.release(), WString::tr("fpn-opt-tt-roi-min-chi2-red") );
   }
 
   {
@@ -1585,7 +1617,7 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
     roi_sig->setValue( static_cast<float>( config.roi_significance_min_peak_sig ) );
     roi_sig->setRange( 0.1f, 20.f );
     roi_sig->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-    add_form_row( WString::tr("fpn-opt-roi-min-peak-sig"), roi_sig.release(), WString::tr("fpn-opt-tt-roi-min-peak-sig") );
+    add_form_row( trOpt("fpn-opt-roi-min-peak-sig","fpn-opt-roi-min-peak-sig-phone"), roi_sig.release(), WString::tr("fpn-opt-tt-roi-min-peak-sig") );
   }
 
   {
@@ -1596,7 +1628,7 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
     obs_init->setValue( static_cast<float>( config.observable_peak_initial_significance_threshold ) );
     obs_init->setRange( 0.1f, 20.f );
     obs_init->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-    add_form_row( WString::tr("fpn-opt-obs-initial-sig"), obs_init.release(), WString::tr("fpn-opt-tt-obs-initial-sig") );
+    add_form_row( trOpt("fpn-opt-obs-initial-sig","fpn-opt-obs-initial-sig-phone"), obs_init.release(), WString::tr("fpn-opt-tt-obs-initial-sig") );
   }
 
   {
@@ -1607,7 +1639,7 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
     obs_fin->setValue( static_cast<float>( config.observable_peak_final_significance_threshold ) );
     obs_fin->setRange( 0.1f, 20.f );
     obs_fin->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-    add_form_row( WString::tr("fpn-opt-obs-final-sig"), obs_fin.release(), WString::tr("fpn-opt-tt-obs-final-sig") );
+    add_form_row( trOpt("fpn-opt-obs-final-sig","fpn-opt-obs-final-sig-phone"), obs_fin.release(), WString::tr("fpn-opt-tt-obs-final-sig") );
   }
 
   {
@@ -1630,7 +1662,7 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
     m_opt_use_fixed_skew = use_fixed_skew.get();
     m_opt_use_fixed_skew->setChecked( true );
     m_opt_use_fixed_skew->changed().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-    add_checkbox_row( WString::tr("fpn-opt-use-fixed-skew"), use_fixed_skew.release(),
+    add_checkbox_row( trOpt("fpn-opt-use-fixed-skew","fpn-opt-use-fixed-skew-phone"), use_fixed_skew.release(),
                      WString::tr("fpn-opt-tt-use-fixed-skew") );
   }
   handlePeakFitDetPrefsChanged();  // Set initial visibility
@@ -1824,8 +1856,11 @@ void FitPeaksAdvancedWidget::handlePeakFitDetPrefsChanged()
     }
   }//if( prefs with skew and not roi-independent )
 
-  // The checkbox row is the parent of m_opt_use_fixed_skew
-  Wt::WWidget *row = m_opt_use_fixed_skew->parent();
+  // m_opt_use_fixed_skew is nested inside the row's .fpn-option-input wrapper (added by
+  // add_checkbox_row), so its parent is that wrapper; the option row is one level up.  Hide
+  // the whole row, otherwise the "Fixed skew" label is left orphaned with no visible input.
+  Wt::WWidget *inp = m_opt_use_fixed_skew->parent();
+  Wt::WWidget *row = inp ? inp->parent() : nullptr;
   if( row )
     row->setHidden( !has_fixed );
 }//void FitPeaksAdvancedWidget::handlePeakFitDetPrefsChanged()

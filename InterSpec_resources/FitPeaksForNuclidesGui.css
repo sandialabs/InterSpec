@@ -245,3 +245,99 @@
   font-size: 0.9em;
   font-weight: normal;
 }
+
+/* ===== Phone / narrow-portrait layout. =====
+   The dialog gets -phone when isPhone(), and -portrait when renderedWidth < 480.
+   Desktop never receives either class, so none of these rules affect the desktop layout. */
+
+/* Shrink the vertical tab strip (Spec./Rel. Eff./Details) so it takes less room on phones.
+   Use height:auto (not a fixed height) so the rotated/vertical label is never clipped — a
+   fixed height shorter than the text cuts off the longest tab (e.g. "Details" -> "lts"). */
+.FitPeaksAdvancedDialog-phone .UpperMenu { font-size: 10px; }
+.FitPeaksAdvancedDialog-phone ul.UpperMenu { max-width: 30px; }
+.FitPeaksAdvancedDialog-phone ul.UpperMenu li
+{
+  height: auto;
+  min-height: 36px;
+  padding: 3px 2px;
+}
+
+/* Phone: keep the chart/tab area a fixed height that stays put (does NOT scroll), and let
+   ONLY the options area scroll when there are more controls than fit. */
+.FitPeaksAdvancedDialog-phone .fpn-upper-area,
+.FitPeaksAdvancedDialog-portrait .fpn-upper-area
+{
+  flex: 0 0 auto;
+  height: 34vh;
+  min-height: 150px;
+  max-height: 230px;
+}
+
+/* Options area: a 2-column grid (label | input) so the inputs line up vertically; it fills
+   the space below the fixed chart and scrolls internally rather than clipping. */
+.FitPeaksAdvancedDialog-phone .fpn-options,
+.FitPeaksAdvancedDialog-portrait .fpn-options
+{
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  gap: 6px 10px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Each option row contributes its label (col 1) and input (col 2) straight to the grid so
+   they align across rows; the checkbox cluster spans the full width on its own row. */
+.FitPeaksAdvancedDialog-phone .fpn-option-row,
+.FitPeaksAdvancedDialog-portrait .fpn-option-row { display: contents; }
+.FitPeaksAdvancedDialog-phone .fpn-options-checkboxes,
+.FitPeaksAdvancedDialog-portrait .fpn-options-checkboxes { grid-column: 1 / -1; }
+.FitPeaksAdvancedDialog-phone .fpn-option-row .fpn-option-label,
+.FitPeaksAdvancedDialog-portrait .fpn-option-row .fpn-option-label
+{
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Cap spin/combo control widths so they never force horizontal overflow (the 4em spin
+   boxes are unaffected; only the wider combo boxes get clamped). */
+.FitPeaksAdvancedDialog-phone .fpn-option-input input,
+.FitPeaksAdvancedDialog-phone .fpn-option-input select,
+.FitPeaksAdvancedDialog-portrait .fpn-option-input input,
+.FitPeaksAdvancedDialog-portrait .fpn-option-input select
+{
+  max-width: 9em;
+  box-sizing: border-box;
+}
+
+/* Title (source list) wraps rather than overflowing. */
+.FitPeaksAdvancedDialog-phone .fpn-title,
+.FitPeaksAdvancedDialog-portrait .fpn-title
+{
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Post-fit "Details" tab is wide fixed-column text: scroll it horizontally inside the tab
+   instead of being clipped by the stack's overflow:hidden. */
+.FitPeaksAdvancedDialog-phone .RelActTxtResults,
+.FitPeaksAdvancedDialog-portrait .RelActTxtResults { overflow-x: auto; }
+
+/* ===== Simple post-fit result dialog (FitSourcesResultDialog) on phones / narrow screens. =====
+   Same scoping rule: -phone/-portrait are never present on desktop. */
+
+/* Summary line and the bottom row (auto-accept checkbox + "advanced..." link) must wrap
+   rather than overflow the narrow dialog. */
+.FitSourcesResultDialog-phone .FitSourcesSummary,
+.FitSourcesResultDialog-portrait .FitSourcesSummary
+{
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.FitSourcesResultDialog-phone .FitSourcesResultBottomRow,
+.FitSourcesResultDialog-portrait .FitSourcesResultBottomRow
+{
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}

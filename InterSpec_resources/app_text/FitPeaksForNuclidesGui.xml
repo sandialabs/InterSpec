@@ -43,6 +43,17 @@
   <message id="fpn-opt-rel-eff-eqn-type">Rel. Eff. eqn.</message>
   <message id="fpn-opt-rel-eff-eqn-order">Rel. Eff. order</message>
 
+  <!-- Shortened option labels used on phones (narrow screens); tooltips keep full text -->
+  <message id="fpn-opt-existing-as-free-phone">Share current ROIs</message>
+  <message id="fpn-opt-dont-vary-energy-cal-phone">Fix energy cal</message>
+  <message id="fpn-opt-dont-refine-energy-cal-phone">Don't refine E-cal</message>
+  <message id="fpn-opt-use-background-phone">Subtract background</message>
+  <message id="fpn-opt-roi-min-chi2-red-phone">ROI min chi2</message>
+  <message id="fpn-opt-roi-min-peak-sig-phone">ROI min signif.</message>
+  <message id="fpn-opt-obs-initial-sig-phone">Init. signif.</message>
+  <message id="fpn-opt-obs-final-sig-phone">Final signif.</message>
+  <message id="fpn-opt-use-fixed-skew-phone">Fixed skew</message>
+
   <!-- Tooltips for options -->
   <message id="fpn-opt-tt-dont-use-existing-rois">With this option, any existing ROI will not be used, and gammas from the current source(s) that fall within an existing ROI will not be considered.</message>
   <message id="fpn-opt-tt-existing-as-free">Normally ROIs of source peaks are limited in energy range to reduce effects of nearby peaks. With this option, nearby peaks that share the ROI are left in as freely-floating peaks and included in the results.</message>
