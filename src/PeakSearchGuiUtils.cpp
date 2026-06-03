@@ -661,28 +661,10 @@ protected:
     
     WPushButton *acceptButton = addCloseButtonToFooter( WString::tr("Accept"), true );
     acceptButton->clicked().connect( this, [this](){ hide(); } );
-    
-    acceptButton->clicked().connect( this, [viewer, orig_peaks, final_peaks](){
+    // Undo/redo for the accept action is registered inside doFinish(), so it can capture
+    //  the actually-committed peaks (post-edits from "Keep peak" checkboxes and the
+    //  nuclide combo boxes), not the unedited constructor-time `final_peaks`.
 
-      auto undo = [viewer, orig_peaks](){
-        const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
-        if( pmodel )
-          pmodel->setPeaks( orig_peaks );
-      };
-
-      auto redo = [viewer, final_peaks](){
-        const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
-        if( pmodel )
-          pmodel->setPeaks( final_peaks );
-      };
-
-      UndoRedoManager *undoManager = viewer->undoRedoManager();
-      if( undoManager )
-        undoManager->addUndoRedoStep( undo, redo, "Accept automated peak search." );
-    } );
-                                               
-    
-    
     WPushButton *cancelButton = nullptr;
     if( viewer->isPhone() )
     {
@@ -1085,10 +1067,14 @@ public:
      */
     
     
+    const bool isPhone = m_viewer && m_viewer->isPhone();
+    const int previewW = isPhone ? 180 : 225;
+    const int previewH = isPhone ?  90 : 125;
+
     SpectrumChart *chart = PeakSearchGuiUtils::createFixedSpectrumDisplay( m_data,
                                                     peaks_for_plotting, m_displayed,
                                                     lowerx, upperx,
-                                                    225, 125, theme );
+                                                    previewW, previewH, theme );
     if( chart )
     {
 #if( !DYNAMICALLY_ADJUST_LEFT_CHART_PADDING )
@@ -1762,39 +1748,63 @@ public:
       }
     }//for( size_t i = 0; i < peaks.size(); ++i )
     
-    auto peakModel = m_viewer->peakModel();
-    if( peakModel )
+    // The PeakModel is left untouched while the dialog is open; on cancel we have nothing
+    //  to commit (originals are still installed), on accept we install the user-edited
+    //  vector and register the undo step against those same edited peaks.
+    const std::shared_ptr<PeakModel> peakModel = m_viewer->peakModel();
+    if( peakModel && !m_cancelOperation )
     {
       vector<PeakDef> final_peaks;
-      for( const auto &i : m_old_to_new_peaks )
+      for( const std::pair<std::shared_ptr<PeakDef>,std::shared_ptr<PeakDef>> &i : m_old_to_new_peaks )
       {
         switch( m_reason )
         {
           case PeakSelectorWindowReason::NuclideId:
           case PeakSelectorWindowReason::PeakSearch:
-            if( i.second && !m_cancelOperation )
+            if( i.second )
               final_peaks.push_back( *i.second );
             else if( i.first )
               final_peaks.push_back( *i.first );
           break;
-          
+
           case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
-            if( i.second && !m_cancelOperation )
+            if( i.second )
               final_peaks.push_back( *i.second );
           break;
-            
+
           case PeakSelectorWindowReason::PeaksFromCsvFile:
             if( i.first )
               final_peaks.push_back( *i.first );
-            else if( i.second && !m_cancelOperation )
+            else if( i.second )
               final_peaks.push_back( *i.second );
           break;
         }//switch( m_reason )
       }//for( const auto &i : m_old_to_new_peaks )
-      
+
       peakModel->setPeaks( final_peaks );
-    }//if( peakModel )
-    
+
+      UndoRedoManager * const undoManager = m_viewer->undoRedoManager();
+      if( undoManager )
+      {
+        InterSpec * const viewer = m_viewer;
+        const std::vector<PeakDef> orig_peaks = m_orig_peaks;
+        const std::vector<PeakDef> accepted_peaks = final_peaks;
+
+        auto undo = [viewer, orig_peaks](){
+          const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
+          if( pmodel )
+            pmodel->setPeaks( orig_peaks );
+        };
+        auto redo = [viewer, accepted_peaks](){
+          const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
+          if( pmodel )
+            pmodel->setPeaks( accepted_peaks );
+        };
+
+        undoManager->addUndoRedoStep( undo, redo, "Accept automated peak search." );
+      }//if( undoManager )
+    }//if( peakModel && !m_cancelOperation )
+
     AuxWindow::deleteAuxWindow( this );
   }//void doFinish()
   
@@ -1838,56 +1848,22 @@ void set_peaks_from_search( InterSpec *viewer,
       filtered_peaks.push_back( p );
   }
 
-  const std::shared_ptr<PeakModel> peakModel = viewer->peakModel();
-
-  peakModel->setPeaks( filtered_peaks );
-
   viewer->automatedPeakSearchCompleted();
-  
+
   passMessage( WString::tr("psgu-peaks-updated-msg"), WarningWidget::WarningMsgInfo );
-  
-  ReferencePhotopeakDisplay *refLineDisplay = viewer->referenceLinesWidget();
-  
-  //InterSpec::addPeak(...) is what normally associations nuclides with peaks
-  vector<string> showingRefLines;
-  if( refLineDisplay )
-  {
-    const ReferenceLineInfo &showingLines = refLineDisplay->currentlyShowingNuclide();
-    if( !showingLines.m_input.m_input_txt.empty() )
-      showingRefLines.push_back( showingLines.m_input.m_input_txt );
-    
-    for( const ReferenceLineInfo &line : refLineDisplay->persistedNuclides() )
-    {
-      if( !line.m_input.m_input_txt.empty() )
-        showingRefLines.push_back( line.m_input.m_input_txt );
-    }
-  }//if( m_referenceNuclideLines )
-  
-  if( showingRefLines.empty() && viewer->isMobile() )
-  {
-    auto undo = [peakModel, originalPeaks](){
-      peakModel->setPeaks(originalPeaks);
-    };
-    auto redo = [peakModel, filtered_peaks](){
-      peakModel->setPeaks(filtered_peaks);
-    };
-    UndoRedoManager *undoManager = viewer->undoRedoManager();
-    
-    if( undoManager )
-      undoManager->addUndoRedoStep( undo, redo, "Automated peak search." );
-    
-    // Add undo/redo point here
-    wApp->triggerUpdate();
-    return;
-  }
-  
+
+  // The PeakModel is intentionally not modified here; PeakSelectorWindow commits the
+  //  user-accepted peaks (or no-op on cancel) in its doFinish().  The mobile bypass that
+  //  used to immediately apply peaks has been removed so mobile and desktop both go
+  //  through the review dialog.
+
   vector<PeakDef> result_peaks;
-  for( const auto &p : filtered_peaks )
+  for( const std::shared_ptr<const PeakDef> &p : filtered_peaks )
     result_peaks.push_back( *p );
-  
+
   AuxWindow::make<PeakSelectorWindow>( viewer, PeakSelectorWindowReason::PeakSearch, originalPeaks,
                           originaldata, result_peaks, displayed );
-  
+
   wApp->triggerUpdate();
 }//void set_peaks_from_search( const vector<PeakDef> &peaks )
 }//namespace
@@ -2792,8 +2768,8 @@ void assign_peak_nuclides_from_reference_lines( InterSpec *viewer,
     }
   }//for( size_t i = 0; i < peaks.size(); ++i )
   
-  peakModel->setPeaks( result_peaks );
-
+  // The PeakModel is intentionally not modified here; PeakSelectorWindow commits the
+  //  user-accepted peaks (or no-op on cancel) in its doFinish().
   AuxWindow::make<PeakSelectorWindow>( viewer, PeakSelectorWindowReason::NuclideId, orig_peaks,
                           foreground, result_peaks, displayed );
   

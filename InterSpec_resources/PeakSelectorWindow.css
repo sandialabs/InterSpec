@@ -76,3 +76,58 @@ table.PeakSelectorTable td.NewNucCell .DontAssignCb{
 .Wt-panel.PeakSelectRelEffPanel .titlebar span {
   display: flex;
 }
+
+/* Stack the peak-selector table into per-peak cards on narrow viewports. */
+@media (max-width: 600px)
+{
+  table.PeakSelectorTable,
+  table.PeakSelectorTable tbody,
+  table.PeakSelectorTable tr,
+  table.PeakSelectorTable td
+  {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  table.PeakSelectorTable
+  {
+    border-collapse: separate;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  /* Header row labels are redundant in the stacked layout. */
+  table.PeakSelectorTable tr:first-child
+  {
+    display: none;
+  }
+
+  table.PeakSelectorTable tr
+  {
+    border: 1px solid #888;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    padding: 6px;
+  }
+
+  table.PeakSelectorTable td
+  {
+    border: none;
+    padding: 3px 0;
+  }
+
+  table.PeakSelectorTable td.PeakPreviewCell
+  {
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  table.PeakSelectorTable td.NewNucCell .DontAssignCb
+  {
+    float: none;
+    margin-right: 0;
+    margin-top: 4px;
+    display: block;
+  }
+}
