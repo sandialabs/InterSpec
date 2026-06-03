@@ -96,7 +96,7 @@ At a minimum, you will need a C++14 compiler, and [cmake](https://cmake.org/).
 Then to build, you can choose one of two methods to build the code:
 1. Use [cmake](https://cmake.org/) to fetch and build the prerequisites for you, by specifying the `InterSpec_FETCH_DEPENDENCIES` CMake option to `ON`.  This option requires having [git](https://git-scm.com) installed, but is generally the easier of the two options.
 2. Build the prerequisites yourself.  This option is faster if you plan to rebuild the code many times, as CMake will have less libraries to deal with internally,.  You will need to build the following libraries from source (see the build scripts in the [dep_build](/target/dep_build/) directory):
-      * [Wt](https://www.webtoolkit.eu/wt) version 4.12.6.
+      * [Wt](https://www.webtoolkit.eu/wt) version 4.13.2.
       * [boost](https://www.boost.org/) version 1.78 is
 
 

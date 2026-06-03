@@ -13,7 +13,7 @@
     files), quieter logging, and no HTTP security headers (the server is
     bound to localhost - no reverse proxy in the picture).
 
-    Derived from the Wt 4.12.6 example config. Defaults that match the
+    Derived from the Wt 4.13.2 example config. Defaults that match the
     reference are left explicit so intent is obvious at audit time.
   -->
 <server>
@@ -86,6 +86,10 @@
         <ajax-puzzle>false</ajax-puzzle>
 
         <strict-event-serialization>false</strict-event-serialization>
+
+        <!-- Added in Wt 4.13; both shown at their Wt defaults (applied when absent). -->
+        <cache-form-data>true</cache-form-data>
+        <form-data-resend-ratio-limit>0.5</form-data-resend-ratio-limit>
 
         <!-- See wt_config_web.xml for the rationale on disabling WebSockets. -->
         <web-sockets>false</web-sockets>

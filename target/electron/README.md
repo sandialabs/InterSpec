@@ -25,7 +25,7 @@ cmake-js
 # Or to have a little more control over things
 cmake-js --generator "Visual Studio 17 2022" \
          --architecture x64 --arch=x64 \
-         --CDCMAKE_PREFIX_PATH=C://Path/To/Wt_4.12.6_prefix \
+         --CDCMAKE_PREFIX_PATH=C://Path/To/Wt_4.13.2_prefix \
          --CDBoost_USE_STATIC_RUNTIME=ON \
          --CDCMAKE_BUILD_TYPE="Release" \
          --CDLEAFLET_MAPS_KEY="..." \

@@ -229,8 +229,8 @@ rem     GOTO :cmderr
     
     
 rem Build/install Wt 
-set WT_DIR=wt-4.12.6
-set WT_GIT_HASH=4d158458b06554192c63389e098ad03e5e35a713
+set WT_DIR=wt-4.13.2
+set WT_GIT_HASH=e8dd034d21409847be135b048641a32e214d7ff1
 set WT_BUILT_FILE=built_%WT_DIR%
 
 if not exist %WT_BUILT_FILE% (
@@ -245,14 +245,14 @@ if not exist %WT_BUILT_FILE% (
         cd %WT_DIR%
 
         git fetch --depth 1 origin %WT_GIT_HASH% && (
-            echo Fetched Wt 4.12.6
+            echo Fetched Wt 4.13.2
         ) || (
             echo "Failed to fetch wanted Wt commit"
             GOTO :cmderr
         )
 
         git checkout %WT_GIT_HASH% && (
-            echo Checked out Wt 4.12.6
+            echo Checked out Wt 4.13.2
         ) || (
             echo "Failed to checkout wanted Wt commit"
             GOTO :cmderr

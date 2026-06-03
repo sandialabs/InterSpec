@@ -28,7 +28,7 @@ set( USE_LEAFLET_MAP ON CACHE INTERNAL "" )
 
 message( "ANDROID_NDK_SYSROOT=${ANDROID_NDK_SYSROOT}")
 
-# Wt 4.12.6's src/http/Android.C guards its body (including the
+# Wt 4.13.2's src/http/Android.C guards its body (including the
 # preventRemoveOfSymbolsDuringLinking() definition that WServer.C
 # references under ANDROID) with `#ifdef WT_THREADED`, but never
 # includes WConfig.h before that check.  Defining WT_THREADED at the
