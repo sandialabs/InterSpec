@@ -47,6 +47,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakFitLM.h"
@@ -288,6 +289,50 @@ namespace
     // Elements and reactions don't have age
     return 0.0;
   }//get_source_age(...)
+
+
+  /** Sets the default `useForShieldingSourceFit` and `useForManualRelEff` flags on
+   each peak in `peaks`, matching the per-source-type behavior of `PeakModel::setNuclide`
+   (src/PeakModel.cpp).  Used by the "Fit Source" workflow so peaks produced through
+   FitPeaksForNuclides land in the user's model with the same default-on/off use flags
+   as peaks created via the manual double-click + nuclide-assignment path.
+   */
+  void apply_default_use_flags( std::vector<PeakDef> &peaks )
+  {
+    for( PeakDef &peak : peaks )
+    {
+      bool useShield = false, useRelEff = false;
+      switch( peak.sourceGammaType() )
+      {
+        case PeakDef::NormalGamma:
+        {
+          const SandiaDecay::Nuclide * const nuc = peak.parentNuclide();
+          const SandiaDecay::Transition * const tr = peak.nuclearTransition();
+          const int idx = peak.decayParticleIndex();
+          if( nuc && tr && (idx >= 0) && (idx < static_cast<int>(tr->products.size())) )
+          {
+            const float energy = tr->products[idx].energy;
+            useShield = PeakModel::recommendUseForFit( nuc, energy );
+            useRelEff = PeakModel::recommendUseForManualRelEff( nuc, energy );
+          }
+          break;
+        }
+
+        case PeakDef::AnnihilationGamma:
+          if( peak.parentNuclide() )
+            useShield = PeakModel::recommendUseForFit( peak.parentNuclide(), 510.99891f );
+          break;
+
+        case PeakDef::XrayGamma:
+        case PeakDef::SingleEscapeGamma:
+        case PeakDef::DoubleEscapeGamma:
+          break;
+      }//switch( peak.sourceGammaType() )
+
+      peak.useForShieldingSourceFit( useShield );
+      peak.useForManualRelEff( useRelEff );
+    }//for( PeakDef &peak : peaks )
+  }//apply_default_use_flags(...)
 }//namespace
 
 
@@ -8161,6 +8206,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     assign_escape_peak_relationships( result.fit_peaks, fit_norm_peaks, det_type );
     assign_escape_peak_relationships( result.observable_peaks, fit_norm_peaks, det_type );
     assign_escape_peak_relationships( result.uncombined_fit_peaks, fit_norm_peaks, det_type );
+
+    // Mirror the use-flag defaults that PeakModel::setNuclide applies on the manual
+    // double-click path, so "Fit Source" peaks are pre-selected for shielding/source
+    // and manual rel-eff fits where appropriate.
+    apply_default_use_flags( result.fit_peaks );
+    apply_default_use_flags( result.observable_peaks );
+    apply_default_use_flags( result.uncombined_fit_peaks );
 
   }catch( const std::exception &e )
   {
