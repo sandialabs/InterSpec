@@ -937,12 +937,17 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget()
   WContainerWidget *upper_div = addNew<WContainerWidget>();
   upper_div->addStyleClass( "fpn-upper-area" );
 
-  // Create the stacked widget and menu; WMenu takes ownership of the stack via pointer
-  WStackedWidget *upper_stack = upper_div->addNew<WStackedWidget>();
+  // Create the stack unparented so the menu becomes the first flex child of
+  // upper_div (left side) and the stack is added second (right side), matching
+  // the .fpn-upper-area "menu on left, content stack on right" CSS layout.
+  std::unique_ptr<WStackedWidget> upperStackOwned = std::make_unique<WStackedWidget>();
+  WStackedWidget *upper_stack = upperStackOwned.get();
   upper_stack->addStyleClass( "UpperStack" );
 
   m_upper_menu = upper_div->addNew<WMenu>( upper_stack );
   m_upper_menu->addStyleClass( "UpperMenu LightNavMenu" );
+
+  upper_div->addWidget( std::move(upperStackOwned) );
 
   // Create chart and model
   {
