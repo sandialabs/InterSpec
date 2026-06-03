@@ -214,7 +214,7 @@ public:
   
   int m_currentNumXPoints;
   
-  SandiaDecay::NuclideMixture            *m_currentMixture;
+  std::unique_ptr<SandiaDecay::NuclideMixture> m_currentMixture;
 
 
   //Functions for dealing with adding new nuclides

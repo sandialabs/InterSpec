@@ -771,7 +771,7 @@ class DateLengthCalculator : public WContainerWidget
     m_info->show();
     
     
-    SandiaDecay::NuclideMixture *mix = m_activityDiv->m_currentMixture;
+    SandiaDecay::NuclideMixture *mix = m_activityDiv->m_currentMixture.get();
     
     int nSigFigsActivity = 0;
     
@@ -1297,7 +1297,7 @@ namespace
       
       try
       {
-        SandiaDecay::NuclideMixture *mixture = m_display->m_currentMixture;
+        SandiaDecay::NuclideMixture *mixture = m_display->m_currentMixture.get();
         if( !mixture || !m_display )
           throw runtime_error( "No data avalaiable" );
     
@@ -1669,7 +1669,7 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer )
   m_currentTimeUnits( -1.0 ),
   m_currentTimeRange( -1.0 ),
   m_currentNumXPoints( 250 ),
-  m_currentMixture( new SandiaDecay::NuclideMixture() )
+  m_currentMixture( std::make_unique<SandiaDecay::NuclideMixture>() )
 {
   addStyleClass( "DecayActivityDiv" );
   
@@ -2321,7 +2321,7 @@ double DecayActivityDiv::timeToDisplayTill()
   }catch( std::exception & )
   {
     const double fracT0 = 0.1;
-    const double finalTime = findTimeForActivityFrac( m_currentMixture, fracT0 );
+    const double finalTime = findTimeForActivityFrac( m_currentMixture.get(), fracT0 );
     
     txt = PhysicalUnitsLocalized::printToBestTimeUnits( finalTime );
     m_displayTimeLength->setText( txt );
@@ -2726,7 +2726,7 @@ void DecayActivityDiv::checkTimeRangeValid()
       timelen = PhysicalUnitsLocalized::stringToTimeDuration( txt );
   }catch( std::exception & )
   {
-    timelen = findTimeForActivityFrac( m_currentMixture, 0.1 );
+    timelen = findTimeForActivityFrac( m_currentMixture.get(), 0.1 );
     txt = PhysicalUnitsLocalized::printToBestTimeUnits( timelen );
     m_displayTimeLength->setText( txt );
   }
@@ -2764,7 +2764,7 @@ void DecayActivityDiv::setTimeLimitToDisplay()
   updateInitialMixture();
 
   const double fracT0 = 0.1;
-  const double finalTime = findTimeForActivityFrac( m_currentMixture, fracT0 );
+  const double finalTime = findTimeForActivityFrac( m_currentMixture.get(), fracT0 );
   
   string txt = PhysicalUnitsLocalized::printToBestTimeUnits( finalTime );
   m_displayTimeLength->setText( txt );
@@ -3620,9 +3620,6 @@ void DecayActivityDiv::updateMouseOver( const Wt::WMouseEvent& event )
 
 DecayActivityDiv::~DecayActivityDiv()
 {
-  if( m_currentMixture )
-    delete m_currentMixture;
-
   if( m_nuclideSelectDialog )
     if( m_nuclideSelectDialog ) AuxWindow::deleteAuxWindow( m_nuclideSelectDialog.get() );
   

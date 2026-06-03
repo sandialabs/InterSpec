@@ -4335,7 +4335,9 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
   // We will apply to currently displayed spectra; its too complicated to
   //  give the user all the options of what to apply it to, like the
   //  energy calibration tool
-  bool ownEnergyCal = false;
+  // If the shared energy-cal tool isn't currently open, make a temporary one (owned by `ownedTool`)
+  //  just to apply the calibration; it is freed automatically when this function returns.
+  std::unique_ptr<EnergyCalTool> ownedTool;
   EnergyCalTool *tool = nullptr;
   try
   {
@@ -4360,8 +4362,8 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     tool = m_interspec->energyCalTool();
     if( !tool )
     {
-      ownEnergyCal = true;
-      tool = new EnergyCalTool( m_interspec, m_interspec->peakModel() );
+      ownedTool = std::make_unique<EnergyCalTool>( m_interspec, m_interspec->peakModel() );
+      tool = ownedTool.get();
     }
     
     MeasToApplyCoefChangeTo fore, back;
@@ -4397,13 +4399,9 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
   {
     passMessage( WString::tr("raag-error-applying-energy-cal").arg(e.what()), WarningWidget::WarningMsgHigh );
   }// try / catch
-  
-  if( ownEnergyCal && tool )
-  {
-    delete tool;
-    tool = nullptr;
-  }
-  
+
+  // `ownedTool` (if we created a temporary EnergyCalTool) is freed here as it goes out of scope.
+
   m_render_flags |= RenderActions::UpdateSpectra;
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::ChartToDefaultRange;

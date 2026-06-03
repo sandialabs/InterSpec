@@ -1481,9 +1481,9 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_removeForeButton ( NULL),
     m_removeBackButton ( NULL),
     m_removeFore2Button ( NULL),
-    m_foregroundDragNDrop( new FileDragUploadResource() ),
-    m_secondForegroundDragNDrop( new FileDragUploadResource() ),
-    m_backgroundDragNDrop( new FileDragUploadResource() ),
+    m_foregroundDragNDrop( std::make_unique<FileDragUploadResource>() ),
+    m_secondForegroundDragNDrop( std::make_unique<FileDragUploadResource>() ),
+    m_backgroundDragNDrop( std::make_unique<FileDragUploadResource>() ),
 #if( USE_BATCH_GUI_TOOLS )
     m_batchDragNDrop( nullptr ),
 #endif
@@ -1540,7 +1540,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   } );
 
 #if( USE_BATCH_GUI_TOOLS )
-  m_batchDragNDrop = new FileDragUploadResource();
+  m_batchDragNDrop = std::make_unique<FileDragUploadResource>();
   m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
 #endif
 }// SpecMeasManager
@@ -1665,14 +1665,8 @@ SpecMeasManager::~SpecMeasManager()
   if( m_nonSpecFileDialog )
     closeNonSpecFileDialog();
 
-  // Wt4: these WResources have no parent ctor arg and are not owned elsewhere; free them here so the
-  //  resources (and any temp files they hold) don't leak for the life of the process.
-  delete m_foregroundDragNDrop;
-  delete m_secondForegroundDragNDrop;
-  delete m_backgroundDragNDrop;
-#if( USE_BATCH_GUI_TOOLS )
-  delete m_batchDragNDrop;
-#endif
+  // These WResources are solely owned by this manager (no widget parent); the unique_ptr members free
+  //  them (and any temp files they hold) when the manager is destroyed.
 } // SpecMeasManager::~SpecMeasManager()
 
 
@@ -1681,11 +1675,11 @@ FileDragUploadResource *SpecMeasManager::dragNDrop( SpecUtils::SpectrumType type
   switch( type )
   {
     case SpectrumType::Foreground:
-      return m_foregroundDragNDrop;
+      return m_foregroundDragNDrop.get();
     case SpectrumType::SecondForeground:
-      return m_secondForegroundDragNDrop;
+      return m_secondForegroundDragNDrop.get();
     case SpectrumType::Background:
-      return m_backgroundDragNDrop;
+      return m_backgroundDragNDrop.get();
   }//switch( type )
 
   throw std::runtime_error( "Serious problem in SpecMeasManager::dragNDrop(..)" );
@@ -1694,23 +1688,23 @@ FileDragUploadResource *SpecMeasManager::dragNDrop( SpecUtils::SpectrumType type
 
 FileDragUploadResource *SpecMeasManager::foregroundDragNDrop()
 {
-  return m_foregroundDragNDrop;
+  return m_foregroundDragNDrop.get();
 }
 
 FileDragUploadResource *SpecMeasManager::secondForegroundDragNDrop()
 {
-  return m_secondForegroundDragNDrop;
+  return m_secondForegroundDragNDrop.get();
 }
 
 FileDragUploadResource *SpecMeasManager::backgroundDragNDrop()
 {
-  return m_backgroundDragNDrop;
+  return m_backgroundDragNDrop.get();
 }
 
 #if( USE_BATCH_GUI_TOOLS )
 FileDragUploadResource *SpecMeasManager::batchDragNDrop()
 {
-  return m_batchDragNDrop;
+  return m_batchDragNDrop.get();
 }
 #endif
 
@@ -4657,7 +4651,7 @@ void SpecMeasManager::showBatchDialog()
   if( m_batchDialog )
     return;
 
-  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
+  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop.get() );
   m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
   wApp->triggerUpdate();
 }//void showBatchDialog()

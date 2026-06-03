@@ -2665,14 +2665,9 @@ std::shared_ptr<void> ReferencePhotopeakDisplay::getDisableUndoRedoSentry()
   if( answer )
     return answer;
   
-  int *dummy = new int(0);
-  auto deleter = []( void *obj ){
-    int *sentry = (int *)obj;
-    if( sentry )
-      delete sentry;
-  };
-  
-  answer = shared_ptr<void>( dummy, deleter );
+  // A small heap object whose only purpose is to be tracked by the weak_ptr sentry; make_shared<int>
+  //  owns and frees it (no need for a hand-written deleter).
+  answer = std::make_shared<int>( 0 );
   m_undo_redo_sentry = answer;
   return answer;
 }//std::shared_ptr<void> getDisableUndoRedoSentry()

@@ -913,12 +913,10 @@ InterSpec::InterSpec()
   LOAD_JAVASCRIPT(wApp, "src/js_inline/InterSpec.js", "InterSpec", wtjsInitFlexResizer);
   m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartResizer->id() + "','" + m_timeSeries->id() + "');" );
   
-  m_layout = new WGridLayout();
+  m_layout = setLayout( std::make_unique<WGridLayout>() );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setHorizontalSpacing( 0 );
   m_layout->setVerticalSpacing( 0 );
-  
-  setLayout( std::unique_ptr<WLayout>(m_layout) );
 
   // Workaround for Wt 4.12.6 layout bug in StdGridLayoutImpl2.js: when a row
   // is made resizable via setRowResizable(), the measure pass reserves
@@ -6892,10 +6890,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 
     //We have to completely replace m_layout or else the vertical spacing
     //  changes wont quite trigger.  In Wt4, setLayout(unique_ptr) handles cleanup of old layout.
-    m_layout = new WGridLayout();
+    m_layout = setLayout( std::make_unique<WGridLayout>() );
     m_layout->setContentsMargins( 0, 0, 0, 0 );
     m_layout->setHorizontalSpacing( 0 );
-    setLayout( std::unique_ptr<WLayout>(m_layout) );
     
     const bool wasShowingPeakManager = !!m_peakInfoWindow;
     handlePeakInfoClose();
@@ -7072,8 +7069,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     assert( !m_nuclideSearchContainer );
 
     m_nuclideSearchContainer = new WContainerWidget();
-    WGridLayout *isoSearchLayout = new WGridLayout();
-    m_nuclideSearchContainer->setLayout( std::unique_ptr<WLayout>(isoSearchLayout) );
+    WGridLayout *isoSearchLayout = m_nuclideSearchContainer->setLayout( std::make_unique<WGridLayout>() );
     isoSearchLayout->setContentsMargins( 0, 0, 0, 0 );
     isoSearchLayout->addWidget( std::move(nuclide_search_widget), 0, 0 );
     m_nuclideSearchContainer->setMargin( 0 );
@@ -7221,10 +7217,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 
     //We have to completely replace m_layout or else the vertical spacing
     //  changes wont quite trigger.  In Wt4, setLayout(unique_ptr) handles cleanup.
-    m_layout = new WGridLayout();
+    m_layout = setLayout( std::make_unique<WGridLayout>() );
     m_layout->setContentsMargins( 0, 0, 0, 0 );
     m_layout->setHorizontalSpacing( 0 );
-    setLayout( std::unique_ptr<WLayout>(m_layout) );
 
     int row = -1;
     if( m_menuDiv )
@@ -10740,8 +10735,7 @@ void InterSpec::closeNuclideSearchWindow()
   if( m_toolsTabs )
   {
     m_nuclideSearchContainer = new WContainerWidget();
-    WGridLayout *isotopeSearchGridLayout = new WGridLayout();
-    m_nuclideSearchContainer->setLayout( std::unique_ptr<WLayout>(isotopeSearchGridLayout) );
+    WGridLayout *isotopeSearchGridLayout = m_nuclideSearchContainer->setLayout( std::make_unique<WGridLayout>() );
 
     isotopeSearchGridLayout->addWidget( std::move(nuclide_search_widget), 0, 0 );
     isotopeSearchGridLayout->setRowStretch( 0, 1 );
@@ -10985,9 +10979,8 @@ void InterSpec::showGammaLinesWindow()
   if( xml_state.size() )
     m_referencePhotopeakLines->deSerialize( xml_state );
 
-  Wt::WGridLayout *layout = new Wt::WGridLayout();
+  Wt::WGridLayout *layout = m_referencePhotopeakLinesWindow->contents()->setLayout( std::make_unique<Wt::WGridLayout>() );
   layout->setContentsMargins(5,5,5,5);
-  m_referencePhotopeakLinesWindow->contents()->setLayout( std::unique_ptr<WLayout>(layout) );
   layout->addWidget( std::move(refLines), 0, 0 );
 
   Wt::WPushButton *closeButton = m_referencePhotopeakLinesWindow->addCloseButtonToFooter( WString::tr("Close"),true);

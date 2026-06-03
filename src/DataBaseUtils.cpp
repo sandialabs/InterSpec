@@ -263,7 +263,7 @@ DbSession::DbSession()
     if( wApp )
     {
       //Only make a keep alive timer if in a Wt event loop
-      m_keepAliveTimer = new WTimer();
+      m_keepAliveTimer = std::make_unique<WTimer>();
       m_keepAliveTimer->setInterval( 1000*60*60 );
       m_keepAliveTimer->timeout().connect( this, [this](){ keepDbConnectionAlive(); } );
       m_keepAliveTimer->start();
@@ -289,10 +289,7 @@ DbSession::~DbSession()
 {
 #if( !USE_GLOBAL_DATABASE_CONNECTION_POOL )
   if( m_keepAliveTimer )
-  {
-    m_keepAliveTimer->stop();  //redundant?
-    delete m_keepAliveTimer;
-  }//if( m_keepAliveTimer )
+    m_keepAliveTimer->stop();  //unique_ptr frees the timer; stop() first to be safe
   
   m_session.reset();
   m_connection.reset();

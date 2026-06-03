@@ -140,7 +140,7 @@ namespace DataBaseUtils
     
 #if( !USE_GLOBAL_DATABASE_CONNECTION_POOL )
     void keepDbConnectionAlive();
-    Wt::WTimer *m_keepAliveTimer;  //should probably use a asio deadline_timer,
+    std::unique_ptr<Wt::WTimer> m_keepAliveTimer;  //should probably use a asio deadline_timer,
     std::shared_ptr<Wt::Dbo::SqlConnectionPool> m_connection;
 #endif
   };//class DbSession

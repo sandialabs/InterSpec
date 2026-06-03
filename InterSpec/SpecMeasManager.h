@@ -693,11 +693,11 @@ protected:
   Wt::WContainerWidget *m_infoHandler;
   std::vector< std::string > m_labelTags;
   
-  FileDragUploadResource *m_foregroundDragNDrop;
-  FileDragUploadResource *m_secondForegroundDragNDrop;
-  FileDragUploadResource *m_backgroundDragNDrop;
+  std::unique_ptr<FileDragUploadResource> m_foregroundDragNDrop;
+  std::unique_ptr<FileDragUploadResource> m_secondForegroundDragNDrop;
+  std::unique_ptr<FileDragUploadResource> m_backgroundDragNDrop;
 #if( USE_BATCH_GUI_TOOLS )
-  FileDragUploadResource *m_batchDragNDrop;
+  std::unique_ptr<FileDragUploadResource> m_batchDragNDrop;
 #endif
   
   Wt::Core::observing_ptr<SimpleDialog> m_multiUrlSpectrumDialog;
