@@ -49,7 +49,6 @@
 #include <Wt/Json/Object.h>
 #include <Wt/WApplication.h>
 #include <Wt/WEnvironment.h>
-#include <Wt/WMediaPlayer.h>
 #include <Wt/WRadioButton.h>
 #include <Wt/WStandardItem.h>
 #include <Wt/WStackedWidget.h>
@@ -174,7 +173,6 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   m_messageModelSample( nullptr ),
   m_viewer( viewer ),
   m_menu( nullptr )
-  //, m_videoTab( nullptr )
 {
   m_viewer->useMessageResourceBundle( "UseInfoWindow" );
   
@@ -204,8 +202,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   const string docroot = wApp->docRoot();
   const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/use_instructions" );
   m_resourceBundle.use(bundle_file,false);
-  
-  initVideoInfoMap();
+
   auto welcomeContainerUptr = std::make_unique<WContainerWidget>();
   WContainerWidget *welcomeContainer = welcomeContainerUptr.get();
   //welcomeContainer->setOverflow(Overflow::Auto);
@@ -431,85 +428,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   item->clicked().connect( this, [this, item](){ right_select_item( item ); } );
   item->mouseWentDown().connect( this, [this, item](){ right_select_item( item ); } );
   m_menu->addItem( std::move(itemUptr) );
-  
-  
-  // ---- Videos
-  /*
-   //Dont put the videos in for now - they arent that good - but leaving code
-   //  commented out because the mechanism still works for in the future if
-   //  I do improve the videos.
-  {
-    WContainerWidget* controlContainer = new WContainerWidget();
-    controlContainer->setOverflow(Overflow::Hidden);
-    controlContainer->setOffsets(WLength(0,WLength::Unit::Pixel));
-    controlContainer->setMargin(WLength(0,WLength::Unit::Pixel));
-    WGridLayout* controlLayout = new WGridLayout();
-    controlLayout->setContentsMargins(0, 0, 0, 0);
-    
-    controlContainer->setLayout(controlLayout);
-    
-    m_videoTab = new Wt::WTabWidget();
-      const WBorder border( Wt::BorderStyle::Solid, Wt::BorderWidth::Thin, Wt::StandardColor::Gray );
-      m_videoTab->contentsStack()->decorationStyle().setBorder( border, Wt::Side::Bottom | Wt::Side::Right | Wt::Side::Left );
-      m_videoTab->setMargin(2);
-      m_videoTab->setOffsets(2);
 
-    controlLayout->addWidget(m_videoTab,1,0);
-    controlLayout->setRowStretch(0,1);
-    
-    
-    std::string controlInfo="";
-    resolveKey( m_resourceBundle, "videoinfo", controlInfo );
-    
-    try
-    {
-      Json::Object result;
-      Json::parse( controlInfo, result );
-      
-      for( Wt::Json::Object::const_iterator iter = result.begin();
-          iter != result.end(); ++iter )
-      {
-        const Json::Array &controls = iter->second;
-        for( size_t i = controls.size(); i >0 ; i-- )
-        {
-          const Json::Object &info = controls[i-1];
-          const Json::Value &title = info.get("title");
-          
-          if( title.isNull() )
-          {
-            cerr << "makeItem found a null key or file string, "
-            "you may want to check use_instructions.xml" << endl;
-            continue;
-          }//if( binding.isNull() || file.isNull() )
-          
-          const WString titlestr = title;
-          WContainerWidget* samplesContainer = new WContainerWidget();
-          samplesContainer->setMargin( 15, Wt::Side::Top );
-          samplesContainer->setOffsets(15,Wt::Top);
-          samplesContainer->setStyleClass("centered");
-          itemCreator(iter->first, samplesContainer, titlestr );
-          WMenuItem * tab= m_videoTab->addTab(samplesContainer, titlestr, Wt::WTabWidget::LazyLoading);
-          tab->clicked().connect( boost::bind( &UseInfoWindow::tab_select_item, this, tab) );
-          tab->mouseWentDown().connect( boost::bind( &UseInfoWindow::tab_select_item, this, tab) );
-          
-        }//for( size_t i = 0; i < videos.size(); ++i )
-      }//for( loop over sesults )
-    }catch( std::exception &e )
-    {
-      cerr << "getVideoInfoMap() caught: " << e.what() << endl
-      << "you may want to check use_instructions.xml" << endl;
-    }//try / catch
-   
-    item = new SideMenuItem( m_viewer->isMobile()?"":"Tutorial videos", std::unique_ptr<WWidget>(controlContainer) );
-    item->setId("TutorialVideos");
-    item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
-    item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
-    //item->setIcon("InterSpec_resources/images/film.png");
-    m_menu->addItem( item );
-  } //videos
-*/
-  
-  
+
   //----------Create Controls window--------
   
   //Select either mobile or desktop mouse/keyboard/gesture page
@@ -915,156 +835,29 @@ UseInfoWindow::~UseInfoWindow()
 
 
 
-/**
- Initializes m_videoInfos
- **/
-void UseInfoWindow::initVideoInfoMap()
+void UseInfoWindow::itemCreator( const string &resource, Wt::WContainerWidget *parent )
 {
-  std::string videoInfo="";
-  resolveKey( m_resourceBundle, "videoinfo", videoInfo );
-  
-  try
-  {
-    Json::Object result;
-    Json::parse( videoInfo, result );
-    
-    for( Wt::Json::Object::const_iterator iter = result.begin();
-        iter != result.end(); ++iter )
-    {
-      const Json::Array &videos = iter->second;
-      for( size_t i = 0; i < videos.size(); ++i )
-      {
-        const Json::Object &info = videos[i];
-        const Json::Value &key = info.get("key");
-        const Json::Value &file1 = info.get("fileMP4");
-        const Json::Value &file2 = info.get("fileOGV");
-        const Json::Value &title = info.get("title");
-        
-        if( key.isNull() || file1.isNull() )
-        {
-          cerr << "makeItem found a null key or file string, "
-          "you may want to check use_instructions.xml" << endl;
-          continue;
-        }//if( binding.isNull() || file.isNull() )
-        
-        const WString bindingstr = key;
-        const WString filestrMP4 = file1;
-        
-        VideoInformation vidinfo;
-        vidinfo.key = bindingstr.toUTF8();
-        vidinfo.fileMP4 = filestrMP4.toUTF8();
-        
-#if( !defined(IOS) )
-        if (!file2.isNull())
-        {
-          const WString filestrOGV = file2;
-          vidinfo.fileOGV = filestrOGV.toUTF8();
-        }//if (!file2.isNull())
-#endif
-        
-        if( !title.isNull() )
-        vidinfo.title = title;
-        m_videoInfos[iter->first].push_back( vidinfo );
-      }//for( size_t i = 0; i < videos.size(); ++i )
-    }//for( loop over sesults )
-  }catch( std::exception &e )
-  {
-    cerr << "getVideoInfoMap() caught: " << e.what() << endl
-    << "you may want to check use_instructions.xml" << endl;
-  }//try / catch
-  
-  return;
-}//void UseInfoWindow::initVideoInfoMap()
-
-
-
-void UseInfoWindow::itemCreator( const string &resource, Wt::WContainerWidget *parent, WString title)
-{
-  std::string resourceContent="";
+  std::string resourceContent;
   resolveKey( m_resourceBundle, resource, resourceContent );
-  
+
   WTemplate *templ = parent->addNew<WTemplate>();
   templ->setTemplateText( WString( resourceContent, Wt::CharEncoding::UTF8 ), Wt::TextFormat::UnsafeXHTML );
-  const std::vector<VideoInformation> videoinfo = m_videoInfos[resource];
-  for( size_t i = 0; i < videoinfo.size(); ++i )
-  {
-    auto playerOwned = std::make_unique<Wt::WMediaPlayer>( Wt::MediaType::Video );
-    Wt::WMediaPlayer *player = playerOwned.get();
-
-    //resize video size, so fits on phone
-    if( m_viewer->isPhone() )
-      player->setVideoSize( 470, 110 );
-
-    //Note: Try to play OGV first...ordering seems to matter!
-    if( videoinfo[i].fileOGV.length() > 0 )     //if have OGV, add that too
-      player->addSource( Wt::MediaEncoding::OGV, WLink( videoinfo[i].fileOGV ) );
-
-    // Last resort, go to MP4 (does not play in Firefox)
-    // http://jplayer.org/latest/developer-guide/#jPlayer-media-encoding
-    if( videoinfo[i].fileMP4.length() > 0 )
-      player->addSource( Wt::MediaEncoding::M4V, WLink( videoinfo[i].fileMP4 ) );
-
-//    player->setTitle( videoinfo[i].title );
-    m_players[title.toUTF8()] = player; //save this list of players so we can stop them
-    templ->bindWidget( videoinfo[i].key, std::move(playerOwned) );
-    
-  }//for( size_t i = 0; i < videoinfo.size(); ++i )
-}//void UseInfoWindow::itemCreator( const string &resource, Wt::WContainerWidget *parent, WString title)
+}//void UseInfoWindow::itemCreator( const string &resource, Wt::WContainerWidget *parent )
 
 
-
-void UseInfoWindow::right_select_item(  WMenuItem *item )
+void UseInfoWindow::right_select_item( WMenuItem *item )
 {
   m_menu->select( item );
-  item->triggered().emit( item ); //doenst look like this is emmitted either
+  item->triggered().emit( item ); //doesnt look like this is emitted either
                                   //when body of SideMenuItem is clicked
-                                  //stop all players
-  tab_select_item(item);
-}//void UseInfoWindow::select_item(  SideMenuItem *item )
-
-
-void UseInfoWindow::tab_select_item( WMenuItem *item )
-{
-  if( !item )
-    return;
-  
-  std::map <string, Wt::WMediaPlayer*>::iterator iter;
-  
-  for (iter = m_players.begin(); iter != m_players.end(); ++iter)
-  {
-    if( item == NULL )
-      (iter->second)->stop();
-    
-    string tab = item->text().toUTF8(); //which tab we clicked
-    
-    /*
-    if (item->id().compare("TutorialVideos")==0)
-    {
-      //if we clicked on Tutorial videos side button, then we should check which
-      //video tab was previously selected
-      tab = m_videoTab->tabText(m_videoTab->currentIndex()).toUTF8();
-    } //if (item->text().toUTF8().compare("Tutorial videos")==0)
-    */
-    
-    //Either match clicked tab, or just check which is selected
-    if (iter->first.compare( tab)==0)
-    {
-      (iter->second)->play();
-    } //if (iter->first.compare(item->text().toUTF8())==0)
-    else
-    {
-      (iter->second)->stop();
-    }//else
-  }// for (iter = m_players.begin(); iter != m_players.end(); ++iter)
-}//void UseInfoWindow::tab_select_item(WMenuItem *item)
+}//void UseInfoWindow::right_select_item( WMenuItem *item )
 
 
 SideMenuItem * UseInfoWindow::makeItem( const WString &title, const string &resource)
 {
   const string resourceCopy = resource;
-  const WString titleCopy = title;
-  std::function<void(WContainerWidget *)> f = [this, resourceCopy, titleCopy](WContainerWidget *w){
-    itemCreator( resourceCopy, w, titleCopy );
+  std::function<void(WContainerWidget *)> f = [this, resourceCopy](WContainerWidget *w){
+    itemCreator( resourceCopy, w );
   };
 
   auto wUptr = deferCreate( std::move(f) );

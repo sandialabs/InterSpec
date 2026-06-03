@@ -72,18 +72,10 @@ protected:
   // Constructor is protected; use AuxWindow::make<UseInfoWindow>() to create.
   UseInfoWindow( std::function<void(bool)> showAgainCallback, InterSpec *viewer );
 
-  struct VideoInformation
-  {
-    std::string key, fileMP4, fileOGV;
-    Wt::WString title;
-  };
-
 protected:
 
-  void initVideoInfoMap();
-  void itemCreator( const std::string &resource, Wt::WContainerWidget *parent, Wt::WString title );
+  void itemCreator( const std::string &resource, Wt::WContainerWidget *parent );
   void right_select_item(Wt::WMenuItem *item );
-  void tab_select_item(Wt::WMenuItem *item);
   SideMenuItem * makeItem( const Wt::WString &title, const std::string &resource);
   
   /** Lazily makes a menu-item, whose contents are from a  #Wt::WMessageResourceBundle file.
@@ -136,14 +128,8 @@ protected:
   
   InterSpec                                           *m_viewer;
 
-  std::map<std::string, Wt::WMediaPlayer *>            m_players;
   Wt::WMessageResourceBundle                           m_resourceBundle;
   Wt::WMenu                                           *m_menu;
-  std::map<std::string,std::vector<VideoInformation> > m_videoInfos;
-  
-  //m_videoTab isnt currently being but its use is left commented out everywhere
-  //  incase I ever get around to making videos that would be useful...
-  //Wt::WTabWidget                                      *m_videoTab;
 }; //class UseInfoWindow : public AuxWindow
 
 

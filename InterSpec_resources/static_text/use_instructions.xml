@@ -1,63 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
 
-  <!--When you add a video to the content, you should use a template placeholder 
-      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this 
-      video to a video playing widget in the WTemplate widget.  However since we 
-      dont want to have to hard code the bind placeholder name, and which video 
-      it points to in the C++, this next videoinfo message section encodes what
-      placeholder names the C++ templating code should look for, as well as
-      the actual video files and titles the placeholder name cooresponds to.
-      The below JSON object is indexed by keys that have the same value
-      as the 'id' for the message they coorespond to; the key cooresponds to an
-      array of objects that each have at least a "key" and "file" member, but
-      may also have an optional "title" member.
-  -->
-  <message id="videoinfo">
-  {
-    "1intro-video":
-      [ 
-        {   "key":"video1",
-            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
-            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
-            "title":"Mouse Intro"
-        }
-      ],
-    "3gamma-lines-video":
-       [
-        {   "key":"video2",
-            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
-            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
-            "title":"Gamma Lines"
-        }
-       ],
-    "4calibration-video":
-       [
-        {   "key":"video3",
-            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
-            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
-            "title":"Calibration"
-        }
-       ],
-    "2nuclide-peak-association-video":
-       [
-        {   "key":"video4",
-            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
-            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
-            "title":"Peak Identification"
-        }
-       ],
-    "5activity-shielding-fit-video":
-       [
-        {   "key":"video5",
-            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
-            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
-            "title":"Activity Shielding"
-        }
-       ]
-  }
-  </message>
-
   <message id='mobile-mouse-interactions'>
  	   <div class="UseInstructionSection">
        <div class="UseInstructionHeader">Zoom In</div>
