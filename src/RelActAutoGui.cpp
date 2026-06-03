@@ -6317,6 +6317,14 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     m_render_flags |= RenderActions::UpdateRefGammaLines;
     scheduleRender();
   }
+
+  // updateFromCalc invokes signal handlers (handleAddRelEffCurve/handleDelRelEffCurve, etc.)
+  //  that set AddUndoRedoStep on m_render_flags as a side-effect. A calculation finishing is
+  //  not a user edit, so we clear the flag here. The BlockUndoRedoInserts above only suppresses
+  //  synchronous adds; the deferred render fires after the blocker is destroyed, so without
+  //  this clear the render() would record a spurious undo step and break the user's history.
+  //  (Same pattern as deSerialize.)
+  m_render_flags.clear( RenderActions::AddUndoRedoStep );
 }//void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer )
 
 
@@ -6326,18 +6334,23 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   assert( message );
   if( !message )
     return;
-  
+
+  // Mirrors updateFromCalc: a calculation result arriving (success or failure) is not a
+  //  user edit, so any synchronous addUndoRedoStep calls triggered by widget mutations
+  //  below should be suppressed.
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
   // If we started a new calculation between when this one was started, and right now, dont
   //  do anything to the GUI state.
   if( cancel_flag != m_cancel_calc )
     return;
-  
+
   m_is_calculating = false;
   m_status_indicator->hide();
-  
+
   string msg = "Calculation error: ";
   msg += *message;
-  
+
   m_error_msg->setText( msg );
   m_error_msg->show();
 
@@ -6345,9 +6358,14 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   m_fit_chi2_msg->hide();
 
   m_solution.reset();
-  
+
   setOptionsForNoSolution();
-  
+
   m_solution_updated.emit( m_solution );
   m_calc_failed.emit();
+
+  // See the matching comment in updateFromCalc: clear any AddUndoRedoStep flag set as a
+  //  side-effect of the widget mutations above so the deferred render does not record a
+  //  spurious undo step for a failure that the user did not initiate.
+  m_render_flags.clear( RenderActions::AddUndoRedoStep );
 }//void handleCalcException( std::shared_ptr<std::string> message )
