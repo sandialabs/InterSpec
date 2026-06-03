@@ -71,8 +71,7 @@
   <message id="fpn-result-title">拟合结果</message>
   <message id="fpn-no-peaks">所选源未拟合到任何峰。</message>
   <message id="fpn-summary">为{2}个源拟合了{1}个峰。</message>
-  <message id="fpn-warnings-header">警告：</message>
   <message id="fpn-auto-accept">自动接受拟合结果</message>
-  <message id="fpn-auto-accepted">拟合结果已自动接受。</message>
+  <message id="fpn-auto-accepted">拟合结果已自动接受。<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
 
 </messages>

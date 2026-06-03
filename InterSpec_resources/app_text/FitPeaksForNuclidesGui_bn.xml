@@ -71,8 +71,7 @@
   <message id="fpn-result-title">ফিটের ফলাফল</message>
   <message id="fpn-no-peaks">নির্বাচিত উৎস(গুলি)-এর জন্য কোনো পিক ফিট করা হয়নি।</message>
   <message id="fpn-summary">{2} উৎস(গুলি)-এর জন্য {1} পিক ফিট করা হয়েছে।</message>
-  <message id="fpn-warnings-header">সতর্কতা:</message>
   <message id="fpn-auto-accept">ফিটের ফলাফল স্বয়ংক্রিয়ভাবে গ্রহণ করুন</message>
-  <message id="fpn-auto-accepted">ফিটের ফলাফল স্বয়ংক্রিয়ভাবে গ্রহণ করা হয়েছে।</message>
+  <message id="fpn-auto-accepted">ফিটের ফলাফল স্বয়ংক্রিয়ভাবে গ্রহণ করা হয়েছে।<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
 
 </messages>

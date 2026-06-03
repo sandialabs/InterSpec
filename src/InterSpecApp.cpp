@@ -1573,7 +1573,7 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
   {
     string msg = signal.substr(12);
     WarningWidget::WarningMsgLevel level = WarningWidget::WarningMsgLevel::WarningMsgInfo;
-  
+
     if( SpecUtils::istarts_with( msg, "success-" ) )
     {
       msg = msg.substr(8);
@@ -1583,13 +1583,38 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
       msg = msg.substr(6);
       level = WarningWidget::WarningMsgLevel::WarningMsgHigh;
     }
-    
+
     passMessage( msg, level );
     return;
   }//if( SpecUtils::istarts_with( signal, "showMultimedia" ) )
-  
-  
-  
+
+
+  if( signal == "fitSrcUndo" )
+  {
+    UndoRedoManager *urm = UndoRedoManager::instance();
+    if( urm && urm->canUndo() )
+      urm->executeUndo();
+    return;
+  }//if( signal == "fitSrcUndo" )
+
+
+  if( signal == "fitSrcNoAutoAccept" )
+  {
+    if( m_viewer )
+    {
+      m_viewer->useMessageResourceBundle( "FitPeaksForNuclidesGui" );
+      try
+      {
+        UserPreferences::setPreferenceValue<bool>( "AutoAcceptFitSourcesPeaks", false, m_viewer );
+        passMessage( Wt::WString::tr("fpn-noautoaccept-confirm"), WarningWidget::WarningMsgInfo );
+      }catch( const std::exception & )
+      {
+      }
+    }
+    return;
+  }//if( signal == "fitSrcNoAutoAccept" )
+
+
   // shouldnt ever make it here..
   const string errmsg = "InterSpecApp::miscSignalHandler: unhandled signal '" + signal + "'";
   passMessage( errmsg, WarningWidget::WarningMsgHigh );

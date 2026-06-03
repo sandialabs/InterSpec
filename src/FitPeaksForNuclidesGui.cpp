@@ -504,8 +504,6 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           Wt::WString msg = WString::tr("fpn-no-peaks");
           if( !result->warnings.empty() && !auto_accept )
           {
-            msg += Wt::WString::fromUTF8( "\n\n" );
-            msg += WString::tr("fpn-warnings-header");
             for( const std::string &w : result->warnings )
             {
               msg += Wt::WString::fromUTF8( "\n• " );
@@ -528,7 +526,14 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
               peak_model->removePeaks( result->original_peaks_to_remove );
             peak_model->addPeaks( result->observable_peaks );
           }
-          passMessage( WString::tr("fpn-auto-accepted"), WarningWidget::WarningMsgInfo );
+          const WString toast_msg = WString::tr("fpn-auto-accepted")
+                                       .arg( WString::tr("fpn-auto-accepted-undo") )
+                                       .arg( WString::tr("fpn-auto-accepted-noauto") );
+          WarningWidget *ww = viewer_c->warningWidget();
+          if( ww )
+            ww->addMessageUnsafe( toast_msg, WarningWidget::WarningMsgInfo, 8000 );
+          else
+            passMessage( toast_msg, WarningWidget::WarningMsgInfo );
           return;
         }
 
@@ -546,22 +551,6 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         Wt::WText *summary_text = contents->addNew<Wt::WText>( summary );
         summary_text->addStyleClass( "FitSourcesSummary" );
         summary_text->setInline( false );
-
-        // Add warnings section if there are any
-        if( !result->warnings.empty() )
-        {
-          Wt::WText *warnings_header = contents->addNew<Wt::WText>( WString::tr("fpn-warnings-header") );
-          warnings_header->addStyleClass( "fpn-warnings-header" );
-
-          for( const std::string &w : result->warnings )
-          {
-            Wt::WText *warning = contents->addNew<Wt::WText>( Wt::WString::fromUTF8( "• " + w ) );
-            warning->addStyleClass( "fpn-warning" );
-          }
-
-          Wt::WText *spacer = contents->addNew<Wt::WText>( WString::fromUTF8("") );
-          spacer->setInline( false );
-        }
 
         // Size chart dynamically based on rendered dimensions
         int chartw = 420, charth = 260;
@@ -606,10 +595,32 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
         preview_model->addPeaks( preview_peaks );
 
-        // Checkbox goes below the chart (lowest item)
-        Wt::WCheckBox *cb = contents->addNew<Wt::WCheckBox>( WString::tr("fpn-auto-accept") );
+        // Warnings below the chart, styled to match the advanced dialog's warnings area.
+        if( !result->warnings.empty() )
+        {
+          Wt::WContainerWidget *warnings_div = contents->addNew<Wt::WContainerWidget>();
+          warnings_div->addStyleClass( "fpn-warnings fpn-warnings-has-warnings" );
+          for( const std::string &w : result->warnings )
+          {
+            Wt::WText *wt = warnings_div->addNew<Wt::WText>( Wt::WString::fromUTF8( "• " + w ) );
+            wt->setInline( false );
+          }
+        }
+
+        // Bottom row below chart: auto-accept checkbox on the left, "advanced..." link on the right
+        Wt::WContainerWidget *bottom_row = contents->addNew<Wt::WContainerWidget>();
+        bottom_row->addStyleClass( "FitSourcesResultBottomRow" );
+
+        Wt::WCheckBox *cb = bottom_row->addNew<Wt::WCheckBox>( WString::tr("fpn-auto-accept") );
+        cb->addStyleClass( "CbNoLineBreak" );
         UserPreferences::associateWidget( "AutoAcceptFitSourcesPeaks", cb, viewer_c );
-        cb->setInline( false );
+
+        Wt::WPushButton *adv_btn = bottom_row->addNew<Wt::WPushButton>( WString::tr("fpn-advanced-link") );
+        adv_btn->addStyleClass( "LinkBtn FitSourcesAdvancedLink" );
+        adv_btn->clicked().connect( std::bind( [result_dlg](){
+          result_dlg->reject();
+          FitPeaksForNuclidesGui::showAdvancedDialog();
+        } ) );
 
         Wt::WPushButton *accept_btn = result_dlg->addButton( WString::tr("Accept") );
         result_dlg->addButton( WString::tr("Cancel") );

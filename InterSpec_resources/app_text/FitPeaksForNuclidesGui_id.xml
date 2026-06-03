@@ -71,8 +71,7 @@
   <message id="fpn-result-title">Hasil fit</message>
   <message id="fpn-no-peaks">Tidak ada puncak yang difit untuk sumber yang dipilih.</message>
   <message id="fpn-summary">{1} puncak difit untuk {2} sumber.</message>
-  <message id="fpn-warnings-header">Peringatan:</message>
   <message id="fpn-auto-accept">Terima hasil fit secara otomatis</message>
-  <message id="fpn-auto-accepted">Hasil fit diterima secara otomatis.</message>
+  <message id="fpn-auto-accepted">Hasil fit diterima secara otomatis.<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
 
 </messages>

@@ -71,8 +71,7 @@
   <message id="fpn-result-title">फ़िट परिणाम</message>
   <message id="fpn-no-peaks">चयनित स्रोत(स्रोतों) के लिए कोई पीक फ़िट नहीं किए गए।</message>
   <message id="fpn-summary">{2} स्रोत(स्रोतों) के लिए {1} पीक फ़िट किए गए।</message>
-  <message id="fpn-warnings-header">चेतावनियाँ:</message>
   <message id="fpn-auto-accept">फ़िट परिणाम स्वतः स्वीकार करें</message>
-  <message id="fpn-auto-accepted">फ़िट परिणाम स्वतः स्वीकार कर लिए गए।</message>
+  <message id="fpn-auto-accepted">फ़िट परिणाम स्वतः स्वीकार कर लिए गए।<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
 
 </messages>

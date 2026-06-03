@@ -71,8 +71,7 @@
   <message id="fpn-result-title">نتائج الملاءمة</message>
   <message id="fpn-no-peaks">لم يتم ملاءمة أي قمم للمصدر (المصادر) المحدد.</message>
   <message id="fpn-summary">تمّت ملاءمة {1} قمة (قمم) لـ {2} مصدر (مصادر).</message>
-  <message id="fpn-warnings-header">تحذيرات:</message>
   <message id="fpn-auto-accept">قبول نتائج الملاءمة تلقائياً</message>
-  <message id="fpn-auto-accepted">تم قبول نتائج الملاءمة تلقائياً.</message>
+  <message id="fpn-auto-accepted">تم قبول نتائج الملاءمة تلقائياً.<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
 
 </messages>

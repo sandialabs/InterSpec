@@ -71,8 +71,7 @@
   <message id="fpn-result-title">Результаты фита</message>
   <message id="fpn-no-peaks">Для выбранного источника(ов) пики не были подогнаны.</message>
   <message id="fpn-summary">Подогнано {1} пик(ов) для {2} источника(ов).</message>
-  <message id="fpn-warnings-header">Предупреждения:</message>
   <message id="fpn-auto-accept">Автоматически принимать результаты фита</message>
-  <message id="fpn-auto-accepted">Результаты фита приняты автоматически.</message>
+  <message id="fpn-auto-accepted">Результаты фита приняты автоматически.<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
 
 </messages>

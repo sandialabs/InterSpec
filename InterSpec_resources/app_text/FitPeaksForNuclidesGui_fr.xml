@@ -71,8 +71,7 @@
   <message id="fpn-result-title">Résultats de l'ajustement</message>
   <message id="fpn-no-peaks">Aucun pic n'a été ajusté pour la ou les source(s) sélectionnée(s).</message>
   <message id="fpn-summary">{1} pic(s) ajusté(s) pour {2} source(s).</message>
-  <message id="fpn-warnings-header">Avertissements :</message>
   <message id="fpn-auto-accept">Accepter automatiquement les résultats de l'ajustement</message>
-  <message id="fpn-auto-accepted">Les résultats de l'ajustement ont été acceptés automatiquement.</message>
+  <message id="fpn-auto-accepted">Les résultats de l'ajustement ont été acceptés automatiquement.<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
 
 </messages>

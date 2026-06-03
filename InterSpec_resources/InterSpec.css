@@ -1015,7 +1015,20 @@ button.Wt-btn.with-label.LightButton,
     margin-left: auto;
     margin-right: auto;
   }
-  
+
+  .clearsession.FitSrcToastActions
+  {
+    display: flex;
+    gap: 6px;
+  }
+
+  .clearsession.FitSrcToastActions > .clearsessiontxt
+  {
+    flex: 1 1 0;
+    margin: 0;
+    text-align: center;
+  }
+
   .RemoteRidToastButtons
   {
     padding-top: 7px;

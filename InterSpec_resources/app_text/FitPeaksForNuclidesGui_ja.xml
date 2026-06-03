@@ -71,8 +71,7 @@
   <message id="fpn-result-title">フィット結果</message>
   <message id="fpn-no-peaks">選択した線源のピークはフィットされませんでした。</message>
   <message id="fpn-summary">{2}線源に対して{1}ピークをフィットしました。</message>
-  <message id="fpn-warnings-header">警告:</message>
   <message id="fpn-auto-accept">フィット結果を自動承認</message>
-  <message id="fpn-auto-accepted">フィット結果は自動的に承認されました。</message>
+  <message id="fpn-auto-accepted">フィット結果は自動的に承認されました。<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
 
 </messages>

@@ -165,7 +165,8 @@
 }
 
 /* Warnings area: always visible, fixed height; must not shrink in flex layout */
-.FitPeaksAdvancedWidget .fpn-warnings
+.FitPeaksAdvancedWidget .fpn-warnings,
+.FitSourcesResultContents .fpn-warnings
 {
   height: 3em;
   min-height: 3em;
@@ -178,29 +179,39 @@
   flex-shrink: 0;
 }
 
-.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-computing
+.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-computing,
+.FitSourcesResultContents .fpn-warnings.fpn-warnings-computing
 {
   background: #f5f5f5;
   border-color: #bbb;
 }
 
-.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-success
+.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-success,
+.FitSourcesResultContents .fpn-warnings.fpn-warnings-success
 {
   background: #e8f5e9;
   border-color: #81c784;
 }
 
-.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-has-warnings
+.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-has-warnings,
+.FitSourcesResultContents .fpn-warnings.fpn-warnings-has-warnings
 {
   background: #fff3e0;
   border-color: #ffb74d;
 }
 
-.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-error
+.FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-error,
+.FitSourcesResultContents .fpn-warnings.fpn-warnings-error
 {
   background: #c62828;
   color: #fff;
   border-color: #b71c1c;
+}
+
+/* Simple result dialog: small gap between chart and warnings box */
+.FitSourcesResultContents .fpn-warnings
+{
+  margin-top: 6px;
 }
 
 /* Options area: flex row with wrapping; natural height, no inner scrollbar */
@@ -241,4 +252,23 @@
 .FitPeaksAdvancedWidget .fpn-option-row .fpn-option-input
 {
   flex: 0 1 auto;
+}
+
+/* Result dialog bottom row: auto-accept checkbox (left) + advanced... link (right) */
+.FitSourcesResultBottomRow
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.FitSourcesAdvancedLink,
+.FitSourcesAdvancedLink:hover
+{
+  margin-left: auto;
+  font-size: 0.9em;
+  font-weight: normal;
 }

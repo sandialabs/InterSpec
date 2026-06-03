@@ -366,7 +366,7 @@
   <message id="app-mi-help-pref-show-tt"> Show tooltips</message>
   <message id="app-mi-help-pref-prop-peak"> Ask to Propagate Peaks</message>
   <message id="app-mi-help-pref-preserve-ene-cal"> Ask to keep energy cal.</message>
-  <message id="app-mi-help-pref-auto-accept-fit-sources"> Automatically accept fit results</message>
+  <message id="app-mi-help-pref-auto-accept-fit-sources"> Accept Fit Source result</message>
   <message id="app-mi-help-pref-disp-bq"> Display in Becquerel</message>
   <message id="app-mi-help-pref-def-drfs"> Use default DRFs</message>
   <message id="app-mi-help-pref-desktop"> Desktop Interface</message>

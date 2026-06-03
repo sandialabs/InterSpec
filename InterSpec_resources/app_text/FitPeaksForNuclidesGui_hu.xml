@@ -71,8 +71,7 @@
   <message id="fpn-result-title">Illesztési eredmények</message>
   <message id="fpn-no-peaks">Nem illesztett csúcsokat a kiválasztott forrás(ok)hoz.</message>
   <message id="fpn-summary">{1} csúcs illesztve {2} forrás(ok)hoz.</message>
-  <message id="fpn-warnings-header">Figyelmeztetések:</message>
   <message id="fpn-auto-accept">Illesztési eredmények automatikus elfogadása</message>
-  <message id="fpn-auto-accepted">Az illesztési eredmények automatikusan elfogadva.</message>
+  <message id="fpn-auto-accepted">Az illesztési eredmények automatikusan elfogadva.<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
 
 </messages>
