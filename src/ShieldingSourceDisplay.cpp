@@ -5326,8 +5326,8 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   spectrum->resize( chart_w, chart_h );
   spectrum->setData( back_hist, false );
 
-  // Owned by the dialog's spectrum chart (setPeakModel() is non-owning); a raw `new` here leaked a
-  //  PeakModel every time this preview dialog was shown.  Matches every other transient PeakModel.
+  // The dialog's spectrum chart co-owns the model (setPeakModel() takes a shared_ptr), so this local
+  //  shared_ptr can go out of scope and the chart keeps the model alive for the life of the dialog.
   const std::shared_ptr<PeakModel> pmodel = PeakModel::create();
   pmodel->setNoSpecMeasBacking();
   pmodel->setForeground( back_hist );

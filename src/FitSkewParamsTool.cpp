@@ -251,8 +251,8 @@ void FitSkewParamsTool::initWidgets()
     m_chart->setData( m_spectrum, false);
   }
 
-  // Create PeakModel for the chart, owned by this tool (Wt4: setPeakModel() is non-owning, so a
-  //  raw `new PeakModel()` leaked every time the tool was opened).
+  // PeakModel for the chart: owned by this tool's `m_peakModel` (shared_ptr) and co-owned by the chart
+  //  via setPeakModel().
   m_peakModel = PeakModel::create();
   m_peakModel->setNoSpecMeasBacking();
   if( m_spectrum )

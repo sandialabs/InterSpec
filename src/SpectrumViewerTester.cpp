@@ -1157,7 +1157,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
 {
   Score score;
   score.m_test = ManualPeakClicking;
-  PeakModel *peakModel = m_viewer->m_peakModel;
+  const std::shared_ptr<PeakModel> peakModel = m_viewer->m_peakModel;
   
   const auto data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   assert( data );
@@ -1386,7 +1386,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
 {
   Score score;
   score.m_test = AutomatedPeakSearch;
-  PeakModel *peakModel = m_viewer->m_peakModel;
+  const std::shared_ptr<PeakModel> peakModel = m_viewer->m_peakModel;
   
   if( !peakModel->peaks() || peakModel->peaks()->empty() )
     return score;
@@ -2098,7 +2098,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
   Score score;
   score.m_test = MultiplePeakInRoiFit;
   
-  PeakModel *peakModel = m_viewer->m_peakModel;
+  const std::shared_ptr<PeakModel> peakModel = m_viewer->m_peakModel;
   
   const auto data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   
