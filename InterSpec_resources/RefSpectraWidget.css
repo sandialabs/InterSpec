@@ -1,12 +1,5 @@
 
 
-/* We need to override some of the SimpleDialog CSS so we can be wider than 50% of screen width */
-.simple-dialog.RefSpectraDialog
-{
-  max-width: 95vw;
-  max-height: 95vh;
-}
-
 .simple-dialog.RefSpectraDialog .body
 {
   /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
@@ -14,25 +7,6 @@
   overflow-y: hidden;
   padding-top: 16px;
   padding-bottom: 5px;
-}
-
-@media screen and (max-width: 1000px) {
-  .simple-dialog.RefSpectraDialog {
-    max-width: calc(99vw);
-  }
-  
-  .simple-dialog.RefSpectraDialog .body {
-    max-width: calc(99vw - 30px );
-  }
-}
-
-@media screen and (min-width: 1000px) {
-  .simple-dialog.RefSpectraDialog {
-    max-width: calc(99vw)
-  }
-  .simple-dialog.RefSpectraDialog .body {
-    max-width: calc( 99vw - 30px );
-  }
 }
 
 .simple-dialog.RefSpectraDialog.RefSpectraDialog-phone

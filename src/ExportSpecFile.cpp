@@ -404,7 +404,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   window->addButton( "Close" );
 
   if( is_phone )
-    window->setAttributeValue( "style", "max-width: 95vw; " + window->attributeValue("style") );
+    window->setMaxWidth( WLength(95, WLength::Unit::ViewportWidth) );
 
   const unsigned char *svg_begin = reinterpret_cast<const unsigned char *>( qr_svg_str.data() );
   const vector<unsigned char> svg_data( svg_begin, svg_begin + qr_svg_str.size() );
@@ -4065,8 +4065,9 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   //  then the window wont be sized properly, so we have actually already loaded
   //  ExportSpecFile.css in InterSpecApp
   wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
-  
+
   addStyleClass( "export-spec-file" );
+  setMaxWidth( WLength(95, WLength::Unit::ViewportWidth) );
   
   const int w = viewer->renderedWidth();
   const bool isPhone = (w > 100) ? (w < ns_min_screen_width_for_wide_layout) : (viewer && viewer->isPhone());

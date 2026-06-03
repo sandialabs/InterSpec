@@ -305,7 +305,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     window->addButton( "Close" );
     
     if( is_phone )
-      window->setAttributeValue( "style", "max-width: 95vw; " + window->attributeValue("style") );
+      window->setMaxWidth( WLength(95, WLength::Unit::ViewportWidth) );
     
     const unsigned char *svg_begin = (unsigned char *) &(qr_svg_str[0]);
     const unsigned char *svg_end = svg_begin + qr_svg_str.size();

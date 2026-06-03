@@ -3,17 +3,14 @@
 .simple-dialog.export-spec-file
 {
   font-size: 16px;
-  max-width: 95vw;
-  max-height: 95vh;
 }
 
 .simple-dialog.export-spec-file .body
 {
   height: min(calc(95vh - 90px), 400px);
-  
-  max-width: calc(95vw - 30px);
+
   max-height: calc(95vh - 90px);
-  
+
   padding-bottom: 10px;
 }
 

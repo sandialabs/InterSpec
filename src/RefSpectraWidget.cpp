@@ -110,6 +110,7 @@ RefSpectraDialog::RefSpectraDialog( const Wt::WString &title )
     m_loadBtn( nullptr )
 {
   addStyleClass( "RefSpectraDialog" );
+  setMaxWidth( WLength(99, WLength::Unit::ViewportWidth) );
 
   WGridLayout *layout = contents()->setLayout( std::make_unique<WGridLayout>() );
   layout->setVerticalSpacing( 0 );

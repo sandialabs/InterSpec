@@ -33,6 +33,7 @@
 
 namespace Wt
 {
+  class WCssTextRule;
   class WPushButton;
   class WContainerWidget;
 }//namespace Wt
@@ -96,7 +97,20 @@ public:
       child widgets otherwise swallow Escape.
    */
   virtual void rejectWhenEscapePressed( bool enable = true );
-  
+
+  /** Sets the dialog's maximum width, overriding the default responsive ~50vw.
+
+   Wt4's WLength supports viewport units, e.g. `WLength(95, Wt::LengthUnit::ViewportWidth)`; the
+   scrollable body's max-width is kept in sync automatically.  Pass `WLength::Auto` to clear an
+   override.  This is a width-only convenience around setMaximumSize() that preserves any max height.
+   */
+  void setMaxWidth( const Wt::WLength &width );
+
+  /** Like WDialog::setMaximumSize(), but also keeps the scrollable `.body` element in sync (the
+   base call only reaches the outer dialog and its inner layout).  Accepts viewport units (vw/vh).
+   */
+  virtual void setMaximumSize( const Wt::WLength &width, const Wt::WLength &height ) override;
+
 protected:
   /** Constructors are protected to enforce use of the SimpleDialog::make() factory,
    which ensures proper Wt4 widget ownership via WApplication::addChild().
@@ -144,6 +158,13 @@ protected:
   bool m_multipleBringToFront;
   
   Wt::Signals::connection m_escapeConnection1;
+
+private:
+  /** Per-instance stylesheet rule (selector `#<id> .body`) that keeps the scrollable body element's
+   max-size in sync with setMaximumSize().  Null until setMaximumSize()/setMaxWidth() is first
+   called; removed in the destructor.
+   */
+  Wt::WCssTextRule *m_bodySizeRule = nullptr;
 };//class SimpleDialog
 
 

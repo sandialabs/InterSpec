@@ -1,10 +1,3 @@
-/* FitPeaksAdvancedDialog: override SimpleDialog max size for responsive layout */
-.simple-dialog.FitPeaksAdvancedDialog
-{
-  max-width: 95vw;
-  max-height: 95vh;
-}
-
 /* Development notice on the Fit Source wait dialog and the Advanced dialog */
 .fpn-wait-dev-note
 {
@@ -21,26 +14,6 @@
   overflow: hidden;
   padding-top: 0;
   padding-bottom: 0;
-}
-
-@media screen and (max-width: 1000px) {
-  .simple-dialog.FitPeaksAdvancedDialog {
-    max-width: calc(99vw);
-  }
-
-  .simple-dialog.FitPeaksAdvancedDialog .body {
-    max-width: calc(99vw - 30px);
-  }
-}
-
-@media screen and (min-width: 1000px) {
-  .simple-dialog.FitPeaksAdvancedDialog {
-    max-width: calc(99vw);
-  }
-
-  .simple-dialog.FitPeaksAdvancedDialog .body {
-    max-width: calc(99vw - 30px);
-  }
 }
 
 /* FitPeaksAdvancedWidget: flex column that fills the dialog body exactly;

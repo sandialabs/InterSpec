@@ -429,8 +429,7 @@ ShieldingDiagramDialog::ShieldingDiagramDialog(
   if( viewer )
     viewer->useMessageResourceBundle( "ShieldingSourceDisplay" );
   
-  addStyleClass( "ShieldingDiagramDialog" );
-  resize( WLength(95,WLength::Unit::Percentage), WLength(95,WLength::Unit::Percentage) );
+  resize( WLength(95,WLength::Unit::ViewportWidth), WLength(95,WLength::Unit::ViewportHeight) );
   
   m_layout = contents()->setLayout( std::make_unique<WGridLayout>() );
   m_layout->setColumnStretch( 0, 1 );
@@ -449,14 +448,9 @@ ShieldingDiagramDialog::ShieldingDiagramDialog(
   m_select->setCurrentIndex( 0 );
   m_select->activated().connect( this, &ShieldingDiagramDialog::handleViewTypeToggle );
   
-  static const std::string chart_css_rule_size_name = "ShieldingDiagramDialog-size";
-  Wt::WCssStyleSheet &style = wApp->styleSheet();
-  if( !style.isDefined(chart_css_rule_size_name) )
-  {
-    style.addRule( ".simple-dialog.ShieldingDiagramDialog", "max-width: 95vw; max-height: 95vh; width: 95vw; height: 95vh;", chart_css_rule_size_name );
-    style.addRule( ".simple-dialog.ShieldingDiagramDialog .body", "max-width: 95vw;", chart_css_rule_size_name + "-body");
-  }
-  
+  // Cap the dialog at 95% of the viewport; setMaximumSize keeps the scrollable body in sync.
+  setMaximumSize( WLength(95,WLength::Unit::ViewportWidth), WLength(95,WLength::Unit::ViewportHeight) );
+
   addButton( WString::tr("Close") );
 }
 

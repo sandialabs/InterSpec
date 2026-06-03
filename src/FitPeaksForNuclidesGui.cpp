@@ -611,7 +611,8 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         Wt::WContainerWidget *bottom_row = contents->addNew<Wt::WContainerWidget>();
         bottom_row->addStyleClass( "FitSourcesResultBottomRow" );
 
-        Wt::WCheckBox *cb = bottom_row->addNew<Wt::WCheckBox>( WString::tr("fpn-auto-accept") );
+        const char * const auto_accept_key = viewer_c->isPhone() ? "fpn-auto-accept-phone" : "fpn-auto-accept";
+        Wt::WCheckBox *cb = bottom_row->addNew<Wt::WCheckBox>( WString::tr(auto_accept_key) );
         cb->addStyleClass( "CbNoLineBreak" );
         UserPreferences::associateWidget( "AutoAcceptFitSourcesPeaks", cb, viewer_c );
 
@@ -652,6 +653,7 @@ FitPeaksAdvancedDialog::FitPeaksAdvancedDialog( const Wt::WString &title )
   : SimpleDialog( title, "" ), m_widget( nullptr ), m_acceptBtn( nullptr )
 {
   addStyleClass( "FitPeaksAdvancedDialog" );
+  setMaxWidth( WLength(99, WLength::Unit::ViewportWidth) );
   wApp->useStyleSheet( "InterSpec_resources/FitPeaksForNuclidesGui.css" );
 
   Wt::WGridLayout *layout = contents()->setLayout( std::make_unique<Wt::WGridLayout>() );

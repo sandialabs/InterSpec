@@ -5313,6 +5313,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
 
   // Override the default SimpleDialog size constraints so the chart can be large enough
   dialog->addStyleClass( "BackPeakPreviewDialog" );
+  dialog->setMaxWidth( WLength(85, WLength::Unit::ViewportWidth) );
 
   // Size the chart based on the app window size
   const int app_w = m_specViewer->renderedWidth();

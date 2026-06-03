@@ -23,11 +23,13 @@
 
 #include "InterSpec_config.h"
 
+#include <Wt/WLength.h>
 #include <Wt/WDialog.h>
 #include <Wt/WServer.h>
 #include <Wt/WTemplate.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
+#include <Wt/WCssStyleSheet.h>
 #include <Wt/WContainerWidget.h>
 
 #include <string>
@@ -64,6 +66,16 @@ WT_DECLARE_WT_MEMBER
    document.querySelectorAll('.suggestion').forEach( function(s){ s.style.zIndex = maxz + 2; } );
  }
 );
+
+
+namespace
+{
+  // These mirror the space reserved in InterSpec_resources/SimpleDialog.css, and must stay in sync
+  //  with it: the `.body` element has 15px left+right padding (30px total), and the title bar plus
+  //  footer occupy roughly 90px of height.
+  const int sm_bodyHorizPaddingPx = 30;
+  const int sm_bodyHeaderFooterPx = 90;
+}//namespace
 
 
 SimpleDialog::SimpleDialog()
@@ -198,7 +210,47 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 
 SimpleDialog::~SimpleDialog()
 {
+  // Remove the per-instance body sizing rule we may have added (see setMaximumSize).
+  WApplication * const app = WApplication::instance();
+  if( app && m_bodySizeRule )
+    app->styleSheet().removeRule( m_bodySizeRule );
 }
+
+
+void SimpleDialog::setMaximumSize( const Wt::WLength &width, const Wt::WLength &height )
+{
+  // Native sizing of the outer dialog and its inner layout.  Wt4's WLength supports viewport units
+  //  (vw/vh) that Wt3 lacked, so callers can pass e.g. WLength(95, LengthUnit::ViewportWidth).
+  //  (WDialog::setMaximumSize silently drops Percentage units for the inner layout, but not vw/vh.)
+  WDialog::setMaximumSize( width, height );
+
+  // WDialog::setMaximumSize cannot reach the scrollable `.body` element, whose max-size must track
+  //  the dialog (minus its padding and header/footer).  Scope a rule to this dialog's id so the body
+  //  stays in sync; it is removed here on re-set and in the destructor.  `#id .body` has higher
+  //  specificity than every `.simple-dialog .body` rule, so it wins without `!important`.
+  WCssStyleSheet &style = wApp->styleSheet();
+  if( m_bodySizeRule )
+  {
+    style.removeRule( m_bodySizeRule );
+    m_bodySizeRule = nullptr;
+  }
+
+  string decl;
+  if( !width.isAuto() )
+    decl += "max-width: calc(" + width.cssText() + " - " + std::to_string(sm_bodyHorizPaddingPx) + "px);";
+  if( !height.isAuto() )
+    decl += "max-height: calc(" + height.cssText() + " - " + std::to_string(sm_bodyHeaderFooterPx) + "px);";
+
+  if( !decl.empty() )
+    m_bodySizeRule = style.addRule( "#" + id() + " .body", decl );
+}//setMaximumSize(...)
+
+
+void SimpleDialog::setMaxWidth( const Wt::WLength &width )
+{
+  // Width-only convenience; preserves any existing maximum height.
+  setMaximumSize( width, maximumHeight() );
+}//setMaxWidth(...)
 
 
 void SimpleDialog::doNotUseMultpleBringstoFront()

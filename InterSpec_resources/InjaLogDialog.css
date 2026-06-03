@@ -7,7 +7,6 @@
 {
   /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
   max-height: calc( 95vh - 90px );
-  max-width: calc(95vw - 30px);
   overflow-y: hidden;
   overflow-x: hidden;
   padding-top: 16px;

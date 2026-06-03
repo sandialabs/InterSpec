@@ -58,6 +58,7 @@ BatchGuiDialog::BatchGuiDialog( FileDragUploadResource *uploadResource, const Wt
 : SimpleDialog( title ), m_widget( nullptr ), m_processBtn( nullptr )
 {
   addStyleClass( "BatchGuiDialog" );
+  setMaxWidth( WLength(99, WLength::Unit::ViewportWidth) );
 
   WGridLayout *layout = contents()->setLayout( std::make_unique<WGridLayout>() );
   layout->setVerticalSpacing( 0 );

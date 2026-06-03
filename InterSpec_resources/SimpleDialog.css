@@ -61,6 +61,12 @@ dialog
   /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
   max-height: calc( 95vh - 90px );
   overflow-y: auto;
+
+  /* Scroll vertically only.  Setting just overflow-y:auto makes the browser promote overflow-x
+     to auto as well, which adds a spurious horizontal scrollbar whenever content is sized to
+     ~exactly the body width (zero slack) and a vertical scrollbar appears.  Clip horizontally
+     instead; dialogs that need to be wider set their max-width so content fits. */
+  overflow-x: hidden;
 }
 
 @media screen and (max-width: 1000px) {

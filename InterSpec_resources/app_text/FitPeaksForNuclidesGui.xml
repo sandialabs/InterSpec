@@ -75,6 +75,7 @@
   <message id="fpn-no-peaks">No peaks were fit for the selected source(s).</message>
   <message id="fpn-summary">Fit {1} peak(s) for {2} source(s).</message>
   <message id="fpn-auto-accept">Automatically accept fit results</message>
+  <message id="fpn-auto-accept-phone">Auto accept</message>
   <message id="fpn-advanced-link">advanced...</message>
   <message id="fpn-auto-accepted">Fit results were automatically accepted.<div class="clearsession FitSrcToastActions"><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcUndo');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{1}</span><span class="clearsessiontxt" onclick="Wt.emit(document.querySelector('.specviewer').id,{name:'miscSignal'},'fitSrcNoAutoAccept');try{this.parentElement.parentElement.parentElement.remove();}catch(e){}return false;">{2}</span></div></message>
   <message id="fpn-auto-accepted-undo">Undo</message>

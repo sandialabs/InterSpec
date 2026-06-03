@@ -161,6 +161,7 @@ InjaLogDialog::InjaLogDialog( const Wt::WString &title,
   m_current_content()
 {
   addStyleClass( "InjaLogDialog" );
+  setMaxWidth( Wt::WLength(95, Wt::WLength::Unit::ViewportWidth) );
 
   Wt::WApplication *app = Wt::WApplication::instance();
   assert( app );
