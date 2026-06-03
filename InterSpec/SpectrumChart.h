@@ -56,7 +56,6 @@ namespace Wt
   class WContainerWidget;
 }//namespace Wt
 
-class AuxWindow;
 class PeakModel;
 
 //See comments about SpectrumChart::setLeftYAxisPadding() for what
@@ -182,11 +181,7 @@ public:
                      const Wt::WRectF& rectangle = Wt::WRectF() ) const;
   virtual void paintEvent( Wt::WPaintDevice *paintDevice );
   
-  //renderFloatingLegend(): only renders if valid m_legend and
-  //  m_legentType==FloatingLegend
-  virtual void renderFloatingLegend();
-  
-  //paintOnChartLegend(): only paints if m_legentType==OnChartLegen
+  //paintOnChartLegend(): only paints if m_legentType==OnChartLegend
   virtual void paintOnChartLegend( Wt::WPainter &painter ) const;
   void paintTextInMiddleOfChart( Wt::WPainter &painter ) const;
 
@@ -306,28 +301,15 @@ public:
                                        const Wt::WColor &color );
 
   
-  //enableLegend():  Makes it so the legend will be rendered, with some caviots.
-  //  If no spectrums are present, will not be rendered.
-  //  If a time series chart, only rendered if more than
-  //  one sereies is to be plotted.
-  //  For non-phone devices, creates a globablly floating legend (AuxWindow)
-  //  that will be kept at a consistent distance from the top and right hand
-  //  side of chart.
-  //  For phone devices, the legend will be rendered directly on the chart.
-  void enableLegend( const bool forceMobileStyle );
-  
-  //disableLegend(): causes legend to stop being drawn.  Deletes m_legend if
-  //  it is non-null.
-  void disableLegend();
-  
-  bool legendIsEnabled() const;
-  
-  Wt::Signal<> &legendEnabled();
-  Wt::Signal<> &legendDisabled();
+  //enableLegend(): paints a legend directly on the chart.
+  //  No-op if a legend is already enabled.
+  void enableLegend();
 
-  //legendExpandedCallback(): rerenders the legend after its been expanded
-  void legendExpandedCallback();
-  
+  //disableLegend(): causes legend to stop being drawn.
+  void disableLegend();
+
+  bool legendIsEnabled() const;
+
   void legendTextSizeCallback( const float legendwidth );
 
   void setDefaultPeakColor( const Wt::WColor &color );
@@ -366,9 +348,6 @@ public:
    */
   void saveChartToPng( const std::string &name );
 
-  virtual void setHidden( bool hidden,
-                          const Wt::WAnimation &animation = Wt::WAnimation() );
-
 #if(DYNAMICALLY_ADJUST_LEFT_CHART_PADDING)
   //setLeftYAxisPadding(): tries to guess how many characters will be used for
   //  the y-axis label, and then sets the left padding of the chart accordingly,
@@ -394,10 +373,7 @@ protected:
   //  re-rendered.  Also enforces that only SpectrumDataModel models can be
   //  used with this class, by throwing an exception otherwise.
   virtual void modelChanged();
-  
-  
-  void setLegendNeedsRendered();
-  
+
 protected:
   void labelRender( Wt::WPainter& painter, const Wt::WString& text,
                    const Wt::WPointF& p, const Wt::WColor& color,
@@ -478,22 +454,12 @@ protected:
   enum LegendType
   {
     NoLegend,
-    FloatingLegend,
     OnChartLegend
   };//enum LegendType
-  
-  //m_legend: valid pointer only when m_legendType==FloatingLegend
-  Wt::Core::observing_ptr<AuxWindow> m_legend;
-  
-  //m_legendType: indicates the type of legend that should be rendered.  Decided
-  //  in enableLegend() based on the device type.
+
+  //m_legendType: indicates whether the legend should be painted on the chart.
   LegendType m_legendType;
-  
-  //m_legendNeedsRender: the legend doesnt need to be rendered everytime the
-  //  chart is updated, but only when the data changes, so this variable tracks
-  //  that.
-  bool m_legendNeedsRender;
-  
+
   //m_paintedLegendWidth: for m_legendType==OnChartLegend, with the chart being
   //  rendered to a <canvas> element, we dont have server side font metrics, so
   //  will execute some javascript to measure the font metrics, and then call

@@ -67,7 +67,6 @@ typedef Wt::Chart::WCartesianChart ChartRenderHelper_t;
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
-#include "InterSpec/AuxWindow.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/InterSpecApp.h"
 #include "SandiaDecay/SandiaDecay.h"
@@ -1728,9 +1727,7 @@ SpectrumChart::SpectrumChart()
   m_defaultPeakColor( ns_default_peakFillColor ),
   m_occupiedMarkerColor( ns_default_occupiedTimeColor ),
   m_timeHighlightColors{ ns_defaultTimeHighlightColors[0], ns_defaultTimeHighlightColors[1], ns_defaultTimeHighlightColors[2] },
-  m_legend( NULL ),
   m_legendType( SpectrumChart::NoLegend ),
-  m_legendNeedsRender( true ),
   m_paintedLegendWidth(-100.0f),
   m_xAxisUnits( SpectrumChart::kUndefinedUnits ),
   m_compactAxis( false ),
@@ -1785,11 +1782,6 @@ SpectrumChart::SpectrumChart()
 
 SpectrumChart::~SpectrumChart()
 {
-  if( m_legend )
-  {
-    AuxWindow::deleteAuxWindow( m_legend.get() );
-    m_legend = 0;
-  }
 }//~SpectrumChart()
 
 void SpectrumChart::setPeakLabelColor( SpectrumChart::PeakLabels label,
@@ -3536,200 +3528,6 @@ void SpectrumChart::paintPeaks( Wt::WPainter& painter ) const
 }//paint( ... )
 
 
-void SpectrumChart::renderFloatingLegend()
-{
-  if( m_legendType != FloatingLegend )
-    return;
-  
-  char buffer[64];
-  
-#if( WT_VERSION < 0x3030600 )
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model().get());
-#else
-  auto proxyModel = dynamic_cast<Wt::Chart::WStandardChartProxyModel *>( model().get());
-  SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
-  assert( m);
-#endif
-
-  
-  if( !m )
-    return;
-  
-  int nhists = (!!m->getData() + !!m->getSecondData() + !!m->getBackground());
-
-  //Dont draw legend text if theres no spectrum on the chart, or for
-  //  time series data, dont show the legend for gamma only data
-  if( nhists < 1 )
-  {
-    if( m_legend )
-    {
-      AuxWindow::deleteAuxWindow( m_legend.get() );
-      m_legend = 0;
-    }//if( m_legend )
-    
-    return;
-  }//if( dont show legend )
-  
-  bool needRender = m_legendNeedsRender;
-  
-  if( !m_legend )
-  {
-    m_legend = AuxWindow::make( "");
-    m_legend->setResizable( false);
-    m_legend->show();
-    m_legend->disableCollapse();
-    m_legend->addStyleClass( "legend");
-    m_legend->finished().connect( this, &SpectrumChart::disableLegend);
-    m_legend->expanded().connect( this, &SpectrumChart::legendExpandedCallback);
-    
-    //Set the offsets so
-    stringstream moveJs;
-
-    //LTM == Legend Top Margin
-    //LRM == Legend Right Margin
-    moveJs << "var s=document.getElementById('" << id() << "');"
-    << "s._isData = s._isData || {};"
-    << "if(!s._isData.LTM) s._isData.LTM = " << plotAreaPadding(Side::Top)+5 << ";"
-    << "if(!s._isData.LRM) s._isData.LRM = " << plotAreaPadding(Side::Right)+5 << ";"
-    << "s._isData.legid = '" << m_legend->id() << "';"
-    << "Wt.WT.AlignLegend('" << id() << "');";
-    doJavaScript( moveJs.str());
-    
-    WContainerWidget *legendContents = m_legend->contents();
-    WContainerWidget *titleBar = m_legend->titleBar();
-    
-    titleBar->addStyleClass( "legend-title");
-    legendContents->addStyleClass( "legend-body");
-    
-    m_legend->show();
-    needRender = true;
-  }//if( !m_legend )
-
-  if( !needRender )
-    return;
-
-  m_legendNeedsRender = false;
-  
-  WContainerWidget *content = m_legend->contents();
-  content->clear();
-
-  
-  for( int index = 1; index < model()->columnCount(); ++index )
-  {
-    // Skip this one if it's not an active data field.
-    if( !m->columnHasData( index ) )
-      continue;
-
-    content->addWidget( createLegendItemWidget( index ));
-
-    std::shared_ptr<const Measurement> hist;
-
-    if( index == m->dataColumn() )
-    {
-      hist = m->getData();
-
-      // place a box to contain live time, dead time, and neutron counts
-      WContainerWidget *statsBox = content->addNew<WContainerWidget>();
-      statsBox->setAttributeValue(
-          "style", "margin-left:5ex;margin-top:-0.5em;margin-bottom:0.5em;");
-
-      const float dataLiveTime = m->dataLiveTime();
-      if( dataLiveTime > 0.0f )
-      {
-        snprintf( buffer, sizeof( buffer ), "Live Time %.1f", dataLiveTime);
-        WText *txt = statsBox->addNew<WText>( buffer);
-        txt->setInline( false);
-      }//if( dataLiveTime > 0.0 )
-
-      const float dataRealTime = m->dataRealTime();
-      if( dataRealTime > 0.0f )
-      {
-        snprintf( buffer, sizeof( buffer ), "Real Time %.1f", dataRealTime);
-        WText *txt = statsBox->addNew<WText>( buffer);
-        txt->setInline( false);
-      }//if( dataRealTime > 0.0 )
-
-      const float dataNeutronCounts = m->dataNeutronCounts();
-      if( (hist && hist->contained_neutron()) || (dataNeutronCounts > 0.0f) )
-      {
-        snprintf( buffer, sizeof( buffer ), "Neutron Count %.1f",
-                  dataNeutronCounts);
-        WText *txt = statsBox->addNew<WText>( buffer);
-        txt->setInline( false);
-      }//if( dataNeutronCounts > 0.0 )
-    }else if( index == m->secondDataColumn() ||
-              index == m->backgroundColumn() )
-    {
-      float scaledBy, neutronCount;
-      if( index == m->secondDataColumn() )
-      {
-        hist = m->getSecondData();
-        scaledBy = m->secondDataScaledBy();
-        neutronCount = m->dataRealTime() *
-                       m->secondDataNeutronCounts() /
-                       m->secondDataRealTime();
-      }else
-      {
-        hist = m->getBackground();
-        scaledBy = m->backgroundScaledBy();
-        neutronCount = m->dataRealTime() *
-                       m->backgroundNeutronCounts() /
-                       m->backgroundRealTime();
-      }// if( index == m->secondDataColumn() ) / else( index ==
-        // m->backgroundColumn() )
-
-      const bool isScaled = (scaledBy > 0.0 && scaledBy != 1.0);
-      const bool hasNeutron =
-          ( !IsNan( neutronCount ) && !IsInf( neutronCount ) &&
-             (neutronCount > 1.0E-3 || (hist && hist->contained_neutron())));
-
-      WContainerWidget *statsBox = content->addNew<WContainerWidget>();
-      statsBox->setAttributeValue(
-          "style", "margin-left:5ex;margin-top:-0.5em;margin-bottom:0.5em;");
-
-      const float thislt = (index == m->secondDataColumn())
-                               ? m->secondDataLiveTime()
-                               : m->backgroundLiveTime();
-
-      if( thislt > 0.0 )
-      {
-        snprintf( buffer, sizeof( buffer ), "Live Time %.1f", thislt);
-        WText *txt = statsBox->addNew<WText>( buffer);
-        txt->setInline( false);
-
-        if( hasNeutron )
-        {
-          snprintf( buffer, sizeof( buffer ), "Neutron Count %.1f",
-                    neutronCount);
-          WText *ntxt = statsBox->addNew<WText>( buffer);
-          ntxt->setToolTip( "Neutron count is scaled for real time to be "
-                           "equivalent cps to main data");
-          ntxt->setInline( false);
-        }//if( hasNeutron )
-
-
-        if( isScaled )
-        {
-          const float datalt = m->dataLiveTime();
-          const float ltscale = datalt / thislt;
-          const bool isltscale = ( fabs( scaledBy - ltscale ) < 0.001);
-
-          string frmt = "Scaled by %.";
-          frmt += ( scaledBy >= 0.1 ) ? "2f" : "1E";
-          if( isltscale )
-            frmt += " for LT";
-          snprintf( buffer, sizeof( buffer ), frmt.c_str(), scaledBy);
-          WText *stxt = statsBox->addNew<WText>( buffer);
-          stxt->setInline( false);
-        }// if( isScaled )
-      }//if( thislt > 0.0 )
-    }//if( index == m->dataColumn() ) / else background or second
-  }//for( int index = 0; index < ; ++index )
-
-  wApp->doJavaScript( "Wt.WT.AlignLegend('" + id() + "');" );
-}//void renderFloatingLegend()
-
-
 void SpectrumChart::paintOnChartLegend( Wt::WPainter &painter ) const
 {
   //I havent perfected how I'de like the legend to be rendered, but its pretty
@@ -3984,9 +3782,7 @@ void SpectrumChart::paintEvent( WPaintDevice *paintDevice )
            << endl;
   }
 #endif
-  
-  renderFloatingLegend();
-  
+
   //When we are drawinging the legend on the chart, and its a <cavnas> element,
   //  we dont have server side font metrics, so we will call to the client side
   //  to get them, but only if we havent done this before, and the chart is
@@ -4055,69 +3851,20 @@ void SpectrumChart::disableLegend()
 {
   if( m_legendType == NoLegend )
     return;
-  
-  const bool rerender = (m_legendType == OnChartLegend);
-  
+
   m_legendType = NoLegend;
-  
-  if( m_legend )
-  {
-    AuxWindow::deleteAuxWindow( m_legend.get() );
-    m_legend = 0;
-    
-    if( wApp )
-      doJavaScript( "var el=document.getElementById('" + id() + "'); if(el && el._isData) el._isData.legid=null;" );
-  }//if( m_legend )
-  
-  if( rerender )
-    update();
+  update();
 }//void disableLegend()
 
 
-void SpectrumChart::legendExpandedCallback()
+void SpectrumChart::enableLegend()
 {
-  if( !m_legend )
-    return;
-  
-  wApp->doJavaScript( "Wt.WT.AlignLegend('" + id() + "');" );
-}//void SpectrumChart::legendExpandedCallback()
-
-
-void SpectrumChart::enableLegend( const bool forceMobileStyle )
-{  
   if( m_legendType != NoLegend )
     return;
 
-  auto wtapp = wApp;
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wtapp);
-  if( forceMobileStyle || (app && app->isMobile()) )
-  {
-    m_legendType = OnChartLegend;
-    update(); //force a re-draw
-    return;
-  }
-  
-  if( wtapp )
-  {
-    LOAD_JAVASCRIPT(wtapp, "src/js_inline/SpectrumChart.js", "SpectrumChart", wtjsAlignLegend);
-  }
-  
-  m_legendType = FloatingLegend;
-  renderFloatingLegend();
+  m_legendType = OnChartLegend;
+  update();
 }//void enableLegend()
-
-
-
-void SpectrumChart::setHidden( bool hidden, const Wt::WAnimation &animation )
-{
-  WCartesianChart::setHidden( hidden, animation);
-
-  if( m_legend )
-  {
-    AuxWindow::deleteAuxWindow( m_legend.get() );
-    m_legend = 0;
-  }//if( m_legend )
-}//void setHidden( bool hidden, const Wt::WAnimation &animation )
 
 
 #if(DYNAMICALLY_ADJUST_LEFT_CHART_PADDING)
@@ -4402,9 +4149,8 @@ void SpectrumChart::renderReferncePhotoPeakLines( Wt::WPainter &painter ) const
 
 void SpectrumChart::modelChanged()
 {
-  m_legendNeedsRender = true;
   Wt::Chart::WCartesianChart::modelChanged();
-  
+
 #if( WT_VERSION < 0x3030600 )
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( model().get());
 #else
@@ -4412,19 +4158,10 @@ void SpectrumChart::modelChanged()
   SpectrumDataModel *m = dynamic_cast<SpectrumDataModel *>( proxyModel ? proxyModel->sourceModel().get() : nullptr);
   assert( m);
 #endif
-  
+
   if( !m && model() )
     throw runtime_error( "SpectrumChart can only be used with SpectrumDataModel models");
-  
-  if( m )
-    m->dataSet().connect( this, &SpectrumChart::setLegendNeedsRendered);
 }//void modelChanged()
-
-
-void SpectrumChart::setLegendNeedsRendered()
-{
-  m_legendNeedsRender = true;
-}//void setLegendNeedsRenderd();
 
 
 
