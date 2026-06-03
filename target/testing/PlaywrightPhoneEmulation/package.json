@@ -1,0 +1,13 @@
+{
+  "name": "interspec-phone-emulation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright-driven phone emulator for testing InterSpec's mobile UI from a desktop browser.",
+  "scripts": {
+    "phone": "node phone-test.js",
+    "tablet": "node phone-test.js --device 'iPad Mini' --param istablet"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}
