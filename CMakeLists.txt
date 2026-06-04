@@ -60,6 +60,11 @@ option(
     "Selects options appropriate for the web in the future"
     OFF
 )
+option(
+    PRUNE_WT_RESOURCES
+    "Remove Wt resources InterSpec never loads (unused themes, font-awesome, jPlayer, IE/RTL assets) from the bundled copy"
+    ON
+)
 if( hasParent )
   option( BUILD_AS_LOCAL_SERVER "Build for use as a server for localhost" OFF )
 else( hasParent )
@@ -658,6 +663,9 @@ endif()
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
 
+# Provides prune_wt_resources(); used below to slim the bundled Wt resources copy
+include(cmake/PruneWtResources.cmake)
+
 list(APPEND sources external_libs/SpecUtils/d3_resources/d3.v3.min.js)
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/d3.v3.min.js"
                     "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/d3.v3.min.js"
@@ -1044,9 +1052,35 @@ endif(IOS)
 if(NOT WT_RESOURCES_DIRECTORY)
     MESSAGE("Could not find the Wt resources path to copy into current directory")
 else(NOT WT_RESOURCES_DIRECTORY)
-    MESSAGE("Using Wt resources from ${WT_RESOURCES_DIRECTORY}")
-    file(COPY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/)
+    # Remember the pristine Wt resources dir exactly once.  On a re-configure
+    # WT_RESOURCES_DIRECTORY may already point at the pruned build-tree copy, so
+    # this guard guarantees we always copy/prune from the original (no self-copy,
+    # no progressive deletion), and is robust to FetchContent (orig under _deps).
+    if(NOT WT_RESOURCES_ORIG_DIR)
+      set(WT_RESOURCES_ORIG_DIR "${WT_RESOURCES_DIRECTORY}" CACHE INTERNAL "Pristine (un-pruned) Wt resources dir")
+    endif(NOT WT_RESOURCES_ORIG_DIR)
+
+    if(PRUNE_WT_RESOURCES)
+      # Copy + prune into the build tree, then repoint WT_RESOURCES_DIRECTORY at
+      # the pruned copy.  It is a CACHE INTERNAL var and every packaging target
+      # add_subdirectory()'s this (root) project before reading it, so all
+      # consumers -- install(DIRECTORY ...), the macOS/wxWidgets GLOB+embed, the
+      # web-server INSTALL below, the dev server, and Android's build-tree zip --
+      # pick up the pruned set with no per-target edits.  Must run at configure
+      # time so the macOS/wxWidgets file(GLOB_RECURSE) sees the pruned file list.
+      MESSAGE("Using PRUNED Wt resources, copied from ${WT_RESOURCES_ORIG_DIR}")
+      prune_wt_resources("${WT_RESOURCES_ORIG_DIR}" "${PROJECT_BINARY_DIR}/resources")
+      set(WT_RESOURCES_DIRECTORY "${PROJECT_BINARY_DIR}/resources" CACHE INTERNAL "Wt resources dir (pruned)" FORCE)
+    else(PRUNE_WT_RESOURCES)
+      MESSAGE("Using FULL Wt resources from ${WT_RESOURCES_ORIG_DIR}")
+      file(COPY ${WT_RESOURCES_ORIG_DIR} DESTINATION ${PROJECT_BINARY_DIR}/)
+      set(WT_RESOURCES_DIRECTORY "${WT_RESOURCES_ORIG_DIR}" CACHE INTERNAL "Wt resources dir (full)" FORCE)
+    endif(PRUNE_WT_RESOURCES)
+
     if(BUILD_FOR_WEB_DEPLOYMENT)
+      # Web deployment serves from ${PROJECT_BINARY_DIR}/resources and additionally
+      # needs Wt's resources/ nested beneath it; mirror whatever (pruned or full)
+      # WT_RESOURCES_DIRECTORY now points at.
       file(COPY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/resources)
     endif(BUILD_FOR_WEB_DEPLOYMENT)
 endif(NOT WT_RESOURCES_DIRECTORY)

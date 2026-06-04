@@ -21,7 +21,10 @@ cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../3rd_party/ios-cmake/i
 cmake --build . --config Release -j8
 
 # The Xcode project expects Wt's web assets at build-iphoneos/WtsRsrcs.
-cp -R _deps/wt-src/resources ./WtsRsrcs
+# Copy from LibInterSpec/resources (the build-tree copy the root CMake produces),
+# NOT _deps/wt-src/resources: with PRUNE_WT_RESOURCES=ON the former is the slimmed
+# set (see cmake/PruneWtResources.cmake); it is the full set when pruning is off.
+cp -R LibInterSpec/resources ./WtsRsrcs
 
 
 # Now (optionally) build for simulator
@@ -30,7 +33,7 @@ mkdir build-iphonesimulator; cd build-iphonesimulator
 unset MACOSX_DEPLOYMENT_TARGET
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../3rd_party/ios-cmake/ios.toolchain.cmake -DPLATFORM=SIMULATOR64 -DIOS_DEPLOYMENT_TARGET=16.4 -DDEPLOYMENT_TARGET=16.4 -DENABLE_BITCODE_INT=OFF -DENABLE_BITCODE=OFF ..
 cmake --build . --config Release -j8
-cp -R _deps/wt-src/resources ./WtsRsrcs
+cp -R LibInterSpec/resources ./WtsRsrcs
 ```
 
 Now open `InterSpec/target/ios/InterSpec/InterSpec.xcodeproj` and build the app.

@@ -42,9 +42,15 @@ zip -9 -r \
   --exclude='*.svn*' --exclude='*.git*' --exclude='*.DS_Store' \
   "${ASSETS_ZIP}" InterSpec_resources data example_spectra
 
-# Add Wt resources
+# Add Wt resources.
+# Normally WT_RES is a build-tree copy already slimmed by PruneWtResources.cmake.
+# The font-awesome/jPlayer/bootstrap/polished excludes are belt-and-suspenders for
+# the WT_RESOURCES_DIR-override path, where an un-pruned dir could be passed in
+# (see target/tools/wt_resource_audit/wt_resources_manifest.json for the full, evidence-backed removal set).
 cd "${WT_RES}/.."
 zip -ur -9 -r \
+  --exclude='resources/font-awesome/*' --exclude='resources/jPlayer/*' \
+  --exclude='resources/themes/bootstrap/*' --exclude='resources/themes/polished/*' \
   --exclude='*OUO*' --exclude='*ouo*' \
   --exclude='*CUI*' --exclude='*cui*' --exclude='*Cui*' \
   --exclude='*.svn*' --exclude='*.git*' --exclude='*.DS_Store' \

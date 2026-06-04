@@ -1,0 +1,1485 @@
+{
+  "active_themes": [
+    "default"
+  ],
+  "files": {
+    "ajax-loading.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WOverlayLoadingIndicator.C:34",
+      "verdict": "REVIEW"
+    },
+    "collapse-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "collapse.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "date.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "expand-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "expand.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit",
+      "verdict": "REVIEW"
+    },
+    "font-awesome/LICENSE.txt": {
+      "reason": "only Wt::WIcon loads font-awesome (Wt WIcon.C:89); current InterSpec source uses no Wt::WIcon",
+      "verdict": "REMOVE"
+    },
+    "font-awesome/css/font-awesome.css": {
+      "reason": "only Wt::WIcon loads font-awesome (Wt WIcon.C:89); current InterSpec source uses no Wt::WIcon",
+      "verdict": "REMOVE"
+    },
+    "font-awesome/css/font-awesome.min.css": {
+      "reason": "only Wt::WIcon loads font-awesome (Wt WIcon.C:89); current InterSpec source uses no Wt::WIcon",
+      "verdict": "REMOVE"
+    },
+    "font-awesome/fonts/FontAwesome.otf": {
+      "reason": "only Wt::WIcon loads font-awesome (Wt WIcon.C:89); current InterSpec source uses no Wt::WIcon",
+      "verdict": "REMOVE"
+    },
+    "font-awesome/fonts/fontawesome-webfont.eot": {
+      "reason": "only Wt::WIcon loads font-awesome (Wt WIcon.C:89); current InterSpec source uses no Wt::WIcon",
+      "verdict": "REMOVE"
+    },
+    "font-awesome/fonts/fontawesome-webfont.svg": {
+      "reason": "only Wt::WIcon loads font-awesome (Wt WIcon.C:89); current InterSpec source uses no Wt::WIcon",
+      "verdict": "REMOVE"
+    },
+    "font-awesome/fonts/fontawesome-webfont.ttf": {
+      "reason": "only Wt::WIcon loads font-awesome (Wt WIcon.C:89); current InterSpec source uses no Wt::WIcon",
+      "verdict": "REMOVE"
+    },
+    "font-awesome/fonts/fontawesome-webfont.woff": {
+      "reason": "only Wt::WIcon loads font-awesome (Wt WIcon.C:89); current InterSpec source uses no Wt::WIcon",
+      "verdict": "REMOVE"
+    },
+    "font-awesome/fonts/fontawesome-webfont.woff2": {
+      "reason": "only Wt::WIcon loads font-awesome (Wt WIcon.C:89); current InterSpec source uses no Wt::WIcon",
+      "verdict": "REMOVE"
+    },
+    "form.css": {
+      "reason": "Wt core/active-theme entry stylesheet",
+      "verdict": "KEEP"
+    },
+    "html4_default.css": {
+      "reason": "Wt core/active-theme entry stylesheet",
+      "verdict": "KEEP"
+    },
+    "icon_clock.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "items-not-ok.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WAbstractItemView.C:412",
+      "verdict": "REVIEW"
+    },
+    "items-ok.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WAbstractItemView.C:417",
+      "verdict": "REVIEW"
+    },
+    "items.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit",
+      "verdict": "REVIEW"
+    },
+    "jPlayer/jquery.jplayer.js": {
+      "reason": "only Wt::WMediaPlayer loads jPlayer (Wt WMediaPlayer.C:127); current InterSpec source uses no Wt::WMediaPlayer",
+      "verdict": "REMOVE"
+    },
+    "jPlayer/jquery.jplayer.min.js": {
+      "reason": "only Wt::WMediaPlayer loads jPlayer (Wt WMediaPlayer.C:127); current InterSpec source uses no Wt::WMediaPlayer",
+      "verdict": "REMOVE"
+    },
+    "jPlayer/jquery.jplayer.swf": {
+      "reason": "only Wt::WMediaPlayer loads jPlayer (Wt WMediaPlayer.C:127); current InterSpec source uses no Wt::WMediaPlayer",
+      "verdict": "REMOVE"
+    },
+    "jPlayer/jquery.min.js": {
+      "reason": "only Wt::WMediaPlayer loads jPlayer (Wt WMediaPlayer.C:127); current InterSpec source uses no Wt::WMediaPlayer",
+      "verdict": "REMOVE"
+    },
+    "jPlayer/skin/jplayer.blue.monday.css": {
+      "reason": "only Wt::WMediaPlayer loads jPlayer (Wt WMediaPlayer.C:127); current InterSpec source uses no Wt::WMediaPlayer",
+      "verdict": "REMOVE"
+    },
+    "jPlayer/skin/jplayer.blue.monday.jpg": {
+      "reason": "only Wt::WMediaPlayer loads jPlayer (Wt WMediaPlayer.C:127); current InterSpec source uses no Wt::WMediaPlayer",
+      "verdict": "REMOVE"
+    },
+    "jPlayer/skin/jplayer.blue.monday.seeking.gif": {
+      "reason": "only Wt::WMediaPlayer loads jPlayer (Wt WMediaPlayer.C:127); current InterSpec source uses no Wt::WMediaPlayer",
+      "verdict": "REMOVE"
+    },
+    "jPlayer/skin/jplayer.blue.monday.video.play.png": {
+      "reason": "only Wt::WMediaPlayer loads jPlayer (Wt WMediaPlayer.C:127); current InterSpec source uses no Wt::WMediaPlayer",
+      "verdict": "REMOVE"
+    },
+    "line-last-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "line-last.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "line-middle-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "line-middle.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "line-trunk.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "loading.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "minus.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WTreeNode.C:21",
+      "verdict": "REVIEW"
+    },
+    "moz-transitions.css": {
+      "reason": "Wt core/active-theme entry stylesheet",
+      "verdict": "KEEP"
+    },
+    "plus.gif": {
+      "reason": "not reached from active CSS and no rule matched; kept pending runtime audit; Wt loader: WTreeNode.C:20",
+      "verdict": "REVIEW"
+    },
+    "resizable.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "right-arrow.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "tab_b.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "tab_l.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "tab_r.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/bootstrap/2/bootstrap-responsive.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/bootstrap-responsive.min.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/bootstrap.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/bootstrap.min.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/date-edit-button.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/date-edit-button.svg": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/nav-minus-rtl.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/nav-minus.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/nav-plus-rtl.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/nav-plus.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/spin-buttons.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/spin-buttons.svg": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/generate.sh": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-10px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-11px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-12px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-13px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-14px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-15px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-16px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-17px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-18px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-19px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-20px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-21px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-22px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-23px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-24px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-25px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-26px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-27px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-28px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-29px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-30px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-31px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-32px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-33px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-34px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-35px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-36px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-37px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-38px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-39px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/stripes/stripe-40px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/suggest-dropdown.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/suggest-dropdown.svg": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/time-edit-button.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/wt.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/2/wt.less": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/bootstrap-theme.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/bootstrap-theme.css.map": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/bootstrap-theme.min.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/bootstrap-theme.min.css.map": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/bootstrap.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/bootstrap.css.map": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/bootstrap.min.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/bootstrap.min.css.map": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/date-edit-button.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/date-edit-button.svg": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/nav-minus-rtl.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/nav-minus.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/nav-plus-rtl.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/nav-plus.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/spin-buttons.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/spin-buttons.svg": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/generate.sh": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-10px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-11px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-12px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-13px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-14px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-15px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-16px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-17px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-18px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-19px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-20px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-21px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-22px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-23px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-24px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-25px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-26px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-27px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-28px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-29px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-30px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-31px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-32px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-33px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-34px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-35px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-36px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-37px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-38px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-39px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/stripes/stripe-40px.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/suggest-dropdown.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/suggest-dropdown.svg": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/time-edit-button.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/wt.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/3/wt.less": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/bootstrap.bundle.min.js": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/bootstrap.bundle.min.js.map": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/calendar-date.svg": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/main.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/main.css.map": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/nav-minus-rtl.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/nav-minus.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/nav-plus-rtl.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/nav-plus.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/5/wt.css": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/img/glyphicons-halflings-white.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/img/glyphicons-halflings.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/sort-arrow-down.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/sort-arrow-none.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/sort-arrow-up.gif": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/splitter-h.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/bootstrap/splitter-v.png": {
+      "reason": "theme 'bootstrap' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/default/closeicons-dialog.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/closeicons-mi.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/closeicons-tab.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/dropdown.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/nav-minus-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "themes/default/nav-minus.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/nav-plus-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "themes/default/nav-plus.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/generate.sh": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-10px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-11px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-12px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-13px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-14px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-15px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-16px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-17px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-18px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-19px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-20px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-21px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-22px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-23px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-24px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-25px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-26px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-27px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-28px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-29px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-30px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-31px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-32px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-33px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-34px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-35px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-36px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-37px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-38px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-39px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/no-stripes/no-stripe-40px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/slider-thumb-h-disabled.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/slider-thumb-h.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/slider-thumb-v-disabled.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/slider-thumb-v.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/sliderbg-h-disabled.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/sliderbg-h.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/sliderbg-v-disabled.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/sliderbg-v.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/sort-arrow-disabled.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/sort-arrow-down.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/sort-arrow-none.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/sort-arrow-up.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/spin-buttons-dn.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/spin-buttons-up.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/spin-buttons.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/splitter-h.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/splitter-v.png": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/generate.sh": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-10px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-11px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-12px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-13px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-14px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-15px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-16px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-17px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-18px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-19px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-20px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-21px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-22px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-23px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-24px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-25px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-26px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-27px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-28px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-29px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-30px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-31px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-32px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-33px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-34px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-35px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-36px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-37px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-38px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-39px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/stripes/stripe-40px.gif": {
+      "reason": "row-striping background set in C++ by alternatingRowColors (Wt WCssTheme.C:295); height-parameterized -> confirm exact set via runtime audit",
+      "verdict": "KEEP"
+    },
+    "themes/default/wt.css": {
+      "reason": "Wt core/active-theme entry stylesheet",
+      "verdict": "KEEP"
+    },
+    "themes/default/wt_ie.css": {
+      "reason": "IE<9-only stylesheet (Wt WCssTheme.C:59 guards it with agentIsIElt(9)/IE6); InterSpec runs WebKit/modern only",
+      "verdict": "REMOVE"
+    },
+    "themes/default/wt_ie6.css": {
+      "reason": "IE<9-only stylesheet (Wt WCssTheme.C:59 guards it with agentIsIElt(9)/IE6); InterSpec runs WebKit/modern only",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/closeicons-dialog.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/closeicons-mi.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/closeicons-tab.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/dropdown.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/dropshadow.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/gradient.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/nav-minus-rtl.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/nav-minus-rtl.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/nav-minus.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/nav-minus.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/nav-plus-rtl.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/nav-plus-rtl.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/nav-plus.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/nav-plus.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/generate.sh": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-10px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-11px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-12px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-13px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-14px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-15px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-16px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-17px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-18px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-19px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-20px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-21px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-22px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-23px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-24px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-25px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-26px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-27px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-28px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-29px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-30px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-31px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-32px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-33px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-34px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-35px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-36px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-37px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-38px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-39px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/no-stripes/no-stripe-40px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/slider-thumb-disabled.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/slider-thumb.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-h-disabled.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-h.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-he-disabled.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-he.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-hw-disabled.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-hw.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-v-disabled.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-v.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-ve-disabled.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-ve.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-vw-disabled.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sliderbg-vw.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sort-arrow-disabled.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sort-arrow-down.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sort-arrow-none.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/sort-arrow-up.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/splitter-h.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/splitter-v.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/generate.sh": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-10px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-11px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-12px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-13px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-14px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-15px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-16px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-17px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-18px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-19px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-20px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-21px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-22px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-23px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-24px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-25px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-26px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-27px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-28px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-29px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-30px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-31px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-32px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-33px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-34px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-35px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-36px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-37px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-38px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-39px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/stripes/stripe-40px.gif": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/suggest-dropdown.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/title-gradient.png": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/wt.css": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/wt_ie.css": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "themes/polished/wt_ie6.css": {
+      "reason": "theme 'polished' is never selected (InterSpec sets only ['default'] via setCssTheme)",
+      "verdict": "REMOVE"
+    },
+    "transitions.css": {
+      "reason": "Wt core/active-theme entry stylesheet",
+      "verdict": "KEEP"
+    },
+    "tv-line-last-rtl.gif": {
+      "reason": "RTL-only asset; InterSpec never sets RightToLeft layout, so the rule referencing it never matches",
+      "verdict": "REMOVE"
+    },
+    "tv-line-last.gif": {
+      "reason": "referenced by active CSS (url()/@import from themes/default/wt.css)",
+      "verdict": "KEEP"
+    },
+    "webkit-transitions.css": {
+      "reason": "Wt core/active-theme entry stylesheet",
+      "verdict": "KEEP"
+    }
+  },
+  "interspec_conditions": {
+    "supports_ie": false,
+    "uses_fa_names": false,
+    "uses_media_player": false,
+    "uses_rtl": false,
+    "uses_wicon": false
+  },
+  "prune_list": [
+    "collapse-rtl.gif",
+    "expand-rtl.gif",
+    "font-awesome",
+    "jPlayer",
+    "line-last-rtl.gif",
+    "line-middle-rtl.gif",
+    "themes/bootstrap",
+    "themes/default/nav-minus-rtl.gif",
+    "themes/default/nav-plus-rtl.gif",
+    "themes/default/wt_ie.css",
+    "themes/default/wt_ie6.css",
+    "themes/polished",
+    "tv-line-last-rtl.gif"
+  ],
+  "summary": {
+    "KEEP": 106,
+    "REMOVE": 248,
+    "REVIEW": 7,
+    "total": 361
+  },
+  "wt_loaders": {
+    "font_awesome": "WIcon.C:89",
+    "ie_css": "WCssTheme.C:59",
+    "jplayer": "WMediaPlayer.C:127",
+    "stripes": "WCssTheme.C:295"
+  }
+}

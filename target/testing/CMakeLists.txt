@@ -64,6 +64,23 @@ set( BOOST_TEST_CL_ARGS --log_level=test_suite --catch_system_error=yes --report
 # The arguments passed to our code, so the code can know where static nuclear data is, as well spectra and such
 set( DATA_DIR_ARGS --datadir=${CMAKE_CURRENT_SOURCE_DIR}/../../data --testfiledir=${CMAKE_CURRENT_SOURCE_DIR}/test_data )
 
+
+# Drift gate for the Wt resource prune (target/tools/wt_resource_audit/wt_resource_audit.py): fails
+# if the committed manifest no longer matches the Wt resources + InterSpec source
+# (e.g. after a Wt upgrade adds/renames a resource or a widget's usage changes).
+# Pure-Python, so it runs without building InterSpecLib (ctest -R WtResourcePruneManifest).
+find_package( Python3 COMPONENTS Interpreter QUIET )
+if( Python3_Interpreter_FOUND AND WT_RESOURCES_ORIG_DIR )
+  add_test( NAME WtResourcePruneManifest
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/../tools/wt_resource_audit/wt_resource_audit.py" --check
+            --wt-resources "${WT_RESOURCES_ORIG_DIR}"
+            --interspec-root "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+            --manifest "${CMAKE_CURRENT_SOURCE_DIR}/../tools/wt_resource_audit/wt_resources_manifest.json"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+endif()
+
 add_executable( test_PhysicalUnits test_PhysicalUnits.cpp )
 target_link_libraries( test_PhysicalUnits PRIVATE InterSpecLib )
 add_test( NAME PhysicalUnits
