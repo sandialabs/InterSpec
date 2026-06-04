@@ -2636,6 +2636,11 @@ void D3SpectrumDisplayDiv::setThumbnailMode()
   //Turn off the mouse-move numbers in lower-right corner
   js += m_jsgraph + ".setShowMouseStats(false);";
 
+  //Thumbnail/preview charts are not editable, so disable the ROI-extent drag affordance
+  //  (the drag handles that appear when hovering a ROI edge); otherwise it looks editable
+  //  but dragging does nothing on these preview charts.
+  js += m_jsgraph + ".setAllowDragRoiExtent(false);";
+
 
   // Make the x-axis (energy) text nice and small.
   const string rule_name = id() + "_ThumbnailTxt";
