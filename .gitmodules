@@ -5,6 +5,7 @@
 [submodule "external_libs/SpecUtils"]
 	path = external_libs/SpecUtils
 	url = https://github.com/sandialabs/SpecUtils.git
+	branch = feature/updateD3Chart
 [submodule "external_libs/QR-Code-generator"]
 	path = external_libs/QR-Code-generator
 	url = https://github.com/nayuki/QR-Code-generator.git
