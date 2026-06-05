@@ -1285,6 +1285,11 @@ void InterSpecApp::getSafeAreaInsets( InterSpecApp::DeviceOrientation &orientati
 
 void InterSpecApp::notify( const Wt::WEvent& event )
 {
+  // Coalesce every undo/redo step generated during this event loop (event handling AND the
+  //  subsequent render pass) into a single combined step.  Declared outside the unit-test guard so it
+  //  applies in both build configurations; flushes on scope exit, even if an exception is caught below.
+  UndoRedoManager::EventLoopSentry undo_event_sentry;
+
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   try
   {

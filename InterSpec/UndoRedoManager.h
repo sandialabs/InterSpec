@@ -50,13 +50,13 @@ namespace SpecUtils
 /**
  TODO items:
  - Have the SpecMeas hold the history for itself
- - Make it so this class collects all the undo/redo steps for a given event loop, and mark this object as needing update, so
-   during render, all steps are collected up, and made into a single step - but this would require making this class inherit
-   from Wt::WWidget (or more likely Wt::WCompositeWidget), instead of just Wt::WObject - or hooking into this class from
-   `InterSpecApp::notify(...)` (but I am assuming all updating/rendering happens from within `notify`, which I'm 100% on)
- - `canAddUndoRedoNow()` and similar could also instead reference a variable that is not reset until the end of
-   `InterSpecApp::notify(...)`, so objects that set undo/redo steps during `render(...)`, will properly be able
-   to detect if they should add a step or not (particularly from within `addUndoRedoStep(...)`)
+
+ Event-loop coalescing is implemented via #EventLoopSentry: `InterSpecApp::notify(...)` instantiates
+ one for the duration of every event loop, so all undo/redo steps generated during a single event
+ loop (event handling AND the subsequent render pass) are accumulated in #m_collected_steps and
+ combined into a single step when the outermost sentry destructs.  Because Wt runs
+ `WServer::post(...)`/`schedule(...)` callbacks through `WApplication::notify(...)`, background/posted
+ work to the session thread is coalesced by the same hook automatically.
  */
 class UndoRedoManager : public Wt::WObject
 {
@@ -169,6 +169,24 @@ public:
     BlockUndoRedoInserts( const BlockUndoRedoInserts& ) = delete; // non construction-copyable
     BlockUndoRedoInserts &operator=( const BlockUndoRedoInserts & ) = delete; // non copyable
   };//BlockUndoRedoInserts
+
+  /** While in scope, marks that we are inside an `InterSpecApp::notify(...)` event loop, so all calls
+   to #addUndoRedoStep are collected (into #m_collected_steps) and combined into a single undo/redo
+   step when the outermost sentry destructs.  `InterSpecApp::notify(...)` instantiates one of these
+   for the duration of every event loop; because Wt runs posted/scheduled callbacks through
+   `WApplication::notify(...)`, background work to the session thread is coalesced by the same
+   mechanism.
+
+   Nestable: only the outermost sentry triggers the combine-and-insert.
+   */
+  struct EventLoopSentry
+  {
+    EventLoopSentry();
+    ~EventLoopSentry();
+
+    EventLoopSentry( const EventLoopSentry & ) = delete; // non construction-copyable
+    EventLoopSentry &operator=( const EventLoopSentry & ) = delete; // non copyable
+  };//struct EventLoopSentry
   
   /** A struct that blocks the GUI from allowing undo/redo (disables menu items), as well as blocks undo/redo*/
   struct BlockGuiUndoRedo : public Wt::WObject
@@ -201,9 +219,17 @@ public:
   };//enum class State
   
 protected:
+  struct UndoRedoStep
+  {
+    std::function<void()> m_undo;
+    std::function<void()> m_redo;
+    std::string m_description;
+    std::chrono::time_point<std::chrono::system_clock> m_time;
+  };//struct UndoRedoStep
+
   /** Emits `m_[undo|redo]MenuDisableUpdate` and `m_[undo|redo|MenuToolTipUpdate` signals
    to set the state that the menu items should be in.
-   
+
    Currently we have things hooked up so values will be updated to the WWidget, even if they dont need to be.
    */
   void updateMenuItemStates();
@@ -215,27 +241,48 @@ protected:
   
   /** Limits total number of steps held in #m_steps plus #m_prev to be less than that retunred by #maxUndoRedoSteps */
   void limitTotalStepsInMemory();
-  
+
+  /** Inserts a single, already-decided step into #m_steps: performs the #m_step_offset undo-recovery
+   re-push, resets the offset, pushes the step, emits the menu signals, and schedules cleanup if
+   needed.  Assumes all #addUndoRedoStep guard conditions have already passed and #m_steps is non-null.
+   */
+  void insertStepInternal( UndoRedoStep step );
+
+  /** Increments #m_event_loop_depth.  Called by #EventLoopSentry. */
+  void beginEventLoop();
+
+  /** Decrements #m_event_loop_depth; when it reaches zero, calls #flushCollectedSteps.
+   Called by #EventLoopSentry. */
+  void endEventLoop();
+
+  /** Combines #m_collected_steps into a single #UndoRedoStep (or zero/one steps as appropriate),
+   inserts it via #insertStepInternal, and clears #m_collected_steps.  Never throws. */
+  void flushCollectedSteps();
+
 protected:
-  
+
   State m_state;
-  
-  struct UndoRedoStep
-  {
-    std::function<void()> m_undo;
-    std::function<void()> m_redo;
-    std::string m_description;
-    std::chrono::time_point<std::chrono::system_clock> m_time;
-  };//struct UndoRedoStep
-  
+
   /** Each new Undo/Redo step, we will `push` onto #m_steps.  But if we have executed an undo step,
    we will use #m_step_offset to track were we are at.
    */
   std::shared_ptr<std::deque<UndoRedoStep>> m_steps;
-  
+
   /** Where we are at, relative to end of #m_steps.
    So if we havent done any undoes, this value will be zero. */
   size_t m_step_offset;
+
+  /** Nesting depth of `InterSpecApp::notify(...)` calls we are currently inside, tracked by
+   #EventLoopSentry.  When zero, #addUndoRedoStep inserts immediately (via #insertStepInternal);
+   when greater than zero, steps are accumulated into #m_collected_steps and combined into a single
+   step when the depth returns to zero.
+   */
+  size_t m_event_loop_depth;
+
+  /** Undo/redo steps collected during the current event loop (see #m_event_loop_depth).
+   Combined into a single #UndoRedoStep and inserted by #flushCollectedSteps.
+   */
+  std::vector<UndoRedoStep> m_collected_steps;
   
   /** Track current SpecMeas and sample numbers; indexed by SpecUtils::SpectrumType enum. */
   std::shared_ptr<SpecMeas> m_current_specs[3];

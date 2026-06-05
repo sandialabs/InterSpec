@@ -25,6 +25,7 @@
 #include <atomic>
 #include <string>
 #include <iostream>
+#include <algorithm>
 
 #include <Wt/WServer.h>
 
@@ -97,6 +98,8 @@ UndoRedoManager::UndoRedoManager( InterSpec *parent )
   m_state( UndoRedoManager::State::Neither ),
   m_steps{},
   m_step_offset{ 0 },
+  m_event_loop_depth( 0 ),
+  m_collected_steps{},
   m_current_specs{ nullptr },
   m_current_samples{},
   m_current_detectors{},
@@ -457,6 +460,24 @@ UndoRedoManager::BlockGuiUndoRedo::~BlockGuiUndoRedo()
 }//BlockGuiUndoRedo destructor
 
 
+UndoRedoManager::EventLoopSentry::EventLoopSentry()
+{
+  // Look the manager up fresh (rather than caching the pointer) so we are robust to the manager being
+  //  created or destroyed during a notify; #endEventLoop has an underflow guard for the asymmetric case.
+  UndoRedoManager *manager = UndoRedoManager::instance();
+  if( manager )
+    manager->beginEventLoop();
+}//EventLoopSentry constructor
+
+
+UndoRedoManager::EventLoopSentry::~EventLoopSentry()
+{
+  UndoRedoManager *manager = UndoRedoManager::instance();
+  if( manager )
+    manager->endEventLoop();  // endEventLoop -> flushCollectedSteps never throws
+}//~EventLoopSentry()
+
+
 UndoRedoManager *UndoRedoManager::instance()
 {
   InterSpec *viewer = InterSpec::instance();
@@ -523,9 +544,35 @@ void UndoRedoManager::addUndoRedoStep( std::function<void()> undo,
     Wt::log("debug") << "UndoRedoManager::addUndoRedoStep(): undo/redo disabled app-wide.";
     return;
   }
-  
+
+  UndoRedoStep step{ std::move(undo), std::move(redo), description,
+                     std::chrono::system_clock::now() };
+
+  if( m_event_loop_depth > 0 )
+  {
+    // Inside an InterSpecApp::notify(...) event loop - collect the step now; all steps collected
+    //  during this loop are combined into a single step when the loop finishes (#flushCollectedSteps).
+    m_collected_steps.push_back( std::move(step) );
+    return;
+  }//if( m_event_loop_depth > 0 )
+
+  // Not inside a notify event loop (e.g., a WResource::handleRequest(...) that grabbed a fresh
+  //  WApplication::UpdateLock on a worker thread) - insert immediately, as we always have.
+  insertStepInternal( std::move(step) );
+}//void addUndoRedoStep(...)
+
+
+void UndoRedoManager::insertStepInternal( UndoRedoStep step )
+{
+  assert( m_steps );
+  if( !m_steps )
+    return;
+
+  assert( m_step_offset <= m_steps->size() );
+
+  const int max_steps = ns_max_steps;
   const size_t num_steps = m_steps->size();
-  
+
   if( (m_step_offset != 0) && (m_step_offset <= num_steps) )
   {
     // If we are here, we have hit 'undo' one or more times, and now we are making a new edit
@@ -535,30 +582,136 @@ void UndoRedoManager::addUndoRedoStep( std::function<void()> undo,
     //  the undo steps.
     for( size_t index = 0; index < m_step_offset; ++index )
     {
-      UndoRedoStep step = (*m_steps)[num_steps - 1 - index];
-      std::swap( step.m_redo, step.m_undo );
+      UndoRedoStep prev_step = (*m_steps)[num_steps - 1 - index];
+      std::swap( prev_step.m_redo, prev_step.m_undo );
       m_num_steps_in_mem += 1;
-      m_steps->push_back( step );
+      m_steps->push_back( prev_step );
     }//
   }//if( m_step_offset != 0 )
-  
+
   m_step_offset = 0;
   m_num_steps_in_mem += 1;
-  m_steps->push_back( {undo, redo, description, std::chrono::system_clock::now()} );
-  
+  m_steps->push_back( std::move(step) );
+
   m_undoMenuDisableUpdate.emit( false );
-  m_undoMenuToolTipUpdate.emit( Wt::WString::fromUTF8(description) );
+  m_undoMenuToolTipUpdate.emit( Wt::WString::fromUTF8(m_steps->back().m_description) );
   m_redoMenuDisableUpdate.emit( true );
   m_redoMenuToolTipUpdate.emit( Wt::WString() );
-  
-  
+
+
   // Cleaning up the history isnt a super-cheap operation, so we'll We'll wait until we
   //  are #ns_nsteps_histerious over the max limit, to bother to clean things up.
   //  Also, we'll clean things up outside of the main event loop
   if( (max_steps != 0) && (m_num_steps_in_mem > (max_steps + ns_nsteps_histerious)) )
     Wt::WServer::instance()->schedule( std::chrono::milliseconds(100), wApp->sessionId(),
                                   [this](){ limitTotalStepsInMemory(); } );
-}//void addUndoRedoStep(...)
+}//void insertStepInternal( UndoRedoStep step )
+
+
+void UndoRedoManager::beginEventLoop()
+{
+  m_event_loop_depth += 1;
+}//void beginEventLoop()
+
+
+void UndoRedoManager::endEventLoop()
+{
+  assert( m_event_loop_depth > 0 );
+  if( m_event_loop_depth == 0 )  // underflow guard: manager may have been created mid-notify
+    return;
+
+  m_event_loop_depth -= 1;
+
+  if( m_event_loop_depth == 0 )
+    flushCollectedSteps();
+}//void endEventLoop()
+
+
+void UndoRedoManager::flushCollectedSteps()
+{
+  if( m_collected_steps.empty() )
+    return;
+
+  try
+  {
+    if( m_collected_steps.size() == 1 )
+    {
+      // Single step: insert it unchanged (this path is byte-for-byte the pre-coalescing behavior).
+      insertStepInternal( std::move(m_collected_steps[0]) );
+    }else
+    {
+      // Description: join the unique sub-step descriptions (in first-seen order) with " & ", capping
+      //  the number shown so the menu tooltip doesnt grow without bound.
+      const size_t max_desc_parts = 3;
+      vector<string> desc_parts;
+      for( const UndoRedoStep &s : m_collected_steps )
+      {
+        if( s.m_description.empty() )
+          continue;
+        if( std::find(begin(desc_parts), end(desc_parts), s.m_description) != end(desc_parts) )
+          continue;
+        desc_parts.push_back( s.m_description );
+      }//for( const UndoRedoStep &s : m_collected_steps )
+
+      string description;
+      const size_t nparts = std::min( desc_parts.size(), max_desc_parts );
+      for( size_t i = 0; i < nparts; ++i )
+        description += (i ? " & " : "") + desc_parts[i];
+      if( desc_parts.size() > max_desc_parts )
+        description += " & ...";
+
+      const std::chrono::time_point<std::chrono::system_clock> when = m_collected_steps.back().m_time;
+
+      const shared_ptr<vector<UndoRedoStep>> steps
+                       = make_shared<vector<UndoRedoStep>>( std::move(m_collected_steps) );
+
+      bool any_undo = false, any_redo = false;
+      for( const UndoRedoStep &s : *steps )
+      {
+        any_undo = (any_undo || static_cast<bool>(s.m_undo));
+        any_redo = (any_redo || static_cast<bool>(s.m_redo));
+      }
+
+      // Undo runs the collected steps' undos in reverse order; redo runs the redos in forward order.
+      //  Each sub-step is wrapped so one failure doesnt prevent reverting/replaying the rest.
+      std::function<void()> combined_undo;
+      if( any_undo )
+      {
+        combined_undo = [steps](){
+          for( size_t i = steps->size(); i > 0; --i )
+          {
+            const std::function<void()> &fcn = (*steps)[i-1].m_undo;
+            if( !fcn )
+              continue;
+            try{ fcn(); }catch( std::exception &e ){ Wt::log("error") << "Error in combined undo step: " << e.what(); }
+          }
+        };
+      }//if( any_undo )
+
+      std::function<void()> combined_redo;
+      if( any_redo )
+      {
+        combined_redo = [steps](){
+          for( size_t i = 0; i < steps->size(); ++i )
+          {
+            const std::function<void()> &fcn = (*steps)[i].m_redo;
+            if( !fcn )
+              continue;
+            try{ fcn(); }catch( std::exception &e ){ Wt::log("error") << "Error in combined redo step: " << e.what(); }
+          }
+        };
+      }//if( any_redo )
+
+      insertStepInternal( UndoRedoStep{ std::move(combined_undo), std::move(combined_redo),
+                                        description, when } );
+    }//if( m_collected_steps.size() == 1 ) / else
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "UndoRedoManager::flushCollectedSteps(): error inserting combined step: " << e.what();
+  }//try / catch
+
+  m_collected_steps.clear();
+}//void flushCollectedSteps()
 
 
 bool UndoRedoManager::canUndo() const
@@ -747,9 +900,11 @@ Wt::Signal<Wt::WString> &UndoRedoManager::redoMenuToolTipUpdate()
 
 void UndoRedoManager::clearUndoRedu()
 {
+  m_collected_steps.clear();
+
   if( m_steps )
     m_steps->clear();
-  
+
   updateMenuItemStates();
 }//void clearUndoRedu()
 
@@ -834,7 +989,13 @@ void UndoRedoManager::handleSpectrumChange( const SpecUtils::SpectrumType type,
     {
       UndoRedoManager::PeakModelChange::setToCurrentPeaks();
     }
-    
+
+    // Any undo/redo steps collected so far during this event loop belong to the spectrum context we
+    //  are about to leave - insert them into the current m_steps before we park/replace it (this is
+    //  an intentional flush while m_event_loop_depth may be > 0; it only touches m_steps/offset/menu).
+    if( !m_collected_steps.empty() )
+      flushCollectedSteps();
+
     if( m_steps && !m_steps->empty() )
     {
       const spec_key_t key{ prev_weak, prev_samples };
