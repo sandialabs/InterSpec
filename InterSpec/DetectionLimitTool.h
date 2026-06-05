@@ -293,6 +293,18 @@ protected:
   
   void handleInputChange();
 
+  /** If the user-visible state has changed since the last call, registers a single undo/redo step
+   that restores the tool's state via #encodeStateToUrl / #handleAppUrl.  Called from
+   #scheduleCalcUpdate (the funnel for all input-driven recomputes - both the per-ROI MdaPeakRow
+   edits and the inputs routed through #handleInputChange).  No-op while an undo/redo is executing
+   or inserts are blocked.
+   */
+  void checkAddUndoRedoStep();
+
+  /** Sets the chart Y axis to log/linear and registers an undo/redo step for the toggle (the
+   log/lin state is not part of #encodeStateToUrl, so it needs its own step). */
+  void handleChartYAxisLogLinChange( const bool logY );
+
   /** Connected to `InterSpec::displayedSpectrumChanged()`.  When the foreground
    changes to a non-null spectrum, rebuilds `m_our_meas` / `m_origSpec` / chart
    from the new foreground (mirroring the constructor's seed logic), refreshes
@@ -499,6 +511,11 @@ public:
   
 protected:
   std::map<float,MdaPeakRowInput> m_previousRoiValues;
+
+  /** Baseline serialized state (from #encodeStateToUrl) used by #checkAddUndoRedoStep to detect
+   user-visible changes and capture undo/redo points.  Empty until the first #handleInputChange.
+   */
+  std::string m_stateUri;
 };//class DetectionLimitTool
 
 

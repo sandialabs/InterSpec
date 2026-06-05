@@ -1217,8 +1217,8 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   
   SwitchCheckbox *loglin = inputTable->addNew<SwitchCheckbox>( WString::tr("dlt-log"), WString::tr("dlt-lin") );
   loglin->addStyleClass( "MdaChartLogLin GridFourthCol GridFirstRow GridSpanTwoCol" );
-  loglin->unChecked().connect( this, [this](){ m_chart->setYAxisLog( true ); } );
-  loglin->checked().connect( this, [this](){ m_chart->setYAxisLog( false ); } );
+  loglin->unChecked().connect( this, [this](){ handleChartYAxisLogLinChange( true ); } );
+  loglin->checked().connect( this, [this](){ handleChartYAxisLogLinChange( false ); } );
   m_chart->yAxisLogLinChanged().connect( loglin, [loglin]( bool isLog ){ loglin->setUnChecked( isLog ); } );
   
   m_attenuateForAir = inputTable->addNew<WCheckBox>( WString::tr("dlt-attenuate-for-air") );
@@ -2409,7 +2409,20 @@ void DetectionLimitTool::render( Wt::WFlags<Wt::RenderFlag> flags )
     doCalc();
   
   m_needsUpdate = false;
-  
+
+  // Establish the undo/redo baseline once, after the first render (the tool's state has settled by
+  //  now), so construction / initial load don't generate spurious undo steps.  See checkAddUndoRedoStep.
+  if( m_stateUri.empty() )
+  {
+    try
+    {
+      m_stateUri = encodeStateToUrl();
+    }catch( std::exception & )
+    {
+      // leave empty; will retry on a later render
+    }
+  }//if( m_stateUri.empty() )
+
   WContainerWidget::render( flags );
 }//render( flags )
 
@@ -3230,9 +3243,53 @@ void DetectionLimitTool::handleInputChange()
   }//for( const auto &line : lines )
   
   m_results->show();
-  
+
   scheduleCalcUpdate();
 }//void handleInputChange()
+
+
+void DetectionLimitTool::checkAddUndoRedoStep()
+{
+  // Baseline is established in render() after the first event loop; until then dont track changes
+  //  (avoids spurious steps during construction / initial load).
+  if( m_stateUri.empty() )
+    return;
+
+  string newState;
+  try
+  {
+    newState = encodeStateToUrl();
+  }catch( std::exception &e )
+  {
+    cerr << "DetectionLimitTool::checkAddUndoRedoStep: failed to encode state: " << e.what() << endl;
+    return;
+  }
+
+  if( newState == m_stateUri )
+    return;
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    const string prevState = m_stateUri;
+
+    // Look the tool up fresh on execution (never capture the widget pointer); handleAppUrl restores
+    //  the full state and is itself wrapped in BlockUndoRedoInserts, so undo/redo wont nest steps.
+    auto restore = []( const string &state ){
+      InterSpec *viewer = InterSpec::instance();
+      DetectionLimitWindow *win = viewer ? viewer->createDetectionLimitTool() : nullptr;
+      DetectionLimitTool *tool = win ? win->tool() : nullptr;
+      if( tool )
+        tool->handleAppUrl( state );
+    };
+
+    auto undo = [restore,prevState](){ restore( prevState ); };
+    auto redo = [restore,newState](){ restore( newState ); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change detection limit input." );
+  }//if( undoRedo && canAddUndoRedoNow )
+
+  m_stateUri = newState;
+}//void checkAddUndoRedoStep()
 
 
 double DetectionLimitTool::currentConfidenceLevel()
@@ -3311,7 +3368,36 @@ void DetectionLimitTool::scheduleCalcUpdate()
 {
   m_needsUpdate = true;
   scheduleRender();
+
+  // All user input changes funnel through here: directly for per-ROI MdaPeakRow edits (select a
+  //  line, ROI bounds, continuum type / norm), and via handleInputChange for the other inputs.
+  //  This runs before the deferred doCalc, so encodeStateToUrl reflects the user inputs - not the
+  //  computed limit that doCalc writes back into the display-activity/-distance fields.
+  checkAddUndoRedoStep();
 }//void scheduleCalcUpdate()
+
+
+void DetectionLimitTool::handleChartYAxisLogLinChange( const bool logY )
+{
+  m_chart->setYAxisLog( logY );
+
+  // The chart log/lin toggle isnt part of encodeStateToUrl, so register its own undo/redo step.
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    auto set_log = []( const bool log ){
+      InterSpec *viewer = InterSpec::instance();
+      DetectionLimitWindow *win = viewer ? viewer->createDetectionLimitTool() : nullptr;
+      DetectionLimitTool *tool = win ? win->tool() : nullptr;
+      if( tool )
+        tool->m_chart->setYAxisLog( log );  // the log/lin checkbox syncs via yAxisLogLinChanged
+    };
+
+    auto undo = [set_log,logY](){ set_log( !logY ); };
+    auto redo = [set_log,logY](){ set_log( logY ); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Toggle MDA chart log/lin." );
+  }//if( undoRedo && canAddUndoRedoNow )
+}//void handleChartYAxisLogLinChange( const bool logY )
 
 
 std::string DetectionLimitTool::encodeStateToUrl() const

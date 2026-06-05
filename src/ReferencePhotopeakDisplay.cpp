@@ -3820,11 +3820,21 @@ void ReferencePhotopeakDisplay::userColorSelectCallback( const WColor &color )
     m_colorSelect->setColor( m_currentlyShowingNuclide.m_input.m_color );
   }else
   {
+    // Snapshot the starting state first so the color change registers an undo/redo point, the same
+    //  way the other reference-line inputs do via updateDisplayChange() / addUndoRedoPoint().
+    const ReferenceLineInfo starting_showing = m_currentlyShowingNuclide;
+    const vector<ReferenceLineInfo> starting_persisted = m_persisted;
+    const deque<RefLineInput> starting_prev_nucs = m_prevNucs;
+    const bool starting_user_color = m_userHasPickedColor;
+
     m_userHasPickedColor = true;
     m_currentlyShowingNuclide.m_input.m_color = color;
     const string &src = m_currentlyShowingNuclide.m_input.m_input_txt;
     updateColorCacheForSource( src, color );
     refreshLinesDisplayedToGui();
+
+    addUndoRedoPoint( starting_showing, starting_persisted, starting_prev_nucs,
+                      starting_user_color, m_currentlyShowingNuclide.m_input );
   }
 }//void userColorSelectCallback( const std::string &color )
 
