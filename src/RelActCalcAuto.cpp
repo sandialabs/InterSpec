@@ -1993,6 +1993,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
 
+  /** Free physical-model Hoerl (b,c) parameters get a weak Gaussian prior pulling them toward their
+   identity values (physical b=0, c=1, i.e. no empirical correction).  This regularizes the otherwise
+   near-degenerate activity<->rel-eff overall-scale/shape direction of the Physical Model, which - unlike
+   the polynomial rel-eff forms - has no `m_rel_eff_anchor_enhancement` anchor residual.  Without it, a
+   weakly-constrained Hoerl direction can produce a tiny singular value that the covariance pseudo-inverse
+   turns into a huge variance, blowing up the displayed rel-eff error band.
+
+   Each entry is {parameter index, identity parameter value (in Ceres-scaled units)}; the prior residual
+   is `sm_hoerl_prior_weight * (x[index] - identity) * parameter_scale_factor(index)`, i.e. the weight times
+   the deviation of the physical b/c from its identity value.  Only populated when
+   `sm_hoerl_prior_weight > 0.0` and the Hoerl term is actually being fit; empty otherwise.
+   */
+  std::vector<std::pair<size_t,double>> m_phys_model_hoerl_priors;
+
   /** Deviation pair anchor points for non-linear energy calibration correction.
 
    Each anchor defines an energy point where a deviation offset can be applied.  The first and last
@@ -2021,6 +2035,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   static constexpr double sm_peak_range_uncert_offset = 1.0;
   static constexpr double sm_peak_range_uncert_par_scale = 0.1;
+
+  /** Weight of the weak prior pulling the free Physical-Model Hoerl b,c toward their identity values
+   (physical b=0, c=1).  See `m_phys_model_hoerl_priors`.  The prior acts like a Gaussian with
+   sigma = 1/weight on the physical b and (c-1) values, so a small weight only lightly regularizes the
+   degenerate scale/shape direction without meaningfully biasing a genuinely-needed Hoerl correction.
+
+   Set to 0.0 to disable entirely (no extra residuals are added).  This is a tuning knob - evaluate the
+   effect with the IDB enrichment check harness (target/idb_enrichment_check) before settling a value.
+   */
+  static constexpr double sm_hoerl_prior_weight = 1.0;
 
   
   mutable std::mutex m_aged_gammas_cache_mutex;
@@ -2133,6 +2157,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_skip_skew( false ), // 20250324 HACK to test fitting peak skew
 #endif
   m_peak_ranges_with_uncert{},
+  m_phys_model_hoerl_priors{},
   m_dev_pair_anchors{},
   m_num_fitted_dev_pair_params( 0 ),
   m_all_peaks( all_peaks ),
@@ -2516,9 +2541,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     for( const auto &r : m_energy_ranges )
       num_resids += r.num_channels;
-    
+
     num_resids += m_peak_ranges_with_uncert.size();
-    
+
+    // One residual per free Physical-Model Hoerl parameter being pulled toward its identity value.
+    num_resids += m_phys_model_hoerl_priors.size();
+
     return num_resids;
   }//size_t number_residuals() const
 
@@ -3752,7 +3780,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const size_t c_index = b_index + 1;
               
               pars[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b - start b at 0, so term is 1.0
-              pars[c_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy) - start c at 1, so term is 1
+              pars[c_index] = hoerl_c_param_for_c( 1.0 );  // (A) gamma=log(c); start c at 1 (gamma=0), so term is 1
               if( !rel_eff_curve.phys_model_use_hoerl
                  || (options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve))) )
               {
@@ -3769,8 +3797,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               {
                 lower_bounds[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
                 upper_bounds[b_index] = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
-                lower_bounds[c_index] = (1.0E-6/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //e.x, pow(-0.1889,1000/124.8) is NaN
-                upper_bounds[c_index] = (3.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+                // (A) Bounds are on gamma=log(c); preserve the original physical c-range of [1e-6, 3].
+                lower_bounds[c_index] = hoerl_c_param_for_c( 1.0E-6 );
+                upper_bounds[c_index] = hoerl_c_param_for_c( 3.0 );
+
+                // These b,c are free parameters.  Add a weak prior pulling them toward their identity
+                //  values (physical b=0, c=1) to regularize the Physical Model's activity<->rel-eff
+                //  degeneracy (it has no rel-eff anchor residual like the polynomial forms do).  The
+                //  identity Ceres values are exactly the starting values set at `pars[b_index]`/`[c_index]`
+                //  above.  See `m_phys_model_hoerl_priors` / `sm_hoerl_prior_weight`.
+                if( sm_hoerl_prior_weight > 0.0 )
+                {
+                  cost_functor->m_phys_model_hoerl_priors.emplace_back( b_index,
+                            (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset );
+                  cost_functor->m_phys_model_hoerl_priors.emplace_back( c_index,
+                            hoerl_c_param_for_c( 1.0 ) );  // (A) identity gamma for c=1 (pulls log(c) toward 0)
+                }
               }
 
               break;
@@ -4213,7 +4255,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
                 const double c_par_val = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
-                parameters[c_index] = c_par_val;
+                // (A) Manual solution fits physical c (linear convention); convert to Auto's log-space gamma.
+                parameters[c_index] = hoerl_c_param_for_c( std::clamp( c_par_val, 1.0E-6, 3.0 ) );
                 manual_index += 1;
               }
             }else
@@ -4225,7 +4268,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }else
               {
                 parameters[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b
-                parameters[c_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy)
+                parameters[c_index] = hoerl_c_param_for_c( 1.0 );  // (A) gamma=log(c); reset c to 1
               }
             }//if( manual_input.phys_model_use_hoerl ) / else
           }//if( no Physical Model ) / else
@@ -5377,7 +5420,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             // Right now we hard-wire not using Hoerl correction for manual Physical Rel Eff solution, so `b` and `c` should be at their starting values
             assert( parameters[b_index] == ((0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset) );  //(energy/1000)^b
-            assert( parameters[c_index] == ((1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset) );  //c^(1000/energy)
+            assert( parameters[c_index] == hoerl_c_param_for_c( 1.0 ) );  // (A) gamma=log(c) start value
             if( !already_fixed(b_index) )
               hoerl_par_indexes.push_back( b_index );
             if( !already_fixed(c_index) )
@@ -5702,7 +5745,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
     cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
     cov_options.num_threads = ceres_options.num_threads;
-    //cov_options.min_reciprocal_condition_number = 1e-14;
+
+    // Treat genuinely near-degenerate directions as null space (zero variance) instead of letting the
+    //  DENSE_SVD pseudo-inverse turn their tiny singular values into enormous ~1/sigma^2 variances that
+    //  blow up the reported rel-eff error band and parameter uncertainties.  `min_reciprocal_condition_number`
+    //  is compared against lambda_i/lambda_max = (sigma_i/sigma_max)^2, so 1e-12 drops directions with
+    //  sigma_i/sigma_max < 1e-6 - matching the effective-DOF singular-value threshold used below (line ~5830),
+    //  so the "kept covariance directions" and the "effective parameters" counts are consistent.
+    //  `null_space_rank = -1` keeps the pseudo-inverse (so Compute() still succeeds on rank-deficient Jacobians)
+    //  while honoring `min_reciprocal_condition_number`.
+    cov_options.min_reciprocal_condition_number = 1e-12; //default 1e-14; drops sigma_i/sigma_max < 1e-6
     //cov_options.column_pivot_threshold = -1;
     cov_options.null_space_rank = -1; //default: 0;
     
@@ -5836,6 +5888,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( (npar_eff < 1) || npar_eff < (num_pars/5) )
         throw runtime_error( "Only computed " + std::to_string(npar_eff)
                             + " DOF, compared to " + std::to_string(num_pars) + " parameters." );
+
+      // The covariance (cov_options.min_reciprocal_condition_number, above) drops exactly the directions
+      //  with singular-value ratio below this same 1e-6 threshold, so `num_free_pars - npar_eff` is the
+      //  number of near-degenerate directions omitted from the reported uncertainties / rel-eff band.
+      //  Warn when the fit is rank-deficient so an over-confident band is diagnosable.
+      const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
+      if( npar_eff < num_free_pars )
+        solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff)
+                            + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
+                            " unconstrained by the data (near-degenerate directions).  Their contribution is"
+                            " omitted from the reported uncertainties and relative-efficiency error band." );
 
       num_effective_paramaters = npar_eff;
     }catch( std::exception &e )
@@ -6545,13 +6608,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           assert( c_index < rel_eff_coefficients.size() );
           
           phys_model_result.hoerl_b = (rel_eff_coefficients[b_index] - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
-          phys_model_result.hoerl_c = (rel_eff_coefficients[c_index] - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
-          
+          // (A) c is fit in log-space (gamma); report the physical c = exp(gamma).
+          phys_model_result.hoerl_c = RelActAutoCostFcn::hoerl_c_from_param( rel_eff_coefficients[c_index] );
+
           if( uncertainties.size() > (this_rel_eff_start_index + b_index) )
             phys_model_result.hoerl_b_uncert = uncertainties[this_rel_eff_start_index + b_index] * RelActCalc::ns_decay_hoerl_b_multiple;
 
+          // (A) Propagate gamma uncertainty to physical c: c = exp(gamma) so sigma_c = c * multiple * sigma_gamma_par.
           if( uncertainties.size() > (this_rel_eff_start_index + c_index) )
-            phys_model_result.hoerl_c_uncert = uncertainties[this_rel_eff_start_index + c_index] * RelActCalc::ns_decay_hoerl_c_multiple; 
+            phys_model_result.hoerl_c_uncert = phys_model_result.hoerl_c.value()
+                       * uncertainties[this_rel_eff_start_index + c_index] * RelActCalc::ns_decay_hoerl_c_multiple;
 
           // If this isnt the first physical model, and we are using the same Hoerl function for all
           //  then we will use the Hoerl function from the first physical model.
@@ -8229,6 +8295,33 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   };//struct PhysModelRelEqnDef
   
   
+  /** (A) The Physical-Model Hoerl 'c' coefficient is fit in LOG-space.
+
+   The modified Hoerl term is `E_MeV^b * c^(1/E_MeV)`, i.e. the exponent is `b*log(E_MeV) + log(c)/E_MeV`.
+   Fitting `c` directly makes that exponent NON-linear in the fit parameter (through `log(c)`), forces an
+   awkward `c > 0` lower bound, and gives `c` an ~8x larger Jacobian at the low-energy end (1/E_MeV is up
+   to ~8 over a 120-1001 keV fit) - all of which hurt conditioning and put `c` near a bound where the
+   Gaussian covariance is ill-defined.
+
+   Instead we make the Ceres parameter be `gamma = log(c)` (mapped through the usual offset/multiple), so
+   the exponent is `b*log(E_MeV) + gamma/E_MeV` - LINEAR in the fit parameters - and `gamma` is unbounded
+   and well-scaled.  The physical `c = exp(gamma)` reported/displayed everywhere is unchanged.
+
+   Note: this fixes the parameter pathology, but the residual b<->c and c<->attenuation basis collinearity
+   is a property of the basis functions {log(E_MeV), 1/E_MeV} themselves; reducing that requires an
+   orthogonal-basis correction (see the planned Chebyshev/Legendre replacement). */
+  template<typename T>
+  static T hoerl_c_from_param( const T &par )
+  {
+    return exp( (par - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple );
+  }
+
+  /** Inverse of `hoerl_c_from_param`: the Ceres parameter (gamma-space) that yields physical Hoerl `c`. */
+  static double hoerl_c_param_for_c( const double c )
+  {
+    return (std::log(c) / RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+  }
+
   template<typename T>
   static PhysModelRelEqnDef<T> make_phys_eqn_input_no_other_curve_shielding( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve,
                                                 std::shared_ptr<const DetectorPeakResponse> drf,
@@ -8301,7 +8394,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const T &c = coeffs[c_index];
       
       answer.hoerl_b = (b - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;  //(energy/1000)^b
-      answer.hoerl_c = (c - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;  //c^(1000/energy)
+      answer.hoerl_c = hoerl_c_from_param( c );  // (A) c is fit in log-space: physical c = exp(gamma).  See hoerl_c_from_param().
     }//if( (b != 0.0) || (c != 1.0) )
     
     return answer;
@@ -10299,6 +10392,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         ++residual_index;
       }
     }//if( !m_peak_ranges_with_uncert.empty() )
+
+    // Weak prior pulling the free Physical-Model Hoerl b,c toward their identity values (physical b=0,
+    //  c=1).  `(x[par_index] - identity)*parameter_scale_factor(par_index)` is the deviation of the
+    //  physical b (or c-1) from identity, so the residual is `weight * physical_deviation`.  See
+    //  `m_phys_model_hoerl_priors` / `sm_hoerl_prior_weight`.
+    for( const std::pair<size_t,double> &prior : m_phys_model_hoerl_priors )
+    {
+      const size_t par_index = prior.first;
+      assert( par_index < x.size() );
+      const double scale = parameter_scale_factor( par_index );
+      residuals[residual_index] = T(sm_hoerl_prior_weight) * (x[par_index] - prior.second) * scale;
+      assert( !isnan(residuals[residual_index]) && !isinf(residuals[residual_index]) );
+      ++residual_index;
+    }//for( loop over Hoerl priors )
 
     assert( residual_index == number_residuals() );
 #ifndef NDEBUG
@@ -14711,6 +14818,12 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
         assert( 0 );
         info.js_rel_eff_eqn = "function(x){ return 1; }";
       }//if( not FramPhysicalModel ) / else / m_cost_functor
+
+      // Include the relative-efficiency uncertainty band (±2σ), like the interactive GUI does
+      //  (see `RelActAutoGui.cpp`).  Gated behind a compile-time flag so it can be disabled.
+      const bool show_rel_eff_uncert_band = true;
+      if( show_rel_eff_uncert_band )
+        info.js_rel_eff_uncert_eqn = rel_eff_eqn_js_uncert_fcn( rel_eff_index );
     }catch( std::exception &e )
     {
       cerr << "Error creating RelEffChart::ReCurveInfo: " << e.what() << endl;
