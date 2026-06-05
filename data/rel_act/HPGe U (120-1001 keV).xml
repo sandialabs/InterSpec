@@ -115,13 +115,6 @@
 				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
 			</RoiRange>
 			<RoiRange version="0">
-				<LowerEnergy>2.24919998e+02</LowerEnergy>
-				<UpperEnergy>2.28694000e+02</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<ForceFullRange>true</ForceFullRange>
-				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
-			</RoiRange>
-			<RoiRange version="0">
 				<LowerEnergy>5.66686707e+02</LowerEnergy>
 				<UpperEnergy>5.72216003e+02</UpperEnergy>
 				<ContinuumType>Linear</ContinuumType>
@@ -180,20 +173,6 @@
 			<RoiRange version="0">
 				<LowerEnergy>2.19365005e+02</LowerEnergy>
 				<UpperEnergy>2.23544998e+02</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<ForceFullRange>true</ForceFullRange>
-				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
-			</RoiRange>
-			<RoiRange version="0">
-				<LowerEnergy>2.89580994e+02</LowerEnergy>
-				<UpperEnergy>2.95419250e+02</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<ForceFullRange>true</ForceFullRange>
-				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
-			</RoiRange>
-			<RoiRange version="0">
-				<LowerEnergy>3.43643005e+02</LowerEnergy>
-				<UpperEnergy>3.48233002e+02</UpperEnergy>
 				<ContinuumType>Linear</ContinuumType>
 				<ForceFullRange>true</ForceFullRange>
 				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
