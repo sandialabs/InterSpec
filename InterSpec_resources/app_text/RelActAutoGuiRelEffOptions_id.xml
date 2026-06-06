@@ -8,7 +8,6 @@
   <message id="raageo-pu242-corr">Koreksi Pu242</message>
   
   <!-- Checkboxes -->
-  <message id="raageo-use-corr-fcn">Gunakan fungsi korelasi</message>
   <message id="raageo-share-corr-fcn">Bagikan fungsi korelasi</message>
   <message id="raageo-share-ext-atten">Bagikan atenuasi eksternal</message>
   <message id="raageo-shielded-by-other-curves">Terlindungi oleh kurva lain</message>

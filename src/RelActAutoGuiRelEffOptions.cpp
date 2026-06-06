@@ -70,8 +70,9 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_phys_model_shields(nullptr),
       m_phys_model_self_atten(nullptr),
       m_phys_ext_attens(nullptr),
-      m_phys_model_use_hoerl(nullptr),
-      m_phys_model_same_hoerl_on_all_curves(nullptr),
+      m_phys_model_corr_fcn(nullptr),
+      m_phys_model_bias_corr(nullptr),
+      m_phys_model_same_corr_fcn_on_all_curves(nullptr),
       m_phys_model_same_ext_shield_all_curves(nullptr),
       m_phys_model_shielded_by_other_curves(nullptr),
       m_eqn_txt(nullptr),
@@ -82,7 +83,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_del_rel_eff_curve_signal(this),
       m_name_changed_signal(this),
       m_eqn_form_changed(this),
-      m_same_hoerl_on_all_curves(this),
+      m_same_corr_fcn_on_all_curves(this),
       m_same_ext_shield_on_all_curves(this),
       m_shielded_by_other_curves(this),
       m_options_changed_signal(this),
@@ -206,25 +207,45 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
 
   WContainerWidget *phys_opt_cb_row = new WContainerWidget( phys_opt_row );
   phys_opt_cb_row->addStyleClass( "PhysOptionCbDiv" );
-  m_phys_model_use_hoerl = new WCheckBox( WString::tr("raageo-use-corr-fcn"), phys_opt_cb_row );
-  m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb CbNoLineBreak PhysOptionCb GridFirstRow GridFirstCol" );
-  m_phys_model_use_hoerl->setChecked( true );
-  m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
-  m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
+
+  // Correction-function selector: None / Hoerl / Chebyshev (combo index == PhysModelCorrFcn enum value).
+  WLabel *corr_fcn_label = new WLabel( WString::tr("raageo-corr-fcn"), phys_opt_cb_row );
+  corr_fcn_label->addStyleClass( "PhysOptionCb GridFirstRow GridFirstCol" );
+  m_phys_model_corr_fcn = new WComboBox( phys_opt_cb_row );
+  m_phys_model_corr_fcn->addStyleClass( "CorrFcnCombo PhysOptionCb GridFirstRow GridSecondCol" );
+  corr_fcn_label->setBuddy( m_phys_model_corr_fcn );
+  m_phys_model_corr_fcn->addItem( WString::tr("raageo-corr-none") );       // None (index 0)
+  m_phys_model_corr_fcn->addItem( WString::tr("raageo-corr-hoerl") );      // Hoerl (index 1)
+  m_phys_model_corr_fcn->addItem( WString::tr("raageo-corr-chebyshev") );  // Chebyshev (index 2)
+  m_phys_model_corr_fcn->setCurrentIndex( static_cast<int>(RelActCalc::PhysModelCorrFcn::Hoerl) );
+  m_phys_model_corr_fcn->activated().connect( this, &RelActAutoGuiRelEffOptions::handlePhysModelCorrFcnChanged );
+  HelpSystem::attachToolTipOn( {m_phys_model_corr_fcn}, WString::tr("raageo-corr-fcn-tt"), showToolTips );
+
+  // Regularization "biasing" checkboxes: when checked, use the default prior weight (numeric override is
+  //  XML-only).  Default off so nothing is baked in.
+  m_phys_model_bias_corr = new WCheckBox( WString::tr("raageo-bias-corr"), phys_opt_cb_row );
+  m_phys_model_bias_corr->addStyleClass( "BiasCorrCb CbNoLineBreak PhysOptionCb GridSecondRow GridFirstCol" );
+  m_phys_model_bias_corr->setChecked( false );
+  m_phys_model_bias_corr->checked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
+  m_phys_model_bias_corr->unChecked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
+  HelpSystem::attachToolTipOn( {m_phys_model_bias_corr}, WString::tr("raageo-bias-corr-tt"), showToolTips );
+
+  // The self-/external-attenuation areal-density biasing is set per-shield via each RelEffShieldWidget's
+  //  own "Bias AD" checkbox (see `setArealDensityBiasVisible`), not here.
 
   // Add the new checkboxes for shared settings
-  m_phys_model_same_hoerl_on_all_curves = new WCheckBox( WString::tr("raageo-share-corr-fcn"), phys_opt_cb_row );
-  m_phys_model_same_hoerl_on_all_curves->addStyleClass( "SameHoerlAllCurvesCb CbNoLineBreak PhysOptionCb GridFirstRow GridSecondCol" );
-  m_phys_model_same_hoerl_on_all_curves->setChecked( false );
-  m_phys_model_same_hoerl_on_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged );
-  m_phys_model_same_hoerl_on_all_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged );
-  m_phys_model_same_hoerl_on_all_curves->hide();
+  m_phys_model_same_corr_fcn_on_all_curves = new WCheckBox( WString::tr("raageo-share-corr-fcn"), phys_opt_cb_row );
+  m_phys_model_same_corr_fcn_on_all_curves->addStyleClass( "SameHoerlAllCurvesCb CbNoLineBreak PhysOptionCb GridThirdRow GridSecondCol" );
+  m_phys_model_same_corr_fcn_on_all_curves->setChecked( false );
+  m_phys_model_same_corr_fcn_on_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameCorrFcnOnAllCurvesChanged );
+  m_phys_model_same_corr_fcn_on_all_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleSameCorrFcnOnAllCurvesChanged );
+  m_phys_model_same_corr_fcn_on_all_curves->hide();
   
-  HelpSystem::attachToolTipOn( {m_phys_model_same_hoerl_on_all_curves}, WString::tr("raageo-share-corr-fcn-tt"), showToolTips );
+  HelpSystem::attachToolTipOn( {m_phys_model_same_corr_fcn_on_all_curves}, WString::tr("raageo-share-corr-fcn-tt"), showToolTips );
 
 
   m_phys_model_same_ext_shield_all_curves = new WCheckBox( WString::tr("raageo-share-ext-atten"), phys_opt_cb_row );
-  m_phys_model_same_ext_shield_all_curves->addStyleClass( "SameExtShieldAllCurvesCb PhysOptionCb GridSecondRow GridFirstCol" );
+  m_phys_model_same_ext_shield_all_curves->addStyleClass( "SameExtShieldAllCurvesCb PhysOptionCb GridFourthRow GridFirstCol" );
   m_phys_model_same_ext_shield_all_curves->setChecked( false );
   m_phys_model_same_ext_shield_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged );
   m_phys_model_same_ext_shield_all_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged );
@@ -233,7 +254,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   HelpSystem::attachToolTipOn( {m_phys_model_same_ext_shield_all_curves}, WString::tr("raageo-share-ext-atten-tt"), showToolTips );
 
   m_phys_model_shielded_by_other_curves = new WCheckBox( WString::tr("raageo-shielded-by-other-curves"), phys_opt_cb_row );
-  m_phys_model_shielded_by_other_curves->addStyleClass( "ShieldedByOtherCurvesCb PhysOptionCb GridSecondRow GridSecondCol" );
+  m_phys_model_shielded_by_other_curves->addStyleClass( "ShieldedByOtherCurvesCb PhysOptionCb GridFourthRow GridSecondCol" );
   m_phys_model_shielded_by_other_curves->setChecked( false );
   m_phys_model_shielded_by_other_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleShieldedByOtherCurvesChanged );
   m_phys_model_shielded_by_other_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleShieldedByOtherCurvesChanged );
@@ -288,14 +309,14 @@ void RelActAutoGuiRelEffOptions::showAndHideOptionsForEqnType()
   // Hide multi-curve options if not a physical model
   if( !is_physical )
   {
-    m_phys_model_same_hoerl_on_all_curves->hide();
+    m_phys_model_same_corr_fcn_on_all_curves->hide();
     m_phys_model_same_ext_shield_all_curves->hide();
     m_phys_model_shielded_by_other_curves->hide();
   }else
   {
     // Show multi-curve options only if there are multiple physical models
     const bool show_shared_options = (m_has_multiple_phys_models && is_physical);
-    m_phys_model_same_hoerl_on_all_curves->setHidden(!show_shared_options);
+    m_phys_model_same_corr_fcn_on_all_curves->setHidden(!show_shared_options);
     m_phys_model_same_ext_shield_all_curves->setHidden(!show_shared_options);
     m_phys_model_shielded_by_other_curves->setHidden(!show_shared_options);
   }
@@ -314,20 +335,20 @@ void RelActAutoGuiRelEffOptions::setHasMultiplePhysicalModels(const bool has_mul
     const bool is_physical = (rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel);
     const bool show_shared_options = (m_has_multiple_phys_models && is_physical);
 
-    m_phys_model_same_hoerl_on_all_curves->setHidden(!show_shared_options);
+    m_phys_model_same_corr_fcn_on_all_curves->setHidden(!show_shared_options);
     m_phys_model_same_ext_shield_all_curves->setHidden(!show_shared_options);
     m_phys_model_shielded_by_other_curves->setHidden(!show_shared_options);
   }
 }
 
-bool RelActAutoGuiRelEffOptions::physModelSameHoerlOnAllCurves() const
+bool RelActAutoGuiRelEffOptions::physModelSameCorrFcnOnAllCurves() const
 {
-  return m_phys_model_same_hoerl_on_all_curves->isChecked();
+  return m_phys_model_same_corr_fcn_on_all_curves->isChecked();
 }
 
-void RelActAutoGuiRelEffOptions::setPhysModelSameHoerlOnAllCurves(const bool same_hoerl_all_curves)
+void RelActAutoGuiRelEffOptions::setPhysModelSameCorrFcnOnAllCurves(const bool same_corr_fcn_all_curves)
 {
-  m_phys_model_same_hoerl_on_all_curves->setChecked(same_hoerl_all_curves);
+  m_phys_model_same_corr_fcn_on_all_curves->setChecked(same_corr_fcn_all_curves);
 }
 
 bool RelActAutoGuiRelEffOptions::physModelSameExtShieldAllCurves() const
@@ -363,9 +384,9 @@ void RelActAutoGuiRelEffOptions::handleRelEffEqnTypeChanged()
   m_eqn_form_changed.emit( this );
 }//void handleRelEffEqnTypeChanged()
 
-void RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged()
+void RelActAutoGuiRelEffOptions::handleSameCorrFcnOnAllCurvesChanged()
 {
-  m_same_hoerl_on_all_curves.emit(this);
+  m_same_corr_fcn_on_all_curves.emit(this);
 }
 
 
@@ -388,6 +409,7 @@ void RelActAutoGuiRelEffOptions::initPhysModelShields()
   {
     m_phys_model_self_atten = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
     m_phys_model_shields->insertWidget( 0, m_phys_model_self_atten );
+    m_phys_model_self_atten->setArealDensityBiasVisible( true );
     m_phys_model_self_atten->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   }
   
@@ -405,6 +427,7 @@ void RelActAutoGuiRelEffOptions::initPhysModelShields()
   {
     RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
                                                      m_phys_ext_attens );
+    sw->setArealDensityBiasVisible( true );
     sw->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   }else
   {
@@ -434,9 +457,9 @@ Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::equationTy
   return m_eqn_form_changed;
 }
 
-Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::sameHoerlOnAllCurvesChanged()
+Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::sameCorrFcnOnAllCurvesChanged()
 {
-  return m_same_hoerl_on_all_curves;
+  return m_same_corr_fcn_on_all_curves;
 }
 
 Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::sameExternalShieldingChanged()
@@ -506,7 +529,7 @@ void RelActAutoGuiRelEffOptions::setRelEffCurveInput( const RelActCalcAuto::RelE
 
   if( rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
-    m_phys_model_use_hoerl->setChecked( rel_eff.phys_model_use_hoerl );
+    setPhysModelCorr( rel_eff.phys_model_corr );
     initPhysModelShields();
     assert( m_phys_model_self_atten );
     
@@ -541,6 +564,7 @@ void RelActAutoGuiRelEffOptions::setRelEffCurveInput( const RelActCalcAuto::RelE
     {
       RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
                                                      m_phys_ext_attens );
+      sw->setArealDensityBiasVisible( true );
       sw->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
     }
 
@@ -752,6 +776,7 @@ void RelActAutoGuiRelEffOptions::update_external_atten_shield_widget(
   {
     RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
                                                      m_phys_ext_attens );
+    sw->setArealDensityBiasVisible( true );
     sw->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   }
 
@@ -815,6 +840,7 @@ void RelActAutoGuiRelEffOptions::update_external_atten_shield_widget( const std:
   {
     RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
                                                     m_phys_ext_attens );
+    sw->setArealDensityBiasVisible( true );
     sw->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   }
   
@@ -919,17 +945,46 @@ vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> RelActAutoGuiRelE
   return answer;
 }
 
-bool RelActAutoGuiRelEffOptions::phys_model_use_hoerl() const
+RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput RelActAutoGuiRelEffOptions::phys_model_corr() const
 {
+  RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput corr;
+
   const RelActCalc::RelEffEqnForm form = rel_eff_eqn_form();
   if( form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    return false;
-  return m_phys_model_use_hoerl->isChecked();
+  {
+    corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
+    return corr;
+  }
+
+  // Combo index maps directly to the enum (0=None, 1=Hoerl, 2=Chebyshev).
+  corr.corr_fcn = static_cast<RelActCalc::PhysModelCorrFcn>( m_phys_model_corr_fcn->currentIndex() );
+
+  // The correction-coefficient biasing checkbox enables that prior with the default weight (numeric override
+  //  is XML-only).  The self-/external-attenuation AD biasing now lives on each RelEffShieldWidget's own
+  //  "Bias AD" checkbox (flows into each shield's `PhysicalModelShieldInput::ad_bias`), not here.
+  corr.corr_coef_bias.use = m_phys_model_bias_corr->isChecked();
+
+  return corr;
 }
 
-void RelActAutoGuiRelEffOptions::setPhysModelUseHoerl( const bool use_hoerl )
+void RelActAutoGuiRelEffOptions::setPhysModelCorr( const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput &corr )
 {
-  m_phys_model_use_hoerl->setChecked( use_hoerl );
+  // Combo index maps directly to the enum (0=None, 1=Hoerl, 2=Chebyshev).
+  m_phys_model_corr_fcn->setCurrentIndex( static_cast<int>( corr.corr_fcn ) );
+
+  // A single GUI checkbox drives the coefficient bias for whichever correction is active.  (The per-shield
+  //  AD biasing is restored on each RelEffShieldWidget from its shield's `ad_bias`.)
+  m_phys_model_bias_corr->setChecked( corr.corr_coef_bias.use );
+  m_phys_model_bias_corr->setEnabled( corr.corr_fcn != RelActCalc::PhysModelCorrFcn::None );
+}
+
+
+void RelActAutoGuiRelEffOptions::handlePhysModelCorrFcnChanged()
+{
+  // The correction-coefficient biasing prior only applies when a correction (Hoerl/Chebyshev) is active.
+  m_phys_model_bias_corr->setEnabled(
+        m_phys_model_corr_fcn->currentIndex() != static_cast<int>(RelActCalc::PhysModelCorrFcn::None) );
+  emitOptionsChanged();
 }
 
 RelActCalc::PuCorrMethod RelActAutoGuiRelEffOptions::pu242_correlation_method() const

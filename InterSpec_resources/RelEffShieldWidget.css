@@ -43,3 +43,11 @@
   padding: 2px; /* Add some padding inside the input */
   width: 65px;
 }
+
+/* Optional "Bias AD" checkbox: its own row at the bottom of the widget, floated to the right. */
+.RelEffShieldWidget .RelEffShieldBiasAD {
+  display: block;
+  float: right;
+  clear: both;
+  margin-top: 3px;
+}

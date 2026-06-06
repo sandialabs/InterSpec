@@ -10,7 +10,7 @@
 		<SkewType>GaussExp</SkewType>
 		<AddUncert>0.00000000e+00</AddUncert>
 		<RelEffCurveInputs>
-			<RelEffCurveInput version="0">
+			<RelEffCurveInput version="1">
 				<Name>Obj 1</Name>
 				<NucInputInfoList>
 					<NucInputInfo version="0">
@@ -67,7 +67,8 @@
 							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
 						</PhysicalModelShield>
 					</ExtAtten>
-					<PhysModelUseHoerl>false</PhysModelUseHoerl>
+					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">None</CorrectionFcnType>
+					<CorrectionFcnBiasing remark="Weak prior pulling the active correction's coefficients toward identity ('no correction') to regularize the fit. true/false enables; optional 'value' attribute sets the weight (default 1.0 when enabled without a value; Gaussian-like with sigma = 1/weight on the coefficient deviation). Off by default.">false</CorrectionFcnBiasing>
 				</PhysicalModelOptions>
 				<MassFractionConstraints>
 					<MassFractionConstraint version="0">
@@ -82,7 +83,7 @@
 					</MassFractionConstraint>
 				</MassFractionConstraints>
 			</RelEffCurveInput>
-			<RelEffCurveInput version="0">
+			<RelEffCurveInput version="1">
 				<Name>Obj 2</Name>
 				<NucInputInfoList>
 					<NucInputInfo version="0">
@@ -133,7 +134,8 @@
 							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
 						</PhysicalModelShield>
 					</ExtAtten>
-					<PhysModelUseHoerl>false</PhysModelUseHoerl>
+					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">None</CorrectionFcnType>
+					<CorrectionFcnBiasing remark="Weak prior pulling the active correction's coefficients toward identity ('no correction') to regularize the fit. true/false enables; optional 'value' attribute sets the weight (default 1.0 when enabled without a value; Gaussian-like with sigma = 1/weight on the coefficient deviation). Off by default.">false</CorrectionFcnBiasing>
 				</PhysicalModelOptions>
 				<MassFractionConstraints>
 					<MassFractionConstraint version="0">
@@ -144,7 +146,7 @@
 				</MassFractionConstraints>
 			</RelEffCurveInput>
 		</RelEffCurveInputs>
-		<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>
+		<SameCorrFcnForAllRelEffCurves>false</SameCorrFcnForAllRelEffCurves>
 		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
 		<RoiRangeList>
 			<RoiRange version="0">

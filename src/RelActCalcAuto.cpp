@@ -1966,7 +1966,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    this.
    */
   double m_rel_eff_anchor_enhancement;
-  
+
+  /** Energy reference frame for the Physical-Model empirical correction when in basis-correction mode
+   (`corr_fcn == Chebyshev`): the fit energy range [lower, upper] and the pivot (log-midpoint),
+   where `correction(pivot) == 1`.  Computed once from `m_energy_ranges` in the constructor.  Harmless and
+   unused in legacy Hoerl mode. */
+  double m_corr_lower_energy = 0.0;
+  double m_corr_upper_energy = 0.0;
+  double m_corr_pivot_energy = 0.0;
+
   /** Will either be null, or have FWHM info. */
   std::shared_ptr<const DetectorPeakResponse> m_drf;
   
@@ -1993,19 +2001,34 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
 
-  /** Free physical-model Hoerl (b,c) parameters get a weak Gaussian prior pulling them toward their
-   identity values (physical b=0, c=1, i.e. no empirical correction).  This regularizes the otherwise
-   near-degenerate activity<->rel-eff overall-scale/shape direction of the Physical Model, which - unlike
-   the polynomial rel-eff forms - has no `m_rel_eff_anchor_enhancement` anchor residual.  Without it, a
-   weakly-constrained Hoerl direction can produce a tiny singular value that the covariance pseudo-inverse
-   turns into a huge variance, blowing up the displayed rel-eff error band.
+  /** Weak Gaussian priors on selected Physical-Model parameters, used to regularize near-degenerate
+   directions (which otherwise produce tiny singular values that the covariance pseudo-inverse turns into a
+   blown-up or collapsed variance - the 293/926 band pathology).  Three families are added:
 
-   Each entry is {parameter index, identity parameter value (in Ceres-scaled units)}; the prior residual
-   is `sm_hoerl_prior_weight * (x[index] - identity) * parameter_scale_factor(index)`, i.e. the weight times
-   the deviation of the physical b/c from its identity value.  Only populated when
-   `sm_hoerl_prior_weight > 0.0` and the Hoerl term is actually being fit; empty otherwise.
-   */
-  std::vector<std::pair<size_t,double>> m_phys_model_hoerl_priors;
+    - the empirical-correction coefficients (Hoerl b,c, or the basis a1,a2), pulled toward their identity
+      (no correction); weight from `PhysModelCorrInput::corr_coef_bias` (default
+      `ns_default_corr_coef_prior_weight`).  Removes the activity<->correction-scale degeneracy
+      (the Physical Model has no `m_rel_eff_anchor_enhancement` anchor like the polynomial forms do).
+    - each FIT external-attenuator areal density, pulled toward 0 (minimal external shielding unless the
+      data clearly demands it); weight from that shield's `PhysicalModelShieldInput::ad_bias` (default
+      `ns_default_ext_atten_ad_prior_weight`).  Breaks the linear-tilt-vs-attenuator
+      degeneracy by making the redundant external shield prefer its nominal, leaving the physical
+      self-attenuation to own the smooth tilt.
+    - each FIT self-attenuation areal density, pulled toward 0; weight from the self shield's
+      `PhysicalModelShieldInput::ad_bias` (default `ns_default_self_atten_ad_prior_weight`)
+      (deliberately the weakest, since self-attenuation is the genuine physical effect).  Pins the last
+      otherwise-unconstrained member of the self/external/Hoerl degenerate cluster.
+
+   For each entry the residual is `weight * (x[par_index] - identity) * parameter_scale_factor(par_index)`,
+   i.e. the weight times the deviation of the PHYSICAL quantity from its identity value.  Only fit parameters
+   are added, and only when the corresponding weight is > 0. */
+  struct ParamPrior
+  {
+    size_t par_index;
+    double identity;   // Ceres-space value the prior pulls toward
+    double weight;
+  };
+  std::vector<ParamPrior> m_phys_model_param_priors;
 
   /** Deviation pair anchor points for non-linear energy calibration correction.
 
@@ -2036,17 +2059,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   static constexpr double sm_peak_range_uncert_offset = 1.0;
   static constexpr double sm_peak_range_uncert_par_scale = 0.1;
 
-  /** Weight of the weak prior pulling the free Physical-Model Hoerl b,c toward their identity values
-   (physical b=0, c=1).  See `m_phys_model_hoerl_priors`.  The prior acts like a Gaussian with
-   sigma = 1/weight on the physical b and (c-1) values, so a small weight only lightly regularizes the
-   degenerate scale/shape direction without meaningfully biasing a genuinely-needed Hoerl correction.
+  // The Physical-Model regularization "biasing" priors (correction-coefficient, self-atten AD, external-atten
+  //  AD) are now RUNTIME, per-curve config (`RelEffCurveInput::PhysModelCorrInput`), each opt-in with an
+  //  optional weight override.  The default weights live in RelActCalc.h
+  //  (ns_default_corr_coef_prior_weight / ns_default_self_atten_ad_prior_weight /
+  //  ns_default_ext_atten_ad_prior_weight); `PriorWeightOption::effective_weight()` resolves the value.
 
-   Set to 0.0 to disable entirely (no extra residuals are added).  This is a tuning knob - evaluate the
-   effect with the IDB enrichment check harness (target/idb_enrichment_check) before settling a value.
-   */
-  static constexpr double sm_hoerl_prior_weight = 1.0;
 
-  
   mutable std::mutex m_aged_gammas_cache_mutex;
   /** When we are fitting the age of nuclides, performing the decay can take a significant amount of the time, so we'll cache results.
    
@@ -2157,7 +2176,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_skip_skew( false ), // 20250324 HACK to test fitting peak skew
 #endif
   m_peak_ranges_with_uncert{},
-  m_phys_model_hoerl_priors{},
+  m_phys_model_param_priors{},
   m_dev_pair_anchors{},
   m_num_fitted_dev_pair_params( 0 ),
   m_all_peaks( all_peaks ),
@@ -2397,7 +2416,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( m_energy_ranges.empty() )
       throw runtime_error( "RelActAutoCostFcn: no gammas in the defined energy ranges." );
-    
+
+    // Energy reference frame for the basis empirical-correction term (see physical_model_basis_correction):
+    //  the full fit range and its log-midpoint pivot.  Harmless/unused in legacy Hoerl mode.
+    m_corr_lower_energy = m_energy_ranges.front().lower_energy;
+    m_corr_upper_energy = m_energy_ranges.front().upper_energy;
+    for( const RoiRangeChannels &r : m_energy_ranges )
+    {
+      m_corr_lower_energy = std::min( m_corr_lower_energy, r.lower_energy );
+      m_corr_upper_energy = std::max( m_corr_upper_energy, r.upper_energy );
+    }
+    m_corr_pivot_energy = std::sqrt( m_corr_lower_energy * m_corr_upper_energy );
+
     if( cancel_calc && cancel_calc->load() )
       throw runtime_error( "User cancelled calculation." );
     
@@ -2544,8 +2574,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     num_resids += m_peak_ranges_with_uncert.size();
 
-    // One residual per free Physical-Model Hoerl parameter being pulled toward its identity value.
-    num_resids += m_phys_model_hoerl_priors.size();
+    // One residual per Physical-Model parameter prior (correction coefficients + external-attenuator AD).
+    num_resids += m_phys_model_param_priors.size();
 
     return num_resids;
   }//size_t number_residuals() const
@@ -3166,7 +3196,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       for( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve : options.rel_eff_curves ) 
         rel_eff_curve.check_nuclide_constraints();
 
-      options.check_same_hoerl_and_external_shielding_specifications();
+      options.check_same_corr_fcn_and_external_shielding_specifications();
     }catch( std::exception &e )
     {
       solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
@@ -3767,27 +3797,52 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             { 
               const auto &self_atten_opt = rel_eff_curve.phys_model_self_atten;
               setup_physical_model_shield_par( lower_bounds, upper_bounds, constant_parameters, pars, this_rel_eff_start, self_atten_opt );
-              
+
+              // The "biasing" priors (self-atten AD, external-atten AD, correction coefficients) are per-curve
+              //  opt-in config (`RelEffCurveInput::phys_model_corr`); each pushes a residual that pulls the
+              //  physical quantity toward its nominal (AD->0, correction->identity) with the resolved weight.
+              //  See `m_phys_model_param_priors`.  AD=0 maps to the Ceres value `ns_ad_ceres_offset`;
+              //  `parameter_scale_factor` supplies `ns_ad_ceres_mult`, so the residual is `weight*AD[g/cm^2]`.
+              const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput &corr_cfg = rel_eff_curve.phys_model_corr;
+
+              if( self_atten_opt && self_atten_opt->fit_areal_density )
+              {
+                const double w = self_atten_opt->ad_bias.effective_weight(
+                                                       RelActCalc::ns_default_self_atten_ad_prior_weight );
+                if( w > 0.0 )
+                  cost_functor->m_phys_model_param_priors.push_back(
+                                  { this_rel_eff_start + 1, RelActCalc::ns_ad_ceres_offset, w } );
+              }
+
               for( size_t ext_ind = 0; ext_ind < rel_eff_curve.phys_model_external_atten.size(); ++ext_ind )
               {
                 const size_t start_index = this_rel_eff_start + 2 + 2*ext_ind;
                 const auto &opt = rel_eff_curve.phys_model_external_atten[ext_ind];
                 setup_physical_model_shield_par( lower_bounds, upper_bounds, constant_parameters, pars, start_index, opt );
+
+                if( opt && opt->fit_areal_density )
+                {
+                  const double w = opt->ad_bias.effective_weight(
+                                                         RelActCalc::ns_default_ext_atten_ad_prior_weight );
+                  if( w > 0.0 )
+                    cost_functor->m_phys_model_param_priors.push_back(
+                                    { start_index + 1, RelActCalc::ns_ad_ceres_offset, w } );
+                }
               }//for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
-              
-              // Not sure what to do with the b and c values of the Modified Hoerl function ( E^b * c^(1/E) ).
+
+              // The two empirical-correction parameters ("Hoerl b,c" / basis a1,a2).
               const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size();
               const size_t c_index = b_index + 1;
-              
-              pars[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b - start b at 0, so term is 1.0
-              pars[c_index] = hoerl_c_param_for_c( 1.0 );  // (A) gamma=log(c); start c at 1 (gamma=0), so term is 1
-              if( !rel_eff_curve.phys_model_use_hoerl
-                 || (options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve))) )
+
+              pars[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+              pars[c_index] = hoerl_c_param_for_c( 1.0 );  // identity start (Hoerl c=1 / basis a2=0); same value for both
+              if( !rel_eff_curve.uses_phys_model_correction()
+                 || (options.same_corr_fcn_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve))) )
               {
                 constant_parameters.push_back( static_cast<int>(b_index) );
                 constant_parameters.push_back( static_cast<int>(c_index) );
-                
-                if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve)) )
+
+                if( options.same_corr_fcn_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve)) )
                 {
                   // This is just so we can assert on the values later, as a double check
                   pars[b_index] = -1.0;
@@ -3795,23 +3850,36 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 }
               }else
               {
-                lower_bounds[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
-                upper_bounds[b_index] = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
-                // (A) Bounds are on gamma=log(c); preserve the original physical c-range of [1e-6, 3].
-                lower_bounds[c_index] = hoerl_c_param_for_c( 1.0E-6 );
-                upper_bounds[c_index] = hoerl_c_param_for_c( 3.0 );
-
-                // These b,c are free parameters.  Add a weak prior pulling them toward their identity
-                //  values (physical b=0, c=1) to regularize the Physical Model's activity<->rel-eff
-                //  degeneracy (it has no rel-eff anchor residual like the polynomial forms do).  The
-                //  identity Ceres values are exactly the starting values set at `pars[b_index]`/`[c_index]`
-                //  above.  See `m_phys_model_hoerl_priors` / `sm_hoerl_prior_weight`.
-                if( sm_hoerl_prior_weight > 0.0 )
+                // Free b,c.  This is the correction-owning curve (the first physical-model curve when the
+                //  correction is shared), so `corr_cfg` is the config that drives the form + coefficient prior.
+                const bool is_basis = is_basis_correction( corr_cfg.corr_fcn );
+                if( is_basis )
                 {
-                  cost_functor->m_phys_model_hoerl_priors.emplace_back( b_index,
-                            (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset );
-                  cost_functor->m_phys_model_hoerl_priors.emplace_back( c_index,
-                            hoerl_c_param_for_c( 1.0 ) );  // (A) identity gamma for c=1 (pulls log(c) toward 0)
+                  // Basis coefficients a1,a2 are O(1); bound them symmetrically about their identity (0).
+                  lower_bounds[b_index] = (-RelActCalc::ns_basis_corr_coef_limit/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  upper_bounds[b_index] = ( RelActCalc::ns_basis_corr_coef_limit/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  lower_bounds[c_index] = (-RelActCalc::ns_basis_corr_coef_limit/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+                  upper_bounds[c_index] = ( RelActCalc::ns_basis_corr_coef_limit/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+                }else
+                {
+                  // Hoerl: b in [0,2]; c fit as gamma=log(c) over the physical c-range [1e-6, 3].
+                  lower_bounds[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  upper_bounds[b_index] = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  lower_bounds[c_index] = hoerl_c_param_for_c( 1.0E-6 );
+                  upper_bounds[c_index] = hoerl_c_param_for_c( 3.0 );
+                }
+
+                // Optional weak prior pulling b,c toward their identity (physical b=0, c=1 / basis a1=a2=0) to
+                //  regularize the Physical Model's activity<->rel-eff degeneracy (it has no rel-eff anchor
+                //  residual).  The identity Ceres values are exactly the start values set above.
+                const double corr_w = corr_cfg.corr_coef_bias.effective_weight(
+                                                       RelActCalc::ns_default_corr_coef_prior_weight );
+                if( corr_w > 0.0 )
+                {
+                  cost_functor->m_phys_model_param_priors.push_back( { b_index,
+                            (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset,
+                            corr_w } );
+                  cost_functor->m_phys_model_param_priors.push_back( { c_index, hoerl_c_param_for_c( 1.0 ), corr_w } );
                 }
               }
 
@@ -3899,8 +3967,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const bool use_first_ext_shield = ((rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
                                             && options.same_external_shielding_for_all_rel_eff_curves
                                             && (first_phys_model_curve != (&rel_eff_curve)));
-          const bool use_first_hoerl = ((rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
-                                        && options.same_hoerl_for_all_rel_eff_curves
+          const bool use_first_corr_fcn = ((rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
+                                        && options.same_corr_fcn_for_all_rel_eff_curves
                                         && manual_input.phys_model_use_hoerl
                                         && (first_phys_model_curve != (&rel_eff_curve)));
 
@@ -4022,12 +4090,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             manual_input.act_ratio_constraints.push_back( manual_constraint );
           }
 
-          if( use_first_hoerl )
+          if( use_first_corr_fcn )
           {
             // TODO: we should fix the Hoerl parameters here to what we got for first Phys Model Rel Eff Curve;
             //       but actually we arent ever fitting the Hoerl parameters, so this is moot (and we havent implemented a 
             //       way to contrain the Hoerl parameters yet).
-          }//if( use_first_hoerl )
+          }//if( use_first_corr_fcn )
 
           for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
           {
@@ -4241,7 +4309,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             {
               assert( first_phys_model_curve );
 
-              if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
+              if( options.same_corr_fcn_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
               {
                 assert( parameters[b_index] == -1.0 );
                 assert( parameters[c_index] == -1.0 );
@@ -4261,7 +4329,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }
             }else
             {
-              if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
+              if( options.same_corr_fcn_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
               {
                 assert( parameters[b_index] == -1.0 );
                 assert( parameters[c_index] == -1.0 );
@@ -5407,12 +5475,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           continue;
         }
         
-        if( rel_eff.phys_model_use_hoerl )
+        if( rel_eff.uses_phys_model_correction() )
         {
           const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 0;
           const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 1;
           
-          if( options.same_hoerl_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
+          if( options.same_corr_fcn_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
           {
             assert( parameters[b_index] == -1.0 ); //Just a consistency/sanity check
             assert( parameters[c_index] == -1.0 );
@@ -5426,8 +5494,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             if( !already_fixed(c_index) )
               hoerl_par_indexes.push_back( c_index );
           }//
-        }//if( rel_eff.phys_model_use_hoerl )
-        
+        }//if( rel_eff.uses_phys_model_correction() )
+
         if( rel_eff.phys_model_self_atten
            && rel_eff.phys_model_self_atten->fit_atomic_number
            && !already_fixed(this_rel_eff_start + 0) )
@@ -5746,15 +5814,29 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
     cov_options.num_threads = ceres_options.num_threads;
 
-    // Treat genuinely near-degenerate directions as null space (zero variance) instead of letting the
-    //  DENSE_SVD pseudo-inverse turn their tiny singular values into enormous ~1/sigma^2 variances that
-    //  blow up the reported rel-eff error band and parameter uncertainties.  `min_reciprocal_condition_number`
-    //  is compared against lambda_i/lambda_max = (sigma_i/sigma_max)^2, so 1e-12 drops directions with
-    //  sigma_i/sigma_max < 1e-6 - matching the effective-DOF singular-value threshold used below (line ~5830),
-    //  so the "kept covariance directions" and the "effective parameters" counts are consistent.
-    //  `null_space_rank = -1` keeps the pseudo-inverse (so Compute() still succeeds on rank-deficient Jacobians)
-    //  while honoring `min_reciprocal_condition_number`.
-    cov_options.min_reciprocal_condition_number = 1e-12; //default 1e-14; drops sigma_i/sigma_max < 1e-6
+    // Conditioning floor for the covariance.  The covariance is the pseudo-inverse of J^T J; a near-degenerate
+    //  direction has a tiny singular value sigma_i, and 1/sigma_i^2 would otherwise become an enormous variance.
+    //  `min_reciprocal_condition_number` is compared against (sigma_i/sigma_max)^2: any direction below the
+    //  cutoff is treated as null space (ZERO variance) instead of being inverted.
+    //
+    //  Where to put that cutoff is a MODELING JUDGMENT - "a direction constrained Nx more weakly than the
+    //  best-constrained one is too weak to report an uncertainty for" - NOT a numerical-precision limit
+    //  (double precision inverts safely down to sigma_i/sigma_max ~ 1e-7; the Ceres default 1e-14 drops only
+    //  genuine round-off singularity).  The catch is that *dropping* a weak direction zeroes its variance,
+    //  which makes the rel-eff band OVER-confident whenever rel-eff(E) actually depends on that direction
+    //  (the 918/926 collapse).  Measured on target/idb_enrichment_check: a high cutoff (1e-8, i.e. ratio
+    //  < 1e-4) wrecks calibration (median |pull| ~50, almost every band far too small); calibration improves
+    //  monotonically as the cutoff is lowered and more directions are retained.  So we deliberately keep this
+    //  at the numerical-guard level (drop only round-off-singular directions) and let the *statistical*
+    //  regularization of the degenerate shielding/correction directions be done physically by the parameter
+    //  priors above (`m_phys_model_param_priors`), which leave a weak direction a finite, physically-bounded
+    //  variance instead of zero.  Kept numerically consistent with the effective-DOF singular-value threshold
+    //  below (both at sigma_i/sigma_max = 1e-7).  `null_space_rank = -1` keeps the pseudo-inverse (so
+    //  Compute() still succeeds on rank-deficient Jacobians) while honoring the cutoff.  NOTE: a faithful band
+    //  for the genuinely rank-deficient files (low-enrichment, weak U-235 lines) is not representable by this
+    //  linearized covariance at all - that needs a profile/Monte-Carlo treatment.  Tuning knob - evaluate
+    //  with target/idb_enrichment_check.
+    cov_options.min_reciprocal_condition_number = 1e-14; //Ceres default; drops sigma_i/sigma_max < 1e-7
     //cov_options.column_pivot_threshold = -1;
     cov_options.null_space_rank = -1; //default: 0;
     
@@ -5838,7 +5920,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
           const size_t acts_start = cost_functor->rel_act_start_parameter( rel_eff_index );
           const size_t num_acts_par = cost_functor->rel_act_num_parameters( rel_eff_index );
-          get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance );
+          get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance[rel_eff_index] );
         }
         
         const size_t fwhm_start = cost_functor->m_fwhm_par_start_index;
@@ -5879,7 +5961,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #endif
 
       Eigen::VectorXd singular_values = svd.singularValues();
-      const double threshold = 1.0e-6 * singular_values.maxCoeff(); // Arbitrary threshold to consider what is contributing to problem
+      // Count a direction as a real degree of freedom only if it is constrained within 1e7x of the
+      //  best-constrained direction - the same ratio as the covariance conditioning floor above
+      //  (min_reciprocal_condition_number = (1e-7)^2 = 1e-14), so the directions counted here as effective
+      //  parameters match the directions kept (non-zero variance) in the reported covariance.
+      const double threshold = 1.0e-7 * singular_values.maxCoeff();
 
       size_t npar_eff = 0;
       for( int i = 0; i < singular_values.size(); ++i)
@@ -5890,7 +5976,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                             + " DOF, compared to " + std::to_string(num_pars) + " parameters." );
 
       // The covariance (cov_options.min_reciprocal_condition_number, above) drops exactly the directions
-      //  with singular-value ratio below this same 1e-6 threshold, so `num_free_pars - npar_eff` is the
+      //  with singular-value ratio below this same 1e-7 threshold, so `num_free_pars - npar_eff` is the
       //  number of near-degenerate directions omitted from the reported uncertainties / rel-eff band.
       //  Warn when the fit is rank-deficient so an over-confident band is diagnosable.
       const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
@@ -6499,7 +6585,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
 
         RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo phys_model_result;
-        
+
+        // Energy reference frame for the basis empirical-correction term (used to evaluate/plot it the same
+        //  way it was fit).  Same for every curve; harmless/unused in legacy Hoerl mode.
+        phys_model_result.corr_lower_energy = cost_functor->m_corr_lower_energy;
+        phys_model_result.corr_upper_energy = cost_functor->m_corr_upper_energy;
+        phys_model_result.corr_pivot_energy = cost_functor->m_corr_pivot_energy;
+
         auto get_shield_info = [&]( const RelActCalc::PhysicalModelShieldInput &input,
                                    const vector<double> &these_rel_eff_coefficients,
                                    const size_t start_index )
@@ -6600,28 +6692,41 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }//for( const size_t outer_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
         //shields_from_other_curves
 
-        if( rel_eff_curve.phys_model_use_hoerl )
+        const RelActCalc::PhysModelCorrFcn report_corr_fcn = cost_functor->effective_corr_fcn( rel_eff_index );
+        phys_model_result.corr_fcn = report_corr_fcn;
+        if( report_corr_fcn != RelActCalc::PhysModelCorrFcn::None )
         {
-          // Modified Hoerl corrections only present if fitting the Hoerl function was selected
+          // The 2 correction coefficients (Hoerl b,c / basis a1,a2) are only present when a correction is used.
+          const bool is_basis = RelActAutoCostFcn::is_basis_correction( report_corr_fcn );
           const size_t b_index = 2 + 2*rel_eff_curve.phys_model_external_atten.size();
           const size_t c_index = b_index + 1;
           assert( c_index < rel_eff_coefficients.size() );
-          
+
           phys_model_result.hoerl_b = (rel_eff_coefficients[b_index] - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
-          // (A) c is fit in log-space (gamma); report the physical c = exp(gamma).
-          phys_model_result.hoerl_c = RelActAutoCostFcn::hoerl_c_from_param( rel_eff_coefficients[c_index] );
+          // Physical c: linear basis a2, or Hoerl c = exp(gamma) (gamma=log-space param).
+          phys_model_result.hoerl_c = RelActAutoCostFcn::hoerl_c_from_param( rel_eff_coefficients[c_index], is_basis );
 
           if( uncertainties.size() > (this_rel_eff_start_index + b_index) )
             phys_model_result.hoerl_b_uncert = uncertainties[this_rel_eff_start_index + b_index] * RelActCalc::ns_decay_hoerl_b_multiple;
 
-          // (A) Propagate gamma uncertainty to physical c: c = exp(gamma) so sigma_c = c * multiple * sigma_gamma_par.
           if( uncertainties.size() > (this_rel_eff_start_index + c_index) )
-            phys_model_result.hoerl_c_uncert = phys_model_result.hoerl_c.value()
-                       * uncertainties[this_rel_eff_start_index + c_index] * RelActCalc::ns_decay_hoerl_c_multiple;
+          {
+            if( is_basis )
+            {
+              // Basis coefficient a2 is linear: sigma_a2 = multiple * sigma_par.
+              phys_model_result.hoerl_c_uncert = uncertainties[this_rel_eff_start_index + c_index]
+                         * RelActCalc::ns_decay_hoerl_c_multiple;
+            }else
+            {
+              // Hoerl: c = exp(gamma), so sigma_c = c * multiple * sigma_gamma_par.
+              phys_model_result.hoerl_c_uncert = phys_model_result.hoerl_c.value()
+                         * uncertainties[this_rel_eff_start_index + c_index] * RelActCalc::ns_decay_hoerl_c_multiple;
+            }//if( is_basis ) / else
+          }
 
           // If this isnt the first physical model, and we are using the same Hoerl function for all
           //  then we will use the Hoerl function from the first physical model.
-          if( first_phys_model_rel_eff_curve && options.same_hoerl_for_all_rel_eff_curves && (rel_eff_index != first_phys_model_index) )
+          if( first_phys_model_rel_eff_curve && options.same_corr_fcn_for_all_rel_eff_curves && (rel_eff_index != first_phys_model_index) )
           {
             assert( phys_model_result.hoerl_b == solution.m_phys_model_results[first_phys_model_index]->hoerl_b );
             assert( phys_model_result.hoerl_c == solution.m_phys_model_results[first_phys_model_index]->hoerl_c );
@@ -6629,8 +6734,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             phys_model_result.hoerl_b_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_b_uncert;
             phys_model_result.hoerl_c_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_c_uncert;
           }
-        }//if( options.phys_model_use_hoerl )
-        
+        }//if( report_corr_fcn != PhysModelCorrFcn::None )
+
         solution.m_phys_model_results[rel_eff_index] = std::move(phys_model_result);
       }//if( FramPhysicalModel )
     }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
@@ -7445,12 +7550,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
           assert( sub_ind >= (2 + 2*rel_eff_curve.phys_model_external_atten.size()) );
           const size_t hoerl_num = sub_ind - 2 - 2*rel_eff_curve.phys_model_external_atten.size();
+          // Correction-coefficient slots: labeled by the curve's correction form (Hoerl b,c vs Chebyshev a1,a2).
+          const bool is_basis = is_basis_correction( rel_eff_curve.phys_model_corr.corr_fcn );
           if( hoerl_num == 0 )
-            return "Hoerl" + re_ind + "(b)";
-        
+            return (is_basis ? "Cheby" : "Hoerl") + re_ind + (is_basis ? "(a1)" : "(b)");
+
           assert( hoerl_num == 1 );
           if( hoerl_num == 1 )
-            return "Hoerl" + re_ind + "(c)";
+            return (is_basis ? "Cheby" : "Hoerl") + re_ind + (is_basis ? "(a2)" : "(c)");
         }else
         {
           return "RE_" + re_ind + std::to_string(sub_ind);
@@ -7519,7 +7626,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       throw runtime_error( "Bad computing of parameter name - too large of index" );
     
     const size_t range_ind = index - m_add_br_uncert_start_index;
-    const int mid_energy = static_cast<int>( std::round(0.5*(m_peak_ranges_with_uncert[range_ind].second
+    const int mid_energy = static_cast<int>( std::round(0.5*(m_peak_ranges_with_uncert[range_ind].first
                                       + m_peak_ranges_with_uncert[range_ind].second)) );
     
     return "dBr" + std::to_string(mid_energy);
@@ -7593,19 +7700,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
           assert( sub_ind >= (2 + 2*rel_eff_curve.phys_model_external_atten.size()) );
 
-          if( !rel_eff_curve.phys_model_use_hoerl )
-            return 0.0;  // We arent using the Hoerl function, so no scale factor
+          if( !rel_eff_curve.uses_phys_model_correction() )
+            return 0.0;  // No correction, so the 2 correction params are constant (no scale factor)
 
-          if( m_options.same_hoerl_for_all_rel_eff_curves && (rel_eff_index != first_physical_model_index) )
-            return 0.0;  // We arent using the Hoerl function, so no scale factor
+          if( m_options.same_corr_fcn_for_all_rel_eff_curves && (rel_eff_index != first_physical_model_index) )
+            return 0.0;  // Correction shared from the first curve; this curve's params are constant
 
+          // Both the Hoerl (b, gamma=log(c)) and the basis (a1,a2) parameters use the same Ceres scale factors.
           const size_t hoerl_num = sub_ind - 2 - 2*rel_eff_curve.phys_model_external_atten.size();
           if( hoerl_num == 0 )
-            return rel_eff_curve.phys_model_use_hoerl ? RelActCalc::ns_decay_hoerl_b_multiple : 0.0;
-        
+            return RelActCalc::ns_decay_hoerl_b_multiple;
+
           assert( hoerl_num == 1 );
-          if( hoerl_num == 1 )
-            return rel_eff_curve.phys_model_use_hoerl ? RelActCalc::ns_decay_hoerl_c_multiple : 0.0;
+          return RelActCalc::ns_decay_hoerl_c_multiple;
         }else
         {
           return 1.0; // The polynomial-esque Rel. Eff. eqn coefficients are not scaled
@@ -8292,31 +8399,31 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     std::vector<RelActCalc::PhysModelShield<T>> external_attens;
     
     std::optional<T> hoerl_b, hoerl_c;
+    RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
   };//struct PhysModelRelEqnDef
-  
-  
-  /** (A) The Physical-Model Hoerl 'c' coefficient is fit in LOG-space.
 
-   The modified Hoerl term is `E_MeV^b * c^(1/E_MeV)`, i.e. the exponent is `b*log(E_MeV) + log(c)/E_MeV`.
-   Fitting `c` directly makes that exponent NON-linear in the fit parameter (through `log(c)`), forces an
-   awkward `c > 0` lower bound, and gives `c` an ~8x larger Jacobian at the low-energy end (1/E_MeV is up
-   to ~8 over a 120-1001 keV fit) - all of which hurt conditioning and put `c` near a bound where the
-   Gaussian covariance is ill-defined.
 
-   Instead we make the Ceres parameter be `gamma = log(c)` (mapped through the usual offset/multiple), so
-   the exponent is `b*log(E_MeV) + gamma/E_MeV` - LINEAR in the fit parameters - and `gamma` is unbounded
-   and well-scaled.  The physical `c = exp(gamma)` reported/displayed everywhere is unchanged.
-
-   Note: this fixes the parameter pathology, but the residual b<->c and c<->attenuation basis collinearity
-   is a property of the basis functions {log(E_MeV), 1/E_MeV} themselves; reducing that requires an
-   orthogonal-basis correction (see the planned Chebyshev/Legendre replacement). */
-  template<typename T>
-  static T hoerl_c_from_param( const T &par )
+  /** Returns true when the correction is the Chebyshev basis form, whose 2 coefficients are fit linearly;
+   false for Hoerl, whose 'c' coefficient is fit in LOG-space (gamma=log(c), so physical c=exp(gamma); keeps
+   the Hoerl exponent linear in the fit parameter and avoids the c>0 bound). */
+  static bool is_basis_correction( const RelActCalc::PhysModelCorrFcn corr_fcn )
   {
+    return (corr_fcn == RelActCalc::PhysModelCorrFcn::Chebyshev);
+  }
+
+  /** Converts the Ceres "c" correction parameter to the physical value passed to the eval: linear basis
+   coefficient a2 when `is_basis`, else the Hoerl physical c = exp(gamma) (gamma = log-space param). */
+  template<typename T>
+  static T hoerl_c_from_param( const T &par, const bool is_basis )
+  {
+    if( is_basis )
+      return (par - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
     return exp( (par - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple );
   }
 
-  /** Inverse of `hoerl_c_from_param`: the Ceres parameter (gamma-space) that yields physical Hoerl `c`. */
+  /** Inverse of `hoerl_c_from_param` for the Hoerl (log-space) case: the Ceres parameter that yields physical
+   Hoerl `c`.  Used for start values / bounds; note `hoerl_c_param_for_c(1.0) == ns_decay_hoerl_c_offset`, which
+   is ALSO the basis a2=0 start, so the start/identity value is the same for both correction families. */
   static double hoerl_c_param_for_c( const double c )
   {
     return (std::log(c) / RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
@@ -8326,7 +8433,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   static PhysModelRelEqnDef<T> make_phys_eqn_input_no_other_curve_shielding( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve,
                                                 std::shared_ptr<const DetectorPeakResponse> drf,
                                                 const std::vector<T> &coeffs,
-                                                const size_t rel_eff_start )
+                                                const size_t rel_eff_start,
+                                                const RelActCalc::PhysModelCorrFcn corr_fcn )
   {
     //Note: `rel_eff_curve` may not be a curve in `m_options.rel_eff_curves` - it could be a copy where shieldings from
     //      other curves added into external shieldings, with `coeffs` appropriately modified
@@ -8385,18 +8493,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       answer.external_attens.push_back( std::move(atten) );
     }//for( loop over external attenuators )
     
-    if( rel_eff_curve.phys_model_use_hoerl )
+    answer.corr_fcn = corr_fcn;
+    if( corr_fcn != RelActCalc::PhysModelCorrFcn::None )
     {
       const size_t b_index = rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size();
       const size_t c_index = b_index + 1;
-      
+
       const T &b = coeffs[b_index];
       const T &c = coeffs[c_index];
-      
-      answer.hoerl_b = (b - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;  //(energy/1000)^b
-      answer.hoerl_c = hoerl_c_from_param( c );  // (A) c is fit in log-space: physical c = exp(gamma).  See hoerl_c_from_param().
-    }//if( (b != 0.0) || (c != 1.0) )
-    
+
+      answer.hoerl_b = (b - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
+      answer.hoerl_c = hoerl_c_from_param( c, is_basis_correction(corr_fcn) );
+    }//if( a correction is being used )
+
     return answer;
   }//static PhysModelRelEqnDef make_phys_eqn_input_no_other_curve_shielding(...)
 
@@ -8415,17 +8524,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const size_t rel_eff_start = rel_eff_eqn_start_parameter(rel_eff_curve_index);
 
-    if( !m_options.same_hoerl_for_all_rel_eff_curves
+    // When the correction is shared across curves (same_corr_fcn_for_all_rel_eff_curves), all sharing curves use
+    //  the FIRST physical-model curve's correction form (consistent with how its b,c params are shared).
+    const RelActCalc::PhysModelCorrFcn corr_fcn = effective_corr_fcn( rel_eff_curve_index );
+
+    if( !m_options.same_corr_fcn_for_all_rel_eff_curves
        && !m_options.same_external_shielding_for_all_rel_eff_curves
        && rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
     {
-      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, x, rel_eff_start );
+      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, x, rel_eff_start, corr_fcn );
     }
 
     const vector<T> coefs = pars_for_rel_eff_curve( rel_eff_curve_index, x );
 
     if( rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
-      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, coefs, 0 );
+      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, coefs, 0, corr_fcn );
 
     // If we are here, we are being shielded by other curves, so we have to make a copy of the RelEff curve, and then
     //  add the shieldings from the other curves to this one.
@@ -8455,8 +8568,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
     }//for( const size_t outer_re_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
 
-    return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve_cpy, m_drf, coefs, 0 );
+    return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve_cpy, m_drf, coefs, 0, corr_fcn );
   }//make_phys_eqn_input(...)
+
+
+  /** The effective correction form for a curve: when the correction is shared
+   (`same_corr_fcn_for_all_rel_eff_curves`), the FIRST physical-model curve's; otherwise the curve's own. */
+  RelActCalc::PhysModelCorrFcn effective_corr_fcn( const size_t rel_eff_curve_index ) const
+  {
+    if( m_options.same_corr_fcn_for_all_rel_eff_curves )
+    {
+      for( const RelActCalcAuto::RelEffCurveInput &c : m_options.rel_eff_curves )
+      {
+        if( c.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          return c.phys_model_corr.corr_fcn;
+      }
+    }
+    return m_options.rel_eff_curves[rel_eff_curve_index].phys_model_corr.corr_fcn;
+  }//effective_corr_fcn(...)
   
 
   /** Returns the parameters for the specified relative efficiency curve.
@@ -8483,7 +8612,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<T> coefs( begin(x) + rel_eff_start_index, begin(x) + rel_eff_start_index + num_rel_eff_par );
 
     if( (rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
-      || (!m_options.same_hoerl_for_all_rel_eff_curves
+      || (!m_options.same_corr_fcn_for_all_rel_eff_curves
           && !m_options.same_external_shielding_for_all_rel_eff_curves
           && rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty()) )
     {
@@ -8520,7 +8649,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( !first_phys_model )
       throw std::logic_error( "make_phys_eqn_input: no physical model found" );
 
-    if( m_options.same_hoerl_for_all_rel_eff_curves )
+    if( m_options.same_corr_fcn_for_all_rel_eff_curves )
     {
       const size_t first_hoerl_b_index = first_phys_model_par_start_index + 2 + 2*first_phys_model->phys_model_external_atten.size();
       const size_t first_hoerl_c_index = first_hoerl_b_index + 1;
@@ -8539,7 +8668,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       coefs[this_hoerl_b_coefs_index] = x[first_hoerl_b_index];
       coefs[this_hoerl_c_coefs_index] = x[first_hoerl_c_index];
-    }//if( m_options.same_hoerl_for_all_rel_eff_curves )
+    }//if( m_options.same_corr_fcn_for_all_rel_eff_curves )
 
     if( m_options.same_external_shielding_for_all_rel_eff_curves )
     {
@@ -8624,7 +8753,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // TODO: this next call can be a real bottlenck - specifically the `GammaInteractionCalc::transmition_length_coefficient` function can be really slow - we should some-how maybe cache these results
       return RelActCalc::eval_physical_model_eqn_imp( energy, re_input.self_atten,
                                                  re_input.external_attens, re_input.det.get(),
-                                                 re_input.hoerl_b, re_input.hoerl_c );
+                                                 re_input.hoerl_b, re_input.hoerl_c,
+                                                 m_corr_lower_energy, m_corr_upper_energy, m_corr_pivot_energy,
+                                                 re_input.corr_fcn );
     }//if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     
     assert( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel );
@@ -10393,19 +10524,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
     }//if( !m_peak_ranges_with_uncert.empty() )
 
-    // Weak prior pulling the free Physical-Model Hoerl b,c toward their identity values (physical b=0,
-    //  c=1).  `(x[par_index] - identity)*parameter_scale_factor(par_index)` is the deviation of the
-    //  physical b (or c-1) from identity, so the residual is `weight * physical_deviation`.  See
-    //  `m_phys_model_hoerl_priors` / `sm_hoerl_prior_weight`.
-    for( const std::pair<size_t,double> &prior : m_phys_model_hoerl_priors )
+    // Weak Gaussian priors on selected Physical-Model parameters (empirical-correction coefficients pulled
+    //  toward "no correction", and fit external-attenuator ADs pulled toward 0).  For each entry,
+    //  `(x[par_index] - identity)*parameter_scale_factor(par_index)` is the deviation of the PHYSICAL
+    //  quantity from its identity, so the residual is `weight * physical_deviation`.  See
+    //  `m_phys_model_param_priors` (populated from each curve's `PhysModelCorrInput` biasing options).
+    for( const ParamPrior &prior : m_phys_model_param_priors )
     {
-      const size_t par_index = prior.first;
-      assert( par_index < x.size() );
-      const double scale = parameter_scale_factor( par_index );
-      residuals[residual_index] = T(sm_hoerl_prior_weight) * (x[par_index] - prior.second) * scale;
+      assert( prior.par_index < x.size() );
+      const double scale = parameter_scale_factor( prior.par_index );
+      residuals[residual_index] = T(prior.weight) * (x[prior.par_index] - prior.identity) * scale;
       assert( !isnan(residuals[residual_index]) && !isinf(residuals[residual_index]) );
       ++residual_index;
-    }//for( loop over Hoerl priors )
+    }//for( loop over Physical-Model parameter priors )
 
     assert( residual_index == number_residuals() );
 #ifndef NDEBUG
@@ -11527,13 +11658,20 @@ bool RelEffCurveInput::MassFractionConstraint::operator!=( const MassFractionCon
 }
 
 
+bool RelEffCurveInput::PhysModelCorrInput::operator==( const PhysModelCorrInput &rhs ) const
+{
+  return (corr_fcn == rhs.corr_fcn)
+         && (corr_coef_bias == rhs.corr_coef_bias);
+}
+
+
 bool RelEffCurveInput::operator==( const RelEffCurveInput &rhs ) const
 {
   if( (name != rhs.name)
     || (nucs_of_el_same_age != rhs.nucs_of_el_same_age)
     || (rel_eff_eqn_type != rhs.rel_eff_eqn_type)
     || (rel_eff_eqn_order != rhs.rel_eff_eqn_order)
-    || (phys_model_use_hoerl != rhs.phys_model_use_hoerl)
+    || (phys_model_corr != rhs.phys_model_corr)
     || (pu242_correlation_method != rhs.pu242_correlation_method)
     || (shielded_by_other_phys_model_curve_shieldings != rhs.shielded_by_other_phys_model_curve_shieldings)
     || (nuclides != rhs.nuclides)
@@ -11585,7 +11723,7 @@ bool Options::operator==( const Options &rhs ) const
     && (skew_type == rhs.skew_type)
     && (lorentzian_xrays == rhs.lorentzian_xrays)
     && (additional_br_uncert == rhs.additional_br_uncert)
-    && (same_hoerl_for_all_rel_eff_curves == rhs.same_hoerl_for_all_rel_eff_curves)
+    && (same_corr_fcn_for_all_rel_eff_curves == rhs.same_corr_fcn_for_all_rel_eff_curves)
     && (same_external_shielding_for_all_rel_eff_curves == rhs.same_external_shielding_for_all_rel_eff_curves)
     && (rel_eff_curves == rhs.rel_eff_curves)
     && (rois == rhs.rois)
@@ -11857,7 +11995,7 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
 }//void fromXml(...)
 
 
-void Options::check_same_hoerl_and_external_shielding_specifications() const
+void Options::check_same_corr_fcn_and_external_shielding_specifications() const
 {
   // Validate lorentzian_xrays compatibility with skew_type
   if( lorentzian_xrays
@@ -11867,22 +12005,22 @@ void Options::check_same_hoerl_and_external_shielding_specifications() const
     throw logic_error( "Lorentzian x-rays can only be used with NoSkew or GaussPlusBortel skew types." );
   }
 
-  if( !same_hoerl_for_all_rel_eff_curves && !same_external_shielding_for_all_rel_eff_curves )
+  if( !same_corr_fcn_for_all_rel_eff_curves && !same_external_shielding_for_all_rel_eff_curves )
     return;
 
-  if( same_hoerl_for_all_rel_eff_curves )
+  if( same_corr_fcn_for_all_rel_eff_curves )
   {
-    size_t num_hoerl_curves = 0;
+    size_t num_corr_fcn_curves = 0;
     for( const auto &rel_eff_curve : rel_eff_curves )
     {
-      if( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
-        && rel_eff_curve.phys_model_use_hoerl )
-        ++num_hoerl_curves;
+      if( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+        && rel_eff_curve.uses_phys_model_correction() )
+        ++num_corr_fcn_curves;
     }
-    if( num_hoerl_curves < 2 )
+    if( num_corr_fcn_curves < 2 )
       throw logic_error( "If using the same Hoerl function for all relative efficiency curves, "
                         "you must have at least two relative efficiency curves with the Hoerl function enabled." );
-  }//if( same_hoerl_for_all_rel_eff_curves )
+  }//if( same_corr_fcn_for_all_rel_eff_curves )
 
   if( same_external_shielding_for_all_rel_eff_curves )
   {
@@ -12027,7 +12165,7 @@ void Options::check_same_hoerl_and_external_shielding_specifications() const
       }//for( size_t shielding_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
     }//for( size_t rel_eff_index = 0; rel_eff_index < rel_eff_curves.size(); ++rel_eff_index
   }//if( same_external_shielding_for_all_rel_eff_curves ) / else
-}//void Options::check_same_hoerl_and_external_shielding_specifications() const
+}//void Options::check_same_corr_fcn_and_external_shielding_specifications() const
 
 
 rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) const
@@ -12041,8 +12179,15 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   xml_document<char> *doc = parent->document();
   xml_node<char> *base_node = doc->allocate_node( node_element, "Options" );
   parent->append_node( base_node );
-  
-  append_version_attrib( base_node, Options::sm_xmlSerializationVersion );
+
+  // Write the lowest schema version that still covers the content: v3 only when a v3-only field
+  //  (foreground/background filename or sample numbers, added 2026-04-27) is actually present, otherwise
+  //  v2.  This keeps configs that don't use the v3 fields readable by v2 builds.  (The physical-model
+  //  empirical-correction forward-compat is handled separately by each RelEffCurveInput's own version.)
+  const bool uses_v3_fields = !foreground_filename.empty() || !background_filename.empty()
+                              || !foreground_sample_numbers.empty() || !background_sample_numbers.empty();
+  static_assert( Options::sm_xmlSerializationVersion == 3, "Update conditional Options version logic." );
+  append_version_attrib( base_node, uses_v3_fields ? 3 : 2 );
 
   // Write "FitEnergyCal" for backwards compatibility
   const bool fit_any_energy_cal = (energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit);
@@ -12093,7 +12238,7 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   for( const auto &curve : rel_eff_curves )
     curve.toXml( rel_eff_node );
 
-  append_bool_node( base_node, "SameHoerlForAllRelEffCurves", same_hoerl_for_all_rel_eff_curves );
+  append_bool_node( base_node, "SameCorrFcnForAllRelEffCurves", same_corr_fcn_for_all_rel_eff_curves );
   append_bool_node( base_node, "SameExternalShieldingForAllRelEffCurves", same_external_shielding_for_all_rel_eff_curves );
 
   if( !rois.empty() )
@@ -12238,10 +12383,14 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 
       try
       {
-        same_hoerl_for_all_rel_eff_curves = get_bool_node_value( parent, "SameHoerlForAllRelEffCurves" );
+        // Prefer the current element name; fall back to the legacy <SameHoerlForAllRelEffCurves>.
+        if( XML_FIRST_NODE( parent, "SameCorrFcnForAllRelEffCurves" ) )
+          same_corr_fcn_for_all_rel_eff_curves = get_bool_node_value( parent, "SameCorrFcnForAllRelEffCurves" );
+        else
+          same_corr_fcn_for_all_rel_eff_curves = get_bool_node_value( parent, "SameHoerlForAllRelEffCurves" );
       }catch( ... )
       {
-        same_hoerl_for_all_rel_eff_curves = false;
+        same_corr_fcn_for_all_rel_eff_curves = false;
       }
 
       try
@@ -12413,7 +12562,7 @@ RelEffCurveInput::RelEffCurveInput()
   phys_model_self_atten( nullptr ),
   phys_model_external_atten{},
   shielded_by_other_phys_model_curve_shieldings{},
-  phys_model_use_hoerl( true ),
+  phys_model_corr{},
   pu242_correlation_method( RelActCalc::PuCorrMethod::NotApplicable )
 {
 }
@@ -12996,7 +13145,21 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
   xml_document<char> *doc = parent->document();
   xml_node<char> *base_node = doc->allocate_node( node_element, "RelEffCurveInput" );
   parent->append_node( base_node );
-  append_version_attrib( base_node, RelEffCurveInput::sm_xmlSerializationVersion );
+
+  // The physical-model correction is written below.  If it uses only v0-representable features (None or
+  //  Hoerl correction, no biasing) we keep the curve at v0 and additionally emit the legacy
+  //  `<PhysModelUseHoerl>` bool, so builds predating `<CorrectionFcnType>` can still read it.  Chebyshev or
+  //  any enabled biasing requires v1 (and such builds will correctly reject the curve on its version).
+  const bool writes_phys_model = (rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+                                 || phys_model_self_atten || !phys_model_external_atten.empty();
+  bool any_corr_biasing = phys_model_corr.corr_coef_bias.use
+                          || (phys_model_self_atten && phys_model_self_atten->ad_bias.use);
+  for( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &ext : phys_model_external_atten )
+    any_corr_biasing = any_corr_biasing || (ext && ext->ad_bias.use);
+  const bool advanced_corr = writes_phys_model
+                             && ( (phys_model_corr.corr_fcn == RelActCalc::PhysModelCorrFcn::Chebyshev)
+                                  || any_corr_biasing );
+  append_version_attrib( base_node, advanced_corr ? 1 : 0 );
 
   append_string_node( base_node, "Name", name );
 
@@ -13050,7 +13213,47 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
         XmlUtils::append_int_node( shield_by_node, "RelEffCurveIndex", curve_index );
     }//if( shielded_by_other_phys_model_curve_shieldings.empty() )
 
-    XmlUtils::append_bool_node( phys_node, "PhysModelUseHoerl", phys_model_use_hoerl );
+    // Correction function form, written as element content ("None"/"Hoerl"/"Chebyshev").
+    xml_node<char> *corr_node = append_string_node( phys_node, "CorrectionFcnType",
+                                                    RelActCalc::to_str(phys_model_corr.corr_fcn) );
+    XmlUtils::append_attrib( corr_node, "remark", "The empirical correction form. Possible values: None,"
+      " Hoerl, Chebyshev (default Hoerl if absent)." );
+
+    // Regularization "biasing" priors: each a bool element (on/off) with an optional `value` weight attribute,
+    //  and a `remark` documenting it.  When enabled without `value`, the built-in default weight is used.
+    auto append_prior_node = [doc, phys_node]( const char *name, const RelActCalc::PriorWeightOption &opt,
+                                               const char *remark ){
+      xml_node<char> *n = doc->allocate_node( node_element, name, (opt.use ? "true" : "false") );
+      phys_node->append_node( n );
+      // Only emit the weight when the prior is enabled: `read_prior` rejects a disabled prior that carries a
+      //  non-zero value, so writing it for `!use` would produce XML this same code refuses to read back.
+      if( opt.use && opt.value.has_value() )
+      {
+        char buffer[64];
+        snprintf( buffer, sizeof(buffer), "%1.8e", *opt.value );
+        XmlUtils::append_attrib( n, "value", buffer );
+      }
+      XmlUtils::append_attrib( n, "remark", remark );
+    };//append_prior_node lambda
+
+    append_prior_node( "CorrectionFcnBiasing", phys_model_corr.corr_coef_bias,
+      "Weak prior pulling the active correction's coefficients toward identity ('no correction') to"
+      " regularize the fit. true/false enables; optional 'value' attribute sets the weight (default 1.0 when"
+      " enabled without a value; Gaussian-like with sigma = 1/weight on the coefficient deviation). Off by"
+      " default." );
+    // Note: the self-/external-attenuation areal-density biasing priors live on each shield
+    //  (`<PhysicalModelShield><ArealDensityBias>`), written by `PhysicalModelShieldInput::toXml`.
+
+    // Legacy boolean element, emitted only for v0-representable curves so older builds can still read them.
+    if( !advanced_corr )
+    {
+      const bool uses_hoerl = (phys_model_corr.corr_fcn == RelActCalc::PhysModelCorrFcn::Hoerl);
+      xml_node<char> *legacy_node = doc->allocate_node( node_element, "PhysModelUseHoerl",
+                                                        (uses_hoerl ? "true" : "false") );
+      phys_node->append_node( legacy_node );
+      XmlUtils::append_attrib( legacy_node, "remark", "Legacy element kept for backward compatibility;"
+        " superseded by <CorrectionFcnType>. true => Hoerl correction, false => none." );
+    }//if( !advanced_corr )
   }//if( phys_model_self_atten || !phys_model_external_atten.empty() )
 
   if( pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable )
@@ -13136,7 +13339,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
   
 
   // Even if not RelActCalc::RelEffEqnForm::FramPhysicalModel, we'll still try to grab the state
-  phys_model_use_hoerl = true;
+  phys_model_corr = PhysModelCorrInput{};  // default: Hoerl correction, all biasing off
   phys_model_self_atten.reset();
   phys_model_external_atten.clear();
   shielded_by_other_phys_model_curve_shieldings.clear();
@@ -13184,7 +13387,49 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
       }//
     }//if( outer_curve_node )
 
-    phys_model_use_hoerl = XmlUtils::get_bool_node_value(phys_model_node, "PhysModelUseHoerl" );
+    // Correction function form.  Prefer the new `<CorrectionFcnType>` element (content None/Hoerl/Chebyshev);
+    //  fall back to the legacy boolean `<PhysModelUseHoerl>` (plain bool: true => Hoerl, false/absent => None;
+    //  any `type`/`value` attributes on it are ignored).
+    const rapidxml::xml_node<char> *corr_type_node = XML_FIRST_NODE( phys_model_node, "CorrectionFcnType" );
+    if( corr_type_node )
+    {
+      const string type_str = SpecUtils::xml_value_str( corr_type_node );
+      phys_model_corr.corr_fcn = type_str.empty()
+                                   ? RelActCalc::PhysModelCorrFcn::Hoerl
+                                   : RelActCalc::phys_model_corr_fcn_from_str( type_str.c_str() );
+    }else
+    {
+      const rapidxml::xml_node<char> *corr_node = XML_FIRST_NODE( phys_model_node, "PhysModelUseHoerl" );
+      const bool uses_hoerl = corr_node ? XmlUtils::get_bool_node_value(phys_model_node, "PhysModelUseHoerl") : false;
+      phys_model_corr.corr_fcn = uses_hoerl ? RelActCalc::PhysModelCorrFcn::Hoerl
+                                            : RelActCalc::PhysModelCorrFcn::None;
+    }//if( <CorrectionFcnType> ) / else (legacy <PhysModelUseHoerl>)
+
+    // Biasing priors: each an optional bool element with an optional `value` weight attribute.  Absent -> off.
+    auto read_prior = []( const rapidxml::xml_node<char> *par, const char *name ) -> RelActCalc::PriorWeightOption {
+      RelActCalc::PriorWeightOption opt;
+      const rapidxml::xml_node<char> *n = par ? par->first_node( name ) : nullptr;
+      if( !n )
+        return opt;  // absent -> off
+      const string val = SpecUtils::xml_value_str( n );
+      opt.use = (SpecUtils::iequals_ascii(val,"true") || SpecUtils::iequals_ascii(val,"1")
+                 || SpecUtils::iequals_ascii(val,"yes"));
+      const rapidxml::xml_attribute<char> *val_attr = n->first_attribute( "value" );
+      if( val_attr && val_attr->value_size() )
+      {
+        double v;
+        if( !SpecUtils::parse_double( val_attr->value(), val_attr->value_size(), v ) )
+          throw runtime_error( std::string("Invalid 'value' attribute on '") + name + "'" );
+        opt.value = v;
+      }
+      if( !opt.use && opt.value.has_value() && (*opt.value != 0.0) )
+        throw runtime_error( std::string("Invalid config: '") + name + "' specifies a non-zero value but is disabled" );
+      return opt;
+    };//read_prior lambda
+
+    phys_model_corr.corr_coef_bias = read_prior( phys_model_node, "CorrectionFcnBiasing" );
+    // The self-/external-attenuation AD biasing priors are read per-shield by
+    //  `PhysicalModelShieldInput::fromXml` (the `<ArealDensityBias>` element on each shield).
   }//if( phys_model_node )
 
   pu242_correlation_method = RelActCalc::PuCorrMethod::NotApplicable;
@@ -13292,7 +13537,7 @@ Options::Options()
   rel_eff_curves{},
   rois{},
   floating_peaks{},
-  same_hoerl_for_all_rel_eff_curves( false ),
+  same_corr_fcn_for_all_rel_eff_curves( false ),
   same_external_shielding_for_all_rel_eff_curves( false )
 {
 }
@@ -13529,7 +13774,9 @@ std::string RelActAutoSolution::rel_eff_txt( const bool html_format, const size_
                = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
 
   return RelActCalc::physical_model_rel_eff_eqn_text( phys_in.self_atten, phys_in.external_attens,
-                                phys_in.det, phys_in.hoerl_b, phys_in.hoerl_c, html_format );
+                                phys_in.det, phys_in.hoerl_b, phys_in.hoerl_c, html_format,
+                                m_cost_functor->m_corr_lower_energy, m_cost_functor->m_corr_upper_energy,
+                                m_cost_functor->m_corr_pivot_energy, phys_in.corr_fcn );
 }//std::string RelActAutoSolution::rel_eff_txt()
   
 
@@ -14812,7 +15059,9 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
         = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
 
         info.js_rel_eff_eqn = RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
-                                                                          input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
+                                                                          input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c,
+                                                                          m_cost_functor->m_corr_lower_energy, m_cost_functor->m_corr_upper_energy,
+                                                                          m_cost_functor->m_corr_pivot_energy, input.corr_fcn );
       }else
       {
         assert( 0 );
@@ -15930,8 +16179,12 @@ double RelActAutoSolution::relative_efficiency( const double energy, const size_
     external_attens.push_back( std::move(ext_shield_mdl) );
   }
 
-  return RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, m_drf.get(), 
-                                              phys_model_result->hoerl_b, phys_model_result->hoerl_c );
+  return RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, m_drf.get(),
+                                              phys_model_result->hoerl_b, phys_model_result->hoerl_c,
+                                              phys_model_result->corr_lower_energy,
+                                              phys_model_result->corr_upper_energy,
+                                              phys_model_result->corr_pivot_energy,
+                                              phys_model_result->corr_fcn );
 }//double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
 
   
@@ -16063,7 +16316,9 @@ string RelActAutoSolution::rel_eff_eqn_js_function( const size_t rel_eff_index )
                                     = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
 
   return RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
-                            input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
+                            input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c,
+                            m_cost_functor->m_corr_lower_energy, m_cost_functor->m_corr_upper_energy,
+                            m_cost_functor->m_corr_pivot_energy, input.corr_fcn );
 }//string rel_eff_eqn_js_function() const
   
   
@@ -16960,7 +17215,11 @@ RelActAutoSolution solve( const Options options,
               assert( phys_model_input.has_value() );
               rel_eff_val = RelActCalc::eval_physical_model_eqn( energy, phys_model_input->self_atten,
                                                                 phys_model_input->external_attens, phys_model_input->det.get(),
-                                                                phys_model_input->hoerl_b, phys_model_input->hoerl_c );
+                                                                phys_model_input->hoerl_b, phys_model_input->hoerl_c,
+                                                                current_sol.m_cost_functor->m_corr_lower_energy,
+                                                                current_sol.m_cost_functor->m_corr_upper_energy,
+                                                                current_sol.m_cost_functor->m_corr_pivot_energy,
+                                                                phys_model_input->corr_fcn );
             }//if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
             
             const double expected_counts = live_time * br * rel_eff_val * rel_act.rel_activity;
@@ -17287,9 +17546,9 @@ void RelEffCurveInput::equalEnough( const RelEffCurveInput &lhs, const RelEffCur
     RelActCalc::PhysicalModelShieldInput::equalEnough( *lhs.phys_model_external_atten[i], *rhs.phys_model_external_atten[i] );
   }
   
-  if( lhs.phys_model_use_hoerl != rhs.phys_model_use_hoerl )
-    throw std::runtime_error( "Physical model use Hoerl in lhs and rhs are not the same" );
-  
+  if( lhs.phys_model_corr != rhs.phys_model_corr )
+    throw std::runtime_error( "Physical model correction options in lhs and rhs are not the same" );
+
   if( lhs.pu242_correlation_method != rhs.pu242_correlation_method )
     throw std::runtime_error( "Pu242 correlation method in lhs and rhs are not the same" );
   

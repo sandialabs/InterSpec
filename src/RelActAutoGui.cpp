@@ -1398,7 +1398,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   options.rois = getRoiRanges();
   
   int num_phys_model_curves = 0;
-  bool any_using_hoerl = false, same_hoerl_all_curves = false, same_ext_shieldings = false;
+  bool any_using_corr_fcn = false, same_corr_fcn_all_curves = false, same_ext_shieldings = false;
   vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_attens;
   
   const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
@@ -1419,17 +1419,17 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     rel_eff_curve.rel_eff_eqn_order = opts->rel_eff_eqn_order();
     rel_eff_curve.phys_model_self_atten = opts->phys_model_self_atten();
     rel_eff_curve.phys_model_external_atten = opts->phys_model_external_atten();
-    rel_eff_curve.phys_model_use_hoerl = opts->phys_model_use_hoerl();
+    rel_eff_curve.phys_model_corr = opts->phys_model_corr();
     rel_eff_curve.pu242_correlation_method = opts->pu242_correlation_method();
 
     if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
       num_phys_model_curves += 1;
-      any_using_hoerl = (any_using_hoerl || rel_eff_curve.phys_model_use_hoerl);
+      any_using_corr_fcn = (any_using_corr_fcn || rel_eff_curve.uses_phys_model_correction());
       if( phys_model_external_attens.empty() )
         phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
       same_ext_shieldings = (same_ext_shieldings || opts->physModelSameExtShieldAllCurves());
-      same_hoerl_all_curves = (same_hoerl_all_curves || opts->physModelSameHoerlOnAllCurves());
+      same_corr_fcn_all_curves = (same_corr_fcn_all_curves || opts->physModelSameCorrFcnOnAllCurves());
 
       if( opts->physModelShieldedByOtherCurves() )
       {
@@ -1449,19 +1449,34 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     options.rel_eff_curves.push_back( rel_eff_curve );
   }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
 
-  options.same_hoerl_for_all_rel_eff_curves = false;
+  options.same_corr_fcn_for_all_rel_eff_curves = false;
   options.same_external_shielding_for_all_rel_eff_curves = false;
-  if( (num_phys_model_curves > 1) && (same_ext_shieldings || same_hoerl_all_curves) )
+  if( (num_phys_model_curves > 1) && (same_ext_shieldings || same_corr_fcn_all_curves) )
   {
-    if( any_using_hoerl && same_hoerl_all_curves )
+    if( any_using_corr_fcn && same_corr_fcn_all_curves )
     {
-      options.same_hoerl_for_all_rel_eff_curves = true;
-      for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+      options.same_corr_fcn_for_all_rel_eff_curves = true;
+
+      // Shared correction uses the FIRST physical-model curve's settings (matching the solver); copy that
+      //  curve's correction config onto all physical-model curves so they are identical.
+      const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput *first_corr = nullptr;
+      for( const RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
       {
-        assert( curve.phys_model_use_hoerl );
-        curve.phys_model_use_hoerl = true;
+        if( curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        {
+          first_corr = &curve.phys_model_corr;
+          break;
+        }
       }
-    }//if( any_using_hoerl and all should share a Hoerl)
+      if( first_corr )
+      {
+        for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+        {
+          if( curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+            curve.phys_model_corr = *first_corr;
+        }
+      }//if( first_corr )
+    }//if( any_using_corr_fcn and all should share a Hoerl)
     
     if( same_ext_shieldings && !phys_model_external_attens.empty() )
     {
@@ -2316,7 +2331,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     if( !rel_eff_opts || (rel_eff_opts->rel_eff_eqn_form() != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
       continue;
     
-    rel_eff_opts->setPhysModelSameHoerlOnAllCurves( options.same_hoerl_for_all_rel_eff_curves );
+    rel_eff_opts->setPhysModelSameCorrFcnOnAllCurves( options.same_corr_fcn_for_all_rel_eff_curves );
     rel_eff_opts->setPhysModelSameExtShieldAllCurves( options.same_external_shielding_for_all_rel_eff_curves );
     
     if( options.same_external_shielding_for_all_rel_eff_curves )
@@ -2679,8 +2694,9 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
   if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
     vector<const RelEffShieldWidget *> ext_shields;
-    bool same_hoerl = false, same_ext_shield = false, use_hoerl = false;
-  
+    bool same_corr_fcn = false, same_ext_shield = false;
+    RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput shared_corr; // adopted from a sibling phys-model curve
+
     const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
     for( int i = 0; i < num_rel_eff_curves; ++i )
     {
@@ -2688,19 +2704,21 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
       assert( options );
       if( options && (options != rel_eff_curve_gui) && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
       {
-        same_hoerl = options->physModelSameHoerlOnAllCurves();
+        same_corr_fcn = options->physModelSameCorrFcnOnAllCurves();
         same_ext_shield = options->physModelSameExtShieldAllCurves();
+        if( same_corr_fcn )
+          shared_corr = options->phys_model_corr();
         if( same_ext_shield )
           ext_shields = options->externalAttenWidgets();
         break; //
       }
     }//for( int i = 0; i < num_rel_eff_curves; ++i )
-    
-    rel_eff_curve_gui->setPhysModelSameHoerlOnAllCurves( same_hoerl );
+
+    rel_eff_curve_gui->setPhysModelSameCorrFcnOnAllCurves( same_corr_fcn );
     rel_eff_curve_gui->setPhysModelSameExtShieldAllCurves( same_ext_shield );
-    
-    if( same_hoerl )
-      rel_eff_curve_gui->setPhysModelUseHoerl( use_hoerl );
+
+    if( same_corr_fcn )
+      rel_eff_curve_gui->setPhysModelCorr( shared_corr );
     if( same_ext_shield )
       rel_eff_curve_gui->update_external_atten_shield_widget( ext_shields );
   }//if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -2712,7 +2730,7 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
 }//void handleRelEffEqnTypeChanged();
 
 
-void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+void RelActAutoGui::handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 {
   assert( rel_eff_curve_gui );
   if( !rel_eff_curve_gui )
@@ -2721,28 +2739,28 @@ void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOption
   // Show/hide physical model elements
   updateMultiPhysicalModelUI( rel_eff_curve_gui, nullptr );
   
-  const bool same_hoerl = rel_eff_curve_gui->physModelSameHoerlOnAllCurves();
-  const bool use_hoerl = rel_eff_curve_gui->phys_model_use_hoerl();
-  
+  const bool same_corr_fcn = rel_eff_curve_gui->physModelSameCorrFcnOnAllCurves();
+  const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput shared_corr = rel_eff_curve_gui->phys_model_corr();
+
   const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
-  
+
   for( int i = 0; i < num_rel_eff_curves; ++i )
   {
     RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
     assert( options );
     if( !options )
       continue;
-    
-    options->setPhysModelSameHoerlOnAllCurves( same_hoerl );
-    if( same_hoerl )
-      options->setPhysModelUseHoerl( use_hoerl );
+
+    options->setPhysModelSameCorrFcnOnAllCurves( same_corr_fcn );
+    if( same_corr_fcn )
+      options->setPhysModelCorr( shared_corr );
   }//for( int i = 0; i < num_rel_eff_curves; ++i )
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
-}//void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+}//void handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
 
 void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
@@ -4528,8 +4546,8 @@ void RelActAutoGui::handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions 
       {
         if( curve->physModelSameExtShieldAllCurves() )
           options->update_external_atten_shield_widget( curve->externalAttenWidgets() );
-        if( curve->physModelSameHoerlOnAllCurves() )
-          options->setPhysModelUseHoerl( curve->phys_model_use_hoerl() );
+        if( curve->physModelSameCorrFcnOnAllCurves() )
+          options->setPhysModelCorr( curve->phys_model_corr() );
       }
     }//for( int i = 0; i < num_rel_eff_curves; ++i )
   }//if( we need to make sure to keep external shieldings in sync )
@@ -4595,7 +4613,7 @@ void RelActAutoGui::handleAddRelEffCurve()
   rel_eff_curve->nameChanged().connect( this, &RelActAutoGui::handleRelEffCurveNameChanged );
   rel_eff_curve->optionsChanged().connect( boost::bind( &RelActAutoGui::handleRelEffModelOptionsChanged, this, boost::placeholders::_1 ) );
   rel_eff_curve->equationTypeChanged().connect( boost::bind( &RelActAutoGui::handleRelEffEqnTypeChanged, this, boost::placeholders::_1 ) );
-  rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( boost::bind( &RelActAutoGui::handleSameHoerlOnAllCurvesChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->sameCorrFcnOnAllCurvesChanged().connect( boost::bind( &RelActAutoGui::handleSameCorrFcnOnAllCurvesChanged, this, boost::placeholders::_1 ) );
   rel_eff_curve->sameExternalShieldingChanged().connect( boost::bind( &RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged, this, boost::placeholders::_1 ) );
 
   rel_eff_curve->shieldedByOtherCurvesChanged().connect( boost::bind( &RelActAutoGui::handleShieldedByOtherCurvesChanged, this, boost::placeholders::_1 ) );
@@ -6152,13 +6170,15 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
    
       //phys_info_ref.hoerl_b/hoerl_c will have (double) values iff the correction function was used
       assert( phys_info_ref.hoerl_b.has_value() == phys_info_ref.hoerl_c.has_value() );
-      //assert( phys_info_ref.hoerl_b.has_value() == opts->phys_model_use_hoerl() );
-      if( phys_info_ref.hoerl_b.has_value() != opts->phys_model_use_hoerl() )
+      const bool soln_uses_corr = phys_info_ref.hoerl_b.has_value();
+      if( soln_uses_corr != opts->phys_model_corr().uses_correction() )
       {
-        cerr << "Warning: mismatch between solution using Hoerl, and GUI saying thier using Hoerl"
-        << " {solution: " << phys_info_ref.hoerl_b.has_value() << ", GUI: " << opts->phys_model_use_hoerl() << "}";
+        cerr << "Warning: mismatch between solution using a correction function, and GUI saying it is"
+        << " {solution: " << soln_uses_corr << ", GUI: " << opts->phys_model_corr().uses_correction() << "}";
         cerr << endl;
-        opts->setPhysModelUseHoerl( phys_info_ref.hoerl_b.has_value() );
+        RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput corr = opts->phys_model_corr();
+        corr.corr_fcn = phys_info_ref.corr_fcn;
+        opts->setPhysModelCorr( corr );
       }
     }//if( Physical model fit info is available )
 

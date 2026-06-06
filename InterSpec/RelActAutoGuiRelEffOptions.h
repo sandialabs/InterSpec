@@ -57,6 +57,9 @@ public:
 
   void showAndHideOptionsForEqnType();
   void initPhysModelShields();
+  /** Updates state dependent on the correction-function combo (greys out "Bias corr." when None) and emits
+   the options-changed signal.  Connected to the correction-function combo. */
+  void handlePhysModelCorrFcnChanged();
   void setIsOnlyOneRelEffCurve(const bool is_only_rel_eff_curve);
   void setHasMultiplePhysicalModels(const bool has_multiple_phys_models);
   Wt::WString name() const;
@@ -69,7 +72,7 @@ public:
   Wt::Signal<RelActAutoGuiRelEffOptions *> &delRelEffCurve();
   Wt::Signal<RelActAutoGuiRelEffOptions *, Wt::WString> &nameChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &equationTypeChanged();
-  Wt::Signal<RelActAutoGuiRelEffOptions *> &sameHoerlOnAllCurvesChanged();
+  Wt::Signal<RelActAutoGuiRelEffOptions *> &sameCorrFcnOnAllCurvesChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &sameExternalShieldingChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &shieldedByOtherCurvesChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &optionsChanged();
@@ -78,10 +81,11 @@ public:
   size_t rel_eff_eqn_order() const;
   std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> phys_model_self_atten() const;
   std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten() const;
-  bool phys_model_use_hoerl() const;
-  void setPhysModelUseHoerl(const bool use_hoerl);
-  bool physModelSameHoerlOnAllCurves() const;
-  void setPhysModelSameHoerlOnAllCurves(const bool same_hoerl_all_curves);
+  /** The physical-model correction form + biasing options selected in the GUI. */
+  RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput phys_model_corr() const;
+  void setPhysModelCorr( const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput &corr );
+  bool physModelSameCorrFcnOnAllCurves() const;
+  void setPhysModelSameCorrFcnOnAllCurves(const bool same_corr_fcn_all_curves);
   bool physModelSameExtShieldAllCurves() const;
   void setPhysModelSameExtShieldAllCurves(const bool same_ext_shield_all_curves);
   bool physModelShieldedByOtherCurves() const;
@@ -102,7 +106,7 @@ protected:
                               RelEffShieldWidget *w);
   
   void handleRelEffEqnTypeChanged();
-  void handleSameHoerlOnAllCurvesChanged();
+  void handleSameCorrFcnOnAllCurvesChanged();
   void handleSameExternalShieldingChanged();
   void handleShieldedByOtherCurvesChanged();
 
@@ -125,8 +129,10 @@ protected:
   Wt::WContainerWidget *m_phys_model_shields;
   RelEffShieldWidget *m_phys_model_self_atten;
   Wt::WContainerWidget *m_phys_ext_attens;
-  Wt::WCheckBox *m_phys_model_use_hoerl;
-  Wt::WCheckBox *m_phys_model_same_hoerl_on_all_curves;
+  Wt::WComboBox *m_phys_model_corr_fcn;
+  Wt::WCheckBox *m_phys_model_bias_corr;      // bias the correction coefficients toward identity
+  // (self-/external-attenuation AD biasing lives on each RelEffShieldWidget's own "Bias AD" checkbox)
+  Wt::WCheckBox *m_phys_model_same_corr_fcn_on_all_curves;
   Wt::WCheckBox *m_phys_model_same_ext_shield_all_curves;
   Wt::WCheckBox *m_phys_model_shielded_by_other_curves;
   Wt::WText *m_eqn_txt;
@@ -137,7 +143,7 @@ protected:
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_del_rel_eff_curve_signal;
   Wt::Signal<RelActAutoGuiRelEffOptions *, Wt::WString> m_name_changed_signal;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_eqn_form_changed;
-  Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_hoerl_on_all_curves;
+  Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_corr_fcn_on_all_curves;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_ext_shield_on_all_curves;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_shielded_by_other_curves;
 

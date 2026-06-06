@@ -113,7 +113,7 @@ void check_auto_state_xml_serialization()
   ext_atten->lower_fit_areal_density = 1.0;
   ext_atten->upper_fit_areal_density = 10*PhysicalUnits::g_per_cm2;
   curve.phys_model_external_atten.push_back( ext_atten );
-  curve.phys_model_use_hoerl = false;
+  curve.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
   
   curve.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
 
@@ -653,7 +653,7 @@ void czt_pu_example()
   
   
   //state.options.rel_eff_curves.resize(1);
-  state.options.rel_eff_curves[0].phys_model_use_hoerl = false;
+  state.options.rel_eff_curves[0].phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
   
   
   // We can constrain the RelActivity.
@@ -1397,15 +1397,15 @@ void check_manual_nuclide_constraints_checks()
 }//void check_manual_nuclide_constraints_checks()
 
 
-void check_auto_hoerl_and_ext_shield_checks()
+void check_auto_corr_fcn_and_ext_shield_checks()
 {
   RelActCalcAuto::Options options;
-  options.same_hoerl_for_all_rel_eff_curves = true;
+  options.same_corr_fcn_for_all_rel_eff_curves = true;
   options.same_external_shielding_for_all_rel_eff_curves = true;
   
   RelActCalcAuto::RelEffCurveInput rel_eff_curve;
   rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-  rel_eff_curve.phys_model_use_hoerl = true;
+  rel_eff_curve.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
 
   auto ext_shield = make_shared<RelActCalc::PhysicalModelShieldInput>( RelActCalc::PhysicalModelShieldInput() );  
   ext_shield->atomic_number = 26;
@@ -1423,15 +1423,15 @@ void check_auto_hoerl_and_ext_shield_checks()
     RelActCalcAuto::Options options_cpy = options;
 
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_2 = rel_eff_curve;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = false;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
 
     options_cpy.rel_eff_curves.push_back( rel_eff_curve );
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
 
     options_cpy.rel_eff_curves.push_back( rel_eff_curve_2 );
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
   }catch( std::exception &e )
   {
     cerr << "Failed to check same hoerl and external shielding specifications: " << e.what() << endl;
@@ -1443,11 +1443,11 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = true;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
     options_cpy.rel_eff_curves.push_back( rel_eff_curve );
     options_cpy.rel_eff_curves.push_back( rel_eff_curve );
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
   }catch( std::exception &e )
   {
     cerr << "Failed to check same hoerl and external shielding specifications: " << e.what() << endl;
@@ -1458,12 +1458,12 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = true;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
 
     options_cpy.rel_eff_curves.clear();
     options_cpy.rel_eff_curves.push_back( rel_eff_curve );
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
     cerr << "Failed to throw an error for a single rel_eff_curve" << endl;
     assert( 0 );
   }catch( std::exception &e )
@@ -1475,12 +1475,12 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = false;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
 
     options_cpy.rel_eff_curves.clear();
     options_cpy.rel_eff_curves.push_back( rel_eff_curve );
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
     cerr << "Failed to throw an error for a single rel_eff_curve" << endl;
     assert( 0 );
   }catch( std::exception &e )
@@ -1492,14 +1492,14 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = false;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
 
     options_cpy.rel_eff_curves.push_back( rel_eff_curve );
     
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_2;
     rel_eff_curve_2.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-    rel_eff_curve_2.phys_model_use_hoerl = true;
+    rel_eff_curve_2.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
     
     auto ext_shield_2 = make_shared<RelActCalc::PhysicalModelShieldInput>( RelActCalc::PhysicalModelShieldInput() );  
     ext_shield_2->atomic_number = 52;
@@ -1512,7 +1512,7 @@ void check_auto_hoerl_and_ext_shield_checks()
     rel_eff_curve_2.phys_model_external_atten.push_back( ext_shield_2 );
     
     options_cpy.rel_eff_curves.push_back( rel_eff_curve_2 );
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
     cerr << "Failed to throw an error for different external shielding" << endl;
     assert( 0 );
   }catch( std::exception &e )
@@ -1525,15 +1525,15 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = true;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
 
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
-    rel_eff_curve_cpy.phys_model_use_hoerl = false;
+    rel_eff_curve_cpy.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
     options_cpy.rel_eff_curves.push_back( rel_eff_curve );
     options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
 
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
     cerr << "Failed to throw an error for one rel_eff_curve not using a hoerl function" << endl;
     assert( 0 );
   }catch( std::exception &e )
@@ -1546,14 +1546,14 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = false;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
 
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
     rel_eff_curve_cpy.phys_model_external_atten.clear();
     options_cpy.rel_eff_curves.push_back( rel_eff_curve );
     options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
     cerr << "Failed to throw an error for one rel_eff_curve not having an external shielding" << endl;
     assert( 0 );
   }catch( std::exception &e )
@@ -1566,16 +1566,16 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = false;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = false;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
 
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
     rel_eff_curve_cpy.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
     rel_eff_curve_cpy.rel_eff_eqn_order = 2;
-    rel_eff_curve_cpy.phys_model_use_hoerl = false;
+    rel_eff_curve_cpy.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
     options_cpy.rel_eff_curves.push_back( rel_eff_curve );
     options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
 
     cerr << "Failed to throw an error for one rel_eff_curve not being a physical model" << endl;
     assert( 0 );
@@ -1587,7 +1587,7 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = true;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
 
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
@@ -1597,7 +1597,7 @@ void check_auto_hoerl_and_ext_shield_checks()
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
     options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
 
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
     cerr << "Failed to throw an error for same_external_shielding_for_all_rel_eff_curves with one curve shielding another" << endl;
     assert( 0 );
   }catch( std::exception &e )
@@ -1608,7 +1608,7 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = true;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
 
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
@@ -1622,7 +1622,7 @@ void check_auto_hoerl_and_ext_shield_checks()
     rel_eff_curve_cpy2.shielded_by_other_phys_model_curve_shieldings.insert( 0 );
     options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
 
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
 
     // We are suppoest to get here
   }catch( std::exception &e )
@@ -1634,7 +1634,7 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = true;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
 
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
@@ -1649,7 +1649,7 @@ void check_auto_hoerl_and_ext_shield_checks()
     rel_eff_curve_cpy2.shielded_by_other_phys_model_curve_shieldings.insert( 0 );
     options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
 
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
 
     cerr << "Didnt throw for cyclical curves shielding eachother" << endl;
     assert( 0 );
@@ -1661,7 +1661,7 @@ void check_auto_hoerl_and_ext_shield_checks()
   try
   {
     RelActCalcAuto::Options options_cpy = options;
-    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_corr_fcn_for_all_rel_eff_curves = true;
     options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
 
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
@@ -1674,7 +1674,7 @@ void check_auto_hoerl_and_ext_shield_checks()
     RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
     options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
 
-    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    options_cpy.check_same_corr_fcn_and_external_shielding_specifications();
 
     cerr << "Didnt throw for shielding curve not having any shieldings defined." << endl;
     assert( 0 );
@@ -1684,7 +1684,7 @@ void check_auto_hoerl_and_ext_shield_checks()
   }
 
   cout << "All auto hoerl and ext shield checks passed" << endl;
-}//void check_auto_hoerl_and_ext_shield_checks()
+}//void check_auto_corr_fcn_and_ext_shield_checks()
 
 
 void utile_ana()
@@ -1770,9 +1770,9 @@ void utile_ana()
     
   //state.options.rel_eff_curves.resize(1);
   const bool use_hoerl = false;
-  state.options.rel_eff_curves[0].phys_model_use_hoerl = use_hoerl;
-  state.options.rel_eff_curves[1].phys_model_use_hoerl = use_hoerl;
-  state.options.same_hoerl_for_all_rel_eff_curves = use_hoerl;
+  state.options.rel_eff_curves[0].phys_model_corr.corr_fcn = use_hoerl ? RelActCalc::PhysModelCorrFcn::Hoerl : RelActCalc::PhysModelCorrFcn::None;
+  state.options.rel_eff_curves[1].phys_model_corr.corr_fcn = use_hoerl ? RelActCalc::PhysModelCorrFcn::Hoerl : RelActCalc::PhysModelCorrFcn::None;
+  state.options.same_corr_fcn_for_all_rel_eff_curves = use_hoerl;
   //state.options.same_external_shielding_for_all_rel_eff_curves = true;
     
     
@@ -1873,7 +1873,7 @@ void leu_heu_ana()
   //const bool use_hoerl = false;
   //state.options.rel_eff_curves[0].phys_model_use_hoerl = use_hoerl;
   //state.options.rel_eff_curves[1].phys_model_use_hoerl = use_hoerl;
-  //state.options.same_hoerl_for_all_rel_eff_curves = use_hoerl;
+  //state.options.same_corr_fcn_for_all_rel_eff_curves = use_hoerl;
   //state.options.same_external_shielding_for_all_rel_eff_curves = true;
 
 
@@ -2140,7 +2140,7 @@ int dev_code()
 
   check_auto_nuclide_constraints_checks();
   check_manual_nuclide_constraints_checks();
-  check_auto_hoerl_and_ext_shield_checks();
+  check_auto_corr_fcn_and_ext_shield_checks();
   return 1;
   
   //check_auto_state_xml_serialization();

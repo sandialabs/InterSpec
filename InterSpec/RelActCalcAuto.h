@@ -586,12 +586,34 @@ struct RelEffCurveInput
    */
   std::set<size_t> shielded_by_other_phys_model_curve_shieldings;
 
-  /** If true, fit the modified Hoerl equation form for the physical model.
-   * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
-   *
-   * Ignored if not using `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
-  */
-  bool phys_model_use_hoerl = true;
+  /** Physical-Model empirical-correction options (the correction form, plus optional weak regularization
+   "biasing" priors).  Ignored unless `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+
+   When multiple physical-model curves share the correction (`Options::same_corr_fcn_for_all_rel_eff_curves`),
+   the FIRST physical-model curve's `phys_model_corr` is used for all of them. */
+  struct PhysModelCorrInput
+  {
+    /** The empirical correction form.  None disables the correction (its value is a constant 1.0).
+     Default Hoerl (matches the legacy `phys_model_use_hoerl == true`). */
+    RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
+
+    /** Weak prior pulling the active correction's coefficients toward identity (Hoerl b,c -> 0,1, or
+     basis a1,a2 -> 0).  Applies to whichever correction `corr_fcn` selects. */
+    RelActCalc::PriorWeightOption corr_coef_bias;
+
+    // Note: the per-shield areal-density biasing priors live on each shield
+    //  (`RelActCalc::PhysicalModelShieldInput::ad_bias`), not here.
+
+    bool uses_correction() const { return corr_fcn != RelActCalc::PhysModelCorrFcn::None; }
+
+    bool operator==( const PhysModelCorrInput &rhs ) const;
+    bool operator!=( const PhysModelCorrInput &rhs ) const { return !(*this == rhs); }
+  };//struct PhysModelCorrInput
+
+  PhysModelCorrInput phys_model_corr;
+
+  /** Convenience: whether any empirical correction is applied (replaces the legacy `phys_model_use_hoerl`). */
+  bool uses_phys_model_correction() const { return phys_model_corr.uses_correction(); }
 
   /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
    Pu isotopics).
@@ -706,10 +728,17 @@ struct RelEffCurveInput
    
    Throws an exception if they are not valid.
    */
-  void check_nuclide_constraints() const; 
+  void check_nuclide_constraints() const;
 
-  
-  static const int sm_xmlSerializationVersion = 0;
+
+  /** Version 1 (from 0): the physical-model empirical correction gained a `<CorrectionFcnType>` element
+   (content None/Hoerl/Chebyshev) and three optional regularization "biasing" prior elements
+   (`<CorrectionFcnBiasing>`, `<SelfAttenAdBiasing>`, `<ExtAttenAdBiasing>`).  To stay readable by v0
+   builds, a curve is written as v0 -- carrying the legacy boolean `<PhysModelUseHoerl>` *and* the new
+   elements -- whenever its correction is v0-representable (None or Hoerl) and no biasing is enabled;
+   Chebyshev or any enabled biasing forces v1 (new elements only).  Reading prefers `<CorrectionFcnType>`
+   and falls back to the legacy `<PhysModelUseHoerl>` (a plain bool: true => Hoerl, false/absent => None). */
+  static const int sm_xmlSerializationVersion = 1;
 
   /** Puts this object to XML
    * 
@@ -791,7 +820,7 @@ struct Options
    *
    * Only compatible with skew_type == NoSkew or skew_type == GaussPlusBortel.
    * If set to true with an incompatible skew_type, then the problem will fail to setup (an exception
-   * in `check_same_hoerl_and_external_shielding_specifications()` will be thrown)
+   * in `check_same_corr_fcn_and_external_shielding_specifications()` will be thrown)
    */
   bool lorentzian_xrays;
 
@@ -818,14 +847,15 @@ struct Options
   std::vector<RelActCalcAuto::FloatingPeak> floating_peaks;
 
 
-  /** If true, use the same Hoerl equation form for all relative efficiency curves.
+  /** If true, use the same empirical-correction function (form + coefficients) for all relative
+   * efficiency curves.
    *
-   * If false, each relative efficiency curve will have its own Hoerl equation fit (if applicable).
-   * 
-   * if true, and you do not have multiple physical models with `RelEffCurveInput::phys_model_use_hoerl`
-   * set to true, then an exception will be thrown.
+   * If false, each relative efficiency curve fits its own correction (if applicable).
+   *
+   * If true, and you do not have at least two physical-model curves that use a correction
+   * (`RelEffCurveInput::uses_phys_model_correction()`), then an exception will be thrown.
    */
-  bool same_hoerl_for_all_rel_eff_curves;
+  bool same_corr_fcn_for_all_rel_eff_curves;
 
   /** If true, use the same external shielding for all relative efficiency curves.
    *
@@ -844,7 +874,7 @@ struct Options
    *
    * Throws an exception if they are not consistent.
    */
-  void check_same_hoerl_and_external_shielding_specifications() const;
+  void check_same_corr_fcn_and_external_shielding_specifications() const;
 
   /** Version history:
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
@@ -860,7 +890,7 @@ struct Options
    @param parent An XML element with name "Options".
    Uses `MaterialDB::instance()` to retrieve materials for #PhysicalModelShieldInput;
    for other equation types, or for AN/AD defined shields, the material DB isnt used/required.
-   `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
+   `same_corr_fcn_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
    were also added, and are optional.
    */
   void fromXml( const ::rapidxml::xml_node<char> *parent );
@@ -1222,8 +1252,10 @@ struct RelActAutoSolution
    uncertainty correction applied (if they were fit for).
    */
   std::vector<std::vector<NuclideRelAct>> m_rel_activities;
-  
-  std::vector<std::vector<double>> m_rel_act_covariance;
+
+  /** Per-curve covariance of the relative-activity parameters (outer index = rel-eff curve index),
+   mirroring `m_rel_eff_covariance`.  In raw fit-parameter space (scale factor not applied). */
+  std::vector<std::vector<std::vector<double>>> m_rel_act_covariance;
   
   FwhmForm m_fwhm_form;
   std::vector<double> m_fwhm_coefficients;
@@ -1469,10 +1501,25 @@ struct RelActAutoSolution
      */
     std::vector<ShieldInfo> shields_from_other_curves;
 
-    // Modified Hoerl corrections only present if fitting the Hoerl function was selected
-    //  Uncertainties are just sqrt of covariance diagnal
+    /** The empirical-correction form that was fit (None/Hoerl/Chebyshev).  Determines how to interpret
+     `hoerl_b`/`hoerl_c` and whether the `corr_*_energy` frame applies.  Must be passed to the
+     `RelActCalc::eval_physical_model_eqn`/`..._text`/`..._js_function` calls so the reported/plotted
+     correction matches the form that was fit. */
+    RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
+
+    // Empirical correction coefficients; only present if a correction (Hoerl or Chebyshev) was fit.
+    //  Uncertainties are just sqrt of covariance diagonal.  For `corr_fcn == Chebyshev`, `hoerl_b`/`hoerl_c`
+    //  instead carry the two pivot-anchored basis coefficients a1,a2 (and `corr_*_energy` below give the
+    //  basis energy reference frame).
     std::optional<double> hoerl_b, hoerl_b_uncert;
     std::optional<double> hoerl_c, hoerl_c_uncert;
+
+    /** Energy reference frame for the basis empirical-correction term (only meaningful when
+     `corr_fcn == Chebyshev`): the fit range [lower, upper] and the pivot (log-midpoint) where
+     `correction(pivot) == 1`.  Needed to evaluate/plot the correction the same way it was fit. */
+    double corr_lower_energy = 0.0;
+    double corr_upper_energy = 0.0;
+    double corr_pivot_energy = 0.0;
   };//struct PhysicalModelFitInfo
   
   /** The curve information for Physical Model curves.

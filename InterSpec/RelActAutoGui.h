@@ -117,7 +117,7 @@ public:
   void handleDisplayedSpectrumChange( SpecUtils::SpectrumType );
   void handlePresetChange();
   void handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
-  void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
+  void handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleRelEffEqnOrderChanged();

@@ -8,7 +8,6 @@
   <message id="raageo-pu242-corr">تصحيح Pu242</message>
   
   <!-- Checkboxes -->
-  <message id="raageo-use-corr-fcn">استخدام دالة التصحيح</message>
   <message id="raageo-share-corr-fcn">مشاركة دالة التصحيح</message>
   <message id="raageo-share-ext-atten">مشاركة الامتصاص الخارجي</message>
   <message id="raageo-shielded-by-other-curves">محمي بواسطة منحنيات أخرى</message>
