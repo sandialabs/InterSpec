@@ -31,6 +31,12 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/FarmOptions.h"
 
+#include <filesystem>
+#include <regex>
+#include <optional>
+#include <cstdlib>
+#include <string>
+
 class InterSpec;
 
 namespace Wt
@@ -42,6 +48,15 @@ namespace Wt
   class WContainerWidget;
 }//namespace Wt
 
+/**
+ * POD Class to store FRAM version number and path
+ **/
+struct FramInstall 
+{
+  std::filesystem::path path;
+  int major;
+  int minor;
+};
 
 /** Window for configuring FARM options.
 
@@ -90,6 +105,26 @@ private:
    */
   void validatePathInputs();
 
+  /**
+   * Slot to handle FRAM version toggle
+   **/
+  void onFramVersionToggled(Wt::WRadioButton* button);
+
+  /**
+   * Search the Program Files (x86) directory and return path to latest
+   * release of requested major version.
+   * e.g. User has 6.1, 7.1, and 7.2 installed
+   * User selects v7 radio button
+   * Will return path to 7.2 executable
+   **/
+  std::optional<std::filesystem::path> findLatestFramExe(int requestedMajor);
+
+  /**
+   * Similar to findLatestFramExe() except it returns the directory where the
+   * output is saved
+   **/
+  std::optional<std::filesystem::path> findLatestFramOutputDir(int requestedMajor);
+
   InterSpec *m_interspec;
 
   // Master enable
@@ -105,6 +140,9 @@ private:
 
   // FRAM controls
   Wt::WCheckBox *m_enableFram;
+  Wt::WButtonGroup *m_framVersionGroup;
+  Wt::WRadioButton *m_v6Fram;
+  Wt::WRadioButton *m_v7Fram;
   Wt::WLineEdit *m_framExePath;
   Wt::WLineEdit *m_framOutputPath;
 

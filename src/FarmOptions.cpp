@@ -22,6 +22,8 @@ std::string FarmOptions::toJson() const
   j["synthesize_background_if_missing"] = synthesize_background_if_missing;
   j["enable_relact_isotopics"] = enable_relact_isotopics;
   j["enable_fram_isotopics"] = enable_fram_isotopics;
+  j["fram_v6"] = fram_v6;
+  j["fram_v7"] = fram_v7;
   j["fram_exe_path"] = fram_exe_path;
   j["fram_output_path"] = fram_output_path;
   j["write_fertilized_n42"] = write_fertilized_n42;
@@ -51,6 +53,8 @@ FarmOptions FarmOptions::fromJson( const std::string &json_str )
     opts.synthesize_background_if_missing = j.value( "synthesize_background_if_missing", true );
     opts.enable_relact_isotopics = j.value( "enable_relact_isotopics", false );
     opts.enable_fram_isotopics = j.value( "enable_fram_isotopics", false );
+    opts.fram_v6 = j.value( "fram_v6", false );
+    opts.fram_v7 = j.value( "fram_v7", false );
     opts.fram_exe_path = j.value( "fram_exe_path", string() );
     opts.fram_output_path = j.value( "fram_output_path", string() );
     opts.write_fertilized_n42 = j.value( "write_fertilized_n42", false );

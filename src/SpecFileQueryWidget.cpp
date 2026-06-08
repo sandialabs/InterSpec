@@ -119,6 +119,9 @@ using namespace std;
 
 namespace
 {
+  static const int IsotopicsJsonRole = Wt::UserRole + 100;
+  static const size_t NumInternalResultFields = 1;
+  static const size_t InternalIsotopicsJsonOffset = 0;//remove
   using namespace SpecFileQuery;
   
   bool file_smaller_than( const std::string &path, void *maxsizeptr )
@@ -670,7 +673,11 @@ namespace
                                     const std::vector<EventXmlFilterInfo> &xmlfilters )
   {
     const size_t max_cell_size = 1024;
-    vector<string> row( NumFileDataFields + xmlfilters.size(), "" );
+    //vector<string> row( NumFileDataFields + xmlfilters.size(), "" );
+
+    vector<string> row(NumFileDataFields + xmlfilters.size() + NumInternalResultFields,"");
+    const size_t isotopics_json_index = NumFileDataFields + xmlfilters.size() + InternalIsotopicsJsonOffset;
+    row[isotopics_json_index] = meas.isotopics_result_json;
     
 #if( SpecFileQuery_TIME_AS_SECONDS )
     auto print_to_milli = []( const double time ) -> string {
@@ -1042,34 +1049,90 @@ namespace
         }
 
         case FileDataField::RelActUIsotopics:
+        {
+          row[f] = "Test RelAct U";
+          break;
+        }
+
         case FileDataField::RelActPuIsotopics:
+        {
+          row[f] = "Test RelAct Pu";
+          break;
+        }
+
         case FileDataField::FramUIsotopics:
+        {
+          if( !meas.isotopics_result_json.empty() )
+          {
+            try
+            {
+              //const bool is_relact = (f == FileDataField::RelActUIsotopics || 
+              //                        f == FileDataField::RelActPuIsotopics);
+              //const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
+              //const std::string target = (f == FileDataField::RelActUIsotopics || 
+              //                            f == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
+              const nlohmann::json results = nlohmann::json::parse( meas.isotopics_result_json );
+              for( const nlohmann::json &res : results )
+              {
+                //if( res.value( "m_analysis_program", std::string() ) != prog )
+                //{
+                //  std::cout << "m_analysis_program continue" <<std::endl;
+                //  continue;
+                //}
+                if( !res.contains( "Isotopics" ) )
+                {
+                  continue;
+                }
+                for( const nlohmann::json &nuc : res["Isotopics"] )
+                {
+                  if( nuc.value( "nuclide", std::string() ) != "U235" ) 
+                  {
+                    continue;
+                  }
+                  char buff[64];
+                  snprintf( buff, sizeof(buff), "%.4g%%", nuc.value( "mass_percent", 0.0 ) );
+                  row[f] = buff;
+                  break;
+                }
+                break;  // Use first matching program entry
+              }
+            }
+            catch( ... ) {}
+          }
+          break;
+        }
+
         case FileDataField::FramPuIsotopics:
         {
           if( !meas.isotopics_result_json.empty() )
           {
             try
             {
-              const bool is_relact = (f == FileDataField::RelActUIsotopics
-                                      || f == FileDataField::RelActPuIsotopics);
-              const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
-              const std::string target = (f == FileDataField::RelActUIsotopics
-                                          || f == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
-
+              //const bool is_relact = (f == FileDataField::RelActUIsotopics || 
+              //                        f == FileDataField::RelActPuIsotopics);
+              //const std::string prog = is_relact ? "RelActCalcAuto" : "FRAM";
+              //const std::string target = (f == FileDataField::RelActUIsotopics || 
+              //                            f == FileDataField::FramUIsotopics) ? "U235" : "Pu240";
               const nlohmann::json results = nlohmann::json::parse( meas.isotopics_result_json );
               for( const nlohmann::json &res : results )
               {
-                if( res.value( "analysis_program", std::string() ) != prog )
-                  continue;
-                if( !res.contains( "nuclide_results" ) )
-                  continue;
-
-                for( const nlohmann::json &nuc : res["nuclide_results"] )
+                //if( res.value( "m_analysis_program", std::string() ) != prog )
+                //{
+                //  std::cout << "m_analysis_program continue" <<std::endl;
+                //  continue;
+                //}
+                if( !res.contains( "Isotopics" ) )
                 {
-                  if( nuc.value( "nuclide", std::string() ) != target )
+                  continue;
+                }
+                for( const nlohmann::json &nuc : res["Isotopics"] )
+                {
+                  if( nuc.value( "nuclide", std::string() ) != "Pu240" ) 
+                  {
                     continue;
+                  }
                   char buff[64];
-                  snprintf( buff, sizeof(buff), "%.4g%%", 100.0 * nuc.value( "mass_fraction", 0.0 ) );
+                  snprintf( buff, sizeof(buff), "%.4g%%", nuc.value( "mass_percent", 0.0 ) );
                   row[f] = buff;
                   break;
                 }
@@ -1144,17 +1207,19 @@ namespace
     
     //ToDo: do we really need to replace commas and quotes?  I think we properly
     //      quote things when saving to CSV.  Oh well for now.
-    for( string &col : row )
+    for( size_t i = 0; i < row.size(); ++i )
     {
-      SpecUtils::ireplace_all(col,",", " ");
+      if( i == isotopics_json_index )
+        continue;
+      std::string &col = row[i];
+      SpecUtils::ireplace_all(col, ",", " ");
       SpecUtils::ireplace_all(col, "\"", "&quot;");
-      
       if( col.size() > max_cell_size )
       {
-        SpecUtils::utf8_limit_str_size( col, max_cell_size-5 ); //count '\n' as twoa characters for windows
+        SpecUtils::utf8_limit_str_size( col, max_cell_size - 5 );
         col += "\n...";
       }
-    }//for( string &col : row )
+    }
     
     return row;
   }//vector<string> get_result_fields( const SpecFileInfoToQuery &meas )
@@ -1537,6 +1602,18 @@ public:
     }
     
     const vector<string> &fields = (*m_result)[row];
+
+
+    if( role == IsotopicsJsonRole )
+    {
+      const size_t isotopics_json_index =
+      NumFileDataFields + m_eventXmlColNames.size() + InternalIsotopicsJsonOffset;
+      if( isotopics_json_index < fields.size() )
+          return WString::fromUTF8( fields[isotopics_json_index] );
+      return boost::any();
+    }
+
+
     
     if( col >= static_cast<int>(fields.size()) )
     {
@@ -1651,8 +1728,8 @@ public:
       case FileDataField::GadrasChi2:                 return WString("GADRAS Chi2");
       case FileDataField::RelActUIsotopics:           return WString("RelAct U Isotopics");
       case FileDataField::RelActPuIsotopics:          return WString("RelAct Pu Isotopics");
-      case FileDataField::FramUIsotopics:             return WString("FRAM U Isotopics");
-      case FileDataField::FramPuIsotopics:            return WString("FRAM Pu Isotopics");
+      case FileDataField::FramUIsotopics:             return WString("FRAM U235 %");
+      case FileDataField::FramPuIsotopics:            return WString("FRAM Pu240 %");
       case FileDataField::SpectrumMean:               return WString("Spectrum Mean (keV)");
       case FileDataField::SpectrumVariance:           return WString("Spectrum Variance");
       case FileDataField::SpectrumStandardDeviation: return WString("Spectrum Std Dev");
@@ -1724,7 +1801,9 @@ SpecFileQueryWidget::SpecFileQueryWidget( InterSpec *viewer, Wt::WContainerWidge
     m_numberResults( nullptr ),
     m_csv( nullptr ),
     m_queryChanged( this, "fileSearchQueryChanged", false ),
-    m_searchRequested( this, "fileSearchRequested", false )
+    m_searchRequested( this, "fileSearchRequested", false ),
+    m_framPopup( nullptr ),
+    m_framModel( nullptr )
 {
   init();
 }//SpecFileQueryWidget constructor
@@ -1978,6 +2057,12 @@ void SpecFileQueryWidget::init()
   m_resultview->setRootIsDecorated( false ); //makes the tree look like a table! :)
   m_resultview->setAlternatingRowColors( true );
   m_resultview->setColumnWidth( 0, WLength(20,WLength::FontEx) );
+  int HoverColumn = SpecFileQuery::FramUIsotopics;
+  m_framPopup = new FRAMPopupBox();
+  m_resultview->setItemDelegateForColumn(
+                                  HoverColumn,
+                                  new FRAMPopupDelegate(*m_framPopup, HoverColumn)
+                                      );
   layout->addWidget( m_resultview, 3, 0 );
   layout->setRowStretch( 3, 5 );
 
@@ -2069,6 +2154,72 @@ void SpecFileQueryWidget::init()
     basePathChanged();
   }
 #endif
+
+/*
+TSN to add
+#include <Wt/WPopupWidget.h>
+#include <Wt/WText.h>
+#include <Wt/WVBoxLayout.h>
+#include <Wt/WImage.h>
+
+class InfoPopup : public Wt::WPopupWidget {
+public:
+    InfoPopup() : Wt::WPopupWidget(std::make_unique<Wt::WContainerWidget>()) {
+        // Style the "box"
+        contents()->setMinimumSize(200, Wt::WLength::Auto);
+        contents()->addStyleClass("dropdown-menu"); // Uses Bootstrap styling if enabled
+        contents()->decoration().setBackgroundColor(Wt::WColor("white"));
+        contents()->decoration().setBorder(Wt::WBorder(Wt::BorderStyle::Solid, 1, Wt::StandardColor::DarkGray));
+        contents()->setPadding(10);
+
+        // Add content
+        auto layout = contents()->setLayout(std::make_unique<Wt::WVBoxLayout>());
+        layout->addWidget(std::make_unique<Wt::WText>("<h4>Details</h4>"));
+        
+        detailText_ = layout->addWidget(std::make_unique<Wt::WText>(""));
+        
+        // Example: adding an icon
+        layout->addWidget(std::make_unique<Wt::WImage>("icons/info.png"));
+    }
+
+    void updateContent(const Wt::WString& text) {
+        detailText_->setText(text);
+    }
+
+private:
+    Wt::WText* detailText_;
+};
+
+// Inside your Application or Parent Widget
+auto popup = std::make_unique<InfoPopup>();
+auto* popupPtr = popup.get();
+addChild(std::move(popup)); // Add to app so it's not destroyed
+
+treeView->entered().connect([=](const Wt::WModelIndex& index) {
+    const int TARGET_COLUMN = 1; // Change to your specific column index
+
+    if (index.isValid() && index.column() == TARGET_COLUMN) {
+        // 1. Update data based on the specific row
+        Wt::WString data = index.data(Wt::ItemDataRole::Display).toString();
+        popupPtr->updateContent("Detailed view for: " + data);
+
+        // 2. Position the popup relative to the cell
+        // visualRect gives us the coordinates of the hovered item
+        popupPtr->setAnchorWidget(treeView);
+        popupPtr->setAnchorOffset(treeView->visualRect(index));
+
+        popupPtr->show();
+    } else {
+        popupPtr->hide();
+    }
+});
+
+// Hide when the mouse leaves the entire tree area
+treeView->mouseWentLeave().connect(popupPtr, &Wt::WWidget::hide);
+
+
+*/
+
 }//void init()
 
 
@@ -2945,9 +3096,10 @@ void testfile( const string &filename, vector<string> &result,
     
     if( testresult )
       result = get_result_fields( *db_test_info, base_search_dir, database->xml_filters() );
-  }catch( ... )
+  }catch( std::exception& e)
   {
     cerr << "Caught exception testing file: " << filename << endl;
+    cerr << "Caught exception: " << e.what() << std::endl;
   }
 }//testfile
 

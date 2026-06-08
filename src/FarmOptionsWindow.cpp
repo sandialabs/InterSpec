@@ -31,6 +31,9 @@
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
+#include <Wt/WHBoxLayout>
+#include <Wt/WRadioButton>
+#include <Wt/WButtonGroup>
 
 #include "SpecUtils/Filesystem.h"
 
@@ -55,6 +58,8 @@ FarmOptionsWindow::FarmOptionsWindow( InterSpec *viewer )
     m_synthesizeBackground( nullptr ),
     m_enableRelAct( nullptr ),
     m_enableFram( nullptr ),
+    m_v6Fram( nullptr ),
+    m_v7Fram( nullptr ),
     m_framExePath( nullptr ),
     m_framOutputPath( nullptr ),
     m_writeFertilized( nullptr )
@@ -141,11 +146,28 @@ void FarmOptionsWindow::init()
   layout->addWidget( framHeader, row, 0, 1, 2 );
   row++;
 
-  // FRAM enable checkbox
+  // FRAM enable checkbox + version radio buttons on same row
   m_enableFram = new WCheckBox( WString::tr("fow-enable-fram") );
-  layout->addWidget( m_enableFram, row, 0, 1, 2 );
   m_enableFram->changed().connect( this, &FarmOptionsWindow::handleEnableChanged );
   HelpSystem::attachToolTipOn( m_enableFram, WString::tr("fow-tt-enable-fram"), true );
+  layout->addWidget( m_enableFram, row, 0 );
+  m_framVersionGroup = new WButtonGroup( this );
+  m_v6Fram = new WRadioButton( WString::tr("fow-v6-fram") );
+  m_v7Fram = new WRadioButton( WString::tr("fow-v7-fram") );
+  m_framVersionGroup->checkedChanged().connect( this, &FarmOptionsWindow::onFramVersionToggled );
+  m_framVersionGroup->addButton( m_v6Fram );
+  m_framVersionGroup->addButton( m_v7Fram );
+  // Pick a default
+  m_v7Fram->setChecked( true );
+  WContainerWidget *framVersionsContainer = new WContainerWidget();
+  WHBoxLayout *framVersionsLayout = new WHBoxLayout();
+  framVersionsContainer->setLayout( framVersionsLayout );
+  framVersionsLayout->setContentsMargins( 0, 0, 0, 0 );
+  framVersionsLayout->setSpacing( 20 );
+  framVersionsLayout->addWidget( m_v6Fram );
+  framVersionsLayout->addWidget( m_v7Fram );
+  framVersionsLayout->addStretch( 1 );
+  layout->addWidget( framVersionsContainer, row, 1 );
   row++;
 
   // FRAM exe path
@@ -215,6 +237,8 @@ Farm::FarmOptions FarmOptionsWindow::currentOptions() const
   opts.synthesize_background_if_missing = m_synthesizeBackground->isChecked();
   opts.enable_relact_isotopics = m_enableRelAct->isChecked();
   opts.enable_fram_isotopics = m_enableFram->isChecked();
+  opts.fram_v6 = m_v6Fram->isChecked();
+  opts.fram_v7 = m_v7Fram->isChecked();
   opts.fram_exe_path = m_framExePath->text().toUTF8();
   opts.fram_output_path = m_framOutputPath->text().toUTF8();
   opts.write_fertilized_n42 = m_writeFertilized->isChecked();
@@ -231,6 +255,8 @@ void FarmOptionsWindow::setOptions( const Farm::FarmOptions &opts )
   m_synthesizeBackground->setChecked( opts.synthesize_background_if_missing );
   m_enableRelAct->setChecked( opts.enable_relact_isotopics );
   m_enableFram->setChecked( opts.enable_fram_isotopics );
+  m_v6Fram->setChecked( opts.fram_v6 );
+  m_v7Fram->setChecked( opts.fram_v7 );
   m_framExePath->setText( WString::fromUTF8(opts.fram_exe_path) );
   m_framOutputPath->setText( WString::fromUTF8(opts.fram_output_path) );
   m_writeFertilized->setChecked( opts.write_fertilized_n42 );
@@ -289,6 +315,8 @@ void FarmOptionsWindow::handleEnableChanged()
   // FRAM controls
   m_enableFram->setEnabled( enabled );
   const bool framEnabled = enabled && m_enableFram->isChecked();
+  m_v6Fram->setEnabled( framEnabled );
+  m_v7Fram->setEnabled( framEnabled );
   m_framExePath->setEnabled( framEnabled );
   m_framOutputPath->setEnabled( framEnabled );
 
@@ -353,3 +381,88 @@ void FarmOptionsWindow::validatePathInputs()
       applyPathStyle( m_framOutputPath, SpecUtils::is_directory( SpecUtils::parent_path( path ) ) );
   }
 }//validatePathInputs()
+
+std::optional<std::filesystem::path> FarmOptionsWindow::findLatestFramExe(int requestedMajor)
+{
+  const char* pf86 = std::getenv("ProgramFiles(x86)");
+  if (!pf86) 
+  {
+    return std::nullopt;
+  }
+  std::filesystem::path root = pf86;
+  std::regex framRegex(R"(^FRAM(\d)(\d+)$)", std::regex::icase);
+  std::optional<FramInstall> best;
+  for (const auto& entry : std::filesystem::directory_iterator(root)) 
+  {
+    if (!entry.is_directory()) continue;
+    std::string name = entry.path().filename().string();
+    std::smatch match;
+    if (!std::regex_match(name, match, framRegex)) continue;
+    int major = std::stoi(match[1].str());
+    int minor = std::stoi(match[2].str());
+    if (major != requestedMajor) continue;
+    std::string versionText = match[1].str() + match[2].str();
+    std::filesystem::path exe = entry.path() / ("FRAM" + versionText + ".exe");
+    // Make sure the executable actually exists
+    if (!std::filesystem::exists(exe)) continue;
+    if (!best || minor > best->minor) 
+    {
+      best = FramInstall{exe, major, minor};
+    }
+  }
+  if (!best) return std::nullopt;
+  return best->path;
+}
+
+std::optional<std::filesystem::path> FarmOptionsWindow::findLatestFramOutputDir(int requestedMajor)
+{
+  std::filesystem::path root = "C:\\FRAMdata";
+  if (!std::filesystem::exists(root) || !std::filesystem::is_directory(root)) 
+  {
+    return std::nullopt;
+  }
+  std::regex framRegex(R"(^FRAM(\d)(\d+)$)", std::regex::icase);
+  std::optional<std::filesystem::path> bestPath;
+  int bestMinor = -1;
+  for (const auto& entry : std::filesystem::directory_iterator(root)) 
+  {
+    if (!entry.is_directory()) 
+    {
+      continue;
+    }
+    std::string name = entry.path().filename().string();
+    std::smatch match;
+    if (!std::regex_match(name, match, framRegex)) 
+    {
+      continue;
+    }
+    int major = std::stoi(match[1].str());
+    int minor = std::stoi(match[2].str());
+    if (major != requestedMajor) 
+    {
+      continue;
+    }
+    if (minor > bestMinor) 
+    {
+      bestMinor = minor;
+      bestPath = entry.path();
+    }
+  }
+  return bestPath;
+}
+
+void FarmOptionsWindow::onFramVersionToggled(Wt::WRadioButton* button) 
+{
+  if (button) 
+  {
+    int id = m_framVersionGroup->id(button);
+
+    std::filesystem::path exePath = findLatestFramExe(id+6).value();
+    std::string exePathStr = exePath.string();
+    m_framExePath->setText(exePathStr);
+
+    std::filesystem::path outPath = findLatestFramOutputDir(id+6).value();
+    std::string outPathStr = outPath.string();
+    m_framOutputPath->setText(outPathStr);
+  }
+}

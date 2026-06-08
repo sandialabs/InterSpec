@@ -27,6 +27,8 @@ struct FarmOptions
   bool enable_fram_isotopics = false;
   std::string fram_exe_path;
   std::string fram_output_path;  // Directory FRAM writes output to
+  bool fram_v6;
+  bool fram_v7;
 
   // Output options
   bool write_fertilized_n42 = false;

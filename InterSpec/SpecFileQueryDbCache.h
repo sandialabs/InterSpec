@@ -1,3 +1,4 @@
+
 #ifndef SpecFileQueryDbCache_h
 #define SpecFileQueryDbCache_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
@@ -40,6 +41,8 @@
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/FarmOptions.h"
+
+#include "FramResults.h"
 
 class MaterialDB;
 
