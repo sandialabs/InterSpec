@@ -71,7 +71,6 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_phys_model_self_atten(nullptr),
       m_phys_ext_attens(nullptr),
       m_phys_model_corr_fcn(nullptr),
-      m_phys_model_bias_corr(nullptr),
       m_phys_model_same_corr_fcn_on_all_curves(nullptr),
       m_phys_model_same_ext_shield_all_curves(nullptr),
       m_phys_model_shielded_by_other_curves(nullptr),
@@ -221,17 +220,8 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   m_phys_model_corr_fcn->activated().connect( this, &RelActAutoGuiRelEffOptions::handlePhysModelCorrFcnChanged );
   HelpSystem::attachToolTipOn( {m_phys_model_corr_fcn}, WString::tr("raageo-corr-fcn-tt"), showToolTips );
 
-  // Regularization "biasing" checkboxes: when checked, use the default prior weight (numeric override is
-  //  XML-only).  Default off so nothing is baked in.
-  m_phys_model_bias_corr = new WCheckBox( WString::tr("raageo-bias-corr"), phys_opt_cb_row );
-  m_phys_model_bias_corr->addStyleClass( "BiasCorrCb CbNoLineBreak PhysOptionCb GridSecondRow GridFirstCol" );
-  m_phys_model_bias_corr->setChecked( false );
-  m_phys_model_bias_corr->checked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
-  m_phys_model_bias_corr->unChecked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
-  HelpSystem::attachToolTipOn( {m_phys_model_bias_corr}, WString::tr("raageo-bias-corr-tt"), showToolTips );
-
   // The self-/external-attenuation areal-density biasing is set per-shield via each RelEffShieldWidget's
-  //  own "Bias AD" checkbox (see `setArealDensityBiasVisible`), not here.
+  //  own "Bias AD" checkbox (see `setArealDensityBiasVisible`).
 
   // Add the new checkboxes for shared settings
   m_phys_model_same_corr_fcn_on_all_curves = new WCheckBox( WString::tr("raageo-share-corr-fcn"), phys_opt_cb_row );
@@ -959,10 +949,8 @@ RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput RelActAutoGuiRelEffOptions:
   // Combo index maps directly to the enum (0=None, 1=Hoerl, 2=Chebyshev).
   corr.corr_fcn = static_cast<RelActCalc::PhysModelCorrFcn>( m_phys_model_corr_fcn->currentIndex() );
 
-  // The correction-coefficient biasing checkbox enables that prior with the default weight (numeric override
-  //  is XML-only).  The self-/external-attenuation AD biasing now lives on each RelEffShieldWidget's own
-  //  "Bias AD" checkbox (flows into each shield's `PhysicalModelShieldInput::ad_bias`), not here.
-  corr.corr_coef_bias.use = m_phys_model_bias_corr->isChecked();
+  // The self-/external-attenuation AD biasing lives on each RelEffShieldWidget's own "Bias AD" checkbox
+  //  (flows into each shield's `PhysicalModelShieldInput::ad_bias`), not here.
 
   return corr;
 }
@@ -971,19 +959,12 @@ void RelActAutoGuiRelEffOptions::setPhysModelCorr( const RelActCalcAuto::RelEffC
 {
   // Combo index maps directly to the enum (0=None, 1=Hoerl, 2=Chebyshev).
   m_phys_model_corr_fcn->setCurrentIndex( static_cast<int>( corr.corr_fcn ) );
-
-  // A single GUI checkbox drives the coefficient bias for whichever correction is active.  (The per-shield
-  //  AD biasing is restored on each RelEffShieldWidget from its shield's `ad_bias`.)
-  m_phys_model_bias_corr->setChecked( corr.corr_coef_bias.use );
-  m_phys_model_bias_corr->setEnabled( corr.corr_fcn != RelActCalc::PhysModelCorrFcn::None );
+  // The per-shield AD biasing is restored on each RelEffShieldWidget from its shield's `ad_bias`.
 }
 
 
 void RelActAutoGuiRelEffOptions::handlePhysModelCorrFcnChanged()
 {
-  // The correction-coefficient biasing prior only applies when a correction (Hoerl/Chebyshev) is active.
-  m_phys_model_bias_corr->setEnabled(
-        m_phys_model_corr_fcn->currentIndex() != static_cast<int>(RelActCalc::PhysModelCorrFcn::None) );
   emitOptionsChanged();
 }
 

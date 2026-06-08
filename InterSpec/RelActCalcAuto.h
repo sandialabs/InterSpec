@@ -586,8 +586,8 @@ struct RelEffCurveInput
    */
   std::set<size_t> shielded_by_other_phys_model_curve_shieldings;
 
-  /** Physical-Model empirical-correction options (the correction form, plus optional weak regularization
-   "biasing" priors).  Ignored unless `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+  /** Physical-Model empirical-correction options (currently just the correction form).  Ignored unless
+   `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
 
    When multiple physical-model curves share the correction (`Options::same_corr_fcn_for_all_rel_eff_curves`),
    the FIRST physical-model curve's `phys_model_corr` is used for all of them. */
@@ -596,10 +596,6 @@ struct RelEffCurveInput
     /** The empirical correction form.  None disables the correction (its value is a constant 1.0).
      Default Hoerl (matches the legacy `phys_model_use_hoerl == true`). */
     RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
-
-    /** Weak prior pulling the active correction's coefficients toward identity (Hoerl b,c -> 0,1, or
-     basis a1,a2 -> 0).  Applies to whichever correction `corr_fcn` selects. */
-    RelActCalc::PriorWeightOption corr_coef_bias;
 
     // Note: the per-shield areal-density biasing priors live on each shield
     //  (`RelActCalc::PhysicalModelShieldInput::ad_bias`), not here.
@@ -732,12 +728,12 @@ struct RelEffCurveInput
 
 
   /** Version 1 (from 0): the physical-model empirical correction gained a `<CorrectionFcnType>` element
-   (content None/Hoerl/Chebyshev) and three optional regularization "biasing" prior elements
-   (`<CorrectionFcnBiasing>`, `<SelfAttenAdBiasing>`, `<ExtAttenAdBiasing>`).  To stay readable by v0
-   builds, a curve is written as v0 -- carrying the legacy boolean `<PhysModelUseHoerl>` *and* the new
-   elements -- whenever its correction is v0-representable (None or Hoerl) and no biasing is enabled;
-   Chebyshev or any enabled biasing forces v1 (new elements only).  Reading prefers `<CorrectionFcnType>`
-   and falls back to the legacy `<PhysModelUseHoerl>` (a plain bool: true => Hoerl, false/absent => None). */
+   (content None/Hoerl/Chebyshev), and each shield gained an optional areal-density `<ArealDensityBias>`
+   regularization prior.  To stay readable by v0 builds, a curve is written as v0 -- carrying the legacy
+   boolean `<PhysModelUseHoerl>` *and* the new elements -- whenever its correction is v0-representable (None
+   or Hoerl) and no areal-density biasing is enabled; Chebyshev or any enabled AD biasing forces v1 (new
+   elements only).  Reading prefers `<CorrectionFcnType>` and falls back to the legacy `<PhysModelUseHoerl>`
+   (a plain bool: true => Hoerl, false/absent => None). */
   static const int sm_xmlSerializationVersion = 1;
 
   /** Puts this object to XML
@@ -868,6 +864,35 @@ struct Options
    * used.
    */
   bool same_external_shielding_for_all_rel_eff_curves;
+
+  /** Auto-simplify the model.
+
+   When true, after the normal fit `solve()` peels off near-degenerate / redundant degrees of freedom,
+   keeping each removal only if it does not meaningfully worsen the data fit (the chi2 increase is
+   `<= auto_simplify_max_dchi2`).  Candidates are tried most-degenerate / least-physical first:
+     1. the empirical correction function (Hoerl / Chebyshev),
+     2. fitted external attenuator(s),
+     3. the highest-order term of a polynomial/empirical (non-physical) rel-eff curve.
+   Only the highest-priority remaining candidate is tried each round, and the process STOPS at the first
+   one the data won't give up (it does not skip to a lower-priority candidate).  Self-attenuation and the
+   sources themselves are never removed (a source that is degenerate with another should be surfaced as a
+   warning, not silently dropped).
+
+   The intent: when the data can't distinguish the physical attenuation from an extra empirical knob, that
+   knob is redundant and distorts the answer (and its uncertainty); dropping it gives a more robust, more
+   accurate result.  Each removal appends a plain-language `m_warnings` entry naming what was dropped.  Off
+   by default.
+
+   Serialized as the optional `<AutoRemoveDegeneraciesChi2Delta>` element (content = the chi2 tolerance,
+   optional `enabled` attribute, default true; absent element => disabled). */
+  bool auto_simplify_model;
+
+  /** The chi2 increase a single DOF removal may cost and still be accepted by `auto_simplify_model`.
+
+   A small positive value (~1) treats DOFs that change chi2 by less than this as redundant ("a unit or two
+   of chi2 is not physically meaningful"); exactly 0 makes near-equivalent choices a numerical coin-flip, so
+   a small positive default is used. */
+  double auto_simplify_max_dchi2;
 
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.

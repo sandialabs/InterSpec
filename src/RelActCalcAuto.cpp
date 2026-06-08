@@ -2001,14 +2001,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
 
-  /** Weak Gaussian priors on selected Physical-Model parameters, used to regularize near-degenerate
+  /** Weak Gaussian priors on the Physical-Model shield areal densities, used to regularize near-degenerate
    directions (which otherwise produce tiny singular values that the covariance pseudo-inverse turns into a
-   blown-up or collapsed variance - the 293/926 band pathology).  Three families are added:
+   blown-up or collapsed variance - the 293/926 band pathology).  Two families are added:
 
-    - the empirical-correction coefficients (Hoerl b,c, or the basis a1,a2), pulled toward their identity
-      (no correction); weight from `PhysModelCorrInput::corr_coef_bias` (default
-      `ns_default_corr_coef_prior_weight`).  Removes the activity<->correction-scale degeneracy
-      (the Physical Model has no `m_rel_eff_anchor_enhancement` anchor like the polynomial forms do).
     - each FIT external-attenuator areal density, pulled toward 0 (minimal external shielding unless the
       data clearly demands it); weight from that shield's `PhysicalModelShieldInput::ad_bias` (default
       `ns_default_ext_atten_ad_prior_weight`).  Breaks the linear-tilt-vs-attenuator
@@ -2016,8 +2012,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       self-attenuation to own the smooth tilt.
     - each FIT self-attenuation areal density, pulled toward 0; weight from the self shield's
       `PhysicalModelShieldInput::ad_bias` (default `ns_default_self_atten_ad_prior_weight`)
-      (deliberately the weakest, since self-attenuation is the genuine physical effect).  Pins the last
-      otherwise-unconstrained member of the self/external/Hoerl degenerate cluster.
+      (deliberately the weakest, since self-attenuation is the genuine physical effect).
 
    For each entry the residual is `weight * (x[par_index] - identity) * parameter_scale_factor(par_index)`,
    i.e. the weight times the deviation of the PHYSICAL quantity from its identity value.  Only fit parameters
@@ -2059,10 +2054,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   static constexpr double sm_peak_range_uncert_offset = 1.0;
   static constexpr double sm_peak_range_uncert_par_scale = 0.1;
 
-  // The Physical-Model regularization "biasing" priors (correction-coefficient, self-atten AD, external-atten
-  //  AD) are now RUNTIME, per-curve config (`RelEffCurveInput::PhysModelCorrInput`), each opt-in with an
-  //  optional weight override.  The default weights live in RelActCalc.h
-  //  (ns_default_corr_coef_prior_weight / ns_default_self_atten_ad_prior_weight /
+  // The Physical-Model areal-density "biasing" priors (self-atten AD, external-atten AD) are RUNTIME,
+  //  per-shield config (`PhysicalModelShieldInput::ad_bias`), each opt-in with an optional weight override.
+  //  The default weights live in RelActCalc.h (ns_default_self_atten_ad_prior_weight /
   //  ns_default_ext_atten_ad_prior_weight); `PriorWeightOption::effective_weight()` resolves the value.
 
 
@@ -3798,11 +3792,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const auto &self_atten_opt = rel_eff_curve.phys_model_self_atten;
               setup_physical_model_shield_par( lower_bounds, upper_bounds, constant_parameters, pars, this_rel_eff_start, self_atten_opt );
 
-              // The "biasing" priors (self-atten AD, external-atten AD, correction coefficients) are per-curve
-              //  opt-in config (`RelEffCurveInput::phys_model_corr`); each pushes a residual that pulls the
-              //  physical quantity toward its nominal (AD->0, correction->identity) with the resolved weight.
-              //  See `m_phys_model_param_priors`.  AD=0 maps to the Ceres value `ns_ad_ceres_offset`;
-              //  `parameter_scale_factor` supplies `ns_ad_ceres_mult`, so the residual is `weight*AD[g/cm^2]`.
+              // The areal-density "biasing" priors (self-atten AD, external-atten AD) are per-shield opt-in
+              //  config (`PhysicalModelShieldInput::ad_bias`); each pushes a residual pulling the AD toward 0
+              //  (its nominal) with the resolved weight.  See `m_phys_model_param_priors`.  AD=0 maps to the
+              //  Ceres value `ns_ad_ceres_offset`; `parameter_scale_factor` supplies `ns_ad_ceres_mult`, so the
+              //  residual is `weight*AD[g/cm^2]`.
               const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput &corr_cfg = rel_eff_curve.phys_model_corr;
 
               if( self_atten_opt && self_atten_opt->fit_areal_density )
@@ -3867,19 +3861,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                   upper_bounds[b_index] = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
                   lower_bounds[c_index] = hoerl_c_param_for_c( 1.0E-6 );
                   upper_bounds[c_index] = hoerl_c_param_for_c( 3.0 );
-                }
-
-                // Optional weak prior pulling b,c toward their identity (physical b=0, c=1 / basis a1=a2=0) to
-                //  regularize the Physical Model's activity<->rel-eff degeneracy (it has no rel-eff anchor
-                //  residual).  The identity Ceres values are exactly the start values set above.
-                const double corr_w = corr_cfg.corr_coef_bias.effective_weight(
-                                                       RelActCalc::ns_default_corr_coef_prior_weight );
-                if( corr_w > 0.0 )
-                {
-                  cost_functor->m_phys_model_param_priors.push_back( { b_index,
-                            (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset,
-                            corr_w } );
-                  cost_functor->m_phys_model_param_priors.push_back( { c_index, hoerl_c_param_for_c( 1.0 ), corr_w } );
                 }
               }
 
@@ -11660,8 +11641,7 @@ bool RelEffCurveInput::MassFractionConstraint::operator!=( const MassFractionCon
 
 bool RelEffCurveInput::PhysModelCorrInput::operator==( const PhysModelCorrInput &rhs ) const
 {
-  return (corr_fcn == rhs.corr_fcn)
-         && (corr_coef_bias == rhs.corr_coef_bias);
+  return (corr_fcn == rhs.corr_fcn);
 }
 
 
@@ -12017,13 +11997,28 @@ void Options::check_same_corr_fcn_and_external_shielding_specifications() const
         && rel_eff_curve.uses_phys_model_correction() )
         ++num_corr_fcn_curves;
     }
-    if( num_corr_fcn_curves < 2 )
+    // 0 (no curve uses a correction) is consistent with "share the same correction" - they share none;
+    //  this is what auto-simplify produces when it drops the correction.  Exactly 1 is the inconsistent
+    //  case (one curve uses a correction the others don't) for a >=2-curve shared spec.
+    if( num_corr_fcn_curves == 1 )
       throw logic_error( "If using the same Hoerl function for all relative efficiency curves, "
                         "you must have at least two relative efficiency curves with the Hoerl function enabled." );
   }//if( same_corr_fcn_for_all_rel_eff_curves )
 
   if( same_external_shielding_for_all_rel_eff_curves )
   {
+    // The per-curve checks below are stricter than mere consistency: they require every shared curve to
+    //  *have* an external shield (throwing on the first empty one).  Auto-simplify drops the external
+    //  attenuator from ALL physical-model curves at once, leaving them consistent but all-empty (they share
+    //  "none").  This function runs in solve() setup, so without this early-out that consistent all-empty
+    //  state would throw FailedToSetupProblem and auto-simplify could never remove shared external shielding.
+    //  "no curve has external shielding" trivially satisfies "share the same external shielding", so accept it.
+    bool any_ext_shielding = false;
+    for( const auto &rel_eff_curve : rel_eff_curves )
+      any_ext_shielding = any_ext_shielding || !rel_eff_curve.phys_model_external_atten.empty();
+    if( !any_ext_shielding )
+      return;
+
     for( const auto &rel_eff_curve : rel_eff_curves )
     {
       if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
@@ -12241,6 +12236,21 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   append_bool_node( base_node, "SameCorrFcnForAllRelEffCurves", same_corr_fcn_for_all_rel_eff_curves );
   append_bool_node( base_node, "SameExternalShieldingForAllRelEffCurves", same_external_shielding_for_all_rel_eff_curves );
 
+  // Auto-simplify (greedy redundant-DOF removal).  A single optional element whose CONTENT is the chi2-delta
+  //  tolerance and whose optional `enabled` attribute (true/false, default true) toggles it.  Absent element
+  //  => disabled, so configs that don't use it stay byte-identical / lowest-version and older builds ignore
+  //  it.  Only written when enabled (off is equivalent to absent).
+  if( auto_simplify_model )
+  {
+    char buffer[64];
+    snprintf( buffer, sizeof(buffer), "%1.8g", auto_simplify_max_dchi2 );
+    xml_node<char> *as_node = append_string_node( base_node, "AutoRemoveDegeneraciesChi2Delta", buffer );
+    append_attrib( as_node, "remark", "Auto-simplify: greedily remove redundant degrees of freedom (the"
+      " empirical correction, then external attenuator(s), then the highest polynomial term) when removing"
+      " one increases chi2 by no more than this value.  Optional 'enabled' attribute (true/false, default"
+      " true) toggles it; an absent element means disabled." );
+  }//if( auto_simplify_model )
+
   if( !rois.empty() )
   {
     xml_node<char> *node = doc->allocate_node( node_element, "RoiRangeList" );
@@ -12406,6 +12416,27 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       rel_eff_input.fromXml( parent );
       rel_eff_curves.push_back( rel_eff_input );
     }//if( version >= 2 ) / else
+
+    // Auto-simplify.  A single optional element whose content is the chi2-delta tolerance; its optional
+    //  `enabled` attribute (default true) toggles the feature.  Absent element => disabled.
+    auto_simplify_model = false;
+    auto_simplify_max_dchi2 = 1.0;
+    if( const rapidxml::xml_node<char> *as_n = XML_FIRST_NODE( parent, "AutoRemoveDegeneraciesChi2Delta" ) )
+    {
+      const string s = SpecUtils::xml_value_str( as_n );
+      double v = 1.0;
+      if( SpecUtils::parse_double( s.c_str(), s.size(), v ) )
+        auto_simplify_max_dchi2 = v;
+
+      bool enabled = true;  // default true when the element is present
+      const rapidxml::xml_attribute<char> *en = as_n->first_attribute( "enabled" );
+      if( en )
+      {
+        const string es = SpecUtils::xml_value_str( en );
+        enabled = (es == "true") || (es == "1") || (es == "TRUE") || (es == "True");
+      }
+      auto_simplify_model = enabled;
+    }//if( <AutoRemoveDegeneraciesChi2Delta> present )
 
     const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent, "RoiRangeList");
     if( !node && parent->parent() )
@@ -13147,18 +13178,17 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
   parent->append_node( base_node );
 
   // The physical-model correction is written below.  If it uses only v0-representable features (None or
-  //  Hoerl correction, no biasing) we keep the curve at v0 and additionally emit the legacy
+  //  Hoerl correction, no areal-density biasing) we keep the curve at v0 and additionally emit the legacy
   //  `<PhysModelUseHoerl>` bool, so builds predating `<CorrectionFcnType>` can still read it.  Chebyshev or
-  //  any enabled biasing requires v1 (and such builds will correctly reject the curve on its version).
+  //  any enabled AD biasing requires v1 (and such builds will correctly reject the curve on its version).
   const bool writes_phys_model = (rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
                                  || phys_model_self_atten || !phys_model_external_atten.empty();
-  bool any_corr_biasing = phys_model_corr.corr_coef_bias.use
-                          || (phys_model_self_atten && phys_model_self_atten->ad_bias.use);
+  bool any_ad_biasing = (phys_model_self_atten && phys_model_self_atten->ad_bias.use);
   for( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &ext : phys_model_external_atten )
-    any_corr_biasing = any_corr_biasing || (ext && ext->ad_bias.use);
+    any_ad_biasing = any_ad_biasing || (ext && ext->ad_bias.use);
   const bool advanced_corr = writes_phys_model
                              && ( (phys_model_corr.corr_fcn == RelActCalc::PhysModelCorrFcn::Chebyshev)
-                                  || any_corr_biasing );
+                                  || any_ad_biasing );
   append_version_attrib( base_node, advanced_corr ? 1 : 0 );
 
   append_string_node( base_node, "Name", name );
@@ -13219,28 +13249,6 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
     XmlUtils::append_attrib( corr_node, "remark", "The empirical correction form. Possible values: None,"
       " Hoerl, Chebyshev (default Hoerl if absent)." );
 
-    // Regularization "biasing" priors: each a bool element (on/off) with an optional `value` weight attribute,
-    //  and a `remark` documenting it.  When enabled without `value`, the built-in default weight is used.
-    auto append_prior_node = [doc, phys_node]( const char *name, const RelActCalc::PriorWeightOption &opt,
-                                               const char *remark ){
-      xml_node<char> *n = doc->allocate_node( node_element, name, (opt.use ? "true" : "false") );
-      phys_node->append_node( n );
-      // Only emit the weight when the prior is enabled: `read_prior` rejects a disabled prior that carries a
-      //  non-zero value, so writing it for `!use` would produce XML this same code refuses to read back.
-      if( opt.use && opt.value.has_value() )
-      {
-        char buffer[64];
-        snprintf( buffer, sizeof(buffer), "%1.8e", *opt.value );
-        XmlUtils::append_attrib( n, "value", buffer );
-      }
-      XmlUtils::append_attrib( n, "remark", remark );
-    };//append_prior_node lambda
-
-    append_prior_node( "CorrectionFcnBiasing", phys_model_corr.corr_coef_bias,
-      "Weak prior pulling the active correction's coefficients toward identity ('no correction') to"
-      " regularize the fit. true/false enables; optional 'value' attribute sets the weight (default 1.0 when"
-      " enabled without a value; Gaussian-like with sigma = 1/weight on the coefficient deviation). Off by"
-      " default." );
     // Note: the self-/external-attenuation areal-density biasing priors live on each shield
     //  (`<PhysicalModelShield><ArealDensityBias>`), written by `PhysicalModelShieldInput::toXml`.
 
@@ -13405,29 +13413,6 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
                                             : RelActCalc::PhysModelCorrFcn::None;
     }//if( <CorrectionFcnType> ) / else (legacy <PhysModelUseHoerl>)
 
-    // Biasing priors: each an optional bool element with an optional `value` weight attribute.  Absent -> off.
-    auto read_prior = []( const rapidxml::xml_node<char> *par, const char *name ) -> RelActCalc::PriorWeightOption {
-      RelActCalc::PriorWeightOption opt;
-      const rapidxml::xml_node<char> *n = par ? par->first_node( name ) : nullptr;
-      if( !n )
-        return opt;  // absent -> off
-      const string val = SpecUtils::xml_value_str( n );
-      opt.use = (SpecUtils::iequals_ascii(val,"true") || SpecUtils::iequals_ascii(val,"1")
-                 || SpecUtils::iequals_ascii(val,"yes"));
-      const rapidxml::xml_attribute<char> *val_attr = n->first_attribute( "value" );
-      if( val_attr && val_attr->value_size() )
-      {
-        double v;
-        if( !SpecUtils::parse_double( val_attr->value(), val_attr->value_size(), v ) )
-          throw runtime_error( std::string("Invalid 'value' attribute on '") + name + "'" );
-        opt.value = v;
-      }
-      if( !opt.use && opt.value.has_value() && (*opt.value != 0.0) )
-        throw runtime_error( std::string("Invalid config: '") + name + "' specifies a non-zero value but is disabled" );
-      return opt;
-    };//read_prior lambda
-
-    phys_model_corr.corr_coef_bias = read_prior( phys_model_node, "CorrectionFcnBiasing" );
     // The self-/external-attenuation AD biasing priors are read per-shield by
     //  `PhysicalModelShieldInput::fromXml` (the `<ArealDensityBias>` element on each shield).
   }//if( phys_model_node )
@@ -13538,7 +13523,9 @@ Options::Options()
   rois{},
   floating_peaks{},
   same_corr_fcn_for_all_rel_eff_curves( false ),
-  same_external_shielding_for_all_rel_eff_curves( false )
+  same_external_shielding_for_all_rel_eff_curves( false ),
+  auto_simplify_model( false ),
+  auto_simplify_max_dchi2( 1.0 )
 {
 }
   
@@ -16990,6 +16977,75 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
  
   
   
+/** One candidate model simplification: a human-readable description and the `Options` with a single
+ degree of freedom removed.  See `enumerate_model_simplifications`. */
+struct ModelSimplification
+{
+  std::string description;
+  Options options;
+};//struct ModelSimplification
+
+/** Builds the ordered list of single-DOF removals to try for `auto_simplify_model`, least-physical
+ first: (1) the empirical correction on physical-model curves, (2) fitted external attenuator(s), and
+ (3) the highest-order term of each non-physical (polynomial/empirical) rel-eff curve.  Self-attenuation
+ and sources are never offered for removal.
+
+ The `same_corr_fcn_for_all_rel_eff_curves` / `same_external_shielding_for_all_rel_eff_curves` flags are
+ deliberately left untouched (they encode user physical intent); `check_same_corr_fcn_and_external_shielding_specifications()`
+ is written to tolerate the resulting "all curves share NO correction / NO external shielding" state. */
+static std::vector<ModelSimplification> enumerate_model_simplifications( const Options &opts )
+{
+  using RelActCalc::RelEffEqnForm;
+  using RelActCalc::PhysModelCorrFcn;
+
+  std::vector<ModelSimplification> out;
+
+  // 1) Drop the empirical correction from every physical-model curve that uses one.
+  bool any_corr = false;
+  for( const RelEffCurveInput &c : opts.rel_eff_curves )
+    any_corr = any_corr || ((c.rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel) && c.phys_model_corr.uses_correction());
+  if( any_corr )
+  {
+    Options t = opts;
+    for( RelEffCurveInput &c : t.rel_eff_curves )
+    {
+      if( c.rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel )
+        c.phys_model_corr.corr_fcn = PhysModelCorrFcn::None;
+    }
+    out.push_back( { "empirical correction function", std::move(t) } );
+  }//if( any correction to remove )
+
+  // 2) Drop fitted external attenuator(s) from every physical-model curve that has them.
+  bool any_ext = false;
+  for( const RelEffCurveInput &c : opts.rel_eff_curves )
+    any_ext = any_ext || ((c.rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel) && !c.phys_model_external_atten.empty());
+  if( any_ext )
+  {
+    Options t = opts;
+    for( RelEffCurveInput &c : t.rel_eff_curves )
+    {
+      if( c.rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel )
+        c.phys_model_external_atten.clear();
+    }
+    out.push_back( { "external attenuator(s)", std::move(t) } );
+  }//if( any external attenuator to remove )
+
+  // 3) Reduce the order of each non-physical rel-eff curve by one (keep at least order 1).
+  for( size_t i = 0; i < opts.rel_eff_curves.size(); ++i )
+  {
+    const RelEffCurveInput &c = opts.rel_eff_curves[i];
+    if( (c.rel_eff_eqn_type != RelEffEqnForm::FramPhysicalModel) && (c.rel_eff_eqn_order >= 2) )
+    {
+      Options t = opts;
+      t.rel_eff_curves[i].rel_eff_eqn_order -= 1;
+      out.push_back( { "highest-order term of rel-eff curve " + std::to_string(i), std::move(t) } );
+    }
+  }//for( each rel-eff curve )
+
+  return out;
+}//enumerate_model_simplifications(...)
+
+
 RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
@@ -16997,7 +17053,59 @@ RelActAutoSolution solve( const Options options,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          std::shared_ptr<std::atomic_bool> cancel_calc
                          )
-{ 
+{
+  // Auto-simplify: fit the full model, then peel off redundant DOF in priority order (most-degenerate /
+  //  least-physical first: correction -> external attenuator -> highest polynomial term), keeping each
+  //  removal only if the chi2 increase is within `auto_simplify_max_dchi2`.  We try ONLY the highest-priority
+  //  remaining candidate each round and STOP at the first one the data won't give up (abort, don't skip to a
+  //  lower-priority candidate): the candidates are ordered most-removable-first, so if the most-degenerate DOF
+  //  is genuinely needed, the more-physical ones are too.  Implemented by re-entering solve() with the flag
+  //  cleared so each trial is a normal, full solve (including ROI auto-ranging below).
+  if( options.auto_simplify_model )
+  {
+    Options base_opts = options;
+    base_opts.auto_simplify_model = false;
+    RelActAutoSolution best = solve( base_opts, foreground, background, input_drf, all_peaks, cancel_calc );
+
+    if( best.m_status != RelActAutoSolution::Status::Success )
+      return best;
+
+    const double max_dchi2 = options.auto_simplify_max_dchi2;
+    while( !(cancel_calc && cancel_calc->load()) )
+    {
+      const std::vector<ModelSimplification> candidates = enumerate_model_simplifications( best.m_options );
+      if( candidates.empty() )
+        break;
+
+      // Only the top (most-degenerate) candidate is considered; abort if it isn't accepted.
+      const ModelSimplification &cand = candidates.front();
+      Options trial_opts = cand.options;
+      trial_opts.auto_simplify_model = false;
+
+      RelActAutoSolution trial;
+      try
+      {
+        trial = solve( trial_opts, foreground, background, input_drf, all_peaks, cancel_calc );
+      }catch( std::exception & )
+      {
+        break;
+      }
+
+      const bool accept = (trial.m_status == RelActAutoSolution::Status::Success)
+                          && ((trial.m_chi2 - best.m_chi2) <= max_dchi2);
+      if( !accept )
+        break;  // the most-degenerate remaining DOF is needed -> stop
+
+      const double dchi2 = trial.m_chi2 - best.m_chi2;
+      best = std::move( trial );
+      best.m_warnings.push_back( "Auto-simplify: removed " + cand.description
+                      + " (chi2 change " + SpecUtils::printCompact(dchi2,4)
+                      + " within tolerance); using the simpler model." );
+    }//while( a higher-priority simplification keeps getting accepted )
+
+    return best;
+  }//if( options.auto_simplify_model )
+
   const std::vector<RoiRange> &energy_ranges = options.rois;
   const std::vector<FloatingPeak> &extra_peaks = options.floating_peaks;
   

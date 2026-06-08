@@ -130,7 +130,6 @@ protected:
   RelEffShieldWidget *m_phys_model_self_atten;
   Wt::WContainerWidget *m_phys_ext_attens;
   Wt::WComboBox *m_phys_model_corr_fcn;
-  Wt::WCheckBox *m_phys_model_bias_corr;      // bias the correction coefficients toward identity
   // (self-/external-attenuation AD biasing lives on each RelEffShieldWidget's own "Bias AD" checkbox)
   Wt::WCheckBox *m_phys_model_same_corr_fcn_on_all_curves;
   Wt::WCheckBox *m_phys_model_same_ext_shield_all_curves;

@@ -50,6 +50,7 @@
 							<FitArealDensity>true</FitArealDensity>
 							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
 							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+							<ArealDensityBias remark="Weak prior pulling this shield's fitted areal density toward 0 g/cm^2. true/false enables; optional 'value' attribute sets the weight (default 0.05 for a self-attenuating shield / 0.1 for an external shield; sigma ~ 1/weight in g/cm^2). Off by default.">true</ArealDensityBias>
 						</PhysicalModelShield>
 					</SelfAtten>
 					<ExtAtten>
@@ -63,15 +64,16 @@
 							<FitArealDensity>true</FitArealDensity>
 							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
 							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+							<ArealDensityBias remark="Weak prior pulling this shield's fitted areal density toward 0 g/cm^2. true/false enables; optional 'value' attribute sets the weight (default 0.05 for a self-attenuating shield / 0.1 for an external shield; sigma ~ 1/weight in g/cm^2). Off by default.">true</ArealDensityBias>
 						</PhysicalModelShield>
 					</ExtAtten>
 					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">Hoerl</CorrectionFcnType>
-					<CorrectionFcnBiasing remark="Weak prior pulling the active correction's coefficients toward identity ('no correction') to regularize the fit. true/false enables; optional 'value' attribute sets the weight (default 1.0 when enabled without a value; Gaussian-like with sigma = 1/weight on the coefficient deviation). Off by default.">false</CorrectionFcnBiasing>
 				</PhysicalModelOptions>
 			</RelEffCurveInput>
 		</RelEffCurveInputs>
 		<SameCorrFcnForAllRelEffCurves>false</SameCorrFcnForAllRelEffCurves>
 		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<AutoRemoveDegeneraciesChi2Delta remark="Auto-simplify: greedily remove redundant degrees of freedom (the empirical correction, then external attenuator(s), then the highest polynomial term) when removing one increases chi2 by no more than this value. Optional 'enabled' attribute (true/false, default true) toggles it; an absent element means disabled.">1</AutoRemoveDegeneraciesChi2Delta>
 		<RoiRangeList>
 			<RoiRange version="0">
 				<LowerEnergy>1.80695999e+02</LowerEnergy>

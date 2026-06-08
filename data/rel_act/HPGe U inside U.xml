@@ -58,7 +58,6 @@
 						<RelEffCurveIndex>1</RelEffCurveIndex>
 					</ShieldedByCurves>
 					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">None</CorrectionFcnType>
-					<CorrectionFcnBiasing remark="Weak prior pulling the active correction's coefficients toward identity ('no correction') to regularize the fit. true/false enables; optional 'value' attribute sets the weight (default 1.0 when enabled without a value; Gaussian-like with sigma = 1/weight on the coefficient deviation). Off by default.">false</CorrectionFcnBiasing>
 				</PhysicalModelOptions>
 				<MassFractionConstraints>
 					<MassFractionConstraint version="0">
@@ -125,7 +124,6 @@
 						</PhysicalModelShield>
 					</ExtAtten>
 					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">None</CorrectionFcnType>
-					<CorrectionFcnBiasing remark="Weak prior pulling the active correction's coefficients toward identity ('no correction') to regularize the fit. true/false enables; optional 'value' attribute sets the weight (default 1.0 when enabled without a value; Gaussian-like with sigma = 1/weight on the coefficient deviation). Off by default.">false</CorrectionFcnBiasing>
 				</PhysicalModelOptions>
 				<MassFractionConstraints>
 					<MassFractionConstraint version="0">
@@ -138,6 +136,7 @@
 		</RelEffCurveInputs>
 		<SameCorrFcnForAllRelEffCurves>false</SameCorrFcnForAllRelEffCurves>
 		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<AutoRemoveDegeneraciesChi2Delta enabled="false" remark="Auto-simplify: greedily remove redundant degrees of freedom (the empirical correction, then external attenuator(s), then the highest polynomial term) when removing one increases chi2 by no more than this value. Optional 'enabled' attribute (true/false, default true) toggles it; an absent element means disabled.">1</AutoRemoveDegeneraciesChi2Delta>
 		<RoiRangeList>
 			<RoiRange version="0">
 				<LowerEnergy>1.18759003e+02</LowerEnergy>

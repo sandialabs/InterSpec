@@ -25,6 +25,8 @@
   <message id="raag-peak-skew">Peak Skew</message>
   <message id="raag-lorentzian-xrays">Lorentzian X-rays</message>
   <message id="raag-add-uncert">Add. Uncert</message>
+  <message id="raag-auto-simplify">Auto-simplify model</message>
+  <message id="raag-auto-simplify-dchi2">Max &#967;&#178; increase</message>
   <message id="raag-yield-info">Yield Info</message>
   
   <!-- FWHM estimation methods -->
@@ -76,6 +78,8 @@
   <message id="raag-tt-fwhm-form">The equation type used to model peak FWHM as a function of energy.</message>
   <message id="raag-tt-skew-type">The type of skew to apply to the peaks; skew parameters will be fit.</message>
   <message id="raag-tt-lorentzian-xrays">When checked, x-ray peaks will use a Voigt profile with the Lorentzian width set to the natural x-ray linewidth. This accounts for the intrinsic Lorentzian shape of x-ray lines. Only compatible with NoSkew or GaussPlusBortel peak skew types.</message>
+  <message id="raag-tt-auto-simplify">When checked, after the initial fit the solver removes near-degenerate / redundant degrees of freedom — the empirical correction, then external attenuator(s), then a high-order polynomial term — keeping each removal only if it does not worsen the fit's &#967;&#178; by more than the value you set. This gives a more robust, more accurate result by dropping parameters the data cannot actually constrain. Self-attenuation and the sources are never removed.</message>
+  <message id="raag-tt-auto-simplify-dchi2">The most a single parameter removal may increase &#967;&#178; and still be accepted. A small value (~1) means "a unit or two of &#967;&#178; is not physically meaningful, prefer the simpler model"; larger values remove more aggressively.</message>
   <message id="raag-tt-u-pu-data-source">The nuclear data source for gamma branching ratios of uranium and plutonium.</message>
   <message id="raag-tt-add-source">Add a source.</message>
   <message id="raag-tt-add-energy-range">Add an energy range.</message>

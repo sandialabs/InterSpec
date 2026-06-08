@@ -468,6 +468,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_add_uncert( nullptr ),
   m_lorentzian_xrays_enabled( false ),
   m_lorentzian_xrays( nullptr ),
+  m_auto_simplify( nullptr ),
+  m_auto_simplify_dchi2_div( nullptr ),
+  m_auto_simplify_max_dchi2( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -880,8 +883,28 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }//for( loop over AddUncert )
      
   m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
-    
-  
+
+
+  // Auto-simplify model: a checkbox that, when checked, reveals a chi2-increase tolerance input.  Drives
+  //  Options::auto_simplify_model / auto_simplify_max_dchi2 (greedy redundant-DOF removal).
+  m_auto_simplify = new WCheckBox( WString::tr("raag-auto-simplify"), generalOptionsDiv );
+  m_auto_simplify->addStyleClass( "AutoSimplifyCb CbNoLineBreak" );
+  m_auto_simplify->checked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  m_auto_simplify->unChecked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  HelpSystem::attachToolTipOn( m_auto_simplify, WString::tr("raag-tt-auto-simplify"), showToolTips );
+
+  m_auto_simplify_dchi2_div = new WContainerWidget( generalOptionsDiv );
+  m_auto_simplify_dchi2_div->addStyleClass( "RelActAutoAutoSimplifyDchi2Div" );
+  WLabel *autoSimplifyLabel = new WLabel( WString::tr("raag-auto-simplify-dchi2"), m_auto_simplify_dchi2_div );
+  m_auto_simplify_max_dchi2 = new NativeFloatSpinBox( m_auto_simplify_dchi2_div );
+  m_auto_simplify_max_dchi2->setValue( 1.0f );
+  m_auto_simplify_max_dchi2->setMinimum( 0.0f );
+  autoSimplifyLabel->setBuddy( m_auto_simplify_max_dchi2 );
+  m_auto_simplify_max_dchi2->valueChanged().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  HelpSystem::attachToolTipOn( m_auto_simplify_dchi2_div, WString::tr("raag-tt-auto-simplify-dchi2"), showToolTips );
+  m_auto_simplify_dchi2_div->setHidden( true );  // revealed only when the checkbox is checked
+
+
   WGroupBox *optionsDiv = new WGroupBox( WString::tr("raag-rel-eff-curve-options"), this );
   optionsDiv->addStyleClass( "RelActAutoOptions" );
 
@@ -1489,7 +1512,12 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
       }
     }//if( all should share ext atten and there are some defined )
   }//if( num_phys_model_curves > 1 )
-  
+
+  // Auto-simplify (greedy redundant-DOF removal).
+  options.auto_simplify_model = (m_auto_simplify && m_auto_simplify->isChecked());
+  if( m_auto_simplify_max_dchi2 )
+    options.auto_simplify_max_dchi2 = std::max( 0.0, static_cast<double>(m_auto_simplify_max_dchi2->value()) );
+
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
 
@@ -2175,6 +2203,14 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( add_uncert == AddUncert::NumAddUncert )
     add_uncert = AddUncert::StatOnly;
   m_add_uncert->setCurrentIndex( static_cast<int>(add_uncert) );
+
+  // Auto-simplify (greedy redundant-DOF removal); the value input is only shown when enabled.
+  if( m_auto_simplify )
+    m_auto_simplify->setChecked( options.auto_simplify_model );
+  if( m_auto_simplify_max_dchi2 )
+    m_auto_simplify_max_dchi2->setValue( static_cast<float>(options.auto_simplify_max_dchi2) );
+  if( m_auto_simplify_dchi2_div )
+    m_auto_simplify_dchi2_div->setHidden( !options.auto_simplify_model );
 
   // First, remove any extra Rel Eff curve GUIs
   const size_t num_rel_eff_curves = options.rel_eff_curves.size();
@@ -3141,6 +3177,20 @@ void RelActAutoGui::handleLorentzianXraysChanged()
   m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void RelActAutoGui::handleLorentzianXraysChanged()
+
+
+void RelActAutoGui::handleAutoSimplifyChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+
+  // Reveal the chi2-tolerance input only when auto-simplify is enabled.
+  if( m_auto_simplify_dchi2_div && m_auto_simplify )
+    m_auto_simplify_dchi2_div->setHidden( !m_auto_simplify->isChecked() );
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void RelActAutoGui::handleAutoSimplifyChanged()
 
 
 PeakDef::SkewType RelActAutoGui::currentSkewType() const

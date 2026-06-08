@@ -111,11 +111,9 @@ struct PriorWeightOption
   bool operator!=( const PriorWeightOption &rhs ) const { return !(*this == rhs); }
 };//struct PriorWeightOption
 
-/** Default weights for the Physical-Model regularization priors (used when an option is enabled without an
- explicit value).  Acts like a Gaussian with sigma = 1/weight on the physical deviation: the correction-coef
- prior pulls the coefficients toward "no correction"; the AD priors pull each fit areal density toward 0
- g/cm^2 (sigma ~ 1/weight in g/cm^2). */
-constexpr double ns_default_corr_coef_prior_weight     = 1.0;
+/** Default weights for the Physical-Model areal-density regularization priors (used when a shield's
+ `ad_bias` is enabled without an explicit value).  Acts like a Gaussian with sigma = 1/weight in g/cm^2,
+ pulling each fit areal density toward 0. */
 constexpr double ns_default_ext_atten_ad_prior_weight  = 0.1;   // sigma ~ 10 g/cm^2
 constexpr double ns_default_self_atten_ad_prior_weight = 0.05;  // sigma ~ 20 g/cm^2 (self-atten is physical)
 
