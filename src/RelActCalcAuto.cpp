@@ -2568,7 +2568,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     num_resids += m_peak_ranges_with_uncert.size();
 
-    // One residual per Physical-Model parameter prior (correction coefficients + external-attenuator AD).
+    // One residual per Physical-Model parameter prior (self- and external-attenuation areal density).
     num_resids += m_phys_model_param_priors.size();
 
     return num_resids;
@@ -5747,7 +5747,153 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//switch( summary.termination_type )
     
     const bool success = (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success);
-    
+
+    // ---- Begin Auto-simplify ------------------------------------------------------------------------
+    // After the converged full fit, greedily fix redundant degrees of freedom AT THEIR IDENTITY VALUES
+    //  (most-degenerate / least-physical first: empirical correction -> external attenuator -> highest
+    //  polynomial term) and re-solve WARM from the current minimum, keeping each removal only if chi2
+    //  rises by no more than `auto_simplify_max_dchi2`.  Abort at the first DOF the data won't give up.
+    //
+    //  Fixing-at-identity (rather than rebuilding a smaller model) keeps the parameter layout unchanged,
+    //  so each trial warm-starts from the previous minimum and reuses this same `problem` - far cheaper
+    //  than a cold re-solve.  A correction held at its identity (Hoerl b=0,c=1 / basis a1=a2=0) evaluates
+    //  to exactly 1, i.e. numerically identical to RelEffEqnForm "None"; an external attenuator held at
+    //  AD=0 contributes exp(0)=1.  `m_options` is intentionally left as the caller passed it (the full
+    //  model + auto_simplify_model=true: re-solving it reproduces this result); the fixed parameters are
+    //  recorded in `m_warnings`.  They end up constant in the final manifold, so the covariance below
+    //  (and hence the reported uncertainties / rel-eff band) gives them zero variance - matching a model
+    //  that never had them.
+    if( success && options.auto_simplify_model )
+    {
+      using RelActCalc::RelEffEqnForm;
+
+      // Candidate removal = description + the (parameter index, identity Ceres-value) pairs to fix.
+      struct AutoSimplifyCandidate{ string description; vector<pair<size_t,double>> fixes; };
+      vector<AutoSimplifyCandidate> candidates;
+
+      const double b_identity = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+      const double c_identity = hoerl_c_param_for_c( 1.0 );
+      const double ad_identity = RelActCalc::ns_ad_ceres_offset;  // AD = 0 g/cm^2
+      const vector<RelActCalcAuto::RelEffCurveInput> &curves = cost_functor->m_options.rel_eff_curves;
+
+      // 1) empirical-correction coefficients of every physical-model curve that uses one.
+      {
+        vector<pair<size_t,double>> fixes;
+        for( size_t i = 0; i < curves.size(); ++i )
+        {
+          if( (curves[i].rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel) && curves[i].uses_phys_model_correction() )
+          {
+            const size_t b_index = cost_functor->rel_eff_eqn_start_parameter(i) + 2 + 2*curves[i].phys_model_external_atten.size();
+            fixes.push_back( { b_index,   b_identity } );
+            fixes.push_back( { b_index+1, c_identity } );
+          }
+        }
+        if( !fixes.empty() )
+          candidates.push_back( { "empirical correction function", std::move(fixes) } );
+      }
+
+      // 2) fitted external-attenuator areal densities of every physical-model curve.
+      {
+        vector<pair<size_t,double>> fixes;
+        for( size_t i = 0; i < curves.size(); ++i )
+        {
+          if( curves[i].rel_eff_eqn_type != RelEffEqnForm::FramPhysicalModel )
+            continue;
+          const size_t start = cost_functor->rel_eff_eqn_start_parameter(i);
+          for( size_t e = 0; e < curves[i].phys_model_external_atten.size(); ++e )
+          {
+            const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &sh = curves[i].phys_model_external_atten[e];
+            // Only offer removal (AD->0) when the user permits AD down to zero; a positive lower bound means
+            //  the user requires this attenuator, and the post-solve AD clamp would push it back off zero.
+            if( sh && sh->fit_areal_density && (sh->lower_fit_areal_density <= 0.0) )
+              fixes.push_back( { start + 2 + 2*e + 1, ad_identity } );
+          }
+        }
+        if( !fixes.empty() )
+          candidates.push_back( { "external attenuator(s)", std::move(fixes) } );
+      }
+
+      // 3) highest-order term of each non-physical (polynomial/empirical) rel-eff curve.
+      for( size_t i = 0; i < curves.size(); ++i )
+      {
+        if( (curves[i].rel_eff_eqn_type != RelEffEqnForm::FramPhysicalModel) && (curves[i].rel_eff_eqn_order >= 2) )
+          candidates.push_back( { "highest-order term of rel-eff curve " + std::to_string(i),
+                                  { { cost_functor->rel_eff_eqn_start_parameter(i) + curves[i].rel_eff_eqn_order, 0.0 } } } );
+      }
+
+      // chi2 = Sum(residual^2), including the AD-bias prior residuals (same metric as `m_chi2`).  Fixing a
+      //  DOF also zeroes that parameter's prior penalty, so the Delta-chi2 gate is marginally easier for the
+      //  external-AD candidate than a pure data-misfit test would be - negligible vs a tolerance of order 1.
+      double best_chi2 = (*cost_functor)( parameters );
+      if( !std::isfinite(best_chi2) )  // a converged solution shouldn't eval to inf/NaN; if it does, don't simplify
+        candidates.clear();
+
+      vector<int> as_fixed;  // parameters auto-simplify has fixed (kept constant in the manifold)
+
+      const auto is_const = [&]( const size_t idx ) -> bool {
+        return (std::find(begin(constant_parameters), end(constant_parameters), (int)idx) != end(constant_parameters))
+            || (std::find(begin(as_fixed), end(as_fixed), (int)idx) != end(as_fixed));
+      };
+
+      for( const AutoSimplifyCandidate &cand : candidates )
+      {
+        bool any_fittable = false;
+        for( const pair<size_t,double> &f : cand.fixes )
+          any_fittable = (any_fittable || !is_const(f.first));
+        if( !any_fittable )
+          continue;  // nothing of this candidate is actually being fit; skip it
+
+        const vector<double> saved_parameters = parameters;
+        vector<int> trial_const = constant_parameters;
+        trial_const.insert( end(trial_const), begin(as_fixed), end(as_fixed) );
+        for( const pair<size_t,double> &f : cand.fixes )
+        {
+          // Only touch parameters that are actually fit.  Already-constant ones must be left exactly as-is
+          //  - e.g. with `same_corr_fcn_for_all_rel_eff_curves`, the non-owning curves' correction coefs are
+          //  held at a load-bearing sentinel (-1.0) that the eval relies on; fixing the owning curve's coefs
+          //  at identity already removes the shared correction for all curves.
+          if( is_const(f.first) )
+            continue;
+          parameters[f.first] = f.second;        // hold at identity ("removed")
+          trial_const.push_back( (int)f.first );
+        }
+
+        problem.SetManifold( pars, new ceres::SubsetManifold( (int)num_pars, trial_const ) );
+        ceres::Solver::Summary as_summary;
+        ceres::Solve( ceres_options, &problem, &as_summary );
+        const double trial_chi2 = (*cost_functor)( parameters );
+
+        const bool solved = ((as_summary.termination_type == ceres::CONVERGENCE)
+                             || (as_summary.termination_type == ceres::USER_SUCCESS));
+        if( solved && ((trial_chi2 - best_chi2) <= options.auto_simplify_max_dchi2) )
+        {
+          const double dchi2 = trial_chi2 - best_chi2;
+          best_chi2 = trial_chi2;
+          for( const pair<size_t,double> &f : cand.fixes )
+          {
+            if( std::find(begin(as_fixed), end(as_fixed), (int)f.first) == end(as_fixed) )
+              as_fixed.push_back( (int)f.first );
+          }
+          solution.m_warnings.push_back( "Auto-simplify: removed " + cand.description
+                          + " (chi2 change " + SpecUtils::printCompact(dchi2,4)
+                          + " within tolerance); using the simpler model." );
+        }else
+        {
+          parameters = saved_parameters;  // restore the kept (full) values
+          break;  // the most-degenerate remaining DOF is needed -> stop
+        }
+      }//for( each candidate, in priority order )
+
+      // Restore the manifold to (originally-constant + auto-simplify-fixed) for the covariance below.
+      vector<int> final_const = constant_parameters;
+      final_const.insert( end(final_const), begin(as_fixed), end(as_fixed) );
+      if( !final_const.empty() )
+        problem.SetManifold( pars, new ceres::SubsetManifold( (int)num_pars, final_const ) );
+      else
+        problem.SetManifold( pars, nullptr );
+    }//if( success && options.auto_simplify_model )
+    // ---- End Auto-simplify -----------------------------------------------------------------------------
+
     solution.m_num_function_eval_solution = static_cast<int>( cost_functor->m_ncalls );
     solution.m_num_microseconds_in_eval = static_cast<int>( cost_functor->m_nanoseconds_spent_in_eval / 1000 );  //convert from nanoseconds to micro
     
@@ -10505,11 +10651,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
     }//if( !m_peak_ranges_with_uncert.empty() )
 
-    // Weak Gaussian priors on selected Physical-Model parameters (empirical-correction coefficients pulled
-    //  toward "no correction", and fit external-attenuator ADs pulled toward 0).  For each entry,
-    //  `(x[par_index] - identity)*parameter_scale_factor(par_index)` is the deviation of the PHYSICAL
-    //  quantity from its identity, so the residual is `weight * physical_deviation`.  See
-    //  `m_phys_model_param_priors` (populated from each curve's `PhysModelCorrInput` biasing options).
+    // Weak Gaussian priors on selected Physical-Model parameters (fit self- and external-attenuator ADs
+    //  pulled toward 0).  For each entry, `(x[par_index] - identity)*parameter_scale_factor(par_index)` is
+    //  the deviation of the PHYSICAL quantity from its identity, so the residual is `weight *
+    //  physical_deviation`.  See `m_phys_model_param_priors` (populated from each shield's `ad_bias`).
     for( const ParamPrior &prior : m_phys_model_param_priors )
     {
       assert( prior.par_index < x.size() );
@@ -11705,6 +11850,8 @@ bool Options::operator==( const Options &rhs ) const
     && (additional_br_uncert == rhs.additional_br_uncert)
     && (same_corr_fcn_for_all_rel_eff_curves == rhs.same_corr_fcn_for_all_rel_eff_curves)
     && (same_external_shielding_for_all_rel_eff_curves == rhs.same_external_shielding_for_all_rel_eff_curves)
+    && (auto_simplify_model == rhs.auto_simplify_model)
+    && (auto_simplify_max_dchi2 == rhs.auto_simplify_max_dchi2)
     && (rel_eff_curves == rhs.rel_eff_curves)
     && (rois == rhs.rois)
     && (floating_peaks == rhs.floating_peaks);
@@ -16977,75 +17124,6 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
  
   
   
-/** One candidate model simplification: a human-readable description and the `Options` with a single
- degree of freedom removed.  See `enumerate_model_simplifications`. */
-struct ModelSimplification
-{
-  std::string description;
-  Options options;
-};//struct ModelSimplification
-
-/** Builds the ordered list of single-DOF removals to try for `auto_simplify_model`, least-physical
- first: (1) the empirical correction on physical-model curves, (2) fitted external attenuator(s), and
- (3) the highest-order term of each non-physical (polynomial/empirical) rel-eff curve.  Self-attenuation
- and sources are never offered for removal.
-
- The `same_corr_fcn_for_all_rel_eff_curves` / `same_external_shielding_for_all_rel_eff_curves` flags are
- deliberately left untouched (they encode user physical intent); `check_same_corr_fcn_and_external_shielding_specifications()`
- is written to tolerate the resulting "all curves share NO correction / NO external shielding" state. */
-static std::vector<ModelSimplification> enumerate_model_simplifications( const Options &opts )
-{
-  using RelActCalc::RelEffEqnForm;
-  using RelActCalc::PhysModelCorrFcn;
-
-  std::vector<ModelSimplification> out;
-
-  // 1) Drop the empirical correction from every physical-model curve that uses one.
-  bool any_corr = false;
-  for( const RelEffCurveInput &c : opts.rel_eff_curves )
-    any_corr = any_corr || ((c.rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel) && c.phys_model_corr.uses_correction());
-  if( any_corr )
-  {
-    Options t = opts;
-    for( RelEffCurveInput &c : t.rel_eff_curves )
-    {
-      if( c.rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel )
-        c.phys_model_corr.corr_fcn = PhysModelCorrFcn::None;
-    }
-    out.push_back( { "empirical correction function", std::move(t) } );
-  }//if( any correction to remove )
-
-  // 2) Drop fitted external attenuator(s) from every physical-model curve that has them.
-  bool any_ext = false;
-  for( const RelEffCurveInput &c : opts.rel_eff_curves )
-    any_ext = any_ext || ((c.rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel) && !c.phys_model_external_atten.empty());
-  if( any_ext )
-  {
-    Options t = opts;
-    for( RelEffCurveInput &c : t.rel_eff_curves )
-    {
-      if( c.rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel )
-        c.phys_model_external_atten.clear();
-    }
-    out.push_back( { "external attenuator(s)", std::move(t) } );
-  }//if( any external attenuator to remove )
-
-  // 3) Reduce the order of each non-physical rel-eff curve by one (keep at least order 1).
-  for( size_t i = 0; i < opts.rel_eff_curves.size(); ++i )
-  {
-    const RelEffCurveInput &c = opts.rel_eff_curves[i];
-    if( (c.rel_eff_eqn_type != RelEffEqnForm::FramPhysicalModel) && (c.rel_eff_eqn_order >= 2) )
-    {
-      Options t = opts;
-      t.rel_eff_curves[i].rel_eff_eqn_order -= 1;
-      out.push_back( { "highest-order term of rel-eff curve " + std::to_string(i), std::move(t) } );
-    }
-  }//for( each rel-eff curve )
-
-  return out;
-}//enumerate_model_simplifications(...)
-
-
 RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
@@ -17054,57 +17132,10 @@ RelActAutoSolution solve( const Options options,
                          std::shared_ptr<std::atomic_bool> cancel_calc
                          )
 {
-  // Auto-simplify: fit the full model, then peel off redundant DOF in priority order (most-degenerate /
-  //  least-physical first: correction -> external attenuator -> highest polynomial term), keeping each
-  //  removal only if the chi2 increase is within `auto_simplify_max_dchi2`.  We try ONLY the highest-priority
-  //  remaining candidate each round and STOP at the first one the data won't give up (abort, don't skip to a
-  //  lower-priority candidate): the candidates are ordered most-removable-first, so if the most-degenerate DOF
-  //  is genuinely needed, the more-physical ones are too.  Implemented by re-entering solve() with the flag
-  //  cleared so each trial is a normal, full solve (including ROI auto-ranging below).
-  if( options.auto_simplify_model )
-  {
-    Options base_opts = options;
-    base_opts.auto_simplify_model = false;
-    RelActAutoSolution best = solve( base_opts, foreground, background, input_drf, all_peaks, cancel_calc );
-
-    if( best.m_status != RelActAutoSolution::Status::Success )
-      return best;
-
-    const double max_dchi2 = options.auto_simplify_max_dchi2;
-    while( !(cancel_calc && cancel_calc->load()) )
-    {
-      const std::vector<ModelSimplification> candidates = enumerate_model_simplifications( best.m_options );
-      if( candidates.empty() )
-        break;
-
-      // Only the top (most-degenerate) candidate is considered; abort if it isn't accepted.
-      const ModelSimplification &cand = candidates.front();
-      Options trial_opts = cand.options;
-      trial_opts.auto_simplify_model = false;
-
-      RelActAutoSolution trial;
-      try
-      {
-        trial = solve( trial_opts, foreground, background, input_drf, all_peaks, cancel_calc );
-      }catch( std::exception & )
-      {
-        break;
-      }
-
-      const bool accept = (trial.m_status == RelActAutoSolution::Status::Success)
-                          && ((trial.m_chi2 - best.m_chi2) <= max_dchi2);
-      if( !accept )
-        break;  // the most-degenerate remaining DOF is needed -> stop
-
-      const double dchi2 = trial.m_chi2 - best.m_chi2;
-      best = std::move( trial );
-      best.m_warnings.push_back( "Auto-simplify: removed " + cand.description
-                      + " (chi2 change " + SpecUtils::printCompact(dchi2,4)
-                      + " within tolerance); using the simpler model." );
-    }//while( a higher-priority simplification keeps getting accepted )
-
-    return best;
-  }//if( options.auto_simplify_model )
+  // Note: `auto_simplify_model` (greedily holding redundant degrees of freedom at their identity values)
+  //  is handled warm, inside solve_ceres(), right after the converged full fit - not here.  When the ROI
+  //  auto-ranging below re-invokes solve_ceres, the simplification simply re-runs (its warm trials are
+  //  cheap); the returned solution reflects the converged ROIs and carries that final pass's warnings.
 
   const std::vector<RoiRange> &energy_ranges = options.rois;
   const std::vector<FloatingPeak> &extra_peaks = options.floating_peaks;
@@ -17712,7 +17743,15 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( fabs(lhs.additional_br_uncert - rhs.additional_br_uncert) > 1.0e-5
     && ((lhs.additional_br_uncert > 0.0) || (rhs.additional_br_uncert > 0.0)) )
     throw std::runtime_error( "Additional BR uncertanty in lhs and rhs are not the same" );
-  
+
+  if( lhs.auto_simplify_model != rhs.auto_simplify_model )
+    throw std::runtime_error( "Auto-simplify model flag in lhs and rhs are not the same" );
+
+  // The Delta-chi2 is only serialized when auto-simplify is enabled, so only compare it then.
+  if( lhs.auto_simplify_model
+     && (fabs(lhs.auto_simplify_max_dchi2 - rhs.auto_simplify_max_dchi2) > 1.0e-6) )
+    throw std::runtime_error( "Auto-simplify max delta-chi2 in lhs and rhs are not the same" );
+
   if( lhs.rel_eff_curves.size() != rhs.rel_eff_curves.size() )
     throw std::runtime_error( "Number of relative efficiency curves in lhs and rhs are not the same" );
   

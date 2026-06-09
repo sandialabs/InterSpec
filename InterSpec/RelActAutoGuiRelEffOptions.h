@@ -57,8 +57,7 @@ public:
 
   void showAndHideOptionsForEqnType();
   void initPhysModelShields();
-  /** Updates state dependent on the correction-function combo (greys out "Bias corr." when None) and emits
-   the options-changed signal.  Connected to the correction-function combo. */
+  /** Emits the options-changed signal.  Connected to the correction-function combo. */
   void handlePhysModelCorrFcnChanged();
   void setIsOnlyOneRelEffCurve(const bool is_only_rel_eff_curve);
   void setHasMultiplePhysicalModels(const bool has_multiple_phys_models);
