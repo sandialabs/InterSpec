@@ -231,10 +231,6 @@ else( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
     add_subdirectory(${wt_SOURCE_DIR} ${wt_BINARY_DIR} EXCLUDE_FROM_ALL)
   endif()
 
-  # Since we arent installing Wt, the InterSpec CMakeLists.txt wont find Wt resources,
-  #  so we'll hard code this directory.
-  set(WT_RESOURCES_DIRECTORY "${wt_SOURCE_DIR}/resources" CACHE INTERNAL "Set Wt resources dir")
-
   # If we run the Cmake "install" target (e.g., for Electron build), we'll get an error because
   # ${boost_BINARY_DIR}/cmake_install.cmake doesnt exist, so we'll just put a dummy
   # there, and things seem to work
@@ -243,6 +239,14 @@ else( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
   #   Or maybe even better yet, we should modify the patching for Wt and zlib to remove the instal(...) commands
   write_file( "${boost_BINARY_DIR}/cmake_install.cmake" "# This is a dummy patch file the InterSpec build put in" )
 endif( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
+
+# Neither branch installs Wt's resources/ to a location the InterSpec CMakeLists.txt
+# FIND_PATH would locate (the INSTALL_DEPENDENCIES_IN_BUILD_DIR=ON path used for iOS
+# only populates, it doesn't install), so hard-code WT_RESOURCES_DIRECTORY to the
+# populated FetchContent source for both branches.  wt_SOURCE_DIR is set by
+# FetchContent_MakeAvailable / FetchContent_Populate above.  Without this the iOS
+# build left WT_RESOURCES_DIRECTORY unset and skipped staging the Wt web assets.
+set(WT_RESOURCES_DIRECTORY "${wt_SOURCE_DIR}/resources" CACHE INTERNAL "Set Wt resources dir")
 
 
 

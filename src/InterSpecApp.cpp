@@ -479,15 +479,7 @@ void InterSpecApp::setupDomEnvironment()
       document.head.appendChild(s);
     );
 
-    //Prevent mobile from hovering white
-    const char *prevent_hovering_white = INLINE_JAVASCRIPT(
-      var s = document.createElement('style');
-      s.textContent = 'ul.Wt-popupmenu > li > a > span > span:hover {color: black !important;}';
-      document.head.appendChild(s);
-    );
-
     doJavaScript( prevent_spinner_js );
-    doJavaScript( prevent_hovering_white );
   }//if( isMobile() )
 
   

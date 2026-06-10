@@ -270,6 +270,23 @@ table.RecalibCoefTable
   height: 0px;
 }
 
+/* Menu items are activated through their <a> element, which normally only wraps
+ the label text - stretch it over the entire <li> (including the <li> padding,
+ via the negative margins) so a tap/click anywhere on the row works.
+ Rows whose interactive content sits beside the (empty) anchor - added widgets
+ (.PopupDivMenuWidget) and checkbox rows (a direct <label> child) - are excluded,
+ so the anchor doesnt cover and block them.
+ The padding-left re-creates the 10px <li> padding plus the 24px .Wt-padded
+ margin, keeping the label text where it was. */
+ul.PopupDivMenuPhone.Wt-popupmenu > li:not(.PopupDivMenuWidget):not(:has(> label)) > a
+{
+  display: block;
+  box-sizing: border-box;
+  height: calc(100% + 10px);
+  margin: -10px -10px 0 -10px;
+  padding: 10px 0 0 34px;
+}
+
 
 .PhoneMenuBack, .PhoneMenuClose
 {

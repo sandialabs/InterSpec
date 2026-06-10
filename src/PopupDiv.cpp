@@ -88,7 +88,11 @@ WT_DECLARE_WT_MEMBER
  {
    var w = Wt.WT.getElement(id);
    if(!w) return;
-   
+
+   //The menu may have been hidden client-side only (see SetupHideOverlay), in
+   //  which case the server doesnt know to re-render it - so force it showing.
+   w.style.display = 'block';
+
    var t0 = (new Date()).valueOf();
    var width = w.offsetWidth;
    w.style['top'] = '0px';
@@ -105,26 +109,29 @@ WT_DECLARE_WT_MEMBER
    var wEl = document.getElementById(id);
    document.querySelectorAll('.Wt-dialog').forEach(function(v){z=Math.max(z,parseInt(getComputedStyle(v).zIndex)||0);});
    document.querySelectorAll('.MobileMenuButton').forEach(function(v){z=Math.max(z,parseInt(getComputedStyle(v).zIndex)||0);});
-   document.querySelectorAll('.PopupDivMenu').forEach(function(v){z=Math.max(z,parseInt(getComputedStyle(v).zIndex)||0);});
    var elZ = wEl ? (parseInt(getComputedStyle(wEl).zIndex)||0) : 0;
-   if(z > elZ)
+   if( z > elZ )
    {
-       //if menu is below dialogs, set above, and also set overlay right below it
-       if(wEl) wEl.style.zIndex = z+2;
-       var overlay = document.querySelector('.mobilePopupMenuOverlay');
-       if (overlay && (overlay.offsetParent === null || overlay.style.display === 'none'))
-       {
-           overlay.style.zIndex = z+1;
-       } //check if the overlay is hidden already
-   } //z > elZ
-   else
-   {
-       var overlay = document.querySelector('.mobilePopupMenuOverlay');
-       if (overlay && (overlay.offsetParent === null || overlay.style.display === 'none'))
-       {
-           overlay.style.zIndex = elZ - 1;
-       }
-   } //already above max z index, so not a problem.
+     //if menu is below dialogs and the hamburger button, raise it above them
+     if(wEl) wEl.style.zIndex = z+2;
+     elZ = z+2;
+   }
+
+   //Keep the dimming overlay just below the lowest visible phone menu, so the
+   //  root menu stays usable after navigating into, and back out of, a
+   //  sub-menu (which has a higher z-index than the root menu).
+   var minZ = elZ;
+   document.querySelectorAll('.PopupDivMenuPhone').forEach(function(v){
+     if( getComputedStyle(v).display !== 'none' )
+     {
+       var vz = parseInt(getComputedStyle(v).zIndex) || 0;
+       if( (vz > 0) && (vz < minZ) )
+         minZ = vz;
+     }
+   });
+   var overlay = document.querySelector('.mobilePopupMenuOverlay');
+   if( overlay && (minZ > 0) )
+     overlay.style.zIndex = minZ - 1;
 
    //Immediately make sure none of items for this menu have the active class
    w.querySelectorAll(':scope > .active').forEach(function(ch){ ch.classList.remove("active"); });
@@ -179,11 +186,14 @@ WT_DECLARE_WT_MEMBER(SetupHideOverlay, Wt::JavaScriptFunction, "SetupHideOverlay
     } //if( !targetInMenu )
   }//function hideverything(e)
 
-  // Abort any previous listener, then set up a new one via AbortController
+  // Abort any previous listeners, then set up new ones via AbortController.
+  //  Bind both touch and mouse, so clicking the overlay also dismisses the
+  //  menus when a mouse is in use (e.g., desktop browser emulating a phone).
   if( !window._IS ) window._IS = {};
   if( window._IS._mobileOverlayCtrl ) window._IS._mobileOverlayCtrl.abort();
   window._IS._mobileOverlayCtrl = new AbortController();
   document.addEventListener("touchstart", hideverything, {signal: window._IS._mobileOverlayCtrl.signal});
+  document.addEventListener("click", hideverything, {signal: window._IS._mobileOverlayCtrl.signal});
 });
 
 //XXX - this is a hack!  The Wt JavaScript function fitToWindow(...) doesnt
