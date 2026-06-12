@@ -25,7 +25,7 @@
 #include <string>
 #include <iostream>
 
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 
 #ifdef _WIN32
 // For some reason, we need to include the following includes, before unit_test.hpp,

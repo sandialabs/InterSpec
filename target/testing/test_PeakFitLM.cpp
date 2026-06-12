@@ -430,7 +430,7 @@ BOOST_AUTO_TEST_CASE( test_refit_all_peaks_no_skew )
     const PeakFitLM::FitPeaksResults result = PeakFitLM::fit_peaks_in_spectrum_LM(
       td.original_peaks, td.foreground, 0.0, 0.0,
       config.resolution_type,
-      std::nullopt, 0 );
+      std::nullopt, {} );
 
     BOOST_REQUIRE_MESSAGE( result.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success,
       prefix << "fit failed: " << result.error_message );
@@ -483,7 +483,7 @@ BOOST_AUTO_TEST_CASE( test_refit_per_roi_matches_all_at_once )
     const PeakFitLM::FitPeaksResults all_at_once = PeakFitLM::fit_peaks_in_spectrum_LM(
       td.original_peaks, td.foreground, 0.0, 0.0,
       config.resolution_type,
-      std::nullopt, 0 );
+      std::nullopt, {} );
 
     BOOST_REQUIRE( all_at_once.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success );
 
@@ -496,7 +496,7 @@ BOOST_AUTO_TEST_CASE( test_refit_per_roi_matches_all_at_once )
       const PeakFitLM::FitPeaksResults roi_result = PeakFitLM::fit_peaks_in_spectrum_LM(
         kv.second, td.foreground, 0.0, 0.0,
         config.resolution_type,
-        std::nullopt, 0 );
+        std::nullopt, {} );
 
       BOOST_REQUIRE_MESSAGE( roi_result.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success,
         prefix << "Per-ROI fit failed: " << roi_result.error_message );
@@ -528,7 +528,7 @@ void test_skew_type_helper( const PeakDef::SkewType skew_type,
                             const string &skew_name,
                             const double area_tolerance_pct,
                             const double fwhm_tolerance_pct,
-                            const Wt::WFlags<PeakFitLM::PeakFitLMOptions> extra_options = 0 )
+                            const Wt::WFlags<PeakFitLM::PeakFitLMOptions> extra_options = {} )
 {
   for( const TestFileConfig &config : g_test_files )
   {
@@ -594,7 +594,7 @@ void test_skew_type_helper( const PeakDef::SkewType skew_type,
 
     // If multi-ROI and not IndependentSkewValues, check skew_relation
     const auto roi_groups = group_peaks_by_roi( result.fit_peaks );
-    const bool is_independent = extra_options.testFlag( PeakFitLM::PeakFitLMOptions::IndependentSkewValues );
+    const bool is_independent = extra_options.test( PeakFitLM::PeakFitLMOptions::IndependentSkewValues );
 
     if( roi_groups.size() > 1 && !is_independent
        && (PeakDef::num_skew_parameters( skew_type ) > 0) )

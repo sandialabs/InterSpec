@@ -28,9 +28,10 @@
 #include <vector>
 #include <cstdlib>
 
-#include <Wt/WServer>
-#include <Wt/WString>
-#include <Wt/WMessageResourceBundle>
+#include <Wt/WLocale.h>
+#include <Wt/WServer.h>
+#include <Wt/WString.h>
+#include <Wt/WMessageResourceBundle.h>
 
 
 //#define BOOST_TEST_DYN_LINK
@@ -131,9 +132,7 @@ BOOST_AUTO_TEST_CASE( printToBestTimeUnitsLocalized ) {
   const bool loadInMemory = true;
   bundle.use( path, loadInMemory );
   
-  bundle.refresh();
-  
-  const set<string> keys = bundle.keys( Wt::WMessageResourceBundle::Default );
+  const set<string> keys = bundle.keys( Wt::WLocale( "" ) );
   BOOST_REQUIRE_MESSAGE( keys.count( "units-label-seconds-short" ), "Missing seconds short label" );
   BOOST_REQUIRE_MESSAGE( keys.count( "units-label-minutes-short" ), "Missing seconds minutes label" );
   BOOST_REQUIRE_MESSAGE( keys.count( "units-label-hours-short" ), "Missing seconds hours label" );
@@ -173,9 +172,7 @@ BOOST_AUTO_TEST_CASE( testStringToTimeDurationLocalized ) {
   const bool loadInMemory = true;
   bundle.use( path, loadInMemory );
   
-  bundle.refresh();
-  
-  const set<string> keys = bundle.keys( Wt::WMessageResourceBundle::Default );
+  const set<string> keys = bundle.keys( Wt::WLocale( "" ) );
   BOOST_REQUIRE_MESSAGE( keys.count( "units-labels-second" ), "Missing seconds localization" );
   BOOST_REQUIRE_MESSAGE( keys.count( "units-labels-minute" ), "Missing minutes localization" );
   BOOST_REQUIRE_MESSAGE( keys.count( "units-labels-hours" ), "Missing hours localization" );
@@ -271,8 +268,6 @@ BOOST_AUTO_TEST_CASE( testStringToTimeDurationPossibleHalfLifeLocalized ) {
   
   const bool loadInMemory = true;
   bundle.use( path, loadInMemory );
-  
-  bundle.refresh();
   
   
   typedef std::tuple<string,double,double> StrHlVal;
@@ -413,27 +408,27 @@ BOOST_AUTO_TEST_CASE( testLocalizedRegexs ) {
   };
   
   
-  WMessageResourceBundle *bundle_french = new WMessageResourceBundle();
-  WMessageResourceBundle *bundle_english = new WMessageResourceBundle();
-  
+  std::shared_ptr<WMessageResourceBundle> bundle_french = std::make_shared<WMessageResourceBundle>();
+  std::shared_ptr<WMessageResourceBundle> bundle_english = std::make_shared<WMessageResourceBundle>();
+
   std::string path = SpecUtils::append_path(g_app_text_dir, "InterSpec");
   bundle_english->use( path, true );
   bundle_french->use( path + "_fr", true );
 
   // We need to create a WServer, so strings can be localized
   Wt::WServer server("","");
-  
-  pair<WMessageResourceBundle *,bool> languages[] = {
+
+  pair<std::shared_ptr<WMessageResourceBundle>,bool> languages[] = {
     {bundle_french, true},
     {bundle_english, false}
   };
-  
+
   for( const auto lang : languages )
   {
-    WMessageResourceBundle *bundle = lang.first;
+    std::shared_ptr<WMessageResourceBundle> bundle = lang.first;
     const bool test_french = lang.second;
-    
-    server.setLocalizedStrings( bundle ); //Takes ownership of bundle
+
+    server.setLocalizedStrings( bundle );
     
     {//begin block to check ordinary duration regex
       Wt::WString duration_regex;

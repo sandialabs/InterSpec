@@ -142,7 +142,7 @@ BOOST_AUTO_TEST_CASE( testNuclideSearch )
   //orig_workingspace->error_msg = string;
   //orig_workingspace->matches = std::vector< std::vector<IsotopeMatch> > ;
   orig_workingspace->sortColumn = IsotopeSearchByEnergyModel::Column::ParentIsotope;
-  orig_workingspace->sortOrder = Wt::SortOrder::AscendingOrder;
+  orig_workingspace->sortOrder = Wt::SortOrder::Ascending;
   //orig_workingspace->undoSentry = std::shared_ptr<void>
   //orig_workingspace->searchdoneCallback = searchdoneCallback
 
@@ -156,7 +156,10 @@ BOOST_AUTO_TEST_CASE( testNuclideSearch )
   const std::vector<const SandiaDecay::Nuclide *> nuclides;
   const std::vector<const ReactionGamma::Reaction *> reactions;
 
-  boost::function< void(void) > updatefcn;
+  // Leave empty: setSearchEnergies takes a std::function, and only posts to the WServer
+  //  when this is non-empty.  (An empty boost::function wrapped in a std::function is itself
+  //  non-empty, which would trigger a post to a non-existent WServer and crash.)
+  std::function< void(void) > updatefcn;
 
   shared_ptr<IsotopeSearchByEnergyModel::SearchWorkingSpace> workingspace
       = make_shared<IsotopeSearchByEnergyModel::SearchWorkingSpace>( *orig_workingspace );

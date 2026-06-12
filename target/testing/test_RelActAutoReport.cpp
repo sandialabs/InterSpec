@@ -48,6 +48,7 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActAutoReport.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -213,9 +214,12 @@ static void do_one_fit_and_check( const string &n42_basename,
                                          bg_basename, bg_total, bg_samples );
   }
 
-  // 6. Solve.
+  // 6. Solve.  `solve` needs the coarse detector-resolution type (it sets FWHM limits); derive
+  //    it from the file's saved prefs, falling back to data-based classification when unknown.
+  const PeakFitUtils::CoarseResolutionType det_type
+      = PeakFitUtils::effective_det_type( meas->peakFitDetPrefs(), foreground, meas );
   const RelActCalcAuto::RelActAutoSolution sol
-      = RelActCalcAuto::solve( state->options, foreground, background, det, {}, nullptr );
+      = RelActCalcAuto::solve( state->options, foreground, background, det, {}, det_type, nullptr );
 
   // 7. Numerical sanity.
   BOOST_CHECK_MESSAGE( sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,

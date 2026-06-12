@@ -201,12 +201,29 @@ namespace
   }// load_test_data_spectrum
 
 
+  // Map the test's coarse "is this HPGe?" flag to the detector-resolution types the
+  //  peak-fitting API now takes (the old `bool isHPGe` arguments were replaced by
+  //  `PeakFitUtils::CoarseResolutionType` / `PeakFitDetPrefs`).
+  PeakFitUtils::CoarseResolutionType res_type_for( const bool isHPGe )
+  {
+    return isHPGe ? PeakFitUtils::CoarseResolutionType::High
+                  : PeakFitUtils::CoarseResolutionType::Low;
+  }
+
+  shared_ptr<const PeakFitDetPrefs> det_prefs_for( const bool isHPGe )
+  {
+    auto prefs = make_shared<PeakFitDetPrefs>();
+    prefs->m_det_type = res_type_for( isHPGe );
+    return prefs;
+  }
+
+
   // Run auto peak search on a spectrum
   vector<shared_ptr<const PeakDef>> run_auto_search(
     const shared_ptr<const SpecUtils::Measurement> &foreground, const bool isHPGe )
   {
     return ExperimentalAutomatedPeakSearch::search_for_peaks(
-      foreground, nullptr, nullptr, true, isHPGe );
+      foreground, nullptr, nullptr, true, det_prefs_for( isHPGe ) );
   }// run_auto_search
 
 
@@ -252,11 +269,11 @@ namespace
       = Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions>() )
   {
     const FitPeaksForNuclides::PeakFitForNuclideConfig &config
-      = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( isHPGe );
+      = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( res_type_for( isHPGe ) );
 
     return FitPeaksForNuclides::fit_peaks_for_nuclides(
       auto_search_peaks, foreground, sources, user_peaks,
-      background, nullptr, options, config, isHPGe );
+      background, nullptr, options, config, det_prefs_for( isHPGe ) );
   }// run_fit
 
 
@@ -465,7 +482,7 @@ namespace
       return;
 
     const FitPeaksForNuclides::PeakFitForNuclideConfig &config
-      = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( true );
+      = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( PeakFitUtils::CoarseResolutionType::High );
 
     // 1. No overlapping observable ROIs
     verify_no_roi_overlaps( result.observable_peaks, foreground );

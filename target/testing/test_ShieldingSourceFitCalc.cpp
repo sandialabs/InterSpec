@@ -25,9 +25,9 @@
 #include <string>
 #include <iostream>
 
-#include <Wt/Utils>
-#include <Wt/WApplication>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/Utils.h>
+#include <Wt/WApplication.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #ifdef _WIN32
 // For some reason, we need to include the following includes, before unit_test.hpp,
@@ -168,7 +168,7 @@ public:
     // Create a test environment
     const std::string applicationPath = "";
     const std::string configurationFile = "";
-    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::Application ) );
+    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::EntryPointType::Application ) );
     m_env->setAppRoot( wt_app_root );
 
     // Create the app
