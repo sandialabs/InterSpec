@@ -557,7 +557,16 @@ struct RelEffSolution
    For Physical Model, this estimate is totally not valid, and can even be negative.
    */
   int m_dof = 0;
-  
+
+  /** Predicted total peak counts from the fitted solution, one entry per peak in #m_input.peaks
+   (same indexing), filled during the chi2 computation in #solve_relative_efficiency.
+
+   Stored so callers can compute alternative goodness-of-fit metrics (e.g. a chi2 with a systematic
+   uncertainty floor, or one that excludes peaks the source cannot account for) without re-deriving
+   predictions from the equation form + activities externally - which is error-prone because the
+   activity/efficiency normalization is not consistent across equation forms.  Empty if not computed. */
+  std::vector<double> m_predicted_peak_counts;
+
   /** The number of evaluation calls it took L-M to reach a solution.
    Only useful for debugging and curiosity.
    */

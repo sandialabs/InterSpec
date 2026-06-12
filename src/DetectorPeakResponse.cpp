@@ -63,6 +63,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
@@ -76,7 +77,40 @@ namespace
 {
   /** Mutex to protect the "generic" detectors, returned by like `DetectorPeakResponse::getGenericHPGeDetector()` */
   std::mutex s_generic_det_mutex;
-  
+
+  /** Loads a named (substring-matched) DRF from data/common_drfs.tsv, or nullptr on any failure.
+   Used to back the generic NaI/LaBr/CZT detectors with characterized DRFs that are valid down to
+   ~20 keV (the hard-coded fallbacks are only valid above ~45-55 keV).  Returns null if the static
+   data directory isn't set, the file is missing, or no matching valid DRF is found - callers then
+   use their hard-coded fallback.  Result is cached by the callers (static + s_generic_det_mutex), so
+   this only parses the file once per detector per application run. */
+  std::shared_ptr<DetectorPeakResponse> load_common_drf_by_name( const std::string &name )
+  {
+    try
+    {
+      const std::string drf_file = SpecUtils::append_path( InterSpec::staticDataDirectory(), "common_drfs.tsv" );
+#ifdef _WIN32
+      std::ifstream input( SpecUtils::convert_from_utf8_to_utf16(drf_file).c_str() );
+#else
+      std::ifstream input( drf_file.c_str() );
+#endif
+      std::string line;
+      while( SpecUtils::safe_get_line( input, line, 2048 ) )
+      {
+        SpecUtils::trim( line );
+        if( line.empty() || (line[0] == '#') )
+          continue;
+        std::shared_ptr<DetectorPeakResponse> det = DetectorPeakResponse::parseSingleCsvLineRelEffDrf( line );
+        if( det && det->isValid() && SpecUtils::icontains( det->name(), name ) )
+          return det;
+      }
+    }catch( std::exception & )
+    {
+      // fall through to nullptr; caller uses its hard-coded fallback
+    }
+    return nullptr;
+  }//load_common_drf_by_name(...)
+
   
   
   //calcA(...) is for use from DetectorPeakResponse::akimaInterpolate(...).
@@ -4940,22 +4974,25 @@ std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericNaID
   
   if( !s_detector )
   {
-    auto detector = std::make_shared<DetectorPeakResponse>( "Generic NaI(Tl)", "12% Efficiency, 6.9% FWHM @661 keV" );
-    
-    // From "Canberra Inspector 1000 (12%)"
-    vector<float> eff_coeffs = {-2.22847652e+00f, -1.89709997e+00f, -1.02779996e+00f, -4.63600010e-01f, -1.06799997e-01f};
-    detector->fromExpOfLogPowerSeries(eff_coeffs, {}, 0.0f, 5.08*PhysicalUnits::cm, PhysicalUnits::MeV,
-                                            45.0f, 3000.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
-    
-    // FWHM from "RadSeeker-NaI"
-    std::vector<float> res_coeffs = {-8.18999958e+00, 6.94000006e+00, 5.64000010e-01};
-    
-    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    // Prefer the characterized "IdentiFINDER-R500-NaI" DRF (valid + non-zero down to ~20 keV); fall
+    // back to the hard-coded generic (valid only above ~45 keV) if common_drfs.tsv isn't available.
+    std::shared_ptr<DetectorPeakResponse> detector = load_common_drf_by_name( "IdentiFINDER-R500-NaI" );
+    if( !detector || !detector->isValid() )
+    {
+      detector = std::make_shared<DetectorPeakResponse>( "Generic NaI(Tl)", "12% Efficiency, 6.9% FWHM @661 keV" );
+      // From "Canberra Inspector 1000 (12%)"
+      vector<float> eff_coeffs = {-2.22847652e+00f, -1.89709997e+00f, -1.02779996e+00f, -4.63600010e-01f, -1.06799997e-01f};
+      detector->fromExpOfLogPowerSeries(eff_coeffs, {}, 0.0f, 5.08*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                              45.0f, 3000.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+      // FWHM from "RadSeeker-NaI"
+      std::vector<float> res_coeffs = {-8.18999958e+00, 6.94000006e+00, 5.64000010e-01};
+      detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    }
     detector->setDrfSource( DrfSource::UnknownDrfSource );
-    
+
     s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
   }
-  
+
   return s_detector;
 }
 
@@ -4968,20 +5005,23 @@ std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericLaBr
   
   if( !s_detector )
   {
-    auto detector = std::make_shared<DetectorPeakResponse>( "Generic LaBr3(Ce)", "" );
-    
-    // Fit to GADRAS efficiency of Sam-Eagle-LaBr
-    // Between 50 and 2600 keV, average error is 1.40918552%, with max error 3.70071643%
-    std::vector<float> eff_coeffs = {-1.66245103e+00, -1.07331991e+00, 9.46287289e-02, 3.29341553e-02, -7.69617930e-02, -1.86134428e-02};
-    detector->fromExpOfLogPowerSeries( eff_coeffs, {}, 0.0f, 3.70*PhysicalUnits::cm, PhysicalUnits::MeV,
-                                            50.0f, 2650.0f, EffGeometryType::FarFieldIntrinsic );
-    
-    // From GADRAS Sam-Eagle-LaBr
-    std::vector<float> res_coeffs = {7.0, 2.6e+00, 5.2e-01};
-    
-    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn /* TODO: verify resolution function type */ );
+    // Prefer the characterized "Radseeker-LaBr3" DRF (valid down to ~25 keV); fall back to the
+    // hard-coded generic (valid only above ~50 keV) if common_drfs.tsv isn't available.
+    std::shared_ptr<DetectorPeakResponse> detector = load_common_drf_by_name( "Radseeker-LaBr3" );
+    if( !detector || !detector->isValid() )
+    {
+      detector = std::make_shared<DetectorPeakResponse>( "Generic LaBr3(Ce)", "" );
+      // Fit to GADRAS efficiency of Sam-Eagle-LaBr
+      // Between 50 and 2600 keV, average error is 1.40918552%, with max error 3.70071643%
+      std::vector<float> eff_coeffs = {-1.66245103e+00, -1.07331991e+00, 9.46287289e-02, 3.29341553e-02, -7.69617930e-02, -1.86134428e-02};
+      detector->fromExpOfLogPowerSeries( eff_coeffs, {}, 0.0f, 3.70*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                              50.0f, 2650.0f, EffGeometryType::FarFieldIntrinsic );
+      // From GADRAS Sam-Eagle-LaBr
+      std::vector<float> res_coeffs = {7.0, 2.6e+00, 5.2e-01};
+      detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn /* TODO: verify resolution function type */ );
+    }
     detector->setDrfSource( DrfSource::UnknownDrfSource );
-    
+
     s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
   }
   
@@ -4997,20 +5037,28 @@ std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericCZTG
   
   if( !s_detector )
   {
-    auto detector = std::make_shared<DetectorPeakResponse>( "Generic CZT", "" );
-    
-    // Fit to the GADRAS efficiencies between 45 and 3000 of the Kromek GR1 detector included with InterSpec
-    //Between 50 and 2600 keV, average error is 1.36569567%, with max error 4.19282222%
-    std::vector<float> eff_coeffs = {-3.36118150e+00, -1.55648577e+00, 2.62750953e-01, -2.36228734e-01, -2.88489103e-01, -5.32837957e-02};
-    detector->fromExpOfLogPowerSeries( eff_coeffs, {}, 0.0f, 1.07*PhysicalUnits::cm, PhysicalUnits::MeV,
-                                            50.0f, 2650.0f, EffGeometryType::FarFieldIntrinsic );
-    
-    // FWHM from "Kromek GR1"
-    std::vector<float> res_coeffs = {8.94999981e+00f, 2.39000010e+00f, 3.44000012e-01f};
-    
-    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    // Prefer the characterized "Kromek GR1" DRF (rel-eff + FWHM are valid down to ~20 keV); fall back
+    // to the hard-coded generic (valid only above ~50 keV) if common_drfs.tsv isn't available.  The
+    // TSV entry doesn't carry an energy range, so set it explicitly (the curves are valid 20-3000 keV).
+    std::shared_ptr<DetectorPeakResponse> detector = load_common_drf_by_name( "Kromek GR1" );
+    if( detector && detector->isValid()
+        && ((detector->lowerEnergy() <= 0.0) || (detector->upperEnergy() <= 0.0)) )
+      detector->setEnergyRange( 20.0, 3000.0 );
+
+    if( !detector || !detector->isValid() )
+    {
+      detector = std::make_shared<DetectorPeakResponse>( "Generic CZT", "" );
+      // Fit to the GADRAS efficiencies between 45 and 3000 of the Kromek GR1 detector included with InterSpec
+      //Between 50 and 2600 keV, average error is 1.36569567%, with max error 4.19282222%
+      std::vector<float> eff_coeffs = {-3.36118150e+00, -1.55648577e+00, 2.62750953e-01, -2.36228734e-01, -2.88489103e-01, -5.32837957e-02};
+      detector->fromExpOfLogPowerSeries( eff_coeffs, {}, 0.0f, 1.07*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                              50.0f, 2650.0f, EffGeometryType::FarFieldIntrinsic );
+      // FWHM from "Kromek GR1"
+      std::vector<float> res_coeffs = {8.94999981e+00f, 2.39000010e+00f, 3.44000012e-01f};
+      detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    }
     detector->setDrfSource( DrfSource::UnknownDrfSource );
-    
+
     s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
   }
   

@@ -5525,6 +5525,8 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       phys_mode_rel_eqn_input = ManualGenericRelActFunctor::make_phys_eqn_input( input, rel_eff_coefs );
     
     bool used_unweighted = false, used_add_uncert = false;
+    solution.m_predicted_peak_counts.clear();
+    solution.m_predicted_peak_counts.reserve( cost_functor->m_input.peaks.size() );
     for( const GenericPeakInfo &peak : cost_functor->m_input.peaks )
     {
       double curve_val;
@@ -5552,6 +5554,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       }//for( const RelActCalc::GammaLineInfo &line : peak.m_source_gammas )
       
       const double expected_counts = expected_src_counts * curve_val;
+      solution.m_predicted_peak_counts.push_back( expected_counts );
       solution.m_chi2 += std::pow( (expected_counts - peak.m_counts) / peak.m_counts_uncert, 2.0 );
     }//for( loop over energies to evaluate at )
     

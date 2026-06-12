@@ -94,12 +94,29 @@ extern RelEffChi2CapMode sm_rel_eff_chi2_cap_mode;
 /** Cap value used when sm_rel_eff_chi2_cap_mode == Fixed. */
 extern double sm_rel_eff_chi2_cap_fixed_value;
 
+/** Detector-resolution class this GA run is optimizing for.  `genes_to_settings` starts from
+ `PeakFitForNuclideConfig::default_config(sm_base_det_type)` so that the non-GA-optimized fields
+ (e.g. skew_type) match the production default for this detector type.  Set from the CLI-selected
+ det-type in main() before `do_nuclide_config_ga(...)`.  Defaults to Low (non-HPGe). */
+extern PeakFitUtils::CoarseResolutionType sm_base_det_type;
+
 /** Cap on the raw (pre-weight) per-spectrum background-fit penalty so a
  single spectrum's false-positive cluster (or fit failure) cannot dominate
  total_score.  30.0 is roughly the typical magnitude of a per-spectrum
  foreground score contribution; combined with the 0.25 weight, this bounds
  the per-spectrum penalty contribution at 7.5. */
 constexpr double sm_background_fit_penalty_per_spectrum_cap = 30.0;
+
+/** Penalty assigned to a single spectrum's foreground cost when the fit fails
+ (non-Success status, or throws).  The GA MINIMIZES the objective, and a successful
+ per-spectrum foreground cost is `total_weight - (find_weight + candidate_score)`,
+ which ranges roughly from ~ -30 (all source peaks found with good areas) up to ~ +40
+ (poor areas and/or many spurious peaks).  This penalty must be strictly worse (larger)
+ than any plausible successful cost so the GA is driven away from configs that cannot
+ produce a fit at all.
+ TODO: normalize per-spectrum costs by expected-peak count so multi-line spectra do not
+ dominate the summed objective; the failure penalty would then move to that normalized scale. */
+constexpr double sm_fit_failure_penalty = 100.0;
 
 
 /** Holds precomputed data for each spectrum, so the expensive search_for_peaks call is done once. */

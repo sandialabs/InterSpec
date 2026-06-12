@@ -447,16 +447,10 @@ T correction_due_to_deviation_pairs( const T true_energy, const std::vector<Cubi
     return answer;
   }
 
-#if( PERFORM_DEVELOPER_CHECKS )
-  {
-    char buffer[256];
-    snprintf( buffer, sizeof(buffer),
-      "correction_due_to_deviation_pairs: averaged iteration did not converge"
-      " after %d iters for E=%.4f, diff=%.6e; falling to bisection.",
-      niters, get_scalar(true_energy), get_scalar(diff) );
-    log_developer_error( __func__, buffer );
-  }
-#endif
+  // (Removed the per-energy "averaged iteration did not converge ... falling to bisection"
+  //  developer-error log: the bisection fallback below is a normal/expected path, and logging it on
+  //  every energy produced ~GB of developer_errors.log during bulk fitting (e.g. GA runs with
+  //  energy-cal fitting on).  Re-add behind a finer debug flag if this needs tracing.)
 
   // Averaged iteration did not converge (can happen if S' < -1, giving a fold in the
   //  energy mapping); fall back to bisection on scalar values.

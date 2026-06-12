@@ -1445,11 +1445,85 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
 
   if( !valid_whole_range )
   {
-    cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
-    warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
-    paramaters.clear();
-    fill_in_default_start_fwhm_pars( paramaters, 0, det_type, fwhm_form, lowest_energy, highest_energy );
-    assert( paramaters.size() == fwhm_pars_float.size() );
+    // The data-driven FWHM fit is not valid across the whole analysis range - common when only a few
+    // peaks are resolved over a narrow span (e.g. shielded NORM on NaI), so the fit extrapolates to a
+    // non-finite or out-of-bounds width at the range edges, which can let the whole solve collapse.
+    // Rather than fall straight to generic defaults, fit a Bernstein FWHM to the EXPECTED peak-width
+    // curve over the central part of the range (100-1500 keV, clamped to the analysis range), with
+    // coefficients constrained to the expected-width limits over the full range.  Because the
+    // constrained Bernstein coefficients are bounded by [min_sigma, max_sigma], the resulting FWHM is
+    // finite and in-range over the entire range by construction.  (Bernstein forms only; the others
+    // keep the generic default.)
+    bool rebuilt_fwhm = false;
+    const bool is_berstein_form = (fwhm_form == RelActCalcAuto::FwhmForm::Berstein_2)
+                               || (fwhm_form == RelActCalcAuto::FwhmForm::Berstein_3)
+                               || (fwhm_form == RelActCalcAuto::FwhmForm::Berstein_4)
+                               || (fwhm_form == RelActCalcAuto::FwhmForm::Berstein_5)
+                               || (fwhm_form == RelActCalcAuto::FwhmForm::Berstein_6);
+    if( is_berstein_form )
+    {
+      try
+      {
+        double cen_lo = std::max( 100.0, lowest_energy );
+        double cen_hi = std::min( 1500.0, highest_energy );
+        if( cen_lo >= cen_hi ){ cen_lo = lowest_energy; cen_hi = highest_energy; }
+
+        // Synthetic peaks following the expected (mid) peak width across the central range.
+        auto synth_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
+        const int n_samples = 16;
+        for( int i = 0; i < n_samples; ++i )
+        {
+          const double e = cen_lo + ((cen_hi - cen_lo) * i) / (n_samples - 1);
+          float mn_s, mx_s;
+          expected_peak_width_limits( static_cast<float>(e), det_type, nullptr, mn_s, mx_s );
+          synth_peaks->push_back( make_shared<PeakDef>( e, 0.5*(static_cast<double>(mn_s) + mx_s), 1000.0 ) );
+        }
+
+        // Global expected-width bounds (over the full range) to constrain the Bernstein coefficients.
+        double glob_min_sigma = std::numeric_limits<double>::max();
+        double glob_max_sigma = std::numeric_limits<double>::lowest();
+        for( int i = 0; i <= 20; ++i )
+        {
+          const double e = lowest_energy + ((highest_energy - lowest_energy) * i) / 20.0;
+          float mn_s, mx_s;
+          expected_peak_width_limits( static_cast<float>(e), det_type, nullptr, mn_s, mx_s );
+          glob_min_sigma = (std::min)( glob_min_sigma, static_cast<double>(mn_s) );
+          glob_max_sigma = (std::max)( glob_max_sigma, static_cast<double>(mx_s) );
+        }
+
+        vector<float> poly_pars, poly_uncerts;
+        MakeDrfFit::performResolutionFit( synth_peaks, form_to_fit, fit_order, poly_pars, poly_uncerts );
+
+        const vector<double> poly_coeffs( begin(poly_pars), end(poly_pars) );
+        const double lower_coef_bound = glob_min_sigma * glob_min_sigma * PhysicalUnits::fwhm_nsigma * PhysicalUnits::fwhm_nsigma;
+        const double upper_coef_bound = glob_max_sigma * glob_max_sigma * PhysicalUnits::fwhm_nsigma * PhysicalUnits::fwhm_nsigma;
+        vector<double> bern = BersteinPolynomial::constrained_power_series_to_bernstein( poly_coeffs,
+                                  lowest_energy/1000.0, highest_energy/1000.0, lower_coef_bound, upper_coef_bound );
+        bern.push_back( lowest_energy );
+        bern.push_back( highest_energy );
+
+        if( bern.size() == num_parameters(fwhm_form) )
+        {
+          paramaters.swap( bern );
+          rebuilt_fwhm = true;
+          warnings.push_back( "FWHM fit from data was not valid over the full energy range; used a"
+                              " Bernstein FWHM fit to the expected widths over the central range." );
+        }
+      }catch( std::exception & )
+      {
+        rebuilt_fwhm = false;  // fall through to the generic default below
+      }
+    }//if( is_berstein_form )
+
+    if( !rebuilt_fwhm )
+    {
+      cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
+      warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
+      paramaters.clear();
+      fill_in_default_start_fwhm_pars( paramaters, 0, det_type, fwhm_form, lowest_energy, highest_energy );
+    }
+
+    assert( paramaters.size() == num_parameters( fwhm_form ) );
     fwhm_pars_float.clear();
     fwhm_pars_float.resize( paramaters.size(), 0.0f );
     for( size_t i = 0; i < paramaters.size(); ++i )
@@ -5358,12 +5432,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //
     //  According to a LLM, the trust region is an area in the parameter space.
     //   So we will need to revisit this value if we scale the various parameters to be closer to reasonable.
+#ifndef NDEBUG
+    // Debug-only: print each free parameter's starting value.  Gated out of release builds because
+    // it emits ~one line per parameter per solve, flooding stdout/logs during bulk fitting (GA runs).
     for( size_t i = 0; i < parameters.size(); ++i )
     {
       const auto const_pos = std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) );
       if( const_pos == end(constant_parameters) )
         cout << "Starting value of " << cost_functor->parameter_name(i) << ": " << parameters[i] << endl;
     }
+#endif
 
     // Initial trust-region radius: Ceres library default of 1e4. An earlier
     //  par_area-based heuristic produced values in [1e3, ~3.4e4] depending on
@@ -5593,15 +5671,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }
 
           case ceres::NO_CONVERGENCE:
+#ifndef NDEBUG
             cout << "Pre-fit correction did not converge" << endl;
+#endif
             break;
 
           case ceres::FAILURE:
+#ifndef NDEBUG
             cout << "Pre-fit correction failed" << endl;
+#endif
             break;
 
           case ceres::USER_FAILURE:
+#ifndef NDEBUG
             cout << "Pre-fit correction was user-cancelled" << endl;
+#endif
             break;
         }//switch( summary.termination_type )
 
@@ -9611,9 +9695,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
           // We compute the relative efficiency and FWHM based off of "true" energy
           const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x );
+          // A non-finite rel-eff (e.g. a gamma below the DRF's valid energy range, where the
+          // efficiency / physical-model curve is undefined) must not abort the entire solve.  Skip
+          // the gamma so it simply isn't modeled - this is consistent across parameter space when the
+          // cause is a fixed out-of-range energy, so it doesn't introduce discontinuities.  The
+          // analysis energy range is also clamped upstream (per rel-eff form) to avoid reaching here.
           if( isinf(rel_eff) || isnan(rel_eff) )
-            throw runtime_error( "peaks_for_energy_range_imp: inf or NaN rel. eff for "
-                                + std::to_string(gamma.energy) + " keV."  );
+            continue;
 
           
           T br_uncert_adj(1.0);
@@ -9690,6 +9778,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x, cached_splines );
           const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
           const T peak_fwhm = fwhm( T(gamma.energy), x );
+
+          // Skip a gamma whose modeled peak is non-finite or has a non-positive width.  This happens for
+          // a gamma well below the DRF / FWHM valid range that gets pulled into a wide low-energy ROI's
+          // (15-sigma) coverage margin: the rel-eff extrapolates to a huge-but-finite value (so the
+          // isinf/isnan rel-eff check above passes) and the amplitude then overflows, or the FWHM
+          // extrapolates to <=0 / non-finite.  Such a far-below-ROI line contributes negligibly, so drop
+          // it rather than let it abort the entire solve.
+          if( isinf(peak_amplitude) || isnan(peak_amplitude)
+             || isinf(peak_fwhm) || isnan(peak_fwhm) || (peak_fwhm <= T(0.0)) )
+            continue;
 
           check_jet_for_NaN( rel_act );
           check_jet_for_NaN( rel_eff );

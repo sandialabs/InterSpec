@@ -415,7 +415,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
         throw std::runtime_error( fit_errors[fi_idx] );
 
       if( curve_results.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
-        throw std::runtime_error( "fit_peaks_for_nuclides failed for all RelEff curve types: " + curve_results.error_message );
+        throw std::runtime_error( "fit_peaks_for_nuclides failed: " + curve_results.error_message );
 
       const RelActCalcAuto::RelActAutoSolution &solution = curve_results.solution;
       const std::vector<PeakDef> &fit_peaks = curve_results.observable_peaks;
@@ -479,7 +479,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       }// End check for overlapping ROIs in fit_peaks
 #endif
 
-      cout << "Best RelEff curve type solution (" << solution.m_options.rel_eff_curves.front().name << ") selected with chi2/dof="
+      cout << "RelEff fit (" << solution.m_options.rel_eff_curves.front().name << ") chi2/dof="
            << solution.m_chi2 << "/" << solution.m_dof << endl;
 
       // How many sigma around a peak to consider for matching (default 1.5)

@@ -36,10 +36,15 @@ set(TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test_data"
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
 include(FetchContent)
+# NOTE: pinned to openGA main HEAD commit f9b15e7 (2026-03-22), not the last release tag (v1.0.5,
+#   2020), because the older b2f292e pin had a single-objective (SOGA) bug: in solve_next_generation,
+#   last_generation was only advanced when `fronts` (a multi-objective structure) was non-empty, so in
+#   SOGA mode the population never progressed past generation 0 (cripples convergence).  Upstream
+#   commit be90215 fixes this, but it is only on main - no tagged release contains it.
 FetchContent_Declare(
   openGA
   GIT_REPOSITORY git@github.com:Arash-codedev/openGA.git
-  GIT_TAG         b2f292eaccfda77363bcc8f30c001392f3b71241 # latest as of 20240718
+  GIT_TAG         f9b15e70600e20491504391dec6de5c64eb18913 # main HEAD 2026-03-22; includes SOGA last_generation fix (be90215)
 )
 FetchContent_MakeAvailable( openGA )
 
@@ -72,3 +77,7 @@ endif( CMAKE_GENERATOR STREQUAL "Xcode" )
 add_executable( Eu152BackgroundDebug Eu152BackgroundDebug.cpp )
 target_link_libraries( Eu152BackgroundDebug PRIVATE InterSpecLib )
 target_include_directories( Eu152BackgroundDebug PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" )
+
+#add_executable( NuclideFitDebug NuclideFitDebug.cpp )
+#target_link_libraries( NuclideFitDebug PRIVATE InterSpecLib )
+#target_include_directories( NuclideFitDebug PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" )

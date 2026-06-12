@@ -43,6 +43,11 @@ namespace SpecUtils
 namespace FitPeaksForNuclides
 {
 
+/** Enable/disable the verbose internal debug trace of `fit_peaks_for_nuclides` (rel-eff fit form/order,
+ chi2/dof, gamma-cluster keep/drop decisions, etc.).  For development harnesses ONLY: it is a process-wide
+ flag with no synchronization, so it must never be enabled during parallel GA optimization. */
+void set_debug_printout( bool enable );
+
 /** an updated implementation of `find_spectroscopic_extent(...)` - we will replace the old implementation after some more testing. */
 std::pair<double,double> find_valid_energy_range( const std::shared_ptr<const SpecUtils::Measurement> &meas );
 
@@ -404,8 +409,9 @@ enum FitSrcPeaksOptions
  2. Matches auto-search peaks to source nuclides
  3. Performs RelActManual fit to get initial relative efficiency estimate
  4. Clusters gamma lines into ROIs based on manual rel-eff
- 5. Calls fit_peaks_for_nuclide_relactauto with three different configurations
- 6. Returns the best result based on chi2
+ 5. Calls fit_peaks_for_nuclide_relactauto with the single configured RelEff curve type (config.rel_eff_eqn_type)
+ 6. Optionally retries with a Physical-Model "desperation" configuration if the initial fit is poor,
+    keeping whichever result has the lower chi2/dof
 
  @param auto_search_peaks Initial peaks found by automatic search (user peaks merged with auto-detected)
  @param foreground Foreground spectrum to fit

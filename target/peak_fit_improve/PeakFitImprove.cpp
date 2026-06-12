@@ -1757,7 +1757,7 @@ int main( int argc, char **argv )
               pd.background, pd.drf, options, config, pd.peak_fit_prefs );
 
             if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
-              return { 100.0, 0.0 };  // Penalty for failed foreground fits, no bg attempted
+              return { NuclideConfig_GA::sm_fit_failure_penalty, 0.0 };  // Penalty for failed foreground fits, no bg attempted
 
             const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
 
@@ -1771,9 +1771,15 @@ int main( int argc, char **argv )
             CandidatePeak_GA::correct_score_for_escape_peaks(
               combined_score.candidate_peak_score, pd.src_info->expected_signal_photopeaks );
 
-            const double fg_score = combined_score.initial_fit_weights.find_weight
-                                  + combined_score.final_fit_score.total_weight
-                                  + combined_score.candidate_peak_score.score;
+            // openGA MINIMIZES the objective, so every contribution must be a cost (lower = better).
+            // find_weight and candidate_peak_score.score are higher-is-better rewards (each correct
+            // source peak adds, each spurious/extra peak subtracts), while final_fit_score.total_weight
+            // is already lower-is-better (area mismatch).  Negate the reward terms so finding the
+            // correct source peaks LOWERS the cost and spurious peaks RAISE it.  Mirrors the sibling
+            // InitialFit/CandidatePeak GAs, which negate their scores before returning to openGA.
+            const double fg_score = combined_score.final_fit_score.total_weight
+                                  - ( combined_score.initial_fit_weights.find_weight
+                                      + combined_score.candidate_peak_score.score );
 
             // Background-false-positive penalty.  No-op (returns 0) when
             // sm_do_background_fit_trial is false or background_auto_search_peaks
@@ -1785,7 +1791,7 @@ int main( int argc, char **argv )
           }
           catch( const std::exception & )
           {
-            return { 100.0, 0.0 };  // Penalty for exceptions
+            return { NuclideConfig_GA::sm_fit_failure_penalty, 0.0 };  // Penalty for exceptions
           }
         };//score_one_spectrum lambda
 
@@ -1830,6 +1836,10 @@ int main( int argc, char **argv )
 
         return total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg;
       };//ga_eval lambda
+
+      // Make the GA's non-optimized config fields (skew_type, etc.) match this detector type's
+      // production defaults, rather than always starting from the non-HPGe (Low) baseline.
+      NuclideConfig_GA::sm_base_det_type = selected_det_type;
 
       // Run the GA
       const FitPeaksForNuclides::PeakFitForNuclideConfig best_config

@@ -74,6 +74,7 @@ namespace NuclideConfig_GA
 bool sm_do_background_fit_trial = false;
 RelEffChi2CapMode sm_rel_eff_chi2_cap_mode = RelEffChi2CapMode::Fixed;
 double sm_rel_eff_chi2_cap_fixed_value = 25.0;
+PeakFitUtils::CoarseResolutionType sm_base_det_type = PeakFitUtils::CoarseResolutionType::Low;
 
 // Module-level state for the GA (following InitialFit_GA pattern).
 // The GA evaluator is wrapped to also return the foreground-only and raw
@@ -479,10 +480,11 @@ static double resolve_chi2_dof_cap( const NuclideConfigSolution &p )
 
 PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
 {
-  // Start from default_config for non-High (Low) since the GA optimizes for non-HPGe.
-  // All GA-optimized fields are overwritten below; non-optimized fields (e.g., skew_type,
-  // norm_css_color, shielding vectors) keep their default values.
-  PeakFitForNuclideConfig config = PeakFitForNuclideConfig::default_config( PeakFitUtils::CoarseResolutionType::Low );
+  // Start from the production default_config for the detector type this GA run targets
+  // (sm_base_det_type, set in main()).  All GA-optimized fields are overwritten below; non-optimized
+  // fields (e.g., skew_type, norm_css_color, shielding vectors) inherit that detector type's defaults
+  // so the genome behaves the same way it will in production for this detector class.
+  PeakFitForNuclideConfig config = PeakFitForNuclideConfig::default_config( sm_base_det_type );
 
   config.fwhm_functional_form = static_cast<DetectorPeakResponse::ResolutionFnctForm>(
     std::clamp( p.fwhm_functional_form, 0, static_cast<int>(DetectorPeakResponse::kNumResolutionFnctForm) - 1 ) );
@@ -540,6 +542,12 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
   config.rel_eff_eqn_type = static_cast<RelActCalc::RelEffEqnForm>(
     std::clamp( p.rel_eff_eqn_type, 0, static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel) ) );
   config.rel_eff_eqn_order = static_cast<size_t>( std::clamp( p.rel_eff_eqn_order, 0, 6 ) );
+
+  // FramPhysicalModel requires order 0; couple the genes here so the GA never samples an
+  // (order>0, FramPhysicalModel) combination that would trip the engine's debug assert (and is
+  // fitness-equivalent to order 0 in release, since the engine self-corrects).
+  if( config.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    config.rel_eff_eqn_order = 0;
 
   config.desperation_phys_model_atomic_number = p.desperation_phys_model_atomic_number;
   config.desperation_phys_model_areal_density_g_per_cm2 = p.desperation_phys_model_areal_density_g_per_cm2;
@@ -984,26 +992,18 @@ void SO_report_generation( int generation_number,
     sm_best_total_cost = last_generation.best_total_cost;
   }
 
-  // When the bg trial is enabled, the best individual's fg/bg breakdown is
-  // useful to report.  openGA only exposes `objective1` via best_total_cost,
-  // so we re-evaluate the best genes once on each best-yet generation to
-  // capture the components, then cache them in static state so subsequent
-  // non-best-yet generations can still report the correct (carried-over)
-  // best-ever breakdown.  This costs one extra GA eval per *new best*
-  // generation - acceptable.
+  // When the bg trial is enabled, report the best individual's fg/bg breakdown.  The components are
+  // already cached in the best chromosome's middle_costs (set by eval_solution), and openGA derives
+  // best_genes from chromosomes[best_chromosome_index], so we read them directly instead of
+  // re-evaluating: this reconciles exactly with best_total_cost and avoids a (potentially
+  // non-deterministic) extra full-dataset eval per new-best generation.
   if( sm_do_background_fit_trial && best_yet )
   {
-    try
+    const int best_idx = last_generation.best_chromosome_index;
+    if( (best_idx >= 0) && (best_idx < static_cast<int>(last_generation.chromosomes.size())) )
     {
-      const PeakFitForNuclideConfig best_config = genes_to_settings( best_genes );
-      double fg = 0.0, bg = 0.0;
-      ns_ga_eval_fcn( best_config, &fg, &bg );
-      sm_best_fg_cost = fg;
-      sm_best_bg_cost = bg;
-    }catch( const std::exception &e )
-    {
-      cerr << "Warning: failed to re-evaluate best individual for fg/bg breakdown: "
-           << e.what() << endl;
+      sm_best_fg_cost = last_generation.chromosomes[best_idx].middle_costs.objective_fg;
+      sm_best_bg_cost = last_generation.chromosomes[best_idx].middle_costs.objective_bg;
     }
   }
   const double best_fg = sm_do_background_fit_trial ? sm_best_fg_cost : last_generation.best_total_cost;
@@ -1141,9 +1141,13 @@ void write_results_html_and_n42(
       CandidatePeak_GA::correct_score_for_escape_peaks(
         combined_score.candidate_peak_score, pd.src_info->expected_signal_photopeaks );
 
-      combined_score.final_weight = combined_score.initial_fit_weights.find_weight
-                                  + combined_score.final_fit_score.total_weight
-                                  + combined_score.candidate_peak_score.score;
+      // Mirror the GA objective's sign convention (see score_one_spectrum in PeakFitImprove.cpp):
+      // lower-is-better, so the reward terms (find_weight, candidate score) are subtracted and the
+      // area-mismatch cost (total_weight) is added.  Keeps reported HTML totals consistent with the
+      // value the GA actually minimized.
+      combined_score.final_weight = combined_score.final_fit_score.total_weight
+                                  - ( combined_score.initial_fit_weights.find_weight
+                                      + combined_score.candidate_peak_score.score );
       const double fg_only_for_source = combined_score.final_weight;
       total_fg += fg_only_for_source;
 
