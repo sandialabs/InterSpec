@@ -705,7 +705,7 @@ bool eval_solution( const NuclideConfigSolution &p, NuclideConfigCost &c )
   c.objective_bg = bg;
 
   ns_num_evals_this_generation += 1;
-  if( (ns_num_evals_this_generation % 10) == 0 )
+  if( PeakFitImprove::debug_printout && ((ns_num_evals_this_generation % 10) == 0) )
     cout << "Have evaluated " << ns_num_evals_this_generation.load() << " individuals this generation." << endl;
 
   if( std::isnan( c.objective1 ) || std::isinf( c.objective1 ) )
@@ -1055,8 +1055,8 @@ void SO_report_generation( int generation_number,
     try
     {
       const PeakFitForNuclideConfig config = genes_to_settings( sm_best_genes );
-      const string html_filename = "nuclide_config_ga_best.html";
-      const string n42_dir = "output_n42_nuclide_config_ga";
+      const string html_filename = PeakFitImprove::sm_output_file_prefix + "nuclide_config_ga_best.html";
+      const string n42_dir = PeakFitImprove::sm_output_file_prefix + "output_n42_nuclide_config_ga";
       write_results_html_and_n42( *sm_precomputed_ptr, config, sm_background_mode, html_filename, n42_dir );
       cout << "Wrote HTML results to " << html_filename << endl;
     }
@@ -1543,7 +1543,7 @@ PeakFitForNuclideConfig do_nuclide_config_ga(
   ns_ga_eval_fcn = ga_eval_fcn;
   sm_precomputed_ptr = &precomputed;
 
-  sm_output_file.open( "nuclide_config_ga_results.txt" );
+  sm_output_file.open( PeakFitImprove::sm_output_file_prefix + "nuclide_config_ga_results.txt" );
   if( sm_do_background_fit_trial )
   {
     sm_output_file << "step\tcost_avg\tcost_best\tfg_best\tbg_best_raw"
@@ -1595,9 +1595,10 @@ PeakFitForNuclideConfig do_nuclide_config_ga(
   // Write final HTML with best solution
   try
   {
-    write_results_html_and_n42( precomputed, best_config, sm_background_mode,
-                                "nuclide_config_ga_final.html", "output_n42_nuclide_config_ga_final" );
-    cout << "Wrote final HTML results to nuclide_config_ga_final.html" << endl;
+    const string final_html = PeakFitImprove::sm_output_file_prefix + "nuclide_config_ga_final.html";
+    const string final_n42_dir = PeakFitImprove::sm_output_file_prefix + "output_n42_nuclide_config_ga_final";
+    write_results_html_and_n42( precomputed, best_config, sm_background_mode, final_html, final_n42_dir );
+    cout << "Wrote final HTML results to " << final_html << endl;
   }
   catch( const std::exception &e )
   {
