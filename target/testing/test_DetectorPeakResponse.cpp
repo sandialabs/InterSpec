@@ -49,6 +49,7 @@
 #include "SpecUtils/ParseUtils.h"
 
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/InterSpec.h"
@@ -1541,6 +1542,72 @@ BOOST_AUTO_TEST_CASE( test_read_gadras_csv_standalone )
 }//test_read_gadras_csv_standalone
 
 
+BOOST_AUTO_TEST_CASE( test_gadras_ptot_total_efficiency )
+{
+  cout << "\n\nTesting GADRAS PTOT -> total efficiency..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Data directory not set" );
+
+  const string csv_file = SpecUtils::append_path( g_data_dir,
+    "GenericGadrasDetectors/HPGe 40%/Efficiency.csv" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( csv_file ), "GADRAS Efficiency.csv not found: " + csv_file );
+
+  ifstream input( csv_file.c_str() );
+  BOOST_REQUIRE( input.is_open() );
+
+  DetectorPeakResponse::EffCsvParseResult result;
+  BOOST_REQUIRE_NO_THROW( result = DetectorPeakResponse::parseEfficiencyCsvFile( input ) );
+  BOOST_REQUIRE( result.drf && result.drf->isValid() );
+
+  // The GADRAS Efficiency.csv has a "PTOT" column -> a total efficiency curve.
+  BOOST_REQUIRE_MESSAGE( result.drf->hasTotalEfficiency(),
+                         "GADRAS CSV with a PTOT column should populate total efficiency" );
+
+  // Total efficiency should be finite, non-negative, and >= the full-energy
+  //  efficiency at every (mid-range) energy.  Note: GADRAS efficiencies can
+  //  legitimately exceed 100% (see the comment in parseEfficiencyCsvFile), so
+  //  there is no tight upper bound.
+  for( const float energy : { 200.0f, 500.0f, 661.7f, 1332.5f, 2000.0f } )
+  {
+    const float full = result.drf->intrinsicEfficiency( energy * static_cast<float>(PhysicalUnits::keV) );
+    const float total = result.drf->totalIntrinsicEfficiency( energy * static_cast<float>(PhysicalUnits::keV) );
+    BOOST_CHECK_MESSAGE( (total >= 0.0f) && std::isfinite(total),
+      "Total efficiency invalid at " + to_string(energy) + " keV: " + to_string(total) );
+    BOOST_CHECK_MESSAGE( total >= (full - 1.0E-4f),
+      "Total efficiency (" + to_string(total) + ") should be >= full-energy ("
+      + to_string(full) + ") at " + to_string(energy) + " keV" );
+  }
+
+  // Reading total efficiency must change the DRF hash relative to one without
+  //  it (this is the accepted lineage break) - confirm by clearing it.
+  auto drf_no_total = make_shared<DetectorPeakResponse>( *result.drf );
+  const uint64_t hash_with_total = drf_no_total->hashValue();
+  drf_no_total->setTotalEfficiencyCurve( nullptr );
+  BOOST_CHECK_NE( hash_with_total, drf_no_total->hashValue() );
+
+  // The full GADRAS read path (Efficiency.csv + Detector.dat) carries the
+  //  total efficiency across into the far-field-intrinsic DRF.
+  const string det_dir = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors/HPGe 40%" );
+  DetectorPeakResponse gadras_drf;
+  BOOST_REQUIRE_NO_THROW( gadras_drf.fromGadrasDirectory( det_dir ) );
+  BOOST_CHECK_MESSAGE( gadras_drf.hasTotalEfficiency(),
+                       "fromGadrasDirectory should carry the PTOT total efficiency across" );
+
+  // And it must survive an XML round-trip.
+  rapidxml::xml_document<char> doc;
+  rapidxml::xml_node<char> *parent = doc.allocate_node( rapidxml::node_element, "Parent" );
+  doc.append_node( parent );
+  gadras_drf.toXml( parent, &doc );
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromXml( parent->first_node("DetectorPeakResponse") ) );
+  BOOST_CHECK( restored->hasTotalEfficiency() );
+  BOOST_CHECK_EQUAL( restored->hashValue(), gadras_drf.hashValue() );
+
+  cout << "GADRAS PTOT total efficiency passed" << endl;
+}//test_gadras_ptot_total_efficiency
+
+
 BOOST_AUTO_TEST_CASE( test_parseDetectorDatGeometry )
 {
   cout << "\n\nTesting Detector.dat geometry parsing..." << endl;
@@ -1574,3 +1641,504 @@ BOOST_AUTO_TEST_CASE( test_parseDetectorDatGeometry )
 
   cout << "Successfully parsed Detector.dat geometry" << endl;
 }//test_parseDetectorDatGeometry
+
+
+BOOST_AUTO_TEST_CASE( test_total_efficiency_basics )
+{
+  cout << "\n\nTesting total efficiency basics..." << endl;
+
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  const vector<float> coeffs = { -5.0f, 0.5f, -0.01f };
+
+  auto drf = make_shared<DetectorPeakResponse>( "TotalEffTest", "total eff test" );
+  drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter, PhysicalUnits::keV,
+                               50.0f, 3000.0f,
+                               DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  BOOST_CHECK( !drf->hasTotalEfficiency() );
+  BOOST_CHECK( !drf->totalEfficiencyCurve() );
+  BOOST_CHECK_THROW( drf->totalIntrinsicEfficiency( 661.0f ), std::runtime_error );
+  BOOST_CHECK_THROW( drf->totalEfficiency( 661.0f, 100.0*PhysicalUnits::cm ), std::runtime_error );
+
+  // Set a pairs-based total efficiency curve
+  vector<DetectorPeakResponse::EnergyEfficiencyPair> pairs;
+  for( size_t i = 0; i < 10; ++i )
+  {
+    DetectorPeakResponse::EnergyEfficiencyPair p;
+    p.energy = 50.0f + 300.0f*i;
+    p.efficiency = 0.9f * exp( -0.0005f * p.energy ) + 0.02f;
+    pairs.push_back( p );
+  }
+
+  auto curve = make_shared<DetectorEfficiencyCurve>();
+  curve->setFromPairs( pairs, static_cast<float>(PhysicalUnits::keV) );
+
+  const uint64_t hash_before = drf->hashValue();
+  drf->setTotalEfficiencyCurve( curve );
+  BOOST_CHECK( drf->hasTotalEfficiency() );
+  BOOST_CHECK_NE( drf->hashValue(), hash_before );
+
+  // Total intrinsic efficiency matches akima interpolation of the pairs
+  for( const float energy : { 75.0f, 661.0f, 2000.0f } )
+  {
+    const float expected = DetectorPeakResponse::akimaInterpolate( energy, pairs );
+    BOOST_CHECK( close_enough( drf->totalIntrinsicEfficiency(energy), expected, 1e-6 ) );
+  }
+
+  // totalEfficiency(energy,dist) applies the same solid angle as efficiency(energy,dist)
+  const double dist = 50.0 * PhysicalUnits::cm;
+  const double frac_solid = DetectorPeakResponse::fractionalSolidAngle( det_diameter, dist );
+  BOOST_CHECK( close_enough( drf->totalEfficiency( 661.0f, dist ),
+                             frac_solid * drf->totalIntrinsicEfficiency(661.0f), 1e-6 ) );
+
+  // Total efficiency should be >= full-energy efficiency for a real detector
+  BOOST_CHECK_GT( drf->totalIntrinsicEfficiency(661.0f), drf->intrinsicEfficiency(661.0f) );
+
+  // Clearing restores the original hash
+  drf->setTotalEfficiencyCurve( nullptr );
+  BOOST_CHECK( !drf->hasTotalEfficiency() );
+  BOOST_CHECK_EQUAL( drf->hashValue(), hash_before );
+
+  cout << "Total efficiency basics passed" << endl;
+}//test_total_efficiency_basics
+
+
+namespace
+{
+  // Builds a DRF with both new optional fields set, for round-trip tests.
+  shared_ptr<DetectorPeakResponse> make_drf_with_new_fields()
+  {
+    const double det_diameter = 5.0 * PhysicalUnits::cm;
+    const vector<float> coeffs = { -5.0f, 0.5f, -0.01f };
+
+    auto drf = make_shared<DetectorPeakResponse>( "NewFieldsTest", "new fields test" );
+    drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter, PhysicalUnits::keV,
+                                 50.0f, 3000.0f,
+                                 DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+    // Full-energy efficiency uncertainty: bands + node covariance + coef covariance
+    const vector<float> uncert_energies = { 59.5f, 122.0f, 661.7f, 1332.5f };
+    const vector<float> uncert_vals = { 0.09f, 0.06f, 0.045f, 0.055f };
+    shared_ptr<DetectorEfficiencyUncert> tmp
+                = DetectorEfficiencyUncert::fromPointUncerts( uncert_energies, uncert_vals );
+    auto uncert = make_shared<DetectorEfficiencyUncert>( *tmp );
+
+    vector<EffUncertBand> bands;
+    bands.push_back( EffUncertBand{ 50.0f, 122.0f, 0.08f } );
+    bands.push_back( EffUncertBand{ 122.0f, 661.0f, 0.05f } );
+    uncert->setBands( bands );
+    uncert->setCoefficientCovariance( { 1.0E-4f, -2.0E-5f, 0.0f,
+                                        -2.0E-5f, 4.0E-5f, 0.0f,
+                                        0.0f, 0.0f, 9.0E-6f } );
+    drf->setEfficiencyUncert( uncert );
+
+    // Total efficiency with its own uncertainty
+    auto total = make_shared<DetectorEfficiencyCurve>();
+    total->setFromExpOfLogPowerSeries( { -1.5f, 0.4f, -0.08f }, {},
+                                       static_cast<float>(PhysicalUnits::keV) );
+    total->setUncertainty( DetectorEfficiencyUncert::fromPointUncerts(
+                            { 60.0f, 700.0f, 2300.0f }, { 0.1f, 0.05f, 0.07f } ) );
+    drf->setTotalEfficiencyCurve( total );
+
+    return drf;
+  }//make_drf_with_new_fields()
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_xml_v5_roundtrip )
+{
+  cout << "\n\nTesting XML v5 round-trip..." << endl;
+
+  shared_ptr<DetectorPeakResponse> orig = make_drf_with_new_fields();
+
+  rapidxml::xml_document<char> doc;
+  rapidxml::xml_node<char> *parent = doc.allocate_node( rapidxml::node_element, "Parent" );
+  doc.append_node( parent );
+  orig->toXml( parent, &doc );
+
+  const rapidxml::xml_node<char> *drf_node = parent->first_node( "DetectorPeakResponse" );
+  BOOST_REQUIRE( drf_node );
+
+  // Version attribute should be 5, since the new fields are present
+  const rapidxml::xml_attribute<char> *version_attr = drf_node->first_attribute( "version" );
+  BOOST_REQUIRE( version_attr );
+  BOOST_CHECK_EQUAL( string(version_attr->value()), "5" );
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromXml( drf_node ) );
+
+  // Float parsing may differ in the last ULP, so use the tolerant comparisons
+  BOOST_REQUIRE( restored->efficiencyUncert() );
+  BOOST_CHECK_NO_THROW( DetectorEfficiencyUncert::equalEnough( *restored->efficiencyUncert(),
+                                                          *orig->efficiencyUncert() ) );
+  BOOST_REQUIRE( restored->hasTotalEfficiency() );
+  BOOST_CHECK_NO_THROW( DetectorEfficiencyCurve::equalEnough( *restored->totalEfficiencyCurve(),
+                                                         *orig->totalEfficiencyCurve() ) );
+  BOOST_REQUIRE( restored->totalEfficiencyCurve()->uncertainty() );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  BOOST_CHECK_NO_THROW( DetectorPeakResponse::equalEnough( *orig, *restored ) );
+#endif
+
+  // A DRF without the new fields must keep writing a version <= 4
+  {
+    const double det_diameter = 5.0 * PhysicalUnits::cm;
+    auto plain = make_shared<DetectorPeakResponse>( "Plain", "plain test" );
+    plain->fromExpOfLogPowerSeries( { -5.0f, 0.5f }, {}, 0.0, det_diameter, PhysicalUnits::keV,
+                                   50.0f, 3000.0f,
+                                   DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+    rapidxml::xml_document<char> doc2;
+    rapidxml::xml_node<char> *parent2 = doc2.allocate_node( rapidxml::node_element, "Parent" );
+    doc2.append_node( parent2 );
+    plain->toXml( parent2, &doc2 );
+
+    const rapidxml::xml_node<char> *plain_node = parent2->first_node( "DetectorPeakResponse" );
+    BOOST_REQUIRE( plain_node );
+    const rapidxml::xml_attribute<char> *plain_version = plain_node->first_attribute( "version" );
+    BOOST_REQUIRE( plain_version );
+    const int version_num = atoi( plain_version->value() );
+    BOOST_CHECK_MESSAGE( version_num <= 4,
+      "DRF without new fields wrote version " + string(plain_version->value()) );
+  }
+
+  cout << "XML v5 round-trip passed" << endl;
+}//test_xml_v5_roundtrip
+
+
+BOOST_AUTO_TEST_CASE( test_xml_v4_backcompat )
+{
+  cout << "\n\nTesting back-compat reading of pre-version-5 XML..." << endl;
+
+  // A literal version-1 era DRF XML (exp-of-log series, far-field intrinsic)
+  const char *old_xml =
+    "<DetectorPeakResponse version=\"1\">"
+      "<Name>OldDrf</Name>"
+      "<Description>old format</Description>"
+      "<DetectorDiameter>5.00000000E+00</DetectorDiameter>"
+      "<EfficiencySource>UserAddedRelativeEfficiencyDrf</EfficiencySource>"
+      "<EfficiencyEnergyUnits>1</EfficiencyEnergyUnits>"
+      "<ResolutionForm>Undefined</ResolutionForm>"
+      "<EfficiencyForm>ExpOfLogPowerSeries</EfficiencyForm>"
+      "<ExpOfLogPowerSeriesCoeffs>-5.0 0.5 -0.01</ExpOfLogPowerSeriesCoeffs>"
+      "<Hash>123456789</Hash>"
+      "<ParentHash>0</ParentHash>"
+      "<Flags>0</Flags>"
+      "<Geometry>FAR-FIELD</Geometry>"
+    "</DetectorPeakResponse>";
+
+  vector<char> xml_buf( old_xml, old_xml + strlen(old_xml) );
+  xml_buf.push_back( '\0' );
+
+  rapidxml::xml_document<char> doc;
+  BOOST_REQUIRE_NO_THROW( doc.parse<rapidxml::parse_trim_whitespace>( xml_buf.data() ) );
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( drf->fromXml( doc.first_node("DetectorPeakResponse") ) );
+
+  BOOST_CHECK( drf->isValid() );
+  BOOST_CHECK_EQUAL( drf->name(), "OldDrf" );
+  BOOST_CHECK( !drf->efficiencyUncert() );
+  BOOST_CHECK( !drf->hasTotalEfficiency() );
+
+  cout << "Pre-version-5 XML back-compat passed" << endl;
+}//test_xml_v4_backcompat
+
+
+BOOST_AUTO_TEST_CASE( test_url_roundtrip_with_uncert )
+{
+  cout << "\n\nTesting URL round-trip with uncertainties..." << endl;
+
+  shared_ptr<DetectorPeakResponse> orig = make_drf_with_new_fields();
+
+  string url;
+  BOOST_REQUIRE_NO_THROW( url = orig->toAppUrl() );
+  BOOST_CHECK( !url.empty() );
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+
+  // The uncertainty should have made it across (values to URL float precision)
+  BOOST_REQUIRE( restored->efficiencyUncert() );
+  BOOST_CHECK( restored->efficiencyUncert()->hasBands() );
+  BOOST_CHECK( restored->efficiencyUncert()->hasNodeCovariance() );
+
+  // Coefficient covariance is never written to URLs
+  BOOST_CHECK( restored->efficiencyUncert()->coefficientCovariance().empty() );
+
+  const vector<double> test_energies = { 80.0, 661.0, 1332.0 };
+  const vector<double> orig_uncerts = orig->efficiencyUncert()->fracUncertainties( test_energies );
+  const vector<double> rest_uncerts = restored->efficiencyUncert()->fracUncertainties( test_energies );
+  for( size_t i = 0; i < test_energies.size(); ++i )
+    BOOST_CHECK( close_enough( orig_uncerts[i], rest_uncerts[i], 1e-3 ) );
+
+  // Total efficiency curve too
+  BOOST_REQUIRE( restored->hasTotalEfficiency() );
+  BOOST_REQUIRE( restored->totalEfficiencyCurve()->uncertainty() );
+  for( const float energy : { 100.0f, 661.0f, 2000.0f } )
+    BOOST_CHECK( close_enough( restored->totalIntrinsicEfficiency(energy),
+                               orig->totalIntrinsicEfficiency(energy), 1e-4 ) );
+
+  cout << "URL round-trip with uncertainties passed" << endl;
+}//test_url_roundtrip_with_uncert
+
+
+BOOST_AUTO_TEST_CASE( test_url_drop_order )
+{
+  cout << "\n\nTesting URL drop order when over the QR budget..." << endl;
+
+  // Build a pairs-form DRF with many points plus a large node covariance, so
+  //  the URL exceeds the QR budget and the new keys must get dropped first.
+  auto drf = make_shared<DetectorPeakResponse>( "DropOrderTest", "drop order test" );
+
+  // Enough points that the base URL is large (but still within the QR budget
+  //  once the new keys are dropped) - the node covariance then pushes it over.
+  vector<DetectorPeakResponse::EnergyEffPoint> points;
+  for( size_t i = 0; i < 120; ++i )
+  {
+    DetectorPeakResponse::EnergyEffPoint p;
+    p.energy = 20.0f + 24.5f*i;
+    p.efficiency = 0.5f * exp( -0.0005f * p.energy ) + 0.01f;
+    points.push_back( p );
+  }
+
+  drf->setEfficiencyPoints( points, 5.0*PhysicalUnits::cm, 0.0,
+                           DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  drf->setDetectorSetback( 0.5 * PhysicalUnits::cm );
+
+  // Large node covariance (40 nodes -> 820 upper-triangle entries)
+  vector<float> uncert_energies, uncert_vals;
+  for( size_t i = 0; i < 40; ++i )
+  {
+    uncert_energies.push_back( 30.0f + 70.0f*i );
+    uncert_vals.push_back( 0.05f + 0.001f*i );
+  }
+  auto big_uncert = make_shared<DetectorEfficiencyUncert>(
+            *DetectorEfficiencyUncert::fromPointUncerts( uncert_energies, uncert_vals ) );
+  vector<EffUncertBand> bands;
+  bands.push_back( EffUncertBand{ 50.0f, 661.0f, 0.07f } );
+  big_uncert->setBands( bands );
+  drf->setEfficiencyUncert( big_uncert );
+
+  string url;
+  BOOST_REQUIRE_NO_THROW( url = drf->toAppUrl() );
+
+  // The URL must parse, and the covariance keys must have been dropped before
+  //  any of the pre-existing keys (like SETBK).
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+  BOOST_CHECK( restored->isValid() );
+
+  BOOST_CHECK_MESSAGE( url.find("EFUC=") == string::npos,
+                       "Node covariance should have been dropped from oversized URL" );
+  BOOST_CHECK_MESSAGE( url.find("SETBK=") != string::npos,
+                       "SETBK should not be dropped before the new keys" );
+
+  cout << "  URL length after drops: " << url.size() << " chars" << endl;
+  cout << "URL drop order passed" << endl;
+}//test_url_drop_order
+
+
+BOOST_AUTO_TEST_CASE( test_hash_stability_with_uncert )
+{
+  cout << "\n\nTesting hash stability with new optional fields..." << endl;
+
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  const vector<float> coeffs = { -5.0f, 0.5f, -0.01f };
+
+  auto drf = make_shared<DetectorPeakResponse>( "HashTest", "hash test" );
+  drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, det_diameter, PhysicalUnits::keV,
+                               50.0f, 3000.0f,
+                               DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  const uint64_t hash_plain = drf->hashValue();
+
+  // Adding the uncertainty changes the hash; removing it restores it.
+  auto uncert = make_shared<DetectorEfficiencyUncert>(
+        *DetectorEfficiencyUncert::fromPointUncerts( {60.0f, 661.0f}, {0.05f, 0.04f} ) );
+  drf->setEfficiencyUncert( uncert );
+  const uint64_t hash_uncert = drf->hashValue();
+  BOOST_CHECK_NE( hash_plain, hash_uncert );
+
+  drf->setEfficiencyUncert( nullptr );
+  BOOST_CHECK_EQUAL( drf->hashValue(), hash_plain );
+
+  // Setting an empty uncertainty is the same as no uncertainty.
+  drf->setEfficiencyUncert( make_shared<DetectorEfficiencyUncert>() );
+  BOOST_CHECK_EQUAL( drf->hashValue(), hash_plain );
+  BOOST_CHECK( !drf->efficiencyUncert() );
+
+  cout << "Hash stability with new fields passed" << endl;
+}//test_hash_stability_with_uncert
+
+
+BOOST_AUTO_TEST_CASE( test_angle_outx_precision_covariance )
+{
+  cout << "\n\nTesting ANGLE .outx efficiencyPrecision -> covariance..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string outx_path = SpecUtils::append_path( g_test_data_dir,
+                                          "det_eff/Angle-example-efficiency.outx" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(outx_path), "Missing " + outx_path );
+
+  ifstream input( outx_path.c_str(), ios::in | ios::binary );
+  BOOST_REQUIRE( input.is_open() );
+
+  shared_ptr<DetectorPeakResponse> drf;
+  BOOST_REQUIRE_NO_THROW( drf = DetectorPeakResponse::parseAngleOutxFile( input ) );
+  BOOST_REQUIRE( drf && drf->isValid() );
+
+  shared_ptr<const DetectorEfficiencyUncert> uncert = drf->efficiencyUncert();
+  BOOST_REQUIRE_MESSAGE( uncert, "ANGLE .outx with precision attributes should give uncertainty" );
+  BOOST_REQUIRE( uncert->hasNodeCovariance() );
+
+  // First result in the example file: energy=30, efficiencyPrecision=1.41419957134595
+  //  -> fractional uncert ~0.4142, variance ~0.1716
+  const vector<float> &node_energies = uncert->covarianceEnergies();
+  const vector<float> &cov = uncert->covarianceMatrix();
+  const size_t n = node_energies.size();
+  BOOST_REQUIRE_GT( n, 4u );
+
+  BOOST_CHECK( close_enough( node_energies[0], 30.0, 1e-4 ) );
+  const double expected_frac = 1.41419957134595 - 1.0;
+  BOOST_CHECK_MESSAGE( close_enough( cov[0], expected_frac*expected_frac, 1e-3 ),
+    "Variance at 30 keV: got " + to_string(cov[0]) + ", expected "
+    + to_string(expected_frac*expected_frac) );
+
+  // Off-diagonal between first two nodes follows the default-corr-length kernel
+  {
+    const double corr_len = DetectorEfficiencyUncert::sm_defaultLogEnergyCorrLength;
+    BOOST_CHECK( close_enough( uncert->correlationLength(), corr_len, 1e-6 ) );
+
+    const double u0 = sqrt( double(cov[0]) );
+    const double u1 = sqrt( double(cov[1*n + 1]) );
+    const double dlne = log(double(node_energies[0])) - log(double(node_energies[1]));
+    const double rho = exp( -0.5 * pow(dlne/corr_len, 2.0) );
+    BOOST_CHECK( close_enough( cov[1], rho*u0*u1, 1e-3 ) );
+  }
+
+  cout << "ANGLE .outx precision covariance passed (" << n << " nodes)" << endl;
+}//test_angle_outx_precision_covariance
+
+
+BOOST_AUTO_TEST_CASE( test_eff_csv_uncert_column )
+{
+  cout << "\n\nTesting efficiency CSV with uncertainty column..." << endl;
+
+  // Synthetic Run_effoutput-style CSV with an "Eff. Unc" column
+  const char *csv =
+    "Energy[keV],Emitted,Peak,Eff,Eff. Unc\n"
+    "59.5,100000,500,0.005,0.0005\n"
+    "122.0,100000,2000,0.02,0.001\n"
+    "661.7,100000,1500,0.015,0.0006\n"
+    "1332.5,100000,800,0.008,0.0004\n";
+
+  stringstream input( csv );
+  DetectorPeakResponse::EffCsvParseResult result;
+  BOOST_REQUIRE_NO_THROW( result = DetectorPeakResponse::parseEfficiencyCsvFile( input ) );
+  BOOST_REQUIRE( result.drf && result.drf->isValid() );
+  BOOST_CHECK( !result.is_gadras_format );
+
+  shared_ptr<const DetectorEfficiencyUncert> uncert = result.drf->efficiencyUncert();
+  BOOST_REQUIRE_MESSAGE( uncert, "CSV with uncertainty column should give an uncertainty" );
+  BOOST_REQUIRE( uncert->hasNodeCovariance() );
+  BOOST_REQUIRE_EQUAL( uncert->covarianceEnergies().size(), 4u );
+
+  // Fractional uncertainty at 59.5 keV: 0.0005/0.005 = 0.1
+  const vector<double> fracs = uncert->fracUncertainties( { 59.5 } );
+  BOOST_CHECK_MESSAGE( close_enough( fracs[0], 0.1, 1e-3 ),
+    "Fractional uncert at 59.5 keV: got " + to_string(fracs[0]) + ", expected 0.1" );
+
+  // A 2-column CSV must not gain an uncertainty
+  const char *plain_csv =
+    "Energy[keV],Eff\n"
+    "59.5,0.005\n"
+    "122.0,0.02\n"
+    "661.7,0.015\n";
+
+  stringstream plain_input( plain_csv );
+  DetectorPeakResponse::EffCsvParseResult plain_result;
+  BOOST_REQUIRE_NO_THROW( plain_result = DetectorPeakResponse::parseEfficiencyCsvFile( plain_input ) );
+  BOOST_REQUIRE( plain_result.drf && plain_result.drf->isValid() );
+  BOOST_CHECK( !plain_result.drf->efficiencyUncert() );
+
+  cout << "Efficiency CSV uncertainty column passed" << endl;
+}//test_eff_csv_uncert_column
+
+
+BOOST_AUTO_TEST_CASE( test_drfextra_blob_roundtrip )
+{
+  cout << "\n\nTesting DrfExtra database-blob round-trip..." << endl;
+
+  shared_ptr<DetectorPeakResponse> orig = make_drf_with_new_fields();
+
+  const string blob = orig->drfExtraToXmlString();
+  BOOST_CHECK( !blob.empty() );
+  BOOST_CHECK( blob.find("<DrfExtra>") != string::npos );
+
+  auto restored = make_shared<DetectorPeakResponse>( *orig );
+  restored->setDrfExtraFromXmlString( "" );  //clears
+  BOOST_CHECK( !restored->efficiencyUncert() );
+  BOOST_CHECK( !restored->hasTotalEfficiency() );
+
+  restored->setDrfExtraFromXmlString( blob );
+  BOOST_REQUIRE( restored->efficiencyUncert() );
+  BOOST_CHECK_NO_THROW( DetectorEfficiencyUncert::equalEnough( *restored->efficiencyUncert(),
+                                                          *orig->efficiencyUncert() ) );
+  BOOST_REQUIRE( restored->hasTotalEfficiency() );
+  BOOST_CHECK_NO_THROW( DetectorEfficiencyCurve::equalEnough( *restored->totalEfficiencyCurve(),
+                                                         *orig->totalEfficiencyCurve() ) );
+
+  // A DRF without the new fields produces an empty blob
+  auto plain = make_shared<DetectorPeakResponse>( "Plain", "plain" );
+  plain->fromExpOfLogPowerSeries( { -5.0f, 0.5f }, {}, 0.0, 5.0*PhysicalUnits::cm,
+                                 PhysicalUnits::keV, 50.0f, 3000.0f,
+                                 DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  BOOST_CHECK( plain->drfExtraToXmlString().empty() );
+
+  // Garbage must not throw, just clear
+  BOOST_CHECK_NO_THROW( restored->setDrfExtraFromXmlString( "<not really &xml" ) );
+  BOOST_CHECK( !restored->efficiencyUncert() );
+  BOOST_CHECK( !restored->hasTotalEfficiency() );
+
+  cout << "DrfExtra blob round-trip passed" << endl;
+}//test_drfextra_blob_roundtrip
+
+
+BOOST_AUTO_TEST_CASE( test_set_efficiency_points_uncerts )
+{
+  cout << "\n\nTesting setEfficiencyPoints with per-point uncertainties..." << endl;
+
+  vector<DetectorPeakResponse::EnergyEffPoint> points = {
+    { 100.0f, 0.05f, 0.005f },
+    { 500.0f, 0.15f, 0.012f },
+    { 1000.0f, 0.12f, 0.011f },
+    { 2000.0f, 0.08f, {} }       //no uncertainty for this point
+  };
+
+  auto drf = make_shared<DetectorPeakResponse>( "PointUncertTest", "point uncert test" );
+  drf->setEfficiencyPoints( points, 5.0*PhysicalUnits::cm, 0.0,
+                           DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  shared_ptr<const DetectorEfficiencyUncert> uncert = drf->efficiencyUncert();
+  BOOST_REQUIRE( uncert );
+  BOOST_REQUIRE( uncert->hasNodeCovariance() );
+  BOOST_CHECK_EQUAL( uncert->covarianceEnergies().size(), 3u );  //only points with uncerts
+
+  // Fractional uncertainty at 100 keV: 0.005/0.05 = 0.1
+  const vector<double> fracs = uncert->fracUncertainties( { 100.0 } );
+  BOOST_CHECK( close_enough( fracs[0], 0.1, 1e-4 ) );
+
+  // Without uncertainties: no uncert object (and same hash as before the
+  //  uncertainty support was added)
+  vector<DetectorPeakResponse::EnergyEffPoint> plain_points = {
+    { 100.0f, 0.05f, {} }, { 500.0f, 0.15f, {} }, { 1000.0f, 0.12f, {} }
+  };
+  auto plain = make_shared<DetectorPeakResponse>( "PlainPoints", "plain points" );
+  plain->setEfficiencyPoints( plain_points, 5.0*PhysicalUnits::cm, 0.0,
+                             DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  BOOST_CHECK( !plain->efficiencyUncert() );
+
+  cout << "setEfficiencyPoints per-point uncertainties passed" << endl;
+}//test_set_efficiency_points_uncerts

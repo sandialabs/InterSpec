@@ -299,6 +299,13 @@ add_test( NAME TDetectorPeakResponse
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_DetectorEfficiency test_DetectorEfficiency.cpp )
+target_link_libraries( test_DetectorEfficiency PRIVATE InterSpecLib )
+add_test( NAME TDetectorEfficiency
+  COMMAND $<TARGET_FILE:test_DetectorEfficiency> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_PeakFitLM test_PeakFitLM.cpp )
 target_link_libraries( test_PeakFitLM PRIVATE InterSpecLib )
 add_test( NAME TPeakFitLM

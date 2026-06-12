@@ -263,6 +263,7 @@ set(sources
     src/PhysicalUnits.cpp
     src/PhysicalUnitsLocalized.cpp
     src/MassAttenuationTool.cpp
+    src/DetectorEfficiency.cpp
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
     src/GroupBox.cpp
@@ -391,6 +392,7 @@ set(headers
     InterSpec/PhysicalUnits.h
     InterSpec/PhysicalUnitsLocalized.h
     InterSpec/MassAttenuationTool.h
+    InterSpec/DetectorEfficiency.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h

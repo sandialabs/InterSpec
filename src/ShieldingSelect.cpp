@@ -4991,7 +4991,7 @@ ShieldingSourceFitCalc::ShieldingInfo ShieldingSelect::toShieldingInfo() const
       answer.m_fitDimensions[1] = fitArealDensity();
     }
     
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     answer.m_truthDimensions[0] = truthAN;
     answer.m_truthDimensionsTolerances[0] = truthANTolerance;
     answer.m_truthDimensions[1] = truthAD;
@@ -5041,7 +5041,7 @@ ShieldingSourceFitCalc::ShieldingInfo ShieldingSelect::toShieldingInfo() const
         break;
     }//switch( m_geometry )
 
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     answer.m_truthDimensions[0] = truthThickness;
     answer.m_truthDimensionsTolerances[0] = truthThicknessTolerance;
     answer.m_truthDimensions[1] = truthThicknessD2;
@@ -5097,7 +5097,7 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
       m_fitArealDensityCB->setChecked( info.m_fitDimensions[1] );
     }//if( m_fitArealDensityCB )
     
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     truthAN  = info.m_truthDimensions[0];
     truthANTolerance = info.m_truthDimensionsTolerances[0];
     truthAD  = info.m_truthDimensions[1];
@@ -5275,7 +5275,7 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
       m_fitMassFrac->setChecked( info.m_fitMassFrac );
     */
     
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     truthThickness = info.m_truthDimensions[0];
     truthThicknessTolerance = info.m_truthDimensionsTolerances[0];
     truthThicknessD2 = info.m_truthDimensions[1];

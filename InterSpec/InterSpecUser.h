@@ -120,7 +120,7 @@ class InterSpecUser;
 //The database this InterSpec is using; if higher than database registry, will
 //  automatically update tables at next execution
 //  See DataBaseVersionUpgrade.cpp/.h
-#define DB_SCHEMA_VERSION 12
+#define DB_SCHEMA_VERSION 13
 
 
 namespace Wt

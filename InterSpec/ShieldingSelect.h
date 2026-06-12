@@ -30,7 +30,7 @@
 #include <mutex>
 #include <utility>
 
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
 #include <boost/optional.hpp>
 #endif
 
@@ -521,7 +521,7 @@ public:
   ShieldingSourceFitCalc::ShieldingInfo toShieldingInfo() const;
   void fromShieldingInfo( const ShieldingSourceFitCalc::ShieldingInfo &info );
   
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
   boost::optional<double> truthThickness; //Spherical thickness, radial thickness (cylindrical), or rectagular width
   boost::optional<double> truthThicknessTolerance;
   boost::optional<double> truthAD;

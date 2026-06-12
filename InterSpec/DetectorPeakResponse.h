@@ -73,14 +73,17 @@ namespace rapidxml
       - Make sure that everywhere that gets a fractional solid angle, accounts for the setback.
       - At the same time, add a "fixed geometry" option, where distances then disappear everywhere
  - Add ability to store original intrinsic efficiencies, and their uncertainties, and similarly for FWHM.
- - Add ability to add "additional" energy dependent uncertainties
-  - Need to think about how to handle correlations between energies
- - Add material type and depth, so can approximate any interaction for cascade summing corrections
+ - Add angular response (relative-to-on-axis correction over energy and polar angle), composable
+   between DRFs of similar detector models.
+ - Add detector geometry/material description (crystal shape/dimensions, materials, surrounding
+   layers, collimator), for MC-based efficiency computation and cascade summing corrections.
  */
 
 
 //Forward declarations
 struct FormulaWrapper;
+class DetectorEfficiencyCurve;
+class DetectorEfficiencyUncert;
 
 
 class DetectorPeakResponse
@@ -307,7 +310,13 @@ public:
   {
     float energy, efficiency;
 
-    /** Currently unused efficiency uncertainty. */
+    /** Optional 1-sigma efficiency uncertainty, in the same units as `efficiency`.
+
+     When at least two points have this set, #setEfficiencyPoints will create a
+     #DetectorEfficiencyUncert node covariance from them, using the default
+     log-energy correlation length (see
+     DetectorEfficiencyUncert::sm_defaultLogEnergyCorrLength).
+     */
     std::optional<float> efficiencyUncert;
   };//struct EnergyEffPoint
 
@@ -317,6 +326,10 @@ public:
    @param detectorDiameter The detector diameter - set to zero or negative if geometry type is not EffGeometryType::FarField; must be positive if far field
    @param absoluteEffDistance Only applicable for absolute efficiency - gives deistance the efficiency is good at.
    @param geometry_type The efficiency type these points are for.
+
+   If two or more entries have `EnergyEffPoint::efficiencyUncert` set, then
+   #efficiencyUncert is populated from them (see #EnergyEffPoint); otherwise it
+   is cleared.
 
    Throws exception on error.
    */
@@ -647,6 +660,56 @@ public:
   */
   std::function<float( float )> intrinsicEfficiencyFcn() const;
 
+  /** The (optional) uncertainty of the full-energy efficiency; may be nullptr.
+
+   Note: the uncertainties are fractional (relative), so they are invariant
+   under the energy-independent rescalings done by #convertFixedGeometryType
+   and #reinterpretAsFarFieldIntrinsicEfficiency etc., and so are carried
+   across those conversions unchanged.
+   */
+  std::shared_ptr<const DetectorEfficiencyUncert> efficiencyUncert() const;
+
+  /** Sets the full-energy efficiency uncertainty; pass nullptr to clear.
+   Recomputes hash value.
+   */
+  void setEfficiencyUncert( std::shared_ptr<const DetectorEfficiencyUncert> uncert );
+
+  /** Convenience for `efficiencyUncert()->efficiencyFracCovariance(energies)`;
+   see DetectorEfficiencyUncert::efficiencyFracCovariance.  Energies in keV.
+   Returns an empty vector if no uncertainty is defined.
+   */
+  std::vector<double> efficiencyFracCovariance( const std::vector<double> &energies ) const;
+
+  /** Whether an (optional) total-efficiency curve has been set - i.e., the
+   probability an incident gamma deposits *any* energy in the detector, not
+   just its full energy.  Useful for cascade-summing corrections.
+   */
+  bool hasTotalEfficiency() const;
+
+  /** The (optional) total-efficiency curve; may be nullptr. */
+  std::shared_ptr<const DetectorEfficiencyCurve> totalEfficiencyCurve() const;
+
+  /** Sets the total-efficiency curve; pass nullptr to clear.
+   Recomputes hash value.
+   */
+  void setTotalEfficiencyCurve( std::shared_ptr<const DetectorEfficiencyCurve> curve );
+
+  /** Returns the fraction of gammas, at the specified energy, striking the
+   detector face, that deposit *any* energy in the detector (or for
+   fixed-geometry DRFs, the probability per decay or similar - mirrors
+   #intrinsicEfficiency).
+
+   Throws std::runtime_error if !hasTotalEfficiency().
+   */
+  float totalIntrinsicEfficiency( const float energy ) const;
+
+  /** Returns probability of an emitted gamma, from a point source at
+   `distance`, depositing any energy in the detector - mirrors #efficiency.
+
+   Throws std::runtime_error if !hasTotalEfficiency().
+   */
+  double totalEfficiency( const float energy, const double distance ) const;
+
   /** Gives the fraction of gammas or x-rays from a point source that would strike the detector crystal.
    
    @param detector_diameter The diameter of the detector, in units of PhysicalUnits.
@@ -795,12 +858,14 @@ public:
   //Some temporary accessors for debugging 2019050
   ResolutionFnctForm resolutionFcnType() const { return m_resolutionForm; }
   const std::vector<float> &resolutionFcnCoefficients() const { return m_resolutionCoeffs; }
-  EfficiencyFnctForm efficiencyFcnType() const { return m_efficiencyForm; }
-  //std::vector<EnergyEfficiencyPair> m_energyEfficiencies;
-  //std::string m_efficiencyFormula;
-  //std::function<float(float)> m_efficiencyFcn;
-  const std::vector<float> &efficiencyExpOfLogsCoeffs() const { return m_expOfLogPowerSeriesCoeffs; }
-  
+  EfficiencyFnctForm efficiencyFcnType() const;
+  const std::vector<float> &efficiencyExpOfLogsCoeffs() const;
+
+  /** The full-energy efficiency curve (energy units, representation, and any
+   uncertainty); always non-null.  See #m_efficiency.
+   */
+  std::shared_ptr<const DetectorEfficiencyCurve> efficiencyCurve() const;
+
   /** Generate JSON data for JavaScript detector response */
   std::string toJSON() const;
   
@@ -835,10 +900,23 @@ public:
                                               const std::vector<float> &coefs );
   
   
-  void toXml( ::rapidxml::xml_node<char> *parent, 
+  void toXml( ::rapidxml::xml_node<char> *parent,
               ::rapidxml::xml_document<char> *doc ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
-  
+
+  /** Serializes the full-energy efficiency uncertainty and #m_totalEfficiency
+   into a compact `<DrfExtra>` XML string, for database persistence (the
+   `m_drfExtra` column); returns an empty string when neither is set.
+   Future optional additions (detector geometry, angular response) should go
+   into this same column, avoiding further schema changes.
+   */
+  std::string drfExtraToXmlString() const;
+
+  /** Inverse of #drfExtraToXmlString; tolerant of an empty or unparsable
+   string (clears the relevant fields, does not throw).
+   */
+  void setDrfExtraFromXmlString( const std::string &xml );
+
 #if( PERFORM_DEVELOPER_CHECKS )
   //equalEnough(...): tests whether the passed in Measurement objects are
   //  equal, for most intents and purposes.  Allows some small numerical
@@ -861,6 +939,27 @@ public:
     { return energy==rhs.energy && efficiency==rhs.efficiency; }
   };//struct EnergyEfficiencyPair
 
+  /** Out-of-line helpers used by the (templated) #persist to marshal the
+   #m_efficiency representation to/from the frozen database columns - kept
+   out of the template so it only needs the forward-declared curve type.
+   (Declared after #EnergyEfficiencyPair since they use it.)
+   */
+  void efficiencyToDbFields( EfficiencyFnctForm &form, float &energyUnits,
+                             std::vector<EnergyEfficiencyPair> &pairs,
+                             std::string &formula,
+                             std::vector<float> &coefs,
+                             std::vector<float> &coefUncerts ) const;
+
+  /** Builds #m_efficiency (representation only; preserves any current rich
+   uncertainty) from the marshalled database fields; tolerant of a bad
+   formula (yields an invalid efficiency, matching legacy behavior).
+   */
+  void setEfficiencyFromDbFields( const EfficiencyFnctForm form, const float energyUnits,
+                                  const std::vector<EnergyEfficiencyPair> &pairs,
+                                  const std::string &formula,
+                                  const std::vector<float> &coefs,
+                                  const std::vector<float> &coefUncerts );
+
   //Returns the energy efficiency pairs
   const std::vector<EnergyEfficiencyPair> &getEnergyEfficiencyPair() const;
 
@@ -876,11 +975,6 @@ protected:
   void computeHash();
   
 protected:
-  //intrinsicEfficiencyFrom...(...) functions assume energy is input in keV
-  float intrinsicEfficiencyFromPairs( float energy ) const;
-  float intrinsicEfficiencyFromFcn( float energy ) const;
-  float intrinsicEfficiencyFromExpLnEqn( float energy ) const;
-
   /** Returns the multiplication factor to convert from absolute to intrinsic efficiency.
 
    This function computes the factor to multiply absolute efficiency by to get intrinsic efficiency.
@@ -907,51 +1001,28 @@ protected:
    */
   double m_detectorSetback;
 
-  //m_efficiencyEnergyUnits: units the absolute energy efficiency formula,
-  //  equation, or EnergyEfficiencyPairs are expecting.  Defaults to
-  //  PhysicalUnits::keV
-  float m_efficiencyEnergyUnits;
-
   ResolutionFnctForm m_resolutionForm;
   std::vector<float> m_resolutionCoeffs;
   /** Valid only if same size as m_resolutionCoeffs. */
   std::vector<float> m_resolutionUncerts;
-  
+
   DrfSource m_efficiencySource;
-  
-  //
-  EfficiencyFnctForm m_efficiencyForm;
-  
-  //Design decision: I dont like have member variables that are only used for
-  //  certain m_efficiencyForm types, and would have preferred to just have a
-  //  single std::function<double(double)> object that would abstract away
-  //  the differences, however, the ability to serialize the detector response
-  //  function easily, made this difficult to accomplish, so I'm doing it the
-  //  bone-headed way I'm not entirely satisfied with at the moment.
-  
-  //m_energyEfficiencies: the raw intrinsic energy to efficiency pairs, only
-  //  filled out if (m_efficiencyForm==kEnergyEfficiencyPairs), which also
-  //  implies the efficiency came from a CSV or ECC file.
-  std::vector<EnergyEfficiencyPair> m_energyEfficiencies;
-  
-   
-  //m_efficiencyFormula: the raw functional form for the intrinsic effeiciency,
-  // e.x. "-343.6 + 269.1*ln(x) + -83.8*ln(x)^2  + 13.0*ln(x)^3".
-  //  Only filled out if m_efficiencyForm==kFunctialEfficienyForm.
-  // 'x' should is energy in keV, and function should vary between 0.0 and 1.0
-  //  for valid energy range.
-  std::string m_efficiencyFormula;
-  
-  //m_efficiencyFcn: the actual function that returns the intrinsic efficiency
-  //  when m_efficiencyForm==kFunctialEfficienyForm
-  std::function<float(float)> m_efficiencyFcn;
-  
-  //m_expOfLogPowerSeriesCoeffs: the coefficients for the intrinsic efficiency
-  //  when m_efficiencyForm==kExpOfLogPowerSeries
-  std::vector<float> m_expOfLogPowerSeriesCoeffs;
- 
-  /** Valid if same size as m_expOfLogPowerSeriesCoeffs. */
-  std::vector<float> m_expOfLogPowerSeriesUncerts;
+
+  /** The full-energy (intrinsic) efficiency curve - the energy units, the
+   functional representation (energy/efficiency pairs, formula, or
+   exp-of-log-power-series with optional per-coefficient uncertainties), and
+   the optional rich uncertainty all live here.
+
+   Held as shared_ptr<const ...> with copy-on-write semantics (like
+   #m_peakFitDetPrefs / #m_totalEfficiency): always non-null; mutating
+   accessors build a fresh curve and reassign, so copies of a
+   DetectorPeakResponse safely share the immutable curve.
+
+   The FarFieldAbsolute absolute-to-intrinsic and solid-angle corrections are
+   NOT baked into the curve; they are applied by #intrinsicEfficiency /
+   #efficiency.
+   */
+  std::shared_ptr<const DetectorEfficiencyCurve> m_efficiency;
   
   //In order to keep track of lineage and uniqueness of detectors, we will use
   //  hash values.  All non-serialization related non-const member functions
@@ -1025,6 +1096,13 @@ protected:
 
   /** Optional peak fitting preferences associated with this DRF. */
   std::shared_ptr<const PeakFitDetPrefs> m_peakFitDetPrefs;
+
+  /** Optional total-efficiency curve - probability an incident gamma deposits
+   *any* energy (not just full-energy), for future cascade-summing
+   corrections.  Any uncertainty of the total efficiency is held within the
+   curve object itself.
+   */
+  std::shared_ptr<const DetectorEfficiencyCurve> m_totalEfficiency;
 
   /** On 20230916 updated from version 0 to 1, to account for `m_fixedGeometry` - will still write version 0 if
    `m_geomType == EffGeometryType::FarFieldIntrinsic`.
@@ -1115,49 +1193,49 @@ public:
   template<class Action>
   void persist( Action &a )
   {
+    // The full-energy efficiency representation lives in #m_efficiency (a
+    //  shared_ptr<const DetectorEfficiencyCurve>); the database columns are
+    //  frozen, so we marshal it through these locals - sourced from the curve
+    //  on write (#efficiencyToDbFields), and assembled back into a fresh curve
+    //  on read (#setEfficiencyFromDbFields, called below).  The curve type is
+    //  only forward-declared here, so the marshalling goes through those
+    //  out-of-line helpers rather than touching the curve in this template.
+    EfficiencyFnctForm efficiencyForm = kNumEfficiencyFnctForms;
+    float efficiencyEnergyUnits = static_cast<float>(PhysicalUnits::keV);
+    std::vector<EnergyEfficiencyPair> energyEfficiencies;
+    std::string efficiencyFormula;
+    std::vector<float> expOfLogCoeffs, expOfLogCoeffUncerts;
+
+    if( a.getsValue() )
+      efficiencyToDbFields( efficiencyForm, efficiencyEnergyUnits, energyEfficiencies,
+                            efficiencyFormula, expOfLogCoeffs, expOfLogCoeffUncerts );
+
     Wt::Dbo::field( a, m_name, "m_name", 255 );
     Wt::Dbo::field( a, m_description, "m_description", 255 );
     Wt::Dbo::field( a, m_detectorDiameter, "m_detectorDiameter" );
-    Wt::Dbo::field( a, m_efficiencyEnergyUnits, "m_efficiencyEnergyUnits" );
+    Wt::Dbo::field( a, efficiencyEnergyUnits, "m_efficiencyEnergyUnits" );
     Wt::Dbo::field( a, m_resolutionForm, "m_resolutionForm" );
-    
+
     if( a.getsValue() )
       saveFloatVectorToDB(m_resolutionCoeffs, "m_resolutionCoeffs", a);
     if( a.setsValue() || a.isSchema() )
       loadDBToFloatVector(m_resolutionCoeffs, "m_resolutionCoeffs", a);
-    
+
     Wt::Dbo::field( a, m_efficiencySource, "m_efficiencySource" );
-    Wt::Dbo::field( a, m_efficiencyForm, "m_efficiencyForm" );
+    Wt::Dbo::field( a, efficiencyForm, "m_efficiencyForm" );
 
     if( a.getsValue() )
-      saveEnergyEfficiencyPairVectorToDB(m_energyEfficiencies, "m_energyEfficiencies", a);
+      saveEnergyEfficiencyPairVectorToDB(energyEfficiencies, "m_energyEfficiencies", a);
     if( a.setsValue() || a.isSchema() )
-      loadDBToEnergyEfficiencyPairVector(m_energyEfficiencies, "m_energyEfficiencies", a);
-    
-    Wt::Dbo::field( a, m_efficiencyFormula, "m_efficiencyFormula" );
-    
-    if( (a.setsValue() || a.isSchema()) && m_efficiencyFormula.size() )
-    {
-      const bool isMeV = (m_efficiencyEnergyUnits > 10.0f);
-      
-      try
-      {
-        m_efficiencyFcn
-            = DetectorPeakResponse::makeEfficiencyFunctionFromFormula( m_efficiencyFormula, isMeV);
-      }catch( std::exception & )
-      {
-        //In principle this shouldnt happen - in practice it might
-        m_efficiencyFcn = std::function<float(float)>();
-        if( m_efficiencyFormula.find( "invalid formula:" ) == std::string::npos )
-          m_efficiencyFormula = "invalid formula: " + m_efficiencyFormula;
-      }//try / catch
-    }//if( reading from DB )
-    
+      loadDBToEnergyEfficiencyPairVector(energyEfficiencies, "m_energyEfficiencies", a);
+
+    Wt::Dbo::field( a, efficiencyFormula, "m_efficiencyFormula" );
+
     if( a.getsValue() )
-      saveFloatVectorToDB(m_expOfLogPowerSeriesCoeffs, "m_expOfLogPowerSeriesCoeffs", a);
+      saveFloatVectorToDB(expOfLogCoeffs, "m_expOfLogPowerSeriesCoeffs", a);
     if( a.setsValue() || a.isSchema() )
-      loadDBToFloatVector(m_expOfLogPowerSeriesCoeffs, "m_expOfLogPowerSeriesCoeffs", a);
-    
+      loadDBToFloatVector(expOfLogCoeffs, "m_expOfLogPowerSeriesCoeffs", a);
+
     Wt::Dbo::field( a, m_user, "InterSpecUser_id" );
     
     //Wt::Dbo doesnt support unsigned integers, so we got a little workaround
@@ -1260,7 +1338,7 @@ public:
     // Load order: pop setback (if flag set), then pop abs_dist (if FarFieldAbsolute)
     if( a.getsValue() )
     {
-      std::vector<float> uncerts_to_save = m_expOfLogPowerSeriesUncerts;
+      std::vector<float> uncerts_to_save = expOfLogCoeffUncerts;
       if( m_geomType == EffGeometryType::FarFieldAbsolute )
         uncerts_to_save.push_back( static_cast<float>(m_absoluteEfficiencyDistance) );
       if( m_detectorSetback > 0.0 )
@@ -1269,7 +1347,7 @@ public:
     }
     if( a.setsValue() || a.isSchema() )
     {
-      loadDBToFloatVector(m_expOfLogPowerSeriesUncerts, "m_expOfLogPowerSeriesUncerts", a);
+      loadDBToFloatVector(expOfLogCoeffUncerts, "m_expOfLogPowerSeriesUncerts", a);
 
       if( !a.isSchema() )
       {
@@ -1277,10 +1355,10 @@ public:
         const bool has_packed_setback = (m_flags & det_setback_packed_bit) != 0;
         m_flags &= ~det_setback_packed_bit;
 
-        if( has_packed_setback && !m_expOfLogPowerSeriesUncerts.empty() )
+        if( has_packed_setback && !expOfLogCoeffUncerts.empty() )
         {
-          m_detectorSetback = static_cast<double>(m_expOfLogPowerSeriesUncerts.back());
-          m_expOfLogPowerSeriesUncerts.pop_back();
+          m_detectorSetback = static_cast<double>(expOfLogCoeffUncerts.back());
+          expOfLogCoeffUncerts.pop_back();
         }else
         {
           m_detectorSetback = 0.0;
@@ -1289,15 +1367,21 @@ public:
         // Extract m_absoluteEfficiencyDistance from last element if FarFieldAbsolute
         if( m_geomType == EffGeometryType::FarFieldAbsolute )
         {
-          assert( !m_expOfLogPowerSeriesUncerts.empty() );
-          if( m_expOfLogPowerSeriesUncerts.empty() )
+          assert( !expOfLogCoeffUncerts.empty() );
+          if( expOfLogCoeffUncerts.empty() )
             throw std::runtime_error( "DetectorPeakResponse: FarFieldAbsolute must have m_expOfLogPowerSeriesUncerts" );
-          m_absoluteEfficiencyDistance = static_cast<double>(m_expOfLogPowerSeriesUncerts.back());
-          m_expOfLogPowerSeriesUncerts.pop_back();
+          m_absoluteEfficiencyDistance = static_cast<double>(expOfLogCoeffUncerts.back());
+          expOfLogCoeffUncerts.pop_back();
         }
       }//if( !a.isSchema() )
+
+      // Assemble the (representation portion of the) efficiency curve from the
+      //  marshalled locals; the rich uncertainty is attached later, from the
+      //  m_drfExtra column.
+      setEfficiencyFromDbFields( efficiencyForm, efficiencyEnergyUnits, energyEfficiencies,
+                                 efficiencyFormula, expOfLogCoeffs, expOfLogCoeffUncerts );
     }
-    
+
     if( a.getsValue() )
       saveFloatVectorToDB(m_resolutionUncerts, "m_resolutionUncerts", a);
     if( a.setsValue() || a.isSchema() )
@@ -1307,6 +1391,20 @@ public:
     Wt::Dbo::field( a, m_upperEnergy, "m_upperEnergy" );
     Wt::Dbo::field( a, m_createdUtc, "m_createdUtc" );
     Wt::Dbo::field( a, m_lastUsedUtc, "m_lastUsedUtc" );
+
+    // Optional extra DRF info (efficiency uncertainty, total efficiency, and
+    //  future additions), serialized as a `<DrfExtra>` XML fragment in a
+    //  single TEXT column added in DB schema version 13 (20260610).
+    {
+      std::string drfExtraXml;
+      if( a.getsValue() )
+        drfExtraXml = drfExtraToXmlString();
+
+      Wt::Dbo::field( a, drfExtraXml, "m_drfExtra" );
+
+      if( a.setsValue() || a.isSchema() )
+        setDrfExtraFromXmlString( drfExtraXml );
+    }
   } //void persist( Action &a )
 };//class DetectorPeakResponse
 

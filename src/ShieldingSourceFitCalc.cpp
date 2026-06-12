@@ -744,7 +744,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         node->append_attribute( attr );
       }//if( m_fitAtomicNumberCB )
       
-  #if( INCLUDE_ANALYSIS_TEST_SUITE )
+  #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       auto addTruth = [doc,generic_node]( const char *truthName, const boost::optional<double> &value ){
         if( value )
         {
@@ -1056,7 +1056,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
           m_fitDimensions[1] = fit;
       }//if( m_fitArealDensityCB )
       
-  #if( INCLUDE_ANALYSIS_TEST_SUITE )
+  #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       auto getTruth = [generic_node]( const char *truthName, boost::optional<double> &value ){
         value.reset();
         auto node = generic_node->first_node( truthName );
@@ -1209,8 +1209,8 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
             throw runtime_error( "Material node expected thickness Fit attribute" );
         }
       }//for( int i = 0; i < required_dim; ++i )
-      
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       auto getTruth = [material_node]( const char *truthName, boost::optional<double> &value ){
         value.reset();
         auto node = material_node->first_node( truthName );
@@ -1268,7 +1268,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         
         m_truthFitMassFractions[el][nuc] = make_pair( value, tolerance );
       }//XML_FOREACH_CHILD( src_node, mass_frac_node, "SelfAttenSrc" )
-#endif //INCLUDE_ANALYSIS_TEST_SUITE
+#endif //#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       
       bool vestigual_FitMassFraction = false;
       if( m_forFitting )
@@ -2365,7 +2365,7 @@ void fit_model( const std::string wtsession,
         row.ageDefiningNuc = initialdef.ageDefiningNuc;
         row.sourceType = initialdef.sourceType;
         
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
         row.truthActivity = initialdef.truthActivity;
         row.truthActivityTolerance = initialdef.truthActivityTolerance;
         row.truthAge = initialdef.truthAge;

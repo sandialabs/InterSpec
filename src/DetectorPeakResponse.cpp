@@ -44,6 +44,7 @@
 #include <boost/functional/hash.hpp>
 
 #include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
 
 #include "mpParser.h"
@@ -61,6 +62,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -70,7 +72,7 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int DetectorPeakResponse::sm_xmlSerializationVersion = 4;
+const int DetectorPeakResponse::sm_xmlSerializationVersion = 5;
 
 namespace
 {
@@ -471,10 +473,9 @@ DetectorPeakResponse::DetectorPeakResponse()
   : m_name( "DetectorPeakResponse" ),
     m_description( "" ),
     m_detectorDiameter( 0.0f ),
-    m_efficiencyEnergyUnits( static_cast<float>(PhysicalUnits::keV) ),
     m_resolutionForm( DetectorPeakResponse::kNumResolutionFnctForm ),
     m_efficiencySource( DrfSource::UnknownDrfSource ),
-    m_efficiencyForm( DetectorPeakResponse::kNumEfficiencyFnctForms ),
+    m_efficiency( std::make_shared<DetectorEfficiencyCurve>() ),
     m_hash( 0 ),
     m_parentHash( 0 ),
     m_flags( 0 ),
@@ -495,10 +496,9 @@ DetectorPeakResponse::DetectorPeakResponse( const std::string &name,
     m_name( name ),
     m_description( descrip ),
     m_detectorDiameter( 0.0 ),
-    m_efficiencyEnergyUnits( static_cast<float>(PhysicalUnits::keV) ),
     m_resolutionForm( DetectorPeakResponse::kNumResolutionFnctForm ),
     m_efficiencySource( DrfSource::UnknownDrfSource ),
-    m_efficiencyForm( DetectorPeakResponse::kNumEfficiencyFnctForms ),
+    m_efficiency( std::make_shared<DetectorEfficiencyCurve>() ),
     m_hash( 0 ),
     m_parentHash( 0 ),
     m_flags( 0x0 ),
@@ -539,35 +539,40 @@ void DetectorPeakResponse::setParentHashValue( const uint64_t val )
 void DetectorPeakResponse::computeHash()
 {
   std::size_t seed = 0;
-  
+
+  // Note: the full-energy efficiency lives in #m_efficiency now, but the hash
+  //  must combine the same values in the same order as before the fold, so
+  //  every existing DRF keeps its hash (and parent-hash lineage).
+  const DetectorEfficiencyCurve &eff = *m_efficiency;
+
   boost::hash_combine( seed, m_name );
   boost::hash_combine( seed, m_description );
-  
+
   boost::hash_combine( seed, m_detectorDiameter );
   if( m_detectorSetback > 0.0 )
     boost::hash_combine( seed, m_detectorSetback );
-  boost::hash_combine( seed, m_efficiencyEnergyUnits );
+  boost::hash_combine( seed, eff.energyUnits() );
   boost::hash_combine( seed, m_resolutionForm );
   for( const float val : m_resolutionCoeffs )
     boost::hash_combine( seed, val );
-  
+
   boost::hash_combine( seed, m_efficiencySource );
-  boost::hash_combine( seed, m_efficiencyForm );
-  
-  for( const EnergyEfficiencyPair &a : m_energyEfficiencies )
+  boost::hash_combine( seed, eff.form() );
+
+  for( const EnergyEfficiencyPair &a : eff.energyEfficiencies() )
   {
     boost::hash_combine( seed, a.energy );
     boost::hash_combine( seed, a.efficiency );
   }
-  
-  boost::hash_combine( seed, m_efficiencyFormula );
 
-  for( const float val : m_expOfLogPowerSeriesCoeffs )
+  boost::hash_combine( seed, eff.formula() );
+
+  for( const float val : eff.expOfLogPowerSeriesCoeffs() )
     boost::hash_combine( seed, val );
-  
-  for( const float val : m_expOfLogPowerSeriesUncerts )
+
+  for( const float val : eff.expOfLogPowerSeriesUncerts() )
     boost::hash_combine( seed, val );
-  
+
   //For legacy DRFs (pre 1.0.4 / 20190527) that dont have DRF source info,
   //  lower/upper energies, and m_flags, dont change the hash.
   if( m_lowerEnergy != 0.0 || m_upperEnergy != 0.0 )
@@ -597,8 +602,16 @@ void DetectorPeakResponse::computeHash()
     case EffGeometryType::FixedGeomActPerGram:
       break;
   }//switch( m_geomType )
-  
-  
+
+  // Only hash the optional efficiency uncertainty and total efficiency when
+  //  present, so legacy DRFs keep their existing hash values.
+  const std::shared_ptr<const DetectorEfficiencyUncert> eff_uncert = eff.uncertainty();
+  if( eff_uncert && !eff_uncert->isEmpty() )
+    eff_uncert->appendToHash( seed );
+
+  if( m_totalEfficiency )
+    m_totalEfficiency->appendToHash( seed );
+
   m_hash = seed;
 }//void computeHash()
 
@@ -607,19 +620,7 @@ void DetectorPeakResponse::computeHash()
 //  defined and can be used
 bool DetectorPeakResponse::isValid() const
 {
-  switch( m_efficiencyForm )
-  {
-    case kEnergyEfficiencyPairs:
-      return (m_energyEfficiencies.size() >= 2);
-    case kFunctialEfficienyForm:
-      return !m_efficiencyFormula.empty();
-    case kExpOfLogPowerSeries:
-      return !m_expOfLogPowerSeriesCoeffs.empty();
-    case kNumEfficiencyFnctForms:
-      break;
-  }//switch( m_efficiencyForm )
-  
-  return false;
+  return m_efficiency && m_efficiency->isValid();
 }//bool isValid() const
 
 
@@ -652,30 +653,16 @@ void DetectorPeakResponse::reset()
   m_description.clear();
   m_detectorDiameter = 0.0;
   m_detectorSetback = 0.0;
-  m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   m_resolutionForm = kNumResolutionFnctForm;
-  m_efficiencyForm = kNumEfficiencyFnctForms;
   m_resolutionCoeffs.clear();
-  m_energyEfficiencies.clear();
+  m_efficiency = std::make_shared<DetectorEfficiencyCurve>();
   m_hash = m_parentHash = 0;
   m_flags = 0;
   m_lowerEnergy = m_upperEnergy = 0.0;
   m_efficiencySource = DrfSource::UnknownDrfSource;
   m_createdUtc = m_lastUsedUtc = 0;
   m_geomType = EffGeometryType::FarFieldIntrinsic;
-  
-/*
-  m_name = "Flat";
-  m_description = "Flat response function; no resolution information";
-  m_detectorDiameter = 1.0*PhysicalUnits::cm;
-  EnergyEfficiencyPair p;
-  p.energy = 0.0;
-  p.efficiency = 1.0;
-  m_energyEfficiencies.push_back( p );
-  p.energy = 10000.0 * PhysicalUnits::keV;
-  p.efficiency = 1.0;
-  m_energyEfficiencies.push_back( p );
-*/
+  m_totalEfficiency.reset();
 }//void reset()
 
 
@@ -687,11 +674,9 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && m_description==rhs.m_description
           && fabs(m_detectorDiameter-rhs.m_detectorDiameter)<0.000001
           && fabs(m_detectorSetback-rhs.m_detectorSetback)<0.000001
-          && fabs(m_efficiencyEnergyUnits-rhs.m_efficiencyEnergyUnits)<0.000001f
           && m_resolutionForm==rhs.m_resolutionForm
-          && m_efficiencyForm==rhs.m_efficiencyForm
           && m_resolutionCoeffs==rhs.m_resolutionCoeffs
-          && m_energyEfficiencies==rhs.m_energyEfficiencies
+          && (*m_efficiency == *rhs.m_efficiency)
           && m_hash==rhs.m_hash
           && m_parentHash==rhs.m_parentHash
           && m_lowerEnergy==rhs.m_lowerEnergy
@@ -702,6 +687,9 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_peakFitDetPrefs && !rhs.m_peakFitDetPrefs)
               || (m_peakFitDetPrefs && rhs.m_peakFitDetPrefs
                   && (*m_peakFitDetPrefs == *rhs.m_peakFitDetPrefs)))
+          && ((!m_totalEfficiency && !rhs.m_totalEfficiency)
+              || (m_totalEfficiency && rhs.m_totalEfficiency
+                  && (*m_totalEfficiency == *rhs.m_totalEfficiency)))
           );
 }//operator==
 
@@ -718,6 +706,160 @@ void DetectorPeakResponse::setPeakFitDetPrefs( shared_ptr<const PeakFitDetPrefs>
 }//setPeakFitDetPrefs(...)
 
 
+shared_ptr<const DetectorEfficiencyUncert> DetectorPeakResponse::efficiencyUncert() const
+{
+  return m_efficiency ? m_efficiency->uncertainty() : nullptr;
+}//efficiencyUncert()
+
+
+void DetectorPeakResponse::setEfficiencyUncert( shared_ptr<const DetectorEfficiencyUncert> uncert )
+{
+  if( uncert && uncert->isEmpty() )
+    uncert.reset();
+
+  // Copy-on-write: build a fresh curve carrying the new uncertainty.
+  shared_ptr<DetectorEfficiencyCurve> curve = m_efficiency
+                ? make_shared<DetectorEfficiencyCurve>( *m_efficiency )
+                : make_shared<DetectorEfficiencyCurve>();
+  curve->setUncertainty( uncert );
+  m_efficiency = curve;
+  computeHash();
+}//setEfficiencyUncert(...)
+
+
+vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies ) const
+{
+  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
+  if( !uncert )
+    return {};
+
+  return uncert->efficiencyFracCovariance( energies );
+}//efficiencyFracCovariance(...)
+
+
+bool DetectorPeakResponse::hasTotalEfficiency() const
+{
+  return !!m_totalEfficiency;
+}//hasTotalEfficiency()
+
+
+shared_ptr<const DetectorEfficiencyCurve> DetectorPeakResponse::totalEfficiencyCurve() const
+{
+  return m_totalEfficiency;
+}//totalEfficiencyCurve()
+
+
+void DetectorPeakResponse::setTotalEfficiencyCurve( shared_ptr<const DetectorEfficiencyCurve> curve )
+{
+  if( curve && !curve->isValid() )
+    throw runtime_error( "DetectorPeakResponse::setTotalEfficiencyCurve: invalid curve" );
+
+  m_totalEfficiency = curve;
+  computeHash();
+}//setTotalEfficiencyCurve(...)
+
+
+float DetectorPeakResponse::totalIntrinsicEfficiency( const float energy ) const
+{
+  if( !m_totalEfficiency )
+    throw runtime_error( "DetectorPeakResponse::totalIntrinsicEfficiency:"
+                         " no total efficiency defined" );
+
+  return m_totalEfficiency->efficiency( energy );
+}//totalIntrinsicEfficiency(...)
+
+
+double DetectorPeakResponse::totalEfficiency( const float energy, const double dist ) const
+{
+  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist + m_detectorSetback );
+  return fracSolidAngle * totalIntrinsicEfficiency( energy );
+}//totalEfficiency(...)
+
+
+string DetectorPeakResponse::drfExtraToXmlString() const
+{
+  const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
+  const bool have_uncert = (eff_uncert && !eff_uncert->isEmpty());
+  if( !have_uncert && !m_totalEfficiency )
+    return "";
+
+  rapidxml::xml_document<char> doc;
+  rapidxml::xml_node<char> *base_node = doc.allocate_node( rapidxml::node_element, "DrfExtra" );
+  doc.append_node( base_node );
+
+  if( have_uncert )
+    eff_uncert->toXml( base_node, &doc );
+
+  if( m_totalEfficiency )
+    m_totalEfficiency->toXml( base_node, &doc, "TotalEfficiency" );
+
+  string answer;
+  rapidxml::print( std::back_inserter(answer), doc, rapidxml::print_no_indenting );
+
+  return answer;
+}//drfExtraToXmlString()
+
+
+void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
+{
+  // Clear any existing full-energy uncertainty (copy-on-write) and total eff.
+  if( m_efficiency && m_efficiency->uncertainty() )
+  {
+    shared_ptr<DetectorEfficiencyCurve> curve = make_shared<DetectorEfficiencyCurve>( *m_efficiency );
+    curve->setUncertainty( nullptr );
+    m_efficiency = curve;
+  }
+  m_totalEfficiency.reset();
+
+  if( xml.empty() )
+    return;
+
+  // Be tolerant of garbage - a corrupt extras column shouldnt prevent loading
+  //  the DRF itself.
+  try
+  {
+    vector<char> xml_buf( xml.begin(), xml.end() );
+    xml_buf.push_back( '\0' );
+
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_trim_whitespace>( xml_buf.data() );
+
+    const rapidxml::xml_node<char> *base_node = doc.first_node( "DrfExtra" );
+    if( !base_node )
+      return;
+
+    const rapidxml::xml_node<char> *uncert_node = base_node->first_node( "EfficiencyUncert" );
+    if( uncert_node )
+    {
+      auto uncert = make_shared<DetectorEfficiencyUncert>();
+      uncert->fromXml( uncert_node );
+      if( !uncert->isEmpty() )
+      {
+        shared_ptr<DetectorEfficiencyCurve> curve = m_efficiency
+                    ? make_shared<DetectorEfficiencyCurve>( *m_efficiency )
+                    : make_shared<DetectorEfficiencyCurve>();
+        curve->setUncertainty( uncert );
+        m_efficiency = curve;
+      }
+    }//if( uncert_node )
+
+    const rapidxml::xml_node<char> *total_node = base_node->first_node( "TotalEfficiency" );
+    if( total_node )
+    {
+      auto curve = make_shared<DetectorEfficiencyCurve>();
+      curve->fromXml( total_node );
+      if( curve->isValid() )
+        m_totalEfficiency = curve;
+    }
+  }catch( std::exception &e )
+  {
+    m_totalEfficiency.reset();
+    cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse"
+            " extras ('" << e.what() << "') - ignoring." << endl;
+  }//try / catch
+}//setDrfExtraFromXmlString(...)
+
+
 DetectorPeakResponse::DrfSource DetectorPeakResponse::drfSource() const
 {
   return m_efficiencySource;
@@ -726,8 +868,69 @@ DetectorPeakResponse::DrfSource DetectorPeakResponse::drfSource() const
 
 float DetectorPeakResponse::efficiencyEnergyUnits() const
 {
-  return m_efficiencyEnergyUnits;
+  return m_efficiency->energyUnits();
 }
+
+
+DetectorPeakResponse::EfficiencyFnctForm DetectorPeakResponse::efficiencyFcnType() const
+{
+  return m_efficiency->form();
+}
+
+
+const std::vector<float> &DetectorPeakResponse::efficiencyExpOfLogsCoeffs() const
+{
+  return m_efficiency->expOfLogPowerSeriesCoeffs();
+}
+
+
+std::shared_ptr<const DetectorEfficiencyCurve> DetectorPeakResponse::efficiencyCurve() const
+{
+  return m_efficiency;
+}
+
+
+void DetectorPeakResponse::efficiencyToDbFields( EfficiencyFnctForm &form, float &energyUnits,
+                             std::vector<EnergyEfficiencyPair> &pairs,
+                             std::string &formula,
+                             std::vector<float> &coefs,
+                             std::vector<float> &coefUncerts ) const
+{
+  const DetectorEfficiencyCurve &eff = *m_efficiency;
+  form = eff.form();
+  energyUnits = eff.energyUnits();
+  pairs = eff.energyEfficiencies();
+  formula = eff.formula();
+  coefs = eff.expOfLogPowerSeriesCoeffs();
+  coefUncerts = eff.expOfLogPowerSeriesUncerts();
+}//efficiencyToDbFields(...)
+
+
+void DetectorPeakResponse::setEfficiencyFromDbFields( const EfficiencyFnctForm form,
+                                  const float energyUnits,
+                                  const std::vector<EnergyEfficiencyPair> &pairs,
+                                  const std::string &formula,
+                                  const std::vector<float> &coefs,
+                                  const std::vector<float> &coefUncerts )
+{
+  // Preserve any rich uncertainty already attached (e.g. from a previous load).
+  shared_ptr<DetectorEfficiencyCurve> eff = make_shared<DetectorEfficiencyCurve>();
+  if( m_efficiency && m_efficiency->uncertainty() )
+    eff->setUncertainty( m_efficiency->uncertainty() );
+
+  try
+  {
+    eff->setRawFields( form, energyUnits, pairs, formula, coefs, coefUncerts );
+  }catch( std::exception & )
+  {
+    // Tolerate a bad/invalid representation (e.g. an un-parsable formula),
+    //  matching the legacy persist() behavior - leave the curve invalid.
+    eff = make_shared<DetectorEfficiencyCurve>();
+  }
+
+  m_efficiency = eff;
+}//setEfficiencyFromDbFields(...)
+
 
 void DetectorPeakResponse::setDrfSource( const DetectorPeakResponse::DrfSource source )
 {
@@ -802,11 +1005,11 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     throw runtime_error( "Failed to parse efficiency CSV file." );
 
   // Copy the parsed energy-efficiency pairs, applying the callers energy units
-  const std::vector<EnergyEfficiencyPair> &parsed_pairs = parse_result.drf->m_energyEfficiencies;
-  const float parsed_energy_units = parse_result.drf->m_efficiencyEnergyUnits;
+  const std::vector<EnergyEfficiencyPair> &parsed_pairs = parse_result.drf->m_efficiency->energyEfficiencies();
+  const float parsed_energy_units = parse_result.drf->m_efficiency->energyUnits();
 
-  m_energyEfficiencies.clear();
-  m_energyEfficiencies.reserve( parsed_pairs.size() );
+  std::vector<EnergyEfficiencyPair> pairs;
+  pairs.reserve( parsed_pairs.size() );
   for( const EnergyEfficiencyPair &p : parsed_pairs )
   {
     EnergyEfficiencyPair point;
@@ -814,20 +1017,31 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
     //  convert to the energy units requested by the caller.
     point.energy = p.energy * (energyUnits / parsed_energy_units);
     point.efficiency = p.efficiency;
-    m_energyEfficiencies.push_back( point );
+    pairs.push_back( point );
   }
 
   m_detectorDiameter = detectorDiameter;
   m_detectorSetback = 0.0;
-  m_efficiencyEnergyUnits = energyUnits;
+
+  std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
+  eff->setFromPairs( pairs, energyUnits );
+
+  // Carry across any per-point-derived efficiency uncertainty; its node
+  //  energies are always in keV (PhysicalUnits), independent of the energy
+  //  units of the efficiency representation, so no rescaling is needed.
+  eff->setUncertainty( parse_result.drf->m_efficiency->uncertainty() );
+  m_efficiency = eff;
+
+  // Carry across any total efficiency (GADRAS "PTOT") - it stores its own
+  //  energy units (keV), so it is independent of `energyUnits` here.
+  m_totalEfficiency = parse_result.drf->m_totalEfficiency;
 
   m_efficiencySource = DrfSource::UserImportedIntrisicEfficiencyDrf;
-  m_efficiencyForm = kEnergyEfficiencyPairs;
 
   m_flags = 0;
 
-  m_lowerEnergy = m_energyEfficiencies.front().energy;
-  m_upperEnergy = m_energyEfficiencies.back().energy;
+  m_lowerEnergy = pairs.front().energy;
+  m_upperEnergy = pairs.back().energy;
 
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
@@ -861,7 +1075,7 @@ void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakRe
   if( efficiencies.size() < 2 )
     throw runtime_error( "DetectorPeakResponse::setEfficiencyPoints(): need at least two efficiency points." );
 
-  m_energyEfficiencies.clear();
+  std::vector<EnergyEfficiencyPair> pairs;
   for( const EnergyEffPoint &p : efficiencies )
   {
     if( p.energy < 0.0 || p.efficiency < 0.0 )
@@ -871,20 +1085,44 @@ void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakRe
     eep.energy = p.energy;
     eep.efficiency = p.efficiency;
 
-    m_energyEfficiencies.push_back( std::move(eep) );
+    pairs.push_back( std::move(eep) );
   }//for( const EnergyEffPoint &p : efficiencies )
 
-  std::sort( begin(m_energyEfficiencies), end(m_energyEfficiencies) );
+  std::sort( begin(pairs), end(pairs) );
+
+  // If per-point uncertainties were given, build a node covariance from them,
+  //  assuming the default log-energy correlation length (the uncertainties of
+  //  such points usually come from smooth, systematic effects, so nearby
+  //  energies are strongly correlated).
+  shared_ptr<DetectorEfficiencyUncert> uncert;
+  {
+    vector<float> uncert_energies, frac_uncerts;
+    for( const EnergyEffPoint &p : efficiencies )
+    {
+      if( p.efficiencyUncert.has_value() && (p.efficiency > 0.0f)
+          && (p.efficiencyUncert.value() > 0.0f) && (p.energy > 0.0f) )
+      {
+        uncert_energies.push_back( p.energy );
+        frac_uncerts.push_back( p.efficiencyUncert.value() / p.efficiency );
+      }
+    }//for( const EnergyEffPoint &p : efficiencies )
+
+    if( uncert_energies.size() >= 2 )
+      uncert = DetectorEfficiencyUncert::fromPointUncerts( uncert_energies, frac_uncerts );
+  }
 
   m_detectorDiameter = detectorDiameter;
   m_detectorSetback = 0.0;
-  m_efficiencyEnergyUnits = static_cast<float>(PhysicalUnits::keV);
 
-  m_efficiencyForm = kEnergyEfficiencyPairs;
+  std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
+  eff->setFromPairs( pairs, static_cast<float>(PhysicalUnits::keV) );
+  eff->setUncertainty( uncert );
+  m_efficiency = eff;
+
   m_flags = 0;
 
-  m_lowerEnergy = m_energyEfficiencies.front().energy;
-  m_upperEnergy = m_energyEfficiencies.back().energy;
+  m_lowerEnergy = pairs.front().energy;
+  m_upperEnergy = pairs.back().energy;
 
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
@@ -911,18 +1149,12 @@ void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
                                                           //const bool fixedGeometry
                                                           const EffGeometryType geometry_type )
 {
-  const bool isMeV = (energyUnits > 10.f);
-  std::shared_ptr<FormulaWrapper > expression
-                                = std::make_shared<FormulaWrapper>( fcnstr, isMeV );
-  
-  m_efficiencyForm = kFunctialEfficienyForm;
-  m_efficiencyFormula = fcnstr;
-  m_efficiencyFcn = [expression]( float energy ) -> float {
-    return expression->efficiency( energy );
-  };
+  std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
+  eff->setFromFormula( fcnstr, energyUnits );  //throws if formula invalid
+  m_efficiency = eff;
+
   m_detectorDiameter = diameter;
   m_detectorSetback = 0.0;
-  m_efficiencyEnergyUnits = energyUnits;
 
   m_flags = 0;
 
@@ -954,7 +1186,8 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   float lowerEnergy = 0.0, upperEnergy = 0.0;
   float detSetback = 0.0;
 
-  m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
+  // Note: the efficiency representation (incl. energy units) is set below by
+  //  the fromEnergyEfficiencyCsv call.
   m_resolutionCoeffs.clear();
   m_resolutionForm = kGadrasResolutionFcn;
   m_resolutionCoeffs.resize( 3, 0.0 );
@@ -1160,20 +1393,13 @@ void DetectorPeakResponse::fromExpOfLogPowerSeries(
   if( (geometry_type == EffGeometryType::FarFieldAbsolute) && (charactDist <= 0.0) )
     throw runtime_error( "DetectorPeakResponse::fromExpOfLogPowerSeries: For FarFieldAbsolute, you must provide a positive distance" );
   
-  m_energyEfficiencies.clear();
-  m_expOfLogPowerSeriesCoeffs.clear();
-  m_expOfLogPowerSeriesUncerts.clear();
-  
-  m_efficiencyFcn = std::function<float(float)>();
-  m_efficiencyFormula.clear();
-  
-  m_efficiencyForm = kExpOfLogPowerSeries;
-  m_efficiencyEnergyUnits = equationEnergyUnits;
+  std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
+  eff->setFromExpOfLogPowerSeries( coefs, uncerts, equationEnergyUnits );
+  m_efficiency = eff;
+
   m_detectorDiameter = det_diam;
   m_detectorSetback = 0.0;
-  m_expOfLogPowerSeriesCoeffs = coefs;
-  m_expOfLogPowerSeriesUncerts = uncerts;
-  
+
   //now we need to account for characterizationDist
   if( geometry_type == EffGeometryType::FarFieldAbsolute )
   {
@@ -1697,58 +1923,60 @@ std::string DetectorPeakResponse::toAppUrl() const
   if( m_detectorSetback > 0.0 )
     parts["SETBK"] = SpecUtils::printCompact( m_detectorSetback / PhysicalUnits::cm, 5 );
 
+  const DetectorEfficiencyCurve &eff = *m_efficiency;
+
   // We'll assume units are MeV, unless stated otherwise.
-  const bool notKeV = (fabs(m_efficiencyEnergyUnits - PhysicalUnits::keV) > 0.001);
+  const bool notKeV = (fabs(eff.energyUnits() - PhysicalUnits::keV) > 0.001);
   if( notKeV )
-    parts["EUNIT"] = SpecUtils::printCompact( m_efficiencyEnergyUnits, 4 );
-  
-  switch( m_efficiencyForm )
+    parts["EUNIT"] = SpecUtils::printCompact( eff.energyUnits(), 4 );
+
+  switch( eff.form() )
   {
     case EfficiencyFnctForm::kEnergyEfficiencyPairs:
     {
-      assert( m_energyEfficiencies.size() );
-      
+      const vector<EnergyEfficiencyPair> &eep = eff.energyEfficiencies();
+      assert( eep.size() );
+
       parts["EFFT"] = "P";
       vector<float> energies, effs;
-      
-      for( size_t i = 0; i < m_energyEfficiencies.size(); ++i )
+
+      for( size_t i = 0; i < eep.size(); ++i )
       {
-        const EnergyEfficiencyPair &v = m_energyEfficiencies[i];
-        energies.push_back( v.energy );
-        effs.push_back( v.efficiency );
+        energies.push_back( eep[i].energy );
+        effs.push_back( eep[i].efficiency );
       }
-      
+
       parts["EFFX"] = to_url_flt_array( energies, 4 );
       parts["EFFY"] = to_url_flt_array( effs, 5 );
       break;
     }//case EfficiencyFnctForm::kEnergyEfficiencyPairs:
-      
+
     case EfficiencyFnctForm::kFunctialEfficienyForm:
     {
-      assert( m_efficiencyFormula.size() );
-      
+      assert( eff.formula().size() );
+
       parts["EFFT"] = "F";
-      parts["EFFE"] = url_encode(m_efficiencyFormula, "", false);
+      parts["EFFE"] = url_encode(eff.formula(), "", false);
       break;
     }
-      
+
     case EfficiencyFnctForm::kExpOfLogPowerSeries:
     {
-      assert( m_expOfLogPowerSeriesCoeffs.size() );
-      
+      assert( eff.expOfLogPowerSeriesCoeffs().size() );
+
       parts["EFFT"] = "E";
-      parts["EFFC"] = to_url_flt_array( m_expOfLogPowerSeriesCoeffs, 7 );
-      if( !m_expOfLogPowerSeriesUncerts.empty() )
-        parts["EFFU"] = to_url_flt_array( m_expOfLogPowerSeriesUncerts, 7 );
+      parts["EFFC"] = to_url_flt_array( eff.expOfLogPowerSeriesCoeffs(), 7 );
+      if( !eff.expOfLogPowerSeriesUncerts().empty() )
+        parts["EFFU"] = to_url_flt_array( eff.expOfLogPowerSeriesUncerts(), 7 );
       break;
     }
-      
+
     case EfficiencyFnctForm::kNumEfficiencyFnctForms:
       assert( 0 );
-      throw std::logic_error("m_efficiencyForm");
+      throw std::logic_error("m_efficiency form undefined");
       break;
-  }//switch( m_efficiencyForm )
-  
+  }//switch( eff.form() )
+
   
   switch( m_resolutionForm )
   {
@@ -1834,6 +2062,19 @@ std::string DetectorPeakResponse::toAppUrl() const
       parts["PFP"] = url_encode( pfp_url, "", false );
   }
 
+  const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = eff.uncertainty();
+  if( eff_uncert && !eff_uncert->isEmpty() )
+    eff_uncert->toUrlParts( parts, "" );
+
+  if( m_totalEfficiency )
+  {
+    m_totalEfficiency->toUrlParts( parts, "T" );
+
+    // A formula needs url-encoding, same as "EFFE"
+    if( parts.count("TEFE") )
+      parts["TEFE"] = url_encode( parts["TEFE"], "", false );
+  }//if( m_totalEfficiency )
+
   auto current_url_len = [&parts]() -> size_t {
     size_t nchar = (2 * parts.size()) - (parts.size() ? 1 : 0);
     for( const auto &p : parts )
@@ -1883,7 +2124,35 @@ std::string DetectorPeakResponse::toAppUrl() const
     return (current_url_len() < max_binary_num);
   };//remove_part
   
-  // PeakFitDetPrefs is optional metadata - drop first
+  // The new (20260610) optional additions get dropped before anything that
+  //  was previously kept.
+  // First the total-efficiency uncertainty...
+  remove_part("TEFUC");
+  remove_part("TEFUE");
+  remove_part("TEFUL");
+  if( remove_part("TEFUB") )
+    return combine_parts();
+
+  // ...then the full-energy node covariance (usually the largest payload)...
+  remove_part("EFUC");
+  remove_part("EFUE");
+  if( remove_part("EFUL") )
+    return combine_parts();
+
+  // ...then the piecewise uncertainty bands (small, user-entered)...
+  if( remove_part("EFUB") )
+    return combine_parts();
+
+  // ...then the total-efficiency curve itself.
+  remove_part("TEFT");
+  remove_part("TEFX");
+  remove_part("TEFY");
+  remove_part("TEFE");
+  remove_part("TEFC");
+  if( remove_part("TEUNIT") )
+    return combine_parts();
+
+  // PeakFitDetPrefs is optional metadata - drop first of the pre-existing parts
   if( remove_part("PFP") )
     return combine_parts();
 
@@ -2265,15 +2534,17 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
        
   m_detectorDiameter = detectorDiameter;
   m_detectorSetback = detectorSetback;
-  m_efficiencyEnergyUnits = efficiencyEnergyUnits;
 
-  m_efficiencyForm = eff_form;
-  m_efficiencyFormula = eqn;
-  m_efficiencyFcn = efficiencyFcn;
-  m_energyEfficiencies = energyEfficiencies;
-  m_expOfLogPowerSeriesCoeffs = expOfLogPowerSeriesCoeffs;
-  m_expOfLogPowerSeriesUncerts = expOfLogPowerSeriesUncerts;
-       
+  // Assemble the efficiency curve from the parsed representation, plus its
+  //  optional uncertainty ("EFUB"/"EFUE"/"EFUC"/"EFUL" keys).
+  {
+    std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
+    eff->setRawFields( eff_form, efficiencyEnergyUnits, energyEfficiencies, eqn,
+                       expOfLogPowerSeriesCoeffs, expOfLogPowerSeriesUncerts );
+    eff->setUncertainty( DetectorEfficiencyUncert::fromUrlParts( parts, "" ) );
+    m_efficiency = eff;
+  }
+
   m_resolutionForm = resolutionForm;
   m_resolutionCoeffs = resolutionCoeffs;
   m_resolutionUncerts = resolutionUncerts;
@@ -2303,6 +2574,10 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   {
     m_peakFitDetPrefs.reset();
   }
+
+  // Optional total efficiency ("TEFT"/etc keys); returns nullptr if absent.
+  //  (The full-energy efficiency uncertainty was applied to m_efficiency above.)
+  m_totalEfficiency = DetectorEfficiencyCurve::fromUrlParts( parts, "T" );
 
   if( !isValid() )
     throw runtime_error( "fromAppUrl: DRF is invalid - even though it shouldnt be - logic error in this function." );
@@ -2466,11 +2741,13 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
   }
   
   answer->m_detectorDiameter = 0.0f;
-  answer->m_efficiencyEnergyUnits = static_cast<float>(PhysicalUnits::keV);
+  {
+    std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
+    eff->setFromPairs( energy_efficiencies, static_cast<float>(PhysicalUnits::keV) );
+    answer->m_efficiency = eff;
+  }
   answer->m_resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
   answer->m_efficiencySource = DrfSource::IsocsEcc;
-  answer->m_efficiencyForm = EfficiencyFnctForm::kEnergyEfficiencyPairs;
-  answer->m_energyEfficiencies = energy_efficiencies;
   answer->m_flags = 0;
   answer->m_lowerEnergy = energy_efficiencies.front().energy;
   answer->m_upperEnergy = energy_efficiencies.back().energy;
@@ -2479,7 +2756,7 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
   answer->m_geomType = EffGeometryType::FixedGeomTotalAct;
   answer->m_parentHash = 0;
   answer->computeHash();
-  
+
   return {answer, source_area, source_mass};
 }//shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input )
 
@@ -2592,7 +2869,8 @@ std::shared_ptr<DetectorPeakResponse>
     eep.efficiency = efficiency;
     energy_efficiencies.push_back( eep );
 
-    // Parse efficiencyPrecision for future use (relative precision factor from ANGLE)
+    // The "efficiencyPrecision" attribute is a multiplicative precision factor
+    //  (e.g., 1.03 means the efficiency is known to within ~3%).
     const auto *prec_attr = XML_FIRST_ATTRIB( result, "efficiencyPrecision" );
     if( prec_attr && prec_attr->value_size() )
     {
@@ -2623,11 +2901,13 @@ std::shared_ptr<DetectorPeakResponse>
 
   answer->m_detectorDiameter = static_cast<float>( 2.0 * crystal_radius * dist_unit );
   answer->m_detectorSetback = setback_pu;
-  answer->m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
+  {
+    std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
+    eff->setFromPairs( energy_efficiencies, static_cast<float>(PhysicalUnits::keV) );
+    answer->m_efficiency = eff;
+  }
   answer->m_resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
   answer->m_efficiencySource = DrfSource::AngleOutx;
-  answer->m_efficiencyForm = EfficiencyFnctForm::kEnergyEfficiencyPairs;
-  answer->m_energyEfficiencies = energy_efficiencies;
   answer->m_flags = 0;
   answer->m_lowerEnergy = energy_efficiencies.front().energy;
   answer->m_upperEnergy = energy_efficiencies.back().energy;
@@ -2635,6 +2915,44 @@ std::shared_ptr<DetectorPeakResponse>
   answer->m_lastUsedUtc = answer->m_createdUtc;
   answer->m_geomType = EffGeometryType::FixedGeomTotalAct;
   answer->m_parentHash = 0;
+
+  // Convert the per-energy multiplicative precision factors into a node
+  //  covariance of the fractional efficiency error, assuming the default
+  //  log-energy correlation length (ANGLE errors are dominated by smooth,
+  //  systematic transfer/geometry-model effects, so nearby energies are
+  //  strongly correlated).
+  if( energy_precision.size() >= 4 )
+  {
+    vector<float> uncert_energies, frac_uncerts;
+    for( const pair<float,float> &ep : energy_precision )
+    {
+      // Values are multiplicative factors >= 1.0 (e.g. 1.03 -> ~3%); if a
+      //  value below 1.0 is ever encountered, treat it as already-fractional.
+      const float p = ep.second;
+      const float frac = (p >= 1.0f) ? (p - 1.0f) : p;
+      if( (frac >= 0.0f) && !IsNan(frac) && !IsInf(frac) )
+      {
+        uncert_energies.push_back( ep.first );
+        frac_uncerts.push_back( frac );
+      }
+    }//for( const pair<float,float> &ep : energy_precision )
+
+    if( uncert_energies.size() >= 4 )
+    {
+      try
+      {
+        std::shared_ptr<DetectorEfficiencyCurve> eff
+                  = std::make_shared<DetectorEfficiencyCurve>( *answer->m_efficiency );
+        eff->setUncertainty( DetectorEfficiencyUncert::fromPointUncerts( uncert_energies, frac_uncerts ) );
+        answer->m_efficiency = eff;
+      }catch( std::exception &e )
+      {
+        cerr << "parseAngleOutxFile: failed to create efficiency uncertainty: "
+             << e.what() << endl;
+      }
+    }//if( uncert_energies.size() >= 4 )
+  }//if( energy_precision.size() >= 4 )
+
   answer->computeHash();
 
   return answer;
@@ -2675,6 +2993,8 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
   bool is_percentage = false;
   int energy_col_index = 0; // default: energy in first column
   int eff_col_index = 1;    // default: efficiency in second column
+  int uncert_col_index = -1; // efficiency uncertainty column, if present
+  int total_col_index = -1; // total-efficiency column (GADRAS "PTOT"), if present
   float energy_units_scale = static_cast<float>( PhysicalUnits::keV ); // default keV
   bool energy_units_from_header = false; // whether we detected energy units from the header
 
@@ -2687,6 +3007,24 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
       is_percentage = true;
       energy_col_index = 0;
       eff_col_index = 1; // "Peak" column, index 1
+
+      // The GADRAS Efficiency.csv "PTOT" column gives the total efficiency of
+      //  the detector (probability of depositing any energy, not just the full
+      //  energy) - capture it for cascade-summing corrections.  Find it by name
+      //  on the column-name header row (e.g. "Energy,Peak,PCOM,...,PTOT,...").
+      vector<string> name_fields;
+      SpecUtils::split( name_fields, header_lines[0], ",\t" );
+      for( size_t c = 0; c < name_fields.size(); ++c )
+      {
+        string name = name_fields[c];
+        SpecUtils::trim( name );
+        if( SpecUtils::iequals_ascii( name, "PTOT" ) )
+        {
+          total_col_index = static_cast<int>( c );
+          break;
+        }
+      }//for( find PTOT column )
+
       break;
     }
   }//for( check GADRAS format )
@@ -2747,15 +3085,20 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
       // Check for efficiency column: look for "eff" in the field name
       // Prefer exact "Eff" match, but also accept "efficiency", etc.
       // Exclude columns like "Eff. Unc", "Eff_Unc", "Eff_err" (uncertainty columns)
-      if( !found_eff_col && (field_lower.find( "eff" ) != string::npos) )
+      if( field_lower.find( "eff" ) != string::npos )
       {
-        // Skip uncertainty/error columns
+        // Uncertainty/error columns (e.g. "Eff. Unc", "Eff_err") give the
+        //  efficiency uncertainty, in the same scale as the efficiency column.
         if( (field_lower.find( "unc" ) != string::npos)
-           || (field_lower.find( "err" ) != string::npos)
-           || (field_lower.find( "eff." ) != string::npos && field_lower.find( "eff. " ) != string::npos) )
+           || (field_lower.find( "err" ) != string::npos) )
         {
+          if( uncert_col_index < 0 )
+            uncert_col_index = static_cast<int>( i );
           continue;
         }
+
+        if( found_eff_col )
+          continue;
 
         eff_col_index = static_cast<int>( i );
         found_eff_col = true;
@@ -2775,6 +3118,16 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
   // Parse data lines
   bool got_data = false;
   vector<EnergyEfficiencyPair> energy_efficiencies;
+
+  // Fractional efficiency uncertainty of each point, when an uncertainty
+  //  column is present; same ordering as `energy_efficiencies`, with values
+  //  <= 0 for points without a (valid) uncertainty.
+  vector<float> frac_uncertainties;
+
+  // Total efficiency (fraction) of each point, when a total-efficiency column
+  //  (GADRAS "PTOT") is present; same ordering as `energy_efficiencies`, with
+  //  values < 0 for points without a (valid) total efficiency.
+  vector<float> total_efficiencies;
 
   for( const string &raw_line : all_lines )
   {
@@ -2807,11 +3160,32 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
     point.energy = fields[energy_col_index]; // energy units applied after parsing
     point.efficiency = fields[eff_col_index];
 
+    // The uncertainty column shares the efficiency columns scale, so the
+    //  fractional uncertainty can be computed before the percentage division.
+    float frac_uncert = -1.0f;
+    if( (uncert_col_index >= 0) && (static_cast<int>(fields.size()) > uncert_col_index)
+        && (fields[eff_col_index] > 0.0f) && (fields[uncert_col_index] > 0.0f)
+        && !IsNan(fields[uncert_col_index]) && !IsInf(fields[uncert_col_index]) )
+    {
+      frac_uncert = fields[uncert_col_index] / fields[eff_col_index];
+    }
+
+    // Total efficiency, in the same (percentage) scale as the efficiency column.
+    float total_eff = -1.0f;
+    if( (total_col_index >= 0) && (static_cast<int>(fields.size()) > total_col_index)
+        && (fields[total_col_index] >= 0.0f)
+        && !IsNan(fields[total_col_index]) && !IsInf(fields[total_col_index]) )
+    {
+      total_eff = is_percentage ? (fields[total_col_index] / 100.0f) : fields[total_col_index];
+    }
+
     if( is_percentage )
       point.efficiency /= 100.0f;
 
     got_data = true;
     energy_efficiencies.push_back( point );
+    frac_uncertainties.push_back( frac_uncert );
+    total_efficiencies.push_back( total_eff );
 
     if( energy_efficiencies.size() > 3000 )
       throw runtime_error( "Efficiency CSV file has too many data points (max 3000)." );
@@ -2877,7 +3251,11 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
   }//for( validate )
 
   if( !increasing )
+  {
     std::reverse( energy_efficiencies.begin(), energy_efficiencies.end() );
+    std::reverse( frac_uncertainties.begin(), frac_uncertainties.end() );
+    std::reverse( total_efficiencies.begin(), total_efficiencies.end() );
+  }
 
   // Build the DRF
   auto answer = make_shared<DetectorPeakResponse>();
@@ -2885,11 +3263,8 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
   answer->m_description = is_gadras ? "GADRAS Efficiency.csv" : "Efficiency CSV";
   answer->m_detectorDiameter = 0.0f;
   answer->m_detectorSetback = 0.0;
-  answer->m_efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
   answer->m_resolutionForm = ResolutionFnctForm::kNumResolutionFnctForm;
   answer->m_efficiencySource = DrfSource::UserImportedEfficiencyCsvDrf;
-  answer->m_efficiencyForm = EfficiencyFnctForm::kEnergyEfficiencyPairs;
-  answer->m_energyEfficiencies = energy_efficiencies;
   answer->m_flags = 0;
   answer->m_lowerEnergy = energy_efficiencies.front().energy;
   answer->m_upperEnergy = energy_efficiencies.back().energy;
@@ -2897,6 +3272,71 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
   answer->m_lastUsedUtc = answer->m_createdUtc;
   answer->m_geomType = EffGeometryType::FixedGeomTotalAct;
   answer->m_parentHash = 0;
+
+  std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
+  eff->setFromPairs( energy_efficiencies, static_cast<float>(PhysicalUnits::keV) );
+
+  // If an efficiency uncertainty column was present, build a node covariance
+  //  from the (valid) per-point uncertainties.
+  {
+    vector<float> uncert_energies, uncert_vals;
+    for( size_t i = 0; i < energy_efficiencies.size(); ++i )
+    {
+      if( frac_uncertainties[i] > 0.0f )
+      {
+        uncert_energies.push_back( energy_efficiencies[i].energy );
+        uncert_vals.push_back( frac_uncertainties[i] );
+      }
+    }//for( size_t i = 0; i < energy_efficiencies.size(); ++i )
+
+    if( uncert_energies.size() >= 2 )
+    {
+      try
+      {
+        eff->setUncertainty( DetectorEfficiencyUncert::fromPointUncerts( uncert_energies, uncert_vals ) );
+      }catch( std::exception &e )
+      {
+        cerr << "parseEfficiencyCsvFile: failed to create efficiency uncertainty: "
+             << e.what() << endl;
+      }
+    }//if( uncert_energies.size() >= 2 )
+  }
+
+  answer->m_efficiency = eff;
+
+  // If a total-efficiency column (GADRAS "PTOT") was present and has any
+  //  non-zero values, store it as the total-efficiency curve (for future
+  //  cascade-summing corrections).  Same energy units and geometry as the
+  //  full-energy efficiency.
+  {
+    vector<EnergyEfficiencyPair> total_pairs;
+    bool any_nonzero = false;
+    for( size_t i = 0; i < energy_efficiencies.size(); ++i )
+    {
+      if( total_efficiencies[i] < 0.0f )  //no (valid) PTOT for this row
+        continue;
+      EnergyEfficiencyPair p;
+      p.energy = energy_efficiencies[i].energy;
+      p.efficiency = total_efficiencies[i];
+      total_pairs.push_back( p );
+      any_nonzero |= (total_efficiencies[i] > 0.0f);
+    }//for( size_t i = 0; i < energy_efficiencies.size(); ++i )
+
+    if( any_nonzero && (total_pairs.size() >= 2) )
+    {
+      try
+      {
+        auto total = make_shared<DetectorEfficiencyCurve>();
+        total->setFromPairs( total_pairs, static_cast<float>(PhysicalUnits::keV) );
+        answer->m_totalEfficiency = total;
+      }catch( std::exception &e )
+      {
+        cerr << "parseEfficiencyCsvFile: failed to create total efficiency: "
+             << e.what() << endl;
+      }
+    }//if( any_nonzero && (total_pairs.size() >= 2) )
+  }
+
   answer->computeHash();
 
   EffCsvParseResult result;
@@ -3073,52 +3513,12 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType(
   if( (correction <= 0.0) || IsNan(correction) || IsInf(correction) )
     throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: "
                          "The correction became invalid (" + to_string(correction) + ")." );
-  
-  switch( answer->m_efficiencyForm )
-  {
-    case kEnergyEfficiencyPairs:
-    {
-      for( EnergyEfficiencyPair &ene_eff : answer->m_energyEfficiencies )
-      {
-        ene_eff.efficiency *= correction;
-      }//for( loop over answer->m_energyEfficiencies )
-      
-      break;
-    }//case kEnergyEfficiencyPairs:
-    
-      
-    case kFunctialEfficienyForm:
-    {
-      if( !answer->m_efficiencyFcn )
-        throw runtime_error( "DetectorPeakResponse::convertFixedGeometryType: "
-                            "no function defined, which is unexpected." );
-      function<float(float)> old_fnctn = answer->m_efficiencyFcn;
-      
-      answer->m_efficiencyFcn
-      = [old_fnctn, correction]( float energy ) -> float {
-        return static_cast<float>( correction * old_fnctn(energy) );
-      };//answer->m_efficiencyFcn lambda defintion
-      
-      break;
-    }//case kFunctialEfficienyForm:
-      
-    case kExpOfLogPowerSeries:
-    {
-      if( m_expOfLogPowerSeriesCoeffs.empty() )
-        throw runtime_error( "DetectorPeakResponse::convertFixedGeometryTypeToFarField: "
-                            "no coefficients defined, which is unexpected." );
-      
-      answer->m_expOfLogPowerSeriesCoeffs[0] += static_cast<float>( log(correction) );
-      
-      break;
-    }//case kExpOfLogPowerSeries:
-      
-    case kNumEfficiencyFnctForms:
-      assert( 0 );
-      throw runtime_error( "DetectorPeakResponse::convertFixedGeometryTypeToFarField: invalid function form" );
-      break;
-  }//switch( m_efficiencyForm )
-  
+
+  // Scale the (copy-on-write) efficiency curve by the energy-independent
+  //  correction factor.
+  answer->m_efficiency = std::make_shared<DetectorEfficiencyCurve>(
+                                  answer->m_efficiency->scaledByConstant( correction ) );
+
   answer->computeHash();
 
   return answer;
@@ -3266,11 +3666,19 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   // - Version 2: Added kConstantPlusSqrtEnergy resolution form (20240410)
   // - Version 3: Added FarFieldAbsolute geometry type with absolute efficiency parameters (20251130)
   // - Version 4: Added PeakFitDetPrefs (20260221)
-  static_assert( sm_xmlSerializationVersion == 4, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+  // - Version 5: Added EfficiencyUncert and TotalEfficiency (20260610)
+  static_assert( sm_xmlSerializationVersion == 5, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+
+  const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
+  const bool have_eff_uncert = (eff_uncert && !eff_uncert->isEmpty());
 
   int version_to_write = 0;
 
-  if( m_peakFitDetPrefs )
+  if( have_eff_uncert || m_totalEfficiency )
+  {
+    // Efficiency uncertainty / total efficiency requires version 5
+    version_to_write = 5;
+  }else if( m_peakFitDetPrefs )
   {
     // PeakFitDetPrefs requires version 4
     version_to_write = 4;
@@ -3340,11 +3748,13 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   node = doc->allocate_node( node_element, "EfficiencySource", val );
   base_node->append_node( node );
   
-  snprintf( buffer, sizeof(buffer), "%g", m_efficiencyEnergyUnits );
+  const DetectorEfficiencyCurve &eff = *m_efficiency;
+
+  snprintf( buffer, sizeof(buffer), "%g", eff.energyUnits() );
   val = doc->allocate_string( buffer );
   node = doc->allocate_node( node_element, "EfficiencyEnergyUnits", val );
   base_node->append_node( node );
-  
+
   switch( m_resolutionForm )
   {
     case kGadrasResolutionFcn:    val = "GadrasResolutionFcn";   break;
@@ -3357,19 +3767,19 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   node = doc->allocate_node( node_element, "ResolutionForm", val );
   base_node->append_node( node );
 
-  
-  switch( m_efficiencyForm )
+
+  switch( eff.form() )
   {
     case kEnergyEfficiencyPairs:  val = "EnergyEfficiencyPairs"; break;
     case kFunctialEfficienyForm:  val = "FunctialEfficienyForm"; break;
     case kExpOfLogPowerSeries:    val = "ExpOfLogPowerSeries";   break;
     case kNumEfficiencyFnctForms: val = "Undefined";             break;
-  }//switch( m_efficiencyForm )
-  
+  }//switch( eff.form() )
+
   node = doc->allocate_node( node_element, "EfficiencyForm", val );
   base_node->append_node( node );
-  
-  
+
+
   if( m_resolutionCoeffs.size() )
   {
     stringstream valstrm;
@@ -3379,46 +3789,48 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     node = doc->allocate_node( node_element, "ResolutionCoefficients", val );
     base_node->append_node( node );
   }//if( m_resolutionCoeffs.size() )
-  
-  if( m_energyEfficiencies.size() )
+
+  if( eff.energyEfficiencies().size() )
   {
+    const vector<EnergyEfficiencyPair> &eep = eff.energyEfficiencies();
     stringstream valstrm;
-    for( size_t i = 0; i < m_energyEfficiencies.size(); ++i )
-      valstrm << (i?" ":"") << m_energyEfficiencies[i].energy 
-              << " " << m_energyEfficiencies[i].efficiency;
+    for( size_t i = 0; i < eep.size(); ++i )
+      valstrm << (i?" ":"") << eep[i].energy << " " << eep[i].efficiency;
     val = doc->allocate_string( valstrm.str().c_str() );
     node = doc->allocate_node( node_element, "EnergyEfficiencies", val );
-    base_node->append_node( node );    
-  }//if( m_energyEfficiencies.size() )
-  
-  if( m_efficiencyFormula.size() )
+    base_node->append_node( node );
+  }//if( eff.energyEfficiencies().size() )
+
+  if( eff.formula().size() )
   {
-    val = doc->allocate_string( m_efficiencyFormula.c_str() );
+    val = doc->allocate_string( eff.formula().c_str() );
     node = doc->allocate_node( node_element, "EfficiencyFormula", val );
-    base_node->append_node( node );    
-  }//if( m_efficiencyFormula.size() )
-  
-  if( m_expOfLogPowerSeriesCoeffs.size() )
+    base_node->append_node( node );
+  }//if( eff.formula().size() )
+
+  if( eff.expOfLogPowerSeriesCoeffs().size() )
   {
+    const vector<float> &coefs = eff.expOfLogPowerSeriesCoeffs();
     stringstream valstrm;
-    for( size_t i = 0; i < m_expOfLogPowerSeriesCoeffs.size(); ++i )
-      valstrm << (i?" ":"") << m_expOfLogPowerSeriesCoeffs[i];
+    for( size_t i = 0; i < coefs.size(); ++i )
+      valstrm << (i?" ":"") << coefs[i];
     val = doc->allocate_string( valstrm.str().c_str() );
     node = doc->allocate_node( node_element, "ExpOfLogPowerSeriesCoeffs", val );
     base_node->append_node( node );
-  }//if( m_expOfLogPowerSeriesCoeffs.size() )
-  
-  
-  if( m_expOfLogPowerSeriesUncerts.size() )
+  }//if( eff.expOfLogPowerSeriesCoeffs().size() )
+
+
+  if( eff.expOfLogPowerSeriesUncerts().size() )
   {
+    const vector<float> &uncerts = eff.expOfLogPowerSeriesUncerts();
     stringstream valstrm;
-    for( size_t i = 0; i < m_expOfLogPowerSeriesUncerts.size(); ++i )
-      valstrm << (i?" ":"") << m_expOfLogPowerSeriesUncerts[i];
+    for( size_t i = 0; i < uncerts.size(); ++i )
+      valstrm << (i?" ":"") << uncerts[i];
     val = doc->allocate_string( valstrm.str().c_str() );
     node = doc->allocate_node( node_element, "ExpOfLogPowerSeriesUncerts", val );
     base_node->append_node( node );
-  }//if( m_expOfLogPowerSeriesUncerts.size() )
-  
+  }//if( eff.expOfLogPowerSeriesUncerts().size() )
+
   
   stringstream hashstrm, parenthashstrm, flagsstrm;
   hashstrm << m_hash;
@@ -3511,6 +3923,12 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
 
   if( m_peakFitDetPrefs )
     m_peakFitDetPrefs->toXml( base_node, doc );
+
+  if( have_eff_uncert )
+    eff_uncert->toXml( base_node, doc );
+
+  if( m_totalEfficiency )
+    m_totalEfficiency->toXml( base_node, doc, "TotalEfficiency" );
 }//toXml(...)
 
 
@@ -3691,12 +4109,20 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }
 
   
+  // The efficiency representation is parsed into locals and assembled into
+  //  #m_efficiency below (the rich uncertainty is attached after that).
+  float efficiencyEnergyUnits = static_cast<float>( PhysicalUnits::keV );
+  EfficiencyFnctForm efficiencyForm = kNumEfficiencyFnctForms;
+  vector<EnergyEfficiencyPair> energyEfficiencies;
+  string efficiencyFormula;
+  vector<float> expOfLogCoeffs, expOfLogCoeffUncerts;
+
   node = parent->first_node( "EfficiencyEnergyUnits", 21 );
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing EfficiencyEnergyUnits node" );
-  if( !SpecUtils::parse_float( node->value(), node->value_size(), m_efficiencyEnergyUnits ) )
+  if( !SpecUtils::parse_float( node->value(), node->value_size(), efficiencyEnergyUnits ) )
     throw runtime_error( "DetectorPeakResponse invalid EfficiencyEnergyUnits value" );
-  if( IsInf(m_efficiencyEnergyUnits) || IsNan(m_efficiencyEnergyUnits) || (m_efficiencyEnergyUnits <= 0.0f) )
+  if( IsInf(efficiencyEnergyUnits) || IsNan(efficiencyEnergyUnits) || (efficiencyEnergyUnits <= 0.0f) )
     throw runtime_error( "DetectorPeakResponse EfficiencyEnergyUnits out of range" );
   
   
@@ -3724,16 +4150,16 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse missing EfficiencyForm node" );
   
   if( compare(node->value(),node->value_size(),"EnergyEfficiencyPairs",21,false) )
-    m_efficiencyForm = kEnergyEfficiencyPairs;
+    efficiencyForm = kEnergyEfficiencyPairs;
   else if( compare(node->value(),node->value_size(),"FunctialEfficienyForm",21,false) )
-    m_efficiencyForm = kFunctialEfficienyForm;
+    efficiencyForm = kFunctialEfficienyForm;
   else if( compare(node->value(),node->value_size(),"ExpOfLogPowerSeries",19,false) )
-    m_efficiencyForm = kExpOfLogPowerSeries;
+    efficiencyForm = kExpOfLogPowerSeries;
   else if( compare(node->value(),node->value_size(),"Undefined",9,false) )
-    m_efficiencyForm = kNumEfficiencyFnctForms;
+    efficiencyForm = kNumEfficiencyFnctForms;
   else
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencyForm value" );
-  
+
   m_resolutionCoeffs.clear();
   if( m_resolutionForm != kNumResolutionFnctForm )
   {
@@ -3746,7 +4172,6 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     }
   }//if( m_resolutionForm != kNumResolutionFnctForm )
 
-  m_energyEfficiencies.clear();
   node = parent->first_node( "EnergyEfficiencies", 18 );
   if( node && node->value() )
   {
@@ -3756,67 +4181,59 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw runtime_error( "DetectorPeakResponse: invalid number of energy efficiency pairs" );
     if( values.size() > 10000 )
       throw runtime_error( "DetectorPeakResponse: too many energy efficiency pairs" );
-    
+
     for( size_t i = 0; i < values.size(); i += 2 )
     {
       EnergyEfficiencyPair p;
       p.energy = values[i];
       p.efficiency = values[i+1];
-      m_energyEfficiencies.push_back( p );
+      energyEfficiencies.push_back( p );
     }
   }//if( node && node->value() )
-  
-  m_efficiencyFcn = std::function<float(float)>();
-  m_efficiencyFormula.clear();
+
   node = parent->first_node( "EfficiencyFormula", 17 );
   if( node && node->value() )
   {
-    m_efficiencyFormula = node->value();
-    SpecUtils::trim( m_efficiencyFormula );
-    
-    if( m_efficiencyFormula.size() )
-    {
-      //if( m_efficiencySource != kUserEfficiencyEquationSpecified )
-        //throw runtime_error( "An detector efficiency formula was specified but the the EfficiencySource had a different value" );
-      const bool isMeV = (m_efficiencyEnergyUnits > 10.0f);
-      
-      try
-      {
-        auto expression = std::make_shared<FormulaWrapper>( m_efficiencyFormula, isMeV );
-        m_efficiencyFcn = [expression]( float energy ) -> float {
-          return expression->efficiency( energy );
-        };
-      }catch( std::exception &e )
-      {
-        throw runtime_error( "Invalid detector efficiency formula in XML: " + string(e.what()) );
-      }
-    }//if( m_efficiencyFormula.size() )
+    efficiencyFormula = node->value();
+    SpecUtils::trim( efficiencyFormula );
   }//if( node && node->value() )
-  
-  m_expOfLogPowerSeriesCoeffs.clear();
-  m_expOfLogPowerSeriesUncerts.clear();
-  
+
   node = XML_FIRST_NODE(parent, "ExpOfLogPowerSeriesCoeffs");
   if( node && node->value() )
   {
-    SpecUtils::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesCoeffs );
-    if( m_expOfLogPowerSeriesCoeffs.size() > 25 )
+    SpecUtils::split_to_floats( node->value(), node->value_size(), expOfLogCoeffs );
+    if( expOfLogCoeffs.size() > 25 )
       throw runtime_error( "DetectorPeakResponse: too many ExpOfLogPowerSeries coefficients" );
   }
 
   node = XML_FIRST_NODE(parent, "ExpOfLogPowerSeriesUncerts");
   if( node && node->value() )
   {
-    SpecUtils::split_to_floats( node->value(), node->value_size(), m_expOfLogPowerSeriesUncerts );
-    if( m_expOfLogPowerSeriesUncerts.size() > 25 )
+    SpecUtils::split_to_floats( node->value(), node->value_size(), expOfLogCoeffUncerts );
+    if( expOfLogCoeffUncerts.size() > 25 )
       throw runtime_error( "DetectorPeakResponse: too many ExpOfLogPowerSeries uncertainties" );
   }
 
-  if( !m_expOfLogPowerSeriesUncerts.empty()
-     && (m_expOfLogPowerSeriesUncerts.size() != m_expOfLogPowerSeriesCoeffs.size()) )
+  if( !expOfLogCoeffUncerts.empty()
+     && (expOfLogCoeffUncerts.size() != expOfLogCoeffs.size()) )
     throw runtime_error( "DetectorPeakResponse number eff coeffs doesnt match number of uncerts" );
-  
-  
+
+  // Assemble the efficiency curve from the parsed representation (throws on an
+  //  un-parsable formula, matching the legacy behavior).
+  {
+    std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
+    try
+    {
+      eff->setRawFields( efficiencyForm, efficiencyEnergyUnits, energyEfficiencies,
+                         efficiencyFormula, expOfLogCoeffs, expOfLogCoeffUncerts );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "Invalid detector efficiency in XML: " + string(e.what()) );
+    }
+    m_efficiency = eff;
+  }
+
+
   node = parent->first_node( "Hash", 4 );
   if( !node || !node->value() )
     throw runtime_error( "DetectorPeakResponse missing Hash node" );
@@ -3896,6 +4313,34 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   {
     m_peakFitDetPrefs.reset();
   }
+
+  // Optional efficiency uncertainty and total efficiency, added in version 5;
+  //  simply absent in older XML.  The uncertainty is attached to the (already
+  //  assembled) efficiency curve.
+  node = parent->first_node( "EfficiencyUncert", 16 );
+  if( node )
+  {
+    auto uncert = make_shared<DetectorEfficiencyUncert>();
+    uncert->fromXml( node );
+    if( !uncert->isEmpty() )
+    {
+      std::shared_ptr<DetectorEfficiencyCurve> eff
+                  = std::make_shared<DetectorEfficiencyCurve>( *m_efficiency );
+      eff->setUncertainty( uncert );
+      m_efficiency = eff;
+    }
+  }//if( node )
+
+  m_totalEfficiency.reset();
+  node = parent->first_node( "TotalEfficiency", 15 );
+  if( node )
+  {
+    auto curve = make_shared<DetectorEfficiencyCurve>();
+    curve->fromXml( node );
+    if( !curve->isValid() )
+      throw runtime_error( "DetectorPeakResponse: invalid TotalEfficiency node" );
+    m_totalEfficiency = curve;
+  }
 }//void fromXml( ::rapidxml::xml_node<char> *parent )
 
 
@@ -3938,13 +4383,6 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     throw runtime_error(buffer);
   }
 
-  if( fabs(lhs.m_efficiencyEnergyUnits - rhs.m_efficiencyEnergyUnits) > 0.001 )
-  {
-    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: efficiency units"
-             " of LHS (%1.8E) doesnt match RHS (%1.8E)",
-             lhs.m_efficiencyEnergyUnits, rhs.m_efficiencyEnergyUnits );
-    throw runtime_error(buffer);
-  }
 
   if( lhs.m_resolutionForm != rhs.m_resolutionForm )
   {
@@ -3985,112 +4423,10 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     throw runtime_error(buffer);
   }
   
-  if( lhs.m_efficiencyForm != rhs.m_efficiencyForm )
-  {
-    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: efficiency"
-              " functional form of LHS (%i) doesnt match RHS (%i)",
-             int(lhs.m_efficiencyForm),
-             int(rhs.m_efficiencyForm) );
-    throw runtime_error(buffer);
-  }
-  
-  
-  if( lhs.m_energyEfficiencies.size() != rhs.m_energyEfficiencies.size() )
-  {
-    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: size of"
-             " efficiency coefficients of LHS (%i) doesnt match RHS (%i)",
-             int(lhs.m_energyEfficiencies.size()),
-             int(rhs.m_energyEfficiencies.size()) );
-    throw runtime_error(buffer);
-  }
-  
-  for( size_t i = 0; i < lhs.m_energyEfficiencies.size(); ++i )
-  {
-    float a = lhs.m_energyEfficiencies[i].energy;
-    float b = rhs.m_energyEfficiencies[i].energy;
-    if( fabs(a-b) > (1.0E-5 * std::max(fabs(a),fabs(b))) )
-    {
-      snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: efficiency"
-               " energy %i of LHS (%1.8E) doesnt match RHS (%1.8E)", int(i), a, b );
-      throw runtime_error( buffer );
-    }
-    
-    a = lhs.m_energyEfficiencies[i].efficiency;
-    b = rhs.m_energyEfficiencies[i].efficiency;
-    if( fabs(a-b) > 1.0E-5 )
-    {
-      snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: efficiency"
-               " %i of LHS (%1.8E) doesnt match RHS (%1.8E)", int(i), a, b );
-      throw runtime_error( buffer );
-    }
-  }
-  
-  
-  if( lhs.m_efficiencyFormula != rhs.m_efficiencyFormula )
-  {
-    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: efficiency formula"
-              " of LHS ('%s') doesnt match RHS ('%s')",
-             lhs.m_efficiencyFormula.c_str(), rhs.m_efficiencyFormula.c_str() );
-    throw runtime_error(buffer);
-  }
-  
-  if( (!lhs.m_efficiencyFcn) != (!rhs.m_efficiencyFcn) )
-  {
-    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: availability of"
-             " efficiency formula of LHS (%s) doesnt match RHS (%s)",
-             (!lhs.m_efficiencyFcn?"missing":"available"),
-             (!rhs.m_efficiencyFcn?"missing":"available") );
-    throw runtime_error(buffer);
-  }
-  
-  
-  if( lhs.m_expOfLogPowerSeriesCoeffs.size() != rhs.m_expOfLogPowerSeriesCoeffs.size() )
-  {
-    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: size of"
-             " exponential of log power series coefficients of LHS (%i) doesnt"
-             " match RHS (%i)",
-             int(lhs.m_expOfLogPowerSeriesCoeffs.size()),
-             int(rhs.m_expOfLogPowerSeriesCoeffs.size()) );
-    throw runtime_error(buffer);
-  }
-  
-  if( lhs.m_expOfLogPowerSeriesUncerts.size() != rhs.m_expOfLogPowerSeriesUncerts.size() )
-  {
-    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: size of"
-             " exponential of log power series uncertainties of LHS (%i) doesnt"
-             " match RHS (%i)",
-             int(lhs.m_expOfLogPowerSeriesUncerts.size()),
-             int(rhs.m_expOfLogPowerSeriesUncerts.size()) );
-    throw runtime_error(buffer);
-  }
-  
-  for( size_t i = 0; i < lhs.m_expOfLogPowerSeriesCoeffs.size(); ++i )
-  {
-    const float a = lhs.m_expOfLogPowerSeriesCoeffs[i];
-    const float b = rhs.m_expOfLogPowerSeriesCoeffs[i];
-    if( fabs(a-b) > (1.0E-5 * std::max(fabs(a),fabs(b))) )
-    {
-      snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: exponential of"
-                " log power series coefficient %i of LHS (%1.8E)"
-                " doesnt match RHS (%1.8E)", int(i), a, b );
-      throw runtime_error( buffer );
-    }
-  }
-  
-  for( size_t i = 0; i < lhs.m_expOfLogPowerSeriesUncerts.size(); ++i )
-  {
-    const float a = lhs.m_expOfLogPowerSeriesUncerts[i];
-    const float b = rhs.m_expOfLogPowerSeriesUncerts[i];
-    const float diff = fabs(a-b);
-    if( fabs(a-b) > (1.0E-5 * std::max(fabs(a),fabs(b))) && (diff > 1.0E-8) )
-    {
-      snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: exponential of"
-               " log power series uncertainty %i of LHS (%1.8E)"
-               " doesnt match RHS (%1.8E)", int(i), a, b );
-      throw runtime_error( buffer );
-    }
-  }
-  
+  // The full-energy efficiency (form, units, representation, coefficient
+  //  uncertainties, and rich uncertainty) all live in m_efficiency now.
+  DetectorEfficiencyCurve::equalEnough( *lhs.m_efficiency, *rhs.m_efficiency );
+
   if( lhs.m_hash != rhs.m_hash )
   {
     //should use PRIu64 instead of casting, but whatever
@@ -4152,6 +4488,13 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
              static_cast<long long int>(rhs.m_lastUsedUtc) );
     throw runtime_error(buffer);
   }
+
+  if( (!lhs.m_totalEfficiency) != (!rhs.m_totalEfficiency) )
+    throw runtime_error( "DetectorPeakResponse: availability of total"
+                         " efficiency doesnt match" );
+
+  if( lhs.m_totalEfficiency && rhs.m_totalEfficiency )
+    DetectorEfficiencyCurve::equalEnough( *lhs.m_totalEfficiency, *rhs.m_totalEfficiency );
 }//void equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 
@@ -4210,7 +4553,7 @@ double DetectorPeakResponse::efficiency( const float energy, const double dist )
 
 const vector<DetectorPeakResponse::EnergyEfficiencyPair> &DetectorPeakResponse::getEnergyEfficiencyPair() const
 {
-  return m_energyEfficiencies;
+  return m_efficiency->energyEfficiencies();
 }//std::vector<EnergyEfficiencyPair> DetectorPeakResponse::getEnergyEfficiencyPair()
 
 
@@ -4243,29 +4586,6 @@ float DetectorPeakResponse::absoluteToIntrinsicMultiple( const float energy ) co
 
   return static_cast<float>( factor );
 }//absoluteToIntrinsicMultiple(...)
-
-
-float DetectorPeakResponse::intrinsicEfficiencyFromPairs( float energy ) const
-{
-  energy /= m_efficiencyEnergyUnits;
-
-  if( m_energyEfficiencies.size() < 2 )
-    throw runtime_error("DetectorPeakResponse objects must be initialized "
-                        "before calling intrinsicEfficiencyFromPairs(...)");
-
-  float eff = akimaInterpolate( energy, m_energyEfficiencies );
-
-  // Apply absolute-to-intrinsic correction if needed
-  if( m_geomType == EffGeometryType::FarFieldAbsolute )
-  {
-    const float energy_with_units = energy * m_efficiencyEnergyUnits;
-    eff *= absoluteToIntrinsicMultiple( energy_with_units );
-  }
-
-  return eff;
-}//double DetectorPeakResponse::absoluteEfficiencyFromPairs( const float energy ) const
-
-
 
 
 float DetectorPeakResponse::akimaInterpolate( const float z,
@@ -4306,48 +4626,6 @@ float DetectorPeakResponse::akimaInterpolate( const float z,
 }//akimaInterpolate(...)
 
 
-float DetectorPeakResponse::intrinsicEfficiencyFromFcn( float energy ) const
-{
-  energy /= m_efficiencyEnergyUnits;
-
-  if( !m_efficiencyFcn )
-    throw runtime_error( "DetectorPeakResponse objects must be initialized "
-                         "before calling intrinsicEfficiencyFromFcn(...)" );
-
-  float eff = m_efficiencyFcn( energy );
-
-  // Apply absolute-to-intrinsic correction if needed
-  if( m_geomType == EffGeometryType::FarFieldAbsolute )
-  {
-    const float energy_with_units = energy * m_efficiencyEnergyUnits;
-    eff *= absoluteToIntrinsicMultiple( energy_with_units );
-  }
-
-  return eff;
-}//double intrinsicEfficiencyFromFcn( const float energy ) const
-
-
-float DetectorPeakResponse::intrinsicEfficiencyFromExpLnEqn( float energy ) const
-{
-  if( m_expOfLogPowerSeriesCoeffs.empty() )
-    throw runtime_error( "DetectorPeakResponse objects must be initialized "
-                         "before calling intrinsicEfficiencyFromExpLnEqn(...)" );
-
-  energy /= m_efficiencyEnergyUnits;
-
-  float eff = expOfLogPowerSeriesEfficiency( energy, m_expOfLogPowerSeriesCoeffs );
-
-  // Apply absolute-to-intrinsic correction if needed
-  if( m_geomType == EffGeometryType::FarFieldAbsolute )
-  {
-    const float energy_with_units = energy * m_efficiencyEnergyUnits;
-    eff *= absoluteToIntrinsicMultiple( energy_with_units );
-  }
-
-  return eff;
-}//float intrinsicEfficiencyFromExpLnEqn( float energy ) const
-
-
 float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
                                            const std::vector<float> &coefs )
 {
@@ -4362,87 +4640,45 @@ float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
 
 float DetectorPeakResponse::intrinsicEfficiency( const float energy ) const
 {
-  
-  switch( m_efficiencyForm )
-  {
-    case kEnergyEfficiencyPairs:
-      return intrinsicEfficiencyFromPairs( energy );
-      
-    case kFunctialEfficienyForm:
-      return intrinsicEfficiencyFromFcn( energy );
-      
-    case kExpOfLogPowerSeries:
-      return intrinsicEfficiencyFromExpLnEqn( energy );
-      
-    case kNumEfficiencyFnctForms:
-      break;
-  }//switch( m_efficiencyForm )
+  // The curve handles the energy/units division and the form dispatch;
+  //  throws if undefined.
+  float eff = m_efficiency->efficiency( energy );
 
-  
-  throw runtime_error( "DetectorPeakResponse::intrinsicEfficiency:"
-                       " undefined efficiency" );
+  // Apply absolute-to-intrinsic correction if needed (energy is in keV here)
+  if( m_geomType == EffGeometryType::FarFieldAbsolute )
+    eff *= absoluteToIntrinsicMultiple( energy );
+
+  return eff;
 }//float intrinsicEfficiency( const float energy ) const;
 
 
 
 std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
 {
-  const double energy_units = m_efficiencyEnergyUnits;
+  if( !m_efficiency || !m_efficiency->isValid() )
+    return nullptr;
+
+  // Capture a copy of the curve (cheap shared internals besides the small
+  //  vectors); does NOT apply the FarFieldAbsolute correction, matching the
+  //  historical behavior of this accessor.
+  const DetectorEfficiencyCurve curve = *m_efficiency;
   const double lowerEnergy = m_lowerEnergy;
   const double upperEnergy = m_upperEnergy;
 
-  switch( m_efficiencyForm )
-  {
-    case kEnergyEfficiencyPairs:
+  // Pairs are clamped to the data range internally (akima); for the formula
+  //  and exp-of-log forms we additionally clamp to the DRF energy range.
+  const bool clampToRange = (curve.form() != kEnergyEfficiencyPairs);
+
+  return [curve, lowerEnergy, upperEnergy, clampToRange]( float energy ) -> float {
+    if( clampToRange )
     {
-      if( m_energyEfficiencies.size() < 2 )
-        return nullptr;
-
-      const vector<EnergyEfficiencyPair> energy_effs = m_energyEfficiencies;
-
-      return [energy_units, energy_effs]( float energy ) -> float {
-        return akimaInterpolate( energy / energy_units, energy_effs );
-      };
-    }//case kEnergyEfficiencyPairs:
-
-    case kFunctialEfficienyForm:
-    {
-      const std::function<float( float )> eff_fcnt = m_efficiencyFcn;
-      if( !eff_fcnt )
-        return nullptr;
-
-      return [energy_units, eff_fcnt, lowerEnergy, upperEnergy]( float energy ) -> float {
-        if( (lowerEnergy > 10.0) && (energy < lowerEnergy) )
-          return eff_fcnt( lowerEnergy / energy_units );
-        if( (upperEnergy > 10.0) && (energy > upperEnergy) )
-          return eff_fcnt( upperEnergy / energy_units );
-        
-        return eff_fcnt( energy / energy_units );
-      };
-    }//case kFunctialEfficienyForm:
-
-
-    case kExpOfLogPowerSeries:
-    {
-      if( m_expOfLogPowerSeriesCoeffs.empty() )
-        return nullptr;
-
-      const vector<float> coeffs = m_expOfLogPowerSeriesCoeffs;
-      return [energy_units, coeffs, lowerEnergy, upperEnergy]( float energy ) -> float {
-        if( (lowerEnergy > 10.0) && (energy < lowerEnergy) )
-          return expOfLogPowerSeriesEfficiency( lowerEnergy / energy_units, coeffs );
-        if( (upperEnergy > 10.0) && (energy > upperEnergy) )
-          return expOfLogPowerSeriesEfficiency( upperEnergy / energy_units, coeffs );
-        return expOfLogPowerSeriesEfficiency( energy / energy_units, coeffs );
-      };
-    }//case kExpOfLogPowerSeries:
-
-
-    case kNumEfficiencyFnctForms:
-      return nullptr;
-  }//switch( m_efficiencyForm )
-
-  return nullptr;
+      if( (lowerEnergy > 10.0) && (energy < lowerEnergy) )
+        energy = static_cast<float>( lowerEnergy );
+      else if( (upperEnergy > 10.0) && (energy > upperEnergy) )
+        energy = static_cast<float>( upperEnergy );
+    }
+    return curve.efficiency( energy );
+  };
 }//std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
 
 
@@ -4693,7 +4929,14 @@ void DetectorPeakResponse::printDetectorParameterizationToStdout() const
 {
   using std::cout;
   using std::endl;
-  
+
+  const DetectorEfficiencyCurve &eff = *m_efficiency;
+  const std::vector<EnergyEfficiencyPair> &energyEfficiencies = eff.energyEfficiencies();
+  const std::vector<float> &expOfLogCoeffs = eff.expOfLogPowerSeriesCoeffs();
+  const std::vector<float> &expOfLogCoeffUncerts = eff.expOfLogPowerSeriesUncerts();
+  const float efficiencyEnergyUnits = eff.energyUnits();
+  const EfficiencyFnctForm efficiencyForm = eff.form();
+
   cout << "\n========== DETECTOR PARAMETERIZATION ===========" << endl;
   cout << "// Copy and paste this into hardcoded detector creation code" << endl;
   cout << "Name: \"" << m_name << "\"" << endl;
@@ -4722,7 +4965,7 @@ void DetectorPeakResponse::printDetectorParameterizationToStdout() const
   // Efficiency information
   cout << "\n--- EFFICIENCY ---" << endl;
   cout << "Efficiency Function Type: ";
-  switch( m_efficiencyForm )
+  switch( efficiencyForm )
   {
     case kEnergyEfficiencyPairs: cout << "EnergyEfficiencyPairs"; break;
     case kFunctialEfficienyForm: cout << "FunctionalEfficiencyForm"; break;
@@ -4731,58 +4974,58 @@ void DetectorPeakResponse::printDetectorParameterizationToStdout() const
   }
   cout << endl;
   
-  cout << "Energy Units: " << m_efficiencyEnergyUnits;
-  if( std::abs(m_efficiencyEnergyUnits - static_cast<float>(PhysicalUnits::keV)) < 0.001 )
+  cout << "Energy Units: " << efficiencyEnergyUnits;
+  if( std::abs(efficiencyEnergyUnits - static_cast<float>(PhysicalUnits::keV)) < 0.001 )
     cout << " (keV)";
-  else if( std::abs(m_efficiencyEnergyUnits - static_cast<float>(PhysicalUnits::MeV)) < 0.001 )
+  else if( std::abs(efficiencyEnergyUnits - static_cast<float>(PhysicalUnits::MeV)) < 0.001 )
     cout << " (MeV)";
   cout << endl;
   
-  if( m_efficiencyForm == kExpOfLogPowerSeries && !m_expOfLogPowerSeriesCoeffs.empty() )
+  if( efficiencyForm == kExpOfLogPowerSeries && !expOfLogCoeffs.empty() )
   {
     cout << "ExpOfLogPowerSeries Coefficients: {";
-    for( size_t i = 0; i < m_expOfLogPowerSeriesCoeffs.size(); ++i )
+    for( size_t i = 0; i < expOfLogCoeffs.size(); ++i )
     {
       if( i > 0 ) cout << ", ";
-      cout << std::scientific << std::setprecision(8) << m_expOfLogPowerSeriesCoeffs[i];
+      cout << std::scientific << std::setprecision(8) << expOfLogCoeffs[i];
     }
     cout << "}" << endl;
     
-    if( !m_expOfLogPowerSeriesUncerts.empty() )
+    if( !expOfLogCoeffUncerts.empty() )
     {
       cout << "ExpOfLogPowerSeries Uncertainties: {";
-      for( size_t i = 0; i < m_expOfLogPowerSeriesUncerts.size(); ++i )
+      for( size_t i = 0; i < expOfLogCoeffUncerts.size(); ++i )
       {
         if( i > 0 ) cout << ", ";
-        cout << std::scientific << std::setprecision(8) << m_expOfLogPowerSeriesUncerts[i];
+        cout << std::scientific << std::setprecision(8) << expOfLogCoeffUncerts[i];
       }
       cout << "}" << endl;
     }
   }
   
-  if( m_efficiencyForm == kFunctialEfficienyForm && !m_efficiencyFormula.empty() )
+  if( efficiencyForm == kFunctialEfficienyForm && !eff.formula().empty() )
   {
-    cout << "Efficiency Formula: \"" << m_efficiencyFormula << "\"" << endl;
+    cout << "Efficiency Formula: \"" << eff.formula() << "\"" << endl;
   }
   
-  if( m_efficiencyForm == kEnergyEfficiencyPairs && !m_energyEfficiencies.empty() )
+  if( efficiencyForm == kEnergyEfficiencyPairs && !energyEfficiencies.empty() )
   {
-    cout << "Energy-Efficiency Pairs (" << m_energyEfficiencies.size() << " points):" << endl;
-    for( size_t i = 0; i < std::min(size_t(10), m_energyEfficiencies.size()); ++i )
+    cout << "Energy-Efficiency Pairs (" << energyEfficiencies.size() << " points):" << endl;
+    for( size_t i = 0; i < std::min(size_t(10), energyEfficiencies.size()); ++i )
     {
-      cout << "  {" << m_energyEfficiencies[i].energy << ", " 
-           << std::scientific << std::setprecision(6) << m_energyEfficiencies[i].efficiency << "}";
-      if( i + 1 < std::min(size_t(10), m_energyEfficiencies.size()) ) cout << ",";
+      cout << "  {" << energyEfficiencies[i].energy << ", " 
+           << std::scientific << std::setprecision(6) << energyEfficiencies[i].efficiency << "}";
+      if( i + 1 < std::min(size_t(10), energyEfficiencies.size()) ) cout << ",";
       cout << endl;
     }
-    if( m_energyEfficiencies.size() > 10 )
-      cout << "  ... (" << (m_energyEfficiencies.size() - 10) << " more points)" << endl;
+    if( energyEfficiencies.size() > 10 )
+      cout << "  ... (" << (energyEfficiencies.size() - 10) << " more points)" << endl;
     
     
     const int fcnOrder = 6;
     std::vector<float> fit_pars, fit_pars_incert;
     std::vector<MakeDrfFit::DetEffDataPoint> eff_points;
-    for( const EnergyEfficiencyPair &eff : m_energyEfficiencies )
+    for( const EnergyEfficiencyPair &eff : energyEfficiencies )
     {
       if( eff.energy < 45 || eff.energy > 3000 )
         continue;
@@ -4805,7 +5048,7 @@ void DetectorPeakResponse::printDetectorParameterizationToStdout() const
     
     cout << "\n\nComparison to original:" << endl;
     double max_error = 0.0, min_error = 100000, average_error = 0.0, num_points = 0;
-    for( const EnergyEfficiencyPair &eff : m_energyEfficiencies )
+    for( const EnergyEfficiencyPair &eff : energyEfficiencies )
     {
       const double fit_eff = expOfLogPowerSeriesEfficiency( 0.001*eff.energy, fit_pars);
       const double percent_error = (100.0*fabs(eff.efficiency - fit_eff)/eff.efficiency);
@@ -4872,17 +5115,17 @@ void DetectorPeakResponse::printDetectorParameterizationToStdout() const
   cout << "// Create detector like this:" << endl;
   cout << "auto detector = std::make_shared<DetectorPeakResponse>(\"" << m_name << "\", \"" << m_description << "\");" << endl;
   
-  if( m_efficiencyForm == kExpOfLogPowerSeries && !m_expOfLogPowerSeriesCoeffs.empty() )
+  if( efficiencyForm == kExpOfLogPowerSeries && !expOfLogCoeffs.empty() )
   {
     cout << "std::vector<float> eff_coeffs = {";
-    for( size_t i = 0; i < m_expOfLogPowerSeriesCoeffs.size(); ++i )
+    for( size_t i = 0; i < expOfLogCoeffs.size(); ++i )
     {
       if( i > 0 ) cout << ", ";
-      cout << m_expOfLogPowerSeriesCoeffs[i] << "f";
+      cout << expOfLogCoeffs[i] << "f";
     }
     cout << "};" << endl;
     cout << "detector->fromExpOfLogPowerSeries(eff_coeffs, {}, 0.0f, "
-         << m_detectorDiameter << "f, " << m_efficiencyEnergyUnits << "f, 0.0f, 0.0f, "
+         << m_detectorDiameter << "f, " << efficiencyEnergyUnits << "f, 0.0f, 0.0f, "
          << "DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);" << endl;
   }
   
@@ -5055,7 +5298,7 @@ std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericCZTG
 
 const std::string &DetectorPeakResponse::efficiencyFormula() const
 {
-  return m_efficiencyFormula;
+  return m_efficiency->formula();
 }
 
 const std::string &DetectorPeakResponse::name() const
@@ -5146,11 +5389,11 @@ std::string DetectorPeakResponse::toJSON() const
   float minEnergy = 50.0f, maxEnergy = 3000.0f;
   
   // Try to get a better range from efficiency pairs if available
-  if( m_efficiencyForm == kEnergyEfficiencyPairs && !m_energyEfficiencies.empty() )
+  if( m_efficiency->form() == kEnergyEfficiencyPairs && !m_efficiency->energyEfficiencies().empty() )
   {
-    minEnergy = m_energyEfficiencies[0].energy;
-    maxEnergy = m_energyEfficiencies[0].energy;
-    for( const auto& pair : m_energyEfficiencies )
+    minEnergy = m_efficiency->energyEfficiencies()[0].energy;
+    maxEnergy = m_efficiency->energyEfficiencies()[0].energy;
+    for( const auto& pair : m_efficiency->energyEfficiencies() )
     {
       minEnergy = std::min(minEnergy, pair.energy);
       maxEnergy = std::max(maxEnergy, pair.energy);
@@ -5181,7 +5424,7 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
   
   // Add efficiency data
   json << ",\"efficiency\":";
-  if( m_efficiencyForm == kFunctialEfficienyForm )
+  if( m_efficiency->form() == kFunctialEfficienyForm )
   {
     // For functional form, generate 100 points and send as kEnergyEfficiencyPairs with energyUnits=1
     json << "{\"form\":\"kEnergyEfficiencyPairs\",\"energyUnits\":1,\"pairs\":[";
@@ -5202,25 +5445,25 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
     }
     json << "]}";
   }
-  else if( m_efficiencyForm == kEnergyEfficiencyPairs )
+  else if( m_efficiency->form() == kEnergyEfficiencyPairs )
   {
-    json << "{\"form\":\"kEnergyEfficiencyPairs\",\"energyUnits\":" << m_efficiencyEnergyUnits << ",\"pairs\":[";
-    for( size_t i = 0; i < m_energyEfficiencies.size(); ++i )
+    json << "{\"form\":\"kEnergyEfficiencyPairs\",\"energyUnits\":" << m_efficiency->energyUnits() << ",\"pairs\":[";
+    for( size_t i = 0; i < m_efficiency->energyEfficiencies().size(); ++i )
     {
       if( i > 0 )
         json << ",";
-      json << "{\"energy\":" << m_energyEfficiencies[i].energy << ",\"efficiency\":" << m_energyEfficiencies[i].efficiency << "}";
+      json << "{\"energy\":" << m_efficiency->energyEfficiencies()[i].energy << ",\"efficiency\":" << m_efficiency->energyEfficiencies()[i].efficiency << "}";
     }
     json << "]}";
   }
-  else if( m_efficiencyForm == kExpOfLogPowerSeries )
+  else if( m_efficiency->form() == kExpOfLogPowerSeries )
   {
-    json << "{\"form\":\"kExpOfLogPowerSeries\",\"energyUnits\":" << m_efficiencyEnergyUnits << ",\"coefficients\":[";
-    for( size_t i = 0; i < m_expOfLogPowerSeriesCoeffs.size(); ++i )
+    json << "{\"form\":\"kExpOfLogPowerSeries\",\"energyUnits\":" << m_efficiency->energyUnits() << ",\"coefficients\":[";
+    for( size_t i = 0; i < m_efficiency->expOfLogPowerSeriesCoeffs().size(); ++i )
     {
       if( i > 0 )
         json << ",";
-      json << m_expOfLogPowerSeriesCoeffs[i];
+      json << m_efficiency->expOfLogPowerSeriesCoeffs()[i];
     }
     json << "]}";
   }
@@ -5265,7 +5508,55 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
   {
     json << "null";
   }
-  
+
+  // Add the fractional efficiency uncertainty envelope, if defined - sampled
+  //  at evenly spaced energies, ready for chart error-band rendering.
+  const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
+  if( eff_uncert && !eff_uncert->isEmpty() )
+  {
+    const size_t num_points = 100;
+    vector<double> energies( num_points );
+    for( size_t i = 0; i < num_points; ++i )
+      energies[i] = minEnergy + (double(i)/(num_points - 1.0)) * (maxEnergy - minEnergy);
+
+    const vector<double> uncerts = eff_uncert->fracUncertainties( energies );
+
+    json << ",\"effUncertFrac\":{\"energies\":[";
+    for( size_t i = 0; i < num_points; ++i )
+      json << (i ? "," : "") << energies[i];
+    json << "],\"fracUncerts\":[";
+    for( size_t i = 0; i < num_points; ++i )
+      json << (i ? "," : "") << uncerts[i];
+    json << "]}";
+  }//if( eff_uncert )
+
+  // Add the total efficiency curve, if defined - sampled the same way.
+  if( m_totalEfficiency && m_totalEfficiency->isValid() )
+  {
+    json << ",\"totalEfficiency\":{\"pairs\":[";
+    bool first = true;
+    for( int i = 0; i < 100; ++i )
+    {
+      const float energy = minEnergy + (float(i)/99.0f) * (maxEnergy - minEnergy);
+
+      float eff = 0.0f;
+      try
+      {
+        eff = m_totalEfficiency->efficiency( energy );
+      }catch( std::exception & )
+      {
+        continue;
+      }
+
+      if( IsNan(eff) || IsInf(eff) || (eff < 0.0f) )
+        continue;
+
+      json << (first ? "" : ",") << "{\"energy\":" << energy << ",\"efficiency\":" << eff << "}";
+      first = false;
+    }//for( int i = 0; i < 100; ++i )
+    json << "]}";
+  }//if( m_totalEfficiency )
+
 #ifdef PERFORM_DEVELOPER_CHECKS
   // Add validation data for JavaScript testing
   json << ",\"validation\":{";
@@ -5288,9 +5579,9 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
     if( i > 0 )
       json << ",";
     
-    if( m_efficiencyForm == kFunctialEfficienyForm || 
-        m_efficiencyForm == kEnergyEfficiencyPairs || 
-        m_efficiencyForm == kExpOfLogPowerSeries )
+    if( m_efficiency->form() == kFunctialEfficienyForm || 
+        m_efficiency->form() == kEnergyEfficiencyPairs || 
+        m_efficiency->form() == kExpOfLogPowerSeries )
     {
       const double efficiency = intrinsicEfficiency( testEnergies[i] );
       if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0 )
