@@ -184,8 +184,18 @@ public:
     EventLoopSentry();
     ~EventLoopSentry();
 
+    /** Marks this sentry as invalidated, so its destructor will skip the matching `endEventLoop()`.
+     Call this when the `UndoRedoManager` this sentry incremented has been destroyed mid-`notify(...)`
+     (e.g. "Clear Session..." rebuilds the `InterSpec`), so the decrement must not be applied to the
+     newly created manager. */
+    void invalidate();
+
     EventLoopSentry( const EventLoopSentry & ) = delete; // non construction-copyable
     EventLoopSentry &operator=( const EventLoopSentry & ) = delete; // non copyable
+
+  private:
+    /** When true, `~EventLoopSentry()` skips `endEventLoop()` - see #invalidate. */
+    bool m_invalidated;
   };//struct EventLoopSentry
   
   /** A struct that blocks the GUI from allowing undo/redo (disables menu items), as well as blocks undo/redo*/

@@ -25,7 +25,7 @@
 #include <string>
 #include <iostream>
 
-#include <Wt/Utils>
+#include <Wt/Utils.h>
 
 //#define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE AppUtils_suite

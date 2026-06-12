@@ -323,6 +323,13 @@ protected:
   InterSpec *m_viewer;
   Wt::WGridLayout *m_layout;
 
+  /** Set when `setupWidgets(...)` tears down the current `InterSpec` (and with it the
+   `UndoRedoManager`) mid-`notify(...)` - e.g. via "Clear Session...".  The in-scope
+   `UndoRedoManager::EventLoopSentry` incremented the now-destroyed manager, so `notify(...)`
+   consumes this flag to `invalidate()` the sentry and keep it from decrementing the freshly
+   created manager.  \sa notify, setupWidgets */
+  bool m_invalidate_undo_sentry;
+
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   Wt::Signal<const InterSpecApp *> m_destructing;
 #endif

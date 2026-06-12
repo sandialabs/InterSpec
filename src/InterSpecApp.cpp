@@ -131,6 +131,7 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   :  WApplication( env ),
     m_viewer( 0 ),
     m_layout( nullptr ),
+    m_invalidate_undo_sentry( false ),
     m_startTime( std::chrono::steady_clock::now() ),
     m_lastAccessTime( m_startTime ),
     m_activeTimeInSession{ std::chrono::seconds(0) },
@@ -554,6 +555,12 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     // In Wt4, m_viewer is owned by the layout; removing from layout destroys it.
     // clear() will delete all children including m_viewer via ownership.
     m_viewer = nullptr;
+
+    // We are tearing down the current InterSpec (and with it the UndoRedoManager) part-way through
+    //  a `notify(...)` event loop (e.g. "Clear Session...").  The in-scope `EventLoopSentry`
+    //  incremented the manager we are about to destroy, so flag `notify(...)` to invalidate it and
+    //  keep it from decrementing the freshly created manager.  \sa notify
+    m_invalidate_undo_sentry = true;
   }
 
   if( m_layout )
@@ -1328,6 +1335,15 @@ void InterSpecApp::notify( const Wt::WEvent& event )
 #endif
   }//try/catch
 #endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
+
+  // If this event tore down the InterSpec/UndoRedoManager (e.g. "Clear Session..." -> setupWidgets),
+  //  the manager `undo_event_sentry` incremented no longer exists; invalidate the sentry so its
+  //  destructor doesnt try to decrement the freshly created manager.  \sa setupWidgets
+  if( m_invalidate_undo_sentry )
+  {
+    undo_event_sentry.invalidate();
+    m_invalidate_undo_sentry = false;
+  }
 }//void notify( const Wt::WEvent& event )
 
 

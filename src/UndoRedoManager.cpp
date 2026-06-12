@@ -461,17 +461,30 @@ UndoRedoManager::BlockGuiUndoRedo::~BlockGuiUndoRedo()
 
 
 UndoRedoManager::EventLoopSentry::EventLoopSentry()
+ : m_invalidated( false )
 {
-  // Look the manager up fresh (rather than caching the pointer) so we are robust to the manager being
-  //  created or destroyed during a notify; #endEventLoop has an underflow guard for the asymmetric case.
+  // Look the manager up fresh (rather than caching the pointer) so we are robust to the manager
+  //  being created or destroyed during a notify.  If the manager we increment here gets destroyed
+  //  mid-notify (e.g. "Clear Session..."), `InterSpecApp::notify` calls #invalidate so our destructor
+  //  skips the matching #endEventLoop on the freshly created manager.
   UndoRedoManager *manager = UndoRedoManager::instance();
   if( manager )
     manager->beginEventLoop();
 }//EventLoopSentry constructor
 
 
+void UndoRedoManager::EventLoopSentry::invalidate()
+{
+  // Called when the manager we incremented was destroyed mid-notify; skip #endEventLoop on destruction.
+  m_invalidated = true;
+}//void invalidate()
+
+
 UndoRedoManager::EventLoopSentry::~EventLoopSentry()
 {
+  if( m_invalidated )
+    return;  // manager we incremented was destroyed mid-notify (e.g. Clear Session) - nothing to balance
+
   UndoRedoManager *manager = UndoRedoManager::instance();
   if( manager )
     manager->endEventLoop();  // endEventLoop -> flushCollectedSteps never throws
