@@ -30,6 +30,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "ceres/jet.h"
+
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -41,6 +43,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/MassAttenuationTool_imp.hpp"
 
 //#define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE GammaInteractionCalc_suite
@@ -835,3 +838,73 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
   // Check that the result is close to the expected value from the comment
   BOOST_CHECK_CLOSE( integral, 2.8626, 0.01 );  // within 0.1%
 }//BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
+
+
+/** Tests #MassAttenuation::mass_atten_coef_frac_an - the C1-continuous
+ fractional-atomic-number attenuation coefficient used (via
+ massAttenuationCoefficientFracAN and RelActCalc::get_atten_coef_for_an) by
+ generic-shielding transmission, and by auto-differentiated fits of atomic
+ number.
+ */
+BOOST_AUTO_TEST_CASE( FracAtomicNumberAttenuationCoef )
+{
+  set_data_dir();
+
+  const double test_energies[] = { 59.5, 185.7, 661.7, 2614.5 };  //keV
+
+  // 1) Must reproduce the element values exactly at integer atomic number
+  for( const double energy : test_energies )
+  {
+    for( const int an : { 1, 13, 26, 53, 74, 92, 98 } )
+    {
+      const double frac_mu = MassAttenuation::mass_atten_coef_frac_an<double>( an, energy );
+      const double elem_mu = MassAttenuation::massAttenuationCoefficientElement( an, energy );
+      BOOST_CHECK_CLOSE( frac_mu, elem_mu, 1.0E-4 );
+    }
+  }//for( loop over energies )
+
+  // 2) Value and derivative continuity across integer atomic numbers.
+  //    (the previous linear interpolation had a discontinuous derivative here)
+  const double delta = 1.0E-4;
+  for( const double energy : test_energies )
+  {
+    for( const double an : { 26.0, 74.0 } )
+    {
+      const double mu_below = MassAttenuation::mass_atten_coef_frac_an<double>( an - delta, energy );
+      const double mu_at = MassAttenuation::mass_atten_coef_frac_an<double>( an, energy );
+      const double mu_above = MassAttenuation::mass_atten_coef_frac_an<double>( an + delta, energy );
+
+      BOOST_CHECK_CLOSE( mu_below, mu_at, 0.1 );
+      BOOST_CHECK_CLOSE( mu_above, mu_at, 0.1 );
+
+      const double slope_below = (mu_at - mu_below) / delta;
+      const double slope_above = (mu_above - mu_at) / delta;
+      BOOST_CHECK_MESSAGE( fabs(slope_above - slope_below) <= 0.01*std::max(fabs(slope_above),fabs(slope_below)),
+                           "Derivative discontinuity at AN=" << an << ", E=" << energy
+                           << " keV: slope below=" << slope_below << ", above=" << slope_above );
+    }
+  }//for( loop over energies )
+
+  // 3) ceres::Jet derivative must match a numeric derivative of the double path,
+  //    including exactly at an integer atomic number (a knot of the interpolation)
+  using Jet1 = ceres::Jet<double,1>;
+  const double diff_step = 1.0E-5;
+  for( const double energy : { 59.5, 661.7 } )
+  {
+    for( const double an : { 25.5, 26.0, 73.2 } )
+    {
+      const Jet1 an_jet( an, 0 );
+      const Jet1 mu_jet = MassAttenuation::mass_atten_coef_frac_an( an_jet, static_cast<float>(energy) );
+
+      const double mu_val = MassAttenuation::mass_atten_coef_frac_an<double>( an, energy );
+      const double mu_plus = MassAttenuation::mass_atten_coef_frac_an<double>( an + diff_step, energy );
+      const double mu_minus = MassAttenuation::mass_atten_coef_frac_an<double>( an - diff_step, energy );
+      const double numeric_deriv = (mu_plus - mu_minus) / (2.0*diff_step);
+
+      BOOST_CHECK_CLOSE( mu_jet.a, mu_val, 1.0E-9 );
+      BOOST_CHECK_MESSAGE( fabs(mu_jet.v[0] - numeric_deriv) <= 1.0E-4*fabs(numeric_deriv),
+                           "Jet derivative (" << mu_jet.v[0] << ") doesnt match numeric ("
+                           << numeric_deriv << ") at AN=" << an << ", E=" << energy << " keV" );
+    }
+  }//for( loop over energies )
+}//BOOST_AUTO_TEST_CASE( FracAtomicNumberAttenuationCoef )

@@ -994,6 +994,72 @@ public:
                                   std::vector<std::string> *info = nullptr,
                                   std::vector<PeakDetail> *log_info = nullptr ) const;
 
+  /** Templated (double or ceres::Jet<>) core of the expected-counts computation,
+   used by the auto-differentiated (Ceres) fit; definitions are in
+   GammaInteractionCalc_imp.hpp, which callers must include (after ceres
+   headers, when using Jets).
+
+   Computes the model-expected counts for each peak that
+   #expected_observed_chis would include (i.e., peaks with a decay particle or
+   annihilation gamma), in that same order, with derivative information
+   propagated through shielding transmission, volumetric-source integration
+   (via #DistributedSrcCalcT and #self_shielding_integration_imp - NOT Cuhre),
+   and - by numeric differencing re-seeded into the Jet - nuclide age.
+
+   No logging; unlike #DoEval, exceptions (including CancelException) propagate.
+   */
+  template<typename T>
+  std::vector<T> expected_peak_counts_imp( const std::vector<T> &params,
+                                           NucMixtureCache &mixturecache ) const;
+
+  /** Templated equivalents of the same-named double-valued accessors below;
+   defined in GammaInteractionCalc_imp.hpp.
+   */
+  template<typename T>
+  T activity_imp( const SandiaDecay::Nuclide *nuclide, const std::vector<T> &params ) const;
+  template<typename T>
+  T age_imp( const SandiaDecay::Nuclide *nuclide, const std::vector<T> &params ) const;
+  template<typename T>
+  T activityOfSelfAttenSource_imp( const SandiaDecay::Nuclide *nuclide, const std::vector<T> &params ) const;
+  template<typename T>
+  T massFractionOfElement_imp( const size_t material_index, const SandiaDecay::Nuclide *nuc,
+                               const std::vector<T> &params ) const;
+  template<typename T>
+  T volumeOfMaterial_imp( const size_t matn, const std::vector<T> &params ) const;
+  template<typename T>
+  T sphericalThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T cylindricalRadiusThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T cylindricalLengthThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T rectangularWidthThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T rectangularHeightThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T rectangularDepthThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T arealDensity_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T atomicNumber_imp( const size_t materialNum, const std::vector<T> &params ) const;
+
+  /** Templated equivalent of #cluster_peak_activities (no logging).
+
+   When T is a ceres::Jet and `age` carries derivative information, the
+   derivative of each gammas yield with respect to age is computed by numeric
+   differencing (the decay calculations are not templatable), and chained into
+   the result - same approach as RelActCalcAuto.
+   */
+  template<typename T>
+  static void cluster_peak_activities_imp( std::map<double,T> &energy_count_map,
+                  const std::vector<std::pair<double,double>> &energie_widths,
+                  SandiaDecay::NuclideMixture &mixture,
+                  const T &act, const T &age,
+                  const double photopeakClusterSigma,
+                  const double energyToCluster,
+                  const bool accountForDecayDuringMeas,
+                  const double measDuration );
+
   void log_shield_info( const std::vector<double> &params,
                         const std::vector<double> &error_params,
                         const std::vector<ShieldingSourceFitCalc::SourceFitDef> &fit_src_info,

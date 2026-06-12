@@ -29,6 +29,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/MassAttenuationTool_imp.hpp"
 
 #ifdef _MSC_VER
 #undef isinf
@@ -156,15 +157,14 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
     
 
 /** This function is the equivalent of `mass_attenuation_coef(...)`, but preserves ceres::Jet
-    derivative information by linearly interpolating between floor(AN) and ceil(AN).
+    derivative information - see #MassAttenuation::mass_atten_coef_frac_an, which it forwards to.
 */
 template<typename T>
 T get_atten_coef_for_an( const T &an, const float energy )
 {
+#ifndef NDEBUG
   // `T` is either a `ceres::Jet<>` or a `double` here, so we'll use compile time if
   //  to get the scalar part
-  //  (the better way to do this is to use `auto an_scalar = ceres::internal::AsScalar(an);`, but
-  //   that requires including "ceres/internal/jet_traits.h", so we'll skip it)
   double an_scalar;
   if constexpr ( !std::is_same_v<T, double> )
     an_scalar = an.a;
@@ -172,17 +172,9 @@ T get_atten_coef_for_an( const T &an, const float energy )
     an_scalar = an;
 
   assert( (an_scalar >= 1.0) && (an_scalar <= 98.0) );
+#endif
 
-  // Clamp to [1, 97] so we can always interpolate to lower_an+1 without exceeding element 98
-  const int lower_an = std::clamp( static_cast<int>(std::floor(an_scalar)), 1, 97 );
-  const int upper_an = lower_an + 1;
-
-  const double lower_mu = MassAttenuation::massAttenuationCoefficientElement(lower_an, energy);
-  const double upper_mu = MassAttenuation::massAttenuationCoefficientElement(upper_an, energy);
-  const T anfrac = an - static_cast<double>(lower_an);  //This preserves the Jet derivative
-  const T mu = (1.0 - anfrac)*lower_mu + anfrac*upper_mu;
-
-  return mu;
+  return MassAttenuation::mass_atten_coef_frac_an( an, energy );
 }//T get_atten_coef_for_an( const T &an )
 
     
@@ -194,11 +186,6 @@ T eval_physical_model_eqn_imp( const double energy,
                                 std::optional<T> b,
                                 std::optional<T> c )
 {
-  // Note 20250114: this function currently interpolates between floor(AN) and one above it.
-  //                However, I dont think this is correct, we should be interpolating a bit better
-  //                so at least the derivative comes out better (think of an integer AN, we should
-  //                take into account the AN one below, as well as the one above)
-  
   using namespace std;
   using namespace ceres; //So we can use the math functions defined in the `ceres` namespace for Jets
   

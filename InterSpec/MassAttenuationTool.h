@@ -106,8 +106,11 @@ namespace MassAttenuation
    */
   float massAttenuationCoefficientElement( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process );
   
-  /** Similar to #massAttenuationCoeficient, but interpolated the result between
-   * floor(atomic_number) and ceil(atomic_number) linearly.
+  /** Similar to #massAttenuationCoefficientElement, but for fractional atomic
+   * numbers: a C1-continuous (Catmull-Rom cubic in log(mu) vs atomic number)
+   * interpolation across the neighboring integer atomic numbers - see
+   * #mass_atten_coef_frac_an in MassAttenuationTool_imp.hpp, which this
+   * forwards to, and which can also preserve ceres::Jet derivatives.
    */
   float massAttenuationCoefficientFracAN( const float atomic_number, const float energy );
   

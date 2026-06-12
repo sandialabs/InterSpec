@@ -51,6 +51,8 @@
 #include "Minuit2/MnUserParameterState.h"
 
 
+#include "ceres/jet.h"
+
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
@@ -67,6 +69,7 @@
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/GammaInteractionCalc_imp.hpp"
 
 
 using namespace std;
@@ -571,6 +574,370 @@ BOOST_AUTO_TEST_CASE( SimpleSourceFit )
                        << ") didnt match expected (" << PhysicalUnits::printToBestActivityUnits(expected_activity,10) << ")" );
 }//BOOST_AUTO_TEST_CASE( SimpleSourceFit )
 
+
+namespace
+{
+/** Finds a transition + product index for a gamma of the given energy, emitted
+ anywhere in `parent`s decay chain (i.e., possibly by a descendant nuclide).
+ */
+bool find_gamma_transition( const SandiaDecay::Nuclide * const parent,
+                            const double energy,
+                            const SandiaDecay::Transition *&transition,
+                            int &particle_index )
+{
+  transition = nullptr;
+  particle_index = -1;
+
+  for( const SandiaDecay::Nuclide *nuc : parent->descendants() )
+  {
+    for( const SandiaDecay::Transition *trans : nuc->decaysToChildren )
+    {
+      for( size_t prod_index = 0; prod_index < trans->products.size(); ++prod_index )
+      {
+        const SandiaDecay::RadParticle &product = trans->products[prod_index];
+        if( (product.type == SandiaDecay::GammaParticle)
+            && (fabs(product.energy - energy) < 0.25) )
+        {
+          transition = trans;
+          particle_index = static_cast<int>( prod_index );
+          return true;
+        }
+      }//for( loop over transition products )
+    }//for( loop over transitions )
+  }//for( loop over descendant nuclides )
+
+  return false;
+}//find_gamma_transition(...)
+
+
+/** Creates a Gaussian peak assigned to the gamma of `parent`s decay chain at `energy`. */
+std::shared_ptr<PeakDef> make_test_peak( const SandiaDecay::Nuclide * const parent,
+                                         const double energy,
+                                         const double sigma,
+                                         const double area )
+{
+  auto peak = make_shared<PeakDef>();
+  peak->setMean( energy );
+  peak->setSigma( sigma );
+  peak->setPeakArea( area );
+  peak->setPeakAreaUncert( sqrt(area) );
+
+  const SandiaDecay::Transition *transition = nullptr;
+  int particle_index = -1;
+  BOOST_REQUIRE_MESSAGE( find_gamma_transition( parent, energy, transition, particle_index ),
+                         "No gamma at " << energy << " keV in " << parent->symbol << " decay chain" );
+
+  peak->setNuclearTransition( parent, transition, particle_index, PeakDef::SourceGammaType::NormalGamma );
+  peak->useForShieldingSourceFit( true );
+
+  return peak;
+}//make_test_peak(...)
+
+
+/** Returns copies of `input.foreground_peaks`, with each peaks area set to the
+ forward-model expectation for the configuration in `input` - i.e., the chi2
+ minimum of the returned peaks is at `input`s parameter values (the "truth").
+ */
+deque<shared_ptr<const PeakDef>> peaks_with_model_expected_areas(
+                const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &input )
+{
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+
+  const vector<double> truth_pars = fcn_pars.second.Params();
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mix_cache;
+  const vector<GammaInteractionCalc::PeakResultPlotInfo> peak_infos
+        = fcn_pars.first->energy_chi_contributions( truth_pars, {}, mix_cache, nullptr, nullptr );
+
+  BOOST_REQUIRE_EQUAL( peak_infos.size(), input.foreground_peaks.size() );
+
+  deque<shared_ptr<const PeakDef>> answer;
+
+  for( const shared_ptr<const PeakDef> &orig : input.foreground_peaks )
+  {
+    const double gamma_energy = orig->gammaParticleEnergy();
+
+    const GammaInteractionCalc::PeakResultPlotInfo *closest = nullptr;
+    for( const GammaInteractionCalc::PeakResultPlotInfo &info : peak_infos )
+    {
+      if( !closest || (fabs(info.energy - gamma_energy) < fabs(closest->energy - gamma_energy)) )
+        closest = &info;
+    }
+
+    BOOST_REQUIRE( closest );
+    BOOST_REQUIRE_MESSAGE( fabs(closest->energy - gamma_energy) < 1.0,
+                           "No model prediction near " << gamma_energy << " keV" );
+    BOOST_REQUIRE_MESSAGE( (closest->observedOverExpected > 0.0) && !IsInf(closest->observedOverExpected),
+                           "Model predicts no counts at " << gamma_energy << " keV" );
+
+    const double expected_area = orig->peakArea() / closest->observedOverExpected;
+    BOOST_REQUIRE( expected_area > 0.0 );
+
+    auto peak = make_shared<PeakDef>( *orig );
+    peak->setPeakArea( expected_area );
+    peak->setPeakAreaUncert( sqrt(expected_area) );
+    answer.push_back( peak );
+  }//for( loop over input peaks )
+
+  return answer;
+}//peaks_with_model_expected_areas(...)
+}//namespace
+
+
+/** Minuit2 baseline: fit generic-shielding atomic number + areal density + source
+ activity on synthetic peak areas generated from the forward model, so the true
+ minimum is at known parameter values.
+
+ This is the regression fixture the (future) Ceres-based driver gets compared
+ against; the same fixture exercises the coarse atomic-number scan in fit_model.
+ */
+BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+
+  const SandiaDecay::Nuclide * const ba133 = db->nuclide( "Ba133" );
+  BOOST_REQUIRE( ba133 );
+
+  const double distance = 100*PhysicalUnits::cm;
+  const float live_time = 600*PhysicalUnits::second;
+  const double true_an = 26.0;
+  const double true_ad = 10.0*PhysicalUnits::g/PhysicalUnits::cm2;
+  const double true_activity = 10.0*PhysicalUnits::microCi;
+  const double age = 5.0*PhysicalUnits::year;
+
+  auto detector = make_shared<DetectorPeakResponse>();
+  detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                    5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                    0, 3000*PhysicalUnits::keV,
+                                    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( 16, 1.0f );
+  foreground->set_gamma_counts( spec, live_time, live_time );
+
+  // Ba133s main lines; spanning 81 to 384 keV gives leverage on atomic number
+  //  (photoelectric component at low energy).
+  const double placeholder_area = 1.0E4;
+  deque<shared_ptr<const PeakDef>> truth_peaks;
+  for( const double energy : { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 } )
+    truth_peaks.push_back( make_test_peak( ba133, energy, 1.0, placeholder_area ) );
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+
+  ShieldingSourceFitCalc::ShieldingInfo generic_shield;
+  generic_shield.m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  generic_shield.m_isGenericMaterial = true;
+  generic_shield.m_forFitting = true;
+  generic_shield.m_material = nullptr;
+  generic_shield.m_dimensions[0] = true_an;
+  generic_shield.m_dimensions[1] = true_ad;
+  generic_shield.m_dimensions[2] = 0.0;
+  generic_shield.m_fitDimensions[0] = false;
+  generic_shield.m_fitDimensions[1] = false;
+  generic_shield.m_fitDimensions[2] = false;
+
+  ShieldingSourceFitCalc::SourceFitDef ba133_src;
+  ba133_src.nuclide = ba133;
+  ba133_src.activity = true_activity;
+  ba133_src.fitActivity = false;
+  ba133_src.age = age;
+  ba133_src.fitAge = false;
+  ba133_src.ageDefiningNuc = nullptr;
+  ba133_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  chi_input.config.shieldings = { generic_shield };
+  chi_input.config.sources = { ba133_src };
+  chi_input.config.options = options;
+  chi_input.detector = detector;
+  chi_input.foreground = foreground;
+  chi_input.background = nullptr;
+  chi_input.foreground_peaks = truth_peaks;
+  chi_input.background_peaks = nullptr;
+
+  // Set peak areas to the forward-model expectation at the truth values
+  const deque<shared_ptr<const PeakDef>> expected_peaks = peaks_with_model_expected_areas( chi_input );
+
+  // Now setup the actual fit, starting away from the truth values
+  generic_shield.m_dimensions[0] = 40.0;
+  generic_shield.m_dimensions[1] = 2.0*PhysicalUnits::g/PhysicalUnits::cm2;
+  generic_shield.m_fitDimensions[0] = true;
+  generic_shield.m_fitDimensions[1] = true;
+  ba133_src.activity = 1.0*PhysicalUnits::microCi;
+  ba133_src.fitActivity = true;
+
+  chi_input.config.shieldings = { generic_shield };
+  chi_input.config.sources = { ba133_src };
+  chi_input.foreground_peaks = expected_peaks;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  auto progress_fcn = [](){};
+  bool finished_fit_called = false;
+  auto finished_fcn = [&finished_fit_called](){ finished_fit_called = true; };
+
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, results, finished_fcn );
+
+  BOOST_CHECK( finished_fit_called );
+  BOOST_CHECK( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+  BOOST_REQUIRE_EQUAL( results->final_shieldings.size(), size_t(1) );
+  BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
+
+  // Note: for generic materials, FitShieldingInfo::m_dimensions[1] is in g/cm2
+  //  (unlike the PhysicalUnits-valued input ShieldingInfo) - see fit_model().
+  const double true_ad_g_cm2 = true_ad / (PhysicalUnits::g/PhysicalUnits::cm2);
+  const double fit_an = results->final_shieldings[0].m_dimensions[0];
+  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1];
+  const double fit_activity = results->fit_src_info[0].activity;
+
+  cout << "FitGenericShieldingANBaseline: AN=" << fit_an
+       << " (truth " << true_an << "), AD=" << fit_ad_g_cm2
+       << " g/cm2 (truth " << true_ad_g_cm2
+       << "), activity=" << PhysicalUnits::printToBestActivityUnits(fit_activity,6)
+       << " (truth " << PhysicalUnits::printToBestActivityUnits(true_activity,6) << ")" << endl;
+
+  BOOST_CHECK_MESSAGE( fabs(fit_an - true_an) < 2.5,
+                       "Fit AN (" << fit_an << ") not close to truth (" << true_an << ")" );
+  BOOST_CHECK_MESSAGE( fabs(fit_ad_g_cm2 - true_ad_g_cm2) < 0.05*true_ad_g_cm2,
+                       "Fit AD (" << fit_ad_g_cm2 << " g/cm2) not close to truth ("
+                       << true_ad_g_cm2 << " g/cm2)" );
+  BOOST_CHECK_MESSAGE( fabs(fit_activity - true_activity) < 0.05*true_activity,
+                       "Fit activity (" << PhysicalUnits::printToBestActivityUnits(fit_activity,6)
+                       << ") not close to truth ("
+                       << PhysicalUnits::printToBestActivityUnits(true_activity,6) << ")" );
+
+  // Uncertainties should be present and sane
+  BOOST_CHECK( results->fit_src_info[0].activityUncertainty.has_value()
+               && (results->fit_src_info[0].activityUncertainty.value() > 0.0) );
+  BOOST_CHECK( results->final_shieldings[0].m_dimensionUncerts[1] > 0.0 );
+}//BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
+
+
+/** Minuit2 baseline: fit source age (plus activity) for a Ra226 point source,
+ where the in-growth of Rn222 progeny (Pb214/Bi214 lines vs Ra226s own 186 keV
+ line) determines the age.  Synthetic peak areas are generated from the forward
+ model, so the chi2 minimum is at known truth values.
+ */
+BOOST_AUTO_TEST_CASE( FitPointSourceAgeBaseline )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+
+  const SandiaDecay::Nuclide * const ra226 = db->nuclide( "Ra226" );
+  BOOST_REQUIRE( ra226 );
+
+  const double distance = 100*PhysicalUnits::cm;
+  const float live_time = 600*PhysicalUnits::second;
+  const double true_activity = 10.0*PhysicalUnits::microCi;
+  const double true_age = 5.0*PhysicalUnits::day;
+
+  auto detector = make_shared<DetectorPeakResponse>();
+  detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                    5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                    0, 3000*PhysicalUnits::keV,
+                                    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( 16, 1.0f );
+  foreground->set_gamma_counts( spec, live_time, live_time );
+
+  // 186.2 keV is Ra226 itself; 351.9 (Pb214) and 609.3 (Bi214) grow in with
+  //  the ~3.8 day half-life of Rn222, so their ratio to 186.2 fixes the age.
+  const double placeholder_area = 1.0E4;
+  deque<shared_ptr<const PeakDef>> truth_peaks;
+  for( const double energy : { 186.211, 351.932, 609.312 } )
+    truth_peaks.push_back( make_test_peak( ra226, energy, 1.0, placeholder_area ) );
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+
+  ShieldingSourceFitCalc::SourceFitDef ra226_src;
+  ra226_src.nuclide = ra226;
+  ra226_src.activity = true_activity;
+  ra226_src.fitActivity = false;
+  ra226_src.age = true_age;
+  ra226_src.fitAge = false;
+  ra226_src.ageDefiningNuc = nullptr;
+  ra226_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  chi_input.config.shieldings = {};
+  chi_input.config.sources = { ra226_src };
+  chi_input.config.options = options;
+  chi_input.detector = detector;
+  chi_input.foreground = foreground;
+  chi_input.background = nullptr;
+  chi_input.foreground_peaks = truth_peaks;
+  chi_input.background_peaks = nullptr;
+
+  const deque<shared_ptr<const PeakDef>> expected_peaks = peaks_with_model_expected_areas( chi_input );
+
+  // Fit starting away from truth
+  ra226_src.activity = 1.0*PhysicalUnits::microCi;
+  ra226_src.fitActivity = true;
+  ra226_src.age = 1.0*PhysicalUnits::day;
+  ra226_src.fitAge = true;
+
+  chi_input.config.sources = { ra226_src };
+  chi_input.foreground_peaks = expected_peaks;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  auto progress_fcn = [](){};
+  bool finished_fit_called = false;
+  auto finished_fcn = [&finished_fit_called](){ finished_fit_called = true; };
+
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, results, finished_fcn );
+
+  BOOST_CHECK( finished_fit_called );
+  BOOST_CHECK( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+  BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
+
+  const double fit_activity = results->fit_src_info[0].activity;
+  const double fit_age = results->fit_src_info[0].age;
+
+  cout << "FitPointSourceAgeBaseline: activity="
+       << PhysicalUnits::printToBestActivityUnits(fit_activity,6)
+       << " (truth " << PhysicalUnits::printToBestActivityUnits(true_activity,6)
+       << "), age=" << fit_age/PhysicalUnits::day << " days (truth "
+       << true_age/PhysicalUnits::day << " days)" << endl;
+
+  BOOST_CHECK_MESSAGE( fabs(fit_activity - true_activity) < 0.05*true_activity,
+                       "Fit activity (" << PhysicalUnits::printToBestActivityUnits(fit_activity,6)
+                       << ") not close to truth ("
+                       << PhysicalUnits::printToBestActivityUnits(true_activity,6) << ")" );
+  BOOST_CHECK_MESSAGE( fabs(fit_age - true_age) < 0.15*true_age,
+                       "Fit age (" << fit_age/PhysicalUnits::day << " days) not close to truth ("
+                       << true_age/PhysicalUnits::day << " days)" );
+
+  BOOST_CHECK( results->fit_src_info[0].activityUncertainty.has_value()
+               && (results->fit_src_info[0].activityUncertainty.value() > 0.0) );
+  BOOST_CHECK( results->fit_src_info[0].ageUncertainty.has_value()
+               && (results->fit_src_info[0].ageUncertainty.value() > 0.0) );
+}//BOOST_AUTO_TEST_CASE( FitPointSourceAgeBaseline )
 
 
 std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingSourceFitCalc::ModelFitResults &results,
@@ -1240,6 +1607,318 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   for( const auto &msg : textInfoLines )
     cout << "\t" << msg << endl;
 }//BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
+
+
+namespace
+{
+/** Loads an analyst-test N42 (single-measurement style, like the AEGIS trace-source file)
+ into a ShieldSourceInput; returns false if the file doesnt fit that simple structure.
+ */
+bool load_simple_analyst_n42( const string &n42_path,
+                              GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &chi_input )
+{
+  auto specfile = make_shared<SpecMeas>();
+  if( !specfile->load_N42_file( n42_path )
+      || (specfile->sample_numbers().size() != 1)
+      || (specfile->num_measurements() != 1) )
+    return false;
+
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = specfile->peaks( specfile->sample_numbers() );
+  if( !peaks || peaks->empty() )
+    return false;
+
+  shared_ptr<const DetectorPeakResponse> detector = specfile->detector();
+  if( !detector || !detector->isValid() )
+    return false;
+
+  rapidxml::xml_document<char> *model_xml = specfile->shieldingSourceModel();
+  if( !model_xml || !model_xml->first_node() )
+    return false;
+
+  GammaInteractionCalc::ShieldSourceConfig config;
+  config.deSerialize( model_xml->first_node() );
+  set_fit_quantities_to_default_values( config.shieldings, config.sources );
+
+  chi_input.config = config;
+  chi_input.detector = detector;
+  chi_input.foreground = specfile->measurements()[0];
+  chi_input.background = nullptr;
+  chi_input.foreground_peaks.assign( peaks->begin(), peaks->end() );
+  chi_input.background_peaks = nullptr;
+
+  return true;
+}//load_simple_analyst_n42(...)
+
+
+/** Checks `expected_peak_counts_imp<double>` reproduces the `expectedCounts` of
+ the legacy `energy_chi_contributions(...)` at the fits initial parameters.
+
+ `tolerance` is relative; volumetric (trace/self-atten) cases need a looser one
+ since the integration backend differs (adaptive GL vs Cuhre).
+ */
+void check_expected_counts_parity( const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &chi_input,
+                                   const double tolerance,
+                                   const string &label )
+{
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+  const vector<double> params = fcn_pars.second.Params();
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_legacy, cache_imp;
+  const vector<GammaInteractionCalc::PeakResultPlotInfo> legacy
+        = fcn_pars.first->energy_chi_contributions( params, {}, cache_legacy, nullptr, nullptr );
+  const vector<double> templated
+        = fcn_pars.first->expected_peak_counts_imp<double>( params, cache_imp );
+
+  BOOST_REQUIRE_EQUAL( legacy.size(), templated.size() );
+
+  for( size_t i = 0; i < legacy.size(); ++i )
+  {
+    BOOST_CHECK_MESSAGE( fabs(templated[i] - legacy[i].expectedCounts)
+                            <= tolerance*std::max(legacy[i].expectedCounts, 1.0E-12),
+                         label << ": peak " << i << " (" << legacy[i].energy << " keV): templated="
+                         << std::setprecision(10) << templated[i] << " vs legacy="
+                         << legacy[i].expectedCounts );
+  }//for( loop over peaks )
+}//check_expected_counts_parity(...)
+}//namespace
+
+
+/** Validates the templated chi2 core (`expected_peak_counts_imp<double>`) against the
+ legacy `energy_chi_contributions(...)` on point-source, aged-source, and volumetric
+ (trace-source) configurations.
+ */
+BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const double distance = 100*PhysicalUnits::cm;
+  const float live_time = 600*PhysicalUnits::second;
+
+  auto detector = make_shared<DetectorPeakResponse>();
+  detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                    5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                    0, 3000*PhysicalUnits::keV,
+                                    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( 16, 1.0f );
+  foreground->set_gamma_counts( spec, live_time, live_time );
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+
+  {// Case A: Ba133 point source behind a generic shielding
+    ShieldingSourceFitCalc::ShieldingInfo generic_shield;
+    generic_shield.m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+    generic_shield.m_isGenericMaterial = true;
+    generic_shield.m_forFitting = true;
+    generic_shield.m_material = nullptr;
+    generic_shield.m_dimensions[0] = 26.0;
+    generic_shield.m_dimensions[1] = 10.0*PhysicalUnits::g/PhysicalUnits::cm2;
+    generic_shield.m_dimensions[2] = 0.0;
+    generic_shield.m_fitDimensions[0] = generic_shield.m_fitDimensions[1] = generic_shield.m_fitDimensions[2] = false;
+
+    ShieldingSourceFitCalc::SourceFitDef ba133_src;
+    ba133_src.nuclide = db->nuclide( "Ba133" );
+    ba133_src.activity = 10.0*PhysicalUnits::microCi;
+    ba133_src.fitActivity = true;
+    ba133_src.age = 5.0*PhysicalUnits::year;
+    ba133_src.fitAge = false;
+    ba133_src.ageDefiningNuc = nullptr;
+    ba133_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+    deque<shared_ptr<const PeakDef>> peaks;
+    for( const double energy : { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 } )
+      peaks.push_back( make_test_peak( ba133_src.nuclide, energy, 1.0, 1.0E4 ) );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+    chi_input.config.distance = distance;
+    chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+    chi_input.config.shieldings = { generic_shield };
+    chi_input.config.sources = { ba133_src };
+    chi_input.config.options = options;
+    chi_input.detector = detector;
+    chi_input.foreground = foreground;
+    chi_input.foreground_peaks = peaks;
+
+    check_expected_counts_parity( chi_input, 1.0E-5, "Ba133+generic" );
+  }// End Case A
+
+  {// Case B: aged Ra226 point source, no shielding
+    ShieldingSourceFitCalc::SourceFitDef ra226_src;
+    ra226_src.nuclide = db->nuclide( "Ra226" );
+    ra226_src.activity = 10.0*PhysicalUnits::microCi;
+    ra226_src.fitActivity = true;
+    ra226_src.age = 5.0*PhysicalUnits::day;
+    ra226_src.fitAge = true;
+    ra226_src.ageDefiningNuc = nullptr;
+    ra226_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+    deque<shared_ptr<const PeakDef>> peaks;
+    for( const double energy : { 186.211, 351.932, 609.312 } )
+      peaks.push_back( make_test_peak( ra226_src.nuclide, energy, 1.0, 1.0E4 ) );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+    chi_input.config.distance = distance;
+    chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+    chi_input.config.shieldings = {};
+    chi_input.config.sources = { ra226_src };
+    chi_input.config.options = options;
+    chi_input.detector = detector;
+    chi_input.foreground = foreground;
+    chi_input.foreground_peaks = peaks;
+
+    check_expected_counts_parity( chi_input, 1.0E-9, "Ra226-aged" );
+  }// End Case B
+
+  {// Case C: the AEGIS Eu152 trace-source (volumetric) analyst file
+    const string test_n42_file = SpecUtils::append_path( g_test_file_dir,
+                  "../analysis_tests/AEGIS_Eu152_surface_contamination.n42_20230622T113239.276178.n42" );
+    BOOST_REQUIRE( SpecUtils::is_file(test_n42_file) );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+    BOOST_REQUIRE( load_simple_analyst_n42( test_n42_file, chi_input ) );
+
+    // Volumetric: integration backend differs (adaptive GL vs Cuhre), so looser tolerance
+    check_expected_counts_parity( chi_input, 2.0E-3, "AEGIS-trace" );
+  }// End Case C
+}//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
+
+
+/** Validates the ceres::Jet derivative lanes of `expected_peak_counts_imp` - including
+ the numerically-seeded age derivative - against central finite differences of the
+ double evaluation.
+ */
+BOOST_AUTO_TEST_CASE( ExpectedPeakCountsJetDerivatives )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+
+  const double distance = 100*PhysicalUnits::cm;
+  const float live_time = 600*PhysicalUnits::second;
+
+  auto detector = make_shared<DetectorPeakResponse>();
+  detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                    5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                    0, 3000*PhysicalUnits::keV,
+                                    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( 16, 1.0f );
+  foreground->set_gamma_counts( spec, live_time, live_time );
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+
+  // Aged Ra226 point source behind a generic shielding: parameters are
+  //  {activity, age, AN, AD} - exercising the age numeric-diff seeding and the
+  //  AN interpolation derivative in one go.
+  ShieldingSourceFitCalc::ShieldingInfo generic_shield;
+  generic_shield.m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  generic_shield.m_isGenericMaterial = true;
+  generic_shield.m_forFitting = true;
+  generic_shield.m_material = nullptr;
+  generic_shield.m_dimensions[0] = 31.4;  //non-integer, to exercise the AN interpolation
+  generic_shield.m_dimensions[1] = 5.0*PhysicalUnits::g/PhysicalUnits::cm2;
+  generic_shield.m_dimensions[2] = 0.0;
+  generic_shield.m_fitDimensions[0] = true;
+  generic_shield.m_fitDimensions[1] = true;
+  generic_shield.m_fitDimensions[2] = false;
+
+  ShieldingSourceFitCalc::SourceFitDef ra226_src;
+  ra226_src.nuclide = db->nuclide( "Ra226" );
+  ra226_src.activity = 10.0*PhysicalUnits::microCi;
+  ra226_src.fitActivity = true;
+  ra226_src.age = 5.0*PhysicalUnits::day;
+  ra226_src.fitAge = true;
+  ra226_src.ageDefiningNuc = nullptr;
+  ra226_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+  deque<shared_ptr<const PeakDef>> peaks;
+  for( const double energy : { 186.211, 351.932, 609.312 } )
+    peaks.push_back( make_test_peak( ra226_src.nuclide, energy, 1.0, 1.0E4 ) );
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  chi_input.config.shieldings = { generic_shield };
+  chi_input.config.sources = { ra226_src };
+  chi_input.config.options = options;
+  chi_input.detector = detector;
+  chi_input.foreground = foreground;
+  chi_input.foreground_peaks = peaks;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+  const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
+  const vector<double> params = fcn_pars.second.Params();
+
+  // Params: [0]=activity (MBq-scaled), [1]=age (seconds), [2]=AN, [3]=AD, [4]=unused
+  BOOST_REQUIRE_EQUAL( params.size(), size_t(5) );
+
+  using Jet4 = ceres::Jet<double,4>;
+
+  vector<Jet4> jet_params( params.size() );
+  for( size_t i = 0; i < params.size(); ++i )
+  {
+    jet_params[i] = Jet4( params[i] );
+    if( i < 4 )
+      jet_params[i].v[i] = 1.0;
+  }
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache jet_cache;
+  const vector<Jet4> jet_counts = fcn->expected_peak_counts_imp<Jet4>( jet_params, jet_cache );
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache dbl_cache;
+  const vector<double> dbl_counts = fcn->expected_peak_counts_imp<double>( params, dbl_cache );
+
+  BOOST_REQUIRE_EQUAL( jet_counts.size(), dbl_counts.size() );
+  BOOST_REQUIRE_EQUAL( jet_counts.size(), size_t(3) );
+
+  // The value lanes must match the double evaluation exactly
+  for( size_t i = 0; i < jet_counts.size(); ++i )
+    BOOST_CHECK_CLOSE( jet_counts[i].a, dbl_counts[i], 1.0E-9 );
+
+  // Each derivative lane vs a central finite difference.
+  //  Step sizes: ~0.1% of each parameter value.
+  for( size_t par_index = 0; par_index < 4; ++par_index )
+  {
+    // The atomic-number lane needs a smaller step: the expected counts have enough
+    //  curvature in AN that the h^2 truncation of this check dominates at 1e-3 relative.
+    const double rel_step = (par_index == 2) ? 1.0E-4 : 1.0E-3;
+    const double step = rel_step * std::max( fabs(params[par_index]), 1.0E-6 );
+
+    vector<double> params_plus = params, params_minus = params;
+    params_plus[par_index] += step;
+    params_minus[par_index] -= step;
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_p, cache_m;
+    const vector<double> counts_plus = fcn->expected_peak_counts_imp<double>( params_plus, cache_p );
+    const vector<double> counts_minus = fcn->expected_peak_counts_imp<double>( params_minus, cache_m );
+
+    for( size_t i = 0; i < jet_counts.size(); ++i )
+    {
+      const double numeric = (counts_plus[i] - counts_minus[i]) / (2.0*step);
+      const double jet_deriv = jet_counts[i].v[par_index];
+
+      // The age lane uses numeric differencing internally (with its own adaptive step),
+      //  so it gets a looser tolerance than the analytically-propagated lanes.
+      const double tol = (par_index == 1) ? 0.01 : 1.0E-4;
+
+      BOOST_CHECK_MESSAGE( fabs(jet_deriv - numeric) <= tol*std::max(fabs(numeric), 1.0E-9),
+                           "Param " << par_index << ", peak " << i << ": Jet deriv ("
+                           << jet_deriv << ") vs numeric (" << numeric << ")" );
+    }//for( loop over peaks )
+  }//for( loop over parameters )
+}//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsJetDerivatives )
 
 
 BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )

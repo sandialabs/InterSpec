@@ -1292,27 +1292,27 @@ double cylinder_line_intersection( const double radius, const double half_length
       // Calculate intersection points
       const double point1[2] = {source[0] + t1*dx, source[1] + t1*dy};
       const double point2[2] = {source[0] + t2*dx, source[1] + t2*dy};
-      
-      // Calculate distances from source to order the points
-      const double dist1_sq = (point1[0] - detector[0])*(point1[0] - detector[0]) + (point1[1] - detector[1])*(point1[1] - detector[1]);
-      const double dist2_sq = (point2[0] - detector[0])*(point2[0] - detector[0]) + (point2[1] - detector[1])*(point2[1] - detector[1]);
-      
-      
-      // Pick the solution towards/away-from the detector
-      const bool sol_1_toward = (dist1_sq < dist2_sq);
-      
+
+      // Pick the solution towards/away-from the detector.
+      //  The line parameter t increases from source (t=0) toward the detector (t=1), so the
+      //  intersection with the larger t (always t2, since a > 0) is the one toward the detector.
+      //  Note: previous to 20260611 this choice compared the Euclidean xy-distances of the two
+      //  intersections to the detector - mathematically equivalent, but when the detector is on
+      //  the cylinder axis (end-on geometry) the two distances are exactly equal and the choice
+      //  was decided by floating-point noise, sometimes picking the away-side exit (and
+      //  consequently the wrong end-cap).
       switch( direction )
       {
         case CylExitDir::TowardDetector:
-          x_exit       = sol_1_toward ? point1[0] : point2[0];
-          y_exit       = sol_1_toward ? point1[1] : point2[1];
-          other_x_exit = sol_1_toward ? point2[0] : point1[0];
+          x_exit       = point2[0];
+          y_exit       = point2[1];
+          other_x_exit = point1[0];
           break;
-          
+
         case CylExitDir::AwayFromDetector:
-          x_exit       = sol_1_toward ? point2[0] : point1[0];
-          y_exit       = sol_1_toward ? point2[1] : point1[1];
-          other_x_exit = sol_1_toward ? point1[0] : point2[0];
+          x_exit       = point1[0];
+          y_exit       = point1[1];
+          other_x_exit = point2[0];
           break;
       }//switch( direction )
     }// end scope to solve for x,y of intersection

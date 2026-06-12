@@ -39,6 +39,7 @@
 
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/MassAttenuationTool_imp.hpp"
 
 using namespace std;
 
@@ -200,12 +201,6 @@ namespace
      * only for a specific sub-process.
      */
     float massAttenuationCoefficientElement( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process );
-    
-    /** Similar to #massAttenuationCoeficient, but interpolated the result between
-     * floor(atomic_number) and ceil(atomic_number) linearly.
-     */
-    float massAttenuationCoefficientFracAN( const float atomic_number, const float energy );
-    
     
     static float logLogInterpolate( const float energy,
                                    const std::vector<float> &logenergy,
@@ -446,7 +441,7 @@ namespace MassAttenuation
   
   float massAttenuationCoefficientFracAN( const float atomic_number, const float energy )
   {
-    return sm_xs_tool.massAttenuationCoefficientFracAN( atomic_number, energy );
+    return static_cast<float>( mass_atten_coef_frac_an<double>( atomic_number, energy ) );
   }
 
 
@@ -888,25 +883,6 @@ float MassAttenuationTool::massAttenuationCoefficientElement( const int atomic_n
   return comptXs + photoXs + convXs;
 #endif
 }//float massAttenuationCoefficientElement(...)
-
-
-float MassAttenuationTool::massAttenuationCoefficientFracAN( const float atomic_number, const float energy )
-{
-  const int floor_an = static_cast<int>( std::floor( atomic_number ) );
-  
-  if( atomic_number >= MassAttenuation::sm_max_xs_atomic_number || (atomic_number == floor_an) )
-    return massAttenuationCoefficientElement( static_cast<int>(atomic_number), energy );
-  
-  const int next_an = floor_an + 1;
-  
-  const float muf = massAttenuationCoefficientElement( floor_an, energy );
-  const float mup1 = massAttenuationCoefficientElement( next_an, energy );
-  
-  const float anfrac = min( 1.0f, max( 0.0f, atomic_number-floor_an ) );  //the min/max can probably be removed, but leaving in JIC
-  const float mu = (1.0f - anfrac)*muf + anfrac*mup1;
-
-  return mu;
-}//float MassAttenuationTool::massAttenuationCoefficientFracAN( const float atomic_number, const float energy )
 
 
 

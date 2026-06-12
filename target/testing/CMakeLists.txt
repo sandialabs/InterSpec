@@ -192,6 +192,13 @@ add_test( NAME TShieldingSourceFitCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_VolumetricIntegration test_VolumetricIntegration.cpp VolumetricIntegrationFixtures.h )
+target_link_libraries( test_VolumetricIntegration PRIVATE InterSpecLib )
+add_test( NAME TVolumetricIntegration
+  COMMAND $<TARGET_FILE:test_VolumetricIntegration> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_DetectionLimit test_DetectionLimit.cpp )
 target_link_libraries( test_DetectionLimit PRIVATE InterSpecLib )
 add_test( NAME test_DetectionLimit
