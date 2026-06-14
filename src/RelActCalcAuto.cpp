@@ -3847,20 +3847,40 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 // Free b,c.  This is the correction-owning curve (the first physical-model curve when the
                 //  correction is shared), so `corr_cfg` is the config that drives the form + coefficient prior.
                 const bool is_basis = is_basis_correction( corr_cfg.corr_fcn );
+
+                // Bound every correction form by ONE physical knob, R = ns_corr_max_window_swing: the max
+                // factor a single basis term may reshape the rel-eff across the fit window (review A13).
+                // Bounds are symmetric about the identity, so the start (identity) is interior - not pinned
+                // on a bound (the old Hoerl b in [0,2] started on its lower bound and could not represent a
+                // decreasing correction).  This is the sole guard now that the coefficient prior is gone.
+                const double corr_ln_R = std::log( RelActCalc::ns_corr_max_window_swing );
+                const double corr_elo_mev = 0.001 * cost_functor->m_corr_lower_energy;
+                const double corr_ehi_mev = 0.001 * cost_functor->m_corr_upper_energy;
+                const bool corr_have_window = (corr_elo_mev > 0.0) && (corr_ehi_mev > corr_elo_mev);
+                // Hoerl E^b term swings (Ehi/Elo)^|b|; Hoerl c^(1/E) term swings exp(|ln c|*(1/Elo-1/Ehi)).
+                // Cap each at R, and clamp for a degenerate (near-zero-width) window so we never get inf.
+                const double corr_bmax = corr_have_window
+                          ? std::min( corr_ln_R / std::log(corr_ehi_mev/corr_elo_mev), 2.0 ) : 2.0;
+                const double corr_gamma_max = corr_have_window
+                          ? std::min( corr_ln_R / ((1.0/corr_elo_mev) - (1.0/corr_ehi_mev)), std::log(3.0) )
+                          : std::log(3.0);
+                // Chebyshev basis is normalized to u in [-1,1]; each anchored term swings exp(2|a|).
+                const double corr_amax = 0.5 * corr_ln_R;
+
                 if( is_basis )
                 {
-                  // Basis coefficients a1,a2 are O(1); bound them symmetrically about their identity (0).
-                  lower_bounds[b_index] = (-RelActCalc::ns_basis_corr_coef_limit/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
-                  upper_bounds[b_index] = ( RelActCalc::ns_basis_corr_coef_limit/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
-                  lower_bounds[c_index] = (-RelActCalc::ns_basis_corr_coef_limit/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
-                  upper_bounds[c_index] = ( RelActCalc::ns_basis_corr_coef_limit/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+                  // Basis coefficients a1,a2: symmetric box |a| <= ln(R)/2 about their identity (0).
+                  lower_bounds[b_index] = (-corr_amax/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  upper_bounds[b_index] = ( corr_amax/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  lower_bounds[c_index] = (-corr_amax/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+                  upper_bounds[c_index] = ( corr_amax/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
                 }else
                 {
-                  // Hoerl: b in [0,2]; c fit as gamma=log(c) over the physical c-range [1e-6, 3].
-                  lower_bounds[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
-                  upper_bounds[b_index] = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
-                  lower_bounds[c_index] = hoerl_c_param_for_c( 1.0E-6 );
-                  upper_bounds[c_index] = hoerl_c_param_for_c( 3.0 );
+                  // Hoerl: b symmetric in [-bmax,bmax]; c fit as gamma=log(c), symmetric in [-gamma_max,gamma_max].
+                  lower_bounds[b_index] = (-corr_bmax/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  upper_bounds[b_index] = ( corr_bmax/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  lower_bounds[c_index] = RelActCalc::ns_decay_hoerl_c_offset - (corr_gamma_max/RelActCalc::ns_decay_hoerl_c_multiple);
+                  upper_bounds[c_index] = RelActCalc::ns_decay_hoerl_c_offset + (corr_gamma_max/RelActCalc::ns_decay_hoerl_c_multiple);
                 }
               }
 

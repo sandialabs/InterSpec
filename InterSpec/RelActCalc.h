@@ -60,10 +60,18 @@ static_assert( ns_num_basis_correction_terms == 2,
               "The correction always uses exactly 2 parameter slots ('Hoerl b,c'); changing this breaks the"
               " invariant parameter-block layout shared by all correction types." );
 
-/** Symmetric +-bound on each orthogonal-polynomial correction coefficient (in physical/coefficient units).
- The coefficients are naturally O(1); this is a generous box that, together with the (optional) weak prior
- pulling them toward 0, keeps the correction well-behaved without clipping realistic shapes. */
-constexpr double ns_basis_corr_coef_limit = 10.0;
+/** The single "max window-swing" knob R for the empirical-correction bounds: the largest factor any one
+ correction basis term may reshape the relative-efficiency curve across the fit energy window.  Every
+ correction form derives symmetric, window-aware bounds about its identity from R, so the start (identity)
+ is always interior - never pinned on a bound:
+   - Hoerl b   (E_MeV^b):     |b|     <= ln(R)/ln(Ehi/Elo)
+   - Hoerl c   (gamma=ln c):  |ln c|  <= ln(R)/(1/Elo_MeV - 1/Ehi_MeV)
+   - Chebyshev a1,a2:         |a|     <= ln(R)/2          (basis already normalized to u in [-1,1])
+ (with narrow-window clamps b<=2, c in [1/3,3]).  R=10 is a generous guard rail (~7x above the corrections
+ actually seen in fits); a 10..30 sweep showed larger R does not improve accuracy and only inflates the
+ rel-eff uncertainty band.  This bound is the SOLE guard on the correction now that the coefficient prior
+ has been removed. */
+constexpr double ns_corr_max_window_swing = 10.0;
 
 /** The empirical correction term applied on top of (DRF x attenuation) in the Physical Model rel-eff.
 
