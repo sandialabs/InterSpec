@@ -5732,8 +5732,57 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }//
     }//if( (summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS) )
 #endif //#if( PEAK_SKEW_HACK == 2 )
-    
-    
+
+    // The main solve can stop on a plateau (ftol/ptol) above the full model's true minimum,
+    //  especially in flat empirical-correction <-> attenuator valleys.  A warm re-Solve resets the
+    //  trust region; from a true minimum it is nearly free, but it reliably drops out of these stalls
+    //  (the auto-simplify trial below otherwise routinely finds a lower chi2 - mathematically
+    //  impossible at a true minimum of the full model).  Loop until improvement stops, keeping the
+    //  last converged point if a restart fails to converge.
+    if( (summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS) )
+    {
+      const int max_restarts = 5;
+      for( int restart = 0; restart < max_restarts; ++restart )
+      {
+        if( cancel_calc && cancel_calc->load() )
+          break;
+
+        const vector<double> pre_restart_pars = parameters;
+        const double pre_restart_cost = summary.final_cost;
+
+        ceres::Solver::Summary restart_summary;
+        ceres::Solve( ceres_options, &problem, &restart_summary );
+
+        const bool restart_converged = ((restart_summary.termination_type == ceres::CONVERGENCE)
+                                        || (restart_summary.termination_type == ceres::USER_SUCCESS));
+        if( !restart_converged )
+        {
+          // A cancel that landed mid-restart must surface (else we'd report Success for a cancelled
+          //  run); any other non-convergence just keeps the last good converged point + summary.
+          if( cancel_calc && cancel_calc->load() )
+            summary = restart_summary;
+          else
+            parameters = pre_restart_pars;
+          break;
+        }
+
+        const double rel_improve = (pre_restart_cost > 0.0)
+                                ? (pre_restart_cost - restart_summary.final_cost)/pre_restart_cost : 0.0;
+        if( rel_improve < 0.0 )
+        {
+          // Non-monotonic steps are enabled, so a converged restart can end above where it started;
+          //  keep the better (pre-restart) point and its summary.
+          parameters = pre_restart_pars;
+          break;
+        }
+
+        summary = restart_summary;
+        if( rel_improve <= ceres_options.function_tolerance )
+          break;
+      }//for( int restart = 0; restart < max_restarts; ++restart )
+    }//if( main solve converged )
+
+
     switch( summary.termination_type )
     {
       case ceres::CONVERGENCE:
@@ -9803,6 +9852,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }else
             {
               forward_dt = std::min( 0.01*nuc_age_val, 0.001*nuc->halfLife );
+              if( forward_dt <= 0.0 )
+                forward_dt = 0.001*nuc->halfLife;  // age==0: keep a nonzero forward step (no 0/0)
               if( nuc_age_val > 0.0 )
                 backward_dt = std::min(0.1*nuc_age_val, 0.001*nuc->halfLife);
             }//if( nuc_age_val > 0.001*nuc->halfLife ) / else
@@ -9963,6 +10014,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 const double derivative = numerator / denominator;
 
                 yield.v = derivative * nuc_age.v;
+              }else
+              {
+                // No backward sample (e.g. age==0 at the lower bound): use the one-sided forward
+                //  difference so the age gradient is not silently zero.
+                yield.v = forward_derivative * nuc_age.v;
               }
             }//if( is_fixed_age(src_info.nuclide, rel_eff_index) )
           }//if( !std::is_same_v<T, double> )          
@@ -10370,13 +10426,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( !rel_eff_indices.empty() )
     {
+      // Filter `peak_uncertainties` with the same predicate/order as the peaks: the uncertainties were
+      //  computed against the unfiltered peak list, so applying them by post-filter index would assign
+      //  each remaining peak the uncertainty of a different (filtered-out) peak in multi-curve fits.
       vector<RelActCalcAuto::PeakDefImp<double>> filtered_peaks;
-      for( const RelActCalcAuto::PeakDefImp<double> &p : computed_peaks.peaks )
+      vector<vector<double>> filtered_uncerts;
+      const bool have_uncerts = !peak_uncertainties.empty();
+      for( size_t p = 0; p < computed_peaks.peaks.size(); ++p )
       {
-        if( rel_eff_indices.count(p.m_rel_eff_index) )
-          filtered_peaks.push_back( p );
+        const RelActCalcAuto::PeakDefImp<double> &peak = computed_peaks.peaks[p];
+        if( rel_eff_indices.count(peak.m_rel_eff_index) )
+        {
+          filtered_peaks.push_back( peak );
+          if( have_uncerts && (p < peak_uncertainties.size()) )
+            filtered_uncerts.push_back( peak_uncertainties[p] );
+        }
       }
       computed_peaks.peaks.swap( filtered_peaks );
+      if( have_uncerts )
+        peak_uncertainties.swap( filtered_uncerts );
     }//if( !rel_eff_indices.empty() )
     
     PeaksForEnergyRange answer;
@@ -10633,17 +10701,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         //  is 1.0 (i.e., RE for approx half source counts above and below 1.0) to remove degeneracy between RE and
         //  activities - this is slightly different than how the manual solution does it, but seemingly a little more
         //  fitting here.
+        // Weight by `m_energy_ranges` (which `source_counts_for_rois` is sized/filled by) rather than
+        //  `m_options.rois`: ROIs are not 1:1 with energy ranges (off-spectrum ROIs are skipped,
+        //  breakable ROIs split into sub-ranges, then sorted), so indexing the per-energy-range counts
+        //  by ROI index could read out-of-bounds and mis-weight split ROIs.
         T avrg_rel_eff( 0.0 );
-        for( size_t roi_index = 0; roi_index < m_options.rois.size(); ++roi_index )
+        for( size_t er_index = 0; er_index < m_energy_ranges.size(); ++er_index )
         {
-          const RelActCalcAuto::RoiRange &roi = m_options.rois[roi_index];
-          const T counts = (sum_src_counts > 1.0) ? source_counts_for_rois[roi_index] : T(1.0);
-          const double mid_energy = roi.lower_energy + 0.5*(roi.upper_energy - roi.lower_energy);
+          const RoiRangeChannels &er = m_energy_ranges[er_index];
+          const T counts = (sum_src_counts > 1.0) ? source_counts_for_rois[er_index] : T(1.0);
+          const double mid_energy = er.lower_energy + 0.5*(er.upper_energy - er.lower_energy);
           const T rel_eff = relative_eff( mid_energy, rel_eff_index, x );
           avrg_rel_eff += counts*rel_eff;
         }
 
-        avrg_rel_eff /= ((sum_src_counts > 1.0) ? sum_src_counts : T(static_cast<double>(m_options.rois.size())));
+        avrg_rel_eff /= ((sum_src_counts > 1.0) ? sum_src_counts : T(static_cast<double>(m_energy_ranges.size())));
 
         //  Note: `m_rel_eff_anchor_enhancement` is the sqrt of counts in all the ranges - I'm not really sure if
         //        this is the appropriate scale to use, but this value effects the error bands displayed on the
