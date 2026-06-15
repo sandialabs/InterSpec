@@ -122,6 +122,28 @@ namespace RelActCalcAuto
 
 int run_test();
 
+/** Caps the number of threads an individual relative-activity solve uses
+ internally.
+
+ Each solve dispatches its ROIs to a thread-pool, and configures Ceres' own
+ thread count; by default both are sized to the hardware concurrency.  When many
+ solves run concurrently — e.g. the peak-fit optimization GA on a many-core
+ machine — this `(outer parallelism) x (hardware_concurrency)` thread count can
+ exhaust the OS thread/process limit (`pthread_create` failing with EAGAIN,
+ i.e. "Resource temporarily unavailable").
+
+ Pass 0 (the default) for "auto" (use the hardware concurrency); pass a small
+ value (e.g. 1) when you provide your own outer parallelism.  Process-wide and
+ thread-safe.
+ */
+void set_max_solve_threads( const unsigned num_threads );
+
+/** The resolved per-solve thread count: the value given to #set_max_solve_threads
+ clamped to [1, hardware_concurrency], or the hardware concurrency when set to 0.
+ Always >= 1.
+ */
+unsigned max_solve_threads();
+
 /** A typdef for passing either Nuclide, Element, or Reaction to functions. 
  
  Note that it also includes using a monostate, because we would like to semi-enforse that if a pointer is

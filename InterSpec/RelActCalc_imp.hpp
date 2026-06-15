@@ -65,7 +65,16 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
   
   
   T answer( 0.0 );
-  
+
+  // Bound on the argument to `exp()` for the exponential equation forms below.
+  // A divergent fit step can push the coefficients to where `exp()` overflows to
+  // +inf, producing an inf/huge relative efficiency that poisons the Ceres
+  // residuals (the solver then rejects the residual block).  Clamping to +-50
+  // spans rel-eff ~5e21..2e-22 -- already far outside any physical value -- and
+  // keeps the (later squared) residuals finite.  In the normal range min/max are
+  // a no-op, passing the value (and its ceres::Jet derivatives) through exactly.
+  constexpr double max_exp_arg = 50.0;
+
   switch( eqn_form )
   {
     case RelActCalc::RelEffEqnForm::LnX:
@@ -102,7 +111,7 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
         }//switch( order )
       }//for( loop over coeffs )
       
-      answer = exp( answer );
+      answer = exp( max( T(-max_exp_arg), min( T(max_exp_arg), answer ) ) );
       
       break;
     }//case RelEffEqnForm::LnY:
@@ -122,7 +131,7 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
         }//switch( order )
       }//for( loop over coeffs )
       
-      answer = exp( answer );
+      answer = exp( max( T(-max_exp_arg), min( T(max_exp_arg), answer ) ) );
       
       break;
     }//case RelEffEqnForm::LnXLnY:
@@ -142,7 +151,7 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
         }//switch( order )
       }//for( loop over coeffs )
       
-      answer = exp( answer );
+      answer = exp( max( T(-max_exp_arg), min( T(max_exp_arg), answer ) ) );
       
       break;
     }//case RelEffEqnForm::FramEmpirical:

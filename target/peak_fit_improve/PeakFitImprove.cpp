@@ -70,6 +70,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/AnalystChecks.h"
 #include "InterSpec/PeakFitSpecImp.h"
+#include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/FitPeaksForNuclides.h"
@@ -1201,6 +1202,14 @@ int main( int argc, char **argv )
   << " threads for individual evaluation, with each individual using up to " << PeakFitImprove::sm_num_threads_per_individual
   << " threads for optimization."
   << endl;
+
+  // Cap the threads each relative-activity solve uses internally to the
+  // per-individual budget (default 1).  The GA already parallelizes across
+  // individuals at the outer level, so without this each solve would spin up a
+  // hardware_concurrency-sized ROI/Ceres thread-pool, and (outer x inner) would
+  // exhaust the OS thread limit on many-core machines (EAGAIN). See
+  // RelActCalcAuto::set_max_solve_threads().
+  RelActCalcAuto::set_max_solve_threads( static_cast<unsigned>( PeakFitImprove::sm_num_threads_per_individual ) );
   cout << "Data base directory: " << data_base_dir << endl;
   if( !static_data_dir.empty() )
     cout << "Static data directory: " << static_data_dir << endl;
