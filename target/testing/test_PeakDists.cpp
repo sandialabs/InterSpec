@@ -22,6 +22,7 @@
  */
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <string>
 #include <iostream>
 
@@ -1365,3 +1366,91 @@ BOOST_AUTO_TEST_CASE( DoubleBortel )
     BOOST_CHECK_CLOSE( integral, 1.0, 0.01 );
   }
 }//BOOST_AUTO_TEST_CASE( DoubleBortel )
+
+
+namespace
+{
+  // Reference Bortel indefinite integral, computed with boost WITHOUT the production cutoff.
+  // Valid wherever exp(exp_arg) does not overflow (erfc_arg up to ~26); used to confirm the A23
+  // fix no longer drops the tail term in the exp_arg>87 || erfc_arg>10 region.
+  double bortel_F_ref( double mean, double sigma, double skew, double x )
+  {
+    const double inv_root_two = 0.70710678118654752440;
+    const double t = (x - mean)/sigma;
+    const double erf_arg = inv_root_two*t;
+    if( skew <= 0.0 )
+      return 0.5*boost::math::erf(erf_arg);
+    const double exp_arg = sigma*(2.0*skew*t + sigma)/(2.0*skew*skew);
+    const double erfc_arg = inv_root_two*(t + sigma/skew);
+    return 0.5*( boost::math::erf(erf_arg) + std::exp(exp_arg)*boost::math::erfc(erfc_arg) );
+  }
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( BortelTailNoDrop )
+{
+  // Previous to 20260615 the Bortel tail term exp(exp_arg)*erfc(erfc_arg) used to be DROPPED when
+  // exp_arg>87 || erfc_arg>10 (a value+Jacobian discontinuity worth up to ~0.6 counts).  With a
+  // small skew the erfc_arg>10 cutoff triggers across the whole peak; verify the integral now
+  // matches an independent boost reference there (the old code would be off by several percent).
+  const double mean = 100.0, sigma = 5.0, skew = sigma/15.0;  // sigma/skew=15 -> erfc_arg>10 for t>-0.9
+
+  // Confirm this configuration sits in the old cutoff region at/above the mean.
+  const double erfc_arg_at_mean = 0.70710678118654752440*(0.0 + sigma/skew);
+  BOOST_CHECK( erfc_arg_at_mean > 10.0 );
+
+  for( double x0 : { mean - 0.5*sigma, mean, mean + 1.0*sigma } )
+  {
+    for( double x1 : { mean + 2.0*sigma, mean + 4.0*sigma } )
+    {
+      const double got = bortel_integral( mean, sigma, skew, x0, x1 );
+      const double ref = bortel_F_ref(mean,sigma,skew,x1) - bortel_F_ref(mean,sigma,skew,x0);
+      BOOST_CHECK_CLOSE( got, ref, 1.0E-5 );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( BortelTailNoDrop )
+
+
+BOOST_AUTO_TEST_CASE( BortelDeepWindowFinite )
+{
+  // bortel_indefinite_integral is reached at very negative t by the *_coverage_limits
+  // bisectors (which start from mean-50*sigma) and by the gauss_plus_/double_bortel array windows
+  // (which reach mean-(12+20*tau)*sigma).  A naive "erfcx everywhere" rewrite gives inf*0 = NaN
+  // there; verify the shipped fix stays finite (and ~unit area).
+  const double mean = 100.0, sigma = 0.5;
+
+  // Scalar Bortel evaluated at t=-50 (sigma/skew small -> erfc_arg ~ -34, the NaN-prone region).
+  for( double skew : { 0.25, 1.0, 2.5 } )
+  {
+    const double v = bortel_integral( mean, sigma, skew, mean - 50.0*sigma, mean + 10.0*sigma );
+    BOOST_CHECK( std::isfinite(v) );
+    BOOST_CHECK_CLOSE( v, 1.0, 1.0 );
+  }
+
+  // Multi-Bortel array fills over deep windows (down to mean-(12+20*tau)*sigma) for large tau --
+  // these reach bortel_indefinite_integral at very negative t.  Check finite + ~unit area.
+  for( double tau : { 1.0, 5.0, 15.0 } )
+  {
+    const size_t n = 2048;
+    const double lo = mean - (12.0 + 20.0*tau)*sigma, hi = mean + 12.0*sigma;
+    vector<float> e( n + 1 );
+    for( size_t i = 0; i <= n; ++i )
+      e[i] = static_cast<float>( lo + i*(hi - lo)/n );
+
+    vector<double> gc( n, 0.0 ), dc( n, 0.0 );
+    gauss_plus_bortel_integral( mean, sigma, 1.0, 1.0, tau, e.data(), gc.data(), n ); // amp=1, R=1
+    double_bortel_integral( mean, sigma, 1.0, tau, 0.0, 0.5, e.data(), dc.data(), n ); // amp=1, delta=0
+
+    double gsum = 0.0, dsum = 0.0;
+    bool finite = true;
+    for( size_t i = 0; i < n; ++i )
+    {
+      gsum += gc[i];
+      dsum += dc[i];
+      finite = finite && std::isfinite(gc[i]) && std::isfinite(dc[i]);
+    }
+    BOOST_CHECK( finite );
+    BOOST_CHECK_CLOSE( gsum, 1.0, 1.0 );
+    BOOST_CHECK_CLOSE( dsum, 1.0, 1.0 );
+  }
+}//BOOST_AUTO_TEST_CASE( BortelDeepWindowFinite )

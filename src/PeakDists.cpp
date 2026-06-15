@@ -320,24 +320,29 @@ template void photopeak_function_integral<double>( const double, const double,co
    */
   double bortel_pdf( const double mean, const double sigma, const double skew_low, const double x )
   {
-    // 32-bit floats have a normalized range of 1E-38 to 1E38; 64bit floats 1E-308 to 1E308
-    // We could use the proper functions up to ~1E308, but to be conservative, but to be
-    // a little conservative, we'll switch to using a gaussian when the exp() and erfc()
-    // functions start returning values with limits near 1E-38 or 1E38.
-    // Although difference between the methods will start out ar ~30% and increase to >100%,
-    // the function values are so small, they dont really matter.
-    // TODO: try expanding the function, around (or above) `mean` to see if there can be a better approximation
-    
-    const double exp_arg = ((x - mean)/skew_low) + (sigma*sigma/(2*skew_low*skew_low));
-    const double erfc_arg = 0.7071067812*(((x - mean)/sigma) + (sigma/skew_low));
-    
-    if( (skew_low <= 0.0) || (exp_arg > 87.0) || (erfc_arg > 10.0) )
+    if( skew_low <= 0.0 )   // degenerate Bortel == pure Gaussian
     {
       const double a = (x-mean)/sigma;
       return (1.0/(sigma*2.5066282746)) * std::exp( -0.5 * a*a );
     }
-    
-    return (0.5/skew_low)*std::exp( exp_arg ) * boost_erfc_imp( erfc_arg );
+
+    // The Bortel PDF tail is (0.5/skew)*exp(exp_arg)*erfc(erfc_arg).  Like
+    // `bortel_indefinite_integral` (review item A23), in the exp_arg>87 || erfc_arg>10 region the
+    // direct product overflows/underflows -- the old code dropped it to a Gaussian there -- so use
+    // the identity exp_arg - erfc_arg^2 == -t^2/2 to evaluate it as the overflow-free
+    // erfcx(erfc_arg)*exp(-t^2/2)  (that region always has erfc_arg>0).  Elsewhere keep the fast
+    // direct product; the two forms agree and are smooth at the switch.
+    const double t = (x - mean)/sigma;
+    const double exp_arg = ((x - mean)/skew_low) + (sigma*sigma/(2*skew_low*skew_low));
+    const double erfc_arg = 0.7071067812*(t + (sigma/skew_low));
+
+    double tail;  // exp(exp_arg)*erfc(erfc_arg)
+    if( (exp_arg > 87.0) || (erfc_arg > 10.0) )
+      tail = FaddeevaT::erfcx_real( erfc_arg ) * std::exp( -0.5*t*t );
+    else
+      tail = std::exp( exp_arg ) * boost_erfc_imp( erfc_arg );
+
+    return (0.5/skew_low) * tail;
   }//double bortel_pdf(...)
 
 

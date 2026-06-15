@@ -7,12 +7,12 @@
 #include <exception>
 
 #include <boost/math/constants/constants.hpp>
-#include <unsupported/Eigen/SpecialFunctions>
 
 #include "SpecUtils/SpecFile.h" //Needed for `offset_integral(...)`
 
 
 #include "VoigtDistribution/pseudo_voigt_exp_tail.hpp" //Pseudo-Voigt with exponential tail distribution - we always need for `voigt_exp_coverage_limits`
+#include "VoigtDistribution/Faddeeva.hpp" //`FaddeevaT::erfcx_real` for the A23 Bortel tail; not pulled in by pseudo_voigt when USE_PSEUDO_VOIGT_DISTRIBUTION=1
 #if( !USE_PSEUDO_VOIGT_DISTRIBUTION )
 #include "VoigtDistribution/voigt_exp_tail.hpp" //True-Voigt with exponential tail distribution
 #endif
@@ -118,61 +118,25 @@ void gaussian_integral( const T peak_mean,
   T erfarg = (static_cast<double>(energies[channel]) - peak_mean) / sqrt2sigma;
 
 
-  // We will keep track of the channels lower value of erf, so we dont have to re-compute
-  //  it for each channel (this is the who advantage of )
+  // We keep the channel's lower erf value so we dont have to re-compute it each channel.
+  // Note: we use double-precision erf - we previously used float-preceision when I didnt
+  //  think it mattered because it was ~4x faster evaluation.  But it turns out the Ceres
+  //  convergence was slower, so using the double precision is net-effect faster.
   T erflow;
   if constexpr ( !std::is_same_v<T, double> )
-  {
     erflow = erf( erfarg );
-  }else
-  {
-    // `Eigen::numext::erf<float>(erfarg)` is a little faster than `boost_erf_imp(erfarg)`,
-    //    but a little less accurate (it even clamps values to +-1 outside of fabs(erfarg) of 4),
-    //    so we'll only use it where we wont notice this slight reduction of accuracy
-    erflow = (amp_mult > 1.0E5)
-                          ? boost_erf_imp(erfarg)
-                          : static_cast<double>( Eigen::numext::erf(static_cast<float>(erfarg)) );
-  }
-
-#ifndef NDEBUG
-  double boost_erflow, eigen_erflow;
-  if constexpr ( std::is_same_v<T, double> )
-  {
-    // We'll check that things area as accurate as we expect
-    // Should maybe enable this check using PERFORM_DEVELOPER_CHECKS
-    boost_erflow = boost_erf_imp(erfarg);
-    eigen_erflow = Eigen::numext::erf(static_cast<float>(erfarg));
-  }
-#endif
+  else
+    erflow = boost_erf_imp( erfarg );
 
   while( (channel < nchannel) && (energies[channel] < stop_energy) )
   {
     erfarg = (static_cast<double>(energies[channel+1]) - peak_mean)/(sqrt2*peak_sigma);
 
-#ifndef NDEBUG
-    if constexpr ( std::is_same_v<T, double> )
-    {
-      const double boost_erfhigh = boost_erf_imp( erfarg );
-      const double eigen_erfhigh = Eigen::numext::erf(static_cast<float>(erfarg));
-      const double boost_val = amp_mult * (boost_erfhigh - boost_erflow);
-      const double eigen_val = amp_mult * (eigen_erfhigh - eigen_erflow);
-
-      assert( fabs(boost_val - eigen_val) < 1.0E-5*abs(amp_mult) || fabs(boost_val - eigen_val) < 0.001 );
-
-      boost_erflow = boost_erfhigh;
-      eigen_erflow = eigen_erfhigh;
-    }//if constexpr ( std::is_same_v<T, double> )
-#endif
-
     T erfhigh;
     if constexpr ( !std::is_same_v<T, double> )
-    {
       erfhigh = erf( erfarg );
-    }else
-    {
-      erfhigh = (amp_mult > 1.0E5) ? boost_erf_imp( erfarg )
-                                   : static_cast<double>( Eigen::numext::erf(static_cast<float>(erfarg)) );
-    }
+    else
+      erfhigh = boost_erf_imp( erfarg );
 
     channels[channel] += amp_mult * (erfhigh - erflow);
     channel += 1;
@@ -396,24 +360,47 @@ template<typename T>
 T bortel_indefinite_integral( const double x, const T mean, const T sigma, const T skew )
 {
   const double one_div_root_two = boost::math::constants::one_div_root_two<double>();
-  
+
   const T t = (x - mean) / sigma;
   const T erf_arg = one_div_root_two*t;
   const T exp_arg = sigma*(2.0*skew*t + sigma) / (2.0*skew*skew);
   const T erfc_arg = one_div_root_two*(t + (sigma/skew));
-  
-  if( (skew <= 0.0) || (exp_arg > 87.0) || (erfc_arg > 10.0) )
+
+  if( skew <= 0.0 )   // degenerate Bortel == pure Gaussian
   {
     if constexpr ( !std::is_same_v<T, double> )
       return 0.5 * erf(erf_arg);
     else
       return 0.5 * boost_erf_imp(erf_arg);
   }
-  
+
+  // Tail term exp(exp_arg)*erfc(erfc_arg).  Before 20260615 we dropped this term
+  //  (returned just 0.5*erf) when exp_arg>87 || erfc_arg>10 -- a value+Jacobian discontinuity worth
+  //  up to ~0.6 counts - messing up our auto-gradients.  In that region (which always has erfc_arg>0) the direct product
+  //  overflows/underflows, so evaluate it with the identity  exp_arg - erfc_arg^2 == -t^2/2  as the
+  //  overflow-free  erfcx(erfc_arg)*exp(-t^2/2)   (erfcx(>0) in (0,1]) instead.  Elsewhere -- the
+  //  common case, and every erfc_arg<0 (where exp_arg<0 is provable, so no overflow) -- keep the
+  //  fast direct product.  The two forms are equal and C-infinity smooth at the switch (no
+  //  discontinuity), and erfcx never sees the very-negative args that would overflow it.
+  T tail;
+  if( (exp_arg > 87.0) || (erfc_arg > 10.0) )
+  {
+    if constexpr ( !std::is_same_v<T, double> )
+      tail = FaddeevaT::erfcx_real(erfc_arg) * exp(-0.5*t*t);
+    else
+      tail = FaddeevaT::erfcx_real(erfc_arg) * std::exp(-0.5*t*t);
+  }else
+  {
+    if constexpr ( !std::is_same_v<T, double> )
+      tail = exp(exp_arg) * erfc(erfc_arg);
+    else
+      tail = std::exp(exp_arg) * boost_erfc_imp(erfc_arg);
+  }
+
   if constexpr ( !std::is_same_v<T, double> )
-    return 0.5*(erf(erf_arg) + (exp(exp_arg) * erfc(erfc_arg)));
+    return 0.5*(erf(erf_arg) + tail);
   else
-    return 0.5*(boost_erf_imp(erf_arg) + (std::exp(exp_arg) * boost_erfc_imp(erfc_arg)));
+    return 0.5*(boost_erf_imp(erf_arg) + tail);
 }//double bortel_indefinite
   
   
@@ -1730,11 +1717,7 @@ void voigt_exp_integral( const T peak_mean, const T sigma_gauss,
                                       tail_ratio, tail_slope, energies, channels, nchannel );
 #endif
 
-  // Add NaN checks for debugging with Ceres Jets
-  for( size_t i = 0; i < nchannel; ++i )
-  {
-    check_jet_for_NaN( channels[i] );
-  }
+  check_jet_array_for_NaN( channels, nchannel );
 }//voigt_exp_integral(...)
 
 
@@ -1805,9 +1788,7 @@ void gauss_plus_bortel_integral( const T peak_mean, const T sigma,
     channel += 1;
   }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
 
-  // Add NaN checks for debugging with Ceres Jets
-  for( size_t i = 0; i < nchannel; ++i )
-    check_jet_for_NaN( channels[i] );
+  check_jet_array_for_NaN( channels, nchannel );
 }//gauss_plus_bortel_integral(...)
 
 
@@ -1873,9 +1854,7 @@ void double_bortel_integral( const T peak_mean, const T sigma,
     channel += 1;
   }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
 
-  // Add NaN checks for debugging with Ceres Jets
-  for( size_t i = 0; i < nchannel; ++i )
-    check_jet_for_NaN( channels[i] );
+  check_jet_array_for_NaN( channels, nchannel );
 }//double_bortel_integral(...)
 
 
