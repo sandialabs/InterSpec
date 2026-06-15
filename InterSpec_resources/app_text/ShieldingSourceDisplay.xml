@@ -12,6 +12,38 @@
     such as '3ft 4in', or '3.6E-2 m 12 cm' which are equivalent to
     40inches and 15.6cm respectively.
   </message>
+  <message id="ssd-offset-check">Off-axis</message>
+  <message id="ssd-tt-offset-check">
+    Displace the whole source/shielding assembly off the detector axis.  When checked,
+    one or two offset inputs appear (depending on geometry) so you can position the
+    item off to the side of where the detector is pointing.  The offsets are user
+    inputs; they are never fit for.
+  </message>
+  <message id="ssd-offset-spherical">Offset:</message>
+  <message id="ssd-offset-radial">Radial Offset:</message>
+  <message id="ssd-offset-axial">Axial Offset:</message>
+  <message id="ssd-offset-width">Width Offset:</message>
+  <message id="ssd-offset-height">Height Offset:</message>
+  <message id="ssd-tt-offset-spherical">
+    Distance the source is displaced off to the side of the detector axis.  May be
+    negative.  For Point/Spherical geometry only the magnitude matters.
+  </message>
+  <message id="ssd-tt-offset-radial">
+    Displacement of the source perpendicular to the cylinder axis (off to the side of
+    where the detector points).  May be negative.
+  </message>
+  <message id="ssd-tt-offset-axial">
+    Displacement of the source along the cylinder axis (toward one end or the other).
+    May be negative.
+  </message>
+  <message id="ssd-tt-offset-width">
+    Horizontal displacement of the source off the detector axis (along the box width).
+    May be negative.
+  </message>
+  <message id="ssd-tt-offset-height">
+    Vertical displacement of the source off the detector axis (along the box height).
+    May be negative.
+  </message>
   <message id="ssd-geom-point">Point/Spherical</message>
   <message id="ssd-geom-cyl-end">Cylindrical: end-on</message>
   <message id="ssd-geom-cyl-side">Cylindrical: side-on</message>

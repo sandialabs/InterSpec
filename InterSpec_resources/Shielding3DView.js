@@ -919,13 +919,20 @@ Shielding3DView.prototype.setData = function(data) {
   
   // Position: Face at Z = detDistance. Cylinder center at Z = detDistance + detLen/2.
   var detZ = detDistance + detLen/2;
-  
+
+  // User-set off-axis offsets displace the whole detector assembly in the X-Y plane
+  //  (line of sight is +Z).  source_offsets[0] -> X, source_offsets[1] -> Y.  For
+  //  CylinderSideOn the shape is rotated so its axis is along Y, which matches the
+  //  axial offset (source_offsets[1]).
+  var offX = (data.sourceOffset0 !== undefined) ? (data.sourceOffset0 * MM) : 0;
+  var offY = (data.sourceOffset1 !== undefined) ? (data.sourceOffset1 * MM) : 0;
+
   // Add Cylinder mesh (Unit cylinder scaled)
   // We use generated buffers for specific sizes to avoid complex scaling normals issues if non-uniform
   meshes.push({
     buffer: createBufferInfo(gl, createCylinder(detRad, detLen, 32)),
     color: [0.7, 0.7, 0.7, 1.0], // Grey
-    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, 0, detZ]),
+    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, offY, detZ]),
     transparent: false
   });
 
@@ -939,7 +946,7 @@ Shielding3DView.prototype.setData = function(data) {
   meshes.push({
     buffer: createBufferInfo(gl, createBox(boxDim, boxDim, boxDim)),
     color: [0.2, 0.2, 0.8, 1.0], // Blueish
-    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, 0, boxZ]),
+    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, offY, boxZ]),
     transparent: false
   });
 
@@ -951,7 +958,7 @@ Shielding3DView.prototype.setData = function(data) {
   meshes.push({
     buffer: createBufferInfo(gl, createBox(handW, handH, handD)),
     color: [0.1, 0.1, 0.1, 1.0], // Dark
-    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, handY, handZ]),
+    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, handY + offY, handZ]),
     transparent: false
   });
 
@@ -1031,11 +1038,11 @@ Shielding3DView.prototype.setData = function(data) {
 
   this.keyPoints = {
     sourceCenter: [0, 0, 0],
-    detFaceCenter: [0, 0, detDistance],
+    detFaceCenter: [offX, offY, detDistance],
     outerShellPoint: [0, 0, outerShellZ],
     outerShellZ: outerShellZ,
     detDistance: detDistance,
-    detCenter: [0, 0, detZ],
+    detCenter: [offX, offY, detZ],
     detBoundRadius: Math.max(detRad, detLen / 2) * 1.2,
     geometry: data.geometry
   };
@@ -1088,9 +1095,13 @@ Shielding3DView.prototype.setData = function(data) {
       container.appendChild(overlay);
   }
   
-  // Update camera target based on new data
+  // Update camera target based on new data.  Include the off-axis offset so a large
+  //  offset doesn't push the (displaced) detector out of frame.
   var detDistance = data.distance * MM;
-  this.camTarget = [0, 0, detDistance/2];
-  this.camRadius = detDistance * 1.5 + 10 * INCH;
+  var offX = (data.sourceOffset0 !== undefined) ? (data.sourceOffset0 * MM) : 0;
+  var offY = (data.sourceOffset1 !== undefined) ? (data.sourceOffset1 * MM) : 0;
+  var offMag = Math.sqrt(offX*offX + offY*offY);
+  this.camTarget = [offX/2, offY/2, detDistance/2];
+  this.camRadius = detDistance * 1.5 + offMag + 10 * INCH;
   if (this.camRadius < 100) this.camRadius = 100;
 };

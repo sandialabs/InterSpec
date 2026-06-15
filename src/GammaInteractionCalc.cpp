@@ -147,6 +147,25 @@ rapidxml::xml_node<char> *ShieldSourceConfig::serialize( rapidxml::xml_node<char
   rapidxml::xml_node<char> *dist_node = doc->allocate_node( rapidxml::node_element, "Distance", dist_cstr );
   base_node->append_node( dist_node );
 
+  if( (source_offsets[0] != 0.0) || (source_offsets[1] != 0.0) )
+  {
+    rapidxml::xml_node<char> *offsets_node = doc->allocate_node( rapidxml::node_element, "SourceOffsets" );
+    base_node->append_node( offsets_node );
+
+    //Offsets may be negative, so serialize as raw PhysicalUnits values (like
+    //  ShieldingInfo dimensions), not display-formatted lengths.
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%.9g", source_offsets[0] );
+    rapidxml::xml_attribute<char> *dx_attrib = doc->allocate_attribute( "dx",
+                                                  doc->allocate_string( buffer ) );
+    offsets_node->append_attribute( dx_attrib );
+
+    snprintf( buffer, sizeof(buffer), "%.9g", source_offsets[1] );
+    rapidxml::xml_attribute<char> *dy_attrib = doc->allocate_attribute( "dy",
+                                                  doc->allocate_string( buffer ) );
+    offsets_node->append_attribute( dy_attrib );
+  }//if( either offset is non-zero )
+
   rapidxml::xml_node<char> *shieldings_node = doc->allocate_node( rapidxml::node_element, "Shieldings" );
   base_node->append_node( shieldings_node );
   for( const auto &info : shieldings )
@@ -190,6 +209,26 @@ void ShieldSourceConfig::deSerialize( const rapidxml::xml_node<char> *base_node 
     throw runtime_error( "ShieldSourceConfig::deSerialize: missing Distance node" );
   const std::string dist_str( dist_node->value(), dist_node->value() + dist_node->value_size() );
   distance = PhysicalUnits::stringToDistance( dist_str );
+
+  source_offsets[0] = source_offsets[1] = 0.0;
+  const rapidxml::xml_node<char> *offsets_node = base_node->first_node( "SourceOffsets", 13 );
+  if( offsets_node )
+  {
+    const rapidxml::xml_attribute<char> *dx_attrib = offsets_node->first_attribute( "dx", 2 );
+    const rapidxml::xml_attribute<char> *dy_attrib = offsets_node->first_attribute( "dy", 2 );
+    if( dx_attrib && dx_attrib->value() )
+    {
+      const std::string val( dx_attrib->value(), dx_attrib->value() + dx_attrib->value_size() );
+      if( !(std::stringstream(val) >> source_offsets[0]) )
+        throw runtime_error( "ShieldSourceConfig::deSerialize: invalid SourceOffsets dx" );
+    }
+    if( dy_attrib && dy_attrib->value() )
+    {
+      const std::string val( dy_attrib->value(), dy_attrib->value() + dy_attrib->value_size() );
+      if( !(std::stringstream(val) >> source_offsets[1]) )
+        throw runtime_error( "ShieldSourceConfig::deSerialize: invalid SourceOffsets dy" );
+    }
+  }//if( offsets_node )
 
   const rapidxml::xml_node<char> *shieldings_node = base_node->first_node( "Shieldings", 10 );
   if( !shieldings_node )
@@ -674,6 +713,8 @@ DistributedSrcCalc::DistributedSrcCalc()
   m_detectorRadius = -1.0;
   m_detectorSetback = 0.0;
   m_observationDist = -1.0;
+  m_srcOffsetX = 0.0;
+  m_srcOffsetY = 0.0;
   m_attenuateForAir = false;
   m_airTransLenCoef = 0.0;
   m_isInSituExponential = false;
@@ -721,6 +762,12 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   const int ndim = (ndimptr ? (*ndimptr) : 3);
   assert( (ndim == 2) || (ndim == 3) );
 
+  // The shells are rotation-invariant and (with the current isotropic detector
+  //  response) only the line-of-sight distance matters, so an off-axis sphere is
+  //  treated as an on-axis one at the true distance.
+  const double obs_dist = sqrt( m_observationDist*m_observationDist
+                                + m_srcOffsetX*m_srcOffsetX + m_srcOffsetY*m_srcOffsetY );
+
   const double source_inner_rad = ((m_materialIndex>0)
                             ? std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1])[0]
                             : 0.0);
@@ -765,7 +812,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
     const double srcRad = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex])[0];
     const double srcTransCoef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
     double dist_in_src = exit_point_of_sphere_z( source_point, exit_point,
-                                                 srcRad, m_observationDist );
+                                                 srcRad, obs_dist );
     
     double min_rad = 0.0;
     bool needShellCompute = false;
@@ -774,7 +821,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
     if( m_materialIndex > 0 )
     {
       exit_point_of_sphere_z( source_point, inner_shell_point, srcRad,
-                                           m_observationDist, false );
+                                           obs_dist, false );
       
       //Take advantage of symmetry, move the position to half way between the
       //  positive and negative exit points, and then check if the radius of
@@ -809,7 +856,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
       const array<double,3> &sub_dims = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
       const double innerRad = sub_dims[0];
       exit_point_of_sphere_z( source_point, exit_point,
-                                        innerRad, m_observationDist, false );
+                                        innerRad, obs_dist, false );
       double srcDist2 = 0.0;
       for( int i = 0; i < 3; ++i )
       {
@@ -850,7 +897,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
           {
             const double shellRad = dims[0];
             double dist = exit_point_of_sphere_z( source_point, source_point,
-                                                 shellRad, m_observationDist );
+                                                 shellRad, obs_dist );
             if( index != m_materialIndex )
               dist = 2.0*dist;
             
@@ -890,7 +937,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
       case ShellType::Material:
       {
         const double dist_in_sphere = exit_point_of_sphere_z( source_point,
-                                                             source_point, sphereRad, m_observationDist );
+                                                             source_point, sphereRad, obs_dist );
         trans += (transLenCoef * dist_in_sphere);
         
         break;
@@ -913,10 +960,10 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   if( m_attenuateForAir )
   {
     // source_point is the exit point on the last of the shielding, and the detector is at
-    //  [0,0,m_observationDist]
+    //  [0,0,obs_dist]
     const double dx = -source_point[0];
     const double dy = -source_point[1];
-    const double dz = source_point[2] - m_observationDist;
+    const double dz = source_point[2] - obs_dist;
     
     const double air_dist = sqrt( dx*dx + dy*dy + dz*dz );
     
@@ -929,10 +976,10 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
     trans *= exp( -(source_outer_rad - r) / m_inSituRelaxationLength );
   }
   
-  const double z_dist = (z - m_observationDist);
+  const double z_dist = (z - obs_dist);
   const double dist_to_det = sqrt( x*x + y*y + z_dist*z_dist );
   
-  // Note: previous to 20211104 m_observationDist was used instead of dist_to_det; I believe this
+  // Note: previous to 20211104 obs_dist was used instead of dist_to_det; I believe this
   //       change is an appropriate correction, but still needs to be validated/ensured.
   trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, dist_to_det + m_detectorSetback );
 
@@ -1488,7 +1535,9 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   const double eval_point[3] = { r * cos(theta), r * sin(theta), z };  //cos is hitting 5% of total function time for debug build at least
   const bool is_side_on = (m_geometry == GeometryType::CylinderSideOn);
   const double detector_pos[3] = {
-    (is_side_on ? m_observationDist : 0.0), 0.0, (is_side_on ? 0.0 : m_observationDist)
+    (is_side_on ? m_observationDist : -m_srcOffsetX),
+    (is_side_on ? -m_srcOffsetX : -m_srcOffsetY),
+    (is_side_on ? -m_srcOffsetY : m_observationDist)
   };
   
   
@@ -1624,9 +1673,7 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   
   if( m_attenuateForAir )
   {
-    const double dz = m_observationDist - source_half_z;
     const double air_dist = distance( exit_point, detector_pos );
-    
     trans *= exp( -m_airTransLenCoef * air_dist );
   }//if( m_attenuateForAir )
   
@@ -1663,11 +1710,13 @@ double rectangle_exit_location( const double half_width, const double half_heigh
   assert( fabs(source[0]) <= (half_width + 1.0E-12) );
   assert( fabs(source[1]) <= (half_height + 1.0E-12) );
   assert( fabs(source[2]) <= (half_depth + 1.0E-12) );
-  
-  assert(fabs(detector[0]) > (half_width - 1.0E-12)
-         || fabs(detector[1]) > (half_height - 1.0E-12)
-         || fabs(detector[2]) > (half_depth - 1.0E-12) );
-  
+
+  // The detector is normally outside the box, but the point-source attenuation path can
+  //  pass a detector that sits inside a (degenerate) over-thick shield; in that case the
+  //  plane-intersection logic below still returns the far-surface exit (t > source-detector
+  //  distance), which the caller caps at the true detector distance.  So we do not assert
+  //  the detector is outside here.
+
   assert( !((source[0] == detector[0])
              && (source[1] == detector[1])
              && (source[2] == detector[2])) );
@@ -1819,7 +1868,7 @@ bool rectangle_intersections( const double half_width, const double half_height,
   const bool intersects_z_src = (t_intersect_z_src >= 0.0);
   
   const bool x_before_y_src = (!intersects_y_src || (t_intersect_x_src <= t_intersect_y_src));
-  const bool x_before_z_src = (!intersects_y_src || (t_intersect_x_src <= t_intersect_z_src));
+  const bool x_before_z_src = (!intersects_z_src || (t_intersect_x_src <= t_intersect_z_src));
   const bool y_before_z_src = (!intersects_z_src || (t_intersect_y_src <= t_intersect_z_src));
   
   if( intersects_x_src && x_before_y_src && x_before_z_src )
@@ -1982,7 +2031,7 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   const double dV = 8.0 * half_width * half_height * half_depth;
   
   const double eval_loc[3] = { eval_x, eval_y, eval_z };
-  const double detector_loc[3] = { 0.0, 0.0, m_observationDist };
+  const double detector_loc[3] = { -m_srcOffsetX, -m_srcOffsetY, m_observationDist };
 
   double exit_point[3];
   double dist_in_src = rectangle_exit_location( half_width, half_height, half_depth,
@@ -2133,7 +2182,16 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> answer;
   answer.reset( new GammaInteractionCalc::ShieldingSourceChi2Fcn( distance, liveTime, realTime,
                                                     peaks, detector, shieldings, geom, options ) );
-  
+
+  answer->m_sourceOffsets[0] = config.source_offsets[0];
+  answer->m_sourceOffsets[1] = config.source_offsets[1];
+
+  if( ((config.source_offsets[0] != 0.0) || (config.source_offsets[1] != 0.0))
+      && detector && detector->isFixedGeometry() )
+    throw runtime_error( "Off-axis source offsets are not allowed for fixed-geometry"
+                         " detector response functions." );
+
+
   //I think num_fit_params will end up same as inputPrams.VariableParameters()
   size_t num_fit_params = 0;
   
@@ -4534,6 +4592,38 @@ ShieldingSourceChi2Fcn::CancelException::CancelException( const ShieldingSourceC
 }
 
 
+ShieldingSourceChi2Fcn::CalcStatus ShieldingSourceChi2Fcn::currentCancelStatus() const
+{
+  return m_cancel.load();
+}
+
+
+double ShieldingSourceChi2Fcn::sourceOffsetX() const
+{
+  return m_sourceOffsets[0];
+}
+
+
+double ShieldingSourceChi2Fcn::sourceOffsetY() const
+{
+  return m_sourceOffsets[1];
+}
+
+
+double ShieldingSourceChi2Fcn::trueSourceToDetectorDistance() const
+{
+  return sqrt( m_distance*m_distance + m_sourceOffsets[0]*m_sourceOffsets[0]
+               + m_sourceOffsets[1]*m_sourceOffsets[1] );
+}
+
+
+void ShieldingSourceChi2Fcn::reportCompletedEval( const double chi2, const std::vector<double> &params ) const
+{
+  if( m_isFitting && m_guiUpdateInfo )
+    m_guiUpdateInfo->completed_eval( chi2, params );
+}
+
+
 double ShieldingSourceChi2Fcn::DoEval( const std::vector<double> &x ) const
 {
   const CalcStatus cancelCode = m_cancel.load();
@@ -5084,15 +5174,22 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
   switch ( calculator.m_geometry )
   {
     case GeometryType::Spherical:
-    case GeometryType::CylinderEndOn:
+      // Off-axis spheres use the rotation trick (true source-detector distance), so
+      //  the 2D azimuthal integral stays valid.
       ndim = 2;
       break;
-      
+
+    case GeometryType::CylinderEndOn:
+      // A non-zero radial offset puts the detector off the cylinder axis and breaks
+      //  the azimuthal symmetry, so the full 3D (theta) integral is required.
+      ndim = ( (calculator.m_srcOffsetX != 0.0) || (calculator.m_srcOffsetY != 0.0) ) ? 3 : 2;
+      break;
+
     case GeometryType::CylinderSideOn:
     case GeometryType::Rectangular:
       ndim = 3;
       break;
-      
+
     case GeometryType::NumGeometryType:
       assert( 0 );
       break;
@@ -5136,7 +5233,8 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
         break;
         
       case GeometryType::CylinderEndOn:
-        if( calculator.m_dimensionsTransLenAndType.size() == 1 )
+        if( (calculator.m_dimensionsTransLenAndType.size() == 1)
+            && (calculator.m_srcOffsetX == 0.0) && (calculator.m_srcOffsetY == 0.0) )
         {
           // For a single end-on cylinder we can use the ever-so-slightly faster function
           //  to evaluate this (debug builds will validate gives same answer as
@@ -5413,8 +5511,19 @@ vector<PeakResultPlotInfo>
   }//if( m_options.multiple_nucs_contribute_to_peaks )
 
   //Propagate the gammas through each material - note we are using the fit peak
-  //  mean here, and not the (pre-cluster) photopeak energy
-  double shield_outer_rad = 0.0;
+  //  mean here, and not the (pre-cluster) photopeak energy.
+  //The attenuation is along the ray from the assembly center to the (possibly
+  //  off-axis) detector; on-axis the per-layer chord is exactly the layer thickness.
+  const double trueDist = trueSourceToDetectorDistance();
+  const bool is_side_on_pt = (m_geometry == GeometryType::CylinderSideOn);
+  const double det_pos_pt[3] = {
+    (is_side_on_pt ? m_distance : -m_sourceOffsets[0]),
+    (is_side_on_pt ? -m_sourceOffsets[0] : -m_sourceOffsets[1]),
+    (is_side_on_pt ? -m_sourceOffsets[1] : m_distance)
+  };
+  const double origin_pt[3] = { 0.0, 0.0, 0.0 };
+  double cumulative_dims_pt[3] = { 0.0, 0.0, 0.0 };
+  double shield_outer_rad = 0.0;  //distance along the ray to the outer shielding surface
   const size_t nMaterials = m_initial_shieldings.size();
   
   for( size_t materialN = 0; materialN < nMaterials; ++materialN )
@@ -5449,23 +5558,28 @@ vector<PeakResultPlotInfo>
       };
     }else
     {
-      double thickness = 0.0;
+      double exit_dist = 0.0, exit_point[3];
       switch( m_geometry )
       {
         case GeometryType::Spherical:
-          thickness = sphericalThickness(materialN,x);
+          cumulative_dims_pt[0] += sphericalThickness(materialN,x);
+          exit_dist = cumulative_dims_pt[0];  //radial - independent of direction
           break;
           
         case GeometryType::CylinderEndOn:
-          thickness = cylindricalLengthThickness(materialN,x);
-          break;
-          
         case GeometryType::CylinderSideOn:
-          thickness = cylindricalRadiusThickness(materialN,x);
+          cumulative_dims_pt[0] += cylindricalRadiusThickness(materialN,x);
+          cumulative_dims_pt[1] += cylindricalLengthThickness(materialN,x);
+          exit_dist = cylinder_line_intersection( cumulative_dims_pt[0], cumulative_dims_pt[1],
+                                        origin_pt, det_pos_pt, CylExitDir::TowardDetector, exit_point );
           break;
           
         case GeometryType::Rectangular:
-          thickness = rectangularDepthThickness(materialN,x);
+          cumulative_dims_pt[0] += rectangularWidthThickness(materialN,x);
+          cumulative_dims_pt[1] += rectangularHeightThickness(materialN,x);
+          cumulative_dims_pt[2] += rectangularDepthThickness(materialN,x);
+          exit_dist = rectangle_exit_location( cumulative_dims_pt[0], cumulative_dims_pt[1],
+                                        cumulative_dims_pt[2], origin_pt, det_pos_pt, exit_point );
           break;
           
         case GeometryType::NumGeometryType:
@@ -5473,8 +5587,13 @@ vector<PeakResultPlotInfo>
           break;
       }//switch( m_geometry )
       
-      shield_outer_rad += thickness;
-      
+      // A shielding layer can't attenuate past where the detector sits; cap a degenerate
+      //  over-thick layer at the detector (keeps the chord and the air gap physical).
+      if( exit_dist > trueDist )
+        exit_dist = trueDist;
+      const double thickness = exit_dist - shield_outer_rad;  //chord through this layer
+      shield_outer_rad = exit_dist;
+
       att_coef_fcn = [mat = material.get(), thickness]( float energy ){
         return transmition_coefficient_material( mat, energy, static_cast<float>(thickness) );
       };
@@ -5610,7 +5729,7 @@ vector<PeakResultPlotInfo>
     }
   }//for( int materialN = 0; materialN < nMaterials; ++materialN )
 
-  const double air_dist = std::max( 0.0, m_distance - shield_outer_rad );
+  const double air_dist = std::max( 0.0, trueDist - shield_outer_rad );
   if( m_options.attenuate_for_air && (!m_detector || !m_detector->isFixedGeometry()) )
   {
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
@@ -5651,7 +5770,7 @@ vector<PeakResultPlotInfo>
 //           << " total efficiency is " << m_detector->efficiency( energy_count.first, m_distance ) << endl;
       
       const double eff = fixed_geom ? m_detector->intrinsicEfficiency(energy_count.first)
-                                    : m_detector->efficiency( energy_count.first, m_distance );
+                                    : m_detector->efficiency( energy_count.first, trueDist );
       
       if( info )
       {
@@ -5700,7 +5819,7 @@ vector<PeakResultPlotInfo>
   {
     const double detDiam = 1.0 * PhysicalUnits::cm;
     const double r = 0.5 * detDiam;
-    const double D = m_distance;
+    const double D = trueDist;
     const double fracAngle = 0.5*(1.0 - (D/sqrt(D*D+r*r)));
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
       energy_count.second *= fracAngle;
@@ -5817,6 +5936,8 @@ vector<PeakResultPlotInfo>
     }
 
     baseCalculator.m_observationDist = m_distance;
+    baseCalculator.m_srcOffsetX = m_sourceOffsets[0];
+    baseCalculator.m_srcOffsetY = m_sourceOffsets[1];
     baseCalculator.m_attenuateForAir = m_options.attenuate_for_air;
     baseCalculator.m_materialIndex = material_index;
     

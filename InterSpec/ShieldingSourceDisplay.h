@@ -456,7 +456,46 @@ public:
   void initialSizeHint( int width, int height );
   
   void handleUserDistanceChange();
-  
+
+  /** Handles the user changing one of the source off-axis offset fields; validates
+   (offsets may be negative), adds an undo/redo step, and updates the chi2 chart.
+   */
+  void handleUserOffsetChange();
+
+  /** Handles the user toggling the "Offset" checkbox: shows/hides the offset
+   input row(s), adds an undo/redo step, and updates the chi2 chart.
+   */
+  void handleOffsetCheckChange();
+
+  /** Description of one offset input field for a given geometry: the label and
+   tool-tip to show.  Returned in display order; entry 0 corresponds to
+   #m_offsetEdit1 (source_offsets[0]) and entry 1 to #m_offsetEdit2 (source_offsets[1]).
+   */
+  struct OffsetFieldSpec
+  {
+    Wt::WString label;     //!< label text (already localized)
+    const char *toolTip;   //!< i18n key for the tool-tip
+  };
+
+  /** Returns the 1 or 2 offset fields used for `geom`, in display (and slot) order:
+   Spherical -> {Offset}; CylinderEndOn -> {Radial}; CylinderSideOn -> {Radial, Axial};
+   Rectangular -> {Width, Height}.  A 1-element result means source_offsets[1] is unused.
+   */
+  std::vector<OffsetFieldSpec> offsetFieldsForGeometry( GammaInteractionCalc::GeometryType geom ) const;
+
+  /** Sets the per-geometry labels/tool-tips on the offset edits and shows/hides
+   the offset checkbox and row(s) according to fixed-geometry, the checkbox state,
+   and the current geometry's field count.  The single place offset visibility is set.
+   */
+  void updateOffsetVisibility();
+
+  /** The current source off-axis offsets, parsed from the GUI, in the
+   source_offsets[2] convention (dx==source_offsets[0], dy==source_offsets[1]).
+   Returns {0,0} when the offset checkbox is unchecked or geometry is fixed.
+   For 1-field geometries the unused slot is zero.
+   */
+  void sourceOffsets( double &dx, double &dy ) const;
+
   GammaInteractionCalc::GeometryType geometry() const;
   void handleGeometryTypeChange();
   
@@ -759,6 +798,21 @@ protected:
    */
   std::string m_prevDistStr;
   Wt::WLineEdit *m_distanceEdit;
+
+  /** Off-axis source offsets - see #GammaInteractionCalc::ShieldSourceConfig::source_offsets.
+   The whole offset row(s) are gated behind #m_useOffsetCheck; the number of edits
+   shown and their labels depend on geometry (see #offsetFieldsForGeometry):
+   Spherical/CylEndOn use only #m_offsetEdit1; CylSideOn/Rectangular use both.
+   #m_offsetEdit1 and #m_offsetEdit2 always map to source_offsets[0] and [1]
+   respectively, except the display order/labels are set per geometry.
+   */
+  Wt::WCheckBox *m_useOffsetCheck;
+  Wt::WLabel *m_offsetLabel1;
+  Wt::WLabel *m_offsetLabel2;
+  std::string m_prevOffset1Str;
+  std::string m_prevOffset2Str;
+  Wt::WLineEdit *m_offsetEdit1;
+  Wt::WLineEdit *m_offsetEdit2;
 
   Wt::WPushButton *m_addMaterialShielding;
   Wt::WPushButton *m_addGenericShielding;

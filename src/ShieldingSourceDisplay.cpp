@@ -2724,6 +2724,13 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     m_distanceLabel( nullptr ),
     m_prevDistStr(),
     m_distanceEdit( nullptr ),
+    m_useOffsetCheck( nullptr ),
+    m_offsetLabel1( nullptr ),
+    m_offsetLabel2( nullptr ),
+    m_prevOffset1Str( "0 cm" ),
+    m_prevOffset2Str( "0 cm" ),
+    m_offsetEdit1( nullptr ),
+    m_offsetEdit2( nullptr ),
     m_addMaterialShielding( nullptr ),
     m_addGenericShielding( nullptr ),
     m_layout( nullptr ),
@@ -2900,6 +2907,39 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_distanceEdit->setValidator( distValidator );
   HelpSystem::attachToolTipOn( m_distanceEdit, WString::tr("ssd-tt-distance"), showToolTips );
 
+  // Off-axis source offsets; like distances, but may be negative
+  //  (the validators decimal part already allows a sign; parsing handles it).
+  //  The whole row is gated behind the "Offset" checkbox, and the number of
+  //  edits and their labels depend on geometry - see updateOffsetVisibility().
+  m_useOffsetCheck = new WCheckBox( WString::tr("ssd-offset-check") );
+  m_useOffsetCheck->setChecked( false );
+  HelpSystem::attachToolTipOn( m_useOffsetCheck, WString::tr("ssd-tt-offset-check"), showToolTips );
+
+  m_offsetLabel1 = new WLabel( WString::tr("ssd-offset-spherical") );
+  m_offsetLabel2 = new WLabel( WString::tr("ssd-offset-axial") );
+  m_offsetEdit1 = new WLineEdit( "0 cm" );
+  m_offsetEdit2 = new WLineEdit( "0 cm" );
+
+  for( WLineEdit *edit : { m_offsetEdit1, m_offsetEdit2 } )
+  {
+    edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+    edit->setAttributeValue( "autocorrect", "off" );
+    edit->setAttributeValue( "spellcheck", "off" );
+#endif
+    edit->setTextSize( 5 );
+    edit->setValidator( distValidator );
+  }//for( both offset edits )
+
+  m_offsetLabel1->setBuddy( m_offsetEdit1 );
+  m_offsetLabel2->setBuddy( m_offsetEdit2 );
+  // Per-geometry labels/tool-tips and visibility are applied by updateOffsetVisibility();
+  //  start hidden (offsets off, geometry Spherical).
+  m_offsetLabel1->hide();
+  m_offsetLabel2->hide();
+  m_offsetEdit1->hide();
+  m_offsetEdit2->hide();
+
   m_geometryLabel = new WLabel( WString::tr("ssd-geometry-label") );
   m_geometrySelect = new WComboBox();
   
@@ -3030,7 +3070,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   
   m_distanceEdit->changed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
   m_distanceEdit->enterPressed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
-  
+  m_offsetEdit1->changed().connect( this, &ShieldingSourceDisplay::handleUserOffsetChange );
+  m_offsetEdit1->enterPressed().connect( this, &ShieldingSourceDisplay::handleUserOffsetChange );
+  m_offsetEdit2->changed().connect( this, &ShieldingSourceDisplay::handleUserOffsetChange );
+  m_offsetEdit2->enterPressed().connect( this, &ShieldingSourceDisplay::handleUserOffsetChange );
+  m_useOffsetCheck->changed().connect( this, &ShieldingSourceDisplay::handleOffsetCheckChange );
+
   m_specViewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
   m_specViewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
   
@@ -3156,13 +3201,18 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   WGridLayout *smallLayout = smallerContainer->setLayout( std::make_unique<WGridLayout>() );
 
   smallLayout->addWidget( std::unique_ptr<WWidget>(m_distanceLabel),        0, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_distanceEdit),         0, 1, 1, 2);
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometryLabel),        1, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometrySelect),       1, 1, 1, 2);
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeometryTxt),     2, 0, 1, 3, AlignmentFlag::Center );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(addShieldingLabel),      3, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_addMaterialShielding), 3, 1);
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_addGenericShielding),  3, 2);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_distanceEdit),         0, 1);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_useOffsetCheck),       0, 2, AlignmentFlag::Left | AlignmentFlag::Middle );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_offsetLabel1),         1, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_offsetEdit1),          1, 1);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_offsetLabel2),         2, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_offsetEdit2),          2, 1);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometryLabel),        3, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometrySelect),       3, 1, 1, 2);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeometryTxt),     4, 0, 1, 3, AlignmentFlag::Center );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(addShieldingLabel),      5, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_addMaterialShielding), 5, 1);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_addGenericShielding),  5, 2);
   smallLayout->setContentsMargins( 0, 5, 0, 5 );
   smallerContainer->setPadding(0);
 
@@ -3642,6 +3692,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
   
   GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
   chi_input.config.distance = distance;
+  sourceOffsets( chi_input.config.source_offsets[0], chi_input.config.source_offsets[1] );
   chi_input.config.geometry = geom;
   chi_input.config.shieldings = initial_shieldings;
   chi_input.config.sources = src_definitions;
@@ -5537,6 +5588,205 @@ void ShieldingSourceDisplay::handleUserDistanceChange()
 }//void ShieldingSourceDisplay::handleUserDistanceChange()
 
 
+namespace
+{
+  /** Parses an off-axis offset distance which, unlike normal distances, may be
+   negative; throws on invalid input.
+   */
+  double offset_text_to_distance( std::string txt )
+  {
+    SpecUtils::trim( txt );
+    if( txt.empty() )
+      return 0.0;
+
+    bool negative = false;
+    if( (txt[0] == '-') || (txt[0] == '+') )
+    {
+      negative = (txt[0] == '-');
+      txt = txt.substr( 1 );
+      SpecUtils::trim( txt );
+    }
+
+    if( txt.empty() )
+      return 0.0;
+
+    const double value = PhysicalUnits::stringToDistance( txt );
+    return negative ? -value : value;
+  }//offset_text_to_distance(...)
+}//namespace
+
+
+void ShieldingSourceDisplay::handleUserOffsetChange()
+{
+  auto normalize = []( WLineEdit *edit, string &prevStr ){
+    string txt = edit->text().toUTF8();
+    SpecUtils::trim( txt );
+
+    if( txt.empty() )
+      txt = "0 cm";
+
+    //Default to cm if no unit is given
+    if( txt.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
+      txt += " cm";
+
+    try
+    {
+      offset_text_to_distance( txt );  //throws if invalid
+      edit->setText( WString::fromUTF8(txt) );
+      prevStr = txt;
+    }catch( std::exception & )
+    {
+      edit->setText( WString::fromUTF8(prevStr) );
+    }
+  };//normalize lambda
+
+  const string prev1 = m_prevOffset1Str, prev2 = m_prevOffset2Str;
+  normalize( m_offsetEdit1, m_prevOffset1Str );
+  normalize( m_offsetEdit2, m_prevOffset2Str );
+
+  if( (prev1 != m_prevOffset1Str) || (prev2 != m_prevOffset2Str) )
+  {
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      const string cur1 = m_prevOffset1Str, cur2 = m_prevOffset2Str;
+      auto undo_redo = [prev1, prev2, cur1, cur2](){
+        UndoRedoManager *undoRedo = UndoRedoManager::instance();
+        ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+        if( display && undoRedo )
+        {
+          const bool isUndo = undoRedo->isInUndo();
+          display->m_offsetEdit1->setText( WString::fromUTF8(isUndo ? prev1 : cur1) );
+          display->m_offsetEdit2->setText( WString::fromUTF8(isUndo ? prev2 : cur2) );
+          display->handleUserOffsetChange();
+        }
+      };//undo_redo lambda
+
+      undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Change source off-axis offset." );
+    }//if( undoRedo )
+  }//if( either offset changed )
+
+  updateChi2Chart();
+}//void ShieldingSourceDisplay::handleUserOffsetChange()
+
+
+std::vector<ShieldingSourceDisplay::OffsetFieldSpec>
+ShieldingSourceDisplay::offsetFieldsForGeometry( GeometryType geom ) const
+{
+  switch( geom )
+  {
+    case GeometryType::Spherical:
+      return { { WString::tr("ssd-offset-spherical"), "ssd-tt-offset-spherical" } };
+
+    case GeometryType::CylinderEndOn:
+      // Detector is on the cylinder axis, so only the (magnitude of the) radial
+      //  offset perpendicular to the axis matters - a single field.
+      return { { WString::tr("ssd-offset-radial"), "ssd-tt-offset-radial" } };
+
+    case GeometryType::CylinderSideOn:
+      // source_offsets[0] is the radial (perpendicular) offset, [1] is along the axis.
+      return { { WString::tr("ssd-offset-radial"), "ssd-tt-offset-radial" },
+               { WString::tr("ssd-offset-axial"),  "ssd-tt-offset-axial"  } };
+
+    case GeometryType::Rectangular:
+      // source_offsets[0] is the width (horizontal) offset, [1] is the height (vertical).
+      return { { WString::tr("ssd-offset-width"),  "ssd-tt-offset-width"  },
+               { WString::tr("ssd-offset-height"), "ssd-tt-offset-height" } };
+
+    case GeometryType::NumGeometryType:
+      break;
+  }//switch( geom )
+
+  assert( 0 );
+  return { { WString::tr("ssd-offset-spherical"), "ssd-tt-offset-spherical" } };
+}//offsetFieldsForGeometry(...)
+
+
+void ShieldingSourceDisplay::updateOffsetVisibility()
+{
+  // Fixed-geometry DRFs hide the distance row entirely; offsets are meaningless then.
+  const bool fixed_geom = m_distanceEdit->isHidden();
+  m_useOffsetCheck->setHidden( fixed_geom );
+
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const std::vector<OffsetFieldSpec> fields = offsetFieldsForGeometry( geometry() );
+  const bool show = !fixed_geom && m_useOffsetCheck->isChecked();
+
+  // Field 1 (always used by every geometry when offsets are shown).
+  m_offsetLabel1->setText( fields[0].label );
+  HelpSystem::attachToolTipOn( m_offsetEdit1, WString::tr(fields[0].toolTip), showToolTips );
+  m_offsetLabel1->setHidden( !show );
+  m_offsetEdit1->setHidden( !show );
+
+  // Field 2 (only geometries that use two offsets: side-on cylinder, rectangular).
+  const bool has_two = (fields.size() > 1);
+  if( has_two )
+  {
+    m_offsetLabel2->setText( fields[1].label );
+    HelpSystem::attachToolTipOn( m_offsetEdit2, WString::tr(fields[1].toolTip), showToolTips );
+  }
+  m_offsetLabel2->setHidden( !show || !has_two );
+  m_offsetEdit2->setHidden( !show || !has_two );
+}//void updateOffsetVisibility()
+
+
+void ShieldingSourceDisplay::handleOffsetCheckChange()
+{
+  updateOffsetVisibility();
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    const bool checked = m_useOffsetCheck->isChecked();
+    auto undo_redo = [checked](){
+      UndoRedoManager *undoRedo = UndoRedoManager::instance();
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display && undoRedo )
+      {
+        const bool isUndo = undoRedo->isInUndo();
+        display->m_useOffsetCheck->setChecked( isUndo ? !checked : checked );
+        display->updateOffsetVisibility();
+        display->updateChi2Chart();
+      }
+    };//undo_redo lambda
+
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Toggle source off-axis offset." );
+  }//if( undoRedo )
+
+  updateChi2Chart();
+}//void handleOffsetCheckChange()
+
+
+void ShieldingSourceDisplay::sourceOffsets( double &dx, double &dy ) const
+{
+  dx = dy = 0.0;
+
+  // Offsets only apply when enabled, and only for non-fixed geometries.
+  if( !m_useOffsetCheck->isChecked() || m_distanceEdit->isHidden() )
+    return;
+
+  // edit1 -> source_offsets[0], edit2 -> source_offsets[1]; the number of fields
+  //  the current geometry uses tells us whether the second slot is meaningful.
+  const std::vector<OffsetFieldSpec> fields = offsetFieldsForGeometry( geometry() );
+
+  try
+  {
+    if( fields.size() >= 1 )
+      dx = offset_text_to_distance( m_offsetEdit1->text().toUTF8() );
+  }catch( std::exception & )
+  {
+  }
+
+  try
+  {
+    if( fields.size() >= 2 )
+      dy = offset_text_to_distance( m_offsetEdit2->text().toUTF8() );
+  }catch( std::exception & )
+  {
+  }
+}//void sourceOffsets( double &dx, double &dy ) const
+
+
 GeometryType ShieldingSourceDisplay::geometry() const
 {
   int currentIndex = m_geometrySelect->currentIndex();
@@ -5570,6 +5820,9 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
   
   m_prevGeometry = type;
   
+  // Update the offset row labels/visibility for the new geometry (field count + labels).
+  updateOffsetVisibility();
+
   for( WWidget *widget : m_shieldingSelects->children() )
   {
     ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
@@ -5975,8 +6228,10 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
     m_geometryLabel->hide();
     m_geometrySelect->hide();
     m_fixedGeometryTxt->show();
-    
+
     m_geometrySelect->setCurrentIndex( static_cast<int>(GeometryType::Spherical) );
+    // The offset checkbox + row(s) are hidden by updateOffsetVisibility() (invoked from
+    //  handleGeometryTypeChange() below), since the now-hidden distance edit marks fixed geometry.
     handleGeometryTypeChange();
     
     for( WWidget *widget : m_shieldingSelects->children() )
@@ -6058,6 +6313,9 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
     m_geometryLabel->show();
     m_geometrySelect->show();
     m_fixedGeometryTxt->hide();
+    // Distance is now shown again, so the offset checkbox + row(s) can be (re)shown
+    //  per the checkbox state and current geometry.
+    updateOffsetVisibility();
     
     for( WWidget *widget : m_shieldingSelects->children() )
     {
@@ -7529,6 +7787,11 @@ void ShieldingSourceDisplay::reset( const bool set_use_peaks_false )
   m_modifiedThisForeground = false;
   m_prevDistStr = "100 cm";
   m_distanceEdit->setValueText( m_prevDistStr );
+  m_prevOffset1Str = m_prevOffset2Str = "0 cm";
+  m_useOffsetCheck->setChecked( false );
+  m_offsetEdit1->setValueText( WString::fromUTF8(m_prevOffset1Str) );
+  m_offsetEdit2->setValueText( WString::fromUTF8(m_prevOffset2Str) );
+  // Offset row visibility is refreshed by the handleDetectorChanged() call at the end of reset().
   const vector<WWidget *> shieldings = m_shieldingSelects->children();
   for( WWidget *child : shieldings )
   {
@@ -7629,6 +7892,22 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_distanceEdit->setValueText( WString::fromUTF8(dist_str) );
   m_prevDistStr = dist_str;
   
+  auto offset_to_text = []( const double value ) -> string {
+    if( value == 0.0 )
+      return "0 cm";
+    const string txt = PhysicalUnits::printToBestLengthUnits( fabs(value), 3 );
+    return (value < 0.0) ? ("-" + txt) : txt;
+  };
+  m_prevOffset1Str = offset_to_text( state.config->source_offsets[0] );
+  m_prevOffset2Str = offset_to_text( state.config->source_offsets[1] );
+  m_offsetEdit1->setValueText( WString::fromUTF8(m_prevOffset1Str) );
+  m_offsetEdit2->setValueText( WString::fromUTF8(m_prevOffset2Str) );
+  // The checkbox state isn't serialized separately: a stored non-zero offset means
+  //  offsets were enabled.  Offset labels/visibility are applied by the
+  //  handleDetectorChanged() call below (which runs updateOffsetVisibility()).
+  m_useOffsetCheck->setChecked( (state.config->source_offsets[0] != 0.0)
+                                || (state.config->source_offsets[1] != 0.0) );
+
   if( update_use_peaks && !state.peaks.empty() )
     deSerializePeaksToUse( state.peaks );
   m_sourceModel->repopulateIsotopes();
@@ -7671,6 +7950,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplayState ShieldingSourceDisplay::seri
   {
     config->distance = 0.0;
   }
+
+  sourceOffsets( config->source_offsets[0], config->source_offsets[1] );
 
   const vector<WWidget *> shielding_widgets = m_shieldingSelects->children();
   config->shieldings.reserve( shielding_widgets.size() );
@@ -8438,6 +8719,9 @@ void ShieldingSourceDisplay::setWidgetStateForFitStarting()
   m_optionsDiv->disable();
   m_addItemMenu->disable();
   m_distanceEdit->disable();
+  m_useOffsetCheck->disable();
+  m_offsetEdit1->disable();
+  m_offsetEdit2->disable();
   m_detectorDisplay->disable();
   m_shieldingSelects->disable();
   m_addGenericShielding->disable();
@@ -8460,6 +8744,9 @@ void ShieldingSourceDisplay::setWidgetStateForFitBeingDone()
   m_optionsDiv->enable();
   m_addItemMenu->enable();
   m_distanceEdit->enable();
+  m_useOffsetCheck->enable();
+  m_offsetEdit1->enable();
+  m_offsetEdit2->enable();
   m_detectorDisplay->enable();
   m_shieldingSelects->enable();
   m_addGenericShielding->enable();
@@ -9334,8 +9621,10 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   {//begin add chi2 line
     stringstream msg;
     msg << "It took " << results->num_fcn_calls
-        << " solution trials to reach chi2=" << results->chi2
-        << " with an estimated distance to minumum of " << results->edm;
+        << " solution trials to reach chi2=" << results->chi2;
+    // The Ceres driver doesn't produce a Minuit-style EDM; it leaves edm < 0 as a sentinel.
+    if( results->edm >= 0.0 )
+      msg << " with an estimated distance to minimum of " << results->edm;
     calcLog.push_back( msg.str() );
   }//end add chi2 line
     
@@ -9570,16 +9859,20 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
 
   std::vector<ShieldingSourceFitCalc::SourceFitDef> sources = m_sourceModel->underlyingData();
   const GeometryType geom_type = geometry();
-  
+
+  // User-set off-axis offsets (zero when the offset checkbox is unchecked).
+  double offset0 = 0.0, offset1 = 0.0;
+  sourceOffsets( offset0, offset1 );
+
   if( m_diagramDialog )
   {
     // Dialog already exists, update its data and show it
-    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter );
+    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1 );
     m_diagramDialog->show();
     return;
   }
-  
-  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
+
+  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1 );
   
   //m_diagramDialog->destroyed().connect( std::bind([dialog_ptr]( Wt::WObject * ){
   //  InterSpec *viewer = InterSpec::instance();

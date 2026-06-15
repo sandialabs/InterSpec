@@ -171,7 +171,9 @@ template<typename T>
 DetectorGeomT<T> detector_geom_from_config( const GeometryType geometry,
                                             const T &distance,
                                             const double detector_radius,
-                                            const double detector_setback )
+                                            const double detector_setback,
+                                            const double offset_x = 0.0,
+                                            const double offset_y = 0.0 )
 {
   DetectorGeomT<T> det;
   det.radius = detector_radius;
@@ -179,9 +181,20 @@ DetectorGeomT<T> detector_geom_from_config( const GeometryType geometry,
 
   const bool is_side_on = (geometry == GeometryType::CylinderSideOn);
 
-  det.position[0] = is_side_on ? distance : T(0.0);
-  det.position[1] = T(0.0);
-  det.position[2] = is_side_on ? T(0.0) : distance;
+  // The user-set offsets displace the source assembly laterally from the detector
+  //  axis; in assembly-centered coordinates that puts the detector at {-dx,-dy,dist}
+  //  (for CylinderSideOn, whose detector axis is +x, at {dist,-dx,-dy}).
+  if( is_side_on )
+  {
+    det.position[0] = distance;
+    det.position[1] = T( -offset_x );
+    det.position[2] = T( -offset_y );
+  }else
+  {
+    det.position[0] = T( -offset_x );
+    det.position[1] = T( -offset_y );
+    det.position[2] = distance;
+  }//if( is_side_on ) / else
 
   det.axis[0] = is_side_on ? -1.0 : 0.0;
   det.axis[1] = 0.0;
@@ -189,6 +202,9 @@ DetectorGeomT<T> detector_geom_from_config( const GeometryType geometry,
 
   return det;
 }//detector_geom_from_config(...)
+
+
+
 
 
 /** The per-ray detector response: the probability a gamma emitted at
@@ -608,7 +624,7 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
   const bool intersects_z_src = (t_intersect_z_src >= 0.0);
 
   const bool x_before_y_src = (!intersects_y_src || (t_intersect_x_src <= t_intersect_y_src));
-  const bool x_before_z_src = (!intersects_y_src || (t_intersect_x_src <= t_intersect_z_src));
+  const bool x_before_z_src = (!intersects_z_src || (t_intersect_x_src <= t_intersect_z_src));
   const bool y_before_z_src = (!intersects_z_src || (t_intersect_y_src <= t_intersect_z_src));
 
   if( intersects_x_src && x_before_y_src && x_before_z_src )
@@ -696,6 +712,45 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
 }//rectangle_intersections_imp(...)
 
 
+/** Distance from the assembly center, along the ray toward the detector, to where the
+ ray exits the volume with the given cumulative outer dimensions.
+
+ Reduces exactly to the on-axis layer dimension (radius / half-length / half-depth)
+ when the detector is on the geometrys axis.
+ */
+template<typename T>
+T center_ray_exit_distance( const GeometryType geometry,
+                            const std::array<T,3> &outer_dims,
+                            const DetectorGeomT<T> &det )
+{
+  const T origin[3] = { T(0.0), T(0.0), T(0.0) };
+  const T detector_pos[3] = { det.position[0], det.position[1], det.position[2] };
+  T exit_point[3];
+
+  switch( geometry )
+  {
+    case GeometryType::Spherical:
+      //Radial symmetry: the exit distance is the radius, whatever the direction
+      return outer_dims[0];
+
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+      return cylinder_line_intersection_imp( outer_dims[0], outer_dims[1], origin, detector_pos,
+                                             CylExitDir::TowardDetector, exit_point );
+
+    case GeometryType::Rectangular:
+      return rectangle_exit_location_imp( outer_dims[0], outer_dims[1], outer_dims[2],
+                                          origin, detector_pos, exit_point );
+
+    case GeometryType::NumGeometryType:
+      assert( 0 );
+      break;
+  }//switch( geometry )
+
+  return T(0.0);
+}//center_ray_exit_distance(...)
+
+
 /** Templated version of #DistributedSrcCalc - the description of one
  volumetric source (one source nuclide at one gamma energy) and its
  surrounding shells, with everything that depends on fit parameters
@@ -722,9 +777,10 @@ struct DistributedSrcCalcT
 
     // Per-shell metadata for the effective-AN/AD/H accumulation (double-only
     //  post-fit pass); unused during fitting.
-    double density = 0.0;
-    double effective_an = 0.0;
-    double hydrogen_mass_frac = 0.0;
+    double density = 0.0;            //Material shells (PhysicalUnits)
+    double areal_density = 0.0;      //Generic shells (PhysicalUnits)
+    double effective_an = 0.0;       //mass-fraction-weighted Z for materials; AN for generic
+    double hydrogen_mass_frac = 0.0; //zero for generic shells
   };//struct ShellInfo
 
   GeometryType m_geometry = GeometryType::NumGeometryType;
@@ -753,11 +809,93 @@ struct DistributedSrcCalcT
   size_t m_num_evals = 0;
   double m_est_rel_error = 0.0;
 
+  /** When set, the [0,1]^ndim integration coordinates map onto this region instead of
+   the source shells full extent.
+
+   Used to split a hollow source shell (one with a non-source inner layer) into smooth
+   sub-domains - see #split_source_subdomains: the inner-void indicator branch in
+   eval_cylinder/eval_rect makes the integrand discontinuous, which costs the adaptive
+   integration orders of magnitude more evaluations, and hides the boundary-motion
+   term of d(integral)/d(inner dimensions) from automatic differentiation.  With the
+   sub-domain limits carried as T, both problems go away.
+
+   Note: a *transmission* near-discontinuity can remain in the region behind the inner
+   layer, along the layers silhouette as seen from the detector, when the inner layer
+   is much more transparent than the source material (e.g., an Fe core in U is a
+   ~180x bright window at 661 keV) - that one is physical, isnt axis-aligned, and
+   still costs the integrator (TODO.md: anisotropic cell refinement would address it).
+
+   Meaning per geometry: cylinders {radius, z, unused}; Rectangular {x, y, z}.
+   */
+  bool m_has_subdomain = false;
+  std::array<T,3> m_subdomain_lo;
+  std::array<T,3> m_subdomain_hi;
+
+  /** When true (only sensible for T=double), each eval_* call also accumulates the
+   per-ray traversed areal density, atomic-number weightings, and hydrogen areal
+   density into the scratch members below - see #integrate_effective_shielding.
+   */
+  bool m_accumulateEffectiveAnAd = false;
+
+  // Per-ray accumulation scratch (reset at the top of each eval when accumulating).
+  //  Only one thread may evaluate a given calculator when accumulating.
+  mutable double m_ray_ad = 0.0;       //sum of density_l * dist_l (+ generic ADs)
+  mutable double m_ray_an_ad = 0.0;    //sum of AN_l * (density_l * dist_l)
+  mutable double m_ray_ad_h = 0.0;     //sum of fracH_l * density_l * dist_l
+  mutable double m_ray_mu_d = 0.0;     //sum of mu_l * dist_l  (the attenuation exponent)
+  mutable double m_ray_an_mu_d = 0.0;  //sum of AN_l * mu_l * dist_l
 
   T eval_spherical( const double xx[], const int ndim ) const;
   T eval_single_cyl_end_on( const double xx[], const int ndim ) const;
   T eval_cylinder( const double xx[], const int ndim ) const;
   T eval_rect( const double xx[], const int ndim ) const;
+
+  /** Resets the per-ray accumulation scratch; called at the top of each eval. */
+  void reset_ray_accumulators() const
+  {
+    // Only the double, accumulating pass uses these scratch members; skip the writes
+    //  entirely during Jet (fitting) evaluation.
+    if constexpr ( std::is_same_v<T,double> )
+    {
+      if( m_accumulateEffectiveAnAd )
+        m_ray_ad = m_ray_an_ad = m_ray_ad_h = m_ray_mu_d = m_ray_an_mu_d = 0.0;
+    }
+  }
+
+  /** Records a path of length `dist` through a Material `shell` (no-op unless
+   accumulating, and T is double).
+   */
+  void record_path( const ShellInfo &shell, const T &dist ) const
+  {
+    if constexpr ( std::is_same_v<T,double> )
+    {
+      if( m_accumulateEffectiveAnAd )
+      {
+        const double ad = shell.density * dist;
+        m_ray_ad += ad;
+        m_ray_an_ad += shell.effective_an * ad;
+        m_ray_ad_h += shell.hydrogen_mass_frac * ad;
+        m_ray_mu_d += scalar_of(shell.trans_len_coef) * dist;
+        m_ray_an_mu_d += shell.effective_an * scalar_of(shell.trans_len_coef) * dist;
+      }
+    }
+  }//record_path(...)
+
+  /** Records the ray passing through a zero-extent Generic `shell`. */
+  void record_generic( const ShellInfo &shell ) const
+  {
+    if constexpr ( std::is_same_v<T,double> )
+    {
+      if( m_accumulateEffectiveAnAd )
+      {
+        m_ray_ad += shell.areal_density;
+        m_ray_an_ad += shell.effective_an * shell.areal_density;
+        //hydrogen_mass_frac is zero for generic shells
+        m_ray_mu_d += scalar_of(shell.trans_len_coef);  //trans_len_coef is the total attenuation for generic
+        m_ray_an_mu_d += shell.effective_an * scalar_of(shell.trans_len_coef);
+      }
+    }
+  }//record_generic(...)
 };//struct DistributedSrcCalcT
 
 
@@ -815,6 +953,8 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
 
   T trans(0.0);
 
+  reset_ray_accumulators();
+
   {//begin code-block to compute distance through source
     T exit_point[3];
     const T srcRad = m_shells[m_materialIndex].dims[0];
@@ -859,7 +999,9 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
         const T diff = exit_point[i] - original_point[i];
         srcDist2 += diff*diff;
       }//for( int i = 0; i < 3; ++i )
-      trans += (srcTransCoef * sqrt(srcDist2));
+      const T src_shell_dist = sqrt(srcDist2);
+      trans += (srcTransCoef * src_shell_dist);
+      record_path( m_shells[m_materialIndex], src_shell_dist );
 
       //find inner most sphere the ray passes through
       size_t start_index = 0;
@@ -892,12 +1034,14 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
               dist = 2.0*dist;
 
             trans += (shell.trans_len_coef * dist);
+            record_path( shell, dist );
             break;
           }//case ShellType::Material:
 
           case ShellType::Generic:
           {
             trans += shell.trans_len_coef;
+            record_generic( shell );
             break;
           }//case ShellType::Generic:
         }//switch( type )
@@ -908,6 +1052,7 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
       source_point[1] = exit_point[1];
       source_point[2] = exit_point[2];
       trans += (srcTransCoef * dist_in_src);
+      record_path( m_shells[m_materialIndex], dist_in_src );
     }//if( line actually goes into child sphere ) / else
   }//end codeblock to compute distance through source
 
@@ -922,12 +1067,14 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
         const T dist_in_sphere = exit_point_of_sphere_z_imp( source_point, source_point,
                                                              shell.dims[0], obs_dist );
         trans += (shell.trans_len_coef * dist_in_sphere);
+        record_path( shell, dist_in_sphere );
         break;
       }//case ShellType::Material:
 
       case ShellType::Generic:
       {
         trans += shell.trans_len_coef;
+        record_generic( shell );
         break;
       }//case ShellType::Generic:
     }//switch( type )
@@ -1012,6 +1159,8 @@ T DistributedSrcCalcT<T>::eval_single_cyl_end_on( const double xx[], const int n
   T exit_radius(0.0);
   T trans(0.0);
 
+  reset_ray_accumulators();
+
   {//begin code-block to compute distance through source
     // Take advantage of theta symmetry here
     const T z_dist_in_src = source_half_z - z;
@@ -1021,6 +1170,7 @@ T DistributedSrcCalcT<T>::eval_single_cyl_end_on( const double xx[], const int n
     const T dist_in_src = sqrt(z_dist_in_src*z_dist_in_src + r_dist_in_src*r_dist_in_src);
 
     trans += (trans_len_coef * dist_in_src);
+    record_path( m_shells[m_materialIndex], dist_in_src );
   }//end codeblock to compute distance through source
 
   trans = exp( -trans );
@@ -1072,11 +1222,26 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
   //  z:     goes from the negative half-height to positive half-height
   const double max_theta = 2.0 * PhysicalUnits::pi;
 
-  const T r = xx[0] * source_outer_rad;
   const double theta = ((ndim==3) ? xx[1] : 0.0) * max_theta;
-  const T z = total_height * (xx[((ndim==3) ? 2 : 1)] - 0.5);
+
+  T r, z, j;
+  if( m_has_subdomain )
+  {
+    const T r_width = m_subdomain_hi[0] - m_subdomain_lo[0];
+    const T z_width = m_subdomain_hi[1] - m_subdomain_lo[1];
+    r = m_subdomain_lo[0] + xx[0] * r_width;
+    z = m_subdomain_lo[1] + xx[((ndim==3) ? 2 : 1)] * z_width;
+    j = r_width * max_theta * z_width;
+  }else
+  {
+    r = xx[0] * source_outer_rad;
+    z = total_height * (xx[((ndim==3) ? 2 : 1)] - 0.5);
+    j = source_outer_rad * max_theta * total_height;
+  }//if( m_has_subdomain ) / else
 
   // If point to evaluate is within inner-cylinder, set the source term to zero and return.
+  //  (sub-domain integrations never land in the inner volume, except possibly exactly on
+  //   its boundary from floating-point rounding)
   if( m_materialIndex > 0 )
   {
     const ShellInfo &inner = m_shells[m_materialIndex-1];
@@ -1085,7 +1250,6 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
       return T(0.0);
   }//if( m_materialIndex > 0 )
 
-  const T j = source_outer_rad * max_theta * total_height;
   const T dV = j * r;
 
   const T eval_point[3] = { r * std::cos(theta), r * std::sin(theta), z };
@@ -1096,6 +1260,8 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
                                               detector_pos, CylExitDir::TowardDetector, exit_point );
 
   T trans(0.0);
+
+  reset_ray_accumulators();
 
   // Do transport through inner cylinders, and also subtract off that distance through source
   //  cylinder
@@ -1121,10 +1287,12 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
     {
       case ShellType::Material:
         trans += (shell.trans_len_coef * (local_distance - inner_distance));
+        record_path( shell, local_distance - inner_distance );
         break;
 
       case ShellType::Generic:
         trans += shell.trans_len_coef;
+        record_generic( shell );
         break;
     }//switch( type )
 
@@ -1132,6 +1300,7 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
   }//for( size_t i = 0; i < m_materialIndex; ++i )
 
   trans += (trans_len_coef * (dist_in_cyl - inner_distance));
+  record_path( m_shells[m_materialIndex], dist_in_cyl - inner_distance );
 
   // Do transport through outer cylinders
   for( size_t i = m_materialIndex + 1; i < m_shells.size(); ++i )
@@ -1143,6 +1312,7 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
       case ShellType::Generic:
       {
         trans += shell.trans_len_coef;
+        record_generic( shell );
         break;
       }//case ShellType::Generic:
 
@@ -1154,6 +1324,7 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
                                                                  CylExitDir::TowardDetector, outer_exit_point );
 
         trans += (shell.trans_len_coef * dist_in_shield);
+        record_path( shell, dist_in_shield );
 
         exit_point[0] = outer_exit_point[0];
         exit_point[1] = outer_exit_point[1];
@@ -1207,20 +1378,33 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
   const T trans_len_coef = m_shells[m_materialIndex].trans_len_coef;
 
   // Translate the [0,1.0] integration coordinates to the world coordinates.
-  const T eval_x = (xx[0] - 0.5) * 2.0 * half_width;
-  const T eval_y = (xx[1] - 0.5) * 2.0 * half_height;
-  const T eval_z = (xx[2] - 0.5) * 2.0 * half_depth;
+  T eval_x, eval_y, eval_z, dV;
+  if( m_has_subdomain )
+  {
+    const T x_width = m_subdomain_hi[0] - m_subdomain_lo[0];
+    const T y_width = m_subdomain_hi[1] - m_subdomain_lo[1];
+    const T z_width = m_subdomain_hi[2] - m_subdomain_lo[2];
+    eval_x = m_subdomain_lo[0] + xx[0] * x_width;
+    eval_y = m_subdomain_lo[1] + xx[1] * y_width;
+    eval_z = m_subdomain_lo[2] + xx[2] * z_width;
+    dV = x_width * y_width * z_width;
+  }else
+  {
+    eval_x = (xx[0] - 0.5) * 2.0 * half_width;
+    eval_y = (xx[1] - 0.5) * 2.0 * half_height;
+    eval_z = (xx[2] - 0.5) * 2.0 * half_depth;
+    dV = 8.0 * half_width * half_height * half_depth;
+  }//if( m_has_subdomain ) / else
 
   // Check to see if [eval_x,eval_y,eval_z] is inside an inner volume, and if so the source
-  //  term is zero
+  //  term is zero (sub-domain integrations never land in the inner volume, except possibly
+  //  exactly on its boundary from floating-point rounding)
   if( m_materialIndex > 0 )
   {
     const ShellInfo &inner = m_shells[m_materialIndex-1];
     if( (abs(eval_x) < inner.dims[0]) && (abs(eval_y) < inner.dims[1]) && (abs(eval_z) < inner.dims[2]) )
       return T(0.0);
   }//if( m_materialIndex > 0 )
-
-  const T dV = 8.0 * half_width * half_height * half_depth;
 
   const T eval_loc[3] = { eval_x, eval_y, eval_z };
   const T detector_loc[3] = { m_detector.position[0], m_detector.position[1], m_detector.position[2] };
@@ -1230,6 +1414,8 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
                                                      eval_loc, detector_loc, exit_point );
 
   T trans(0.0);
+
+  reset_ray_accumulators();
 
   // Do transport through inner shieldings, and also subtract off that distance through source
   T inner_rect_dist(0.0);
@@ -1250,12 +1436,14 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
         case ShellType::Generic:
         {
           trans += shell.trans_len_coef;
+          record_generic( shell );
           break;
         }//case ShellType::Generic:
 
         case ShellType::Material:
         {
           trans += (shell.trans_len_coef * (dist - inner_rect_dist));
+          record_path( shell, dist - inner_rect_dist );
           break;
         }//case ShellType::Material:
       }//switch( type )
@@ -1265,6 +1453,7 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
   }//for( size_t i = 0; i < m_materialIndex; ++i )
 
   trans += (trans_len_coef * (dist_in_src - inner_rect_dist));
+  record_path( m_shells[m_materialIndex], dist_in_src - inner_rect_dist );
 
   // Account for additional external shieldings
   for( size_t i = m_materialIndex + 1; i < m_shells.size(); ++i )
@@ -1276,6 +1465,7 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
       case ShellType::Generic:
       {
         trans += shell.trans_len_coef;
+        record_generic( shell );
         break;
       }
 
@@ -1285,6 +1475,7 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
                                               shell.dims[2], exit_point, detector_loc, exit_point );
 
         trans += (shell.trans_len_coef * dist_in_shield);
+        record_path( shell, dist_in_shield );
         break;
       }//case ShellType::Material:
     }//switch( type )
@@ -1423,7 +1614,8 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
                                 const double epsrel,
                                 const size_t max_evals,
                                 double *est_error = nullptr,
-                                size_t *num_evals_out = nullptr )
+                                size_t *num_evals_out = nullptr,
+                                const double epsabs = 0.0 )
 {
   assert( (ndim == 2) || (ndim == 3) );
   if( (ndim != 2) && (ndim != 3) )
@@ -1453,7 +1645,8 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
 
   while( !heap.empty()
          && ( (num_below_min_depth > 0)
-              || ((active_err + frozen_err) > epsrel*std::max(std::fabs(scalar_of(total)), DBL_MIN)) )
+              || ((active_err + frozen_err)
+                   > std::max( epsrel*std::max(std::fabs(scalar_of(total)), DBL_MIN), epsabs )) )
          && (num_evals < max_evals) )
   {
     // Pop the cell with the largest error estimate; if any cells havent reached
@@ -1515,8 +1708,108 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
   if( num_evals_out )
     *num_evals_out = num_evals;
 
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Flag the (otherwise silent) case where we ran out of evaluation budget before reaching the
+  //  requested accuracy - the returned integral and its derivatives may be under-converged.
+  {
+    const double final_err = active_err + frozen_err;
+    const double target = std::max( epsrel*std::max(std::fabs(scalar_of(total)), DBL_MIN), epsabs );
+    if( (num_evals >= max_evals) && (final_err > 10.0*target) )
+    {
+      const std::string msg = "exhausted " + std::to_string(num_evals)
+            + " evaluations with estimated abs error " + std::to_string(final_err)
+            + " vs target " + std::to_string(target)
+            + " - integral/derivatives may be under-converged";
+      log_developer_error( __func__, msg.c_str() );
+    }
+  }
+#endif
+
   return total;
 }//adaptive_unit_cube_integrate(...)
+
+
+/** Splits a calculator whose source shell has a non-source inner layer into smooth
+ integration sub-domains that exactly tile the source region (top/bottom slabs plus a
+ radial annulus for cylinders; six boxes for rectangles), so the adaptive integration
+ never crosses the inner-void discontinuity, and automatic differentiation sees the
+ dependence of the integration limits on the inner dimensions.
+
+ Returns just a copy of `calc` when no splitting applies (spherical geometry handles
+ the inner radius natively in its radial coordinate range).
+ */
+template<typename T>
+std::vector<DistributedSrcCalcT<T>> split_source_subdomains( const DistributedSrcCalcT<T> &calc )
+{
+  std::vector<DistributedSrcCalcT<T>> answer;
+
+  const size_t src_index = calc.m_materialIndex;
+
+  if( (src_index == 0) || calc.m_has_subdomain
+      || (calc.m_geometry == GeometryType::Spherical)
+      || (calc.m_geometry == GeometryType::NumGeometryType) )
+  {
+    answer.push_back( calc );
+    return answer;
+  }//if( nothing to split )
+
+  // Note: if the previous shell is a zero-extent Generic one, its dims are still the
+  //  cumulative extent of the layers inside the source shell, which is what we need.
+  const std::array<T,3> &inner = calc.m_shells[src_index - 1].dims;
+  const std::array<T,3> &outer = calc.m_shells[src_index].dims;
+
+  const auto add_subdomain = [&answer,&calc]( const T &lo0, const T &hi0,
+                                              const T &lo1, const T &hi1,
+                                              const T &lo2, const T &hi2 ){
+    // Skip degenerate (zero-extent) sub-domains
+    if( (scalar_of(hi0) <= scalar_of(lo0))
+        || (scalar_of(hi1) <= scalar_of(lo1))
+        || (scalar_of(hi2) <= scalar_of(lo2)) )
+      return;
+
+    answer.push_back( calc );
+    answer.back().m_has_subdomain = true;
+    answer.back().m_subdomain_lo = { lo0, lo1, lo2 };
+    answer.back().m_subdomain_hi = { hi0, hi1, hi2 };
+  };//add_subdomain lambda
+
+  switch( calc.m_geometry )
+  {
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+    {
+      // {radius, z} sub-domains; the third component is unused (give it unit extent)
+      const T zero(0.0), one(1.0);
+      add_subdomain( zero, outer[0], inner[1], outer[1], zero, one );    //top slab
+      add_subdomain( zero, outer[0], -outer[1], -inner[1], zero, one );  //bottom slab
+      add_subdomain( inner[0], outer[0], -inner[1], inner[1], zero, one ); //radial annulus
+      break;
+    }//case cylinders
+
+    case GeometryType::Rectangular:
+    {
+      // Six boxes: two z-slabs (full x,y), two y-slabs (full x, inner z), two
+      //  x-slabs (inner y,z)
+      add_subdomain( -outer[0], outer[0], -outer[1], outer[1], inner[2], outer[2] );
+      add_subdomain( -outer[0], outer[0], -outer[1], outer[1], -outer[2], -inner[2] );
+      add_subdomain( -outer[0], outer[0], inner[1], outer[1], -inner[2], inner[2] );
+      add_subdomain( -outer[0], outer[0], -outer[1], -inner[1], -inner[2], inner[2] );
+      add_subdomain( inner[0], outer[0], -inner[1], inner[1], -inner[2], inner[2] );
+      add_subdomain( -outer[0], -inner[0], -inner[1], inner[1], -inner[2], inner[2] );
+      break;
+    }//case GeometryType::Rectangular:
+
+    case GeometryType::Spherical:
+    case GeometryType::NumGeometryType:
+      assert( 0 );
+      break;
+  }//switch( calc.m_geometry )
+
+  if( answer.empty() )  //all sub-domains degenerate (inner fills the source shell)
+    answer.push_back( calc );
+
+  return answer;
+}//split_source_subdomains(...)
 
 
 /** Templated equivalent of #ShieldingSourceChi2Fcn::selfShieldingIntegration:
@@ -1536,8 +1829,17 @@ void self_shielding_integration_imp( DistributedSrcCalcT<T> &calculator,
   switch( calculator.m_geometry )
   {
     case GeometryType::Spherical:
-    case GeometryType::CylinderEndOn:
+      // Off-axis spheres are handled by the rotation trick (eval_spherical uses the
+      //  true source-detector distance), so the 2D azimuthal integral stays valid.
       ndim = 2;
+      break;
+
+    case GeometryType::CylinderEndOn:
+      // On-axis end-on is azimuthally symmetric (2D), but a non-zero radial offset
+      //  puts the detector off the cylinder axis and breaks that symmetry, so the
+      //  full 3D (theta) integral is required.
+      ndim = ( (scalar_of(calculator.m_detector.position[0]) != 0.0)
+               || (scalar_of(calculator.m_detector.position[1]) != 0.0) ) ? 3 : 2;
       break;
 
     case GeometryType::CylinderSideOn:
@@ -1550,72 +1852,366 @@ void self_shielding_integration_imp( DistributedSrcCalcT<T> &calculator,
       throw std::runtime_error( "self_shielding_integration_imp: invalid geometry" );
   }//switch( calculator.m_geometry )
 
-  calculator.integral = T(0.0);
-  calculator.m_num_evals = 0;
-  calculator.m_est_rel_error = 0.0;
+  // Hollow source shells get tiled into smooth sub-domains - see #split_source_subdomains
+  const std::vector<DistributedSrcCalcT<T>> subdomains = split_source_subdomains( calculator );
 
+  // Integrates one sub-domain, dispatching to the right evaluator
+  const auto integrate_sub = [ndim]( const DistributedSrcCalcT<T> &sub,
+                                     const double sub_epsrel, const double sub_epsabs,
+                                     const size_t sub_max_evals,
+                                     double &sub_error, size_t &sub_evals ) -> T {
+    switch( sub.m_geometry )
+    {
+      case GeometryType::Spherical:
+      {
+        const auto f = [&sub,ndim]( const double xx[3] ) -> T {
+          return sub.eval_spherical( xx, ndim );
+        };
+        return adaptive_unit_cube_integrate<T>( f, ndim, sub_epsrel, sub_max_evals, &sub_error, &sub_evals, sub_epsabs );
+      }//case GeometryType::Spherical:
+
+      case GeometryType::CylinderEndOn:
+      {
+        if( (sub.m_shells.size() == 1)
+            && (scalar_of(sub.m_detector.position[0]) == 0.0)
+            && (scalar_of(sub.m_detector.position[1]) == 0.0) )
+        {
+          // For a single, on-axis, end-on cylinder we can use the ever-so-slightly faster evaluator
+          const auto f = [&sub,ndim]( const double xx[3] ) -> T {
+            return sub.eval_single_cyl_end_on( xx, ndim );
+          };
+          return adaptive_unit_cube_integrate<T>( f, ndim, sub_epsrel, sub_max_evals, &sub_error, &sub_evals, sub_epsabs );
+        }
+
+        const auto f = [&sub,ndim]( const double xx[3] ) -> T {
+          return sub.eval_cylinder( xx, ndim );
+        };
+        return adaptive_unit_cube_integrate<T>( f, ndim, sub_epsrel, sub_max_evals, &sub_error, &sub_evals, sub_epsabs );
+      }//case GeometryType::CylinderEndOn:
+
+      case GeometryType::CylinderSideOn:
+      {
+        const auto f = [&sub,ndim]( const double xx[3] ) -> T {
+          return sub.eval_cylinder( xx, ndim );
+        };
+        return adaptive_unit_cube_integrate<T>( f, ndim, sub_epsrel, sub_max_evals, &sub_error, &sub_evals, sub_epsabs );
+      }//case GeometryType::CylinderSideOn:
+
+      case GeometryType::Rectangular:
+      {
+        const auto f = [&sub,ndim]( const double xx[3] ) -> T {
+          return sub.eval_rect( xx, ndim );
+        };
+        return adaptive_unit_cube_integrate<T>( f, ndim, sub_epsrel, sub_max_evals, &sub_error, &sub_evals, sub_epsabs );
+      }//case GeometryType::Rectangular:
+
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }//switch( sub.m_geometry )
+
+    return T(0.0);
+  };//integrate_sub lambda
+
+  T total(0.0);
   double est_error = 0.0;
   size_t num_evals = 0;
 
-  switch( calculator.m_geometry )
+  if( subdomains.size() == 1 )
   {
-    case GeometryType::Spherical:
-    {
-      const auto f = [&calculator,ndim]( const double xx[3] ) -> T {
-        return calculator.eval_spherical( xx, ndim );
-      };
-      calculator.integral = adaptive_unit_cube_integrate<T>( f, ndim, epsrel, max_evals, &est_error, &num_evals );
-      break;
-    }//case GeometryType::Spherical:
+    total = integrate_sub( subdomains.front(), epsrel, 0.0, max_evals, est_error, num_evals );
+  }else
+  {
+    // The requested accuracy is relative to the TOTAL integral, so distribute the
+    //  error budget across sub-domains as absolute targets: a cheap rough pass for
+    //  magnitudes first, then refinement processed easiest-first so a single hard
+    //  sub-domain (e.g., one behind a more-transparent core, whose silhouette is a
+    //  near-discontinuity) inherits all the budget the easy ones didnt need.
+    const size_t num_subs = subdomains.size();
 
-    case GeometryType::CylinderEndOn:
+    std::vector<T> rough_vals( num_subs, T(0.0) );
+    std::vector<double> rough_errs( num_subs, 0.0 );
+    double total_rough = 0.0;
+
+    const size_t rough_max_evals = std::min( max_evals, size_t(50000) );
+    for( size_t i = 0; i < num_subs; ++i )
     {
-      if( (calculator.m_shells.size() == 1)
-          && (scalar_of(calculator.m_detector.position[0]) == 0.0)
-          && (scalar_of(calculator.m_detector.position[1]) == 0.0) )
+      size_t sub_evals = 0;
+      rough_vals[i] = integrate_sub( subdomains[i], 0.02, 0.0, rough_max_evals, rough_errs[i], sub_evals );
+      num_evals += sub_evals;
+      total_rough += std::fabs( scalar_of(rough_vals[i]) );
+    }//for( rough pass over sub-domains )
+
+    // Process in order of increasing rough error
+    std::vector<size_t> order( num_subs );
+    for( size_t i = 0; i < num_subs; ++i )
+      order[i] = i;
+    std::sort( begin(order), end(order),
+               [&rough_errs]( const size_t lhs, const size_t rhs ) {
+                 return rough_errs[lhs] < rough_errs[rhs];
+               } );
+
+    double budget_left = epsrel * total_rough;
+
+    for( size_t order_index = 0; order_index < num_subs; ++order_index )
+    {
+      const size_t i = order[order_index];
+      const size_t num_remaining = num_subs - order_index;
+      const double share = std::max( budget_left, 0.0 ) / static_cast<double>(num_remaining);
+
+      if( rough_errs[i] <= share )
       {
-        // For a single, on-axis, end-on cylinder we can use the ever-so-slightly faster evaluator
-        const auto f = [&calculator,ndim]( const double xx[3] ) -> T {
-          return calculator.eval_single_cyl_end_on( xx, ndim );
-        };
-        calculator.integral = adaptive_unit_cube_integrate<T>( f, ndim, epsrel, max_evals, &est_error, &num_evals );
-      }else
-      {
-        const auto f = [&calculator,ndim]( const double xx[3] ) -> T {
-          return calculator.eval_cylinder( xx, ndim );
-        };
-        calculator.integral = adaptive_unit_cube_integrate<T>( f, ndim, epsrel, max_evals, &est_error, &num_evals );
+        // The rough pass already met this sub-domains share of the error budget
+        total += rough_vals[i];
+        est_error += rough_errs[i];
+        budget_left -= rough_errs[i];
+        continue;
       }
-      break;
-    }//case GeometryType::CylinderEndOn:
 
-    case GeometryType::CylinderSideOn:
-    {
-      const auto f = [&calculator,ndim]( const double xx[3] ) -> T {
-        return calculator.eval_cylinder( xx, ndim );
-      };
-      calculator.integral = adaptive_unit_cube_integrate<T>( f, ndim, epsrel, max_evals, &est_error, &num_evals );
-      break;
-    }//case GeometryType::CylinderSideOn:
+      size_t sub_evals = 0;
+      double sub_error = 0.0;
+      total += integrate_sub( subdomains[i], epsrel, share, max_evals, sub_error, sub_evals );
+      est_error += sub_error;
+      num_evals += sub_evals;
+      budget_left -= sub_error;
+    }//for( final pass over sub-domains, easiest first )
+  }//if( single domain ) / else
 
-    case GeometryType::Rectangular:
-    {
-      const auto f = [&calculator,ndim]( const double xx[3] ) -> T {
-        return calculator.eval_rect( xx, ndim );
-      };
-      calculator.integral = adaptive_unit_cube_integrate<T>( f, ndim, epsrel, max_evals, &est_error, &num_evals );
-      break;
-    }//case GeometryType::Rectangular:
-
-    case GeometryType::NumGeometryType:
-      assert( 0 );
-      break;
-  }//switch( calculator.m_geometry )
-
+  calculator.integral = total;
   calculator.m_num_evals = num_evals;
   const double integral_scalar = std::fabs( scalar_of(calculator.integral) );
   calculator.m_est_rel_error = (integral_scalar > 0.0) ? (est_error / integral_scalar) : est_error;
 }//self_shielding_integration_imp(...)
+
+
+/** Mass-fraction-weighted average atomic number of a material (a simple Zbar; a
+ cross-section-matching effective Z would be a possible refinement for better GADRAS
+ shield-scatter fidelity).
+ */
+inline double material_mass_weighted_atomic_number( const Material &material )
+{
+  double frac_sum = 0.0, weighted_z = 0.0;
+
+  for( const Material::ElementFractionPair &el_frac : material.elements )
+  {
+    if( el_frac.first )
+    {
+      frac_sum += el_frac.second;
+      weighted_z += el_frac.second * el_frac.first->atomicNumber;
+    }
+  }//for( loop over elements )
+
+  for( const Material::NuclideFractionPair &nuc_frac : material.nuclides )
+  {
+    if( nuc_frac.first )
+    {
+      frac_sum += nuc_frac.second;
+      weighted_z += nuc_frac.second * nuc_frac.first->atomicNumber;
+    }
+  }//for( loop over nuclides )
+
+  return (frac_sum > 0.0) ? (weighted_z / frac_sum) : 0.0;
+}//material_mass_weighted_atomic_number(...)
+
+
+/** Hydrogen mass fraction of a material. */
+inline double material_hydrogen_mass_fraction( const Material &material )
+{
+  double frac_sum = 0.0, frac_h = 0.0;
+
+  for( const Material::ElementFractionPair &el_frac : material.elements )
+  {
+    if( el_frac.first )
+    {
+      frac_sum += el_frac.second;
+      if( el_frac.first->atomicNumber == 1 )
+        frac_h += el_frac.second;
+    }
+  }//for( loop over elements )
+
+  for( const Material::NuclideFractionPair &nuc_frac : material.nuclides )
+  {
+    if( nuc_frac.first )
+    {
+      frac_sum += nuc_frac.second;
+      if( nuc_frac.first->atomicNumber == 1 )
+        frac_h += nuc_frac.second;
+    }
+  }//for( loop over nuclides )
+
+  return (frac_sum > 0.0) ? (frac_h / frac_sum) : 0.0;
+}//material_hydrogen_mass_fraction(...)
+
+
+/** The components of the effective-shielding integration, each integrated over the
+ source volume with t = transmission*solid-angle weighting (see
+ #integrate_effective_shielding):
+   c[0] = t*dV                          (the plain detection-probability integral)
+   c[1] = t*dV * AD_ray                 (areal density traversed by the ray)
+   c[2] = t*dV * sum_l(AN_l * AD_l)     (mass-weighted atomic number numerator)
+   c[3] = t*dV * AD_H,ray               (hydrogen component of the areal density)
+   c[4] = t*dV * sum_l(mu_l * d_l)      (cross-section weighting normalization)
+   c[5] = t*dV * sum_l(AN_l * mu_l * d_l) (cross-section-weighted AN numerator)
+ */
+struct EffShieldComponents
+{
+  std::array<double,6> c;
+
+  EffShieldComponents() : c{ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 } {}
+  explicit EffShieldComponents( const double val ) : c{ val, val, val, val, val, val } {}
+
+  EffShieldComponents &operator+=( const EffShieldComponents &rhs )
+  {
+    for( size_t i = 0; i < c.size(); ++i )
+      c[i] += rhs.c[i];
+    return *this;
+  }
+
+  EffShieldComponents &operator-=( const EffShieldComponents &rhs )
+  {
+    for( size_t i = 0; i < c.size(); ++i )
+      c[i] -= rhs.c[i];
+    return *this;
+  }
+
+  friend EffShieldComponents operator*( const double lhs, const EffShieldComponents &rhs )
+  {
+    EffShieldComponents result( rhs );
+    for( size_t i = 0; i < result.c.size(); ++i )
+      result.c[i] *= lhs;
+    return result;
+  }
+
+  friend EffShieldComponents operator*( const EffShieldComponents &lhs, const double rhs )
+  {
+    return rhs * lhs;
+  }
+};//struct EffShieldComponents
+
+/** Refinement of the adaptive integration of #EffShieldComponents is driven by the
+ plain detection-probability component.
+
+ TODO: refinement/convergence is driven solely by c[0] (the detection probability).
+ The reported effective-AD/AN/H ratios are formed from c[1]..c[5], which ride along but
+ never drive subdivision, so those ratios can be materially less accurate than c[0]'s
+ relative error suggests (e.g. where the AD integrand has more structure than the
+ probability integrand - a bright transparent-core silhouette).  Consider driving the
+ convergence test by the max relative error across the components actually consumed.
+ This is a post-fit diagnostic only, so it does not affect fit results.
+ */
+inline double scalar_of( const EffShieldComponents &val )
+{
+  return val.c[0];
+}
+
+
+/** How the effective atomic number is weighted across the materials a ray traverses;
+ the user may want to revisit this once cascade-summing corrections are implemented.
+ */
+enum class EffectiveAnWeighting : int
+{
+  /** <AN> = sum_l(AN_l * AD_l) / sum_l(AD_l) - weighted by traversed mass. */
+  MassWeighted,
+
+  /** <AN> = sum_l(AN_l * mu_l * d_l) / sum_l(mu_l * d_l) - weighted by each
+   materials share of the attenuation.
+   */
+  CrossSectionWeighted
+};//enum class EffectiveAnWeighting
+
+
+/** Integrates the effective-shielding components for `calculator` over its source
+ volume (double-valued only; this is a post-fit diagnostic pass).
+
+ Returns the six components described at #EffShieldComponents; the
+ attenuation-weighted averages are then
+   <AD>    = c[1]/c[0]
+   <AN>    = c[2]/c[1]  (MassWeighted)   or  c[5]/c[4]  (CrossSectionWeighted)
+   <fracH> = c[3]/c[1]
+ The per-shell metadata (density, areal_density, effective_an, hydrogen_mass_frac)
+ must be filled in on calculator.m_shells.
+ */
+inline EffShieldComponents integrate_effective_shielding( DistributedSrcCalcT<double> &calculator,
+                                                          const double epsrel = 1.0E-4,
+                                                          const size_t max_evals = 5000000 )
+{
+  int ndim = -1;
+  switch( calculator.m_geometry )
+  {
+    case GeometryType::Spherical:
+      ndim = 2;
+      break;
+
+    case GeometryType::CylinderEndOn:
+      // A non-zero radial offset breaks the azimuthal symmetry - need the full 3D
+      //  integral (see #self_shielding_integration_imp).
+      ndim = ( (scalar_of(calculator.m_detector.position[0]) != 0.0)
+               || (scalar_of(calculator.m_detector.position[1]) != 0.0) ) ? 3 : 2;
+      break;
+
+    case GeometryType::CylinderSideOn:
+    case GeometryType::Rectangular:
+      ndim = 3;
+      break;
+
+    case GeometryType::NumGeometryType:
+      assert( 0 );
+      throw std::runtime_error( "integrate_effective_shielding: invalid geometry" );
+  }//switch( calculator.m_geometry )
+
+  // Hollow source shells get tiled into smooth sub-domains - see #split_source_subdomains
+  std::vector<DistributedSrcCalcT<double>> subdomains = split_source_subdomains( calculator );
+
+  EffShieldComponents result;
+  size_t num_evals = 0;
+
+  for( DistributedSrcCalcT<double> &sub : subdomains )
+  {
+    sub.m_accumulateEffectiveAnAd = true;
+
+    const auto components_integrand = [&sub,ndim]( const double xx[3] ) -> EffShieldComponents {
+      double t_dv = 0.0;
+
+      switch( sub.m_geometry )
+      {
+        case GeometryType::Spherical:
+          t_dv = sub.eval_spherical( xx, ndim );
+          break;
+
+        case GeometryType::CylinderEndOn:
+        case GeometryType::CylinderSideOn:
+          t_dv = sub.eval_cylinder( xx, ndim );
+          break;
+
+        case GeometryType::Rectangular:
+          t_dv = sub.eval_rect( xx, ndim );
+          break;
+
+        case GeometryType::NumGeometryType:
+          break;
+      }//switch( geometry )
+
+      EffShieldComponents components;
+      components.c[0] = t_dv;
+      components.c[1] = t_dv * sub.m_ray_ad;
+      components.c[2] = t_dv * sub.m_ray_an_ad;
+      components.c[3] = t_dv * sub.m_ray_ad_h;
+      components.c[4] = t_dv * sub.m_ray_mu_d;
+      components.c[5] = t_dv * sub.m_ray_an_mu_d;
+      return components;
+    };//components_integrand
+
+    size_t sub_evals = 0;
+    double sub_error = 0.0;
+    result += adaptive_unit_cube_integrate<EffShieldComponents>(
+                          components_integrand, ndim, epsrel, max_evals, &sub_error, &sub_evals );
+    num_evals += sub_evals;
+  }//for( loop over sub-domains )
+
+  calculator.m_num_evals = num_evals;
+
+  return result;
+}//integrate_effective_shielding(...)
 
 
 /** Templated equivalent of #transmition_coefficient_generic: the total
@@ -2064,7 +2660,13 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities_imp( std::map<double,T> &en
 
   //'gammas' have the activity of the original parent decreased by aging by 'age', but we
   //  want the parent to have 'sm_activityUnits' activity at 'age' - so a correction factor.
-  const double age_sf = sm_activityUnits / mixture.activity( age_val, nuclide );
+  //  A stable or fully-decayed parent has zero activity (would divide by zero); in that case
+  //  it emits nothing, so a scale factor of 0 gives the correct (zero) contribution.
+  auto safe_age_sf = []( const double parent_activity ) -> double {
+    return ((parent_activity > 0.0) && !IsInf(parent_activity))
+              ? (sm_activityUnits / parent_activity) : 0.0;
+  };
+  const double age_sf = safe_age_sf( mixture.activity( age_val, nuclide ) );
 
   // Decide if we need the age derivative, and if so compute forward/backward differences
   bool age_has_deriv = false;
@@ -2101,13 +2703,13 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities_imp( std::map<double,T> &en
     }//if( age_val > 0.1*half_life ) / else
 
     gammas_fwd = gammas_at_age( age_val + forward_dt );
-    age_sf_fwd = sm_activityUnits / mixture.activity( age_val + forward_dt, nuclide );
+    age_sf_fwd = safe_age_sf( mixture.activity( age_val + forward_dt, nuclide ) );
     assert( gammas_fwd.size() == gammas.size() );
 
     if( backward_dt > 0.0 )
     {
       gammas_bwd = gammas_at_age( age_val - backward_dt );
-      age_sf_bwd = sm_activityUnits / mixture.activity( age_val - backward_dt, nuclide );
+      age_sf_bwd = safe_age_sf( mixture.activity( age_val - backward_dt, nuclide ) );
       assert( gammas_bwd.size() == gammas.size() );
     }
   }//if( age_has_deriv )
@@ -2214,173 +2816,22 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities_imp( std::map<double,T> &en
 }//cluster_peak_activities_imp(...)
 
 
+
 template<typename T>
-std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vector<T> &params,
-                                                          NucMixtureCache &mixturecache ) const
+std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
+                        const std::vector<T> &params,
+                        NucMixtureCache &mixturecache,
+                        const std::vector<std::pair<double,double>> &energie_widths ) const
 {
   using namespace std;
   using namespace ceres;
 
   typedef std::map<double,T> EnergyCountMapT;
 
-  assert( !m_options.attenuate_for_air || !m_detector || !m_detector->isFixedGeometry() );
-
-  if( params.size() != numExpectedFitParameters() )
-    throw std::runtime_error( "expected_peak_counts_imp: invalid params size" );
-
-  EnergyCountMapT energy_count_map;
-  const std::vector<std::pair<double,double>> energie_widths = observedPeakEnergyWidths( m_peaks );
-
-  // 1) Un-attenuated contributions of the point sources
-  if( m_options.multiple_nucs_contribute_to_peaks )
-  {
-    for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
-    {
-      if( isVolumetricSource(nuclide) )
-        continue;
-
-      const T act = activity_imp( nuclide, params );
-      const T thisage = age_imp( nuclide, params );
-
-      if( mixturecache.find(nuclide) == mixturecache.end() )
-        mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
-
-      cluster_peak_activities_imp( energy_count_map, energie_widths, mixturecache[nuclide],
-                                   act, thisage, m_options.photopeak_cluster_sigma, -1.0,
-                                   m_options.account_for_decay_during_meas, m_realTime );
-    }//for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
-  }else
-  {
-    for( const PeakDef &peak : m_peaks )
-    {
-      const SandiaDecay::Nuclide *nuclide = peak.parentNuclide();
-      const SandiaDecay::RadParticle *particle = peak.decayParticle();
-
-      if( !nuclide
-          || (!particle && (peak.sourceGammaType() != PeakDef::AnnihilationGamma))
-          || isVolumetricSource(nuclide) )
-        continue;
-
-      const T act = activity_imp( nuclide, params );
-      const T thisage = age_imp( nuclide, params );
-
-      if( mixturecache.find(nuclide) == mixturecache.end() )
-        mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
-
-      const float energy = peak.gammaParticleEnergy();
-      cluster_peak_activities_imp( energy_count_map, energie_widths, mixturecache[nuclide],
-                                   act, thisage, m_options.photopeak_cluster_sigma, energy,
-                                   m_options.account_for_decay_during_meas, m_realTime );
-    }//for( const PeakDef &peak : m_peaks )
-  }//if( m_options.multiple_nucs_contribute_to_peaks ) / else
-
-  // 2) Propagate the point-source gammas through each shielding
-  T shield_outer_rad(0.0);
   const size_t nMaterials = m_initial_shieldings.size();
 
-  for( size_t materialN = 0; materialN < nMaterials; ++materialN )
-  {
-    std::function<T(float)> att_coef_fcn;
-    const ShieldingSourceFitCalc::ShieldingInfo &shielding = m_initial_shieldings[materialN];
-    const std::shared_ptr<const Material> &material = shielding.m_material;
-
-    if( !material )
-    {
-      // Generic material here.
-      T atomic_number = atomicNumber_imp( materialN, params );
-      T areal_density = arealDensity_imp( materialN, params );
-
-      // Clamp way-out-of-bounds values (the optimizer should keep things in bounds, but the
-      //  Minuit path historically hasnt always) - only the scalar part is clamped, so
-      //  derivative information survives.
-      if( scalar_of(atomic_number) < MassAttenuation::sm_min_xs_atomic_number )
-        atomic_number = T( static_cast<double>(MassAttenuation::sm_min_xs_atomic_number) );
-      if( scalar_of(atomic_number) > MassAttenuation::sm_max_xs_atomic_number )
-        atomic_number = T( static_cast<double>(MassAttenuation::sm_max_xs_atomic_number) );
-
-      const double ad_in_gcm2 = scalar_of(areal_density) * PhysicalUnits::cm2 / PhysicalUnits::g;
-      if( ad_in_gcm2 < 0.0 )
-        areal_density = T(0.0);
-      if( ad_in_gcm2 > sm_max_areal_density_g_cm2 )
-        areal_density = T( sm_max_areal_density_g_cm2 * PhysicalUnits::g / PhysicalUnits::cm2 );
-
-      att_coef_fcn = [atomic_number, areal_density]( float energy ) -> T {
-        return transmission_coefficient_generic_imp( atomic_number, areal_density, energy );
-      };
-    }else
-    {
-      T thickness(0.0);
-      switch( m_geometry )
-      {
-        case GeometryType::Spherical:
-          thickness = sphericalThickness_imp( materialN, params );
-          break;
-
-        case GeometryType::CylinderEndOn:
-          thickness = cylindricalLengthThickness_imp( materialN, params );
-          break;
-
-        case GeometryType::CylinderSideOn:
-          thickness = cylindricalRadiusThickness_imp( materialN, params );
-          break;
-
-        case GeometryType::Rectangular:
-          thickness = rectangularDepthThickness_imp( materialN, params );
-          break;
-
-        case GeometryType::NumGeometryType:
-          assert( 0 );
-          break;
-      }//switch( m_geometry )
-
-      shield_outer_rad += thickness;
-
-      att_coef_fcn = [mat = material.get(), thickness]( float energy ) -> T {
-        return thickness * transmition_length_coefficient( mat, energy );
-      };
-    }//if( generic material ) / else
-
-    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
-      energy_count.second *= exp( -1.0 * att_coef_fcn( static_cast<float>(energy_count.first) ) );
-  }//for( size_t materialN = 0; materialN < nMaterials; ++materialN )
-
-  // 3) Attenuation in the air between the shielding surface and the detector
-  if( m_options.attenuate_for_air && (!m_detector || !m_detector->isFixedGeometry()) )
-  {
-    T air_dist = m_distance - shield_outer_rad;
-    if( scalar_of(air_dist) < 0.0 )
-      air_dist = T(0.0);
-
-    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
-    {
-      const double coef = transmission_length_coefficient_air( static_cast<float>(energy_count.first) );
-      energy_count.second *= exp( -coef * air_dist );
-    }
-  }//if( m_options.attenuate_for_air )
-
-  // 4) Detector response (at the fixed user-entered distance)
-  if( m_detector && m_detector->isValid() )
-  {
-    const bool fixed_geom = m_detector->isFixedGeometry();
-    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
-    {
-      const double eff = fixed_geom
-                  ? m_detector->intrinsicEfficiency( static_cast<float>(energy_count.first) )
-                  : m_detector->efficiency( static_cast<float>(energy_count.first), m_distance );
-      energy_count.second *= eff;
-    }
-  }else
-  {
-    const double detDiam = 1.0 * PhysicalUnits::cm;
-    const double r = 0.5 * detDiam;
-    const double D = m_distance;
-    const double fracAngle = 0.5*(1.0 - (D/std::sqrt(D*D + r*r)));
-    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
-      energy_count.second *= fracAngle;
-  }//if( m_detector && m_detector->isValid() ) / else
-
-  // 5) Contributions from self-attenuating and trace sources
   std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> calculators;
+
 
   for( size_t material_index = 0; material_index < nMaterials; ++material_index )
   {
@@ -2421,7 +2872,8 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
     const double det_radius = (m_detector ? 0.5*m_detector->detectorDiameter() : 0.5*PhysicalUnits::cm);
     const double det_setback = (m_detector ? m_detector->detectorSetback() : 0.0);
     baseCalculator.m_detector = detector_geom_from_config( m_geometry, T(m_distance),
-                                                           det_radius, det_setback );
+                                                           det_radius, det_setback,
+                                                           m_sourceOffsets[0], m_sourceOffsets[1] );
 
     for( size_t src_index = 0; src_index < combined_srcs.size(); ++src_index )
     {
@@ -2577,6 +3029,8 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
             shell.dims = outer_dims;
             shell.trans_len_coef = transmission_coefficient_generic_imp( an, ad, static_cast<float>(calculator->m_energy) );
             shell.type = DistributedSrcCalc::ShellType::Generic;
+            shell.areal_density = scalar_of( ad );
+            shell.effective_an = scalar_of( an );
             calculator->m_shells.push_back( shell );
             continue;
           }//if( isGenericMaterial( subMat ) )
@@ -2604,20 +3058,25 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
               break;
           }//switch( m_geometry )
 
+          // Compare against the true (offset-aware) source-to-detector distance, not the
+          //  on-axis m_distance: with an off-axis offset the detector is farther away, so
+          //  using m_distance would spuriously flag a legitimate shell as past the detector.
+          //  On-axis the two are equal.
+          const double det_dist = trueSourceToDetectorDistance();
           bool pastDetector = false;
           switch( m_geometry )
           {
             case GeometryType::Spherical:
             case GeometryType::CylinderSideOn:
-              pastDetector = (scalar_of(outer_dims[0]) > m_distance);
+              pastDetector = (scalar_of(outer_dims[0]) > det_dist);
               break;
 
             case GeometryType::CylinderEndOn:
-              pastDetector = (scalar_of(outer_dims[1]) > m_distance);
+              pastDetector = (scalar_of(outer_dims[1]) > det_dist);
               break;
 
             case GeometryType::Rectangular:
-              pastDetector = (scalar_of(outer_dims[2]) > m_distance);
+              pastDetector = (scalar_of(outer_dims[2]) > det_dist);
               break;
 
             case GeometryType::NumGeometryType:
@@ -2634,6 +3093,9 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
           shell.trans_len_coef = T( transmition_length_coefficient( sub_material.get(),
                                                   static_cast<float>(calculator->m_energy) ) );
           shell.type = DistributedSrcCalc::ShellType::Material;
+          shell.density = sub_material->density;
+          shell.effective_an = material_mass_weighted_atomic_number( *sub_material );
+          shell.hydrogen_mass_frac = material_hydrogen_mass_fraction( *sub_material );
           calculator->m_shells.push_back( shell );
         }//for( size_t subMat = 0; subMat < nMaterials; ++subMat )
 
@@ -2644,6 +3106,200 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       }//for( loop over local_energy_count_map )
     }//for( loop over combined_srcs )
   }//for( loop over materials )
+
+
+  return calculators;
+}//build_volumetric_calculators(...)
+
+template<typename T>
+std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vector<T> &params,
+                                                          NucMixtureCache &mixturecache ) const
+{
+  using namespace std;
+  using namespace ceres;
+
+  typedef std::map<double,T> EnergyCountMapT;
+
+  assert( !m_options.attenuate_for_air || !m_detector || !m_detector->isFixedGeometry() );
+
+  if( params.size() != numExpectedFitParameters() )
+    throw std::runtime_error( "expected_peak_counts_imp: invalid params size" );
+
+  EnergyCountMapT energy_count_map;
+  const std::vector<std::pair<double,double>> energie_widths = observedPeakEnergyWidths( m_peaks );
+
+  // 1) Un-attenuated contributions of the point sources
+  if( m_options.multiple_nucs_contribute_to_peaks )
+  {
+    for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
+    {
+      if( isVolumetricSource(nuclide) )
+        continue;
+
+      const T act = activity_imp( nuclide, params );
+      const T thisage = age_imp( nuclide, params );
+
+      if( mixturecache.find(nuclide) == mixturecache.end() )
+        mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
+
+      cluster_peak_activities_imp( energy_count_map, energie_widths, mixturecache[nuclide],
+                                   act, thisage, m_options.photopeak_cluster_sigma, -1.0,
+                                   m_options.account_for_decay_during_meas, m_realTime );
+    }//for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
+  }else
+  {
+    for( const PeakDef &peak : m_peaks )
+    {
+      const SandiaDecay::Nuclide *nuclide = peak.parentNuclide();
+      const SandiaDecay::RadParticle *particle = peak.decayParticle();
+
+      if( !nuclide
+          || (!particle && (peak.sourceGammaType() != PeakDef::AnnihilationGamma))
+          || isVolumetricSource(nuclide) )
+        continue;
+
+      const T act = activity_imp( nuclide, params );
+      const T thisage = age_imp( nuclide, params );
+
+      if( mixturecache.find(nuclide) == mixturecache.end() )
+        mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
+
+      const float energy = peak.gammaParticleEnergy();
+      cluster_peak_activities_imp( energy_count_map, energie_widths, mixturecache[nuclide],
+                                   act, thisage, m_options.photopeak_cluster_sigma, energy,
+                                   m_options.account_for_decay_during_meas, m_realTime );
+    }//for( const PeakDef &peak : m_peaks )
+  }//if( m_options.multiple_nucs_contribute_to_peaks ) / else
+
+  // 2) Propagate the point-source gammas through each shielding, along the ray from
+  //    the assembly center to the (possibly off-axis) detector.  On-axis, the per-layer
+  //    chord reduces exactly to the layer thickness the legacy path uses.
+  const size_t nMaterials = m_initial_shieldings.size();
+
+  const double det_radius_pt = (m_detector ? 0.5*m_detector->detectorDiameter() : 0.5*PhysicalUnits::cm);
+  const double det_setback_pt = (m_detector ? m_detector->detectorSetback() : 0.0);
+  const DetectorGeomT<T> det_geom = detector_geom_from_config( m_geometry, T(m_distance),
+                                            det_radius_pt, det_setback_pt,
+                                            m_sourceOffsets[0], m_sourceOffsets[1] );
+
+  const double true_dist = trueSourceToDetectorDistance();
+
+  std::array<T,3> cumulative_dims = { T(0.0), T(0.0), T(0.0) };
+  T prev_exit_dist(0.0);
+
+  for( size_t materialN = 0; materialN < nMaterials; ++materialN )
+  {
+    std::function<T(float)> att_coef_fcn;
+    const ShieldingSourceFitCalc::ShieldingInfo &shielding = m_initial_shieldings[materialN];
+    const std::shared_ptr<const Material> &material = shielding.m_material;
+
+    if( !material )
+    {
+      // Generic material here.
+      T atomic_number = atomicNumber_imp( materialN, params );
+      T areal_density = arealDensity_imp( materialN, params );
+
+      // Clamp way-out-of-bounds values (the optimizer should keep things in bounds, but the
+      //  Minuit path historically hasnt always).  Replacing the value with a constant T also
+      //  zeroes the derivative lanes - which is the correct derivative of a hard clamp (the
+      //  clamped region is flat, so d/dparam = 0), matching mass_atten_coef_frac_an's
+      //  out-of-range behavior.
+      if( scalar_of(atomic_number) < MassAttenuation::sm_min_xs_atomic_number )
+        atomic_number = T( static_cast<double>(MassAttenuation::sm_min_xs_atomic_number) );
+      if( scalar_of(atomic_number) > MassAttenuation::sm_max_xs_atomic_number )
+        atomic_number = T( static_cast<double>(MassAttenuation::sm_max_xs_atomic_number) );
+
+      const double ad_in_gcm2 = scalar_of(areal_density) * PhysicalUnits::cm2 / PhysicalUnits::g;
+      if( ad_in_gcm2 < 0.0 )
+        areal_density = T(0.0);
+      if( ad_in_gcm2 > sm_max_areal_density_g_cm2 )
+        areal_density = T( sm_max_areal_density_g_cm2 * PhysicalUnits::g / PhysicalUnits::cm2 );
+
+      att_coef_fcn = [atomic_number, areal_density]( float energy ) -> T {
+        return transmission_coefficient_generic_imp( atomic_number, areal_density, energy );
+      };
+    }else
+    {
+      switch( m_geometry )
+      {
+        case GeometryType::Spherical:
+          cumulative_dims[0] += sphericalThickness_imp( materialN, params );
+          break;
+
+        case GeometryType::CylinderEndOn:
+        case GeometryType::CylinderSideOn:
+          cumulative_dims[0] += cylindricalRadiusThickness_imp( materialN, params );
+          cumulative_dims[1] += cylindricalLengthThickness_imp( materialN, params );
+          break;
+
+        case GeometryType::Rectangular:
+          cumulative_dims[0] += rectangularWidthThickness_imp( materialN, params );
+          cumulative_dims[1] += rectangularHeightThickness_imp( materialN, params );
+          cumulative_dims[2] += rectangularDepthThickness_imp( materialN, params );
+          break;
+
+        case GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( m_geometry )
+
+      T exit_dist = center_ray_exit_distance( m_geometry, cumulative_dims, det_geom );
+      // A shielding layer can't attenuate past where the detector sits.  If a (degenerate)
+      //  over-thick layer would exit beyond the detector, cap the path at the detector so
+      //  the chord stays physical, the air gap below doesn't go negative, and the exit
+      //  helpers aren't relied on for a detector that sits inside the volume.
+      if( scalar_of(exit_dist) > true_dist )
+        exit_dist = T(true_dist);
+      const T chord = exit_dist - prev_exit_dist;
+      prev_exit_dist = exit_dist;
+
+      att_coef_fcn = [mat = material.get(), chord]( float energy ) -> T {
+        return chord * transmition_length_coefficient( mat, energy );
+      };
+    }//if( generic material ) / else
+
+    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
+      energy_count.second *= exp( -1.0 * att_coef_fcn( static_cast<float>(energy_count.first) ) );
+  }//for( size_t materialN = 0; materialN < nMaterials; ++materialN )
+
+  // 3) Attenuation in the air between the shielding surface and the detector
+  if( m_options.attenuate_for_air && (!m_detector || !m_detector->isFixedGeometry()) )
+  {
+    T air_dist = true_dist - prev_exit_dist;
+    if( scalar_of(air_dist) < 0.0 )
+      air_dist = T(0.0);
+
+    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
+    {
+      const double coef = transmission_length_coefficient_air( static_cast<float>(energy_count.first) );
+      energy_count.second *= exp( -coef * air_dist );
+    }
+  }//if( m_options.attenuate_for_air )
+
+  // 4) Detector response (at the true line-of-sight distance)
+  if( m_detector && m_detector->isValid() )
+  {
+    const bool fixed_geom = m_detector->isFixedGeometry();
+    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
+    {
+      const double eff = fixed_geom
+                  ? m_detector->intrinsicEfficiency( static_cast<float>(energy_count.first) )
+                  : m_detector->efficiency( static_cast<float>(energy_count.first), true_dist );
+      energy_count.second *= eff;
+    }
+  }else
+  {
+    const double detDiam = 1.0 * PhysicalUnits::cm;
+    const double r = 0.5 * detDiam;
+    const double D = true_dist;
+    const double fracAngle = 0.5*(1.0 - (D/std::sqrt(D*D + r*r)));
+    for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
+      energy_count.second *= fracAngle;
+  }//if( m_detector && m_detector->isValid() ) / else
+
+  // 5) Contributions from self-attenuating and trace sources
+  std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> calculators
+                       = build_volumetric_calculators( params, mixturecache, energie_widths );
 
   if( !calculators.empty() )
   {
@@ -2720,6 +3376,200 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
   return answer;
 }//expected_peak_counts_imp(...)
+
+
+inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffectiveShielding(
+                                                    const std::vector<double> &params,
+                                                    NucMixtureCache &mixturecache ) const
+{
+  using namespace std;
+
+  std::vector<EffectiveShieldingInfo> answer;
+
+  const std::vector<std::pair<double,double>> energie_widths = observedPeakEnergyWidths( m_peaks );
+
+  // Volumetric (self-attenuating and trace) sources: integrate the components over
+  //  the source volume.  This is a best-effort, post-fit diagnostic; if the final
+  //  geometry is degenerate (e.g. a shell past the detector makes build_volumetric_calculators
+  //  throw), skip the volumetric contributions rather than aborting - the point-source
+  //  results below are still produced.
+  try
+  {
+  std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calculators
+                = build_volumetric_calculators<double>( params, mixturecache, energie_widths );
+
+  for( const std::unique_ptr<DistributedSrcCalcT<double>> &calc : calculators )
+  {
+    const EffShieldComponents comps = integrate_effective_shielding( *calc );
+
+    EffectiveShieldingInfo info;
+    info.nuclide = calc->m_nuclide;
+    info.energy = calc->m_energy;
+    info.is_point_source = false;
+
+    // For in-situ exponential sources m_srcVolumetricActivity is per-area normalized,
+    //  so the total emitted is not volumetric-activity * volume; leave as -1.
+    if( !calc->m_isInSituExponential )
+      info.gammas_into_4pi = calc->m_srcVolumetricActivity
+                             * volumeOfMaterial_imp( calc->m_materialIndex, params )
+                             * m_liveTime;
+
+    if( (comps.c[0] > 0.0) && (comps.c[1] > 0.0) )
+    {
+      info.effective_ad = comps.c[1] / comps.c[0];
+      info.effective_an_mass = comps.c[2] / comps.c[1];
+      info.hydrogen_frac_of_ad = comps.c[3] / comps.c[1];
+      info.effective_an_xs = (comps.c[4] > 0.0) ? (comps.c[5] / comps.c[4]) : 0.0;
+    }//if( the source has any transmission )
+
+    answer.push_back( info );
+  }//for( loop over volumetric source calculators )
+  }catch( std::exception & )
+  {
+    // Degenerate final geometry for the diagnostic pass - skip volumetric effective
+    //  shielding and continue with the point sources below.
+  }//try / catch building+integrating volumetric calculators
+
+  // Point sources: the ray from the assembly center to the detector crosses each
+  //  layers thickness once, so the effective quantities are analytic (the mass-based
+  //  ones are even energy-independent).
+  bool any_point_src = false;
+  for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
+    any_point_src = (any_point_src || !isVolumetricSource(nuclide));
+
+  if( any_point_src )
+  {
+    const size_t nMaterials = m_initial_shieldings.size();
+
+    // The chord of the center-to-detector ray through each material layer
+    //  (reduces to the axial layer thickness when the source is on-axis)
+    std::vector<double> layer_chords( nMaterials, 0.0 );
+    {// begin compute layer_chords
+      const DetectorGeomT<double> det_geom = detector_geom_from_config( m_geometry, m_distance,
+                    (m_detector ? 0.5*m_detector->detectorDiameter() : 0.5*PhysicalUnits::cm),
+                    (m_detector ? m_detector->detectorSetback() : 0.0),
+                    m_sourceOffsets[0], m_sourceOffsets[1] );
+
+      const double true_dist = trueSourceToDetectorDistance();
+      std::array<double,3> cumulative_dims = { 0.0, 0.0, 0.0 };
+      double prev_exit = 0.0;
+
+      for( size_t materialN = 0; materialN < nMaterials; ++materialN )
+      {
+        if( !m_initial_shieldings[materialN].m_material )
+          continue;  //generic layers have no physical extent
+
+        switch( m_geometry )
+        {
+          case GeometryType::Spherical:
+            cumulative_dims[0] += sphericalThickness_imp( materialN, params );
+            break;
+          case GeometryType::CylinderEndOn:
+          case GeometryType::CylinderSideOn:
+            cumulative_dims[0] += cylindricalRadiusThickness_imp( materialN, params );
+            cumulative_dims[1] += cylindricalLengthThickness_imp( materialN, params );
+            break;
+          case GeometryType::Rectangular:
+            cumulative_dims[0] += rectangularWidthThickness_imp( materialN, params );
+            cumulative_dims[1] += rectangularHeightThickness_imp( materialN, params );
+            cumulative_dims[2] += rectangularDepthThickness_imp( materialN, params );
+            break;
+          case GeometryType::NumGeometryType:
+            assert( 0 );
+            break;
+        }//switch( m_geometry )
+
+        double exit_dist = center_ray_exit_distance( m_geometry, cumulative_dims, det_geom );
+        if( exit_dist > true_dist )  // cap a degenerate over-thick layer at the detector
+          exit_dist = true_dist;
+        layer_chords[materialN] = exit_dist - prev_exit;
+        prev_exit = exit_dist;
+      }//for( loop over materials )
+    }// end compute layer_chords
+
+    double sum_ad = 0.0, sum_an_ad = 0.0, sum_ad_h = 0.0;
+    for( size_t materialN = 0; materialN < nMaterials; ++materialN )
+    {
+      const std::shared_ptr<const Material> &material = m_initial_shieldings[materialN].m_material;
+      if( !material )
+      {
+        const double an = atomicNumber_imp( materialN, params );
+        const double ad = arealDensity_imp( materialN, params );
+        sum_ad += ad;
+        sum_an_ad += an * ad;
+      }else
+      {
+        const double ad = material->density * layer_chords[materialN];
+        sum_ad += ad;
+        sum_an_ad += material_mass_weighted_atomic_number( *material ) * ad;
+        sum_ad_h += material_hydrogen_mass_fraction( *material ) * ad;
+      }//if( generic ) / else
+    }//for( loop over materials )
+
+    for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
+    {
+      if( isVolumetricSource(nuclide) )
+        continue;
+
+      const double act = activity_imp( nuclide, params );
+      const double thisage = age_imp( nuclide, params );
+
+      if( mixturecache.find(nuclide) == mixturecache.end() )
+        mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
+
+      // Source gammas per second, by clustered peak energy.
+      //  Note: clusters all of this nuclides gammas to the fit peaks (i.e., like
+      //  ShieldingSourceFitOptions::multiple_nucs_contribute_to_peaks) - close enough
+      //  for the scattered-continuum estimation this feeds.
+      std::map<double,double> rate_map;
+      cluster_peak_activities_imp<double>( rate_map, energie_widths, mixturecache[nuclide],
+                                  act, thisage, m_options.photopeak_cluster_sigma, -1.0,
+                                  m_options.account_for_decay_during_meas, m_realTime );
+
+      for( const std::map<double,double>::value_type &energy_rate : rate_map )
+      {
+        if( energy_rate.second <= 0.0 )
+          continue;
+
+        EffectiveShieldingInfo info;
+        info.nuclide = nuclide;
+        info.energy = energy_rate.first;
+        info.is_point_source = true;
+        info.gammas_into_4pi = energy_rate.second * m_liveTime;
+        info.effective_ad = sum_ad;
+        info.effective_an_mass = (sum_ad > 0.0) ? (sum_an_ad / sum_ad) : 0.0;
+        info.hydrogen_frac_of_ad = (sum_ad > 0.0) ? (sum_ad_h / sum_ad) : 0.0;
+
+        // The cross-section weighted atomic number is energy-dependent
+        double sum_mu_d = 0.0, sum_an_mu_d = 0.0;
+        const float energy = static_cast<float>( energy_rate.first );
+        for( size_t materialN = 0; materialN < nMaterials; ++materialN )
+        {
+          const std::shared_ptr<const Material> &material = m_initial_shieldings[materialN].m_material;
+          double mu_d = 0.0, an = 0.0;
+          if( !material )
+          {
+            an = atomicNumber_imp( materialN, params );
+            mu_d = transmission_coefficient_generic_imp( an, arealDensity_imp(materialN, params), energy );
+          }else
+          {
+            an = material_mass_weighted_atomic_number( *material );
+            mu_d = transmition_length_coefficient( material.get(), energy ) * layer_chords[materialN];
+          }//if( generic ) / else
+
+          sum_mu_d += mu_d;
+          sum_an_mu_d += an * mu_d;
+        }//for( loop over materials )
+
+        info.effective_an_xs = (sum_mu_d > 0.0) ? (sum_an_mu_d / sum_mu_d) : 0.0;
+
+        answer.push_back( info );
+      }//for( loop over this nuclides gamma energies )
+    }//for( loop over point-source nuclides )
+  }//if( any_point_src )
+
+  return answer;
+}//computeEffectiveShielding(...)
 
 }//namespace GammaInteractionCalc
 

@@ -92,6 +92,10 @@ struct VolumetricSrcSpec
 
   bool attenuate_for_air = false;
 
+  /** Lateral offsets of the source assembly from the detector axis. */
+  double offset_x = 0.0;
+  double offset_y = 0.0;
+
   /** In-situ exponentially-distributed (trace) source options. */
   bool in_situ_exponential = false;
   double relaxation_length = -1.0;
@@ -114,6 +118,8 @@ inline GammaInteractionCalc::DistributedSrcCalc
   calc.m_detectorRadius = spec.detector_radius;
   calc.m_detectorSetback = spec.detector_setback;
   calc.m_observationDist = spec.distance;
+  calc.m_srcOffsetX = spec.offset_x;
+  calc.m_srcOffsetY = spec.offset_y;
   calc.m_attenuateForAir = spec.attenuate_for_air;
   calc.m_airTransLenCoef = spec.attenuate_for_air
               ? GammaInteractionCalc::transmission_length_coefficient_air( static_cast<float>(spec.energy) )
@@ -203,7 +209,8 @@ inline GammaInteractionCalc::DistributedSrcCalcT<double>
   calc.m_geometry = legacy.m_geometry;
   calc.m_materialIndex = legacy.m_materialIndex;
   calc.m_detector = GammaInteractionCalc::detector_geom_from_config<double>(
-                          spec.geometry, spec.distance, spec.detector_radius, spec.detector_setback );
+                          spec.geometry, spec.distance, spec.detector_radius, spec.detector_setback,
+                          spec.offset_x, spec.offset_y );
   calc.m_attenuateForAir = legacy.m_attenuateForAir;
   calc.m_airTransLenCoef = legacy.m_airTransLenCoef;
   calc.m_isInSituExponential = legacy.m_isInSituExponential;
@@ -213,6 +220,7 @@ inline GammaInteractionCalc::DistributedSrcCalcT<double>
   calc.m_nuclide = legacy.m_nuclide;
   calc.integral = 0.0;
 
+  size_t legacy_index = 0;
   for( const std::tuple<std::array<double,3>,double,GammaInteractionCalc::DistributedSrcCalc::ShellType> &shell
                                                           : legacy.m_dimensionsTransLenAndType )
   {
@@ -220,7 +228,26 @@ inline GammaInteractionCalc::DistributedSrcCalcT<double>
     info.dims = std::get<0>( shell );
     info.trans_len_coef = std::get<1>( shell );
     info.type = std::get<2>( shell );
+
+    // Metadata for the effective-AN/AD/H accumulation
+    const ShellSpec &shell_spec = spec.shells[legacy_index];
+    if( shell_spec.material.empty() )
+    {
+      info.areal_density = shell_spec.areal_density;
+      info.effective_an = shell_spec.atomic_number;
+    }else
+    {
+      const std::shared_ptr<const Material> mat = matdb.material( shell_spec.material );
+      if( mat )
+      {
+        info.density = mat->density;
+        info.effective_an = GammaInteractionCalc::material_mass_weighted_atomic_number( *mat );
+        info.hydrogen_mass_frac = GammaInteractionCalc::material_hydrogen_mass_fraction( *mat );
+      }
+    }//if( generic ) / else
+
     calc.m_shells.push_back( info );
+    ++legacy_index;
   }//for( loop over legacy shells )
 
   return calc;

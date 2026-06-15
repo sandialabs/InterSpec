@@ -940,6 +940,175 @@ BOOST_AUTO_TEST_CASE( FitPointSourceAgeBaseline )
 }//BOOST_AUTO_TEST_CASE( FitPointSourceAgeBaseline )
 
 
+/** End-to-end fit with the source assembly off the detector axis: synthetic peak
+ areas are generated from the forward model with offsets set, then activity and
+ areal density are fit - the recovered values must match the truth (and would not,
+ if the off-axis geometry were ignored: the true distance here is ~12% longer than
+ the axial one).
+ */
+BOOST_AUTO_TEST_CASE( FitOffAxisSourceBaseline )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+
+  const double distance = 100*PhysicalUnits::cm;
+  const float live_time = 600*PhysicalUnits::second;
+  const double true_ad = 10.0*PhysicalUnits::g/PhysicalUnits::cm2;
+  const double true_activity = 10.0*PhysicalUnits::microCi;
+
+  auto detector = make_shared<DetectorPeakResponse>();
+  detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                    5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                    0, 3000*PhysicalUnits::keV,
+                                    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( 16, 1.0f );
+  foreground->set_gamma_counts( spec, live_time, live_time );
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+
+  ShieldingSourceFitCalc::ShieldingInfo generic_shield;
+  generic_shield.m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  generic_shield.m_isGenericMaterial = true;
+  generic_shield.m_forFitting = true;
+  generic_shield.m_material = nullptr;
+  generic_shield.m_dimensions[0] = 26.0;
+  generic_shield.m_dimensions[1] = true_ad;
+  generic_shield.m_dimensions[2] = 0.0;
+  generic_shield.m_fitDimensions[0] = generic_shield.m_fitDimensions[1] = generic_shield.m_fitDimensions[2] = false;
+
+  ShieldingSourceFitCalc::SourceFitDef ba133_src;
+  ba133_src.nuclide = db->nuclide( "Ba133" );
+  ba133_src.activity = true_activity;
+  ba133_src.fitActivity = false;
+  ba133_src.age = 5.0*PhysicalUnits::year;
+  ba133_src.fitAge = false;
+  ba133_src.ageDefiningNuc = nullptr;
+  ba133_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+  deque<shared_ptr<const PeakDef>> peaks;
+  for( const double energy : { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 } )
+    peaks.push_back( make_test_peak( ba133_src.nuclide, energy, 1.0, 1.0E4 ) );
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  chi_input.config.source_offsets[0] = 40.0*PhysicalUnits::cm;
+  chi_input.config.source_offsets[1] = -25.0*PhysicalUnits::cm;
+  chi_input.config.shieldings = { generic_shield };
+  chi_input.config.sources = { ba133_src };
+  chi_input.config.options = options;
+  chi_input.detector = detector;
+  chi_input.foreground = foreground;
+  chi_input.foreground_peaks = peaks;
+
+  // Truth peak areas, with the offsets in effect
+  const deque<shared_ptr<const PeakDef>> expected_peaks = peaks_with_model_expected_areas( chi_input );
+
+  // Fit activity and AD, starting away from truth (offsets stay user-set, never fit)
+  generic_shield.m_dimensions[1] = 2.0*PhysicalUnits::g/PhysicalUnits::cm2;
+  generic_shield.m_fitDimensions[1] = true;
+  ba133_src.activity = 1.0*PhysicalUnits::microCi;
+  ba133_src.fitActivity = true;
+
+  chi_input.config.shieldings = { generic_shield };
+  chi_input.config.sources = { ba133_src };
+  chi_input.foreground_peaks = expected_peaks;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+  BOOST_CHECK_CLOSE( fcn_pars.first->trueSourceToDetectorDistance(),
+                     sqrt( 100.0*100.0 + 40.0*40.0 + 25.0*25.0 )*PhysicalUnits::cm, 1.0E-9 );
+
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  auto progress_fcn = [](){};
+  auto finished_fcn = [](){};
+
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, results, finished_fcn );
+
+  BOOST_REQUIRE( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+  BOOST_REQUIRE_EQUAL( results->final_shieldings.size(), size_t(1) );
+  BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
+
+  const double true_ad_g_cm2 = true_ad / (PhysicalUnits::g/PhysicalUnits::cm2);
+  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1];
+  const double fit_activity = results->fit_src_info[0].activity;
+
+  cout << "FitOffAxisSourceBaseline: AD=" << fit_ad_g_cm2 << " g/cm2 (truth " << true_ad_g_cm2
+       << "), activity=" << PhysicalUnits::printToBestActivityUnits(fit_activity,6)
+       << " (truth " << PhysicalUnits::printToBestActivityUnits(true_activity,6) << ")" << endl;
+
+  BOOST_CHECK_MESSAGE( fabs(fit_ad_g_cm2 - true_ad_g_cm2) < 0.02*true_ad_g_cm2,
+                       "Off-axis fit AD (" << fit_ad_g_cm2 << " g/cm2) not close to truth ("
+                       << true_ad_g_cm2 << " g/cm2)" );
+  BOOST_CHECK_MESSAGE( fabs(fit_activity - true_activity) < 0.02*true_activity,
+                       "Off-axis fit activity (" << PhysicalUnits::printToBestActivityUnits(fit_activity,6)
+                       << ") not close to truth ("
+                       << PhysicalUnits::printToBestActivityUnits(true_activity,6) << ")" );
+}//BOOST_AUTO_TEST_CASE( FitOffAxisSourceBaseline )
+
+
+/** XML round-trip of the source off-axis offsets in ShieldSourceConfig. */
+BOOST_AUTO_TEST_CASE( SourceOffsetsSerialization )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  GammaInteractionCalc::ShieldSourceConfig config;
+  config.distance = 150.0*PhysicalUnits::cm;
+  config.geometry = GammaInteractionCalc::GeometryType::Rectangular;
+  config.source_offsets[0] = 23.5*PhysicalUnits::cm;
+  config.source_offsets[1] = -7.25*PhysicalUnits::cm;
+
+  ShieldingSourceFitCalc::SourceFitDef src_def;
+  src_def.nuclide = db->nuclide( "Cs137" );
+  src_def.activity = 1.0*PhysicalUnits::microCi;
+  src_def.fitActivity = true;
+  src_def.age = 30.0*PhysicalUnits::day;
+  src_def.fitAge = false;
+  src_def.ageDefiningNuc = nullptr;
+  src_def.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+  config.sources.push_back( src_def );
+
+  rapidxml::xml_document<char> doc;
+  rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "ShieldingSourceFit" );
+  doc.append_node( root );
+  BOOST_REQUIRE_NO_THROW( config.serialize( root ) );
+
+  GammaInteractionCalc::ShieldSourceConfig reparsed;
+  BOOST_REQUIRE_NO_THROW( reparsed.deSerialize( root ) );
+
+  BOOST_CHECK_CLOSE( reparsed.source_offsets[0], config.source_offsets[0], 1.0E-6 );
+  BOOST_CHECK_CLOSE( reparsed.source_offsets[1], config.source_offsets[1], 1.0E-6 );
+
+  // And zero offsets dont emit the node (backward-compatible XML)
+  GammaInteractionCalc::ShieldSourceConfig zero_config = config;
+  zero_config.source_offsets[0] = zero_config.source_offsets[1] = 0.0;
+
+  rapidxml::xml_document<char> doc2;
+  rapidxml::xml_node<char> *root2 = doc2.allocate_node( rapidxml::node_element, "ShieldingSourceFit" );
+  doc2.append_node( root2 );
+  BOOST_REQUIRE_NO_THROW( zero_config.serialize( root2 ) );
+  BOOST_CHECK( !root2->first_node( "SourceOffsets", 13 ) );
+
+  GammaInteractionCalc::ShieldSourceConfig zero_reparsed;
+  BOOST_REQUIRE_NO_THROW( zero_reparsed.deSerialize( root2 ) );
+  BOOST_CHECK_EQUAL( zero_reparsed.source_offsets[0], 0.0 );
+  BOOST_CHECK_EQUAL( zero_reparsed.source_offsets[1], 0.0 );
+}//BOOST_AUTO_TEST_CASE( SourceOffsetsSerialization )
+
+
 std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingSourceFitCalc::ModelFitResults &results,
                                                                const string &filename )
 {
@@ -1618,12 +1787,23 @@ bool load_simple_analyst_n42( const string &n42_path,
                               GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &chi_input )
 {
   auto specfile = make_shared<SpecMeas>();
-  if( !specfile->load_N42_file( n42_path )
-      || (specfile->sample_numbers().size() != 1)
-      || (specfile->num_measurements() != 1) )
+  if( !specfile->load_N42_file( n42_path ) || !specfile->num_measurements() )
     return false;
 
-  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = specfile->peaks( specfile->sample_numbers() );
+  // Use the first sample-set that has peaks (the analyst files store peaks for the foreground)
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks;
+  set<int> foreground_samples;
+  for( const set<int> &samples : specfile->sampleNumsWithPeaks() )
+  {
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> these_peaks = specfile->peaks( samples );
+    if( these_peaks && !these_peaks->empty() )
+    {
+      peaks = these_peaks;
+      foreground_samples = samples;
+      break;
+    }
+  }//for( loop over sample sets with peaks )
+
   if( !peaks || peaks->empty() )
     return false;
 
@@ -1639,9 +1819,19 @@ bool load_simple_analyst_n42( const string &n42_path,
   config.deSerialize( model_xml->first_node() );
   set_fit_quantities_to_default_values( config.shieldings, config.sources );
 
+  shared_ptr<const SpecUtils::Measurement> foreground;
+  if( !foreground_samples.empty() )
+  {
+    const vector<string> &det_names = specfile->detector_names();
+    foreground = specfile->measurement( *begin(foreground_samples),
+                                        det_names.empty() ? string() : det_names[0] );
+  }
+  if( !foreground )
+    foreground = specfile->measurements()[0];
+
   chi_input.config = config;
   chi_input.detector = detector;
-  chi_input.foreground = specfile->measurements()[0];
+  chi_input.foreground = foreground;
   chi_input.background = nullptr;
   chi_input.foreground_peaks.assign( peaks->begin(), peaks->end() );
   chi_input.background_peaks = nullptr;
@@ -1788,6 +1978,17 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
     // Volumetric: integration backend differs (adaptive GL vs Cuhre), so looser tolerance
     check_expected_counts_parity( chi_input, 2.0E-3, "AEGIS-trace" );
   }// End Case C
+
+  {// Case D: self-attenuating U+Np source with fit mass fractions in two elements
+    const string test_n42_file = SpecUtils::append_path( g_test_file_dir,
+                                                         "../analysis_tests/u_np_1kg.n42" );
+    BOOST_REQUIRE( SpecUtils::is_file(test_n42_file) );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+    BOOST_REQUIRE( load_simple_analyst_n42( test_n42_file, chi_input ) );
+
+    check_expected_counts_parity( chi_input, 2.0E-3, "U-Np-self-atten" );
+  }// End Case D
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
 
 
@@ -1919,6 +2120,246 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsJetDerivatives )
     }//for( loop over peaks )
   }//for( loop over parameters )
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsJetDerivatives )
+
+
+/** Runs both fit drivers on a self-attenuating U+Np analyst problem (mass fractions
+ in two elements plus a fit thickness - historically the hardest configuration), and
+ requires they agree with each other.
+ */
+BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string n42 = SpecUtils::append_path( g_test_file_dir, "../analysis_tests/u_np_1kg.n42" );
+  BOOST_REQUIRE( SpecUtils::is_file(n42) );
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  BOOST_REQUIRE( load_simple_analyst_n42( n42, chi_input ) );
+
+  vector<double> chi2s;
+  vector<vector<double>> param_sets;
+
+  for( const bool use_ceres : { false, true } )
+  {
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+    *inputPrams = fcn_pars.second;
+
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    auto progress_fcn = [](){};
+    auto finished_fcn = [](){};
+
+    const auto start_time = std::chrono::steady_clock::now();
+
+    if( use_ceres )
+      ShieldingSourceFitCalc::fit_model_ceres( "", fcn_pars.first, inputPrams, progress,
+                                               progress_fcn, fit_results, finished_fcn );
+    else
+      ShieldingSourceFitCalc::fit_model_minuit2( "", fcn_pars.first, inputPrams, progress,
+                                                 progress_fcn, fit_results, finished_fcn );
+
+    const auto finish_time = std::chrono::steady_clock::now();
+    const double seconds = 1.0E-3 * std::chrono::duration_cast<std::chrono::milliseconds>(finish_time - start_time).count();
+    cout << (use_ceres ? "Ceres" : "Minuit") << " driver took " << seconds << " s, "
+         << fit_results->num_fcn_calls << " evals" << endl;
+
+    BOOST_REQUIRE( fit_results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+
+    chi2s.push_back( fit_results->chi2 );
+    param_sets.push_back( fit_results->paramValues );
+  }//for( both drivers )
+
+  BOOST_REQUIRE_EQUAL( chi2s.size(), size_t(2) );
+  BOOST_REQUIRE_EQUAL( param_sets[0].size(), param_sets[1].size() );
+
+  cout << "CeresVsMinuitDrivers: Minuit chi2=" << chi2s[0] << ", Ceres chi2=" << chi2s[1] << endl;
+
+  // Both drivers should find (essentially) the same minimum
+  BOOST_CHECK_MESSAGE( fabs(chi2s[0] - chi2s[1]) <= 0.01*std::max(chi2s[0], chi2s[1]),
+                       "Driver chi2s differ: Minuit=" << chi2s[0] << " vs Ceres=" << chi2s[1] );
+
+  for( size_t i = 0; i < param_sets[0].size(); ++i )
+  {
+    const double minuit_val = param_sets[0][i];
+    const double ceres_val = param_sets[1][i];
+    const double scale = std::max( {fabs(minuit_val), fabs(ceres_val), 1.0E-9} );
+
+    BOOST_CHECK_MESSAGE( fabs(minuit_val - ceres_val) <= 0.01*scale,
+                         "Parameter " << i << " differs: Minuit=" << minuit_val
+                         << " vs Ceres=" << ceres_val );
+  }//for( loop over parameters )
+}//BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
+
+
+/** Sanity-checks ShieldingSourceChi2Fcn::computeEffectiveShielding on a volumetric
+ (trace-source) and a point-source-with-mass-fractions analyst problem.
+ (The quantitative validation of the underlying accumulation is the analytic-slab
+ test in test_VolumetricIntegration.cpp.)
+ */
+BOOST_AUTO_TEST_CASE( ComputeEffectiveShielding )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  for( const string &filename : { string("AEGIS_Eu152_surface_contamination.n42_20230622T113239.276178.n42"),
+                                  string("u_np_1kg.n42") } )
+  {
+    const string n42 = SpecUtils::append_path( g_test_file_dir, "../analysis_tests/" + filename );
+    BOOST_REQUIRE( SpecUtils::is_file(n42) );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+    BOOST_REQUIRE( load_simple_analyst_n42( n42, chi_input ) );
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    vector<GammaInteractionCalc::EffectiveShieldingInfo> eff_shieldings;
+    BOOST_REQUIRE_NO_THROW( eff_shieldings = fcn_pars.first->computeEffectiveShielding(
+                                                          fcn_pars.second.Params(), cache ) );
+
+    BOOST_REQUIRE_MESSAGE( !eff_shieldings.empty(), filename << ": no effective shielding entries" );
+
+    size_t num_volumetric = 0;
+    for( const GammaInteractionCalc::EffectiveShieldingInfo &info : eff_shieldings )
+    {
+      num_volumetric += !info.is_point_source;
+
+      BOOST_CHECK_MESSAGE( info.nuclide, filename << ": null nuclide" );
+      BOOST_CHECK_MESSAGE( info.energy > 0.0, filename << ": non-positive energy" );
+      BOOST_CHECK_MESSAGE( info.effective_ad >= 0.0,
+                           filename << ": negative effective AD at " << info.energy << " keV" );
+
+      if( info.effective_ad > 0.0 )
+      {
+        BOOST_CHECK_MESSAGE( (info.effective_an_mass >= 1.0) && (info.effective_an_mass <= 98.0),
+                             filename << ": effective AN (mass) " << info.effective_an_mass
+                             << " out of range at " << info.energy << " keV" );
+        BOOST_CHECK_MESSAGE( (info.effective_an_xs >= 1.0) && (info.effective_an_xs <= 98.0),
+                             filename << ": effective AN (xs) " << info.effective_an_xs
+                             << " out of range at " << info.energy << " keV" );
+        BOOST_CHECK_MESSAGE( (info.hydrogen_frac_of_ad >= 0.0) && (info.hydrogen_frac_of_ad <= 1.0),
+                             filename << ": H fraction " << info.hydrogen_frac_of_ad
+                             << " out of range at " << info.energy << " keV" );
+      }//if( there was any shielding )
+    }//for( loop over entries )
+
+    cout << "ComputeEffectiveShielding '" << filename << "': " << eff_shieldings.size()
+         << " entries (" << num_volumetric << " volumetric); first: E="
+         << eff_shieldings[0].energy << " keV, AD="
+         << eff_shieldings[0].effective_ad/(PhysicalUnits::g/PhysicalUnits::cm2)
+         << " g/cm2, AN_mass=" << eff_shieldings[0].effective_an_mass
+         << ", AN_xs=" << eff_shieldings[0].effective_an_xs
+         << ", fracH=" << eff_shieldings[0].hydrogen_frac_of_ad << endl;
+
+    BOOST_CHECK_MESSAGE( num_volumetric > 0, filename << ": expected volumetric entries" );
+  }//for( loop over test files )
+}//BOOST_AUTO_TEST_CASE( ComputeEffectiveShielding )
+
+
+// Diagnostic: Jet-vs-numeric Jacobian of expected_peak_counts_imp on an analyst file
+//  (useful when the Ceres driver misbehaves on a particular configuration).
+BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string n42 = SpecUtils::append_path( g_test_file_dir, "../analysis_tests/u_np_1kg.n42" );
+  BOOST_REQUIRE( SpecUtils::is_file(n42) );
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  BOOST_REQUIRE( load_simple_analyst_n42( n42, chi_input ) );
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+  const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
+  const vector<double> params = fcn_pars.second.Params();
+
+  cout << "Parameters:" << endl;
+  for( size_t i = 0; i < params.size(); ++i )
+  {
+    const auto &p = fcn_pars.second.Parameters()[i];
+    cout << "  [" << i << "] " << p.GetName() << " = " << params[i]
+         << (p.IsConst() ? " (const)" : "") << (p.IsFixed() ? " (fixed)" : "")
+         << (p.HasLowerLimit() ? (" lo=" + std::to_string(p.LowerLimit())) : string())
+         << (p.HasUpperLimit() ? (" up=" + std::to_string(p.UpperLimit())) : string()) << endl;
+  }
+
+  using JetN = ceres::Jet<double,16>;
+  BOOST_REQUIRE( params.size() <= 16 );
+
+  vector<JetN> jet_params( params.size() );
+  for( size_t i = 0; i < params.size(); ++i )
+  {
+    jet_params[i] = JetN( params[i] );
+    jet_params[i].v[i] = 1.0;
+  }
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache jc, dc;
+  const vector<JetN> jets = fcn->expected_peak_counts_imp<JetN>( jet_params, jc );
+  const vector<double> dbls = fcn->expected_peak_counts_imp<double>( params, dc );
+
+  BOOST_REQUIRE_EQUAL( jets.size(), dbls.size() );
+
+  for( size_t par = 0; par < params.size(); ++par )
+  {
+    const auto &p = fcn_pars.second.Parameters()[par];
+    if( p.IsConst() || p.IsFixed() || (string(p.GetName()).find("_FIXED") != string::npos) )
+      continue;
+
+    const double step = 1.0E-4 * std::max( fabs(params[par]), 1.0E-6 );
+    vector<double> pp = params, pm = params;
+    pp[par] += step;
+    pm[par] -= step;
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cp, cm;
+    const vector<double> fp = fcn->expected_peak_counts_imp<double>( pp, cp );
+    const vector<double> fm = fcn->expected_peak_counts_imp<double>( pm, cm );
+
+    for( size_t i = 0; i < jets.size(); ++i )
+    {
+      const double numeric = (fp[i] - fm[i]) / (2.0*step);
+      const double jet_d = jets[i].v[par];
+      const double denom = std::max( {fabs(numeric), fabs(jet_d), 1.0E-9} );
+      if( fabs(jet_d - numeric) > 0.02*denom )
+        cout << "  MISMATCH par[" << par << "]=" << p.GetName() << " peak " << i
+             << ": jet=" << jet_d << " numeric=" << numeric << endl;
+    }
+  }//for( loop over params )
+
+  cout << "Jacobian check done" << endl;
+
+  // Now run both fit drivers and compare where they end up
+  for( const bool use_ceres : { false, true } )
+  {
+    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+    *inputPrams = fcn_pars.second;
+
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    auto progress_fcn = [](){};
+    auto finished_fcn = [](){};
+
+    if( use_ceres )
+      ShieldingSourceFitCalc::fit_model_ceres( "", fcn, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
+    else
+      ShieldingSourceFitCalc::fit_model_minuit2( "", fcn, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
+
+    cout << (use_ceres ? "CERES" : "MINUIT") << " result: chi2=" << fit_results->chi2 << ", params={";
+    for( const double v : fit_results->paramValues )
+      cout << std::setprecision(6) << v << ", ";
+    cout << "}" << endl;
+
+    const double recomputed_chi2 = fcn->DoEval( fit_results->paramValues );
+    cout << "  DoEval at solution: " << recomputed_chi2 << endl;
+    for( const string &msg : fit_results->errormsgs )
+      cout << "  errormsg: " << msg << endl;
+  }//for( both drivers )
+}//BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian )
 
 
 BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )

@@ -74,6 +74,7 @@ namespace GammaInteractionCalc
   struct PeakDetail;
   struct ShieldingDetails;
   struct SourceDetails;
+  struct EffectiveShieldingInfo;
   
   struct PeakResultPlotInfo;
   class ShieldingSourceChi2Fcn;
@@ -307,6 +308,13 @@ namespace ShieldingSourceFitCalc
     /** If nuclides of the same element, should all have the same age.  */
     bool same_age_isotopes = true;
 
+    /** Compute the effective (attenuation-weighted) shielding each sources gammas
+     traverse, after the fit - see #GammaInteractionCalc::EffectiveShieldingInfo;
+     results go in #ModelFitResults::effective_shielding.  Used for (future)
+     cascade-summing corrections via the GADRAS shield-scatter model.
+     */
+    bool compute_effective_shielding = false;
+
     
     void serialize( rapidxml::xml_node<char> *parent_node ) const;
     void deSerialize( const rapidxml::xml_node<char> *parent_node );
@@ -377,6 +385,9 @@ namespace ShieldingSourceFitCalc
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> peak_calc_details;
     std::unique_ptr<const std::vector<GammaInteractionCalc::ShieldingDetails>> shield_calc_details;
     std::unique_ptr<const std::vector<GammaInteractionCalc::SourceDetails>> source_calc_details;
+
+    /** Only filled out when #ShieldingSourceFitOptions::compute_effective_shielding is set. */
+    std::unique_ptr<const std::vector<GammaInteractionCalc::EffectiveShieldingInfo>> effective_shielding;
     
     
     ShieldingSourceFitOptions options;
@@ -415,7 +426,35 @@ namespace ShieldingSourceFitCalc
                   std::function<void()> progress_fcn,
                   std::shared_ptr<ModelFitResults> results,
                   std::function<void()> finished_fcn );
-  
+
+  /** The Minuit2-based implementation of #fit_model (numeric gradients).
+
+   #fit_model dispatches to this or #fit_model_ceres according to the
+   USE_CERES_FOR_ACTIVITY_FIT compile option; both are always compiled, so they can
+   be compared against each other in tests.
+   */
+  void fit_model_minuit2( const std::string wtsession,
+                  std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                  std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
+                  std::shared_ptr<ModelFitProgress> progress,
+                  std::function<void()> progress_fcn,
+                  std::shared_ptr<ModelFitResults> results,
+                  std::function<void()> finished_fcn );
+
+  /** The Ceres-based implementation of #fit_model: automatic differentiation through
+   the whole expected-counts computation (including volumetric-source integration),
+   which is generally more reliable at finding the true minimum than Minuit2s
+   numeric gradients.  See #fit_model_minuit2.
+   */
+  void fit_model_ceres( const std::string wtsession,
+                  std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                  std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
+                  std::shared_ptr<ModelFitProgress> progress,
+                  std::function<void()> progress_fcn,
+                  std::shared_ptr<ModelFitResults> results,
+                  std::function<void()> finished_fcn );
+
+
   /** The maximum time (in milliseconds) a model fit can take before the fit is
       aborted.  This generally will only ever be applicable to fits with
       self-attenuators, where there is a ton of peaks, or things go really

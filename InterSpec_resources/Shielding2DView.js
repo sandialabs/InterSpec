@@ -296,11 +296,14 @@ Shielding2DView.prototype.processData = function() {
     maxY: bounds.maxY
   };
   
-  // Store detector info for bounds calculation
+  // Store detector info for bounds calculation.  sourceOffset0 is the in-plane
+  //  off-axis offset (source_offsets[0]); the second offset is out of this 2D
+  //  cross-section plane for every geometry, so it isn't drawn here (see the 3D view).
   this.detectorInfo = {
     distance: data.distance,
     diameter: (data.detectorDiameter !== undefined) ? data.detectorDiameter : (3.0 * 25.4),
-    geometry: data.geometry
+    geometry: data.geometry,
+    sourceOffset0: (data.sourceOffset0 !== undefined) ? data.sourceOffset0 : 0
   };
   
   // Calculate bounds with detector (will be recalculated in render() based on showDetector)
@@ -320,18 +323,19 @@ Shielding2DView.prototype.calculateBounds = function(shieldingBounds, detectorIn
     var detDist = detectorInfo.distance;
     var detDiam = detectorInfo.diameter;
     var detRad = detDiam / 2.0;
-    var detLen = detDiam; 
-    
+    var detLen = detDiam;
+    var off = detectorInfo.sourceOffset0 || 0;  // in-plane off-axis offset
+
     if (detectorInfo.geometry === "Spherical") {
-        // Top (-Y)
+        // Detector is above the source (line of sight = -Y); offset shifts it in X.
         bounds.minY = Math.min(bounds.minY, -detDist - detLen);
-        bounds.maxX = Math.max(bounds.maxX, detRad);
-        bounds.minX = Math.min(bounds.minX, -detRad);
+        bounds.maxX = Math.max(bounds.maxX, off + detRad);
+        bounds.minX = Math.min(bounds.minX, off - detRad);
     } else {
-        // Right (+X)
+        // Detector is to the right (line of sight = +X); offset shifts it in -Y.
         bounds.maxX = Math.max(bounds.maxX, detDist + detLen);
-        bounds.maxY = Math.max(bounds.maxY, detRad);
-        bounds.minY = Math.min(bounds.minY, -detRad);
+        bounds.maxY = Math.max(bounds.maxY, -off + detRad);
+        bounds.minY = Math.min(bounds.minY, -off - detRad);
     }
   }
   
@@ -401,26 +405,32 @@ Shielding2DView.prototype.render = function() {
   function formatLength(length_mm, maxDecimals) {
       if (maxDecimals === undefined) maxDecimals = 2;
       if (length_mm === 0) return "0.00 mm";
-      
+
+      // Work in magnitude so negative values (e.g. off-axis offsets) pick the right
+      //  unit; re-apply the sign to the formatted number.
+      var sign = (length_mm < 0) ? "-" : "";
+      var mag = Math.abs(length_mm);
+      var fmt = function(v){ return sign + d3.format("." + maxDecimals + "f")(v); };
+
       // Convert mm to base units for comparison
-      var length_nm = length_mm * 1e6;
-      var length_um = length_mm * 1e3;
-      var length_cm = length_mm / 10;
-      var length_m = length_mm / 1000;
-      var length_km = length_mm / 1e6;
-      
+      var length_nm = mag * 1e6;
+      var length_um = mag * 1e3;
+      var length_cm = mag / 10;
+      var length_m = mag / 1000;
+      var length_km = mag / 1e6;
+
       if (length_nm < 1000) {
-          return d3.format("." + maxDecimals + "f")(length_nm) + " nm";
+          return fmt(length_nm) + " nm";
       } else if (length_um < 1000) {
-          return d3.format("." + maxDecimals + "f")(length_um) + " um";
-      } else if (length_mm < 10) {
-          return d3.format("." + maxDecimals + "f")(length_mm) + " mm";
+          return fmt(length_um) + " um";
+      } else if (mag < 10) {
+          return fmt(mag) + " mm";
       } else if (length_cm < 100) {
-          return d3.format("." + maxDecimals + "f")(length_cm) + " cm";
+          return fmt(length_cm) + " cm";
       } else if (length_m < 1000) {
-          return d3.format("." + maxDecimals + "f")(length_m) + " m";
+          return fmt(length_m) + " m";
       } else {
-          return d3.format("." + maxDecimals + "f")(length_km) + " km";
+          return fmt(length_km) + " km";
       }
   }
   
@@ -1038,23 +1048,27 @@ Shielding2DView.prototype.render = function() {
       var detDist = data.distance;
       var detDiam = (data.detectorDiameter !== undefined) ? data.detectorDiameter : (3.0 * 25.4);
       var detRad = detDiam / 2.0;
-      var detLen = detDiam; 
+      var detLen = detDiam;
       var detGroup = this.g.append("g").attr("class", "detector-group");
 
+      // In-plane off-axis offset (source_offsets[0]).  The second offset is out of
+      //  this cross-section plane for every geometry, so it isn't shown in 2D.
+      var off0 = (data.sourceOffset0 !== undefined) ? data.sourceOffset0 : 0;
+
       if (data.geometry === "Spherical") {
-          // Top (-Y) - scale coordinates
+          // Detector above the source (line of sight = -Y); offset shifts it in +X.
           detGroup.append("rect")
               .attr("class", "detector-shape detector-rect")
-              .attr("x", scaleX(-detRad))
+              .attr("x", scaleX(off0 - detRad))
               .attr("y", scaleY(-detDist - detLen))
               .attr("width", scaleX(detDiam))
               .attr("height", scaleY(detLen))
               .attr("fill", "#ccc")
               .attr("stroke", "var(--d3spec-axis-color, black)")
               .style("stroke-width", "1px"); // Fixed pixel width
-              
+
           detGroup.append("text")
-              .attr("x", scaleX(0))
+              .attr("x", scaleX(off0))
               .attr("y", scaleY(-detDist - detLen/2))
               .attr("text-anchor", "middle")
               .attr("dy", "0.3em")
@@ -1062,12 +1076,25 @@ Shielding2DView.prototype.render = function() {
               .style("font-size", Math.min(scaleX(detDiam/4), scaleY(detLen/4), 12) + "px") // Scale with box size, but ensure it fits
               .attr("fill", "black")
               .style("pointer-events", "none");
+
+          // Dashed indicator from the on-axis point to the offset detector center.
+          if (Math.abs(off0) > 1e-6) {
+              detGroup.append("line").attr("class", "offset-indicator")
+                  .attr("x1", scaleX(0)).attr("y1", scaleY(-detDist))
+                  .attr("x2", scaleX(off0)).attr("y2", scaleY(-detDist))
+                  .attr("stroke", "orange").style("stroke-width", "1.5px").style("stroke-dasharray", "4,3");
+              detGroup.append("text").attr("class", "offset-label")
+                  .attr("x", scaleX(off0/2)).attr("y", scaleY(-detDist)).attr("dy", "-0.4em")
+                  .attr("text-anchor", "middle")
+                  .text("Offset: " + formatLength(off0, 1))
+                  .style("font-size", "11px").attr("fill", "orange").style("pointer-events", "none");
+          }
       } else {
-          // Right (+X) - scale coordinates
+          // Detector to the right (line of sight = +X); offset shifts it in -Y.
           detGroup.append("rect")
               .attr("class", "detector-shape detector-rect")
               .attr("x", scaleX(detDist))
-              .attr("y", scaleY(-detRad))
+              .attr("y", scaleY(-off0 - detRad))
               .attr("width", scaleX(detLen))
               .attr("height", scaleY(detDiam))
               .attr("fill", "#ccc")
@@ -1076,15 +1103,28 @@ Shielding2DView.prototype.render = function() {
 
           detGroup.append("text")
               .attr("x", scaleX(detDist + detLen/2))
-              .attr("y", scaleY(0))
+              .attr("y", scaleY(-off0))
               .attr("text-anchor", "middle")
               .attr("dy", "0.3em")
               .text("Detector")
               .style("font-size", Math.min(scaleX(detLen/4), scaleY(detDiam/4), 12) + "px") // Scale with box size, but ensure it fits
               .attr("fill", "black")
               .style("pointer-events", "none");
+
+          // Dashed indicator from the on-axis point to the offset detector center.
+          if (Math.abs(off0) > 1e-6) {
+              detGroup.append("line").attr("class", "offset-indicator")
+                  .attr("x1", scaleX(detDist)).attr("y1", scaleY(0))
+                  .attr("x2", scaleX(detDist)).attr("y2", scaleY(-off0))
+                  .attr("stroke", "orange").style("stroke-width", "1.5px").style("stroke-dasharray", "4,3");
+              detGroup.append("text").attr("class", "offset-label")
+                  .attr("x", scaleX(detDist)).attr("y", scaleY(-off0/2)).attr("dx", "0.4em")
+                  .attr("text-anchor", "start")
+                  .text("Offset: " + formatLength(off0, 1))
+                  .style("font-size", "11px").attr("fill", "orange").style("pointer-events", "none");
+          }
       }
-      
+
       // Interaction
       detGroup.selectAll(".detector-shape")
           .on("mouseover", function() {

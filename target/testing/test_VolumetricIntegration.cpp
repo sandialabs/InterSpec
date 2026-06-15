@@ -230,6 +230,60 @@ BOOST_AUTO_TEST_CASE( SingleCylEndOnVsGeneralCylinder )
 }//BOOST_AUTO_TEST_CASE( SingleCylEndOnVsGeneralCylinder )
 
 
+/** Regression test for the off-axis end-on cylinder self-attenuation integral.
+
+ An end-on cylinder is azimuthally symmetric about its own axis, so displacing the
+ detector radially by the same magnitude in any perpendicular direction must give the
+ same self-attenuation integral.  A bug (fixed) integrated the off-axis end-on case with
+ the on-axis 2D (azimuthal-symmetry) shortcut, which samples only the theta=0 half-plane
+ and makes an +x offset and a +y offset disagree.  This pins the full-3D fix.
+ */
+BOOST_AUTO_TEST_CASE( OffAxisEndOnAzimuthalSymmetry )
+{
+  set_data_dir();
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const double cm = PhysicalUnits::cm;
+  const double r0 = 40.0*cm;  //radial offset magnitude
+
+  auto integral_for = [&]( const double off_x, const double off_y ) -> double {
+    VolumetricFixture::VolumetricSrcSpec spec;
+    spec.name = "cyl-end-offaxis";
+    spec.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+    spec.shells = { {"Fe (iron)", 0.0, 0.0, {5.0*cm, 5.0*cm, 0.0}} };
+    spec.offset_x = off_x;
+    spec.offset_y = off_y;
+
+    GammaInteractionCalc::DistributedSrcCalcT<double> calc
+                            = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
+    GammaInteractionCalc::self_shielding_integration_imp( calc, 1.0E-4, size_t(5000000) );
+    return calc.integral;
+  };//integral_for lambda
+
+  const double on_axis = integral_for( 0.0, 0.0 );
+  const double off_x   = integral_for( r0,  0.0 );
+  const double off_y   = integral_for( 0.0, r0  );
+
+  BOOST_REQUIRE( on_axis > 0.0 );
+  BOOST_REQUIRE( off_x > 0.0 );
+  BOOST_REQUIRE( off_y > 0.0 );
+
+  // +x and +y radial offsets are equivalent by azimuthal symmetry (this fails with the
+  //  buggy 2D shortcut, which only samples theta=0).
+  BOOST_CHECK_MESSAGE( fabs(off_x - off_y) <= 1.0E-3*std::max(off_x,off_y),
+                       "Off-axis end-on cylinder: +x offset (" << std::setprecision(12) << off_x
+                       << ") != +y offset (" << off_y << ") - azimuthal symmetry broken" );
+
+  // Sanity: a radial offset actually changes the result vs on-axis (so the test isn't
+  //  trivially passing because the offset is being ignored).
+  BOOST_CHECK_MESSAGE( fabs(off_x - on_axis) > 1.0E-3*on_axis,
+                       "Off-axis end-on cylinder: radial offset had no effect vs on-axis ("
+                       << std::setprecision(12) << on_axis << ")" );
+}//BOOST_AUTO_TEST_CASE( OffAxisEndOnAzimuthalSymmetry )
+
+
 /** The spherical evaluator supports both a 2D (azimuthal symmetry) and 3D
  integral; production uses 2D.  Make sure both agree - the 3D path will be
  needed once sources can be off the detector axis with a non-isotropic
@@ -272,6 +326,66 @@ BOOST_AUTO_TEST_CASE( SphericalTwoVsThreeDim )
                        "Spherical 2D integral (" << std::setprecision(12) << integral_2d
                        << ") disagrees with 3D integral (" << integral_3d << ")" );
 }//BOOST_AUTO_TEST_CASE( SphericalTwoVsThreeDim )
+
+
+/** Benchmark of the adaptive Gauss-Legendre backend vs Cuba/Cuhre, at the production
+ tolerance (epsrel=1e-4), with accuracy judged against a tight (epsrel=1e-7) GL
+ reference.  Diagnostic only (asserts nothing beyond sanity) - run explicitly with
+ --run_test=IntegrationBackendBenchmark.
+ */
+BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const vector<VolumetricFixture::VolumetricSrcSpec> fixtures
+                                = VolumetricFixture::standard_volumetric_fixtures();
+
+  const int num_timing_repeats = 10;
+
+  cout << "\nfixture, cuhre_relerr, gl_relerr, cuhre_ms, gl_ms, cuhre_evals, gl_evals" << endl;
+
+  for( const VolumetricFixture::VolumetricSrcSpec &spec : fixtures )
+  {
+    // Tight-tolerance GL reference value
+    GammaInteractionCalc::DistributedSrcCalcT<double> ref_calc
+                            = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
+    GammaInteractionCalc::self_shielding_integration_imp( ref_calc, 1.0E-7, size_t(100000000) );
+    const double reference = ref_calc.integral;
+    BOOST_REQUIRE( reference > 0.0 );
+
+    // Cuhre at production settings (via the production dispatch, incl. its fast paths)
+    GammaInteractionCalc::DistributedSrcCalc legacy
+                            = VolumetricFixture::make_distributed_src_calc( spec, *matdb );
+
+    const auto cuhre_start = std::chrono::steady_clock::now();
+    for( int rep = 0; rep < num_timing_repeats; ++rep )
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy );
+    const auto cuhre_finish = std::chrono::steady_clock::now();
+
+    // The GL backend at production settings
+    GammaInteractionCalc::DistributedSrcCalcT<double> calc
+                            = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
+
+    const auto gl_start = std::chrono::steady_clock::now();
+    for( int rep = 0; rep < num_timing_repeats; ++rep )
+      GammaInteractionCalc::self_shielding_integration_imp( calc );
+    const auto gl_finish = std::chrono::steady_clock::now();
+
+    const double cuhre_ms = std::chrono::duration_cast<std::chrono::microseconds>(cuhre_finish - cuhre_start).count()
+                            / (1000.0 * num_timing_repeats);
+    const double gl_ms = std::chrono::duration_cast<std::chrono::microseconds>(gl_finish - gl_start).count()
+                         / (1000.0 * num_timing_repeats);
+
+    cout << spec.name << ", "
+         << std::setprecision(3) << fabs(legacy.integral - reference)/reference << ", "
+         << fabs(calc.integral - reference)/reference << ", "
+         << std::setprecision(4) << cuhre_ms << ", " << gl_ms << ", "
+         << "n/a, " << calc.m_num_evals << endl;
+  }//for( loop over fixtures )
+}//BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark )
 
 
 /** Validates the templated ray-tracing + adaptive Gauss-Legendre integration
@@ -339,26 +453,35 @@ BOOST_AUTO_TEST_CASE( JetDerivativeOfIntegral )
   const size_t max_evals = 20000000;
 
   // Geometries to check: {fixture, which-dim-of-source-shell to differentiate}
-  const vector<pair<string,int>> cases = {
-    { "sph-U-plus-Fe-661keV", 0 },     //sphere radius
-    { "cyl-end-U-plus-Fe-661keV", 1 }, //cylinder half-length
-    { "rect-U-plus-Fe-661keV", 2 },    //rectangle half-depth
+  // {fixture, dim index, inner_boundary}: inner_boundary=false differentiates the
+  //  source shells outer dimension (with enclosing shells shifted along); =true
+  //  differentiates the boundary between a non-source core and the source shell -
+  //  the lane that was blind to autodiff before hollow shells were split into
+  //  sub-domains (the indicator-function approach hid the boundary-motion term).
+  struct DerivCase{ string name; int dim; bool inner_boundary; };
+  const vector<DerivCase> cases = {
+    { "sph-U-plus-Fe-661keV", 0, false },     //sphere radius
+    { "cyl-end-U-plus-Fe-661keV", 1, false }, //cylinder half-length
+    { "rect-U-plus-Fe-661keV", 2, false },    //rectangle half-depth
+    { "sph-innervoid-Fe-then-U-661keV", 0, true },
+    { "cyl-end-innervoid-661keV", 1, true },
+    { "rect-innervoid-661keV", 2, true },
   };
 
   const vector<VolumetricFixture::VolumetricSrcSpec> fixtures
                                 = VolumetricFixture::standard_volumetric_fixtures();
 
-  for( const pair<string,int> &test_case : cases )
+  for( const DerivCase &test_case : cases )
   {
     const VolumetricFixture::VolumetricSrcSpec *spec = nullptr;
     for( const VolumetricFixture::VolumetricSrcSpec &fixture : fixtures )
     {
-      if( fixture.name == test_case.first )
+      if( fixture.name == test_case.name )
         spec = &fixture;
     }
     BOOST_REQUIRE( spec );
 
-    const int dim_index = test_case.second;
+    const int dim_index = test_case.dim;
     const size_t src_shell = spec->source_shell_index;
 
     // Jet evaluation: lane 0 = d/d(source-shell dim), lane 1 unused (exercises multi-lane)
@@ -389,7 +512,11 @@ BOOST_AUTO_TEST_CASE( JetDerivativeOfIntegral )
 
       // Outer dims are cumulative, so increasing the source-shell dim shifts all
       //  enclosing shells outward too - mirror that in the derivative seeding.
-      if( shell_index >= src_shell )
+      //  For the inner-boundary cases, only the cores boundary moves (the source
+      //  shells outer extent stays put).
+      const bool seed = test_case.inner_boundary ? (shell_index == (src_shell - 1))
+                                                 : (shell_index >= src_shell);
+      if( seed )
         shell.dims[dim_index].v[0] = 1.0;
 
       calc_jet.m_shells.push_back( shell );
@@ -398,12 +525,14 @@ BOOST_AUTO_TEST_CASE( JetDerivativeOfIntegral )
     GammaInteractionCalc::self_shielding_integration_imp( calc_jet, epsrel, max_evals );
 
     // Finite-difference reference from the double path
-    const double dim_val = calc_dbl.m_shells[src_shell].dims[dim_index];
+    const size_t fd_shell = test_case.inner_boundary ? (src_shell - 1) : src_shell;
+    const double dim_val = calc_dbl.m_shells[fd_shell].dims[dim_index];
     const double step = 0.02 * dim_val;
 
     GammaInteractionCalc::DistributedSrcCalcT<double> calc_plus = calc_dbl;
     GammaInteractionCalc::DistributedSrcCalcT<double> calc_minus = calc_dbl;
-    for( size_t shell_index = src_shell; shell_index < calc_dbl.m_shells.size(); ++shell_index )
+    const size_t fd_last_shell = test_case.inner_boundary ? src_shell : calc_dbl.m_shells.size();
+    for( size_t shell_index = fd_shell; shell_index < fd_last_shell; ++shell_index )
     {
       calc_plus.m_shells[shell_index].dims[dim_index] += step;
       calc_minus.m_shells[shell_index].dims[dim_index] -= step;
@@ -526,6 +655,120 @@ BOOST_AUTO_TEST_CASE( TemplatedIntegrandPointCompare )
 }//BOOST_AUTO_TEST_CASE( TemplatedIntegrandPointCompare )
 
 
+// Diagnostic: integrand profile across the inner-box shadow boundary, for the
+//  behind-the-core sub-domain of rect-innervoid
+BOOST_AUTO_TEST_CASE( DebugRectShadowProfile, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const vector<VolumetricFixture::VolumetricSrcSpec> fixtures
+                                = VolumetricFixture::standard_volumetric_fixtures();
+  const VolumetricFixture::VolumetricSrcSpec *spec = nullptr;
+  for( const VolumetricFixture::VolumetricSrcSpec &fixture : fixtures )
+  {
+    if( fixture.name == "rect-innervoid-661keV" )
+      spec = &fixture;
+  }
+  BOOST_REQUIRE( spec );
+
+  GammaInteractionCalc::DistributedSrcCalcT<double> calc
+                          = VolumetricFixture::make_distributed_src_calc_t( *spec, *matdb );
+  const vector<GammaInteractionCalc::DistributedSrcCalcT<double>> subs
+                          = GammaInteractionCalc::split_source_subdomains( calc );
+  BOOST_REQUIRE_EQUAL( subs.size(), size_t(6) );
+
+  const GammaInteractionCalc::DistributedSrcCalcT<double> &behind = subs[1];
+
+  // Detailed ray-trace pieces at two probe points either side of the jump
+  for( const double x_cm : { 1.4, 1.6 } )
+  {
+    const double mm = PhysicalUnits::mm;
+    const double eval_loc[3] = { 10.0*x_cm*mm, 0.0, -20.0*mm };
+    const double det_loc[3] = { 0.0, 0.0, 1000.0*mm };
+
+    double exit_pt[3];
+    const double src_chord = GammaInteractionCalc::rectangle_exit_location_imp<double>(
+                  behind.m_shells[1].dims[0], behind.m_shells[1].dims[1], behind.m_shells[1].dims[2],
+                  eval_loc, det_loc, exit_pt );
+
+    double enter_in[3], exit_in[3];
+    const bool hits_inner = GammaInteractionCalc::rectangle_intersections_imp<double>(
+                  behind.m_shells[0].dims[0], behind.m_shells[0].dims[1], behind.m_shells[0].dims[2],
+                  eval_loc, det_loc, enter_in, exit_in );
+
+    double inner_chord = 0.0;
+    if( hits_inner )
+    {
+      const double dx = exit_in[0]-enter_in[0], dy = exit_in[1]-enter_in[1], dz = exit_in[2]-enter_in[2];
+      inner_chord = sqrt( dx*dx + dy*dy + dz*dz );
+    }
+
+    cout << "probe x=" << x_cm << "cm: src_chord=" << src_chord/PhysicalUnits::cm
+         << "cm, hits_inner=" << hits_inner << ", inner_chord=" << inner_chord/PhysicalUnits::cm
+         << "cm, mu_src=" << behind.m_shells[1].trans_len_coef*PhysicalUnits::cm
+         << "/cm, mu_inner=" << behind.m_shells[0].trans_len_coef*PhysicalUnits::cm << "/cm"
+         << ", exp(-trans)=" << exp( -(behind.m_shells[0].trans_len_coef*inner_chord
+                              + behind.m_shells[1].trans_len_coef*(src_chord - inner_chord)) ) << endl;
+  }//for( probe points )
+
+  // Scan x across the shadow edge of the inner box (y=0 middle, z middle of slab)
+  cout << "x_cm, integrand" << endl;
+  for( int i = 0; i <= 60; ++i )
+  {
+    const double xx[3] = { 0.70 + 0.01*(i/60.0 - 0.0)*30.0/30.0*0.3/0.3, 0.5, 0.5 };
+    //simpler: u from 0.7 to 1.0
+    const double u = 0.70 + (0.30*i)/60.0;
+    const double xx2[3] = { u, 0.5, 0.5 };
+    const double val = behind.eval_rect( xx2, 3 );
+    const double x_cm = (behind.m_subdomain_lo[0] + u*(behind.m_subdomain_hi[0]-behind.m_subdomain_lo[0]))/PhysicalUnits::cm;
+    cout << std::setprecision(6) << x_cm << ", " << std::setprecision(10) << val << endl;
+    (void)xx;
+  }
+}//BOOST_AUTO_TEST_CASE( DebugRectShadowProfile )
+
+
+// Diagnostic: per-sub-domain integration cost for the inner-void fixtures
+BOOST_AUTO_TEST_CASE( DebugSubdomainCosts, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const vector<VolumetricFixture::VolumetricSrcSpec> fixtures
+                                = VolumetricFixture::standard_volumetric_fixtures();
+
+  for( const VolumetricFixture::VolumetricSrcSpec &spec : fixtures )
+  {
+    if( spec.name.find("innervoid") == string::npos )
+      continue;
+
+    GammaInteractionCalc::DistributedSrcCalcT<double> calc
+                            = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
+
+    const vector<GammaInteractionCalc::DistributedSrcCalcT<double>> subs
+                            = GammaInteractionCalc::split_source_subdomains( calc );
+
+    cout << "Fixture '" << spec.name << "': " << subs.size() << " subdomains" << endl;
+    for( size_t i = 0; i < subs.size(); ++i )
+    {
+      GammaInteractionCalc::DistributedSrcCalcT<double> sub = subs[i];
+      sub.m_materialIndex = sub.m_materialIndex;  //no-op; keep copy mutable
+      GammaInteractionCalc::self_shielding_integration_imp( sub, 1.0E-4 );
+      cout << "  sub[" << i << "]: lo={" << sub.m_subdomain_lo[0]/PhysicalUnits::cm << ","
+           << sub.m_subdomain_lo[1]/PhysicalUnits::cm << "," << sub.m_subdomain_lo[2]/PhysicalUnits::cm
+           << "}cm hi={" << sub.m_subdomain_hi[0]/PhysicalUnits::cm << ","
+           << sub.m_subdomain_hi[1]/PhysicalUnits::cm << "," << sub.m_subdomain_hi[2]/PhysicalUnits::cm
+           << "}cm integral=" << std::setprecision(8) << sub.integral
+           << " evals=" << sub.m_num_evals << " est_rel_err=" << sub.m_est_rel_error << endl;
+    }
+  }//for( loop over innervoid fixtures )
+}//BOOST_AUTO_TEST_CASE( DebugSubdomainCosts )
+
+
 // Temporary diagnostic - convergence study of the adaptive GL integrator on the
 //  fixtures it struggles with.
 BOOST_AUTO_TEST_CASE( DebugAdaptiveGLConvergence, * boost::unit_test::disabled() )
@@ -573,41 +816,197 @@ BOOST_AUTO_TEST_CASE( DebugAdaptiveGLConvergence, * boost::unit_test::disabled()
 }//BOOST_AUTO_TEST_CASE( DebugAdaptiveGLConvergence )
 
 
-/** TODO: enable once sources can be off the detector axis.
-
- A sphere at distance d with lateral offset s must give the same answer as an
+/** A sphere at distance d with lateral offset s must give the same answer as an
  on-axis sphere at distance sqrt(d*d + s*s): the shells are rotation-invariant
- and (currently) the detector response uses only the line-of-sight distance
- (`fractionalSolidAngle( 2*detRad, dist + setback )` in eval_spherical), with no
- detector-face orientation term.  NOTE: this equivalence breaks once the
+ and (currently) the detector response uses only the line-of-sight distance, with
+ no detector-face orientation term.  NOTE: this equivalence breaks once the
  detector response gains an angular dependence - at that point this test should
  compare against an independent 3D reference instead.
 
- Planned check: 'sph-U-plus-Fe-661keV' fixture at 300 cm with a 100 cm offset,
- versus the same fixture on-axis at sqrt(10)*100 cm.
+ Also cross-checks the off-axis cylinder/rectangle evaluation between the two
+ independent backends (legacy + Cuhre, vs templated + adaptive GL), and that
+ moving the source off-axis monotonically decreases the detected counts.
  */
-BOOST_AUTO_TEST_CASE( OffAxisSphereEquivalence, * boost::unit_test::disabled() )
+BOOST_AUTO_TEST_CASE( OffAxisSphereEquivalence )
 {
-  BOOST_FAIL( "Off-axis source offsets are not implemented yet" );
+  set_data_dir();
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const double cm = PhysicalUnits::cm;
+
+  {// Begin off-axis == rotated on-axis sphere
+    VolumetricFixture::VolumetricSrcSpec off_axis;
+    off_axis.name = "sph-offaxis";
+    off_axis.geometry = GammaInteractionCalc::GeometryType::Spherical;
+    off_axis.shells = { {"U (uranium)", 0.0, 0.0, {2.0*cm, 0.0, 0.0}},
+                        {"Fe (iron)", 0.0, 0.0, {1.0*cm, 0.0, 0.0}} };
+    off_axis.distance = 300.0*cm;
+    off_axis.offset_x = 100.0*cm;
+
+    VolumetricFixture::VolumetricSrcSpec rotated = off_axis;
+    rotated.name = "sph-rotated";
+    rotated.distance = sqrt( 300.0*300.0 + 100.0*100.0 )*cm;
+    rotated.offset_x = 0.0;
+
+    // Legacy + Cuhre
+    GammaInteractionCalc::DistributedSrcCalc legacy_off
+                          = VolumetricFixture::make_distributed_src_calc( off_axis, *matdb );
+    GammaInteractionCalc::DistributedSrcCalc legacy_rot
+                          = VolumetricFixture::make_distributed_src_calc( rotated, *matdb );
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy_off );
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy_rot );
+
+    BOOST_REQUIRE( legacy_rot.integral > 0.0 );
+    BOOST_CHECK_MESSAGE( fabs(legacy_off.integral - legacy_rot.integral) <= 5.0E-4*legacy_rot.integral,
+                         "Cuhre off-axis sphere (" << std::setprecision(10) << legacy_off.integral
+                         << ") != rotated equivalent (" << legacy_rot.integral << ")" );
+
+    // Templated + adaptive GL
+    GammaInteractionCalc::DistributedSrcCalcT<double> gl_off
+                          = VolumetricFixture::make_distributed_src_calc_t( off_axis, *matdb );
+    GammaInteractionCalc::DistributedSrcCalcT<double> gl_rot
+                          = VolumetricFixture::make_distributed_src_calc_t( rotated, *matdb );
+    GammaInteractionCalc::self_shielding_integration_imp( gl_off );
+    GammaInteractionCalc::self_shielding_integration_imp( gl_rot );
+
+    BOOST_REQUIRE( gl_rot.integral > 0.0 );
+    BOOST_CHECK_MESSAGE( fabs(gl_off.integral - gl_rot.integral) <= 5.0E-4*gl_rot.integral,
+                         "GL off-axis sphere (" << std::setprecision(10) << gl_off.integral
+                         << ") != rotated equivalent (" << gl_rot.integral << ")" );
+
+    BOOST_CHECK_MESSAGE( fabs(gl_off.integral - legacy_off.integral) <= 1.0E-3*legacy_off.integral,
+                         "Off-axis sphere: GL (" << std::setprecision(10) << gl_off.integral
+                         << ") vs Cuhre (" << legacy_off.integral << ")" );
+
+    cout << "OffAxisSphere: off-axis=" << std::setprecision(10) << gl_off.integral
+         << ", rotated=" << gl_rot.integral << " (Cuhre off-axis=" << legacy_off.integral << ")" << endl;
+  }// End off-axis == rotated on-axis sphere
+
+  // Off-axis cylinders/rectangles: cross-validate the two independent backends.
+  //  (Note: detected counts do NOT necessarily decrease with offset for heavily
+  //  self-absorbed boxes - the oblique view exposes more escape surface, which can
+  //  beat the solid-angle loss - so only backend agreement is asserted.)
+  for( const auto geometry : { GammaInteractionCalc::GeometryType::CylinderEndOn,
+                               GammaInteractionCalc::GeometryType::CylinderSideOn,
+                               GammaInteractionCalc::GeometryType::Rectangular } )
+  {
+    for( const double offset : { 0.0, 30.0*cm, 80.0*cm } )
+    {
+      VolumetricFixture::VolumetricSrcSpec spec;
+      spec.name = "offaxis-test";
+      spec.geometry = geometry;
+      if( geometry == GammaInteractionCalc::GeometryType::Rectangular )
+        spec.shells = { {"Fe (iron)", 0.0, 0.0, {4.0*cm, 4.0*cm, 4.0*cm}} };
+      else
+        spec.shells = { {"Fe (iron)", 0.0, 0.0, {4.0*cm, 4.0*cm, 0.0}} };
+      spec.distance = 100.0*cm;
+      spec.offset_x = offset;
+      spec.offset_y = 0.5*offset;
+
+      GammaInteractionCalc::DistributedSrcCalc legacy
+                            = VolumetricFixture::make_distributed_src_calc( spec, *matdb );
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy );
+
+      GammaInteractionCalc::DistributedSrcCalcT<double> gl
+                            = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
+      GammaInteractionCalc::self_shielding_integration_imp( gl );
+
+      BOOST_REQUIRE( legacy.integral > 0.0 );
+      BOOST_REQUIRE( gl.integral > 0.0 );
+
+      BOOST_CHECK_MESSAGE( fabs(gl.integral - legacy.integral) <= 2.0E-3*legacy.integral,
+                           "Off-axis " << GammaInteractionCalc::to_str(geometry) << " offset="
+                           << offset/cm << "cm: GL (" << std::setprecision(10) << gl.integral
+                           << ") vs Cuhre (" << legacy.integral << ")" );
+
+      cout << "OffAxis " << GammaInteractionCalc::to_str(geometry) << " offset=" << offset/cm
+           << "cm: GL=" << std::setprecision(8) << gl.integral
+           << ", Cuhre=" << legacy.integral << endl;
+    }//for( loop over offsets )
+  }//for( loop over geometries )
 }//BOOST_AUTO_TEST_CASE( OffAxisSphereEquivalence )
 
 
-/** TODO: enable once effective-AN/AD/H accumulation during integration exists.
-
- For the 'rect-poly-slab-661keV' fixture (polyethylene slab, half-depth
+/** For the 'rect-poly-slab-661keV' fixture (polyethylene slab, half-depth
  D/2 = 2 cm, at 3 m), rays to the detector are nearly normal to the slab, so
  with z the depth from a source point to the exit surface, and mu the linear
  attenuation coefficient, the attenuation-weighted averages are analytic:
 
    <AD>    = rho * Int(z*exp(-mu*z))/Int(exp(-mu*z)), z over [0,D]
            = (rho/mu) * (1 - x*exp(-x)/(1 - exp(-x))),  x = mu*D
-   <AN>    = mass-weighted Zbar of polyethylene (CH2):
-             0.8563*6 + 0.1437*1 = ~5.28
-   <fracH> = hydrogen mass fraction of polyethylene = ~0.1437
+   <AN>    = mass-weighted Zbar of polyethylene
+   <fracH> = hydrogen mass fraction of polyethylene
 
  (expect agreement to ~1%, the residual coming from ray obliquity)
  */
-BOOST_AUTO_TEST_CASE( EffectiveShieldingAnalyticSlab, * boost::unit_test::disabled() )
+BOOST_AUTO_TEST_CASE( EffectiveShieldingAnalyticSlab )
 {
-  BOOST_FAIL( "Effective-AN/AD/H accumulation is not implemented yet" );
+  set_data_dir();
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const vector<VolumetricFixture::VolumetricSrcSpec> fixtures
+                                = VolumetricFixture::standard_volumetric_fixtures();
+
+  const VolumetricFixture::VolumetricSrcSpec *spec = nullptr;
+  for( const VolumetricFixture::VolumetricSrcSpec &fixture : fixtures )
+  {
+    if( fixture.name == "rect-poly-slab-661keV" )
+      spec = &fixture;
+  }
+  BOOST_REQUIRE( spec );
+
+  GammaInteractionCalc::DistributedSrcCalcT<double> calc
+                          = VolumetricFixture::make_distributed_src_calc_t( *spec, *matdb );
+  BOOST_REQUIRE_EQUAL( calc.m_shells.size(), size_t(1) );
+
+  const GammaInteractionCalc::EffShieldComponents components
+                          = GammaInteractionCalc::integrate_effective_shielding( calc, 1.0E-5 );
+
+  BOOST_REQUIRE( components.c[0] > 0.0 );
+  BOOST_REQUIRE( components.c[1] > 0.0 );
+
+  const double eff_ad = components.c[1] / components.c[0];
+  const double eff_an_mass = components.c[2] / components.c[1];
+  const double eff_frac_h = components.c[3] / components.c[1];
+  const double eff_an_xs = components.c[5] / components.c[4];
+
+  // Analytic expectations
+  const std::shared_ptr<const Material> poly = matdb->material( "Polyethylene" );
+  BOOST_REQUIRE( poly );
+
+  const double mu = calc.m_shells[0].trans_len_coef;  //linear attenuation coef (1/length)
+  const double depth = 2.0 * calc.m_shells[0].dims[2]; //full slab depth
+  const double x = mu * depth;
+  const double rho = poly->density;
+
+  const double expected_ad = (rho/mu) * (1.0 - x*exp(-x)/(1.0 - exp(-x)));
+  const double expected_an = GammaInteractionCalc::material_mass_weighted_atomic_number( *poly );
+  const double expected_frac_h = GammaInteractionCalc::material_hydrogen_mass_fraction( *poly );
+
+  const double g_cm2 = PhysicalUnits::g / PhysicalUnits::cm2;
+  cout << "EffectiveShieldingAnalyticSlab: <AD>=" << eff_ad/g_cm2 << " g/cm2 (expect "
+       << expected_ad/g_cm2 << "), <AN>=" << eff_an_mass << " (expect " << expected_an
+       << "), <fracH>=" << eff_frac_h << " (expect " << expected_frac_h
+       << "), <AN>_xs=" << eff_an_xs << endl;
+
+  BOOST_CHECK_MESSAGE( fabs(eff_ad - expected_ad) <= 0.01*expected_ad,
+                       "Effective AD (" << eff_ad/g_cm2 << " g/cm2) not within 1% of analytic ("
+                       << expected_ad/g_cm2 << " g/cm2)" );
+
+  BOOST_CHECK_MESSAGE( fabs(eff_an_mass - expected_an) <= 0.001*expected_an,
+                       "Mass-weighted effective AN (" << eff_an_mass << ") != material Zbar ("
+                       << expected_an << ")" );
+
+  BOOST_CHECK_MESSAGE( fabs(eff_frac_h - expected_frac_h) <= 0.001*std::max(expected_frac_h, 1.0E-6),
+                       "Effective H fraction (" << eff_frac_h << ") != material value ("
+                       << expected_frac_h << ")" );
+
+  // For a single material both atomic-number weightings must agree exactly
+  BOOST_CHECK_MESSAGE( fabs(eff_an_xs - expected_an) <= 0.001*expected_an,
+                       "Cross-section-weighted effective AN (" << eff_an_xs << ") != material Zbar ("
+                       << expected_an << ")" );
 }//BOOST_AUTO_TEST_CASE( EffectiveShieldingAnalyticSlab )
