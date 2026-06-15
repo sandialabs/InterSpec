@@ -432,13 +432,13 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
   data["have_multiple_rel_eff"] = have_multiple_rel_eff;
   data["live_time_s"]           = live_time;
 
-  // ---- Goodness-of-fit ----
-  data["chi2"]            = sol.m_chi2;
-  data["dof"]             = static_cast<int64_t>(sol.m_dof);
-  data["chi2_per_dof"]    = sol.m_dof > 0 ? sol.m_chi2 / static_cast<double>(sol.m_dof) : 0.0;
+  // ---- Goodness-of-fit (data channel rows only; excludes the anchor/prior/BR residual rows) ----
+  data["chi2"]            = sol.m_chi2_data;
+  data["dof"]             = static_cast<int64_t>(sol.m_dof_data);
+  data["chi2_per_dof"]    = sol.m_dof_data > 0 ? sol.m_chi2_data / static_cast<double>(sol.m_dof_data) : 0.0;
   {
     char buf[64] = { '\0' };
-    snprintf( buf, sizeof(buf), "%.6G", sol.m_chi2 );
+    snprintf( buf, sizeof(buf), "%.6G", sol.m_chi2_data );
     data["chi2_str"] = string(buf);
     snprintf( buf, sizeof(buf), "%.6G", data["chi2_per_dof"].get<double>() );
     data["chi2_per_dof_str"] = string(buf);

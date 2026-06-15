@@ -5767,16 +5767,18 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
 
-  const string chi2_str = SpecUtils::printCompact(answer->m_chi2, 3);
-  const int dof = static_cast<int>(answer->m_dof);
+  // Goodness-of-fit uses the data-only chi2/dof (channel rows only); the full chi2 the optimizer
+  //  minimized also includes anchor/prior/BR rows and is not a data goodness-of-fit.
+  const string chi2_str = SpecUtils::printCompact(answer->m_chi2_data, 3);
+  const int dof = static_cast<int>(answer->m_dof_data);
   WString chi2_title_tooltip;
   WString chi2_title = WString("χ²/dof = {1}/{2}{3}").arg( chi2_str ).arg( dof );
   try
   {
-    const double chi2_dof = answer->m_chi2 / answer->m_dof;
+    const double chi2_dof = (answer->m_dof_data > 0) ? (answer->m_chi2_data / answer->m_dof_data) : 0.0;
     const string chi2_dof_str = SpecUtils::printCompact(chi2_dof, 3);
     boost::math::chi_squared chi2_dist(dof);
-    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2); //Probability we would have seen a chi2 this large.
+    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2_data); //Probability we would have seen a chi2 this large.
     const double p_value = 1.0 - prob; //Probability we would have observed this good of a chi2, or better
     const string p_value_str = SpecUtils::printCompact(p_value, 3);
 

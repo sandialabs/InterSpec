@@ -2575,6 +2575,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//size_t number_residuals() const
 
 
+  /** The number of DATA (spectrum-channel) residual rows only - i.e. `number_residuals()` minus the
+   rel-eff anchor, peak-range-uncertainty, and physical-model parameter-prior rows.
+
+   `eval()` writes these channel rows FIRST, so the leading `number_data_residuals()` entries of the
+   residual vector are exactly the data residuals; this is used to form the data-only chi-square that
+   the reported covariance is rescaled by (the non-data prior/anchor rows are not data degrees of
+   freedom and must not enter that goodness-of-fit).
+   */
+  size_t number_data_residuals() const
+  {
+    size_t num_resids = 0;
+    for( const auto &r : m_energy_ranges )
+      num_resids += r.num_channels;
+    return num_resids;
+  }//size_t number_data_residuals() const
+
+
   /** Find the anchor energy for a ROI.
 
    Returns the mean of the largest peak (by area) in the ROI from m_all_peaks,
@@ -6052,6 +6069,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         problem.SetManifold( pars, new ceres::SubsetManifold( (int)num_pars, final_const ) );
       else
         problem.SetManifold( pars, nullptr );
+      // Fold the auto-simplify-fixed parameters into `constant_parameters` so downstream bookkeeping
+      //  (m_parameter_were_fit, and the bound-active check) treats them as fixed, not free.
+      constant_parameters = final_const;
     }//if( success && options.auto_simplify_model )
     // ---- End Auto-simplify -----------------------------------------------------------------------------
 
@@ -6266,20 +6286,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       for( int i = 0; i < singular_values.size(); ++i)
         npar_eff += (singular_values(i) > threshold);
 
-      if( (npar_eff < 1) || npar_eff < (num_pars/5) )
-        throw runtime_error( "Only computed " + std::to_string(npar_eff)
-                            + " DOF, compared to " + std::to_string(num_pars) + " parameters." );
-
       // The covariance (cov_options.min_reciprocal_condition_number, above) drops exactly the directions
       //  with singular-value ratio below this same 1e-7 threshold, so `num_free_pars - npar_eff` is the
       //  number of near-degenerate directions omitted from the reported uncertainties / rel-eff band.
-      //  Warn when the fit is rank-deficient so an over-confident band is diagnosable.
+      //  Record this (and warn) BEFORE the trustworthiness throw below: a severely rank-deficient SVD
+      //  (npar_eff << num_pars, which triggers the throw) is the STRONGEST collapse signal, and the
+      //  derived-uncertainty floor keys off `m_num_rank_deficient_dirs`, so it must be set even when
+      //  we fall back to num_pars for the DOF estimate.
       const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
+      solution.m_num_rank_deficient_dirs = (npar_eff < num_free_pars) ? (num_free_pars - npar_eff) : size_t(0);
       if( npar_eff < num_free_pars )
         solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff)
                             + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
-                            " unconstrained by the data (near-degenerate directions).  Their contribution is"
-                            " omitted from the reported uncertainties and relative-efficiency error band." );
+                            " unconstrained by the data (near-degenerate directions).  Per-parameter"
+                            " uncertainties omit these directions; derived quantities (enrichment,"
+                            " relative-efficiency band) that depend on them are flagged and widened instead." );
+
+      if( (npar_eff < 1) || npar_eff < (num_pars/5) )
+        throw runtime_error( "Only computed " + std::to_string(npar_eff)
+                            + " DOF, compared to " + std::to_string(num_pars) + " parameters." );
 
       num_effective_paramaters = npar_eff;
     }catch( std::exception &e )
@@ -6290,6 +6315,63 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//try / catch evaluate NDOF
 
 
+    // -------------------------------------------------------------------------------------------
+    // Rescale the reported covariance/uncertainties by the data-only reduced chi-square.
+    //
+    // The linearized Ceres covariance is purely statistical - it assumes the model is correct and the
+    //  only scatter is Poisson counting noise.  When the data scatter about the fit exceeds that (i.e.
+    //  unmodeled systematics, which dominate the U-235 enrichment pulls), the standard remedy is to
+    //  inflate the covariance by chi2/dof.  We use a DATA-ONLY chi2/dof: the non-data residual rows
+    //  (rel-eff anchor, peak-range-uncert, and the physical-model parameter priors) are not data
+    //  degrees of freedom and must not enter this goodness-of-fit.
+    //
+    // Done here - after the effective-DOF SVD, but BEFORE m_phys_units_cov is built and before every
+    //  downstream uncertainty consumer (peaks, age, rel-act, enrichment, rel-eff band) - so a SINGLE
+    //  multiply propagates to all reported uncertainties.  The full chi2 / m_dof (which include the
+    //  prior rows, for display) are still computed separately below.
+    {
+      const size_t n_data_rows = cost_functor->number_data_residuals();
+      vector<double> data_residuals( cost_functor->number_residuals(), 0.0 );
+      cost_functor->eval( parameters, data_residuals.data() );
+      double chi2_data = 0.0;
+      for( size_t i = 0; (i < n_data_rows) && (i < data_residuals.size()); ++i )
+        chi2_data += data_residuals[i]*data_residuals[i];
+
+      solution.m_chi2_data = chi2_data;
+      solution.m_dof_data = (n_data_rows > num_effective_paramaters) ? (n_data_rows - num_effective_paramaters) : size_t(0);
+      solution.m_cov_scale = (solution.m_dof_data > 0) ? (std::max)(1.0, chi2_data/static_cast<double>(solution.m_dof_data)) : 1.0;
+
+      if( !solution.m_covariance.empty() && (solution.m_cov_scale != 1.0) )
+      {
+        const double s = solution.m_cov_scale;   // variance scale
+        const double s_std = std::sqrt(s);        // standard-deviation scale
+
+        auto scale_matrix = []( vector<vector<double>> &m, const double f ){
+          for( vector<double> &row : m )
+            for( double &v : row )
+              v *= f;
+        };
+
+        scale_matrix( solution.m_covariance, s );  // m_phys_units_cov is built from this below, so it inherits
+        for( vector<vector<double>> &c : solution.m_rel_eff_covariance )
+          scale_matrix( c, s );
+        for( vector<vector<double>> &c : solution.m_rel_act_covariance )
+          scale_matrix( c, s );
+        scale_matrix( solution.m_fwhm_covariance, s );
+
+        for( double &u : solution.m_final_uncertainties )
+          u *= s_std;
+        // The local `uncertainties`/`uncerts_squared` vectors feed the directly-reported sigmas below
+        //  (age, peak fwhm/amplitude, AN/AD, Hoerl b/c).  `age(...)` etc. are linear in the per-parameter
+        //  sigma, so scaling these scales those reported uncertainties correctly.
+        for( double &u : uncertainties )
+          u *= s_std;
+        for( double &u : uncerts_squared )
+          u *= s;
+      }//if( we have a covariance to scale )
+    }//covariance rescale by data-only chi2/dof
+
+
     solution.m_num_function_eval_total = static_cast<int>( cost_functor->m_ncalls );
   
     solution.m_final_parameters = parameters;
@@ -6297,17 +6379,62 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     solution.m_parameter_names.resize( parameters.size() );
     solution.m_parameter_were_fit.resize( parameters.size(), true );
+    solution.m_param_at_bound.assign( parameters.size(), 0 );  // per-parameter bound-active flags
+    vector<string> bound_pinned_names;
     for( size_t i = 0; i < parameters.size(); ++i )
     {
       solution.m_parameter_names[i] = cost_functor->parameter_name( i );
       solution.m_parameter_were_fit[i] = std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) ) == end(constant_parameters);
 
       solution.m_parameter_scale_factors[i] = cost_functor->parameter_scale_factor( i );
-      
+
       assert( (solution.m_parameter_scale_factors[i] > 0.0)
              || !solution.m_parameter_were_fit[i]
              || cost_functor->mass_constraint_multiple(i,parameters).has_value() );
+
+      // Flag fit parameters sitting on a fit bound.  Ceres' covariance ignores active bounds,
+      //  so a pinned parameter's reported variance is meaningless (typically far too small) - and the
+      //  empirical correction pins at its bound in a large fraction of DRF-mismatched files.  Derived
+      //  quantities depending on a pinned parameter get their uncertainty widened (see
+      //  `reliability_floored_uncert`).
+      if( solution.m_parameter_were_fit[i] && (i < lower_bounds.size()) && (i < upper_bounds.size()) )
+      {
+        const double val = parameters[i];
+        const std::optional<double> &lo = lower_bounds[i];
+        const std::optional<double> &hi = upper_bounds[i];
+        constexpr double tol_frac = 1.0e-3;
+        bool at_bound = false;
+        if( lo.has_value() && hi.has_value() && (*hi > *lo) )
+        {
+          const double tol = tol_frac*(*hi - *lo);
+          at_bound = ((val - *lo) <= tol) || ((*hi - val) <= tol);
+        }else if( lo.has_value() )
+        {
+          const double scale = std::max( std::fabs(val), std::max(std::fabs(*lo), 1.0e-12) );
+          at_bound = (std::fabs(val - *lo) <= tol_frac*scale);
+        }else if( hi.has_value() )
+        {
+          const double scale = std::max( std::fabs(val), std::max(std::fabs(*hi), 1.0e-12) );
+          at_bound = (std::fabs(val - *hi) <= tol_frac*scale);
+        }
+
+        if( at_bound )
+        {
+          solution.m_param_at_bound[i] = 1;
+          bound_pinned_names.push_back( solution.m_parameter_names[i] );
+        }
+      }//if( fit parameter with bounds in scope )
     }//for( size_t i = 0; i < parameters.size(); ++i )
+
+    if( !bound_pinned_names.empty() )
+    {
+      string msg = "These fit parameters are pinned at a bound, so their reported uncertainties are"
+                   " under-stated (Ceres' covariance ignores active bounds): ";
+      for( size_t i = 0; i < bound_pinned_names.size(); ++i )
+        msg += (i ? ", " : "") + bound_pinned_names[i];
+      msg += ".  Derived quantities depending on them are flagged and widened.";
+      solution.m_warnings.push_back( msg );
+    }//if( any bound-pinned parameters )
 
     if( !solution.m_covariance.empty() )
     {
@@ -6368,10 +6495,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
     vector<PeakDef> fit_peaks;
     vector<vector<PeakDef>> fit_peaks_for_each_curve( (num_rel_eff_curves > 1) ? num_rel_eff_curves : size_t(0) );
-    
+    size_t num_neg_peak_variances = 0; // accumulate clamped-negative peak variances across ROIs
+
     for( const RoiRangeChannels &range : cost_functor->m_energy_ranges )
     {
       const PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters, {}, &(solution.m_covariance) );
+      num_neg_peak_variances += these_peaks.num_negative_peak_variances;
 
       fit_peaks.insert( end(fit_peaks), begin(these_peaks.peaks), end(these_peaks.peaks) );
 
@@ -6395,7 +6524,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }//for( size_t i = 0; i < num_rel_eff_curves; ++i )
       }//if( more than R.E. curve )
     }//for( const RoiRangeChannels &range : cost_functor->m_energy_ranges )
-    
+
+    if( num_neg_peak_variances > 0 )
+      solution.m_warnings.push_back( "Covariance propagation produced " + std::to_string(num_neg_peak_variances)
+                          + " negative peak-parameter variance(s) (clamped to zero); the fit covariance is"
+                          " ill-conditioned, so some peak uncertainties may be unreliable." );
+
     std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMean );
     for( vector<PeakDef> &re_peaks : fit_peaks_for_each_curve )
       std::sort( begin(re_peaks), end(re_peaks), &PeakDef::lessThanByMean );
@@ -6619,8 +6753,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         nuc_output.age_was_fit = nuc_input.fit_age;
         nuc_output.rel_activity = cost_functor->relative_activity( nuc_input.source, rel_eff_index, parameters );
       
-        nuc_output.age_uncertainty = cost_functor->age( nuc_input, rel_eff_index, uncertainties );
-        
+        // Only report an age uncertainty when we actually have a covariance.  When
+        //  `covariance.Compute()` failed `uncertainties` is all-zero, and passing that through
+        //  `age()` would leak a spurious exact-zero ("infinitely confident") uncertainty.
+        if( solution.m_covariance.empty() )
+          nuc_output.age_uncertainty = -1.0;
+        else
+          nuc_output.age_uncertainty = cost_functor->age( nuc_input, rel_eff_index, uncertainties );
+
         bool is_mass_constrained = false;
         
         if( const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(nuc_output.source) )
@@ -10422,6 +10562,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t last_channel;
     bool no_gammas_in_range;
     bool forced_full_range;
+    /** Number of peak-parameter variances that came out meaningfully negative (beyond round-off)
+        and were clamped to zero.  A non-zero value flags an ill-conditioned covariance to the caller. */
+    size_t num_negative_peak_variances = 0;
   };//struct PeaksForEnergyRange
   
   
@@ -10463,7 +10606,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     // Compute uncertainties if covariance is provided and valid
     vector<vector<double>> peak_uncertainties; // [peak_index][param_index] where param_index: 0=mean, 1=sigma, 2=amplitude, 3+=skew_pars
-    
+    size_t num_neg_peak_variances = 0; // count of meaningfully-negative variances clamped to 0
+
     if( convariance && !convariance->empty() && (convariance->size() == x.size()) )
     {
       const size_t num_par = x.size();
@@ -10506,17 +10650,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t param_idx = 0; param_idx < 8; ++param_idx )
         {
           const vector<double> &jacobian = peak_jacobians[peak_idx][param_idx];
-          double uncertainty = 0.0;
-          
+          double uncertainty = 0.0, abs_sum = 0.0;
+
           for( size_t i = 0; i < num_par; ++i )
           {
             for( size_t j = 0; j < num_par; ++j )
             {
               if( i < convariance->size() && j < (*convariance)[i].size() )
-                uncertainty += jacobian[i] * (*convariance)[i][j] * jacobian[j];
+              {
+                const double term = jacobian[i] * (*convariance)[i][j] * jacobian[j];
+                uncertainty += term;
+                abs_sum += std::fabs(term);
+              }
             }
           }
-          
+
+          // Round-off can make this slightly negative; a value negative beyond ~round-off
+          //  (relative to the sum of |terms|) signals a genuinely ill-conditioned covariance.
+          if( uncertainty < -1.0e-6*abs_sum )
+            ++num_neg_peak_variances;
+
           peak_uncertainties[peak_idx][param_idx] = std::sqrt(std::max(0.0, uncertainty));
         }
       }
@@ -10551,7 +10704,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     answer.last_channel = computed_peaks.last_channel;
     answer.no_gammas_in_range = computed_peaks.no_gammas_in_range;
     answer.forced_full_range = computed_peaks.forced_full_range;
-    
+    answer.num_negative_peak_variances = num_neg_peak_variances;
+
     for( size_t i = 0; i < computed_peaks.peaks.size(); ++i )
     {
       const RelActCalcAuto::PeakDefImp<double> &comp_peak = computed_peaks.peaks[i];
@@ -14592,8 +14746,8 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 
   if( m_status == Status::Success )
   {
-    results_html << "<div>&chi;<sup>2</sup>=" << m_chi2 << " and there were " << m_dof
-    << " DOF (&chi;<sup>2</sup>/dof=" << m_chi2/m_dof << ")</div>\n";
+    results_html << "<div>&chi;<sup>2</sup>=" << m_chi2_data << " over " << m_dof_data
+    << " data DOF (&chi;<sup>2</sup>/dof=" << ((m_dof_data > 0) ? (m_chi2_data/m_dof_data) : 0.0) << ")</div>\n";
   }else
   {
     string fail_reason;
@@ -15489,6 +15643,54 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 
 
 
+double RelActAutoSolution::reliability_floored_uncert( const double value, const double uncert,
+                                                       const std::vector<double> &jacobian ) const
+{
+  // Tuning constants (evaluate/adjust with target/idb_enrichment_check):
+  //  - an "implausibly small" relative uncertainty - the GATE for any flooring.  A reported relative
+  //    uncertainty below this for an enrichment/rel-eff value is not physically credible for these fits;
+  //    it is the signature of a covariance pathology.  Crucially, a file with a credible uncertainty
+  //    (above this) is NEVER touched - so well-determined fits keep their (small, correct) bands.
+  static constexpr double sm_implausible_rel_uncert = 1.0e-3;
+  //  - fraction of the quantity's sensitivity (by squared-Jacobian) that must ride on bound-pinned
+  //    parameters before bound-pinning is accepted as the explanation for an implausibly small uncert;
+  static constexpr double sm_bound_sensitivity_frac = 0.25;
+  //  - the floor applied (as a fraction of |value|) when an implausibly small uncert is explained by a
+  //    pathology - i.e. "we cannot reliably determine this; report a wide band".
+  static constexpr double sm_unreliable_uncert_floor_frac = 1.0;
+
+  // GATE: only ever touch an uncertainty that is implausibly small relative to its value.  This protects
+  //  well-determined fits (e.g. high-enrichment files whose enrichment is genuinely tight) from being
+  //  widened just because some unrelated parameter sits on a bound.
+  if( (value == 0.0) || (std::fabs(uncert) >= sm_implausible_rel_uncert*std::fabs(value)) )
+    return uncert;
+
+  // The uncertainty is implausibly small.  Accept it as a genuine collapse only if there is a known
+  //  pathology that explains it: the fit is rank-deficient (a near-degenerate direction was dropped
+  //  from the covariance, zeroing this quantity's variance), or a significant fraction of this
+  //  quantity's sensitivity rides on a parameter pinned at a bound (whose variance Ceres reports as ~0).
+  bool pathology = (m_num_rank_deficient_dirs > 0);
+
+  if( !pathology && !m_param_at_bound.empty() && (jacobian.size() == m_param_at_bound.size()) )
+  {
+    double jac_norm2 = 0.0, at_bound2 = 0.0;
+    for( size_t i = 0; i < jacobian.size(); ++i )
+    {
+      jac_norm2 += jacobian[i]*jacobian[i];
+      if( m_param_at_bound[i] )
+        at_bound2 += jacobian[i]*jacobian[i];
+    }
+    pathology = (jac_norm2 > 0.0) && (at_bound2 > sm_bound_sensitivity_frac*jac_norm2);
+  }
+
+  if( !pathology )
+    return uncert;
+
+  m_enrichment_uncert_unreliable = true;
+  return (std::max)( uncert, sm_unreliable_uncert_floor_frac*std::fabs(value) );
+}//reliability_floored_uncert(...)
+
+
 pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const
 {
 #define USE_RelActAutoCostFcn_MASS_FRAC_IMP 1
@@ -15544,8 +15746,14 @@ pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( cons
     for( size_t j = 0; j < num_pars; ++j )
       uncertainty += jacobian[i]*covariance[i][j]*jacobian[j];
   }
-    
-  uncertainty = sqrt( uncertainty );
+
+  // Guard against a round-off-negative quadratic form yielding a NaN uncertainty.
+  uncertainty = sqrt( std::max(0.0, uncertainty) );
+
+  // Floor the (data-driven) enrichment uncertainty when the linearized covariance under-states
+  //  it (rank-deficient collapse, or sensitivity riding a bound-pinned parameter).  Applied before the
+  //  Pu242 systematic is added in quadrature below (that term is an external systematic, not covariance).
+  uncertainty = reliability_floored_uncert( enrichment, uncertainty, jacobian );
 
   if( nuclide && (nuclide->atomicNumber == 94) && (nuclide->massNumber == 242)
      && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index] )
@@ -16540,8 +16748,10 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
     for( size_t j = 0; j < num_par; ++j )
       uncertainty += jacobian[i]*m_covariance[i][j]*jacobian[j];
   }
-  
-  uncertainty = std::sqrt( uncertainty );
+
+  // Guard against a round-off-negative quadratic form (otherwise the IsNan check below
+  //  throws and aborts the whole report render).
+  uncertainty = std::sqrt( std::max(0.0, uncertainty) );
   
 #ifndef NDEBUG
   // We can double-check this rel eff calc, but more importantly, for non-physical models, we
@@ -16569,7 +16779,12 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
     assert( (diff < 1.0E-8) || (diff < 1.0E-6*(std::max)(manual_uncert, uncertainty)) );
   }//if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
 #endif //NDEBUG
-  
+
+  // Floor the rel-eff band when the linearized covariance under-states it (rank-deficient
+  //  collapse, or sensitivity riding a bound-pinned parameter).  Done after the NDEBUG analytic
+  //  cross-check above so that compares the raw autodiff uncertainty.
+  uncertainty = reliability_floored_uncert( rel_eff, uncertainty, jacobian );
+
   if( IsNan(rel_eff) || IsInf(rel_eff) )
     throw runtime_error( "relative_efficiency_with_uncert: invalid rel eff value." );
   

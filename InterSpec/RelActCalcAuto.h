@@ -1139,7 +1139,25 @@ struct RelActAutoSolution
    Throws exception if covariance matrix is invalid.
    */
   std::pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const;
-  
+
+
+  /** Floors a derived-quantity uncertainty when the linearized covariance is known to under-state it.
+
+   The Ceres covariance is over-confident in two situations this catches: the fit is rank-deficient
+   and the quantity depends on a dropped near-degenerate direction, so its variance was zeroed (giving an
+   absurdly tiny uncertainty / huge pull); and a significant fraction of the quantity's sensitivity
+   rides on a parameter pinned at a fit bound, whose variance Ceres reports as ~0 (bounds are ignored by
+   the covariance).  In either case the returned uncertainty is floored to a wide fraction of `value`,
+   and `m_enrichment_uncert_unreliable` is set.  Otherwise `uncert` is returned unchanged.
+
+   @param value     The nominal derived quantity (e.g. enrichment fraction, rel-eff value).
+   @param uncert    Its linearized 1-sigma from `J^T Cov J` (already non-negative).
+   @param jacobian  d(value)/d(parameter) in the full/ambient parameter space (same index space as
+                    `m_final_parameters` and `m_param_at_bound`).
+   */
+  double reliability_floored_uncert( const double value, const double uncert,
+                                     const std::vector<double> &jacobian ) const;
+
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
   size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
@@ -1231,6 +1249,27 @@ struct RelActAutoSolution
    Indexed as `m_phys_units_cov[row][col]`, by convention.
    */
   std::vector<std::vector<double>> m_phys_units_cov;
+
+  /** Number of near-degenerate Jacobian directions DROPPED from the
+   reported covariance (singular-value ratio below the 1e-7 conditioning floor) - i.e.
+   `num_free_parameters - effective_parameters` from the post-fit SVD.  Zero for a full-rank fit.  When
+   non-zero, a derived quantity (enrichment, rel-eff band) whose variance came out implausibly small is
+   depending on a dropped direction and its linearized uncertainty is not trustworthy (it was zeroed,
+   not inflated). */
+  size_t m_num_rank_deficient_dirs = 0;
+
+  /** Per-parameter flag, non-zero if the fitted parameter sits within tolerance of a lower or
+   upper bound.  Ceres' covariance ignores active bounds, so a pinned parameter's reported variance is
+   meaningless (usually too small).  Size `m_final_parameters.size()`, or empty.  Same (ambient) index
+   space as `m_final_parameters`, so a derived quantity's parameter-space Jacobian can be projected onto
+   it directly. */
+  std::vector<char> m_param_at_bound;
+
+  /** Set true when any reported enrichment / derived uncertainty was floored because the quantity
+   depends substantially on a dropped rank-deficient direction or a bound-pinned parameter,
+   so its linearized uncertainty was under-stated.  Consumers should treat such uncertainties as a wide
+   lower bound ("unreliable").  Mutable: set lazily by the const derived-uncertainty accessors. */
+  mutable bool m_enrichment_uncert_unreliable = false;
 
   /** The short names of the parameters. */
   std::vector<std::string> m_parameter_names;
@@ -1493,15 +1532,34 @@ struct RelActAutoSolution
    */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
   
-  /** */
+  /** The full chi-square: sum of squares of ALL residual rows (data channels plus the rel-eff anchor,
+   peak-range-uncertainty, and physical-model parameter-prior rows).  This is the value the optimizer
+   minimizes; the report/GUI display the data-only `m_chi2_data`/`m_dof_data` goodness-of-fit instead. */
   double m_chi2;
-  
+
   /** The number of degrees of freedom in the fit for equation parameters.
-   
-   Note: this is the number data channels used, minus the number of (estimated effective) fit paramaters.
+
+   Note: this is the number of residual rows (data channels plus the non-data prior/anchor rows that
+   `m_chi2` sums), minus the number of (estimated effective) fit paramaters - i.e. the DOF matching
+   `m_chi2`.  For the data-only goodness-of-fit use `m_dof_data`.
    */
   size_t m_dof;
-  
+
+  /** The data-only chi-square: sum of squares of just the spectrum-channel residual rows (excludes the
+   rel-eff anchor, peak-range-uncertainty, and physical-model parameter-prior rows that `m_chi2` includes).
+   This is the chi2/dof shown in the report and GUI, and the statistic used to rescale the reported
+   covariance/uncertainties by `m_cov_scale`. */
+  double m_chi2_data = 0.0;
+
+  /** Degrees of freedom for `m_chi2_data`: number of data channels used, minus the (estimated effective)
+   number of fit parameters. */
+  size_t m_dof_data = 0;
+
+  /** The covariance inflation factor applied to every reported covariance/uncertainty:
+   `max(1.0, m_chi2_data/m_dof_data)`.  A value of 1.0 means no inflation (a good or over-fit).
+   Variances are multiplied by this; standard deviations by its square root. */
+  double m_cov_scale = 1.0;
+
   /** A struct to hold information about the Physical Model result of the fit. */
   struct PhysicalModelFitInfo
   {
