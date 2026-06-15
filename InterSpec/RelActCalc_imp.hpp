@@ -306,27 +306,26 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = self_atten->areal_density;
 
-    // `setup_physical_model_shield_par` loosens the Ceres-level lower bound
-    //  on AD by 1e-5 g/cm^2 to escape an active-bound LM trap. The optimizer
-    //  may consequently evaluate at AD slightly below the user's bound.
-    //  `areal_density` is in PhysicalUnits here, so the test for "grossly
-    //  negative" multiplies by `g_per_cm2` to compare in physical units.
-    //  Threshold of -1e-3 g/cm^2 is well above the loosening (-1e-5) so
-    //  the cost function never returns false on legitimate optimizer
-    //  exploration; only catches truly pathological values.
+    // `setup_physical_model_shield_par` loosens the Ceres-level lower bound on AD by 1e-5 g/cm^2
+    //  to escape an active-bound LM trap, so the optimizer may evaluate at AD a hair below zero.
+    //  We deliberately do NOT clamp `areal_density` to >= 0 here: the self-attenuation factor
+    //  (1 - e^{-x})/x is smooth and accurate for the tiny negative x reachable inside that margin,
+    //  so letting the true value/gradient flow keeps the AD Jacobian column non-zero (clamping a
+    //  `ceres::Jet` with `fmax(jet,0)` would zero its derivative and recreate the trap - see A2).
+    //  The converged AD is clamped to >= 0 where the solution is extracted (`get_shield_info` in
+    //  RelActCalcAuto.cpp), so the user never sees a negative AD; here we only guard grossly
+    //  negative values. `areal_density` is in PhysicalUnits, so the -1e-3 g/cm^2 throw threshold
+    //  (well below the -1e-5 loosening) compares in physical units.
     assert( !isinf(areal_density) );
     if( (areal_density <= -1.0e-3 * PhysicalUnits::g_per_cm2)
         || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0 - got value " );
 
-    if( areal_density < 0.0 )
-      areal_density = fmax(areal_density, 0.0);
-
     assert( mu >= 0.0 );
     if( mu < 0.0 )
       mu = fmax(mu, 0.0);
 
-    assert( areal_density >= 0.0 );
+    assert( areal_density >= -1.0e-3 * PhysicalUnits::g_per_cm2 );
 
     //The simple computation to handel self-attenuation would be:
     //  answer *= (1.0 - exp(-mu * areal_density)) / (mu * areal_density);
@@ -362,28 +361,26 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = ext_atten.areal_density;
 
-    // See note in self-atten branch above: threshold is in PhysicalUnits;
-    //  -1e-3 g/cm^2 is comfortably above the bounds-loosening of -1e-5 g/cm^2,
-    //  so the cost function does not return false on normal optimizer
-    //  exploration near the loosened bound.
+    // See note in self-atten branch above: we do NOT clamp `areal_density` to >= 0 (that would zero
+    //  the Jet gradient across the deliberately-loosened bound margin - A2); e^{-mu*AD} is smooth for
+    //  the tiny negative AD reachable inside the margin, and the converged value is clamped >= 0 at
+    //  extraction. The -1e-3 g/cm^2 throw (in PhysicalUnits, below the -1e-5 loosening) only catches
+    //  grossly negative values.
     assert( !isinf(areal_density) );
     if( (areal_density <= -1.0e-3 * PhysicalUnits::g_per_cm2)
         || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
 
-    if( areal_density < 0.0 )
-      areal_density = fmax(areal_density, 0.0);
-
     assert( mu >= 0.0 );
     if( mu < 0.0 )
       mu = fmax(mu, 0.0);
 
-    // Local areal_density was clamped to >= 0 above; original ext_atten value
-    //  may be slightly negative due to bounds-loosening.
-    assert( areal_density >= 0.0 );
+    assert( areal_density >= -1.0e-3 * PhysicalUnits::g_per_cm2 );
 
-    if( (mu >= 0.0) && (areal_density >= 0.0) )
-      answer *= exp( -mu * areal_density );
+    // Apply unconditionally: `mu >= 0` (clamped above) and `AD >= -1e-5` is a valid exponent.
+    //  Guarding on `areal_density >= 0` would skip the term for AD in the loosened margin and
+    //  re-zero the external-AD gradient there.
+    answer *= exp( -mu * areal_density );
     
     assert( !isnan(answer) && !isinf(answer) );
   }//for( size_t i = 0; i < external_attens.size(); ++i )
