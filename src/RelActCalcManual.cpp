@@ -1004,16 +1004,22 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         const auto pos = std::find( begin(mod_isotopes), end(mod_isotopes), iso );
         if( pos == end(mod_isotopes) )  
         {
-          m_rel_act_norms[i] = -1.0;
+          // This nuclide was removed from the free fit because it is constrained.  Act-ratio-controlled
+          //  nuclides keep the -1.0 sentinel; a *fixed* (lower==upper) mass-fraction constraint is also removed
+          //  here, but takes a norm of 1.0 - the same value range mass-fraction constraints get, and the value
+          //  release already settles on via the normalization loop below - so the norm invariant in
+          //  mass_fraction() stays consistent.  (Range constraints are not removed from mod_isotopes, so any
+          //  mass-fraction-constrained nuclide reaching this branch is necessarily a fixed one.)
+          bool is_mass_constrained = false;
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+          for( size_t j = 0; !is_mass_constrained && (j < m_input.mass_fraction_constraints.size()); ++j )
+            is_mass_constrained = (m_input.mass_fraction_constraints[j].m_nuclide == iso);
+#endif
+          m_rel_act_norms[i] = is_mass_constrained ? 1.0 : -1.0;
 #ifndef NDEBUG
-          bool has_constrained = false;
+          bool has_constrained = is_mass_constrained;
           for( size_t j = 0; !has_constrained && (j < m_input.act_ratio_constraints.size()); ++j )
             has_constrained = (m_input.act_ratio_constraints[j].m_constrained_nuclide == iso);
-
-#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-          for( size_t j = 0; !has_constrained && (j < m_input.mass_fraction_constraints.size()); ++j )
-            has_constrained = (m_input.mass_fraction_constraints[j].m_nuclide == iso);
-#endif
           assert( has_constrained );
 #endif
         }else
@@ -3160,20 +3166,13 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
     if( !was_constrolled )
     {
 #ifndef NDEBUG
-      bool was_fixed_mass_frac = false, was_mass_frac_constrained = false;
-      for( const MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
-      {
-        if( constraint.m_nuclide == act.m_isotope )
-        {
-          was_mass_frac_constrained = true;
-          was_fixed_mass_frac = (constraint.m_mass_fraction_lower == constraint.m_mass_fraction_upper);
-          assert( norm_for_index == 1.0 );
-          break;
-        }
-      }//
-
-      assert( !was_mass_frac_constrained || was_fixed_mass_frac || (norm_for_index == 1.0) );
-      assert( !was_fixed_mass_frac || (norm_for_index == -1.0) );
+      // Every mass-fraction-constrained nuclide - fixed or range - carries a norm of 1.0 here; act-ratio
+      //  controlled nuclides are handled in the `was_constrolled` branch above, not this one.  (The norm
+      //  cancels for the central mass fraction below; it only scales the +-num_sigma perturbation.)
+      bool was_mass_frac_constrained = false;
+      for( size_t j = 0; !was_mass_frac_constrained && (j < m_input.mass_fraction_constraints.size()); ++j )
+        was_mass_frac_constrained = (m_input.mass_fraction_constraints[j].m_nuclide == act.m_isotope);
+      assert( !was_mass_frac_constrained || (norm_for_index == 1.0) );
 #endif
     }//if( !was_constrolled )
 

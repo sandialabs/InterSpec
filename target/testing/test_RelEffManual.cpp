@@ -22,6 +22,7 @@
  */
 #include "InterSpec_config.h"
 
+#include <set>
 #include <string>
 #include <iostream>
 
@@ -37,6 +38,8 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+
+#include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
@@ -173,7 +176,11 @@ BOOST_AUTO_TEST_CASE( FitRelActManualToKnown )
   calc_raw_input.state = guiState;
   calc_raw_input.fore_spec = meas;
   //calc_raw_input.back_spec = ...;
-  calc_raw_input.peaks = *orig_peaks;
+  // prepare_calc_input expects peaks already filtered to nuclide/reaction-assigned, manual-rel-eff peaks
+  //  (normally done by get_raw_info_for_calc_input()); the file's peak list can include others, so filter here.
+  for( const shared_ptr<const PeakDef> &p : *orig_peaks )
+    if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
+      calc_raw_input.peaks.push_back( p );
   calc_raw_input.detector = det;
   
   RelActCalcManual::RelEffInput calc_input;
@@ -220,3 +227,103 @@ BOOST_AUTO_TEST_CASE( FitRelActManualToKnown )
   
   BOOST_CHECK( fabs(lls_enrich - ceres_enrich) < 0.0001 );
 }//BOOST_AUTO_TEST_CASE( FitRelActManualToKnown )
+
+
+// Regression test for fixed mass-fraction constraints in the manual solver.  A *fixed* (lower==upper)
+// mass-fraction constraint removes its nuclide from the free fit; the solver previously left such a nuclide
+// with the act-ratio -1.0 norm sentinel while its own asserts (functor ctor / mass_fraction()) expected 1.0 -
+// contradictory invariants that aborted assert-enabled builds.  Fixed mass-fraction nuclides now carry norm
+// 1.0 (matching range constraints and release behavior).  spec184 has fitted peaks for U232/U234/U235/U238,
+// so pinning U234 (other U isotopes free) exercises the path.
+BOOST_AUTO_TEST_CASE( FitRelActManualFixedMassFractionConstraint )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+
+  const string test_n42_file = SpecUtils::append_path( g_test_file_dir, "manual_rel_eff/spec184_235U_12.9543.n42" );
+  BOOST_REQUIRE( SpecUtils::is_file(test_n42_file) );
+
+  SpecMeas infile;
+  BOOST_REQUIRE( infile.load_file( test_n42_file, SpecUtils::ParserType::Auto ) );
+
+  const std::shared_ptr<const DetectorPeakResponse> det = infile.detector();
+  BOOST_REQUIRE( det );
+
+  const shared_ptr<deque<shared_ptr<const PeakDef>>> orig_peaks = infile.peaks( {1} );
+  BOOST_REQUIRE( orig_peaks && orig_peaks->size() );
+
+  BOOST_REQUIRE( infile.detector_names().size() == 1 );
+  const shared_ptr<const SpecUtils::Measurement> meas = infile.measurement( 1, infile.detector_names()[0] );
+  BOOST_REQUIRE( meas );
+
+  const rapidxml::xml_document<char> * const guiStateXml = infile.relActManualGuiState();
+  BOOST_REQUIRE( guiStateXml );
+
+  RelActManualGui::RelActCalcRawInput calc_raw_input;
+  auto guiState = make_shared<RelActManualGui::GuiState>();
+  BOOST_REQUIRE_NO_THROW( guiState->deSerialize( guiStateXml->first_node() ) );
+  calc_raw_input.state = guiState;
+  calc_raw_input.fore_spec = meas;
+  // prepare_calc_input expects peaks already filtered to nuclide/reaction-assigned, manual-rel-eff peaks
+  //  (normally done by get_raw_info_for_calc_input()); the file's peak list can include others, so filter here.
+  for( const shared_ptr<const PeakDef> &p : *orig_peaks )
+    if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
+      calc_raw_input.peaks.push_back( p );
+  calc_raw_input.detector = det;
+
+  RelActCalcManual::RelEffInput calc_input;
+  BOOST_REQUIRE_NO_THROW( RelActManualGui::prepare_calc_input( calc_raw_input, calc_input ) );
+
+  // The constraint's m_specific_activities must list every nuclide of the constrained element present in the
+  //  fit (including the constrained one), so gather the uranium isotopes actually in the problem's peaks.
+  std::set<std::string> u_isotopes;
+  for( const RelActCalcManual::GenericPeakInfo &peak : calc_input.peaks )
+  {
+    for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+    {
+      const SandiaDecay::Nuclide * const n = db->nuclide( line.m_isotope );
+      if( n && (n->atomicNumber == 92) )
+        u_isotopes.insert( line.m_isotope );
+    }
+  }
+  BOOST_REQUIRE_MESSAGE( u_isotopes.count("U234"), "spec184 problem has no U234 peak to constrain." );
+  BOOST_REQUIRE_MESSAGE( u_isotopes.size() >= 2, "Need >=2 U isotopes so at least one stays free." );
+
+  // First solve UNCONSTRAINED, to learn U234's natural mass fraction (which we then pin) and the free-isotope
+  //  result a consistent fixed-constraint solve should reproduce.
+  RelActCalcManual::RelEffSolution unc_sol;
+  BOOST_REQUIRE_NO_THROW( unc_sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
+  BOOST_REQUIRE( unc_sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+  const double u234_natural = unc_sol.mass_fraction( "U234" );
+  const double u235_unconstrained = unc_sol.mass_fraction( "U235" );
+  BOOST_REQUIRE_MESSAGE( (u234_natural > 1.0e-4) && (u234_natural < 0.5),
+                         "Unexpected unconstrained U234 mass fraction " << u234_natural );
+
+  // Pin U234 at the value it already wants and re-solve; fixing a nuclide at its natural value must not move
+  //  the free isotopes.  (Without the fix, this solve aborts in debug builds via contradictory norm asserts.)
+  RelActCalcManual::RelEffInput constrained_input = calc_input;
+  RelActCalcManual::MassFractionConstraint u234_fixed;
+  u234_fixed.m_nuclide = "U234";
+  u234_fixed.m_mass_fraction_lower = u234_natural;
+  u234_fixed.m_mass_fraction_upper = u234_natural;
+  for( const std::string &iso : u_isotopes )
+    u234_fixed.m_specific_activities[iso] = db->nuclide(iso)->activityPerGram();
+  constrained_input.mass_fraction_constraints.push_back( u234_fixed );
+
+  RelActCalcManual::RelEffSolution con_sol;
+  BOOST_REQUIRE_NO_THROW( con_sol = RelActCalcManual::solve_relative_efficiency( constrained_input ) );
+  BOOST_CHECK_MESSAGE( con_sol.m_status == RelActCalcManual::ManualSolutionStatus::Success,
+                       "Manual solve with a fixed mass-fraction constraint did not succeed." );
+  if( con_sol.m_status != RelActCalcManual::ManualSolutionStatus::Success )
+    return;
+
+  // U234 must decode back to its pinned value, and U235 must match the unconstrained result.
+  BOOST_CHECK_MESSAGE( fabs(con_sol.mass_fraction("U234") - u234_natural) < 1.0e-3,
+                       "Fixed U234 mass fraction " << con_sol.mass_fraction("U234")
+                       << " is not pinned at its natural value " << u234_natural );
+  BOOST_CHECK_MESSAGE( fabs(con_sol.mass_fraction("U235") - u235_unconstrained) < 0.02,
+                       "U235 moved from " << u235_unconstrained << " (unconstrained) to "
+                       << con_sol.mass_fraction("U235") << " when U234 was pinned at its natural value." );
+}//BOOST_AUTO_TEST_CASE( FitRelActManualFixedMassFractionConstraint )

@@ -151,6 +151,13 @@ add_test( NAME TRelActCalcAuto_EnergyCal_imp
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_MassFracConstraint test_RelActCalcAuto_MassFracConstraint.cpp )
+target_link_libraries( test_RelActCalcAuto_MassFracConstraint PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_MassFracConstraint
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_MassFracConstraint> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_XRayWidthServer test_XRayWidthServer.cpp )
 target_link_libraries( test_XRayWidthServer PRIVATE InterSpecLib )
 add_test( NAME TXRayWidthServer

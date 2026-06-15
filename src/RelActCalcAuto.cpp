@@ -4417,39 +4417,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               assert( mass_frac_constraint->nuclide == RelActCalcAuto::nuclide(nuc.source) );
               is_constrained = true;
 
-              //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper values
+              //Rel Act paramater is constrained within [1.0, 2.0] (= sm_activity_par_offset + [0,1]), so the
+              //  mass fraction interpolates between the lower and upper constraint values.
               //  If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
               //  solution gives the sum of all the mass fractions to be greater than 1.0, we will just return a say
               //  that particular set of parameters is invalid, even though we could maybe do something more intelligent.
 
               //TODO: To model mass-fraction constraints, should switch to a paramter that gives total RelAct of an element, and then use a ceres::Manifold to make all the nuclides of the element add up to 1.0 (eg, on a surface).
 
-              parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
-              if( mass_frac_constraint->lower_mass_fraction != mass_frac_constraint->upper_mass_fraction )
-              {
-                try
-                {
-                  const double mf = manual_solution.mass_fraction( mass_frac_constraint->nuclide->symbol );
-                  const double frac = (mf - mass_frac_constraint->lower_mass_fraction) / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
-                  assert( frac > -0.0002 && frac < 1.0002 );
-                  const double clamped_frac = std::min( 1.0, std::max( frac, 0.0 ) );
-                  parameters[act_index] = RelActAutoCostFcn::sm_activity_par_offset + 0.5*clamped_frac;
-
-                  cerr << "\n\nStill having trouble navigating to global minima\n\nHacked mass fraction to be halfway in the range it should! - From " << frac << " to " << 0.5*clamped_frac << "\n\n" << endl;
-
-#pragma message("Still having trouble navigating to global minima for RelActAuto. Hacked mass fraction to be halfway in the range it should! - should undo this (but seems to help for some problems).")
-                }catch( std::exception & )
-                {
-                  cerr << "Warning: failed to get initial manual solution rel-eff fraction" << endl;
-                }
-              }//if( mass_frac_constraint->lower_mass_fraction != mass_frac_constraint->upper_mass_fraction )
-
+              // This (manual-estimate) pass sets the constrained nuclide up once; the second pass below leaves it
+              //  alone (it only sets up constrained nuclides when this manual estimate did not run).  A former
+              //  hack here biased the start, then the second pass overwrote it with the window upper bound anyway
+              //  (review item A5) - both are gone; the start now comes from the manual solution.
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
 
-              //If the lower and upper mass fractions are the same, we can just fix the rel act to 1.0
+              //If the lower and upper mass fractions are the same, we can just fix the rel act (the parameter
+              //  value is irrelevant - the (upper-lower) factor in the mass-fraction decode is zero).
               if( fabs(mass_frac_constraint->lower_mass_fraction - mass_frac_constraint->upper_mass_fraction)
                   <= 1.0E-6*std::max(mass_frac_constraint->lower_mass_fraction, mass_frac_constraint->upper_mass_fraction) )
               {
+                parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
                 cout << "Fixing act_index=" << act_index << ", " << mass_frac_constraint->nuclide << ", for mass fraction constraint" << endl;
                 assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
                 constant_parameters.push_back( static_cast<int>(act_index) );
@@ -4457,6 +4444,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               {
                 lower_bounds[act_index] = RelActAutoCostFcn::sm_activity_par_offset;
                 upper_bounds[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
+
+                // Start at the manual solution's mass-fraction position within the window, but kept strictly
+                //  inside the bounds: Ceres' projected-gradient step behaves poorly for a parameter that starts
+                //  exactly on a bound (and the manual estimate can land on/over one, e.g. a trace isotope at ~0).
+                //  Fall back to the window midpoint if the manual mass fraction is unavailable.
+                const double eps = 1.0E-3;
+                double start_frac_in_window = 0.5;  // window midpoint fallback if no manual mass fraction
+                try
+                {
+                  const double mf = manual_solution.mass_fraction( mass_frac_constraint->nuclide->symbol );
+                  const double frac = (mf - mass_frac_constraint->lower_mass_fraction)
+                                      / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
+                  if( !IsNan(frac) && !IsInf(frac) )
+                    start_frac_in_window = std::min( 1.0 - eps, std::max( eps, frac ) );
+                }catch( std::exception & )
+                {
+                  cerr << "Warning: no initial manual mass fraction for " << mass_frac_constraint->nuclide->symbol
+                       << "; starting at window midpoint." << endl;
+                }
+                parameters[act_index] = RelActAutoCostFcn::sm_activity_par_offset + start_frac_in_window;
               }
             }//if( mass_frac_constraint )
 
@@ -4789,13 +4796,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint = *src_mass_frac_constr;
               assert( (constraint.nuclide == nuc_nuclide) && nuc_nuclide );
 
-              parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
+              // Set a mass-fraction-constrained nuclide up exactly once.  If the manual estimate succeeded, the
+              //  first nuclide pass already did it (manual-based, in-bounds start, bounds, and constant-parameter
+              //  status) - leave it untouched.  Only when the manual estimate failed do we set it up here, at the
+              //  window midpoint (strictly off the bounds; the sum>1 rescale below keeps it interior when several
+              //  constraints overlap).
+              if( succesfully_estimated_re_and_ra )
+                continue;
+
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
-              cout << "Setting par " << act_index << " to " << (1.0 + RelActAutoCostFcn::sm_activity_par_offset) << " for " << nuc.name() << endl;
+              parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
 
               if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
               {
-                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
                 assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
                 constant_parameters.push_back( static_cast<int>(act_index) );
               }else
@@ -4928,7 +4941,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           const SandiaDecay::Nuclide *nuc = constraint.nuclide;
           const size_t act_index = cost_functor->nuclide_parameter_index( nuc, re_eff_index );
-          const double starting_dist = parameters[act_index] - 0.5;
+          // The activity parameter encodes the position within the window as (param - sm_activity_par_offset);
+          //  decode with the offset (1.0), not 0.5, so this matches the rescale/check below (`:5015`-`:5019`)
+          //  and the eval-time decode (`:8138`,`:8168`).  Using 0.5 here over-counts the starting mass
+          //  fraction by 0.5*(upper-lower), which spuriously triggered the sum>1 rescale and its assert.
+          const double starting_dist = parameters[act_index] - RelActAutoCostFcn::sm_activity_par_offset;
 
           const double lower_frac = constraint.lower_mass_fraction;
           const double upper_frac = constraint.upper_mass_fraction;
@@ -4957,16 +4974,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             throw std::logic_error( "Mass fraction constraint sums to over 1 - please fix `RelEffCurveInput::check_nuclide_constraints()` to catch this." );
 
           const double fixed_fraction = elements_fixed_mass_frac[atomic_number];
+
+          // `lower_allowed_frac` (used by the feasibility check above) is the sum of *all* lowers, but this
+          //  rescale only shrinks the *range* (lower!=upper) constraints - so the target and the reduction
+          //  fraction must be expressed in terms of the range-only lower sum.  Omitting this `- fixed_fraction`
+          //  over-counts the lower bound by `fixed_fraction`, which makes the denominator below too small (a
+          //  wrong / over-reduced start in release, and a tripped consistency assert in debug) whenever an
+          //  element mixes a fixed and a range mass-fraction constraint.
+          const double lower_allowed_var_frac = lower_allowed_frac - fixed_fraction;
           const double initial_variable_amount = starting_mass_frac - fixed_fraction;
-          const double target_var_frac = 0.5*((1.0 - fixed_fraction) + lower_allowed_frac);  //halfway between the smallest and largest amount allowed
+          const double target_var_frac = 0.5*((1.0 - fixed_fraction) + lower_allowed_var_frac);  //halfway between the smallest and largest amount allowed
           const double amount_need_reduced = initial_variable_amount - target_var_frac;
-          const double frac_variable_reduce = amount_need_reduced / (initial_variable_amount - lower_allowed_frac);
+          const double frac_variable_reduce = amount_need_reduced / (initial_variable_amount - lower_allowed_var_frac);
           const double updated_variable_frac = initial_variable_amount - amount_need_reduced;
 
           //Example starting mass fraction 1.25, with 0.5 fixed, and lowest variable amount of 0.1
           //  fixed_fraction = 0.5
           //  starting_mass_frac = 1.25
-          //  lower_allowed_frac = 0.1
+          //  lower_allowed_frac = 0.6   (0.5 fixed + 0.1 range-constraint lower)
+          //  lower_allowed_var_frac = 0.6 - 0.5 = 0.1
           //  initial_variable_amount = 1.25 - 0.5 = 0.75
           //  target_var_frac = 0.5*((1.0 - 0.5) + 0.1) = 0.3;
           //  amount_need_reduced = 0.75 - 0.3 = 0.45;
