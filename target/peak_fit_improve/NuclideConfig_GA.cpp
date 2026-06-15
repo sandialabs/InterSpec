@@ -36,6 +36,9 @@
 #include <algorithm>
 #include <functional>
 
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -192,6 +195,11 @@ std::vector<PrecomputedNuclideData> precompute_nuclide_data(
 
   cout << "Precomputing auto-search peaks for " << srcs_info.size() << " spectra..." << endl;
 
+  // First, cheaply build up the entries (resolve sources, detector type, etc.),
+  // skipping any that cannot be resolved.  The expensive search_for_peaks calls
+  // are deferred and run in parallel below.  `result` is fully populated here and
+  // never resized afterwards, so the worker tasks can safely write into their
+  // own slot by index.
   for( size_t i = 0; i < srcs_info.size(); ++i )
   {
     const DataSrcInfo &info = srcs_info[i];
@@ -230,43 +238,63 @@ std::vector<PrecomputedNuclideData> precompute_nuclide_data(
     pd.peak_fit_prefs = std::make_shared<PeakFitDetPrefs>();
     pd.peak_fit_prefs->m_det_type = pd.det_type;
 
-    const bool singleThreaded = false;
-    std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> dummy_origpeaks;
-
-    // The expensive call - done once
-    pd.auto_search_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks(
-      pd.foreground, pd.drf, dummy_origpeaks, singleThreaded, pd.peak_fit_prefs );
-
-    // Background auto-search peaks for the GA background-false-positive penalty.
-    // Gated on sm_do_background_fit_trial (CLI flag) - default off, so we skip
-    // the expensive bg auto-search entirely unless the user opted in.  When
-    // enabled we still only compute for entries that have a long_background
-    // and at least one non-NORM-like source (otherwise the penalty path is a
-    // no-op).
-    if( sm_do_background_fit_trial && src.long_background )
-    {
-      bool any_non_norm = false;
-      for( const RelActCalcAuto::SrcVariant &s : pd.sources )
-      {
-        if( !FitPeaksForNuclides::is_norm_like_for_ga( s ) )
-        {
-          any_non_norm = true;
-          break;
-        }
-      }
-
-      if( any_non_norm )
-      {
-        pd.background_auto_search_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks(
-          src.long_background, pd.drf, dummy_origpeaks, singleThreaded, pd.peak_fit_prefs );
-      }
-    }
-
     result.push_back( std::move( pd ) );
-
-    if( ((i + 1) % 10) == 0 || (i + 1) == srcs_info.size() )
-      cout << "  Precomputed " << (i + 1) << " of " << srcs_info.size() << " spectra" << endl;
   }//for( size_t i = 0; i < srcs_info.size(); ++i )
+
+  // Run the expensive search_for_peaks calls in parallel - one task per spectrum,
+  // using the same worker count as the GA optimization.  Each task searches
+  // single-threaded so we don't oversubscribe the CPU (num_threads * internal
+  // search threads).
+  boost::asio::thread_pool pool( PeakFitImprove::sm_num_optimization_threads );
+  std::atomic<size_t> num_completed{ 0 };
+  const size_t num_total = result.size();
+
+  for( size_t idx = 0; idx < num_total; ++idx )
+  {
+    boost::asio::post( pool, [idx, num_total, &result, &num_completed](){
+      PrecomputedNuclideData &pd = result[idx];
+
+      const bool singleThreaded = true;
+      std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> dummy_origpeaks;
+
+      // The expensive call - done once
+      pd.auto_search_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks(
+        pd.foreground, pd.drf, dummy_origpeaks, singleThreaded, pd.peak_fit_prefs );
+
+      // Background auto-search peaks for the GA background-false-positive penalty.
+      // Gated on sm_do_background_fit_trial (CLI flag) - default off, so we skip
+      // the expensive bg auto-search entirely unless the user opted in.  When
+      // enabled we still only compute for entries that have a long_background
+      // and at least one non-NORM-like source (otherwise the penalty path is a
+      // no-op).
+      const std::shared_ptr<const SpecUtils::Measurement> long_background
+        = pd.src_info->src_info.long_background;
+      if( sm_do_background_fit_trial && long_background )
+      {
+        bool any_non_norm = false;
+        for( const RelActCalcAuto::SrcVariant &s : pd.sources )
+        {
+          if( !FitPeaksForNuclides::is_norm_like_for_ga( s ) )
+          {
+            any_non_norm = true;
+            break;
+          }
+        }
+
+        if( any_non_norm )
+        {
+          pd.background_auto_search_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks(
+            long_background, pd.drf, dummy_origpeaks, singleThreaded, pd.peak_fit_prefs );
+        }
+      }//if( sm_do_background_fit_trial && long_background )
+
+      const size_t done = num_completed.fetch_add( 1, std::memory_order_relaxed ) + 1;
+      if( (done % 10) == 0 || done == num_total )
+        cout << "  Precomputed " << done << " of " << num_total << " spectra" << endl;
+    } );
+  }//for( size_t idx = 0; idx < num_total; ++idx )
+
+  pool.join();
 
   cout << "Precomputation complete: " << result.size() << " spectra ready for GA evaluation." << endl;
 
