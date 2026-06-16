@@ -997,7 +997,15 @@ struct FloatingPeakResult
 
   double amplitude;
   double amplitude_uncert;
+
+  /** The fit peak FWHM, in keV.
+
+   Note: even when #FloatingPeak::release_fwhm is true (where the fit parameter is a
+   dimensionless multiplier on the functional FWHM), this value is the resulting FWHM in keV.
+   */
   double fwhm;
+
+  /** The uncertainty of #fwhm, in keV; a value of -1 indicates it was not evaluated. */
   double fwhm_uncert;
 };//struct FloatingPeakResult
 
@@ -1470,10 +1478,19 @@ struct RelActAutoSolution
    */
   constexpr static double sm_energy_par_offset = 1.0;
   
-  /** We will allow the energy offset to vary by the minimum of +-15 keV or `sm_energy_offset_range_fwhm` times lower energy FWHM . This is arbitrarily chosen. */
-  constexpr static double sm_energy_offset_range_keV = 15.0;  // Allow +-15 keV offset adjust
-  /** If we are off by more than 1 FWHM on the offset, we are likely to be falling into some false minima - this has not been investigated. */
-  constexpr static double sm_energy_offset_range_fwhm = 1.0;
+  /** We will allow the energy offset to vary by the minimum of +-10 keV, or the maximum of
+   `sm_energy_offset_range_floor_keV` and `sm_energy_offset_range_fwhm` times the lower-energy FWHM.
+   The +-10 keV cap balances two concerns: a much larger offset lets the fit shift the energy calibration
+   far enough to line peaks up with a nuclide that isn't actually in the spectrum (biasing toward fitting
+   the wrong nuclide), but too tight a cap won't cover real low-resolution-detector calibration drift.
+   (For HPGe this cap is well above the FWHM-based limit, so it only constrains low-res detectors.) */
+  constexpr static double sm_energy_offset_range_keV = 10.0;  // Allow +-10 keV offset adjust
+  /** If we are off by more than a couple FWHM on the offset, we are likely to be falling into some
+   false minima - this has not been investigated. */
+  constexpr static double sm_energy_offset_range_fwhm = 2.0;
+  /** A floor on the offset allowance: for high-resolution detectors 2 FWHM can be sub-keV, which is
+   less than routine field calibration drift, so never allow less than this many keV of offset. */
+  constexpr static double sm_energy_offset_range_floor_keV = 2.0;
   
   /** We will allow the energy gain to vary by +-20 keV, or 4 FWHM - whichever is less, at the right side of the spectrum.
    This is arbitrarily chosen.

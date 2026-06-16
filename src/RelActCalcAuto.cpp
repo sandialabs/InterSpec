@@ -3310,14 +3310,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double lowest_energy = cost_functor->m_energy_ranges.front().lower_energy;
       const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
 
-      // Estimate FWHM at lowest, highest, and midpoint energies
-      const double midpoint_energy = 0.5 * (lowest_energy + highest_energy);
-      double fwhm_at_lowest = 10.0, fwhm_at_highest = 10.0, fwhm_at_midpoint = 10.0;
+      // Estimate FWHM at the lowest and highest energies (used to size the offset and gain bounds).
+      double fwhm_at_lowest = 10.0, fwhm_at_highest = 10.0;
       if( solution.m_drf && solution.m_drf->hasResolutionInfo() )
       {
         fwhm_at_lowest = solution.m_drf->peakResolutionFWHM( static_cast<float>(lowest_energy) );
         fwhm_at_highest = solution.m_drf->peakResolutionFWHM( static_cast<float>(highest_energy) );
-        fwhm_at_midpoint = solution.m_drf->peakResolutionFWHM( static_cast<float>(midpoint_energy) );
       }else
       {
         float min_sigma, max_sigma;
@@ -3326,9 +3324,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         expected_peak_width_limits( static_cast<float>(highest_energy), highres, spectrum, min_sigma, max_sigma );
         fwhm_at_highest = max_sigma * PhysicalUnits::fwhm_nsigma;
-
-        expected_peak_width_limits( static_cast<float>(midpoint_energy), highres, spectrum, min_sigma, max_sigma );
-        fwhm_at_midpoint = max_sigma * PhysicalUnits::fwhm_nsigma;
       }
 
       // Completely arbitrary
@@ -3352,8 +3347,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
         const double limit_by_fwhm = fwhm_at_lowest * RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_fwhm;
-        const double offset_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV, limit_by_fwhm );
-        
+        const double floored_limit = (std::max)( RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_floor_keV, limit_by_fwhm );
+        const double offset_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV, floored_limit );
+
         lower_bounds[0] = offset - (offset_limit/cal_mult);
         upper_bounds[0] = offset + (offset_limit/cal_mult);
       }else
@@ -3366,9 +3362,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
-        const double limit_by_fwhm = fwhm_at_midpoint * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_fwhm;
+        // The gain parameter is the keV shift at the far right of the *spectrum* (highest channel),
+        //  but we want the achievable shift at the highest ROI to be ~`sm_energy_gain_range_fwhm`
+        //  FWHM there.  The shift scales ~linearly with channel (≈ energy), so scale the FWHM-based
+        //  limit by spectrum_max/highest_ROI to express it as a far-right-of-spectrum gain.  The
+        //  `max(1.0,...)` keeps the bound from ever becoming tighter than the FWHM-at-highest sizing.
+        const double spectrum_max_energy = spectrum->gamma_energy_max();
+        const double gain_scale = (highest_energy > 10.0)
+                                  ? (std::max)( 1.0, spectrum_max_energy / highest_energy ) : 1.0;
+        const double limit_by_fwhm = fwhm_at_highest
+                                     * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_fwhm
+                                     * gain_scale;
         double gain_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV, limit_by_fwhm );
-        
+
         lower_bounds[1] = offset - (gain_limit/cal_mult);
         upper_bounds[1] = offset + (gain_limit/cal_mult);
       }else
@@ -6998,23 +7004,29 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         peak.original_spectrum_cal_energy = fp.energy;
 
       peak.amplitude = parameters[amp_index] * area_multiple;
-      peak.fwhm = parameters[fwhm_index];
+
+      // The functional FWHM is evaluated at the true gamma energy, and returned in keV.
+      // For Known energies, fp.energy is already the true gamma energy.
+      // For ObservedInSpectrum, we need to convert from observed position to true energy.
+      const double true_energy
+        = (fp.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known)
+          ? fp.energy
+          : cost_functor->un_apply_energy_cal_adjustment( fp.energy, parameters );
+      const double functional_fwhm = cost_functor->fwhm( true_energy, parameters );
 
       if( !fp.release_fwhm )
       {
-        // For Known energies, fp.energy is already the true gamma energy.
-        // For ObservedInSpectrum, we need to convert from observed position to true energy.
-        const double true_energy
-          = (fp.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known)
-            ? fp.energy
-            : cost_functor->un_apply_energy_cal_adjustment( fp.energy, parameters );
-        peak.fwhm = cost_functor->fwhm( true_energy, parameters );
-        
+        peak.fwhm = functional_fwhm;
+
         // TODO: implement evaluating uncertainty of FWHM, given covariance.
         peak.fwhm_uncert = -1;
       }else
       {
-        peak.fwhm_uncert = uncertainties[fwhm_index];
+        // When the FWHM is released, parameters[fwhm_index] is a dimensionless multiplier on
+        //  the functional FWHM (see `peaks_for_energy_range_imp`); convert to keV here so that
+        //  FloatingPeakResult::fwhm / ::fwhm_uncert are in keV, like all consumers expect.
+        peak.fwhm = parameters[fwhm_index] * functional_fwhm;
+        peak.fwhm_uncert = uncertainties[fwhm_index] * functional_fwhm;
         if( IsNan(peak.fwhm_uncert) )
         {
           solution.m_warnings.push_back( "Variance for floating peak at " + std::to_string(peak.energy)
@@ -9749,7 +9761,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }
 
     // Check adjustments are near the limits we placed
-    // Offset: sm_energy_par_offset ± (sm_energy_offset_range_keV/sm_energy_cal_multiple) = 1.0 ± 0.15 = [0.85, 1.15]
+    // Offset: sm_energy_par_offset ± (sm_energy_offset_range_keV/sm_energy_cal_multiple) = 1.0 ± 0.10 = [0.90, 1.10]
     // Gain: sm_energy_par_offset ± (sm_energy_gain_range_keV/sm_energy_cal_multiple) = 1.0 ± 0.20 = [0.80, 1.20]
     // Quadratic: same as gain = [0.80, 1.20]
     constexpr double offset_lower = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset
