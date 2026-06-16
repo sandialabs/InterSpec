@@ -16,8 +16,8 @@ jobs:
       matrix:
         config: 
         - {
-            name: "Windows Latest MSVC-2022",
-            os: windows-latest,
+            name: "Windows 2022 MSVC-2022",
+            os: windows-2022,
             artifact: "windows_msvc2022.7z",
             build_type: "Release",
             cc: "cl",
