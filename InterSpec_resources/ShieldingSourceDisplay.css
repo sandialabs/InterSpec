@@ -317,3 +317,172 @@
   height: 16px;
   vertical-align: middle;
 }
+
+
+/* ============================================================
+   Activity/Shielding Fit redesign (Phase 2: per-nuclide cards)
+   ============================================================ */
+.ShieldingSourceDisplay .SourceNuclideDisplay
+{
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.ShieldingSourceDisplay .NucCardsHolder
+{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid #d2d2d8;
+  border-radius: 8px;
+  background: #f8f8fa;
+  padding: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ShieldingSourceDisplay .NucCard
+{
+  background: #fff;
+  border: 1px solid #e3e3e7;
+  border-radius: 9px;
+  padding: 9px 11px 8px;
+  box-shadow: 0 1px 2px rgba(20,20,30,.05);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ShieldingSourceDisplay .NucHead
+{
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.ShieldingSourceDisplay .NucName
+{
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.ShieldingSourceDisplay .NucHl
+{
+  font-size: 11px;
+  color: #86868f;
+  white-space: nowrap;
+}
+.ShieldingSourceDisplay .NucTag
+{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #76767e;
+  background: #f0f0f3;
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.ShieldingSourceDisplay .NucRow
+{
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.ShieldingSourceDisplay .NucRowLbl
+{
+  font-size: 11.5px;
+  color: #54545c;
+  white-space: nowrap;
+  width: 50px;
+  flex: 0 0 auto;
+}
+.ShieldingSourceDisplay .NucField
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+}
+.ShieldingSourceDisplay .NucField.NucFieldRo
+{
+  background: #f4f8ff;
+  color: #1c3a63;
+  border-color: #d4e2f7;
+}
+.ShieldingSourceDisplay .NucFitCb
+{
+  flex: 0 0 auto;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ShieldingSourceDisplay .NucMass
+{
+  font-size: 11px;
+  color: #86868f;
+  padding-left: 59px;
+  margin-top: -3px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.ShieldingSourceDisplay .NucT0
+{
+  color: #54545c;
+}
+.ShieldingSourceDisplay .NucProgeny
+{
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border-top: 1px dashed #e3e3e7;
+  padding-top: 7px;
+}
+.ShieldingSourceDisplay .NpLbl
+{
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #86868f;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.ShieldingSourceDisplay .NpList
+{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ShieldingSourceDisplay .NpChip
+{
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  background: #f6f4f0;
+  border: 1px solid #e3e3e7;
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+.ShieldingSourceDisplay .NpDaughter
+{
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.ShieldingSourceDisplay .NpEn
+{
+  font-size: 10.5px;
+  color: #86868f;
+}
+
+/* Peak-table nuclide cell: small color swatch + nuclide name */
+.ShieldingSourceDisplay .PeakNucCell .PeakSwatch
+{
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: middle;
+  border: 1px solid rgba(0,0,0,0.18);
+}

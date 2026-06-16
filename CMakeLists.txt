@@ -269,6 +269,7 @@ set(sources
     src/GammaInteractionCalc.cpp
     src/GroupBox.cpp
     src/ShieldingSourceDisplay.cpp
+    src/SourceFitNuclideDisplay.cpp
     src/ShieldingSourceDiagram.cpp
     src/ShieldingSourceFitCalc.cpp
     src/ShieldingSelect.cpp
@@ -397,6 +398,7 @@ set(headers
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h
+    InterSpec/SourceFitNuclideDisplay.h
     InterSpec/ShieldingSourceDiagram.h
     InterSpec/ShieldingSourceFitCalc.h
     InterSpec/ShieldingSelect.h

@@ -55,10 +55,13 @@
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WJavaScript.h>
+#include <Wt/WAny.h>
+#include <Wt/Utils.h>
 #include <Wt/WFileUpload.h>
 #include <Wt/Http/Response.h>
 #include <Wt/WSelectionBox.h>
 #include <Wt/WItemDelegate.h>
+#include <Wt/WAbstractItemDelegate.h>
 #include <Wt/Dbo/QueryModel.h>
 #include <Wt/WSuggestionPopup.h>
 #include <Wt/WRegExpValidator.h>
@@ -112,6 +115,7 @@
 #include "InterSpec/ShieldingSourceDiagram.h"
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/SourceFitNuclideDisplay.h"
 
 using namespace Wt;
 using namespace std;
@@ -557,8 +561,69 @@ namespace
       rapidxml::print( response.out(), doc, 0 );
     }
   };//class StringDownloadResource
-  
-  
+
+
+  /** Display delegate for the Activity/Shielding peaks table's "Nuclide" column: renders a small
+   colored swatch (the peak's line color, from PeakModel::kPeakLineColor) followed by the nuclide
+   text.  Display-only - nuclide assignment is edited in the main Peak Manager, and the design
+   shows the peaks here as read-only selection rows.
+   */
+  class PeakNuclideSwatchDelegate : public Wt::WAbstractItemDelegate
+  {
+    std::shared_ptr<PeakModel> m_peakModel;
+  public:
+    PeakNuclideSwatchDelegate( std::shared_ptr<PeakModel> peakModel )
+      : Wt::WAbstractItemDelegate(), m_peakModel( peakModel ){}
+
+    virtual std::unique_ptr<Wt::WWidget> update( Wt::WWidget *widget,
+                                                 const Wt::WModelIndex &index,
+                                                 Wt::WFlags<Wt::ViewItemRenderFlag> flags ) override
+    {
+      Wt::WText *text = dynamic_cast<Wt::WText *>( widget );
+      std::unique_ptr<Wt::WWidget> created;
+      if( !text )
+      {
+        auto t = std::make_unique<Wt::WText>();
+        t->setTextFormat( Wt::TextFormat::XHTML );
+        text = t.get();
+        created = std::move( t );
+      }//if( !text )
+
+      if( !index.isValid() )
+      {
+        text->setText( "" );
+        return created;
+      }
+
+      const std::string nuc = Wt::asString( index.data() ).toUTF8();
+
+      std::string colorCss;
+      if( m_peakModel )
+      {
+        const Wt::WModelIndex colIdx = m_peakModel->index( index.row(), PeakModel::kPeakLineColor );
+        const Wt::cpp17::any colAny = colIdx.isValid() ? m_peakModel->data( colIdx ) : Wt::cpp17::any();
+        if( colAny.has_value() )
+          colorCss = Wt::asString( colAny ).toUTF8();
+      }//if( m_peakModel )
+
+      std::string html;
+      if( !colorCss.empty() )
+        html += "<span class=\"PeakSwatch\" style=\"background:" + Wt::Utils::htmlEncode(colorCss) + "\"></span>";
+      html += Wt::Utils::htmlEncode( nuc );
+      text->setText( Wt::WString::fromUTF8(html) );
+
+      text->setToolTip( Wt::asString( index.data( Wt::ItemDataRole::ToolTip ) ) );
+
+      std::string sc = "PeakNucCell";
+      if( flags.test( Wt::ViewItemRenderFlag::Selected ) )
+        sc += " Wt-selected";
+      text->setStyleClass( Wt::WString::fromUTF8(sc) );
+
+      return created;
+    }//update(...)
+  };//class PeakNuclideSwatchDelegate
+
+
   /** Struct that saves the ShieldingSourceDisplay state to XML, when this struct is first constructed, and then again
    when the struct destructs; it then uses these two XML states to create a undo/redo point.
    If blocks all other undo/redo step insertions until this object is destructed.
@@ -2758,7 +2823,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     m_specViewer( specViewer ),
     m_sourceModel( nullptr ),
     m_peakView( nullptr ),
-    m_sourceView( nullptr ),
+    m_nuclideDisplay( nullptr ),
     m_detectorDisplay( nullptr ),
     m_distanceLabel( nullptr ),
     m_prevDistStr(),
@@ -2862,68 +2927,16 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_peakView->setColumnWidth( PeakModel::kUseForShieldingSourceFit, WLength(7,WLength::Unit::FontEx) );
 
 
-  auto nuclideDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::NuclideDelegate, true );
+  // The Nuclide column shows a peak-color swatch + the nuclide name (display only; nuclide
+  //  assignment is edited in the main Peak Manager).
+  auto nuclideDelegate = std::make_shared<PeakNuclideSwatchDelegate>( m_peakModel );
   m_peakView->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
 
 
-  m_sourceView = new RowStretchTreeView();
-  m_sourceView->setRootIsDecorated	(	false); //makes the tree look like a table! :)
-  
+  // The Nuclides column is a custom per-nuclide "card" display (replacing the old MVC table
+  //  view); SourceFitModel remains the single source of truth behind it.
+  m_nuclideDisplay = new SourceFitNuclideDisplay( m_sourceModel, m_peakModel, m_specViewer );
 
-  m_sourceView->setModel( std::shared_ptr<WAbstractItemModel>( m_sourceModel, []( WAbstractItemModel * ){} ) );
-  m_sourceView->setSortingEnabled( true );
-  m_sourceView->setAlternatingRowColors( true );
-  m_sourceView->addStyleClass( "SourceView" );
-
-  for( SourceFitModel::Columns col = SourceFitModel::Columns(0);
-       col < SourceFitModel::kNumColumns;
-       col = SourceFitModel::Columns(col+1) )
-  {
-    switch( col )
-    {
-      case SourceFitModel::kActivity:
-        //need make custom delegate
-      break;
-      case SourceFitModel::kAge:
-        //need to make custom delegate
-      break;
-
-      case SourceFitModel::kActivityUncertainty:
-      case SourceFitModel::kAgeUncertainty:
-        m_sourceView->setColumnHidden( static_cast<int>( col ), true );
-        break;
-        
-      case SourceFitModel::kFitActivity:
-      case SourceFitModel::kFitAge:
-      case SourceFitModel::kIsotope:
-      case SourceFitModel::kIsotopeMass:
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-      case SourceFitModel::kTruthActivity: case SourceFitModel::kTruthActivityTolerance:
-      case SourceFitModel::kTruthAge: case SourceFitModel::kTruthAgeTolerance:
-#endif
-      case SourceFitModel::kNumColumns:
-      break;
-    }//case( col )
-  }//for( loop over SourceFitModel columns )
-
-
-  m_sourceView->setColumnWidth( SourceFitModel::kActivity, WLength(150,WLength::Unit::Pixel) );
-  m_sourceView->setColumnWidth( SourceFitModel::kAge, WLength(9,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kFitAge, WLength(10,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kFitActivity, WLength(10,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kIsotope, WLength(9,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kIsotopeMass, WLength(9,WLength::Unit::FontEx) );
-
-  m_sourceView->setColumnWidth( SourceFitModel::kActivityUncertainty, WLength(10,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kAgeUncertainty, WLength(10,WLength::Unit::FontEx) );
-
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-  m_sourceView->setColumnWidth( SourceFitModel::kTruthActivity, WLength(13,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kTruthActivityTolerance, WLength(14,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kTruthAge, WLength(13,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kTruthAgeTolerance, WLength(14,WLength::Unit::FontEx) );
-#endif
-  
   
   m_detectorDisplay = new DetectorDisplay( m_specViewer, m_specViewer->fileManager()->model() );
   m_detectorDisplay->setInline( true );
@@ -3270,7 +3283,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   srcCap->addStyleClass( "SsdCap" );
   srcCap->setInline( false );
   sourceGrid->addWidget( std::unique_ptr<WWidget>(srcCap),       0, 0 );
-  sourceGrid->addWidget( std::unique_ptr<WWidget>(m_sourceView), 1, 0 );
+  sourceGrid->addWidget( std::unique_ptr<WWidget>(m_nuclideDisplay), 1, 0 );
   sourceGrid->setRowStretch(1, 1);
   sourceGrid->setColumnStretch(0, 1);
   sourceGrid->setContentsMargins( 0, 0, 0, 0 );
@@ -8819,7 +8832,7 @@ void ShieldingSourceDisplay::setWidgetStateForFitStarting()
   m_cancelfitModelButton->show();
   
   m_peakView->disable();
-  m_sourceView->disable();
+  m_nuclideDisplay->disable();
   m_optionsDiv->disable();
   m_distanceEdit->disable();
   m_useOffsetCheck->disable();
@@ -8846,7 +8859,7 @@ void ShieldingSourceDisplay::setWidgetStateForFitBeingDone()
   m_cancelfitModelButton->hide();
   
   m_peakView->enable();
-  m_sourceView->enable();
+  m_nuclideDisplay->enable();
   m_optionsDiv->enable();
   m_distanceEdit->enable();
   m_useOffsetCheck->enable();
@@ -8997,11 +9010,15 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
       ShieldingSourceFitCalc::ShieldingInfo::equalEnough( now_info, orig_info );
     }catch( std::exception &e )
     {
+      // This is a developer diagnostic (e.g., can trip for a shielding left with no material
+      //  selected); log it, but do NOT assert(0)/abort - crashing the whole app on a user's
+      //  "Perform Model Fit" is far worse than applying results, and release builds (where this
+      //  whole block is compiled out) proceed anyway.
       cerr << "shieldings changed: " << e.what() << endl;
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, "Programming Logic Error - shieldings changed - fit results when model was no longer valid." );
+      log_developer_error( __func__, ("shieldings changed during fit (continuing anyway): "
+                                      + string(e.what())).c_str() );
 #endif
-      assert( 0 );
     }//try / catch
   }//for( size_t i = 0; i < initial_shieldings.size(); ++i )
 #endif
@@ -9071,8 +9088,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
         continue;
       
       shared_ptr<const Material> usrmaterial = select->material();
-      assert( usrmaterial );
-      if( !usrmaterial )
+      if( !usrmaterial )  //e.g., a material shielding with no material selected - just skip it
         continue;
       
       const bool calcFitMassFrac = std::count(begin(massfracFitMaterials), end(massfracFitMaterials), usrmaterial);
@@ -9554,6 +9570,18 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
 {
   // Clear any prior message; fit warnings/errors are shown in the dedicated inline area.
   clearFitMessage();
+
+  // A material shielding with no material selected can't be fit (and trips internal
+  //  consistency checks); flag it and don't start the fit.
+  for( WWidget *w : m_shieldingSelects->children() )
+  {
+    ShieldingSelect * const select = dynamic_cast<ShieldingSelect *>( w );
+    if( select && !select->isGenericMaterial() && !select->material() )
+    {
+      setFitMessage( WString::tr("ssd-err-empty-material"), FitMsgType::Error );
+      return nullptr;
+    }
+  }//for( WWidget *w : m_shieldingSelects->children() )
 
   try
   {

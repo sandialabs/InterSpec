@@ -121,6 +121,7 @@ class SourceFitModel;
 class ShieldingSelect;
 class NativeFloatSpinBox;
 class ShieldingSourceDisplay;
+class SourceFitNuclideDisplay;
 
 
 /*
@@ -300,7 +301,11 @@ public:
                        Columns sortColumn, Wt::SortOrder order );
 
   void displayUnitsChanged( bool displayBq );
-  
+
+  /** Whether activities are currently displayed in curies (true) or becquerel (false).
+   Used by the custom nuclide-card display to format derived quantities consistently. */
+  bool displayCuries() const{ return m_displayCuries; }
+
   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &underlyingData() const;
   
   void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &data );
@@ -802,7 +807,8 @@ protected:
   SourceFitModel *m_sourceModel;
 
   Wt::WTreeView *m_peakView;
-  Wt::WTreeView *m_sourceView;
+  /** Custom per-nuclide card display (replaces the old MVC tree-view of m_sourceModel). */
+  SourceFitNuclideDisplay *m_nuclideDisplay;
 
   DetectorDisplay *m_detectorDisplay;
   

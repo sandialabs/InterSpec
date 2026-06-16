@@ -82,6 +82,17 @@
   <message id="ssd-tt-export-model">Export / download the current model as an XML config.</message>
   <message id="ssd-tt-import-model">Import a previously exported model from an XML file.</message>
   <message id="ssd-tt-database">Open, save, or clone this model in the database.</message>
+  <!-- Phase 2: per-nuclide card display (sfn- = SourceFitNuclideDisplay) -->
+  <message id="sfn-activity">Activity</message>
+  <message id="sfn-age">Age</message>
+  <message id="sfn-fit">Fit</message>
+  <message id="sfn-mass">mass =</message>
+  <message id="sfn-mass-approx">mass &#8776;</message>
+  <message id="sfn-act-t0">act(T<sub>0</sub>)</message>
+  <message id="sfn-via-progeny">via progeny</message>
+  <message id="sfn-tag-trace">trace source</message>
+  <message id="sfn-tag-shield-src">shielding source</message>
+  <message id="ssd-err-empty-material">A shielding has no material selected. Please choose a material (or remove that shielding) before fitting.</message>
   <message id="ssd-to-small-for-chart">(make window taller to show χ<sup>2</sup>)</message>
   <message id="ssd-tt-chi2-switch">Show the Chi of each peak for the current model on the chart, or the relative peak area multiple between current model and observed peak.</message>
   <message id="ssd-cb-all-peaks">All Peaks</message>
