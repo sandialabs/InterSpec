@@ -41,6 +41,7 @@ namespace Wt
 {
   class WMenu;
   class WText;
+  class WLabel;
   class WCheckBox;
   class WComboBox;
   class WInPlaceEdit;
@@ -108,6 +109,10 @@ protected:
   void handleSameCorrFcnOnAllCurvesChanged();
   void handleSameExternalShieldingChanged();
   void handleShieldedByOtherCurvesChanged();
+  /** Handler for the "Hoerl Corr." checkbox: drives the source-of-truth combo (checked => Hoerl, unchecked => None). */
+  void handleUseHoerlCheckboxChanged();
+  /** Shows the "Hoerl Corr." checkbox, or the full None/Hoerl/Chebyshev drop-down when Chebyshev is selected. */
+  void updateCorrFcnWidgetVisibility();
 
 protected:
   RelActAutoGui *const m_gui;
@@ -129,6 +134,12 @@ protected:
   RelEffShieldWidget *m_phys_model_self_atten;
   Wt::WContainerWidget *m_phys_ext_attens;
   Wt::WComboBox *m_phys_model_corr_fcn;
+  /** Label for the correction-function drop-down; hidden while the default "Hoerl Corr." checkbox is shown. */
+  Wt::WLabel *m_phys_model_corr_fcn_label;
+  /** Default-shown "Hoerl Corr." checkbox: a None/Hoerl skin over `m_phys_model_corr_fcn` (which stays the
+   source of truth).  The full None/Hoerl/Chebyshev drop-down is only revealed when a Chebyshev correction
+   is currently selected (e.g. loaded from an XML config). */
+  Wt::WCheckBox *m_phys_model_use_hoerl;
   // (self-/external-attenuation AD biasing lives on each RelEffShieldWidget's own "Bias AD" checkbox)
   Wt::WCheckBox *m_phys_model_same_corr_fcn_on_all_curves;
   Wt::WCheckBox *m_phys_model_same_ext_shield_all_curves;

@@ -13,6 +13,9 @@
   <message id="raageo-corr-hoerl">Hoerl</message>
   <message id="raageo-corr-chebyshev">Chebyshev</message>
 
+  <!-- Default-shown "Hoerl Corr." checkbox (the None/Hoerl/Chebyshev combo above is only shown for Chebyshev configs) -->
+  <message id="raageo-use-hoerl-corr">Hoerl Corr.</message>
+
   <!-- Checkboxes -->
   <message id="raageo-share-corr-fcn">Share corr. fcn.</message>
   <message id="raageo-share-ext-atten">Share ext. atten.</message>
@@ -33,6 +36,7 @@
   <message id="raageo-eqn-order-tt">The order (how many energy-dependent terms) relative efficiency equation to use.</message>
   <message id="raageo-pu242-corr-tt">Pu-242 is often not directly observable in gamma spectra.  However, to correct for this isotope when calculating enrichment, the expected contributions of this isotope can be inferred from the other Pu isotopes.  This form allows you to select the correction method.</message>
   <message id="raageo-corr-fcn-tt">The empirical correction applied on top of (detector efficiency &times; attenuation) for the Physical model.<br />&bull; <b>None</b>: no correction.<br />&bull; <b>Hoerl</b>: the modified Hoerl function E<sup>b</sup>&middot;c<sup>1/E</sup>.<br />&bull; <b>Chebyshev</b>: a pivot-anchored exponential of a low-order Chebyshev polynomial in log-energy (better conditioned than the Hoerl).</message>
+  <message id="raageo-use-hoerl-corr-tt">Apply the modified Hoerl empirical correction (E<sup>b</sup>&middot;c<sup>1/E</sup>) on top of (detector efficiency &times; attenuation) for the Physical model.  Uncheck for no correction.</message>
   <message id="raageo-share-corr-fcn-tt">When checked, the Correlation Function setting will be synchronized across all Physical model curves.</message>
   <message id="raageo-share-ext-atten-tt">When checked, the external shielding configuration will be synchronized across all Physical model curves.</message>
   <message id="raageo-shielded-by-other-curves-tt">When checked, the sources of this curve will be shielded by all other Physical model curves.</message>

@@ -71,6 +71,8 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_phys_model_self_atten(nullptr),
       m_phys_ext_attens(nullptr),
       m_phys_model_corr_fcn(nullptr),
+      m_phys_model_corr_fcn_label(nullptr),
+      m_phys_model_use_hoerl(nullptr),
       m_phys_model_same_corr_fcn_on_all_curves(nullptr),
       m_phys_model_same_ext_shield_all_curves(nullptr),
       m_phys_model_shielded_by_other_curves(nullptr),
@@ -207,18 +209,33 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   WContainerWidget *phys_opt_cb_row = new WContainerWidget( phys_opt_row );
   phys_opt_cb_row->addStyleClass( "PhysOptionCbDiv" );
 
-  // Correction-function selector: None / Hoerl / Chebyshev (combo index == PhysModelCorrFcn enum value).
-  WLabel *corr_fcn_label = new WLabel( WString::tr("raageo-corr-fcn"), phys_opt_cb_row );
-  corr_fcn_label->addStyleClass( "PhysOptionCb GridFirstRow GridFirstCol" );
+  // Correction function selector.  By default users only see the simple "Hoerl Corr." checkbox (None/Hoerl);
+  //  the full None/Hoerl/Chebyshev drop-down is only revealed when a Chebyshev correction is loaded (see
+  //  `updateCorrFcnWidgetVisibility`).  The drop-down `m_phys_model_corr_fcn` stays the source of truth
+  //  (combo index == PhysModelCorrFcn enum value), so all read/solve/save paths are unchanged.
+  m_phys_model_corr_fcn_label = new WLabel( WString::tr("raageo-corr-fcn"), phys_opt_cb_row );
+  m_phys_model_corr_fcn_label->addStyleClass( "PhysOptionCb GridFirstRow GridFirstCol" );
   m_phys_model_corr_fcn = new WComboBox( phys_opt_cb_row );
   m_phys_model_corr_fcn->addStyleClass( "CorrFcnCombo PhysOptionCb GridFirstRow GridSecondCol" );
-  corr_fcn_label->setBuddy( m_phys_model_corr_fcn );
+  m_phys_model_corr_fcn_label->setBuddy( m_phys_model_corr_fcn );
   m_phys_model_corr_fcn->addItem( WString::tr("raageo-corr-none") );       // None (index 0)
   m_phys_model_corr_fcn->addItem( WString::tr("raageo-corr-hoerl") );      // Hoerl (index 1)
   m_phys_model_corr_fcn->addItem( WString::tr("raageo-corr-chebyshev") );  // Chebyshev (index 2)
   m_phys_model_corr_fcn->setCurrentIndex( static_cast<int>(RelActCalc::PhysModelCorrFcn::Hoerl) );
   m_phys_model_corr_fcn->activated().connect( this, &RelActAutoGuiRelEffOptions::handlePhysModelCorrFcnChanged );
   HelpSystem::attachToolTipOn( {m_phys_model_corr_fcn}, WString::tr("raageo-corr-fcn-tt"), showToolTips );
+
+  // The simple checkbox shown to users by default; it occupies the same grid cell as the drop-down's label
+  //  (the two are never visible at once).  Checked => Hoerl, unchecked => None.
+  m_phys_model_use_hoerl = new WCheckBox( WString::tr("raageo-use-hoerl-corr"), phys_opt_cb_row );
+  m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb CbNoLineBreak PhysOptionCb GridFirstRow GridFirstCol" );
+  m_phys_model_use_hoerl->setChecked( true );
+  m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGuiRelEffOptions::handleUseHoerlCheckboxChanged );
+  m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleUseHoerlCheckboxChanged );
+  HelpSystem::attachToolTipOn( {m_phys_model_use_hoerl}, WString::tr("raageo-use-hoerl-corr-tt"), showToolTips );
+
+  // Default to the checkbox; the drop-down only appears for Chebyshev.
+  updateCorrFcnWidgetVisibility();
 
   // The self-/external-attenuation areal-density biasing is set per-shield via each RelEffShieldWidget's
   //  own "Bias AD" checkbox (see `setArealDensityBiasVisible`).
@@ -295,7 +312,11 @@ void RelActAutoGuiRelEffOptions::showAndHideOptionsForEqnType()
   
   m_eqn_order_div->setHidden( is_physical );
   m_phys_model_opts->setHidden( !is_physical );
-  
+
+  // When showing the physical-model options, pick the right correction control (checkbox vs. drop-down).
+  if( is_physical )
+    updateCorrFcnWidgetVisibility();
+
   // Hide multi-curve options if not a physical model
   if( !is_physical )
   {
@@ -957,15 +978,45 @@ RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput RelActAutoGuiRelEffOptions:
 
 void RelActAutoGuiRelEffOptions::setPhysModelCorr( const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput &corr )
 {
-  // Combo index maps directly to the enum (0=None, 1=Hoerl, 2=Chebyshev).
+  // Combo index maps directly to the enum (0=None, 1=Hoerl, 2=Chebyshev); the combo is the source of truth.
   m_phys_model_corr_fcn->setCurrentIndex( static_cast<int>( corr.corr_fcn ) );
+  // Keep the simple checkbox consistent, and show it (or the drop-down, for Chebyshev) as appropriate.
+  m_phys_model_use_hoerl->setChecked( corr.corr_fcn == RelActCalc::PhysModelCorrFcn::Hoerl );
+  updateCorrFcnWidgetVisibility();
   // The per-shield AD biasing is restored on each RelEffShieldWidget from its shield's `ad_bias`.
 }
 
 
 void RelActAutoGuiRelEffOptions::handlePhysModelCorrFcnChanged()
 {
+  // Keep the (currently hidden) checkbox consistent, in case we later revert to the simple display.
+  //  Visibility is intentionally left unchanged here so the drop-down stays put while the user edits it.
+  m_phys_model_use_hoerl->setChecked( m_phys_model_corr_fcn->currentIndex()
+                                      == static_cast<int>(RelActCalc::PhysModelCorrFcn::Hoerl) );
   emitOptionsChanged();
+}
+
+
+void RelActAutoGuiRelEffOptions::handleUseHoerlCheckboxChanged()
+{
+  // The drop-down is the source of truth: checked => Hoerl, unchecked => None.
+  m_phys_model_corr_fcn->setCurrentIndex( static_cast<int>( m_phys_model_use_hoerl->isChecked()
+                                            ? RelActCalc::PhysModelCorrFcn::Hoerl
+                                            : RelActCalc::PhysModelCorrFcn::None ) );
+  emitOptionsChanged();
+}
+
+
+void RelActAutoGuiRelEffOptions::updateCorrFcnWidgetVisibility()
+{
+  // Default UI is the simple "Hoerl Corr." checkbox; only expose the full None/Hoerl/Chebyshev drop-down
+  //  when a Chebyshev correction is actually selected (e.g. loaded from an XML config), so Cheby stays
+  //  visible/editable/round-trippable without confusing normal users.
+  const bool is_cheby = (m_phys_model_corr_fcn->currentIndex()
+                         == static_cast<int>(RelActCalc::PhysModelCorrFcn::Chebyshev));
+  m_phys_model_use_hoerl->setHidden( is_cheby );
+  m_phys_model_corr_fcn_label->setHidden( !is_cheby );
+  m_phys_model_corr_fcn->setHidden( !is_cheby );
 }
 
 RelActCalc::PuCorrMethod RelActAutoGuiRelEffOptions::pu242_correlation_method() const
