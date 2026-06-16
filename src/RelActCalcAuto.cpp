@@ -5928,6 +5928,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const bool success = (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success);
 
+    // TODO (RelActAuto true-minimum rescue): a few fits converge to a bad LOCAL minimum yet report
+    //  "Success" - notably depleted-U high-statistics spectra (e.g. JRC SS16 CBNM031): chi2/dof ~120
+    //  while a re-minimization from a perturbed rel-eff/physical-model point reaches chi2/dof ~1.6 and
+    //  the correct enrichment (1.0% -> 0.32%, truth 0.317%).  A 2026-06 basin-hopping experiment
+    //  confirmed this.  PLAN: when chi2/dof exceeds a high threshold N (~20, TBD) treat the fit as a
+    //  catastrophic stall and attempt a *smart* rescue.
+    //  IMPORTANT: gate this on high chi2/dof ONLY.  Chasing the global minimum on already-good fits
+    //  HURTS - the marginally-lower basins there are model/DRF-degeneracy artifacts that pull
+    //  enrichment AWAY from truth (seen on 5 of 7 affected IDB files).
+
     // ---- Begin Auto-simplify ------------------------------------------------------------------------
     // After the converged full fit, greedily fix redundant degrees of freedom AT THEIR IDENTITY VALUES
     //  (most-degenerate / least-physical first: empirical correction -> external attenuator -> highest
