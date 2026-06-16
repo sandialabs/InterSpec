@@ -131,6 +131,56 @@ void set_data_dir()
 
 
 
+BOOST_AUTO_TEST_CASE( SkewBoundsAndNoSkewValue )
+{
+  // Review item A12: GaussExp/ExpGaussExp upper skew bound widened 3.25 -> 4.0 and CrystalBall/DSCB
+  //  alpha 4.0 -> 5.0, plus a new PeakDef::skew_no_skew_value() giving the value to fix a skew
+  //  coefficient at to remove skew.  The "no skew" end differs per model: GaussExp/CrystalBall reach
+  //  it only at the (asymptotic) upper bound, Bortel/GaussPlusBortel at their lower bound.
+  double lo = 0, hi = 0, start = 0, step = 0, nsv = 0;
+
+  // --- Widened bounds ---
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::GaussExp, PeakDef::CoefficientType::SkewPar0, lo, hi, start, step ) );
+  BOOST_CHECK_CLOSE( hi, 4.0, 1.0E-9 );
+  BOOST_CHECK_CLOSE( lo, 0.15, 1.0E-9 );
+
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::ExpGaussExp, PeakDef::CoefficientType::SkewPar1, lo, hi, start, step ) );
+  BOOST_CHECK_CLOSE( hi, 4.0, 1.0E-9 );
+
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::CrystalBall, PeakDef::CoefficientType::SkewPar0, lo, hi, start, step ) );
+  BOOST_CHECK_CLOSE( hi, 5.0, 1.0E-9 );  // alpha (left)
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::DoubleSidedCrystalBall, PeakDef::CoefficientType::SkewPar2, lo, hi, start, step ) );
+  BOOST_CHECK_CLOSE( hi, 5.0, 1.0E-9 );  // alpha (right)
+
+  // --- skew_no_skew_value: GaussExp/ExpGaussExp/CrystalBall -> upper bound; Bortel/GaussPlusBortel -> 0 ---
+  BOOST_CHECK( PeakDef::skew_no_skew_value( PeakDef::SkewType::GaussExp, PeakDef::CoefficientType::SkewPar0, nsv ) );
+  BOOST_CHECK_CLOSE( nsv, 4.0, 1.0E-9 );
+
+  BOOST_CHECK( PeakDef::skew_no_skew_value( PeakDef::SkewType::ExpGaussExp, PeakDef::CoefficientType::SkewPar1, nsv ) );
+  BOOST_CHECK_CLOSE( nsv, 4.0, 1.0E-9 );
+
+  BOOST_CHECK( PeakDef::skew_no_skew_value( PeakDef::SkewType::CrystalBall, PeakDef::CoefficientType::SkewPar0, nsv ) );
+  BOOST_CHECK_CLOSE( nsv, 5.0, 1.0E-9 );  // alpha -> upper bound
+
+  BOOST_CHECK( PeakDef::skew_no_skew_value( PeakDef::SkewType::Bortel, PeakDef::CoefficientType::SkewPar0, nsv ) );
+  BOOST_CHECK_SMALL( nsv, 1.0E-12 );      // tau -> 0 is an exact pure Gaussian
+
+  BOOST_CHECK( PeakDef::skew_no_skew_value( PeakDef::SkewType::GaussPlusBortel, PeakDef::CoefficientType::SkewPar0, nsv ) );
+  BOOST_CHECK_SMALL( nsv, 1.0E-12 );      // R = 0 is a pure Gaussian
+
+  // CrystalBall power-law `n` is a "don't care" once alpha is at no-skew: returns true at its neutral start.
+  double n_lo = 0, n_hi = 0, n_start = 0, n_step = 0;
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::CrystalBall, PeakDef::CoefficientType::SkewPar1, n_lo, n_hi, n_start, n_step ) );
+  BOOST_CHECK( PeakDef::skew_no_skew_value( PeakDef::SkewType::CrystalBall, PeakDef::CoefficientType::SkewPar1, nsv ) );
+  BOOST_CHECK_CLOSE( nsv, n_start, 1.0E-9 );
+
+  // --- No removal offered: DoubleBortel (no pure-Gaussian limit), NoSkew, inapplicable coefficient ---
+  BOOST_CHECK( !PeakDef::skew_no_skew_value( PeakDef::SkewType::DoubleBortel, PeakDef::CoefficientType::SkewPar0, nsv ) );
+  BOOST_CHECK( !PeakDef::skew_no_skew_value( PeakDef::SkewType::NoSkew, PeakDef::CoefficientType::SkewPar0, nsv ) );
+  BOOST_CHECK( !PeakDef::skew_no_skew_value( PeakDef::SkewType::GaussExp, PeakDef::CoefficientType::SkewPar1, nsv ) ); // GaussExp uses only SkewPar0
+}//BOOST_AUTO_TEST_CASE( SkewBoundsAndNoSkewValue )
+
+
 BOOST_AUTO_TEST_CASE( FitContinuum )
 {
   //set_data_dir();

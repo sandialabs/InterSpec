@@ -6013,13 +6013,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             || (std::find(begin(as_fixed), end(as_fixed), (int)idx) != end(as_fixed));
       };
 
-      for( const AutoSimplifyCandidate &cand : candidates )
-      {
+      // Try fixing `cand`'s parameters at the given values and warm-re-solve.  On success (the solve
+      //  converges and chi2 rises by no more than the tolerance) keep the simpler model and return
+      //  Accepted; if nothing in the candidate is actually being fit return Skipped; otherwise restore
+      //  the full-model parameters and return Refused.  Shared by the priority chain below (which stops
+      //  at the first Refused) and the independent skew removal (which ignores the result).
+      enum class RemoveResult{ Accepted, Skipped, Refused };
+      const auto try_remove = [&]( const AutoSimplifyCandidate &cand ) -> RemoveResult {
         bool any_fittable = false;
         for( const pair<size_t,double> &f : cand.fixes )
           any_fittable = (any_fittable || !is_const(f.first));
         if( !any_fittable )
-          continue;  // nothing of this candidate is actually being fit; skip it
+          return RemoveResult::Skipped;  // nothing of this candidate is actually being fit
 
         const vector<double> saved_parameters = parameters;
         vector<int> trial_const = constant_parameters;
@@ -6032,7 +6037,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           //  at identity already removes the shared correction for all curves.
           if( is_const(f.first) )
             continue;
-          parameters[f.first] = f.second;        // hold at identity ("removed")
+          parameters[f.first] = f.second;        // hold at identity / no-skew ("removed")
           trial_const.push_back( (int)f.first );
         }
 
@@ -6055,12 +6060,49 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           solution.m_warnings.push_back( "Auto-simplify: removed " + cand.description
                           + " (chi2 change " + SpecUtils::printCompact(dchi2,4)
                           + " within tolerance); using the simpler model." );
-        }else
-        {
-          parameters = saved_parameters;  // restore the kept (full) values
-          break;  // the most-degenerate remaining DOF is needed -> stop
+          return RemoveResult::Accepted;
         }
+
+        parameters = saved_parameters;  // restore the kept (full) values
+        return RemoveResult::Refused;
+      };//try_remove lambda
+
+      // Priority chain: most-degenerate / least-physical first, stopping at the first DOF the data
+      //  won't give up (it does not skip to a lower-priority candidate).
+      for( const AutoSimplifyCandidate &cand : candidates )
+      {
+        if( try_remove( cand ) == RemoveResult::Refused )
+          break;  // the most-degenerate remaining DOF is needed -> stop
       }//for( each candidate, in priority order )
+
+      // 4) peak skew.  Independent of the rel-eff degeneracy chain above (skew is a peak-shape nuisance
+      //    parameter, not part of the efficiency model), so it is evaluated on its own regardless of
+      //    whether the chain stopped early.  GaussExp/CrystalBall reach "no skew" only as the parameter
+      //    approaches a bound (a finite proxy for skew->inf), so an unwanted skew otherwise just pins
+      //    there (review item A12); fixing every fittable skew parameter at its no-skew value and
+      //    re-solving drops the DOF when the data does not actually want a tail.  A fit with real skew
+      //    raises chi2 when forced to no-skew and is rejected, leaving the skew in place.
+      {
+        const size_t num_skew = PeakDef::num_skew_parameters( options.skew_type );
+        const size_t skew_start = cost_functor->m_skew_par_start_index;
+
+        AutoSimplifyCandidate skew_cand;
+        skew_cand.description = "peak skew (data prefers no tail)";
+        bool have_no_skew_limit = (num_skew > 0);
+        // Layout is two energy-interpolated sets of `num_skew` coefs: [set0 coefs..., set1 coefs...].
+        for( size_t i = 0; have_no_skew_limit && (i < 2*num_skew); ++i )
+        {
+          const PeakDef::CoefficientType coef = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + (i % num_skew) );
+          double no_skew_value = 0.0;
+          if( PeakDef::skew_no_skew_value( options.skew_type, coef, no_skew_value ) )
+            skew_cand.fixes.push_back( { skew_start + i, no_skew_value } );
+          else
+            have_no_skew_limit = false;  // this skew type has no pure-Gaussian limit -> don't offer removal
+        }
+
+        if( have_no_skew_limit && !skew_cand.fixes.empty() )
+          try_remove( skew_cand );  // independent: kept or rejected on its own, no effect on the chain
+      }//peak-skew removal
 
       // Restore the manifold to (originally-constant + auto-simplify-fixed) for the covariance below.
       vector<int> final_const = constant_parameters;

@@ -1491,7 +1491,12 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
           starting_value = 2; // Saying skew becomes significant after 2 sigma, is maybe reasonable
           step_size = 0.5;
           lower_value = 0.5;  // You should at least be gaussian for half a sigma
-          upper_value = 4.0;  // If you are gaussian all the way out to 4 sigma, you dont need skew
+          // Pure Gaussian only as alpha->inf; the power-law tail is <1e-5 of the area by ~5 sigma,
+          //  so 5.0 is the practical "no skew" ceiling (a larger alpha also shrinks the (n/alpha)^n
+          //  term, so widening this does NOT worsen the CrystalBall overflow corner, which is at
+          //  small alpha).  The auto-simplify de-pin fixes alpha here to drop the skew DOF when the
+          //  data prefers no tail.
+          upper_value = 5.0;
           break;
         
           
@@ -1526,8 +1531,14 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
         case CoefficientType::SkewPar0:
           starting_value = 1;  //A pretty good amount of skew
           step_size = 0.2;
-          lower_value = 0.15;  //this is a huge amount of skew
-          upper_value = 3.25;  //you really cant see any skew above ~2.75
+          lower_value = 0.15;  //this is a huge amount of skew (~82% of the area is in the tail)
+          // GaussExp/ExpGaussExp reach a pure Gaussian only as skew->inf, so this upper bound is a
+          //  finite proxy for "no skew".  The exponential tail is ~0.06% of the peak area at 3.25,
+          //  but ~0.003% at 4.0 (tail = (sigma/s)*exp(-s^2/2) over the total `gauss_exp_norm`), so
+          //  4.0 is the practical "no skew" ceiling.  When the data wants even less tail, the
+          //  RelActAuto auto-simplify de-pin fixes skew here and drops the DOF (see
+          //  PeakDef::skew_no_skew_value) rather than the fit slamming into - and pinning at - the bound.
+          upper_value = 4.0;
           break;
           
         default:
@@ -1629,6 +1640,65 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
 
   return true;
 }//void skew_parameter_range(...)
+
+
+bool PeakDef::skew_no_skew_value( const SkewType skew_type, const CoefficientType coef,
+                                  double &no_skew_value )
+{
+  no_skew_value = 0.0;
+
+  // Only meaningful for coefficients this skew type actually uses; piggy-back on the bounds
+  //  function both to reject inapplicable coefficients and to read the (possibly widened) bounds
+  //  so the asymptotic "no skew" value tracks `skew_parameter_range` automatically.
+  double lower = 0.0, upper = 0.0, starting = 0.0, step = 0.0;
+  if( !skew_parameter_range( skew_type, coef, lower, upper, starting, step ) )
+    return false;
+
+  switch( skew_type )
+  {
+    case NumSkewType:
+    case NoSkew:
+      return false;
+
+    case SkewType::Bortel:
+      // tau -> 0 is exactly a pure Gaussian (bortel_indefinite_integral returns pure erf for skew<=0).
+      no_skew_value = lower;  // 0.0
+      return true;
+
+    case SkewType::GaussExp:
+    case SkewType::ExpGaussExp:
+      // skew -> inf approaches a pure Gaussian; the (negligible-tail) upper bound is the proxy.
+      no_skew_value = upper;
+      return true;
+
+    case SkewType::CrystalBall:
+    case SkewType::DoubleSidedCrystalBall:
+      // alpha -> inf approaches a pure Gaussian; the power `n` is then irrelevant, so leave it neutral.
+      if( (coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar2) )
+        no_skew_value = upper;     // alpha (left / right)
+      else
+        no_skew_value = starting;  // n (does not matter once alpha is at "no skew")
+      return true;
+
+    case SkewType::GaussPlusBortel:
+      // R == 0 is a pure Gaussian; tau is then irrelevant.
+      no_skew_value = (coef == CoefficientType::SkewPar0) ? lower : starting;
+      return true;
+
+    case SkewType::VoigtPlusBortel:
+      // gamma_lor == 0 and R == 0 give a pure Gaussian; tau is then irrelevant.
+      no_skew_value = ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1))
+                        ? lower : starting;
+      return true;
+
+    case SkewType::DoubleBortel:
+      // Always a sum of two exponential-Gaussian tails - there is no pure-Gaussian limit, so do not
+      //  offer a skew removal for it.
+      return false;
+  }//switch( skew_type )
+
+  return false;
+}//bool skew_no_skew_value(...)
 
 
 size_t PeakDef::num_skew_parameters( const SkewType skew_type )

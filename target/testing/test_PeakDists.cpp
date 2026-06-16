@@ -304,6 +304,88 @@ BOOST_AUTO_TEST_CASE( GaussExp )
 }//BOOST_AUTO_TEST_CASE( GaussExp )
 
 
+BOOST_AUTO_TEST_CASE( SkewBoundsNumericalStability )
+{
+  // Review item A12: the GaussExp/ExpGaussExp upper skew bound was widened 3.25 -> 4.0, and the
+  //  CrystalBall/DSCB alpha upper bound 4.0 -> 5.0 (see PeakDef::skew_parameter_range).  Confirm the
+  //  distributions stay finite, normalized, and well-behaved at - and approaching - the new bounds,
+  //  i.e. nothing the fitter now reaches breaks down numerically.  The area-form integral is a single
+  //  indefinite-integral evaluation, so the fat-tailed low-skew cases just use a very wide window.
+
+  const double mean = 500.0;
+  const double sigma = 1.0;
+
+  // --- GaussExp ---------------------------------------------------------------------------------
+  {
+    const double x0 = mean - 200.0*sigma, x1 = mean + 15.0*sigma;  // wide enough for skew=0.15
+    const double skews[] = { 0.15, 1.0, 2.05, 3.25, 4.0 };         // floor ... new ceiling
+
+    double prev_tail_frac = 2.0;  // larger than any real fraction
+    for( const double skew : skews )
+    {
+      const double norm = gauss_exp_norm( sigma, skew );
+      BOOST_CHECK_MESSAGE( std::isfinite(norm) && (norm > 0.0), "GaussExp norm not finite/positive at skew=" << skew );
+
+      const double area = gauss_exp_integral( mean, sigma, skew, x0, x1 );
+      BOOST_CHECK_MESSAGE( std::isfinite(area), "GaussExp area not finite at skew=" << skew );
+      BOOST_CHECK_CLOSE( area, 1.0, 1.0E-6 );
+
+      // Fraction of area in the exponential tail (below the junction mean - skew*sigma) must shrink
+      //  monotonically as skew grows (larger skew = less tail).
+      const double tail_end = mean - skew*sigma;
+      const double tail_frac = gauss_exp_integral( mean, sigma, skew, x0, tail_end );
+      BOOST_CHECK( std::isfinite(tail_frac) && (tail_frac >= 0.0) );
+      BOOST_CHECK_MESSAGE( tail_frac < prev_tail_frac, "GaussExp tail fraction not decreasing at skew=" << skew );
+      prev_tail_frac = tail_frac;
+    }
+
+    // At the new ceiling the retained tail is < ~0.01% of the area (a de-pinned peak is ~Gaussian).
+    const double tail_at_ceiling = gauss_exp_integral( mean, sigma, 4.0, x0, mean - 4.0*sigma );
+    BOOST_CHECK( tail_at_ceiling < 1.0E-4 );
+
+    // Channel (fit-path) evaluation at the ceiling: every channel finite & non-negative, summing to amp.
+    const double amplitude = 1.2345;
+    const size_t num_channels = 4096;
+    const double cx0 = mean - 40.0*sigma, cx1 = mean + 15.0*sigma;
+    vector<double> counts( num_channels, 0.0 );
+    vector<float> energies( num_channels + 1, 0.0f );
+    for( size_t i = 0; i < energies.size(); ++i )
+      energies[i] = static_cast<float>( cx0 + (i*(cx1 - cx0)/num_channels) );
+    gauss_exp_integral( mean, sigma, amplitude, 4.0, &(energies[0]), &(counts[0]), num_channels );
+    for( const double c : counts )
+      BOOST_CHECK( std::isfinite(c) && (c >= 0.0) );
+    const double sum = std::accumulate( begin(counts), end(counts), 0.0 );
+    BOOST_CHECK_CLOSE( sum, amplitude, amplitude*1.0E-6 );
+  }
+
+  // --- ExpGaussExp (both tails at the new ceiling) ----------------------------------------------
+  {
+    const double x0 = mean - 50.0*sigma, x1 = mean + 50.0*sigma;
+    const double area = exp_gauss_exp_integral( mean, sigma, 4.0, 4.0, x0, x1 );
+    BOOST_CHECK( std::isfinite(area) );
+    BOOST_CHECK_CLOSE( area, 1.0, 1.0E-6 );
+  }
+
+  // --- CrystalBall (alpha at the new ceiling) ---------------------------------------------------
+  //  Widening alpha upward only shrinks the (n/alpha)^n term, so this cannot trip the small-alpha
+  //  overflow corner; just confirm the normalization stays finite/positive across power laws.
+  {
+    const double ns[] = { 1.05, 2.5, 10.0, 100.0 };
+    for( const double n : ns )
+    {
+      const double norm = crystal_ball_norm( sigma, 5.0, n );
+      BOOST_CHECK_MESSAGE( std::isfinite(norm) && (norm > 0.0), "CrystalBall norm not finite/positive at alpha=5, n=" << n );
+    }
+
+    // Unit area at alpha=5 (n=2.5, same wide window/tolerance as the CrystalBall case above).
+    const double x0 = mean - 100.0*sigma, x1 = mean + 20.0*sigma;
+    const double area = crystal_ball_integral( mean, sigma, 5.0, 2.5, x0, x1 );
+    BOOST_CHECK( std::isfinite(area) );
+    BOOST_CHECK_CLOSE( area, 1.0, 5.0E-3 );
+  }
+}//BOOST_AUTO_TEST_CASE( SkewBoundsNumericalStability )
+
+
 BOOST_AUTO_TEST_CASE( ExpGaussExp )
 {
   // Check ExpGaussExp has unit area
