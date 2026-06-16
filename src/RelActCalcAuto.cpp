@@ -3272,10 +3272,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<int> initial_const_parameters;
 #endif
 
-    // If we are fitting the Physical model with a Hoerl function, we will do the first fit without the Hoerl,
-    //  but after the initial fit, we will want to restore some parameters back to inital values
-    vector<pair<int,double>> initial_par_vals_to_restore_after_initial_fit;
-
     assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->valid() );
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
       parameters[i] = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
@@ -4232,8 +4228,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
                   parameters[ad_index] = starting_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
                 }
-
-                initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_index, parameters[ad_index] );
               }else
               {
                 const double ad = self_atten.areal_density / PhysicalUnits::g_per_cm2;
@@ -4310,10 +4304,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
                   ad_par = starting_ad;
                 }
-
-                // For an example problem, it looks like we dont want to go back to starting paramters after initial fit
-                //if( rel_eff_curve.phys_model_self_atten && rel_eff_curve.phys_model_self_atten->fit_areal_density )
-                  //initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_par_index, ad_par );
               }else
               {
                 const double ad = ext_att->areal_density / PhysicalUnits::g_per_cm2;
@@ -5680,8 +5670,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
        Will update `parameters` if solution is better than previous best solution, otherwise leaves them alone.
        */
       double initial_cost = std::numeric_limits<double>::max(), best_cost_val = std::numeric_limits<double>::max();
-      
-      const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, ceres_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
+
+      // Pre-fit stages only nudge parameters into the right neighborhood before the main solve;
+      //  give them a small time/iteration budget so they cannot each burn the full main-solve
+      //  budget (review A14). The main solve below keeps the full `ceres_options`.
+      ceres::Solver::Options pre_fit_options = ceres_options;
+      pre_fit_options.max_num_iterations = 300;
+#ifndef NDEBUG
+      pre_fit_options.max_solver_time_in_seconds = 80.0;   // ~4x the release cap for slow debug builds
+#else
+      pre_fit_options.max_solver_time_in_seconds = 20.0;
+#endif
+
+      const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, pre_fit_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
         const vector<double> orig_parameters = parameters;
         vector<int> tmp_constant_parameters = constant_parameters;
         for( const vector<size_t> &indices : indices_to_fix )
@@ -5702,7 +5703,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         double *pars = &parameters[0];
         problem.SetManifold( pars, subset_manifold );
         ceres::Solver::Summary summary;
-        ceres::Solve(ceres_options, &problem, &summary);
+        ceres::Solve(pre_fit_options, &problem, &summary);
         
         if( (initial_cost == std::numeric_limits<double>::max()) && (summary.initial_cost > 0.0) )
           initial_cost = summary.initial_cost;
@@ -5712,22 +5713,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           case ceres::CONVERGENCE:
           case ceres::USER_SUCCESS:
-            cout << "Pre-fit correction was successful with FinalCost="
-            << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
+          case ceres::NO_CONVERGENCE:
+            // Accept any finite cost improvement, even when a stage merely exhausted its (small)
+            //  iteration/time budget without formally converging - the parameters are still the
+            //  best feasible point the stage reached, and discarding them wastes the pre-fit (A14).
+            //  `final_cost < best_cost_val` is already NaN/inf-safe (both compare false vs. a finite
+            //  best_cost_val / its max() seed).
+            cout << "Pre-fit correction finished (termination_type=" << static_cast<int>(summary.termination_type)
+            << ") with FinalCost=" << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
             << "  Previous best_cost_val=" << ((best_cost_val == std::numeric_limits<double>::max()) ? string("N/A") : SpecUtils::printCompact(best_cost_val, 6))
             << endl;
             solution_is_better = (summary.final_cost < best_cost_val);
             break;
-            
-          case ceres::NO_CONVERGENCE:
-            cout << "Pre-fit correction did not converge" << endl;
-            break;
-            
-          case ceres::FAILURE:
+
+          case ceres::FAILURE:        // solver state unreliable - keep discarding
             cout << "Pre-fit correction failed" << endl;
             break;
-            
-          case ceres::USER_FAILURE:
+
+          case ceres::USER_FAILURE:   // user-cancelled - keep discarding
             cout << "Pre-fit correction was user-cancelled" << endl;
             break;
         }//switch( summary.termination_type )
@@ -5758,14 +5761,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       //  Also, all the above getting of indexes is totally not tested.
       //  Also, still need to give offset and scale for AD shielding - e.g., so zero doesnt mean no shielding
       eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars} );
-      
-      if( !initial_par_vals_to_restore_after_initial_fit.empty() )
-      {
-        for( const pair<int,double> &intial_vals : initial_par_vals_to_restore_after_initial_fit )
-          parameters[intial_vals.first] = intial_vals.second;
-        eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs} );
-      }
-      
+
       if( !hoerl_par_indexes.empty() )
         eval_with_constants( {hoerl_par_indexes} );
 
