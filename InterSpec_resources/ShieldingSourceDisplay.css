@@ -50,11 +50,10 @@
 
 
 .ShieldingSourceDisplay .PeakView,
-.ShieldingSourceDisplay .SourceView,
-.ShieldingSourceDisplay .FitOptions
+.ShieldingSourceDisplay .SourceView
 {
 /*   height: 100%; */
-   border:2px solid #e1e1e1; 
+   border:2px solid #e1e1e1;
 }
 
 
@@ -143,4 +142,178 @@
 .IsPhone.Portrait .ShieldingSourceDisplay .NumInputOptLine
 {
   padding-left: 17px;
+}
+
+
+/* ============================================================
+   Activity/Shielding Fit redesign (Phase 1: chrome/discoverability)
+   ============================================================ */
+
+/* Borderless bold section caption (Peaks / Nuclides / Shielding) */
+.ShieldingSourceDisplay .SsdCap
+{
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #34343a;
+  letter-spacing: 0.2px;
+  padding: 0 0 3px 1px;
+  white-space: nowrap;
+}
+
+.ShieldingSourceDisplay .PeakView,
+.ShieldingSourceDisplay .SourceView
+{
+  border-radius: 6px;
+}
+
+/* "Fit options" is now a borderless captioned group (was a bordered fieldset) */
+.ShieldingSourceDisplay .FitOptions
+{
+  border: none;
+}
+
+/* Bordered box wrapping the scrollable shielding cards + the add-footer bar
+   (the inner .ShieldingSelectContainer scroll area is itself borderless). */
+.ShieldingSourceDisplay .ShieldBox
+{
+  border: 1px solid #d2d2d8;
+  border-radius: 8px;
+  background: #f8f8fa;
+  overflow: hidden;          /* clip the footer's corners to the rounded box */
+}
+
+/* Add-shielding footer bar (inside .ShieldBox): round "+" button on the left, "Show Diagram"
+   link on the right, separated from the cards by a top rule - matches the Isotopics tool. */
+.ShieldingSourceDisplay .ShieldFoot
+{
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 9px;
+  border-top: 1px solid #e3e3e7;
+  background: #fbfbfc;
+}
+
+/* "+" add-shielding button: matches the "Isotopics by nuclides" tool's add icon
+   (plus_min_black.svg glyph, no border/background, dim until hovered). */
+.ShieldingSourceDisplay .AddShieldingBtn,
+.ShieldingSourceDisplay .AddShieldingBtn:hover,
+.ShieldingSourceDisplay .AddShieldingBtn:active
+{
+  opacity: 0.6;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  width: 16px;
+  height: 21px;
+}
+.ShieldingSourceDisplay .AddShieldingBtn:hover
+{
+  opacity: 1.0;
+}
+
+/* Link-styled push buttons (Show Diagram, calc. log) */
+.ShieldingSourceDisplay .SsdLink,
+.ShieldingSourceDisplay .SsdLink:hover,
+.ShieldingSourceDisplay .SsdLink:active
+{
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  color: #1f6feb;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ShieldingSourceDisplay .SsdLink:hover
+{
+  text-decoration: underline;
+}
+
+/* Mult./Chi switch toolbar, placed under the chart */
+.ShieldingSourceDisplay .ChartToolbar
+{
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 6px 0 0;
+}
+
+/* Fit zone: inline message + action row (calc.log + Perform Model Fit) + progress/cancel */
+.ShieldingSourceDisplay .FitZone
+{
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 4px;
+}
+.ShieldingSourceDisplay .FitActions
+{
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;  /* Perform Model Fit always pinned right */
+  gap: 8px;
+  min-height: 22px;
+}
+/* calc. log link sits on the left; margin-right:auto keeps the fit button right even
+   when the link is hidden (before the first fit). */
+.ShieldingSourceDisplay .FitActions .CalcLogLink
+{
+  margin-right: auto;
+}
+
+/* Dedicated inline message area (replaces the toast). Max ~50px tall, scrolls if larger. */
+.ShieldingSourceDisplay .FitMessage
+{
+  display: block;
+  max-height: 50px;
+  overflow-y: auto;
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.ShieldingSourceDisplay .FitMessage.FitMsgInfo
+{
+  background: #eef5ff;
+  border: 1px solid #cfe0fb;
+  color: #1c3a63;
+}
+.ShieldingSourceDisplay .FitMessage.FitMsgWarn
+{
+  background: #fff6e6;
+  border: 1px solid #f0d59a;
+  color: #8a5a00;
+}
+.ShieldingSourceDisplay .FitMessage.FitMsgError
+{
+  background: #fdecec;
+  border: 1px solid #f0b9b9;
+  color: #9a2222;
+}
+
+/* "Perform Model Fit" attention state when a new fit is needed (auto-fit OFF; Phase 3) */
+.ShieldingSourceDisplay .FitNeeded
+{
+  box-shadow: 0 0 0 2px rgba(45,127,249,.55);
+}
+
+/* Footer icon buttons (export / import / database) */
+.SsdFooterIcon
+{
+  min-width: 0;
+}
+.SsdFooterIcon img
+{
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
 }

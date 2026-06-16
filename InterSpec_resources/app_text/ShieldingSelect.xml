@@ -3,6 +3,8 @@
   <!-- ss- is short for ShieldingSelect
   -->
   <message id="ss-tt-shield-type-toggle">Toggle between material and generic shielding</message>
+  <message id="ss-tt-shield-type-material">Material shielding (chosen from the material database) - click to use a specific material.</message>
+  <message id="ss-tt-shield-type-generic">Generic shielding (effective atomic number + areal density) - click to specify generically.</message>
   <message id="ss-tt-material-name">
     You can either enter the name of a pre-defined material or element here
     (clear form text and click arrow on right of form to see all predefined

@@ -32,9 +32,82 @@
   column-gap: 5px;
 }
 
+/* Segmented material/generic type toggle (shield = material, atom = generic) */
+.ShieldingSelect .ShieldTypeToggle
+{
+  display: inline-flex;
+  flex: 0 0 auto;
+  background: #ececef;
+  border: 1px solid #d2d2d8;
+  border-radius: 7px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.ShieldingSelect .ShieldTypeToggle .TypeBtn,
+.ShieldingSelect .ShieldTypeToggle .TypeBtn:hover,
+.ShieldingSelect .ShieldTypeToggle .TypeBtn:active
+{
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 2px 8px;
+  margin: 0;
+  min-width: 0;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.5;
+}
+
+.ShieldingSelect .ShieldTypeToggle .TypeBtn.on
+{
+  background: #ffffff;
+  opacity: 1.0;
+  box-shadow: 0 1px 2px rgba(20,20,30,.14);
+}
+
+.ShieldingSelect .ShieldTypeToggle .TypeBtn:hover
+{
+  opacity: 0.85;
+}
+
+.ShieldingSelect .ShieldTypeToggle .TypeBtn img
+{
+  width: 15px;
+  height: 15px;
+  vertical-align: middle;
+  margin: 0;
+}
+
 .ShieldingSelect .DimDiv
 {
   padding: 3px;
+}
+
+/* Generic shielding: AN + AD (+ Fit checkboxes) laid out compactly on one wrapping row */
+.ShieldingSelect .GenericMatRow
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  padding: 4px 3px;
+}
+.ShieldingSelect .GenericMatRow input
+{
+  flex: 0 0 auto;   /* keep the explicit compact width; don't stretch */
+}
+.ShieldingSelect .GenericMatRow label
+{
+  white-space: nowrap;
+}
+/* Extra space before the AD group so the AN / AD groupings read as distinct */
+.ShieldingSelect .GenericMatRow .AdGroupStart
+{
+  margin-left: 16px;
 }
 
 .ShieldingSelect .DimEditRow

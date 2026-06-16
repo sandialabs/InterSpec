@@ -579,7 +579,18 @@ protected:
   
   //This simply toggles the generic, and calls handleMaterialChange()
   void handleToggleGeneric();
-  
+
+  /** Handles the user clicking one of the two segments of the material/generic
+   type toggle.  Switches to the requested type (calling #handleToggleGeneric)
+   only when it differs from the current state, then records an undo/redo step.
+   */
+  void handleMaterialTypeToggle( const bool wantGeneric );
+
+  /** Sets the "on" style on whichever segment (material or generic) matches the
+   current #m_isGenericMaterial state.  Cheap; safe to call any time.
+   */
+  void updateMaterialTypeToggle();
+
   void displayInputsForCurrentGeometry();
   
   //handleMaterialChange(): handles when the user changes or modifies the
@@ -680,7 +691,13 @@ protected:
   /** Pointer to the ShieldingSourceDisplay this ShieldingSelect belongs to - if it belongs to this tool, otherwise will be nullptr. */
   const ShieldingSourceDisplay *m_shieldSrcDisp;
   
-  Wt::WImage* m_toggleImage;
+  /** The material/generic type toggle - a small segmented control with two
+   icon buttons (shield = material, atom = generic).  Replaces the old single
+   click-to-toggle shield image, to make the type choice obvious.
+   */
+  Wt::WContainerWidget *m_typeToggle;
+  Wt::WPushButton *m_materialTypeBtn;
+  Wt::WPushButton *m_genericTypeBtn;
   const bool m_forFitting;
   SourceFitModel *m_sourceModel;
   

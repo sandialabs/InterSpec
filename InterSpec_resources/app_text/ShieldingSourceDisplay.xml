@@ -70,11 +70,23 @@
   <message id="ssd-mi-from-db">Open From Database...</message>
   <message id="ssd-mi-save-to-db">Save To Database...</message>
   <message id="ssd-mi-clone-db-entry">Clone In Database...</message>
+  <!-- Redesign (Phase 1): section captions, add-shielding footer, footer model controls -->
+  <message id="ssd-cap-peaks">Peaks</message>
+  <message id="ssd-cap-nuclides">Nuclides</message>
+  <message id="ssd-cap-shielding">Shielding</message>
+  <message id="ssd-add-shielding">+ Add Shielding</message>
+  <message id="ssd-mi-material-layer">Material layer</message>
+  <message id="ssd-mi-generic-shielding">Generic shielding</message>
+  <message id="ssd-show-diagram">Show Diagram</message>
+  <message id="ssd-calc-log">calc. log</message>
+  <message id="ssd-tt-export-model">Export / download the current model as an XML config.</message>
+  <message id="ssd-tt-import-model">Import a previously exported model from an XML file.</message>
+  <message id="ssd-tt-database">Open, save, or clone this model in the database.</message>
   <message id="ssd-to-small-for-chart">(make window taller to show χ<sup>2</sup>)</message>
   <message id="ssd-tt-chi2-switch">Show the Chi of each peak for the current model on the chart, or the relative peak area multiple between current model and observed peak.</message>
   <message id="ssd-cb-all-peaks">All Peaks</message>
   <message id="ssd-multi-iso-per-peak">Interference correct</message>
-  <message id="ssd-options-title">Options</message>
+  <message id="ssd-options-title">Fit options</message>
   <message id="ssd-tt-multi-iso-per-peak">Checking this option will allow other nuclides being fit for, other that the one assigned to a peak, to contribute to the expected counts in a observed peak.  This could for instance be useful when fitting for both Ho166m and U235 that both have a peak near 185 keV.</message>
   <message id="ssd-cluster-width-label">Interference width (num σ):</message>
   <message id="ssd-tt-cluster-width">The number of sigma away from the mean of the peak that gamma lines,

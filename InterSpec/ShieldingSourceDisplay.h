@@ -92,12 +92,15 @@ namespace Wt
 {
   class WText;
   class WLabel;
+  class WAnchor;
+  class WResource;
   class WCheckBox;
   class WLineEdit;
   class WTreeView;
   class WComboBox;
   class WGridLayout;
   class WFileUpload;
+  class WPushButton;
   class WSelectionBox;
   class WSuggestionPopup;
 }//namespace Wt
@@ -531,6 +534,17 @@ public:
   /** Callback for when the user toggles between Chi and Mult display modes in the chart */
   void handleChi2ChartDisplayModeChanged( bool showChi );
   
+  /** Kind of message shown in the dedicated inline message area (#m_fitMessage). */
+  enum class FitMsgType{ None, Info, Warning, Error };
+
+  /** Shows a message in the dedicated inline area above "Perform Model Fit"
+   (replaces toast-style notifications for this tool).  Passing FitMsgType::None
+   or an empty message hides the area. */
+  void setFitMessage( const Wt::WString &msg, const FitMsgType type );
+
+  /** Convenience: hides the inline message area. */
+  void clearFitMessage();
+
   void showCalcLog();
   void closeCalcLogWindow();
 
@@ -814,16 +828,29 @@ protected:
   Wt::WLineEdit *m_offsetEdit1;
   Wt::WLineEdit *m_offsetEdit2;
 
-  Wt::WPushButton *m_addMaterialShielding;
-  Wt::WPushButton *m_addGenericShielding;
-  
+  /** "+" add-shielding button (always adds material; the user can toggle to generic).
+   Replaces the old separate Material/Generic push-buttons. */
+  Wt::WPushButton *m_addShieldingBtn;
+  /** "Show Diagram" link in the shielding add-footer; only shown when there is >=1 shielding. */
+  Wt::WPushButton *m_showDiagramBtn;
+
   Wt::WGridLayout *m_layout;
-  PopupDivMenu *m_addItemMenu;
-  
+
+  /** Footer model import/export controls + the download resource they link to
+   (replaces the old upper-right "..." menu's Import/Export items). */
+  Wt::WPushButton *m_importModelBtn;
+  Wt::WPushButton *m_exportModelBtn;
+  /** The XML model download resource (the concrete type is file-local in the .cpp, so it
+   is held here as its Wt::WResource base; the footer "Export Model" link uses its url()). */
+  Wt::WResource *m_xmlDownloadResource;
+
 #if( USE_DB_TO_STORE_SPECTRA )
+  /** Footer database button + menu (Open / Save / Clone), replacing the old menu items. */
+  Wt::WPushButton *m_dbButton;
+  PopupDivMenu *m_dbMenu;
   PopupDivMenuItem *m_saveAsNewModelInDb;
 #endif
-  
+
   Wt::Dbo::ptr<ShieldingSourceModel> m_modelInDb;
 
   //m_shieldingSelects: contains objects of class ShieldingSelect
@@ -857,7 +884,9 @@ protected:
    */
   bool m_skipBackgroundPeakCheck;
 
-  PopupDivMenuItem *m_showLog;
+  /** "calc. log" link shown to the left of the Perform Model Fit button; only
+   visible once a fit has produced results.  (Was a menu item.) */
+  Wt::WPushButton *m_showLog;
 
   InjaLogDialog *m_logDiv;
   ShieldingDiagramDialog *m_diagramDialog;
@@ -872,6 +901,10 @@ protected:
 #endif
   
 
+
+  /** Dedicated inline message area shown above "Perform Model Fit"; replaces the
+   transient toast for this tool's own fit warnings/errors.  Hidden when empty. */
+  Wt::WText *m_fitMessage;
 
   Wt::WPushButton *m_fitModelButton;
   Wt::WText *m_fitProgressTxt;
