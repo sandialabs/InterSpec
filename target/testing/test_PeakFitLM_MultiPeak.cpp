@@ -336,3 +336,157 @@ BOOST_AUTO_TEST_CASE( proximityPunishmentContinuity )
   BOOST_CHECK_CLOSE( P(1.0),  0.453561*pf, 1.0e-2 );
   BOOST_CHECK_CLOSE( P(1.25), 0.191920*pf, 1.0e-2 );
 }//BOOST_AUTO_TEST_CASE( proximityPunishmentContinuity )
+
+
+// The StatInsig option is compiled out by default (ENABLE_PUNISH_STAT_INSIG_PEAKS == 0 in
+//  PeakFitLM.h); this test only builds when the option is re-enabled there.
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
+// Issue #6: the PunishForPeakBeingStatInsig block was nested inside the proximity loop, so it ran
+//  (npeaks-1)x via += and -- critically -- never ran at all for single-peak ROIs (the proximity loop
+//  body doesn't execute when npeaks==1, leaving that ROI's StatInsig residual slot unwritten).  It is
+//  now lifted OUT to run exactly once.  This test drives the option through fit_peaks_in_roi_LM for
+//  npeaks = 1, 2, 3 and checks the fit completes cleanly with finite, sane peaks.  The test build
+//  forces PERFORM_DEVELOPER_CHECKS, so the lifted block's `(end_data_residual + npeaks) ==
+//  number_residuals()` assert and the proximity-slot index asserts run on every Ceres evaluation.
+//  (The StatInsig punishment is essentially gradient-inert at a single peak's data optimum -- where
+//  d(LLS amplitude)/d(mean,sigma) = 0 -- so it does not move an isolated converged fit; the value of
+//  this test is exercising the lifted code path, especially npeaks==1 which the old nested code
+//  skipped entirely.)
+BOOST_AUTO_TEST_CASE( statInsigPunishmentLifted )
+{
+  set_data_dir();
+
+  const size_t num_channels = 512;
+  const float gain = 1.0f;          // 1 keV/channel, offset 0
+  const double background = 200.0;  // counts/channel
+  const double sigma = 2.5;         // keV
+
+  // Add an analytic Gaussian (unit-erf integral per channel) on top of a count vector.
+  auto add_gauss = []( vector<float> &c, double amp, double mean, double sg, float gn ){
+    const double s = sg * std::sqrt(2.0);
+    for( size_t ch = 0; ch < c.size(); ++ch )
+      c[ch] += static_cast<float>( 0.5 * amp * ( std::erf(((ch+1)*gn - mean)/s) - std::erf((ch*gn - mean)/s) ) );
+  };
+
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( num_channels, {0.0f, gain}, {} );
+
+  auto make_data = [&]( const vector<pair<double,double>> &mean_amp ) -> shared_ptr<SpecUtils::Measurement> {
+    auto counts = make_shared<vector<float>>( num_channels, static_cast<float>(background) );
+    for( const pair<double,double> &ma : mean_amp )
+      add_gauss( *counts, ma.second, ma.first, sigma, gain );
+    auto m = make_shared<SpecUtils::Measurement>();
+    m->set_gamma_counts( counts, 300.0f, 300.0f );
+    m->set_energy_calibration( cal );
+    return m;
+  };
+
+  // ROI peaks (free mean/sigma, LLS amplitude), all sharing one Linear continuum.
+  auto make_roi = [&]( const vector<pair<double,double>> &mean_amp, double lo, double hi )
+      -> vector<shared_ptr<const PeakDef>> {
+    auto cont = make_shared<PeakContinuum>();
+    cont->setType( PeakContinuum::OffsetType::Linear );
+    cont->setRange( lo, hi );
+    vector<shared_ptr<const PeakDef>> roi;
+    for( const pair<double,double> &ma : mean_amp )
+    {
+      auto p = make_shared<PeakDef>( ma.first, sigma, ma.second );
+      p->setFitFor( PeakDef::Mean, true );
+      p->setFitFor( PeakDef::Sigma, true );
+      p->setFitFor( PeakDef::GaussAmplitude, true );
+      p->setContinuum( cont );
+      roi.push_back( p );
+    }
+    return roi;
+  };
+
+  const bool isHPGe = false;
+  // Pass the flag directly; Wt::WFlags<PeakFitLMOptions> is implicitly constructible from it.
+  const PeakFitLM::PeakFitLMOptions stat_insig = PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig;
+
+  // (1) Single statistically-insignificant peak: amp 60 << 2*sqrt(local data ~1855) ~= 86.  This is
+  //     exactly the npeaks==1 case the old nested code never punished.
+  {
+    const vector<pair<double,double>> mp = { { 256.0, 60.0 } };
+    shared_ptr<SpecUtils::Measurement> data = make_data( mp );
+
+    vector<shared_ptr<const PeakDef>> fit_off, fit_on;
+    BOOST_REQUIRE_NO_THROW( fit_off = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, isHPGe, 0 ) );
+    BOOST_REQUIRE_NO_THROW( fit_on  = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, isHPGe, stat_insig ) );
+
+    BOOST_REQUIRE_EQUAL( fit_off.size(), size_t(1) );
+    BOOST_REQUIRE_EQUAL( fit_on.size(),  size_t(1) );
+    BOOST_CHECK( std::isfinite(fit_on[0]->mean()) && std::isfinite(fit_on[0]->sigma())
+                 && std::isfinite(fit_on[0]->amplitude()) && std::isfinite(fit_on[0]->chi2dof()) );
+    BOOST_CHECK( fit_on[0]->amplitude() >= 0.0 );
+
+    cout << "StatInsig npeaks=1: OFF (mean,sigma,amp)=(" << fit_off[0]->mean() << "," << fit_off[0]->sigma()
+         << "," << fit_off[0]->amplitude() << ")  ON=(" << fit_on[0]->mean() << "," << fit_on[0]->sigma()
+         << "," << fit_on[0]->amplitude() << ")" << endl;
+
+    // The OLD nested code never ran the StatInsig block for a single-peak ROI (the proximity loop
+    //  body doesn't execute when npeaks==1), leaving that ROI's punishment residual at zero -- so ON
+    //  was bit-identical to OFF.  The lifted block runs once and observably perturbs the fit, so
+    //  require a change.  Thresholds are well above numerical noise and well below the observed shift
+    //  (d_sigma ~0.35 keV, d_amp ~4.6 counts); the un-lifted code gives an exact zero difference.
+    const double dmean = std::fabs( fit_on[0]->mean()      - fit_off[0]->mean() );
+    const double dsig  = std::fabs( fit_on[0]->sigma()     - fit_off[0]->sigma() );
+    const double damp  = std::fabs( fit_on[0]->amplitude() - fit_off[0]->amplitude() );
+    BOOST_CHECK_MESSAGE( (dmean > 5.0e-3) || (dsig > 0.05) || (damp > 0.5),
+                         "Enabling PunishForPeakBeingStatInsig must change the single-peak fit -- the "
+                         "lifted block must run for npeaks==1 (dmean=" << dmean << ", dsig=" << dsig
+                         << ", damp=" << damp << ")" );
+  }
+
+  // (1b) Single statistically-SIGNIFICANT peak: amp 5000 >> 2*sqrt(local data ~6300) ~= 159, so the
+  //      per-peak punishment is gated off (`if(amp < 2*sqrt(dataarea))` is false) -- the residual is
+  //      identically 0 and enabling the option must NOT bias the fit.  This pins the "no bias for
+  //      significant peaks" property.
+  {
+    const vector<pair<double,double>> mp = { { 256.0, 5000.0 } };
+    shared_ptr<SpecUtils::Measurement> data = make_data( mp );
+
+    vector<shared_ptr<const PeakDef>> fit_off, fit_on;
+    BOOST_REQUIRE_NO_THROW( fit_off = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, isHPGe, 0 ) );
+    BOOST_REQUIRE_NO_THROW( fit_on  = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, isHPGe, stat_insig ) );
+    BOOST_REQUIRE_EQUAL( fit_off.size(), size_t(1) );
+    BOOST_REQUIRE_EQUAL( fit_on.size(),  size_t(1) );
+
+    const double rel_amp = std::fabs(fit_on[0]->amplitude() - fit_off[0]->amplitude()) / fit_off[0]->amplitude();
+    const double rel_sig = std::fabs(fit_on[0]->sigma()     - fit_off[0]->sigma())     / fit_off[0]->sigma();
+    const double d_mean  = std::fabs(fit_on[0]->mean()      - fit_off[0]->mean());
+    cout << "StatInsig npeaks=1 SIGNIFICANT: OFF (mean,sigma,amp)=(" << fit_off[0]->mean() << ","
+         << fit_off[0]->sigma() << "," << fit_off[0]->amplitude() << ")  ON=(" << fit_on[0]->mean() << ","
+         << fit_on[0]->sigma() << "," << fit_on[0]->amplitude() << ")  rel_amp=" << rel_amp
+         << " rel_sig=" << rel_sig << " d_mean=" << d_mean << endl;
+
+    // Significant peak is above the punishment gate -> ON must match OFF (no bias).
+    BOOST_CHECK_MESSAGE( (rel_amp < 1.0e-4) && (rel_sig < 1.0e-4) && (d_mean < 1.0e-3),
+                         "Significant peak biased by StatInsig (should be gated off): rel_amp=" << rel_amp
+                         << " rel_sig=" << rel_sig << " d_mean=" << d_mean );
+  }
+
+  // (2),(3) Two- and three-peak ROIs (one weak peak among strong neighbors) exercise the shared-slot
+  //         += path under the lifted block.
+  for( const size_t npeaks : { size_t(2), size_t(3) } )
+  {
+    vector<pair<double,double>> mp;
+    if( npeaks == 2 )
+      mp = { { 248.0, 5000.0 }, { 264.0, 60.0 } };
+    else
+      mp = { { 240.0, 5000.0 }, { 256.0, 60.0 }, { 272.0, 5000.0 } };
+
+    shared_ptr<SpecUtils::Measurement> data = make_data( mp );
+    const double lo = mp.front().first - 8*sigma, hi = mp.back().first + 8*sigma;
+
+    vector<shared_ptr<const PeakDef>> fit;
+    BOOST_REQUIRE_NO_THROW( fit = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,lo,hi), data, isHPGe, stat_insig ) );
+    BOOST_CHECK_EQUAL( fit.size(), npeaks );
+    for( const shared_ptr<const PeakDef> &p : fit )
+    {
+      BOOST_CHECK( std::isfinite(p->mean()) && std::isfinite(p->sigma()) && std::isfinite(p->amplitude()) );
+      BOOST_CHECK( p->amplitude() >= 0.0 );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( statInsigPunishmentLifted )
+#endif //( ENABLE_PUNISH_STAT_INSIG_PEAKS )

@@ -1576,3 +1576,75 @@ BOOST_AUTO_TEST_CASE( BortelDeepWindowFinite )
     BOOST_CHECK_CLOSE( dsum, 1.0, 1.0 );
   }
 }//BOOST_AUTO_TEST_CASE( BortelDeepWindowFinite )
+
+
+// Review issue #8: the CrystalBall / DoubleSidedCrystalBall CDF (PeakDists::peak_cdf) used to
+//  integrate the heavy power-law tail only from mean-50*sigma.  For small n (~1.05) a large part
+//  of the tail lies beyond 50 sigma, so the (analytically normalized) CDF was biased low and never
+//  reached 1.  The tail antiderivatives have an EXACT zero limit at -infinity, so peak_cdf now
+//  integrates from -inf.  These checks (monotone, and -> 1 on the right) fail against the old
+//  50-sigma truncation, which dropped a large fraction of the n~1.05 left-tail mass.
+BOOST_AUTO_TEST_CASE( PeakCdfTailToInfinity )
+{
+  const double mean = 1000.0;
+  const double sigma = 1.5;
+
+  // --- CrystalBall: heavy left power-law tail (n=1.05).  skew_pars = {alpha, n} -------------------
+  {
+    const double skew_pars[2] = { 1.0, 1.05 };
+    const PeakDef::SkewType skew = PeakDef::SkewType::CrystalBall;
+
+    // Monotone non-decreasing across a wide window, and within [0,1].
+    double prev = -1.0;
+    for( double t = -60.0; t <= 30.0; t += 0.5 )
+    {
+      const double cdf = peak_cdf( mean + t*sigma, mean, sigma, skew, skew_pars );
+      BOOST_CHECK_MESSAGE( (cdf >= -1.0e-9) && (cdf <= 1.0 + 1.0e-9),
+                           "CB CDF out of [0,1] at t=" << t << ": " << cdf );
+      BOOST_CHECK_MESSAGE( cdf >= (prev - 1.0e-9),
+                           "CB CDF not monotone at t=" << t << ": " << cdf << " < prev " << prev );
+      prev = cdf;
+    }
+
+    // Reaches 1 on the right (the property the 50-sigma truncation broke: the old code maxed out
+    //  well below 1 because most of the n=1.05 left-tail mass sits beyond -50 sigma).
+    const double cdf_right = peak_cdf( mean + 20.0*sigma, mean, sigma, skew, skew_pars );
+    BOOST_CHECK_MESSAGE( cdf_right > 0.999, "CB CDF should reach ~1 to the right; got " << cdf_right );
+  }
+
+  // --- DoubleSidedCrystalBall: heavy left (n_low=1.05), light right (n_high=10) -------------------
+  //  skew_pars = {alpha_low, n_low, alpha_high, n_high}
+  {
+    const double skew_pars[4] = { 1.0, 1.05, 2.0, 10.0 };
+    const PeakDef::SkewType skew = PeakDef::SkewType::DoubleSidedCrystalBall;
+
+    double prev = -1.0;
+    for( double t = -60.0; t <= 30.0; t += 0.5 )
+    {
+      const double cdf = peak_cdf( mean + t*sigma, mean, sigma, skew, skew_pars );
+      BOOST_CHECK_MESSAGE( (cdf >= -1.0e-9) && (cdf <= 1.0 + 1.0e-9),
+                           "DSCB CDF out of [0,1] at t=" << t << ": " << cdf );
+      BOOST_CHECK_MESSAGE( cdf >= (prev - 1.0e-9),
+                           "DSCB CDF not monotone at t=" << t << ": " << cdf << " < prev " << prev );
+      prev = cdf;
+    }
+
+    const double cdf_right = peak_cdf( mean + 20.0*sigma, mean, sigma, skew, skew_pars );
+    BOOST_CHECK_MESSAGE( cdf_right > 0.999, "DSCB CDF should reach ~1 to the right; got " << cdf_right );
+
+    // Cross-check the CDF increments against the independent array integral
+    //  double_sided_crystal_ball_integral over a few finite mid-range intervals.
+    const double pts[5] = { mean - 8.0*sigma, mean - 2.0*sigma, mean, mean + 2.0*sigma, mean + 8.0*sigma };
+    for( int i = 0; (i + 1) < 5; ++i )
+    {
+      const double a = pts[i], b = pts[i+1];
+      const double via_cdf = peak_cdf( b, mean, sigma, skew, skew_pars )
+                           - peak_cdf( a, mean, sigma, skew, skew_pars );
+      const double via_int = double_sided_crystal_ball_integral( mean, sigma,
+                                  skew_pars[0], skew_pars[1], skew_pars[2], skew_pars[3], a, b );
+      BOOST_CHECK_MESSAGE( std::fabs(via_cdf - via_int) < 1.0e-6,
+                           "DSCB CDF increment [" << a << "," << b << "] = " << via_cdf
+                           << " disagrees with array integral " << via_int );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( PeakCdfTailToInfinity )

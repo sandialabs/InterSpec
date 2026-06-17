@@ -233,9 +233,14 @@ struct PeakFitDiffCostFunction
     ),
     m_num_residuals( ((size_t(1) + m_upper_channel) - m_lower_channel)
       + ((!options.testFlag(PeakFitLM::PeakFitLMOptions::DoNotPunishForBeingToClose)
-          || options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig))
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
+          || options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig)
+#endif
+         )
           ? (m_num_peaks - 1) : size_t(0))
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
       + (options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig) ? size_t(1) : size_t(0))
+#endif
     ),
     m_offset_type( offset_type ),
     m_ref_energy( continuum_ref_energy ),
@@ -401,9 +406,15 @@ struct PeakFitDiffCostFunction
     assert( m_num_residuals == (
       (((size_t(1) + m_upper_channel) - m_lower_channel)
       + ((!m_options.testFlag(PeakFitLM::PeakFitLMOptions::DoNotPunishForBeingToClose)
-          || m_options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig))
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
+          || m_options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig)
+#endif
+         )
          ? (m_num_peaks - 1) : size_t(0))
-      + (m_options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig) ? size_t(1) : size_t(0))))
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
+      + (m_options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig) ? size_t(1) : size_t(0))
+#endif
+      ))
     );
 
     return m_num_residuals;
@@ -990,8 +1001,15 @@ struct PeakFitDiffCostFunction
         {
           if constexpr ( !std::is_same_v<T, double> )
           {
-            reldist.a = 0.01;
-            reldist.v = peaks[i-1].mean().v - peaks[i].mean().v;
+            // Floor the *value* so the 1/reldist barrier in peaks_too_close_punishment stays finite,
+            //  but keep the true derivative of reldist = |mean_i - mean_{i-1}|/sigma that the
+            //  division above already produced (correct sign -- abs() on the sorted means -- and the
+            //  1/sigma scale), so the fit still feels a gradient pushing the peaks apart.  If sigma->0
+            //  made reldist non-finite there is no usable derivative, so pin to a constant.
+            if( isinf(reldist) || isnan(reldist) )
+              reldist = T(0.01);
+            else
+              reldist.a = 0.01;
           }else
           {
             reldist = 0.01;
@@ -1011,75 +1029,83 @@ struct PeakFitDiffCostFunction
         //  trust region stays well-behaved (see `peaks_too_close_punishment`).
         residuals[prox_resid_index] = peaks_too_close_punishment( reldist, punishment_factor );
       }//
+    }//for( size_t i = 1; i < peaks.size(); ++i )
 
 
-      if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig) )
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
+    // Punish statistically-insignificant peaks (area below ~sqrt of the data within mean +- 1.75
+    //  sigma).  This block is LIFTED OUT of the proximity loop above so it runs exactly once -- it
+    //  has its own peak loop; nested inside the proximity loop it accumulated (npeaks-1)x via += and
+    //  never ran for single-peak ROIs (the proximity loop body doesn't execute when npeaks==1).
+    //  NOTE (20250415): off by default; the punishment *magnitudes* below are heuristic and still
+    //  untested -- only the residual-slot layout is now correct.
+    if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig) )
+    {
+      // From LinearProblemSubSolveChi2Fcn: if the peak area is statistically insignificant on the
+      //  interval mean +- 1.75 sigma, punish.  StatInsig uses npeaks residual slots
+      //  [end_data_residual, end_data_residual + npeaks): it shares the npeaks-1 proximity slots
+      //  (adding via +=) and adds one extra slot at the end.
+      assert( (end_data_residual + peaks.size()) == number_residuals() );
+      residuals[end_data_residual + peaks.size() - 1] = T(0.0); // the extra slot, not yet initialized
+
+      for( size_t i = 0; i < peaks.size(); ++i )
       {
-        // As of 20250415 - this section of code is totally untested.
-        //From LinearProblemSubSolveChi2Fcn:
-        //If the peak area is statistically insignificant on the interval
-        //  -1.75sigma to 1.75, then punish!
+        const PeakType &peak = peaks[i];
 
-        // Note: for the `PeakFitLMOptions::PunishForPeakBeingStatInsig` option, we ad a residual
-        //       over
-        assert( (end_data_residual + peaks.size()) == number_residuals() );
-        residuals[end_data_residual + peaks.size() - 1] = T(0.0); //We didnt initialize this residual yet
+        // When proximity punishment is off its slots were not written -- zero them before the +=.
+        if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::DoNotPunishForBeingToClose) )
+          residuals[end_data_residual + i] = T(0.0);
 
-        for( size_t i = 0; i < peaks.size(); ++i )
+        double mean, sigma, amp;
+        if constexpr ( std::is_same_v<T, double> )
         {
-          const PeakType &peak = peaks[i];
+          mean = peak.mean();
+          sigma = peak.sigma();
+          amp = peak.amplitude();
+        }else
+        {
+          mean = peak.mean().a;
+          sigma = peak.sigma().a;
+          amp = peak.amplitude().a;
+        }
 
-          if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::DoNotPunishForBeingToClose) )
-            residuals[end_data_residual + i] = T(0.0);
+        const float lower_energy = static_cast<float>( mean - 1.75*sigma );
+        const float upper_energy = static_cast<float>( mean + 1.75*sigma );
 
-          double mean, sigma, amp;
-          if constexpr ( std::is_same_v<T, double> )
+        const size_t lower_channel = std::max(m_lower_channel, m_data->find_gamma_channel(lower_energy) );
+        const size_t upper_channel = std::min(m_upper_channel, m_data->find_gamma_channel(upper_energy) );
+
+        double dataarea = 0.0;
+        for( size_t bin = lower_channel; (bin < counts_vec.size()) && (bin < upper_channel); ++bin )
+          dataarea += counts_vec[bin];
+
+        const double punishment_chi2 = (2.0*(1.0 + upper_channel - lower_channel));
+
+        if( amp < std::max(2.0*sqrt(dataarea), 1.0) )
+        {
+          if( amp <= 1.0 )
           {
-            mean = peak.mean();
-            sigma = peak.sigma();
-            amp = peak.amplitude();
-          }else
-          {
-            mean = peak.mean().a;
-            sigma = peak.sigma().a;
-            amp = peak.amplitude().a;
-          }
-
-          const float lower_energy = static_cast<float>( mean - 1.75*sigma );
-          const float upper_energy = static_cast<float>( mean + 1.75*sigma );
-
-          const size_t lower_channel = std::max(m_lower_channel, m_data->find_gamma_channel(lower_energy) );
-          const size_t upper_channel = std::min(m_upper_channel, m_data->find_gamma_channel(upper_energy) );
-
-          double dataarea = 0.0;
-          for( size_t bin = lower_channel; (bin < counts_vec.size()) && (bin < upper_channel); ++bin )
-            dataarea += counts_vec[bin];
-
-          // TODO: all this punishment hasnt been tested, or thought out
-          const double punishment_chi2 = (2.0*(1.0 + upper_channel - lower_channel)); //
-
-          if( amp < std::max(2.0*sqrt(dataarea), 1.0) )
-          {
-            if( amp <= 1.0 )
+            if constexpr ( std::is_same_v<T, double> )
             {
-              if constexpr ( std::is_same_v<T, double> )
-              {
-                residuals[end_data_residual + i] += 100.0 * punishment_chi2;
-              }else
-              {
-                T punish( 1.0 );
-                punish.v = peak.amplitude().v / peak.amplitude().a; // I think this gets the matrix part to ~unity amplitude
-                punish *= 100.0 * punishment_chi2;
-                residuals[end_data_residual + i] += punish;
-              }
+              residuals[end_data_residual + i] += 100.0 * punishment_chi2;
             }else
             {
-              residuals[end_data_residual + i] += (T(-1.0) + 2.0*sqrt(dataarea)/peak.amplitude()) * punishment_chi2;
+              T punish( 1.0 );
+              // Normalize the Jet derivative by the amplitude value; floor the denominator so it
+              //  stays finite when amp.a is ~0 (or <0) in this branch.
+              const double amp_den = std::max( peak.amplitude().a, 1.0E-6 );
+              punish.v = peak.amplitude().v / amp_den;
+              punish *= 100.0 * punishment_chi2;
+              residuals[end_data_residual + i] += punish;
             }
-          }//if( peaks[i].amplitude() < 2.0*sqrt(dataarea) )
-        }//for( size_t i = 0; i < peaks.size(); ++i )
-      }//if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig) )
-    }//for( size_t i = 1; i < peaks.size(); ++i )
+          }else
+          {
+            residuals[end_data_residual + i] += (T(-1.0) + 2.0*sqrt(dataarea)/peak.amplitude()) * punishment_chi2;
+          }
+        }//if( peaks[i].amplitude() < 2.0*sqrt(dataarea) )
+      }//for( size_t i = 0; i < peaks.size(); ++i )
+    }//if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig) )
+#endif //( ENABLE_PUNISH_STAT_INSIG_PEAKS )
 
 
     // We could skip pretty much the rest of the function, if we are using `PeakDefImpWithCont`,

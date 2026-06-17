@@ -43,6 +43,23 @@ namespace SpecUtils
 
 #define PRINT_VERBOSE_PEAK_FIT_LM_INFO 0
 
+/** Compile-time switch for the "punish statistically-insignificant peaks" fit option,
+ `PeakFitLMOptions::PunishForPeakBeingStatInsig`.
+
+ Disabled (0) by default, because:
+   - No production code path enables the option; nothing sets the flag.
+   - The punishment is a heuristic that has never been validated: its magnitude/direction are ad-hoc
+     (it can widen a peak's sigma, arguably the wrong way), and the residual's Jacobian is
+     discontinuous at the significance threshold (amp == 2*sqrt(data in mean +- 1.75 sigma)), which
+     the Ceres L-M trust region does not love.  (It does NOT bias statistically-significant peaks:
+     the residual is gated off, and identically zero, once a peak is above ~2 sigma.)
+
+ Set to 1 to compile the option back in (the enum value, the residual-count branches, the punishment
+ block in `parametersToPeaks`, and its `statInsigPunishmentLifted` test).  The punishment math should
+ be re-derived/validated before relying on it.
+ */
+#define ENABLE_PUNISH_STAT_INSIG_PEAKS 0
+
 namespace PeakFitLM
 {
 
@@ -64,10 +81,13 @@ enum PeakFitLMOptions
    */
   DoNotPunishForBeingToClose  = 0x01,
 
-  /** Punishes peaks for their areas being less than less than sqrt(data betwee mean +- 1.75*sigma) .
-   As of 20250415, totally not tested.
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
+  /** Punishes peaks for their areas being less than sqrt(data between mean +- 1.75*sigma).
+   Heuristic and untested -- see `ENABLE_PUNISH_STAT_INSIG_PEAKS`; the 0x02 bit is reserved while
+   this is disabled.
    */
   PunishForPeakBeingStatInsig = 0x02,
+#endif
 
   /** Normally when fitting multiple peaks, the peak FWHM is allowed to vary +-15% throughout the
    ROI, with the FWHM of each peak being a linear function of the fraction of energy through the ROI.
