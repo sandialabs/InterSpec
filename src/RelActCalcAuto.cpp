@@ -15795,6 +15795,31 @@ double RelActAutoSolution::reliability_floored_uncert( const double value, const
 }//reliability_floored_uncert(...)
 
 
+// =====================================================================================================
+// TODO(systematic-uncertainty): the uncertainty returned here is purely STATISTICAL (counting). A model-
+//   form SYSTEMATIC term still needs to be computed and combined in (review A3 "layer 3"). It is the
+//   dominant uncertainty once counting statistics are good, and is dominated by the detector-efficiency
+//   (DRF) shape. The estimate must be made PER-SPECTRUM, on the fly -- a blanket multiplier is not adequate
+//   (the size varies ~3x with enrichment and collapses to ~0 when the DRF is known). Planned recipe:
+//     1. Re-solve THIS spectrum a handful of times, each varying one assumption the data can't pin down:
+//        the detector-efficiency curve, the empirical correction function, and the U chemical form.
+//     2. systematic = scatter (std-dev) of the resulting enrichment values; reported value = their average.
+//        Use EQUAL weights -- do NOT chi2-weight: the best-fitting DRF is anti-correlated with the truth-
+//        closest one (it matched only 15% of the time, vs 25% by chance).
+//     3. total_uncert = sqrt( statistical^2 + (k * scatter)^2 ),  k ~ 0.8.
+//
+//   Where each number comes from:
+//     - candidate detector curves: the detector-response library shipped with the program (coax/planar/etc.
+//       of the right detector class). If the user supplies their OWN measured DRF, use only that one and this
+//       (dominant) axis collapses to ~0 on its own.
+//     - the correction-function / U-matrix variations: just re-running this fit with those options toggled.
+//     - the scatter: measured live by re-analyzing THIS spectrum -- nothing pre-tabulated.
+//     - k (~0.8): the ONLY number from outside the spectrum; fit once, offline, so the pulls come out honest
+//       on the uranium reference standards we have truth for (IAEA IDB + JRC). One dimensionless dial.
+//
+//   Combine point: fold the systematic into the optional<double> returned here (and the rel-eff band in
+//   relative_efficiency_with_uncert); report it separately from statistical (Total-Measurement-Uncertainty style).
+// =====================================================================================================
 pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const
 {
 #define USE_RelActAutoCostFcn_MASS_FRAC_IMP 1
