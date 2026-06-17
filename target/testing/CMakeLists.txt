@@ -144,6 +144,20 @@ add_test( NAME TPeakDists
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_CrystalBall_CZT_fit test_CrystalBall_CZT_fit.cpp )
+target_link_libraries( test_CrystalBall_CZT_fit PRIVATE InterSpecLib )
+add_test( NAME TCrystalBall_CZT_fit
+  COMMAND $<TARGET_FILE:test_CrystalBall_CZT_fit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_PeakFitLM_MultiPeak test_PeakFitLM_MultiPeak.cpp )
+target_link_libraries( test_PeakFitLM_MultiPeak PRIVATE InterSpecLib )
+add_test( NAME TPeakFitLM_MultiPeak
+  COMMAND $<TARGET_FILE:test_PeakFitLM_MultiPeak> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_EnergyCal_imp test_RelActCalcAuto_EnergyCal_imp.cpp )
 target_link_libraries( test_RelActCalcAuto_EnergyCal_imp PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_EnergyCal_imp

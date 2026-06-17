@@ -311,6 +311,10 @@ BOOST_AUTO_TEST_CASE( SkewBoundsNumericalStability )
   //  distributions stay finite, normalized, and well-behaved at - and approaching - the new bounds,
   //  i.e. nothing the fitter now reaches breaks down numerically.  The area-form integral is a single
   //  indefinite-integral evaluation, so the fat-tailed low-skew cases just use a very wide window.
+  //
+  // Review item A26: the single-sided CrystalBall tail is now evaluated in a cancellation-free form
+  //  that never builds the (n/alpha)^n constant, so the small-alpha / large-n corner (where that
+  //  constant used to overflow / lose precision) is exercised at the end of this test.
 
   const double mean = 500.0;
   const double sigma = 1.0;
@@ -382,6 +386,42 @@ BOOST_AUTO_TEST_CASE( SkewBoundsNumericalStability )
     const double area = crystal_ball_integral( mean, sigma, 5.0, 2.5, x0, x1 );
     BOOST_CHECK( std::isfinite(area) );
     BOOST_CHECK_CLOSE( area, 1.0, 5.0E-3 );
+  }
+
+  // --- CrystalBall (small-alpha / large-n: the A26 overflow corner) -----------------------------
+  //  This is the corner the old A = (n/alpha)^n form overflowed / lost precision at: at the bound
+  //  corner alpha=0.5, n=100 we have (n/alpha)^n = 200^100 ~ 1.6e230.  The cancellation-free tail
+  //  form never builds that constant; confirm the normalization (both bound ends), the scalar area
+  //  integral, and the channel/fit (Jet) path all stay finite & normalized there.
+  {
+    const double alpha = 0.5;             // the floor (heaviest tail / largest n/alpha)
+    const double ns[] = { 1.05, 100.0 };  // pole-guard floor ... ceiling (the overflow corner)
+    for( const double n : ns )
+    {
+      const double norm = crystal_ball_norm( sigma, alpha, n );
+      BOOST_CHECK_MESSAGE( std::isfinite(norm) && (norm > 0.0), "CrystalBall norm not finite/positive at alpha=0.5, n=" << n );
+    }
+
+    // Scalar area at the overflow corner (alpha=0.5, n=100; the n~1 end has an un-windowable fat
+    //  tail, so area is only checked at n=100 where the tail is ~exponential).
+    const double x0 = mean - 60.0*sigma, x1 = mean + 20.0*sigma;
+    const double area = crystal_ball_integral( mean, sigma, alpha, 100.0, x0, x1 );
+    BOOST_CHECK( std::isfinite(area) );
+    BOOST_CHECK_CLOSE( area, 1.0, 5.0E-3 );
+
+    // Channel (fit-path) evaluation at the overflow corner: every channel finite & non-negative,
+    //  summing to the amplitude - this is the path the Jacobian/Jet fit takes.
+    const double amplitude = 1.2345;
+    const size_t num_channels = 4096;
+    vector<double> counts( num_channels, 0.0 );
+    vector<float> energies( num_channels + 1, 0.0f );
+    for( size_t i = 0; i < energies.size(); ++i )
+      energies[i] = static_cast<float>( x0 + (i*(x1 - x0)/num_channels) );
+    crystal_ball_integral( mean, sigma, amplitude, alpha, 100.0, &(energies[0]), &(counts[0]), num_channels );
+    for( const double c : counts )
+      BOOST_CHECK( std::isfinite(c) && (c >= 0.0) );
+    const double sum = std::accumulate( begin(counts), end(counts), 0.0 );
+    BOOST_CHECK_CLOSE( sum, amplitude, amplitude*5.0E-3 );
   }
 }//BOOST_AUTO_TEST_CASE( SkewBoundsNumericalStability )
 
@@ -1536,3 +1576,75 @@ BOOST_AUTO_TEST_CASE( BortelDeepWindowFinite )
     BOOST_CHECK_CLOSE( dsum, 1.0, 1.0 );
   }
 }//BOOST_AUTO_TEST_CASE( BortelDeepWindowFinite )
+
+
+// Review issue #8: the CrystalBall / DoubleSidedCrystalBall CDF (PeakDists::peak_cdf) used to
+//  integrate the heavy power-law tail only from mean-50*sigma.  For small n (~1.05) a large part
+//  of the tail lies beyond 50 sigma, so the (analytically normalized) CDF was biased low and never
+//  reached 1.  The tail antiderivatives have an EXACT zero limit at -infinity, so peak_cdf now
+//  integrates from -inf.  These checks (monotone, and -> 1 on the right) fail against the old
+//  50-sigma truncation, which dropped a large fraction of the n~1.05 left-tail mass.
+BOOST_AUTO_TEST_CASE( PeakCdfTailToInfinity )
+{
+  const double mean = 1000.0;
+  const double sigma = 1.5;
+
+  // --- CrystalBall: heavy left power-law tail (n=1.05).  skew_pars = {alpha, n} -------------------
+  {
+    const double skew_pars[2] = { 1.0, 1.05 };
+    const PeakDef::SkewType skew = PeakDef::SkewType::CrystalBall;
+
+    // Monotone non-decreasing across a wide window, and within [0,1].
+    double prev = -1.0;
+    for( double t = -60.0; t <= 30.0; t += 0.5 )
+    {
+      const double cdf = peak_cdf( mean + t*sigma, mean, sigma, skew, skew_pars );
+      BOOST_CHECK_MESSAGE( (cdf >= -1.0e-9) && (cdf <= 1.0 + 1.0e-9),
+                           "CB CDF out of [0,1] at t=" << t << ": " << cdf );
+      BOOST_CHECK_MESSAGE( cdf >= (prev - 1.0e-9),
+                           "CB CDF not monotone at t=" << t << ": " << cdf << " < prev " << prev );
+      prev = cdf;
+    }
+
+    // Reaches 1 on the right (the property the 50-sigma truncation broke: the old code maxed out
+    //  well below 1 because most of the n=1.05 left-tail mass sits beyond -50 sigma).
+    const double cdf_right = peak_cdf( mean + 20.0*sigma, mean, sigma, skew, skew_pars );
+    BOOST_CHECK_MESSAGE( cdf_right > 0.999, "CB CDF should reach ~1 to the right; got " << cdf_right );
+  }
+
+  // --- DoubleSidedCrystalBall: heavy left (n_low=1.05), light right (n_high=10) -------------------
+  //  skew_pars = {alpha_low, n_low, alpha_high, n_high}
+  {
+    const double skew_pars[4] = { 1.0, 1.05, 2.0, 10.0 };
+    const PeakDef::SkewType skew = PeakDef::SkewType::DoubleSidedCrystalBall;
+
+    double prev = -1.0;
+    for( double t = -60.0; t <= 30.0; t += 0.5 )
+    {
+      const double cdf = peak_cdf( mean + t*sigma, mean, sigma, skew, skew_pars );
+      BOOST_CHECK_MESSAGE( (cdf >= -1.0e-9) && (cdf <= 1.0 + 1.0e-9),
+                           "DSCB CDF out of [0,1] at t=" << t << ": " << cdf );
+      BOOST_CHECK_MESSAGE( cdf >= (prev - 1.0e-9),
+                           "DSCB CDF not monotone at t=" << t << ": " << cdf << " < prev " << prev );
+      prev = cdf;
+    }
+
+    const double cdf_right = peak_cdf( mean + 20.0*sigma, mean, sigma, skew, skew_pars );
+    BOOST_CHECK_MESSAGE( cdf_right > 0.999, "DSCB CDF should reach ~1 to the right; got " << cdf_right );
+
+    // Cross-check the CDF increments against the independent array integral
+    //  double_sided_crystal_ball_integral over a few finite mid-range intervals.
+    const double pts[5] = { mean - 8.0*sigma, mean - 2.0*sigma, mean, mean + 2.0*sigma, mean + 8.0*sigma };
+    for( int i = 0; (i + 1) < 5; ++i )
+    {
+      const double a = pts[i], b = pts[i+1];
+      const double via_cdf = peak_cdf( b, mean, sigma, skew, skew_pars )
+                           - peak_cdf( a, mean, sigma, skew, skew_pars );
+      const double via_int = double_sided_crystal_ball_integral( mean, sigma,
+                                  skew_pars[0], skew_pars[1], skew_pars[2], skew_pars[3], a, b );
+      BOOST_CHECK_MESSAGE( std::fabs(via_cdf - via_int) < 1.0e-6,
+                           "DSCB CDF increment [" << a << "," << b << "] = " << via_cdf
+                           << " disagrees with array integral " << via_int );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( PeakCdfTailToInfinity )

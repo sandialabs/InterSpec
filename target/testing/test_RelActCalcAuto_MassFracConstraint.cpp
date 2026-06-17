@@ -29,6 +29,7 @@
 #include <memory>
 #include <utility>
 #include <iostream>
+#include <algorithm>
 
 #define BOOST_TEST_MODULE RelActCalcAuto_MassFracConstraint_suite
 #include <boost/test/included/unit_test.hpp>
@@ -39,6 +40,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/RelActCalcAuto.h"
@@ -341,3 +343,78 @@ BOOST_AUTO_TEST_CASE( mass_fraction_constraint_fixed_plus_range )
   BOOST_CHECK_MESSAGE( (mf235.first > 0.0) && (mf235.first <= 1.0 + 1.0e-6),
                        "Range U235 mass fraction " << mf235.first << " is outside [0,1]." );
 }//BOOST_AUTO_TEST_CASE( mass_fraction_constraint_fixed_plus_range )
+
+
+// Regression guard for an auto-simplify + peak-skew interaction in RelActCalcAuto::solve.
+//
+// The auto-simplify pass records every parameter it fixes into `as_fixed`, then builds the final Ceres
+// manifold from `constant_parameters + as_fixed`.  The accept-branch used to add a fixed parameter even
+// when it was already constant from problem setup, so the two lists overlapped and the concatenation
+// contained duplicate indices - `ceres::SubsetManifold` then aborts ("The set of constant parameters
+// cannot contain duplicates").
+//
+// Double Sided Crystal Ball is the reliable trigger: its two `n` exponents are never energy dependent
+// (PeakDef::is_energy_dependent), so their second-energy-set copies are fixed unconditionally at setup;
+// the accepted skew-removal candidate then re-added those already-constant indices.  This test loads a
+// uranium HPGe spectrum, switches to DSCB skew with auto-simplify on, and (by forcing every converged
+// removal to be accepted) requires the solve to complete - pre-fix it aborts the process at SubsetManifold.
+BOOST_AUTO_TEST_CASE( auto_simplify_double_crystal_ball_no_duplicate_const )
+{
+  set_data_dir();
+
+  const string spec_path = SpecUtils::append_path(
+      SpecUtils::append_path( g_test_file_dir, "RelActAutoReport" ), "U235_Unshielded_6000.n42" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( spec_path ), "Test spectrum not at '" << spec_path << "'" );
+
+  auto meas = make_shared<SpecMeas>();
+  BOOST_REQUIRE_MESSAGE( meas->load_file( spec_path, SpecUtils::ParserType::Auto ),
+                         "Failed to load '" << spec_path << "'" );
+
+  shared_ptr<const SpecUtils::Measurement> foreground, background;
+  for( const shared_ptr<const SpecUtils::Measurement> &m : meas->measurements() )
+  {
+    if( !m )
+      continue;
+    if( m->source_type() == SpecUtils::SourceType::Background )
+      background = m;
+    else if( !foreground )
+      foreground = m;
+  }
+  BOOST_REQUIRE_MESSAGE( foreground, "No foreground measurement in '" << spec_path << "'" );
+
+  const shared_ptr<const DetectorPeakResponse> det = meas->detector();
+  BOOST_REQUIRE_MESSAGE( det, "Test N42 has no embedded detector response." );
+
+  const unique_ptr<RelActCalcAuto::RelActAutoGuiState> state = meas->getRelActAutoGuiState();
+  BOOST_REQUIRE_MESSAGE( state, "Test N42 missing embedded RelActAuto state." );
+  BOOST_REQUIRE_MESSAGE( !state->options.rel_eff_curves.empty(), "Embedded state has no rel-eff curve." );
+
+  RelActCalcAuto::Options options = state->options;
+  options.skew_type = PeakDef::SkewType::DoubleSidedCrystalBall;
+  options.auto_simplify_model = true;
+  // Force every converged removal to be accepted (regardless of chi2 cost) so the skew-removal candidate
+  //  is guaranteed to run its accept-branch - that is the bookkeeping path that produced the duplicate
+  //  constant index.  Whether real data would prefer the tail is irrelevant to the index bug under test;
+  //  this just makes the regression deterministic instead of depending on the spectrum's skew preference.
+  options.auto_simplify_max_dchi2 = 1.0e9;
+  // `lorentzian_xrays` requires NoSkew/GaussPlusBortel; clear it so DSCB doesn't trip the setup check
+  //  (an unrelated exception) before we reach the auto-simplify path under test.
+  options.lorentzian_xrays = false;
+
+  RelActCalcAuto::RelActAutoSolution sol;
+  // Pre-fix this call aborts the process inside ceres::SubsetManifold; post-fix it returns normally.
+  BOOST_REQUIRE_NO_THROW( sol = RelActCalcAuto::solve( options, foreground, background, det, {}, nullptr ) );
+
+  BOOST_CHECK_MESSAGE( sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,
+                       "DSCB + auto-simplify solve failed: status=" << static_cast<int>(sol.m_status)
+                       << ", error='" << sol.m_error_message << "'" );
+
+  // Confirm the buggy code path was actually exercised: with removals force-accepted, auto-simplify must
+  //  have dropped the skew and recorded it in the warnings (this is the path that produced the duplicate
+  //  constant crash).
+  const bool removed_skew = std::any_of( begin(sol.m_warnings), end(sol.m_warnings),
+                                         []( const string &w ){ return SpecUtils::icontains( w, "peak skew" ); } );
+  BOOST_CHECK_MESSAGE( removed_skew,
+                       "Expected an auto-simplify 'peak skew' removal warning (the path that produced the"
+                       " duplicate-constant crash); none found - the regression path may not be exercised." );
+}//BOOST_AUTO_TEST_CASE( auto_simplify_double_crystal_ball_no_duplicate_const )

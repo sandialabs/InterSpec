@@ -221,6 +221,8 @@ with the heaviest blobs elided for readability.
 | `live_time_s` | number | Spectrum live time, seconds |
 | `chi2`, `dof`, `chi2_per_dof` | number, int, number | Goodness of fit |
 | `chi2_str`, `chi2_per_dof_str` | string | Pre-formatted with `%.6G` |
+| `r2`, `condition_number` | number\|null, number\|null | Weighted R² (coeff. of determination) and Jacobian condition number κ(J); `null` if not computed |
+| `r2_str`, `condition_number_str` | string | Pre-formatted (`%.5G` / `%.3G`), or `"n/a"` |
 | `rel_eff_curves` | array | Per-curve equation info (see §3.2) |
 | `rel_eff_chart_json` | string | JSON literal interpolated into `<script>` to drive the bundled `RelEffPlot` widget; HTML reports only |
 | `relative_activities` | array | Per-curve activity rows; nested `pu` and `ratios` (see §3.3) |

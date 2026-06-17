@@ -45,6 +45,7 @@
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <boost/math/distributions/chi_squared.hpp>
 
 #include "Wt/WDateTime"
 #include "Wt/WApplication"
@@ -2592,6 +2593,55 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//size_t number_data_residuals() const
 
 
+  /** Inverse-variance-weighted total sum of squares of the data about its weighted mean, summed over
+   exactly the spectrum channels that contribute to the data residuals (the same channels as the
+   data-only chi-square).  This is the SS_tot denominator for the weighted coefficient of
+   determination:  R^2 = 1 - m_chi2_data / data_weighted_total_ss().  Returns 0 if there is no
+   usable data. */
+  double data_weighted_total_ss() const
+  {
+    // First pass: inverse-variance weighted mean of the data over all ROI channels.
+    double sum_w = 0.0, sum_wy = 0.0;
+    for( const RoiRangeChannels &roi : m_energy_ranges )
+    {
+      const std::pair<size_t,size_t> chan_range = RoiRangeChannels::channel_range(
+                                roi.lower_energy, roi.upper_energy, roi.num_channels, m_energy_cal );
+      for( size_t ch = chan_range.first; ch <= chan_range.second; ++ch )
+      {
+        const double uncert = m_channel_count_uncerts[ch];
+        if( uncert <= 0.0 )
+          continue;
+        const double w = 1.0 / (uncert*uncert);
+        sum_w  += w;
+        sum_wy += w * m_channel_counts[ch];
+      }
+    }//for( const RoiRangeChannels &roi : m_energy_ranges )
+
+    if( sum_w <= 0.0 )
+      return 0.0;
+
+    const double weighted_mean = sum_wy / sum_w;
+
+    // Second pass: weighted sum of squares of the data about that mean.
+    double ss_tot = 0.0;
+    for( const RoiRangeChannels &roi : m_energy_ranges )
+    {
+      const std::pair<size_t,size_t> chan_range = RoiRangeChannels::channel_range(
+                                roi.lower_energy, roi.upper_energy, roi.num_channels, m_energy_cal );
+      for( size_t ch = chan_range.first; ch <= chan_range.second; ++ch )
+      {
+        const double uncert = m_channel_count_uncerts[ch];
+        if( uncert <= 0.0 )
+          continue;
+        const double diff = m_channel_counts[ch] - weighted_mean;
+        ss_tot += (diff*diff) / (uncert*uncert);
+      }
+    }//for( const RoiRangeChannels &roi : m_energy_ranges )
+
+    return ss_tot;
+  }//double data_weighted_total_ss() const
+
+
   /** Find the anchor energy for a ROI.
 
    Returns the mean of the largest peak (by area) in the ROI from m_all_peaks,
@@ -3476,9 +3526,52 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
       
       
-      // Set bounds for Berstein coefficients based on expected peak width limits
+      // Set bounds for the FWHM coefficients based on expected peak width limits, so an unconstrained
+      //  optimizer step can't drive the FWHM model to a non-finite / non-positive value (which makes
+      //  eval_fwhm() throw and aborts a developer-checks build).
       switch( options.fwhm_form )
       {
+        case RelActCalcAuto::FwhmForm::Gadras:
+        {
+          // GADRAS FWHM(E) = 6.61*b*(E/661)^c above the 661 keV pivot (~ constant `a` below it).  Left
+          //  unbounded, a single Ceres step can push the exponent `c` large enough that pow(E/661, c)
+          //  overflows to inf, or push the scale `b` non-positive (negative FWHM) - either throws in
+          //  eval_fwhm().  Bound `b` (keep FWHM positive & sane) and `c` (keep the high-energy tail
+          //  finite), and pull any out-of-range seed (e.g. from a poor DRF->GADRAS conversion) into range.
+          //  `a` is left free (it can legitimately be negative for low-resolution detectors).
+          if( (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
+             || (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
+            break;  // FWHM held constant - don't constrain or move the fixed parameters.
+
+          assert( (cost_functor->m_fwhm_par_start_index + 3) <= parameters.size() );
+
+          // FWHM(661 keV) = 6.61*b, so b in [0.01, 30] keeps FWHM(661) in ~[0.07, 200] keV - permissive
+          //  from a very good HPGe to a poor scintillator, while keeping `b` strictly positive.  Physical
+          //  GADRAS exponents are ~0.3-0.7; cap `c` at 4 (floor 0, which also keeps the a<0 branch finite),
+          //  far above anything real but well below where pow(E/661, c) overflows.
+          const double gadras_bounds[2][2] = { {0.01, 30.0}, {0.0, 4.0} }; // {b_lo,b_hi}, {c_lo,c_hi}
+          for( size_t i = 0; i < 2; ++i )
+          {
+            const size_t par_index = cost_functor->m_fwhm_par_start_index + 1 + i; // b is start+1, c is start+2
+            lower_bounds[par_index] = gadras_bounds[i][0];
+            upper_bounds[par_index] = gadras_bounds[i][1];
+
+            if( (parameters[par_index] < gadras_bounds[i][0]) || (parameters[par_index] > gadras_bounds[i][1]) )
+            {
+              const string msg = "Initial GADRAS FWHM parameter (" + std::to_string(parameters[par_index])
+                + ") is outside expected range [" + std::to_string(gadras_bounds[i][0]) + ", "
+                + std::to_string(gadras_bounds[i][1]) + "] - clamping into range.";
+              cerr << endl << msg << endl << endl;
+              solution.m_warnings.push_back( msg );
+            }
+
+            parameters[par_index] = std::max( parameters[par_index], gadras_bounds[i][0] );
+            parameters[par_index] = std::min( parameters[par_index], gadras_bounds[i][1] );
+          }//for( bound b then c )
+
+          break;
+        }//case Gadras
+
         case RelActCalcAuto::FwhmForm::Berstein_2:
         case RelActCalcAuto::FwhmForm::Berstein_3:
         case RelActCalcAuto::FwhmForm::Berstein_4:
@@ -6075,7 +6168,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           best_chi2 = trial_chi2;
           for( const pair<size_t,double> &f : cand.fixes )
           {
-            if( std::find(begin(as_fixed), end(as_fixed), (int)f.first) == end(as_fixed) )
+            // Only record parameters this candidate actually fixed; skip ones already constant (from
+            //  problem setup or an earlier candidate) so `as_fixed` never overlaps `constant_parameters`.
+            //  Otherwise final_const = constant_parameters + as_fixed would contain duplicate indices and
+            //  ceres::SubsetManifold aborts ("constant parameters cannot contain duplicates") - e.g. the
+            //  never-energy-dependent DoubleSidedCrystalBall `n` exponents are fixed at setup, then the
+            //  accepted skew-removal candidate would re-add them here.
+            if( !is_const( f.first ) )
               as_fixed.push_back( (int)f.first );
           }
           solution.m_warnings.push_back( "Auto-simplify: removed " + cand.description
@@ -6128,6 +6227,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // Restore the manifold to (originally-constant + auto-simplify-fixed) for the covariance below.
       vector<int> final_const = constant_parameters;
       final_const.insert( end(final_const), begin(as_fixed), end(as_fixed) );
+      // `as_fixed` holds only newly-fixed (previously-free) indices, so it must not overlap
+      //  `constant_parameters`; a duplicate here would make ceres::SubsetManifold abort.
+      assert( std::set<int>(begin(final_const), end(final_const)).size() == final_const.size() );
       if( !final_const.empty() )
         problem.SetManifold( pars, new ceres::SubsetManifold( (int)num_pars, final_const ) );
       else
@@ -6339,6 +6441,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #endif
 
       Eigen::VectorXd singular_values = svd.singularValues();
+
+      // Report the 2-norm condition number kappa(J) = sigma_max / sigma_min of the fit Jacobian - a
+      //  continuous measure of nearness-to-singularity (kappa >~ 1e7 corresponds to the rank-deficiency
+      //  flagged just below).  Set here, before the rank-deficiency `throw`, so it is recorded regardless.
+      {
+        const double sigma_max = singular_values.maxCoeff();
+        const double sigma_min = singular_values.minCoeff();
+        solution.m_jacobian_condition_number = (sigma_min > 0.0)
+                            ? (sigma_max / sigma_min) : std::numeric_limits<double>::infinity();
+      }
+
       // Count a direction as a real degree of freedom only if it is constrained within 1e7x of the
       //  best-constrained direction - the same ratio as the covariance conditioning floor above
       //  (min_reciprocal_condition_number = (1e-7)^2 = 1e-14), so the directions counted here as effective
@@ -6403,6 +6516,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_chi2_data = chi2_data;
       solution.m_dof_data = (n_data_rows > num_effective_paramaters) ? (n_data_rows - num_effective_paramaters) : size_t(0);
       solution.m_cov_scale = (solution.m_dof_data > 0) ? (std::max)(1.0, chi2_data/static_cast<double>(solution.m_dof_data)) : 1.0;
+
+      // Weighted coefficient of determination: R^2 = 1 - SS_res/SS_tot, with SS_res = chi2_data (the
+      //  weighted residual sum of squares we just computed) and SS_tot the weighted total sum of squares
+      //  of the data about its weighted mean, over the same channels.
+      try
+      {
+        const double ss_tot = cost_functor->data_weighted_total_ss();
+        solution.m_r2 = (ss_tot > 0.0) ? (1.0 - (chi2_data / ss_tot))
+                                       : std::numeric_limits<double>::quiet_NaN();
+      }catch( std::exception & )
+      {
+        solution.m_r2 = std::numeric_limits<double>::quiet_NaN();
+      }
 
       if( !solution.m_covariance.empty() && (solution.m_cov_scale != 1.0) )
       {
@@ -14356,7 +14482,25 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
 
   if( m_status != Status::Success )
     return out;
-  
+
+  // Goodness of fit (data-channel rows only): chi2/dof and its p-value.
+  out << "Goodness of fit:\n";
+  {
+    const double chi2_dof = (m_dof_data > 0) ? (m_chi2_data / static_cast<double>(m_dof_data)) : 0.0;
+    out << "  χ²/dof = " << SpecUtils::printCompact(m_chi2_data, 4) << "/" << m_dof_data
+        << " = " << SpecUtils::printCompact(chi2_dof, 4);
+    try
+    {
+      boost::math::chi_squared chi2_dist( static_cast<double>(m_dof_data) );
+      const double p_value = 1.0 - boost::math::cdf( chi2_dist, m_chi2_data );
+      out << "  (p-value = " << SpecUtils::printCompact(p_value, 3) << ")";
+    }catch( std::exception & )
+    {
+    }
+    out << "\n";
+  }
+  out << "\n";
+
   assert( m_final_parameters.size() == m_parameter_names.size() );
   //out << "Raw Ceres par values: [";
   //for( size_t i = 0; i < m_final_parameters.size(); ++i )
@@ -15600,7 +15744,8 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       }else
       {
         assert( 0 );
-        info.js_rel_eff_eqn = "function(x){ return 1; }";
+        // Empty -> RelEffChart serializes as JS `null` (no fit line drawn), rather than a misleading flat y=1.
+        info.js_rel_eff_eqn = "";
       }//if( not FramPhysicalModel ) / else / m_cost_functor
 
       // Include the relative-efficiency uncertainty band (±2σ), like the interactive GUI does
@@ -15760,6 +15905,31 @@ double RelActAutoSolution::reliability_floored_uncert( const double value, const
 }//reliability_floored_uncert(...)
 
 
+// =====================================================================================================
+// TODO(systematic-uncertainty): the uncertainty returned here is purely STATISTICAL (counting). A model-
+//   form SYSTEMATIC term still needs to be computed and combined in (review A3 "layer 3"). It is the
+//   dominant uncertainty once counting statistics are good, and is dominated by the detector-efficiency
+//   (DRF) shape. The estimate must be made PER-SPECTRUM, on the fly -- a blanket multiplier is not adequate
+//   (the size varies ~3x with enrichment and collapses to ~0 when the DRF is known). Planned recipe:
+//     1. Re-solve THIS spectrum a handful of times, each varying one assumption the data can't pin down:
+//        the detector-efficiency curve, the empirical correction function, and the U chemical form.
+//     2. systematic = scatter (std-dev) of the resulting enrichment values; reported value = their average.
+//        Use EQUAL weights -- do NOT chi2-weight: the best-fitting DRF is anti-correlated with the truth-
+//        closest one (it matched only 15% of the time, vs 25% by chance).
+//     3. total_uncert = sqrt( statistical^2 + (k * scatter)^2 ),  k ~ 0.8.
+//
+//   Where each number comes from:
+//     - candidate detector curves: the detector-response library shipped with the program (coax/planar/etc.
+//       of the right detector class). If the user supplies their OWN measured DRF, use only that one and this
+//       (dominant) axis collapses to ~0 on its own.
+//     - the correction-function / U-matrix variations: just re-running this fit with those options toggled.
+//     - the scatter: measured live by re-analyzing THIS spectrum -- nothing pre-tabulated.
+//     - k (~0.8): the ONLY number from outside the spectrum; fit once, offline, so the pulls come out honest
+//       on the uranium reference standards we have truth for (IAEA IDB + JRC). One dimensionless dial.
+//
+//   Combine point: fold the systematic into the optional<double> returned here (and the rel-eff band in
+//   relative_efficiency_with_uncert); report it separately from statistical (Total-Measurement-Uncertainty style).
+// =====================================================================================================
 pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const
 {
 #define USE_RelActAutoCostFcn_MASS_FRAC_IMP 1

@@ -409,12 +409,25 @@ void bortel_integral( const T mean, const T sigma, const T amp, const T skew,
                        const float * const energies, T *channels, const size_t nchannel )
 {
   assert( sigma > 0.0 );
-  if( (sigma <= 0.0) || (amp <= 0.0) || !nchannel )
+  if( (sigma <= 0.0) || !nchannel )
     return;
-  
-  const double zero_amp_point_nsigma_lower = 12.0; // TODO: Use the skew to determine lower energy
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // Guard zero/negative amplitude only for the double path; for a Ceres::Jet we must keep
+    //  computing so the d(channel)/d(amp)=shape derivative at amp==0 survives (matches every
+    //  sibling distribution, e.g. gaussian_integral / crystal_ball_integral).
+    if( amp <= 0.0 )
+      return;
+  }
+
+  // `skew` is the Bortel tau, in keV (it enters bortel_indefinite_integral as sigma/skew and
+  //  (x-mean)/skew), so the exponential left tail has decay length `skew` keV.  Extend the lower
+  //  bound by 12*sigma for the Gaussian core plus 20*tau (keV) for the tail (exp(-20) ~ 2e-9).
+  const double zero_amp_point_nsigma_lower = 12.0;
   const double zero_amp_point_nsigma_upper = 8.0;
-  const T start_energy = mean - zero_amp_point_nsigma_lower*sigma;
+  const double tau_tail_factor = 20.0;
+  const T start_energy = mean - (zero_amp_point_nsigma_lower*sigma + tau_tail_factor*skew);
   const T stop_energy = mean + zero_amp_point_nsigma_upper*sigma;
   
   size_t channel = 0;
@@ -490,23 +503,22 @@ void crystal_ball_integral( const T peak_mean,
   const double root_half_pi = boost::math::constants::root_half_pi<double>();
   const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
   
-  const T A = pow(power_law/alpha, power_law) * exp_aa;
-  const T B = (power_law / alpha) - alpha;
+  // The power-law tail is evaluated in the cancellation-free form that never builds the
+  //  (n/alpha)^n constant (which overflows for large n / small alpha).  Writing B - t = (n/alpha)*t_1
+  //  with t_1 = 1 - (alpha+t)*alpha/n, the un-normalized tail A*(B-t)^(1-n) equals
+  //  (n/alpha)*exp(-alpha^2/2)*t_1^(1-n), so the full tail prefactor N*A*sigma/(n-1) collapses
+  //  exactly to C/(C+D).  (See PeakDef::crystal_ball_tail_indefinite_t for the same rewrite.)
   const T C = (power_law / alpha) * (1.0/(power_law - 1.0)) * exp_aa;
   T D;
   if constexpr ( !std::is_same_v<T, double> )
     D = root_half_pi * (1.0 + erf( one_div_root_two * alpha ));
   else
     D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
-  const T N = 1.0 / (peak_sigma * (C + D));
-  const T tail_amp = peak_amplitude * N * A * peak_sigma / (power_law - 1.0);
+  const T tail_amp = peak_amplitude * C / (C + D);
   const T gauss_indef_amp = 0.5 * peak_amplitude * sqrt_2pi / (C + D);
 
-  check_jet_for_NaN( N );
   check_jet_for_NaN( tail_amp );
   check_jet_for_NaN( gauss_indef_amp );
-  check_jet_for_NaN( A );
-  check_jet_for_NaN( B );
   check_jet_for_NaN( C );
   check_jet_for_NaN( D );
   check_jet_for_NaN( exp_aa );
@@ -514,13 +526,17 @@ void crystal_ball_integral( const T peak_mean,
   check_jet_for_NaN( stop_energy );
 
   // Brief implementation of crystal_ball_tail_indefinite_t
-  auto tail_indefinite = [peak_mean,peak_sigma,alpha,power_law,B,tail_amp]( const T x ) -> T {
+  auto tail_indefinite = [peak_mean,peak_sigma,alpha,power_law,tail_amp]( const T x ) -> T {
     const T t = (x - peak_mean) / peak_sigma;
     assert( ((t - 1.0E-6) <= -alpha) && (alpha > 0.0) && (power_law > 1.0) );
 
-    T answer = tail_amp * pow( B - t, 1.0 - power_law );
+    // t_1 = (B - t)/(n/alpha) >= 1 for t <= -alpha; using it instead of (B - t) keeps the
+    //  (n/alpha)^n factor from ever forming.
+    const T t_1 = 1.0 - ((alpha + t) * alpha / power_law);
+    T answer = tail_amp * pow( t_1, 1.0 - power_law );
 
     check_jet_for_NaN( t );
+    check_jet_for_NaN( t_1 );
     check_jet_for_NaN( answer );
 
     return answer;
@@ -623,10 +639,10 @@ void crystal_ball_integral( const T peak_mean,
       const double diff = fabs(val - simple_answer);
       const double frac_diff = diff / std::max(val, simple_answer);
       
-      // We'll be pragmatic here; we wont ever care about 1E-9 counts, so we will use this as our
-      //   limit, otherwise we will actually trigger asserts.
-      // TODO: figure out what is causing the in-accuracy of this (probably just numeric accuracy?)
-      assert( (frac_diff < 1.0E-2) || (diff < 1.0E-3) );
+      // Post the cancellation-free rewrite the templated and scalar forms are algebraically
+      //  identical (both via crystal_ball_tail_indefinite_t), so they agree to ~1e-12.  Keep the
+      //  absolute `diff` escape hatch for the near-cancelling alpha=0.5 / n->1.05 tail corner.
+      assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
     }
 #endif //PERFORM_DEVELOPER_CHECKS
     
@@ -720,10 +736,14 @@ void exp_gauss_exp_integral( const T peak_mean,
     return (peak_sigma/skew_left)*exp((skew_left/peak_sigma)*(0.5*skew_left*peak_sigma - peak_mean + x));
   };
   
-  // This next line looks suspect, with both a multiplication by 0.5, and division by 2.0, but
-  //  the developers checks would catch it if it was a real issue, since the alternative
-  //  calculation is fairly independent.
-  const T r_const = (exp(-0.5*skew_right*skew_right/2.0)*peak_sigma)/skew_right;
+  // r_const is the additive integration constant of the right-tail antiderivative.  It CANCELS in
+  //  every `indefinite_high - indefinite_low` difference used below, so its value does not affect
+  //  any result here -- and, for that same reason, the difference-based developer checks below can
+  //  NOT validate it.  We set it to the junction-anchored value exp(-k^2/2)*sigma/k (k=skew_right)
+  //  to match the scalar twin exp_gauss_exp_right_tail_indefinite (PeakDists.cpp), where the
+  //  bracket must vanish at the junction x = mean + k*sigma because it is consumed as an absolute
+  //  CDF; that makes this lambda reusable as a CDF too.
+  const T r_const = (exp(-0.5*skew_right*skew_right)*peak_sigma)/skew_right;
   auto right_tail_indefinite_non_norm = [peak_mean,peak_sigma,skew_right,r_const]( const T x ) -> T {
     return (r_const-(peak_sigma*exp((skew_right*peak_mean)/peak_sigma-(x*skew_right)/peak_sigma+0.5*skew_right*skew_right))/skew_right);
   };
@@ -1466,6 +1486,10 @@ offset_integral(const ContType& cont,
           assert( std::max(answer,0.0) == cont.offset_eqn_integral( &(pars[0]), cont_type, energies[i], energies[i+1], reference_energy ) );
         }
 
+        // Continuum counts are physical (>= 0): clamp negative continuum to 0.  This is an
+        //  intentional ReLU, applied identically on the double and Jet paths (no value/Jacobian
+        //  mismatch), but it deliberately zeroes the Jet gradient w.r.t. the continuum coefficients
+        //  on any channel where the continuum dips below 0 (a kink there).
         channels[i] += max( answer, T(0.0) );
       }//for( size_t i = 0; i < nchannel; ++i )
 
@@ -1572,6 +1596,9 @@ offset_integral(const ContType& cont,
             const size_t step_index = ((cont_type == PeakContinuum::OffsetType::FlatStep) ? 1 : 2);
             const T step_contribution = pars[step_index] * frac_data * (x1_rel - x0_rel);
 
+            // Continuum counts are physical (>= 0): intentional ReLU clamp, applied identically on
+            //  the double and Jet paths (no value/Jacobian mismatch); it deliberately zeroes the Jet
+            //  gradient w.r.t. the continuum coefficients on channels where the continuum dips < 0.
             const T answer = max( T(0.0), offset + linear + step_contribution );
 
             if constexpr ( std::is_same_v<T, double> )
@@ -1588,6 +1615,7 @@ offset_integral(const ContType& cont,
             assert( pars.size() == 4 );
             const T left_poly = pars[0]*(x1_rel - x0_rel) + 0.5*pars[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
             const T right_poly = pars[2]*(x1_rel - x0_rel) + 0.5*pars[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            // Intentional ReLU clamp (continuum counts >= 0); same gradient-kink note as above.
             const T contrib = std::max( T(0.0), ((1.0 - frac_data) * left_poly) + (frac_data * right_poly) );
 
             if constexpr ( std::is_same_v<T, double> )
@@ -1742,12 +1770,14 @@ void gauss_plus_bortel_integral( const T peak_mean, const T sigma,
 
   // For GaussPlusBortel: PDF(x) = (1-R)*Gaussian(x) + R*Bortel(x)
 
-  // Determine energy range to process
-  // The Bortel component has an exponential tail extending far to the left
-  // Use a generous multiplier on tau to ensure we capture the full tail
+  // Determine energy range to process.  The Bortel component has an exponential left tail with
+  //  decay length `tau` keV.  Extend the lower bound by 12*sigma for the Gaussian core plus
+  //  20*tau (keV) for the tail (exp(-20) ~ 2e-9).  Note tau is in keV, so it is NOT multiplied
+  //  by sigma (the old `(12 + 20*tau)*sigma` form was dimensionally keV^2).
   const double zero_amp_point_nsigma_lower = 12.0;
   const double zero_amp_point_nsigma_upper = 8.0;
-  const T start_energy = peak_mean - (zero_amp_point_nsigma_lower + 20.0*tau) * sigma;
+  const double tau_tail_factor = 20.0;
+  const T start_energy = peak_mean - (zero_amp_point_nsigma_lower*sigma + tau_tail_factor*tau);
   const T stop_energy = peak_mean + zero_amp_point_nsigma_upper * sigma;
 
   size_t channel = 0;
@@ -1764,15 +1794,25 @@ void gauss_plus_bortel_integral( const T peak_mean, const T sigma,
   const T one_minus_R = T(1.0) - R;
   const T half_one_minus_R = T(0.5) * one_minus_R;
 
+  // Use boost_erf_imp for the Gaussian part on the double path (matching bortel_indefinite_integral
+  //  and the scalar peak_cdf GaussPlusBortel case), so the Gaussian and Bortel parts share one erf
+  //  implementation here; the Jet path uses ceres::erf.
+  auto erf_T = []( const T &a ) -> T {
+    if constexpr ( !std::is_same_v<T, double> )
+      return erf( a );
+    else
+      return boost_erf_imp( a );
+  };
+
   // Cache the lower energy indefinite integrals
   T erfarg_low = ( static_cast<double>(energies[channel]) - peak_mean ) / sqrt2sigma;
-  T erf_low = erf( erfarg_low );
+  T erf_low = erf_T( erfarg_low );
   T bortel_val_low = bortel_indefinite_integral( static_cast<double>(energies[channel]), peak_mean, sigma, tau );
 
   while( (channel < nchannel) && (energies[channel] < stop_energy) )
   {
     const T erfarg_high = ( static_cast<double>(energies[channel + 1]) - peak_mean ) / sqrt2sigma;
-    const T erf_high = erf( erfarg_high );
+    const T erf_high = erf_T( erfarg_high );
     const T bortel_val_high = bortel_indefinite_integral( static_cast<double>(energies[channel + 1]), peak_mean, sigma, tau );
 
     // Gaussian integral: 0.5 * (erf_high - erf_low)
@@ -1816,13 +1856,15 @@ void double_bortel_integral( const T peak_mean, const T sigma,
   // PDF(x) = (1-eta)*Bortel(tau1) + eta*Bortel(tau2)
   const T tau2 = tau1 + tau2_delta;
 
-  // Determine energy range to process - use larger tau for the tail extent
-  // The Bortel component has an exponential tail extending far to the left
-  // Use a generous multiplier on the larger tau to ensure we capture the full tail
+  // Determine energy range to process.  tau1/tau2 are Bortel decay lengths in keV; the longer
+  //  one sets the tail extent.  Extend the lower bound by 12*sigma for the Gaussian core plus
+  //  20*max_tau (keV) for the tail (exp(-20) ~ 2e-9).  tau is in keV, so it is NOT multiplied by
+  //  sigma (the old `(12 + 20*max_tau)*sigma` form was dimensionally keV^2).
   const double zero_amp_point_nsigma_base = 12.0;
   const double zero_amp_point_nsigma_upper = 8.0;
+  const double tau_tail_factor = 20.0;
   const T max_tau = (tau2 > tau1) ? tau2 : tau1;
-  const T start_energy = peak_mean - ( zero_amp_point_nsigma_base + 20.0*max_tau ) * sigma;
+  const T start_energy = peak_mean - ( zero_amp_point_nsigma_base*sigma + tau_tail_factor*max_tau );
   const T stop_energy = peak_mean + zero_amp_point_nsigma_upper * sigma;
 
   size_t channel = 0;
