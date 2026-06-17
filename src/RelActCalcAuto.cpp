@@ -6159,7 +6159,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           best_chi2 = trial_chi2;
           for( const pair<size_t,double> &f : cand.fixes )
           {
-            if( std::find(begin(as_fixed), end(as_fixed), (int)f.first) == end(as_fixed) )
+            // Only record parameters this candidate actually fixed; skip ones already constant (from
+            //  problem setup or an earlier candidate) so `as_fixed` never overlaps `constant_parameters`.
+            //  Otherwise final_const = constant_parameters + as_fixed would contain duplicate indices and
+            //  ceres::SubsetManifold aborts ("constant parameters cannot contain duplicates") - e.g. the
+            //  never-energy-dependent DoubleSidedCrystalBall `n` exponents are fixed at setup, then the
+            //  accepted skew-removal candidate would re-add them here.
+            if( !is_const( f.first ) )
               as_fixed.push_back( (int)f.first );
           }
           solution.m_warnings.push_back( "Auto-simplify: removed " + cand.description
@@ -6212,6 +6218,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // Restore the manifold to (originally-constant + auto-simplify-fixed) for the covariance below.
       vector<int> final_const = constant_parameters;
       final_const.insert( end(final_const), begin(as_fixed), end(as_fixed) );
+      // `as_fixed` holds only newly-fixed (previously-free) indices, so it must not overlap
+      //  `constant_parameters`; a duplicate here would make ceres::SubsetManifold abort.
+      assert( std::set<int>(begin(final_const), end(final_const)).size() == final_const.size() );
       if( !final_const.empty() )
         problem.SetManifold( pars, new ceres::SubsetManifold( (int)num_pars, final_const ) );
       else
