@@ -886,19 +886,25 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 
 
   // Auto-simplify model: a checkbox that, when checked, reveals a chi2-increase tolerance input.  Drives
-  //  Options::auto_simplify_model / auto_simplify_max_dchi2 (greedy redundant-DOF removal).
-  m_auto_simplify = new WCheckBox( WString::tr("raag-auto-simplify"), generalOptionsDiv );
+  //  Options::auto_simplify_model / auto_simplify_max_dchi2 (greedy redundant-DOF removal).  The checkbox
+  //  and its tolerance input are grouped in a single container so they stay together on one row.
+  WContainerWidget *autoSimplifyDiv = new WContainerWidget( generalOptionsDiv );
+  autoSimplifyDiv->addStyleClass( "RelActAutoAutoSimplifyDiv" );
+
+  m_auto_simplify = new WCheckBox( WString::tr("raag-auto-simplify"), autoSimplifyDiv );
   m_auto_simplify->addStyleClass( "AutoSimplifyCb CbNoLineBreak" );
   m_auto_simplify->checked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
   m_auto_simplify->unChecked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
   HelpSystem::attachToolTipOn( m_auto_simplify, WString::tr("raag-tt-auto-simplify"), showToolTips );
 
-  m_auto_simplify_dchi2_div = new WContainerWidget( generalOptionsDiv );
+  m_auto_simplify_dchi2_div = new WContainerWidget( autoSimplifyDiv );
   m_auto_simplify_dchi2_div->addStyleClass( "RelActAutoAutoSimplifyDchi2Div" );
   WLabel *autoSimplifyLabel = new WLabel( WString::tr("raag-auto-simplify-dchi2"), m_auto_simplify_dchi2_div );
   m_auto_simplify_max_dchi2 = new NativeFloatSpinBox( m_auto_simplify_dchi2_div );
+  m_auto_simplify_max_dchi2->addStyleClass( "RelActAutoAutoSimplifyDchi2Input" );
   m_auto_simplify_max_dchi2->setValue( 1.0f );
   m_auto_simplify_max_dchi2->setMinimum( 0.0f );
+  m_auto_simplify_max_dchi2->setSpinnerHidden( false );
   autoSimplifyLabel->setBuddy( m_auto_simplify_max_dchi2 );
   m_auto_simplify_max_dchi2->valueChanged().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
   HelpSystem::attachToolTipOn( m_auto_simplify_dchi2_div, WString::tr("raag-tt-auto-simplify-dchi2"), showToolTips );

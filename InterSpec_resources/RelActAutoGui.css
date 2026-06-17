@@ -322,13 +322,22 @@ padding-bottom: 1px;
 .RelActAutoGui .RelActAutoFwhmEstDiv,
 .RelActAutoGui .RelActAutoFwhmFormDiv,
 .RelActAutoGui .RelActAutoSkewDiv,
-.RelActAutoGui .RelActAutoAddUncertDiv
+.RelActAutoGui .RelActAutoAddUncertDiv,
+.RelActAutoGui .RelActAutoAutoSimplifyDiv,
+.RelActAutoGui .RelActAutoAutoSimplifyDchi2Div
 {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
   gap: 5px;
   align-items: center;
+}
+
+/* Keep the "Auto-simplify model" checkbox and its "Max Chi2 increase" input together. */
+.RelActAutoGui .RelActAutoAutoSimplifyDchi2Input
+{
+  width: 4.5em;
+  min-width: 4.5em;
 }
 
 
