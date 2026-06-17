@@ -1505,11 +1505,21 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
             return false;
           // fall-though intentional
         case CoefficientType::SkewPar1: //n (left)
-          // The valid values of `n` is probably a bit more complicated than just the range
+          // `n` is the power-law tail exponent.  These bounds are the single source of truth shared
+          //  by every peak-fit path and by RelActCalcAuto (both read this function), so the
+          //  CrystalBall range is unified across them.
+          //   - lower 1.05 keeps the 1/(n-1) tail-normalization pole bounded (|1/(n-1)| <= 20);
+          //     1.0 is a hard divide-by-zero.
+          //   - upper 100 is a deliberately generous ceiling.  It used to also cap the (n/alpha)^n
+          //     constant that overflowed for large n / small alpha, but the CrystalBall tail is now
+          //     evaluated in a cancellation-free form (PeakDists::crystal_ball_tail_indefinite_t)
+          //     that never forms that constant, so 100 is numerically safe.  (The likelihood in `n`
+          //     flattens for large n - the tail approaches a fixed exponential - so a tail-heavy peak
+          //     may pin here; that is handled by the bound-aware uncertainty path, not this bound.)
           starting_value = 2;
           step_size = 0.75;
-          lower_value = 1.05; //1.0 would be divide by zero
-          upper_value = 100;  //much higher than this and we run into numerical issues
+          lower_value = 1.05;
+          upper_value = 100;
           break;
           
         default:

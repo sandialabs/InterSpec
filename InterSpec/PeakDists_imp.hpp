@@ -490,23 +490,22 @@ void crystal_ball_integral( const T peak_mean,
   const double root_half_pi = boost::math::constants::root_half_pi<double>();
   const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
   
-  const T A = pow(power_law/alpha, power_law) * exp_aa;
-  const T B = (power_law / alpha) - alpha;
+  // The power-law tail is evaluated in the cancellation-free form that never builds the
+  //  (n/alpha)^n constant (which overflows for large n / small alpha).  Writing B - t = (n/alpha)*t_1
+  //  with t_1 = 1 - (alpha+t)*alpha/n, the un-normalized tail A*(B-t)^(1-n) equals
+  //  (n/alpha)*exp(-alpha^2/2)*t_1^(1-n), so the full tail prefactor N*A*sigma/(n-1) collapses
+  //  exactly to C/(C+D).  (See PeakDef::crystal_ball_tail_indefinite_t for the same rewrite.)
   const T C = (power_law / alpha) * (1.0/(power_law - 1.0)) * exp_aa;
   T D;
   if constexpr ( !std::is_same_v<T, double> )
     D = root_half_pi * (1.0 + erf( one_div_root_two * alpha ));
   else
     D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
-  const T N = 1.0 / (peak_sigma * (C + D));
-  const T tail_amp = peak_amplitude * N * A * peak_sigma / (power_law - 1.0);
+  const T tail_amp = peak_amplitude * C / (C + D);
   const T gauss_indef_amp = 0.5 * peak_amplitude * sqrt_2pi / (C + D);
 
-  check_jet_for_NaN( N );
   check_jet_for_NaN( tail_amp );
   check_jet_for_NaN( gauss_indef_amp );
-  check_jet_for_NaN( A );
-  check_jet_for_NaN( B );
   check_jet_for_NaN( C );
   check_jet_for_NaN( D );
   check_jet_for_NaN( exp_aa );
@@ -514,13 +513,17 @@ void crystal_ball_integral( const T peak_mean,
   check_jet_for_NaN( stop_energy );
 
   // Brief implementation of crystal_ball_tail_indefinite_t
-  auto tail_indefinite = [peak_mean,peak_sigma,alpha,power_law,B,tail_amp]( const T x ) -> T {
+  auto tail_indefinite = [peak_mean,peak_sigma,alpha,power_law,tail_amp]( const T x ) -> T {
     const T t = (x - peak_mean) / peak_sigma;
     assert( ((t - 1.0E-6) <= -alpha) && (alpha > 0.0) && (power_law > 1.0) );
 
-    T answer = tail_amp * pow( B - t, 1.0 - power_law );
+    // t_1 = (B - t)/(n/alpha) >= 1 for t <= -alpha; using it instead of (B - t) keeps the
+    //  (n/alpha)^n factor from ever forming.
+    const T t_1 = 1.0 - ((alpha + t) * alpha / power_law);
+    T answer = tail_amp * pow( t_1, 1.0 - power_law );
 
     check_jet_for_NaN( t );
+    check_jet_for_NaN( t_1 );
     check_jet_for_NaN( answer );
 
     return answer;
