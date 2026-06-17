@@ -4881,6 +4881,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                   rel_act_mult /= rel_eff;
                 }
               }//if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
+              if( (rel_act_mult <= std::numeric_limits<double>::epsilon()) || IsNan(rel_act_mult) || IsInf(rel_act_mult) )
+              {
+                rel_act_mult = 100*PhysicalUnits::bq;
+                solution.m_warnings.push_back( "Could not estimate a starting activity for "
+                                            + nuc.name() + ".  This may be because there are no"
+                                            " significant gammas for the nuclide in the selected energy"
+                                            " ranges." );
+              }
             }else
             {
               rel_act_mult = 100*PhysicalUnits::bq;
