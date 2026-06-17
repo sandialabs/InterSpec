@@ -49,7 +49,7 @@ namespace PeakFitLM
 /** By default:
  - peak means are only constrained to be in the ROI
  - peak widths are only constrained to be within a reasonable range, for the spectrum
- - If peak means are closer than 1.25 sigma together, there is a punishment
+ - If peak means are closer than 1.75 sigma together, there is a punishment (smoothly tapering to zero at 1.75 sigma)
  - If there are multiple peaks, their FWHM is a linear function of thier mean; the FWHM can vary by +-15% over the ROI
 
  However, these choices can be overridden
@@ -58,8 +58,8 @@ namespace PeakFitLM
  */
 enum PeakFitLMOptions
 {
-  /** By default, if peaks are less than 1.25 sigma away from each other, they start getting punished,
-   with the punishment growing linearly as they get closer.
+  /** By default, if peaks are closer than 1.75 sigma to each other, they get punished, with the
+   punishment growing smoothly (and continuously) as they get closer - see `peaks_too_close_punishment`.
    Specifying this option turns this punishment off.
    */
   DoNotPunishForBeingToClose  = 0x01,
@@ -91,6 +91,34 @@ enum PeakFitLMOptions
    */
   SmallRefinementOnly         = 0x10,
 };//enum PeakFitLMOptions
+
+
+/** Residual that punishes two peaks for being too close together, to break the amplitude
+ degeneracy (and the local minima it causes) as two Gaussians approach the same mean.
+
+ `reldist = |mean_1 - mean_2| / sigma`, with `sigma` the average of the two peaks' sigmas.
+ Returns `punishment_factor * (1 - (reldist/1.75)^2)^2 / reldist` for `reldist < 1.75`, and 0 beyond.
+
+ 2 sigma is the Sparrow limit - the separation below which two equal-amplitude Gaussians no longer
+ show a dip between them - but we often *can* resolve peaks a little closer than this, so the
+ punishment is cut off at 1.75 sigma to give the fit a chance to resolve them without penalty.
+ The squared `(1 - (reldist/1.75)^2)` factor makes the residual (and its Jacobian) continuous (C1)
+ at the 1.75 cutoff: a hard cutoff would make the Ceres L-M trust-region model mispredict whenever
+ a step crosses the threshold.  The `1/reldist` keeps a strong barrier as the peaks coincide; the
+ caller is expected to floor `reldist` (e.g. at 0.01) beforehand.
+ */
+template<typename T>
+T peaks_too_close_punishment( const T &reldist, const double punishment_factor )
+{
+  const double cutoff = 1.75;  // sigma; just inside the 2-sigma Sparrow limit, to leave resolvable peaks alone
+  if( reldist >= cutoff )
+    return T( 0.0 );
+
+  const T frac = reldist / cutoff;
+  const T deficit = 1.0 - frac*frac;
+  return (punishment_factor * deficit * deficit) / reldist;
+}//peaks_too_close_punishment(...)
+
 
 /** Fits a peak following a user click (or the automated peak search using the same
  entry point).

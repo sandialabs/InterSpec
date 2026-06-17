@@ -1007,20 +1007,9 @@ struct PeakFitDiffCostFunction
         assert( prox_resid_index >= nchannel );           // must never clobber a data residual
         assert( prox_resid_index < number_residuals() );  // must stay within the residual buffer
 
-        if( reldist < 1.25 )
-        {
-          residuals[prox_resid_index] = (punishment_factor / reldist);
-        }
-        //else if( reldist < 1.5 )
-        //{
-        //  // At reldist==1, this will be equal to the above case,
-        //  //  and by reldist==1.5: exp( -pow(5*0.5,3.0) )== 1.64E-7
-        //  residuals[prox_resid_index] = punishment_factor * exp( -pow(5.0*(reldist - 1.0),3.0) );
-        //}
-        else
-        {
-          residuals[prox_resid_index] = T(0.0);
-        }
+        // Punish peaks for being too close together; continuous + compact-support so Ceres' L-M
+        //  trust region stays well-behaved (see `peaks_too_close_punishment`).
+        residuals[prox_resid_index] = peaks_too_close_punishment( reldist, punishment_factor );
       }//
 
 

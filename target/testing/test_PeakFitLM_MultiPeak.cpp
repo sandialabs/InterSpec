@@ -26,6 +26,7 @@
 #include <set>
 #include <cmath>
 #include <deque>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -273,3 +274,65 @@ BOOST_AUTO_TEST_CASE( refitOverlappingROIs )
 
   BOOST_CHECK_EQUAL( num_tested, num_multi );
 }//BOOST_AUTO_TEST_CASE( refitOverlappingROIs )
+
+
+// Issue #2: the peak-proximity punishment (PeakFitLM::peaks_too_close_punishment) must be
+//  continuous (no jump at the old reldist==1.25 hard cutoff) and have compact support (identically
+//  zero at/beyond the 1.75 sigma cutoff), so Ceres' L-M trust region stays well-behaved.  The dense
+//  scan below is formula-agnostic, so any reintroduced discontinuity or C1 kink trips it.
+BOOST_AUTO_TEST_CASE( proximityPunishmentContinuity )
+{
+  const double pf = 7.0;        // arbitrary positive punishment_factor
+  const double cutoff = 1.75;   // must match peaks_too_close_punishment()
+
+  auto P = [pf]( const double reldist ){ return PeakFitLM::peaks_too_close_punishment( reldist, pf ); };
+
+  // Compact support: identically zero at and beyond the cutoff.
+  for( const double r : { 1.75, 1.8, 2.0, 2.5, 3.0, 5.0 } )
+    BOOST_CHECK_MESSAGE( P(r) == 0.0, "punishment at reldist=" << r << " must be 0, got " << P(r) );
+
+  // Positive and strictly decreasing on (0, cutoff).
+  double prev = std::numeric_limits<double>::infinity();
+  for( double r = 0.05; r < (cutoff - 1.0e-9); r += 0.005 )
+  {
+    const double v = P(r);
+    BOOST_CHECK_MESSAGE( v > 0.0, "punishment at reldist=" << r << " must be > 0, got " << v );
+    BOOST_CHECK_MESSAGE( v < prev, "punishment must strictly decrease; reldist=" << r << " gave "
+                         << v << " (>= previous " << prev << ")" );
+    prev = v;
+  }
+
+  // C0 (no jumps) and C1 (no slope kinks) across [0.5, 3.0] - in particular catches the old hard
+  //  cutoff at 1.25 (a ~0.8*pf jump) and any kink at the 1.75 cutoff.  On [0.5,3] the true function
+  //  has max|dP/dr| ~ 5*pf and max|d2P/dr2| ~ 16*pf (near 0.5); the loose limits below pass it by a
+  //  wide margin, while a real jump (~0.8*pf, i.e. ~8000*pf over one step) or kink blows past them.
+  const double h = 1.0e-4;
+  double prev_slope = 0.0;
+  bool have_prev_slope = false;
+  for( double r = 0.5; r <= 3.0; r += h )
+  {
+    const double v0 = P(r), v1 = P(r + h);
+    BOOST_CHECK_MESSAGE( std::fabs(v1 - v0) < (20.0*pf*h + 1.0e-9),
+                         "discontinuity near reldist=" << r << ": P jumped " << (v1 - v0)
+                         << " over " << h );
+    const double slope = (v1 - v0) / h;
+    if( have_prev_slope )
+      BOOST_CHECK_MESSAGE( std::fabs(slope - prev_slope) < (0.02*pf),
+                           "slope kink near reldist=" << r << ": slope " << prev_slope
+                           << " -> " << slope );
+    prev_slope = slope;
+    have_prev_slope = true;
+  }
+
+  // Pin the specific c=1.75 form (not merely "some continuous function").
+  auto expected = [pf,cutoff]( const double r ){
+    const double frac = r/cutoff, d = 1.0 - frac*frac;
+    return (pf*d*d)/r;
+  };
+  for( const double r : { 0.5, 1.0, 1.25, 1.5, 1.7 } )
+    BOOST_CHECK_CLOSE( P(r), expected(r), 1.0e-6 );
+
+  // Hand-computed sanity values (per the design table).
+  BOOST_CHECK_CLOSE( P(1.0),  0.453561*pf, 1.0e-2 );
+  BOOST_CHECK_CLOSE( P(1.25), 0.191920*pf, 1.0e-2 );
+}//BOOST_AUTO_TEST_CASE( proximityPunishmentContinuity )
