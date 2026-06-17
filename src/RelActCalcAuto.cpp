@@ -45,6 +45,7 @@
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <boost/math/distributions/chi_squared.hpp>
 
 #include "Wt/WDateTime"
 #include "Wt/WApplication"
@@ -2590,6 +2591,55 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       num_resids += r.num_channels;
     return num_resids;
   }//size_t number_data_residuals() const
+
+
+  /** Inverse-variance-weighted total sum of squares of the data about its weighted mean, summed over
+   exactly the spectrum channels that contribute to the data residuals (the same channels as the
+   data-only chi-square).  This is the SS_tot denominator for the weighted coefficient of
+   determination:  R^2 = 1 - m_chi2_data / data_weighted_total_ss().  Returns 0 if there is no
+   usable data. */
+  double data_weighted_total_ss() const
+  {
+    // First pass: inverse-variance weighted mean of the data over all ROI channels.
+    double sum_w = 0.0, sum_wy = 0.0;
+    for( const RoiRangeChannels &roi : m_energy_ranges )
+    {
+      const std::pair<size_t,size_t> chan_range = RoiRangeChannels::channel_range(
+                                roi.lower_energy, roi.upper_energy, roi.num_channels, m_energy_cal );
+      for( size_t ch = chan_range.first; ch <= chan_range.second; ++ch )
+      {
+        const double uncert = m_channel_count_uncerts[ch];
+        if( uncert <= 0.0 )
+          continue;
+        const double w = 1.0 / (uncert*uncert);
+        sum_w  += w;
+        sum_wy += w * m_channel_counts[ch];
+      }
+    }//for( const RoiRangeChannels &roi : m_energy_ranges )
+
+    if( sum_w <= 0.0 )
+      return 0.0;
+
+    const double weighted_mean = sum_wy / sum_w;
+
+    // Second pass: weighted sum of squares of the data about that mean.
+    double ss_tot = 0.0;
+    for( const RoiRangeChannels &roi : m_energy_ranges )
+    {
+      const std::pair<size_t,size_t> chan_range = RoiRangeChannels::channel_range(
+                                roi.lower_energy, roi.upper_energy, roi.num_channels, m_energy_cal );
+      for( size_t ch = chan_range.first; ch <= chan_range.second; ++ch )
+      {
+        const double uncert = m_channel_count_uncerts[ch];
+        if( uncert <= 0.0 )
+          continue;
+        const double diff = m_channel_counts[ch] - weighted_mean;
+        ss_tot += (diff*diff) / (uncert*uncert);
+      }
+    }//for( const RoiRangeChannels &roi : m_energy_ranges )
+
+    return ss_tot;
+  }//double data_weighted_total_ss() const
 
 
   /** Find the anchor energy for a ROI.
@@ -6373,6 +6423,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #endif
 
       Eigen::VectorXd singular_values = svd.singularValues();
+
+      // Report the 2-norm condition number kappa(J) = sigma_max / sigma_min of the fit Jacobian - a
+      //  continuous measure of nearness-to-singularity (kappa >~ 1e7 corresponds to the rank-deficiency
+      //  flagged just below).  Set here, before the rank-deficiency `throw`, so it is recorded regardless.
+      {
+        const double sigma_max = singular_values.maxCoeff();
+        const double sigma_min = singular_values.minCoeff();
+        solution.m_jacobian_condition_number = (sigma_min > 0.0)
+                            ? (sigma_max / sigma_min) : std::numeric_limits<double>::infinity();
+      }
+
       // Count a direction as a real degree of freedom only if it is constrained within 1e7x of the
       //  best-constrained direction - the same ratio as the covariance conditioning floor above
       //  (min_reciprocal_condition_number = (1e-7)^2 = 1e-14), so the directions counted here as effective
@@ -6437,6 +6498,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_chi2_data = chi2_data;
       solution.m_dof_data = (n_data_rows > num_effective_paramaters) ? (n_data_rows - num_effective_paramaters) : size_t(0);
       solution.m_cov_scale = (solution.m_dof_data > 0) ? (std::max)(1.0, chi2_data/static_cast<double>(solution.m_dof_data)) : 1.0;
+
+      // Weighted coefficient of determination: R^2 = 1 - SS_res/SS_tot, with SS_res = chi2_data (the
+      //  weighted residual sum of squares we just computed) and SS_tot the weighted total sum of squares
+      //  of the data about its weighted mean, over the same channels.
+      try
+      {
+        const double ss_tot = cost_functor->data_weighted_total_ss();
+        solution.m_r2 = (ss_tot > 0.0) ? (1.0 - (chi2_data / ss_tot))
+                                       : std::numeric_limits<double>::quiet_NaN();
+      }catch( std::exception & )
+      {
+        solution.m_r2 = std::numeric_limits<double>::quiet_NaN();
+      }
 
       if( !solution.m_covariance.empty() && (solution.m_cov_scale != 1.0) )
       {
@@ -14390,7 +14464,25 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
 
   if( m_status != Status::Success )
     return out;
-  
+
+  // Goodness of fit (data-channel rows only): chi2/dof and its p-value.
+  out << "Goodness of fit:\n";
+  {
+    const double chi2_dof = (m_dof_data > 0) ? (m_chi2_data / static_cast<double>(m_dof_data)) : 0.0;
+    out << "  χ²/dof = " << SpecUtils::printCompact(m_chi2_data, 4) << "/" << m_dof_data
+        << " = " << SpecUtils::printCompact(chi2_dof, 4);
+    try
+    {
+      boost::math::chi_squared chi2_dist( static_cast<double>(m_dof_data) );
+      const double p_value = 1.0 - boost::math::cdf( chi2_dist, m_chi2_data );
+      out << "  (p-value = " << SpecUtils::printCompact(p_value, 3) << ")";
+    }catch( std::exception & )
+    {
+    }
+    out << "\n";
+  }
+  out << "\n";
+
   assert( m_final_parameters.size() == m_parameter_names.size() );
   //out << "Raw Ceres par values: [";
   //for( size_t i = 0; i < m_final_parameters.size(); ++i )

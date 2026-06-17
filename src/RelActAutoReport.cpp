@@ -444,6 +444,36 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     data["chi2_per_dof_str"] = string(buf);
   }
 
+  // Weighted R² (coefficient of determination) and the Jacobian condition number κ(J).  See the doc
+  //  comments on RelActAutoSolution::m_r2 / m_jacobian_condition_number for meaning and typical ranges.
+  //  Store null (and an "n/a" string) when a value was not computed, so the JSON stays valid.
+  data["r2"] = nullptr;
+  if( sol.m_r2 == sol.m_r2 )  // i.e. not NaN
+    data["r2"] = sol.m_r2;
+  data["condition_number"] = nullptr;
+  if( sol.m_jacobian_condition_number >= 0.0 )
+    data["condition_number"] = sol.m_jacobian_condition_number;
+  {
+    char buf[64] = { '\0' };
+    if( sol.m_r2 == sol.m_r2 )
+    {
+      snprintf( buf, sizeof(buf), "%.5G", sol.m_r2 );
+      data["r2_str"] = string(buf);
+    }else
+    {
+      data["r2_str"] = string("n/a");
+    }
+
+    if( sol.m_jacobian_condition_number >= 0.0 )
+    {
+      snprintf( buf, sizeof(buf), "%.3G", sol.m_jacobian_condition_number );
+      data["condition_number_str"] = string(buf);
+    }else
+    {
+      data["condition_number_str"] = string("n/a");
+    }
+  }
+
   // ---- Warnings ----
   data["warnings"] = json::array();
   data["warnings_html"] = json::array();

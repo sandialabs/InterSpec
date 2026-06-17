@@ -28,6 +28,7 @@
 #include <set>
 #include <array>
 #include <atomic>
+#include <limits>
 #include <string>
 #include <memory>
 #include <vector>
@@ -1576,6 +1577,37 @@ struct RelActAutoSolution
    `max(1.0, m_chi2_data/m_dof_data)`.  A value of 1.0 means no inflation (a good or over-fit).
    Variances are multiplied by this; standard deviations by its square root. */
   double m_cov_scale = 1.0;
+
+  /** Weighted coefficient of determination: R2 = 1 - m_chi2_data / SS_tot, where SS_tot is the
+   inverse-variance-weighted total sum of squares of the data about its weighted mean, taken over the
+   same spectrum channels that contribute to `m_chi2_data` (so SS_res and SS_tot are consistent).
+
+   Interpretation - fraction of the (inverse-variance-weighted) variation in the channel counts that
+   the fitted model explains, relative to a flat (weighted-mean) baseline.  Range <= 1.0:
+     - 1.0  = the model passes through every channel (perfect).
+     - For gamma spectra it is normally very close to 1 (the peaks dominate the weighted variance),
+       so judge it on the trailing digits: >0.999 excellent, 0.99-0.999 good, <0.99 the model is
+       missing real structure.
+     - < 0  = the fit is worse than a constant (a failed fit).
+   It complements - does not replace - chi2/dof and the p-value (it is less discriminating than they
+   are for this kind of data).  NaN if it could not be computed. */
+  double m_r2 = std::numeric_limits<double>::quiet_NaN();
+
+  /** 2-norm condition number of the (scaled) fit Jacobian, kappa(J) = sigma_max / sigma_min, from the
+   post-fit singular-value decomposition (the same SVD used for the effective-DOF estimate).
+
+   Interpretation - how well-determined the fit parameters are / how near the inverted normal matrix
+   (J^T J) is to singular.  Range >= 1.0 (1 = perfectly conditioned); roughly log10(kappa) decimal
+   digits of precision are lost in the solution:
+     - <~1e4      : well-conditioned.
+     - ~1e5-1e6   : some parameters weakly constrained or strongly correlated.
+     - >~1e7      : near-degenerate - at least one parameter direction is essentially unconstrained by
+                    the data; its uncertainty (and any derived enrichment / rel-eff band that depends
+                    on it) is unreliable, and the "rank-deficient" warning fires (cf.
+                    `m_num_rank_deficient_dirs`).
+     - -> infinity: singular (infinitely many solutions along that direction).
+   -1.0 if it could not be computed (the SVD failed). */
+  double m_jacobian_condition_number = -1.0;
 
   /** A struct to hold information about the Physical Model result of the fit. */
   struct PhysicalModelFitInfo
