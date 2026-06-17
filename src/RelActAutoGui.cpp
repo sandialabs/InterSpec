@@ -5941,9 +5941,19 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       }
     }
     info.rel_acts = answer->m_rel_activities[i];
-    info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
-    info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
-    
+    try
+    {
+      // For a physical model these throw if an areal density evaluates < 0.  Leave the strings empty on
+      //  failure: RelEffChart serializes an empty equation as JS `null`, so the chart still shows the data
+      //  points (just without a fit line / uncertainty band) instead of letting the exception escape the
+      //  GUI update.
+      info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
+      info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
+    }catch( const std::exception &e )
+    {
+      cerr << "RelActAutoGui: failed to build rel-eff equation JS for curve " << i << ": " << e.what() << endl;
+    }
+
     info.re_curve_name = WString::fromUTF8( answer->m_options.rel_eff_curves[i].name );
 
     try

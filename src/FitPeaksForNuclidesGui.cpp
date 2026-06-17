@@ -28,6 +28,7 @@
 #include <vector>
 #include <memory>
 #include <atomic>
+#include <iostream>
 
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
@@ -1328,7 +1329,16 @@ void FitPeaksAdvancedWidget::updateFromResult( std::shared_ptr<FitPeaksForNuclid
         }
       }
       info.rel_acts = sol.m_rel_activities[i];
-      info.js_rel_eff_eqn = sol.rel_eff_eqn_js_function( i );
+      try
+      {
+        // Throws for a physical model whose areal densities evaluate < 0.  Leave empty on failure:
+        //  RelEffChart serializes an empty equation as JS `null`, so the chart shows the data points
+        //  without a fit line instead of letting the exception escape the GUI update.
+        info.js_rel_eff_eqn = sol.rel_eff_eqn_js_function( i );
+      }catch( const std::exception &e )
+      {
+        cerr << "FitPeaksForNuclidesGui: failed to build rel-eff equation JS for curve " << i << ": " << e.what() << endl;
+      }
       // 20260210: Lets not show uncertainty band right now, the uncertainty calculations arent reliable yet, so the uncert band can be really large, obscuring the information
       //info.js_rel_eff_uncert_eqn = sol.rel_eff_eqn_js_uncert_fcn( i );
       if( i < sol.m_options.rel_eff_curves.size() )

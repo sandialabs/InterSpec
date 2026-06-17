@@ -3476,9 +3476,52 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
       
       
-      // Set bounds for Berstein coefficients based on expected peak width limits
+      // Set bounds for the FWHM coefficients based on expected peak width limits, so an unconstrained
+      //  optimizer step can't drive the FWHM model to a non-finite / non-positive value (which makes
+      //  eval_fwhm() throw and aborts a developer-checks build).
       switch( options.fwhm_form )
       {
+        case RelActCalcAuto::FwhmForm::Gadras:
+        {
+          // GADRAS FWHM(E) = 6.61*b*(E/661)^c above the 661 keV pivot (~ constant `a` below it).  Left
+          //  unbounded, a single Ceres step can push the exponent `c` large enough that pow(E/661, c)
+          //  overflows to inf, or push the scale `b` non-positive (negative FWHM) - either throws in
+          //  eval_fwhm().  Bound `b` (keep FWHM positive & sane) and `c` (keep the high-energy tail
+          //  finite), and pull any out-of-range seed (e.g. from a poor DRF->GADRAS conversion) into range.
+          //  `a` is left free (it can legitimately be negative for low-resolution detectors).
+          if( (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
+             || (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
+            break;  // FWHM held constant - don't constrain or move the fixed parameters.
+
+          assert( (cost_functor->m_fwhm_par_start_index + 3) <= parameters.size() );
+
+          // FWHM(661 keV) = 6.61*b, so b in [0.01, 30] keeps FWHM(661) in ~[0.07, 200] keV - permissive
+          //  from a very good HPGe to a poor scintillator, while keeping `b` strictly positive.  Physical
+          //  GADRAS exponents are ~0.3-0.7; cap `c` at 4 (floor 0, which also keeps the a<0 branch finite),
+          //  far above anything real but well below where pow(E/661, c) overflows.
+          const double gadras_bounds[2][2] = { {0.01, 30.0}, {0.0, 4.0} }; // {b_lo,b_hi}, {c_lo,c_hi}
+          for( size_t i = 0; i < 2; ++i )
+          {
+            const size_t par_index = cost_functor->m_fwhm_par_start_index + 1 + i; // b is start+1, c is start+2
+            lower_bounds[par_index] = gadras_bounds[i][0];
+            upper_bounds[par_index] = gadras_bounds[i][1];
+
+            if( (parameters[par_index] < gadras_bounds[i][0]) || (parameters[par_index] > gadras_bounds[i][1]) )
+            {
+              const string msg = "Initial GADRAS FWHM parameter (" + std::to_string(parameters[par_index])
+                + ") is outside expected range [" + std::to_string(gadras_bounds[i][0]) + ", "
+                + std::to_string(gadras_bounds[i][1]) + "] - clamping into range.";
+              cerr << endl << msg << endl << endl;
+              solution.m_warnings.push_back( msg );
+            }
+
+            parameters[par_index] = std::max( parameters[par_index], gadras_bounds[i][0] );
+            parameters[par_index] = std::min( parameters[par_index], gadras_bounds[i][1] );
+          }//for( bound b then c )
+
+          break;
+        }//case Gadras
+
         case RelActCalcAuto::FwhmForm::Berstein_2:
         case RelActCalcAuto::FwhmForm::Berstein_3:
         case RelActCalcAuto::FwhmForm::Berstein_4:
@@ -15591,7 +15634,8 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       }else
       {
         assert( 0 );
-        info.js_rel_eff_eqn = "function(x){ return 1; }";
+        // Empty -> RelEffChart serializes as JS `null` (no fit line drawn), rather than a misleading flat y=1.
+        info.js_rel_eff_eqn = "";
       }//if( not FramPhysicalModel ) / else / m_cost_functor
 
       // Include the relative-efficiency uncertainty band (±2σ), like the interactive GUI does
