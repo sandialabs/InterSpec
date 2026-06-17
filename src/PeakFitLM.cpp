@@ -426,7 +426,6 @@ struct PeakFitDiffCostFunction
     const size_t num_fit_continuum_pars = m_use_lls_for_cont
       ? (cdf_step_lls ? size_t(1) : size_t(0))
       : PeakContinuum::num_parameters( m_offset_type );
-    const size_t end_data_residual = m_upper_channel - m_lower_channel;
 
     auto starting_continuum = m_starting_peaks[0]->continuum();
     assert( (fabs(starting_continuum->lowerEnergy() - m_roi_lower_energy) < 1.0E-6*std::max(starting_continuum->lowerEnergy(),m_roi_lower_energy))
@@ -786,6 +785,12 @@ struct PeakFitDiffCostFunction
 
 
     const size_t nchannel = (m_upper_channel - m_lower_channel) + 1;
+
+    // Index one-past-the-last data residual; also the index of the first peak-proximity
+    //  punishment residual.  Data residuals occupy [0, nchannel); punishment residuals
+    //  occupy [nchannel, number_residuals()).  Tied to `nchannel` so the two cannot drift.
+    const size_t end_data_residual = nchannel;
+
     const shared_ptr<const vector<float>> &energies_ptr = m_data->channel_energies();
     assert( energies_ptr && (energies_ptr->size() > (m_lower_channel + nchannel)) );
 
@@ -997,21 +1002,24 @@ struct PeakFitDiffCostFunction
         const double punishment_factor = 0.25 * (m_upper_channel - m_lower_channel) / m_num_peaks;
         //const double punishment_factor = 5;
 
-        assert( (end_data_residual + i) <= number_residuals() );
+        // Punishment residuals live in [nchannel, number_residuals()); `i` runs 1..peaks.size()-1.
+        const size_t prox_resid_index = end_data_residual + i - 1;
+        assert( prox_resid_index >= nchannel );           // must never clobber a data residual
+        assert( prox_resid_index < number_residuals() );  // must stay within the residual buffer
 
         if( reldist < 1.25 )
         {
-          residuals[end_data_residual + i - 1] = (punishment_factor / reldist);
+          residuals[prox_resid_index] = (punishment_factor / reldist);
         }
         //else if( reldist < 1.5 )
         //{
         //  // At reldist==1, this will be equal to the above case,
         //  //  and by reldist==1.5: exp( -pow(5*0.5,3.0) )== 1.64E-7
-        //  residuals[last_data_residual + i] = punishment_factor * exp( -pow(5.0*(reldist - 1.0),3.0) );
+        //  residuals[prox_resid_index] = punishment_factor * exp( -pow(5.0*(reldist - 1.0),3.0) );
         //}
         else
         {
-          residuals[end_data_residual + i - 1] = T(0.0);
+          residuals[prox_resid_index] = T(0.0);
         }
       }//
 
