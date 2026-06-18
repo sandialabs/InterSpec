@@ -45,6 +45,7 @@
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <boost/math/distributions/chi_squared.hpp>
 
 #include "Wt/WDateTime"
 #include "Wt/WApplication"
@@ -2057,8 +2058,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    this.
    */
   double m_rel_eff_anchor_enhancement;
-  
+
   const PeakFitUtils::CoarseResolutionType m_det_type;
+
+  /** Energy reference frame for the Physical-Model empirical correction when in basis-correction mode
+   (`corr_fcn == Chebyshev`): the fit energy range [lower, upper] and the pivot (log-midpoint),
+   where `correction(pivot) == 1`.  Computed once from `m_energy_ranges` in the constructor.  Harmless and
+   unused in legacy Hoerl mode. */
+  double m_corr_lower_energy = 0.0;
+  double m_corr_upper_energy = 0.0;
+  double m_corr_pivot_energy = 0.0;
 
   /** Will either be null, or have FWHM info. */
   std::shared_ptr<const DetectorPeakResponse> m_drf;
@@ -2085,6 +2094,30 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   This variable defines the lower and upper energy of each peak range.
    */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
+
+  /** Weak Gaussian priors on the Physical-Model shield areal densities, used to regularize near-degenerate
+   directions (which otherwise produce tiny singular values that the covariance pseudo-inverse turns into a
+   blown-up or collapsed variance - the 293/926 band pathology).  Two families are added:
+
+    - each FIT external-attenuator areal density, pulled toward 0 (minimal external shielding unless the
+      data clearly demands it); weight from that shield's `PhysicalModelShieldInput::ad_bias` (default
+      `ns_default_ext_atten_ad_prior_weight`).  Breaks the linear-tilt-vs-attenuator
+      degeneracy by making the redundant external shield prefer its nominal, leaving the physical
+      self-attenuation to own the smooth tilt.
+    - each FIT self-attenuation areal density, pulled toward 0; weight from the self shield's
+      `PhysicalModelShieldInput::ad_bias` (default `ns_default_self_atten_ad_prior_weight`)
+      (deliberately the weakest, since self-attenuation is the genuine physical effect).
+
+   For each entry the residual is `weight * (x[par_index] - identity) * parameter_scale_factor(par_index)`,
+   i.e. the weight times the deviation of the PHYSICAL quantity from its identity value.  Only fit parameters
+   are added, and only when the corresponding weight is > 0. */
+  struct ParamPrior
+  {
+    size_t par_index;
+    double identity;   // Ceres-space value the prior pulls toward
+    double weight;
+  };
+  std::vector<ParamPrior> m_phys_model_param_priors;
 
   /** Deviation pair anchor points for non-linear energy calibration correction.
 
@@ -2115,7 +2148,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   static constexpr double sm_peak_range_uncert_offset = 1.0;
   static constexpr double sm_peak_range_uncert_par_scale = 0.1;
 
-  
+  // The Physical-Model areal-density "biasing" priors (self-atten AD, external-atten AD) are RUNTIME,
+  //  per-shield config (`PhysicalModelShieldInput::ad_bias`), each opt-in with an optional weight override.
+  //  The default weights live in RelActCalc.h (ns_default_self_atten_ad_prior_weight /
+  //  ns_default_ext_atten_ad_prior_weight); `PriorWeightOption::effective_weight()` resolves the value.
+
+
   mutable std::mutex m_aged_gammas_cache_mutex;
   /** When we are fitting the age of nuclides, performing the decay can take a significant amount of the time, so we'll cache results.
    
@@ -2228,6 +2266,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_skip_skew( false ), // 20250324 HACK to test fitting peak skew
 #endif
   m_peak_ranges_with_uncert{},
+  m_phys_model_param_priors{},
   m_dev_pair_anchors{},
   m_num_fitted_dev_pair_params( 0 ),
   m_all_peaks( all_peaks ),
@@ -2466,7 +2505,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( m_energy_ranges.empty() )
       throw runtime_error( "RelActAutoCostFcn: no gammas in the defined energy ranges." );
-    
+
+    // Energy reference frame for the basis empirical-correction term (see physical_model_basis_correction):
+    //  the full fit range and its log-midpoint pivot.  Harmless/unused in legacy Hoerl mode.
+    m_corr_lower_energy = m_energy_ranges.front().lower_energy;
+    m_corr_upper_energy = m_energy_ranges.front().upper_energy;
+    for( const RoiRangeChannels &r : m_energy_ranges )
+    {
+      m_corr_lower_energy = std::min( m_corr_lower_energy, r.lower_energy );
+      m_corr_upper_energy = std::max( m_corr_upper_energy, r.upper_energy );
+    }
+    m_corr_pivot_energy = std::sqrt( m_corr_lower_energy * m_corr_upper_energy );
+
     if( cancel_calc && cancel_calc->load() )
       throw runtime_error( "User cancelled calculation." );
     
@@ -2612,11 +2662,80 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     for( const auto &r : m_energy_ranges )
       num_resids += r.num_channels;
-    
+
     num_resids += m_peak_ranges_with_uncert.size();
-    
+
+    // One residual per Physical-Model parameter prior (self- and external-attenuation areal density).
+    num_resids += m_phys_model_param_priors.size();
+
     return num_resids;
   }//size_t number_residuals() const
+
+
+  /** The number of DATA (spectrum-channel) residual rows only - i.e. `number_residuals()` minus the
+   rel-eff anchor, peak-range-uncertainty, and physical-model parameter-prior rows.
+
+   `eval()` writes these channel rows FIRST, so the leading `number_data_residuals()` entries of the
+   residual vector are exactly the data residuals; this is used to form the data-only chi-square that
+   the reported covariance is rescaled by (the non-data prior/anchor rows are not data degrees of
+   freedom and must not enter that goodness-of-fit).
+   */
+  size_t number_data_residuals() const
+  {
+    size_t num_resids = 0;
+    for( const auto &r : m_energy_ranges )
+      num_resids += r.num_channels;
+    return num_resids;
+  }//size_t number_data_residuals() const
+
+
+  /** Inverse-variance-weighted total sum of squares of the data about its weighted mean, summed over
+   exactly the spectrum channels that contribute to the data residuals (the same channels as the
+   data-only chi-square).  This is the SS_tot denominator for the weighted coefficient of
+   determination:  R^2 = 1 - m_chi2_data / data_weighted_total_ss().  Returns 0 if there is no
+   usable data. */
+  double data_weighted_total_ss() const
+  {
+    // First pass: inverse-variance weighted mean of the data over all ROI channels.
+    double sum_w = 0.0, sum_wy = 0.0;
+    for( const RoiRangeChannels &roi : m_energy_ranges )
+    {
+      const std::pair<size_t,size_t> chan_range = RoiRangeChannels::channel_range(
+                                roi.lower_energy, roi.upper_energy, roi.num_channels, m_energy_cal );
+      for( size_t ch = chan_range.first; ch <= chan_range.second; ++ch )
+      {
+        const double uncert = m_channel_count_uncerts[ch];
+        if( uncert <= 0.0 )
+          continue;
+        const double w = 1.0 / (uncert*uncert);
+        sum_w  += w;
+        sum_wy += w * m_channel_counts[ch];
+      }
+    }//for( const RoiRangeChannels &roi : m_energy_ranges )
+
+    if( sum_w <= 0.0 )
+      return 0.0;
+
+    const double weighted_mean = sum_wy / sum_w;
+
+    // Second pass: weighted sum of squares of the data about that mean.
+    double ss_tot = 0.0;
+    for( const RoiRangeChannels &roi : m_energy_ranges )
+    {
+      const std::pair<size_t,size_t> chan_range = RoiRangeChannels::channel_range(
+                                roi.lower_energy, roi.upper_energy, roi.num_channels, m_energy_cal );
+      for( size_t ch = chan_range.first; ch <= chan_range.second; ++ch )
+      {
+        const double uncert = m_channel_count_uncerts[ch];
+        if( uncert <= 0.0 )
+          continue;
+        const double diff = m_channel_counts[ch] - weighted_mean;
+        ss_tot += (diff*diff) / (uncert*uncert);
+      }
+    }//for( const RoiRangeChannels &roi : m_energy_ranges )
+
+    return ss_tot;
+  }//double data_weighted_total_ss() const
 
 
   /** Find the anchor energy for a ROI.
@@ -3241,7 +3360,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       for( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve : options.rel_eff_curves ) 
         rel_eff_curve.check_nuclide_constraints();
 
-      options.check_same_hoerl_and_external_shielding_specifications();
+      options.check_same_corr_fcn_and_external_shielding_specifications();
     }catch( std::exception &e )
     {
       solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
@@ -3306,10 +3425,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<int> initial_const_parameters;
 #endif
 
-    // If we are fitting the Physical model with a Hoerl function, we will do the first fit without the Hoerl,
-    //  but after the initial fit, we will want to restore some parameters back to inital values
-    vector<pair<int,double>> initial_par_vals_to_restore_after_initial_fit;
-
     assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->valid() );
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
       parameters[i] = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
@@ -3344,14 +3459,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double lowest_energy = cost_functor->m_energy_ranges.front().lower_energy;
       const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
 
-      // Estimate FWHM at lowest, highest, and midpoint energies
-      const double midpoint_energy = 0.5 * (lowest_energy + highest_energy);
-      double fwhm_at_lowest = 10.0, fwhm_at_highest = 10.0, fwhm_at_midpoint = 10.0;
+      // Estimate FWHM at the lowest and highest energies (used to size the offset and gain bounds).
+      double fwhm_at_lowest = 10.0, fwhm_at_highest = 10.0;
       if( solution.m_drf && solution.m_drf->hasResolutionInfo() )
       {
         fwhm_at_lowest = solution.m_drf->peakResolutionFWHM( static_cast<float>(lowest_energy) );
         fwhm_at_highest = solution.m_drf->peakResolutionFWHM( static_cast<float>(highest_energy) );
-        fwhm_at_midpoint = solution.m_drf->peakResolutionFWHM( static_cast<float>(midpoint_energy) );
       }else
       {
         float min_sigma, max_sigma;
@@ -3360,9 +3473,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         expected_peak_width_limits( static_cast<float>(highest_energy), det_type, spectrum, min_sigma, max_sigma );
         fwhm_at_highest = max_sigma * PhysicalUnits::fwhm_nsigma;
-
-        expected_peak_width_limits( static_cast<float>(midpoint_energy), det_type, spectrum, min_sigma, max_sigma );
-        fwhm_at_midpoint = max_sigma * PhysicalUnits::fwhm_nsigma;
       }
 
       // Completely arbitrary
@@ -3386,8 +3496,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
         const double limit_by_fwhm = fwhm_at_lowest * RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_fwhm;
-        const double offset_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV, limit_by_fwhm );
-        
+        const double floored_limit = (std::max)( RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_floor_keV, limit_by_fwhm );
+        const double offset_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV, floored_limit );
+
         lower_bounds[0] = offset - (offset_limit/cal_mult);
         upper_bounds[0] = offset + (offset_limit/cal_mult);
       }else
@@ -3400,9 +3511,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         constexpr double offset = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
         constexpr double cal_mult = RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple;
-        const double limit_by_fwhm = fwhm_at_midpoint * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_fwhm;
+        // The gain parameter is the keV shift at the far right of the *spectrum* (highest channel),
+        //  but we want the achievable shift at the highest ROI to be ~`sm_energy_gain_range_fwhm`
+        //  FWHM there.  The shift scales ~linearly with channel (≈ energy), so scale the FWHM-based
+        //  limit by spectrum_max/highest_ROI to express it as a far-right-of-spectrum gain.  The
+        //  `max(1.0,...)` keeps the bound from ever becoming tighter than the FWHM-at-highest sizing.
+        const double spectrum_max_energy = spectrum->gamma_energy_max();
+        const double gain_scale = (highest_energy > 10.0)
+                                  ? (std::max)( 1.0, spectrum_max_energy / highest_energy ) : 1.0;
+        const double limit_by_fwhm = fwhm_at_highest
+                                     * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_fwhm
+                                     * gain_scale;
         double gain_limit = (std::min)( RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV, limit_by_fwhm );
-        
+
         lower_bounds[1] = offset - (gain_limit/cal_mult);
         upper_bounds[1] = offset + (gain_limit/cal_mult);
       }else
@@ -3508,9 +3629,52 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
       
       
-      // Set bounds for Berstein coefficients based on expected peak width limits
+      // Set bounds for the FWHM coefficients based on expected peak width limits, so an unconstrained
+      //  optimizer step can't drive the FWHM model to a non-finite / non-positive value (which makes
+      //  eval_fwhm() throw and aborts a developer-checks build).
       switch( options.fwhm_form )
       {
+        case RelActCalcAuto::FwhmForm::Gadras:
+        {
+          // GADRAS FWHM(E) = 6.61*b*(E/661)^c above the 661 keV pivot (~ constant `a` below it).  Left
+          //  unbounded, a single Ceres step can push the exponent `c` large enough that pow(E/661, c)
+          //  overflows to inf, or push the scale `b` non-positive (negative FWHM) - either throws in
+          //  eval_fwhm().  Bound `b` (keep FWHM positive & sane) and `c` (keep the high-energy tail
+          //  finite), and pull any out-of-range seed (e.g. from a poor DRF->GADRAS conversion) into range.
+          //  `a` is left free (it can legitimately be negative for low-resolution detectors).
+          if( (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
+             || (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
+            break;  // FWHM held constant - don't constrain or move the fixed parameters.
+
+          assert( (cost_functor->m_fwhm_par_start_index + 3) <= parameters.size() );
+
+          // FWHM(661 keV) = 6.61*b, so b in [0.01, 30] keeps FWHM(661) in ~[0.07, 200] keV - permissive
+          //  from a very good HPGe to a poor scintillator, while keeping `b` strictly positive.  Physical
+          //  GADRAS exponents are ~0.3-0.7; cap `c` at 4 (floor 0, which also keeps the a<0 branch finite),
+          //  far above anything real but well below where pow(E/661, c) overflows.
+          const double gadras_bounds[2][2] = { {0.01, 30.0}, {0.0, 4.0} }; // {b_lo,b_hi}, {c_lo,c_hi}
+          for( size_t i = 0; i < 2; ++i )
+          {
+            const size_t par_index = cost_functor->m_fwhm_par_start_index + 1 + i; // b is start+1, c is start+2
+            lower_bounds[par_index] = gadras_bounds[i][0];
+            upper_bounds[par_index] = gadras_bounds[i][1];
+
+            if( (parameters[par_index] < gadras_bounds[i][0]) || (parameters[par_index] > gadras_bounds[i][1]) )
+            {
+              const string msg = "Initial GADRAS FWHM parameter (" + std::to_string(parameters[par_index])
+                + ") is outside expected range [" + std::to_string(gadras_bounds[i][0]) + ", "
+                + std::to_string(gadras_bounds[i][1]) + "] - clamping into range.";
+              cerr << endl << msg << endl << endl;
+              solution.m_warnings.push_back( msg );
+            }
+
+            parameters[par_index] = std::max( parameters[par_index], gadras_bounds[i][0] );
+            parameters[par_index] = std::min( parameters[par_index], gadras_bounds[i][1] );
+          }//for( bound b then c )
+
+          break;
+        }//case Gadras
+
         case RelActCalcAuto::FwhmForm::Berstein_2:
         case RelActCalcAuto::FwhmForm::Berstein_3:
         case RelActCalcAuto::FwhmForm::Berstein_4:
@@ -3877,27 +4041,52 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             { 
               const auto &self_atten_opt = rel_eff_curve.phys_model_self_atten;
               setup_physical_model_shield_par( lower_bounds, upper_bounds, constant_parameters, pars, this_rel_eff_start, self_atten_opt );
-              
+
+              // The areal-density "biasing" priors (self-atten AD, external-atten AD) are per-shield opt-in
+              //  config (`PhysicalModelShieldInput::ad_bias`); each pushes a residual pulling the AD toward 0
+              //  (its nominal) with the resolved weight.  See `m_phys_model_param_priors`.  AD=0 maps to the
+              //  Ceres value `ns_ad_ceres_offset`; `parameter_scale_factor` supplies `ns_ad_ceres_mult`, so the
+              //  residual is `weight*AD[g/cm^2]`.
+              const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput &corr_cfg = rel_eff_curve.phys_model_corr;
+
+              if( self_atten_opt && self_atten_opt->fit_areal_density )
+              {
+                const double w = self_atten_opt->ad_bias.effective_weight(
+                                                       RelActCalc::ns_default_self_atten_ad_prior_weight );
+                if( w > 0.0 )
+                  cost_functor->m_phys_model_param_priors.push_back(
+                                  { this_rel_eff_start + 1, RelActCalc::ns_ad_ceres_offset, w } );
+              }
+
               for( size_t ext_ind = 0; ext_ind < rel_eff_curve.phys_model_external_atten.size(); ++ext_ind )
               {
                 const size_t start_index = this_rel_eff_start + 2 + 2*ext_ind;
                 const auto &opt = rel_eff_curve.phys_model_external_atten[ext_ind];
                 setup_physical_model_shield_par( lower_bounds, upper_bounds, constant_parameters, pars, start_index, opt );
+
+                if( opt && opt->fit_areal_density )
+                {
+                  const double w = opt->ad_bias.effective_weight(
+                                                         RelActCalc::ns_default_ext_atten_ad_prior_weight );
+                  if( w > 0.0 )
+                    cost_functor->m_phys_model_param_priors.push_back(
+                                    { start_index + 1, RelActCalc::ns_ad_ceres_offset, w } );
+                }
               }//for( size_t ext_ind = 0; ext_ind < options.phys_model_external_atten.size(); ++ext_ind )
-              
-              // Not sure what to do with the b and c values of the Modified Hoerl function ( E^b * c^(1/E) ).
+
+              // The two empirical-correction parameters ("Hoerl b,c" / basis a1,a2).
               const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size();
               const size_t c_index = b_index + 1;
-              
-              pars[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b - start b at 0, so term is 1.0
-              pars[c_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy) - start c at 1, so term is 1
-              if( !rel_eff_curve.phys_model_use_hoerl
-                 || (options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve))) )
+
+              pars[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+              pars[c_index] = hoerl_c_param_for_c( 1.0 );  // identity start (Hoerl c=1 / basis a2=0); same value for both
+              if( !rel_eff_curve.uses_phys_model_correction()
+                 || (options.same_corr_fcn_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve))) )
               {
                 constant_parameters.push_back( static_cast<int>(b_index) );
                 constant_parameters.push_back( static_cast<int>(c_index) );
-                
-                if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve)) )
+
+                if( options.same_corr_fcn_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve)) )
                 {
                   // This is just so we can assert on the values later, as a double check
                   pars[b_index] = -1.0;
@@ -3905,10 +4094,44 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 }
               }else
               {
-                lower_bounds[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
-                upper_bounds[b_index] = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
-                lower_bounds[c_index] = (1.0E-6/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //e.x, pow(-0.1889,1000/124.8) is NaN
-                upper_bounds[c_index] = (3.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+                // Free b,c.  This is the correction-owning curve (the first physical-model curve when the
+                //  correction is shared), so `corr_cfg` is the config that drives the form + coefficient prior.
+                const bool is_basis = is_basis_correction( corr_cfg.corr_fcn );
+
+                // Bound every correction form by ONE physical knob, R = ns_corr_max_window_swing: the max
+                // factor a single basis term may reshape the rel-eff across the fit window (review A13).
+                // Bounds are symmetric about the identity, so the start (identity) is interior - not pinned
+                // on a bound (the old Hoerl b in [0,2] started on its lower bound and could not represent a
+                // decreasing correction).  This is the sole guard now that the coefficient prior is gone.
+                const double corr_ln_R = std::log( RelActCalc::ns_corr_max_window_swing );
+                const double corr_elo_mev = 0.001 * cost_functor->m_corr_lower_energy;
+                const double corr_ehi_mev = 0.001 * cost_functor->m_corr_upper_energy;
+                const bool corr_have_window = (corr_elo_mev > 0.0) && (corr_ehi_mev > corr_elo_mev);
+                // Hoerl E^b term swings (Ehi/Elo)^|b|; Hoerl c^(1/E) term swings exp(|ln c|*(1/Elo-1/Ehi)).
+                // Cap each at R, and clamp for a degenerate (near-zero-width) window so we never get inf.
+                const double corr_bmax = corr_have_window
+                          ? std::min( corr_ln_R / std::log(corr_ehi_mev/corr_elo_mev), 2.0 ) : 2.0;
+                const double corr_gamma_max = corr_have_window
+                          ? std::min( corr_ln_R / ((1.0/corr_elo_mev) - (1.0/corr_ehi_mev)), std::log(3.0) )
+                          : std::log(3.0);
+                // Chebyshev basis is normalized to u in [-1,1]; each anchored term swings exp(2|a|).
+                const double corr_amax = 0.5 * corr_ln_R;
+
+                if( is_basis )
+                {
+                  // Basis coefficients a1,a2: symmetric box |a| <= ln(R)/2 about their identity (0).
+                  lower_bounds[b_index] = (-corr_amax/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  upper_bounds[b_index] = ( corr_amax/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  lower_bounds[c_index] = (-corr_amax/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+                  upper_bounds[c_index] = ( corr_amax/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+                }else
+                {
+                  // Hoerl: b symmetric in [-bmax,bmax]; c fit as gamma=log(c), symmetric in [-gamma_max,gamma_max].
+                  lower_bounds[b_index] = (-corr_bmax/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  upper_bounds[b_index] = ( corr_bmax/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                  lower_bounds[c_index] = RelActCalc::ns_decay_hoerl_c_offset - (corr_gamma_max/RelActCalc::ns_decay_hoerl_c_multiple);
+                  upper_bounds[c_index] = RelActCalc::ns_decay_hoerl_c_offset + (corr_gamma_max/RelActCalc::ns_decay_hoerl_c_multiple);
+                }
               }
 
               break;
@@ -3995,8 +4218,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const bool use_first_ext_shield = ((rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
                                             && options.same_external_shielding_for_all_rel_eff_curves
                                             && (first_phys_model_curve != (&rel_eff_curve)));
-          const bool use_first_hoerl = ((rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
-                                        && options.same_hoerl_for_all_rel_eff_curves
+          const bool use_first_corr_fcn = ((rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
+                                        && options.same_corr_fcn_for_all_rel_eff_curves
                                         && manual_input.phys_model_use_hoerl
                                         && (first_phys_model_curve != (&rel_eff_curve)));
 
@@ -4118,12 +4341,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             manual_input.act_ratio_constraints.push_back( manual_constraint );
           }
 
-          if( use_first_hoerl )
+          if( use_first_corr_fcn )
           {
             // TODO: we should fix the Hoerl parameters here to what we got for first Phys Model Rel Eff Curve;
             //       but actually we arent ever fitting the Hoerl parameters, so this is moot (and we havent implemented a 
             //       way to contrain the Hoerl parameters yet).
-          }//if( use_first_hoerl )
+          }//if( use_first_corr_fcn )
 
           for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
           {
@@ -4236,8 +4459,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
                   parameters[ad_index] = starting_ad / RelActCalc::ns_ad_ceres_mult + RelActCalc::ns_ad_ceres_offset;
                 }
-
-                initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_index, parameters[ad_index] );
               }else
               {
                 const double ad = self_atten.areal_density / PhysicalUnits::g_per_cm2;
@@ -4314,10 +4535,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
                   ad_par = starting_ad;
                 }
-
-                // For an example problem, it looks like we dont want to go back to starting paramters after initial fit
-                //if( rel_eff_curve.phys_model_self_atten && rel_eff_curve.phys_model_self_atten->fit_areal_density )
-                  //initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_par_index, ad_par );
               }else
               {
                 const double ad = ext_att->areal_density / PhysicalUnits::g_per_cm2;
@@ -4337,7 +4554,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             {
               assert( first_phys_model_curve );
 
-              if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
+              if( options.same_corr_fcn_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
               {
                 assert( parameters[b_index] == -1.0 );
                 assert( parameters[c_index] == -1.0 );
@@ -4351,19 +4568,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
                 const double c_par_val = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
-                parameters[c_index] = c_par_val;
+                // (A) Manual solution fits physical c (linear convention); convert to Auto's log-space gamma.
+                parameters[c_index] = hoerl_c_param_for_c( std::clamp( c_par_val, 1.0E-6, 3.0 ) );
                 manual_index += 1;
               }
             }else
             {
-              if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
+              if( options.same_corr_fcn_for_all_rel_eff_curves && (first_phys_model_curve != (&rel_eff_curve)) )
               {
                 assert( parameters[b_index] == -1.0 );
                 assert( parameters[c_index] == -1.0 );
               }else
               {
                 parameters[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b
-                parameters[c_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy)
+                parameters[c_index] = hoerl_c_param_for_c( 1.0 );  // (A) gamma=log(c); reset c to 1
               }
             }//if( manual_input.phys_model_use_hoerl ) / else
           }//if( no Physical Model ) / else
@@ -4448,39 +4666,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               assert( mass_frac_constraint->nuclide == RelActCalcAuto::nuclide(nuc.source) );
               is_constrained = true;
 
-              //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper values
+              //Rel Act paramater is constrained within [1.0, 2.0] (= sm_activity_par_offset + [0,1]), so the
+              //  mass fraction interpolates between the lower and upper constraint values.
               //  If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
               //  solution gives the sum of all the mass fractions to be greater than 1.0, we will just return a say
               //  that particular set of parameters is invalid, even though we could maybe do something more intelligent.
 
               //TODO: To model mass-fraction constraints, should switch to a paramter that gives total RelAct of an element, and then use a ceres::Manifold to make all the nuclides of the element add up to 1.0 (eg, on a surface).
 
-              parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
-              if( mass_frac_constraint->lower_mass_fraction != mass_frac_constraint->upper_mass_fraction )
-              {
-                try
-                {
-                  const double mf = manual_solution.mass_fraction( mass_frac_constraint->nuclide->symbol );
-                  const double frac = (mf - mass_frac_constraint->lower_mass_fraction) / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
-                  assert( frac > -0.0002 && frac < 1.0002 );
-                  const double clamped_frac = std::min( 1.0, std::max( frac, 0.0 ) );
-                  parameters[act_index] = RelActAutoCostFcn::sm_activity_par_offset + 0.5*clamped_frac;
-
-                  cerr << "\n\nStill having trouble navigating to global minima\n\nHacked mass fraction to be halfway in the range it should! - From " << frac << " to " << 0.5*clamped_frac << "\n\n" << endl;
-
-#pragma message("Still having trouble navigating to global minima for RelActAuto. Hacked mass fraction to be halfway in the range it should! - should undo this (but seems to help for some problems).")
-                }catch( std::exception & )
-                {
-                  cerr << "Warning: failed to get initial manual solution rel-eff fraction" << endl;
-                }
-              }//if( mass_frac_constraint->lower_mass_fraction != mass_frac_constraint->upper_mass_fraction )
-
+              // This (manual-estimate) pass sets the constrained nuclide up once; the second pass below leaves it
+              //  alone (it only sets up constrained nuclides when this manual estimate did not run).  A former
+              //  hack here biased the start, then the second pass overwrote it with the window upper bound anyway
+              //  (review item A5) - both are gone; the start now comes from the manual solution.
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
 
-              //If the lower and upper mass fractions are the same, we can just fix the rel act to 1.0
+              //If the lower and upper mass fractions are the same, we can just fix the rel act (the parameter
+              //  value is irrelevant - the (upper-lower) factor in the mass-fraction decode is zero).
               if( fabs(mass_frac_constraint->lower_mass_fraction - mass_frac_constraint->upper_mass_fraction)
                   <= 1.0E-6*std::max(mass_frac_constraint->lower_mass_fraction, mass_frac_constraint->upper_mass_fraction) )
               {
+                parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
 #ifndef NDEBUG
                 cout << "Fixing act_index=" << act_index << ", " << mass_frac_constraint->nuclide << ", for mass fraction constraint" << endl;
 #endif
@@ -4490,6 +4695,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               {
                 lower_bounds[act_index] = RelActAutoCostFcn::sm_activity_par_offset;
                 upper_bounds[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
+
+                // Start at the manual solution's mass-fraction position within the window, but kept strictly
+                //  inside the bounds: Ceres' projected-gradient step behaves poorly for a parameter that starts
+                //  exactly on a bound (and the manual estimate can land on/over one, e.g. a trace isotope at ~0).
+                //  Fall back to the window midpoint if the manual mass fraction is unavailable.
+                const double eps = 1.0E-3;
+                double start_frac_in_window = 0.5;  // window midpoint fallback if no manual mass fraction
+                try
+                {
+                  const double mf = manual_solution.mass_fraction( mass_frac_constraint->nuclide->symbol );
+                  const double frac = (mf - mass_frac_constraint->lower_mass_fraction)
+                                      / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
+                  if( !IsNan(frac) && !IsInf(frac) )
+                    start_frac_in_window = std::min( 1.0 - eps, std::max( eps, frac ) );
+                }catch( std::exception & )
+                {
+                  cerr << "Warning: no initial manual mass fraction for " << mass_frac_constraint->nuclide->symbol
+                       << "; starting at window midpoint." << endl;
+                }
+                parameters[act_index] = RelActAutoCostFcn::sm_activity_par_offset + start_frac_in_window;
               }
             }//if( mass_frac_constraint )
 
@@ -4829,15 +5054,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint = *src_mass_frac_constr;
               assert( (constraint.nuclide == nuc_nuclide) && nuc_nuclide );
 
-              parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
+              // Set a mass-fraction-constrained nuclide up exactly once.  If the manual estimate succeeded, the
+              //  first nuclide pass already did it (manual-based, in-bounds start, bounds, and constant-parameter
+              //  status) - leave it untouched.  Only when the manual estimate failed do we set it up here, at the
+              //  window midpoint (strictly off the bounds; the sum>1 rescale below keeps it interior when several
+              //  constraints overlap).
+              if( succesfully_estimated_re_and_ra )
+                continue;
+
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+              parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
 #ifndef NDEBUG
-              cout << "Setting par " << act_index << " to " << (1.0 + RelActAutoCostFcn::sm_activity_par_offset) << " for " << nuc.name() << endl;
+              cout << "Setting par " << act_index << " to " << (0.5 + RelActAutoCostFcn::sm_activity_par_offset) << " for " << nuc.name() << endl;
 #endif
 
               if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
               {
-                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
                 assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
                 constant_parameters.push_back( static_cast<int>(act_index) );
               }else
@@ -4971,7 +5203,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           const SandiaDecay::Nuclide *nuc = constraint.nuclide;
           const size_t act_index = cost_functor->nuclide_parameter_index( nuc, re_eff_index );
-          const double starting_dist = parameters[act_index] - 0.5;
+          // The activity parameter encodes the position within the window as (param - sm_activity_par_offset);
+          //  decode with the offset (1.0), not 0.5, so this matches the rescale/check below (`:5015`-`:5019`)
+          //  and the eval-time decode (`:8138`,`:8168`).  Using 0.5 here over-counts the starting mass
+          //  fraction by 0.5*(upper-lower), which spuriously triggered the sum>1 rescale and its assert.
+          const double starting_dist = parameters[act_index] - RelActAutoCostFcn::sm_activity_par_offset;
 
           const double lower_frac = constraint.lower_mass_fraction;
           const double upper_frac = constraint.upper_mass_fraction;
@@ -5000,16 +5236,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             throw std::logic_error( "Mass fraction constraint sums to over 1 - please fix `RelEffCurveInput::check_nuclide_constraints()` to catch this." );
 
           const double fixed_fraction = elements_fixed_mass_frac[atomic_number];
+
+          // `lower_allowed_frac` (used by the feasibility check above) is the sum of *all* lowers, but this
+          //  rescale only shrinks the *range* (lower!=upper) constraints - so the target and the reduction
+          //  fraction must be expressed in terms of the range-only lower sum.  Omitting this `- fixed_fraction`
+          //  over-counts the lower bound by `fixed_fraction`, which makes the denominator below too small (a
+          //  wrong / over-reduced start in release, and a tripped consistency assert in debug) whenever an
+          //  element mixes a fixed and a range mass-fraction constraint.
+          const double lower_allowed_var_frac = lower_allowed_frac - fixed_fraction;
           const double initial_variable_amount = starting_mass_frac - fixed_fraction;
-          const double target_var_frac = 0.5*((1.0 - fixed_fraction) + lower_allowed_frac);  //halfway between the smallest and largest amount allowed
+          const double target_var_frac = 0.5*((1.0 - fixed_fraction) + lower_allowed_var_frac);  //halfway between the smallest and largest amount allowed
           const double amount_need_reduced = initial_variable_amount - target_var_frac;
-          const double frac_variable_reduce = amount_need_reduced / (initial_variable_amount - lower_allowed_frac);
+          const double frac_variable_reduce = amount_need_reduced / (initial_variable_amount - lower_allowed_var_frac);
           const double updated_variable_frac = initial_variable_amount - amount_need_reduced;
 
           //Example starting mass fraction 1.25, with 0.5 fixed, and lowest variable amount of 0.1
           //  fixed_fraction = 0.5
           //  starting_mass_frac = 1.25
-          //  lower_allowed_frac = 0.1
+          //  lower_allowed_frac = 0.6   (0.5 fixed + 0.1 range-constraint lower)
+          //  lower_allowed_var_frac = 0.6 - 0.5 = 0.1
           //  initial_variable_amount = 1.25 - 0.5 = 0.75
           //  target_var_frac = 0.5*((1.0 - 0.5) + 0.1) = 0.3;
           //  amount_need_reduced = 0.75 - 0.3 = 0.45;
@@ -5259,75 +5504,141 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     ceres::CostFunction *cost_function = nullptr;
 
-    /*
 #if( PERFORM_DEVELOPER_CHECKS )
-    //Test auto diff vs numerical diff
-    auto test_gradients = [constant_parameters,&cost_functor]( RelActAutoCostFcn *fcn, const vector<double> &x ){
-      
-      ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32> auto_diff( fcn, ceres::DO_NOT_TAKE_OWNERSHIP );
-      auto_diff.SetNumResiduals( static_cast<int>(fcn->number_residuals()) );
-      auto_diff.AddParameterBlock( static_cast<int>(fcn->number_parameters()) );
-      
-      ceres::NumericDiffOptions num_diff_options;
-      num_diff_options.relative_step_size = 1E-6; //Default is 1E-6.
-      auto num_diff = ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( fcn, ceres::DO_NOT_TAKE_OWNERSHIP, num_diff_options );
-      num_diff.SetNumResiduals( static_cast<int>(fcn->number_residuals()) );
-      num_diff.AddParameterBlock( static_cast<int>(fcn->number_parameters()) );
-      
-      const size_t num_res = fcn->number_residuals();
-      const size_t num_pars = fcn->number_parameters();
-      //assert( num_res == 1 );
-      assert( num_pars == x.size() );
-      
-      // Compute the residuals and gradients using automatic differentiation
-      vector<double> pars = x;
-      std::vector<double*> parameter_blocks = { &(pars[0]) };
-      std::vector<double> residuals_auto( num_res, 0.0 ), jacobians_auto( num_pars*num_res, 0.0 );
-      std::vector<double*> jacobian_ptrs_auto = { &jacobians_auto[0] };
-      auto_diff.Evaluate( parameter_blocks.data(), residuals_auto.data(), jacobian_ptrs_auto.data());
-      
-      
-      std::vector<double> residuals_numeric( num_res, 0.0 ), jacobians_numeric( num_pars*num_res, 0.0 );
-      std::vector<double*> jacobian_ptrs_numeric = { &(jacobians_numeric[0]) };
-      num_diff.Evaluate( parameter_blocks.data(), residuals_numeric.data(), jacobian_ptrs_numeric.data() );
+    // Developer regression guard for the auto-diff math: compare the analytic (auto-diff) Jacobian
+    //  against a central finite-difference Jacobian.  The Boost test suites do not exercise the
+    //  Jacobian, and auto-diff defects here are subtle (e.g. A2: `fmax(Jet,0)` zeroing the AD
+    //  gradient across the loosened bound).  Run at the start point and again at the converged
+    //  point; flag only column-significant disagreements and report via `log_developer_error`
+    //  (non-fatal - central differences can legitimately disagree at a true kink).
+    //
+    //  Cost when enabled is small - measured ~1-2% (~30 ms) per file: it is a handful of extra full
+    //  residual evaluations, not a re-solve.  It is opt-in (below) mainly to keep the default solve
+    //  bit-identical and not perturb eval-count/timing comparisons, not because it is expensive.
+    //
+    //  Known-benign disagreement: pure-Gaussian (no-skew) peaks below ~2e5 counts take the
+    //  `Eigen::numext::erf<float>` fast path in `PeakDists::gaussian_integral`, so the *numeric*
+    //  reference for the FWHM columns is float-precision while auto-diff is double - they disagree
+    //  (often sign-flip) on FWHM only.  It is a numeric-reference artifact,
+    //  not an auto-diff bug.
+    const auto test_gradients = [&constant_parameters,&cost_functor]( RelActAutoCostFcn * const fcn,
+                                                          const vector<double> &x, const char * const tag ){
+      const size_t n_res = fcn->number_residuals();
+      const size_t n_par = fcn->number_parameters();
+      assert( n_par == x.size() );
 
-      cout << "Non-equal of numeric and auto-diff Jacobians\n";
-      cout << setw(7) << "Index"
-      << setw(8) << "ParName" << setw(10) << "ResNum"
-      << setw(12) << "ResVal" << setw(12) << "ParVal"
-      << setw(12) << "Auto" << setw(12) << "Numeric"
-      << setw(12) << "Diff" << setw(12) << "FracDiff"
-      << endl;
-      for( size_t i = 0; i < num_pars*num_res; ++i )
+      ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,sm_auto_diff_stride_size> auto_diff( fcn, ceres::DO_NOT_TAKE_OWNERSHIP );
+      auto_diff.SetNumResiduals( static_cast<int>(n_res) );
+      auto_diff.AddParameterBlock( static_cast<int>(n_par) );
+
+      ceres::NumericDiffOptions num_diff_options;
+      num_diff_options.relative_step_size = 1.0E-6;
+      ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn,ceres::CENTRAL> num_diff( fcn, ceres::DO_NOT_TAKE_OWNERSHIP, num_diff_options );
+      num_diff.SetNumResiduals( static_cast<int>(n_res) );
+      num_diff.AddParameterBlock( static_cast<int>(n_par) );
+
+      vector<double> pars = x;
+      vector<double *> blocks{ &pars[0] };
+      vector<double> res_auto( n_res, 0.0 ), jac_auto( n_res*n_par, 0.0 );
+      vector<double> res_num( n_res, 0.0 ), jac_num( n_res*n_par, 0.0 );
+      vector<double *> jac_auto_ptr{ &jac_auto[0] }, jac_num_ptr{ &jac_num[0] };
+      const bool auto_ok = auto_diff.Evaluate( blocks.data(), res_auto.data(), jac_auto_ptr.data() );
+      const bool num_ok = num_diff.Evaluate( blocks.data(), res_num.data(), jac_num_ptr.data() );
+      if( !auto_ok || !num_ok )
       {
-        // i = residual_index * num_pars + parameter_index.
-        const int par_num = static_cast<int>(i % num_pars);
-        const string par_name = cost_functor->parameter_name(par_num);
-        
-        // Const parameters may not be used, so we'll ignore them.
-        const auto const_pos = std::find(begin(constant_parameters), end(constant_parameters), par_num );
-        if( const_pos != end(constant_parameters) )
-          continue;
-        
-        const size_t residual_num = (i - par_num) / num_pars;
-        const double diff = fabs(jacobians_auto[i] - jacobians_numeric[i]);
-        const double frac_diff = diff / std::max( fabs(jacobians_auto[i]), fabs(jacobians_numeric[i]) );
-        if( (diff > 1.0E-18) && (frac_diff > 1.0E-2) )  //This is totally arbitrary
-        {
-          cout << setprecision(4)
-          << setw(8) << i << setw(10) << par_name << setw(7) << residual_num
-          << setw(12) << residuals_numeric[residual_num] << setw(12) << x[par_num]
-          << setw(12) << jacobians_auto[i] << setw(12) << jacobians_numeric[i]
-          << setw(12) << diff << setw(12) << frac_diff
-          << endl;
-        }
+        char buffer[256];
+        snprintf( buffer, sizeof(buffer), "RelActAuto gradient check: Jacobian evaluation failed (tag=%s)", tag );
+        log_developer_error( __func__, buffer );
+        return;
       }
-      cout << "---" << endl;
+
+      // Optional full-detail dump for deep debugging / regression evidence: set
+      //  RELACT_CHECK_GRADIENTS=<path-prefix> to write a CSV of every (residual, parameter) Jacobian
+      //  entry from both auto-diff and central differences (same columns as the review gradcheck
+      //  CSVs).  No file is written when the env var is unset.
+      if( const char * const out_prefix = std::getenv("RELACT_CHECK_GRADIENTS") )
+      {
+        static std::atomic<int> s_gradcheck_call_num{ 0 };
+        const int call_num = s_gradcheck_call_num++;
+        const string outname = string(out_prefix) + "_" + std::to_string(call_num) + "_" + tag + ".csv";
+        if( FILE * const outfile = fopen( outname.c_str(), "w" ) )
+        {
+          fprintf( outfile, "# nres=%zu npar=%zu tag=%s\n", n_res, n_par, tag );
+          fprintf( outfile, "par_index,par_name,is_const,par_value,residual_index,res_auto,res_num,jac_auto,jac_num\n" );
+          for( size_t r = 0; r < n_res; ++r )
+          {
+            for( size_t c = 0; c < n_par; ++c )
+            {
+              const double ja = jac_auto[r*n_par + c], jn = jac_num[r*n_par + c];
+              if( (ja == 0.0) && (jn == 0.0) )
+                continue;  //zero-vs-zero rows carry no information; keeps the CSV manageable
+              const bool is_const = (std::find(begin(constant_parameters), end(constant_parameters),
+                                               static_cast<int>(c)) != end(constant_parameters));
+              fprintf( outfile, "%zu,\"%s\",%d,%.10g,%zu,%.10g,%.10g,%.17g,%.17g\n",
+                       c, cost_functor->parameter_name(c).c_str(), static_cast<int>(is_const), pars[c],
+                       r, res_auto[r], res_num[r], ja, jn );
+            }
+          }
+          fclose( outfile );
+        }
+      }//if( RELACT_CHECK_GRADIENTS )
+
+      // Per-column max |Jacobian|, so we only judge entries significant within their own column
+      //  (a near-zero entry can differ by a large fraction from pure round-off and means nothing).
+      vector<double> col_max( n_par, 0.0 );
+      for( size_t r = 0; r < n_res; ++r )
+        for( size_t c = 0; c < n_par; ++c )
+          col_max[c] = std::max( col_max[c], std::max( fabs(jac_auto[r*n_par + c]), fabs(jac_num[r*n_par + c]) ) );
+
+      size_t num_bad = 0;
+      double worst_frac = 0.0;
+      string worst_detail;
+      for( size_t c = 0; c < n_par; ++c )
+      {
+        // Constant parameters are not used by the cost function; skip their (meaningless) column.
+        if( std::find(begin(constant_parameters), end(constant_parameters), static_cast<int>(c)) != end(constant_parameters) )
+          continue;
+
+        for( size_t r = 0; r < n_res; ++r )
+        {
+          const double ja = jac_auto[r*n_par + c], jn = jac_num[r*n_par + c];
+          if( std::max(fabs(ja),fabs(jn)) < 1.0E-3*col_max[c] )  //not column-significant
+            continue;
+
+          const double frac = fabs(ja - jn) / std::max( fabs(ja), fabs(jn) );
+          if( frac > 1.0E-2 )  //review measured auto-diff agrees to <=1% on significant entries
+          {
+            ++num_bad;
+            if( frac > worst_frac )
+            {
+              worst_frac = frac;
+              char buffer[512];
+              snprintf( buffer, sizeof(buffer), "par '%s' (idx %zu), residual %zu: auto=%.8g numeric=%.8g fracdiff=%.4g",
+                        cost_functor->parameter_name(c).c_str(), c, r, ja, jn, frac );
+              worst_detail = buffer;
+            }
+          }
+        }//for( residuals )
+      }//for( parameter columns )
+
+      if( num_bad > 0 )
+      {
+        char buffer[768];
+        snprintf( buffer, sizeof(buffer),
+                 "RelActAuto auto-diff vs central-difference Jacobian disagreed on %zu column-significant entries (tag=%s); worst: %s",
+                 num_bad, tag, worst_detail.c_str() );
+        log_developer_error( __func__, buffer );
+      }
     };//test_gradients(...)
-    
-    test_gradients( cost_functor.get(), parameters );
-#endif
-     */
+
+    // Opt-in (cheap - see cost note above): gated on an env var so the default solve stays
+    //  bit-identical and timing/eval-count comparisons aren't perturbed.  Set RELACT_GRADIENT_CHECK=1
+    //  to log auto-diff/numeric disagreements, or RELACT_CHECK_GRADIENTS=<prefix> to additionally dump
+    //  per-entry CSVs.  Default (neither set): no check, solve identical to a non-developer build.
+    const bool gradient_check_enabled = ( std::getenv("RELACT_GRADIENT_CHECK") || std::getenv("RELACT_CHECK_GRADIENTS") );
+    if( gradient_check_enabled )
+      test_gradients( cost_functor.get(), parameters, "start" );
+#endif //PERFORM_DEVELOPER_CHECKS
 
     if( sm_use_auto_diff )
     {
@@ -5557,12 +5868,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           continue;
         }
         
-        if( rel_eff.phys_model_use_hoerl )
+        if( rel_eff.uses_phys_model_correction() )
         {
           const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 0;
           const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 1;
           
-          if( options.same_hoerl_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
+          if( options.same_corr_fcn_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
           {
             assert( parameters[b_index] == -1.0 ); //Just a consistency/sanity check
             assert( parameters[c_index] == -1.0 );
@@ -5570,14 +5881,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             // Right now we hard-wire not using Hoerl correction for manual Physical Rel Eff solution, so `b` and `c` should be at their starting values
             assert( parameters[b_index] == ((0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset) );  //(energy/1000)^b
-            assert( parameters[c_index] == ((1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset) );  //c^(1000/energy)
+            assert( parameters[c_index] == hoerl_c_param_for_c( 1.0 ) );  // (A) gamma=log(c) start value
             if( !already_fixed(b_index) )
               hoerl_par_indexes.push_back( b_index );
             if( !already_fixed(c_index) )
               hoerl_par_indexes.push_back( c_index );
           }//
-        }//if( rel_eff.phys_model_use_hoerl )
-        
+        }//if( rel_eff.uses_phys_model_correction() )
+
         if( rel_eff.phys_model_self_atten
            && rel_eff.phys_model_self_atten->fit_atomic_number
            && !already_fixed(this_rel_eff_start + 0) )
@@ -5647,7 +5958,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
        */
       double initial_cost = std::numeric_limits<double>::max(), best_cost_val = std::numeric_limits<double>::max();
 
-      const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, ceres_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
+      // Pre-fit stages only nudge parameters into the right neighborhood before the main solve;
+      //  give them a small time/iteration budget so they cannot each burn the full main-solve
+      //  budget (review A14). The main solve below keeps the full `ceres_options`.
+      ceres::Solver::Options pre_fit_options = ceres_options;
+      pre_fit_options.max_num_iterations = 300;
+#ifndef NDEBUG
+      pre_fit_options.max_solver_time_in_seconds = 80.0;   // ~4x the release cap for slow debug builds
+#else
+      pre_fit_options.max_solver_time_in_seconds = 20.0;
+#endif
+
+      const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, pre_fit_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
         const vector<double> orig_parameters = parameters;
         vector<int> tmp_constant_parameters = constant_parameters;
         for( const vector<size_t> &indices : indices_to_fix )
@@ -5668,7 +5990,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         double *pars = &parameters[0];
         problem.SetManifold( pars, subset_manifold );
         ceres::Solver::Summary summary;
-        ceres::Solve(ceres_options, &problem, &summary);
+        ceres::Solve(pre_fit_options, &problem, &summary);
 
         if( (initial_cost == std::numeric_limits<double>::max()) && (summary.initial_cost > 0.0) )
           initial_cost = summary.initial_cost;
@@ -5678,30 +6000,28 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           case ceres::CONVERGENCE:
           case ceres::USER_SUCCESS:
-          {
+          case ceres::NO_CONVERGENCE:
+            // Accept any finite cost improvement, even when a stage merely exhausted its (small)
+            //  iteration/time budget without formally converging - the parameters are still the
+            //  best feasible point the stage reached, and discarding them wastes the pre-fit (A14).
+            //  `final_cost < best_cost_val` is already NaN/inf-safe (both compare false vs. a finite
+            //  best_cost_val / its max() seed).
 #ifndef NDEBUG
-            cout << "Pre-fit correction was successful with FinalCost="
-            << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
+            cout << "Pre-fit correction finished (termination_type=" << static_cast<int>(summary.termination_type)
+            << ") with FinalCost=" << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
             << "  Previous best_cost_val=" << ((best_cost_val == std::numeric_limits<double>::max()) ? string("N/A") : SpecUtils::printCompact(best_cost_val, 6))
             << endl;
 #endif
             solution_is_better = (summary.final_cost < best_cost_val);
             break;
-          }
 
-          case ceres::NO_CONVERGENCE:
-#ifndef NDEBUG
-            cout << "Pre-fit correction did not converge" << endl;
-#endif
-            break;
-
-          case ceres::FAILURE:
+          case ceres::FAILURE:        // solver state unreliable - keep discarding
 #ifndef NDEBUG
             cout << "Pre-fit correction failed" << endl;
 #endif
             break;
 
-          case ceres::USER_FAILURE:
+          case ceres::USER_FAILURE:   // user-cancelled - keep discarding
 #ifndef NDEBUG
             cout << "Pre-fit correction was user-cancelled" << endl;
 #endif
@@ -5722,13 +6042,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars} );
 
-      if( !initial_par_vals_to_restore_after_initial_fit.empty() )
-      {
-        for( const pair<int,double> &intial_vals : initial_par_vals_to_restore_after_initial_fit )
-          parameters[intial_vals.first] = intial_vals.second;
-        eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs} );
-      }
-      
       if( !hoerl_par_indexes.empty() )
         eval_with_constants( {hoerl_par_indexes} );
 
@@ -5813,8 +6126,57 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }//
     }//if( (summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS) )
 #endif //#if( PEAK_SKEW_HACK == 2 )
-    
-    
+
+    // The main solve can stop on a plateau (ftol/ptol) above the full model's true minimum,
+    //  especially in flat empirical-correction <-> attenuator valleys.  A warm re-Solve resets the
+    //  trust region; from a true minimum it is nearly free, but it reliably drops out of these stalls
+    //  (the auto-simplify trial below otherwise routinely finds a lower chi2 - mathematically
+    //  impossible at a true minimum of the full model).  Loop until improvement stops, keeping the
+    //  last converged point if a restart fails to converge.
+    if( (summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS) )
+    {
+      const int max_restarts = 5;
+      for( int restart = 0; restart < max_restarts; ++restart )
+      {
+        if( cancel_calc && cancel_calc->load() )
+          break;
+
+        const vector<double> pre_restart_pars = parameters;
+        const double pre_restart_cost = summary.final_cost;
+
+        ceres::Solver::Summary restart_summary;
+        ceres::Solve( ceres_options, &problem, &restart_summary );
+
+        const bool restart_converged = ((restart_summary.termination_type == ceres::CONVERGENCE)
+                                        || (restart_summary.termination_type == ceres::USER_SUCCESS));
+        if( !restart_converged )
+        {
+          // A cancel that landed mid-restart must surface (else we'd report Success for a cancelled
+          //  run); any other non-convergence just keeps the last good converged point + summary.
+          if( cancel_calc && cancel_calc->load() )
+            summary = restart_summary;
+          else
+            parameters = pre_restart_pars;
+          break;
+        }
+
+        const double rel_improve = (pre_restart_cost > 0.0)
+                                ? (pre_restart_cost - restart_summary.final_cost)/pre_restart_cost : 0.0;
+        if( rel_improve < 0.0 )
+        {
+          // Non-monotonic steps are enabled, so a converged restart can end above where it started;
+          //  keep the better (pre-restart) point and its summary.
+          parameters = pre_restart_pars;
+          break;
+        }
+
+        summary = restart_summary;
+        if( rel_improve <= ceres_options.function_tolerance )
+          break;
+      }//for( int restart = 0; restart < max_restarts; ++restart )
+    }//if( main solve converged )
+
+
     switch( summary.termination_type )
     {
       case ceres::CONVERGENCE:
@@ -5848,7 +6210,224 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//switch( summary.termination_type )
     
     const bool success = (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success);
-    
+
+    // TODO (RelActAuto true-minimum rescue): a few fits converge to a bad LOCAL minimum yet report
+    //  "Success" - notably depleted-U high-statistics spectra (e.g. JRC SS16 CBNM031): chi2/dof ~120
+    //  while a re-minimization from a perturbed rel-eff/physical-model point reaches chi2/dof ~1.6 and
+    //  the correct enrichment (1.0% -> 0.32%, truth 0.317%).  A 2026-06 basin-hopping experiment
+    //  confirmed this.  PLAN: when chi2/dof exceeds a high threshold N (~20, TBD) treat the fit as a
+    //  catastrophic stall and attempt a *smart* rescue.
+    //  IMPORTANT: gate this on high chi2/dof ONLY.  Chasing the global minimum on already-good fits
+    //  HURTS - the marginally-lower basins there are model/DRF-degeneracy artifacts that pull
+    //  enrichment AWAY from truth (seen on 5 of 7 affected IDB files).
+
+    // ---- Begin Auto-simplify ------------------------------------------------------------------------
+    // After the converged full fit, greedily fix redundant degrees of freedom AT THEIR IDENTITY VALUES
+    //  (most-degenerate / least-physical first: empirical correction -> external attenuator -> highest
+    //  polynomial term) and re-solve WARM from the current minimum, keeping each removal only if chi2
+    //  rises by no more than `auto_simplify_max_dchi2`.  Abort at the first DOF the data won't give up.
+    //
+    //  Fixing-at-identity (rather than rebuilding a smaller model) keeps the parameter layout unchanged,
+    //  so each trial warm-starts from the previous minimum and reuses this same `problem` - far cheaper
+    //  than a cold re-solve.  A correction held at its identity (Hoerl b=0,c=1 / basis a1=a2=0) evaluates
+    //  to exactly 1, i.e. numerically identical to RelEffEqnForm "None"; an external attenuator held at
+    //  AD=0 contributes exp(0)=1.  `m_options` is intentionally left as the caller passed it (the full
+    //  model + auto_simplify_model=true: re-solving it reproduces this result); the fixed parameters are
+    //  recorded in `m_warnings`.  They end up constant in the final manifold, so the covariance below
+    //  (and hence the reported uncertainties / rel-eff band) gives them zero variance - matching a model
+    //  that never had them.
+    if( success && options.auto_simplify_model )
+    {
+      using RelActCalc::RelEffEqnForm;
+
+      // Candidate removal = description + the (parameter index, identity Ceres-value) pairs to fix.
+      struct AutoSimplifyCandidate{ string description; vector<pair<size_t,double>> fixes; };
+      vector<AutoSimplifyCandidate> candidates;
+
+      const double b_identity = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+      const double c_identity = hoerl_c_param_for_c( 1.0 );
+      const double ad_identity = RelActCalc::ns_ad_ceres_offset;  // AD = 0 g/cm^2
+      const vector<RelActCalcAuto::RelEffCurveInput> &curves = cost_functor->m_options.rel_eff_curves;
+
+      // 1) empirical-correction coefficients of every physical-model curve that uses one.
+      {
+        vector<pair<size_t,double>> fixes;
+        for( size_t i = 0; i < curves.size(); ++i )
+        {
+          if( (curves[i].rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel) && curves[i].uses_phys_model_correction() )
+          {
+            const size_t b_index = cost_functor->rel_eff_eqn_start_parameter(i) + 2 + 2*curves[i].phys_model_external_atten.size();
+            fixes.push_back( { b_index,   b_identity } );
+            fixes.push_back( { b_index+1, c_identity } );
+          }
+        }
+        if( !fixes.empty() )
+          candidates.push_back( { "empirical correction function", std::move(fixes) } );
+      }
+
+      // 2) fitted external-attenuator areal densities of every physical-model curve.
+      {
+        vector<pair<size_t,double>> fixes;
+        for( size_t i = 0; i < curves.size(); ++i )
+        {
+          if( curves[i].rel_eff_eqn_type != RelEffEqnForm::FramPhysicalModel )
+            continue;
+          const size_t start = cost_functor->rel_eff_eqn_start_parameter(i);
+          for( size_t e = 0; e < curves[i].phys_model_external_atten.size(); ++e )
+          {
+            const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &sh = curves[i].phys_model_external_atten[e];
+            // Only offer removal (AD->0) when the user permits AD down to zero; a positive lower bound means
+            //  the user requires this attenuator, and the post-solve AD clamp would push it back off zero.
+            if( sh && sh->fit_areal_density && (sh->lower_fit_areal_density <= 0.0) )
+              fixes.push_back( { start + 2 + 2*e + 1, ad_identity } );
+          }
+        }
+        if( !fixes.empty() )
+          candidates.push_back( { "external attenuator(s)", std::move(fixes) } );
+      }
+
+      // 3) highest-order term of each non-physical (polynomial/empirical) rel-eff curve.
+      for( size_t i = 0; i < curves.size(); ++i )
+      {
+        if( (curves[i].rel_eff_eqn_type != RelEffEqnForm::FramPhysicalModel) && (curves[i].rel_eff_eqn_order >= 2) )
+          candidates.push_back( { "highest-order term of rel-eff curve " + std::to_string(i),
+                                  { { cost_functor->rel_eff_eqn_start_parameter(i) + curves[i].rel_eff_eqn_order, 0.0 } } } );
+      }
+
+      // chi2 = Sum(residual^2), including the AD-bias prior residuals (same metric as `m_chi2`).  Fixing a
+      //  DOF also zeroes that parameter's prior penalty, so the Delta-chi2 gate is marginally easier for the
+      //  external-AD candidate than a pure data-misfit test would be - negligible vs a tolerance of order 1.
+      double best_chi2 = (*cost_functor)( parameters );
+      if( !std::isfinite(best_chi2) )  // a converged solution shouldn't eval to inf/NaN; if it does, don't simplify
+        candidates.clear();
+
+      vector<int> as_fixed;  // parameters auto-simplify has fixed (kept constant in the manifold)
+
+      const auto is_const = [&]( const size_t idx ) -> bool {
+        return (std::find(begin(constant_parameters), end(constant_parameters), (int)idx) != end(constant_parameters))
+            || (std::find(begin(as_fixed), end(as_fixed), (int)idx) != end(as_fixed));
+      };
+
+      // Try fixing `cand`'s parameters at the given values and warm-re-solve.  On success (the solve
+      //  converges and chi2 rises by no more than the tolerance) keep the simpler model and return
+      //  Accepted; if nothing in the candidate is actually being fit return Skipped; otherwise restore
+      //  the full-model parameters and return Refused.  Shared by the priority chain below (which stops
+      //  at the first Refused) and the independent skew removal (which ignores the result).
+      enum class RemoveResult{ Accepted, Skipped, Refused };
+      const auto try_remove = [&]( const AutoSimplifyCandidate &cand ) -> RemoveResult {
+        bool any_fittable = false;
+        for( const pair<size_t,double> &f : cand.fixes )
+          any_fittable = (any_fittable || !is_const(f.first));
+        if( !any_fittable )
+          return RemoveResult::Skipped;  // nothing of this candidate is actually being fit
+
+        const vector<double> saved_parameters = parameters;
+        vector<int> trial_const = constant_parameters;
+        trial_const.insert( end(trial_const), begin(as_fixed), end(as_fixed) );
+        for( const pair<size_t,double> &f : cand.fixes )
+        {
+          // Only touch parameters that are actually fit.  Already-constant ones must be left exactly as-is
+          //  - e.g. with `same_corr_fcn_for_all_rel_eff_curves`, the non-owning curves' correction coefs are
+          //  held at a load-bearing sentinel (-1.0) that the eval relies on; fixing the owning curve's coefs
+          //  at identity already removes the shared correction for all curves.
+          if( is_const(f.first) )
+            continue;
+          parameters[f.first] = f.second;        // hold at identity / no-skew ("removed")
+          trial_const.push_back( (int)f.first );
+        }
+
+        problem.SetManifold( pars, new ceres::SubsetManifold( (int)num_pars, trial_const ) );
+        ceres::Solver::Summary as_summary;
+        ceres::Solve( ceres_options, &problem, &as_summary );
+        const double trial_chi2 = (*cost_functor)( parameters );
+
+        const bool solved = ((as_summary.termination_type == ceres::CONVERGENCE)
+                             || (as_summary.termination_type == ceres::USER_SUCCESS));
+        if( solved && ((trial_chi2 - best_chi2) <= options.auto_simplify_max_dchi2) )
+        {
+          const double dchi2 = trial_chi2 - best_chi2;
+          best_chi2 = trial_chi2;
+          for( const pair<size_t,double> &f : cand.fixes )
+          {
+            // Only record parameters this candidate actually fixed; skip ones already constant (from
+            //  problem setup or an earlier candidate) so `as_fixed` never overlaps `constant_parameters`.
+            //  Otherwise final_const = constant_parameters + as_fixed would contain duplicate indices and
+            //  ceres::SubsetManifold aborts ("constant parameters cannot contain duplicates") - e.g. the
+            //  never-energy-dependent DoubleSidedCrystalBall `n` exponents are fixed at setup, then the
+            //  accepted skew-removal candidate would re-add them here.
+            if( !is_const( f.first ) )
+              as_fixed.push_back( (int)f.first );
+          }
+          solution.m_warnings.push_back( "Auto-simplify: removed " + cand.description
+                          + " (chi2 change " + SpecUtils::printCompact(dchi2,4)
+                          + " within tolerance); using the simpler model." );
+          return RemoveResult::Accepted;
+        }
+
+        parameters = saved_parameters;  // restore the kept (full) values
+        return RemoveResult::Refused;
+      };//try_remove lambda
+
+      // Priority chain: most-degenerate / least-physical first, stopping at the first DOF the data
+      //  won't give up (it does not skip to a lower-priority candidate).
+      for( const AutoSimplifyCandidate &cand : candidates )
+      {
+        if( try_remove( cand ) == RemoveResult::Refused )
+          break;  // the most-degenerate remaining DOF is needed -> stop
+      }//for( each candidate, in priority order )
+
+      // 4) peak skew.  Independent of the rel-eff degeneracy chain above (skew is a peak-shape nuisance
+      //    parameter, not part of the efficiency model), so it is evaluated on its own regardless of
+      //    whether the chain stopped early.  GaussExp/CrystalBall reach "no skew" only as the parameter
+      //    approaches a bound (a finite proxy for skew->inf), so an unwanted skew otherwise just pins
+      //    there (review item A12); fixing every fittable skew parameter at its no-skew value and
+      //    re-solving drops the DOF when the data does not actually want a tail.  A fit with real skew
+      //    raises chi2 when forced to no-skew and is rejected, leaving the skew in place.
+      {
+        const size_t num_skew = PeakDef::num_skew_parameters( options.skew_type );
+        const size_t skew_start = cost_functor->m_skew_par_start_index;
+
+        AutoSimplifyCandidate skew_cand;
+        skew_cand.description = "peak skew (data prefers no tail)";
+        bool have_no_skew_limit = (num_skew > 0);
+        // Layout is two energy-interpolated sets of `num_skew` coefs: [set0 coefs..., set1 coefs...].
+        for( size_t i = 0; have_no_skew_limit && (i < 2*num_skew); ++i )
+        {
+          const PeakDef::CoefficientType coef = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + (i % num_skew) );
+          double no_skew_value = 0.0;
+          if( PeakDef::skew_no_skew_value( options.skew_type, coef, no_skew_value ) )
+            skew_cand.fixes.push_back( { skew_start + i, no_skew_value } );
+          else
+            have_no_skew_limit = false;  // this skew type has no pure-Gaussian limit -> don't offer removal
+        }
+
+        if( have_no_skew_limit && !skew_cand.fixes.empty() )
+          try_remove( skew_cand );  // independent: kept or rejected on its own, no effect on the chain
+      }//peak-skew removal
+
+      // Restore the manifold to (originally-constant + auto-simplify-fixed) for the covariance below.
+      vector<int> final_const = constant_parameters;
+      final_const.insert( end(final_const), begin(as_fixed), end(as_fixed) );
+      // `as_fixed` holds only newly-fixed (previously-free) indices, so it must not overlap
+      //  `constant_parameters`; a duplicate here would make ceres::SubsetManifold abort.
+      assert( std::set<int>(begin(final_const), end(final_const)).size() == final_const.size() );
+      if( !final_const.empty() )
+        problem.SetManifold( pars, new ceres::SubsetManifold( (int)num_pars, final_const ) );
+      else
+        problem.SetManifold( pars, nullptr );
+      // Fold the auto-simplify-fixed parameters into `constant_parameters` so downstream bookkeeping
+      //  (m_parameter_were_fit, and the bound-active check) treats them as fixed, not free.
+      constant_parameters = final_const;
+    }//if( success && options.auto_simplify_model )
+    // ---- End Auto-simplify -----------------------------------------------------------------------------
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Re-run the check at the converged point (opt-in, same env gate) - this is where boundary-sensitive
+    //  defects show up (the A2 trap lived at a converged AD inside the loosened bound).
+    if( gradient_check_enabled )
+      test_gradients( cost_functor.get(), parameters, "converged" );
+#endif //PERFORM_DEVELOPER_CHECKS
+
     solution.m_num_function_eval_solution = static_cast<int>( cost_functor->m_ncalls );
     solution.m_num_microseconds_in_eval = static_cast<int>( cost_functor->m_nanoseconds_spent_in_eval / 1000 );  //convert from nanoseconds to micro
     
@@ -5896,7 +6475,30 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
     cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
     cov_options.num_threads = ceres_options.num_threads;
-    //cov_options.min_reciprocal_condition_number = 1e-14;
+
+    // Conditioning floor for the covariance.  The covariance is the pseudo-inverse of J^T J; a near-degenerate
+    //  direction has a tiny singular value sigma_i, and 1/sigma_i^2 would otherwise become an enormous variance.
+    //  `min_reciprocal_condition_number` is compared against (sigma_i/sigma_max)^2: any direction below the
+    //  cutoff is treated as null space (ZERO variance) instead of being inverted.
+    //
+    //  Where to put that cutoff is a MODELING JUDGMENT - "a direction constrained Nx more weakly than the
+    //  best-constrained one is too weak to report an uncertainty for" - NOT a numerical-precision limit
+    //  (double precision inverts safely down to sigma_i/sigma_max ~ 1e-7; the Ceres default 1e-14 drops only
+    //  genuine round-off singularity).  The catch is that *dropping* a weak direction zeroes its variance,
+    //  which makes the rel-eff band OVER-confident whenever rel-eff(E) actually depends on that direction
+    //  (the 918/926 collapse).  Measured on target/idb_enrichment_check: a high cutoff (1e-8, i.e. ratio
+    //  < 1e-4) wrecks calibration (median |pull| ~50, almost every band far too small); calibration improves
+    //  monotonically as the cutoff is lowered and more directions are retained.  So we deliberately keep this
+    //  at the numerical-guard level (drop only round-off-singular directions) and let the *statistical*
+    //  regularization of the degenerate shielding/correction directions be done physically by the parameter
+    //  priors above (`m_phys_model_param_priors`), which leave a weak direction a finite, physically-bounded
+    //  variance instead of zero.  Kept numerically consistent with the effective-DOF singular-value threshold
+    //  below (both at sigma_i/sigma_max = 1e-7).  `null_space_rank = -1` keeps the pseudo-inverse (so
+    //  Compute() still succeeds on rank-deficient Jacobians) while honoring the cutoff.  NOTE: a faithful band
+    //  for the genuinely rank-deficient files (low-enrichment, weak U-235 lines) is not representable by this
+    //  linearized covariance at all - that needs a profile/Monte-Carlo treatment.  Tuning knob - evaluate
+    //  with target/idb_enrichment_check.
+    cov_options.min_reciprocal_condition_number = 1e-14; //Ceres default; drops sigma_i/sigma_max < 1e-7
     //cov_options.column_pivot_threshold = -1;
     cov_options.null_space_rank = -1; //default: 0;
     
@@ -5980,7 +6582,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
           const size_t acts_start = cost_functor->rel_act_start_parameter( rel_eff_index );
           const size_t num_acts_par = cost_functor->rel_act_num_parameters( rel_eff_index );
-          get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance );
+          get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance[rel_eff_index] );
         }
         
         const size_t fwhm_start = cost_functor->m_fwhm_par_start_index;
@@ -6021,11 +6623,42 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #endif
 
       Eigen::VectorXd singular_values = svd.singularValues();
-      const double threshold = 1.0e-6 * singular_values.maxCoeff(); // Arbitrary threshold to consider what is contributing to problem
+
+      // Report the 2-norm condition number kappa(J) = sigma_max / sigma_min of the fit Jacobian - a
+      //  continuous measure of nearness-to-singularity (kappa >~ 1e7 corresponds to the rank-deficiency
+      //  flagged just below).  Set here, before the rank-deficiency `throw`, so it is recorded regardless.
+      {
+        const double sigma_max = singular_values.maxCoeff();
+        const double sigma_min = singular_values.minCoeff();
+        solution.m_jacobian_condition_number = (sigma_min > 0.0)
+                            ? (sigma_max / sigma_min) : std::numeric_limits<double>::infinity();
+      }
+
+      // Count a direction as a real degree of freedom only if it is constrained within 1e7x of the
+      //  best-constrained direction - the same ratio as the covariance conditioning floor above
+      //  (min_reciprocal_condition_number = (1e-7)^2 = 1e-14), so the directions counted here as effective
+      //  parameters match the directions kept (non-zero variance) in the reported covariance.
+      const double threshold = 1.0e-7 * singular_values.maxCoeff();
 
       size_t npar_eff = 0;
       for( int i = 0; i < singular_values.size(); ++i)
         npar_eff += (singular_values(i) > threshold);
+
+      // The covariance (cov_options.min_reciprocal_condition_number, above) drops exactly the directions
+      //  with singular-value ratio below this same 1e-7 threshold, so `num_free_pars - npar_eff` is the
+      //  number of near-degenerate directions omitted from the reported uncertainties / rel-eff band.
+      //  Record this (and warn) BEFORE the trustworthiness throw below: a severely rank-deficient SVD
+      //  (npar_eff << num_pars, which triggers the throw) is the STRONGEST collapse signal, and the
+      //  derived-uncertainty floor keys off `m_num_rank_deficient_dirs`, so it must be set even when
+      //  we fall back to num_pars for the DOF estimate.
+      const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
+      solution.m_num_rank_deficient_dirs = (npar_eff < num_free_pars) ? (num_free_pars - npar_eff) : size_t(0);
+      if( npar_eff < num_free_pars )
+        solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff)
+                            + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
+                            " unconstrained by the data (near-degenerate directions).  Per-parameter"
+                            " uncertainties omit these directions; derived quantities (enrichment,"
+                            " relative-efficiency band) that depend on them are flagged and widened instead." );
 
       if( (npar_eff < 1) || npar_eff < (num_pars/5) )
         throw runtime_error( "Only computed " + std::to_string(npar_eff)
@@ -6040,6 +6673,76 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//try / catch evaluate NDOF
 
 
+    // -------------------------------------------------------------------------------------------
+    // Rescale the reported covariance/uncertainties by the data-only reduced chi-square.
+    //
+    // The linearized Ceres covariance is purely statistical - it assumes the model is correct and the
+    //  only scatter is Poisson counting noise.  When the data scatter about the fit exceeds that (i.e.
+    //  unmodeled systematics, which dominate the U-235 enrichment pulls), the standard remedy is to
+    //  inflate the covariance by chi2/dof.  We use a DATA-ONLY chi2/dof: the non-data residual rows
+    //  (rel-eff anchor, peak-range-uncert, and the physical-model parameter priors) are not data
+    //  degrees of freedom and must not enter this goodness-of-fit.
+    //
+    // Done here - after the effective-DOF SVD, but BEFORE m_phys_units_cov is built and before every
+    //  downstream uncertainty consumer (peaks, age, rel-act, enrichment, rel-eff band) - so a SINGLE
+    //  multiply propagates to all reported uncertainties.  The full chi2 / m_dof (which include the
+    //  prior rows, for display) are still computed separately below.
+    {
+      const size_t n_data_rows = cost_functor->number_data_residuals();
+      vector<double> data_residuals( cost_functor->number_residuals(), 0.0 );
+      cost_functor->eval( parameters, data_residuals.data() );
+      double chi2_data = 0.0;
+      for( size_t i = 0; (i < n_data_rows) && (i < data_residuals.size()); ++i )
+        chi2_data += data_residuals[i]*data_residuals[i];
+
+      solution.m_chi2_data = chi2_data;
+      solution.m_dof_data = (n_data_rows > num_effective_paramaters) ? (n_data_rows - num_effective_paramaters) : size_t(0);
+      solution.m_cov_scale = (solution.m_dof_data > 0) ? (std::max)(1.0, chi2_data/static_cast<double>(solution.m_dof_data)) : 1.0;
+
+      // Weighted coefficient of determination: R^2 = 1 - SS_res/SS_tot, with SS_res = chi2_data (the
+      //  weighted residual sum of squares we just computed) and SS_tot the weighted total sum of squares
+      //  of the data about its weighted mean, over the same channels.
+      try
+      {
+        const double ss_tot = cost_functor->data_weighted_total_ss();
+        solution.m_r2 = (ss_tot > 0.0) ? (1.0 - (chi2_data / ss_tot))
+                                       : std::numeric_limits<double>::quiet_NaN();
+      }catch( std::exception & )
+      {
+        solution.m_r2 = std::numeric_limits<double>::quiet_NaN();
+      }
+
+      if( !solution.m_covariance.empty() && (solution.m_cov_scale != 1.0) )
+      {
+        const double s = solution.m_cov_scale;   // variance scale
+        const double s_std = std::sqrt(s);        // standard-deviation scale
+
+        auto scale_matrix = []( vector<vector<double>> &m, const double f ){
+          for( vector<double> &row : m )
+            for( double &v : row )
+              v *= f;
+        };
+
+        scale_matrix( solution.m_covariance, s );  // m_phys_units_cov is built from this below, so it inherits
+        for( vector<vector<double>> &c : solution.m_rel_eff_covariance )
+          scale_matrix( c, s );
+        for( vector<vector<double>> &c : solution.m_rel_act_covariance )
+          scale_matrix( c, s );
+        scale_matrix( solution.m_fwhm_covariance, s );
+
+        for( double &u : solution.m_final_uncertainties )
+          u *= s_std;
+        // The local `uncertainties`/`uncerts_squared` vectors feed the directly-reported sigmas below
+        //  (age, peak fwhm/amplitude, AN/AD, Hoerl b/c).  `age(...)` etc. are linear in the per-parameter
+        //  sigma, so scaling these scales those reported uncertainties correctly.
+        for( double &u : uncertainties )
+          u *= s_std;
+        for( double &u : uncerts_squared )
+          u *= s;
+      }//if( we have a covariance to scale )
+    }//covariance rescale by data-only chi2/dof
+
+
     solution.m_num_function_eval_total = static_cast<int>( cost_functor->m_ncalls );
   
     solution.m_final_parameters = parameters;
@@ -6047,17 +6750,62 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     solution.m_parameter_names.resize( parameters.size() );
     solution.m_parameter_were_fit.resize( parameters.size(), true );
+    solution.m_param_at_bound.assign( parameters.size(), 0 );  // per-parameter bound-active flags
+    vector<string> bound_pinned_names;
     for( size_t i = 0; i < parameters.size(); ++i )
     {
       solution.m_parameter_names[i] = cost_functor->parameter_name( i );
       solution.m_parameter_were_fit[i] = std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) ) == end(constant_parameters);
 
       solution.m_parameter_scale_factors[i] = cost_functor->parameter_scale_factor( i );
-      
+
       assert( (solution.m_parameter_scale_factors[i] > 0.0)
              || !solution.m_parameter_were_fit[i]
              || cost_functor->mass_constraint_multiple(i,parameters).has_value() );
+
+      // Flag fit parameters sitting on a fit bound.  Ceres' covariance ignores active bounds,
+      //  so a pinned parameter's reported variance is meaningless (typically far too small) - and the
+      //  empirical correction pins at its bound in a large fraction of DRF-mismatched files.  Derived
+      //  quantities depending on a pinned parameter get their uncertainty widened (see
+      //  `reliability_floored_uncert`).
+      if( solution.m_parameter_were_fit[i] && (i < lower_bounds.size()) && (i < upper_bounds.size()) )
+      {
+        const double val = parameters[i];
+        const std::optional<double> &lo = lower_bounds[i];
+        const std::optional<double> &hi = upper_bounds[i];
+        constexpr double tol_frac = 1.0e-3;
+        bool at_bound = false;
+        if( lo.has_value() && hi.has_value() && (*hi > *lo) )
+        {
+          const double tol = tol_frac*(*hi - *lo);
+          at_bound = ((val - *lo) <= tol) || ((*hi - val) <= tol);
+        }else if( lo.has_value() )
+        {
+          const double scale = std::max( std::fabs(val), std::max(std::fabs(*lo), 1.0e-12) );
+          at_bound = (std::fabs(val - *lo) <= tol_frac*scale);
+        }else if( hi.has_value() )
+        {
+          const double scale = std::max( std::fabs(val), std::max(std::fabs(*hi), 1.0e-12) );
+          at_bound = (std::fabs(val - *hi) <= tol_frac*scale);
+        }
+
+        if( at_bound )
+        {
+          solution.m_param_at_bound[i] = 1;
+          bound_pinned_names.push_back( solution.m_parameter_names[i] );
+        }
+      }//if( fit parameter with bounds in scope )
     }//for( size_t i = 0; i < parameters.size(); ++i )
+
+    if( !bound_pinned_names.empty() )
+    {
+      string msg = "These fit parameters are pinned at a bound, so their reported uncertainties are"
+                   " under-stated (Ceres' covariance ignores active bounds): ";
+      for( size_t i = 0; i < bound_pinned_names.size(); ++i )
+        msg += (i ? ", " : "") + bound_pinned_names[i];
+      msg += ".  Derived quantities depending on them are flagged and widened.";
+      solution.m_warnings.push_back( msg );
+    }//if( any bound-pinned parameters )
 
     if( !solution.m_covariance.empty() )
     {
@@ -6118,10 +6866,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
     vector<PeakDef> fit_peaks;
     vector<vector<PeakDef>> fit_peaks_for_each_curve( (num_rel_eff_curves > 1) ? num_rel_eff_curves : size_t(0) );
-    
+    size_t num_neg_peak_variances = 0; // accumulate clamped-negative peak variances across ROIs
+
     for( const RoiRangeChannels &range : cost_functor->m_energy_ranges )
     {
       const PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters, {}, &(solution.m_covariance) );
+      num_neg_peak_variances += these_peaks.num_negative_peak_variances;
 
       fit_peaks.insert( end(fit_peaks), begin(these_peaks.peaks), end(these_peaks.peaks) );
 
@@ -6145,7 +6895,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }//for( size_t i = 0; i < num_rel_eff_curves; ++i )
       }//if( more than R.E. curve )
     }//for( const RoiRangeChannels &range : cost_functor->m_energy_ranges )
-    
+
+    if( num_neg_peak_variances > 0 )
+      solution.m_warnings.push_back( "Covariance propagation produced " + std::to_string(num_neg_peak_variances)
+                          + " negative peak-parameter variance(s) (clamped to zero); the fit covariance is"
+                          " ill-conditioned, so some peak uncertainties may be unreliable." );
+
     std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMean );
     for( vector<PeakDef> &re_peaks : fit_peaks_for_each_curve )
       std::sort( begin(re_peaks), end(re_peaks), &PeakDef::lessThanByMean );
@@ -6369,8 +7124,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         nuc_output.age_was_fit = nuc_input.fit_age;
         nuc_output.rel_activity = cost_functor->relative_activity( nuc_input.source, rel_eff_index, parameters );
       
-        nuc_output.age_uncertainty = cost_functor->age( nuc_input, rel_eff_index, uncertainties );
-        
+        // Only report an age uncertainty when we actually have a covariance.  When
+        //  `covariance.Compute()` failed `uncertainties` is all-zero, and passing that through
+        //  `age()` would leak a spurious exact-zero ("infinitely confident") uncertainty.
+        if( solution.m_covariance.empty() )
+          nuc_output.age_uncertainty = -1.0;
+        else
+          nuc_output.age_uncertainty = cost_functor->age( nuc_input, rel_eff_index, uncertainties );
+
         bool is_mass_constrained = false;
         
         if( const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(nuc_output.source) )
@@ -6566,23 +7327,29 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         peak.original_spectrum_cal_energy = fp.energy;
 
       peak.amplitude = parameters[amp_index] * area_multiple;
-      peak.fwhm = parameters[fwhm_index];
+
+      // The functional FWHM is evaluated at the true gamma energy, and returned in keV.
+      // For Known energies, fp.energy is already the true gamma energy.
+      // For ObservedInSpectrum, we need to convert from observed position to true energy.
+      const double true_energy
+        = (fp.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known)
+          ? fp.energy
+          : cost_functor->un_apply_energy_cal_adjustment( fp.energy, parameters );
+      const double functional_fwhm = cost_functor->fwhm( true_energy, parameters );
 
       if( !fp.release_fwhm )
       {
-        // For Known energies, fp.energy is already the true gamma energy.
-        // For ObservedInSpectrum, we need to convert from observed position to true energy.
-        const double true_energy
-          = (fp.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::Known)
-            ? fp.energy
-            : cost_functor->un_apply_energy_cal_adjustment( fp.energy, parameters );
-        peak.fwhm = cost_functor->fwhm( true_energy, parameters );
-        
+        peak.fwhm = functional_fwhm;
+
         // TODO: implement evaluating uncertainty of FWHM, given covariance.
         peak.fwhm_uncert = -1;
       }else
       {
-        peak.fwhm_uncert = uncertainties[fwhm_index];
+        // When the FWHM is released, parameters[fwhm_index] is a dimensionless multiplier on
+        //  the functional FWHM (see `peaks_for_energy_range_imp`); convert to keV here so that
+        //  FloatingPeakResult::fwhm / ::fwhm_uncert are in keV, like all consumers expect.
+        peak.fwhm = parameters[fwhm_index] * functional_fwhm;
+        peak.fwhm_uncert = uncertainties[fwhm_index] * functional_fwhm;
         if( IsNan(peak.fwhm_uncert) )
         {
           solution.m_warnings.push_back( "Variance for floating peak at " + std::to_string(peak.energy)
@@ -6630,7 +7397,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
 
         RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo phys_model_result;
-        
+
+        // Energy reference frame for the basis empirical-correction term (used to evaluate/plot it the same
+        //  way it was fit).  Same for every curve; harmless/unused in legacy Hoerl mode.
+        phys_model_result.corr_lower_energy = cost_functor->m_corr_lower_energy;
+        phys_model_result.corr_upper_energy = cost_functor->m_corr_upper_energy;
+        phys_model_result.corr_pivot_energy = cost_functor->m_corr_pivot_energy;
+
         auto get_shield_info = [&]( const RelActCalc::PhysicalModelShieldInput &input,
                                    const vector<double> &these_rel_eff_coefficients,
                                    const size_t start_index )
@@ -6731,25 +7504,41 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }//for( const size_t outer_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
         //shields_from_other_curves
 
-        if( rel_eff_curve.phys_model_use_hoerl )
+        const RelActCalc::PhysModelCorrFcn report_corr_fcn = cost_functor->effective_corr_fcn( rel_eff_index );
+        phys_model_result.corr_fcn = report_corr_fcn;
+        if( report_corr_fcn != RelActCalc::PhysModelCorrFcn::None )
         {
-          // Modified Hoerl corrections only present if fitting the Hoerl function was selected
+          // The 2 correction coefficients (Hoerl b,c / basis a1,a2) are only present when a correction is used.
+          const bool is_basis = RelActAutoCostFcn::is_basis_correction( report_corr_fcn );
           const size_t b_index = 2 + 2*rel_eff_curve.phys_model_external_atten.size();
           const size_t c_index = b_index + 1;
           assert( c_index < rel_eff_coefficients.size() );
-          
+
           phys_model_result.hoerl_b = (rel_eff_coefficients[b_index] - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
-          phys_model_result.hoerl_c = (rel_eff_coefficients[c_index] - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
-          
+          // Physical c: linear basis a2, or Hoerl c = exp(gamma) (gamma=log-space param).
+          phys_model_result.hoerl_c = RelActAutoCostFcn::hoerl_c_from_param( rel_eff_coefficients[c_index], is_basis );
+
           if( uncertainties.size() > (this_rel_eff_start_index + b_index) )
             phys_model_result.hoerl_b_uncert = uncertainties[this_rel_eff_start_index + b_index] * RelActCalc::ns_decay_hoerl_b_multiple;
 
           if( uncertainties.size() > (this_rel_eff_start_index + c_index) )
-            phys_model_result.hoerl_c_uncert = uncertainties[this_rel_eff_start_index + c_index] * RelActCalc::ns_decay_hoerl_c_multiple; 
+          {
+            if( is_basis )
+            {
+              // Basis coefficient a2 is linear: sigma_a2 = multiple * sigma_par.
+              phys_model_result.hoerl_c_uncert = uncertainties[this_rel_eff_start_index + c_index]
+                         * RelActCalc::ns_decay_hoerl_c_multiple;
+            }else
+            {
+              // Hoerl: c = exp(gamma), so sigma_c = c * multiple * sigma_gamma_par.
+              phys_model_result.hoerl_c_uncert = phys_model_result.hoerl_c.value()
+                         * uncertainties[this_rel_eff_start_index + c_index] * RelActCalc::ns_decay_hoerl_c_multiple;
+            }//if( is_basis ) / else
+          }
 
           // If this isnt the first physical model, and we are using the same Hoerl function for all
           //  then we will use the Hoerl function from the first physical model.
-          if( first_phys_model_rel_eff_curve && options.same_hoerl_for_all_rel_eff_curves && (rel_eff_index != first_phys_model_index) )
+          if( first_phys_model_rel_eff_curve && options.same_corr_fcn_for_all_rel_eff_curves && (rel_eff_index != first_phys_model_index) )
           {
             assert( phys_model_result.hoerl_b == solution.m_phys_model_results[first_phys_model_index]->hoerl_b );
             assert( phys_model_result.hoerl_c == solution.m_phys_model_results[first_phys_model_index]->hoerl_c );
@@ -6757,8 +7546,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             phys_model_result.hoerl_b_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_b_uncert;
             phys_model_result.hoerl_c_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_c_uncert;
           }
-        }//if( options.phys_model_use_hoerl )
-        
+        }//if( report_corr_fcn != PhysModelCorrFcn::None )
+
         solution.m_phys_model_results[rel_eff_index] = std::move(phys_model_result);
       }//if( FramPhysicalModel )
     }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
@@ -7581,12 +8370,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
           assert( sub_ind >= (2 + 2*rel_eff_curve.phys_model_external_atten.size()) );
           const size_t hoerl_num = sub_ind - 2 - 2*rel_eff_curve.phys_model_external_atten.size();
+          // Correction-coefficient slots: labeled by the curve's correction form (Hoerl b,c vs Chebyshev a1,a2).
+          const bool is_basis = is_basis_correction( rel_eff_curve.phys_model_corr.corr_fcn );
           if( hoerl_num == 0 )
-            return "Hoerl" + re_ind + "(b)";
-        
+            return (is_basis ? "Cheby" : "Hoerl") + re_ind + (is_basis ? "(a1)" : "(b)");
+
           assert( hoerl_num == 1 );
           if( hoerl_num == 1 )
-            return "Hoerl" + re_ind + "(c)";
+            return (is_basis ? "Cheby" : "Hoerl") + re_ind + (is_basis ? "(a2)" : "(c)");
         }else
         {
           return "RE_" + re_ind + std::to_string(sub_ind);
@@ -7655,7 +8446,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       throw runtime_error( "Bad computing of parameter name - too large of index" );
     
     const size_t range_ind = index - m_add_br_uncert_start_index;
-    const int mid_energy = static_cast<int>( std::round(0.5*(m_peak_ranges_with_uncert[range_ind].second
+    const int mid_energy = static_cast<int>( std::round(0.5*(m_peak_ranges_with_uncert[range_ind].first
                                       + m_peak_ranges_with_uncert[range_ind].second)) );
     
     return "dBr" + std::to_string(mid_energy);
@@ -7729,19 +8520,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
           assert( sub_ind >= (2 + 2*rel_eff_curve.phys_model_external_atten.size()) );
 
-          if( !rel_eff_curve.phys_model_use_hoerl )
-            return 0.0;  // We arent using the Hoerl function, so no scale factor
+          if( !rel_eff_curve.uses_phys_model_correction() )
+            return 0.0;  // No correction, so the 2 correction params are constant (no scale factor)
 
-          if( m_options.same_hoerl_for_all_rel_eff_curves && (rel_eff_index != first_physical_model_index) )
-            return 0.0;  // We arent using the Hoerl function, so no scale factor
+          if( m_options.same_corr_fcn_for_all_rel_eff_curves && (rel_eff_index != first_physical_model_index) )
+            return 0.0;  // Correction shared from the first curve; this curve's params are constant
 
+          // Both the Hoerl (b, gamma=log(c)) and the basis (a1,a2) parameters use the same Ceres scale factors.
           const size_t hoerl_num = sub_ind - 2 - 2*rel_eff_curve.phys_model_external_atten.size();
           if( hoerl_num == 0 )
-            return rel_eff_curve.phys_model_use_hoerl ? RelActCalc::ns_decay_hoerl_b_multiple : 0.0;
-        
+            return RelActCalc::ns_decay_hoerl_b_multiple;
+
           assert( hoerl_num == 1 );
-          if( hoerl_num == 1 )
-            return rel_eff_curve.phys_model_use_hoerl ? RelActCalc::ns_decay_hoerl_c_multiple : 0.0;
+          return RelActCalc::ns_decay_hoerl_c_multiple;
         }else
         {
           return 1.0; // The polynomial-esque Rel. Eff. eqn coefficients are not scaled
@@ -8428,14 +9219,42 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     std::vector<RelActCalc::PhysModelShield<T>> external_attens;
     
     std::optional<T> hoerl_b, hoerl_c;
+    RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
   };//struct PhysModelRelEqnDef
-  
-  
+
+
+  /** Returns true when the correction is the Chebyshev basis form, whose 2 coefficients are fit linearly;
+   false for Hoerl, whose 'c' coefficient is fit in LOG-space (gamma=log(c), so physical c=exp(gamma); keeps
+   the Hoerl exponent linear in the fit parameter and avoids the c>0 bound). */
+  static bool is_basis_correction( const RelActCalc::PhysModelCorrFcn corr_fcn )
+  {
+    return (corr_fcn == RelActCalc::PhysModelCorrFcn::Chebyshev);
+  }
+
+  /** Converts the Ceres "c" correction parameter to the physical value passed to the eval: linear basis
+   coefficient a2 when `is_basis`, else the Hoerl physical c = exp(gamma) (gamma = log-space param). */
+  template<typename T>
+  static T hoerl_c_from_param( const T &par, const bool is_basis )
+  {
+    if( is_basis )
+      return (par - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
+    return exp( (par - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple );
+  }
+
+  /** Inverse of `hoerl_c_from_param` for the Hoerl (log-space) case: the Ceres parameter that yields physical
+   Hoerl `c`.  Used for start values / bounds; note `hoerl_c_param_for_c(1.0) == ns_decay_hoerl_c_offset`, which
+   is ALSO the basis a2=0 start, so the start/identity value is the same for both correction families. */
+  static double hoerl_c_param_for_c( const double c )
+  {
+    return (std::log(c) / RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+  }
+
   template<typename T>
   static PhysModelRelEqnDef<T> make_phys_eqn_input_no_other_curve_shielding( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve,
                                                 std::shared_ptr<const DetectorPeakResponse> drf,
                                                 const std::vector<T> &coeffs,
-                                                const size_t rel_eff_start )
+                                                const size_t rel_eff_start,
+                                                const RelActCalc::PhysModelCorrFcn corr_fcn )
   {
     //Note: `rel_eff_curve` may not be a curve in `m_options.rel_eff_curves` - it could be a copy where shieldings from
     //      other curves added into external shieldings, with `coeffs` appropriately modified
@@ -8494,18 +9313,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       answer.external_attens.push_back( std::move(atten) );
     }//for( loop over external attenuators )
     
-    if( rel_eff_curve.phys_model_use_hoerl )
+    answer.corr_fcn = corr_fcn;
+    if( corr_fcn != RelActCalc::PhysModelCorrFcn::None )
     {
       const size_t b_index = rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size();
       const size_t c_index = b_index + 1;
-      
+
       const T &b = coeffs[b_index];
       const T &c = coeffs[c_index];
-      
-      answer.hoerl_b = (b - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;  //(energy/1000)^b
-      answer.hoerl_c = (c - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;  //c^(1000/energy)
-    }//if( (b != 0.0) || (c != 1.0) )
-    
+
+      answer.hoerl_b = (b - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
+      answer.hoerl_c = hoerl_c_from_param( c, is_basis_correction(corr_fcn) );
+    }//if( a correction is being used )
+
     return answer;
   }//static PhysModelRelEqnDef make_phys_eqn_input_no_other_curve_shielding(...)
 
@@ -8524,17 +9344,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const size_t rel_eff_start = rel_eff_eqn_start_parameter(rel_eff_curve_index);
 
-    if( !m_options.same_hoerl_for_all_rel_eff_curves
+    // When the correction is shared across curves (same_corr_fcn_for_all_rel_eff_curves), all sharing curves use
+    //  the FIRST physical-model curve's correction form (consistent with how its b,c params are shared).
+    const RelActCalc::PhysModelCorrFcn corr_fcn = effective_corr_fcn( rel_eff_curve_index );
+
+    if( !m_options.same_corr_fcn_for_all_rel_eff_curves
        && !m_options.same_external_shielding_for_all_rel_eff_curves
        && rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
     {
-      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, x, rel_eff_start );
+      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, x, rel_eff_start, corr_fcn );
     }
 
     const vector<T> coefs = pars_for_rel_eff_curve( rel_eff_curve_index, x );
 
     if( rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
-      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, coefs, 0 );
+      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, coefs, 0, corr_fcn );
 
     // If we are here, we are being shielded by other curves, so we have to make a copy of the RelEff curve, and then
     //  add the shieldings from the other curves to this one.
@@ -8564,8 +9388,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
     }//for( const size_t outer_re_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
 
-    return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve_cpy, m_drf, coefs, 0 );
+    return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve_cpy, m_drf, coefs, 0, corr_fcn );
   }//make_phys_eqn_input(...)
+
+
+  /** The effective correction form for a curve: when the correction is shared
+   (`same_corr_fcn_for_all_rel_eff_curves`), the FIRST physical-model curve's; otherwise the curve's own. */
+  RelActCalc::PhysModelCorrFcn effective_corr_fcn( const size_t rel_eff_curve_index ) const
+  {
+    if( m_options.same_corr_fcn_for_all_rel_eff_curves )
+    {
+      for( const RelActCalcAuto::RelEffCurveInput &c : m_options.rel_eff_curves )
+      {
+        if( c.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          return c.phys_model_corr.corr_fcn;
+      }
+    }
+    return m_options.rel_eff_curves[rel_eff_curve_index].phys_model_corr.corr_fcn;
+  }//effective_corr_fcn(...)
   
 
   /** Returns the parameters for the specified relative efficiency curve.
@@ -8592,7 +9432,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<T> coefs( begin(x) + rel_eff_start_index, begin(x) + rel_eff_start_index + num_rel_eff_par );
 
     if( (rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
-      || (!m_options.same_hoerl_for_all_rel_eff_curves
+      || (!m_options.same_corr_fcn_for_all_rel_eff_curves
           && !m_options.same_external_shielding_for_all_rel_eff_curves
           && rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty()) )
     {
@@ -8629,7 +9469,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( !first_phys_model )
       throw std::logic_error( "make_phys_eqn_input: no physical model found" );
 
-    if( m_options.same_hoerl_for_all_rel_eff_curves )
+    if( m_options.same_corr_fcn_for_all_rel_eff_curves )
     {
       const size_t first_hoerl_b_index = first_phys_model_par_start_index + 2 + 2*first_phys_model->phys_model_external_atten.size();
       const size_t first_hoerl_c_index = first_hoerl_b_index + 1;
@@ -8648,7 +9488,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       coefs[this_hoerl_b_coefs_index] = x[first_hoerl_b_index];
       coefs[this_hoerl_c_coefs_index] = x[first_hoerl_c_index];
-    }//if( m_options.same_hoerl_for_all_rel_eff_curves )
+    }//if( m_options.same_corr_fcn_for_all_rel_eff_curves )
 
     if( m_options.same_external_shielding_for_all_rel_eff_curves )
     {
@@ -8733,7 +9573,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // TODO: this next call can be a real bottlenck - specifically the `GammaInteractionCalc::transmition_length_coefficient` function can be really slow - we should some-how maybe cache these results
       return RelActCalc::eval_physical_model_eqn_imp( energy, re_input.self_atten,
                                                  re_input.external_attens, re_input.det.get(),
-                                                 re_input.hoerl_b, re_input.hoerl_c );
+                                                 re_input.hoerl_b, re_input.hoerl_c,
+                                                 m_corr_lower_energy, m_corr_upper_energy, m_corr_pivot_energy,
+                                                 re_input.corr_fcn );
     }//if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     
     assert( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel );
@@ -9250,7 +10092,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }
 
     // Check adjustments are near the limits we placed
-    // Offset: sm_energy_par_offset ± (sm_energy_offset_range_keV/sm_energy_cal_multiple) = 1.0 ± 0.15 = [0.85, 1.15]
+    // Offset: sm_energy_par_offset ± (sm_energy_offset_range_keV/sm_energy_cal_multiple) = 1.0 ± 0.10 = [0.90, 1.10]
     // Gain: sm_energy_par_offset ± (sm_energy_gain_range_keV/sm_energy_cal_multiple) = 1.0 ± 0.20 = [0.80, 1.20]
     // Quadratic: same as gain = [0.80, 1.20]
     constexpr double offset_lower = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset
@@ -9634,6 +10476,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }else
             {
               forward_dt = std::min( 0.01*nuc_age_val, 0.001*nuc->halfLife );
+              if( forward_dt <= 0.0 )
+                forward_dt = 0.001*nuc->halfLife;  // age==0: keep a nonzero forward step (no 0/0)
               if( nuc_age_val > 0.0 )
                 backward_dt = std::min(0.1*nuc_age_val, 0.001*nuc->halfLife);
             }//if( nuc_age_val > 0.001*nuc->halfLife ) / else
@@ -9798,6 +10642,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 const double derivative = numerator / denominator;
 
                 yield.v = derivative * nuc_age.v;
+              }else
+              {
+                // No backward sample (e.g. age==0 at the lower bound): use the one-sided forward
+                //  difference so the age gradient is not silently zero.
+                yield.v = forward_derivative * nuc_age.v;
               }
             }//if( is_fixed_age(src_info.nuclide, rel_eff_index) )
           }//if( !std::is_same_v<T, double> )          
@@ -10112,6 +10961,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t last_channel;
     bool no_gammas_in_range;
     bool forced_full_range;
+    /** Number of peak-parameter variances that came out meaningfully negative (beyond round-off)
+        and were clamped to zero.  A non-zero value flags an ill-conditioned covariance to the caller. */
+    size_t num_negative_peak_variances = 0;
   };//struct PeaksForEnergyRange
   
   
@@ -10154,7 +11006,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     // Compute uncertainties if covariance is provided and valid
     vector<vector<double>> peak_uncertainties; // [peak_index][param_index] where param_index: 0=mean, 1=sigma, 2=amplitude, 3+=skew_pars
-    
+    size_t num_neg_peak_variances = 0; // count of meaningfully-negative variances clamped to 0
+
     if( convariance && !convariance->empty() && (convariance->size() == x.size()) )
     {
       const size_t num_par = x.size();
@@ -10197,17 +11050,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t param_idx = 0; param_idx < 8; ++param_idx )
         {
           const vector<double> &jacobian = peak_jacobians[peak_idx][param_idx];
-          double uncertainty = 0.0;
-          
+          double uncertainty = 0.0, abs_sum = 0.0;
+
           for( size_t i = 0; i < num_par; ++i )
           {
             for( size_t j = 0; j < num_par; ++j )
             {
               if( i < convariance->size() && j < (*convariance)[i].size() )
-                uncertainty += jacobian[i] * (*convariance)[i][j] * jacobian[j];
+              {
+                const double term = jacobian[i] * (*convariance)[i][j] * jacobian[j];
+                uncertainty += term;
+                abs_sum += std::fabs(term);
+              }
             }
           }
-          
+
+          // Round-off can make this slightly negative; a value negative beyond ~round-off
+          //  (relative to the sum of |terms|) signals a genuinely ill-conditioned covariance.
+          if( uncertainty < -1.0e-6*abs_sum )
+            ++num_neg_peak_variances;
+
           peak_uncertainties[peak_idx][param_idx] = std::sqrt(std::max(0.0, uncertainty));
         }
       }
@@ -10216,13 +11078,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( !rel_eff_indices.empty() )
     {
+      // Filter `peak_uncertainties` with the same predicate/order as the peaks: the uncertainties were
+      //  computed against the unfiltered peak list, so applying them by post-filter index would assign
+      //  each remaining peak the uncertainty of a different (filtered-out) peak in multi-curve fits.
       vector<RelActCalcAuto::PeakDefImp<double>> filtered_peaks;
-      for( const RelActCalcAuto::PeakDefImp<double> &p : computed_peaks.peaks )
+      vector<vector<double>> filtered_uncerts;
+      const bool have_uncerts = !peak_uncertainties.empty();
+      for( size_t p = 0; p < computed_peaks.peaks.size(); ++p )
       {
-        if( rel_eff_indices.count(p.m_rel_eff_index) )
-          filtered_peaks.push_back( p );
+        const RelActCalcAuto::PeakDefImp<double> &peak = computed_peaks.peaks[p];
+        if( rel_eff_indices.count(peak.m_rel_eff_index) )
+        {
+          filtered_peaks.push_back( peak );
+          if( have_uncerts && (p < peak_uncertainties.size()) )
+            filtered_uncerts.push_back( peak_uncertainties[p] );
+        }
       }
       computed_peaks.peaks.swap( filtered_peaks );
+      if( have_uncerts )
+        peak_uncertainties.swap( filtered_uncerts );
     }//if( !rel_eff_indices.empty() )
     
     PeaksForEnergyRange answer;
@@ -10230,7 +11104,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     answer.last_channel = computed_peaks.last_channel;
     answer.no_gammas_in_range = computed_peaks.no_gammas_in_range;
     answer.forced_full_range = computed_peaks.forced_full_range;
-    
+    answer.num_negative_peak_variances = num_neg_peak_variances;
+
     for( size_t i = 0; i < computed_peaks.peaks.size(); ++i )
     {
       const RelActCalcAuto::PeakDefImp<double> &comp_peak = computed_peaks.peaks[i];
@@ -10487,17 +11362,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         //  is 1.0 (i.e., RE for approx half source counts above and below 1.0) to remove degeneracy between RE and
         //  activities - this is slightly different than how the manual solution does it, but seemingly a little more
         //  fitting here.
+        // Weight by `m_energy_ranges` (which `source_counts_for_rois` is sized/filled by) rather than
+        //  `m_options.rois`: ROIs are not 1:1 with energy ranges (off-spectrum ROIs are skipped,
+        //  breakable ROIs split into sub-ranges, then sorted), so indexing the per-energy-range counts
+        //  by ROI index could read out-of-bounds and mis-weight split ROIs.
         T avrg_rel_eff( 0.0 );
-        for( size_t roi_index = 0; roi_index < m_options.rois.size(); ++roi_index )
+        for( size_t er_index = 0; er_index < m_energy_ranges.size(); ++er_index )
         {
-          const RelActCalcAuto::RoiRange &roi = m_options.rois[roi_index];
-          const T counts = (sum_src_counts > 1.0) ? source_counts_for_rois[roi_index] : T(1.0);
-          const double mid_energy = roi.lower_energy + 0.5*(roi.upper_energy - roi.lower_energy);
+          const RoiRangeChannels &er = m_energy_ranges[er_index];
+          const T counts = (sum_src_counts > 1.0) ? source_counts_for_rois[er_index] : T(1.0);
+          const double mid_energy = er.lower_energy + 0.5*(er.upper_energy - er.lower_energy);
           const T rel_eff = relative_eff( mid_energy, rel_eff_index, x );
           avrg_rel_eff += counts*rel_eff;
         }
 
-        avrg_rel_eff /= ((sum_src_counts > 1.0) ? sum_src_counts : T(static_cast<double>(m_options.rois.size())));
+        avrg_rel_eff /= ((sum_src_counts > 1.0) ? sum_src_counts : T(static_cast<double>(m_energy_ranges.size())));
 
         //  Note: `m_rel_eff_anchor_enhancement` is the sqrt of counts in all the ranges - I'm not really sure if
         //        this is the appropriate scale to use, but this value effects the error bands displayed on the
@@ -10524,6 +11403,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         ++residual_index;
       }
     }//if( !m_peak_ranges_with_uncert.empty() )
+
+    // Weak Gaussian priors on selected Physical-Model parameters (fit self- and external-attenuator ADs
+    //  pulled toward 0).  For each entry, `(x[par_index] - identity)*parameter_scale_factor(par_index)` is
+    //  the deviation of the PHYSICAL quantity from its identity, so the residual is `weight *
+    //  physical_deviation`.  See `m_phys_model_param_priors` (populated from each shield's `ad_bias`).
+    for( const ParamPrior &prior : m_phys_model_param_priors )
+    {
+      assert( prior.par_index < x.size() );
+      const double scale = parameter_scale_factor( prior.par_index );
+      residuals[residual_index] = T(prior.weight) * (x[prior.par_index] - prior.identity) * scale;
+      assert( !isnan(residuals[residual_index]) && !isinf(residuals[residual_index]) );
+      ++residual_index;
+    }//for( loop over Physical-Model parameter priors )
 
     assert( residual_index == number_residuals() );
 #ifndef NDEBUG
@@ -11389,47 +12281,34 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
       const size_t num_drf_coefs = drf_coefs.size();
       const DetectorPeakResponse::ResolutionFnctForm fwhm_form = drf->resolutionFcnType();
       
-      if constexpr ( std::is_same_v<T, double> )
+      // Note 20260615: all paths (double or Jet) are now being evaluated through same code path to avoid
+      //   numeric inconsistencies with using the (possibly slightly faster) float-based method of FWHM eval
+      T local_val;
+      if( num_drf_coefs < 7 )
       {
-        const std::vector<float> &drf_coefs = drf->resolutionFcnCoefficients();
-        const double local_val = peakResolutionFWHM( static_cast<float>(energy), fwhm_form, drf_coefs.data(), num_drf_coefs );
-        
-#if( PERFORM_DEVELOPER_CHECKS )
-        const float drf_val = drf->peakResolutionFWHM( static_cast<float>(energy) );
-        const double diff = fabs(drf_val - local_val);
-        assert( (diff < 1.0E-4*std::max(local_val,1.0*drf_val)) || (diff < 1.0E-8) );
-#endif
-        return local_val;
+        T local_pars[6]; //Avoid allocation overhead of std::vector
+        for( size_t i = 0; i < num_drf_coefs; ++i )
+          local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
+        local_val = peakResolutionFWHM( energy, fwhm_form, local_pars, num_drf_coefs );
       }else
       {
-        // We will try to keep the gradients w.r.t. energy by converting the detectors paramaters into `ceres::Jets<>`
-        //  so we can use our local `peakResolutionFWHM(...)`, which should hopefully propogate things through
-        //  (minor effect, but the right thing to do).
-        T local_val;
-        if( num_drf_coefs < 7 )
-        {
-          T local_pars[6]; //Avoid allocation overhead of std::vector
-          for( size_t i = 0; i < num_drf_coefs; ++i )
-            local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
-          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars, num_drf_coefs );
-        }else
-        {
-          //Dont expect to ever get here
-          vector<T> local_pars( num_drf_coefs );
-          for( size_t i = 0; i < num_drf_coefs; ++i )
-            local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
-          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars.data(), num_drf_coefs );
-        }//if( num_drf_coefs < 7 ) / else
-          
+        //Dont expect to ever get here
+        vector<T> local_pars( num_drf_coefs );
+        for( size_t i = 0; i < num_drf_coefs; ++i )
+          local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
+        local_val = peakResolutionFWHM( energy, fwhm_form, local_pars.data(), num_drf_coefs );
+      }//if( num_drf_coefs < 7 ) / else
+
 #if( PERFORM_DEVELOPER_CHECKS )
-        const float drf_val = drf->peakResolutionFWHM( static_cast<float>(energy.a) );
-        const double diff = fabs(drf_val - local_val.a);
-        assert( (diff < 1.0E-4*std::max(local_val.a,1.0*drf_val)) || (diff < 1.0E-8) );
+      double energy_scalar, local_val_scalar;
+      if constexpr ( std::is_same_v<T, double> ) { energy_scalar = energy;   local_val_scalar = local_val; }
+      else                                       { energy_scalar = energy.a; local_val_scalar = local_val.a; }
+      const float drf_val = drf->peakResolutionFWHM( static_cast<float>(energy_scalar) );
+      const double diff = fabs(drf_val - local_val_scalar);
+      assert( (diff < 1.0E-4*std::max(local_val_scalar,1.0*drf_val)) || (diff < 1.0E-8) );
 #endif
-        
-        return local_val;
-      }
-      break;
+
+      return local_val;
   }//switch( m_options.fwhm_form )
 
   assert( fctntype != DetectorPeakResponse::kNumResolutionFnctForm );
@@ -11658,13 +12537,19 @@ bool RelEffCurveInput::MassFractionConstraint::operator!=( const MassFractionCon
 }
 
 
+bool RelEffCurveInput::PhysModelCorrInput::operator==( const PhysModelCorrInput &rhs ) const
+{
+  return (corr_fcn == rhs.corr_fcn);
+}
+
+
 bool RelEffCurveInput::operator==( const RelEffCurveInput &rhs ) const
 {
   if( (name != rhs.name)
     || (nucs_of_el_same_age != rhs.nucs_of_el_same_age)
     || (rel_eff_eqn_type != rhs.rel_eff_eqn_type)
     || (rel_eff_eqn_order != rhs.rel_eff_eqn_order)
-    || (phys_model_use_hoerl != rhs.phys_model_use_hoerl)
+    || (phys_model_corr != rhs.phys_model_corr)
     || (pu242_correlation_method != rhs.pu242_correlation_method)
     || (shielded_by_other_phys_model_curve_shieldings != rhs.shielded_by_other_phys_model_curve_shieldings)
     || (nuclides != rhs.nuclides)
@@ -11716,8 +12601,10 @@ bool Options::operator==( const Options &rhs ) const
     && (skew_type == rhs.skew_type)
     && (lorentzian_xrays == rhs.lorentzian_xrays)
     && (additional_br_uncert == rhs.additional_br_uncert)
-    && (same_hoerl_for_all_rel_eff_curves == rhs.same_hoerl_for_all_rel_eff_curves)
+    && (same_corr_fcn_for_all_rel_eff_curves == rhs.same_corr_fcn_for_all_rel_eff_curves)
     && (same_external_shielding_for_all_rel_eff_curves == rhs.same_external_shielding_for_all_rel_eff_curves)
+    && (auto_simplify_model == rhs.auto_simplify_model)
+    && (auto_simplify_max_dchi2 == rhs.auto_simplify_max_dchi2)
     && (rel_eff_curves == rhs.rel_eff_curves)
     && (rois == rhs.rois)
     && (floating_peaks == rhs.floating_peaks);
@@ -11988,7 +12875,7 @@ void FloatingPeak::fromXml( const ::rapidxml::xml_node<char> *parent )
 }//void fromXml(...)
 
 
-void Options::check_same_hoerl_and_external_shielding_specifications() const
+void Options::check_same_corr_fcn_and_external_shielding_specifications() const
 {
   // Validate lorentzian_xrays compatibility with skew_type
   if( lorentzian_xrays
@@ -11998,25 +12885,40 @@ void Options::check_same_hoerl_and_external_shielding_specifications() const
     throw logic_error( "Lorentzian x-rays can only be used with NoSkew or GaussPlusBortel skew types." );
   }
 
-  if( !same_hoerl_for_all_rel_eff_curves && !same_external_shielding_for_all_rel_eff_curves )
+  if( !same_corr_fcn_for_all_rel_eff_curves && !same_external_shielding_for_all_rel_eff_curves )
     return;
 
-  if( same_hoerl_for_all_rel_eff_curves )
+  if( same_corr_fcn_for_all_rel_eff_curves )
   {
-    size_t num_hoerl_curves = 0;
+    size_t num_corr_fcn_curves = 0;
     for( const auto &rel_eff_curve : rel_eff_curves )
     {
-      if( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) 
-        && rel_eff_curve.phys_model_use_hoerl )
-        ++num_hoerl_curves;
+      if( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+        && rel_eff_curve.uses_phys_model_correction() )
+        ++num_corr_fcn_curves;
     }
-    if( num_hoerl_curves < 2 )
+    // 0 (no curve uses a correction) is consistent with "share the same correction" - they share none;
+    //  this is what auto-simplify produces when it drops the correction.  Exactly 1 is the inconsistent
+    //  case (one curve uses a correction the others don't) for a >=2-curve shared spec.
+    if( num_corr_fcn_curves == 1 )
       throw logic_error( "If using the same Hoerl function for all relative efficiency curves, "
                         "you must have at least two relative efficiency curves with the Hoerl function enabled." );
-  }//if( same_hoerl_for_all_rel_eff_curves )
+  }//if( same_corr_fcn_for_all_rel_eff_curves )
 
   if( same_external_shielding_for_all_rel_eff_curves )
   {
+    // The per-curve checks below are stricter than mere consistency: they require every shared curve to
+    //  *have* an external shield (throwing on the first empty one).  Auto-simplify drops the external
+    //  attenuator from ALL physical-model curves at once, leaving them consistent but all-empty (they share
+    //  "none").  This function runs in solve() setup, so without this early-out that consistent all-empty
+    //  state would throw FailedToSetupProblem and auto-simplify could never remove shared external shielding.
+    //  "no curve has external shielding" trivially satisfies "share the same external shielding", so accept it.
+    bool any_ext_shielding = false;
+    for( const auto &rel_eff_curve : rel_eff_curves )
+      any_ext_shielding = any_ext_shielding || !rel_eff_curve.phys_model_external_atten.empty();
+    if( !any_ext_shielding )
+      return;
+
     for( const auto &rel_eff_curve : rel_eff_curves )
     {
       if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
@@ -12158,7 +13060,7 @@ void Options::check_same_hoerl_and_external_shielding_specifications() const
       }//for( size_t shielding_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
     }//for( size_t rel_eff_index = 0; rel_eff_index < rel_eff_curves.size(); ++rel_eff_index
   }//if( same_external_shielding_for_all_rel_eff_curves ) / else
-}//void Options::check_same_hoerl_and_external_shielding_specifications() const
+}//void Options::check_same_corr_fcn_and_external_shielding_specifications() const
 
 
 rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) const
@@ -12172,8 +13074,15 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   xml_document<char> *doc = parent->document();
   xml_node<char> *base_node = doc->allocate_node( node_element, "Options" );
   parent->append_node( base_node );
-  
-  append_version_attrib( base_node, Options::sm_xmlSerializationVersion );
+
+  // Write the lowest schema version that still covers the content: v3 only when a v3-only field
+  //  (foreground/background filename or sample numbers, added 2026-04-27) is actually present, otherwise
+  //  v2.  This keeps configs that don't use the v3 fields readable by v2 builds.  (The physical-model
+  //  empirical-correction forward-compat is handled separately by each RelEffCurveInput's own version.)
+  const bool uses_v3_fields = !foreground_filename.empty() || !background_filename.empty()
+                              || !foreground_sample_numbers.empty() || !background_sample_numbers.empty();
+  static_assert( Options::sm_xmlSerializationVersion == 3, "Update conditional Options version logic." );
+  append_version_attrib( base_node, uses_v3_fields ? 3 : 2 );
 
   // Write "FitEnergyCal" for backwards compatibility
   const bool fit_any_energy_cal = (energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit);
@@ -12240,8 +13149,23 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   for( const auto &curve : rel_eff_curves )
     curve.toXml( rel_eff_node );
 
-  append_bool_node( base_node, "SameHoerlForAllRelEffCurves", same_hoerl_for_all_rel_eff_curves );
+  append_bool_node( base_node, "SameCorrFcnForAllRelEffCurves", same_corr_fcn_for_all_rel_eff_curves );
   append_bool_node( base_node, "SameExternalShieldingForAllRelEffCurves", same_external_shielding_for_all_rel_eff_curves );
+
+  // Auto-simplify (greedy redundant-DOF removal).  A single optional element whose CONTENT is the chi2-delta
+  //  tolerance and whose optional `enabled` attribute (true/false, default true) toggles it.  Absent element
+  //  => disabled, so configs that don't use it stay byte-identical / lowest-version and older builds ignore
+  //  it.  Only written when enabled (off is equivalent to absent).
+  if( auto_simplify_model )
+  {
+    char buffer[64];
+    snprintf( buffer, sizeof(buffer), "%1.8g", auto_simplify_max_dchi2 );
+    xml_node<char> *as_node = append_string_node( base_node, "AutoRemoveDegeneraciesChi2Delta", buffer );
+    append_attrib( as_node, "remark", "Auto-simplify: greedily remove redundant degrees of freedom (the"
+      " empirical correction, then external attenuator(s), then the highest polynomial term) when removing"
+      " one increases chi2 by no more than this value.  Optional 'enabled' attribute (true/false, default"
+      " true) toggles it; an absent element means disabled." );
+  }//if( auto_simplify_model )
 
   if( !rois.empty() )
   {
@@ -12416,10 +13340,14 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 
       try
       {
-        same_hoerl_for_all_rel_eff_curves = get_bool_node_value( parent, "SameHoerlForAllRelEffCurves" );
+        // Prefer the current element name; fall back to the legacy <SameHoerlForAllRelEffCurves>.
+        if( XML_FIRST_NODE( parent, "SameCorrFcnForAllRelEffCurves" ) )
+          same_corr_fcn_for_all_rel_eff_curves = get_bool_node_value( parent, "SameCorrFcnForAllRelEffCurves" );
+        else
+          same_corr_fcn_for_all_rel_eff_curves = get_bool_node_value( parent, "SameHoerlForAllRelEffCurves" );
       }catch( ... )
       {
-        same_hoerl_for_all_rel_eff_curves = false;
+        same_corr_fcn_for_all_rel_eff_curves = false;
       }
 
       try
@@ -12435,6 +13363,27 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       rel_eff_input.fromXml( parent );
       rel_eff_curves.push_back( rel_eff_input );
     }//if( version >= 2 ) / else
+
+    // Auto-simplify.  A single optional element whose content is the chi2-delta tolerance; its optional
+    //  `enabled` attribute (default true) toggles the feature.  Absent element => disabled.
+    auto_simplify_model = false;
+    auto_simplify_max_dchi2 = 1.0;
+    if( const rapidxml::xml_node<char> *as_n = XML_FIRST_NODE( parent, "AutoRemoveDegeneraciesChi2Delta" ) )
+    {
+      const string s = SpecUtils::xml_value_str( as_n );
+      double v = 1.0;
+      if( SpecUtils::parse_double( s.c_str(), s.size(), v ) )
+        auto_simplify_max_dchi2 = v;
+
+      bool enabled = true;  // default true when the element is present
+      const rapidxml::xml_attribute<char> *en = as_n->first_attribute( "enabled" );
+      if( en )
+      {
+        const string es = SpecUtils::xml_value_str( en );
+        enabled = (es == "true") || (es == "1") || (es == "TRUE") || (es == "True");
+      }
+      auto_simplify_model = enabled;
+    }//if( <AutoRemoveDegeneraciesChi2Delta> present )
 
     const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent, "RoiRangeList");
     if( !node && parent->parent() )
@@ -12591,7 +13540,7 @@ RelEffCurveInput::RelEffCurveInput()
   phys_model_self_atten( nullptr ),
   phys_model_external_atten{},
   shielded_by_other_phys_model_curve_shieldings{},
-  phys_model_use_hoerl( true ),
+  phys_model_corr{},
   pu242_correlation_method( RelActCalc::PuCorrMethod::NotApplicable )
 {
 }
@@ -13174,7 +14123,20 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
   xml_document<char> *doc = parent->document();
   xml_node<char> *base_node = doc->allocate_node( node_element, "RelEffCurveInput" );
   parent->append_node( base_node );
-  append_version_attrib( base_node, RelEffCurveInput::sm_xmlSerializationVersion );
+
+  // The physical-model correction is written below.  If it uses only v0-representable features (None or
+  //  Hoerl correction, no areal-density biasing) we keep the curve at v0 and additionally emit the legacy
+  //  `<PhysModelUseHoerl>` bool, so builds predating `<CorrectionFcnType>` can still read it.  Chebyshev or
+  //  any enabled AD biasing requires v1 (and such builds will correctly reject the curve on its version).
+  const bool writes_phys_model = (rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+                                 || phys_model_self_atten || !phys_model_external_atten.empty();
+  bool any_ad_biasing = (phys_model_self_atten && phys_model_self_atten->ad_bias.use);
+  for( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &ext : phys_model_external_atten )
+    any_ad_biasing = any_ad_biasing || (ext && ext->ad_bias.use);
+  const bool advanced_corr = writes_phys_model
+                             && ( (phys_model_corr.corr_fcn == RelActCalc::PhysModelCorrFcn::Chebyshev)
+                                  || any_ad_biasing );
+  append_version_attrib( base_node, advanced_corr ? 1 : 0 );
 
   append_string_node( base_node, "Name", name );
 
@@ -13228,7 +14190,25 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
         XmlUtils::append_int_node( shield_by_node, "RelEffCurveIndex", curve_index );
     }//if( shielded_by_other_phys_model_curve_shieldings.empty() )
 
-    XmlUtils::append_bool_node( phys_node, "PhysModelUseHoerl", phys_model_use_hoerl );
+    // Correction function form, written as element content ("None"/"Hoerl"/"Chebyshev").
+    xml_node<char> *corr_node = append_string_node( phys_node, "CorrectionFcnType",
+                                                    RelActCalc::to_str(phys_model_corr.corr_fcn) );
+    XmlUtils::append_attrib( corr_node, "remark", "The empirical correction form. Possible values: None,"
+      " Hoerl, Chebyshev (default Hoerl if absent)." );
+
+    // Note: the self-/external-attenuation areal-density biasing priors live on each shield
+    //  (`<PhysicalModelShield><ArealDensityBias>`), written by `PhysicalModelShieldInput::toXml`.
+
+    // Legacy boolean element, emitted only for v0-representable curves so older builds can still read them.
+    if( !advanced_corr )
+    {
+      const bool uses_hoerl = (phys_model_corr.corr_fcn == RelActCalc::PhysModelCorrFcn::Hoerl);
+      xml_node<char> *legacy_node = doc->allocate_node( node_element, "PhysModelUseHoerl",
+                                                        (uses_hoerl ? "true" : "false") );
+      phys_node->append_node( legacy_node );
+      XmlUtils::append_attrib( legacy_node, "remark", "Legacy element kept for backward compatibility;"
+        " superseded by <CorrectionFcnType>. true => Hoerl correction, false => none." );
+    }//if( !advanced_corr )
   }//if( phys_model_self_atten || !phys_model_external_atten.empty() )
 
   if( pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable )
@@ -13314,7 +14294,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
   
 
   // Even if not RelActCalc::RelEffEqnForm::FramPhysicalModel, we'll still try to grab the state
-  phys_model_use_hoerl = true;
+  phys_model_corr = PhysModelCorrInput{};  // default: Hoerl correction, all biasing off
   phys_model_self_atten.reset();
   phys_model_external_atten.clear();
   shielded_by_other_phys_model_curve_shieldings.clear();
@@ -13362,7 +14342,26 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
       }//
     }//if( outer_curve_node )
 
-    phys_model_use_hoerl = XmlUtils::get_bool_node_value(phys_model_node, "PhysModelUseHoerl" );
+    // Correction function form.  Prefer the new `<CorrectionFcnType>` element (content None/Hoerl/Chebyshev);
+    //  fall back to the legacy boolean `<PhysModelUseHoerl>` (plain bool: true => Hoerl, false/absent => None;
+    //  any `type`/`value` attributes on it are ignored).
+    const rapidxml::xml_node<char> *corr_type_node = XML_FIRST_NODE( phys_model_node, "CorrectionFcnType" );
+    if( corr_type_node )
+    {
+      const string type_str = SpecUtils::xml_value_str( corr_type_node );
+      phys_model_corr.corr_fcn = type_str.empty()
+                                   ? RelActCalc::PhysModelCorrFcn::Hoerl
+                                   : RelActCalc::phys_model_corr_fcn_from_str( type_str.c_str() );
+    }else
+    {
+      const rapidxml::xml_node<char> *corr_node = XML_FIRST_NODE( phys_model_node, "PhysModelUseHoerl" );
+      const bool uses_hoerl = corr_node ? XmlUtils::get_bool_node_value(phys_model_node, "PhysModelUseHoerl") : false;
+      phys_model_corr.corr_fcn = uses_hoerl ? RelActCalc::PhysModelCorrFcn::Hoerl
+                                            : RelActCalc::PhysModelCorrFcn::None;
+    }//if( <CorrectionFcnType> ) / else (legacy <PhysModelUseHoerl>)
+
+    // The self-/external-attenuation AD biasing priors are read per-shield by
+    //  `PhysicalModelShieldInput::fromXml` (the `<ArealDensityBias>` element on each shield).
   }//if( phys_model_node )
 
   pu242_correlation_method = RelActCalc::PuCorrMethod::NotApplicable;
@@ -13470,8 +14469,10 @@ Options::Options()
   rel_eff_curves{},
   rois{},
   floating_peaks{},
-  same_hoerl_for_all_rel_eff_curves( false ),
-  same_external_shielding_for_all_rel_eff_curves( false )
+  same_corr_fcn_for_all_rel_eff_curves( false ),
+  same_external_shielding_for_all_rel_eff_curves( false ),
+  auto_simplify_model( false ),
+  auto_simplify_max_dchi2( 1.0 )
 {
 }
   
@@ -13707,7 +14708,9 @@ std::string RelActAutoSolution::rel_eff_txt( const bool html_format, const size_
                = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
 
   return RelActCalc::physical_model_rel_eff_eqn_text( phys_in.self_atten, phys_in.external_attens,
-                                phys_in.det, phys_in.hoerl_b, phys_in.hoerl_c, html_format );
+                                phys_in.det, phys_in.hoerl_b, phys_in.hoerl_c, html_format,
+                                m_cost_functor->m_corr_lower_energy, m_cost_functor->m_corr_upper_energy,
+                                m_cost_functor->m_corr_pivot_energy, phys_in.corr_fcn );
 }//std::string RelActAutoSolution::rel_eff_txt()
   
 
@@ -13752,7 +14755,25 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
 
   if( m_status != Status::Success )
     return out;
-  
+
+  // Goodness of fit (data-channel rows only): chi2/dof and its p-value.
+  out << "Goodness of fit:\n";
+  {
+    const double chi2_dof = (m_dof_data > 0) ? (m_chi2_data / static_cast<double>(m_dof_data)) : 0.0;
+    out << "  χ²/dof = " << SpecUtils::printCompact(m_chi2_data, 4) << "/" << m_dof_data
+        << " = " << SpecUtils::printCompact(chi2_dof, 4);
+    try
+    {
+      boost::math::chi_squared chi2_dist( static_cast<double>(m_dof_data) );
+      const double p_value = 1.0 - boost::math::cdf( chi2_dist, m_chi2_data );
+      out << "  (p-value = " << SpecUtils::printCompact(p_value, 3) << ")";
+    }catch( std::exception & )
+    {
+    }
+    out << "\n";
+  }
+  out << "\n";
+
   assert( m_final_parameters.size() == m_parameter_names.size() );
   //out << "Raw Ceres par values: [";
   //for( size_t i = 0; i < m_final_parameters.size(); ++i )
@@ -14211,8 +15232,8 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 
   if( m_status == Status::Success )
   {
-    results_html << "<div>&chi;<sup>2</sup>=" << m_chi2 << " and there were " << m_dof
-    << " DOF (&chi;<sup>2</sup>/dof=" << m_chi2/m_dof << ")</div>\n";
+    results_html << "<div>&chi;<sup>2</sup>=" << m_chi2_data << " over " << m_dof_data
+    << " data DOF (&chi;<sup>2</sup>/dof=" << ((m_dof_data > 0) ? (m_chi2_data/m_dof_data) : 0.0) << ")</div>\n";
   }else
   {
     string fail_reason;
@@ -14990,12 +16011,21 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
         = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
 
         info.js_rel_eff_eqn = RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
-                                                                          input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
+                                                                          input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c,
+                                                                          m_cost_functor->m_corr_lower_energy, m_cost_functor->m_corr_upper_energy,
+                                                                          m_cost_functor->m_corr_pivot_energy, input.corr_fcn );
       }else
       {
         assert( 0 );
-        info.js_rel_eff_eqn = "function(x){ return 1; }";
+        // Empty -> RelEffChart serializes as JS `null` (no fit line drawn), rather than a misleading flat y=1.
+        info.js_rel_eff_eqn = "";
       }//if( not FramPhysicalModel ) / else / m_cost_functor
+
+      // Include the relative-efficiency uncertainty band (±2σ), like the interactive GUI does
+      //  (see `RelActAutoGui.cpp`).  Gated behind a compile-time flag so it can be disabled.
+      const bool show_rel_eff_uncert_band = true;
+      if( show_rel_eff_uncert_band )
+        info.js_rel_eff_uncert_eqn = rel_eff_eqn_js_uncert_fcn( rel_eff_index );
     }catch( std::exception &e )
     {
       cerr << "Error creating RelEffChart::ReCurveInfo: " << e.what() << endl;
@@ -15100,6 +16130,79 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 
 
 
+double RelActAutoSolution::reliability_floored_uncert( const double value, const double uncert,
+                                                       const std::vector<double> &jacobian ) const
+{
+  // Tuning constants (evaluate/adjust with target/idb_enrichment_check):
+  //  - an "implausibly small" relative uncertainty - the GATE for any flooring.  A reported relative
+  //    uncertainty below this for an enrichment/rel-eff value is not physically credible for these fits;
+  //    it is the signature of a covariance pathology.  Crucially, a file with a credible uncertainty
+  //    (above this) is NEVER touched - so well-determined fits keep their (small, correct) bands.
+  static constexpr double sm_implausible_rel_uncert = 1.0e-3;
+  //  - fraction of the quantity's sensitivity (by squared-Jacobian) that must ride on bound-pinned
+  //    parameters before bound-pinning is accepted as the explanation for an implausibly small uncert;
+  static constexpr double sm_bound_sensitivity_frac = 0.25;
+  //  - the floor applied (as a fraction of |value|) when an implausibly small uncert is explained by a
+  //    pathology - i.e. "we cannot reliably determine this; report a wide band".
+  static constexpr double sm_unreliable_uncert_floor_frac = 1.0;
+
+  // GATE: only ever touch an uncertainty that is implausibly small relative to its value.  This protects
+  //  well-determined fits (e.g. high-enrichment files whose enrichment is genuinely tight) from being
+  //  widened just because some unrelated parameter sits on a bound.
+  if( (value == 0.0) || (std::fabs(uncert) >= sm_implausible_rel_uncert*std::fabs(value)) )
+    return uncert;
+
+  // The uncertainty is implausibly small.  Accept it as a genuine collapse only if there is a known
+  //  pathology that explains it: the fit is rank-deficient (a near-degenerate direction was dropped
+  //  from the covariance, zeroing this quantity's variance), or a significant fraction of this
+  //  quantity's sensitivity rides on a parameter pinned at a bound (whose variance Ceres reports as ~0).
+  bool pathology = (m_num_rank_deficient_dirs > 0);
+
+  if( !pathology && !m_param_at_bound.empty() && (jacobian.size() == m_param_at_bound.size()) )
+  {
+    double jac_norm2 = 0.0, at_bound2 = 0.0;
+    for( size_t i = 0; i < jacobian.size(); ++i )
+    {
+      jac_norm2 += jacobian[i]*jacobian[i];
+      if( m_param_at_bound[i] )
+        at_bound2 += jacobian[i]*jacobian[i];
+    }
+    pathology = (jac_norm2 > 0.0) && (at_bound2 > sm_bound_sensitivity_frac*jac_norm2);
+  }
+
+  if( !pathology )
+    return uncert;
+
+  m_enrichment_uncert_unreliable = true;
+  return (std::max)( uncert, sm_unreliable_uncert_floor_frac*std::fabs(value) );
+}//reliability_floored_uncert(...)
+
+
+// =====================================================================================================
+// TODO(systematic-uncertainty): the uncertainty returned here is purely STATISTICAL (counting). A model-
+//   form SYSTEMATIC term still needs to be computed and combined in (review A3 "layer 3"). It is the
+//   dominant uncertainty once counting statistics are good, and is dominated by the detector-efficiency
+//   (DRF) shape. The estimate must be made PER-SPECTRUM, on the fly -- a blanket multiplier is not adequate
+//   (the size varies ~3x with enrichment and collapses to ~0 when the DRF is known). Planned recipe:
+//     1. Re-solve THIS spectrum a handful of times, each varying one assumption the data can't pin down:
+//        the detector-efficiency curve, the empirical correction function, and the U chemical form.
+//     2. systematic = scatter (std-dev) of the resulting enrichment values; reported value = their average.
+//        Use EQUAL weights -- do NOT chi2-weight: the best-fitting DRF is anti-correlated with the truth-
+//        closest one (it matched only 15% of the time, vs 25% by chance).
+//     3. total_uncert = sqrt( statistical^2 + (k * scatter)^2 ),  k ~ 0.8.
+//
+//   Where each number comes from:
+//     - candidate detector curves: the detector-response library shipped with the program (coax/planar/etc.
+//       of the right detector class). If the user supplies their OWN measured DRF, use only that one and this
+//       (dominant) axis collapses to ~0 on its own.
+//     - the correction-function / U-matrix variations: just re-running this fit with those options toggled.
+//     - the scatter: measured live by re-analyzing THIS spectrum -- nothing pre-tabulated.
+//     - k (~0.8): the ONLY number from outside the spectrum; fit once, offline, so the pulls come out honest
+//       on the uranium reference standards we have truth for (IAEA IDB + JRC). One dimensionless dial.
+//
+//   Combine point: fold the systematic into the optional<double> returned here (and the rel-eff band in
+//   relative_efficiency_with_uncert); report it separately from statistical (Total-Measurement-Uncertainty style).
+// =====================================================================================================
 pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const
 {
 #define USE_RelActAutoCostFcn_MASS_FRAC_IMP 1
@@ -15155,8 +16258,14 @@ pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( cons
     for( size_t j = 0; j < num_pars; ++j )
       uncertainty += jacobian[i]*covariance[i][j]*jacobian[j];
   }
-    
-  uncertainty = sqrt( uncertainty );
+
+  // Guard against a round-off-negative quadratic form yielding a NaN uncertainty.
+  uncertainty = sqrt( std::max(0.0, uncertainty) );
+
+  // Floor the (data-driven) enrichment uncertainty when the linearized covariance under-states
+  //  it (rank-deficient collapse, or sensitivity riding a bound-pinned parameter).  Applied before the
+  //  Pu242 systematic is added in quadrature below (that term is an external systematic, not covariance).
+  uncertainty = reliability_floored_uncert( enrichment, uncertainty, jacobian );
 
   if( nuclide && (nuclide->atomicNumber == 94) && (nuclide->massNumber == 242)
      && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index] )
@@ -16102,8 +17211,12 @@ double RelActAutoSolution::relative_efficiency( const double energy, const size_
     external_attens.push_back( std::move(ext_shield_mdl) );
   }
 
-  return RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, m_drf.get(), 
-                                              phys_model_result->hoerl_b, phys_model_result->hoerl_c );
+  return RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, m_drf.get(),
+                                              phys_model_result->hoerl_b, phys_model_result->hoerl_c,
+                                              phys_model_result->corr_lower_energy,
+                                              phys_model_result->corr_upper_energy,
+                                              phys_model_result->corr_pivot_energy,
+                                              phys_model_result->corr_fcn );
 }//double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
 
   
@@ -16147,8 +17260,10 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
     for( size_t j = 0; j < num_par; ++j )
       uncertainty += jacobian[i]*m_covariance[i][j]*jacobian[j];
   }
-  
-  uncertainty = std::sqrt( uncertainty );
+
+  // Guard against a round-off-negative quadratic form (otherwise the IsNan check below
+  //  throws and aborts the whole report render).
+  uncertainty = std::sqrt( std::max(0.0, uncertainty) );
   
 #ifndef NDEBUG
   // We can double-check this rel eff calc, but more importantly, for non-physical models, we
@@ -16176,7 +17291,12 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
     assert( (diff < 1.0E-8) || (diff < 1.0E-6*(std::max)(manual_uncert, uncertainty)) );
   }//if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
 #endif //NDEBUG
-  
+
+  // Floor the rel-eff band when the linearized covariance under-states it (rank-deficient
+  //  collapse, or sensitivity riding a bound-pinned parameter).  Done after the NDEBUG analytic
+  //  cross-check above so that compares the raw autodiff uncertainty.
+  uncertainty = reliability_floored_uncert( rel_eff, uncertainty, jacobian );
+
   if( IsNan(rel_eff) || IsInf(rel_eff) )
     throw runtime_error( "relative_efficiency_with_uncert: invalid rel eff value." );
   
@@ -16235,7 +17355,9 @@ string RelActAutoSolution::rel_eff_eqn_js_function( const size_t rel_eff_index )
                                     = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
 
   return RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
-                            input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
+                            input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c,
+                            m_cost_functor->m_corr_lower_energy, m_cost_functor->m_corr_upper_energy,
+                            m_cost_functor->m_corr_pivot_energy, input.corr_fcn );
 }//string rel_eff_eqn_js_function() const
   
   
@@ -16916,6 +18038,11 @@ RelActAutoSolution solve( const Options options,
                          std::shared_ptr<std::atomic_bool> cancel_calc
                          )
 {
+  // Note: `auto_simplify_model` (greedily holding redundant degrees of freedom at their identity values)
+  //  is handled warm, inside solve_ceres(), right after the converged full fit - not here.  When the ROI
+  //  auto-ranging below re-invokes solve_ceres, the simplification simply re-runs (its warm trials are
+  //  cheap); the returned solution reflects the converged ROIs and carries that final pass's warnings.
+
   const std::vector<RoiRange> &energy_ranges = options.rois;
   const std::vector<FloatingPeak> &extra_peaks = options.floating_peaks;
 
@@ -17134,7 +18261,11 @@ RelActAutoSolution solve( const Options options,
               assert( phys_model_input.has_value() );
               rel_eff_val = RelActCalc::eval_physical_model_eqn( energy, phys_model_input->self_atten,
                                                                 phys_model_input->external_attens, phys_model_input->det.get(),
-                                                                phys_model_input->hoerl_b, phys_model_input->hoerl_c );
+                                                                phys_model_input->hoerl_b, phys_model_input->hoerl_c,
+                                                                current_sol.m_cost_functor->m_corr_lower_energy,
+                                                                current_sol.m_cost_functor->m_corr_upper_energy,
+                                                                current_sol.m_cost_functor->m_corr_pivot_energy,
+                                                                phys_model_input->corr_fcn );
             }//if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
             
             const double expected_counts = live_time * br * rel_eff_val * rel_act.rel_activity;
@@ -17461,9 +18592,9 @@ void RelEffCurveInput::equalEnough( const RelEffCurveInput &lhs, const RelEffCur
     RelActCalc::PhysicalModelShieldInput::equalEnough( *lhs.phys_model_external_atten[i], *rhs.phys_model_external_atten[i] );
   }
   
-  if( lhs.phys_model_use_hoerl != rhs.phys_model_use_hoerl )
-    throw std::runtime_error( "Physical model use Hoerl in lhs and rhs are not the same" );
-  
+  if( lhs.phys_model_corr != rhs.phys_model_corr )
+    throw std::runtime_error( "Physical model correction options in lhs and rhs are not the same" );
+
   if( lhs.pu242_correlation_method != rhs.pu242_correlation_method )
     throw std::runtime_error( "Pu242 correlation method in lhs and rhs are not the same" );
   
@@ -17527,7 +18658,15 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( fabs(lhs.additional_br_uncert - rhs.additional_br_uncert) > 1.0e-5
     && ((lhs.additional_br_uncert > 0.0) || (rhs.additional_br_uncert > 0.0)) )
     throw std::runtime_error( "Additional BR uncertanty in lhs and rhs are not the same" );
-  
+
+  if( lhs.auto_simplify_model != rhs.auto_simplify_model )
+    throw std::runtime_error( "Auto-simplify model flag in lhs and rhs are not the same" );
+
+  // The Delta-chi2 is only serialized when auto-simplify is enabled, so only compare it then.
+  if( lhs.auto_simplify_model
+     && (fabs(lhs.auto_simplify_max_dchi2 - rhs.auto_simplify_max_dchi2) > 1.0e-6) )
+    throw std::runtime_error( "Auto-simplify max delta-chi2 in lhs and rhs are not the same" );
+
   if( lhs.rel_eff_curves.size() != rhs.rel_eff_curves.size() )
     throw std::runtime_error( "Number of relative efficiency curves in lhs and rhs are not the same" );
   

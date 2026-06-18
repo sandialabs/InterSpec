@@ -471,6 +471,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_lorentzian_xrays( nullptr ),
   m_use_fixed_skew_enabled( false ),
   m_use_fixed_skew( nullptr ),
+  m_auto_simplify( nullptr ),
+  m_auto_simplify_dchi2_div( nullptr ),
+  m_auto_simplify_max_dchi2( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -896,8 +899,34 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }//for( loop over AddUncert )
      
   m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
-    
-  
+
+
+  // Auto-simplify model: a checkbox that, when checked, reveals a chi2-increase tolerance input.  Drives
+  //  Options::auto_simplify_model / auto_simplify_max_dchi2 (greedy redundant-DOF removal).  The checkbox
+  //  and its tolerance input are grouped in a single container so they stay together on one row.
+  WContainerWidget *autoSimplifyDiv = new WContainerWidget( generalOptionsDiv );
+  autoSimplifyDiv->addStyleClass( "RelActAutoAutoSimplifyDiv" );
+
+  m_auto_simplify = new WCheckBox( WString::tr("raag-auto-simplify"), autoSimplifyDiv );
+  m_auto_simplify->addStyleClass( "AutoSimplifyCb CbNoLineBreak" );
+  m_auto_simplify->checked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  m_auto_simplify->unChecked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  HelpSystem::attachToolTipOn( m_auto_simplify, WString::tr("raag-tt-auto-simplify"), showToolTips );
+
+  m_auto_simplify_dchi2_div = new WContainerWidget( autoSimplifyDiv );
+  m_auto_simplify_dchi2_div->addStyleClass( "RelActAutoAutoSimplifyDchi2Div" );
+  WLabel *autoSimplifyLabel = new WLabel( WString::tr("raag-auto-simplify-dchi2"), m_auto_simplify_dchi2_div );
+  m_auto_simplify_max_dchi2 = new NativeFloatSpinBox( m_auto_simplify_dchi2_div );
+  m_auto_simplify_max_dchi2->addStyleClass( "RelActAutoAutoSimplifyDchi2Input" );
+  m_auto_simplify_max_dchi2->setValue( 1.0f );
+  m_auto_simplify_max_dchi2->setMinimum( 0.0f );
+  m_auto_simplify_max_dchi2->setSpinnerHidden( false );
+  autoSimplifyLabel->setBuddy( m_auto_simplify_max_dchi2 );
+  m_auto_simplify_max_dchi2->valueChanged().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  HelpSystem::attachToolTipOn( m_auto_simplify_dchi2_div, WString::tr("raag-tt-auto-simplify-dchi2"), showToolTips );
+  m_auto_simplify_dchi2_div->setHidden( true );  // revealed only when the checkbox is checked
+
+
   WGroupBox *optionsDiv = new WGroupBox( WString::tr("raag-rel-eff-curve-options"), this );
   optionsDiv->addStyleClass( "RelActAutoOptions" );
 
@@ -1428,7 +1457,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   options.rois = getRoiRanges();
   
   int num_phys_model_curves = 0;
-  bool any_using_hoerl = false, same_hoerl_all_curves = false, same_ext_shieldings = false;
+  bool any_using_corr_fcn = false, same_corr_fcn_all_curves = false, same_ext_shieldings = false;
   vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_attens;
   
   const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
@@ -1449,17 +1478,17 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     rel_eff_curve.rel_eff_eqn_order = opts->rel_eff_eqn_order();
     rel_eff_curve.phys_model_self_atten = opts->phys_model_self_atten();
     rel_eff_curve.phys_model_external_atten = opts->phys_model_external_atten();
-    rel_eff_curve.phys_model_use_hoerl = opts->phys_model_use_hoerl();
+    rel_eff_curve.phys_model_corr = opts->phys_model_corr();
     rel_eff_curve.pu242_correlation_method = opts->pu242_correlation_method();
 
     if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
       num_phys_model_curves += 1;
-      any_using_hoerl = (any_using_hoerl || rel_eff_curve.phys_model_use_hoerl);
+      any_using_corr_fcn = (any_using_corr_fcn || rel_eff_curve.uses_phys_model_correction());
       if( phys_model_external_attens.empty() )
         phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
       same_ext_shieldings = (same_ext_shieldings || opts->physModelSameExtShieldAllCurves());
-      same_hoerl_all_curves = (same_hoerl_all_curves || opts->physModelSameHoerlOnAllCurves());
+      same_corr_fcn_all_curves = (same_corr_fcn_all_curves || opts->physModelSameCorrFcnOnAllCurves());
 
       if( opts->physModelShieldedByOtherCurves() )
       {
@@ -1479,19 +1508,34 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     options.rel_eff_curves.push_back( rel_eff_curve );
   }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
 
-  options.same_hoerl_for_all_rel_eff_curves = false;
+  options.same_corr_fcn_for_all_rel_eff_curves = false;
   options.same_external_shielding_for_all_rel_eff_curves = false;
-  if( (num_phys_model_curves > 1) && (same_ext_shieldings || same_hoerl_all_curves) )
+  if( (num_phys_model_curves > 1) && (same_ext_shieldings || same_corr_fcn_all_curves) )
   {
-    if( any_using_hoerl && same_hoerl_all_curves )
+    if( any_using_corr_fcn && same_corr_fcn_all_curves )
     {
-      options.same_hoerl_for_all_rel_eff_curves = true;
-      for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+      options.same_corr_fcn_for_all_rel_eff_curves = true;
+
+      // Shared correction uses the FIRST physical-model curve's settings (matching the solver); copy that
+      //  curve's correction config onto all physical-model curves so they are identical.
+      const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput *first_corr = nullptr;
+      for( const RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
       {
-        assert( curve.phys_model_use_hoerl );
-        curve.phys_model_use_hoerl = true;
+        if( curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        {
+          first_corr = &curve.phys_model_corr;
+          break;
+        }
       }
-    }//if( any_using_hoerl and all should share a Hoerl)
+      if( first_corr )
+      {
+        for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+        {
+          if( curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+            curve.phys_model_corr = *first_corr;
+        }
+      }//if( first_corr )
+    }//if( any_using_corr_fcn and all should share a Hoerl)
     
     if( same_ext_shieldings && !phys_model_external_attens.empty() )
     {
@@ -1504,7 +1548,12 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
       }
     }//if( all should share ext atten and there are some defined )
   }//if( num_phys_model_curves > 1 )
-  
+
+  // Auto-simplify (greedy redundant-DOF removal).
+  options.auto_simplify_model = (m_auto_simplify && m_auto_simplify->isChecked());
+  if( m_auto_simplify_max_dchi2 )
+    options.auto_simplify_max_dchi2 = std::max( 0.0, static_cast<double>(m_auto_simplify_max_dchi2->value()) );
+
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
 
@@ -2201,6 +2250,14 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     add_uncert = AddUncert::StatOnly;
   m_add_uncert->setCurrentIndex( static_cast<int>(add_uncert) );
 
+  // Auto-simplify (greedy redundant-DOF removal); the value input is only shown when enabled.
+  if( m_auto_simplify )
+    m_auto_simplify->setChecked( options.auto_simplify_model );
+  if( m_auto_simplify_max_dchi2 )
+    m_auto_simplify_max_dchi2->setValue( static_cast<float>(options.auto_simplify_max_dchi2) );
+  if( m_auto_simplify_dchi2_div )
+    m_auto_simplify_dchi2_div->setHidden( !options.auto_simplify_model );
+
   // First, remove any extra Rel Eff curve GUIs
   const size_t num_rel_eff_curves = options.rel_eff_curves.size();
   while( m_rel_eff_opts_menu->count() > num_rel_eff_curves )
@@ -2356,7 +2413,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     if( !rel_eff_opts || (rel_eff_opts->rel_eff_eqn_form() != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
       continue;
     
-    rel_eff_opts->setPhysModelSameHoerlOnAllCurves( options.same_hoerl_for_all_rel_eff_curves );
+    rel_eff_opts->setPhysModelSameCorrFcnOnAllCurves( options.same_corr_fcn_for_all_rel_eff_curves );
     rel_eff_opts->setPhysModelSameExtShieldAllCurves( options.same_external_shielding_for_all_rel_eff_curves );
     
     if( options.same_external_shielding_for_all_rel_eff_curves )
@@ -2719,8 +2776,9 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
   if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
     vector<const RelEffShieldWidget *> ext_shields;
-    bool same_hoerl = false, same_ext_shield = false, use_hoerl = false;
-  
+    bool same_corr_fcn = false, same_ext_shield = false;
+    RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput shared_corr; // adopted from a sibling phys-model curve
+
     const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
     for( int i = 0; i < num_rel_eff_curves; ++i )
     {
@@ -2728,19 +2786,21 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
       assert( options );
       if( options && (options != rel_eff_curve_gui) && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
       {
-        same_hoerl = options->physModelSameHoerlOnAllCurves();
+        same_corr_fcn = options->physModelSameCorrFcnOnAllCurves();
         same_ext_shield = options->physModelSameExtShieldAllCurves();
+        if( same_corr_fcn )
+          shared_corr = options->phys_model_corr();
         if( same_ext_shield )
           ext_shields = options->externalAttenWidgets();
         break; //
       }
     }//for( int i = 0; i < num_rel_eff_curves; ++i )
-    
-    rel_eff_curve_gui->setPhysModelSameHoerlOnAllCurves( same_hoerl );
+
+    rel_eff_curve_gui->setPhysModelSameCorrFcnOnAllCurves( same_corr_fcn );
     rel_eff_curve_gui->setPhysModelSameExtShieldAllCurves( same_ext_shield );
-    
-    if( same_hoerl )
-      rel_eff_curve_gui->setPhysModelUseHoerl( use_hoerl );
+
+    if( same_corr_fcn )
+      rel_eff_curve_gui->setPhysModelCorr( shared_corr );
     if( same_ext_shield )
       rel_eff_curve_gui->update_external_atten_shield_widget( ext_shields );
   }//if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -2752,7 +2812,7 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
 }//void handleRelEffEqnTypeChanged();
 
 
-void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+void RelActAutoGui::handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 {
   assert( rel_eff_curve_gui );
   if( !rel_eff_curve_gui )
@@ -2761,28 +2821,28 @@ void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOption
   // Show/hide physical model elements
   updateMultiPhysicalModelUI( rel_eff_curve_gui, nullptr );
   
-  const bool same_hoerl = rel_eff_curve_gui->physModelSameHoerlOnAllCurves();
-  const bool use_hoerl = rel_eff_curve_gui->phys_model_use_hoerl();
-  
+  const bool same_corr_fcn = rel_eff_curve_gui->physModelSameCorrFcnOnAllCurves();
+  const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput shared_corr = rel_eff_curve_gui->phys_model_corr();
+
   const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
-  
+
   for( int i = 0; i < num_rel_eff_curves; ++i )
   {
     RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
     assert( options );
     if( !options )
       continue;
-    
-    options->setPhysModelSameHoerlOnAllCurves( same_hoerl );
-    if( same_hoerl )
-      options->setPhysModelUseHoerl( use_hoerl );
+
+    options->setPhysModelSameCorrFcnOnAllCurves( same_corr_fcn );
+    if( same_corr_fcn )
+      options->setPhysModelCorr( shared_corr );
   }//for( int i = 0; i < num_rel_eff_curves; ++i )
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
-}//void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+}//void handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
 
 void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
@@ -3231,6 +3291,20 @@ void RelActAutoGui::handlePeakFitDetPrefsChanged()
     m_skew_type->setDisabled( false );
   }
 }//void RelActAutoGui::handlePeakFitDetPrefsChanged()
+
+
+void RelActAutoGui::handleAutoSimplifyChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+
+  // Reveal the chi2-tolerance input only when auto-simplify is enabled.
+  if( m_auto_simplify_dchi2_div && m_auto_simplify )
+    m_auto_simplify_dchi2_div->setHidden( !m_auto_simplify->isChecked() );
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void RelActAutoGui::handleAutoSimplifyChanged()
 
 
 PeakDef::SkewType RelActAutoGui::currentSkewType() const
@@ -4649,8 +4723,8 @@ void RelActAutoGui::handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions 
       {
         if( curve->physModelSameExtShieldAllCurves() )
           options->update_external_atten_shield_widget( curve->externalAttenWidgets() );
-        if( curve->physModelSameHoerlOnAllCurves() )
-          options->setPhysModelUseHoerl( curve->phys_model_use_hoerl() );
+        if( curve->physModelSameCorrFcnOnAllCurves() )
+          options->setPhysModelCorr( curve->phys_model_corr() );
       }
     }//for( int i = 0; i < num_rel_eff_curves; ++i )
   }//if( we need to make sure to keep external shieldings in sync )
@@ -4716,7 +4790,7 @@ void RelActAutoGui::handleAddRelEffCurve()
   rel_eff_curve->nameChanged().connect( this, &RelActAutoGui::handleRelEffCurveNameChanged );
   rel_eff_curve->optionsChanged().connect( boost::bind( &RelActAutoGui::handleRelEffModelOptionsChanged, this, boost::placeholders::_1 ) );
   rel_eff_curve->equationTypeChanged().connect( boost::bind( &RelActAutoGui::handleRelEffEqnTypeChanged, this, boost::placeholders::_1 ) );
-  rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( boost::bind( &RelActAutoGui::handleSameHoerlOnAllCurvesChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->sameCorrFcnOnAllCurvesChanged().connect( boost::bind( &RelActAutoGui::handleSameCorrFcnOnAllCurvesChanged, this, boost::placeholders::_1 ) );
   rel_eff_curve->sameExternalShieldingChanged().connect( boost::bind( &RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged, this, boost::placeholders::_1 ) );
 
   rel_eff_curve->shieldedByOtherCurvesChanged().connect( boost::bind( &RelActAutoGui::handleShieldedByOtherCurvesChanged, this, boost::placeholders::_1 ) );
@@ -5830,16 +5904,18 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
 
-  const string chi2_str = SpecUtils::printCompact(answer->m_chi2, 3);
-  const int dof = static_cast<int>(answer->m_dof);
+  // Goodness-of-fit uses the data-only chi2/dof (channel rows only); the full chi2 the optimizer
+  //  minimized also includes anchor/prior/BR rows and is not a data goodness-of-fit.
+  const string chi2_str = SpecUtils::printCompact(answer->m_chi2_data, 3);
+  const int dof = static_cast<int>(answer->m_dof_data);
   WString chi2_title_tooltip;
   WString chi2_title = WString("χ²/dof = {1}/{2}{3}").arg( chi2_str ).arg( dof );
   try
   {
-    const double chi2_dof = answer->m_chi2 / answer->m_dof;
+    const double chi2_dof = (answer->m_dof_data > 0) ? (answer->m_chi2_data / answer->m_dof_data) : 0.0;
     const string chi2_dof_str = SpecUtils::printCompact(chi2_dof, 3);
     boost::math::chi_squared chi2_dist(dof);
-    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2); //Probability we would have seen a chi2 this large.
+    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2_data); //Probability we would have seen a chi2 this large.
     const double p_value = 1.0 - prob; //Probability we would have observed this good of a chi2, or better
     const string p_value_str = SpecUtils::printCompact(p_value, 3);
 
@@ -6002,9 +6078,19 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       }
     }
     info.rel_acts = answer->m_rel_activities[i];
-    info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
-    info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
-    
+    try
+    {
+      // For a physical model these throw if an areal density evaluates < 0.  Leave the strings empty on
+      //  failure: RelEffChart serializes an empty equation as JS `null`, so the chart still shows the data
+      //  points (just without a fit line / uncertainty band) instead of letting the exception escape the
+      //  GUI update.
+      info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
+      info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
+    }catch( const std::exception &e )
+    {
+      cerr << "RelActAutoGui: failed to build rel-eff equation JS for curve " << i << ": " << e.what() << endl;
+    }
+
     info.re_curve_name = WString::fromUTF8( answer->m_options.rel_eff_curves[i].name );
 
     try
@@ -6283,13 +6369,15 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
    
       //phys_info_ref.hoerl_b/hoerl_c will have (double) values iff the correction function was used
       assert( phys_info_ref.hoerl_b.has_value() == phys_info_ref.hoerl_c.has_value() );
-      //assert( phys_info_ref.hoerl_b.has_value() == opts->phys_model_use_hoerl() );
-      if( phys_info_ref.hoerl_b.has_value() != opts->phys_model_use_hoerl() )
+      const bool soln_uses_corr = phys_info_ref.hoerl_b.has_value();
+      if( soln_uses_corr != opts->phys_model_corr().uses_correction() )
       {
-        cerr << "Warning: mismatch between solution using Hoerl, and GUI saying thier using Hoerl"
-        << " {solution: " << phys_info_ref.hoerl_b.has_value() << ", GUI: " << opts->phys_model_use_hoerl() << "}";
+        cerr << "Warning: mismatch between solution using a correction function, and GUI saying it is"
+        << " {solution: " << soln_uses_corr << ", GUI: " << opts->phys_model_corr().uses_correction() << "}";
         cerr << endl;
-        opts->setPhysModelUseHoerl( phys_info_ref.hoerl_b.has_value() );
+        RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput corr = opts->phys_model_corr();
+        corr.corr_fcn = phys_info_ref.corr_fcn;
+        opts->setPhysModelCorr( corr );
       }
     }//if( Physical model fit info is available )
 

@@ -6349,7 +6349,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   }//if( has_multi_nuc_element ) / else
   
   
-  rel_eff_curve.phys_model_use_hoerl = config.phys_model_use_hoerl;
+  rel_eff_curve.phys_model_corr.corr_fcn = config.phys_model_use_hoerl
+                            ? RelActCalc::PhysModelCorrFcn::Hoerl : RelActCalc::PhysModelCorrFcn::None;
   rel_eff_curve.nuclides = synced_sources;
 
   // Copy shielding inputs from config (converting to const shared_ptr)
@@ -7216,7 +7217,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       norm_rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
       norm_rel_eff_curve.rel_eff_eqn_order = 0;
       norm_rel_eff_curve.nucs_of_el_same_age = false;
-      norm_rel_eff_curve.phys_model_use_hoerl = false;
+      norm_rel_eff_curve.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
       norm_rel_eff_curve.phys_model_self_atten = self_atten;
 
       if( many_peaks )
@@ -7330,7 +7331,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             std::cerr << "First desperation attempt: not using external shielding" << std::endl;
         }
         
-        curve.phys_model_use_hoerl = (options.rois.size() > 2);
+        curve.phys_model_corr.corr_fcn = (options.rois.size() > 2)
+                            ? RelActCalc::PhysModelCorrFcn::Hoerl : RelActCalc::PhysModelCorrFcn::None;
         
         add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
         add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
@@ -7734,7 +7736,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
                 std::cerr << "Second desperation attempt: not using external shielding" << std::endl;
             }
 
-            curve.phys_model_use_hoerl = (desperation_opts.rois.size() > 2);
+            curve.phys_model_corr.corr_fcn = (desperation_opts.rois.size() > 2)
+                            ? RelActCalc::PhysModelCorrFcn::Hoerl : RelActCalc::PhysModelCorrFcn::None;
 
             add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
             add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );

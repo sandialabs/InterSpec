@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <limits>
 #include <memory>
 #include <iostream>
 
@@ -320,24 +321,32 @@ template void photopeak_function_integral<double>( const double, const double,co
    */
   double bortel_pdf( const double mean, const double sigma, const double skew_low, const double x )
   {
-    // 32-bit floats have a normalized range of 1E-38 to 1E38; 64bit floats 1E-308 to 1E308
-    // We could use the proper functions up to ~1E308, but to be conservative, but to be
-    // a little conservative, we'll switch to using a gaussian when the exp() and erfc()
-    // functions start returning values with limits near 1E-38 or 1E38.
-    // Although difference between the methods will start out ar ~30% and increase to >100%,
-    // the function values are so small, they dont really matter.
-    // TODO: try expanding the function, around (or above) `mean` to see if there can be a better approximation
-    
-    const double exp_arg = ((x - mean)/skew_low) + (sigma*sigma/(2*skew_low*skew_low));
-    const double erfc_arg = 0.7071067812*(((x - mean)/sigma) + (sigma/skew_low));
-    
-    if( (skew_low <= 0.0) || (exp_arg > 87.0) || (erfc_arg > 10.0) )
+    if( skew_low <= 0.0 )   // degenerate Bortel == pure Gaussian
     {
+      const double root_two_pi = boost::math::constants::root_two_pi<double>(); //2.50662827463100050
       const double a = (x-mean)/sigma;
-      return (1.0/(sigma*2.5066282746)) * std::exp( -0.5 * a*a );
+      return (1.0/(sigma*root_two_pi)) * std::exp( -0.5 * a*a );
     }
-    
-    return (0.5/skew_low)*std::exp( exp_arg ) * boost_erfc_imp( erfc_arg );
+
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.707106781186547524
+
+    // The Bortel PDF tail is (0.5/skew)*exp(exp_arg)*erfc(erfc_arg).  Like
+    // `bortel_indefinite_integral` (review item A23), in the exp_arg>87 || erfc_arg>10 region the
+    // direct product overflows/underflows -- the old code dropped it to a Gaussian there -- so use
+    // the identity exp_arg - erfc_arg^2 == -t^2/2 to evaluate it as the overflow-free
+    // erfcx(erfc_arg)*exp(-t^2/2)  (that region always has erfc_arg>0).  Elsewhere keep the fast
+    // direct product; the two forms agree and are smooth at the switch.
+    const double t = (x - mean)/sigma;
+    const double exp_arg = ((x - mean)/skew_low) + (sigma*sigma/(2*skew_low*skew_low));
+    const double erfc_arg = one_div_root_two*(t + (sigma/skew_low));
+
+    double tail;  // exp(exp_arg)*erfc(erfc_arg)
+    if( (exp_arg > 87.0) || (erfc_arg > 10.0) )
+      tail = FaddeevaT::erfcx_real( erfc_arg ) * std::exp( -0.5*t*t );
+    else
+      tail = std::exp( exp_arg ) * boost_erfc_imp( erfc_arg );
+
+    return (0.5/skew_low) * tail;
   }//double bortel_pdf(...)
 
 
@@ -538,26 +547,28 @@ template void photopeak_function_integral<double>( const double, const double,co
     const double root_half_pi = boost::math::constants::root_half_pi<double>();
     const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
     
-    const double A = std::pow(n/alpha, n) * std::exp( -0.5*alpha*alpha );
-    const double B = (n / alpha) - alpha;
+    // Cancellation-free form (never builds (n/alpha)^n): the tail's total area fraction is exactly
+    //  C/(C+D), and the normalized tail indefinite integral is (C/(C+D))*t_1^(1-n) with
+    //  t_1 = 1 - (alpha+t)*alpha/n.
     const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
     const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
-    const double N = 1.0 / (sigma * (C + D));
-    const double tail_norm = N * A * sigma / (n - 1.0);
+    const double coef = C / (C + D);
     const double gauss_indef_amp = 0.5 * sqrt_2pi / (C + D);
     const double gaus_indef_at_skew = gauss_indef_amp * boost_erf_imp( -alpha*one_div_root_two );
-    const double indefinite_of_tail = tail_norm * std::pow( B + alpha, 1.0 - n );
+    const double indefinite_of_tail = coef;  //tail indefinite at t = -alpha (t_1 = 1)
     
     if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
       throw runtime_error( "crystal_ball_coverage_limits: invalid p" );
     
     try
     {
-      auto x_from_eqn = [tail_norm,indefinite_of_tail,B,n,one_div_root_two,sigma,mean,
+      auto x_from_eqn = [coef,indefinite_of_tail,alpha,n,sigma,mean,
                          gauss_indef_amp,gaus_indef_at_skew]( const double prob ) -> double {
         if( prob < indefinite_of_tail )
         {
-          const double t_eqn = B - std::pow( prob/tail_norm, 1.0/(1.0 - n));
+          // invert prob = coef*t_1^(1-n): t_1 = (prob/coef)^(1/(1-n)), t = -alpha - (n/alpha)*(t_1-1)
+          const double t_1 = std::pow( prob/coef, 1.0/(1.0 - n) );
+          const double t_eqn = -alpha - (n/alpha)*(t_1 - 1.0);
           return t_eqn*sigma + mean;
         }
         
@@ -890,14 +901,15 @@ template void photopeak_function_integral<double>( const double, const double,co
     
     const double N = crystal_ball_norm( sigma, alpha, n );
     const double t = (x - mean) / sigma;
-    
+
     if( t <= -alpha )
     {
-      const double A = std::pow( n/alpha, n) * std::exp( -0.5*alpha*alpha );
-      const double B = (n / alpha) - alpha;
-      return N*A*std::pow( B - t, -n );
+      // N*A*(B-t)^(-n), with A=(n/alpha)^n*exp(-alpha^2/2) and B-t=(n/alpha)*t_1, reduces to
+      //  N*exp(-alpha^2/2)*t_1^(-n) (the (n/alpha)^n cancels) - avoids the overflow constant.
+      const double t_1 = 1.0 - ((alpha + t) * alpha / n);
+      return N * std::exp( -0.5*alpha*alpha ) * std::pow( t_1, -n );
     }
-    
+
     return N * std::exp( -0.5*t*t );
   }//crystal_ball_pdf
 
@@ -909,23 +921,26 @@ template void photopeak_function_integral<double>( const double, const double,co
                                           const double n,
                                           const double t )
   {
-    // TODO: this is just a niave implementation - still needs to be optimized
-    // The CERN ROOT implementation switches to a log-version of this integral when `n` is
-    //  less than 1 + 1E-5 - which makes sense, but for the moment lets just avoid n approaching 1
+    // Indefinite integral of the unit-area power-law tail, written in the cancellation-free form
+    //  (C/(C+D))*t_1^(1-n) with t_1 = 1 - (alpha+t)*alpha/n.  This never forms the (n/alpha)^n
+    //  constant (which overflows for large n / small alpha): from B - t = (n/alpha)*t_1, the old
+    //  N*A*sigma*(B-t)^(1-n)/(n-1) reduces exactly to (C/(C+D))*t_1^(1-n) (and the explicit sigma
+    //  always cancelled the 1/sigma in N).  The 1/(n-1) pole in C is held off by the n >= 1.05 fit
+    //  bound (PeakDef::skew_parameter_range); CERN ROOT instead log-integrates for n within 1E-5
+    //  of 1, which we do not need.
     assert( t <= -alpha );
     assert( alpha > 0.0 );
     assert( n > 1.0 );
-    
+    (void)sigma; //unused: the tail indefinite of the unit-area distribution is sigma-independent
+
     const double one_div_root_two = boost::math::constants::one_div_root_two<double>(); //0.7071....
     const double root_half_pi = boost::math::constants::root_half_pi<double>();
-    
-    const double A = std::pow(n/alpha, n) * std::exp( -0.5*alpha*alpha );
-    const double B = (n / alpha) - alpha;
+
     const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
     const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
-    const double N = 1.0 / (sigma * (C + D));
-    
-    return N * A * sigma * std::pow( B - t, 1.0 - n ) / (n - 1.0);
+    const double t_1 = 1.0 - ((alpha + t) * alpha / n);
+
+    return (C / (C + D)) * std::pow( t_1, 1.0 - n );
   }//crystal_ball_tail_indefinite_t
 
   /*
@@ -1177,9 +1192,13 @@ double peak_cdf( const double x, const double mean, const double sigma,
     case PeakDef::SkewType::CrystalBall:
     {
       assert( skew_pars );
-      // Use crystal_ball_integral from a far-left starting point
-      const double far_left = mean - 50.0 * sigma;
-      return crystal_ball_integral( mean, sigma, skew_pars[0], skew_pars[1], far_left, x );
+      // The CDF integrates from -infinity.  crystal_ball_tail_indefinite_t is anchored at -inf
+      //  (its value there is exactly 0: t_1 = 1-(alpha+t)*alpha/n -> +inf, and pow(t_1,1-n) -> 0
+      //  for n>1), so pass -inf as the lower limit instead of truncating at mean-50*sigma -- the
+      //  old 50-sigma cutoff badly under-counted the heavy power-law tail for small n (~1.05).
+      //  Relies on IEEE-754 pow(+inf, negative) == 0 (no NaN).
+      const double neg_inf = -std::numeric_limits<double>::infinity();
+      return crystal_ball_integral( mean, sigma, skew_pars[0], skew_pars[1], neg_inf, x );
     }
 
     case PeakDef::SkewType::DoubleSidedCrystalBall:
@@ -1193,22 +1212,21 @@ double peak_cdf( const double x, const double mean, const double sigma,
 
       // Integrate from -infinity to t in the non-normalized space
       // CDF = norm * [left_tail(-inf to min(t,-alpha_low)) + gauss(max(-alpha_low, ?) to ?) + right_tail]
+      // DSCB_left_tail_indefinite_non_norm_t is anchored at -inf (its value there is exactly 0:
+      //  t_1 -> +inf, t_1^(1-n) -> 0 for n>1), so there is NO far-point subtraction -- the old
+      //  -50-sigma cutoff biased the heavy power-law tail for small n (~1.05).
       double answer = 0.0;
 
       // Left tail from -inf to min(t, -alpha_low)
       if( t <= -alpha_low )
       {
-        // Only left tail contributes; evaluate from a far-left point
-        const double t_far = std::min( t, -50.0 );
-        answer = DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, t )
-               - DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, t_far );
+        // Only left tail contributes
+        answer = DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, t );
         return std::max( 0.0, std::min( 1.0, norm * answer ) );
       }
 
       // Full left tail from -inf to -alpha_low
-      const double t_far = -50.0;
-      answer += DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, -alpha_low )
-              - DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, t_far );
+      answer += DSCB_left_tail_indefinite_non_norm_t( alpha_low, n_low, -alpha_low );
 
       // Gaussian from -alpha_low to min(t, alpha_high)
       const double t_gauss_upper = std::min( t, alpha_high );
@@ -1298,11 +1316,10 @@ double peak_cdf( const double x, const double mean, const double sigma,
                                - crystal_ball_tail_indefinite_t(sigma,alpha,n,a_0));
     }
     
-    const double A = std::pow(n/alpha, n) * std::exp( -0.5*alpha*alpha );
-    //const double B = (n / alpha) - alpha;
+    // (Only the Gaussian-core amplitude is needed here; the tail pieces are delegated to
+    //  crystal_ball_tail_indefinite_t, so the old overflow-prone A=(n/alpha)^n is not formed.)
     const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
     const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
-    //const double N = 1.0 / (sigma * (C + D));
     
     const double sqrt_2pi = boost::math::constants::root_two_pi<double>();
     

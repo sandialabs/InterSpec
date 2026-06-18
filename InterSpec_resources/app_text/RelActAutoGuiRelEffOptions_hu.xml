@@ -8,7 +8,6 @@
   <message id="raageo-pu242-corr">Pu242 korr.</message>
 
   <!-- Checkboxes -->
-  <message id="raageo-use-corr-fcn">Korr. fv. haszn.</message>
   <message id="raageo-share-corr-fcn">Korr. fv. megoszt.</message>
   <message id="raageo-share-ext-atten">Külső gyeng. megoszt.</message>
   <message id="raageo-shielded-by-other-curves">Más görbék árnyékolásával</message>

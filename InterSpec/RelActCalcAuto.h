@@ -28,6 +28,7 @@
 #include <set>
 #include <array>
 #include <atomic>
+#include <limits>
 #include <string>
 #include <memory>
 #include <vector>
@@ -610,12 +611,30 @@ struct RelEffCurveInput
    */
   std::set<size_t> shielded_by_other_phys_model_curve_shieldings;
 
-  /** If true, fit the modified Hoerl equation form for the physical model.
-   * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
-   *
-   * Ignored if not using `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
-  */
-  bool phys_model_use_hoerl = true;
+  /** Physical-Model empirical-correction options (currently just the correction form).  Ignored unless
+   `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+
+   When multiple physical-model curves share the correction (`Options::same_corr_fcn_for_all_rel_eff_curves`),
+   the FIRST physical-model curve's `phys_model_corr` is used for all of them. */
+  struct PhysModelCorrInput
+  {
+    /** The empirical correction form.  None disables the correction (its value is a constant 1.0).
+     Default Hoerl (matches the legacy `phys_model_use_hoerl == true`). */
+    RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
+
+    // Note: the per-shield areal-density biasing priors live on each shield
+    //  (`RelActCalc::PhysicalModelShieldInput::ad_bias`), not here.
+
+    bool uses_correction() const { return corr_fcn != RelActCalc::PhysModelCorrFcn::None; }
+
+    bool operator==( const PhysModelCorrInput &rhs ) const;
+    bool operator!=( const PhysModelCorrInput &rhs ) const { return !(*this == rhs); }
+  };//struct PhysModelCorrInput
+
+  PhysModelCorrInput phys_model_corr;
+
+  /** Convenience: whether any empirical correction is applied (replaces the legacy `phys_model_use_hoerl`). */
+  bool uses_phys_model_correction() const { return phys_model_corr.uses_correction(); }
 
   /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
    Pu isotopics).
@@ -730,10 +749,17 @@ struct RelEffCurveInput
    
    Throws an exception if they are not valid.
    */
-  void check_nuclide_constraints() const; 
+  void check_nuclide_constraints() const;
 
-  
-  static const int sm_xmlSerializationVersion = 0;
+
+  /** Version 1 (from 0): the physical-model empirical correction gained a `<CorrectionFcnType>` element
+   (content None/Hoerl/Chebyshev), and each shield gained an optional areal-density `<ArealDensityBias>`
+   regularization prior.  To stay readable by v0 builds, a curve is written as v0 -- carrying the legacy
+   boolean `<PhysModelUseHoerl>` *and* the new elements -- whenever its correction is v0-representable (None
+   or Hoerl) and no areal-density biasing is enabled; Chebyshev or any enabled AD biasing forces v1 (new
+   elements only).  Reading prefers `<CorrectionFcnType>` and falls back to the legacy `<PhysModelUseHoerl>`
+   (a plain bool: true => Hoerl, false/absent => None). */
+  static const int sm_xmlSerializationVersion = 1;
 
   /** Puts this object to XML
    * 
@@ -829,7 +855,7 @@ struct Options
    *
    * Only compatible with skew_type == NoSkew or skew_type == GaussPlusBortel.
    * If set to true with an incompatible skew_type, then the problem will fail to setup (an exception
-   * in `check_same_hoerl_and_external_shielding_specifications()` will be thrown)
+   * in `check_same_corr_fcn_and_external_shielding_specifications()` will be thrown)
    */
   bool lorentzian_xrays;
 
@@ -856,14 +882,15 @@ struct Options
   std::vector<RelActCalcAuto::FloatingPeak> floating_peaks;
 
 
-  /** If true, use the same Hoerl equation form for all relative efficiency curves.
+  /** If true, use the same empirical-correction function (form + coefficients) for all relative
+   * efficiency curves.
    *
-   * If false, each relative efficiency curve will have its own Hoerl equation fit (if applicable).
-   * 
-   * if true, and you do not have multiple physical models with `RelEffCurveInput::phys_model_use_hoerl`
-   * set to true, then an exception will be thrown.
+   * If false, each relative efficiency curve fits its own correction (if applicable).
+   *
+   * If true, and you do not have at least two physical-model curves that use a correction
+   * (`RelEffCurveInput::uses_phys_model_correction()`), then an exception will be thrown.
    */
-  bool same_hoerl_for_all_rel_eff_curves;
+  bool same_corr_fcn_for_all_rel_eff_curves;
 
   /** If true, use the same external shielding for all relative efficiency curves.
    *
@@ -877,12 +904,41 @@ struct Options
    */
   bool same_external_shielding_for_all_rel_eff_curves;
 
+  /** Auto-simplify the model.
+
+   When true, after the normal fit `solve()` peels off near-degenerate / redundant degrees of freedom,
+   keeping each removal only if it does not meaningfully worsen the data fit (the chi2 increase is
+   `<= auto_simplify_max_dchi2`).  Candidates are tried most-degenerate / least-physical first:
+     1. the empirical correction function (Hoerl / Chebyshev),
+     2. fitted external attenuator(s),
+     3. the highest-order term of a polynomial/empirical (non-physical) rel-eff curve.
+   Only the highest-priority remaining candidate is tried each round, and the process STOPS at the first
+   one the data won't give up (it does not skip to a lower-priority candidate).  Self-attenuation and the
+   sources themselves are never removed (a source that is degenerate with another should be surfaced as a
+   warning, not silently dropped).
+
+   The intent: when the data can't distinguish the physical attenuation from an extra empirical knob, that
+   knob is redundant and distorts the answer (and its uncertainty); dropping it gives a more robust, more
+   accurate result.  Each removal appends a plain-language `m_warnings` entry naming what was dropped.  Off
+   by default.
+
+   Serialized as the optional `<AutoRemoveDegeneraciesChi2Delta>` element (content = the chi2 tolerance,
+   optional `enabled` attribute, default true; absent element => disabled). */
+  bool auto_simplify_model;
+
+  /** The chi2 increase a single DOF removal may cost and still be accepted by `auto_simplify_model`.
+
+   A small positive value (~1) treats DOFs that change chi2 by less than this as redundant ("a unit or two
+   of chi2 is not physically meaningful"); exactly 0 makes near-equivalent choices a numerical coin-flip, so
+   a small positive default is used. */
+  double auto_simplify_max_dchi2;
+
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.
    *
    * Throws an exception if they are not consistent.
    */
-  void check_same_hoerl_and_external_shielding_specifications() const;
+  void check_same_corr_fcn_and_external_shielding_specifications() const;
 
   /** Version history:
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
@@ -898,7 +954,7 @@ struct Options
    @param parent An XML element with name "Options".
    Uses `MaterialDB::instance()` to retrieve materials for #PhysicalModelShieldInput;
    for other equation types, or for AN/AD defined shields, the material DB isnt used/required.
-   `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
+   `same_corr_fcn_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
    were also added, and are optional.
    */
   void fromXml( const ::rapidxml::xml_node<char> *parent );
@@ -980,7 +1036,15 @@ struct FloatingPeakResult
 
   double amplitude;
   double amplitude_uncert;
+
+  /** The fit peak FWHM, in keV.
+
+   Note: even when #FloatingPeak::release_fwhm is true (where the fit parameter is a
+   dimensionless multiplier on the functional FWHM), this value is the resulting FWHM in keV.
+   */
   double fwhm;
+
+  /** The uncertainty of #fwhm, in keV; a value of -1 indicates it was not evaluated. */
   double fwhm_uncert;
 };//struct FloatingPeakResult
 
@@ -1122,7 +1186,25 @@ struct RelActAutoSolution
    Throws exception if covariance matrix is invalid.
    */
   std::pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const;
-  
+
+
+  /** Floors a derived-quantity uncertainty when the linearized covariance is known to under-state it.
+
+   The Ceres covariance is over-confident in two situations this catches: the fit is rank-deficient
+   and the quantity depends on a dropped near-degenerate direction, so its variance was zeroed (giving an
+   absurdly tiny uncertainty / huge pull); and a significant fraction of the quantity's sensitivity
+   rides on a parameter pinned at a fit bound, whose variance Ceres reports as ~0 (bounds are ignored by
+   the covariance).  In either case the returned uncertainty is floored to a wide fraction of `value`,
+   and `m_enrichment_uncert_unreliable` is set.  Otherwise `uncert` is returned unchanged.
+
+   @param value     The nominal derived quantity (e.g. enrichment fraction, rel-eff value).
+   @param uncert    Its linearized 1-sigma from `J^T Cov J` (already non-negative).
+   @param jacobian  d(value)/d(parameter) in the full/ambient parameter space (same index space as
+                    `m_final_parameters` and `m_param_at_bound`).
+   */
+  double reliability_floored_uncert( const double value, const double uncert,
+                                     const std::vector<double> &jacobian ) const;
+
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
   size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
@@ -1215,6 +1297,27 @@ struct RelActAutoSolution
    */
   std::vector<std::vector<double>> m_phys_units_cov;
 
+  /** Number of near-degenerate Jacobian directions DROPPED from the
+   reported covariance (singular-value ratio below the 1e-7 conditioning floor) - i.e.
+   `num_free_parameters - effective_parameters` from the post-fit SVD.  Zero for a full-rank fit.  When
+   non-zero, a derived quantity (enrichment, rel-eff band) whose variance came out implausibly small is
+   depending on a dropped direction and its linearized uncertainty is not trustworthy (it was zeroed,
+   not inflated). */
+  size_t m_num_rank_deficient_dirs = 0;
+
+  /** Per-parameter flag, non-zero if the fitted parameter sits within tolerance of a lower or
+   upper bound.  Ceres' covariance ignores active bounds, so a pinned parameter's reported variance is
+   meaningless (usually too small).  Size `m_final_parameters.size()`, or empty.  Same (ambient) index
+   space as `m_final_parameters`, so a derived quantity's parameter-space Jacobian can be projected onto
+   it directly. */
+  std::vector<char> m_param_at_bound;
+
+  /** Set true when any reported enrichment / derived uncertainty was floored because the quantity
+   depends substantially on a dropped rank-deficient direction or a bound-pinned parameter,
+   so its linearized uncertainty was under-stated.  Consumers should treat such uncertainties as a wide
+   lower bound ("unreliable").  Mutable: set lazily by the const derived-uncertainty accessors. */
+  mutable bool m_enrichment_uncert_unreliable = false;
+
   /** The short names of the parameters. */
   std::vector<std::string> m_parameter_names;
 
@@ -1260,8 +1363,10 @@ struct RelActAutoSolution
    uncertainty correction applied (if they were fit for).
    */
   std::vector<std::vector<NuclideRelAct>> m_rel_activities;
-  
-  std::vector<std::vector<double>> m_rel_act_covariance;
+
+  /** Per-curve covariance of the relative-activity parameters (outer index = rel-eff curve index),
+   mirroring `m_rel_eff_covariance`.  In raw fit-parameter space (scale factor not applied). */
+  std::vector<std::vector<std::vector<double>>> m_rel_act_covariance;
   
   FwhmForm m_fwhm_form;
   std::vector<double> m_fwhm_coefficients;
@@ -1412,10 +1517,19 @@ struct RelActAutoSolution
    */
   constexpr static double sm_energy_par_offset = 1.0;
   
-  /** We will allow the energy offset to vary by the minimum of +-15 keV or `sm_energy_offset_range_fwhm` times lower energy FWHM . This is arbitrarily chosen. */
-  constexpr static double sm_energy_offset_range_keV = 15.0;  // Allow +-15 keV offset adjust
-  /** If we are off by more than 1 FWHM on the offset, we are likely to be falling into some false minima - this has not been investigated. */
-  constexpr static double sm_energy_offset_range_fwhm = 1.0;
+  /** We will allow the energy offset to vary by the minimum of +-10 keV, or the maximum of
+   `sm_energy_offset_range_floor_keV` and `sm_energy_offset_range_fwhm` times the lower-energy FWHM.
+   The +-10 keV cap balances two concerns: a much larger offset lets the fit shift the energy calibration
+   far enough to line peaks up with a nuclide that isn't actually in the spectrum (biasing toward fitting
+   the wrong nuclide), but too tight a cap won't cover real low-resolution-detector calibration drift.
+   (For HPGe this cap is well above the FWHM-based limit, so it only constrains low-res detectors.) */
+  constexpr static double sm_energy_offset_range_keV = 10.0;  // Allow +-10 keV offset adjust
+  /** If we are off by more than a couple FWHM on the offset, we are likely to be falling into some
+   false minima - this has not been investigated. */
+  constexpr static double sm_energy_offset_range_fwhm = 2.0;
+  /** A floor on the offset allowance: for high-resolution detectors 2 FWHM can be sub-keV, which is
+   less than routine field calibration drift, so never allow less than this many keV of offset. */
+  constexpr static double sm_energy_offset_range_floor_keV = 2.0;
   
   /** We will allow the energy gain to vary by +-20 keV, or 4 FWHM - whichever is less, at the right side of the spectrum.
    This is arbitrarily chosen.
@@ -1474,15 +1588,65 @@ struct RelActAutoSolution
    */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
   
-  /** */
+  /** The full chi-square: sum of squares of ALL residual rows (data channels plus the rel-eff anchor,
+   peak-range-uncertainty, and physical-model parameter-prior rows).  This is the value the optimizer
+   minimizes; the report/GUI display the data-only `m_chi2_data`/`m_dof_data` goodness-of-fit instead. */
   double m_chi2;
-  
+
   /** The number of degrees of freedom in the fit for equation parameters.
-   
-   Note: this is the number data channels used, minus the number of (estimated effective) fit paramaters.
+
+   Note: this is the number of residual rows (data channels plus the non-data prior/anchor rows that
+   `m_chi2` sums), minus the number of (estimated effective) fit paramaters - i.e. the DOF matching
+   `m_chi2`.  For the data-only goodness-of-fit use `m_dof_data`.
    */
   size_t m_dof;
-  
+
+  /** The data-only chi-square: sum of squares of just the spectrum-channel residual rows (excludes the
+   rel-eff anchor, peak-range-uncertainty, and physical-model parameter-prior rows that `m_chi2` includes).
+   This is the chi2/dof shown in the report and GUI, and the statistic used to rescale the reported
+   covariance/uncertainties by `m_cov_scale`. */
+  double m_chi2_data = 0.0;
+
+  /** Degrees of freedom for `m_chi2_data`: number of data channels used, minus the (estimated effective)
+   number of fit parameters. */
+  size_t m_dof_data = 0;
+
+  /** The covariance inflation factor applied to every reported covariance/uncertainty:
+   `max(1.0, m_chi2_data/m_dof_data)`.  A value of 1.0 means no inflation (a good or over-fit).
+   Variances are multiplied by this; standard deviations by its square root. */
+  double m_cov_scale = 1.0;
+
+  /** Weighted coefficient of determination: R2 = 1 - m_chi2_data / SS_tot, where SS_tot is the
+   inverse-variance-weighted total sum of squares of the data about its weighted mean, taken over the
+   same spectrum channels that contribute to `m_chi2_data` (so SS_res and SS_tot are consistent).
+
+   Interpretation - fraction of the (inverse-variance-weighted) variation in the channel counts that
+   the fitted model explains, relative to a flat (weighted-mean) baseline.  Range <= 1.0:
+     - 1.0  = the model passes through every channel (perfect).
+     - For gamma spectra it is normally very close to 1 (the peaks dominate the weighted variance),
+       so judge it on the trailing digits: >0.999 excellent, 0.99-0.999 good, <0.99 the model is
+       missing real structure.
+     - < 0  = the fit is worse than a constant (a failed fit).
+   It complements - does not replace - chi2/dof and the p-value (it is less discriminating than they
+   are for this kind of data).  NaN if it could not be computed. */
+  double m_r2 = std::numeric_limits<double>::quiet_NaN();
+
+  /** 2-norm condition number of the (scaled) fit Jacobian, kappa(J) = sigma_max / sigma_min, from the
+   post-fit singular-value decomposition (the same SVD used for the effective-DOF estimate).
+
+   Interpretation - how well-determined the fit parameters are / how near the inverted normal matrix
+   (J^T J) is to singular.  Range >= 1.0 (1 = perfectly conditioned); roughly log10(kappa) decimal
+   digits of precision are lost in the solution:
+     - <~1e4      : well-conditioned.
+     - ~1e5-1e6   : some parameters weakly constrained or strongly correlated.
+     - >~1e7      : near-degenerate - at least one parameter direction is essentially unconstrained by
+                    the data; its uncertainty (and any derived enrichment / rel-eff band that depends
+                    on it) is unreliable, and the "rank-deficient" warning fires (cf.
+                    `m_num_rank_deficient_dirs`).
+     - -> infinity: singular (infinitely many solutions along that direction).
+   -1.0 if it could not be computed (the SVD failed). */
+  double m_jacobian_condition_number = -1.0;
+
   /** A struct to hold information about the Physical Model result of the fit. */
   struct PhysicalModelFitInfo
   {
@@ -1507,10 +1671,25 @@ struct RelActAutoSolution
      */
     std::vector<ShieldInfo> shields_from_other_curves;
 
-    // Modified Hoerl corrections only present if fitting the Hoerl function was selected
-    //  Uncertainties are just sqrt of covariance diagnal
+    /** The empirical-correction form that was fit (None/Hoerl/Chebyshev).  Determines how to interpret
+     `hoerl_b`/`hoerl_c` and whether the `corr_*_energy` frame applies.  Must be passed to the
+     `RelActCalc::eval_physical_model_eqn`/`..._text`/`..._js_function` calls so the reported/plotted
+     correction matches the form that was fit. */
+    RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
+
+    // Empirical correction coefficients; only present if a correction (Hoerl or Chebyshev) was fit.
+    //  Uncertainties are just sqrt of covariance diagonal.  For `corr_fcn == Chebyshev`, `hoerl_b`/`hoerl_c`
+    //  instead carry the two pivot-anchored basis coefficients a1,a2 (and `corr_*_energy` below give the
+    //  basis energy reference frame).
     std::optional<double> hoerl_b, hoerl_b_uncert;
     std::optional<double> hoerl_c, hoerl_c_uncert;
+
+    /** Energy reference frame for the basis empirical-correction term (only meaningful when
+     `corr_fcn == Chebyshev`): the fit range [lower, upper] and the pivot (log-midpoint) where
+     `correction(pivot) == 1`.  Needed to evaluate/plot the correction the same way it was fit. */
+    double corr_lower_energy = 0.0;
+    double corr_upper_energy = 0.0;
+    double corr_pivot_energy = 0.0;
   };//struct PhysicalModelFitInfo
   
   /** The curve information for Physical Model curves.

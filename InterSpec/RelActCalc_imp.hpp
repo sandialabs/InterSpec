@@ -194,14 +194,71 @@ T get_atten_coef_for_an( const T &an, const float energy )
   return mu;
 }//T get_atten_coef_for_an( const T &an )
 
-    
+
+/** Evaluates the pivot-anchored Chebyshev empirical correction in log-energy:
+
+   correction(E) = exp( sum_{k=1..N} coeffs[k-1] * ( T_k(u(E)) - T_k(u(E0)) ) )
+
+ with `u(E) = 2*(log E - log Elo)/(log Ehi - log Elo) - 1` and `T_k` the Chebyshev polynomial of degree k.
+ The basis polynomials depend only on energy (not the fit coefficients), so they are evaluated in `double`;
+ only the linear combination with `coeffs` (which may be a `ceres::Jet`) carries derivatives.  The pivot
+ anchor (subtracting `T_k(u(E0))`) forces `correction(E0) = 1`, so the correction contributes only SHAPE, not
+ overall scale - removing the scale degeneracy with the relative activities. */
+template<typename T>
+T physical_model_basis_correction( const double energy,
+                                   const std::vector<T> &coeffs,
+                                   const double lower_energy,
+                                   const double upper_energy,
+                                   const double pivot_energy )
+{
+  if( coeffs.empty() )
+    return T( 1.0 );
+
+  // If the energy reference frame was not supplied (e.g. a caller that does not yet plumb it through),
+  //  skip the correction (identity) rather than producing garbage.
+  if( !((lower_energy > 0.0) && (upper_energy > lower_energy) && (pivot_energy > 0.0)) )
+    return T( 1.0 );
+
+  const double log_lo = std::log( lower_energy );
+  const double log_span = std::log( upper_energy ) - log_lo;
+  assert( log_span > 0.0 );
+
+  // Map energy -> [-1,1] in log-energy (efficiency/attenuation are ~power laws -> ~linear in log E).
+  const double u  = 2.0*(std::log( energy )       - log_lo)/log_span - 1.0;
+  const double u0 = 2.0*(std::log( pivot_energy ) - log_lo)/log_span - 1.0;
+
+  // Chebyshev recurrence (in double; basis is independent of the fit coefficients):
+  //   T_0=1, T_1=x, T_{k+1} = 2x*T_k - T_{k-1}
+  double Tkm1_u = 1.0, Tk_u = u;    // T_0, T_1 evaluated at u
+  double Tkm1_0 = 1.0, Tk_0 = u0;   // T_0, T_1 evaluated at u0
+
+  T exponent( 0.0 );
+  for( size_t k = 1; k <= coeffs.size(); ++k )
+  {
+    exponent += coeffs[k-1] * (Tk_u - Tk_0);  // anchored basis term T_k(u) - T_k(u0)
+
+    const double Tnext_u = 2.0*u *Tk_u - Tkm1_u;
+    const double Tnext_0 = 2.0*u0*Tk_0 - Tkm1_0;
+    Tkm1_u = Tk_u; Tk_u = Tnext_u;
+    Tkm1_0 = Tk_0; Tk_0 = Tnext_0;
+  }//for( k = 1 .. N )
+
+  using std::exp;
+  return exp( exponent );
+}//physical_model_basis_correction(...)
+
+
 template<typename T>
 T eval_physical_model_eqn_imp( const double energy,
                                 std::optional<RelActCalc::PhysModelShield<T>> self_atten,
                                 const std::vector<RelActCalc::PhysModelShield<T>> &external_attens,
                                 const DetectorPeakResponse * const drf,
                                 std::optional<T> b,
-                                std::optional<T> c )
+                                std::optional<T> c,
+                                const double corr_lower_energy = 0.0,
+                                const double corr_upper_energy = 0.0,
+                                const double corr_pivot_energy = 0.0,
+                                const RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl )
 {
   // Note 20250114: this function currently interpolates between floor(AN) and one above it.
   //                However, I dont think this is correct, we should be interpolating a bit better
@@ -221,25 +278,27 @@ T eval_physical_model_eqn_imp( const double energy,
   if( b.has_value() != c.has_value() )
     throw std::logic_error( "hoerl_b.has_value() != hoerl_c.has_value()" );
   
-  if( b.has_value() && c.has_value() )
+  if( (corr_fcn != RelActCalc::PhysModelCorrFcn::None) && b.has_value() && c.has_value() )
   {
-    const T b_val = *b;
-    const T c_val = *c;
-
-    const double energy_mev = 0.001*energy;
-    // Calculating the Hoerl is niavely done as follows:
-    //const T b_part = pow(energy_mev, b_val);
-    //const T c_part = pow(c_val, 1.0/energy_mev);
-    //answer = b_part * c_part;
-    //
-    // However, in principle, and totally not verified, computing it the following way should be a little more
-    //  stable for the automatic differentiation. eh - on an example problem didnt seem to matter.
-    answer = exp( b_val*log(energy_mev) + log(c_val)/energy_mev );
+    if( corr_fcn == RelActCalc::PhysModelCorrFcn::Chebyshev )
+    {
+      // Pivot-anchored Chebyshev correction; `b`,`c` carry the basis coefficients a_1, a_2.
+      const std::vector<T> corr_coeffs{ *b, *c };
+      answer = physical_model_basis_correction( energy, corr_coeffs,
+                                  corr_lower_energy, corr_upper_energy, corr_pivot_energy );
+    }else
+    {
+      // Modified Hoerl function E_MeV^b * c^(1/E_MeV); evaluated in exp/log form for AD/Jet stability.
+      const T b_val = *b;
+      const T c_val = *c;
+      const double energy_mev = 0.001*energy;
+      answer = exp( b_val*log(energy_mev) + log(c_val)/energy_mev );
+    }//if( basis ) / else( Hoerl )
 
     assert( !isnan(answer) && !isinf(answer) );
     if( isnan(answer) || isinf(answer) )
-      throw std::logic_error( "hoerl_b or hoerl_c gives eqn NaN or Inf" );
-  }
+      throw std::logic_error( "physical-model correction gives eqn NaN or Inf" );
+  }//if( correction active )
   
   const double det_part = drf ? drf->intrinsicEfficiency( energyf ) : 1.0;
   answer *= det_part;
@@ -256,27 +315,26 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = self_atten->areal_density;
 
-    // `setup_physical_model_shield_par` loosens the Ceres-level lower bound
-    //  on AD by 1e-5 g/cm^2 to escape an active-bound LM trap. The optimizer
-    //  may consequently evaluate at AD slightly below the user's bound.
-    //  `areal_density` is in PhysicalUnits here, so the test for "grossly
-    //  negative" multiplies by `g_per_cm2` to compare in physical units.
-    //  Threshold of -1e-3 g/cm^2 is well above the loosening (-1e-5) so
-    //  the cost function never returns false on legitimate optimizer
-    //  exploration; only catches truly pathological values.
+    // `setup_physical_model_shield_par` loosens the Ceres-level lower bound on AD by 1e-5 g/cm^2
+    //  to escape an active-bound LM trap, so the optimizer may evaluate at AD a hair below zero.
+    //  We deliberately do NOT clamp `areal_density` to >= 0 here: the self-attenuation factor
+    //  (1 - e^{-x})/x is smooth and accurate for the tiny negative x reachable inside that margin,
+    //  so letting the true value/gradient flow keeps the AD Jacobian column non-zero (clamping a
+    //  `ceres::Jet` with `fmax(jet,0)` would zero its derivative and recreate the trap - see A2).
+    //  The converged AD is clamped to >= 0 where the solution is extracted (`get_shield_info` in
+    //  RelActCalcAuto.cpp), so the user never sees a negative AD; here we only guard grossly
+    //  negative values. `areal_density` is in PhysicalUnits, so the -1e-3 g/cm^2 throw threshold
+    //  (well below the -1e-5 loosening) compares in physical units.
     assert( !isinf(areal_density) );
     if( (areal_density <= -1.0e-3 * PhysicalUnits::g_per_cm2)
         || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0 - got value " );
 
-    if( areal_density < 0.0 )
-      areal_density = fmax(areal_density, 0.0);
-
     assert( mu >= 0.0 );
     if( mu < 0.0 )
       mu = fmax(mu, 0.0);
 
-    assert( areal_density >= 0.0 );
+    assert( areal_density >= -1.0e-3 * PhysicalUnits::g_per_cm2 );
 
     //The simple computation to handel self-attenuation would be:
     //  answer *= (1.0 - exp(-mu * areal_density)) / (mu * areal_density);
@@ -312,28 +370,26 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = ext_atten.areal_density;
 
-    // See note in self-atten branch above: threshold is in PhysicalUnits;
-    //  -1e-3 g/cm^2 is comfortably above the bounds-loosening of -1e-5 g/cm^2,
-    //  so the cost function does not return false on normal optimizer
-    //  exploration near the loosened bound.
+    // See note in self-atten branch above: we do NOT clamp `areal_density` to >= 0 (that would zero
+    //  the Jet gradient across the deliberately-loosened bound margin - A2); e^{-mu*AD} is smooth for
+    //  the tiny negative AD reachable inside the margin, and the converged value is clamped >= 0 at
+    //  extraction. The -1e-3 g/cm^2 throw (in PhysicalUnits, below the -1e-5 loosening) only catches
+    //  grossly negative values.
     assert( !isinf(areal_density) );
     if( (areal_density <= -1.0e-3 * PhysicalUnits::g_per_cm2)
         || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
 
-    if( areal_density < 0.0 )
-      areal_density = fmax(areal_density, 0.0);
-
     assert( mu >= 0.0 );
     if( mu < 0.0 )
       mu = fmax(mu, 0.0);
 
-    // Local areal_density was clamped to >= 0 above; original ext_atten value
-    //  may be slightly negative due to bounds-loosening.
-    assert( areal_density >= 0.0 );
+    assert( areal_density >= -1.0e-3 * PhysicalUnits::g_per_cm2 );
 
-    if( (mu >= 0.0) && (areal_density >= 0.0) )
-      answer *= exp( -mu * areal_density );
+    // Apply unconditionally: `mu >= 0` (clamped above) and `AD >= -1e-5` is a valid exponent.
+    //  Guarding on `areal_density >= 0` would skip the term for AD in the loosened margin and
+    //  re-zero the external-AD gradient there.
+    answer *= exp( -mu * areal_density );
     
     assert( !isnan(answer) && !isinf(answer) );
   }//for( size_t i = 0; i < external_attens.size(); ++i )

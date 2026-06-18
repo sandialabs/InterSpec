@@ -10,4 +10,6 @@
   <message id="resw-material-frame-label">Material</message>
   <message id="resw-generic-frame-label">Generic</message>
   <message id="resw-areal-density-placeholder">g/cm^2</message>
+  <message id="resw-bias-ad">Bias AD</message>
+  <message id="resw-bias-ad-tt">When checked, applies a weak prior pulling this shield's fitted areal density toward 0 g/cm&sup2;.  Helps stabilize the (often near-degenerate) shielding/correction covariance so the fit and its uncertainty band are better behaved.  Leave unchecked when this shielding is genuinely substantial, or the fit already looks stable.  Only used by the relative-activity "Auto" physical-model fit.</message>
 </messages>

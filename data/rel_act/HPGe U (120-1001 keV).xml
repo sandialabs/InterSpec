@@ -8,7 +8,7 @@
 		<SkewType>GaussExp</SkewType>
 		<AddUncert>0.00000000e+00</AddUncert>
 		<RelEffCurveInputs>
-			<RelEffCurveInput version="0">
+			<RelEffCurveInput version="1">
 				<Name>Curve 0</Name>
 				<NucInputInfoList>
 					<NucInputInfo version="0">
@@ -50,6 +50,7 @@
 							<FitArealDensity>true</FitArealDensity>
 							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
 							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+							<ArealDensityBias remark="Weak prior pulling this shield's fitted areal density toward 0 g/cm^2. true/false enables; optional 'value' attribute sets the weight (default 0.05 for a self-attenuating shield / 0.1 for an external shield; sigma ~ 1/weight in g/cm^2). Off by default.">true</ArealDensityBias>
 						</PhysicalModelShield>
 					</SelfAtten>
 					<ExtAtten>
@@ -63,14 +64,16 @@
 							<FitArealDensity>true</FitArealDensity>
 							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
 							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+							<ArealDensityBias remark="Weak prior pulling this shield's fitted areal density toward 0 g/cm^2. true/false enables; optional 'value' attribute sets the weight (default 0.05 for a self-attenuating shield / 0.1 for an external shield; sigma ~ 1/weight in g/cm^2). Off by default.">true</ArealDensityBias>
 						</PhysicalModelShield>
 					</ExtAtten>
-					<PhysModelUseHoerl>true</PhysModelUseHoerl>
+					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">Hoerl</CorrectionFcnType>
 				</PhysicalModelOptions>
 			</RelEffCurveInput>
 		</RelEffCurveInputs>
-		<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>
+		<SameCorrFcnForAllRelEffCurves>false</SameCorrFcnForAllRelEffCurves>
 		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<AutoRemoveDegeneraciesChi2Delta remark="Auto-simplify: greedily remove redundant degrees of freedom (the empirical correction, then external attenuator(s), then the highest polynomial term) when removing one increases chi2 by no more than this value. Optional 'enabled' attribute (true/false, default true) toggles it; an absent element means disabled.">1</AutoRemoveDegeneraciesChi2Delta>
 		<RoiRangeList>
 			<RoiRange version="0">
 				<LowerEnergy>1.80695999e+02</LowerEnergy>
@@ -110,13 +113,6 @@
 			<RoiRange version="0">
 				<LowerEnergy>2.56125000e+02</LowerEnergy>
 				<UpperEnergy>2.60500000e+02</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<ForceFullRange>true</ForceFullRange>
-				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
-			</RoiRange>
-			<RoiRange version="0">
-				<LowerEnergy>2.24919998e+02</LowerEnergy>
-				<UpperEnergy>2.28694000e+02</UpperEnergy>
 				<ContinuumType>Linear</ContinuumType>
 				<ForceFullRange>true</ForceFullRange>
 				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
@@ -180,20 +176,6 @@
 			<RoiRange version="0">
 				<LowerEnergy>2.19365005e+02</LowerEnergy>
 				<UpperEnergy>2.23544998e+02</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<ForceFullRange>true</ForceFullRange>
-				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
-			</RoiRange>
-			<RoiRange version="0">
-				<LowerEnergy>2.89580994e+02</LowerEnergy>
-				<UpperEnergy>2.95419250e+02</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<ForceFullRange>true</ForceFullRange>
-				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
-			</RoiRange>
-			<RoiRange version="0">
-				<LowerEnergy>3.43643005e+02</LowerEnergy>
-				<UpperEnergy>3.48233002e+02</UpperEnergy>
 				<ContinuumType>Linear</ContinuumType>
 				<ForceFullRange>true</ForceFullRange>
 				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>

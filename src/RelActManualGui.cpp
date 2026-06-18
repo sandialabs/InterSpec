@@ -1986,9 +1986,19 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   if( solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
     return;
   
-  // We'll first update the chart
-  string relEffEqn = solution.rel_eff_eqn_js_function();
-  string relEffEqnUncert = solution.rel_eff_eqn_js_uncert_fcn();
+  // We'll first update the chart.  For a physical model these throw if an areal density evaluates < 0;
+  //  on failure leave the strings empty - RelEffChart serializes an empty equation as JS `null`, so the
+  //  chart shows the data points without a fit line / uncertainty band rather than letting the exception
+  //  escape this GUI update.
+  string relEffEqn, relEffEqnUncert;
+  try
+  {
+    relEffEqn = solution.rel_eff_eqn_js_function();
+    relEffEqnUncert = solution.rel_eff_eqn_js_uncert_fcn();
+  }catch( const std::exception &e )
+  {
+    cerr << "RelActManualGui: failed to build rel-eff equation JS: " << e.what() << endl;
+  }
   if( solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
     // Update shield widgets

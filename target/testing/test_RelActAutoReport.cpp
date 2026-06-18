@@ -227,15 +227,67 @@ static void do_one_fit_and_check( const string &n42_basename,
                          "chi2/dof = " << (sol.m_chi2 / sol.m_dof)
                          << " is unreasonably large for " << n42_basename );
 
+  // 7a. New goodness-of-fit stats: weighted R² (<= 1) and Jacobian condition number κ(J) (>= 1).
+  BOOST_TEST_MESSAGE( "  " << n42_basename << ": R2 = " << sol.m_r2
+                      << ", condition number kappa(J) = " << sol.m_jacobian_condition_number
+                      << " (chi2/dof_data = "
+                      << (sol.m_dof_data > 0 ? sol.m_chi2_data/static_cast<double>(sol.m_dof_data) : 0.0)
+                      << ")" );
+  BOOST_CHECK_MESSAGE( std::isnan(sol.m_r2) || (sol.m_r2 <= 1.0),
+                       "R2 = " << sol.m_r2 << " exceeds 1 for " << n42_basename );
+  BOOST_CHECK_MESSAGE( (sol.m_jacobian_condition_number < 0.0)
+                         || (sol.m_jacobian_condition_number >= 1.0),
+                       "condition number = " << sol.m_jacobian_condition_number
+                       << " (< 1) for " << n42_basename );
+
   BOOST_CHECK_MESSAGE( solution_has_nuclide_named( sol, expected_nuclide_substring ),
                        "No nuclide with name containing '" << expected_nuclide_substring
                        << "' (and rel_activity > 0) in solution for " << n42_basename );
+
+  // 7b. Uncertainty-reliability invariants: the data-only covariance rescale never deflates, the
+  //     data-only DOF never exceeds the full DOF, and no reported enrichment uncertainty exhibits the
+  //     rank-deficiency "variance collapse" (a sub-1e-4 relative uncertainty, which is now floored).
+  BOOST_CHECK_MESSAGE( sol.m_cov_scale >= 1.0,
+                       "m_cov_scale = " << sol.m_cov_scale << " (< 1) for " << n42_basename );
+  BOOST_CHECK_MESSAGE( sol.m_dof_data <= sol.m_dof,
+                       "m_dof_data (" << sol.m_dof_data << ") > m_dof (" << sol.m_dof << ") for " << n42_basename );
+
+  if( !sol.m_covariance.empty() )
+  {
+    for( size_t curve = 0; curve < sol.m_rel_activities.size(); ++curve )
+    {
+      for( const RelActCalcAuto::NuclideRelAct &nra : sol.m_rel_activities[curve] )
+      {
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( nra.source );
+        if( !nuc || (nra.rel_activity <= 0.0) )
+          continue;
+        const pair<double,optional<double>> enr = sol.mass_enrichment_fraction( nuc, curve );
+        if( !enr.second.has_value() || (enr.first <= 0.0) )
+          continue;
+        const double sigma = *enr.second;
+        BOOST_CHECK_MESSAGE( std::isfinite(sigma) && (sigma >= 0.0),
+                             "Enrichment uncertainty for " << nra.name() << " not finite/non-negative ("
+                             << sigma << ") for " << n42_basename );
+        // Skip single-isotope elements, whose fraction is legitimately ~1.0 with ~0 uncertainty.
+        if( enr.first < 0.999 )
+          BOOST_CHECK_MESSAGE( sigma >= 1.0e-4*enr.first,
+                               "Enrichment uncertainty for " << nra.name() << " collapsed: sigma/value = "
+                               << (sigma/enr.first) << " for " << n42_basename );
+      }
+    }
+  }//if( !sol.m_covariance.empty() )
 
   // 8. JSON conversion.
   nlohmann::json data;
   BOOST_REQUIRE_NO_THROW( data = RelActAutoReport::solution_to_json( sol ) );
   BOOST_REQUIRE( data.contains("status") );
   BOOST_CHECK( data["status"].value("success", false) );
+
+  // New goodness-of-fit fields must be present for the templates that reference them.
+  BOOST_CHECK( data.contains("r2") );
+  BOOST_CHECK( data.contains("condition_number") );
+  BOOST_CHECK( data.contains("r2_str") );
+  BOOST_CHECK( data.contains("condition_number_str") );
 
   // 9. Inja env construction.  (`inja::Environment` is non-copyable, so direct-construct.)
   inja::Environment env = RelActAutoReport::get_default_inja_env( "" );

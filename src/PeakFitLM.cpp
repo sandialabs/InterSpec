@@ -432,7 +432,11 @@ struct PeakFitDiffCostFunction
   {
     const size_t n_chan = roi.upper_channel - roi.lower_channel + 1;
     const bool punish_close = !m_options.testFlag( PeakFitLM::PeakFitLMOptions::DoNotPunishForBeingToClose );
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
     const bool punish_insig = m_options.testFlag( PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig );
+#else
+    const bool punish_insig = false;
+#endif
     size_t n = n_chan;
     if( (punish_close || punish_insig) && roi.peaks.size() > 1 )
       n += roi.peaks.size() - 1;
@@ -926,6 +930,7 @@ struct PeakFitDiffCostFunction
                                              amplitudes, cont_coeffs, amp_uncerts, cont_uncerts,
                                              &peak_counts[0] );
           }
+
           assert( peaks.size() == amplitudes.size() );
           for( size_t pi = 0; pi < peaks.size(); ++pi )
           {
@@ -1064,8 +1069,15 @@ struct PeakFitDiffCostFunction
           {
             if constexpr ( !std::is_same_v<T, double> )
             {
-              reldist.a = 0.01;
-              reldist.v = peaks[i-1].mean().v - peaks[i].mean().v;
+              // Floor the *value* so the 1/reldist barrier in peaks_too_close_punishment stays
+              //  finite, but keep the true derivative of reldist = |mean_i - mean_{i-1}|/sigma the
+              //  division above already produced, so the fit still feels a gradient pushing the
+              //  peaks apart.  If sigma->0 made reldist non-finite there is no usable derivative,
+              //  so pin to a constant.
+              if( isinf(reldist) || isnan(reldist) )
+                reldist = T(0.01);
+              else
+                reldist.a = 0.01;
             }
             else
             {
@@ -1075,81 +1087,88 @@ struct PeakFitDiffCostFunction
 
           const size_t punish_idx = nchannel + i - 1;
           assert( punish_idx < roi_residual_count( roi ) );
-          if( reldist < 1.25 )
-            roi_residuals[punish_idx] = T(punishment_factor / reldist);
-          else
-            roi_residuals[punish_idx] = T(0.0);
+          // Punish peaks for being too close together; continuous + compact-support so Ceres' L-M
+          //  trust region stays well-behaved (see `peaks_too_close_punishment`).
+          roi_residuals[punish_idx] = peaks_too_close_punishment( reldist, punishment_factor );
         }//if( punish for peaks too close )
+      }//for( size_t i = 1; i < peaks.size(); ++i )
 
-        if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig ) )
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
+      // Punish statistically-insignificant peaks.  Lifted OUT of the proximity loop above so it runs
+      //  exactly once per ROI -- it has its own peak loop; nested in the proximity loop it
+      //  accumulated (npeaks-1)x via += and never ran for single-peak ROIs.  Off by default: the
+      //  punishment magnitudes are heuristic and untested -- only the residual-slot layout is correct.
+      if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig ) )
+      {
+        // Use last slot of punishment residuals for the insignificance penalty
+        const size_t last_punish_idx = nchannel + peaks.size() - 1;
+        assert( last_punish_idx < roi_residual_count( roi ) );
+        roi_residuals[last_punish_idx] = T(0.0);  // initialized once; summed below
+
+        for( size_t pi = 0; pi < peaks.size(); ++pi )
         {
-          // As of 20250415, this section is untested.
-          // Use last slot of punishment residuals for the insignificance penalty
-          const size_t last_punish_idx = nchannel + peaks.size() - 1;
-          assert( last_punish_idx < roi_residual_count( roi ) );
-          roi_residuals[last_punish_idx] = T(0.0);  // initialized once; summed below
+          const PeakType &pk = peaks[pi];
 
-          for( size_t pi = 0; pi < peaks.size(); ++pi )
+          if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::DoNotPunishForBeingToClose ) )
           {
-            const PeakType &pk = peaks[pi];
+            const size_t idx = nchannel + pi;
+            assert( idx < roi_residual_count( roi ) );
+            roi_residuals[idx] = T(0.0);
+          }
 
-            if( m_options.testFlag( PeakFitLM::PeakFitLMOptions::DoNotPunishForBeingToClose ) )
+          double pk_mean, pk_sigma, pk_amp;
+          if constexpr ( std::is_same_v<T, double> )
+          {
+            pk_mean  = pk.mean();
+            pk_sigma = pk.sigma();
+            pk_amp   = pk.amplitude();
+          }
+          else
+          {
+            pk_mean  = pk.mean().a;
+            pk_sigma = pk.sigma().a;
+            pk_amp   = pk.amplitude().a;
+          }
+
+          const float lower_energy = static_cast<float>( pk_mean - 1.75*pk_sigma );
+          const float upper_energy = static_cast<float>( pk_mean + 1.75*pk_sigma );
+          const size_t lower_ch = std::max( roi.lower_channel, m_data->find_gamma_channel(lower_energy) );
+          const size_t upper_ch = std::min( roi.upper_channel, m_data->find_gamma_channel(upper_energy) );
+
+          double dataarea = 0.0;
+          for( size_t bin = lower_ch; (bin < counts_vec.size()) && (bin <= upper_ch); ++bin )
+            dataarea += counts_vec[bin];
+
+          const double punishment_chi2 = 2.0 * static_cast<double>( 1 + upper_ch - lower_ch );
+          const size_t this_punish_idx = nchannel + pi;
+
+          if( pk_amp < std::max( 2.0*sqrt(dataarea), 1.0 ) )
+          {
+            if( pk_amp <= 1.0 )
             {
-              const size_t idx = nchannel + pi;
-              assert( idx < roi_residual_count( roi ) );
-              roi_residuals[idx] = T(0.0);
-            }
-
-            double pk_mean, pk_sigma, pk_amp;
-            if constexpr ( std::is_same_v<T, double> )
-            {
-              pk_mean  = pk.mean();
-              pk_sigma = pk.sigma();
-              pk_amp   = pk.amplitude();
-            }
-            else
-            {
-              pk_mean  = pk.mean().a;
-              pk_sigma = pk.sigma().a;
-              pk_amp   = pk.amplitude().a;
-            }
-
-            const float lower_energy = static_cast<float>( pk_mean - 1.75*pk_sigma );
-            const float upper_energy = static_cast<float>( pk_mean + 1.75*pk_sigma );
-            const size_t lower_ch = std::max( roi.lower_channel, m_data->find_gamma_channel(lower_energy) );
-            const size_t upper_ch = std::min( roi.upper_channel, m_data->find_gamma_channel(upper_energy) );
-
-            double dataarea = 0.0;
-            for( size_t bin = lower_ch; (bin < counts_vec.size()) && (bin <= upper_ch); ++bin )
-              dataarea += counts_vec[bin];
-
-            const double punishment_chi2 = 2.0 * static_cast<double>( 1 + upper_ch - lower_ch );
-            const size_t this_punish_idx = nchannel + pi;
-
-            if( pk_amp < std::max( 2.0*sqrt(dataarea), 1.0 ) )
-            {
-              if( pk_amp <= 1.0 )
+              if constexpr ( std::is_same_v<T, double> )
               {
-                if constexpr ( std::is_same_v<T, double> )
-                {
-                  roi_residuals[this_punish_idx] += 100.0 * punishment_chi2;
-                }
-                else
-                {
-                  T punish( 1.0 );
-                  punish.v = pk.amplitude().v / pk.amplitude().a;
-                  punish *= 100.0 * punishment_chi2;
-                  roi_residuals[this_punish_idx] += punish;
-                }
+                roi_residuals[this_punish_idx] += 100.0 * punishment_chi2;
               }
               else
               {
-                roi_residuals[this_punish_idx] += (T(-1.0) + 2.0*sqrt(dataarea)/pk.amplitude()) * T(punishment_chi2);
+                T punish( 1.0 );
+                // Normalize the Jet derivative by the amplitude value; floor the denominator so it
+                //  stays finite when amp.a is ~0 (or <0) in this branch.
+                const double amp_den = std::max( pk.amplitude().a, 1.0E-6 );
+                punish.v = pk.amplitude().v / amp_den;
+                punish *= 100.0 * punishment_chi2;
+                roi_residuals[this_punish_idx] += punish;
               }
-            }//if( amp < 2*sqrt(dataarea) )
-          }//for( size_t pi = 0; pi < peaks.size(); ++pi )
-        }//if( PunishForPeakBeingStatInsig )
-      }//for( size_t i = 1; i < peaks.size(); ++i )
+            }
+            else
+            {
+              roi_residuals[this_punish_idx] += (T(-1.0) + 2.0*sqrt(dataarea)/pk.amplitude()) * T(punishment_chi2);
+            }
+          }//if( amp < 2*sqrt(dataarea) )
+        }//for( size_t pi = 0; pi < peaks.size(); ++pi )
+      }//if( PunishForPeakBeingStatInsig )
+#endif //( ENABLE_PUNISH_STAT_INSIG_PEAKS )
 
       // --- Inherit user-selected options from matching starting peaks ---
       assert( roi.peaks.size() == peaks.size() );

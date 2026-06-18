@@ -45,6 +45,7 @@ class RelActTxtResults;
 class RelEffShieldWidget;
 class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
+class NativeFloatSpinBox;
 class RelActAutoGuiNuclide;
 class RelActAutoGuiRelEffOptions;
 
@@ -117,7 +118,7 @@ public:
   void handleDisplayedSpectrumChange( SpecUtils::SpectrumType );
   void handlePresetChange();
   void handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
-  void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
+  void handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleRelEffEqnOrderChanged();
@@ -196,7 +197,8 @@ public:
   void handleFreePeakChange();
   
   void handleAdditionalUncertChanged();
-  
+  void handleAutoSimplifyChanged();
+
   void setOptionsForNoSolution();
   void setOptionsForValidSolution();
   void makeZeroAmplitudeRoisToChart();
@@ -428,6 +430,13 @@ protected:
    */
   bool m_use_fixed_skew_enabled;
   Wt::WCheckBox *m_use_fixed_skew;
+
+  /** Auto-simplify model: when checked, the solver greedily removes redundant degrees of freedom (see
+   `RelActCalcAuto::Options::auto_simplify_model`).  Checking it reveals `m_auto_simplify_dchi2_div`, which
+   holds the chi2-increase tolerance (`auto_simplify_max_dchi2`, default 1). */
+  Wt::WCheckBox *m_auto_simplify;
+  Wt::WContainerWidget *m_auto_simplify_dchi2_div;
+  NativeFloatSpinBox *m_auto_simplify_max_dchi2;
 
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;

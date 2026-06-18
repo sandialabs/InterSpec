@@ -438,16 +438,46 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
   data["have_multiple_rel_eff"] = have_multiple_rel_eff;
   data["live_time_s"]           = live_time;
 
-  // ---- Goodness-of-fit ----
-  data["chi2"]            = sol.m_chi2;
-  data["dof"]             = static_cast<int64_t>(sol.m_dof);
-  data["chi2_per_dof"]    = sol.m_dof > 0 ? sol.m_chi2 / static_cast<double>(sol.m_dof) : 0.0;
+  // ---- Goodness-of-fit (data channel rows only; excludes the anchor/prior/BR residual rows) ----
+  data["chi2"]            = sol.m_chi2_data;
+  data["dof"]             = static_cast<int64_t>(sol.m_dof_data);
+  data["chi2_per_dof"]    = sol.m_dof_data > 0 ? sol.m_chi2_data / static_cast<double>(sol.m_dof_data) : 0.0;
   {
     char buf[64] = { '\0' };
-    snprintf( buf, sizeof(buf), "%.6G", sol.m_chi2 );
+    snprintf( buf, sizeof(buf), "%.6G", sol.m_chi2_data );
     data["chi2_str"] = string(buf);
     snprintf( buf, sizeof(buf), "%.6G", data["chi2_per_dof"].get<double>() );
     data["chi2_per_dof_str"] = string(buf);
+  }
+
+  // Weighted R² (coefficient of determination) and the Jacobian condition number κ(J).  See the doc
+  //  comments on RelActAutoSolution::m_r2 / m_jacobian_condition_number for meaning and typical ranges.
+  //  Store null (and an "n/a" string) when a value was not computed, so the JSON stays valid.
+  data["r2"] = nullptr;
+  if( sol.m_r2 == sol.m_r2 )  // i.e. not NaN
+    data["r2"] = sol.m_r2;
+  data["condition_number"] = nullptr;
+  if( sol.m_jacobian_condition_number >= 0.0 )
+    data["condition_number"] = sol.m_jacobian_condition_number;
+  {
+    char buf[64] = { '\0' };
+    if( sol.m_r2 == sol.m_r2 )
+    {
+      snprintf( buf, sizeof(buf), "%.5G", sol.m_r2 );
+      data["r2_str"] = string(buf);
+    }else
+    {
+      data["r2_str"] = string("n/a");
+    }
+
+    if( sol.m_jacobian_condition_number >= 0.0 )
+    {
+      snprintf( buf, sizeof(buf), "%.3G", sol.m_jacobian_condition_number );
+      data["condition_number_str"] = string(buf);
+    }else
+    {
+      data["condition_number_str"] = string("n/a");
+    }
   }
 
   // ---- Warnings ----

@@ -156,6 +156,22 @@ BOOST_AUTO_TEST_CASE( exemplar_only_happy_path )
     BOOST_CHECK_MESSAGE( act.second / act.first < 0.5,
                          "Expected uncertainty < 50% of rel_activity, got "
                          << (act.second/act.first) );
+
+  // age_uncertainty must be gated on covariance availability (never leak an exact-0 after a failed
+  //  covariance).  Invariant: covariance present => a real, finite, non-negative value; covariance
+  //  absent => the -1 sentinel.
+  const bool have_cov = !result.m_solution.m_covariance.empty();
+  for( const vector<RelActCalcAuto::NuclideRelAct> &curve : result.m_solution.m_rel_activities )
+  {
+    for( const RelActCalcAuto::NuclideRelAct &nra : curve )
+    {
+      BOOST_CHECK_MESSAGE( std::isfinite(nra.age_uncertainty),
+                           "age_uncertainty not finite for " << nra.name() );
+      BOOST_CHECK_MESSAGE( have_cov ? (nra.age_uncertainty >= 0.0) : (nra.age_uncertainty == -1.0),
+                           "age_uncertainty (" << nra.age_uncertainty << ") inconsistent with covariance"
+                           " availability (have_cov=" << have_cov << ") for " << nra.name() );
+    }
+  }
 }
 
 

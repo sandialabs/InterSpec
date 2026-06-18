@@ -57,13 +57,30 @@ namespace PeakFitUtils
  */
 #define PEAK_FIT_LM_PARALLEL_ROIS 1
 
+/** Compile-time switch for the "punish statistically-insignificant peaks" fit option,
+ `PeakFitLMOptions::PunishForPeakBeingStatInsig`.
+
+ Disabled (0) by default, because:
+   - No production code path enables the option; nothing sets the flag.
+   - The punishment is a heuristic that has never been validated: its magnitude/direction are ad-hoc
+     (it can widen a peak's sigma, arguably the wrong way), and the residual's Jacobian is
+     discontinuous at the significance threshold (amp == 2*sqrt(data in mean +- 1.75 sigma)), which
+     the Ceres L-M trust region does not love.  (It does NOT bias statistically-significant peaks:
+     the residual is gated off, and identically zero, once a peak is above ~2 sigma.)
+
+ Set to 1 to compile the option back in (the enum value, the residual-count branches, the punishment
+ block in `parametersToPeaks`, and its `statInsigPunishmentLifted` test).  The punishment math should
+ be re-derived/validated before relying on it.
+ */
+#define ENABLE_PUNISH_STAT_INSIG_PEAKS 0
+
 namespace PeakFitLM
 {
 
 /** By default:
  - peak means are only constrained to be in the ROI
  - peak widths are only constrained to be within a reasonable range, for the spectrum
- - If peak means are closer than 1.25 sigma together, there is a punishment
+ - If peak means are closer than 1.75 sigma together, there is a punishment (smoothly tapering to zero at 1.75 sigma)
  - If there are multiple peaks, their FWHM is a linear function of thier mean; the FWHM can vary by +-15% over the ROI
 
  However, these choices can be overridden
@@ -72,16 +89,19 @@ namespace PeakFitLM
  */
 enum PeakFitLMOptions
 {
-  /** By default, if peaks are less than 1.25 sigma away from each other, they start getting punished,
-   with the punishment growing linearly as they get closer.
+  /** By default, if peaks are closer than 1.75 sigma to each other, they get punished, with the
+   punishment growing smoothly (and continuously) as they get closer - see `peaks_too_close_punishment`.
    Specifying this option turns this punishment off.
    */
   DoNotPunishForBeingToClose  = 0x01,
 
-  /** Punishes peaks for their areas being less than less than sqrt(data betwee mean +- 1.75*sigma) .
-   As of 20250415, totally not tested.
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
+  /** Punishes peaks for their areas being less than sqrt(data between mean +- 1.75*sigma).
+   Heuristic and untested -- see `ENABLE_PUNISH_STAT_INSIG_PEAKS`; the 0x02 bit is reserved while
+   this is disabled.
    */
   PunishForPeakBeingStatInsig = 0x02,
+#endif
 
   /** Normally when fitting multiple peaks, the peak FWHM is allowed to vary +-15% throughout the
    ROI, with the FWHM of each peak being a linear function of the fraction of energy through the ROI.
@@ -137,6 +157,34 @@ enum PeakFitLMOptions
   SmallRefinementOnly = SmallAmplitudeRefinementOnly | SmallFwhmRefinementOnly, // 0x90
 
 };//enum PeakFitLMOptions
+
+
+/** Residual that punishes two peaks for being too close together, to break the amplitude
+ degeneracy (and the local minima it causes) as two Gaussians approach the same mean.
+
+ `reldist = |mean_1 - mean_2| / sigma`, with `sigma` the average of the two peaks' sigmas.
+ Returns `punishment_factor * (1 - (reldist/1.75)^2)^2 / reldist` for `reldist < 1.75`, and 0 beyond.
+
+ 2 sigma is the Sparrow limit - the separation below which two equal-amplitude Gaussians no longer
+ show a dip between them - but we often *can* resolve peaks a little closer than this, so the
+ punishment is cut off at 1.75 sigma to give the fit a chance to resolve them without penalty.
+ The squared `(1 - (reldist/1.75)^2)` factor makes the residual (and its Jacobian) continuous (C1)
+ at the 1.75 cutoff: a hard cutoff would make the Ceres L-M trust-region model mispredict whenever
+ a step crosses the threshold.  The `1/reldist` keeps a strong barrier as the peaks coincide; the
+ caller is expected to floor `reldist` (e.g. at 0.01) beforehand.
+ */
+template<typename T>
+T peaks_too_close_punishment( const T &reldist, const double punishment_factor )
+{
+  const double cutoff = 1.75;  // sigma; just inside the 2-sigma Sparrow limit, to leave resolvable peaks alone
+  if( reldist >= cutoff )
+    return T( 0.0 );
+
+  const T frac = reldist / cutoff;
+  const T deficit = 1.0 - frac*frac;
+  return (punishment_factor * deficit * deficit) / reldist;
+}//peaks_too_close_punishment(...)
+
 
 /** Fits a peak following a user click (or the automated peak search using the same
  entry point).
