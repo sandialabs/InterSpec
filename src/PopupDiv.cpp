@@ -680,9 +680,14 @@ PopupDivMenu::PopupDivMenu( const PopupDivMenu::MenuType menutype )
   }else
   {
     addStyleClass( "PopupDivMenu" );
-    LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsBringAboveDialogs);
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsAdjustTopPos);
   }//if( mobile ) / else
+
+  // BringAboveDialogs is invoked unconditionally from setupAsTransientMenu()/setupAsButtonOwnedMenu()
+  //  and the popup paths (for both desktop and mobile menus), so it must be loaded in either mode.
+  //  It used to be loaded only in the desktop branch above, so tapping any transient PopupDivMenu on
+  //  a phone threw "Wt.WT.BringAboveDialogs is not a function", which tore down the whole session.
+  LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "PopupDivMenu", wtjsBringAboveDialogs);
 }//PopupDivMenu( constructor )
 
 

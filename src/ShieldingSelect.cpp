@@ -37,6 +37,8 @@
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WCheckBox.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WPopupMenu.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
@@ -55,7 +57,6 @@
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/AppUtils.h"
-#include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
@@ -1526,11 +1527,18 @@ void ShieldingSelect::setClosableAndAddable( bool closeable, WGridLayout *layout
     m_addIcon->setStyleClass( "ShieldingAdd Wt-icon" );
     m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.svg");
 
-    PopupDivMenu *popup = makePopupMenu( m_addIcon );
-    PopupDivMenuItem *item = popup->addMenuItem( WString::tr("ss-add-shield-before") );
-    item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
-    item = popup->addMenuItem( WString::tr("ss-add-shield-after") );
-    item->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
+    // Use a plain WPopupMenu (NOT PopupDivMenu): a compact dropdown that pops up next to the
+    //  "+" on both desktop and phone, matching the fit split-button's menu.  PopupDivMenu renders
+    //  as a full-height slide-in on phones, and its show-JS calls Wt.WT.BringAboveDialogs(), which
+    //  isn't loaded in mobile mode -- the resulting JS error tore down the whole session.
+    auto addMenuOwned = std::make_unique<WPopupMenu>();
+    WPopupMenu *addMenu = addMenuOwned.get();
+    WMenuItem *beforeItem = addMenu->addItem( WString::tr("ss-add-shield-before") );
+    beforeItem->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
+    WMenuItem *afterItem = addMenu->addItem( WString::tr("ss-add-shield-after") );
+    afterItem->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
+    addChild( std::move(addMenuOwned) );  // ShieldingSelect owns the menu
+    m_addIcon->clicked().connect( this, [this, addMenu](){ addMenu->popup( m_addIcon ); } );
 
     // Keep the add/remove icons side-by-side in the top row so they don't each consume a
     //  full grid row (which wasted vertical space, especially for generic shielding).
@@ -2351,6 +2359,13 @@ void ShieldingSelect::init()
       m_fitAtomicNumberCB->setChecked( false );
       m_fitAtomicNumberCB->addStyleClass( "CbNoLineBreak" );
       m_genericDiv->addWidget( std::move(fitAtomicNumberCBUniq) );
+      // These "Fit" checkboxes previously had no signal connections, so toggling them neither
+      //  added an undo step nor (in live mode) triggered a re-fit.  Wire them like the other fit
+      //  checkboxes: record undo state + emit materialModified() so the chart/live-fit updates.
+      m_fitAtomicNumberCB->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      m_fitAtomicNumberCB->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      m_fitAtomicNumberCB->checked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
+      m_fitAtomicNumberCB->unChecked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
     }//if( m_forFitting )
   }
 
@@ -2389,6 +2404,10 @@ void ShieldingSelect::init()
       m_fitArealDensityCB->setChecked( true );
       m_fitArealDensityCB->addStyleClass( "CbNoLineBreak" );
       m_genericDiv->addWidget( std::move(fitArealDensityCBUniq) );
+      m_fitArealDensityCB->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      m_fitArealDensityCB->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      m_fitArealDensityCB->checked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
+      m_fitArealDensityCB->unChecked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
     }//if( m_forFitting )
   }
 
@@ -2457,6 +2476,13 @@ void ShieldingSelect::init()
 
       fitCb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
       fitCb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+
+      // Toggling whether to fit this dimension changes the model, so emit materialModified()
+      //  directly (immediately, on both check and uncheck) to drive the chart update / live
+      //  re-fit.  The deferred, state-diff-gated userChangedStateSignal alone proved unreliable
+      //  for triggering a re-fit when the box is *checked*.
+      fitCb->checked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
+      fitCb->unChecked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
     }//if( m_forFitting )
   };//setupDimEdit(...)
 

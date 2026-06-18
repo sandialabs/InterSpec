@@ -27,6 +27,8 @@
 
 #include <map>
 #include <memory>
+#include <vector>
+#include <string>
 
 #include <Wt/WModelIndex.h>
 #include <Wt/WContainerWidget.h>
@@ -35,6 +37,11 @@
 class PeakModel;
 class InterSpec;
 class SourceFitModel;
+
+namespace Wt
+{
+  class WColor;
+}//namespace Wt
 
 namespace SandiaDecay
 {
@@ -58,14 +65,34 @@ namespace SandiaDecay
 class SourceFitNuclideDisplay : public Wt::WContainerWidget
 {
 public:
+  /** @param nestPeaks When true (phone "merged" layout), each card becomes an accordion that nests
+   the list of *its* peaks (toggle a peak's "use in fit" right inside the card).  When false (the
+   default, desktop), the cards behave exactly as before and the peak table stays separate. */
   SourceFitNuclideDisplay( SourceFitModel *model,
                            std::shared_ptr<PeakModel> peakModel,
-                           InterSpec *interspec );
+                           InterSpec *interspec,
+                           const bool nestPeaks = false );
   virtual ~SourceFitNuclideDisplay();
 
   /** Reconciles the displayed cards with the model (adds/removes/reorders cards and refreshes
    each one's contents).  Cheap to call; safe to call any time on the session thread. */
   void reconcileCards();
+
+  /** A compact, fit-ready summary of one source nuclide, used to populate the phone bottom
+   status/fit bar (the scrollable activity strip) and the results sheet. */
+  struct NucActivitySummary
+  {
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    std::string symbol;       //!< nuclide id, e.g. "Cs137"
+    std::string colorCss;     //!< the nuclide's peak-line color (empty -> use a default)
+    std::string activity;     //!< activity formatted in the display units
+    std::string activityUncert; //!< uncertainty (empty when not fit / unavailable)
+    std::string age;          //!< age (empty when aging is not relevant)
+    bool fitActivity = false; //!< whether the activity is being fit for
+  };//struct NucActivitySummary
+
+  /** Returns one summary per nuclide currently in the model, in model order. */
+  std::vector<NucActivitySummary> activitySummaries() const;
 
 protected:
   class NuclideCard;  //defined in the .cpp
@@ -73,9 +100,19 @@ protected:
   /** Connected to the model's dataChanged/rowsInserted/rowsRemoved/layoutChanged signals. */
   void handleModelChanged();
 
+  /** Connected (only in nestPeaks mode) to the *peak* model's change signals, so toggling a
+   peak that does not move a SourceFitModel row still refreshes the nested peak lists. */
+  void handlePeakModelChanged();
+
+  /** Looks up the peak-line color for a nuclide (from any of its peaks).  Empty if none. */
+  std::string peakColorForNuclide( const SandiaDecay::Nuclide *nuc ) const;
+
   SourceFitModel *m_model;
   std::shared_ptr<PeakModel> m_peakModel;
   InterSpec *m_interspec;
+
+  /** When true, cards are accordions that nest their peak rows (phone layout). */
+  bool m_nestPeaks;
 
   /** Scrolling container that holds the per-nuclide cards. */
   Wt::WContainerWidget *m_cardsHolder;

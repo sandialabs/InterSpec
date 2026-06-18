@@ -362,7 +362,13 @@ namespace ShieldingSourceFitCalc
     std::vector<double> paramValues;
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;
-    
+
+    /** Non-fatal warnings about a completed fit, suitable for display to the user and inclusion in
+     reports (e.g. a large average peak deviation, or x-ray peaks being used).  Populated for Final
+     fits by `fill_fit_results(...)`.  Distinct from `errormsgs`, which are lower-level fit problems.
+     Add new warning conditions in the warning-detection helper, not at call sites. */
+    std::vector<std::string> warnings;
+
     double distance;
     GammaInteractionCalc::GeometryType geometry;
     std::vector<PeakDef> foreground_peaks;

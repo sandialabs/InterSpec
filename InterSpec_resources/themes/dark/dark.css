@@ -31,7 +31,17 @@ input[type="text"], input[type="number"], textarea :not(.pm-textarea) {
   border: none;
 }
 
-.Wt-icon, .InvertInDark {
+.Wt-icon, .InvertInDark, .MobileMenuButton {
+  /* .MobileMenuButton: invert its black hamburger SVG (a CSS background) to white for the dark UI. */
+  filter: invert(100%);
+}
+
+/* Shielding material/generic segmented toggle: the track and active "thumb" backgrounds now come
+   from the theme CSS variables (--interspec-background-color / --interspec-input-background) used in
+   ShieldingSelect.css, so they adapt automatically.  Only the black shield/atom icons still need
+   handling here: invert them to white so they're visible on the dark toggle (images can't use the
+   color variables). */
+.ShieldingSelect .ShieldTypeToggle .TypeBtn img {
   filter: invert(100%);
 }
 
@@ -73,6 +83,12 @@ ul.Wt-tv-root > li:nth-child(odd) {
 
 .Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th, .DevPairTitle, .CalDisplay .CalType, .DetHdr, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
   background-color: rgb( 80, 81, 94 );
+}
+
+/* Wt inline-styles the itemview's top-right header corner (above the vertical scrollbar) a light
+   grey; recolor it to match the dark header so it isn't a light patch. */
+.Wt-itemview > div[style*="top: 0px"][style*="right: 0px"] {
+  background-color: rgb( 80, 81, 94 ) !important;
 }
 
 

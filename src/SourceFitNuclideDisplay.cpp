@@ -29,9 +29,13 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <utility>
+#include <algorithm>
+#include <functional>
 
 #include <Wt/WAny.h>
 #include <Wt/WText.h>
+#include <Wt/WColor.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WModelIndex.h>
@@ -73,13 +77,31 @@ public:
    : WContainerWidget(),
      m_disp( disp ),
      m_model( disp->m_model ),
-     m_nuc( nuc )
+     m_nuc( nuc ),
+     m_nestPeaks( disp->m_nestPeaks ),
+     m_open( disp->m_nestPeaks ),   //phone accordion cards start expanded (showing all peak rows)
+     m_swatch( nullptr ),
+     m_countLabel( nullptr ),
+     m_chevron( nullptr ),
+     m_summaryRow( nullptr ),
+     m_bodyDiv( nullptr ),
+     m_peakList( nullptr ),
+     m_peakListLbl( nullptr )
   {
     addStyleClass( "NucCard" );
 
-    // ---- header: name, half-life, source-type tag ----
+    // ---- header: (swatch) name, half-life, source-type tag, (count + chevron) ----
     WContainerWidget *head = addNew<WContainerWidget>();
     head->addStyleClass( "NucHead" );
+    if( m_nestPeaks )
+    {
+      // The whole header toggles the accordion open/closed.
+      head->addStyleClass( "NucHeadTap" );
+      head->clicked().connect( this, &NuclideCard::toggleOpen );
+      m_swatch = head->addNew<WContainerWidget>();
+      m_swatch->addStyleClass( "NucSwatch" );
+    }//if( m_nestPeaks )
+
     m_nameLabel = head->addNew<WText>();
     m_nameLabel->addStyleClass( "NucName" );
     m_halfLifeLabel = head->addNew<WText>();
@@ -88,8 +110,33 @@ public:
     m_tag->addStyleClass( "NucTag" );
     m_tag->hide();
 
+    if( m_nestPeaks )
+    {
+      WContainerWidget *grow = head->addNew<WContainerWidget>();
+      grow->addStyleClass( "NucGrow" );
+      m_countLabel = head->addNew<WText>();
+      m_countLabel->addStyleClass( "NucCount" );
+      m_chevron = head->addNew<WText>();
+      m_chevron->addStyleClass( "NucChev" );
+      m_chevron->setText( "›" );  //single right-pointing angle quotation mark
+
+      // Collapsed one-line summary of which peaks are in the fit.
+      m_summaryRow = addNew<WContainerWidget>();
+      m_summaryRow->addStyleClass( "NucPeakSummary" );
+    }//if( m_nestPeaks )
+
+    // In nest-peaks mode the activity/age fields live in a collapsible body; otherwise they sit
+    //  directly on the card (desktop behavior, unchanged).
+    WContainerWidget *fields = this;
+    if( m_nestPeaks )
+    {
+      m_bodyDiv = addNew<WContainerWidget>();
+      m_bodyDiv->addStyleClass( "NucBody" );
+      fields = m_bodyDiv;
+    }//if( m_nestPeaks )
+
     // ---- activity row ----
-    WContainerWidget *actRow = addNew<WContainerWidget>();
+    WContainerWidget *actRow = fields->addNew<WContainerWidget>();
     actRow->addStyleClass( "NucRow" );
     WText *actLbl = actRow->addNew<WText>( WString::tr("sfn-activity") );
     actLbl->addStyleClass( "NucRowLbl" );
@@ -102,7 +149,7 @@ public:
     m_fitActivityCB->changed().connect( this, &NuclideCard::onFitActivityToggled );
 
     // ---- mass + act(T0) line ----
-    WContainerWidget *massLine = addNew<WContainerWidget>();
+    WContainerWidget *massLine = fields->addNew<WContainerWidget>();
     massLine->addStyleClass( "NucMass" );
     m_massLabel = massLine->addNew<WText>();
     m_actT0Label = massLine->addNew<WText>();
@@ -110,7 +157,7 @@ public:
     m_actT0Label->hide();
 
     // ---- age row ----
-    m_ageRow = addNew<WContainerWidget>();
+    m_ageRow = fields->addNew<WContainerWidget>();
     m_ageRow->addStyleClass( "NucRow" );
     WText *ageLbl = m_ageRow->addNew<WText>( WString::tr("sfn-age") );
     ageLbl->addStyleClass( "NucRowLbl" );
@@ -123,15 +170,29 @@ public:
     m_fitAgeCB->changed().connect( this, &NuclideCard::onFitAgeToggled );
 
     // ---- progeny attribution row (rebuilt each refresh) ----
-    m_progenyRow = addNew<WContainerWidget>();
+    m_progenyRow = fields->addNew<WContainerWidget>();
     m_progenyRow->addStyleClass( "NucProgeny" );
     m_progenyRow->hide();
+
+    // ---- nested peak list (phone): a header + one toggleable row per peak ----
+    if( m_nestPeaks )
+    {
+      m_peakList = addNew<WContainerWidget>();
+      m_peakList->addStyleClass( "NucPeakList" );
+      WContainerWidget *plHead = m_peakList->addNew<WContainerWidget>();
+      plHead->addStyleClass( "NucPeakListHead" );
+      m_peakListLbl = plHead->addNew<WText>();
+      m_peakListLbl->addStyleClass( "NpListLbl" );
+    }//if( m_nestPeaks )
 
     refresh();
   }//NuclideCard constructor
 
 
   const SandiaDecay::Nuclide *nuclide() const { return m_nuc; }
+
+  bool isOpen() const { return m_open; }
+  void setOpen( const bool open ){ m_open = open; applyOpenState(); }
 
 
   /** Re-reads the model row for this nuclide and updates all sub-widgets in place. */
@@ -147,6 +208,13 @@ public:
     m_nameLabel->setText( WString::fromUTF8(m_nuc->symbol) );
     m_halfLifeLabel->setText( WString("{1}={2}").arg( WString::tr("T1/2") )
         .arg( PhysicalUnitsLocalized::printToBestTimeUnits( m_nuc->halfLife, 2, PhysicalUnits::second ) ) );
+
+    if( m_swatch )
+    {
+      const string colorCss = m_disp->peakColorForNuclide( m_nuc );
+      m_swatch->setAttributeValue( "style",
+                          "background:" + (colorCss.empty() ? string("#888") : colorCss) + ";" );
+    }//if( m_swatch )
 
     const ShieldingSourceFitCalc::ModelSourceType srcType = m_model->sourceType( row );
     const bool isPoint = (srcType == ShieldingSourceFitCalc::ModelSourceType::Point);
@@ -229,10 +297,172 @@ public:
     }
 
     updateProgeny();
+
+    if( m_nestPeaks )
+      updatePeakList();
   }//void refresh()
 
 
 protected:
+  /** Toggles this accordion card open/closed (phone nest-peaks mode). */
+  void toggleOpen()
+  {
+    m_open = !m_open;
+    applyOpenState();
+  }
+
+  /** Shows/hides the collapsible body + peak list and rotates the chevron to match #m_open. */
+  void applyOpenState()
+  {
+    if( !m_nestPeaks )
+      return;
+    if( m_bodyDiv )    m_bodyDiv->setHidden( !m_open );
+    if( m_peakList )   m_peakList->setHidden( !m_open );
+    if( m_summaryRow ) m_summaryRow->setHidden( m_open );
+    if( m_chevron )    m_chevron->toggleStyleClass( "NucChevOpen", m_open );
+  }
+
+  /** Gathers the peaks attributed to this nuclide (both used and unused, so the user can toggle
+   them), in ascending energy order, paired with their PeakModel row index. */
+  std::vector<std::pair<int,PeakModel::PeakShrdPtr>> peaksForNuclide() const
+  {
+    std::vector<std::pair<int,PeakModel::PeakShrdPtr>> out;
+    const std::shared_ptr<PeakModel> &pm = m_disp->m_peakModel;
+    if( !pm )
+      return out;
+    const int npeaks = static_cast<int>( pm->npeaks() );
+    for( int row = 0; row < npeaks; ++row )
+    {
+      const PeakModel::PeakShrdPtr p = pm->peakPtr( row );
+      if( p && (p->parentNuclide() == m_nuc) )
+        out.push_back( std::make_pair( row, p ) );
+    }
+    std::sort( begin(out), end(out), []( const std::pair<int,PeakModel::PeakShrdPtr> &a,
+                                         const std::pair<int,PeakModel::PeakShrdPtr> &b ){
+      return a.second->mean() < b.second->mean();
+    } );
+    return out;
+  }//peaksForNuclide()
+
+  /** Rebuilds the nested peak list, the "sel/total" count, and the collapsed summary line. */
+  void updatePeakList()
+  {
+    if( !m_peakList )
+      return;
+
+    const std::vector<std::pair<int,PeakModel::PeakShrdPtr>> peaks = peaksForNuclide();
+    int nused = 0;
+    std::vector<int> usedEnergies;
+    for( const auto &rp : peaks )
+    {
+      if( rp.second->useForShieldingSourceFit() )
+      {
+        ++nused;
+        usedEnergies.push_back( static_cast<int>( std::round( rp.second->mean() ) ) );
+      }
+    }//for( const auto &rp : peaks )
+
+    const int total = static_cast<int>( peaks.size() );
+
+    // Header count + summary line.
+    if( m_countLabel )
+    {
+      m_countLabel->setText( WString("{1}/{2}").arg(nused).arg(total) );
+      m_countLabel->toggleStyleClass( "NucCountHas", nused > 0 );
+    }
+
+    if( m_summaryRow )
+    {
+      if( nused > 0 )
+      {
+        string es;
+        for( size_t i = 0; i < usedEnergies.size(); ++i )
+          es += (i ? ", " : "") + std::to_string( usedEnergies[i] );
+        m_summaryRow->clear();
+        WText *t = m_summaryRow->addNew<WText>( WString::tr("sfn-peaks-in-fit").arg( WString::fromUTF8(es) ) );
+        t->setTextFormat( TextFormat::XHTML );
+      }else
+      {
+        m_summaryRow->clear();
+        m_summaryRow->addNew<WText>( WString::tr("sfn-no-peaks-selected") );
+      }
+    }//if( m_summaryRow )
+
+    // Peak-list label, e.g. "Peaks · 2 of 5 used".
+    if( m_peakListLbl )
+      m_peakListLbl->setText( WString::tr("sfn-peaks-n-of-m").arg(nused).arg(total) );
+
+    // Rebuild rows.  We keep the header (first child) and drop the rest.
+    while( m_peakList->count() > 1 )
+      m_peakList->removeWidget( m_peakList->widget(1) );
+
+    for( const auto &rp : peaks )
+    {
+      const int peakRow = rp.first;
+      const PeakModel::PeakShrdPtr &p = rp.second;
+      const bool use = p->useForShieldingSourceFit();
+
+      WContainerWidget *row = m_peakList->addNew<WContainerWidget>();
+      row->addStyleClass( "NpRow" );
+      if( use )
+        row->addStyleClass( "NpRowOn" );
+      row->clicked().connect( this, [this,peakRow](){ onPeakToggled( peakRow ); } );
+
+      WContainerWidget *box = row->addNew<WContainerWidget>();
+      box->addStyleClass( "NpBox" );
+
+      WContainerWidget *main = row->addNew<WContainerWidget>();
+      main->addStyleClass( "NpMain" );
+
+      char en[32] = { '\0' };
+      snprintf( en, sizeof(en), "%.1f", p->mean() );
+      WText *enTxt = main->addNew<WText>( WString("{1}<span class=\"NpUnit\">{2}</span>")
+                                          .arg( WString::fromUTF8(en) ).arg( WString::tr("sfn-kev") ) );
+      enTxt->setTextFormat( TextFormat::XHTML );
+      enTxt->addStyleClass( "NpEnergy" );
+
+      // Progeny chip: the gamma is actually emitted by a daughter of this nuclide.
+      const SandiaDecay::Transition * const trans = p->nuclearTransition();
+      if( trans && trans->parent && (trans->parent != m_nuc) )
+      {
+        WText *prog = main->addNew<WText>( WString::fromUTF8(trans->parent->symbol) );
+        prog->addStyleClass( "NpProg" );
+      }
+
+      // X-ray / escape subtext.
+      const SandiaDecay::RadParticle * const part = p->decayParticle();
+      const char *subKey = nullptr;
+      if( part && (part->type == SandiaDecay::XrayParticle) )
+        subKey = "sfn-peak-xray";
+      else if( (p->sourceGammaType() == PeakDef::SingleEscapeGamma)
+              || (p->sourceGammaType() == PeakDef::DoubleEscapeGamma) )
+        subKey = "sfn-peak-escape";
+      if( subKey )
+      {
+        WText *sub = main->addNew<WText>( WString::tr(subKey) );
+        sub->addStyleClass( "NpSub" );
+      }
+    }//for( const auto &rp : peaks )
+
+    applyOpenState();
+  }//void updatePeakList()
+
+  /** Toggles whether the given peak (by PeakModel row) is used in the shielding/source fit. */
+  void onPeakToggled( const int peakRow )
+  {
+    if( m_disp->m_refreshing )
+      return;
+    const std::shared_ptr<PeakModel> &pm = m_disp->m_peakModel;
+    if( !pm )
+      return;
+    const PeakModel::PeakShrdPtr p = pm->peakPtr( peakRow );
+    if( !p )
+      return;
+    const WModelIndex idx = pm->index( peakRow, PeakModel::kUseForShieldingSourceFit );
+    pm->setData( idx, !p->useForShieldingSourceFit() );
+    // The peak-model change will fan out to SourceFitModel and back to us to refresh.
+  }//void onPeakToggled( const int peakRow )
+
   void onActivityChanged()
   {
     if( m_disp->m_refreshing )
@@ -330,9 +560,18 @@ protected:
   SourceFitModel *m_model;
   const SandiaDecay::Nuclide *m_nuc;
 
+  /** Phone "merged" mode: card is an accordion that nests its peak rows. */
+  const bool m_nestPeaks;
+  bool m_open;
+
+  Wt::WContainerWidget *m_swatch;     //!< peak-color swatch (nestPeaks only)
   Wt::WText *m_nameLabel;
   Wt::WText *m_halfLifeLabel;
   Wt::WText *m_tag;
+  Wt::WText *m_countLabel;            //!< "sel/total" peak count (nestPeaks only)
+  Wt::WText *m_chevron;               //!< expand/collapse chevron (nestPeaks only)
+  Wt::WContainerWidget *m_summaryRow; //!< collapsed peak summary line (nestPeaks only)
+  Wt::WContainerWidget *m_bodyDiv;    //!< collapsible body wrapping the fields (nestPeaks only)
   Wt::WLineEdit *m_activityEdit;
   Wt::WCheckBox *m_fitActivityCB;
   Wt::WText *m_massLabel;
@@ -341,21 +580,27 @@ protected:
   Wt::WLineEdit *m_ageEdit;
   Wt::WCheckBox *m_fitAgeCB;
   Wt::WContainerWidget *m_progenyRow;
+  Wt::WContainerWidget *m_peakList;   //!< nested peak rows (nestPeaks only)
+  Wt::WText *m_peakListLbl;           //!< "Peaks · N of M used" (nestPeaks only)
 };//class SourceFitNuclideDisplay::NuclideCard
 
 
 
 SourceFitNuclideDisplay::SourceFitNuclideDisplay( SourceFitModel *model,
                                                   std::shared_ptr<PeakModel> peakModel,
-                                                  InterSpec *interspec )
+                                                  InterSpec *interspec,
+                                                  const bool nestPeaks )
   : WContainerWidget(),
     m_model( model ),
     m_peakModel( peakModel ),
     m_interspec( interspec ),
+    m_nestPeaks( nestPeaks ),
     m_cardsHolder( nullptr ),
     m_refreshing( false )
 {
   addStyleClass( "SourceNuclideDisplay" );
+  if( m_nestPeaks )
+    addStyleClass( "SourceNuclideDisplayPhone" );
 
   m_cardsHolder = addNew<WContainerWidget>();
   m_cardsHolder->addStyleClass( "NucCardsHolder" );
@@ -366,6 +611,18 @@ SourceFitNuclideDisplay::SourceFitNuclideDisplay( SourceFitModel *model,
   model->rowsRemoved().connect( this, &SourceFitNuclideDisplay::handleModelChanged );
   model->layoutChanged().connect( this, &SourceFitNuclideDisplay::handleModelChanged );
   model->modelReset().connect( this, &SourceFitNuclideDisplay::handleModelChanged );
+
+  // In nest-peaks mode the cards show every peak of a nuclide (used and unused) so the user can
+  //  toggle them; toggling a currently-unused peak may not move a SourceFitModel row, so we also
+  //  observe the peak model directly and refresh the nested peak lists.
+  if( m_nestPeaks && m_peakModel )
+  {
+    m_peakModel->dataChanged().connect( this, &SourceFitNuclideDisplay::handlePeakModelChanged );
+    m_peakModel->rowsInserted().connect( this, &SourceFitNuclideDisplay::handlePeakModelChanged );
+    m_peakModel->rowsRemoved().connect( this, &SourceFitNuclideDisplay::handlePeakModelChanged );
+    m_peakModel->layoutChanged().connect( this, &SourceFitNuclideDisplay::handlePeakModelChanged );
+    m_peakModel->modelReset().connect( this, &SourceFitNuclideDisplay::handlePeakModelChanged );
+  }//if( m_nestPeaks && m_peakModel )
 
   reconcileCards();
 }//SourceFitNuclideDisplay constructor
@@ -382,6 +639,71 @@ void SourceFitNuclideDisplay::handleModelChanged()
 {
   reconcileCards();
 }
+
+
+void SourceFitNuclideDisplay::handlePeakModelChanged()
+{
+  // A peak's use-in-fit (or its color/energy) changed; reconcile refreshes every card, which in
+  //  nest-peaks mode rebuilds the per-card peak lists.  Guarded by m_refreshing so our own
+  //  setData() during a toggle does not recurse.
+  reconcileCards();
+}
+
+
+std::string SourceFitNuclideDisplay::peakColorForNuclide( const SandiaDecay::Nuclide *nuc ) const
+{
+  if( !m_peakModel || !nuc )
+    return string();
+
+  const int npeaks = static_cast<int>( m_peakModel->npeaks() );
+  for( int row = 0; row < npeaks; ++row )
+  {
+    const PeakModel::PeakShrdPtr p = m_peakModel->peakPtr( row );
+    if( p && (p->parentNuclide() == nuc) && !p->lineColor().isDefault() )
+      return p->lineColor().cssText();
+  }//for( loop over peaks )
+
+  return string();
+}//std::string peakColorForNuclide( const SandiaDecay::Nuclide *nuc ) const
+
+
+std::vector<SourceFitNuclideDisplay::NucActivitySummary>
+SourceFitNuclideDisplay::activitySummaries() const
+{
+  std::vector<NucActivitySummary> out;
+  const int n = m_model->numNuclides();
+  for( int i = 0; i < n; ++i )
+  {
+    const SandiaDecay::Nuclide * const nuc = m_model->nuclide( i );
+    if( !nuc )
+      continue;
+
+    NucActivitySummary s;
+    s.nuclide = nuc;
+    s.symbol = nuc->symbol;
+    s.colorCss = peakColorForNuclide( nuc );
+    s.fitActivity = m_model->fitActivity( i );
+
+    const double activity = m_model->activity( i );
+    s.activity = PhysicalUnits::printToBestActivityUnits( activity, 2, m_model->displayCuries() )
+                 + DetectorPeakResponse::det_eff_geom_type_postfix( m_model->detType() );
+
+    const double actUncert = m_model->activityUncert( i );
+    if( actUncert > 0.0 )
+      s.activityUncert = PhysicalUnits::printToBestActivityUnits( actUncert, 2, m_model->displayCuries() );
+
+    if( !PeakDef::ageFitNotAllowed( nuc ) )
+    {
+      const double age = m_model->age( i );
+      if( age > 0.0 )
+        s.age = PhysicalUnitsLocalized::printToBestTimeUnits( age, 2, PhysicalUnits::second );
+    }//if( ageable )
+
+    out.push_back( std::move(s) );
+  }//for( loop over model nuclides )
+
+  return out;
+}//std::vector<NucActivitySummary> activitySummaries() const
 
 
 void SourceFitNuclideDisplay::reconcileCards()
@@ -443,4 +765,8 @@ void SourceFitNuclideDisplay::reconcileCards()
     for( auto &w : ordered )
       m_cardsHolder->addWidget( std::move(w) );
   }//if( !inOrder )
+
+  // Phone accordion cards default to expanded (m_open initialized to m_nestPeaks), so all peak
+  //  rows are visible up front; the user can collapse individual cards and that state persists
+  //  across refreshes (each card object outlives a reconcile).
 }//void reconcileCards()

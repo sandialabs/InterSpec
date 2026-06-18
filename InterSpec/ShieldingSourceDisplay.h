@@ -91,7 +91,9 @@ namespace rapidxml
 namespace Wt
 {
   class WText;
+  class WTimer;
   class WLabel;
+  class WMenuItem;
   class WAnchor;
   class WResource;
   class WCheckBox;
@@ -101,6 +103,7 @@ namespace Wt
   class WGridLayout;
   class WFileUpload;
   class WPushButton;
+  class WSplitButton;
   class WSelectionBox;
   class WSuggestionPopup;
 }//namespace Wt
@@ -426,8 +429,27 @@ public:
             fitting is being performed (use m_mutex to ensure safe access).
    */
   std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> doModelFit( const bool fitInBackground,
-                                                                      const bool checkForMissingBackPeaks );
-  
+                                                                      const bool checkForMissingBackPeaks,
+                                                                      const bool autoTriggered = false );
+
+  /** Returns whether "live"/auto-fit mode is enabled (the app-level AutoActShieldFit preference). */
+  bool autoFitEnabled() const;
+
+  /** Single entry point called whenever the user changes something that affects the fit result.
+   In auto mode it (re)starts the debounced auto-fit; in manual mode it flags the fit button as
+   needing an update. */
+  void markModelChanged();
+
+  /** Debounce-timer slot: cancels any in-flight fit and launches a fresh auto-triggered fit. */
+  void startAutoFit();
+
+  /** Updates the fit split-button's text/style for the current mode + fit state (manual
+   "Perform Model Fit"/needs-update, or auto "Up to date"/"Updating…"). */
+  void updateFitButtonState();
+
+  /** Reacts to the AutoActShieldFit preference changing (menu selection or elsewhere). */
+  void handleAutoFitPrefChanged( bool enabled );
+
   /** Cancels the current model fit happening */
   void cancelModelFit();
   
@@ -774,8 +796,11 @@ public:
   
   ShieldingSourceFitCalc::ShieldingSourceFitOptions fitOptions() const;
 protected:
-  /** Disables fit button and other elements, and hides some stuff, etc. */
-  void setWidgetStateForFitStarting();
+  /** Sets the widget state for a fit that is starting (shows progress/cancel, sets the fit
+   button to its "Updating…" state).  When `autoTriggered` is false (manual fit) the rest of
+   the UI is disabled; when true (auto/live fit) the UI stays interactive so the user can keep
+   editing (which will cancel-and-relaunch the fit). */
+  void setWidgetStateForFitStarting( const bool autoTriggered );
   
   /** Undoes the changes from #setWidgetStateForFitStarting */
   void setWidgetStateForFitBeingDone();
@@ -912,10 +937,61 @@ protected:
    transient toast for this tool's own fit warnings/errors.  Hidden when empty. */
   Wt::WText *m_fitMessage;
 
+  /** The fit control is a split button: the action half performs/shows the fit; the dropdown
+   half opens a menu to choose Live (auto) vs Manual fitting.  m_fitModelButton is kept pointing
+   at the action half so existing call-sites (clicked(), show/hide) still work. */
+  Wt::WSplitButton *m_fitSplitButton;
   Wt::WPushButton *m_fitModelButton;
+  /** Checkable "Live (auto-update)" / "Manual update" items in the split-button's WPopupMenu. */
+  Wt::WMenuItem *m_autoFitItem;
+  Wt::WMenuItem *m_manualFitItem;
   Wt::WText *m_fitProgressTxt;
   Wt::WPushButton *m_cancelfitModelButton;
-  
+
+  // ---- Phone-only bottom status/fit bar (built in the isPhone() layout branch) ----
+  /** The sticky bottom bar; null on desktop. */
+  Wt::WContainerWidget *m_phoneFitBar;
+  /** Tappable distance chip (left); jumps to the Physical tab + focuses #m_distanceEdit. */
+  Wt::WPushButton *m_phoneDistChip;
+  /** Horizontally-scrollable strip of fitted-activity chips (tap -> results sheet); stays visible
+   during a fit (the footer split-button shows the "working" state). */
+  Wt::WContainerWidget *m_phoneActStrip;
+  /** Amber "N ⚠" warning pill, shown when the last fit had warnings or a large deviation. */
+  Wt::WPushButton *m_phoneWarnPill;
+  /** The phone tab strip, so the distance chip can switch to the Physical tab. */
+  Wt::WTabWidget *m_phoneTabs;
+  /** Index of the Physical tab within #m_phoneTabs (the distance chip targets it). */
+  int m_phonePhysicalTabIndex;
+
+  /** Builds the sticky bottom status/fit bar used in the phone layout and returns it (the caller
+   adds it to the layout).  Wires the distance chip, activity strip, warning pill, and Live/Fit
+   control to their handlers. */
+  Wt::WContainerWidget *createPhoneFitBar();
+
+  /** Refreshes the phone bottom bar (distance chip, activity strip, spinner, warning pill,
+   Live/Fit control) from current state.  No-op on desktop. */
+  void updatePhoneFitBar();
+  /** Shows the phone fit-results sheet (a table of nuclide / activity±uncert / age + warnings). */
+  void showPhoneFitResults();
+  /** Switches to the Physical tab and focuses the distance input (phone distance-chip tap). */
+  void showPhoneDistanceInput();
+
+  /** Debounce timer for live/auto fitting (single-shot; restarted on each change). */
+  Wt::WTimer *m_autoFitTimer;
+  /** Bumped on every fit launch; a background fit's result is discarded if the epoch has moved
+   on (i.e., a newer fit superseded it) - prevents stale results clobbering newer user edits. */
+  std::size_t m_autoFitEpoch;
+  /** True while a fit is running (drives the split-button "Updating…" state). */
+  bool m_fitInProgress;
+  /** (Manual mode) true when the model changed since the last fit, so the button hints a re-fit. */
+  bool m_modelNeedsFit;
+  /** Guard: true while applying fit results (so the resulting setData()'s don't re-trigger auto-fit). */
+  bool m_applyingFitResults;
+  /** False during construction/deserialization so programmatic changes don't trigger auto-fit. */
+  bool m_autoFitArmed;
+  /** Whether the in-flight fit was auto-triggered (used to suppress its undo/redo step). */
+  bool m_lastFitWasAuto;
+
   std::mutex m_currentFitFcnMutex;  //protects the shared_ptr only, not the object it points to
   std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> m_currentFitFcn;
 

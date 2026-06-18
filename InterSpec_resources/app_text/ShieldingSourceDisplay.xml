@@ -92,7 +92,21 @@
   <message id="sfn-via-progeny">via progeny</message>
   <message id="sfn-tag-trace">trace source</message>
   <message id="sfn-tag-shield-src">shielding source</message>
+  <!-- Phase 4 (phone): nested-peak accordion strings -->
+  <message id="sfn-kev">keV</message>
+  <message id="sfn-peaks-in-fit"><![CDATA[<b>{1}</b> keV in fit]]></message>
+  <message id="sfn-no-peaks-selected">no peaks selected</message>
+  <message id="sfn-peaks-n-of-m">Peaks · {1} of {2} used</message>
+  <message id="sfn-peak-xray">x-ray</message>
+  <message id="sfn-peak-escape">escape peak</message>
   <message id="ssd-err-empty-material">A shielding has no material selected. Please choose a material (or remove that shielding) before fitting.</message>
+  <!-- Phase 3: live/manual fit split-button -->
+  <message id="ssd-fit-mode-auto">Live (auto-update)</message>
+  <message id="ssd-fit-mode-manual">Manual update</message>
+  <message id="ssd-tt-fit-mode">Choose whether the model is re-fit automatically as you make changes ("Live"), or only when you click the button ("Manual").</message>
+  <message id="ssd-fit-up-to-date">Up to date</message>
+  <message id="ssd-fit-updating">Updating…</message>
+  <message id="ssd-tt-fit-needed">The model has changed since the last fit — click to update the results.</message>
   <message id="ssd-to-small-for-chart">(make window taller to show χ<sup>2</sup>)</message>
   <message id="ssd-tt-chi2-switch">Show the Chi of each peak for the current model on the chart, or the relative peak area multiple between current model and observed peak.</message>
   <message id="ssd-cb-all-peaks">All Peaks</message>
@@ -100,6 +114,7 @@
   <message id="ssd-options-title">Fit options</message>
   <message id="ssd-tt-multi-iso-per-peak">Checking this option will allow other nuclides being fit for, other that the one assigned to a peak, to contribute to the expected counts in a observed peak.  This could for instance be useful when fitting for both Ho166m and U235 that both have a peak near 185 keV.</message>
   <message id="ssd-cluster-width-label">Interference width (num σ):</message>
+  <message id="ssd-grouping-width-label">grouping width</message>
   <message id="ssd-tt-cluster-width">The number of sigma away from the mean of the peak that gamma lines,
     from any nuclide, will be summed and attributed to the peak. The default value is 1.25 sigma, but if the peak is
     obviously widened due to interferences, or its a poor fit, you may wish to increase this value.
@@ -132,6 +147,22 @@
   <message id="ssd-phone-tab-source-peaks">Source Peaks</message>
   <message id="ssd-phone-tab-source-isotopes">Source Isotopes</message>
   <message id="ssd-phone-tab-shielding">Shielding</message>
+  <!-- Phase 4 (phone): 3-tab labels + sticky bottom status/fit bar + nested-peak accordion -->
+  <message id="ssd-phone-tab-nuclides">Nuclides</message>
+  <message id="ssd-phone-tab-physical">Physical</message>
+  <message id="ssd-phone-tab-options">Options</message>
+  <message id="ssd-phone-dist-tt">Source-to-detector distance — tap to change</message>
+  <message id="ssd-phone-updating">Updating fit…</message>
+  <message id="ssd-phone-live">Live</message>
+  <message id="ssd-phone-fit-btn">Fit</message>
+  <message id="ssd-phone-warn-pill">{1} &#9888;</message>
+  <message id="ssd-phone-results-title">Fit results</message>
+  <message id="ssd-phone-results-none">No fit results yet — edit a value (Live) or tap Fit.</message>
+  <message id="ssd-phone-col-nuclide">Nuclide</message>
+  <message id="ssd-phone-col-activity">Activity</message>
+  <message id="ssd-phone-col-age">Age</message>
+  <message id="ssd-phone-view-log">View calculation log</message>
+  <message id="ssd-phone-done">Done</message>
   <message id="ssd-warn-no-back-peaks">There are no background peaks defined, not subtracting them</message>
   <message id="ssd-warn-no-back-spec">There is no background spectrum loaded, so can not subtract background peak areas from foreground.</message>
   <message id="ssd-warn-no-back-peaks-toggle">

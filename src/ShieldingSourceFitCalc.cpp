@@ -1975,6 +1975,51 @@ ModelFitProgress::ModelFitProgress()
 }
 
   
+/** Detects non-fatal warning conditions for a completed (Final) fit and appends human-readable
+ messages to `results->warnings`.  Centralizing this means every consumer - the desktop fit-message
+ area, the phone fit bar's "issue" pill, and the text/HTML/CSV reports - picks up each warning
+ automatically; add future warning conditions here rather than at call sites.
+
+ English strings (no WString::tr), matching the `errormsgs` convention: this runs on the fit worker
+ thread / in batch, where the Wt message bundles aren't necessarily available.  Avoid '<'/'>'/'&' in
+ the text so it renders correctly in the HTML report and the XHTML message area without escaping.
+ */
+static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &results )
+{
+  // x-ray peaks: the activity/shielding model doesn't account for x-ray production, so a fit that
+  //  relies on x-ray peaks may be unreliable.  (Previously a transient toast at peak-select time.)
+  for( const PeakDef &peak : results.foreground_peaks )
+  {
+    const SandiaDecay::RadParticle * const radpart = peak.decayParticle();
+    if( radpart && (radpart->type == SandiaDecay::XrayParticle) )
+    {
+      results.warnings.push_back( "One or more peaks used in the fit are x-rays. X-ray production is"
+        " not modeled by the activity/shielding fit, so results that rely on these peaks may be"
+        " unreliable." );
+      break;
+    }
+  }//for( const PeakDef &peak : results.foreground_peaks )
+
+  // Questionable fit: the average per-peak deviation shown on the fit chart is
+  //  dev = sqrt(chi2 / num_peaks) - it divides by the NUMBER OF PEAKS, not the degrees of freedom
+  //  (see `dev` in ShieldingSourceFitPlot.js).  A good fit is around 1 sigma, so flag dev above 3.
+  //  Compute and format it the same way so the warning's number matches the chart's "<dev>".
+  const size_t num_peaks = results.foreground_peaks.size();
+  if( (num_peaks > 0) && (results.chi2 > 0.0) )
+  {
+    const double dev = std::sqrt( results.chi2 / static_cast<double>(num_peaks) );
+    if( dev > 3.0 )
+    {
+      char devbuf[32] = { '\0' };
+      snprintf( devbuf, sizeof(devbuf), "%.2f", dev );  // match the chart's dev.toFixed(2)
+      results.warnings.push_back( "The fit is questionable: the average peak deviation (dev) is "
+        + string(devbuf) + " sigma, well above the roughly 1 sigma expected for a good fit - the"
+        " model may not describe the data well." );
+    }
+  }//if( num_peaks > 0 && chi2 > 0 )
+}//void check_for_fit_warnings( ModelFitResults & )
+
+
 /** Fills the source/shielding interpretation of the fit results (fit_src_info,
  final_shieldings, and the calculation-detail logs) from the final parameter
  values and their uncertainties.
@@ -2371,6 +2416,10 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
                                      " peak overlapped a foreground peak.");
     }//if( background peak subtraction selected )
   }// end logging detailed info, we'll later use to template reports
+
+  // Surface non-fatal warnings (poor average deviation, x-ray peaks, ...) on the results so the
+  //  GUI, phone fit bar, and reports can all show them.  Only reached on the Final/success path.
+  check_for_fit_warnings( *results );
 }//fill_fit_results(...)
 
 

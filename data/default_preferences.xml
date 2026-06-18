@@ -3,6 +3,7 @@
  <pref name="LoadPrevStateOnStart" type="Boolean">true</pref>
  <pref name="PromptStateLoadOnStart" type="Boolean">true</pref>
  <pref name="ShowSplashScreen" type="Boolean">true</pref>
+ <pref name="AutoActShieldFit" type="Boolean">false</pref>
  <pref name="PopupBlockNotificationInfo" type="Boolean">false</pref>
  <pref name="PopupBlockNotificationLow" type="Boolean">false</pref>
  <pref name="PopupBlockNotificationMedium" type="Boolean">false</pref>

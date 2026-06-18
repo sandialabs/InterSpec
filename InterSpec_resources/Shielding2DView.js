@@ -358,11 +358,16 @@ Shielding2DView.prototype.render = function() {
   // Clear previous render
   this.g.selectAll("*").remove();
   
-  // Get container dimensions
+  // Drawing dimensions come from the SVG element itself, not the outer .Shielding2DView
+  //  container.  These differ on narrow screens where the controls stack above the SVG
+  //  (the SVG then gets the remaining flex height); measuring the SVG keeps scale/centering
+  //  correct in both the overlay (wide) and stacked (narrow) layouts.  `container` is still
+  //  used below for tooltip page-coordinate math.
   var container = this.svg.node().parentElement;
-  var width = container.clientWidth;
-  var height = container.clientHeight;
-  
+  var svgNode = this.svg.node();
+  var width = svgNode.clientWidth || container.clientWidth;
+  var height = svgNode.clientHeight || container.clientHeight;
+
   // Helper function to position tooltip within viewport
   function positionTooltip(tooltip, eventX, eventY, width, height) {
       var tooltipWidth = 200; // Approximate tooltip width
@@ -464,28 +469,43 @@ Shielding2DView.prototype.render = function() {
   var padRight = self.options.padding.right;
   var padBottom = self.options.padding.bottom;
   var padLeft = self.options.padding.left;
-  
-  var availableW = width - padLeft - padRight;
+
+  // Labels are drawn to the right of the geometry (at scaleX(shieldingMaxX)+20, then text),
+  //  and the detector/offset text can stick out past the geometry too.  None of that is in
+  //  `bounds`, so reserve a right-side band for it; otherwise the scale-to-fit centers only
+  //  the geometry and the labels/right text overflow the (narrow) container.
+  var labelReserve = self.estimateLabelBandWidth();   // px (0 when labels hidden)
+
+  // On a narrow container don't let the label band swallow the drawing: cap the reserve so
+  //  at least ~45% of the usable width is left for the geometry; labels then shrink-to-fit
+  //  against the right edge.
+  var usableW = width - padLeft - padRight;
+  if (usableW < 1) usableW = 1;
+  if (labelReserve > usableW * 0.55) labelReserve = usableW * 0.55;
+
+  var availableW = usableW - labelReserve;
   var availableH = height - padTop - padBottom;
-  
+  if (availableW < 1) availableW = 1;
+
   var contentW = bounds.maxX - bounds.minX;
   var contentH = bounds.maxY - bounds.minY;
-  
+
   if (contentW <= 0) contentW = 1;
   if (contentH <= 0) contentH = 1;
-  
+
   var scaleX = availableW / contentW;
   var scaleY = availableH / contentH;
   var scale = Math.min(scaleX, scaleY);
-  
+
   if (scale <= 0) scale = 1;
-  
+
   var cx = (bounds.minX + bounds.maxX) / 2;
   var cy = (bounds.minY + bounds.maxY) / 2;
-  
-  // Store scale for manual coordinate scaling
+
+  // Store scale for manual coordinate scaling.  Center the geometry within the left region
+  //  [padLeft, padLeft+availableW]; the reserved band on the right holds the labels.
   this.currentScale = scale;
-  this.currentTx = (width / 2) - cx * scale;
+  this.currentTx = padLeft + (availableW / 2) - cx * scale;
   this.currentTy = (height / 2) - cy * scale;
   
   // Helper functions to scale coordinates
@@ -1324,6 +1344,42 @@ Shielding2DView.prototype.render = function() {
               .text("Height");
       }
   }
+};
+
+// Estimate the pixel width of the right-side label band (longest material/density/OD line
+//  across all layers).  Used by render() to reserve room so labels aren't clipped and the
+//  geometry is centered in the remaining space.  Returns 0 when labels are hidden.
+//  This is an estimate (no DOM measurement) sized for the fixed 12px label font; render()
+//  caps it so it can never swallow the whole drawing on a narrow screen.
+Shielding2DView.prototype.estimateLabelBandWidth = function() {
+  if (!this.showLabels || !this.processedLayers || this.processedLayers.length === 0)
+    return 0;
+
+  var geo = this.data ? this.data.geometry : "";
+
+  // Rough mm->display string length without unit juggling: longest labels come from large
+  //  outer dimensions, so use a generous fixed estimate per number ("1234.5 cm" ~ 8 chars).
+  var numChars = 9;
+
+  var maxChars = 0;
+  for (var i = 0; i < this.processedLayers.length; i++) {
+    var layer = this.processedLayers[i];
+    var name = (layer.data && layer.data.material) ? layer.data.material : "";
+
+    // Density / AN-AD line, e.g. "AN=26.0, AD=12.3 g/cm2" or "ρ=7.87 g/cm3".
+    var line2 = layer.isGeneric ? (8 + numChars + 6) : (3 + numChars + 6);
+
+    // OD line: one number for spherical, two for cylinders, three for rectangular, plus a
+    //  prefix like "OD(WxHxD)=" and " x " separators.
+    var nNums = (geo === "Spherical") ? 1 : (geo === "Rectangular") ? 3 : 2;
+    var line3 = 10 + nNums * numChars + (nNums - 1) * 3;
+
+    maxChars = Math.max(maxChars, name.length, line2, line3);
+  }
+
+  // ~6.6 px per char at the 12px sans-serif label font, plus the 20px connector offset and
+  //  a small right gutter so text doesn't touch the edge.
+  return 20 + Math.ceil(maxChars * 6.6) + 6;
 };
 
 // Handle resize

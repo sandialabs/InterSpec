@@ -173,7 +173,7 @@ InjaLogDialog::InjaLogDialog( const Wt::WString &title,
   static const std::string chart_css_rule_size_name = "InjaLogDialog-size";
   Wt::WCssStyleSheet &style = app->styleSheet();
   if( !style.isDefined(chart_css_rule_size_name) )
-    style.addRule( ".simple-dialog.InjaLogDialog", "max-width: 95vw; max-height: 95vh; width: 95vw; height: 95vw;", chart_css_rule_size_name );
+    style.addRule( ".simple-dialog.InjaLogDialog", "max-width: 95vw; max-height: 95vh; width: 95vw; height: 95vh;", chart_css_rule_size_name );
   
   InterSpec *interspec = InterSpec::instance();
   if( interspec )

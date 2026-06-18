@@ -31,15 +31,15 @@
 {
   border-width: 2px;
   border-style: inset;
-  border-color: rgb(255, 255, 255);
-  
+  border-color: var(--interspec-border-color, rgb(255, 255, 255));
+
   margin-top:    3px;
   margin-bottom: 3px;
 }
 
 .InfoLink
 {
-  color:grey;
+  color:var(--interspec-label-color, grey);
 }
 
 
@@ -53,7 +53,7 @@
 .ShieldingSourceDisplay .SourceView
 {
 /*   height: 100%; */
-   border:2px solid #e1e1e1;
+   border:2px solid var(--interspec-border-color, #e1e1e1);
 }
 
 
@@ -120,7 +120,39 @@
 
 .FitOptionsRow
 {
-  
+
+}
+
+/* The "Off-axis" checkbox is added to a WGridLayout cell with an alignment flag, so Wt positions it
+   absolutely with an inline display:block that overrides .CbNoLineBreak's flex (the inline style can
+   only be beaten with !important).  Re-assert flex so its label vertically centers with the box,
+   matching every other checkbox; the row/column flex props still come from .CbNoLineBreak. */
+.ShieldingSourceDisplay .SsdOffAxisCb
+{
+  display: flex !important;
+}
+
+/* The grouped interference row ("Interference correct" + its "grouping width [N] σ" entry):
+   lay the checkbox and the grouping-width sub-group inline on one row (desktop and phone). */
+.ShieldingSourceDisplay .InterfRow
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 4px;
+}
+.ShieldingSourceDisplay .GroupingWidth
+{
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: 5px;
+}
+/* keep the grouped entry compact (no phone NumInputOptLine indent, since it sits after the checkbox) */
+.IsPhone.Portrait .ShieldingSourceDisplay .GroupingWidth.NumInputOptLine
+{
+  padding-left: 0;
 }
 
 
@@ -155,7 +187,7 @@
   display: block;
   font-size: 12.5px;
   font-weight: 700;
-  color: #34343a;
+  color: var(--interspec-text-color, #34343a);
   letter-spacing: 0.2px;
   padding: 0 0 3px 1px;
   white-space: nowrap;
@@ -177,9 +209,9 @@
    (the inner .ShieldingSelectContainer scroll area is itself borderless). */
 .ShieldingSourceDisplay .ShieldBox
 {
-  border: 1px solid #d2d2d8;
+  border: 1px solid var(--interspec-border-color, #d2d2d8);
   border-radius: 8px;
-  background: #f8f8fa;
+  background: var(--interspec-background-color, #f8f8fa);
   overflow: hidden;          /* clip the footer's corners to the rounded box */
 }
 
@@ -192,8 +224,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 5px 9px;
-  border-top: 1px solid #e3e3e7;
-  background: #fbfbfc;
+  border-top: 1px solid var(--interspec-border-color, #e3e3e7);
+  background: var(--interspec-background-color, #fbfbfc);
 }
 
 /* "+" add-shielding button: matches the "Isotopics by nuclides" tool's add icon
@@ -300,11 +332,108 @@
   color: #9a2222;
 }
 
-/* "Perform Model Fit" attention state when a new fit is needed (auto-fit OFF; Phase 3) */
-.ShieldingSourceDisplay .FitNeeded
+/* Phase 3: live/manual fit split-button states (classes set on the action button half).
+   Manual mode: "Perform Model Fit", flagged when the showing results are stale.
+   Live mode: the action button becomes a status pill ("Updating…" / "Up to date"). */
+.ShieldingSourceDisplay .FitActions .FitNeeded
 {
   box-shadow: 0 0 0 2px rgba(45,127,249,.55);
 }
+
+/* Live mode: the action button is a status pill, not really a "press me" button. */
+.ShieldingSourceDisplay .FitActions .FitLive
+{
+  cursor: default;
+}
+.ShieldingSourceDisplay .FitActions .FitLive::before
+{
+  content: "\25CF";   /* ● status dot */
+  margin-right: 5px;
+  font-size: 10px;
+  vertical-align: middle;
+}
+/* up to date = calm green */
+.ShieldingSourceDisplay .FitActions .FitUpToDate,
+.ShieldingSourceDisplay .FitActions .FitUpToDate:hover
+{
+  background: #e7f6ec;
+  border-color: #b6e3c4;
+  color: #1d7a3a;
+}
+.ShieldingSourceDisplay .FitActions .FitUpToDate::before
+{
+  color: #1faa4d;
+}
+/* updating = amber, with a gently pulsing dot */
+.ShieldingSourceDisplay .FitActions .FitUpdating,
+.ShieldingSourceDisplay .FitActions .FitUpdating:hover
+{
+  background: #fff4e2;
+  border-color: #f0d09a;
+  color: #8a5a00;
+}
+.ShieldingSourceDisplay .FitActions .FitUpdating::before
+{
+  color: #f0a020;
+  animation: ssdFitPulse 1s ease-in-out infinite;
+}
+@keyframes ssdFitPulse
+{
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Desktop: in the live states, color the split-button's dropdown caret to match the colored action
+   half so it reads as one cohesive pill (like the mobile fit button), instead of the colored action
+   half + a disjoint grey 3D caret with the default caret glyph.  Manual mode is left as the default
+   button (which looks fine).  The state class is set on the WSplitButton container by
+   updateFitButtonState(); on phone the .SsdPhone rules apply instead. */
+/* Make the whole control one clean pill: the CONTAINER carries the rounded border and clips the
+   (squared-off) button halves.  This avoids the nested-border-radius mismatch where the green button
+   corners didn't sit flush inside the container's rounded border, so the caret looked clipped. */
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk,
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking
+{
+  overflow: hidden;
+}
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk { border-color: #b6e3c4; }
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking { border-color: #f0d09a; }
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.Wt-btn,
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking > button.Wt-btn
+{
+  border-radius: 0;   /* square halves; the container's rounded border + overflow:hidden forms the pill */
+}
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.dropdown-toggle,
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking > button.dropdown-toggle
+{
+  background-image: none;   /* drop the default grey caret glyph image */
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.dropdown-toggle
+{
+  background: #e7f6ec;      /* match .FitUpToDate */
+  border-color: #b6e3c4;
+}
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking > button.dropdown-toggle
+{
+  background: #fff4e2;      /* match .FitUpdating */
+  border-color: #f0d09a;
+}
+/* Draw the caret (▾) ourselves in the matching ink (we removed the default glyph image above). */
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.dropdown-toggle::after,
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking > button.dropdown-toggle::after
+{
+  content: "\25BE";
+  font-size: 10px;
+  line-height: 1;
+}
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.dropdown-toggle::after { color: #1d7a3a; }
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking > button.dropdown-toggle::after { color: #8a5a00; }
+/* hide any theme caret child so we don't get a double caret */
+.ShieldingSourceDisplay .FitActions .SsdFitSplit > button.dropdown-toggle > .caret { display: none; }
 
 /* Footer icon buttons (export / import / database) */
 .SsdFooterIcon
@@ -316,6 +445,17 @@
   width: 16px;
   height: 16px;
   vertical-align: middle;
+}
+
+/* Desktop footer: float the model icons (export/import/database) to the left, just after the help
+   icon, so the Close button (right-aligned, inline) stays the rightmost control.  The :hover variant
+   keeps the same margin so the icons don't shift on hover (".modal-footer button:hover" otherwise
+   forces margin-left:2px, which outranks the non-hover rule and caused jitter). */
+.SsdModelFooterDesktop .SsdFooterIcon,
+.SsdModelFooterDesktop .SsdFooterIcon:hover
+{
+  float: left;
+  margin-left: 6px;
 }
 
 
@@ -335,9 +475,9 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  border: 1px solid #d2d2d8;
+  border: 1px solid var(--interspec-border-color, #d2d2d8);
   border-radius: 8px;
-  background: #f8f8fa;
+  background: var(--interspec-background-color, #f8f8fa);
   padding: 7px;
   display: flex;
   flex-direction: column;
@@ -345,14 +485,17 @@
 }
 .ShieldingSourceDisplay .NucCard
 {
-  background: #fff;
-  border: 1px solid #e3e3e7;
+  background: var(--interspec-input-background, #fff);
+  border: 1px solid var(--interspec-border-color, #e3e3e7);
   border-radius: 9px;
   padding: 9px 11px 8px;
   box-shadow: 0 1px 2px rgba(20,20,30,.05);
   display: flex;
   flex-direction: column;
   gap: 7px;
+  /* Keep each card at its natural height so the holder scrolls instead of squishing the
+     cards (and so an expanded card's full peak list shows) - see .NucCardsHolder overflow. */
+  flex: 0 0 auto;
 }
 .ShieldingSourceDisplay .NucHead
 {
@@ -369,7 +512,7 @@
 .ShieldingSourceDisplay .NucHl
 {
   font-size: 11px;
-  color: #86868f;
+  color: var(--interspec-label-color, #86868f);
   white-space: nowrap;
 }
 .ShieldingSourceDisplay .NucTag
@@ -378,8 +521,8 @@
   font-weight: 700;
   letter-spacing: 0.3px;
   text-transform: uppercase;
-  color: #76767e;
-  background: #f0f0f3;
+  color: var(--interspec-label-color, #76767e);
+  background: var(--interspec-background-color, #f0f0f3);
   border-radius: 5px;
   padding: 2px 6px;
 }
@@ -392,7 +535,7 @@
 .ShieldingSourceDisplay .NucRowLbl
 {
   font-size: 11.5px;
-  color: #54545c;
+  color: var(--interspec-text-color, #54545c);
   white-space: nowrap;
   width: 50px;
   flex: 0 0 auto;
@@ -419,7 +562,7 @@
 .ShieldingSourceDisplay .NucMass
 {
   font-size: 11px;
-  color: #86868f;
+  color: var(--interspec-label-color, #86868f);
   padding-left: 59px;
   margin-top: -3px;
   display: flex;
@@ -428,14 +571,14 @@
 }
 .ShieldingSourceDisplay .NucT0
 {
-  color: #54545c;
+  color: var(--interspec-text-color, #54545c);
 }
 .ShieldingSourceDisplay .NucProgeny
 {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  border-top: 1px dashed #e3e3e7;
+  border-top: 1px dashed var(--interspec-border-color, #e3e3e7);
   padding-top: 7px;
 }
 .ShieldingSourceDisplay .NpLbl
@@ -444,7 +587,7 @@
   font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  color: #86868f;
+  color: var(--interspec-label-color, #86868f);
   white-space: nowrap;
   flex: 0 0 auto;
 }
@@ -459,8 +602,8 @@
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  background: #f6f4f0;
-  border: 1px solid #e3e3e7;
+  background: var(--interspec-input-background, #f6f4f0);
+  border: 1px solid var(--interspec-border-color, #e3e3e7);
   border-radius: 6px;
   padding: 2px 7px;
 }
@@ -472,7 +615,7 @@
 .ShieldingSourceDisplay .NpEn
 {
   font-size: 10.5px;
-  color: #86868f;
+  color: var(--interspec-label-color, #86868f);
 }
 
 /* Peak-table nuclide cell: small color swatch + nuclide name */
@@ -485,4 +628,593 @@
   margin-right: 5px;
   vertical-align: middle;
   border: 1px solid rgba(0,0,0,0.18);
+}
+
+
+/* ============================================================
+   "Mobile Activity Shielding Fit" design.  Everything here is
+   scoped under .SsdPhone (set on the tool root only in the isPhone() branch) or
+   the phone-only .SourceNuclideDisplayPhone, so desktop styling is untouched.
+   ============================================================ */
+.ShieldingSourceDisplay.SsdPhone
+{
+  --ssd-accent: #2d7ff9;
+  --ssd-accent-ink: #1f6feb;
+  --ssd-accent-soft: #eaf2ff;
+  /* Selected-row highlight as a translucent accent tint, so it works on both themes (light-blue on
+     white, dark-blue on the dark surface) and the row text stays legible either way. */
+  --ssd-sel: rgba(45,127,249,0.18);
+  --ssd-hair: var(--interspec-border-color, #e6e6ea);
+  --ssd-hair-strong: var(--interspec-border-color, #d4d4da);
+  --ssd-ink: var(--interspec-text-color, #1d1d22);
+  --ssd-ink-2: var(--interspec-text-color, #54545c);
+  --ssd-ink-3: var(--interspec-label-color, #86868f);
+  --ssd-warn-bg: #fff6e6;
+  --ssd-warn-bd: #f0d59a;
+  --ssd-warn-ink: #8a5a00;
+  --ssd-ok-bg: #eaf7ee;
+  --ssd-ok-bd: #b6e2c4;
+  --ssd-ok-ink: #1f7a3d;
+}
+
+/* pinned chart at the top */
+.ShieldingSourceDisplay.SsdPhone .SsdPhoneChartZone
+{
+  background: var(--interspec-input-background, #fff);
+  border-bottom: 1px solid var(--ssd-hair);
+}
+
+/* tab strip + scrolling panels */
+.ShieldingSourceDisplay.SsdPhone .SsdPhoneTabs
+{
+  background: var(--interspec-background-color, #f3f3f6);
+}
+.ShieldingSourceDisplay.SsdPhone .SsdPhoneOptionsTab,
+.ShieldingSourceDisplay.SsdPhone .SsdPhoneTabs .Wt-stack > *
+{
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The "Fit options" fieldset legend is redundant on phone (the tab is already "Options");
+   the "Nuclides" caption is dropped in C++ for the same reason. */
+.ShieldingSourceDisplay.SsdPhone .FitOptions > legend
+{
+  display: none;
+}
+
+/* Phone Options tab: lay the options out as a tidy settings list - each option a full-width row
+   with a separator, the label left-aligned and its control right-aligned (so all labels share a
+   left edge and all controls share a right edge).  Uses the native checkbox (reliable on Safari);
+   true toggle switches would need the SwitchCheckbox widget (a larger, shared-with-desktop change). */
+.ShieldingSourceDisplay.SsdPhone .FitOptions
+{
+  background: var(--interspec-input-background, #fff);
+  border: 1px solid var(--ssd-hair);
+  border-radius: 12px;
+  /* Scroll the option list if it is taller than the (layout-bounded) Options tab area. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  padding: 0;
+  gap: 0;
+}
+.ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow
+{
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 6px 13px;
+  border-top: 1px solid var(--interspec-border-color, #f1f1f4);
+  box-sizing: border-box;
+}
+.ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow:first-child
+{
+  border-top: 0;
+}
+/* Plain checkbox rows (everything except the grouped interference row): the WCheckBox renders as
+   <root.CbNoLineBreak><label><input><span>text</span></label>; make the label fill the row with the
+   text on the left (order:1) and the box on the right (order:2). */
+.ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow:not(.InterfRow) > .CbNoLineBreak
+{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow:not(.InterfRow) > .CbNoLineBreak > label
+{
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  gap: 10px;
+}
+.ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow:not(.InterfRow) > .CbNoLineBreak > label > span
+{
+  order: 1;
+  flex: 1 1 auto;
+  font-size: 14.5px;
+  color: var(--ssd-ink);
+  white-space: normal;
+}
+.ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow:not(.InterfRow) > .CbNoLineBreak > label > input
+{
+  order: 2;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+/* The grouped interference row: "Interference correct" checkbox (normal box-left) on the left, the
+   "grouping width [N] σ" entry pushed to the right - on one line (wrapping only if truly too narrow). */
+.ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow.InterfRow
+{
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow.InterfRow > .CbNoLineBreak > label > span
+{
+  font-size: 14.5px;
+  color: var(--ssd-ink);
+}
+.ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow.InterfRow > .GroupingWidth
+{
+  margin-left: auto;   /* push the grouping-width entry to the right edge */
+}
+/* grouping-width sub-group ("grouping width [N] σ"): label + σ matched to the checkbox text size */
+.ShieldingSourceDisplay.SsdPhone .FitOptions .GroupingWidth label,
+.ShieldingSourceDisplay.SsdPhone .FitOptions .GroupingWidth .GwSigma,
+.ShieldingSourceDisplay.SsdPhone .FitOptions .GroupingWidth input
+{
+  font-size: 14.5px;
+  color: var(--ssd-ink-2);
+}
+
+/* ---------- sticky bottom status / fit bar ---------- */
+.ShieldingSourceDisplay.SsdPhone .SsdFitBar
+{
+  flex: 0 0 auto;
+  /* var() fallback may itself be a gradient: light mode keeps the original sheen, dark mode uses the
+     theme bg (the border-top separates the bar from the content). */
+  background: var(--interspec-background-color, linear-gradient(#fbfbfd, #f1f1f4));
+  border-top: 1px solid var(--ssd-hair-strong);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+/* pinned, accent-tinted distance chip (left) */
+.ShieldingSourceDisplay.SsdPhone .SsdDistChip
+{
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+  padding: 0 7px;
+  border-radius: 8px;
+  /* translucent accent so it reads as a tappable accent chip on both themes (the value text uses
+     --ssd-ink, the icon uses the theme link color - both legible light & dark). */
+  background: rgba(45,127,249,0.18);
+  border: 1px solid rgba(45,127,249,0.5);
+  cursor: pointer;
+}
+.ShieldingSourceDisplay.SsdPhone .SsdDistIcon
+{
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--interspec-link-color, var(--ssd-accent-ink));
+}
+/* "↔" reads as a distance/measurement (source-to-detector) far better than a plain circle. */
+.ShieldingSourceDisplay.SsdPhone .SsdDistIcon::before
+{
+  content: "\2194";
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+.ShieldingSourceDisplay.SsdPhone .SsdDistVal
+{
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ssd-ink);
+  white-space: nowrap;
+}
+/* spinner + "Updating fit…" */
+.ShieldingSourceDisplay.SsdPhone .SsdStatLine
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.ShieldingSourceDisplay.SsdPhone .SsdSpin
+{
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(45,127,249,.25);
+  border-top-color: var(--ssd-accent);
+  animation: ssdMSpin .7s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes ssdMSpin { to { transform: rotate(360deg); } }
+/* horizontally-scrollable fitted-activity strip */
+.ShieldingSourceDisplay.SsdPhone .SsdActStrip
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px;
+  cursor: pointer;
+  /* Subtle right-edge fade: when the chips overflow, the last one fades out to cue "there are
+     more results - scroll, or tap to see all".  Costs no layout space; invisible when they fit. */
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+}
+.ShieldingSourceDisplay.SsdPhone .SsdActStrip::-webkit-scrollbar { display: none; }
+.ShieldingSourceDisplay.SsdPhone .SsdActChip
+{
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--interspec-input-background, #fff);
+  border: 1px solid var(--ssd-hair-strong);
+  border-radius: 9px;
+  padding: 4px 8px;
+}
+.ShieldingSourceDisplay.SsdPhone .SsdActDot
+{
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.ShieldingSourceDisplay.SsdPhone .SsdActNuc
+{
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ssd-ink-3);
+}
+.ShieldingSourceDisplay.SsdPhone .SsdActVal
+{
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ssd-ink);
+  white-space: nowrap;
+}
+/* amber warning pill */
+.ShieldingSourceDisplay.SsdPhone .SsdWarnPill
+{
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ssd-warn-ink);
+  background: var(--ssd-warn-bg);
+  border: 1px solid var(--ssd-warn-bd);
+  border-radius: 8px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* ---- footer fit split-button (compact) ----
+   The WSplitButton root element ITSELF is the `.btn-group` (a <span>), with two direct-child
+   buttons: the action button (no `.with-label` once its text is emptied in icon states) and the
+   caret `button.dropdown-toggle`.  We override the desktop 19/21px button heights and make the
+   two halves one cohesive rounded pill, colored per state by a class set on the container in
+   updateFitButtonState(): .SsdFitManual (blue "Fit"), .SsdFitWorking (amber+spinner),
+   .SsdFitLiveOk (green + ● dot).  The action half is `> button:not(.dropdown-toggle)`. */
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit
+{
+  flex: 0 0 auto;
+  display: inline-flex;     /* size to the two buttons; keeps the container height == button height */
+  align-items: center;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(45,127,249,.28);
+}
+/* Both halves: uniform height (override desktop .dropdown-toggle{height:21px}/.LightButton{height:19px}),
+   square inner corners (the group clips to its radius), default blue. */
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit > button.Wt-btn,
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit > button.Wt-btn.dropdown-toggle,
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit > button.Wt-btn.LightButton
+{
+  height: 32px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  box-shadow: none;
+  font-size: 15px;
+  font-weight: 700;
+  background: linear-gradient(#3f8bfb, #2d7ff9);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+/* action half = the button that is NOT the dropdown caret */
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit > button:not(.dropdown-toggle)
+{
+  min-width: 50px;
+  padding: 0 14px;
+}
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit > button.dropdown-toggle
+{
+  padding: 0 7px;
+  border-left: 1px solid rgba(0,0,0,.14);   /* visible divider so the "split" reads */
+}
+/* explicit caret so it's obvious the button opens the Live/Manual menu */
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit > button.dropdown-toggle::after
+{
+  content: "\25BE";   /* ▾ */
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.9;
+}
+/* hide any theme-provided caret child so we don't get a double caret */
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit > button.dropdown-toggle > .caret
+{
+  display: none;
+}
+/* fitting: amber pill + a spinner glyph on the action half (its text is empty) */
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitWorking > button.Wt-btn
+{
+  background: linear-gradient(#fbd989, #f0c25f);
+  color: var(--ssd-warn-ink);
+}
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitWorking > button:not(.dropdown-toggle)::before
+{
+  content: "";
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(138,90,0,.35);
+  border-top-color: var(--ssd-warn-ink);
+  animation: ssdMSpin .7s linear infinite;
+}
+/* live + up to date: green pill + ● status dot on the action half (its text is empty) */
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitLiveOk > button.Wt-btn
+{
+  background: linear-gradient(#d6f3df, #bfead0);
+  color: var(--ssd-ok-ink);
+}
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitLiveOk > button:not(.dropdown-toggle)::before
+{
+  content: "\25CF";
+  color: #1faa4d;
+  font-size: 13px;
+}
+/* manual mode: the iOS mobile theme paints button text/carets iOS-blue (!important), but the base
+   pill above also forces a blue background - so the blue "Fit" label was unreadable on blue.  Give
+   the manual button a plain light background so the app's default blue text/caret reads clearly (the
+   default button look).  Working/live states keep their colored backgrounds above. */
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitManual > button.Wt-btn
+{
+  /* raised surface so it stands out from the bar; the iOS-blue label/caret read on both light(#fff)
+     and the dark theme's input bg. */
+  background: var(--interspec-input-background, #fff);
+}
+/* manual "needs fit": subtle accent attention ring on the action half (was white - invisible on the
+   light button, an odd strip on the dark one; a translucent accent reads on both). */
+.ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitManual > button.FitNeeded
+{
+  box-shadow: inset 0 0 0 2px rgba(45,127,249,0.55);
+}
+
+/* fit-results sheet (SimpleDialog) */
+.SsdResultsSheet .SsdResultsTable { width: 100%; border-collapse: collapse; }
+.SsdResultsSheet .SsdResultsTable th,
+.SsdResultsSheet .SsdResultsTable td
+{
+  text-align: left;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--interspec-border-color, #f2f2f4);
+  font-size: 13.5px;
+}
+.SsdResultsSheet .SsdResultsTable th
+{
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--interspec-label-color, #86868f);
+}
+.SsdResultsSheet .SsdResultMono { font-family: var(--mono, monospace); font-size: 12.5px; }
+.SsdResultsSheet .SsdResultsWarn
+{
+  margin-top: 12px;
+  border-radius: 10px;
+  padding: 11px;
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--ssd-warn-bg, #fff6e6);
+  border: 1px solid var(--ssd-warn-bd, #f0d59a);
+  color: var(--ssd-warn-ink, #8a5a00);
+}
+.SsdResultsSheet .SsdViewLog { margin-top: 10px; }
+.SsdResultsSheet .SsdResultsTable .PeakSwatch
+{
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border: 1px solid rgba(0,0,0,0.18);
+}
+
+/* ---------- merged nuclide + peaks accordion cards (phone) ---------- */
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucCardsHolder
+{
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  gap: 11px;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucCard
+{
+  border: 1px solid var(--ssd-hair, var(--interspec-border-color, #e6e6ea));
+  border-radius: 14px;
+  padding: 0;
+  gap: 0;
+  box-shadow: 0 1px 3px rgba(20,20,30,.06);
+  overflow: hidden;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucHead
+{
+  padding: 12px 13px;
+  gap: 9px;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucHeadTap { cursor: pointer; }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucSwatch
+{
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucName { font-size: 16px; }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucGrow { flex: 1 1 auto; }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucCount
+{
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ssd-ink-2, var(--interspec-text-color, #54545c));
+  background: var(--interspec-background-color, #f0f1f4);
+  border-radius: 8px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucCount.NucCountHas
+{
+  background: var(--ssd-sel, #e7f6f5);
+  color: #1c6b66;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucChev
+{
+  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  flex: 0 0 auto;
+  transition: transform .18s;
+  display: inline-block;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucChev.NucChevOpen { transform: rotate(90deg); }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakSummary
+{
+  font-size: 12px;
+  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  padding: 0 13px 12px;
+  margin-top: -2px;
+  line-height: 1.5;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakSummary b { color: var(--ssd-ink-2, var(--interspec-text-color, #54545c)); font-weight: 600; }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucBody
+{
+  padding: 2px 13px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucMass { padding-left: 2px; }
+
+/* nested peak list */
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakList { border-top: 1px solid var(--ssd-hair, var(--interspec-border-color, #e6e6ea)); }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakListHead
+{
+  padding: 8px 13px 6px;
+  background: var(--interspec-background-color, #fafafb);
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpListLbl
+{
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpRow
+{
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 4px 13px;
+  border-top: 1px solid var(--interspec-border-color, #f2f2f4);
+  cursor: pointer;
+  min-height: 30px;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpRow.NpRowOn { background: var(--ssd-sel, #e7f6f5); }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpBox
+{
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1.5px solid var(--ssd-hair-strong, var(--interspec-border-color, #d4d4da));
+  background: var(--interspec-input-background, #fff);
+  flex: 0 0 auto;
+  position: relative;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpRow.NpRowOn .NpBox
+{
+  background: var(--ssd-accent, #2d7ff9);
+  border-color: var(--ssd-accent, #2d7ff9);
+}
+/* check-mark drawn with a rotated border (no SVG needed) */
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpRow.NpRowOn .NpBox::after
+{
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 3px;
+  width: 5px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpMain { flex: 1 1 auto; min-width: 0; }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpEnergy
+{
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpUnit
+{
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  margin-left: 3px;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpProg
+{
+  font-size: 10px;
+  font-weight: 700;
+  color: #8a6d3b;
+  background: #f6f1e8;
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-left: 6px;
+}
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpSub
+{
+  font-size: 11px;
+  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  margin-left: 8px;
+  font-weight: 500;
+  white-space: nowrap;
 }

@@ -868,7 +868,13 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     
     if( !results.errormsgs.empty() )
       data["ErrorMessages"] = results.errormsgs;
-    
+
+    // Non-fatal fit warnings (poor average deviation, x-ray peaks, ...).  Templates render these
+    //  under {% if HasWarnings %} / {{ Warnings }}; the GUI and batch both reach this function, so
+    //  populating them here covers every report.
+    data["HasWarnings"] = !results.warnings.empty();
+    data["Warnings"] = results.warnings;
+
     int num_sources = 0;
     bool hasAnyTraceSrc = false, hasAnyVolumetricSrc = false, hasFitAnyAge = false;
     if( results.source_calc_details )

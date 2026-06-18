@@ -68,7 +68,7 @@ Shielding2DView::Shielding2DView( const std::vector<ShieldingSourceFitCalc::Shie
   // Load JS and CSS
   Wt::WApplication *app = Wt::WApplication::instance();
   app->require("InterSpec_resources/d3.v3.min.js", "d3.v3.js");
-  app->require("InterSpec_resources/Shielding2DView.js?v=1");
+  app->require("InterSpec_resources/Shielding2DView.js?v=2");
   app->useStyleSheet("InterSpec_resources/Shielding2DView.css");
   
   defineJavaScript();
@@ -385,7 +385,7 @@ Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::Shie
   setStyleClass("Shielding3DView");
   
   Wt::WApplication *app = Wt::WApplication::instance();
-  app->require("InterSpec_resources/Shielding3DView.js?v=4");
+  app->require("InterSpec_resources/Shielding3DView.js?v=5");
   app->useStyleSheet("InterSpec_resources/Shielding3DView.css");
   
   defineJavaScript();
