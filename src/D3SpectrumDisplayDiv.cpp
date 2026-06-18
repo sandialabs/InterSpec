@@ -128,6 +128,7 @@ WT_DECLARE_WT_MEMBER
     width = Math.round(width);
     height = Math.round(height);
 
+
     if( format === "svg" )
     {
       // For SVG, base64-encode the markup directly
@@ -1559,27 +1560,6 @@ void D3SpectrumDisplayDiv::setPeaksToClient( const SpecUtils::SpectrumType spect
 
 
 
-void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
-{
-  switch( spectrum_type )
-  {
-    case SpecUtils::SpectrumType::Foreground:
-      m_renderFlags |= UpdateForegroundPeaks;
-      break;
-      
-    case SpecUtils::SpectrumType::SecondForeground:
-      m_renderFlags |= UpdateSecondaryPeaks;
-      break;
-      
-    case SpecUtils::SpectrumType::Background:
-      m_renderFlags |= UpdateBackgroundPeaks;
-      break;
-  }//switch( spectrum_type )
-  
-  scheduleRender();
-}//void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
-
-
 void D3SpectrumDisplayDiv::setRoiData( const std::string &peak_json,
                                        const SpecUtils::SpectrumType spectrum_type )
 {
@@ -1603,6 +1583,27 @@ void D3SpectrumDisplayDiv::setRoiData( const std::string &peak_json,
     scheduleRender();
   }
 }//void setRoiData(...)
+
+
+void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
+{
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      m_renderFlags |= UpdateForegroundPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::SecondForeground:
+      m_renderFlags |= UpdateSecondaryPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::Background:
+      m_renderFlags |= UpdateBackgroundPeaks;
+      break;
+  }//switch( spectrum_type )
+  
+  scheduleRender();
+}//void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
 
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist, const bool keep_curent_xrange )

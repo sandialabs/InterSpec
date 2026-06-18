@@ -365,6 +365,7 @@
   <message id="uid-err-to-large">Uploaded file was too large to try and display.</message>
   <message id="uid-err-reading-upload">Couldn't read uploaded file.</message>
   <message id="uid-embed-image-btn">Embed image in spectrum file</message>
+  <message id="uid-send-to-llm-btn">Send to AI assistant</message>
   <message id="uid-no-qr-found">QR-code not found ⓘ</message>
   <message id="uid-looking-for-qr">Looking for QR-codes.</message>
   <message id="uid-check-for-qr-btn">Check for Qr-code</message>

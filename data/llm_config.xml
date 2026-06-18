@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- UUR SAND2026-21903O -->
+<LlmConfig version="0">
+  <!-- LLM API Settings -->
+  <LlmApi version="1">
+    <Enabled>true</Enabled>
+
+    <!-- Each ApiProvider groups an API endpoint, bearer token, and one or more Models.
+         Set active="true" on the provider and model you want to use.
+         If multiple have active="true", the first one is used.
+         If none have active="true", the first one is used.
+    -->
+    <ApiProvider active="false">
+      <!-- A number of providers work, including locally running LLM models -->
+      <ApiEndpoint>https://shirty.sandia.gov/api/chat/completions</ApiEndpoint>
+      <BearerToken>sk-...</BearerToken>
+
+      <!-- Model specification with optional attributes:
+        - active: Set to "true" for the model to use (default: false)
+        - supportsImages: Set to "true" if this model supports vision/image input (default: false)
+          When true, the get_spectrum_image tool will be available to LLM agents.
+        - reasoning: Optional reasoning configuration:
+          - Boolean (true/false): For OpenRouter-style reasoning
+          - Effort level (low/medium/high): For OpenAI o1/o3-style reasoning
+        - requireToolInStateMachine: Set to "true" to force tool_choice="required" when
+          the LLM is in a non-final state machine state (default: false).
+          Useful for models that intermittently fail to make structured tool calls.
+
+        Child elements (inside <Model>):
+        - <Name>: Required. The model identifier string.
+        - <MaxTokens>: Optional. Max output tokens (0 or omitted = API default).
+        - <ContextLengthLimit>: Optional. Context window size (0 or omitted = API default).
+        - <ModelTemperature>: Optional, and not supported by all providers/models. Temperature 0.0-2.0 (omitted = API default).
+          0.0 = deterministic, 0.2-0.5 = balanced (recommended), 0.7+ = creative but riskier.
+      -->
+      <Model active="false" reasoning="true" supportsImages="false" requireToolInStateMachine="true">
+        <Name>openai/gpt-oss-120b</Name>
+        <MaxTokens>62565</MaxTokens>
+        <ContextLengthLimit>65536</ContextLengthLimit>
+        <ModelTemperature>0.2</ModelTemperature>
+      </Model>
+      <Model active="true" requireToolInStateMachine="true">
+        <Name>mistral/devstral-2-123B</Name>
+        <MaxTokens>62565</MaxTokens>
+        <ContextLengthLimit>200000</ContextLengthLimit>
+        <ModelTemperature>0.2</ModelTemperature>
+      </Model>
+      <Model active="false" requireToolInStateMachine="true">
+        <Name>meta-llama/Llama-4-Scout-17B-16E-Instruct</Name>
+        <MaxTokens>62565</MaxTokens>
+        <ContextLengthLimit>65536</ContextLengthLimit>
+      </Model>
+      <Model active="false" requireToolInStateMachine="true">
+        <Name>meta-llama/Llama-3.3-70B-Instruct</Name>
+        <MaxTokens>62565</MaxTokens>
+        <ContextLengthLimit>65536</ContextLengthLimit>
+      </Model>
+    </ApiProvider>
+
+    <ApiProvider active="true">
+      <ApiEndpoint>https://api.nnsa.asksage.ai/server/openai/v1/chat/completions</ApiEndpoint>
+      <BearerToken>...</BearerToken>
+      <Model active="true" supportsImages="true">
+        <Name reasoning="high">gpt-5-mini</Name>
+        <MaxTokens>62565</MaxTokens>
+        <ContextLengthLimit>131072</ContextLengthLimit>
+      </Model>
+      <Model active="false" supportsImages="true">
+        <Name>gpt-5.4</Name>
+        <MaxTokens>62565</MaxTokens>
+        <ContextLengthLimit>200000</ContextLengthLimit>
+      </Model>
+    </ApiProvider>
+
+    <!-- Google AI Studio provider -->
+    <ApiProvider active="false">
+      <ApiEndpoint>https://generativelanguage.googleapis.com/v1beta/openai/chat/completions</ApiEndpoint>
+      <BearerToken>...</BearerToken>
+      <Model active="false" supportsImages="true" reasoning="high" requireToolInStateMachine="true">
+        <Name>gemini-3.5-flash</Name>. <!-- 1M tokens: Input: $1.50, Output: $9.00, Cache: $0.15 -->
+        <ContextLengthLimit>131072</ContextLengthLimit>
+      </Model>
+      <Model active="true" supportsImages="true" reasoning="high" requireToolInStateMachine="true">
+        <Name>gemini-3.1-flash-lite</Name> <!-- 1M tokens: Input: $0.25, Output: $1.50, Cache: $0.025 -->
+        <ContextLengthLimit>131072</ContextLengthLimit>
+      </Model>
+    </ApiProvider>
+
+    <!-- Google Vertex AI - lots of models  -->
+    <ApiProvider active="false">
+      <ApiEndpoint>https://aiplatform.googleapis.com/v1beta1/projects/--your project name--/locations/global/endpoints/openapi/chat/completions</ApiEndpoint>
+      <!-- The bearer token is only good for 1-hour, then you need to get a new one via `gcloud auth print-access-token` 
+        TODO: implement 
+      -->
+      <BearerToken>...</BearerToken>
+      <Model active="false" supportsImages="true" reasoning="true" requireToolInStateMachine="true">
+        <Name>google/gemini-3.5-flash</Name>. <!-- 1M tokens: Input: $1.50, Output: $9.00, Cache: $0.15 -->
+        <ContextLengthLimit>131072</ContextLengthLimit>
+      </Model>
+      <Model active="true" supportsImages="true" reasoning="true" requireToolInStateMachine="true">
+        <Name>google/gemini-3.1-flash-lite</Name> <!-- 1M tokens: Input: $0.25, Output: $1.50, Cache: $0.025 -->
+        <ContextLengthLimit>131072</ContextLengthLimit>
+      </Model>
+    </ApiProvider>
+
+    <!-- A vanilla-OpenAI example - not approved for use at SNL, and CUI not allowed - so you probably dont want to use -->
+    <ApiProvider active="false">
+      <ApiEndpoint>https://api.openai.com/v1/chat/completions</ApiEndpoint>
+      <BearerToken>sk-...</BearerToken>
+      <Model active="true" supportsImages="true">
+        <Name>gpt-5-mini</Name>
+        <MaxTokens>62565</MaxTokens>
+        <ContextLengthLimit>131072</ContextLengthLimit>
+      </Model>
+      <Model active="false" supportsImages="true">
+        <Name>gpt-5.4</Name>
+        <MaxTokens>62565</MaxTokens>
+        <ContextLengthLimit>200000</ContextLengthLimit>
+      </Model>
+    </ApiProvider>
+
+
+
+    <!--  A HTTP enpoint to post questions to, to do deeper research.
+     At the moment, this is a seperate service that is not distributed, so it likely will not be of use to anyone besides the primary InterSpec developer.
+
+     An example value you would fill in for this field is: "http://localhost:8000/query".
+     If this field is non-empty, then the DeepResearch sub-agent will additionally have access to the
+     `query_deep_research_endpoint` tool-call, which will make a shell command to have `curl` make a call like:
+     ```
+       curl -X 'POST' 'http://localhost:8000/query' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"messages": [{"content": "what is the primary use of Ba133?"}], "corpora": ["my_gamma_spec_dataset"]}'
+     ```
+
+     If you leave this field blank, the DeepResearch sub-agent still remains available, but this remote
+     endpoint query tool-call will not be available.
+     It is very recomended you do not put a value in this field.
+    -->
+    <DeepResearchUrl></DeepResearchUrl>
+
+    <!-- Optional debug logging configuration. If empty or not present, no debug logging will be done.
+         Valid values:
+         - "stdout" or "stderr": Log debug messages to standard output or error streams
+         - A file path: Log debug messages to the specified file (will be created/overwritten)
+
+         Debug logging includes detailed information about LLM interactions, state transitions,
+         tool calls, and internal processing steps useful for development and troubleshooting.
+    -->
+    <!-- <DebugFile>llm_debug.log</DebugFile> -->
+    <!-- <DebugFile>stdout</DebugFile> -->
+
+  </LlmApi>
+  
+  <!-- MCP Server Settings - this is for InterSpec to create a MCP server you can use with other applications.
+  
+  It will be avaiable at http://127.0.0.1:<port>/mcp-api, where port is the same on InterSpec instance is being
+  served on - see `HttpPortToServeOn` in InterSpec_app_settings.json - by default it is a random high-numbered
+  port.
+   -->
+  <McpServer version="0">
+    <Enabled>false</Enabled>
+
+    <!-- The bearer token required to access the MCP instance. If empty, no authorization will be required.
+    But you must change this from "INVALID-BEARER-TOKEN" if you enable this capability.
+     -->
+    <BearerToken>INVALID-BEARER-TOKEN</BearerToken>
+  </McpServer>
+</LlmConfig>

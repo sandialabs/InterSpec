@@ -208,6 +208,10 @@
 #include "InterSpec/RelActManualGui.h"
 #endif
 
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
+#endif
 
 #include "js/InterSpec.js"
 
@@ -239,6 +243,9 @@ namespace
 #endif
 #if( USE_REL_ACT_TOOL )
   static const string RelActManualTitleKey(      "app-tab-isotopics" );
+#endif
+#if( USE_LLM_INTERFACE )
+static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
 #endif
 
   // The Reference Photopeak and/or the Search tab need thier widgets loaded,
@@ -482,6 +489,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_decayInfoWindow( nullptr ),
   m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
+#if( USE_LLM_INTERFACE )
+  m_llmToolMenuItem( nullptr ),
+  m_llmTool( nullptr ),
+#endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
 #endif
@@ -3198,7 +3209,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     saveRelActManualStateToForegroundSpecMeas();
     saveRelActAutoStateToForegroundSpecMeas();
 #endif
-    
+#if( USE_LLM_INTERFACE )
+    syncLlmHistoryToSpecMeas();
+#endif
+
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
     
@@ -3493,7 +3507,12 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->simpleMdaUri = m_simpleMdaWindow->tool()->encodeStateToUrl();
     }//if( m_simpleMdaWindow )
 #endif
-        
+    
+#if( USE_LLM_INTERFACE )
+    if( m_llmTool )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingLlmAssistant;
+#endif
+    
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
       entry.modify()->backgroundSubMode = UserState::kBackgorundSubtract;
@@ -3519,6 +3538,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
       else if( txtKey == RelActManualTitleKey )
         entry.modify()->currentTab = UserState::kRelActManualTab;
+#endif
+#if( USE_LLM_INTERFACE )
+      else if( txtKey == LlmAssistantTabTitleKey )
+        entry.modify()->currentTab = UserState::kLlmAssistantTab;
 #endif
     }//if( m_toolsTabs )
     
@@ -4027,7 +4050,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingRelActAuto) )
       relActAutoWindow(true);
 #endif
-        
+    
+#if( USE_LLM_INTERFACE )
+    if( (entry->shownDisplayFeatures & UserState::kShowingLlmAssistant)
+       && LlmToolGui::llmToolIsConfigured() )
+    {
+      createLlmTool();
+    }
+#endif
+    
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
     
@@ -4187,6 +4218,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
         case UserState::kRelActManualTab: titleKey = RelActManualTitleKey;     break;
 #endif
+#if( USE_LLM_INTERFACE )
+        case UserState::kLlmAssistantTab: titleKey = LlmAssistantTabTitleKey;  break;
+#endif
         case UserState::kNoTabs:                                               break;
       };//switch( entry->currentTab )
       
@@ -4220,6 +4254,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           case UserState::kRelActManualTab: 
             if( m_relActManualGui )
               m_toolsTabs->setCurrentWidget( m_relActManualGui );
+            break;
+  #endif
+  #if( USE_LLM_INTERFACE )
+          case UserState::kLlmAssistantTab:
+            if( m_llmTool )
+              m_toolsTabs->setCurrentWidget( m_llmTool );
             break;
   #endif
           case UserState::kNoTabs:  
@@ -5352,7 +5392,10 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
     saveRelActManualStateToForegroundSpecMeas();
     saveRelActAutoStateToForegroundSpecMeas();
   #endif
-    
+  #if( USE_LLM_INTERFACE )
+    syncLlmHistoryToSpecMeas();
+  #endif
+
     SpecMeas meas;
     meas.uniqueCopyContents( *m_dataMeasurement );
     
@@ -5990,7 +6033,10 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
     saveRelActManualStateToForegroundSpecMeas();
     saveRelActAutoStateToForegroundSpecMeas();
   #endif
-    
+  #if( USE_LLM_INTERFACE )
+    syncLlmHistoryToSpecMeas();
+  #endif
+
     return;
   }//if( !saveState || !m_dataMeasurement )
   
@@ -6058,6 +6104,9 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
 #if( USE_REL_ACT_TOOL )
       saveRelActManualStateToForegroundSpecMeas();
       saveRelActAutoStateToForegroundSpecMeas();
+#endif
+#if( USE_LLM_INTERFACE )
+      syncLlmHistoryToSpecMeas();
 #endif
       
       // Get foreground/background/secondary files, and update them to the database..
@@ -6874,9 +6923,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 //  WString tooltip = WString::tr("app-tab-tt-nuc-search");
 //  HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
-    // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
-    //  Activity tool
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
+    // Handle when the user closes the tab for the Math/Command terminal, the Manual Relative
+    //  Activity tool, or the LLM Assistant
     m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
 #endif
     
@@ -8363,6 +8412,7 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
     timestr = timestr.substr(0,ppos);
   filename += "_" + timestr + (asPng ? ".png" : ".svg");
 
+
   string illegal_chars = "\\/:?\"<>|";
   SpecUtils::erase_any_character( filename, illegal_chars.c_str() );
 
@@ -9654,13 +9704,22 @@ void InterSpec::handleTerminalWindowClose()
     AuxWindow::deleteAuxWindow( m_terminalWindow );
   }else
   {
-    delete m_terminal;
+    // Check if we need to delete the widget ourselves.
+    // If the widget is still in the tab widget, it means we were called from the tabClosed() signal
+    // which is emitted BEFORE Wt removes/deletes the widget - so we let Wt handle the deletion.
+    // If the widget is NOT in the tab widget, we were called programmatically after removeTab()
+    // was called, so we need to delete it ourselves.
+    const bool inTabWidget = m_toolsTabs && (m_toolsTabs->indexOf( m_terminal ) >= 0);
+    
+    if( !inTabWidget )
+      delete m_terminal;
+    
     if( m_toolsTabs )
       m_toolsTabs->setCurrentIndex( 2 );
   }
   
-  m_terminal = 0;
-  m_terminalWindow = 0;
+  m_terminal = nullptr;
+  m_terminalWindow = nullptr;
 }//void handleTerminalWindowClose()
 #endif  //#if( USE_TERMINAL_WIDGET )
 
@@ -10026,43 +10085,40 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 #endif //#if( USE_REL_ACT_TOOL )
 
 
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
 void InterSpec::handleToolTabClosed( const int tabnum )
 {
+  // The tabClosed() signal is emitted BEFORE Wt removes and deletes the widget from the tab.
+  // So widget(tabnum) returns the widget being closed, and we should NOT delete it ourselves.
+  
   assert( m_toolsTabs );
   if( !m_toolsTabs )
     return;
   
   WWidget *w = m_toolsTabs->widget( tabnum );
   
-#if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
-  if( w == m_relActManualGui )
+#if( USE_LLM_INTERFACE )
+  if( w == m_llmTool )
   {
-    handleRelActManualClose();
-  }else if( w == m_terminal )
-  {
-    handleTerminalWindowClose();
-  }else
-  {
-    assert( 0 );
+    handleLlmToolClose();
+    return;
   }
-#elif( USE_TERMINAL_WIDGET )
+#endif
+
+#if( USE_TERMINAL_WIDGET )
   if( w == m_terminal )
   {
     handleTerminalWindowClose();
-  }else
-  {
-    assert( 0 );
+    return;
   }
-#elif( USE_REL_ACT_TOOL )
+#endif
+
+#if( USE_REL_ACT_TOOL )
   if( w == m_relActManualGui )
   {
     handleRelActManualClose();
-  }else
-  {
-    assert( 0 );
+    return;
   }
-  //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
   
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -10179,6 +10235,15 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
+
+#if( USE_LLM_INTERFACE )
+  if( LlmToolGui::llmToolIsConfigured() )
+  {
+    m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
+    HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
+    m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
+  }//if( LlmToolGui::llmToolIsConfigured() )
+#endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -11472,6 +11537,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();
     
+#if( USE_LLM_INTERFACE )
+    // Save LLM conversation history to previous SpecMeas before switching foreground
+    syncLlmHistoryToSpecMeas();
+#endif
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -12112,6 +12181,35 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( showToolTips )
   }//if( passthrough foreground )
    */
+   
+#if( USE_LLM_INTERFACE )
+  // Load LLM conversation history from the new foreground SpecMeas.
+  //  During benchmark SpectrumSequence steps, the conversation must be preserved across
+  //  mid-sequence spectrum loads, so we skip the swap.
+  if( (spec_type == SpecUtils::SpectrumType::Foreground)
+     && meas && m_llmTool && !m_llmTool->shouldPreserveConversation() )
+  {
+    try
+    {
+      // For passthrough/search-mode data, use an empty sample set as the history key
+      //  so that conversation history persists across time range changes.
+      static const std::set<int> s_empty_sample_set;
+      const std::set<int> &currentSamples = meas->passthrough()
+        ? s_empty_sample_set
+        : (sample_numbers.empty() ? displayedSamples( spec_type ) : sample_numbers);
+
+      // Get the LLM history for these sample numbers
+      auto nativeHistoryPtr = meas->llmConversationHistory( currentSamples );
+
+      // Set the conversation history in the LLM tool
+      m_llmTool->setConversationHistory( nativeHistoryPtr );
+    }
+    catch( const std::exception& e )
+    {
+      std::cerr << "Failed to load LLM conversation history from SpecMeas: " << e.what() << std::endl;
+    }
+  }
+#endif
 }//void setSpectrum(...)
 
 
@@ -13608,3 +13706,123 @@ void InterSpec::displayBackgroundData()
   if( m_hardBackgroundSub->isEnabled() != canSub )
     m_hardBackgroundSub->setDisabled( !canSub );
 }//void displayBackgroundData()
+
+
+
+
+#if( USE_LLM_INTERFACE )
+void InterSpec::createLlmTool()
+{
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+  assert( LlmToolGui::llmToolIsConfigured() );
+#endif
+
+  if( m_llmTool )
+    return;
+    
+  try
+  {
+    m_llmTool = new LlmToolGui( this );
+    m_llmTool->focusInput();
+
+    // Load any existing LLM conversation history from the foreground SpecMeas
+    std::shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
+    if( meas )
+    {
+      // For passthrough/search-mode data, use an empty sample set as the history key
+      static const std::set<int> s_empty_sample_set;
+      const std::set<int> &samples = meas->passthrough()
+        ? s_empty_sample_set
+        : displayedSamples( SpecUtils::SpectrumType::Foreground );
+      std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history
+        = meas->llmConversationHistory( samples );
+      if( history && !history->empty() )
+        m_llmTool->setConversationHistory( history );
+    }
+
+    if( m_toolsTabs )
+    {
+      WMenuItem *item = m_toolsTabs->addTab( m_llmTool, WString::fromUTF8("LLM Assistant") );
+      item->setCloseable( true );
+      m_toolsTabs->setCurrentWidget( m_llmTool );
+      const int index = m_toolsTabs->currentIndex();
+      m_toolsTabs->setTabToolTip( index, WString::fromUTF8("Chat with the Large Language Model assistant for spectrum analysis help") );
+
+      // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+      //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
+    }
+
+    m_llmToolMenuItem->disable();
+  }catch( const std::exception &e )
+  {
+    std::cout << "Error creating LLM tool: " << e.what() << std::endl;
+    if( m_llmTool )
+    {
+      delete m_llmTool;
+      m_llmTool = nullptr;
+    }//if( m_llmTool )
+  }//try / catch
+}//void createLlmTool()
+
+LlmToolGui *InterSpec::currentLlmTool()
+{
+  return m_llmTool;
+}//LlmToolGui *currentLlmTool();
+
+void InterSpec::syncLlmHistoryToSpecMeas()
+{
+  if( !m_llmTool )
+    return;
+
+  std::shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
+  if( !meas )
+    return;
+
+  try
+  {
+    std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history
+      = m_llmTool->getConversationHistory();
+
+    // For passthrough/search-mode data, use an empty sample set as the history key
+    static const std::set<int> s_empty_sample_set;
+    const std::set<int> &samples = meas->passthrough()
+      ? s_empty_sample_set
+      : displayedSamples( SpecUtils::SpectrumType::Foreground );
+
+    if( history && !history->empty() )
+      meas->setLlmConversationHistory( samples, history );
+    else
+      meas->removeLlmConversationHistory( samples );
+  }catch( const std::exception &e )
+  {
+    std::cerr << "Failed to sync LLM history to SpecMeas: " << e.what() << std::endl;
+  }
+}//void syncLlmHistoryToSpecMeas()
+
+
+void InterSpec::handleLlmToolClose()
+{
+  if( !m_llmTool )
+    return;
+
+  syncLlmHistoryToSpecMeas();
+
+  m_llmToolMenuItem->enable();
+
+  // Check if we need to delete the widget ourselves.
+  // If the widget is still in the tab widget, it means we were called from the tabClosed() signal
+  // which is emitted BEFORE Wt removes/deletes the widget - so we let Wt handle the deletion.
+  // If the widget is NOT in the tab widget, we were called programmatically after removeTab()
+  // was called, so we need to delete it ourselves.
+  const bool inTabWidget = m_toolsTabs && (m_toolsTabs->indexOf( m_llmTool ) >= 0);
+  
+  if( !inTabWidget )
+    delete m_llmTool;
+  
+  m_llmTool = nullptr;
+  
+  if( m_toolsTabs )
+    m_toolsTabs->setCurrentIndex( 2 );
+}
+#endif // USE_LLM_INTERFACE
+

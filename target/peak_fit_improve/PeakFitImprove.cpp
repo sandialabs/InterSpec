@@ -1412,7 +1412,8 @@ int main( int argc, char **argv )
 
     case OptimizationAction::PeaksForNuclide:
     {
-      FitPeaksForNuclideDev::eval_peaks_for_nuclide( input_srcs );
+      const bool isHPGe = true;
+      FitPeaksForNuclideDev::eval_peaks_for_nuclide( input_srcs, isHPGe );
       break;
     }//case OptimizationAction::PeaksForNuclide:
 

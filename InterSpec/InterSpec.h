@@ -65,6 +65,10 @@ class DoseCalcWindow;
 class FluxToolWindow;
 class PeakEditWindow;
 class RefLineDynamic;
+
+#if( USE_LLM_INTERFACE )
+class LlmToolGui;
+#endif
 class WarningMessage;
 class DrfSelectWindow;
 class PeakInfoDisplay;
@@ -899,6 +903,22 @@ public:
    */
   void deleteFwhmFromForegroundWindow();
 
+#if( USE_LLM_INTERFACE )
+  /** Create and show the LLM tool widget in the tools tab, if its not already created. */
+  void createLlmTool();
+  
+  /** Returns current LLM tool, or nullptr if one does not currently exist. */
+  LlmToolGui *currentLlmTool();
+  
+  /** Handle cleanup when LLM tool is closed. */
+  void handleLlmToolClose();
+
+  /** Sync the current LLM conversation history into the foreground SpecMeas,
+   so it will be included when the file is next saved.
+   */
+  void syncLlmHistoryToSpecMeas();
+#endif
+  
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
    */
@@ -1482,6 +1502,7 @@ protected:
   PopupDivMenuItem *m_saveTimeChartPng;
   PopupDivMenuItem *m_saveTimeChartSvg;
 
+
   enum RightClickItems
   {
     kPeakEdit,
@@ -1684,6 +1705,13 @@ protected:
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
   EnergyCalPreserveWindow *m_preserveCalibWindow;
+
+#if( USE_LLM_INTERFACE )
+  /** Menu item for opening the LLM tool. */
+  PopupDivMenuItem *m_llmToolMenuItem;
+  /** LLM tool widget for user interaction. */
+  LlmToolGui          *m_llmTool;
+#endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
   /** Pointer to window showing the Search Mode 3D data view. */

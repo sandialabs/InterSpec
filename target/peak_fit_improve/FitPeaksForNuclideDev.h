@@ -46,7 +46,7 @@ namespace SpecUtils
 
 namespace FitPeaksForNuclideDev
 {
-  void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info );
+  void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info, const bool isHPGe );
 }//namespace InitialFit_GA
 
 #endif //FitPeaksForNuclideDev_h

@@ -295,10 +295,14 @@ void gauss_exp_integral( const T peak_mean,
           const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, tail_end );
           const double diff = fabs(val - simple_answer);
           const double frac_diff = diff / std::max(val, simple_answer);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+            cerr << "gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " skew=" << skew << " lower_energy=" << lower_energy << " upper_energy=" << tail_end
+                 << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
           assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
         }
 #endif
-          
+
         lower_energy = tail_end;
         break;
       }else
@@ -313,10 +317,14 @@ void gauss_exp_integral( const T peak_mean,
           const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, upper_energy );
           const double diff = fabs(val - simple_answer);
           const double frac_diff = diff / std::max(val, simple_answer);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+            cerr << "gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " skew=" << skew << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+                 << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
           assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
         }
 #endif
-          
+
         lower_energy = upper_energy;
         indefinite_low = indefinite_high;
         channel += 1;
@@ -344,6 +352,10 @@ void gauss_exp_integral( const T peak_mean,
       const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, upper_energy );
       const double diff = fabs(val - simple_answer);
       const double frac_diff = diff / std::max(val, simple_answer);
+      if( !((frac_diff < 1.0E-5) || (diff < 1.0E-7) || (fabs(peak_mean - 0.5*(lower_energy + upper_energy)) > (5.0*peak_sigma))) )
+        cerr << "gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+             << " skew=" << skew << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+             << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
       assert( (frac_diff < 1.0E-5) || (diff < 1.0E-7) || (fabs(peak_mean - 0.5*(lower_energy + upper_energy)) > (5.0*peak_sigma)) );
     }
 #endif
@@ -638,10 +650,15 @@ void crystal_ball_integral( const T peak_mean,
                                     peak_sigma, alpha, power_law, lower_energy, upper_energy );
       const double diff = fabs(val - simple_answer);
       const double frac_diff = diff / std::max(val, simple_answer);
-      
+
       // Post the cancellation-free rewrite the templated and scalar forms are algebraically
       //  identical (both via crystal_ball_tail_indefinite_t), so they agree to ~1e-12.  Keep the
       //  absolute `diff` escape hatch for the near-cancelling alpha=0.5 / n->1.05 tail corner.
+      if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+        cerr << "crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+             << " alpha=" << alpha << " power_law=" << power_law
+             << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+             << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
       assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
     }
 #endif //PERFORM_DEVELOPER_CHECKS
@@ -793,10 +810,15 @@ void exp_gauss_exp_integral( const T peak_mean,
         const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, left_tail_end );
         const double diff = fabs(val - simple_answer);
         const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << left_tail_end
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
         assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
       }
 #endif
-        
+
         lower_energy = left_tail_end;
         break;
       }else
@@ -816,6 +838,11 @@ void exp_gauss_exp_integral( const T peak_mean,
         const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, upper_energy );
         const double diff = fabs(val - simple_answer);
         const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
         assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
       }
 #endif
@@ -854,10 +881,15 @@ void exp_gauss_exp_integral( const T peak_mean,
         const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, right_tail_start );
         const double diff = fabs(val - simple_answer);
         const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << right_tail_start
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
         assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
       }
 #endif
-      
+
       lower_energy = right_tail_start;
       break;
     }else
@@ -877,20 +909,25 @@ void exp_gauss_exp_integral( const T peak_mean,
         const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, upper_energy );
         const double diff = fabs(val - simple_answer);
         const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
         assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
       }
 #endif
-      
+
       lower_energy = upper_energy;
       indefinite_low = indefinite_high;
       channel += 1;
     }
   }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
-  
-  
+
+
   if( channel >= nchannel )
     return;
-  
+
   assert( static_cast<double>(energies[channel+1]) >= right_tail_start );
   
   lower_energy = max( T(static_cast<double>(energies[channel])), right_tail_start);
@@ -917,10 +954,15 @@ void exp_gauss_exp_integral( const T peak_mean,
         const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, right_tail_start );
         const double diff = fabs(val - simple_answer);
         const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << right_tail_start
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
         assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
       }
 #endif
-      
+
       lower_energy = right_tail_start;
       break;
     }else
@@ -940,10 +982,15 @@ void exp_gauss_exp_integral( const T peak_mean,
         const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, upper_energy );
         const double diff = fabs(val - simple_answer);
         const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-4) || (diff < 1.0E-5)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
         assert( (frac_diff < 1.0E-4) || (diff < 1.0E-5) );
       }
 #endif
-      
+
       lower_energy = upper_energy;
       indefinite_low = indefinite_high;
       channel += 1;
@@ -1135,9 +1182,15 @@ void double_sided_crystal_ball_integral( const T peak_mean,
                                                                                               lower_alpha, lower_power_law,
                                                                                               upper_alpha, upper_power_law,
                                                                                               lower_energy, left_tail_end );
-          
+
           const double diff = fabs(val - alt_val);
           const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-5)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << left_tail_end
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
           assert( (frac_diff < 1.0E-6) || (diff < 1.0E-5) );
         }//if constexpr ( std::is_same_v<T, double> )
 #endif
@@ -1163,13 +1216,19 @@ void double_sided_crystal_ball_integral( const T peak_mean,
                                                                                               lower_alpha, lower_power_law,
                                                                                               upper_alpha, upper_power_law,
                                                                                               lower_energy, upper_energy );
-          
+
           const double diff = fabs(val - alt_val);
           const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-9)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
           assert( (frac_diff < 1.0E-6) || (diff < 1.0E-9) );
         }//if constexpr ( std::is_same_v<T, double> )
 #endif
-        
+
         lower_energy = upper_energy;
         indefinite_low = indefinite_high;
         channel += 1;
@@ -1213,13 +1272,19 @@ void double_sided_crystal_ball_integral( const T peak_mean,
                                                                                               lower_alpha, lower_power_law,
                                                                                               upper_alpha, upper_power_law,
                                                                                               lower_energy, right_tail_start );
-          
+
           const double diff = fabs(val - alt_val);
           const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-5)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << right_tail_start
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
           assert( (frac_diff < 1.0E-6) || (diff < 1.0E-5) );
         }//if constexpr ( std::is_same_v<T, double> )
 #endif
-      
+
       lower_energy = right_tail_start;
       break;
     }else
@@ -1241,23 +1306,29 @@ void double_sided_crystal_ball_integral( const T peak_mean,
                                                                                               lower_alpha, lower_power_law,
                                                                                               upper_alpha, upper_power_law,
                                                                                               lower_energy, upper_energy );
-          
+
           const double diff = fabs(val - alt_val);
           const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-9)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
           assert( (frac_diff < 1.0E-6) || (diff < 1.0E-9) );
         }//if constexpr ( std::is_same_v<T, double> )
 #endif
-      
+
       lower_energy = upper_energy;
       indefinite_low = indefinite_high;
       channel += 1;
     }
   }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
-  
-  
+
+
   if( channel >= nchannel )
     return;
-  
+
   assert( energies[channel+1] >= right_tail_start );
   lower_energy = max( T(static_cast<double>(energies[channel])), right_tail_start );
   indefinite_low = right_tail_indefinite_non_norm( lower_energy );
@@ -1290,13 +1361,19 @@ void double_sided_crystal_ball_integral( const T peak_mean,
                                                                                               lower_alpha, lower_power_law,
                                                                                               upper_alpha, upper_power_law,
                                                                                               lower_energy, right_tail_start );
-          
+
           const double diff = fabs(val - alt_val);
           const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-9)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << right_tail_start
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
           assert( (frac_diff < 1.0E-6) || (diff < 1.0E-9) );
         }//if constexpr ( std::is_same_v<T, double> )
 #endif
-      
+
       lower_energy = right_tail_start;
       break;
     }else
@@ -1318,13 +1395,19 @@ void double_sided_crystal_ball_integral( const T peak_mean,
                                                                                               lower_alpha, lower_power_law,
                                                                                               upper_alpha, upper_power_law,
                                                                                               lower_energy, upper_energy );
-          
+
           const double diff = fabs(val - alt_val);
           const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-9)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
           assert( (frac_diff < 1.0E-6) || (diff < 1.0E-9) );
         }//if constexpr ( std::is_same_v<T, double> )
 #endif
-      
+
       lower_energy = upper_energy;
       indefinite_low = indefinite_high;
       channel += 1;

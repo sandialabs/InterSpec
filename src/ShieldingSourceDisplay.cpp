@@ -9088,6 +9088,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     log_developer_error( __func__, ("Programming Issue - caught exception: " + string(e.what())).c_str() );
 #endif
   }//try / catch
+
+  wApp->triggerUpdate();
   
   m_currentFitFcn.reset();
 }//void updateGuiWithModelFitResults( std::vector<double> paramValues, paramErrors )

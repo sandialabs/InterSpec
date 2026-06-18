@@ -1075,6 +1075,9 @@ void ExportSpecFileTool::init()
   m_interspec->saveRelActAutoStateToForegroundSpecMeas();
   m_interspec->saveRelActManualStateToForegroundSpecMeas();
 #endif
+#if( USE_LLM_INTERFACE )
+  m_interspec->syncLlmHistoryToSpecMeas();
+#endif
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   const bool isMobile = m_interspec && m_interspec->isMobile();

@@ -93,7 +93,14 @@ namespace AnalystChecks
   };
   
   InterSpec_API FitPeakStatus fit_user_peak( const FitPeakOptions &options, InterSpec *interspec );
-  
+
+  /** Async version of fit_user_peak that runs the expensive peak search in a background thread.
+   The callback is called on the GUI thread with either a FitPeakStatus (success) or a string (error message).
+   */
+  using FitPeakCallback = std::function<void( std::variant<FitPeakStatus, std::string> )>;
+  InterSpec_API void fit_user_peak_async( const FitPeakOptions &options, InterSpec *interspec,
+                                          FitPeakCallback callback );
+
   struct GetUserPeakOptions {
     SpecUtils::SpectrumType specType;
     std::optional<double> lowerEnergy;
@@ -131,11 +138,19 @@ namespace AnalystChecks
     std::vector<std::shared_ptr<const PeakDef>> fitPeaks;
     std::vector<std::shared_ptr<const PeakDef>> peaksToRemove;
     bool peaksWereRemovedFromSession = false;
+    bool noObservablePeaksFit = false;
     std::vector<std::string> warnings;
   };
   
   InterSpec_API FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec );
-  
+
+  /** Async version of fit_peaks_for_nuclides that runs the expensive fitting in a background thread.
+   The callback is called on the GUI thread with either a FitPeaksForNuclideStatus (success) or a string (error message).
+   */
+  using FitPeaksCallback = std::function<void( std::variant<FitPeaksForNuclideStatus, std::string> )>;
+  InterSpec_API void fit_peaks_for_nuclides_async( const FitPeaksForNuclideOptions &options, InterSpec *interspec,
+                                                    FitPeaksCallback callback );
+
   /** Calculates an approximate importance that a peak in a spectrum will have for a given nuclide.
    * 
    * Importance is defined by `yield(i)*sqrt(energy(i))/sum(yield*sqrt(energy))`.
@@ -175,85 +190,140 @@ namespace AnalystChecks
   
   struct SpectrumCountsInEnergyRange
   {
-    double lower_energy;
-    double upper_energy;
+    double lower_energy;  // actual lower energy, snapped to channel boundary
+    double upper_energy;  // actual upper energy, snapped to channel boundary
 
-    double foreground_counts;
+    double foreground_counts;  // total counts in range
 
     /** Counts divided by live time.  If live time of spectrum is not valid, this will be set to NaN. */
     double foreground_cps;
 
-    struct CountsWithComparisonToForeground
+    // Per-channel data (empty when max_channels <= 1)
+    std::vector<float> channel_lower_energies;    // lower edge of each (possibly combined) bin
+    std::vector<float> foreground_channel_counts;  // counts in each bin
+    size_t channel_combine_factor = 1;             // the 2^N combining factor used
+
+    struct BackgroundSecondaryInfo
     {
       double counts;
 
       /** Counts divided by live time.  If live time of spectrum is not valid, this will be set to NaN. */
       double cps;
 
-      /** The number of statistical sigma the foreground is is elevated, 
-       * relative to this spectrum (the background or secondary), when live-time normalized. 
-       * Positive numbers indicate foreground is elevated, negative numbers indicate 
+      /** The number of statistical sigma the foreground is elevated,
+       * relative to this spectrum (the background or secondary), when live-time normalized.
+       * Positive numbers indicate foreground is elevated, negative numbers indicate
        * deficit in foreground.
-       * */
+       */
       double num_sigma_rel_foreground;
-    };//struct CountsWithComparisonToForeground
 
-    std::optional<CountsWithComparisonToForeground> background_info;
-    std::optional<CountsWithComparisonToForeground> secondary_info;
+      /** Scale factor: foreground_live_time / this_live_time.
+       * Set to 1.0 if either live time is zero or invalid.
+       */
+      double live_time_scale_factor;
+
+      /** Per-channel counts, rebinned to foreground energy calibration and scaled by live-time ratio.
+       * Empty when max_channels <= 1.
+       */
+      std::vector<float> channel_counts;
+    };//struct BackgroundSecondaryInfo
+
+    std::optional<BackgroundSecondaryInfo> background_info;
+    std::optional<BackgroundSecondaryInfo> secondary_info;
   };//struct SpectrumCountsInEnergyRange
 
-  SpectrumCountsInEnergyRange get_counts_in_energy_range( double lower_energy, double upper_energy, InterSpec *interspec );
+  SpectrumCountsInEnergyRange get_counts_in_energy_range( double lower_energy, double upper_energy,
+                                                          int max_channels, InterSpec *interspec );
 
-  /** Enum specifying the action to perform when editing a peak. */
-  enum class EditPeakAction
+  /** Structural actions for peak editing that are mutually exclusive with property changes. */
+  enum class EditPeakStructuralAction
   {
-    SetEnergy,
-    SetFwhm,
-    SetAmplitude,
-    SetEnergyUncertainty,
-    SetFwhmUncertainty,
-    SetAmplitudeUncertainty,
-    SetRoiLower,
-    SetRoiUpper,
-    SetSkewType,
-    SetContinuumType,
-    SetSource,
-    SetColor,
-    SetUserLabel,
-    SetUseForEnergyCalibration,
-    SetUseForShieldingSourceFit,
-    SetUseForManualRelEff,
     DeletePeak,
     SplitFromRoi,
     MergeWithLeft,
     MergeWithRight
-  };//enum class EditPeakAction
+  };//enum class EditPeakStructuralAction
 
-  /** Converts EditPeakAction enum to string representation.
+  const char *to_string( EditPeakStructuralAction action );
+  EditPeakStructuralAction structural_action_from_string( const std::string &str );
 
-   @param action The edit action to convert
-   @return String representation of the action
+
+  /** Options for editing a peak at a specified energy.
+
+   Supports setting multiple peak properties in a single call.  When a structural action is
+   specified (Delete, Split, Merge), all property fields are ignored.
+
+   Shape-affecting property changes (mean, fwhm, amplitude, skew type/params, continuum
+   type/coefficients, ROI bounds) trigger an automatic refit unless suppressed via #refit.
+   Fit-for flags and metadata changes do not trigger auto-refit.
+
+   Important: setting a parameter value (e.g., skewPar0) triggers a refit that may adjust
+   that value.  To lock a value, also set its corresponding fitFor flag to false.
    */
-  const char* to_string( EditPeakAction action );
-
-  /** Converts string to EditPeakAction enum.
-
-   @param str String representation of the action
-   @return The corresponding EditPeakAction enum value
-   @throws std::runtime_error if string does not match a valid action
-   */
-  EditPeakAction edit_peak_action_from_string( const std::string &str );
-
-  /** Options for editing a peak at a specified energy. */
   struct EditAnalysisPeakOptions
   {
+    /** Energy (keV) used to find the nearest analysis peak (must be within 1 FWHM). */
     double energy;
-    EditPeakAction editAction;
-    SpecUtils::SpectrumType specType;
-    std::optional<double> doubleValue;
-    std::optional<std::string> stringValue;
-    std::optional<bool> boolValue;
-    std::optional<double> uncertainty;
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
+
+    /** When set, performs a structural action and all property fields below are ignored. */
+    std::optional<EditPeakStructuralAction> structuralAction;
+
+    // --- Gaussian peak properties ---
+    std::optional<double> meanEnergy;
+    std::optional<double> fwhm;
+    std::optional<double> amplitude;
+
+    std::optional<double> meanUncertainty;
+    std::optional<double> fwhmUncertainty;
+    std::optional<double> amplitudeUncertainty;
+
+    std::optional<bool> fitForMean;
+    std::optional<bool> fitForFwhm;       // maps to PeakDef::CoefficientType::Sigma
+    std::optional<bool> fitForAmplitude;
+
+    // --- Skew ---
+    std::optional<std::string> skewType;
+    std::optional<double> skewPar0;
+    std::optional<double> skewPar1;
+    std::optional<double> skewPar2;
+    std::optional<double> skewPar3;
+    std::optional<bool> fitForSkewPar0;
+    std::optional<bool> fitForSkewPar1;
+    std::optional<bool> fitForSkewPar2;
+    std::optional<bool> fitForSkewPar3;
+
+    // --- Continuum ---
+    std::optional<std::string> continuumType;
+    std::optional<double> continuumCoef0;
+    std::optional<double> continuumCoef1;
+    std::optional<double> continuumCoef2;
+    std::optional<double> continuumCoef3;
+    std::optional<bool> fitForContinuumCoef0;
+    std::optional<bool> fitForContinuumCoef1;
+    std::optional<bool> fitForContinuumCoef2;
+    std::optional<bool> fitForContinuumCoef3;
+
+    // --- ROI bounds ---
+    std::optional<double> roiLowerEnergy;
+    std::optional<double> roiUpperEnergy;
+
+    // --- Source / metadata ---
+    std::optional<std::string> source;
+    std::optional<std::string> color;
+    std::optional<std::string> userLabel;
+
+    // --- Usage flags ---
+    std::optional<bool> useForEnergyCalibration;
+    std::optional<bool> useForShieldingSourceFit;
+    std::optional<bool> useForManualRelEff;
+
+    /** Refit control.
+     nullopt: auto (refit if shape-affecting values changed).
+     true: force refit even if only metadata changed.
+     false: suppress refit even if shape values changed.
+     */
+    std::optional<bool> refit;
   };//struct EditAnalysisPeakOptions
 
   /** Results of peak edit operation. */
@@ -261,20 +331,19 @@ namespace AnalystChecks
   {
     bool success;
     std::string message;
+    bool refitPerformed = false;
     std::optional<std::shared_ptr<const PeakDef>> modifiedPeak;
     std::vector<std::shared_ptr<const PeakDef>> peaksInRoi;
   };//struct EditAnalysisPeakStatus
 
   /** Edit or delete a peak at the specified energy.
 
-   This function allows modifying peak properties (energy, FWHM, amplitude),
-   ROI bounds, continuum/skew types, assigning sources, setting colors/labels,
-   deleting peaks, or splitting/merging ROIs.
+   Supports modifying multiple peak properties in a single call, with optional automatic
+   refitting when shape-affecting properties change.
 
-   @param options Specifies the energy, action, and values for the edit
+   @param options Specifies the energy and property changes (or structural action) to apply
    @param interspec Pointer to the InterSpec session containing the peak
-   @return EditAnalysisPeakStatus containing success/failure and modified peak info
-   @throws std::runtime_error if InterSpec is null or other errors occur
+   @return EditAnalysisPeakStatus containing success/failure, refit info, and modified peak
    */
   InterSpec_API EditAnalysisPeakStatus edit_analysis_peak( const EditAnalysisPeakOptions &options, InterSpec *interspec );
 
