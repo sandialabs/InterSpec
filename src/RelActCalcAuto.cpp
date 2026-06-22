@@ -7719,6 +7719,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     };
     
     const auto moreThanByNumPerSecond = []( const pair<double,double> &lhs, const pair<double,double> &rhs ){
+      // NaN-safe strict-weak ordering.  A degenerate rel-eff curve (e.g. a poorly-conditioned or
+      //  failing fit) can make `counts` non-finite (a 0*inf overflow), and a plain `>` comparison
+      //  involving NaN is not a valid strict-weak ordering -> std::sort would be undefined behavior.
+      //  Sort any NaN counts last (they form ROIs that get rejected downstream anyway).
+      if( IsNan(lhs.second) )
+        return false;
+      if( IsNan(rhs.second) )
+        return true;
       return lhs.second > rhs.second;
     };
     
@@ -11253,13 +11261,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
 
-      // The throw threshold in `eval_physical_model_eqn_imp` is set generously
-      //  (-1e-3 g/cm^2 i.e. well below the bounds-loosening of -1e-5 g/cm^2);
-      //  reaching this branch under normal operation means something has gone
-      //  genuinely wrong, so assert loudly during development. Returning false
-      //  tells Ceres to reject the trial step and shrink the trust region,
-      //  which is the safe production-time recovery.
-      assert( 0 );
+      // eval(...) throws when a trial parameter set is numerically un-evaluable - most commonly a
+      //  poorly-conditioned or degenerate rel-eff curve overflowing to inf/NaN.  That legitimately
+      //  happens for sources with essentially no signal (fits that are "expected to fail"), where the
+      //  initial estimate produces an extreme curve.  It is a recoverable condition: returning false
+      //  tells Ceres to reject the trial step and shrink the trust region (the safe recovery).  We
+      //  deliberately do NOT assert here - that would crash these legitimately-degenerate fits during
+      //  development; the cerr above is the developer-facing signal.
       return false;
     }
     

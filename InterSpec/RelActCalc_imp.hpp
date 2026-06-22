@@ -171,7 +171,10 @@ T get_atten_coef_for_an( const T &an, const float energy )
   else
     an_scalar = an;
 
-  assert( (an_scalar >= 1.0) && (an_scalar <= 98.0) );
+  // Allow a small margin past [1,98]: callers no longer hard-clamp the (Jet) atomic number to the
+  //  bound (that would zero its derivative), so the optimizer may evaluate a hair outside while the
+  //  table lookup below stays valid via std::clamp.
+  assert( (an_scalar >= 1.0 - 1.0e-3) && (an_scalar <= 98.0 + 1.0e-3) );
 
   // Clamp to [1, 97] so we can always interpolate to lower_an+1 without exceeding element 98
   const int lower_an = std::clamp( static_cast<int>(std::floor(an_scalar)), 1, 97 );

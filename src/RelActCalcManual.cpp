@@ -88,6 +88,61 @@ struct DoWorkOnDestruct
 #define USE_RESIDUAL_TO_BREAK_DEGENERACY 0
 
   
+/** Computes the linear-least-squares parameter covariance `C = (A^T A)^{-1}` from the (thin) SVD of
+ `A = U*S*V^T`, using the numerically-stable pseudo-inverse `C = V * S^{-2} * V^T`.  Singular values
+ below `tol*sigma_max` are dropped (treated as 1/s^2 -> 0), so this avoids forming `A^T A` (which
+ squares the condition number) and yields a finite, minimum-norm covariance for rank-deficient `A`
+ instead of a blow-up or a slightly-negative diagonal.
+
+ The covariance is only ever needed in double precision: the auto-differentiation (`ceres::Jet`)
+ residual path passes a null covariance pointer (it is unused there, and a Jet matrix pseudo-inverse
+ would be expensive and is not needed).  The `static_assert` makes that a compile-time requirement for
+ any future caller. */
+template<typename T>
+Eigen::MatrixX<T> lls_covariance_from_svd( const Eigen::MatrixX<T> &V,
+                                           const Eigen::VectorX<T> &singular_values,
+                                           const Eigen::Index num_rows )
+{
+  static_assert( std::is_same_v<T, double>,
+    "lls_covariance_from_svd: covariance is computed in double precision only.  The auto-diff"
+    " (ceres::Jet) path passes a null covariance pointer (it is unused there); the SVD pseudo-inverse"
+    " is neither needed nor implemented for Jet types." );
+
+  const Eigen::Index p = V.rows();          // parameter dimension (covariance is p x p)
+  const Eigen::Index num_sv = singular_values.size();
+
+  // Eigen returns singular values in descending order, so element 0 is the largest.
+  const double sigma_max = (num_sv > 0) ? singular_values(0) : 0.0;
+  const double tol = std::numeric_limits<double>::epsilon()
+                       * static_cast<double>( std::max<Eigen::Index>( num_rows, p ) )
+                       * sigma_max;
+
+  Eigen::MatrixX<T> C = Eigen::MatrixX<T>::Zero( p, p );
+  for( Eigen::Index k = 0; k < num_sv; ++k )
+  {
+    const double s = singular_values(k);
+    if( s > tol )
+      C.noalias() += (1.0 / (s*s)) * (V.col(k) * V.col(k).transpose());
+  }//for( loop over singular values )
+
+  return C;
+}//lls_covariance_from_svd(...)
+
+
+/** Smooth, gradient-preserving lower bound: ~`value` for `value >> floor_val`, ~`floor_val` for
+ `value << floor_val`, with slope always in (0,1).  Used to keep a quantity strictly positive before
+ a log()/division without zeroing a `ceres::Jet` derivative (a hard clamp `value = floor_val` would
+ zero it, re-creating the bound-trap the physical-model AD code avoids). */
+template<typename T>
+T smooth_lower_bound( const T &value, const double floor_val )
+{
+  using namespace std;
+  using namespace ceres;
+  const T d = value - floor_val;
+  return floor_val + 0.5*( d + sqrt( d*d + floor_val*floor_val ) );
+}//smooth_lower_bound(...)
+
+
 template<typename T>
 void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
                               const size_t order,
@@ -192,7 +247,7 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
           //y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...
           // and
           //ln(y) = a + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ...
-          A(row,col) = pow(log(energy), static_cast<T>(col)) / uncertainty;
+          A(row,col) = pow(log(energy), static_cast<double>(col)) / uncertainty;
           break;
           
         case RelActCalc::RelEffEqnForm::LnY:
@@ -241,26 +296,34 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
   // Only compute covariance if it is wanted
   if( covariance )
   {
-    // TODO: I'm sure Eigen::BDCSVD has the uncertainty matrix in it somewhere already computed, but
-    //       for the moment (See pg 796 in Numerical Recipes for hint - probably has something to do
-    //       with bdc.singularValues(), bdc.matrixV(), or bdc.matrixU()) we'll just be dumb and do
-    //       extra (unstable?) work.
-    const Eigen::MatrixX<T> A_transpose = A.transpose();
-    const Eigen::MatrixX<T> alpha = Eigen::Product<Eigen::MatrixX<T>,Eigen::MatrixX<T>>( A_transpose, A ); //A_transpose * A;
-    const Eigen::MatrixX<T> C = alpha.inverse();
-    
-    assert( C.rows() == solution.size() );
-    assert( C.cols() == solution.size() );
-    
-    covariance->resize( solution.size() );
-    
-    for( size_t i = 0; i <= order; ++i )
+    if constexpr ( std::is_same_v<T, double> )
     {
-      vector<T> &row = (*covariance)[i];
-      row.resize( solution.size() );
-      for( size_t j = 0; j <= order; ++j )
-        row[j] = C(i,j);
-    }//for( loop over coefficients index )
+      // Covariance C = (A^T A)^{-1}, computed as the SVD pseudo-inverse V*S^{-2}*V^T (see helper);
+      //  this avoids forming A^T A (which squares the condition number) and stays finite for
+      //  rank-deficient A.
+      const Eigen::MatrixX<T> C = lls_covariance_from_svd<T>( bdc.matrixV(), bdc.singularValues(),
+                                                            static_cast<Eigen::Index>(num_peaks) );
+
+      assert( C.rows() == solution.size() );
+      assert( C.cols() == solution.size() );
+
+      covariance->resize( solution.size() );
+
+      for( size_t i = 0; i <= order; ++i )
+      {
+        vector<T> &row = (*covariance)[i];
+        row.resize( solution.size() );
+        for( size_t j = 0; j <= order; ++j )
+          row[j] = C(i,j);
+      }//for( loop over coefficients index )
+    }else
+    {
+      // The auto-diff (ceres::Jet) residual path passes covariance==nullptr (it is unused there),
+      //  so this is unreachable; we never want to differentiate through a matrix pseudo-inverse.
+      assert( 0 );
+      throw std::logic_error( "fit_rel_eff_eqn_lls_imp: covariance output is not supported for"
+                              " ceres::Jet types - pass a null covariance pointer." );
+    }//if constexpr( T is double ) / else
   }//if( covariance )
 }//fit_rel_eff_eqn_lls_imp(...)
 
@@ -341,15 +404,33 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
 
     T measured_rel_eff = counts / raw_rel_counts;
     T measured_rel_eff_uncert = counts_uncert / raw_rel_counts;
-    
-    // We will clamp rel eff to zero or above ... this is a workaround since Eigens LM doesnt
-    //  seem to allow constraining parameter ranges.
-    if( (measured_rel_eff <= static_cast<double>(numeric_limits<float>::epsilon()))
-       || isinf(measured_rel_eff)
-       || isinf(measured_rel_eff) )
+
+    // Keep rel-eff in a usable range (workaround since Eigen's LM doesn't constrain parameter ranges).
+    //  The log-based forms take log(measured_rel_eff) and divide by it downstream, so a non-positive
+    //  or non-finite value poisons the fit; use a smooth, gradient-preserving floor for those (a hard
+    //  clamp to a constant would zero the ceres::Jet derivative w.r.t. the activities - the same
+    //  bound-trap the physical-model AD code deliberately avoids).  LnX uses rel-eff linearly, so a
+    //  hard clamp to zero remains valid there.
+    const double rel_eff_floor = static_cast<double>(numeric_limits<float>::epsilon());
+    const bool log_form = (fcn_form == RelActCalc::RelEffEqnForm::LnY)
+                          || (fcn_form == RelActCalc::RelEffEqnForm::LnXLnY)
+                          || (fcn_form == RelActCalc::RelEffEqnForm::FramEmpirical);
+
+    if( log_form )
+    {
+      if( isnan(measured_rel_eff) || isinf(measured_rel_eff) )
+      {
+        // raw_rel_counts ~ 0: no usable measurement (no meaningful derivative either) - floor and down-weight.
+        measured_rel_eff = T( rel_eff_floor );
+        measured_rel_eff_uncert = T( 1.0 );
+      }else
+      {
+        measured_rel_eff = smooth_lower_bound( measured_rel_eff, rel_eff_floor );
+      }
+    }else if( (measured_rel_eff <= rel_eff_floor) || isinf(measured_rel_eff) || isnan(measured_rel_eff) )
     {
       measured_rel_eff = T( 0.0 );
-      if( peak.m_base_rel_eff_uncert > static_cast<double>(numeric_limits<float>::epsilon()) )
+      if( peak.m_base_rel_eff_uncert > rel_eff_floor )
         measured_rel_eff_uncert = T( 0.0 );
       else
         measured_rel_eff_uncert = T( 1.0 );
@@ -1229,6 +1310,12 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         assert( sum_constrained_frac_rel_mass_of_el == el_constrained_sum );
         const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
 
+        // Guard the division below: if the constrained mass fractions sum to ~1.0 there is no
+        //  unconstrained mass for this element, so total_rel_mass = (.../~0) would blow up.
+        if( unconstrained_rel_mass_frac_of_el <= 1.0E-6 )
+          throw std::runtime_error( "relative_activity: constrained mass fractions for an element sum"
+                                    " to ~1.0, leaving no unconstrained mass (degenerate constraint)." );
+
         T iso_mass_fraction;
         if( constraint.m_mass_fraction_lower == constraint.m_mass_fraction_upper )
         {
@@ -1439,15 +1526,16 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     }
 
     vector<T> eqn_coefficients;
-    vector<vector<T>> eqn_cov;
+    // Note: we deliberately pass nullptr for the covariance: it is unused here, and requesting it
+    //  would force a (ceres::Jet) matrix pseudo-inverse on every residual evaluation.  The final
+    //  covariance is computed once, in double precision, where the solution is extracted.
     fit_rel_eff_eqn_lls_imp<T>( m_input.eqn_form, m_input.eqn_order,
                                 m_isotopes,
                                 rel_activities,
                                 m_input.peaks,
-                                eqn_coefficients, &eqn_cov );
-    
+                                eqn_coefficients, nullptr );
+
     assert( eqn_coefficients.size() == (m_input.eqn_order + 1) );
-    assert( eqn_cov.size() == (m_input.eqn_order + 1) );
     
     
     std::function<T(double)> rel_eff_curve = make_rel_eff_fcn<T>( eqn_coefficients );
@@ -1570,7 +1658,12 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         }else if( m_input.phys_model_self_atten->fit_atomic_number )
         {
           T an = x[par_num] * RelActCalc::ns_an_ceres_mult;
-          att.atomic_number = fmin( fmax(an, 1.0), 98.0);
+          // Do NOT clamp `an` with fmin/fmax: that zeroes the ceres::Jet derivative at the [1,98]
+          //  bound, re-creating the bound-trap the areal-density AD path deliberately avoids (see
+          //  RelActCalc_imp.hpp).  The AN parameter is already Ceres-bounded (to [lower_an,upper_an]/
+          //  ns_an_ceres_mult), and get_atten_coef_for_an interpolates smoothly - keeping the gradient
+          //  non-zero - for the tiny margin the optimizer can reach past the bound.
+          att.atomic_number = an;
           par_num += 1;
         }else
         {
@@ -1611,7 +1704,12 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         }else if( ext_atten->fit_atomic_number )
         {
           T an = x[par_num] * RelActCalc::ns_an_ceres_mult;
-          att.atomic_number = fmin( fmax(an, 1.0), 98.0);
+          // Do NOT clamp `an` with fmin/fmax: that zeroes the ceres::Jet derivative at the [1,98]
+          //  bound, re-creating the bound-trap the areal-density AD path deliberately avoids (see
+          //  RelActCalc_imp.hpp).  The AN parameter is already Ceres-bounded (to [lower_an,upper_an]/
+          //  ns_an_ceres_mult), and get_atten_coef_for_an interpolates smoothly - keeping the gradient
+          //  non-zero - for the tiny margin the optimizer can reach past the bound.
+          att.atomic_number = an;
           par_num += 1;
         }else
         {
@@ -1688,7 +1786,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         if( ((rel_src_counts < 1.0E-8) && (rel_src_counts < (1.0E-6*peak.m_counts)))
            || (rel_src_counts < numeric_limits<T>::epsilon()) )
         {
-          rel_src_counts = exp(T{}) * 1.0E-6 * peak.m_counts;
+          rel_src_counts = T(1.0E-6) * peak.m_counts;
         }
         
         residuals[index] = (peak.m_counts / rel_src_counts) - curve_val;
@@ -2519,24 +2617,28 @@ void fit_act_to_rel_eff( const std::function<double(double)> &eff_fcn,
     
     if( IsNan(rel_eff) || IsInf(rel_eff) )
       throw runtime_error( "fit_act_to_rel_eff: invalid rel eff at " + to_string(energy) + " keV." );
-    
-    const double rel_act = (counts / rel_eff);
-    const double rel_act_uncert = rel_act * (counts_uncert / counts);
-    
-    b(row) = rel_act / rel_act_uncert;
-    
-    
+
+    if( counts_uncert <= 0.0 )
+      throw runtime_error( "fit_act_to_rel_eff: peak counts uncertainty must be > 0 at "
+                          + to_string(energy) + " keV." );
+
+    // The per-peak weighted least-squares row is (sum_iso yield*rel_eff*act - counts)/counts_uncert.
+    //  Writing b and A directly - instead of via rel_act = counts/rel_eff and
+    //  rel_act_uncert = rel_act*counts_uncert/counts - avoids dividing by rel_eff and by counts; the
+    //  algebra is identical (b = counts/counts_uncert, A = yield*rel_eff/counts_uncert), so the
+    //  solution and covariance are unchanged, but a zero rel_eff or zero counts no longer produce NaN.
+    b(row) = counts / counts_uncert;
+
     for( const GenericLineInfo &info : peak.m_source_gammas )
     {
       const auto pos = std::find( begin(isotopes), end(isotopes), info.m_isotope );
       assert( pos != end(isotopes) ); //we already checked this.
-      
+
       const int column = static_cast<int>( pos - begin(isotopes) );
       assert( (column >= 0) && (column < static_cast<int>(isotopes.size())) ); //sometimes re-assurance is good
-      
-      // rel efficiency is just something like cps/rel_act
+
       assert( A(row,column) == 0.0 );
-      A(row,column) = info.m_yield / rel_act_uncert;
+      A(row,column) = (info.m_yield * rel_eff) / counts_uncert;
     }//for( const GenericLineInfo &info : peak.m_source_gammas )
   }//for( size_t row = 0; row < num_peaks; ++row )
   
@@ -2554,21 +2656,18 @@ void fit_act_to_rel_eff( const std::function<double(double)> &eff_fcn,
   
   assert( solution.size() == num_isotopes );
   
-  // TODO: I'm sure Eigen::BDCSVD has the uncertainty matrix in it somewhere already computed, but
-  //       for the moment (See pg 796 in Numerical Recipes for hint - probably has something to do
-  //       with bdc.singularValues(), bdc.matrixV(), or bdc.matrixU()) we'll just be dumb and do
-  //       extra (unstable?) work.
-  const Eigen::MatrixX<double> A_transpose = A.transpose();
-  const Eigen::MatrixX<double> alpha = Eigen::Product<Eigen::MatrixX<double>,Eigen::MatrixX<double>>( A_transpose, A ); //A_transpose * A;
-  const Eigen::MatrixX<double> C = alpha.inverse();
-  
+  // Covariance C = (A^T A)^{-1} via the SVD pseudo-inverse V*S^{-2}*V^T (see helper): avoids forming
+  //  A^T A (which squares the condition number) and stays finite for rank-deficient A.
+  const Eigen::MatrixX<double> C = lls_covariance_from_svd<double>( bdc.matrixV(), bdc.singularValues(),
+                                                            static_cast<Eigen::Index>(num_peaks) );
+
   fit_rel_acts.resize( solution.size() );
   fit_uncerts.resize( solution.size() );
-  
+
   for( size_t i = 0; i < num_isotopes; ++i )
   {
     fit_rel_acts[i] = solution(i);
-    fit_uncerts[i] = std::sqrt( C(i,i) );
+    fit_uncerts[i] = std::sqrt( std::max( 0.0, C(i,i) ) );
   }
 }//fit_act_to_rel_eff(...)
 

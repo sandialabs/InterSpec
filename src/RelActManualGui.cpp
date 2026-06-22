@@ -2125,6 +2125,16 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
         ext_shields[i]->resetMaterialEntryState();
         continue;
       }
+
+      // solution and input external shields should be 1:1; guard the input access defensively so a
+      //  size mismatch can't read out of bounds.
+      assert( i < input.phys_model_external_attens.size() );
+      if( i >= input.phys_model_external_attens.size() )
+      {
+        ext_shields[i]->resetMaterialEntryState();
+        continue;
+      }
+
       const auto &fit_val = solution.m_phys_model_external_atten_shields[i];
       const shared_ptr<const RelActCalc::PhysicalModelShieldInput> in_shield = input.phys_model_external_attens[i];
 
@@ -2754,7 +2764,7 @@ size_t RelActManualGui::relEffEqnOrder() const
     return 0;
 
   const int orderIndex = m_relEffEqnOrder->currentIndex();
-  if( (orderIndex < 0) || (orderIndex > 7) )
+  if( (orderIndex < 0) || (orderIndex > 6) )
     throw runtime_error( "Invalid RelEffEqnOrder" );
   
   return static_cast<size_t>(orderIndex);
