@@ -1355,8 +1355,16 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       }
     }//if( filtered_peaks->size() != all_peaks.size() )
     
-    paramaters.resize( fwhm_paramatersf.size() );
-    for( size_t i = 0; i < fwhm_paramatersf.size(); ++i )
+    // performResolutionFit() can return FEWER coefficients than the requested fit_order when the
+    //  spectrum has too few peaks to constrain the full order (e.g. sparse spectra with only 2-3
+    //  ROIs).  Downstream code (and the Bernstein conversion below) assumes exactly fit_order
+    //  coefficients, so a short result silently leaves the trailing FWHM parameters - including the
+    //  Bernstein min/max energy window - uninitialized in the solve vector, which then evaluates to a
+    //  degenerate window (min==max==0 -> NaN FWHM) or a ~0 FWHM (the "too small" throw).  Pad to
+    //  fit_order with zeros: zero high-order polynomial terms leave the fitted curve unchanged, just
+    //  expressed at the requested order, guaranteeing the parameter block has the size the form needs.
+    paramaters.assign( static_cast<size_t>(fit_order), 0.0 );
+    for( size_t i = 0; (i < fwhm_paramatersf.size()) && (i < static_cast<size_t>(fit_order)); ++i )
       paramaters[i] = static_cast<double>( fwhm_paramatersf[i] );
 
     // For Bernstein forms, convert polynomial coefficients to Bernstein immediately,
@@ -3713,28 +3721,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             max_fwhm_keV = std::max( max_fwhm_keV, max_fwhm );
           }
           
-          // Find the lowest energy ROI to compute its average channel width
-          double lowest_roi_energy = std::numeric_limits<double>::max();
-          double lowest_roi_upper_energy = std::numeric_limits<double>::max();
+          // The per-peak resolvability check (check_peak_reasonable) requires each peak's FWHM to
+          //  span >=1.15 *local* channels.  The Bernstein FWHM bound is a single keV value applied
+          //  across the whole energy range, so to clear that check at *every* ROI energy we base the
+          //  floor on the *widest* channel in any ROI: FWHM >= 1.25*max_channel_width then yields
+          //  >=1.25 local channels everywhere (>1.15 with margin), for all detector types.  Using a
+          //  narrower basis (e.g. the lowest ROI's average) lets the FWHM collapse below 1.15 local
+          //  channels wherever channels are wider than that basis - which is what caused the prior
+          //  flood of "FWHM ... too small" rejections, especially for NaI/LaBr.
+          float min_channel_width_constraint = 0.0f;
           for( const RelActCalcAuto::RoiRange &roi : energy_ranges )
           {
-            if( roi.lower_energy < lowest_roi_energy )
-            {
-              lowest_roi_energy = roi.lower_energy;
-              lowest_roi_upper_energy = roi.upper_energy;
-            }
-          }
-
-          // Calculate average channel width of the lowest energy ROI
-          float min_channel_width_constraint = 0.0f;
-          if( lowest_roi_energy < std::numeric_limits<double>::max() )
-          {
-            const size_t lower_channel = spectrum->find_gamma_channel( lowest_roi_energy );
-            const size_t upper_channel = spectrum->find_gamma_channel( lowest_roi_upper_energy );
-            const float lower_energy = spectrum->gamma_channel_lower( lower_channel );
-            const float upper_energy = spectrum->gamma_channel_upper( upper_channel );
-            const double avg_channel_width = (upper_energy - lower_energy) / (upper_channel - lower_channel + 1);
-            min_channel_width_constraint = static_cast<float>(1.25 * avg_channel_width);
+            const size_t lower_channel = spectrum->find_gamma_channel( roi.lower_energy );
+            const size_t upper_channel = spectrum->find_gamma_channel( roi.upper_energy );
+            for( size_t ch = lower_channel; ch <= upper_channel; ++ch )
+              min_channel_width_constraint = std::max( min_channel_width_constraint,
+                                                       1.25f * spectrum->gamma_channel_width( ch ) );
           }
 
           // For high-res detectors, allow the FWHM floor to drop below the expected minimum, so
@@ -10308,25 +10310,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         fwhm = 2.35482 * peak_sigma;
 
       if( isinf(peak_sigma) || isnan(peak_sigma) )
-      {
-        stringstream msg;
-        msg << "peaks_for_energy_range_imp: " << fwhm << " FWHM for "
-        << std::setprecision(2) << gamma_energy << " keV, from pars={";
-        const size_t num_drf_par = num_parameters(m_options.fwhm_form);
-        for( size_t i = 0; i < num_drf_par; ++i )
-        {
-          double par_val;
-          if constexpr ( !std::is_same_v<T, double> )
-            par_val = x[2 + i].a;
-          else
-            par_val = x[2 + i];
-
-          msg << (i ? ", " : "") << par_val;
-        }
-        msg << "}";
-
-        throw runtime_error( msg.str() );
-      }//if( IsInf(peak_sigma) || IsNan(peak_sigma) )
+        throw runtime_error( "peaks_for_energy_range_imp: nan/inf FWHM for "
+                            + std::to_string(gamma_energy) + " keV." );
 
       // Do a sanity check to make sure peak isnt getting too narrow - require FWHM to be at least 1.15 channels in
       //  the ROI, and even for peaks below the ROI, something positive
@@ -12230,9 +12215,14 @@ T bersteinPeakResolutionFWHM( T energy, const T * const pars, const size_t num_p
       energy.a = max_energy.a;
   }
   
-  // Normalize energy to [0, 1] for Berstein polynomial
-  const T t = (energy - min_energy) / (max_energy - min_energy);
-  
+  // Normalize energy to [0, 1] for Berstein polynomial.
+  //  Guard the degenerate window max_energy <= min_energy: otherwise (max-min)==0 gives t = 0/0 = NaN,
+  //  which propagates to a NaN FWHM/sigma and aborts the whole cost evaluation.  This happens when a
+  //  solve reaches here with an uninitialized FWHM energy range (min==max==0); rather than poison the
+  //  fit, fall back to the low-energy control point (t=0) so the FWHM stays finite and the solve can
+  //  proceed (and be judged on its merits).  In the normal (max>min) case this is exactly the old path.
+  const T t = (max_energy > min_energy) ? ((energy - min_energy) / (max_energy - min_energy)) : T(0);
+
   // Evaluate Berstein polynomial using the optimized implementation
   return sqrt( BersteinPolynomial::evaluate( t, pars, num_berstein_coeffs ) );
 }//T bersteinPeakResolutionFWHM( energy, pars, num_pars )

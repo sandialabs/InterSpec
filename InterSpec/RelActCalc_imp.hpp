@@ -291,7 +291,17 @@ T eval_physical_model_eqn_imp( const double energy,
       // Modified Hoerl function E_MeV^b * c^(1/E_MeV); evaluated in exp/log form for AD/Jet stability.
       const T b_val = *b;
       const T c_val = *c;
-      const double energy_mev = 0.001*energy;
+      // The b/c bounds are sized to keep the exponent's swing bounded over the correction's fit
+      //  window [corr_lower_energy, corr_upper_energy] (see RelActCalcAuto.cpp ~4104).  The correction
+      //  is meaningless outside that window, and below it the 1/E_MeV term grows without bound, blowing
+      //  the exponent up until exp() overflows (-> the throw below).  Clamp the evaluation energy into
+      //  the window so the exponent stays in the range the bounds were sized for - preventing the
+      //  overflow at its source.  `energy` is a plain double here, so this does not touch any
+      //  ceres::Jet derivative.
+      double eval_energy = energy;
+      if( (corr_upper_energy > corr_lower_energy) && (corr_lower_energy > 0.0) )
+        eval_energy = std::max( corr_lower_energy, std::min( corr_upper_energy, energy ) );
+      const double energy_mev = 0.001*eval_energy;
       answer = exp( b_val*log(energy_mev) + log(c_val)/energy_mev );
     }//if( basis ) / else( Hoerl )
 

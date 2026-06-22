@@ -7682,6 +7682,24 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             []( const RelActCalcAuto::RoiRange &a, const RelActCalcAuto::RoiRange &b ){
               return a.lower_energy < b.lower_energy;
           } );
+
+          // Restored edge ROIs (above) use their original, pre-shrink bounds and can overlap a
+          //  re-clustered neighbor.  Quietly merge any such overlaps now - extend the earlier ROI to
+          //  cover the later one and drop the later - so they are not later flagged by
+          //  resolve_overlapping_rois as a spurious non-escape-peak overlap.  (Matches that
+          //  function's merge semantics: keep the earlier ROI and widen its upper energy.)
+          for( size_t i = 1; i < refined_rois.size(); )
+          {
+            if( refined_rois[i].lower_energy <= refined_rois[i-1].upper_energy )
+            {
+              refined_rois[i-1].upper_energy = std::max( refined_rois[i-1].upper_energy,
+                                                         refined_rois[i].upper_energy );
+              refined_rois.erase( refined_rois.begin() + i );
+            }else
+            {
+              ++i;
+            }
+          }
         }//if( check for dropped edge ROIs )
 
         if( refined_rois.empty() )
