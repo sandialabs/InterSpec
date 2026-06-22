@@ -42,6 +42,8 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -205,8 +207,11 @@ namespace
   vector<shared_ptr<const PeakDef>> run_auto_search(
     const shared_ptr<const SpecUtils::Measurement> &foreground, const bool isHPGe )
   {
+    auto prefs = make_shared<PeakFitDetPrefs>();
+    prefs->m_det_type = isHPGe ? PeakFitUtils::CoarseResolutionType::High
+                               : PeakFitUtils::CoarseResolutionType::Low;
     return ExperimentalAutomatedPeakSearch::search_for_peaks(
-      foreground, nullptr, nullptr, true, isHPGe );
+      foreground, nullptr, nullptr, true, prefs );
   }// run_auto_search
 
 
@@ -251,12 +256,18 @@ namespace
     const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options
       = Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions>() )
   {
+    const PeakFitUtils::CoarseResolutionType det_type = isHPGe
+        ? PeakFitUtils::CoarseResolutionType::High
+        : PeakFitUtils::CoarseResolutionType::Low;
+    auto peak_fit_prefs = make_shared<PeakFitDetPrefs>();
+    peak_fit_prefs->m_det_type = det_type;
+
     const FitPeaksForNuclides::PeakFitForNuclideConfig &config
-      = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( isHPGe );
+      = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
 
     return FitPeaksForNuclides::fit_peaks_for_nuclides(
       auto_search_peaks, foreground, sources, user_peaks,
-      background, nullptr, options, config, isHPGe );
+      background, nullptr, options, config, peak_fit_prefs );
   }// run_fit
 
 
@@ -465,7 +476,7 @@ namespace
       return;
 
     const FitPeaksForNuclides::PeakFitForNuclideConfig &config
-      = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( true );
+      = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( PeakFitUtils::CoarseResolutionType::High );
 
     // 1. No overlapping observable ROIs
     verify_no_roi_overlaps( result.observable_peaks, foreground );
@@ -1012,9 +1023,11 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
 
   // ---- Step 3: Eu-152 ----
   {
-    BOOST_TEST_MESSAGE( "\n--- Step 3: Eu-152 ---" );
+    BOOST_TEST_MESSAGE( "\n--- Step 3: Eu-152 (+K40) ---" );
     const vector<shared_ptr<const PeakDef>> pre_peaks = user_peaks;
-    const vector<RelActCalcAuto::SrcVariant> sources = make_sources( {"Eu152"} );
+    // Fit K40 together with Eu-152: Eu-152's 1457 keV line sits on K40's strong 1460 keV line,
+    // so fitting Eu-152 alone mis-attributes/distorts that ROI and throws off the rel-eff curve.
+    const vector<RelActCalcAuto::SrcVariant> sources = make_sources( {"K40", "Eu152"} );
 
     const FitPeaksForNuclides::PeakFitResult result
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
@@ -1219,12 +1232,20 @@ BOOST_AUTO_TEST_CASE( test_trinitite_do_not_use_existing_sequence )
   const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> opts
     = FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois;
 
-  const vector<string> source_names = { "Cs137", "Am241", "Eu152", "Ba133", "Co60" };
+  // Fit each source independently (DoNotUseExistingRois), but fit K40 together with Eu-152:
+  // Eu-152's 1457 keV line overlaps K40's strong 1460 keV line, so they must be fit jointly.
+  const vector<vector<string>> source_groups = {
+    {"Cs137"}, {"Am241"}, {"K40", "Eu152"}, {"Ba133"}, {"Co60"}
+  };
 
-  for( const string &src_name : source_names )
+  for( const vector<string> &src_group : source_groups )
   {
-    BOOST_TEST_MESSAGE( "\n--- DoNotUseExisting: " << src_name << " ---" );
-    const vector<RelActCalcAuto::SrcVariant> sources = make_sources( {src_name} );
+    string group_label;
+    for( const string &n : src_group )
+      group_label += (group_label.empty() ? "" : "+") + n;
+
+    BOOST_TEST_MESSAGE( "\n--- DoNotUseExisting: " << group_label << " ---" );
+    const vector<RelActCalcAuto::SrcVariant> sources = make_sources( src_group );
 
     const FitPeaksForNuclides::PeakFitResult result
       = run_fit( spec.foreground, spec.background, auto_peaks, sources,
@@ -1236,12 +1257,12 @@ BOOST_AUTO_TEST_CASE( test_trinitite_do_not_use_existing_sequence )
 
       // DoNotUseExistingRois: no peaks should ever be removed
       BOOST_CHECK_MESSAGE( result.original_peaks_to_remove.empty(),
-        src_name << ": DoNotUseExistingRois removed " << result.original_peaks_to_remove.size()
+        group_label << ": DoNotUseExistingRois removed " << result.original_peaks_to_remove.size()
         << " peaks" );
     }
 
     user_peaks = apply_fit_result( user_peaks, result );
-    BOOST_TEST_MESSAGE( "After " << src_name << ": " << user_peaks.size() << " total peaks" );
+    BOOST_TEST_MESSAGE( "After " << group_label << ": " << user_peaks.size() << " total peaks" );
   }
 }
 
@@ -1362,8 +1383,8 @@ BOOST_AUTO_TEST_CASE( test_eu154_does_not_remove_strong_eu152_peak )
   const vector<shared_ptr<const PeakDef>> auto_peaks
     = run_auto_search( spec.foreground, spec.isHPGe );
 
-  // Step 1: Fit Eu-152
-  const vector<RelActCalcAuto::SrcVariant> sources_eu152 = make_sources( {"Eu152"} );
+  // Step 1: Fit Eu-152 (with K40 - Eu-152 1457 keV overlaps K40's strong 1460 keV line)
+  const vector<RelActCalcAuto::SrcVariant> sources_eu152 = make_sources( {"K40", "Eu152"} );
   const vector<shared_ptr<const PeakDef>> empty_user_peaks;
 
   const FitPeaksForNuclides::PeakFitResult result_eu152
