@@ -268,6 +268,67 @@ ExpectedPhotopeakInfo create_expected_photopeak( const InjectSourceInfo &info, c
 }//ExpectedPhotopeakInfo create_expected_photopeak(...)
 
 
+std::vector<ExpectedPhotopeakInfo> filter_photopeaks_for_scoring(
+    const std::vector<ExpectedPhotopeakInfo> &expected,
+    PeakFitUtils::CoarseResolutionType det_type )
+{
+  // Below ~50 keV (NaI/low-med) / 30 keV (HPGe), peaks are unreliable (poor resolution, rapidly
+  //  changing efficiency, x-ray overlap), so they are excluded from scoring - unless the source's
+  //  primary (largest-area) peak is itself below the threshold, in which case keep all peaks so a
+  //  low-energy-dominant source is not discarded.
+  const double min_scoring_energy
+    = (det_type == PeakFitUtils::CoarseResolutionType::High) ? 30.0 : 50.0;
+
+  double primary_energy = 0.0, primary_area = 0.0;
+  for( const ExpectedPhotopeakInfo &ep : expected )
+  {
+    if( ep.peak_area > primary_area )
+    {
+      primary_area = ep.peak_area;
+      primary_energy = ep.effective_energy;
+    }
+  }//for( const ExpectedPhotopeakInfo &ep : expected )
+
+  if( primary_energy < min_scoring_energy )
+    return expected;  // low-energy-dominant source: keep everything
+
+  std::vector<ExpectedPhotopeakInfo> filtered;
+  filtered.reserve( expected.size() );
+  for( const ExpectedPhotopeakInfo &ep : expected )
+  {
+    if( ep.effective_energy >= min_scoring_energy )
+      filtered.push_back( ep );
+  }
+
+  return filtered;
+}//filter_photopeaks_for_scoring(...)
+
+
+double missed_def_wanted_area_fraction(
+    const std::vector<ExpectedPhotopeakInfo> &scoring_peaks,
+    const std::vector<ExpectedPhotopeakInfo> &missed_def_wanted,
+    PeakFitUtils::CoarseResolutionType det_type )
+{
+  const JudgmentThresholds &th = JudgmentThresholds::for_det_type( det_type );
+
+  double total_def_area = 0.0;
+  for( const ExpectedPhotopeakInfo &ep : scoring_peaks )
+  {
+    if( (ep.nsigma_over_background > th.def_want_nsigma) && (ep.peak_area > th.min_def_wanted_counts) )
+      total_def_area += ep.peak_area;
+  }
+
+  if( total_def_area <= 0.0 )
+    return 0.0;
+
+  double missed_area = 0.0;
+  for( const ExpectedPhotopeakInfo &ep : missed_def_wanted )
+    missed_area += ep.peak_area;
+
+  return std::min( 1.0, missed_area / total_def_area );
+}//missed_def_wanted_area_fraction(...)
+
+
 InjectSourceInfo parse_inject_source_files( const string &base_name, const std::vector<std::pair<float,float>> &deviation_pairs )
 {
   /*

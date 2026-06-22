@@ -1802,15 +1802,22 @@ int main( int argc, char **argv )
 
             const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
 
+            // Score against the det-type-appropriate, low-energy-filtered expected peaks (sub-30 keV
+            // for HPGe / sub-50 keV otherwise are unreliable), and pass det_type so the def-wanted
+            // significance/area gates match the detector resolution.
+            const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
+            const std::vector<ExpectedPhotopeakInfo> scoring_peaks
+              = PeakFitImproveData::filter_photopeaks_for_scoring( pd.src_info->expected_signal_photopeaks, det_type );
+
             CombinedPeakFitScore combined_score;
             combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
-              fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
+              fit_peaks, scoring_peaks, num_sigma_contribution );
             combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
-              fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
+              fit_peaks, scoring_peaks, num_sigma_contribution, det_type );
             combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
-              fit_peaks, pd.src_info->expected_signal_photopeaks );
+              fit_peaks, scoring_peaks, det_type );
             CandidatePeak_GA::correct_score_for_escape_peaks(
-              combined_score.candidate_peak_score, pd.src_info->expected_signal_photopeaks );
+              combined_score.candidate_peak_score, scoring_peaks );
 
             // openGA MINIMIZES the objective, so every contribution must be a cost (lower = better).
             // find_weight and candidate_peak_score.score are higher-is-better rewards (each correct
@@ -1818,9 +1825,17 @@ int main( int argc, char **argv )
             // is already lower-is-better (area mismatch).  Negate the reward terms so finding the
             // correct source peaks LOWERS the cost and spurious peaks RAISE it.  Mirrors the sibling
             // InitialFit/CandidatePeak GAs, which negate their scores before returning to openGA.
+            // The final term penalizes missed expected AREA (fraction of definitely-wanted area not
+            // detected, after escape correction): without it a missed peak is "free" (its area error is
+            // never scored), so the GA could drop hard peaks / tolerate total-misses.  See NuclideConfig_GA.h.
             const double fg_score = combined_score.final_fit_score.total_weight
                                   - ( combined_score.initial_fit_weights.find_weight
-                                      + combined_score.candidate_peak_score.score );
+                                      + combined_score.candidate_peak_score.score )
+                                  + NuclideConfig_GA::sm_miss_penalty_weight
+                                      * PeakFitImproveData::missed_def_wanted_area_fraction(
+                                          scoring_peaks,
+                                          combined_score.candidate_peak_score.def_expected_but_not_detected,
+                                          det_type );
 
             // Background-false-positive penalty.  No-op (returns 0) when
             // sm_do_background_fit_trial is false or background_auto_search_peaks

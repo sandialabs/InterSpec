@@ -137,6 +137,18 @@ constexpr double sm_background_fit_penalty_per_spectrum_cap = 30.0;
 constexpr double sm_fit_failure_penalty = 100.0;
 
 
+/** Weight for the per-spectrum "missed expected area" penalty term, added to the foreground cost:
+ `sm_miss_penalty_weight * (fraction of definitely-wanted expected peak-area not detected)`.
+
+ The fraction is in [0,1], so this is the maximum per-spectrum penalty (a total miss).  It exists
+ because the rest of the objective is asymmetric: finding a peak is rewarded and its area error is
+ penalized, but a *missed* peak only forgoes the reward (its area error is never counted), so the GA
+ can lower its cost by dropping hard-to-fit peaks and total-miss spectra score ~0.  Area-weighting
+ makes missing a dominant peak hurt far more than a marginal one.  MUST be a fixed constant, not a GA
+ gene (the GA would drive its own objective weight to zero).  See missed_def_wanted_area_fraction(). */
+constexpr double sm_miss_penalty_weight = 5.0;
+
+
 /** Holds precomputed data for each spectrum, so the expensive search_for_peaks call is done once. */
 struct PrecomputedNuclideData
 {
@@ -241,13 +253,19 @@ std::vector<PrecomputedNuclideData> precompute_nuclide_data(
   const BackgroundMode bg_mode );
 
 
+struct NuclideConfigSolution;  // defined below; needed for the `genes` parameter
+
 /** Write the HTML and N42 output files for a given config, using the precomputed data.
  This is the shared logic extracted from eval_peaks_for_nuclide, and can be called
  from both the GA reporting and the PeaksForNuclide action.
+
+ `genes` is the chromosome that produced `config`; it is rendered as a table in the report so the
+ reader can see exactly which GA parameters generated the plots.
  */
 void write_results_html_and_n42(
   const std::vector<PrecomputedNuclideData> &precomputed,
   const PeakFitForNuclideConfig &config,
+  const NuclideConfigSolution &genes,
   const BackgroundMode bg_mode,
   const std::string &html_filename,
   const std::string &n42_output_dir );

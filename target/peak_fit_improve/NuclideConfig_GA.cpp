@@ -68,6 +68,7 @@
 #include "FinalFit_GA.h"
 #include "CandidatePeak_GA.h"
 #include "ClassifyDetType_GA.h"
+#include "PeakFitImproveData.h"
 #include "FitPeaksForNuclideDev.h"
 
 using namespace std;
@@ -1185,9 +1186,12 @@ void SO_report_generation( int generation_number,
     try
     {
       const PeakFitForNuclideConfig config = genes_to_settings( sm_best_genes );
-      const string html_filename = PeakFitImprove::sm_output_file_prefix + "nuclide_config_ga_best.html";
-      const string n42_dir = PeakFitImprove::sm_output_file_prefix + "output_n42_nuclide_config_ga";
-      write_results_html_and_n42( *sm_precomputed_ptr, config, sm_background_mode, html_filename, n42_dir );
+      // Gen-numbered filename so each generation's best-genes HTML is preserved (a visual history of
+      //  how the best fit improves), rather than overwriting a single file.  n42 output is skipped for
+      //  these per-generation writes (empty dir) to avoid the disk churn; the final run writes n42.
+      const string html_filename = PeakFitImprove::sm_output_file_prefix
+        + "nuclide_config_ga_best_gen" + std::to_string( generation_number ) + ".html";
+      write_results_html_and_n42( *sm_precomputed_ptr, config, sm_best_genes, sm_background_mode, html_filename, /*n42_dir=*/"" );
       cout << "Wrote HTML results to " << html_filename << endl;
     }
     catch( const std::exception &e )
@@ -1240,6 +1244,7 @@ void SO_report_generation( int generation_number,
 void write_results_html_and_n42(
   const std::vector<PrecomputedNuclideData> &precomputed,
   const PeakFitForNuclideConfig &config,
+  const NuclideConfigSolution &genes,
   const BackgroundMode bg_mode,
   const std::string &html_filename,
   const std::string &n42_output_dir )
@@ -1265,7 +1270,28 @@ void write_results_html_and_n42(
     << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
     << "</style>" << endl;
 
-  size_t chart_counter = 0;
+  // GA genes that produced every fit below.  Rendered from the authoritative NuclideConfigSolution
+  //  serialization (key=value pairs) so the table never drifts from what the GA actually optimizes.
+  //  Collapsed by default (<details>) since it is ~55 rows.
+  {
+    html_output << "<details style=\"width:90vw;margin:15px auto;\">" << endl
+                << "<summary style=\"cursor:pointer;font-weight:bold;font-size:110%;\">"
+                << "GA genes used to produce these fits</summary>" << endl;
+    html_output << "<table class=\"TopLinesTable\"><tr><th>Gene</th><th>Value</th></tr>" << endl;
+    std::vector<std::string> gene_lines;
+    SpecUtils::split( gene_lines, genes.to_string( "\n" ), "\n" );
+    for( const std::string &gl : gene_lines )
+    {
+      const size_t eq = gl.find( '=' );
+      if( eq == std::string::npos )
+        continue;
+      html_output << "<tr><td style=\"text-align:left;font-family:monospace;\">" << gl.substr( 0, eq )
+                  << "</td><td style=\"text-align:right;font-family:monospace;\">" << gl.substr( eq + 1 )
+                  << "</td></tr>" << endl;
+    }
+    html_output << "</table></details>" << endl;
+  }
+
   double total_score = 0.0;
   double total_fg = 0.0;
   double total_bg_raw = 0.0;
@@ -1288,8 +1314,49 @@ void write_results_html_and_n42(
   std::vector<SpectrumQuality> spectrum_quals;
   spectrum_quals.reserve( precomputed.size() );
 
-  for( const PrecomputedNuclideData &pd : precomputed )
+  // The per-spectrum re-fit (fit_peaks_for_nuclides) dominates this function's runtime, so we run one
+  //  task per spectrum in parallel - the same concurrent calls the GA already makes when scoring
+  //  (score_one_spectrum is posted to a thread pool), so they are known thread-safe.  Each task builds
+  //  its HTML <fieldset> fragment into a private stream and writes its own N42 file; the fragments are
+  //  concatenated in spectrum order afterwards, so the report stays byte-for-byte deterministic.
+  struct PerSpectrumResult
   {
+    std::string html;            // the per-spectrum HTML fragment (empty for failed/excepted fits)
+    double fg = 0.0;             // contribution to total_fg
+    double bg_raw = 0.0;         // contribution to total_bg_raw (raw background penalty)
+    double score = 0.0;          // contribution to total_score
+    SpectrumQuality qual;        // recorded for every spectrum (ok / FIT FAILED / EXCEPTION)
+  };
+  std::vector<PerSpectrumResult> results( precomputed.size() );
+
+  // Pre-create the N42 output directories serially - concurrent create_directory on a shared detector
+  //  subdir would race.
+  if( !n42_output_dir.empty() )
+  {
+    if( !SpecUtils::is_directory( n42_output_dir ) )
+      SpecUtils::create_directory( n42_output_dir );
+    for( const PrecomputedNuclideData &pd : precomputed )
+    {
+      const string outdir = SpecUtils::append_path( n42_output_dir, pd.src_info->detector_name );
+      if( !SpecUtils::is_directory( outdir ) )
+        SpecUtils::create_directory( outdir );
+    }
+  }//if( !n42_output_dir.empty() )
+
+  boost::asio::thread_pool pool( std::max<size_t>( 1, PeakFitImprove::sm_num_optimization_threads ) );
+
+  for( size_t spec_index = 0; spec_index < precomputed.size(); ++spec_index )
+  {
+   boost::asio::post( pool, [spec_index, &results, &precomputed, &config, bg_mode, &n42_output_dir, num_sigma_contribution]()
+   {
+    const PrecomputedNuclideData &pd = precomputed[spec_index];
+    PerSpectrumResult &res = results[spec_index];
+
+    // All existing `html_output << ...` lines below write into this private per-spectrum fragment;
+    //  shadowing the name lets the body stay unchanged.  Merged into the file in order after join().
+    std::ostringstream html_output;
+    size_t chart_counter = 0;
+
     const InjectSourceInfo &src = pd.src_info->src_info;
     const string src_name = src.src_name;
     const string detector_name = pd.src_info->detector_name;
@@ -1317,33 +1384,41 @@ void write_results_html_and_n42(
         q.cost = sm_fit_failure_penalty;
         q.status = "FIT FAILED";
         q.frac_area_missing = 1.0;
-        spectrum_quals.push_back( q );
-        continue;
+        res.qual = q;
+        return;
       }
 
       const RelActCalcAuto::RelActAutoSolution &solution = result.solution;
       const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
 
+      // Score against the det-type-appropriate, low-energy-filtered expected peaks - identical to the
+      //  GA objective (score_one_spectrum in PeakFitImprove.cpp), so reported totals match what the GA
+      //  minimized.
+      const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
+      const std::vector<ExpectedPhotopeakInfo> scoring_peaks
+        = PeakFitImproveData::filter_photopeaks_for_scoring( pd.src_info->expected_signal_photopeaks, det_type );
+
       // Score the results
       CombinedPeakFitScore combined_score;
       combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
-        fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
+        fit_peaks, scoring_peaks, num_sigma_contribution );
       combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
-        fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
+        fit_peaks, scoring_peaks, num_sigma_contribution, det_type );
       combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
-        fit_peaks, pd.src_info->expected_signal_photopeaks );
+        fit_peaks, scoring_peaks, det_type );
       CandidatePeak_GA::correct_score_for_escape_peaks(
-        combined_score.candidate_peak_score, pd.src_info->expected_signal_photopeaks );
+        combined_score.candidate_peak_score, scoring_peaks );
 
-      // Mirror the GA objective's sign convention (see score_one_spectrum in PeakFitImprove.cpp):
-      // lower-is-better, so the reward terms (find_weight, candidate score) are subtracted and the
-      // area-mismatch cost (total_weight) is added.  Keeps reported HTML totals consistent with the
-      // value the GA actually minimized.
+      // Mirror the GA objective (see score_one_spectrum in PeakFitImprove.cpp): lower-is-better, reward
+      // terms subtracted, area-mismatch added, plus the missed-expected-area penalty.
+      const double miss_fraction = PeakFitImproveData::missed_def_wanted_area_fraction(
+          scoring_peaks, combined_score.candidate_peak_score.def_expected_but_not_detected, det_type );
       combined_score.final_weight = combined_score.final_fit_score.total_weight
                                   - ( combined_score.initial_fit_weights.find_weight
-                                      + combined_score.candidate_peak_score.score );
+                                      + combined_score.candidate_peak_score.score )
+                                  + sm_miss_penalty_weight * miss_fraction;
       const double fg_only_for_source = combined_score.final_weight;
-      total_fg += fg_only_for_source;
+      res.fg = fg_only_for_source;
 
       // Background false-positive penalty (with diagnostic detail for HTML).
       // compute_background_fit_penalty short-circuits to 0 when
@@ -1351,22 +1426,16 @@ void write_results_html_and_n42(
       BackgroundFitDetail bg_detail;
       combined_score.background_fit_penalty
         = compute_background_fit_penalty( pd, config, bg_mode, &bg_detail );
-      total_bg_raw += combined_score.background_fit_penalty;
+      res.bg_raw = combined_score.background_fit_penalty;
       combined_score.final_weight
         += sm_background_fit_penalty_weight * combined_score.background_fit_penalty;
 
-      total_score += combined_score.final_weight;
+      res.score = combined_score.final_weight;
 
-      // Record per-spectrum quality for the worst-spectra summary.  fraction-of-expected-area-missing
-      //  uses the truth signal peaks vs the "definitely wanted but not detected" set the scorer found.
+      // Record per-spectrum quality for the worst-spectra summary.  frac_area_missing is the same
+      //  def-wanted missed-area fraction used by the objective's miss term, so the report column and
+      //  the GA cost agree.
       {
-        double total_expected_area = 0.0;
-        for( const ExpectedPhotopeakInfo &ep : pd.src_info->expected_signal_photopeaks )
-          total_expected_area += ep.peak_area;
-        double missing_area = 0.0;
-        for( const ExpectedPhotopeakInfo &ep : combined_score.candidate_peak_score.def_expected_but_not_detected )
-          missing_area += ep.peak_area;
-
         SpectrumQuality q;
         q.src_name = src_name;
         q.detector = detector_name;
@@ -1374,8 +1443,8 @@ void write_results_html_and_n42(
         q.status = "ok";
         q.n_missing = combined_score.candidate_peak_score.num_def_wanted_not_found;
         q.n_extra = combined_score.candidate_peak_score.num_extra_peaks;
-        q.frac_area_missing = (total_expected_area > 0.0) ? (missing_area / total_expected_area) : 0.0;
-        spectrum_quals.push_back( q );
+        q.frac_area_missing = miss_fraction;
+        res.qual = q;
       }
 
       // Write N42 file
@@ -1511,11 +1580,15 @@ void write_results_html_and_n42(
           fit_peaks_ptrs.push_back( make_shared<PeakDef>( p ) );
         fg_opts.peaks_json = PeakDef::peak_json( fit_peaks_ptrs, pd.foreground, Wt::WColor(), false );
 
-        const string div_id = "chart_" + std::to_string( chart_counter );
+        // div / JS-function names must be unique across the whole file, since fragments are
+        //  concatenated; key them on the spectrum index plus a per-fragment chart counter.
+        const string div_id = "chart_" + std::to_string( spec_index ) + "_" + std::to_string( chart_counter );
+        const string resize_fn = "resizeChart_" + std::to_string( spec_index ) + "_" + std::to_string( chart_counter );
         chart_counter++;
 
         html_output << "<fieldset>" << endl
-          << "<legend>" << src_name << " (chi2/dof=" << solution.m_chi2 << "/" << solution.m_dof << ")</legend>" << endl;
+          << "<legend>" << src_name << " &mdash; " << detector_name
+          << " (chi2/dof=" << solution.m_chi2 << "/" << solution.m_dof << ")</legend>" << endl;
         html_output << "<div id=\"" << div_id << "\" class=\"chart\" oncontextmenu=\"return false;\"></div>" << endl;
         html_output << "<script>" << endl;
 
@@ -1537,7 +1610,7 @@ void write_results_html_and_n42(
         D3SpectrumExport::write_and_set_data_for_chart( html_output, div_id, measurements );
 
         html_output << R"delim(
-const resizeChart)delim" << chart_counter - 1 << R"delim( = function(){
+const )delim" << resize_fn << R"delim( = function(){
   let height = window.innerHeight;
   let width = document.documentElement.clientWidth;
   let el = spec_chart_)delim" << div_id << R"delim(.chart;
@@ -1549,12 +1622,12 @@ const resizeChart)delim" << chart_counter - 1 << R"delim( = function(){
           << "  spec_chart_" << div_id << R"delim(.handleResize();
 };
 
-window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"delim();
+window.addEventListener('resize', )delim" << resize_fn << R"delim();
 )delim" << endl;
 
         D3SpectrumExport::write_set_options_for_chart( html_output, div_id, chart_options );
         html_output << "spec_chart_" << div_id << ".setReferenceLines( reference_lines_" << div_id << " );" << endl;
-        html_output << "resizeChart" << chart_counter - 1 << "();" << endl;
+        html_output << resize_fn << "();" << endl;
         html_output << "</script>" << endl;
 
         // Score summary
@@ -1642,7 +1715,8 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"d
               }
             }
 
-            const string bg_div_id = "chart_" + std::to_string( chart_counter );
+            const string bg_div_id = "chart_" + std::to_string( spec_index ) + "_" + std::to_string( chart_counter );
+            const string bg_resize_fn = "resizeChart_" + std::to_string( spec_index ) + "_" + std::to_string( chart_counter );
             chart_counter++;
 
             const string bg_title = src_name + " — long_background (false positives)";
@@ -1683,7 +1757,7 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"d
             D3SpectrumExport::write_and_set_data_for_chart( html_output, bg_div_id, bg_measurements );
 
             html_output << R"delim(
-const resizeChart)delim" << chart_counter - 1 << R"delim( = function(){
+const )delim" << bg_resize_fn << R"delim( = function(){
   let height = window.innerHeight;
   let width = document.documentElement.clientWidth;
   let el = spec_chart_)delim" << bg_div_id << R"delim(.chart;
@@ -1695,11 +1769,11 @@ const resizeChart)delim" << chart_counter - 1 << R"delim( = function(){
               << "  spec_chart_" << bg_div_id << R"delim(.handleResize();
 };
 
-window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"delim();
+window.addEventListener('resize', )delim" << bg_resize_fn << R"delim();
 )delim" << endl;
 
             D3SpectrumExport::write_set_options_for_chart( html_output, bg_div_id, bg_chart_options );
-            html_output << "resizeChart" << chart_counter - 1 << "();" << endl;
+            html_output << bg_resize_fn << "();" << endl;
             html_output << "</script>" << endl;
           }//bg diagnostic chart
         }//if( background_auto_search_peaks present )
@@ -1709,6 +1783,9 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"d
         html_output << "</fieldset>" << endl;
       }// HTML chart block
 
+      // Only fully-built fragments are emitted; an exception above leaves res.html empty (the
+      //  spectrum still shows up in the worst-spectra table via res.qual).
+      res.html = html_output.str();
     }
     catch( const std::exception &e )
     {
@@ -1719,9 +1796,23 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"d
       q.cost = sm_fit_failure_penalty;
       q.status = "EXCEPTION";
       q.frac_area_missing = 1.0;
-      spectrum_quals.push_back( q );
+      res.qual = q;
     }
-  }//for( const PrecomputedNuclideData &pd : precomputed )
+   } );//boost::asio::post( pool, [&]() - one task per spectrum
+  }//for( size_t spec_index = 0; spec_index < precomputed.size(); ++spec_index )
+
+  pool.join();
+
+  // Merge the per-spectrum fragments in spectrum order so the HTML is deterministic, and sum the
+  //  per-spectrum totals.  Failed/excepted spectra have an empty fragment and zero contributions.
+  for( const PerSpectrumResult &res : results )
+  {
+    html_output << res.html;
+    total_fg += res.fg;
+    total_bg_raw += res.bg_raw;
+    total_score += res.score;
+    spectrum_quals.push_back( res.qual );
+  }
 
   // Worst-fitting spectra summary - the likely-catastrophic nuclides worth inspecting.  Two views,
   //  because no single rank catches both failure modes: (1) by the GA's per-spectrum cost, which
@@ -1988,7 +2079,7 @@ PeakFitForNuclideConfig do_nuclide_config_ga(
   {
     const string final_html = PeakFitImprove::sm_output_file_prefix + "nuclide_config_ga_final.html";
     const string final_n42_dir = PeakFitImprove::sm_output_file_prefix + "output_n42_nuclide_config_ga_final";
-    write_results_html_and_n42( precomputed, best_config, sm_background_mode, final_html, final_n42_dir );
+    write_results_html_and_n42( precomputed, best_config, sm_best_genes, sm_background_mode, final_html, final_n42_dir );
     cout << "Wrote final HTML results to " << final_html << endl;
   }
   catch( const std::exception &e )
