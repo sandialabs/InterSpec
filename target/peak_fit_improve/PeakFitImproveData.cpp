@@ -738,6 +738,15 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
 
 
 
+          // Largest single-line area among all clusters - used to decide whether the 511 keV
+          //  annihilation line is the *dominant* line for this source (see exclusion below).
+          double max_cluster_area = 0.0;
+          for( const vector<PeakTruthInfo> &cluster : clustered_lines )
+          {
+            if( !cluster.empty() )
+              max_cluster_area = std::max( max_cluster_area, static_cast<double>(cluster.front().area) );
+          }
+
           vector<ExpectedPhotopeakInfo> detectable_clusters;
           for( const vector<PeakTruthInfo> &cluster : clustered_lines )
           {
@@ -747,9 +756,25 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
               continue;
 
             const PeakTruthInfo &main_line = cluster.front();
+
+            // The 511 keV annihilation line is normally excluded from the truth set: it is contaminated
+            //  by ambient/cosmic annihilation and pair-production from high-energy gammas, and its truth
+            //  area is unreliable.  BUT for positron emitters whose dominant signature IS 511 (e.g. Ge68,
+            //  Cu64, F18, Na22), excluding it leaves a degenerate truth set and the source looks like a
+            //  total fit-failure.  So keep 511 only when it is the dominant (largest-area) line for the
+            //  source; otherwise exclude it as before.
+            // NOTE: this runs only when (re)generating data (original -> compact); load_compact_data()
+            //  reads the already-clustered expected photopeaks straight from the truth CSV, so existing
+            //  compact datasets must be regenerated (--create-compact-data) for this to take effect.
+            //  (HPGe caveat: the truth width here is detector-resolution only and omits the ~2-3 keV
+            //  annihilation Doppler broadening of 511, so on HPGe the 511 truth ROI is a bit narrow;
+            //  harmless for the area-based scoring, but see notes if width scoring is added later.)
+            const bool is_511 = (fabs(main_line.energy - 511.0) < 1.0);
+            const bool is_dominant_line = (main_line.area >= max_cluster_area);
+
             if( (main_line.area < 4.0)  // Let be realistic, and require something
                || (fabs(main_line.energy - 478.0) < 1.2)  // Avoid Alpha-Li reaction
-               || (fabs(main_line.energy - 511.0) < 1.0 ) // Avoid D.B. 511
+               || (is_511 && !is_dominant_line) // 511: keep only if it's this source's dominant line - please note there is dobler broadenging to the 511 keV peak, which we are not properly accounting for
                // Shouldn't there be some other broadened reaction lines here???
                || ((main_line.energy + 0.5*main_line.full_width) > info.src_no_poisson->gamma_energy_max()) // Make sure not off upper-end
                || ((main_line.energy - 0.5*main_line.full_width) < info.src_no_poisson->gamma_energy_min()) // Make sure not below lower-end

@@ -28,10 +28,14 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <map>
+#include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <cassert>
 #include <iomanip>
 #include <sstream>
+#include <thread>
 #include <iostream>
 #include <algorithm>
 #include <functional>
@@ -78,6 +82,11 @@ bool sm_do_background_fit_trial = false;
 RelEffChi2CapMode sm_rel_eff_chi2_cap_mode = RelEffChi2CapMode::Fixed;
 double sm_rel_eff_chi2_cap_fixed_value = 25.0;
 PeakFitUtils::CoarseResolutionType sm_base_det_type = PeakFitUtils::CoarseResolutionType::Low;
+
+// Checkpoint/resume state, set from the CLI in main() (all opt-in).  See NuclideConfig_GA.h.
+std::string sm_checkpoint_name;
+std::string sm_resume_path;
+std::string sm_checkpoint_options_summary;
 
 // Module-level state for the GA (following InitialFit_GA pattern).
 // The GA evaluator is wrapped to also return the foreground-only and raw
@@ -488,6 +497,98 @@ std::string NuclideConfigSolution::to_string( const std::string &separator ) con
       << "initial_manual_rel_eff_max_chi2_dof=" << initial_manual_rel_eff_max_chi2_dof;
   return oss.str();
 }//NuclideConfigSolution::to_string
+
+
+bool NuclideConfigSolution::from_string( const std::string &line, const std::string &separator,
+                                         NuclideConfigSolution &out )
+{
+  // Split "name=value<sep>name=value..." into a name->value map (order-independent; unknown keys are
+  //  ignored so older checkpoints stay loadable as genes are added).
+  std::map<std::string,std::string> kv;
+  size_t pos = 0;
+  while( true )
+  {
+    const size_t next = line.find( separator, pos );
+    const size_t end = (next == std::string::npos) ? line.size() : next;
+    const std::string token = line.substr( pos, end - pos );
+    const size_t eq = token.find( '=' );
+    if( eq != std::string::npos )
+      kv[ token.substr( 0, eq ) ] = token.substr( eq + 1 );
+    if( next == std::string::npos )
+      break;
+    pos = end + separator.size();
+  }
+
+  bool ok = true;
+  const auto getI = [&kv,&ok]( const char *key, int &dst ){
+    const auto it = kv.find( key );
+    if( it == std::end(kv) ){ ok = false; return; }
+    try{ dst = std::stoi( it->second ); }catch( ... ){ ok = false; }
+  };
+  const auto getD = [&kv,&ok]( const char *key, double &dst ){
+    const auto it = kv.find( key );
+    if( it == std::end(kv) ){ ok = false; return; }
+    try{ dst = std::stod( it->second ); }catch( ... ){ ok = false; }
+  };
+
+  getI( "fwhm_functional_form", out.fwhm_functional_form );
+  getD( "rel_eff_manual_base_rel_eff_uncert", out.rel_eff_manual_base_rel_eff_uncert );
+  getD( "initial_nuc_match_cluster_num_sigma", out.initial_nuc_match_cluster_num_sigma );
+  getD( "manual_eff_cluster_num_sigma", out.manual_eff_cluster_num_sigma );
+  getI( "initial_manual_relEff_1peak_eqn_order", out.initial_manual_relEff_1peak_eqn_order );
+  getI( "initial_manual_relEff_1peak_form", out.initial_manual_relEff_1peak_form );
+  getI( "initial_manual_relEff_2peak_eqn_order", out.initial_manual_relEff_2peak_eqn_order );
+  getI( "initial_manual_relEff_2peak_form", out.initial_manual_relEff_2peak_form );
+  getI( "initial_manual_relEff_3peak_eqn_order", out.initial_manual_relEff_3peak_eqn_order );
+  getI( "initial_manual_relEff_3peak_form", out.initial_manual_relEff_3peak_form );
+  getI( "initial_manual_relEff_4peak_physical_use_hoerl", out.initial_manual_relEff_4peak_physical_use_hoerl );
+  getI( "initial_manual_relEff_4peak_eqn_order", out.initial_manual_relEff_4peak_eqn_order );
+  getI( "initial_manual_relEff_4peak_form", out.initial_manual_relEff_4peak_form );
+  getI( "initial_manual_relEff_many_peak_physical_use_hoerl", out.initial_manual_relEff_many_peak_physical_use_hoerl );
+  getI( "initial_manual_relEff_many_peak_eqn_order", out.initial_manual_relEff_many_peak_eqn_order );
+  getI( "initial_manual_relEff_manypeak_form", out.initial_manual_relEff_manypeak_form );
+  getD( "manual_rel_eff_sol_min_data_area_keep", out.manual_rel_eff_sol_min_data_area_keep );
+  getD( "manual_rel_eff_sol_min_est_peak_area_keep", out.manual_rel_eff_sol_min_est_peak_area_keep );
+  getD( "manual_rel_eff_sol_min_est_significance_keep", out.manual_rel_eff_sol_min_est_significance_keep );
+  getD( "manual_rel_eff_sol_min_fwhm_roi", out.manual_rel_eff_sol_min_fwhm_roi );
+  getD( "manual_rel_eff_sol_min_fwhm_quad_cont", out.manual_rel_eff_sol_min_fwhm_quad_cont );
+  getD( "manual_rel_eff_sol_max_fwhm", out.manual_rel_eff_sol_max_fwhm );
+  getD( "manual_rel_eff_min_tail_contribution", out.manual_rel_eff_min_tail_contribution );
+  getD( "manual_rel_eff_tail_width_scale_fwhm", out.manual_rel_eff_tail_width_scale_fwhm );
+  getD( "manual_rel_eff_roi_width_num_fwhm_lower", out.manual_rel_eff_roi_width_num_fwhm_lower );
+  getD( "manual_rel_eff_roi_width_num_fwhm_upper", out.manual_rel_eff_roi_width_num_fwhm_upper );
+  getI( "fwhm_form", out.fwhm_form );
+  getD( "rel_eff_auto_base_rel_eff_uncert", out.rel_eff_auto_base_rel_eff_uncert );
+  getD( "auto_rel_eff_cluster_num_sigma", out.auto_rel_eff_cluster_num_sigma );
+  getD( "auto_rel_eff_sol_min_data_area_keep", out.auto_rel_eff_sol_min_data_area_keep );
+  getD( "auto_rel_eff_sol_min_est_peak_area_keep", out.auto_rel_eff_sol_min_est_peak_area_keep );
+  getD( "auto_rel_eff_sol_min_est_significance_keep", out.auto_rel_eff_sol_min_est_significance_keep );
+  getD( "auto_rel_eff_roi_width_num_fwhm_lower", out.auto_rel_eff_roi_width_num_fwhm_lower );
+  getD( "auto_rel_eff_roi_width_num_fwhm_upper", out.auto_rel_eff_roi_width_num_fwhm_upper );
+  getD( "auto_rel_eff_sol_max_fwhm", out.auto_rel_eff_sol_max_fwhm );
+  getD( "auto_rel_eff_min_tail_contribution", out.auto_rel_eff_min_tail_contribution );
+  getD( "auto_rel_eff_tail_width_scale_fwhm", out.auto_rel_eff_tail_width_scale_fwhm );
+  getD( "auto_rel_eff_sol_min_fwhm_roi", out.auto_rel_eff_sol_min_fwhm_roi );
+  getD( "auto_rel_eff_sol_min_fwhm_quad_cont", out.auto_rel_eff_sol_min_fwhm_quad_cont );
+  getI( "rel_eff_eqn_type", out.rel_eff_eqn_type );
+  getI( "rel_eff_eqn_order", out.rel_eff_eqn_order );
+  getD( "desperation_phys_model_atomic_number", out.desperation_phys_model_atomic_number );
+  getD( "desperation_phys_model_areal_density_g_per_cm2", out.desperation_phys_model_areal_density_g_per_cm2 );
+  getI( "nucs_of_el_same_age", out.nucs_of_el_same_age );
+  getI( "phys_model_use_hoerl", out.phys_model_use_hoerl );
+  getI( "fit_energy_cal", out.fit_energy_cal );
+  getD( "roi_significance_min_chi2_reduction", out.roi_significance_min_chi2_reduction );
+  getD( "roi_significance_min_peak_sig", out.roi_significance_min_peak_sig );
+  getD( "roi_significance_min_quad_cont_chi2_dof", out.roi_significance_min_quad_cont_chi2_dof );
+  getD( "observable_peak_initial_significance_threshold", out.observable_peak_initial_significance_threshold );
+  getD( "observable_peak_final_significance_threshold", out.observable_peak_final_significance_threshold );
+  getD( "step_cont_min_peak_area", out.step_cont_min_peak_area );
+  getD( "step_cont_min_peak_significance", out.step_cont_min_peak_significance );
+  getD( "step_cont_left_right_nsigma", out.step_cont_left_right_nsigma );
+  getD( "initial_manual_rel_eff_max_chi2_dof", out.initial_manual_rel_eff_max_chi2_dof );
+
+  return ok;
+}//NuclideConfigSolution::from_string
 
 // Resolves the effective initial_manual_rel_eff_max_chi2_dof based on the
 // CLI mode.  In Disabled mode the cap is set high enough that the throw at
@@ -1059,6 +1160,7 @@ void SO_report_generation( int generation_number,
       << "\t" << (best_yet ? "BestYet" : "NoImprovement")
       << "\n\n";
   }
+  sm_output_file.flush();  // persist each generation so an interrupted run keeps its full history
 
   cout
     << "Generation [" << generation_number << "], "
@@ -1094,6 +1196,42 @@ void SO_report_generation( int generation_number,
            << ": " << e.what() << endl;
     }
   }//if( best_yet && sm_precomputed_ptr )
+
+  // Checkpoint the full population's genes this generation (opt-in via --checkpoint) so an
+  //  interrupted run can be continued with --resume.  Written atomically (temp + rename).  Genes
+  //  only - the RNG/stall-counter are not persisted; a resume continues from the same population.
+  if( !sm_checkpoint_name.empty() )
+  {
+    const std::string path = PeakFitImprove::sm_output_file_prefix + sm_checkpoint_name
+                             + "_nuclide_config_ga_checkpoint.tsv";
+    const std::string tmp_path = path + ".tmp";
+    try
+    {
+      std::ofstream ckpt( tmp_path.c_str(), std::ios::out | std::ios::trunc );
+      if( !ckpt )
+        throw std::runtime_error( "could not open '" + tmp_path + "' for writing" );
+
+      // Header ('#'-prefixed, skipped on load): the run-options summary lets --resume refuse an
+      //  incompatible continuation; the rest is human-readable progress metadata.
+      ckpt << "# options: " << sm_checkpoint_options_summary << "\n"
+           << "# generation=" << generation_number
+           << " population=" << last_generation.chromosomes.size()
+           << " best_total_cost=" << last_generation.best_total_cost << "\n";
+      for( const auto &chromo : last_generation.chromosomes )
+        ckpt << chromo.genes.to_string( "\t" ) << "\n";
+
+      ckpt.close();
+      if( !ckpt )
+        throw std::runtime_error( "error while writing '" + tmp_path + "'" );
+
+      if( std::rename( tmp_path.c_str(), path.c_str() ) != 0 )
+        throw std::runtime_error( "could not rename '" + tmp_path + "' to '" + path + "'" );
+    }catch( const std::exception &e )
+    {
+      cerr << "Warning: failed to write checkpoint for generation " << generation_number
+           << ": " << e.what() << endl;
+    }
+  }//if( !sm_checkpoint_name.empty() )
 
   ns_num_evals_this_generation = 0;
 }//SO_report_generation
@@ -1134,10 +1272,27 @@ void write_results_html_and_n42(
 
   const double num_sigma_contribution = 1.5;
 
+  // Per-spectrum fit-quality, collected so we can list the worst-fitting spectra (the ones most
+  //  likely to be catastrophic nuclides) in a summary table.  Ranked by the per-spectrum cost the GA
+  //  actually minimizes; failed fits (which would otherwise be skipped) are recorded as the worst.
+  struct SpectrumQuality
+  {
+    std::string src_name;
+    std::string detector;
+    double cost = 0.0;          // per-spectrum cost (combined_score.final_weight); higher = worse
+    std::string status;         // "ok", "FIT FAILED", or "EXCEPTION"
+    size_t n_missing = 0;       // expected ("definitely wanted") peaks not found
+    size_t n_extra = 0;         // spurious / unexpected peaks
+    double frac_area_missing = 0.0;  // fraction of expected signal peak-area not recovered
+  };
+  std::vector<SpectrumQuality> spectrum_quals;
+  spectrum_quals.reserve( precomputed.size() );
+
   for( const PrecomputedNuclideData &pd : precomputed )
   {
     const InjectSourceInfo &src = pd.src_info->src_info;
     const string src_name = src.src_name;
+    const string detector_name = pd.src_info->detector_name;
 
     // Build options based on background mode
     Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
@@ -1153,7 +1308,18 @@ void write_results_html_and_n42(
         pd.background, pd.drf, options, config, pd.peak_fit_prefs );
 
       if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+      {
+        // A failed foreground fit is the GA's worst case (scored at sm_fit_failure_penalty); record
+        //  it so it shows up in the worst-spectra table rather than silently vanishing.
+        SpectrumQuality q;
+        q.src_name = src_name;
+        q.detector = detector_name;
+        q.cost = sm_fit_failure_penalty;
+        q.status = "FIT FAILED";
+        q.frac_area_missing = 1.0;
+        spectrum_quals.push_back( q );
         continue;
+      }
 
       const RelActCalcAuto::RelActAutoSolution &solution = result.solution;
       const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
@@ -1190,6 +1356,27 @@ void write_results_html_and_n42(
         += sm_background_fit_penalty_weight * combined_score.background_fit_penalty;
 
       total_score += combined_score.final_weight;
+
+      // Record per-spectrum quality for the worst-spectra summary.  fraction-of-expected-area-missing
+      //  uses the truth signal peaks vs the "definitely wanted but not detected" set the scorer found.
+      {
+        double total_expected_area = 0.0;
+        for( const ExpectedPhotopeakInfo &ep : pd.src_info->expected_signal_photopeaks )
+          total_expected_area += ep.peak_area;
+        double missing_area = 0.0;
+        for( const ExpectedPhotopeakInfo &ep : combined_score.candidate_peak_score.def_expected_but_not_detected )
+          missing_area += ep.peak_area;
+
+        SpectrumQuality q;
+        q.src_name = src_name;
+        q.detector = detector_name;
+        q.cost = combined_score.final_weight;
+        q.status = "ok";
+        q.n_missing = combined_score.candidate_peak_score.num_def_wanted_not_found;
+        q.n_extra = combined_score.candidate_peak_score.num_extra_peaks;
+        q.frac_area_missing = (total_expected_area > 0.0) ? (missing_area / total_expected_area) : 0.0;
+        spectrum_quals.push_back( q );
+      }
 
       // Write N42 file
       if( !n42_output_dir.empty() )
@@ -1526,8 +1713,79 @@ window.addEventListener('resize', resizeChart)delim" << chart_counter - 1 << R"d
     catch( const std::exception &e )
     {
       cerr << "Error processing " << src_name << ": " << e.what() << endl;
+      SpectrumQuality q;
+      q.src_name = src_name;
+      q.detector = detector_name;
+      q.cost = sm_fit_failure_penalty;
+      q.status = "EXCEPTION";
+      q.frac_area_missing = 1.0;
+      spectrum_quals.push_back( q );
     }
   }//for( const PrecomputedNuclideData &pd : precomputed )
+
+  // Worst-fitting spectra summary - the likely-catastrophic nuclides worth inspecting.  Two views,
+  //  because no single rank catches both failure modes: (1) by the GA's per-spectrum cost, which
+  //  surfaces area-accuracy errors on peaks that WERE found, and (2) by fraction of expected
+  //  peak-area not fit, which surfaces total-misses (a fit that finds none of its expected peaks
+  //  scores ~0 cost - no reward, but also no penalty - so it is invisible to view 1).
+  if( !spectrum_quals.empty() )
+  {
+    size_t num_failed = 0;
+    for( const SpectrumQuality &q : spectrum_quals )
+      num_failed += (q.status != "ok");
+
+    // Emit one worst-spectra table.  `quals` must already be sorted worst-first.
+    auto write_worst_table = [&html_output,num_failed]( const std::vector<SpectrumQuality> &quals,
+                                                        const std::string &heading,
+                                                        const std::string &metric_desc )
+    {
+      // Show the worst ~10% (at least 10), but never fewer than all the outright failures.
+      size_t num_show = std::max<size_t>( 10, static_cast<size_t>( std::ceil( 0.10 * quals.size() ) ) );
+      num_show = std::max( num_show, num_failed );
+      num_show = std::min( num_show, quals.size() );
+
+      html_output << "<fieldset><legend>" << heading << "</legend>" << endl;
+      html_output << "<p style=\"max-width:900px;margin:5px auto;\">Showing the " << num_show
+                  << " worst of " << quals.size() << " spectra, ranked by " << metric_desc << ". "
+                  << num_failed << " spectra failed to fit.</p>" << endl;
+      html_output << "<table class=\"TopLinesTable\"><tr>"
+                  << "<th>#</th><th>Source</th><th>Detector</th><th>Cost</th><th>Status</th>"
+                  << "<th>Missing peaks</th><th>Extra peaks</th><th>Frac. area missing</th></tr>" << endl;
+      const std::ios_base::fmtflags saved_flags = html_output.flags();
+      const std::streamsize saved_prec = html_output.precision();
+      html_output << std::fixed << std::setprecision(2);
+      for( size_t i = 0; i < num_show; ++i )
+      {
+        const SpectrumQuality &q = quals[i];
+        const bool ok = (q.status == "ok");
+        html_output << "<tr" << (ok ? "" : " style=\"color:darkred;\"") << ">"
+                    << "<td>" << (i+1) << "</td>"
+                    << "<td>" << q.src_name << "</td>"
+                    << "<td>" << q.detector << "</td>"
+                    << "<td>" << q.cost << "</td>"
+                    << "<td>" << q.status << "</td>"
+                    << "<td>" << (ok ? std::to_string(q.n_missing) : std::string("-")) << "</td>"
+                    << "<td>" << (ok ? std::to_string(q.n_extra) : std::string("-")) << "</td>"
+                    << "<td>" << q.frac_area_missing << "</td>"
+                    << "</tr>" << endl;
+      }
+      html_output.flags( saved_flags );
+      html_output.precision( saved_prec );
+      html_output << "</table></fieldset>" << endl;
+    };//write_worst_table
+
+    // View 1: ranked by per-spectrum cost (the value the GA minimizes).
+    std::stable_sort( begin(spectrum_quals), end(spectrum_quals),
+      []( const SpectrumQuality &a, const SpectrumQuality &b ){ return a.cost > b.cost; } );
+    write_worst_table( spectrum_quals, "Worst-fitting spectra - by GA cost",
+                       "per-spectrum cost (the value the GA minimizes; higher = worse)" );
+
+    // View 2: ranked by fraction of expected peak-area not fit (catches total-misses).
+    std::stable_sort( begin(spectrum_quals), end(spectrum_quals),
+      []( const SpectrumQuality &a, const SpectrumQuality &b ){ return a.frac_area_missing > b.frac_area_missing; } );
+    write_worst_table( spectrum_quals, "Worst-fitting spectra - by expected-area missed",
+                       "fraction of expected peak-area not fit (higher = worse; catches total-misses)" );
+  }//if( !spectrum_quals.empty() )
 
   if( sm_do_background_fit_trial )
   {
@@ -1604,6 +1862,111 @@ PeakFitForNuclideConfig do_nuclide_config_ga(
   ga_obj.mutation_rate = PeakFitImprove::sm_ga_mutation_rate;
   ga_obj.best_stall_max = static_cast<int>( PeakFitImprove::sm_ga_best_stall_max );
   ga_obj.elite_count = static_cast<int>( PeakFitImprove::sm_ga_elite_count );
+
+  // Resume: seed the initial population from a checkpoint (--resume).  Genes only; openGA re-evaluates
+  //  each via eval_solution and fills any remainder up to `population` with fresh random genes.
+  if( !sm_resume_path.empty() )
+  {
+    std::ifstream resume_in( sm_resume_path.c_str() );
+    if( !resume_in )
+    {
+      cerr << "Error: could not open --resume checkpoint '" << sm_resume_path << "'" << endl;
+      exit( 1 );
+    }
+
+    std::vector<NuclideConfigSolution> seeded;
+    size_t bad_lines = 0;
+    std::string line;
+    while( std::getline( resume_in, line ) )
+    {
+      if( !line.empty() && (line[0] == '#') )
+      {
+        // Refuse to resume into an incompatible run (different det-type, dataset, objective, ...).
+        const std::string tag = "# options: ";
+        if( (line.size() >= tag.size()) && (line.compare( 0, tag.size(), tag ) == 0)
+            && (line.substr( tag.size() ) != sm_checkpoint_options_summary) )
+        {
+          cerr << "Error: --resume checkpoint is incompatible with this run.\n"
+               << "  checkpoint options: " << line.substr( tag.size() ) << "\n"
+               << "  this run's options:  " << sm_checkpoint_options_summary << "\n"
+               << "Resume with matching options, or start a fresh run." << endl;
+          exit( 1 );
+        }
+        continue;
+      }//if( comment / header line )
+
+      if( line.empty() )
+        continue;
+
+      NuclideConfigSolution s;
+      if( NuclideConfigSolution::from_string( line, "\t", s ) )
+        seeded.push_back( s );
+      else
+        ++bad_lines;
+    }//while( read each checkpoint line )
+
+    if( seeded.empty() )
+    {
+      cerr << "Error: no usable solutions parsed from --resume checkpoint '" << sm_resume_path << "'" << endl;
+      exit( 1 );
+    }
+
+    cout << "Resuming from " << sm_resume_path << ": seeded " << seeded.size() << " solutions"
+         << (bad_lines ? (" (" + std::to_string(bad_lines) + " unparseable lines skipped)") : "")
+         << "." << endl;
+    ga_obj.user_initial_solutions = std::move( seeded );
+  }//if( !sm_resume_path.empty() )
+
+  // Print a VERY rough estimate of per-generation wall time before the (long) solve starts, so the
+  //  user can sanity-check the run scale.  Model (validated against past runs to ~1%):
+  //     wall/gen ≈ evals × spectra × per_fit_seconds / effective_parallelism
+  //  where evals ≈ population (gen 0) or population - elite_count (steady state), and
+  //  effective_parallelism = min(outer_threads × inner_threads, hardware threads).  per_fit is a
+  //  rough single-thread per-spectrum fit time keyed on detector resolution (HPGe fits are slower).
+  {
+    const size_t spectra = precomputed.size();
+    const size_t pop = PeakFitImprove::sm_ga_population;
+    const size_t elite = PeakFitImprove::sm_ga_elite_count;
+    const size_t outer = std::max<size_t>( 1, PeakFitImprove::sm_num_optimization_threads );
+    const size_t inner = std::max<size_t>( 1, PeakFitImprove::sm_num_threads_per_individual );
+    const unsigned hw = std::max( 1u, std::thread::hardware_concurrency() );
+    const size_t effective = std::min<size_t>( outer * inner, hw );
+    const size_t evals_gen0 = pop;
+    const size_t evals_steady = (pop > elite) ? (pop - elite) : pop;
+    // Rough per-spectrum single-thread fit time (seconds); HPGe ~ measured 7.3 s, others ~ 4.4 s.
+    const bool is_hpge = (sm_base_det_type == PeakFitUtils::CoarseResolutionType::High);
+    const double per_fit = is_hpge ? 8.0 : 5.0;
+    const double cold_factor = 1.6;  // gen 0/1 are slower: random configs hit the Ceres time cap
+
+    auto hms = []( double s ) -> std::string {
+      const long t = static_cast<long>( s + 0.5 );
+      const long h = t / 3600, m = (t % 3600) / 60, sec = t % 60;
+      std::ostringstream o;
+      if( h ) o << h << "h ";
+      if( h || m ) o << m << "m ";
+      o << sec << "s";
+      return o.str();
+    };
+
+    const double wall_steady = (evals_steady * (double)spectra * per_fit) / effective;
+    const double wall_gen0 = cold_factor * (evals_gen0 * (double)spectra * per_fit) / effective;
+
+    cout << "\n=== Rough runtime estimate (very approximate) ===\n"
+         << "  spectra/individual: " << spectra
+         << "   population: " << pop << " (elite " << elite << ")"
+         << "   threads: " << outer << " outer x " << inner << " inner"
+         << "   hw-threads: " << hw << "\n"
+         << "  effective parallelism: " << effective << " concurrent fits"
+         << (((outer*inner) > hw) ? "  [WARNING: outer x inner exceeds hw-threads -> oversubscribed]" : "")
+         << "\n"
+         << "  assumed per-spectrum fit: ~" << per_fit << " s (" << (is_hpge ? "HPGe" : "low/med-res") << ", rough)\n"
+         << "  est. wall/generation: ~" << hms(wall_steady) << " steady-state"
+         << "   (~" << hms(wall_gen0) << " for gen 0-1, slower)\n"
+         << "  est. CPU-time/generation: ~" << std::fixed << std::setprecision(1)
+         << (wall_steady * effective / 3600.0) << " CPU-hours\n"
+         << "  NOTE: refined automatically once real per-generation Exe_time is reported below.\n"
+         << "=================================================\n" << endl;
+  }
 
   const EA::StopReason stop_reason = ga_obj.solve();
 

@@ -1056,7 +1056,14 @@ int main( int argc, char **argv )
        "(GA picks the cap as a gene).  Default 'fixed'.")
     ("rel-eff-chi2-cap-value", po::value<double>( &chi2_cap_fixed_value )->default_value( chi2_cap_fixed_value ),
        "Fixed value for initial_manual_rel_eff_max_chi2_dof.  Used only when "
-       "--rel-eff-chi2-cap-mode=fixed.");
+       "--rel-eff-chi2-cap-mode=fixed.")
+    ("checkpoint", po::value<string>(),
+       "NuclideConfigGA: enable per-generation checkpointing of the GA population.  The value is a "
+       "run name embedded in the filename (<det-type>_<name>_nuclide_config_ga_checkpoint.tsv), so "
+       "concurrent runs don't overwrite each other's state.")
+    ("resume", po::value<string>(),
+       "NuclideConfigGA: resume by seeding the initial population from the given checkpoint file.  "
+       "Refuses to resume if the run options (det-type, dataset filters, chi2-cap, bg-trial) differ.");
   
   po::variables_map vm;
   
@@ -1124,6 +1131,31 @@ int main( int argc, char **argv )
     return -6;
   }
   NuclideConfig_GA::sm_rel_eff_chi2_cap_fixed_value = chi2_cap_fixed_value;
+
+  // Checkpoint / resume (opt-in).  Build a one-line summary of the options that affect the objective
+  //  and gene meaning so a --resume can refuse an incompatible continuation; thread counts are
+  //  intentionally omitted as they don't affect results.
+  if( vm.count( "checkpoint" ) )
+    NuclideConfig_GA::sm_checkpoint_name = vm["checkpoint"].as<string>();
+  if( vm.count( "resume" ) )
+    NuclideConfig_GA::sm_resume_path = vm["resume"].as<string>();
+  {
+    const auto opt_or = [&vm]( const char *key, const char *dflt ) -> string {
+      return vm.count(key) ? vm[key].as<string>() : string(dflt);
+    };
+    ostringstream opts_summary;
+    opts_summary << "det_type=" << det_type_str
+                 << "; detector=" << opt_or( "detector", "(default)" )
+                 << "; city=" << opt_or( "city", "(all)" )
+                 << "; live_time=" << opt_or( "live-time", "(all)" )
+                 << "; subsample=" << (vm.count("subsample") ? std::to_string(vm["subsample"].as<size_t>()) : string("1"))
+                 << "; source_nuclide=" << opt_or( "source-nuclide", "(all)" )
+                 << "; data_base_dir=" << data_base_dir
+                 << "; chi2_cap_mode=" << chi2_cap_mode_str
+                 << "; chi2_cap_value=" << chi2_cap_fixed_value
+                 << "; bg_trial=" << (background_fit_trial_arg ? 1 : 0);
+    NuclideConfig_GA::sm_checkpoint_options_summary = opts_summary.str();
+  }
   
   // Parse action enum
   enum class OptimizationAction : int
@@ -1271,7 +1303,7 @@ int main( int argc, char **argv )
   vector<string> wanted_detectors = detectors_for_type( selected_det_type );
 
   if( vm.count( "detector" ) )
-    wanted_detectors = { vm["detector"].as<string>() };
+    SpecUtils::split( wanted_detectors, vm["detector"].as<string>(), "," );
   else if( debug_printout_arg )
     wanted_detectors = vector<string>{ "Detective-X" };
 

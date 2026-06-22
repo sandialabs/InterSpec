@@ -100,6 +100,24 @@ extern double sm_rel_eff_chi2_cap_fixed_value;
  det-type in main() before `do_nuclide_config_ga(...)`.  Defaults to Low (non-HPGe). */
 extern PeakFitUtils::CoarseResolutionType sm_base_det_type;
 
+/** Checkpoint/resume for NuclideConfigGA (all opt-in via the CLI).
+
+ `sm_checkpoint_name`: when non-empty (--checkpoint <name>), the full population's genes are written
+ every generation to `<sm_output_file_prefix><name>_nuclide_config_ga_checkpoint.tsv` (atomic
+ temp+rename).  The det-type prefix plus the user-supplied name keep concurrent runs from
+ clobbering one another.
+
+ `sm_resume_path`: when non-empty (--resume <file>), the GA's initial population is seeded from this
+ checkpoint (genes only; costs are recomputed; the RNG/stall-counter are not restored).
+
+ `sm_checkpoint_options_summary`: one-line summary of the options that affect the objective and gene
+ meaning (det-type, dataset filters, chi2-cap mode/value, background-fit-trial).  Written into the
+ checkpoint header; on resume it is compared against the current run so an incompatible continuation
+ is refused.  Thread counts are intentionally excluded as they do not affect results. */
+extern std::string sm_checkpoint_name;
+extern std::string sm_resume_path;
+extern std::string sm_checkpoint_options_summary;
+
 /** Cap on the raw (pre-weight) per-spectrum background-fit penalty so a
  single spectrum's false-positive cluster (or fit failure) cannot dominate
  total_score.  30.0 is roughly the typical magnitude of a per-spectrum
@@ -322,6 +340,12 @@ struct NuclideConfigSolution
   double initial_manual_rel_eff_max_chi2_dof;
 
   std::string to_string( const std::string &separator ) const;
+
+  /** Parse a line produced by `to_string()` back into a solution.  Name-keyed, so it is
+   order-independent and tolerant of unknown keys (older checkpoints stay loadable as genes are
+   added); returns false if any known gene is missing or unparseable.  Used by --resume. */
+  static bool from_string( const std::string &line, const std::string &separator,
+                           NuclideConfigSolution &out );
 };//struct NuclideConfigSolution
 
 
