@@ -25,6 +25,7 @@
 
 #include <tuple>
 #include <vector>
+#include <cassert>
 #include <optional>
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -50,6 +51,55 @@ namespace ceres
 namespace RelActCalc
 {
   
+/** Knee of the mass-fraction soft-cap (as a fraction of the variable budget asymptote): the
+ constrained nuclides' variable demand `S` passes through unchanged (`factor == 1`) while it stays
+ below `ns_mass_frac_softcap_knee * (1-eps) * B`, so feasible fits are undistorted; above the knee the
+ factor bends smoothly.  See #mass_fraction_softcap_factor and RelActCalcAuto review item A16. */
+constexpr double ns_mass_frac_softcap_knee = 0.95;
+
+/** Default soft-cap margin: the constrained mass-fraction sum is held strictly below `1 - eps*B`, so
+ the element's unconstrained nuclides always keep a positive mass remainder (no divide-by-zero). */
+constexpr double ns_mass_frac_softcap_eps = 1.0e-6;
+
+/** Smooth, throw-free soft-cap factor for element mass-fraction constraints (RelActCalcAuto A16).
+
+ For an element whose mass-fraction-constrained nuclides demand a total "variable" mass fraction
+ `S = Σ vᵢ ≥ 0` (each `vᵢ = gᵢ·(upperᵢ − lowerᵢ) ≥ 0`) on top of their lower-bound floor
+ `L = Σ lowerᵢ`, with remaining budget `B = 1 − L > 0`, this returns a factor ∈ (0,1] so the actual
+ constrained sum `L + factor·S` is structurally below 1 (it approaches `1 − eps·B` as `S → ∞`).
+
+ The factor is exactly 1 while `S ≤ ns_mass_frac_softcap_knee·(1−eps)·B` (windows respected with no
+ distortion), then bends smoothly to its asymptote.  The bend is tangent to the identity line at the
+ knee (matching value and slope), so the factor is C¹ everywhere - including at `S = 0`, which sits in
+ the flat region - and is therefore safe to evaluate and differentiate through `ceres::Jet`.
+
+ @param S    Summed variable mass-fraction demand of the element's constrained nuclides (≥ 0).
+ @param B    Variable budget `1 − Σ lowerᵢ` for the element (> 0; check_nuclide_constraints guarantees it).
+ @param eps  Small positive margin keeping the constrained sum strictly below 1 (e.g. ns_mass_frac_softcap_eps).
+ */
+template<typename T>
+T mass_fraction_softcap_factor( const T &S, const T &B, const double eps )
+{
+  using namespace std;
+  using namespace ceres;
+
+  assert( eps > 0.0 );
+
+  const T cap_max = (1.0 - eps) * B;                    // asymptote for the variable sum (< B)
+  const T knee = ns_mass_frac_softcap_knee * cap_max;   // identity (factor == 1) holds for S <= knee
+
+  if( S <= knee )
+    return T( 1.0 );                                    // feasible: no distortion
+
+  // Above the knee, approach `cap_max` exponentially.  The curve is tangent to the identity line
+  //  `cap = S` at the knee (both value and slope match there), so `factor = cap/S` and its derivative
+  //  are continuous across the join (C¹).  `S > knee > 0` here, so the division is safe.
+  const T width = cap_max - knee;                       // > 0
+  const T cap = cap_max - width*exp( -(S - knee)/width );
+  return cap / S;
+}
+
+
 template<typename T>
 T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
                   const T * const coeffs, const size_t num_coefs )

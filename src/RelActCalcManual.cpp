@@ -1220,8 +1220,12 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         if( this_nuc_pos == end(specific_activities_for_el) )
           throw std::logic_error( "ManualGenericRelActFunctor: missing nuclide in constraint.m_specific_activities???" );
 
-        // Next we'll check that the sum of mass fractions for this element is less than 1.0
-        T el_constrained_sum( 0.0 );
+        // Soft-cap this element's constrained mass fractions so they sum to < 1 for any in-box
+        //  parameters, instead of throwing when the sum approaches 1 (RelActCalcAuto review item A16;
+        //  RelActCalc::mass_fraction_softcap_factor).  Accumulate L = Sum lower_i (constant) and
+        //  S = Sum v_i (v_i = g_i*(upper_i - lower_i) >= 0) over the element's constrained nuclides.
+        double el_lower_sum = 0.0;
+        T el_variable_sum( 0.0 );
         for( const map<std::string, double>::value_type &nucs_sa : specific_activities_for_el )
         {
           const string &inner_nuc = nucs_sa.first;
@@ -1241,20 +1245,21 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           const double &lower_frac = inner_constraint->m_mass_fraction_lower;
           const double &upper_frac = inner_constraint->m_mass_fraction_upper;
 
-          if( lower_frac == upper_frac )
-          {
-            el_constrained_sum += lower_frac;
-          }else
+          el_lower_sum += lower_frac;
+          if( lower_frac != upper_frac )
           {
             const size_t inner_index = iso_index( inner_nuc );
             const T frac = x[inner_index] - 0.5;
             assert( (frac > -0.0002) && (frac < 1.0001) );
-            el_constrained_sum += lower_frac + frac*(upper_frac - lower_frac);
-          }//if( inner_constraint->m_mass_fraction_lower == inner_constraint->m_mass_fraction_upper )
+            el_variable_sum += frac*(upper_frac - lower_frac);
+          }//if( fixed lower==upper ) / else range
         }//for( const map<std::string, double>::value_type &nucs_sa : specific_activities_for_el )
 
-        if( (el_constrained_sum < 0.0) || (el_constrained_sum > 1.0) )
-          throw runtime_error( "Invalid paramaters - mass-fraction sum over 1." );
+        const double el_budget = 1.0 - el_lower_sum; // > 0 by RelEffCurveInput::check_nuclide_constraints()
+        assert( el_budget > 0.0 );
+        const T el_softcap_factor = RelActCalc::mass_fraction_softcap_factor( el_variable_sum,
+                                              T(el_budget), RelActCalc::ns_mass_frac_softcap_eps );
+        const T el_constrained_sum = T(el_lower_sum) + el_softcap_factor*el_variable_sum; // < 1 structurally
 
         // Sum the relative masses of the other nuclides of this element
         // and sum the mass-constrained portion of this element.
@@ -1298,23 +1303,20 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
             {
               const T dist = x[src_index] - 0.5;
               assert( (dist > -0.02) && (dist < 1.02) ); //should be between 0 and 1, but will leave some room for numerical diff
-              mass_fraction = lower_frac + dist*(upper_frac - lower_frac);
+              mass_fraction = lower_frac + el_softcap_factor*dist*(upper_frac - lower_frac);
             }
             sum_constrained_frac_rel_mass_of_el += mass_fraction;
           }
         }//for( [ const string &iso, const double &activity] : element_specific_activities )
           
 
+        // The per-iso, factor-scaled sum matches el_constrained_sum (= L + factor*S) up to floating
+        //  point.  The soft-cap keeps it < 1 structurally, so the unconstrained remainder is strictly
+        //  positive (> eps*budget) - no divide-by-near-zero, and no degenerate-constraint throw needed.
         assert( sum_constrained_frac_rel_mass_of_el <= 1.00001 );
         assert( sum_constrained_frac_rel_mass_of_el >= -0.00001 );
-        assert( sum_constrained_frac_rel_mass_of_el == el_constrained_sum );
+        assert( abs(sum_constrained_frac_rel_mass_of_el - el_constrained_sum) < 1.0E-6 );
         const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
-
-        // Guard the division below: if the constrained mass fractions sum to ~1.0 there is no
-        //  unconstrained mass for this element, so total_rel_mass = (.../~0) would blow up.
-        if( unconstrained_rel_mass_frac_of_el <= 1.0E-6 )
-          throw std::runtime_error( "relative_activity: constrained mass fractions for an element sum"
-                                    " to ~1.0, leaving no unconstrained mass (degenerate constraint)." );
 
         T iso_mass_fraction;
         if( constraint.m_mass_fraction_lower == constraint.m_mass_fraction_upper )
@@ -1326,7 +1328,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           const T dist = x[index] - 0.5;
           assert( (dist > -0.02) && (dist < 1.02) ); //should be between 0 and 1, but will leave some room for numerical diff
           iso_mass_fraction = constraint.m_mass_fraction_lower
-               + dist * (constraint.m_mass_fraction_upper - constraint.m_mass_fraction_lower);
+               + el_softcap_factor*dist * (constraint.m_mass_fraction_upper - constraint.m_mass_fraction_lower);
         }
 
         const T total_rel_mass = sum_unconstrained_rel_mass_of_el / unconstrained_rel_mass_frac_of_el;

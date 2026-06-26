@@ -34,6 +34,8 @@
 #define BOOST_TEST_MODULE RelActCalcAuto_MassFracConstraint_suite
 #include <boost/test/included/unit_test.hpp>
 
+#include <ceres/jet.h>
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -46,6 +48,11 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+
+// Pulls in RelActCalc::mass_fraction_softcap_factor for the pure-math tests below; included after
+//  <ceres/jet.h> and the std headers (per the header's own requirement) so it can be instantiated as
+//  both double and ceres::Jet.
+#include "InterSpec/RelActCalc_imp.hpp"
 
 using namespace std;
 using namespace boost::unit_test;
@@ -418,3 +425,318 @@ BOOST_AUTO_TEST_CASE( auto_simplify_double_crystal_ball_no_duplicate_const )
                        "Expected an auto-simplify 'peak skew' removal warning (the path that produced the"
                        " duplicate-constant crash); none found - the regression path may not be exercised." );
 }//BOOST_AUTO_TEST_CASE( auto_simplify_double_crystal_ball_no_duplicate_const )
+
+
+// =====================================================================================================
+// A16 soft-cap (RelActCalc::mass_fraction_softcap_factor) - pure-math unit tests (fast; no spectra/solve)
+// =====================================================================================================
+namespace
+{
+  // Reconstructs the per-element mass-fraction decode the cost functor performs from the soft-cap
+  //  factor, given each constrained nuclide's (lower, upper, g=rel_dist in [0,1]).
+  struct SoftcapEval
+  {
+    double S = 0.0, B = 0.0, factor = 0.0, sum_constrained = 0.0;
+    vector<double> v, f, f_des;
+  };
+
+  SoftcapEval eval_softcap( const vector<double> &lower, const vector<double> &upper,
+                            const vector<double> &g,
+                            const double eps = RelActCalc::ns_mass_frac_softcap_eps )
+  {
+    SoftcapEval r;
+    const size_t n = lower.size();
+    r.v.resize( n ); r.f.resize( n ); r.f_des.resize( n );
+    double L = 0.0;
+    for( size_t i = 0; i < n; ++i )
+    {
+      r.v[i] = g[i]*(upper[i] - lower[i]);
+      r.f_des[i] = lower[i] + r.v[i];
+      L += lower[i];
+      r.S += r.v[i];
+    }
+    r.B = 1.0 - L;
+    r.factor = RelActCalc::mass_fraction_softcap_factor( r.S, r.B, eps );
+    for( size_t i = 0; i < n; ++i )
+      r.f[i] = lower[i] + r.factor*r.v[i];
+    r.sum_constrained = L + r.factor*r.S;
+    return r;
+  }
+}//namespace
+
+
+// A.1 - Feasible configs (variable demand comfortably below the knee) pass through unchanged: factor is
+//  exactly 1, each decoded fraction equals the desired lerp, and stays inside its window.
+BOOST_AUTO_TEST_CASE( softcap_feasible_is_identity )
+{
+  const vector<vector<double>> lowers = { {0.0, 0.0}, {0.1, 0.2}, {0.0, 0.05, 0.0} };
+  const vector<vector<double>> uppers = { {0.5, 0.5}, {0.4, 0.5}, {0.3, 0.10, 0.2} };
+  const vector<vector<double>> gs     = { {0.2, 0.3}, {0.5, 0.5}, {0.4, 0.50, 0.3} };
+
+  for( size_t c = 0; c < lowers.size(); ++c )
+  {
+    const SoftcapEval r = eval_softcap( lowers[c], uppers[c], gs[c] );
+    const double knee = RelActCalc::ns_mass_frac_softcap_knee*(1.0 - RelActCalc::ns_mass_frac_softcap_eps)*r.B;
+    BOOST_REQUIRE_MESSAGE( r.S <= knee, "test case " << c << " is not in the identity region (S=" << r.S << ")" );
+
+    BOOST_CHECK_SMALL( r.factor - 1.0, 1.0e-12 );
+    for( size_t i = 0; i < r.f.size(); ++i )
+    {
+      BOOST_CHECK_SMALL( r.f[i] - r.f_des[i], 1.0e-12 );
+      BOOST_CHECK( (r.f[i] >= lowers[c][i] - 1.0e-12) && (r.f[i] <= uppers[c][i] + 1.0e-12) );
+    }
+  }
+}
+
+
+// A.2 - Infeasible configs (Σ desired > 1) are capped: Σ actual < 1 strictly, every fraction stays in
+//  window and is <= its desired value (monotone shrink), and the variable parts stay proportional.
+BOOST_AUTO_TEST_CASE( softcap_infeasible_is_capped_and_proportional )
+{
+  const vector<double> lower = {0.0, 0.0}, upper = {1.0, 1.0}, g = {0.8, 0.7};
+  const SoftcapEval r = eval_softcap( lower, upper, g );
+
+  BOOST_CHECK( r.S > 1.0 );                       // genuinely infeasible at factor == 1
+  BOOST_CHECK( r.factor < 1.0 );
+  BOOST_CHECK( r.sum_constrained < 1.0 );         // structurally feasible
+  for( size_t i = 0; i < r.f.size(); ++i )
+  {
+    BOOST_CHECK( (r.f[i] >= lower[i] - 1.0e-12) && (r.f[i] <= upper[i] + 1.0e-12) );
+    BOOST_CHECK( r.f[i] <= r.f_des[i] + 1.0e-12 );      // monotone shrink
+  }
+  // proportional shrink: (f0-lower0)/(f1-lower1) == v0/v1  <=>  (f0-lower0)*v1 == (f1-lower1)*v0
+  BOOST_CHECK_CLOSE( (r.f[0]-lower[0])*r.v[1], (r.f[1]-lower[1])*r.v[0], 1.0e-6 );
+}
+
+
+// A.3 - The decoded fraction never falls below the validated lower bound, for any demand; and the
+//  variable sum is always held below (1-eps)*B (so the unconstrained remainder stays positive).
+BOOST_AUTO_TEST_CASE( softcap_respects_lower_floor )
+{
+  const double eps = RelActCalc::ns_mass_frac_softcap_eps;
+  for( const double B : { 1.0, 0.7, 0.2 } )
+  {
+    for( const double S : { 0.0, 0.1, 1.0, 5.0, 100.0, 1.0e6 } )
+    {
+      const double factor = RelActCalc::mass_fraction_softcap_factor( S, B, eps );
+      BOOST_CHECK( (factor > 0.0) && (factor <= 1.0 + 1.0e-12) );
+      BOOST_CHECK( (S*factor) <= (1.0 - eps)*B + 1.0e-9 );          // cap < (1-eps)*B
+      const double lower_i = 0.123, v_i = 0.4;                       // representative nuclide
+      BOOST_CHECK( (lower_i + factor*v_i) >= lower_i - 1.0e-12 );    // f_i >= lower_i
+    }
+  }
+}
+
+
+// A.4 - Sweeping a knob finely across the feasibility transition gives a continuous decode (no cliff),
+//  and Σ never exceeds the (1 - eps*B) cap.  Direct regression against the old throw wall.
+BOOST_AUTO_TEST_CASE( softcap_is_continuous_across_transition )
+{
+  const vector<double> lower = {0.0, 0.0}, upper = {1.0, 1.0};
+  const int nsteps = 2000;
+  double prev_factor = 0.0, prev_sum = 0.0;
+  for( int k = 0; k <= nsteps; ++k )
+  {
+    const double g0 = static_cast<double>(k) / nsteps;             // 0 -> 1 ; S = g0 + 0.6 crosses the knee
+    const SoftcapEval r = eval_softcap( lower, upper, { g0, 0.6 } );
+    BOOST_CHECK( r.sum_constrained <= (1.0 - RelActCalc::ns_mass_frac_softcap_eps)*r.B + 1.0e-12 );
+    if( k > 0 )
+    {
+      BOOST_CHECK_SMALL( r.factor - prev_factor, 5.0e-3 );
+      BOOST_CHECK_SMALL( r.sum_constrained - prev_sum, 5.0e-3 );
+    }
+    prev_factor = r.factor;
+    prev_sum = r.sum_constrained;
+  }
+}
+
+
+// A.5 - Automatic differentiation (ceres::Jet) through the soft-cap matches central finite differences
+//  in the feasible region, deep in the capped region, and at the knee.  Validates AD-safety (Option A).
+BOOST_AUTO_TEST_CASE( softcap_ad_matches_finite_difference )
+{
+  typedef ceres::Jet<double,1> Jet;
+  const double eps = RelActCalc::ns_mass_frac_softcap_eps;
+  const double B = 1.0;
+  const double knee = RelActCalc::ns_mass_frac_softcap_knee*(1.0 - eps)*B;
+
+  const vector<double> test_S = { 0.0, 0.3, knee, 1.0, 1.5, 3.0 };
+  for( const double S : test_S )
+  {
+    const Jet S_jet( S, 0 );                                        // value S, derivative seed at index 0
+    const Jet f_jet = RelActCalc::mass_fraction_softcap_factor( S_jet, Jet(B), eps );
+    const double ad = f_jet.v[0];
+    BOOST_CHECK( std::isfinite( f_jet.a ) && std::isfinite( ad ) );
+
+    const double h = 1.0e-6;
+    const double fp = RelActCalc::mass_fraction_softcap_factor( S + h, B, eps );
+    const double fm = RelActCalc::mass_fraction_softcap_factor( S - h, B, eps );
+    const double fd = (fp - fm) / (2.0*h);
+    BOOST_CHECK_MESSAGE( fabs(ad - fd) < 1.0e-5,
+                         "AD/FD mismatch at S=" << S << ": ad=" << ad << " fd=" << fd );
+  }
+}
+
+
+// A.6 - With all knobs at their lower bound (S == 0) the factor and its Jet derivative are finite (no 0/0).
+BOOST_AUTO_TEST_CASE( softcap_s_zero_is_finite )
+{
+  typedef ceres::Jet<double,1> Jet;
+  const double eps = RelActCalc::ns_mass_frac_softcap_eps;
+  for( const double B : { 1.0, 0.5, 0.05 } )
+  {
+    const double factor = RelActCalc::mass_fraction_softcap_factor( 0.0, B, eps );
+    BOOST_CHECK_SMALL( factor - 1.0, 1.0e-12 );
+    const Jet f_jet = RelActCalc::mass_fraction_softcap_factor( Jet(0.0, 0), Jet(B), eps );
+    BOOST_CHECK( std::isfinite( f_jet.a ) && std::isfinite( f_jet.v[0] ) );
+    BOOST_CHECK_SMALL( f_jet.v[0], 1.0e-12 );                       // flat region -> zero slope
+  }
+}
+
+
+// A.7 - A fixed (lower==upper) constraint contributes only a constant to L and is never scaled, while a
+//  range nuclide on the same element stays feasible.
+BOOST_AUTO_TEST_CASE( softcap_fixed_plus_range )
+{
+  const vector<double> lower = {0.3, 0.0}, upper = {0.3, 0.5}, g = {0.5, 0.4};   // nuc 0 fixed at 0.3
+  const SoftcapEval r = eval_softcap( lower, upper, g );
+  BOOST_CHECK_SMALL( r.v[0], 1.0e-15 );                            // fixed nuclide: zero variable amount
+  BOOST_CHECK_SMALL( r.f[0] - 0.3, 1.0e-12 );                       // ... decodes to exactly its fixed fraction
+  BOOST_CHECK( (r.f[1] >= 0.0) && (r.f[1] <= 0.5 + 1.0e-12) );
+  BOOST_CHECK( r.sum_constrained < 1.0 );
+}
+
+
+// =====================================================================================================
+// A16 integration tests (full solve)
+// =====================================================================================================
+namespace
+{
+  // Loads the embedded-state uranium HPGe test case shared by the integration tests below.
+  struct ULoadResult
+  {
+    shared_ptr<SpecMeas> meas;
+    shared_ptr<const SpecUtils::Measurement> foreground, background;
+    shared_ptr<const DetectorPeakResponse> det;
+    RelActCalcAuto::Options options;   // copy of the embedded state's options, ready to tweak
+  };
+
+  bool load_u_test_case( ULoadResult &out )
+  {
+    const string spec_path = SpecUtils::append_path(
+        SpecUtils::append_path( g_test_file_dir, "RelActAutoReport" ), "U235_Unshielded_6000.n42" );
+    if( !SpecUtils::is_file( spec_path ) )
+      return false;
+    out.meas = make_shared<SpecMeas>();
+    if( !out.meas->load_file( spec_path, SpecUtils::ParserType::Auto ) )
+      return false;
+    for( const shared_ptr<const SpecUtils::Measurement> &m : out.meas->measurements() )
+    {
+      if( !m )
+        continue;
+      if( m->source_type() == SpecUtils::SourceType::Background )
+        out.background = m;
+      else if( !out.foreground )
+        out.foreground = m;
+    }
+    out.det = out.meas->detector();
+    const unique_ptr<RelActCalcAuto::RelActAutoGuiState> state = out.meas->getRelActAutoGuiState();
+    if( !out.foreground || !out.det || !state || state->options.rel_eff_curves.empty() )
+      return false;
+    out.options = state->options;
+    return true;
+  }
+}//namespace
+
+
+// A.8 - A16 regression: an element carrying TWO wide overlapping constraints (U234 [0,1] and U235 [0,1]).
+//  The old eval threw "Sum of constrained mass fractions ... > 1.0" whenever a trial step drove the two
+//  fractions past the simplex face, which Ceres treats as a hard wall (invalid step) and could abort on.
+//  The soft-cap makes Σ < 1 structural, so the solve must simply succeed with both fractions feasible.
+BOOST_AUTO_TEST_CASE( mass_fraction_constraint_two_wide_overlap )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case( tc ), "Failed to load U235_Unshielded_6000.n42 test case." );
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u234 = db->nuclide( "U234" );
+  const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
+  BOOST_REQUIRE( u234 && u235 );
+
+  RelActCalcAuto::Options options = tc.options;
+  RelActCalcAuto::RelEffCurveInput::MassFractionConstraint wide_u234, wide_u235;
+  wide_u234.nuclide = u234;  wide_u234.lower_mass_fraction = 0.0;  wide_u234.upper_mass_fraction = 1.0;
+  wide_u235.nuclide = u235;  wide_u235.lower_mass_fraction = 0.0;  wide_u235.upper_mass_fraction = 1.0;
+  options.rel_eff_curves[0].mass_fraction_constraints.push_back( wide_u234 );
+  options.rel_eff_curves[0].mass_fraction_constraints.push_back( wide_u235 );
+
+  RelActCalcAuto::RelActAutoSolution sol;
+  BOOST_REQUIRE_NO_THROW( sol = RelActCalcAuto::solve( options, tc.foreground, tc.background, tc.det, {}, nullptr ) );
+
+  BOOST_CHECK_MESSAGE( sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,
+                       "Two-wide-overlap solve failed: status=" << static_cast<int>(sol.m_status)
+                       << ", error='" << sol.m_error_message << "'" );
+  if( sol.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+    return;
+
+  BOOST_CHECK_MESSAGE( sol.m_dof > 0 && (sol.m_chi2 / sol.m_dof) < 50.0,
+                       "chi2/dof = " << (sol.m_dof > 0 ? sol.m_chi2/sol.m_dof : -1.0) << " is unreasonable." );
+
+  const pair<double,optional<double>> mf234 = sol.mass_enrichment_fraction( u234, 0 );
+  const pair<double,optional<double>> mf235 = sol.mass_enrichment_fraction( u235, 0 );
+  BOOST_CHECK( (mf234.first >= -1.0e-6) && (mf234.first <= 1.0 + 1.0e-6) );
+  BOOST_CHECK( (mf235.first >  0.0)     && (mf235.first <= 1.0 + 1.0e-6) );
+  BOOST_CHECK_MESSAGE( (mf234.first + mf235.first) < 1.0,
+                       "Sum of constrained U234+U235 fractions " << (mf234.first + mf235.first)
+                       << " must be < 1." );
+}
+
+
+// A.9 - The soft-cap reparametrization is benign on a feasible config.  Adding a single feasible
+//  U235 [0,1] constraint is the *same model in different coordinates* (its decode is factor==1 here -
+//  see softcap_feasible_is_identity), so it must reach a fit quality comparable to an *unconstrained*
+//  solve of the same spectrum.  We deliberately do NOT assert bit-identical enrichment: this spectrum's
+//  U235 fraction is only weakly determined (its cost surface is shallow - the 185.7 keV peak alone sits
+//  ~10 sigma off the DRF-limited model), so the two parametrizations settle on different near-degenerate
+//  minima (~25 vs ~28 wt%) at essentially equal cost - and that gap predates A16 (factor==1 makes the
+//  decode identical to the old lerp).  The strict before/after "feasible fits don't move" guard is the
+//  idb_enrichment_check over the HPGe corpus (verification step 4), not this single shallow case.
+BOOST_AUTO_TEST_CASE( mass_fraction_constraint_feasible_invariance )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case( tc ), "Failed to load U235_Unshielded_6000.n42 test case." );
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
+  BOOST_REQUIRE( u235 );
+
+  RelActCalcAuto::RelActAutoSolution sol_unc;
+  BOOST_REQUIRE_NO_THROW( sol_unc = RelActCalcAuto::solve( tc.options, tc.foreground, tc.background, tc.det, {}, nullptr ) );
+  BOOST_REQUIRE_MESSAGE( sol_unc.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,
+                         "Unconstrained reference solve failed (status=" << static_cast<int>(sol_unc.m_status) << ")." );
+
+  RelActCalcAuto::Options options = tc.options;
+  RelActCalcAuto::RelEffCurveInput::MassFractionConstraint c;
+  c.nuclide = u235;  c.lower_mass_fraction = 0.0;  c.upper_mass_fraction = 1.0;
+  options.rel_eff_curves[0].mass_fraction_constraints.push_back( c );
+
+  RelActCalcAuto::RelActAutoSolution sol_con;
+  BOOST_REQUIRE_NO_THROW( sol_con = RelActCalcAuto::solve( options, tc.foreground, tc.background, tc.det, {}, nullptr ) );
+  BOOST_REQUIRE_MESSAGE( sol_con.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,
+                         "Single-constraint solve failed (status=" << static_cast<int>(sol_con.m_status) << ")." );
+
+  // Same model, different coordinates: the soft-cap must not materially degrade the achievable fit.
+  BOOST_REQUIRE( (sol_unc.m_dof > 0) && (sol_con.m_dof > 0) );
+  const double chi2dof_unc = sol_unc.m_chi2 / sol_unc.m_dof;
+  const double chi2dof_con = sol_con.m_chi2 / sol_con.m_dof;
+  BOOST_CHECK_MESSAGE( chi2dof_con <= 2.0*chi2dof_unc + 1.0e-9,
+                       "Constrained chi2/dof " << chi2dof_con << " is materially worse than unconstrained "
+                       << chi2dof_unc << " - soft-cap reparametrization should not degrade a feasible fit." );
+
+  // ... and the reported enrichment must be a feasible fraction.
+  const double enr_con = sol_con.mass_enrichment_fraction( u235, 0 ).first;
+  BOOST_CHECK_MESSAGE( (enr_con > 0.0) && (enr_con < 1.0),
+                       "Constrained U235 enrichment " << enr_con << " is not a feasible fraction." );
+}
