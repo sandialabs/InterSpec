@@ -120,7 +120,7 @@ shared_ptr<const PeakDef> fit_skew_peak( const shared_ptr<const SpecUtils::Measu
 {
   const double mean0 = 661.657;
   const double sigma0 = 2.8;  // ~1% FWHM at 662 keV for the CZT H3D M400; the fit refines it.
-  const double amp0 = std::max( 10.0, data->gamma_integral( static_cast<float>(roi_lower),
+  const double amp0 = (std::max)( 10.0, data->gamma_integral( static_cast<float>(roi_lower),
                                                             static_cast<float>(roi_upper) ) );
 
   const shared_ptr<PeakDef> peak = make_shared<PeakDef>( mean0, sigma0, amp0 );
