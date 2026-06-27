@@ -446,9 +446,11 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
   {
     if( convo->promptTokens.has_value() )
     {
-      const string tokenStr = " | Tokens: " + to_string(convo->promptTokens.value())
-                           + " + " + to_string(convo->completionTokens.value_or(0))
-                           + " = " + to_string(convo->totalTokens.value_or(0));
+      string tokenStr = " | Tokens: " + to_string(convo->promptTokens.value())
+                      + " in + " + to_string(convo->completionTokens.value_or(0))
+                      + " out = " + to_string(convo->totalTokens.value_or(0));
+      if( convo->cachedTokens.has_value() )
+        tokenStr += " (" + to_string(convo->cachedTokens.value()) + " cached)";
       WText *tokenText = new WText( tokenStr, metadataDiv );
       tokenText->addStyleClass( "LlmTokenUsage" );
     }
@@ -1761,14 +1763,37 @@ void LlmInteractionDisplay::updateSummary()
     totalDuration->addStyleClass( "LlmSummaryItem" );
   }
 
-  // Token usage
+  // Token usage.  Note the input count is cumulative across all of this conversation's API calls
+  // (the growing history is re-sent each tool-call round), which is why it can be large; the cache
+  // breakdown below shows how much of that input was re-processed cheaply from the provider's cache.
   if( m_interaction->totalTokens.has_value() && m_interaction->totalTokens.value() > 0 )
   {
-    const string tokenStr = " | Tokens: " + to_string(m_interaction->promptTokens.value_or(0))
-                         + " + " + to_string(m_interaction->completionTokens.value_or(0))
-                         + " = " + to_string(m_interaction->totalTokens.value());
+    const size_t promptTok = m_interaction->promptTokens.value_or(0);
+    const size_t completionTok = m_interaction->completionTokens.value_or(0);
+
+    const string tokenStr = " | Tokens: " + to_string(promptTok) + " in + "
+                         + to_string(completionTok) + " out = "
+                         + to_string(m_interaction->totalTokens.value()) + " total";
     WText *tokens = new WText( tokenStr, m_summaryDiv );
     tokens->addStyleClass( "LlmSummaryItem" );
+
+    // Cache usage: how much of the (cumulative) input was served from / written to cache.
+    if( m_interaction->cachedTokens.has_value() )
+    {
+      const size_t cachedTok = m_interaction->cachedTokens.value();
+      string cacheStr = " | Cache: " + to_string(cachedTok) + " read";
+      if( promptTok > 0 )
+      {
+        const int pct = static_cast<int>( (100.0 * cachedTok / promptTok) + 0.5 );
+        cacheStr += " (" + to_string(pct) + "% of input)";
+      }
+      const size_t writtenTok = m_interaction->cacheCreationTokens.value_or(0);
+      if( writtenTok > 0 )
+        cacheStr += ", " + to_string(writtenTok) + " written";
+
+      WText *cache = new WText( cacheStr, m_summaryDiv );
+      cache->addStyleClass( "LlmSummaryItem" );
+    }
   }
 }//updateSummary()
 

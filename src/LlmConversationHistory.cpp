@@ -117,6 +117,8 @@ std::shared_ptr<LlmInteraction> LlmInteraction::shallowClone() const
   clone->promptTokens     = promptTokens;
   clone->completionTokens = completionTokens;
   clone->totalTokens      = totalTokens;
+  clone->cachedTokens     = cachedTokens;
+  clone->cacheCreationTokens = cacheCreationTokens;
   clone->responses        = responses; // shared_ptr copies; turns are immutable read-only objects
   if( state_machine )
     clone->state_machine = state_machine->copy();
@@ -282,7 +284,9 @@ std::shared_ptr<LlmInteractionAutoReply> LlmConversationHistory::addAutoReplyMes
 void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmInteraction> conversation,
                                            std::optional<int> promptTokens,
                                            std::optional<int> completionTokens,
-                                           std::optional<int> totalTokens )
+                                           std::optional<int> totalTokens,
+                                           std::optional<int> cachedTokens,
+                                           std::optional<int> cacheCreationTokens )
 {
   assert( conversation );
   if( !conversation )
@@ -312,6 +316,14 @@ void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmInteraction> conv
     else
       conversation->totalTokens = static_cast<size_t>( totalTokens.value() );
   }
+
+  // Cache usage: accumulate even a reported 0 (so "0 cached" can be distinguished from "not
+  // reported"); these are a subset of promptTokens.
+  if( cachedTokens.has_value() && (cachedTokens.value() >= 0) )
+    conversation->cachedTokens = conversation->cachedTokens.value_or(0) + static_cast<size_t>( cachedTokens.value() );
+
+  if( cacheCreationTokens.has_value() && (cacheCreationTokens.value() >= 0) )
+    conversation->cacheCreationTokens = conversation->cacheCreationTokens.value_or(0) + static_cast<size_t>( cacheCreationTokens.value() );
 }//void addTokenUsage(...)
 
 

@@ -41,6 +41,7 @@ static_assert( USE_LLM_INTERFACE, "You should not include this library unless US
 // Forward declarations
 class InterSpec;
 class LlmConfig;
+class LlmApiProtocol;
 struct LlmInteraction;
 class LlmConversationHistory;
 
@@ -218,6 +219,11 @@ private:
   std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
   std::shared_ptr<LlmConversationHistory> m_history;
 
+  /** The wire-format translator for the active provider (OpenAI Chat / OpenAI Responses /
+   Anthropic).  Built from the config's resolved apiFormat() in the constructor and resetWithConfig().
+   */
+  std::unique_ptr<const LlmApiProtocol> m_protocol;
+
   // Debug logging support
   std::ostream* m_debug_stream;              // Pointer to debug output stream (nullptr if no logging)
   std::unique_ptr<std::ofstream> m_debug_file; // File stream if logging to a file
@@ -263,27 +269,6 @@ private:
   
   // Context summarization support
   std::weak_ptr<LlmInteraction> m_summarizationPendingConvo;  // User's conversation queued while summarization runs
-
-  /** Cached serialized request prefix and messages for incremental serialization. */
-  struct SerializedRequestCache
-  {
-    std::string prefix;              // Everything before "messages":[
-    std::string serializedMessages;  // Accumulated serialized messages (without [ ])
-    size_t serializedMessageCount = 0;
-    std::string configFingerprint;   // Config fields hash for invalidation
-
-    void clear()
-    {
-      prefix.clear();
-      serializedMessages.clear();
-      serializedMessageCount = 0;
-      configFingerprint.clear();
-    }
-
-    bool isValid() const { return !prefix.empty(); }
-  };
-
-  SerializedRequestCache m_serializedCache;
 
   /** Make an API call with request ID tracking
 
@@ -341,19 +326,6 @@ private:
    @param convo The conversation to initialize state machine for
    */
   //void initializeStateMachineForConversation( std::shared_ptr<LlmInteraction> convo ) const;
-
-  /** Serialize request using cached prefix and incremental message serialization.
-   Only used for MainAgent conversations; sub-agents use full serialization.
-   */
-  std::string serializeRequestIncremental( const nlohmann::json &requestJson );
-
-  /** Build the stable prefix portion of the serialized request (model, tools, config).
-   Ends with "messages":[ ready for message append.
-   */
-  std::string buildSerializedPrefix( const nlohmann::json &requestJson ) const;
-
-  /** Build a simple fingerprint of config fields for cache invalidation. */
-  std::string buildConfigFingerprint( const nlohmann::json &requestJson ) const;
 
   /** Build and send a compaction (summarization) request to the LLM.
 

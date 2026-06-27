@@ -9,6 +9,16 @@
          Set active="true" on the provider and model you want to use.
          If multiple have active="true", the first one is used.
          If none have active="true", the first one is used.
+
+         Optional "apiFormat" attribute on <ApiProvider> selects the wire format / protocol:
+           - "openai_chat"      : the legacy OpenAI Chat Completions API (.../v1/chat/completions),
+                                  and all OpenAI-compatible providers (OpenRouter, Google OpenAI-compat,
+                                  Ask Sage, local servers, ...).  This is the default.
+           - "openai_responses" : the newer OpenAI Responses API (.../v1/responses).
+           - "anthropic"        : the native Anthropic Messages API (.../v1/messages).
+         If apiFormat is omitted, it is auto-detected from the endpoint URL (api.anthropic.com or a
+         path ending in /messages -> anthropic; a path ending in /responses -> openai_responses;
+         otherwise openai_chat).  Existing configs without the attribute keep working as openai_chat.
     -->
     <ApiProvider active="false">
       <!-- A number of providers work, including locally running LLM models -->
@@ -116,6 +126,38 @@
         <Name>gpt-5.4</Name>
         <MaxTokens>62565</MaxTokens>
         <ContextLengthLimit>200000</ContextLengthLimit>
+      </Model>
+    </ApiProvider>
+
+    <!-- Native Anthropic Messages API example.  apiFormat="anthropic" could be omitted here, since
+         the api.anthropic.com endpoint is auto-detected, but it is shown for clarity.
+         Auth uses the api-key as a header (x-api-key) rather than a Bearer token.
+         Note: max_tokens is REQUIRED by Anthropic, so set <MaxTokens>; reasoning="true" turns on
+         Claude's adaptive thinking. -->
+    <ApiProvider active="false" apiFormat="anthropic">
+      <ApiEndpoint>https://api.anthropic.com/v1/messages</ApiEndpoint>
+      <BearerToken>sk-ant-...</BearerToken>
+      <Model active="true" supportsImages="true" reasoning="true">
+        <Name>claude-opus-4-8</Name>
+        <MaxTokens>32000</MaxTokens>
+        <ContextLengthLimit>200000</ContextLengthLimit>
+      </Model>
+      <Model active="false" supportsImages="true" reasoning="true">
+        <Name>claude-sonnet-4-6</Name>
+        <MaxTokens>32000</MaxTokens>
+        <ContextLengthLimit>200000</ContextLengthLimit>
+      </Model>
+    </ApiProvider>
+
+    <!-- Newer OpenAI Responses API example (the /v1/responses endpoint).  apiFormat could be omitted
+         here too (auto-detected from the /responses path), but is shown for clarity. -->
+    <ApiProvider active="false" apiFormat="openai_responses">
+      <ApiEndpoint>https://api.openai.com/v1/responses</ApiEndpoint>
+      <BearerToken>sk-...</BearerToken>
+      <Model active="true" supportsImages="true" reasoning="medium">
+        <Name>gpt-5-mini</Name>
+        <MaxTokens>62565</MaxTokens>
+        <ContextLengthLimit>131072</ContextLengthLimit>
       </Model>
     </ApiProvider>
 

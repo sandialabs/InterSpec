@@ -60,6 +60,61 @@ AgentType stringToAgentType( const std::string &name )
 const std::string LlmConfig::McpServer::sm_invalid_bearer_token = "INVALID-BEARER-TOKEN";
 
 
+LlmConfig::LlmApi::ApiFormat LlmConfig::LlmApi::parseApiFormat( const std::string &str )
+{
+  if( SpecUtils::iequals_ascii( str, "openai_chat" )
+     || SpecUtils::iequals_ascii( str, "openai_chat_completions" )
+     || SpecUtils::iequals_ascii( str, "openai" )
+     || SpecUtils::iequals_ascii( str, "chat" ) )
+    return ApiFormat::OpenAiChat;
+
+  if( SpecUtils::iequals_ascii( str, "openai_responses" )
+     || SpecUtils::iequals_ascii( str, "responses" ) )
+    return ApiFormat::OpenAiResponses;
+
+  if( SpecUtils::iequals_ascii( str, "anthropic" )
+     || SpecUtils::iequals_ascii( str, "claude" )
+     || SpecUtils::iequals_ascii( str, "messages" ) )
+    return ApiFormat::Anthropic;
+
+  throw std::runtime_error( "Invalid apiFormat value: '" + str + "'."
+    " Valid values are 'openai_chat', 'openai_responses', or 'anthropic'." );
+}//LlmConfig::LlmApi::parseApiFormat(...)
+
+
+const char *LlmConfig::LlmApi::apiFormatToString( ApiFormat fmt )
+{
+  switch( fmt )
+  {
+    case ApiFormat::OpenAiChat:      return "openai_chat";
+    case ApiFormat::OpenAiResponses: return "openai_responses";
+    case ApiFormat::Anthropic:       return "anthropic";
+  }
+  throw std::invalid_argument( "Unknown ApiFormat" );
+}//LlmConfig::LlmApi::apiFormatToString(...)
+
+
+LlmConfig::LlmApi::ApiFormat LlmConfig::LlmApi::detectApiFormat( const std::string &endpoint )
+{
+  // Strip any query string / fragment, then any trailing slash, to get a clean path for the
+  // suffix tests below.
+  std::string url = endpoint;
+  const size_t q = url.find_first_of( "?#" );
+  if( q != std::string::npos )
+    url = url.substr( 0, q );
+  while( !url.empty() && (url.back() == '/') )
+    url.pop_back();
+
+  if( SpecUtils::icontains( url, "api.anthropic.com" ) || SpecUtils::iends_with( url, "/messages" ) )
+    return ApiFormat::Anthropic;
+
+  if( SpecUtils::iends_with( url, "/responses" ) )
+    return ApiFormat::OpenAiResponses;
+
+  return ApiFormat::OpenAiChat;
+}//LlmConfig::LlmApi::detectApiFormat(...)
+
+
 std::shared_ptr<LlmConfig> LlmConfig::load()
 {
   // Determine which path to use for config files.
@@ -331,6 +386,14 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
           SpecUtils::trim( active_str );
           const bool isActiveProvider = (active_str == "true" || active_str == "1");
 
+          // Optional "apiFormat" attribute on provider.  When absent, the format is auto-detected
+          // from the endpoint URL at use-time (see LlmApi::detectApiFormat).
+          const rapidxml::xml_attribute<char> * const apiFmtAttr = XML_FIRST_ATTRIB( provNode, "apiFormat" );
+          string api_fmt_str = SpecUtils::xml_value_str( apiFmtAttr );
+          SpecUtils::trim( api_fmt_str );
+          if( !api_fmt_str.empty() )
+            provider.apiFormat = LlmApi::parseApiFormat( api_fmt_str );  // throws on invalid value
+
           bool foundActiveModel = false;
 
           for( const rapidxml::xml_node<char> *modelNode = XML_FIRST_NODE( provNode, "Model" );
@@ -501,6 +564,11 @@ bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename
 
       if( pi == config.llmApi.activeProviderIndex )
         provNode->append_attribute( doc.allocate_attribute( "active", "true" ) );
+
+      // Only emit apiFormat when explicitly set, so providers left on auto-detect round-trip as such.
+      if( prov.apiFormat.has_value() )
+        provNode->append_attribute( doc.allocate_attribute( "apiFormat",
+                                      LlmApi::apiFormatToString( prov.apiFormat.value() ) ) );
 
       XmlUtils::append_string_node( provNode, "ApiEndpoint", prov.apiEndpoint );
       XmlUtils::append_string_node( provNode, "BearerToken", prov.bearerToken );

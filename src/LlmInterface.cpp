@@ -53,6 +53,7 @@
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmToolGui.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmApiProtocol.h"
 #include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/LlmConversationHistory.h"
 
@@ -202,7 +203,10 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
   
   if( !m_tool_registry )
     throw std::logic_error( "LlmInterface: couldnt create tool registry from config" );
-  
+
+  // Select the wire-format translator for the active provider's API format.
+  m_protocol = LlmApiProtocol::create( m_config->llmApi.apiFormat() );
+
   // Initialize debug logging if configured
   if( !m_config->llmApi.debug_file.empty() )
   {
@@ -387,12 +391,12 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
 
   m_config = config;
   m_tool_registry = tool_registry;
+  m_protocol = LlmApiProtocol::create( m_config->llmApi.apiFormat() );
   m_history = make_shared<LlmConversationHistory>();
   m_pendingRequests.clear();
   m_deferredToolResults.clear();
   m_currentConversation.reset();
   m_summarizationPendingConvo.reset();
-  m_serializedCache.clear();
   m_nextRequestId = 1;
 
   // Re-initialize debug logging
@@ -560,7 +564,6 @@ std::shared_ptr<LlmConversationHistory> LlmInterface::getHistory() const {
 
 void LlmInterface::setHistory(std::shared_ptr<LlmConversationHistory> history) {
   m_history = history ? history : std::make_shared<LlmConversationHistory>();
-  m_serializedCache.clear();
 }
 
 std::shared_ptr<const LlmConfig> LlmInterface::config() const
@@ -1250,7 +1253,8 @@ static nlohmann::json sanitizeJsonUtf8( const nlohmann::json &value )
   }
 }
 
-static std::string serializeRequestForCaching( const nlohmann::json &requestJson )
+static std::string serializeRequestForCaching( const nlohmann::json &requestJson,
+                                               const std::vector<std::string> &priorityFields )
 {
   try
   {
@@ -1274,26 +1278,24 @@ static std::string serializeRequestForCaching( const nlohmann::json &requestJson
       result += sanitizedValue.dump();
     };
 
-    // Add fields in priority order for caching (these should stay stable across requests)
-    addField( "model" );
-    addField( "temperature" );
-    addField( "max_completion_tokens" );
-    addField( "max_tokens" );
-    addField( "reasoning" );
-    addField( "reasoning_effort" );
-    addField( "tools" );
-    addField( "tool_choice" );
+    auto isPriority = [&priorityFields]( const std::string &key ) -> bool
+    {
+      for( const std::string &p : priorityFields )
+        if( p == key )
+          return true;
+      return false;
+    };
 
-    // Add remaining fields (messages, etc.)
+    // Emit the stable/priority fields first (these should stay constant across requests so the
+    // growing message/input array stays at the end - this helps providers cache the prefix).
+    for( const std::string &key : priorityFields )
+      addField( key );
+
+    // Add any remaining fields (the bulk messages/input array, and anything else).
     for( auto it = requestJson.begin(); it != requestJson.end(); ++it )
     {
       const std::string &key = it.key();
-
-      // Skip fields we already added in the priority order above
-      if( key == "model" || key == "temperature"
-         || key == "max_completion_tokens" || key == "max_tokens"
-         || key == "reasoning" || key == "reasoning_effort"
-         || key == "tools" || key == "tool_choice" )
+      if( isPriority( key ) )
         continue;
 
       if( !first )
@@ -1399,11 +1401,9 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
     (*m_debug_stream) << "=========================" << endl;
   }//if( m_debug_stream )
 
-  // Serialize request - use incremental caching for MainAgent, full serialization otherwise.
-  // We check the messages array to determine if this looks like a MainAgent request (has history),
-  // but for sub-agents or summarization requests, we use the stable full serialization.
-  // The m_serializedCache is only valid for MainAgent conversations with growing message histories.
-  const std::string requestStr = serializeRequestForCaching( requestJson );
+  // Serialize the request with the stable field ordering the active protocol prefers, so the
+  // large/stable fields come before the growing message array (helps provider prompt caching).
+  const std::string requestStr = serializeRequestForCaching( requestJson, m_protocol->cachePriorityFields() );
 
 #if( PERFORM_DEVELOPER_CHECKS )
   // Developer check: Compare this request with the previous one to predict cache hit rate
@@ -1500,13 +1500,20 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
    */
 #endif // PERFORM_DEVELOPER_CHECKS
 
-  // Use Wt::WWebWidget::jsStringLiteral to properly escape the JSON string for JavaScript
+  // Build the per-format HTTP headers object (auth scheme, version header, etc.) for this provider.
+  const std::string endpoint = m_config->llmApi.apiEndpoint();
+  nlohmann::json headersJson = nlohmann::json::object();
+  for( const std::pair<std::string,std::string> &kv : m_protocol->headers( endpoint, m_config->llmApi.bearerToken() ) )
+    headersJson[kv.first] = kv.second;
+
+  // Use Wt::WWebWidget::jsStringLiteral to properly escape the strings for JavaScript
   const std::string jsLiteralRequestStr = Wt::WWebWidget::jsStringLiteral( requestStr );
+  const std::string jsLiteralHeaders = Wt::WWebWidget::jsStringLiteral( headersJson.dump() );
 
   string jsCall =
     "var llmRequestData = " + jsLiteralRequestStr + ";\n"
-    "window.llmHttpRequest('" + m_config->llmApi.apiEndpoint() + "', llmRequestData, '" +
-    m_config->llmApi.bearerToken() + "', " + std::to_string(requestId) + ", '" + m_instanceId + "');";
+    "window.llmHttpRequest('" + endpoint + "', llmRequestData, " +
+    jsLiteralHeaders + ", " + std::to_string(requestId) + ", '" + m_instanceId + "');";
 
   // Execute JavaScript to make the HTTP request
   auto app = Wt::WApplication::instance();
@@ -1537,249 +1544,125 @@ void LlmInterface::handleApiResponse( const std::string &response,
   try
   {
     json responseJson = parseLenientJson( response );
-    
-    // Parse and accumulate token usage information if available
-    std::optional<size_t> promptTokens, completionTokens;
-    if( responseJson.contains("usage") )
+
+    assert( m_protocol );
+    const ParsedLlmResponse parsed = m_protocol->parseResponse( responseJson );
+
+    // Accumulate token usage (and log it when debugging).
+    std::optional<size_t> promptTokens = parsed.promptTokens;
+    std::optional<size_t> completionTokens = parsed.completionTokens;
     {
-      const auto &usage = responseJson["usage"];
+      std::optional<int> promptTokensInt, completionTokensInt, totalTokens, cachedTokensInt, cacheCreationInt;
+      if( parsed.promptTokens.has_value() )
+        promptTokensInt = static_cast<int>( parsed.promptTokens.value() );
+      if( parsed.completionTokens.has_value() )
+        completionTokensInt = static_cast<int>( parsed.completionTokens.value() );
+      if( parsed.totalTokens.has_value() )
+        totalTokens = static_cast<int>( parsed.totalTokens.value() );
+      if( parsed.cachedTokens.has_value() )
+        cachedTokensInt = static_cast<int>( parsed.cachedTokens.value() );
+      if( parsed.cacheCreationTokens.has_value() )
+        cacheCreationInt = static_cast<int>( parsed.cacheCreationTokens.value() );
 
-      std::optional<int> promptTokensInt, completionTokensInt, totalTokens;
-      if (usage.contains("prompt_tokens") && usage["prompt_tokens"].is_number())
-      {
-        promptTokensInt = usage["prompt_tokens"].get<int>();
-        promptTokens = static_cast<size_t>(promptTokensInt.value());
-      }
-      if (usage.contains("completion_tokens") && usage["completion_tokens"].is_number())
-      {
-        completionTokensInt = usage["completion_tokens"].get<int>();
-        completionTokens = static_cast<size_t>(completionTokensInt.value());
-      }
-      if (usage.contains("total_tokens") && usage["total_tokens"].is_number())
-        totalTokens = usage["total_tokens"].get<int>();
-
-      // Accumulate token usage for this conversation
-      m_history->addTokenUsage( conversation, promptTokensInt, completionTokensInt, totalTokens );
+      if( promptTokensInt.has_value() || completionTokensInt.has_value() || totalTokens.has_value()
+         || cachedTokensInt.has_value() || cacheCreationInt.has_value() )
+        m_history->addTokenUsage( conversation, promptTokensInt, completionTokensInt, totalTokens,
+                                  cachedTokensInt, cacheCreationInt );
 
       if( m_debug_stream )
       {
         const bool has_completion = completionTokens.has_value();
-        const bool has_cache_detals = (usage.contains("prompt_tokens_details")
-                                       && usage["prompt_tokens_details"].is_object()
-                                       && usage["prompt_tokens_details"].contains("cached_tokens")
-                                       && usage["prompt_tokens_details"].is_number());
-        
-        if( has_completion || has_cache_detals )
+        const bool has_cache = parsed.cachedTokens.has_value();
+
+        if( has_completion || has_cache )
           (*m_debug_stream) << "=== Token Usage This Call ===" << endl;
-        
+
         if( has_completion )
         {
           (*m_debug_stream) << "Prompt tokens: " << (promptTokens.has_value() ? std::to_string(promptTokens.value()) : "N/A") << endl;
           (*m_debug_stream) << "Completion tokens: " << completionTokens.value() << endl;
-          (*m_debug_stream) << "Total tokens: " << (totalTokens.has_value() ? std::to_string(totalTokens.value()) : "N/A") << endl;
+          (*m_debug_stream) << "Total tokens: " << (parsed.totalTokens.has_value() ? std::to_string(parsed.totalTokens.value()) : "N/A") << endl;
         }
-        
-        // Log prompt cache hit info (OpenRouter and OpenAI both use usage.prompt_tokens_details.cached_tokens)
-        if( has_cache_detals )
+
+        if( has_cache )
         {
-          const auto &details = usage["prompt_tokens_details"];
-          const int cachedTokens = details["cached_tokens"].get<int>();
-          (*m_debug_stream) << "Cached tokens: " << cachedTokens;
+          (*m_debug_stream) << "Cached tokens: " << parsed.cachedTokens.value();
           if( promptTokens.has_value() && (promptTokens.value() > 0) )
           {
-            const double pct = 100.0 * cachedTokens / static_cast<double>( promptTokens.value() );
+            const double pct = 100.0 * parsed.cachedTokens.value() / static_cast<double>( promptTokens.value() );
             (*m_debug_stream) << " (" << static_cast<int>( pct ) << "% of prompt)";
           }
-        }//if( has_cache_detals )
-        
-        if( has_completion || has_cache_detals )
+          (*m_debug_stream) << endl;
+        }
+
+        if( has_completion || has_cache )
           (*m_debug_stream) << "=============================" << endl;
       }//if( m_debug_stream )
-    }//if( responseJson.contains("usage") )
-    
-    
-    string content, reasoning, thinkingContent, thinkingSignature, reasoningContent;
-    if( responseJson.contains("choices") && !responseJson["choices"].empty() )
-    {
-      const json &choice = responseJson["choices"][0];
-
-      if( choice.contains("message") )
-      {
-        const json &message = choice["message"];
-        const string role = message.value("role", "");
-
-        // Handle content field - can be string or array (Claude content blocks)
-        if( message.contains("content") )
-        {
-          if( message["content"].is_string() )
-          {
-            content = message["content"].get<string>();
-          }
-          else if( message["content"].is_array() )
-          {
-            // Claude content block array format with thinking blocks
-            for( const auto &block : message["content"] )
-            {
-              const string blockType = block.value("type", "");
-              if( blockType == "thinking" )
-              {
-                thinkingContent = block.value("thinking", "");
-                thinkingSignature = block.value("signature", "");
-              }
-              else if( blockType == "text" )
-              {
-                content += block.value("text", "");
-              }
-              // tool_use blocks are handled separately via tool_calls
-            }
-          }
-        }
-
-        // reasoning_content (some models) at message level (same level as content)
-        if( message.contains("reasoning_content") && message["reasoning_content"].is_string() )
-        {
-          reasoningContent = message["reasoning_content"].get<string>();
-          if( thinkingContent.empty() )
-            thinkingContent = reasoningContent;  // Also store in thinkingContent for consistency
-        }
-
-        // OpenAI o1/o3: reasoning field (older Chat Completions format)
-        if( message.contains("reasoning") && message["reasoning"].is_string() )
-        {
-          reasoning = message["reasoning"].get<string>();
-          if( thinkingContent.empty() )
-            thinkingContent = reasoning;
-        }
-
-        // OpenRouter: reasoning_details array (must be passed back unmodified)
-        string reasoningDetails;
-        if( message.contains("reasoning_details") && message["reasoning_details"].is_array() )
-        {
-          // Store the entire array as JSON string to preserve exact structure
-          reasoningDetails = message["reasoning_details"].dump();
-
-          // Also extract text content for display purposes
-          if( thinkingContent.empty() )
-          {
-            for( const auto &detail : message["reasoning_details"] )
-            {
-              if( !detail.is_object() )
-                continue;
-
-              string detailType;
-              if( detail.contains("type") && detail["type"].is_string() )
-                detailType = detail["type"].get<string>();
-
-              if( detailType == "reasoning.text" )
-              {
-                if( detail.contains("text") && detail["text"].is_string() )
-                {
-                  const string text = detail["text"].get<string>();
-                  if( !text.empty() )
-                  {
-                    if( !thinkingContent.empty() )
-                      thinkingContent += "\n";
-                    thinkingContent += text;
-                  }
-                }
-              }
-              else if( detailType == "reasoning.summary" )
-              {
-                if( detail.contains("summary") && detail["summary"].is_string() )
-                {
-                  const string summary = detail["summary"].get<string>();
-                  if( !summary.empty() )
-                  {
-                    if( !thinkingContent.empty() )
-                      thinkingContent += "\n";
-                    thinkingContent += summary;
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        if( role == "assistant" )
-        {
-          // If we haven't already extracted thinking content from content blocks,
-          // extract <think>...</think> tags from string content
-          if( thinkingContent.empty() && !content.empty() )
-          {
-            auto [cleanContent, extractedThinking] = extractThinkingAndContent(content);
-            content = cleanContent;
-            thinkingContent = extractedThinking;
-          }
-
-          // Handle structured tool calls first (OpenAI format)
-          pair<shared_ptr<LlmToolRequest>,shared_ptr<LlmToolResults>> call_interactions;
-          if (message.contains("tool_calls"))
-          {
-            call_interactions = executeToolCallsAndSendResults( message["tool_calls"], conversation, requestId, response,
-              thinkingContent, thinkingSignature, reasoningContent, reasoningDetails, promptTokens, completionTokens );
-          }else
-          {
-            // Parse content for text-based tool requests (use cleaned content)
-            call_interactions = parseContentForToolCallsAndSendResults( content, conversation, requestId, response,
-              thinkingContent, thinkingSignature, reasoningContent, reasoningDetails );
-          }
-
-          request_interaction = call_interactions.first;
-          response_interaction = call_interactions.second;
-
-          if( call_interactions.first )
-          {
-            number_tool_calls += call_interactions.first->toolCalls().size();
-            conversation->consecutiveNonFinalAutoReplies = 0;
-          }
-
-          // Add assistant message to history with thinking content - only if there were no tool calls
-          if( number_tool_calls == 0 )
-          {
-            request_interaction = m_history->addAssistantMessageWithThinking( content, thinkingContent, response, conversation );
-
-            // Store additional reasoning fields
-            if( request_interaction )
-            {
-              request_interaction->setThinkingSignature( thinkingSignature );
-              request_interaction->setReasoningContent( reasoningContent );
-              request_interaction->setReasoningDetails( reasoningDetails );
-            }
-          }
-        }//if( role == "assistant" )
-      }//if( choice.contains("message") )
     }
 
-    // Lets check for Ask Sage style tool-calls to the `/server/query` endpoint
-    if( (number_tool_calls == 0)
-       && responseJson.contains("tool_calls")
-       && !responseJson["tool_calls"].is_null()
-       && !responseJson["tool_calls"].empty() )
-    {
-      pair<shared_ptr<LlmToolRequest>,shared_ptr<LlmToolResults>> call_interactions;
-      call_interactions = executeToolCallsAndSendResults( responseJson["tool_calls"], conversation, requestId, response,
-        "", "", "", "", promptTokens, completionTokens );
-      if( call_interactions.first )
-      {
-        number_tool_calls += call_interactions.first->toolCalls().size();
-        conversation->consecutiveNonFinalAutoReplies = 0;
-      }
-    }//if( responseJson.contains("choices") && !responseJson["choices"].empty() )
+    // Map the normalized response into the locals the rest of this method drives.  Any LLM reply is
+    // an assistant turn.
+    string content = parsed.content;
+    string thinkingContent = parsed.thinkingContent;
+    const string thinkingSignature = parsed.thinkingSignature;
+    const string reasoningContent = parsed.reasoningContent;
+    const string reasoningDetails = parsed.reasoningDetails;
 
-    // Lets check for Ask Sage style message to the `/server/query` endpoint
-    if( content.empty()
-       && responseJson.contains("message")
-       && !responseJson["message"].is_null()
-       && !responseJson["message"].empty() )
+    // If we didn't already get thinking content from the structured response, pull any
+    // <think>...</think> out of the visible text.
+    if( thinkingContent.empty() && !content.empty() )
     {
-      content = responseJson["message"];
-      auto [cleanContent, extractedThinking] = extractThinkingAndContent(content);
+      auto [cleanContent, extractedThinking] = extractThinkingAndContent( content );
       content = cleanContent;
-      if( thinkingContent.empty() )
-        thinkingContent = extractedThinking;
+      thinkingContent = extractedThinking;
+    }
 
-      if( number_tool_calls == 0 )
-        m_history->addAssistantMessageWithThinking( content, thinkingContent, response, conversation );
+    pair<shared_ptr<LlmToolRequest>,shared_ptr<LlmToolResults>> call_interactions;
+    if( !parsed.toolCalls.empty() )
+    {
+      // Re-shape the normalized tool calls into the OpenAI-style array that
+      // executeToolCallsAndSendResults() consumes (id, function.name, function.arguments string).
+      json toolCallsJson = json::array();
+      for( const ParsedLlmResponse::ToolCall &tc : parsed.toolCalls )
+      {
+        json j;
+        j["id"] = tc.id;
+        j["type"] = "function";
+        j["function"]["name"] = tc.name;
+        j["function"]["arguments"] = tc.argsRaw;
+        if( !tc.extra.is_null() )
+          j["extra_content"] = tc.extra;
+        toolCallsJson.push_back( std::move(j) );
+      }
+
+      call_interactions = executeToolCallsAndSendResults( toolCallsJson, conversation, requestId, response,
+        thinkingContent, thinkingSignature, reasoningContent, reasoningDetails, promptTokens, completionTokens );
+    }else
+    {
+      // Parse the text content for tool requests (for models that don't emit structured tool calls).
+      call_interactions = parseContentForToolCallsAndSendResults( content, conversation, requestId, response,
+        thinkingContent, thinkingSignature, reasoningContent, reasoningDetails );
+    }
+
+    request_interaction = call_interactions.first;
+    response_interaction = call_interactions.second;
+
+    if( call_interactions.first )
+    {
+      number_tool_calls += call_interactions.first->toolCalls().size();
+      conversation->consecutiveNonFinalAutoReplies = 0;
+    }
+
+    // Add assistant message to history with thinking content - only if there were no tool calls.
+    if( number_tool_calls == 0 )
+    {
+      request_interaction = m_history->addAssistantMessageWithThinking( content, thinkingContent, response, conversation );
+      if( request_interaction )
+      {
+        request_interaction->setThinkingSignature( thinkingSignature );
+        request_interaction->setReasoningContent( reasoningContent );
+        request_interaction->setReasoningDetails( reasoningDetails );
+      }
     }
 
     // Sometimes a model might need a little prompting to continue....
@@ -3642,59 +3525,12 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
 {
   if( !m_config || !m_config->llmApi.enabled )
     throw std::logic_error( "LlmInterface: not configured" );
-  
+
   assert( convo );
   if( !convo )
     throw std::logic_error( "LlmInterface::buildMessagesArray: null conversation history passed in." );
-  
-  json request;
-  request["model"] = m_config->llmApi.model();
-  
-  // Use max_completion_tokens for newer OpenAI models, max_tokens for others
-  if( m_config->llmApi.maxTokens() > 0 )
-  {
-    string modelName = m_config->llmApi.model();
-    if( (modelName.find("gpt-") != string::npos)
-       || (modelName.find("o1") != string::npos)
-       || (modelName.find("o3") != string::npos)
-       || (modelName.find("o4") != string::npos)
-       || (modelName.find("gemini") != string::npos) )
-    {
-      request["max_completion_tokens"] = m_config->llmApi.maxTokens();
-    } else
-    {
-      request["max_tokens"] = m_config->llmApi.maxTokens();
-    }
-  }//if( m_config->llmApi.maxTokens() > 0 )
 
-  // Add reasoning configuration based on variant type
-  if( std::holds_alternative<bool>(m_config->llmApi.reasoning()) )
-  {
-    // Boolean reasoning (OpenRouter style): reasoning: {enabled: true}
-    if( std::get<bool>(m_config->llmApi.reasoning()) )
-      request["reasoning"]["enabled"] = true;
-  }else if( std::holds_alternative<LlmConfig::LlmApi::ReasoningEffort>(m_config->llmApi.reasoning()) )
-  {
-    // Effort-level reasoning (OpenAI o1/o3 style): reasoning_effort: "low"|"medium"|"high"
-    const LlmConfig::LlmApi::ReasoningEffort effort = std::get<LlmConfig::LlmApi::ReasoningEffort>(m_config->llmApi.reasoning());
-    switch( effort )
-    {
-      case LlmConfig::LlmApi::ReasoningEffort::low:
-        request["reasoning_effort"] = "low";
-        break;
-      case LlmConfig::LlmApi::ReasoningEffort::medium:
-        request["reasoning_effort"] = "medium";
-        break;
-      case LlmConfig::LlmApi::ReasoningEffort::high:
-        request["reasoning_effort"] = "high";
-        break;
-    }
-  }//if( std::holds_alternative<bool>(m_config->llmApi.reasoning()) ) / else
-
-  // Add optional temperature parameter if configured
-  if( m_config->llmApi.temperature().has_value() )
-    request["temperature"] = m_config->llmApi.temperature().value();
-
+  assert( m_protocol );
 
   // Build system prompt with optional state machine overview
   string systemPrompt = getSystemPromptForAgent( convo->agent_type );
@@ -3708,10 +3544,20 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
     systemPrompt += "After each transition, you'll receive guidance for the new state.";
   }
 
-  // Build messages array - delegate to LlmConversationHistory for MainAgent
-  json messages;
+  // Gather the conversation turns to serialize.  For the MainAgent this is the prior history up to
+  // and including the current conversation; for sub-agents it is just the current conversation.
+  // The protocol places the system prompt itself (top-level for Anthropic/Responses, or as the
+  // leading message for OpenAI Chat).
+  std::vector<std::shared_ptr<LlmInteraction>> convos;
   if( convo->agent_type == AgentType::MainAgent )
   {
+    for( const std::shared_ptr<LlmInteraction> &c : m_history->getConversations() )
+    {
+      convos.push_back( c );
+      if( c == convo )
+        break;
+    }
+
     if( m_debug_stream )
     {
       const size_t nConvos = m_history->getConversations().size();
@@ -3720,21 +3566,12 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
       else
         (*m_debug_stream) << "=== No history to include ===" << endl;
     }
-
-    messages = m_history->buildMessagesForMainAgent( convo, systemPrompt );
   }else
   {
-    // For sub-agents, just include system prompt + current conversation
-    messages = json::array();
-    if( !systemPrompt.empty() )
-    {
-      json systemMsg;
-      systemMsg["role"] = "system";
-      systemMsg["content"] = systemPrompt;
-      messages.push_back( systemMsg );
-    }
-    LlmConversationHistory::addConversationToLlmApiHistory( *convo, messages );
+    convos.push_back( convo );
   }
+
+  json messages = m_protocol->serializeConversations( convos );
 
   // Add ephemeral state machine reminder as the last message (not persisted in history).
   // Only inject after the first call (when there are already responses), to avoid consecutive
@@ -3790,202 +3627,45 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
         if( !stateEphemeralTxt.empty() )
           ephemeralContent += "\n\n" + stateEphemeralTxt;
 
-        // Some providers (e.g., Mistral) require an assistant turn immediately after tool result
-        // messages (role "tool"), so we can't insert a user message there.  Instead, append the
-        // ephemeral state info to the last tool result message's content.
-        if( !messages.empty() && (messages.back()["role"] == "tool") )
-        {
-          json &lastMsg = messages.back();
-          if( lastMsg["content"].is_string() )
-          {
-            const string existing = lastMsg["content"].get<string>();
-            lastMsg["content"] = existing + "\n\n" + ephemeralContent;
-          }
-          else
-          {
-            assert( lastMsg["content"].is_array() );
-            if( lastMsg["content"].is_array() )
-            {
-              json textBlock;
-              textBlock["type"] = "text";
-              textBlock["text"] = ephemeralContent;
-              lastMsg["content"].push_back( textBlock );
-            }
-          }
-        }
-        else
-        {
-          json stateMsg;
-          stateMsg["role"] = "user";
-          stateMsg["content"] = ephemeralContent;
-          messages.push_back( stateMsg );
-        }
+        // Placement of the (not-persisted) reminder differs per wire format.
+        m_protocol->appendEphemeralUserNote( messages, ephemeralContent );
       }
     }
   }//if( state machine ephemeral reminder )
 
-  request["messages"] = messages;
-
-  // Add tools
-  json tools = json::array();
-  
-  const map<string, LlmTools::SharedTool> agentTools = m_tool_registry->getToolsForAgent(convo->agent_type);
+  // Build the normalized tool list for the active agent.
+  std::vector<NormalizedTool> tools;
+  const map<string, LlmTools::SharedTool> agentTools = m_tool_registry->getToolsForAgent( convo->agent_type );
   for( const auto &[name, tool] : agentTools )
   {
-    json toolDef;
-    toolDef["type"] = "function";
-    toolDef["function"]["name"] = tool.name;
-    toolDef["function"]["description"] = m_tool_registry->getDescriptionForAgent(tool.name, convo->agent_type);
-    
-    // Functions used to include "userSession" argument for the MCP server (now thats added in by the MCP server) - but we'll make sure of this here for the moment until we verify they have been totally removed.
+    // Functions used to include a "userSession" argument for the MCP server (now added by the MCP
+    // server itself) - strip it here for the moment until we verify it has been totally removed.
     nlohmann::json par_schema = tool.parameters_schema;
     assert( !par_schema.contains("properties") || !par_schema["properties"].contains("userSession") );
     if( par_schema.contains("properties") && par_schema["properties"].contains("userSession") )
       par_schema["properties"].erase( "userSession" );
-    
-    toolDef["function"]["parameters"] = par_schema;
-    tools.push_back(toolDef);
-  }//for( const auto &[name, tool] : m_tool_registry->getTools() )
-  
+
+    NormalizedTool nt;
+    nt.name = tool.name;
+    nt.description = m_tool_registry->getDescriptionForAgent( tool.name, convo->agent_type );
+    nt.parameters = std::move( par_schema );
+    tools.push_back( std::move(nt) );
+  }//for( const auto &[name, tool] : agentTools )
+
   assert( !tools.empty() );
-  if( !tools.empty() )
+
+  // Use "required" tool choice when configured and in a non-final state machine state, to force the
+  // model to make a tool call rather than just producing text.
+  ToolChoice toolChoice = ToolChoice::Auto;
+  if( m_config->llmApi.requireToolInStateMachine()
+     && convo->state_machine
+     && !convo->state_machine->isFinalState( convo->state_machine->getCurrentState() ) )
   {
-    request["tools"] = tools;
-
-    // Use "required" when configured and in a non-final state machine state,
-    // to force the model to make a tool call rather than just producing text.
-    bool useRequired = false;
-    if( m_config->llmApi.requireToolInStateMachine()
-       && convo->state_machine
-       && !convo->state_machine->isFinalState( convo->state_machine->getCurrentState() ) )
-    {
-      useRequired = true;
-    }
-
-    request["tool_choice"] = useRequired ? "required" : "auto";
+    toolChoice = ToolChoice::Required;
   }
 
-  return request;
+  return m_protocol->buildRequestBody( m_config->llmApi, systemPrompt, messages, tools, toolChoice );
 }//nlohmann::json LlmInterface::buildMessagesArray( convo )
-
-
-std::string LlmInterface::buildConfigFingerprint( const nlohmann::json &requestJson ) const
-{
-  string fp;
-  if( requestJson.contains("model") )
-    fp += requestJson["model"].dump();
-  if( requestJson.contains("tools") )
-    fp += "|tools=" + std::to_string( requestJson["tools"].size() );
-  if( requestJson.contains("max_tokens") )
-    fp += "|mt=" + requestJson["max_tokens"].dump();
-  if( requestJson.contains("max_completion_tokens") )
-    fp += "|mct=" + requestJson["max_completion_tokens"].dump();
-  return fp;
-}//string buildConfigFingerprint(...)
-
-
-std::string LlmInterface::buildSerializedPrefix( const nlohmann::json &requestJson ) const
-{
-  string result = "{";
-  bool first = true;
-
-  auto addField = [&]( const string &key )
-  {
-    if( !requestJson.contains(key) )
-      return;
-    if( !first )
-      result += ",";
-    first = false;
-    result += "\"" + key + "\":";
-    const nlohmann::json sanitized = sanitizeJsonUtf8( requestJson[key] );
-    result += sanitized.dump();
-  };
-
-  // Same priority order as serializeRequestForCaching
-  addField( "model" );
-  addField( "temperature" );
-  addField( "max_completion_tokens" );
-  addField( "max_tokens" );
-  addField( "reasoning" );
-  addField( "reasoning_effort" );
-  addField( "tools" );
-  addField( "tool_choice" );
-
-  // Add any remaining non-messages fields
-  for( auto it = requestJson.begin(); it != requestJson.end(); ++it )
-  {
-    const string &key = it.key();
-    if( key == "model" || key == "temperature"
-       || key == "max_completion_tokens" || key == "max_tokens"
-       || key == "reasoning" || key == "reasoning_effort"
-       || key == "tools" || key == "tool_choice"
-       || key == "messages" )
-      continue;
-
-    if( !first )
-      result += ",";
-    first = false;
-    result += "\"" + key + "\":";
-    const nlohmann::json sanitized = sanitizeJsonUtf8( it.value() );
-    result += sanitized.dump();
-  }
-
-  // Open the messages array
-  if( !first )
-    result += ",";
-  result += "\"messages\":[";
-
-  return result;
-}//string buildSerializedPrefix(...)
-
-
-std::string LlmInterface::serializeRequestIncremental( const nlohmann::json &requestJson )
-{
-  try
-  {
-    // Check if prefix cache is valid
-    const string fingerprint = buildConfigFingerprint( requestJson );
-
-    if( !m_serializedCache.isValid() || m_serializedCache.configFingerprint != fingerprint )
-    {
-      m_serializedCache.clear();
-      m_serializedCache.configFingerprint = fingerprint;
-      m_serializedCache.prefix = buildSerializedPrefix( requestJson );
-    }
-
-    // Get messages array
-    assert( requestJson.contains("messages") && requestJson["messages"].is_array() );
-    const nlohmann::json &messages = requestJson["messages"];
-    const size_t totalMessages = messages.size();
-
-    // If cached count > total (history was compacted or reset), rebuild
-    if( m_serializedCache.serializedMessageCount > totalMessages )
-    {
-      m_serializedCache.serializedMessages.clear();
-      m_serializedCache.serializedMessageCount = 0;
-    }
-
-    // Serialize only new messages
-    for( size_t i = m_serializedCache.serializedMessageCount; i < totalMessages; ++i )
-    {
-      if( !m_serializedCache.serializedMessages.empty() )
-        m_serializedCache.serializedMessages += ",";
-
-      const nlohmann::json sanitized = sanitizeJsonUtf8( messages[i] );
-      m_serializedCache.serializedMessages += sanitized.dump();
-    }
-    m_serializedCache.serializedMessageCount = totalMessages;
-
-    // Assemble final string: prefix + messages + close
-    return m_serializedCache.prefix + m_serializedCache.serializedMessages + "]}";
-  }catch( const std::exception &e )
-  {
-    cerr << "ERROR in serializeRequestIncremental: " << e.what()
-      << " - falling back to full serialization" << endl;
-    m_serializedCache.clear();
-    return serializeRequestForCaching( requestJson );
-  }
-}//string serializeRequestIncremental(...)
 
 
 void LlmInterface::storeRawContentForToolResults( const std::shared_ptr<LlmInteraction> &convo,
@@ -4080,7 +3760,7 @@ void LlmInterface::setupJavaScriptBridge() {
       window.llmResponseCallbacks = {};
 
       // Internal function to make a request (supports retry)
-      function makeRequest(endpoint, requestJsonString, bearerToken, requestId, instanceId, isRetry, rateLimitRetryCount) {
+      function makeRequest(endpoint, requestJsonString, headersJsonString, requestId, instanceId, isRetry, rateLimitRetryCount) {
         var MAX_RATE_LIMIT_RETRIES = 6;
         var DEFAULT_RATE_LIMIT_WAIT_MS = 5000;
         var MAX_RATE_LIMIT_WAIT_MS = 120000;
@@ -4134,17 +3814,20 @@ void LlmInterface::setupJavaScriptBridge() {
           }
         }
 
+        // The C++ side builds the per-format headers (auth scheme, version, browser-access, etc.);
+        // merge them over the default Content-Type.
         var headers = {
           'Content-Type': 'application/json'
         };
-
-        if (bearerToken && bearerToken.trim() !== '') {
-          headers['Authorization'] = 'Bearer ' + bearerToken;
-
-          // Some providers will reject the message if x-access-tokens is set, so only set it for the one I know needs it
-          if (endpoint.indexOf('.ai/server/query') !== -1) {
-            headers['x-access-tokens'] = bearerToken;
+        try {
+          var extraHeaders = JSON.parse(headersJsonString);
+          for (var hk in extraHeaders) {
+            if (Object.prototype.hasOwnProperty.call(extraHeaders, hk)) {
+              headers[hk] = extraHeaders[hk];
+            }
           }
+        } catch(e) {
+          console.error('Failed to parse request headers JSON:', e);
         }
 
         // Create AbortController for timeout handling
@@ -4257,7 +3940,7 @@ void LlmInterface::setupJavaScriptBridge() {
 
             setTimeout(function() {
               console.log('=== Launching rate-limit retry ' + nextRetry + ' for request ID ' + requestId + ' ===');
-              makeRequest(endpoint, requestJsonString, bearerToken, requestId, instanceId, isRetry, nextRetry);
+              makeRequest(endpoint, requestJsonString, headersJsonString, requestId, instanceId, isRetry, nextRetry);
             }, waitMs);
 
             return;
@@ -4304,7 +3987,7 @@ void LlmInterface::setupJavaScriptBridge() {
             // Launch retry after small delay (100ms)
             setTimeout(function() {
               console.log('=== Launching retry for request ID ' + requestId + ' ===');
-              makeRequest(endpoint, requestJsonString, bearerToken, requestId, instanceId, true);
+              makeRequest(endpoint, requestJsonString, headersJsonString, requestId, instanceId, true);
             }, 100);
 
             // Don't send error to C++ yet - wait for retry
@@ -4347,8 +4030,8 @@ void LlmInterface::setupJavaScriptBridge() {
       }
 
       // Public entry point - always starts as non-retry
-      window.llmHttpRequest = function(endpoint, requestJsonString, bearerToken, requestId, instanceId) {
-        makeRequest(endpoint, requestJsonString, bearerToken, requestId, instanceId, false);
+      window.llmHttpRequest = function(endpoint, requestJsonString, headersJsonString, requestId, instanceId) {
+        makeRequest(endpoint, requestJsonString, headersJsonString, requestId, instanceId, false);
       };
 
       console.log('LLM JavaScript bridge initialized with automatic retry support');
@@ -4566,28 +4249,12 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       if( m_debug_stream )
         (*m_debug_stream) << "=== Processing summarization response ===" << endl;
 
-      // Extract the summary text from the LLM response
+      // Extract the summary text from the LLM response (format-agnostic, via the active protocol).
       string summaryText;
       try
       {
-        if( responseJson.contains("choices") && !responseJson["choices"].empty() )
-        {
-          const json &choice = responseJson["choices"][0];
-          if( choice.contains("message") && choice["message"].contains("content") )
-          {
-            if( choice["message"]["content"].is_string() )
-              summaryText = choice["message"]["content"].get<string>();
-            else if( choice["message"]["content"].is_array() )
-            {
-              // Handle Claude content block array
-              for( const json &block : choice["message"]["content"] )
-              {
-                if( block.value("type", "") == "text" )
-                  summaryText += block.value("text", "");
-              }
-            }
-          }
-        }
+        assert( m_protocol );
+        summaryText = m_protocol->parseResponse( responseJson ).content;
       }catch( const std::exception &e )
       {
         cerr << "Error extracting summary from LLM response: " << e.what() << endl;
@@ -4608,9 +4275,6 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
 
         // Apply the summary to replace older conversations
         m_history->applySummary( summaryText );
-
-        // Invalidate serialization cache since history structure changed
-        m_serializedCache.clear();
       }
 
       // Now send the queued user message

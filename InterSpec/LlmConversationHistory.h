@@ -498,6 +498,11 @@ struct LlmInteraction
   std::optional<size_t> promptTokens;      // Tokens used in the input/prompt
   std::optional<size_t> completionTokens;  // Tokens generated in the response
   std::optional<size_t> totalTokens;       // Total tokens used (prompt + completion)
+  // Prompt-cache usage, accumulated across the conversation's API calls (subset of promptTokens).
+  // nullopt means the provider did not report cache info; a value of 0 means caching was reported
+  // but nothing was served from cache.
+  std::optional<size_t> cachedTokens;        // Prompt tokens served from cache (cache reads; all providers)
+  std::optional<size_t> cacheCreationTokens; // Prompt tokens written to cache (Anthropic cache writes)
   
   /** The conversation turns sent to, or recieved from the LLM.
 
@@ -656,7 +661,9 @@ public:
   static void addTokenUsage( std::shared_ptr<LlmInteraction> conversation,
                      std::optional<int> promptTokens,
                      std::optional<int> completionTokens,
-                     std::optional<int> totalTokens);
+                     std::optional<int> totalTokens,
+                     std::optional<int> cachedTokens = std::nullopt,
+                     std::optional<int> cacheCreationTokens = std::nullopt );
   
   /** Find a conversation start by conversation ID */
   std::shared_ptr<LlmInteraction> findConversationByConversationId(const std::string& conversationId);

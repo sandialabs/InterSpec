@@ -180,6 +180,32 @@ public:
       high
     };//enum class ReasoningEffort
 
+    /** The wire-format / protocol an API provider speaks.
+
+     - OpenAiChat: the legacy OpenAI Chat Completions API (`/v1/chat/completions`), and the many
+       OpenAI-compatible providers (OpenRouter, Google OpenAI-compat, Ask Sage, local servers, ...).
+     - OpenAiResponses: the newer OpenAI Responses API (`/v1/responses`).
+     - Anthropic: the native Anthropic Messages API (`/v1/messages`).
+     */
+    enum class ApiFormat
+    {
+      OpenAiChat,
+      OpenAiResponses,
+      Anthropic
+    };//enum class ApiFormat
+
+    /** Map an `apiFormat` attribute string to an ApiFormat; throws std::runtime_error if unknown. */
+    static ApiFormat parseApiFormat( const std::string &str );
+
+    /** The canonical attribute string for an ApiFormat (returns a static literal). */
+    static const char *apiFormatToString( ApiFormat fmt );
+
+    /** Best-effort detection of the wire format from an endpoint URL, used when a provider does
+     not explicitly specify `apiFormat`.  Contains "api.anthropic.com" or path ends with
+     "/messages" -> Anthropic; ends with "/responses" -> OpenAiResponses; otherwise OpenAiChat.
+     */
+    static ApiFormat detectApiFormat( const std::string &endpoint );
+
     /** Per-model configuration within an ApiProvider. */
     struct ModelInfo
     {
@@ -225,6 +251,14 @@ public:
     {
       std::string apiEndpoint;  // e.g., "https://api.openai.com/v1/chat/completions"
       std::string bearerToken;
+
+      /** The wire-format this provider speaks.  An empty optional means "auto-detect from the
+       endpoint URL" (see `detectApiFormat`), which keeps existing configs (that predate this
+       attribute) working as OpenAiChat.  Parsed from the optional `apiFormat` attribute on the
+       `<ApiProvider>` XML element.  (Added as a purely additive, default-preserving field, so the
+       `LlmApi` serialization version was intentionally NOT bumped.)
+       */
+      std::optional<ApiFormat> apiFormat;
 
       std::vector<ModelInfo> models;
       size_t activeModelIndex = 0;  // Index of the active model; resolved at parse time
@@ -281,6 +315,15 @@ public:
     int contextLengthLimit() const { return activeModel().contextLengthLimit; }
     std::optional<double> temperature() const { return activeModel().temperature; }
     bool requireToolInStateMachine() const { return activeModel().requireToolInStateMachine; }
+
+    /** The resolved wire-format for the active provider: the explicitly-configured `apiFormat`,
+     or, if unset, auto-detected from the active provider's endpoint URL.
+     */
+    ApiFormat apiFormat() const
+    {
+      const ApiProvider &p = activeProvider();
+      return p.apiFormat.value_or( detectApiFormat( p.apiEndpoint ) );
+    }
   };//struct LlmApi
 
 
