@@ -216,7 +216,7 @@ BOOST_AUTO_TEST_CASE( refitOverlappingROIs )
   for( const vector<shared_ptr<const PeakDef>> &roi : rois )
   {
     num_multi += (roi.size() >= 2);
-    max_peaks = std::max( max_peaks, roi.size() );
+    max_peaks = (std::max)( max_peaks, roi.size() );
   }
   cout << "Ba133: " << spec.peaks.size() << " peaks in " << rois.size() << " ROIs; "
        << num_multi << " overlapping (>=2 peak) ROIs, largest has " << max_peaks << " peaks." << endl;
@@ -252,7 +252,7 @@ BOOST_AUTO_TEST_CASE( refitOverlappingROIs )
     for( size_t i = 0; i < fit.size(); ++i )
     {
       const double orig_sigma = orig[i]->gausPeak() ? orig[i]->sigma() : 0.0;
-      const double mean_tol = std::max( 2.0, 0.5*orig_sigma );
+      const double mean_tol = (std::max)( 2.0, 0.5*orig_sigma );
       BOOST_CHECK_MESSAGE( std::fabs(fit[i]->mean() - orig[i]->mean()) < mean_tol,
                            "Refit peak mean " << fit[i]->mean() << " keV drifted > " << mean_tol
                            << " keV from the saved mean " << orig[i]->mean() << " keV" );
