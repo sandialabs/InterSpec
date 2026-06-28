@@ -69,7 +69,8 @@ namespace Wt {
  - Conversation history management  
  - Integration with InterSpec session
  */
-class LlmInterface : public Wt::Signals::trackable
+class LlmInterface : public Wt::Signals::trackable,
+                     public std::enable_shared_from_this<LlmInterface>
 {
 public:
   /** Construct LLM interface for the given InterSpec instance.
@@ -204,6 +205,19 @@ public:
    */
   std::shared_ptr<LlmInteraction> triggerManualCompaction();
 
+  /** Cancel all in-flight requests for this interface.
+
+   Aborts the underlying browser fetch(es), finalizes every pending conversation with a "cancelled"
+   error turn, clears the pending/deferred/summarization bookkeeping, and emits conversationFinished
+   so the GUI re-enables input.  Safe to call when nothing is pending (no-op).
+   */
+  void cancelAll();
+
+  /** Returns true if any request is currently in flight (pending API call or deferred tool/sub-agent
+   results), i.e. cancelAll() would do something / a Stop button should be enabled.
+   */
+  bool hasActiveRequests() const;
+
   /** Direct all debug logging to the specified file path.
    Pass an empty string to disable file logging.
    Opens the file in append mode; logs a warning to stderr if the file cannot be opened.
@@ -267,8 +281,9 @@ private:
   };
   std::map<int, DeferredToolResult> m_deferredToolResults; // Key is sub-agent requestId
   
-  // Context summarization support
-  std::weak_ptr<LlmInteraction> m_summarizationPendingConvo;  // User's conversation queued while summarization runs
+  // Context summarization support.  A queue (not a single slot) so a second user message arriving
+  // while summarization is in flight is not silently dropped.
+  std::vector<std::weak_ptr<LlmInteraction>> m_summarizationPendingConvos;
 
   /** Make an API call with request ID tracking
 
@@ -345,6 +360,24 @@ private:
 
   /** Set up the JavaScript bridge for making HTTPS requests */
   void setupJavaScriptBridge();
+
+  /** Finalize every still-pending conversation (set finishTime and record an error turn) and clear
+   the pending/deferred bookkeeping.  Used on destruction and resetWithConfig() so in-flight
+   conversations are not left perpetually "in progress" (which also stalls benchmark runs waiting on
+   completion).  Does not abort the underlying browser fetch; late responses for cleared request IDs
+   are ignored by handleJavaScriptResponse().
+
+   @param reason Error message recorded on each finalized conversation.
+   @param recordErrorTurn If true, append a (display-only) error turn to each conversation, which
+          emits responseAdded to the GUI.  Pass false from the destructor to avoid emitting signals
+          while this object is being torn down.
+   */
+  void failInFlightConversations( const std::string &reason, bool recordErrorTurn = true );
+
+  /** Send every conversation queued in m_summarizationPendingConvos (and clear the queue).  Called
+   when a compaction request completes or fails so queued user messages are not stranded.
+   */
+  void flushSummarizationQueue();
 };
 
 

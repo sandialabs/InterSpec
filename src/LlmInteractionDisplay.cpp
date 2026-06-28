@@ -1403,6 +1403,22 @@ void LlmInteractionErrorDisplay::handleContinueAnyway()
           (*it)->setExcludeFromHistory( true );
           cout << "Marked error and preceding request (type: " << static_cast<int>(turnType)
                << ") to exclude from history" << endl;
+
+          // A ToolResult answers a preceding assistant ToolCall (tool_use block).  Excluding the
+          // results while leaving the request would create a dangling tool_use, which the Anthropic
+          // API rejects - so also exclude the nearest preceding ToolCall turn.
+          if( turnType == LlmInteractionTurn::Type::ToolResult )
+          {
+            for( auto callIt = it; callIt != convo->responses.begin(); )
+            {
+              --callIt;
+              if( (*callIt)->type() == LlmInteractionTurn::Type::ToolCall )
+              {
+                (*callIt)->setExcludeFromHistory( true );
+                break;
+              }
+            }
+          }//if( excluded turn was a ToolResult )
           break;
         }
       }

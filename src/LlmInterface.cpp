@@ -37,6 +37,7 @@
 #include <mutex>
 #endif
 
+#include <Wt/WServer>
 #include <Wt/WApplication>
 #include <Wt/WResource>
 #include <Wt/WWebWidget>
@@ -90,24 +91,29 @@ static std::string sanitizeToolName( const std::string &toolName );
 static std::string generateToolCallId()
 {
   static const char alphanum[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-  
-  // Use combination of timestamp and counter for uniqueness
-  const auto epoch_ticks = std::chrono::duration_cast<std::chrono::microseconds>(
-    std::chrono::system_clock::now().time_since_epoch() ).count();
-  
+
+  // A process-wide monotonic counter guarantees distinct seeds across calls (even within the same
+  // microsecond / across threads); the microsecond clock adds cross-process entropy.  The counter is
+  // mixed into the seed multiplicatively (an odd constant => bijective over 64 bits) so it perturbs
+  // ALL bits, not just the high ones, and each character is drawn from a SplitMix64 step for a
+  // well-distributed stream.  Together this makes a 24-char collision astronomically unlikely.
+  static std::atomic<uint64_t> counter{ 0 };
+  const uint64_t epoch_ticks = static_cast<uint64_t>( std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::system_clock::now().time_since_epoch() ).count() );
+  const uint64_t n = counter.fetch_add( 1, std::memory_order_relaxed );
+
   std::string id = "call_";
-  
-  // Use epoch as seed, combined with a static counter for same-microsecond calls
-  static std::atomic<uint32_t> counter{0};
-  uint64_t seed = static_cast<uint64_t>( epoch_ticks ) ^ (static_cast<uint64_t>( counter.fetch_add(1) ) << 48);
-  
-  // Generate 24 alphanumeric characters using a simple LCG
+  uint64_t s = epoch_ticks ^ (n * 0x9E3779B97F4A7C15ULL);
   for( int i = 0; i < 24; ++i )
   {
-    id += alphanum[seed % 62];
-    seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+    s += 0x9E3779B97F4A7C15ULL;                  // SplitMix64
+    uint64_t z = s;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    z = z ^ (z >> 31);
+    id += alphanum[z % 62];
   }
-  
+
   return id;
 }//std::string generateToolCallId()
 
@@ -246,12 +252,142 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
 
 LlmInterface::~LlmInterface()
 {
+  // Finalize any still-pending conversations so they are not persisted as perpetually in-progress.
+  // Pass recordErrorTurn=false: do not emit responseAdded to GUI widgets while we are being torn down.
+  failInFlightConversations( "Conversation ended: the LLM interface was closed before a response arrived.", false );
+
   // Unregister this instance's callback from the JavaScript registry
   if( Wt::WApplication *app = Wt::WApplication::instance() )
     app->doJavaScript( "if(window.llmResponseCallbacks) delete window.llmResponseCallbacks['" + m_instanceId + "'];" );
 
   cout << "LlmInterface destroyed (instanceId=" << m_instanceId << ")" << endl;
 }
+
+
+namespace
+{
+  /** Recursively finalize a conversation and every nested sub-agent conversation reachable through its
+   tool calls (sub-agent conversations are not in the top-level history list, so they are otherwise
+   missed).  Sets finishTime so an abandoned conversation does not display "Pending LLM response..."
+   forever; only the directly-cancelled top conversation gets a visible error turn (when requested),
+   nested sub-agents are just marked finished.  The finishTime guard also de-duplicates and leaves
+   already-completed conversations untouched. */
+  void finalize_convo_tree( const shared_ptr<LlmInteraction> &convo, const std::string &reason,
+                            const bool recordErrorTurn, LlmConversationHistory * const history )
+  {
+    if( !convo || convo->finishTime.has_value() )
+      return;
+
+    convo->finishTime = std::chrono::system_clock::now();
+    if( recordErrorTurn && history )
+      history->addErrorMessage( reason, "", convo, LlmInteractionError::ErrorType::Unknown );
+
+    for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+    {
+      const LlmToolRequest * const req = dynamic_cast<const LlmToolRequest*>( turn.get() );
+      const LlmToolResults * const res = dynamic_cast<const LlmToolResults*>( turn.get() );
+      const std::vector<LlmToolCall> * const calls = req ? &req->toolCalls()
+                                                         : (res ? &res->toolCalls() : nullptr);
+      if( !calls )
+        continue;
+      for( const LlmToolCall &tc : *calls )
+        finalize_convo_tree( tc.sub_agent_conversation, reason, /*recordErrorTurn=*/false, history );
+    }
+  }//finalize_convo_tree(...)
+}//namespace
+
+
+void LlmInterface::failInFlightConversations( const std::string &reason, const bool recordErrorTurn )
+{
+  // Finalize a conversation (and its nested sub-agents) exactly once.  The finishTime check both
+  // skips already-finished conversations and de-duplicates a conversation that appears in more than
+  // one of the maps below.
+  const auto finalize = [this, &reason, recordErrorTurn]( const shared_ptr<LlmInteraction> &convo ){
+    finalize_convo_tree( convo, reason, recordErrorTurn, m_history.get() );
+  };
+
+  for( const std::pair<const int, PendingRequest> &pr : m_pendingRequests )
+    finalize( pr.second.conversation.lock() );
+
+  // A conversation paused awaiting an async tool result (e.g. a long peak fit) has no entry in
+  // m_pendingRequests - the HTTP request already completed and returned the tool call.  Finalize
+  // these too, otherwise cancelling/resetting during async tool execution re-enables input but leaves
+  // the conversation stuck displaying "Pending LLM response..." forever (the dropped deferred result
+  // never resumes it).
+  if( m_history )
+  {
+    for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+      finalize( m_history->findConversationByConversationId( dr.second.conversationId ) );
+  }
+
+  // User messages queued behind an in-flight summarization were never sent - finalize them as well.
+  for( const std::weak_ptr<LlmInteraction> &wk : m_summarizationPendingConvos )
+    finalize( wk.lock() );
+
+  m_pendingRequests.clear();
+  m_deferredToolResults.clear();
+  m_summarizationPendingConvos.clear();
+}//failInFlightConversations(...)
+
+
+bool LlmInterface::hasActiveRequests() const
+{
+  return !m_pendingRequests.empty() || !m_deferredToolResults.empty()
+         || !m_summarizationPendingConvos.empty();
+}//hasActiveRequests()
+
+
+void LlmInterface::cancelAll()
+{
+  if( !hasActiveRequests() )
+    return;
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "cancelAll(): aborting " << m_pendingRequests.size()
+      << " pending request(s) and clearing deferred/queued state" << endl;
+
+  // Abort the in-flight browser fetch(es) for this instance so they stop consuming time/tokens.
+  if( Wt::WApplication *app = Wt::WApplication::instance() )
+    app->doJavaScript( "if(window.llmAbortAllRequests) window.llmAbortAllRequests('" + m_instanceId + "');" );
+
+  // Finalize the affected conversations (adds a display-only "cancelled" error turn, clears the
+  // pending/deferred/summarization-queue maps).  This covers conversations awaiting an async tool
+  // result as well as those with an in-flight HTTP request.  Any late abort response or async tool
+  // completion is ignored since the request id / deferred entry is no longer present.
+  failInFlightConversations( "Request cancelled by user." );
+
+  // Re-enable GUI input.
+  m_conversationFinished.emit();
+}//cancelAll()
+
+
+void LlmInterface::flushSummarizationQueue()
+{
+  // Swap out first so makeTrackedApiCall (which does not touch the queue) cannot re-enter into a
+  // half-drained queue.
+  std::vector<std::weak_ptr<LlmInteraction>> queued;
+  queued.swap( m_summarizationPendingConvos );
+
+  for( const std::weak_ptr<LlmInteraction> &wk : queued )
+  {
+    shared_ptr<LlmInteraction> pendingUserConvo = wk.lock();
+    if( !pendingUserConvo )
+      continue;
+
+    if( m_debug_stream )
+      (*m_debug_stream) << "=== Sending queued user message after summarization ===" << endl;
+
+    json requestJson = buildMessagesArray( pendingUserConvo );
+    std::pair<int,string> request_id_content = makeTrackedApiCall( requestJson, pendingUserConvo );
+
+    if( !pendingUserConvo->responses.empty() )
+    {
+      std::shared_ptr<LlmInteractionTurn> firstTurn = pendingUserConvo->responses.front();
+      if( firstTurn && (firstTurn->type() == LlmInteractionTurn::Type::InitialRequest) )
+        firstTurn->setRawContent( std::move(request_id_content.second) );
+    }
+  }//for( queued conversations )
+}//flushSummarizationQueue()
 
 
 void LlmInterface::setBlockToolCalls( bool block )
@@ -292,29 +428,6 @@ shared_ptr<LlmInteraction> LlmInterface::sendCompactionRequest( const string &su
   shared_ptr<LlmInteraction> summarizationConvo
     = m_history->addSystemMessageToMainConversation( displayMessage );
 
-  // Build a minimal request (no tools, just the summarization prompt)
-  json sumRequest;
-  sumRequest["model"] = m_config->llmApi.model();
-
-  if( m_config->llmApi.maxTokens() > 0 )
-  {
-    const string &modelName = m_config->llmApi.model();
-    if( (modelName.find("gpt-") != string::npos)
-       || (modelName.find("o1") != string::npos)
-       || (modelName.find("o3") != string::npos)
-       || (modelName.find("o4") != string::npos)
-       || (modelName.find("gemini") != string::npos) )
-    {
-      sumRequest["max_completion_tokens"] = m_config->llmApi.maxTokens();
-    }else
-    {
-      sumRequest["max_tokens"] = m_config->llmApi.maxTokens();
-    }
-  }//if( m_config->llmApi.maxTokens() > 0 )
-
-  if( m_config->llmApi.temperature().has_value() )
-    sumRequest["temperature"] = m_config->llmApi.temperature().value();
-
   static const char * const sm_defaultCompactionPrompt =
     "You are a specialized assistant that summarizes conversation history for a nuclear"
     " spectroscopy application (InterSpec). Produce a concise summary that preserves:"
@@ -330,19 +443,20 @@ shared_ptr<LlmInteraction> LlmInterface::sendCompactionRequest( const string &su
     ? string( sm_defaultCompactionPrompt )
     : m_config->llmApi.compactionSystemPrompt;
 
+  // Build the request body THROUGH the protocol abstraction so it is valid for the active provider:
+  // Anthropic needs a top-level `system` (no system role in messages), OpenAI-Responses needs
+  // `input`/`instructions`, and OpenAI-Chat needs a leading system message.  (This was previously
+  // hand-built in OpenAI-Chat shape and 400'd on Anthropic and OpenAI-Responses.)  A single plain
+  // user message with string content is accepted by all three wire formats.
   json sumMessages = json::array();
-
-  json systemMsg;
-  systemMsg["role"] = "system";
-  systemMsg["content"] = compactionPrompt;
-  sumMessages.push_back( systemMsg );
-
   json userMsg;
   userMsg["role"] = "user";
   userMsg["content"] = summarizationPrompt;
   sumMessages.push_back( userMsg );
 
-  sumRequest["messages"] = sumMessages;
+  const std::vector<NormalizedTool> noTools;
+  json sumRequest = m_protocol->buildRequestBody( m_config->llmApi, compactionPrompt,
+                                                  sumMessages, noTools, ToolChoice::Auto );
 
   // Send the summarization request and mark it
   std::pair<int,string> sumReqResult = makeTrackedApiCall( sumRequest, summarizationConvo );
@@ -389,15 +503,21 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
   std::shared_ptr<const LlmTools::ToolRegistry> tool_registry
     = make_shared<LlmTools::ToolRegistry>( *config );
 
+  // Finalize any in-flight conversations on the OLD history before swapping it out, so they are not
+  // left perpetually in-progress.  (This also clears m_pendingRequests / m_deferredToolResults.)
+  // recordErrorTurn=false: the history is about to be replaced, so don't bother emitting turns.
+  failInFlightConversations( "Conversation ended: the LLM configuration was reset.", false );
+
   m_config = config;
   m_tool_registry = tool_registry;
   m_protocol = LlmApiProtocol::create( m_config->llmApi.apiFormat() );
   m_history = make_shared<LlmConversationHistory>();
-  m_pendingRequests.clear();
-  m_deferredToolResults.clear();
   m_currentConversation.reset();
-  m_summarizationPendingConvo.reset();
-  m_nextRequestId = 1;
+  m_summarizationPendingConvos.clear();
+  m_block_tool_calls = false;  // "clears all conversation state" per the contract
+  // Deliberately do NOT reset m_nextRequestId: keeping it monotonic across resets prevents a
+  // late/stale in-flight response from colliding with a brand-new request's id and being routed
+  // into the wrong conversation.
 
   // Re-initialize debug logging
   m_debug_stream = nullptr;
@@ -497,11 +617,15 @@ shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &mes
 
     if( !summarizationPrompt.empty() )
     {
-      // Store the user's real conversation as pending - it will be sent after summarization completes
-      m_summarizationPendingConvo = convo;
+      // Queue the user's real conversation; it is sent after summarization completes.  If a
+      // compaction is already in flight (queue non-empty), just queue behind it rather than starting
+      // (and racing) a second compaction - this also avoids dropping the previously queued message.
+      const bool alreadyCompacting = !m_summarizationPendingConvos.empty();
+      m_summarizationPendingConvos.push_back( convo );
 
-      sendCompactionRequest( summarizationPrompt,
-        "[Context Compaction] Summarizing older conversation history to manage context length..." );
+      if( !alreadyCompacting )
+        sendCompactionRequest( summarizationPrompt,
+          "[Context Compaction] Summarizing older conversation history to manage context length..." );
 
       return convo;
     }
@@ -1506,13 +1630,16 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
   for( const std::pair<std::string,std::string> &kv : m_protocol->headers( endpoint, m_config->llmApi.bearerToken() ) )
     headersJson[kv.first] = kv.second;
 
-  // Use Wt::WWebWidget::jsStringLiteral to properly escape the strings for JavaScript
+  // Use Wt::WWebWidget::jsStringLiteral to properly escape the strings for JavaScript.  The endpoint
+  // comes from user config and must be escaped too (a stray quote/backslash would otherwise break
+  // the generated JS or allow injection); m_instanceId is internally generated and safe.
   const std::string jsLiteralRequestStr = Wt::WWebWidget::jsStringLiteral( requestStr );
   const std::string jsLiteralHeaders = Wt::WWebWidget::jsStringLiteral( headersJson.dump() );
+  const std::string jsLiteralEndpoint = Wt::WWebWidget::jsStringLiteral( endpoint );
 
   string jsCall =
     "var llmRequestData = " + jsLiteralRequestStr + ";\n"
-    "window.llmHttpRequest('" + endpoint + "', llmRequestData, " +
+    "window.llmHttpRequest(" + jsLiteralEndpoint + ", llmRequestData, " +
     jsLiteralHeaders + ", " + std::to_string(requestId) + ", '" + m_instanceId + "');";
 
   // Execute JavaScript to make the HTTP request
@@ -1540,6 +1667,7 @@ void LlmInterface::handleApiResponse( const std::string &response,
   }
   
   size_t number_tool_calls = 0;
+  bool parseFailed = false;  // true if the response could not be parsed/recognized (M5)
   shared_ptr<LlmInteractionTurn> request_interaction, response_interaction;
   try
   {
@@ -1669,21 +1797,18 @@ void LlmInterface::handleApiResponse( const std::string &response,
     SpecUtils::trim( content );
     if( (number_tool_calls == 0) && content.empty() && !thinkingContent.empty() )
     {
-      // Check if the last response was already an AutoReply
-      bool lastWasAutoReply = false;
-      if( !conversation->responses.empty() )
+      // Bound this: a model that keeps returning thinking but no content/tool-calls would otherwise
+      // be re-prompted forever.  (The previous `lastWasAutoReply` guard was dead code - the empty
+      // FinalLlmResponse was pushed to `responses` just above, so responses.back() was never the
+      // AutoReply.)  Reuse the per-conversation auto-reply counter as the bound.
+      if( conversation->consecutiveNonFinalAutoReplies >= sm_max_consecutive_nonfinal_autoreplies )
       {
-        const std::shared_ptr<LlmInteractionTurn> &lastResponse = conversation->responses.back();
-        lastWasAutoReply = (lastResponse->type() == LlmInteractionTurn::Type::AutoReply);
-      }
-
-      if( lastWasAutoReply )
-      {
-        // We already sent an auto-reply prompt and the LLM still didn't respond properly.
-        // Just end the conversation instead of looping.
-        cout << "LLM provided reasoning but no content/tool calls after auto-reply prompt. Ending conversation." << endl;
+        cout << "LLM provided reasoning but no content/tool calls after "
+             << conversation->consecutiveNonFinalAutoReplies
+             << " auto-reply prompt(s). Ending conversation." << endl;
         if( m_debug_stream )
-          (*m_debug_stream) << "LLM provided reasoning but no content/tool calls after auto-reply prompt. Ending conversation." << endl;
+          (*m_debug_stream) << "Auto-reply limit reached for empty-content response - ending conversation." << endl;
+        // Fall through to the finish path below.
       }else
       {
         // Add an auto-reply message to prompt the LLM to continue
@@ -1692,6 +1817,9 @@ void LlmInterface::handleApiResponse( const std::string &response,
         "Then applying careful reasoning at each step, and continuing to to working on the problem until you have"
         " arrived at an answer, so you can provide a summary.";
         cout << "LLM provided reasoning but no content/tool calls. Sending auto-reply prompt." << endl;
+
+        conversation->consecutiveNonFinalAutoReplies++;
+        conversation->totalNonFinalAutoReplies++;
 
         shared_ptr<LlmInteractionAutoReply> autoReply = m_history->addAutoReplyMessage( autoReplyContent, conversation );
 
@@ -1771,7 +1899,7 @@ void LlmInterface::handleApiResponse( const std::string &response,
 
         // Scan response content and thinking/reasoning text for tool names
         // the model may have intended to call
-        const map<string, LlmTools::SharedTool> agentTools
+        const map<string, const LlmTools::SharedTool*> agentTools
           = m_tool_registry->getToolsForAgent( conversation->agent_type );
         vector<string> mentionedTools;
         for( const auto &[name, tool] : agentTools )
@@ -1842,9 +1970,15 @@ void LlmInterface::handleApiResponse( const std::string &response,
     }//if( sub-agent, no tool calls, non-final state )
   }catch( const std::exception &e )
   {
+    // A response we could not parse/recognize is a failure, NOT a successful empty turn.  Record an
+    // error turn so the user sees it and the conversation can be retried/continued.
+    parseFailed = true;
     cerr << "Error parsing LLM response: " << e.what() << "\n\tresponse=" << response << endl << endl;
     if( m_debug_stream )
       (*m_debug_stream) << "Error parsing LLM response: " << e.what() << "\n\tresponse=" << response << endl << endl;
+    if( m_history )
+      m_history->addErrorMessage( string("Could not parse the LLM response: ") + e.what(),
+                                  response, conversation, LlmInteractionError::ErrorType::JsonParse );
   }
 
   if( !number_tool_calls )
@@ -1854,14 +1988,19 @@ void LlmInterface::handleApiResponse( const std::string &response,
       conversation->conversation_completion_handler();
     conversation->conversationFinished.emit();
   }
-  
-  // Only emit signal if there are no pending requests AND no deferred async tools still running.
-  // This is the SUCCESS path - emit m_conversationFinished (errors emit m_responseError)
+
+  // Only emit an interface-level signal once there are no pending requests AND no deferred async
+  // tools still running.  A parse failure emits m_responseError (the error path); otherwise this is
+  // the success path and emits m_conversationFinished.
   if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
   {
     if( m_debug_stream )
-      (*m_debug_stream) << "No pending requests or deferred tools, emitting response received signal" << endl;
-    m_conversationFinished.emit();
+      (*m_debug_stream) << (parseFailed ? "Unparseable response - emitting error signal"
+                                        : "No pending requests or deferred tools, emitting response received signal") << endl;
+    if( parseFailed )
+      m_responseError.emit();
+    else
+      m_conversationFinished.emit();
   }else
   {
     if( m_debug_stream )
@@ -1869,6 +2008,37 @@ void LlmInterface::handleApiResponse( const std::string &response,
         << " and " << m_deferredToolResults.size() << " deferred tool results, not emitting signal yet" << endl;
   }
 }//void handleApiResponse(...)
+
+
+namespace
+{
+  // Cap on a single tool-result's text returned to the LLM, so one (or many) very large results
+  // cannot blow the context window.  Generous, so normal results pass through untouched.
+  constexpr size_t sm_max_tool_result_chars = 200000;
+
+  /** Truncate `content` to at most sm_max_tool_result_chars, backing off to a UTF-8 boundary (so it
+   remains valid UTF-8 for JSON serialization - nlohmann::json::dump() throws on invalid UTF-8) and
+   appending a marker telling the model the result was truncated.
+   */
+  std::string truncate_tool_result( std::string content )
+  {
+    if( content.size() <= sm_max_tool_result_chars )
+      return content;
+
+    const size_t original = content.size();
+    content.resize( sm_max_tool_result_chars );
+
+    // Back off any trailing incomplete UTF-8 sequence (drop continuation bytes, then a dangling lead byte).
+    while( !content.empty() && ((static_cast<unsigned char>(content.back()) & 0xC0) == 0x80) )
+      content.pop_back();
+    if( !content.empty() && (static_cast<unsigned char>(content.back()) & 0x80) )
+      content.pop_back();
+
+    content += "\n\n...[tool result truncated to fit the context window: "
+             + std::to_string( original - content.size() ) + " characters omitted]";
+    return content;
+  }//truncate_tool_result(...)
+}//namespace
 
 
 std::pair<std::shared_ptr<LlmToolRequest>, std::shared_ptr<LlmToolResults>>
@@ -2065,8 +2235,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         }// End placeholder result that will be updated when sub-agent completes
         
         // We will define a completion handler that will get called when the sub-agent conversation is complete.
-        LlmInterface * self = this;
-        sub_agent_convo->conversation_completion_handler = [parent_convo_wk, parentRequestId, subAgentRequestId, self, sub_agent_convo_wk, callId](){
+        // Capture a weak_ptr to this interface so the handler safely bails if the interface (and thus its
+        // owning GUI/session) has been destroyed before the sub-agent finished - see use-after-free notes.
+        const std::weak_ptr<LlmInterface> weakSelf = weak_from_this();
+        sub_agent_convo->conversation_completion_handler = [parent_convo_wk, parentRequestId, subAgentRequestId, weakSelf, sub_agent_convo_wk, callId](){
           shared_ptr<LlmInteraction> parent_conv = parent_convo_wk.lock();
           assert( parent_conv );
           if( !parent_conv )
@@ -2083,28 +2255,18 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
             return;
           }
           
-          InterSpec *viewer = InterSpec::instance();
-          if( !viewer )
+          // Bail if this interface (and thus its owning GUI/session) has been destroyed.  The weak_ptr
+          // lock replaces the previous fragile "walk the GUI to re-find the interface" liveness check,
+          // and (because all LlmInterface instances are now shared-owned) also works for the private
+          // interfaces used by LlmSubAgentFollowup / LlmBenchmarkRunner.
+          shared_ptr<LlmInterface> selfPtr = weakSelf.lock();
+          if( !selfPtr )
           {
-            cerr << "Sub-agent completed for dead session - ignoring results." << endl;
+            cerr << "Sub-agent completed but its LlmInterface is no longer alive - ignoring results." << endl;
             return;
           }
-          
-          // TODO: maybe `LlmInterface` should use the Wt object life and/or boost signal/slot mechanism to protect against LlmInterface lifetime - and not this hack of a system of relying on checking stuff through the GUI
-          LlmToolGui * const llm_gui = viewer->currentLlmTool();
-          if( !llm_gui )
-          {
-            cerr << "Sub-agent completed and no llm_gui avaiable - ignoring results." << endl;
-            return;
-          }
-          
-          LlmInterface * const interface = llm_gui->llmInterface();
-          if( interface != self )
-          {
-            cerr << "Sub-agent completed and with different LlmInterface now present - ignoring results." << endl;
-            return;
-          }
-          
+          LlmInterface * const interface = selfPtr.get();
+
           // Here is where we fill in `parent_conv` with the result, and send back to the LLM
           if( interface->m_debug_stream )
             (*interface->m_debug_stream) << "Sub-agent complete (no tool calls left) - will extracting summary and continue main conversation." << endl;
@@ -2287,8 +2449,9 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
           }//if( toolResult )
 
 
+          // No assert here: the deferred entry can legitimately be gone (e.g. an unrelated error
+          // response or resetWithConfig() cleared the map) by the time a sub-agent finishes.
           const auto defered_pos = interface->m_deferredToolResults.find(parentRequestId);
-          assert( defered_pos != end(interface->m_deferredToolResults) );
           if( defered_pos == end(interface->m_deferredToolResults) )
           {
             if( interface->m_debug_stream )
@@ -2366,7 +2529,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
             const string capturedToolName = toolName;
             const int capturedParentRequestId = parentRequestId;
             weak_ptr<LlmInteraction> weakConvo = convo;
-            LlmInterface *self = this;
+            // Capture a weak_ptr to this interface (not a raw `this`).  A background tool may keep the
+            // conversation alive (it is shared into SpecMeas) after the LlmInterface/session is torn
+            // down, so we must verify the interface itself is still alive before dereferencing it.
+            const weak_ptr<LlmInterface> weakSelf = weak_from_this();
 
             const auto exec_start = std::chrono::steady_clock::now();
 
@@ -2375,11 +2541,18 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
 
             try
             {
-            tool->asyncExecutor( arguments, m_interspec, convo, m_history.get(),
-              [self, weakConvo, capturedCallId, capturedToolName, capturedParentRequestId, exec_start]
+            // Build the completion body separately, then dispatch a thin wrapper (safeCallback below)
+            // that guarantees this body runs on a LATER GUI event-loop tick.
+            LlmTools::SharedTool::AsyncCallback rawCallback =
+              [weakSelf, weakConvo, capturedCallId, capturedToolName, capturedParentRequestId, exec_start]
               ( std::variant<nlohmann::json, std::string> result_or_error )
               {
-                // This callback runs on the GUI thread (posted by the async function)
+                // Runs on the GUI thread, on a later event-loop iteration than dispatch, so the
+                // deferred-result entry and placeholder tool-result are guaranteed to be in place.
+                shared_ptr<LlmInterface> self = weakSelf.lock();
+                if( !self )
+                  return;
+
                 shared_ptr<LlmInteraction> convo = weakConvo.lock();
                 if( !convo )
                   return;
@@ -2525,7 +2698,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                     result.erase( "_visuals" );
                   }//if( result.contains( "_visuals" ) )
 
-                  pendingResult->content = result.dump();
+                  pendingResult->content = truncate_tool_result( result.dump() );
                 }
 
                 pendingResult->executionDuration = exec_duration;
@@ -2562,8 +2735,28 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
 
                   self->sendToolResultsToLLM( convo );
                 }
-              }
-            );//asyncExecutor callback
+              };//rawCallback
+
+            // Marshal the completion body onto a later iteration of THIS session's GUI event loop,
+            // no matter how the executor delivers its callback (synchronously inline, or from a
+            // background thread).  This is what makes the consumer robust to executors that violate
+            // the "async, GUI-thread, exactly-once" contract (e.g. run_javascript with no bridge, or
+            // fit_* early-error paths) - the previous code hung the conversation forever in those cases.
+            const std::string sessionId = wApp ? wApp->sessionId() : std::string();
+            tool->asyncExecutor( arguments, m_interspec, convo, m_history.get(),
+              [rawCallback, sessionId]( std::variant<nlohmann::json, std::string> result_or_error )
+              {
+                Wt::WServer * const server = Wt::WServer::instance();
+                if( !server )
+                  return;
+                server->post( sessionId,
+                  [rawCallback, result_or_error]()
+                  {
+                    rawCallback( result_or_error );
+                    if( wApp )
+                      wApp->triggerUpdate();
+                  } );
+              } );//asyncExecutor dispatch (always-post wrapper)
             }catch( const std::exception &e )
             {
               // The asyncExecutor threw synchronously (e.g., during argument parsing)
@@ -2709,7 +2902,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
               result.erase( "_visuals" );
             }//if( result.contains( "_visuals" ) )
 
-            toolResult.content = result.dump();
+            toolResult.content = truncate_tool_result( result.dump() );
             toolResult.executionDuration = exec_duration;
             toolCallResults.push_back( std::move(toolResult) );
           }//if( async tool ) / else ( synchronous tool )
@@ -3352,50 +3545,46 @@ std::string LlmInterface::stripThinkingContent(const std::string& content) {
 }
 
 std::pair<std::string, std::string> LlmInterface::extractThinkingAndContent(const std::string& content) {
-  std::string cleanContent = content;
   std::string thinkingContent;
-  
-  // Extract <think>...</think> blocks (case insensitive, supports nested and multiline)
-  std::regex thinkRegex("<think[^>]*>([\\s\\S]*?)</think>", 
+
+  // 1) Collect thinking text from every well-formed <think>...</think> block (case-insensitive,
+  //    multiline; [\s\S] matches newlines).
+  const std::regex thinkRegex("<think[^>]*>([\\s\\S]*?)</think>",
     std::regex_constants::icase | std::regex_constants::ECMAScript);
-  
-  std::smatch match;
-  std::string::const_iterator searchStart(content.cbegin());
-  
-  // Collect all thinking content from properly formatted <think>...</think> blocks
-  while (std::regex_search(searchStart, content.cend(), match, thinkRegex)) {
-    if (!thinkingContent.empty()) {
+  for( std::sregex_iterator it(content.begin(), content.end(), thinkRegex), end; it != end; ++it )
+  {
+    if( !thinkingContent.empty() )
       thinkingContent += "\n";
-    }
-    thinkingContent += match[1].str();
-    searchStart = match.suffix().first;
+    thinkingContent += (*it)[1].str();
   }
-  
-  // Check for orphaned </think> tags (closing tag without opening tag)
-  std::regex orphanedCloseRegex("</think>", std::regex_constants::icase);
+
+  // 2) Remove all well-formed blocks to get the visible content.  (Previously the orphaned-tag
+  //    heuristic below ran against the RAW content and matched a valid block's closing tag, which
+  //    discarded visible text before the first </think> and left later blocks un-stripped.)
+  std::string cleanContent = stripThinkingContent(content);
+
+  // 3) Handle a genuine leading orphaned </think>: some reasoning models emit their reasoning
+  //    followed by a bare </think> with no opening <think>.  After step 2 removed every well-formed
+  //    block, any remaining </think> is truly orphaned, so the text before it is reasoning.
   std::smatch orphanedMatch;
-  if (std::regex_search(content, orphanedMatch, orphanedCloseRegex)) {
-    // Find the position of the first </think> tag
-    size_t closePos = orphanedMatch.position();
-    
-    // Extract all text before the </think> tag as thinking content
-    std::string orphanedThinking = content.substr(0, closePos);
-    
-    // Only add if we found some content and it's not just whitespace
-    if (!orphanedThinking.empty() && orphanedThinking.find_first_not_of("\\s\\t\\n\\r") != std::string::npos) {
-      if (!thinkingContent.empty()) {
+  if( std::regex_search(cleanContent, orphanedMatch, std::regex("</think>", std::regex_constants::icase)) )
+  {
+    const size_t closePos = static_cast<size_t>( orphanedMatch.position() );
+    const std::string orphanedThinking = cleanContent.substr( 0, closePos );
+    if( orphanedThinking.find_first_not_of(" \t\n\r") != std::string::npos )
+    {
+      if( !thinkingContent.empty() )
         thinkingContent += "\n";
-      }
       thinkingContent += orphanedThinking;
-      
-      // Remove the orphaned thinking content and </think> tag from clean content
-      cleanContent = content.substr(closePos + 7); // 7 is length of "</think>"
     }
-  } else {
-    // No orphaned tags, use normal stripping
-    cleanContent = stripThinkingContent(content);
+    // Drop everything up to and including this </think> (8 chars) from the visible content.
+    cleanContent = cleanContent.substr( closePos + 8 );
+
+    // Trim leading whitespace left behind after removing the orphaned prefix.
+    const size_t firstNonWs = cleanContent.find_first_not_of(" \t\n\r");
+    cleanContent = (firstNonWs == std::string::npos) ? std::string() : cleanContent.substr( firstNonWs );
   }
-  
+
   return {cleanContent, thinkingContent};
 }
 
@@ -3635,19 +3824,19 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
 
   // Build the normalized tool list for the active agent.
   std::vector<NormalizedTool> tools;
-  const map<string, LlmTools::SharedTool> agentTools = m_tool_registry->getToolsForAgent( convo->agent_type );
+  const map<string, const LlmTools::SharedTool*> agentTools = m_tool_registry->getToolsForAgent( convo->agent_type );
   for( const auto &[name, tool] : agentTools )
   {
     // Functions used to include a "userSession" argument for the MCP server (now added by the MCP
     // server itself) - strip it here for the moment until we verify it has been totally removed.
-    nlohmann::json par_schema = tool.parameters_schema;
+    nlohmann::json par_schema = tool->parameters_schema;
     assert( !par_schema.contains("properties") || !par_schema["properties"].contains("userSession") );
     if( par_schema.contains("properties") && par_schema["properties"].contains("userSession") )
       par_schema["properties"].erase( "userSession" );
 
     NormalizedTool nt;
-    nt.name = tool.name;
-    nt.description = m_tool_registry->getDescriptionForAgent( tool.name, convo->agent_type );
+    nt.name = tool->name;
+    nt.description = m_tool_registry->getDescriptionForAgent( tool->name, convo->agent_type );
     nt.parameters = std::move( par_schema );
     tools.push_back( std::move(nt) );
   }//for( const auto &[name, tool] : agentTools )
@@ -3758,6 +3947,22 @@ void LlmInterface::setupJavaScriptBridge() {
     if ( !window.llmHttpRequest ) {
       window.requestRetryState = {};
       window.llmResponseCallbacks = {};
+      window.llmAbortControllers = {};
+
+      // Abort a single in-flight request (marks it cancelled so the catch handler won't auto-retry).
+      window.llmAbortRequest = function(requestId) {
+        var e = window.llmAbortControllers[requestId];
+        if (e) { e.cancelled = true; try { e.controller.abort(); } catch(ex){} }
+      };
+      // Abort all in-flight requests (optionally limited to one instance).
+      window.llmAbortAllRequests = function(instanceId) {
+        for (var rid in window.llmAbortControllers) {
+          var e = window.llmAbortControllers[rid];
+          if (e && (!instanceId || e.instanceId === instanceId)) {
+            e.cancelled = true; try { e.controller.abort(); } catch(ex){}
+          }
+        }
+      };
 
       // Internal function to make a request (supports retry)
       function makeRequest(endpoint, requestJsonString, headersJsonString, requestId, instanceId, isRetry, rateLimitRetryCount) {
@@ -3830,8 +4035,9 @@ void LlmInterface::setupJavaScriptBridge() {
           console.error('Failed to parse request headers JSON:', e);
         }
 
-        // Create AbortController for timeout handling
+        // Create AbortController for timeout handling (also registered so it can be cancelled externally)
         var controller = new AbortController();
+        window.llmAbortControllers[requestId] = { controller: controller, instanceId: instanceId, cancelled: false };
         var timeoutMs = 300000; // 5 minutes
         var timeoutId = setTimeout(function() {
           var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -3957,11 +4163,38 @@ void LlmInterface::setupJavaScriptBridge() {
             window.requestRetryState[requestId].originalCompleted = true;
           }
 
+          // If the HTTP status indicates failure (and this was not handled as a rate-limit retry
+          // above), make sure C++ sees it as an error even when the provider returned a non-standard
+          // error body (e.g. {"detail":...}, {"errors":[...]}, {"status":"error"}).  Without this,
+          // such bodies fall through to the success parser and are shown as an empty "successful" turn.
+          var deliverText = responseText;
+          if (httpStatus >= 400) {
+            var hasStdError = false;
+            try {
+              var bodyObj = JSON.parse(responseText);
+              hasStdError = !!(bodyObj && (bodyObj.error
+                || (bodyObj.choices && bodyObj.choices[0] && bodyObj.choices[0].error)));
+            } catch (e) { /* non-JSON body */ }
+            if (!hasStdError) {
+              deliverText = JSON.stringify({
+                error: {
+                  type: 'http_error',
+                  code: httpStatus,
+                  message: 'HTTP ' + httpStatus + ' error from LLM endpoint',
+                  body: responseText
+                }
+              });
+            }
+          }
+
+          // Request is complete - drop its abort controller registration.
+          delete window.llmAbortControllers[requestId];
+
           // Route response to the correct LlmInterface instance's callback
           var cb = window.llmResponseCallbacks[instanceId];
           if (cb) {
-  console.log( 'Sent back for requestId:', requestId);
-            cb(responseText, requestId);
+            console.log( 'Sent back for requestId:', requestId);
+            cb(deliverText, requestId);
           } else {
             console.error('No llmResponseCallback registered for instance', instanceId);
           }
@@ -3971,6 +4204,16 @@ void LlmInterface::setupJavaScriptBridge() {
 
           // Clear the timeout since we got an error
           clearTimeout(timeoutId);
+
+          // If this request was explicitly cancelled, do not retry or deliver an error - the C++
+          // side has already finalized the conversation.
+          var ctrlEntry = window.llmAbortControllers[requestId];
+          if (ctrlEntry && ctrlEntry.cancelled) {
+            console.log('Request ' + requestId + ' was cancelled by user - not retrying');
+            delete window.llmAbortControllers[requestId];
+            delete window.requestRetryState[requestId];
+            return;
+          }
 
           var errorType = error.name === 'AbortError' ? 'timeout_error' : 'network_error';
 
@@ -4006,8 +4249,9 @@ void LlmInterface::setupJavaScriptBridge() {
           console.error('Error message:', error.message);
           console.error('Elapsed time:', elapsed + 's');
 
-          // Clean up retry state
+          // Clean up retry state and abort registration
           delete window.requestRetryState[requestId];
+          delete window.llmAbortControllers[requestId];
 
           // Send error response to C++
           var errorResponse = JSON.stringify({
@@ -4079,8 +4323,12 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       m_pendingRequests.erase(requestId);
     }else
     {
-      cerr << "Got response that didnt have pending request: requestId=" << requestId << ", response='" << response << "'" << endl;
-      assert( 0 );
+      // A response for an unknown request id is a legitimate race (a late/timed-out browser fetch
+      // arriving after the request was cleared by resetWithConfig()/teardown/cancel), so ignore it
+      // rather than asserting.  Monotonic request ids ensure it cannot be confused with a new request.
+      cerr << "Ignoring response for unknown/cleared request id=" << requestId << endl;
+      if( m_debug_stream )
+        (*m_debug_stream) << "Ignoring response for unknown/cleared request id=" << requestId << endl;
       return;
     }
     
@@ -4114,8 +4362,15 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     // TODO: we need to make sure `handleApiResponse` gives an error if it doesnt recognize the format of the result - it currently doesnt
 
 
-    if( (responseJson.contains("error") && !responseJson["error"].is_null())
-       || (responseJson.contains("choices") && responseJson["choices"].contains("error")) )
+    // Note: `choices` is an array, so `choices.contains("error")` is always false (it checks for an
+    // array *element*-key, not an object key) - look inside the first choice instead.
+    const bool choiceHasError = responseJson.contains("choices")
+                                && responseJson["choices"].is_array()
+                                && !responseJson["choices"].empty()
+                                && responseJson["choices"][0].is_object()
+                                && responseJson["choices"][0].contains("error")
+                                && !responseJson["choices"][0]["error"].is_null();
+    if( (responseJson.contains("error") && !responseJson["error"].is_null()) || choiceHasError )
     {
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
       const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
@@ -4213,17 +4468,38 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       if( m_debug_stream )
         (*m_debug_stream) << "Conversation PAUSED due to error (type: " << static_cast<int>(errorType) << ")" << endl;
 
-      // On error, clean up any deferred tool results that will never complete
-      //  (since the response that would have triggered them never arrived).
-      if( !m_deferredToolResults.empty() )
+      // On error, clean up deferred tool results for THIS conversation only (the response that would
+      // have resolved them never arrived).  Previously this cleared the ENTIRE map, orphaning
+      // unrelated in-flight conversations' tool rounds (they would then never finalize).
+      if( convo && !m_deferredToolResults.empty() )
       {
-        cerr << "Error response - clearing " << m_deferredToolResults.size()
-             << " orphaned deferred tool results" << endl;
-        if( m_debug_stream )
-          (*m_debug_stream) << "Error response - clearing " << m_deferredToolResults.size()
-            << " orphaned deferred tool results" << endl;
-        m_deferredToolResults.clear();
+        size_t cleared = 0;
+        for( auto it = m_deferredToolResults.begin(); it != m_deferredToolResults.end(); )
+        {
+          if( it->second.conversationId == convo->conversationId )
+          {
+            it = m_deferredToolResults.erase( it );
+            ++cleared;
+          }else
+          {
+            ++it;
+          }
+        }
+        if( cleared && m_debug_stream )
+          (*m_debug_stream) << "Error response - cleared " << cleared
+            << " orphaned deferred tool result(s) for this conversation" << endl;
       }
+
+      // If the FAILED request was the compaction/summarization request, don't strand the user's
+      // queued message - clear the slot and re-send it as a normal request so the conversation
+      // continues (just without a fresh summary).  Done before the error-signal check below so the
+      // re-sent request is counted in m_pendingRequests and we don't spuriously signal failure.
+      if( pendingRequest.isSummarizationRequest )
+      {
+        if( m_debug_stream )
+          (*m_debug_stream) << "Summarization request failed - sending queued user message(s) without summary" << endl;
+        flushSummarizationQueue();
+      }//if( pendingRequest.isSummarizationRequest )
 
       // Signal that an error response was received
       if( m_pendingRequests.empty() )
@@ -4277,31 +4553,13 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
         m_history->applySummary( summaryText );
       }
 
-      // Now send the queued user message
-      shared_ptr<LlmInteraction> pendingUserConvo = m_summarizationPendingConvo.lock();
-      m_summarizationPendingConvo.reset();
+      // Now send any queued user message(s)
+      const bool hadQueued = !m_summarizationPendingConvos.empty();
+      flushSummarizationQueue();
 
-      if( pendingUserConvo )
+      if( !hadQueued )
       {
-        if( m_debug_stream )
-          (*m_debug_stream) << "=== Sending queued user message after summarization ===" << endl;
-
-        json requestJson = buildMessagesArray( pendingUserConvo );
-        std::pair<int,string> request_id_content = makeTrackedApiCall( requestJson, pendingUserConvo );
-
-        if( m_debug_stream )
-          (*m_debug_stream) << "Sent queued user message with request ID: " << request_id_content.first << endl;
-
-        // Store raw JSON in the InitialRequest turn
-        if( !pendingUserConvo->responses.empty() )
-        {
-          std::shared_ptr<LlmInteractionTurn> firstTurn = pendingUserConvo->responses.front();
-          if( firstTurn && firstTurn->type() == LlmInteractionTurn::Type::InitialRequest )
-            firstTurn->setRawContent( std::move(request_id_content.second) );
-        }
-      }else
-      {
-        // No pending user conversation - this is expected for manual compaction.
+        // No queued user conversation - this is expected for manual compaction.
         // Emit conversationFinished so the UI re-enables input.
         if( m_debug_stream )
           (*m_debug_stream) << "Summarization completed (no queued user message - manual compaction)" << endl;

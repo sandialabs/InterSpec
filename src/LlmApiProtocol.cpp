@@ -43,17 +43,30 @@ namespace
 /** Anthropic requires `max_tokens`; used when the active model leaves MaxTokens unset (0). */
 const int sm_anthropic_default_max_tokens = 4096;
 
+/** Whether a Claude model accepts thinking:{type:"adaptive"} (the model sizes its own thinking).
+ Adaptive thinking is supported on the larger current Claude models (Opus, Sonnet) but some models -
+ notably Haiku 4.5 - reject it with a 400 ("adaptive thinking is not supported on this model") and
+ require the explicit {type:"enabled",budget_tokens:N} form instead.  Default to true so new/unknown
+ models get the modern form; only carve out families known not to support it. */
+bool anthropic_supports_adaptive_thinking( const std::string &model )
+{
+  return !SpecUtils::icontains( model, "haiku" );
+}
 
-/** Extract a non-negative integer token count from a usage field, if present and numeric. */
+
+/** Extract a non-negative integer token count from a usage field, if present and numeric.
+ Read as 64-bit (or via double for float-encoded counts) so large counts do not overflow a 32-bit int. */
 std::optional<size_t> get_usage_count( const json &usage, const char *key )
 {
-  if( usage.contains(key) && usage[key].is_number() )
-  {
-    const int v = usage[key].get<int>();
-    if( v >= 0 )
-      return static_cast<size_t>( v );
-  }
-  return std::nullopt;
+  if( !usage.contains(key) || !usage[key].is_number() )
+    return std::nullopt;
+
+  const json &v = usage[key];
+  const long long count = v.is_number_float() ? static_cast<long long>( v.get<double>() )
+                                              : v.get<long long>();
+  if( count < 0 )
+    return std::nullopt;
+  return static_cast<size_t>( count );
 }//get_usage_count(...)
 
 
@@ -85,6 +98,66 @@ void add_anthropic_cache_breakpoint_to_last_message( json &messages )
     content.back()["cache_control"]["type"] = "ephemeral";
   }
 }//add_anthropic_cache_breakpoint_to_last_message(...)
+
+
+/** Normalize string `content` into an array of text blocks (block `type` given by `textType`), so two
+ messages with the same role can be concatenated.  Array content passes through; null/empty becomes [].
+ */
+json content_to_block_array( const json &content, const char *textType )
+{
+  if( content.is_array() )
+    return content;
+  json arr = json::array();
+  if( content.is_string() && !content.get<std::string>().empty() )
+  {
+    json b;
+    b["type"] = textType;
+    b["text"] = content.get<std::string>();
+    arr.push_back( b );
+  }
+  return arr;
+}//content_to_block_array(...)
+
+
+/** Merge consecutive messages that share the same role.  The Anthropic Messages API rejects
+ consecutive same-role turns (and the Responses API mishandles them); this can otherwise happen at
+ the summarization seam (summary `user` immediately followed by the next conversation's `user`
+ InitialRequest).  Items without a "role" (e.g. Responses function_call / function_call_output) are
+ never merged.  `textType` is the per-format text-block type ("text" for Anthropic, "input_text" for
+ the Responses input).
+ */
+void merge_adjacent_same_role( json &messages, const char *textType )
+{
+  if( !messages.is_array() )
+    return;
+
+  json out = json::array();
+  for( const json &msg : messages )
+  {
+    const std::string role = msg.is_object() ? msg.value("role","") : std::string();
+    if( !role.empty() && !out.empty() && out.back().is_object()
+        && (out.back().value("role","") == role) )
+    {
+      json &prev = out.back()["content"];
+      const json cur = msg.contains("content") ? msg["content"] : json();
+      if( prev.is_string() && cur.is_string() )
+      {
+        prev = prev.get<std::string>() + "\n\n" + cur.get<std::string>();
+      }else
+      {
+        json merged = content_to_block_array( prev, textType );
+        for( json &b : content_to_block_array( cur, textType ) )
+          merged.push_back( b );
+        prev = merged;
+      }
+    }else
+    {
+      out.push_back( msg );
+    }
+  }//for( msg : messages )
+
+  messages = out;
+}//merge_adjacent_same_role(...)
 
 
 //==============================================================================
@@ -440,6 +513,11 @@ class AnthropicProtocol : public LlmApiProtocol
             msg["content"] = arr;
           }else
           {
+            // Skip a FinalLlmResponse with no text and no (signed) thinking: Anthropic rejects an
+            // assistant message with empty content (can happen for an empty model turn, or a
+            // signatureless/redacted thinking response).
+            if( resp->content().empty() )
+              break;
             msg["content"] = resp->content();
           }
           messages.push_back( msg );
@@ -508,8 +586,11 @@ class AnthropicProtocol : public LlmApiProtocol
               toolResult["content"] = contentArr;
             }else
             {
-              toolResult["content"] = tc.content;
+              // Anthropic rejects an empty tool_result content - substitute a placeholder.
+              toolResult["content"] = tc.content.empty() ? string("(no output)") : tc.content;
             }
+            if( tc.status == LlmToolCall::CallStatus::Error )
+              toolResult["is_error"] = true;
             arr.push_back( toolResult );
           }
           json msg;
@@ -568,6 +649,8 @@ public:
       if( c )
         addConversation( *c, messages );
     }
+    // Anthropic rejects consecutive same-role turns (e.g. summary user -> InitialRequest user).
+    merge_adjacent_same_role( messages, "text" );
     return messages;
   }
 
@@ -637,19 +720,53 @@ public:
     // Incrementally cache the growing conversation prefix as well.
     add_anthropic_cache_breakpoint_to_last_message( request["messages"] );
 
-    // Map any configured reasoning to adaptive thinking (the modern Claude default).  When thinking
-    // is on, `temperature` must be omitted on current models, so only set temperature otherwise.
+    // Map any configured reasoning to Claude extended thinking.  Newer models (Opus/Sonnet) take the
+    // "adaptive" type (the model sizes its own thinking); others (e.g. Haiku 4.5) reject "adaptive"
+    // and need the explicit {type:"enabled",budget_tokens:N} form - gate on model capability so
+    // reasoning="true" works across models.  When thinking is on, `temperature` must be omitted on
+    // current models, so only set temperature otherwise.
     const std::variant<bool,LlmConfig::LlmApi::ReasoningEffort> &reasoning = api.reasoning();
     bool thinkingEnabled = false;
+    LlmConfig::LlmApi::ReasoningEffort effort = LlmConfig::LlmApi::ReasoningEffort::medium;
     if( std::holds_alternative<bool>(reasoning) )
+    {
       thinkingEnabled = std::get<bool>(reasoning);
-    else
+    }else
+    {
       thinkingEnabled = true;  // any explicit effort level enables thinking
+      effort = std::get<LlmConfig::LlmApi::ReasoningEffort>(reasoning);
+    }
 
-    if( thinkingEnabled )
+    if( thinkingEnabled && anthropic_supports_adaptive_thinking( api.model() ) )
+    {
       request["thinking"]["type"] = "adaptive";
-    else if( api.temperature().has_value() )
+    }else if( thinkingEnabled )
+    {
+      // Explicit extended-thinking budget (supported across thinking-capable models incl. Haiku).
+      // Anthropic requires 1024 <= budget_tokens < max_tokens; scale by effort and clamp to fit.
+      const int maxTok = request["max_tokens"].get<int>();
+      int budget = 4096;  // medium / unspecified default
+      if( effort == LlmConfig::LlmApi::ReasoningEffort::low )
+        budget = 2048;
+      else if( effort == LlmConfig::LlmApi::ReasoningEffort::high )
+        budget = 8192;
+      if( budget >= maxTok )
+        budget = maxTok - 1;
+      if( budget < 1024 )
+        budget = 1024;
+
+      if( budget < maxTok )  // only enable if a valid budget fits under max_tokens
+      {
+        request["thinking"]["type"] = "enabled";
+        request["thinking"]["budget_tokens"] = budget;
+      }else if( api.temperature().has_value() )
+      {
+        request["temperature"] = api.temperature().value();  // max_tokens too small for thinking
+      }
+    }else if( api.temperature().has_value() )
+    {
       request["temperature"] = api.temperature().value();
+    }
 
     if( !tools.empty() )
     {
@@ -765,6 +882,23 @@ class OpenAiResponsesProtocol : public LlmApiProtocol
 {
   static void addConversation( const LlmInteraction &conv, json &input )
   {
+    // Echo any captured reasoning items (id + encrypted_content) ahead of the items they produced -
+    // required by the Responses API for reasoning models when store=false (else the follow-up turn
+    // 400s with the reasoning items missing).  reasoningDetails carries them as a JSON array string.
+    const auto echo_reasoning = []( const LlmInteractionTurn &turn, json &out ){
+      const std::string &rd = turn.reasoningDetails();
+      if( rd.empty() )
+        return;
+      try {
+        const json items = json::parse( rd );
+        if( items.is_array() )
+        {
+          for( const json &it : items )
+            out.push_back( it );
+        }
+      } catch( ... ) { /* not Responses reasoning items (e.g. cross-provider history) - skip */ }
+    };
+
     for( const std::shared_ptr<LlmInteractionTurn> &response : conv.responses )
     {
       if( response->excludeFromHistory() )
@@ -809,6 +943,7 @@ class OpenAiResponsesProtocol : public LlmApiProtocol
             = dynamic_cast<const LlmInteractionFinalResponse*>( response.get() );
           if( !resp )
             break;
+          echo_reasoning( *resp, input );
           json item;
           item["role"] = "assistant";
           item["content"] = resp->content();
@@ -821,8 +956,9 @@ class OpenAiResponsesProtocol : public LlmApiProtocol
           const LlmToolRequest *req = dynamic_cast<const LlmToolRequest*>( response.get() );
           if( !req )
             break;
-          // Each tool call is its own function_call input item.  (Reasoning items are intentionally
-          // NOT echoed back: we run statelessly, so there is nothing for them to reference.)
+          // Replay the reasoning items that preceded these tool calls (required when store=false),
+          // then emit each tool call as its own function_call input item.
+          echo_reasoning( *req, input );
           for( const LlmToolCall &tc : req->toolCalls() )
           {
             json item;
@@ -900,6 +1036,9 @@ public:
       if( c )
         addConversation( *c, input );
     }
+    // Merge consecutive same-role message items (function_call/output items have no role and are
+    // left untouched).
+    merge_adjacent_same_role( input, "input_text" );
     return input;
   }
 
@@ -944,6 +1083,13 @@ public:
         case LlmConfig::LlmApi::ReasoningEffort::high:   request["reasoning"]["effort"] = "high";   break;
       }
     }
+
+    // With store=false (below) and a reasoning model, the Responses API requires the reasoning items
+    // produced before each tool call to be replayed on the following turn - otherwise it 400s
+    // ("reasoning item ... without its required following item").  Ask for the encrypted reasoning so
+    // serializeConversations() can echo it back across tool rounds (see addConversation / parseResponse).
+    if( request.contains("reasoning") )
+      request["include"] = json::array({ "reasoning.encrypted_content" });
 
     if( api.temperature().has_value() )
       request["temperature"] = api.temperature().value();
@@ -993,6 +1139,7 @@ public:
 
     if( responseJson.contains("output") && responseJson["output"].is_array() )
     {
+      json reasoningItems = json::array();
       for( const json &item : responseJson["output"] )
       {
         const string itemType = item.value("type","");
@@ -1020,7 +1167,10 @@ public:
           out.toolCalls.push_back( std::move(call) );
         }else if( itemType == "reasoning" )
         {
-          // Reasoning is usually opaque; surface any summary text for display only.
+          // Capture the reasoning item verbatim (incl. id + encrypted_content, requested via
+          // include=["reasoning.encrypted_content"]) so it can be echoed back across tool rounds when
+          // store=false (see addConversation).  Also surface any summary text for display.
+          reasoningItems.push_back( item );
           if( item.contains("summary") && item["summary"].is_array() )
           {
             for( const json &s : item["summary"] )
@@ -1031,6 +1181,11 @@ public:
           }
         }
       }//for( output items )
+
+      // Carry the reasoning items (as a JSON array string) on the turn's reasoningDetails so they are
+      // replayed before the items they produced on the next request.
+      if( !reasoningItems.empty() )
+        out.reasoningDetails = reasoningItems.dump();
     }//if( output array )
 
     if( out.content.empty() && responseJson.contains("output_text")

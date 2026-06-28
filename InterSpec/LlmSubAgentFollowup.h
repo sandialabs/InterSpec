@@ -62,7 +62,8 @@ private:
   void showResponseDialog( const std::string &responseText );
 
   std::shared_ptr<LlmInteraction> m_originalInteraction; // kept for shallowClone on construction
-  std::unique_ptr<LlmInterface> m_llmInterface;          // private interface; tool calls blocked
+  std::shared_ptr<LlmInterface> m_llmInterface;          // private interface; tool calls blocked
+                                                         // (shared_ptr so LlmInterface::weak_from_this() is valid)
   bool m_requestPending;
 };//class LlmSubAgentFollowup
 

@@ -19,6 +19,44 @@ static_assert( USE_LLM_INTERFACE, "You should not be compiling this file without
 using namespace std;
 using json = nlohmann::json;
 
+namespace
+{
+  /** Parse a signed integer from XML text, returning `fallback` (with a warning) on malformed input.
+   fromXml() clears the conversation vector up front and the caller only commits on success, so an
+   unguarded throw here would silently discard an entire sample-set's conversation history.
+   */
+  long long parse_ll_or( const std::string &str, const long long fallback )
+  {
+    if( str.empty() )
+      return fallback;
+    try
+    {
+      return std::stoll( str );
+    }catch( const std::exception & )
+    {
+      std::cerr << "LlmConversationHistory: could not parse integer from '" << str
+                << "' - using fallback " << fallback << std::endl;
+      return fallback;
+    }
+  }//parse_ll_or(...)
+
+  unsigned long long parse_ull_or( const std::string &str, const unsigned long long fallback )
+  {
+    if( str.empty() )
+      return fallback;
+    try
+    {
+      return std::stoull( str );
+    }catch( const std::exception & )
+    {
+      std::cerr << "LlmConversationHistory: could not parse unsigned integer from '" << str
+                << "' - using fallback " << fallback << std::endl;
+      return fallback;
+    }
+  }//parse_ull_or(...)
+}//namespace
+
+
 LlmConversationHistory::LlmConversationHistory()
   : m_conversations()
 {
@@ -253,9 +291,13 @@ std::shared_ptr<LlmInteractionError> LlmConversationHistory::addErrorMessage( co
     return nullptr;
   }
 
-  // Add this as a follow-up to an existing conversation
+  // Add this as a follow-up to an existing conversation.  Error turns are excluded from the history
+  // sent to the LLM: they are display-only.  Previously the serializers fabricated them as assistant
+  // "Error: ..." messages, which produces invalid request shapes (e.g. an assistant turn after an
+  // unanswered tool_use, or consecutive assistant turns).
   auto response = std::make_shared<LlmInteractionError>( errorMessage, convo, errorType );
   response->setRawContent( rawResponseContent );
+  response->setExcludeFromHistory( true );
   convo->responses.push_back( response );
   convo->responseAdded.emit( response );
 
@@ -299,6 +341,10 @@ void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmInteraction> conv
       conversation->promptTokens = conversation->promptTokens.value() + promptTokens.value();
     else
       conversation->promptTokens = static_cast<size_t>( promptTokens.value() );
+
+    // Record this single call's prompt size (SET, not accumulated): with full history resent each
+    // turn it is the true context-window occupancy used by shouldSummarize().
+    conversation->lastCallPromptTokens = static_cast<size_t>( promptTokens.value() );
   }
   
   if( completionTokens.has_value() && (completionTokens.value() > 0) )
@@ -596,31 +642,29 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmInteractio
           toolResultMsg["role"] = "tool";
           toolResultMsg["tool_call_id"] = toolRes.invocationId;
 
+          // OpenAI only accepts a plain (string) content in a role:"tool" message - images are not
+          // allowed there.  Put the text in the tool result, then carry the image in a following
+          // role:"user" message.
+          if( toolRes.imageContent.has_value() )
+            toolResultMsg["content"] = toolRes.content.empty() ? string("(see attached image)") : toolRes.content;
+          else
+            toolResultMsg["content"] = toolRes.content;
+
+          messages.push_back( toolResultMsg );
+
           if( toolRes.imageContent.has_value() )
           {
-            // Format as OpenAI content array with text + image
-            json contentArray = json::array();
-
-            json textBlock;
-            textBlock["type"] = "text";
-            textBlock["text"] = toolRes.content;
-            contentArray.push_back( textBlock );
-
             json imageBlock;
             imageBlock["type"] = "image_url";
             imageBlock["image_url"] = {
               {"url", "data:" + toolRes.imageContent->mimeType + ";base64," + toolRes.imageContent->base64Data}
             };
-            contentArray.push_back( imageBlock );
 
-            toolResultMsg["content"] = contentArray;
-          }
-          else
-          {
-            toolResultMsg["content"] = toolRes.content;
-          }
-
-          messages.push_back(toolResultMsg);
+            json imageMsg;
+            imageMsg["role"] = "user";
+            imageMsg["content"] = json::array({ imageBlock });
+            messages.push_back( imageMsg );
+          }//if( toolRes.imageContent.has_value() )
         }
         // Skip the normal push_back at the end since we've already added the messages
         continue;
@@ -854,11 +898,19 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
               if( !toolCall.content.empty() )
                 XmlUtils::append_string_node( toolCallNode, "ToolContent", toolCall.content );
 
-              if( !toolCall.toolParameters.empty() )
+              // Guard on extra_content (not toolParameters): the previous condition wrote a spurious
+              // "null" ExtraContent for every parameterized call and dropped real extra_content when
+              // toolParameters was empty.
+              if( !toolCall.extra_content.is_null() )
                 XmlUtils::append_string_node( toolCallNode, "ExtraContent", toolCall.extra_content.dump() );
 
               if( toolCall.executionDuration.has_value() )
                 XmlUtils::append_attrib( toolCallNode, "executionDurationMs", std::to_string(toolCall.executionDuration.value().count()) );
+
+              // Recursively serialize the sub-agent conversation (for invoke_* tool calls) so it
+              // survives a save/reload round-trip, mirroring ConversationSummary::originalConversations.
+              if( toolCall.sub_agent_conversation )
+                toXml( { toolCall.sub_agent_conversation }, toolCallNode, doc );
             }//for( loop over toolCalls )
           }//if( toolCalls && numToolCalls > 0 )
           break;
@@ -955,7 +1007,7 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
     if( rapidxml::xml_attribute<char> *timeAttr = XML_FIRST_ATTRIB(convNode, "timestamp") )
     {
       const string time_str = SpecUtils::xml_value_str(timeAttr);
-      auto timeT = static_cast<time_t>( std::stoll( time_str.c_str() ) );
+      auto timeT = static_cast<time_t>( parse_ll_or( time_str, 0 ) );
       conv->timestamp = chrono::system_clock::from_time_t(timeT);
     }
 
@@ -967,7 +1019,7 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
     if( rapidxml::xml_attribute<char>* finishTimeAttr = XML_FIRST_ATTRIB(convNode, "finishTime") )
     {
       const string finishTime_str = SpecUtils::xml_value_str(finishTimeAttr);
-      const auto finishTimeT = static_cast<time_t>( std::stoll( finishTime_str.c_str() ) );
+      const auto finishTimeT = static_cast<time_t>( parse_ll_or( finishTime_str, 0 ) );
       conv->finishTime = chrono::system_clock::from_time_t(finishTimeT);
     }else
     {
@@ -1025,11 +1077,11 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
             std::chrono::system_clock::time_point latest = earliest;
 
             if( rapidxml::xml_attribute<char> *countAttr = XML_FIRST_ATTRIB(responseNode, "summarizedCount") )
-              summarizedCount = static_cast<size_t>( std::stoull( SpecUtils::xml_value_str(countAttr) ) );
+              summarizedCount = static_cast<size_t>( parse_ull_or( SpecUtils::xml_value_str(countAttr), 0 ) );
             if( rapidxml::xml_attribute<char> *earlyAttr = XML_FIRST_ATTRIB(responseNode, "earliestTimestamp") )
-              earliest = chrono::system_clock::from_time_t( static_cast<time_t>( std::stoll( SpecUtils::xml_value_str(earlyAttr) ) ) );
+              earliest = chrono::system_clock::from_time_t( static_cast<time_t>( parse_ll_or( SpecUtils::xml_value_str(earlyAttr), 0 ) ) );
             if( rapidxml::xml_attribute<char> *lateAttr = XML_FIRST_ATTRIB(responseNode, "latestTimestamp") )
-              latest = chrono::system_clock::from_time_t( static_cast<time_t>( std::stoll( SpecUtils::xml_value_str(lateAttr) ) ) );
+              latest = chrono::system_clock::from_time_t( static_cast<time_t>( parse_ll_or( SpecUtils::xml_value_str(lateAttr), 0 ) ) );
 
             response = std::make_shared<LlmConversationSummary>( "", summarizedCount, earliest, latest, conv );
             break;
@@ -1065,12 +1117,12 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
         if( rapidxml::xml_attribute<char> *durationAttr = XML_FIRST_ATTRIB(responseNode, "callDurationMs") )
         {
           const string duration_str = SpecUtils::xml_value_str(durationAttr);
-          response->setCallDuration( std::chrono::milliseconds( std::stoll(duration_str) ) );
+          response->setCallDuration( std::chrono::milliseconds( parse_ll_or(duration_str, 0) ) );
         }
         else if( rapidxml::xml_attribute<char> *durationAttr = XML_FIRST_ATTRIB(responseNode, "apiCallDurationMs") )
         {
           const string duration_str = SpecUtils::xml_value_str(durationAttr);
-          response->setCallDuration( std::chrono::milliseconds( std::stoll(duration_str) ) );
+          response->setCallDuration( std::chrono::milliseconds( parse_ll_or(duration_str, 0) ) );
         }
 
         // Read excludeFromHistory flag
@@ -1134,7 +1186,7 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
                 {
                   try
                   {
-                    extraContent = json::parse(extraContentNode->value());
+                    extraContent = json::parse( SpecUtils::xml_value_str(extraContentNode) );
                   }catch( const std::exception &e )
                   {
                     cout << "Failed to parse extra_content: " << e.what() << endl;
@@ -1148,7 +1200,7 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
                 {
                   try
                   {
-                    toolParameters = json::parse(paramsNode->value());
+                    toolParameters = json::parse( SpecUtils::xml_value_str(paramsNode) );
                   }catch( const std::exception &e )
                   {
                     cout << "Failed to parse tool parameters: " << e.what() << endl;
@@ -1161,7 +1213,17 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
                 if( rapidxml::xml_attribute<char> *execDurationAttr = XML_FIRST_ATTRIB(toolCallNode, "executionDurationMs") )
                 {
                   const string duration_str = SpecUtils::xml_value_str(execDurationAttr);
-                  executionDuration = std::chrono::milliseconds( std::stoll(duration_str) );
+                  executionDuration = std::chrono::milliseconds( parse_ll_or(duration_str, 0) );
+                }
+
+                // Restore a recursively-serialized sub-agent conversation, if present.
+                shared_ptr<LlmInteraction> subAgentConvo;
+                if( rapidxml::xml_node<char> *subHistNode = XML_FIRST_NODE(toolCallNode, "LlmHistory") )
+                {
+                  vector<shared_ptr<LlmInteraction>> subConvos;
+                  fromXml( subHistNode, subConvos );
+                  if( !subConvos.empty() )
+                    subAgentConvo = subConvos.front();
                 }
 
                 LlmToolCall toolCall( toolName, invocationId, toolParameters );
@@ -1169,6 +1231,7 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
                 toolCall.content = toolContent;
                 toolCall.executionDuration = executionDuration;
                 toolCall.extra_content = extraContent;
+                toolCall.sub_agent_conversation = subAgentConvo;
                 toolCalls.push_back(toolCall);
               }//XML_FOREACH_CHILD( toolCallNode, toolCallsNode, "ToolCall" )
 
@@ -1441,14 +1504,17 @@ bool LlmConversationHistory::shouldSummarize( const size_t contextLengthLimit ) 
   if( nonSummaryCount <= 6 )
     return false;
 
-  // Check actual prompt token count from the most recent completed conversation.
-  // Walk backwards to find the most recent conversation with token data.
+  // Use the most recent SINGLE API call's prompt-token count as the context-window occupancy.
+  // (Previously this used the accumulated `promptTokens`, which sums every round-trip in the
+  // conversation plus folded-in sub-agent usage - roughly N x the real occupancy - causing
+  // summarization to fire far too early.)  Walk backwards to the most recent conversation that
+  // recorded a per-call value.
   for( auto it = m_conversations.rbegin(); it != m_conversations.rend(); ++it )
   {
     const shared_ptr<LlmInteraction> &conv = *it;
-    if( conv && conv->promptTokens.has_value() )
+    if( conv && conv->lastCallPromptTokens.has_value() )
     {
-      const size_t promptTokens = conv->promptTokens.value();
+      const size_t promptTokens = conv->lastCallPromptTokens.value();
       const size_t threshold = static_cast<size_t>( contextLengthLimit * 0.85 );
       return (promptTokens >= threshold);
     }

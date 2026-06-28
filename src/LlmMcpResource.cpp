@@ -445,17 +445,19 @@ void LlmMcpResource::handle_jsonrpc( const Wt::Http::Request &request, Wt::Http:
 
           // Start async operation. The callback captures the shared state and
           // wakes the SSE continuation when the tool finishes.
-          LlmMcpResource *self = this;
+          std::weak_ptr<std::atomic<bool>> weak_alive = m_alive;
           tool->asyncExecutor( arguments, viewer, nullptr, nullptr,
-            [state, self]( std::variant<json, std::string> result )
+            [state, this, weak_alive]( std::variant<json, std::string> result )
             {
               state->prom->set_value( std::move( result ) );
               state->tool_complete.store( true );
 
-              // Wake any waiting SSE continuations so they can send the result.
-              // This is safe because the callback runs on the GUI thread via
-              // WServer::post(), and the resource is alive during normal operation.
-              self->haveMoreData();
+              // Wake any waiting SSE continuations so they can send the result.  The callback runs on
+              // the GUI thread via WServer::post(); guard against the resource having been destroyed
+              // (shutdown/static-destruction race) using the same alive-token the keepalive path uses.
+              const std::shared_ptr<std::atomic<bool>> alive = weak_alive.lock();
+              if( alive && alive->load() )
+                this->haveMoreData();
             }
           );
 
@@ -560,9 +562,9 @@ void LlmMcpResource::register_default_tools()
   for( const auto &[name, sharedTool] : tool_registry_->getToolsForMcp() )
   {
     ToolInfo info;
-    info.name = sharedTool.name;
-    info.description = sharedTool.description;
-    info.parameters_schema = sharedTool.parameters_schema;
+    info.name = sharedTool->name;
+    info.description = sharedTool->description;
+    info.parameters_schema = sharedTool->parameters_schema;
 
     // Add userSession parameter to schema
     if( info.parameters_schema.is_object() )

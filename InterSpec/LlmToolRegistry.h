@@ -99,16 +99,19 @@ public:
 
   /** Get tools available for a specific agent.
    @param agentType The type of the agent
-   @return Map of tool name to SharedTool struct, filtered for the agent
+   @return Map of tool name to (non-owning) pointer into the registry's tools, filtered for the agent.
+           The pointers stay valid for the lifetime of this ToolRegistry (tools are not mutated after
+           construction).  Returns pointers rather than copies to avoid duplicating the heavy SharedTool
+           structs (schema + executors) on this per-request path.
    */
-  std::map<std::string, SharedTool> getToolsForAgent( AgentType agentType ) const;
+  std::map<std::string, const SharedTool*> getToolsForAgent( AgentType agentType ) const;
 
   /** Get tools suitable for the MCP server.
    Excludes agent invocation tools (invoke_*), deep research tools,
    and agent-only tools (those with non-empty availableForAgents).
-   @return Map of tool name to SharedTool struct, filtered for MCP.
+   @return Map of tool name to (non-owning) pointer into the registry's tools, filtered for MCP.
    */
-  std::map<std::string, SharedTool> getToolsForMcp() const;
+  std::map<std::string, const SharedTool*> getToolsForMcp() const;
 
   /** Get the description for a tool for a specific agent role.
    @param toolName The name of the tool

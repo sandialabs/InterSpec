@@ -1818,6 +1818,7 @@ Further investigation of top returned candidates is required to make sure they m
       <Agent>Isotopics</Agent>
       <Agent>SpectrumTimeHistory</Agent>
       <Agent>InSitu</Agent>
+      <Agent>EnergyCalibration</Agent>
     </AvailableFor>
   </Tool>
 

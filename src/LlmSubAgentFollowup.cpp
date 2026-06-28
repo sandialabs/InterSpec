@@ -77,7 +77,7 @@ LlmSubAgentFollowup::LlmSubAgentFollowup( std::shared_ptr<LlmInteraction> intera
   // and block tool calls so LLM responds with text only.
   // We use shallowClone() so new turns appended by LlmInterface go into the clone's
   // independent responses vector and do not affect the original interaction.
-  m_llmInterface = std::make_unique<LlmInterface>( interspec, config );
+  m_llmInterface = std::make_shared<LlmInterface>( interspec, config );
   m_llmInterface->setBlockToolCalls( true );
 
   // Write debug output to a timestamped file so the request JSON can be inspected

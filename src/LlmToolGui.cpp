@@ -390,6 +390,14 @@ void LlmToolGui::handleInputSubmit()
 
 void LlmToolGui::handleSendButton()
 {
+  // While a request is in flight the Send button acts as a Stop button.
+  if( m_isRequestPending )
+  {
+    if( m_llmInterface )
+      m_llmInterface->cancelAll();
+    return;
+  }
+
   if( !m_inputEdit )
     return;
 
@@ -905,22 +913,29 @@ void LlmToolGui::setInputEnabled(bool enabled)
       m_inputEdit->setPlaceholderText( WString( "Working..." ) );
   }
 
+  // While working, keep the button enabled but relabel it "Stop" so the user can cancel the request
+  // (handleSendButton() routes to cancelAll() when a request is pending).
   if( m_sendButton )
-    m_sendButton->setEnabled(enabled);
+  {
+    m_sendButton->setEnabled( true );
+    m_sendButton->setText( enabled ? "Send" : "Stop" );
+    if( enabled )
+      m_sendButton->removeStyleClass( "llm-stop-button" );
+    else
+      m_sendButton->addStyleClass( "llm-stop-button" );
+  }
 
-  // Update visual appearance
-  if( m_inputEdit && m_sendButton )
+  // Update visual appearance.  Only the input is greyed out while working; the button stays active
+  // (as "Stop"), so it must not get the "disabled" class.
+  if( m_inputEdit )
   {
     if( enabled )
-    {
       m_inputEdit->removeStyleClass("disabled");
-      m_sendButton->removeStyleClass("disabled");
-    }else
-    {
+    else
       m_inputEdit->addStyleClass("disabled");
-      m_sendButton->addStyleClass("disabled");
-    }
-  }//if( m_inputEdit && m_sendButton )
+  }
+  if( m_sendButton )
+    m_sendButton->removeStyleClass("disabled");
 }
 
 void LlmToolGui::handleSpectrumChanged( SpecUtils::SpectrumType specType,

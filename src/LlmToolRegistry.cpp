@@ -2561,9 +2561,9 @@ const SharedTool* ToolRegistry::getTool(const std::string& name) const {
   return (it != m_tools.end()) ? &it->second : nullptr;
 }
 
-std::map<std::string, SharedTool> ToolRegistry::getToolsForAgent( AgentType agentType ) const
+std::map<std::string, const SharedTool*> ToolRegistry::getToolsForAgent( AgentType agentType ) const
 {
-  std::map<std::string, SharedTool> filteredTools;
+  std::map<std::string, const SharedTool*> filteredTools;
 
   for( const auto &[toolName, tool] : m_tools )
   {
@@ -2580,7 +2580,7 @@ std::map<std::string, SharedTool> ToolRegistry::getToolsForAgent( AgentType agen
     // If availableForAgents is empty, tool is available to all agents
     if( tool.availableForAgents.empty() )
     {
-      filteredTools[toolName] = tool;
+      filteredTools[toolName] = &tool;
       continue;
     }
 
@@ -2590,16 +2590,16 @@ std::map<std::string, SharedTool> ToolRegistry::getToolsForAgent( AgentType agen
                                          agentType ) != tool.availableForAgents.end();
 
     if( agentAllowed )
-      filteredTools[toolName] = tool;
+      filteredTools[toolName] = &tool;
   }//for( loop over all tools )
 
   return filteredTools;
 }//getToolsForAgent(...)
 
 
-std::map<std::string, SharedTool> ToolRegistry::getToolsForMcp() const
+std::map<std::string, const SharedTool*> ToolRegistry::getToolsForMcp() const
 {
-  std::map<std::string, SharedTool> filteredTools;
+  std::map<std::string, const SharedTool*> filteredTools;
 
   for( const auto &[toolName, tool] : m_tools )
   {
@@ -2622,7 +2622,7 @@ std::map<std::string, SharedTool> ToolRegistry::getToolsForMcp() const
         continue;
     }
 
-    filteredTools[toolName] = tool;
+    filteredTools[toolName] = &tool;
   }//for( loop over all tools )
 
   return filteredTools;
@@ -8632,6 +8632,16 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
   const set<int> &back_samples = interspec->displayedSamples( SpectrumType::Background );
   const set<int> &sec_samples = interspec->displayedSamples( SpectrumType::SecondForeground );
 
+  // Capture old/new state as we apply it, so the change can be registered as a single undo/redo step
+  // below (this LLM fit applies calibrations + translated peaks directly on the SpecMeas, bypassing
+  // the GUI's own energy-cal undo path - without this, the user cannot undo an agent-driven change).
+  struct CalUndoItem { weak_ptr<SpecMeas> meas; shared_ptr<const Measurement> m;
+                       shared_ptr<const EnergyCalibration> oldCal, newCal; };
+  struct PeakUndoItem { weak_ptr<SpecMeas> meas; set<int> samples;
+                        deque<shared_ptr<const PeakDef>> oldPeaks, newPeaks; };
+  vector<CalUndoItem> cal_undo;
+  vector<PeakUndoItem> peak_undo, hint_undo;
+
   for( const ApplyEntry &entry : apply_entries )
   {
     // Set calibrations
@@ -8648,6 +8658,7 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
         if( iter == end( old_to_new_cals ) )
           continue;
 
+        cal_undo.push_back( { entry.meas, m, meas_old_cal, iter->second } );
         entry.meas->set_energy_calibration( iter->second, m );
       }//for( const string &det : entry.detectors )
     }//for( const int sample : entry.sample_numbers )
@@ -8664,6 +8675,7 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
       if( pos == end( updated_peaks ) )
         continue;
 
+      peak_undo.push_back( { entry.meas, samples, (oldpeaks ? *oldpeaks : deque<shared_ptr<const PeakDef>>{}), pos->second } );
       entry.meas->setPeaks( pos->second, samples );
 
       if( peak_model )
@@ -8689,12 +8701,58 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
       if( pos == end( updated_hint_peaks ) )
         continue;
 
+      hint_undo.push_back( { entry.meas, samples, (hint_peaks ? *hint_peaks : deque<shared_ptr<const PeakDef>>{}), pos->second } );
       entry.meas->setAutomatedSearchPeaks( samples,
         make_shared<deque<shared_ptr<const PeakDef>>>( pos->second ) );
     }//for( hint peak sample sets )
   }//for( const ApplyEntry &entry : apply_entries )
 
   interspec->refreshDisplayedCharts();
+
+  // Register a single undo/redo step for the whole calibration change (+ translated peaks), so the
+  // user can revert an agent-driven energy-cal fit just like a manual one.
+  UndoRedoManager * const undoManager = interspec->undoRedoManager();
+  if( undoManager && undoManager->canAddUndoRedoNow()
+      && (!cal_undo.empty() || !peak_undo.empty() || !hint_undo.empty()) )
+  {
+    auto applyState = [cal_undo, peak_undo, hint_undo, interspec]( const bool useNew ){
+      for( const CalUndoItem &c : cal_undo )
+      {
+        const shared_ptr<SpecMeas> sm = c.meas.lock();
+        if( sm && c.m )
+          sm->set_energy_calibration( useNew ? c.newCal : c.oldCal, c.m );
+      }
+      for( const PeakUndoItem &p : peak_undo )
+      {
+        const shared_ptr<SpecMeas> sm = p.meas.lock();
+        if( sm )
+          sm->setPeaks( useNew ? p.newPeaks : p.oldPeaks, p.samples );
+      }
+      for( const PeakUndoItem &p : hint_undo )
+      {
+        const shared_ptr<SpecMeas> sm = p.meas.lock();
+        if( sm )
+          sm->setAutomatedSearchPeaks( p.samples,
+            make_shared<deque<shared_ptr<const PeakDef>>>( useNew ? p.newPeaks : p.oldPeaks ) );
+      }
+
+      // Reload the displayed peaks from the (now-updated) SpecMeas and redraw.
+      PeakModel * const pm = interspec->peakModel();
+      const SpectrumType refresh_types[] = { SpectrumType::Foreground, SpectrumType::Background,
+                                             SpectrumType::SecondForeground };
+      for( const SpectrumType t : refresh_types )
+      {
+        const shared_ptr<SpecMeas> sm = interspec->measurment( t );
+        if( sm && pm )
+          pm->setPeakFromSpecMeas( sm, interspec->displayedSamples( t ), t );
+      }
+      interspec->refreshDisplayedCharts();
+    };//applyState lambda
+
+    undoManager->addUndoRedoStep( [applyState](){ applyState( false ); },  // undo -> restore old
+                                  [applyState](){ applyState( true ); },   // redo -> re-apply new
+                                  "LLM energy calibration" );
+  }//if( can register undo/redo )
 
   // Build result
   vector<string> propagated_to;

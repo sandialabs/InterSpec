@@ -495,9 +495,15 @@ struct LlmInteraction
   // Token usage tracking from LLM API responses
   // Using optional<size_t> because some models/APIs don't provide token usage information,
   // making it clear when this data is unavailable rather than defaulting to 0
-  std::optional<size_t> promptTokens;      // Tokens used in the input/prompt
-  std::optional<size_t> completionTokens;  // Tokens generated in the response
-  std::optional<size_t> totalTokens;       // Total tokens used (prompt + completion)
+  std::optional<size_t> promptTokens;      // Tokens used in the input/prompt (accumulated across this
+                                           // conversation's API calls + folded-in sub-agent usage; for
+                                           // cost/UI only - do NOT use as a context-window occupancy signal)
+  std::optional<size_t> completionTokens;  // Tokens generated in the response (accumulated)
+  std::optional<size_t> totalTokens;       // Total tokens used (prompt + completion, accumulated)
+  // Prompt tokens of the most recent SINGLE API call (set, not accumulated, and never folded with
+  // sub-agent usage).  Because the API resends the full prior history each turn, this is the true
+  // current context-window occupancy and is what shouldSummarize() must compare against the limit.
+  std::optional<size_t> lastCallPromptTokens;
   // Prompt-cache usage, accumulated across the conversation's API calls (subset of promptTokens).
   // nullopt means the provider did not report cache info; a value of 0 means caching was reported
   // but nothing was served from cache.

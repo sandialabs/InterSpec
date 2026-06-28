@@ -371,6 +371,7 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       {
         // Version 1+: ApiProvider/Model hierarchy
         bool foundActiveProvider = false;
+        int numActiveProviders = 0;  // for a config-validation warning (only the first active is used)
 
         for( const rapidxml::xml_node<char> *provNode = XML_FIRST_NODE( llmApiNode, "ApiProvider" );
              provNode;
@@ -403,6 +404,8 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
             LlmApi::ModelInfo modelInfo;
 
             modelInfo.name = XmlUtils::get_string_node_value( modelNode, "Name" );
+            if( modelInfo.name.empty() )
+              cerr << "Warning: LLM config has a <Model> with an empty <Name>; it will be unusable." << endl;
             modelInfo.reasoning = parseReasoningAttr( modelNode );
 
             // Parse supportsImages attribute (optional, defaults to false)
@@ -472,10 +475,14 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
           if( provider.models.empty() )
             throw runtime_error( "ApiProvider has no Model elements." );
 
-          if( isActiveProvider && !foundActiveProvider )
+          if( isActiveProvider )
           {
-            llmApi.activeProviderIndex = llmApi.providers.size();
-            foundActiveProvider = true;
+            numActiveProviders += 1;
+            if( !foundActiveProvider )
+            {
+              llmApi.activeProviderIndex = llmApi.providers.size();
+              foundActiveProvider = true;
+            }
           }
 
           llmApi.providers.push_back( std::move( provider ) );
@@ -483,6 +490,29 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
 
         if( llmApi.providers.empty() )
           throw runtime_error( "LlmApi has no ApiProvider elements." );
+
+        // Non-fatal validation warnings for the resolved active provider/model, to make
+        // mis-configuration (which otherwise surfaces only as opaque API errors) easy to spot.
+        if( numActiveProviders == 0 )
+          cerr << "Warning: no <ApiProvider active=\"true\"> found; defaulting to the first provider." << endl;
+        else if( numActiveProviders > 1 )
+          cerr << "Warning: " << numActiveProviders << " <ApiProvider> entries are active=\"true\";"
+                  " only the first is used." << endl;
+
+        const LlmApi::ApiProvider &activeProv = llmApi.providers.at( llmApi.activeProviderIndex );
+        if( (activeProv.activeModelIndex >= activeProv.models.size())
+            || activeProv.models.at( activeProv.activeModelIndex ).name.empty() )
+          cerr << "Warning: the active LLM provider has no usable active <Model> (empty/missing name)." << endl;
+
+        const string &activeTok = activeProv.bearerToken;
+        const bool placeholderTok = activeTok.empty()
+            || (activeTok == "...") || (activeTok == "sk-...") || (activeTok == "INVALID-BEARER-TOKEN")
+            || (activeTok.rfind("AnInvalidBearerToken",0) == 0)
+            || (activeTok.find("PUT-YOUR") != string::npos)
+            || (activeTok.find("PUT-") != string::npos);
+        if( placeholderTok )
+          cerr << "Warning: the active LLM provider's <BearerToken> looks like a placeholder;"
+                  " API calls will fail until a real key is set." << endl;
       }// if version 0 / else version 1+
 
       // Load global optional fields
