@@ -7349,16 +7349,16 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
           if( fpr->amplitude <= 0.0 )
           {
-            // The solver gave the floating peak zero or negative amplitude, meaning the
-            //  source peak(s) in this ROI absorbed all the counts.  Remove the original
-            //  bystander but don't add a zero-amplitude replacement.
+            // The solver gave the floating peak zero or negative amplitude.  We can't build a
+            //  zero/negative-amplitude replacement, and silently dropping the user's existing peak
+            //  would degrade their data when fitting a new source.  So retain the original bystander
+            //  untouched (it keeps its own ROI) - the same conservative choice we make above when the
+            //  fit produced no source peaks in the bystander's ROI.
 #if( PERFORM_DEVELOPER_CHECKS )
             std::cerr << "ExistingPeaksAsFreePeak: bystander at " << orig_energy
                  << " keV has non-positive amplitude (" << fpr->amplitude
-                 << ") — removing original." << std::endl;
+                 << ") — retaining original." << std::endl;
 #endif
-            result.original_peaks_to_remove.push_back( orig_peak );
-
             continue;
           }
 

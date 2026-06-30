@@ -6356,37 +6356,68 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                             ? (sigma_max / sigma_min) : std::numeric_limits<double>::infinity();
       }
 
-      // Count a direction as a real degree of freedom only if it is constrained within 1e7x of the
-      //  best-constrained direction - the same ratio as the covariance conditioning floor above
-      //  (min_reciprocal_condition_number = (1e-7)^2 = 1e-14), so the directions counted here as effective
-      //  parameters match the directions kept (non-zero variance) in the reported covariance.
+      // Raw-Jacobian rank count: this mirrors the conditioning Ceres uses for the reported covariance
+      //  (cov_options.min_reciprocal_condition_number = (1e-7)^2 = 1e-14 drops directions with
+      //  sigma_i/sigma_max < 1e-7), so `m_num_rank_deficient_dirs` and the rank-deficiency warning below
+      //  describe exactly the directions the covariance zeroed.  kappa(J) above is on this same raw
+      //  Jacobian.  These are deliberately NOT scale-invariant - they must track the (scale-sensitive)
+      //  covariance so the uncertainty-widening net keys off what was actually dropped.
       const double threshold = 1.0e-7 * singular_values.maxCoeff();
 
-      size_t npar_eff = 0;
+      size_t npar_eff_raw = 0;
       for( int i = 0; i < singular_values.size(); ++i)
-        npar_eff += (singular_values(i) > threshold);
+        npar_eff_raw += (singular_values(i) > threshold);
 
-      // The covariance (cov_options.min_reciprocal_condition_number, above) drops exactly the directions
-      //  with singular-value ratio below this same 1e-7 threshold, so `num_free_pars - npar_eff` is the
-      //  number of near-degenerate directions omitted from the reported uncertainties / rel-eff band.
-      //  Record this (and warn) BEFORE the trustworthiness throw below: a severely rank-deficient SVD
-      //  (npar_eff << num_pars, which triggers the throw) is the STRONGEST collapse signal, and the
-      //  derived-uncertainty floor keys off `m_num_rank_deficient_dirs`, so it must be set even when
-      //  we fall back to num_pars for the DOF estimate.
+      // Record (and warn about) the near-degenerate directions omitted from the covariance, BEFORE the
+      //  trustworthiness throw below: the derived-uncertainty floor keys off `m_num_rank_deficient_dirs`,
+      //  so it must be set even when the DOF estimate falls back to num_pars.
       const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
-      solution.m_num_rank_deficient_dirs = (npar_eff < num_free_pars) ? (num_free_pars - npar_eff) : size_t(0);
-      if( npar_eff < num_free_pars )
-        solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff)
+      solution.m_num_rank_deficient_dirs = (npar_eff_raw < num_free_pars) ? (num_free_pars - npar_eff_raw) : size_t(0);
+      if( npar_eff_raw < num_free_pars )
+        solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff_raw)
                             + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
                             " unconstrained by the data (near-degenerate directions).  Per-parameter"
                             " uncertainties omit these directions; derived quantities (enrichment,"
                             " relative-efficiency band) that depend on them are flagged and widened instead." );
 
-      if( (npar_eff < 1) || npar_eff < (num_pars/5) )
-        throw runtime_error( "Only computed " + std::to_string(npar_eff)
-                            + " DOF, compared to " + std::to_string(num_pars) + " parameters." );
+      // Effective degrees of freedom for the data-only chi2/DOF: a SCALE-INVARIANT count.  Ceres
+      //  parameters are re-parameterized to O(1), but a unit step in a relative-activity parameter moves
+      //  thousands of Poisson-weighted counts while a step in a nuisance parameter (FWHM, age, areal
+      //  density, the branching-ratio-uncertainty params) moves O(1), so the raw Jacobian column norms -
+      //  and hence its singular spectrum - span many orders of magnitude from unit choices alone (e.g.
+      //  kappa ~ 1e18, collapsing the raw count to 2 of 77 on a Pu-239 HPGe fit with additional_br_uncert).
+      //  A single relative cutoff on that spectrum then discards legitimately-constrained-but-small-column
+      //  directions.  Column-equilibrating the Jacobian (van der Sluis: divide each column by its L2 norm)
+      //  before this SVD removes the unit dependence, so the count reflects genuine collinearity.  Used
+      //  ONLY for the DOF estimate; kappa(J) and the rank-deficiency flag above stay on the raw Jacobian.
+      Eigen::MatrixXd jacobian_eq = jacobian;
+      for( int col = 0; col < jacobian_eq.cols(); ++col )
+      {
+        const double col_norm = jacobian_eq.col(col).norm();
+        if( col_norm > 0.0 )
+          jacobian_eq.col(col) /= col_norm;  // zero-norm column (no gradient) left zero -> stays degenerate
+      }
 
-      num_effective_paramaters = npar_eff;
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+      const Eigen::JacobiSVD<Eigen::MatrixXd> svd_eq( jacobian_eq );
+#else
+      const Eigen::BDCSVD<Eigen::MatrixXd> svd_eq( jacobian_eq );
+#endif
+      const Eigen::VectorXd singular_values_eq = svd_eq.singularValues();
+      const double threshold_eq = 1.0e-7 * singular_values_eq.maxCoeff();
+
+      size_t npar_eff_equil = 0;
+      for( int i = 0; i < singular_values_eq.size(); ++i )
+        npar_eff_equil += (singular_values_eq(i) > threshold_eq);
+
+      // Only flag a genuinely collapsed problem (a real model degeneracy that survives column-
+      //  equilibration), comparing against the FREE-parameter count (Jacobian columns), not the ambient
+      //  num_pars (which includes manifold-constant parameters that cannot be effective DOF anyway).
+      if( (npar_eff_equil < 1) || (npar_eff_equil < (num_free_pars/5)) )
+        throw runtime_error( "Only computed " + std::to_string(npar_eff_equil)
+                            + " DOF, compared to " + std::to_string(num_free_pars) + " free parameters." );
+
+      num_effective_paramaters = npar_eff_equil;
     }catch( std::exception &e )
     {
       solution.m_warnings.push_back( "Computation of the effective number of parameters failed ('"
