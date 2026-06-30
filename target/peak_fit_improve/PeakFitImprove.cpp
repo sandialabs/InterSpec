@@ -1240,8 +1240,8 @@ int main( int argc, char **argv )
   // individuals at the outer level, so without this each solve would spin up a
   // hardware_concurrency-sized ROI/Ceres thread-pool, and (outer x inner) would
   // exhaust the OS thread limit on many-core machines (EAGAIN). See
-  // RelActCalcAuto::set_max_solve_threads().
-  RelActCalcAuto::set_max_solve_threads( static_cast<unsigned>( PeakFitImprove::sm_num_threads_per_individual ) );
+  // RelActCalc::set_max_solve_threads().
+  RelActCalc::set_max_solve_threads( static_cast<unsigned>( PeakFitImprove::sm_num_threads_per_individual ) );
   cout << "Data base directory: " << data_base_dir << endl;
   if( !static_data_dir.empty() )
     cout << "Static data directory: " << static_data_dir << endl;

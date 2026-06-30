@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <atomic>
+#include <thread>
 #include <algorithm>
 #include <assert.h>
 #include <iostream> //for cout, only for debug
@@ -82,6 +84,24 @@ namespace
 
 namespace RelActCalc
 {
+namespace
+{
+  /** Backing store for set_max_solve_threads(); 0 == "auto" (hardware concurrency). */
+  std::atomic<unsigned> sm_max_solve_threads{ 0 };
+}//namespace
+
+void set_max_solve_threads( const unsigned num_threads )
+{
+  sm_max_solve_threads.store( num_threads );
+}
+
+unsigned max_solve_threads()
+{
+  const unsigned hw = std::max( 1u, std::thread::hardware_concurrency() );
+  const unsigned cap = sm_max_solve_threads.load();
+  return cap ? std::min( cap, hw ) : hw;
+}
+
 const double PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2 = 500.0;
 
 const char *to_str( const RelEffEqnForm form )
@@ -1246,8 +1266,11 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
     }
   };
   
-  // Decide whether to use threading
-  if( num_rois > 4 )
+  // Decide whether to use threading.  Only fan out when the per-solve thread
+  // budget allows >1 thread; when solves run concurrently (e.g. the peak-fit GA)
+  // max_solve_threads()==1, so this stays serial rather than stacking a pool on
+  // top of the outer parallelism and exhausting the OS thread limit.
+  if( (num_rois > 4) && (max_solve_threads() > 1) )
   {
     // Use ThreadPool for parallel processing
     SpecUtilsAsync::ThreadPool pool;

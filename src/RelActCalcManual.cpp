@@ -4701,6 +4701,11 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     double best_chi2 = std::numeric_limits<double>::max();
     double best_an = 0.0, best_ad = 0.0;
     
+    // Run serial when the per-solve thread budget is 1 (e.g. concurrent GA
+    // solves) so we don't stack a thread-pool on top of the outer parallelism
+    // and exhaust the OS thread limit.
+    const bool multithread = (RelActCalc::max_solve_threads() > 1);
+
     const auto do_work = [&input, &best_chi2, &best_an, &best_ad, &best_chi2_mutex]( const double an ){
       RelEffInput new_input = input;
       auto new_self_atten = std::make_shared<RelActCalc::PhysicalModelShieldInput>(*input.phys_model_self_atten);
@@ -4720,12 +4725,19 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       }
     };//do_work
 
+    const auto dispatch = [&threadpool, &do_work, multithread]( const double an ){
+      if( multithread )
+        threadpool.post( [&do_work, an](){ do_work(an); } );
+      else
+        do_work( an );
+    };//dispatch
+
     double an_step = 5.0;
     double min_an = input.phys_model_self_atten->lower_fit_atomic_number;
     double max_an = input.phys_model_self_atten->upper_fit_atomic_number;
     
     for( double an = min_an; an <= max_an; an += an_step )
-      threadpool.post( [&do_work, an](){ do_work(an); } );
+      dispatch( an );
     threadpool.join();
 
     if( best_chi2 != std::numeric_limits<double>::max() )
@@ -4736,7 +4748,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       max_an = std::min( max_an, best_an + an_step );
       an_step = 1.0;
       for( double an = min_an; an <= max_an; an += an_step )
-        threadpool.post( [&do_work, an](){ do_work(an); } );
+        dispatch( an );
       threadpool.join();
     }
     
@@ -5146,11 +5158,13 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   //double function_tolerance = 1e-6;
   //int max_num_consecutive_invalid_steps = 5;
   
-  // Setting ceres_options.num_threads >1 doesnt seem to do much (any?) good
-  ceres_options.num_threads = std::thread::hardware_concurrency();
-  assert( ceres_options.num_threads );
-  if( !ceres_options.num_threads )
-    ceres_options.num_threads = 4;
+  // The problem is a single residual block (see AddResidualBlock above) solved
+  // with DENSE_QR.  Ceres only parallelizes evaluation across residual blocks
+  // (there is one) and DENSE_QR is not threaded, so num_threads>1 has nothing to
+  // do here.  Forcing 1 also keeps concurrent solves (e.g. the peak-fit GA) from
+  // each spinning up a hardware_concurrency-sized Ceres pool and exhausting the
+  // OS thread limit (pthread_create -> EAGAIN, "Resource temporarily unavailable").
+  ceres_options.num_threads = 1;
   
   //cout << "Starting parameter values: {";
   //for( size_t i = 0; i < num_parameters; ++i )

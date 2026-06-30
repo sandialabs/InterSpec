@@ -53,6 +53,26 @@ namespace rapidxml
 namespace RelActCalc
 {
 
+/** Caps the number of threads an individual relative-activity/efficiency solve uses
+ internally — both the ROI/atomic-number thread-pools and Ceres' own thread count,
+ which are otherwise sized to the hardware concurrency.
+
+ When many solves run concurrently — e.g. the peak-fit optimization GA on a many-core
+ machine — that `(outer parallelism) x (hardware_concurrency)` thread count can exhaust
+ the OS thread/process limit (`pthread_create` failing with EAGAIN, i.e. "Resource
+ temporarily unavailable").
+
+ Pass 0 (the default) for "auto" (use the hardware concurrency); pass a small value
+ (e.g. 1) when you provide your own outer parallelism.  Process-wide and thread-safe.
+ */
+void set_max_solve_threads( const unsigned num_threads );
+
+/** The resolved per-solve thread count: the value given to #set_max_solve_threads
+ clamped to [1, hardware_concurrency], or the hardware concurrency when set to 0.
+ Always >= 1.
+ */
+unsigned max_solve_threads();
+
 /** Number of empirical-correction basis coefficients (replaces the Hoerl b,c) - kept at 2 so the
  physical-model parameter-block layout is identical for every correction type. */
 constexpr int ns_num_basis_correction_terms = 2;

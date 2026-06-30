@@ -137,12 +137,6 @@ namespace
 
 using namespace RelActCalcAutoImp;
 
-/** Backing store for RelActCalcAuto::set_max_solve_threads(); 0 == "auto".
- See RelActCalcAuto::max_solve_threads() for the resolved value used to size the
- per-solve ROI thread-pool and Ceres' thread count.
- */
-std::atomic<unsigned> sm_max_solve_threads{ 0 };
-
 
 void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
 {
@@ -2282,7 +2276,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_aged_gammas_cache{},
   m_free_peak_area_multiples{},
   m_solution_finished( false ),
-  m_pool{ RelActCalcAuto::max_solve_threads() },
+  m_pool{ RelActCalc::max_solve_threads() },
   m_cancel_calc( cancel_calc ),
   m_ncalls( 0 ),
   m_nanoseconds_spent_in_eval( size_t(0) )
@@ -5834,7 +5828,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // Setting ceres_options.num_threads >1 doesnt seem to do much (any?) good.
     // Capped via max_solve_threads() so concurrent solves (e.g. the GA) don't
     // multiply into an unbounded thread count - see set_max_solve_threads().
-    ceres_options.num_threads = static_cast<int>( RelActCalcAuto::max_solve_threads() );
+    ceres_options.num_threads = static_cast<int>( RelActCalc::max_solve_threads() );
 
     cost_functor->m_solution_finished = false;
 
@@ -10986,7 +10980,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const RelActCalcAutoImp::CachedEnergyCalSplines<double> deviation_splines = compute_energy_cal_splines( x );
     
     // `computed_peaks` will include free-floating peaks
-    const bool multithread = (RelActCalcAuto::max_solve_threads() > 1);
+    const bool multithread = (RelActCalc::max_solve_threads() > 1);
     RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, deviation_splines, multithread );
 
     // Compute uncertainties if covariance is provided and valid
@@ -11231,7 +11225,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // Only fan out within a ROI when we're allowed >1 thread; when solves run
     // concurrently (the GA), max_solve_threads() is 1 and this stays single-
     // threaded to avoid oversubscribing / exhausting OS threads.
-    const bool multhread_each_roi = (RelActCalcAuto::max_solve_threads() > 1)
+    const bool multhread_each_roi = (RelActCalc::max_solve_threads() > 1)
                                     && (m_energy_ranges.size() < 6);
     
     // Calling `m_pool.join()` puts the threadpool in a state where it will no longer work,
@@ -11500,17 +11494,6 @@ NucInputGamma::NucInputGamma( const RelActCalcAuto::NucInputInfo &info, const Re
 
 namespace RelActCalcAuto
 {
-void set_max_solve_threads( const unsigned num_threads )
-{
-  sm_max_solve_threads.store( num_threads );
-}
-
-unsigned max_solve_threads()
-{
-  const unsigned hw = std::max( 1u, std::thread::hardware_concurrency() );
-  const unsigned cap = sm_max_solve_threads.load();
-  return cap ? std::min( cap, hw ) : hw;
-}
 
 const SandiaDecay::Nuclide *nuclide( const SrcVariant &src )
 {
