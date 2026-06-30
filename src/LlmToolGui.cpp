@@ -340,7 +340,7 @@ void LlmToolGui::initializeUI()
   // Create menu icon for conversation-level actions (positioned in upper-right via CSS)
   m_menuIcon = new WPushButton( scrollWrapper );
   m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn LlmMenuIcon" );
-  m_menuIcon->clicked().preventPropagation();
+  // Note: deliberately do NOT preventPropagation() here (doing this lets menu open, but not close when you click the button).
 
   // Create popup menu
   PopupDivMenu *menu = new PopupDivMenu( m_menuIcon, PopupDivMenu::TransientMenu );
