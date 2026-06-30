@@ -2550,6 +2550,44 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   }
 
   //cout << "Registered " << m_tools.size() << " default tools" << endl;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Developer check: every tool an agent's state machine lists in <SuggestedTools> must actually
+  // be available to that agent.  Catches drift between the llm_agent_*.xml state definitions and
+  // the <AvailableFor> declarations in llm_tools_config.xml (e.g. a state that suggests a tool the
+  // agent cannot call - a mistake that otherwise only surfaces as a failed tool call mid-run).
+  for( const LlmConfig::AgentConfig &agent : config.agents )
+  {
+    if( !agent.state_machine )
+      continue;
+
+    const std::map<std::string, const SharedTool*> agentTools = getToolsForAgent( agent.type );
+
+    for( const std::pair<const std::string, AgentStateMachine::StateDefinition> &state_entry
+           : agent.state_machine->allStates() )
+    {
+      const AgentStateMachine::StateDefinition &state = state_entry.second;
+      for( const std::string &tool_name : state.suggested_tools )
+      {
+        // get_spectrum_image / get_time_chart_image are config-available to all agents, but are
+        // gated out of getToolsForAgent() when the active model lacks image support; accept them
+        // as long as they exist in the registry so this check does not depend on the model.
+        const bool image_tool = (tool_name == "get_spectrum_image")
+                                 || (tool_name == "get_time_chart_image");
+        const bool available = (agentTools.find(tool_name) != end(agentTools))
+                               || (image_tool && (m_tools.find(tool_name) != end(m_tools)));
+        if( !available )
+        {
+          cerr << "Error: agent '" << agentTypeToString(agent.type) << "' state '" << state.name
+               << "' suggests tool '" << tool_name << "' that is not available to it - either the"
+                  " tool name is wrong, or the agent is missing from that tool's <AvailableFor> in"
+                  " llm_tools_config.xml." << endl;
+          assert( 0 && "Agent state suggests a tool not available to that agent (see stderr)" );
+        }
+      }//for( const string &tool_name : state.suggested_tools )
+    }//for( loop over states in this agent's state machine )
+  }//for( loop over agents )
+#endif // PERFORM_DEVELOPER_CHECKS
 }
 
 const std::map<std::string, SharedTool>& ToolRegistry::getTools() const {

@@ -70,8 +70,8 @@
     <ApiProvider active="true">
       <ApiEndpoint>https://api.nnsa.asksage.ai/server/openai/v1/chat/completions</ApiEndpoint>
       <BearerToken>...</BearerToken>
-      <Model active="true" supportsImages="true">
-        <Name reasoning="high">gpt-5-mini</Name>
+      <Model active="true" supportsImages="true" reasoning="high">
+        <Name>gpt-5-mini</Name>
         <MaxTokens>62565</MaxTokens>
         <ContextLengthLimit>131072</ContextLengthLimit>
       </Model>
@@ -87,7 +87,7 @@
       <ApiEndpoint>https://generativelanguage.googleapis.com/v1beta/openai/chat/completions</ApiEndpoint>
       <BearerToken>...</BearerToken>
       <Model active="false" supportsImages="true" reasoning="high" requireToolInStateMachine="true">
-        <Name>gemini-3.5-flash</Name>. <!-- 1M tokens: Input: $1.50, Output: $9.00, Cache: $0.15 -->
+        <Name>gemini-3.5-flash</Name> <!-- 1M tokens: Input: $1.50, Output: $9.00, Cache: $0.15 -->
         <ContextLengthLimit>131072</ContextLengthLimit>
       </Model>
       <Model active="true" supportsImages="true" reasoning="high" requireToolInStateMachine="true">
@@ -104,7 +104,7 @@
       -->
       <BearerToken>...</BearerToken>
       <Model active="false" supportsImages="true" reasoning="true" requireToolInStateMachine="true">
-        <Name>google/gemini-3.5-flash</Name>. <!-- 1M tokens: Input: $1.50, Output: $9.00, Cache: $0.15 -->
+        <Name>google/gemini-3.5-flash</Name> <!-- 1M tokens: Input: $1.50, Output: $9.00, Cache: $0.15 -->
         <ContextLengthLimit>131072</ContextLengthLimit>
       </Model>
       <Model active="true" supportsImages="true" reasoning="true" requireToolInStateMachine="true">

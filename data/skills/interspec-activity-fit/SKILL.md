@@ -77,7 +77,7 @@ Fully specified fit, does not modify GUI state. Best for:
 | Point source, nothing specific | Spherical |
 | Pipe, cylinder, rod | CylinderSideOn or CylinderEndOn |
 | Box, plate, rectangular | Rectangular |
-| Ground/surface contamination | CylinderEndOn (thin Air shielding with trace source, large radius ~30m) |
+| Ground/surface contamination | CylinderEndOn (~1 cm Air shielding with trace source, large radius ~100m) |
 
 ### Shielding Configuration
 
@@ -127,8 +127,8 @@ Model surface or ground contamination as a thin disk of Air with a trace source,
   "geometry": "CylinderEndOn",
   "shielding": [{
     "material": "Air",
-    "length": "0.5 mm",
-    "radius": "30 m",
+    "length": "1 cm",
+    "radius": "100 m",
     "trace_sources": [{
       "nuclide": "Cs137",
       "activity": "1 Bq/cm3",
@@ -138,7 +138,7 @@ Model surface or ground contamination as a thin disk of Air with a trace source,
 }
 ```
 
-The thin length (0.5 mm) makes it effectively a surface source. The large radius (30 m) models a wide-area contamination. Adjust radius to match the actual contaminated area (if known), or make large enough that the entire contributing area is effectively captured.
+The thin length (1 cm) makes it effectively a surface source. The large radius (100 m) models a wide-area contamination. Adjust radius to match the actual contaminated area (if known), or make large enough that the entire contributing area is effectively captured.
 
 ## Peak Selection
 
@@ -206,7 +206,7 @@ Provide:
 - **Simple point source**: `geometry: Spherical`, no shielding
 - **Shielded source**: Add shielding layers, fit thickness if unknown
 - **Contaminated pipe**: `CylinderSideOn` geometry with trace source in material
-- **Ground contamination**: `CylinderEndOn`, thin Air layer with trace source, radius ~30 m
+- **Ground contamination**: `CylinderEndOn`, ~1 cm Air layer with trace source, radius ~100 m
 - **Multiple nuclides**: The fit supports multiple nuclides simultaneously
 
 ## Error Handling

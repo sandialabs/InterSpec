@@ -71,7 +71,7 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 * Select preset based on material type and peak distribution:
 
 **For Plutonium isotopics:**
-  * **HPGe Pu (120-420 KeV).xml** - Low-energy region, good when low-energy peaks are clean
+  * **HPGe Pu (120-420 keV).xml** - Low-energy region, good when low-energy peaks are clean
   * **HPGe Pu (120-780 keV).xml** - Wide energy range, most comprehensive, RECOMMENDED DEFAULT
   * **HPGe Pu (610-775 keV).xml** - High-energy only, use when Am-241 interference severe at 59.5 keV
 
@@ -245,7 +245,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
           <Tool>list_isotopics_presets</Tool>
           <Tool>load_isotopics_preset</Tool>
         </SuggestedTools>
-        <PromptGuidance>For Pu: Choose from 'HPGe Pu (120-780 keV).xml' (default), 'HPGe Pu (120-420 KeV).xml' (low-energy), or 'HPGe Pu (610-775 keV).xml' (high-energy if Am-241 severe). For U: Use 'HPGe U (120-1001 keV).xml'. Use list_isotopics_presets to see all available presets. Load chosen preset with load_isotopics_preset. Document choice and rationale. Transition to VALIDATE_CONFIGURATION.</PromptGuidance>
+        <PromptGuidance>For Pu: Choose from 'HPGe Pu (120-780 keV).xml' (default), 'HPGe Pu (120-420 keV).xml' (low-energy), or 'HPGe Pu (610-775 keV).xml' (high-energy if Am-241 severe). For U: Use 'HPGe U (120-1001 keV).xml'. Use list_isotopics_presets to see all available presets. Load chosen preset with load_isotopics_preset. Document choice and rationale. Transition to VALIDATE_CONFIGURATION.</PromptGuidance>
       </State>
 
       <State name="VALIDATE_CONFIGURATION">

@@ -64,7 +64,7 @@ You are an activity and shielding fitting specialist for InterSpec. Your task is
 * **Cylindrical geometry:** User says "pipe", "cylinder", "rod" - use CylinderSideOn or CylinderEndOn
 * **Trace sources:** User says "contaminated", "distributed", "volumetric" - add trace sources to shielding
 * **Multiple shielding layers:** User mentions multiple materials - add layers from innermost to outermost
-* **Ground or surface contamination:** Unless a geometry is explicitly given, model surface contamination using the CylinderEndOn geometry, with a thin (`length` of ~5 mm) "Air" shielding that has a trace source of the nuclide of interest - and unless dimension is given, make the `radius` 30 meters.
+* **Ground or surface contamination:** Unless a geometry is explicitly given, model surface contamination using the CylinderEndOn geometry, with a thin (`length` of ~1 cm) "Air" shielding that has a trace source of the nuclide of interest - and unless a dimension is given, make the `radius` 100 meters (do not fit these dimensions). Set the source-to-detector `distance` to the detector height plus half the air-layer thickness (e.g. 100.5 cm for a 1 m height).
 
 ### 4. **Handle Peak Selection**
 
@@ -145,7 +145,7 @@ Before returning final results, call the `close_activity_shielding_display` to c
 * **Contaminated pipe:** Use `CylinderSideOn` geometry with trace source
 * **Add shielding to existing fit:** Use `modify_shielding_source_config` then `activity_fit` with `mode: from_app_state`
 * **Multiple nuclides:** Fit supports multiple nuclides simultaneously
-* **Surface or ground contamination:** use CylinderEndOn geometry with a thin (`length` of ~5 mm) air shielding with trace source, and a large radius (`radius` ~30 meters)
+* **Surface or ground contamination:** use CylinderEndOn geometry with a thin (`length` of ~1 cm) air shielding with trace source, and a large radius (`radius` ~100 meters)
 
 ## **Error Handling**
 

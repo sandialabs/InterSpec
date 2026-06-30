@@ -562,7 +562,7 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
   </Tool>
 
   <Tool name="sources_with_primary_gammas_in_energy_range">
-    <Description>Get the commonly encountered field nuclides, x-ray elements, or reactions with primary gammas in the specified energy range.</Description>
+    <Description>Get the commonly encountered field nuclides, x-ray elements, or reactions with primary gammas in the specified energy range. This is a nuclear-data catalog lookup that does NOT consider the loaded spectrum; to instead rank candidate sources against the actual spectrum (peak heights, detector response) when identifying an observed peak, use the 'search_sources_by_energy' tool.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -580,7 +580,7 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
   </Tool>
 
   <Tool name="sources_with_primary_gammas_near_energy">
-    <Description>Get the commonly encountered field nuclides, x-ray elements, or reactions with primary gammas near the specified energy.</Description>
+    <Description>Get the commonly encountered field nuclides, x-ray elements, or reactions with primary gammas near the specified energy. This is a nuclear-data catalog lookup that does NOT consider the loaded spectrum; to instead rank candidate sources against the actual spectrum when identifying an observed peak, use the 'search_sources_by_energy' tool.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -592,7 +592,12 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
       "required": ["energy"]
     }</ParametersSchema>
   </Tool>
-<!--
+
+  <!-- The two tools below are only registered when the InterSpec build flag
+       INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO (see InterSpec/LlmToolRegistry.h) is 0.
+       By default it is 1, and this same information is returned by source_info instead.
+       Kept here, commented out, as the definitions to re-enable alongside that build flag. -->
+  <!--
   <Tool name="sources_associated_with_source">
     <Description>Gets other sources (nuclides, reactions, x-rays) that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source.  You you should check for these associated sources being present or not when the specified source is observed.</Description>
     <ParametersSchema>{
@@ -620,7 +625,7 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
       "required": ["source"]
     }</ParametersSchema>
   </Tool>
--->
+  -->
 
   <Tool name="source_info">
     <Description>Gets relevant information about the specified source (nuclide, x-ray element, reaction), such as half-life, decay modes, analyst notes (such as when the source is used/seen, typical activity ranges of nuclides, etc.), associated sources (i.e. sources that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source - you should check for these associated sources being present or not when the specified source is observed), source categories (medical, NORM, industrial, etc), and other nuclear data.</Description>
@@ -789,7 +794,8 @@ The 'profile_score' metric (larger = better match) is the best indicator of fit 
 
 Further investigation of top returned candidates is required to make sure they match the spectrum (e.g., the spectrum is not missing a peak it should have from that source, or the peaks in the spectrum have expected relative amplitudes, etc.)</Description>
 <Description role="NuclideId">Your primary identification tool. Search for candidate nuclides by gamma energy. Use extensively with single-energy searches. The profile_score metric (higher=better) accounts for peak heights and detector response. Prefer single-energy searches - only use 2-3 energies if desperately needed.</Description>
-<AvailableFor><Agent>MainAgent</Agent><Agent>NuclideId</Agent><Agent>McpServer</Agent></AvailableFor>
+<Description role="EnergyCalibration">Search for radiation sources by gamma energy, ranked against the loaded spectrum (profile_score, higher = better). Use during calibration-peak validation: search at the detected peak's mean energy to check whether a source other than K-40 (1460.83 keV) or Th-232/Tl-208 (2614.51 keV) better explains the peak - e.g. a confuser such as Eu-152 near 1460 keV or Co-56 near 2614 keV that would also produce other lines not seen in the spectrum. Prefer single-energy searches.</Description>
+<AvailableFor><Agent>MainAgent</Agent><Agent>NuclideId</Agent><Agent>EnergyCalibration</Agent><Agent>McpServer</Agent></AvailableFor>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1367,109 +1373,6 @@ Further investigation of top returned candidates is required to make sure they m
     </AvailableFor>
   </Tool>
 
-<!-- 
-  <Tool name="modify_shielding_source_config">
-  <Description>Modify the activity/shielding fit configuration in the application state. Can add/remove shielding layers, modify source properties, set distance, set geometry, set fitting options, and add, update, or remove sources from the fit problem. Source modifications include setting source type, assigning or removing a shielding-layer association for `Trace` or `Intrinsic` sources, setting source age, setting whether age should be fit, and for non-`Intrinsic` sources setting source activity and whether activity should be fit. Changes are saved to the application state and updated in the GUI if open. If a dimension is specified when adding shielding (e.g., '0.5 inches'), it is fixed; if omitted, it will be fit. To include a nuclide in the fit configuration, at least one peak for that nuclide must first be marked for activity/shielding fitting using `mark_peaks_for_activity_fit` or the equivalent peak edit option. A source may be associated with at most one shielding layer as a `Trace` or `Intrinsic` source at a time; if reassigned, the previous shielding association is removed first. Setting a source to `Point` removes any previous `Trace` or `Intrinsic` shielding-layer association while keeping the source in the fit problem. To remove a source from the fit problem, mark all peaks for that source as not used for activity/shielding fitting.</Description>
-  <ParametersSchema>{
-    "type": "object",
-    "properties": {
-      "operation": {
-        "type": "string",
-        "enum": ["add_shielding", "remove_shielding", "modify_source", "set_distance", "set_geometry", "set_fit_options"],
-        "description": "Operation to perform on the configuration. `modify_source` modifies properties of a source in the fit problem, including source type, shielding-layer assignment for `Trace` or `Intrinsic` sources, activity and whether activity should be fit for non-`Intrinsic` sources, age, and whether age should be fit. To remove a source from the fit problem entirely, use `mark_peaks_for_activity_fit` or equivalent peak editing to mark all peaks of that nuclide as not used for fitting."
-      },
-      "material": {
-        "type": "string",
-        "description": "For `add_shielding`: material name or formula. For `remove_shielding`: material name of the shielding layer to remove. For `modify_source` when `source_type` is `Trace` or `Intrinsic`: material name of the shielding layer to assign the source to. Use either `material` or `index` to identify the shielding layer. If `source_type` is `Point`, `material` is ignored."
-      },
-      "index": {
-        "type": "integer",
-        "description": "For `remove_shielding`: zero-based index of the shielding layer to remove. For `modify_source` when `source_type` is `Trace` or `Intrinsic`: zero-based index of the shielding layer to assign the source to. Use either `index` or `material` to identify the shielding layer. If `source_type` is `Point`, `index` is ignored."
-      },
-      "radial_thickness": {
-        "type": "string",
-        "description": "For `add_shielding` with Spherical geometry: thickness with units. If specified, thickness is fixed; if omitted, it will be fit."
-      },
-      "fit_thickness": {
-        "type": "boolean",
-        "description": "For `add_shielding`: explicit control over whether to fit thickness."
-      },
-      "radius": {
-        "type": "string",
-        "description": "For `add_shielding` with Cylinder geometry: radius with units."
-      },
-      "fit_radius": {
-        "type": "boolean",
-        "description": "For `add_shielding`: whether to fit cylinder radius."
-      },
-      "length": {
-        "type": "string",
-        "description": "For `add_shielding` with Cylinder geometry: length with units."
-      },
-      "fit_length": {
-        "type": "boolean",
-        "description": "For `add_shielding`: whether to fit cylinder length."
-      },
-      "geometry": {
-        "type": "string",
-        "enum": ["Spherical", "CylinderSideOn", "CylinderEndOn", "Rectangular"],
-        "description": "For `set_geometry`: new geometry type. For `add_shielding`: geometry for the layer."
-      },
-      "distance": {
-        "type": "string",
-        "description": "For `set_distance`: new source-to-detector distance with units (e.g., '100 cm', '3 ft')."
-      },
-      "nuclide": {
-        "type": "string",
-        "description": "For `modify_source`: nuclide symbol. The nuclide must have at least one peak marked for use in activity/shielding fitting in order to participate in the fit problem."
-      },
-      "activity": {
-        "type": "string",
-        "description": "For `modify_source`: source activity with units (e.g., '10 uCi'). Only valid for `Point` or `Trace` sources. If omitted, activity is unchanged."
-      },
-      "age": {
-        "type": "string",
-        "description": "For `modify_source`: nuclide age with units (e.g., '20 years'). If omitted, age is unchanged."
-      },
-      "fit_activity": {
-        "type": "boolean",
-        "description": "For `modify_source`: whether the source activity should be fit. Only valid for `Point` or `Trace` sources. If omitted, the current setting is unchanged."
-      },
-      "fit_age": {
-        "type": "boolean",
-        "description": "For `modify_source`: whether the source age should be fit. If omitted, the current setting is unchanged."
-      },
-      "source_type": {
-        "type": "string",
-        "enum": ["Point", "Trace", "Intrinsic"],
-        "description": "For `modify_source`: source type. If omitted, the source type is unchanged. If set to `Trace` or `Intrinsic`, you must specify either `material` or `index` to identify the shielding layer, for example `{\"operation\":\"modify_source\", \"nuclide\":\"Cs137\", \"source_type\":\"Trace\", \"material\":\"air\"}` or `{\"operation\":\"modify_source\", \"nuclide\":\"Cs137\", \"source_type\":\"Trace\", \"index\":0}`. A source may be associated with at most one shielding layer as a `Trace` or `Intrinsic` source at a time; if it was previously assigned to another shielding layer, it will be removed from that layer before being assigned to the requested one. Setting `source_type` to `Point` removes any previous `Trace` or `Intrinsic` shielding-layer assignment while keeping the source in the fit problem; when `source_type` is `Point`, any supplied `material` or `index` is ignored."
-      },
-      "attenuate_for_air": {
-        "type": "boolean",
-        "description": "For `set_fit_options`: whether to include air attenuation in the model. Default: true."
-      },
-      "multiple_nucs_contribute_to_peaks": {
-        "type": "boolean",
-        "description": "For `set_fit_options`: allow multiple nuclides to contribute to the same peak. Default: true."
-      },
-      "background_peak_subtract": {
-        "type": "boolean",
-        "description": "For `set_fit_options`: whether to subtract background peak contributions. Default: true."
-      },
-      "same_age_isotopes": {
-        "type": "boolean",
-        "description": "For `set_fit_options`: isotopes of the same element share the same age (e.g., U235 and U238). Default: true."
-      }
-    },
-    "required": ["operation"]
-  }</ParametersSchema>
-  <AvailableFor>
-    <Agent>ActivityFit</Agent>
-    <Agent>InSitu</Agent>
-    <Agent>McpServer</Agent>
-  </AvailableFor>
-</Tool>
--->
 <Tool name="modify_shielding_source_config">
   <Description>Modify the activity/shielding fit configuration in the application state. Can add/remove shielding layers, modify source properties, set distance, set geometry, set fitting options, and add, update, or remove sources from the fit problem. Source modifications include setting source type, assigning or removing a shielding-layer association for `Trace` or `Intrinsic` sources, setting source age, setting whether age should be fit, and for non-`Intrinsic` sources setting source activity and whether activity should be fit. Changes are saved to the application state and updated in the GUI if open. If a dimension is specified when adding shielding (e.g., '0.5 inches'), it is fixed; if omitted, it will be fit. To include a nuclide in the fit configuration, at least one peak for that nuclide must first be marked for activity/shielding fitting using `mark_peaks_for_activity_fit` or the equivalent peak edit option. A source may be associated with at most one shielding layer as a `Trace` or `Intrinsic` source at a time; if reassigned, the previous shielding association is removed first. Setting a source to `Point` removes any previous `Trace` or `Intrinsic` shielding-layer association while keeping the source in the fit problem. To remove a source from the fit problem, mark all peaks for that source as not used for activity/shielding fitting.</Description>
   <ParametersSchema>{
@@ -1841,6 +1744,7 @@ Further investigation of top returned candidates is required to make sure they m
       <Agent>Isotopics</Agent>
       <Agent>EnergyCalibration</Agent>
       <Agent>InSitu</Agent>
+      <Agent>McpServer</Agent>
     </AvailableFor>
   </Tool>
 
@@ -1863,6 +1767,7 @@ Further investigation of top returned candidates is required to make sure they m
       <Agent>Isotopics</Agent>
       <Agent>EnergyCalibration</Agent>
       <Agent>InSitu</Agent>
+      <Agent>McpServer</Agent>
     </AvailableFor>
   </Tool>
 
@@ -2581,6 +2486,7 @@ Returns information about:
     }</ParametersSchema>
     <AvailableFor>
       <Agent>EnergyCalibration</Agent>
+      <Agent>McpServer</Agent>
     </AvailableFor>
   </Tool>
 
@@ -2598,6 +2504,7 @@ Returns information about:
     }</ParametersSchema>
     <AvailableFor>
       <Agent>EnergyCalibration</Agent>
+      <Agent>McpServer</Agent>
     </AvailableFor>
   </Tool>
 

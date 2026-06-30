@@ -15,7 +15,6 @@ For the supplied context to the agent, you may only provide positively identifie
       <Agent>NuclideId</Agent>
       <Agent>ActivityFit</Agent>
       <Agent>Isotopics</Agent>
-      <Agent>DeepResearch</Agent>
     </AvailableFor>
     <SystemPrompt><![CDATA[## Role
 You are a deep research sub-agent for InterSpec which is being used for gamma spectral analysis of nuclear radiation.

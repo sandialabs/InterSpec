@@ -49,10 +49,10 @@ Adjust the energy calibration of loaded spectra so peak positions match their kn
 
 Start with background spectrum if present, otherwise foreground.
 
-1. Check existing analysis peaks (`get_analysis_peaks`) for peaks near 1460.8 keV (K-40) or 2614.5 keV (Th-232) with correct source assignment.
+1. Check existing analysis peaks (`get_analysis_peaks`) for peaks near 1460.83 keV (K-40) or 2614.51 keV (Th-232) with correct source assignment.
 2. If no suitable analysis peak exists, use `get_detected_peaks` to find candidates. Search within ~15 keV of expected energy (calibration may be off).
 3. If using a NORM peak, pick **one peak** for gain-only fit:
-   - Prefer Th-232 at 2614.5 keV if `numSigma > 12` (higher energy = better gain constraint)
+   - Prefer Th-232 at 2614.51 keV if `numSigma > 12` (higher energy = better gain constraint)
    - Otherwise use whichever peak (K-40 or Th-232) has larger `numSigma`
    - If user specified a different peak (e.g., Cs-137 at 661.7 keV), use that instead
 4. If the chosen peak is not already an analysis peak, add it: `add_analysis_peak({energy: <peak_energy>, source: "K40", specType: "<current_spectrum>"})`. Verify the correct gamma was assigned by checking `source.photonEnergy` in the result.

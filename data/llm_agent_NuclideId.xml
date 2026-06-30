@@ -136,7 +136,7 @@ Transition to INITIAL_SOURCE_PEAKS_ASSESSMENT.</PromptGuidance>
 
 
       <State name="INITIAL_SOURCE_PEAKS_ASSESSMENT">
-          <Description></Description>
+          <Description>Take an initial inventory of the top unidentified foreground peaks to scope the identification work before investigating them individually.</Description>
           <AllowedTransitions>
             <Transition>WORK_ON_NEXT_UNIDENTIFIED_PEAK</Transition>
           </AllowedTransitions>
@@ -293,7 +293,7 @@ If the peaks for a source were fit using `add_analysis_peaks_for_source`, transi
 - If there are many peaks (e.g., 6+), increase the order to better capture the efficiency curve (e.g., 6 peaks use order 4).
 - If the source has a peak near 511 keV and that line is **not** among the top ~3 gamma lines for the source, exclude it via `exclude_peak_energies` (provided there are at least a couple other peaks). The 511 keV annihilation peak from pair-production commonly interferes.
 - If any source peaks potentially overlap with peaks in the background spectrum, set `background_subtract` to `true`.
-- Use an "additional_uncertainty" of 0.1 to help make sure high-statistics peaks that dont have the correct skew model dont make results bad, even though the nuclide ID is good.
+- Use an "additional_uncertainty" of "TenPercent" to help make sure high-statistics peaks that dont have the correct skew model dont make results bad, even though the nuclide ID is good.
 
 **Interpreting results:**
 - **Ignore** the `chi2` and `chi2_per_dof` fields — these are not reliable indicators of result quality. Instead, evaluate the `residual_sigma` of each individual peak.
@@ -419,7 +419,7 @@ After completing all checks, note any non-peak signatures found and transition t
           <EphemeralMessageTxt>Checking for non-peak radiation signatures (neutrons, alphas, betas).</EphemeralMessageTxt>
         </State>
         <State name="RECONSIDER_SOURCES">
-          <Description>.</Description>
+          <Description>Review all source identifications together for overall physical and contextual consistency; reassign or remove peaks whose attribution does not fit the whole picture.</Description>
           <AllowedTransitions>
             <Transition>FINALIZE_RESULTS</Transition>
             <Transition>INVESTIGATE_PEAK</Transition>
@@ -439,7 +439,7 @@ General points to consider:
 - Is it possible that a peak was assigned to descendant nuclide, when a parent was more appropriate in context of other IDs? Ex., Am241 is identified, but also Pu239, then the Am241 should probably be Pu241 (if no Pu isotopes were identified, then Am241 probably would have been the better ID).
 - Is a nuclide trans-plutonic (higher atomic number) without strong evidence?  Ex., Es247 may match the peaks, but is exceedingly unlikely to be the subject of a measurement unless the measurement context explicitly specifies this.
 - Is a source nuclide half-life comparable or shorter than the measurement dwell time?  It is unlikely the measurement would be a time interval comparable to the measurement time, so the source is very unlikely, unless the measurement context explicitly indicates this.
-- Are there multiple nuclides identified, where a single nuclide would better explain all the peaks?  Ex., Tl x-rays are fit, along with Hg203 (for 279 keV peak) and Se75 (for 410 keV peak) - but Pb203 would explain all of these peaks, so could be a better fit (with relative efficeincy analysis confirming).
+- Are there multiple nuclides identified, where a single nuclide would better explain all the peaks?  Ex., Tl x-rays are fit, along with Hg203 (for 279 keV peak) and Se75 (for 410 keV peak) - but Pb203 would explain all of these peaks, so could be a better fit (with relative efficiency analysis confirming).
 - Check if the sources associated with the identified sources are possibly a better match (you can compare relative efficiency analysis by using peak setpoints, re-assigning peak IDs, and then restoring from the setpoint).
 
 If one or more peaks could use having their sources modified and you are confident in this source re-assignment, use the `edit_analysis_peak( {"energy": peak-mean, "source": "new-source"} )` tool-call to make this re-assignment.

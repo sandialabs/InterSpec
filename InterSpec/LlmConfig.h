@@ -115,6 +115,9 @@ public:
   bool hasState( const std::string &state_name ) const;
   bool isFinalState( const std::string &state_name ) const;
 
+  /** Access all state definitions (state name -> definition); used for config validation. */
+  const std::map<std::string, StateDefinition>& allStates() const { return m_states; }
+
   // Transition validation
   bool canTransitionTo( const std::string &new_state ) const;
 
