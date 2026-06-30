@@ -10237,12 +10237,11 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
 
 #if( USE_LLM_INTERFACE )
-  if( LlmToolGui::llmToolIsConfigured() )
-  {
-    m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
-    HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
-    m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
-  }//if( LlmToolGui::llmToolIsConfigured() )
+  // Always offer the LLM Assistant; if it is not yet configured, opening it shows a panel with a
+  // button to configure the provider/model (see LlmToolGui).
+  m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
+  HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
+  m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
 #endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
@@ -13713,9 +13712,8 @@ void InterSpec::displayBackgroundData()
 #if( USE_LLM_INTERFACE )
 void InterSpec::createLlmTool()
 {
-#if( !BUILD_AS_UNIT_TEST_SUITE )
-  assert( LlmToolGui::llmToolIsConfigured() );
-#endif
+  // Note: the tool may be opened even when not configured - LlmToolGui then shows a "not configured"
+  // panel with a button to open the provider settings window.
 
   if( m_llmTool )
     return;

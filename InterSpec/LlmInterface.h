@@ -133,6 +133,35 @@ public:
    @throws std::logic_error if config is null or LLM API is not enabled
    */
   void resetWithConfig( const std::shared_ptr<const LlmConfig> &config );
+
+  /** How a config change relates to the active provider, used to decide whether the existing
+   conversation can be carried over to the new config (see applyConfigPreservingHistory). */
+  enum class ConfigChange
+  {
+    SameModel,     ///< Same wire format and same active model name: fully compatible.
+    ModelChanged,  ///< Same wire format, different active model: history is kept but model-specific
+                   ///<   reasoning blocks must not be replayed (strip them).
+    FormatChanged  ///< Different wire format: history cannot be reliably carried over.
+  };//enum class ConfigChange
+
+  /** Classify how `newCfg` differs from `oldCfg` for the active provider/model.  Compares the
+   resolved wire format first (any difference -> FormatChanged), then the active model name.
+   Defaults to FormatChanged on any error (the safe, "reset" choice). */
+  static ConfigChange classifyConfigChange( const LlmConfig &oldCfg, const LlmConfig &newCfg );
+
+  /** Apply a new config while KEEPING the existing conversation history.
+
+   Swaps the config, tool registry, protocol, and debug logging (like resetWithConfig), but does
+   not clear `m_history`/`m_currentConversation`.  Any in-flight request is finalized.  When
+   `stripReasoning` is true, the model-specific reasoning state (thinking signatures,
+   reasoning_content, reasoning_details) is cleared from every stored turn so it is not replayed to
+   a model that did not produce it; the human-readable thinking text is kept for display.
+
+   @param config The new LLM configuration to use (same wire format as the current one).
+   @param stripReasoning Clear stored reasoning blocks from history (use when the model changed).
+   @throws std::logic_error if config is null or LLM API is not enabled
+   */
+  void applyConfigPreservingHistory( const std::shared_ptr<const LlmConfig> &config, bool stripReasoning );
   
   /** Signal emitted when a new response is received from the LLM */
   Wt::Signal<>& conversationFinished();
@@ -373,6 +402,14 @@ private:
           while this object is being torn down.
    */
   void failInFlightConversations( const std::string &reason, bool recordErrorTurn = true );
+
+  /** Clear the model-specific reasoning state (thinking signatures, reasoning_content,
+   reasoning_details) from every stored turn, so it is not replayed to a model that did not produce
+   it.  The human-readable thinking text (thinkingContent) is kept for display. */
+  void stripReasoningFromHistory();
+
+  /** (Re)point m_debug_stream/m_debug_file from m_config->llmApi.debug_file. */
+  void initDebugLoggingFromConfig();
 
   /** Send every conversation queued in m_summarizationPendingConvos (and clear the queue).  Called
    when a compaction request completes or fails so queued user messages are not stranded.

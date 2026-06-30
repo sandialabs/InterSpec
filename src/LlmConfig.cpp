@@ -559,138 +559,204 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
 }//LlmConfig::loadApiAndMcpConfigs( const std::string &llmConfigPath )
 
 
+std::string LlmConfig::toXmlString( const LlmConfig &config )
+{
+  rapidxml::xml_document<char> doc;
+
+  // Helper to append a documentation comment node to `parent`.  rapidxml stores the value pointer
+  // (it does not copy), so allocate the text in the document pool to guarantee its lifetime.
+  auto append_comment = [&doc]( rapidxml::xml_node<char> *parent, const char *text ){
+    parent->append_node( doc.allocate_node( rapidxml::node_comment, nullptr, doc.allocate_string(text) ) );
+  };
+
+  // XML declaration: <?xml version="1.0" encoding="UTF-8"?>
+  rapidxml::xml_node<char> *decl = doc.allocate_node( rapidxml::node_declaration );
+  decl->append_attribute( doc.allocate_attribute( "version", "1.0" ) );
+  decl->append_attribute( doc.allocate_attribute( "encoding", "UTF-8" ) );
+  doc.append_node( decl );
+
+  // Document-scope header explaining the file is GUI-managed.
+  append_comment( &doc,
+    " InterSpec LLM configuration.\n\n"
+    "     This file is read from InterSpec's writable user-data directory if present, otherwise from\n"
+    "     the static data directory.  It is rewritten by the \"LLM Provider Settings\" GUI; any\n"
+    "     hand-written comments or unrecognized elements you add will NOT be preserved the next time\n"
+    "     the GUI saves it.\n\n" );
+
+  // Create root node
+  rapidxml::xml_node<char>* root = doc.allocate_node(rapidxml::node_element, "LlmConfig");
+  doc.append_node(root);
+
+  XmlUtils::append_version_attrib( root, LlmConfig::sm_xmlSerializationVersion );
+
+  // LLM API settings
+  rapidxml::xml_node<char> *llmApi = doc.allocate_node( rapidxml::node_element, "LlmApi" );
+  root->append_node( llmApi );
+  XmlUtils::append_version_attrib( llmApi, LlmApi::sm_xmlSerializationVersion );
+  XmlUtils::append_bool_node( llmApi, "Enabled", config.llmApi.enabled );
+
+  // Documentation for the provider/model structure that follows.
+  append_comment( llmApi,
+    " Each <ApiProvider> groups an API endpoint, a bearer token, and one or more <Model> entries.\n"
+    "       Mark the provider and model to use with active=\"true\".  If several are active=\"true\", the\n"
+    "       first is used; if none are, the first is used.\n\n"
+    "       The optional apiFormat attribute on <ApiProvider> selects the wire protocol:\n"
+    "         openai_chat      - OpenAI Chat Completions (/v1/chat/completions) and OpenAI-compatible\n"
+    "                            servers (OpenRouter, Google OpenAI-compat, Ask Sage, local servers).  Default.\n"
+    "         openai_responses - the newer OpenAI Responses API (/v1/responses).\n"
+    "         anthropic        - the native Anthropic Messages API (/v1/messages); auth via x-api-key.\n"
+    "       If apiFormat is omitted it is auto-detected from the endpoint URL (api.anthropic.com or a\n"
+    "       path ending in /messages -> anthropic; ending in /responses -> openai_responses; else openai_chat). " );
+
+  append_comment( llmApi,
+    " <Model> attributes (all optional unless noted):\n"
+    "         active                    - \"true\" for the model to use within its provider.\n"
+    "         supportsImages            - \"true\" if the model accepts image input (enables get_spectrum_image).\n"
+    "         reasoning                 - \"true\"/\"false\" (OpenRouter-style) or \"low\"/\"medium\"/\"high\" (OpenAI effort).\n"
+    "         requireToolInStateMachine - \"true\" forces tool_choice=\"required\" in non-final state-machine states.\n"
+    "       <Model> child elements:\n"
+    "         <Name>               - required model identifier (e.g. gpt-5-mini).\n"
+    "         <MaxTokens>          - max output tokens (omit/0 = API default; REQUIRED by Anthropic).\n"
+    "         <ContextLengthLimit> - context window size (omit/0 = API default).\n"
+    "         <ModelTemperature>   - 0.0-2.0 (omit = API default); not supported by all models. " );
+
+  // Write ApiProvider elements
+  for( size_t pi = 0; pi < config.llmApi.providers.size(); ++pi )
+  {
+    const LlmApi::ApiProvider &prov = config.llmApi.providers[pi];
+    rapidxml::xml_node<char> *provNode = doc.allocate_node( rapidxml::node_element, "ApiProvider" );
+
+    if( pi == config.llmApi.activeProviderIndex )
+      provNode->append_attribute( doc.allocate_attribute( "active", "true" ) );
+
+    // Only emit apiFormat when explicitly set, so providers left on auto-detect round-trip as such.
+    if( prov.apiFormat.has_value() )
+      provNode->append_attribute( doc.allocate_attribute( "apiFormat",
+                                    LlmApi::apiFormatToString( prov.apiFormat.value() ) ) );
+
+    // Attach to the tree before appending child element nodes - XmlUtils::append_*_node() requires
+    // base_node->document() to be resolvable, which is only true once the node has a parent chain.
+    llmApi->append_node( provNode );
+
+    XmlUtils::append_string_node( provNode, "ApiEndpoint", prov.apiEndpoint );
+    XmlUtils::append_string_node( provNode, "BearerToken", prov.bearerToken );
+
+    for( size_t mi = 0; mi < prov.models.size(); ++mi )
+    {
+      const LlmApi::ModelInfo &m = prov.models[mi];
+      rapidxml::xml_node<char> *modelNode = doc.allocate_node( rapidxml::node_element, "Model" );
+
+      if( mi == prov.activeModelIndex )
+        modelNode->append_attribute( doc.allocate_attribute( "active", "true" ) );
+
+      if( m.supportsImages )
+        modelNode->append_attribute( doc.allocate_attribute( "supportsImages", "true" ) );
+
+      if( m.requireToolInStateMachine )
+        modelNode->append_attribute( doc.allocate_attribute( "requireToolInStateMachine", "true" ) );
+
+      // Write reasoning attribute
+      if( std::holds_alternative<bool>( m.reasoning ) )
+      {
+        if( std::get<bool>( m.reasoning ) )
+          modelNode->append_attribute( doc.allocate_attribute( "reasoning", "true" ) );
+      }
+      else if( std::holds_alternative<LlmApi::ReasoningEffort>( m.reasoning ) )
+      {
+        const LlmApi::ReasoningEffort effort = std::get<LlmApi::ReasoningEffort>( m.reasoning );
+        const char *effort_str = nullptr;
+        switch( effort )
+        {
+          case LlmApi::ReasoningEffort::low:    effort_str = "low";    break;
+          case LlmApi::ReasoningEffort::medium: effort_str = "medium"; break;
+          case LlmApi::ReasoningEffort::high:   effort_str = "high";   break;
+        }
+        if( effort_str )
+          modelNode->append_attribute( doc.allocate_attribute( "reasoning", effort_str ) );
+      }
+
+      // Attach to the tree before appending child element nodes (see note above).
+      provNode->append_node( modelNode );
+
+      XmlUtils::append_string_node( modelNode, "Name", m.name );
+
+      if( m.maxTokens > 0 )
+        XmlUtils::append_int_node( modelNode, "MaxTokens", m.maxTokens );
+
+      if( m.contextLengthLimit > 0 )
+        XmlUtils::append_int_node( modelNode, "ContextLengthLimit", m.contextLengthLimit );
+
+      if( m.temperature.has_value() )
+        XmlUtils::append_float_node( modelNode, "ModelTemperature", m.temperature.value() );
+    }// for each model
+  }// for each provider
+
+  // Optional <LlmApi> elements.  The GUI does not expose these, but they are preserved here so
+  // round-tripping the config through "LLM Provider Settings" never drops them.
+  append_comment( llmApi,
+    " Optional <LlmApi> elements:\n"
+    "         <DeepResearchUrl>        - HTTP endpoint for the DeepResearch sub-agent's query tool; empty disables it.\n"
+    "         <CompactionSystemPrompt> - overrides the default prompt used when summarizing old conversation history.\n"
+    "         <DebugFile>              - \"stdout\", \"stderr\", or a file path for verbose LLM debug logging; empty disables it. " );
+
+  if( !config.llmApi.deep_research_url.empty() )
+    XmlUtils::append_string_node( llmApi, "DeepResearchUrl", config.llmApi.deep_research_url );
+
+  if( !config.llmApi.compactionSystemPrompt.empty() )
+    XmlUtils::append_string_node( llmApi, "CompactionSystemPrompt", config.llmApi.compactionSystemPrompt );
+
+  if( !config.llmApi.debug_file.empty() )
+    XmlUtils::append_string_node( llmApi, "DebugFile", config.llmApi.debug_file );
+
+  // NOTE: Agents and tools are saved separately in their own files, not in llm_config.xml.
+
+  // MCP server settings
+  append_comment( root,
+    " MCP server settings: when enabled, InterSpec exposes itself as an MCP server at\n"
+    "       http://127.0.0.1:<port>/mcp-api (port = the InterSpec server port), so other applications\n"
+    "       can use InterSpec's tools.\n"
+    "         <Enabled>     - \"true\" to start the MCP server.\n"
+    "         <BearerToken> - token clients must supply; if empty, no auth is required.  You MUST change\n"
+    "                         it from \"INVALID-BEARER-TOKEN\" before enabling. " );
+
+  rapidxml::xml_node<char> *mcpServer = doc.allocate_node(rapidxml::node_element, "McpServer");
+  root->append_node(mcpServer);
+  XmlUtils::append_version_attrib( mcpServer, McpServer::sm_xmlSerializationVersion );
+  XmlUtils::append_bool_node(   mcpServer, "Enabled",     config.mcpServer.enabled );
+#if( MCP_ENABLE_AUTH )
+  XmlUtils::append_string_node( mcpServer, "BearerToken", config.mcpServer.bearerToken );
+#endif
+
+  std::string out;
+  rapidxml::print( std::back_inserter(out), doc, 0 );
+  return out;
+}//std::string LlmConfig::toXmlString( const LlmConfig &config )
+
+
 bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename )
 {
   try
   {
-    rapidxml::xml_document<char> doc;
-    
-    // Create root node
-    rapidxml::xml_node<char>* root = doc.allocate_node(rapidxml::node_element, "LlmConfig");
-    doc.append_node(root);
-    
-    XmlUtils::append_version_attrib( root, LlmConfig::sm_xmlSerializationVersion );
-    
-    // LLM API settings
-    rapidxml::xml_node<char> *llmApi = doc.allocate_node( rapidxml::node_element, "LlmApi" );
-    root->append_node( llmApi );
-    XmlUtils::append_version_attrib( llmApi, LlmApi::sm_xmlSerializationVersion );
-    XmlUtils::append_bool_node( llmApi, "Enabled", config.llmApi.enabled );
+    const std::string xml = toXmlString( config );
 
-    if( !config.llmApi.deep_research_url.empty() )
-      XmlUtils::append_string_node( llmApi, "DeepResearchUrl", config.llmApi.deep_research_url );
-
-    if( !config.llmApi.compactionSystemPrompt.empty() )
-      XmlUtils::append_string_node( llmApi, "CompactionSystemPrompt", config.llmApi.compactionSystemPrompt );
-
-    if( !config.llmApi.debug_file.empty() )
-      XmlUtils::append_string_node( llmApi, "DebugFile", config.llmApi.debug_file );
-
-    // Write ApiProvider elements
-    for( size_t pi = 0; pi < config.llmApi.providers.size(); ++pi )
-    {
-      const LlmApi::ApiProvider &prov = config.llmApi.providers[pi];
-      rapidxml::xml_node<char> *provNode = doc.allocate_node( rapidxml::node_element, "ApiProvider" );
-
-      if( pi == config.llmApi.activeProviderIndex )
-        provNode->append_attribute( doc.allocate_attribute( "active", "true" ) );
-
-      // Only emit apiFormat when explicitly set, so providers left on auto-detect round-trip as such.
-      if( prov.apiFormat.has_value() )
-        provNode->append_attribute( doc.allocate_attribute( "apiFormat",
-                                      LlmApi::apiFormatToString( prov.apiFormat.value() ) ) );
-
-      XmlUtils::append_string_node( provNode, "ApiEndpoint", prov.apiEndpoint );
-      XmlUtils::append_string_node( provNode, "BearerToken", prov.bearerToken );
-
-      for( size_t mi = 0; mi < prov.models.size(); ++mi )
-      {
-        const LlmApi::ModelInfo &m = prov.models[mi];
-        rapidxml::xml_node<char> *modelNode = doc.allocate_node( rapidxml::node_element, "Model" );
-
-        if( mi == prov.activeModelIndex )
-          modelNode->append_attribute( doc.allocate_attribute( "active", "true" ) );
-
-        if( m.supportsImages )
-          modelNode->append_attribute( doc.allocate_attribute( "supportsImages", "true" ) );
-
-        if( m.requireToolInStateMachine )
-          modelNode->append_attribute( doc.allocate_attribute( "requireToolInStateMachine", "true" ) );
-
-        // Write reasoning attribute
-        if( std::holds_alternative<bool>( m.reasoning ) )
-        {
-          if( std::get<bool>( m.reasoning ) )
-            modelNode->append_attribute( doc.allocate_attribute( "reasoning", "true" ) );
-        }
-        else if( std::holds_alternative<LlmApi::ReasoningEffort>( m.reasoning ) )
-        {
-          const LlmApi::ReasoningEffort effort = std::get<LlmApi::ReasoningEffort>( m.reasoning );
-          const char *effort_str = nullptr;
-          switch( effort )
-          {
-            case LlmApi::ReasoningEffort::low:    effort_str = "low";    break;
-            case LlmApi::ReasoningEffort::medium: effort_str = "medium"; break;
-            case LlmApi::ReasoningEffort::high:   effort_str = "high";   break;
-          }
-          if( effort_str )
-            modelNode->append_attribute( doc.allocate_attribute( "reasoning", effort_str ) );
-        }
-
-        XmlUtils::append_string_node( modelNode, "Name", m.name );
-
-        if( m.maxTokens > 0 )
-          XmlUtils::append_int_node( modelNode, "MaxTokens", m.maxTokens );
-
-        if( m.contextLengthLimit > 0 )
-          XmlUtils::append_int_node( modelNode, "ContextLengthLimit", m.contextLengthLimit );
-
-        if( m.temperature.has_value() )
-          XmlUtils::append_float_node( modelNode, "ModelTemperature", m.temperature.value() );
-
-        provNode->append_node( modelNode );
-      }// for each model
-
-      llmApi->append_node( provNode );
-    }// for each provider
-
-
-    // NOTE: Agents and tools are now saved separately in llm_agents.xml and llm_tools_config.xml,
-    // not in llm_config.xml
-
-
-    // MCP server settings
-    rapidxml::xml_node<char> *mcpServer = doc.allocate_node(rapidxml::node_element, "McpServer");
-    root->append_node(mcpServer);
-    XmlUtils::append_version_attrib( mcpServer, McpServer::sm_xmlSerializationVersion );
-    XmlUtils::append_bool_node(   mcpServer, "Enabled",     config.mcpServer.enabled );
-#if( MCP_ENABLE_AUTH )
-    XmlUtils::append_string_node( mcpServer, "BearerToken", config.mcpServer.bearerToken );
-#endif
-    
-    // Write to file
 #ifdef _WIN32
     const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(filename);
     std::ofstream file( woutcsv.c_str(), ios::binary | ios::out );
 #else
     std::ofstream file( filename.c_str(), ios::binary | ios::out);
 #endif
-    
+
     if( !file.is_open() )
       return false;
-    
-    //file << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-    file << doc;
-    
+
+    file.write( xml.data(), static_cast<std::streamsize>(xml.size()) );
+
     return file.good();
   }catch( const std::exception &e )
   {
     cout << "Failed to save config: " << e.what() << endl;
     return false;
   }//try / catch
-  
-  assert( 0 );
-  return false; //cant actually get here
 }//bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename )
 
 

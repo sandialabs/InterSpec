@@ -34,6 +34,7 @@
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmConfigWindow.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/LlmBenchmarkRunner.h"
 #include "InterSpec/LlmJsSandboxBridge.h"
@@ -47,6 +48,8 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
   : WContainerWidget(parent),
     m_viewer(viewer),
     m_llmInterface(nullptr),
+    m_root(nullptr),
+    m_configWindow(nullptr),
     m_conversationContainer(nullptr),
     m_inputEdit(nullptr),
     m_sendButton(nullptr),
@@ -59,10 +62,25 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
 {
   if( !m_viewer )
     throw std::runtime_error("InterSpec instance cannot be null");
-  
+
   wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
+  // The "not configured" panel and the settings window share styles + strings from these bundles.
+  wApp->useStyleSheet( "InterSpec_resources/LlmConfigWindow.css" );
+  m_viewer->useMessageResourceBundle( "LlmConfigWindow" );
+
+  // A single-cell outer layout holds m_root, which we swap between the configured chat UI and
+  // the "not configured" panel.
+  WGridLayout *outer = new WGridLayout();
+  outer->setContentsMargins( 0, 0, 0, 0 );
+  outer->setVerticalSpacing( 0 );
+  outer->setHorizontalSpacing( 0 );
+  setLayout( outer );
+  m_root = new WContainerWidget();
+  outer->addWidget( m_root, 0, 0 );
+  outer->setRowStretch( 0, 1 );
+  outer->setColumnStretch( 0, 1 );
+
   std::shared_ptr<const LlmConfig> config;
-  
   try
   {
     config = InterSpecServer::llm_config();
@@ -70,15 +88,40 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
   {
     cerr << "LLM config reading in failed: " << e.what() << endl;
   }
-  
-  if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint().empty() )
-    throw std::runtime_error("LLM API not enabled");
-  
-  // Create our own LLM interface instance
+
+  bool configured = false;
+  try
+  {
+    configured = config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty();
+  }catch( std::exception & )
+  {
+    configured = false; // e.g. a config with no providers
+  }
+
+  if( configured )
+    buildConfiguredUi( config );
+  else
+    buildUnconfiguredUi();
+}
+
+LlmToolGui::~LlmToolGui()
+{
+  // If the settings window is still open, delete it now so its onSaved callback (which captures
+  // this) can never fire against a destroyed widget.
+  if( m_configWindow )
+  {
+    delete m_configWindow;
+    m_configWindow = nullptr;
+  }
+}
+
+
+void LlmToolGui::buildConfiguredUi( const std::shared_ptr<const LlmConfig> &config )
+{
   try
   {
     m_llmInterface = std::make_shared<LlmInterface>(m_viewer, config);
-    
+
     // Connect to LLM interface response signals
     m_llmInterface->conversationFinished().connect(this, &LlmToolGui::handleConversationFinished);
     m_llmInterface->responseError().connect(this, &LlmToolGui::handleResponseError);
@@ -91,13 +134,159 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
   }catch( std::exception &e )
   {
     m_llmInterface.reset();
-    WText *err_msg = new WText( "Error initializing LLM assistant: " + string(e.what()), this );
+    new WText( "Error initializing LLM assistant: " + string(e.what()), m_root );
   }
 }
 
-LlmToolGui::~LlmToolGui()
+
+void LlmToolGui::buildUnconfiguredUi()
 {
-  
+  m_root->addStyleClass( "LlmToolGui" );
+
+  WContainerWidget *panel = new WContainerWidget( m_root );
+  panel->addStyleClass( "LlmNotConfigured" );
+
+  WText *msg = new WText( WString::tr("lcw-not-configured"), panel );
+  msg->addStyleClass( "LlmNotConfiguredMsg" );
+
+  WPushButton *btn = new WPushButton( WString::tr("lcw-configure-btn"), panel );
+  btn->clicked().connect( this, &LlmToolGui::openConfigWindow );
+}
+
+
+void LlmToolGui::resetRoot()
+{
+  WGridLayout *outer = dynamic_cast<WGridLayout *>( layout() );
+
+  // Tear down the configured-UI state.  The spectrum-changed slot must be disconnected here (not
+  // just reassigned in buildConfiguredUi) - boost::signals2 reassignment drops the handle without
+  // disconnecting, which would leave an orphaned slot firing into a rebuilt widget.
+  m_spectrumChangedConnection.disconnect();
+
+  // Staged images live in this object (not under m_root); drop them so they don't leak into the
+  // next conversation after a reconfigure.
+  m_stagedImages.clear();
+
+  if( m_root )
+  {
+    delete m_root;   // detaches from the layout and deletes all child widgets
+    m_root = nullptr;
+  }
+
+  // Child widgets owned by the old root are now gone; clear dangling pointers.
+  m_layout = nullptr;
+  m_conversationContainer = nullptr;
+  m_inputEdit = nullptr;
+  m_sendButton = nullptr;
+  m_menuIcon = nullptr;
+  m_imagePreviewContainer = nullptr;
+  m_jsSandboxBridge = nullptr;
+
+  m_root = new WContainerWidget();
+  if( outer )
+  {
+    outer->addWidget( m_root, 0, 0 );
+    outer->setRowStretch( 0, 1 );
+    outer->setColumnStretch( 0, 1 );
+  }
+}
+
+
+void LlmToolGui::openConfigWindow()
+{
+  if( m_configWindow )
+    return;  // already open
+
+  m_configWindow = new LlmConfigWindow( m_viewer,
+                                        std::bind( &LlmToolGui::handleConfigSaved, this ),
+                                        std::bind( &LlmToolGui::hasConversationHistory, this ) );
+  m_configWindow->finished().connect( std::bind( [this](){ m_configWindow = nullptr; } ) );
+}
+
+
+bool LlmToolGui::hasConversationHistory() const
+{
+  if( !m_llmInterface )
+    return false;
+  const std::shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
+  return history && !history->isEmpty();
+}
+
+
+void LlmToolGui::handleConfigSaved()
+{
+  // Re-read the full config from disk (also loads agents/tools), swap the server-wide cache, then
+  // refresh this widget to reflect the new state.
+  std::shared_ptr<LlmConfig> config;
+  try
+  {
+    config = LlmConfig::load();
+  }catch( std::exception &e )
+  {
+    SimpleDialog *errDialog = new SimpleDialog( "Error Loading LLM Config" );
+    new WText( e.what(), errDialog->contents() );
+    errDialog->addButton( "Okay" );
+    return;
+  }
+
+  InterSpecServer::set_llm_config( config );
+
+  bool configured = false;
+  try
+  {
+    configured = config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty();
+  }catch( std::exception & )
+  {
+    configured = false;
+  }
+
+  if( configured )
+  {
+    if( m_llmInterface )
+    {
+      // Decide whether the conversation can be carried over to the new config.  Classify against the
+      // interface's current (old) config before applying.
+      const std::shared_ptr<const LlmConfig> oldConfig = m_llmInterface->config();
+      LlmInterface::ConfigChange change = LlmInterface::ConfigChange::FormatChanged;
+      if( oldConfig )
+        change = LlmInterface::classifyConfigChange( *oldConfig, *config );
+
+      cancelCurrentRequest();
+      try
+      {
+        if( change == LlmInterface::ConfigChange::FormatChanged )
+        {
+          // The wire format changed - the conversation can't be reliably carried over, so reset it.
+          clearHistory();
+          m_llmInterface->resetWithConfig( config );
+        }else
+        {
+          // Same wire format: keep the conversation.  If the active model changed, strip the
+          // model-specific reasoning blocks so they aren't replayed to a different model.
+          const bool stripReasoning = (change == LlmInterface::ConfigChange::ModelChanged);
+          m_llmInterface->applyConfigPreservingHistory( config, stripReasoning );
+        }
+      }catch( std::exception &e )
+      {
+        SimpleDialog *errDialog = new SimpleDialog( "Error Updating LLM" );
+        new WText( e.what(), errDialog->contents() );
+        errDialog->addButton( "Okay" );
+        return;
+      }
+      setInputEnabled( true );
+    }else
+    {
+      // Was unconfigured: build the full chat UI now.
+      resetRoot();
+      buildConfiguredUi( config );
+    }
+  }else
+  {
+    // User disabled the LLM (or left it unconfigured): show the not-configured panel.
+    m_llmInterface.reset();
+    resetRoot();
+    buildUnconfiguredUi();
+  }
 }
 
 bool LlmToolGui::llmToolIsConfigured()
@@ -123,11 +312,11 @@ LlmInterface *LlmToolGui::llmInterface()
 
 void LlmToolGui::initializeUI()
 {
-  addStyleClass("LlmToolGui");
+  m_root->addStyleClass("LlmToolGui");
 
   // Create the main layout
   m_layout = new WGridLayout();
-  setLayout(m_layout);
+  m_root->setLayout(m_layout);
   m_layout->setContentsMargins(5, 5, 5, 5);
   m_layout->setVerticalSpacing(5);
   m_layout->setHorizontalSpacing(5);
@@ -167,6 +356,10 @@ void LlmToolGui::initializeUI()
   // Add "Compact Conversation" option - manually trigger context summarization
   PopupDivMenuItem *compactItem = menu->addMenuItem( "Compact Conversation" );
   compactItem->triggered().connect( this, &LlmToolGui::handleCompactConversation );
+
+  // Add "Configure LLM Provider…" option - opens the graphical provider/model settings window
+  PopupDivMenuItem *configItem = menu->addMenuItem( WString::tr("lcw-configure-menu") );
+  configItem->triggered().connect( this, &LlmToolGui::openConfigWindow );
 
   // Add "Reset LLM Config" option - re-reads config files and creates a new LlmInterface
   PopupDivMenuItem *resetConfigItem = menu->addMenuItem( "Reset LLM Config" );

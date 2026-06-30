@@ -519,33 +519,110 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
   // late/stale in-flight response from colliding with a brand-new request's id and being routed
   // into the wrong conversation.
 
-  // Re-initialize debug logging
+  initDebugLoggingFromConfig();
+}
+
+
+LlmInterface::ConfigChange LlmInterface::classifyConfigChange( const LlmConfig &oldCfg,
+                                                               const LlmConfig &newCfg )
+{
+  try
+  {
+    if( oldCfg.llmApi.apiFormat() != newCfg.llmApi.apiFormat() )
+      return ConfigChange::FormatChanged;
+
+    if( oldCfg.llmApi.model() != newCfg.llmApi.model() )
+      return ConfigChange::ModelChanged;
+
+    return ConfigChange::SameModel;
+  }catch( const std::exception & )
+  {
+    // No usable active provider/model on one side - treat as a full reset (the safe choice).
+    return ConfigChange::FormatChanged;
+  }
+}//classifyConfigChange(...)
+
+
+void LlmInterface::applyConfigPreservingHistory( const std::shared_ptr<const LlmConfig> &config,
+                                                 const bool stripReasoning )
+{
+  if( !config || !config->llmApi.enabled )
+    throw std::logic_error( "LlmInterface::applyConfigPreservingHistory: config is null or LLM API not enabled" );
+
+  // Build the tool registry first - if this throws, we haven't modified any state yet.
+  std::shared_ptr<const LlmTools::ToolRegistry> tool_registry
+    = make_shared<LlmTools::ToolRegistry>( *config );
+
+  // Finalize any in-flight request (it was built with the old config), but KEEP the completed
+  // conversation history.  recordErrorTurn=true so a half-finished turn is visibly closed out.
+  failInFlightConversations( "Request ended: the LLM settings were updated.", true );
+
+  m_config = config;
+  m_tool_registry = tool_registry;
+  m_protocol = LlmApiProtocol::create( m_config->llmApi.apiFormat() );
+
+  // Deliberately KEEP m_history and m_currentConversation so the user can continue the conversation.
+  m_summarizationPendingConvos.clear();  // any pending summarization used the old config
+  m_block_tool_calls = false;
+
+  if( stripReasoning )
+    stripReasoningFromHistory();
+
+  initDebugLoggingFromConfig();
+}//applyConfigPreservingHistory(...)
+
+
+void LlmInterface::stripReasoningFromHistory()
+{
+  if( !m_history )
+    return;
+
+  // Clear only the fields that get replayed to the model on the next request (signatures and the
+  // OpenRouter/OpenAI reasoning blobs).  Keep thinkingContent so the prior thinking still displays.
+  for( const std::shared_ptr<LlmInteraction> &convo : m_history->getConversations() )
+  {
+    if( !convo )
+      continue;
+    for( const std::shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+    {
+      if( !turn )
+        continue;
+      turn->setThinkingSignature( "" );
+      turn->setReasoningContent( "" );
+      turn->setReasoningDetails( "" );
+    }
+  }
+}//stripReasoningFromHistory()
+
+
+void LlmInterface::initDebugLoggingFromConfig()
+{
   m_debug_stream = nullptr;
   m_debug_file.reset();
 
-  if( !m_config->llmApi.debug_file.empty() )
+  if( !m_config || m_config->llmApi.debug_file.empty() )
+    return;
+
+  const string debug_dest = m_config->llmApi.debug_file;
+  if( debug_dest == "stdout" )
   {
-    const string debug_dest = m_config->llmApi.debug_file;
-    if( debug_dest == "stdout" )
+    m_debug_stream = &std::cout;
+  }else if( debug_dest == "stderr" )
+  {
+    m_debug_stream = &std::cerr;
+  }else
+  {
+    // Open file for writing
+    m_debug_file = std::make_unique<std::ofstream>( debug_dest, std::ios::out | std::ios::app );
+    if( m_debug_file->is_open() )
     {
-      m_debug_stream = &std::cout;
-    }else if( debug_dest == "stderr" )
-    {
-      m_debug_stream = &std::cerr;
+      m_debug_stream = m_debug_file.get();
     }else
     {
-      // Open file for writing
-      m_debug_file = std::make_unique<std::ofstream>( debug_dest, std::ios::out | std::ios::app );
-      if( m_debug_file->is_open() )
-      {
-        m_debug_stream = m_debug_file.get();
-      }else
-      {
-        std::cerr << "Warning: Failed to open debug log file: " << debug_dest << std::endl;
-      }
+      std::cerr << "Warning: Failed to open debug log file: " << debug_dest << std::endl;
     }
   }
-}
+}//initDebugLoggingFromConfig()
 
 
 std::shared_ptr<const LlmTools::ToolRegistry> LlmInterface::toolRegistry()

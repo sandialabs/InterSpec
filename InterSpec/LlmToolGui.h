@@ -42,7 +42,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 //Forward declarations
 class SpecMeas;
 class InterSpec;
+class LlmConfig;
 class LlmInterface;
+class LlmConfigWindow;
 class LlmBenchmarkRunner;
 class LlmJsSandboxBridge;
 class LlmInteractionDisplay;
@@ -166,6 +168,14 @@ private:
   InterSpec *m_viewer;              ///< The InterSpec instance
   std::shared_ptr<LlmInterface> m_llmInterface;  ///< The LLM interface for sending messages
 
+  /** The single swappable content container (child of this widget's outer layout).
+   Holds either the configured chat UI or the "not configured" panel; recreated when the
+   configured/unconfigured state changes. */
+  Wt::WContainerWidget *m_root;
+
+  /** The open provider-settings window (nullptr if none), so it can be cleaned up. */
+  LlmConfigWindow *m_configWindow;
+
   Wt::WContainerWidget *m_conversationContainer;  ///< Container holding LlmInteractionDisplay widgets
   Wt::WLineEdit *m_inputEdit;             ///< Input field for user messages
   Wt::WPushButton *m_sendButton;          ///< Button to send messages
@@ -205,9 +215,30 @@ private:
   /** Remove all staged images and hide the preview strip. */
   void clearStagedImages();
 
-  /** Initialize the UI layout and widgets */
+  /** Initialize the configured chat UI (conversation, input, menu) into m_root. */
   void initializeUI();
-  
+
+  /** Build the full chat UI (creates the LlmInterface, hooks signals, calls initializeUI). */
+  void buildConfiguredUi( const std::shared_ptr<const LlmConfig> &config );
+
+  /** Build the "not configured" panel (message + a button to open the settings window). */
+  void buildUnconfiguredUi();
+
+  /** Tear down m_root and recreate an empty one in the outer layout; nulls child pointers. */
+  void resetRoot();
+
+  /** Open (or focus) the LLM provider settings window. */
+  void openConfigWindow();
+
+  /** Whether there is any (non-empty) conversation history right now.  Used by the settings window
+   to decide whether to warn before applying a config change. */
+  bool hasConversationHistory() const;
+
+  /** Re-read config after the settings window saved, swap cache, and refresh this widget.
+   Preserves the conversation when the change is compatible (same wire format); only does a full
+   reset when the wire format changed (see LlmInterface::classifyConfigChange). */
+  void handleConfigSaved();
+
   /** Enable or disable the input field and send button */
   void setInputEnabled(bool enabled);
   

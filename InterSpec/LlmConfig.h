@@ -380,6 +380,17 @@ public:
    */
   static std::pair<LlmApi, McpServer> loadApiAndMcpConfigs( const std::string &llmConfigPath );
   
+  /** Serialize a configuration to an XML string.
+
+   Produces exactly the bytes `saveToFile` writes, including documentation comments describing each
+   field (so a GUI "preview" matches the saved file).  Only `llmApi` and `mcpServer` are serialized;
+   `agents` and `tools` live in their own files and are not written here.
+
+   @param config The configuration to serialize.
+   @return The XML document as a UTF-8 string.
+   */
+  static std::string toXmlString( const LlmConfig &config );
+
   /** Save configuration to a specific XML file.
 
    @param config The configuration to save
