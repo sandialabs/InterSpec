@@ -499,14 +499,19 @@ vector<pair<const SandiaDecay::Element *, float> > GammaXsGui::parseMaterial()
     {
       material = MaterialDB::materialFromChemicalFormula( text, db );
 
-      // Check if this suggestion already exists before adding
-      Wt::WAbstractItemModel *mdl = m_materialSuggestion->model();
-      const Wt::WString suggName = Wt::WString::fromUTF8( material->name );
-      bool alreadyHave = false;
-      for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
-        alreadyHave = (Wt::asString( mdl->data( row, 0 ) ) == suggName);
-      if( !alreadyHave )
-        m_materialSuggestion->addSuggestion( material->name, material->name );
+      // Add the formula to the suggestions so the user doesn't have to retype it next time.
+      //  Only add a non-empty name we don't already have: an empty suggestion is poison for
+      //  Wt's WSuggestionPopup (it matches any input and renders as the literal "undefined").
+      if( material && !material->name.empty() )
+      {
+        Wt::WAbstractItemModel *mdl = m_materialSuggestion->model();
+        const Wt::WString suggName = Wt::WString::fromUTF8( material->name );
+        bool alreadyHave = false;
+        for( int row = 0; !alreadyHave && (row < mdl->rowCount()); ++row )
+          alreadyHave = (Wt::asString( mdl->data( row, 0 ) ) == suggName);
+        if( !alreadyHave )
+          m_materialSuggestion->addSuggestion( material->name, material->name );
+      }
     }catch(...){}
   }//if( !material )
 
