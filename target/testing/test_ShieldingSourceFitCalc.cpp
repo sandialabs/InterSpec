@@ -826,6 +826,136 @@ BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
 }//BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
 
 
+/** A non-source shielding whose thickness STARTS at exactly 0, fit to data that requires a real
+ (1 cm) thickness.  A shield's effect is pure attenuation (exp(-mu*chord), no volume normalization),
+ and the chord is the Stage-1-continuous quantity, so the Jet derivative at thickness 0 is finite,
+ nonzero, and correctly signed - Ceres should climb off zero to the truth.  (The variant-2 minimum-
+ thickness bound applies only to volume-normalized *source* shells, not to plain shields, so this
+ thickness is fit from a true zero.)  Truth data is the forward model itself, so the fit recovers it.
+ */
+BOOST_AUTO_TEST_CASE( FitNonSourceShieldThicknessFromZero )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const std::shared_ptr<const Material> iron = matdb->material( "Fe (iron)" );
+  BOOST_REQUIRE( iron );
+
+  const SandiaDecay::Nuclide * const ba133 = db->nuclide( "Ba133" );
+  BOOST_REQUIRE( ba133 );
+
+  const double distance = 100*PhysicalUnits::cm;
+  const float live_time = 600*PhysicalUnits::second;
+  const double true_thickness = 1.0*PhysicalUnits::cm;     // truth: a 1 cm iron shell
+  const double true_activity = 50.0*PhysicalUnits::microCi;
+  const double age = 5.0*PhysicalUnits::year;
+
+  auto detector = make_shared<DetectorPeakResponse>();
+  detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance, 5*PhysicalUnits::cm,
+                                     PhysicalUnits::keV, 0, 3000*PhysicalUnits::keV,
+                                     DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( 16, 1.0f );
+  foreground->set_gamma_counts( spec, live_time, live_time );
+
+  // Ba133 81 -> 384 keV: iron attenuates 81 keV far more than 356 keV, so the line-ratio pins the
+  //  thickness (and breaks the activity/thickness degeneracy a single line would have).
+  const double placeholder_area = 1.0E4;
+  deque<shared_ptr<const PeakDef>> truth_peaks;
+  for( const double energy : { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 } )
+    truth_peaks.push_back( make_test_peak( ba133, energy, 1.0, placeholder_area ) );
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+
+  // Truth shielding: a NON-SOURCE 1 cm iron sphere around a Ba133 point source.
+  ShieldingSourceFitCalc::ShieldingInfo iron_shield;
+  iron_shield.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  iron_shield.m_isGenericMaterial = false;
+  iron_shield.m_forFitting = true;
+  iron_shield.m_material = make_shared<Material>( *iron );
+  iron_shield.m_dimensions[0] = true_thickness;
+  iron_shield.m_dimensions[1] = iron_shield.m_dimensions[2] = 0.0;
+  iron_shield.m_fitDimensions[0] = iron_shield.m_fitDimensions[1] = iron_shield.m_fitDimensions[2] = false;
+
+  ShieldingSourceFitCalc::SourceFitDef ba133_src;
+  ba133_src.nuclide = ba133;
+  ba133_src.activity = true_activity;
+  ba133_src.fitActivity = false;
+  ba133_src.age = age;
+  ba133_src.fitAge = false;
+  ba133_src.ageDefiningNuc = nullptr;
+  ba133_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  chi_input.config.shieldings = { iron_shield };
+  chi_input.config.sources = { ba133_src };
+  chi_input.config.options = options;
+  chi_input.detector = detector;
+  chi_input.foreground = foreground;
+  chi_input.background = nullptr;
+  chi_input.foreground_peaks = truth_peaks;
+  chi_input.background_peaks = nullptr;
+
+  // Data = the forward model's peak areas for 1 cm of iron.
+  const deque<shared_ptr<const PeakDef>> expected_peaks = peaks_with_model_expected_areas( chi_input );
+
+  // The actual fit: start the iron thickness at EXACTLY 0 (the point of the test) and fit it, plus
+  //  the activity from an off guess.
+  iron_shield.m_dimensions[0] = 0.0;
+  iron_shield.m_fitDimensions[0] = true;
+  ba133_src.activity = 0.5*true_activity;
+  ba133_src.fitActivity = true;
+
+  chi_input.config.shieldings = { iron_shield };
+  chi_input.config.sources = { ba133_src };
+  chi_input.foreground_peaks = expected_peaks;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  auto progress_fcn = [](){};
+  bool finished_fit_called = false;
+  auto finished_fcn = [&finished_fit_called](){ finished_fit_called = true; };
+
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, results, finished_fcn );
+
+  BOOST_CHECK( finished_fit_called );
+  BOOST_CHECK( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+  BOOST_REQUIRE_EQUAL( results->final_shieldings.size(), size_t(1) );
+  BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
+
+  const double fit_thickness = results->final_shieldings[0].m_dimensions[0];
+  const double fit_activity = results->fit_src_info[0].activity;
+
+  cout << "FitNonSourceShieldThicknessFromZero: thickness=" << fit_thickness/PhysicalUnits::cm
+       << " cm (truth " << true_thickness/PhysicalUnits::cm << "), activity="
+       << PhysicalUnits::printToBestActivityUnits(fit_activity,6)
+       << " (truth " << PhysicalUnits::printToBestActivityUnits(true_activity,6) << ")" << endl;
+
+  // Started at exactly 0; the gradient must have driven it to the truth 1 cm.
+  BOOST_CHECK_MESSAGE( fabs(fit_thickness - true_thickness) < 0.02*true_thickness,
+    "Fit iron thickness (" << fit_thickness/PhysicalUnits::cm << " cm) not close to truth (1 cm) - "
+    "Ceres did not climb off a 0 starting thickness correctly" );
+  BOOST_CHECK_MESSAGE( fabs(fit_activity - true_activity) < 0.05*true_activity,
+    "Fit activity (" << PhysicalUnits::printToBestActivityUnits(fit_activity,6) << ") not close to truth" );
+  BOOST_CHECK_MESSAGE( results->final_shieldings[0].m_dimensionUncerts[0] > 0.0,
+    "Fit thickness uncertainty should be positive" );
+}//BOOST_AUTO_TEST_CASE( FitNonSourceShieldThicknessFromZero )
+
+
 /** Minuit2 baseline: fit source age (plus activity) for a Ra226 point source,
  where the in-growth of Rn222 progeny (Pb214/Bi214 lines vs Ra226s own 186 keV
  line) determines the age.  Synthetic peak areas are generated from the forward

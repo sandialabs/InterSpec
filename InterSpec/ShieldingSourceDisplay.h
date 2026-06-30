@@ -937,6 +937,12 @@ protected:
    transient toast for this tool's own fit warnings/errors.  Hidden when empty. */
   Wt::WText *m_fitMessage;
 
+  /** Informational notice produced by checkDistanceAndThicknessConsistent() (currently only that
+   shielding was scaled to fit inside the detector distance).  Set on each call to that function
+   (cleared if nothing to report) and surfaced by callers in #m_fitMessage / the end-of-fit
+   warnings, rather than as a toast.  UTF-8 (joins the English worker warnings list). */
+  std::string m_dimConsistencyMsg;
+
   /** The fit control is a split button: the action half performs/shows the fit; the dropdown
    half opens a menu to choose Live (auto) vs Manual fitting.  m_fitModelButton is kept pointing
    at the action half so existing call-sites (clicked(), show/hide) still work. */

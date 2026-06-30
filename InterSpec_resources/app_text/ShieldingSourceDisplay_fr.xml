@@ -97,7 +97,6 @@
   <message id="ssd-back-peaks-manual-hint">(vous pouvez également ajuster manuellement les pics d'arrière-plan avec la touche Alt (mac : touche Option) plus double<br />
   clic sur le spectre, ou en chargeant l'arrière-plan comme premier plan)</message>
   <message id="ssd-err-adding-back-peaks">Erreur lors de l'ajout de pics à l'arrière-plan : {1}</message>
-  <message id="ssd-update-dim-to-be-min">Dimension de blindage mise à jour pour être une épaisseur minimale.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Les épaisseurs de blindage ont été mises à l'échelle pour être inférieures à la distance du détecteur.</message>
   <message id="ssd-err-fit-only-one-an">Vous ne pouvez ajuster que le numéro atomique d'un seul blindage générique à la fois.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Un chi2 invalide a été calculé pour {1} keV, d'autres résultats peuvent être invalides</message>

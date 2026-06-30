@@ -199,6 +199,24 @@ add_test( NAME TVolumetricIntegration
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ShieldingDimLimit test_ShieldingDimLimit.cpp VolumetricIntegrationFixtures.h )
+target_link_libraries( test_ShieldingDimLimit PRIVATE InterSpecLib )
+add_test( NAME TShieldingDimLimit
+  COMMAND $<TARGET_FILE:test_ShieldingDimLimit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+option( RECORD_GEOM_GOLDENS "Print (instead of check) geometry golden values" OFF )
+add_executable( test_ShieldingGeomGolden test_ShieldingGeomGolden.cpp VolumetricIntegrationFixtures.h )
+target_link_libraries( test_ShieldingGeomGolden PRIVATE InterSpecLib )
+if( RECORD_GEOM_GOLDENS )
+  target_compile_definitions( test_ShieldingGeomGolden PRIVATE RECORD_GEOM_GOLDENS=1 )
+endif()
+add_test( NAME TShieldingGeomGolden
+  COMMAND $<TARGET_FILE:test_ShieldingGeomGolden> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_DetectionLimit test_DetectionLimit.cpp )
 target_link_libraries( test_DetectionLimit PRIVATE InterSpecLib )
 add_test( NAME test_DetectionLimit

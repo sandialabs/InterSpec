@@ -96,7 +96,6 @@
   <message id="ssd-back-peaks-manual-hint">（您也可以通过 Alt 键（mac：Option 键）加双击<br />
   谱图来手动拟合本底峰，或将本底加载为前景）</message>
   <message id="ssd-err-adding-back-peaks">向本底添加峰时出错：{1}</message>
-  <message id="ssd-update-dim-to-be-min">已将屏蔽尺寸更新为最小厚度。</message>
   <message id="ssd-scaled-shield-to-be-less-dist">屏蔽厚度已缩放为小于探测器距离。</message>
   <message id="ssd-err-fit-only-one-an">您一次只能拟合一个通用屏蔽的原子序数。</message>
   <message id="ssd-warn-invalid-chi2-for-energy">为{1} keV计算了无效的chi2，其他结果可能无效</message>

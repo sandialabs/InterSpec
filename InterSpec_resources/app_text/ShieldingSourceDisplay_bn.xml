@@ -82,7 +82,6 @@
   <message id="ssd-back-peaks-manual-hint">(আপনি Alt কী (mac: Option কী) প্লাস ডাবল<br />
   ক্লিক করে স্পেকট্রামে ম্যানুয়ালি ব্যাকগ্রাউন্ড পিক ফিট করতে পারেন, বা ব্যাকগ্রাউন্ড ফোরগ্রাউন্ড হিসাবে লোড করে)</message>
   <message id="ssd-err-adding-back-peaks">ব্যাকগ্রাউন্ডে পিক যোগ করতে ত্রুটি: {1}</message>
-  <message id="ssd-update-dim-to-be-min">ন্যূনতম পুরুত্ব হতে শিল্ডিং মাত্রা আপডেট করা হয়েছে।</message>
   <message id="ssd-scaled-shield-to-be-less-dist">শিল্ডিং পুরুত্বগুলি ডিটেক্টর দূরত্বের চেয়ে কম হতে স্কেল করা হয়েছে।</message>
   <message id="ssd-err-fit-only-one-an">আপনি একবারে শুধুমাত্র একটি জেনেরিক শিল্ডিংয়ের পারমাণবিক সংখ্যার জন্য ফিট করতে পারেন।</message>
   <message id="ssd-warn-invalid-chi2-for-energy">{1} keV এর জন্য একটি অবৈধ chi2 গণনা করা হয়েছে, অন্যান্য ফলাফল অবৈধ হতে পারে</message>

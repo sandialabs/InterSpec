@@ -101,7 +101,6 @@
   <message id="ssd-back-peaks-manual-hint">(también puede ajustar picos de fondo manualmente con la tecla Alt (mac: tecla Option) más doble<br />
   clic en el espectro, o cargando el fondo como primer plano)</message>
   <message id="ssd-err-adding-back-peaks">Error al añadir picos al fondo: {1}</message>
-  <message id="ssd-update-dim-to-be-min">Se actualizó dimensión de blindaje para ser espesor mínimo.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Los espesores de blindaje han sido escalados para ser menores que la distancia del detector.</message>
   <message id="ssd-err-fit-only-one-an">Solo puede ajustar el número atómico de un blindaje genérico a la vez.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Se calculó un chi2 inválido para {1} keV, otros resultados pueden ser inválidos</message>

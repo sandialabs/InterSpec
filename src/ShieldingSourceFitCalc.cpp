@@ -1984,8 +1984,31 @@ ModelFitProgress::ModelFitProgress()
  thread / in batch, where the Wt message bundles aren't necessarily available.  Avoid '<'/'>'/'&' in
  the text so it renders correctly in the HTML report and the XHTML message area without escaping.
  */
-static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &results )
+static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &results,
+                                    const GammaInteractionCalc::ShieldingSourceChi2Fcn &chi2Fcn,
+                                    const std::vector<double> &params )
 {
+  // Zero-volume source: a trace or self-attenuating source needs a non-zero shielding volume to
+  //  carry activity.  Now that zero-thickness shieldings are allowed, flag a source-bearing shell
+  //  that ended the fit with zero volume - it contributes nothing and its fitted activity / mass
+  //  fraction is meaningless.  Skip generic shieldings: they can't carry sources, and
+  //  traceNuclidesForMaterial()/selfAttenuatingNuclides()/volumeOfMaterial() all throw on them.
+  const size_t nmaterials = chi2Fcn.numMaterials();
+  for( size_t i = 0; i < nmaterials; ++i )
+  {
+    if( chi2Fcn.isGenericMaterial(i) )
+      continue;
+
+    const bool is_source = !chi2Fcn.traceNuclidesForMaterial(i).empty()
+                           || !chi2Fcn.selfAttenuatingNuclides(i).empty();
+    if( is_source && (chi2Fcn.volumeOfMaterial(i,params) <= 0.0) )
+    {
+      results.warnings.push_back( "A shielding that carries a source has zero volume (zero"
+        " thickness), so it contributes no activity and its fitted activity is meaningless." );
+      break;
+    }
+  }//for( size_t i = 0; i < nmaterials; ++i )
+
   // x-ray peaks: the activity/shielding model doesn't account for x-ray production, so a fit that
   //  relies on x-ray peaks may be unreliable.  (Previously a transient toast at peak-select time.)
   for( const PeakDef &peak : results.foreground_peaks )
@@ -2419,7 +2442,7 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
 
   // Surface non-fatal warnings (poor average deviation, x-ray peaks, ...) on the results so the
   //  GUI, phone fit bar, and reports can all show them.  Only reached on the Final/success path.
-  check_for_fit_warnings( *results );
+  check_for_fit_warnings( *results, *chi2Fcn, params );
 }//fill_fit_results(...)
 
 

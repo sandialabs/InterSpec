@@ -6048,9 +6048,11 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
     try
     {
       checkDistanceAndThicknessConsistent();
+      if( !m_dimConsistencyMsg.empty() )
+        setFitMessage( WString::fromUTF8(m_dimConsistencyMsg), FitMsgType::Warning );
     }catch( std::exception &e )
     {
-      passMessage( e.what(), WarningWidget::WarningMsgMedium );
+      setFitMessage( WString::fromUTF8(e.what()), FitMsgType::Error );
     }//try / catch
   }//if( !is_same_geometry )
   
@@ -6062,10 +6064,14 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
 
 void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
 {
-  const char * const contained_err_msg_key = "ssd-update-dim-to-be-min";
   const char * const scaled_err_msg_key = "ssd-scaled-shield-to-be-less-dist";
- 
-  
+
+  // Informational notice (currently only "shielding scaled to fit inside the detector distance")
+  //  that callers surface in the inline fit-message area / end-of-fit warnings, rather than as a
+  //  toast.  Cleared on every call; genuine input errors are still thrown.
+  m_dimConsistencyMsg.clear();
+
+
   // TODO: We should probably check that we arent trying to fit multiple AN of generic shieldings,
   //       or the AD of two generic shieldings that have similar AN, or many other potentially
   //       degenerate cases.
@@ -6133,126 +6139,21 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
   
   
   // Now check shielding doesnt go past detector, and if it does, shrink things down.
+  //  Zero-thickness shieldings are allowed: a plain attenuator with zero thickness contributes no
+  //  attenuation, and a source-bearing shell with zero volume simply contributes no activity (and
+  //  earns a fit warning).  The volumetric calc guards the resulting zero-volume divisions (see
+  //  GammaInteractionCalc), so we no longer clamp dimensions up to a minimum thickness here.
   double shieldrad = 0.0, distance = 0.0;
-  
-  const double tolerance = PhysicalUnits::um;
-  
-  int shield_num = 0;
-  bool updated_a_dim = false;
+
   for( ShieldingSelect *select : shieldings )
   {
     assert( type == select->geometry() );
     if( type != select->geometry() )
       throw runtime_error( "A shieldings geometry didnt match expected." );
-    
+
     for( WLineEdit *edit : select->distanceEdits() )
       make_sure_distance_units_present( edit );
-    
-    // Check to make sure this shielding is larger than all shielding it contains
-    switch( type )
-    {
-      case GeometryType::Spherical:
-      {
-        double thick = select->thickness();
-        if( thick < tolerance )
-        {
-          updated_a_dim = true;
-          thick = tolerance;
-          select->setSphericalThickness( thick );
-        }
-        
-        break;
-      }//case GeometryType::Spherical:
-      
-      case GeometryType::CylinderEndOn:
-      case GeometryType::CylinderSideOn:
-      {
-        const double min_delta = (shield_num ? 0.0 : tolerance);
-        
-        double rad = select->cylindricalRadiusThickness();
-        double len = select->cylindricalLengthThickness();
-        
-        // If this is the first shielding, make sure it is at least 1 um rad/width.
-        //  After that, it makes sense to maybe have one of the dimensions be the same length
-        //  (e.x., in a hollow pipe, the inner void will be same length as metal tube).
-        if( rad < min_delta )
-        {
-          rad = min_delta;
-          updated_a_dim = true;
-          select->setCylindricalRadiusThickness( min_delta );
-        }
-        
-        if( len < min_delta )
-        {
-          len = min_delta;
-          updated_a_dim = true;
-          select->setCylindricalLengthThickness( min_delta );
-        }
-        
-        // Dont let the dimensions both be zero, even after first shielding... I think the code
-        //  would be fine if they are both zero, but this just doesnt quite seem right...
-        //  TODO: need to think about implications of (not) letting, both dimensions be zero
-        if( (rad == 0.0) && (len == 0.0) )
-        {
-          // I think we could leave
-          len = rad = tolerance;
-          updated_a_dim = true;
-          select->setCylindricalLengthThickness( tolerance );
-          select->setCylindricalLengthThickness( tolerance );
-        }
-        
-        break;
-      }//case GeometryType::CylinderSideOn:
-        
-      case GeometryType::Rectangular:
-      {
-        const double min_delta = (shield_num ? 0.0 : tolerance);
-        
-        double width = select->rectangularWidthThickness();
-        double height = select->rectangularHeightThickness();
-        double depth = select->rectangularDepthThickness();
-        
-        if( width < min_delta )
-        {
-          width = min_delta;
-          updated_a_dim = true;
-          select->setRectangularWidthThickness( min_delta );
-        }
-        
-        if( height < min_delta )
-        {
-          height = min_delta;
-          updated_a_dim = true;
-          select->setRectangularHeightThickness( min_delta );
-        }
-        
-        if( depth < min_delta )
-        {
-          depth = min_delta;
-          updated_a_dim = true;
-          select->setRectangularDepthThickness( min_delta );
-        }
-        
-        // Dont let the dimensions both be zero, even after first shielding.
-        //  See notes for cylindrical case.
-        if( (width == 0.0) && (height == 0.0) && (depth == 0.0) )
-        {
-          width = height = depth = tolerance;
-          updated_a_dim = true;
-          select->setRectangularWidthThickness( tolerance );
-          select->setRectangularHeightThickness( tolerance );
-          select->setRectangularDepthThickness( tolerance );
-        }
-        
-        break;
-      }//case GeometryType::CylinderSideOn:
-        
-      case GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( type )
-    
-    
+
     // Get the extent of the shielding, in the direction of the detector
     switch( type )
     {
@@ -6276,24 +6177,14 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
         assert( 0 );
         break;
     }//switch( type )
-    
-    shield_num += 1;
   }//for( WWidget *widget : m_shieldingSelects->children() )
-  
+
   const string distanceStr = m_distanceEdit->text().toUTF8();
   distance = PhysicalUnits::stringToDistance( distanceStr );
   if( distance <= 0.0 )
     throw runtime_error( "Distance must be greater than zero" );
-  
-  if( shieldrad <= distance )
-  {
-    if( updated_a_dim )
-    {
-      handleShieldingChange();
-      
-      throw runtime_error( WString::tr(contained_err_msg_key).toUTF8() );
-    }
-  }else
+
+  if( shieldrad > distance )
   {
     const double scale = 0.95*distance/shieldrad;
     for( ShieldingSelect *select : shieldings )
@@ -6321,22 +6212,13 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
           break;
       }//switch( type )
     }//for( WWidget *widget : m_shieldingSelects->children() )
-    
-    WString msg;
-    if( updated_a_dim )
-    {
-      msg = WString("{1}<br />{2}")
-        .arg(WString::tr(contained_err_msg_key))
-        .arg( WString::tr(scaled_err_msg_key) );
-    }else
-    {
-      msg = WString::tr(scaled_err_msg_key);
-    }
-    
+
     handleShieldingChange();
-    
-    throw runtime_error( msg.toUTF8() );
-  }//if( shieldrad < distance )
+
+    // Not an error: record the (informational) notice for callers to surface alongside the other
+    //  fit warnings, instead of throwing/toasting it.
+    m_dimConsistencyMsg = WString::tr(scaled_err_msg_key).toUTF8();
+  }//if( shieldrad > distance )
 }//void checkDistanceAndThicknessConsistent()
 
 
@@ -6567,9 +6449,16 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
   try
   {
     checkDistanceAndThicknessConsistent();
+    // Interactive refreshes (results==null) surface the informational notice (e.g. shielding
+    //  scaled to fit inside the detector distance) in the inline message area here.  When applying
+    //  fit results, updateGuiWithModelFitResults() folds m_dimConsistencyMsg into the combined
+    //  fit-warning list instead, so don't touch the message area in that case.
+    if( !results && !m_dimConsistencyMsg.empty() )
+      setFitMessage( WString::fromUTF8(m_dimConsistencyMsg), FitMsgType::Warning );
   }catch( exception &e )
   {
-    passMessage( e.what(), WarningWidget::WarningMsgHigh );
+    if( !results )
+      setFitMessage( WString::fromUTF8(e.what()), FitMsgType::Error );
   }//try / catch
 
   try
@@ -9070,6 +8959,9 @@ void ShieldingSourceDisplay::updateFitButtonState()
     m_fitSplitButton->toggleStyleClass( "SsdFitWorking", m_fitInProgress );
     m_fitSplitButton->toggleStyleClass( "SsdFitLiveOk", !m_fitInProgress && autoMode );
     m_fitSplitButton->toggleStyleClass( "SsdFitManual", !m_fitInProgress && !autoMode );
+    // Manual + stale: accent the WHOLE split button (action half + dropdown caret) via one ring on
+    //  the container, instead of just the action half (which read as discontinuous from the caret).
+    m_fitSplitButton->toggleStyleClass( "SsdFitNeeded", m_modelNeedsFit && !m_fitInProgress && !autoMode );
   }
 
   // Keep the phone bottom bar (distance chip / activity strip / warning pill) in sync.
@@ -9464,6 +9356,10 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   // Cache the fit results for HTML log display
   m_lastFitResults = results;
 
+  // Reset the dimension-consistency notice; the post-fit consistency check (updateChi2ChartActual)
+  //  re-sets it if needed, and it is folded into the fit warnings near the end of this function.
+  m_dimConsistencyMsg.clear();
+
   setWidgetStateForFitBeingDone();
   
   std::lock( results->m_mutex, m_currentFitFcnMutex );
@@ -9567,23 +9463,15 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   }//switch( status )
   
   
-  // Show non-fatal fit warnings + lower-level fit messages in the dedicated inline area (replaces
-  //  the old toast); a clean fit clears it.  results->warnings holds the curated warnings (poor
-  //  average deviation, x-ray peaks, ...) detected in fill_fit_results; errormsgs holds lower-level
-  //  fit messages.  The phone fit bar's warning pill reads results->warnings directly.
+  // Collect non-fatal fit warnings + lower-level fit messages now, but defer showing them until
+  //  after the post-fit consistency check has run (in updateChi2ChartActual, below) so its
+  //  informational notice - e.g. shielding scaled to fit inside the detector distance - is folded
+  //  in and they all appear together in the dedicated inline area at once (replaces the old toast).
+  //  results->warnings holds the curated warnings (poor average deviation, x-ray peaks, ...) from
+  //  fill_fit_results; errormsgs holds lower-level fit messages.  The phone fit bar's warning pill
+  //  reads results->warnings directly, so the dimension notice is appended to it too, below.
   vector<string> shown_msgs = results->warnings;
   shown_msgs.insert( shown_msgs.end(), errormsgs.begin(), errormsgs.end() );
-  if( !shown_msgs.empty() )
-  {
-    string warn;
-    for( const string &s : shown_msgs )
-      warn += (warn.empty() ? string() : string("<br />")) + s;
-    warn += "<br />" + WString::tr("ssd-using-fit-anyway").toUTF8();
-    setFitMessage( WString::fromUTF8(warn), FitMsgType::Warning );
-  }else
-  {
-    clearFitMessage();
-  }
 
   try
   {
@@ -10078,6 +9966,27 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
 #endif
   }//try / catch
 
+  // Fold the post-fit dimension-consistency notice (set by updateChi2ChartActual, above) into the
+  //  fit-warning list - in results->warnings so the phone fit-bar pill and reports pick it up, and
+  //  in the inline message we compose now - then show everything together, or clear if nothing.
+  if( !m_dimConsistencyMsg.empty() )
+  {
+    results->warnings.push_back( m_dimConsistencyMsg );
+    shown_msgs.push_back( m_dimConsistencyMsg );
+  }
+
+  if( !shown_msgs.empty() )
+  {
+    string warn;
+    for( const string &s : shown_msgs )
+      warn += (warn.empty() ? string() : string("<br />")) + s;
+    warn += "<br />" + WString::tr("ssd-using-fit-anyway").toUTF8();
+    setFitMessage( WString::fromUTF8(warn), FitMsgType::Warning );
+  }else
+  {
+    clearFitMessage();
+  }
+
   // A successful fit means the showing results now match the model: clear the manual-mode
   //  "needs update" hint and refresh the button/pill to its idle state.
   m_modelNeedsFit = false;
@@ -10144,6 +10053,10 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
   try
   {
     checkDistanceAndThicknessConsistent();
+    // Give immediate feedback if the pre-fit consistency check adjusted dimensions (e.g. scaled the
+    //  shielding to fit inside the detector distance); the post-fit results display re-surfaces it.
+    if( !m_dimConsistencyMsg.empty() )
+      setFitMessage( WString::tr("ssd-err-before-fit").arg(WString::fromUTF8(m_dimConsistencyMsg)), FitMsgType::Warning );
   }catch( exception &e )
   {
     setFitMessage( WString::tr("ssd-err-before-fit").arg(e.what()), FitMsgType::Warning );

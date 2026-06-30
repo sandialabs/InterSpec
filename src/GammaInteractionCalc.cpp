@@ -80,6 +80,12 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
+// For the shared templated helpers used by this double-only legacy mirror so it stays consistent
+//  with the templated Ceres path: one_minus_exp_neg_over_x, sphere_exp_norm_factor,
+//  cyl_side_exp_norm_factor (variant-2 trace-source normalization) and sphere_exit_distance_scaled,
+//  cylinder_source_exit_scaled (zero-thickness-safe ray tracing).  Self-contained for double use
+//  (dummy ceres namespace fallback inside).
+#include "InterSpec/GammaInteractionCalc_imp.hpp"
 
 using namespace std;
 
@@ -719,6 +725,7 @@ DistributedSrcCalc::DistributedSrcCalc()
   m_airTransLenCoef = 0.0;
   m_isInSituExponential = false;
   m_inSituRelaxationLength = 0.0;
+  m_normalizeByVolume = false;
   m_nuclide = NULL;
 }//DistributedSrcCalc()
 
@@ -811,8 +818,20 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
     double exit_point[3];
     const double srcRad = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex])[0];
     const double srcTransCoef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
-    double dist_in_src = exit_point_of_sphere_z( source_point, exit_point,
-                                                 srcRad, obs_dist );
+
+    double dist_in_src;
+    if( m_materialIndex == 0 )
+    {
+      // Single source shell: q = x_r*dir is radius-free, so sphere_exit_distance_scaled factors
+      //  srcRad out of the intersection discriminant (finite value+derivative as srcRad -> 0;
+      //  mirrors the templated path - see variant 2 in GammaInteractionCalc_imp.hpp).
+      const double st = sin(theta);
+      const double q_src[3] = { x_r*st*cos(phi), x_r*st*sin(phi), x_r*cos(theta) };
+      dist_in_src = sphere_exit_distance_scaled( q_src, exit_point, srcRad, obs_dist );
+    }else
+    {
+      dist_in_src = exit_point_of_sphere_z( source_point, exit_point, srcRad, obs_dist );
+    }
     
     double min_rad = 0.0;
     bool needShellCompute = false;
@@ -983,6 +1002,28 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   //       change is an appropriate correction, but still needs to be validated/ensured.
   trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, dist_to_det + m_detectorSetback );
 
+  if( m_normalizeByVolume )
+  {
+    // Variant 2 (mirror of DistributedSrcCalcT<T>::eval_spherical): fold 1/vol (or 1/norm)
+    //  into the integrand weight, the vanishing source dimension cancelled symbolically.
+    double w;
+    if( m_isInSituExponential )
+    {
+      const double u = source_outer_rad / m_inSituRelaxationLength;
+      w = (0.5*pi*x_r*x_r*sin(theta)) / sphere_exp_norm_factor( u );
+    }else if( m_materialIndex == 0 )
+    {
+      w = 1.5*pi*x_r*x_r*sin(theta);   // single shell: dV/vol, R_o^3 cancelled
+    }else
+    {
+      const double Ri = source_inner_rad, Ro = source_outer_rad;
+      w = (1.5*pi*sin(theta) * (r*r)) / (Ro*Ro + Ro*Ri + Ri*Ri);
+    }
+
+    ff[0] = trans * w;
+    return;
+  }//if( m_normalizeByVolume )
+
   ff[0] = trans * dV;
 }//eval_spherical(...)
 
@@ -1053,8 +1094,11 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
     const double z_dist_in_src = source_half_z - z;
     const double r_dist_in_src = r * z_dist_in_src / eval_z_dist_to_det;
     exit_radius = r - r_dist_in_src;
-    
-    const double dist_in_src = sqrt(z_dist_in_src*z_dist_in_src + r_dist_in_src*r_dist_in_src);
+
+    // Factor the z extent (vanishes with the half-length) out of the radical so the path length and
+    //  its derivative stay finite as source_half_z -> 0 (mirrors the templated path).
+    const double inv_slope = r / eval_z_dist_to_det;
+    const double dist_in_src = z_dist_in_src * sqrt( 1.0 + inv_slope*inv_slope );
     
     trans += (trans_len_coef * dist_in_src);
   }//end codeblock to compute distance through source
@@ -1090,7 +1134,23 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
   //assert( fabs(test_ff[0] - this_answer) < 1.0E-6*std::max(0.001,std::max( fabs(test_ff[0]), fabs(this_answer))) );
 #endif
 
-  
+  if( m_normalizeByVolume )
+  {
+    // Variant 2 (single source shell from origin - this fast path is m_materialIndex==0).
+    double w;
+    if( m_isInSituExponential )
+    {
+      const double u = total_height / m_inSituRelaxationLength;   // R = 2*L_o = total_height
+      w = (2.0*PhysicalUnits::pi*x_r * (source_outer_rad*source_outer_rad)) / one_minus_exp_neg_over_x( u );
+    }else
+    {
+      w = 2.0*x_r;   // dV/vol, R_o^2 and L_o cancelled
+    }
+
+    ff[0] = trans * w;
+    return;
+  }//if( m_normalizeByVolume )
+
   ff[0] = trans * dV;
 }//void eval_single_cyl_end_on(...)
 
@@ -1542,7 +1602,20 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   
   
   double exit_point[3];
-  double dist_in_cyl = cylinder_line_intersection( source_outer_rad, source_half_z, eval_point, detector_pos, CylExitDir::TowardDetector, exit_point );
+  double dist_in_cyl;
+  if( m_materialIndex == 0 )
+  {
+    // Single source shell: radius-free normalized source s_xy = xx[0]*(cos,sin) lets
+    //  cylinder_source_exit_scaled factor the radius out of the curved-side discriminant and keep
+    //  the half-length linear - finite value+derivative as either source dimension -> 0 (mirrors
+    //  the templated path - see variant 2 in GammaInteractionCalc_imp.hpp).
+    const double s_xy[2] = { xx[0]*cos(theta), xx[0]*sin(theta) };
+    dist_in_cyl = cylinder_source_exit_scaled( s_xy, z, source_outer_rad, source_half_z,
+                                               detector_pos, exit_point );
+  }else
+  {
+    dist_in_cyl = cylinder_line_intersection( source_outer_rad, source_half_z, eval_point, detector_pos, CylExitDir::TowardDetector, exit_point );
+  }
   
   //- make so cylinder_line_intersection take either a near or away from detector argument, and have it return zero if it doesnt intersect at all
   //    - Look through cylinder_line_intersection and make sure it can be mostly independent of the two points actual values
@@ -1691,6 +1764,33 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to to detector).
   const double eval_dist_to_det = distance( eval_point, detector_pos );
   trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det + m_detectorSetback );
+
+  if( m_normalizeByVolume )
+  {
+    // Variant 2 (mirror of DistributedSrcCalcT<T>::eval_cylinder).  vol = 2pi(R_o^2 L_o - R_i^2 L_i).
+    const double Ro = source_outer_rad;
+    const double Lo = source_half_z;
+    double w;
+    if( m_isInSituExponential )
+    {
+      const double L = m_inSituRelaxationLength;
+      if( m_geometry == GeometryType::CylinderSideOn )
+        w = (2.0*xx[0] * Lo) / cyl_side_exp_norm_factor( Ro / L );        // 2*L_o*x_r / h_side(R_o/L)
+      else
+        w = (2.0*PhysicalUnits::pi*xx[0] * (Ro*Ro)) / one_minus_exp_neg_over_x( total_height / L ); // 2pi*x_r*R_o^2 / g(2L_o/L)
+    }else if( m_materialIndex == 0 )
+    {
+      w = 2.0*xx[0];   // single shell: dV/vol, R_o^2 and L_o cancelled
+    }else
+    {
+      const std::array<double,3> &inner = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
+      const double Ri = inner[0], Li = inner[1];
+      w = dV / (2.0*PhysicalUnits::pi * (Ro*Ro*Lo - Ri*Ri*Li));
+    }
+
+    ff[0] = trans * w;
+    return;
+  }//if( m_normalizeByVolume )
 
   ff[0] = trans * dV;
 }//void eval_cylinder(...)
@@ -2130,6 +2230,27 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
   const double eval_dist_to_det = distance(eval_loc, detector_loc);
   trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det + m_detectorSetback );
 
+  if( m_normalizeByVolume )
+  {
+    // Variant 2 (mirror of DistributedSrcCalcT<T>::eval_rect).  vol = 8(W H D - Wi Hi Di).
+    double w;
+    if( m_isInSituExponential )
+    {
+      const double u = (2.0*half_depth) / m_inSituRelaxationLength;   // R = 2*D
+      w = (4.0*half_width*half_height) / one_minus_exp_neg_over_x( u );   // 4*W*H / g(2D/L)
+    }else if( m_materialIndex == 0 )
+    {
+      w = 1.0;   // single shell: dV/vol = 1
+    }else
+    {
+      const std::array<double,3> &inner = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
+      w = dV / (8.0 * (half_width*half_height*half_depth - inner[0]*inner[1]*inner[2]));
+    }
+
+    ff[0] = trans * w;
+    return;
+  }//if( m_normalizeByVolume )
+
   ff[0] = trans * dV;
 }//void eval_rect(...)
 
@@ -2242,7 +2363,25 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
         name = mat->name + std::to_string(i);
       else
         name = "unspecifiedmat_" + std::to_string(i);
-      
+
+      // Variant-2 volumetric trace sources (TotalActivity / in-situ exponential) fold 1/vol into the
+      //  integrand.  If the fit drives such a source shell's thickness to *exactly* 0 while it wraps a
+      //  non-source inner core (the shell collapsing onto the core), that exact point is singular
+      //  (NaN/discontinuous) - though every positive thickness is fine, and a single innermost source
+      //  shell is already continuous through 0.  So give only these shells' fitted dimensions a
+      //  negligible lower bound (0.1 nm), which keeps the optimizer a hair off the singular point: it
+      //  returns the correct concentrated-source limit and preserves the gradient (it is NOT a volume
+      //  floor - other shells, shields, and self-attenuating sources keep a 0 lower bound, and fixed
+      //  dimensions are unbounded, so e.g. equal-length nested cylinders still model a true 0-thickness
+      //  endcap).
+      double dimLowerBound = 0.0;
+      for( const ShieldingSourceFitCalc::TraceSourceInfo &ts : info.m_traceSources )
+      {
+        if( (ts.m_type == TraceActivityType::TotalActivity)
+            || (ts.m_type == TraceActivityType::ExponentialDistribution) )
+          dimLowerBound = 1.0E-8 * PhysicalUnits::cm;
+      }
+
       switch( geom )
       {
         case GeometryType::Spherical:
@@ -2253,7 +2392,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitThickness;
           
           if( fitThickness )
-            inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), 0, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
             inputPrams.Add( name + "_thickness", thickness );
           
@@ -2276,12 +2415,12 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitLen;
           
           if( fitRad )
-            inputPrams.Add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), 0, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
             inputPrams.Add( name + "_dr", rad );
           
           if( fitLen )
-            inputPrams.Add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), 0, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
             inputPrams.Add( name + "_dz", len );
           
@@ -2306,17 +2445,17 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitDepth;
           
           if( fitWidth )
-            inputPrams.Add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), 0, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
             inputPrams.Add( name + "_dx", width );
           
           if( fitHeight )
-            inputPrams.Add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), 0, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
             inputPrams.Add( name + "_dy", height );
           
           if( fitDepth )
-            inputPrams.Add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), 0, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
             inputPrams.Add( name + "_dz", depth );
           
@@ -4258,6 +4397,8 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
         
         const double iso_density = massFrac * mat->density / PhysicalUnits::gram;
         const double activity_per_gram = nuclide->activityPerGram();
+        // A zero-thickness (zero-volume) self-attenuating shell yields zero mass -> zero activity
+        //  by design; no division by volume here, so nothing to guard.
         const double mass_grams = iso_density * vol;
         const double massUncertaintySquared_grams = iso_density * volUncert * volUncert;
         const double thisActivity = mass_grams * activity_per_gram;
@@ -4316,8 +4457,9 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
           //  statistical errors probably always pale in comparison to systematic, I dont think this
           //  is an issue (or usually would people would just say this is being conservative, which
           //  no one ever questions).
-          const double volFracUncert = volUncert / vol;
-          
+          // Guard against a zero-volume (zero-thickness) shell.
+          const double volFracUncert = (vol > 0.0) ? (volUncert / vol) : 0.0;
+
           if( trace_type == TraceActivityType::ActivityPerCm3 )
             activity += thisActivity * (vol/PhysicalUnits::cm3);
           else
@@ -5575,12 +5717,20 @@ vector<PeakResultPlotInfo>
           break;
           
         case GeometryType::Rectangular:
+        {
           cumulative_dims_pt[0] += rectangularWidthThickness(materialN,x);
           cumulative_dims_pt[1] += rectangularHeightThickness(materialN,x);
           cumulative_dims_pt[2] += rectangularDepthThickness(materialN,x);
-          exit_dist = rectangle_exit_location( cumulative_dims_pt[0], cumulative_dims_pt[1],
-                                        cumulative_dims_pt[2], origin_pt, det_pos_pt, exit_point );
+          // Nudge any zero half-extent strictly positive so the source sits inside the box and the
+          //  along-ray dimension sets the chord (matches the templated center_ray_exit_distance);
+          //  rectangle_exit_location requires a positive box (it asserts / divides otherwise).
+          const double tiny = 1.0E-6 * PhysicalUnits::mm;
+          const double w = (cumulative_dims_pt[0] > 0.0) ? cumulative_dims_pt[0] : tiny;
+          const double h = (cumulative_dims_pt[1] > 0.0) ? cumulative_dims_pt[1] : tiny;
+          const double d = (cumulative_dims_pt[2] > 0.0) ? cumulative_dims_pt[2] : tiny;
+          exit_dist = rectangle_exit_location( w, h, d, origin_pt, det_pos_pt, exit_point );
           break;
+        }
           
         case GeometryType::NumGeometryType:
           assert( 0 );
@@ -5959,8 +6109,11 @@ vector<PeakResultPlotInfo>
 #endif
       
       double actPerVol = 0.0;
+      // Variant 2: set true for the volumetric-normalized trace types so the calculators fold
+      //  1/vol (or 1/norm) into the integrand rather than dividing actPerVol here.
+      bool normalizeByVolume = false;
       EnergyCountMap local_energy_count_map;
-      
+
       if( is_trace )
       {
         has_trace = true;
@@ -5972,11 +6125,22 @@ vector<PeakResultPlotInfo>
         {
           case TraceActivityType::TotalActivity:
           {
+            // Variant-gated; see VOL_CALC_VARIANT in GammaInteractionCalc_imp.hpp.  (Mirror of the
+            //  templated path so the displayed/uncertainty calc matches the Ceres fit residual.)
+#if( VOL_CALC_VARIANT == 2 )
+            // Reformulation: carry act, fold 1/vol into the integrand weight (see eval_*); the
+            //  per-volume normalization happens inside eval_*, so the shell volume is not needed here.
+            actPerVol = act;
+            normalizeByVolume = true;
+#elif( VOL_CALC_VARIANT == 0 )
             const double vol = volumeOfMaterial(material_index, x);
-            actPerVol = act / vol;
+            actPerVol = (vol > 0.0) ? (act / vol) : 0.0;
+#else
+            #error "Unknown VOL_CALC_VARIANT"
+#endif
             break;
           }
-            
+
           case TraceActivityType::ActivityPerCm3:
             actPerVol = act / PhysicalUnits::cm3;
             break;
@@ -5987,14 +6151,24 @@ vector<PeakResultPlotInfo>
             
           case TraceActivityType::ExponentialDistribution:
           {
-            const double relaxation_len = trace_srcs[src_index].m_relaxationDistance;
-            assert( relaxation_len > 0.0 );
-            
             //actually activity of the entire soil-column, all the way down, so not an actPerVol,
             //  strictly, but per surface area
             actPerVol = act / PhysicalUnits::m2;
-            
-            // We need to normalize the activity by integrating over the entire volume
+
+#if( VOL_CALC_VARIANT == 2 )
+            // Reformulation: carry act/m^2, fold 1/norm into the integrand weight (see eval_*).
+            //  eval_* uses the single (innermost) source-shell exponential forms - the physical
+            //  in-situ case - so a nested exponential source would be mis-normalized; assert it away.
+            //  (m_inSituRelaxationLength validity is asserted below where it is set.)
+            assert( material_index == 0 );
+            normalizeByVolume = true;
+#elif( VOL_CALC_VARIANT == 0 )
+            const double relaxation_len = trace_srcs[src_index].m_relaxationDistance;
+            assert( relaxation_len > 0.0 );
+
+            // Normalize by the depth-integral `norm` (-> 0 as the shell dimension R -> 0); divided
+            //  after the geometry switch.
+            double norm = 0.0;
             switch( m_geometry )
             {
               case GeometryType::Spherical:
@@ -6003,24 +6177,22 @@ vector<PeakResultPlotInfo>
                 //  relaxation length, is L*(L*L*(2-2*exp(-R/L)) - 2*L*R + R*R)
                 //  So we will normalize by this factor (times 4pi) so the surface contamination
                 //  level (in activity/m2), multiplied by surface are will give total activity
-                
+
                 //4 π integral_0^R e^(-(R - ρ)/L) ρ^2 dρ = 4 π L (L^2 (2 - 2 e^(-R/L)) - 2 L R + R^2)
-                
+
                 const double R = sphericalThickness(material_index, x);
                 const double L = relaxation_len;
-                const double norm = 4*PhysicalUnits::pi * L * (L*L*(2 - 2*exp(-R/L)) - 2*L*R + R*R);
-                actPerVol /= norm;
-                
+                norm = 4*PhysicalUnits::pi * L * (L*L*(2 - 2*exp(-R/L)) - 2*L*R + R*R);
                 break;
               }//case GeometryType::Spherical:
-                
+
               case GeometryType::Rectangular:
               case GeometryType::CylinderEndOn:
               {
                 // Integral from 0.0 to shielding depth R, of relaxation length L, is L - L*exp(-R/L)
                 //  So we will normalize by this factor so the activity represents the entire activity
                 //  of the column
-                
+
                 double R = -1.0;
                 if( m_geometry == GeometryType::Rectangular )
                   R = 2.0 * rectangularDepthThickness(material_index, x);
@@ -6028,21 +6200,19 @@ vector<PeakResultPlotInfo>
                   R = 2.0 * cylindricalLengthThickness(material_index, x);
 
                 assert( R >= 0.0 );
-                
+
                 const double L = relaxation_len;
-                const double norm = L * (1.0 - exp(-R / L) );
-                actPerVol /= norm;
+                norm = L * (1.0 - exp(-R / L) );
                 break;
               }// case GeometryType::Rectangular or CylinderEndOn
-                
+
               case GeometryType::CylinderSideOn:
               {
                 //integrate 2*pi*r*exp(-(R-r)/L) wrt r, from 0 to R
                 const double R = cylindricalRadiusThickness(material_index, x);
                 const double L = relaxation_len;
-                
-                const double norm = 2 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1) + R);
-                actPerVol /= norm;
+
+                norm = 2 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1) + R);
                 break;
               }//case GeometryType::CylinderSideOn:
               
@@ -6050,7 +6220,12 @@ vector<PeakResultPlotInfo>
                 assert( 0 );
                 break;
             }//switch( m_geometry )
-            
+
+            actPerVol /= norm;                          // unguarded - norm -> 0 as R -> 0
+#else
+            #error "Unknown VOL_CALC_VARIANT"
+#endif
+
             break;
           }//case TraceActivityType::ExponentialDistribution:
             
@@ -6112,7 +6287,8 @@ vector<PeakResultPlotInfo>
         calculator->m_nuclide = src;
         calculator->m_energy = energy_count.first;
         calculator->m_srcVolumetricActivity = energy_count.second;
-        
+        calculator->m_normalizeByVolume = normalizeByVolume;
+
         if( m_options.attenuate_for_air )
           calculator->m_airTransLenCoef = transmission_length_coefficient_air( energy_count.first );
         else
@@ -6372,8 +6548,13 @@ vector<PeakResultPlotInfo>
             {
               if( !calculator->m_isInSituExponential )
               {
-                src.cpsAtSource *= volume;
-                src.countsAtSource *= volume;
+                // Variant 2 (m_normalizeByVolume) already carries the total activity in
+                //  cpsAtSource (actPerVol = act), so don't multiply by the volume again.
+                if( !calculator->m_normalizeByVolume )
+                {
+                  src.cpsAtSource *= volume;
+                  src.countsAtSource *= volume;
+                }
               }else
               {
                 // For in-situ exponential, we are tracking per surface area
@@ -6417,8 +6598,11 @@ vector<PeakResultPlotInfo>
                     const double norm = L * (1.0 - exp(-R / L) );
                     const double r = cylindricalRadiusThickness(mat_index, x);
                     const double sa = PhysicalUnits::pi*r*r;
-                    src.cpsAtSource *= (sa * norm);
-                    src.countsAtSource *= (sa * norm);
+                    // Variant 2 folds 1/norm into the integrand, so cpsAtSource is already
+                    //  per-area (un-divided by norm); only the cross-section `sa` is needed.
+                    const double norm_factor = calculator->m_normalizeByVolume ? 1.0 : norm;
+                    src.cpsAtSource *= (sa * norm_factor);
+                    src.countsAtSource *= (sa * norm_factor);
                     break;
                   }//case GeometryType::CylinderEndOn:
                   
@@ -6448,10 +6632,16 @@ vector<PeakResultPlotInfo>
           
           PeakDetail::VolumeSrc src;
           src.trace = is_trace_src[calculator.get()];
-          src.integral = calculator->integral;
+          // Variant 2 normalizes the integral by vol and carries the total activity; un-normalize
+          //  the reported integral and recover the per-volume activity so the report (and
+          //  averageEfficiencyPerSourceGamma) matches variants 0/1.  (Exponential keeps its own
+          //  per-area diagnostic above.)
+          const bool unnormVol = (calculator->m_normalizeByVolume && !calculator->m_isInSituExponential);
+          src.integral = unnormVol ? (calculator->integral * volume) : calculator->integral;
           src.volume = volume;
           src.averageEfficiencyPerSourceGamma = src.integral / src.volume;
-          src.srcVolumetricActivity = calculator->m_srcVolumetricActivity;
+          src.srcVolumetricActivity = unnormVol ? (calculator->m_srcVolumetricActivity / volume)
+                                                : calculator->m_srcVolumetricActivity;
           src.inSituExponential = calculator->m_isInSituExponential;
           src.inSituRelaxationLength = calculator->m_inSituRelaxationLength;
           src.detIntrinsicEff = 1.0;

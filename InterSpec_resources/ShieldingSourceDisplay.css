@@ -335,9 +335,32 @@
 /* Phase 3: live/manual fit split-button states (classes set on the action button half).
    Manual mode: "Perform Model Fit", flagged when the showing results are stale.
    Live mode: the action button becomes a status pill ("Updating…" / "Up to date"). */
-.ShieldingSourceDisplay .FitActions .FitNeeded
+/* Manual + stale "needs fit" accent: ring the WHOLE split button via the container (which carries
+   the 5px rounded border around both halves), so the highlight reads as one button rather than just
+   the left half disjoint from the dropdown caret.  Desktop only - phone keeps its own inset accent
+   on the action half (see the .SsdPhone .SsdFitSplit.SsdFitManual > button.FitNeeded rule below). */
+.ShieldingSourceDisplay:not(.SsdPhone) .FitActions .SsdFitSplit.SsdFitNeeded
 {
   box-shadow: 0 0 0 2px rgba(45,127,249,.55);
+}
+/* The footer pins this button flush to the panel's bottom-right corner, where the dialog's
+   overflow:hidden clips the 2px accent ring.  Hold it just 1px off each edge (always, so the
+   position is stable - no jump when the ring appears): enough for the ring to clear the clip
+   boundary, while the button's right edge still lines up with the boxes above it. */
+.ShieldingSourceDisplay:not(.SsdPhone) .FitActions .SsdFitSplit
+{
+  margin-right: 1px;
+  margin-bottom: 1px;
+}
+/* The button is the last element in the panel, so the dialog body's standard 4px bottom padding
+   shows below it - more than the ~2px in-panel gap above it, making the accent ring look
+   bottom-heavy.  The button is pinned (its ring is clipped at the panel-content edge, and the
+   panel is a fixed-size Wt grid that ignores margins), so the only lever is the body padding.
+   Trim it for THIS dialog so the spacing above and below the button reads balanced.  :has() is
+   supported on the Safari 15.4 minimum target; older engines just keep the 4px (graceful). */
+.AuxWindow-content.body:has(.ShieldingSourceDisplay)
+{
+  padding-bottom: 2px !important;
 }
 
 /* Live mode: the action button is a status pill, not really a "press me" button. */

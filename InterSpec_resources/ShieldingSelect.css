@@ -96,10 +96,20 @@
   gap: 4px 6px;
   padding: 4px 3px;
 }
-.ShieldingSelect .GenericMatRow input
+/* Number inputs (AN / AD) only - NOT the Fit checkboxes, whose <input type=checkbox> would
+   otherwise be forced to 34px wide and read as large padding around each checkbox. */
+.ShieldingSelect .GenericMatRow input:not([type="checkbox"])
 {
   flex: 0 1 auto;      /* compact; may shrink slightly if the column gets narrow */
   min-width: 34px;
+}
+/* AN/AD "Fit" checkboxes: keep the box its natural size and tight to its label so the whole
+   AN/AD row fits the available width. */
+.ShieldingSelect .GenericMatRow .CbNoLineBreak input[type="checkbox"]
+{
+  min-width: 0;
+  flex: 0 0 auto;
+  margin: 0 2px 0 0;
 }
 .ShieldingSelect .GenericMatRow label
 {

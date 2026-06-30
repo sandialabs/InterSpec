@@ -2859,7 +2859,7 @@ double ShieldingSelect::shieldingVolume() const
       
       const double innerVolume = (4.0/3.0) * pi * inner_rad * inner_rad * inner_rad;
       const double outerVolume = (4.0/3.0) * pi * outer_rad * outer_rad * outer_rad;
-      assert( outerVolume > innerVolume );
+      assert( outerVolume >= innerVolume );  // equal when this shell has zero thickness
       
       volume = outerVolume - innerVolume;
       

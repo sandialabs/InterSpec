@@ -399,9 +399,20 @@ struct DistributedSrcCalc
 
   /** The photons (i.e., sum of activities times br) per volume of the shielding.
    Is not used during integration; used to multiple integral by to get number of expected peak counts.
+
+   Variant 2 (VOL_CALC_VARIANT, see GammaInteractionCalc_imp.hpp): when #m_normalizeByVolume is
+   set this instead carries the un-divided numerator (total activity, or activity per m^2 for an
+   in-situ exponential), and eval_* folds 1/vol (or 1/norm) into the integrand.
    */
   double m_srcVolumetricActivity;
-  
+
+  /** Variant 2: when true, eval_* returns trans*(dV/vol) for TotalActivity (or trans*(dV/norm)
+   for an in-situ exponential) instead of trans*dV, folding the source-shell normalization into
+   the integrand with the vanishing source dimension cancelled symbolically.  Mirrors
+   DistributedSrcCalcT<T>::m_normalizeByVolume.  Left false in variants 0/1.
+   */
+  bool m_normalizeByVolume = false;
+
   /** The energy of gamma being integrated over.
    
    Doesnt look to be used in the integration, but used for debug writing out.

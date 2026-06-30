@@ -92,6 +92,79 @@ inline double scalar_of( const T &val )
 }
 
 
+/** Volumetric trace-source normalization variant (TotalActivity / in-situ
+ ExponentialDistribution).  This is a core fit-path calculation, so the two
+ formulations are gated behind one compile-time switch, to let us A/B variant 2
+ against the original (variant 0) using the golden regression tests
+ (test_ShieldingGeomGolden) and the zero-thickness limit tests
+ (test_ShieldingDimLimit).
+
+   0  Original.  actPerVol = act/vol (and act/m^2/norm for the exponential).  Exact
+      and well-conditioned for healthy shell dimensions, but as a source-shell
+      dimension -> 0 the volume (and exponential norm) -> 0: act/vol blows up to
+      Inf/NaN (the exponential norm divide is unguarded), or, where guarded, drops
+      to a constant 0 that zeroes the Jacobian (Ceres can stall on a pinned dim).
+      Kept as the "obviously correct in the healthy regime" reference oracle for
+      validating variant 2 during the Minuit2 -> Ceres migration.
+   2  Per-geometry reformulation (the default).  Carry the numerator (act) and fold
+      1/vol (and the exponential 1/norm) into a per-sample-point integrand weight
+      with the vanishing dimension cancelled symbolically (see eval_*), so both
+      value AND derivative stay continuous through zero thickness.  Strictly at
+      least as numerically stable as variant 0 everywhere, and strictly better as
+      any source dimension shrinks (and in the Jet derivative lane for thin
+      multi-shell annuli).
+
+ (A former variant 1 floored vol/norm to a small positive value; it was removed once
+ variant 2 was validated, since its clamp zeroed the Jacobian below the floor and was
+ therefore strictly inferior to variant 2.)
+
+ Override at build time with -DVOL_CALC_VARIANT=n to compare. */
+#ifndef VOL_CALC_VARIANT
+#define VOL_CALC_VARIANT 2
+#endif
+
+/** (1 - e^{-x})/x, finite and C-infinity through x = 0 (value -> 1, slope -> -1/2);
+ used by variant 2 to write the exponential-distribution normalization without a
+ 0/0 as the shell dimension -> 0.  The direct (1 - e^{-x})/x form is used for
+ moderate x; a Taylor series covers the neighborhood of 0 (where 1 - e^{-x} would
+ cancel).  ceres::Jet has no expm1, so we cannot use that here. */
+template<typename T>
+inline T one_minus_exp_neg_over_x( const T &x )
+{
+  using std::exp;   // ADL picks ceres::exp for Jet, std::exp for double
+  if( std::abs( scalar_of(x) ) > 1.0e-3 )
+    return ( T(1.0) - exp(-x) ) / x;
+  return T(1.0) + x*( T(-1.0/2.0) + x*( T(1.0/6.0) + x*( T(-1.0/24.0) + x*T(1.0/120.0) ) ) );
+}
+
+/** (u^2 - 2u + 2 - 2 e^{-u})/u^3, finite and C-infinity through u = 0 (value -> 1/3);
+ the smooth, non-vanishing factor of the spherical in-situ exponential depth-integral
+ norm = 4*pi*R^3*h_sph(R/L) used by variant 2, so the R^3 cancels the integrand's
+ r^2*dr Jacobian.  Direct form for |u| > 1e-2 (where the u^3 cancellation is still
+ safe), a Taylor series in the neighborhood of 0. */
+template<typename T>
+inline T sphere_exp_norm_factor( const T &u )
+{
+  using std::exp;
+  if( std::abs( scalar_of(u) ) > 1.0e-2 )
+    return ( u*u - T(2.0)*u + T(2.0) - T(2.0)*exp(-u) ) / (u*u*u);
+  return T(1.0/3.0) + u*( T(-1.0/12.0) + u*( T(1.0/60.0) + u*( T(-1.0/360.0) + u*T(1.0/2520.0) ) ) );
+}
+
+/** (u - 1 + e^{-u})/u^2, finite and C-infinity through u = 0 (value -> 1/2); the
+ smooth, non-vanishing factor of the side-on-cylinder in-situ exponential depth-integral
+ norm = 2*pi*R^2*h_side(R/L) used by variant 2, so the R^2 cancels the integrand's
+ r*dr Jacobian.  Direct form for |u| > 1e-2, a Taylor series near 0. */
+template<typename T>
+inline T cyl_side_exp_norm_factor( const T &u )
+{
+  using std::exp;
+  if( std::abs( scalar_of(u) ) > 1.0e-2 )
+    return ( u - T(1.0) + exp(-u) ) / (u*u);
+  return T(1.0/2.0) + u*( T(-1.0/6.0) + u*( T(1.0/24.0) + u*( T(-1.0/120.0) + u*T(1.0/720.0) ) ) );
+}
+
+
 template<typename T>
 inline T distance_imp( const T a[3], const T b[3] )
 {
@@ -223,12 +296,24 @@ T detector_response_factor( const DetectorGeomT<T> &det, const T eval_point[3] )
 }//detector_response_factor(...)
 
 
+// Forward declaration; #exit_point_of_sphere_z_imp (below) validates its inputs and forwards here.
+//  The default argument lives here, on the first declaration (a function template may not add a
+//  default argument on a later re-declaration), so the definition below omits it.
+template<typename T>
+T sphere_exit_distance_scaled( const T source_over_rad[3], T exit_point[3],
+                               const T &sphere_rad, const T &observation_dist,
+                               const bool positiveSolution = true );
+
+
 /** Templated transcription of #exit_point_of_sphere_z.
 
- Makes `exit_point` the intersection of the sphere of radius `sphere_rad`
- (centered at origin) with the line from `source_point` toward
- {0,0,observation_dist}; returns the distance from source to exit point.
- Safe to pass the same array for source and exit point.
+ Makes `exit_point` the intersection of the sphere of radius `sphere_rad` (centered at origin) with
+ the line from `source_point` toward {0,0,observation_dist}; returns the distance from source to exit
+ point.  Validates that the source is inside the sphere (with a rounding tolerance for a source on the
+ surface), then forwards to #sphere_exit_distance_scaled with the source pre-divided by the radius - so
+ this is only ever reached with a real, non-vanishing shell radius (the single source-shell path, where
+ the radius can vanish, calls sphere_exit_distance_scaled directly with a radius-free q).  Safe to pass
+ the same array for source and exit point.
  */
 template<typename T>
 T exit_point_of_sphere_z_imp( const T source_point[3],
@@ -243,8 +328,6 @@ T exit_point_of_sphere_z_imp( const T source_point[3],
   const T a = source_point[0];
   const T b = source_point[1];
   const T c = source_point[2];
-  const T &S = sphere_rad;
-  const T &R = observation_dist;
 
   const T r = sqrt( a*a + b*b + c*c );
   if( observation_dist < sphere_rad )
@@ -263,28 +346,73 @@ T exit_point_of_sphere_z_imp( const T source_point[3],
     throw std::runtime_error( "exit_point_of_sphere_z_imp(...): r > sphere_rad" );
   }//if( r > sphere_rad )
 
-  const T denom = R*R - 2.0*c*R + c*c + b*b + a*a;
-  const T sqrt_arg = R*R*S*S - 2.0*c*R*S*S + c*c*S*S + b*b*S*S + a*a*S*S - b*b*R*R - a*a*R*R;
-  const T sqrt_term = sqrt( sqrt_arg );
-
-  if( postiveSolution )
-  {
-    exit_point[0] = -(a*sqrt_term - a*R*R + a*c*R) / denom;
-    exit_point[1] = (-b*sqrt_term + b*R*R - b*c*R) / denom;
-    exit_point[2] = (R*(sqrt_term + b*b + a*a) - c*sqrt_term) / denom;
-  }else
-  {
-    exit_point[0] = (a*sqrt_term + a*R*R - a*c*R) / denom;
-    exit_point[1] = (b*sqrt_term + b*R*R - b*c*R) / denom;
-    exit_point[2] = (c*sqrt_term + R*(-sqrt_term + b*b + a*a)) / denom;
-  }//if( postiveSolution ) / else
-
-  const T dx = a - exit_point[0];
-  const T dy = b - exit_point[1];
-  const T dz = c - exit_point[2];
-
-  return sqrt( dx*dx + dy*dy + dz*dz );
+  // Source is inside the sphere and the radius is bounded > 0 here, so forward to the radius-scaled
+  //  solver with q = source/S.  q is a local copy, so writing exit_point is safe even when it aliases
+  //  source_point.  (The single source-shell path, where S can vanish, calls the scaled solver
+  //  directly with a radius-free q, keeping the ceres::Jet derivative finite through S -> 0.)
+  const T inv_S = T(1.0) / sphere_rad;
+  const T q[3] = { a*inv_S, b*inv_S, c*inv_S };
+  return sphere_exit_distance_scaled( q, exit_point, sphere_rad, observation_dist, postiveSolution );
 }//exit_point_of_sphere_z_imp(...)
+
+
+/** Distance from an interior source to the surface of a radius-`sphere_rad` sphere (centered at the
+ origin), along the ray toward the rotated detector at (0,0,observation_dist); also writes the exit
+ location to `exit_point`.  Mathematically identical to #exit_point_of_sphere_z_imp, but the source is
+ supplied **pre-divided by the radius** as `source_over_rad` (= P/sphere_rad, |.| <= 1), which lets the
+ radius factor out of the intersection discriminant:
+
+   t_exit = sqrt(disc) - P.u,  disc = (P.u)^2 + S^2 - |P|^2 = S^2 * [ (q.u)^2 + 1 - |q|^2 ]
+
+ so `t_exit = S*( sqrt(G) - q.u )` with `G = (q.u)^2 + 1 - |q|^2 >= 1 - |q|^2 >= 0` for an interior
+ source.  The radical is therefore never of a quadratically-vanishing argument, so value AND ceres::Jet
+ derivative stay finite and continuous as `sphere_rad -> 0` (where the un-scaled `sqrt(S^2*G)` would
+ poison the derivative lane) - and likewise as the source approaches the sphere *surface* (|q| -> 1),
+ which is the multi-shell thin-shell failure mode.  Callers must form `q`
+ without dividing by the radius where the radius can vanish (e.g. a single source shell has source =
+ x_r*S*dir, so q = x_r*dir is radius-free); for multi-shell shells the radius is bounded away from 0,
+ so `q = source/radius` is safe.
+
+ `positiveSolution` selects the forward (toward-detector) root, or the backward root behind the
+ source (matching #exit_point_of_sphere_z_imp's `postiveSolution=false`); the returned distance is
+ non-negative either way.  (Default argument is on the forward declaration above.) */
+template<typename T>
+T sphere_exit_distance_scaled( const T source_over_rad[3], T exit_point[3],
+                               const T &sphere_rad, const T &observation_dist,
+                               const bool positiveSolution )
+{
+  using namespace std;
+  using namespace ceres;
+
+  const T &S = sphere_rad;
+  const T &R = observation_dist;
+
+  // Source point P = S*q, and the unit direction toward the detector at (0,0,R).
+  const T px = S*source_over_rad[0];
+  const T py = S*source_over_rad[1];
+  const T pz = S*source_over_rad[2];
+
+  T u[3] = { -px, -py, R - pz };
+  const T un = sqrt( u[0]*u[0] + u[1]*u[1] + u[2]*u[2] );
+  u[0] /= un;  u[1] /= un;  u[2] /= un;
+
+  const T q_dot_u = source_over_rad[0]*u[0] + source_over_rad[1]*u[1] + source_over_rad[2]*u[2];
+  const T q2 = source_over_rad[0]*source_over_rad[0]
+             + source_over_rad[1]*source_over_rad[1]
+             + source_over_rad[2]*source_over_rad[2];
+  const T G = q_dot_u*q_dot_u + T(1.0) - q2;   // >= 1 - |q|^2 >= 0 for an interior source
+  const T root = sqrt(G);
+
+  // Signed ray parameter (source at t=0): forward root toward the detector, else the backward root
+  //  behind the source.  S factors out of the radical, so no quadratically-vanishing sqrt.
+  const T t_signed = positiveSolution ? (S*( root - q_dot_u )) : (S*( -root - q_dot_u ));
+
+  exit_point[0] = px + t_signed*u[0];
+  exit_point[1] = py + t_signed*u[1];
+  exit_point[2] = pz + t_signed*u[2];
+
+  return positiveSolution ? t_signed : -t_signed;   // non-negative distance to the intersection
+}//sphere_exit_distance_scaled(...)
 
 
 /** Templated transcription of #cylinder_line_intersection.
@@ -517,6 +645,68 @@ T cylinder_line_intersection_imp( const T &radius, const T &half_length,
 }//cylinder_line_intersection_imp(...)
 
 
+/** Distance from an **interior** source to where the ray toward `detector` exits a single
+ radius-`radius`, half-length-`half_length` cylinder (axis along z, centered at origin); also writes
+ `exit_point`.  Like #cylinder_line_intersection_imp for the toward-detector direction of a single
+ cylinder, but reformulated so value AND ceres::Jet derivative stay finite as `radius` or
+ `half_length` -> 0:
+
+  - The source xy is supplied **pre-divided by the radius** as `src_xy_over_rad` (= {px,py}/radius,
+    |.| <= 1), so the radius factors out of the curved-side intersection discriminant:
+    `t_side = radius*( sqrt(D_s) - s.u )/|u_xy|^2` with `D_s = (s.u)^2 + |u_xy|^2*(1 - |s|^2) >= 0`
+    (never a quadratically-vanishing root, unlike the un-normalized `sqrt(b^2-4ac)`).
+  - The end-cap crossing `t_cap = (±half_length - src_z)/u_z` is linear in `half_length` (and in
+    `src_z`, which itself ~ half_length for a single source shell), so it is finite as
+    `half_length -> 0` instead of the zero-half-length `return 0` branch-switch.
+
+ The exit is the nearer boundary crossing.  Intended for the single source shell (m_materialIndex==0)
+ in eval_cylinder; multi-shell / shield-layer tracing keeps #cylinder_line_intersection_imp. */
+template<typename T>
+T cylinder_source_exit_scaled( const T src_xy_over_rad[2], const T &src_z,
+                               const T &radius, const T &half_length,
+                               const T detector[3], T exit_point[3] )
+{
+  using namespace std;
+  using namespace ceres;
+
+  const T px = radius*src_xy_over_rad[0];
+  const T py = radius*src_xy_over_rad[1];
+  const T &pz = src_z;
+
+  // Unit direction toward the detector.
+  T u[3] = { detector[0] - px, detector[1] - py, detector[2] - pz };
+  const T un = sqrt( u[0]*u[0] + u[1]*u[1] + u[2]*u[2] );
+  u[0] /= un;  u[1] /= un;  u[2] /= un;
+
+  // Curved-side exit, with `radius` factored out of the discriminant.
+  const T uxy2  = u[0]*u[0] + u[1]*u[1];
+  const T s_dot_u = src_xy_over_rad[0]*u[0] + src_xy_over_rad[1]*u[1];
+  const T s2    = src_xy_over_rad[0]*src_xy_over_rad[0] + src_xy_over_rad[1]*src_xy_over_rad[1];
+  const T D_s   = s_dot_u*s_dot_u + uxy2*( T(1.0) - s2 );    // >= 0 for an interior source
+  const T t_side = radius*( sqrt(D_s) - s_dot_u ) / uxy2;    // forward (toward-detector) root
+
+  // End-cap exit (z = +/- half_length); +inf when the ray is parallel to the caps.
+  T t_cap;
+  if( std::abs( scalar_of(u[2]) ) < DBL_EPSILON )
+  {
+    t_cap = T(DBL_MAX);
+  }else
+  {
+    const T z_cap = (scalar_of(u[2]) > 0.0) ? half_length : -half_length;
+    t_cap = (z_cap - pz) / u[2];
+  }
+
+  // The exit is the nearer boundary the (interior-originating) ray reaches.
+  const T t_exit = (scalar_of(t_side) <= scalar_of(t_cap)) ? t_side : t_cap;
+
+  exit_point[0] = px + t_exit*u[0];
+  exit_point[1] = py + t_exit*u[1];
+  exit_point[2] = pz + t_exit*u[2];
+
+  return t_exit;
+}//cylinder_source_exit_scaled(...)
+
+
 /** Templated transcription of #rectangle_exit_location.
 
  `source` must be inside (or on the surface of) the box; returns the distance
@@ -541,18 +731,18 @@ T rectangle_exit_location_imp( const T &half_width, const T &half_height,
   norm[2] /= total_dist;
 
   // Find the intersection with each of the three candidate exit planes, and take the closest.
-  // Line in three-space: {x,y,z} = source + t*norm
-  const T inv_slope_x = (norm[0] == 0.0) ? T(DBL_MAX) : (1.0 / norm[0]);
-  const T x_intersect = (inv_slope_x >= 0.0) ? half_width : -half_width;
-  const T t_intersect_x = (x_intersect - source[0])*inv_slope_x;
-
-  const T inv_slope_y = (norm[1] == 0.0) ? T(DBL_MAX) : (1.0 / norm[1]);
-  const T y_intersect = (inv_slope_y >= 0.0) ? half_height : -half_height;
-  const T t_intersect_y = (y_intersect - source[1])*inv_slope_y;
-
-  const T inv_slope_z = (norm[2] == 0.0) ? T(DBL_MAX) : (1.0 / norm[2]);
-  const T z_intersect = (inv_slope_z >= 0.0) ? half_depth : -half_depth;
-  const T t_intersect_z = (z_intersect - source[2])*inv_slope_z;
+  // Line in three-space: {x,y,z} = source + t*norm.  A ray parallel to an axis' planes (a zero
+  //  norm component) never exits through them, so its t is +inf - and we must short-circuit the
+  //  *whole* t there, NOT form (intersect-source)*(1/norm).  Otherwise a zero half-extent makes
+  //  (0 - 0)*DBL_MAX = 0, and that degenerate plane is wrongly selected as the nearest exit - the
+  //  zero-transverse-dimension bug.  Note division is only ever by the ray direction component,
+  //  never by a half-extent, so a zero box dimension is numerically safe here.
+  const T t_intersect_x = (norm[0] == 0.0) ? T(DBL_MAX)
+                          : ( ((norm[0] >= 0.0) ? half_width : -half_width) - source[0] ) / norm[0];
+  const T t_intersect_y = (norm[1] == 0.0) ? T(DBL_MAX)
+                          : ( ((norm[1] >= 0.0) ? half_height : -half_height) - source[1] ) / norm[1];
+  const T t_intersect_z = (norm[2] == 0.0) ? T(DBL_MAX)
+                          : ( ((norm[2] >= 0.0) ? half_depth : -half_depth) - source[2] ) / norm[2];
 
   if( (t_intersect_x <= t_intersect_y) && (t_intersect_x <= t_intersect_z) )
   {
@@ -734,11 +924,30 @@ T center_ray_exit_distance( const GeometryType geometry,
       return outer_dims[0];
 
     case GeometryType::CylinderEndOn:
+      // For the on-axis center ray (the usual point-source case) the chord is exactly the along-ray
+      //  half-length, and stays smooth through zero radius.  We short-circuit it rather than route
+      //  through the general intersector, which (a) returns a flat T(0.0) - zero value AND zeroed
+      //  Jacobian - for a ray at zero radius/length via its axis-parallel guard, and (b) for a
+      //  side-on ray computes the chord via sqrt(discriminant), which is 0/0 (NaN derivative) at
+      //  zero radius.  Off-axis (lateral detector offset) falls through to the intersector.
+      if( (scalar_of(detector_pos[0]) == 0.0) && (scalar_of(detector_pos[1]) == 0.0) )
+        return outer_dims[1];   // along-ray dimension = half-length
+      return cylinder_line_intersection_imp( outer_dims[0], outer_dims[1], origin, detector_pos,
+                                             CylExitDir::TowardDetector, exit_point );
+
     case GeometryType::CylinderSideOn:
+      // Side-on detector is along +x, so the on-axis chord is exactly the radius (see CylinderEndOn
+      //  for why we short-circuit instead of using the general intersector).
+      if( (scalar_of(detector_pos[1]) == 0.0) && (scalar_of(detector_pos[2]) == 0.0) )
+        return outer_dims[0];   // along-ray dimension = radius
       return cylinder_line_intersection_imp( outer_dims[0], outer_dims[1], origin, detector_pos,
                                              CylExitDir::TowardDetector, exit_point );
 
     case GeometryType::Rectangular:
+      // rectangle_exit_location_imp divides only by the ray direction (never by the half-extents)
+      //  and short-circuits a ray-parallel face to +inf, so it is exact and smooth even when a
+      //  transverse half-extent is zero: the along-ray dimension sets the chord (derivative 1),
+      //  transverse dimensions do not (derivative 0).  No clamp/nudge needed.
       return rectangle_exit_location_imp( outer_dims[0], outer_dims[1], outer_dims[2],
                                           origin, detector_pos, exit_point );
 
@@ -799,6 +1008,16 @@ struct DistributedSrcCalcT
   std::vector<ShellInfo> m_shells;
 
   T m_srcVolumetricActivity;
+
+  /** Variant 2 (see VOL_CALC_VARIANT): when true, each eval_* folds the source-shell
+   normalization - 1/vol for TotalActivity, 1/norm (the depth-integral) for an in-situ
+   exponential - into the returned integrand weight, with the vanishing source dimension
+   cancelled symbolically so value and Jet derivatives stay finite through zero thickness.
+   m_srcVolumetricActivity then carries the un-divided numerator (act, or act/m^2), and
+   `contrib = integral * m_srcVolumetricActivity` reproduces the original act/vol product.
+   Left false in variants 0/1 (the integrand returns trans*dV unchanged).
+   */
+  bool m_normalizeByVolume = false;
 
   /** Gamma energy; informational only. */
   double m_energy = 0.0;
@@ -959,7 +1178,20 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
     T exit_point[3];
     const T srcRad = m_shells[m_materialIndex].dims[0];
     const T srcTransCoef = m_shells[m_materialIndex].trans_len_coef;
-    const T dist_in_src = exit_point_of_sphere_z_imp( source_point, exit_point, srcRad, obs_dist );
+
+    T dist_in_src;
+    if( m_materialIndex == 0 )
+    {
+      // Single source shell from the origin: source = x_r*srcRad*dir, so the radius-free normalized
+      //  source q = x_r*dir lets sphere_exit_distance_scaled factor srcRad out of the discriminant -
+      //  value+derivative stay finite as srcRad -> 0 (variant-2 zero-thickness limit).
+      const double st = std::sin(theta);
+      const T q_src[3] = { T(x_r*st*std::cos(phi)), T(x_r*st*std::sin(phi)), T(x_r*std::cos(theta)) };
+      dist_in_src = sphere_exit_distance_scaled( q_src, exit_point, srcRad, obs_dist );
+    }else
+    {
+      dist_in_src = exit_point_of_sphere_z_imp( source_point, exit_point, srcRad, obs_dist );
+    }
 
     T min_rad(0.0);
     bool needShellCompute = false;
@@ -1111,6 +1343,27 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
     trans *= detector_response_factor( rotated_det, eval_point );
   }// end apply detector response
 
+  if( m_normalizeByVolume )
+  {
+    // Variant 2: return trans*(dV/N) with the vanishing source dimension cancelled.
+    //  vol = (4/3)pi(R_o^3 - R_i^3); norm = 4pi*R_o^3*h_sph(R_o/L) (single shell).
+    T w;
+    if( m_isInSituExponential )
+    {
+      const T u = source_outer_rad / T(m_inSituRelaxationLength);
+      w = T(0.5*pi*x_r*x_r*std::sin(theta)) / sphere_exp_norm_factor( u );
+    }else if( m_materialIndex == 0 )
+    {
+      w = T(1.5*pi*x_r*x_r*std::sin(theta));   // single shell: dV/vol, R_o^3 cancelled
+    }else
+    {
+      const T Ri = source_inner_rad, Ro = source_outer_rad;
+      w = (T(1.5*pi*std::sin(theta)) * (r*r)) / (Ro*Ro + Ro*Ri + Ri*Ri);
+    }
+
+    return trans * w;
+  }//if( m_normalizeByVolume )
+
   return trans * dV;
 }//eval_spherical(...)
 
@@ -1167,7 +1420,11 @@ T DistributedSrcCalcT<T>::eval_single_cyl_end_on( const double xx[], const int n
     const T r_dist_in_src = r * z_dist_in_src / eval_z_dist_to_det;
     exit_radius = r - r_dist_in_src;
 
-    const T dist_in_src = sqrt(z_dist_in_src*z_dist_in_src + r_dist_in_src*r_dist_in_src);
+    // Factor the z extent (which vanishes with the half-length) out of the radical so the path length
+    //  and its derivative stay finite as source_half_z -> 0:
+    //  sqrt(z_d^2 + (z_d*r/Z)^2) = z_d*sqrt(1 + (r/Z)^2), with z_d = z_dist_in_src >= 0.
+    const T inv_slope = r / eval_z_dist_to_det;
+    const T dist_in_src = z_dist_in_src * sqrt( T(1.0) + inv_slope*inv_slope );
 
     trans += (trans_len_coef * dist_in_src);
     record_path( m_shells[m_materialIndex], dist_in_src );
@@ -1193,6 +1450,24 @@ T DistributedSrcCalcT<T>::eval_single_cyl_end_on( const double xx[], const int n
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to detector).
   const T eval_dist_to_det = sqrt( r*r + eval_z_dist_to_det*eval_z_dist_to_det );
   trans *= fractional_solid_angle_imp( 2.0*m_detector.radius, eval_dist_to_det + m_detector.setback );
+
+  if( m_normalizeByVolume )
+  {
+    // Variant 2 (single source shell from origin - this fast path requires m_materialIndex==0).
+    //  vol = 2pi*R_o^2*L_o -> dV/vol = 2*x_r; norm = 2*L_o*g(2L_o/L) (end-on exponential).
+    T w;
+    if( m_isInSituExponential )
+    {
+      const T u = total_height / T(m_inSituRelaxationLength);   // R = 2*L_o = total_height
+      w = (T(2.0*PhysicalUnits::pi*x_r) * (source_outer_rad*source_outer_rad))
+          / one_minus_exp_neg_over_x( u );
+    }else
+    {
+      w = T(2.0*x_r);   // dV/vol, R_o^2 and L_o cancelled
+    }
+
+    return trans * w;
+  }//if( m_normalizeByVolume )
 
   return trans * dV;
 }//eval_single_cyl_end_on(...)
@@ -1256,8 +1531,21 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
   const T detector_pos[3] = { m_detector.position[0], m_detector.position[1], m_detector.position[2] };
 
   T exit_point[3];
-  const T dist_in_cyl = cylinder_line_intersection_imp( source_outer_rad, source_half_z, eval_point,
+  T dist_in_cyl;
+  if( m_materialIndex == 0 )
+  {
+    // Single source shell: source xy = xx[0]*source_outer_rad*(cos,sin), so the radius-free
+    //  normalized source s_xy = xx[0]*(cos,sin) lets cylinder_source_exit_scaled factor the radius
+    //  out of the curved-side discriminant and keep the half-length linear - finite value+derivative
+    //  as either source dimension -> 0 (variant-2 zero-thickness limit).
+    const T s_xy[2] = { T(xx[0]*std::cos(theta)), T(xx[0]*std::sin(theta)) };
+    dist_in_cyl = cylinder_source_exit_scaled( s_xy, z, source_outer_rad, source_half_z,
+                                               detector_pos, exit_point );
+  }else
+  {
+    dist_in_cyl = cylinder_line_intersection_imp( source_outer_rad, source_half_z, eval_point,
                                               detector_pos, CylExitDir::TowardDetector, exit_point );
+  }
 
   T trans(0.0);
 
@@ -1355,6 +1643,41 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
 
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to detector).
   trans *= detector_response_factor( m_detector, eval_point );
+
+  if( m_normalizeByVolume )
+  {
+    // Variant 2: dV/vol (TotalActivity) or dV/norm (in-situ exponential, single shell).
+    //  vol = 2pi(R_o^2 L_o - R_i^2 L_i).
+    const T Ro = source_outer_rad;
+    const T Lo = source_half_z;
+    T w;
+    if( m_isInSituExponential )
+    {
+      const T L = T(m_inSituRelaxationLength);
+      if( m_geometry == GeometryType::CylinderSideOn )
+        w = (T(2.0*xx[0]) * Lo) / cyl_side_exp_norm_factor( Ro / L );   // 2*L_o*x_r / h_side(R_o/L)
+      else
+        w = (T(2.0*PhysicalUnits::pi*xx[0]) * (Ro*Ro))
+            / one_minus_exp_neg_over_x( total_height / L );             // 2pi*x_r*R_o^2 / g(2L_o/L)
+    }else if( m_materialIndex == 0 )
+    {
+      w = T(2.0*xx[0]);   // single shell: dV/vol, R_o^2 and L_o cancelled
+    }else
+    {
+      const T Ri = m_shells[m_materialIndex-1].dims[0];
+      const T Li = m_shells[m_materialIndex-1].dims[1];
+      // Annular volume 2pi(R_o^2 L_o - R_i^2 L_i), expanded via the thickness deltas dR=R_o-R_i,
+      //  dL=L_o-L_i.  Algebraically identical, but it avoids catastrophic cancellation in the
+      //  *autodiff derivative lane* when the source shell is thin (subtracting two nearly-equal
+      //  cumulative terms otherwise blows the derivative up through the dV/vol quotient).
+      const T dR = Ro - Ri, dL = Lo - Li;
+      const T vol_factor = dL*(Ri*Ri) + dR*(T(2.0)*Ri*Li) + T(2.0)*Ri*dR*dL
+                         + (dR*dR)*Li + (dR*dR)*dL;
+      w = dV / (T(2.0*PhysicalUnits::pi) * vol_factor);
+    }
+
+    return trans * w;
+  }//if( m_normalizeByVolume )
 
   return trans * dV;
 }//eval_cylinder(...)
@@ -1496,6 +1819,34 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
   }
 
   trans *= detector_response_factor( m_detector, eval_loc );
+
+  if( m_normalizeByVolume )
+  {
+    // Variant 2: dV/vol (TotalActivity) or dV/norm (in-situ exponential, single shell).
+    //  vol = 8(W H D - Wi Hi Di); norm = 2*D*g(2D/L) (depth-direction exponential).
+    T w;
+    if( m_isInSituExponential )
+    {
+      const T u = (T(2.0)*half_depth) / T(m_inSituRelaxationLength);   // R = 2*D
+      w = (T(4.0)*half_width*half_height) / one_minus_exp_neg_over_x( u );   // 4*W*H / g(2D/L)
+    }else if( m_materialIndex == 0 )
+    {
+      w = T(1.0);   // single shell: dV/vol = 1
+    }else
+    {
+      const T Wi = m_shells[m_materialIndex-1].dims[0];
+      const T Hi = m_shells[m_materialIndex-1].dims[1];
+      const T Di = m_shells[m_materialIndex-1].dims[2];
+      // Trilinear thickness-delta expansion of (W H D - Wi Hi Di) - same autodiff-derivative
+      //  cancellation avoidance as the cylinder above (dW=W-Wi, etc.).
+      const T dW = half_width - Wi, dH = half_height - Hi, dD = half_depth - Di;
+      const T vol_factor = dW*Hi*Di + dH*Wi*Di + dD*Wi*Hi
+                         + dW*dH*Di + dW*dD*Hi + dH*dD*Wi + dW*dH*dD;
+      w = dV / (T(8.0) * vol_factor);
+    }
+
+    return trans * w;
+  }//if( m_normalizeByVolume )
 
   return trans * dV;
 }//eval_rect(...)
@@ -2882,6 +3233,11 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
 
       T actPerVol(0.0);
 
+      // Variant 2: set true for the volumetric-normalized trace types (TotalActivity, in-situ
+      //  exponential) so the created calculators fold 1/vol (or 1/norm) into the integrand
+      //  instead of dividing actPerVol here.  Stays false in variants 0/1.
+      bool normalizeByVolume = false;
+
       if( is_trace )
       {
         const T act = activity_imp( src, params );
@@ -2889,8 +3245,23 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
         switch( trace_srcs[src_index].m_type )
         {
           case TraceActivityType::TotalActivity:
-            actPerVol = act / volumeOfMaterial_imp( material_index, params );
+          {
+#if( VOL_CALC_VARIANT == 2 )
+            // Reformulation: carry the numerator (act) and fold 1/vol into the integrand weight
+            //  (see eval_*), so value+derivative stay continuous through zero thickness.  The
+            //  per-volume normalization happens inside eval_*, so the shell volume is not needed here.
+            actPerVol = act;
+            normalizeByVolume = true;
+#elif( VOL_CALC_VARIANT == 0 )
+            // Original: act/vol, guarded so an exactly-zero shell volume yields 0 (a flat,
+            //  zero-derivative contribution) rather than Inf/NaN.  (Flagged by check_for_fit_warnings.)
+            const T vol = volumeOfMaterial_imp( material_index, params );
+            actPerVol = (scalar_of(vol) > 0.0) ? (act / vol) : T(0.0);
+#else
+            #error "Unknown VOL_CALC_VARIANT"
+#endif
             break;
+          }
 
           case TraceActivityType::ActivityPerCm3:
             actPerVol = act / PhysicalUnits::cm3;
@@ -2902,21 +3273,34 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
 
           case TraceActivityType::ExponentialDistribution:
           {
-            const double relaxation_len = trace_srcs[src_index].m_relaxationDistance;
-            assert( relaxation_len > 0.0 );
-
             //actually activity of the entire soil-column, per surface area
             actPerVol = act / PhysicalUnits::m2;
 
-            // Normalize the activity by integrating over the entire volume
+#if( VOL_CALC_VARIANT == 2 )
+            // Reformulation: carry act/m^2 as the numerator and fold 1/norm into the integrand
+            //  weight (see eval_*), so do not divide by the depth-integral here.
+            //
+            // eval_* uses the single (innermost) source-shell exponential forms - the physical
+            //  in-situ case, where the soil column is the only/innermost layer.  A nested
+            //  exponential source (an inner non-source core inside the soil) would be
+            //  mis-normalized, so assert it away rather than silently apply the wrong weight.
+            //  (calculator->m_inSituRelaxationLength validity is asserted below where it is set.)
+            assert( material_index == 0 );
+            normalizeByVolume = true;
+#elif( VOL_CALC_VARIANT == 0 )
+            const double relaxation_len = trace_srcs[src_index].m_relaxationDistance;
+            assert( relaxation_len > 0.0 );
+
+            // Normalize by the depth-integral over the shell, `norm` (a volume-like factor that
+            //  -> 0 as the shell dimension R -> 0).  Computed per geometry, then divided once below.
             const double L = relaxation_len;
+            T norm(0.0);
             switch( m_geometry )
             {
               case GeometryType::Spherical:
               {
                 const T R = sphericalThickness_imp( material_index, params );
-                const T norm = 4*PhysicalUnits::pi * L * (L*L*(2.0 - 2.0*exp(-R/L)) - 2.0*L*R + R*R);
-                actPerVol /= norm;
+                norm = 4*PhysicalUnits::pi * L * (L*L*(2.0 - 2.0*exp(-R/L)) - 2.0*L*R + R*R);
                 break;
               }//case GeometryType::Spherical:
 
@@ -2929,16 +3313,14 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
                 else
                   R = 2.0 * cylindricalLengthThickness_imp( material_index, params );
 
-                const T norm = L * (1.0 - exp(-R / L));
-                actPerVol /= norm;
+                norm = L * (1.0 - exp(-R / L));
                 break;
               }//case Rectangular or CylinderEndOn
 
               case GeometryType::CylinderSideOn:
               {
                 const T R = cylindricalRadiusThickness_imp( material_index, params );
-                const T norm = 2.0 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1.0) + R);
-                actPerVol /= norm;
+                norm = 2.0 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1.0) + R);
                 break;
               }//case GeometryType::CylinderSideOn:
 
@@ -2946,6 +3328,12 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
                 assert( 0 );
                 break;
             }//switch( m_geometry )
+
+            // Original: divide by the depth-integral.  UNGUARDED - norm -> 0 as R -> 0 gives Inf/NaN.
+            actPerVol /= norm;
+#else
+            #error "Unknown VOL_CALC_VARIANT"
+#endif
 
             break;
           }//case TraceActivityType::ExponentialDistribution:
@@ -2998,6 +3386,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
         calculator->m_nuclide = src;
         calculator->m_energy = energy_count.first;
         calculator->m_srcVolumetricActivity = energy_count.second;
+        calculator->m_normalizeByVolume = normalizeByVolume;
 
         if( m_options.attenuate_for_air )
           calculator->m_airTransLenCoef = transmission_length_coefficient_air( static_cast<float>(energy_count.first) );
@@ -3410,9 +3799,13 @@ inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffect
     // For in-situ exponential sources m_srcVolumetricActivity is per-area normalized,
     //  so the total emitted is not volumetric-activity * volume; leave as -1.
     if( !calc->m_isInSituExponential )
-      info.gammas_into_4pi = calc->m_srcVolumetricActivity
-                             * volumeOfMaterial_imp( calc->m_materialIndex, params )
-                             * m_liveTime;
+    {
+      // Variant 2 (m_normalizeByVolume) already carries the total activity in
+      //  m_srcVolumetricActivity, so don't multiply by the volume again.
+      const double vol_factor = calc->m_normalizeByVolume
+                  ? 1.0 : volumeOfMaterial_imp( calc->m_materialIndex, params );
+      info.gammas_into_4pi = calc->m_srcVolumetricActivity * vol_factor * m_liveTime;
+    }
 
     if( (comps.c[0] > 0.0) && (comps.c[1] > 0.0) )
     {
