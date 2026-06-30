@@ -31,11 +31,11 @@
 #include <iostream>
 #include <algorithm>
 
-#define BOOST_TEST_MODULE RelActCalcAuto_MassFracConstraint_suite
-#include <boost/test/included/unit_test.hpp>
-
 #include <ceres/jet.h>
 
+// Include the InterSpec/Wt headers (which transitively pull in boost/asio, i.e. winsock2.h)
+//  BEFORE the Boost.Test header, which on Windows includes <windows.h> -> WinSock.h.  Reversing
+//  this order triggers MSVC C1189 "WinSock.h has already been included".
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -48,6 +48,9 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+
+#define BOOST_TEST_MODULE RelActCalcAuto_MassFracConstraint_suite
+#include <boost/test/included/unit_test.hpp>
 
 // Pulls in RelActCalc::mass_fraction_softcap_factor for the pure-math tests below; included after
 //  <ceres/jet.h> and the std headers (per the header's own requirement) so it can be instantiated as
