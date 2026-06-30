@@ -135,6 +135,7 @@ static const std::map<std::string,double> sm_cuhre_baselines = {
   { "cyl-end-innervoid-661keV",       1.39075429013 },
   { "cyl-side-Fe-661keV",             55.752592498433657 },
   { "cyl-side-U-plus-Fe-661keV",      1.4367924646991794 },
+  { "cyl-side-innervoid-661keV",      1.72724054817 },
   { "rect-Fe-661keV",                 30.0958140512233 },
   { "rect-U-plus-Fe-661keV",          0.65361416781207027 },
   { "rect-innervoid-661keV",          1.7688442081211311 },
@@ -435,6 +436,114 @@ BOOST_AUTO_TEST_CASE( BoostGLBackendVsCuhre )
 }//BOOST_AUTO_TEST_CASE( BoostGLBackendVsCuhre )
 
 
+/** Guards the anisotropic-refinement speedup.  The nested-core silhouette cases (a transparent
+ core seen through the source material) used to cost the adaptive integrator ~5M evaluations under
+ isotropic bisection; anisotropic refinement cuts that ~20x.  This pins a generous evaluation
+ ceiling for those cases (and a smooth case), so a future change that silently restores isotropic
+ refinement - or otherwise inflates the cost - trips here.  Also confirms the cheap production
+ result still matches a much-tighter reference, i.e. the savings are not bought with accuracy.
+ Ceilings are well above the measured anisotropic cost (cross-platform FP-path slack) yet well
+ below the isotropic cost they replaced.
+ */
+BOOST_AUTO_TEST_CASE( AnisotropicEvalBudget )
+{
+  set_data_dir();
+
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  const vector<VolumetricFixture::VolumetricSrcSpec> fixtures
+                                = VolumetricFixture::standard_volumetric_fixtures();
+
+  // {fixture, production-eval ceiling, rel-tolerance vs a much-tighter reference}.
+  //  measured anisotropic / isotropic production evals, for context:
+  //   rect-innervoid      ~271k / ~5.28M   cyl-side-innervoid ~196k / ~631k   cyl-side-Fe ~34k / ~79k
+  struct Budget{ string name; size_t eval_ceiling; double ref_tol; };
+  const vector<Budget> budgets = {
+    { "rect-innervoid-661keV",     1500000, 2.0e-3 },
+    { "cyl-side-innervoid-661keV",  500000, 1.0e-4 },
+    { "cyl-side-Fe-661keV",         150000, 1.0e-5 },
+  };
+
+  for( const Budget &b : budgets )
+  {
+    const VolumetricFixture::VolumetricSrcSpec *spec = nullptr;
+    for( const VolumetricFixture::VolumetricSrcSpec &f : fixtures )
+      if( f.name == b.name )
+        spec = &f;
+    BOOST_REQUIRE_MESSAGE( spec, "missing fixture " << b.name );
+
+    // Much-tighter reference (100x the production epsrel, bounded budget).
+    GammaInteractionCalc::DistributedSrcCalcT<double> ref
+                            = VolumetricFixture::make_distributed_src_calc_t( *spec, *matdb );
+    GammaInteractionCalc::self_shielding_integration_imp( ref, 1.0e-6, size_t(5000000) );
+    BOOST_REQUIRE( ref.integral > 0.0 );
+
+    // Production-settings run - the one whose cost we guard.
+    GammaInteractionCalc::DistributedSrcCalcT<double> calc
+                            = VolumetricFixture::make_distributed_src_calc_t( *spec, *matdb );
+    GammaInteractionCalc::self_shielding_integration_imp( calc );
+
+    cout << "EvalBudget '" << b.name << "': evals=" << calc.m_num_evals
+         << " (ceiling " << b.eval_ceiling << "), rel-vs-ref="
+         << std::setprecision(3) << fabs(calc.integral - ref.integral)/ref.integral << endl;
+
+    BOOST_CHECK_MESSAGE( calc.m_num_evals <= b.eval_ceiling,
+                         "Fixture '" << b.name << "' used " << calc.m_num_evals
+                         << " evals, over the anisotropic-refinement ceiling " << b.eval_ceiling
+                         << " - did anisotropic refinement regress to isotropic?" );
+
+    BOOST_CHECK_MESSAGE( fabs(calc.integral - ref.integral) <= b.ref_tol*ref.integral,
+                         "Fixture '" << b.name << "' production integral " << std::setprecision(12)
+                         << calc.integral << " differs from the tighter reference " << ref.integral
+                         << " by more than " << b.ref_tol << " (savings cost accuracy?)" );
+  }//for( loop over budgets )
+}//BOOST_AUTO_TEST_CASE( AnisotropicEvalBudget )
+
+
+/** Unit-tests the per-axis non-smoothness indicator (`compute_axis_surplus`) that drives the
+ anisotropic split-axis selection: a GL5 grid that is a low-order polynomial (inside the rule's
+ exactness space) must give ~zero surplus on every axis, and a grid with a sharp kink along one
+ axis only must single out that axis.  This guards the indicator wiring independent of the full
+ integration.
+ */
+BOOST_AUTO_TEST_CASE( AxisSurplusIndicator )
+{
+  const int npts = 5;
+  const double * const x = GammaInteractionCalc::QuadDetail::gl5_x;
+
+  // (a) A function linear along each axis is annihilated by the degree-4 surplus -> ~0 everywhere.
+  {
+    double grid[125];
+    for( int i = 0; i < npts; ++i )
+      for( int j = 0; j < npts; ++j )
+        for( int k = 0; k < npts; ++k )
+          grid[(i*npts + j)*npts + k] = 1.0 + 2.0*x[i] - 3.0*x[j] + 0.5*x[k]
+                                        + x[i]*x[j] - x[j]*x[k];   // linear in each axis separately
+    double axis_err[3] = { -1, -1, -1 };
+    GammaInteractionCalc::QuadDetail::compute_axis_surplus( grid, 3, axis_err );
+    BOOST_CHECK_SMALL( axis_err[0], 1.0e-6 );
+    BOOST_CHECK_SMALL( axis_err[1], 1.0e-6 );
+    BOOST_CHECK_SMALL( axis_err[2], 1.0e-6 );
+  }
+
+  // (b) A kink |y-0.5| along axis 1 only -> axis 1 dominates, axes 0 and 2 are ~0 (constant there).
+  {
+    double grid[125];
+    for( int i = 0; i < npts; ++i )
+      for( int j = 0; j < npts; ++j )
+        for( int k = 0; k < npts; ++k )
+          grid[(i*npts + j)*npts + k] = std::fabs( x[j] - 0.5 );
+    double axis_err[3] = { -1, -1, -1 };
+    GammaInteractionCalc::QuadDetail::compute_axis_surplus( grid, 3, axis_err );
+    BOOST_CHECK_MESSAGE( axis_err[1] > 1.0e-3,
+                         "kink axis surplus too small: " << axis_err[1] );
+    BOOST_CHECK_SMALL( axis_err[0], 1.0e-9 );
+    BOOST_CHECK_SMALL( axis_err[2], 1.0e-9 );
+  }
+}//BOOST_AUTO_TEST_CASE( AxisSurplusIndicator )
+
+
 /** Checks that integrating with ceres::Jet dimensions produces the correct
  derivative of the integral with respect to a shell dimension, by comparing
  the Jet derivative lane against a central finite difference of the double
@@ -465,6 +574,7 @@ BOOST_AUTO_TEST_CASE( JetDerivativeOfIntegral )
     { "rect-U-plus-Fe-661keV", 2, false },    //rectangle half-depth
     { "sph-innervoid-Fe-then-U-661keV", 0, true },
     { "cyl-end-innervoid-661keV", 1, true },
+    { "cyl-side-innervoid-661keV", 0, true }, //radial core boundary - the side-on silhouette
     { "rect-innervoid-661keV", 2, true },
   };
 

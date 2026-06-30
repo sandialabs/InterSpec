@@ -1873,10 +1873,15 @@ namespace QuadDetail
   T gl_cell_estimate( const Fcn &f, const int ndim,
                       const double lower[3], const double width[3],
                       const int npts, const double *xs, const double *ws,
-                      size_t &num_evals )
+                      size_t &num_evals, double *node_scalars = nullptr )
   {
+    // If `node_scalars` is non-null it is filled with scalar_of() of the integrand at each node, in
+    //  node order (i*npts+j)*npts+k (ndim==3) / i*npts+j (ndim==2), for the per-axis indicator - no
+    //  extra evaluations (each node is evaluated once and reused).  The weighted accumulation is kept
+    //  a single expression so the value (cell.fine) is unchanged by the capture (FP-contraction).
     T sum(0.0);
     double xx[3] = { 0.5, 0.5, 0.5 };
+    int node_index = 0;
 
     for( int i = 0; i < npts; ++i )
     {
@@ -1887,13 +1892,19 @@ namespace QuadDetail
 
         if( ndim == 2 )
         {
-          sum += (ws[i]*ws[j]) * f( xx );
+          const T val = f( xx );
+          sum += (ws[i]*ws[j]) * val;
+          if( node_scalars )
+            node_scalars[node_index++] = scalar_of( val );
         }else
         {
           for( int k = 0; k < npts; ++k )
           {
             xx[2] = lower[2] + width[2]*xs[k];
-            sum += (ws[i]*ws[j]*ws[k]) * f( xx );
+            const T val = f( xx );
+            sum += (ws[i]*ws[j]*ws[k]) * val;
+            if( node_scalars )
+              node_scalars[node_index++] = scalar_of( val );
           }
         }//if( ndim == 2 ) / else
       }//for( j )
@@ -1906,6 +1917,89 @@ namespace QuadDetail
   }//gl_cell_estimate(...)
 
 
+  /** Degree-4 divided-difference weights for the fixed GL5 abscissas:
+   c4[i] = 1 / prod_{j!=i}( gl5_x[i] - gl5_x[j] ).  |sum_i c4[i]*v[i]| is the magnitude of the top
+   (degree-4) 1-D mode of the 5 values v[] sampled at the GL5 nodes along an axis - large only where
+   the integrand is non-smooth at GL5 resolution.  This is the GL5-node analogue of Cuhre's per-axis
+   "fourth difference" (Cuba: src/cuhre/Rule.c).  Computed once (thread-safe magic static).
+   */
+  inline const double *gl5_divdiff4()
+  {
+    static const std::array<double,5> c4 = []() {
+      std::array<double,5> c{};
+      for( int i = 0; i < 5; ++i )
+      {
+        double denom = 1.0;
+        for( int j = 0; j < 5; ++j )
+          if( j != i )
+            denom *= (gl5_x[i] - gl5_x[j]);
+        c[i] = 1.0 / denom;
+      }
+      return c;
+    }();
+    return c4.data();
+  }//gl5_divdiff4()
+
+
+  /** Fills axis_err[d] (d < ndim) with the per-axis non-smoothness indicator from the GL5 node-scalar
+   grid `grid` (node order (i*npts+j)*npts+k for ndim==3, i*npts+j for ndim==2; npts=5).  For each
+   axis it sums, over the transverse node lines (weighted by the transverse GL5 weights), the
+   magnitude of the degree-4 divided difference of the 5 values along that axis.  Scalar-only (no
+   integrand evaluations), so ceres::Jet derivative lanes are untouched.  axis_err[2]=0 for ndim==2.
+   */
+  inline void compute_axis_surplus( const double *grid, const int ndim, double axis_err[3] )
+  {
+    const int npts = 5;
+    const double *c4 = gl5_divdiff4();
+
+    axis_err[0] = axis_err[1] = axis_err[2] = 0.0;
+
+    if( ndim == 2 )
+    {
+      for( int j = 0; j < npts; ++j )       // axis 0: vary i, transverse line j
+      {
+        double s = 0.0;
+        for( int i = 0; i < npts; ++i )
+          s += c4[i] * grid[i*npts + j];
+        axis_err[0] += gl5_w[j] * std::fabs( s );
+      }
+      for( int i = 0; i < npts; ++i )       // axis 1: vary j, transverse line i
+      {
+        double s = 0.0;
+        for( int j = 0; j < npts; ++j )
+          s += c4[j] * grid[i*npts + j];
+        axis_err[1] += gl5_w[i] * std::fabs( s );
+      }
+    }else
+    {
+      for( int j = 0; j < npts; ++j )       // axis 0: vary i, transverse line (j,k)
+        for( int k = 0; k < npts; ++k )
+        {
+          double s = 0.0;
+          for( int i = 0; i < npts; ++i )
+            s += c4[i] * grid[(i*npts + j)*npts + k];
+          axis_err[0] += gl5_w[j] * gl5_w[k] * std::fabs( s );
+        }
+      for( int i = 0; i < npts; ++i )       // axis 1: vary j, transverse line (i,k)
+        for( int k = 0; k < npts; ++k )
+        {
+          double s = 0.0;
+          for( int j = 0; j < npts; ++j )
+            s += c4[j] * grid[(i*npts + j)*npts + k];
+          axis_err[1] += gl5_w[i] * gl5_w[k] * std::fabs( s );
+        }
+      for( int i = 0; i < npts; ++i )       // axis 2: vary k, transverse line (i,j)
+        for( int j = 0; j < npts; ++j )
+        {
+          double s = 0.0;
+          for( int k = 0; k < npts; ++k )
+            s += c4[k] * grid[(i*npts + j)*npts + k];
+          axis_err[2] += gl5_w[i] * gl5_w[j] * std::fabs( s );
+        }
+    }//if( ndim == 2 ) / else
+  }//compute_axis_surplus(...)
+
+
   /** One cell of the adaptive subdivision: its bounds, its GL5 estimate, and
    the embedded GL3/GL5 error estimate that prioritizes refinement.
    */
@@ -1913,7 +2007,8 @@ namespace QuadDetail
   struct QuadCell
   {
     double err;
-    int depth;
+    int nsplit[3];        // times each axis has been halved (per-axis subdivision depth)
+    double axis_err[3];   // per-axis non-smoothness indicator (Cuhre-style fourth difference)
     double lower[3];
     double width[3];
     T fine;
@@ -1924,19 +2019,21 @@ namespace QuadDetail
   template<typename T, typename Fcn>
   QuadCell<T> make_quad_cell( const Fcn &f, const int ndim,
                               const double lower[3], const double width[3],
-                              const int depth, size_t &num_evals )
+                              const int nsplit[3], size_t &num_evals )
   {
     QuadCell<T> cell;
-    cell.depth = depth;
     for( int i = 0; i < 3; ++i )
     {
+      cell.nsplit[i] = nsplit[i];
       cell.lower[i] = lower[i];
       cell.width[i] = width[i];
     }
 
+    double grid[125];   // GL5 node scalars (5^ndim <= 125), reused to form the per-axis indicator
     const T coarse = gl_cell_estimate<T>( f, ndim, lower, width, 3, gl3_x, gl3_w, num_evals );
-    cell.fine = gl_cell_estimate<T>( f, ndim, lower, width, 5, gl5_x, gl5_w, num_evals );
+    cell.fine = gl_cell_estimate<T>( f, ndim, lower, width, 5, gl5_x, gl5_w, num_evals, grid );
     cell.err = std::fabs( scalar_of(cell.fine) - scalar_of(coarse) );
+    compute_axis_surplus( grid, ndim, cell.axis_err );
 
     return cell;
   }//make_quad_cell(...)
@@ -1947,9 +2044,13 @@ namespace QuadDetail
  unit cube [0,1]^ndim (ndim = 2 or 3).
 
  Each cell is estimated with an embedded GL3/GL5 pair; the cell with the
- largest error estimate is repeatedly bisected (in every dimension) until the
- summed error estimate drops below `epsrel` times the current integral
- estimate, or the evaluation budget runs out.  Subdivision decisions use only
+ largest error estimate is repeatedly bisected until the summed error estimate
+ drops below `epsrel` times the current integral estimate, or the evaluation
+ budget runs out.  Refinement is anisotropic (after a brief isotropic priming
+ phase): a per-axis fourth-difference indicator computed from the GL5 grid
+ selects which dimension(s) to split, so a thin non-axis-aligned feature (e.g.
+ a nested core's silhouette) is resolved without paying to refine the smooth
+ axes too - cf. Cuhre (Cuba, src/cuhre/Rule.c).  Subdivision decisions use only
  the scalar part of T, so T may be a ceres::Jet<> and the derivative
  components are integrated alongside the value.
 
@@ -1985,14 +2086,30 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
 
   const double root_lower[3] = { 0.0, 0.0, 0.0 };
   const double root_width[3] = { 1.0, 1.0, 1.0 };
+  const int    root_nsplit[3] = { 0, 0, 0 };
 
   std::vector<QuadDetail::QuadCell<T>> heap;
-  heap.push_back( QuadDetail::make_quad_cell<T>( f, ndim, root_lower, root_width, 0, num_evals ) );
+  heap.push_back( QuadDetail::make_quad_cell<T>( f, ndim, root_lower, root_width, root_nsplit, num_evals ) );
 
   T total = heap.front().fine;
   double active_err = heap.front().err;
   double frozen_err = 0.0;  //error of cells at max_depth, that wont be refined further
   size_t num_below_min_depth = 1;
+
+  // Smallest per-axis subdivision count over the active dimensions; drives the min_depth priming
+  //  (refine every axis at least that deep) and the max_depth freeze (stop once every axis is capped).
+  const auto min_active_nsplit = [ndim]( const QuadDetail::QuadCell<T> &c ) -> int {
+    int m = c.nsplit[0];
+    for( int d = 1; d < ndim; ++d )
+      m = std::min( m, c.nsplit[d] );
+    return m;
+  };
+
+  // While true, every cell splits isotropically (every dimension) - bit-identical to the original
+  //  integrator.  False enables Cuhre-style single roughest-axis refinement above min_depth (the
+  //  anisotropic optimization); the priming phase (below min_depth) stays isotropic either way, which
+  //  preserves the symmetric-void defense.
+  const bool force_isotropic_split = false;
 
   while( !heap.empty()
          && ( (num_below_min_depth > 0)
@@ -2006,7 +2123,7 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
     {
       // Find a below-min-depth cell (cheap linear scan; only happens for the first few dozen cells)
       size_t index = 0;
-      while( (index < heap.size()) && (heap[index].depth >= min_depth) )
+      while( (index < heap.size()) && (min_active_nsplit(heap[index]) >= min_depth) )
         ++index;
       assert( index < heap.size() );
       std::swap( heap[index], heap.back() );
@@ -2020,35 +2137,100 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
     const QuadDetail::QuadCell<T> cell = heap.back();
     heap.pop_back();
 
-    if( cell.depth >= max_depth )
+    const int cell_min_nsplit = min_active_nsplit( cell );
+
+    if( cell_min_nsplit >= max_depth )
     {
-      // Give up on refining this cell; keep its contribution and account its error separately
+      // Every active axis is at the per-axis cap; keep this cells contribution and account its error separately
       active_err -= cell.err;
       frozen_err += cell.err;
       continue;
-    }//if( cell.depth >= max_depth )
+    }//if( cell at max_depth on every axis )
 
     total -= cell.fine;
     active_err -= cell.err;
 
-    // Bisect every dimension
-    const double half_width[3] = { 0.5*cell.width[0], 0.5*cell.width[1],
-                                   (ndim == 3) ? 0.5*cell.width[2] : cell.width[2] };
-    const int num_children = (1 << ndim);
+    // Choose which dimension(s) to bisect.  Below min_depth: split every axis (isotropic), exactly as
+    //  the original.  Above: split the least-smooth axis/axes - every axis whose per-axis fourth-
+    //  difference indicator is within a fraction `rho` of the largest (among axes still below the cap).
+    //  A silhouette with one dominant non-smooth axis splits just that axis (the big saving); a smooth
+    //  cell whose axes are comparable splits them all (isotropic-like), which keeps smooth integrands
+    //  - including smooth-but-steep ones the fourth difference deliberately under-weights - converged.
+    const bool isotropic = force_isotropic_split || (cell_min_nsplit < min_depth);
+    const double rho = 0.05;
 
+    bool split[3] = { false, false, false };
+    int split_axis[3] = { 0, 0, 0 };
+    int num_split = 0;
+
+    if( isotropic )
+    {
+      for( int d = 0; d < ndim; ++d )
+      {
+        split[d] = true;
+        split_axis[num_split++] = d;
+      }
+    }else
+    {
+      double max_axis = 0.0;
+      for( int d = 0; d < ndim; ++d )
+        if( cell.nsplit[d] < max_depth )
+          max_axis = std::max( max_axis, cell.axis_err[d] );
+
+      if( max_axis > 0.0 )
+      {
+        for( int d = 0; d < ndim; ++d )
+        {
+          if( (cell.nsplit[d] < max_depth) && (cell.axis_err[d] >= rho*max_axis) )
+          {
+            split[d] = true;
+            split_axis[num_split++] = d;
+          }
+        }
+      }//if( max_axis > 0.0 )
+
+      if( num_split == 0 )    // flat indicator (all ~0): fall back to halving the widest axis (Cuhre)
+      {
+        double widest = -1.0;
+        int best = -1;
+        for( int d = 0; d < ndim; ++d )
+        {
+          if( (cell.nsplit[d] < max_depth) && (cell.width[d] > widest) )
+          {
+            widest = cell.width[d];
+            best = d;
+          }
+        }
+        assert( best >= 0 );  //guaranteed: not every axis is capped (we did not freeze above)
+        split[best] = true;
+        split_axis[num_split++] = best;
+      }//if( num_split == 0 )
+    }//if( isotropic ) / else
+
+    assert( num_split >= 1 );
+
+    double child_width[3] = { cell.width[0], cell.width[1], cell.width[2] };
+    for( int s = 0; s < num_split; ++s )
+      child_width[ split_axis[s] ] = 0.5 * cell.width[ split_axis[s] ];
+
+    const int num_children = (1 << num_split);
     for( int child = 0; child < num_children; ++child )
     {
-      const double child_lower[3] = {
-        cell.lower[0] + ((child & 0x1) ? half_width[0] : 0.0),
-        cell.lower[1] + ((child & 0x2) ? half_width[1] : 0.0),
-        cell.lower[2] + (((child & 0x4) && (ndim == 3)) ? half_width[2] : 0.0)
-      };
+      double child_lower[3] = { cell.lower[0], cell.lower[1], cell.lower[2] };
+      int    child_nsplit[3] = { cell.nsplit[0], cell.nsplit[1], cell.nsplit[2] };
+      for( int s = 0; s < num_split; ++s )
+      {
+        const int d = split_axis[s];
+        if( (child >> s) & 0x1 )
+          child_lower[d] += child_width[d];
+        child_nsplit[d] = cell.nsplit[d] + 1;
+      }//for( set this childs lower corner and per-axis split counts )
 
-      heap.push_back( QuadDetail::make_quad_cell<T>( f, ndim, child_lower, half_width,
-                                                     cell.depth + 1, num_evals ) );
+      heap.push_back( QuadDetail::make_quad_cell<T>( f, ndim, child_lower, child_width,
+                                                     child_nsplit, num_evals ) );
       total += heap.back().fine;
       active_err += heap.back().err;
-      if( (cell.depth + 1) < min_depth )
+      if( min_active_nsplit( heap.back() ) < min_depth )
         ++num_below_min_depth;
       std::push_heap( heap.begin(), heap.end() );
     }//for( loop over children )

@@ -377,6 +377,18 @@ inline std::vector<VolumetricSrcSpec> standard_volumetric_fixtures()
     fixtures.push_back( spec );
   }
 
+  {// CylinderSideOn: source in outer layer, non-source inner core - the clean side-on silhouette
+   //  (Fe core seen side-on through the U source; the dominant non-smooth axis runs along the
+   //  detector direction) used to benchmark the anisotropic GL refinement.
+    VolumetricSrcSpec spec;
+    spec.name = "cyl-side-innervoid-661keV";
+    spec.geometry = GeometryType::CylinderSideOn;
+    spec.shells = { {"Fe (iron)", 0.0, 0.0, {1.5*cm, 1.5*cm, 0.0}},
+                    {"U (uranium)", 0.0, 0.0, {1.0*cm, 1.0*cm, 0.0}} };
+    spec.source_shell_index = 1;
+    fixtures.push_back( spec );
+  }
+
   {// Rectangular: single iron box (3D)
     VolumetricSrcSpec spec;
     spec.name = "rect-Fe-661keV";
