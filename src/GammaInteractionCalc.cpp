@@ -2323,8 +2323,30 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   
   //Setup the parameters from the sources
   num_fit_params += answer->setInitialSourceDefinitions( src_definitions, shieldings, inputPrams );
-  
-  
+
+
+  // Physical cap for a *fitted* shielding thickness along the center->detector axis (Spherical /
+  //  CylinderSideOn: radius; CylinderEndOn: half-length; Rectangular: half-depth): the source's outer
+  //  extent along that axis must stay inside the detector distance - beyond it the geometry is invalid
+  //  (expected_peak_counts_imp throws "radius > distance"), which fails the fit.  Cap each such fitted
+  //  thickness at the distance minus the fixed (non-fit) thicknesses of the other shells on that axis.
+  //  This is a per-layer box bound: it does not exactly express the cumulative constraint when several
+  //  axis layers are fit at once (a future manifold would), but it keeps the optimizer out of the
+  //  invalid region.  Uses the on-axis distance (off-axis is left for that future manifold).
+  const int det_dim = (geom == GeometryType::CylinderEndOn) ? 1
+                      : ((geom == GeometryType::Rectangular) ? 2 : 0);
+  double fixed_axis_extent = 0.0;
+  for( const ShieldingSourceFitCalc::ShieldingInfo &s : shieldings )
+  {
+    if( !s.m_isGenericMaterial && s.m_material && !s.m_fitDimensions[det_dim] )
+      fixed_axis_extent += s.m_dimensions[det_dim];
+  }
+  double dim_fit_upper = distance - fixed_axis_extent;
+  if( !(dim_fit_upper > 0.0) )     // fixed shells already reach the detector: keep the loose sanity bound
+    dim_fit_upper = 1000.0*PhysicalUnits::m;
+  dim_fit_upper = std::min( dim_fit_upper, 1000.0*PhysicalUnits::m );
+
+
   //setup the parameters for the shieldings
   for( size_t i = 0; i < shieldings.size(); ++i )
   {
@@ -2392,7 +2414,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitThickness;
           
           if( fitThickness )
-            inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), dimLowerBound, dim_fit_upper );
           else
             inputPrams.Add( name + "_thickness", thickness );
           
@@ -2415,12 +2437,12 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitLen;
           
           if( fitRad )
-            inputPrams.Add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), dimLowerBound, ((det_dim == 0) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
           else
             inputPrams.Add( name + "_dr", rad );
           
           if( fitLen )
-            inputPrams.Add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), dimLowerBound, ((det_dim == 1) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
           else
             inputPrams.Add( name + "_dz", len );
           
@@ -2455,7 +2477,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
             inputPrams.Add( name + "_dy", height );
           
           if( fitDepth )
-            inputPrams.Add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.Add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), dimLowerBound, dim_fit_upper );
           else
             inputPrams.Add( name + "_dz", depth );
           

@@ -2968,7 +2968,18 @@ namespace
       const double range = (p.has_lower && p.has_upper) ? (tf.up - tf.lo) : -1.0;
       const bool compact = (range > 0.0) && (p.step > 0.0) && (range <= 100.0*p.step);
 
-      if( compact )
+      // Physical dimension parameters (thickness/radius/half-length/width/height/depth) can legitimately
+      //  start at their lower limit (e.g. a 0-thickness shell) and span a wide range; the sin-transform's
+      //  zero derivative at the limits would trap them there.  Keep them on plain Ceres bounds even when a
+      //  tight (e.g. distance-capped) upper bound makes their range look "compact" - only the truly
+      //  compact non-dimension parameters (mass fraction, atomic number, areal density) get the transform.
+      const auto ends_with = []( const std::string &s, const std::string &suf ){
+        return (s.size() >= suf.size()) && (s.compare( s.size()-suf.size(), suf.size(), suf ) == 0);
+      };
+      const bool is_dimension = ends_with(p.name,"_thickness") || ends_with(p.name,"_dr")
+                    || ends_with(p.name,"_dz") || ends_with(p.name,"_dx") || ends_with(p.name,"_dy");
+
+      if( compact && !is_dimension )
         tf.type = Type::TwoSided;
       else
         tf.use_plain_bounds = true;
@@ -3230,7 +3241,24 @@ namespace
     options.linear_solver_type = ceres::DENSE_QR;
     options.use_nonmonotonic_steps = true;
     options.max_num_iterations = 1000;
-    options.function_tolerance = 1.0E-9;
+
+    // Match the convergence tolerances to the forward model.  With volumetric (self-attenuating or
+    //  trace) sources, the chi2 and its auto-diff gradient carry parameter-dependent noise at roughly
+    //  the self-shielding integration accuracy (#self_shielding_integration_imp runs at epsrel=1e-4),
+    //  so tolerances tighter than ~1e-6 just polish against that noise (extra iterations, no real
+    //  improvement) - and those volumetric evaluations are the expensive ones.  Without volumetric
+    //  sources the model is smooth (to ~machine precision) and cheap, so keep the original tight
+    //  tolerances: they cost only a few extra quick iterations and guard an ill-conditioned smooth fit
+    //  (e.g. an activity/shielding-thickness degeneracy) from stopping a hair short of the true minimum
+    //  on a small step.  (For reference, the Ceres defaults are 1e-6 / 1e-8.)
+    bool has_volumetric_source = false;
+    for( size_t i = 0; (i < chi2Fcn->numNuclides()) && !has_volumetric_source; ++i )
+    {
+      const SandiaDecay::Nuclide * const nuc = chi2Fcn->nuclide( i );
+      has_volumetric_source = nuc && (chi2Fcn->isSelfAttenSource(nuc) || chi2Fcn->isTraceSource(nuc));
+    }
+    options.function_tolerance  = has_volumetric_source ? 1.0E-6 : 1.0E-9;
+    options.parameter_tolerance = has_volumetric_source ? 1.0E-6 : 1.0E-8;
     options.logging_type = ceres::SILENT;
     options.minimizer_progress_to_stdout = false;
     options.callbacks.push_back( &cancel_callback );
@@ -3355,7 +3383,22 @@ namespace
         std::vector<std::pair<const double *, const double *>> cov_blocks;
         cov_blocks.emplace_back( u.data(), u.data() );
 
-        if( covariance.Compute(cov_blocks, &problem) )
+        // ceres::Covariance (DENSE_SVD) evaluates the Jacobian at `u` and runs Eigen's SVD, which
+        //  null-derefs - a segfault, NOT catchable by the try below - on a non-finite Jacobian.  That
+        //  happens when the fit failed its initial residual/Jacobian evaluation: `u` is then left at a
+        //  point where the forward model is NaN/Inf (a far or degenerate starting point can cause it).
+        //  So only attempt covariance for a usable solution whose residuals are finite; otherwise leave
+        //  the uncertainties at the zero already assigned, exactly as on any other covariance failure.
+        double cov_eval_cost = 0.0;
+        std::vector<double> cov_eval_resids;
+        bool solution_usable = (best_termination != ceres::FAILURE)
+              && problem.Evaluate( ceres::Problem::EvaluateOptions(), &cov_eval_cost,
+                                   &cov_eval_resids, nullptr, nullptr )
+              && std::isfinite( cov_eval_cost );
+        for( size_t i = 0; solution_usable && (i < cov_eval_resids.size()); ++i )
+          solution_usable = std::isfinite( cov_eval_resids[i] );
+
+        if( solution_usable && covariance.Compute(cov_blocks, &problem) )
         {
           std::vector<double> cov_mat( num_vars*num_vars, 0.0 );
           covariance.GetCovarianceBlock( u.data(), u.data(), cov_mat.data() );
