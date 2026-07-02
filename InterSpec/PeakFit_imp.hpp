@@ -2,7 +2,11 @@
 #define PeakFit_imp_h
 
 #include <cmath>
+#include <atomic>
+#include <cstdio>
 #include <vector>
+#include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <type_traits>
@@ -16,6 +20,36 @@
 
 namespace PeakFit
 {
+
+/** Half-width, in units of the channel uncertainty, of the smooth one-sided floor applied to the
+ continuum-fit target `y = max(data - peaks, 0)/uncert` in #fit_continuum.
+
+ The old hard `(data > peaks) ? (data - peaks)/uncert : 0` branch fired in EVERY empty channel
+ carrying any model peak mass (`peaks >= 0` always, and at `data == 0` the uncertainty floors to
+ 1), so its zero-gradient side was the COMMON case in sparse spectra - deforming the autodiff
+ Jacobian (AD-vs-finite-difference disagreements at converged fits traced here).  The quadratic
+ hinge keeps the same intent (dont let overshooting peaks drag the continuum negative) while making
+ the target C1: values differ from the old clamp by at most `hinge/4` (= this constant / 4, in
+ sigma units) inside the +-hinge blend zone, and are exactly equal outside it.
+ */
+static const double ns_cont_target_hinge_nsigma = 0.25;
+
+/** C1 smooth `max(x, 0)` with compact support (exact outside |x| >= r; quadratic blend inside;
+ `>= max(x,0)` everywhere with excess <= r/4).  A local copy of RelActCalc::qmax_hinge (kept
+ header-local to avoid layering PeakFit on RelActCalc) - keep the two in sync.
+ */
+template<typename T>
+T smooth_max_zero( const T &x, const double r )
+{
+  assert( r > 0.0 );
+
+  if( x >= r )
+    return x;
+  if( x <= -r )
+    return T(0.0);
+  return (x + r)*(x + r) / (4.0*r);
+}//smooth_max_zero(...)
+
 
 /** Converts unit-area peak PDF-per-channel integrals to CDF values at channel centers.
 
@@ -281,7 +315,33 @@ void fit_continuum( const float * const x,
       if( step_continuum && !cdf_step )
         step_cumulative_data += (data_counts - min_data_val);
 
-      y(row) = (data_counts > peak_counts[row]) ? (data_counts - peak_counts[row])/uncert : ScalarType(0.0);
+      // Smooth one-sided floor on the fit target - C1 in the peak parameters, same intent as the
+      //  old hard `(data > peaks) ? (data - peaks)/uncert : 0` clamp (see ns_cont_target_hinge_nsigma).
+      const ScalarType target_deficit = data_counts - peak_counts[row];
+      y(row) = smooth_max_zero( target_deficit, ns_cont_target_hinge_nsigma*uncert ) / uncert;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+      {// Opt-in activation statistics for the (former) clamp - how often the floored side is hit.
+        static const bool s_clamp_stats = ( std::getenv("RELACT_CONT_CLAMP_STATS") != nullptr );
+        if( s_clamp_stats )
+        {
+          static std::atomic<uint64_t> s_num_channels{ 0 }, s_num_floored{ 0 };
+          double deficit_val;
+          if constexpr ( std::is_same_v<ScalarType,double> )
+            deficit_val = target_deficit;
+          else
+            deficit_val = target_deficit.a;
+          if( deficit_val <= 0.0 )
+            s_num_floored += 1;
+          const uint64_t nchan = ++s_num_channels;
+          if( (nchan & 0x3FFFF) == 0 )  //print every ~262k channels
+            fprintf( stderr, "RELACT_CONT_CLAMP_STATS: %llu of %llu channels (%.2f%%) on the floored side\n",
+                     static_cast<unsigned long long>(s_num_floored.load()),
+                     static_cast<unsigned long long>(nchan),
+                     (100.0*s_num_floored.load())/nchan );
+        }//if( s_clamp_stats )
+      }
+#endif //PERFORM_DEVELOPER_CHECKS
 
       for( Eigen::Index col = 0; col < num_poly_terms; ++col )
       {
