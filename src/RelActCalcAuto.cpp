@@ -6461,238 +6461,395 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//for( each rel_eff_curve )
 
 
-    ceres::Covariance::Options cov_options;
-    // DENSE_SVD: accurate but slow (only to be used for small to moderate sized problems). Handles full-rank as well as rank deficient Jacobians.
-    // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
-    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
-    cov_options.num_threads = ceres_options.num_threads;
-
-    // Conditioning floor for the covariance.  The covariance is the pseudo-inverse of J^T J; a near-degenerate
-    //  direction has a tiny singular value sigma_i, and 1/sigma_i^2 would otherwise become an enormous variance.
-    //  `min_reciprocal_condition_number` is compared against (sigma_i/sigma_max)^2: any direction below the
-    //  cutoff is treated as null space (ZERO variance) instead of being inverted.
-    //
-    //  Where to put that cutoff is a MODELING JUDGMENT - "a direction constrained Nx more weakly than the
-    //  best-constrained one is too weak to report an uncertainty for" - NOT a numerical-precision limit
-    //  (double precision inverts safely down to sigma_i/sigma_max ~ 1e-7; the Ceres default 1e-14 drops only
-    //  genuine round-off singularity).  The catch is that *dropping* a weak direction zeroes its variance,
-    //  which makes the rel-eff band OVER-confident whenever rel-eff(E) actually depends on that direction
-    //  (the 918/926 collapse).  Measured on target/idb_enrichment_check: a high cutoff (1e-8, i.e. ratio
-    //  < 1e-4) wrecks calibration (median |pull| ~50, almost every band far too small); calibration improves
-    //  monotonically as the cutoff is lowered and more directions are retained.  So we deliberately keep this
-    //  at the numerical-guard level (drop only round-off-singular directions) and let the *statistical*
-    //  regularization of the degenerate shielding/correction directions be done physically by the parameter
-    //  priors above (`m_phys_model_param_priors`), which leave a weak direction a finite, physically-bounded
-    //  variance instead of zero.  Kept numerically consistent with the effective-DOF singular-value threshold
-    //  below (both at sigma_i/sigma_max = 1e-7).  `null_space_rank = -1` keeps the pseudo-inverse (so
-    //  Compute() still succeeds on rank-deficient Jacobians) while honoring the cutoff.  NOTE: a faithful band
-    //  for the genuinely rank-deficient files (low-enrichment, weak U-235 lines) is not representable by this
-    //  linearized covariance at all - that needs a profile/Monte-Carlo treatment.  Tuning knob - evaluate
-    //  with target/idb_enrichment_check.
-    cov_options.min_reciprocal_condition_number = 1e-14; //Ceres default; drops sigma_i/sigma_max < 1e-7
-    //cov_options.column_pivot_threshold = -1;
-    cov_options.null_space_rank = -1; //default: 0;
-    
     vector<double> uncertainties( num_pars, 0.0 ), uncerts_squared( num_pars, 0.0 );
-    
-    if( success )
+
+    // Fills the per-parameter uncertainties and the rel-eff / rel-act / FWHM covariance sub-blocks
+    //  from solution.m_covariance (which must already be filled, num_pars x num_pars).
+    // TODO: check the covariance is actually defined right (like not swapping row/col, calling the right places, etc).
+    const auto fill_covariance_consumers = [&]()
     {
+      for( size_t i = 0; i < num_pars; ++i )
+      {
+        uncerts_squared[i] = solution.m_covariance[i][i];
+        if( uncerts_squared[i] >= 0.0 )
+          uncertainties[i] = sqrt( uncerts_squared[i] );
+        else
+          uncertainties[i] = std::numeric_limits<double>::quiet_NaN();
+      }
+
+      solution.m_final_uncertainties = uncertainties;
+
+      auto get_cov_block = [&solution]( const size_t start, const size_t num, vector<vector<double>> &cov ){
+        cov.clear();
+        cov.resize( num, vector<double>(num,0.0) );
+        for( size_t i = start; i < (start + num); ++i )
+        {
+          for( size_t j = start; j < (start + num); ++j )
+            cov[j-start][i-start] = solution.m_covariance[i][j];
+        }
+      };
+
+      solution.m_rel_eff_covariance.resize( num_rel_eff_curves );
+      solution.m_rel_act_covariance.resize( num_rel_eff_curves );
+      for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+      {
+        const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(rel_eff_index);
+        const size_t num_rel_eff_par = cost_functor->rel_eff_eqn_num_parameters(rel_eff_index);
+        vector<vector<double>> &cov = solution.m_rel_eff_covariance[rel_eff_index];
+
+        get_cov_block( rel_eff_start, num_rel_eff_par, cov );
+
+        for( size_t par_index = 0; par_index < num_rel_eff_par; ++par_index )
+        {
+          const double scale = cost_functor->parameter_scale_factor(rel_eff_start + par_index);
+          for( size_t row = 0; row < num_rel_eff_par; ++row )
+            cov[row][par_index] *= scale;
+          for( size_t col = 0; col < num_rel_eff_par; ++col )
+            cov[par_index][col] *= scale;
+        }
+
+        const size_t acts_start = cost_functor->rel_act_start_parameter( rel_eff_index );
+        const size_t num_acts_par = cost_functor->rel_act_num_parameters( rel_eff_index );
+        get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance[rel_eff_index] );
+      }
+
+      const size_t fwhm_start = cost_functor->m_fwhm_par_start_index;
+      const size_t num_fwhm_pars = num_parameters(options.fwhm_form);
+      get_cov_block( fwhm_start, num_fwhm_pars, solution.m_fwhm_covariance );
+    };//fill_covariance_consumers lambda
+
+    // Fallback covariance: Ceres' own DENSE_SVD pseudo-inverse of the RAW Jacobian.  Only used when
+    //  the scale-invariant computation below fails (it is also what the RELACT_COV_COMPARE debug
+    //  path compares against).  Its `min_reciprocal_condition_number` cutoff acts on the RAW
+    //  singular spectrum, which unit-scale disparity spreads over many decades - the reason the
+    //  equilibrated computation below replaced it as the primary.
+    const auto compute_ceres_covariance = [&]( vector<double> &row_major_covariance ) -> bool
+    {
+      ceres::Covariance::Options cov_options;
+      // DENSE_SVD: accurate but slow (only to be used for small to moderate sized problems). Handles full-rank as well as rank deficient Jacobians.
+      // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
+      cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
+      cov_options.num_threads = ceres_options.num_threads;
+      cov_options.min_reciprocal_condition_number = 1e-14; //Ceres default; drops sigma_i/sigma_max < 1e-7
+      cov_options.null_space_rank = -1; //keep the pseudo-inverse on rank-deficient Jacobians
+
       ceres::Covariance covariance(cov_options);
       vector<pair<const double*, const double*> > covariance_blocks;
       covariance_blocks.emplace_back( pars, pars );
-      
+
+      if( !covariance.Compute(covariance_blocks, &problem) )
+        return false;
+
+      row_major_covariance.resize( num_pars * num_pars, 0.0 );
+      const vector<const double *> const_par_blocks( 1, pars );
+      return covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
+    };//compute_ceres_covariance lambda
+
+    // ---------------------------------------------------------------------------------------------
+    // Scale-invariant covariance, condition number, rank count, and effective-DOF - all from ONE
+    //  column-equilibrated SVD of the tangent-space Jacobian.
+    //
+    // The covariance is the truncated pseudo-inverse of J^T J: a near-degenerate direction has a tiny
+    //  singular value sigma_i, and 1/sigma_i^2 would otherwise become an enormous variance, so
+    //  directions with sigma_i/sigma_max below a cutoff are treated as null space (ZERO variance).
+    //  Where to put that cutoff is a MODELING JUDGMENT - "a direction constrained Nx more weakly than
+    //  the best-constrained one is too weak to report an uncertainty for" - NOT a numerical-precision
+    //  limit.  The catch: the RAW Jacobian's column norms span many decades from unit choices alone
+    //  (a unit step in a relative-activity parameter moves thousands of Poisson-weighted counts while
+    //  a step in a nuisance parameter - FWHM, age, areal density, branching-ratio-uncertainty - moves
+    //  O(1)), e.g. raw kappa ~ 1e18 on a Pu-239 HPGe fit with additional_br_uncert, so a single
+    //  relative cutoff on the raw spectrum discards legitimately-constrained-but-small-column
+    //  directions (74 of 77 there) and zeroes their variance - making the rel-eff band OVER-confident
+    //  wherever it depends on them (the 918/926 collapse), which the reliability_floored_uncert net
+    //  then papers over.
+    //
+    //  Column-equilibrating first (van der Sluis: J~ = J*D, D = diag(1/||col||)) makes the cutoff
+    //  scale-invariant, while the algebra stays EXACT: (J^T J)^+ = D (J~^T J~)^+ D = D V S^-2 V^T D,
+    //  identical to the raw pseudo-inverse whenever nothing is dropped (the U-235 well-scaled case),
+    //  and keeping a finite, prior-regularized variance for unit-scale-small directions when the raw
+    //  cutoff would have zeroed them.  The parameter priors (`m_phys_model_param_priors`) are residual
+    //  rows in J, so they regularize weak directions physically, exactly as intended.  The cutoff
+    //  (sigma_i/sigma_max < 1e-7 on the EQUILIBRATED spectrum) now drops only genuine collinearity;
+    //  it is shared by the covariance, kappa(J~), the rank-deficiency count, and the effective-DOF
+    //  estimate, so all four tell one consistent story.  A too-aggressive cutoff wrecks calibration
+    //  (measured on target/idb_enrichment_check: ratio < 1e-4 gives median |pull| ~50, almost every
+    //  band far too small) - it is a tuning knob; evaluate any change against that corpus.  NOTE: a
+    //  faithful band for genuinely rank-deficient fits (low-enrichment, weak U-235 lines) is not
+    //  representable by ANY linearized covariance - that needs a profile/Monte-Carlo treatment.
+    //
+    //  Set RELACT_COV_COMPARE=1 to also compute the Ceres (raw) covariance and print tangent- and
+    //  ambient-level max differences: on a well-scaled fit the two must agree to ~1e-6 relative;
+    //  they diverge exactly when the raw cutoff drops rescued directions.
+    // ---------------------------------------------------------------------------------------------
+    size_t num_effective_paramaters = num_pars;
+
+    if( success )
+    {
       solution.m_covariance.clear();
       solution.m_phys_units_cov.clear();
       solution.m_final_uncertainties.clear();
-      
-      if( !covariance.Compute(covariance_blocks, &problem) )
+
+      try
       {
-        //Possible reason we're here: rank deficient Jacobian is encountered
-        cerr << "Failed to compute final covariances!" << endl;
-        solution.m_warnings.push_back( "Failed to compute final covariances." );
-      }else
-      {
-        // row-major order: the elements of the first row are consecutively given, followed by second
-        //                  row contents, etc
-        vector<double> row_major_covariance( num_pars * num_pars );
-        const vector<const double *> const_par_blocks( 1, pars );
-        
-        const bool success = covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
-        assert( success );
-        if( !success )
-          throw runtime_error( "Failed to get covariance matrix." );
-        
+        // Tangent-space Jacobian at the solution (rows: residuals; cols: FREE parameters - the final
+        //  SubsetManifold, set above, excludes the constant ones).  Plain squared loss is used
+        //  (lossfcn == nullptr), so `apply_loss_function = false` is exact.
+        ceres::Problem::EvaluateOptions evaluate_options;
+        evaluate_options.apply_loss_function = false;
+        ceres::CRSMatrix sparse_jacobian;
+        problem.Evaluate(evaluate_options, nullptr, nullptr, nullptr, &sparse_jacobian);
+
+        if( (sparse_jacobian.num_rows == 0) || (sparse_jacobian.num_cols == 0) )
+          throw runtime_error( "Failed to evaluate Jacobian" );
+
+        const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
+
+        Eigen::MatrixXd jacobian;
+        jacobian.resize(sparse_jacobian.num_rows, sparse_jacobian.num_cols);
+        jacobian.setZero();
+        for( int row = 0; row < sparse_jacobian.num_rows; ++row )
+        {
+          for( int idx = sparse_jacobian.rows[row]; idx < sparse_jacobian.rows[row + 1]; ++idx )
+            jacobian(row, sparse_jacobian.cols[idx]) = sparse_jacobian.values[idx];
+        }
+
+        // Column-equilibrate (a zero-norm column has no gradient at all: fully unconstrained -
+        //  zero variance, and counted as a degenerate direction).
+        Eigen::VectorXd inv_col_norm( jacobian.cols() );
+        Eigen::MatrixXd jacobian_eq = jacobian;
+        size_t num_zero_norm_cols = 0;
+        for( int col = 0; col < jacobian_eq.cols(); ++col )
+        {
+          const double col_norm = jacobian_eq.col(col).norm();
+          if( col_norm > 0.0 )
+          {
+            inv_col_norm(col) = 1.0 / col_norm;
+            jacobian_eq.col(col) *= inv_col_norm(col);
+          }else
+          {
+            inv_col_norm(col) = 0.0;
+            num_zero_norm_cols += 1;
+          }
+        }//for( int col = 0; col < jacobian_eq.cols(); ++col )
+
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+        const Eigen::JacobiSVD<Eigen::MatrixXd,Eigen::ComputeThinV> svd_eq( jacobian_eq );
+#else
+        const Eigen::BDCSVD<Eigen::MatrixXd> svd_eq( jacobian_eq, Eigen::ComputeThinV );
+#endif
+        const Eigen::VectorXd singular_values_eq = svd_eq.singularValues();
+        const double sv_max = singular_values_eq.maxCoeff();
+        const double sv_min = singular_values_eq.minCoeff();
+        const double sv_threshold = 1.0e-7 * sv_max;
+
+        if( !(sv_max > 0.0) || IsNan(sv_max) || IsInf(sv_max) )
+          throw runtime_error( "Jacobian SVD produced a non-finite/zero spectrum" );
+
+        // 2-norm condition number of the column-EQUILIBRATED Jacobian - a continuous measure of
+        //  genuine (unit-independent) nearness-to-singularity; kappa >~ 1e7 corresponds to the
+        //  rank-deficiency flagged below.  Zero-norm columns make it infinite by definition.
+        solution.m_jacobian_condition_number = ((sv_min > 0.0) && !num_zero_norm_cols)
+                            ? (sv_max / sv_min) : std::numeric_limits<double>::infinity();
+
+        size_t npar_eff_equil = 0;
+        for( int i = 0; i < singular_values_eq.size(); ++i )
+          npar_eff_equil += (singular_values_eq(i) > sv_threshold);
+        assert( (npar_eff_equil + num_zero_norm_cols) <= num_free_pars );
+
+        // The near-degenerate directions the covariance below zeroes - the same equilibrated
+        //  spectrum and cutoff, so this count describes exactly what was dropped, and the
+        //  derived-uncertainty widening net (reliability_floored_uncert) keys off it.
+        solution.m_num_rank_deficient_dirs = (npar_eff_equil < num_free_pars)
+                                             ? (num_free_pars - npar_eff_equil) : size_t(0);
+        if( npar_eff_equil < num_free_pars )
+          solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff_equil)
+                              + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
+                              " unconstrained by the data (near-degenerate directions).  Per-parameter"
+                              " uncertainties omit these directions; derived quantities (enrichment,"
+                              " relative-efficiency band) that depend on them are flagged and widened instead." );
+
+        // Truncated pseudo-inverse in the equilibrated basis, mapped back:
+        //  C_tan = D * V * S^-2 * V^T * D   (dropped directions contribute zero)
+        const Eigen::MatrixXd &V = svd_eq.matrixV();
+        Eigen::VectorXd inv_s2( singular_values_eq.size() );
+        for( int i = 0; i < singular_values_eq.size(); ++i )
+          inv_s2(i) = (singular_values_eq(i) > sv_threshold)
+                      ? 1.0/(singular_values_eq(i)*singular_values_eq(i)) : 0.0;
+
+        Eigen::MatrixXd cov_tangent = V * inv_s2.asDiagonal() * V.transpose();
+        for( int row = 0; row < cov_tangent.rows(); ++row )
+        {
+          for( int col = 0; col < cov_tangent.cols(); ++col )
+            cov_tangent(row,col) *= inv_col_norm(row) * inv_col_norm(col);
+        }
+
+        // Tangent -> ambient through the LIVE manifold (the final SubsetManifold set above, or
+        //  nullptr when nothing is constant): for a SubsetManifold the Plus-Jacobian is the
+        //  identity with the constant rows deleted, so this is exactly the scatter-into-free-
+        //  positions-with-zeroed-constants that Ceres' GetCovarianceMatrix produces.  Reading the
+        //  manifold from the problem keeps the tangent dimension/ordering consistent with the
+        //  `problem.Evaluate` Jacobian by construction.
+        Eigen::MatrixXd cov_ambient;
+        const ceres::Manifold * const manifold = problem.GetManifold( pars );
+        if( !manifold )
+        {
+          if( num_free_pars != num_pars )
+            throw std::logic_error( "No manifold, but tangent size != ambient size" );
+          cov_ambient = cov_tangent;
+        }else
+        {
+          const int amb_size = manifold->AmbientSize();
+          const int tan_size = manifold->TangentSize();
+          if( (static_cast<size_t>(amb_size) != num_pars) || (static_cast<size_t>(tan_size) != num_free_pars) )
+            throw std::logic_error( "Manifold ambient/tangent size mismatch with Jacobian" );
+
+          vector<double> plus_jac( static_cast<size_t>(amb_size) * static_cast<size_t>(tan_size), 0.0 );
+          if( !manifold->PlusJacobian( pars, plus_jac.data() ) )
+            throw runtime_error( "Manifold PlusJacobian failed" );
+
+          const Eigen::Map<const Eigen::Matrix<double,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>>
+                                                            plus_jacobian( plus_jac.data(), amb_size, tan_size );
+          cov_ambient = plus_jacobian * cov_tangent * plus_jacobian.transpose();
+        }//if( !manifold ) / else
+
+        // Optional cross-check against the Ceres (raw-Jacobian) covariance - see the block comment.
+        static const bool s_compare_cov = ( std::getenv("RELACT_COV_COMPARE") != nullptr );
+        if( s_compare_cov )
+        {
+          vector<double> ceres_cov;
+          if( compute_ceres_covariance( ceres_cov ) )
+          {
+            double max_abs = 0.0, max_rel = 0.0;
+            for( size_t r = 0; r < num_pars; ++r )
+            {
+              for( size_t c = 0; c < num_pars; ++c )
+              {
+                const double ours = cov_ambient(static_cast<int>(r),static_cast<int>(c));
+                const double theirs = ceres_cov[r*num_pars + c];
+                const double d = fabs(ours - theirs);
+                max_abs = (std::max)( max_abs, d );
+                const double denom = (std::max)( fabs(ours), fabs(theirs) );
+                if( denom > 1.0E-30 )
+                  max_rel = (std::max)( max_rel, d/denom );
+              }
+            }
+
+            // The RAW-spectrum rank (what the Ceres cutoff kept): when raw_rank == num_free the two
+            //  computations must agree to ~1e-6 relative (the equilibration algebra is exact); when
+            //  raw_rank < rank_kept the difference IS the rescued directions - the point of the change.
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+            const Eigen::JacobiSVD<Eigen::MatrixXd,Eigen::ComputeThinV> svd_raw( jacobian );
+#else
+            const Eigen::BDCSVD<Eigen::MatrixXd> svd_raw( jacobian, Eigen::ComputeThinV );
+#endif
+            const Eigen::VectorXd sv_raw = svd_raw.singularValues();
+            size_t raw_rank = 0;
+            for( int i = 0; i < sv_raw.size(); ++i )
+              raw_rank += (sv_raw(i) > 1.0E-7*sv_raw.maxCoeff());
+
+            // Machinery self-check: OUR truncated pseudo-inverse of the RAW spectrum (identity
+            //  equilibration) uses the same spectrum and cutoff as Ceres' DENSE_SVD, so it must
+            //  reproduce the Ceres matrix to round-off regardless of any rescue - validating the
+            //  pinv + manifold-mapping code independent of the equilibration choice.
+            {
+              const Eigen::MatrixXd &V_raw = svd_raw.matrixV();
+              Eigen::VectorXd inv_s2_raw( sv_raw.size() );
+              for( int i = 0; i < sv_raw.size(); ++i )
+                inv_s2_raw(i) = (sv_raw(i) > 1.0E-7*sv_raw.maxCoeff()) ? 1.0/(sv_raw(i)*sv_raw(i)) : 0.0;
+              const Eigen::MatrixXd cov_tan_raw = V_raw * inv_s2_raw.asDiagonal() * V_raw.transpose();
+
+              Eigen::MatrixXd cov_amb_raw;
+              const ceres::Manifold * const mani = problem.GetManifold( pars );
+              if( !mani )
+              {
+                cov_amb_raw = cov_tan_raw;
+              }else
+              {
+                vector<double> pj( static_cast<size_t>(mani->AmbientSize())*static_cast<size_t>(mani->TangentSize()), 0.0 );
+                mani->PlusJacobian( pars, pj.data() );
+                const Eigen::Map<const Eigen::Matrix<double,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>>
+                                              pjm( pj.data(), mani->AmbientSize(), mani->TangentSize() );
+                cov_amb_raw = pjm * cov_tan_raw * pjm.transpose();
+              }
+
+              double chk_abs = 0.0, chk_rel = 0.0;
+              for( size_t r = 0; r < num_pars; ++r )
+              {
+                for( size_t c = 0; c < num_pars; ++c )
+                {
+                  const double ours = cov_amb_raw(static_cast<int>(r),static_cast<int>(c));
+                  const double theirs = ceres_cov[r*num_pars + c];
+                  const double d = fabs(ours - theirs);
+                  chk_abs = (std::max)( chk_abs, d );
+                  const double denom = (std::max)( fabs(ours), fabs(theirs) );
+                  if( denom > 1.0E-30 )
+                    chk_rel = (std::max)( chk_rel, d/denom );
+                }
+              }
+              cout << "RELACT_COV_COMPARE: machinery check (raw-pinv-vs-Ceres, must match): max_abs="
+                   << chk_abs << ", max_rel=" << chk_rel << endl;
+            }
+
+            cout << "RELACT_COV_COMPARE: ambient covariance equilibrated-vs-Ceres max_abs=" << max_abs
+                 << ", max_rel=" << max_rel
+                 << " (num_free=" << num_free_pars << ", rank_kept=" << npar_eff_equil
+                 << ", raw_rank=" << raw_rank
+                 << ", kappa_eq=" << solution.m_jacobian_condition_number
+                 << ", kappa_raw=" << ((sv_raw.minCoeff() > 0.0) ? sv_raw.maxCoeff()/sv_raw.minCoeff()
+                                                                 : std::numeric_limits<double>::infinity())
+                 << ")" << endl;
+          }else
+          {
+            cout << "RELACT_COV_COMPARE: Ceres covariance failed to compute (rank-deficient?);"
+                    " equilibrated covariance stands alone." << endl;
+          }
+        }//if( s_compare_cov )
+
         solution.m_covariance.resize( num_pars, vector<double>(num_pars, 0.0) );
-        
         for( size_t row = 0; row < num_pars; ++row )
         {
           for( size_t col = 0; col < num_pars; ++col )
-            solution.m_covariance[row][col] = row_major_covariance[row*num_pars + col];
-        }//for( size_t row = 0; row < num_pars; ++row )
-        
-        for( size_t i = 0; i < num_pars; ++i )
-        {
-          uncerts_squared[i] = solution.m_covariance[i][i];
-          if( uncerts_squared[i] >= 0.0 )
-            uncertainties[i] = sqrt( uncerts_squared[i] );
-          else
-            uncertainties[i] = std::numeric_limits<double>::quiet_NaN();
+            solution.m_covariance[row][col] = cov_ambient(static_cast<int>(row),static_cast<int>(col));
         }
-        
-        solution.m_final_uncertainties = uncertainties;
-        
-        // TODO: check the covariance is actually defined right (like not swapping row/col, calling the right places, etc).
-        auto get_cov_block = [&solution]( const size_t start, const size_t num, vector<vector<double>> &cov ){
-          cov.clear();
-          cov.resize( num, vector<double>(num,0.0) );
-          for( size_t i = start; i < (start + num); ++i )
-          {
-            for( size_t j = start; j < (start + num); ++j )
-              cov[j-start][i-start] = solution.m_covariance[i][j];
-          }
-        };
-        
-        solution.m_rel_eff_covariance.resize( num_rel_eff_curves );
-        solution.m_rel_act_covariance.resize( num_rel_eff_curves );
-        for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+
+        fill_covariance_consumers();
+
+        // Effective DOF for the data-only chi2/dof: the directions genuinely constrained by the
+        //  problem, i.e. the kept (non-collinear) equilibrated directions.  Only trust a count that
+        //  isnt collapsed (a real model degeneracy leaves npar_eff_equil small even after
+        //  equilibration); compare against the FREE-parameter count, not ambient num_pars.
+        if( (npar_eff_equil < 1) || (npar_eff_equil < (num_free_pars/5)) )
+          solution.m_warnings.push_back( "Only computed " + std::to_string(npar_eff_equil)
+                              + " effective DOF, compared to " + std::to_string(num_free_pars)
+                              + " free parameters; using the total number of fit parameters"
+                              " to estimate the degrees of freedom." );
+        else
+          num_effective_paramaters = npar_eff_equil;
+      }catch( std::exception &e )
+      {
+        // Fall back to the Ceres covariance (raw Jacobian), preserving pre-equilibration behavior;
+        //  kappa/rank-count/DOF stay at their defaults.
+        solution.m_warnings.push_back( "Scale-invariant covariance computation failed ('" + string(e.what())
+                                       + "'); falling back to the Ceres covariance." );
+
+        vector<double> row_major_covariance;
+        if( !compute_ceres_covariance( row_major_covariance ) )
         {
-          const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(rel_eff_index);
-          const size_t num_rel_eff_par = cost_functor->rel_eff_eqn_num_parameters(rel_eff_index);
-          vector<vector<double>> &cov = solution.m_rel_eff_covariance[rel_eff_index];
-          
-          get_cov_block( rel_eff_start, num_rel_eff_par, cov );
-          
-          for( size_t par_index = 0; par_index < num_rel_eff_par; ++par_index )
+          cerr << "Failed to compute final covariances!" << endl;
+          solution.m_warnings.push_back( "Failed to compute final covariances." );
+        }else
+        {
+          solution.m_covariance.resize( num_pars, vector<double>(num_pars, 0.0) );
+          for( size_t row = 0; row < num_pars; ++row )
           {
-            const double scale = cost_functor->parameter_scale_factor(rel_eff_start + par_index);
-            for( size_t row = 0; row < num_rel_eff_par; ++row )
-              cov[row][par_index] *= scale;
-            for( size_t col = 0; col < num_rel_eff_par; ++col )
-              cov[par_index][col] *= scale;
+            for( size_t col = 0; col < num_pars; ++col )
+              solution.m_covariance[row][col] = row_major_covariance[row*num_pars + col];
           }
-        
-          const size_t acts_start = cost_functor->rel_act_start_parameter( rel_eff_index );
-          const size_t num_acts_par = cost_functor->rel_act_num_parameters( rel_eff_index );
-          get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance[rel_eff_index] );
-        }
-        
-        const size_t fwhm_start = cost_functor->m_fwhm_par_start_index;
-        const size_t num_fwhm_pars = num_parameters(options.fwhm_form);
-        get_cov_block( fwhm_start, num_fwhm_pars, solution.m_fwhm_covariance );
-      }//if( we failed to get covariance ) / else
+
+          fill_covariance_consumers();
+        }//if( Ceres covariance also failed ) / else
+      }//try / catch( scale-invariant covariance )
     }//if( solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success )
-
-
-    // Now we will estimate the effective degrees of freedom by doing SVD on the Jacobian,
-    //  and then looking at how many of the singular values effectively contribute to the
-    //  problem.  This seems to give reasonable answers, but havent strictly evaluated it
-    //  beyond that.
-    size_t num_effective_paramaters = num_pars;
-    try
-    {
-      ceres::Problem::EvaluateOptions evaluate_options;
-      evaluate_options.apply_loss_function = false;
-      ceres::CRSMatrix sparse_jacobian;
-      problem.Evaluate(evaluate_options, nullptr, nullptr, nullptr, &sparse_jacobian);
-
-      if( sparse_jacobian.num_rows == 0 )
-        throw runtime_error( "Failed to evaluate Jacobian" );
-
-      Eigen::MatrixXd jacobian;
-      jacobian.resize(sparse_jacobian.num_rows, sparse_jacobian.num_cols);
-      jacobian.setZero();
-      for( int row = 0; row < sparse_jacobian.num_rows; ++row )
-      {
-        for( int idx = sparse_jacobian.rows[row]; idx < sparse_jacobian.rows[row + 1]; ++idx )
-          jacobian(row, sparse_jacobian.cols[idx]) = sparse_jacobian.values[idx];
-      }//
-
-#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
-      Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
-#else
-      const Eigen::BDCSVD<Eigen::MatrixX<ScalarType>> svd(jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
-#endif
-
-      Eigen::VectorXd singular_values = svd.singularValues();
-
-      // Report the 2-norm condition number kappa(J) = sigma_max / sigma_min of the fit Jacobian - a
-      //  continuous measure of nearness-to-singularity (kappa >~ 1e7 corresponds to the rank-deficiency
-      //  flagged just below).  Set here, before the rank-deficiency `throw`, so it is recorded regardless.
-      {
-        const double sigma_max = singular_values.maxCoeff();
-        const double sigma_min = singular_values.minCoeff();
-        solution.m_jacobian_condition_number = (sigma_min > 0.0)
-                            ? (sigma_max / sigma_min) : std::numeric_limits<double>::infinity();
-      }
-
-      // Raw-Jacobian rank count: this mirrors the conditioning Ceres uses for the reported covariance
-      //  (cov_options.min_reciprocal_condition_number = (1e-7)^2 = 1e-14 drops directions with
-      //  sigma_i/sigma_max < 1e-7), so `m_num_rank_deficient_dirs` and the rank-deficiency warning below
-      //  describe exactly the directions the covariance zeroed.  kappa(J) above is on this same raw
-      //  Jacobian.  These are deliberately NOT scale-invariant - they must track the (scale-sensitive)
-      //  covariance so the uncertainty-widening net keys off what was actually dropped.
-      const double threshold = 1.0e-7 * singular_values.maxCoeff();
-
-      size_t npar_eff_raw = 0;
-      for( int i = 0; i < singular_values.size(); ++i)
-        npar_eff_raw += (singular_values(i) > threshold);
-
-      // Record (and warn about) the near-degenerate directions omitted from the covariance, BEFORE the
-      //  trustworthiness throw below: the derived-uncertainty floor keys off `m_num_rank_deficient_dirs`,
-      //  so it must be set even when the DOF estimate falls back to num_pars.
-      const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
-      solution.m_num_rank_deficient_dirs = (npar_eff_raw < num_free_pars) ? (num_free_pars - npar_eff_raw) : size_t(0);
-      if( npar_eff_raw < num_free_pars )
-        solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff_raw)
-                            + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
-                            " unconstrained by the data (near-degenerate directions).  Per-parameter"
-                            " uncertainties omit these directions; derived quantities (enrichment,"
-                            " relative-efficiency band) that depend on them are flagged and widened instead." );
-
-      // Effective degrees of freedom for the data-only chi2/DOF: a SCALE-INVARIANT count.  Ceres
-      //  parameters are re-parameterized to O(1), but a unit step in a relative-activity parameter moves
-      //  thousands of Poisson-weighted counts while a step in a nuisance parameter (FWHM, age, areal
-      //  density, the branching-ratio-uncertainty params) moves O(1), so the raw Jacobian column norms -
-      //  and hence its singular spectrum - span many orders of magnitude from unit choices alone (e.g.
-      //  kappa ~ 1e18, collapsing the raw count to 2 of 77 on a Pu-239 HPGe fit with additional_br_uncert).
-      //  A single relative cutoff on that spectrum then discards legitimately-constrained-but-small-column
-      //  directions.  Column-equilibrating the Jacobian (van der Sluis: divide each column by its L2 norm)
-      //  before this SVD removes the unit dependence, so the count reflects genuine collinearity.  Used
-      //  ONLY for the DOF estimate; kappa(J) and the rank-deficiency flag above stay on the raw Jacobian.
-      Eigen::MatrixXd jacobian_eq = jacobian;
-      for( int col = 0; col < jacobian_eq.cols(); ++col )
-      {
-        const double col_norm = jacobian_eq.col(col).norm();
-        if( col_norm > 0.0 )
-          jacobian_eq.col(col) /= col_norm;  // zero-norm column (no gradient) left zero -> stays degenerate
-      }
-
-#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
-      const Eigen::JacobiSVD<Eigen::MatrixXd> svd_eq( jacobian_eq );
-#else
-      const Eigen::BDCSVD<Eigen::MatrixXd> svd_eq( jacobian_eq );
-#endif
-      const Eigen::VectorXd singular_values_eq = svd_eq.singularValues();
-      const double threshold_eq = 1.0e-7 * singular_values_eq.maxCoeff();
-
-      size_t npar_eff_equil = 0;
-      for( int i = 0; i < singular_values_eq.size(); ++i )
-        npar_eff_equil += (singular_values_eq(i) > threshold_eq);
-
-      // Only flag a genuinely collapsed problem (a real model degeneracy that survives column-
-      //  equilibration), comparing against the FREE-parameter count (Jacobian columns), not the ambient
-      //  num_pars (which includes manifold-constant parameters that cannot be effective DOF anyway).
-      if( (npar_eff_equil < 1) || (npar_eff_equil < (num_free_pars/5)) )
-        throw runtime_error( "Only computed " + std::to_string(npar_eff_equil)
-                            + " DOF, compared to " + std::to_string(num_free_pars) + " free parameters." );
-
-      num_effective_paramaters = npar_eff_equil;
-    }catch( std::exception &e )
-    {
-      solution.m_warnings.push_back( "Computation of the effective number of parameters failed ('"
-                                    + string(e.what()) + "'), will use total number of fit parameters"
-                                    " to estimate the degrees of freedom." );
-    }//try / catch evaluate NDOF
 
 
     // -------------------------------------------------------------------------------------------

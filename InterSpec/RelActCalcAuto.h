@@ -1605,11 +1605,19 @@ struct RelActAutoSolution
    are for this kind of data).  NaN if it could not be computed. */
   double m_r2 = std::numeric_limits<double>::quiet_NaN();
 
-  /** 2-norm condition number of the (scaled) fit Jacobian, kappa(J) = sigma_max / sigma_min, from the
-   post-fit singular-value decomposition (the same SVD used for the effective-DOF estimate).
+  /** 2-norm condition number of the COLUMN-EQUILIBRATED fit Jacobian,
+   kappa(J~) = sigma_max / sigma_min with J~ = J * diag(1/||col||) (van der Sluis scaling), from the
+   post-fit singular-value decomposition - the same SVD used for the reported covariance
+   (equilibrated truncated pseudo-inverse), the rank-deficiency count, and the effective-DOF
+   estimate, so all four tell one consistent story.
+
+   Equilibration removes the many decades of spread the raw Jacobian gets from unit choices alone
+   (a unit step in an activity parameter moves thousands of Poisson-weighted counts; a nuisance
+   parameter moves O(1)), so this kappa measures GENUINE collinearity/degeneracy, independent of
+   parameter scaling.
 
    Interpretation - how well-determined the fit parameters are / how near the inverted normal matrix
-   (J^T J) is to singular.  Range >= 1.0 (1 = perfectly conditioned); roughly log10(kappa) decimal
+   (J~^T J~) is to singular.  Range >= 1.0 (1 = perfectly conditioned); roughly log10(kappa) decimal
    digits of precision are lost in the solution:
      - <~1e4      : well-conditioned.
      - ~1e5-1e6   : some parameters weakly constrained or strongly correlated.
@@ -1617,7 +1625,8 @@ struct RelActAutoSolution
                     the data; its uncertainty (and any derived enrichment / rel-eff band that depends
                     on it) is unreliable, and the "rank-deficient" warning fires (cf.
                     `m_num_rank_deficient_dirs`).
-     - -> infinity: singular (infinitely many solutions along that direction).
+     - -> infinity: singular (infinitely many solutions along that direction, or a parameter with no
+                    gradient at all - a zero-norm Jacobian column).
    -1.0 if it could not be computed (the SVD failed). */
   double m_jacobian_condition_number = -1.0;
 
