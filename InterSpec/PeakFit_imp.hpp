@@ -606,6 +606,11 @@ void fit_continuum( const float * const x,
 
     for( size_t bin = 0; bin < nbin; ++bin )
     {
+      // NOTE: smoothing this hard clamp with the same hinge as the fit-target floor was tried
+      //  (2026-07) and REVERTED: the idb_enrichment_check gate showed constrained shallow-surface
+      //  fits reshuffling into worse basins (one file chi2 +135), while the unconstrained corpus
+      //  slightly improved - net not neutral-or-better.  The zero-gradient side here is also far
+      //  rarer than the fit-target floors was (the fitted continuum seldom dips negative).
       ScalarType y_continuum = cont_vals(bin) * uncerts[bin];
       if( y_continuum < 0.0 )
         y_continuum = ScalarType(0.0);
