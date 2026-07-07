@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <memory>
+#include <random>
 #include <optional>
 
 #include "rapidxml/rapidxml.hpp"
@@ -2865,6 +2866,21 @@ void fit_model_minuit2( const std::string wtsession,
 
 namespace
 {
+  /** True if a fit-parameter name is a physical shielding dimension
+   (thickness/radius/half-length/width/height/depth), i.e. ends in
+   `_thickness`/`_dr`/`_dz`/`_dx`/`_dy`.  These are the parameters whose far/degenerate
+   starts trap the optimizer, and the ones the recovery multi-start perturbs.
+   */
+  bool is_dimension_param_name( const std::string &name )
+  {
+    const auto ends_with = []( const std::string &s, const std::string &suf ){
+      return (s.size() >= suf.size()) && (s.compare( s.size()-suf.size(), suf.size(), suf ) == 0);
+    };
+    return ends_with(name,"_thickness") || ends_with(name,"_dr")
+             || ends_with(name,"_dz") || ends_with(name,"_dx") || ends_with(name,"_dy");
+  }//is_dimension_param_name(...)
+
+
   /** A Minuit2-independent description of one fit parameter.
 
    The fit interface hands the Ceres driver a ROOT::Minuit2::MnUserParameters (it is the
@@ -2973,11 +2989,7 @@ namespace
       //  zero derivative at the limits would trap them there.  Keep them on plain Ceres bounds even when a
       //  tight (e.g. distance-capped) upper bound makes their range look "compact" - only the truly
       //  compact non-dimension parameters (mass fraction, atomic number, areal density) get the transform.
-      const auto ends_with = []( const std::string &s, const std::string &suf ){
-        return (s.size() >= suf.size()) && (s.compare( s.size()-suf.size(), suf.size(), suf ) == 0);
-      };
-      const bool is_dimension = ends_with(p.name,"_thickness") || ends_with(p.name,"_dr")
-                    || ends_with(p.name,"_dz") || ends_with(p.name,"_dx") || ends_with(p.name,"_dy");
+      const bool is_dimension = is_dimension_param_name( p.name );
 
       if( compact && !is_dimension )
         tf.type = Type::TwoSided;
@@ -3424,6 +3436,187 @@ namespace
 
     return best_chi2;
   }//run_ceres_solve(...)
+
+
+  /** Wraps #run_ceres_solve with a bounded multi-start "recovery" for stuck fits.
+
+   A far or degenerate start - most often a large shielding thickness deep in the flat
+   self-attenuation region, where the model is nearly insensitive to the dimension - can make
+   the optimizer "converge" to a local minimum with a disastrous chi2 rather than fail
+   outright.  The trap is often coupled across parameters (e.g. a far source radius together
+   with a far-low shield thickness), so nudging one parameter at a time does not escape it.
+
+   So: run the normal solve; if the average per-peak deviation dev=sqrt(chi2/npeaks) is far
+   above what even a poor-but-real fit gives (statistical-only uncertainties leave good fits
+   around 1-4), and shielding dimensions are being fit, re-solve from a small deterministic
+   set of restart points that move the fitted dimensions across their ranges - each
+   dimension's low/high end (from the primary fit), plus a few coupled log-uniform points
+   (all fitted dimensions moved jointly) - keeping the best result.  Good fits short-circuit
+   immediately with no extra work.  Same parameters and return value as #run_ceres_solve.
+   */
+  double run_ceres_solve_with_recovery( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                          const std::vector<FitParameterDef> &par_defs,
+                          const std::vector<double> &start_full,
+                          const std::vector<size_t> &var_indices,
+                          const std::vector<double> &observed,
+                          const std::vector<double> &observed_uncert,
+                          std::vector<double> &final_full,
+                          std::vector<double> *var_errors,
+                          std::string *cov_errmsg,
+                          size_t *num_evals,
+                          std::string *convergence_msg = nullptr )
+  {
+    typedef GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus CalcStatus;
+
+    const double primary_chi2 = run_ceres_solve( chi2Fcn, par_defs, start_full, var_indices,
+                                                 observed, observed_uncert, final_full, var_errors,
+                                                 cov_errmsg, num_evals, convergence_msg );
+
+    const size_t npeaks = observed.size();
+    if( npeaks == 0 )
+      return primary_chi2;
+
+    // Only rescue disasters.  The fit uncertainties are statistical-only (no detector-efficiency
+    //  or peak-fit systematics), so even good fits routinely sit at dev~2-4; trigger well above
+    //  that.  A stuck self-atten fit gives a far larger dev.  (The dev>3 "questionable" warning in
+    //  check_for_fit_warnings() is a separate, softer flag.)
+    const double sm_recovery_dev = 8.0;
+    const double primary_dev = std::sqrt( primary_chi2 / static_cast<double>(npeaks) );
+    if( !(primary_dev > sm_recovery_dev) )
+      return primary_chi2;
+
+    // The varied parameters that are shielding dimensions with a finite range - the ones to perturb.
+    std::vector<size_t> dim_indices;
+    for( const size_t idx : var_indices )
+    {
+      const FitParameterDef &p = par_defs[idx];
+      if( is_dimension_param_name( p.name ) && p.has_lower && p.has_upper && (p.upper > p.lower) )
+        dim_indices.push_back( idx );
+    }
+
+    if( dim_indices.empty() )
+      return primary_chi2;
+
+    // Per-dimension perturbation range, kept off the exact bounds: Ceres' projected trust region
+    //  pins a parameter at a limit (its transform derivative goes to zero there), so starting a
+    //  restart exactly at a bound would just re-stall.  Offset inward by min( ~0.5 g/cm2 of the
+    //  shell material, 0.5% of the range ); 0.5 g/cm2 is sub-mm for dense shields, and the 0.5%
+    //  cap handles a near-void shell (tiny density) whose 0.5 g/cm2 thickness would be enormous.
+    const double distance = chi2Fcn->distance();
+    const size_t nnuc = chi2Fcn->numNuclides();
+    const double half_gcm2 = 0.5 * PhysicalUnits::g_per_cm2;
+
+    struct DimRange{ size_t index; double lo; double hi; };
+    std::vector<DimRange> ranges;
+    for( const size_t idx : dim_indices )
+    {
+      const FitParameterDef &p = par_defs[idx];
+
+      // Clamp the range to a sane physical scale (some non-fit dims carry a 1000 m sanity bound).
+      double hi_raw = (distance > 0.0) ? std::min( p.upper, distance ) : p.upper;
+      double lo_raw = std::max( p.lower, 1.0E-3*((distance > 0.0) ? distance : hi_raw) );
+      if( !(hi_raw > lo_raw) ){ lo_raw = p.lower; hi_raw = p.upper; }
+
+      const double valid_range = hi_raw - lo_raw;
+
+      double offset = 0.005*valid_range;
+      if( idx >= 2*nnuc )   // full-vector layout: 2 params per nuclide, then 3 per shielding
+      {
+        const size_t shield_index = (idx - 2*nnuc)/3;
+        if( (shield_index < chi2Fcn->numMaterials()) && !chi2Fcn->isGenericMaterial(shield_index) )
+        {
+          const std::shared_ptr<const Material> mat = chi2Fcn->material( shield_index );
+          if( mat && (mat->density > 0.0f) )
+            offset = std::min( offset, half_gcm2 / static_cast<double>(mat->density) );
+        }
+      }//if( a real (non-generic) shielding material )
+      offset = std::max( 0.0, std::min( offset, 0.49*valid_range ) );
+
+      DimRange r;
+      r.index = idx;
+      r.lo = lo_raw + offset;
+      r.hi = hi_raw - offset;
+      if( !(r.hi > r.lo) ){ r.lo = lo_raw; r.hi = hi_raw; }
+      ranges.push_back( r );
+    }//for( const size_t idx : dim_indices )
+
+    // Assemble restart start-vectors.  Endpoints move one dimension at a time from the primary
+    //  fit (single-parameter escape); coupled samples move all fitted dimensions jointly from the
+    //  original start (the coupled trap).
+    const size_t sm_max_restarts = 12;
+    const size_t sm_num_coupled = 6;
+    std::vector<std::vector<double>> restarts;
+
+    for( const DimRange &r : ranges )
+    {
+      for( const double v : { r.lo, r.hi } )
+      {
+        std::vector<double> s = final_full;
+        s[r.index] = v;
+        restarts.push_back( std::move(s) );
+      }
+    }//for( const DimRange &r : ranges )
+
+    // Deterministic, portable coupled samples (fixed seed, like the tests own perturbation).
+    std::mt19937 rng( 0xC0FFEEu );
+    for( size_t k = 0; (k < sm_num_coupled) && (restarts.size() < sm_max_restarts); ++k )
+    {
+      std::vector<double> s = start_full;
+      for( const DimRange &r : ranges )
+      {
+        std::uniform_real_distribution<double> lu( std::log(r.lo), std::log(r.hi) );
+        s[r.index] = std::exp( lu(rng) );
+      }
+      restarts.push_back( std::move(s) );
+    }//for( coupled multistart samples )
+
+    if( restarts.size() > sm_max_restarts )
+      restarts.resize( sm_max_restarts );
+
+    // Cheap restart solves (no covariance); keep the best-improving start.  A far restart may put
+    //  the model where it cant evaluate (run_ceres_solve throws) - skip it and keep going.
+    double best_chi2 = primary_chi2;
+    std::vector<double> best_start;  //empty => the primary fit stays best
+    const double good_enough_chi2 = sm_recovery_dev*sm_recovery_dev*static_cast<double>(npeaks);
+
+    for( const std::vector<double> &s : restarts )
+    {
+      if( chi2Fcn->currentCancelStatus() != CalcStatus::NotCanceled )
+        break;
+
+      try
+      {
+        std::vector<double> trial_full;
+        const double c = run_ceres_solve( chi2Fcn, par_defs, s, var_indices, observed,
+                                          observed_uncert, trial_full, nullptr, nullptr,
+                                          num_evals, nullptr );
+        if( c < best_chi2 )
+        {
+          best_chi2 = c;
+          best_start = s;
+        }
+      }catch( std::exception & )
+      {
+        //model not evaluatable at this restart - ignore it
+      }
+
+      if( best_chi2 <= good_enough_chi2 )
+        break;  //recovered - self-atten solves are expensive, so stop probing
+    }//for( const std::vector<double> &s : restarts )
+
+    if( best_start.empty() )
+      return primary_chi2;  //nothing beat the primary; its outputs are already in place
+
+    // Final covariance-bearing solve from the best restart, so the returned
+    //  final_full/var_errors/messages correspond to the accepted solution.
+    if( cov_errmsg )
+      cov_errmsg->clear();
+    if( convergence_msg )
+      convergence_msg->clear();
+
+    return run_ceres_solve( chi2Fcn, par_defs, best_start, var_indices, observed, observed_uncert,
+                            final_full, var_errors, cov_errmsg, num_evals, convergence_msg );
+  }//run_ceres_solve_with_recovery(...)
 }//namespace
 
 
@@ -3607,9 +3800,9 @@ void fit_model_ceres( const std::string wtsession,
 
     if( fit_generic_an_indices.empty() )
     {
-      const double chi2 = run_ceres_solve( chi2Fcn, par_defs, initial_full, variable_indices,
-                                           observed, observed_uncert, fit_full, &var_errors,
-                                           &cov_errmsg, &num_evals, &conv_msg );
+      const double chi2 = run_ceres_solve_with_recovery( chi2Fcn, par_defs, initial_full,
+                                           variable_indices, observed, observed_uncert, fit_full,
+                                           &var_errors, &cov_errmsg, &num_evals, &conv_msg );
       results->chi2 = chi2;
     }else
     {

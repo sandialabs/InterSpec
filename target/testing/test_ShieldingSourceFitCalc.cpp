@@ -22,6 +22,8 @@
  */
 #include "InterSpec_config.h"
 
+#include <cmath>
+#include <random>
 #include <string>
 #include <iostream>
 
@@ -2490,6 +2492,118 @@ BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian, * boost::unit_test::disabled() )
       cout << "  errormsg: " << msg << endl;
   }//for( both drivers )
 }//BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian )
+
+
+/** A self-attenuating uranium fit started deep in the flat self-attenuation regime (source radius set
+ to ~6x its true value, but kept inside the detector distance), combined with a far-low Fe shell.  A
+ thick uranium source emits only from a thin surface layer, so the model is nearly insensitive to the
+ radius there, and the far U-radius / far-low-Fe combination traps a plain local optimizer near the
+ far start with a large chi2.
+
+ This test does two things:
+   1) It guards that such a fit COMPLETES rather than crashing.  A far/degenerate start used to drive
+      the model past `radius > distance` (NaN residuals) and then segfault in the post-fit covariance
+      SVD; both are now handled, and a segfault here would abort the test process.
+   2) It verifies the far-start recovery: run_ceres_solve_with_recovery() detects the disastrous chi2
+      and re-solves from a bounded multi-start over the fitted shielding dimensions, so the fit now
+      climbs back to the true radius.  (This was an EXPECTED FAILURE before that recovery landed.)
+ */
+BOOST_AUTO_TEST_CASE( SelfAttenUraniumFarStartStuck )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string n42 = SpecUtils::append_path( g_test_file_dir, "uranium_40pct_selfatten_HPGe_15cm.n42" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(n42), "missing fixture: " << n42 );
+
+  SpecMeas specfile;
+  BOOST_REQUIRE( specfile.load_N42_file( n42 ) );
+
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks;
+  set<int> fg_samples;
+  for( const set<int> &samples : specfile.sampleNumsWithPeaks() )
+  {
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> p = specfile.peaks( samples );
+    if( p && !p->empty() ){ peaks = p; fg_samples = samples; break; }
+  }
+  BOOST_REQUIRE( peaks && !peaks->empty() );
+
+  shared_ptr<const DetectorPeakResponse> det = specfile.detector();
+  BOOST_REQUIRE( det && det->isValid() );
+
+  rapidxml::xml_document<char> *model_xml = specfile.shieldingSourceModel();
+  BOOST_REQUIRE( model_xml && model_xml->first_node() );
+  GammaInteractionCalc::ShieldSourceConfig config;
+  BOOST_REQUIRE_NO_THROW( config.deSerialize( model_xml->first_node() ) );
+  BOOST_REQUIRE( config.geometry == GammaInteractionCalc::GeometryType::Spherical );
+
+  const vector<string> &dn = specfile.detector_names();
+  shared_ptr<const SpecUtils::Measurement> fg = specfile.measurement( *fg_samples.begin(),
+                                                                      dn.empty() ? string() : dn[0] );
+  if( !fg )
+    fg = specfile.measurements()[0];
+
+  // The uranium (self-attenuating source) shell; its saved radius is the true/converged answer.
+  ShieldingSourceFitCalc::ShieldingInfo *u_shell = nullptr;
+  for( ShieldingSourceFitCalc::ShieldingInfo &sh : config.shieldings )
+    if( sh.m_material && SpecUtils::icontains(sh.m_material->name, "uranium") )
+      u_shell = &sh;
+  BOOST_REQUIRE_MESSAGE( u_shell, "fixture changed: no uranium shell found" );
+  BOOST_REQUIRE_MESSAGE( u_shell->m_fitDimensions[0], "fixture changed: uranium radius is not fit" );
+
+  const double true_U_radius = u_shell->m_dimensions[0];
+  BOOST_REQUIRE( true_U_radius > 0.0 );
+
+  // Reproduce the documented far-start failure: perturb every fitted dimension by a fixed-seed random
+  //  0.1-10x factor (deterministic std::mt19937, so portable).  For this fixture this drives the U
+  //  source radius to ~6x the truth (deep in the flat self-attenuation regime) while also driving the
+  //  thin Fe shell far low - the combination the optimizer cannot recover from.  (Perturbing the U
+  //  radius alone, with a correct Fe, does recover - so both must be off to exercise the failure.)
+  std::mt19937 rng( 20240601u + 1000u );
+  std::uniform_real_distribution<double> logfac( std::log(0.1), std::log(10.0) );
+  for( ShieldingSourceFitCalc::ShieldingInfo &sh : config.shieldings )
+    for( int d = 0; d < 3; ++d )
+      if( sh.m_fitDimensions[d] && (sh.m_dimensions[d] > 0.0) )
+        sh.m_dimensions[d] *= std::exp( logfac(rng) );
+  const double far_start = u_shell->m_dimensions[0];
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput ci;
+  ci.config = config;
+  ci.detector = det;
+  ci.foreground = fg;
+  ci.background = nullptr;
+  ci.foreground_peaks.assign( peaks->begin(), peaks->end() );
+  ci.background_peaks = nullptr;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( ci );
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  auto pf = [](){};
+  auto ff = [](){};
+
+  // (1) Must complete without crashing / throwing (the regression guard - a segfault would abort here).
+  BOOST_REQUIRE_NO_THROW( ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams,
+                                                             progress, pf, results, ff ) );
+  BOOST_CHECK( std::isfinite( results->chi2 ) );
+
+  double fitted_U_radius = -1.0;
+  for( const ShieldingSourceFitCalc::FitShieldingInfo &sh : results->final_shieldings )
+    if( sh.m_material && SpecUtils::icontains(sh.m_material->name, "uranium") )
+      fitted_U_radius = sh.m_dimensions[0];
+
+  BOOST_TEST_MESSAGE( "Self-atten U far-start (started " << far_start/PhysicalUnits::cm << " cm): fitted "
+                      << fitted_U_radius/PhysicalUnits::cm << " cm vs true "
+                      << true_U_radius/PhysicalUnits::cm << " cm" );
+
+  // (2) The far-start recovery must climb back to the true radius from the far start.
+  BOOST_CHECK_MESSAGE( std::fabs(fitted_U_radius - true_U_radius) <= 0.10*true_U_radius,
+                       "far-start self-attenuating fit did not recover the true U radius: got "
+                       << fitted_U_radius/PhysicalUnits::cm << " cm, true "
+                       << true_U_radius/PhysicalUnits::cm << " cm" );
+}//BOOST_AUTO_TEST_CASE( SelfAttenUraniumFarStartStuck )
 
 
 BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
