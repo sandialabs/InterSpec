@@ -9,16 +9,46 @@
   <message id="mmr-profile">Profile:</message>
   <message id="mmr-profile-general">General (default)</message>
   <message id="mmr-profile-farfield">Far-field only</message>
-  <message id="mmr-profile-contact">Contact / close-in</message>
-  <message id="mmr-tt-profile">How much Monte Carlo to spend where: &lt;b&gt;General&lt;/b&gt; adds a
-    near-field model (lab/hand-held use); &lt;b&gt;Far-field&lt;/b&gt; skips it (large standoff
-    detectors - close-in queries will be flagged); &lt;b&gt;Contact&lt;/b&gt; adds a denser close-in
-    scan (well/swipe counting).</message>
+  <message id="mmr-profile-contact">Extra near detail</message>
+  <message id="mmr-tt-profile">&lt;p&gt;Controls how close to the detector the response
+    stays accurate - i.e. how much extra Monte Carlo is spent characterizing the
+    near-field. All three profiles cover the &lt;b&gt;full front hemisphere&lt;/b&gt;
+    (source angle 0&#176; on-axis through 90&#176; grazing) and the detector&apos;s whole
+    energy range; they differ only in the closest distance they model. (Sources
+    &lt;i&gt;behind&lt;/i&gt; the detector face - angles &gt; 90&#176;, e.g. Marinelli
+    beakers - are not modeled by any profile.)&lt;/p&gt;
+    &lt;ul&gt;
+    &lt;li&gt;&lt;b&gt;Far-field only&lt;/b&gt; - no near-field model at all. Accurate from
+    roughly a few detector-widths outward; queries closer than that are flagged
+    (not silently corrected). Cheapest. Use for fixed, large-standoff installations
+    or search detectors.&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;General (default)&lt;/b&gt; - adds a near-field model down to about one
+    detector transverse size (a few cm). Covers typical lab bench and hand-held
+    measurements. Moderate extra cost.&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Extra near detail&lt;/b&gt; - scans the near-field denser and all the way
+    down to contact (about half a detector size, ~0.5 cm), with fine angular
+    coverage close-in. Use for contact, well, or swipe counting, or anything held
+    right against the endcap. Most Monte Carlo, but the only profile accurate at
+    contact off-axis.&lt;/li&gt;
+    &lt;/ul&gt;</message>
   <message id="mmr-precision">MC precision:</message>
   <message id="mmr-precision-fast">Fast (1% per node)</message>
   <message id="mmr-precision-normal">Normal (0.3% per node)</message>
   <message id="mmr-precision-thorough">Thorough (0.1% per node)</message>
   <message id="mmr-precision-custom">Custom...</message>
+  <message id="mmr-tt-precision">&lt;p&gt;The per-node Monte-Carlo statistical target: how
+    tightly each point of the response is computed. Tighter means less statistical
+    noise baked into the stored response, at more run time (cost scales roughly as
+    1 / precision&#178; - halving the target is about 4&#215; the work).&lt;/p&gt;
+    &lt;ul&gt;
+    &lt;li&gt;&lt;b&gt;Fast (1%)&lt;/b&gt; - a quick preview, or small/high-efficiency detectors.&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Normal (0.3%)&lt;/b&gt; - a good balance for most detectors (default).&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Thorough (0.1%)&lt;/b&gt; - a high-quality reference; noticeably slower.&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Custom&lt;/b&gt; - enter your own per-node target (e.g. 0.2%).&lt;/li&gt;
+    &lt;/ul&gt;
+    &lt;p&gt;This is the &lt;i&gt;statistical&lt;/i&gt; precision only; the response&apos;s overall
+    accuracy also depends on how finely the energy/angle/distance grids are placed,
+    so tightening precision helps but has diminishing returns.&lt;/p&gt;</message>
   <message id="mmr-estimate">About {1} Monte-Carlo nodes; very roughly {2} minute(s).</message>
   <message id="mmr-generate-btn">Generate Response</message>
   <message id="mmr-use-response-btn">Use Response</message>

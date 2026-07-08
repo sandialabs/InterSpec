@@ -231,6 +231,7 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_precision->addItem( WString::tr("mmr-precision-custom") );
   m_precision->setCurrentIndex( 1 );
   m_precision->activated().connect( this, &MakeMcResponseForDrf::handlePrecisionChanged );
+  HelpSystem::attachToolTipOn( m_precision, WString::tr("mmr-tt-precision"), true );
 
   m_customPrecision = precRow->addNew<WLineEdit>();
   m_customPrecision->setTextSize( 5 );

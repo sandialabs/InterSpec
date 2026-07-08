@@ -296,20 +296,24 @@ BOOST_GLOBAL_FIXTURE( TestFixture );
  */
 BOOST_AUTO_TEST_CASE( probe_bank_nai3x3 )
 {
-  check_probe_bank( "nai3x3", 0.02, 0.06 );
+  // High-stats fixture (0.1% node precision): FEP median ~0.6%, 95th ~2.6%.
+  check_probe_bank( "nai3x3", 0.015, 0.045 );
 }
 
 BOOST_AUTO_TEST_CASE( probe_bank_hpge_coax )
 {
-  // The HPGe 95th tail (~8%) is the v1 near-field model on the steepest
-  //  eta(theta) detector at low-E/grazing probes; the campaign's full S6
-  //  treatment reaches ~4.5% - tightening this gate tracks that follow-up.
-  check_probe_bank( "hpge_coax", 0.02, 0.10 );
+  // HPGe is the steepest eta(theta) detector, so its 95th is the highest.
+  //  High stats + the angle-scanned near-field (rho=z*tan(theta)) bring it to
+  //  ~5% (was ~8%); the residual sits at grazing (~86-88 deg) where the
+  //  near-field angular grid currently tops out at 84 deg while eta reaches
+  //  ~89 deg - extending that grid is a documented follow-up.
+  check_probe_bank( "hpge_coax", 0.02, 0.08 );
 }
 
 BOOST_AUTO_TEST_CASE( probe_bank_czt_box )
 {
-  check_probe_bank( "czt_box", 0.02, 0.08 );
+  // High-stats fixture (0.15%): FEP median ~0.35%, 95th ~2.3%.
+  check_probe_bank( "czt_box", 0.015, 0.045 );
 }
 
 

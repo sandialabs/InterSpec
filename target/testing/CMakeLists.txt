@@ -225,10 +225,15 @@ if( INTERSPEC_REGEN_CEELO_GOLDENS )
   set( _ceelo_fixture_dir "${CMAKE_CURRENT_SOURCE_DIR}/test_data/ceelo_drf" )
   add_custom_target( regen_ceelo_goldens
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_ceelo_fixture_dir}"
-    COMMAND $<TARGET_FILE:make_golden_response> nai3x3 "${_ceelo_fixture_dir}" general 0.003 60 1
-    COMMAND $<TARGET_FILE:make_golden_response> hpge_coax "${_ceelo_fixture_dir}" general 0.003 60 1
-    COMMAND $<TARGET_FILE:make_golden_response> czt_box "${_ceelo_fixture_dir}" far-field 0.003 60 1
-    COMMENT "Regenerating CeeLo golden response fixtures (real MC; several minutes)"
+    # High-statistics fixtures: tight per-node precision with raised caps
+    #  (max_events / max_wall_s) so it is actually reached. czt_box is a box
+    #  (4x the angular nodes via its phi axis), so a lighter target keeps it
+    #  practical. Args: <preset> <dir> <profile> <precision> <n_probes> <seed>
+    #  <max_events> <max_wall_s>.
+    COMMAND $<TARGET_FILE:make_golden_response> nai3x3 "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 60
+    COMMAND $<TARGET_FILE:make_golden_response> hpge_coax "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 60
+    COMMAND $<TARGET_FILE:make_golden_response> czt_box "${_ceelo_fixture_dir}" far-field 0.0015 90 1 200000000 25
+    COMMENT "Regenerating CeeLo golden response fixtures (real MC; ~hours at high stats)"
     VERBATIM
   )
   add_dependencies( regen_ceelo_goldens make_golden_response )
