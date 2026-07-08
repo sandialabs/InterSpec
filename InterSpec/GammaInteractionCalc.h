@@ -1313,6 +1313,30 @@ public:
   const std::vector<PeakDef> &backgroundPeaks() const;
   double backgroundNormalizationFactor() const;
 
+  /** Energies (keV) of the peaks included in the fit - the same inclusion
+   rule and ordering as the fit residuals, so per-peak quantities line up
+   one-to-one with them.
+   */
+  std::vector<double> includedPeakEnergies() const;
+
+  /** Row-major NxN fractional detector-efficiency covariance among the
+   included peaks (see #includedPeakEnergies), evaluated on-axis at the fit
+   distance; strongly correlated between nearby energies for grounded
+   Monte-Carlo-parameterized responses.  Empty if the detector has no
+   uncertainty information.
+
+   Not yet folded into the fit residuals - available for the chi2 / reported
+   parameter covariance to consume (a common-mode efficiency error maps ~1:1
+   onto activity and must not be averaged down by sqrt(num-peaks)).
+   */
+  std::vector<double> peakEffFracCovariance() const;
+
+  /** Square root of the diagonal of #peakEffFracCovariance - the per-peak
+   1-sigma fractional efficiency uncertainty envelope.  Empty if the detector
+   has no uncertainty information.
+   */
+  std::vector<double> peakEffFracUncerts() const;
+
   double distance() const;
   
   const std::shared_ptr<const DetectorPeakResponse> &detector() const;

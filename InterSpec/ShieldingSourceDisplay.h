@@ -778,6 +778,7 @@ public:
 
   void sameIsotopesAgeChanged();
   void decayCorrectChanged();
+  void accountForDrfUncertChanged();
   void showGraphicTypeChanged();
   
 
@@ -903,6 +904,7 @@ protected:
   Wt::WCheckBox  *m_backgroundPeakSub;
   Wt::WCheckBox  *m_sameIsotopesAge;
   Wt::WCheckBox  *m_decayCorrect;
+  Wt::WCheckBox  *m_accountForDrfUncert;
   SwitchCheckbox *m_showChiOnChart;
   GroupBox *m_optionsDiv;
   /** This variable should be set to the same value as `m_clusterWidth`, but is around for undo/redo support. */

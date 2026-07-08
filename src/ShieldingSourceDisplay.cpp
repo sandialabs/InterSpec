@@ -3309,8 +3309,18 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_decayCorrect->setChecked( decayCorrectActivity );
   m_decayCorrect->checked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );
   m_decayCorrect->unChecked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );
-      
-  
+
+
+  lineDiv = m_optionsDiv->addNew<WContainerWidget>();
+  lineDiv->addStyleClass( "FitOptionsRow" );
+  m_accountForDrfUncert = lineDiv->addNew<WCheckBox>( WString::tr("ssd-cb-drf-uncert") );
+  m_accountForDrfUncert->addStyleClass( "CbNoLineBreak" );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-drf-uncert"), showToolTips );
+  m_accountForDrfUncert->setChecked( true );  //matches ShieldingSourceFitOptions default
+  m_accountForDrfUncert->checked().connect( this, &ShieldingSourceDisplay::accountForDrfUncertChanged );
+  m_accountForDrfUncert->unChecked().connect( this, &ShieldingSourceDisplay::accountForDrfUncertChanged );
+
+
   WContainerWidget *detectorDiv = new WContainerWidget();
   WGridLayout *detectorLayout = detectorDiv->setLayout( std::make_unique<WGridLayout>() );
 
@@ -3684,7 +3694,8 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
   options.photopeak_cluster_sigma = m_photopeak_cluster_sigma;
   options.background_peak_subtract = m_backgroundPeakSub->isChecked();
   options.same_age_isotopes = m_sameIsotopesAge->isChecked();
-  
+  options.account_for_drf_uncert = m_accountForDrfUncert->isChecked();
+
   return options;
 }//ShieldingSourceFitOptions fitOptions() const
 
@@ -5725,6 +5736,27 @@ void ShieldingSourceDisplay::decayCorrectChanged()
   
   updateChi2Chart();
 }//void decayCorrectChanged()
+
+
+void ShieldingSourceDisplay::accountForDrfUncertChanged()
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_accountForDrfUncert->setChecked( !display->m_accountForDrfUncert->isChecked() );
+        display->accountForDrfUncertChanged();
+      }
+    };
+
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Account for DRF uncertainty changed." );
+  }//if( undoRedo )
+
+  updateChi2Chart();
+}//void accountForDrfUncertChanged()
 
 
 void ShieldingSourceDisplay::showGraphicTypeChanged()
@@ -7995,6 +8027,7 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_backgroundPeakSub->setChecked( options.background_peak_subtract );
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
+  m_accountForDrfUncert->setChecked( options.account_for_drf_uncert );
   m_showChiOnChart->setChecked( state.showChiOnChart );
   m_chi2Plot->setShowChi( state.showChiOnChart );
   string dist_str = PhysicalUnits::printToBestLengthUnitsCompact( state.config->distance );  //e.g. "1 m", not "1.000000 m"

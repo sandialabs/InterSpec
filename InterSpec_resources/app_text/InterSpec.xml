@@ -156,6 +156,8 @@
   <message id="window-title-nuc-decay">Nuclide Decay Information</message>
   <message id="window-title-select-det-eff-fcn">Detector Response Function Select</message>
   <message id="window-title-add-fwhm">Add FWHM to Detector Response Function</message>
+  <message id="window-title-mc-response">Characterize Detector Response by Monte Carlo</message>
+  <message id="window-title-modify-drf">Modify Detector Response</message>
   <message id="window-title-create-drf">Create Detector Response Function</message>
   <message id="window-title-file-parameters">File Parameters</message>
   <message id="window-title-energy-range-sum">Energy Range Sum</message>

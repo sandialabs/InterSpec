@@ -82,8 +82,11 @@ namespace rapidxml
 
 //Forward declarations
 struct FormulaWrapper;
+class MeasuredDrfPoints;
 class DetectorEfficiencyCurve;
 class DetectorEfficiencyUncert;
+
+namespace ceelo{ class DetectorResponse; }
 
 
 class DetectorPeakResponse
@@ -674,11 +677,26 @@ public:
    */
   void setEfficiencyUncert( std::shared_ptr<const DetectorEfficiencyUncert> uncert );
 
-  /** Convenience for `efficiencyUncert()->efficiencyFracCovariance(energies)`;
-   see DetectorEfficiencyUncert::efficiencyFracCovariance.  Energies in keV.
-   Returns an empty vector if no uncertainty is defined.
+  /** Fractional-efficiency-error covariance among `energies` (keV), row-major
+   N*N; empty vector if no uncertainty information is available.
+
+   When a Monte-Carlo-parameterized response is attached (see #ceeloResponse),
+   the covariance comes from it (grounding-fit covariance + per-node MC
+   variance + regime model floors - strongly correlated between nearby
+   energies), evaluated at a far-field on-axis geometry; use the
+   (theta, distance) overload when the actual measurement geometry is known.
+   Otherwise this is `efficiencyUncert()->efficiencyFracCovariance(energies)`.
    */
   std::vector<double> efficiencyFracCovariance( const std::vector<double> &energies ) const;
+
+  /** Same as above, but evaluated at the given query geometry (theta in
+   radians from the detector axis; distance in PhysicalUnits) - the
+   Monte-Carlo response's uncertainty grows off-axis and close-in.  The legacy
+   #DetectorEfficiencyUncert path ignores the geometry.
+   */
+  std::vector<double> efficiencyFracCovariance( const std::vector<double> &energies,
+                                                const double theta,
+                                                const double distance ) const;
 
   /** Whether an (optional) total-efficiency curve has been set - i.e., the
    probability an incident gamma deposits *any* energy in the detector, not
@@ -709,6 +727,87 @@ public:
    Throws std::runtime_error if !hasTotalEfficiency().
    */
   double totalEfficiency( const float energy, const double distance ) const;
+
+  /** Provenance flag returned with every #EffEval query.
+
+   Mirrors ceelo::ResponseFlag; for legacy (curve-only) DRFs only Ok,
+   OutOfRangeClamped and NeedsMc (off-axis or missing-total-efficiency
+   queries) can occur.
+   */
+  enum class EffFlag : int
+  {
+    Ok = 0,               //inside validated ranges
+    OutOfRangeClamped,    //energy or angle outside the validated range; value clamped
+    NearFieldUnmodeled,   //closer than the validated distance, no near-field model
+    Shadowed,             //collimated detector, scatter/leak dominated; sigma inflated
+    NeedsMc               //refuse-grade query; value is a guess - offer a bespoke MC run
+  };//enum class EffFlag
+
+  /** An efficiency evaluation: {value, absolute 1-sigma uncertainty, flag}. */
+  struct EffEval
+  {
+    double value = 0.0;
+    double sigma = 0.0;
+    EffFlag flag = EffFlag::Ok;
+  };//struct EffEval
+
+  /** The (optional) Monte-Carlo-parameterized detector response; may be
+   nullptr.  When set, the #EffEval query functions and
+   #efficiencyFracCovariance dispatch to it; the legacy efficiency curve is
+   kept as the back-compat fallback/export, and #intrinsicEfficiency /
+   #efficiency are NOT affected (they keep evaluating the legacy curve
+   bit-identically).
+   */
+  std::shared_ptr<const ceelo::DetectorResponse> ceeloResponse() const;
+
+  /** Sets (or clears, with nullptr) the Monte-Carlo-parameterized response.
+   Recomputes hash value.
+   */
+  void setCeeloResponse( std::shared_ptr<const ceelo::DetectorResponse> response );
+
+  /** The (optional) raw measured efficiency points this DRF was
+   characterized from; may be nullptr.  Kept for provenance and for grounding
+   a Monte-Carlo-parameterized response (which must use the raw points, not a
+   fitted curve).
+   */
+  std::shared_ptr<const MeasuredDrfPoints> measuredPoints() const;
+
+  /** Sets (or clears, with nullptr) the raw measured efficiency points.
+   Recomputes hash value.
+   */
+  void setMeasuredPoints( std::shared_ptr<const MeasuredDrfPoints> points );
+
+  /** #intrinsicEfficiency with 1-sigma uncertainty and provenance flag.
+
+   Legacy path: value is bit-identical to #intrinsicEfficiency, sigma from
+   #efficiencyUncert (0 if none).  With a ceelo response: derived from the
+   parameterized far-field on-axis response.
+   */
+  EffEval intrinsicEfficiencyEval( const float energy ) const;
+
+  /** #efficiency (on-axis point source at `distance`, PhysicalUnits) with
+   uncertainty and flag.  For fixed-geometry DRFs distance is ignored.
+   */
+  EffEval efficiencyEval( const float energy, const double distance ) const;
+
+  /** Absolute full-energy-peak efficiency of a point source at polar angle
+   `theta` (radians, from the detector axis), azimuth `phi` (radians; only
+   meaningful for non-axially-symmetric detectors), and `distance`
+   (PhysicalUnits, from the detector reference point).
+
+   With a ceelo response this is the full off-axis/near-field evaluation.
+   Legacy path: the theta-blind on-axis value, flagged NeedsMc when theta is
+   meaningfully off-axis (the legacy curve cannot model it).
+   */
+  EffEval fepEfficiencyEval( const float energy, const double theta,
+                             const double phi, const double distance ) const;
+
+  /** Like #fepEfficiencyEval, but the probability of depositing *any* energy
+   (for cascade-summing corrections).  Legacy path uses #m_totalEfficiency
+   when present, else returns {0, 0, NeedsMc}.
+   */
+  EffEval totalEfficiencyEval( const float energy, const double theta,
+                               const double phi, const double distance ) const;
 
   /** Gives the fraction of gammas or x-rays from a point source that would strike the detector crystal.
    
@@ -1104,9 +1203,26 @@ protected:
    */
   std::shared_ptr<const DetectorEfficiencyCurve> m_totalEfficiency;
 
+  /** Optional Monte-Carlo-parameterized detector response (CeeLo): geometry
+   descriptor, eta(E,theta[,phi]) residual tables with per-node MC sigma,
+   near-field model, tiered total-efficiency payload, grounding k(E) +
+   covariance, per-regime uncertainty floors, and provenance.  See
+   external_libs/CeeLo/src/io/DetectorResponse.h.
+
+   The legacy efficiency curve remains the fallback (and back-compat export);
+   #intrinsicEfficiency / #efficiency never dispatch here - only the #EffEval
+   query functions and #efficiencyFracCovariance do.
+   */
+  std::shared_ptr<const ceelo::DetectorResponse> m_ceeloResponse;
+
+  /** Optional raw measured efficiency points the DRF was characterized from
+   (see #MeasuredDrfPoints) - provenance + grounding input.
+   */
+  std::shared_ptr<const MeasuredDrfPoints> m_measuredPoints;
+
   /** On 20230916 updated from version 0 to 1, to account for `m_fixedGeometry` - will still write version 0 if
    `m_geomType == EffGeometryType::FarFieldIntrinsic`.
-   
+
    On 20240410 updated from 1 to 2, to account for `ResolutionFnctForm::kConstantPlusSqrtEnergy` type of FWHM
    being added.  However, will only write 2 if `m_resolutionForm == ResolutionFnctForm::kConstantPlusSqrtEnergy`.
    */

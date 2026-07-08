@@ -87,6 +87,7 @@ struct PeakFitDetPrefs;
 class DetectorPeakResponse;
 class ExportSpecFileWindow;
 class MakeFwhmForDrfWindow;
+class MakeMcResponseForDrfWindow;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
@@ -900,6 +901,18 @@ public:
   /** If a `MakeFwhmForDrfWindow` is showing, deletes it, and sets `m_addFwhmTool` to nullptr.
    */
   void deleteFwhmFromForegroundWindow();
+
+  /** Shows the "characterize detector by Monte-Carlo" tool window (geometry
+   entry + CeeLo MC run + attach response to the DRF).  If already showing,
+   just returns the existing window.
+   @param seed_drf The DRF to seed the geometry from and attach the response
+          to; pass nullptr to use the current foreground detector.
+   */
+  MakeMcResponseForDrfWindow *showMcResponseWindow(
+                        std::shared_ptr<const DetectorPeakResponse> seed_drf );
+
+  /** If a `MakeMcResponseForDrfWindow` is showing, deletes it. */
+  void deleteMcResponseWindow();
 
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
@@ -1718,6 +1731,8 @@ protected:
   Wt::Core::observing_ptr<DecayWindow> m_decayInfoWindow;
   
   Wt::Core::observing_ptr<MakeFwhmForDrfWindow> m_addFwhmTool;
+
+  Wt::Core::observing_ptr<MakeMcResponseForDrfWindow> m_mcResponseTool;
   
   //m_preserveCalibWindow: a pointer to the window that prompts the user if they
   //  would like to use a calibration from a previously used spectrum if the one

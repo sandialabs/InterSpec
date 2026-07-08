@@ -251,3 +251,30 @@ div.RelEffFile select
   margin-top: 10px;
   margin-bottom: 5px;
 }
+
+
+/* Chip strip summarizing the current DRFs contents (DrfSelect::updateDrfContentSummary) */
+.DrfContentChips
+{
+  padding: 2px 6px;
+  white-space: normal;
+}
+
+.DrfContentChips .DrfChip
+{
+  display: inline-block;
+  padding: 1px 7px;
+  margin: 1px 3px 1px 0px;
+  border-radius: 9px;
+  font-size: smaller;
+  border: 1px solid var(--interspec-outline-color, #a5b7c8);
+  background: var(--interspec-alt-row-background, #eef3f7);
+  color: var(--interspec-text-color, #333);
+}
+
+.DrfContentChips .DrfChipAbsent
+{
+  opacity: 0.45;
+  text-decoration: line-through;
+  border-style: dashed;
+}

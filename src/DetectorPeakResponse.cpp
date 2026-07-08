@@ -57,6 +57,10 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
+// CeeLo (external_libs/CeeLo/src): the Monte-Carlo-parameterized response.
+#include "io/SolidAngle.h"
+#include "io/DetectorResponse.h"
+
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PeakModel.h"
@@ -72,15 +76,85 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int DetectorPeakResponse::sm_xmlSerializationVersion = 5;
+const int DetectorPeakResponse::sm_xmlSerializationVersion = 6;
 
 namespace
 {
   /** Mutex to protect the "generic" detectors, returned by like `DetectorPeakResponse::getGenericHPGeDetector()` */
   std::mutex s_generic_det_mutex;
-  
-  
-  
+
+
+  /** Recursively deep-copies an XML node (names, values, attributes,
+   children) into `doc`s allocator - unlike rapidxml's clone_node, which
+   references the SOURCE documents strings and so cannot outlive it.
+   Used to embed the CeeLo response XML (produced/parsed in its own document)
+   into the DRF document.
+   */
+  ::rapidxml::xml_node<char> *deep_clone_xml_node( ::rapidxml::xml_document<char> *doc,
+                                          const ::rapidxml::xml_node<char> *src )
+  {
+    using namespace ::rapidxml;
+
+    xml_node<char> *node = doc->allocate_node( src->type() );
+    if( src->name_size() )
+      node->name( doc->allocate_string( src->name(), src->name_size() ), src->name_size() );
+    if( src->value_size() )
+      node->value( doc->allocate_string( src->value(), src->value_size() ), src->value_size() );
+
+    for( auto att = src->first_attribute(); att; att = att->next_attribute() )
+    {
+      xml_attribute<char> *cpy = doc->allocate_attribute(
+                doc->allocate_string( att->name(), att->name_size() ),
+                doc->allocate_string( att->value(), att->value_size() ),
+                att->name_size(), att->value_size() );
+      node->append_attribute( cpy );
+    }
+
+    for( auto child = src->first_node(); child; child = child->next_sibling() )
+      node->append_node( deep_clone_xml_node( doc, child ) );
+
+    return node;
+  }//deep_clone_xml_node(...)
+
+
+  /** Serializes a ceelo::DetectorResponse (via its own single XML codec) and
+   embeds the resulting "CeeLoResponse" element under `parent`.
+   */
+  void append_ceelo_response_node( ::rapidxml::xml_node<char> *parent,
+                                   ::rapidxml::xml_document<char> *doc,
+                                   const ceelo::DetectorResponse &response )
+  {
+    const std::string xml = response.to_xml_string();
+    std::vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+
+    // Default (destructive, on our local buffer) parsing: values/attributes
+    //  are normalized and zero-terminated.  parse_non_destructive leaves the
+    //  quote characters in empty attribute values and element values spanning
+    //  child markup, which corrupts a deep clone.
+    ::rapidxml::xml_document<char> ceelo_doc;
+    ceelo_doc.parse<0>( buf.data() );
+    const ::rapidxml::xml_node<char> *root = ceelo_doc.first_node( "CeeLoResponse" );
+    if( !root )
+      throw std::runtime_error( "append_ceelo_response_node: codec produced no root" );
+
+    parent->append_node( deep_clone_xml_node( doc, root ) );
+  }//append_ceelo_response_node(...)
+
+
+  /** Re-prints a "CeeLoResponse" element to a standalone string and hands it
+   to the CeeLo codec.  Throws on invalid content.
+   */
+  std::shared_ptr<const ceelo::DetectorResponse> parse_ceelo_response_node(
+                                        const ::rapidxml::xml_node<char> *node )
+  {
+    std::string xml;
+    ::rapidxml::print( std::back_inserter(xml), *node, ::rapidxml::print_no_indenting );
+    return ceelo::DetectorResponse::from_xml_string( xml );
+  }//parse_ceelo_response_node(...)
+
+
+
   //calcA(...) is for use from DetectorPeakResponse::akimaInterpolate(...).
   //  This function does not to any error checking that the input is valid.
   float calcA( const size_t i,
@@ -612,6 +686,14 @@ void DetectorPeakResponse::computeHash()
   if( m_totalEfficiency )
     m_totalEfficiency->appendToHash( seed );
 
+  // Only hash the optional raw measured points and MC-parameterized response
+  //  when present, so legacy DRFs keep their existing hash values.
+  if( m_measuredPoints && !m_measuredPoints->empty() )
+    m_measuredPoints->appendToHash( seed );
+
+  if( m_ceeloResponse )
+    boost::hash_combine( seed, m_ceeloResponse->content_hash() );
+
   m_hash = seed;
 }//void computeHash()
 
@@ -663,6 +745,8 @@ void DetectorPeakResponse::reset()
   m_createdUtc = m_lastUsedUtc = 0;
   m_geomType = EffGeometryType::FarFieldIntrinsic;
   m_totalEfficiency.reset();
+  m_ceeloResponse.reset();
+  m_measuredPoints.reset();
 }//void reset()
 
 
@@ -690,6 +774,12 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_totalEfficiency && !rhs.m_totalEfficiency)
               || (m_totalEfficiency && rhs.m_totalEfficiency
                   && (*m_totalEfficiency == *rhs.m_totalEfficiency)))
+          && ((!m_measuredPoints && !rhs.m_measuredPoints)
+              || (m_measuredPoints && rhs.m_measuredPoints
+                  && (*m_measuredPoints == *rhs.m_measuredPoints)))
+          && ((!m_ceeloResponse && !rhs.m_ceeloResponse)
+              || (m_ceeloResponse && rhs.m_ceeloResponse
+                  && (m_ceeloResponse->content_hash() == rhs.m_ceeloResponse->content_hash())))
           );
 }//operator==
 
@@ -729,6 +819,29 @@ void DetectorPeakResponse::setEfficiencyUncert( shared_ptr<const DetectorEfficie
 
 vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies ) const
 {
+  if( m_ceeloResponse )
+  {
+    // Far-field on-axis default geometry; use the (theta, distance) overload
+    //  when the measurement geometry is known.
+    const double d_cm = std::max( 100.0, 20.0 * m_ceeloResponse->transverse_half_extent() );
+    return m_ceeloResponse->frac_covariance( energies, 0.0, d_cm );
+  }
+
+  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
+  if( !uncert )
+    return {};
+
+  return uncert->efficiencyFracCovariance( energies );
+}//efficiencyFracCovariance(...)
+
+
+vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies,
+                                                               const double theta,
+                                                               const double distance ) const
+{
+  if( m_ceeloResponse )
+    return m_ceeloResponse->frac_covariance( energies, theta, distance / PhysicalUnits::cm );
+
   const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
   if( !uncert )
     return {};
@@ -776,11 +889,174 @@ double DetectorPeakResponse::totalEfficiency( const float energy, const double d
 }//totalEfficiency(...)
 
 
+shared_ptr<const ceelo::DetectorResponse> DetectorPeakResponse::ceeloResponse() const
+{
+  return m_ceeloResponse;
+}//ceeloResponse()
+
+
+void DetectorPeakResponse::setCeeloResponse( shared_ptr<const ceelo::DetectorResponse> response )
+{
+  m_ceeloResponse = response;
+  computeHash();
+}//setCeeloResponse(...)
+
+
+shared_ptr<const MeasuredDrfPoints> DetectorPeakResponse::measuredPoints() const
+{
+  return m_measuredPoints;
+}//measuredPoints()
+
+
+void DetectorPeakResponse::setMeasuredPoints( shared_ptr<const MeasuredDrfPoints> points )
+{
+  if( points && points->empty() )
+    points.reset();
+  m_measuredPoints = points;
+  computeHash();
+}//setMeasuredPoints(...)
+
+
+namespace
+{
+  /** Maps the CeeLo provenance flag to the DetectorPeakResponse one. */
+  DetectorPeakResponse::EffFlag to_eff_flag( const ceelo::ResponseFlag flag )
+  {
+    switch( flag )
+    {
+      case ceelo::ResponseFlag::Ok:                 return DetectorPeakResponse::EffFlag::Ok;
+      case ceelo::ResponseFlag::OutOfRangeClamped:  return DetectorPeakResponse::EffFlag::OutOfRangeClamped;
+      case ceelo::ResponseFlag::NearFieldUnmodeled: return DetectorPeakResponse::EffFlag::NearFieldUnmodeled;
+      case ceelo::ResponseFlag::Shadowed:           return DetectorPeakResponse::EffFlag::Shadowed;
+      case ceelo::ResponseFlag::NeedsMc:            return DetectorPeakResponse::EffFlag::NeedsMc;
+    }//switch( flag )
+
+    assert( 0 );
+    return DetectorPeakResponse::EffFlag::NeedsMc;
+  }//to_eff_flag(...)
+}//namespace
+
+
+DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( const float energy ) const
+{
+  EffEval answer;
+
+  if( m_ceeloResponse )
+  {
+    // Intrinsic = absolute / geometric solid angle, in the true far field of
+    //  the parameterized response (its transverse half-extent `a` is the
+    //  face radius the solid angle is defined against).
+    const double a_cm = m_ceeloResponse->transverse_half_extent();
+    const double d_cm = std::max( 1000.0 * a_cm, 100.0 );
+    const ceelo::EffResult res = m_ceeloResponse->eps_fep( energy, 0.0, 0.0, d_cm );
+    const double omega = ceelo::disk_solid_angle_fraction( d_cm, a_cm );
+
+    answer.value = (omega > 0.0) ? (res.value / omega) : 0.0;
+    answer.sigma = (omega > 0.0) ? (res.sigma / omega) : 0.0;
+    answer.flag = to_eff_flag( res.flag );
+    return answer;
+  }//if( m_ceeloResponse )
+
+  answer.value = intrinsicEfficiency( energy );
+
+  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
+  if( uncert && !uncert->isEmpty() )
+  {
+    const vector<double> sig = uncert->fracUncertainties( { static_cast<double>(energy) } );
+    if( sig.size() == 1 )
+      answer.sigma = answer.value * sig[0];
+  }
+
+  if( ((m_lowerEnergy != 0.0) || (m_upperEnergy != 0.0))
+      && ((energy < m_lowerEnergy) || (energy > m_upperEnergy)) )
+    answer.flag = EffFlag::OutOfRangeClamped;
+
+  return answer;
+}//intrinsicEfficiencyEval(...)
+
+
+DetectorPeakResponse::EffEval DetectorPeakResponse::efficiencyEval( const float energy,
+                                                                    const double distance ) const
+{
+  return fepEfficiencyEval( energy, 0.0, 0.0, distance );
+}//efficiencyEval(...)
+
+
+DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const float energy,
+                                                        const double theta,
+                                                        const double phi,
+                                                        const double distance ) const
+{
+  EffEval answer;
+
+  if( isFixedGeometry() )
+    return intrinsicEfficiencyEval( energy );  //distance/angles are meaningless
+
+  if( m_ceeloResponse )
+  {
+    const double dist_cm = distance / PhysicalUnits::cm;
+    const ceelo::EffResult res = m_ceeloResponse->eps_fep( energy, theta, phi, dist_cm );
+    answer.value = res.value;
+    answer.sigma = res.sigma;
+    answer.flag = to_eff_flag( res.flag );
+    return answer;
+  }//if( m_ceeloResponse )
+
+  // Legacy path: theta-blind on-axis evaluation.
+  const EffEval intrinsic = intrinsicEfficiencyEval( energy );
+  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter,
+                                                      distance + m_detectorSetback );
+  answer.value = fracSolidAngle * intrinsic.value;
+  answer.sigma = fracSolidAngle * intrinsic.sigma;
+  answer.flag = intrinsic.flag;
+
+  // The legacy curve cannot model an off-axis response; flag meaningful
+  //  off-axis queries so callers can offer an MC characterization.
+  if( fabs(theta) > 0.087 )  //~5 degrees
+    answer.flag = EffFlag::NeedsMc;
+
+  return answer;
+}//fepEfficiencyEval(...)
+
+
+DetectorPeakResponse::EffEval DetectorPeakResponse::totalEfficiencyEval( const float energy,
+                                                        const double theta,
+                                                        const double phi,
+                                                        const double distance ) const
+{
+  EffEval answer;
+
+  if( m_ceeloResponse )
+  {
+    const double dist_cm = distance / PhysicalUnits::cm;
+    const ceelo::EffResult res = m_ceeloResponse->eps_total( energy, theta, phi, dist_cm );
+    answer.value = res.value;
+    answer.sigma = res.sigma;
+    answer.flag = to_eff_flag( res.flag );
+    return answer;
+  }//if( m_ceeloResponse )
+
+  if( !m_totalEfficiency )
+  {
+    answer.flag = EffFlag::NeedsMc;
+    return answer;
+  }
+
+  answer.value = isFixedGeometry() ? totalIntrinsicEfficiency( energy )
+                                   : totalEfficiency( energy, distance );
+  if( fabs(theta) > 0.087 )
+    answer.flag = EffFlag::NeedsMc;
+
+  return answer;
+}//totalEfficiencyEval(...)
+
+
 string DetectorPeakResponse::drfExtraToXmlString() const
 {
   const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
   const bool have_uncert = (eff_uncert && !eff_uncert->isEmpty());
-  if( !have_uncert && !m_totalEfficiency )
+  const bool have_points = (m_measuredPoints && !m_measuredPoints->empty());
+  if( !have_uncert && !m_totalEfficiency && !have_points && !m_ceeloResponse )
     return "";
 
   rapidxml::xml_document<char> doc;
@@ -793,6 +1069,12 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   if( m_totalEfficiency )
     m_totalEfficiency->toXml( base_node, &doc, "TotalEfficiency" );
 
+  if( have_points )
+    m_measuredPoints->toXml( base_node, &doc );
+
+  if( m_ceeloResponse )
+    append_ceelo_response_node( base_node, &doc, *m_ceeloResponse );
+
   string answer;
   rapidxml::print( std::back_inserter(answer), doc, rapidxml::print_no_indenting );
 
@@ -802,7 +1084,8 @@ string DetectorPeakResponse::drfExtraToXmlString() const
 
 void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
 {
-  // Clear any existing full-energy uncertainty (copy-on-write) and total eff.
+  // Clear any existing full-energy uncertainty (copy-on-write), total eff,
+  //  raw measured points, and MC-parameterized response.
   if( m_efficiency && m_efficiency->uncertainty() )
   {
     shared_ptr<DetectorEfficiencyCurve> curve = make_shared<DetectorEfficiencyCurve>( *m_efficiency );
@@ -810,6 +1093,8 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     m_efficiency = curve;
   }
   m_totalEfficiency.reset();
+  m_measuredPoints.reset();
+  m_ceeloResponse.reset();
 
   if( xml.empty() )
     return;
@@ -851,9 +1136,24 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
       if( curve->isValid() )
         m_totalEfficiency = curve;
     }
+
+    const rapidxml::xml_node<char> *points_node = base_node->first_node( "MeasuredEffPoints" );
+    if( points_node )
+    {
+      auto points = make_shared<MeasuredDrfPoints>();
+      points->fromXml( points_node );
+      if( !points->empty() )
+        m_measuredPoints = points;
+    }
+
+    const rapidxml::xml_node<char> *ceelo_node = base_node->first_node( "CeeLoResponse" );
+    if( ceelo_node )
+      m_ceeloResponse = parse_ceelo_response_node( ceelo_node );
   }catch( std::exception &e )
   {
     m_totalEfficiency.reset();
+    m_measuredPoints.reset();
+    m_ceeloResponse.reset();
     cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse"
             " extras ('" << e.what() << "') - ignoring." << endl;
   }//try / catch
@@ -3667,14 +3967,19 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   // - Version 3: Added FarFieldAbsolute geometry type with absolute efficiency parameters (20251130)
   // - Version 4: Added PeakFitDetPrefs (20260221)
   // - Version 5: Added EfficiencyUncert and TotalEfficiency (20260610)
-  static_assert( sm_xmlSerializationVersion == 5, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+  // - Version 6: Added CeeLoResponse (MC-parameterized response) and MeasuredEffPoints (20260707)
+  static_assert( sm_xmlSerializationVersion == 6, "Update DetectorPeakResponse sm_xmlSerializationVersion");
 
   const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
   const bool have_eff_uncert = (eff_uncert && !eff_uncert->isEmpty());
 
   int version_to_write = 0;
 
-  if( have_eff_uncert || m_totalEfficiency )
+  if( m_ceeloResponse || (m_measuredPoints && !m_measuredPoints->empty()) )
+  {
+    // MC-parameterized response / raw measured points require version 6
+    version_to_write = 6;
+  }else if( have_eff_uncert || m_totalEfficiency )
   {
     // Efficiency uncertainty / total efficiency requires version 5
     version_to_write = 5;
@@ -3929,6 +4234,12 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
 
   if( m_totalEfficiency )
     m_totalEfficiency->toXml( base_node, doc, "TotalEfficiency" );
+
+  if( m_measuredPoints && !m_measuredPoints->empty() )
+    m_measuredPoints->toXml( base_node, doc );
+
+  if( m_ceeloResponse )
+    append_ceelo_response_node( base_node, doc, *m_ceeloResponse );
 }//toXml(...)
 
 
@@ -4341,6 +4652,23 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw runtime_error( "DetectorPeakResponse: invalid TotalEfficiency node" );
     m_totalEfficiency = curve;
   }
+
+  // Optional raw measured points and MC-parameterized response, added in
+  //  version 6; simply absent in older XML.
+  m_measuredPoints.reset();
+  node = parent->first_node( "MeasuredEffPoints", 17 );
+  if( node )
+  {
+    auto points = make_shared<MeasuredDrfPoints>();
+    points->fromXml( node );
+    if( !points->empty() )
+      m_measuredPoints = points;
+  }
+
+  m_ceeloResponse.reset();
+  node = parent->first_node( "CeeLoResponse", 13 );
+  if( node )
+    m_ceeloResponse = parse_ceelo_response_node( node );  //throws on invalid content
 }//void fromXml( ::rapidxml::xml_node<char> *parent )
 
 
@@ -4495,6 +4823,24 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
 
   if( lhs.m_totalEfficiency && rhs.m_totalEfficiency )
     DetectorEfficiencyCurve::equalEnough( *lhs.m_totalEfficiency, *rhs.m_totalEfficiency );
+
+  if( (!lhs.m_measuredPoints) != (!rhs.m_measuredPoints) )
+    throw runtime_error( "DetectorPeakResponse: availability of measured"
+                         " efficiency points doesnt match" );
+
+  if( lhs.m_measuredPoints && rhs.m_measuredPoints )
+    MeasuredDrfPoints::equalEnough( *lhs.m_measuredPoints, *rhs.m_measuredPoints );
+
+  if( (!lhs.m_ceeloResponse) != (!rhs.m_ceeloResponse) )
+    throw runtime_error( "DetectorPeakResponse: availability of CeeLo"
+                         " response doesnt match" );
+
+  // The CeeLo XML codec is bit-stable, so content hashes match exactly after
+  //  a serialization round trip.
+  if( lhs.m_ceeloResponse && rhs.m_ceeloResponse
+      && (lhs.m_ceeloResponse->content_hash() != rhs.m_ceeloResponse->content_hash()) )
+    throw runtime_error( "DetectorPeakResponse: CeeLo response content"
+                         " doesnt match" );
 }//void equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 

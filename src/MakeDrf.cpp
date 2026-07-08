@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <regex>
 #include <deque>
@@ -67,6 +68,11 @@
 
 #include "InterSpec/QrCode.h"
 #include "InterSpec/MakeDrf.h"
+#include "InterSpec/MakeMcResponseForDrf.h"
+
+// CeeLo (external_libs/CeeLo/src): MC-parameterized response + grounding.
+#include "io/DetectorResponse.h"
+#include "io/ResponseGenerator.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
@@ -1466,7 +1472,20 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer )
   saveAs->clicked().connect( m_tool, &MakeDrf::startSaveAs );
   m_tool->intrinsicEfficiencyIsValid().connect( saveAs, [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
   saveAs->disable();
-    
+
+  // Characterize the detector by Monte-Carlo: opens the geometry/MC tool; a
+  //  successfully generated response is attached to the DRF this tool
+  //  assembles (grounded to the raw measured efficiency points).
+  WPushButton *mcBtn = footer()->addNew<WPushButton>( WString::tr("md-mc-response-btn") );
+  mcBtn->clicked().connect( std::bind( [viewer,this](){
+    MakeMcResponseForDrfWindow *window = viewer->showMcResponseWindow( nullptr );
+    if( window )
+    {
+      window->tool()->responseGenerated().connect( m_tool,
+                                          &MakeDrf::setGeneratedMcResponse );
+    }
+  } ) );
+
   show();
     
   resizeToFitOnScreen();
@@ -2138,12 +2157,23 @@ bool MakeDrf::isIntrinsicEfficiencyValid()
 }//bool MakeDrf::isDrfValid()
 
 
+void MakeDrf::setGeneratedMcResponse( std::shared_ptr<ceelo::DetectorResponse> response )
+{
+  m_generatedMcResponse = response;
+}//setGeneratedMcResponse(...)
+
+
 void MakeDrf::handleSourcesUpdates()
 {
   size_t numchan = 0;
   vector< std::shared_ptr<const PeakDef> > peaks;
   vector<MakeDrfFit::DetEffDataPoint> effpoints;
-  
+
+  // Raw per-peak points, rebuilt alongside `effpoints`; per-source keys keep
+  //  each calibration source's certificate error a common-mode block.
+  m_measuredEffPoints.clear();
+  map<MakeDrfSrcDef *,int> raw_src_indexes;
+
   const bool is_fixed_geometry = (m_geometry->currentIndex() != 0);
   
   bool detDiamInvalid = false;
@@ -2441,6 +2471,30 @@ void MakeDrf::handleSourcesUpdates()
           effpoint.energy = point.energy;
           effpoint.efficiency = eff;
           effpoint.efficiency_uncert = sqrt(fracUncert2);
+
+          // Keep the raw point, with the statistical (peak area) and
+          //  certificate (source activity) parts separate - the grounding of
+          //  a Monte-Carlo-parameterized response needs exactly this.
+          if( (eff > 0.0) && !IsNan(eff) && !IsInf(eff) )
+          {
+            const double raw_dist = is_fixed_geometry ? -1.0 : srcDef->distance();
+            const double fracSolidAngle = is_fixed_geometry ? 1.0
+                  : DetectorPeakResponse::fractionalSolidAngle( diameter, raw_dist + setback );
+
+            MeasuredEffPoint raw;
+            raw.energy = point.energy;
+            raw.efficiency = static_cast<float>( eff * fracSolidAngle );
+            raw.fracStatUncert = (point.peak_area > 0.0f)
+                                  ? (point.peak_area_uncertainty / point.peak_area) : 0.0f;
+            raw.fracCertUncert = fracUncert;
+            if( !raw_src_indexes.count(srcDef) )
+              raw_src_indexes[srcDef] = static_cast<int>( raw_src_indexes.size() );
+            raw.sourceKey = (nuc ? nuc->symbol : string("user"))
+                            + "#" + std::to_string( raw_src_indexes[srcDef] );
+            raw.distance = static_cast<float>( raw_dist );
+
+            m_measuredEffPoints.push_back( std::move(raw) );
+          }//if( eff is sensible )
         }catch( std::exception &e )
         {
           cerr << "handleSourcesUpdates: got exception: " << e.what() << endl;
@@ -3239,6 +3293,55 @@ shared_ptr<DetectorPeakResponse> MakeDrf::assembleDrf( const string &name, const
     if( prefs )
       drf->setPeakFitDetPrefs( prefs );
   }
+
+  // Persist the raw per-peak efficiency points (provenance, and the grounding
+  //  input for a Monte-Carlo-parameterized response), plus the rich
+  //  uncertainty (stat diagonal + per-source certificate blocks) they imply.
+  if( !m_measuredEffPoints.empty() )
+  {
+    auto points = make_shared<MeasuredDrfPoints>();
+    points->setPoints( m_measuredEffPoints );
+    drf->setMeasuredPoints( points );
+
+    const shared_ptr<DetectorEfficiencyUncert> uncert = points->toEfficiencyUncert();
+    if( uncert )
+      drf->setEfficiencyUncert( uncert );
+  }//if( !m_measuredEffPoints.empty() )
+
+  // Attach a Monte-Carlo-parameterized response generated while this tool was
+  //  open, grounding it to the raw measured points (Level-1 k(E) fit; cheap -
+  //  no MC involved).
+  if( m_generatedMcResponse )
+  {
+    try
+    {
+      vector<ceelo::GroundingPoint> ground_pts;
+      for( const MeasuredEffPoint &p : m_measuredEffPoints )
+      {
+        if( (p.distance < 0.0f) || (p.efficiency <= 0.0f) )
+          continue;
+        ceelo::GroundingPoint gp;
+        gp.energy_keV = p.energy;
+        gp.measured_eff = p.efficiency;
+        gp.frac_stat_sigma = p.fracStatUncert;
+        gp.frac_cert_sigma = p.fracCertUncert;
+        gp.source_key = p.sourceKey;
+        gp.distance_cm = p.distance / PhysicalUnits::cm;
+        gp.cos_theta = 1.0;
+        ground_pts.push_back( std::move(gp) );
+      }//for( const MeasuredEffPoint &p : m_measuredEffPoints )
+
+      if( !ground_pts.empty() )
+        ceelo::ResponseGenerator::ground_to_points( *m_generatedMcResponse,
+                                          ground_pts, /*curve_derived=*/false );
+
+      drf->setCeeloResponse( m_generatedMcResponse );
+    }catch( std::exception &e )
+    {
+      cerr << "assembleDrf: failed to ground/attach MC response: " << e.what() << endl;
+      drf->setCeeloResponse( m_generatedMcResponse );  //attach ungrounded
+    }
+  }//if( m_generatedMcResponse )
 
   if( !drf->isValid() )
     throw runtime_error( "DRF wasnt valid after creation" );

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dmw- is short for DrfModifyWidget / DrfModifyWindow -->
+  <message id="dmw-tab-name">Name &amp; Description</message>
+  <message id="dmw-tab-geometry">Geometry &amp; MC</message>
+  <message id="dmw-tab-fwhm">FWHM</message>
+  <message id="dmw-fwhm-no-foreground">Load a foreground spectrum (with fitted peaks) to fit the detector&apos;s FWHM here.</message>
+  <message id="dmw-tab-uncert">Uncertainty</message>
+  <message id="dmw-use-btn">Use</message>
+  <message id="dmw-uncert-help">Optional baseline efficiency uncertainty: a fractional
+    (e.g. 0.05 = 5%) 1-sigma uncertainty that applies, and is fully correlated, within
+    each energy band, and is uncorrelated between bands. The Activity/Shielding fit can
+    fold this into its results. (A Monte-Carlo-characterized response provides its own,
+    finer, energy-correlated uncertainty; these bands add to it.)</message>
+  <message id="dmw-band-lower">Lower energy (keV)</message>
+  <message id="dmw-band-upper">Upper energy (keV)</message>
+  <message id="dmw-band-frac">Frac. uncertainty</message>
+  <message id="dmw-add-band">Add band</message>
+  <message id="dmw-remove-band">Remove band</message>
+  <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, you can download this
+    detector as an XML file or a QR code (buttons on the Detector Select dialog), or find it
+    again later under the &quot;Previous&quot; tab of Detector Select.</message>
+</messages>

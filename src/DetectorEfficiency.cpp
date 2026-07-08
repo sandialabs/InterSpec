@@ -799,6 +799,229 @@ void DetectorEfficiencyUncert::equalEnough( const DetectorEfficiencyUncert &lhs,
 #endif //PERFORM_DEVELOPER_CHECKS
 
 
+bool MeasuredEffPoint::operator==( const MeasuredEffPoint &rhs ) const
+{
+  return (energy == rhs.energy)
+         && (efficiency == rhs.efficiency)
+         && (fracStatUncert == rhs.fracStatUncert)
+         && (fracCertUncert == rhs.fracCertUncert)
+         && (sourceKey == rhs.sourceKey)
+         && (distance == rhs.distance);
+}//MeasuredEffPoint::operator==
+
+
+MeasuredDrfPoints::MeasuredDrfPoints()
+{
+}
+
+
+bool MeasuredDrfPoints::empty() const
+{
+  return m_points.empty();
+}
+
+
+const vector<MeasuredEffPoint> &MeasuredDrfPoints::points() const
+{
+  return m_points;
+}
+
+
+void MeasuredDrfPoints::setPoints( vector<MeasuredEffPoint> points )
+{
+  for( const MeasuredEffPoint &p : points )
+  {
+    if( (p.energy <= 0.0f) || (p.fracStatUncert < 0.0f) || (p.fracCertUncert < 0.0f) )
+      throw runtime_error( "MeasuredDrfPoints::setPoints: invalid point" );
+  }
+
+  std::stable_sort( begin(points), end(points),
+    []( const MeasuredEffPoint &lhs, const MeasuredEffPoint &rhs ) {
+      return lhs.energy < rhs.energy;
+  } );
+
+  m_points = std::move( points );
+}//setPoints(...)
+
+
+std::shared_ptr<DetectorEfficiencyUncert> MeasuredDrfPoints::toEfficiencyUncert() const
+{
+  // Merge (near) duplicate energies: inverse-variance weighted stat part,
+  //  largest certificate part, first source key kept.
+  struct MergedPt
+  {
+    float energy;
+    double invStatVar; //sum of 1/stat^2
+    float cert;
+    std::string sourceKey;
+  };//struct MergedPt
+
+  vector<MergedPt> merged;
+  for( const MeasuredEffPoint &p : m_points )  //m_points sorted by energy
+  {
+    const double stat = std::max( 1.0E-4, static_cast<double>(p.fracStatUncert) );
+    if( !merged.empty() && (fabs(merged.back().energy - p.energy) < 0.01f) )
+    {
+      MergedPt &m = merged.back();
+      m.invStatVar += 1.0 / (stat * stat);
+      m.cert = std::max( m.cert, p.fracCertUncert );
+      continue;
+    }
+    MergedPt m;
+    m.energy = p.energy;
+    m.invStatVar = 1.0 / (stat * stat);
+    m.cert = p.fracCertUncert;
+    m.sourceKey = p.sourceKey;
+    merged.push_back( std::move(m) );
+  }//for( const MeasuredEffPoint &p : m_points )
+
+  if( merged.size() < 2 )
+    return nullptr;
+
+  const size_t n = merged.size();
+  vector<float> energies( n );
+  vector<float> cov( n * n, 0.0f );
+  for( size_t i = 0; i < n; ++i )
+  {
+    energies[i] = merged[i].energy;
+    cov[i*n + i] = static_cast<float>( 1.0 / merged[i].invStatVar );
+    for( size_t j = 0; j < n; ++j )
+    {
+      if( !merged[i].sourceKey.empty() && (merged[i].sourceKey == merged[j].sourceKey) )
+        cov[i*n + j] += merged[i].cert * merged[j].cert;
+    }
+  }//for( size_t i = 0; i < n; ++i )
+
+  auto answer = make_shared<DetectorEfficiencyUncert>();
+  answer->setNodeCovariance( energies, cov );
+
+  return answer;
+}//toEfficiencyUncert()
+
+
+void MeasuredDrfPoints::toXml( ::rapidxml::xml_node<char> *parent,
+                               ::rapidxml::xml_document<char> *doc ) const
+{
+  using namespace rapidxml;
+
+  xml_node<char> *base_node = doc->allocate_node( node_element, "MeasuredEffPoints" );
+  parent->append_node( base_node );
+
+  char buffer[64];
+  for( const MeasuredEffPoint &p : m_points )
+  {
+    xml_node<char> *pt = doc->allocate_node( node_element, "Pt" );
+    base_node->append_node( pt );
+
+    auto add_attrib = [&]( const char *name, const float value ){
+      snprintf( buffer, sizeof(buffer), "%1.8E", value );
+      const char *val = doc->allocate_string( buffer );
+      pt->append_attribute( doc->allocate_attribute( name, val ) );
+    };
+
+    add_attrib( "E", p.energy );
+    add_attrib( "eff", p.efficiency );
+    add_attrib( "statSig", p.fracStatUncert );
+    add_attrib( "certSig", p.fracCertUncert );
+    if( !p.sourceKey.empty() )
+    {
+      const char *val = doc->allocate_string( p.sourceKey.c_str() );
+      pt->append_attribute( doc->allocate_attribute( "src", val ) );
+    }
+    if( p.distance >= 0.0f )
+      add_attrib( "d", p.distance );
+  }//for( const MeasuredEffPoint &p : m_points )
+}//MeasuredDrfPoints::toXml(...)
+
+
+void MeasuredDrfPoints::fromXml( const ::rapidxml::xml_node<char> *node )
+{
+  using ::rapidxml::internal::compare;
+
+  if( !node )
+    throw runtime_error( "MeasuredDrfPoints::fromXml: null node" );
+
+  if( !compare( node->name(), node->name_size(), "MeasuredEffPoints", 17, false ) )
+    throw runtime_error( "MeasuredDrfPoints::fromXml: invalid node name" );
+
+  vector<MeasuredEffPoint> points;
+  for( auto pt = node->first_node( "Pt", 2 ); pt; pt = pt->next_sibling( "Pt", 2 ) )
+  {
+    auto attrib_float = [&]( const char *name, float &value, const bool required ){
+      const auto att = pt->first_attribute( name );
+      if( !att || !att->value_size() )
+      {
+        if( required )
+          throw runtime_error( string("MeasuredDrfPoints::fromXml: missing '")
+                               + name + "' attribute" );
+        return;
+      }
+      if( !SpecUtils::parse_float( att->value(), att->value_size(), value ) )
+        throw runtime_error( string("MeasuredDrfPoints::fromXml: invalid '")
+                             + name + "' attribute" );
+    };
+
+    MeasuredEffPoint p;
+    attrib_float( "E", p.energy, true );
+    attrib_float( "eff", p.efficiency, true );
+    attrib_float( "statSig", p.fracStatUncert, true );
+    attrib_float( "certSig", p.fracCertUncert, false );
+    attrib_float( "d", p.distance, false );
+    const auto src = pt->first_attribute( "src" );
+    if( src && src->value_size() )
+      p.sourceKey = string( src->value(), src->value() + src->value_size() );
+
+    points.push_back( std::move(p) );
+  }//for( loop over Pt nodes )
+
+  setPoints( std::move(points) );
+}//MeasuredDrfPoints::fromXml(...)
+
+
+void MeasuredDrfPoints::appendToHash( std::size_t &seed ) const
+{
+  for( const MeasuredEffPoint &p : m_points )
+  {
+    boost::hash_combine( seed, p.energy );
+    boost::hash_combine( seed, p.efficiency );
+    boost::hash_combine( seed, p.fracStatUncert );
+    boost::hash_combine( seed, p.fracCertUncert );
+    boost::hash_combine( seed, p.sourceKey );
+    boost::hash_combine( seed, p.distance );
+  }
+}//MeasuredDrfPoints::appendToHash(...)
+
+
+bool MeasuredDrfPoints::operator==( const MeasuredDrfPoints &rhs ) const
+{
+  return m_points == rhs.m_points;
+}
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+void MeasuredDrfPoints::equalEnough( const MeasuredDrfPoints &lhs,
+                                     const MeasuredDrfPoints &rhs )
+{
+  if( lhs.m_points.size() != rhs.m_points.size() )
+    throw runtime_error( "MeasuredDrfPoints: number of points doesnt match" );
+
+  for( size_t i = 0; i < lhs.m_points.size(); ++i )
+  {
+    const MeasuredEffPoint &a = lhs.m_points[i];
+    const MeasuredEffPoint &b = rhs.m_points[i];
+    if( a.sourceKey != b.sourceKey )
+      throw runtime_error( "MeasuredDrfPoints: source key of point "
+                           + std::to_string(i) + " doesnt match" );
+    check_float_vectors_close( { a.energy, a.efficiency, a.fracStatUncert,
+                                 a.fracCertUncert, a.distance },
+                               { b.energy, b.efficiency, b.fracStatUncert,
+                                 b.fracCertUncert, b.distance },
+                               "MeasuredDrfPoints point" );
+  }//for( size_t i = 0; i < lhs.m_points.size(); ++i )
+}//MeasuredDrfPoints::equalEnough(...)
+#endif //PERFORM_DEVELOPER_CHECKS
+
+
 DetectorEfficiencyCurve::DetectorEfficiencyCurve()
   : m_form( DetectorPeakResponse::kNumEfficiencyFnctForms ),
     m_energyUnits( static_cast<float>(PhysicalUnits::keV) ),

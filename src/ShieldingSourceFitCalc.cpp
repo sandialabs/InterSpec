@@ -49,6 +49,8 @@
 
 #include "ceres/ceres.h"
 
+#include <Eigen/Dense>  // Cholesky of the per-peak covariance for GLS whitening
+
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
@@ -1870,7 +1872,12 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
   value = compute_effective_shielding ? "1" : "0";
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
-  
+
+  name = "AccountForDrfUncert";
+  value = account_for_drf_uncert ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+
   name = "PhotopeakClusterSigma";
   char buffer[64] = { '\0' };
   snprintf( buffer, sizeof(buffer), "%.9g", photopeak_cluster_sigma );
@@ -1924,7 +1931,11 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
   node = XML_FIRST_NODE( parent_node, "ComputeEffectiveShielding" );
   if( node )
     compute_effective_shielding = boolval( node );
-  
+
+  node = XML_FIRST_NODE( parent_node, "AccountForDrfUncert" );
+  if( node )
+    account_for_drf_uncert = boolval( node );  //absent in older XML -> keeps the default (true)
+
   node = XML_FIRST_NODE( parent_node, "PhotopeakClusterSigma" );
   if( node )
   {
@@ -1962,6 +1973,9 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
   
   if( lhs.compute_effective_shielding != rhs.compute_effective_shielding )
     throw runtime_error( "ShieldingSourceFitOptions LHS compute_effective_shielding != RHS compute_effective_shielding" );
+
+  if( lhs.account_for_drf_uncert != rhs.account_for_drf_uncert )
+    throw runtime_error( "ShieldingSourceFitOptions LHS account_for_drf_uncert != RHS account_for_drf_uncert" );
 }//void equalEnough( const ShieldingSourceFitOptions &lhs, const ShieldingSourceFitOptions &rhs )
 #endif
   
@@ -3103,6 +3117,17 @@ namespace
     std::vector<double> m_observed;
     std::vector<double> m_observed_uncert;
 
+    /** Optional residual-whitening matrix W = L^{-1} (row-major N x N, lower
+     triangular), where L L^T = Sigma is the Cholesky of the TOTAL per-peak
+     covariance (statistical + correlated detector-efficiency).  When set, the
+     residual vector is W . (observed - expected) instead of the per-peak
+     (observed - expected)/uncert; this is the generalized-least-squares chi2
+     that propagates the (correlated) efficiency uncertainty into both the
+     fit and - via the Jacobian of these residuals - the reported parameter
+     covariance.  Empty => the plain diagonal residual (statistical only).
+     */
+    std::vector<double> m_whiten;
+
     /** Cache of decay mixtures; Ceres evaluates a single residual block serially, so
      no synchronization is needed (each AN-scan solve has its own functor).
      */
@@ -3130,8 +3155,25 @@ namespace
         if( expected.size() != m_observed.size() )
           return false;
 
-        for( size_t i = 0; i < expected.size(); ++i )
-          residuals[i] = (m_observed[i] - expected[i]) / m_observed_uncert[i];
+        const size_t n = expected.size();
+        if( m_whiten.empty() )
+        {
+          // Statistical-only: independent per-peak residuals (historical).
+          for( size_t i = 0; i < n; ++i )
+            residuals[i] = (m_observed[i] - expected[i]) / m_observed_uncert[i];
+        }else
+        {
+          // Correlated GLS: residual = L^{-1} . (observed - expected).  W is
+          //  lower-triangular, so row i needs only columns j <= i.
+          for( size_t i = 0; i < n; ++i )
+          {
+            T r( 0.0 );
+            const double * const wrow = &m_whiten[i*n];
+            for( size_t j = 0; j <= i; ++j )
+              r += wrow[j] * (m_observed[j] - expected[j]);
+            residuals[i] = r;
+          }
+        }//if( statistical only ) / else
 
         // Report progress (and track best-so-far parameters) on the value-only passes
         if constexpr ( std::is_same_v<T,double> )
@@ -3211,6 +3253,37 @@ namespace
     functor->m_variable_indices = var_indices;
     functor->m_observed = observed;
     functor->m_observed_uncert = observed_uncert;
+
+    // Fold detector-efficiency uncertainty into the fit (correlated GLS) when
+    //  requested and the DRF supplies it.  Sigma = diag(stat^2)
+    //  + diag(counts) . C_eff_frac . diag(counts); the functor whitens its
+    //  residuals by L^{-1} (Sigma = L L^T).  On numerical trouble (or no
+    //  covariance) we silently keep the plain diagonal residual.
+    if( chi2Fcn->options().account_for_drf_uncert )
+    {
+      const size_t n = observed.size();
+      const std::vector<double> eff_cov = chi2Fcn->peakEffFracCovariance();
+      if( !eff_cov.empty() && (eff_cov.size() == (n*n)) && (n > 0) )
+      {
+        Eigen::MatrixXd Sigma( n, n );
+        for( size_t i = 0; i < n; ++i )
+          for( size_t j = 0; j < n; ++j )
+            Sigma(i,j) = observed[i] * eff_cov[i*n + j] * observed[j];
+        for( size_t i = 0; i < n; ++i )
+          Sigma(i,i) += observed_uncert[i] * observed_uncert[i];
+
+        Eigen::LLT<Eigen::MatrixXd> llt( Sigma );
+        if( llt.info() == Eigen::Success )
+        {
+          const Eigen::MatrixXd Linv
+                = llt.matrixL().solve( Eigen::MatrixXd::Identity(n,n) );
+          functor->m_whiten.resize( n*n );
+          for( size_t i = 0; i < n; ++i )
+            for( size_t j = 0; j < n; ++j )
+              functor->m_whiten[i*n + j] = Linv(i,j);
+        }//if( Cholesky succeeded )
+      }//if( have a usable efficiency covariance )
+    }//if( account_for_drf_uncert )
 
     // The optimizer works on unbounded internal parameters (Minuit2-style transforms);
     //  the functor maps them to the bounded physical values - see #BoundTransform.

@@ -57,6 +57,7 @@
   <message id="md-mi-chart-phone">Chart/Options</message>
   <message id="md-mi-peaks-phone">Peaks To Use</message>
   <message id="md-export-btn">Store/Export...</message>
+  <message id="md-mc-response-btn">Characterize by MC...</message>
   <message id="md-export-window-title">Store/Export DRF</message>
   <message id="md-tt-name">
     Name of the detector response function to save to <em>InterSpecs</em>

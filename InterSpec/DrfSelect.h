@@ -58,6 +58,7 @@ namespace Wt
 class DrfChart;
 class InterSpec;
 class InterSpecUser;
+class DrfModifyWindow;
 class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
@@ -314,6 +315,28 @@ public:
   
   void handleFitFwhmRequested();
   void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf );
+
+  /** Opens the characterize-by-Monte-Carlo tool (geometry entry + CeeLo MC
+   run), seeded with the currently displayed DRF.
+   */
+  void handleMcResponseRequested();
+  void handleMcResponseFinished( std::shared_ptr<DetectorPeakResponse> drf );
+
+  /** Opens the consolidated "Modify..." dialog (rename, geometry + MC
+   characterization, FWHM, baseline uncertainty), seeded with the current DRF.
+   */
+  void handleModifyRequested();
+
+  /** Receives the modified DRF from the Modify dialog and makes it this
+   dialog's current detector (the user still Accepts to apply app-wide).
+   */
+  void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf );
+
+  /** Rebuilds the "chips" summarizing what the current DRF contains (FWHM,
+   uncertainties, total efficiency, raw measured points, MC parameterization,
+   grounding, geometry interpretation).
+   */
+  void updateDrfContentSummary();
 protected:
   void setAcceptButtonEnabled( const bool enable );
   
@@ -325,7 +348,14 @@ protected:
   InterSpec *m_interspec;
   SpectraFileModel *m_fileModel;
   DrfChart *m_chart;
-  
+
+  /** Chip strip summarizing the current DRFs contents; see
+   #updateDrfContentSummary. */
+  Wt::WContainerWidget *m_drfContentChips;
+
+  /** The consolidated "Modify..." dialog, while open (auto-nulls on close). */
+  Wt::Core::observing_ptr<DrfModifyWindow> m_modifyWindow;
+
   //m_detector: the detector that is currently defined for the user to edit.
   //  When ever there is a substantial edit, this detector wil be emitted via
   //  the appropriate detectorChanged or detectorModified signal.

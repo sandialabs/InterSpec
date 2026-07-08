@@ -206,6 +206,34 @@ add_test( NAME TShieldingDimLimit
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# CeeLo MC-parameterized detector-response validation: golden response XMLs +
+# fresh MC probe banks live in test_data/ceelo_drf/ (committed fixtures); the
+# test never runs Monte Carlo.
+add_executable( test_CeeLoDrfIntegration test_CeeLoDrfIntegration.cpp )
+target_link_libraries( test_CeeLoDrfIntegration PRIVATE InterSpecLib )
+add_test( NAME TCeeLoDrfIntegration
+  COMMAND $<TARGET_FILE:test_CeeLoDrfIntegration> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# Regenerating the CeeLo golden fixtures runs REAL Monte Carlo (several
+# minutes); opt in with -DINTERSPEC_REGEN_CEELO_GOLDENS=ON, then build the
+# `regen_ceelo_goldens` target.  Deterministic seeds: regenerated probe
+# truths reproduce within their recorded MC sigma.
+option( INTERSPEC_REGEN_CEELO_GOLDENS "Add a target to regenerate CeeLo golden fixtures (runs minutes of MC)" OFF )
+if( INTERSPEC_REGEN_CEELO_GOLDENS )
+  set( _ceelo_fixture_dir "${CMAKE_CURRENT_SOURCE_DIR}/test_data/ceelo_drf" )
+  add_custom_target( regen_ceelo_goldens
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_ceelo_fixture_dir}"
+    COMMAND $<TARGET_FILE:make_golden_response> nai3x3 "${_ceelo_fixture_dir}" general 0.003 60 1
+    COMMAND $<TARGET_FILE:make_golden_response> hpge_coax "${_ceelo_fixture_dir}" general 0.003 60 1
+    COMMAND $<TARGET_FILE:make_golden_response> czt_box "${_ceelo_fixture_dir}" far-field 0.003 60 1
+    COMMENT "Regenerating CeeLo golden response fixtures (real MC; several minutes)"
+    VERBATIM
+  )
+  add_dependencies( regen_ceelo_goldens make_golden_response )
+endif( INTERSPEC_REGEN_CEELO_GOLDENS )
+
 option( RECORD_GEOM_GOLDENS "Print (instead of check) geometry golden values" OFF )
 add_executable( test_ShieldingGeomGolden test_ShieldingGeomGolden.cpp VolumetricIntegrationFixtures.h )
 target_link_libraries( test_ShieldingGeomGolden PRIVATE InterSpecLib )
@@ -351,6 +379,11 @@ add_test( NAME TGadrasShieldScatter
   COMMAND $<TARGET_FILE:test_GadrasShieldScatter> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+# Standalone driver: dump GADRAS shield transmission + scatter continuum for a
+# list of (energy, Z, areal-density) requests (cascade-summing shield benchmark).
+add_executable( gadras_shield_dump gadras_shield_dump.cpp )
+target_link_libraries( gadras_shield_dump PRIVATE InterSpecLib )
 
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 

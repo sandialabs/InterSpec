@@ -251,6 +251,107 @@ private:
 };//class DetectorEfficiencyUncert
 
 
+/** One raw measured full-energy-peak efficiency point, as fitted by the
+ "Make Detector Response" tool (or sampled from an imported curve).
+
+ The statistical part (peak-area fit, branching ratio) is independent between
+ points; the certificate part (source activity uncertainty) is 100% correlated
+ among all points sharing the same #sourceKey - that block structure is what
+ lets a later grounding fit (e.g. of a Monte-Carlo-parameterized response)
+ treat each calibration source's activity error as a common-mode scale.
+ */
+struct MeasuredEffPoint
+{
+  /** Gamma energy, keV. */
+  float energy = 0.0f;
+
+  /** Measured absolute full-energy-peak efficiency at the measurement
+   geometry (counts per source gamma), i.e. NOT intrinsic.
+   */
+  float efficiency = 0.0f;
+
+  /** Fractional 1-sigma statistical uncertainty (peak area, BR) -
+   independent between points.
+   */
+  float fracStatUncert = 0.0f;
+
+  /** Fractional 1-sigma source-certificate (activity) uncertainty - fully
+   correlated among points with the same #sourceKey.
+   */
+  float fracCertUncert = 0.0f;
+
+  /** Identity of the calibration source this point came from,
+   e.g. "Eu152/SRS-1234".
+   */
+  std::string sourceKey;
+
+  /** Source-to-detector-face distance, in PhysicalUnits; < 0 if unknown or
+   fixed geometry.
+   */
+  float distance = -1.0f;
+
+  bool operator==( const MeasuredEffPoint &rhs ) const;
+};//struct MeasuredEffPoint
+
+
+/** The raw per-peak efficiency points a DRF was characterized from.
+
+ Persisted with the DRF (see DetectorPeakResponse::measuredPoints) for
+ provenance and later re-grounding: fitting a smooth curve and discarding the
+ points loses the per-point sigmas and the per-source covariance structure
+ that a Monte-Carlo-response grounding fit needs (grounding must use the RAW
+ points - a pre-fit curve injects its lack-of-fit into every prediction).
+
+ Instances are held as `shared_ptr<const MeasuredDrfPoints>` and treated as
+ immutable once attached to a DetectorPeakResponse - replace, dont mutate.
+ */
+class MeasuredDrfPoints
+{
+public:
+  MeasuredDrfPoints();
+
+  bool empty() const;
+  const std::vector<MeasuredEffPoint> &points() const;
+
+  /** Sets the points; sorts by energy.  Throws std::runtime_error if any
+   point has a non-positive energy or negative uncertainty.
+   */
+  void setPoints( std::vector<MeasuredEffPoint> points );
+
+  /** Builds the rich efficiency uncertainty implied by these points: node
+   covariance C[i][j] = delta_ij*stat_i^2 + cert_i*cert_j*[same sourceKey].
+   Points with (nearly) duplicate energies are merged (inverse-variance
+   weighted stat part; largest cert kept).
+
+   Returns nullptr if there are fewer than two distinct energies.
+   */
+  std::shared_ptr<DetectorEfficiencyUncert> toEfficiencyUncert() const;
+
+  /** Appends a "MeasuredEffPoints" node under `parent`. */
+  void toXml( ::rapidxml::xml_node<char> *parent, ::rapidxml::xml_document<char> *doc ) const;
+
+  /** Parses a "MeasuredEffPoints" node; throws std::runtime_error on error. */
+  void fromXml( const ::rapidxml::xml_node<char> *node );
+
+  /** Combines all content into `seed` via boost::hash_combine. */
+  void appendToHash( std::size_t &seed ) const;
+
+  bool operator==( const MeasuredDrfPoints &rhs ) const;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  /** Tests equality to within serialization rounding; throws
+   std::runtime_error with a brief explanation when an issue is found.
+   */
+  static void equalEnough( const MeasuredDrfPoints &lhs,
+                           const MeasuredDrfPoints &rhs );
+#endif
+
+private:
+  /** Sorted by energy. */
+  std::vector<MeasuredEffPoint> m_points;
+};//class MeasuredDrfPoints
+
+
 /** A reusable efficiency-curve, mirroring the three efficiency
  representations DetectorPeakResponse supports (energy/efficiency pairs,
  formula string, exp-of-log-power-series), plus an optional uncertainty.

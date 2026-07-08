@@ -32,6 +32,9 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/DetectorEfficiency.h"
+
+namespace ceelo{ class DetectorResponse; }
 
 class PeakDef;
 class InterSpec;
@@ -229,6 +232,26 @@ protected:
   float m_effLowerEnergy; ///< The lowest energy peak used for eff calculation
   float m_effUpperEnergy; ///< The highest energy peak used for eff calculation
   std::vector<float> m_effEqnCoefs, m_effEqnCoefUncerts;
+
+  /** The raw per-peak efficiency points currently entering the efficiency
+   fit, with statistical and source-certificate uncertainties kept separate
+   (see #MeasuredEffPoint).  Rebuilt by #handleSourcesUpdates and persisted
+   into the assembled DRF - the raw points (not the fitted curve) are what a
+   Monte-Carlo-response grounding fit needs.
+   */
+  std::vector<MeasuredEffPoint> m_measuredEffPoints;
+
+  /** A Monte-Carlo-parameterized response generated (via the
+   "Characterize by MC" tool) while this tool was open; attached - grounded
+   to #m_measuredEffPoints - to the DRF #assembleDrf creates.
+   */
+  std::shared_ptr<ceelo::DetectorResponse> m_generatedMcResponse;
+
+public:
+  /** Receives the response from the characterize-by-MC tool. */
+  void setGeneratedMcResponse( std::shared_ptr<ceelo::DetectorResponse> response );
+
+private:
 
   /** Optional peak fitting preferences to embed in the created DRF. */
   PeakFitDetPrefsGui *m_peakFitDetPrefsGui;

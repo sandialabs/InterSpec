@@ -4721,6 +4721,61 @@ const std::vector<PeakDef> &ShieldingSourceChi2Fcn::backgroundPeaks() const
   return m_backgroundPeaks;
 }
 
+
+std::vector<double> ShieldingSourceChi2Fcn::includedPeakEnergies() const
+{
+  // Same inclusion rule and ordering as the residual assembly (see
+  //  `fit_model_ceres` in ShieldingSourceFitCalc.cpp and
+  //  #expected_observed_chis), so per-peak quantities line up one-to-one
+  //  with the fit residuals.
+  std::vector<double> energies;
+  for( const PeakDef &peak : m_peaks )
+  {
+    if( !peak.decayParticle() && (peak.sourceGammaType() != PeakDef::AnnihilationGamma) )
+      continue;
+    energies.push_back( peak.gammaParticleEnergy() );
+  }
+
+  return energies;
+}//includedPeakEnergies()
+
+
+std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance() const
+{
+  if( !m_detector || !m_detector->isValid() )
+    return {};
+
+  const std::vector<double> energies = includedPeakEnergies();
+  if( energies.empty() )
+    return {};
+
+  // On-axis at the fit distance; the covariance of a Monte-Carlo-
+  //  parameterized response depends (mildly) on geometry, while the legacy
+  //  DetectorEfficiencyUncert path ignores it.
+  const std::vector<double> cov = m_detector->isFixedGeometry()
+                    ? m_detector->efficiencyFracCovariance( energies )
+                    : m_detector->efficiencyFracCovariance( energies, 0.0, m_distance );
+
+  assert( cov.empty() || (cov.size() == (energies.size() * energies.size())) );
+
+  return cov;
+}//peakEffFracCovariance()
+
+
+std::vector<double> ShieldingSourceChi2Fcn::peakEffFracUncerts() const
+{
+  const std::vector<double> cov = peakEffFracCovariance();
+  if( cov.empty() )
+    return {};
+
+  const size_t n = static_cast<size_t>( std::lround( std::sqrt( static_cast<double>(cov.size()) ) ) );
+  std::vector<double> uncerts( n, 0.0 );
+  for( size_t i = 0; i < n; ++i )
+    uncerts[i] = std::sqrt( std::max( 0.0, cov[i*n + i] ) );
+
+  return uncerts;
+}//peakEffFracUncerts()
+
 double ShieldingSourceChi2Fcn::backgroundNormalizationFactor() const
 {
   return m_backgroundPeakScale;

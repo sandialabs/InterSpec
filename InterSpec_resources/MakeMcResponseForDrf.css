@@ -1,0 +1,82 @@
+/* Styling for the "Characterize Detector Response by Monte Carlo" tool
+   (MakeMcResponseForDrf + DetectorGeometryInput). */
+
+.MakeMcResponseForDrf
+{
+  padding: 4px 8px;
+  overflow-y: auto;
+}
+
+.MakeMcResponseForDrf .McGeomBox,
+.MakeMcResponseForDrf .McOptsBox
+{
+  margin-bottom: 6px;
+}
+
+.DetectorGeometryInput .DgiTable td
+{
+  padding: 1px 4px;
+}
+
+.DetectorGeometryInput .DgiLayers
+{
+  margin-top: 4px;
+}
+
+.DetectorGeometryInput .DgiLayersTable td
+{
+  padding: 1px 4px;
+  font-size: smaller;
+}
+
+.DetectorGeometryInput .DgiCollimator > label
+{
+  margin-left: 6px;
+}
+
+.DetectorGeometryInput .DgiNote
+{
+  color: var(--interspec-warning-color, #a35d00);
+  font-size: smaller;
+}
+
+.MakeMcResponseForDrf .McEstimate
+{
+  font-size: smaller;
+  color: var(--interspec-fainter-text-color, #888);
+}
+
+.MakeMcResponseForDrf .McRunRow
+{
+  margin-top: 6px;
+}
+
+.MakeMcResponseForDrf .McRunRow .Wt-progressbar
+{
+  width: 100%;
+  margin-top: 4px;
+}
+
+.MakeMcResponseForDrf .McStatus
+{
+  margin-top: 4px;
+  font-size: smaller;
+}
+
+
+/* DrfModifyWidget: the consolidated "Modify Detector" editor */
+.DrfModifyWidget { padding: 4px 6px; }
+.DrfModifyWidget .DrfModifyStack { padding-top: 6px; }
+.DrfModifyPanel { padding: 6px 4px; overflow-y: auto; }
+.DrfModifyRow { margin-bottom: 6px; display: flex; align-items: center; }
+.DrfModifyRow > label { min-width: 90px; }
+.DrfModifyBandTable td { padding: 1px 4px; }
+.DrfModifyUncert .DrfModifyBandTable { margin: 6px 0; }
+.DrfModifyNote
+{
+  margin-top: 4px;
+  padding: 3px 6px;
+  font-size: smaller;
+  color: var(--interspec-fainter-text-color, #666);
+  border-top: 1px solid var(--interspec-outline-color, #ccc);
+}

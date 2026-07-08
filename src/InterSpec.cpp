@@ -120,6 +120,7 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecMeasManager.h"
@@ -501,6 +502,7 @@ InterSpec::InterSpec()
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
   m_addFwhmTool( nullptr ),
+  m_mcResponseTool( nullptr ),
   m_preserveCalibWindow( 0 ),
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
@@ -1574,6 +1576,8 @@ void InterSpec::layoutSizeChanged( int w, int h )
           deleteDecayInfoWindow();
         if( m_addFwhmTool )
           deleteFwhmFromForegroundWindow();
+        if( m_mcResponseTool )
+          deleteMcResponseWindow();
         if( m_preserveCalibWindow )
           deleteEnergyCalPreserveWindow();
 #if( USE_SEARCH_MODE_3D_CHART )
@@ -8998,6 +9002,57 @@ void InterSpec::deleteFwhmFromForegroundWindow()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close fit FWHM from foreground tool" );
   }//if( do_undo )
 }//void deleteFwhmFromForegroundWindow()
+
+
+MakeMcResponseForDrfWindow *InterSpec::showMcResponseWindow(
+                          std::shared_ptr<const DetectorPeakResponse> seed_drf )
+{
+  if( m_mcResponseTool )
+  {
+    m_mcResponseTool->show();
+    m_mcResponseTool->centerWindowHeavyHanded();
+    return m_mcResponseTool.get();
+  }//if( m_mcResponseTool )
+
+  m_mcResponseTool = AuxWindow::make<MakeMcResponseForDrfWindow>( seed_drf );
+  m_mcResponseTool->tool()->updatedDrf().connect( m_mcResponseTool.get(), &AuxWindow::hide );
+  m_mcResponseTool->finished().connect( this, [this](){ deleteMcResponseWindow(); } );
+
+  if( m_drfSelectWindow )
+  {
+    m_mcResponseTool->tool()->updatedDrf().connect( this,
+                        [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+      if( m_drfSelectWindow )
+        m_drfSelectWindow->widget()->handleMcResponseFinished( drf );
+    } );
+  }//if( m_drfSelectWindow )
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ deleteMcResponseWindow(); };
+    auto redo = [this](){ showMcResponseWindow( nullptr ); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show characterize-by-MC tool" );
+  }//if( undo )
+
+  return m_mcResponseTool.get();
+}//MakeMcResponseForDrfWindow *showMcResponseWindow(...)
+
+
+void InterSpec::deleteMcResponseWindow()
+{
+  if( !m_mcResponseTool )
+    return;
+
+  AuxWindow::deleteAuxWindow( m_mcResponseTool.get() );
+  assert( !m_mcResponseTool );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showMcResponseWindow( nullptr ); };
+    auto redo = [this](){ deleteMcResponseWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close characterize-by-MC tool" );
+  }//if( undo )
+}//void deleteMcResponseWindow()
 
 
 #if( USE_DETECTION_LIMIT_TOOL )

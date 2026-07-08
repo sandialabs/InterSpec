@@ -315,7 +315,30 @@ namespace ShieldingSourceFitCalc
      */
     bool compute_effective_shielding = false;
 
-    
+    /** Whether to fold the detector-efficiency uncertainty into the fit.
+
+     When true and the DRF carries efficiency uncertainty information (a
+     Monte-Carlo-parameterized response's covariance, or a
+     #DetectorEfficiencyUncert), the fit residuals are whitened by the
+     Cholesky factor of the TOTAL per-peak covariance
+        Sigma = diag(peak-stat^2) + diag(counts) . C_eff . diag(counts),
+     where C_eff is the fractional efficiency covariance among the fit peaks.
+     This propagates the efficiency uncertainty - INCLUDING its strong
+     correlation between nearby energies - into both the best-fit values and
+     the reported parameter uncertainties.  A common-mode efficiency error
+     then maps ~1:1 onto activity (it is NOT averaged down by sqrt(Npeaks)),
+     which is the physically correct behavior.
+
+     When false, only the per-peak statistical (counting) uncertainty is used
+     - the historical behavior; results are bit-identical to before this
+     option existed.
+
+     Applies to the Ceres fit path (the default); the legacy Minuit2 path
+     uses a diagonal (uncorrelated) inflation only.
+     */
+    bool account_for_drf_uncert = true;
+
+
     void serialize( rapidxml::xml_node<char> *parent_node ) const;
     void deSerialize( const rapidxml::xml_node<char> *parent_node );
     

@@ -129,6 +129,8 @@
   <message id="ssd-tt-same-el-same-age">Enforce isotopes for the same element should all have the same age.</message>
   <message id="ssd-cb-corr-for-decay">Correct for decay during meas.</message>
   <message id="ssd-tt-corr-for-decay">Corrects for decay and in-growth effects that happen during the time the measurement is being taken.  Resulting activities correspond to the start time of the measurement. May take take additional computation time to find solution.</message>
+  <message id="ssd-cb-drf-uncert">Include detector-efficiency uncertainty</message>
+  <message id="ssd-tt-drf-uncert">When the detector response carries efficiency uncertainties, fold them (including their correlation between nearby energies) into the fit and the reported activity/shielding uncertainties. A detector-wide efficiency error then shows up as a corresponding activity uncertainty rather than being averaged away across peaks. Uncheck to use only the peak counting-statistics uncertainties.</message>
   <message id="ssd-tt-geometry">Geometry to use for modeling "trace" sources, or self-attenuating sources.
     <br />
     <br />

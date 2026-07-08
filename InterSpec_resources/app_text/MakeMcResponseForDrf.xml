@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- mmr- is short for MakeMcResponseForDrf
+       dgi- is short for DetectorGeometryInput
+  -->
+
+  <message id="mmr-geometry-title">Detector geometry</message>
+  <message id="mmr-options-title">Characterization</message>
+  <message id="mmr-profile">Profile:</message>
+  <message id="mmr-profile-general">General (default)</message>
+  <message id="mmr-profile-farfield">Far-field only</message>
+  <message id="mmr-profile-contact">Contact / close-in</message>
+  <message id="mmr-tt-profile">How much Monte Carlo to spend where: &lt;b&gt;General&lt;/b&gt; adds a
+    near-field model (lab/hand-held use); &lt;b&gt;Far-field&lt;/b&gt; skips it (large standoff
+    detectors - close-in queries will be flagged); &lt;b&gt;Contact&lt;/b&gt; adds a denser close-in
+    scan (well/swipe counting).</message>
+  <message id="mmr-precision">MC precision:</message>
+  <message id="mmr-precision-fast">Fast (1% per node)</message>
+  <message id="mmr-precision-normal">Normal (0.3% per node)</message>
+  <message id="mmr-precision-thorough">Thorough (0.1% per node)</message>
+  <message id="mmr-precision-custom">Custom...</message>
+  <message id="mmr-estimate">About {1} Monte-Carlo nodes; very roughly {2} minute(s).</message>
+  <message id="mmr-generate-btn">Generate Response</message>
+  <message id="mmr-use-response-btn">Use Response</message>
+  <message id="mmr-status-running">Running Monte Carlo...</message>
+  <message id="mmr-status-cancelling">Cancelling (finishes after the current node)...</message>
+  <message id="mmr-status-cancelled">Generation cancelled.</message>
+  <message id="mmr-status-error">Generation failed: {1}</message>
+  <message id="mmr-status-done">Response generated (not grounded to any measured efficiencies).</message>
+  <message id="mmr-status-done-grounded">Response generated and grounded to the measured efficiencies.</message>
+  <message id="mmr-status-stale">Geometry changed - generate again to update the response.</message>
+
+  <message id="dgi-shape">Shape:</message>
+  <message id="dgi-shape-cyl">Cylinder</message>
+  <message id="dgi-shape-coax">Coaxial HPGe</message>
+  <message id="dgi-shape-box">Rectangular</message>
+  <message id="dgi-crystal-material">Crystal:</message>
+  <message id="dgi-dim-diameter">Crystal diameter:</message>
+  <message id="dgi-dim-length">Crystal length:</message>
+  <message id="dgi-dim-width">Crystal width:</message>
+  <message id="dgi-dim-height">Crystal height:</message>
+  <message id="dgi-bore">Bore (dia., depth):</message>
+  <message id="dgi-bore-diam-ph">diameter</message>
+  <message id="dgi-bore-depth-ph">depth</message>
+  <message id="dgi-dead-layer">Dead layer (front, side):</message>
+  <message id="dgi-dead-front-ph">front</message>
+  <message id="dgi-dead-side-ph">side</message>
+  <message id="dgi-layers-label">Endcap / housing layers (innermost first):</message>
+  <message id="dgi-layer-material">Material</message>
+  <message id="dgi-layer-front">Front thickness</message>
+  <message id="dgi-layer-side">Side thickness</message>
+  <message id="dgi-add-layer">Add layer</message>
+  <message id="dgi-remove-layer">Remove layer</message>
+  <message id="dgi-collimator-cb">Collimator (side shield)</message>
+  <message id="dgi-collimator-thickness">Thickness</message>
+  <message id="dgi-collimator-extension">Extends past face</message>
+  <message id="dgi-ref-point">Distances measured from:</message>
+  <message id="dgi-ref-endcap">Detector face (endcap front)</message>
+  <message id="dgi-ref-crystal">Crystal face</message>
+  <message id="dgi-seeded-note">Crystal length is a guess (taken equal to the diameter) - please correct it.</message>
+  <message id="dgi-err-missing">Please enter the {1}.</message>
+  <message id="dgi-err-invalid">The {1} is not a valid distance.</message>
+  <message id="dgi-err-bore">Please give both a bore diameter and depth (or neither).</message>
+  <message id="dgi-err-bore-size">The bore must be smaller than the crystal.</message>
+  <message id="dgi-err-layer">Each layer needs a material and a front and/or side thickness.</message>
+  <message id="dgi-err-material">Material &apos;{1}&apos; was not found in the material database.</message>
+</messages>

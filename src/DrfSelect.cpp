@@ -94,13 +94,18 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
+#include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DetectorPeakResponse.h"
+
+// CeeLo (external_libs/CeeLo/src): the MC-parameterized response.
+#include "io/DetectorResponse.h"
 
 #if( USE_QR_CODES )
 #include "InterSpec/QrCode.h"
@@ -2149,6 +2154,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_interspec( specViewer ),
     m_fileModel( fileModel ),
     m_chart( 0 ),
+    m_drfContentChips( nullptr ),
     m_detector( currentDet ),
     m_gui_select_matches_det( false ),
     m_tabs( nullptr ),
@@ -2259,7 +2265,16 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   distValidator->setInvalidBlankText( "0.0 cm" );
   distValidator->setMandatory( true );
   
-  WContainerWidget *lowerContent = mainLayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
+  // Compact summary "chips" of what the current DRF contains (FWHM,
+  //  uncertainties, MC parameterization, ...) - see updateDrfContentSummary().
+  {
+    auto chipsOwned = std::make_unique<WContainerWidget>();
+    m_drfContentChips = chipsOwned.get();
+    m_drfContentChips->addStyleClass( "DrfContentChips" );
+    mainLayout->addWidget( std::move(chipsOwned), 1, 0 );
+  }
+
+  WContainerWidget *lowerContent = mainLayout->addWidget( std::make_unique<WContainerWidget>(), 2, 0 );
 
   WGridLayout *lowerLayout = lowerContent->setLayout( std::make_unique<WGridLayout>() );
   lowerLayout->setContentsMargins( 0, 2, 0, 0 );
@@ -2306,12 +2321,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   
   
   
-  WContainerWidget *defaultOptions = mainLayout->addWidget( std::make_unique<WContainerWidget>(), 2, 0 );
+  WContainerWidget *defaultOptions = mainLayout->addWidget( std::make_unique<WContainerWidget>(), 3, 0 );
   //lowerLayout->addWidget( defaultOptions, 1, 1 );
-  
+
   mainLayout->setRowResizable( 0, true, WLength(is_phone ? 125 : 250, WLength::Unit::Pixel) );
-  
-  mainLayout->setRowStretch( 1, 1 );
+
+  mainLayout->setRowStretch( 2, 1 );
   
   
   //-------------------------------------
@@ -2956,11 +2971,15 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   if( specViewer && !specViewer->isPhone() )
     m_noDrfButton->addStyleClass( "NoDrfBtn" );
   
-  WPushButton *changeFwhm = secondFooter->addNew<WPushButton>( WString::tr("ds-fit-fwhm-btn") );
+  // A single "Modify..." button opens a dialog consolidating FWHM fitting,
+  //  geometry + Monte-Carlo characterization, renaming, and baseline
+  //  efficiency uncertainty (these used to be separate footer buttons that
+  //  overflowed).
+  WPushButton *modify = secondFooter->addNew<WPushButton>( WString::tr("ds-modify-btn") );
   if( specViewer && !specViewer->isPhone() )
-    changeFwhm->addStyleClass( "NoDrfBtn" );
-  changeFwhm->clicked().connect( this, &DrfSelect::handleFitFwhmRequested );
-  
+    modify->addStyleClass( "NoDrfBtn" );
+  modify->clicked().connect( this, &DrfSelect::handleModifyRequested );
+
   if( auxWindow && !auxWindow->isPhone() )
   {
     m_cancelButton = auxWindow->addCloseButtonToFooter( WString::tr("Cancel") );
@@ -3317,6 +3336,122 @@ void DrfSelect::handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf
 }//void handleFitFwhmFinished( std::shared_ptr<DetectorPeakResponse> drf )
 
 
+void DrfSelect::handleMcResponseRequested()
+{
+  m_interspec->showMcResponseWindow( m_detector );
+}//void handleMcResponseRequested()
+
+
+void DrfSelect::handleMcResponseFinished( std::shared_ptr<DetectorPeakResponse> drf )
+{
+  if( drf )
+    updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
+  done().emit();
+}//void handleMcResponseFinished( std::shared_ptr<DetectorPeakResponse> drf )
+
+
+void DrfSelect::handleModifyRequested()
+{
+  if( m_modifyWindow )
+  {
+    m_modifyWindow->show();
+    m_modifyWindow->centerWindowHeavyHanded();
+    return;
+  }
+
+  m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, m_detector );
+  m_modifyWindow->tool()->updatedDrf().connect( this, &DrfSelect::handleModifyFinished );
+  m_modifyWindow->tool()->updatedDrf().connect( m_modifyWindow.get(), &AuxWindow::hide );
+  m_modifyWindow->finished().connect( this, [this](){
+    if( m_modifyWindow )
+    {
+      AuxWindow::deleteAuxWindow( m_modifyWindow.get() );
+      assert( !m_modifyWindow );
+    }
+  } );
+}//void handleModifyRequested()
+
+
+void DrfSelect::handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf )
+{
+  if( !drf )
+    return;
+
+  updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
+
+  // Make the modified DRF the one this dialog is editing/showing; the user
+  //  still confirms with Accept to push it to the rest of the app.
+  setDetector( drf );
+}//void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf )
+
+
+void DrfSelect::updateDrfContentSummary()
+{
+  if( !m_drfContentChips )
+    return;
+
+  m_drfContentChips->clear();
+
+  const shared_ptr<DetectorPeakResponse> &det = m_detector;
+  if( !det || !det->isValid() )
+    return;
+
+  auto add_chip = [this]( const WString &txt, const WString &tooltip,
+                          const bool present ){
+    WText *chip = m_drfContentChips->addNew<WText>( txt );
+    chip->addStyleClass( present ? "DrfChip" : "DrfChip DrfChipAbsent" );
+    if( !tooltip.empty() )
+      HelpSystem::attachToolTipOn( chip, tooltip, true );
+  };
+
+  //Geometry interpretation
+  const bool fixed_geom = det->isFixedGeometry();
+  add_chip( WString::tr( fixed_geom ? "ds-chip-fixed-geom" : "ds-chip-far-field" ),
+            WString::tr( fixed_geom ? "ds-chip-tt-fixed-geom" : "ds-chip-tt-far-field" ),
+            true );
+
+  //FWHM info
+  add_chip( WString::tr("ds-chip-fwhm"), WString::tr("ds-chip-tt-fwhm"),
+            det->hasResolutionInfo() );
+
+  //Efficiency uncertainty
+  const shared_ptr<const DetectorEfficiencyUncert> uncert = det->efficiencyUncert();
+  add_chip( WString::tr("ds-chip-uncert"), WString::tr("ds-chip-tt-uncert"),
+            (uncert && !uncert->isEmpty()) );
+
+  //Total efficiency (cascade summing input)
+  add_chip( WString::tr("ds-chip-total-eff"), WString::tr("ds-chip-tt-total-eff"),
+            det->hasTotalEfficiency() );
+
+  //Raw measured points (provenance / grounding input)
+  const shared_ptr<const MeasuredDrfPoints> points = det->measuredPoints();
+  add_chip( WString::tr("ds-chip-points"), WString::tr("ds-chip-tt-points"),
+            (points && !points->empty()) );
+
+  //Monte-Carlo parameterized response
+  const shared_ptr<const ceelo::DetectorResponse> mc = det->ceeloResponse();
+  if( mc )
+  {
+    WString tip = WString::tr("ds-chip-tt-mc")
+                    .arg( ceelo::to_string( mc->provenance.profile ) )
+                    .arg( mc->provenance.valid_e_min_keV )
+                    .arg( mc->provenance.valid_e_max_keV );
+    add_chip( WString::tr("ds-chip-mc"), tip, true );
+
+    const bool grounded = !mc->grounding.empty();
+    const bool curve_derived = grounded && mc->grounding.curve_derived;
+    if( grounded )
+      add_chip( WString::tr( curve_derived ? "ds-chip-grounded-curve" : "ds-chip-grounded" ),
+                WString::tr("ds-chip-tt-grounded"), true );
+    else
+      add_chip( WString::tr("ds-chip-grounded"), WString::tr("ds-chip-tt-grounded"), false );
+  }else
+  {
+    add_chip( WString::tr("ds-chip-mc"), WString::tr("ds-chip-tt-no-mc"), false );
+  }//if( mc ) / else
+}//void updateDrfContentSummary()
+
+
 void DrfSelect::deleteDBTableSelected()
 {
   WModelIndexSet indices = m_DBtable->selectedIndexes();
@@ -3375,7 +3510,9 @@ void DrfSelect::dbTableSelectionChanged()
 void DrfSelect::setGuiToCurrentDetector()
 {
   //----initialize
-  
+
+  updateDrfContentSummary();
+
   if( !m_detector )
   {
     //m_drfTypeMenu->select( 0 );
