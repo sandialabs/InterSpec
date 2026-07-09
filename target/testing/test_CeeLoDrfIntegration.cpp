@@ -302,12 +302,14 @@ BOOST_AUTO_TEST_CASE( probe_bank_nai3x3 )
 
 BOOST_AUTO_TEST_CASE( probe_bank_hpge_coax )
 {
-  // HPGe is the steepest eta(theta) detector, so its 95th is the highest.
-  //  High stats + the angle-scanned near-field (rho=z*tan(theta)) bring it to
-  //  ~5% (was ~8%); the residual sits at grazing (~86-88 deg) where the
-  //  near-field angular grid currently tops out at 84 deg while eta reaches
-  //  ~89 deg - extending that grid is a documented follow-up.
-  check_probe_bank( "hpge_coax", 0.02, 0.08 );
+  // HPGe is the steepest eta(theta) detector. The tabulated near-field model
+  //  (ln N on a cos_theta x d grid, PCHIP-interpolated, covering to the eta
+  //  grazing edge cos_theta=0.02) brought FEP 95th to ~1% and max to ~4%
+  //  (was ~5% 95th / ~11% max with the old quadratic near-field surface).
+  //  The p95 gate is bounded below by the TOT tier (eta_tot, unaffected by the
+  //  near-field model), whose 95th is ~6.7%: TOT is checked at 2*p95_gate, so
+  //  p95_gate stays >= ~0.05 to keep ~50% headroom there.
+  check_probe_bank( "hpge_coax", 0.015, 0.05 );
 }
 
 BOOST_AUTO_TEST_CASE( probe_bank_czt_box )
