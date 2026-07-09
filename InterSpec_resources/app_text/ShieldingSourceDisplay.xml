@@ -145,6 +145,20 @@
     information, which cascade-summing corrections require.  Open the detector editor and attach a
     Monte-Carlo characterization (or a total-efficiency curve), then re-enable this option.</message>
   <message id="ssd-cascade-open-drf-editor">Open detector editor</message>
+  <message id="ssd-fixed-geom-mc-btn">Compute DRF for this geometry (MC)</message>
+  <message id="ssd-tt-fixed-geom-mc">Runs a CeeLo Monte-Carlo over the exact source/shielding scene
+    (including scatter, near-field response, and total efficiency), producing a fixed-geometry
+    detector response that embeds this setup and switching to it.  Only available when no shielding
+    dimension is being fit, and the detector response has a Monte-Carlo detector model attached
+    (add one via the detector editor).  Takes a few minutes.</message>
+  <message id="ssd-fixed-geom-locked-note">These source/shielding layers are embedded in the
+    fixed-geometry detector response and cannot be edited here.  Select a different detector
+    response to change them.</message>
+  <message id="ssd-fixed-geom-mc-running-title">Computing fixed-geometry response</message>
+  <message id="ssd-fixed-geom-mc-running-msg">Running the Monte-Carlo over the current scene; this
+    typically takes a few minutes.</message>
+  <message id="ssd-fixed-geom-mc-needs-model">The detector response needs a Monte-Carlo detector
+    model attached (via the detector editor) before a fixed-geometry response can be computed.</message>
   <message id="ssd-tt-geometry">Geometry to use for modeling "trace" sources, or self-attenuating sources.
     <br />
     <br />

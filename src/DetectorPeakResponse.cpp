@@ -694,6 +694,11 @@ void DetectorPeakResponse::computeHash()
   if( m_ceeloResponse )
     boost::hash_combine( seed, m_ceeloResponse->content_hash() );
 
+  // Embedded fixed-geometry source setup: only hashed when present, so legacy
+  //  DRFs keep their hashes.
+  if( !m_fixedGeomSetupXml.empty() )
+    boost::hash_combine( seed, m_fixedGeomSetupXml );
+
   m_hash = seed;
 }//void computeHash()
 
@@ -862,6 +867,19 @@ bool DetectorPeakResponse::hasAnyTotalEfficiencyInfo() const
   //  #totalEfficiencyEval, which dispatches to it unconditionally).
   return ( !!m_totalEfficiency || !!m_ceeloResponse );
 }//hasAnyTotalEfficiencyInfo()
+
+
+const string &DetectorPeakResponse::fixedGeometrySetupXml() const
+{
+  return m_fixedGeomSetupXml;
+}
+
+
+void DetectorPeakResponse::setFixedGeometrySetupXml( const std::string &xml )
+{
+  m_fixedGeomSetupXml = xml;
+  computeHash();
+}
 
 
 shared_ptr<const DetectorEfficiencyCurve> DetectorPeakResponse::totalEfficiencyCurve() const
@@ -1064,7 +1082,8 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
   const bool have_uncert = (eff_uncert && !eff_uncert->isEmpty());
   const bool have_points = (m_measuredPoints && !m_measuredPoints->empty());
-  if( !have_uncert && !m_totalEfficiency && !have_points && !m_ceeloResponse )
+  if( !have_uncert && !m_totalEfficiency && !have_points && !m_ceeloResponse
+      && m_fixedGeomSetupXml.empty() )
     return "";
 
   rapidxml::xml_document<char> doc;
@@ -1082,6 +1101,16 @@ string DetectorPeakResponse::drfExtraToXmlString() const
 
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, &doc, *m_ceeloResponse );
+
+  if( !m_fixedGeomSetupXml.empty() )
+  {
+    const char *val = doc.allocate_string( m_fixedGeomSetupXml.c_str(),
+                                           m_fixedGeomSetupXml.size() + 1 );
+    rapidxml::xml_node<char> *setup = doc.allocate_node( rapidxml::node_element,
+                                          "FixedGeomSourceSetup", val,
+                                          20, m_fixedGeomSetupXml.size() );
+    base_node->append_node( setup );
+  }
 
   string answer;
   rapidxml::print( std::back_inserter(answer), doc, rapidxml::print_no_indenting );
@@ -1103,6 +1132,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
   m_totalEfficiency.reset();
   m_measuredPoints.reset();
   m_ceeloResponse.reset();
+  m_fixedGeomSetupXml.clear();
 
   if( xml.empty() )
     return;
@@ -1157,6 +1187,10 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     const rapidxml::xml_node<char> *ceelo_node = base_node->first_node( "CeeLoResponse" );
     if( ceelo_node )
       m_ceeloResponse = parse_ceelo_response_node( ceelo_node );
+
+    const rapidxml::xml_node<char> *setup_node = base_node->first_node( "FixedGeomSourceSetup" );
+    if( setup_node )
+      m_fixedGeomSetupXml.assign( setup_node->value(), setup_node->value_size() );
   }catch( std::exception &e )
   {
     m_totalEfficiency.reset();
@@ -4248,6 +4282,16 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
 
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, doc, *m_ceeloResponse );
+
+  if( !m_fixedGeomSetupXml.empty() )
+  {
+    const char *val = doc->allocate_string( m_fixedGeomSetupXml.c_str(),
+                                            m_fixedGeomSetupXml.size() + 1 );
+    xml_node<char> *setup = doc->allocate_node( node_element,
+                                    "FixedGeomSourceSetup", val,
+                                    20, m_fixedGeomSetupXml.size() );
+    base_node->append_node( setup );
+  }
 }//toXml(...)
 
 
@@ -4677,6 +4721,11 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   node = parent->first_node( "CeeLoResponse", 13 );
   if( node )
     m_ceeloResponse = parse_ceelo_response_node( node );  //throws on invalid content
+
+  m_fixedGeomSetupXml.clear();
+  node = parent->first_node( "FixedGeomSourceSetup", 20 );
+  if( node )
+    m_fixedGeomSetupXml.assign( node->value(), node->value_size() );
 }//void fromXml( ::rapidxml::xml_node<char> *parent )
 
 

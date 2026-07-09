@@ -70,6 +70,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/CascadeSummingCalc.h"
+#include "InterSpec/MakeFixedGeomResponse.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
@@ -3449,3 +3450,83 @@ BOOST_AUTO_TEST_CASE( CascadeCorrectionHandCheck )
     BOOST_CHECK_LT( r.c_in, 0.005 );  //no pairs sum into 1173/1332
   }//for( results )
 }//BOOST_AUTO_TEST_CASE( CascadeCorrectionHandCheck )
+
+
+/** Fixed-geometry MC DRF plumbing (no Monte-Carlo run): the source-setup blob
+ round-trips through the Setup codec and the DetectorPeakResponse XML, the
+ scene-representability rules hold, and embedding the blob changes the hash.
+ */
+BOOST_AUTO_TEST_CASE( FixedGeomSetupBlobRoundTrip )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  shared_ptr<const Material> fe;
+  BOOST_REQUIRE_NO_THROW( fe = matdb->material( "Fe" ) );
+  BOOST_REQUIRE( !!fe );
+
+  MakeFixedGeomResponse::Setup setup;
+  setup.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  setup.distance = 12.5*PhysicalUnits::cm;
+  {
+    ShieldingSourceFitCalc::ShieldingInfo shield;
+    shield.m_geometry = setup.geometry;
+    shield.m_isGenericMaterial = false;
+    shield.m_forFitting = false;
+    shield.m_material = fe;
+    shield.m_dimensions[0] = 1.0*PhysicalUnits::cm;
+    shield.m_dimensions[1] = shield.m_dimensions[2] = 0.0;
+    shield.m_fitDimensions[0] = shield.m_fitDimensions[1] = shield.m_fitDimensions[2] = false;
+    setup.shieldings.push_back( shield );
+  }
+
+  BOOST_CHECK( MakeFixedGeomResponse::sceneRepresentable( setup, nullptr ) );
+
+  // Codec round-trip.
+  const string blob = setup.toXmlString();
+  MakeFixedGeomResponse::Setup back;
+  BOOST_REQUIRE_NO_THROW( back.fromXmlString( blob ) );
+  BOOST_CHECK( back.geometry == setup.geometry );
+  BOOST_CHECK_LT( fabs(back.distance - setup.distance), 1.0E-6*setup.distance );
+  BOOST_REQUIRE_EQUAL( back.shieldings.size(), setup.shieldings.size() );
+  BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough(
+                                    back.shieldings[0], setup.shieldings[0] ) );
+
+  // A generic shielding is not representable.
+  {
+    MakeFixedGeomResponse::Setup bad = setup;
+    bad.shieldings[0].m_isGenericMaterial = true;
+    bad.shieldings[0].m_material = nullptr;
+    string why;
+    BOOST_CHECK( !MakeFixedGeomResponse::sceneRepresentable( bad, &why ) );
+    BOOST_CHECK( !why.empty() );
+  }
+
+  // DRF embedding: XML round-trip + hash gating.
+  auto drf = make_shared<DetectorPeakResponse>();
+  drf->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, 100.0*PhysicalUnits::cm,
+                                5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                0, 3000*PhysicalUnits::keV,
+                                DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+  const uint64_t hash_before = drf->hashValue();
+  drf->setFixedGeometrySetupXml( blob );
+  BOOST_CHECK( drf->hashValue() != hash_before );
+  BOOST_CHECK_EQUAL( drf->fixedGeometrySetupXml(), blob );
+
+  {// through the DRF XML
+    rapidxml::xml_document<char> doc;
+    drf->toXml( &doc, &doc );
+    auto from_xml = make_shared<DetectorPeakResponse>();
+    from_xml->fromXml( doc.first_node() );
+    BOOST_CHECK_EQUAL( from_xml->fixedGeometrySetupXml(), blob );
+    MakeFixedGeomResponse::Setup from_drf;
+    BOOST_REQUIRE_NO_THROW( from_drf.fromXmlString( from_xml->fixedGeometrySetupXml() ) );
+    BOOST_CHECK( from_drf.geometry == setup.geometry );
+  }
+
+  // Clearing restores the original hash (blob only hashed when present).
+  drf->setFixedGeometrySetupXml( "" );
+  BOOST_CHECK_EQUAL( drf->hashValue(), hash_before );
+}//BOOST_AUTO_TEST_CASE( FixedGeomSetupBlobRoundTrip )

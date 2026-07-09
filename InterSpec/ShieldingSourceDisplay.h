@@ -781,6 +781,14 @@ public:
   void accountForDrfUncertChanged();
   void correctForCascadeChanged();
 
+  /** "Compute DRF for this geometry (MC)": runs CeeLo over the current scene
+   (worker thread) and switches to the resulting fixed-geometry DRF, which
+   embeds the scene (displayed read-only afterwards).  Only available when no
+   shielding dimension is being fit and the DRF has a CeeLo detector model.
+   */
+  void computeFixedGeomDrfRequested();
+  void updateFixedGeomMcAvailability();
+
   /** Enables/disables the cascade-summing checkbox: enabled when the DRF has
    usable total-efficiency info AND the predicted maximum summing magnitude
    (solid angle x total intrinsic efficiency) is at least ~0.3% (always
@@ -915,6 +923,8 @@ protected:
   Wt::WCheckBox  *m_decayCorrect;
   Wt::WCheckBox  *m_accountForDrfUncert;
   Wt::WCheckBox  *m_correctForCascade;
+  Wt::WPushButton *m_fixedGeomMcBtn;
+  Wt::WText *m_fixedGeomLockedNote;
   SwitchCheckbox *m_showChiOnChart;
   GroupBox *m_optionsDiv;
   /** This variable should be set to the same value as `m_clusterWidth`, but is around for undo/redo support. */

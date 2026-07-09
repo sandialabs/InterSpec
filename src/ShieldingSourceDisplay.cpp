@@ -54,6 +54,7 @@
 #include <Wt/WTabWidget.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WProgressBar.h>
 #include <Wt/WJavaScript.h>
 #include <Wt/WAny.h>
 #include <Wt/Utils.h>
@@ -110,6 +111,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/CascadeSummingCalc.h"
+#include "InterSpec/MakeFixedGeomResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -3348,6 +3350,18 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometryLabel),        3, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
   smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometrySelect),       3, 1, 1, 2);
   smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeometryTxt),     4, 0, 1, 3, AlignmentFlag::Center );
+
+  m_fixedGeomLockedNote = new WText( WString::tr("ssd-fixed-geom-locked-note") );
+  m_fixedGeomLockedNote->addStyleClass( "FixedGeomLockedNote" );
+  m_fixedGeomLockedNote->hide();
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeomLockedNote),  5, 0, 1, 3, AlignmentFlag::Center );
+
+  m_fixedGeomMcBtn = new WPushButton( WString::tr("ssd-fixed-geom-mc-btn") );
+  m_fixedGeomMcBtn->addStyleClass( "FixedGeomMcBtn LightButton" );
+  HelpSystem::attachToolTipOn( m_fixedGeomMcBtn, WString::tr("ssd-tt-fixed-geom-mc"), showToolTips );
+  m_fixedGeomMcBtn->clicked().connect( this, &ShieldingSourceDisplay::computeFixedGeomDrfRequested );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeomMcBtn),       6, 0, 1, 3, AlignmentFlag::Center );
+
   smallLayout->setContentsMargins( 0, 5, 0, 5 );
   smallerContainer->setPadding(0);
 
@@ -5848,7 +5862,160 @@ void ShieldingSourceDisplay::updateCascadeAvailability()
     m_correctForCascade->setToolTip( enable ? WString()
                                      : WString::tr("ssd-tt-cascade-negligible") );
   }
+
+  updateFixedGeomMcAvailability();
 }//void updateCascadeAvailability()
+
+
+void ShieldingSourceDisplay::updateFixedGeomMcAvailability()
+{
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+
+  // Needs a CeeLo detector model, and must not already be a fixed-geometry DRF.
+  bool enable = ( det && det->isValid() && det->ceeloResponse()
+                  && !det->isFixedGeometry() );
+
+  // Nothing geometric may be getting fit (activity-only fits).
+  if( enable )
+  {
+    for( WWidget *widget : m_shieldingSelects->children() )
+    {
+      ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+      if( !select )
+        continue;
+
+      if( select->isGenericMaterial() )
+      {
+        enable = false;
+        break;
+      }
+
+      const ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
+      for( int i = 0; i < 3; ++i )
+        enable = (enable && !info.m_fitDimensions[i]);
+      if( !enable )
+        break;
+    }//for( shieldings )
+  }//if( enable )
+
+  m_fixedGeomMcBtn->setHidden( det && det->isFixedGeometry() );
+  m_fixedGeomMcBtn->setDisabled( !enable );
+}//void updateFixedGeomMcAvailability()
+
+
+void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
+{
+  using GammaInteractionCalc::GeometryType;
+
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  if( !det || !det->isValid() || !det->ceeloResponse() || det->isFixedGeometry() )
+  {
+    passMessage( WString::tr("ssd-fixed-geom-mc-needs-model"), WarningWidget::WarningMsgHigh );
+    return;
+  }
+
+  MakeFixedGeomResponse::Setup setup;
+  setup.geometry = geometry();
+  try
+  {
+    setup.distance = PhysicalUnits::stringToDistance( m_distanceEdit->text().toUTF8() );
+  }catch( std::exception & )
+  {
+    passMessage( "Invalid distance.", WarningWidget::WarningMsgHigh );
+    return;
+  }
+
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+    if( select )
+      setup.shieldings.push_back( select->toShieldingInfo() );
+  }
+
+  string why;
+  if( !MakeFixedGeomResponse::sceneRepresentable( setup, &why ) )
+  {
+    passMessage( WString::fromUTF8(why), WarningWidget::WarningMsgHigh );
+    return;
+  }
+
+  // Fit-peak gamma lines get exact MC nodes.
+  vector<double> extra_energies;
+  {
+    const vector<PeakDef> peaks = m_peakModel ? m_peakModel->peakVec() : vector<PeakDef>();
+    for( const PeakDef &peak : peaks )
+    {
+      if( peak.useForShieldingSourceFit()
+          && (peak.decayParticle() || (peak.sourceGammaType() == PeakDef::AnnihilationGamma)) )
+        extra_energies.push_back( peak.gammaParticleEnergy() );
+    }
+  }
+
+  // Progress dialog with cancel; worker thread does the MC.
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>(
+                              WString::tr("ssd-fixed-geom-mc-running-title"),
+                              WString::tr("ssd-fixed-geom-mc-running-msg") );
+  WProgressBar *progress_bar = dialog->contents()->addNew<WProgressBar>();
+  progress_bar->setRange( 0.0, 1.0 );
+
+  auto cancel_flag = make_shared<std::atomic<bool>>( false );
+  WPushButton *cancel_btn = dialog->addButton( WString::tr("Cancel") );
+  cancel_btn->clicked().connect( std::bind( [cancel_flag](){
+    cancel_flag->store( true );
+  } ) );
+
+  const string session_id = wApp->sessionId();
+  const string bar_id = progress_bar->id();
+  const string dialog_id = dialog->id();
+  const shared_ptr<const DetectorPeakResponse> base_drf = det;
+
+  auto worker = [setup, extra_energies, base_drf, cancel_flag, session_id, bar_id, dialog_id](){
+    shared_ptr<DetectorPeakResponse> new_drf;
+    string errmsg;
+    try
+    {
+      auto last_pct = make_shared<std::atomic<int>>( -1 );
+      const auto progress_fcn = [session_id, bar_id, last_pct]( const double frac ){
+        const int pct = static_cast<int>( 100.0 * frac );
+        if( last_pct->exchange(pct) == pct )
+          return;
+        WServer::instance()->post( session_id, [bar_id, frac](){
+          WProgressBar *bar = dynamic_cast<WProgressBar *>( wApp->domRoot()->findById(bar_id) );
+          if( bar )
+            bar->setValue( frac );
+          wApp->triggerUpdate();
+        } );
+      };
+
+      new_drf = MakeFixedGeomResponse::computeFixedGeomDrf( base_drf, setup,
+                                  extra_energies, 0.005, progress_fcn, cancel_flag );
+    }catch( std::exception &e )
+    {
+      errmsg = e.what();
+    }
+
+    WServer::instance()->post( session_id, [new_drf, errmsg, dialog_id](){
+      SimpleDialog *dlg = dynamic_cast<SimpleDialog *>( wApp->domRoot()->findById(dialog_id) );
+      if( dlg )
+        dlg->accept();
+
+      InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+      InterSpec *viewer = app ? app->viewer() : nullptr;
+      if( !viewer )
+        return;
+
+      if( new_drf )
+        viewer->detectorChanged().emit( new_drf );
+      else if( errmsg != "cancelled" )
+        passMessage( "Fixed-geometry MC failed: " + errmsg, WarningWidget::WarningMsgHigh );
+
+      wApp->triggerUpdate();
+    } );
+  };//worker
+
+  wApp->enableUpdates( true );
+  WServer::instance()->ioService().boost::asio::io_service::post( worker );
+}//void computeFixedGeomDrfRequested()
 
 
 void ShieldingSourceDisplay::showGraphicTypeChanged()
@@ -6543,10 +6710,56 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
     {
       ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
       if( thisSelect )
+      {
         thisSelect->setFixedGeometry( false );
+        thisSelect->setDisabled( false );
+        thisSelect->removeStyleClass( "FixedGeomLocked", true );
+      }
     }//for( WWidget *widget : m_shieldingSelects->children() )
   }//if( DRF is non-fixed geometry, but layout is for fixed geometry )
   
+  // A fixed-geometry DRF computed for a specific scene embeds it; replace the
+  //  displayed shieldings with that scene, read-only (change the DRF to
+  //  change the layers).
+  bool locked_setup = false;
+  if( fixed_geom && det && !det->fixedGeometrySetupXml().empty() )
+  {
+    try
+    {
+      MakeFixedGeomResponse::Setup setup;
+      setup.fromXmlString( det->fixedGeometrySetupXml() );
+
+      const vector<WWidget *> old_shields = m_shieldingSelects->children();
+      for( WWidget *child : old_shields )
+      {
+        if( dynamic_cast<ShieldingSelect *>( child ) )
+          m_shieldingSelects->removeWidget( child );
+      }
+
+      deSerializeShieldings( setup.shieldings );
+
+      for( WWidget *widget : m_shieldingSelects->children() )
+      {
+        ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+        if( select )
+        {
+          select->setFixedGeometry( true );
+          select->setDisabled( true );
+          select->addStyleClass( "FixedGeomLocked" );
+        }
+      }//for( new ShieldingSelects )
+
+      locked_setup = true;
+    }catch( std::exception &e )
+    {
+      cerr << "handleDetectorChanged: invalid FixedGeomSourceSetup blob: "
+           << e.what() << endl;
+    }
+  }//if( fixed-geometry DRF with an embedded scene )
+
+  m_fixedGeomLockedNote->setHidden( !locked_setup );
+  m_addShieldingBtn->setHidden( locked_setup );
+
   updateChi2Chart();
   updateCascadeAvailability();
 }//void handleDetectorChanged()

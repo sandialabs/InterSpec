@@ -710,6 +710,19 @@ public:
    */
   bool hasAnyTotalEfficiencyInfo() const;
 
+  /** For a fixed-geometry DRF computed for one specific source/shielding
+   setup (see MakeFixedGeomResponse): the setup description, as an opaque XML
+   blob owned by ShieldingSourceFitCalc (geometry type, distance, serialized
+   ShieldingInfo list).  Empty when this DRF has no embedded setup.  The
+   Act/Shield tool displays the setup read-only and refuses edits.
+   */
+  const std::string &fixedGeometrySetupXml() const;
+
+  /** Sets (or clears, with an empty string) the embedded source-setup blob;
+   recomputes the hash, like the other setters.
+   */
+  void setFixedGeometrySetupXml( const std::string &xml );
+
   /** The (optional) total-efficiency curve; may be nullptr. */
   std::shared_ptr<const DetectorEfficiencyCurve> totalEfficiencyCurve() const;
 
@@ -1220,6 +1233,12 @@ protected:
    query functions and #efficiencyFracCovariance do.
    */
   std::shared_ptr<const ceelo::DetectorResponse> m_ceeloResponse;
+
+  /** Opaque source/shielding-setup XML for fixed-geometry DRFs computed for a
+   specific scene; see #fixedGeometrySetupXml.  Serialized as the optional
+   <FixedGeomSourceSetup> node (XML + DrfExtra/DB), absent when empty.
+   */
+  std::string m_fixedGeomSetupXml;
 
   /** Optional raw measured efficiency points the DRF was characterized from
    (see #MeasuredDrfPoints) - provenance + grounding input.
