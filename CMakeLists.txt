@@ -342,6 +342,8 @@ set(sources
     src/MakeDrfChart.cpp
     src/MakeDrfFit.cpp
     src/MakeFwhmForDrf.cpp
+    src/CeeLoUtils.cpp
+    src/CascadeSummingCalc.cpp
     src/MakeMcResponseForDrf.cpp
     src/DetectorGeometryInput.cpp
     src/DrfModifyWidget.cpp
@@ -474,6 +476,8 @@ set(headers
     InterSpec/MakeDrfChart.h
     InterSpec/MakeDrfFit.h
     InterSpec/MakeFwhmForDrf.h
+    InterSpec/CeeLoUtils.h
+    InterSpec/CascadeSummingCalc.h
     InterSpec/MakeMcResponseForDrf.h
     InterSpec/DetectorGeometryInput.h
     InterSpec/DrfModifyWidget.h

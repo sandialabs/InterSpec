@@ -338,6 +338,17 @@ namespace ShieldingSourceFitCalc
      */
     bool account_for_drf_uncert = true;
 
+    /** Correct expected peak counts for true-coincidence (cascade) summing.
+
+     Requires the detector response to carry total-efficiency information
+     (an explicit total-efficiency curve, or an attached CeeLo MC response) -
+     see DetectorPeakResponse::hasAnyTotalEfficiencyInfo().  Creating the
+     chi2 function with this option set but no such info throws.
+
+     Default false: the historical (uncorrected) behavior.
+     */
+    bool correct_for_cascade_summing = false;
+
 
     void serialize( rapidxml::xml_node<char> *parent_node ) const;
     void deSerialize( const rapidxml::xml_node<char> *parent_node );

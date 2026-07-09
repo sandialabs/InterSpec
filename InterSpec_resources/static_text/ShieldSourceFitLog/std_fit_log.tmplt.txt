@@ -64,7 +64,7 @@ Detector Efficiency Effects:
 Chi2 Contributions Of Peaks:
 {% if exists("PeaksUsedForActivityFitting") %}
 ## for peak in PeaksUsedForActivityFitting.Peaks
-    At {{ peak.Energy }} keV expected {{ peak.PredictedCounts }} counts, recieved {{ peak.SignalCounts }} +- {{ peak.SignalCountsUncert }}. giving (observed-expected)/uncert={{ peak.PredictedNumSigmaOff }}
+    At {{ peak.Energy }} keV expected {{ peak.PredictedCounts }} counts, recieved {{ peak.SignalCounts }} +- {{ peak.SignalCountsUncert }}{% if existsIn(peak,"DrfEffFracUncert") %} (uncert incl. {{ peak.DrfEffFracUncertPercentStr }}% detector-efficiency uncert){% endif %}. giving (observed-expected)/uncert={{ peak.PredictedNumSigmaOff }}
 ##endfor
 {% endif %}
 

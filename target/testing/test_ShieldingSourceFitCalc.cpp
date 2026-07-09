@@ -66,9 +66,10 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
-#include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
@@ -428,6 +429,7 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
     test.photopeak_cluster_sigma = ((10.0*rand()) / RAND_MAX);
     test.background_peak_subtract = (rand() % 2);
     test.same_age_isotopes = (rand() % 2);
+    test.account_for_drf_uncert = (rand() % 2);
     
     rapidxml::xml_document<char> doc;
     BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
@@ -3187,3 +3189,263 @@ BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
     BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( original_config.options, gui_config.options ) );
   }//for( const string n42_filename : files )
 }//BOOST_FIXTURE_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
+
+
+/** GLS treatment of DRF efficiency uncertainty in the (Ceres) activity fit:
+ - a fully-correlated 5% efficiency band maps ~1:1 onto the activity
+   uncertainty (NOT 5%/sqrt(N_peaks)),
+ - attaching uncertainty info with `account_for_drf_uncert = false` leaves the
+   fit bit-identical to a DRF with no uncertainty info at all, and
+ - the option does not move the best-fit activity (only its uncertainty).
+ */
+BOOST_AUTO_TEST_CASE( DrfUncertaintyInActivityFit )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  const double distance = 100.0*PhysicalUnits::cm;
+  const double live_time = 1000.0*PhysicalUnits::second;
+  const double true_activity = 1.0*PhysicalUnits::microCi;
+  const double frac_eff_uncert = 0.05;
+
+  const SandiaDecay::Nuclide * const co60 = db->nuclide( "Co60" );
+  BOOST_REQUIRE( co60 );
+
+  auto make_drf = [distance,frac_eff_uncert]( const bool with_uncert ) -> shared_ptr<DetectorPeakResponse> {
+    auto drf = make_shared<DetectorPeakResponse>();
+    drf->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                  5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                  0, 3000*PhysicalUnits::keV,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+    if( with_uncert )
+    {
+      // One flat band => the efficiency error is fully correlated across peaks.
+      auto uncert = make_shared<DetectorEfficiencyUncert>();
+      uncert->setBands( { EffUncertBand{ 0.0f, 3000.0f, static_cast<float>(frac_eff_uncert) } } );
+      drf->setEfficiencyUncert( uncert );
+    }
+    return drf;
+  };
+
+  // Common input, except detector + the account_for_drf_uncert flag.
+  auto make_input = [&]( const shared_ptr<DetectorPeakResponse> &drf, const bool use_uncert )
+                    -> GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput
+  {
+    ShieldingSourceFitCalc::SourceFitDef src;
+    src.nuclide = co60;
+    src.activity = true_activity;
+    src.fitActivity = true;
+    src.age = 1.0*PhysicalUnits::year;
+    src.fitAge = false;
+    src.ageDefiningNuc = nullptr;
+    src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+    auto foreground = make_shared<SpecUtils::Measurement>();
+    auto spec = make_shared<vector<float>>( vector<float>{0.0f, 1.0f, 5.0f, 2.0f} );
+    foreground->set_gamma_counts( spec, live_time/PhysicalUnits::second,
+                                  live_time/PhysicalUnits::second );
+
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+    options.multiple_nucs_contribute_to_peaks = false;
+    options.attenuate_for_air = false;
+    options.account_for_decay_during_meas = false;
+    options.multithread_self_atten = true;
+    options.photopeak_cluster_sigma = 1.25;
+    options.background_peak_subtract = false;
+    options.same_age_isotopes = false;
+    options.account_for_drf_uncert = use_uncert;
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input;
+    input.config.distance = distance;
+    input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+    input.config.shieldings = {};
+    input.config.sources = { src };
+    input.config.options = options;
+    input.detector = drf;
+    input.foreground = foreground;
+    input.background = nullptr;
+    input.foreground_peaks = {
+      make_test_peak( co60, 1173.228, 1.0, 1.0E5 ),
+      make_test_peak( co60, 1332.492, 1.0, 1.0E5 )
+    };
+    input.background_peaks = nullptr;
+    return input;
+  };
+
+  // Set the peak areas to the exact forward-model expectation, so the fit
+  //  minimum is at the true activity with ~zero residuals.
+  struct FitOut { double act = 0.0, act_uncert = 0.0; double sum_counts = 0.0; };
+  auto run_fit = [&]( const shared_ptr<DetectorPeakResponse> &drf, const bool use_uncert ) -> FitOut
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+                                                  = make_input( drf, use_uncert );
+    input.foreground_peaks = peaks_with_model_expected_areas( input );
+
+    FitOut out;
+    for( const shared_ptr<const PeakDef> &p : input.foreground_peaks )
+      out.sum_counts += p->peakArea();
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+          fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+
+    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+    *inputPrams = fcn_pars.second;
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    auto progress_fcn = [](){};
+    auto finished_fcn = [](){};
+    ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress,
+                                       progress_fcn, results, finished_fcn );
+
+    BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), 1 );
+    out.act = results->fit_src_info[0].activity;
+    BOOST_REQUIRE( results->fit_src_info[0].activityUncertainty.has_value() );
+    out.act_uncert = *results->fit_src_info[0].activityUncertainty;
+    return out;
+  };
+
+  const FitOut base = run_fit( make_drf(false), false );  //no uncert info at all
+  const FitOut with = run_fit( make_drf(true), true );    //uncert + option on
+  const FitOut off = run_fit( make_drf(true), false );    //uncert present, option off
+
+  // All three land on the true activity.
+  BOOST_CHECK_LT( fabs(base.act - true_activity), 1.0E-3*true_activity );
+  BOOST_CHECK_LT( fabs(with.act - base.act), 1.0E-4*base.act );
+
+  // Option off => identical to a DRF with no uncertainty info.
+  BOOST_CHECK_EQUAL( off.act, base.act );
+  BOOST_CHECK_EQUAL( off.act_uncert, base.act_uncert );
+
+  // Statistics-only relative uncertainty ~ 1/sqrt(total counts).
+  const double rel_stat = 1.0 / sqrt( base.sum_counts );
+  BOOST_CHECK_MESSAGE( fabs( (base.act_uncert/base.act) - rel_stat ) < 0.15*rel_stat,
+        "stat-only rel uncert " << base.act_uncert/base.act
+        << " vs expected " << rel_stat );
+
+  // GLS: fully-correlated efficiency error adds ~1:1, i.e.
+  //   rel_uncert = sqrt( rel_stat^2 + frac_eff_uncert^2 )  (NOT s/sqrt(2))
+  const double rel_expected = sqrt( rel_stat*rel_stat + frac_eff_uncert*frac_eff_uncert );
+  BOOST_CHECK_MESSAGE( fabs( (with.act_uncert/with.act) - rel_expected ) < 0.15*rel_expected,
+        "GLS rel uncert " << with.act_uncert/with.act
+        << " vs expected " << rel_expected
+        << " (stat-only would be " << rel_stat
+        << "; naive diagonal would be ~" << rel_expected/sqrt(2.0) << ")" );
+}//BOOST_AUTO_TEST_CASE( DrfUncertaintyInActivityFit )
+
+
+/** Requesting cascade-summing correction with a DRF lacking total-efficiency
+ info must throw at chi2-function creation (the batch/API contract).
+ */
+BOOST_AUTO_TEST_CASE( CascadeSummingRequiresTotalEff )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const co60 = db->nuclide( "Co60" );
+  BOOST_REQUIRE( co60 );
+
+  const double distance = 25.0*PhysicalUnits::cm;
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  drf->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                0, 3000*PhysicalUnits::keV,
+                                DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+  BOOST_REQUIRE( !drf->hasAnyTotalEfficiencyInfo() );
+
+  ShieldingSourceFitCalc::SourceFitDef src;
+  src.nuclide = co60;
+  src.activity = 1.0*PhysicalUnits::microCi;
+  src.fitActivity = true;
+  src.age = 1.0*PhysicalUnits::year;
+  src.fitAge = false;
+  src.ageDefiningNuc = nullptr;
+  src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( vector<float>{0.0f, 1.0f} );
+  foreground->set_gamma_counts( spec, 600.0f, 600.0f );
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+  options.account_for_drf_uncert = false;
+  options.correct_for_cascade_summing = true;
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input;
+  input.config.distance = distance;
+  input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  input.config.shieldings = {};
+  input.config.sources = { src };
+  input.config.options = options;
+  input.detector = drf;
+  input.foreground = foreground;
+  input.background = nullptr;
+  input.foreground_peaks = { make_test_peak( co60, 1173.228, 1.0, 1.0E5 ) };
+  input.background_peaks = nullptr;
+
+  BOOST_CHECK_EXCEPTION(
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input ),
+      std::runtime_error,
+      []( const std::runtime_error &e ){
+        return (string(e.what()).find("total-efficiency") != string::npos);
+      } );
+}//BOOST_AUTO_TEST_CASE( CascadeSummingRequiresTotalEff )
+
+
+/** Hand-checkable cascade-correction arithmetic through CascadeSummingCalc:
+ Co-60 with flat absolute efficiencies (eps_fep = 0.02, eps_tot = 0.10):
+   C_out(1173) = 1 - p(1332 emitted | 1173 emitted) * eps_tot ~= 1 - 0.9998*0.10
+ (and symmetrically for 1332), to well within the x-ray/annihilation noise.
+ */
+BOOST_AUTO_TEST_CASE( CascadeCorrectionHandCheck )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const co60 = db->nuclide( "Co60" );
+  BOOST_REQUIRE( co60 );
+
+  // A DRF with a (flat) total-efficiency curve, so construction validates.
+  auto drf = make_shared<DetectorPeakResponse>();
+  drf->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, 25.0*PhysicalUnits::cm,
+                                5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                0, 3000*PhysicalUnits::keV,
+                                DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+  {
+    auto tot_curve = make_shared<DetectorEfficiencyCurve>();
+    tot_curve->setFromFormula( "0.25", PhysicalUnits::keV );
+    drf->setTotalEfficiencyCurve( tot_curve );
+  }
+  BOOST_REQUIRE( drf->hasAnyTotalEfficiencyInfo() );
+
+  const vector<pair<const SandiaDecay::Nuclide *,double>> nuc_ages{
+                                            { co60, 1.0*PhysicalUnits::year } };
+  const vector<pair<double,double>> peak_widths{ {1173.228, 1.0}, {1332.492, 1.0} };
+
+  const GammaInteractionCalc::CascadeSummingCalc calc( nuc_ages, peak_widths,
+              1.25, drf, 0.0, false /*no shields*/,
+              InterSpec::staticDataDirectory() );
+
+  const double flat_fep = 0.02, flat_tot = 0.10;
+  const std::function<double(double)> fep_f = [flat_fep]( double ){ return flat_fep; };
+  const std::function<double(double)> tot_f = [flat_tot]( double ){ return flat_tot; };
+
+  const vector<ceelo::AnalyticPeakResult> results
+              = calc.evaluate<double>( co60, 1.0*PhysicalUnits::year, fep_f, tot_f );
+  BOOST_REQUIRE_EQUAL( results.size(), 2 );
+
+  for( const ceelo::AnalyticPeakResult &r : results )
+  {
+    BOOST_REQUIRE( r.found );
+    // Expected: 1 - ~0.9998*0.10, with sub-percent room for the (small)
+    //  x-ray / annihilation channels of the real decay data.
+    BOOST_CHECK_MESSAGE( fabs( r.c_out - (1.0 - 0.9998*flat_tot) ) < 0.005,
+        "Co-60 " << r.energy_keV << " keV C_out = " << r.c_out
+        << " (expected ~" << (1.0 - 0.9998*flat_tot) << ")" );
+    BOOST_CHECK_LT( r.c_in, 0.005 );  //no pairs sum into 1173/1332
+  }//for( results )
+}//BOOST_AUTO_TEST_CASE( CascadeCorrectionHandCheck )

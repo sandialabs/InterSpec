@@ -704,6 +704,12 @@ public:
    */
   bool hasTotalEfficiency() const;
 
+  /** Whether cascade-summing corrections can be computed with this DRF: an
+   explicit total-efficiency curve, OR an attached CeeLo MC response (whose
+   total-efficiency payload #totalEfficiencyEval dispatches to).
+   */
+  bool hasAnyTotalEfficiencyInfo() const;
+
   /** The (optional) total-efficiency curve; may be nullptr. */
   std::shared_ptr<const DetectorEfficiencyCurve> totalEfficiencyCurve() const;
 

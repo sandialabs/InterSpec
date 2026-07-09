@@ -28,6 +28,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <Wt/WContainerWidget.h>
 
@@ -46,7 +47,12 @@ namespace Wt
   class WProgressBar;
 }//namespace Wt
 
-namespace ceelo{ class DetectorResponse; }
+namespace ceelo
+{
+  class DetectorResponse;
+  struct GroundingPoint;
+  struct GeometryDescriptor;
+}//namespace ceelo
 
 /** Characterizes a detectors response by Monte-Carlo simulation (CeeLo):
  the user enters/edits the detector geometry, picks a characterization
@@ -93,6 +99,18 @@ public:
   void acceptResponse();
 
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &updatedDrf();
+
+  /** Grounding anchors from a DRF: raw measured points when present
+   (preferred), else the legacy efficiency curve sampled at a reference
+   distance (lower quality: curve lack-of-fit leaks into k(E)).
+   Returns whether the points are curve-derived through `curve_derived`.
+   Public/static so batch tools and the cascade-truth tests can ground a
+   generated response to an existing DRF the same way this widget does.
+   */
+  static std::vector<ceelo::GroundingPoint> groundingPointsForDrf(
+                            const std::shared_ptr<const DetectorPeakResponse> &drf,
+                            const ceelo::GeometryDescriptor &geom,
+                            bool &curve_derived );
 
 protected:
   void handleGeometryChanged();

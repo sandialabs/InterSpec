@@ -383,6 +383,9 @@ Sources:
         <th>Det. Eff</th>
         <th>Pred.</th>
         <th>&sigma; off</th>
+{% if ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
+        <th>DRF eff. uncert.</th>
+{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -405,6 +408,9 @@ Sources:
         <td>{{ printCompact(peak.DetectorEff,5) }}</td>
         <td>{{ printCompact(peak.PredictedCounts,5) }}</td>
         <td>{{ printFixed(peak.PredictedNumSigmaOff,3) }}</td>
+{% if ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
+        <td>{% if existsIn(peak,"DrfEffFracUncert") %}{{ peak.DrfEffFracUncertPercentStr }}%{% endif %}</td>
+{% endif %}
       </tr>
 ##endfor
 {% endif %}

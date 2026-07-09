@@ -206,6 +206,16 @@ add_test( NAME TShieldingDimLimit
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# Act/Shield-fit truth tests vs CeeLo FullRealization cascade MC (Detective-X
+# model grounded to the LANL curve).  Fixtures live in test_data/cascade_truth/
+# (committed); the test never runs MC unless invoked with `--regenerate`.
+add_executable( test_CascadeSummingFit test_CascadeSummingFit.cpp )
+target_link_libraries( test_CascadeSummingFit PRIVATE InterSpecLib )
+add_test( NAME TCascadeSummingFit
+  COMMAND $<TARGET_FILE:test_CascadeSummingFit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # CeeLo MC-parameterized detector-response validation: golden response XMLs +
 # fresh MC probe banks live in test_data/ceelo_drf/ (committed fixtures); the
 # test never runs Monte Carlo.
@@ -233,6 +243,10 @@ if( INTERSPEC_REGEN_CEELO_GOLDENS )
     COMMAND $<TARGET_FILE:make_golden_response> nai3x3 "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 60
     COMMAND $<TARGET_FILE:make_golden_response> hpge_coax "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 60
     COMMAND $<TARGET_FILE:make_golden_response> czt_box "${_ceelo_fixture_dir}" far-field 0.0015 90 1 200000000 25
+    # Detective-X-like coax HPGe (public specs), the Act/Shield cascade-truth
+    #  detector; grounded to the ORTEC Detective-X_LANL_100cm curve by
+    #  test_CascadeSummingFit's --regenerate mode (see test_data/cascade_truth/).
+    COMMAND $<TARGET_FILE:make_golden_response> detective_x "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 60
     COMMENT "Regenerating CeeLo golden response fixtures (real MC; ~hours at high stats)"
     VERBATIM
   )

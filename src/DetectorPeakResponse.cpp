@@ -856,6 +856,14 @@ bool DetectorPeakResponse::hasTotalEfficiency() const
 }//hasTotalEfficiency()
 
 
+bool DetectorPeakResponse::hasAnyTotalEfficiencyInfo() const
+{
+  // A CeeLo MC response always carries a total-efficiency payload (see
+  //  #totalEfficiencyEval, which dispatches to it unconditionally).
+  return ( !!m_totalEfficiency || !!m_ceeloResponse );
+}//hasAnyTotalEfficiencyInfo()
+
+
 shared_ptr<const DetectorEfficiencyCurve> DetectorPeakResponse::totalEfficiencyCurve() const
 {
   return m_totalEfficiency;

@@ -65,18 +65,11 @@ using namespace Wt;
 using namespace std;
 
 
-namespace
-{
-  /** Grounding anchors from the seed DRF: raw measured points when present
-   (preferred), else the legacy efficiency curve sampled at a reference
-   distance (lower quality: curve lack-of-fit leaks into k(E)).
-   Returns whether the points are curve-derived through `curve_derived`.
-   */
-  vector<ceelo::GroundingPoint> grounding_points_for_drf(
+vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
                             const shared_ptr<const DetectorPeakResponse> &drf,
                             const ceelo::GeometryDescriptor &geom,
                             bool &curve_derived )
-  {
+{
     vector<ceelo::GroundingPoint> answer;
     curve_derived = false;
 
@@ -170,8 +163,7 @@ namespace
     }//for( size_t i = 0; i < energies.size(); ++i )
 
     return answer;
-  }//grounding_points_for_drf(...)
-}//namespace
+}//groundingPointsForDrf(...)
 
 
 MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
@@ -430,7 +422,7 @@ void MakeMcResponseForDrf::startGeneration()
   //  widget tree crosses into the worker thread.
   bool curve_derived = false;
   const vector<ceelo::GroundingPoint> ground_pts
-                      = grounding_points_for_drf( m_seedDrf, gd, curve_derived );
+                      = groundingPointsForDrf( m_seedDrf, gd, curve_derived );
 
   const string sessionId = wApp->sessionId();
   const string widgetId = id();

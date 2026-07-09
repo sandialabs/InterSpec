@@ -62,6 +62,8 @@ namespace SpecUtils
 namespace GammaInteractionCalc
 {
 
+class CascadeSummingCalc;
+
 /** Maximum areal density allowed for computations, in units of g/cm2 -
  
  Not in units of PhysicalUnits; e.g., you need to multiple by PhysicalUnits::cm2 / PhysicalUnits::g before using for computation..
@@ -531,6 +533,25 @@ struct PeakDetail
   double observedOverExpected, observedOverExpectedUncert;
   //float modelInto4Pi, modelInto4PiCps;
   double detSolidAngle, detIntrinsicEff, detEff;
+
+  /** Fractional (1-sigma) detector-efficiency uncertainty at this peaks energy,
+   from the DRFs uncertainty info; 0 when the DRF has none or the
+   `account_for_drf_uncert` option is off.  When non-zero, #observedUncert and
+   #numSigmaOff include this component (added in quadrature as
+   expectedCounts*drfEffFracUncert), matching the GLS-whitened fit.
+   */
+  double drfEffFracUncert = 0.0;
+
+  /** True-coincidence (cascade) summing correction applied to this peaks
+   expected counts (`correct_for_cascade_summing` option).  cascadeNetMult is
+   the emission-weighted net multiplier over the peaks source nuclides
+   (= C_out + C_in); the out/in decomposition is per the analytic engine.
+   All 1.0/0.0 when the correction was not applied.
+   */
+  bool cascadeCorrApplied = false;
+  double cascadeNetMult = 1.0;
+  double cascadeSummingOut = 1.0;
+  double cascadeSummingIn = 0.0;
   
   float backgroundCounts, backgroundCountsUncert;
   
@@ -1393,12 +1414,21 @@ public:
   //returns the chi computed from the expected verses observed counts; one
   //  chi2 for each peak energy.  Each returned entry is {energy,chi,scale,PeakColor,ScaleUncert},
   //  where scale is observed/expected
+  //
+  //  `eff_frac_uncerts`, when non-null, holds the per-peak fractional detector-
+  //  efficiency uncertainties (same inclusion rule and order as
+  //  #includedPeakEnergies, i.e. one entry per included peak); each peaks
+  //  denominator is then inflated to sqrt(stat^2 + (expected*frac)^2) so the
+  //  displayed chi agrees with the GLS-whitened (Ceres) fit that accounts for
+  //  the DRF uncertainty.  Pass null (or when the DRF has no uncertainty info)
+  //  for the historical statistics-only behavior.
   static std::vector<PeakResultPlotInfo> expected_observed_chis(
                               const std::vector<PeakDef> &peaks,
                               const std::vector<PeakDef> &backgroundPeaks,
                               const std::map<double,double> &energy_count_map,
                               std::vector<std::string> *info = 0,
-                              std::vector<GammaInteractionCalc::PeakDetail> *log_info = nullptr );
+                              std::vector<GammaInteractionCalc::PeakDetail> *log_info = nullptr,
+                              const std::vector<double> *eff_frac_uncerts = nullptr );
 protected:
   
   void zombieCallback( const boost::system::error_code &ec );
@@ -1445,6 +1475,53 @@ protected:
   const GeometryType m_geometry;
   
   ShieldingSourceFitCalc::ShieldingSourceFitOptions m_options;
+
+  /** Cascade (true-coincidence) summing corrections; non-null only when
+   `m_options.correct_for_cascade_summing` is set (see
+   ShieldingSourceChi2Fcn::create, which validates the DRF has the needed
+   total-efficiency info and throws otherwise).  Immutable after creation;
+   safe for the fit worker threads.
+   */
+  std::shared_ptr<const CascadeSummingCalc> m_cascadeCalc;
+
+public:
+  /** Per-material attenuation-coefficient functions (energy -> mu*chord) along
+   the center->detector ray at the given parameters, plus the air path length
+   and the stacks along-ray (effective-AN, areal-density) for the GADRAS
+   scatter augmentation.  Replicates the point-source propagation setup of
+   #expected_peak_counts_imp / #energy_chi_contributions without touching any
+   counts map - used to build the cascade-correction efficiency functors.
+   Empty (no attenuation, zero air) for fixed-geometry DRFs.
+   Defined in GammaInteractionCalc_imp.hpp.
+   */
+  template <typename T>
+  struct PointSrcAttenContext
+  {
+    std::vector<std::function<T(float)>> att_fcns;
+    T air_dist = T(0.0);        //length units
+    T total_ad_gcm2 = T(0.0);   //along-ray areal density, g/cm2
+    T eff_an = T(0.0);          //AD-weighted effective atomic number
+  };
+
+  template <typename T>
+  PointSrcAttenContext<T> pointSourceAttenContext( const std::vector<T> &params ) const;
+
+  /** Multiplies each entry of a single nuclides cluster map (keyed exactly by
+   the #observedPeakEnergyWidths energies) by that nuclides cascade-summing
+   net correction at the fit geometry.  No-op when #m_cascadeCalc is null.
+   When `log_info`/`info` are provided (the logging double path), the per-peak
+   cascade fields / log lines are also filled.
+   Defined in GammaInteractionCalc_imp.hpp.
+   */
+  template <typename T>
+  void applyCascadeToClusterMap( std::map<double,T> &cluster_map,
+                                 const SandiaDecay::Nuclide *nuclide,
+                                 const T &age,
+                                 const PointSrcAttenContext<T> &atten_ctx,
+                                 std::vector<std::string> *info,
+                                 std::vector<GammaInteractionCalc::PeakDetail> *log_info ) const;
+
+protected:
   
   /** The real-time of the measurement; only used if decay during measurement is being accounted for. */
   double m_realTime;

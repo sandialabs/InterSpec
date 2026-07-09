@@ -1878,6 +1878,11 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
 
+  name = "CorrectForCascadeSumming";
+  value = correct_for_cascade_summing ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+
   name = "PhotopeakClusterSigma";
   char buffer[64] = { '\0' };
   snprintf( buffer, sizeof(buffer), "%.9g", photopeak_cluster_sigma );
@@ -1936,6 +1941,10 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
   if( node )
     account_for_drf_uncert = boolval( node );  //absent in older XML -> keeps the default (true)
 
+  node = XML_FIRST_NODE( parent_node, "CorrectForCascadeSumming" );
+  if( node )
+    correct_for_cascade_summing = boolval( node );  //absent in older XML -> keeps the default (false)
+
   node = XML_FIRST_NODE( parent_node, "PhotopeakClusterSigma" );
   if( node )
   {
@@ -1976,6 +1985,9 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
 
   if( lhs.account_for_drf_uncert != rhs.account_for_drf_uncert )
     throw runtime_error( "ShieldingSourceFitOptions LHS account_for_drf_uncert != RHS account_for_drf_uncert" );
+
+  if( lhs.correct_for_cascade_summing != rhs.correct_for_cascade_summing )
+    throw runtime_error( "ShieldingSourceFitOptions LHS correct_for_cascade_summing != RHS correct_for_cascade_summing" );
 }//void equalEnough( const ShieldingSourceFitOptions &lhs, const ShieldingSourceFitOptions &rhs )
 #endif
   

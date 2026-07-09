@@ -56,6 +56,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DetectorGeometryInput.h"
 #include "InterSpec/ShieldMaterialSuggestion.h"
 
@@ -91,42 +92,7 @@ namespace
   }//distance_cm(...)
 
 
-  /** Converts an InterSpec MaterialDB material to a self-contained CeeLo
-   material spec (per-element mass fractions; nuclide fractions folded into
-   their element).  Throws for elements CeeLo has no data for (Z > 92).
-   */
-  ceelo::MaterialSpec to_ceelo_material( const Material &mat )
-  {
-    ceelo::MaterialSpec spec;
-    spec.name = mat.name;
-    spec.density_g_per_cm3 = mat.density * PhysicalUnits::cm3 / PhysicalUnits::g;
 
-    map<int,double> frac_by_z;
-    for( const Material::ElementFractionPair &efp : mat.elements )
-      frac_by_z[efp.first->atomicNumber] += efp.second;
-    for( const Material::NuclideFractionPair &nfp : mat.nuclides )
-      frac_by_z[nfp.first->atomicNumber] += nfp.second;
-
-    double sum = 0.0;
-    for( const auto &zf : frac_by_z )
-      sum += zf.second;
-    if( sum <= 0.0 )
-      throw runtime_error( "Material '" + mat.name + "' has no composition." );
-
-    for( const auto &zf : frac_by_z )
-    {
-      if( (zf.first < 1) || (zf.first > 92) )
-        throw runtime_error( "Material '" + mat.name + "' contains an element"
-                             " (Z=" + std::to_string(zf.first) + ") the Monte"
-                             " Carlo has no cross-section data for." );
-      ceelo::MaterialComponent c;
-      c.Z = static_cast<uint8_t>( zf.first );
-      c.mass_fraction = zf.second / sum;
-      spec.composition.push_back( c );
-    }
-
-    return spec;
-  }//to_ceelo_material(...)
 
 
   /** The crystal-material combo entries, mapped to CeeLo built-ins. */
@@ -550,7 +516,7 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
 
     ceelo::LayerSpec spec;
     spec.material_index = static_cast<int>( gd.materials.size() );
-    gd.materials.push_back( to_ceelo_material(*mat) );
+    gd.materials.push_back( CeeLoUtils::to_ceelo_material(*mat) );
     spec.front_thickness_cm = front;
     spec.side_thickness_cm = side;
     spec.z_start_cm = 0.0;
@@ -570,7 +536,7 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
 
     ceelo::CollimatorSpec spec;
     spec.material_index = static_cast<int>( gd.materials.size() );
-    gd.materials.push_back( to_ceelo_material(*mat) );
+    gd.materials.push_back( CeeLoUtils::to_ceelo_material(*mat) );
     spec.side_thickness_cm = thickness;
     spec.z_start_cm = -extension;
     spec.z_end_cm = crystal_len;

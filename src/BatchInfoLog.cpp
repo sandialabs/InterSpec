@@ -738,6 +738,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     fit_options["PhotopeakClusterSigma"]    = options.photopeak_cluster_sigma;
     fit_options["BackgroundPeakSubtract"]   = options.background_peak_subtract;
     fit_options["ElementNuclidesSameAge"]   = options.same_age_isotopes;
+    fit_options["AccountForDrfUncert"]      = options.account_for_drf_uncert;
   }//void add_act_shield_fit_options_to_json(...)
   
   
@@ -797,6 +798,16 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     peak_json["DetectorSolidAngleFraction"] = peak.detSolidAngle;
     peak_json["DetectorIntrinsicEff"] = peak.detIntrinsicEff;
     peak_json["DetectorEff"] = peak.detEff;
+
+    // Fractional 1-sigma DRF efficiency uncertainty at this energy; present
+    //  only when the `account_for_drf_uncert` option was on and the DRF has
+    //  uncertainty info (SignalCountsUncert then includes this component).
+    if( peak.drfEffFracUncert > 0.0 )
+    {
+      peak_json["DrfEffFracUncert"] = peak.drfEffFracUncert;
+      peak_json["DrfEffFracUncertPercentStr"]
+                     = SpecUtils::printCompact( 100.0*peak.drfEffFracUncert, 3 );
+    }
   }//add_basic_peak_info( const PeakDetail &peak, nlohmann::basic_json<> &peak_json )
    
   

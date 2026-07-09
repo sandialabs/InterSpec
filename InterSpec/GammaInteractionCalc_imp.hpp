@@ -71,6 +71,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/MassAttenuationTool_imp.hpp"
 
 namespace ceres
@@ -3699,6 +3700,32 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
   EnergyCountMapT energy_count_map;
   const std::vector<std::pair<double,double>> energie_widths = observedPeakEnergyWidths( m_peaks );
 
+  // Cascade-summing corrections: each point-source nuclide is clustered into
+  //  its own local map, multiplied by its per-peak net summing factor at the
+  //  fit geometry (parameter/Jet-dependent through the shield chords), then
+  //  merged.  With the option off, the shared map is filled exactly as before.
+  const PointSrcAttenContext<T> cascade_atten_ctx = m_cascadeCalc
+                          ? pointSourceAttenContext( params ) : PointSrcAttenContext<T>{};
+
+  auto cluster_one_nuclide = [&]( const SandiaDecay::Nuclide *nuclide, const T &act,
+                                  const T &thisage, const double energyToCluster ){
+    if( !m_cascadeCalc )
+    {
+      cluster_peak_activities_imp( energy_count_map, energie_widths, mixturecache[nuclide],
+                                   act, thisage, m_options.photopeak_cluster_sigma, energyToCluster,
+                                   m_options.account_for_decay_during_meas, m_realTime );
+      return;
+    }
+
+    EnergyCountMapT nuc_map;
+    cluster_peak_activities_imp( nuc_map, energie_widths, mixturecache[nuclide],
+                                 act, thisage, m_options.photopeak_cluster_sigma, energyToCluster,
+                                 m_options.account_for_decay_during_meas, m_realTime );
+    applyCascadeToClusterMap( nuc_map, nuclide, thisage, cascade_atten_ctx, nullptr, nullptr );
+    for( const typename EnergyCountMapT::value_type &ec : nuc_map )
+      energy_count_map[ec.first] += ec.second;
+  };//cluster_one_nuclide
+
   // 1) Un-attenuated contributions of the point sources
   if( m_options.multiple_nucs_contribute_to_peaks )
   {
@@ -3713,9 +3740,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       if( mixturecache.find(nuclide) == mixturecache.end() )
         mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
 
-      cluster_peak_activities_imp( energy_count_map, energie_widths, mixturecache[nuclide],
-                                   act, thisage, m_options.photopeak_cluster_sigma, -1.0,
-                                   m_options.account_for_decay_during_meas, m_realTime );
+      cluster_one_nuclide( nuclide, act, thisage, -1.0 );
     }//for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
   }else
   {
@@ -3736,9 +3761,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
         mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
 
       const float energy = peak.gammaParticleEnergy();
-      cluster_peak_activities_imp( energy_count_map, energie_widths, mixturecache[nuclide],
-                                   act, thisage, m_options.photopeak_cluster_sigma, energy,
-                                   m_options.account_for_decay_during_meas, m_realTime );
+      cluster_one_nuclide( nuclide, act, thisage, energy );
     }//for( const PeakDef &peak : m_peaks )
   }//if( m_options.multiple_nucs_contribute_to_peaks ) / else
 
@@ -3847,15 +3870,28 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
     }
   }//if( m_options.attenuate_for_air )
 
-  // 4) Detector response (at the true line-of-sight distance)
+  // 4) Detector response (at the true line-of-sight distance).  With a
+  //    Monte-Carlo-parameterized (CeeLo) response attached, use the near-field/
+  //    off-axis-aware evaluation; else the legacy finite-disk x intrinsic form.
   if( m_detector && m_detector->isValid() )
   {
     const bool fixed_geom = m_detector->isFixedGeometry();
+    const bool mc_eval = (!fixed_geom && !!m_detector->ceeloResponse());
+    const double offset_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
+                                       + m_sourceOffsets[1]*m_sourceOffsets[1] );
+    const double eval_theta = (offset_r > 0.0) ? std::atan2(offset_r, m_distance) : 0.0;
+    const double eval_phi = (offset_r > 0.0) ? std::atan2(m_sourceOffsets[1], m_sourceOffsets[0]) : 0.0;
+
     for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
     {
-      const double eff = fixed_geom
-                  ? m_detector->intrinsicEfficiency( static_cast<float>(energy_count.first) )
-                  : m_detector->efficiency( static_cast<float>(energy_count.first), true_dist );
+      double eff;
+      if( fixed_geom )
+        eff = m_detector->intrinsicEfficiency( static_cast<float>(energy_count.first) );
+      else if( mc_eval )
+        eff = m_detector->fepEfficiencyEval( static_cast<float>(energy_count.first),
+                                             eval_theta, eval_phi, true_dist ).value;
+      else
+        eff = m_detector->efficiency( static_cast<float>(energy_count.first), true_dist );
       energy_count.second *= eff;
     }
   }else
@@ -4145,6 +4181,216 @@ inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffect
 
   return answer;
 }//computeEffectiveShielding(...)
+
+
+template <typename T>
+ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
+      ShieldingSourceChi2Fcn::pointSourceAttenContext( const std::vector<T> &params ) const
+{
+  // Replicates the point-source propagation setup of expected_peak_counts_imp
+  //  steps 2-3 (per-layer chords along the center->detector ray, then air),
+  //  WITHOUT applying anything to a counts map - so the cascade-correction
+  //  efficiency functors see exactly the transmission the fit uses.  Also
+  //  accumulates the along-ray (effective AN, areal density) the GADRAS
+  //  scatter-augmentation table interpolates on.
+  PointSrcAttenContext<T> ctx;
+
+  if( m_detector && m_detector->isFixedGeometry() )
+    return ctx;  //shields/air are baked into a fixed-geometry response
+
+  const size_t nMaterials = m_initial_shieldings.size();
+
+  const double det_radius_pt = (m_detector ? 0.5*m_detector->detectorDiameter() : 0.5*PhysicalUnits::cm);
+  const double det_setback_pt = (m_detector ? m_detector->detectorSetback() : 0.0);
+  const DetectorGeomT<T> det_geom = detector_geom_from_config( m_geometry, T(m_distance),
+                                            det_radius_pt, det_setback_pt,
+                                            m_sourceOffsets[0], m_sourceOffsets[1] );
+
+  const double true_dist = trueSourceToDetectorDistance();
+
+  std::array<T,3> cumulative_dims = { T(0.0), T(0.0), T(0.0) };
+  T prev_exit_dist(0.0);
+  T an_weighted_ad(0.0);
+
+  for( size_t materialN = 0; materialN < nMaterials; ++materialN )
+  {
+    const ShieldingSourceFitCalc::ShieldingInfo &shielding = m_initial_shieldings[materialN];
+    const std::shared_ptr<const Material> &material = shielding.m_material;
+
+    if( !material )
+    {
+      T atomic_number = atomicNumber_imp( materialN, params );
+      T areal_density = arealDensity_imp( materialN, params );
+
+      if( scalar_of(atomic_number) < MassAttenuation::sm_min_xs_atomic_number )
+        atomic_number = T( static_cast<double>(MassAttenuation::sm_min_xs_atomic_number) );
+      if( scalar_of(atomic_number) > MassAttenuation::sm_max_xs_atomic_number )
+        atomic_number = T( static_cast<double>(MassAttenuation::sm_max_xs_atomic_number) );
+
+      const double ad_in_gcm2 = scalar_of(areal_density) * PhysicalUnits::cm2 / PhysicalUnits::g;
+      if( ad_in_gcm2 < 0.0 )
+        areal_density = T(0.0);
+      if( ad_in_gcm2 > sm_max_areal_density_g_cm2 )
+        areal_density = T( sm_max_areal_density_g_cm2 * PhysicalUnits::g / PhysicalUnits::cm2 );
+
+      ctx.att_fcns.push_back( [atomic_number, areal_density]( float energy ) -> T {
+        return transmission_coefficient_generic_imp( atomic_number, areal_density, energy );
+      } );
+
+      const T ad_gcm2 = areal_density * (PhysicalUnits::cm2 / PhysicalUnits::g);
+      ctx.total_ad_gcm2 += ad_gcm2;
+      an_weighted_ad += atomic_number * ad_gcm2;
+    }else
+    {
+      switch( m_geometry )
+      {
+        case GeometryType::Spherical:
+          cumulative_dims[0] += sphericalThickness_imp( materialN, params );
+          break;
+
+        case GeometryType::CylinderEndOn:
+        case GeometryType::CylinderSideOn:
+          cumulative_dims[0] += cylindricalRadiusThickness_imp( materialN, params );
+          cumulative_dims[1] += cylindricalLengthThickness_imp( materialN, params );
+          break;
+
+        case GeometryType::Rectangular:
+          cumulative_dims[0] += rectangularWidthThickness_imp( materialN, params );
+          cumulative_dims[1] += rectangularHeightThickness_imp( materialN, params );
+          cumulative_dims[2] += rectangularDepthThickness_imp( materialN, params );
+          break;
+
+        case GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( m_geometry )
+
+      T exit_dist = center_ray_exit_distance( m_geometry, cumulative_dims, det_geom );
+      if( scalar_of(exit_dist) > true_dist )
+        exit_dist = T(true_dist);
+      const T chord = exit_dist - prev_exit_dist;
+      prev_exit_dist = exit_dist;
+
+      ctx.att_fcns.push_back( [mat = material.get(), chord]( float energy ) -> T {
+        return chord * transmition_length_coefficient( mat, energy );
+      } );
+
+      const T ad_gcm2 = chord * ( static_cast<double>(material->density)
+                                  * PhysicalUnits::cm2 / PhysicalUnits::g );
+      ctx.total_ad_gcm2 += ad_gcm2;
+      an_weighted_ad += material_mass_weighted_atomic_number( *material ) * ad_gcm2;
+    }//if( generic material ) / else
+  }//for( size_t materialN = 0; materialN < nMaterials; ++materialN )
+
+  if( scalar_of(ctx.total_ad_gcm2) > 0.0 )
+    ctx.eff_an = an_weighted_ad / ctx.total_ad_gcm2;
+
+  if( m_options.attenuate_for_air )
+  {
+    ctx.air_dist = T(true_dist) - prev_exit_dist;
+    if( scalar_of(ctx.air_dist) < 0.0 )
+      ctx.air_dist = T(0.0);
+  }
+
+  return ctx;
+}//pointSourceAttenContext(...)
+
+
+template <typename T>
+void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &cluster_map,
+                                 const SandiaDecay::Nuclide *nuclide,
+                                 const T &age,
+                                 const PointSrcAttenContext<T> &atten_ctx,
+                                 std::vector<std::string> *info,
+                                 std::vector<GammaInteractionCalc::PeakDetail> *log_info ) const
+{
+  if( !m_cascadeCalc || !nuclide || cluster_map.empty() )
+    return;
+
+  const std::shared_ptr<const DetectorPeakResponse> &drf = m_detector;
+  if( !drf || !drf->isValid() )
+    return;
+
+  const double true_dist = trueSourceToDetectorDistance();
+  const double off_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
+                                  + m_sourceOffsets[1]*m_sourceOffsets[1] );
+  const double theta = (off_r > 0.0) ? std::atan2( off_r, m_distance ) : 0.0;
+  const double phi = (off_r > 0.0) ? std::atan2( m_sourceOffsets[1], m_sourceOffsets[0] ) : 0.0;
+
+  const bool do_air = (m_options.attenuate_for_air && (scalar_of(atten_ctx.air_dist) > 0.0));
+  const ShieldScatterAugment &scatter = m_cascadeCalc->scatterAugment();
+
+  // Absolute FEP efficiency at the fit geometry: shields x air x detector.
+  //  The parameter (Jet) dependence enters through the shield chords / AD.
+  const auto eps_fep_abs = std::function<T(double)>( [&]( const double energy ) -> T {
+    T att(0.0);
+    for( const std::function<T(float)> &f : atten_ctx.att_fcns )
+      att += f( static_cast<float>(energy) );
+    T result = exp( -att );
+    if( do_air )
+      result *= exp( -transmission_length_coefficient_air( static_cast<float>(energy) ) * atten_ctx.air_dist );
+    return result * CascadeSummingCalc::detectorFepEffAbs( drf, energy, theta, phi, true_dist );
+  } );
+
+  // Absolute total (any-deposit) efficiency: the shield-scatter continuum
+  //  keeps this higher than pure transmission -
+  //    eps_tot = eps_tot_bare * ( T_shield + A(E; AN, AD) ) * air
+  //  (see ShieldScatterAugment / the GADRAS benchmark recipe).
+  const auto eps_tot_abs = std::function<T(double)>( [&]( const double energy ) -> T {
+    T att(0.0);
+    for( const std::function<T(float)> &f : atten_ctx.att_fcns )
+      att += f( static_cast<float>(energy) );
+    T shield_part = exp( -att );
+    if( scatter.valid() )
+      shield_part += scatter.evaluate( energy, atten_ctx.eff_an, atten_ctx.total_ad_gcm2 );
+    if( do_air )
+      shield_part *= exp( -transmission_length_coefficient_air( static_cast<float>(energy) ) * atten_ctx.air_dist );
+    return shield_part * CascadeSummingCalc::detectorTotEffAbs( drf, energy, theta, phi, true_dist );
+  } );
+
+  const std::vector<ceelo::AnalyticPeakResultT<T>> corrections
+        = m_cascadeCalc->evaluate<T>( nuclide, scalar_of(age), eps_fep_abs, eps_tot_abs );
+
+  for( const ceelo::AnalyticPeakResultT<T> &corr : corrections )
+  {
+    if( !corr.found )
+      continue;
+
+    const auto pos = cluster_map.find( corr.energy_keV );
+    if( pos == std::end(cluster_map) )
+      continue;
+
+    pos->second *= corr.c_net;
+
+    if( info )
+    {
+      char buffer[256];
+      snprintf( buffer, sizeof(buffer),
+                "\tCascade summing multiplier %.4f (out %.4f, in +%.4f) for"
+                " %.1f keV [%s]",
+                scalar_of(corr.c_net), scalar_of(corr.c_out),
+                scalar_of(corr.c_in), corr.energy_keV,
+                nuclide->symbol.c_str() );
+      info->push_back( buffer );
+    }//if( info )
+
+    if( log_info )
+    {
+      for( GammaInteractionCalc::PeakDetail &log_peak : *log_info )
+      {
+        if( std::fabs(log_peak.decayParticleEnergy - corr.energy_keV) > 0.01 )
+          continue;
+        // Emission-weighted merge if several source nuclides feed this peak
+        //  (each nuclide's factor applies to its own contribution; for the
+        //  log, report the product of applied multipliers).
+        log_peak.cascadeCorrApplied = true;
+        log_peak.cascadeNetMult *= scalar_of( corr.c_net );
+        log_peak.cascadeSummingOut *= scalar_of( corr.c_out );
+        log_peak.cascadeSummingIn += scalar_of( corr.c_in );
+      }
+    }//if( log_info )
+  }//for( corrections )
+}//applyCascadeToClusterMap(...)
 
 }//namespace GammaInteractionCalc
 

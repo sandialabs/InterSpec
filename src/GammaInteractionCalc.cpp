@@ -70,7 +70,9 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/Integrate.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -2311,6 +2313,52 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
       && detector && detector->isFixedGeometry() )
     throw runtime_error( "Off-axis source offsets are not allowed for fixed-geometry"
                          " detector response functions." );
+
+  if( options.correct_for_cascade_summing )
+  {
+    // The API contract: requesting the correction without the needed DRF info
+    //  is an error (the GUI checks first and prompts the user instead).
+    if( !CascadeSummingCalc::drfHasNeededInfo( detector ) )
+      throw runtime_error( "Cascade summing correction requires the detector"
+          " response to have total-efficiency information; add it via the"
+          " detector editor (Detector Response Select -> Modify), e.g. by"
+          " attaching a Monte-Carlo characterization." );
+
+    vector<pair<const SandiaDecay::Nuclide *,double>> nuc_ages;
+    for( const ShieldingSourceFitCalc::SourceFitDef &src : src_definitions )
+    {
+      if( src.nuclide )
+        nuc_ages.emplace_back( src.nuclide, src.age );
+    }
+
+    // The shield stack's AD-weighted hydrogen mass fraction, at the starting
+    //  dimensions (a fixed, second-order input of the scatter table).
+    double h_mass = 0.0, total_mass = 0.0;
+    bool shields_present = false;
+    for( const ShieldingSourceFitCalc::ShieldingInfo &shield : shieldings )
+    {
+      if( shield.m_isGenericMaterial )
+      {
+        const double ad = shield.m_dimensions[1] * PhysicalUnits::cm2 / PhysicalUnits::g;
+        shields_present = (shields_present || (ad > 0.0));
+        total_mass += std::max( 0.0, ad );
+      }else if( shield.m_material )
+      {
+        const double thick = shield.m_dimensions[0];
+        const double ad = shield.m_material->density * thick
+                          * PhysicalUnits::cm2 / PhysicalUnits::g;
+        shields_present = (shields_present || (ad > 0.0));
+        total_mass += std::max( 0.0, ad );
+        h_mass += std::max( 0.0, ad ) * material_hydrogen_mass_fraction( *shield.m_material );
+      }
+    }//for( shieldings )
+    const double shield_frac_h = (total_mass > 0.0) ? (h_mass / total_mass) : 0.0;
+
+    answer->m_cascadeCalc = make_shared<const CascadeSummingCalc>( nuc_ages,
+                    observedPeakEnergyWidths( peaks ), options.photopeak_cluster_sigma,
+                    detector, shield_frac_h, shields_present,
+                    InterSpec::staticDataDirectory() );
+  }//if( options.correct_for_cascade_summing )
 
 
   //I think num_fit_params will end up same as inputPrams.VariableParameters()
@@ -5194,8 +5242,11 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
                                            const std::vector<PeakDef> &backPeaks,
                                            const std::map<double,double> &energy_count_map,
                                            vector<string> *info,
-                                           vector<GammaInteractionCalc::PeakDetail> *log_info )
+                                           vector<GammaInteractionCalc::PeakDetail> *log_info,
+                                           const std::vector<double> *eff_frac_uncerts )
 {
+  size_t included_peak_index = 0;  //parallels #includedPeakEnergies ordering
+
   typedef map<double,double> EnergyCountMap;
 
   
@@ -5259,6 +5310,20 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
       observed_uncertainty = sqrt( observed_uncertainty*observed_uncertainty + backUncert2 );
     }
     
+    // Detector-efficiency uncertainty (see the header comment): inflate the
+    //  denominator so the displayed chi matches the GLS-whitened fit.
+    double eff_frac_uncert = 0.0;
+    if( eff_frac_uncerts && (included_peak_index < eff_frac_uncerts->size()) )
+      eff_frac_uncert = (*eff_frac_uncerts)[included_peak_index];
+    ++included_peak_index;
+    
+    if( eff_frac_uncert > 0.0 )
+    {
+      const double eff_uncert = expected_counts * eff_frac_uncert;
+      observed_uncertainty = sqrt( observed_uncertainty*observed_uncertainty
+                                   + eff_uncert*eff_uncert );
+    }
+    
     const double chi = (observed_counts - expected_counts) / observed_uncertainty;
     const double scale = observed_counts / expected_counts;
     const double scale_uncert = observed_uncertainty / expected_counts;
@@ -5287,6 +5352,9 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
       if( backCounts > 0.0 )
         msg << " (after correcting for " << backCounts << " +- "
             << sqrt(backUncert2) << " counts in background)";
+      if( eff_frac_uncert > 0.0 )
+        msg << " (uncert incl. " << 100.0*eff_frac_uncert
+            << "% detector-efficiency uncert)";
       msg << " giving (observed-expected)/uncert=" << chi;
       info->push_back( msg.str() );
     }//if( info )
@@ -5319,6 +5387,7 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
           log_peak.expectedCounts = expected_counts;
           log_peak.observedCounts = observed_counts;
           log_peak.observedUncert = observed_uncertainty;
+          log_peak.drfEffFracUncert = eff_frac_uncert;
           
           log_peak.numSigmaOff = chi;
           log_peak.observedOverExpected = scale;
@@ -5673,6 +5742,35 @@ vector<PeakResultPlotInfo>
   EnergyCountMap energy_count_map;
   const vector<pair<double,double> > energie_widths = observedPeakEnergyWidths( m_peaks );
   
+  // Cascade-summing: per-nuclide local cluster maps, corrected then merged
+  //  (see the templated path in expected_peak_counts_imp for the details).
+  const PointSrcAttenContext<double> cascade_atten_ctx = m_cascadeCalc
+                  ? pointSourceAttenContext<double>( x ) : PointSrcAttenContext<double>{};
+  
+  auto cluster_one_nuclide = [&]( const SandiaDecay::Nuclide *nuclide, const double act,
+                                  const double thisage, const double energyToCluster,
+                                  ShieldingSourceChi2Fcn::NucMixtureCache &mixcache ){
+    if( !m_cascadeCalc )
+    {
+      cluster_peak_activities( energy_count_map, energie_widths,
+                               mixcache[nuclide], act, thisage,
+                               m_options.photopeak_cluster_sigma, energyToCluster,
+                               m_options.account_for_decay_during_meas, m_realTime,
+                               info, log_info );
+      return;
+    }
+    
+    EnergyCountMap nuc_map;
+    cluster_peak_activities( nuc_map, energie_widths,
+                             mixcache[nuclide], act, thisage,
+                             m_options.photopeak_cluster_sigma, energyToCluster,
+                             m_options.account_for_decay_during_meas, m_realTime,
+                             info, log_info );
+    applyCascadeToClusterMap( nuc_map, nuclide, thisage, cascade_atten_ctx, info, log_info );
+    for( const EnergyCountMap::value_type &ec : nuc_map )
+      energy_count_map[ec.first] += ec.second;
+  };//cluster_one_nuclide
+  
   if( m_options.multiple_nucs_contribute_to_peaks )
   {
     //Get the number of source gammas from each nuclide
@@ -5696,11 +5794,7 @@ vector<PeakResultPlotInfo>
       if( mixturecache.find(nuclide) == mixturecache.end() )
         mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
       
-      cluster_peak_activities( energy_count_map, energie_widths,
-                               mixturecache[nuclide], act, thisage,
-                               m_options.photopeak_cluster_sigma, -1.0,
-                               m_options.account_for_decay_during_meas, m_realTime,
-                               info, log_info );
+      cluster_one_nuclide( nuclide, act, thisage, -1.0, mixturecache );
     }//for( const SandiaDecay::Nuclide *nuclide : m_nuclides )
   }else
   {
@@ -5721,11 +5815,7 @@ vector<PeakResultPlotInfo>
         mixturecache[nuclide].addNuclideByActivity( nuclide, sm_activityUnits );
       
       const float energy = peak.gammaParticleEnergy();
-      cluster_peak_activities( energy_count_map, energie_widths,
-                               mixturecache[nuclide], act, thisage,
-                               m_options.photopeak_cluster_sigma, energy,
-                               m_options.account_for_decay_during_meas, m_realTime,
-                               info, log_info );
+      cluster_one_nuclide( nuclide, act, thisage, energy, mixturecache );
     }//for( const PeakDef &peak : m_peaks )
   }//if( m_options.multiple_nucs_contribute_to_peaks )
 
@@ -5996,8 +6086,22 @@ vector<PeakResultPlotInfo>
 //           << m_detector->intrinsicEfficiency( energy_count.first ) << " and the "
 //           << " total efficiency is " << m_detector->efficiency( energy_count.first, m_distance ) << endl;
       
-      const double eff = fixed_geom ? m_detector->intrinsicEfficiency(energy_count.first)
-                                    : m_detector->efficiency( energy_count.first, trueDist );
+      double eff;
+      if( fixed_geom )
+        eff = m_detector->intrinsicEfficiency( energy_count.first );
+      else if( m_detector->ceeloResponse() )
+      {
+        // Monte-Carlo-parameterized response: near-field / off-axis aware.
+        const double off_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
+                                        + m_sourceOffsets[1]*m_sourceOffsets[1] );
+        const double eval_theta = (off_r > 0.0) ? std::atan2(off_r, m_distance) : 0.0;
+        const double eval_phi = (off_r > 0.0) ? std::atan2(m_sourceOffsets[1], m_sourceOffsets[0]) : 0.0;
+        eff = m_detector->fepEfficiencyEval( energy_count.first, eval_theta,
+                                             eval_phi, trueDist ).value;
+      }else
+      {
+        eff = m_detector->efficiency( energy_count.first, trueDist );
+      }
       
       if( info )
       {
@@ -6837,7 +6941,13 @@ vector<PeakResultPlotInfo>
   }//if( log_info )
   
   
-  return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map, info, log_info );
+  vector<double> eff_frac_uncerts;
+  if( m_options.account_for_drf_uncert )
+    eff_frac_uncerts = peakEffFracUncerts();
+  
+  return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map,
+                          info, log_info,
+                          eff_frac_uncerts.empty() ? nullptr : &eff_frac_uncerts );
 }//vector<PeakResultPlotInfo> energy_chi_contributions(...) const
 
   
