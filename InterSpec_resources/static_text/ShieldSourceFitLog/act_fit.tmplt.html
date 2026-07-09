@@ -386,6 +386,9 @@ Sources:
 {% if ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
         <th>DRF eff. uncert.</th>
 {% endif %}
+{% if ActShieldFitSetup.FitOptions.CorrectForCascadeSumming %}
+        <th title="True-coincidence (cascade) summing multiplier applied to the predicted counts (summing-out x1 + summing-in)">Cascade mult.</th>
+{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -410,6 +413,9 @@ Sources:
         <td>{{ printFixed(peak.PredictedNumSigmaOff,3) }}</td>
 {% if ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
         <td>{% if existsIn(peak,"DrfEffFracUncert") %}{{ peak.DrfEffFracUncertPercentStr }}%{% endif %}</td>
+{% endif %}
+{% if ActShieldFitSetup.FitOptions.CorrectForCascadeSumming %}
+        <td>{% if existsIn(peak,"CascadeCorrection") %}{{ peak.CascadeCorrection.NetMultStr }} (out {{ peak.CascadeCorrection.SummingOutStr }}, in +{{ peak.CascadeCorrection.SummingInStr }}){% endif %}</td>
 {% endif %}
       </tr>
 ##endfor

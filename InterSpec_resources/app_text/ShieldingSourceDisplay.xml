@@ -131,6 +131,20 @@
   <message id="ssd-tt-corr-for-decay">Corrects for decay and in-growth effects that happen during the time the measurement is being taken.  Resulting activities correspond to the start time of the measurement. May take take additional computation time to find solution.</message>
   <message id="ssd-cb-drf-uncert">Include detector-efficiency uncertainty</message>
   <message id="ssd-tt-drf-uncert">When the detector response carries efficiency uncertainties, fold them (including their correlation between nearby energies) into the fit and the reported activity/shielding uncertainties. A detector-wide efficiency error then shows up as a corresponding activity uncertainty rather than being averaged away across peaks. Uncheck to use only the peak counting-statistics uncertainties.</message>
+  <message id="ssd-cb-cascade-corr">Cascade summing corr.</message>
+  <message id="ssd-tt-cascade-corr">Correct expected peak counts for true-coincidence (cascade) summing:
+    gammas emitted in coincidence (e.g., Co-60, Eu-152, Ba-133 cascades) can sum in the detector,
+    suppressing (summing-out) or enhancing (summing-in) full-energy peaks for close-in geometries.
+    Requires the detector response to have total-efficiency information (e.g., from a Monte-Carlo
+    characterization); shielded sources use the GADRAS shield-scatter model, and volumetric sources
+    apply the correction per volume element inside the integration.</message>
+  <message id="ssd-tt-cascade-negligible">Predicted cascade-summing effect is negligible (less than ~0.3%) at this
+    distance, or the detector response lacks total-efficiency information.</message>
+  <message id="ssd-cascade-need-total-eff-title">Detector response needs more info</message>
+  <message id="ssd-cascade-need-total-eff-msg">The current detector response has no total-efficiency
+    information, which cascade-summing corrections require.  Open the detector editor and attach a
+    Monte-Carlo characterization (or a total-efficiency curve), then re-enable this option.</message>
+  <message id="ssd-cascade-open-drf-editor">Open detector editor</message>
   <message id="ssd-tt-geometry">Geometry to use for modeling "trace" sources, or self-attenuating sources.
     <br />
     <br />

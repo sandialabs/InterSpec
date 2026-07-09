@@ -739,6 +739,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     fit_options["BackgroundPeakSubtract"]   = options.background_peak_subtract;
     fit_options["ElementNuclidesSameAge"]   = options.same_age_isotopes;
     fit_options["AccountForDrfUncert"]      = options.account_for_drf_uncert;
+    fit_options["CorrectForCascadeSumming"] = options.correct_for_cascade_summing;
   }//void add_act_shield_fit_options_to_json(...)
   
   
@@ -808,6 +809,20 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       peak_json["DrfEffFracUncertPercentStr"]
                      = SpecUtils::printCompact( 100.0*peak.drfEffFracUncert, 3 );
     }
+
+    // True-coincidence (cascade) summing correction applied to the predicted
+    //  counts; present only when the `correct_for_cascade_summing` option was
+    //  on and this peaks nuclide has coincident emissions.
+    if( peak.cascadeCorrApplied )
+    {
+      auto &cascade = peak_json["CascadeCorrection"];
+      cascade["NetMult"] = peak.cascadeNetMult;
+      cascade["NetMultStr"] = SpecUtils::printCompact( peak.cascadeNetMult, 5 );
+      cascade["SummingOut"] = peak.cascadeSummingOut;
+      cascade["SummingOutStr"] = SpecUtils::printCompact( peak.cascadeSummingOut, 5 );
+      cascade["SummingIn"] = peak.cascadeSummingIn;
+      cascade["SummingInStr"] = SpecUtils::printCompact( peak.cascadeSummingIn, 5 );
+    }//if( peak.cascadeCorrApplied )
   }//add_basic_peak_info( const PeakDetail &peak, nlohmann::basic_json<> &peak_json )
    
   

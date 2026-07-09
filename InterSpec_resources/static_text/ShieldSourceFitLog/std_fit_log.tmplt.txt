@@ -56,7 +56,9 @@ Shieldings:
 Detector Efficiency Effects:
 {% if exists("PeaksUsedForActivityFitting") %}
 ## for peak in PeaksUsedForActivityFitting.Peaks
-    {{ peak.Energy }} keV photopeak reduced by {{ peak.DetectorSolidAngleFraction }} * {{ peak.DetectorIntrinsicEff }} = {{ peak.DetectorEff}} ((solid angle)*(det intrinsic eff)=eff)
+    {{ peak.Energy }} keV photopeak reduced by {{ peak.DetectorSolidAngleFraction }} * {{ peak.DetectorIntrinsicEff }} = {{ peak.DetectorEff}} ((solid angle)*(det intrinsic eff)=eff){% if existsIn(peak,"CascadeCorrection") %}
+    {{ peak.Energy }} keV cascade summing multiplier {{ peak.CascadeCorrection.NetMultStr }} (summing-out {{ peak.CascadeCorrection.SummingOutStr }}, summing-in +{{ peak.CascadeCorrection.SummingInStr }})
+{%- endif %}
 ##endfor
 {% endif %}
 

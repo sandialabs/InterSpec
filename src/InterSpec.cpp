@@ -120,6 +120,7 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/PeakInfoDisplay.h"
@@ -9053,6 +9054,44 @@ void InterSpec::deleteMcResponseWindow()
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close characterize-by-MC tool" );
   }//if( undo )
 }//void deleteMcResponseWindow()
+
+
+DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf )
+{
+  if( m_drfModifyWindow )
+  {
+    m_drfModifyWindow->show();
+    m_drfModifyWindow->centerWindowHeavyHanded();
+    return m_drfModifyWindow.get();
+  }//if( m_drfModifyWindow )
+
+  if( !drf )
+  {
+    const shared_ptr<SpecMeas> foreground = measurment( SpecUtils::SpectrumType::Foreground );
+    drf = foreground ? foreground->detector() : nullptr;
+  }
+
+  m_drfModifyWindow = AuxWindow::make<DrfModifyWindow>( this, drf );
+  m_drfModifyWindow->tool()->updatedDrf().connect( this,
+                          [this]( std::shared_ptr<DetectorPeakResponse> new_drf ){
+    if( new_drf )
+      detectorChanged().emit( new_drf );
+  } );
+  m_drfModifyWindow->tool()->updatedDrf().connect( m_drfModifyWindow.get(), &AuxWindow::hide );
+  m_drfModifyWindow->finished().connect( this, &InterSpec::deleteDrfModifyWindow );
+
+  return m_drfModifyWindow.get();
+}//DrfModifyWindow *showDrfModifyWindow(...)
+
+
+void InterSpec::deleteDrfModifyWindow()
+{
+  if( !m_drfModifyWindow )
+    return;
+
+  AuxWindow::deleteAuxWindow( m_drfModifyWindow.get() );
+  assert( !m_drfModifyWindow );
+}//void deleteDrfModifyWindow()
 
 
 #if( USE_DETECTION_LIMIT_TOOL )

@@ -109,6 +109,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -3320,6 +3321,15 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_accountForDrfUncert->checked().connect( this, &ShieldingSourceDisplay::accountForDrfUncertChanged );
   m_accountForDrfUncert->unChecked().connect( this, &ShieldingSourceDisplay::accountForDrfUncertChanged );
 
+  lineDiv = m_optionsDiv->addNew<WContainerWidget>();
+  lineDiv->addStyleClass( "FitOptionsRow" );
+  m_correctForCascade = lineDiv->addNew<WCheckBox>( WString::tr("ssd-cb-cascade-corr") );
+  m_correctForCascade->addStyleClass( "CbNoLineBreak" );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-cascade-corr"), showToolTips );
+  m_correctForCascade->setChecked( false );  //matches ShieldingSourceFitOptions default
+  m_correctForCascade->checked().connect( this, &ShieldingSourceDisplay::correctForCascadeChanged );
+  m_correctForCascade->unChecked().connect( this, &ShieldingSourceDisplay::correctForCascadeChanged );
+
 
   WContainerWidget *detectorDiv = new WContainerWidget();
   WGridLayout *detectorLayout = detectorDiv->setLayout( std::make_unique<WGridLayout>() );
@@ -3695,6 +3705,8 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
   options.background_peak_subtract = m_backgroundPeakSub->isChecked();
   options.same_age_isotopes = m_sameIsotopesAge->isChecked();
   options.account_for_drf_uncert = m_accountForDrfUncert->isChecked();
+  options.correct_for_cascade_summing = (m_correctForCascade->isChecked()
+                                         && m_correctForCascade->isEnabled());
 
   return options;
 }//ShieldingSourceFitOptions fitOptions() const
@@ -5759,6 +5771,86 @@ void ShieldingSourceDisplay::accountForDrfUncertChanged()
 }//void accountForDrfUncertChanged()
 
 
+void ShieldingSourceDisplay::correctForCascadeChanged()
+{
+  using GammaInteractionCalc::CascadeSummingCalc;
+
+  // Checking the option requires the DRF to carry total-efficiency info; if it
+  //  does not, un-check and point the user at the detector editor.
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  if( m_correctForCascade->isChecked() && !CascadeSummingCalc::drfHasNeededInfo(det) )
+  {
+    m_correctForCascade->setChecked( false );
+
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>(
+                              WString::tr("ssd-cascade-need-total-eff-title"),
+                              WString::tr("ssd-cascade-need-total-eff-msg") );
+    WPushButton *edit_btn = dialog->addButton( WString::tr("ssd-cascade-open-drf-editor") );
+    edit_btn->clicked().connect( std::bind( [](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( viewer )
+        viewer->showDrfModifyWindow( nullptr );
+    } ) );
+    dialog->addButton( WString::tr("Cancel") );
+
+    return;
+  }//if( checked, but DRF doesnt have the info )
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_correctForCascade->setChecked( !display->m_correctForCascade->isChecked() );
+        display->correctForCascadeChanged();
+      }
+    };
+
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Cascade summing correction changed." );
+  }//if( undoRedo )
+
+  updateChi2Chart();
+}//void correctForCascadeChanged()
+
+
+void ShieldingSourceDisplay::updateCascadeAvailability()
+{
+  using GammaInteractionCalc::CascadeSummingCalc;
+
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+
+  bool enable = CascadeSummingCalc::drfHasNeededInfo( det );
+
+  if( enable && !det->isFixedGeometry() )
+  {
+    // Predicted maximum summing magnitude: solid angle x total intrinsic
+    //  efficiency; below ~0.3% the correction is negligible for this geometry.
+    double distance = 1.0*PhysicalUnits::meter;
+    try
+    {
+      distance = PhysicalUnits::stringToDistance( m_distanceEdit->text().toUTF8() );
+    }catch( std::exception & )
+    {
+    }
+
+    const double predicted = CascadeSummingCalc::estimateMaxSummingMagnitude( det, distance );
+    enable = (predicted >= 0.003);
+  }//if( enable && !det->isFixedGeometry() )
+
+  if( !enable && m_correctForCascade->isChecked() )
+    m_correctForCascade->setChecked( false );
+
+  if( enable != m_correctForCascade->isEnabled() )
+  {
+    m_correctForCascade->setDisabled( !enable );
+    m_correctForCascade->setToolTip( enable ? WString()
+                                     : WString::tr("ssd-tt-cascade-negligible") );
+  }
+}//void updateCascadeAvailability()
+
+
 void ShieldingSourceDisplay::showGraphicTypeChanged()
 {
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
@@ -6091,6 +6183,7 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
   handleShieldingChange();
   
   updateChi2Chart(); //I think this should have already been called, but JIC since its a cheap call
+  updateCascadeAvailability();
 }//void handleGeometryTypeChange()
 
 
@@ -6455,6 +6548,7 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
   }//if( DRF is non-fixed geometry, but layout is for fixed geometry )
   
   updateChi2Chart();
+  updateCascadeAvailability();
 }//void handleDetectorChanged()
 
 void ShieldingSourceDisplay::updateChi2Chart()
@@ -8028,6 +8122,8 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
   m_accountForDrfUncert->setChecked( options.account_for_drf_uncert );
+  m_correctForCascade->setChecked( options.correct_for_cascade_summing );
+  updateCascadeAvailability();
   m_showChiOnChart->setChecked( state.showChiOnChart );
   m_chi2Plot->setShowChi( state.showChiOnChart );
   string dist_str = PhysicalUnits::printToBestLengthUnitsCompact( state.config->distance );  //e.g. "1 m", not "1.000000 m"

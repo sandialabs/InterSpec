@@ -88,6 +88,7 @@ class DetectorPeakResponse;
 class ExportSpecFileWindow;
 class MakeFwhmForDrfWindow;
 class MakeMcResponseForDrfWindow;
+class DrfModifyWindow;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
@@ -914,6 +915,16 @@ public:
   /** If a `MakeMcResponseForDrfWindow` is showing, deletes it. */
   void deleteMcResponseWindow();
 
+  /** Shows the "Modify Detector" editor (rename / MC characterization / FWHM /
+   uncertainty bands) for `drf`; pass nullptr for the current foreground
+   detector.  An accepted edit becomes the session detector.  Used e.g. by the
+   Act/Shield cascade-summing option when the DRF lacks total-efficiency info.
+   */
+  DrfModifyWindow *showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf );
+
+  /** If a `DrfModifyWindow` opened via #showDrfModifyWindow is showing, deletes it. */
+  void deleteDrfModifyWindow();
+
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
    */
@@ -1733,6 +1744,7 @@ protected:
   Wt::Core::observing_ptr<MakeFwhmForDrfWindow> m_addFwhmTool;
 
   Wt::Core::observing_ptr<MakeMcResponseForDrfWindow> m_mcResponseTool;
+  Wt::Core::observing_ptr<DrfModifyWindow> m_drfModifyWindow;
   
   //m_preserveCalibWindow: a pointer to the window that prompts the user if they
   //  would like to use a calibration from a previously used spectrum if the one

@@ -779,6 +779,15 @@ public:
   void sameIsotopesAgeChanged();
   void decayCorrectChanged();
   void accountForDrfUncertChanged();
+  void correctForCascadeChanged();
+
+  /** Enables/disables the cascade-summing checkbox: enabled when the DRF has
+   usable total-efficiency info AND the predicted maximum summing magnitude
+   (solid angle x total intrinsic efficiency) is at least ~0.3% (always
+   enabled for fixed-geometry DRFs with the info).  Disabling unchecks it.
+   Called on detector / distance / geometry changes.
+   */
+  void updateCascadeAvailability();
   void showGraphicTypeChanged();
   
 
@@ -905,6 +914,7 @@ protected:
   Wt::WCheckBox  *m_sameIsotopesAge;
   Wt::WCheckBox  *m_decayCorrect;
   Wt::WCheckBox  *m_accountForDrfUncert;
+  Wt::WCheckBox  *m_correctForCascade;
   SwitchCheckbox *m_showChiOnChart;
   GroupBox *m_optionsDiv;
   /** This variable should be set to the same value as `m_clusterWidth`, but is around for undo/redo support. */
