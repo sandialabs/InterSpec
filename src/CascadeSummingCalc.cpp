@@ -21,16 +21,28 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-/* GADRAS-scatter effect on cascade corrections (quantification, per plan):
- With/without the ShieldScatterAugment term, computed for point sources at
- 10 cm from the Detective-X truth model (see test_CascadeSummingFit):
-   TODO(P3-quantify): numbers filled in once the Detective-X truth fixtures
-   exist - run the `CascadeScatterQuantification` case of
-   test_CascadeSummingFit and paste the Co-60 / Ba-133 behind Fe 10 mm and
-   Pb 6 mm C_net values here.
- The summing change from shielding is transmission-dominated (see
- mc_det_eff_plan/studies/cascade/cascade_shield_gadras_benchmark.md, Result
- 2); the scatter augmentation is a second-order restore of summing-out.
+/* GADRAS-scatter effect on cascade corrections (quantification, per plan).
+ Net summing factor C_net with vs without the ShieldScatterAugment term, for
+ point sources at 10 cm from the Detective-X model grounded to the LANL curve
+ (test_CascadeSummingFit's `CascadeScatterQuantification` case, analytic + DRF
+ curves, no MC):
+
+   Co-60  1173 keV behind Fe 10 mm:  no-scatter 0.9888  with 0.9831  (-0.57%)
+   Co-60  1173 keV behind Pb  6 mm:  no-scatter 0.9884  with 0.9858  (-0.26%)
+   Ba-133  356 keV behind Fe 10 mm:  ~1.0000          ~1.0000       (<0.01%)
+   Ba-133  356 keV behind Pb  6 mm:  ~1.0000          ~1.0000       (<0.01%)
+
+ The scatter continuum keeps the coincident partner's TOTAL efficiency higher
+ than pure transmission predicts, so it slightly deepens summing-OUT (C_net a
+ few tenths of a percent lower for Co-60).  For Ba-133 behind shielding the
+ low-energy coincidence partners are removed by differential transmission, so
+ there is little summing left and the scatter term is negligible.  In all cases
+ the effect is <~0.6% on C_net: the shielding effect on summing is
+ transmission-dominated and the scatter augmentation is a second-order restore
+ (see mc_det_eff_plan/studies/cascade/cascade_shield_gadras_benchmark.md,
+ Result 2).  The full shielded correction (transmission + this augmentation) is
+ validated end-to-end by the shielded-point truth gates in
+ test_CascadeSummingFit (Co-60/Ba-133 behind Al/Fe/Pb pass).
  */
 
 #include "InterSpec_config.h"

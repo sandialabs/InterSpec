@@ -93,7 +93,9 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
+#include "cascade/AnalyticCascade.h"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -1090,3 +1092,110 @@ BOOST_AUTO_TEST_CASE( TruthActivityFits )
   BOOST_TEST_MESSAGE( "Checked " << n_checked << " truth scenes" );
   BOOST_CHECK_GT( n_checked, 0 );
 }//TruthActivityFits
+
+
+/** Quantifies how much the GADRAS shield-scatter augmentation of the total
+ efficiency changes the cascade summing factor for shielded point sources.
+ Prints C_net with and without the augmentation term for Co-60 and Ba-133
+ behind Fe 10 mm and Pb 6 mm at 10 cm; the numbers are pasted into the comment
+ block atop src/CascadeSummingCalc.cpp.  No Monte Carlo (analytic + DRF curves).
+ Report-only.
+ */
+BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+
+  const shared_ptr<DetectorPeakResponse> drf = fit_drf();
+  const double dist = 10.0*PhysicalUnits::cm;
+  const double omega = DetectorPeakResponse::fractionalSolidAngle(
+                          drf->detectorDiameter(), dist + drf->detectorSetback() );
+
+  struct Cfg { const char *nuc; double age; const char *shield; double t_cm; double peak; };
+  const Cfg cfgs[] = {
+    { "Co60",  1.0*PhysicalUnits::year, "Fe", 1.0, 1173.228 },
+    { "Co60",  1.0*PhysicalUnits::year, "Pb", 0.6, 1173.228 },
+    { "Ba133", 2.0*PhysicalUnits::year, "Fe", 1.0, 356.017 },
+    { "Ba133", 2.0*PhysicalUnits::year, "Pb", 0.6, 356.017 },
+  };
+
+  BOOST_TEST_MESSAGE( "--- GADRAS shield-scatter augmentation effect on C_net (10 cm) ---" );
+  for( const Cfg &c : cfgs )
+  {
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( c.nuc );
+    const shared_ptr<const Material> shield = material_or_fail( *matdb, c.shield );
+
+    ceelo::cascade_adapter::CascadeOptions copt;
+    copt.age_seconds = c.age / PhysicalUnits::second;
+    const vector<ceelo::DecayCascade> casc
+                            = ceelo::cascade_adapter::build_cascades( nuc, copt );
+
+    // Every emission energy the analytic path may query, + the scatter table.
+    std::set<double> eset;
+    std::set<int> zset;
+    for( const ceelo::DecayCascade &dc : casc )
+    {
+      for( const ceelo::CascadeMember &m : dc.members )
+        if( m.energy_keV >= 5.0 ) eset.insert( m.energy_keV );
+      const int z = dc.daughter_Z ? dc.daughter_Z : dc.level_scheme.daughter_Z;
+      if( z > 0 ) zset.insert( z );
+    }
+    // (x-ray lines are added by the engine internally; for the provider we
+    //  just need FEP/tot at any requested energy - the DRF curves cover it.)
+    vector<double> energies( begin(eset), end(eset) );
+
+    const std::function<double(double)> eps_totint = [&drf]( double e ) -> double {
+      return drf->totalIntrinsicEfficiencyAny( static_cast<float>(e) );
+    };
+
+    ShieldScatterAugment scatter;
+    scatter.build( energies, eps_totint, 0.0, g_data_dir );
+
+    auto T = [&]( double e ){
+      return std::exp( -transmition_coefficient_material( shield.get(),
+                              static_cast<float>(e), static_cast<float>(c.t_cm*PhysicalUnits::cm) ) );
+    };
+    const double ad_gcm2 = shield->density * c.t_cm*PhysicalUnits::cm
+                           * PhysicalUnits::cm2 / PhysicalUnits::g;
+    const double eff_an = 26.0;  //Fe; Pb ~82 - only the augmentation uses it
+    const double an = (string(c.shield) == "Pb") ? 82.0 : 26.0;
+
+    auto run = [&]( const bool with_scatter ) -> double {
+      struct Prov final : public ceelo::EfficiencyProviderT<double> {
+        const DetectorPeakResponse *drf; double omega;
+        std::function<double(double)> Tf; const ShieldScatterAugment *sc;
+        double an, ad; bool use_scatter;
+        double fep( double e ) const override {
+          return omega * drf->intrinsicEfficiency( (float)e ) * Tf(e);
+        }
+        double total( double e ) const override {
+          double shield_part = Tf(e);
+          if( use_scatter && sc->valid() )
+            shield_part += sc->evaluate<double>( e, an, ad );
+          return omega * drf->totalIntrinsicEfficiencyAny( (float)e ) * shield_part;
+        }
+        bool has( double ) const override { return true; }
+      } prov;
+      prov.drf = drf.get(); prov.omega = omega; prov.Tf = T; prov.sc = &scatter;
+      prov.an = an; prov.ad = ad_gcm2; prov.use_scatter = with_scatter;
+
+      const vector<ceelo::PeakWindow> win{ { c.peak, 1.5 } };
+      const auto r = ceelo::compute_cascade_analytic( casc, win, prov );
+      return (r.empty() || !r[0].found) ? 1.0 : r[0].c_net;
+    };
+    (void)eff_an;
+
+    const double cnet_with = run( true );
+    const double cnet_without = run( false );
+    char line[256];
+    snprintf( line, sizeof(line),
+              "%-6s %s %.0fmm  %.1f keV:  C_net no-scatter=%.4f  with-scatter=%.4f  (delta %.4f)",
+              c.nuc, c.shield, c.t_cm*10.0, c.peak, cnet_without, cnet_with,
+              cnet_with - cnet_without );
+    BOOST_TEST_MESSAGE( line );
+  }//for( configs )
+}//BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
