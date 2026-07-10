@@ -1,0 +1,6 @@
+# CeeLo FullRealization cascade-truth for the Act/Shield fit
+# scene: id=co60_fe10mm_10 nuclide=Co60 age_s=3.1557e+07 activity_bq=37000 live_time_s=3600 shape=0 dist_cm=10 src_r_cm=0 src_half_len_cm=0 src_mat=none shield=Fe shield_cm=1 events=80000000
+# counts = activity x live_time x p_emit x eff_with_summing x k_grounding
+peak_keV,net_counts,net_counts_unc,p_emit,eff_with_summing,eff_no_summing,summing_factor,k_grounding
+1173.228,2.928314e+05,7.347e+02,9.98499990e-01,1.99257485e-03,2.00327846e-03,0.994657,1.104971
+1332.492,2.705797e+05,7.078e+02,9.99826014e-01,1.83060456e-03,1.85603397e-03,0.986299,1.109870

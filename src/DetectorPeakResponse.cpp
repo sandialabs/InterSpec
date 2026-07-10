@@ -915,6 +915,27 @@ double DetectorPeakResponse::totalEfficiency( const float energy, const double d
 }//totalEfficiency(...)
 
 
+float DetectorPeakResponse::totalIntrinsicEfficiencyAny( const float energy ) const
+{
+  if( m_totalEfficiency )
+    return m_totalEfficiency->efficiency( energy );
+
+  if( m_ceeloResponse )
+  {
+    // Back the intrinsic total out of a far-field absolute evaluation, where
+    //  eps_total ~= (solid angle) x (intrinsic total).
+    const double a_cm = m_ceeloResponse->transverse_half_extent();
+    const double d_cm = std::max( 100.0, 20.0*a_cm );
+    const ceelo::EffResult tot = m_ceeloResponse->eps_total( energy, 0.0, 0.0, d_cm );
+    const double omega = fractionalSolidAngle( m_detectorDiameter,
+                                d_cm*PhysicalUnits::cm + m_detectorSetback );
+    return (omega > 0.0) ? static_cast<float>( tot.value / omega ) : 0.0f;
+  }//if( m_ceeloResponse )
+
+  return 0.0f;
+}//totalIntrinsicEfficiencyAny(...)
+
+
 shared_ptr<const ceelo::DetectorResponse> DetectorPeakResponse::ceeloResponse() const
 {
   return m_ceeloResponse;

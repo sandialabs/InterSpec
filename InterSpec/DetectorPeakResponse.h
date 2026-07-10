@@ -710,6 +710,16 @@ public:
    */
   bool hasAnyTotalEfficiencyInfo() const;
 
+  /** Intrinsic total efficiency at `energy` (keV), dispatching to whichever
+   total-efficiency source the DRF has: an explicit total-efficiency curve, or
+   (backed out of) an attached CeeLo MC response evaluated far-field.  Returns
+   0 when the DRF has no total-efficiency info (unlike #totalIntrinsicEfficiency,
+   which throws).  Used by the per-element cascade-summing correction, which
+   needs an intrinsic (solid-angle-free) total efficiency for arbitrary source
+   geometries.
+   */
+  float totalIntrinsicEfficiencyAny( const float energy ) const;
+
   /** For a fixed-geometry DRF computed for one specific source/shielding
    setup (see MakeFixedGeomResponse): the setup description, as an opaque XML
    blob owned by ShieldingSourceFitCalc (geometry type, distance, serialized

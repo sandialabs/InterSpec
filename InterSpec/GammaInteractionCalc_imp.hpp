@@ -991,7 +991,30 @@ struct DistributedSrcCalcT
     double areal_density = 0.0;      //Generic shells (PhysicalUnits)
     double effective_an = 0.0;       //mass-fraction-weighted Z for materials; AN for generic
     double hydrogen_mass_frac = 0.0; //zero for generic shells
+
+    /** Cascade-summing partner attenuation, parallel to
+     CascadeBlock::partner_energies: per-length coefficient for Material
+     shells, total (dimensionless) attenuation for Generic shells.  Empty when
+     no cascade block is attached.
+     */
+    std::vector<double> cascade_mu;
   };//struct ShellInfo
+
+  /** Per-fit constants for the per-element cascade-summing correction (see
+   #cascade_correction_factor); shared across this build's calculators.
+   The per-element (parameter-dependent) pieces - partner path attenuations,
+   ray areal density, air path - accumulate in the mutable scratch below
+   during each eval (like the effective-AN/AD scratch, at most one thread may
+   evaluate a given calculator).
+   */
+  struct CascadeBlock
+  {
+    const CascadeSummingCalc *calc = nullptr;   //owned by the chi2 function
+    std::vector<double> partner_energies;       //sorted; every emission energy
+    std::vector<double> partner_fep_int;        //detector intrinsic FEP eff
+    std::vector<double> partner_tot_int;        //detector intrinsic total eff
+    std::vector<double> air_mu;                 //air atten coef per partner
+  };//struct CascadeBlock
 
   GeometryType m_geometry = GeometryType::NumGeometryType;
 
@@ -1057,6 +1080,13 @@ struct DistributedSrcCalcT
    */
   bool m_accumulateEffectiveAnAd = false;
 
+  /** Cascade-summing correction inputs (null => no correction); the
+   correction multiplies each element's integrand by the per-element net
+   summing factor - see #cascade_correction_factor.
+   */
+  std::shared_ptr<const CascadeBlock> m_cascade;
+  double m_cascade_age = 0.0;
+
   // Per-ray accumulation scratch (reset at the top of each eval when accumulating).
   //  Only one thread may evaluate a given calculator when accumulating.
   mutable double m_ray_ad = 0.0;       //sum of density_l * dist_l (+ generic ADs)
@@ -1064,6 +1094,13 @@ struct DistributedSrcCalcT
   mutable double m_ray_ad_h = 0.0;     //sum of fracH_l * density_l * dist_l
   mutable double m_ray_mu_d = 0.0;     //sum of mu_l * dist_l  (the attenuation exponent)
   mutable double m_ray_an_mu_d = 0.0;  //sum of AN_l * mu_l * dist_l
+
+  // Cascade per-element scratch (same one-thread-per-calculator rule; T-valued
+  //  so ceres::Jet path derivatives flow through the correction).
+  mutable std::vector<T> m_ray_partner_mu_d;  //per partner: sum of mu_j * dist
+  mutable T m_ray_cascade_ad{ 0.0 };          //sum density*dist (+ generic AD), PhysicalUnits
+  mutable T m_ray_cascade_an_ad{ 0.0 };
+  mutable T m_ray_air_dist{ 0.0 };
 
   T eval_spherical( const double xx[], const int ndim ) const;
   T eval_single_cyl_end_on( const double xx[], const int ndim ) const;
@@ -1079,6 +1116,14 @@ struct DistributedSrcCalcT
     {
       if( m_accumulateEffectiveAnAd )
         m_ray_ad = m_ray_an_ad = m_ray_ad_h = m_ray_mu_d = m_ray_an_mu_d = 0.0;
+    }
+
+    if( m_cascade )
+    {
+      if( m_ray_partner_mu_d.size() != m_cascade->partner_energies.size() )
+        m_ray_partner_mu_d.resize( m_cascade->partner_energies.size() );
+      std::fill( std::begin(m_ray_partner_mu_d), std::end(m_ray_partner_mu_d), T(0.0) );
+      m_ray_cascade_ad = m_ray_cascade_an_ad = m_ray_air_dist = T(0.0);
     }
   }
 
@@ -1099,6 +1144,15 @@ struct DistributedSrcCalcT
         m_ray_an_mu_d += shell.effective_an * scalar_of(shell.trans_len_coef) * dist;
       }
     }
+
+    if( m_cascade && !shell.cascade_mu.empty() )
+    {
+      for( size_t j = 0; j < shell.cascade_mu.size(); ++j )
+        m_ray_partner_mu_d[j] += shell.cascade_mu[j] * dist;
+      const T ad = shell.density * dist;
+      m_ray_cascade_ad += ad;
+      m_ray_cascade_an_ad += shell.effective_an * ad;
+    }
   }//record_path(...)
 
   /** Records the ray passing through a zero-extent Generic `shell`. */
@@ -1115,8 +1169,99 @@ struct DistributedSrcCalcT
         m_ray_an_mu_d += shell.effective_an * scalar_of(shell.trans_len_coef);
       }
     }
+
+    if( m_cascade && !shell.cascade_mu.empty() )
+    {
+      for( size_t j = 0; j < shell.cascade_mu.size(); ++j )
+        m_ray_partner_mu_d[j] += shell.cascade_mu[j];  //total attenuation for generic
+      m_ray_cascade_ad += T( shell.areal_density );
+      m_ray_cascade_an_ad += T( shell.effective_an * shell.areal_density );
+    }
   }//record_generic(...)
+
+  /** The per-element cascade-summing net factor from the accumulated partner
+   attenuations + air path + the elements detector geometric factor.
+   The engine (CascadeSummingCalc/CeeLo) sees absolute efficiencies
+     eps_fep(E_j) = det_factor * eps_int_fep(E_j) * exp(-Sum mu_j dist) * air_j
+     eps_tot(E_j) = det_factor * eps_int_tot(E_j)
+                      * ( exp(-Sum mu_j dist) + A(E_j; AN, AD) ) * air_j
+   (A = GADRAS shield-scatter augmentation over the elements full ray).
+   The detector geometric factor is energy-independent here (matches the
+   isotropic detector-response assumption of these integrands).
+   Defined after this struct.
+   */
+  T cascade_correction_factor( const T &det_factor ) const;
 };//struct DistributedSrcCalcT
+
+
+template<typename T>
+T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor ) const
+{
+  if( !m_cascade || !m_cascade->calc || !m_nuclide )
+    return T(1.0);
+
+  const CascadeBlock &cb = *m_cascade;
+
+  // This calculator integrates one clustered line: its window.
+  const std::vector<ceelo::PeakWindow> &all_windows = cb.calc->peakWindows();
+  std::vector<ceelo::PeakWindow> window;
+  for( const ceelo::PeakWindow &w : all_windows )
+  {
+    if( std::fabs(w.energy_keV - m_energy) < 0.01 )
+    {
+      window.push_back( w );
+      break;
+    }
+  }
+  if( window.empty() )
+    return T(1.0);
+
+  const auto idx_of = [&cb]( const double energy ) -> int {
+    // partner_energies is sorted; binary search within 0.25 keV
+    const auto pos = std::lower_bound( std::begin(cb.partner_energies),
+                                       std::end(cb.partner_energies), energy - 0.25 );
+    if( (pos != std::end(cb.partner_energies)) && (std::fabs(*pos - energy) < 0.25) )
+      return static_cast<int>( pos - std::begin(cb.partner_energies) );
+    return -1;
+  };
+
+  const ShieldScatterAugment &scatter = cb.calc->scatterAugment();
+
+  const double ad_scalar = scalar_of( m_ray_cascade_ad );
+  const T ad_gcm2 = m_ray_cascade_ad * (PhysicalUnits::cm2 / PhysicalUnits::g);
+  const T eff_an = (ad_scalar > 0.0) ? T(m_ray_cascade_an_ad / m_ray_cascade_ad) : T(0.0);
+
+  const std::function<T(double)> eps_fep = [&]( const double energy ) -> T {
+    const int j = idx_of( energy );
+    if( j < 0 )
+      return T(0.0);
+    T v = det_factor * cb.partner_fep_int[j] * exp( -m_ray_partner_mu_d[j] );
+    if( m_attenuateForAir )
+      v *= exp( -cb.air_mu[j] * m_ray_air_dist );
+    return v;
+  };
+
+  const std::function<T(double)> eps_tot = [&]( const double energy ) -> T {
+    const int j = idx_of( energy );
+    if( j < 0 )
+      return T(0.0);
+    T shield_part = exp( -m_ray_partner_mu_d[j] );
+    if( scatter.valid() )
+      shield_part += scatter.evaluate( energy, eff_an, ad_gcm2 );
+    T v = det_factor * cb.partner_tot_int[j] * shield_part;
+    if( m_attenuateForAir )
+      v *= exp( -cb.air_mu[j] * m_ray_air_dist );
+    return v;
+  };
+
+  const std::vector<ceelo::AnalyticPeakResultT<T>> results
+        = cb.calc->template evaluateWindows<T>( m_nuclide, m_cascade_age, window, eps_fep, eps_tot );
+
+  if( results.empty() || !results[0].found )
+    return T(1.0);
+
+  return results[0].c_net;
+}//cascade_correction_factor(...)
 
 
 template<typename T>
@@ -1326,6 +1471,9 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
     const T air_dist = sqrt( dx*dx + dy*dy + dz*dz );
 
     trans *= exp( -m_airTransLenCoef * air_dist );
+
+    if( m_cascade )
+      m_ray_air_dist = air_dist;
   }//if( m_attenuateForAir )
 
   if( m_isInSituExponential )
@@ -1341,7 +1489,10 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
     rotated_det.position[2] = obs_dist;
 
     const T eval_point[3] = { x, y, z };
-    trans *= detector_response_factor( rotated_det, eval_point );
+    const T det_factor = detector_response_factor( rotated_det, eval_point );
+    trans *= det_factor;
+    if( m_cascade )
+      trans *= cascade_correction_factor( det_factor );
   }// end apply detector response
 
   if( m_normalizeByVolume )
@@ -1440,6 +1591,9 @@ T DistributedSrcCalcT<T>::eval_single_cyl_end_on( const double xx[], const int n
     const T air_dist = sqrt( exit_radius*exit_radius + dz*dz );
 
     trans *= exp( -m_airTransLenCoef * air_dist );
+
+    if( m_cascade )
+      m_ray_air_dist = air_dist;
   }//if( m_attenuateForAir )
 
   if( m_isInSituExponential )
@@ -1450,7 +1604,10 @@ T DistributedSrcCalcT<T>::eval_single_cyl_end_on( const double xx[], const int n
 
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to detector).
   const T eval_dist_to_det = sqrt( r*r + eval_z_dist_to_det*eval_z_dist_to_det );
-  trans *= fractional_solid_angle_imp( 2.0*m_detector.radius, eval_dist_to_det + m_detector.setback );
+  const T det_factor = fractional_solid_angle_imp( 2.0*m_detector.radius, eval_dist_to_det + m_detector.setback );
+  trans *= det_factor;
+  if( m_cascade )
+    trans *= cascade_correction_factor( det_factor );
 
   if( m_normalizeByVolume )
   {
@@ -1631,6 +1788,9 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
     const T air_dist = distance_imp( exit_point, detector_pos );
 
     trans *= exp( -m_airTransLenCoef * air_dist );
+
+    if( m_cascade )
+      m_ray_air_dist = air_dist;
   }//if( m_attenuateForAir )
 
   if( m_isInSituExponential )
@@ -1643,7 +1803,12 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
   }//if( m_isInSituExponential )
 
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to detector).
-  trans *= detector_response_factor( m_detector, eval_point );
+  {
+    const T det_factor = detector_response_factor( m_detector, eval_point );
+    trans *= det_factor;
+    if( m_cascade )
+      trans *= cascade_correction_factor( det_factor );
+  }
 
   if( m_normalizeByVolume )
   {
@@ -1811,6 +1976,9 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
   {
     const T air_dist = distance_imp( exit_point, detector_loc );
     trans *= exp( -m_airTransLenCoef * air_dist );
+
+    if( m_cascade )
+      m_ray_air_dist = air_dist;
   }//if( m_attenuateForAir )
 
   if( m_isInSituExponential )
@@ -1819,7 +1987,12 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
     trans *= exp( -(half_depth - eval_z) / m_inSituRelaxationLength );
   }
 
-  trans *= detector_response_factor( m_detector, eval_loc );
+  {
+    const T det_factor = detector_response_factor( m_detector, eval_loc );
+    trans *= det_factor;
+    if( m_cascade )
+      trans *= cascade_correction_factor( det_factor );
+  }
 
   if( m_normalizeByVolume )
   {
@@ -3366,6 +3539,104 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
 
   std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> calculators;
 
+  // Cascade-summing: partner-energy constants shared by every calculator this
+  //  build creates; per-material partner attenuation coefficients are cached,
+  //  and nuclides whose maximum possible summing effect is negligible (at the
+  //  closest-approach solid angle, unattenuated - an upper bound) skip the
+  //  per-element correction entirely.
+  std::shared_ptr<typename DistributedSrcCalcT<T>::CascadeBlock> cascade_block;
+  std::map<const Material *, std::vector<double>> cascade_mat_mu;
+  std::map<const SandiaDecay::Nuclide *, bool> cascade_nuc_active;
+  if( m_cascadeCalc && m_detector && m_detector->isValid() )
+  {
+    cascade_block = std::make_shared<typename DistributedSrcCalcT<T>::CascadeBlock>();
+    cascade_block->calc = m_cascadeCalc.get();
+    cascade_block->partner_energies = m_cascadeCalc->allPartnerEnergies();
+    for( const double energy : cascade_block->partner_energies )
+    {
+      double fep_int = 0.0, tot_int = 0.0;
+      try
+      {
+        fep_int = m_detector->intrinsicEfficiency( static_cast<float>(energy) );
+        // CeeLo-aware, and returns 0 (rather than throwing) when the DRF has no
+        //  total-efficiency info - the CeeLo-response case, where the total
+        //  lives in the response, not a separate curve.
+        tot_int = m_detector->totalIntrinsicEfficiencyAny( static_cast<float>(energy) );
+      }catch( std::exception & )
+      {
+      }
+      cascade_block->partner_fep_int.push_back( std::max(0.0, fep_int) );
+      cascade_block->partner_tot_int.push_back( std::max(0.0, tot_int) );
+      cascade_block->air_mu.push_back(
+              transmission_length_coefficient_air( static_cast<float>(energy) ) );
+    }//for( partner energies )
+  }//if( m_cascadeCalc )
+
+  const auto cascade_mu_for_material = [&]( const Material * const mat ) -> const std::vector<double> & {
+    std::vector<double> &mus = cascade_mat_mu[mat];
+    if( mus.empty() && cascade_block )
+    {
+      mus.reserve( cascade_block->partner_energies.size() );
+      for( const double energy : cascade_block->partner_energies )
+        mus.push_back( transmition_length_coefficient( mat, static_cast<float>(energy) ) );
+    }
+    return mus;
+  };
+
+  const auto cascade_active_for_nuclide = [&]( const SandiaDecay::Nuclide * const src,
+                                               const double src_age ) -> bool {
+    if( !cascade_block )
+      return false;
+    const auto pos = cascade_nuc_active.find( src );
+    if( pos != std::end(cascade_nuc_active) )
+      return pos->second;
+
+    // Upper-bound geometry: closest possible element, no attenuation.
+    double extent = 0.0;
+    for( const ShieldingSourceFitCalc::ShieldingInfo &sh : m_initial_shieldings )
+    {
+      if( !sh.m_isGenericMaterial && sh.m_material )
+        extent += std::max( 0.0, sh.m_dimensions[0] );
+    }
+    const double closest = std::max( 0.1*PhysicalUnits::cm,
+                                     trueSourceToDetectorDistance() - extent );
+    const double det_diam = m_detector->detectorDiameter();
+    const double omega = DetectorPeakResponse::fractionalSolidAngle( det_diam,
+                                    closest + m_detector->detectorSetback() );
+
+    const std::vector<double> &energies = cascade_block->partner_energies;
+    const std::vector<double> &feps = cascade_block->partner_fep_int;
+    const std::vector<double> &tots = cascade_block->partner_tot_int;
+    const auto find_idx = [&energies]( const double energy ) -> int {
+      const auto p = std::lower_bound( std::begin(energies), std::end(energies), energy - 0.25 );
+      return ((p != std::end(energies)) && (std::fabs(*p - energy) < 0.25))
+                ? static_cast<int>(p - std::begin(energies)) : -1;
+    };
+    const std::function<double(double)> fep_f = [&]( double energy ) -> double {
+      const int j = find_idx(energy);
+      return (j >= 0) ? omega * feps[j] : 0.0;
+    };
+    const std::function<double(double)> tot_f = [&]( double energy ) -> double {
+      const int j = find_idx(energy);
+      return (j >= 0) ? omega * tots[j] : 0.0;
+    };
+
+    bool active = false;
+    try
+    {
+      const std::vector<ceelo::AnalyticPeakResult> est
+                = m_cascadeCalc->evaluate<double>( src, src_age, fep_f, tot_f );
+      for( const ceelo::AnalyticPeakResult &r : est )
+        active = (active || (r.found && (std::fabs(1.0 - r.c_net) >= 1.0E-4)));
+    }catch( std::exception & )
+    {
+      active = true;  //be safe: apply the correction if the estimate failed
+    }
+
+    cascade_nuc_active[src] = active;
+    return active;
+  };//cascade_active_for_nuclide
+
 
   for( size_t material_index = 0; material_index < nMaterials; ++material_index )
   {
@@ -3603,6 +3874,19 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
             shell.type = DistributedSrcCalc::ShellType::Generic;
             shell.areal_density = scalar_of( ad );
             shell.effective_an = scalar_of( an );
+
+            if( cascade_block )
+            {
+              // Total (dimensionless) attenuation per partner energy; the
+              //  parameter (Jet) dependence of the primary line is carried by
+              //  trans_len_coef - here we take the scalar AN/AD (a generic
+              //  shield's derivative through the cascade factor is dropped).
+              shell.cascade_mu.reserve( cascade_block->partner_energies.size() );
+              for( const double energy : cascade_block->partner_energies )
+                shell.cascade_mu.push_back( scalar_of( transmission_coefficient_generic_imp(
+                                        an, ad, static_cast<float>(energy) ) ) );
+            }
+
             calculator->m_shells.push_back( shell );
             continue;
           }//if( isGenericMaterial( subMat ) )
@@ -3668,11 +3952,21 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
           shell.density = sub_material->density;
           shell.effective_an = material_mass_weighted_atomic_number( *sub_material );
           shell.hydrogen_mass_frac = material_hydrogen_mass_fraction( *sub_material );
+
+          if( cascade_block )
+            shell.cascade_mu = cascade_mu_for_material( sub_material.get() );
+
           calculator->m_shells.push_back( shell );
         }//for( size_t subMat = 0; subMat < nMaterials; ++subMat )
 
         if( calculator->m_shells.empty() )
           throw std::logic_error( "No source/shielding sphere for calculator" );
+
+        if( cascade_block && cascade_active_for_nuclide( src, scalar_of(thisage) ) )
+        {
+          calculator->m_cascade = cascade_block;
+          calculator->m_cascade_age = scalar_of( thisage );
+        }
 
         calculators.push_back( std::move(calculator) );
       }//for( loop over local_energy_count_map )
