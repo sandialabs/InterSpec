@@ -40,26 +40,27 @@ Branch `upgrade/DetEff`, commits `2560d0a9`, `493ac00e`, `62a4bb78` (+ CeeLo dev
   0.5–5 cm, `--regenerate` mode that re-grounds the golden response to the LANL Detective-X curve
   and re-runs the CeeLo FullRealization truth MC). `detective_x` added to `regen_ceelo_goldens`.
 
-## Remaining (in order)
+## Remaining
 
-1. **Wait for `make_golden_response detective_x`** (running in background; writes
-   `target/testing/test_data/ceelo_drf/detective_x_response.xml` + `_probe.csv`; args
-   `general 0.001 120 1 200000000 60`).
-2. **Generate truth fixtures** (hours; overnight):
-   `cd target/testing/build_ninja && ./test_CascadeSummingFit -- --datadir=$PWD/../../../data --testfiledir=$PWD/../test_data --regenerate`
-   Then `ctest -R TCascadeSummingFit` — the Cs-137 rows must pass. Commit
-   `test_data/cascade_truth/` + the detective_x fixtures + a README (gates table is in the test file).
-3. **Flip `CASCADE_TRUTH_FULL` to 1** in `test_CascadeSummingFit.cpp` → all cascade + extended rows
-   assert. Debug against gates (bare Co-60/Y-88 3–4%, Ba-133/Eu-152 5–8%, shielded +2 pctpts,
-   disks 6–8%). Also time a self-atten fit option-on vs off (target ≤1.5×).
-4. **Scatter quantification**: run Co-60/Ba-133 behind Fe 10 mm / Pb 6 mm with and without the
-   `ShieldScatterAugment` term; paste numbers into the comment block atop `src/CascadeSummingCalc.cpp`.
-5. **Re-run the full CeeLo dev-repo ctest** (was stopped for CPU; targeted analytic tests all pass).
-6. **Manual GUI pass** (user): checkbox gating vs distance; missing-info dialog → editor round-trip;
-   fixed-geom MC button → progress → locked display; calc log/report output; `?isphone=1` layout.
-7. Follow-ups filed: per-partner report breakdown; `eps_*_element` integrand refinement; per-element
-   scatter-table fracH axis; Jet ∂C for generic-material shields in the cascade term (currently
-   scalar); Minuit2-path removal.
+All automated work is COMPLETE and committed (branch `upgrade/DetEff`, commits through
+the cascade-truth + scatter-quantification commits). Verification status:
+- Full cascade-truth suite `TCascadeSummingFit`: PASS (point absolute + extended ratio).
+- InterSpec regressions `ShieldingSourceFitCalc`/`ShieldingGeomGolden`/`CeeLoDrfIntegration`/
+  `DetectorEfficiency`: PASS.
+- CeeLo dev-repo ctest: 31/31 PASS.
+
+1. **Manual GUI pass (USER — the only remaining item):** checkbox gating vs distance;
+   missing-info dialog → detector editor round-trip; fixed-geom MC button → progress →
+   locked read-only display; calc log / report output; `?isphone=1` layout.
+2. **Follow-ups filed (not blocking):** `eps_*_element` integrand refinement (removes the
+   extended-source absolute-activity baseline gap — see finding #3); CeeLo FullRealization
+   daughter-line emission for multi-generation chains (Bi-214 in aged Ra-226 — dev-repo);
+   per-partner report breakdown; per-element scatter-table fracH axis; Jet ∂C for
+   generic-material shields in the cascade term (currently scalar); Minuit2-path removal.
+
+Notes for the next session: nothing is pushed to GitHub and the `mc_det_eff_plan` dev repo
+is local-only; the build state (`build_wt4`, `target/testing/build_ninja`) is local. The
+other session's Reference-Photopeak cascade work touches `ReferenceLineInfo.cpp` (independent lane).
 
 ## Truth-run findings (2026-07-10)
 
