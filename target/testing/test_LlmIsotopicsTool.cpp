@@ -58,7 +58,7 @@ using namespace std;
 using namespace boost::unit_test;
 using json = nlohmann::json;
 
-// TODO: as of 20251013, need to add tests for: `currie_mda_calc`, `add_analysis_peaks_for_source`, `automated_source_id_results`, and `nuclides_with_primary_gammas_in_energy_range` 
+// TODO: as of 20251013, need to add tests for: `currie_mda_calc`, `add_analysis_peaks_for_source`, `get_automated_id_results`, and `sources_with_gammas_near_energy` 
 
 
 std::string g_test_file_dir;

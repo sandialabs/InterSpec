@@ -44,7 +44,7 @@ control which gamma/x-ray lines are used to compute relative activities.
 * **get_isotopics_config** - Retrieve current configuration
 * **reset_isotopics_config** - Clear current configuration
 * **perform_isotopics_calculation** - Execute the isotopics calculation using current configuration
-* **get_analysis_peaks** - Review which peaks the user has fit in the spectrum - these are not used by the "perform_isotopics_calculation" tool.
+* **get_peaks** (with filter 'analysis') - Review which peaks the user has fit in the spectrum - these are not used by the "perform_isotopics_calculation" tool.
 * **get_spectrum_info** - Get information about loaded spectra
 * **get_isotopics_config_schema** - get the full description of configuration
 * **modify_isotopics_rois** - Add, remove, or update ROIs to use in the data
@@ -60,7 +60,7 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 **Actions:**
 * Determine if this is Plutonium, Uranium, or some custom isotopics
 * Check if spectrum is loaded using `get_spectrum_info`
-* Use `get_detected_peaks` to determine relevant peaks in the spectrum (to e.g., check if there are Pu-related peaks in the ~650 keV range); this can help determine isotopics goals, if not explicitly specified.
+* Use `get_peaks` to determine relevant peaks in the spectrum (to e.g., check if there are Pu-related peaks in the ~650 keV range); this can help determine isotopics goals, if not explicitly specified.
 
 **Transition to:** SELECT_CONFIGURATION
 
@@ -102,7 +102,7 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 **Goal:** Identify potential interferences from other nuclides
 
 **Actions:**
-* Review analysis peaks with `get_analysis_peaks`
+* Review analysis peaks with `get_peaks` (filter 'analysis')
 * Look for non-target nuclides with peaks in the analysis energy ranges
 * Assess if interferences will significantly affect results
 
@@ -230,9 +230,9 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
         </AllowedTransitions>
         <SuggestedTools>
           <Tool>get_spectrum_info</Tool>
-          <Tool>get_analysis_peaks</Tool>
+          <Tool>get_peaks</Tool>
         </SuggestedTools>
-        <PromptGuidance>First, verify that a foreground spectrum is loaded and peaks are fit. Use get_spectrum_info and get_analysis_peaks to check prerequisites. Determine if the user wants Plutonium or Uranium isotopics. Once you understand the request and have confirmed prerequisites, transition to SELECT_CONFIGURATION state.</PromptGuidance>
+        <PromptGuidance>First, verify that a foreground spectrum is loaded and peaks are fit. Use get_spectrum_info and get_peaks (filter 'analysis') to check prerequisites. Determine if the user wants Plutonium or Uranium isotopics. Once you understand the request and have confirmed prerequisites, transition to SELECT_CONFIGURATION state.</PromptGuidance>
       </State>
 
       <State name="SELECT_CONFIGURATION">
@@ -256,9 +256,9 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
         </AllowedTransitions>
         <SuggestedTools>
           <Tool>get_isotopics_config</Tool>
-          <Tool>get_analysis_peaks</Tool>
+          <Tool>get_peaks</Tool>
         </SuggestedTools>
-        <PromptGuidance>Use get_isotopics_config to retrieve loaded configuration. Use get_analysis_peaks to verify peaks exist in configuration ROI ranges. Check peak fit quality, verify detector efficiency loaded, confirm expected nuclides in config. If wrong preset loaded (no peaks in ROIs or wrong nuclides), go back to SELECT_CONFIGURATION. Otherwise transition to CHECK_INTERFERENCE.</PromptGuidance>
+        <PromptGuidance>Use get_isotopics_config to retrieve loaded configuration. Use get_peaks (filter 'analysis') to verify peaks exist in configuration ROI ranges. Check peak fit quality, verify detector efficiency loaded, confirm expected nuclides in config. If wrong preset loaded (no peaks in ROIs or wrong nuclides), go back to SELECT_CONFIGURATION. Otherwise transition to CHECK_INTERFERENCE.</PromptGuidance>
       </State>
 
       <State name="CHECK_INTERFERENCE">
@@ -268,7 +268,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
           <Transition>SELECT_CONFIGURATION</Transition>
         </AllowedTransitions>
         <SuggestedTools>
-          <Tool>get_analysis_peaks</Tool>
+          <Tool>get_peaks</Tool>
         </SuggestedTools>
         <PromptGuidance>Review analysis peaks to identify non-target nuclides that could interfere. For Pu: Am-241 (59.5 keV - if severe, switch to high-energy preset). For U: Th-234 (indicates decay). Check for mixed U/Pu. Note interferences as limitations. If severe interference requires preset change, go back to SELECT_CONFIGURATION. Otherwise proceed to EXECUTE_CALCULATION.</PromptGuidance>
       </State>

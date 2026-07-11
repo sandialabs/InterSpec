@@ -29,7 +29,7 @@ Determine the analysis type:
 
 Check prerequisites:
 - `get_spectrum_info` - Verify foreground spectrum is loaded
-- `get_detected_peaks` - Check for relevant peaks to confirm material type
+- `get_peaks` - Check for relevant peaks to confirm material type
 
 ### Step 2: Select and Load Configuration
 
@@ -61,7 +61,7 @@ Call `get_isotopics_config` to review:
 
 ### Step 4: Check for Interferences
 
-Review with `get_analysis_peaks` for non-target nuclides with peaks in the analysis energy ranges.
+Review with `get_peaks` (filter 'analysis') for non-target nuclides with peaks in the analysis energy ranges.
 
 **Common interferences:**
 - **Pu analysis**: I-131, Cs-137, other fission products

@@ -59,7 +59,7 @@ using namespace std;
 using namespace boost::unit_test;
 using json = nlohmann::json;
 
-// TODO: as of 20251013, need to add tests for: `currie_mda_calc`, `add_analysis_peaks_for_source`, `automated_source_id_results`, and `nuclides_with_primary_gammas_in_energy_range` 
+// TODO: as of 20251013, need to add tests for: `currie_mda_calc`, `add_analysis_peaks_for_source`, `get_automated_id_results`, and `sources_with_gammas_near_energy` 
 
 
 std::string g_test_file_dir;
@@ -306,9 +306,10 @@ BOOST_AUTO_TEST_CASE( test_executeMarkPeaksForActivityFit )
   // Verify all peaks were added to analysis peaks
   json verify_peaks_params;
   verify_peaks_params["specType"] = "Foreground";
+  verify_peaks_params["filter"] = "analysis";
 
   json verify_peaks_result;
-  BOOST_REQUIRE_NO_THROW( verify_peaks_result = registry->executeTool( "get_analysis_peaks", verify_peaks_params, interspec ) );
+  BOOST_REQUIRE_NO_THROW( verify_peaks_result = registry->executeTool( "get_peaks", verify_peaks_params, interspec ) );
   BOOST_REQUIRE( verify_peaks_result.contains("rois") );
   BOOST_REQUIRE( verify_peaks_result["rois"].is_array() );
 
@@ -388,9 +389,10 @@ BOOST_AUTO_TEST_CASE( test_executeMarkPeaksForActivityFit )
   // Verify that peaks are actually marked for activity fit
   json get_peaks_params;
   get_peaks_params["specType"] = "Foreground";
+  get_peaks_params["filter"] = "analysis";
 
   json get_peaks_result;
-  BOOST_REQUIRE_NO_THROW( get_peaks_result = registry->executeTool( "get_analysis_peaks", get_peaks_params, interspec ) );
+  BOOST_REQUIRE_NO_THROW( get_peaks_result = registry->executeTool( "get_peaks", get_peaks_params, interspec ) );
   BOOST_REQUIRE( get_peaks_result.contains("rois") );
   BOOST_REQUIRE( get_peaks_result["rois"].is_array() );
 
@@ -443,7 +445,7 @@ BOOST_AUTO_TEST_CASE( test_executeMarkPeaksForActivityFit )
   BOOST_CHECK( mark_false_result.contains("errors") );
 
   // Verify that 554.35 peak is now unmarked for activity fit
-  BOOST_REQUIRE_NO_THROW( get_peaks_result = registry->executeTool( "get_analysis_peaks", get_peaks_params, interspec ) );
+  BOOST_REQUIRE_NO_THROW( get_peaks_result = registry->executeTool( "get_peaks", get_peaks_params, interspec ) );
   BOOST_REQUIRE( get_peaks_result.contains("rois") );
   BOOST_REQUIRE( get_peaks_result["rois"].is_array() );
 
@@ -645,7 +647,7 @@ BOOST_AUTO_TEST_CASE( test_executeModifyShieldingSourceConfig )
   // Verify Br82 peaks are in analysis peaks and NOT marked for shielding fit
   cout << "  Verifying Br82 peaks are in analysis peaks..." << endl;
   json verify_br82_peaks;
-  BOOST_REQUIRE_NO_THROW( verify_br82_peaks = registry->executeTool( "get_analysis_peaks", json::object(), interspec ) );
+  BOOST_REQUIRE_NO_THROW( verify_br82_peaks = registry->executeTool( "get_peaks", json{{"filter", "analysis"}}, interspec ) );
   BOOST_REQUIRE( verify_br82_peaks.contains("rois") );
   BOOST_REQUIRE( verify_br82_peaks["rois"].is_array() );
 
@@ -727,7 +729,7 @@ BOOST_AUTO_TEST_CASE( test_executeModifyShieldingSourceConfig )
   // Verify Th232 peak is in analysis peaks and IS marked for shielding fit
   cout << "  Verifying Th232 peak is in analysis peaks..." << endl;
   json verify_th232_peak;
-  BOOST_REQUIRE_NO_THROW( verify_th232_peak = registry->executeTool( "get_analysis_peaks", json::object(), interspec ) );
+  BOOST_REQUIRE_NO_THROW( verify_th232_peak = registry->executeTool( "get_peaks", json{{"filter", "analysis"}}, interspec ) );
   BOOST_REQUIRE( verify_th232_peak.contains("rois") );
   BOOST_REQUIRE( verify_th232_peak["rois"].is_array() );
 
@@ -983,7 +985,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_SinglePeak )
   peak_params["specType"] = "Foreground";
 
   json peak_result;
-  BOOST_REQUIRE_NO_THROW( peak_result = registry->executeTool( "get_detected_peaks", peak_params, interspec ) );
+  BOOST_REQUIRE_NO_THROW( peak_result = registry->executeTool( "get_peaks", peak_params, interspec ) );
   BOOST_CHECK( peak_result.contains("rois") );
 
   // Add the Br82 peak at 554.35 keV to the analysis peaks
@@ -1178,7 +1180,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_WithAge )
   json peak_params;
   peak_params["specType"] = "Foreground";
   
-  BOOST_REQUIRE_NO_THROW( registry->executeTool( "get_detected_peaks", peak_params, interspec ) );
+  BOOST_REQUIRE_NO_THROW( registry->executeTool( "get_peaks", peak_params, interspec ) );
   
   
   const double ba133_peaks_energies[] = { 80.94, 276.83, 303.31, 356.57, 384.47 };
@@ -1292,7 +1294,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_CustomMode )
   // Detect peaks first
   json peak_params;
   peak_params["specType"] = "Foreground";
-  //BOOST_REQUIRE_NO_THROW( registry->executeTool( "get_detected_peaks", peak_params, interspec ) );
+  //BOOST_REQUIRE_NO_THROW( registry->executeTool( "get_peaks", peak_params, interspec ) );
 
 
   // Add some Br82 peaks

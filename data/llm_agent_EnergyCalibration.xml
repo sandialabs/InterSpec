@@ -53,7 +53,7 @@ CRITICAL: You must advance through the state machine ONE STATE AT A TIME. After 
 
 ## Key Tools
 - **Workflow**: `set_workflow_state` (REQUIRED at each phase transition)
-- **Discovery**: `loaded_spectra`, `get_spectrum_info`, `get_detected_peaks`
+- **Discovery**: `get_loaded_spectra`, `get_spectrum_info`, `get_peaks`
 - **Peak management**: `add_analysis_peak`
 - **Calibration**: `fit_energy_calibration`
 - **Validation**: `search_sources_by_energy`
@@ -69,10 +69,10 @@ CRITICAL: You must advance through the state machine ONE STATE AT A TIME. After 
           <Transition>CHECKPOINT_STATE</Transition>
         </AllowedTransitions>
         <SuggestedTools>
-          <Tool>loaded_spectra</Tool>
+          <Tool>get_loaded_spectra</Tool>
           <Tool>get_spectrum_info</Tool>
         </SuggestedTools>
-        <PromptGuidance>Call `loaded_spectra` to see what spectra are available. Call `get_spectrum_info` for each loaded spectrum to check calibration type and energy range. Note which spectra need calibrating. If background is loaded, it will be calibrated first. Transition to CHECKPOINT_STATE.</PromptGuidance>
+        <PromptGuidance>Call `get_loaded_spectra` to see what spectra are available. Call `get_spectrum_info` for each loaded spectrum to check calibration type and energy range. Note which spectra need calibrating. If background is loaded, it will be calibrated first. Transition to CHECKPOINT_STATE.</PromptGuidance>
         <EphemeralMessageTxt>Assessing loaded spectra and calibration state.</EphemeralMessageTxt>
       </State>
 
@@ -97,13 +97,12 @@ CRITICAL: You must advance through the state machine ONE STATE AT A TIME. After 
           <Transition>REPORT_FAILURE</Transition>
         </AllowedTransitions>
         <SuggestedTools>
-          <Tool>get_analysis_peaks</Tool>
-          <Tool>get_detected_peaks</Tool>
+          <Tool>get_peaks</Tool>
           <Tool>add_analysis_peak</Tool>
         </SuggestedTools>
-        <PromptGuidance>First, check existing analysis peaks using `get_analysis_peaks` on the current target spectrum (background first if present, then foreground, then secondary). Look for peaks near 1460.8 keV (K40) and 2614.5 keV (Th232) that already have the correct source assignment. If a suitable peak is already an analysis peak with the right source, you can use it directly without calling `add_analysis_peak`.
+        <PromptGuidance>First, check existing analysis peaks using `get_peaks` (with `{"filter": "analysis"}`) on the current target spectrum (background first if present, then foreground, then secondary). Look for peaks near 1460.8 keV (K40) and 2614.5 keV (Th232) that already have the correct source assignment. If a suitable peak is already an analysis peak with the right source, you can use it directly without calling `add_analysis_peak`.
 
-If no suitable analysis peak exists, use `get_detected_peaks` to find candidate peaks. The current calibration may be off by up to ~15 keV, so search within that range.
+If no suitable analysis peak exists, use `get_peaks` (default 'all' filter) to find candidate peaks. The current calibration may be off by up to ~15 keV, so search within that range.
 
 Always pick ONE peak for gain-only fit:
 - Prefer Th232 2614 keV if its numSigma greater than 12

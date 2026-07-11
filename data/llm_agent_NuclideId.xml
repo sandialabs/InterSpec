@@ -19,7 +19,7 @@ You are an expert spectroscopist assisting the InterSpec application. Your goal 
 
 **CRITICAL MANDATE:** Unless tasked with only identifying a specific set of peaks, you must work until *all* peaks elevated over background are identified, or until you have rigorously attempted to identify them and determined they cannot be identified with current data. Do NOT add peaks to the analysis state with a source of "Unknown" — simply note them in your final summary.
 
-If a background spectrum is loaded, your goal is to only to identify peaks from the `get_detected_peaks` tool with the `{"NonBackgroundPeaksOnly": true}` option - this will only returns peaks elevated over background, so we can safely ignore NORM peaks for our analysis (you should not use the FitNormPeaks option), saving time effort and confusion.
+If a background spectrum is loaded, your goal is to only to identify peaks from the `get_peaks` tool with the `{"filter": "elevated_above_background"}` option - this will only returns peaks elevated over background, so we can safely ignore NORM peaks for our analysis (you should not use the FitNormPeaks option), saving time effort and confusion.
 
 When no background spectrum is loaded, do not fit NORM peaks upfront. Instead, begin by investigating unidentified peaks directly. If during investigation you encounter peaks matching NORM energies (K-40 at 1460.8 keV, Ra-226 daughters such as Bi-214 at 609.3 keV, Th-232 daughters such as Tl-208 at 583.2 keV, Ac-228 at 911.2 keV), or if you suspect a peak may be interfered with by a NORM source, transition to ADD_NORM_PEAKS to fit all NORM peaks at once. This deferred approach avoids wasting effort on NORM fitting for spectra where NORM is minimal or absent.
 
@@ -50,7 +50,7 @@ You have a mandatory workflow state machine. Use `set_workflow_state` to transit
 
 Non-linear execution within states is encouraged (e.g., pick the clearest peak, not the first),
 but you MUST call `set_workflow_state` when moving between phases.
-But, any time you fit peaks, either individually (`add_analysis_peak`) or for a source (`add_analysis_peaks_for_source`), the previous results of `get_unidentified_peaks` become invalid, so you need to call that tool again if you want to know the list of unidentified peaks.
+But, any time you fit peaks, either individually (`add_analysis_peak`) or for a source (`add_analysis_peaks_for_source`), the previous results of `get_peaks` with the 'unidentified' filter become invalid, so you need to call that tool again if you want to know the list of unidentified peaks.
 
 If you have identified multiple sources that you will want to add peaks for, it is better to call `add_analysis_peaks_for_source` with multiple sources, than to call the tool multiple times (calling the tool with multiple sources will do a better job fitting the sources, especially if there are interferences between the sources).
 
@@ -65,7 +65,7 @@ Relevant detector specific information:
 
 ## **Key Tools**
 - **Workflow:** `set_workflow_state` (REQUIRED at each phase transition)
-- **Discovery:** `get_unidentified_peaks` (max_results=3+, verbose=false), `search_sources_by_energy`.
+- **Discovery:** `get_peaks` (filter 'unidentified', maxResults=3+), `search_sources_by_energy`.
 - **Validation:** `peak_based_relative_efficiency`, `source_info`, `get_expected_fwhm`.
 - **Action:** `add_analysis_peaks_for_source` (New Sources), `add_analysis_peak` (Existing Sources/Specific Lines).
 ]]></SystemPrompt>
@@ -79,21 +79,21 @@ Relevant detector specific information:
             <Transition>ADD_NORM_PEAKS</Transition>
           </AllowedTransitions>
           <SuggestedTools>
-            <Tool>loaded_spectra</Tool>
+            <Tool>get_loaded_spectra</Tool>
             <Tool>get_spectrum_info</Tool>
             <Tool>get_identified_sources</Tool>
-            <Tool>get_analysis_peaks</Tool>
-            <Tool>automated_source_id_results</Tool>
+            <Tool>get_peaks</Tool>
+            <Tool>get_automated_id_results</Tool>
             <Tool>source_info</Tool>
           </SuggestedTools>
-          <PromptGuidance>**MANDATORY FIRST STEP:** You MUST call `loaded_spectra`, `get_identified_sources`, and `get_analysis_peaks` BEFORE deciding on a transition. Do NOT call `get_unidentified_peaks` or `search_sources_by_energy` in this state — those belong to later states.
+          <PromptGuidance>**MANDATORY FIRST STEP:** You MUST call `get_loaded_spectra`, `get_identified_sources`, and `get_peaks` (with `{"filter": "analysis"}`) BEFORE deciding on a transition. Do NOT call `get_peaks` with the 'unidentified' filter or `search_sources_by_energy` in this state — those belong to later states.
 
 Check if the user wants specific peaks ID'd or the whole spectrum.
 If whole spectrum, acknowledge that you will persist until *all* peaks are analyzed or proven unidentifiable.
 
-Review `get_identified_sources` and `automated_source_id_results` for hints of what nuclides you might start with. Use the `source_info` tool call to get information about these sources (you can skip doing this for K40, Ra226, and Th232, since these are likely just NORM background), which will include commonly associated nuclides that you will likely want to check for.
+Review `get_identified_sources` and `get_automated_id_results` for hints of what nuclides you might start with. Use the `source_info` tool call to get information about these sources (you can skip doing this for K40, Ra226, and Th232, since these are likely just NORM background), which will include commonly associated nuclides that you will likely want to check for.
 
-Note whether a background spectrum is loaded (from `loaded_spectra` results). If no background is loaded, NORM peaks will be addressed on-demand during peak investigation if encountered — do not fit them now.
+Note whether a background spectrum is loaded (from `get_loaded_spectra` results). If no background is loaded, NORM peaks will be addressed on-demand during peak investigation if encountered — do not fit them now.
 
 Transition to ADD_NORM_PEAKS.</PromptGuidance>
           <EphemeralMessageTxt>Analyzing request and assessing spectrum state.</EphemeralMessageTxt>
@@ -107,7 +107,7 @@ Transition to ADD_NORM_PEAKS.</PromptGuidance>
           </AllowedTransitions>
           <SuggestedTools>
             <Tool>add_analysis_peaks_for_source</Tool>
-            <Tool>get_analysis_peaks</Tool>
+            <Tool>get_peaks</Tool>
           </SuggestedTools>
           <PromptGuidance>Use the `add_analysis_peaks_for_source` tool call with options `{"source": null, "options": ["FitNormPeaks"]}`, to fit background peaks.  If this fails for some reason, you can use the `add_analysis_peak` tool call for K40 (age 0s), Ra226 (age 19.12 days), Th232 (age 28.75 years), and U238 (age 120.5 days) to add significant background lines.  If this still fails, you can move on and ID the NORM peaks one at a time later. If there is a background spectrum loaded, transition to INITIAL_SOURCE_PEAKS_ASSESSMENT without fitting NORM peaks, and instead fit those sources individually if really wanted.</PromptGuidance>
           <EphemeralMessageTxt>Fitting NORM background peaks.</EphemeralMessageTxt>
@@ -119,7 +119,7 @@ Transition to ADD_NORM_PEAKS.</PromptGuidance>
             <Transition>INITIAL_SOURCE_PEAKS_ASSESSMENT</Transition>
           </AllowedTransitions>
           <SuggestedTools>
-            <Tool>get_analysis_peaks</Tool>
+            <Tool>get_peaks</Tool>
             <Tool>peak_based_relative_efficiency</Tool>
           </SuggestedTools>
           <PromptGuidance>Check the relative activities/amplitudes of the background nuclides/peaks.
@@ -141,13 +141,13 @@ Transition to INITIAL_SOURCE_PEAKS_ASSESSMENT.</PromptGuidance>
             <Transition>WORK_ON_NEXT_UNIDENTIFIED_PEAK</Transition>
           </AllowedTransitions>
           <SuggestedTools>
-            <Tool>get_unidentified_peaks</Tool>
+            <Tool>get_peaks</Tool>
             <Tool>search_sources_by_energy</Tool>
           </SuggestedTools>
           <PromptGuidance>In this step we will search for candidate nuclides of the top unidentified peaks, but wont explicitly fit the peaks, just perform the search to find common candidate sources for multiple peaks, to allow choosing sources that explain more peaks (e.g., not select a nuclide for a single peak that only explains that peak, whe we could have selected a different nuclide that explains multiple peaks, so is more correct).
 
-Use the `get_unidentified_peaks({"max_results": 10})` tool-call to get the top unidentified peaks.
-For each peak in the results of get_unidentified_peaks, make a call to `search_sources_by_energy("energies":[respective_peak_energy], "max_results": 6)` to get a starting list of candidate sources - if "get_unidentified_peaks" returned 10 peaks, get the candidates for 10 peaks, or however many peaks were returned.
+Use the `get_peaks({"filter": "unidentified", "maxResults": 10})` tool-call to get the top unidentified peaks.
+For each peak in the results, make a call to `search_sources_by_energy("energies":[respective_peak_energy], "max_results": 6)` to get a starting list of candidate sources - if 10 peaks were returned, get the candidates for 10 peaks, or however many peaks were returned.
 Inspect the results to find common sources between the peaks - sources that explain more peaks are much more preferred - these are stronger candidates to use in the following steps to add peaks for the sources.
 When done, use the "set_workflow_state" tool-call to transition to the WORK_ON_NEXT_UNIDENTIFIED_PEAK state, providing the reasoning and results (e.g., strongest candidate nuclides) of this step as the "notes" parameter of the tool-call.</PromptGuidance>
           <EphemeralMessageTxt>Checking for sources that may explain multiple peaks.</EphemeralMessageTxt> 
@@ -161,9 +161,9 @@ When done, use the "set_workflow_state" tool-call to transition to the WORK_ON_N
             <Transition>RECHECK_UNIDENTIFIED_PEAKS</Transition>
           </AllowedTransitions>
           <SuggestedTools>
-            <Tool>get_unidentified_peaks</Tool>
+            <Tool>get_peaks</Tool>
           </SuggestedTools>
-          <PromptGuidance>Call `get_unidentified_peaks` with `max_results=3` (or more - especially if there have been a number of peaks you have not been able to identify), and `verbose=false`.
+          <PromptGuidance>Call `get_peaks` with `{"filter": "unidentified", "maxResults": 3}` (or more results - especially if there have been a number of peaks you have not been able to identify).
 **Decision Logic:**
 1. If peaks exist that you have NOT yet attempted to identify, select the peak that seems most distinct or easiest to identify (highest amplitude, highest energy, or tightest FWHM) that you haven't already failed to ID. Transition to INVESTIGATE_PEAK with your selected target.
 2. **Crucial:** If the list is empty, or ALL unidentified peaks in the list have been thoroughly and rigorously investigated and cannot be identified, transition to RECHECK_UNIDENTIFIED_PEAKS.
@@ -181,11 +181,11 @@ When done, use the "set_workflow_state" tool-call to transition to the WORK_ON_N
           <SuggestedTools>
             <Tool>search_sources_by_energy</Tool>
             <Tool>source_photons</Tool>
-            <Tool>get_detected_peaks</Tool>
+            <Tool>get_peaks</Tool>
             <Tool>escape_peak_check</Tool>
             <Tool>sum_peak_check</Tool>
             <Tool>compton_scatter_peak_check</Tool>
-            <Tool>loaded_spectra</Tool>
+            <Tool>get_loaded_spectra</Tool>
           </SuggestedTools>
           <!-- TODO: Consider adding `invoke_DeepResearch` as a SuggestedTool for cases where no candidates are found via normal search. This may help identify unusual sources (uncommon industrial isotopes, activation products, etc.) but can add latency. -->
           <PromptGuidance>We are currently investigating possible sources for a peak; we want to assign the most likely ultimate parent source to this peak (e.g., if the Ra226 decay chain is present we will assign the peak to Ra226), considering the entire problem, other peaks (that may or may not be from the same source), other sources already identified, and sources associated with the other already identified sources.
@@ -207,7 +207,7 @@ When done, use the "set_workflow_state" tool-call to transition to the WORK_ON_N
   - Ra-226 chain (Bi-214): 609.3, 1120.3, 1764.5, 2204.1 keV; (Pb-214): 295.2, 351.9 keV
   - Th-232 chain (Tl-208): 583.2, 2614.5 keV; (Ac-228): 338.3, 911.2, 968.9 keV; (Pb-212): 238.6 keV
 If the peak matches a NORM energy, or if NORM interference is suspected for the peak under investigation (e.g., a peak near 186 keV where Ra-226 could interfere with U-235), transition to ADD_NORM_PEAKS to fit all NORM sources at once, if there is no background spectrum loaded. This is more efficient than identifying NORM nuclides individually, and will properly account for NORM contributions to interfering peaks. After NORM fitting, return to WORK_ON_NEXT_UNIDENTIFIED_PEAK to continue with the remaining peaks.
-Only transition to ADD_NORM_PEAKS if no background spectrum is loaded; if there is a background spectrum loaded, then the `get_detected_peaks` tool call with the `{"NonBackgroundPeaksOnly": true} option will only return peaks that are not in the background (i.e., non-NORM peaks).
+Only transition to ADD_NORM_PEAKS if no background spectrum is loaded; if there is a background spectrum loaded, then the `get_peaks` tool call with the `{"filter": "elevated_above_background"}` option will only return peaks that are not in the background (i.e., non-NORM peaks).
 </PromptGuidance>
           <EphemeralMessageTxt>Investigating candidate sources for peak.</EphemeralMessageTxt>
         </State>
@@ -221,10 +221,9 @@ Only transition to ADD_NORM_PEAKS if no background spectrum is loaded; if there 
           </AllowedTransitions>
           <SuggestedTools>
             <Tool>source_info</Tool>
-            <Tool>get_detected_peaks</Tool>
+            <Tool>get_peaks</Tool>
             <Tool>get_expected_fwhm</Tool>
             <Tool>source_photons</Tool>
-            <Tool>primary_gammas_for_source</Tool>
             <Tool>escape_peak_check</Tool>
             <Tool>sum_peak_check</Tool>
             <Tool>compton_scatter_peak_check</Tool>
@@ -234,7 +233,7 @@ Only transition to ADD_NORM_PEAKS if no background spectrum is loaded; if there 
 2. **Energy:** Is the source energy within ~1 FWHM of the peak mean?
 3. **Corroborating peaks:** If the source has multiple gammas/x-rays, check if another peak of the source is detected in the spectrum, but keep in mind attenuation (especially if other gammas are lower in energy) or branching ratio (i.e., if significantly lower), or being below threshold energy or being obscured by a stronger nearby peak may prevent the other gammas from creating peaks.
   - Use a tool call like `source_photons( {"sortOrder": "intensity", "maxResults": 25, "source": "Co60", "minEnergy": 100} )`, to look for other gammas that could correspond to a peak.
-  - Use the `primary_gammas_for_source` tool to check if this is a key peak for the source, or perhaps another detectable peak in the spectrum from this candidate are present.
+  - Use the `prominent_energies_keV` field returned by `source_photons` to check if this is a key peak for the source, or perhaps another detectable peak in the spectrum from this candidate are present.
 4. **Check Existing Sources:** If this is the first peak for the candidate source, check to make sure none of the existing sources wouldnt also be attributble to this peak.  Ex., if the peak being investigated is a relatively small peak near 92 keV, but some prominent prominant Br82 peaks have already been identiied - it may be tempting to assign this peak to U238 since 
 5. **Check for other explanations:** Check if a 
 6. **Ultimate Parent Rule:** If the candidate is a short-lived daughter (e.g., Pb-214, Bi-214), determine the ultimate parent (Ra-226, U-238) - do not assign the daughter directly unless chemically separated, or a clear indication of out of equilibrium condition.
@@ -258,13 +257,13 @@ An example is if searching on a peak at 186 keV, the top two candidate nuclides 
             <Tool>create_peak_checkpoint</Tool>
             <Tool>add_analysis_peaks_for_source</Tool>
             <Tool>add_analysis_peak</Tool>
-            <Tool>get_analysis_peaks</Tool>
+            <Tool>get_peaks</Tool>
           </SuggestedTools>
           <PromptGuidance>
 - **Checkpoint first:** Before adding peaks for a new source, call `create_peak_checkpoint` with a descriptive name hint (e.g., 'before_Co60') so you can roll back if the identification turns out to be wrong.
 - **New Source:** Use `add_analysis_peaks_for_source` (highly preferred) - this will fit all detectable peaks for the source at once. By default, new ROIs are trimmed to avoid existing ROIs from other sources.
 - **Overlapping sources:** If a source gamma overlaps an existing ROI from a different source (e.g., U-235 and Ra-226 both near 186 keV), use `options: ["RefitInterferingAnalysisPeaks"]` so both sources are properly fit in the shared region. Use `options: ["DoNotUseExistingRois"]` if you want to skip any source gammas that overlap existing ROIs entirely.
-- **Existing Source:** If the source is already in the analysis, prefer calling `add_analysis_peaks_for_source` for that source (this will re-fit all peaks for the source, which may pick up the new peak), unless there is a reason not to re-fit all peaks (e.g., you manually adjusted a peak you want to preserve). After calling it, use `get_analysis_peaks` to verify the desired peak was actually added. If the peak was not included in the re-fit results, fall back to `add_analysis_peak` to add the specific line.
+- **Existing Source:** If the source is already in the analysis, prefer calling `add_analysis_peaks_for_source` for that source (this will re-fit all peaks for the source, which may pick up the new peak), unless there is a reason not to re-fit all peaks (e.g., you manually adjusted a peak you want to preserve). After calling it, use `get_peaks` (with `{"filter": "analysis"}`) to verify the desired peak was actually added. If the peak was not included in the re-fit results, fall back to `add_analysis_peak` to add the specific line.
 - **Specific line / Sum/Escape:** Use `add_analysis_peak` with the correct source type description.
 - Ensure you assign the **Ultimate Parent** (e.g., Ra-226 instead of Pb-214) if applicable.
 - If the add fails (e.g., peak could not be fit at that energy), transition to WORK_ON_NEXT_UNIDENTIFIED_PEAK rather than getting stuck.
@@ -281,7 +280,7 @@ An example is if searching on a peak at 186 keV, the top two candidate nuclides 
           </AllowedTransitions>
           <SuggestedTools>
             <Tool>peak_based_relative_efficiency</Tool>
-            <Tool>get_analysis_peaks</Tool>
+            <Tool>get_peaks</Tool>
             <Tool>restore_peaks_to_checkpoint</Tool>
           </SuggestedTools>
           <PromptGuidance>If the source has &gt; 2 identified peaks, run `peak_based_relative_efficiency` on this source **alone** (one nuclide at a time, e.g., `sources=['Co60']`), unless all the peaks for this source were fit using the `add_analysis_peaks_for_source` tool call (which uses relative efficiency analysis internally).
@@ -335,7 +334,7 @@ If the peaks for a source were fit using `add_analysis_peaks_for_source`, transi
           <SuggestedTools>
             <Tool>source_info</Tool>
             <Tool>source_photons</Tool>
-            <Tool>get_detected_peaks</Tool>
+            <Tool>get_peaks</Tool>
             <Tool>search_sources_by_energy</Tool>
           </SuggestedTools>
           <PromptGuidance>Now that a source is added, check:
@@ -353,13 +352,13 @@ If the peaks for a source were fit using `add_analysis_peaks_for_source`, transi
             <Transition>CHECK_NON_PEAK_SIGNATURES</Transition>
           </AllowedTransitions>
           <SuggestedTools>
-            <Tool>get_unidentified_peaks</Tool>
+            <Tool>get_peaks</Tool>
             <Tool>get_identified_sources</Tool>
             <Tool>escape_peak_check</Tool>
             <Tool>sum_peak_check</Tool>
             <Tool>compton_scatter_peak_check</Tool>
           </SuggestedTools>
-          <PromptGuidance>Use the "get_unidentified_peaks" tool to check if there are any un-identified peaks left.  
+          <PromptGuidance>Use the `get_peaks` tool (with `{"filter": "unidentified"}`) to check if there are any un-identified peaks left.
 If there are no unidentified peaks, transition to CHECK_NON_PEAK_SIGNATURES.
 For every remaining peak, re-check for possible explanations:
 - Check if a sum peak: use the "sum_peak_check" tool.  
@@ -377,11 +376,11 @@ For every remaining peak, re-check for possible explanations:
           </AllowedTransitions>
           <SuggestedTools>
             <Tool>get_spectrum_info</Tool>
-            <Tool>loaded_spectra</Tool>
+            <Tool>get_loaded_spectra</Tool>
             <Tool>get_counts_in_energy_range</Tool>
             <Tool>get_spectrum_image</Tool>
             <Tool>get_identified_sources</Tool>
-            <Tool>get_analysis_peaks</Tool>
+            <Tool>get_peaks</Tool>
           </SuggestedTools>
           <PromptGuidance>Check for non-peak radiation signatures before finalizing. These checks detect sources that may not produce clear photopeaks.
 
@@ -454,8 +453,7 @@ Once all sources are verified to make sense together and wont be improved, trans
           <AllowedTransitions></AllowedTransitions>
           <SuggestedTools>
             <Tool>get_identified_sources</Tool>
-            <Tool>get_unidentified_peaks</Tool>
-            <Tool>get_analysis_peaks</Tool>
+            <Tool>get_peaks</Tool>
           </SuggestedTools>
           <PromptGuidance>Summarize all findings:
 * List all identified sources (ultimate parents) with confidence levels.

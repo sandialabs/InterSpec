@@ -11,7 +11,7 @@ When a background spectrum is loaded, differentiate foreground peaks from backgr
   - **Unexplained**: No corresponding background peak. Requires investigation.
 - If most background-associated peaks are consistently elevated or suppressed in the foreground, the background spectrum may not be representative.
 
-The `get_unidentified_peaks` tool handles this automatically, returning only elevated or unexplained foreground peaks.
+The `get_peaks` tool with `{"filter": "unidentified"}` handles this automatically, returning only elevated or unexplained foreground peaks.
 
 ## NORM Background
 

@@ -60,6 +60,39 @@ using namespace boost::unit_test;
 using json = nlohmann::json;
 
 
+/** Converts the compact 'timeSlices' table ({"columns": [...], "rows": [[...],...]}) returned by
+ get_time_history_count_rates into an array of objects keyed by column name, with the '_s' unit
+ suffixes stripped (i.e., 'startTime_s' -> 'startTime'), so test assertions read naturally.
+ */
+json time_slices_as_objects( const json &result )
+{
+  BOOST_REQUIRE( result.contains("timeSlices") && result["timeSlices"].is_object() );
+  const json &table = result["timeSlices"];
+  BOOST_REQUIRE( table.contains("columns") && table.contains("rows") );
+
+  vector<string> columns;
+  for( const auto &col : table["columns"] )
+  {
+    string name = col.get<string>();
+    if( SpecUtils::iends_with( name, "_s" ) )
+      name = name.substr( 0, name.size() - 2 );
+    columns.push_back( name );
+  }
+
+  json slices = json::array();
+  for( const auto &row : table["rows"] )
+  {
+    BOOST_REQUIRE( row.is_array() && (row.size() == columns.size()) );
+    json slice = json::object();
+    for( size_t i = 0; i < columns.size(); ++i )
+      slice[columns[i]] = row[i];
+    slices.push_back( std::move(slice) );
+  }
+
+  return slices;
+}//time_slices_as_objects(...)
+
+
 std::string g_test_file_dir;
 
 // We need to set the static data directory, so the code knows where
@@ -282,7 +315,7 @@ BOOST_AUTO_TEST_CASE( test_get_time_history_count_rates_basic )
     BOOST_REQUIRE_MESSAGE( result.contains( "timeSlices" ), "Missing timeSlices for " << filename );
     BOOST_REQUIRE_MESSAGE( result.contains( "numEntries" ), "Missing numEntries for " << filename );
 
-    const json &timeSlices = result["timeSlices"];
+    const json timeSlices = time_slices_as_objects( result );
     const int numEntries = result["numEntries"].get<int>();
 
     BOOST_REQUIRE( timeSlices.is_array() );
@@ -339,10 +372,10 @@ BOOST_AUTO_TEST_CASE( test_get_time_history_count_rates_maxEntries )
 
   const int numEntries = result["numEntries"].get<int>();
   BOOST_CHECK_MESSAGE( numEntries <= 10, "Expected at most 10 entries, got " << numEntries );
-  BOOST_CHECK_EQUAL( result["timeSlices"].size(), static_cast<size_t>( numEntries ) );
+  BOOST_CHECK_EQUAL( time_slices_as_objects( result ).size(), static_cast<size_t>( numEntries ) );
 
   // Even with maxEntries, the startTimes should still be monotonically non-decreasing
-  const json &slices = result["timeSlices"];
+  const json slices = time_slices_as_objects( result );
   for( size_t i = 1; i < slices.size(); ++i )
   {
     BOOST_CHECK( slices[i]["startTime"].get<double>() >= slices[i - 1]["startTime"].get<double>() );
@@ -362,7 +395,7 @@ BOOST_AUTO_TEST_CASE( test_get_time_history_count_rates_time_range )
   json fullResult;
   BOOST_REQUIRE_NO_THROW( fullResult = registry.executeTool( "get_time_history_count_rates", fullParams, fixture.m_interspec ) );
 
-  const json &fullSlices = fullResult["timeSlices"];
+  const json fullSlices = time_slices_as_objects( fullResult );
   BOOST_REQUIRE( fullSlices.size() >= 3 );
 
   const double firstTime = fullSlices[0]["startTime"].get<double>();
@@ -388,7 +421,7 @@ BOOST_AUTO_TEST_CASE( test_get_time_history_count_rates_time_range )
     "Filtered result should have fewer entries than full result" );
 
   // All returned slices should overlap with requested range
-  const json &filtSlices = result["timeSlices"];
+  const json filtSlices = time_slices_as_objects( result );
   for( size_t i = 0; i < filtSlices.size(); ++i )
   {
     const double sampleStart = filtSlices[i]["startTime"].get<double>();
@@ -424,8 +457,8 @@ BOOST_AUTO_TEST_CASE( test_get_time_history_count_rates_energy_filter )
   BOOST_CHECK_EQUAL( fullResult["numEntries"].get<int>(), filteredResult["numEntries"].get<int>() );
 
   // Filtered CPS should be <= unfiltered CPS for each entry
-  const json &fullSlicesE = fullResult["timeSlices"];
-  const json &filtSlicesE = filteredResult["timeSlices"];
+  const json fullSlicesE = time_slices_as_objects( fullResult );
+  const json filtSlicesE = time_slices_as_objects( filteredResult );
   BOOST_REQUIRE_EQUAL( fullSlicesE.size(), filtSlicesE.size() );
 
   for( size_t i = 0; i < fullSlicesE.size(); ++i )
@@ -451,7 +484,7 @@ BOOST_AUTO_TEST_CASE( test_set_displayed_time_ranges )
   json countRatesResult;
   BOOST_REQUIRE_NO_THROW( countRatesResult = registry.executeTool( "get_time_history_count_rates", countRatesParams, fixture.m_interspec ) );
 
-  const json &tsSlices = countRatesResult["timeSlices"];
+  const json tsSlices = time_slices_as_objects( countRatesResult );
   BOOST_REQUIRE( tsSlices.size() >= 4 );
 
   const double firstTime = tsSlices[0]["startTime"].get<double>();
@@ -515,7 +548,7 @@ BOOST_AUTO_TEST_CASE( test_get_displayed_time_ranges )
   json countRatesResult;
   BOOST_REQUIRE_NO_THROW( countRatesResult = registry.executeTool( "get_time_history_count_rates", countRatesParams, fixture.m_interspec ) );
 
-  const json &slicesGD = countRatesResult["timeSlices"];
+  const json slicesGD = time_slices_as_objects( countRatesResult );
   BOOST_REQUIRE( slicesGD.size() >= 4 );
 
   const double firstTime = slicesGD[0]["startTime"].get<double>();
@@ -567,7 +600,7 @@ BOOST_AUTO_TEST_CASE( test_time_range_roundtrip )
   json countRatesResult;
   BOOST_REQUIRE_NO_THROW( countRatesResult = registry.executeTool( "get_time_history_count_rates", countRatesParams, fixture.m_interspec ) );
 
-  const json &slicesRT = countRatesResult["timeSlices"];
+  const json slicesRT = time_slices_as_objects( countRatesResult );
   BOOST_REQUIRE( slicesRT.size() >= 4 );
 
   const double firstTime = slicesRT[0]["startTime"].get<double>();

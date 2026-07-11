@@ -38,33 +38,30 @@ InterSpec is a nuclear radiation spectral analysis application. The MCP server e
 ## Tool Reference
 
 ### Spectrum Management
-- `loaded_spectra` - List currently loaded spectrum types (Foreground, Background, Secondary)
+- `get_loaded_spectra` - List currently loaded spectrum types (Foreground, Background, Secondary)
 - `get_spectrum_info` - Detailed metadata: live time, energy range, calibration, detector type. Pass `fileInfo: true` for full file details.
 - `load_spectrum_file` - Load a spectrum file from the filesystem. Load foreground first if loading a pair (background may be cleared when foreground changes).
 - `get_counts_in_energy_range` - Photon counts in an energy range with statistical foreground/background comparison.
 
 ### Peak Detection and Management
-- `get_detected_peaks` - All ROIs/peaks from automated search. Use `NonBackgroundPeaksOnly: true` to filter to elevated/unexplained foreground peaks.
-- `get_analysis_peaks` - Peaks in the internal analysis state (user-selected or agent-added).
+- `get_peaks` - Peaks in a spectrum, grouped by ROI. `filter` selects the subset: `all` (default, automated search + analysis peaks), `analysis` (internal analysis state - user-selected or agent-added), `unidentified` (foreground peaks without source assignments, elevated over background, sorted by amplitude), or `elevated_above_background`.
 - `get_identified_sources` - Unique sources currently assigned to analysis peaks.
-- `get_unidentified_peaks` - Foreground peaks without source assignments, elevated over background. Sorted by amplitude.
 - `add_analysis_peak` - Fit and add a single peak at a specified energy, optionally assigning a source.
 - `add_analysis_peaks_for_source` - Fit all detectable peaks for one or more sources at once. Much better than fitting individually for multi-line sources. Use `options: ["FitNormPeaks"]` with `source: null` for NORM background. By default, existing peaks for the same source are replaced and new ROIs are trimmed to avoid other sources' ROIs. Use `options: ["RefitInterferingAnalysisPeaks"]` when a source gamma overlaps an existing ROI from a different source (e.g., U-235/Ra-226 at 186 keV). Use `options: ["DoNotUseExistingRois"]` to skip source gammas that overlap any existing ROI.
-- `edit_analysis_peak` - Modify multiple peak properties in one call (energy, fwhm, amplitude, skew type/params, continuum type/coefs, fit-for flags, ROI bounds, source, color, label, usage flags), with automatic refit. Also supports structural actions (delete, split, merge).
+- `edit_analysis_peak` - Everyday peak edits in one call (centroid, fwhm, amplitude, fit-for flags, ROI bounds, source, color, label, usage flags), with automatic refit. Also supports structural actions (delete, split, merge).
+- `set_peak_shape` - Expert peak-shape surgery: skew type/params, continuum type/coefficients, uncertainty overrides.
 - `get_expected_fwhm` - Expected peak width at a given energy.
 
 ### Source Identification
-- `search_sources_by_energy` - Search for nuclides/x-rays/reactions matching specified energies. `profile_score` (higher = better) is the best match indicator. Prefer single-energy searches.
-- `sources_with_primary_gammas_near_energy` - Common field sources with primary gammas near an energy.
-- `sources_with_primary_gammas_in_energy_range` - Common field sources with primary gammas in an energy range.
-- `primary_gammas_for_source` - The most characteristic energies for a given source.
+- `search_sources_by_energy` - Search for nuclides/x-rays/reactions matching specified energies, ranked against the loaded spectrum. `profile_score` (higher = better) is the best match indicator. Prefer single-energy searches.
+- `sources_with_gammas_near_energy` - Catalog lookup: common field sources with a characteristic gamma near an energy (optional `window`); does not consider the loaded spectrum.
 
 ### Nuclear Data
 - `source_info` - Half-life, decay modes, analyst notes, associated sources, common mis-IDs, source categories.
-- `source_photons` - Energy/intensity pairs for a source. Supports sorting by energy or intensity, energy range filtering.
+- `source_photons` - Photon lines (energy/intensity table) for a source, plus `prominent_energies_keV` (its most characteristic energies). Supports sorting by energy or intensity, energy range filtering, cascade sums.
 - `nuclide_decay_chain` - Full decay chain with branching ratios.
 - `decay_calculator` - Calculate radioactive decay over time. Supports forward and back-decay, date ranges, progeny inclusion.
-- `automated_source_id_results` - Results from on-board and GADRAS automated ID algorithms (may be wrong/incomplete).
+- `get_automated_id_results` - Results from on-board and GADRAS automated ID algorithms (may be wrong/incomplete).
 
 ### Peak Validation
 - `escape_peak_check` - Check if a peak is a single/double escape peak of a higher-energy parent.
@@ -118,8 +115,8 @@ See the [interspec-energy-cal](../interspec-energy-cal/SKILL.md) sub-skill for d
 ## Quick-Start Workflows
 
 ### Identify Sources in a Spectrum
-1. Check what's loaded (`loaded_spectra`, `get_spectrum_info`).
-2. If background is present, use `get_unidentified_peaks` to find elevated foreground peaks.
+1. Check what's loaded (`get_loaded_spectra`, `get_spectrum_info`).
+2. If background is present, use `get_peaks` with `{"filter": "unidentified"}` to find elevated foreground peaks.
 3. If no background, fit NORM first: `add_analysis_peaks_for_source({source: null, options: ["FitNormPeaks"]})`.
 4. For each unidentified peak, use `search_sources_by_energy`, validate with `source_info` and corroborating peaks, then `add_analysis_peaks_for_source`.
 5. See the [interspec-nuclide-id](../interspec-nuclide-id/SKILL.md) sub-skill for the full workflow.

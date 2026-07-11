@@ -18,7 +18,7 @@ Determine the activity (Bq or Ci) and shielding parameters for identified radioa
 
 Before fitting, verify:
 1. **Detector efficiency loaded**: Call `detector_efficiency_function_info` (no args). If not loaded, use `available_detector_efficiency_functions` then `load_detector_efficiency_function`.
-2. **Peaks assigned to nuclides**: Call `get_analysis_peaks` and verify peaks have source assignments.
+2. **Peaks assigned to nuclides**: Call `get_peaks` with `{"filter": "analysis"}` and verify peaks have source assignments.
 3. **Peaks marked for fitting**: Check the `useForShieldingSourceFit` attribute on analysis peaks. Use `mark_peaks_for_activity_fit` or `edit_analysis_peak` with `useForShieldingSourceFit` to adjust.
 
 ## Detector Efficiency Types

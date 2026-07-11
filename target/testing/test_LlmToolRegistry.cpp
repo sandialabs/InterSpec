@@ -332,11 +332,21 @@ BOOST_AUTO_TEST_CASE( test_executeGetSourcePhotons )
   json result;
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
 
-  // Should return an object with a "photons" array and a description
+  // Should return an object with a "photons" compact table ('columns' header + positional 'rows'),
+  // the source/age echoed back, and the prominent (characteristic) energies.
   BOOST_REQUIRE( result.is_object() );
-  BOOST_REQUIRE( result.contains("photons") );
-  BOOST_CHECK( result.contains("photonsDescription") );
-  const json &photons = result["photons"];
+  BOOST_CHECK( result.contains("source") && (result["source"].get<std::string>() == "Cs137") );
+  BOOST_CHECK( result.contains("age") );
+  BOOST_CHECK( result.contains("prominent_energies_keV") && result["prominent_energies_keV"].is_array() );
+  BOOST_REQUIRE( result.contains("photons") && result["photons"].is_object() );
+  BOOST_REQUIRE( result["photons"].contains("columns") && result["photons"].contains("rows") );
+
+  const json &columns = result["photons"]["columns"];
+  BOOST_REQUIRE( columns.is_array() && (columns.size() == 2) );
+  BOOST_CHECK_EQUAL( columns[0].get<std::string>(), "energy_keV" );
+  BOOST_CHECK_EQUAL( columns[1].get<std::string>(), "intensity_perBq" );
+
+  const json &photons = result["photons"]["rows"];
   BOOST_CHECK( photons.is_array() );
   BOOST_CHECK( !photons.empty() );
 
@@ -364,19 +374,21 @@ BOOST_AUTO_TEST_CASE( test_executeGetSourcePhotons )
 
   BOOST_CHECK_MESSAGE( found_662, "Cs137 should have 662 keV gamma" );
 
-  // Test with an element (x-rays)
+  // Test with an element (x-rays) - intensity column should be relative
   params["Source"] = "Pb";
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
   BOOST_REQUIRE( result.is_object() && result.contains("photons") );
-  BOOST_CHECK( result["photons"].is_array() );
-  BOOST_CHECK( !result["photons"].empty() );
+  BOOST_REQUIRE( result["photons"].is_object() && result["photons"].contains("rows") );
+  BOOST_CHECK( !result["photons"]["rows"].empty() );
+  BOOST_CHECK_EQUAL( result["photons"]["columns"][1].get<std::string>(), "intensity_rel" );
+  BOOST_CHECK( !result.contains("age") );
 
   // Test with age parameter
   params["Source"] = "U238";
   params["Age"] = "0 seconds";
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
   BOOST_REQUIRE( result.is_object() && result.contains("photons") );
-  BOOST_CHECK( result["photons"].is_array() );
+  BOOST_CHECK( result["photons"].is_object() && result["photons"]["rows"].is_array() );
 
   // Test error handling - age with element should fail
   params["Source"] = "Pb";
@@ -712,7 +724,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetLoadedSpectra )
   const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   json result;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("loaded_spectra", {}, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_loaded_spectra", {}, fixture.m_interspec) );
   // Result is an object with a "loaded_spectra" array
   BOOST_REQUIRE( result.is_object() );
   BOOST_REQUIRE( result.contains("loaded_spectra") );
@@ -934,7 +946,7 @@ BOOST_AUTO_TEST_CASE( test_executePeakDetection )
   params["specType"] = "Foreground";
 
   json result;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_detected_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_peaks", params, fixture.m_interspec) );
   BOOST_CHECK( result.is_object() && result.contains("rois") && result["rois"].is_array() );
   
 
@@ -992,7 +1004,7 @@ BOOST_AUTO_TEST_CASE( test_executePeakDetection )
 
   // Test error handling - invalid spectrum type
   params["specType"] = "InvalidType";
-  BOOST_CHECK_THROW( registry.executeTool("get_detected_peaks", params, fixture.m_interspec), std::runtime_error );
+  BOOST_CHECK_THROW( registry.executeTool("get_peaks", params, fixture.m_interspec), std::runtime_error );
 }
 
 
@@ -1015,7 +1027,7 @@ BOOST_AUTO_TEST_CASE( test_executePeakDetection_energy_range_filtering )
   params["upperEnergy"] = 850.0;
 
   json result;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_detected_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_peaks", params, fixture.m_interspec) );
   BOOST_REQUIRE( result.contains("rois") );
   BOOST_REQUIRE( result["rois"].is_array() );
 
@@ -1049,7 +1061,7 @@ BOOST_AUTO_TEST_CASE( test_executePeakDetection_energy_range_filtering )
   // Invalid bounds should throw
   params["lowerEnergy"] = 900.0;
   params["upperEnergy"] = 800.0;
-  BOOST_CHECK_THROW( registry.executeTool("get_detected_peaks", params, fixture.m_interspec), std::runtime_error );
+  BOOST_CHECK_THROW( registry.executeTool("get_peaks", params, fixture.m_interspec), std::runtime_error );
 }
 
 
@@ -1062,11 +1074,12 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   // Get user peaks when there are none initially
   json params = json::object();
   params["specType"] = "Foreground";
+  params["filter"] = "analysis";
 
   json result;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_peaks", params, fixture.m_interspec) );
 
-  // Should return an object with rois array (same structure as get_detected_peaks)
+  // Should return an object with rois array (same structure as get_peaks)
   BOOST_CHECK( result.is_object() );
   BOOST_CHECK( result.contains("rois") );
   BOOST_CHECK( result["rois"].is_array() );
@@ -1093,7 +1106,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   //std::cout << "Fitted peaks at 776.52 keV and 554.35 keV\n";
 
   // Now get user peaks - should have the fitted peaks
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_peaks", params, fixture.m_interspec) );
 
   BOOST_CHECK( result.is_object() );
   BOOST_CHECK( result.contains("rois") );
@@ -1149,9 +1162,10 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   // Test energy range filtering - get peaks only between 500-600 keV
   params = json::object();
   params["specType"] = "Foreground";
+  params["filter"] = "analysis";
   params["lowerEnergy"] = 500.0;
   params["upperEnergy"] = 600.0;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_peaks", params, fixture.m_interspec) );
 
   BOOST_CHECK( result.is_object() );
   BOOST_CHECK( result.contains("rois") );
@@ -1177,8 +1191,9 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   // Test with only lower bound
   params = json::object();
   params["specType"] = "Foreground";
+  params["filter"] = "analysis";
   params["lowerEnergy"] = 700.0;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_peaks", params, fixture.m_interspec) );
 
   found_554 = false;
   found_776 = false;
@@ -1199,8 +1214,9 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   // Test with only upper bound
   params = json::object();
   params["specType"] = "Foreground";
+  params["filter"] = "analysis";
   params["upperEnergy"] = 600.0;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_peaks", params, fixture.m_interspec) );
 
   found_554 = false;
   found_776 = false;
@@ -1221,8 +1237,9 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   // Test with only lower bound above all peaks - should return no peaks
   params = json::object();
   params["specType"] = "Foreground";
+  params["filter"] = "analysis";
   params["lowerEnergy"] = 800.0;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_peaks", params, fixture.m_interspec) );
   BOOST_CHECK( result.is_object() );
   BOOST_CHECK( result.contains("rois") );
   BOOST_CHECK( result["rois"].is_array() );
@@ -1231,105 +1248,88 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   // Test with invalid range (upper < lower) - should throw exception
   params = json::object();
   params["specType"] = "Foreground";
+  params["filter"] = "analysis";
   params["lowerEnergy"] = 800.0;
   params["upperEnergy"] = 500.0;
-  BOOST_CHECK_THROW( registry.executeTool("get_analysis_peaks", params, fixture.m_interspec), std::runtime_error );
+  BOOST_CHECK_THROW( registry.executeTool("get_peaks", params, fixture.m_interspec), std::runtime_error );
 }
 
 
 BOOST_AUTO_TEST_CASE( test_executeGetCharacteristicLines )
 {
+  // The old 'primary_gammas_for_source' tool is consolidated into the 'prominent_energies_keV'
+  // field of 'source_photons' - check that field carries the characteristic energies.
   InterSpecTestFixture fixture;
 
   const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
-  // Test nuclide: U235 - should have 185.7 keV
-  json params;
-  params["source"] = "U235";
+  // Lambda: returns true if prominent_energies_keV of `source` has an entry within `tol` of `expected`
+  const auto has_prominent = [&registry, &fixture]( const std::string &source, const double expected, const double tol ) -> bool {
+    json params;
+    params["source"] = source;
+    params["maxResults"] = 5; //keep result small - prominent energies are unaffected
 
-  json result;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("primary_gammas_for_source", params, fixture.m_interspec) );
+    json result;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
+    BOOST_REQUIRE( result.is_object() );
+    BOOST_REQUIRE_MESSAGE( result.contains("prominent_energies_keV"),
+                           "source_photons for " << source << " should have prominent_energies_keV" );
+    BOOST_REQUIRE( result["prominent_energies_keV"].is_array() );
+    BOOST_CHECK( !result["prominent_energies_keV"].empty() );
 
-  // Result should be object with characteristicGammas array
-  BOOST_CHECK( result.is_object() );
-  BOOST_CHECK( result.contains("characteristicGammas") );
-  BOOST_CHECK( result["characteristicGammas"].is_array() );
-  BOOST_CHECK( !result["characteristicGammas"].empty() );
+    for( const auto &energy : result["prominent_energies_keV"] )
+    {
+      BOOST_CHECK( energy.is_number() );
+      if( std::abs(energy.get<double>() - expected) < tol )
+        return true;
+    }
+    return false;
+  };
 
-  //std::cout << "\n=== U235 Primary Gammas ===\n";
-  bool found_185 = false;
-  for( const auto &energy : result["characteristicGammas"] )
+  BOOST_CHECK_MESSAGE( has_prominent("U235", 185.7, 0.5), "U235 should have 185.7 keV as a prominent line" );
+  BOOST_CHECK_MESSAGE( has_prominent("Fe", 6.4, 1.6), "Fe should have K-alpha x-ray around 6.4 keV as a prominent line" );
+  BOOST_CHECK_MESSAGE( has_prominent("H(n,g)", 2223.0, 5.0), "H(n,g) should have 2223 keV capture gamma as a prominent line" );
+
+  // The consolidated catalog lookup: sources near 661.7 keV should include Cs137, with its
+  // characteristic energy included in the result.
   {
-    BOOST_CHECK( energy.is_number() );
-    const double e = energy.get<double>();
-    //std::cout << "  " << e << " keV\n";
+    json params;
+    params["energy"] = 661.7;
+    params["window"] = 3.0;
 
-    if( std::abs(e - 185.7) < 0.5 )
-      found_185 = true;
+    json result;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool("sources_with_gammas_near_energy", params, fixture.m_interspec) );
+    BOOST_REQUIRE( result.is_object() );
+    BOOST_CHECK( result.contains("energy_keV") );
+    BOOST_CHECK( result.contains("window_keV") );
+    BOOST_REQUIRE( result.contains("sources") && result["sources"].is_array() );
+
+    bool found_cs137 = false;
+    for( const auto &src : result["sources"] )
+    {
+      BOOST_REQUIRE( src.is_object() && src.contains("name") && src.contains("energies_keV") );
+      if( src["name"].get<std::string>() == "Cs137" )
+      {
+        found_cs137 = true;
+        bool has_662 = false;
+        for( const auto &e : src["energies_keV"] )
+          has_662 = has_662 || (std::abs(e.get<double>() - 661.66) < 0.5);
+        BOOST_CHECK_MESSAGE( has_662, "Cs137 entry should list its 661.66 keV line inside the window" );
+      }
+    }
+    BOOST_CHECK_MESSAGE( found_cs137, "Cs137 should be returned for 661.7 keV catalog lookup" );
+
+    // Default window (expected FWHM) path should also work
+    json params_no_window;
+    params_no_window["energy"] = 661.7;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool("sources_with_gammas_near_energy", params_no_window, fixture.m_interspec) );
+    BOOST_CHECK( result.contains("window_keV") && (result["window_keV"].get<double>() > 0.0) );
   }
-  //std::cout << "=== End U235 Lines ===\n" << std::endl;
-
-  BOOST_CHECK_MESSAGE( found_185, "U235 should have 185.7 keV line" );
-
-  // Test fluorescence x-ray: Fe (iron) - should have K-alpha around 6.4 keV
-  params.clear();
-  params["source"] = "Fe";
-
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("primary_gammas_for_source", params, fixture.m_interspec) );
-
-  BOOST_CHECK( result.is_object() );
-  BOOST_CHECK( result.contains("characteristicGammas") );
-  BOOST_CHECK( result["characteristicGammas"].is_array() );
-  BOOST_CHECK( !result["characteristicGammas"].empty() );
-
-  //std::cout << "\n=== Fe X-ray Lines ===\n";
-  bool found_fe_ka = false;
-
-  for( const auto &energy : result["characteristicGammas"] )
-  {
-    BOOST_CHECK( energy.is_number() );
-    const double e = energy.get<double>();
-    std::cout << "  " << e << " keV\n";
-
-    // Fe K-alpha is around 6.4 keV
-    if( e > 5.0 && e < 8.0 )
-      found_fe_ka = true;
-  }
-  //std::cout << "=== End Fe Lines ===\n" << std::endl;
-
-  BOOST_CHECK_MESSAGE( found_fe_ka, "Fe should have K-alpha x-ray around 6.4 keV" );
-
-  // Test nuclear reaction: H(n,g) - should have 2223 keV capture gamma
-  params.clear();
-  params["source"] = "H(n,g)";
-
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("primary_gammas_for_source", params, fixture.m_interspec) );
-
-  BOOST_CHECK( result.is_object() );
-  BOOST_CHECK( result.contains("characteristicGammas") );
-  BOOST_CHECK( result["characteristicGammas"].is_array() );
-  BOOST_CHECK( !result["characteristicGammas"].empty() );
-
-  //std::cout << "\n=== H(n,g) Reaction Lines ===\n";
-  bool found_2223 = false;
-
-  for( const auto &energy : result["characteristicGammas"] )
-  {
-    BOOST_CHECK( energy.is_number() );
-    const double e = energy.get<double>();
-    //std::cout << "  " << e << " keV\n";
-
-    // H(n,g) produces 2223 keV gamma
-    if( std::abs(e - 2223.0) < 5.0 )
-      found_2223 = true;
-  }
-  //std::cout << "=== End H(n,g) Lines ===\n" << std::endl;
-
-  BOOST_CHECK_MESSAGE( found_2223, "H(n,g) should have 2223 keV capture gamma" );
 
   // Test error handling - invalid source
+  json params;
   params["source"] = "InvalidSource12345";
-  BOOST_CHECK_THROW( registry.executeTool("primary_gammas_for_source", params, fixture.m_interspec), std::runtime_error );
+  BOOST_CHECK_THROW( registry.executeTool("source_photons", params, fixture.m_interspec), std::runtime_error );
 }
 
 
@@ -1532,17 +1532,20 @@ BOOST_AUTO_TEST_CASE( test_executeGetNuclideDecayChain )
   json result;
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("nuclide_decay_chain", params, fixture.m_interspec) );
 
-  // Should return an array
-  BOOST_CHECK( result.is_array() );
-  BOOST_CHECK( !result.empty() );
-  BOOST_CHECK( result.size() == 21 );
+  // Should return an object with the parent and its decay chain
+  BOOST_REQUIRE( result.is_object() );
+  BOOST_CHECK( result.contains("Parent") && (result["Parent"].get<string>() == "U238") );
+  BOOST_REQUIRE( result.contains("DecayChain") && result["DecayChain"].is_array() );
+  const json &chain = result["DecayChain"];
+  BOOST_CHECK( !chain.empty() );
+  BOOST_CHECK( chain.size() == 21 );
 
   // U238 decay chain should include Th234, Pa234m, Ra226, Rn222, Pb210, etc.
   bool found_th234 = false;
   bool found_ra226 = false;
   bool found_rn222 = false;
 
-  for( const auto &entry : result )
+  for( const auto &entry : chain )
   {
     BOOST_CHECK( entry.is_object() );
     BOOST_CHECK( entry.contains("nuclide") );
@@ -1555,6 +1558,16 @@ BOOST_AUTO_TEST_CASE( test_executeGetNuclideDecayChain )
       found_ra226 = true;
     if( SpecUtils::icontains(nuclide, "Rn222") || SpecUtils::icontains(nuclide, "Rn-222") )
       found_rn222 = true;
+
+    // Each entry's decays must be for that descendant itself (not the chain parent):
+    // e.g., the Ra226 entry should decay to Rn222.
+    if( entry.contains("decays") && (nuclide == "Ra226") )
+    {
+      bool decays_to_rn222 = false;
+      for( const auto &decay : entry["decays"] )
+        decays_to_rn222 = decays_to_rn222 || (decay["child"].get<string>() == "Rn222");
+      BOOST_CHECK_MESSAGE( decays_to_rn222, "Ra226 chain entry should list Rn222 as its decay child" );
+    }
   }
 
   BOOST_CHECK_MESSAGE( found_th234, "U238 chain should include Th234" );
@@ -1564,9 +1577,9 @@ BOOST_AUTO_TEST_CASE( test_executeGetNuclideDecayChain )
   // Test with a simple chain
   params["nuclide"] = "Cs137";
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("nuclide_decay_chain", params, fixture.m_interspec) );
-  BOOST_CHECK( result.is_array() );
+  BOOST_REQUIRE( result.is_object() && result.contains("DecayChain") );
   // Cs137 -> Ba137m -> Ba137 (stable)
-  BOOST_CHECK( result.size() >= 2 );
+  BOOST_CHECK( result["DecayChain"].size() >= 2 );
 
   // Test error handling - invalid nuclide
   params["nuclide"] = "InvalidNuclide12345";
@@ -1850,11 +1863,11 @@ BOOST_AUTO_TEST_CASE( test_executeEditAnalysisPeak )
   BOOST_CHECK( result.contains("refitPerformed") );
   BOOST_CHECK( result["refitPerformed"].get<bool>() == false );
 
-  // Verify the peak was actually modified by checking get_analysis_peaks
+  // Verify the peak was actually modified by checking get_peaks (filter=analysis)
   json get_peaks_params = json::object();
   get_peaks_params["specType"] = "Foreground";
   json peaks_result;
-  BOOST_REQUIRE_NO_THROW( peaks_result = registry.executeTool("get_analysis_peaks", get_peaks_params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( peaks_result = registry.executeTool("get_peaks", get_peaks_params, fixture.m_interspec) );
 
   bool found_modified_peak = false;
   bool found_original_peak = false;
@@ -2136,21 +2149,19 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
 
   // Define the expected tools (same list as in the validation code)
   const std::vector<std::string> expectedTools = {
-    "get_detected_peaks",
+    "get_peaks", //Consolidation of the old get_detected_peaks/get_analysis_peaks/get_unidentified_peaks
     "add_analysis_peak",
     "edit_analysis_peak",
-    "get_analysis_peaks",
+    "set_peak_shape",
     "get_spectrum_info",
-    "primary_gammas_for_source",
-    "sources_with_primary_gammas_in_energy_range",
-    "sources_with_primary_gammas_near_energy",
+    "sources_with_gammas_near_energy", //Consolidation of the old sources_with_primary_gammas_* pair
     // These are always included, regardless of INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO
     //"sources_associated_with_source", //This info now included in "source_info" call
     //"analyst_notes_for_source",       //This info now included in "source_info" call
     "source_info",
     "nuclide_decay_chain",
-    "automated_source_id_results",
-    "loaded_spectra",
+    "get_automated_id_results",
+    "get_loaded_spectra",
     //"add_analysis_peaks_for_source", // Temporarily commenting out until we get this implementation right
     "get_counts_in_energy_range",
     "get_expected_fwhm",

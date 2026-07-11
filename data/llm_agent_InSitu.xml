@@ -33,7 +33,7 @@ The workflow progresses through these states in order. Use `set_workflow_state` 
 ### State 1: GATHER_INFORMATION
 
 Collect all available context before making decisions:
-- Call `loaded_spectra` to identify foreground, background, and secondary spectra.
+- Call `get_loaded_spectra` to identify foreground, background, and secondary spectra.
 - Call `get_spectrum_info` (with `fileInfo: true`) for detector model, serial number, manufacturer, measurement location, and any embedded metadata.
 - Call `detector_efficiency_function_info` to check if a detector efficiency function is already loaded.
 - Note any context provided by the caller: contamination type, area size, relaxation length, burial depth, soil type, surface description, measurement height, requested activity units, known nuclides present.
@@ -67,14 +67,14 @@ Invoke `invoke_EnergyCalibration` to verify and correct the energy calibration:
 Invoke `invoke_NuclideId` to identify all sources contributing to elevated peaks:
 - Pass relevant context: any nuclides suspected from context, environmental setting (NORM-heavy background, reactor area, industrial source, etc.).
 - Do NOT provide peak energy lists — the NuclideId agent finds peaks itself.
-- After the agent returns, call `get_analysis_peaks` to review the identified peaks and their source assignments.
+- After the agent returns, call `get_peaks` (with `{"filter": "analysis"}`) to review the identified peaks and their source assignments.
 - Check whether any foreground-elevated peaks remain unidentified. If unidentified peaks exist and context warrants further investigation, invoke `invoke_NuclideId` again, noting the specific unidentified peaks for the agent to focus on.
 - Proceed once either all significant peaks are identified, or the NuclideId agent has determined they cannot be positively identified.
 
 ### State 5: DETERMINE_NUCLIDES_OF_INTEREST
 
 Decide which identified nuclides to include in the activity fit:
-- Retrieve all analysis peaks with `get_analysis_peaks`.
+- Retrieve all analysis peaks with `get_peaks` (filter 'analysis').
 - **NORM nuclides** (K-40, Ra-226, Th-232, U-238, and their progeny) are often present in background and may have been identified during nuclide ID. By default, **exclude NORM nuclides from the activity fit** unless:
   - The context specifically names a NORM nuclide as the source of interest (e.g., "determine Ra-226 activity").
   - A NORM nuclide appears significantly elevated above typical background levels (flag this to the user).
@@ -151,11 +151,11 @@ Compile and return a complete summary to the caller:
 
 ## **Available Tools**
 
-* **get_spectrum_info**, **loaded_spectra** — Inspect loaded spectra and file metadata
+* **get_spectrum_info**, **get_loaded_spectra** — Inspect loaded spectra and file metadata
 * **detector_efficiency_function_info**, **available_detector_efficiency_functions**, **load_detector_efficiency_function** — Detector efficiency management
 * **invoke_EnergyCalibration** — Invoke energy calibration sub-agent
 * **invoke_NuclideId** — Invoke nuclide identification sub-agent
-* **get_analysis_peaks**, **get_unidentified_peaks** — Retrieve peak/source assignments
+* **get_peaks** — Retrieve peak/source assignments (use filter 'analysis' or 'unidentified')
 * **mark_peaks_for_activity_fit**, **edit_analysis_peak** — Manage which peaks are used for fitting
 * **get_shielding_source_config**, **modify_shielding_source_config** — Configure and inspect geometry
 * **activity_fit** — Run activity fit using app-state geometry (prefer `from_app_state` mode)
@@ -176,11 +176,11 @@ Be quantitative and precise. The user needs defensible activity measurements, no
           <Transition>SELECT_DETECTOR_EFFICIENCY</Transition>
         </AllowedTransitions>
         <SuggestedTools>
-          <Tool>loaded_spectra</Tool>
+          <Tool>get_loaded_spectra</Tool>
           <Tool>get_spectrum_info</Tool>
           <Tool>detector_efficiency_function_info</Tool>
         </SuggestedTools>
-        <PromptGuidance>Gather all available information before making any decisions. Call loaded_spectra, get_spectrum_info (with fileInfo: true), and detector_efficiency_function_info. Note detector model, serial number, any already-loaded detector efficiency, and all context clues provided by the caller (contamination type, area, relaxation length, soil depth, measurement height, requested units). When done, transition to SELECT_DETECTOR_EFFICIENCY.</PromptGuidance>
+        <PromptGuidance>Gather all available information before making any decisions. Call get_loaded_spectra, get_spectrum_info (with fileInfo: true), and detector_efficiency_function_info. Note detector model, serial number, any already-loaded detector efficiency, and all context clues provided by the caller (contamination type, area, relaxation length, soil depth, measurement height, requested units). When done, transition to SELECT_DETECTOR_EFFICIENCY.</PromptGuidance>
         <EphemeralMessageTxt>Gathering spectrum and detector information...</EphemeralMessageTxt>
       </State>
 
@@ -218,10 +218,9 @@ Be quantitative and precise. The user needs defensible activity measurements, no
         </AllowedTransitions>
         <SuggestedTools>
           <Tool>invoke_NuclideId</Tool>
-          <Tool>get_analysis_peaks</Tool>
-          <Tool>get_unidentified_peaks</Tool>
+          <Tool>get_peaks</Tool>
         </SuggestedTools>
-        <PromptGuidance>Call invoke_NuclideId with relevant context (suspected nuclides, environmental setting). Do NOT provide peak lists. After the agent returns, call get_analysis_peaks and get_unidentified_peaks to verify coverage. If significant unidentified peaks remain, transition back to NUCLIDE_ID and re-invoke with a note about those specific peaks. Once all significant peaks are identified (or rigorously attempted), transition to DETERMINE_NUCLIDES_OF_INTEREST.</PromptGuidance>
+        <PromptGuidance>Call invoke_NuclideId with relevant context (suspected nuclides, environmental setting). Do NOT provide peak lists. After the agent returns, call get_peaks (with filter 'analysis', then filter 'unidentified') to verify coverage. If significant unidentified peaks remain, transition back to NUCLIDE_ID and re-invoke with a note about those specific peaks. Once all significant peaks are identified (or rigorously attempted), transition to DETERMINE_NUCLIDES_OF_INTEREST.</PromptGuidance>
         <EphemeralMessageTxt>Performing nuclide identification...</EphemeralMessageTxt>
       </State>
 
@@ -231,11 +230,11 @@ Be quantitative and precise. The user needs defensible activity measurements, no
           <Transition>DETERMINE_GEOMETRY</Transition>
         </AllowedTransitions>
         <SuggestedTools>
-          <Tool>get_analysis_peaks</Tool>
+          <Tool>get_peaks</Tool>
           <Tool>mark_peaks_for_activity_fit</Tool>
           <Tool>edit_analysis_peak</Tool>
         </SuggestedTools>
-        <PromptGuidance>Call get_analysis_peaks. Identify nuclides of interest vs. background NORM (K-40, Ra-226, Th-232, U-238 and their progeny). Exclude NORM from the fit unless context specifies them or they appear elevated. Use mark_peaks_for_activity_fit to set use_for_fit: true for nuclides of interest and use_for_fit: false for excluded nuclides. Document the filtering decision. Then transition to DETERMINE_GEOMETRY.</PromptGuidance>
+        <PromptGuidance>Call get_peaks with {"filter": "analysis"}. Identify nuclides of interest vs. background NORM (K-40, Ra-226, Th-232, U-238 and their progeny). Exclude NORM from the fit unless context specifies them or they appear elevated. Use mark_peaks_for_activity_fit to set use_for_fit: true for nuclides of interest and use_for_fit: false for excluded nuclides. Document the filtering decision. Then transition to DETERMINE_GEOMETRY.</PromptGuidance>
         <EphemeralMessageTxt>Determining nuclides of interest for activity fitting...</EphemeralMessageTxt>
       </State>
 

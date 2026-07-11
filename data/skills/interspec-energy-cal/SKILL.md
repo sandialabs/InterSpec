@@ -36,7 +36,7 @@ Adjust the energy calibration of loaded spectra so peak positions match their kn
 
 ### Step 1: Assess Spectra
 
-- `loaded_spectra` - What spectra are available?
+- `get_loaded_spectra` - What spectra are available?
 - `get_spectrum_info` for each - Check calibration type and energy range
 
 ### Step 2: Create Checkpoints
@@ -49,8 +49,8 @@ Adjust the energy calibration of loaded spectra so peak positions match their kn
 
 Start with background spectrum if present, otherwise foreground.
 
-1. Check existing analysis peaks (`get_analysis_peaks`) for peaks near 1460.83 keV (K-40) or 2614.51 keV (Th-232) with correct source assignment.
-2. If no suitable analysis peak exists, use `get_detected_peaks` to find candidates. Search within ~15 keV of expected energy (calibration may be off).
+1. Check existing analysis peaks (`get_peaks` with `{"filter": "analysis"}`) for peaks near 1460.83 keV (K-40) or 2614.51 keV (Th-232) with correct source assignment.
+2. If no suitable analysis peak exists, use `get_peaks` (default 'all' filter) to find candidates. Search within ~15 keV of expected energy (calibration may be off).
 3. If using a NORM peak, pick **one peak** for gain-only fit:
    - Prefer Th-232 at 2614.51 keV if `numSigma > 12` (higher energy = better gain constraint)
    - Otherwise use whichever peak (K-40 or Th-232) has larger `numSigma`

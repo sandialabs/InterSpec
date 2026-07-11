@@ -14,6 +14,53 @@
 
   <!-- Peak Detection and Analysis Tools -->
 
+  <Tool name="get_peaks">
+    <Description>Returns peaks in a displayed spectrum, grouped by Region Of Interest (ROI), with an optional filter for which subset you want.
+
+Each peak gives energy (keV), FWHM (keV), amplitude (peak area, in counts), counts per second (cps), statistical significance (numSigma), whether it is an analysis peak (isAnalysisPeak), and its assigned source if any. The automated peak search is not perfect - additional peaks may still be fittable in the data (use 'add_analysis_peak').
+
+Filter values:
+- 'all' (default): every automated-search peak plus analysis peaks.
+- 'analysis': only the analysis set - peaks added by the user or via 'add_analysis_peak'; these are what activity/shielding fitting and source identification track.
+- 'unidentified': foreground peaks with no source assigned and not explained by the background; sorted by amplitude (largest first), limited by maxResults; includes elevation over any matching background peak.
+- 'elevated_above_background': foreground peaks without a corresponding background-spectrum peak, or notably elevated over it (requires a background spectrum be loaded).</Description>
+    <Description role="NuclideId">Your peak-inventory tool. Filter values: 'unidentified' lists the remaining peaks to identify, largest first (results go stale after any peak fitting - call again); 'elevated_above_background' lists foreground peaks not explained by a loaded background; 'analysis' lists committed peaks with their source assignments; 'all' (default) lists every automated-search + analysis peak. Each peak gives energy (keV), FWHM, amplitude, cps, numSigma, and source if assigned.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+          "filter": {
+            "type": "string",
+            "enum": ["all", "analysis", "unidentified", "elevated_above_background"],
+            "description": "Optional: which subset of peaks to return. Default: 'all'."
+          },
+          "specType": {
+            "type": "string",
+            "enum": ["Foreground", "Background", "Secondary"],
+            "description": "Optional: which displayed spectrum. Default: 'Foreground'. The 'unidentified' and 'elevated_above_background' filters are Foreground-only."
+          },
+          "lowerEnergy": {
+            "type": "number",
+            "description": "Optional: minimum peak energy in keV. Default: no lower bound."
+          },
+          "upperEnergy": {
+            "type": "number",
+            "description": "Optional: maximum peak energy in keV. Default: no upper bound."
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional: maximum peaks returned, largest first. Only applies to the 'unidentified' filter. Default: 5."
+          }
+      }
+    }</ParametersSchema>
+  </Tool>
+
+  <!-- The three tools below were consolidated into the "get_peaks" tool (above, with its 'filter'
+       parameter), to keep the tool surface small for LLMs.  Kept here, commented out, as the
+       definitions to re-enable if the InterSpec build flag CONSOLIDATED_PEAK_READOUT_TOOLS
+       (see InterSpec/LlmToolRegistry.h) is set to 0.  The "get_unidentified_peaks" definition is
+       farther down in this file. -->
+  <!--
   <Tool name="get_detected_peaks">
     <Description>Returns all Regions Of Interest (ROI) with peaks detected by automated peak search, or that has been added to the internal analysis peak state. For ROI gives lower and upper energies, and for each peak it gives energy (in keV), FWHM, amplitude (area), statistical significance (numSigma), and if an analysis peak (isAnalysisPeak); if the peak is associated with a source, will also give that information.  Additional peaks may be fittable in data, as the automated peak search algorithm is not perfect.</Description>
     <ParametersSchema>{
@@ -62,6 +109,7 @@
       }
     }</ParametersSchema>
   </Tool>
+  -->
 
   <Tool name="get_identified_sources">
     <Description>Returns a list of unique sources (nuclides, x-ray elements, or reactions) that are currently assigned to user peaks in the specified spectrum. Each source appears only once in the list, even if multiple peaks are assigned to that source. Also includes user-defined labels that do not contain 'unknown'. This is useful for getting an overview of what sources have been identified in the spectrum.</Description>
@@ -77,6 +125,9 @@
     }</ParametersSchema>
   </Tool>
 
+  <!-- Consolidated into the "get_peaks" tool (its 'unidentified' filter value) - see the note by
+       "get_peaks" and the CONSOLIDATED_PEAK_READOUT_TOOLS build flag in InterSpec/LlmToolRegistry.h. -->
+  <!--
   <Tool name="get_unidentified_peaks">
     <Description>Returns the list of foreground peaks (either detected by the auto peak search algorithm or in the internal analysis peak state) that do not have a source (nuclide, x-ray element, or reaction) assigned to them, and that are not consistent with the background spectrum (if present) peaks. Results are sorted by amplitude (largest first) and limited to the specified maximum number of results.  If a peak is coincident with a peak in the background spectrum (but elevated, or else it would not be returned), then the amount of elevation will also be returned.</Description>
     <ParametersSchema>{
@@ -96,6 +147,7 @@
       }
     }</ParametersSchema>
   </Tool>
+  -->
 
   <Tool name="add_analysis_peak">
     <Description>Fit and add a peak to the users peaks, at approximately the specified energy, optionally associating a source with it.  Returns Region Of Interest that was either created, or the peak was added to.  If fit failed, reason will be described in 'error' field.</Description>
@@ -125,28 +177,15 @@
   </Tool>
 
   <Tool name="edit_analysis_peak">
-    <Description>Edit, refit, or delete a peak at approximately the specified energy. Supports modifying multiple peak properties in a single call. Only "energy" is required; all other fields are optional.
+    <Description>Edit, refit, or delete the analysis peak nearest the specified energy. Only "energy" is required.
 
-Structural actions (via "action" field): DeletePeak, SplitFromRoi, MergeWithLeft, MergeWithRight. When an action is specified, all property fields are ignored.
+Use when: deleting a peak, forcing a refit, changing ROI bounds, assigning a source, or setting basic properties (centroid, FWHM, amplitude, label, color, usage flags).
+Do not use to change skew or continuum models/coefficients; those are handled by the separate 'set_peak_shape' tool (available in advanced workflows) when present.
 
-Property changes: meanEnergy, fwhm, amplitude (and uncertainties), ROI bounds, skew type and parameters (skewPar0-3), continuum type and coefficients (continuumCoef0-3), fit-for flags, source assignment, color, label, and usage flags.
+Structural actions (via "action"): DeletePeak, SplitFromRoi, MergeWithLeft, MergeWithRight. When an action is specified, all other property fields are ignored.
 
-Refit behavior: By default, changing shape-affecting values (meanEnergy, fwhm, amplitude, skew type/params, continuum type/coefs, ROI bounds) triggers an automatic refit to the spectrum data. Changing only fit-for flags or metadata does NOT trigger a refit. Use "refit": false to suppress auto-refit, or "refit": true to force one (including if you want to refit without changing anything).
-
-IMPORTANT: If you set a parameter value (e.g., skewPar0: 1.5), the refit may adjust it. To lock a value, also set its fitFor flag to false (e.g., skewPar0: 1.5, fitForSkewPar0: false).
-
-Skew types and parameters:
-- NoSkew: 0 params
-- Bortel (EMG/ExGauss): 1 param (skewPar0=tau, 0.01-15 sigma)
-- GaussExp: 1 param (skewPar0, 0.01-15)
-- CrystalBall: 2 params (skewPar0=alpha 0.1-10, skewPar1=n 0.1-50)
-- ExpGaussExp: 2 params (skewPar0=lower 0.01-15, skewPar1=upper 0.01-15)
-- DoubleSidedCrystalBall: 4 params (skewPar0=alpha_low, skewPar1=n_low, skewPar2=alpha_high, skewPar3=n_high)
-- GaussPlusBortel: 2 params (skewPar0=R mixing 0-1, skewPar1=tau 0.01-15)
-- DoubleBortel: 3 params (skewPar0=tau1, skewPar1=tau2_delta, skewPar2=eta 0-1)
-- VoigtPlusBortel: 3 params (skewPar0=gamma_lor keV, skewPar1=R 0-1, skewPar2=tau 0.01-15)
-
-Continuum types: NoOffset, Constant (1 coef), Linear (2 coef), Quadratic (3 coef), Cubic (4 coef), FlatStep (2), LinearStep (3), BiLinearStep (4), FlatStepCDF (2), LinearStepCDF (3), BiLinearStepCDF (4), External.</Description>
+Refit behavior: changing shape-affecting values (meanEnergy, fwhm, amplitude, ROI bounds) triggers an automatic refit to the spectrum data; changing only fit-for flags or metadata does not. Use "refit": false to suppress the auto-refit, or "refit": true to force one (e.g., to refit without changing anything).
+A refit may adjust values you set; to lock a value, also set its fitFor flag to false (e.g., fwhm: 1.5, fitForFwhm: false).</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -171,18 +210,6 @@ Continuum types: NoOffset, Constant (1 coef), Linear (2 coef), Quadratic (3 coef
             "type": "number",
             "description": "Set peak area (counts)."
           },
-          "meanUncertainty": {
-            "type": "number",
-            "description": "Override energy uncertainty (keV). Rarely needed; refit computes this."
-          },
-          "fwhmUncertainty": {
-            "type": "number",
-            "description": "Override FWHM uncertainty (keV). Rarely needed; refit computes this."
-          },
-          "amplitudeUncertainty": {
-            "type": "number",
-            "description": "Override amplitude uncertainty (counts). Rarely needed; refit computes this."
-          },
           "fitForMean": {
             "type": "boolean",
             "description": "Whether peak mean/energy is free (true) or fixed (false) during fitting."
@@ -194,6 +221,96 @@ Continuum types: NoOffset, Constant (1 coef), Linear (2 coef), Quadratic (3 coef
           "fitForAmplitude": {
             "type": "boolean",
             "description": "Whether peak amplitude is free (true) or fixed (false) during fitting."
+          },
+          "roiLowerEnergy": {
+            "type": "number",
+            "description": "Set lower energy bound (keV) of the ROI."
+          },
+          "roiUpperEnergy": {
+            "type": "number",
+            "description": "Set upper energy bound (keV) of the ROI."
+          },
+          "source": {
+            "type": "string",
+            "description": "Assign source (e.g., 'Ba133', 'Co60 1332.49 keV', 'Pb' for x-ray, 'H(n,g)' for reaction)."
+          },
+          "color": {
+            "type": "string",
+            "description": "Set peak display color (CSS color string, e.g., 'rgb(255,0,0)', '#FF0000')."
+          },
+          "userLabel": {
+            "type": "string",
+            "description": "Set a text label for the peak."
+          },
+          "useForEnergyCalibration": {
+            "type": "boolean",
+            "description": "Whether this peak should be used for energy calibration."
+          },
+          "useForShieldingSourceFit": {
+            "type": "boolean",
+            "description": "Whether this peak should be used in activity/shielding fitting."
+          },
+          "useForManualRelEff": {
+            "type": "boolean",
+            "description": "Whether this peak should be used for manual relative efficiency."
+          },
+          "refit": {
+            "type": "boolean",
+            "description": "Control refitting. Default (omitted): refit if shape-affecting values changed. true: force refit. false: suppress refit."
+          },
+          "specType": {
+            "type": "string",
+            "enum": ["Foreground", "Background", "Secondary"],
+            "description": "Optional: Which spectrum the peak is in (default: Foreground)."
+          }
+      },
+      "required": ["energy"]
+    }</ParametersSchema>
+  </Tool>
+
+  <Tool name="set_peak_shape">
+    <Description>Expert tool: set the skew model, continuum model/coefficients, or uncertainty overrides of the analysis peak nearest the specified energy. Only "energy" is required.
+
+Use when: fine-tuning peak shape - changing the skew model, fixing continuum coefficients, or overriding fitted uncertainties.
+For everyday edits (delete, refit, ROI bounds, source assignment, labels, usage flags) use 'edit_analysis_peak' instead.
+
+A refit may adjust values you set; to lock a value, also set its fitFor flag to false (e.g., skewPar0: 1.5, fitForSkewPar0: false).
+
+Skew types (number of parameters, and their meaning):
+- NoSkew: 0 params
+- Bortel (EMG/ExGauss): 1 param (skewPar0=tau, 0.01-15 sigma)
+- GaussExp: 1 param (skewPar0, 0.01-15)
+- CrystalBall: 2 params (skewPar0=alpha 0.1-10, skewPar1=n 0.1-50)
+- ExpGaussExp: 2 params (skewPar0=lower 0.01-15, skewPar1=upper 0.01-15)
+- DoubleSidedCrystalBall: 4 params (skewPar0=alpha_low, skewPar1=n_low, skewPar2=alpha_high, skewPar3=n_high)
+- GaussPlusBortel: 2 params (skewPar0=R mixing 0-1, skewPar1=tau 0.01-15)
+- DoubleBortel: 3 params (skewPar0=tau1, skewPar1=tau2_delta, skewPar2=eta 0-1)
+- VoigtPlusBortel: 3 params (skewPar0=gamma_lor keV, skewPar1=R 0-1, skewPar2=tau 0.01-15)
+
+Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Quadratic (3), Cubic (4), FlatStep (2), LinearStep (3), BiLinearStep (4), FlatStepCDF (2), LinearStepCDF (3), BiLinearStepCDF (4), External.</Description>
+    <AvailableFor>
+      <Agent>MainAgent</Agent>
+      <Agent>Isotopics</Agent>
+      <Agent>McpServer</Agent>
+    </AvailableFor>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+          "energy": {
+            "type": "number",
+            "description": "Energy (in keV) of the peak to edit; finds nearest peak within 1 FWHM."
+          },
+          "meanUncertainty": {
+            "type": "number",
+            "description": "Override energy uncertainty (keV). Rarely needed; refit computes this."
+          },
+          "fwhmUncertainty": {
+            "type": "number",
+            "description": "Override FWHM uncertainty (keV). Rarely needed; refit computes this."
+          },
+          "amplitudeUncertainty": {
+            "type": "number",
+            "description": "Override amplitude uncertainty (counts). Rarely needed; refit computes this."
           },
           "skewType": {
             "type": "string",
@@ -268,38 +385,6 @@ Continuum types: NoOffset, Constant (1 coef), Linear (2 coef), Quadratic (3 coef
           "fitForContinuumCoef3": {
             "type": "boolean",
             "description": "Whether continuum coefficient 3 is free (true) or fixed (false)."
-          },
-          "roiLowerEnergy": {
-            "type": "number",
-            "description": "Set lower energy bound (keV) of the ROI."
-          },
-          "roiUpperEnergy": {
-            "type": "number",
-            "description": "Set upper energy bound (keV) of the ROI."
-          },
-          "source": {
-            "type": "string",
-            "description": "Assign source (e.g., 'Ba133', 'Co60 1332.49 keV', 'Pb' for x-ray, 'H(n,g)' for reaction)."
-          },
-          "color": {
-            "type": "string",
-            "description": "Set peak display color (CSS color string, e.g., 'rgb(255,0,0)', '#FF0000')."
-          },
-          "userLabel": {
-            "type": "string",
-            "description": "Set a text label for the peak."
-          },
-          "useForEnergyCalibration": {
-            "type": "boolean",
-            "description": "Whether this peak should be used for energy calibration."
-          },
-          "useForShieldingSourceFit": {
-            "type": "boolean",
-            "description": "Whether this peak should be used in activity/shielding fitting."
-          },
-          "useForManualRelEff": {
-            "type": "boolean",
-            "description": "Whether this peak should be used for manual relative efficiency."
           },
           "refit": {
             "type": "boolean",
@@ -464,7 +549,7 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
     }</ParametersSchema>
   </Tool>
 
-  <Tool name="loaded_spectra">
+  <Tool name="get_loaded_spectra">
     <Description>Returns array of the currently loaded spectra from ["Foreground", "Background", "Secondary"].  If no spectra are loaded, returns empty array.</Description>
     <ParametersSchema>{
       "type": "object",
@@ -536,7 +621,7 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
     }</ParametersSchema>
   </Tool>
 
-  <Tool name="automated_source_id_results">
+  <Tool name="get_automated_id_results">
     <Description>Get the source (isotope, florescent x-ray, or nuclear reaction) ID from the available automated ID algorithms. Will return the detection systems on-board nuclide ID results, if present, as well as the GADRAS Full Spectrum Isotope ID results if the app is configured to get.  These automated results can be wrong or incomplete, so should used at most as a starting point, or something to check.</Description>
     <ParametersSchema>{
       "type": "object",
@@ -547,6 +632,42 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
 
   <!-- Nuclear Data Tools -->
 
+  <Tool name="sources_with_gammas_near_energy">
+    <Description>Lists commonly encountered sources (nuclides, x-ray elements, reactions) with a characteristic gamma near the specified energy - a nuclear-data catalog lookup.
+
+Use when: brainstorming what could emit at a given energy, independent of the loaded spectrum.
+Do not use to identify an observed peak in the loaded spectrum - use 'search_sources_by_energy' instead, which ranks candidates against the spectrum (peak heights, detector response).
+
+Each returned source includes its characteristic energies (keV) that fall inside the searched window; the effective window used is echoed back as 'window_keV'.</Description>
+    <AvailableFor>
+      <Agent>MainAgent</Agent>
+      <Agent>ActivityFit</Agent>
+      <Agent>Isotopics</Agent>
+      <Agent>InSitu</Agent>
+      <Agent>SpectrumTimeHistory</Agent>
+      <Agent>McpServer</Agent>
+    </AvailableFor>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "energy": {
+          "type": "number",
+          "description": "Energy in keV to look up."
+        },
+        "window": {
+          "type": "number",
+          "description": "Optional: half-width of the search window (+- keV). Default: the expected detector FWHM at that energy."
+        }
+      },
+      "required": ["energy"]
+    }</ParametersSchema>
+  </Tool>
+
+  <!-- The three tools below were consolidated into "sources_with_gammas_near_energy" (above) and the
+       "prominent_energies_keV" field of "source_photons", to keep the tool surface small for LLMs.
+       Kept here, commented out, as the definitions to re-enable if the InterSpec build flag
+       CONSOLIDATED_GAMMA_LINE_TOOLS (see InterSpec/LlmToolRegistry.h) is set to 0. -->
+  <!--
   <Tool name="primary_gammas_for_source">
     <Description>Get the most likely characteristic energies a peak will be detected at for a source (nuclide, florescent x-ray, or nuclear reaction). Returns one to a few energies (in keV).  This is only a rough guess at the most prominent or unique peaks for the source; not detecting a peak at these energies does not rule out a source, but it makes the source a stronger candidate.</Description>
     <ParametersSchema>{
@@ -592,6 +713,8 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
       "required": ["energy"]
     }</ParametersSchema>
   </Tool>
+  -->
+
 
   <!-- The two tools below are only registered when the InterSpec build flag
        INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO (see InterSpec/LlmToolRegistry.h) is 0.
@@ -705,9 +828,9 @@ Mechanics:
 - `console.log`, `console.info`, `console.debug` populate `stdout`; `console.warn`, `console.error` populate `stderr`.
 - Execution is synchronous from your perspective.  Promises and `await`/async will not work as expected - the result snapshot is taken when the synchronous portion of the snippet returns.
 - Throwing an exception (or syntax error) returns `error` (and often `errorLine`) instead of `result`.
-- A timeout (default 5 seconds, max 30) terminates the sandbox and returns `timedOut: true`.</Description>
+- A timeout (default 5 seconds, max 30) terminates the sandbox and returns `timedOut: true`.
 
-Example: `run_javascript( { "code": "let base = 9; const exponent = 4; console.log('Computing ' + base + '^' + exponent); return Math.pow(base,exponent);" } )` will return `{"executionTimeMs":0,"result":6561,"resultType":"number","stderr":[],"stdout":["Computing 9^4"],"success":true,"timedOut":false}`
+Example: `run_javascript( { "code": "let base = 9; const exponent = 4; console.log('Computing ' + base + '^' + exponent); return Math.pow(base,exponent);" } )` will return `{"executionTimeMs":0,"result":6561,"resultType":"number","stderr":[],"stdout":["Computing 9^4"],"success":true,"timedOut":false}`</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -740,7 +863,16 @@ Example: `run_javascript( { "code": "let base = 9; const exponent = 4; console.l
 
   <!-- TODO: consider adding escape peak option to "source_photons" -->
   <Tool name="source_photons">
-    <Description>Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-rays, or reaction.  The energies are expressed in keV, and intensities are given as photons per source Becquerel for nuclides, or normalized to 1 for fluorescence or reactions.  Results default to sorted by energy, but can optionally be sorted by intensity.  An optional energy range can be specified to filter results.</Description>
+    <Description>Returns the photon lines (energy in keV, and intensity) emitted by a nuclide, fluorescence x-ray element, or nuclear reaction.
+
+Use when: you know the source and need its gamma/x-ray line energies and intensities - e.g., to predict which peaks it produces, or compare expected vs observed peak amplitudes.
+Do not use to find what sources emit near an energy - use 'sources_with_gammas_near_energy' (catalog lookup) or 'search_sources_by_energy' (ranked against loaded spectrum) instead.
+
+Output notes:
+- 'photons' is a compact table: 'columns' names the fields, 'rows' has one entry per line. For nuclides, 'intensity_perBq' is photons per becquerel of parent activity (decay-chain progeny included, aged per 'age'); for x-ray elements and reactions, 'intensity_rel' is relative to the strongest line (max 1).
+- 'prominent_energies_keV' lists the few energies most characteristic of this source - check for these first. Not seeing a peak at these energies does not rule the source out, but seeing them makes it a stronger candidate.
+- If cascade sums are requested: 'coincidenceIntensity' is how often the two photons are emitted simultaneously (NOT a detection rate); apply attenuation and detection efficiency to each photon individually, then multiply by it. Only relevant for sources closer than ~15 cm to the detector.</Description>
+    <Description role="NuclideId">Your candidate-validation tool: returns all photon lines (energy_keV, intensity) of a source, plus 'prominent_energies_keV' - the characteristic energies to check for first. Use e.g. {"source": "Co60", "sortOrder": "intensity", "maxResults": 25} when checking for corroborating peaks of a candidate. Absence of a prominent line does not rule a source out (attenuation, low BR, interference), but presence makes it a stronger candidate. For nuclides, intensities are photons per Bq of parent (progeny included, aged per 'age'); for x-ray elements/reactions, relative to the strongest line.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -759,11 +891,11 @@ Example: `run_javascript( { "code": "let base = 9; const exponent = 4; console.l
         },
         "includeCascadeSumEnergies": {
           "type": "boolean",
-          "description": "Optional: default false. If true, results will also include a list of top gamma pairs that may sum (gammas emitted at the same time that may be detected together), and is only relevant for nuclide sources and measurements less than ~15 cm from the source. The 'MaxResults' argument also limits the max possible length of these results."
+          "description": "Optional: default false. If true, also returns 'cascadeSums' - the top gamma pairs emitted simultaneously that may be detected together. Nuclides only; relevant for sources closer than ~15 cm. 'maxResults' also caps this list."
         },
         "includePhotonParent": {
           "type": "boolean",
-          "description": "Optional: default false. If true, each photon entry includes the parent nuclide as a third element, e.g. [energy, intensity, \"Ba137m\"] for gammas or [energy, intensity, \"Ba137m xray\"] for decay x-rays. Only applies to nuclide sources; ignored for elements and reactions."
+          "description": "Optional: default false. If true, adds a 'parent' column giving the decay-chain nuclide emitting each photon, e.g. \"Ba137m\" for gammas or \"Ba137m xray\" for decay x-rays. Nuclides only; ignored for elements and reactions."
         },
         "sortOrder": {
           "type": "string",
@@ -801,7 +933,7 @@ Further investigation of top returned candidates is required to make sure they m
       "properties": {
         "energies": {
           "type": "array",
-          "description": "The energies the source MUST match.  Since the source must match ALL entries, it is best to only search on one to a few unidentified peaks at a time, ususally starting with only a single peak, and then moving to two only if no satisfactory answer can be found. You usually will not want to search on a foreground peak that roughly aligns in energy with a background peak (either auto-search peak, or user/analysis fit peak), unless the foreground peak CPS is substantially elevated relative to the background peak.",
+          "description": "The energies the source MUST match ALL of.  It is best to only search on one to a few unidentified peaks at a time, usually starting with only a single peak, and then moving to two only if no satisfactory answer can be found. You usually will not want to search on a foreground peak that roughly aligns in energy with a background peak (either auto-search peak, or user/analysis fit peak), unless the foreground peak CPS is substantially elevated relative to the background peak.",
           "items": {
             "type": "object",
             "properties": {
@@ -816,8 +948,7 @@ Further investigation of top returned candidates is required to make sure they m
             },
             "required": ["energy"]
           },
-          "minItems": 1,
-          "description": "Array of energies to search for. Each source must have emissions matching ALL specified energies."
+          "minItems": 1
         },
         "source_category": {
           "type": "string",
@@ -2549,7 +2680,12 @@ Returns information about:
   <!-- Search-Mode / Time-History Tools -->
 
   <Tool name="get_time_history_count_rates">
-    <Description>Returns gamma CPS and neutron CPS (if present) arrays indexed by time for search-mode/passthrough data. Supports time sub-range filtering, energy range filtering with normalization, and data reduction via maxEntries. Times are in seconds since the beginning of the measurement (matching D3TimeChart x-axis). When maxEntries causes sample combining: occupancy is Occupied if any sample is Occupied; sourceType is Foreground if any sample is Foreground; GPS is averaged.</Description>
+    <Description>Returns gamma CPS (and neutron CPS if present) versus time for search-mode/passthrough data. Supports time sub-range filtering, energy range filtering with normalization, and data reduction via maxEntries.
+
+Output notes:
+- 'timeSlices' is a compact table: 'columns' names the fields (startTime_s, duration_s, gammaCps, and neutronCps when neutron data exists), 'rows' has one entry per time slice. Times are seconds since the beginning of the measurement (matching the time-chart x-axis).
+- 'backgroundRowIndexes' (if present) lists row indexes marked as Background samples; 'gpsByRow' (if present) gives GPS coordinates per row index.
+- When maxEntries causes sample combining: occupancy is Occupied if any combined sample is Occupied; a row is Foreground if any combined sample is Foreground; GPS is averaged.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {

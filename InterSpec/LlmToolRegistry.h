@@ -168,6 +168,7 @@ private:
   //  - Use "source", and not "nuclide" everywhere - to be consistent and inclusive of flourescent x-rays and reactions,
   //    unless it really is a nuclide-only thing, like decay chain.
   static nlohmann::json executePeakDetection(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetPeaks(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetSpectrumInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executePeakFit(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec);
@@ -175,7 +176,19 @@ private:
   static nlohmann::json executeGetUnidentifiedDetectedPeaks(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetCharacteristicGammasForSource( const nlohmann::json& params );
   static nlohmann::json executeGetNuclidesWithCharacteristicsInEnergyRange( const nlohmann::json& params, InterSpec* interspec );
+  static nlohmann::json executeGetSourcesWithGammasNearEnergy( const nlohmann::json& params, InterSpec* interspec );
   static nlohmann::json executeGetLoadedSpectra(const nlohmann::json& params, InterSpec* interspec);
+// To keep the tool-calling surface small (which helps smaller LLMs pick correctly), the
+// "primary_gammas_for_source" tool is merged into "source_photons" (as its prominent_energies_keV
+// field), and the "sources_with_primary_gammas_in_energy_range"/"sources_with_primary_gammas_near_energy"
+// pair is merged into the single "sources_with_gammas_near_energy" tool.  Set this to 0 (and swap the
+// commented-out tool definitions in llm_tools_config.xml) to restore the original separate tools.
+#define CONSOLIDATED_GAMMA_LINE_TOOLS 1
+
+// Similarly, the "get_detected_peaks", "get_analysis_peaks", and "get_unidentified_peaks" tools are
+// merged into the single "get_peaks" tool (with a 'filter' parameter).  Set this to 0 (and swap the
+// commented-out tool definitions in llm_tools_config.xml) to restore the original separate tools.
+#define CONSOLIDATED_PEAK_READOUT_TOOLS 1
 // I read that you should minimize the number of tool calls - so this next define makes it so the
 // "analyst_notes_for_source" and "sources_associated_with_source" tool calls will not be defined, but rather this info
 // is included with the "source_info" tool call

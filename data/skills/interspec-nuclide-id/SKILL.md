@@ -33,11 +33,11 @@ Only assign to the daughter if there is evidence of chemical separation.
 ### Step 1: Assess Spectrum State
 
 Call these tools first:
-- `loaded_spectra` - What spectra are available?
+- `get_loaded_spectra` - What spectra are available?
 - `get_spectrum_info` - Detector type, energy range, live time
 - `get_identified_sources` - Sources already assigned to analysis peaks
-- `get_analysis_peaks` - Current analysis peak state
-- `automated_source_id_results` - Hints from automated algorithms (may be wrong)
+- `get_peaks` with `{"filter": "analysis"}` - Current analysis peak state
+- `get_automated_id_results` - Hints from automated algorithms (may be wrong)
 
 Use `source_info` on any already-identified sources to learn about commonly associated nuclides.
 
@@ -45,11 +45,11 @@ Use `source_info` on any already-identified sources to learn about commonly asso
 
 ### Step 2: Get Unidentified Peaks
 
-Call `get_unidentified_peaks` with `max_results: 3` (or more), `verbose: false`.
+Call `get_peaks` with `{"filter": "unidentified", "maxResults": 3}` (or more).
 
 Select the most distinct or easiest-to-identify peak (highest amplitude, highest energy, or tightest FWHM). If all peaks have been investigated, proceed to Step 6a (Check Non-Peak Signatures).
 
-**Important**: After fitting any peaks (`add_analysis_peak` or `add_analysis_peaks_for_source`), the unidentified peaks list becomes stale. Call `get_unidentified_peaks` again.
+**Important**: After fitting any peaks (`add_analysis_peak` or `add_analysis_peaks_for_source`), the unidentified peaks list becomes stale. Call `get_peaks` with the 'unidentified' filter again.
 
 ### Step 3: Investigate Peak
 
@@ -86,7 +86,7 @@ Before accepting a source identification:
    - Attenuation may suppress low-energy lines
    - Low branching ratio lines may be below detection threshold
    - Nearby stronger peaks may obscure weaker lines
-   - Use `primary_gammas_for_source` for a quick check of the most characteristic energies
+   - The `prominent_energies_keV` field of the `source_photons` result gives the most characteristic energies for a quick check
 
 4. **Ultimate Parent**: If the candidate is a short-lived daughter, determine the parent.
 

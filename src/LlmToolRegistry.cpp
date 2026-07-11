@@ -130,7 +130,11 @@ namespace {
   };//find_case_insensitive_key
   
   
-  double rount_to_hundredth(double val){ return 0.01*std::round(100.0*val); }
+  double round_to_decimal_places( const double val, const int n );
+
+  // Uses round_to_decimal_places() so values like 1.66 serialize as "1.66" and not
+  // "1.6600000000000001" (0.01*round(100*x) re-introduces binary float artifacts).
+  double rount_to_hundredth(double val){ return round_to_decimal_places(val, 2); }
 
   /** Rounds a double to `n` significant figures using snprintf/strtod, so the
    resulting double will serialize cleanly via nlohmann::json's Grisu2.
@@ -1790,12 +1794,22 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
   tool.name = toolName;
 
   // Assign executor based on tool name
+#if( CONSOLIDATED_PEAK_READOUT_TOOLS )
+  if( toolName == "get_peaks" )
+  {
+    tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
+      return executeGetPeaks(params, interspec);
+      };
+    }
+#else
   if( toolName == "get_detected_peaks" )
   {
     tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
       return executePeakDetection(params, interspec);
       };
-    }else if( toolName == "add_analysis_peak" )
+    }
+#endif //CONSOLIDATED_PEAK_READOUT_TOOLS
+    else if( toolName == "add_analysis_peak" )
     {
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction>, LlmConversationHistory*,
@@ -1877,6 +1891,13 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeEditAnalysisPeak(params, interspec);
       };
+    }else if( toolName == "set_peak_shape" )
+    {
+      // Same executor as edit_analysis_peak - the two tools are an XML-level partition of one
+      // parameter set, so smaller LLMs see a simple everyday tool and a separate expert tool.
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
+        return executeEditAnalysisPeak(params, interspec);
+      };
     }else if( toolName == "compton_scatter_peak_check" )
     {
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
@@ -1892,27 +1913,40 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeSumPeakCheck(params, interspec);
       };
-    }else if( toolName == "get_analysis_peaks" )
+    }
+#if( !CONSOLIDATED_PEAK_READOUT_TOOLS )
+    else if( toolName == "get_analysis_peaks" )
     {
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetUserPeaks(params, interspec);
-      };
-    }else if( toolName == "get_identified_sources" )
-    {
-      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
-        return executeGetIdentifiedSources(params, interspec);
       };
     }else if( toolName == "get_unidentified_peaks" )
     {
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetUnidentifiedDetectedPeaks(params, interspec);
       };
+    }
+#endif //!CONSOLIDATED_PEAK_READOUT_TOOLS
+    else if( toolName == "get_identified_sources" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
+        return executeGetIdentifiedSources(params, interspec);
+      };
     }else if( toolName == "get_spectrum_info" )
     {
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetSpectrumInfo(params, interspec);
       };
-    }else if( toolName == "primary_gammas_for_source" )
+    }
+#if( CONSOLIDATED_GAMMA_LINE_TOOLS )
+    else if( toolName == "sources_with_gammas_near_energy" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
+        return executeGetSourcesWithGammasNearEnergy(params, interspec);
+      };
+    }
+#else
+    else if( toolName == "primary_gammas_for_source" )
     {
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetCharacteristicGammasForSource(params);
@@ -1928,6 +1962,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
         return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
       };
     }
+#endif //CONSOLIDATED_GAMMA_LINE_TOOLS
 #if( !INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
     else if( toolName == "sources_associated_with_source" )
     {
@@ -1951,12 +1986,12 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetNuclideDecayChain(params);
       };
-    }else if( toolName == "automated_source_id_results" )
+    }else if( toolName == "get_automated_id_results" )
     {
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetAutomatedRiidId(params, interspec);
       };
-    }else if( toolName == "loaded_spectra" )
+    }else if( toolName == "get_loaded_spectra" )
     {
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeGetLoadedSpectra(params, interspec);
@@ -2456,28 +2491,44 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   //   2. Tool descriptions and schemas can be updated without recompilation
   //   3. Missing configuration is caught early rather than silently using outdated hardcoded values
 
-  // Runtime validation: Check that all expected tools are registered
+  // Runtime validation: Check that all expected tools are registered.
+  // This list must match the executor branches in createToolWithExecutor(); it catches a stale
+  // llm_tools_config.xml (e.g., an outdated user-override copy missing newly added tools), and,
+  // in the other direction, XML tools with no C++ executor.
   std::vector<std::string> expectedTools = {
+#if( CONSOLIDATED_PEAK_READOUT_TOOLS )
+    "get_peaks",
+#else
     "get_detected_peaks",
+    "get_analysis_peaks",
+    "get_unidentified_peaks",
+#endif
     "add_analysis_peak",
     "edit_analysis_peak",
+    "set_peak_shape",
+    "compton_scatter_peak_check",
     "escape_peak_check",
     "sum_peak_check",
-    "get_analysis_peaks",
     "get_identified_sources",
-    "get_unidentified_peaks",
     "get_spectrum_info",
+#if( CONSOLIDATED_GAMMA_LINE_TOOLS )
+    "sources_with_gammas_near_energy",
+#else
     "primary_gammas_for_source",
     "sources_with_primary_gammas_in_energy_range",
     "sources_with_primary_gammas_near_energy",
+#endif
 #if( !INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
     "sources_associated_with_source",
     "analyst_notes_for_source",
 #endif
     "source_info",
     "nuclide_decay_chain",
-    "automated_source_id_results",
-    "loaded_spectra",
+    "decay_calculator",
+    "get_automated_id_results",
+    "get_loaded_spectra",
+    "load_spectrum_file",
+    "get_spectrum_image",
     "add_analysis_peaks_for_source",
     "get_counts_in_energy_range",
     "get_expected_fwhm",
@@ -2512,6 +2563,11 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "set_workflow_state",
     "get_rel_act_manual_state",
     "peak_based_relative_efficiency",
+    "create_peak_checkpoint",
+    "restore_peaks_to_checkpoint",
+    "fit_energy_calibration",
+    "save_energy_cal_checkpoint",
+    "restore_energy_cal_checkpoint",
     "get_time_history_count_rates",
     "set_displayed_time_ranges",
     "get_displayed_time_ranges",
@@ -2779,8 +2835,112 @@ json ToolRegistry::executePeakDetection(const json& params, InterSpec* interspec
 
   return result_json;
 }
-  
-  
+
+
+/** Dispatcher for the consolidated 'get_peaks' tool: translates the 'filter' parameter into a call
+ to one of the legacy peak-readout executors (which remain as internal helpers).
+ */
+nlohmann::json ToolRegistry::executeGetPeaks( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+
+  const string filter_key = find_case_insensitive_key( "filter", params );
+  string filter = "all";
+  if( params.contains(filter_key) && !params[filter_key].is_null() )
+    filter = params[filter_key].get<string>();
+  SpecUtils::to_lower_ascii( filter );
+
+  const string spec_key = find_case_insensitive_key( "specType", params );
+  const string spec_type = (params.contains(spec_key) && !params[spec_key].is_null())
+                             ? params[spec_key].get<string>() : string("Foreground");
+
+  const string lower_key = find_case_insensitive_key( "lowerEnergy", params );
+  const string upper_key = find_case_insensitive_key( "upperEnergy", params );
+  const bool has_lower = params.contains(lower_key) && !params[lower_key].is_null();
+  const bool has_upper = params.contains(upper_key) && !params[upper_key].is_null();
+
+  if( (filter == "all") || (filter == "elevated_above_background") )
+  {
+    json legacy = json::object();
+    legacy["specType"] = spec_type;
+    if( filter == "elevated_above_background" )
+      legacy["NonBackgroundPeaksOnly"] = true;
+    if( has_lower )
+      legacy["lowerEnergy"] = params[lower_key];
+    if( has_upper )
+      legacy["upperEnergy"] = params[upper_key];
+
+    return executePeakDetection( legacy, interspec );
+  }//if( "all" or "elevated_above_background" )
+
+  if( filter == "analysis" )
+  {
+    json legacy = json::object();
+    legacy["specType"] = spec_type;
+    if( has_lower )
+      legacy["lowerEnergy"] = params[lower_key];
+    if( has_upper )
+      legacy["upperEnergy"] = params[upper_key];
+
+    return executeGetUserPeaks( legacy, interspec );
+  }//if( "analysis" )
+
+  if( filter == "unidentified" )
+  {
+    if( !SpecUtils::iequals_ascii(spec_type, "Foreground") )
+      throw std::runtime_error( "The 'unidentified' filter only supports the Foreground spectrum." );
+
+    const bool has_bounds = (has_lower || has_upper);
+
+    // Resolve the requested max (default 5, matching executeGetUnidentifiedDetectedPeaks).
+    const string max_key = find_case_insensitive_key( "maxResults", params );
+    const bool has_max = params.contains(max_key) && !params[max_key].is_null();
+    size_t requested_max = 5;
+    if( has_max )
+      requested_max = static_cast<size_t>( std::max( 1.0, std::round( get_number( params, max_key ) ) ) );
+
+    json legacy = json::object();
+    // With energy bounds we must fetch a broad, amplitude-sorted set and filter to the
+    //  window *before* truncating - otherwise truncating to maxResults across the whole
+    //  spectrum can drop in-window peaks.  Without bounds, let the inner executor truncate.
+    if( has_bounds )
+      legacy["max_results"] = std::numeric_limits<int>::max();
+    else if( has_max )
+      legacy["max_results"] = params[max_key];
+
+    json result = executeGetUnidentifiedDetectedPeaks( legacy, interspec );
+
+    // The legacy executor has no energy bounds - apply them here, then truncate.
+    if( has_bounds && result.contains("peaks") && result["peaks"].is_array() )
+    {
+      const double lower = has_lower ? get_number( params, lower_key ) : -std::numeric_limits<double>::infinity();
+      const double upper = has_upper ? get_number( params, upper_key ) : std::numeric_limits<double>::infinity();
+
+      json filtered = json::array();
+      for( const json &peak : result["peaks"] )  // already sorted by amplitude, largest first
+      {
+        if( !peak.is_object() || !peak.contains("energy") )
+          continue;
+        const double energy = peak["energy"].get<double>();
+        if( (energy >= lower) && (energy <= upper) )
+        {
+          filtered.push_back( peak );
+          if( filtered.size() >= requested_max )
+            break;
+        }
+      }
+      result["peaks"] = std::move(filtered);
+    }//if( energy bounds requested )
+
+    return result;
+  }//if( "unidentified" )
+
+  throw std::runtime_error( "Invalid 'filter' value '" + filter + "' - must be one of"
+                            " 'all', 'analysis', 'unidentified', or 'elevated_above_background'." );
+}//executeGetPeaks(...)
+
+
 nlohmann::json ToolRegistry::executePeakFit(const nlohmann::json& params, InterSpec* interspec)
 {
   if( !interspec )
@@ -3788,18 +3948,28 @@ nlohmann::json ToolRegistry::executeGetTimeHistoryCountRates( const nlohmann::js
   // Only include "sourceType": "Background" markers when the file has both foreground and background
   const bool includeBackgroundMarkers = (anyForeground && anyBackground);
 
-  // Build result JSON as array of objects
-  json timeSlices = json::array();
+  // Build result as a compact table ('columns' header + positional rows), since there may be
+  // hundreds of slices; sparse per-slice info (GPS, background markers) goes in sidecar arrays
+  // keyed by row index.
+  json columns = json::array( {"startTime_s", "duration_s", "gammaCps"} );
+  if( anyNeutron )
+    columns.push_back( "neutronCps" );
 
-  for( const SampleTimeInfo &info : timeMap )
+  json rows = json::array();
+  json backgroundRowIndexes = json::array();
+  json gpsByRow = json::array();
+
+  for( size_t index = 0; index < timeMap.size(); ++index )
   {
-    json slice;
-    slice["startTime"] = rount_to_hundredth( info.startTime );
-    slice["duration"] = rount_to_hundredth( info.duration );
+    const SampleTimeInfo &info = timeMap[index];
+
+    json row = json::array();
+    row.push_back( rount_to_hundredth( info.startTime ) );
+    row.push_back( rount_to_hundredth( info.duration ) );
 
     // Compute and round gamma CPS
     const double glt = (info.gammaLiveTime > 0.0) ? info.gammaLiveTime : info.duration;
-    slice["gammaCps"] = (glt > 0.0) ? roundCps( info.gammaCounts / glt ) : 0.0;
+    row.push_back( (glt > 0.0) ? roundCps( info.gammaCounts / glt ) : 0.0 );
 
     // Include neutron CPS only if any sample has neutrons
     if( anyNeutron )
@@ -3807,28 +3977,32 @@ nlohmann::json ToolRegistry::executeGetTimeHistoryCountRates( const nlohmann::js
       if( info.hasNeutron )
       {
         const double nlt = (info.neutronLiveTime > 0.0) ? info.neutronLiveTime : info.duration;
-        slice["neutronCps"] = (nlt > 0.0) ? roundCps( info.neutronCounts / nlt ) : 0.0;
-      }
-      else
+        row.push_back( (nlt > 0.0) ? roundCps( info.neutronCounts / nlt ) : 0.0 );
+      }else
       {
-        slice["neutronCps"] = nullptr;
+        row.push_back( nullptr );
       }
     }
 
-    // Include GPS if this entry has coordinates
     if( info.hasGps )
-      slice["gps"] = { {"lat", info.latitude}, {"lon", info.longitude} };
+      gpsByRow.push_back( { {"row", static_cast<int>(index)},
+                            {"lat", round_to_decimal_places( info.latitude, 6 )},
+                            {"lon", round_to_decimal_places( info.longitude, 6 )} } );
 
-    // Only mark Background sourceType when file has foreground samples
+    // Only mark Background rows when file has foreground samples
     if( includeBackgroundMarkers && (info.sourceType == SpecUtils::SourceType::Background) )
-      slice["sourceType"] = "Background";
+      backgroundRowIndexes.push_back( static_cast<int>(index) );
 
-    timeSlices.push_back( std::move( slice ) );
+    rows.push_back( std::move( row ) );
   }//for( timeMap )
 
   json result;
-  result["timeSlices"] = std::move( timeSlices );
+  result["timeSlices"] = json{ {"columns", std::move(columns)}, {"rows", std::move(rows)} };
   result["numEntries"] = static_cast<int>( timeMap.size() );
+  if( !backgroundRowIndexes.empty() )
+    result["backgroundRowIndexes"] = std::move( backgroundRowIndexes );
+  if( !gpsByRow.empty() )
+    result["gpsByRow"] = std::move( gpsByRow );
 
   return result;
 }//executeGetTimeHistoryCountRates(...)
@@ -4134,7 +4308,78 @@ nlohmann::json ToolRegistry::executeGetNuclidesWithCharacteristicsInEnergyRange(
 
   return answer;
 }
-  
+
+
+nlohmann::json ToolRegistry::executeGetSourcesWithGammasNearEnergy( const nlohmann::json& params, InterSpec* interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+
+  const double energy = get_number( params, "energy" );
+
+  const string window_key = find_case_insensitive_key( "window", params );
+  double window = 0.0;
+  if( params.contains(window_key) && !params[window_key].is_null() )
+  {
+    window = get_number( params, window_key );
+    if( window <= 0.0 )
+      throw std::runtime_error( "'window' must be a positive number of keV." );
+  }else
+  {
+    // Match the historical default of get_characteristics_near_energy(): +-FWHM at this energy.
+    try
+    {
+      window = AnalystChecks::get_expected_fwhm( energy, interspec );
+    }catch( std::exception & )
+    {
+    }
+
+    if( window <= 0.0 )
+      window = 0.01*energy;
+  }//if( window specified ) / else
+
+  const double lower_energy = energy - window;
+  const double upper_energy = energy + window;
+
+  const vector<variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>> found
+    = AnalystChecks::get_nuclides_with_characteristics_in_energy_range( lower_energy, upper_energy, interspec );
+
+  json sources = json::array();
+  for( const variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> &item : found )
+  {
+    string name;
+    if( std::holds_alternative<const SandiaDecay::Nuclide *>(item) )
+      name = std::get<const SandiaDecay::Nuclide *>(item)->symbol;
+    else if( std::holds_alternative<const SandiaDecay::Element *>(item) )
+      name = std::get<const SandiaDecay::Element *>(item)->symbol;
+    else if( std::holds_alternative<const ReactionGamma::Reaction *>(item) )
+      name = std::get<const ReactionGamma::Reaction *>(item)->name();
+
+    // Include the characteristic energies that fall inside the search window, so the answer is
+    // actionable without requiring a follow-up lookup for each candidate.
+    json energies = json::array();
+    try
+    {
+      for( const float e : AnalystChecks::get_characteristic_gammas(name) )
+      {
+        if( (e >= lower_energy) && (e <= upper_energy) )
+          energies.push_back( round_to_decimal_places(e, 2) );
+      }
+    }catch( std::exception & )
+    {
+    }
+
+    sources.push_back( json{ {"name", name}, {"energies_keV", std::move(energies)} } );
+  }//for( loop over found sources )
+
+  json answer = json::object();
+  answer["energy_keV"] = round_to_decimal_places( energy, 2 );
+  answer["window_keV"] = round_to_decimal_places( window, 2 );
+  answer["sources"] = std::move(sources);
+
+  return answer;
+}//executeGetSourcesWithGammasNearEnergy(...)
+
 
 nlohmann::json ToolRegistry::executeGetAssociatedSources( const nlohmann::json& params )
 {
@@ -4404,11 +4649,11 @@ nlohmann::json ToolRegistry::executeGetNuclideDecayChain(const nlohmann::json& p
     nlohmann::json kid_info;
     kid_info["nuclide"] = kid->symbol;
     kid_info["halfLife"] = PhysicalUnits::printToBestTimeUnits(kid->halfLife, 6);
-    
-    for( const SandiaDecay::Transition *trans : nuc->decaysToChildren )
+
+    for( const SandiaDecay::Transition *trans : kid->decaysToChildren )
     {
       kid_info["decays"].push_back( json{{"child", trans->child ? trans->child->symbol : ""},
-        {"branchingRatio",trans->branchRatio},
+        {"branchingRatio", round_to_sig_figs(trans->branchRatio, 4)},
         {"decayType", SandiaDecay::to_str(trans->mode)}}
       );
     }
@@ -5614,57 +5859,78 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   }
 
 
-  nlohmann::json json_array;
+  nlohmann::json rows = nlohmann::json::array();
 
   for( const PhotonEntry &val : result )
   {
     if( val.parent_label.empty() )
-      json_array.push_back( { round_to_decimal_places(val.energy, 2), round_to_sig_figs(val.intensity, 4) } );
+      rows.push_back( { round_to_decimal_places(val.energy, 2), round_to_sig_figs(val.intensity, 4) } );
     else
-      json_array.push_back( { round_to_decimal_places(val.energy, 2), round_to_sig_figs(val.intensity, 4), val.parent_label } );
+      rows.push_back( { round_to_decimal_places(val.energy, 2), round_to_sig_figs(val.intensity, 4), val.parent_label } );
   }
-  
+
+  // Intensity semantics are encoded in the column name: photons per Bq of parent activity for
+  // nuclides, or intensity relative to the strongest line (max = 1) for x-rays and reactions.
+  nlohmann::json columns = nlohmann::json::array();
+  columns.push_back( "energy_keV" );
+  columns.push_back( nuc ? "intensity_perBq" : "intensity_rel" );
+  if( include_parent && nuc )
+    columns.push_back( "parent" );
+
   nlohmann::json answer = nlohmann::json::object();
-  answer["photons"] = std::move(json_array);
   if( nuc )
-    answer["photonsDescription"] = "Photons emmitted per Bq of parent activity.";
-  else if( el )
-    answer["photonsDescription"] = "Fluorescent x-rays, and relative intensities, emmitted by " + el->name + ".";
-  else if( rctn )
-    answer["photonsDescription"] = "Gammas emmitted by the " + rctn->name() + " reaction.";
-    
-  
+  {
+    answer["source"] = nuc->symbol;
+    answer["age"] = PhysicalUnits::printToBestTimeUnits( age_in_seconds * PhysicalUnits::second, 4 );
+  }else if( el )
+  {
+    answer["source"] = el->symbol;
+  }else if( rctn )
+  {
+    answer["source"] = rctn->name();
+  }
+
+  // The handful of energies an analyst would consider "characteristic" of this source - i.e., the
+  // most prominent or unique peaks to look for first.  Nearly free to include, and it saves the
+  // model a separate lookup (this replaces the old 'primary_gammas_for_source' tool).
+  try
+  {
+    nlohmann::json prominent = nlohmann::json::array();
+    for( const float e : AnalystChecks::get_characteristic_gammas( answer["source"].get<string>() ) )
+      prominent.push_back( round_to_decimal_places(e, 2) );
+    answer["prominent_energies_keV"] = std::move(prominent);
+  }catch( std::exception & )
+  {
+  }
+
+  answer["photons"] = nlohmann::json{ {"columns", std::move(columns)}, {"rows", std::move(rows)} };
+
   if( nuc && cascade )
   {
-    nlohmann::json cascades_array = nlohmann::json::array();
-    
-    //double max_coinc_amp = 1.0;
-    //if( !nuc_gamma_coincidences.empty() )
-    //  max_coinc_amp = std::get<1>(nuc_gamma_coincidences.front()) * std::get<4>(nuc_gamma_coincidences.front());
-    //assert( !IsNan(max_coinc_amp) && !IsInf(max_coinc_amp) && (max_coinc_amp > 0.0) );
-    
+    nlohmann::json cascade_rows = nlohmann::json::array();
+
     for( const coincidence_info_t &coinc : nuc_gamma_coincidences )
     {
-      const double coinc_amp = std::get<1>(coinc) * std::get<4>(coinc);// / max_coinc_amp;
+      const double coinc_amp = std::get<1>(coinc) * std::get<4>(coinc);
       const SandiaDecay::Transition * const trans = std::get<0>(coinc);
       string transition;
       if( trans && trans->parent )
         transition = trans->parent->symbol + " -> " + (trans->child ? trans->child->symbol : "various"s);
-      
-      cascades_array.emplace_back( nlohmann::json{
-        {"Intensity", round_to_sig_figs(coinc_amp, 4)},
-        {"Energies", {round_to_decimal_places(std::get<2>(coinc), 2), round_to_decimal_places(std::get<3>(coinc), 2)}},
-        {"Transition", std::move(transition) }
-      } );
+
+      cascade_rows.push_back( { round_to_decimal_places(std::get<2>(coinc), 2),
+                                round_to_decimal_places(std::get<3>(coinc), 2),
+                                round_to_sig_figs(coinc_amp, 4),
+                                std::move(transition) } );
     }//for( const coincidence_info_t &coinc : nuc_gamma_coincidences )
-    
-    
-    answer["cascadeSums"] = std::move(cascades_array);
-    answer["cascadeSumsDescription"] = "Photons emitted at the same time during nuclear decay and may be detected together.  The Intensity gives how often the photons are emitted together - not an actual rate, detection probability, or anything comparible to the photons rate. If you applying attenuation or detection probability to the results, first apply to each photon individually, then multiple those results by intensity to get overall relative probabbility.";
-    
-    return answer;
+
+    answer["cascadeSums"] = nlohmann::json{
+      {"columns", {"energy1_keV", "energy2_keV", "coincidenceIntensity", "transition"}},
+      {"rows", std::move(cascade_rows)}
+    };
+    answer["cascadeSumsNote"] = "coincidenceIntensity is how often the two photons are emitted together"
+                                " - not a detection rate; apply attenuation/detection efficiency to each"
+                                " photon individually, then multiply by it.";
   }//if( nuc && cascade )
-  
 
   return answer;
 }//nlohmann::json executeGetSourcePhotons(const nlohmann::json& params, InterSpec* interspec)
