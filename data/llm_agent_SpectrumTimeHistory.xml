@@ -25,7 +25,7 @@ The steady-state low-count times being used to form the background spectrum allo
 
 ## Core Principles
 
-1. **Tool-First**: Use get_time_history_count_rates (and get_time_chart_image if it is available) to understand the data before making any changes.
+1. **Tool-First**: Use get_time_history_count_rates{% if model.supports_images %} (and get_time_chart_image if it is available){% endif %} to understand the data before making any changes.
 2. **Time Convention**: All times are in seconds since the beginning of the measurement. This matches what the user sees in the analysis GUI. For portal monitor data with a leading background record, the background portion may have negative times (the occupied/foreground portion starts near time 0).
 3. **Peaks and Time Ranges**: When you change foreground or background time ranges, any peaks from the previous selection disappear. They are stored internally and will reappear if the same time ranges are restored. After changing ranges, new peak fits must be performed on the new data.
 
@@ -78,7 +78,7 @@ If there is a region, or regions with elevated neutron CPS, make sure to note
         </SuggestedTools>
         <PromptGuidance>First, call get_time_history_count_rates. If the tool returns an error indicating the data is not passthrough/search-mode, transition immediately to REPORT_RESULTS and inform the calling agent that this file is not search-mode data and does not need time region selection.
 
-Otherwise, examine the gross count rate time series. Check the time chart image for a visual overview if available. Look for elevated regions, metadata (OccupancyStatus, SourceType), and overall data characteristics. If count rates are uniform with no clear elevation, transition to NO_ELEVATION_FOUND. Otherwise transition to IDENTIFY_REGIONS.</PromptGuidance>
+Otherwise, examine the gross count rate time series. {% if model.supports_images %}Check the time chart image for a visual overview if available. {% endif %}Look for elevated regions, metadata (OccupancyStatus, SourceType), and overall data characteristics. If count rates are uniform with no clear elevation, transition to NO_ELEVATION_FOUND. Otherwise transition to IDENTIFY_REGIONS.</PromptGuidance>
         <EphemeralMessageTxt>Examining time history data.</EphemeralMessageTxt>
       </State>
 
@@ -123,7 +123,7 @@ Transition to SET_TIME_RANGES once boundaries are determined, or back to ASSESS_
           <Tool>get_time_chart_image</Tool>
           <Tool>get_spectrum_image</Tool>
         </SuggestedTools>
-        <PromptGuidance>Verify the time ranges were applied correctly by checking get_displayed_time_ranges and the time chart image. Optionally check the resulting spectrum image to confirm reasonable data. If the ranges need adjustment, transition back to SET_TIME_RANGES. Otherwise transition to REPORT_RESULTS.</PromptGuidance>
+        <PromptGuidance>Verify the time ranges were applied correctly by checking get_displayed_time_ranges{% if model.supports_images %} and the time chart image{% endif %}. {% if model.supports_images %}Optionally check the resulting spectrum image to confirm reasonable data. {% endif %}If the ranges need adjustment, transition back to SET_TIME_RANGES. Otherwise transition to REPORT_RESULTS.</PromptGuidance>
         <EphemeralMessageTxt>Verifying selected time regions.</EphemeralMessageTxt>
       </State>
 

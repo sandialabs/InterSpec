@@ -563,7 +563,10 @@ void LlmMcpResource::register_default_tools()
   {
     ToolInfo info;
     info.name = sharedTool->name;
-    info.description = sharedTool->description;
+    // Use the MCP-surface rendering of the description (rendered at registry build); fall back to the
+    // agent-surface description if unset.  For marker-free descriptions these are identical.
+    info.description = sharedTool->mcpDescription.empty() ? sharedTool->description
+                                                          : sharedTool->mcpDescription;
     info.parameters_schema = sharedTool->parameters_schema;
 
     // Add userSession parameter to schema

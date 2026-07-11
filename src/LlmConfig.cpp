@@ -316,6 +316,29 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
         return false;
       };//parseReasoningAttr lambda
 
+      // Helper lambda to parse an optional "instructionVerbosity" attribute from a Model node
+      auto parseVerbosityAttr = []( const rapidxml::xml_node<char> *node ) -> LlmApi::InstructionVerbosity
+      {
+        const rapidxml::xml_attribute<char> * const verbAttr = XML_FIRST_ATTRIB( node, "instructionVerbosity" );
+        if( !verbAttr )
+          return LlmApi::InstructionVerbosity::Normal;
+
+        string verb_str = SpecUtils::xml_value_str( verbAttr );
+        SpecUtils::trim( verb_str );
+        SpecUtils::to_lower_ascii( verb_str );
+
+        if( verb_str == "terse" )
+          return LlmApi::InstructionVerbosity::Terse;
+        if( (verb_str == "normal") || verb_str.empty() )
+          return LlmApi::InstructionVerbosity::Normal;
+        if( verb_str == "verbose" )
+          return LlmApi::InstructionVerbosity::Verbose;
+
+        cerr << "Warning: Invalid instructionVerbosity value '" << verb_str << "', ignoring. "
+             << "Valid values are: terse, normal, verbose" << endl;
+        return LlmApi::InstructionVerbosity::Normal;
+      };//parseVerbosityAttr lambda
+
       // Helper lambda to parse an optional ModelTemperature node
       auto parseTemperatureNode = []( const rapidxml::xml_node<char> *node ) -> std::optional<double>
       {
@@ -426,6 +449,9 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
               SpecUtils::trim( rt_str );
               modelInfo.requireToolInStateMachine = (rt_str == "true" || rt_str == "1");
             }
+
+            // Parse instructionVerbosity attribute (optional, defaults to Normal)
+            modelInfo.instructionVerbosity = parseVerbosityAttr( modelNode );
 
             // Parse optional child elements
             const rapidxml::xml_node<char> * const maxTokNode = XML_FIRST_NODE( modelNode, "MaxTokens" );
@@ -614,6 +640,7 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
     "         supportsImages            - \"true\" if the model accepts image input (enables get_spectrum_image).\n"
     "         reasoning                 - \"true\"/\"false\" (OpenRouter-style) or \"low\"/\"medium\"/\"high\" (OpenAI effort).\n"
     "         requireToolInStateMachine - \"true\" forces tool_choice=\"required\" in non-final state-machine states.\n"
+    "         instructionVerbosity      - \"terse\"/\"normal\"/\"verbose\"; how explicit the rendered instructions are (default normal).\n"
     "       <Model> child elements:\n"
     "         <Name>               - required model identifier (e.g. gpt-5-mini).\n"
     "         <MaxTokens>          - max output tokens (omit/0 = API default; REQUIRED by Anthropic).\n"
@@ -673,6 +700,14 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
         }
         if( effort_str )
           modelNode->append_attribute( doc.allocate_attribute( "reasoning", effort_str ) );
+      }
+
+      // Write instructionVerbosity attribute (only when non-default, so files round-trip clean)
+      if( m.instructionVerbosity != LlmApi::InstructionVerbosity::Normal )
+      {
+        const char * const verb_str = (m.instructionVerbosity == LlmApi::InstructionVerbosity::Terse)
+                                        ? "terse" : "verbose";
+        modelNode->append_attribute( doc.allocate_attribute( "instructionVerbosity", verb_str ) );
       }
 
       // Attach to the tree before appending child element nodes (see note above).

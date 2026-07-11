@@ -52,6 +52,7 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmPromptTemplate.h"
 #include "InterSpec/LlmToolGui.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmApiProtocol.h"
@@ -212,6 +213,9 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
 
   // Select the wire-format translator for the active provider's API format.
   m_protocol = LlmApiProtocol::create( m_config->llmApi.apiFormat() );
+
+  // Render the model-dependent instruction text once for the active model.
+  prepareModelInstructions();
 
   // Initialize debug logging if configured
   if( !m_config->llmApi.debug_file.empty() )
@@ -439,9 +443,11 @@ shared_ptr<LlmInteraction> LlmInterface::sendCompactionRequest( const string &su
     "\nOmit tool call details, intermediate reasoning, and error retries."
     " Focus on what was asked, what was found, and what changed.";
 
-  const string &compactionPrompt = m_config->llmApi.compactionSystemPrompt.empty()
+  // m_renderedCompaction holds the config's compaction prompt rendered for the active model, or is
+  // empty when none was configured - in which case fall back to the built-in default.
+  const string &compactionPrompt = m_renderedCompaction.empty()
     ? string( sm_defaultCompactionPrompt )
-    : m_config->llmApi.compactionSystemPrompt;
+    : m_renderedCompaction;
 
   // Build the request body THROUGH the protocol abstraction so it is valid for the active provider:
   // Anthropic needs a top-level `system` (no system role in messages), OpenAI-Responses needs
@@ -511,6 +517,10 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
   m_config = config;
   m_tool_registry = tool_registry;
   m_protocol = LlmApiProtocol::create( m_config->llmApi.apiFormat() );
+
+  // Re-render model-dependent instruction text for the newly-adopted model.
+  prepareModelInstructions();
+
   m_history = make_shared<LlmConversationHistory>();
   m_currentConversation.reset();
   m_summarizationPendingConvos.clear();
@@ -560,6 +570,9 @@ void LlmInterface::applyConfigPreservingHistory( const std::shared_ptr<const Llm
   m_config = config;
   m_tool_registry = tool_registry;
   m_protocol = LlmApiProtocol::create( m_config->llmApi.apiFormat() );
+
+  // Re-render model-dependent instruction text for the newly-adopted model.
+  prepareModelInstructions();
 
   // Deliberately KEEP m_history and m_currentConversation so the user can continue the conversation.
   m_summarizationPendingConvos.clear();  // any pending summarization used the old config
@@ -1964,7 +1977,10 @@ void LlmInterface::handleApiResponse( const std::string &response,
         // Send a re-prompt to nudge the LLM to continue
         const string &currentState = conversation->state_machine->getCurrentState();
         const vector<string> allowedTransitions = conversation->state_machine->getAllowedTransitions();
-        const string guidance = conversation->state_machine->getPromptGuidanceForCurrentState();
+        // Use the guidance pre-rendered for the active model (falls back to raw if not pre-rendered).
+        const string rawGuidance = conversation->state_machine->getPromptGuidanceForCurrentState();
+        const auto guidancePos = m_renderedStateGuidance.find( { conversation->agent_type, currentState } );
+        const string guidance = (guidancePos != end(m_renderedStateGuidance)) ? guidancePos->second : rawGuidance;
 
         string transitionList;
         for( size_t i = 0; i < allowedTransitions.size(); ++i )
@@ -3665,21 +3681,65 @@ std::pair<std::string, std::string> LlmInterface::extractThinkingAndContent(cons
   return {cleanContent, thinkingContent};
 }
 
+void LlmInterface::prepareModelInstructions()
+{
+  m_renderedSystemPrompt.clear();
+  m_renderedStateGuidance.clear();
+  m_renderedStateEphemeral.clear();
+  m_renderedCompaction.clear();
+
+  if( !m_config || !m_config->llmApi.enabled )
+    return;
+
+  // The compaction prompt is a single top-level instruction; render it with the MainAgent context.
+  if( !m_config->llmApi.compactionSystemPrompt.empty() )
+    m_renderedCompaction = LlmPromptTemplate::render( m_config->llmApi.compactionSystemPrompt,
+      LlmPromptTemplate::buildContext( *m_config, LlmPromptTemplate::Surface::Agent, AgentType::MainAgent ) );
+
+  // Per-agent: the base system prompt plus any per-state PromptGuidance / ephemeral text.  buildContext()
+  // is cheap and this runs only on model change, so we simply (re)render everything here.
+  for( const LlmConfig::AgentConfig &agent : m_config->agents )
+  {
+    const nlohmann::json ctx = LlmPromptTemplate::buildContext( *m_config,
+                                                    LlmPromptTemplate::Surface::Agent, agent.type );
+
+    m_renderedSystemPrompt[agent.type] = LlmPromptTemplate::render( agent.systemPrompt, ctx );
+
+    if( !agent.state_machine )
+      continue;
+
+    for( const auto &[stateName, stateDef] : agent.state_machine->allStates() )
+    {
+      if( !stateDef.prompt_guidance.empty() )
+        m_renderedStateGuidance[{ agent.type, stateName }] = LlmPromptTemplate::render( stateDef.prompt_guidance, ctx );
+      if( !stateDef.ephemeral_message_txt.empty() )
+        m_renderedStateEphemeral[{ agent.type, stateName }] = LlmPromptTemplate::render( stateDef.ephemeral_message_txt, ctx );
+    }
+  }//for( const LlmConfig::AgentConfig &agent : m_config->agents )
+}//prepareModelInstructions()
+
+
 std::string LlmInterface::getSystemPromptForAgent( const AgentType agentType ) const
 {
   if( !m_config || !m_config->llmApi.enabled )
     return "";
 
-  // Search for agent in config
+  // Return the base prompt pre-rendered for the active model (see prepareModelInstructions).
+  const auto pos = m_renderedSystemPrompt.find( agentType );
+  if( pos != end(m_renderedSystemPrompt) )
+    return pos->second;
+
+  // Fallback (should have been pre-rendered): find the agent and render on demand.
   for( const LlmConfig::AgentConfig &agent : m_config->agents )
   {
     if( agent.type == agentType )
-      return agent.systemPrompt;
+      return LlmPromptTemplate::render( agent.systemPrompt,
+               LlmPromptTemplate::buildContext( *m_config, LlmPromptTemplate::Surface::Agent, agentType ) );
   }
 
   assert( 0 );
   throw std::runtime_error( "Failed to find agent config for agent " + agentTypeToString(agentType) );
-  
+
   return "";
 }//getSystemPromptForAgent(...)
 
@@ -3889,7 +3949,10 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
         }
         ephemeralContent += ".]";
 
-        const string stateEphemeralTxt = convo->state_machine->getEphemeralMessageTxtForCurrentState();
+        // Use the ephemeral text pre-rendered for the active model (falls back to raw if not pre-rendered).
+        const string rawEphemeralTxt = convo->state_machine->getEphemeralMessageTxtForCurrentState();
+        const auto ephemPos = m_renderedStateEphemeral.find( { convo->agent_type, curState } );
+        const string stateEphemeralTxt = (ephemPos != end(m_renderedStateEphemeral)) ? ephemPos->second : rawEphemeralTxt;
         if( !stateEphemeralTxt.empty() )
           ephemeralContent += "\n\n" + stateEphemeralTxt;
 

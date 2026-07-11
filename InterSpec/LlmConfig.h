@@ -183,6 +183,20 @@ public:
       high
     };//enum class ReasoningEffort
 
+    /** How verbose/explicit the rendered instruction text (system prompts, tool descriptions,
+     state-machine guidance) should be for a given model.  Weaker models generally benefit from more
+     explicit, step-by-step instructions (Verbose); frontier models do well with terse prompts.
+
+     Purely an input to the Inja instruction-template rendering (see LlmPromptTemplate); it is never
+     sent on the wire.  Exposed to templates as the `verbosity` variable ("terse"/"normal"/"verbose").
+     */
+    enum class InstructionVerbosity
+    {
+      Terse,
+      Normal,
+      Verbose
+    };//enum class InstructionVerbosity
+
     /** The wire-format / protocol an API provider speaks.
 
      - OpenAiChat: the legacy OpenAI Chat Completions API (`/v1/chat/completions`), and the many
@@ -247,6 +261,11 @@ public:
        a tool call.  Default is false (uses `tool_choice: "auto"`).
        */
       bool requireToolInStateMachine = false;
+
+      /** How verbose the rendered instruction text should be for this model.  Default Normal.
+       Only affects instruction-template rendering (LlmPromptTemplate); never sent on the wire.
+       */
+      InstructionVerbosity instructionVerbosity = InstructionVerbosity::Normal;
     };//struct ModelInfo
 
     /** A single API provider (endpoint + token) with one or more models. */
@@ -318,6 +337,7 @@ public:
     int contextLengthLimit() const { return activeModel().contextLengthLimit; }
     std::optional<double> temperature() const { return activeModel().temperature; }
     bool requireToolInStateMachine() const { return activeModel().requireToolInStateMachine; }
+    InstructionVerbosity instructionVerbosity() const { return activeModel().instructionVerbosity; }
 
     /** The resolved wire-format for the active provider: the explicitly-configured `apiFormat`,
      or, if unset, auto-detected from the active provider's endpoint URL.

@@ -40,6 +40,7 @@
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/LlmPromptTemplate.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmToolGui.h"
 #include "InterSpec/LlmJsSandboxBridge.h"
@@ -2331,6 +2332,20 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   
   //cout << "Registering default LLM tools..." << endl;
 
+  // Tool/agent descriptions can be authored as Inja templates that adapt to the active model and the
+  // consumer (agent vs MCP).  Render them once here - registerDefaultTools() runs on every model
+  // change - so per-turn code just reads finished text.  render() is a no-op for marker-free strings,
+  // so existing (non-templated) descriptions are unchanged.
+  const json mcpCtx = LlmPromptTemplate::buildContext( config, LlmPromptTemplate::Surface::Mcp, AgentType::MainAgent );
+  std::map<AgentType, json> agentCtxCache;
+  auto agentCtx = [&config, &agentCtxCache]( const AgentType a ) -> const json & {
+    const auto pos = agentCtxCache.find( a );
+    if( pos != end(agentCtxCache) )
+      return pos->second;
+    return agentCtxCache.emplace( a,
+      LlmPromptTemplate::buildContext( config, LlmPromptTemplate::Surface::Agent, a ) ).first->second;
+  };
+
   // Register agent-specific invoke tools dynamically from config
   for( const LlmConfig::AgentConfig &agent : config.agents )
   {
@@ -2380,6 +2395,10 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       end(invokeTool.availableForAgents)
     );
 
+    // Render the (opt-in) instruction template for the active model.
+    invokeTool.mcpDescription = LlmPromptTemplate::render( invokeTool.description, mcpCtx );
+    invokeTool.description = LlmPromptTemplate::render( invokeTool.description, agentCtx( agent.type ) );
+
     registerTool(invokeTool);
   }//for( loop over agents in config )
   
@@ -2404,6 +2423,13 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
 
       // Apply agent restrictions
       tool.availableForAgents = toolConfig.availableForAgents;
+
+      // Render instruction templates (opt-in via markers) for the active model + surface: the MCP
+      // variant from the default description, then the agent-surface default and each role description.
+      tool.mcpDescription = LlmPromptTemplate::render( tool.description, mcpCtx );
+      tool.description = LlmPromptTemplate::render( tool.description, agentCtx( AgentType::MainAgent ) );
+      for( auto &roleDesc : tool.roleDescriptions )
+        roleDesc.second = LlmPromptTemplate::render( roleDesc.second, agentCtx( roleDesc.first ) );
 
       registerTool(tool);
     }catch( const std::exception &e )

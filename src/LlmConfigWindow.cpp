@@ -64,6 +64,7 @@ using namespace Wt;
 
 using ApiFormat = LlmConfig::LlmApi::ApiFormat;
 using ReasoningEffort = LlmConfig::LlmApi::ReasoningEffort;
+using InstructionVerbosity = LlmConfig::LlmApi::InstructionVerbosity;
 using ApiProvider = LlmConfig::LlmApi::ApiProvider;
 using ModelInfo = LlmConfig::LlmApi::ModelInfo;
 
@@ -122,6 +123,29 @@ namespace
     }
     return false;
   }//index_to_reasoning
+
+  /** InstructionVerbosity -> combo index: 0=terse, 1=normal, 2=verbose. */
+  int verbosity_to_index( const InstructionVerbosity v )
+  {
+    switch( v )
+    {
+      case InstructionVerbosity::Terse:   return 0;
+      case InstructionVerbosity::Normal:  return 1;
+      case InstructionVerbosity::Verbose: return 2;
+    }
+    return 1;
+  }//verbosity_to_index
+
+  InstructionVerbosity index_to_verbosity( int idx )
+  {
+    switch( idx )
+    {
+      case 0: return InstructionVerbosity::Terse;
+      case 1: return InstructionVerbosity::Normal;
+      case 2: return InstructionVerbosity::Verbose;
+    }
+    return InstructionVerbosity::Normal;
+  }//index_to_verbosity
 }//namespace
 
 
@@ -727,7 +751,7 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
       refreshPreview();
     } );
 
-  // Row 3: supports images / force tool / reasoning
+  // Row 3: supports images / force tool / reasoning / verbosity
   WContainerWidget *row3 = new WContainerWidget( card );
   row3->addStyleClass( "LcwModelRow3" );
 
@@ -767,6 +791,24 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
     if( pi < m_working.llmApi.providers.size() && mi < m_working.llmApi.providers[pi].models.size() )
     {
       m_working.llmApi.providers[pi].models[mi].reasoning = index_to_reasoning( reason->currentIndex() );
+      refreshPreview();
+    }
+  } ) );
+
+  WContainerWidget *verbWrap = new WContainerWidget( row3 );
+  verbWrap->addStyleClass( "LcwReasonWrap" );
+  new WText( WString::tr("lcw-verbosity"), verbWrap );
+  WComboBox *verbosity = new WComboBox( verbWrap );
+  verbosity->addStyleClass( "LcwSelect" );
+  verbosity->addItem( WString::tr("lcw-verbosity-terse") );
+  verbosity->addItem( WString::tr("lcw-verbosity-normal") );
+  verbosity->addItem( WString::tr("lcw-verbosity-verbose") );
+  verbosity->setCurrentIndex( verbosity_to_index( m.instructionVerbosity ) );
+  verbosity->setToolTip( WString::tr("lcw-verbosity-tip") );
+  verbosity->activated().connect( std::bind( [this,pi,mi,verbosity](){
+    if( pi < m_working.llmApi.providers.size() && mi < m_working.llmApi.providers[pi].models.size() )
+    {
+      m_working.llmApi.providers[pi].models[mi].instructionVerbosity = index_to_verbosity( verbosity->currentIndex() );
       refreshPreview();
     }
   } ) );

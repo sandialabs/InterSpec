@@ -25,8 +25,10 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <string>
 #include <memory>
+#include <utility>
 #include <functional>
 
 #include <Wt/WContainerWidget>
@@ -267,6 +269,15 @@ private:
    */
   std::unique_ptr<const LlmApiProtocol> m_protocol;
 
+  /** Instruction text pre-rendered for the active model by prepareModelInstructions() (at construction
+   and on every config adoption), then read - never re-rendered - during per-turn request assembly.
+   See LlmPromptTemplate.
+   */
+  std::map<AgentType, std::string> m_renderedSystemPrompt;                          // agent -> rendered base system prompt
+  std::map<std::pair<AgentType,std::string>, std::string> m_renderedStateGuidance;  // (agent,state) -> rendered PromptGuidance
+  std::map<std::pair<AgentType,std::string>, std::string> m_renderedStateEphemeral; // (agent,state) -> rendered ephemeral text
+  std::string m_renderedCompaction;                                                 // rendered compaction prompt ("" -> use default)
+
   // Debug logging support
   std::ostream* m_debug_stream;              // Pointer to debug output stream (nullptr if no logging)
   std::unique_ptr<std::ofstream> m_debug_file; // File stream if logging to a file
@@ -362,6 +373,15 @@ private:
   /** Get the system prompt for a specific agent from config
    */
   std::string getSystemPromptForAgent( const AgentType agentType ) const;
+
+  /** Render all model-dependent instruction text (agent system prompts, per-state guidance/ephemeral
+   text, and the compaction prompt) for the active model and cache it in the m_rendered* members.
+
+   Called from the constructor and whenever a new config is adopted (resetWithConfig /
+   applyConfigPreservingHistory) - i.e. exactly when the active model can change, NOT per request.
+   render() is a no-op for marker-free text, so non-templated instructions are unchanged.
+   */
+  void prepareModelInstructions();
 
   /** Initialize state machine for a conversation if the agent has one defined.
 

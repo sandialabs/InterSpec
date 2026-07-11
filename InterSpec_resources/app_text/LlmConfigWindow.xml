@@ -64,6 +64,11 @@
   <message id="lcw-reasoning-low">Low effort</message>
   <message id="lcw-reasoning-medium">Medium effort</message>
   <message id="lcw-reasoning-high">High effort</message>
+  <message id="lcw-verbosity">Instructions</message>
+  <message id="lcw-verbosity-terse">Terse</message>
+  <message id="lcw-verbosity-normal">Normal</message>
+  <message id="lcw-verbosity-verbose">Verbose</message>
+  <message id="lcw-verbosity-tip">How explicit the rendered instruction text is for this model. Weaker models benefit from Verbose; frontier models do well with Terse. Only affects instruction templates that opt in.</message>
   <message id="lcw-anthropic-needs-max"><![CDATA[Anthropic requires <strong>Max tokens</strong> &mdash; set a value above.]]></message>
 
   <!-- MCP -->
