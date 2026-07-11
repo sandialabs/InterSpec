@@ -252,6 +252,20 @@ public:
                       const std::function<T(double)> &eps_fep_abs,
                       const std::function<T(double)> &eps_tot_abs ) const
   {
+    return evaluateWindows( nuc, age, m_windows, eps_fep_abs, eps_tot_abs );
+  }
+
+  /** Same as #evaluate, but for an explicit window subset - e.g. the volume
+   integrand evaluates a single calculator's window per element.
+   */
+  template <class T>
+  std::vector<ceelo::AnalyticPeakResultT<T>> evaluateWindows(
+                      const SandiaDecay::Nuclide *nuc,
+                      const double age,
+                      const std::vector<ceelo::PeakWindow> &windows,
+                      const std::function<T(double)> &eps_fep_abs,
+                      const std::function<T(double)> &eps_tot_abs ) const
+  {
     struct FunctorProv final : public ceelo::EfficiencyProviderT<T>
     {
       const std::function<T(double)> *fep_f = nullptr;
@@ -271,7 +285,7 @@ public:
     ceelo::AnalyticCascadeOptions opts;  //defaults: triples + W(0) angular on
 
     std::vector<ceelo::AnalyticPeakResultT<T>> results
-              = ceelo::compute_cascade_analytic( *casc, m_windows, prov, opts );
+              = ceelo::compute_cascade_analytic( *casc, windows, prov, opts );
 
     for( const ceelo::AnalyticPeakResultT<T> &r : results )
     {

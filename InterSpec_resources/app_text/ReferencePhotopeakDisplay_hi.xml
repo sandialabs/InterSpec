@@ -35,6 +35,9 @@
   <message id="rpd-opt-alphas">अल्फा दिखाएं</message>
   <message id="rpd-opt-betas">बीटा दिखाएं</message>
   <message id="rpd-opt-cascade">कैस्केड योग</message>
+  <message id="rpd-cascade-dist">दूरी:</message>
+  <message id="rpd-warn-cascade-example-drf">कोई डिटेक्टर नहीं; योग हेतु उदाहरण HPGe दक्षता।</message>
+  <message id="rpd-warn-cascade-approx-drf">योग की कुल दक्षता उदाहरण डिटेक्टर से।</message>
   <message id="rpd-opt-escapes">एस्केप शिखर</message>
   <message id="rpd-prev-nucs">पिछला न्यूक्लाइड</message>
   <message id="rpd-det-nucs">डिटेक्टर RID न्यूक्लाइड</message>
@@ -59,7 +62,6 @@
   <message id="rpd-det-id">डिटेक्टर ID</message>
   <message id="rpd-ext-rid">बाहरी RID</message>
   <message id="rpd-prev">पिछला</message>
-  <message id="rpd-warn-cascade-xrays">x-rays कैस्केड में शामिल नहीं हैं</message>
 
   <!-- Values in the table on this tool -->
   <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->

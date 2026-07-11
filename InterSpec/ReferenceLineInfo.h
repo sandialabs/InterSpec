@@ -129,8 +129,14 @@ struct RefLineInput
   bool m_showBetas;
   bool m_showCascades;
   bool m_showEscapes;
-  
-  
+
+  /** The assumed source-to-detector distance used for cascade (true-coincidence)
+   summing, as a user-entered distance string (e.g. "1 cm").  Defaults to "1 cm";
+   an empty or unparseable value is treated as 1 cm.  Serialized.
+   */
+  std::string m_cascade_distance = "1 cm";
+
+
   /** The name of the detector to display as having had the reference
    lines modulated with.
    */
@@ -187,12 +193,59 @@ struct RefLineInput
   std::string m_shielding_ad;
   
   /** Function to return the shielding attenuation factor, as a function of energy.
-   
+
    I.e., returns values between 0 (all gammas stopped), and 1.0 (no attenuation).
-   
+
    May be nullptr.
    */
   std::function<double( float )> m_shielding_att;
+
+  /** Absolute full-energy-peak (photopeak) efficiency at the fixed cascade-summing
+   distance, folding in the uncollided shielding transmission.  Used only for
+   true-coincidence (cascade) summing.
+
+   I.e., the per-decay probability a gamma of the given energy is fully detected.
+
+   May be nullptr (e.g. for non-nuclide sources).  NOT serialized (same policy as
+   #m_det_intrinsic_eff / #m_shielding_att).
+   */
+  std::function<double( double )> m_summing_fep_eff;
+
+  /** Absolute total (any-deposit) efficiency at the cascade-summing distance,
+   including the uncollided shielding transmission plus GADRAS down-scatter.  Used
+   only for cascade summing-out.
+
+   Null (or returns 0) when the detector has no total-efficiency information, in
+   which case summing-out is disabled.  NOT serialized.
+   */
+  std::function<double( double )> m_summing_total_eff;
+
+  /** Whether cascade (true-coincidence) summing should be computed.  This is the
+   resolved capability: the user checkbox (#m_showCascades) is ON, the source is a
+   nuclide or nuclide-mixture, and #m_summing_fep_eff is available.  Recomputed by
+   #ReferenceLineInfo::generateRefLineInfo; NOT serialized.
+   */
+  bool m_do_cascade_summing = false;
+
+  /** Which detector efficiency the cascade summing used - so the GUI can warn the
+   user when it is not their actual detector.  NOT serialized. */
+  enum class SummingDetSource : int
+  {
+    None,                    ///< no summing / no efficiency
+    Current,                 ///< the loaded detector (has total efficiency)
+    CurrentFepExampleTotal,  ///< loaded detector FEP, example detector total (scaled)
+    Example                  ///< example detector for everything (no usable DRF)
+  };
+  SummingDetSource m_summing_det_source = SummingDetSource::None;
+
+  /** Shielding parameters for the GADRAS shield-scatter augmentation of the
+   total efficiency (cascade summing-out): effective atomic number, areal
+   density in g/cm2, and hydrogen mass fraction.  #m_summing_shield_ad <= 0 means
+   no shield (no scatter augmentation).  NOT serialized.
+   */
+  float m_summing_shield_an = 0.0f;
+  float m_summing_shield_ad = 0.0f;
+  float m_summing_shield_fracH = 0.0f;
   
   /** Serializes member variables to xml, appending a <RefLineInput> element onto the
    passed in node.
@@ -271,6 +324,16 @@ struct ReferenceLineInfo
      to zero, then lines with zero amplitude will be filtered out).
     */
     double m_normalized_intensity;
+
+    /** The display height this line would have WITHOUT cascade-summing applied,
+     in the same normalized [0,1] units as #m_normalized_intensity.
+
+     Equal to #m_normalized_intensity when no summing correction applies.  When
+     summing-out dominates a real line, #m_normalized_intensity is less than
+     #m_uncorrected_intensity, and the chart shades the region between the two
+     tops to indicate the amplitude lost to coincidence summing.
+     */
+    double m_uncorrected_intensity;
 
     /** The detectors intrinsic efficiency.
      Should be between in range [0,1], with it being 1.0 if no DRF is being used.

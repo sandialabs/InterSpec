@@ -37,6 +37,9 @@
   <message id="rpd-opt-alphas">アルファ表示</message>
   <message id="rpd-opt-betas">ベータ表示</message>
   <message id="rpd-opt-cascade">カスケード和</message>
+  <message id="rpd-cascade-dist">距離:</message>
+  <message id="rpd-warn-cascade-example-drf">検出器なし。加算は例のHPGe効率を使用。</message>
+  <message id="rpd-warn-cascade-approx-drf">加算の全効率は例の検出器から。</message>
   <message id="rpd-opt-escapes">エスケープピーク</message>
   <message id="rpd-prev-nucs">前の核種</message>
   <message id="rpd-det-nucs">検出器RID核種</message>
@@ -61,7 +64,6 @@
   <message id="rpd-det-id">検出器ID</message>
   <message id="rpd-ext-rid">外部RID</message>
   <message id="rpd-prev">前の</message>
-  <message id="rpd-warn-cascade-xrays">X線はカスケードに含まれません</message>
 
   <!-- Values in the table on this tool -->
   <message id="rpd-tbl-iso">同位体</message>  <!-- a.k.a meta-stable state of nuclide -->

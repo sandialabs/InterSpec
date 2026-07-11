@@ -23,10 +23,15 @@
 
 #include "InterSpec_config.h"
 
+#include <mutex>
 #include <vector>
+#include <fstream>
+#include <sstream>
 #include <algorithm>
 
 #include <boost/tuple/tuple.hpp>
+
+#include "io/DetectorResponse.h"
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -54,6 +59,7 @@
 #include <Wt/WRegExpValidator.h>
 
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -83,6 +89,7 @@
 #include "InterSpec/FeatureMarkerWidget.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
@@ -114,13 +121,63 @@ const vector<Wt::WColor> ReferencePhotopeakDisplay::sm_def_line_colors{
 };
 
 namespace
-{   
+{
   struct UpdateGuard
   {
     bool &m_guard;
     UpdateGuard( bool &guard ) : m_guard( guard ) { m_guard = true; }
     ~UpdateGuard(){ m_guard = false; }
   };
+
+  /** Fixed source-to-detector distance used for cascade (true-coincidence)
+   summing.  The summing magnitude scales with solid angle, so a near distance
+   makes the effect visible.  TODO: expose as a user option.
+   */
+  const double sm_cascade_summing_distance = 1.0 * PhysicalUnits::cm;
+
+  /** An example full-response detector (HPGe Monte-Carlo response with total
+   efficiency + angular response), used as a fallback for cascade summing when
+   the current DRF lacks total-efficiency info (borrow its total efficiency,
+   scaled by the FEP ratio) or when there is no current DRF at all (use it
+   wholesale).  Loaded once and cached.
+   */
+  std::shared_ptr<const DetectorPeakResponse> example_summing_detector()
+  {
+    static std::mutex s_mutex;
+    static std::shared_ptr<const DetectorPeakResponse> s_det;
+    static bool s_tried = false;
+
+    std::lock_guard<std::mutex> lock( s_mutex );
+    if( s_tried )
+      return s_det;
+    s_tried = true;
+
+    try
+    {
+      const string path = SpecUtils::append_path( InterSpec::staticDataDirectory(),
+                                                  "cascade_summing_example_response.xml" );
+      std::ifstream input( path.c_str(), std::ios::in | std::ios::binary );
+      if( !input.is_open() )
+        throw std::runtime_error( "could not open '" + path + "'" );
+
+      std::stringstream strm;
+      strm << input.rdbuf();
+
+      auto drf = std::make_shared<DetectorPeakResponse>( "CascadeSummingExample",
+                                                         "cascade summing example detector" );
+      drf->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm, PhysicalUnits::keV,
+                                          0.0f, 0.0f,
+                                          DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+      drf->setCeeloResponse( ceelo::DetectorResponse::from_xml_string( strm.str() ) );
+      s_det = drf;
+    }catch( std::exception &e )
+    {
+      cerr << "Failed to load cascade-summing example detector: " << e.what() << endl;
+      s_det = nullptr;
+    }//try / catch
+
+    return s_det;
+  }//example_summing_detector()
 
   class RefGammaCsvResource : public Wt::WResource
   {
@@ -842,8 +899,10 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showAlphas( NULL ),
     m_showBetas( NULL ),
     m_showCascadeSums( NULL ),
-    m_showEscapes( NULL ),
+    m_cascadeDistanceRow( NULL ),
+    m_cascadeDistance( NULL ),
     m_cascadeWarn( NULL ),
+    m_showEscapes( NULL ),
     m_showRiidNucs( NULL ),
     m_showPrevNucs( NULL ),
     m_showAssocNucs( NULL ),
@@ -1153,6 +1212,23 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showBetas = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-betas") );
     m_showCascadeSums = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-cascade") );
     m_showCascadeSums->hide();
+
+    // Compact "Dist:" row for the assumed cascade-summing distance.
+    m_cascadeDistanceRow = m_optionsContent->addNew<WContainerWidget>();
+    m_cascadeDistanceRow->addStyleClass( "CascadeDistRow" );
+    m_cascadeDistanceRow->hide();
+    WLabel *cascadeDistLabel = m_cascadeDistanceRow->addNew<WLabel>( WString::tr("rpd-cascade-dist") );
+    m_cascadeDistance = m_cascadeDistanceRow->addNew<WLineEdit>( "1 cm" );
+    m_cascadeDistance->addStyleClass( "CascadeDistEdit" );
+    cascadeDistLabel->setBuddy( m_cascadeDistance );
+    m_cascadeDistance->setAutoComplete( false );
+
+    // Warning shown when a default/example detector efficiency is being used.
+    m_cascadeWarn = m_optionsContent->addNew<WText>( WString::tr("rpd-warn-cascade-example-drf") );
+    m_cascadeWarn->addStyleClass( "CascadeGammaWarn" );
+    m_cascadeWarn->setInline( false );
+    m_cascadeWarn->hide();
+
     m_showEscapes = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-opt-escapes") );
 
     m_showPrevNucs = m_optionsContent->addNew<WCheckBox>( WString::tr("rpd-prev-nucs") );
@@ -1251,6 +1327,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   m_showCascadeSums->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_showCascadeSums->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+  m_cascadeDistance->changed().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+  m_cascadeDistance->enterPressed().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   
   m_showEscapes->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_showEscapes->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
@@ -2414,7 +2492,12 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
           const double att_coef = GammaInteractionCalc::transmition_coefficient_generic( atomic_number, areal_density, energy );
           return exp( -1.0 * att_coef );
         };
-        
+
+        // For the GADRAS shield-scatter augmentation used by cascade summing-out.
+        input.m_summing_shield_an = atomic_number;
+        input.m_summing_shield_ad = static_cast<float>( areal_density * PhysicalUnits::cm2 / PhysicalUnits::g );
+        input.m_summing_shield_fracH = 0.0f;
+
         NativeFloatSpinBox *anEdit = m_shieldingSelect->atomicNumberEdit();
         NativeFloatSpinBox *adEdit = m_shieldingSelect->arealDensityEdit();
         assert( adEdit && adEdit );
@@ -2447,12 +2530,111 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
           const double att_coef = GammaInteractionCalc::transmition_coefficient_material( material.get(), energy, thick );
           return exp( -1.0 * att_coef );
         };
+
+        // For the GADRAS shield-scatter augmentation used by cascade summing-out.
+        const double ad = material->density * thick;
+        input.m_summing_shield_an = material->massWeightedAtomicNumber();
+        input.m_summing_shield_ad = static_cast<float>( ad * PhysicalUnits::cm2 / PhysicalUnits::g );
+
+        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+        const SandiaDecay::Element * const H = db ? db->element( 1 ) : nullptr;
+        input.m_summing_shield_fracH = H ? static_cast<float>( material->massFractionOfElementInMaterial( H ) ) : 0.0f;
       }//if( material && (thick > 0.0) )
     }//if( isGenericMaterial ) / else
   }catch( std::exception &e )
   {
     cerr << "Exception getting shielding: " << e.what() << endl;
   }//try / catch to get shielding
+
+
+  // Build the absolute efficiency functors used for cascade (true-coincidence)
+  //  summing.  These are "bare" (no shielding) - ReferenceLineInfo folds the
+  //  shielding transmission + GADRAS scatter in.  Fallback tiers (per user):
+  //   - current DRF has total efficiency -> use it for both FEP and total;
+  //   - current DRF has FEP but no total -> current FEP, example detector total
+  //                                         scaled by the FEP ratio;
+  //   - no usable current DRF            -> example detector for both.
+  if( input.m_showCascades )
+  {
+    using GammaInteractionCalc::CascadeSummingCalc;
+
+    // User-settable source-to-detector distance (defaults to 1 cm).  The
+    //  validated string is stored on the input so it round-trips / serializes.
+    double dist = sm_cascade_summing_distance;
+    input.m_cascade_distance = "1 cm";
+    if( m_cascadeDistance )
+    {
+      const string diststr = SpecUtils::trim_copy( m_cascadeDistance->text().toUTF8() );
+      try
+      {
+        if( !diststr.empty() )
+        {
+          const double d = PhysicalUnits::stringToDistance( diststr );
+          if( d > 0.0 )
+          {
+            dist = d;
+            input.m_cascade_distance = diststr;
+          }
+        }
+      }catch( std::exception & )
+      {
+        //keep the 1 cm default for an unparseable distance
+      }
+    }//if( m_cascadeDistance )
+
+    const std::shared_ptr<const DetectorPeakResponse> cur = m_detectorDisplay->detector();
+    const std::shared_ptr<const DetectorPeakResponse> ex = example_summing_detector();
+
+    const bool cur_has_fep = cur && cur->isValid()
+        && (CascadeSummingCalc::detectorFepEffAbs( cur, 500.0, 0.0, 0.0, dist ) > 0.0);
+
+    std::shared_ptr<const DetectorPeakResponse> fep_src, tot_src;
+    bool scale_total_by_fep = false;
+    if( cur_has_fep )
+    {
+      fep_src = cur;
+      if( CascadeSummingCalc::drfHasNeededInfo( cur ) )
+      {
+        tot_src = cur;
+        input.m_summing_det_source = RefLineInput::SummingDetSource::Current;
+      }else if( ex )
+      {
+        tot_src = ex;
+        scale_total_by_fep = true;
+        input.m_summing_det_source = RefLineInput::SummingDetSource::CurrentFepExampleTotal;
+      }
+    }else if( ex )
+    {
+      fep_src = ex;
+      tot_src = ex;
+      input.m_summing_det_source = RefLineInput::SummingDetSource::Example;
+    }
+
+    if( fep_src )
+    {
+      input.m_summing_fep_eff = [fep_src, dist]( double energy ) -> double {
+        return CascadeSummingCalc::detectorFepEffAbs( fep_src, energy, 0.0, 0.0, dist );
+      };
+    }
+
+    if( tot_src && scale_total_by_fep && fep_src && ex )
+    {
+      input.m_summing_total_eff = [ex, fep_src, dist]( double energy ) -> double {
+        const double ex_tot = CascadeSummingCalc::detectorTotEffAbs( ex, energy, 0.0, 0.0, dist );
+        const double ex_fep = CascadeSummingCalc::detectorFepEffAbs( ex, energy, 0.0, 0.0, dist );
+        const double cur_fep = CascadeSummingCalc::detectorFepEffAbs( fep_src, energy, 0.0, 0.0, dist );
+        return (ex_fep > 0.0) ? (ex_tot * cur_fep / ex_fep) : ex_tot;
+      };
+    }else if( tot_src )
+    {
+      input.m_summing_total_eff = [tot_src, dist]( double energy ) -> double {
+        return CascadeSummingCalc::detectorTotEffAbs( tot_src, energy, 0.0, 0.0, dist );
+      };
+    }
+
+    input.m_do_cascade_summing = static_cast<bool>( input.m_summing_fep_eff );
+  }//if( input.m_showCascades )
+
 
   SpecUtils::trim( input.m_age );
   SpecUtils::trim( input.m_input_txt );
@@ -2896,9 +3078,46 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   m_showGammas->setHidden( !showGammaCB );
   m_showAlphas->setHidden( !showAplhaCb );
   m_showBetas->setHidden( !showBetaCb );
-  m_showCascadeSums->setHidden( !ref_lines || !ref_lines->m_has_coincidences );
+  const bool cascadeAvailable = (ref_lines && ref_lines->m_has_coincidences);
+  m_showCascadeSums->setHidden( !cascadeAvailable );
   m_showEscapes->setHidden( !showEscapeCb );
-  
+
+  // The distance input + example-detector warning only apply while cascade sums
+  //  are actually being shown.
+  const bool showingCascades = (cascadeAvailable && ref_lines->m_input.m_showCascades
+                                && ref_lines->m_input.m_do_cascade_summing);
+  m_cascadeDistanceRow->setHidden( !showingCascades );
+
+  // Reset an invalid/empty/zero distance back to the 1 cm default (the summing
+  //  calc already fell back to 1 cm; here we just keep the field consistent).
+  if( m_cascadeDistance )
+  {
+    const string diststr = SpecUtils::trim_copy( m_cascadeDistance->text().toUTF8() );
+    bool valid = false;
+    try
+    {
+      valid = (!diststr.empty() && (PhysicalUnits::stringToDistance( diststr ) > 0.0));
+    }catch( std::exception & )
+    {
+      valid = false;
+    }
+    if( !valid )
+      m_cascadeDistance->setText( "1 cm" );
+  }//if( m_cascadeDistance )
+
+  using SummingDetSource = RefLineInput::SummingDetSource;
+  const SummingDetSource detsrc = ref_lines ? ref_lines->m_input.m_summing_det_source
+                                            : SummingDetSource::None;
+  const bool showWarn = showingCascades && (detsrc != SummingDetSource::Current);
+  if( showWarn )
+  {
+    const char *key = (detsrc == SummingDetSource::Example)
+                        ? "rpd-warn-cascade-example-drf"
+                        : "rpd-warn-cascade-approx-drf";
+    m_cascadeWarn->setText( WString::tr(key) );
+  }
+  m_cascadeWarn->setHidden( !showWarn );
+
   if( ref_lines && (ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid) )
   {
     m_showXrays->setChecked( ref_lines->m_input.m_showXrays );
@@ -2907,6 +3126,11 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     m_showBetas->setChecked( ref_lines->m_input.m_showBetas );
     m_showCascadeSums->setChecked( ref_lines->m_input.m_showCascades );
     m_showEscapes->setChecked( ref_lines->m_input.m_showEscapes );
+
+    // Reflect the resolved cascade distance (e.g. after a restored/serialized state).
+    if( m_cascadeDistance && !ref_lines->m_input.m_cascade_distance.empty()
+       && (SpecUtils::trim_copy( m_cascadeDistance->text().toUTF8() ) != ref_lines->m_input.m_cascade_distance) )
+      m_cascadeDistance->setText( ref_lines->m_input.m_cascade_distance );
   }
   
   
@@ -3052,18 +3276,6 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
         nonDefaultOpts |= ref_lines->m_input.m_showCascades;
         break;
     }//switch( src_type )
-    
-    const bool showCascades = (ref_lines->m_has_coincidences && ref_lines->m_input.m_showCascades);
-    if( showCascades && !m_cascadeWarn )
-    {
-      auto warnOwner = std::make_unique<WText>( WString::tr("rpd-warn-cascade-xrays") );
-      m_cascadeWarn = warnOwner.get();
-      m_cascadeWarn->addStyleClass("CascadeGammaWarn");
-      m_optionsContent->insertWidget( m_optionsContent->indexOf(m_showCascadeSums) + 1, std::move(warnOwner) );
-    }//if( show coincidences )
-    
-    if( m_cascadeWarn )
-      m_cascadeWarn->setHidden( !showCascades );
   }//if( we are actually showing any lines )
   
   const bool hasNonDefaultStyle = m_options_icon->hasStyleClass("non-default");

@@ -36,6 +36,9 @@
   <message id="rpd-opt-alphas">显示阿尔法</message>
   <message id="rpd-opt-betas">显示贝塔</message>
   <message id="rpd-opt-cascade">级联和</message>
+  <message id="rpd-cascade-dist">距离:</message>
+  <message id="rpd-warn-cascade-example-drf">无探测器；求和使用示例 HPGe 效率。</message>
+  <message id="rpd-warn-cascade-approx-drf">求和总效率来自示例探测器。</message>
   <message id="rpd-opt-escapes">逃逸峰</message>
   <message id="rpd-prev-nucs">先前核素</message>
   <message id="rpd-det-nucs">探测器RID核素</message>
@@ -60,7 +63,6 @@
   <message id="rpd-det-id">探测器ID</message>
   <message id="rpd-ext-rid">外部RID</message>
   <message id="rpd-prev">先前</message>
-  <message id="rpd-warn-cascade-xrays">X射线不包括在级联中</message>
 
   <!-- Values in the table on this tool -->
   <message id="rpd-tbl-iso">异构</message>  <!-- a.k.a meta-stable state of nuclide -->

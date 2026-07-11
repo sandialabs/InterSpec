@@ -34,6 +34,9 @@
   <message id="rpd-opt-alphas">আলফা দেখান</message>
   <message id="rpd-opt-betas">বিটা দেখান</message>
   <message id="rpd-opt-cascade">ক্যাসকেড যোগফল</message>
+  <message id="rpd-cascade-dist">দূরত্ব:</message>
+  <message id="rpd-warn-cascade-example-drf">কোনো ডিটেক্টর নেই; যোগফলে উদাহরণ HPGe দক্ষতা ব্যবহৃত।</message>
+  <message id="rpd-warn-cascade-approx-drf">যোগফলের মোট দক্ষতা একটি উদাহরণ ডিটেক্টর থেকে।</message>
   <message id="rpd-opt-escapes">এস্কেপ পিক</message>
   <message id="rpd-prev-nucs">পূর্ববর্তী নিউক</message>
   <message id="rpd-det-nucs">ডিট RID নিউক</message>
@@ -58,7 +61,6 @@
   <message id="rpd-det-id">ডিটেক্টর ID</message>
   <message id="rpd-ext-rid">বহিরাগত RID</message>
   <message id="rpd-prev">পূর্ববর্তী</message>
-  <message id="rpd-warn-cascade-xrays">এক্স-রে ক্যাসকেডে অন্তর্ভুক্ত নয়</message>
 
   <!-- Values in the table on this tool -->
   <message id="rpd-tbl-iso">আইসো</message>  <!-- a.k.a meta-stable state of nuclide -->

@@ -23,11 +23,16 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <set>
 #include <deque>
 #include <mutex>
 #include <tuple>
+#include <cmath>
+#include <limits>
 #include <vector>
 #include <string>
+#include <algorithm>
 #include <stdexcept>
 
 #include <Wt/WLocale.h>
@@ -46,6 +51,9 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
+#include "cascade/AnalyticCascade.h"
+#include "cascade/SandiaDecayCascade.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/Integrate.h"
 #include "InterSpec/InterSpec.h"
@@ -54,6 +62,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/ReferenceLinePredef.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -956,6 +965,292 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
   
   return keeper_lines;
 }//shared_ptr<vector<FissionLine>> fission_photons(...)
+
+
+// ===================== True-coincidence (cascade) summing ====================
+//
+// Analytic cascade summing via the CeeLo engine (ceelo::compute_cascade_analytic):
+// gamma-gamma, gamma-xray, and xray-xray summing-IN, plus summing-OUT.  The caller
+// supplies bare absolute FEP/total efficiency functors (RefLineInput::
+// m_summing_fep_eff / m_summing_total_eff) at a fixed near distance; here we fold
+// in the shielding (uncollided transmission for FEP; transmission + GADRAS
+// down-scatter for total) and evaluate the per-line net summing factor plus any
+// pure sum peaks.  The intent is to show WHERE summing effects are, not to be
+// rigorously correct in amplitude.
+//
+// Fills cnet_map[(nuclide, round(energy))] with the net summing factor for each
+// real line, and appends pure sum peaks to `sum_peaks` (m_decay_intensity =
+// absolute per-parent-decay detected gain, already scaled by the caller's
+// activity-fraction `weight`).
+void compute_cascade_summing_for_nuclide(
+        const SandiaDecay::Nuclide * const nuc,
+        const double age,
+        const double weight,
+        const RefLineInput &input,
+        const std::vector<double> &real_line_energies,
+        std::map<std::pair<const SandiaDecay::Nuclide *,long long>,double> &cnet_map,
+        std::map<std::pair<const SandiaDecay::Nuclide *,long long>,double> &sum_in_map,
+        std::vector<ReferenceLineInfo::RefLine> &sum_peaks )
+{
+  if( !nuc || !input.m_summing_fep_eff )
+    return;
+
+  auto energy_key = []( const double e ) -> long long {
+    return static_cast<long long>( std::llround( e * 10.0 ) );  //0.1 keV buckets
+  };
+
+  // 1) Build the correlated decay cascades (handles progeny in-growth at `age`).
+  std::vector<ceelo::DecayCascade> cascades;
+  try
+  {
+    ceelo::cascade_adapter::CascadeOptions copt;
+    copt.age_seconds = age / PhysicalUnits::second;
+    // Match the displayed real-line progeny basis: prompt-only sources use prompt
+    //  equilibrium; otherwise progeny grow in over `age` (like addNuclideByActivity),
+    //  so decay-chain daughter summing sits on the same activity scale as the
+    //  daughter's own displayed lines.
+    copt.prompt_equilibrium = input.m_promptLinesOnly;
+    // Use the transition-group x-ray model (flat x-ray members with coincidence
+    //  links to their transition's gammas) rather than the vacancy-level model,
+    //  which stores x-rays as k_vacancies the pairwise loop below does not read.
+    //  This gives us gamma-xray and xray-xray summing (near-exact for the
+    //  electron-capture emitters that dominate x-ray summing).
+    copt.include_xrays = true;
+    copt.vacancy_xray_model = false;
+    cascades = ceelo::cascade_adapter::build_cascades( nuc, copt );
+  }catch( std::exception & )
+  {
+    return;
+  }
+  if( cascades.empty() )
+    return;
+
+  const std::function<double(float)> &Tfcn = input.m_shielding_att;
+  const std::function<double(double)> &fepFcn = input.m_summing_fep_eff;
+  const std::function<double(double)> &totFcn = input.m_summing_total_eff;
+  auto trans = [&Tfcn]( const double e ) -> double { return Tfcn ? Tfcn( static_cast<float>(e) ) : 1.0; };
+
+  // The absolute FEP/total efficiency functors dispatch to the (relatively
+  //  expensive) Monte-Carlo detector response; the same emission energies are
+  //  queried many times (enumeration + the analytic engine's partner lookups),
+  //  so memoize by 0.1 keV bucket.  This is single-threaded (session thread).
+  std::map<long long,double> fep_cache, tot_cache;
+  auto cached_fep = [&fepFcn,&fep_cache]( const double e ) -> double {
+    const long long k = static_cast<long long>( std::llround( e * 10.0 ) );
+    const auto pos = fep_cache.find( k );
+    if( pos != end(fep_cache) )
+      return pos->second;
+    const double v = fepFcn ? fepFcn( e ) : 0.0;
+    fep_cache.emplace( k, v );
+    return v;
+  };
+  auto cached_tot = [&totFcn,&tot_cache]( const double e ) -> double {
+    const long long k = static_cast<long long>( std::llround( e * 10.0 ) );
+    const auto pos = tot_cache.find( k );
+    if( pos != end(tot_cache) )
+      return pos->second;
+    const double v = totFcn ? totFcn( e ) : 0.0;
+    tot_cache.emplace( k, v );
+    return v;
+  };
+
+  // Half-width of the per-line summing window handed to the engine.  It decides
+  //  (a) which emitted lines the engine groups into one "peak" (sharing one net
+  //  factor), and (b) which coincidence SUMS the engine folds into that line as
+  //  summing-IN.  We keep it tight (0.25 keV, resolvable on HPGe) rather than
+  //  CeeLo's NaI-scale 1.5 keV default: only a sum that is essentially on top of a
+  //  real line (e.g. Ra-226 1120.3+609.3 = 1729.60 vs the 1729.595 gamma) folds in
+  //  and makes that line taller (summing-in); a resolvable sum (e.g. 276.4+81 =
+  //  357.4, next to the 356 gamma) stays a separate sum peak.
+  const double match_tol = 0.25;  //keV
+
+  // Sorted displayed-line energies for O(log n) nearest-line lookup.  Returns the
+  //  nearest real line within match_tol, or NaN if none.
+  std::vector<double> sorted_real( real_line_energies );
+  std::sort( begin(sorted_real), end(sorted_real) );
+  auto nearest_real = [&sorted_real,match_tol]( const double e ) -> double {
+    if( sorted_real.empty() )
+      return std::numeric_limits<double>::quiet_NaN();
+    const auto it = std::lower_bound( begin(sorted_real), end(sorted_real), e );
+    double best = std::numeric_limits<double>::quiet_NaN(), bestd = match_tol;
+    if( (it != end(sorted_real)) && (std::fabs(*it - e) <= bestd) ){ bestd = std::fabs(*it - e); best = *it; }
+    if( it != begin(sorted_real) ){ const double v = *(it-1); if( std::fabs(v - e) <= bestd ) best = v; }
+    return best;
+  };
+
+  // GADRAS shield-scatter augmentation of the total efficiency (only when shielded).
+  GammaInteractionCalc::ShieldScatterAugment scatter;
+  if( (input.m_summing_shield_ad > 0.0f) && totFcn )
+  {
+    try
+    {
+      std::set<double> part_e;
+      for( const ceelo::DecayCascade &dc : cascades )
+        for( const ceelo::CascadeMember &m : dc.members )
+          if( m.energy_keV >= 5.0 )
+            part_e.insert( m.energy_keV );
+      const std::vector<double> part_e_vec( begin(part_e), end(part_e) );
+      const std::function<double(double)> eps_totint = [&cached_tot]( double e ){ return cached_tot(e); };
+      scatter.build( part_e_vec, eps_totint, input.m_summing_shield_fracH,
+                     InterSpec::staticDataDirectory() );
+    }catch( std::exception & )
+    {
+      //leave the augment invalid -> transmission-only summing-out
+    }
+  }//if( shielding present )
+
+  const double shield_an = input.m_summing_shield_an;
+  const double shield_ad = input.m_summing_shield_ad;
+  auto eps_fep_sh = [&cached_fep,&trans]( const double e ) -> double { return cached_fep(e) * trans(e); };
+  auto eps_tot_sh = [&cached_tot,&trans,&scatter,shield_an,shield_ad]( const double e ) -> double {
+    double shield = trans(e);
+    if( scatter.valid() )
+      shield += scatter.evaluate( e, shield_an, shield_ad );
+    return cached_tot(e) * shield;
+  };
+
+  // --- Per-line summing-OUT factor: the EXACT level-scheme engine ---
+  //  Real lines are scaled by the summing-OUT survival (c_out) only.  The
+  //  summing-IN is shown separately as its own sum peaks (below), even when a sum
+  //  energy is close to a real line (e.g. Ba-133 276.4+81 = 357.4, just above the
+  //  356 gamma) - so those distinct, resolvable coincidence-sum peaks stay
+  //  visible.  Using the net factor (c_out+c_in) here instead would fold that
+  //  summing-in into the nearby real line and hide the separate peak.
+  //  (The engine is only seconds-slow when un-memoized or given duplicate/phantom
+  //  windows; with the memoized provider + deduplicated real-line windows it is
+  //  ~0.3 s even for U-238.)
+  std::set<long long> win_seen;
+  std::vector<ceelo::PeakWindow> windows;
+  for( const double e : real_line_energies )
+  {
+    if( (e >= 5.0) && win_seen.insert( energy_key(e) ).second )
+    {
+      ceelo::PeakWindow w;
+      w.energy_keV = e;
+      w.tolerance_keV = match_tol;
+      windows.push_back( w );
+    }
+  }
+
+  if( !windows.empty() )
+  {
+    struct Provider : public ceelo::EfficiencyProvider
+    {
+      std::function<double(double)> fep_fn, tot_fn;
+      double fep( double e ) const override { return fep_fn ? std::max(0.0, fep_fn(e)) : 0.0; }
+      double total( double e ) const override { return tot_fn ? std::max(0.0, tot_fn(e)) : 0.0; }
+      bool has( double ) const override { return true; }
+    } provider;
+    provider.fep_fn = [&eps_fep_sh]( double e ){ return eps_fep_sh(e); };
+    provider.tot_fn = [&eps_tot_sh]( double e ){ return eps_tot_sh(e); };
+
+    try
+    {
+      ceelo::AnalyticCascadeOptions opts;   //exact; triples add negligible cost here
+      const std::vector<ceelo::AnalyticPeakResult> results
+          = ceelo::compute_cascade_analytic( cascades, windows, provider, opts );
+      for( const ceelo::AnalyticPeakResult &res : results )
+      {
+        if( !res.found || IsNan(res.c_out) || IsInf(res.c_out) )
+          continue;
+        //Summing-OUT survival only.  Summing-IN is added below (the engine's own
+        //  c_in does not reliably fold a crossover+cascade coincidence such as
+        //  Ra-226 1120.3+609.3 into the direct 1729.6 line), so we do it ourselves.
+        cnet_map[ std::make_pair(nuc, energy_key(res.energy_keV)) ] = std::max( 0.0, res.c_out );
+      }
+    }catch( std::exception & )
+    {
+      //leave cnet_map empty -> lines shown uncorrected
+    }
+  }//if( !windows.empty() )
+
+  // --- Separate sum peaks (pairwise) ---
+  //  Coincidence sums whose energy is NOT within match_tol of a real line (so the
+  //  engine did not fold them into a line as summing-in above) are shown as their
+  //  own peaks.  Joint full-energy detection gain at E_a+E_b.
+  struct SumCand { double gain = 0.0; double e_a = 0.0; double e_b = 0.0; };
+  std::map<long long,SumCand> sum_cands;
+  for( const ceelo::DecayCascade &dc : cascades )
+  {
+    const size_t nmem = dc.members.size();
+    std::set<std::pair<uint16_t,uint16_t>> seen_pairs;
+    for( size_t a = 0; a < nmem; ++a )
+    {
+      const double ea = dc.members[a].energy_keV;
+      if( ea < 5.0 )
+        continue;
+      for( const ceelo::CoincidenceLink &lnk : dc.members[a].coincident )
+      {
+        if( lnk.partner >= nmem )
+          continue;
+        const uint16_t ai = static_cast<uint16_t>(a), bi = lnk.partner;
+        if( !seen_pairs.insert( std::make_pair( std::min(ai,bi), std::max(ai,bi) ) ).second )
+          continue;
+        const double eb = dc.members[bi].energy_keV;
+        if( eb < 5.0 )
+          continue;
+        const double esum = ea + eb;
+        // Both photons must go into the detector to both be full-energy detected,
+        //  so they are near-collinear: weight by the gamma-gamma angular
+        //  correlation in the collinear limit W(0) = 1 + a2 + a4 (the same factor
+        //  the engine applies to summing-in; ~1.16 for Co-60).  Isotropic pairs
+        //  carry a2 = a4 = 0 -> W(0) = 1.
+        double gain = dc.branch_weight * dc.members[a].intensity * lnk.prob
+                      * eps_fep_sh(ea) * eps_fep_sh(eb);
+        if( lnk.has_correlation )
+          gain *= std::max( 0.0, 1.0 + lnk.a2 + lnk.a4 );
+        if( (gain <= 0.0) || IsNan(gain) || IsInf(gain) )
+          continue;
+
+        // A sum that is essentially on top of a real line (within match_tol) is
+        //  folded into that line as summing-in (making it taller); otherwise it is
+        //  its own separate sum peak.
+        const double rl = nearest_real( esum );
+        if( !IsNan(rl) )
+        {
+          sum_in_map[ std::make_pair(nuc, energy_key(rl)) ] += gain * weight;
+          continue;
+        }
+
+        SumCand &cand = sum_cands[ energy_key(esum) ];
+        if( gain > cand.gain ){ cand.e_a = ea; cand.e_b = eb; }
+        cand.gain += gain;
+      }//for( coincidence links )
+    }//for( members a )
+  }//for( cascades )
+
+  // Pure sum peaks (ranked by gain, capped).
+  const size_t max_sum_peaks = 300;
+  std::vector<std::pair<long long,SumCand>> ranked( begin(sum_cands), end(sum_cands) );
+  if( ranked.size() > max_sum_peaks )
+  {
+    std::partial_sort( begin(ranked), begin(ranked) + max_sum_peaks, end(ranked),
+        []( const std::pair<long long,SumCand> &l, const std::pair<long long,SumCand> &r ){
+          return l.second.gain > r.second.gain; } );
+    ranked.resize( max_sum_peaks );
+  }
+  for( const std::pair<long long,SumCand> &rc : ranked )
+  {
+    const double gain = rc.second.gain;
+    if( (gain <= 0.0) || IsNan(gain) || IsInf(gain) )
+      continue;
+
+    ReferenceLineInfo::RefLine line;
+    line.m_energy = rc.second.e_a + rc.second.e_b;
+    line.m_decay_intensity = gain * weight;
+    line.m_parent_nuclide = nuc;
+    line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+    line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak;
+
+    char buffer[128] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "Cascade sum %s (%.1f + %.1f keV)",
+              nuc->symbol.c_str(), rc.second.e_a, rc.second.e_b );
+    line.m_decaystr = buffer;
+
+    sum_peaks.push_back( std::move(line) );
+  }//for( ranked sum peaks )
+}//compute_cascade_summing_for_nuclide(...)
+
 }//namespace
 
 
@@ -1488,6 +1783,7 @@ bool RefLineInput::operator==(const RefLineInput &rhs) const
   && (m_showBetas == rhs.m_showBetas)
   && (m_showCascades == rhs.m_showCascades)
   && (m_showEscapes == rhs.m_showEscapes)
+  && (m_cascade_distance == rhs.m_cascade_distance)
   && (m_detector_name == rhs.m_detector_name)
   //&& (m_det_intrinsic_eff == rhs.)
   && (m_shielding_name == rhs.m_shielding_name)
@@ -1502,6 +1798,7 @@ bool RefLineInput::operator==(const RefLineInput &rhs) const
 ReferenceLineInfo::RefLine::RefLine()
   : m_energy( 0.0 ),
   m_normalized_intensity( 0.0 ),
+  m_uncorrected_intensity( 0.0 ),
   m_drf_factor( 1.0f ),
   m_shield_atten( 1.0f ),
   m_particle_sf_applied( 1.0f ),
@@ -1684,6 +1981,7 @@ void ReferenceLineInfo::toJson( string &json ) const
     if( next_gamma_close )
     {
       double intensity = 0.0;
+      double uncorrected = 0.0;   //for the cascade summing-out "lost" shading
       size_t num_combined = 0;
       map<const SandiaDecay::Nuclide *,double> nuc_to_frac;
       // TODO: be a little more efficient than allocating strings in these sets...
@@ -1705,6 +2003,7 @@ void ReferenceLineInfo::toJson( string &json ) const
         }
         
         intensity += inner_line.m_normalized_intensity;
+        uncorrected += inner_line.m_uncorrected_intensity;  //no-summing height (may be < or > corrected)
         particles.insert( inner_line.particlestr() );
         if( !inner_line.m_decaystr.empty() )
         {
@@ -1748,6 +2047,16 @@ void ReferenceLineInfo::toJson( string &json ) const
       };//combine_particle_strs lambda
       
       jsons << (printed ? "," : "") << "{\"e\":" << energy << ",\"h\":" << intensity_buffer;
+      // "hu" = the no-summing height, emitted whenever cascade summing changed the
+      //  displayed height - either direction, so the chart can shade amplitude LOST
+      //  to summing-out (hu>h) or highlight amplitude GAINED by summing-in (h>hu).
+      if( !IsNan(uncorrected) && !IsInf(uncorrected)
+         && (std::fabs(uncorrected - intensity) > intensity*0.0001) )
+      {
+        char hu_buffer[32];
+        snprintf( hu_buffer, sizeof(hu_buffer), "%.3g", uncorrected );
+        jsons << ",\"hu\":" << hu_buffer;
+      }
       if( !particles.empty() )
         jsons << ",\"particle\":" << jsQuote(combine_particle_strs(particles));
       
@@ -1836,6 +2145,16 @@ void ReferenceLineInfo::toJson( string &json ) const
         snprintf( intensity_buffer, sizeof(intensity_buffer), "%.3g", line.m_normalized_intensity );
       
       jsons << (printed ? "," : "") << "{\"e\":" << energy << ",\"h\":" << intensity_buffer;
+      // "hu" = no-summing height (see combined-line branch above); emitted in
+      //  either direction (summing-out loss or summing-in gain).
+      if( !IsNan(line.m_uncorrected_intensity) && !IsInf(line.m_uncorrected_intensity)
+         && (std::fabs(line.m_uncorrected_intensity - line.m_normalized_intensity)
+             > line.m_normalized_intensity*0.0001) )
+      {
+        char hu_buffer[32];
+        snprintf( hu_buffer, sizeof(hu_buffer), "%.3g", line.m_uncorrected_intensity );
+        jsons << ",\"hu\":" << hu_buffer;
+      }
       jsons << ",\"particle\":" << jsQuote( line.particlestr() );
       
       if( !line.m_decaystr.empty() )
@@ -2120,7 +2439,23 @@ void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   node = base_node->first_node("ShowEscapes", 11);
   input.m_showEscapes = node && node->value_size() && (node->value()[0] == '1');
-  
+
+  // Cascade-summing distance; any parse/validation problem falls back to 1 cm.
+  input.m_cascade_distance = "1 cm";
+  node = base_node->first_node( "CascadeDistance", 15 );
+  if( node && node->value_size() )
+  {
+    const string diststr = SpecUtils::trim_copy( string( node->value(), node->value() + node->value_size() ) );
+    try
+    {
+      if( !diststr.empty() && (PhysicalUnits::stringToDistance( diststr ) > 0.0) )
+        input.m_cascade_distance = diststr;
+    }catch( std::exception & )
+    {
+      //keep the 1 cm default
+    }
+  }//if( CascadeDistance node )
+
   //node = base_node->first_node( "ShowLines", 9 );
   //if( node && node->value_size() )
   //  showLines = (node->value()[0] == '1');
@@ -2370,7 +2705,15 @@ void RefLineInput::serialize( rapidxml::xml_node<char> *parent_node ) const
   value = (m_showEscapes ? "1" : "0");
   node = doc->allocate_node(rapidxml::node_element, name, value);
   base_node->append_node(node);
-  
+
+  if( !m_cascade_distance.empty() )
+  {
+    name = "CascadeDistance";
+    value = doc->allocate_string( m_cascade_distance.c_str() );
+    node = doc->allocate_node( rapidxml::node_element, name, value );
+    base_node->append_node( node );
+  }
+
   name = "PromptLinesOnly";
   value = (m_promptLinesOnly ? "1" : "0");
   node = doc->allocate_node( rapidxml::node_element, name, value );
@@ -2763,6 +3106,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   //  Should probably move all this information parsing to a seperate function (its
   //  length has grown quite a bit over initial imp).
   bool fission_src = false;
+  bool sf_parent_lines_added = false;  //true once a spontaneous-fission parent nuclide's lines are added
   FissionType fission_type = FissionType::Thermal;
   const SandiaDecay::Nuclide *fission_nuclide = nullptr;
   double fission_buildup_time = 0.0;
@@ -3008,19 +3352,19 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   
   
   vector<ReferenceLineInfo::RefLine> lines;
-  
-  //transition, first gamma BR, first gamma energy, second gamma energy, coincidence fraction, second gamma BR (just for debug)
-  typedef tuple<const SandiaDecay::Transition *, double, float, float, float, double> coincidence_info_t;
-  vector<coincidence_info_t> gamma_coincidences;
-  
+
   /** The `m_decay_intensity` value returned are normalized to 1 bq of the parent nuclide, at the specified age.
+
+   True-coincidence (cascade) summing is handled separately, after all lines are built, by the
+   analytic CeeLo engine (see below) - which understands gamma-gamma, gamma-xray, and xray-xray
+   coincidences, plus summing-out.  Here we only flag whether the nuclide has *any* coincidences,
+   so the GUI knows whether to offer the cascade-sum option.
    */
   auto make_nuc_lines = [use_particle,lower_photon_energy]( const SandiaDecay::Nuclide *nuc, double age, const RefLineInput &input )
-              -> tuple<vector<ReferenceLineInfo::RefLine>,vector<coincidence_info_t>,bool> {
-    
-                
+              -> pair<vector<ReferenceLineInfo::RefLine>,bool> {
+
+
     vector<ReferenceLineInfo::RefLine> nuc_lines;
-    vector<coincidence_info_t> nuc_gamma_coincidences;
     bool has_coincidences = false;
                 
     SandiaDecay::NuclideMixture mixture;
@@ -3127,30 +3471,9 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
           
           if( !has_coincidences && (particle.type == SandiaDecay::GammaParticle) )
             has_coincidences = !particle.coincidences.empty();
-          
+
           const double br = activity * particle.intensity * transition->branchRatio / parent_activity;
-          
-          if( input.m_showCascades && (particle.type == SandiaDecay::GammaParticle) )
-          {
-            for( size_t coinc_index = 0; coinc_index < particle.coincidences.size(); ++coinc_index )
-            {
-              const unsigned short int part_ind = particle.coincidences[coinc_index].first;
-              const float fraction = particle.coincidences[coinc_index].second;
-              assert( part_ind < transition->products.size() );
-              if( part_ind < transition->products.size() )
-              {
-                const SandiaDecay::RadParticle &coinc_part = transition->products[part_ind];
-                
-                // The BR of second gamma is just for debugging
-                const double second_br = activity * coinc_part.intensity
-                * transition->branchRatio / parent_activity;
-                
-                if( coinc_part.type == SandiaDecay::ProductType::GammaParticle )
-                  nuc_gamma_coincidences.emplace_back( transition, br, particle.energy, coinc_part.energy, fraction, second_br );
-              }//if (part_ind < transition->products.size())
-            }//for( loop over coincidences )
-          }//if( show cascade gammas )
-          
+
           line.m_decay_intensity = br;
           line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
           
@@ -3215,18 +3538,16 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     
     if( positron_line.m_decay_intensity > 0.0 )
       nuc_lines.push_back( positron_line );
-                
-    return { nuc_lines, nuc_gamma_coincidences, has_coincidences };
+
+    return { nuc_lines, has_coincidences };
   };//make_nuc_lines lambda
-  
+
   if( nuc )
   {
-    tuple<vector<ReferenceLineInfo::RefLine>,vector<coincidence_info_t>,bool> nuc_line_info
-                                                                = make_nuc_lines( nuc, age, input );
-    
-    lines = std::move( std::get<0>(nuc_line_info) );
-    gamma_coincidences = std::move( std::get<1>(nuc_line_info) );
-    answer.m_has_coincidences = std::get<2>(nuc_line_info);
+    pair<vector<ReferenceLineInfo::RefLine>,bool> nuc_line_info = make_nuc_lines( nuc, age, input );
+
+    lines = std::move( nuc_line_info.first );
+    answer.m_has_coincidences = nuc_line_info.second;
   }//if( nuc )
   
   
@@ -3238,12 +3559,11 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     {
       assert( comp.m_nuclide );
       const double nuc_age = std::max( 0.0, age - comp.m_age_offset ); //Make sure age is at least zero
-      tuple<vector<ReferenceLineInfo::RefLine>,vector<coincidence_info_t>,bool> nuc_line_info
+      pair<vector<ReferenceLineInfo::RefLine>,bool> nuc_line_info
                                 = make_nuc_lines( comp.m_nuclide, nuc_age, input );
-      
-      vector<ReferenceLineInfo::RefLine> &these_lines = get<0>(nuc_line_info);
-      vector<coincidence_info_t> &these_coinc = get<1>(nuc_line_info);
-      
+
+      vector<ReferenceLineInfo::RefLine> &these_lines = nuc_line_info.first;
+
       // Correct BR of line to account for fraction of parent nuclide
       //
       // The `m_decay_intensity` value returned are normalized to 1 bq of the parent nuclide, at
@@ -3265,29 +3585,22 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       
       for( ReferenceLineInfo::RefLine &this_line : these_lines )
         this_line.m_decay_intensity *= correction_factor;
-      
-      for( coincidence_info_t &this_coinc : these_coinc )
-      {
-        get<1>(this_coinc) *= correction_factor; // first gamma BR
-        get<5>(this_coinc) *= correction_factor; // second gamma BR (just for debug)
-      }
-      
+
       if( !comp.m_color.isDefault() )
       {
         for( ReferenceLineInfo::RefLine &this_line : these_lines )
           this_line.m_color = comp.m_color;
       }
-      
+
       lines.insert( end(lines), begin(these_lines), end(these_lines) );
-      gamma_coincidences.insert( end(gamma_coincidences), begin(these_coinc), end(these_coinc) );
-      
+
       //combine 511 lines
       //positron_line.m_energy = 510.9989 * PhysicalUnits::keV;
       //positron_line.m_parent_nuclide = nuc;
       //positron_line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
       //positron_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Annihilation;
-      
-      answer.m_has_coincidences |= std::get<2>(nuc_line_info);
+
+      answer.m_has_coincidences |= nuc_line_info.second;
     }//for( const NucMixComp &comp : nuc_mix->m_components )
       
     // We will limit the total number of gammas/x-rays, according to intensity
@@ -3576,15 +3889,14 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
       if( spontaneous_fission )
       {
         // Add parent Cf252 and progeny lines, normalized consistently by source age.
-        tuple<vector<ReferenceLineInfo::RefLine>,vector<coincidence_info_t>,bool> nuc_line_info
+        pair<vector<ReferenceLineInfo::RefLine>,bool> nuc_line_info
                                                                 = make_nuc_lines( fission_nuclide, age, input );
-        
-        vector<ReferenceLineInfo::RefLine> nuc_lines = std::move( std::get<0>(nuc_line_info) );
+
+        vector<ReferenceLineInfo::RefLine> nuc_lines = std::move( nuc_line_info.first );
         lines.insert( end(lines), begin(nuc_lines), end(nuc_lines) );
-        
-        vector<coincidence_info_t> nuc_coinc = std::move( std::get<1>(nuc_line_info) );
-        gamma_coincidences.insert( end(gamma_coincidences), begin(nuc_coinc), end(nuc_coinc) );
-        answer.m_has_coincidences = answer.m_has_coincidences || std::get<2>(nuc_line_info);
+
+        answer.m_has_coincidences = answer.m_has_coincidences || nuc_line_info.second;
+        sf_parent_lines_added = true;
       }else
       {
         // At least for the moment, we'll avoid trying to deal with coincidences.
@@ -3599,60 +3911,170 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     
   }//if( fission_src )
   
-  // Now calc detector response and shielding
-  //  Up to now, we shouldnt have any escape or sum gammas in answer.m_ref_lines
+  // ===== True-coincidence (cascade) summing =====
+  //  Corrects real photopeak amplitudes (summing-out shrinks a line, summing-in
+  //  grows it) and adds pure sum peaks, using the analytic CeeLo engine.  Only
+  //  applies to nuclide / nuclide-mixture / spontaneous-fission-parent sources.
+  //  When active, photon amplitudes switch to an absolute (solid-angle-included)
+  //  per-decay basis so real lines and sum peaks share one scale.
+  std::map<std::pair<const SandiaDecay::Nuclide *,long long>,double> cnet_map;   //summing-OUT survival factor per real line
+  std::map<std::pair<const SandiaDecay::Nuclide *,long long>,double> sum_in_map; //absolute summing-IN gain folded onto a real line
+  const bool do_summing = input.m_do_cascade_summing && input.m_summing_fep_eff
+                          && (nuc || nuc_mix || sf_parent_lines_added);
+  auto photon_energy_key = []( const double e ) -> long long {
+    return static_cast<long long>( std::llround( e * 10.0 ) );
+  };
+  if( do_summing )
+  {
+    // (nuclide, age, activity-fraction weight)
+    vector<tuple<const SandiaDecay::Nuclide*,double,double>> nuc_ages;
+    if( nuc )
+      nuc_ages.emplace_back( nuc, age, 1.0 );
+    if( sf_parent_lines_added && fission_nuclide )
+      nuc_ages.emplace_back( fission_nuclide, age, 1.0 );
+    if( nuc_mix )
+    {
+      for( const ReferenceLinePredef::NucMixComp &comp : nuc_mix->m_components )
+      {
+        if( !comp.m_nuclide )
+          continue;
+        const double nuc_age = std::max( 0.0, age - comp.m_age_offset );
+        double comp_weight = comp.m_rel_act;
+        if( !nuc_mix->m_fixed_act_fractions )
+          comp_weight *= exp( -age * comp.m_nuclide->decayConstant() );
+        nuc_ages.emplace_back( comp.m_nuclide, nuc_age, comp_weight );
+      }
+    }//if( nuc_mix )
+
+    vector<ReferenceLineInfo::RefLine> sum_peaks;
+    for( const tuple<const SandiaDecay::Nuclide*,double,double> &na : nuc_ages )
+    {
+      const SandiaDecay::Nuclide * const cnuc = std::get<0>(na);
+
+      vector<double> real_energies;
+      for( const ReferenceLineInfo::RefLine &line : lines )
+      {
+        if( (line.m_parent_nuclide == cnuc)
+           && (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal)
+           && ((line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Gamma)
+               || (line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray)) )
+        {
+          real_energies.push_back( line.m_energy );
+        }
+      }//for( lines )
+
+      compute_cascade_summing_for_nuclide( cnuc, std::get<1>(na), std::get<2>(na),
+                                           input, real_energies, cnet_map, sum_in_map, sum_peaks );
+    }//for( nuclides )
+
+    lines.insert( end(lines), begin(sum_peaks), end(sum_peaks) );
+  }//if( do_summing )
+
+
+  // Now calc detector response and shielding.  Up to now, the only escape/sum
+  //  gammas present are the cascade sum peaks just added above.
+  //  For each photon line we compute both the uncorrected amplitude and (when
+  //  summing) the net-corrected amplitude; both feed the normalization max so a
+  //  shrunk line's uncorrected top stays on-scale for the "lost" shading.
   double max_alpha_br = 0.0, max_beta_br = 0.0, max_photon_br = 0.0;
   for( ReferenceLineInfo::RefLine &line : lines )
   {
     assert( (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal)
            || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Annihilation)
            || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::SingleEscape)
-           || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape) );
-    
+           || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape)
+           || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak) );
+
     switch( line.m_particle_type )
     {
       case ReferenceLineInfo::RefLine::Particle::Alpha:
         max_alpha_br = std::max( max_alpha_br, line.m_decay_intensity );
+        line.m_normalized_intensity = line.m_decay_intensity;   //raw; scaled below
+        line.m_uncorrected_intensity = line.m_normalized_intensity;
         break;
-        
+
       case ReferenceLineInfo::RefLine::Particle::Beta:
         max_beta_br = std::max( max_beta_br, line.m_decay_intensity );
+        line.m_normalized_intensity = line.m_decay_intensity;   //raw; scaled below
+        line.m_uncorrected_intensity = line.m_normalized_intensity;
         break;
-        
+
       case ReferenceLineInfo::RefLine::Particle::Gamma:
       case ReferenceLineInfo::RefLine::Particle::Xray:
       {
+        // Cascade sum peaks carry an absolute per-decay detected gain directly
+        //  in m_decay_intensity (efficiency and shielding already folded in).
+        if( line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak )
+        {
+          line.m_normalized_intensity = line.m_decay_intensity;   //raw; scaled below
+          line.m_uncorrected_intensity = line.m_normalized_intensity;
+          max_photon_br = std::max( max_photon_br, line.m_decay_intensity );
+          break;
+        }
+
         double energy = line.m_energy;
         switch( line.m_source_type )
         {
           case ReferenceLineInfo::RefLine::RefGammaType::Normal:
           case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
             break;
-            
+
           case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
             // TODO: Need to put in S.E. DRF factor here
             energy += 510.998950;
             break;
-            
+
           case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
             // TODO: Need to put in D.E. DRF factor here
             energy += 2.0*510.998950;
             break;
-            
+
           case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
           case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
             assert( 0 );
             break;
         }//switch( line.m_source_type )
-        
+
         if( input.m_det_intrinsic_eff && line.m_attenuation_applies )
           line.m_drf_factor = input.m_det_intrinsic_eff( energy );
-        
+
         if( input.m_shielding_att && line.m_attenuation_applies )
           line.m_shield_atten = input.m_shielding_att( energy );
-        
-        const double intensity = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten;
-        max_photon_br = std::max( max_photon_br, intensity );
+
+        // Uncorrected amplitude.  When summing, use absolute FEP efficiency (so
+        //  real lines and sum peaks share one solid-angle-consistent scale);
+        //  otherwise the legacy intrinsic-efficiency basis.
+        double uncorrected;
+        if( do_summing && line.m_attenuation_applies )
+        {
+          const double eps = input.m_summing_fep_eff( energy );
+          const double shield = input.m_shielding_att ? input.m_shielding_att( energy ) : 1.0;
+          uncorrected = line.m_decay_intensity * eps * shield;
+        }else
+        {
+          uncorrected = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten;
+        }
+
+        // Summing correction: summing-OUT survival (cnet, <=1) applied to the
+        //  line's own emission, plus any summing-IN gain folded onto this energy
+        //  (a coincidence sum that lands on top of the line makes it taller).
+        double cnet = 1.0, sum_in = 0.0;
+        if( do_summing && line.m_parent_nuclide
+           && (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal) )
+        {
+          const std::pair<const SandiaDecay::Nuclide *,long long> key( line.m_parent_nuclide, photon_energy_key(energy) );
+          const auto pos = cnet_map.find( key );
+          if( pos != end(cnet_map) )
+            cnet = pos->second;
+          const auto sin = sum_in_map.find( key );
+          if( sin != end(sum_in_map) )
+            sum_in = sin->second;
+        }
+
+        const double corrected = uncorrected * cnet + sum_in;
+        line.m_uncorrected_intensity = uncorrected;   //raw; scaled below
+        line.m_normalized_intensity = corrected;       //raw; scaled below
+        max_photon_br = std::max( max_photon_br, std::max( uncorrected, corrected ) );
         break;
       }
     }//switch( line.m_particle_type )
@@ -3669,18 +4091,23 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     {
       case ReferenceLineInfo::RefLine::Particle::Alpha:
         line.m_particle_sf_applied = alpha_sf;
-        line.m_normalized_intensity = line.m_decay_intensity * alpha_sf;
+        line.m_normalized_intensity *= alpha_sf;
+        line.m_uncorrected_intensity *= alpha_sf;
         break;
-        
+
       case ReferenceLineInfo::RefLine::Particle::Beta:
         line.m_particle_sf_applied = beta_sf;
-        line.m_normalized_intensity = line.m_decay_intensity * beta_sf;
+        line.m_normalized_intensity *= beta_sf;
+        line.m_uncorrected_intensity *= beta_sf;
         break;
-        
+
       case ReferenceLineInfo::RefLine::Particle::Gamma:
       case ReferenceLineInfo::RefLine::Particle::Xray:
+        // The raw (pre-scale) uncorrected and net-corrected amplitudes were
+        //  computed in the loop above; here we just apply the shared photon scale.
         line.m_particle_sf_applied = photon_sf;
-        line.m_normalized_intensity = photon_sf * line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten;
+        line.m_normalized_intensity *= photon_sf;
+        line.m_uncorrected_intensity *= photon_sf;
         break;
     }//switch( line.m_particle_type )
     
@@ -3768,105 +4195,6 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   
   // If we add in escape peaks - we could put them in here
   
-  // Add in coincident gammas
-  if( !gamma_coincidences.empty() )
-  {
-    double max_coincidence_br = 0.0;
-    vector<ReferenceLineInfo::RefLine> coinc_ref_lines;
-    for( const auto &casc : gamma_coincidences )
-    {
-      const SandiaDecay::Transition *const &trans = get<0>( casc );
-      const double &first_br = get<1>( casc );
-      const float &first_energy = get<2>( casc );
-      const float &second_energy = get<3>( casc );
-      const float &coinc_frac = get<4>( casc );
-      //const double &second_br = get<5>( casc );
-
-      const float energy = first_energy + second_energy;
-      
-      ReferenceLineInfo::RefLine line;
-      line.m_energy = energy;
-      line.m_decay_intensity = first_br * coinc_frac;
-      line.m_parent_nuclide = nuc;
-      line.m_transition = trans;
-      line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
-      line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak;
-      
-      if( input.m_det_intrinsic_eff )
-        line.m_drf_factor = input.m_det_intrinsic_eff( first_energy ) * input.m_det_intrinsic_eff( second_energy );
-      
-      if( input.m_shielding_att )
-        line.m_shield_atten = input.m_shielding_att( first_energy ) * input.m_shielding_att( second_energy );
-      
-      const double amp = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten;
-      assert( !IsNan( amp ) && !IsInf( amp ) );
-      if( IsNan( amp ) || IsInf( amp ) )
-      {
-        cerr << "Unexpected NaN or Inf coincidence amp." << endl;
-        continue;
-      }
-      
-      line.m_decaystr = "Cascade sum";
-      if( trans && trans->parent )
-        line.m_decaystr += " " + trans->parent->symbol;
-      if( trans && trans->child )
-        line.m_decaystr += " to " + trans->child->symbol;
-      
-      char buffer[128];
-      snprintf( buffer, sizeof( buffer ),
-               " (%.1f + %.1f keV, coinc=%.3g)",
-               first_energy, second_energy, coinc_frac );
-      
-      line.m_decaystr += buffer;
-      
-      coinc_ref_lines.push_back( std::move( line ) );
-      
-      max_coincidence_br = std::max( max_coincidence_br, amp );
-    }//for( loop over cascades )
-    
-    assert( coinc_ref_lines.empty()
-           || ((max_coincidence_br > 0.0) && !IsNan( max_coincidence_br )) );
-    
-    // Scale the coincidence line amplitudes to be between 0
-    for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
-    {
-      const double sf = 1.0 / max_coincidence_br;
-      line.m_particle_sf_applied = sf;
-      const double amp = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten * sf;
-      line.m_normalized_intensity = amp;
-    }//for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
-    
-    // There can be tons of cascade sums (4834 for U238), we'll limit the number
-    //   we draw to an arbitrary 350, because this is even more than I expect to
-    //   be relevant (although I didnt actually check this).
-    //  TODO: limit based on importance, and not a flat limit, e.g., use something like
-    //        yield(i)*sqrt(energy(i))/sum(yield*sqrt(energy))
-    const size_t max_cascade_sums = 350;
-    if( coinc_ref_lines.size() > max_cascade_sums )
-    {
-      std::sort( begin( coinc_ref_lines ), end( coinc_ref_lines ),
-                []( const ReferenceLineInfo::RefLine &lhs, const ReferenceLineInfo::RefLine &rhs ) -> bool {
-        if( lhs.m_normalized_intensity == rhs.m_normalized_intensity )
-          return lhs.m_energy > rhs.m_energy;
-        return lhs.m_normalized_intensity > rhs.m_normalized_intensity;
-      } );
-      
-      cout << "Resizing cascade sums from " << coinc_ref_lines.size() << " to " << max_cascade_sums << endl;
-      coinc_ref_lines.resize( max_cascade_sums );
-    }//if( coinc_ref_lines.size() > 350 )
-    
-    answer.m_ref_lines.reserve( answer.m_ref_lines.size() + coinc_ref_lines.size() );
-    
-    for( const ReferenceLineInfo::RefLine &line : coinc_ref_lines )
-    {
-      const double &amp = line.m_normalized_intensity;
-      if( !IsNan( amp ) && !IsInf( amp )
-         && (amp >= std::numeric_limits<float>::min()) // numeric_limits<float>::min()==1.17549e-38
-         && (amp > input.m_lower_br_cutt_off)
-         )
-        answer.m_ref_lines.push_back( line );
-    }//for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
-  }//if( !gamma_coincidences.empty() )
   
   // Mark the major lines before sorting
   answer.markMajorLines();

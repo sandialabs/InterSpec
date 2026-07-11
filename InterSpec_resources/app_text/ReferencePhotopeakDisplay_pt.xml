@@ -37,6 +37,9 @@
   <message id="rpd-opt-alphas">Mostrar Alfas</message>
   <message id="rpd-opt-betas">Mostrar Betas</message>
   <message id="rpd-opt-cascade">Somas em Cascata</message>
+  <message id="rpd-cascade-dist">Dist.:</message>
+  <message id="rpd-warn-cascade-example-drf">Sem detector; a soma usa uma eficiência HPGe de exemplo.</message>
+  <message id="rpd-warn-cascade-approx-drf">Eficiência total da soma de um detector de exemplo.</message>
   <message id="rpd-opt-escapes">Picos de Escape</message>
   <message id="rpd-prev-nucs">Nucl. Anteriores</message>
   <message id="rpd-det-nucs">Nucl. RID do Det.</message>
@@ -61,7 +64,6 @@
   <message id="rpd-det-id">ID do Detector</message>
   <message id="rpd-ext-rid">RID Externo</message>
   <message id="rpd-prev">Anterior</message>
-  <message id="rpd-warn-cascade-xrays">raios x não estão incluídos em cascatas</message>
 
   <!-- Values in the table on this tool -->
   <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->

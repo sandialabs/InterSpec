@@ -37,6 +37,9 @@
   <message id="rpd-opt-alphas">Show Alphas</message>
   <message id="rpd-opt-betas">Show Betas</message>
   <message id="rpd-opt-cascade">Cascade Sums</message>
+  <message id="rpd-cascade-dist">Dist:</message>
+  <message id="rpd-warn-cascade-example-drf">No detector; summing uses an example HPGe efficiency.</message>
+  <message id="rpd-warn-cascade-approx-drf">Summing total-efficiency from an example detector.</message>
   <message id="rpd-opt-escapes">Escape Peaks</message>
   <message id="rpd-prev-nucs">Prev Nucs</message>
   <message id="rpd-det-nucs">Det RID Nucs</message>
@@ -61,7 +64,6 @@
   <message id="rpd-det-id">Detector ID</message>
   <message id="rpd-ext-rid">External RID</message>
   <message id="rpd-prev">Previous</message>
-  <message id="rpd-warn-cascade-xrays">x-rays are not included in cascades</message>
 
   <!-- Values in the table on this tool -->
   <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->

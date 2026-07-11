@@ -37,6 +37,9 @@
   <message id="rpd-opt-alphas">Tampilkan Alfa</message>
   <message id="rpd-opt-betas">Tampilkan Beta</message>
   <message id="rpd-opt-cascade">Jumlah Cascade</message>
+  <message id="rpd-cascade-dist">Jarak:</message>
+  <message id="rpd-warn-cascade-example-drf">Tanpa detektor; penjumlahan memakai efisiensi HPGe contoh.</message>
+  <message id="rpd-warn-cascade-approx-drf">Efisiensi total penjumlahan dari detektor contoh.</message>
   <message id="rpd-opt-escapes">Puncak Lepas</message>
   <message id="rpd-prev-nucs">Nuc. Sebelumnya</message>
   <message id="rpd-det-nucs">Nuc. RID Det.</message>
@@ -61,7 +64,6 @@
   <message id="rpd-det-id">ID Detektor</message>
   <message id="rpd-ext-rid">RID Eksternal</message>
   <message id="rpd-prev">Sebelumnya</message>
-  <message id="rpd-warn-cascade-xrays">sinar-x tidak termasuk dalam cascade</message>
 
   <!-- Values in the table on this tool -->
   <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->

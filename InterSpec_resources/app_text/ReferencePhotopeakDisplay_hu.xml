@@ -37,6 +37,9 @@
   <message id="rpd-opt-alphas">Alfák mutatása</message>
   <message id="rpd-opt-betas">Béták mutatása</message>
   <message id="rpd-opt-cascade">Kaszkád összegek</message>
+  <message id="rpd-cascade-dist">Táv.:</message>
+  <message id="rpd-warn-cascade-example-drf">Nincs detektor; az összegzés példa HPGe hatásfokot használ.</message>
+  <message id="rpd-warn-cascade-approx-drf">Az összegzés teljes hatásfoka példa detektorból.</message>
   <message id="rpd-opt-escapes">Kiszökési csúcsok</message>
   <message id="rpd-prev-nucs">Előző nuklidok</message>
   <message id="rpd-det-nucs">Det. RID nuklidok</message>
@@ -61,7 +64,6 @@
   <message id="rpd-det-id">Detektor ID</message>
   <message id="rpd-ext-rid">Külső RID</message>
   <message id="rpd-prev">Előző</message>
-  <message id="rpd-warn-cascade-xrays">a röntgenek nem szerepelnek a kaszkádokban</message>
 
   <!-- Values in the table on this tool -->
   <message id="rpd-tbl-iso">Izo</message>  <!-- a.k.a meta-stable state of nuclide -->

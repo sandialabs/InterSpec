@@ -120,6 +120,14 @@ add_test( NAME TesRefLines
 )
 
 
+add_executable( test_CascadeRefLineSumming test_CascadeRefLineSumming.cpp )
+target_link_libraries( test_CascadeRefLineSumming PRIVATE InterSpecLib )
+add_test( NAME TCascadeRefLineSumming
+  COMMAND $<TARGET_FILE:test_CascadeRefLineSumming> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 add_executable( test_DoseCalc test_DoseCalc.cpp )
 target_link_libraries( test_DoseCalc PRIVATE InterSpecLib )
 add_test( NAME TDoseCalc

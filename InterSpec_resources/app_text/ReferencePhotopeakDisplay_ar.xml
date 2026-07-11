@@ -36,6 +36,9 @@
   <message id="rpd-opt-alphas">إظهار جسيمات ألفا</message>
   <message id="rpd-opt-betas">إظهار جسيمات بيتا</message>
   <message id="rpd-opt-cascade">مجاميع متتالية</message>
+  <message id="rpd-cascade-dist">المسافة:</message>
+  <message id="rpd-warn-cascade-example-drf">لا كاشف؛ يستخدم الجمع كفاءة HPGe نموذجية.</message>
+  <message id="rpd-warn-cascade-approx-drf">كفاءة الجمع الكلية من كاشف نموذجي.</message>
   <message id="rpd-opt-escapes">ذروات الهروب</message>
   <message id="rpd-prev-nucs">النويدات السابقة</message>
   <message id="rpd-det-nucs">نويدات RID الكاشف</message>
@@ -60,7 +63,6 @@
   <message id="rpd-det-id">معرف الكاشف</message>
   <message id="rpd-ext-rid">RID خارجي</message>
   <message id="rpd-prev">السابق</message>
-  <message id="rpd-warn-cascade-xrays">الأشعة السينية غير متضمنة في التتابعات</message>
 
   <!-- Values in the table on this tool -->
   <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->

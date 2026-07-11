@@ -70,6 +70,7 @@ namespace Wt
   class WCheckBox;
   class WComboBox;
   class WLineEdit;
+  class WContainerWidget;
   class WTreeView;
   class WGridLayout;
   class WPushButton;
@@ -476,7 +477,16 @@ protected:
   Wt::WCheckBox *m_showAlphas;
   Wt::WCheckBox *m_showBetas;
   Wt::WCheckBox *m_showCascadeSums;
-  Wt::WText* m_cascadeWarn;
+
+  /** Compact "Dist:" row + input shown under the Cascade Sums checkbox, letting the
+   user set the assumed source-to-detector distance used for coincidence summing. */
+  Wt::WContainerWidget *m_cascadeDistanceRow;
+  Wt::WLineEdit *m_cascadeDistance;
+
+  /** Warning shown under the cascade options when summing is using a default/example
+   detector efficiency (no DRF loaded, or the total efficiency is approximated). */
+  Wt::WText *m_cascadeWarn;
+
   Wt::WCheckBox *m_showEscapes;
   Wt::WCheckBox *m_showRiidNucs;
   Wt::WCheckBox *m_showPrevNucs;
