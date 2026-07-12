@@ -1210,22 +1210,27 @@ public:
    */
   bool colorPeaksBasedOnReferenceLines() const;
   
-  //searchForHintPeaks(): launches the job to search for peaks (single threaded)
-  //  which will call setHintPeaks(...) when done.
+  //searchForHintPeaks(): launches (or coalesces onto) the shared automated peak search via
+  //  PeakSearchGuiUtils::get_or_launch_automated_search_peaks(...) and calls setHintPeaks(...)
+  //  on this session's event loop when done.
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                            const std::set<int> &samples,
                           const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
                           const bool isHPGe );
-  
-  //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and
-  //  SpecMeas::m_autoSearchInitialPeaks) if spectrum.lock() yeilds a valid ptr.
-  //  If the user has changed peaks from existingPeaks, then results will be
-  //  merged.
+
+  //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks) if spectrum.lock() yeilds a
+  //  valid ptr.  If the user has changed peaks from existingPeaks, then results will be merged.
   //  This function should be called from the main event loop.
   void setHintPeaks( std::weak_ptr<SpecMeas> spectrum,
                      std::set<int> samplenums,
                      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existingPeaks,
-                     std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks );
+                     std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > resultpeaks );
+
+  //startBackgroundPeakRecoveryIfReady(): if both a foreground and background are loaded and both
+  //  have automated-search peaks available, launches (once per pairing, on a worker thread)
+  //  background-peak recovery so non-elevated NORM lines the background auto-search missed are not
+  //  mis-flagged as elevated.  Called after the hint-peak search completes.  No-op otherwise.
+  void startBackgroundPeakRecoveryIfReady();
   
   
   void excludePeaksFromRange( double x0, double x1 );
@@ -1791,8 +1796,6 @@ protected:
   
   Wt::Signal<std::shared_ptr<const ColorTheme>> m_colorThemeChanged;
   
-  bool m_findingHintPeaks;
-  std::deque<boost::function<void()> > m_hintQueue;
   Wt::Signal<SpecUtils::SpectrumType> m_hintPeaksSet;
   
   Wt::Signal<std::shared_ptr<const ExternalRidResults>> m_externalRidResultsRecieved;

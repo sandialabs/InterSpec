@@ -30,6 +30,7 @@
 #include <ctime>
 #include <tuple>
 #include <mutex>
+#include <thread>
 #include <locale>
 #include <vector>
 #include <string>
@@ -505,8 +506,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_currentColorThemeCssFile(),
   m_colorTheme( nullptr ),
   m_colorThemeChanged( this ),
-  m_findingHintPeaks( false ),
-  m_hintQueue{},
   m_hintPeaksSet( this ),
   m_externalRidResultsRecieved( this ),
   m_infoNotificationsMade{}
@@ -12881,101 +12880,81 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                    const bool isHPGe )
 {
   assert( data );
-  if( !data )
+  if( !data || !spectrum_meas )
     return;
-  
+
+  // Snapshot the existing peaks (on this GUI thread) - used both to seed the search and, in
+  //  setHintPeaks(...), to detect peaks the user added while the search was running.
   shared_ptr<const deque<shared_ptr<const PeakDef>>> origPeaks;
   if( data->sampleNumsWithAutomatedSearchPeaks().count(samples) )
     origPeaks = data->peaks(samples);
   if( origPeaks )
-    origPeaks = make_shared<deque<shared_ptr<const PeakDef>>>( *origPeaks );
-  
-  shared_ptr<vector<shared_ptr<const PeakDef>>> searchresults = make_shared<vector<shared_ptr<const PeakDef>>>();
-  
-  const string sessionId = wApp->sessionId();
-  weak_ptr<const SpecUtils::Measurement> weakdata = spectrum_meas;
-  
-  // Grab the detector
+    origPeaks = make_shared<const deque<shared_ptr<const PeakDef>>>( *origPeaks );
+
+  // Grab the detector.  If this is the background measurement and it doesnt have a detector, try to
+  //  grab it from the foreground.
   shared_ptr<DetectorPeakResponse> drf = data->detector();
-  // If this is the background measurement, and it doesnt have a detector, try to grab it from the foreground
   if( !drf && (data != m_dataMeasurement) && (data == m_backgroundMeasurement) && m_dataMeasurement )
     drf = m_dataMeasurement->detector();
-  
-  weak_ptr<SpecMeas> spectrum = data;
 
-  boost::function<void(void)> callback = wApp->bind( boost::bind(&InterSpec::setHintPeaks,
-                this, spectrum, samples, origPeaks, searchresults
-  ) );
+  // Launch (or coalesce onto) the single shared automated search for these sample numbers.  The
+  //  search runs on its own dedicated thread, caches the result, and is honored by the SpecMeas
+  //  cancel token, so we never launch a duplicate here.
+  const std::shared_future<std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>>> fut
+    = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( data, samples, spectrum_meas, drf,
+                                                               isHPGe, origPeaks );
 
-  // Grab the SpecMeas's persistent cancel token; the worker will check it at
-  //  each cooperative point and inside the Ceres `IterationCallback`.  When
-  //  this `InterSpec` is destroyed (or the SpecMeas itself is destroyed) the
-  //  token is flipped to `true` and the worker bails within ~1 LM iteration.
-  std::shared_ptr<const std::atomic<bool>> cancel_flag = data->peak_search_cancel_flag();
+  Wt::WServer *server = Wt::WServer::instance();
+  if( !server )  //this should always be true
+    return;
 
-  boost::function<void(void)> worker = [=](){
-    PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, false, isHPGe, cancel_flag );
-  };
+  const string sessionId = wApp->sessionId();
+  const weak_ptr<SpecMeas> weak_spectrum = data;
 
+  // Wait for the search on a DEDICATED thread (not the Wt ioService pool - blocking a pool thread on
+  //  .get() for the whole search would risk starving the pool under many concurrent searches), then
+  //  deliver the result back to this session's event loop.  server->post is a no-op if the session
+  //  has gone away, so setHintPeaks only runs while this InterSpec is alive.
+  std::thread( [this, fut, sessionId, weak_spectrum, samples, origPeaks](){
+    const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> found = fut.get();
 
-  if( m_findingHintPeaks )
-  {
-    m_hintQueue.push_back( worker );
-  }else
-  {
     Wt::WServer *server = Wt::WServer::instance();
-    if( server )  //this should always be true
-    {
-      m_findingHintPeaks = true;
-      server->ioService().boost::asio::io_service::post( worker );
-    }//if( server )
-  }
+    if( server )
+      server->post( sessionId, boost::bind( &InterSpec::setHintPeaks, this, weak_spectrum,
+                                            samples, origPeaks, found ) );
+  } ).detach();
 }//void searchForHintPeaks(...)
 
 
 void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
                   std::set<int> samplenums,
                   shared_ptr<const deque< std::shared_ptr<const PeakDef>>> existing,
-                  shared_ptr<vector<std::shared_ptr<const PeakDef>>> resultpeaks )
+                  shared_ptr<const deque<std::shared_ptr<const PeakDef>>> resultpeaks )
 {
 #if( PERFORM_DEVELOPER_CHECKS )
   if( !wApp )
     log_developer_error( __func__, "setHintPeaks() being called from not within the event loop!" );
 #endif
 
-  m_findingHintPeaks = false;
-  
-  if( m_hintQueue.size() )
-  {
-    Wt::WServer *server = Wt::WServer::instance();
-    if( server )  //this should always be true
-    {
-      m_findingHintPeaks = true;
-      boost::function<void()> worker = m_hintQueue.back();
-      m_hintQueue.pop_back();
-      server->ioService().boost::asio::io_service::post( worker );
-    }//if( server )
-  }//if( m_hintQueue.size() )
-  
-
   std::shared_ptr<SpecMeas> spectrum = weak_spectrum.lock();
-  
+
   if( !spectrum || !resultpeaks )
   {
-    cerr << "InterSpec::setHintPeaks(): invalid SpecMeas" << endl;
+    // Null result => the search was canceled or failed; nothing to cache.  Still see if recovery can
+    //  run (both spectra may already have peaks from other paths).
+    startBackgroundPeakRecoveryIfReady();
     return;
-  }//if( !spectrum )
-  
-  
+  }//if( !spectrum || !resultpeaks )
+
+
   shared_ptr<deque<shared_ptr<const PeakDef>>> newpeaks
     = make_shared<deque<shared_ptr<const PeakDef>>>( resultpeaks->begin(), resultpeaks->end() );
-  
+
   //See if the user has added any peaks since we did the automated search
   shared_ptr<deque<shared_ptr<const PeakDef>>> current_user_peaks;
   if( spectrum->sampleNumsWithPeaks().count(samplenums) )
     current_user_peaks = spectrum->peaks(samplenums);
-  
+
   vector<shared_ptr<const PeakDef>> addedpeaks;
   if( current_user_peaks && !existing )
   {
@@ -12986,7 +12965,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
       if( std::find(existing->begin(),existing->end(),p) != existing->end() )
         addedpeaks.push_back( p );
   }
-  
+
   if( addedpeaks.size() )
   {
     for( shared_ptr<const PeakDef> p : addedpeaks )
@@ -12996,16 +12975,74 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
         newpeaks->insert( newpeaks->begin() + pos, p );
     }
   }//if( addedpeaks.size() )
-  
+
   spectrum->setAutomatedSearchPeaks( samplenums, newpeaks );
-  
+
   if( (spectrum == m_dataMeasurement) && (m_displayedSamples == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::Foreground);
   else if( (spectrum == m_backgroundMeasurement) && (m_backgroundSampleNumbers == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::Background);
   else if( (spectrum == m_secondDataMeasurement) && (m_sectondForgroundSampleNumbers == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::SecondForeground);
+
+  // Now that this spectrum has automated-search peaks, run background-peak recovery if both a
+  //  foreground and background are loaded (guarded to run once per pairing).
+  startBackgroundPeakRecoveryIfReady();
 }//void setHintPeaks(...)
+
+
+void InterSpec::startBackgroundPeakRecoveryIfReady()
+{
+  const std::shared_ptr<SpecMeas> fg_meas = m_dataMeasurement;
+  const std::shared_ptr<SpecMeas> bg_meas = m_backgroundMeasurement;
+  if( !fg_meas || !bg_meas || (fg_meas == bg_meas) )
+    return;
+
+  const std::shared_ptr<const SpecUtils::Measurement> fg_spectrum
+      = displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  const std::shared_ptr<const SpecUtils::Measurement> bg_spectrum
+      = displayedHistogram( SpecUtils::SpectrumType::Background );
+  if( !fg_spectrum || !bg_spectrum )
+    return;
+
+  const std::set<int> fg_samples = m_displayedSamples;
+  const std::set<int> bg_samples = m_backgroundSampleNumbers;
+  if( fg_samples.empty() || bg_samples.empty() )
+    return;
+
+  // Only proceed once both foreground and background automated-search peaks are actually cached, so
+  //  the worker below only hits the cache for them (no off-GUI-thread SpecMeas::peaks() snapshot -
+  //  the captured shared_ptrs keep those caches alive) and we dont kick off extra searches here.
+  if( !fg_meas->automatedSearchPeaks(fg_samples) || !bg_meas->automatedSearchPeaks(bg_samples) )
+    return;
+
+  // Guard: run recovery at most once per foreground/background pairing.
+  if( bg_meas->hasRecoveredBackgroundForForeground(fg_samples, bg_samples) )
+    return;
+
+  if( !Wt::WServer::instance() )
+    return;
+
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+  const std::string sessionId = wApp->sessionId();
+
+  // Recovery blocks (it fits peaks), so run it on a DEDICATED thread (not the ioService pool); then
+  //  refresh consumers of the background peaks (dynamic reference lines, shielding-source fit) on the
+  //  session event loop.
+  std::thread(
+    [this, fg_meas, fg_samples, fg_spectrum, bg_meas, bg_samples, bg_spectrum, isHPGe, sessionId]()
+  {
+    const bool changed = PeakSearchGuiUtils::ensure_background_peaks_recovered(
+        fg_meas, fg_samples, fg_spectrum, bg_meas, bg_samples, bg_spectrum, isHPGe );
+
+    if( !changed )
+      return;
+
+    Wt::WServer *server = Wt::WServer::instance();
+    if( server )
+      server->post( sessionId, [this](){ m_hintPeaksSet.emit(SpecUtils::SpectrumType::Background); } );
+  } ).detach();
+}//void startBackgroundPeakRecoveryIfReady()
 
 
 void InterSpec::excludePeaksFromRange( double x0, double x1 )

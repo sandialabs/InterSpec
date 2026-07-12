@@ -104,6 +104,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -5028,23 +5029,13 @@ bool ShieldingSourceDisplay::checkForMissingBackgroundPeaks( const bool triggere
 
   const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_peaks = back_meas->peaks( back_samples );
 
-  // Get or generate auto-search peaks for the background
-  shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks
-    = back_meas->automatedSearchPeaks( back_samples );
-
-  if( !auto_peaks )
-  {
-    const bool singleThreaded = true;
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_specViewer );
-    const shared_ptr<const DetectorPeakResponse> det = back_meas->detector();
-
-    const vector<shared_ptr<const PeakDef>> found
-      = ExperimentalAutomatedPeakSearch::search_for_peaks( back_hist, det, back_peaks, singleThreaded, isHPGe );
-
-    auto found_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin( found ), end( found ) );
-    back_meas->setAutomatedSearchPeaks( back_samples, found_deque );
-    auto_peaks = found_deque;
-  }//if( !auto_peaks )
+  // Get or generate auto-search peaks for the background via the shared, de-duplicated accessor -
+  // launches at most one search per (SpecMeas, sample numbers) and coalesces with any concurrent
+  // search instead of running its own.  We are on the GUI thread here.
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_specViewer );
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks
+    = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( back_meas, back_samples, back_hist,
+                                                back_meas->detector(), isHPGe ).get();
 
   if( !auto_peaks || auto_peaks->empty() )
     return false;

@@ -42,6 +42,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/IsotopeId.h"
@@ -101,21 +102,18 @@ namespace AnalystChecks
           + " spectrum");
     }
     
-    shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = meas->automatedSearchPeaks(sample_nums);
     shared_ptr<const deque<shared_ptr<const PeakDef>>> user_peaks = meas->peaks(sample_nums);
-    
-    if (!auto_peaks) {
-      // Search for peaks
-      const bool singleThreaded = false;
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
-      const auto det = meas->detector();
-      const vector<shared_ptr<const PeakDef>> found_auto_peaks
-                = ExperimentalAutomatedPeakSearch::search_for_peaks(spectrum, det, user_peaks, singleThreaded, isHPGe);
-        
-      auto autopeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>(begin(found_auto_peaks), end(found_auto_peaks));
-      auto_peaks = autopeaksdeque;
-      meas->setAutomatedSearchPeaks(sample_nums, autopeaksdeque);
-    }
+
+    // Whether the detector is high-resolution (HPGe); used for the peak search and recovery below.
+    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+
+    // Obtain the automated-search peaks through the shared, de-duplicated accessor - this launches
+    // at most one search per (SpecMeas, sample numbers) and coalesces with any concurrent search
+    // (GUI hint-peak search, other tools), instead of each caller running its own.  We are on the
+    // GUI thread here, so the accessor may snapshot meas->peaks() itself for the search seed.
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks
+        = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( meas, sample_nums, spectrum,
+                                                                    meas->detector(), isHPGe ).get();
 
     vector<shared_ptr<const PeakDef>> all_peaks;
     vector<shared_ptr<const PeakDef>> user_analysis_peaks;
@@ -266,26 +264,22 @@ namespace AnalystChecks
         throw std::logic_error( "Somehow lost background spectrum being loaded?" );
       const set<int> background_sample_nums = interspec->displayedSamples(SpecUtils::SpectrumType::Background);
 
-      // Get or search for background auto peaks
-      shared_ptr<const deque<shared_ptr<const PeakDef>>> background_auto_peaks = background_meas->automatedSearchPeaks(background_sample_nums);
+      // Ensure the background's automated-search peaks include any real NORM peaks recovered from
+      // underneath the foreground peaks, so non-elevated background lines that the background
+      // auto-search may have missed are not mis-flagged as elevated.  This obtains both foreground
+      // and background auto-search peaks via the shared accessor, runs recovery, and persists the
+      // augmented background set (guarded to run once per foreground/background pairing).  We are on
+      // the GUI thread, where blocking on the search/recovery is acceptable (matches prior behavior).
+      PeakSearchGuiUtils::ensure_background_peaks_recovered( meas, sample_nums, spectrum,
+                                                            background_meas, background_sample_nums,
+                                                            background_spectrum, isHPGe );
 
-      if( !background_auto_peaks && background_spectrum )
-      {
-        const bool singleThreaded = false;
-        const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
-        const auto det = background_meas->detector();
-        
-        shared_ptr<const deque<shared_ptr<const PeakDef>>> background_user_peaks;
-        if( background_meas->sampleNumsWithPeaks().count(background_sample_nums) )
-          background_user_peaks = background_meas->peaks(background_sample_nums);
-        
-        const vector<shared_ptr<const PeakDef>> found_background_auto_peaks
-                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, isHPGe);
-
-        auto background_autopeaksdeque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(found_background_auto_peaks), end(found_background_auto_peaks));
-        background_auto_peaks = background_autopeaksdeque;
-        background_meas->setAutomatedSearchPeaks(background_sample_nums, background_autopeaksdeque);
-      }
+      // Fetch the (now recovered/augmented) background auto peaks via the shared, de-duplicated
+      // accessor - a cache hit after the call above.
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> background_auto_peaks
+          = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( background_meas,
+                          background_sample_nums, background_spectrum,
+                          background_meas->detector(), isHPGe ).get();
 
       // Filter foreground peaks based on background
       vector<shared_ptr<const PeakDef>> filtered_peaks;
@@ -356,12 +350,10 @@ namespace AnalystChecks
             }//if( fg_cps > (bg_cps * elevation_threshold) ) / else
           }else
           {
-            // If we didnt detect the peak in the background, but this is a pretty insignificant peak that
-            //  could be a background peak, then dont include it
-            if( (fg_peak->amplitude() < 100) && (fg_peak->amplitudeUncert() > 0.0) )
-            {
-              // TODO: check if peak potentually lines up with a background peak, and if so, estimate the amplitude we would expect for it in the background spectrum, and if we wouldnt totally expect to detect it in the background spectrum, and the foreground peak significance isnt that high or its amplitude is consistent with what is expected from other confirmed background peaks of the same series, then dont include it.
-            }
+            // No matching background peak.  Background-peak recovery (run above) already actively
+            // fit-tested for a real peak at this energy in the background and added it if present,
+            // so a still-unmatched foreground peak genuinely is NOT in the background => keep it as
+            // a real foreground source.  (include_peak stays true.)
           }//if( closest_bg_peak )
         }//if( background_auto_peaks )
 

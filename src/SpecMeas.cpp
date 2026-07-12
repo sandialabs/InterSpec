@@ -2544,6 +2544,63 @@ std::set<std::set<int>> SpecMeas::sampleNumsWithAutomatedSearchPeaks() const
 }//std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const
 
 
+SpecMeas::AutoSearchPeaksFuture
+SpecMeas::reserveAutomatedSearchPeaks( const std::set<int> &samplenums,
+                                       std::shared_ptr<AutoSearchPeaksPromise> &out_promise )
+{
+  out_promise = nullptr;
+
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+
+  // (a) Cache hit -> a ready future.  Note automatedSearchPeaks() locks the inherited mutex_,
+  //     giving the lock order m_autoSearchMutex -> mutex_ (this is the ONLY place both are held,
+  //     and never in the reverse order, so no deadlock cycle can form).
+  const std::shared_ptr<const PeakDeque> cached = automatedSearchPeaks( samplenums );
+  if( cached )
+  {
+    AutoSearchPeaksPromise ready;
+    ready.set_value( cached );
+    return ready.get_future().share();
+  }
+
+  // (b) A search is already in-flight for these sample numbers -> coalesce onto it.
+  const std::map<std::set<int>, AutoSearchPeaksFuture>::const_iterator pos
+                                                = m_autoSearchInFlight.find( samplenums );
+  if( pos != m_autoSearchInFlight.end() )
+    return pos->second;
+
+  // (c) Nothing cached or running -> register a new in-flight entry; caller must fulfill it.
+  out_promise = std::make_shared<AutoSearchPeaksPromise>();
+  const AutoSearchPeaksFuture fut = out_promise->get_future().share();
+  m_autoSearchInFlight[samplenums] = fut;
+
+  return fut;
+}//reserveAutomatedSearchPeaks(...)
+
+
+void SpecMeas::clearInFlightAutomatedSearch( const std::set<int> &samplenums )
+{
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+  m_autoSearchInFlight.erase( samplenums );
+}//clearInFlightAutomatedSearch(...)
+
+
+bool SpecMeas::hasRecoveredBackgroundForForeground( const std::set<int> &foreground_samplenums,
+                                                    const std::set<int> &background_samplenums ) const
+{
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+  return (m_bgRecoveredForForeground.count( std::make_pair(foreground_samplenums, background_samplenums) ) > 0);
+}//hasRecoveredBackgroundForForeground(...)
+
+
+void SpecMeas::markBackgroundRecoveredForForeground( const std::set<int> &foreground_samplenums,
+                                                     const std::set<int> &background_samplenums )
+{
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+  m_bgRecoveredForForeground.insert( std::make_pair(foreground_samplenums, background_samplenums) );
+}//markBackgroundRecoveredForForeground(...)
+
+
 std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                              SpecMeas::peaks( const std::set<int> &samplenums )
 {
