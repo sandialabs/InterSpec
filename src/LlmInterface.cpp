@@ -32,11 +32,13 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <functional>
 
 #if( PERFORM_DEVELOPER_CHECKS )
 #include <mutex>
 #endif
 
+#include <Wt/WTimer>
 #include <Wt/WServer>
 #include <Wt/WApplication>
 #include <Wt/WResource>
@@ -250,8 +252,18 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
   
   // Connect the JavaScript response signal
   m_responseSignal->connect(this, &LlmInterface::handleJavaScriptResponse);
-  
+
   setupJavaScriptBridge();
+
+  // Watchdog backstop against a hung conversation (see m_watchdogTimer / onWatchdogTimeout).  No
+  // WObject parent (the unique_ptr owns it; a parent would double-delete); the WTimer only needs the
+  // active WApplication session, which is present here.  Left stopped until work is outstanding.
+  m_watchdogTimer.reset( new Wt::WTimer() );
+  m_watchdogTimer->setSingleShot( true );
+  m_watchdogTimer->setInterval( sm_watchdog_timeout_ms );
+  // LlmInterface is a Wt::Signals::trackable (not a WObject), so connect a functor rather than the
+  // (target,method) overload, which would pick the WObject fast-path and fail to compile.
+  m_watchdogTimer->timeout().connect( std::bind( &LlmInterface::onWatchdogTimeout, this ) );
 }
 
 LlmInterface::~LlmInterface()
@@ -331,6 +343,12 @@ void LlmInterface::failInFlightConversations( const std::string &reason, const b
   m_pendingRequests.clear();
   m_deferredToolResults.clear();
   m_summarizationPendingConvos.clear();
+
+  // Every non-emit teardown path (destructor, resetWithConfig, config change, and the watchdog
+  // itself) funnels through here after clearing the bookkeeping, so disarm here too - nothing is
+  // outstanding to rescue.  Keeps "exactly one disarm per terminal transition" true and stops a
+  // stale timer from surviving a reset.  (The normal success path emits and does not call this.)
+  disarmWatchdog();
 }//failInFlightConversations(...)
 
 
@@ -361,8 +379,77 @@ void LlmInterface::cancelAll()
   failInFlightConversations( "Request cancelled by user." );
 
   // Re-enable GUI input.
-  m_conversationFinished.emit();
+  emitConversationFinished();
 }//cancelAll()
+
+
+void LlmInterface::armWatchdog()
+{
+  // Single-shot restart: stop() then start() so the generous inactivity window begins anew on every
+  // outbound request / inbound response / async-tool step.
+  if( m_watchdogTimer )
+  {
+    m_watchdogTimer->stop();
+    m_watchdogTimer->start();
+  }
+}//armWatchdog()
+
+
+void LlmInterface::disarmWatchdog()
+{
+  if( m_watchdogTimer )
+    m_watchdogTimer->stop();
+}//disarmWatchdog()
+
+
+void LlmInterface::onWatchdogTimeout()
+{
+  // Only fires if no terminal signal disarmed us within the window.  If nothing is outstanding this
+  // is spurious (a race with a just-completed turn) - ignore it.
+  if( !hasActiveRequests() )
+    return;
+
+  cerr << "LLM watchdog fired after " << (sm_watchdog_timeout_ms/1000)
+       << "s with no terminal signal; forcing conversation failure." << endl;
+  if( m_debug_stream )
+    (*m_debug_stream) << "LLM watchdog fired after " << (sm_watchdog_timeout_ms/1000)
+       << "s with no terminal signal; forcing conversation failure." << endl;
+
+  // Abort any in-flight browser fetch(es) so they stop consuming time/tokens (mirrors cancelAll()).
+  if( Wt::WApplication *app = Wt::WApplication::instance() )
+    app->doJavaScript( "if(window.llmAbortAllRequests) window.llmAbortAllRequests('" + m_instanceId + "');" );
+
+  // Reuse the orphan-cleanup path: finalizes every in-flight conversation (and nested sub-agents)
+  // with an error turn and clears the pending/deferred/summarization bookkeeping.  Defensive
+  // try/catch so the terminal emit below always happens even if finalization throws.
+  try
+  {
+    failInFlightConversations(
+      "Conversation timed out: no response was produced within the watchdog interval.", true );
+  }catch( const std::exception &e )
+  {
+    cerr << "LLM watchdog cleanup threw: " << e.what() << endl;
+    m_pendingRequests.clear();
+    m_deferredToolResults.clear();
+    m_summarizationPendingConvos.clear();
+  }
+
+  emitResponseError();
+}//onWatchdogTimeout()
+
+
+void LlmInterface::emitConversationFinished()
+{
+  disarmWatchdog();
+  m_conversationFinished.emit();
+}//emitConversationFinished()
+
+
+void LlmInterface::emitResponseError()
+{
+  disarmWatchdog();
+  m_responseError.emit();
+}//emitResponseError()
 
 
 void LlmInterface::flushSummarizationQueue()
@@ -2091,9 +2178,9 @@ void LlmInterface::handleApiResponse( const std::string &response,
       (*m_debug_stream) << (parseFailed ? "Unparseable response - emitting error signal"
                                         : "No pending requests or deferred tools, emitting response received signal") << endl;
     if( parseFailed )
-      m_responseError.emit();
+      emitResponseError();
     else
-      m_conversationFinished.emit();
+      emitConversationFinished();
   }else
   {
     if( m_debug_stream )
@@ -2812,6 +2899,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
 
                 assert( defPos->second.pendingAsyncToolCount > 0 );
                 defPos->second.pendingAsyncToolCount--;
+
+                // An async tool just made progress; restart the watchdog so a single long-running
+                // async tool/sub-agent step cannot trip the inactivity window on its own.
+                self->armWatchdog();
 
                 if( self->m_debug_stream )
                   (*self->m_debug_stream) << "Async tool complete: " << capturedToolName
@@ -3826,6 +3917,7 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
 #endif
 
   m_pendingRequests[requestId] = pending;
+  armWatchdog();  // a sub-agent request is now in flight
 
   if( m_debug_stream )
   {
@@ -4452,7 +4544,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
   }
 
   std::shared_ptr<LlmInteraction> convo;
-  
+
   try
   {
     // Find and remove the pending request
@@ -4477,10 +4569,17 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     {
       cerr << "For JavaScript response, found original request, but conversation is nullptr, so ending this conversation." << endl;
       assert( convo );
-      
+
       return;
     }//if( !convo )
-    
+
+    // A valid response for a live conversation arrived, so it is still making progress: restart the
+    // watchdog so its window covers the synchronous render below and the subsequent Wt flush.  In a
+    // genuine render/flush hang no terminal signal fires, so the timer stays armed and backstops the
+    // stall.  (Done only after the request/convo are confirmed valid so an orphan response - unknown
+    // request id or dead convo, handled above - does not needlessly re-arm.)
+    armWatchdog();
+
     // Check for errors first
     if( m_debug_stream )
       (*m_debug_stream) << "--- about to parse response to json --- " << endl;
@@ -4647,7 +4746,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
         cerr << "Error response - no pending requests, emitting error signal" << endl;
         if( m_debug_stream )
           (*m_debug_stream) << "Error response - no pending requests, emitting error signal" << endl;
-        m_responseError.emit();
+        emitResponseError();
       }else
       {
         cerr << "Error response - still have " << m_pendingRequests.size()
@@ -4705,7 +4804,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
           (*m_debug_stream) << "Summarization completed (no queued user message - manual compaction)" << endl;
 
         if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
-          m_conversationFinished.emit();
+          emitConversationFinished();
       }
 
       return;
@@ -4727,7 +4826,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       m_history->addErrorMessage( errorMsg, response, convo, LlmInteractionError::ErrorType::JsonParse );
 
     if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
-      m_responseError.emit();
+      emitResponseError();
   }catch( const std::exception &e )
   {
     string errorMsg = "Error processing LLM response: " + string(e.what());
@@ -4740,7 +4839,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       m_history->addErrorMessage( errorMsg, response, convo, LlmInteractionError::ErrorType::Unknown );
 
     if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
-      m_responseError.emit();
+      emitResponseError();
   }
 }
 
@@ -4761,7 +4860,8 @@ std::pair<int,std::string> LlmInterface::makeTrackedApiCall( const nlohmann::jso
 #endif
 
   m_pendingRequests[requestId] = pending;
-  
+  armWatchdog();  // a request is now in flight
+
   // Make the call with request ID tracking
   std::string request_content = makeApiCallWithId(requestJson, requestId);
   

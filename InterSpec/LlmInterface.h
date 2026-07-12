@@ -57,9 +57,10 @@ class LlmToolRequest;
 class LlmToolResults;
 
 namespace Wt {
+  class WTimer;
   class WResource;
 
-  template <typename A1, typename A2, typename A3, typename A4, typename A5, typename A6> 
+  template <typename A1, typename A2, typename A3, typename A4, typename A5, typename A6>
   class JSignal;
 }
 
@@ -284,7 +285,18 @@ private:
   
   Wt::Signal<> m_conversationFinished; // Signal emitted when succesful final response from LLM is recieved.
   Wt::Signal<> m_responseError;    // Signal emitted when error responses are received
-  
+
+  /** Backstop against a hung conversation.  A single-shot timer (re)armed while work is outstanding
+   (a request in flight, a response being rendered, or async tools running); if no terminal signal
+   (conversationFinished/responseError) fires within sm_watchdog_timeout_ms, onWatchdogTimeout()
+   forces the in-flight conversation(s) to fail and emits responseError so the GUI/benchmark cannot
+   hang.  Every terminal emit goes through emitConversationFinished()/emitResponseError(), which
+   disarm it.  Must exceed the JS-side fetch timeout (300 s) so normal stalls report through the
+   existing error path first.
+   */
+  std::unique_ptr<Wt::WTimer> m_watchdogTimer;
+  static constexpr int sm_watchdog_timeout_ms = 600000; // 10 minutes
+
   const std::string m_instanceId; // Unique ID for JavaScript bridge routing of responses to this instance
   std::unique_ptr<Wt::JSignal<std::string, int>> m_responseSignal; // For JavaScript bridge (response, requestId)
 
@@ -435,6 +447,18 @@ private:
    when a compaction request completes or fails so queued user messages are not stranded.
    */
   void flushSummarizationQueue();
+
+  /** Watchdog helpers (see m_watchdogTimer).  armWatchdog() (re)starts the single-shot timer;
+   disarmWatchdog() stops it; onWatchdogTimeout() force-fails outstanding conversations and emits
+   responseError. */
+  void armWatchdog();
+  void disarmWatchdog();
+  void onWatchdogTimeout();
+
+  /** Sole emit points for the interface-level terminal signals; each disarms the watchdog first so
+   there is exactly one disarm site per terminal transition. */
+  void emitConversationFinished();
+  void emitResponseError();
 };
 
 

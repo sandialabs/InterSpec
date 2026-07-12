@@ -412,16 +412,18 @@ WString LlmInteractionFinalResponseDisplay::getTitleText() const
   const string firstLine = getFirstLine( content );
   const string truncated = truncateString( firstLine, 80 );
 
-  return WString( "Response: {1}" ).arg( truncated );
+  // Escape model-derived text: the title WText renders as XHTMLText, and WString::arg() does not
+  // HTML-escape, so raw '&'/'<'/'>' or stray entities would break Wt's XHTML parse.
+  return WString( "Response: {1}" ).arg( Wt::Utils::htmlEncode( truncated ) );
 }//getTitleText()
 
 
 void LlmInteractionFinalResponseDisplay::createBodyContent()
 {
-  // Display the full response content
-  WText *contentText = new WText( m_bodyContainer );
-  contentText->setText( m_response->content() );
-  contentText->setTextFormat( PlainText );
+  // Display the full response content.  Pass PlainText in the constructor: the 3-arg WText ctor sets
+  // the format BEFORE the text, so the raw model content is never run through Wt's XHTML parser (which
+  // would log "Error reading XHTML string" on a bare '&' or '<' before silently falling back).
+  WText *contentText = new WText( m_response->content(), PlainText, m_bodyContainer );
   contentText->addStyleClass( "LlmResponseContent" );
 
   // Add metadata section
@@ -465,8 +467,8 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
     WText *thinkingLabel = new WText( "Thinking:", thinkingDiv );
     thinkingLabel->addStyleClass( "LlmThinkingLabel" );
 
-    WText *thinkingText = new WText( m_response->thinkingContent(), thinkingDiv );
-    thinkingText->setTextFormat( PlainText );
+    // PlainText via the 3-arg ctor (format before text) so raw thinking content skips the XHTML parser.
+    WText *thinkingText = new WText( m_response->thinkingContent(), PlainText, thinkingDiv );
   }
 }//createBodyContent()
 
@@ -520,8 +522,9 @@ WString LlmToolRequestDisplay::getTitleText() const
     oss << calls[i].toolName;
   }
 
+  // Escape model-derived tool names before they reach the XHTMLText panel title.
   const string truncated = truncateString( oss.str(), 100 );
-  return WString( truncated );
+  return WString( Wt::Utils::htmlEncode( truncated ) );
 }//getTitleText()
 
 
@@ -542,13 +545,13 @@ void LlmToolRequestDisplay::createBodyContent()
     WContainerWidget *callDiv = new WContainerWidget( m_bodyContainer );
     callDiv->addStyleClass( "LlmToolCallItem" );
 
-    // Tool name
-    WText *nameText = new WText( "<b>" + call.toolName + "</b>", callDiv );
+    // Tool name - escape the model-derived name but keep the intentional <b> markup.
+    WText *nameText = new WText( "<b>" + Wt::Utils::htmlEncode( call.toolName ) + "</b>", callDiv );
     nameText->setTextFormat( TextFormat::XHTMLUnsafeText );
     nameText->addStyleClass( "LlmToolName" );
 
-    // Invocation ID
-    WText *idText = new WText( " (ID: " + call.invocationId + ")", callDiv );
+    // Invocation ID - PlainText so a stray '&'/'<' in an id can't hit the XHTML parser.
+    WText *idText = new WText( " (ID: " + call.invocationId + ")", PlainText, callDiv );
     idText->addStyleClass( "LlmInvocationId" );
 
     // Parameters
@@ -645,8 +648,9 @@ WString LlmToolResultsDisplay::getTitleText() const
     oss << calls[i].toolName;
   }
 
+  // Escape model-derived tool names before they reach the XHTMLText panel title.
   const string truncated = truncateString( oss.str(), 100 );
-  return WString( truncated );
+  return WString( Wt::Utils::htmlEncode( truncated ) );
 }//getTitleText()
 
 
@@ -658,9 +662,9 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
   if( call.status == LlmToolCall::CallStatus::Error )
     resultDiv->addStyleClass( "LlmToolResultError" );
 
-  // Tool name with status indicator
+  // Tool name with status indicator - escape the model-derived name but keep the intentional markup.
   ostringstream nameHtml;
-  nameHtml << "<b>" << call.toolName << "</b>";
+  nameHtml << "<b>" << Wt::Utils::htmlEncode( call.toolName ) << "</b>";
   if( call.status == LlmToolCall::CallStatus::Error )
     nameHtml << " <span class='LlmToolStatusError'>[ERROR]</span>";
   else if( call.status == LlmToolCall::CallStatus::Pending && !call.sub_agent_conversation )
@@ -670,8 +674,8 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
   nameText->setTextFormat( TextFormat::XHTMLUnsafeText );
   nameText->addStyleClass( "LlmToolName" );
 
-  // Invocation ID
-  WText *idText = new WText( " (ID: " + call.invocationId + ")", resultDiv );
+  // Invocation ID - PlainText so a stray '&'/'<' in an id can't hit the XHTML parser.
+  WText *idText = new WText( " (ID: " + call.invocationId + ")", PlainText, resultDiv );
   idText->addStyleClass( "LlmInvocationId" );
 
   // Execution duration
@@ -724,13 +728,14 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
 
   if( !visual.title.empty() )
   {
-    WText *titleText = new WText( WString::fromUTF8( visual.title ), vizDiv );
+    // PlainText via the 3-arg ctor (format before text) keeps model-derived text out of the XHTML parser.
+    WText *titleText = new WText( WString::fromUTF8( visual.title ), Wt::PlainText, vizDiv );
     titleText->addStyleClass( "LlmToolVisualTitle" );
   }
 
   if( !visual.description.empty() )
   {
-    WText *descText = new WText( WString::fromUTF8( visual.description ), vizDiv );
+    WText *descText = new WText( WString::fromUTF8( visual.description ), Wt::PlainText, vizDiv );
     descText->addStyleClass( "LlmToolVisualDesc" );
   }
 
@@ -1224,7 +1229,8 @@ WString LlmInteractionErrorDisplay::getTitleText() const
       prefix = "Error";
   }
 
-  return WString( "{1}: {2}" ).arg( prefix ).arg( truncated );
+  // Escape the model-derived message portion; prefix is a fixed literal.
+  return WString( "{1}: {2}" ).arg( prefix ).arg( Wt::Utils::htmlEncode( truncated ) );
 }//getTitleText()
 
 
@@ -1518,8 +1524,8 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
 
     if( !questionContent.empty() )
     {
-      WText *questionText = new WText( questionContent, questionDiv );
-      questionText->setTextFormat( PlainText );
+      // PlainText via the 3-arg ctor (format before text) so raw user text skips the XHTML parser.
+      WText *questionText = new WText( questionContent, PlainText, questionDiv );
       questionText->addStyleClass( "LlmQuestionContent" );
     }
 
@@ -1603,9 +1609,15 @@ shared_ptr<LlmInteraction> LlmInteractionDisplay::interaction() const
 
 void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> turn )
 {
-  // Create appropriate display widget for this turn
+  // Create appropriate display widget for this turn.  Rendering must never throw back into the
+  // conversation engine: this signal is emitted synchronously from LlmInterface's turn processing,
+  // and an escaped exception here would skip the engine's terminal-signal emit and hang the
+  // conversation (GUI input stays disabled; the benchmark runner blocks forever).  So catch any
+  // display failure, fall back to a plain-text placeholder, and keep the finished-state bookkeeping.
   LlmInteractionTurnDisplay *turnDisplay = nullptr;
 
+  try
+  {
   switch( turn->type() )
   {
     case LlmInteractionTurn::Type::InitialRequest:
@@ -1688,6 +1700,26 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
       break;
     }
   }//switch( turn->type() )
+  }catch( const std::exception &e )
+  {
+    cerr << "LlmInteractionDisplay::handleResponseAdded: failed to render turn: " << e.what() << endl;
+
+    WText *fallback = new WText( m_turnContainer );
+    fallback->setTextFormat( Wt::PlainText );
+    fallback->setText( string("[Turn could not be displayed: ") + e.what() + "]" );
+
+    // A FinalLlmResponse or Error turn still terminates the conversation - keep that bookkeeping
+    // consistent even though its widget failed to build.
+    const LlmInteractionTurn::Type type = turn->type();
+    if( !m_isFinished
+        && ((type == LlmInteractionTurn::Type::FinalLlmResponse)
+            || (type == LlmInteractionTurn::Type::Error)) )
+    {
+      m_isFinished = true;
+      stopStatusTimer();
+      updateSummary();
+    }
+  }//try / catch
 
   // Update status
   updateStatus();
