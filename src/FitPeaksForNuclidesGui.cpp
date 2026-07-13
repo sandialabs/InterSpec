@@ -87,6 +87,28 @@ namespace
     return kSymbols;
   }
 
+  // Removes the given peaks from the model, tolerating peaks that are no longer present.
+  // The fit runs asynchronously, so the user may have edited/deleted peaks between launching the
+  // fit and accepting the result; PeakModel::removePeaks throws on the first missing peak, which
+  // would both leave the removal half-done and propagate an uncaught exception through the UI.
+  void remove_peaks_tolerantly( PeakModel *peak_model,
+                                const std::vector<std::shared_ptr<const PeakDef>> &peaks )
+  {
+    if( !peak_model )
+      return;
+
+    for( const std::shared_ptr<const PeakDef> &peak : peaks )
+    {
+      try
+      {
+        peak_model->removePeak( peak );
+      }catch( const std::exception & )
+      {
+        // Peak no longer in the model (user edited peaks while the fit ran) - skip it.
+      }
+    }
+  }//remove_peaks_tolerantly
+
   // Applies reference-line colors to peaks in place.
   // Matching priority per peak: direct nuclide / x-ray / reaction, then NuclideMixture component,
   // then Background-source NORM. Color priority: per-component NuclideMixture color, then the
@@ -524,8 +546,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           {
             apply_reference_line_colors_to_peaks( result->observable_peaks, ref_lines_for_display, disp );
             UndoRedoManager::PeakModelChange peak_undo_creator;
-            if( !result->original_peaks_to_remove.empty() )
-              peak_model->removePeaks( result->original_peaks_to_remove );
+            remove_peaks_tolerantly( peak_model, result->original_peaks_to_remove );
             peak_model->addPeaks( result->observable_peaks );
           }
           passMessage( WString::tr("fpn-auto-accepted"), WarningWidget::WarningMsgInfo );
@@ -597,10 +618,24 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
         apply_reference_line_colors_to_peaks( result->observable_peaks, ref_lines_for_display, disp );
 
+        // Preview what accepting would produce: current peaks MINUS the ones the result will
+        // remove, PLUS the new observable peaks (previously the to-be-removed peaks were left in,
+        // so the preview showed old and replacement peaks stacked on top of each other).
         std::vector<PeakDef> preview_peaks;
         PeakModel *peak_model = viewer_c->peakModel();
-        if( peak_model )
-          preview_peaks = peak_model->peakVec();
+        if( peak_model && peak_model->peaks() )
+        {
+          for( const PeakModel::PeakShrdPtr &p : *peak_model->peaks() )
+          {
+            if( !p )
+              continue;
+            const bool will_remove = std::any_of(
+              result->original_peaks_to_remove.begin(), result->original_peaks_to_remove.end(),
+              [&p]( const std::shared_ptr<const PeakDef> &rm ) -> bool { return rm == p; } );
+            if( !will_remove )
+              preview_peaks.push_back( *p );
+          }
+        }
         preview_peaks.insert( preview_peaks.end(),
                               result->observable_peaks.begin(),
                               result->observable_peaks.end() );
@@ -623,8 +658,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
             if( peak_model )
             {
               UndoRedoManager::PeakModelChange peak_undo_creator;
-              if( !result->original_peaks_to_remove.empty() )
-                peak_model->removePeaks( result->original_peaks_to_remove );
+              remove_peaks_tolerantly( peak_model, result->original_peaks_to_remove );
               peak_model->addPeaks( result->observable_peaks );
             }
           }
@@ -752,8 +786,7 @@ FitPeaksAdvancedWidget::FitPeaksAdvancedWidget( Wt::WContainerWidget *parent )
     m_opt_fit_bkgnd_peaks( nullptr ),
     m_opt_fit_bkgnd_dont_use( nullptr ),
     m_opt_use_background( nullptr ),
-    m_opt_roi_min_chi2( nullptr ),
-    m_opt_roi_min_peak_sig( nullptr ),
+    m_opt_roi_sig_z( nullptr ),
     m_opt_obs_initial_sig( nullptr ),
     m_opt_obs_final_sig( nullptr ),
     m_opt_skew_type( nullptr ),
@@ -1027,8 +1060,7 @@ void FitPeaksAdvancedWidget::acceptResult()
   if( !peak_model )
     return;
   UndoRedoManager::PeakModelChange peak_undo_creator;
-  if( !m_current_result->original_peaks_to_remove.empty() )
-    peak_model->removePeaks( m_current_result->original_peaks_to_remove );
+  remove_peaks_tolerantly( peak_model, m_current_result->original_peaks_to_remove );
   std::vector<PeakDef> peaks_to_add = m_current_result->observable_peaks;
 
   std::vector<ReferenceLineInfo> ref_lines_to_use( m_ref_lines.begin(), m_ref_lines.end() );
@@ -1543,23 +1575,14 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
       m_opt_use_background->setHidden( true );
   }
 
-  NativeFloatSpinBox *roi_chi2 = new NativeFloatSpinBox();
-  roi_chi2->setWidth( WLength( 4, WLength::Unit::FontEm ) );
-  roi_chi2->setSpinnerHidden( true );
-  roi_chi2->setValue( static_cast<float>( config.roi_significance_min_chi2_reduction ) );
-  roi_chi2->setRange( 0.1f, 1000.f );
-  roi_chi2->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  add_form_row( WString::tr("fpn-opt-roi-min-chi2-red"), roi_chi2, WString::tr("fpn-opt-tt-roi-min-chi2-red") );
-  m_opt_roi_min_chi2 = roi_chi2;
-
-  NativeFloatSpinBox *roi_sig = new NativeFloatSpinBox();
-  roi_sig->setWidth( WLength( 4, WLength::Unit::FontEm ) );
-  roi_sig->setSpinnerHidden( true );
-  roi_sig->setValue( static_cast<float>( config.roi_significance_min_peak_sig ) );
-  roi_sig->setRange( 0.1f, 20.f );
-  roi_sig->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-  add_form_row( WString::tr("fpn-opt-roi-min-peak-sig"), roi_sig, WString::tr("fpn-opt-tt-roi-min-peak-sig") );
-  m_opt_roi_min_peak_sig = roi_sig;
+  NativeFloatSpinBox *roi_sig_z = new NativeFloatSpinBox();
+  roi_sig_z->setWidth( WLength( 4, WLength::Unit::FontEm ) );
+  roi_sig_z->setSpinnerHidden( true );
+  roi_sig_z->setValue( static_cast<float>( config.roi_significance_z ) );
+  roi_sig_z->setRange( 0.1f, 20.f );
+  roi_sig_z->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
+  add_form_row( WString::tr("fpn-opt-roi-sig-z"), roi_sig_z, WString::tr("fpn-opt-tt-roi-sig-z") );
+  m_opt_roi_sig_z = roi_sig_z;
 
   NativeFloatSpinBox *obs_init = new NativeFloatSpinBox();
   obs_init->setWidth( WLength( 4, WLength::Unit::FontEm ) );
@@ -1681,10 +1704,8 @@ FitPeaksForNuclides::PeakFitForNuclideConfig FitPeaksAdvancedWidget::currentConf
   FitPeaksForNuclides::PeakFitForNuclideConfig config
     = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
 
-  if( m_opt_roi_min_chi2 )
-    config.roi_significance_min_chi2_reduction = m_opt_roi_min_chi2->value();
-  if( m_opt_roi_min_peak_sig )
-    config.roi_significance_min_peak_sig = m_opt_roi_min_peak_sig->value();
+  if( m_opt_roi_sig_z )
+    config.roi_significance_z = m_opt_roi_sig_z->value();
   if( m_opt_obs_initial_sig )
     config.observable_peak_initial_significance_threshold = m_opt_obs_initial_sig->value();
   if( m_opt_obs_final_sig )

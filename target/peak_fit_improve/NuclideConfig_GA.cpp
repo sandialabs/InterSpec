@@ -440,46 +440,32 @@ double compute_background_fit_penalty(
 std::string NuclideConfigSolution::to_string( const std::string &separator ) const
 {
   std::ostringstream oss;
-  oss << std::setprecision(6);
+  // Full round-trip precision: the reformulated pipeline is decision-cascaded (an adaptive-extent
+  // block accept/reject flip propagates through merging and the fit), so genes rounded to 6
+  // significant digits could re-score several percent off their in-memory cost - which would make
+  // checkpoint resume and NuclideConfigEval cross-checks unfaithful.
+  oss << std::setprecision( std::numeric_limits<double>::max_digits10 );
   oss << "fwhm_functional_form=" << fwhm_functional_form << separator
       << "rel_eff_manual_base_rel_eff_uncert=" << rel_eff_manual_base_rel_eff_uncert << separator
       << "initial_nuc_match_cluster_num_sigma=" << initial_nuc_match_cluster_num_sigma << separator
       << "manual_eff_cluster_num_sigma=" << manual_eff_cluster_num_sigma << separator
-      << "initial_manual_relEff_1peak_eqn_order=" << initial_manual_relEff_1peak_eqn_order << separator
-      << "initial_manual_relEff_1peak_form=" << initial_manual_relEff_1peak_form << separator
-      << "initial_manual_relEff_2peak_eqn_order=" << initial_manual_relEff_2peak_eqn_order << separator
-      << "initial_manual_relEff_2peak_form=" << initial_manual_relEff_2peak_form << separator
-      << "initial_manual_relEff_3peak_eqn_order=" << initial_manual_relEff_3peak_eqn_order << separator
-      << "initial_manual_relEff_3peak_form=" << initial_manual_relEff_3peak_form << separator
-      << "initial_manual_relEff_4peak_physical_use_hoerl=" << initial_manual_relEff_4peak_physical_use_hoerl << separator
-      << "initial_manual_relEff_4peak_eqn_order=" << initial_manual_relEff_4peak_eqn_order << separator
-      << "initial_manual_relEff_4peak_form=" << initial_manual_relEff_4peak_form << separator
-      << "initial_manual_relEff_many_peak_physical_use_hoerl=" << initial_manual_relEff_many_peak_physical_use_hoerl << separator
-      << "initial_manual_relEff_many_peak_eqn_order=" << initial_manual_relEff_many_peak_eqn_order << separator
-      << "initial_manual_relEff_manypeak_form=" << initial_manual_relEff_manypeak_form << separator
-      << "manual_rel_eff_sol_min_data_area_keep=" << manual_rel_eff_sol_min_data_area_keep << separator
-      << "manual_rel_eff_sol_min_est_peak_area_keep=" << manual_rel_eff_sol_min_est_peak_area_keep << separator
-      << "manual_rel_eff_sol_min_est_significance_keep=" << manual_rel_eff_sol_min_est_significance_keep << separator
+      << "manual_releff_aicc_penalty=" << manual_releff_aicc_penalty << separator
+      << "cont_order_aicc_penalty=" << cont_order_aicc_penalty << separator
+      << "manual_keep_significance_z=" << manual_keep_significance_z << separator
       << "manual_rel_eff_sol_min_fwhm_roi=" << manual_rel_eff_sol_min_fwhm_roi << separator
-      << "manual_rel_eff_sol_min_fwhm_quad_cont=" << manual_rel_eff_sol_min_fwhm_quad_cont << separator
       << "manual_rel_eff_sol_max_fwhm=" << manual_rel_eff_sol_max_fwhm << separator
-      << "manual_rel_eff_min_tail_contribution=" << manual_rel_eff_min_tail_contribution << separator
-      << "manual_rel_eff_tail_width_scale_fwhm=" << manual_rel_eff_tail_width_scale_fwhm << separator
-      << "manual_rel_eff_roi_width_num_fwhm_lower=" << manual_rel_eff_roi_width_num_fwhm_lower << separator
-      << "manual_rel_eff_roi_width_num_fwhm_upper=" << manual_rel_eff_roi_width_num_fwhm_upper << separator
+      << "merge_tail_z=" << merge_tail_z << separator
+      << "merge_clean_gap_fwhm=" << merge_clean_gap_fwhm << separator
+      << "manual_roi_core_num_fwhm=" << manual_roi_core_num_fwhm << separator
       << "fwhm_form=" << fwhm_form << separator
       << "rel_eff_auto_base_rel_eff_uncert=" << rel_eff_auto_base_rel_eff_uncert << separator
       << "auto_rel_eff_cluster_num_sigma=" << auto_rel_eff_cluster_num_sigma << separator
-      << "auto_rel_eff_sol_min_data_area_keep=" << auto_rel_eff_sol_min_data_area_keep << separator
-      << "auto_rel_eff_sol_min_est_peak_area_keep=" << auto_rel_eff_sol_min_est_peak_area_keep << separator
-      << "auto_rel_eff_sol_min_est_significance_keep=" << auto_rel_eff_sol_min_est_significance_keep << separator
-      << "auto_rel_eff_roi_width_num_fwhm_lower=" << auto_rel_eff_roi_width_num_fwhm_lower << separator
-      << "auto_rel_eff_roi_width_num_fwhm_upper=" << auto_rel_eff_roi_width_num_fwhm_upper << separator
+      << "auto_keep_significance_z=" << auto_keep_significance_z << separator
+      << "auto_roi_core_num_fwhm=" << auto_roi_core_num_fwhm << separator
+      << "roi_extend_z=" << roi_extend_z << separator
+      << "roi_max_num_fwhm=" << roi_max_num_fwhm << separator
       << "auto_rel_eff_sol_max_fwhm=" << auto_rel_eff_sol_max_fwhm << separator
-      << "auto_rel_eff_min_tail_contribution=" << auto_rel_eff_min_tail_contribution << separator
-      << "auto_rel_eff_tail_width_scale_fwhm=" << auto_rel_eff_tail_width_scale_fwhm << separator
       << "auto_rel_eff_sol_min_fwhm_roi=" << auto_rel_eff_sol_min_fwhm_roi << separator
-      << "auto_rel_eff_sol_min_fwhm_quad_cont=" << auto_rel_eff_sol_min_fwhm_quad_cont << separator
       << "rel_eff_eqn_type=" << rel_eff_eqn_type << separator
       << "rel_eff_eqn_order=" << rel_eff_eqn_order << separator
       << "desperation_phys_model_atomic_number=" << desperation_phys_model_atomic_number << separator
@@ -487,14 +473,11 @@ std::string NuclideConfigSolution::to_string( const std::string &separator ) con
       << "nucs_of_el_same_age=" << nucs_of_el_same_age << separator
       << "phys_model_use_hoerl=" << phys_model_use_hoerl << separator
       << "fit_energy_cal=" << fit_energy_cal << separator
-      << "roi_significance_min_chi2_reduction=" << roi_significance_min_chi2_reduction << separator
-      << "roi_significance_min_peak_sig=" << roi_significance_min_peak_sig << separator
-      << "roi_significance_min_quad_cont_chi2_dof=" << roi_significance_min_quad_cont_chi2_dof << separator
+      << "roi_significance_z=" << roi_significance_z << separator
       << "observable_peak_initial_significance_threshold=" << observable_peak_initial_significance_threshold << separator
       << "observable_peak_final_significance_threshold=" << observable_peak_final_significance_threshold << separator
-      << "step_cont_min_peak_area=" << step_cont_min_peak_area << separator
       << "step_cont_min_peak_significance=" << step_cont_min_peak_significance << separator
-      << "step_cont_left_right_nsigma=" << step_cont_left_right_nsigma << separator
+      << "step_trial_chi2_margin=" << step_trial_chi2_margin << separator
       << "initial_manual_rel_eff_max_chi2_dof=" << initial_manual_rel_eff_max_chi2_dof;
   return oss.str();
 }//NuclideConfigSolution::to_string
@@ -536,41 +519,23 @@ bool NuclideConfigSolution::from_string( const std::string &line, const std::str
   getD( "rel_eff_manual_base_rel_eff_uncert", out.rel_eff_manual_base_rel_eff_uncert );
   getD( "initial_nuc_match_cluster_num_sigma", out.initial_nuc_match_cluster_num_sigma );
   getD( "manual_eff_cluster_num_sigma", out.manual_eff_cluster_num_sigma );
-  getI( "initial_manual_relEff_1peak_eqn_order", out.initial_manual_relEff_1peak_eqn_order );
-  getI( "initial_manual_relEff_1peak_form", out.initial_manual_relEff_1peak_form );
-  getI( "initial_manual_relEff_2peak_eqn_order", out.initial_manual_relEff_2peak_eqn_order );
-  getI( "initial_manual_relEff_2peak_form", out.initial_manual_relEff_2peak_form );
-  getI( "initial_manual_relEff_3peak_eqn_order", out.initial_manual_relEff_3peak_eqn_order );
-  getI( "initial_manual_relEff_3peak_form", out.initial_manual_relEff_3peak_form );
-  getI( "initial_manual_relEff_4peak_physical_use_hoerl", out.initial_manual_relEff_4peak_physical_use_hoerl );
-  getI( "initial_manual_relEff_4peak_eqn_order", out.initial_manual_relEff_4peak_eqn_order );
-  getI( "initial_manual_relEff_4peak_form", out.initial_manual_relEff_4peak_form );
-  getI( "initial_manual_relEff_many_peak_physical_use_hoerl", out.initial_manual_relEff_many_peak_physical_use_hoerl );
-  getI( "initial_manual_relEff_many_peak_eqn_order", out.initial_manual_relEff_many_peak_eqn_order );
-  getI( "initial_manual_relEff_manypeak_form", out.initial_manual_relEff_manypeak_form );
-  getD( "manual_rel_eff_sol_min_data_area_keep", out.manual_rel_eff_sol_min_data_area_keep );
-  getD( "manual_rel_eff_sol_min_est_peak_area_keep", out.manual_rel_eff_sol_min_est_peak_area_keep );
-  getD( "manual_rel_eff_sol_min_est_significance_keep", out.manual_rel_eff_sol_min_est_significance_keep );
+  getD( "manual_releff_aicc_penalty", out.manual_releff_aicc_penalty );
+  getD( "cont_order_aicc_penalty", out.cont_order_aicc_penalty );
+  getD( "manual_keep_significance_z", out.manual_keep_significance_z );
   getD( "manual_rel_eff_sol_min_fwhm_roi", out.manual_rel_eff_sol_min_fwhm_roi );
-  getD( "manual_rel_eff_sol_min_fwhm_quad_cont", out.manual_rel_eff_sol_min_fwhm_quad_cont );
   getD( "manual_rel_eff_sol_max_fwhm", out.manual_rel_eff_sol_max_fwhm );
-  getD( "manual_rel_eff_min_tail_contribution", out.manual_rel_eff_min_tail_contribution );
-  getD( "manual_rel_eff_tail_width_scale_fwhm", out.manual_rel_eff_tail_width_scale_fwhm );
-  getD( "manual_rel_eff_roi_width_num_fwhm_lower", out.manual_rel_eff_roi_width_num_fwhm_lower );
-  getD( "manual_rel_eff_roi_width_num_fwhm_upper", out.manual_rel_eff_roi_width_num_fwhm_upper );
+  getD( "merge_tail_z", out.merge_tail_z );
+  getD( "merge_clean_gap_fwhm", out.merge_clean_gap_fwhm );
+  getD( "manual_roi_core_num_fwhm", out.manual_roi_core_num_fwhm );
   getI( "fwhm_form", out.fwhm_form );
   getD( "rel_eff_auto_base_rel_eff_uncert", out.rel_eff_auto_base_rel_eff_uncert );
   getD( "auto_rel_eff_cluster_num_sigma", out.auto_rel_eff_cluster_num_sigma );
-  getD( "auto_rel_eff_sol_min_data_area_keep", out.auto_rel_eff_sol_min_data_area_keep );
-  getD( "auto_rel_eff_sol_min_est_peak_area_keep", out.auto_rel_eff_sol_min_est_peak_area_keep );
-  getD( "auto_rel_eff_sol_min_est_significance_keep", out.auto_rel_eff_sol_min_est_significance_keep );
-  getD( "auto_rel_eff_roi_width_num_fwhm_lower", out.auto_rel_eff_roi_width_num_fwhm_lower );
-  getD( "auto_rel_eff_roi_width_num_fwhm_upper", out.auto_rel_eff_roi_width_num_fwhm_upper );
+  getD( "auto_keep_significance_z", out.auto_keep_significance_z );
+  getD( "auto_roi_core_num_fwhm", out.auto_roi_core_num_fwhm );
+  getD( "roi_extend_z", out.roi_extend_z );
+  getD( "roi_max_num_fwhm", out.roi_max_num_fwhm );
   getD( "auto_rel_eff_sol_max_fwhm", out.auto_rel_eff_sol_max_fwhm );
-  getD( "auto_rel_eff_min_tail_contribution", out.auto_rel_eff_min_tail_contribution );
-  getD( "auto_rel_eff_tail_width_scale_fwhm", out.auto_rel_eff_tail_width_scale_fwhm );
   getD( "auto_rel_eff_sol_min_fwhm_roi", out.auto_rel_eff_sol_min_fwhm_roi );
-  getD( "auto_rel_eff_sol_min_fwhm_quad_cont", out.auto_rel_eff_sol_min_fwhm_quad_cont );
   getI( "rel_eff_eqn_type", out.rel_eff_eqn_type );
   getI( "rel_eff_eqn_order", out.rel_eff_eqn_order );
   getD( "desperation_phys_model_atomic_number", out.desperation_phys_model_atomic_number );
@@ -578,14 +543,11 @@ bool NuclideConfigSolution::from_string( const std::string &line, const std::str
   getI( "nucs_of_el_same_age", out.nucs_of_el_same_age );
   getI( "phys_model_use_hoerl", out.phys_model_use_hoerl );
   getI( "fit_energy_cal", out.fit_energy_cal );
-  getD( "roi_significance_min_chi2_reduction", out.roi_significance_min_chi2_reduction );
-  getD( "roi_significance_min_peak_sig", out.roi_significance_min_peak_sig );
-  getD( "roi_significance_min_quad_cont_chi2_dof", out.roi_significance_min_quad_cont_chi2_dof );
+  getD( "roi_significance_z", out.roi_significance_z );
   getD( "observable_peak_initial_significance_threshold", out.observable_peak_initial_significance_threshold );
   getD( "observable_peak_final_significance_threshold", out.observable_peak_final_significance_threshold );
-  getD( "step_cont_min_peak_area", out.step_cont_min_peak_area );
   getD( "step_cont_min_peak_significance", out.step_cont_min_peak_significance );
-  getD( "step_cont_left_right_nsigma", out.step_cont_left_right_nsigma );
+  getD( "step_trial_chi2_margin", out.step_trial_chi2_margin );
   getD( "initial_manual_rel_eff_max_chi2_dof", out.initial_manual_rel_eff_max_chi2_dof );
 
   return ok;
@@ -623,29 +585,15 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
   config.initial_nuc_match_cluster_num_sigma = p.initial_nuc_match_cluster_num_sigma;
   config.manual_eff_cluster_num_sigma = p.manual_eff_cluster_num_sigma;
 
-  config.initial_manual_relEff_1peak_eqn_order = static_cast<size_t>( std::clamp( p.initial_manual_relEff_1peak_eqn_order, 0, 2 ) );
-  config.initial_manual_relEff_1peak_form = static_cast<RelActCalc::RelEffEqnForm>( std::clamp( p.initial_manual_relEff_1peak_form, 0, 3 ) );
-  config.initial_manual_relEff_2peak_eqn_order = static_cast<size_t>( std::clamp( p.initial_manual_relEff_2peak_eqn_order, 0, 3 ) );
-  config.initial_manual_relEff_2peak_form = static_cast<RelActCalc::RelEffEqnForm>( std::clamp( p.initial_manual_relEff_2peak_form, 0, 3 ) );
-  config.initial_manual_relEff_3peak_eqn_order = static_cast<size_t>( std::clamp( p.initial_manual_relEff_3peak_eqn_order, 0, 4 ) );
-  config.initial_manual_relEff_3peak_form = static_cast<RelActCalc::RelEffEqnForm>( std::clamp( p.initial_manual_relEff_3peak_form, 0, 3 ) );
-  config.initial_manual_relEff_4peak_physical_use_hoerl = (p.initial_manual_relEff_4peak_physical_use_hoerl != 0);
-  config.initial_manual_relEff_4peak_eqn_order = static_cast<size_t>( std::clamp( p.initial_manual_relEff_4peak_eqn_order, 0, 5 ) );
-  config.initial_manual_relEff_4peak_form = static_cast<RelActCalc::RelEffEqnForm>( std::clamp( p.initial_manual_relEff_4peak_form, 0, 3 ) );
-  config.initial_manual_relEff_many_peak_physical_use_hoerl = (p.initial_manual_relEff_many_peak_physical_use_hoerl != 0);
-  config.initial_manual_relEff_many_peak_eqn_order = static_cast<size_t>( std::clamp( p.initial_manual_relEff_many_peak_eqn_order, 0, 6 ) );
-  config.initial_manual_relEff_manypeak_form = static_cast<RelActCalc::RelEffEqnForm>( std::clamp( p.initial_manual_relEff_manypeak_form, 0, 3 ) );
+  config.manual_releff_aicc_penalty = p.manual_releff_aicc_penalty;
+  config.cont_order_aicc_penalty = p.cont_order_aicc_penalty;
 
-  config.manual_rel_eff_sol_min_data_area_keep = p.manual_rel_eff_sol_min_data_area_keep;
-  config.manual_rel_eff_sol_min_est_peak_area_keep = p.manual_rel_eff_sol_min_est_peak_area_keep;
-  config.manual_rel_eff_sol_min_est_significance_keep = p.manual_rel_eff_sol_min_est_significance_keep;
+  config.manual_keep_significance_z = p.manual_keep_significance_z;
   config.manual_rel_eff_sol_min_fwhm_roi = p.manual_rel_eff_sol_min_fwhm_roi;
-  config.manual_rel_eff_sol_min_fwhm_quad_cont = p.manual_rel_eff_sol_min_fwhm_quad_cont;
   config.manual_rel_eff_sol_max_fwhm = p.manual_rel_eff_sol_max_fwhm;
-  config.manual_rel_eff_min_tail_contribution = p.manual_rel_eff_min_tail_contribution;
-  config.manual_rel_eff_tail_width_scale_fwhm = p.manual_rel_eff_tail_width_scale_fwhm;
-  config.manual_rel_eff_roi_width_num_fwhm_lower = p.manual_rel_eff_roi_width_num_fwhm_lower;
-  config.manual_rel_eff_roi_width_num_fwhm_upper = p.manual_rel_eff_roi_width_num_fwhm_upper;
+  config.merge_tail_z = p.merge_tail_z;
+  config.merge_clean_gap_fwhm = p.merge_clean_gap_fwhm;
+  config.manual_roi_core_num_fwhm = p.manual_roi_core_num_fwhm;
 
   // FwhmForm: limited to Berstein_2 through Berstein_5
   static_assert( static_cast<int>(RelActCalcAuto::FwhmForm::Berstein_2) == 8, "Berstein_2 enum value changed" );
@@ -657,16 +605,12 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
 
   config.rel_eff_auto_base_rel_eff_uncert = p.rel_eff_auto_base_rel_eff_uncert;
   config.auto_rel_eff_cluster_num_sigma = p.auto_rel_eff_cluster_num_sigma;
-  config.auto_rel_eff_sol_min_data_area_keep = p.auto_rel_eff_sol_min_data_area_keep;
-  config.auto_rel_eff_sol_min_est_peak_area_keep = p.auto_rel_eff_sol_min_est_peak_area_keep;
-  config.auto_rel_eff_sol_min_est_significance_keep = p.auto_rel_eff_sol_min_est_significance_keep;
-  config.auto_rel_eff_roi_width_num_fwhm_lower = p.auto_rel_eff_roi_width_num_fwhm_lower;
-  config.auto_rel_eff_roi_width_num_fwhm_upper = p.auto_rel_eff_roi_width_num_fwhm_upper;
+  config.auto_keep_significance_z = p.auto_keep_significance_z;
+  config.auto_roi_core_num_fwhm = p.auto_roi_core_num_fwhm;
+  config.roi_extend_z = p.roi_extend_z;
+  config.roi_max_num_fwhm = p.roi_max_num_fwhm;
   config.auto_rel_eff_sol_max_fwhm = p.auto_rel_eff_sol_max_fwhm;
-  config.auto_rel_eff_min_tail_contribution = p.auto_rel_eff_min_tail_contribution;
-  config.auto_rel_eff_tail_width_scale_fwhm = p.auto_rel_eff_tail_width_scale_fwhm;
   config.auto_rel_eff_sol_min_fwhm_roi = p.auto_rel_eff_sol_min_fwhm_roi;
-  config.auto_rel_eff_sol_min_fwhm_quad_cont = p.auto_rel_eff_sol_min_fwhm_quad_cont;
 
   // RelEffEqnForm: 0=LnX, 1=LnY, 2=LnXLnY, 3=FramEmpirical, 4=FramPhysicalModel
   config.rel_eff_eqn_type = static_cast<RelActCalc::RelEffEqnForm>(
@@ -686,15 +630,12 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
   config.phys_model_use_hoerl = (p.phys_model_use_hoerl != 0);
   config.fit_energy_cal = (p.fit_energy_cal != 0);
 
-  config.roi_significance_min_chi2_reduction = p.roi_significance_min_chi2_reduction;
-  config.roi_significance_min_peak_sig = p.roi_significance_min_peak_sig;
-  config.roi_significance_min_quad_cont_chi2_dof = p.roi_significance_min_quad_cont_chi2_dof;
+  config.roi_significance_z = p.roi_significance_z;
   config.observable_peak_initial_significance_threshold = p.observable_peak_initial_significance_threshold;
   config.observable_peak_final_significance_threshold = p.observable_peak_final_significance_threshold;
 
-  config.step_cont_min_peak_area = p.step_cont_min_peak_area;
   config.step_cont_min_peak_significance = p.step_cont_min_peak_significance;
-  config.step_cont_left_right_nsigma = p.step_cont_left_right_nsigma;
+  config.step_trial_chi2_margin = p.step_trial_chi2_margin;
 
   // Manual rel-eff chi2/dof cap: resolved from the CLI mode + (when
   // GA-optimized) the gene value.
@@ -719,44 +660,17 @@ void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rn
   p.manual_eff_cluster_num_sigma = 0.5 + 3.5 * rnd01();
 
   // Manual RelEff equation forms/orders
-  p.initial_manual_relEff_1peak_eqn_order = static_cast<int>( 3 * rnd01() );
-  if( p.initial_manual_relEff_1peak_eqn_order > 2 ) p.initial_manual_relEff_1peak_eqn_order = 2;
-  p.initial_manual_relEff_1peak_form = static_cast<int>( 4 * rnd01() );
-  if( p.initial_manual_relEff_1peak_form > 3 ) p.initial_manual_relEff_1peak_form = 3;
-
-  p.initial_manual_relEff_2peak_eqn_order = static_cast<int>( 4 * rnd01() );
-  if( p.initial_manual_relEff_2peak_eqn_order > 3 ) p.initial_manual_relEff_2peak_eqn_order = 3;
-  p.initial_manual_relEff_2peak_form = static_cast<int>( 4 * rnd01() );
-  if( p.initial_manual_relEff_2peak_form > 3 ) p.initial_manual_relEff_2peak_form = 3;
-
-  p.initial_manual_relEff_3peak_eqn_order = static_cast<int>( 5 * rnd01() );
-  if( p.initial_manual_relEff_3peak_eqn_order > 4 ) p.initial_manual_relEff_3peak_eqn_order = 4;
-  p.initial_manual_relEff_3peak_form = static_cast<int>( 4 * rnd01() );
-  if( p.initial_manual_relEff_3peak_form > 3 ) p.initial_manual_relEff_3peak_form = 3;
-
-  p.initial_manual_relEff_4peak_physical_use_hoerl = rnd01() < 0.5 ? 0 : 1;
-  p.initial_manual_relEff_4peak_eqn_order = static_cast<int>( 6 * rnd01() );
-  if( p.initial_manual_relEff_4peak_eqn_order > 5 ) p.initial_manual_relEff_4peak_eqn_order = 5;
-  p.initial_manual_relEff_4peak_form = static_cast<int>( 4 * rnd01() );
-  if( p.initial_manual_relEff_4peak_form > 3 ) p.initial_manual_relEff_4peak_form = 3;
-
-  p.initial_manual_relEff_many_peak_physical_use_hoerl = rnd01() < 0.5 ? 0 : 1;
-  p.initial_manual_relEff_many_peak_eqn_order = static_cast<int>( 7 * rnd01() );
-  if( p.initial_manual_relEff_many_peak_eqn_order > 6 ) p.initial_manual_relEff_many_peak_eqn_order = 6;
-  p.initial_manual_relEff_manypeak_form = static_cast<int>( 4 * rnd01() );
-  if( p.initial_manual_relEff_manypeak_form > 3 ) p.initial_manual_relEff_manypeak_form = 3;
+  // Manual rel-eff form/order are selected per spectrum by AICc; only the penalty scales are genes.
+  p.manual_releff_aicc_penalty = 0.5 + 7.5 * rnd01();
+  p.cont_order_aicc_penalty = 0.5 + 7.5 * rnd01();
 
   // Manual clustering thresholds
-  p.manual_rel_eff_sol_min_data_area_keep = 1.0 + 99.0 * rnd01();
-  p.manual_rel_eff_sol_min_est_peak_area_keep = 1.0 + 49.0 * rnd01();
-  p.manual_rel_eff_sol_min_est_significance_keep = 0.5 + 5.5 * rnd01();
+  p.manual_keep_significance_z = 0.5 + 5.5 * rnd01();
   p.manual_rel_eff_sol_min_fwhm_roi = 0.5 + 2.5 * rnd01();
-  p.manual_rel_eff_sol_min_fwhm_quad_cont = 3.0 + 12.0 * rnd01();
   p.manual_rel_eff_sol_max_fwhm = 5.0 + 25.0 * rnd01();
-  p.manual_rel_eff_min_tail_contribution = 0.01 * rnd01();
-  p.manual_rel_eff_tail_width_scale_fwhm = 1.0 + 14.0 * rnd01();
-  p.manual_rel_eff_roi_width_num_fwhm_lower = 1.0 + 5.0 * rnd01();
-  p.manual_rel_eff_roi_width_num_fwhm_upper = 1.0 + 5.0 * rnd01();
+  p.merge_tail_z = 0.5 + 4.5 * rnd01();
+  p.merge_clean_gap_fwhm = 0.25 + 2.75 * rnd01();
+  p.manual_roi_core_num_fwhm = 0.75 + 1.75 * rnd01();
 
   // Auto RelEff parameters
   // FwhmForm: limited to Berstein_2(8) through Berstein_5(11)
@@ -767,16 +681,12 @@ void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rn
 
   p.rel_eff_auto_base_rel_eff_uncert = 0.0 + 0.5 * rnd01();
   p.auto_rel_eff_cluster_num_sigma = 0.5 + 4.5 * rnd01();
-  p.auto_rel_eff_sol_min_data_area_keep = 1.0 + 99.0 * rnd01();
-  p.auto_rel_eff_sol_min_est_peak_area_keep = 1.0 + 49.0 * rnd01();
-  p.auto_rel_eff_sol_min_est_significance_keep = 0.5 + 7.5 * rnd01();
-  p.auto_rel_eff_roi_width_num_fwhm_lower = 1.0 + 6.0 * rnd01();
-  p.auto_rel_eff_roi_width_num_fwhm_upper = 1.0 + 6.0 * rnd01();
+  p.auto_keep_significance_z = 0.5 + 7.5 * rnd01();
+  p.auto_roi_core_num_fwhm = 0.75 + 1.75 * rnd01();
+  p.roi_extend_z = 0.75 + 3.25 * rnd01();
+  p.roi_max_num_fwhm = 2.0 + 6.0 * rnd01();
   p.auto_rel_eff_sol_max_fwhm = 4.0 + 21.0 * rnd01();
-  p.auto_rel_eff_min_tail_contribution = 0.01 * rnd01();
-  p.auto_rel_eff_tail_width_scale_fwhm = 1.0 + 14.0 * rnd01();
   p.auto_rel_eff_sol_min_fwhm_roi = 0.5 + 2.5 * rnd01();
-  p.auto_rel_eff_sol_min_fwhm_quad_cont = 3.0 + 12.0 * rnd01();
 
   // RelActAuto model
   // RelEffEqnForm: 0..4 (LnX, LnY, LnXLnY, FramEmpirical, FramPhysicalModel)
@@ -795,16 +705,13 @@ void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rn
   p.fit_energy_cal = rnd01() < 0.5 ? 0 : 1;
 
   // ROI significance and observable peak thresholds
-  p.roi_significance_min_chi2_reduction = 2.0 + 28.0 * rnd01();
-  p.roi_significance_min_peak_sig = 1.0 + 7.0 * rnd01();
-  p.roi_significance_min_quad_cont_chi2_dof = 3.0 * rnd01();
+  p.roi_significance_z = 1.5 + 6.5 * rnd01();
   p.observable_peak_initial_significance_threshold = 1.0 + 4.0 * rnd01();
   p.observable_peak_final_significance_threshold = 0.5 + 4.5 * rnd01();
 
   // Step continuum
-  p.step_cont_min_peak_area = 100.0 + 4900.0 * rnd01();
   p.step_cont_min_peak_significance = 5.0 + 95.0 * rnd01();
-  p.step_cont_left_right_nsigma = 1.0 + 7.0 * rnd01();
+  p.step_trial_chi2_margin = 15.0 * rnd01();
 
   // Manual rel-eff chi2/dof cap.  Only randomize when GAOptimized; otherwise
   // genes_to_settings will override this with the CLI-resolved value.
@@ -905,31 +812,17 @@ NuclideConfigSolution mutate( const NuclideConfigSolution &X_base,
     MUTATE_DOUBLE( initial_nuc_match_cluster_num_sigma, 0.5, 4.0 )
     MUTATE_DOUBLE( manual_eff_cluster_num_sigma, 0.5, 4.0 )
 
-    // Manual equation forms/orders (ints)
-    MUTATE_INT( initial_manual_relEff_1peak_eqn_order, 0, 2 )
-    MUTATE_INT( initial_manual_relEff_1peak_form, 0, 3 )
-    MUTATE_INT( initial_manual_relEff_2peak_eqn_order, 0, 3 )
-    MUTATE_INT( initial_manual_relEff_2peak_form, 0, 3 )
-    MUTATE_INT( initial_manual_relEff_3peak_eqn_order, 0, 4 )
-    MUTATE_INT( initial_manual_relEff_3peak_form, 0, 3 )
-    MUTATE_BOOL( initial_manual_relEff_4peak_physical_use_hoerl )
-    MUTATE_INT( initial_manual_relEff_4peak_eqn_order, 0, 5 )
-    MUTATE_INT( initial_manual_relEff_4peak_form, 0, 3 )
-    MUTATE_BOOL( initial_manual_relEff_many_peak_physical_use_hoerl )
-    MUTATE_INT( initial_manual_relEff_many_peak_eqn_order, 0, 6 )
-    MUTATE_INT( initial_manual_relEff_manypeak_form, 0, 3 )
+    // AICc complexity-penalty scales (rel-eff form/order ladder + continuum-order selection)
+    MUTATE_DOUBLE( manual_releff_aicc_penalty, 0.5, 8.0 )
+    MUTATE_DOUBLE( cont_order_aicc_penalty, 0.5, 8.0 )
 
     // Manual clustering doubles
-    MUTATE_DOUBLE( manual_rel_eff_sol_min_data_area_keep, 1.0, 100.0 )
-    MUTATE_DOUBLE( manual_rel_eff_sol_min_est_peak_area_keep, 1.0, 50.0 )
-    MUTATE_DOUBLE( manual_rel_eff_sol_min_est_significance_keep, 0.5, 6.0 )
+    MUTATE_DOUBLE( manual_keep_significance_z, 0.5, 6.0 )
     MUTATE_DOUBLE( manual_rel_eff_sol_min_fwhm_roi, 0.5, 3.0 )
-    MUTATE_DOUBLE( manual_rel_eff_sol_min_fwhm_quad_cont, 3.0, 15.0 )
     MUTATE_DOUBLE( manual_rel_eff_sol_max_fwhm, 5.0, 30.0 )
-    MUTATE_DOUBLE( manual_rel_eff_min_tail_contribution, 0.0, 0.01 )
-    MUTATE_DOUBLE( manual_rel_eff_tail_width_scale_fwhm, 1.0, 15.0 )
-    MUTATE_DOUBLE( manual_rel_eff_roi_width_num_fwhm_lower, 1.0, 6.0 )
-    MUTATE_DOUBLE( manual_rel_eff_roi_width_num_fwhm_upper, 1.0, 6.0 )
+    MUTATE_DOUBLE( merge_tail_z, 0.5, 5.0 )
+    MUTATE_DOUBLE( merge_clean_gap_fwhm, 0.25, 3.0 )
+    MUTATE_DOUBLE( manual_roi_core_num_fwhm, 0.75, 2.5 )
 
     // Auto RelEff - fwhm_form limited to Berstein_2 through Berstein_5
     static_assert( static_cast<int>(RelActCalcAuto::FwhmForm::Berstein_2) == 8, "Berstein_2 enum value changed" );
@@ -937,16 +830,12 @@ NuclideConfigSolution mutate( const NuclideConfigSolution &X_base,
     MUTATE_INT( fwhm_form, 8, 11 )
     MUTATE_DOUBLE( rel_eff_auto_base_rel_eff_uncert, 0.0, 0.5 )
     MUTATE_DOUBLE( auto_rel_eff_cluster_num_sigma, 0.5, 5.0 )
-    MUTATE_DOUBLE( auto_rel_eff_sol_min_data_area_keep, 1.0, 100.0 )
-    MUTATE_DOUBLE( auto_rel_eff_sol_min_est_peak_area_keep, 1.0, 50.0 )
-    MUTATE_DOUBLE( auto_rel_eff_sol_min_est_significance_keep, 0.5, 8.0 )
-    MUTATE_DOUBLE( auto_rel_eff_roi_width_num_fwhm_lower, 1.0, 7.0 )
-    MUTATE_DOUBLE( auto_rel_eff_roi_width_num_fwhm_upper, 1.0, 7.0 )
+    MUTATE_DOUBLE( auto_keep_significance_z, 0.5, 8.0 )
+    MUTATE_DOUBLE( auto_roi_core_num_fwhm, 0.75, 2.5 )
+    MUTATE_DOUBLE( roi_extend_z, 0.75, 4.0 )
+    MUTATE_DOUBLE( roi_max_num_fwhm, 2.0, 8.0 )
     MUTATE_DOUBLE( auto_rel_eff_sol_max_fwhm, 4.0, 25.0 )
-    MUTATE_DOUBLE( auto_rel_eff_min_tail_contribution, 0.0, 0.01 )
-    MUTATE_DOUBLE( auto_rel_eff_tail_width_scale_fwhm, 1.0, 15.0 )
     MUTATE_DOUBLE( auto_rel_eff_sol_min_fwhm_roi, 0.5, 3.0 )
-    MUTATE_DOUBLE( auto_rel_eff_sol_min_fwhm_quad_cont, 3.0, 15.0 )
 
     // RelActAuto model
     MUTATE_INT( rel_eff_eqn_type, 0, 4 )
@@ -962,16 +851,13 @@ NuclideConfigSolution mutate( const NuclideConfigSolution &X_base,
     MUTATE_BOOL( fit_energy_cal )
 
     // ROI significance
-    MUTATE_DOUBLE( roi_significance_min_chi2_reduction, 2.0, 30.0 )
-    MUTATE_DOUBLE( roi_significance_min_peak_sig, 1.0, 8.0 )
-    MUTATE_DOUBLE( roi_significance_min_quad_cont_chi2_dof, 0.0, 3.0 )
+    MUTATE_DOUBLE( roi_significance_z, 1.5, 8.0 )
     MUTATE_DOUBLE( observable_peak_initial_significance_threshold, 1.0, 5.0 )
     MUTATE_DOUBLE( observable_peak_final_significance_threshold, 0.5, 5.0 )
 
     // Step continuum
-    MUTATE_DOUBLE( step_cont_min_peak_area, 100.0, 5000.0 )
     MUTATE_DOUBLE( step_cont_min_peak_significance, 5.0, 100.0 )
-    MUTATE_DOUBLE( step_cont_left_right_nsigma, 1.0, 8.0 )
+    MUTATE_DOUBLE( step_trial_chi2_margin, 0.0, 15.0 )
 
     // Manual rel-eff chi2/dof cap - only meaningful when GAOptimized.  When
     // Fixed/Disabled, the gene value is ignored by resolve_chi2_dof_cap().
@@ -1023,45 +909,27 @@ NuclideConfigSolution crossover( const NuclideConfigSolution &X1,
   CROSSOVER_DOUBLE( manual_eff_cluster_num_sigma )
 
   // Manual equation forms/orders
-  CROSSOVER_INT( initial_manual_relEff_1peak_eqn_order )
-  CROSSOVER_INT( initial_manual_relEff_1peak_form )
-  CROSSOVER_INT( initial_manual_relEff_2peak_eqn_order )
-  CROSSOVER_INT( initial_manual_relEff_2peak_form )
-  CROSSOVER_INT( initial_manual_relEff_3peak_eqn_order )
-  CROSSOVER_INT( initial_manual_relEff_3peak_form )
-  CROSSOVER_INT( initial_manual_relEff_4peak_physical_use_hoerl )
-  CROSSOVER_INT( initial_manual_relEff_4peak_eqn_order )
-  CROSSOVER_INT( initial_manual_relEff_4peak_form )
-  CROSSOVER_INT( initial_manual_relEff_many_peak_physical_use_hoerl )
-  CROSSOVER_INT( initial_manual_relEff_many_peak_eqn_order )
-  CROSSOVER_INT( initial_manual_relEff_manypeak_form )
+  CROSSOVER_DOUBLE( manual_releff_aicc_penalty )
+  CROSSOVER_DOUBLE( cont_order_aicc_penalty )
 
   // Manual clustering doubles
-  CROSSOVER_DOUBLE( manual_rel_eff_sol_min_data_area_keep )
-  CROSSOVER_DOUBLE( manual_rel_eff_sol_min_est_peak_area_keep )
-  CROSSOVER_DOUBLE( manual_rel_eff_sol_min_est_significance_keep )
+  CROSSOVER_DOUBLE( manual_keep_significance_z )
   CROSSOVER_DOUBLE( manual_rel_eff_sol_min_fwhm_roi )
-  CROSSOVER_DOUBLE( manual_rel_eff_sol_min_fwhm_quad_cont )
   CROSSOVER_DOUBLE( manual_rel_eff_sol_max_fwhm )
-  CROSSOVER_DOUBLE( manual_rel_eff_min_tail_contribution )
-  CROSSOVER_DOUBLE( manual_rel_eff_tail_width_scale_fwhm )
-  CROSSOVER_DOUBLE( manual_rel_eff_roi_width_num_fwhm_lower )
-  CROSSOVER_DOUBLE( manual_rel_eff_roi_width_num_fwhm_upper )
+  CROSSOVER_DOUBLE( merge_tail_z )
+  CROSSOVER_DOUBLE( merge_clean_gap_fwhm )
+  CROSSOVER_DOUBLE( manual_roi_core_num_fwhm )
 
   // Auto RelEff
   CROSSOVER_INT( fwhm_form )
   CROSSOVER_DOUBLE( rel_eff_auto_base_rel_eff_uncert )
   CROSSOVER_DOUBLE( auto_rel_eff_cluster_num_sigma )
-  CROSSOVER_DOUBLE( auto_rel_eff_sol_min_data_area_keep )
-  CROSSOVER_DOUBLE( auto_rel_eff_sol_min_est_peak_area_keep )
-  CROSSOVER_DOUBLE( auto_rel_eff_sol_min_est_significance_keep )
-  CROSSOVER_DOUBLE( auto_rel_eff_roi_width_num_fwhm_lower )
-  CROSSOVER_DOUBLE( auto_rel_eff_roi_width_num_fwhm_upper )
+  CROSSOVER_DOUBLE( auto_keep_significance_z )
+  CROSSOVER_DOUBLE( auto_roi_core_num_fwhm )
+  CROSSOVER_DOUBLE( roi_extend_z )
+  CROSSOVER_DOUBLE( roi_max_num_fwhm )
   CROSSOVER_DOUBLE( auto_rel_eff_sol_max_fwhm )
-  CROSSOVER_DOUBLE( auto_rel_eff_min_tail_contribution )
-  CROSSOVER_DOUBLE( auto_rel_eff_tail_width_scale_fwhm )
   CROSSOVER_DOUBLE( auto_rel_eff_sol_min_fwhm_roi )
-  CROSSOVER_DOUBLE( auto_rel_eff_sol_min_fwhm_quad_cont )
 
   // RelActAuto model
   CROSSOVER_INT( rel_eff_eqn_type )
@@ -1077,16 +945,13 @@ NuclideConfigSolution crossover( const NuclideConfigSolution &X1,
   CROSSOVER_INT( fit_energy_cal )
 
   // ROI significance
-  CROSSOVER_DOUBLE( roi_significance_min_chi2_reduction )
-  CROSSOVER_DOUBLE( roi_significance_min_peak_sig )
-  CROSSOVER_DOUBLE( roi_significance_min_quad_cont_chi2_dof )
+  CROSSOVER_DOUBLE( roi_significance_z )
   CROSSOVER_DOUBLE( observable_peak_initial_significance_threshold )
   CROSSOVER_DOUBLE( observable_peak_final_significance_threshold )
 
   // Step continuum
-  CROSSOVER_DOUBLE( step_cont_min_peak_area )
   CROSSOVER_DOUBLE( step_cont_min_peak_significance )
-  CROSSOVER_DOUBLE( step_cont_left_right_nsigma )
+  CROSSOVER_DOUBLE( step_trial_chi2_margin )
 
   // Manual rel-eff chi2/dof cap - only crossed when GAOptimized.
   if( sm_rel_eff_chi2_cap_mode == RelEffChi2CapMode::GAOptimized )

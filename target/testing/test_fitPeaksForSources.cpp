@@ -24,6 +24,7 @@
 
 #include <set>
 #include <map>
+#include <array>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -31,6 +32,7 @@
 #include <numeric>
 #include <iostream>
 #include <algorithm>
+#include <functional>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -1266,6 +1268,82 @@ BOOST_AUTO_TEST_CASE( test_trinitite_do_not_use_existing_sequence )
   }
 }
 
+// Regression (2026-07 review, P1): the FitNormBkgrndPeaks path used to rebuild options.rois from
+// the raw input ROIs, discarding the existing-ROI trimming and mixed-ROI setup - so NORM/source
+// ROIs could cover existing other-source user peaks.  Fit Ba-133 first, then Cs-137 with NORM
+// background peaks, and require that no new observable ROI covers the mean of a retained
+// (not-removed) existing user peak.  Note: NORM fits disable background subtraction, so this case
+// is on the slow side.
+BOOST_AUTO_TEST_CASE( test_norm_fit_preserves_existing_rois )
+{
+  const LoadedSpectrum spec = load_test_data_spectrum(
+    "trinitite_sample_b.n42", "trinitite_sample_b_background.n42" );
+
+  BOOST_REQUIRE( spec.foreground );
+  BOOST_REQUIRE( spec.background );
+
+  const vector<shared_ptr<const PeakDef>> auto_peaks
+    = run_auto_search( spec.foreground, spec.isHPGe );
+
+  // ---- Step 1: Ba-133, default mode, to establish existing user peaks/ROIs ----
+  vector<shared_ptr<const PeakDef>> user_peaks;
+  {
+    const vector<RelActCalcAuto::SrcVariant> sources = make_sources( {"Ba133"} );
+    const FitPeaksForNuclides::PeakFitResult result
+      = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
+
+    verify_fit_result( result, user_peaks, spec.foreground, {} );
+    BOOST_REQUIRE_GE( result.observable_peaks.size(), 1u );
+    user_peaks = apply_fit_result( user_peaks, result );
+    BOOST_TEST_MESSAGE( "Ba-133 established " << user_peaks.size() << " existing peaks" );
+  }
+
+  // ---- Step 2: Cs-137 with NORM background peaks, against the existing Ba-133 peaks ----
+  {
+    const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> opts
+      = FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks;
+    const vector<RelActCalcAuto::SrcVariant> sources = make_sources( {"Cs137"} );
+
+    const FitPeaksForNuclides::PeakFitResult result
+      = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe, opts );
+
+    verify_fit_result( result, user_peaks, spec.foreground, opts );
+    verify_removed_peaks_replaced( result );
+
+    BOOST_CHECK( has_peak_near( result.observable_peaks, 661.66, 3.0 ) );
+
+    // The P1 regression check: a retained (not-removed) existing user peak's mean must not be
+    // covered by any new observable ROI (per the FitSrcPeaksOptions default-mode contract).
+    // A Ba-133 peak MAY legitimately be removed+replaced (mixed-ROI bystander flow, e.g. the
+    // 356 keV ROI vs Pb-214 352 keV from the Ra-226 NORM chain) - those are excluded here.
+    set<const PeakDef *> removed_ptrs;
+    for( const shared_ptr<const PeakDef> &p : result.original_peaks_to_remove )
+      removed_ptrs.insert( p.get() );
+
+    for( const shared_ptr<const PeakDef> &user_peak : user_peaks )
+    {
+      if( !user_peak || removed_ptrs.count( user_peak.get() ) )
+        continue;
+
+      const double mean = user_peak->mean();
+      set<const PeakContinuum *> seen_conts;
+      for( const PeakDef &obs : result.observable_peaks )
+      {
+        if( !obs.continuum() || !seen_conts.insert( obs.continuum().get() ).second )
+          continue;
+
+        const bool covers = (mean >= obs.continuum()->lowerEnergy())
+                            && (mean <= obs.continuum()->upperEnergy());
+        BOOST_CHECK_MESSAGE( !covers,
+          "NORM-fit observable ROI [" << obs.continuum()->lowerEnergy() << ", "
+          << obs.continuum()->upperEnergy() << "] keV covers retained existing "
+          << user_peak->sourceName() << " peak mean at " << mean << " keV" );
+      }
+    }
+  }
+}
+
+
 BOOST_AUTO_TEST_SUITE_END() // TrinititeSequential
 
 
@@ -1537,3 +1615,184 @@ BOOST_AUTO_TEST_CASE( test_eu154_does_not_destroy_am241_peak )
 }
 
 BOOST_AUTO_TEST_SUITE_END() // BystanderDegradation
+
+
+// ---------------------------------------------------------------------------
+// Unit tests for the statistical detail:: helpers introduced by the
+// dimensionless-parameter reformulation (local continuum estimate, adaptive
+// ROI extent, clean-gap merge test, continuum-order selection).
+// All use exact synthetic spectra (no Poisson noise) so assertions test the
+// logic rather than noise robustness.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_SUITE( StatisticalDetailHelpers )
+
+namespace
+{
+  // Synthetic spectrum with per-keV continuum density given by `density`, plus optional
+  // Gaussians described by (mean, sigma, total counts).
+  std::shared_ptr<const SpecUtils::Measurement> make_synthetic_spectrum(
+    const size_t nchannel,
+    const float lower_energy,
+    const float channel_width,
+    const std::function<double(double)> &density,
+    const std::vector<std::array<double,3>> &gaussians = {} )
+  {
+    auto cal = std::make_shared<SpecUtils::EnergyCalibration>();
+    cal->set_polynomial( nchannel, { lower_energy, channel_width }, {} );
+
+    auto counts = std::make_shared<std::vector<float>>( nchannel, 0.0f );
+    for( size_t i = 0; i < nchannel; ++i )
+    {
+      const double lo = lower_energy + i*channel_width;
+      const double hi = lo + channel_width;
+      const double mid = 0.5*(lo + hi);
+      double val = density( mid ) * channel_width;
+      for( const std::array<double,3> &g : gaussians )
+      {
+        const double t0 = (lo - g[0]) / (std::sqrt(2.0) * g[1]);
+        const double t1 = (hi - g[0]) / (std::sqrt(2.0) * g[1]);
+        val += g[2] * 0.5 * (std::erf(t1) - std::erf(t0));
+      }
+      (*counts)[i] = static_cast<float>( val );
+    }
+
+    auto meas = std::make_shared<SpecUtils::Measurement>();
+    meas->set_gamma_counts( counts, 100.0f, 100.0f );
+    meas->set_energy_calibration( cal );
+    return meas;
+  }//make_synthetic_spectrum
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_estimate_local_continuum )
+{
+  using FitPeaksForNuclides::detail::LocalContinuumEstimate;
+  using FitPeaksForNuclides::detail::estimate_local_continuum;
+
+  // Flat continuum: 5 counts/keV over [0, 3000] keV, 1 keV channels
+  const auto flat = make_synthetic_spectrum( 3000, 0.0f, 1.0f, []( double ){ return 5.0; } );
+
+  const LocalContinuumEstimate flat_est = estimate_local_continuum( flat, 590.0, 610.0, 2.0, 0.5 );
+  BOOST_REQUIRE( flat_est.valid );
+  BOOST_CHECK_CLOSE( flat_est.integral( 595.0, 605.0 ), 50.0, 5.0 );
+
+  // Sloped continuum: density falls linearly from 20 at 0 keV to 0 at 2000 keV
+  const auto sloped = make_synthetic_spectrum( 2000, 0.0f, 1.0f,
+      []( double e ){ return std::max( 0.0, 20.0 * (1.0 - e/2000.0) ); } );
+
+  const LocalContinuumEstimate slope_est = estimate_local_continuum( sloped, 980.0, 1020.0, 2.0, 0.5 );
+  BOOST_REQUIRE( slope_est.valid );
+  // At 1000 keV density is 10/keV; over [990, 1010] expect ~200 counts
+  BOOST_CHECK_CLOSE( slope_est.integral( 990.0, 1010.0 ), 200.0, 5.0 );
+
+  // Degenerate inputs are flagged invalid rather than crashing
+  const LocalContinuumEstimate bad = estimate_local_continuum( flat, 700.0, 650.0, 2.0, 0.5 );
+  BOOST_CHECK( !bad.valid );
+}//test_estimate_local_continuum
+
+
+BOOST_AUTO_TEST_CASE( test_extend_roi_by_sidebands )
+{
+  using FitPeaksForNuclides::detail::AdaptiveExtentResult;
+  using FitPeaksForNuclides::detail::extend_roi_by_sidebands;
+
+  const double fwhm = 2.0;
+  const auto fwhm_at = [fwhm]( double ){ return fwhm; };
+  const std::vector<double> energies( 1, 600.0 );
+  const std::vector<double> amps( 1, 1000.0 );
+
+  // Case 1: flat continuum - extension should run to the cap on both sides
+  const auto flat = make_synthetic_spectrum( 3000, 0.0f, 1.0f, []( double ){ return 5.0; },
+                                             { {600.0, fwhm/2.355, 1000.0} } );
+  const AdaptiveExtentResult full = extend_roi_by_sidebands(
+      energies, amps, fwhm, flat, fwhm_at, {}, 1.5, 2.0, 5.0,
+      PeakDef::SkewType::NoSkew, 0.0, 3000.0 );
+
+  // Cap is 5 FWHM = 10 keV each side; block quantization can leave one block un-taken
+  BOOST_CHECK_LT( full.lower, 600.0 - 0.8*5.0*fwhm );
+  BOOST_CHECK_GT( full.upper, 600.0 + 0.8*5.0*fwhm );
+  BOOST_CHECK_GT( full.sideband_lower_kev, 0.0 );
+  BOOST_CHECK_GT( full.sideband_upper_kev, 0.0 );
+
+  // Case 2: a large un-modeled structure at 610 keV must stop the high-side extension short,
+  // while the clean low side still extends further out
+  const auto bumped = make_synthetic_spectrum( 3000, 0.0f, 1.0f, []( double ){ return 5.0; },
+      { {600.0, fwhm/2.355, 1000.0}, {610.0, fwhm/2.355, 5000.0} } );
+  const AdaptiveExtentResult stopped = extend_roi_by_sidebands(
+      energies, amps, fwhm, bumped, fwhm_at, {}, 1.5, 2.0, 8.0,
+      PeakDef::SkewType::NoSkew, 0.0, 3000.0 );
+
+  BOOST_CHECK_LT( stopped.upper, 609.0 );
+  BOOST_CHECK_LT( stopped.lower, 600.0 - 0.8*8.0*fwhm );
+
+  // Case 3: no usable spectrum - falls back to the core extent
+  const AdaptiveExtentResult core_only = extend_roi_by_sidebands(
+      energies, amps, fwhm, nullptr, fwhm_at, {}, 1.5, 2.0, 5.0,
+      PeakDef::SkewType::NoSkew, 0.0, 3000.0 );
+  BOOST_CHECK_CLOSE( core_only.lower, 600.0 - 1.5*fwhm, 1.0e-6 );
+  BOOST_CHECK_CLOSE( core_only.upper, 600.0 + 1.5*fwhm, 1.0e-6 );
+}//test_extend_roi_by_sidebands
+
+
+BOOST_AUTO_TEST_CASE( test_find_clean_gap_between )
+{
+  using FitPeaksForNuclides::detail::find_clean_gap_between;
+
+  const double fwhm = 2.0;
+  const auto fwhm_at = [fwhm]( double ){ return fwhm; };
+  const auto flat = make_synthetic_spectrum( 3000, 0.0f, 1.0f, []( double ){ return 5.0; } );
+
+  double win_lo = 0.0, win_hi = 0.0;
+
+  // Well-separated small peaks (10 FWHM apart): clean gap exists
+  const std::vector<double> left_e( 1, 600.0 ), right_e( 1, 620.0 );
+  const std::vector<double> small_amp( 1, 100.0 );
+  BOOST_CHECK( find_clean_gap_between( left_e, small_amp, right_e, small_amp,
+      600.0, 620.0, flat, fwhm_at, 2.0, 1.0, &win_lo, &win_hi ) );
+  BOOST_CHECK_GT( win_lo, 600.0 - 1.0e-9 );
+  BOOST_CHECK_LT( win_hi, 620.0 + 1.0e-9 );
+
+  // Anchors closer than the required gap width: must merge (no room to anchor a continuum)
+  const std::vector<double> close_right( 1, 601.5 );
+  BOOST_CHECK( !find_clean_gap_between( left_e, small_amp, close_right, small_amp,
+      600.0, 601.5, flat, fwhm_at, 2.0, 1.0, nullptr, nullptr ) );
+
+  // At 3-FWHM separation the answer depends on amplitude vs continuum noise: small peaks leave
+  // a clean anchoring window between them, but 1e7-count peaks put >> sqrt(continuum) of tail
+  // into every candidate block (even the midpoint sits at only ~3.5 sigma) - must merge.
+  const std::vector<double> mid_right( 1, 606.0 );
+  BOOST_CHECK( find_clean_gap_between( left_e, small_amp, mid_right, small_amp,
+      600.0, 606.0, flat, fwhm_at, 2.0, 1.0, nullptr, nullptr ) );
+  const std::vector<double> huge_amp( 1, 1.0e7 );
+  BOOST_CHECK( !find_clean_gap_between( left_e, huge_amp, mid_right, huge_amp,
+      600.0, 606.0, flat, fwhm_at, 2.0, 1.0, nullptr, nullptr ) );
+
+  // Zero/unknown amplitudes degrade to a pure gap-width test
+  const std::vector<double> zero_amp( 1, 0.0 );
+  BOOST_CHECK( find_clean_gap_between( left_e, zero_amp, right_e, zero_amp,
+      600.0, 620.0, flat, fwhm_at, 2.0, 1.0, nullptr, nullptr ) );
+}//test_find_clean_gap_between
+
+
+BOOST_AUTO_TEST_CASE( test_select_continuum_order_by_sidebands )
+{
+  using FitPeaksForNuclides::detail::select_continuum_order_by_sidebands;
+
+  // Linear continuum: sidebands are a straight line - Linear must win
+  const auto lin = make_synthetic_spectrum( 3000, 0.0f, 1.0f,
+      []( double e ){ return 20.0 - 0.005*e; } );
+  BOOST_CHECK( select_continuum_order_by_sidebands( lin, 580.0, 620.0, 595.0, 605.0, 2.0 )
+               == PeakContinuum::OffsetType::Linear );
+
+  // Strongly curved continuum (quadratic in energy): Quadratic must win
+  const auto quad = make_synthetic_spectrum( 3000, 0.0f, 1.0f,
+      []( double e ){ const double d = (e - 600.0); return 50.0 + 0.05*d*d; } );
+  BOOST_CHECK( select_continuum_order_by_sidebands( quad, 560.0, 640.0, 595.0, 605.0, 2.0 )
+               == PeakContinuum::OffsetType::Quadratic );
+
+  // Too few sideband channels: falls back to Linear
+  BOOST_CHECK( select_continuum_order_by_sidebands( quad, 598.0, 602.0, 599.0, 601.0, 2.0 )
+               == PeakContinuum::OffsetType::Linear );
+}//test_select_continuum_order_by_sidebands
+
+BOOST_AUTO_TEST_SUITE_END() // StatisticalDetailHelpers

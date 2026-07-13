@@ -991,6 +991,139 @@ const char *det_type_filename_str( const PeakFitUtils::CoarseResolutionType type
 }//det_type_filename_str(...)
 
 
+/** Score a single config across all precomputed spectra.
+
+ This is the exact objective the NuclideConfigGA action minimizes; it is shared with the
+ NuclideConfigEval action so a saved gene-line can be re-scored on a different dataset
+ (holdout split, other live-times, other detector classes) with identical math.
+
+ Per-spectrum tasks write into pre-sized slots so summation order is independent of
+ completion order.  The two out-params receive the foreground-only and raw bg-penalty
+ totals so reporting can show the breakdown when --background-fit-trial is on.
+
+ Returns `total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg`.
+ */
+static double score_config_over_precomputed(
+    const std::vector<NuclideConfig_GA::PrecomputedNuclideData> &precomputed,
+    const FitPeaksForNuclides::PeakFitForNuclideConfig &config,
+    const size_t num_threads,
+    double *out_fg, double *out_bg )
+{
+  const double num_sigma_contribution = 1.5;
+
+  // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
+  // Called from both the serial and parallel paths below; safe to invoke concurrently.
+  const auto score_one_spectrum = [&config, num_sigma_contribution](
+      const NuclideConfig_GA::PrecomputedNuclideData &pd ) -> std::pair<double,double>
+  {
+    Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
+    if( NuclideConfig_GA::sm_background_mode == NuclideConfig_GA::BackgroundMode::NoBackgroundFitNorm )
+      options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
+
+    try
+    {
+      const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
+
+      const FitPeaksForNuclides::PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
+        pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
+        pd.background, pd.drf, options, config, pd.peak_fit_prefs );
+
+      if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+        return { NuclideConfig_GA::sm_fit_failure_penalty, 0.0 };  // Penalty for failed foreground fits, no bg attempted
+
+      const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
+
+      // Score against the det-type-appropriate, low-energy-filtered expected peaks (sub-30 keV
+      // for HPGe / sub-50 keV otherwise are unreliable), and pass det_type so the def-wanted
+      // significance/area gates match the detector resolution.
+      const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
+      const std::vector<ExpectedPhotopeakInfo> scoring_peaks
+        = PeakFitImproveData::filter_photopeaks_for_scoring( pd.src_info->expected_signal_photopeaks, det_type );
+
+      CombinedPeakFitScore combined_score;
+      combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
+        fit_peaks, scoring_peaks, num_sigma_contribution );
+      combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
+        fit_peaks, scoring_peaks, num_sigma_contribution, det_type );
+      combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
+        fit_peaks, scoring_peaks, det_type );
+      CandidatePeak_GA::correct_score_for_escape_peaks(
+        combined_score.candidate_peak_score, scoring_peaks );
+
+      // openGA MINIMIZES the objective, so every contribution must be a cost (lower = better).
+      // find_weight and candidate_peak_score.score are higher-is-better rewards (each correct
+      // source peak adds, each spurious/extra peak subtracts), while final_fit_score.total_weight
+      // is already lower-is-better (area mismatch).  Negate the reward terms so finding the
+      // correct source peaks LOWERS the cost and spurious peaks RAISE it.  Mirrors the sibling
+      // InitialFit/CandidatePeak GAs, which negate their scores before returning to openGA.
+      // The final term penalizes missed expected AREA (fraction of definitely-wanted area not
+      // detected, after escape correction): without it a missed peak is "free" (its area error is
+      // never scored), so the GA could drop hard peaks / tolerate total-misses.  See NuclideConfig_GA.h.
+      const double fg_score = combined_score.final_fit_score.total_weight
+                            - ( combined_score.initial_fit_weights.find_weight
+                                + combined_score.candidate_peak_score.score )
+                            + NuclideConfig_GA::sm_miss_penalty_weight
+                                * PeakFitImproveData::missed_def_wanted_area_fraction(
+                                    scoring_peaks,
+                                    combined_score.candidate_peak_score.def_expected_but_not_detected,
+                                    det_type );
+
+      // Background-false-positive penalty.  No-op (returns 0) when
+      // sm_do_background_fit_trial is false or background_auto_search_peaks
+      // is empty for this entry.
+      const double bg_raw = NuclideConfig_GA::compute_background_fit_penalty(
+          pd, config, NuclideConfig_GA::sm_background_mode, /*detail_out=*/nullptr );
+
+      return { fg_score, bg_raw };
+    }
+    catch( const std::exception & )
+    {
+      return { NuclideConfig_GA::sm_fit_failure_penalty, 0.0 };  // Penalty for exceptions
+    }
+  };//score_one_spectrum lambda
+
+  const size_t inner_threads = std::max<size_t>( 1, num_threads );
+
+  double total_fg = 0.0, total_bg = 0.0;
+
+  if( inner_threads <= 1 )
+  {
+    for( const NuclideConfig_GA::PrecomputedNuclideData &pd : precomputed )
+    {
+      const auto [fg, bg] = score_one_spectrum( pd );
+      total_fg += fg;
+      total_bg += bg;
+    }
+  }
+  else
+  {
+    // Parallel path: each task writes into its own slot, then we sum in
+    // spectrum-index order so the result is independent of thread count.
+    std::vector<std::pair<double,double>> partials( precomputed.size(), {0.0, 0.0} );
+    {
+      boost::asio::thread_pool pool( inner_threads );
+      for( size_t i = 0; i < precomputed.size(); ++i )
+      {
+        boost::asio::post( pool, [i, &precomputed, &partials, &score_one_spectrum]()
+        {
+          partials[i] = score_one_spectrum( precomputed[i] );
+        } );
+      }
+      pool.join();
+    }
+    for( const auto &p : partials )
+    {
+      total_fg += p.first;
+      total_bg += p.second;
+    }
+  }
+
+  if( out_fg ) *out_fg = total_fg;
+  if( out_bg ) *out_bg = total_bg;
+
+  return total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg;
+}//score_config_over_precomputed(...)
+
 
 int main( int argc, char **argv )
 {
@@ -1019,6 +1152,11 @@ int main( int argc, char **argv )
   bool background_fit_trial_arg = false;
   string chi2_cap_mode_str = "fixed";
   double chi2_cap_fixed_value = 25.0;
+  double holdout_frac = 0.0;
+  string holdout_role_str = "all";
+  size_t holdout_seed = 20260703;
+  string config_genes_file;
+  string eval_html_file;
 
   po::options_description desc( "Allowed options" );
   desc.add_options()
@@ -1063,7 +1201,22 @@ int main( int argc, char **argv )
        "concurrent runs don't overwrite each other's state.")
     ("resume", po::value<string>(),
        "NuclideConfigGA: resume by seeding the initial population from the given checkpoint file.  "
-       "Refuses to resume if the run options (det-type, dataset filters, chi2-cap, bg-trial) differ.");
+       "Refuses to resume if the run options (det-type, dataset filters, chi2-cap, bg-trial) differ.")
+    ("holdout-frac", po::value<double>( &holdout_frac )->default_value( holdout_frac ),
+       "Fraction of source entries (by src_name hash) assigned to the held-out 'eval' split.  "
+       "0 disables the split.  The hash is of the source name only, so an entry's split assignment "
+       "is identical across detectors/cities/live-times (eval sources are unseen during tuning, "
+       "while every detector/city/live-time stratum stays represented in both splits).")
+    ("holdout-role", po::value<string>( &holdout_role_str )->default_value( holdout_role_str ),
+       "Which split this run uses when --holdout-frac > 0: 'train' (tuning), 'eval' (validation), "
+       "or 'all' (no filtering).")
+    ("holdout-seed", po::value<size_t>( &holdout_seed )->default_value( holdout_seed ),
+       "Seed mixed into the split hash; keep it identical between the tuning run and its evaluation.")
+    ("config-genes", po::value<string>( &config_genes_file ),
+       "NuclideConfigEval: file whose first non-comment line is a gene set, in either checkpoint-TSV "
+       "(tab-separated) or results-txt (comma-space) key=value format.")
+    ("eval-html", po::value<string>( &eval_html_file ),
+       "NuclideConfigEval: optional output HTML report filename for the evaluated config.");
   
   po::variables_map vm;
   
@@ -1144,7 +1297,11 @@ int main( int argc, char **argv )
       return vm.count(key) ? vm[key].as<string>() : string(dflt);
     };
     ostringstream opts_summary;
-    opts_summary << "det_type=" << det_type_str
+    // genome=v2: the statistically-reformulated gene set (dimensionless keep/merge/extent
+    // thresholds, AICc model selection).  Bump on any change to gene meaning so --resume
+    // refuses checkpoints from a different genome even if all gene names happen to parse.
+    opts_summary << "genome=v2"
+                 << "; det_type=" << det_type_str
                  << "; detector=" << opt_or( "detector", "(default)" )
                  << "; city=" << opt_or( "city", "(all)" )
                  << "; live_time=" << opt_or( "live-time", "(all)" )
@@ -1153,8 +1310,23 @@ int main( int argc, char **argv )
                  << "; data_base_dir=" << data_base_dir
                  << "; chi2_cap_mode=" << chi2_cap_mode_str
                  << "; chi2_cap_value=" << chi2_cap_fixed_value
-                 << "; bg_trial=" << (background_fit_trial_arg ? 1 : 0);
+                 << "; bg_trial=" << (background_fit_trial_arg ? 1 : 0)
+                 << "; holdout_frac=" << holdout_frac
+                 << "; holdout_role=" << holdout_role_str
+                 << "; holdout_seed=" << holdout_seed;
     NuclideConfig_GA::sm_checkpoint_options_summary = opts_summary.str();
+  }
+
+  if( (holdout_role_str != "train") && (holdout_role_str != "eval") && (holdout_role_str != "all") )
+  {
+    cerr << "Error: --holdout-role must be 'train', 'eval', or 'all' (got '" << holdout_role_str << "')." << endl;
+    return -7;
+  }
+
+  if( (holdout_frac < 0.0) || (holdout_frac >= 1.0) )
+  {
+    cerr << "Error: --holdout-frac must be in [0, 1) (got " << holdout_frac << ")." << endl;
+    return -7;
   }
   
   // Parse action enum
@@ -1169,6 +1341,7 @@ int main( int argc, char **argv )
     DetTypeClassify,
     ValidateDetType,
     NuclideConfigGA,
+    NuclideConfigEval,
     SpectroscopicExtent
   };//enum class OptimizationAction : int
   
@@ -1191,11 +1364,13 @@ int main( int argc, char **argv )
     action = OptimizationAction::ValidateDetType;
   else if( action_str == "NuclideConfigGA" )
     action = OptimizationAction::NuclideConfigGA;
+  else if( action_str == "NuclideConfigEval" )
+    action = OptimizationAction::NuclideConfigEval;
   else if( action_str == "SpectroscopicExtent" )
     action = OptimizationAction::SpectroscopicExtent;
   else
   {
-    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide, DetTypeClassify, ValidateDetType, NuclideConfigGA, SpectroscopicExtent" << endl;
+    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide, DetTypeClassify, ValidateDetType, NuclideConfigGA, NuclideConfigEval, SpectroscopicExtent" << endl;
     return -4;
   }
 
@@ -1383,6 +1558,42 @@ int main( int argc, char **argv )
          << before << " entries matching prefixes: " << nuclide_csv << endl;
     input_srcs = std::move( filtered );
   }//if( source-nuclide filter )
+
+  // Train/eval holdout split.  Assignment is a deterministic hash of the source name plus
+  // the seed, so the same source lands in the same split on every machine and for every
+  // detector/city/live-time stratum: eval sources are never seen during tuning, while every
+  // stratum stays represented in both splits.  FNV-1a is used (not std::hash) because
+  // std::hash is implementation-defined and the split must reproduce across platforms.
+  if( (holdout_frac > 0.0) && (holdout_role_str != "all") )
+  {
+    const auto fnv1a_hash = []( const string &key ) -> uint64_t {
+      uint64_t h = 14695981039346656037ULL;
+      for( const char c : key )
+      {
+        h ^= static_cast<uint64_t>( static_cast<unsigned char>(c) );
+        h *= 1099511628211ULL;
+      }
+      return h;
+    };
+
+    const bool want_eval = (holdout_role_str == "eval");
+    const size_t before = input_srcs.size();
+    vector<DataSrcInfo> split_srcs;
+    for( DataSrcInfo &info : input_srcs )
+    {
+      const uint64_t hash = fnv1a_hash( info.src_info.src_name + "|" + std::to_string(holdout_seed) );
+      // Top 53 bits -> uniform in [0,1); entries above (1 - holdout_frac) form the eval split.
+      const double u = static_cast<double>( hash >> 11 ) / 9007199254740992.0;
+      const bool is_eval = (u >= (1.0 - holdout_frac));
+      if( is_eval == want_eval )
+        split_srcs.push_back( std::move( info ) );
+    }
+
+    cout << "Holdout split: kept " << split_srcs.size() << " of " << before
+         << " entries (role=" << holdout_role_str << ", frac=" << holdout_frac
+         << ", seed=" << holdout_seed << ")." << endl;
+    input_srcs = std::move( split_srcs );
+  }//if( holdout split requested )
 
   // Handle --create-compact-data: write compact format, then round-trip verify
   if( vm.count( "create-compact-data" ) )
@@ -1769,128 +1980,16 @@ int main( int argc, char **argv )
         break;
       }
 
-      const double num_sigma_contribution = 1.5;
-
       // The GA evaluation function: given a config, score it across all precomputed spectra.
-      // Per-individual parallelism is controlled by --num-threads-per-individual; the per-spectrum
-      // tasks write into pre-sized slots so summation order is independent of completion order.
-      // The two out-params receive the foreground-only and raw bg-penalty totals so reporting
-      // can show the breakdown when --background-fit-trial is on.
-      const auto ga_eval = [&precomputed, num_sigma_contribution](
+      // Per-individual parallelism is controlled by --num-threads-per-individual.  The scoring
+      // math lives in score_config_over_precomputed() so the NuclideConfigEval action can
+      // re-score saved genes with identical math.
+      const auto ga_eval = [&precomputed](
           const FitPeaksForNuclides::PeakFitForNuclideConfig &config,
           double *out_fg, double *out_bg ) -> double
       {
-        // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
-        // Called from both the serial and parallel paths below; safe to invoke concurrently.
-        const auto score_one_spectrum = [&config, num_sigma_contribution](
-            const NuclideConfig_GA::PrecomputedNuclideData &pd ) -> std::pair<double,double>
-        {
-          Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
-          if( NuclideConfig_GA::sm_background_mode == NuclideConfig_GA::BackgroundMode::NoBackgroundFitNorm )
-            options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
-
-          try
-          {
-            const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
-
-            const FitPeaksForNuclides::PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
-              pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
-              pd.background, pd.drf, options, config, pd.peak_fit_prefs );
-
-            if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
-              return { NuclideConfig_GA::sm_fit_failure_penalty, 0.0 };  // Penalty for failed foreground fits, no bg attempted
-
-            const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
-
-            // Score against the det-type-appropriate, low-energy-filtered expected peaks (sub-30 keV
-            // for HPGe / sub-50 keV otherwise are unreliable), and pass det_type so the def-wanted
-            // significance/area gates match the detector resolution.
-            const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
-            const std::vector<ExpectedPhotopeakInfo> scoring_peaks
-              = PeakFitImproveData::filter_photopeaks_for_scoring( pd.src_info->expected_signal_photopeaks, det_type );
-
-            CombinedPeakFitScore combined_score;
-            combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
-              fit_peaks, scoring_peaks, num_sigma_contribution );
-            combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
-              fit_peaks, scoring_peaks, num_sigma_contribution, det_type );
-            combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
-              fit_peaks, scoring_peaks, det_type );
-            CandidatePeak_GA::correct_score_for_escape_peaks(
-              combined_score.candidate_peak_score, scoring_peaks );
-
-            // openGA MINIMIZES the objective, so every contribution must be a cost (lower = better).
-            // find_weight and candidate_peak_score.score are higher-is-better rewards (each correct
-            // source peak adds, each spurious/extra peak subtracts), while final_fit_score.total_weight
-            // is already lower-is-better (area mismatch).  Negate the reward terms so finding the
-            // correct source peaks LOWERS the cost and spurious peaks RAISE it.  Mirrors the sibling
-            // InitialFit/CandidatePeak GAs, which negate their scores before returning to openGA.
-            // The final term penalizes missed expected AREA (fraction of definitely-wanted area not
-            // detected, after escape correction): without it a missed peak is "free" (its area error is
-            // never scored), so the GA could drop hard peaks / tolerate total-misses.  See NuclideConfig_GA.h.
-            const double fg_score = combined_score.final_fit_score.total_weight
-                                  - ( combined_score.initial_fit_weights.find_weight
-                                      + combined_score.candidate_peak_score.score )
-                                  + NuclideConfig_GA::sm_miss_penalty_weight
-                                      * PeakFitImproveData::missed_def_wanted_area_fraction(
-                                          scoring_peaks,
-                                          combined_score.candidate_peak_score.def_expected_but_not_detected,
-                                          det_type );
-
-            // Background-false-positive penalty.  No-op (returns 0) when
-            // sm_do_background_fit_trial is false or background_auto_search_peaks
-            // is empty for this entry.
-            const double bg_raw = NuclideConfig_GA::compute_background_fit_penalty(
-                pd, config, NuclideConfig_GA::sm_background_mode, /*detail_out=*/nullptr );
-
-            return { fg_score, bg_raw };
-          }
-          catch( const std::exception & )
-          {
-            return { NuclideConfig_GA::sm_fit_failure_penalty, 0.0 };  // Penalty for exceptions
-          }
-        };//score_one_spectrum lambda
-
-        const size_t inner_threads = std::max<size_t>( 1, PeakFitImprove::sm_num_threads_per_individual );
-
-        double total_fg = 0.0, total_bg = 0.0;
-
-        if( inner_threads <= 1 )
-        {
-          for( const NuclideConfig_GA::PrecomputedNuclideData &pd : precomputed )
-          {
-            const auto [fg, bg] = score_one_spectrum( pd );
-            total_fg += fg;
-            total_bg += bg;
-          }
-        }
-        else
-        {
-          // Parallel path: each task writes into its own slot, then we sum in
-          // spectrum-index order so the result is independent of thread count.
-          std::vector<std::pair<double,double>> partials( precomputed.size(), {0.0, 0.0} );
-          {
-            boost::asio::thread_pool pool( inner_threads );
-            for( size_t i = 0; i < precomputed.size(); ++i )
-            {
-              boost::asio::post( pool, [i, &precomputed, &partials, &score_one_spectrum]()
-              {
-                partials[i] = score_one_spectrum( precomputed[i] );
-              } );
-            }
-            pool.join();
-          }
-          for( const auto &p : partials )
-          {
-            total_fg += p.first;
-            total_bg += p.second;
-          }
-        }
-
-        if( out_fg ) *out_fg = total_fg;
-        if( out_bg ) *out_bg = total_bg;
-
-        return total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg;
+        return score_config_over_precomputed( precomputed, config,
+            PeakFitImprove::sm_num_threads_per_individual, out_fg, out_bg );
       };//ga_eval lambda
 
       // Make the GA's non-optimized config fields (skew_type, etc.) match this detector type's
@@ -1903,6 +2002,100 @@ int main( int argc, char **argv )
 
       break;
     }//case OptimizationAction::NuclideConfigGA
+
+    case OptimizationAction::NuclideConfigEval:
+    {
+      // Re-score a saved gene-line (e.g. the best individual from a NuclideConfigGA run) on the
+      // currently-loaded dataset, with the exact same objective math as the GA.  Used for holdout
+      // validation and cross-live-time transfer measurements.
+      if( config_genes_file.empty() )
+      {
+        cerr << "NuclideConfigEval requires --config-genes <file>." << endl;
+        return -8;
+      }
+
+      ifstream genes_strm( config_genes_file.c_str(), (ios::binary | ios::in) );
+      if( !genes_strm.good() )
+      {
+        cerr << "Could not open --config-genes file '" << config_genes_file << "'." << endl;
+        return -8;
+      }
+
+      // First non-comment, non-empty line is the gene set.
+      string genes_line;
+      while( std::getline( genes_strm, genes_line ) )
+      {
+        SpecUtils::trim( genes_line );
+        if( !genes_line.empty() && (genes_line[0] != '#') )
+          break;
+        genes_line.clear();
+      }
+
+      if( genes_line.empty() )
+      {
+        cerr << "No gene line found in '" << config_genes_file << "'." << endl;
+        return -8;
+      }
+
+      // Accept either a bare gene line (checkpoint TSV rows) or a line containing a braced gene
+      // list (results-txt rows look like "step<TAB>cost_avg<TAB>cost_best<TAB>{key=value, ...}<TAB>status").
+      const size_t open_brace = genes_line.find( '{' );
+      if( open_brace != string::npos )
+      {
+        const size_t close_brace = genes_line.rfind( '}' );
+        const size_t span_end = (close_brace == string::npos) ? genes_line.size() : close_brace;
+        genes_line = genes_line.substr( open_brace + 1, span_end - open_brace - 1 );
+      }
+
+      NuclideConfig_GA::NuclideConfigSolution genes;
+      bool parsed = NuclideConfig_GA::NuclideConfigSolution::from_string( genes_line, "\t", genes );
+      if( !parsed )
+        parsed = NuclideConfig_GA::NuclideConfigSolution::from_string( genes_line, ", ", genes );
+
+      if( !parsed )
+      {
+        cerr << "Could not parse gene line from '" << config_genes_file
+             << "' (tried tab and comma-space separators)." << endl;
+        return -8;
+      }
+
+      // genes_to_settings() starts from default_config(sm_base_det_type), so the non-GA fields
+      // (skew_type, etc.) must match the detector class the genes were tuned for.
+      NuclideConfig_GA::sm_base_det_type = selected_det_type;
+      const FitPeaksForNuclides::PeakFitForNuclideConfig config = NuclideConfig_GA::genes_to_settings( genes );
+
+      const std::vector<NuclideConfig_GA::PrecomputedNuclideData> precomputed
+        = NuclideConfig_GA::precompute_nuclide_data( input_srcs, NuclideConfig_GA::sm_background_mode );
+
+      if( precomputed.empty() )
+      {
+        cerr << "No valid spectra to evaluate - check your data and filters." << endl;
+        break;
+      }
+
+      // A single config evaluation has no outer GA parallelism, so give it the full thread budget.
+      const size_t eval_threads = std::max( PeakFitImprove::sm_num_threads_per_individual,
+                                            PeakFitImprove::sm_num_optimization_threads );
+
+      double total_fg = 0.0, total_bg = 0.0;
+      const double total = score_config_over_precomputed( precomputed, config, eval_threads,
+                                                          &total_fg, &total_bg );
+
+      cout << "NuclideConfigEval over " << precomputed.size() << " spectra:" << endl
+           << "  total_cost=" << total
+           << " (fg=" << total_fg << ", raw_bg=" << total_bg
+           << ", bg_weight=" << NuclideConfig_GA::sm_background_fit_penalty_weight << ")" << endl
+           << "  per-spectrum avg cost=" << (total / static_cast<double>(precomputed.size())) << endl;
+
+      if( !eval_html_file.empty() )
+      {
+        NuclideConfig_GA::write_results_html_and_n42( precomputed, config, genes,
+            NuclideConfig_GA::sm_background_mode, eval_html_file, /*n42_dir=*/"" );
+        cout << "Wrote HTML report to " << eval_html_file << endl;
+      }
+
+      break;
+    }//case OptimizationAction::NuclideConfigEval
 
     case OptimizationAction::AccuracyFromCsvsStudy:
     {

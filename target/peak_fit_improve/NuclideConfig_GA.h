@@ -282,42 +282,29 @@ struct NuclideConfigSolution
   double initial_nuc_match_cluster_num_sigma;
   double manual_eff_cluster_num_sigma;
 
-  // Manual RelEff equation forms/orders per peak count
-  int initial_manual_relEff_1peak_eqn_order;
-  int initial_manual_relEff_1peak_form;
-  int initial_manual_relEff_2peak_eqn_order;
-  int initial_manual_relEff_2peak_form;
-  int initial_manual_relEff_3peak_eqn_order;
-  int initial_manual_relEff_3peak_form;
-  int initial_manual_relEff_4peak_physical_use_hoerl;  // 0 or 1
-  int initial_manual_relEff_4peak_eqn_order;
-  int initial_manual_relEff_4peak_form;
-  int initial_manual_relEff_many_peak_physical_use_hoerl;  // 0 or 1
-  int initial_manual_relEff_many_peak_eqn_order;
-  int initial_manual_relEff_manypeak_form;
+  // AICc complexity-penalty scales: manual rel-eff form/order and per-ROI continuum order are
+  // selected per spectrum/per ROI at runtime; only these kappa scales are optimized.  Replaces
+  // the former per-peak-count form/order genes and the width-threshold quadratic-continuum genes.
+  double manual_releff_aicc_penalty;
+  double cont_order_aicc_penalty;
 
-  // Manual clustering thresholds
-  double manual_rel_eff_sol_min_data_area_keep;
-  double manual_rel_eff_sol_min_est_peak_area_keep;
-  double manual_rel_eff_sol_min_est_significance_keep;
+  // Manual clustering keep-gate: min z = S_est/sqrt(S_est + B_est) vs the sideband continuum.
+  // (Replaces the former absolute-count min_data_area/min_est_peak_area gates + S/sqrt(gross) sig.)
+  double manual_keep_significance_z;
   double manual_rel_eff_sol_min_fwhm_roi;
-  double manual_rel_eff_sol_min_fwhm_quad_cont;
   double manual_rel_eff_sol_max_fwhm;
-  double manual_rel_eff_roi_width_num_fwhm_lower;
-  double manual_rel_eff_roi_width_num_fwhm_upper;
+  double manual_roi_core_num_fwhm;  // adaptive-extent core half-width, manual stage
 
   // --- Auto RelEff parameters ---
   int fwhm_form;  // RelActCalcAuto::FwhmForm (0..12, excluding NotApplicable)
   double rel_eff_auto_base_rel_eff_uncert;
   double auto_rel_eff_cluster_num_sigma;
-  double auto_rel_eff_sol_min_data_area_keep;
-  double auto_rel_eff_sol_min_est_peak_area_keep;
-  double auto_rel_eff_sol_min_est_significance_keep;
-  double auto_rel_eff_roi_width_num_fwhm_lower;
-  double auto_rel_eff_roi_width_num_fwhm_upper;
+  double auto_keep_significance_z;  // keep-gate z for the auto stage (see manual_keep_significance_z)
+  double auto_roi_core_num_fwhm;    // adaptive-extent core half-width, auto stage
+  double roi_extend_z;              // sideband block-consistency z (shared across stages)
+  double roi_max_num_fwhm;          // extension cap beyond outermost gamma (shared)
   double auto_rel_eff_sol_max_fwhm;
   double auto_rel_eff_sol_min_fwhm_roi;
-  double auto_rel_eff_sol_min_fwhm_quad_cont;
 
   // --- RelActAuto model parameters ---
   int rel_eff_eqn_type;   // RelActCalc::RelEffEqnForm (0..4, excluding FramPhysicalModel=4 is fine to include)
@@ -332,23 +319,20 @@ struct NuclideConfigSolution
   int phys_model_use_hoerl;  // 0 or 1
   int fit_energy_cal;         // 0 or 1
 
-  // --- Tail contribution merge prevention ---
-  double manual_rel_eff_min_tail_contribution;
-  double manual_rel_eff_tail_width_scale_fwhm;
-  double auto_rel_eff_min_tail_contribution;
-  double auto_rel_eff_tail_width_scale_fwhm;
+  // --- ROI merge/split: clean-gap anchoring test (shared across stages) ---
+  double merge_tail_z;           // predicted-tail-vs-continuum-noise z per block
+  double merge_clean_gap_fwhm;   // required clean-window width, in FWHM
 
   // --- ROI significance and observable peak thresholds ---
-  double roi_significance_min_chi2_reduction;
-  double roi_significance_min_peak_sig;
-  double roi_significance_min_quad_cont_chi2_dof;
+  // Single likelihood-ratio equivalent-z (replaces min_chi2_reduction / min_peak_sig /
+  // min_quad_cont_chi2_dof, which were redundant parameterizations of one test).
+  double roi_significance_z;
   double observable_peak_initial_significance_threshold;
   double observable_peak_final_significance_threshold;
 
   // --- Step continuum parameters ---
-  double step_cont_min_peak_area;
   double step_cont_min_peak_significance;
-  double step_cont_left_right_nsigma;
+  double step_trial_chi2_margin;  // chi2 margin the step trial fit must win by (replaced step_cont_left_right_nsigma)
 
   // Note: skew_type is NOT optimized by GA - it is manually chosen per detector type
   // (e.g., NoSkew for most detectors, DoubleSidedCrystalBall for CZT)
@@ -360,8 +344,13 @@ struct NuclideConfigSolution
   std::string to_string( const std::string &separator ) const;
 
   /** Parse a line produced by `to_string()` back into a solution.  Name-keyed, so it is
-   order-independent and tolerant of unknown keys (older checkpoints stay loadable as genes are
-   added); returns false if any known gene is missing or unparseable.  Used by --resume. */
+   order-independent and tolerant of unknown keys; returns false if any known gene is missing or
+   unparseable.  NOTE this means a checkpoint from before a gene RENAME does NOT resume (its old
+   key is ignored as unknown, its new key is missing -> the individual is discarded, and if every
+   line fails the resume exits) - fail-loud is intentional, since a checkpoint tuned against
+   different gene semantics should not silently seed a new run.  E.g. checkpoints predating the
+   step_cont_left_right_nsigma -> step_trial_chi2_margin replacement (2026-07) must be re-tuned
+   from scratch.  Used by --resume. */
   static bool from_string( const std::string &line, const std::string &separator,
                            NuclideConfigSolution &out );
 };//struct NuclideConfigSolution

@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <functional>
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/RelActCalc.h"
@@ -51,33 +52,196 @@ void set_debug_printout( bool enable );
 /** an updated implementation of `find_spectroscopic_extent(...)` - we will replace the old implementation after some more testing. */
 std::pair<double,double> find_valid_energy_range( const std::shared_ptr<const SpecUtils::Measurement> &meas );
 
+
+// Internal helpers exposed for unit tests and development harnesses; not part of the public API.
+namespace detail
+{
+  /** A cheap, fit-free estimate of the local continuum: a straight line through averaged channel
+   heights at the two edges of a region (the classic two-sideband estimator used for net-area
+   determination).  Callers must pad the region beyond any expected peak (~1 FWHM past the
+   outermost gamma) so the edge samples measure continuum rather than peak tail.
+   */
+  struct LocalContinuumEstimate
+  {
+    double coeffs[2] = { 0.0, 0.0 };   // linear continuum density, relative to reference_energy
+    double reference_energy = 0.0;
+    bool valid = false;
+
+    // The sideband measurements the line was derived from (windows may have been relocated
+    // outward past interfering unfit auto-search peaks; extents are the ones actually used).
+    double lower_sideband_counts = 0.0;      // signal-subtracted counts, low-side window
+    double upper_sideband_counts = 0.0;
+    double lower_sideband_raw_counts = 0.0;  // raw counts (Poisson variance basis)
+    double upper_sideband_raw_counts = 0.0;
+    double lower_sideband_lo = 0.0, lower_sideband_hi = 0.0;  // low-side window extent, keV
+    double upper_sideband_lo = 0.0, upper_sideband_hi = 0.0;  // high-side window extent, keV
+
+    /** Integral of the estimated continuum density over [x0,x1], clamped to >= 0.
+     Returns 0 when not valid. */
+    double integral( const double x0, const double x1 ) const;
+
+    /** z-score of (low-side density - high-side density) against the Poisson noise of the two
+     sideband samples.  Positive when the continuum is higher below the region than above it -
+     the signature of a step continuum.  Returns 0 when not valid. */
+    double sideband_asymmetry_z() const;
+  };//struct LocalContinuumEstimate
+
+  /** Estimate the local continuum from sideband channel averages at `region_lower`/`region_upper`.
+   `sideband_num_fwhm` sets how many FWHM of channels are averaged at each edge (minimum 2 channels).
+
+   `predicted_signal`, when supplied, is the expected signal counts over an energy interval
+   [x0,x1] (e.g., Gaussian tails of the cluster's own gammas); it is subtracted from each sideband
+   sum so peak leakage does not bias the continuum estimate upward.
+
+   `unfit_auto_peaks`, when supplied, veto sideband windows they overlap: the window slides one
+   width further from the region (up to 3 tries) to find a clean sample.
+
+   Result is not `valid` if the region is outside the spectrum, degenerate, so close to a spectrum
+   edge that a sideband would extend past the first/last channel, or no uncontaminated sideband
+   window exists on one side.
+   */
+  LocalContinuumEstimate estimate_local_continuum(
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const double region_lower,
+    const double region_upper,
+    const double fwhm,
+    const double sideband_num_fwhm,
+    const std::function<double(double,double)> &predicted_signal = std::function<double(double,double)>(),
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks
+      = std::vector<std::shared_ptr<const PeakDef>>() );
+
+  /** Result of the adaptive (data-driven) ROI extent determination. */
+  struct AdaptiveExtentResult
+  {
+    double lower = 0.0, upper = 0.0;      // final ROI bounds
+    double sideband_lower_kev = 0.0;      // accepted continuum sideband beyond the core, low side
+    double sideband_upper_kev = 0.0;      // accepted continuum sideband beyond the core, high side
+  };//struct AdaptiveExtentResult
+
+  /** Determine a ROI's extent by data-driven sideband extension.
+
+   A core region of `core_num_fwhm` x FWHM beyond the outermost expected gammas (plus a fixed skew
+   allowance on the low side when `skew_type` is not NoSkew) is always included.  Each side is then
+   extended in ~0.375-FWHM blocks while the newly added block stays statistically consistent with a
+   linear continuum anchored just inside the already-accepted extent.  `extend_z` is the
+   FAMILY-wise consistency z for a full side of extension: the per-block threshold is
+   Bonferroni-split across the expected block count, so a genuinely flat continuum has the same
+   chance of full extension regardless of how many blocks the cap allows (a fixed per-block z
+   would false-stop ~28% of the time at z=2 with ~7 blocks/side).  The block z's denominator
+   includes the Poisson noise of the block, the predicted tail leakage of the cluster's own
+   gammas, and the estimation variance of the (extrapolated, leveraged) anchor line.  A cumulative
+   drift guard catches slow curvature, and any unfit auto-search peak near the block vetoes
+   further extension.  Extension stops at `max_num_fwhm` x FWHM beyond the outermost gammas.
+   This replaces fixed +/- k x FWHM extents: ROIs shorten automatically next to Compton edges,
+   backscatter humps and other peaks, and lengthen over clean flat continua - and the parameters
+   are dimensionless, so they transfer across live-times and detector classes.
+
+   @param gamma_energies   Expected gamma energies of the cluster (need not be sorted)
+   @param gamma_amplitudes Expected counts of each gamma (parallel to gamma_energies); pass zeros
+                           when amplitudes are unknown (tail-leakage prediction is then skipped)
+   */
+  AdaptiveExtentResult extend_roi_by_sidebands(
+    const std::vector<double> &gamma_energies,
+    const std::vector<double> &gamma_amplitudes,
+    const double effective_fwhm,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    const double core_num_fwhm,
+    const double extend_z,
+    const double max_num_fwhm,
+    const PeakDef::SkewType skew_type,
+    const double lowest_energy,
+    const double highest_energy );
+
+  /** Search for a "clean gap" between two peak groups: a contiguous window at least
+   `clean_gap_num_fwhm` x FWHM wide, between the two anchor energies, where the predicted Gaussian
+   tail contamination from BOTH groups is statistically negligible compared to the local continuum
+   noise, tested at WINDOW level: S_pred over the window / sqrt(B_est over the window)
+   < merge_tail_z.  (A former per-~0.25-FWHM-block form understated the window-level contamination
+   by ~sqrt(block/window), biasing toward splitting.)  The local continuum estimate has both
+   groups' predicted tails subtracted from its sideband samples, so strong close peaks no longer
+   inflate B_est and spuriously pass the test.  If no clean window exists, the continuum between
+   the peaks cannot be independently anchored and the ROIs should share one continuum (merge).
+   This replaces an amplitude-relative tail-fraction merge test that ignored counting statistics:
+   a 0.5% tail matters on a high-statistics spectrum and is invisible on a low-statistics one -
+   the noise-relative form transfers across live-times.
+
+   Returns true (and the least-contaminated window via the out-params) when a clean gap exists.
+   When all amplitudes are zero/unknown the test degenerates to a pure gap-width check.
+   */
+  bool find_clean_gap_between(
+    const std::vector<double> &left_energies,
+    const std::vector<double> &left_amplitudes,
+    const std::vector<double> &right_energies,
+    const std::vector<double> &right_amplitudes,
+    const double left_anchor,
+    const double right_anchor,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const std::function<double(double)> &fwhm_at_energy,
+    const double merge_tail_z,
+    const double clean_gap_num_fwhm,
+    double *clean_win_lo,
+    double *clean_win_hi );
+
+  /** Choose Linear vs Quadratic continuum for a ROI by AICc over the ROI's continuum sidebands
+   (the channels between the ROI bounds and the peak core [core_lo, core_hi], which are excluded).
+   Fits both polynomial orders to the sideband channels by Poisson-weighted least squares and picks
+   the penalized-chi2 winner; `aicc_penalty` is the kappa scale (2.0 = textbook AIC).  Returns
+   Linear when there are too few sideband channels (< 8) to select on, or when curvature is not
+   supported by the data.  Replaces a pure ROI-width-in-FWHM rule: whether the continuum actually
+   curves is a property of the data, not of the window width.
+   */
+  PeakContinuum::OffsetType select_continuum_order_by_sidebands(
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const double roi_lower,
+    const double roi_upper,
+    const double core_lo,
+    const double core_hi,
+    const double aicc_penalty );
+}//namespace detail
+
+
 // Settings for the gamma clustering algorithm - different values may be used
 // for the initial RelActManual stage vs subsequent RelActAuto refinement stages
 struct GammaClusteringSettings
 {
   double cluster_num_sigma;         // How many sigma to use for clustering gamma lines
-  double min_data_area_keep;        // Minimum data area to keep a cluster
-  double min_est_peak_area_keep;    // Minimum estimated peak area to keep
-  double min_est_significance_keep; // Minimum significance (est_counts / sqrt(data_area))
-  double roi_width_num_fwhm_lower;  // FWHM below lowest gamma line for ROI extent
-  double roi_width_num_fwhm_upper;  // FWHM above highest gamma line for ROI extent
+
+  // Minimum Poisson detection significance z = S_est / sqrt(S_est + B_est) to keep a cluster,
+  // where S_est is the expected peak counts and B_est the sideband-estimated continuum over the
+  // cluster's CORE extent (outermost gammas +/- roi_core_num_fwhm x FWHM - the always-included
+  // part of the ROI the fit will see), with the cluster's own predicted tails subtracted from the
+  // sideband samples and the samples relocated away from interfering unfit auto-search peaks
+  // (see detail::estimate_local_continuum).  Dimensionless, so - unlike the absolute-count
+  // gates it replaces - the same value transfers across live-times and detector classes.
+  // A fixed (non-configurable) minimum expected-count floor additionally protects the
+  // Gaussian-statistics regime; see sm_keep_gate_min_est_counts in FitPeaksForNuclides.cpp.
+  double keep_significance_z;
+
+  // Adaptive ROI extent (see detail::extend_roi_by_sidebands): always-included core half-extent
+  // beyond the outermost gamma, block-consistency z for data-driven sideband extension, and the
+  // extension cap - all in FWHM/z units so they transfer across live-times and detector classes.
+  double roi_core_num_fwhm;
+  double roi_extend_z;
+  double roi_max_num_fwhm;
+
+  // Peak skew the eventual fit will use; extend_roi_by_sidebands adds a low-side core allowance
+  // when not NoSkew.  Copied from PeakFitForNuclideConfig::skew_type (not GA-optimized).
+  PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+
   double max_fwhm_width;            // Maximum ROI width in FWHM before breaking up
   double min_fwhm_roi;              // Minimum ROI width in FWHM to keep
-  double min_fwhm_quad_cont;        // Width threshold to use quadratic continuum
 
-  // Merge prevention via Gaussian tail contribution check.
-  // Two overlapping clusters are only merged if the Gaussian tail of one cluster's peaks
-  // contributes more than this fraction at the other cluster's nearest peak.
-  // 0 disables the check. Evaluated as:
-  //   sum(amp_i * exp(-d_i^2 / (2*sigma^2))) / ref_peak_amplitude > threshold
-  // where the sum is over all peaks in the other cluster.
-  double min_tail_contribution_fraction = 0.0;
+  // kappa for the per-ROI Linear-vs-Quadratic continuum AICc selection
+  // (see detail::select_continuum_order_by_sidebands); replaces a width-in-FWHM threshold.
+  double cont_order_aicc_penalty = 2.0;
 
-  // Width normalization for tail check: the threshold is scaled up linearly
-  // with combined ROI width (in FWHM) beyond this value.
-  // effective_threshold = min_tail * max(1, combined_width_fwhm / width_scale)
-  // Larger values = less penalty for wide ROIs. 0 disables width scaling.
-  double tail_merge_width_scale_fwhm = 0.0;
+  // Merge decision via the clean-gap test (see detail::find_clean_gap_between): overlapping
+  // clusters stay separate only when a continuum-anchoring window exists between their dominant
+  // gammas where the predicted tail contamination is < merge_tail_z x sqrt(local continuum).
+  double merge_tail_z = 2.0;
+  double merge_clean_gap_fwhm = 1.0;  // required clean-window width, in FWHM
 
   // Parameters for synthetic spectrum-based ROI breaking
   // Region around minimum/maximum to compute significance (in FWHM units)
@@ -92,12 +256,17 @@ struct GammaClusteringSettings
   double break_significance_tie_threshold = 0.5;
 
   // Step continuum decision thresholds
-  // Minimum peak area (counts) to consider checking for step continuum
-  double step_cont_min_peak_area = 1000.0;
-  // Minimum peak significance (peak_area / sqrt(data_area)) to consider step continuum
+  // Minimum peak detection significance z = S_est / sqrt(S_est + B_est), with B_est from the
+  // sideband continuum estimate, to consider a step continuum (a step only matters when the peak
+  // towers over the continuum, which is inherently a significance statement - an absolute-count
+  // gate would not transfer across live-times).
   double step_cont_min_peak_significance = 30.0;
-  // How many sigma higher the left side must be than the right side to use step continuum
-  double step_cont_left_right_nsigma = 3.0;
+  // Chi2 margin by which the step-continuum trial fit must beat the polynomial fit for the ROI to
+  // get a step continuum (the trial pairs equal-parameter-count candidates - Linear vs FlatStep,
+  // Quadratic vs LinearStep - so the AICc penalty terms cancel and the decision reduces to a
+  // chi2 comparison with this tunable bias against the step).  Replaces the former left-vs-right
+  // probe-window nsigma test, which self-vetoed on tight ROIs and read neighbor peaks as steps.
+  double step_trial_chi2_margin = 4.0;
 };
 
 
@@ -164,35 +333,15 @@ struct PeakFitForNuclideConfig
   double initial_nuc_match_cluster_num_sigma = 1.5;
   double manual_eff_cluster_num_sigma = 1.5;
 
-  // RelActManual equation form and order based on number of matched peaks
-  size_t initial_manual_relEff_1peak_eqn_order = 0;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_1peak_form = RelActCalc::RelEffEqnForm::LnXLnY;
+  // The RelActManual equation form and order are selected per spectrum by an AICc ladder
+  // (see manual_releff_aicc_penalty below), not configured here.
 
-  size_t initial_manual_relEff_2peak_eqn_order = 0;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_2peak_form = RelActCalc::RelEffEqnForm::LnXLnY;
-
-  size_t initial_manual_relEff_3peak_eqn_order = 1;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_3peak_form = RelActCalc::RelEffEqnForm::LnXLnY;
-
-  bool initial_manual_relEff_4peak_physical_use_hoerl = false;
-  size_t initial_manual_relEff_4peak_eqn_order = 2;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_4peak_form = RelActCalc::RelEffEqnForm::LnXLnY;
-
-  bool initial_manual_relEff_many_peak_physical_use_hoerl = false;
-  size_t initial_manual_relEff_many_peak_eqn_order = 3;
-  RelActCalc::RelEffEqnForm initial_manual_relEff_manypeak_form = RelActCalc::RelEffEqnForm::LnXLnY;
-
-  // ROI clustering thresholds for manual RelEff stage
-  double manual_rel_eff_sol_min_data_area_keep = 10.0;
-  double manual_rel_eff_sol_min_est_peak_area_keep = 5.0;
-  double manual_rel_eff_sol_min_est_significance_keep = 2.0;
+  // ROI clustering thresholds for manual RelEff stage.
+  // Cluster keep-gate: minimum z = S_est/sqrt(S_est + B_est) (see GammaClusteringSettings::keep_significance_z).
+  double manual_keep_significance_z = 2.0;
   double manual_rel_eff_sol_min_fwhm_roi = 1.0;
-  double manual_rel_eff_sol_min_fwhm_quad_cont = 8.0;
   double manual_rel_eff_sol_max_fwhm = 15.0;
-  double manual_rel_eff_min_tail_contribution = 0.0004;  // Min Gaussian tail fraction to allow merge
-  double manual_rel_eff_tail_width_scale_fwhm = 5.0;    // Width (FWHM) at which tail threshold doubles
-  double manual_rel_eff_roi_width_num_fwhm_lower = 3.0;
-  double manual_rel_eff_roi_width_num_fwhm_upper = 3.0;
+  double manual_roi_core_num_fwhm = 1.5;  // Always-included ROI half-extent beyond outermost gamma
 
   // RelActAuto parameters
   RelActCalcAuto::FwhmForm fwhm_form = RelActCalcAuto::FwhmForm::Berstein_3;
@@ -200,16 +349,27 @@ struct PeakFitForNuclideConfig
 
   // ROI clustering thresholds for auto RelEff refinement stage
   double auto_rel_eff_cluster_num_sigma = 2.0;  // Slightly wider clustering with better rel-eff
-  double auto_rel_eff_sol_min_data_area_keep = 10.0;
-  double auto_rel_eff_sol_min_est_peak_area_keep = 5.0;
-  double auto_rel_eff_sol_min_est_significance_keep = 3.0;
-  double auto_rel_eff_roi_width_num_fwhm_lower = 3.5;  // Slightly more generous for refined fit
-  double auto_rel_eff_roi_width_num_fwhm_upper = 3.5;
+  double auto_keep_significance_z = 3.0;  // Cluster keep-gate z (see manual_keep_significance_z)
+  double auto_roi_core_num_fwhm = 1.5;    // Always-included ROI half-extent beyond outermost gamma
   double auto_rel_eff_sol_max_fwhm = 12.0;  // Tighter constraint as solution improves
-  double auto_rel_eff_min_tail_contribution = 0.0004;  // Min Gaussian tail fraction to allow merge
-  double auto_rel_eff_tail_width_scale_fwhm = 5.0;    // Width (FWHM) at which tail threshold doubles
   double auto_rel_eff_sol_min_fwhm_roi = 1.25;
-  double auto_rel_eff_sol_min_fwhm_quad_cont = 8.0;
+
+  // Adaptive ROI sideband extension (shared between manual and auto stages): block-consistency z
+  // and extension cap in FWHM beyond the outermost gamma.  See detail::extend_roi_by_sidebands.
+  double roi_extend_z = 2.0;
+  double roi_max_num_fwhm = 4.0;
+
+  // ROI merge/split decision (shared between stages): overlapping clusters stay separate only
+  // when a clean continuum-anchoring gap exists between them.  See detail::find_clean_gap_between.
+  double merge_tail_z = 2.0;
+  double merge_clean_gap_fwhm = 1.0;
+
+  // AICc complexity-penalty scales (kappa; 2.0 = textbook AIC) for the per-spectrum manual
+  // rel-eff form/order ladder and the per-ROI continuum-order selection.  These two scalars
+  // replace the former per-peak-count form/order genes and the width-threshold quadratic rule;
+  // they also absorb the non-textbook scale of the judged/sideband chi2s they penalize.
+  double manual_releff_aicc_penalty = 2.0;
+  double cont_order_aicc_penalty = 2.0;
 
 
   // RelActAuto relative efficiency model parameters
@@ -242,26 +402,20 @@ struct PeakFitForNuclideConfig
   // Set to a large value (e.g. 1e6) to effectively disable the cap.
   double initial_manual_rel_eff_max_chi2_dof = 25.0;
 
-  // ROI significance threshold for iterative refinement
-  // Minimum total chi2 reduction required for peaks in a ROI to be considered significant
-  // The chi2 with peaks must be at least this much lower than chi2 with continuum-only
-  double roi_significance_min_chi2_reduction = 10.0;
-
-  // Minimum peak significance (peak_area / sqrt(continuum)) for a peak to be considered significant
-  // If any peak in a ROI has significance above this threshold, the ROI is considered significant
-  // (alternative to chi2 reduction test - ROI passes if EITHER test passes)
-  double roi_significance_min_peak_sig = 3.5;
-
-  // Minimum chi2/dof of a quadratic (or higher-order) continuum-only fit required
-  // for the ROI to be considered as potentially containing a peak.  If a quadratic
-  // continuum alone fits the data well (chi2/dof below this threshold), there is no
-  // evidence of a peak and the ROI is marked insignificant regardless of other tests.
-  // Set to 0.0 to disable this check (e.g., for HPGe where this is less relevant).
-  double roi_significance_min_quad_cont_chi2_dof = 0.0;
+  // ROI significance threshold for iterative refinement, as an equivalent-z of a
+  // likelihood-ratio test (Wilks): the chi2 improvement of adding the ROI's peaks over a
+  // quadratic continuum-only null, referred to a chi2 distribution with dof = number of
+  // peaks, converted to a normal quantile.  Replaces the former trio of thresholds
+  // (min chi2-reduction, min single-peak significance, quad-continuum gate), which were
+  // redundant parameterizations of this one test: a strong single peak gives a huge
+  // delta-chi2, and the quadratic null already absorbs smooth continuum curvature.
+  double roi_significance_z = 3.0;
 
   // Threshold for initial peak significance filter before refitting for observable_peaks.
-  // Significance = (peak_amplitude * 0.7607) / sqrt(data_area_in_pm_1_fwhm)
-  // 0.7607 is fraction of Gaussian area within +/-1 FWHM
+  // Significance = S / sqrt(S + B) with S = peak_amplitude * 0.7607 (fraction of Gaussian
+  // area within +/-1 FWHM) and B the FITTED continuum integral over the same +/-1 FWHM
+  // window - using the fitted continuum rather than the gross data means a neighboring
+  // peak's counts no longer dilute this peak's significance.
   double observable_peak_initial_significance_threshold = 2.25;
 
   // Threshold for final peak significance after refitting for observable_peaks.
@@ -269,12 +423,11 @@ struct PeakFitForNuclideConfig
   double observable_peak_final_significance_threshold = 2.0;
 
   // Step continuum decision parameters
-  // Minimum peak area (counts) to consider checking for step continuum
-  double step_cont_min_peak_area = 1000.0;
-  // Minimum peak significance (peak_area / sqrt(data_area)) to consider step continuum
+  // Minimum peak detection significance z = S_est/sqrt(S_est + B_est) to consider step continuum
   double step_cont_min_peak_significance = 30.0;
-  // How many sigma higher the left side must be than the right side to use step continuum
-  double step_cont_left_right_nsigma = 3.0;
+  // Chi2 margin the step trial fit must beat the polynomial fit by (see
+  // GammaClusteringSettings::step_trial_chi2_margin for the full description).
+  double step_trial_chi2_margin = 4.0;
 
   // Peak skew type to apply during the RelActAuto fit - note this parameter should not be optimized, but rather
   //  something that might be over-rided according to the detector efficiency or user preferences.
@@ -291,19 +444,18 @@ struct PeakFitForNuclideConfig
   {
     GammaClusteringSettings settings;
     settings.cluster_num_sigma = manual_eff_cluster_num_sigma;
-    settings.min_data_area_keep = manual_rel_eff_sol_min_data_area_keep;
-    settings.min_est_peak_area_keep = manual_rel_eff_sol_min_est_peak_area_keep;
-    settings.min_est_significance_keep = manual_rel_eff_sol_min_est_significance_keep;
-    settings.roi_width_num_fwhm_lower = manual_rel_eff_roi_width_num_fwhm_lower;
-    settings.roi_width_num_fwhm_upper = manual_rel_eff_roi_width_num_fwhm_upper;
+    settings.keep_significance_z = manual_keep_significance_z;
+    settings.roi_core_num_fwhm = manual_roi_core_num_fwhm;
+    settings.roi_extend_z = roi_extend_z;
+    settings.roi_max_num_fwhm = roi_max_num_fwhm;
+    settings.skew_type = skew_type;
     settings.max_fwhm_width = manual_rel_eff_sol_max_fwhm;
     settings.min_fwhm_roi = manual_rel_eff_sol_min_fwhm_roi;
-    settings.min_fwhm_quad_cont = manual_rel_eff_sol_min_fwhm_quad_cont;
-    settings.min_tail_contribution_fraction = manual_rel_eff_min_tail_contribution;
-    settings.tail_merge_width_scale_fwhm = manual_rel_eff_tail_width_scale_fwhm;
-    settings.step_cont_min_peak_area = step_cont_min_peak_area;
+    settings.cont_order_aicc_penalty = cont_order_aicc_penalty;
+    settings.merge_tail_z = merge_tail_z;
+    settings.merge_clean_gap_fwhm = merge_clean_gap_fwhm;
     settings.step_cont_min_peak_significance = step_cont_min_peak_significance;
-    settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
+    settings.step_trial_chi2_margin = step_trial_chi2_margin;
     return settings;
   }
 
@@ -312,19 +464,18 @@ struct PeakFitForNuclideConfig
   {
     GammaClusteringSettings settings;
     settings.cluster_num_sigma = auto_rel_eff_cluster_num_sigma;
-    settings.min_data_area_keep = auto_rel_eff_sol_min_data_area_keep;
-    settings.min_est_peak_area_keep = auto_rel_eff_sol_min_est_peak_area_keep;
-    settings.min_est_significance_keep = auto_rel_eff_sol_min_est_significance_keep;
-    settings.roi_width_num_fwhm_lower = auto_rel_eff_roi_width_num_fwhm_lower;
-    settings.roi_width_num_fwhm_upper = auto_rel_eff_roi_width_num_fwhm_upper;
+    settings.keep_significance_z = auto_keep_significance_z;
+    settings.roi_core_num_fwhm = auto_roi_core_num_fwhm;
+    settings.roi_extend_z = roi_extend_z;
+    settings.roi_max_num_fwhm = roi_max_num_fwhm;
+    settings.skew_type = skew_type;
     settings.max_fwhm_width = auto_rel_eff_sol_max_fwhm;
     settings.min_fwhm_roi = auto_rel_eff_sol_min_fwhm_roi;
-    settings.min_fwhm_quad_cont = auto_rel_eff_sol_min_fwhm_quad_cont;
-    settings.min_tail_contribution_fraction = auto_rel_eff_min_tail_contribution;
-    settings.tail_merge_width_scale_fwhm = auto_rel_eff_tail_width_scale_fwhm;
-    settings.step_cont_min_peak_area = step_cont_min_peak_area;
+    settings.cont_order_aicc_penalty = cont_order_aicc_penalty;
+    settings.merge_tail_z = merge_tail_z;
+    settings.merge_clean_gap_fwhm = merge_clean_gap_fwhm;
     settings.step_cont_min_peak_significance = step_cont_min_peak_significance;
-    settings.step_cont_left_right_nsigma = step_cont_left_right_nsigma;
+    settings.step_trial_chi2_margin = step_trial_chi2_margin;
     return settings;
   }
 
@@ -390,7 +541,12 @@ enum FitSrcPeaksOptions
   /** The energy calibration stays fixed. */
   DoNotVaryEnergyCal = 0x04,
   
-  /** The energy calibration is varied in the fit, but the ROI extent is not updated based on the fit calibration. */
+  /** The energy calibration is varied in the fit, but the ROI extent is not updated based on the fit calibration.
+
+   Note: returned peaks are still in the original spectrum's energy calibration (they are built from
+   the solve's spectrum-cal peak set, and the working foreground is never cal-advanced in this mode);
+   the fitted calibration adjustment itself is simply discarded.
+   */
   DoNotRefineEnergyCal = 0x08,
   
   /** Fit the NORM peaks, using a second relative efficiency curve. */
