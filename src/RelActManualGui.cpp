@@ -742,7 +742,7 @@ void RelActManualGui::init()
   m_matchTolerance->setSpinnerHidden();
   m_matchTolerance->setWidth( 35 );
   m_matchTolerance->setRange( 0, 5 );
-  m_matchTolerance->setValue( 0.5 ); //Other places we use 1.25/2.355 = 0.530786
+  m_matchTolerance->setValue( 0.65 ); //Other places we use 1.25/2.355 = 0.530786
   label = new WLabel( WString("&nbsp;{1}").arg(WString::tr("FWHM")), optionsList->elementAt(row, 1) );
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->valueChanged().connect( this, &RelActManualGui::matchToleranceChanged );

@@ -33,9 +33,17 @@
 
 #include <ceres/jet.h>
 
-// Include the InterSpec/Wt headers (which transitively pull in boost/asio, i.e. winsock2.h)
-//  BEFORE the Boost.Test header, which on Windows includes <windows.h> -> WinSock.h.  Reversing
-//  this order triggers MSVC C1189 "WinSock.h has already been included".
+// InterSpec/RelActCalc_imp.hpp (included below) transitively pulls in InterSpec/GammaInteractionCalc.h
+//  -> <boost/asio>, i.e. winsock2.h; while <boost/test/included/unit_test.hpp> includes <windows.h>,
+//  which drags in the legacy WinSock.h.  Pulling winsock2.h in first keeps that later <windows.h>
+//  from including WinSock.h -- otherwise MSVC fails with C1189 "WinSock.h has already been included".
+//  Same approach as test_DetectorPeakResponse.cpp and test_ShieldingSourceFitCalc.cpp.
+#ifdef _WIN32
+  #define WIN32_LEAN_AND_MEAN
+  #include <winsock2.h>
+  #include <windows.h>
+#endif
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"

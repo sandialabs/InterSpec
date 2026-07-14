@@ -1173,6 +1173,12 @@ continuum; `PeakIndexes[]` lists which `Peaks[]` entries do so.
 | `UpperChannelInt`        | int     |     | Only if `HasChannelRange`. |
 | `NumberChannels`         | number  |     | Only if `HasChannelRange`. |
 | `NumberChannelsInt`      | int     |     | Only if `HasChannelRange`. |
+| `PeakMeanChannel`        | number  | chnl | Channel-unit equivalent of `PeakMean` (fractional channel of the centroid). Only if `HasChannelRange`. |
+| `PeakMeanUncertChannel`  | number  | chnl | Channel-unit equivalent of `PeakMeanUncert`. Only if `HasChannelRange`. |
+| `PeakSigmaChannel`       | number  | chnl | Channel-unit equivalent of `PeakSigma`; 0.0 for data-defined peaks. Only if `HasChannelRange`. |
+| `PeakSigmaUncertChannel` | number  | chnl | Channel-unit equivalent of `PeakSigmaUncert`. Only if `HasChannelRange`. |
+| `PeakFwhmChannel`        | number  | chnl | Channel-unit equivalent of `PeakFwhm`. Only if `HasChannelRange`. |
+| `PeakFwhmUncertChannel`  | number  | chnl | Channel-unit equivalent of `PeakFwhmUncert`. Only if `HasChannelRange`. |
 | `AreaBetweenContinuumAndData` | number | cnt | Direct integration of (data − continuum) over the ROI; an alternative-to-Gaussian peak area. |
 | `UseForEnergyCal`        | bool    |     | User flagged this peak for energy-cal use. |
 | `UseForActivityFit`      | bool    |     | User flagged this peak for activity-fit use. |
@@ -1192,6 +1198,12 @@ continuum; `PeakIndexes[]` lists which `Peaks[]` entries do so.
 | `CoefficientFit`         | array[bool]   | | Per-coefficient "was this fit?" |
 | `CoefficientNames`       | array[string] | | Human-readable names paired with `CoefficientValues`. |
 | `PeakColor`              | string  |     | CSS colour (e.g. `"rgb(255,0,0)"`). |
+
+The `Peak*Channel` fields are the channel-number equivalents of the keV `PeakMean` /
+`PeakSigma` / `PeakFwhm` (and their uncertainties), computed from the spectrum's energy
+calibration. They are emitted only when `HasChannelRange` is true; the width fields are
+obtained by mapping the mean-centered energy interval to a channel count, so they remain
+correct under non-linear calibrations.
 
 ### 6.7 Reused common objects
 
