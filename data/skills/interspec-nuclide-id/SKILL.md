@@ -20,13 +20,13 @@ Identify the source (nuclide, x-ray, nuclear reaction) of every significant peak
 
 ## The Ultimate Parent Rule
 
-Do not assign peaks to short-lived daughters. Determine the long-lived parent:
+Do not assign peaks to short-lived daughters. Report the actual source — usually the long-lived parent whose chain is in secular equilibrium with the observed lines:
 - Pb-214, Bi-214 peaks -> assign to **Ra-226** (or U-238)
 - Ac-228, Pb-212, Tl-208 peaks -> assign to **Th-232**
 - Pa-234m, Th-234 peaks -> assign to **U-238**
 - Ba-137m -> assign to **Cs-137**
 
-Only assign to the daughter if there is evidence of chemical separation.
+But do NOT climb past the source: only assign to a higher parent if that parent's presence is actually supported by the data. A produced, milked, or medical isotope IS the source — e.g. report **Ac-225** (milked from Th-229), NOT Th-229; report Tc-99m / I-131 etc. themselves, not their generators. Only assign to the daughter if there is evidence of chemical separation.
 
 ## Workflow
 
@@ -78,7 +78,11 @@ Then check NORM ratios (Ra-226 and Th-232 activities within ~1 order of magnitud
 
 Before accepting a source identification:
 
-1. **Context**: Call `source_info` on the candidate. Check for associated nuclides, common mis-IDs, and whether it makes sense given other identified sources.
+1. **Context**: Call `source_info` on the candidate. Check for associated nuclides, common mis-IDs, and whether it makes sense given other identified sources. `source_info` also flags how to separate look-alikes — e.g. Th-228 vs Th-232: the Ac-228 lines come from Th-232 but not Th-228. Use the strongest lines, **911.2 and 969.0 keV**, and judge elevation by **fit peak area** (whether they are in the elevated-above-background/unidentified list, or their `elevatedOverBackgroundPeakNumSigma`) — NOT gross counts (`get_counts_in_energy_range`), whose continuum is raised across the whole spectrum by the source's Compton scatter (so e.g. the 338.3 keV region can show elevated gross counts with no real peak). If the 911.2/969.0 keV Ac-228 fit peaks are not elevated while Pb-212 (238.6) and Tl-208 (583.2, 2614.5) ARE, the source is **Th-228** (U-232), not Th-232.
+
+> **General rule:** to judge whether a line is elevated over background, use its fit peak area (continuum-subtracted), not gross region counts — Compton continuum from a source raises gross counts everywhere.
+
+> **511 keV-only sources:** if the only significantly elevated peak is the 511 keV annihilation line (no other distinguishing gammas), report a **positron/β+ emitter (elevated 511 keV)** — do not force one nuclide, since many β+ emitters produce only 511 (F-18, Ga-68, …). Naming F-18 as a likely candidate is fine, but as a possibility, not a definitive ID.
 
 2. **Energy fit**: Source energy must be within ~1 FWHM of the peak mean.
 
@@ -89,6 +93,8 @@ Before accepting a source identification:
    - The `prominent_energies_keV` field of the `source_photons` result gives the most characteristic energies for a quick check
 
 4. **Ultimate Parent**: If the candidate is a short-lived daughter, determine the parent.
+
+5. **Other explanations & single-line caution**: Rule out that the peak is a sum/escape peak, x-ray, or statistical fluctuation (`sum_peak_check`, `escape_peak_check`, `compton_scatter_peak_check`). Be especially skeptical of a candidate supported by only a single peak with no corroborating lines (e.g. Mn-54 at 835 keV) — a lone, modest peak is easily an artifact. Only report a single-line source when the peak is clearly significant and no better explanation exists; otherwise leave the peak unidentified rather than over-report (a false positive costs more than one unexplained weak peak).
 
 **Example**: Searching on a peak at 186 keV, top candidates might be Ra-226 and U-235. Check for U-235 corroborating peaks at 205.3 and 163.4 keV. If present, U-235 is confirmed. Note that Ra-226 may also be present; its 295.2 and 351.9 keV peaks should be much larger than 186 keV if Ra-226 is the source (higher branching ratios).
 
@@ -132,9 +138,9 @@ Then return to Step 2 for the next unidentified peak.
 
 Before finalizing, check for radiation signatures that do not manifest as discrete photopeaks:
 
-**Neutron checks:**
+**Neutron checks (MANDATORY — always do 1 and 2; do not conclude "no sources" without them):**
 1. Check `get_spectrum_info` for `neutronCPS` field. If background is loaded, check `neutronCPS_excess_sigma` (>2 indicates significant neutron excess).
-2. Check continuum above 2614.5 keV using `get_counts_in_energy_range` (~2640-3000 keV) for neutron-induced elevation. Caveat: less diagnostic if Co-56 or similar high-energy emitters are identified.
+2. **Always** check the continuum **ABOVE 2614.5 keV** with `get_counts_in_energy_range` (~2640-3000 keV, and ~3000-4000 keV if present) and compare the sigma elevation to background. A significant excess above 2614.5 keV — **even with no discrete peaks** — indicates neutrons / a neutron source and must be reported. This is the primary way to detect a bare neutron source (e.g. Cf-252) whose own gammas are not identifiable. (Note: this is the region ABOVE 2614 keV — do not confuse it with the beta-continuum broad-band check at 100-2000 keV below.) Caveat: less diagnostic if Co-56 or similar high-energy emitters are identified.
 3. Look for neutron reaction peaks among identified sources: H(n,g) 2223.2 keV, Fe(n,n') 846.8 keV, B-10(n,a) 477.6 keV, Ge(n,n') inelastic scatter.
 4. If 477 keV region shows excess, use `get_spectrum_image` (430-530 keV) to check for Doppler-broadened triangular B-10 feature.
 5. If spectrum extends above 4 MeV, check 4.2-4.7 MeV range for alpha-Be (AmBe/PuBe) signature using `get_counts_in_energy_range` and `get_spectrum_image`.
@@ -147,6 +153,8 @@ Before finalizing, check for radiation signatures that do not manifest as discre
 **Beta source check:**
 - If foreground is clearly elevated over background but relatively few peaks were identified (e.g., only 511 keV and/or small NORM peaks relative to total counts), use `get_spectrum_image` below ~2 MeV to check if a smooth exponential continuum dominates. This indicates beta sources (Sr-90/Y-90, P-32, Ru-106/Rh-106).
 - Check `get_counts_in_energy_range` in broad bands (100-500, 500-1000, 1000-2000 keV) comparing foreground to background — broad elevation without peaks suggests beta source.
+
+**Sanity check before finalizing:** Confirm (a) every source you will report has at least one genuinely *elevated* peak. Report a NORM nuclide (K-40, U/Ra/Th chains) as a *source* only if it is notably elevated over the background rate — if its lines are clearly elevated it is a legitimate source, but if they are at/near background level, attribute them to background instead. And (b) the largest elevated peaks are all explained — re-check `get_peaks` (elevated_above_background/unidentified); if the dominant elevated peak is unattributed, you have likely missed the primary source, so go back and investigate it rather than finalizing.
 
 Note findings for the final summary, then proceed to Step 7.
 

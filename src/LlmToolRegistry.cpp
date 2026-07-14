@@ -2473,6 +2473,53 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     }
   }//for( loop over tool configs )
 
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Developer/automation-only MCP tool: submit a prompt into the assistant conversation as if the
+  // user typed it, and (async) block until the whole turn finishes, returning the final response.
+  // Registered programmatically (not from llm_tools_config.xml) so the shipping tool surface is
+  // untouched, and marked MCP-only via AgentType::McpServer so no in-app agent can call it.
+  {
+    SharedTool submitTool;
+    submitTool.name = "assistant_submit_prompt";
+    submitTool.description =
+      "[Automation] Submit a prompt into the active InterSpec assistant conversation as if the user"
+      " typed it, then wait until the assistant's turn (including all tool calls and sub-agents)"
+      " finishes.  Returns the assistant's final response text plus a compact list of the tools it"
+      " called.  Prompts submitted while a turn is already in progress are queued and run in order."
+      " Refused while a benchmark is running.";
+    submitTool.mcpDescription = submitTool.description;
+    submitTool.parameters_schema = json::parse(R"({
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The message to submit to the assistant, exactly as if the user typed it."
+          }
+        },
+        "required": ["prompt"]
+      })");
+    submitTool.availableForAgents = { AgentType::McpServer };
+    submitTool.asyncExecutor = [](const json& params, InterSpec* interspec,
+        shared_ptr<LlmInteraction>, LlmConversationHistory*,
+        SharedTool::AsyncCallback callback) {
+      LlmToolGui *gui = interspec ? interspec->currentLlmTool() : nullptr;
+      if( !gui )
+      {
+        callback( std::string("No active LLM GUI session - cannot submit a prompt.") );
+        return;
+      }
+
+      std::string prompt;
+      if( params.contains("prompt") && params["prompt"].is_string() )
+        prompt = params["prompt"].get<std::string>();
+
+      gui->queuePromptForMcp( prompt, std::move(callback) );
+    };
+
+    registerTool( submitTool );
+  }
+#endif // PERFORM_DEVELOPER_CHECKS
+
   bool loaded_deep_research_skills = false;
   LlmDeepResearch::registerDeepResearchTools( config.llmApi.deep_research_url,
                                               [this]( const SharedTool &tool ){ registerTool(tool); },
@@ -2577,6 +2624,12 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
 
   if( !config.llmApi.deep_research_url.empty() )
     expectedTools.push_back( "query_deep_research_endpoint" );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Registered programmatically above (dev/automation only); list it so the drift checks below
+  // don't flag it as an "unexpected" tool.
+  expectedTools.push_back( "assistant_submit_prompt" );
+#endif
 
   std::vector<std::string> missingTools;
   for( const std::string &toolName : expectedTools )
@@ -2781,13 +2834,15 @@ nlohmann::json ToolRegistry::executeTool(const std::string& toolName,
 
   try
   {
-#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
+// Print the per-call tool transcript in debug builds, and also in the local-server developer
+//  build (RelWithDebInfo defines NDEBUG) so the tuning/benchmark sessions get it on stdout.
+#if( (!defined(NDEBUG) || (PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER)) && !BUILD_AS_UNIT_TEST_SUITE )
     cout << "Executing tool: " << toolName << " with params: " << parameters.dump() << endl;
 #endif
 
     json result = tool->executor(parameters, interspec, conversation, history);
-    
-#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
+
+#if( (!defined(NDEBUG) || (PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER)) && !BUILD_AS_UNIT_TEST_SUITE )
     std::string resultStr = result.dump();
     if( resultStr.length() > 100 )
       resultStr = resultStr.substr(0, 100) + "...";
@@ -7922,15 +7977,44 @@ nlohmann::json ToolRegistry::executeSetWorkflowState(
     return result;
   }
 
-  // Check if transition is valid (soft enforcement)
+  // Firm enforcement: reject a disallowed transition and keep the model in its current state so it
+  // must follow the workflow (e.g. it cannot skip CHECK_NON_PEAK_SIGNATURES / RECONSIDER_SOURCES to
+  // reach FINALIZE_RESULTS).  But if it keeps insisting on the same invalid target a few times, let it
+  // through so it can never get permanently stuck.
+  constexpr int sm_max_reject_attempts = 3;
   if( !sm->canTransitionTo(new_state) )
   {
-    result["warning"] = "Unexpected state transition";
-    result["expected_transitions"] = sm->getAllowedTransitions();
-    result["reason"] = "Transition from " + previous_state +
-                       " to " + new_state + " not in allowed transitions";
+    const vector<string> allowed = sm->getAllowedTransitions();
+    const int attempts = sm->noteRejectedTransitionAttempt(new_state);
+
+    if( attempts <= sm_max_reject_attempts )
+    {
+      // Build a readable "AAA, BBB, or CCC" list of the states actually allowed from here.
+      string allowedStr;
+      for( size_t i = 0; i < allowed.size(); ++i )
+      {
+        if( i > 0 )
+          allowedStr += (i + 1 == allowed.size()) ? (allowed.size() > 2 ? ", or " : " or ") : ", ";
+        allowedStr += allowed[i];
+      }
+
+      // Do NOT transition - stay in the current state and tell the model to pick a valid one.
+      result["success"] = false;
+      result["transition_allowed"] = false;
+      result["current_state"] = previous_state;
+      result["allowed_transitions"] = allowed;
+      result["error"] = "You tried to make an invalid state transition. You were in state "
+                        + previous_state + ", and were allowed to transition to " + allowedStr
+                        + ", but not " + new_state + ". I did not allow the transition, so you are"
+                          " still in state " + previous_state + ". Please transition to a state in ["
+                        + allowedStr + "].";
+      return result;
+    }
+
+    // Exceeded the retry budget - allow the transition anyway so the model doesn't get stuck.
+    result["warning"] = "Invalid transition to " + new_state + " allowed after "
+                        + std::to_string(attempts) + " repeated attempts (soft fallback).";
     result["transition_forced"] = true;
-    // Continue anyway - soft enforcement
   }
 
   // Perform transition

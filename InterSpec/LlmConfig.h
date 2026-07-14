@@ -89,12 +89,15 @@ public:
     std::string prompt_guidance;                // Guidance text for the agent
     std::string ephemeral_message_txt;          // Optional per-state ephemeral message text
     bool is_final = false;                      // True if this is a terminal state
+    int declaration_order = 0;                  // Order the state was declared in XML (for display in workflow order)
   };//struct StateDefinition
 
 private:
   std::string m_initial_state;                      // Starting state name
   std::string m_current_state;                      // Current state in this conversation
   std::map<std::string, StateDefinition> m_states;  // All state definitions
+  std::string m_last_rejected_target;               // Last disallowed transition target attempted
+  int m_rejected_attempts = 0;                      // Consecutive attempts at m_last_rejected_target
 
 public:
   AgentStateMachine();
@@ -124,6 +127,12 @@ public:
   // State updates
   void transitionTo( const std::string &new_state );
   void reset();
+
+  /** Record an attempt to make a disallowed transition to `target`, and return how many times in a
+   row this same disallowed `target` has now been attempted (starting at 1).  Used to firmly enforce
+   the state machine while still letting the model through after a few repeated attempts.  Reset by a
+   successful transitionTo(). */
+  int noteRejectedTransitionAttempt( const std::string &target );
 
   // Guidance
   std::string getPromptGuidanceForCurrentState() const;

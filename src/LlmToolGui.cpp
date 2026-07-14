@@ -106,6 +106,22 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
 
 LlmToolGui::~LlmToolGui()
 {
+  // Fail any outstanding MCP `assistant_submit_prompt` callbacks so a blocked MCP request thread
+  //  doesn't hang forever waiting on a turn that can no longer complete.
+  if( m_activeMcpCallback )
+  {
+    McpPromptCallback cb = std::move( m_activeMcpCallback );
+    m_activeMcpCallback = McpPromptCallback();
+    cb( string( "The assistant session was torn down before the prompt completed." ) );
+  }
+
+  for( PendingMcpPrompt &pending : m_mcpPromptQueue )
+  {
+    if( pending.callback )
+      pending.callback( string( "The assistant session was torn down before the prompt ran." ) );
+  }
+  m_mcpPromptQueue.clear();
+
   // If the settings window is still open, delete it now so its onSaved callback (which captures
   // this) can never fire against a destroyed widget.
   if( m_configWindow )
@@ -872,7 +888,10 @@ void LlmToolGui::handleConversationFinished()
   //cout << "Conversation finished, re-enabling input" << endl;
 
   setInputEnabled( true );
-  
+
+  // Resolve any in-flight MCP `assistant_submit_prompt` call, then start the next queued prompt.
+  resolveActiveMcpPrompt( true );
+
   // The display is automatically updated via signals in LlmInteractionDisplay
   // No need to manually refresh
 }
@@ -887,6 +906,10 @@ void LlmToolGui::handleResponseError()
     cout << "Error response received, keeping input disabled" << endl;
     // Input stays disabled - user must use retry/continue buttons
   }
+
+  // If this errored turn was an MCP-submitted prompt, resolve its callback with an error and keep
+  //  draining the queue so automation doesn't get stuck on the human retry flow.
+  resolveActiveMcpPrompt( false );
 
   // The display is automatically updated via signals in LlmInteractionDisplay
   // No need to manually refresh
@@ -1254,6 +1277,139 @@ void LlmToolGui::submitMessageAsUser( const string &message )
 
   m_inputEdit->setText( WString::fromUTF8( message ) );
   handleSendButton();
+}
+
+
+void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback callback )
+{
+  if( !callback )
+    return;
+
+  if( prompt.empty() )
+  {
+    callback( string( "Empty prompt: nothing to submit." ) );
+    return;
+  }
+
+  if( !m_llmInterface )
+  {
+    callback( string( "The LLM assistant is not configured for this session." ) );
+    return;
+  }
+
+  if( isBenchmarkRunning() )
+  {
+    callback( string( "A benchmark is currently running; cannot submit a prompt right now." ) );
+    return;
+  }
+
+  m_mcpPromptQueue.push_back( PendingMcpPrompt{ prompt, std::move( callback ) } );
+  drainMcpPromptQueue();
+}
+
+
+void LlmToolGui::drainMcpPromptQueue()
+{
+  // Only submit when the conversation is fully idle and no MCP prompt is already in flight;
+  //  submitting mid-turn would be interpreted as a "Stop" (see handleSendButton).
+  if( m_activeMcpCallback || m_isRequestPending || m_mcpPromptQueue.empty() )
+    return;
+
+  // A benchmark may have started after these prompts were queued; fail them rather than interfere
+  //  with the benchmark or hang waiting for it (queuePromptForMcp already refuses at enqueue time).
+  if( isBenchmarkRunning() )
+  {
+    for( PendingMcpPrompt &pending : m_mcpPromptQueue )
+    {
+      if( pending.callback )
+        pending.callback( string( "A benchmark started; queued prompt was dropped." ) );
+    }
+    m_mcpPromptQueue.clear();
+    return;
+  }
+
+  PendingMcpPrompt next = std::move( m_mcpPromptQueue.front() );
+  m_mcpPromptQueue.pop_front();
+  m_activeMcpCallback = std::move( next.callback );
+
+  submitMessageAsUser( next.prompt );
+
+  // If the turn did not actually start (e.g. input unavailable / validation refused it),
+  //  fail fast so the waiting MCP call doesn't hang, and move on to the next queued prompt.
+  if( !m_isRequestPending )
+    resolveActiveMcpPrompt( false );
+}
+
+
+void LlmToolGui::resolveActiveMcpPrompt( bool success )
+{
+  if( m_activeMcpCallback )
+  {
+    McpPromptCallback cb = std::move( m_activeMcpCallback );
+    m_activeMcpCallback = McpPromptCallback();
+
+    if( success )
+      cb( buildMcpPromptResult() );
+    else
+      cb( string( "The assistant's turn ended with an error before producing a final response." ) );
+  }
+
+  drainMcpPromptQueue();
+}
+
+
+nlohmann::json LlmToolGui::buildMcpPromptResult() const
+{
+  nlohmann::json result;
+  result["response"] = "";
+  result["tool_calls"] = nlohmann::json::array();
+
+  if( !m_llmInterface )
+    return result;
+
+  const shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
+  if( !history )
+    return result;
+
+  const vector<shared_ptr<LlmInteraction>> &conversations = history->getConversations();
+  if( conversations.empty() )
+    return result;
+
+  const shared_ptr<LlmInteraction> &convo = conversations.back();
+  if( !convo )
+    return result;
+
+  // Final assistant text: the last FinalLlmResponse in the most recent conversation.
+  for( int i = static_cast<int>( convo->responses.size() ) - 1; i >= 0; --i )
+  {
+    const shared_ptr<LlmInteractionTurn> &turn = convo->responses[i];
+    if( turn && (turn->type() == LlmInteractionTurn::Type::FinalLlmResponse) )
+    {
+      const LlmInteractionFinalResponse *finalResp
+                       = dynamic_cast<const LlmInteractionFinalResponse *>( turn.get() );
+      if( finalResp )
+      {
+        result["response"] = finalResp->content();
+        break;
+      }
+    }
+  }
+
+  // Compact tool-call trace: the names of tools requested this conversation, in order.
+  for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    if( !turn || (turn->type() != LlmInteractionTurn::Type::ToolCall) )
+      continue;
+
+    const LlmToolRequest *req = dynamic_cast<const LlmToolRequest *>( turn.get() );
+    if( !req )
+      continue;
+
+    for( const LlmToolCall &call : req->toolCalls() )
+      result["tool_calls"].push_back( call.toolName );
+  }
+
+  return result;
 }
 
 

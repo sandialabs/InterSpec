@@ -497,6 +497,7 @@ void LlmBenchmarkRunner::startBenchmark( const string &xmlFilePath )
   m_currentProblem = 0;
   m_currentQuestion = 0;
   m_currentSequenceStep = 0;
+  m_currentQuestionRetries = 0;
   m_state = State::Idle;
 
   // Clear reference photopeak lines so they dont interfere with benchmark spectra
@@ -836,6 +837,33 @@ void LlmBenchmarkRunner::sendSequenceStepPrompt()
 }
 
 
+bool LlmBenchmarkRunner::retryCurrentQuestionOnError( const string &why )
+{
+  if( m_currentQuestionRetries >= sm_max_question_retries )
+    return false;
+
+  m_currentQuestionRetries += 1;
+
+  const BenchmarkProblem *problem = currentProblem();
+  const BenchmarkQuestion *question = currentQuestion();
+  logError( "Retrying " + (problem ? problem->id : string("?"))
+            + " Q" + to_string( question ? question->part : -1 )
+            + " (retry " + to_string( m_currentQuestionRetries )
+            + " of " + to_string( sm_max_question_retries )
+            + ") after error: " + why );
+
+  // Clear the failed conversation turn so the retry starts from a clean slate,
+  //  exactly as a fresh problem would (the spectrum is already loaded and
+  //  unchanged, so we do NOT reload it).
+  if( m_toolGui )
+    m_toolGui->clearConversationHistory();
+
+  m_state = State::Idle;
+  sendCurrentQuestion();  // re-sends the same question; resets m_questionStartTime
+  return true;
+}//retryCurrentQuestionOnError()
+
+
 void LlmBenchmarkRunner::sendCurrentQuestion()
 {
   const BenchmarkQuestion *question = currentQuestion();
@@ -926,7 +954,20 @@ void LlmBenchmarkRunner::handleResponseError()
 
   if( m_state == State::WaitingForSequenceStepResponse )
   {
-    // Skip entire problem on sequence step error
+    // Retry the sequence step before giving up on the whole problem.  We do NOT
+    //  clear the conversation here (sequence steps intentionally accumulate
+    //  context); we just re-send the step prompt.
+    if( m_currentQuestionRetries < sm_max_question_retries )
+    {
+      m_currentQuestionRetries += 1;
+      logError( "Retrying sequence step (retry " + to_string( m_currentQuestionRetries )
+                + " of " + to_string( sm_max_question_retries ) + ") after LLM response error" );
+      sendSequenceStepPrompt();
+      return;
+    }
+
+    // Retries exhausted - skip entire problem on sequence step error
+    m_currentQuestionRetries = 0;
     reconnectSpectrumChangedHandler();
     m_currentProblem++;
     m_currentQuestion = 0;
@@ -936,7 +977,14 @@ void LlmBenchmarkRunner::handleResponseError()
     return;
   }
 
-  // Record error result for the current question
+  // Transient endpoint/watchdog errors are common; re-ask the question a few
+  //  times before counting it as a failure, so LLM-endpoint flakiness doesn't
+  //  get charged against the tool's spectroscopy ability.
+  if( retryCurrentQuestionOnError( "LLM response error" ) )
+    return;
+
+  // Retries exhausted - record an error result for the current question.
+  //  recordResult() advances to the next question and resets the retry counter.
   if( question && problem )
   {
     BenchmarkQuestionResult result;
@@ -944,7 +992,8 @@ void LlmBenchmarkRunner::handleResponseError()
     result.questionPart = question->part;
     result.prompt = question->prompt;
     result.hadError = true;
-    result.errorMessage = "LLM response error";
+    result.errorMessage = "LLM response error (after " + to_string( m_currentQuestionRetries )
+                          + " retries)";
     const auto now = chrono::system_clock::now();
     result.duration = chrono::duration_cast<chrono::milliseconds>( now - m_questionStartTime );
     if( question->judgement.has_value() )
@@ -952,13 +1001,16 @@ void LlmBenchmarkRunner::handleResponseError()
       result.graded = true;
       result.expectedAnswer = question->judgement->expectedAnswer;
     }
-    m_results.questionResults.push_back( result );
+    recordResult( std::move( result ) );
   }
-
-  // Advance to next question
-  m_currentQuestion++;
-  m_state = State::Idle;
-  advanceToNextStep();
+  else
+  {
+    // Shouldn't happen, but keep the runner moving.
+    m_currentQuestionRetries = 0;
+    m_currentQuestion++;
+    m_state = State::Idle;
+    advanceToNextStep();
+  }
 }
 
 
@@ -1006,6 +1058,34 @@ void LlmBenchmarkRunner::extractAnswerAndJudge()
   log( "Extracted answer (" + to_string( llmAnswer.size() ) + " chars, "
        + to_string( duration.count() ) + " ms): "
        + (llmAnswer.size() > 200 ? llmAnswer.substr( 0, 200 ) + "..." : llmAnswer) );
+
+  // An empty final answer means the turn finished without the model producing a
+  //  usable response (e.g. it errored out, hit the watchdog, or emitted content
+  //  that failed to parse).  Treat it like an endpoint error and re-ask, rather
+  //  than scoring an empty answer against the tool's spectroscopy ability.
+  if( SpecUtils::trim_copy( llmAnswer ).empty() )
+  {
+    if( retryCurrentQuestionOnError( "empty answer from model" ) )
+      return;
+
+    // Retries exhausted - record as an error so it's counted separately.
+    BenchmarkQuestionResult result;
+    result.problemId = problem->id;
+    result.questionPart = question->part;
+    result.prompt = question->prompt;
+    result.llmAnswer = llmAnswer;
+    result.hadError = true;
+    result.errorMessage = "Empty answer from model (after " + to_string( m_currentQuestionRetries )
+                          + " retries)";
+    result.duration = duration;
+    if( question->judgement.has_value() )
+    {
+      result.graded = true;
+      result.expectedAnswer = question->judgement->expectedAnswer;
+    }
+    recordResult( std::move( result ) );
+    return;
+  }//if( empty answer )
 
   if( !question->judgement.has_value() )
   {
@@ -1286,8 +1366,16 @@ void LlmBenchmarkRunner::handleJudgeResponseError()
 
 void LlmBenchmarkRunner::recordResult( BenchmarkQuestionResult result )
 {
+  // Attribute any error-retries spent on this question to the result, then clear
+  //  the counter for the next question.  recordResult() is the single terminal
+  //  point for a question (success or error-after-retries), so this is where the
+  //  per-question retry accounting is finalized.
+  result.errorRetries = m_currentQuestionRetries;
+  m_currentQuestionRetries = 0;
+
   log( "Recorded result for " + result.problemId + " Q" + to_string( result.questionPart )
-       + ": " + (result.hadError ? "ERROR" : (result.graded ? (result.correct ? "PASS" : "FAIL") : "UNGRADED")) );
+       + ": " + (result.hadError ? "ERROR" : (result.graded ? (result.correct ? "PASS" : "FAIL") : "UNGRADED"))
+       + (result.errorRetries > 0 ? (" [after " + to_string( result.errorRetries ) + " error-retries]") : string()) );
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
   const BenchmarkProblem *prev_problem = currentProblem();
@@ -1305,6 +1393,7 @@ void LlmBenchmarkRunner::recordResult( BenchmarkQuestionResult result )
   << "\tllmAnswer: " << result.llmAnswer << endl
   << "\texpectedAnswer: " << result.expectedAnswer << endl
   << "\thadError: " << result.hadError << (result.hadError ? string(" errorm msg: " + result.errorMessage) : string("")) << endl
+  << "\terrorRetries: " << result.errorRetries << endl
   << "\tgraded: " << result.graded << endl
   << "\tcorrect: " << result.correct << endl
   << "\tscore: " << result.score << " out of " << result.maxScore << endl
@@ -1416,6 +1505,29 @@ void LlmBenchmarkRunner::generateReport()
   if( m_results.errorCount > 0 )
     log( "Errors: " + to_string( m_results.errorCount ) );
 
+  // Report LLM-endpoint reliability separately from spectroscopy accuracy: how
+  //  many questions had to be re-asked due to errors, and how many of those
+  //  still failed after exhausting retries.
+  {
+    int recovered = 0, stillErrored = 0, totalRetries = 0;
+    for( const BenchmarkQuestionResult &r : m_results.questionResults )
+    {
+      totalRetries += r.errorRetries;
+      if( r.errorRetries > 0 )
+      {
+        if( r.hadError )
+          stillErrored++;
+        else
+          recovered++;
+      }
+    }
+    if( totalRetries > 0 )
+      log( "Error-retries: " + to_string( totalRetries ) + " total across "
+           + to_string( recovered + stillErrored ) + " question(s) ("
+           + to_string( recovered ) + " recovered, "
+           + to_string( stillErrored ) + " still errored after retries)" );
+  }
+
   log( "" );
   log( "Problem Results:" );
 
@@ -1441,6 +1553,11 @@ void LlmBenchmarkRunner::generateReport()
 
     if( !isSkipped )
       line += " (" + to_string( r.duration.count() ) + "ms)";
+
+    // Flag questions that had to be re-asked due to errors, so an answer that was
+    //  only obtained after retries is visibly distinguished from a clean first try.
+    if( !isSkipped && (r.errorRetries > 0) )
+      line += " [retried " + to_string( r.errorRetries ) + "x]";
 
     if( isSkipped )
       line += " - " + r.llmAnswer;
@@ -1491,6 +1608,7 @@ void LlmBenchmarkRunner::showResultsDialog()
     qj["durationMs"] = r.duration.count();
     qj["hadError"] = r.hadError;
     qj["errorMessage"] = r.errorMessage;
+    qj["errorRetries"] = r.errorRetries;
     questionsArray.push_back( qj );
   }
   resultsJson["questions"] = questionsArray;

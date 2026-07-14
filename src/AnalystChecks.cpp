@@ -63,6 +63,112 @@
 
 using namespace std;
 
+namespace
+{
+  /** Decay series a NORM line belongs to, used for the chain-consistency (secular-equilibrium) rescue
+   of borderline peaks in detected_peaks. */
+  enum class NormSeries : int { None = 0, K40, Th232, U238Ra, Annih };
+
+  struct NormLine { double energy_kev; NormSeries series; };
+
+  /** Well-known NORM / ubiquitous environmental-background gamma-ray lines (keV), tagged by decay
+   series.
+
+   A foreground peak matching one of these is held to a stricter elevation bar before being reported
+   as "elevated over background" (see detected_peaks), since these lines are expected to be present -
+   and to fluctuate - in any background, so a small foreground excess is usually noise rather than a
+   real foreground source.  Covers K-40; the Th-232 chain (Ac-228, Pb-212, Bi-212, Tl-208); the
+   U-238/Ra-226 chain (Th-234, Pa-234m, Ra-226, Pb-214, Bi-214); and the 511 keV annihilation line.
+   */
+  const NormLine sk_norm_lines[] = {
+    // U-238 / Ra-226 chain
+    {  63.29, NormSeries::U238Ra }, {  92.58, NormSeries::U238Ra }, { 186.21, NormSeries::U238Ra },
+    { 240.99, NormSeries::U238Ra }, { 242.00, NormSeries::U238Ra }, { 295.22, NormSeries::U238Ra },
+    { 351.93, NormSeries::U238Ra }, { 609.32, NormSeries::U238Ra }, { 768.36, NormSeries::U238Ra },
+    { 934.06, NormSeries::U238Ra }, {1001.03, NormSeries::U238Ra }, {1120.29, NormSeries::U238Ra },
+    {1155.19, NormSeries::U238Ra }, {1238.11, NormSeries::U238Ra }, {1280.96, NormSeries::U238Ra },
+    {1377.67, NormSeries::U238Ra }, {1401.50, NormSeries::U238Ra }, {1407.98, NormSeries::U238Ra },
+    {1509.23, NormSeries::U238Ra }, {1661.28, NormSeries::U238Ra }, {1729.60, NormSeries::U238Ra },
+    {1764.49, NormSeries::U238Ra }, {1847.42, NormSeries::U238Ra }, {2118.55, NormSeries::U238Ra },
+    {2204.21, NormSeries::U238Ra }, {2447.86, NormSeries::U238Ra },
+    // Th-232 chain
+    { 238.63, NormSeries::Th232 }, { 300.09, NormSeries::Th232 }, { 338.32, NormSeries::Th232 },
+    { 463.00, NormSeries::Th232 }, { 510.77, NormSeries::Th232 }, { 583.19, NormSeries::Th232 },
+    { 727.33, NormSeries::Th232 }, { 785.37, NormSeries::Th232 }, { 794.95, NormSeries::Th232 },
+    { 860.56, NormSeries::Th232 }, { 911.20, NormSeries::Th232 }, { 964.77, NormSeries::Th232 },
+    { 968.97, NormSeries::Th232 }, {1588.20, NormSeries::Th232 }, {1620.50, NormSeries::Th232 },
+    {1630.63, NormSeries::Th232 }, {2614.51, NormSeries::Th232 },
+    // K-40
+    {1460.82, NormSeries::K40 },
+    // Positron annihilation
+    { 511.00, NormSeries::Annih }
+  };
+
+  /** Returns the NORM decay series `energy_kev` falls in (NormSeries::None if not a known NORM line),
+   choosing the closest table entry within `tolerance_kev`. */
+  NormSeries norm_series_for_energy( const double energy_kev, const double tolerance_kev )
+  {
+    NormSeries best = NormSeries::None;
+    double bestDE = tolerance_kev;
+    for( const NormLine &l : sk_norm_lines )
+    {
+      const double de = fabs( energy_kev - l.energy_kev );
+      if( de <= bestDE ) { bestDE = de; best = l.series; }
+    }
+    return best;
+  }//norm_series_for_energy(...)
+
+  /** Returns true if `energy_kev` is within `tolerance_kev` of a known NORM/background line. */
+  bool is_known_norm_energy( const double energy_kev, const double tolerance_kev )
+  {
+    return norm_series_for_energy( energy_kev, tolerance_kev ) != NormSeries::None;
+  }//is_known_norm_energy(...)
+
+  /** "Seed" gamma-ray lines (keV): Cs-137 (661.66) and Na-22 (511, 1274.53).
+
+   On low-resolution (NaI) field detectors these nuclides are sometimes embedded as a stabilization/
+   energy-calibration "seed", so the background spectrum also contains these peaks.  Unlike NORM,
+   a seed's intensity is fixed (it does not vary by hours or ~10 ft of distance), so even a small but
+   statistically-significant foreground excess indicates a genuine added foreground source.  Such peaks
+   therefore get only a significance test - no blanket percent-elevation floor.
+   */
+  const double sk_seed_energies_kev[] = { 511.00, 661.66, 1274.53 };
+
+  /** Returns true if `energy_kev` is within `tolerance_kev` of a known seed line (Cs-137 / Na-22). */
+  bool is_seed_energy( const double energy_kev, const double tolerance_kev )
+  {
+    for( const double e : sk_seed_energies_kev )
+    {
+      if( fabs( energy_kev - e ) <= tolerance_kev )
+        return true;
+    }
+    return false;
+  }//is_seed_energy(...)
+
+  /** Estimate the net (continuum-subtracted) counts a peak-sized feature would have in `hist` at the
+   given `mean`/`fwhm`, using a simple linear side-band continuum.  Used to gauge whether a foreground
+   peak at a known NORM energy is genuinely elevated over the background *data* in the case where the
+   background auto-search did not fit a peak there (a weak background NORM line may simply have been
+   too small to fit).  Returns 0 if the histogram/fwhm are unusable. */
+  double estimate_net_counts_in_hist( const std::shared_ptr<const SpecUtils::Measurement> &hist,
+                                      const double mean, const double fwhm )
+  {
+    if( !hist || (fwhm <= 0.0) )
+      return 0.0;
+
+    const double half = 1.25 * fwhm;            // peak window half-width
+    const double lo = mean - half, hi = mean + half;
+    const double side = fwhm;                   // side-band width on each side
+    const double gross = hist->gamma_integral( static_cast<float>(lo), static_cast<float>(hi) );
+    const double left  = hist->gamma_integral( static_cast<float>(lo - side), static_cast<float>(lo) );
+    const double right = hist->gamma_integral( static_cast<float>(hi), static_cast<float>(hi + side) );
+    const double cont_per_kev = (left + right) / (2.0 * side);   // continuum counts per keV
+    const double continuum = cont_per_kev * (hi - lo);
+    return gross - continuum;                   // net counts under the peak window
+  }//estimate_net_counts_in_hist(...)
+}//anonymous namespace
+
+
 namespace AnalystChecks
 {
   DetectedPeakStatus detected_peaks( const DetectedPeaksOptions& options, InterSpec *interspec )
@@ -287,25 +393,77 @@ namespace AnalystChecks
       const double foreground_live_time = (spectrum->live_time() > 0.0f) ? spectrum->live_time() : 1.0f;
       const double background_live_time = (background_spectrum->live_time() > 0.0f ? background_spectrum->live_time() : 1.0f);
 
+#if( PERFORM_DEVELOPER_CHECKS )
+      // Debug dump of the foreground candidate peaks and the (recovered) background auto-search peaks,
+      // to aid tuning of the elevated-above-background logic.  Per-peak KEEP/drop decisions follow below.
+      {
+        cerr << "=== detected_peaks: elevated-above-background debug (fg live=" << foreground_live_time
+             << "s, bg live=" << background_live_time << "s) ===" << endl;
+        cerr << " Background auto-search peaks ("
+             << (background_auto_peaks ? background_auto_peaks->size() : size_t(0)) << "):" << endl;
+        if( background_auto_peaks )
+        {
+          for( const shared_ptr<const PeakDef> &bp : *background_auto_peaks )
+            cerr << "  bg E=" << bp->mean() << " keV  amp=" << bp->amplitude()
+                 << " cps=" << (bp->amplitude()/background_live_time) << endl;
+        }
+        cerr << " Foreground candidate peaks (" << all_peaks.size() << "):" << endl;
+      }
+#endif
+
+      // Two-pass elevated-above-background filter.  Pass 1 makes the clear accept/reject decisions and
+      // *defers* borderline NORM peaks (a known NORM line that fails the 4-sigma bar but is still above
+      // 2 sigma).  Pass 2 rescues a borderline NORM peak only if another line of the SAME decay series
+      // is already accepted and this peak's foreground/background ratio to the nearest such line is
+      // consistent with them being the same chain (secular equilibrium) - otherwise it stays dropped.
+      struct FgPeakDecision {
+        shared_ptr<const PeakDef> peak;
+        bool include = false;
+        bool is_user = false;
+        bool is_seed = false;
+        bool borderline_norm = false;   // deferred to pass 2
+        NormSeries series = NormSeries::None;
+        double mean = 0.0;
+        double fg_cps = 0.0;
+        double bg_cps = 0.0;            // >0 only when a matching background peak was found
+      };
+
+      const double norm_min_sigma = 4.0;         // net-significance bar for known NORM lines
+      const double norm_borderline_sigma = 2.0;  // below this a NORM peak is simply background
+      const double seed_min_sigma = 2.25;
+
+      vector<FgPeakDecision> decisions;
+      decisions.reserve( all_peaks.size() );
+
+      // --- Pass 1: per-peak decision (deferring borderline NORM peaks) ---
       for( const shared_ptr<const PeakDef> &fg_peak : all_peaks )
       {
+        FgPeakDecision dec;
+        dec.peak = fg_peak;
+        dec.mean = fg_peak->mean();
+        dec.fg_cps = fg_peak->amplitude() / foreground_live_time;
+        dec.is_user = (std::find(user_analysis_peaks.begin(), user_analysis_peaks.end(), fg_peak) != user_analysis_peaks.end());
+
+        // Known NORM/background lines are held to a stricter bar (they are expected in any background
+        // and fluctuate).  Seed nuclides (Cs-137/Na-22) on low-res detectors get only a significance
+        // test (stable background intensity).  Tolerance scales with resolution (peak FWHM).
+        const double norm_tol = std::max( 2.0, 0.5 * fg_peak->fwhm() );
+        dec.series = norm_series_for_energy( fg_peak->mean(), norm_tol );
+        const bool is_norm = (dec.series != NormSeries::None);
+        dec.is_seed = (!isHPGe && is_seed_energy( fg_peak->mean(), norm_tol ));
+
         bool include_peak = true;
 
-        // Check if there is a corresponding background peak
         if( background_auto_peaks )
         {
           // Find the closest matching background peak
           shared_ptr<const PeakDef> closest_bg_peak;
           double smallest_energy_diff = std::numeric_limits<double>::infinity();
-
           for( const shared_ptr<const PeakDef> &bg_peak : *background_auto_peaks )
           {
             assert( fg_peak != bg_peak );
-            
-            // Check if peaks are at roughly the same energy (within their widths)
             const double energy_diff = fabs(fg_peak->mean() - bg_peak->mean());
             const double avg_fwhm = 0.75 * (fg_peak->fwhm() + bg_peak->fwhm()) / 2.0;
-
             if( (energy_diff < avg_fwhm) && (energy_diff < smallest_energy_diff) )
             {
               closest_bg_peak = bg_peak;
@@ -313,60 +471,127 @@ namespace AnalystChecks
             }
           }
 
-          // If we found a matching background peak, compare CPS
           if( closest_bg_peak )
           {
-            const double fg_cps = (fg_peak->amplitude() / foreground_live_time);
+            const double fg_cps = dec.fg_cps;
             const double bg_cps = (closest_bg_peak->amplitude() / background_live_time);
+            dec.bg_cps = bg_cps;
+            const double fg_amp_uncert = fg_peak->amplitudeUncert();
+            const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
+            const bool have_uncert = (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0);
 
-            // Check if foreground peak is elevated by at least 20% relative to background
-            const double elevation_threshold = 1.20;
-            if( fg_cps > (bg_cps * elevation_threshold) )
+            double sigma_elevation = 0.0;
+            if( have_uncert )
             {
-              include_peak = true;
+              const double fg_cps_uncert = fg_amp_uncert / foreground_live_time;
+              const double bg_cps_uncert = bg_amp_uncert / background_live_time;
+              const double combined_uncert = sqrt(fg_cps_uncert*fg_cps_uncert + bg_cps_uncert*bg_cps_uncert);
+              if( combined_uncert > 0.0 )
+                sigma_elevation = ((fg_cps - bg_cps) / combined_uncert);
+            }
 
-              // Foreground is elevated by >20%, now check statistical significance if uncertainties are available
-              const double fg_amp_uncert = fg_peak->amplitudeUncert();
-              const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
-
-              if( (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0) )
+            if( dec.is_seed )
+            {
+              // Seed nuclide on a low-res detector: significance test only, no percent floor.
+              include_peak = have_uncert ? (sigma_elevation > seed_min_sigma) : (fg_cps > (bg_cps * 1.20));
+            }else if( is_norm )
+            {
+              // NORM: strict 4-sigma bar; 2-4 sigma is deferred to the pass-2 chain-consistency check;
+              // below 2 sigma is background.  (Flat 20% ratio dropped - meaningless at low counts.)
+              if( have_uncert )
               {
-                // Calculate CPS uncertainties
-                const double fg_cps_uncert = fg_amp_uncert / foreground_live_time;
-                const double bg_cps_uncert = bg_amp_uncert / background_live_time;
-
-                // Calculate combined uncertainty
-                const double combined_uncert = sqrt(fg_cps_uncert*fg_cps_uncert + bg_cps_uncert*bg_cps_uncert);
-
-                // Check if foreground is elevated by at least 2.25 sigma
-                const double min_sigma = 2.25;
-                const double sigma_elevation = ((fg_cps - bg_cps) / combined_uncert);
-                include_peak = (sigma_elevation > min_sigma);
+                if( sigma_elevation > norm_min_sigma )
+                  include_peak = true;
+                else if( sigma_elevation > norm_borderline_sigma )
+                { include_peak = false; dec.borderline_norm = true; }
+                else
+                  include_peak = false;
+              }else
+              {
+                include_peak = (fg_cps > (bg_cps * 1.75));
               }
             }else
             {
-              // Foreground peak is not elevated by 20% - exclude it
-              include_peak = false;
-            }//if( fg_cps > (bg_cps * elevation_threshold) ) / else
+              // Non-NORM, non-seed: original behavior - >20% elevated, then >2.25 sigma if available.
+              const double elevation_threshold = 1.20;
+              if( fg_cps > (bg_cps * elevation_threshold) )
+                include_peak = have_uncert ? (sigma_elevation > 2.25) : true;
+              else
+                include_peak = false;
+            }//if( is_seed ) / else if( is_norm ) / else
           }else
           {
-            // No matching background peak.  Background-peak recovery (run above) already actively
-            // fit-tested for a real peak at this energy in the background and added it if present,
-            // so a still-unmatched foreground peak genuinely is NOT in the background => keep it as
-            // a real foreground source.  (include_peak stays true.)
+            // No matching background peak.  Non-NORM (and seed) energies keep the existing behavior:
+            // the background recovery (run above) already fit-tested here and found nothing, so treat
+            // the foreground peak as a real source (include_peak stays true).  For a known NORM energy,
+            // do NOT auto-pass - require it to be clearly elevated over the background *data* counts in
+            // the peak region (a weak background NORM line may simply have been too small to fit).
+            if( is_norm && !dec.is_seed )
+            {
+              const double bg_net = estimate_net_counts_in_hist( background_spectrum, fg_peak->mean(), fg_peak->fwhm() );
+              const double bg_net_cps = std::max( 0.0, bg_net ) / background_live_time;
+              const double fg_net_cps = fg_peak->amplitude() / foreground_live_time;
+              const double fg_cps_uncert = fg_peak->amplitudeUncert() / foreground_live_time;
+              const double bg_net_uncert_cps = sqrt( std::max( fabs(bg_net), 1.0 ) ) / background_live_time;
+              const double combined = sqrt( fg_cps_uncert*fg_cps_uncert + bg_net_uncert_cps*bg_net_uncert_cps );
+              const double sigma_vs_data = (combined > 0.0) ? ((fg_net_cps - bg_net_cps) / combined) : 0.0;
+              include_peak = (sigma_vs_data > norm_min_sigma);
+            }
           }//if( closest_bg_peak )
         }//if( background_auto_peaks )
 
-        if( include_peak )
-        {
-          filtered_peaks.push_back(fg_peak);
+        dec.include = include_peak;
+        decisions.push_back( std::move(dec) );
+      }//for( fg_peak : all_peaks ) - pass 1
 
-          // Check if this peak is also in the user_analysis_peaks
-          const bool is_user_peak = std::find(user_analysis_peaks.begin(), user_analysis_peaks.end(), fg_peak) != user_analysis_peaks.end();
-          if( is_user_peak )
-            filtered_analysis_peaks.push_back(fg_peak);
+      // --- Pass 2: rescue borderline NORM peaks consistent with an accepted same-series line ---
+      for( FgPeakDecision &dec : decisions )
+      {
+        if( !dec.borderline_norm || (dec.bg_cps <= 0.0) )
+          continue;   // no way to form a ratio => stays rejected
+
+        // Nearest PASS-1-accepted peak of the same series that also has a background counterpart.
+        const FgPeakDecision *ref = nullptr;
+        double bestDE = std::numeric_limits<double>::infinity();
+        for( const FgPeakDecision &other : decisions )
+        {
+          if( (&other == &dec) || !other.include || other.borderline_norm )
+            continue;
+          if( (other.series != dec.series) || (other.bg_cps <= 0.0) || (other.fg_cps <= 0.0) )
+            continue;
+          const double de = fabs( other.mean - dec.mean );
+          if( de < bestDE ) { bestDE = de; ref = &other; }
         }
-      }//for( const shared_ptr<const PeakDef> &fg_peak : all_peaks )
+
+        if( ref )
+        {
+          // If this peak's foreground/background ratio to the accepted line is consistent with them
+          // being the same chain, keep it; if it is under-represented in the foreground relative to
+          // that line, it's a background fluctuation and is dropped.
+          const double R_fg = dec.fg_cps / ref->fg_cps;
+          const double R_bg = dec.bg_cps / ref->bg_cps;
+          const double consistency = (R_bg > 0.0) ? (R_fg / R_bg) : 0.0;
+          dec.include = (consistency >= 0.5) && (consistency <= 3.0);
+        }
+        // else: no same-series accepted reference => stays rejected.
+      }//for( pass 2 )
+
+      // --- Emit results (+ optional debug dump) ---
+      for( const FgPeakDecision &dec : decisions )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        cerr << "  fg E=" << dec.mean << " keV  amp=" << dec.peak->amplitude() << " cps=" << dec.fg_cps
+             << (dec.is_seed ? "  [SEED]" : ((dec.series != NormSeries::None) ? "  [NORM]" : "        "))
+             << (dec.borderline_norm ? " (borderline)" : "")
+             << "  -> " << (dec.include ? "KEEP" : "drop (background)") << endl;
+#endif
+        if( dec.include )
+        {
+          filtered_peaks.push_back( dec.peak );
+          if( dec.is_user )
+            filtered_analysis_peaks.push_back( dec.peak );
+        }
+      }//for( emit results )
 
       all_peaks = std::move(filtered_peaks);
       user_analysis_peaks = std::move(filtered_analysis_peaks);

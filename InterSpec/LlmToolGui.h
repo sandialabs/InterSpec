@@ -29,15 +29,20 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include <set>
 #include <map>
+#include <deque>
 #include <string>
 #include <vector>
 #include <memory>
+#include <variant>
+#include <functional>
 
 #include <Wt/WSignal>
 #include <Wt/WLineEdit>
 #include <Wt/WContainerWidget>
 
 #include "SpecUtils/SpecFile.h"
+
+#include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 //Forward declarations
 class SpecMeas;
@@ -107,6 +112,20 @@ public:
    Used by LlmBenchmarkRunner to drive automated evaluation.
    */
   void submitMessageAsUser( const std::string &message );
+
+  /** Callback used by the MCP `assistant_submit_prompt` tool: invoked exactly once, on the session
+   event loop, with either a result JSON (final assistant text + compact tool-call trace) or an
+   error string. */
+  using McpPromptCallback = std::function<void( std::variant<nlohmann::json, std::string> )>;
+
+  /** Queue a prompt to be submitted into the conversation as if the user typed it, then invoke
+   `callback` once the resulting turn (including all tool calls / sub-agents) finishes.
+   Prompts are drained FIFO; only one runs at a time and never while a turn is already in progress.
+   Resolves `callback` immediately with an error while a benchmark is running or the assistant is
+   not configured.  Safe to call from the session event loop (e.g. an MCP async tool's Stage A,
+   under the session UpdateLock).
+   */
+  void queuePromptForMcp( const std::string &prompt, McpPromptCallback callback );
 
   /** Disconnect the spectrum-changed handler (used by LlmBenchmarkRunner during SpectrumSequence). */
   void disconnectSpectrumChangedForBenchmark();
@@ -256,6 +275,30 @@ private:
 
   /** Start running a benchmark from the given XML file path. */
   void handleStartBenchmark( const std::string &xmlPath );
+
+  /** A prompt queued by the MCP `assistant_submit_prompt` tool, with its completion callback. */
+  struct PendingMcpPrompt
+  {
+    std::string prompt;
+    McpPromptCallback callback;
+  };//struct PendingMcpPrompt
+
+  /** FIFO of MCP-submitted prompts awaiting their turn (front = next to run). */
+  std::deque<PendingMcpPrompt> m_mcpPromptQueue;
+
+  /** Completion callback for the MCP prompt whose turn is currently in flight; empty when the
+   active turn was not MCP-initiated, or when idle. */
+  McpPromptCallback m_activeMcpCallback;
+
+  /** If idle and no MCP prompt is in flight, submit the next queued prompt. */
+  void drainMcpPromptQueue();
+
+  /** Resolve the in-flight MCP prompt's callback (success → result JSON; else error string), then
+   drain the next queued prompt. */
+  void resolveActiveMcpPrompt( bool success );
+
+  /** Build the JSON result (final assistant text + compact tool-call trace) for an MCP prompt. */
+  nlohmann::json buildMcpPromptResult() const;
 };
 
 #endif // USE_LLM_INTERFACE

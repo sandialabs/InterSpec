@@ -24,10 +24,10 @@ If a background spectrum is loaded, your goal is to only to identify peaks from 
 When no background spectrum is loaded, do not fit NORM peaks upfront. Instead, begin by investigating unidentified peaks directly. If during investigation you encounter peaks matching NORM energies (K-40 at 1460.8 keV, Ra-226 daughters such as Bi-214 at 609.3 keV, Th-232 daughters such as Tl-208 at 583.2 keV, Ac-228 at 911.2 keV), or if you suspect a peak may be interfered with by a NORM source, transition to ADD_NORM_PEAKS to fit all NORM peaks at once. This deferred approach avoids wasting effort on NORM fitting for spectra where NORM is minimal or absent.
 
 ## **Source Hierarchy Strategy (The "Ultimate Parent" Rule)**
-Do not simply identify short-lived daughters. You must determine the **Ultimate Parent** or intended source:
-1. **NORM/Uranium/Thorium:** If you see Pb-214 or Bi-214, the source is likely **Ra-226** or **U-238**. If you see Ac-228 or Pb-212, the source is **Th-232**. Always assign the peak to the long-lived Parent (e.g., "Ra-226") unless the daughter is chemically separated.
-2. **Fission Products:** Look for Cs-137, Ba-133, etc.
-3. **Medical:** Tc-99m, I-131, etc.
+Do not simply identify short-lived daughters. Report the nuclide that is the **actual source** — usually the longest-lived ancestor whose chain is in secular equilibrium and consistent with the observed lines. But **do NOT climb past the source**: only assign to a higher parent if that parent's presence is actually supported by the data (its chain is in equilibrium and matches the observed lines). A produced, milked, or medical isotope IS the source — do not report its distant natural parent.
+1. **NORM/Uranium/Thorium:** If you see Pb-214 or Bi-214, the source is likely **Ra-226** or **U-238**. If you see Ac-228 or Pb-212, the source is **Th-232**. Assign the peak to the long-lived Parent (e.g., "Ra-226") unless the daughter is chemically separated.
+2. **Produced / medical isotopes are themselves the source — do not climb to their natural parent.** e.g. report **Ac-225** (an alpha-therapy isotope milked from Th-229), NOT Th-229; Tc-99m, I-131, etc. are likewise the source, not their generators.
+3. **Fission Products:** Cs-137, Ba-133, etc.
 
 ## **Validation Protocols**
 Before finalizing a source ID, you must validate it:
@@ -43,6 +43,7 @@ Before finalizing a source ID, you must validate it:
      * Nuclide age differences (secular equilibrium issues).
      * Likely interference from background.
    - **Reject:** If amplitudes are physically impossible without a valid explanation (above), reject the ID.
+4. **Judging elevation over background:** To decide whether a specific line is genuinely elevated over background, use its FIT PEAK AREA (continuum-subtracted) — e.g. whether a fit peak at that energy is in the `elevated_above_background`/`unidentified` peak list, or its `elevatedOverBackgroundPeakNumSigma`. Do NOT judge elevation from gross region counts (`get_counts_in_energy_range`): a source's Compton continuum raises gross counts across the whole spectrum, so a region can show elevated gross counts even where there is NO actual elevated peak. (This is decisive for chain discrimination, e.g. Th-232 vs Th-228 via the Ac-228 911.2/969.0 keV peaks.)
 
 ## **Workflow State Machine**
 
@@ -56,6 +57,8 @@ If you have identified multiple sources that you will want to add peaks for, it 
 
 
 ## **Additional Useful Information**
+
+**511 keV-only sources (positron emitters):** If the ONLY significantly-elevated peak is the 511 keV annihilation line (no other distinguishing gammas elevated over background), the source is a positron (β+) emitter. Do NOT force a single specific nuclide - many β+ emitters produce essentially only 511 keV (e.g. F-18, Ga-68, and others), so it cannot be uniquely determined from 511 alone. Report it as a "positron/β+ emitter (elevated 511 keV annihilation)", and you may note likely candidates such as F-18 (the common PET isotope) - but present them as possibilities, not a definitive ID.
 
 Relevant detector specific information:
 - The Ortec Detective line of detectors have gold contact, so you may see Au fluorescent x-rays around 68 and possible 78 keV - please consider this for these detectors, instead 
@@ -235,7 +238,7 @@ Only transition to ADD_NORM_PEAKS if no background spectrum is loaded; if there 
   - Use a tool call like `source_photons( {"sortOrder": "intensity", "maxResults": 25, "source": "Co60", "minEnergy": 100} )`, to look for other gammas that could correspond to a peak.
   - Use the `prominent_energies_keV` field returned by `source_photons` to check if this is a key peak for the source, or perhaps another detectable peak in the spectrum from this candidate are present.
 4. **Check Existing Sources:** If this is the first peak for the candidate source, check to make sure none of the existing sources wouldnt also be attributble to this peak.  Ex., if the peak being investigated is a relatively small peak near 92 keV, but some prominent prominant Br82 peaks have already been identiied - it may be tempting to assign this peak to U238 since 
-5. **Check for other explanations:** Check if a 
+5. **Check for other explanations (and single-line caution):** Before accepting, rule out that the peak is a sum peak, single/double escape peak, x-ray, or a statistical fluctuation — use `sum_peak_check`, `escape_peak_check`, and `compton_scatter_peak_check` as appropriate. Be especially skeptical of a candidate supported by only a SINGLE peak with no corroborating lines (e.g. Mn-54 at 835 keV, or another single-gamma nuclide): a lone, modest peak is easily a sum/escape/background artifact or a statistical fluctuation. Only report such a single-line source if the peak is clearly significant AND no better explanation exists; otherwise leave the peak unidentified rather than over-reporting a speculative nuclide — a false positive costs more than leaving one weak peak unexplained.
 6. **Ultimate Parent Rule:** If the candidate is a short-lived daughter (e.g., Pb-214, Bi-214), determine the ultimate parent (Ra-226, U-238) - do not assign the daughter directly unless chemically separated, or a clear indication of out of equilibrium condition.
 
 - If validation passes, transition to ADD_SOURCE_PEAK.
@@ -384,11 +387,11 @@ For every remaining peak, re-check for possible explanations:
           </SuggestedTools>
           <PromptGuidance>Check for non-peak radiation signatures before finalizing. These checks detect sources that may not produce clear photopeaks.
 
-**1. Neutron Detection Checks:**
+**1. Neutron Detection Checks (MANDATORY — you MUST actively check for neutrons before finalizing; do NOT conclude "no sources" or leave this state without performing at least checks a and b):**
   a. **Neutron CPS comparison:** Call `get_spectrum_info` for the foreground. If the result includes `neutronCPS`, neutrons were detected.
      - If a background spectrum is loaded and both report neutron data, check the `neutronCPS_excess_sigma` field. If this value is above ~2, note significant neutron excess in the foreground.
      - If no background, a non-zero neutron CPS is still noteworthy but less definitive.
-  b. **High-energy continuum elevation:** Use `get_counts_in_energy_range` to check the region above the 2614.5 keV Tl-208 peak. Choose a range starting ~4 FWHM above 2614.5 keV (roughly 2640-3000 keV or similar). If the foreground has significantly more counts than background (check the sigma elevation in the background comparison), this suggests neutron-induced continuum (from neutron capture gammas, inelastic scatter gammas, or activation).
+  b. **High-energy continuum elevation (ALWAYS PERFORM THIS CHECK):** You MUST call `get_counts_in_energy_range` for the region ABOVE the 2614.5 keV Tl-208 peak — use ~2640-3000 keV (and also ~3000-4000 keV if the spectrum extends that high) — and compare the sigma elevation to background. A significant foreground excess above 2614.5 keV, **even with no discrete photopeaks**, indicates neutron-induced continuum (neutron-capture, inelastic-scatter, or activation gammas) and MUST be reported as evidence of neutrons / a neutron source. This is the primary way to detect a bare neutron source (e.g. Cf-252) whose own gammas are not identifiable. Do NOT decide "no non-background sources" from the absence of photopeaks below 2614 keV without having explicitly checked the >2614 keV continuum.
      - **Caveat:** If Co-56 or another high-energy gamma emitter has been identified, peaks above 2614 keV are expected and this check is less diagnostic.
   c. **Neutron reaction indicator peaks:** Check if any already-identified peaks correspond to known neutron reaction signatures:
      - H(n,gamma) at 2223.2 keV (hydrogen neutron capture)
@@ -431,6 +434,10 @@ After completing all checks, note any non-peak signatures found and transition t
             <Tool>edit_analysis_peak</Tool>
           </SuggestedTools>
           <PromptGuidance>You are currently investigating the source identifications as a whole to make sure they make sense; if they dont some peaks sources may need updating.
+
+**MANDATORY sanity checks (do these first):**
+- **Every reported source must be genuinely elevated over background.** Confirm each source you will report has at least one peak that is actually elevated (in the `elevated_above_background`/`unidentified` list, or with significant fit-peak elevation over the matching background peak). Do not report a nuclide as a source when its peaks are only at background level. In particular, report a NORM nuclide (K-40, the U/Ra chain, the Th chain) as a *source* ONLY IF it is notably elevated over the background rate: if its lines ARE clearly elevated over background it is a legitimate source and should be reported, but if they are at (or near) background level, attribute them to background rather than a foreground source.
+- **The dominant peaks must be explained.** Re-check the largest elevated peaks (`get_peaks` with the `elevated_above_background`/`unidentified` filter). Every large elevated peak must be attributed to one of your identified sources. If the biggest elevated peak is left unexplained, you have very likely MISSED the primary source — go back to INVESTIGATE_PEAK for that peak rather than finalizing.
 
 General points to consider:
 - Excluding NORM sources, do all the sources make sense to find together?  For example, is one source very short lived, while others are much longer lived? Or was U or Pu identified, along with a medical isotope (which doesnt make a lot of sense - can the medical isotope peak be attributed to the U/Pu, or is a longer-lived fission product more likely)?

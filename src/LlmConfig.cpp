@@ -969,11 +969,13 @@ void AgentStateMachine::fromXml( const rapidxml::xml_node<char> *state_machine_n
   m_current_state = m_initial_state;
 
   // Parse all states
+  int state_declaration_index = 0;
   for( const rapidxml::xml_node<char> *state_node = XML_FIRST_NODE( state_machine_node, "State" );
        state_node;
        state_node = XML_NEXT_TWIN( state_node ) )
   {
     StateDefinition state_def;
+    state_def.declaration_order = state_declaration_index++;
 
     // Get state name
     const rapidxml::xml_attribute<char> *name_attr = XML_FIRST_ATTRIB( state_node, "name" );
@@ -1126,13 +1128,34 @@ void AgentStateMachine::transitionTo( const std::string &new_state )
     throw std::runtime_error( "AgentStateMachine: Cannot transition to unknown state: " + new_state );
 
   m_current_state = new_state;
+
+  // A transition happened; clear any pending rejected-transition tracking.
+  m_last_rejected_target.clear();
+  m_rejected_attempts = 0;
 }//transitionTo(...)
 
 
 void AgentStateMachine::reset()
 {
   m_current_state = m_initial_state;
+  m_last_rejected_target.clear();
+  m_rejected_attempts = 0;
 }//reset()
+
+
+int AgentStateMachine::noteRejectedTransitionAttempt( const std::string &target )
+{
+  if( target == m_last_rejected_target )
+  {
+    m_rejected_attempts += 1;
+  }else
+  {
+    m_last_rejected_target = target;
+    m_rejected_attempts = 1;
+  }
+
+  return m_rejected_attempts;
+}//noteRejectedTransitionAttempt(...)
 
 
 std::string AgentStateMachine::getPromptGuidanceForCurrentState() const
@@ -1166,15 +1189,16 @@ std::string AgentStateMachine::getFullStateMapSummary() const
 {
   std::string summary;
 
-  // Start with the initial state, then add remaining states in map order
+  // List states in their declared (workflow) order, not the alphabetical std::map order, so the
+  // summary reads as the actual sequence the agent should follow (and the final state comes last).
   std::vector<std::string> ordered_states;
-  ordered_states.push_back( m_initial_state );
-
   for( const auto &state_pair : m_states )
-  {
-    if( state_pair.first != m_initial_state )
-      ordered_states.push_back( state_pair.first );
-  }
+    ordered_states.push_back( state_pair.first );
+
+  std::sort( ordered_states.begin(), ordered_states.end(),
+    [this]( const std::string &a, const std::string &b ) -> bool {
+      return getStateDefinition(a).declaration_order < getStateDefinition(b).declaration_order;
+    } );
 
   for( const std::string &state_name : ordered_states )
   {

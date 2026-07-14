@@ -131,6 +131,13 @@ struct BenchmarkQuestionResult
   std::chrono::milliseconds duration{0};
   bool hadError = false;
   std::string errorMessage;
+
+  // Number of times this question had to be re-asked because of an endpoint/LLM
+  //  error (response error, watchdog timeout, or empty answer) before it was
+  //  finally recorded.  Zero for a clean first-try result.  Lets us separate
+  //  the LLM-endpoint reliability from the tool's spectroscopy ability: a
+  //  question with errorRetries>0 but hadError==false was recovered by a retry.
+  int errorRetries = 0;
 };//struct BenchmarkQuestionResult
 
 
@@ -224,6 +231,16 @@ private:
   size_t m_currentQuestion;
   size_t m_currentSequenceStep;
 
+  // How many times the in-flight question (or sequence step) has been re-asked
+  //  due to an endpoint/LLM error.  Reset to 0 once a result for the current
+  //  question is recorded (success or error-after-exhausting-retries).
+  int m_currentQuestionRetries = 0;
+
+  // Max number of times a question is re-asked after an error before giving up
+  //  and recording it as an error.  Bounds the retry loop so a persistently
+  //  failing endpoint can't hang the run.
+  static constexpr int sm_max_question_retries = 3;
+
   // Timing for current question
   std::chrono::system_clock::time_point m_questionStartTime;
 
@@ -263,6 +280,13 @@ private:
 
   /** Send the current judged question to the LLM. */
   void sendCurrentQuestion();
+
+  // Re-ask the current question after an endpoint/LLM error, if we have retries
+  //  left.  Clears the (failed) conversation turn so the retry starts fresh
+  //  against the already-loaded spectrum, then re-sends the question.
+  //  Returns true if a retry was initiated (caller should just return); false
+  //  if retries are exhausted (caller should record the error and advance).
+  bool retryCurrentQuestionOnError( const std::string &why );
 
   /** Send the current sequence step prompt to the LLM. */
   void sendSequenceStepPrompt();
