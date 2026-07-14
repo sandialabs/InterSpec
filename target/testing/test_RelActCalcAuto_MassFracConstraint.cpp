@@ -31,6 +31,19 @@
 #include <iostream>
 #include <algorithm>
 
+#include <ceres/jet.h>
+
+// InterSpec/RelActCalc_imp.hpp (included below) transitively pulls in InterSpec/GammaInteractionCalc.h
+//  -> <boost/asio>, i.e. winsock2.h; while <boost/test/included/unit_test.hpp> includes <windows.h>,
+//  which drags in the legacy WinSock.h.  Pulling winsock2.h in first keeps that later <windows.h>
+//  from including WinSock.h -- otherwise MSVC fails with C1189 "WinSock.h has already been included".
+//  Same approach as test_DetectorPeakResponse.cpp and test_ShieldingSourceFitCalc.cpp.
+#ifdef _WIN32
+  #define WIN32_LEAN_AND_MEAN
+  #include <winsock2.h>
+  #include <windows.h>
+#endif
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -43,10 +56,6 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
-
-// Included after the boost/asio-pulling InterSpec headers above (see note there) and before
-//  RelActCalc_imp.hpp, which requires <ceres/jet.h> to be in scope.
-#include <ceres/jet.h>
 
 #define BOOST_TEST_MODULE RelActCalcAuto_MassFracConstraint_suite
 #include <boost/test/included/unit_test.hpp>
