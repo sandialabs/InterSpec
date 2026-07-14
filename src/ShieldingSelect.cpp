@@ -2282,10 +2282,30 @@ void ShieldingSelect::init()
                               showToolTips, HelpSystem::ToolTipPosition::Top );
   
   if( m_materialSuggest )
+  {
     m_materialSuggest->forEdit( m_materialEdit,
                    WSuggestionPopup::Editing | WSuggestionPopup::DropDownIcon );
 
-  
+    // The material suggestion popup is shared app-wide, and `ShieldingSelect` is frequently
+    //  hosted inside an AuxWindow that calls `rejectWhenEscapePressed()`, which wires the
+    //  global (domRoot) Escape handler to close the window.  When the suggestion popup is
+    //  open, Escape should only dismiss the popup - but the keydown still bubbles up to the
+    //  domRoot and closes the whole window.  Install a capture-phase keydown listener on the
+    //  material edit that stops Escape from propagating *only while the popup is showing*, so
+    //  the popup still hides (it does that on keyup) while the window stays open.  This must
+    //  be a raw capture-phase listener: WSuggestionPopup replaces the edit's `onkeydown`
+    //  property while it is shown, which would suppress a Wt keyWentDown() handler.
+    const std::string escapeJs =
+      "var e=" + m_materialEdit->jsRef() + ";"
+      "if(e){e.addEventListener('keydown',function(ev){"
+        "if(ev.keyCode!==27)return;"
+        "var p=" + m_materialSuggest->jsRef() + ";"
+        "if(p && p.style.display!=='none')ev.stopPropagation();"
+      "},true);}";
+    m_materialEdit->doJavaScript( escapeJs );
+  }//if( m_materialSuggest )
+
+
   m_materialSummary = new WText( "", XHTMLText );
   if( m_forFitting )
   {
@@ -3496,14 +3516,18 @@ std::shared_ptr<const Material> ShieldingSelect::material( const std::string &te
     //material wasnt in the database
   }
 
-  //See if 'text' is a chemical formula, if so add it to possible suggestions
+  //See if 'text' is a chemical formula, and if so add it to the suggestions so the user
+  //  doesn't have to retype it next time.
   try
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     std::shared_ptr<const Material> mat = MaterialDB::materialFromChemicalFormula( text, db );
-    if( mat && m_materialSuggest )
+
+    // Only add a non-empty name we don't already have.  An empty suggestion is poison for
+    //  Wt's WSuggestionPopup: it matches *any* typed text and renders as the literal text
+    //  "undefined" (see InterSpec::pushMaterialSuggestionsToUsers()).
+    if( mat && m_materialSuggest && !mat->name.empty() )
     {
-      // Check if this suggestion already exists before adding
       Wt::WAbstractItemModel *mdl = m_materialSuggest->model();
       const Wt::WString suggName = Wt::WString::fromUTF8( mat->name );
       bool alreadyHave = false;
@@ -3512,6 +3536,7 @@ std::shared_ptr<const Material> ShieldingSelect::material( const std::string &te
       if( !alreadyHave )
         m_materialSuggest->addSuggestion( mat->name, mat->name );
     }
+
     if( mat )
       return mat;
   }catch(...)

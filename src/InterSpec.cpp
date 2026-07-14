@@ -10321,12 +10321,20 @@ void InterSpec::pushMaterialSuggestionsToUsers()
     if( desc_pos != string::npos )
       continue;
 
-    m_shieldingSuggestion->addSuggestion( name, name );
+    // Don't add empty/blank names or descriptions as suggestions.  Some material-database
+    //  entries (e.g. the GADRAS "?"/void placeholder material) parse to a blank name or
+    //  description.  An empty suggestion row is poison for Wt's WSuggestionPopup: its matcher
+    //  treats an empty suggestion as a match for *any* typed text and then renders the row as
+    //  the literal text "undefined", and selecting it (its value is empty) wipes the edit -
+    //  so the user sees a stray "undefined" entry and the Enter key never accepts their input.
+    if( !SpecUtils::trim_copy( name ).empty() )
+      m_shieldingSuggestion->addSuggestion( name, name );
+
     if( SpecUtils::iequals_ascii( name, desc ) )
       continue;
 
     const string::size_type sub_pos = SpecUtils::ifind_substr_ascii( name, desc.c_str() );
-    if( sub_pos == string::npos )
+    if( (sub_pos == string::npos) && !SpecUtils::trim_copy( desc ).empty() )
       m_shieldingSuggestion->addSuggestion( desc, desc );
   }//for( const shared_ptr<const Material> &mat : mats )
 

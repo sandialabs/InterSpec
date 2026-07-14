@@ -4537,12 +4537,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               is_constrained = true;
 
               //Rel Act paramater is constrained within [1.0, 2.0] (= sm_activity_par_offset + [0,1]), so the
-              //  mass fraction interpolates between the lower and upper constraint values.
-              //  If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
-              //  solution gives the sum of all the mass fractions to be greater than 1.0, we will just return a say
-              //  that particular set of parameters is invalid, even though we could maybe do something more intelligent.
+              //  mass fraction interpolates between the lower and upper constraint values.  When several nuclides
+              //  of an element are constrained, a smooth soft-cap decode keeps their fractions summing to < 1 for
+              //  any in-box parameters (RelActCalc::mass_fraction_softcap_factor / review item A16), so no start is
+              //  infeasible and the eval never throws.
 
-              //TODO: To model mass-fraction constraints, should switch to a paramter that gives total RelAct of an element, and then use a ceres::Manifold to make all the nuclides of the element add up to 1.0 (eg, on a surface).
+              //TODO: a full ceres::Manifold over an element's nuclides (a total-element-RelAct parameter on a
+              //  simplex surface) would additionally allow ALL of an element's nuclides to be mass-constrained at
+              //  once (we currently require >=1 unconstrained nuclide per element) - still future work.
 
               // This (manual-estimate) pass sets the constrained nuclide up once; the second pass below leaves it
               //  alone (it only sets up constrained nuclides when this manual estimate did not run).  A former
@@ -4918,8 +4920,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               // Set a mass-fraction-constrained nuclide up exactly once.  If the manual estimate succeeded, the
               //  first nuclide pass already did it (manual-based, in-bounds start, bounds, and constant-parameter
               //  status) - leave it untouched.  Only when the manual estimate failed do we set it up here, at the
-              //  window midpoint (strictly off the bounds; the sum>1 rescale below keeps it interior when several
-              //  constraints overlap).
+              //  window midpoint (strictly off the bounds; the soft-cap decode keeps any in-box start feasible
+              //  even when several constraints overlap).
               if( succesfully_estimated_re_and_ra )
                 continue;
 
@@ -5050,95 +5052,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }
           }//if( !succesfully_estimated_re_and_ra )
         }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
-
-
-        // If we have multiple mass-fraction constraints for this element, we need to make sure thier initial
-        //  values sum to less than 1.0.
-        // Sum starting mass fractions for all constraints in this Rel Eff curve
-        map<short int,double> elements_starting_mass_fracs, elements_lower_mass_fracs, elements_fixed_mass_frac;
-        for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
-        {
-          const SandiaDecay::Nuclide *nuc = constraint.nuclide;
-          const size_t act_index = cost_functor->nuclide_parameter_index( nuc, re_eff_index );
-          // The activity parameter encodes the position within the window as (param - sm_activity_par_offset);
-          //  decode with the offset (1.0), not 0.5, so this matches the rescale/check below (`:5015`-`:5019`)
-          //  and the eval-time decode (`:8138`,`:8168`).  Using 0.5 here over-counts the starting mass
-          //  fraction by 0.5*(upper-lower), which spuriously triggered the sum>1 rescale and its assert.
-          const double starting_dist = parameters[act_index] - RelActAutoCostFcn::sm_activity_par_offset;
-
-          const double lower_frac = constraint.lower_mass_fraction;
-          const double upper_frac = constraint.upper_mass_fraction;
-          const double starting_mass_frac = lower_frac + starting_dist*(upper_frac - lower_frac);
-
-          elements_lower_mass_fracs[nuc->atomicNumber] += lower_frac;
-          if( lower_frac == upper_frac )
-            elements_fixed_mass_frac[nuc->atomicNumber] += lower_frac;
-
-          elements_starting_mass_fracs[nuc->atomicNumber] += starting_mass_frac;
-        }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
-
-        //Now go through and check if any sum is greater than or equal to 1.0
-        for( const map<short int,double>::value_type &an_sum : elements_starting_mass_fracs )
-        {
-          const short int atomic_number = an_sum.first;
-          const double starting_mass_frac = an_sum.second;
-          if( starting_mass_frac < 1.0 )
-            continue;
-
-          // If we're here, we have need to reduce the mass fractions for this element
-          const double lower_allowed_frac = elements_lower_mass_fracs[atomic_number];
-
-          assert( lower_allowed_frac < 1.0 ); //`RelEffCurveInput::check_nuclide_constraints()` should have already checked this
-          if( lower_allowed_frac >= 1.0 )
-            throw std::logic_error( "Mass fraction constraint sums to over 1 - please fix `RelEffCurveInput::check_nuclide_constraints()` to catch this." );
-
-          const double fixed_fraction = elements_fixed_mass_frac[atomic_number];
-
-          // `lower_allowed_frac` (used by the feasibility check above) is the sum of *all* lowers, but this
-          //  rescale only shrinks the *range* (lower!=upper) constraints - so the target and the reduction
-          //  fraction must be expressed in terms of the range-only lower sum.  Omitting this `- fixed_fraction`
-          //  over-counts the lower bound by `fixed_fraction`, which makes the denominator below too small (a
-          //  wrong / over-reduced start in release, and a tripped consistency assert in debug) whenever an
-          //  element mixes a fixed and a range mass-fraction constraint.
-          const double lower_allowed_var_frac = lower_allowed_frac - fixed_fraction;
-          const double initial_variable_amount = starting_mass_frac - fixed_fraction;
-          const double target_var_frac = 0.5*((1.0 - fixed_fraction) + lower_allowed_var_frac);  //halfway between the smallest and largest amount allowed
-          const double amount_need_reduced = initial_variable_amount - target_var_frac;
-          const double frac_variable_reduce = amount_need_reduced / (initial_variable_amount - lower_allowed_var_frac);
-          const double updated_variable_frac = initial_variable_amount - amount_need_reduced;
-
-          //Example starting mass fraction 1.25, with 0.5 fixed, and lowest variable amount of 0.1
-          //  fixed_fraction = 0.5
-          //  starting_mass_frac = 1.25
-          //  lower_allowed_frac = 0.6   (0.5 fixed + 0.1 range-constraint lower)
-          //  lower_allowed_var_frac = 0.6 - 0.5 = 0.1
-          //  initial_variable_amount = 1.25 - 0.5 = 0.75
-          //  target_var_frac = 0.5*((1.0 - 0.5) + 0.1) = 0.3;
-          //  amount_need_reduced = 0.75 - 0.3 = 0.45;
-          //  frac_variable_reduce = 0.45 / (0.75 - 0.1) = 0.6923;
-          //  updated_variable_frac = 0.75 - 0.45 = 0.3;
-          //So then 0.5 fixed, 0.3 variable, and 0.2 "other"
-
-          assert( initial_variable_amount > 0.0 );
-          assert( amount_need_reduced >= 0.0 );
-          assert( (frac_variable_reduce > 0.0) && (frac_variable_reduce < 1.0) );
-
-          double check_var_frac = 0.0;
-          for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &c : rel_eff_curve.mass_fraction_constraints )
-          {
-            if( (c.nuclide->atomicNumber != atomic_number) || (c.lower_mass_fraction == c.upper_mass_fraction) )
-              continue;
-
-            const size_t act_index = cost_functor->nuclide_parameter_index( c.nuclide, re_eff_index );
-            const double offset = RelActAutoCostFcn::sm_activity_par_offset;
-            parameters[act_index] = offset + ((1.0 - frac_variable_reduce)*(parameters[act_index] - offset));
-            assert( (parameters[act_index] >= offset) && (parameters[act_index] <= (1.0 + offset)) );
-
-            check_var_frac += (c.lower_mass_fraction + (parameters[act_index] - offset)*(c.upper_mass_fraction - c.lower_mass_fraction));
-          }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
-
-          assert( fabs(check_var_frac - updated_variable_frac) < 0.0001 );
-        }//for( const map<short int,double>::value_type &an_sum : elements_starting_mass_fracs )
       }//for( const auto &rel_eff_curve : options.rel_eff_curves )
         
       // The parameters will have entries for two sets of peak-skew parameters; one for
@@ -6456,37 +6369,68 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                             ? (sigma_max / sigma_min) : std::numeric_limits<double>::infinity();
       }
 
-      // Count a direction as a real degree of freedom only if it is constrained within 1e7x of the
-      //  best-constrained direction - the same ratio as the covariance conditioning floor above
-      //  (min_reciprocal_condition_number = (1e-7)^2 = 1e-14), so the directions counted here as effective
-      //  parameters match the directions kept (non-zero variance) in the reported covariance.
+      // Raw-Jacobian rank count: this mirrors the conditioning Ceres uses for the reported covariance
+      //  (cov_options.min_reciprocal_condition_number = (1e-7)^2 = 1e-14 drops directions with
+      //  sigma_i/sigma_max < 1e-7), so `m_num_rank_deficient_dirs` and the rank-deficiency warning below
+      //  describe exactly the directions the covariance zeroed.  kappa(J) above is on this same raw
+      //  Jacobian.  These are deliberately NOT scale-invariant - they must track the (scale-sensitive)
+      //  covariance so the uncertainty-widening net keys off what was actually dropped.
       const double threshold = 1.0e-7 * singular_values.maxCoeff();
 
-      size_t npar_eff = 0;
+      size_t npar_eff_raw = 0;
       for( int i = 0; i < singular_values.size(); ++i)
-        npar_eff += (singular_values(i) > threshold);
+        npar_eff_raw += (singular_values(i) > threshold);
 
-      // The covariance (cov_options.min_reciprocal_condition_number, above) drops exactly the directions
-      //  with singular-value ratio below this same 1e-7 threshold, so `num_free_pars - npar_eff` is the
-      //  number of near-degenerate directions omitted from the reported uncertainties / rel-eff band.
-      //  Record this (and warn) BEFORE the trustworthiness throw below: a severely rank-deficient SVD
-      //  (npar_eff << num_pars, which triggers the throw) is the STRONGEST collapse signal, and the
-      //  derived-uncertainty floor keys off `m_num_rank_deficient_dirs`, so it must be set even when
-      //  we fall back to num_pars for the DOF estimate.
+      // Record (and warn about) the near-degenerate directions omitted from the covariance, BEFORE the
+      //  trustworthiness throw below: the derived-uncertainty floor keys off `m_num_rank_deficient_dirs`,
+      //  so it must be set even when the DOF estimate falls back to num_pars.
       const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
-      solution.m_num_rank_deficient_dirs = (npar_eff < num_free_pars) ? (num_free_pars - npar_eff) : size_t(0);
-      if( npar_eff < num_free_pars )
-        solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff)
+      solution.m_num_rank_deficient_dirs = (npar_eff_raw < num_free_pars) ? (num_free_pars - npar_eff_raw) : size_t(0);
+      if( npar_eff_raw < num_free_pars )
+        solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff_raw)
                             + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
                             " unconstrained by the data (near-degenerate directions).  Per-parameter"
                             " uncertainties omit these directions; derived quantities (enrichment,"
                             " relative-efficiency band) that depend on them are flagged and widened instead." );
 
-      if( (npar_eff < 1) || npar_eff < (num_pars/5) )
-        throw runtime_error( "Only computed " + std::to_string(npar_eff)
-                            + " DOF, compared to " + std::to_string(num_pars) + " parameters." );
+      // Effective degrees of freedom for the data-only chi2/DOF: a SCALE-INVARIANT count.  Ceres
+      //  parameters are re-parameterized to O(1), but a unit step in a relative-activity parameter moves
+      //  thousands of Poisson-weighted counts while a step in a nuisance parameter (FWHM, age, areal
+      //  density, the branching-ratio-uncertainty params) moves O(1), so the raw Jacobian column norms -
+      //  and hence its singular spectrum - span many orders of magnitude from unit choices alone (e.g.
+      //  kappa ~ 1e18, collapsing the raw count to 2 of 77 on a Pu-239 HPGe fit with additional_br_uncert).
+      //  A single relative cutoff on that spectrum then discards legitimately-constrained-but-small-column
+      //  directions.  Column-equilibrating the Jacobian (van der Sluis: divide each column by its L2 norm)
+      //  before this SVD removes the unit dependence, so the count reflects genuine collinearity.  Used
+      //  ONLY for the DOF estimate; kappa(J) and the rank-deficiency flag above stay on the raw Jacobian.
+      Eigen::MatrixXd jacobian_eq = jacobian;
+      for( int col = 0; col < jacobian_eq.cols(); ++col )
+      {
+        const double col_norm = jacobian_eq.col(col).norm();
+        if( col_norm > 0.0 )
+          jacobian_eq.col(col) /= col_norm;  // zero-norm column (no gradient) left zero -> stays degenerate
+      }
 
-      num_effective_paramaters = npar_eff;
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+      const Eigen::JacobiSVD<Eigen::MatrixXd> svd_eq( jacobian_eq );
+#else
+      const Eigen::BDCSVD<Eigen::MatrixXd> svd_eq( jacobian_eq );
+#endif
+      const Eigen::VectorXd singular_values_eq = svd_eq.singularValues();
+      const double threshold_eq = 1.0e-7 * singular_values_eq.maxCoeff();
+
+      size_t npar_eff_equil = 0;
+      for( int i = 0; i < singular_values_eq.size(); ++i )
+        npar_eff_equil += (singular_values_eq(i) > threshold_eq);
+
+      // Only flag a genuinely collapsed problem (a real model degeneracy that survives column-
+      //  equilibration), comparing against the FREE-parameter count (Jacobian columns), not the ambient
+      //  num_pars (which includes manifold-constant parameters that cannot be effective DOF anyway).
+      if( (npar_eff_equil < 1) || (npar_eff_equil < (num_free_pars/5)) )
+        throw runtime_error( "Only computed " + std::to_string(npar_eff_equil)
+                            + " DOF, compared to " + std::to_string(num_free_pars) + " free parameters." );
+
+      num_effective_paramaters = npar_eff_equil;
     }catch( std::exception &e )
     {
       solution.m_warnings.push_back( "Computation of the effective number of parameters failed ('"
@@ -7732,6 +7676,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     };
     
     const auto moreThanByNumPerSecond = []( const pair<double,double> &lhs, const pair<double,double> &rhs ){
+      // NaN-safe strict-weak ordering.  A degenerate rel-eff curve (e.g. a poorly-conditioned or
+      //  failing fit) can make `counts` non-finite (a 0*inf overflow), and a plain `>` comparison
+      //  involving NaN is not a valid strict-weak ordering -> std::sort would be undefined behavior.
+      //  Sort any NaN counts last (they form ROIs that get rejected downstream anyway).
+      if( IsNan(lhs.second) )
+        return false;
+      if( IsNan(rhs.second) )
+        return true;
       return lhs.second > rhs.second;
     };
     
@@ -8471,6 +8423,67 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *mass_fraction_constraint( nuc.source, re_eff_index )
 
 
+  /** Decodes the mass fraction of a single mass-fraction-constrained nuclide - and optionally the
+   element's total constrained mass fraction - through the smooth soft-cap (RelActCalcAuto A16).
+
+   Both #relative_activity and #mass_enrichment_fraction route through this one method, so the
+   fraction used in the fit and the fraction reported to the user can never diverge.  Over the
+   element's constrained nuclides it accumulates the constant lower-bound floor `L = Σ lowerᵢ` and
+   the variable demand `S = Σ vᵢ` (vᵢ = gᵢ·(upperᵢ − lowerᵢ) ≥ 0), forms the soft-cap
+   `factor = RelActCalc::mass_fraction_softcap_factor(S, 1−L, eps) ∈ (0,1]`, and returns:
+     - `this_frac        = lower_this + factor·v_this`   (this nuclide's mass fraction, in window), and
+     - `*sum_constrained = L + factor·S`                 (Σ over the element's constrained nuclides; < 1).
+
+   `src` must be a mass-fraction-constrained nuclide and `this_constraint` its constraint.
+   */
+  template<typename T>
+  void constrained_element_mass_frac( const RelActCalcAuto::SrcVariant &src,
+                                      const size_t rel_eff_index,
+                                      const std::vector<T> &x,
+                                      const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &this_constraint,
+                                      T &this_frac,
+                                      T *sum_constrained = nullptr ) const
+  {
+    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+    const SandiaDecay::Nuclide * const src_nuc = RelActCalcAuto::nuclide(src);
+    assert( src_nuc && (this_constraint.nuclide == src_nuc) );
+
+    // Fixed (lower==upper) constraints contribute only to L; their vᵢ == 0, so they are never scaled.
+    double L = 0.0;
+    T S( 0.0 ), v_this( 0.0 );
+    for( const RelActCalcAuto::NucInputInfo &nuclide : rel_eff_curve.nuclides )
+    {
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(nuclide.source);
+      if( !nuc || (nuc->atomicNumber != src_nuc->atomicNumber) )
+        continue;
+
+      const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const mc
+                                                  = mass_fraction_constraint( nuclide.source, rel_eff_index );
+      if( !mc )
+        continue; // unconstrained nuclides of the element are handled by the caller
+
+      const size_t nuc_x_index = nuclide_parameter_index( nuclide.source, rel_eff_index );
+      const T rel_dist = x[nuc_x_index] - RelActAutoCostFcn::sm_activity_par_offset; // box-bounded to [0,1]
+      assert( (rel_dist >= (0.0 - 1.0E-6)) || (x[nuc_x_index] == 0.0) );
+      assert( (rel_dist <= (1.0 + 1.0E-6)) || (x[nuc_x_index] == 0.0) );
+
+      const T v = rel_dist * (mc->upper_mass_fraction - mc->lower_mass_fraction);
+      L += mc->lower_mass_fraction;
+      S += v;
+      if( nuc == src_nuc )
+        v_this = v;
+    }//for( const NucInputInfo &nuclide : rel_eff_curve.nuclides )
+
+    const double budget = 1.0 - L; // > 0 by RelEffCurveInput::check_nuclide_constraints()
+    assert( budget > 0.0 );
+    const T factor = RelActCalc::mass_fraction_softcap_factor( S, T(budget), RelActCalc::ns_mass_frac_softcap_eps );
+
+    this_frac = this_constraint.lower_mass_fraction + factor*v_this;
+    if( sum_constrained )
+      *sum_constrained = T(L) + factor*S;
+  }//void constrained_element_mass_frac(...)
+
+
   template<typename T>
   T relative_activity( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index, const std::vector<T> &x ) const
   {
@@ -8538,60 +8551,29 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         assert( mass_fraction_constraint(src,rel_eff_index) == (&mass_frac_constraint) );
 
-        // Sum the relative masses of the other nuclides of this element
-        // and sum the mass-constrained portion of this element.
-        T sum_unconstrained_rel_mass_of_el( 0.0 ); //Note this is rel act divide by specific activity, and does not add up to one
-        T sum_constrained_frac_rel_mass_of_el( 0.0 ); // This will include `src.nuclide`, and be less than 1.0
+        // Decode this nuclide's mass fraction and the element's constrained-fraction sum through the
+        //  smooth soft-cap, so the sum is structurally < 1 - no throw, and the unconstrained remainder
+        //  below stays strictly positive (RelActCalcAuto review item A16).
+        T this_rel_mass_frac, sum_constrained_frac_rel_mass_of_el;
+        constrained_element_mass_frac( src, rel_eff_index, x, mass_frac_constraint,
+                                       this_rel_mass_frac, &sum_constrained_frac_rel_mass_of_el );
+
+        // Sum the relative masses of the element's *unconstrained* nuclides (rel act / specific
+        //  activity); together they make up the `1 - sum_constrained` remainder of the element mass.
+        T sum_unconstrained_rel_mass_of_el( 0.0 );
         for( const RelActCalcAuto::NucInputInfo &nuclide : rel_eff_curve.nuclides )
         {
           const SandiaDecay::Nuclide *nuclide_nuc = RelActCalcAuto::nuclide(nuclide.source);
           if( !nuclide_nuc || (nuclide_nuc->atomicNumber != src_nuc->atomicNumber) )
             continue;
-          
-          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const mass_constraint
-                                                               = mass_fraction_constraint(nuclide.source,rel_eff_index);
-           
-          if( mass_constraint )
-          {
-            const size_t nuc_x_index = nuclide_parameter_index( nuclide.source, rel_eff_index );
-            const T rel_dist = (x[nuc_x_index] - RelActAutoCostFcn::sm_activity_par_offset); //Rel Act paramater is constrained within offset and 1.0+offset, to make mass fraction go between lower and upper
-            assert( rel_dist >= (0.0 - 1.0E-6) );
-            assert( rel_dist <= (1.0 + 1.0E-6) );
-            
-            const T rel_mass = (1.0 - rel_dist)*mass_constraint->lower_mass_fraction + rel_dist*mass_constraint->upper_mass_fraction;
-            sum_constrained_frac_rel_mass_of_el += rel_mass;
-          }else
-          {
-            const T rel_act = relative_activity( nuclide.source, rel_eff_index, x );
-            const double specific_activity = nuclide_nuc->activityPerGram();
-            sum_unconstrained_rel_mass_of_el += (rel_act / specific_activity);
-          }//if( is_mass_constrained ) / else
+          if( mass_fraction_constraint(nuclide.source,rel_eff_index) )
+            continue; // constrained nuclides are folded into sum_constrained above
+          const T rel_act = relative_activity( nuclide.source, rel_eff_index, x );
+          sum_unconstrained_rel_mass_of_el += (rel_act / nuclide_nuc->activityPerGram());
         }//for( const NucInputInfo &nuclide : rel_eff_curve.nuclides )
 
-        // If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
-        //  solution gives the sum of all the mass fractions to be greater than 1.0, we throw an exception, causing
-        //  this particular set of parameters to be rejected.
-        //  Also, right now we are requiring at least one nuclide for the element to not have a mass-fraction constraint,
-        //  which we may relax in the future (its just a little easier to implement this way, because otherwise we would
-        //  have to scale the rel_act of them all, which we could do...)
-        if( sum_constrained_frac_rel_mass_of_el > 1.0 )
-          throw runtime_error( "Sum of constrained mass fractions of element is greater than 1.0." );
-
-        if( sum_constrained_frac_rel_mass_of_el < 0.0 )
-          throw runtime_error( "Sum of constrained mass fractions of element is less than 0.0." );
-
+        // sum_constrained < 1 structurally, so this remainder is strictly positive (> eps*budget).
         const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
-        
-
-        const size_t this_nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
-        const T rel_dist = x[this_nuc_x_index] - RelActAutoCostFcn::sm_activity_par_offset;
-        assert( (rel_dist >= (0.0 - 1.0E-6)) || (x[this_nuc_x_index] == 0.0) );
-        assert( rel_dist <= (1.0 + 1.0E-6) || (x[this_nuc_x_index] == 0.0) );
-        const T this_rel_mass_frac = mass_frac_constraint.lower_mass_fraction
-                                     + rel_dist*(mass_frac_constraint.upper_mass_fraction - mass_frac_constraint.lower_mass_fraction);
-        assert( this_rel_mass_frac >= (0.0 - 1.0E-6) );
-        assert( this_rel_mass_frac <= (1.0 + 1.0E-6) );
-
         const T total_rel_mass = sum_unconstrained_rel_mass_of_el / unconstrained_rel_mass_frac_of_el;
         const T this_rel_mass = total_rel_mass * this_rel_mass_frac;
         const T this_rel_act = this_rel_mass * mass_frac_constraint.nuclide->activityPerGram();
@@ -8769,12 +8751,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       if( mass_frac_constraint.nuclide == nuclide )
       {
-        // For mass-constrained nuclides, return the mass fraction directly
-        const size_t nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
-        const T rel_dist = x[nuc_x_index] - T(RelActAutoCostFcn::sm_activity_par_offset);
-        const T mass_frac = mass_frac_constraint.lower_mass_fraction
-                           + rel_dist*(mass_frac_constraint.upper_mass_fraction - mass_frac_constraint.lower_mass_fraction);
-        return mass_frac;
+        // Decode through the SAME soft-cap helper the fit uses, so the reported fraction equals the
+        //  fraction actually used in `relative_activity` (RelActCalcAuto review item A16).
+        T this_frac;
+        constrained_element_mass_frac( src, rel_eff_index, x, mass_frac_constraint, this_frac );
+        return this_frac;
       }
     }//for( const auto &mass_frac_constraint : rel_eff_curve.mass_fraction_constraints )
     
@@ -8857,9 +8838,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             continue;
 
           // If we are here, we have a constraint for this source.
-          //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper:
-          // i.e.: rel_mass = (1.0 - rel_dist)*mass_constraint->lower_mass_fraction + rel_dist*mass_constraint->upper_mass_fraction;
-          //  So we will multiple by d{RelAct}/d{Par[index]} to convert to the multiple for Rel. Act.
+          //Rel Act paramater is constrained within [sm_activity_par_offset, 1+sm_activity_par_offset] (= [1,2]),
+          //  and the nuclide's mass fraction is decoded from it through the soft-cap (constrained_element_mass_frac).
+          //  So we will multiply by d{RelAct}/d{Par[index]} to convert to the multiple for Rel. Act.
           double derivative = std::numeric_limits<double>::infinity();
           const double rel_act = cost_functor->relative_activity(src, rel_eff_index, parameters);
           if( sm_use_auto_diff )
@@ -8874,14 +8855,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             // We dont really need this, as we always use auto diff - but will leave this in here to potentually use as a check in this future.
             const double step_size = 1.0E-3;
             vector<double> local_pars = parameters;
-            if( ((parameters[index] - step_size) > 0.5) && ((parameters[index] + step_size) < 1.5) )
+            if( ((parameters[index] - step_size) > RelActAutoCostFcn::sm_activity_par_offset)
+               && ((parameters[index] + step_size) < (1.0 + RelActAutoCostFcn::sm_activity_par_offset)) )
             {
               local_pars[index] = parameters[index] - step_size;
               const double lower_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
               local_pars[index] = parameters[index] + step_size;
               const double upper_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
               derivative = (upper_act - lower_act) / (2*step_size);
-            }else if( (parameters[index] - step_size) > 0.5 )
+            }else if( (parameters[index] - step_size) > RelActAutoCostFcn::sm_activity_par_offset )
             {
               local_pars[index] = parameters[index] - step_size;
               const double lower_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
@@ -11257,13 +11239,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       cerr << "RelActAutoCostFcn::operator() caught: " << e.what() << endl;
 
-      // The throw threshold in `eval_physical_model_eqn_imp` is set generously
-      //  (-1e-3 g/cm^2 i.e. well below the bounds-loosening of -1e-5 g/cm^2);
-      //  reaching this branch under normal operation means something has gone
-      //  genuinely wrong, so assert loudly during development. Returning false
-      //  tells Ceres to reject the trial step and shrink the trust region,
-      //  which is the safe production-time recovery.
-      assert( 0 );
+      // eval(...) throws when a trial parameter set is numerically un-evaluable - most commonly a
+      //  poorly-conditioned or degenerate rel-eff curve overflowing to inf/NaN.  That legitimately
+      //  happens for sources with essentially no signal (fits that are "expected to fail"), where the
+      //  initial estimate produces an extreme curve.  It is a recoverable condition: returning false
+      //  tells Ceres to reject the trial step and shrink the trust region (the safe recovery).  We
+      //  deliberately do NOT assert here - that would crash these legitimately-degenerate fits during
+      //  development; the cerr above is the developer-facing signal.
       return false;
     }
     

@@ -208,6 +208,13 @@ add_test( NAME test_DetectionLimit
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ShieldSourcePullTrend test_ShieldSourcePullTrend.cpp )
+target_link_libraries( test_ShieldSourcePullTrend PRIVATE InterSpecLib )
+add_test( NAME TShieldSourcePullTrend
+  COMMAND $<TARGET_FILE:test_ShieldSourcePullTrend> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_MakeDrfSrcDef test_MakeDrfSrcDef.cpp )
 target_link_libraries( test_MakeDrfSrcDef PRIVATE InterSpecLib )
 add_test( NAME TMakeDrfSrcDef

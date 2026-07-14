@@ -17,6 +17,9 @@ Warnings:
   {{ warning }}
 ## endfor
 {% endif %}
+{% if exists("PullTrend") and PullTrend.HasConclusion %}
+Pull-trend interpretation: {{ PullTrend.Message }}
+{% endif %}
 {% if exists("Sources") %}
 Sources:
 ## for src in Sources

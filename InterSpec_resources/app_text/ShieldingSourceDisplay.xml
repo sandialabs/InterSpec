@@ -181,4 +181,17 @@
   <message id="x2g-tt-counts-abbrev">cnts</message>
   <message id="x2g-tt-br-abbrev">br</message>
   <message id="x2g-dev-label"><![CDATA[<dev>]]></message>
+
+  <!-- Pull-trend interpretation messages.  {1} is the confidence qualifier (x2g-trend-conf-*).
+       The trend is fit to (observed-model)/uncert vs energy: a slope indicates the shielding
+       amount is off; curvature (a low-energy hook) indicates the effective atomic number is off. -->
+  <message id="x2g-trend-shield-too-low">Peak residuals {1} too little modeled shielding.</message>
+  <message id="x2g-trend-shield-too-high">Peak residuals {1} too much modeled shielding.</message>
+  <message id="x2g-trend-an-too-low">Peak residuals {1} the shielding's effective atomic number is too low.</message>
+  <message id="x2g-trend-an-too-high">Peak residuals {1} the shielding's effective atomic number is too high.</message>
+  <message id="x2g-trend-other-inconsistency">A residual energy trend remains despite fitting shielding — check distance, geometry, age, or detector.</message>
+  <message id="x2g-trend-conf-tentative">possibly indicate</message>
+  <message id="x2g-trend-conf-weak">may indicate</message>
+  <message id="x2g-trend-conf-moderate">probably indicate</message>
+  <message id="x2g-trend-conf-strong">strongly indicate</message>
 </messages>
