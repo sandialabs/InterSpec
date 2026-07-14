@@ -220,6 +220,23 @@ void LlmToolGui::openConfigWindow()
 }
 
 
+void LlmToolGui::openConfigWindowToImport( const std::string &configFilePath )
+{
+  // Replace any window that is already open so the imported config is what the user sees.
+  if( m_configWindow )
+  {
+    AuxWindow::deleteAuxWindow( m_configWindow );  // deletes the window; does not emit finished()
+    m_configWindow = nullptr;
+  }
+
+  m_configWindow = new LlmConfigWindow( m_viewer,
+                                        std::bind( &LlmToolGui::handleConfigSaved, this ),
+                                        std::bind( &LlmToolGui::hasConversationHistory, this ),
+                                        configFilePath );
+  m_configWindow->finished().connect( std::bind( [this](){ m_configWindow = nullptr; } ) );
+}
+
+
 bool LlmToolGui::hasConversationHistory() const
 {
   if( !m_llmInterface )

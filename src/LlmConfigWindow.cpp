@@ -151,7 +151,8 @@ namespace
 
 LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
                                   std::function<void()> onApply,
-                                  std::function<bool()> hasConversation )
+                                  std::function<bool()> hasConversation,
+                                  const std::string &importConfigPath )
   : AuxWindow( WString::tr("lcw-window-title"),
                (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
                 | AuxWindowProperties::SetCloseable
@@ -159,6 +160,7 @@ LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
     m_interspec( viewer ),
     m_onApply( std::move(onApply) ),
     m_hasConversation( std::move(hasConversation) ),
+    m_importConfigPath( importConfigPath ),
     m_enableLlm( nullptr ),
     m_activeSummary( nullptr ),
     m_providersArea( nullptr ),
@@ -228,6 +230,24 @@ LlmConfigWindow::~LlmConfigWindow()
 
 void LlmConfigWindow::seedWorkingCopy()
 {
+  // 0) Import mode: seed from the file the user opened/dropped, so the GUI shows that config.
+  if( !m_importConfigPath.empty() )
+  {
+    try
+    {
+      std::pair<LlmConfig::LlmApi,LlmConfig::McpServer> parsed
+                                    = LlmConfig::loadApiAndMcpConfigs( m_importConfigPath );
+      m_working.llmApi = std::move( parsed.first );
+      m_working.mcpServer = std::move( parsed.second );
+      m_uiState.assign( m_working.llmApi.providers.size(), ProviderUiState() );
+      return;
+    }catch( std::exception & )
+    {
+      // The caller validates the file parses before opening this window, so this should not happen;
+      // fall through to the normal seeding tiers rather than showing an empty window.
+    }
+  }//if( import mode )
+
   // 1) The in-memory (cached) config is the truth that the assistant uses; prefer it.
   try
   {
@@ -1248,6 +1268,27 @@ void LlmConfigWindow::handleAccept()
 {
   if( m_writableDir.empty() )
     return;  // Accept is disabled when there is nowhere to save.
+
+  // Import mode: the user opened a config file to install it.  Warn before clobbering any existing
+  //  config; there is nothing to preserve on the session side, so just save+apply on confirmation.
+  if( !m_importConfigPath.empty() )
+  {
+    const string existing = SpecUtils::append_path( m_writableDir, "llm_config.xml" );
+    if( SpecUtils::is_file(existing) )
+    {
+      SimpleDialog *dialog = new SimpleDialog( WString::tr("lcw-overwrite-title") );
+      WText *txt = new WText( WString::tr("lcw-overwrite-msg"), dialog->contents() );
+      txt->setTextFormat( Wt::XHTMLText );
+
+      WPushButton *ok = dialog->addButton( WString::tr("lcw-overwrite-confirm") );
+      dialog->addButton( WString::tr("lcw-cancel") );  // just dismisses; settings window stays open
+      ok->clicked().connect( std::bind( [this](){ doAccept( true ); } ) );
+      return;
+    }//if( an existing config would be overwritten )
+
+    doAccept( true );
+    return;
+  }//if( import mode )
 
   const bool hasConversation = m_hasConversation && m_hasConversation();
   if( !hasConversation )

@@ -147,6 +147,7 @@
 #endif
 
 #if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmToolGui.h"
 #endif
 
@@ -2561,7 +2562,31 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   {
     return true;
   }
-  
+
+#if( USE_LLM_INTERFACE )
+  // Check if this is an `llm_config.xml` for the LLM assistant.  Open the provider settings window
+  //  pre-loaded with it (the user installs it by accepting), instead of the generic message dialog.
+  if( header_contains( "<LlmConfig" ) )
+  {
+    delete dialog;  // we present our own window/dialog instead of the generic non-spectrum one
+
+    try
+    {
+      LlmConfig::loadApiAndMcpConfigs( fileLocation );  // validate it parses before opening the window
+    }catch( std::exception & )
+    {
+      SimpleDialog *errdialog = new SimpleDialog( WString::tr("smm-llm-config-invalid-title") );
+      new WText( WString::tr("smm-llm-config-invalid-msg"), errdialog->contents() );
+      errdialog->addButton( WString::tr("Close") );
+      return true;
+    }//try / catch
+
+    m_viewer->openLlmConfigForImport( fileLocation );
+    return true;
+  }//if( an LLM assistant config file )
+#endif //USE_LLM_INTERFACE
+
+
 #if( USE_REL_ACT_TOOL )
   if( currdata
      && header_contains( "<RelActCalcAuto " )

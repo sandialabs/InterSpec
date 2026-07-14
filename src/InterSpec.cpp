@@ -12359,10 +12359,22 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
   {
     cerr << "Caught exception '" << e.what() << "' when trying to load '"
          << path << "'" << endl;
+
+    // Not a spectrum - give the non-spectrum dispatcher a chance to claim it (DRF, CALp, LLM config,
+    //  etc.), the same way in-app drag-drop does.  Only show the invalid-file message if nothing does.
+    try
+    {
+      if( m_fileManager
+         && m_fileManager->handleNonSpectrumFile( displayFileName, path, SpecUtils::SpectrumType::Foreground ) )
+        return false;
+    }catch( std::exception & )
+    {
+    }
+
     SpecMeasManager::displayInvalidFileMsg( displayFileName, e.what() );
     return false;
   }//try / catch
-  
+
   return true;
 }//bool userOpenFileFromFilesystem( const std::string filepath )
 
@@ -13805,6 +13817,22 @@ LlmToolGui *InterSpec::currentLlmTool()
 {
   return m_llmTool;
 }//LlmToolGui *currentLlmTool();
+
+void InterSpec::openLlmConfigForImport( const std::string &configFilePath )
+{
+  // Make sure the LLM Assistant tool/tab exists so the user lands in the assistant, and so we have
+  //  the save/apply wiring; then open the settings window pre-loaded with the dropped config.
+  createLlmTool();  // creates + switches to the tab on first use; a no-op if already created
+
+  if( !m_llmTool )
+    return;
+
+  // If the tool already existed, the user may be on a different tab - bring the assistant forward.
+  if( m_toolsTabs )
+    m_toolsTabs->setCurrentWidget( m_llmTool );
+
+  m_llmTool->openConfigWindowToImport( configFilePath );
+}//void openLlmConfigForImport( const std::string &configFilePath )
 
 void InterSpec::syncLlmHistoryToSpecMeas()
 {

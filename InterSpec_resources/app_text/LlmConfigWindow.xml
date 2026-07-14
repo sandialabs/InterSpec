@@ -97,6 +97,11 @@
   <message id="lcw-apply-continue">Apply now</message>
   <message id="lcw-apply-file-only">Save file only</message>
 
+  <!-- Confirmation shown when importing a config file would overwrite the existing one -->
+  <message id="lcw-overwrite-title">Overwrite LLM configuration?</message>
+  <message id="lcw-overwrite-msg"><![CDATA[You already have an LLM configuration saved. Accepting will <strong>overwrite</strong> it with this file.]]></message>
+  <message id="lcw-overwrite-confirm">Overwrite</message>
+
   <!-- Validation warnings (shown in the footer tooltip) -->
   <message id="lcw-warn-endpoint-empty">Active provider: endpoint is empty.</message>
   <message id="lcw-warn-token-placeholder">Active provider: bearer token looks unset.</message>

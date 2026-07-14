@@ -69,10 +69,15 @@ public:
                      (re-reads the config and refreshes the assistant).  May be empty.
       @param hasConversation Returns whether there is a non-empty conversation right now; used to
                      decide whether to warn before applying.  May be empty (treated as "no").
+      @param importConfigPath If non-empty, the working copy is seeded from this on-disk
+                     `llm_config.xml` (e.g. a file the user dragged onto / opened in the app) rather
+                     than from the currently-loaded config.  In this "import" mode, Accept warns the
+                     user before overwriting any existing config in the writable data directory.
    */
   LlmConfigWindow( InterSpec *viewer,
                    std::function<void()> onApply,
-                   std::function<bool()> hasConversation );
+                   std::function<bool()> hasConversation,
+                   const std::string &importConfigPath = std::string() );
   virtual ~LlmConfigWindow();
 
 private:
@@ -132,6 +137,7 @@ private:
   std::function<void()> m_onApply;
   std::function<bool()> m_hasConversation;
   std::string m_writableDir; // empty => saving unavailable on this platform
+  std::string m_importConfigPath; // non-empty => seed from this file and warn before overwriting
 
   LlmConfig m_working;                       // authoritative working state (llmApi + mcpServer used)
   std::vector<ProviderUiState> m_uiState;    // parallel to m_working.llmApi.providers

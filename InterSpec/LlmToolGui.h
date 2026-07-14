@@ -85,7 +85,13 @@ public:
   static bool llmToolIsConfigured();
   
   LlmInterface *llmInterface();
-  
+
+  /** Open the LLM provider settings window seeded from an on-disk `llm_config.xml` the user opened
+   or dragged onto the app (import mode).  On Accept the file is written to the writable data
+   directory (warning first if one already exists), then applied to the session like a normal save.
+   If a settings window is already open, it is replaced. */
+  void openConfigWindowToImport( const std::string &configFilePath );
+
   /** Focus the input text field */
   void focusInput();
 

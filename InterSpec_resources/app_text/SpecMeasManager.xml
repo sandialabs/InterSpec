@@ -30,6 +30,8 @@
   <message id="smm-empty-file">File was probably an empty file - not a spectrum file.</message>
   <message id="smm-failed-reading-nonspec-file">Failed to read non-spectrum file.</message>
   <message id="smm-not-spec-file">Not a spectrum file</message>
+  <message id="smm-llm-config-invalid-title">Invalid LLM configuration file</message>
+  <message id="smm-llm-config-invalid-msg">This file looks like an LLM assistant configuration, but it could not be read. It may be malformed or from an incompatible version.</message>
   <message id="smm-image-file">Image File Selected</message>
   <message id="smm-icd2">This looks to be an N42 ICD2 file that contains analysis results
     rather than raw spectra.

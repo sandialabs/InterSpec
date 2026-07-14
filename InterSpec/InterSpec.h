@@ -910,6 +910,12 @@ public:
   
   /** Returns current LLM tool, or nullptr if one does not currently exist. */
   LlmToolGui *currentLlmTool();
+
+  /** Open the LLM provider settings window seeded from an `llm_config.xml` the user opened or
+   dragged onto the app.  Ensures the LLM Assistant tool/tab exists (createLlmTool()) and then hands
+   off to LlmToolGui::openConfigWindowToImport().  On Accept the file is installed into the writable
+   data directory (with an overwrite warning if one already exists). */
+  void openLlmConfigForImport( const std::string &configFilePath );
   
   /** Handle cleanup when LLM tool is closed. */
   void handleLlmToolClose();
