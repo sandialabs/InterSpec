@@ -1920,7 +1920,14 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
 {
   using namespace rapidxml;
   rapidxml::xml_document<char> *doc = RadInstrumentData->document();
-  
+
+  // Declare the "DHS" namespace prefix used by the <DHS:InterSpec> extension node below.
+  //  Without this declaration strict XML parsers (e.g. lxml/libxml2) reject the exported
+  //  N42 file with "Namespace prefix DHS on InterSpec is not defined".  The URI is an
+  //  opaque identifier (never network-resolved) and does not affect reading the file back.
+  RadInstrumentData->append_attribute(
+      doc->allocate_attribute( "xmlns:DHS", "https://github.com/sandialabs/InterSpec" ) );
+
   xml_node<char> *interspec_node = doc->allocate_node( node_element, "DHS:InterSpec" );
   RadInstrumentData->append_node( interspec_node );
   
