@@ -67,6 +67,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 
@@ -2623,8 +2624,24 @@ void fit_model( const std::string wtsession,
       
       results->peak_calc_details = std::move(peak_calc_details);
       results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
-      
-      
+
+      // Diagnose the per-peak pull trend vs energy (never let a diagnostic fail the fit).
+      try
+      {
+        const vector<ShieldingSourceFitCalc::ShieldingInfo> shield_bases(
+                        results->final_shieldings.begin(), results->final_shieldings.end() );
+        const ShieldSourcePullTrend::FitConfigSummary trend_config =
+          ShieldSourcePullTrend::summarize_fit_config( shield_bases, results->fit_src_info );
+        results->pull_trend = make_shared<const ShieldSourcePullTrend::TrendResult>(
+          ShieldSourcePullTrend::fit_pull_trend( *results->peak_comparisons,
+                                                 *results->peak_calc_details,
+                                                 shield_bases, trend_config ) );
+      }catch( std::exception & )
+      {
+        results->pull_trend = nullptr;
+      }
+
+
       if( !results->peak_calc_log.empty() )
       {
         char buffer[64];

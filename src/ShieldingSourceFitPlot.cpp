@@ -42,6 +42,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitPlot.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -267,6 +268,40 @@ std::string ShieldingSourceFitPlot::jsonForData( const ShieldingSourceFitCalc::M
 
     json_obj["data_points"].push_back( point );
   }
+
+  // Add the fitted pull-trend curve(s), when a model was determined.  Sampled curve points
+  //  (not coefficients) are sent so the JS stays agnostic to the regressor basis.  These are
+  //  only meaningful in Chi mode; the JS draws them only then.
+  const ShieldSourcePullTrend::TrendResult * const trend = results.pull_trend.get();
+  if( trend && (trend->model != ShieldSourcePullTrend::TrendModel::None) )
+  {
+    json_obj["trend_lines"] = nlohmann::json::array();
+    for( const ShieldSourcePullTrend::NuclideTrend &nt : trend->nuclideTrends )
+    {
+      if( nt.curve.empty() )
+        continue;
+
+      nlohmann::json line;
+      line["nuclide"] = nt.nuclide;
+      line["color"] = nt.cssColor;
+      line["is_quadratic"] = (trend->model == ShieldSourcePullTrend::TrendModel::Quadratic);
+      line["points"] = nlohmann::json::array();
+      for( const std::pair<double,double> &pt : nt.curve )
+      {
+        nlohmann::json p;
+        p["energy"] = pt.first;
+        p["chi"] = pt.second;
+        line["points"].push_back( p );
+      }
+      json_obj["trend_lines"].push_back( line );
+    }//for( loop over nuclide trends )
+
+    nlohmann::json stats;
+    stats["model"] = (trend->model == ShieldSourcePullTrend::TrendModel::Quadratic) ? "quadratic" : "linear";
+    stats["slope_t"] = trend->slopeT;
+    stats["curvature_t"] = trend->curvatureT;
+    json_obj["trend"] = stats;
+  }//if( have a trend model )
 
   return json_obj.dump();
 }
