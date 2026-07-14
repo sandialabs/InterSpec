@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -222,25 +223,30 @@ std::string ShieldingSourceFitPlot::jsonForData( const ShieldingSourceFitCalc::M
 
   const size_t npoints = std::min( peak_comparisons->size(), peak_details->size() );
 
+  // nlohmann::json::dump() throws on NaN/Inf, which would abort the whole chart update; a
+  //  degenerate fit (e.g. a peak with zero uncertainty) can yield non-finite chi/mult values, so
+  //  sanitize every numeric field to a finite number before serializing.
+  const auto fin = []( const double v ) -> double { return std::isfinite(v) ? v : 0.0; };
+
   for( size_t i = 0; i < npoints; ++i )
   {
     const GammaInteractionCalc::PeakResultPlotInfo &comparison = (*peak_comparisons)[i];
     const GammaInteractionCalc::PeakDetail &detail = (*peak_details)[i];
 
     nlohmann::json point;
-    point["energy"] = comparison.energy;
-    point["chi"] = comparison.numSigmaOff;
-    point["mult"] = comparison.observedOverExpected;
-    point["mult_uncert"] = comparison.observedOverExpectedUncert;
+    point["energy"] = fin( comparison.energy );
+    point["chi"] = fin( comparison.numSigmaOff );
+    point["mult"] = fin( comparison.observedOverExpected );
+    point["mult_uncert"] = fin( comparison.observedOverExpectedUncert );
     point["color"] = comparison.peakColor.cssText(false);
     point["nuclide"] = detail.assignedNuclide;
-    point["numForeground"] = comparison.foregroundCounts;
-    point["numForegroundUncert"] = comparison.foregroundUncert;
-    point["numObserved"] = comparison.observedCounts;
-    point["numObservedUncert"] = comparison.observedUncert;
-    point["numExpected"] = comparison.expectedCounts;
-    point["numBackground"] = comparison.backgroundCounts;
-    point["numBackgroundUncert"] = comparison.backgroundUncert;
+    point["numForeground"] = fin( comparison.foregroundCounts );
+    point["numForegroundUncert"] = fin( comparison.foregroundUncert );
+    point["numObserved"] = fin( comparison.observedCounts );
+    point["numObservedUncert"] = fin( comparison.observedUncert );
+    point["numExpected"] = fin( comparison.expectedCounts );
+    point["numBackground"] = fin( comparison.backgroundCounts );
+    point["numBackgroundUncert"] = fin( comparison.backgroundUncert );
 
     // Add source contributions
     point["sources"] = nlohmann::json::array();
@@ -259,10 +265,10 @@ std::string ShieldingSourceFitPlot::jsonForData( const ShieldingSourceFitCalc::M
 
       nlohmann::json source;
       source["nuclide"] = nuclideSymbol;
-      source["fraction"] = fraction;
-      source["counts"] = src.modelContribToPeak;
-      source["br"] = src.br;
-      source["energy"] = src.energy;
+      source["fraction"] = fin( fraction );
+      source["counts"] = fin( src.modelContribToPeak );
+      source["br"] = fin( src.br );
+      source["energy"] = fin( src.energy );
       point["sources"].push_back( source );
     }
 
