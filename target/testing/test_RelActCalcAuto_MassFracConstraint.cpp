@@ -31,11 +31,6 @@
 #include <iostream>
 #include <algorithm>
 
-#include <ceres/jet.h>
-
-// Include the InterSpec/Wt headers (which transitively pull in boost/asio, i.e. winsock2.h)
-//  BEFORE the Boost.Test header, which on Windows includes <windows.h> -> WinSock.h.  Reversing
-//  this order triggers MSVC C1189 "WinSock.h has already been included".
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -48,6 +43,10 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+
+// Included after the boost/asio-pulling InterSpec headers above (see note there) and before
+//  RelActCalc_imp.hpp, which requires <ceres/jet.h> to be in scope.
+#include <ceres/jet.h>
 
 #define BOOST_TEST_MODULE RelActCalcAuto_MassFracConstraint_suite
 #include <boost/test/included/unit_test.hpp>
