@@ -150,9 +150,13 @@ Before finalizing, check for radiation signatures that do not manifest as discre
 - 4.44 MeV broad feature indicates alpha-Be neutron source (AmBe/PuBe).
 - Note any recoil-broadened peaks observed during investigation.
 
-**Beta source check:**
-- If foreground is clearly elevated over background but relatively few peaks were identified (e.g., only 511 keV and/or small NORM peaks relative to total counts), use `get_spectrum_image` below ~2 MeV to check if a smooth exponential continuum dominates. This indicates beta sources (Sr-90/Y-90, P-32, Ru-106/Rh-106).
-- Check `get_counts_in_energy_range` in broad bands (100-500, 500-1000, 1000-2000 keV) comparing foreground to background — broad elevation without peaks suggests beta source.
+**Beta source check (MANDATORY gate — pure-beta emitters produce NO photopeaks, only bremsstrahlung, so without this they are missed and wrongly called "background"):**
+- Whenever neutrons are NOT definitively present AND you are about to conclude "no source"/"only background" (no photopeaks beyond background ones), you MUST rule out a beta source before finalizing. Do NOT conclude "only background" or leave this state without this check.
+- Exception: if the NORM peaks are themselves clearly elevated over background, skip it — elevated NORM raises the continuum and would mimic a beta continuum.
+- Otherwise: call `get_spectrum_image` with EXACTLY `{"background_subtract": true, "y_axis_scale": "linear", "energy_range": {"min_keV": 0, "max_keV": 2500}}` (linear-y + this zoom are required — they make a beta continuum fill the frame as a large excess area; log/full-range hides it). Inspect the residual: a smooth positive continuum/excess-area with no large photopeaks = beta source (bremsstrahlung); peak-shaped residuals = residual NORM/source mismatch, not beta. (No image support: use `get_counts_in_energy_range` broad bands 100-500/500-1000/1000-2000 keV, foreground vs background.)
+- If found, report as bremsstrahlung from a beta emitter (leave the actual answer as that). You may suggest a candidate ONLY if BOTH hold:
+  - Gamma-vs-beta consistency: candidate must be a (nearly) pure beta emitter. A nuclide with significant gamma branching would produce dominant photopeaks that swamp the brehm — a peak-less continuum CANNOT be a gamma emitter (never attribute it to Pb-212 / NORM / any strong gamma line; those peaks would be present if it were the source).
+  - Endpoint is only a weak hint: observed endpoint often reads LOWER than true (especially at low stats), so Sr-90/Y-90 (~0.55/2.28 MeV), P-32 (~1.71 MeV) are soft hints only — don't commit to a nuclide on that basis.
 
 **Sanity check before finalizing:** Confirm (a) every source you will report has at least one genuinely *elevated* peak. Report a NORM nuclide (K-40, U/Ra/Th chains) as a *source* only if it is notably elevated over the background rate — if its lines are clearly elevated it is a legitimate source, but if they are at/near background level, attribute them to background instead. And (b) the largest elevated peaks are all explained — re-check `get_peaks` (elevated_above_background/unidentified); if the dominant elevated peak is unattributed, you have likely missed the primary source, so go back and investigate it rather than finalizing.
 

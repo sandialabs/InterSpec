@@ -3797,6 +3797,12 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
   int maxSize = 0;
   std::optional<std::pair<double,double>> energyRange;
   std::optional<bool> yAxisLog;
+  std::optional<bool> backgroundSubtract;
+
+  const string bg_sub_key = find_case_insensitive_key( "background_subtract", effectiveParams );
+  if( !bg_sub_key.empty() && effectiveParams.contains( bg_sub_key )
+      && effectiveParams.at( bg_sub_key ).is_boolean() )
+    backgroundSubtract = effectiveParams.at( bg_sub_key ).get<bool>();
 
   const string format_key = find_case_insensitive_key( "format", effectiveParams );
   if( !format_key.empty() && effectiveParams.contains( format_key ) )
@@ -3849,8 +3855,10 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
   const double descMinE = energyRange ? energyRange->first : curMinE;
   const double descMaxE = energyRange ? energyRange->second : curMaxE;
 
-  interspec->captureSpectrumImage( format, maxSize, energyRange, yAxisLog,
-    [callback, format, descMinE, descMaxE]( std::string base64Data, std::string mimeType,
+  const bool didBgSub = backgroundSubtract.has_value() && *backgroundSubtract;
+
+  interspec->captureSpectrumImage( format, maxSize, energyRange, yAxisLog, backgroundSubtract,
+    [callback, format, descMinE, descMaxE, didBgSub]( std::string base64Data, std::string mimeType,
                                              int widthPx, int heightPx )
     {
       if( base64Data.empty() )
@@ -3863,7 +3871,8 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
       ostringstream desc;
       desc << "Spectrum image captured (" << format << ", "
            << widthPx << "x" << heightPx << ", "
-           << fixed << setprecision(1) << descMinE << "-" << descMaxE << " keV)";
+           << fixed << setprecision(1) << descMinE << "-" << descMaxE << " keV"
+           << (didBgSub ? ", background-subtracted" : "") << ")";
 
       // Build result with _image convention for extraction by LlmInterface/MCP
       json result;

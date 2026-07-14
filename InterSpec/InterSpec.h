@@ -540,6 +540,7 @@ public:
   void captureSpectrumImage( const std::string &format, int maxLongestSide,
                              std::optional<std::pair<double,double>> energyRange,
                              std::optional<bool> yAxisLog,
+                             std::optional<bool> backgroundSubtract,
                              std::function<void(std::string, std::string, int, int)> callback );
 
   /** Capture the time history chart as a base64-encoded image via JavaScript round-trip.

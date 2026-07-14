@@ -2641,7 +2641,7 @@ Returns information about:
 
 
   <Tool name="get_spectrum_image">
-    <Description>Capture an image of the currently displayed spectrum chart. Returns a base64-encoded image. Optionally specify an energy range to zoom into before capturing. Useful for visual inspection of peaks, ROIs, or overall spectrum shape.</Description>
+    <Description>Capture an image of the currently displayed spectrum chart. Returns a base64-encoded image. Optionally specify an energy range to zoom into before capturing, or if background subtraction is wanted. Useful for visual inspection of peaks, ROIs, or overall spectrum shape.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -2657,6 +2657,10 @@ Returns information about:
           "type": "string",
           "enum": ["log", "linear"],
           "description": "Y-axis scale for the captured image. If omitted, uses whatever the user currently has displayed."
+        },
+        "background_subtract": {
+          "type": "boolean",
+          "description": "If true, capture the background-subtracted view (foreground minus live-time-scaled background), so only the residual/excess over background is shown. No effect if no background spectrum loaded. Especially useful for visually checking non-peak signatures (e.g. elevated continuum due to bremsstrahlung from a beta emitter, neutrons on Ge, etc). If omitted, uses the current (usually non-subtracted) view."
         },
         "format": {
           "type": "string",

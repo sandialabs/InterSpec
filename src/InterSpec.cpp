@@ -8428,11 +8428,13 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
 void InterSpec::captureSpectrumImage( const std::string &format, int maxLongestSide,
                                        std::optional<std::pair<double,double>> energyRange,
                                        std::optional<bool> yAxisLog,
+                                       std::optional<bool> backgroundSubtract,
                                        std::function<void(std::string, std::string, int, int)> callback )
 {
   if( !m_spectrum )
     throw std::runtime_error( "captureSpectrumImage: no spectrum display available" );
-  m_spectrum->captureChartImage( format, maxLongestSide, energyRange, yAxisLog, std::move( callback ) );
+  m_spectrum->captureChartImage( format, maxLongestSide, energyRange, yAxisLog,
+                                 backgroundSubtract, std::move( callback ) );
 }//captureSpectrumImage(...)
 
 
