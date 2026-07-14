@@ -1873,7 +1873,49 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
           peak_json["UpperChannelInt"] = upper_channel_int;
           peak_json["NumberChannels"] = upper_channel - lower_channel;
           peak_json["NumberChannelsInt"] = num_channel;
-          
+
+          // Peak mean & widths expressed in channel numbers (channel-unit equivalents of the
+          //  keV PeakMean / PeakSigma / PeakFwhm fields above).  Widths are converted by mapping
+          //  the mean-centered energy interval of that width to a channel count, which stays
+          //  correct for non-linear energy calibrations.
+          try
+          {
+            const double mean = p->mean();
+            peak_json["PeakMeanChannel"] = cal->channel_for_energy( mean );
+
+            // Maps a keV width, centered on the peak mean, to a width in channels.
+            const auto width_to_channels = [cal,mean]( const double width_kev ) -> double {
+              return cal->channel_for_energy( mean + 0.5*width_kev )
+                     - cal->channel_for_energy( mean - 0.5*width_kev );
+            };
+
+            peak_json["PeakMeanUncertChannel"] = width_to_channels( p->meanUncert() );
+
+            if( p->gausPeak() )
+            {
+              peak_json["PeakSigmaChannel"]       = width_to_channels( p->sigma() );
+              peak_json["PeakSigmaUncertChannel"] = width_to_channels( p->sigmaUncert() );
+              peak_json["PeakFwhmChannel"]        = width_to_channels( p->fwhm() );
+              peak_json["PeakFwhmUncertChannel"]  = width_to_channels( 2.35482*p->sigmaUncert() );
+            }else
+            {
+              peak_json["PeakSigmaChannel"]       = 0.0;
+              peak_json["PeakSigmaUncertChannel"] = 0.0;
+              peak_json["PeakFwhmChannel"]        = 0.0;
+              peak_json["PeakFwhmUncertChannel"]  = 0.0;
+            }
+          }catch( std::exception & )
+          {
+            // channel_for_energy can throw (lower-channel-edge cal, energy out of range);
+            //  not expected in practice, so just emit sentinels.
+            peak_json["PeakMeanChannel"]        = -1.0;
+            peak_json["PeakMeanUncertChannel"]  = -1.0;
+            peak_json["PeakSigmaChannel"]       = -1.0;
+            peak_json["PeakSigmaUncertChannel"] = -1.0;
+            peak_json["PeakFwhmChannel"]        = -1.0;
+            peak_json["PeakFwhmUncertChannel"]  = -1.0;
+          }
+
           // TODO: put in arrays of gaussian integrals, data counts, and continuum integral
           //double gauss_integral( const double x0, const double x1 ) const;
           //void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const;
