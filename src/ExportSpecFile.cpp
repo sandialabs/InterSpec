@@ -2890,7 +2890,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generate_file_to_save(
   //       waiting for the summing step
 
   const bool backgroundSub = options.back_sub_fore;
-  const bool sumAll = (options.sum_all_to_single_record || (max_records < 2));
+  bool sumAll = (options.sum_all_to_single_record || (max_records < 2));
   const bool foreToSingleRecord = options.fore_to_single_record;
   const bool backToSingleRecord = options.back_to_single_record;
   const bool secoToSingleRecord = options.seco_to_single_record;
@@ -2922,28 +2922,32 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generate_file_to_save(
   }//if( sum detectors per sample )
   
 
-  if( (foreToSingleRecord || (use_disp_fore && (max_records <= 2))) && !fore_plus_back_files )
+  // Note: when background-subtracting, the displayed foreground/background/secondary
+  //  records are consumed to create the subtracted record(s), so they must not also be
+  //  summed into records of their own (previously that double-counted the foreground on
+  //  single-record formats, and over-produced records for QR codes).
+  if( (foreToSingleRecord || (use_disp_fore && (max_records <= 2)))
+     && !fore_plus_back_files && !backgroundSub )
   {
     assert( use_disp_fore );
-    assert( !fore_plus_back_files );
     samplesToSum.insert( display.fore_samples );
     sampleSourceTypes[display.fore_samples] = SpecUtils::SourceType::Foreground;
   }//if( foreground to single record )
 
 
-  if( (backToSingleRecord || (use_disp_back && (max_records <= 2))) && !fore_plus_back_files )
+  if( (backToSingleRecord || (use_disp_back && (max_records <= 2)))
+     && !fore_plus_back_files && !backgroundSub )
   {
     assert( use_disp_back );
-    assert( !fore_plus_back_files );
     samplesToSum.insert( display.back_samples );
     sampleSourceTypes[display.back_samples] = SpecUtils::SourceType::Background;
   }//if( background to single record )
 
 
-  if( (secoToSingleRecord || (use_disp_seco && (max_records <= 2))) && !fore_plus_back_files )
+  if( (secoToSingleRecord || (use_disp_seco && (max_records <= 2)))
+     && !fore_plus_back_files && !backgroundSub )
   {
     assert( use_disp_seco );
-    assert( !fore_plus_back_files );
     samplesToSum.insert( display.seco_samples );
     sampleSourceTypes[display.seco_samples] = SpecUtils::SourceType::Unknown;
   }//if( secondary to single record )
@@ -2993,7 +2997,12 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generate_file_to_save(
       }
     }//for( SpecUtils::SourceType type : src_types )
   }//if( fore_plus_back_files )
-  
+
+  // Two-record formats (e.g. QR codes) can only hold two spectra; if more sample-sets than
+  //  that were selected (e.g. foreground + background + secondary all displayed), sum
+  //  everything to a single record (this is also what the GUI status text tells the user).
+  sumAll |= ((max_records == 2) && (samplesToSum.size() > 2));
+
   set<set<int>> peaks_to_remove;
   map<set<int>,shared_ptr<const deque<shared_ptr<const PeakDef>>>> peaks_to_set;
   set<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
@@ -3263,17 +3272,13 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generate_file_to_save(
         assert( single_record );
         single_meas = true;
         meas_to_add.push_back( make_shared<SpecUtils::Measurement>(*single_record) );
-        
+
+        // If a source type was requested for this sample set, apply it; otherwise the
+        //  copied record just keeps its original source type.
         const auto typePos = sampleSourceTypes.find(sum_samples);
         if( typePos != end(sampleSourceTypes) )
-        {
           meas_to_add.back()->set_source_type( typePos->second );
-          sampleSourceTypes[sum_samples] = typePos->second;
-        }else
-        {
-          sampleSourceTypes[sum_samples] = SpecUtils::SourceType::Background;
-        }
-        
+
         meas_to_remove.insert( single_record );
       }
     }//if( sum_samples.size() == 1 )
@@ -3295,7 +3300,26 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generate_file_to_save(
       m->set_sample_number( *begin(sum_samples) );
       const auto typePos = sampleSourceTypes.find(sum_samples);
       if( typePos != end(sampleSourceTypes) )
+      {
         m->set_source_type( typePos->second );
+      }else
+      {
+        // No specific source type requested (e.g. summing detectors per sample), so keep
+        //  the constituent records' source type, if they all agree.
+        set<SpecUtils::SourceType> constituent_types;
+        for( const int sample : sum_samples )
+        {
+          for( const string &det : detectors )
+          {
+            const shared_ptr<const SpecUtils::Measurement> orig = answer->measurement( sample, det );
+            if( orig )
+              constituent_types.insert( orig->source_type() );
+          }
+        }//for( const int sample : sum_samples )
+
+        if( constituent_types.size() == 1 )
+          m->set_source_type( *begin(constituent_types) );
+      }
 
       meas_to_add.push_back( m );
 

@@ -675,6 +675,129 @@ BOOST_AUTO_TEST_CASE( generateFileCombinations )
 }//BOOST_AUTO_TEST_CASE( generateFileCombinations )
 
 
+/** Generation fixes: background subtraction must not double-count on single-record
+ formats; 2-record formats must not over-produce; per-sample sums keep source types.
+ */
+BOOST_AUTO_TEST_CASE( generationRecordCountAndSourceTypes )
+{
+  set_data_dir();
+
+  typedef ExportSpecFileTool::DisplayStateInfo DisplayStateInfo;
+  typedef ExportSpecFileTool::ExportOptions ExportOptions;
+
+  const SpecUtils::SaveSpectrumAsType n42 = SpecUtils::SaveSpectrumAsType::N42_2012;
+  const SpecUtils::SaveSpectrumAsType spe = SpecUtils::SaveSpectrumAsType::SpeIaea;
+
+  // Background subtraction to a single-record format: exactly one record, equal to
+  //  foreground minus background (previously the fore and back also got summed back in,
+  //  roughly doubling the foreground).
+  {
+    vector<SynthSample> defs;
+    defs.push_back( SynthSample{1, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    defs.push_back( SynthSample{2, {"Aa1"}, SpecUtils::SourceType::Background} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = display.spec_is_back = true;
+    display.fore_samples = set<int>{1};
+    display.back_samples = set<int>{2};
+    display.fore_dets = display.back_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+    options.use_disp_back = true;
+    options.back_sub_fore = true;
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( spec, spe, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+    const shared_ptr<const SpecUtils::Measurement> rec = result->measurements()[0];
+    const shared_ptr<const SpecUtils::Measurement> s1 = spec->measurement( 1, "Aa1" );
+    const shared_ptr<const SpecUtils::Measurement> s2 = spec->measurement( 2, "Aa1" );
+    BOOST_REQUIRE( rec && rec->gamma_counts() && s1 && s2 );
+    for( size_t ch = 0; ch < rec->gamma_counts()->size(); ch += 50 )
+    {
+      const float expected = (*s1->gamma_counts())[ch] - (*s2->gamma_counts())[ch];
+      BOOST_CHECK_CLOSE( (*rec->gamma_counts())[ch], expected, 1.0e-2 );
+    }
+  }
+
+  // Summing detectors per sample keeps the (uniform) source type of the constituents
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 3; ++i )
+      defs.push_back( SynthSample{i, {"Aa1", "Ba2"},
+        ((i == 3) ? SpecUtils::SourceType::Background : SpecUtils::SourceType::Foreground)} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.fore_samples = set<int>{1};
+    display.fore_dets = vector<string>{"Aa1", "Ba2"};
+
+    ExportOptions options;
+    options.all_samples = true;
+    options.sum_dets_per_sample = true;
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( spec, n42, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 3 );
+
+    for( const auto &m : result->measurements() )
+    {
+      BOOST_CHECK_CLOSE( m->live_time(), 600.0f, 1.0e-3 );
+      const SpecUtils::SourceType expected = (m->sample_number() == 3)
+                          ? SpecUtils::SourceType::Background : SpecUtils::SourceType::Foreground;
+      BOOST_CHECK( m->source_type() == expected );
+    }
+  }
+
+#if( USE_QR_CODES )
+  // A 2-record format with three displayed spectrum types selected gets summed to a
+  //  single record (previously produced 3 records, which then failed QR generation)
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 6; ++i )
+      defs.push_back( SynthSample{i, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = display.spec_is_back = display.spec_is_seco = true;
+    display.fore_samples = set<int>{1};
+    display.back_samples = set<int>{2};
+    display.seco_samples = set<int>{3};
+    display.fore_dets = display.back_dets = display.seco_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+    options.use_disp_back = true;
+    options.use_disp_seco = true;
+
+    const SpecUtils::SaveSpectrumAsType qr = SpecUtils::SaveSpectrumAsType::Uri;
+    BOOST_REQUIRE_EQUAL( ExportSpecFileTool::maxRecordsInCurrentSaveType(qr, spec), 2 );
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( spec, qr, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_CHECK_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+    // With only two types selected, the two records are kept separate
+    ExportOptions two_type_options;
+    two_type_options.use_disp_fore = true;
+    two_type_options.use_disp_back = true;
+
+    const shared_ptr<const SpecMeas> two_rec
+                 = ExportSpecFileTool::generate_file_to_save( spec, qr, display, two_type_options );
+    BOOST_REQUIRE( two_rec );
+    BOOST_CHECK_EQUAL( static_cast<int>(two_rec->num_measurements()), 2 );
+  }
+#endif //#if( USE_QR_CODES )
+}//BOOST_AUTO_TEST_CASE( generationRecordCountAndSourceTypes )
+
+
 /** SpecMeas-level guards for the peak-map access semantics the export code relies on. */
 BOOST_AUTO_TEST_CASE( specMeasPeakMapGuards )
 {
