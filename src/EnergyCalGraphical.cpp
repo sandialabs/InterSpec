@@ -42,6 +42,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/EnergyCal.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/UserPreferences.h"
@@ -81,7 +82,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
                                                              : nullptr;
   
   if( !disp_meas || !energycal || !energycal->valid()
-      || (energycal->type() == SpecUtils::EnergyCalType::LowerChannelEdge) )
+      || (energycal->type() == SpecUtils::EnergyCalType::InvalidEquationType) )
   {
     throw runtime_error( "You must have a dispayed spectrum to do a recalibration" );
     return;
@@ -116,6 +117,12 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
     WRadioButton *button = new WRadioButton( txt, buttonBox );
     button->setInline( false );
     m_typeButtons->addButton( button, t );
+
+    // Deviation pairs arent supported for lower-channel-energy calibrations (only {offset, gain}
+    //  adjustments, relative to the files original channel energies)
+    if( (t == kDeviation)
+        && (energycal->type() == SpecUtils::EnergyCalType::LowerChannelEdge) )
+      button->hide();
   }//for( loop over recal types )
   m_typeButtons->setSelectedButtonIndex( kLinear );
  
@@ -244,14 +251,107 @@ void EnergyCalGraphicalConfirm::apply()
   
   shared_ptr<const SpecUtils::EnergyCalibration> energycal = displ_foreground->energy_calibration();
   if( !energycal || !energycal->valid()
-      || (energycal->type() == SpecUtils::EnergyCalType::LowerChannelEdge) )
+      || (energycal->type() == SpecUtils::EnergyCalType::InvalidEquationType) )
   {
     finished().emit(WDialog::Accepted);
     return;
   }
-  
-  
+
+
   const float shift = finalE - startE;
+
+  if( energycal->type() == SpecUtils::EnergyCalType::LowerChannelEdge )
+  {
+    // For lower-channel-energy calibrations the adjustment is a cumulative {offset, gain},
+    //  relative to the sessions original channel energies (see
+    //  EnergyCal::adjust_lower_channel_energy_cal); we solve for the new cumulative values that
+    //  put `startE` at `finalE` (and, for the two-point case, keep the last calibration point
+    //  fixed).
+    try
+    {
+      const LowerChanCalOriginal previnfo = m_calibrator->lowerChannelOriginal( energycal );
+      assert( previnfo.original && previnfo.original->valid() );
+
+      const shared_ptr<const vector<float>> &orig_energies = previnfo.original->channel_energies();
+      if( !orig_energies || (orig_energies->size() < 2) )
+        throw runtime_error( "Unexpected invalid original channel energies" );
+
+      // The original energy of the channel currently displaying `energy`; the {offset, gain}
+      //  adjust energies as E_new = offset + gain*E_orig (gain dimensionless, nominal 1.0).
+      const auto orig_energy_at = [&]( const double energy ) -> double {
+        const double channel = energycal->channel_for_energy( energy );
+        return previnfo.original->energy_for_channel( channel );
+      };
+
+      double new_offset = previnfo.offset, new_gain = previnfo.gain;
+      bool isOffsetOnly = false;
+
+      const bool preserveLast = (m_preserveLastCal && m_preserveLastCal->isChecked()
+                                 && (m_lastEnergy != startE));
+      const RecalTypes lower_type = preserveLast ? NumRecalTypes : type;
+
+      if( preserveLast )
+      {
+        // Two-point: keep the point at m_lastEnergy fixed, move startE to finalE.  Solve
+        //  new_offset + new_gain*x = target at both points.
+        const double x1 = orig_energy_at( m_lastEnergy );
+        const double x2 = orig_energy_at( startE );
+
+        if( fabs(x2 - x1) < 1.0e-6 )
+          throw runtime_error( "The two calibration points are too close together in energy" );
+
+        new_gain = (finalE - m_lastEnergy) / (x2 - x1);
+        new_offset = m_lastEnergy - new_gain*x1;
+      }else
+      {
+        switch( lower_type )
+        {
+          case kOffset:
+            new_offset += shift;   //gain unchanged; E_new shifts uniformly by `shift`
+            isOffsetOnly = true;
+            break;
+
+          case kLinear:
+          {
+            // Keep the offset fixed, and solve the gain that puts startE at finalE
+            const double x = orig_energy_at( startE );
+            if( fabs(x) < 1.0e-6 )
+              throw runtime_error( "The calibration point is too close to zero energy to adjust"
+                                   " the gain" );
+
+            new_gain = (finalE - new_offset) / x;
+            break;
+          }//case kLinear:
+
+          case kDeviation:
+          case NumRecalTypes:
+            //Deviation pairs arent supported for lower channel energy cals (the radio button is
+            //  hidden), so we shouldnt be able to get here
+            throw runtime_error( "Deviation pairs cant be added to lower channel energy"
+                                 " defined calibrations" );
+        }//switch( lower_type )
+      }//if( preserveLast ) / else
+
+      LowerChanCalOriginal info = previnfo;
+      info.offset = new_offset;
+      info.gain = new_gain;
+
+      const auto adjusted = EnergyCal::adjust_lower_channel_energy_cal( info.original,
+                                                                      info.offset, info.gain );
+      m_calibrator->registerLowerChannelAdjustment( adjusted, info );
+
+      const vector<MeasToApplyCoefChangeTo> changemeas = m_calibrator->measurementsToApplyCoeffChangeTo();
+      m_calibrator->applyCalChange( energycal, adjusted, changemeas, isOffsetOnly );
+
+      m_calibrator->setWasGraphicalRecal( type, finalE );
+    }catch( std::exception &e )
+    {
+      viewer->logMessage( WString::fromUTF8(e.what()), 2 );
+    }//try / catch
+
+    finished().emit(WDialog::Accepted);
+    return;
+  }//if( lower channel energy calibration )
   
   pair<float,float> added_dev_pair = {0.0f, 0.0f};
   const vector<pair<float,float>> orig_dev_pairs = energycal->deviation_pairs();

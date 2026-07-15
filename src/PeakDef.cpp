@@ -292,29 +292,38 @@ size_t findROILimitHighRes( const PeakDef &peak, const std::shared_ptr<const Mea
   {
     if( (channel <= nprev_avrg) || ((channel + nprev_avrg + 1) >= nchannel) )
       continue;
-    
+
     const size_t prev_sum_start = channel - direction*nprev_avrg;
     const size_t prev_sum_end = channel - direction;
-    
+
     const float prev_sum = dataH->gamma_channels_sum( prev_sum_start, prev_sum_end );
     const float val = dataH->gamma_channel_content( channel );
     const float val_next = dataH->gamma_channel_content( channel + direction );
 
     const float prev_avrg = prev_sum / nprev_avrg;
     const float prev_avrg_uncert = std::max( 1.0f*nprev_avrg, std::sqrt(prev_sum) ) / nprev_avrg;
-    
+
     const float max_allowable = std::ceil(prev_avrg + feature_nsigma_limit*prev_avrg_uncert) +  0.001f;
-    
+
     //cout << "mean=" << mean << ", channel=" << channel << ", prev_avrg(" << prev_sum_start
     //     <<  "," << prev_sum_end<< ")=" << prev_avrg
     //     << ", val=" << val << ", nextval=" << val_next << ", max_allowable=" << max_allowable << ""
     //     << endl;
-    
+
     // We'll require two bins to be outside of tolerance
     if( (val > max_allowable && val_next > max_allowable) )
-      return channel - direction;
+    {
+      // When the peaks FWHM is smaller than the channel width (e.g., a synthetic delta-like
+      //  peak), `feature_detect_start` can be the peaks own channel, in which case backing off
+      //  by one channel here would put the ROI limit on the wrong side of the peaks mean -
+      //  giving an inverted (lower above upper) ROI once both sides do this - so clamp the limit
+      //  to the peaks mean channel.
+      const size_t limit = channel - direction;
+      const size_t mean_channel = dataH->find_gamma_channel( mean );
+      return high ? std::max(limit, mean_channel) : std::min(limit, mean_channel);
+    }
   }//for( int bin = minBin; bin > lastbin; --bin )
-  
+
 
   return high ? nominal_up_channel : nominal_low_channel;
 }//findROILimitHighRes(...)

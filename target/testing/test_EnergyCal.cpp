@@ -29,6 +29,8 @@
 #define BOOST_TEST_MODULE test_EnergyCal_suite
 #include <boost/test/included/unit_test.hpp>
 
+#include "SpecUtils/EnergyCalibration.h"
+
 #include "InterSpec/EnergyCal.h"
 
 namespace 
@@ -973,4 +975,671 @@ BOOST_AUTO_TEST_CASE( test_fit_energy_cal_frf_consistency )
       BOOST_CHECK_CLOSE( coefs[2], 200.0f, 10.0 );  // Should recover quadratic term
     }
   }
+}
+
+// Test polynomial fitting stays numerically stable for an ill-conditioned problem: many channels
+//  (raw basis columns then span ~13 orders of magnitude), higher polynomial order, and peaks
+//  spanning the full spectrum.  Before the column-equilibrated solve (and SVD pseudo-inverse
+//  covariance) the coefficient uncertainties came from inverse(A^T*A), which for this problem is
+//  numerically singular (condition number ~1e26).
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_poly_ill_conditioned )
+{
+  const size_t nchannels = 16384;
+  const std::vector<double> coeffs_true = { -3.0, 0.183, 2.0e-8, 5.0e-13 };
+
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+  const std::vector<double> channels = { 300.0, 1200.0, 3000.0, 6500.0, 9000.0, 12000.0, 15500.0 };
+  for( double channel : channels )
+  {
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = channel;
+    peak.peakMeanUncert = 0.25;
+    peak.photopeakEnergy = coeffs_true[0] + coeffs_true[1]*channel
+                           + coeffs_true[2]*channel*channel
+                           + coeffs_true[3]*channel*channel*channel;
+    peaks.push_back( peak );
+  }
+
+  const std::vector<bool> fitfor( 4, true );
+  std::vector<std::pair<float,float>> dev_pairs;
+  std::vector<float> coefs, uncert;
+
+  const double chi2 = EnergyCal::fit_energy_cal_poly( peaks, fitfor, nchannels, dev_pairs, coefs, uncert );
+
+  BOOST_REQUIRE_EQUAL( coefs.size(), 4u );
+  BOOST_REQUIRE_EQUAL( uncert.size(), 4u );
+
+  BOOST_CHECK_CLOSE( coefs[0], coeffs_true[0], 1.0 );
+  BOOST_CHECK_CLOSE( coefs[1], coeffs_true[1], 0.1 );
+  BOOST_CHECK_CLOSE( coefs[2], coeffs_true[2], 10.0 );
+  BOOST_CHECK_CLOSE( coefs[3], coeffs_true[3], 25.0 );
+  // chi2 is not exactly zero only because the returned coefficients are rounded to float
+  //  (e.g., the cubic term rounding, times 15500^3, gives ~1e-7 keV residuals)
+  BOOST_CHECK_SMALL( chi2, 1.0e-4 );
+
+  // The predicted energies matter more than the individual (correlated) coefficients
+  for( double channel : channels )
+  {
+    const double e_true = coeffs_true[0] + coeffs_true[1]*channel
+                          + coeffs_true[2]*channel*channel
+                          + coeffs_true[3]*channel*channel*channel;
+    const double e_fit = coefs[0] + coefs[1]*channel + coefs[2]*channel*channel
+                         + coefs[3]*channel*channel*channel;
+    BOOST_CHECK_SMALL( fabs(e_fit - e_true), 0.01 );
+  }
+
+  // Uncertainties must be finite and positive - with the old inverse(A^T*A) covariance these
+  //  would come out NaN, negative, or wildly large for this problem
+  for( size_t i = 0; i < uncert.size(); ++i )
+  {
+    BOOST_CHECK( !std::isnan(uncert[i]) && !std::isinf(uncert[i]) );
+    BOOST_CHECK_GT( uncert[i], 0.0f );
+  }
+
+  // Rough magnitude sanity of the uncertainties: predicted energy uncertainty at a middle peak,
+  //  from just the diagonal (ignoring correlations, which only reduce it), shouldnt be more than
+  //  a few times the ~0.25 keV scale of the input peak uncertainties.
+  {
+    const double channel = 6500.0;
+    double pred_var = 0.0;
+    for( size_t i = 0; i < uncert.size(); ++i )
+    {
+      const double basis = std::pow( channel, static_cast<double>(i) );
+      pred_var += (uncert[i]*basis) * (uncert[i]*basis);
+    }
+    BOOST_CHECK_LT( std::sqrt(pred_var), 100.0 );
+  }
+}
+
+// Check the column-equilibrated solve gives the same answer as the hand-computed exact solution
+//  of a simple two-point problem (i.e., the equilibration un-scaling is exactly right).
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_poly_equilibration_exactness )
+{
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+
+  EnergyCal::RecalPeakInfo peak1;
+  peak1.peakMeanBinNumber = 1000.0;
+  peak1.peakMean = 1000.0;
+  peak1.peakMeanUncert = 1.0;
+  peak1.photopeakEnergy = 661.657;
+  peaks.push_back( peak1 );
+
+  EnergyCal::RecalPeakInfo peak2;
+  peak2.peakMeanBinNumber = 2223.0;
+  peak2.peakMean = 2223.0;
+  peak2.peakMeanUncert = 1.0;
+  peak2.photopeakEnergy = 1460.82;
+  peaks.push_back( peak2 );
+
+  const std::vector<bool> fitfor = { true, true };
+  std::vector<std::pair<float,float>> dev_pairs;
+  std::vector<float> coefs, uncert;
+
+  EnergyCal::fit_energy_cal_poly( peaks, fitfor, 4096, dev_pairs, coefs, uncert );
+
+  // Exact solution of the 2x2 system
+  const double gain = (1460.82 - 661.657) / (2223.0 - 1000.0);
+  const double offset = 661.657 - gain*1000.0;
+
+  BOOST_REQUIRE_EQUAL( coefs.size(), 2u );
+  // Tolerances (in percent) allow for the float rounding of the returned coefficients; the
+  //  offset suffers some cancellation (661.657 - gain*1000), so gets a bit more slack.
+  BOOST_CHECK_CLOSE( static_cast<double>(coefs[0]), offset, 1.0e-2 );
+  BOOST_CHECK_CLOSE( static_cast<double>(coefs[1]), gain, 1.0e-3 );
+  BOOST_CHECK_GT( uncert[0], 0.0f );
+  BOOST_CHECK_GT( uncert[1], 0.0f );
+}
+
+// Helper for the lower-channel-energy calibration tests: a mildly non-linear set of channel
+//  energies (quadratic in channel), like a real lower-channel-edge defined detector might have.
+namespace
+{
+std::shared_ptr<const SpecUtils::EnergyCalibration> make_test_lower_channel_cal( const size_t nchannel )
+{
+  std::vector<float> energies( nchannel + 1 );
+  for( size_t i = 0; i <= nchannel; ++i )
+  {
+    const double x = static_cast<double>(i);
+    energies[i] = static_cast<float>( 1.0 + 2.9*x + 3.0e-5*x*x );
+  }
+
+  auto cal = std::make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_lower_channel_energy( nchannel, std::move(energies) );
+  return cal;
+}
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_adjust_lower_channel_energy_cal )
+{
+  const size_t nchannel = 1024;
+  const auto orig = make_test_lower_channel_cal( nchannel );
+  const auto orig_energies = orig->channel_energies();
+  BOOST_REQUIRE( orig_energies && (orig_energies->size() == (nchannel + 1)) );
+
+  // E_new = offset + gain*E_orig, gain dimensionless (nominal 1.0)
+  const double offset = 3.25, gain = 1.05;
+  const auto adjusted = EnergyCal::adjust_lower_channel_energy_cal( orig, offset, gain );
+
+  BOOST_REQUIRE( adjusted && adjusted->valid() );
+  BOOST_REQUIRE( adjusted->type() == SpecUtils::EnergyCalType::LowerChannelEdge );
+  BOOST_REQUIRE_EQUAL( adjusted->num_channels(), nchannel );
+
+  const auto new_energies = adjusted->channel_energies();
+  BOOST_REQUIRE( new_energies && (new_energies->size() == (nchannel + 1)) );
+
+  for( size_t i = 0; i <= nchannel; i += 100 )
+  {
+    const double expected = offset + gain*(*orig_energies)[i];
+    BOOST_CHECK_SMALL( fabs( (*new_energies)[i] - expected ), 1.0e-2 );  //float, energies ~keV
+  }
+
+  // offset = 0, gain = 1 is the identity
+  const auto identity = EnergyCal::adjust_lower_channel_energy_cal( orig, 0.0, 1.0 );
+  const auto identity_energies = identity->channel_energies();
+  for( size_t i = 0; i <= nchannel; i += 100 )
+    BOOST_CHECK_SMALL( fabs( static_cast<double>((*identity_energies)[i]) - (*orig_energies)[i] ), 1.0e-3 );
+
+  // A non-positive gain makes the edges non-monotonic (or degenerate)
+  BOOST_CHECK_THROW( EnergyCal::adjust_lower_channel_energy_cal( orig, 0.0, 0.0 ), std::exception );
+  BOOST_CHECK_THROW( EnergyCal::adjust_lower_channel_energy_cal( orig, 0.0, -0.5 ), std::exception );
+
+  // Non lower-channel-energy input must throw
+  auto polycal = std::make_shared<SpecUtils::EnergyCalibration>();
+  polycal->set_polynomial( nchannel, {0.0f, 3.0f}, {} );
+  BOOST_CHECK_THROW( EnergyCal::adjust_lower_channel_energy_cal( polycal, 1.0, 1.0 ),
+                     std::exception );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_lower_channel )
+{
+  const size_t nchannel = 2048;
+  const auto orig = make_test_lower_channel_cal( nchannel );
+
+  const double true_offset = 2.75, true_gain = 1.008;  //gain dimensionless, nominal 1.0
+  const auto adjusted = EnergyCal::adjust_lower_channel_energy_cal( orig, true_offset, true_gain );
+
+  // Make peaks whose true energies are where the adjusted calibration puts those channels
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+  for( const double channel : { 250.0, 800.0, 1600.0 } )
+  {
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = orig->energy_for_channel( channel );
+    peak.peakMeanUncert = 0.25;
+    peak.photopeakEnergy = adjusted->energy_for_channel( channel );
+    peaks.push_back( peak );
+  }
+
+  {// Fit both offset and gain
+    std::vector<bool> fitfor = { true, true };
+    std::vector<float> coefs, uncerts;
+    const double chi2 = EnergyCal::fit_energy_cal_lower_channel( peaks, orig, fitfor, coefs, uncerts );
+
+    BOOST_REQUIRE_EQUAL( coefs.size(), 2u );
+    BOOST_CHECK_SMALL( fabs( coefs[0] - true_offset ), 1.0e-2 );
+    BOOST_CHECK_SMALL( fabs( coefs[1] - true_gain ), 1.0e-4 );
+    BOOST_CHECK_SMALL( chi2, 1.0e-4 );
+    BOOST_CHECK_GT( uncerts[0], 0.0f );
+    BOOST_CHECK_GT( uncerts[1], 0.0f );
+  }
+
+  {// Fit only the offset, with gain fixed at its true value
+    std::vector<bool> fitfor = { true, false };
+    std::vector<float> coefs = { 0.0f, static_cast<float>(true_gain) }, uncerts;
+    EnergyCal::fit_energy_cal_lower_channel( peaks, orig, fitfor, coefs, uncerts );
+
+    BOOST_CHECK_SMALL( fabs( coefs[0] - true_offset ), 1.0e-2 );
+    BOOST_CHECK_SMALL( fabs( coefs[1] - true_gain ), 1.0e-6 );  //should be passed through un-touched
+    BOOST_CHECK_EQUAL( uncerts[1], 0.0f );
+  }
+
+  {// Fit only the gain, with offset fixed at its true value
+    std::vector<bool> fitfor = { false, true };
+    std::vector<float> coefs = { static_cast<float>(true_offset), 0.0f }, uncerts;
+    EnergyCal::fit_energy_cal_lower_channel( peaks, orig, fitfor, coefs, uncerts );
+
+    BOOST_CHECK_SMALL( fabs( coefs[0] - true_offset ), 1.0e-6 );
+    BOOST_CHECK_SMALL( fabs( coefs[1] - true_gain ), 1.0e-4 );
+  }
+
+  {// A single peak is enough to fit just the offset
+    std::vector<EnergyCal::RecalPeakInfo> one_peak( 1, peaks[1] );
+    std::vector<bool> fitfor = { true, false };
+    std::vector<float> coefs = { 0.0f, static_cast<float>(true_gain) }, uncerts;
+    EnergyCal::fit_energy_cal_lower_channel( one_peak, orig, fitfor, coefs, uncerts );
+    BOOST_CHECK_SMALL( fabs( coefs[0] - true_offset ), 1.0e-2 );
+  }
+
+  // Invalid inputs
+  {
+    std::vector<float> coefs, uncerts;
+    std::vector<bool> wrong_size_fitfor = { true };
+    BOOST_CHECK_THROW( EnergyCal::fit_energy_cal_lower_channel( peaks, orig, wrong_size_fitfor, coefs, uncerts ),
+                       std::exception );
+
+    auto polycal = std::make_shared<SpecUtils::EnergyCalibration>();
+    polycal->set_polynomial( nchannel, {0.0f, 3.0f}, {} );
+    std::vector<bool> fitfor = { true, true };
+    BOOST_CHECK_THROW( EnergyCal::fit_energy_cal_lower_channel( peaks, polycal, fitfor, coefs, uncerts ),
+                       std::exception );
+  }
+}
+
+
+// The generalized propogate_energy_cal_change: a lower-channel-energy display calibration change
+//  gets propagated to a polynomial "other" calibration, keeping relative channel alignment.
+BOOST_AUTO_TEST_CASE( test_propogate_energy_cal_change_lower_channel )
+{
+  const size_t nchannel = 1024;
+  const auto orig = make_test_lower_channel_cal( nchannel );
+  const auto adjusted = EnergyCal::adjust_lower_channel_energy_cal( orig, 4.0, 1.05 );
+
+  // Note: keep the energy range of `other` within `orig`s range, so the checks below can use
+  //  orig->channel_for_energy() without it throwing for being outside the defined range
+  auto other = std::make_shared<SpecUtils::EnergyCalibration>();
+  other->set_polynomial( 512, {2.0f, 5.5f}, {} );
+
+  const auto new_other = EnergyCal::propogate_energy_cal_change( orig, adjusted, other );
+  BOOST_REQUIRE( new_other && new_other->valid() );
+  BOOST_REQUIRE( new_other->type() == other->type() );
+  BOOST_REQUIRE_EQUAL( new_other->num_channels(), other->num_channels() );
+
+  // Channels of `other` that mapped to a given energy under `orig` must now map to where
+  //  `adjusted` puts that same original energy
+  for( const double other_channel : { 25.0, 150.0, 350.0, 500.0 } )
+  {
+    const double energy_before = other->energy_for_channel( other_channel );
+    const double orig_channel = orig->channel_for_energy( energy_before );
+    const double expected_energy = adjusted->energy_for_channel( orig_channel );
+    const double energy_after = new_other->energy_for_channel( other_channel );
+    BOOST_CHECK_SMALL( fabs( energy_after - expected_energy ), 0.01 );
+  }
+}
+
+// ---- fit_energy_cal_ceres tests ----
+
+namespace
+{
+std::vector<EnergyCal::RecalPeakInfo> make_poly_peaks( const std::vector<float> &coefs,
+                                          const std::vector<std::pair<float,float>> &dev_pairs,
+                                          const std::vector<double> &channels )
+{
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+  for( const double channel : channels )
+  {
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = SpecUtils::polynomial_energy( channel, coefs, dev_pairs );
+    peak.peakMeanUncert = 0.25;
+    peak.photopeakEnergy = peak.peakMean;
+    peaks.push_back( peak );
+  }
+  return peaks;
+}
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_poly )
+{
+  const std::vector<float> true_coefs = { -1.5f, 2.93f, 2.0e-5f };
+  const std::vector<double> channels = { 100.0, 400.0, 950.0 };
+  const auto peaks = make_poly_peaks( true_coefs, {}, channels );
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+  setup.num_channels = 1024;
+  setup.fitfor = { true, true, true };
+  setup.starting_coefs = { 0.0f, 3.0f, 0.0f };
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  BOOST_REQUIRE_EQUAL( result.coefs.size(), 3u );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[0]) - true_coefs[0] ), 1.0e-3 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - true_coefs[1] ), 1.0e-4 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[2]) - true_coefs[2] ), 1.0e-6 );
+  BOOST_CHECK_SMALL( result.chi2, 1.0e-4 );
+  BOOST_CHECK_GT( result.coef_uncerts[1], 0.0f );
+  BOOST_CHECK( result.warning_msg.empty() );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_agrees_with_lls )
+{
+  // On a purely linear (in the coefficients) problem the Ceres fit must agree with the linear
+  //  least squares fit
+  const std::vector<float> true_coefs = { 3.1f, 0.37f };
+  const std::vector<std::pair<float,float>> dev_pairs = { {0.0f, 0.0f}, {661.7f, 4.0f}, {2614.0f, -3.0f} };
+  const std::vector<double> channels = { 500.0, 1500.0, 3000.0, 6000.0 };
+
+  auto peaks = make_poly_peaks( true_coefs, dev_pairs, channels );
+  // perturb targets a little, so the fit isnt exact, and the two methods have to agree at the
+  //  minimum (not just at the truth)
+  peaks[0].photopeakEnergy += 0.21;
+  peaks[2].photopeakEnergy -= 0.13;
+
+  const std::vector<bool> fitfor = { true, true };
+
+  std::vector<float> lls_coefs = { 0.0f, 0.0f }, lls_uncerts;
+  const double lls_chi2 = EnergyCal::fit_energy_cal_poly( peaks, fitfor, 8192, dev_pairs,
+                                                          lls_coefs, lls_uncerts );
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+  setup.num_channels = 8192;
+  setup.fitfor = fitfor;
+  setup.starting_coefs = { 0.0f, 0.5f };
+  setup.dev_pairs = dev_pairs;
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  BOOST_REQUIRE_EQUAL( result.coefs.size(), 2u );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[0]) - lls_coefs[0] ), 1.0e-3 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - lls_coefs[1] ), 1.0e-6 );
+  BOOST_CHECK_SMALL( fabs( result.chi2 - lls_chi2 ), 1.0e-3*std::max(1.0, lls_chi2) );
+
+  // and the dev pairs should be passed through un-changed
+  BOOST_REQUIRE_EQUAL( result.dev_pairs.size(), dev_pairs.size() );
+  for( size_t i = 0; i < dev_pairs.size(); ++i )
+  {
+    BOOST_CHECK_EQUAL( result.dev_pairs[i].first, dev_pairs[i].first );
+    BOOST_CHECK_EQUAL( result.dev_pairs[i].second, dev_pairs[i].second );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_fixed_coef )
+{
+  const std::vector<float> true_coefs = { -2.0f, 3.0f };
+  const std::vector<double> channels = { 200.0, 700.0, 900.0 };
+  const auto peaks = make_poly_peaks( true_coefs, {}, channels );
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+  setup.num_channels = 1024;
+  setup.fitfor = { false, true };
+  setup.starting_coefs = { -2.0f, 2.5f };  //offset fixed at its true value
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  BOOST_CHECK_EQUAL( result.coefs[0], -2.0f );  //fixed - must come through exactly
+  BOOST_CHECK_EQUAL( result.coef_uncerts[0], 0.0f );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - true_coefs[1] ), 1.0e-5 );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_frf )
+{
+  const size_t nchannel = 2048;
+  const std::vector<float> true_coefs = { -3.0f, 2900.0f, 20.0f, 0.0f, 12.0f };
+  const std::vector<double> channels = { 150.0, 400.0, 800.0, 1200.0, 1600.0, 1900.0 };
+
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+  for( const double channel : channels )
+  {
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = SpecUtils::fullrangefraction_energy( channel, true_coefs, nchannel, {} );
+    peak.peakMeanUncert = 0.25;
+    peak.photopeakEnergy = peak.peakMean;
+    peaks.push_back( peak );
+  }
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::FullRangeFraction;
+  setup.num_channels = nchannel;
+  setup.fitfor = { true, true, true, false, true };
+  setup.starting_coefs = { 0.0f, 3000.0f, 0.0f, 0.0f, 0.0f };
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[0]) - true_coefs[0] ), 0.01 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - true_coefs[1] ), 0.05 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[2]) - true_coefs[2] ), 0.05 );
+  BOOST_CHECK_EQUAL( result.coefs[3], 0.0f );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[4]) - true_coefs[4] ), 0.1 );
+  BOOST_CHECK_SMALL( result.chi2, 1.0e-3 );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_dev_pair_offsets )
+{
+  // Recover known deviation pair offsets (with the calibration coefficients held fixed)
+  const std::vector<float> true_coefs = { 0.0f, 3.0f };
+  const std::vector<std::pair<float,float>> true_pairs = { {0.0f, 0.0f}, {661.7f, 5.0f},
+                                                           {1460.8f, 8.0f}, {2614.0f, 2.0f} };
+  const std::vector<double> channels = { 100.0, 220.567, 486.933, 871.333, 960.0 };
+
+  const auto peaks = make_poly_peaks( true_coefs, true_pairs, channels );
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+  setup.num_channels = 1024;
+  setup.fitfor = { false, false };
+  setup.starting_coefs = true_coefs;
+  setup.dev_pairs = true_pairs;
+  setup.fit_dev_pair_offsets = { false, true, true, false };
+
+  //Start the fit offsets away from truth
+  setup.dev_pairs[1].second = 0.0f;
+  setup.dev_pairs[2].second = 0.0f;
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  BOOST_REQUIRE_EQUAL( result.dev_pairs.size(), true_pairs.size() );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.dev_pairs[1].second) - true_pairs[1].second ), 0.05 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.dev_pairs[2].second) - true_pairs[2].second ), 0.05 );
+  BOOST_CHECK_EQUAL( result.dev_pairs[0].second, 0.0f );  //not fit
+  BOOST_CHECK_EQUAL( result.dev_pairs[3].second, 2.0f );  //not fit
+  BOOST_CHECK_GT( result.dev_pair_offset_uncerts[1], 0.0f );
+  BOOST_CHECK_EQUAL( result.dev_pair_offset_uncerts[0], 0.0f );
+
+  // The result must be self-consistent when applied through SpecUtils
+  for( size_t i = 0; i < channels.size(); ++i )
+  {
+    const double pred = SpecUtils::polynomial_energy( channels[i], result.coefs, result.dev_pairs );
+    BOOST_CHECK_SMALL( fabs( pred - peaks[i].photopeakEnergy ), 0.1 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_lower_channel )
+{
+  const size_t nchannel = 2048;
+  const auto orig = make_test_lower_channel_cal( nchannel );
+  const double true_offset = 3.5, true_gain = 1.006;  //gain dimensionless, nominal 1.0
+  const auto adjusted = EnergyCal::adjust_lower_channel_energy_cal( orig, true_offset, true_gain );
+
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+  for( const double channel : { 300.0, 900.0, 1700.0 } )
+  {
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = channel;
+    peak.peakMean = orig->energy_for_channel( channel );
+    peak.peakMeanUncert = 0.25;
+    peak.photopeakEnergy = adjusted->energy_for_channel( channel );
+    peaks.push_back( peak );
+  }
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::LowerChannelEdge;
+  setup.num_channels = nchannel;
+  setup.fitfor = { true, true };
+  setup.starting_coefs = { 0.0f, 0.0f };
+  setup.lower_channel_energies = *orig->channel_energies();
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[0]) - true_offset ), 1.0e-2 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - true_gain ), 1.0e-4 );
+
+  // ...and must agree with the dedicated linear fit
+  std::vector<bool> fitfor = { true, true };
+  std::vector<float> lin_coefs, lin_uncerts;
+  EnergyCal::fit_energy_cal_lower_channel( peaks, orig, fitfor, lin_coefs, lin_uncerts );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[0]) - lin_coefs[0] ), 1.0e-3 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - lin_coefs[1] ), 1.0e-3 );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_degenerate_warns )
+{
+  // Fitting the offset coefficient together with ALL deviation pair offsets is degenerate; the
+  //  fit should still converge (SVD covariance absorbs the null space), but must warn
+  const std::vector<float> true_coefs = { 0.0f, 3.0f };
+  const std::vector<std::pair<float,float>> pairs = { {300.0f, 2.0f}, {1500.0f, 4.0f} };
+  const std::vector<double> channels = { 50.0, 300.0, 700.0, 990.0 };
+  const auto peaks = make_poly_peaks( true_coefs, pairs, channels );
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+  setup.num_channels = 1024;
+  setup.fitfor = { true, false };
+  setup.starting_coefs = true_coefs;
+  setup.dev_pairs = pairs;
+  setup.fit_dev_pair_offsets = { true, true };
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  BOOST_CHECK( !result.warning_msg.empty() );
+
+  // Even though the parameter split is ambiguous, the RESULTING calibration must reproduce the
+  //  peak energies
+  for( size_t i = 0; i < channels.size(); ++i )
+  {
+    const double pred = SpecUtils::polynomial_energy( channels[i], result.coefs, result.dev_pairs );
+    BOOST_CHECK_SMALL( fabs( pred - peaks[i].photopeakEnergy ), 0.1 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_error_conditions )
+{
+  const auto peaks = make_poly_peaks( {0.0f, 3.0f}, {}, {100.0, 500.0} );
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+  setup.num_channels = 1024;
+  setup.fitfor = { true, true, true };  //3 params > 2 peaks
+  setup.starting_coefs = { 0.0f, 3.0f, 0.0f };
+  BOOST_CHECK_THROW( EnergyCal::fit_energy_cal_ceres( peaks, setup ), std::exception );
+
+  setup.fitfor = { false, false };  //nothing to fit
+  setup.starting_coefs = { 0.0f, 3.0f };
+  BOOST_CHECK_THROW( EnergyCal::fit_energy_cal_ceres( peaks, setup ), std::exception );
+
+  setup.fitfor = { true, false };  //mismatched starting_coefs
+  setup.starting_coefs = { 0.0f };
+  BOOST_CHECK_THROW( EnergyCal::fit_energy_cal_ceres( peaks, setup ), std::exception );
+
+  BOOST_CHECK_THROW( EnergyCal::fit_energy_cal_ceres( {}, setup ), std::exception );  //no peaks
+}
+
+// A lone deviation pair below 0.1 keV is treated by SpecUtils as no deviation at all, so asking
+//  to fit its offset must not leave a silent do-nothing parameter in the problem (which would
+//  also poison the covariance); the fit should warn, skip that offset, and still fit the
+//  coefficients correctly.
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_lone_low_energy_dev_pair )
+{
+  const std::vector<float> true_coefs = { -1.0f, 3.0f };
+  const std::vector<double> channels = { 150.0, 500.0, 900.0 };
+  const auto peaks = make_poly_peaks( true_coefs, {}, channels );
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+  setup.num_channels = 1024;
+  setup.fitfor = { true, true };
+  setup.starting_coefs = { 0.0f, 2.8f };
+  setup.dev_pairs = { {0.05f, 1.0f} };  //below the 0.1 keV threshold SpecUtils cares about
+  setup.fit_dev_pair_offsets = { true };
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  BOOST_CHECK( !result.warning_msg.empty() );  //must tell the user the offset wasnt fit
+
+  BOOST_REQUIRE_EQUAL( result.dev_pairs.size(), 1u );
+  BOOST_CHECK_EQUAL( result.dev_pairs[0].second, 1.0f );  //passed through untouched
+  BOOST_CHECK_EQUAL( result.dev_pair_offset_uncerts[0], 0.0f );
+
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[0]) - true_coefs[0] ), 1.0e-3 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - true_coefs[1] ), 1.0e-5 );
+  BOOST_CHECK_GT( result.coef_uncerts[1], 0.0f );  //covariance must still be computable
+}
+
+// Reproduces a user-reported divergence: a badly mis-calibrated starting point, plus a deviation
+//  pair that DOES sit under a calibration peak (so it is genuinely constrained), used to send the
+//  non-linear fit off the rails (offset ~ -59, gain ~0.4, the 766 keV deviation offset ~ -316).
+//  Seeding the fit from the linear solution (and bounding the offsets) must let it recover.
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_dev_pair_bad_start )
+{
+  const size_t nchannel = 8192;
+  const std::vector<float> true_coefs = { 0.003f, 0.366f };
+  const std::vector<std::pair<float,float>> true_pairs = { {100.0f, 0.0f}, {766.0f, -0.1f},
+                                                           {2614.0f, 0.0f} };
+
+  auto truecal = std::make_shared<SpecUtils::EnergyCalibration>();
+  truecal->set_polynomial( nchannel, true_coefs, true_pairs );
+
+  std::vector<EnergyCal::RecalPeakInfo> peaks;
+  for( const double energy : { 100.0, 250.0, 500.0, 766.0, 1200.0 } )  //note a peak AT 766
+  {
+    EnergyCal::RecalPeakInfo peak;
+    peak.peakMeanBinNumber = truecal->channel_for_energy( energy );
+    peak.peakMean = energy;
+    peak.peakMeanUncert = 0.25;
+    peak.photopeakEnergy = energy;
+    peaks.push_back( peak );
+  }
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+  setup.num_channels = nchannel;
+  setup.fitfor = { true, true };
+  setup.starting_coefs = { 0.0f, 0.28f };  //deliberately far from truth (23% low gain)
+  setup.dev_pairs = { {100.0f, 0.0f}, {766.0f, 0.0f}, {2614.0f, 0.0f} };  //766 offset starts at 0
+  setup.fit_dev_pair_offsets = { false, true, false };
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  //Must recover the calibration, not diverge
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[0]) - true_coefs[0] ), 0.05 );
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - true_coefs[1] ), 1.0e-3 );
+
+  BOOST_REQUIRE_EQUAL( result.dev_pairs.size(), 3u );
+  BOOST_CHECK_LT( fabs( static_cast<double>(result.dev_pairs[1].second) ), 1.0 );  //not -316
+  BOOST_CHECK_EQUAL( result.dev_pairs[0].second, 0.0f );  //held fixed
+  BOOST_CHECK_EQUAL( result.dev_pairs[2].second, 0.0f );  //held fixed
+
+  for( size_t i = 0; i < peaks.size(); ++i )
+  {
+    const double pred = SpecUtils::polynomial_energy( peaks[i].peakMeanBinNumber, result.coefs,
+                                                      result.dev_pairs );
+    BOOST_CHECK_SMALL( fabs( pred - peaks[i].photopeakEnergy ), 0.3 );
+  }
+}
+
+// A deviation pair with NO calibration peak in the energy region it governs is unconstrained;
+//  it must be held fixed (with a warning), not fit - otherwise the optimizer overfits through it.
+BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_dev_pair_no_governing_peak )
+{
+  const std::vector<float> true_coefs = { 0.0f, 3.0f };
+  const std::vector<double> channels = { 40.0, 80.0, 150.0, 250.0 };  //energies 120..750, all < 766
+  const auto peaks = make_poly_peaks( true_coefs, {}, channels );
+
+  EnergyCal::EnergyCalCeresFitSetup setup;
+  setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+  setup.num_channels = 1024;
+  setup.fitfor = { true, true };
+  setup.starting_coefs = { 0.0f, 2.9f };
+  //dev pair at 2000 keV has no peak anywhere near it (peaks span 120..750)
+  setup.dev_pairs = { {100.0f, 0.0f}, {2000.0f, 0.0f} };
+  setup.fit_dev_pair_offsets = { false, true };
+
+  const EnergyCal::EnergyCalCeresFitResult result = EnergyCal::fit_energy_cal_ceres( peaks, setup );
+
+  BOOST_CHECK( !result.warning_msg.empty() );          //must tell the user it wasnt fit
+  BOOST_CHECK_EQUAL( result.dev_pairs[1].second, 0.0f );  //held fixed at its starting value
+  BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - true_coefs[1] ), 1.0e-4 );  //coefs still good
 }

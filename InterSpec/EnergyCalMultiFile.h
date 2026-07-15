@@ -41,6 +41,12 @@ class EnergyCalTool;
 class SpectraFileModel;
 class SpectraFileHeader;
 class EnergyCalMultiFileModel;
+namespace Wt
+{
+  class WText;
+  class WGroupBox;
+}
+namespace EnergyCalImp{ class DeviationPairDisplay; }
 namespace SpecUtils{ struct EnergyCalibration; }
 
 
@@ -67,13 +73,17 @@ public:
   virtual ~EnergyCalMultiFile();
   
   void doFit();
-  
+
   void applyCurrentFit();
-  
+
   void handleFinish( Wt::WDialog::DialogCode result );
 protected:
   void updateCoefDisplay();
-  
+
+  /** Updates the displayed deviation pair offsets from #m_devPairs (falling back to
+   #m_origDevPairs where not fit). */
+  void updateDevPairDisplay();
+
   EnergyCalTool *m_calibrator;
   AuxWindow *m_parent;
   EnergyCalMultiFileModel *m_model;
@@ -83,8 +93,13 @@ protected:
   Wt::WPushButton *m_cancel;
   Wt::WPushButton *m_fit;
   Wt::WTextArea *m_fitSumary;
-  
-  
+
+  /** Editable deviation-pair list (add / edit / delete), the same widget as the Energy
+   Calibration tab, with a per-row "Fit offset" checkbox; seeded from the displayed foregrounds
+   deviation pairs. */
+  Wt::WGroupBox *m_devPairBox;
+  EnergyCalImp::DeviationPairDisplay *m_devPairDisplay;
+
   std::vector<float> m_calVal;
   std::vector<float> m_calUncert;
   std::vector<std::pair<float,float>> m_devPairs;

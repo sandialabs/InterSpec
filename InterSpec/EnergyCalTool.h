@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -161,6 +162,23 @@ struct MeasToApplyCoefChangeTo
 };//struct MeasToApplyCoefChangeTo
 
 
+/** Tracks the ORIGINAL channel energies of a lower-channel-energy defined calibration, together
+ with the cumulative {offset, gain} adjustment that has been applied to it this session, so that
+ re-calibrating these calibrations is always done relative to the original channel energies (and
+ not just the current ones).  See #EnergyCal::adjust_lower_channel_energy_cal for the meaning of
+ offset and gain.
+
+ Once the file is unloaded/re-loaded (or exported), the adjusted calibration becomes the new
+ nominal calibration - which is fine.
+ */
+struct LowerChanCalOriginal
+{
+  std::shared_ptr<const SpecUtils::EnergyCalibration> original;
+  double offset = 0.0;  //keV; E_new = offset + gain*E_orig
+  double gain = 1.0;    //dimensionless, nominal 1.0 (identity)
+};//struct LowerChanCalOriginal
+
+
 
 class EnergyCalTool : public Wt::WContainerWidget
 {
@@ -254,6 +272,22 @@ public:
    what options the user has chosen.
    */
   std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo();
+
+  /** Returns the original channel energies, and cumulative {offset, gain} adjustment, of a
+   (possibly already adjusted) lower-channel-energy calibration; if `cal` hasnt been adjusted this
+   session, returns {cal, 0.0, 0.0} - i.e., the passed in calibration is the original.
+   */
+  LowerChanCalOriginal lowerChannelOriginal(
+                        const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal ) const;
+
+  /** Registers `new_cal` as being `info.original`, adjusted by the cumulative {info.offset,
+   info.gain}, so future adjustments of `new_cal` stay relative to the true original channel
+   energies.  `info.original` should be the resolved original (i.e., from
+   #lowerChannelOriginal), not just the previous calibration.
+   */
+  void registerLowerChannelAdjustment(
+                        const std::shared_ptr<const SpecUtils::EnergyCalibration> &new_cal,
+                        const LowerChanCalOriginal &info );
   
   
   
@@ -302,7 +336,13 @@ protected:
   
   
   void doRefreshFromFiles();
-  
+
+  /** Creates #m_specTypeMenu, #m_specTypeMenuStack, #m_calInfoDisplayStack, and all three
+   #m_detectorMenu entries.  Called once per layout (Wide/Tall) from #doRefreshFromFiles; after
+   that the menu contents are only diffed/updated in place.
+   */
+  void createCalDisplayWidgets();
+
   void specTypeToDisplayForChanged();
   
   void fitCoefficients();
@@ -370,8 +410,12 @@ protected:
   
   /** The menus that let you select which detector to show calibration info for.
    These menues are held in the #m_specTypeMenuStack stack.
-   
-   These entries will be nullptr if there is not a SpecFile for its respective {for, back, sec}
+
+   All three menus are created (in #createCalDisplayWidgets) even if there is not a SpecFile for
+   the respective {for, back, sec} - in that case the menu is just empty, and its item in
+   #m_specTypeMenu hidden.  When every displayed file has no more than one detector, all entries
+   go in the foreground menu (labeled "Foreground"/"Background"/"Secondary"), and the other two
+   menus are empty.
    */
   Wt::WMenu *m_detectorMenu[3];
   
@@ -415,6 +459,14 @@ protected:
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];
+
+  /** Map from a session-adjusted lower-channel-energy calibration, to its original channel
+   energies and the cumulative adjustment applied; see #LowerChanCalOriginal.  Weak keys stay
+   resolvable while the measurements (or the undo/redo history) hold the calibrations; expired
+   entries are lazily pruned in #doRefreshFromFiles.
+   */
+  std::map<std::weak_ptr<const SpecUtils::EnergyCalibration>, LowerChanCalOriginal,
+           std::owner_less<std::weak_ptr<const SpecUtils::EnergyCalibration>>> m_lowerChanOrigCals;
   
   EnergyCalAddActionsWindow *m_addActionWindow;
   
