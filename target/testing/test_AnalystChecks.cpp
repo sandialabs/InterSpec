@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <fstream>
 #include <iostream>
 
 #include <Wt/Utils>
@@ -779,3 +780,172 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_no_background, InterSpecTestFixture
   const AnalystChecks::BetaContinuumCheckStatus second = AnalystChecks::beta_continuum_check( input );
   BOOST_CHECK_EQUAL( AnalystChecks::to_string(first.verdict), AnalystChecks::to_string(second.verdict) );
 }//test_beta_continuum_no_background
+
+
+// ---------------------------------------------------------------------------------------------
+// Data-driven beta_continuum_check harness.
+//
+// Reads test_data/AnalystTests/beta_check_cases.csv (see that file for the column format) and
+// runs the check on every row, so new brem spectra / shielded-gamma negatives / x-ray-machine
+// spectra can be added without touching C++.
+// ---------------------------------------------------------------------------------------------
+
+namespace
+{
+  /** Resolve a manifest sample selector to a sample number of `meas`.
+   'auto' = first record not titled "Background"; 'auto-bkg' = the "Background" record with the
+   longest (prefer_long) or shortest live time, falling back to longest/shortest-live-time record
+   overall; otherwise the integer sample number. */
+  int resolve_manifest_sample( const std::shared_ptr<SpecMeas> &meas, const std::string &selector,
+                               const bool prefer_long )
+  {
+    if( (selector != "auto") && (selector != "auto-bkg") )
+      return std::stoi( selector );
+
+    int best_sample = -999, best_any_sample = -999;
+    float best_lt = prefer_long ? -1.0f : std::numeric_limits<float>::max();
+    float best_any_lt = best_lt;
+
+    for( size_t i = 0; i < meas->num_measurements(); ++i )
+    {
+      const shared_ptr<const SpecUtils::Measurement> m = meas->measurement_at_index( static_cast<int>(i) );
+      if( !m )
+        continue;
+      const bool is_bkg = SpecUtils::icontains( m->title(), "Background" );
+      const bool better_any = prefer_long ? (m->live_time() > best_any_lt) : (m->live_time() < best_any_lt);
+
+      if( selector == "auto" )
+      {
+        if( !is_bkg )
+          return m->sample_number();
+      }else if( is_bkg )
+      {
+        const bool better = prefer_long ? (m->live_time() > best_lt) : (m->live_time() < best_lt);
+        if( better )
+        {
+          best_lt = m->live_time();
+          best_sample = m->sample_number();
+        }
+      }
+
+      if( better_any )
+      {
+        best_any_lt = m->live_time();
+        best_any_sample = m->sample_number();
+      }
+    }//for( measurements )
+
+    if( best_sample != -999 )
+      return best_sample;
+    if( best_any_sample != -999 )
+      return best_any_sample;  //'auto'/'auto-bkg' with no matching titles: any record
+    throw std::runtime_error( "No usable record for selector '" + selector + "'" );
+  }//resolve_manifest_sample(...)
+
+
+  std::vector<std::string> split_csv_row( const std::string &line )
+  {
+    std::vector<std::string> fields;
+    std::string field;
+    for( const char c : line )
+    {
+      if( c == ',' )
+      {
+        fields.push_back( field );
+        field.clear();
+      }else
+      {
+        field += c;
+      }
+    }
+    fields.push_back( field );
+    for( std::string &f : fields )
+      SpecUtils::trim( f );
+    return fields;
+  }//split_csv_row(...)
+}//namespace
+
+
+BOOST_FIXTURE_TEST_CASE( test_beta_continuum_case_manifest, InterSpecTestFixture )
+{
+  const string manifest_path = SpecUtils::append_path( g_test_file_dir,
+                                                       "AnalystTests/beta_check_cases.csv" );
+  BOOST_REQUIRE( SpecUtils::is_file(manifest_path) );
+
+  std::ifstream manifest( manifest_path.c_str() );
+  BOOST_REQUIRE( manifest.is_open() );
+
+  size_t num_cases = 0;
+  string line;
+  while( std::getline( manifest, line ) )
+  {
+    SpecUtils::trim( line );
+    if( line.empty() || (line[0] == '#') )
+      continue;
+
+    const vector<string> fields = split_csv_row( line );
+    BOOST_REQUIRE_MESSAGE( fields.size() >= 8, "Manifest row needs 8 columns: " << line );
+
+    const string &fore_file = fields[0], &fore_sel = fields[1];
+    const string &back_file = fields[2], &back_sel = fields[3];
+    const string &allowed = fields[4], &min_term = fields[5], &max_term = fields[6];
+    const string &note = fields[7];
+    num_cases += 1;
+
+    const auto resolve_path = [&]( const string &f ) -> string {
+      if( SpecUtils::is_file(f) )
+        return f;
+      return SpecUtils::append_path( g_test_file_dir, "AnalystTests/" + f );
+    };
+
+    shared_ptr<SpecMeas> fore_meas = make_shared<SpecMeas>();
+    BOOST_REQUIRE_MESSAGE( fore_meas->load_file( resolve_path(fore_file), SpecUtils::ParserType::Auto, fore_file ),
+                           "Failed to load " << fore_file );
+    shared_ptr<SpecMeas> back_meas = make_shared<SpecMeas>();
+    BOOST_REQUIRE_MESSAGE( back_meas->load_file( resolve_path(back_file), SpecUtils::ParserType::Auto, back_file ),
+                           "Failed to load " << back_file );
+
+    // Foreground 'auto-bkg' means the shortest-live-time background record (null tests).
+    const int fore_sample = resolve_manifest_sample( fore_meas, fore_sel, false );
+    const int back_sample = resolve_manifest_sample( back_meas, back_sel, true );
+
+    m_interspec->setSpectrum( fore_meas, {fore_sample}, SpecUtils::SpectrumType::Foreground, 0 );
+    Wt::WApplication::instance()->processEvents();
+    m_interspec->setSpectrum( back_meas, {back_sample}, SpecUtils::SpectrumType::Background, 0 );
+    Wt::WApplication::instance()->processEvents();
+
+    const AnalystChecks::BetaContinuumCheckOptions options;
+    AnalystChecks::BetaContinuumCheckStatus result;
+    BOOST_REQUIRE_NO_THROW( result = AnalystChecks::beta_continuum_check( options, m_interspec ) );
+
+    const string verdict = AnalystChecks::to_string( result.verdict );
+    BOOST_TEST_MESSAGE( "[beta manifest] " << note << " (" << fore_file << "): verdict=" << verdict
+        << " elevSigma=" << result.continuumElevationSigma
+        << " eTerm=" << (result.terminationEnergy ? *result.terminationEnergy : -1.0)
+        << " eChar=" << (result.characteristicEnergy ? *result.characteristicEnergy : -1.0)
+        << " nGammaPk=" << result.elevatedGammaPeaks.size()
+        << " nXrayPk=" << result.xrayRegionPeaks.size() );
+
+    // Verdict must be one of the '|'-separated allowed values.
+    vector<string> allowed_verdicts;
+    SpecUtils::split( allowed_verdicts, allowed, "|" );
+    const bool verdict_ok = (std::find( begin(allowed_verdicts), end(allowed_verdicts), verdict )
+                             != end(allowed_verdicts));
+    BOOST_CHECK_MESSAGE( verdict_ok, note << ": verdict '" << verdict
+                         << "' not in allowed set '" << allowed << "'" );
+
+    if( (min_term != "-") && !min_term.empty() )
+    {
+      BOOST_CHECK_MESSAGE( result.terminationEnergy && (*result.terminationEnergy >= std::stod(min_term)),
+                           note << ": terminationEnergy below " << min_term << " keV" );
+    }
+    if( (max_term != "-") && !max_term.empty() )
+    {
+      BOOST_CHECK_MESSAGE( result.terminationEnergy && (*result.terminationEnergy <= std::stod(max_term)),
+                           note << ": terminationEnergy above " << max_term << " keV" );
+    }
+  }//while( manifest rows )
+
+  BOOST_TEST_MESSAGE( "[beta manifest] ran " << num_cases << " cases" );
+  BOOST_CHECK_GT( num_cases, 0 );
+}//test_beta_continuum_case_manifest

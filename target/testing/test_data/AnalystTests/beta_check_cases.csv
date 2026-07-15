@@ -1,0 +1,24 @@
+# Data-driven cases for AnalystChecks::beta_continuum_check, run by the
+# `test_beta_continuum_case_manifest` case in target/testing/test_AnalystChecks.cpp.
+# Add a spectrum file (any format SpecUtils reads) and a row here to extend coverage -
+# e.g. known brem spectra, heavily-shielded gamma sources, or x-ray generator spectra.
+#
+# Columns (comma separated, '#' starts a comment line):
+#   fore_file        - spectrum file; absolute path, or relative to test_data/AnalystTests/
+#   fore_sample      - integer sample number, 'auto' (first record NOT titled "Background"),
+#                      or 'auto-bkg' (shortest-live-time "Background" record; for null tests)
+#   back_file        - file for the background spectrum (may be the same file)
+#   back_sample      - integer sample number, or 'auto-bkg' (longest-live-time "Background"
+#                      record, falling back to the longest-live-time record)
+#   allowed_verdicts - '|'-separated acceptable verdicts: BremLike, Ambiguous, NotBremLike,
+#                      NoContinuumElevation, AnnihilationDominated, BackgroundNotLoaded
+#   min_term_keV     - lower bound on TerminationEnergy, or '-' to skip
+#   max_term_keV     - upper bound on TerminationEnergy, or '-' to skip
+#   note             - free text shown in failure messages
+#
+# fore_file, fore_sample, back_file, back_sample, allowed_verdicts, min_term_keV, max_term_keV, note
+BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf,    auto,     BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf,    auto-bkg, BremLike,             500, 2450, Sr-90 unshielded on HPGe
+BetaCheck_Sr90_Unsh_SamEagleNaI3x3_300s.pcf,auto,     BetaCheck_Sr90_Unsh_SamEagleNaI3x3_300s.pcf,auto-bkg, BremLike,             500, 2450, Sr-90 unshielded on 3x3 NaI
+BetaCheck_Tl204_Unsh_SamEagleNaI3x3_300s.pcf,auto,    BetaCheck_Tl204_Unsh_SamEagleNaI3x3_300s.pcf,auto-bkg, BremLike|Ambiguous,   -,   950,  Tl-204 (Hg K x-rays must not veto; endpoint 763.7)
+BetaCheck_Cs137_Sh_DetectiveX_300s.pcf,     auto,     BetaCheck_Cs137_Sh_DetectiveX_300s.pcf,     auto-bkg, NotBremLike,          -,   -,    Shielded Cs-137: 661.7 peak + Compton structure
+BetaCheck_Cs137_Sh_DetectiveX_300s.pcf,     auto-bkg, BetaCheck_Cs137_Sh_DetectiveX_300s.pcf,     auto-bkg, NoContinuumElevation, -,   -,    Null: background record as foreground
