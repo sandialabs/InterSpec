@@ -572,3 +572,210 @@ BOOST_FIXTURE_TEST_CASE( test_sum_peak_check, InterSpecTestFixture )
     BOOST_CHECK_LE( result.searchWindow, 15.0 );
   }
 }
+
+
+// ---------------------------------------------------------------------------------------------
+// beta_continuum_check tests.
+//
+// Test PCFs (copied from the peak_fit_accuracy_inject_compact benchmark) each contain the
+// source foreground record, a matched-live-time "Background" record, and a 10x-longer
+// "Background" record.
+// ---------------------------------------------------------------------------------------------
+
+namespace
+{
+  /** Loads `filename` (in AnalystTests/) as both displayed Foreground and Background: the
+   non-"Background" record becomes the foreground (or the short background record, when
+   `background_as_foreground`), and the longest-live-time "Background" record the background. */
+  void load_pcf_fore_and_back( InterSpec * const interspec, const std::string &filename,
+                               const bool background_as_foreground = false )
+  {
+    const string path = SpecUtils::append_path( g_test_file_dir, "AnalystTests/" + filename );
+    BOOST_REQUIRE( SpecUtils::is_file(path) );
+
+    shared_ptr<SpecMeas> fore_meas = make_shared<SpecMeas>();
+    BOOST_REQUIRE( fore_meas->load_file( path, SpecUtils::ParserType::Auto, path ) );
+    shared_ptr<SpecMeas> back_meas = make_shared<SpecMeas>();
+    BOOST_REQUIRE( back_meas->load_file( path, SpecUtils::ParserType::Auto, path ) );
+
+    int fore_sample = -999, short_bkg_sample = -999, long_bkg_sample = -999;
+    float short_bkg_lt = std::numeric_limits<float>::max(), long_bkg_lt = -1.0f;
+    for( size_t i = 0; i < fore_meas->num_measurements(); ++i )
+    {
+      const shared_ptr<const SpecUtils::Measurement> m = fore_meas->measurement_at_index( static_cast<int>(i) );
+      BOOST_REQUIRE( !!m );
+      if( SpecUtils::icontains( m->title(), "Background" ) )
+      {
+        if( m->live_time() > long_bkg_lt )
+        {
+          long_bkg_lt = m->live_time();
+          long_bkg_sample = m->sample_number();
+        }
+        if( m->live_time() < short_bkg_lt )
+        {
+          short_bkg_lt = m->live_time();
+          short_bkg_sample = m->sample_number();
+        }
+      }else if( fore_sample == -999 )
+      {
+        fore_sample = m->sample_number();
+      }
+    }//for( measurements )
+
+    BOOST_REQUIRE( fore_sample != -999 );
+    BOOST_REQUIRE( long_bkg_sample != -999 );
+
+    const int use_fore_sample = background_as_foreground ? short_bkg_sample : fore_sample;
+    BOOST_REQUIRE( use_fore_sample != -999 );
+
+    interspec->setSpectrum( fore_meas, {use_fore_sample}, SpecUtils::SpectrumType::Foreground, 0 );
+    Wt::WApplication::instance()->processEvents();
+    interspec->setSpectrum( back_meas, {long_bkg_sample}, SpecUtils::SpectrumType::Background, 0 );
+    Wt::WApplication::instance()->processEvents();
+  }//load_pcf_fore_and_back(...)
+}//namespace
+
+
+BOOST_FIXTURE_TEST_CASE( test_beta_continuum_sr90_hpge, InterSpecTestFixture )
+{
+  load_pcf_fore_and_back( m_interspec, "BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf" );
+
+  const AnalystChecks::BetaContinuumCheckOptions options;
+  const AnalystChecks::BetaContinuumCheckStatus result
+      = AnalystChecks::beta_continuum_check( options, m_interspec );
+
+  BOOST_TEST_MESSAGE( "Sr90 HPGe: verdict=" << AnalystChecks::to_string(result.verdict)
+                      << ", elevSigma=" << result.continuumElevationSigma
+                      << ", eTerm=" << (result.terminationEnergy ? *result.terminationEnergy : -1.0)
+                      << ", eChar=" << (result.characteristicEnergy ? *result.characteristicEnergy : -1.0)
+                      << ", nGammaPeaks=" << result.elevatedGammaPeaks.size() );
+
+  BOOST_CHECK_EQUAL( AnalystChecks::to_string(result.verdict),
+                     AnalystChecks::to_string(AnalystChecks::BetaContinuumVerdict::BremLike) );
+  BOOST_CHECK( result.elevatedGammaPeaks.empty() );
+  BOOST_REQUIRE( result.terminationEnergy.has_value() );
+  BOOST_CHECK_GT( *result.terminationEnergy, 500.0 );
+  BOOST_CHECK_LT( *result.terminationEnergy, 2450.0 );
+
+  bool have_sr90 = false;
+  for( const AnalystChecks::BetaContinuumCandidateNuclide &candidate : result.candidateNuclides )
+    have_sr90 = (have_sr90 || (candidate.nuclide == "Sr90"));
+  BOOST_CHECK_MESSAGE( have_sr90, "Sr90 should be among the candidate nuclides" );
+}//test_beta_continuum_sr90_hpge
+
+
+BOOST_FIXTURE_TEST_CASE( test_beta_continuum_sr90_nai, InterSpecTestFixture )
+{
+  load_pcf_fore_and_back( m_interspec, "BetaCheck_Sr90_Unsh_SamEagleNaI3x3_300s.pcf" );
+
+  const AnalystChecks::BetaContinuumCheckOptions options;
+  const AnalystChecks::BetaContinuumCheckStatus result
+      = AnalystChecks::beta_continuum_check( options, m_interspec );
+
+  BOOST_TEST_MESSAGE( "Sr90 NaI: verdict=" << AnalystChecks::to_string(result.verdict)
+                      << ", elevSigma=" << result.continuumElevationSigma
+                      << ", eTerm=" << (result.terminationEnergy ? *result.terminationEnergy : -1.0)
+                      << ", eChar=" << (result.characteristicEnergy ? *result.characteristicEnergy : -1.0)
+                      << ", nGammaPeaks=" << result.elevatedGammaPeaks.size() );
+
+  BOOST_CHECK_EQUAL( AnalystChecks::to_string(result.verdict),
+                     AnalystChecks::to_string(AnalystChecks::BetaContinuumVerdict::BremLike) );
+  BOOST_CHECK( result.elevatedGammaPeaks.empty() );
+  BOOST_REQUIRE( result.terminationEnergy.has_value() );
+
+  bool have_sr90 = false;
+  for( const AnalystChecks::BetaContinuumCandidateNuclide &candidate : result.candidateNuclides )
+    have_sr90 = (have_sr90 || (candidate.nuclide == "Sr90"));
+  BOOST_CHECK_MESSAGE( have_sr90, "Sr90 should be among the candidate nuclides" );
+}//test_beta_continuum_sr90_nai
+
+
+BOOST_FIXTURE_TEST_CASE( test_beta_continuum_cs137_not_brem, InterSpecTestFixture )
+{
+  load_pcf_fore_and_back( m_interspec, "BetaCheck_Cs137_Sh_DetectiveX_300s.pcf" );
+
+  const AnalystChecks::BetaContinuumCheckOptions options;
+  const AnalystChecks::BetaContinuumCheckStatus result
+      = AnalystChecks::beta_continuum_check( options, m_interspec );
+
+  BOOST_TEST_MESSAGE( "Cs137 shielded HPGe: verdict=" << AnalystChecks::to_string(result.verdict)
+                      << ", nGammaPeaks=" << result.elevatedGammaPeaks.size() );
+
+  BOOST_CHECK_EQUAL( AnalystChecks::to_string(result.verdict),
+                     AnalystChecks::to_string(AnalystChecks::BetaContinuumVerdict::NotBremLike) );
+
+  bool have_662 = false;
+  for( const AnalystChecks::BetaContinuumPeakInfo &peak : result.elevatedGammaPeaks )
+    have_662 = (have_662 || (fabs(peak.energy - 661.66) < 3.0));
+  BOOST_CHECK_MESSAGE( have_662, "661.66 keV should be among the elevated gamma peaks" );
+}//test_beta_continuum_cs137_not_brem
+
+
+BOOST_FIXTURE_TEST_CASE( test_beta_continuum_background_as_foreground, InterSpecTestFixture )
+{
+  // The short "Background" record as foreground, the long one as background: nothing is elevated.
+  load_pcf_fore_and_back( m_interspec, "BetaCheck_Cs137_Sh_DetectiveX_300s.pcf", true );
+
+  const AnalystChecks::BetaContinuumCheckOptions options;
+  const AnalystChecks::BetaContinuumCheckStatus result
+      = AnalystChecks::beta_continuum_check( options, m_interspec );
+
+  BOOST_TEST_MESSAGE( "Background-as-foreground: verdict=" << AnalystChecks::to_string(result.verdict)
+                      << ", elevSigma=" << result.continuumElevationSigma );
+
+  BOOST_CHECK_EQUAL( AnalystChecks::to_string(result.verdict),
+                     AnalystChecks::to_string(AnalystChecks::BetaContinuumVerdict::NoContinuumElevation) );
+  BOOST_CHECK_LT( result.continuumElevationSigma, 8.0 );
+}//test_beta_continuum_background_as_foreground
+
+
+BOOST_FIXTURE_TEST_CASE( test_beta_continuum_tl204_xrays, InterSpecTestFixture )
+{
+  // Tl-204's EC branch gives Hg K x-rays (~69-83 keV); these are reported but must not veto.
+  load_pcf_fore_and_back( m_interspec, "BetaCheck_Tl204_Unsh_SamEagleNaI3x3_300s.pcf" );
+
+  const AnalystChecks::BetaContinuumCheckOptions options;
+  const AnalystChecks::BetaContinuumCheckStatus result
+      = AnalystChecks::beta_continuum_check( options, m_interspec );
+
+  BOOST_TEST_MESSAGE( "Tl204 NaI: verdict=" << AnalystChecks::to_string(result.verdict)
+                      << ", eTerm=" << (result.terminationEnergy ? *result.terminationEnergy : -1.0)
+                      << ", nXrayPeaks=" << result.xrayRegionPeaks.size()
+                      << ", nGammaPeaks=" << result.elevatedGammaPeaks.size() );
+
+  const bool brem_or_ambiguous = (result.verdict == AnalystChecks::BetaContinuumVerdict::BremLike)
+                                 || (result.verdict == AnalystChecks::BetaContinuumVerdict::Ambiguous);
+  BOOST_CHECK_MESSAGE( brem_or_ambiguous, "Tl204 should grade BremLike or Ambiguous, got "
+                       << AnalystChecks::to_string(result.verdict) );
+
+  BOOST_REQUIRE( result.terminationEnergy.has_value() );
+  BOOST_CHECK_LT( *result.terminationEnergy, 950.0 ); // Tl-204 endpoint is 763.7 keV
+}//test_beta_continuum_tl204_xrays
+
+
+BOOST_FIXTURE_TEST_CASE( test_beta_continuum_no_background, InterSpecTestFixture )
+{
+  // Direct test of the worker-safe overload: null background must yield BackgroundNotLoaded,
+  // and the check must be deterministic (identical results for identical inputs).
+  const string path = SpecUtils::append_path( g_test_file_dir,
+                                    "AnalystTests/BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf" );
+  BOOST_REQUIRE( SpecUtils::is_file(path) );
+
+  shared_ptr<SpecMeas> meas = make_shared<SpecMeas>();
+  BOOST_REQUIRE( meas->load_file( path, SpecUtils::ParserType::Auto, path ) );
+  BOOST_REQUIRE( meas->num_measurements() > 0 );
+
+  AnalystChecks::BetaContinuumCheckInput input;
+  input.foreground = meas->measurement_at_index( 0 );
+  input.expectedFwhm = []( const double energy ) -> float {
+    return static_cast<float>( 2.0 + 0.03*std::sqrt(energy) );
+  };
+
+  const AnalystChecks::BetaContinuumCheckStatus first = AnalystChecks::beta_continuum_check( input );
+  BOOST_CHECK_EQUAL( AnalystChecks::to_string(first.verdict),
+                     AnalystChecks::to_string(AnalystChecks::BetaContinuumVerdict::BackgroundNotLoaded) );
+  BOOST_CHECK( !first.warnings.empty() );
+
+  const AnalystChecks::BetaContinuumCheckStatus second = AnalystChecks::beta_continuum_check( input );
+  BOOST_CHECK_EQUAL( AnalystChecks::to_string(first.verdict), AnalystChecks::to_string(second.verdict) );
+}//test_beta_continuum_no_background

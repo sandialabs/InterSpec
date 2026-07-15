@@ -4376,11 +4376,17 @@ namespace AnalystChecks
     double upper = 0.0;
   };//struct BetaExclusionInterval
 
-  /** Builds the merged, sorted peak-exclusion intervals: +-2 FWHM around every foreground and
-   background peak, plus the 511 keV annihilation region. */
+  /** Builds the merged, sorted peak-exclusion intervals: +-2 FWHM around every foreground peak,
+   plus the 511 keV annihilation region.
+
+   Background-only peaks are deliberately NOT excluded: the analysis runs on the live-time
+   normalized net spectrum, where background lines cancel (their statistical residual is already
+   in the per-bin variance), and any background line that does not cancel will have been found as
+   a foreground peak anyway.  Excluding background peaks would tile most of a low-resolution
+   spectrum with exclusions (wide NORM peaks every few hundred keV), blinding the tail analysis.
+   */
   static vector<BetaExclusionInterval> beta_exclusion_intervals(
                                   const vector<shared_ptr<const PeakDef>> &fore_peaks,
-                                  const vector<shared_ptr<const PeakDef>> &back_peaks,
                                   const std::function<float(double)> &fwhm_fcn )
   {
     vector<BetaExclusionInterval> intervals;
@@ -4396,8 +4402,6 @@ namespace AnalystChecks
     };
 
     for( const shared_ptr<const PeakDef> &p : fore_peaks )
-      add_peak( p );
-    for( const shared_ptr<const PeakDef> &p : back_peaks )
       add_peak( p );
 
     // Always exclude the annihilation region - 511 is allowed for a beta source (pair production
@@ -4680,7 +4684,7 @@ namespace AnalystChecks
     const vector<double> back_binned = beta_rebin_counts( back, edges );
 
     const vector<BetaExclusionInterval> exclusions
-        = beta_exclusion_intervals( input.foregroundPeaks, input.backgroundPeaks, fwhm_fcn );
+        = beta_exclusion_intervals( input.foregroundPeaks, fwhm_fcn );
 
     vector<BetaCoarseBin> bins( nbins );
     for( size_t i = 0; i < nbins; ++i )
