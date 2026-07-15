@@ -76,6 +76,14 @@ Two types:
 
 Use `sum_peak_check` to identify these.
 
+### Pure Beta Emitters (Bremsstrahlung)
+Pure beta emitters (P-32, Sr-90/Y-90, Tl-204, Sr-89, ...) produce no photopeaks - only a smooth
+bremsstrahlung continuum that rises to a hump at ~60-150 keV and falls quasi-exponentially.
+Use `beta_continuum_check` (requires a background spectrum loaded) - it background-subtracts,
+excludes peak regions, and grades the net continuum shape.  The reported termination energy is a
+statistics-limited LOWER bound on the beta endpoint.  X-ray-region peaks below ~120 keV do not
+rule a beta source out (e.g. Tl-204's Hg K x-rays from its small EC branch).
+
 ## Detector Response Functions (DRF)
 
 A DRF describes the detector's intrinsic efficiency as a function of energy. Required for:

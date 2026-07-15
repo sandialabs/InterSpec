@@ -66,6 +66,7 @@ InterSpec is a nuclear radiation spectral analysis application. The MCP server e
 ### Peak Validation
 - `escape_peak_check` - Check if a peak is a single/double escape peak of a higher-energy parent.
 - `sum_peak_check` - Check if a peak is a cascade-sum or random-sum (pile-up) peak.
+- `beta_continuum_check` - Deterministic check for a pure-beta-emitter (bremsstrahlung) continuum; background-subtracts the foreground and grades the net continuum shape (requires a background loaded). Returns candidate pure-beta nuclides consistent with the observed termination energy.
 - `peak_based_relative_efficiency` - Validate source ID by checking if peak areas are consistent with a smooth relative efficiency curve. Run on one nuclide at a time. See [interspec-nuclide-id](../interspec-nuclide-id/SKILL.md).
 
 ### Detection and Dose
