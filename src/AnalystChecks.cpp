@@ -31,6 +31,8 @@
 #include <limits>
 #include <algorithm>
 
+#include "Eigen/Dense"
+
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/EnergyCalibration.h"
 
@@ -2034,25 +2036,25 @@ namespace AnalystChecks
   }//get_characteristics_near_energy(...)
   
   
-  float get_expected_fwhm( const double energy, InterSpec *interspec )
+  std::function<float(double)> make_expected_fwhm_fcn( InterSpec *interspec )
   {
     if( !interspec )
       throw std::runtime_error("No InterSpec session available");
-    
+
     shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
     shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     if( !meas || !spectrum )
       throw std::runtime_error("No foreground loaded");
-    
-    float fwhm = -1.0;
-    
+
     // Try the currently loaded peak detector response
+    shared_ptr<const DetectorPeakResponse> res_drf;
     if( meas->detector() && meas->detector()->hasResolutionInfo() )
-      fwhm = meas->detector()->peakResolutionFWHM( static_cast<float>(energy) );
-    
-    // Estimate the FWHM response using detected peaks...
+      res_drf = meas->detector();
+
+    // Otherwise, estimate the FWHM response by fitting the detected peaks (once, up front)...
     shared_ptr<deque<shared_ptr<const PeakDef>>> peak_deque;
-    if( fwhm <= 0.0 )
+    shared_ptr<DetectorPeakResponse> fit_drf;
+    if( !res_drf )
     {
       try
       {
@@ -2060,49 +2062,68 @@ namespace AnalystChecks
         opts.specType = SpecUtils::SpectrumType::Foreground;
         const DetectedPeakStatus peaks = detected_peaks( opts, interspec );
         peak_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(peaks.peaks), end(peaks.peaks) );
-        
-        DetectorPeakResponse drf;
-        drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
+
+        fit_drf = make_shared<DetectorPeakResponse>();
+        fit_drf->setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
                                                0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
-        
-        drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
-        
-        fwhm = drf.peakResolutionFWHM( static_cast<float>(energy) );
+
+        fit_drf->fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
       }catch( std::exception & )
       {
+        fit_drf.reset();
       }
-    }//if( fwhm <= 0.0 )
-    
-    // Find nearest peak, and if within 20% of the energy, use it.
-    if( (fwhm <= 0.0) && peak_deque )
-    {
-      double smallest_energy_diff = std::numeric_limits<double>::max();
-      double nearest_fwhm = 0.0;
-      for( const auto &peak : *peak_deque )
-      {
-        double energy_diff = std::abs(peak->mean() - energy);
-        if( energy_diff < smallest_energy_diff )
-        {
-          smallest_energy_diff = energy_diff;
-          nearest_fwhm = peak->fwhm();
-        }
-      }
+    }//if( !res_drf )
 
-      if( smallest_energy_diff < 0.2*energy )
-        fwhm = nearest_fwhm;
-    }//if( (fwhm <= 0.0) && peak_deque )
-    
-    // Finally, a wag based on detection type.
-    if( fwhm <= 0.0 )
+    // GADRAS-parameter wag by detection type, as the final fallback.
+    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+    const vector<float> wag_pars = isHPGe ? vector<float>{ 1.54f, 0.264f, 0.33f } : vector<float>{ -6.5f, 7.5f, 0.55f };
+
+    return [res_drf, fit_drf, peak_deque, wag_pars]( const double energy ) -> float
     {
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
-      const vector<float> pars = isHPGe ? vector<float>{ 1.54f, 0.264f, 0.33f } : vector<float>{ -6.5f, 7.5f, 0.55f };
-      fwhm = DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars );
-    }
+      float fwhm = -1.0f;
+
+      if( res_drf )
+        fwhm = res_drf->peakResolutionFWHM( static_cast<float>(energy) );
+
+      if( (fwhm <= 0.0f) && fit_drf )
+        fwhm = fit_drf->peakResolutionFWHM( static_cast<float>(energy) );
+
+      // Find nearest peak, and if within 20% of the energy, use it.
+      if( (fwhm <= 0.0f) && peak_deque )
+      {
+        double smallest_energy_diff = std::numeric_limits<double>::max();
+        double nearest_fwhm = 0.0;
+        for( const auto &peak : *peak_deque )
+        {
+          double energy_diff = std::abs(peak->mean() - energy);
+          if( energy_diff < smallest_energy_diff )
+          {
+            smallest_energy_diff = energy_diff;
+            nearest_fwhm = peak->fwhm();
+          }
+        }
+
+        if( smallest_energy_diff < 0.2*energy )
+          fwhm = static_cast<float>( nearest_fwhm );
+      }//if( (fwhm <= 0.0) && peak_deque )
+
+      if( fwhm <= 0.0f )
+        fwhm = DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, wag_pars );
+
+      return fwhm;
+    };
+  }//make_expected_fwhm_fcn(...)
+
+
+  float get_expected_fwhm( const double energy, InterSpec *interspec )
+  {
+    const std::function<float(double)> fwhm_fcn = make_expected_fwhm_fcn( interspec );
+
+    const float fwhm = fwhm_fcn( energy );
 
     if( fwhm <= 0.0 )
       throw std::runtime_error("Could not determine FWHM for energy " + std::to_string(energy) );
-    
+
     return fwhm;
   }//get_expected_fwhm(...)
   
@@ -4241,5 +4262,694 @@ namespace AnalystChecks
     result.searchWindow = tol;
     return result;
   }//ComptonPeakCheckStatus compton_peak_check( const ComptonPeakCheckOptions &options, InterSpec *interspec )
+
+
+  // ---------------------------------------------------------------------------------------------
+  // beta_continuum_check: deterministic pure-beta-emitter (bremsstrahlung) continuum analysis.
+  //
+  // Thresholds below were tuned against the ~800-spectrum injected benchmark (35 detector configs,
+  // NaI through HPGe; P-32/Sr-90/Tl-204/Y-90 vs shielded-gamma negatives and background nulls);
+  // kept as named file-locals so future tuning is a one-line change.
+  // ---------------------------------------------------------------------------------------------
+  static constexpr double sk_beta_coarse_bin_kev      = 24.0;   // coarse analysis bin width
+  static constexpr double sk_beta_xray_max_kev        = 120.0;  // peaks below this are reported as x-rays, and dont veto
+  static constexpr double sk_beta_analysis_max_kev    = 3000.0; // upper end of analysis range
+  static constexpr double sk_beta_mode_max_kev        = 1500.0; // continuum hump mode must be below this
+  static constexpr double sk_beta_min_elevation_sigma = 8.0;    // below this: NoContinuumElevation
+  static constexpr double sk_beta_peak_veto_sigma     = 5.0;    // gamma-peak elevation bar for the veto
+  static constexpr double sk_beta_term_ratio_max      = 0.05;   // cliff detector: intensity at termination / max
+  static constexpr double sk_beta_echar_max_kev       = 350.0;  // max brem-like characteristic (1/e) energy
+  static constexpr double sk_beta_term_max_kev        = 2450.0; // max plausible beta endpoint (Y-90 is 2280 keV)
+  static constexpr double sk_beta_seg_resid_max_sigma = 8.0;    // smoothness: max |segment residual|
+  static constexpr double sk_beta_outlier_frac_max    = 0.25;   // smoothness: max fit-outlier fraction
+  static constexpr double sk_beta_sys_frac            = 0.03;   // fractional systematic floor on the model
+  static constexpr double sk_beta_511_dominant_sigma  = 8.0;    // 511 significance for the positron demotion
+
+  /** (Nearly) pure beta-minus emitters considered as consistency candidates; endpoints are pulled
+   from SandiaDecay at runtime (including in-equilibrium daughters, e.g. Sr90 -> Y90). */
+  static const char * const sk_pure_beta_nuclide_names[] = {
+    "H3", "C14", "P32", "S35", "Cl36", "Ca45", "Ni63", "Sr89", "Sr90", "Y90",
+    "Tc99", "Ru106", "Pm147", "Tl204", "Bi210"
+  };
+
+  /** One coarse bin of the live-time-normalized, background-subtracted continuum. */
+  struct BetaCoarseBin
+  {
+    double center = 0.0;    // keV
+    double net = 0.0;       // foreground - scaled background, counts
+    double var = 0.0;       // variance of net
+    bool excluded = false;  // below the x-ray floor, or inside a peak-exclusion region
+  };//struct BetaCoarseBin
+
+  /** Max beta endpoint (keV) over `nuc` and any descendants with half-life shorter than the
+   parent (i.e., nuclides that reach equilibrium with it); `note` names the descendant when
+   the endpoint comes from one.  Returns 0 if no beta branch found. */
+  static double max_equilibrium_beta_endpoint( const SandiaDecay::Nuclide * const nuc, std::string &note )
+  {
+    note.clear();
+    if( !nuc )
+      return 0.0;
+
+    double best_kev = 0.0;
+    const SandiaDecay::Nuclide *best_nuc = nullptr;
+
+    const vector<const SandiaDecay::Nuclide *> descendants = nuc->descendants();
+    for( const SandiaDecay::Nuclide * const d : descendants )
+    {
+      if( !d || ((d != nuc) && (d->halfLife > nuc->halfLife)) )
+        continue;
+
+      for( const SandiaDecay::Transition * const trans : d->decaysToChildren )
+      {
+        if( !trans )
+          continue;
+
+        for( const SandiaDecay::RadParticle &particle : trans->products )
+        {
+          // For beta particles, RadParticle::energy is the endpoint energy (in SandiaDecay units of keV)
+          if( (particle.type == SandiaDecay::BetaParticle) && (particle.energy > best_kev) )
+          {
+            best_kev = particle.energy;
+            best_nuc = d;
+          }
+        }//for( particles )
+      }//for( transitions )
+    }//for( descendants )
+
+    if( best_nuc && (best_nuc != nuc) )
+      note = "endpoint is from in-equilibrium daughter " + best_nuc->symbol;
+
+    return best_kev;
+  }//max_equilibrium_beta_endpoint(...)
+
+
+  /** Rebin `meas` onto the uniform grid given by `edges` (channel lower energies in keV, plus the
+   final upper edge); returns per-bin counts (clamped non-negative). */
+  static vector<double> beta_rebin_counts( const shared_ptr<const SpecUtils::Measurement> &meas,
+                                           const vector<float> &edges )
+  {
+    assert( meas && (edges.size() > 1) );
+
+    const shared_ptr<const vector<float>> &counts = meas->gamma_counts();
+    const shared_ptr<const vector<float>> &energies = meas->gamma_channel_energies();
+
+    // rebin_by_lower_edge requires at least 4 channels in both inputs.
+    if( !counts || !energies || (counts->size() < 4) || (energies->size() < 4) )
+      throw runtime_error( "beta_continuum_check: spectrum has too few channels" );
+
+    vector<float> rebinned;
+    SpecUtils::rebin_by_lower_edge( *energies, *counts, edges, rebinned );
+
+    vector<double> result( edges.size() - 1, 0.0 );
+    const size_t nfill = std::min( result.size(), rebinned.size() );
+    for( size_t i = 0; i < nfill; ++i )
+      result[i] = std::max( 0.0, static_cast<double>(rebinned[i]) );
+
+    return result;
+  }//beta_rebin_counts(...)
+
+
+  /** A [lower,upper] keV interval excluded from continuum-shape analysis (peak regions, 511). */
+  struct BetaExclusionInterval
+  {
+    double lower = 0.0;
+    double upper = 0.0;
+  };//struct BetaExclusionInterval
+
+  /** Builds the merged, sorted peak-exclusion intervals: +-2 FWHM around every foreground and
+   background peak, plus the 511 keV annihilation region. */
+  static vector<BetaExclusionInterval> beta_exclusion_intervals(
+                                  const vector<shared_ptr<const PeakDef>> &fore_peaks,
+                                  const vector<shared_ptr<const PeakDef>> &back_peaks,
+                                  const std::function<float(double)> &fwhm_fcn )
+  {
+    vector<BetaExclusionInterval> intervals;
+
+    const auto add_peak = [&intervals, &fwhm_fcn]( const shared_ptr<const PeakDef> &p ){
+      if( !p )
+        return;
+      const double mean = p->mean();
+      double fwhm = p->gausPeak() ? p->fwhm() : 0.0;
+      if( fwhm <= 0.0 )
+        fwhm = std::max( 1.0f, fwhm_fcn( mean ) );
+      intervals.push_back( { mean - 2.0*fwhm, mean + 2.0*fwhm } );
+    };
+
+    for( const shared_ptr<const PeakDef> &p : fore_peaks )
+      add_peak( p );
+    for( const shared_ptr<const PeakDef> &p : back_peaks )
+      add_peak( p );
+
+    // Always exclude the annihilation region - 511 is allowed for a beta source (pair production
+    // of high-energy brems, or a small beta+ branch), so it must not distort the shape fit.
+    const double fwhm511 = std::max( 1.0f, fwhm_fcn( 511.0 ) );
+    const double half511 = std::max( 2.0*fwhm511, 10.0 );
+    intervals.push_back( { 511.0 - half511, 511.0 + half511 } );
+
+    std::sort( begin(intervals), end(intervals),
+               []( const BetaExclusionInterval &a, const BetaExclusionInterval &b ){
+                 return a.lower < b.lower;
+               } );
+
+    vector<BetaExclusionInterval> merged;
+    for( const BetaExclusionInterval &iv : intervals )
+    {
+      if( merged.empty() || (iv.lower > merged.back().upper) )
+        merged.push_back( iv );
+      else
+        merged.back().upper = std::max( merged.back().upper, iv.upper );
+    }
+
+    return merged;
+  }//beta_exclusion_intervals(...)
+
+
+  /** Result of the iterative outlier-robust weighted polynomial fit of ln(net) vs energy. */
+  struct BetaLogFitResult
+  {
+    bool valid = false;
+    double chi2Dof = 0.0;
+    double outlierFraction = 0.0;
+    double maxSegmentResidual = 0.0;      // max |summed residual| over 5 segments, in sigma
+    double slopePerKev = 0.0;             // d ln(net) / dE at the requested midpoint energy
+  };//struct BetaLogFitResult
+
+  /** Iterative (3-sigma rejection) weighted cubic (quadratic if few bins) fit of ln(net) vs
+   energy over `fit_indices` of `bins`; residuals are normalized with a `sk_beta_sys_frac`
+   fractional systematic floor added in quadrature, so high-statistics spectra are not
+   penalized for percent-level wiggles. */
+  static BetaLogFitResult beta_robust_log_fit( const vector<BetaCoarseBin> &bins,
+                                               const vector<size_t> &fit_indices,
+                                               const double emid_kev )
+  {
+    BetaLogFitResult result;
+
+    const size_t nfit = fit_indices.size();
+    if( nfit < 6 )
+      return result;
+
+    const int order = (nfit >= 10) ? 3 : 2;
+
+    // Energies are scaled to MeV in the design matrix for conditioning.
+    const auto poly_ln = [order]( const Eigen::VectorXd &coefs, const double e_kev ) -> double {
+      const double x = e_kev / 1000.0;
+      double ln_val = 0.0, xk = 1.0;
+      for( int k = 0; k <= order; ++k, xk *= x )
+        ln_val += coefs[k] * xk;
+      return std::max( -50.0, std::min( 50.0, ln_val ) );
+    };
+
+    vector<char> live( bins.size(), 0 );
+    for( const size_t idx : fit_indices )
+      live[idx] = 1;
+
+    Eigen::VectorXd coefs;
+
+    for( int iter = 0; iter < 5; ++iter )
+    {
+      vector<size_t> pts;
+      for( const size_t idx : fit_indices )
+      {
+        if( live[idx] )
+          pts.push_back( idx );
+      }
+
+      if( pts.size() < 6 )
+        break;  //keep coefficients from the previous iteration
+
+      Eigen::MatrixXd design( pts.size(), order + 1 );
+      Eigen::VectorXd rhs( pts.size() );
+      for( size_t row = 0; row < pts.size(); ++row )
+      {
+        const BetaCoarseBin &bin = bins[pts[row]];
+        // Weight of ln(net): sigma_ln = sqrt(var)/net, so sqrt(weight) = net/sqrt(var)
+        const double sqrt_w = bin.net / std::sqrt( std::max( bin.var, 1.0e-9 ) );
+        const double x = bin.center / 1000.0;
+        double xk = 1.0;
+        for( int k = 0; k <= order; ++k, xk *= x )
+          design(row, k) = sqrt_w * xk;
+        rhs[row] = sqrt_w * std::log( bin.net );
+      }
+
+      coefs = design.colPivHouseholderQr().solve( rhs );
+
+      bool changed = false;
+      for( const size_t idx : fit_indices )
+      {
+        if( !live[idx] )
+          continue;  //once rejected, stays rejected
+        const BetaCoarseBin &bin = bins[idx];
+        const double model = std::exp( poly_ln( coefs, bin.center ) );
+        const double sig_eff = std::sqrt( bin.var + std::pow( sk_beta_sys_frac * model, 2.0 ) );
+        if( std::fabs( (bin.net - model) / sig_eff ) > 3.0 )
+        {
+          live[idx] = 0;
+          changed = true;
+        }
+      }//for( fit_indices )
+
+      if( !changed )
+        break;
+    }//for( iter )
+
+    if( coefs.size() != (order + 1) )
+      return result;
+
+    result.valid = true;
+
+    // chi2/dof over surviving bins, outlier fraction, and segment systematics over all fit bins.
+    size_t nlive = 0;
+    double chi2 = 0.0;
+    for( const size_t idx : fit_indices )
+    {
+      if( !live[idx] )
+        continue;
+      const BetaCoarseBin &bin = bins[idx];
+      const double model = std::exp( poly_ln( coefs, bin.center ) );
+      const double sig_eff = std::sqrt( bin.var + std::pow( sk_beta_sys_frac * model, 2.0 ) );
+      chi2 += std::pow( (bin.net - model) / sig_eff, 2.0 );
+      nlive += 1;
+    }
+    result.chi2Dof = chi2 / std::max( 1.0, static_cast<double>(nlive) - order - 1.0 );
+    result.outlierFraction = 1.0 - (static_cast<double>(nlive) / static_cast<double>(nfit));
+
+    // Max |summed residual| over 5 contiguous segments - catches broad systematic structure
+    // (Compton bumps, backscatter humps) that per-bin outlier rejection can miss.
+    const size_t nseg = 5;
+    for( size_t seg = 0; seg < nseg; ++seg )
+    {
+      const size_t seg_begin = (seg * nfit) / nseg;
+      const size_t seg_end = ((seg + 1) * nfit) / nseg;
+      double sum_resid = 0.0, sum_var = 0.0;
+      for( size_t i = seg_begin; i < seg_end; ++i )
+      {
+        const BetaCoarseBin &bin = bins[fit_indices[i]];
+        const double model = std::exp( poly_ln( coefs, bin.center ) );
+        sum_resid += (bin.net - model);
+        sum_var += bin.var + std::pow( sk_beta_sys_frac * model, 2.0 );
+      }
+      if( sum_var > 0.0 )
+        result.maxSegmentResidual = std::max( result.maxSegmentResidual,
+                                              std::fabs( sum_resid ) / std::sqrt( sum_var ) );
+    }//for( segments )
+
+    // Local slope of ln(net) at the fit-range midpoint (per keV).
+    const double xmid = emid_kev / 1000.0;
+    double slope_per_mev = 0.0, xk = 1.0;
+    for( int k = 1; k <= order; ++k, xk *= xmid )
+      slope_per_mev += k * coefs[k] * xk;
+    result.slopePerKev = slope_per_mev / 1000.0;
+
+    return result;
+  }//beta_robust_log_fit(...)
+
+
+  const char *to_string( const BetaContinuumVerdict verdict )
+  {
+    switch( verdict )
+    {
+      case BetaContinuumVerdict::BackgroundNotLoaded:    return "BackgroundNotLoaded";
+      case BetaContinuumVerdict::NoContinuumElevation:   return "NoContinuumElevation";
+      case BetaContinuumVerdict::BremLike:               return "BremLike";
+      case BetaContinuumVerdict::Ambiguous:              return "Ambiguous";
+      case BetaContinuumVerdict::NotBremLike:            return "NotBremLike";
+      case BetaContinuumVerdict::AnnihilationDominated:  return "AnnihilationDominated";
+    }
+    assert( 0 );
+    return "InvalidBetaContinuumVerdict";
+  }//to_string( BetaContinuumVerdict )
+
+
+  BetaContinuumCheckStatus beta_continuum_check( const BetaContinuumCheckInput &input )
+  {
+    BetaContinuumCheckStatus status;
+
+    const shared_ptr<const SpecUtils::Measurement> &fore = input.foreground;
+    if( !fore || !fore->gamma_counts() || (fore->num_gamma_channels() < 4) )
+      throw runtime_error( "beta_continuum_check: no usable foreground spectrum" );
+
+    if( !input.expectedFwhm )
+      throw runtime_error( "beta_continuum_check: no expected-FWHM function provided" );
+
+    const shared_ptr<const SpecUtils::Measurement> &back = input.background;
+    if( !back || !back->gamma_counts() || (back->num_gamma_channels() < 4) )
+    {
+      status.verdict = BetaContinuumVerdict::BackgroundNotLoaded;
+      status.warnings.push_back( "A background spectrum is required to test for a beta-emitter"
+                                 " (bremsstrahlung) continuum; please load a background measurement"
+                                 " taken with the same detector." );
+      return status;
+    }
+
+    const std::function<float(double)> &fwhm_fcn = input.expectedFwhm;
+
+    const double fore_lt = (fore->live_time() > 0.0f) ? fore->live_time() : 1.0;
+    const double back_lt = (back->live_time() > 0.0f) ? back->live_time() : 1.0;
+    const double lt_sf = fore_lt / back_lt;
+
+    // ---- Classify foreground peaks: x-ray region / annihilation / gamma-source evidence ----
+    const double fwhm511 = std::max( 1.0f, fwhm_fcn( 511.0 ) );
+    double sig511 = 0.0;
+
+    for( const shared_ptr<const PeakDef> &peak : input.foregroundPeaks )
+    {
+      if( !peak || !peak->gausPeak() )
+        continue;
+
+      const double mean = peak->mean();
+      const double fg_cps = peak->amplitude() / fore_lt;
+
+      // Elevation significance over the closest matching background peak (if any); same matching
+      // and arithmetic as detected_peaks, but with the fractional systematic floor included so
+      // huge-statistics spectra dont produce meaninglessly-large sigmas.
+      shared_ptr<const PeakDef> closest_bg;
+      double smallest_de = std::numeric_limits<double>::infinity();
+      for( const shared_ptr<const PeakDef> &bg_peak : input.backgroundPeaks )
+      {
+        if( !bg_peak || !bg_peak->gausPeak() )
+          continue;
+        const double de = fabs( mean - bg_peak->mean() );
+        const double avg_fwhm = 0.75 * (peak->fwhm() + bg_peak->fwhm()) / 2.0;
+        if( (de < avg_fwhm) && (de < smallest_de) )
+        {
+          closest_bg = bg_peak;
+          smallest_de = de;
+        }
+      }//for( background peaks )
+
+      const double bg_cps = closest_bg ? (closest_bg->amplitude() / back_lt) : 0.0;
+      const double fg_cps_uncert = (peak->amplitudeUncert() > 0.0)
+                                     ? (peak->amplitudeUncert() / fore_lt)
+                                     : (std::sqrt( std::max( peak->amplitude(), 1.0 ) ) / fore_lt);
+      const double bg_cps_uncert = (closest_bg && (closest_bg->amplitudeUncert() > 0.0))
+                                     ? (closest_bg->amplitudeUncert() / back_lt)
+                                     : (closest_bg ? (std::sqrt( std::max( closest_bg->amplitude(), 1.0 ) ) / back_lt) : 0.0);
+      const double combined_uncert = std::sqrt( fg_cps_uncert*fg_cps_uncert
+                                                + bg_cps_uncert*bg_cps_uncert
+                                                + std::pow( sk_beta_sys_frac * fg_cps, 2.0 ) );
+      const double sigma_elev = (combined_uncert > 0.0) ? ((fg_cps - bg_cps) / combined_uncert) : 0.0;
+
+      BetaContinuumPeakInfo info;
+      info.energy = mean;
+      info.amplitude = peak->amplitude();
+      info.numSigmaElevated = sigma_elev;
+      info.isAnnihilation = (fabs( mean - 511.0 ) < 1.5*fwhm511);
+
+      if( info.isAnnihilation )
+        sig511 = std::max( sig511, sigma_elev );
+      else if( mean <= sk_beta_xray_max_kev )
+        status.xrayRegionPeaks.push_back( info );
+      else if( sigma_elev > sk_beta_peak_veto_sigma )
+        status.elevatedGammaPeaks.push_back( info );
+    }//for( foreground peaks )
+
+    // ---- Coarse net-continuum grid, with peak regions excluded ----
+    const double upper_kev = std::min( sk_beta_analysis_max_kev,
+                                       static_cast<double>(fore->gamma_energy_max()) );
+    if( upper_kev < (sk_beta_xray_max_kev + 10.0*sk_beta_coarse_bin_kev) )
+      throw runtime_error( "beta_continuum_check: spectrum energy range (up to "
+                           + std::to_string( static_cast<int>(upper_kev) )
+                           + " keV) is too small to analyze the continuum shape" );
+
+    const size_t nbins = static_cast<size_t>( std::floor( upper_kev / sk_beta_coarse_bin_kev ) );
+    vector<float> edges( nbins + 1 );
+    for( size_t i = 0; i <= nbins; ++i )
+      edges[i] = static_cast<float>( i * sk_beta_coarse_bin_kev );
+
+    const vector<double> fore_binned = beta_rebin_counts( fore, edges );
+    const vector<double> back_binned = beta_rebin_counts( back, edges );
+
+    const vector<BetaExclusionInterval> exclusions
+        = beta_exclusion_intervals( input.foregroundPeaks, input.backgroundPeaks, fwhm_fcn );
+
+    vector<BetaCoarseBin> bins( nbins );
+    for( size_t i = 0; i < nbins; ++i )
+    {
+      BetaCoarseBin &bin = bins[i];
+      bin.center = (i + 0.5) * sk_beta_coarse_bin_kev;
+      bin.net = fore_binned[i] - lt_sf*back_binned[i];
+      bin.var = std::max( fore_binned[i], 1.0 ) + lt_sf*lt_sf*std::max( back_binned[i], 1.0 );
+      bin.excluded = (bin.center <= sk_beta_xray_max_kev);
+      for( size_t j = 0; !bin.excluded && (j < exclusions.size()); ++j )
+        bin.excluded = ((bin.center >= exclusions[j].lower) && (bin.center <= exclusions[j].upper));
+    }//for( coarse bins )
+
+    // ---- Total continuum-elevation significance ----
+    double sum_net = 0.0, sum_var = 0.0;
+    for( const BetaCoarseBin &bin : bins )
+    {
+      if( bin.excluded )
+        continue;
+      sum_net += bin.net;
+      sum_var += bin.var;
+    }
+    status.continuumElevationSigma = sum_net / std::sqrt( std::max( sum_var, 1.0e-9 ) );
+
+    if( status.continuumElevationSigma < sk_beta_min_elevation_sigma )
+    {
+      status.verdict = BetaContinuumVerdict::NoContinuumElevation;
+      return status;
+    }
+
+    // ---- Smoothed profile: hump mode, termination energy, termination (cliff) ratio ----
+    vector<double> smooth( nbins, 0.0 ), smooth_var( nbins, 0.0 );
+    for( size_t i = 0; i < nbins; ++i )
+    {
+      const size_t lo = (i >= 2) ? (i - 2) : size_t(0);
+      const size_t hi = std::min( i + 2, nbins - 1 );
+      const double cnt = static_cast<double>( hi - lo + 1 );
+      for( size_t j = lo; j <= hi; ++j )
+      {
+        smooth[i] += bins[j].net / cnt;
+        smooth_var[i] += bins[j].var / (cnt*cnt);
+      }
+    }//for( coarse bins )
+
+    size_t imode = nbins;
+    for( size_t i = 0; i < nbins; ++i )
+    {
+      if( bins[i].excluded || (bins[i].center >= sk_beta_mode_max_kev) )
+        continue;
+      if( (imode == nbins) || (smooth[i] > smooth[imode]) )
+        imode = i;
+    }
+
+    if( imode == nbins )
+    {
+      status.verdict = BetaContinuumVerdict::Ambiguous;
+      status.warnings.push_back( "Continuum is elevated, but no usable (non-peak) region was found"
+                                 " to locate the continuum maximum - too many peak regions?" );
+      return status;
+    }
+
+    status.modeEnergy = bins[imode].center;
+
+    size_t iterm = imode;
+    for( size_t i = imode + 1; i < nbins; ++i )
+    {
+      if( !bins[i].excluded && (smooth[i] > 3.0*std::sqrt( std::max( smooth_var[i], 1.0e-9 ) )) )
+        iterm = i;
+    }
+    status.terminationEnergy = bins[iterm].center;
+    status.terminationRatio = std::max( smooth[iterm], 0.0 ) / std::max( smooth[imode], 1.0e-9 );
+
+    if( iterm <= (imode + 3) )
+    {
+      status.verdict = BetaContinuumVerdict::Ambiguous;
+      status.warnings.push_back( "Continuum is elevated, but extends too little beyond its maximum"
+                                 " to analyze its shape." );
+      return status;
+    }
+
+    // ---- Robust fit of ln(net) vs energy over [mode, termination] ----
+    vector<size_t> fit_indices;
+    for( size_t i = imode + 1; i <= iterm; ++i )
+    {
+      if( !bins[i].excluded && (bins[i].net > 0.0) )
+        fit_indices.push_back( i );
+    }
+
+    const double emid_kev = 0.5*(bins[imode].center + bins[iterm].center);
+    const BetaLogFitResult fit = beta_robust_log_fit( bins, fit_indices, emid_kev );
+
+    if( !fit.valid )
+    {
+      status.verdict = BetaContinuumVerdict::Ambiguous;
+      status.warnings.push_back( "Continuum is elevated, but too few usable bins remained to fit"
+                                 " its shape." );
+      return status;
+    }
+
+    status.fitChi2Dof = fit.chi2Dof;
+    status.fitOutlierFraction = fit.outlierFraction;
+    status.fitMaxSegmentResidual = fit.maxSegmentResidual;
+    if( fit.slopePerKev < 0.0 )
+      status.characteristicEnergy = -1.0 / fit.slopePerKev;
+
+    // ---- Gates -> verdict (count of passed gates, matching the validated prototype) ----
+    const bool gate_peaks = status.elevatedGammaPeaks.empty();
+    const bool gate_cliff = (*status.terminationRatio < sk_beta_term_ratio_max);
+    const bool gate_echar = status.characteristicEnergy.has_value()
+                            && (*status.characteristicEnergy < sk_beta_echar_max_kev);
+    const bool gate_term = (*status.terminationEnergy < sk_beta_term_max_kev);
+    const bool gate_smooth = (fit.maxSegmentResidual < sk_beta_seg_resid_max_sigma)
+                             && (fit.outlierFraction < sk_beta_outlier_frac_max);
+
+    const int num_passed = static_cast<int>(gate_peaks) + static_cast<int>(gate_cliff)
+                           + static_cast<int>(gate_echar) + static_cast<int>(gate_term)
+                           + static_cast<int>(gate_smooth);
+
+    if( num_passed == 5 )
+      status.verdict = BetaContinuumVerdict::BremLike;
+    else if( num_passed == 4 )
+      status.verdict = BetaContinuumVerdict::Ambiguous;
+    else
+      status.verdict = BetaContinuumVerdict::NotBremLike;
+
+    // 511-dominance: a strong annihilation peak with the continuum dying just above it suggests
+    // a positron source (e.g. F-18) whose "continuum" is 511-scatter, not beta-minus brems.
+    status.annihilationDominant = (sig511 > sk_beta_511_dominant_sigma)
+                                  && (*status.terminationEnergy < (511.0 + 5.0*fwhm511));
+    if( status.annihilationDominant && (status.verdict == BetaContinuumVerdict::BremLike) )
+      status.verdict = BetaContinuumVerdict::AnnihilationDominated;
+
+    // ---- Candidate pure-beta nuclides consistent with the observed termination energy ----
+    if( (status.verdict == BetaContinuumVerdict::BremLike)
+        || (status.verdict == BetaContinuumVerdict::Ambiguous)
+        || (status.verdict == BetaContinuumVerdict::AnnihilationDominated) )
+    {
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      if( db )
+      {
+        for( const char * const name : sk_pure_beta_nuclide_names )
+        {
+          const SandiaDecay::Nuclide * const nuc = db->nuclide( name );
+          std::string note;
+          const double endpoint = max_equilibrium_beta_endpoint( nuc, note );
+          // terminationEnergy is a lower bound on the endpoint; allow one coarse bin of slop.
+          if( nuc && (endpoint >= (*status.terminationEnergy - sk_beta_coarse_bin_kev)) )
+          {
+            BetaContinuumCandidateNuclide candidate;
+            candidate.nuclide = nuc->symbol;
+            candidate.betaEndpoint = endpoint;
+            candidate.note = note;
+            status.candidateNuclides.push_back( candidate );
+          }
+        }//for( candidate nuclide names )
+
+        std::sort( begin(status.candidateNuclides), end(status.candidateNuclides),
+                   []( const BetaContinuumCandidateNuclide &a, const BetaContinuumCandidateNuclide &b ){
+                     return a.betaEndpoint < b.betaEndpoint;
+                   } );
+      }//if( db )
+    }//if( verdict allows candidates )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Consistency of the emitted verdict with the stored metrics.
+    {
+      assert( status.modeEnergy.has_value() && status.terminationEnergy.has_value() );
+      assert( *status.modeEnergy <= *status.terminationEnergy );
+      assert( status.continuumElevationSigma >= sk_beta_min_elevation_sigma );
+      const bool chk_peaks = status.elevatedGammaPeaks.empty();
+      const bool chk_cliff = (*status.terminationRatio < sk_beta_term_ratio_max);
+      const bool chk_echar = status.characteristicEnergy.has_value()
+                             && (*status.characteristicEnergy < sk_beta_echar_max_kev);
+      const bool chk_term = (*status.terminationEnergy < sk_beta_term_max_kev);
+      const int chk_passed = static_cast<int>(chk_peaks) + static_cast<int>(chk_cliff)
+                             + static_cast<int>(chk_echar) + static_cast<int>(chk_term)
+                             + static_cast<int>(gate_smooth);
+      switch( status.verdict )
+      {
+        case BetaContinuumVerdict::BremLike:              assert( chk_passed == 5 ); break;
+        case BetaContinuumVerdict::Ambiguous:             assert( chk_passed == 4 ); break;
+        case BetaContinuumVerdict::NotBremLike:           assert( chk_passed < 4 ); break;
+        case BetaContinuumVerdict::AnnihilationDominated: assert( status.annihilationDominant ); break;
+        case BetaContinuumVerdict::BackgroundNotLoaded:
+        case BetaContinuumVerdict::NoContinuumElevation:  assert( 0 ); break;
+      }
+    }
+#endif //PERFORM_DEVELOPER_CHECKS
+
+    return status;
+  }//beta_continuum_check( const BetaContinuumCheckInput &input )
+
+
+  BetaContinuumCheckStatus beta_continuum_check( const BetaContinuumCheckOptions &options,
+                                                 InterSpec *interspec )
+  {
+    if( !interspec )
+      throw runtime_error( "beta_continuum_check: No InterSpec session available" );
+
+    if( options.specType == SpecUtils::SpectrumType::Background )
+      throw runtime_error( "beta_continuum_check: the Background spectrum cannot be the candidate"
+                           " spectrum - it is the subtraction baseline" );
+
+    shared_ptr<SpecMeas> meas = interspec->measurment( options.specType );
+    if( !meas )
+      throw runtime_error( "beta_continuum_check: No measurement loaded for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+
+    shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram( options.specType );
+    if( !spectrum )
+      throw runtime_error( "beta_continuum_check: No spectrum displayed for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+
+    const set<int> sample_nums = interspec->displayedSamples( options.specType );
+
+    BetaContinuumCheckInput input;
+    input.foreground = spectrum;
+
+    // Without a displayed background we cannot analyze - the natural background continuum is
+    // itself a smooth falling curve, so a no-subtraction shape analysis has an unacceptable
+    // false-positive rate (empirically verified) - return the clear status instead of throwing.
+    shared_ptr<SpecMeas> back_meas = interspec->measurment( SpecUtils::SpectrumType::Background );
+    shared_ptr<const SpecUtils::Measurement> back_spectrum
+        = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+    if( !back_meas || !back_spectrum )
+    {
+      BetaContinuumCheckStatus status;
+      status.verdict = BetaContinuumVerdict::BackgroundNotLoaded;
+      status.warnings.push_back( "A background spectrum is required to test for a beta-emitter"
+                                 " (bremsstrahlung) continuum; please load a background measurement"
+                                 " taken with the same detector." );
+      return status;
+    }
+
+    const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
+
+    // Foreground user + auto-search peaks, de-duplicated - same set detected_peaks reports.
+    DetectedPeaksOptions fg_opts;
+    fg_opts.specType = options.specType;
+    fg_opts.nonBackgroundPeaksOnly = false;
+    fg_opts.lowerEnergy = std::nullopt;
+    fg_opts.upperEnergy = std::nullopt;
+    const DetectedPeakStatus fg_peaks = detected_peaks( fg_opts, interspec );
+    input.foregroundPeaks = fg_peaks.peaks;
+
+    // Background peaks: recover NORM peaks hidden under foreground peaks first, then fetch the
+    // (augmented) auto-search peaks - the same sequence detected_peaks uses; we are on the GUI
+    // thread, where blocking on the searches is acceptable (they are cached/coalesced).
+    const set<int> back_samples = interspec->displayedSamples( SpecUtils::SpectrumType::Background );
+    PeakSearchGuiUtils::ensure_background_peaks_recovered( meas, sample_nums, spectrum,
+                                                          back_meas, back_samples,
+                                                          back_spectrum, isHPGe );
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_auto_peaks
+        = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( back_meas, back_samples,
+                                back_spectrum, back_meas->detector(), isHPGe ).get();
+    if( back_auto_peaks )
+      input.backgroundPeaks.insert( end(input.backgroundPeaks),
+                                    begin(*back_auto_peaks), end(*back_auto_peaks) );
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_user_peaks = back_meas->peaks( back_samples );
+    if( back_user_peaks )
+      input.backgroundPeaks.insert( end(input.backgroundPeaks),
+                                    begin(*back_user_peaks), end(*back_user_peaks) );
+
+    input.background = back_spectrum;
+    input.expectedFwhm = make_expected_fwhm_fcn( interspec );
+
+    return beta_continuum_check( input );
+  }//beta_continuum_check( const BetaContinuumCheckOptions &options, InterSpec *interspec )
 
 } // namespace AnalystChecks

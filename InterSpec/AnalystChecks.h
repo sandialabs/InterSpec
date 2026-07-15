@@ -31,6 +31,7 @@
 #include <memory>
 #include <variant>
 #include <optional>
+#include <functional>
 
 #include "SpecUtils/SpecFile.h"
 
@@ -187,7 +188,21 @@ namespace AnalystChecks
    @throws std::runtime_error if no InterSpec session, no foreground loaded, or FWHM cannot be determined
    */
   float get_expected_fwhm( const double energy, InterSpec *interspec );
-  
+
+  /** Returns a callable giving the expected FWHM (keV) at an energy (keV).
+
+   The underlying resolution source is resolved once, up front - in order of preference: the
+   loaded DRF's resolution info, a one-time resolution fit to the detected peaks, the nearest
+   detected peak (within 20% of the requested energy), then a generic HPGe/low-res estimate -
+   so the returned function is cheap to evaluate repeatedly, and does not touch InterSpec
+   session state when called.
+
+   @param interspec Pointer to the InterSpec session
+   @return Function mapping energy (keV) to expected FWHM (keV)
+   @throws std::runtime_error if no InterSpec session or no foreground loaded
+   */
+  InterSpec_API std::function<float(double)> make_expected_fwhm_fcn( InterSpec *interspec );
+
   struct SpectrumCountsInEnergyRange
   {
     double lower_energy;  // actual lower energy, snapped to channel boundary
@@ -618,6 +633,130 @@ namespace AnalystChecks
    @throws std::runtime_error if InterSpec is null or no spectrum is loaded.
    */
   InterSpec_API ComptonPeakCheckStatus compton_peak_check( const ComptonPeakCheckOptions &options, InterSpec *interspec );
+
+
+  /** Graded verdict of the pure-beta-emitter (bremsstrahlung) continuum check.
+
+   The check background-subtracts the foreground and analyzes the net continuum shape;
+   a smooth quasi-exponential hump with no gamma-peak evidence and a gradual (non-cliff)
+   high-energy fade is characteristic of bremsstrahlung from a pure beta emitter
+   (e.g. P-32, Sr-90/Y-90, Tl-204).
+   */
+  enum class BetaContinuumVerdict
+  {
+    BackgroundNotLoaded,   // check requires a displayed Background spectrum to subtract
+    NoContinuumElevation,  // net continuum not significantly above background
+    BremLike,              // all gates passed: smooth brem-shaped continuum, no gamma peaks
+    Ambiguous,             // elevation present, but a soft gate failed (smoothness marginal,
+                           //  or too little tail to analyze)
+    NotBremLike,           // a hard gate failed (gamma peaks present, cliff-like termination,
+                           //  shape too hard/soft, or termination beyond plausible beta endpoint)
+    AnnihilationDominated  // strong 511 keV peak with continuum ending just above it -
+                           //  suggests a positron source (e.g. F-18), not a pure beta-minus emitter
+  };//enum class BetaContinuumVerdict
+
+  const char *to_string( BetaContinuumVerdict verdict );
+
+  /** A peak the beta-continuum check considered as gamma-source evidence (or an x-ray report). */
+  struct BetaContinuumPeakInfo
+  {
+    double energy = 0.0;             // keV
+    double amplitude = 0.0;          // peak area, counts
+    double numSigmaElevated = 0.0;   // significance of elevation over the (live-time scaled)
+                                     //  matching background peak; over zero if no match
+    bool isAnnihilation = false;     // within tolerance of 511 keV
+  };//struct BetaContinuumPeakInfo
+
+  /** A pure-beta nuclide whose (equilibrium-chain) endpoint is consistent with the observed
+   continuum termination energy.  A consistency candidate - NOT an identification.
+   */
+  struct BetaContinuumCandidateNuclide
+  {
+    std::string nuclide;             // e.g. "Sr90"
+    double betaEndpoint = 0.0;       // keV; max endpoint over the parent and any shorter-lived
+                                     //  (in-equilibrium) descendants
+    std::string note;                // e.g. "endpoint is from in-equilibrium daughter Y90"
+  };//struct BetaContinuumCandidateNuclide
+
+  /** Options for beta_continuum_check. */
+  struct BetaContinuumCheckOptions
+  {
+    /** Spectrum to test as the candidate beta/bremsstrahlung source; Foreground or
+     SecondForeground only (the displayed Background is always the subtraction baseline). */
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
+  };//struct BetaContinuumCheckOptions
+
+  /** Worker-thread-safe inputs for beta_continuum_check - no InterSpec session state. */
+  struct BetaContinuumCheckInput
+  {
+    std::shared_ptr<const SpecUtils::Measurement> foreground;    // required
+    std::shared_ptr<const SpecUtils::Measurement> background;    // null => BackgroundNotLoaded
+    std::vector<std::shared_ptr<const PeakDef>> foregroundPeaks; // user + auto-search peaks
+    std::vector<std::shared_ptr<const PeakDef>> backgroundPeaks; // user + auto-search peaks
+    std::function<float(double)> expectedFwhm;                   // FWHM(energy in keV) in keV; required
+  };//struct BetaContinuumCheckInput
+
+  /** Results of the beta/bremsstrahlung continuum analysis. */
+  struct BetaContinuumCheckStatus
+  {
+    BetaContinuumVerdict verdict = BetaContinuumVerdict::BackgroundNotLoaded;
+
+    /** Total net-continuum significance (sigma) over the analysis range, peak regions excluded. */
+    double continuumElevationSigma = 0.0;
+
+    // Shape metrics; populated only once continuum elevation was established:
+    std::optional<double> modeEnergy;           // keV; maximum of the smoothed net continuum (turn-on hump)
+    std::optional<double> terminationEnergy;    // keV; last coarse bin > 3 sigma.  A statistics-limited
+                                                //  LOWER BOUND on the beta endpoint energy.
+    std::optional<double> terminationRatio;     // smoothed net at termination / smoothed max; small
+                                                //  (<~0.05) for a gradual brem fade, large for a cliff
+    std::optional<double> characteristicEnergy; // keV; -1/(dln(net)/dE) at fit midrange (continuum softness)
+    std::optional<double> fitChi2Dof;           // robust log-fit chi2/dof (3% systematic floor included)
+    std::optional<double> fitOutlierFraction;   // fraction of fit bins rejected as outliers
+    std::optional<double> fitMaxSegmentResidual;// max |mean residual| over 5 fit segments, in sigma
+
+    /** Peaks >~120 keV (non-511) significantly elevated over background - gamma-source evidence
+     that vetoes a BremLike verdict. */
+    std::vector<BetaContinuumPeakInfo> elevatedGammaPeaks;
+
+    /** Peaks at <~120 keV - candidate fluorescence/decay x-rays (e.g. Hg K x-rays from Tl-204's
+     EC branch).  Reported for context; these do NOT veto a BremLike verdict. */
+    std::vector<BetaContinuumPeakInfo> xrayRegionPeaks;
+
+    /** True when a strong 511 keV peak dominates and the continuum terminates just above it. */
+    bool annihilationDominant = false;
+
+    /** Pure-beta nuclides consistent with terminationEnergy; only filled for
+     BremLike/Ambiguous/AnnihilationDominated verdicts. */
+    std::vector<BetaContinuumCandidateNuclide> candidateNuclides;
+
+    std::vector<std::string> warnings;
+  };//struct BetaContinuumCheckStatus
+
+  /** Check whether the net (background-subtracted) continuum is consistent with bremsstrahlung
+   from a pure beta emitter.
+
+   Worker-thread-safe overload: pure function of the input struct; touches no InterSpec session
+   state.  See BetaContinuumVerdict and BetaContinuumCheckStatus for the semantics of the result.
+
+   @param input Spectra, peak lists, and FWHM function; see BetaContinuumCheckInput.
+   @return BetaContinuumCheckStatus with graded verdict and shape metrics.
+   @throws std::runtime_error if the foreground or FWHM function is missing/unusable.
+   */
+  InterSpec_API BetaContinuumCheckStatus beta_continuum_check( const BetaContinuumCheckInput &input );
+
+  /** Main-thread wrapper around the worker-safe overload above.
+
+   Gathers the displayed foreground (or second foreground) and background spectra, their
+   user + automated-search peaks (running background-peak recovery first), and the expected-FWHM
+   function from the session, then delegates.
+
+   @param options Which spectrum to test (Foreground or SecondForeground).
+   @param interspec Pointer to the InterSpec session.
+   @throws std::runtime_error if InterSpec is null or the candidate spectrum is not loaded.
+   */
+  InterSpec_API BetaContinuumCheckStatus beta_continuum_check( const BetaContinuumCheckOptions &options,
+                                                               InterSpec *interspec );
 
 } // namespace AnalystChecks
 
