@@ -2047,6 +2047,14 @@ ExportSpecFileTool::ExportOptionsAvailability ExportSpecFileTool::applicable_exp
   if( !spec )
     return avail;
 
+#if( SpecUtils_ENABLE_D3_CHART )
+  // HTML export currently writes the displayed spectra directly, ignoring the generated
+  //  file (see DownloadSpectrumResource::write_file), so no options apply.
+  //  TODO: route the HTML export through generate_file_to_save() so the options work.
+  if( save_type == SpecUtils::SaveSpectrumAsType::HtmlD3 )
+    return avail;
+#endif
+
   const uint16_t max_records = maxRecordsInCurrentSaveType( save_type, spec );
   const bool multi_sample = (spec->sample_numbers().size() > 1);
 
@@ -2530,19 +2538,28 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   if( !spec )
   {
     m_msg->setText( "&nbsp;" );
-  }else if( (max_records < 2)
+  }
+#if( SpecUtils_ENABLE_D3_CHART )
+  else if( save_type == SpecUtils::SaveSpectrumAsType::HtmlD3 )
+  {
+    // HTML export writes the currently displayed spectra directly (see
+    //  DownloadSpectrumResource::write_file), so none of the options apply.
+    m_msg->setText( WString::tr("esf-msg-html-as-displayed") );
+  }
+#endif
+  else if( (max_records < 2)
      && ( (spec->gamma_detector_names().size() > 1) || (samplesToUse.size() > 1 ) ) )
   {
     if( m_backSubFore->isVisible() && m_backSubFore->isEnabled() && m_backSubFore->isChecked()
        && (use_fore_disp != use_seco_disp) )
     {
-      m_msg->setText( "A single spectrum will be produced." );
+      m_msg->setText( WString::tr("esf-msg-single-spec") );
     }else if( !multi_sample )
     {
-      m_msg->setText( "Detectors will be summed together." );
+      m_msg->setText( WString::tr("esf-msg-dets-summed") );
     }else
     {
-      m_msg->setText( "Records will be summed together." );
+      m_msg->setText( WString::tr("esf-msg-records-summed") );
     }
   }else if( max_records == 2 )
   {
@@ -2552,22 +2569,22 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
       for( const string &det : detsToUse )
         num_records += ( spec->measurement(sample, det) ? 1 : 0);
     }//for( const int samples : samplesToUse )
-    
+
     // QR code here
     if( use_fore_disp && use_seco_disp && use_back_disp )
     {
-      m_msg->setText( "Will be summed to single spec." );
+      m_msg->setText( WString::tr("esf-msg-sum-to-single") );
     }else if( (use_fore_disp || use_seco_disp) && use_back_disp
        && (!m_sumAllToSingleRecord->isVisible() || !m_sumAllToSingleRecord->isChecked()) )
     {
-      m_msg->setText( "QR will have 2 spectrum" );
+      m_msg->setText( WString::tr("esf-msg-qr-two-spectra") );
     }else if( m_backSubFore->isVisible() && m_backSubFore->isEnabled() && m_backSubFore->isChecked()
              && (use_fore_disp != use_seco_disp) )
     {
-      m_msg->setText( "A single spectrum will be produced." );
+      m_msg->setText( WString::tr("esf-msg-single-spec") );
     }else if( num_records > 2 )
     {
-      m_msg->setText( "Records will be summed together." );
+      m_msg->setText( WString::tr("esf-msg-records-summed") );
     }else
     {
       m_msg->setText( "&nbsp;" );
@@ -2882,7 +2899,11 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generate_file_to_save(
   if( !start_spec )
     throw runtime_error( "No file selected for export." );
 
-  // First we'll check for all the cases where we want the whole file
+  // First we'll check for all the cases where we want the whole file.
+  //  With a single measurement, sample/detector filtering and summing are all moot; the
+  //  InterSpec-specific info (peaks, detector response, etc) this object still carries is
+  //  stripped at write-time when the user requested it (see `DownloadSpectrumResource::
+  //  handleRequest`, which passes `removeInterSpecInfo()` to `write_file(...)`).
   if( (start_spec->num_measurements() == 1) && !remove_gps )
     return start_spec;
 

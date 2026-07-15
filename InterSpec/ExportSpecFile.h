@@ -66,7 +66,11 @@ namespace ExportSpecFileTool_imp
  TODO:
   - Add a checkbox for excluding serial number, or other sensitive info
   - Fix up displaying for undersized displays
-  - Peaks aren't re-fit if background subtracted is selected - skeleton code is in there for this.
+  - Peaks aren't re-fit if background subtracted is selected - skeleton code is in there for
+    this.  Similarly, peaks carried onto summed records (sum-all, sum per sample/detector)
+    keep their original amplitudes/continua, so they wont match the summed data.
+  - HTML (D3) export writes the currently displayed spectra directly, ignoring all the
+    export options; it should be routed through `generate_file_to_save(...)`.
  */
 
 class ExportSpecFileTool : public Wt::WContainerWidget
