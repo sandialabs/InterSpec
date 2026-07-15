@@ -72,6 +72,96 @@ namespace ExportSpecFileTool_imp
 class ExportSpecFileTool : public Wt::WContainerWidget
 {
 public:
+  /** UI-independent snapshot of the displayed-spectra state that export generation needs;
+   filled from the `InterSpec` instance by `currentDisplayState()`, or constructed directly
+   in unit tests.
+   */
+  struct DisplayStateInfo
+  {
+    /** Sample numbers currently displayed for each spectrum type. */
+    std::set<int> fore_samples, back_samples, seco_samples;
+    /** Detector names currently displayed for each spectrum type. */
+    std::vector<std::string> fore_dets, back_dets, seco_dets;
+    /** Live-time display scale factors (used for background subtraction). */
+    double fore_scale_factor = 1.0, back_scale_factor = 1.0, seco_scale_factor = 1.0;
+    /** Whether the file being exported is the loaded foreground/background/secondary. */
+    bool spec_is_fore = false, spec_is_back = false, spec_is_seco = false;
+  };//struct DisplayStateInfo
+
+  /** UI-independent description of the export options the user has selected;
+   filled from the widget state by `currentExportOptions()`, or constructed directly
+   in unit tests.  See `generate_file_to_save(...)`.
+   */
+  struct ExportOptions
+  {
+    /** Sample selection - at most one of the following ways of choosing samples applies;
+     they are resolved in the order used by `selected_samples(...)`.
+     */
+    bool fore_plus_back = false;
+    bool use_disp_fore = false, use_disp_back = false, use_disp_seco = false;
+    bool all_samples = false;
+    bool custom_samples = false;
+    std::set<int> custom_sample_nums;
+
+    /** If true, only the detectors named in `detectors` are included (even if that is
+     none); if false, all detectors are included and `detectors` is ignored.
+     */
+    bool filter_detectors = false;
+    std::vector<std::string> detectors;
+
+    bool sum_all_to_single_record = false;
+    bool fore_to_single_record = false, back_to_single_record = false, seco_to_single_record = false;
+    bool back_sub_fore = false;
+    bool sum_dets_per_sample = false, sum_samples_per_det = false;
+    bool remove_interspec_info = false, remove_gps = false;
+  };//struct ExportOptions
+
+  /** Which export options may sensibly be offered to the user for the given file, save
+   format, display state, and currently selected options.  Single source of truth for
+   the option checkbox visibilities in the GUI (see `refreshSampleAndDetectorOptions()`).
+   */
+  struct ExportOptionsAvailability
+  {
+    bool disp_fore = false, disp_back = false, disp_seco = false;
+    bool all_samples = false, custom_samples = false;
+    bool filter_detectors = false;
+    bool sum_all = false, sum_fore = false, sum_back = false, sum_seco = false;
+    bool back_sub = false;
+    bool sum_dets_per_sample = false, sum_samples_per_det = false;
+    bool exclude_interspec = false, exclude_gps = false;
+  };//struct ExportOptionsAvailability
+
+  /** Resolves the sample numbers of `spec` that the given options select. */
+  static std::set<int> selected_samples( const std::shared_ptr<const SpecMeas> &spec,
+                                         const DisplayStateInfo &display,
+                                         const ExportOptions &options );
+
+  /** Resolves the detector names of `spec` that the given options select. */
+  static std::vector<std::string> selected_detectors( const std::shared_ptr<const SpecMeas> &spec,
+                                                      const ExportOptions &options );
+
+  /** Computes which options are applicable; pure function of its inputs. */
+  static ExportOptionsAvailability applicable_export_options(
+                                         const std::shared_ptr<const SpecMeas> &spec,
+                                         const SpecUtils::SaveSpectrumAsType save_type,
+                                         const DisplayStateInfo &display,
+                                         const ExportOptions &options );
+
+  /** UI-independent implementation of `generateFileToSave()`: produces the SpecMeas that
+   will be written out for the given file, save format, display state, and options.
+
+   Any user-facing warnings generated (e.g., peak continuum re-fit failures during
+   background subtraction) are appended to `warnings`, if provided.
+
+   Throws exception if there is an issue generating the file.
+   */
+  static std::shared_ptr<const SpecMeas> generate_file_to_save(
+                                         const std::shared_ptr<const SpecMeas> &spec,
+                                         const SpecUtils::SaveSpectrumAsType save_type,
+                                         const DisplayStateInfo &display,
+                                         const ExportOptions &options,
+                                         std::vector<Wt::WString> *warnings = nullptr );
+
   /** Constructor to create tool to select from any currently loaded spectrum files. */
   ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget *parent );
   
@@ -123,12 +213,21 @@ public:
   bool removeInterSpecInfo() const;
   
   /** Generates the final spectrums file, ready to be given to the user.
-   
+
    E.g., if user selected, all detectors will be summed, or samples numbers, etc.
-   
+
+   Thin wrapper around the static `generate_file_to_save(...)`, using the current
+   GUI state; any warnings are shown to the user via `passMessage(...)`.
+
    Throws exception if there is issue generating the file.
    */
   std::shared_ptr<const SpecMeas> generateFileToSave();
+
+  /** Snapshot of the InterSpec display state needed by the static logic functions. */
+  DisplayStateInfo currentDisplayState() const;
+
+  /** Snapshot of the currently selected export options, as reflected by the GUI state. */
+  ExportOptions currentExportOptions() const;
   
   
   /** Handles receiving a "deep-link" url starting with "interspec://specexport/...".

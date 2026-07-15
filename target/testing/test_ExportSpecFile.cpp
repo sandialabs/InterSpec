@@ -363,6 +363,318 @@ public:
 };//class InterSpecTestFixture
 
 
+/** Availability of export options across file-shape and format combinations,
+ via the pure `applicable_export_options(...)` (no GUI needed).
+ */
+BOOST_AUTO_TEST_CASE( applicableOptionsMatrix )
+{
+  set_data_dir();
+
+  typedef ExportSpecFileTool::DisplayStateInfo DisplayStateInfo;
+  typedef ExportSpecFileTool::ExportOptions ExportOptions;
+  typedef ExportSpecFileTool::ExportOptionsAvailability Availability;
+
+  const SpecUtils::SaveSpectrumAsType n42 = SpecUtils::SaveSpectrumAsType::N42_2012;
+  const SpecUtils::SaveSpectrumAsType spe = SpecUtils::SaveSpectrumAsType::SpeIaea;
+
+  // 13 samples, one detector, displayed as foreground with sample 8 shown
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 13; ++i )
+      defs.push_back( SynthSample{i, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.fore_samples = set<int>{8};
+    display.fore_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.all_samples = true;
+
+    const Availability n42_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, options );
+    BOOST_CHECK( n42_avail.disp_fore );
+    BOOST_CHECK( !n42_avail.disp_back );
+    BOOST_CHECK( !n42_avail.disp_seco );
+    BOOST_CHECK( n42_avail.all_samples );
+    BOOST_CHECK( n42_avail.custom_samples );
+    BOOST_CHECK( !n42_avail.filter_detectors );  // only one detector
+    BOOST_CHECK( n42_avail.sum_all );            // 13 records can be summed
+    BOOST_CHECK( !n42_avail.sum_fore );          // displayed foreground not selected
+    BOOST_CHECK( !n42_avail.back_sub );          // no background displayed
+    BOOST_CHECK( !n42_avail.sum_dets_per_sample );
+    BOOST_CHECK( n42_avail.sum_samples_per_det );
+    BOOST_CHECK( n42_avail.exclude_interspec );
+    BOOST_CHECK( !n42_avail.exclude_gps );       // no GPS in synthetic file
+
+    const Availability spe_avail = ExportSpecFileTool::applicable_export_options( spec, spe, display, options );
+    BOOST_CHECK( !spe_avail.sum_all );           // single-record format sums regardless
+    BOOST_CHECK( !spe_avail.sum_fore );
+    BOOST_CHECK( !spe_avail.sum_dets_per_sample );
+    BOOST_CHECK( !spe_avail.sum_samples_per_det );
+    BOOST_CHECK( !spe_avail.exclude_interspec ); // SPE cant carry the InterSpec info block
+
+    // Selecting displayed foreground with multiple displayed samples offers per-type sum for N42
+    ExportOptions disp_options;
+    disp_options.use_disp_fore = true;
+    display.fore_samples = set<int>{7, 8};
+    const Availability disp_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, disp_options );
+    BOOST_CHECK( disp_avail.sum_fore );
+
+    display.fore_samples = set<int>{8};
+    const Availability one_disp_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, disp_options );
+    BOOST_CHECK( !one_disp_avail.sum_fore );     // only a single displayed record
+  }
+
+  // 5 samples, two detectors each
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 5; ++i )
+      defs.push_back( SynthSample{i, {"Aa1", "Ba2"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.fore_samples = set<int>{3};
+    display.fore_dets = vector<string>{"Aa1", "Ba2"};
+
+    ExportOptions options;
+    options.all_samples = true;
+
+    const Availability n42_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, options );
+    BOOST_CHECK( n42_avail.filter_detectors );
+    BOOST_CHECK( n42_avail.sum_all );
+    BOOST_CHECK( n42_avail.sum_dets_per_sample );
+    BOOST_CHECK( n42_avail.sum_samples_per_det );
+
+    const Availability spe_avail = ExportSpecFileTool::applicable_export_options( spec, spe, display, options );
+    BOOST_CHECK( spe_avail.filter_detectors );   // filtering applies to any format
+    BOOST_CHECK( !spe_avail.sum_dets_per_sample );
+    BOOST_CHECK( !spe_avail.sum_samples_per_det );
+  }
+
+  // Single sample, two detectors: no sample selection; sum-all only where format allows
+  {
+    const vector<SynthSample> defs{ SynthSample{1, {"Aa1", "Ba2"}, SpecUtils::SourceType::Foreground} };
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.fore_samples = set<int>{1};
+    display.fore_dets = vector<string>{"Aa1", "Ba2"};
+
+    ExportOptions options;
+    options.all_samples = true;
+
+    const Availability n42_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, options );
+    BOOST_CHECK( !n42_avail.disp_fore );
+    BOOST_CHECK( !n42_avail.all_samples );
+    BOOST_CHECK( !n42_avail.custom_samples );
+    BOOST_CHECK( n42_avail.filter_detectors );
+    BOOST_CHECK( n42_avail.sum_all );            // two detector records can be summed
+    BOOST_CHECK( !n42_avail.sum_dets_per_sample );  // same thing as sum-all for one sample
+  }
+
+  // Background-subtract offered exactly when a background plus fore (or secondary) is used
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 3; ++i )
+      defs.push_back( SynthSample{i, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.spec_is_back = true;
+    display.fore_samples = set<int>{1};
+    display.back_samples = set<int>{3};
+    display.fore_dets = display.back_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+    BOOST_CHECK( !ExportSpecFileTool::applicable_export_options( spec, n42, display, options ).back_sub );
+
+    options.use_disp_back = true;
+    BOOST_CHECK( ExportSpecFileTool::applicable_export_options( spec, n42, display, options ).back_sub );
+
+    options.use_disp_fore = false;
+    BOOST_CHECK( !ExportSpecFileTool::applicable_export_options( spec, n42, display, options ).back_sub );
+  }
+}//BOOST_AUTO_TEST_CASE( applicableOptionsMatrix )
+
+
+/** Results of option combinations, via the pure `generate_file_to_save(...)` (no GUI). */
+BOOST_AUTO_TEST_CASE( generateFileCombinations )
+{
+  set_data_dir();
+
+  typedef ExportSpecFileTool::DisplayStateInfo DisplayStateInfo;
+  typedef ExportSpecFileTool::ExportOptions ExportOptions;
+
+  const SpecUtils::SaveSpectrumAsType n42 = SpecUtils::SaveSpectrumAsType::N42_2012;
+  const SpecUtils::SaveSpectrumAsType spe = SpecUtils::SaveSpectrumAsType::SpeIaea;
+
+  vector<SynthSample> defs;
+  for( int i = 1; i <= 13; ++i )
+    defs.push_back( SynthSample{i, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+  const shared_ptr<SpecMeas> thirteen = create_synthetic_file( defs );
+  thirteen->setPeaks( make_test_peaks(), {8} );
+
+  DisplayStateInfo display;
+  display.spec_is_fore = true;
+  display.fore_samples = set<int>{8};
+  display.fore_dets = vector<string>{"Aa1"};
+
+  // Displayed foreground to SPE: single faithful record, peaks re-keyed to {1}
+  {
+    ExportOptions options;
+    options.use_disp_fore = true;
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( thirteen, spe, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+    BOOST_CHECK_EQUAL( result->measurements()[0]->sample_number(), 1 );
+    BOOST_CHECK_EQUAL( result->measurements()[0]->live_time(), 300.0f );
+
+    const SpecMeas &const_result = *result;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_result.peaks( set<int>{1} );
+    BOOST_REQUIRE( peaks );
+    BOOST_CHECK_EQUAL( static_cast<int>(peaks->size()), 1 );
+  }
+
+  // All samples to N42: 13 records, sample numbers 1..N, peaks still keyed {8}
+  {
+    ExportOptions options;
+    options.all_samples = true;
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( thirteen, n42, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 13 );
+
+    set<int> expected;
+    for( int i = 1; i <= 13; ++i )
+      expected.insert( i );
+    BOOST_CHECK( result->sample_numbers() == expected );
+
+    const SpecMeas &const_result = *result;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_result.peaks( set<int>{8} );
+    BOOST_REQUIRE( peaks );
+    BOOST_CHECK_EQUAL( static_cast<int>(peaks->size()), 1 );
+  }
+
+  // Displayed foreground of multiple samples to SPE: records summed; peaks keyed on the
+  //  displayed set survive; peaks keyed on a different set do not (exact-match semantics)
+  {
+    display.fore_samples = set<int>{2, 5};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+
+    shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( thirteen, spe, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+    BOOST_CHECK_CLOSE( result->measurements()[0]->live_time(), 600.0f, 1.0e-3 );
+
+    {
+      const SpecMeas &const_result = *result;
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_result.peaks( set<int>{1} );
+      BOOST_CHECK( !peaks || peaks->empty() );  // peaks were keyed {8}, not {2,5}
+    }
+
+    thirteen->setPeaks( make_test_peaks(), {2, 5} );
+    result = ExportSpecFileTool::generate_file_to_save( thirteen, spe, display, options );
+    BOOST_REQUIRE( result );
+
+    {
+      const SpecMeas &const_result = *result;
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_result.peaks( set<int>{1} );
+      BOOST_REQUIRE( peaks );
+      BOOST_CHECK_EQUAL( static_cast<int>(peaks->size()), 1 );
+    }
+
+    thirteen->removePeaks( set<int>{2, 5} );
+    display.fore_samples = set<int>{8};
+  }
+
+  // Detector filtering: only the named detector's records survive
+  {
+    vector<SynthSample> two_det_defs;
+    for( int i = 1; i <= 5; ++i )
+      two_det_defs.push_back( SynthSample{i, {"Aa1", "Ba2"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> two_dets = create_synthetic_file( two_det_defs );
+
+    DisplayStateInfo two_det_display;
+    two_det_display.spec_is_fore = true;
+    two_det_display.fore_samples = set<int>{1};
+    two_det_display.fore_dets = vector<string>{"Aa1", "Ba2"};
+
+    ExportOptions options;
+    options.all_samples = true;
+    options.filter_detectors = true;
+    options.detectors = vector<string>{"Aa1"};
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( two_dets, n42, two_det_display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 5 );
+    for( const auto &m : result->measurements() )
+      BOOST_CHECK_EQUAL( m->detector_name(), "Aa1" );
+  }
+
+  // Background subtraction to N42: a single subtracted foreground record, peaks kept
+  {
+    vector<SynthSample> fb_defs;
+    fb_defs.push_back( SynthSample{1, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    fb_defs.push_back( SynthSample{2, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    fb_defs.push_back( SynthSample{3, {"Aa1"}, SpecUtils::SourceType::Background} );
+    const shared_ptr<SpecMeas> fore_back = create_synthetic_file( fb_defs );
+    fore_back->setPeaks( make_test_peaks(), {1, 2} );
+
+    DisplayStateInfo fb_display;
+    fb_display.spec_is_fore = true;
+    fb_display.spec_is_back = true;
+    fb_display.fore_samples = set<int>{1, 2};
+    fb_display.back_samples = set<int>{3};
+    fb_display.fore_dets = fb_display.back_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+    options.use_disp_back = true;
+    options.back_sub_fore = true;
+
+    vector<Wt::WString> warnings;
+    const shared_ptr<const SpecMeas> result
+       = ExportSpecFileTool::generate_file_to_save( fore_back, n42, fb_display, options, &warnings );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+    const shared_ptr<const SpecUtils::Measurement> rec = result->measurements()[0];
+    BOOST_CHECK( rec->source_type() == SpecUtils::SourceType::Foreground );
+
+    // Counts should be (sample1 + sample2) - sample3, channel by channel
+    const shared_ptr<const SpecUtils::Measurement> s1 = fore_back->measurement( 1, "Aa1" );
+    const shared_ptr<const SpecUtils::Measurement> s2 = fore_back->measurement( 2, "Aa1" );
+    const shared_ptr<const SpecUtils::Measurement> s3 = fore_back->measurement( 3, "Aa1" );
+    BOOST_REQUIRE( s1 && s2 && s3 && rec->gamma_counts() );
+    const vector<float> &result_counts = *rec->gamma_counts();
+    for( size_t ch = 0; ch < result_counts.size(); ch += 100 )
+    {
+      const float expected = (*s1->gamma_counts())[ch] + (*s2->gamma_counts())[ch]
+                             - (*s3->gamma_counts())[ch];
+      BOOST_CHECK_CLOSE( result_counts[ch], expected, 1.0e-2 );
+    }
+
+    const SpecMeas &const_result = *result;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks
+                                     = const_result.peaks( result->sample_numbers() );
+    BOOST_REQUIRE( peaks );
+    BOOST_CHECK_EQUAL( static_cast<int>(peaks->size()), 1 );
+  }
+}//BOOST_AUTO_TEST_CASE( generateFileCombinations )
+
+
 /** SpecMeas-level guards for the peak-map access semantics the export code relies on. */
 BOOST_AUTO_TEST_CASE( specMeasPeakMapGuards )
 {
