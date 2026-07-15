@@ -1017,6 +1017,33 @@ namespace {
     j["Verdict"] = AnalystChecks::to_string( p.verdict );
     j["ContinuumElevationSigma"] = rount_to_hundredth( p.continuumElevationSigma );
 
+    // Fixed interpretive text for the suggestive verdicts, so the caveats sit in the result the
+    // model is looking at when it concludes - not only in the tool description.
+    switch( p.verdict )
+    {
+      case AnalystChecks::BetaContinuumVerdict::BremLike:
+        j["Interpretation"] = "The net continuum shape is consistent with bremsstrahlung -"
+          " suggestive, not definitive. A pure beta emitter is the most common cause, but an"
+          " x-ray generator (termination ~ tube kVp, usually <450 keV) or a heavily shielded"
+          " source such as depleted uranium can produce a similar continuum. Candidate nuclides"
+          " are endpoint-consistency matches only, NOT an identification.";
+        break;
+      case AnalystChecks::BetaContinuumVerdict::Ambiguous:
+        j["Interpretation"] = "Continuum elevation is present but the shape evidence is marginal;"
+          " corroborate (e.g. background-subtracted spectrum image, other context) before"
+          " concluding for or against a beta source.";
+        break;
+      case AnalystChecks::BetaContinuumVerdict::AnnihilationDominated:
+        j["Interpretation"] = "A strong 511 keV annihilation peak dominates and the continuum ends"
+          " just above it - more consistent with a positron source (e.g. F-18) than a pure"
+          " beta-minus emitter.";
+        break;
+      case AnalystChecks::BetaContinuumVerdict::BackgroundNotLoaded:
+      case AnalystChecks::BetaContinuumVerdict::NoContinuumElevation:
+      case AnalystChecks::BetaContinuumVerdict::NotBremLike:
+        break;
+    }//switch( verdict )
+
     if( p.modeEnergy.has_value() )
       j["ContinuumMaximumEnergy_keV"] = rount_to_hundredth( *p.modeEnergy );
     if( p.terminationEnergy.has_value() )
@@ -1061,6 +1088,11 @@ namespace {
 
     if( p.annihilationDominant )
       j["AnnihilationDominant"] = true;
+
+    if( p.highEnergyTailUpperEnergy.has_value() )
+      j["HighEnergyTailUpperEnergy_keV"] = rount_to_hundredth( *p.highEnergyTailUpperEnergy );
+    if( p.highEnergyTailSigma.has_value() )
+      j["HighEnergyTailSigma"] = rount_to_hundredth( *p.highEnergyTailSigma );
 
     if( !p.candidateNuclides.empty() )
     {

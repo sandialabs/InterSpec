@@ -4287,6 +4287,15 @@ namespace AnalystChecks
   static constexpr double sk_beta_max_fwhm_frac       = 0.12;   // cap on expectedFwhm(E)/E - protects against a
                                                                 //  garbage resolution fit (e.g. from two spurious
                                                                 //  peaks) blowing up the exclusion regions
+  static constexpr double sk_beta_fit_count_quantile  = 0.99;   // shape fitting/gating is bounded at this net-count
+                                                                //  quantile; a trace tail beyond it (commonly random
+                                                                //  summing / pile-up) is reported but must not drive
+                                                                //  the verdict or the endpoint lower bound
+  static constexpr double sk_beta_cliff_meaningful_sigma = 9.0; // a cliff-like termination ratio is categorical
+                                                                //  evidence only when the smoothed intensity at the
+                                                                //  termination is this many sigma above zero (3x the
+                                                                //  3-sigma detection floor); otherwise termination is
+                                                                //  statistics-limited and the ratio is inconclusive
 
   /** (Nearly) pure beta-minus emitters considered as consistency candidates; endpoints are pulled
    from SandiaDecay at runtime (including in-equilibrium daughters, e.g. Sr90 -> Y90). */
@@ -4756,67 +4765,188 @@ namespace AnalystChecks
 
     status.modeEnergy = bins[imode].center;
 
-    size_t iterm = imode;
+    size_t iterm_raw = imode;
     for( size_t i = imode + 1; i < nbins; ++i )
     {
       if( !bins[i].excluded && (smooth[i] > 3.0*std::sqrt( std::max( smooth_var[i], 1.0e-9 ) )) )
-        iterm = i;
+        iterm_raw = i;
     }
-    status.terminationEnergy = bins[iterm].center;
-    status.terminationRatio = std::max( smooth[iterm], 0.0 ) / std::max( smooth[imode], 1.0e-9 );
 
-    if( iterm <= (imode + 3) )
+    // Bound the shape analysis at the sk_beta_fit_count_quantile net-count quantile: a trace
+    // high-energy tail (random-summing/pile-up, or tiny residuals) can be statistically
+    // significant while holding <1% of the counts, and letting it stretch the fit range makes
+    // the shape gates grade the tail instead of the continuum the counts are actually in.
+    double total_pos_net = 0.0;
+    for( const BetaCoarseBin &bin : bins )
     {
-      status.verdict = BetaContinuumVerdict::Ambiguous;
-      status.warnings.push_back( "Continuum is elevated, but extends too little beyond its maximum"
-                                 " to analyze its shape." );
-      return status;
+      if( !bin.excluded )
+        total_pos_net += std::max( bin.net, 0.0 );
     }
-
-    // ---- Robust fit of ln(net) vs energy over [mode, termination] ----
-    vector<size_t> fit_indices;
-    for( size_t i = imode + 1; i <= iterm; ++i )
+    size_t iquant = iterm_raw;
+    double cum_net = 0.0;
+    for( size_t i = 0; i < nbins; ++i )
     {
-      if( !bins[i].excluded && (bins[i].net > 0.0) )
-        fit_indices.push_back( i );
-    }
+      if( bins[i].excluded )
+        continue;
+      cum_net += std::max( bins[i].net, 0.0 );
+      if( cum_net >= sk_beta_fit_count_quantile*total_pos_net )
+      {
+        iquant = i;
+        break;
+      }
+    }//for( coarse bins )
 
-    const double emid_kev = 0.5*(bins[imode].center + bins[iterm].center);
-    const BetaLogFitResult fit = beta_robust_log_fit( bins, fit_indices, emid_kev );
-
-    if( !fit.valid )
+    // ---- Two-pass shape evaluation ----
+    // The raw (last-significant-bin) termination is tried first, preserving full-range grading
+    // for clean spectra where the high tail is simply more continuum.  When a weak tail extends
+    // past the count-quantile bound, a second, clamped pass is tried: a trace tail (commonly
+    // random-summing/pile-up) can be statistically significant while holding <1% of the counts,
+    // and letting it stretch the fit range makes the gates grade the tail instead of the
+    // continuum the counts are actually in.  The better verdict wins.
+    struct BetaRangeEval
     {
-      status.verdict = BetaContinuumVerdict::Ambiguous;
-      status.warnings.push_back( "Continuum is elevated, but too few usable bins remained to fit"
-                                 " its shape." );
-      return status;
-    }
+      bool valid = false;
+      int rank = -1;   // 2 = BremLike, 1 = Ambiguous, 0 = NotBremLike
+      BetaContinuumVerdict verdict = BetaContinuumVerdict::NotBremLike;
+      size_t iterm = 0;
+      double termRatio = 0.0;
+      std::optional<double> eChar;
+      BetaLogFitResult fit;
+      bool echarOk = false;
+    };//struct BetaRangeEval
 
-    status.fitChi2Dof = fit.chi2Dof;
-    status.fitOutlierFraction = fit.outlierFraction;
-    status.fitMaxSegmentResidual = fit.maxSegmentResidual;
-    if( fit.slopePerKev < 0.0 )
-      status.characteristicEnergy = -1.0 / fit.slopePerKev;
-
-    // ---- Gates -> verdict (count of passed gates, matching the validated prototype) ----
     const bool gate_peaks = status.elevatedGammaPeaks.empty();
-    const bool gate_cliff = (*status.terminationRatio < sk_beta_term_ratio_max);
-    const bool gate_echar = status.characteristicEnergy.has_value()
-                            && (*status.characteristicEnergy < sk_beta_echar_max_kev);
-    const bool gate_term = (*status.terminationEnergy < sk_beta_term_max_kev);
-    const bool gate_smooth = (fit.maxSegmentResidual < sk_beta_seg_resid_max_sigma)
-                             && (fit.outlierFraction < sk_beta_outlier_frac_max);
 
-    const int num_passed = static_cast<int>(gate_peaks) + static_cast<int>(gate_cliff)
-                           + static_cast<int>(gate_echar) + static_cast<int>(gate_term)
-                           + static_cast<int>(gate_smooth);
+    const auto evaluate_range = [&]( size_t iterm_eval ) -> BetaRangeEval {
+      BetaRangeEval eval;
+      while( (iterm_eval > imode) && bins[iterm_eval].excluded )
+        iterm_eval -= 1;
+      if( iterm_eval <= (imode + 3) )
+        return eval;  //too little range beyond the maximum to analyze
 
-    if( num_passed == 5 )
-      status.verdict = BetaContinuumVerdict::BremLike;
-    else if( num_passed == 4 )
+      eval.iterm = iterm_eval;
+      eval.termRatio = std::max( smooth[iterm_eval], 0.0 ) / std::max( smooth[imode], 1.0e-9 );
+
+      vector<size_t> fit_indices;
+      for( size_t i = imode + 1; i <= iterm_eval; ++i )
+      {
+        if( !bins[i].excluded && (bins[i].net > 0.0) )
+          fit_indices.push_back( i );
+      }
+
+      const double emid_kev = 0.5*(bins[imode].center + bins[iterm_eval].center);
+      eval.fit = beta_robust_log_fit( bins, fit_indices, emid_kev );
+      if( !eval.fit.valid )
+        return eval;
+
+      eval.valid = true;
+      if( eval.fit.slopePerKev < 0.0 )
+        eval.eChar = -1.0 / eval.fit.slopePerKev;
+
+      // A large termination ratio only counts as a hard (photopeak/Compton-edge style) cliff
+      // when the intensity at termination is well above the detection floor; for weak spectra
+      // the 3-sigma termination is statistics-limited and the ratio is meaningless.
+      const bool cliff_bad = (eval.termRatio >= sk_beta_term_ratio_max);
+      const bool cliff_meaningful = (smooth[iterm_eval] > (sk_beta_cliff_meaningful_sigma
+                          * std::sqrt( std::max( smooth_var[iterm_eval], 1.0e-9 ) )));
+
+      const bool gate_term = (bins[iterm_eval].center < sk_beta_term_max_kev);
+      const bool gate_falling = eval.eChar.has_value();
+      eval.echarOk = gate_falling && (*eval.eChar < sk_beta_echar_max_kev);
+      const bool gate_smooth = (eval.fit.maxSegmentResidual < sk_beta_seg_resid_max_sigma)
+                               && (eval.fit.outlierFraction < sk_beta_outlier_frac_max);
+
+      // Hard gates are categorical evidence AGAINST a beta source (gamma peaks, a real cliff,
+      // termination beyond any plausible beta endpoint, a non-falling continuum); any failure
+      // => NotBremLike.  Soft gates are shape-quality evidence (how exponential-clean the fall
+      // is); a failure only demotes to Ambiguous - heavily scattered/hardened but genuine beta
+      // continua (e.g. Y-90 in a body phantom) fail these without being gamma-like.
+      const bool hard_ok = gate_peaks && gate_term && gate_falling
+                           && !(cliff_bad && cliff_meaningful);
+      const bool soft_ok = eval.echarOk && gate_smooth && !cliff_bad;
+
+      if( !hard_ok )
+      {
+        eval.verdict = BetaContinuumVerdict::NotBremLike;
+        eval.rank = 0;
+      }else if( soft_ok )
+      {
+        eval.verdict = BetaContinuumVerdict::BremLike;
+        eval.rank = 2;
+      }else
+      {
+        eval.verdict = BetaContinuumVerdict::Ambiguous;
+        eval.rank = 1;
+      }
+
+      return eval;
+    };//evaluate_range lambda
+
+    const BetaRangeEval full_eval = evaluate_range( iterm_raw );
+
+    const size_t iterm_clamped = std::min( iterm_raw, std::max( iquant, imode + 4 ) );
+    BetaRangeEval clamped_eval;
+    if( (iterm_clamped + 2) < iterm_raw )
+      clamped_eval = evaluate_range( iterm_clamped );
+
+    const bool use_clamped = clamped_eval.valid
+                             && (!full_eval.valid || (clamped_eval.rank > full_eval.rank));
+    const BetaRangeEval &chosen = use_clamped ? clamped_eval : full_eval;
+
+    if( !chosen.valid )
+    {
       status.verdict = BetaContinuumVerdict::Ambiguous;
-    else
-      status.verdict = BetaContinuumVerdict::NotBremLike;
+      status.warnings.push_back( "Continuum is elevated, but extends too little beyond its"
+                                 " maximum (or has too few usable bins) to analyze its shape." );
+      return status;
+    }
+
+    status.terminationEnergy = bins[chosen.iterm].center;
+    status.terminationRatio = chosen.termRatio;
+    status.fitChi2Dof = chosen.fit.chi2Dof;
+    status.fitOutlierFraction = chosen.fit.outlierFraction;
+    status.fitMaxSegmentResidual = chosen.fit.maxSegmentResidual;
+    status.characteristicEnergy = chosen.eChar;
+    status.verdict = chosen.verdict;
+
+    // Report (but dont grade on) the weak tail beyond the fitted range, when clamping mattered.
+    if( use_clamped && (iterm_raw > (chosen.iterm + 2)) )
+    {
+      double tail_net = 0.0, tail_var = 0.0;
+      for( size_t i = chosen.iterm + 1; i <= iterm_raw; ++i )
+      {
+        if( bins[i].excluded )
+          continue;
+        tail_net += bins[i].net;
+        tail_var += bins[i].var;
+      }
+      const double tail_sigma = tail_net / std::sqrt( std::max( tail_var, 1.0e-9 ) );
+      if( tail_sigma > 2.0 )
+      {
+        status.highEnergyTailUpperEnergy = bins[iterm_raw].center;
+        status.highEnergyTailSigma = tail_sigma;
+
+        const double dead_time_frac = ((fore->real_time() > 0.0f) && (fore->live_time() > 0.0f)
+                                       && (fore->real_time() > fore->live_time()))
+                    ? (1.0 - fore->live_time()/fore->real_time()) : 0.0;
+        char buffer[512];
+        snprintf( buffer, sizeof(buffer),
+                  "A weak high-energy net tail (%.1f sigma, <%.0f%% of net counts) extends beyond"
+                  " the fitted continuum, up to ~%.0f keV.  It was not used for shape grading or"
+                  " the beta-endpoint lower bound; such a tail is commonly random-summing"
+                  " (pile-up)%s.",
+                  tail_sigma, 100.0*(1.0 - sk_beta_fit_count_quantile),
+                  bins[iterm_raw].center,
+                  (dead_time_frac > 0.005) ? " - consistent with the foreground dead time" : "" );
+        status.warnings.push_back( buffer );
+      }//if( tail is significant )
+    }//if( clamped pass chosen and a tail extends beyond it )
+
+    if( (status.verdict == BetaContinuumVerdict::Ambiguous) && !chosen.echarOk )
+      status.warnings.push_back( "The continuum falls more slowly than typical unshielded-beta"
+                                 " bremsstrahlung; this can be a heavily scattered/shielded hard"
+                                 " beta source (e.g. Y-90 through a person or thick shielding),"
+                                 " but also a peak-less scattered gamma continuum." );
 
     // 511-dominance: a strong annihilation peak with the continuum dying just above it suggests
     // a positron source (e.g. F-18) whose "continuum" is 511-scatter, not beta-minus brems.
@@ -4862,23 +4992,23 @@ namespace AnalystChecks
       assert( status.modeEnergy.has_value() && status.terminationEnergy.has_value() );
       assert( *status.modeEnergy <= *status.terminationEnergy );
       assert( status.continuumElevationSigma >= sk_beta_min_elevation_sigma );
-      const bool chk_peaks = status.elevatedGammaPeaks.empty();
-      const bool chk_cliff = (*status.terminationRatio < sk_beta_term_ratio_max);
-      const bool chk_echar = status.characteristicEnergy.has_value()
-                             && (*status.characteristicEnergy < sk_beta_echar_max_kev);
-      const bool chk_term = (*status.terminationEnergy < sk_beta_term_max_kev);
-      const int chk_passed = static_cast<int>(chk_peaks) + static_cast<int>(chk_cliff)
-                             + static_cast<int>(chk_echar) + static_cast<int>(chk_term)
-                             + static_cast<int>(gate_smooth);
-      switch( status.verdict )
+      // A BremLike verdict must be fully consistent with the reported metrics; the Ambiguous /
+      // NotBremLike distinction additionally depends on range-internal quantities (cliff
+      // meaningfulness, which of the two evaluation ranges won), so it isnt re-derivable from
+      // the status alone.
+      if( (status.verdict == BetaContinuumVerdict::BremLike)
+          || (status.verdict == BetaContinuumVerdict::AnnihilationDominated) )
       {
-        case BetaContinuumVerdict::BremLike:              assert( chk_passed == 5 ); break;
-        case BetaContinuumVerdict::Ambiguous:             assert( chk_passed == 4 ); break;
-        case BetaContinuumVerdict::NotBremLike:           assert( chk_passed < 4 ); break;
-        case BetaContinuumVerdict::AnnihilationDominated: assert( status.annihilationDominant ); break;
-        case BetaContinuumVerdict::BackgroundNotLoaded:
-        case BetaContinuumVerdict::NoContinuumElevation:  assert( 0 ); break;
+        assert( status.elevatedGammaPeaks.empty() );
+        assert( *status.terminationRatio < sk_beta_term_ratio_max );
+        assert( *status.terminationEnergy < sk_beta_term_max_kev );
+        assert( status.characteristicEnergy.has_value()
+                && (*status.characteristicEnergy < sk_beta_echar_max_kev) );
       }
+      assert( (status.verdict != BetaContinuumVerdict::AnnihilationDominated)
+              || status.annihilationDominant );
+      assert( (status.verdict != BetaContinuumVerdict::BackgroundNotLoaded)
+              && (status.verdict != BetaContinuumVerdict::NoContinuumElevation) );
     }
 #endif //PERFORM_DEVELOPER_CHECKS
 

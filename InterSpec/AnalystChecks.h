@@ -726,6 +726,12 @@ namespace AnalystChecks
     /** True when a strong 511 keV peak dominates and the continuum terminates just above it. */
     bool annihilationDominant = false;
 
+    // Set when a weak net tail (beyond the count-quantile used for shape fitting - i.e., holding
+    // <~1% of the net counts) extends past terminationEnergy.  Commonly random-summing (pile-up)
+    // at elevated count rates; not used for shape grading or the endpoint bound.
+    std::optional<double> highEnergyTailUpperEnergy;  // keV
+    std::optional<double> highEnergyTailSigma;        // significance of the tail region net counts
+
     /** Pure-beta nuclides consistent with terminationEnergy; only filled for
      BremLike/Ambiguous/AnnihilationDominated verdicts. */
     std::vector<BetaContinuumCandidateNuclide> candidateNuclides;
