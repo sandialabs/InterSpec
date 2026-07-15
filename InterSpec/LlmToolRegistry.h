@@ -217,6 +217,7 @@ private:
   static nlohmann::json executeComptonPeakCheck(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeEscapePeakCheck(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeSumPeakCheck(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeBetaContinuumCheck(const nlohmann::json& params, InterSpec* interspec);
 
   // Workflow State Tool (for agents with state machines)
   static nlohmann::json executeSetWorkflowState(const nlohmann::json& params, InterSpec* interspec);

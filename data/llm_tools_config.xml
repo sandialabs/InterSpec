@@ -462,6 +462,21 @@ Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Qu
   </Tool>
 
 
+  <Tool name="beta_continuum_check">
+    <Description>Deterministic check for whether the spectrum is consistent with a pure beta emitter (e.g., P-32, Sr-90/Y-90, Tl-204) whose only gamma-region signature is a bremsstrahlung continuum. Requires a Background spectrum to be loaded: the tool background-subtracts the foreground (live-time normalized), excludes peak regions and the 511 keV area, and analyzes the net continuum shape. Returns a Verdict: 'BremLike' (smooth quasi-exponential continuum, no gamma-peak evidence), 'NotBremLike' (gamma peaks present, cliff-like termination such as a Compton edge, or shape inconsistent with bremsstrahlung), 'Ambiguous' (elevation present but shape evidence marginal), 'NoContinuumElevation' (foreground continuum not significantly above background), 'AnnihilationDominated' (strong 511 keV with continuum ending just above it - suggests a positron source like F-18, not a beta-minus emitter), or 'BackgroundNotLoaded'. Also returns: TerminationEnergy_keV_LowerBoundOnBetaEndpoint (the highest energy with significant net counts - a statistics-limited LOWER bound on the beta endpoint; the true endpoint is typically 1.5-3x higher for shorter dwells), CharacteristicDecayEnergy_keV (softness of the exponential fall), ElevatedGammaPeaks (gamma-source evidence), XrayRegionPeaks (peaks below ~120 keV, e.g. Hg K x-rays from Tl-204 - these do not rule out a beta source), and ConsistentPureBetaNuclides (pure-beta nuclides whose endpoint is consistent with the observed termination - consistency candidates, NOT an identification). Prefer this tool over visual inspection of a background-subtracted spectrum image for the beta-source check; use the image only as fallback confirmation.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+          "specType": {
+            "type": "string",
+            "enum": ["Foreground", "Secondary"],
+            "description": "Optional: which displayed spectrum to test as the candidate beta/bremsstrahlung source (default: Foreground). The displayed Background spectrum is always the subtraction baseline."
+          }
+      }
+    }</ParametersSchema>
+  </Tool>
+
+
   <Tool name="add_analysis_peaks_for_source">
     <Description>Fits, and adds to the analysis peaks all of the detectable peaks for the one or more specified sources.
 For sources with multiple peaks, will very likely do a much better job than individually fitting peaks for a source, and will do it much more efficiently and with a single tool call.

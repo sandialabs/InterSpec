@@ -982,6 +982,106 @@ namespace {
   }//void from_json( const json &j, AnalystChecks::EscapePeakCheckOptions &p )
 
 
+  void from_json( const json &j, AnalystChecks::BetaContinuumCheckOptions &p )
+  {
+    // Optional spectrum type (default Foreground); Background is not allowed - it is the baseline.
+    const string specTypeStr = j.value("specType", std::string());
+    if( specTypeStr.empty() || SpecUtils::iequals_ascii(specTypeStr, "Foreground") )
+    {
+      p.specType = SpecUtils::SpectrumType::Foreground;
+    }else if( SpecUtils::iequals_ascii( specTypeStr, "Secondary" ) )
+    {
+      p.specType = SpecUtils::SpectrumType::SecondForeground;
+    }else
+    {
+      throw std::runtime_error( "Invalid spectrum type for beta_continuum_check: '" + specTypeStr
+                                + "' - must be 'Foreground' or 'Secondary'" );
+    }
+  }//void from_json( const json &j, AnalystChecks::BetaContinuumCheckOptions &p )
+
+
+  void to_json( json &j, const AnalystChecks::BetaContinuumPeakInfo &p )
+  {
+    j = json{
+      {"Energy_keV", rount_to_hundredth(p.energy)},
+      {"Amplitude_counts", rount_to_hundredth(p.amplitude)},
+      {"NumSigmaElevatedOverBackground", rount_to_hundredth(p.numSigmaElevated)}
+    };
+    if( p.isAnnihilation )
+      j["IsAnnihilation"] = true;
+  }//void to_json( json &j, const AnalystChecks::BetaContinuumPeakInfo &p )
+
+
+  void to_json( json &j, const AnalystChecks::BetaContinuumCheckStatus &p )
+  {
+    j["Verdict"] = AnalystChecks::to_string( p.verdict );
+    j["ContinuumElevationSigma"] = rount_to_hundredth( p.continuumElevationSigma );
+
+    if( p.modeEnergy.has_value() )
+      j["ContinuumMaximumEnergy_keV"] = rount_to_hundredth( *p.modeEnergy );
+    if( p.terminationEnergy.has_value() )
+    {
+      // Emphasized in the field name: this is a lower bound, not the endpoint itself.
+      j["TerminationEnergy_keV_LowerBoundOnBetaEndpoint"] = rount_to_hundredth( *p.terminationEnergy );
+    }
+    if( p.terminationRatio.has_value() )
+      j["TerminationRatio"] = rount_to_hundredth( *p.terminationRatio );
+    if( p.characteristicEnergy.has_value() )
+      j["CharacteristicDecayEnergy_keV"] = rount_to_hundredth( *p.characteristicEnergy );
+    if( p.fitChi2Dof.has_value() )
+      j["FitChi2PerDof"] = rount_to_hundredth( *p.fitChi2Dof );
+    if( p.fitOutlierFraction.has_value() )
+      j["FitOutlierFraction"] = rount_to_hundredth( *p.fitOutlierFraction );
+    if( p.fitMaxSegmentResidual.has_value() )
+      j["FitMaxSegmentResidualSigma"] = rount_to_hundredth( *p.fitMaxSegmentResidual );
+
+    if( !p.elevatedGammaPeaks.empty() )
+    {
+      json peaks = json::array();
+      for( const AnalystChecks::BetaContinuumPeakInfo &info : p.elevatedGammaPeaks )
+      {
+        json pk;
+        to_json( pk, info );
+        peaks.push_back( pk );
+      }
+      j["ElevatedGammaPeaks"] = peaks;
+    }
+
+    if( !p.xrayRegionPeaks.empty() )
+    {
+      json peaks = json::array();
+      for( const AnalystChecks::BetaContinuumPeakInfo &info : p.xrayRegionPeaks )
+      {
+        json pk;
+        to_json( pk, info );
+        peaks.push_back( pk );
+      }
+      j["XrayRegionPeaks"] = peaks;
+    }
+
+    if( p.annihilationDominant )
+      j["AnnihilationDominant"] = true;
+
+    if( !p.candidateNuclides.empty() )
+    {
+      json candidates = json::array();
+      for( const AnalystChecks::BetaContinuumCandidateNuclide &candidate : p.candidateNuclides )
+      {
+        json c;
+        c["Nuclide"] = candidate.nuclide;
+        c["BetaEndpoint_keV"] = rount_to_hundredth( candidate.betaEndpoint );
+        if( !candidate.note.empty() )
+          c["Note"] = candidate.note;
+        candidates.push_back( c );
+      }
+      j["ConsistentPureBetaNuclides"] = candidates;
+    }
+
+    if( !p.warnings.empty() )
+      j["Warnings"] = p.warnings;
+  }//void to_json( json &j, const AnalystChecks::BetaContinuumCheckStatus &p )
+
+
   void from_json( const json &j, AnalystChecks::EscapePeakCheckOptions &p )
   {
     p.energy = get_number( j, "energy" );
@@ -1913,6 +2013,11 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
         return executeSumPeakCheck(params, interspec);
       };
+    }else if( toolName == "beta_continuum_check" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec, shared_ptr<LlmInteraction>, LlmConversationHistory*) -> json {
+        return executeBetaContinuumCheck(params, interspec);
+      };
     }
 #if( !CONSOLIDATED_PEAK_READOUT_TOOLS )
     else if( toolName == "get_analysis_peaks" )
@@ -2556,6 +2661,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "compton_scatter_peak_check",
     "escape_peak_check",
     "sum_peak_check",
+    "beta_continuum_check",
     "get_identified_sources",
     "get_spectrum_info",
 #if( CONSOLIDATED_GAMMA_LINE_TOOLS )
@@ -3376,6 +3482,23 @@ nlohmann::json ToolRegistry::executeSumPeakCheck( const nlohmann::json &params, 
 
   return result_json;
 }//nlohmann::json ToolRegistry::executeSumPeakCheck( const nlohmann::json &params, InterSpec *interspec )
+
+
+nlohmann::json ToolRegistry::executeBetaContinuumCheck( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+
+  AnalystChecks::BetaContinuumCheckOptions options;
+  from_json( params, options );
+
+  const AnalystChecks::BetaContinuumCheckStatus result = AnalystChecks::beta_continuum_check( options, interspec );
+
+  json result_json;
+  to_json( result_json, result );
+
+  return result_json;
+}//nlohmann::json ToolRegistry::executeBetaContinuumCheck( const nlohmann::json &params, InterSpec *interspec )
 
 
 json ToolRegistry::executeGetSpectrumInfo( const json &params, InterSpec *interspec )
