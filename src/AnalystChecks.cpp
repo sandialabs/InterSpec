@@ -4284,6 +4284,9 @@ namespace AnalystChecks
   static constexpr double sk_beta_outlier_frac_max    = 0.25;   // smoothness: max fit-outlier fraction
   static constexpr double sk_beta_sys_frac            = 0.03;   // fractional systematic floor on the model
   static constexpr double sk_beta_511_dominant_sigma  = 8.0;    // 511 significance for the positron demotion
+  static constexpr double sk_beta_max_fwhm_frac       = 0.12;   // cap on expectedFwhm(E)/E - protects against a
+                                                                //  garbage resolution fit (e.g. from two spurious
+                                                                //  peaks) blowing up the exclusion regions
 
   /** (Nearly) pure beta-minus emitters considered as consistency candidates; endpoints are pulled
    from SandiaDecay at runtime (including in-equilibrium daughters, e.g. Sr90 -> Y90). */
@@ -4397,7 +4400,8 @@ namespace AnalystChecks
       const double mean = p->mean();
       double fwhm = p->gausPeak() ? p->fwhm() : 0.0;
       if( fwhm <= 0.0 )
-        fwhm = std::max( 1.0f, fwhm_fcn( mean ) );
+        fwhm = std::max( 1.0, std::min( static_cast<double>(fwhm_fcn( mean )),
+                                        sk_beta_max_fwhm_frac*mean ) );
       intervals.push_back( { mean - 2.0*fwhm, mean + 2.0*fwhm } );
     };
 
@@ -4406,7 +4410,8 @@ namespace AnalystChecks
 
     // Always exclude the annihilation region - 511 is allowed for a beta source (pair production
     // of high-energy brems, or a small beta+ branch), so it must not distort the shape fit.
-    const double fwhm511 = std::max( 1.0f, fwhm_fcn( 511.0 ) );
+    const double fwhm511 = std::max( 1.0, std::min( static_cast<double>(fwhm_fcn( 511.0 )),
+                                                    sk_beta_max_fwhm_frac*511.0 ) );
     const double half511 = std::max( 2.0*fwhm511, 10.0 );
     intervals.push_back( { 511.0 - half511, 511.0 + half511 } );
 
@@ -4612,7 +4617,10 @@ namespace AnalystChecks
     const double lt_sf = fore_lt / back_lt;
 
     // ---- Classify foreground peaks: x-ray region / annihilation / gamma-source evidence ----
-    const double fwhm511 = std::max( 1.0f, fwhm_fcn( 511.0 ) );
+    // FWHM capped at a physical fraction of energy, in case the resolution estimate is garbage
+    // (e.g. fit through only a couple spurious wide peaks).
+    const double fwhm511 = std::max( 1.0, std::min( static_cast<double>(fwhm_fcn( 511.0 )),
+                                                    sk_beta_max_fwhm_frac*511.0 ) );
     double sig511 = 0.0;
 
     for( const shared_ptr<const PeakDef> &peak : input.foregroundPeaks )
