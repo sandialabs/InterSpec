@@ -1890,8 +1890,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::currentlySelectedFile() cons
     result->uniqueCopyContents( *fore );
     result->remove_measurements( result->measurements() );
     
-    for( const set<int> &samples : result->sampleNumsWithPeaks() )
-      result->setPeaks( {}, samples );
+    result->removeAllPeaks();
     
     const set<int> &fore_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
     const set<int> &back_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
@@ -3253,22 +3252,26 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     if( !single_meas )
     {
       assert( !sum_samples.empty() );
-      
-      shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = answer->peaks(sum_samples);
-      
+
+      // Use the const `peaks(...)` overload (no insert-on-miss), and copy the deque by value
+      //  before mutating the peak map: `setPeaks(...)` clears the existing deque in-place,
+      //  which is the same deque the non-const `peaks(...)` returns - this aliasing previously
+      //  caused the peaks to be lost from exports (see notes in SpecMeas.h).
+      const SpecMeas &const_answer = *answer;
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_answer.peaks( sum_samples );
+      const deque<shared_ptr<const PeakDef>> peaks_copy = peaks ? *peaks : deque<shared_ptr<const PeakDef>>{};
+
       shared_ptr<SpecUtils::Measurement> m = answer->sum_measurements( sum_samples, detectors, nullptr );
       m->set_sample_number( *begin(sum_samples) );
       const auto typePos = sampleSourceTypes.find(sum_samples);
       if( typePos != end(sampleSourceTypes) )
         m->set_source_type( typePos->second );
-      
+
       meas_to_add.push_back( m );
-      
-      answer->setPeaks( {}, sum_samples );
-      if( peaks && peaks->size() )
-        answer->setPeaks( *peaks, {m->sample_number()} );
-      else
-        answer->setPeaks( {}, {m->sample_number()} );
+
+      answer->removePeaks( sum_samples );
+      if( !peaks_copy.empty() )
+        answer->setPeaks( peaks_copy, {m->sample_number()} );
       
       // We will make a feeble attempt to preserve title, or for portal data
       //  set it to background, for that sample
@@ -3385,7 +3388,6 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
     //  - we will fix this up, although it probably makes more sense to just filter out unwanted
     //  detectors and samples, up front (but this maybe creates other problems?)
     const vector<string> &dets_now = answer->detector_names();
-    const set<int> &samples_now = answer->sample_numbers();
     vector<string> names_to_remove;
     for( const string &d : detectors )
     {
@@ -3398,51 +3400,57 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       assert( std::find( begin(detectors), end(detectors), d ) != end(detectors) );
       detectors.erase( std::find( begin(detectors), end(detectors), d ) );
     }
-    
-    set<int> samples_to_remove;
-    for( const int sample : samples )
-    {
-      if( !samples_now.count(sample) )
-        samples_to_remove.insert(sample);
-    }
-    for( const int sample : samples_to_remove )
-      samples.erase( sample );
-    
-    // Now lets map sample numbers to 1 through N
+  }//if( !meas_to_remove.empty() || !meas_to_add.empty() )
+
+  // Map sample numbers to 1 through N, on every path (not just when measurements were
+  //  removed/added), so the exported file always has sample numbers starting at 1.
+  //  `SpecMeas::change_sample_numbers` also remaps the peak-map keys to match.
+  {
     samples.clear();
     int new_sample_number = 0;
+    bool needs_renumbering = false;
     vector<pair<int,int>> old_to_new_samplenum;
     for( const int old_sample_number : answer->sample_numbers() )
     {
       ++new_sample_number;
+      needs_renumbering |= (old_sample_number != new_sample_number);
       old_to_new_samplenum.emplace_back( old_sample_number, new_sample_number );
       samples.insert( new_sample_number );
     }//for( loop over sample numbers )
-    
-    answer->change_sample_numbers( old_to_new_samplenum );
-  }//if( !meas_to_remove.empty() || !meas_to_add.empty() )
+
+    if( needs_renumbering )
+      answer->change_sample_numbers( old_to_new_samplenum );
+  }
   
   
-  if( sumAll )
+  // If only a single measurement is left, it is already the record we want to write out
+  //  (summing a lone record would just discard its meta-information), so only sum if
+  //  there are multiple measurements.
+  if( sumAll && (answer->num_measurements() > 1) )
   {
     const vector<shared_ptr<const SpecUtils::Measurement>> orig_meass = answer->measurements();
-    
+
     // Next call throws exception if invalid sample number, detector name, or cant find energy
     //  binning to use.  And returns nullptr if empty sample numbers or detector names.
     shared_ptr<SpecUtils::Measurement> sum_meas = answer->sum_measurements( samples, detectors, nullptr );
     assert( sum_meas );
     if( !sum_meas )
       throw runtime_error( "Error summing records - perhaps empty sample numbers or detector names." );
-    
-    shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = answer->peaks(samples);
-    answer->setPeaks( {}, samples );
-    
+
+    // Use the const `peaks(...)` overload (no insert-on-miss), and copy the deque by value
+    //  before mutating the peak map: `setPeaks(...)` clears the existing deque in-place,
+    //  which is the same deque the non-const `peaks(...)` returns - this aliasing previously
+    //  caused the peaks to be lost from exports (see notes in SpecMeas.h).
+    const SpecMeas &const_answer = *answer;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_answer.peaks( samples );
+    const deque<shared_ptr<const PeakDef>> peaks_copy = peaks ? *peaks : deque<shared_ptr<const PeakDef>>{};
+
+    answer->removePeaks( samples );
+
     sum_meas->set_sample_number( 1 );
-    if( peaks && peaks->size() )
-      answer->setPeaks( *peaks, {1} );
-    else
-      answer->setPeaks( {}, {1} );
-    
+    if( !peaks_copy.empty() )
+      answer->setPeaks( peaks_copy, {1} );
+
     answer->remove_measurements( orig_meass );
     answer->add_measurement( sum_meas, true );
   }//if( sumAll )

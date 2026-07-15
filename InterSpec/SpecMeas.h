@@ -222,6 +222,13 @@ public:
    */
   virtual void change_sample_numbers( const std::vector<std::pair<int,int>> &from_to_sample_nums );
 
+  /** CAUTION: returns the live deque stored in the peak map - it is the same deque
+   `setPeaks(...)` clears in-place, and the same deque PeakModel mutates as the user
+   edits peaks.  Also, if no entry exists for `samplenums`, this non-const overload
+   INSERTS an empty entry into the map.  If you need a stable snapshot (e.g., before
+   calling `setPeaks(...)` or `removePeaks(...)`), copy the deque by value first, or
+   use the const overload, which has no insert side-effect.
+   */
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                                  peaks( const std::set<int> &samplenums );
   /** CAUTION: the returned deque may be modified elsewhere in the app, if for
@@ -247,6 +254,12 @@ public:
   //  The peaks stored by *this will be same pointers to peaks as passed in,
   //  but the deque will be different than passed in.
   //  Note: does not notify PeakModel, or anywhere else.
+  //  CAUTION: if an entry already exists for `samplenums`, its deque is cleared and
+  //  re-filled IN-PLACE, so any deque previously obtained from the non-const
+  //  `peaks(...)` for these sample numbers will see its contents replaced (PeakModel
+  //  relies on this aliasing; other callers have been bitten by it - copy the deque
+  //  by value first if you need the old contents).  To remove an entry without
+  //  touching the shared deque, use `removePeaks(...)` instead of setting empty peaks.
   void setPeaks( const std::deque< std::shared_ptr<const PeakDef> > &peakdeque,
                  const std::set<int> &samplenums );
   
