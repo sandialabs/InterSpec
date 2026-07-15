@@ -277,6 +277,7 @@ protected:
   void handleSumDetPerSampleChanged();
   void handleSumSamplesPerDetChanged();
   void handleIncludeInterSpecInfoChanged();
+  void handleExcludeGpsInfoChanged();
   
 #if( USE_QR_CODES )
   void handleGenerateQrCode();

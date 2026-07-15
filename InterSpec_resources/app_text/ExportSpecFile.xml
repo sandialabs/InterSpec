@@ -41,7 +41,8 @@
   <message id="esf-sum-back-to-single-record-tt">There are either multiple sample numbers, or multiple detectors that comprise the displayed background; checking this option will sum all these to a single spectrum in the output file.</message>
   
   <message id="esf-sum-sec-to-single-record">Sum Sec to single record</message>
-  
+  <message id="esf-sum-sec-to-single-record-tt">There are either multiple sample numbers, or multiple detectors that comprise the displayed secondary spectrum; checking this option will sum all these to a single spectrum in the output file.</message>
+
   <message id="esf-background-subtract">Background subtract</message>
   <message id="esf-background-subtract-tt">The output spectrum will be the foreground, minus the background.</message>
   
@@ -55,7 +56,8 @@
   <message id="esf-remove-interspec-info-tt">Removes detector response, peaks, and other analysis results you may have added in InterSpec.</message>
   
   <message id="esf-remove-gps">Remove GPS</message>
-  
+  <message id="esf-remove-gps-tt">Removes the GPS coordinates from the output file.</message>
+
   <!-- Status text -->
   <message id="esf-not-applicable">Not Applicable</message>
   <message id="esf-none-available">None Available</message>

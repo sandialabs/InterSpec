@@ -949,7 +949,9 @@ namespace ExportSpecFileTool_imp
         
 #if( USE_QR_CODES )
       case SpecUtils::SaveSpectrumAsType::Uri:
-        assert( 0 );
+        // QR-code export normally goes through `handleGenerateQrCode()` (the download/export
+        //  button is hidden for this format), so this path shouldnt be reachable through the
+        //  GUI - but keep the fallback of writing a single-record URI, just in case.
         measurement->write_uri( output, 1, 0x0 );
       break;
 #endif
@@ -1015,7 +1017,7 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
                    Wt::WContainerWidget *parent )
 : Wt::WContainerWidget( parent ),
   m_interspec ( viewer ),
-  m_is_specific_file( false ),
+  m_is_specific_file( !!spectrum ),
   m_specific_spectrum( spectrum ),
   m_specific_samples{ samples },
   m_specific_detectors{ detectors },
@@ -1328,14 +1330,18 @@ void ExportSpecFileTool::init()
   m_sumBackToSingleRecord = new WCheckBox( WString::tr("esf-sum-back-to-single-record"), m_optionsHolder );
   m_sumBackToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = WString::tr("esf-sum-back-to-single-record-tt");
-  HelpSystem::attachToolTipOn( m_sumForeToSingleRecord, tooltip, true,
+  HelpSystem::attachToolTipOn( m_sumBackToSingleRecord, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumBackToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumBackToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
-  
+
   m_sumSecoToSingleRecord = new WCheckBox( WString::tr("esf-sum-sec-to-single-record"), m_optionsHolder );
   m_sumSecoToSingleRecord->addStyleClass( "CbNoLineBreak" );
+  tooltip = WString::tr("esf-sum-sec-to-single-record-tt");
+  HelpSystem::attachToolTipOn( m_sumSecoToSingleRecord, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_sumSecoToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumSecoToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
@@ -1379,6 +1385,12 @@ void ExportSpecFileTool::init()
   
   m_excludeGpsInfo = new WCheckBox( WString::tr("esf-remove-gps"), m_optionsHolder );
   m_excludeGpsInfo->addStyleClass( "CbNoLineBreak" );
+  tooltip = WString::tr("esf-remove-gps-tt");
+  HelpSystem::attachToolTipOn( m_excludeGpsInfo, tooltip, true,
+                              HelpSystem::ToolTipPosition::Right,
+                              HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  m_excludeGpsInfo->checked().connect( this, &ExportSpecFileTool::handleExcludeGpsInfoChanged );
+  m_excludeGpsInfo->unChecked().connect( this, &ExportSpecFileTool::handleExcludeGpsInfoChanged );
 
 #if( USE_QR_CODES )
   m_lossless_qr_cb = new WCheckBox( WString::tr("esf-lossless-qr"), m_optionsHolder );
@@ -2840,6 +2852,12 @@ void ExportSpecFileTool::handleIncludeInterSpecInfoChanged()
 }//void handleIncludeInterSpecInfoChanged()
 
 
+void ExportSpecFileTool::handleExcludeGpsInfoChanged()
+{
+  scheduleAddingUndoRedo();
+}//void handleExcludeGpsInfoChanged()
+
+
 std::shared_ptr<const SpecMeas> ExportSpecFileTool::generate_file_to_save(
                                        const std::shared_ptr<const SpecMeas> &start_spec,
                                        const SpecUtils::SaveSpectrumAsType save_type,
@@ -3657,7 +3675,7 @@ void ExportSpecFileTool::updateUndoRedo()
         shared_ptr<const string> state_str = undo ? prev_state : curr_state;
         if( !export_window || !state_str || state_str->empty() )
           throw runtime_error( "No export dialog, or no state avaialable" );
-        export_window->handleAppUrl( *prev_state );
+        export_window->handleAppUrl( *state_str );
       }catch( std::exception &e )
       {
         string msg = "Error executing undo/redo step for Spectrum File Export tool: " + string(e.what());
