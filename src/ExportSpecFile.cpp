@@ -1004,7 +1004,8 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_lossless_qr_cb( nullptr ),
 #endif
   m_resource( nullptr ),
-  m_last_state_uri{}
+  m_last_state_uri{},
+  m_restoring_state( false )
 {
   init();
 }//ExportSpecFileTool()
@@ -1055,7 +1056,8 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_lossless_qr_cb( nullptr ),
 #endif
   m_resource( nullptr ),
-  m_last_state_uri{}
+  m_last_state_uri{},
+  m_restoring_state( false )
 {
   init();
 }//
@@ -2372,7 +2374,8 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_resource->suggestFileName( filename );
   }// End update suggested spectrum file name
   
-  if( !m_dispForeSamples->isChecked()
+  if( !m_restoring_state
+     && !m_dispForeSamples->isChecked()
      && !m_dispBackSamples->isChecked()
      && !m_dispSecondSamples->isChecked()
      && !m_customSamples->isChecked()
@@ -3745,7 +3748,16 @@ void ExportSpecFileTool::handleAppUrl( std::string query_str )
   map<string,string> parts = AppUtils::query_str_key_values( query_str );
   if( !parts.count("V") || (parts["V"] != "1") )
     throw runtime_error( "fromAppUrl: missing or invalid 'V'" );
-  
+
+  // Suppress default-selection forcing in refreshSampleAndDetectorOptions() while we
+  //  restore the state (the guard resets the flag even if an exception is thrown).
+  struct RestoreFlagGuard
+  {
+    bool &m_flag;
+    explicit RestoreFlagGuard( bool &flag ) : m_flag( flag ) { m_flag = true; }
+    ~RestoreFlagGuard() { m_flag = false; }
+  } restore_guard( m_restoring_state );
+
   
   auto find_spec = [this]( SpecUtils::SpectrumType type ) -> int {
     auto spec = m_interspec->measurment(type);
@@ -3954,39 +3966,45 @@ void ExportSpecFileTool::handleAppUrl( std::string query_str )
     }//if( m_detectorFilterCbs )
   }//if( parts.count("DETECTORS") ) / else
   
+  // Set all the (mutually exclusive) option checkboxes from the URL first, and only then
+  //  run their change-handlers, in a fixed order - previously the handlers ran interleaved
+  //  with setting the checkboxes (and handleSumSamplesPerDetChanged() never ran at all), so
+  //  the mutual-exclusion side-effects depended on ordering and could drop a set flag.
   if( m_sumAllToSingleRecord )
     m_sumAllToSingleRecord->setChecked( parts.count("SUMALLTOSINGLERECORD") );
-  handleSumToSingleRecordChanged();
-  
+
   if( m_sumForeToSingleRecord )
     m_sumForeToSingleRecord->setChecked( parts.count("SUMFORETOSINGLERECORD") );
-  
+
   if( m_sumBackToSingleRecord )
     m_sumBackToSingleRecord->setChecked( parts.count("SUMBACKTOSINGLERECORD") );
-  
+
   if( m_sumSecoToSingleRecord )
     m_sumSecoToSingleRecord->setChecked( parts.count("SUMSECOTOSINGLERECORD") );
 
-  handleSumTypeToSingleRecordChanged();
-  
   if( m_backSubFore )
     m_backSubFore->setChecked( parts.count("BACKSUBFORE") );
 
-  handleBackSubForeChanged();
-  
   if( m_sumDetsPerSample )
     m_sumDetsPerSample->setChecked( parts.count("SUMDETSPERSAMPLE") );
-  
+
   if( m_sumSamplesPerDets )
     m_sumSamplesPerDets->setChecked( parts.count("SUMSAMPLEPERDET") );
-  
-  handleSumDetPerSampleChanged();
-  
+
   if( m_excludeInterSpecInfo )
     m_excludeInterSpecInfo->setChecked( parts.count("NOINTERSPECINFO") );
-  
+
   if( m_excludeGpsInfo )
     m_excludeGpsInfo->setChecked( parts.count("NOGPS") );
+
+  handleSumToSingleRecordChanged();
+  handleSumTypeToSingleRecordChanged();
+  handleBackSubForeChanged();
+  handleSumDetPerSampleChanged();
+  handleSumSamplesPerDetChanged();
+
+  m_restoring_state = false;
+  refreshSampleAndDetectorOptions();
 }//void handleAppUrl( std::string query_str )
 
 

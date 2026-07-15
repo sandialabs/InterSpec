@@ -349,6 +349,12 @@ protected:
   
   /** For undo/redo purposes, we will keep track of last state as a URL. */
   std::shared_ptr<const std::string> m_last_state_uri;
+
+  /** True while `handleAppUrl(...)` is restoring the tool state, so intermediate
+   `refreshSampleAndDetectorOptions()` calls dont force default selections that would
+   clobber the state being restored.
+   */
+  bool m_restoring_state;
 };//class ExportSpecFileTool
 
 
