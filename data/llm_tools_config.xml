@@ -1281,7 +1281,7 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Activity/Shielding Fit Tools (ActivityFit Agent Only) -->
 
   <Tool name="activity_fit">
-    <Description>Perform activity and shielding fitting using the current application state (GUI configuration). Requires the Activity/Shielding fit GUI to be open. Uses existing sources, shielding, and configuration from the GUI. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions.</Description>
+    <Description>Perform activity and shielding fitting using the current application state (GUI configuration). Requires the Activity/Shielding fit GUI to be open. Uses existing sources, shielding, and configuration from the GUI. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1300,7 +1300,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="activity_fit_one_off">
-    <Description>Perform a one-off activity and shielding fit with full specification. Does not use or modify GUI state. Ideal for custom fits where you want complete control over all parameters. Requires specifying distance, geometry, and peak energies. Can optionally specify sources and shielding, otherwise sources are auto-generated from peak nuclide assignments. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions.</Description>
+    <Description>Perform a one-off activity and shielding fit with full specification. Does not use or modify GUI state. Ideal for custom fits where you want complete control over all parameters. Requires specifying distance, geometry, and peak energies. Can optionally specify sources and shielding, otherwise sources are auto-generated from peak nuclide assignments. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {

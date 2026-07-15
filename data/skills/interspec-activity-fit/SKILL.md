@@ -192,6 +192,28 @@ Isotopes of the same element typically share age (e.g., U-235 and U-238). Use `s
 
 Check per-peak observed vs expected counts. If low-energy peaks are under-predicted, shielding may be needed.
 
+### Shielding Atomic-Number Check (`pull_trend_diagnostic`)
+
+The fit result includes a `pull_trend_diagnostic` object that analyzes the trend of per-peak
+residuals vs energy to judge the modeled shielding's effective atomic number (AN). Its
+`atomic_number_status` field is **always present** and is one of:
+
+| `atomic_number_status` | Meaning |
+|---|---|
+| `consistent` | The data **could** resolve an AN error of this size, and none was found → the shielding's effective AN is consistent with the data. |
+| `too_low` | Residuals indicate the modeled shielding's effective AN is likely too low (true shielding is heavier). |
+| `too_high` | Residuals indicate the modeled shielding's effective AN is likely too high (true shielding is lighter). |
+| `not_determinable` | The data **lack the statistical power** to resolve the AN (e.g. no low-energy high-significance peaks, or no shielding in the model). This is inconclusive — **do NOT** treat it as "AN is correct". |
+
+Key distinction: `consistent` vs `not_determinable` is about whether the data even *had power* to
+judge AN. Only `consistent` supports the AN; `not_determinable` says nothing either way.
+
+Other fields: `conclusion` (also flags `shielding_amount_too_low`/`shielding_amount_too_high` when
+the *amount* rather than AN looks wrong, or `other_model_inconsistency`), `conclusion_message`
+(plain-English summary), `conclusion_confidence`, `data_can_resolve_atomic_number`, and supporting
+stats (`slope_t`, `curvature_t`, `reduced_chi2`). When `available` is `false` the diagnostic could
+not run and `atomic_number_status` is `not_determinable`.
+
 ## Report to User
 
 Provide:
@@ -199,6 +221,7 @@ Provide:
 - Age with uncertainty if fitted (e.g., "20 +/- 3 years")
 - Shielding parameters if fitted (e.g., "0.5 +/- 0.1 cm Fe")
 - Fit quality (chi2/DOF, number of peaks used)
+- Shielding atomic-number check (from `pull_trend_diagnostic.atomic_number_status`): if `too_low`/`too_high`, tell the user the modeled shielding material's atomic number may be wrong (consider a different material); if `consistent`, note the effective atomic number is supported by the data; if `not_determinable`, do not make any claim about the AN.
 - Any warnings or recommendations
 
 ## Common Scenarios

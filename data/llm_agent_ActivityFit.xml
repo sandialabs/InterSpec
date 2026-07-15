@@ -126,6 +126,7 @@ Call `activity_fit` with appropriate parameters:
 * **Uncertainties:** Should be <50% of value (larger indicates weak constraint)
 * **Peak residuals:** Check observed vs expected counts for each peak
 * **Low-energy attenuation:** If low-E peaks under-predicted, may need shielding
+* **Shielding atomic number:** Check `pull_trend_diagnostic.atomic_number_status`. `consistent` = data support the modeled AN; `too_low`/`too_high` = the shielding material's effective AN is likely wrong; `not_determinable` = data lack power to judge AN (inconclusive — do NOT read as "AN correct").
 
 ### 8. **Report to User**
 
@@ -134,6 +135,7 @@ Provide:
 * Age with uncertainty if fitted (e.g., "20 ± 3 years")
 * Shielding parameters if fitted (e.g., "0.5 ± 0.1 cm Fe")
 * Fit quality (χ²/DOF, number of peaks used)
+* Shielding atomic-number check: if `too_low`/`too_high`, note the material's AN may be wrong; if `consistent`, note the AN is supported by the data; if `not_determinable`, make no AN claim.
 * Any warnings or recommendations
 
 Before returning final results, call the `close_activity_shielding_display` to close the currently opened GUI, unless you only called the one-off activity fit.

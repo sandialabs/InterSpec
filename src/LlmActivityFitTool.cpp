@@ -26,6 +26,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/ShieldingSourceFitPlot.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
@@ -2638,6 +2639,114 @@ nlohmann::json fit_results_to_comprehensive_json(
     }//for( peak comparisons )
   }//if( peak_comparisons )
 
+  // 6. Pull-trend / atomic-number diagnostic.
+  //   A wrong shielding model leaves a trend in the per-peak pulls vs energy: a slope indicates the
+  //   wrong shielding *amount*, a low-energy curvature the wrong effective atomic number (AN).  We
+  //   ALWAYS report an AN-consistency status, distinguishing "the data could not resolve AN"
+  //   (not_determinable) from "AN is consistent with the data".  See ShieldSourcePullTrend.h.
+  {
+    using namespace ShieldSourcePullTrend;
+
+    json &trend_json = result["pull_trend_diagnostic"];
+    const std::shared_ptr<const TrendResult> &trend = fit_results->pull_trend;
+
+    if( !trend )
+    {
+      // Diagnostic could not run (degenerate fit, no shielding in the model, or it threw).
+      trend_json["available"] = false;
+      trend_json["atomic_number_status"] = "not_determinable";
+      trend_json["atomic_number_status_explanation"]
+        = "The pull-trend diagnostic could not be run for this fit, so whether the shielding's"
+          " effective atomic number is consistent with the data cannot be judged.";
+    }else
+    {
+      trend_json["available"] = true;
+
+      // Atomic-number consistency status - always present.  There is no dedicated "consistent"
+      // conclusion enum; consistency is inferred from "the data could resolve an AN error, yet
+      // none was found".  A null result with low discrimination power is inconclusive, NOT
+      // confirmation the AN is correct.
+      const char *an_status = "not_determinable";
+      const char *an_explanation = nullptr;
+      switch( trend->conclusion )
+      {
+        case TrendConclusion::AtomicNumberTooLow:
+          an_status = "too_low";
+          an_explanation = "Peak residuals indicate the shielding's effective atomic number is"
+                           " likely too low (modeled material is lighter than the true shielding).";
+          break;
+
+        case TrendConclusion::AtomicNumberTooHigh:
+          an_status = "too_high";
+          an_explanation = "Peak residuals indicate the shielding's effective atomic number is"
+                           " likely too high (modeled material is heavier than the true shielding).";
+          break;
+
+        case TrendConclusion::NoConclusion:
+        case TrendConclusion::ShieldingAmountTooLow:
+        case TrendConclusion::ShieldingAmountTooHigh:
+        case TrendConclusion::OtherModelInconsistency:
+          if( trend->anDiscriminable )
+          {
+            an_status = "consistent";
+            an_explanation = "The data could resolve an effective-atomic-number error of this size,"
+                             " and none was seen, so the shielding's effective atomic number is"
+                             " consistent with the data.";
+          }else
+          {
+            an_status = "not_determinable";
+            an_explanation = "The data do not have the power to resolve the shielding's effective"
+                             " atomic number, so AN consistency cannot be judged (a null result"
+                             " here is inconclusive, not confirmation the AN is correct).";
+          }
+          break;
+      }//switch( trend->conclusion )
+
+      trend_json["atomic_number_status"] = an_status;
+      trend_json["atomic_number_status_explanation"] = an_explanation;
+      trend_json["data_can_resolve_atomic_number"] = trend->anDiscriminable;
+      trend_json["atomic_number_discrimination_power"] = trend->anDiscriminationT;
+
+      // Broader trend conclusion (shielding amount / other), from the same TrendResult.
+      const char *conclusion_str = "none";
+      switch( trend->conclusion )
+      {
+        case TrendConclusion::NoConclusion:            conclusion_str = "none";                       break;
+        case TrendConclusion::ShieldingAmountTooLow:   conclusion_str = "shielding_amount_too_low";   break;
+        case TrendConclusion::ShieldingAmountTooHigh:  conclusion_str = "shielding_amount_too_high";  break;
+        case TrendConclusion::AtomicNumberTooLow:      conclusion_str = "atomic_number_too_low";      break;
+        case TrendConclusion::AtomicNumberTooHigh:     conclusion_str = "atomic_number_too_high";     break;
+        case TrendConclusion::OtherModelInconsistency: conclusion_str = "other_model_inconsistency";  break;
+      }//switch( trend->conclusion )
+
+      trend_json["conclusion"] = conclusion_str;
+
+      if( trend->conclusion != TrendConclusion::NoConclusion )
+      {
+        const char *confidence_str = "weak";
+        switch( trend->confidence )
+        {
+          case TrendConfidence::Tentative: confidence_str = "tentative"; break;
+          case TrendConfidence::Weak:      confidence_str = "weak";      break;
+          case TrendConfidence::Moderate:  confidence_str = "moderate";  break;
+          case TrendConfidence::Strong:    confidence_str = "strong";    break;
+        }//switch( trend->confidence )
+
+        trend_json["conclusion_confidence"] = confidence_str;
+
+        const std::string conclusion_msg = conclusion_report_text( *trend );
+        if( !conclusion_msg.empty() )
+          trend_json["conclusion_message"] = conclusion_msg;
+      }//if( a conclusion was reached )
+
+      // Supporting statistics, for transparency into the call.
+      trend_json["slope_t"] = trend->slopeT;
+      trend_json["curvature_t"] = trend->curvatureT;
+      trend_json["reduced_chi2"] = trend->redChi2;
+      trend_json["num_points_used"] = static_cast<int>( trend->numPointsUsed );
+    }//if( !trend ) / else
+  }//end pull-trend / atomic-number diagnostic
+
   return result;
 }//fit_results_to_comprehensive_json(...)
 
@@ -2692,6 +2801,7 @@ nlohmann::json executeActivityFit(
     result["sources"] = formatted_results["sources"];
     result["shielding"] = formatted_results["shielding"];
     result["solution_to_peak_comparison"] = formatted_results["solution_to_peak_comparison"];
+    result["pull_trend_diagnostic"] = formatted_results["pull_trend_diagnostic"];
 
     // Keep legacy fields for backward compatibility
     result["chi2"] = formatted_results["fit_quality"]["chi2"];
@@ -3336,6 +3446,7 @@ nlohmann::json executeActivityFitOneOff(
   result["sources"] = fit_json["sources"];
   result["shielding"] = fit_json["shielding"];
   result["solution_to_peak_comparison"] = fit_json["solution_to_peak_comparison"];
+  result["pull_trend_diagnostic"] = fit_json["pull_trend_diagnostic"];
 
   // Keep legacy fields for backward compatibility
   result["chi2"] = fit_json["fit_quality"]["chi2"];
