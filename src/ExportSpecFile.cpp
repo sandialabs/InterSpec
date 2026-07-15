@@ -1004,8 +1004,7 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_lossless_qr_cb( nullptr ),
 #endif
   m_resource( nullptr ),
-  m_last_state_uri{},
-  m_restoring_state( false )
+  m_last_state_uri{}
 {
   init();
 }//ExportSpecFileTool()
@@ -1056,8 +1055,7 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_lossless_qr_cb( nullptr ),
 #endif
   m_resource( nullptr ),
-  m_last_state_uri{},
-  m_restoring_state( false )
+  m_last_state_uri{}
 {
   init();
 }//
@@ -2103,7 +2101,10 @@ ExportSpecFileTool::ExportOptionsAvailability ExportSpecFileTool::applicable_exp
     dets_present += present;
   }//for( const string &det : spec->detector_names() )
 
-  avail.filter_detectors = (dets_present > 1);
+  // Filtering is a no-op unless there is more than one gamma detector (see
+  //  `currentExportOptions()`), so dont offer it in that case - e.g., for a file with a
+  //  single gamma detector plus a neutron-only detector.
+  avail.filter_detectors = ((dets_present > 1) && (spec->gamma_detector_names().size() > 1));
 
   avail.sum_all = ((max_records >= 2) && (num_records > 1));
   avail.sum_dets_per_sample = ((max_records > 2) && multi_sample && mult_dets_per_sample);
@@ -2382,15 +2383,9 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_resource->suggestFileName( filename );
   }// End update suggested spectrum file name
   
-  if( !m_restoring_state
-     && !m_dispForeSamples->isChecked()
-     && !m_dispBackSamples->isChecked()
-     && !m_dispSecondSamples->isChecked()
-     && !m_customSamples->isChecked()
-     && !m_allSamples->isChecked() )
-  {
-    m_allSamples->setChecked( true );
-  }
+  // Note: the default of selecting all samples, when nothing else is selected, is applied
+  //  after the sample-selection reconciliation below - not here - since that reconciliation
+  //  can itself end up un-checking things.
   
   
   // Rebuild the detector-filter checkboxes (keeping any previous checked states);
@@ -2478,6 +2473,19 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     m_allSamples->setChecked( false );
   }
 
+  // Make sure some way of selecting samples is checked; default to all samples.
+  //  This must come after the reconciliation above, since that can un-check the last
+  //  checked option (e.g., custom-sample text that resolves to no samples), and
+  //  `selected_samples(...)` requires at least one selection.
+  if( !m_dispForeSamples->isChecked()
+     && !m_dispBackSamples->isChecked()
+     && !m_dispSecondSamples->isChecked()
+     && !m_customSamples->isChecked()
+     && !m_allSamples->isChecked() )
+  {
+    m_allSamples->setChecked( true );
+  }
+
 
   // Now compute which options are applicable, and apply the visibilities.
   //  Note: `currentExportOptions()` reads `isVisible()` of the checkboxes, which at this
@@ -2515,7 +2523,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   const bool use_back_disp = (m_dispBackSamples->isVisible() && m_dispBackSamples->isChecked());
 
   const set<int> samplesToUse = currentlySelectedSamples();
-  const vector<string> detsToUse = spec ? currentlySelectedDetectors() : vector<string>{};
+  const vector<string> detsToUse = currentlySelectedDetectors();
 
   size_t num_sample_showing = 0, num_option_showing = 0;
   for( const auto w : m_samplesHolder->children() )
@@ -3022,11 +3030,6 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generate_file_to_save(
     }//for( SpecUtils::SourceType type : src_types )
   }//if( fore_plus_back_files )
 
-  // Two-record formats (e.g. QR codes) can only hold two spectra; if more sample-sets than
-  //  that were selected (e.g. foreground + background + secondary all displayed), sum
-  //  everything to a single record (this is also what the GUI status text tells the user).
-  sumAll |= ((max_records == 2) && (samplesToSum.size() > 2));
-
   set<set<int>> peaks_to_remove;
   map<set<int>,shared_ptr<const deque<shared_ptr<const PeakDef>>>> peaks_to_set;
   set<shared_ptr<const SpecUtils::Measurement>> meas_to_remove;
@@ -3501,6 +3504,14 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generate_file_to_save(
   }
   
   
+  // Formats that hold at most two spectra (e.g. QR codes) cant write what we have, if we
+  //  ended up with more records than that - so sum everything together (which is what the
+  //  GUI status text tells the user will happen).  Checking the actual number of records
+  //  covers every way of ending up with too many (e.g. foreground + background + secondary
+  //  all displayed, or a single sample with three or more detectors).
+  if( (max_records == 2) && (answer->num_measurements() > 2) )
+    sumAll = true;
+
   // If only a single measurement is left, it is already the record we want to write out
   //  (summing a lone record would just discard its meta-information), so only sum if
   //  there are multiple measurements.
@@ -3770,14 +3781,6 @@ void ExportSpecFileTool::handleAppUrl( std::string query_str )
   if( !parts.count("V") || (parts["V"] != "1") )
     throw runtime_error( "fromAppUrl: missing or invalid 'V'" );
 
-  // Suppress default-selection forcing in refreshSampleAndDetectorOptions() while we
-  //  restore the state (the guard resets the flag even if an exception is thrown).
-  struct RestoreFlagGuard
-  {
-    bool &m_flag;
-    explicit RestoreFlagGuard( bool &flag ) : m_flag( flag ) { m_flag = true; }
-    ~RestoreFlagGuard() { m_flag = false; }
-  } restore_guard( m_restoring_state );
 
   
   auto find_spec = [this]( SpecUtils::SpectrumType type ) -> int {
@@ -3923,13 +3926,7 @@ void ExportSpecFileTool::handleAppUrl( std::string query_str )
   }
 
   handleSamplesChanged();
-  
-  vector<string> dets;
-  if( m_is_specific_file )
-    dets = m_specific_detectors;
-  else if( m_filterDetector && m_filterDetector->isVisible() && m_filterDetector->isChecked() )
-    dets = currentlySelectedDetectors();
-  
+
   if( parts.count("DETECTORS") )
   {
     if( m_filterDetector )
@@ -4023,9 +4020,6 @@ void ExportSpecFileTool::handleAppUrl( std::string query_str )
   handleBackSubForeChanged();
   handleSumDetPerSampleChanged();
   handleSumSamplesPerDetChanged();
-
-  m_restoring_state = false;
-  refreshSampleAndDetectorOptions();
 }//void handleAppUrl( std::string query_str )
 
 

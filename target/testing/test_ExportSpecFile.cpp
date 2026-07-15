@@ -206,9 +206,16 @@ shared_ptr<SpecMeas> create_synthetic_file( const vector<SynthSample> &samples )
 }//create_synthetic_file(...)
 
 
-/** Synthesizes the N42 test-file variants into `<testfiledir>/ExportSpecFile/`, overwriting
- on each run.  Files are left on disk (not temp files) so they can be manually loaded in the
- InterSpec GUI to reproduce/inspect export behavior.  Returns the directory path.
+/** Makes sure the N42 test-file variants exist in `<testfiledir>/ExportSpecFile/`, creating
+ any that are missing.  Returns the directory path.
+
+ These files are checked into the repository (rather than being temp files) so they can be
+ manually loaded in the InterSpec GUI to reproduce/inspect export behavior - so we only write
+ the ones that arent already there.  Note `SpecFile::write_2012_N42(...)` stamps the current
+ time into the file, so re-writing an existing file would leave the working tree dirty after
+ every test run.
+
+ If you change how these files are made, delete them and re-run this test to re-create them.
  */
 string ensure_synthetic_files()
 {
@@ -227,6 +234,9 @@ string ensure_synthetic_files()
 
   const auto write_file = [&dir]( const shared_ptr<SpecMeas> &meas, const string &name ){
     const string path = SpecUtils::append_path( dir, name );
+    if( SpecUtils::is_file(path) )
+      return;
+
     ofstream out( path.c_str(), ios::binary );
     BOOST_REQUIRE( out.is_open() );
     BOOST_REQUIRE( meas->write_2012_N42( out ) );
@@ -659,12 +669,24 @@ BOOST_AUTO_TEST_CASE( generateFileCombinations )
     const shared_ptr<const SpecUtils::Measurement> s3 = fore_back->measurement( 3, "Aa1" );
     BOOST_REQUIRE( s1 && s2 && s3 && rec->gamma_counts() );
     const vector<float> &result_counts = *rec->gamma_counts();
+
+    // Check the peak region (the Gaussian is centered at channel ~220.6) as well as the
+    //  flat continuum - a check that only samples the continuum would pass even if the
+    //  wrong record had been subtracted.
+    set<size_t> channels_to_check{ 0, 100, 210, 218, 220, 221, 223, 230, 500, 1000 };
     for( size_t ch = 0; ch < result_counts.size(); ch += 100 )
+      channels_to_check.insert( ch );
+
+    for( const size_t ch : channels_to_check )
     {
+      BOOST_REQUIRE( ch < result_counts.size() );
       const float expected = (*s1->gamma_counts())[ch] + (*s2->gamma_counts())[ch]
                              - (*s3->gamma_counts())[ch];
       BOOST_CHECK_CLOSE( result_counts[ch], expected, 1.0e-2 );
     }
+
+    // Sanity: the peak channel must actually carry signal, else the above proves nothing
+    BOOST_CHECK_GT( (*s1->gamma_counts())[220], 1.5f*(*s1->gamma_counts())[0] );
 
     const SpecMeas &const_result = *result;
     const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks
@@ -717,11 +739,27 @@ BOOST_AUTO_TEST_CASE( generationRecordCountAndSourceTypes )
     const shared_ptr<const SpecUtils::Measurement> s1 = spec->measurement( 1, "Aa1" );
     const shared_ptr<const SpecUtils::Measurement> s2 = spec->measurement( 2, "Aa1" );
     BOOST_REQUIRE( rec && rec->gamma_counts() && s1 && s2 );
+
+    // Include the peak region (Gaussian centered at channel ~220.6): sampling only the
+    //  flat continuum would pass even if the peak had been subtracted wrongly.  The two
+    //  samples have different peak areas (amplitude scales with sample number), so the
+    //  difference is non-zero there, and the old double-counting bug is caught.
+    set<size_t> channels_to_check{ 0, 100, 210, 218, 220, 221, 223, 230, 500, 1000 };
     for( size_t ch = 0; ch < rec->gamma_counts()->size(); ch += 50 )
+      channels_to_check.insert( ch );
+
+    for( const size_t ch : channels_to_check )
     {
+      BOOST_REQUIRE( ch < rec->gamma_counts()->size() );
       const float expected = (*s1->gamma_counts())[ch] - (*s2->gamma_counts())[ch];
-      BOOST_CHECK_CLOSE( (*rec->gamma_counts())[ch], expected, 1.0e-2 );
+      if( fabs(expected) < 1.0e-4 )
+        BOOST_CHECK_SMALL( (*rec->gamma_counts())[ch], 1.0e-3f );
+      else
+        BOOST_CHECK_CLOSE( (*rec->gamma_counts())[ch], expected, 1.0e-2 );
     }
+
+    // Sanity: the peak channel must actually carry signal, else the above proves nothing
+    BOOST_CHECK_GT( (*s1->gamma_counts())[220], 1.5f*(*s1->gamma_counts())[0] );
   }
 
   // Summing detectors per sample keeps the (uniform) source type of the constituents
@@ -914,6 +952,29 @@ BOOST_FIXTURE_TEST_CASE( exportDisplayedForegroundToSpeKeepsPeaks, InterSpecTest
 }//BOOST_FIXTURE_TEST_CASE( exportDisplayedForegroundToSpeKeepsPeaks, ... )
 
 
+/** A state URL that selects no sample numbers at all (which `encodeStateToUrl()` can emit,
+ e.g. if custom-sample text resolved to nothing) must restore to the default of all samples,
+ and must not leave the tool with nothing selected - `selected_samples(...)` asserts on that.
+ */
+BOOST_FIXTURE_TEST_CASE( restoreUrlWithNoSampleSelection, InterSpecTestFixture )
+{
+  const shared_ptr<SpecMeas> fore = loadForeground( "13samples_1det_peaks_on_8.n42" );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(fore->sample_numbers().size()), 13 );
+
+  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+
+  // No DISPFORE / ALLSAMPLES / SAMPLES key
+  tool->handleAppUrl( "V=1&FORE=1&FORMAT=N42-2012" );
+
+  // Should have fallen back to all samples, and be able to generate a file
+  BOOST_CHECK( tool->currentlySelectedSamples() == fore->sample_numbers() );
+
+  const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
+  BOOST_REQUIRE( result );
+  BOOST_CHECK_EQUAL( static_cast<int>(result->num_measurements()), 13 );
+}//BOOST_FIXTURE_TEST_CASE( restoreUrlWithNoSampleSelection, ... )
+
+
 /** Summing all samples to a single record: peaks keyed on the full sample set must survive
  (re-keyed to sample 1); peaks keyed on a subset (e.g. just sample 8) are - by design - not
  carried over to the sum (exact-match peak-key semantics).
@@ -1057,9 +1118,10 @@ BOOST_FIXTURE_TEST_CASE( exportGappedSampleNumbers, InterSpecTestFixture )
   const shared_ptr<SpecMeas> fore = loadForeground( "gapped_samples_peaks_on_9.n42" );
   BOOST_REQUIRE_EQUAL( static_cast<int>(fore->sample_numbers().size()), 5 );
 
-  // InterSpec-written N42 files must keep their (gapped) sample numbers on load,
-  //  so the peak-map key still refers to valid samples
-  BOOST_CHECK( fore->sample_numbers().count(9) );
+  // InterSpec-written N42 files must keep their (gapped) sample numbers on load, so the
+  //  peak-map key still refers to valid samples.  REQUIRE, not CHECK: the rest of this
+  //  test displays sample 9, which doesnt exist if this fails.
+  BOOST_REQUIRE( fore->sample_numbers().count(9) );
 
   const set<int> peak_key = loadedPeakKey( fore );
   BOOST_REQUIRE_EQUAL( static_cast<int>(peak_key.size()), 1 );

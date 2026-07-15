@@ -78,7 +78,7 @@ The rest need real files (suggestions given) — these are the shapes with no un
 | **S13** | NaI, <2075 channels (1024) | any NaI file | QR is a **2-record** format |
 | **S14** | Differing energy cal between samples/detectors | multi-det file w/ per-det cal | Summing rebins; peaks may no longer line up |
 | **S15** | Differing channel counts between records | mixed-detector file | `sum_measurements` may throw → error message, no crash |
-| **S16** | Has Calibration / IntrinsicActivity source types | some handheld files | Fore+Back mode asserts these are absent (`assert(0)` in debug!) |
+| **S16** | Has Calibration / IntrinsicActivity source types | some handheld files | Fore+Back mode re-labels every record's source type (`currentlySelectedFile()`), so these types should not reach generation |
 | **S17** | Two separate files: fore from A, background from B | load two files | Fore+Back checkbox path (`currentlySelectedFile()` synthesizes a file) |
 | **S18** | Same file loaded as both fore and background | load once, assign both | Fore+Back checkbox should **not** appear (not a unique file) |
 | **S19** | Peaks fit on several different sample sets | fit peaks on 2 different samples | Exact-match peak carry; only matching set travels |
@@ -107,6 +107,14 @@ Every downloaded file should be re-opened in InterSpec (or inspected as text for
 ## 4. Option-visibility matrix
 
 Open the dialog for each shape and check the checkbox set. `-` = must be hidden.
+
+**Preconditions this table assumes** — without them several rows won't match:
+- The dialog opens with **"Disp. Foreground" checked**, and InterSpec displays a **single**
+  sample for these files. Rows mentioning "Sum samples per det." / "Sum Fore to single record"
+  need **more than one sample selected** — either check "All Samples", or display a sample
+  range (Spectrum Files tab → drag the sample slider) first.
+- "Sum Back to single record" needs a **background with >1 record displayed** — none of the
+  `[T]` fixtures provide that; use a real portal/passthrough file (S8).
 
 | Shape | N-record (N42) | 2-record (QR@1024ch) | 1-record (SPE/CHN) | HTML |
 |---|---|---|---|---|
@@ -155,7 +163,7 @@ must **hide** the per-type sums.
 | Sum to single record | S4, All Samples, N42, Sum to single | 1 record; live = 10×300 s (5 samples × 2 dets) |
 | Sum det. per sample | S4, All Samples, N42 | 5 records (one/sample); live = 600 s each; **source types preserved** |
 | Sum samples per det. | S4, All Samples, N42 | 2 records (one/detector); live = 1500 s each |
-| Mutual exclusion | check each sum box in turn | Checking one un-checks the others (all 5 are mutually exclusive) |
+| Mutual exclusion | check each sum box in turn | "Sum to single record", "Background subtract", "Sum det. per sample" and "Sum samples per det." are mutually exclusive with each other and with the per-type sums. **But "Sum Fore/Back/Sec to single record" are designed to coexist** — checking one of those must not un-check the other two |
 | Forced sum, single record | S3, display sample 8, CHN/SPE/CNF/TKA | **No summing artifact** — faithful copy (this was the reported bug) |
 | Sum with mixed source types | S7, All Samples, Sum det. per sample | Background sample keeps `Background` source type |
 
@@ -185,7 +193,7 @@ must **hide** the per-type sums.
 | Case | Setup | Expected |
 |---|---|---|
 | Remove InterSpec info | S3 + peaks, N42, checked | Output has **no** peaks, no DRF, no shielding/rel-act model |
-| Remove InterSpec info hidden | any non-N42 format | Checkbox hidden (and stripping still applied at write-time where relevant) |
+| Remove InterSpec info hidden | any non-N42 format | Checkbox hidden. **Note the info is then NOT stripped**: the write-time strip is gated on the (now hidden) checkbox, so e.g. an SPE export always carries its peak CSV. Only N42 can strip |
 | Remove GPS | S9, checked | No coordinates in output; **also verify a 1-record GPS file** (this disables the return-as-is fast path) |
 | GPS handler | S9, toggle Remove GPS, then Undo | Toggling now registers an undo step (it did not before) |
 
@@ -234,3 +242,8 @@ Each of these was a real, reproducible bug — worth an explicit pass:
   summed data. (Only background-subtraction refits continua.)
 - Peaks are dropped when the exported sample set differs from the fit set (exact-match by design).
 - HTML export ignores every option.
+- Non-N42 formats cannot strip InterSpec info (the option is N42-only), so e.g. SPE exports always
+  carry their peak CSV.
+- Neutron-only records in an **InterSpec-written** N42 are no longer merged into their gamma
+  records on load: SpecUtils gates that merge on the same flag that preserves sample numbers,
+  and preserving sample numbers (hence peaks) won. See the comment in `SpecMeas::cleanup_after_load`.
