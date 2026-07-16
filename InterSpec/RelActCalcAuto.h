@@ -673,13 +673,21 @@ struct RelEffCurveInput
   std::vector<ActRatioConstraint> act_ratio_constraints;
 
 
-  /** A constraint on the mass fraction of an nuclide within an element. 
-   
+  /** A constraint on the mass fraction of an nuclide within an element.
+
+   Fixed (lower == upper) constraints pin the fraction exactly; range constraints fit it within
+   [lower, upper] through an exact per-element "sigma-block" reparameterization (see
+   RelActCalc::MassFracBlockSpec in RelActCalc_imp.hpp): the elements total constrained fraction
+   is one hard-bounded parameter, so the constrained sum can never exceed 1, with every in-window
+   position exactly reachable.
+
+   Note: for Plutonium with a Pu242-by-correlation method active, the windows bind the
+   PRE-correction fractions (the correlation correction is applied downstream when reporting).
 
    TODO: currently this constraint only applies to a single Rel. Eff. curve; if you have multiple
           curves with same constraint/nuclide, then each constraint will be applied seperately.
           We should add in a `set<size_t>` that specifies the indexes of all the Rel. Eff. curves
-          that this constraint applies to (if only single curve, then allow it to be empty), and 
+          that this constraint applies to (if only single curve, then allow it to be empty), and
           then move the constraint up a level to the `Options` struct.
   */
   struct MassFractionConstraint
@@ -711,10 +719,14 @@ struct RelEffCurveInput
     must be of a different element.
     (this could be changed in the future, but for the initial implementation, we'll enforce this)
 
-    The lower mass fractions, for a particular element, must sum to less than 1.0.
+    For an element that still has at least one unconstrained nuclide, the constrained lower mass
+    fractions must sum to less than 1.0 (the unconstrained nuclides need a positive mass remainder).
 
-    There must be at least one nuclide for the element that does not have a mass fraction constraint.
-    (this _could_ be relaxed in the future, but for the initial implementation, this is required)
+    ALL of an elements nuclides may be constrained: then the windows must be able to sum to
+    exactly 1 (sum of lowers <= 1 <= sum of uppers), and the elements total relative mass is fit
+    (the first range-constrained nuclides parameter slot carries it - see the sigma-block note on
+    #MassFractionConstraint); if every constraint is fixed, the fractions must sum to 1 and only
+    the element total is fit.
   */
   std::vector<MassFractionConstraint> mass_fraction_constraints;
 
@@ -1593,11 +1605,19 @@ struct RelActAutoSolution
    are for this kind of data).  NaN if it could not be computed. */
   double m_r2 = std::numeric_limits<double>::quiet_NaN();
 
-  /** 2-norm condition number of the (scaled) fit Jacobian, kappa(J) = sigma_max / sigma_min, from the
-   post-fit singular-value decomposition (the same SVD used for the effective-DOF estimate).
+  /** 2-norm condition number of the COLUMN-EQUILIBRATED fit Jacobian,
+   kappa(J~) = sigma_max / sigma_min with J~ = J * diag(1/||col||) (van der Sluis scaling), from the
+   post-fit singular-value decomposition - the same SVD used for the reported covariance
+   (equilibrated truncated pseudo-inverse), the rank-deficiency count, and the effective-DOF
+   estimate, so all four tell one consistent story.
+
+   Equilibration removes the many decades of spread the raw Jacobian gets from unit choices alone
+   (a unit step in an activity parameter moves thousands of Poisson-weighted counts; a nuisance
+   parameter moves O(1)), so this kappa measures GENUINE collinearity/degeneracy, independent of
+   parameter scaling.
 
    Interpretation - how well-determined the fit parameters are / how near the inverted normal matrix
-   (J^T J) is to singular.  Range >= 1.0 (1 = perfectly conditioned); roughly log10(kappa) decimal
+   (J~^T J~) is to singular.  Range >= 1.0 (1 = perfectly conditioned); roughly log10(kappa) decimal
    digits of precision are lost in the solution:
      - <~1e4      : well-conditioned.
      - ~1e5-1e6   : some parameters weakly constrained or strongly correlated.
@@ -1605,7 +1625,8 @@ struct RelActAutoSolution
                     the data; its uncertainty (and any derived enrichment / rel-eff band that depends
                     on it) is unreliable, and the "rank-deficient" warning fires (cf.
                     `m_num_rank_deficient_dirs`).
-     - -> infinity: singular (infinitely many solutions along that direction).
+     - -> infinity: singular (infinitely many solutions along that direction, or a parameter with no
+                    gradient at all - a zero-norm Jacobian column).
    -1.0 if it could not be computed (the SVD failed). */
   double m_jacobian_condition_number = -1.0;
 

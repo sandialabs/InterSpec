@@ -1957,6 +1957,44 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   RelActCalcAuto::Options m_options;
   std::vector<std::vector<NucInputGamma>> m_nuclides; //has same number of entries as `m_options.rel_eff_curves`
   std::vector<RoiRangeChannels> m_energy_ranges;
+
+  /** Per-element mass-fraction constraint block: the exact "sigma-block" reparameterization.
+
+   Each range-constrained (lower < upper) nuclide of the element owns one activity slot; the
+   CARRIER (first range-constrained nuclide, input order) slot holds `t in [0,1]` mapping to the
+   range-constrained TOTAL `sigma = sig_lo + t*(sig_hi - sig_lo)` (a hard Ceres box keeps
+   `fixed_sum + sigma <= 1 - delta` - no throw, no warp), and the remaining slots hold `g_k in [0,1]`
+   distributing `sigma` among the windows (see RelActCalc::decode_mass_frac_block).  When ALL of the
+   element's nuclides are constrained, `sigma` is the constant `1 - fixed_sum` and the carrier slot
+   instead holds the element's total relative-mass scale (`scale_multiple * (x - offset)`).
+   Fixed (lower == upper, by the same relative tolerance the setup uses) constraints keep their
+   constant slot and enter only through `spec.fixed_sum`.
+   */
+  struct MassFracBlock
+  {
+    short int atomic_number = 0;
+    RelActCalc::MassFracBlockSpec spec;
+
+    /** Activity-slot parameter index holding `t` (mixed case) or the element scale (all-constrained). */
+    size_t carrier_par = std::numeric_limits<size_t>::max();
+
+    /** Activity-slot parameter indices of the `g_k` distribution values (range nuclides 1..). */
+    std::vector<size_t> dist_pars;
+
+    /** The range-constrained nuclides, in block order (carrier first; parallel to spec.lower/upper). */
+    std::vector<const SandiaDecay::Nuclide *> range_nucs;
+
+    /** Fixed (lower == upper) constrained nuclides of the element, and their pinned fractions. */
+    std::vector<const SandiaDecay::Nuclide *> fixed_nucs;
+    std::vector<double> fixed_fractions;
+
+    /** For `spec.all_constrained` only: the element's total relative mass per unit of
+     `(x[carrier_par] - sm_activity_par_offset)`; set during solve setup (manual estimate, or 1.0). */
+    double scale_multiple = 1.0;
+  };//struct MassFracBlock
+
+  /** Same number of entries as `m_options.rel_eff_curves`; built in the constructor. */
+  std::vector<std::vector<MassFracBlock>> m_mass_frac_blocks;
   
   const std::shared_ptr<const SpecUtils::Measurement> m_spectrum;
   
@@ -2159,6 +2197,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   : m_options( options ),
   m_nuclides{},
   m_energy_ranges{},
+  m_mass_frac_blocks{},
   m_spectrum( spectrum ),
   m_live_time( spectrum ? spectrum->live_time() : 0.0f ),
   m_channel_counts( (spectrum && spectrum->gamma_counts()) ? *spectrum->gamma_counts() : vector<float>() ),
@@ -2500,7 +2539,269 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const size_t num_free_peak_par = 2*extra_peaks.size();
     m_skew_par_start_index = m_free_peak_par_start_index + num_free_peak_par;
+
+    // Needs the parameter start indices set just above (for nuclide_parameter_index).
+    build_mass_fraction_blocks();
   }//RelActAutoCostFcn constructor.
+
+
+  /** Groups each rel-eff curve's mass-fraction constraints into per-element sigma-blocks - see
+   the #MassFracBlock doc.  The deterministic block order is the order nuclides appear in
+   `rel_eff_curve.nuclides`; a constraint counts as FIXED using the same relative tolerance as the
+   solve setup (`|upper - lower| <= 1E-6 * max(lower, upper)`).  Feasibility of the windows was
+   already validated by RelEffCurveInput::check_nuclide_constraints().
+   */
+  void build_mass_fraction_blocks()
+  {
+    m_mass_frac_blocks.clear();
+    m_mass_frac_blocks.resize( m_options.rel_eff_curves.size() );
+
+    for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+      if( rel_eff_curve.mass_fraction_constraints.empty() )
+        continue;
+
+      // Gather the elements constraint/nuclide bookkeeping, in nuclide input order
+      std::vector<short int> element_order;
+      std::map<short int, size_t> num_nucs_of_el, num_constrained_of_el;
+      std::map<short int, MassFracBlock> block_of_el;
+
+      for( const RelActCalcAuto::NucInputInfo &nuc_input : rel_eff_curve.nuclides )
+      {
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( nuc_input.source );
+        if( !nuc )
+          continue;
+
+        const short int an = nuc->atomicNumber;
+        num_nucs_of_el[an] += 1;
+
+        const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const constraint
+                                             = mass_fraction_constraint( nuc_input.source, rel_eff_index );
+        if( !constraint )
+          continue;
+
+        num_constrained_of_el[an] += 1;
+        if( !std::count( begin(element_order), end(element_order), an ) )
+          element_order.push_back( an );
+
+        MassFracBlock &block = block_of_el[an];
+        block.atomic_number = an;
+
+        const double lower = constraint->lower_mass_fraction;
+        const double upper = constraint->upper_mass_fraction;
+        const bool is_fixed = (fabs(upper - lower) <= 1.0E-6*(std::max)(lower, upper));
+        if( is_fixed )
+        {
+          block.fixed_nucs.push_back( nuc );
+          block.fixed_fractions.push_back( lower );
+        }else
+        {
+          block.range_nucs.push_back( nuc );
+        }
+      }//for( const RelActCalcAuto::NucInputInfo &nuc_input : rel_eff_curve.nuclides )
+
+      for( const short int an : element_order )
+      {
+        MassFracBlock &block = block_of_el[an];
+
+        double fixed_sum = 0.0;
+        for( const double f : block.fixed_fractions )
+          fixed_sum += f;
+
+        const bool all_constrained = (num_constrained_of_el[an] >= num_nucs_of_el[an]);
+
+        std::vector<std::pair<double,double>> windows;
+        for( const SandiaDecay::Nuclide * const nuc : block.range_nucs )
+        {
+          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const c
+                                          = mass_fraction_constraint( RelActCalcAuto::SrcVariant(nuc), rel_eff_index );
+          assert( c );
+          windows.push_back( {c->lower_mass_fraction, c->upper_mass_fraction} );
+        }
+
+        block.spec = RelActCalc::make_mass_frac_block_spec( windows, fixed_sum, all_constrained );
+
+        if( block.range_nucs.empty() )
+        {
+          // Only fixed constraints on this element.  If unconstrained nuclides remain, no carrier
+          //  parameter is needed (the fixed slots are const; the decode is a constant).  If ALL
+          //  nuclides are constrained (fully specified isotopics), the first fixed nuclides slot
+          //  is freed from const duty to carry the element scale.
+          assert( !block.fixed_nucs.empty() );
+          if( all_constrained )
+            block.carrier_par = nuclide_parameter_index( RelActCalcAuto::SrcVariant(block.fixed_nucs[0]), rel_eff_index );
+        }else
+        {
+          block.carrier_par = nuclide_parameter_index( RelActCalcAuto::SrcVariant(block.range_nucs[0]), rel_eff_index );
+          for( size_t k = 1; k < block.range_nucs.size(); ++k )
+            block.dist_pars.push_back( nuclide_parameter_index( RelActCalcAuto::SrcVariant(block.range_nucs[k]), rel_eff_index ) );
+        }
+
+        m_mass_frac_blocks[rel_eff_index].push_back( std::move(block) );
+      }//for( const short int an : element_order )
+    }//for( size_t rel_eff_index = 0; ... )
+  }//void build_mass_fraction_blocks()
+
+
+  /** Returns the sigma-block for the given element of the given rel-eff curve, or nullptr. */
+  const MassFracBlock *mass_frac_block( const short int atomic_number, const size_t rel_eff_index ) const
+  {
+    assert( rel_eff_index < m_mass_frac_blocks.size() );
+    if( rel_eff_index >= m_mass_frac_blocks.size() )
+      return nullptr;
+
+    for( const MassFracBlock &block : m_mass_frac_blocks[rel_eff_index] )
+    {
+      if( block.atomic_number == atomic_number )
+        return &block;
+    }
+    return nullptr;
+  }//const MassFracBlock *mass_frac_block(...)
+
+
+  /** Sets the starting values, bounds, and const-pinning for one curves mass-fraction sigma-block
+   parameters (see #MassFracBlock).  `manual_solution` (may be nullptr) supplies target fractions
+   for the start inversion - window midpoints are used otherwise.  Called from both nuclide-setup
+   passes in solve_ceres; the second (fallback) pass only when the manual estimate failed, so each
+   block is configured exactly once.
+   */
+  static void setup_mass_fraction_block_pars( RelActAutoCostFcn &cost_functor,
+                                              const size_t rel_eff_index,
+                                              const RelActCalcManual::RelEffSolution * const manual_solution,
+                                              std::vector<double> &parameters,
+                                              std::vector<std::optional<double>> &lower_bounds,
+                                              std::vector<std::optional<double>> &upper_bounds,
+                                              std::vector<int> &constant_parameters )
+  {
+    using namespace std;
+
+    assert( rel_eff_index < cost_functor.m_mass_frac_blocks.size() );
+
+    const auto make_const = [&constant_parameters]( const size_t par ){
+      if( !std::count( begin(constant_parameters), end(constant_parameters), static_cast<int>(par) ) )
+        constant_parameters.push_back( static_cast<int>(par) );
+    };
+
+    for( MassFracBlock &block : cost_functor.m_mass_frac_blocks[rel_eff_index] )
+    {
+      const RelActCalc::MassFracBlockSpec &spec = block.spec;
+      const size_t num_range = block.range_nucs.size();
+
+      // Fixed-constrained slots: constant (the decode pins their fraction; the value is irrelevant).
+      for( const SandiaDecay::Nuclide * const nuc : block.fixed_nucs )
+      {
+        const size_t par = cost_functor.nuclide_parameter_index( RelActCalcAuto::SrcVariant(nuc), rel_eff_index );
+        if( spec.all_constrained && (par == block.carrier_par) )
+          continue; //the all-fixed-element carrier holds the element scale - handled below
+
+        parameters[par] = 0.5 + sm_activity_par_offset;
+        make_const( par );
+      }//for( loop over fixed-constrained nuclides )
+
+      // Target fractions for the start inversion, from the manual estimate when available.
+      vector<double> targets( num_range, 0.0 ), gs( (num_range > 1) ? (num_range - 1) : size_t(0), 0.5 );
+      for( size_t k = 0; k < num_range; ++k )
+      {
+        targets[k] = 0.5*(spec.lower[k] + spec.upper[k]); //window midpoint fallback
+        if( manual_solution )
+        {
+          try
+          {
+            const double mf = manual_solution->mass_fraction( block.range_nucs[k]->symbol );
+            if( !IsNan(mf) && !IsInf(mf) )
+              targets[k] = mf;
+          }catch( std::exception & )
+          {
+            cerr << "Warning: no initial manual mass fraction for " << block.range_nucs[k]->symbol
+                 << "; starting at window midpoint." << endl;
+          }
+        }//if( manual_solution )
+      }//for( size_t k = 0; k < num_range; ++k )
+
+      double sigma = spec.sig_lo;
+      RelActCalc::invert_mass_frac_block( spec, targets.data(), sigma, gs.data() );
+
+      // The g_k distribution slots: box [offset, offset+1]; the inversion keeps starts strictly
+      //  inside (1e-3 margin - Ceres' projected-gradient step behaves poorly starting on a bound).
+      for( size_t k = 1; k < num_range; ++k )
+      {
+        const size_t par = block.dist_pars[k-1];
+        lower_bounds[par] = sm_activity_par_offset;
+        upper_bounds[par] = 1.0 + sm_activity_par_offset;
+        parameters[par] = sm_activity_par_offset + gs[k-1];
+      }//for( size_t k = 1; k < num_range; ++k )
+
+      // The carrier slot.
+      if( spec.all_constrained )
+      {
+        // Element total relative-mass scale, exactly the activity_multiple pattern:
+        //  physical element rel mass = scale_multiple * (x - offset), start at x = 1 + offset.
+        double el_rel_mass = 0.0;
+        if( manual_solution )
+        {
+          const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = cost_functor.m_options.rel_eff_curves[rel_eff_index];
+          for( const RelActCalcAuto::NucInputInfo &nuc_input : rel_eff_curve.nuclides )
+          {
+            const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( nuc_input.source );
+            if( !nuc || (nuc->atomicNumber != block.atomic_number) )
+              continue;
+            try
+            {
+              el_rel_mass += manual_solution->relative_activity( nuc->symbol ) / nuc->activityPerGram();
+            }catch( std::exception & )
+            {
+            }
+          }//for( loop over the elements nuclides )
+        }//if( manual_solution )
+
+        if( IsNan(el_rel_mass) || IsInf(el_rel_mass) || (el_rel_mass <= 0.0) )
+          el_rel_mass = 1.0;
+
+        block.scale_multiple = el_rel_mass;
+        parameters[block.carrier_par] = 1.0 + sm_activity_par_offset;
+        lower_bounds[block.carrier_par] = sm_activity_par_offset; //element rel mass >= 0
+        upper_bounds[block.carrier_par] = std::nullopt;
+      }else if( num_range > 0 )
+      {
+        // Pin the carrier const only when the sigma box is empty or a point at double precision -
+        //  a RELATIVE check: tiny windows (e.g. U232 constrained to [0, 0.9E-9]) are legitimate
+        //  live parameters (the t-in-[0,1] chart is O(1) regardless of window width), and must
+        //  never be frozen by an absolute epsilon.
+        const double box_width = spec.sig_hi - spec.sig_lo;
+        const double box_scale = (std::max)( spec.sig_lo, std::fabs(spec.sig_hi) );
+        if( box_width <= 4.0*std::numeric_limits<double>::epsilon()*box_scale )
+        {
+          parameters[block.carrier_par] = 0.5 + sm_activity_par_offset;
+          make_const( block.carrier_par );
+        }else
+        {
+          const double t = (sigma - spec.sig_lo) / box_width;
+          assert( (t > 0.0) && (t < 1.0) ); //invert_mass_frac_block clamps by its margin
+          parameters[block.carrier_par] = sm_activity_par_offset + t;
+          lower_bounds[block.carrier_par] = sm_activity_par_offset;
+          upper_bounds[block.carrier_par] = 1.0 + sm_activity_par_offset;
+        }
+      }//if( spec.all_constrained ) / else if( num_range > 0 )
+
+#ifndef NDEBUG
+      // Sanity: the start must decode inside every window, with the constrained sum below 1.
+      if( num_range > 0 )
+      {
+        vector<double> start_fracs( num_range, 0.0 );
+        RelActCalc::decode_mass_frac_block( spec, sigma, gs.data(), start_fracs.data() );
+        double frac_sum = spec.fixed_sum;
+        for( size_t k = 0; k < num_range; ++k )
+        {
+          frac_sum += start_fracs[k];
+          assert( start_fracs[k] >= (spec.lower[k] - 1.0E-9) );
+          assert( start_fracs[k] <= (spec.upper[k] + 1.0E-9) );
+        }
+        assert( spec.all_constrained || (frac_sum <= (1.0 - 0.5*spec.delta)) );
+      }//if( num_range > 0 )
+#endif
+    }//for( MassFracBlock &block : cost_functor.m_mass_frac_blocks[rel_eff_index] )
+  }//static void setup_mass_fraction_block_pars(...)
   
   
   
@@ -4536,56 +4837,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               assert( mass_frac_constraint->nuclide == RelActCalcAuto::nuclide(nuc.source) );
               is_constrained = true;
 
-              //Rel Act paramater is constrained within [1.0, 2.0] (= sm_activity_par_offset + [0,1]), so the
-              //  mass fraction interpolates between the lower and upper constraint values.  When several nuclides
-              //  of an element are constrained, a smooth soft-cap decode keeps their fractions summing to < 1 for
-              //  any in-box parameters (RelActCalc::mass_fraction_softcap_factor / review item A16), so no start is
-              //  infeasible and the eval never throws.
-
-              //TODO: a full ceres::Manifold over an element's nuclides (a total-element-RelAct parameter on a
-              //  simplex surface) would additionally allow ALL of an element's nuclides to be mass-constrained at
-              //  once (we currently require >=1 unconstrained nuclide per element) - still future work.
-
-              // This (manual-estimate) pass sets the constrained nuclide up once; the second pass below leaves it
-              //  alone (it only sets up constrained nuclides when this manual estimate did not run).  A former
-              //  hack here biased the start, then the second pass overwrote it with the window upper bound anyway
-              //  (review item A5) - both are gone; the start now comes from the manual solution.
+              // Mass-fraction-constrained nuclides are set up per element (the exact sigma-block:
+              //  the carrier slot holds the range-constrained TOTAL fraction under a hard box
+              //  bound; other slots distribute it among the windows) right after this nuclide
+              //  loop - see setup_mass_fraction_block_pars().  Here we only mark the slot as
+              //  not-a-plain-activity.
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
-
-              //If the lower and upper mass fractions are the same, we can just fix the rel act (the parameter
-              //  value is irrelevant - the (upper-lower) factor in the mass-fraction decode is zero).
-              if( fabs(mass_frac_constraint->lower_mass_fraction - mass_frac_constraint->upper_mass_fraction)
-                  <= 1.0E-6*std::max(mass_frac_constraint->lower_mass_fraction, mass_frac_constraint->upper_mass_fraction) )
-              {
-                parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
-                cout << "Fixing act_index=" << act_index << ", " << mass_frac_constraint->nuclide << ", for mass fraction constraint" << endl;
-                assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
-                constant_parameters.push_back( static_cast<int>(act_index) );
-              }else
-              {
-                lower_bounds[act_index] = RelActAutoCostFcn::sm_activity_par_offset;
-                upper_bounds[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
-
-                // Start at the manual solution's mass-fraction position within the window, but kept strictly
-                //  inside the bounds: Ceres' projected-gradient step behaves poorly for a parameter that starts
-                //  exactly on a bound (and the manual estimate can land on/over one, e.g. a trace isotope at ~0).
-                //  Fall back to the window midpoint if the manual mass fraction is unavailable.
-                const double eps = 1.0E-3;
-                double start_frac_in_window = 0.5;  // window midpoint fallback if no manual mass fraction
-                try
-                {
-                  const double mf = manual_solution.mass_fraction( mass_frac_constraint->nuclide->symbol );
-                  const double frac = (mf - mass_frac_constraint->lower_mass_fraction)
-                                      / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
-                  if( !IsNan(frac) && !IsInf(frac) )
-                    start_frac_in_window = std::min( 1.0 - eps, std::max( eps, frac ) );
-                }catch( std::exception & )
-                {
-                  cerr << "Warning: no initial manual mass fraction for " << mass_frac_constraint->nuclide->symbol
-                       << "; starting at window midpoint." << endl;
-                }
-                parameters[act_index] = RelActAutoCostFcn::sm_activity_par_offset + start_frac_in_window;
-              }
             }//if( mass_frac_constraint )
 
             if( is_constrained )
@@ -4627,8 +4884,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
             parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
           }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
-          
-          
+
+          // Per-element sigma-block setup for this curves mass-fraction constraints (bounds,
+          //  const-pinning, and starts inverted from the manual solutions mass fractions).
+          RelActAutoCostFcn::setup_mass_fraction_block_pars( *cost_functor, re_eff_index, &manual_solution,
+                                                    parameters, lower_bounds, upper_bounds, constant_parameters );
+
           succesfully_estimated_re_and_ra = true;
         }catch( std::exception &e )
         {
@@ -4914,29 +5175,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
             if( src_mass_frac_constr )
             {
-              const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint = *src_mass_frac_constr;
-              assert( (constraint.nuclide == nuc_nuclide) && nuc_nuclide );
+              assert( (src_mass_frac_constr->nuclide == nuc_nuclide) && nuc_nuclide );
 
-              // Set a mass-fraction-constrained nuclide up exactly once.  If the manual estimate succeeded, the
-              //  first nuclide pass already did it (manual-based, in-bounds start, bounds, and constant-parameter
-              //  status) - leave it untouched.  Only when the manual estimate failed do we set it up here, at the
-              //  window midpoint (strictly off the bounds; the soft-cap decode keeps any in-box start feasible
-              //  even when several constraints overlap).
+              // Set mass-fraction-constrained nuclides up exactly once.  If the manual estimate
+              //  succeeded, the first nuclide pass already configured this elements sigma-block
+              //  (manual-based starts, bounds, constant-parameter status) - leave it untouched.
+              //  Only when the manual estimate failed is the block set up, after this loop, at the
+              //  window midpoints (see setup_mass_fraction_block_pars); here we only mark the slot
+              //  as not-a-plain-activity.
               if( succesfully_estimated_re_and_ra )
                 continue;
 
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
-              parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
-
-              if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
-              {
-                assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
-                constant_parameters.push_back( static_cast<int>(act_index) );
-              }else
-              {
-                lower_bounds[act_index] = RelActAutoCostFcn::sm_activity_par_offset;
-                upper_bounds[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
-              }
 
               continue;
             }//if( src_mass_frac_constr )
@@ -5061,6 +5311,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }
           }//if( !succesfully_estimated_re_and_ra )
         }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
+
+        // When the manual estimate failed, this curves mass-fraction sigma-blocks havent been
+        //  configured yet - do it now, starting at the window midpoints.
+        if( !succesfully_estimated_re_and_ra )
+          RelActAutoCostFcn::setup_mass_fraction_block_pars( *cost_functor, re_eff_index, nullptr,
+                                                    parameters, lower_bounds, upper_bounds, constant_parameters );
       }//for( const auto &rel_eff_curve : options.rel_eff_curves )
         
       // The parameters will have entries for two sets of peak-skew parameters; one for
@@ -6214,238 +6470,395 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//for( each rel_eff_curve )
 
 
-    ceres::Covariance::Options cov_options;
-    // DENSE_SVD: accurate but slow (only to be used for small to moderate sized problems). Handles full-rank as well as rank deficient Jacobians.
-    // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
-    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
-    cov_options.num_threads = ceres_options.num_threads;
-
-    // Conditioning floor for the covariance.  The covariance is the pseudo-inverse of J^T J; a near-degenerate
-    //  direction has a tiny singular value sigma_i, and 1/sigma_i^2 would otherwise become an enormous variance.
-    //  `min_reciprocal_condition_number` is compared against (sigma_i/sigma_max)^2: any direction below the
-    //  cutoff is treated as null space (ZERO variance) instead of being inverted.
-    //
-    //  Where to put that cutoff is a MODELING JUDGMENT - "a direction constrained Nx more weakly than the
-    //  best-constrained one is too weak to report an uncertainty for" - NOT a numerical-precision limit
-    //  (double precision inverts safely down to sigma_i/sigma_max ~ 1e-7; the Ceres default 1e-14 drops only
-    //  genuine round-off singularity).  The catch is that *dropping* a weak direction zeroes its variance,
-    //  which makes the rel-eff band OVER-confident whenever rel-eff(E) actually depends on that direction
-    //  (the 918/926 collapse).  Measured on target/idb_enrichment_check: a high cutoff (1e-8, i.e. ratio
-    //  < 1e-4) wrecks calibration (median |pull| ~50, almost every band far too small); calibration improves
-    //  monotonically as the cutoff is lowered and more directions are retained.  So we deliberately keep this
-    //  at the numerical-guard level (drop only round-off-singular directions) and let the *statistical*
-    //  regularization of the degenerate shielding/correction directions be done physically by the parameter
-    //  priors above (`m_phys_model_param_priors`), which leave a weak direction a finite, physically-bounded
-    //  variance instead of zero.  Kept numerically consistent with the effective-DOF singular-value threshold
-    //  below (both at sigma_i/sigma_max = 1e-7).  `null_space_rank = -1` keeps the pseudo-inverse (so
-    //  Compute() still succeeds on rank-deficient Jacobians) while honoring the cutoff.  NOTE: a faithful band
-    //  for the genuinely rank-deficient files (low-enrichment, weak U-235 lines) is not representable by this
-    //  linearized covariance at all - that needs a profile/Monte-Carlo treatment.  Tuning knob - evaluate
-    //  with target/idb_enrichment_check.
-    cov_options.min_reciprocal_condition_number = 1e-14; //Ceres default; drops sigma_i/sigma_max < 1e-7
-    //cov_options.column_pivot_threshold = -1;
-    cov_options.null_space_rank = -1; //default: 0;
-    
     vector<double> uncertainties( num_pars, 0.0 ), uncerts_squared( num_pars, 0.0 );
-    
-    if( success )
+
+    // Fills the per-parameter uncertainties and the rel-eff / rel-act / FWHM covariance sub-blocks
+    //  from solution.m_covariance (which must already be filled, num_pars x num_pars).
+    // TODO: check the covariance is actually defined right (like not swapping row/col, calling the right places, etc).
+    const auto fill_covariance_consumers = [&]()
     {
+      for( size_t i = 0; i < num_pars; ++i )
+      {
+        uncerts_squared[i] = solution.m_covariance[i][i];
+        if( uncerts_squared[i] >= 0.0 )
+          uncertainties[i] = sqrt( uncerts_squared[i] );
+        else
+          uncertainties[i] = std::numeric_limits<double>::quiet_NaN();
+      }
+
+      solution.m_final_uncertainties = uncertainties;
+
+      auto get_cov_block = [&solution]( const size_t start, const size_t num, vector<vector<double>> &cov ){
+        cov.clear();
+        cov.resize( num, vector<double>(num,0.0) );
+        for( size_t i = start; i < (start + num); ++i )
+        {
+          for( size_t j = start; j < (start + num); ++j )
+            cov[j-start][i-start] = solution.m_covariance[i][j];
+        }
+      };
+
+      solution.m_rel_eff_covariance.resize( num_rel_eff_curves );
+      solution.m_rel_act_covariance.resize( num_rel_eff_curves );
+      for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+      {
+        const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(rel_eff_index);
+        const size_t num_rel_eff_par = cost_functor->rel_eff_eqn_num_parameters(rel_eff_index);
+        vector<vector<double>> &cov = solution.m_rel_eff_covariance[rel_eff_index];
+
+        get_cov_block( rel_eff_start, num_rel_eff_par, cov );
+
+        for( size_t par_index = 0; par_index < num_rel_eff_par; ++par_index )
+        {
+          const double scale = cost_functor->parameter_scale_factor(rel_eff_start + par_index);
+          for( size_t row = 0; row < num_rel_eff_par; ++row )
+            cov[row][par_index] *= scale;
+          for( size_t col = 0; col < num_rel_eff_par; ++col )
+            cov[par_index][col] *= scale;
+        }
+
+        const size_t acts_start = cost_functor->rel_act_start_parameter( rel_eff_index );
+        const size_t num_acts_par = cost_functor->rel_act_num_parameters( rel_eff_index );
+        get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance[rel_eff_index] );
+      }
+
+      const size_t fwhm_start = cost_functor->m_fwhm_par_start_index;
+      const size_t num_fwhm_pars = num_parameters(options.fwhm_form);
+      get_cov_block( fwhm_start, num_fwhm_pars, solution.m_fwhm_covariance );
+    };//fill_covariance_consumers lambda
+
+    // Fallback covariance: Ceres' own DENSE_SVD pseudo-inverse of the RAW Jacobian.  Only used when
+    //  the scale-invariant computation below fails (it is also what the RELACT_COV_COMPARE debug
+    //  path compares against).  Its `min_reciprocal_condition_number` cutoff acts on the RAW
+    //  singular spectrum, which unit-scale disparity spreads over many decades - the reason the
+    //  equilibrated computation below replaced it as the primary.
+    const auto compute_ceres_covariance = [&]( vector<double> &row_major_covariance ) -> bool
+    {
+      ceres::Covariance::Options cov_options;
+      // DENSE_SVD: accurate but slow (only to be used for small to moderate sized problems). Handles full-rank as well as rank deficient Jacobians.
+      // SPARSE_QR: fast, but not capable of computing the covariance if the Jacobian is rank deficient
+      cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
+      cov_options.num_threads = ceres_options.num_threads;
+      cov_options.min_reciprocal_condition_number = 1e-14; //Ceres default; drops sigma_i/sigma_max < 1e-7
+      cov_options.null_space_rank = -1; //keep the pseudo-inverse on rank-deficient Jacobians
+
       ceres::Covariance covariance(cov_options);
       vector<pair<const double*, const double*> > covariance_blocks;
       covariance_blocks.emplace_back( pars, pars );
-      
+
+      if( !covariance.Compute(covariance_blocks, &problem) )
+        return false;
+
+      row_major_covariance.resize( num_pars * num_pars, 0.0 );
+      const vector<const double *> const_par_blocks( 1, pars );
+      return covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
+    };//compute_ceres_covariance lambda
+
+    // ---------------------------------------------------------------------------------------------
+    // Scale-invariant covariance, condition number, rank count, and effective-DOF - all from ONE
+    //  column-equilibrated SVD of the tangent-space Jacobian.
+    //
+    // The covariance is the truncated pseudo-inverse of J^T J: a near-degenerate direction has a tiny
+    //  singular value sigma_i, and 1/sigma_i^2 would otherwise become an enormous variance, so
+    //  directions with sigma_i/sigma_max below a cutoff are treated as null space (ZERO variance).
+    //  Where to put that cutoff is a MODELING JUDGMENT - "a direction constrained Nx more weakly than
+    //  the best-constrained one is too weak to report an uncertainty for" - NOT a numerical-precision
+    //  limit.  The catch: the RAW Jacobian's column norms span many decades from unit choices alone
+    //  (a unit step in a relative-activity parameter moves thousands of Poisson-weighted counts while
+    //  a step in a nuisance parameter - FWHM, age, areal density, branching-ratio-uncertainty - moves
+    //  O(1)), e.g. raw kappa ~ 1e18 on a Pu-239 HPGe fit with additional_br_uncert, so a single
+    //  relative cutoff on the raw spectrum discards legitimately-constrained-but-small-column
+    //  directions (74 of 77 there) and zeroes their variance - making the rel-eff band OVER-confident
+    //  wherever it depends on them (the 918/926 collapse), which the reliability_floored_uncert net
+    //  then papers over.
+    //
+    //  Column-equilibrating first (van der Sluis: J~ = J*D, D = diag(1/||col||)) makes the cutoff
+    //  scale-invariant, while the algebra stays EXACT: (J^T J)^+ = D (J~^T J~)^+ D = D V S^-2 V^T D,
+    //  identical to the raw pseudo-inverse whenever nothing is dropped (the U-235 well-scaled case),
+    //  and keeping a finite, prior-regularized variance for unit-scale-small directions when the raw
+    //  cutoff would have zeroed them.  The parameter priors (`m_phys_model_param_priors`) are residual
+    //  rows in J, so they regularize weak directions physically, exactly as intended.  The cutoff
+    //  (sigma_i/sigma_max < 1e-7 on the EQUILIBRATED spectrum) now drops only genuine collinearity;
+    //  it is shared by the covariance, kappa(J~), the rank-deficiency count, and the effective-DOF
+    //  estimate, so all four tell one consistent story.  A too-aggressive cutoff wrecks calibration
+    //  (measured on target/idb_enrichment_check: ratio < 1e-4 gives median |pull| ~50, almost every
+    //  band far too small) - it is a tuning knob; evaluate any change against that corpus.  NOTE: a
+    //  faithful band for genuinely rank-deficient fits (low-enrichment, weak U-235 lines) is not
+    //  representable by ANY linearized covariance - that needs a profile/Monte-Carlo treatment.
+    //
+    //  Set RELACT_COV_COMPARE=1 to also compute the Ceres (raw) covariance and print tangent- and
+    //  ambient-level max differences: on a well-scaled fit the two must agree to ~1e-6 relative;
+    //  they diverge exactly when the raw cutoff drops rescued directions.
+    // ---------------------------------------------------------------------------------------------
+    size_t num_effective_paramaters = num_pars;
+
+    if( success )
+    {
       solution.m_covariance.clear();
       solution.m_phys_units_cov.clear();
       solution.m_final_uncertainties.clear();
-      
-      if( !covariance.Compute(covariance_blocks, &problem) )
+
+      try
       {
-        //Possible reason we're here: rank deficient Jacobian is encountered
-        cerr << "Failed to compute final covariances!" << endl;
-        solution.m_warnings.push_back( "Failed to compute final covariances." );
-      }else
-      {
-        // row-major order: the elements of the first row are consecutively given, followed by second
-        //                  row contents, etc
-        vector<double> row_major_covariance( num_pars * num_pars );
-        const vector<const double *> const_par_blocks( 1, pars );
-        
-        const bool success = covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
-        assert( success );
-        if( !success )
-          throw runtime_error( "Failed to get covariance matrix." );
-        
+        // Tangent-space Jacobian at the solution (rows: residuals; cols: FREE parameters - the final
+        //  SubsetManifold, set above, excludes the constant ones).  Plain squared loss is used
+        //  (lossfcn == nullptr), so `apply_loss_function = false` is exact.
+        ceres::Problem::EvaluateOptions evaluate_options;
+        evaluate_options.apply_loss_function = false;
+        ceres::CRSMatrix sparse_jacobian;
+        problem.Evaluate(evaluate_options, nullptr, nullptr, nullptr, &sparse_jacobian);
+
+        if( (sparse_jacobian.num_rows == 0) || (sparse_jacobian.num_cols == 0) )
+          throw runtime_error( "Failed to evaluate Jacobian" );
+
+        const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
+
+        Eigen::MatrixXd jacobian;
+        jacobian.resize(sparse_jacobian.num_rows, sparse_jacobian.num_cols);
+        jacobian.setZero();
+        for( int row = 0; row < sparse_jacobian.num_rows; ++row )
+        {
+          for( int idx = sparse_jacobian.rows[row]; idx < sparse_jacobian.rows[row + 1]; ++idx )
+            jacobian(row, sparse_jacobian.cols[idx]) = sparse_jacobian.values[idx];
+        }
+
+        // Column-equilibrate (a zero-norm column has no gradient at all: fully unconstrained -
+        //  zero variance, and counted as a degenerate direction).
+        Eigen::VectorXd inv_col_norm( jacobian.cols() );
+        Eigen::MatrixXd jacobian_eq = jacobian;
+        size_t num_zero_norm_cols = 0;
+        for( int col = 0; col < jacobian_eq.cols(); ++col )
+        {
+          const double col_norm = jacobian_eq.col(col).norm();
+          if( col_norm > 0.0 )
+          {
+            inv_col_norm(col) = 1.0 / col_norm;
+            jacobian_eq.col(col) *= inv_col_norm(col);
+          }else
+          {
+            inv_col_norm(col) = 0.0;
+            num_zero_norm_cols += 1;
+          }
+        }//for( int col = 0; col < jacobian_eq.cols(); ++col )
+
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+        const Eigen::JacobiSVD<Eigen::MatrixXd,Eigen::ComputeThinV> svd_eq( jacobian_eq );
+#else
+        const Eigen::BDCSVD<Eigen::MatrixXd> svd_eq( jacobian_eq, Eigen::ComputeThinV );
+#endif
+        const Eigen::VectorXd singular_values_eq = svd_eq.singularValues();
+        const double sv_max = singular_values_eq.maxCoeff();
+        const double sv_min = singular_values_eq.minCoeff();
+        const double sv_threshold = 1.0e-7 * sv_max;
+
+        if( !(sv_max > 0.0) || IsNan(sv_max) || IsInf(sv_max) )
+          throw runtime_error( "Jacobian SVD produced a non-finite/zero spectrum" );
+
+        // 2-norm condition number of the column-EQUILIBRATED Jacobian - a continuous measure of
+        //  genuine (unit-independent) nearness-to-singularity; kappa >~ 1e7 corresponds to the
+        //  rank-deficiency flagged below.  Zero-norm columns make it infinite by definition.
+        solution.m_jacobian_condition_number = ((sv_min > 0.0) && !num_zero_norm_cols)
+                            ? (sv_max / sv_min) : std::numeric_limits<double>::infinity();
+
+        size_t npar_eff_equil = 0;
+        for( int i = 0; i < singular_values_eq.size(); ++i )
+          npar_eff_equil += (singular_values_eq(i) > sv_threshold);
+        assert( (npar_eff_equil + num_zero_norm_cols) <= num_free_pars );
+
+        // The near-degenerate directions the covariance below zeroes - the same equilibrated
+        //  spectrum and cutoff, so this count describes exactly what was dropped, and the
+        //  derived-uncertainty widening net (reliability_floored_uncert) keys off it.
+        solution.m_num_rank_deficient_dirs = (npar_eff_equil < num_free_pars)
+                                             ? (num_free_pars - npar_eff_equil) : size_t(0);
+        if( npar_eff_equil < num_free_pars )
+          solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff_equil)
+                              + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
+                              " unconstrained by the data (near-degenerate directions).  Per-parameter"
+                              " uncertainties omit these directions; derived quantities (enrichment,"
+                              " relative-efficiency band) that depend on them are flagged and widened instead." );
+
+        // Truncated pseudo-inverse in the equilibrated basis, mapped back:
+        //  C_tan = D * V * S^-2 * V^T * D   (dropped directions contribute zero)
+        const Eigen::MatrixXd &V = svd_eq.matrixV();
+        Eigen::VectorXd inv_s2( singular_values_eq.size() );
+        for( int i = 0; i < singular_values_eq.size(); ++i )
+          inv_s2(i) = (singular_values_eq(i) > sv_threshold)
+                      ? 1.0/(singular_values_eq(i)*singular_values_eq(i)) : 0.0;
+
+        Eigen::MatrixXd cov_tangent = V * inv_s2.asDiagonal() * V.transpose();
+        for( int row = 0; row < cov_tangent.rows(); ++row )
+        {
+          for( int col = 0; col < cov_tangent.cols(); ++col )
+            cov_tangent(row,col) *= inv_col_norm(row) * inv_col_norm(col);
+        }
+
+        // Tangent -> ambient through the LIVE manifold (the final SubsetManifold set above, or
+        //  nullptr when nothing is constant): for a SubsetManifold the Plus-Jacobian is the
+        //  identity with the constant rows deleted, so this is exactly the scatter-into-free-
+        //  positions-with-zeroed-constants that Ceres' GetCovarianceMatrix produces.  Reading the
+        //  manifold from the problem keeps the tangent dimension/ordering consistent with the
+        //  `problem.Evaluate` Jacobian by construction.
+        Eigen::MatrixXd cov_ambient;
+        const ceres::Manifold * const manifold = problem.GetManifold( pars );
+        if( !manifold )
+        {
+          if( num_free_pars != num_pars )
+            throw std::logic_error( "No manifold, but tangent size != ambient size" );
+          cov_ambient = cov_tangent;
+        }else
+        {
+          const int amb_size = manifold->AmbientSize();
+          const int tan_size = manifold->TangentSize();
+          if( (static_cast<size_t>(amb_size) != num_pars) || (static_cast<size_t>(tan_size) != num_free_pars) )
+            throw std::logic_error( "Manifold ambient/tangent size mismatch with Jacobian" );
+
+          vector<double> plus_jac( static_cast<size_t>(amb_size) * static_cast<size_t>(tan_size), 0.0 );
+          if( !manifold->PlusJacobian( pars, plus_jac.data() ) )
+            throw runtime_error( "Manifold PlusJacobian failed" );
+
+          const Eigen::Map<const Eigen::Matrix<double,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>>
+                                                            plus_jacobian( plus_jac.data(), amb_size, tan_size );
+          cov_ambient = plus_jacobian * cov_tangent * plus_jacobian.transpose();
+        }//if( !manifold ) / else
+
+        // Optional cross-check against the Ceres (raw-Jacobian) covariance - see the block comment.
+        static const bool s_compare_cov = ( std::getenv("RELACT_COV_COMPARE") != nullptr );
+        if( s_compare_cov )
+        {
+          vector<double> ceres_cov;
+          if( compute_ceres_covariance( ceres_cov ) )
+          {
+            double max_abs = 0.0, max_rel = 0.0;
+            for( size_t r = 0; r < num_pars; ++r )
+            {
+              for( size_t c = 0; c < num_pars; ++c )
+              {
+                const double ours = cov_ambient(static_cast<int>(r),static_cast<int>(c));
+                const double theirs = ceres_cov[r*num_pars + c];
+                const double d = fabs(ours - theirs);
+                max_abs = (std::max)( max_abs, d );
+                const double denom = (std::max)( fabs(ours), fabs(theirs) );
+                if( denom > 1.0E-30 )
+                  max_rel = (std::max)( max_rel, d/denom );
+              }
+            }
+
+            // The RAW-spectrum rank (what the Ceres cutoff kept): when raw_rank == num_free the two
+            //  computations must agree to ~1e-6 relative (the equilibration algebra is exact); when
+            //  raw_rank < rank_kept the difference IS the rescued directions - the point of the change.
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+            const Eigen::JacobiSVD<Eigen::MatrixXd,Eigen::ComputeThinV> svd_raw( jacobian );
+#else
+            const Eigen::BDCSVD<Eigen::MatrixXd> svd_raw( jacobian, Eigen::ComputeThinV );
+#endif
+            const Eigen::VectorXd sv_raw = svd_raw.singularValues();
+            size_t raw_rank = 0;
+            for( int i = 0; i < sv_raw.size(); ++i )
+              raw_rank += (sv_raw(i) > 1.0E-7*sv_raw.maxCoeff());
+
+            // Machinery self-check: OUR truncated pseudo-inverse of the RAW spectrum (identity
+            //  equilibration) uses the same spectrum and cutoff as Ceres' DENSE_SVD, so it must
+            //  reproduce the Ceres matrix to round-off regardless of any rescue - validating the
+            //  pinv + manifold-mapping code independent of the equilibration choice.
+            {
+              const Eigen::MatrixXd &V_raw = svd_raw.matrixV();
+              Eigen::VectorXd inv_s2_raw( sv_raw.size() );
+              for( int i = 0; i < sv_raw.size(); ++i )
+                inv_s2_raw(i) = (sv_raw(i) > 1.0E-7*sv_raw.maxCoeff()) ? 1.0/(sv_raw(i)*sv_raw(i)) : 0.0;
+              const Eigen::MatrixXd cov_tan_raw = V_raw * inv_s2_raw.asDiagonal() * V_raw.transpose();
+
+              Eigen::MatrixXd cov_amb_raw;
+              const ceres::Manifold * const mani = problem.GetManifold( pars );
+              if( !mani )
+              {
+                cov_amb_raw = cov_tan_raw;
+              }else
+              {
+                vector<double> pj( static_cast<size_t>(mani->AmbientSize())*static_cast<size_t>(mani->TangentSize()), 0.0 );
+                mani->PlusJacobian( pars, pj.data() );
+                const Eigen::Map<const Eigen::Matrix<double,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>>
+                                              pjm( pj.data(), mani->AmbientSize(), mani->TangentSize() );
+                cov_amb_raw = pjm * cov_tan_raw * pjm.transpose();
+              }
+
+              double chk_abs = 0.0, chk_rel = 0.0;
+              for( size_t r = 0; r < num_pars; ++r )
+              {
+                for( size_t c = 0; c < num_pars; ++c )
+                {
+                  const double ours = cov_amb_raw(static_cast<int>(r),static_cast<int>(c));
+                  const double theirs = ceres_cov[r*num_pars + c];
+                  const double d = fabs(ours - theirs);
+                  chk_abs = (std::max)( chk_abs, d );
+                  const double denom = (std::max)( fabs(ours), fabs(theirs) );
+                  if( denom > 1.0E-30 )
+                    chk_rel = (std::max)( chk_rel, d/denom );
+                }
+              }
+              cout << "RELACT_COV_COMPARE: machinery check (raw-pinv-vs-Ceres, must match): max_abs="
+                   << chk_abs << ", max_rel=" << chk_rel << endl;
+            }
+
+            cout << "RELACT_COV_COMPARE: ambient covariance equilibrated-vs-Ceres max_abs=" << max_abs
+                 << ", max_rel=" << max_rel
+                 << " (num_free=" << num_free_pars << ", rank_kept=" << npar_eff_equil
+                 << ", raw_rank=" << raw_rank
+                 << ", kappa_eq=" << solution.m_jacobian_condition_number
+                 << ", kappa_raw=" << ((sv_raw.minCoeff() > 0.0) ? sv_raw.maxCoeff()/sv_raw.minCoeff()
+                                                                 : std::numeric_limits<double>::infinity())
+                 << ")" << endl;
+          }else
+          {
+            cout << "RELACT_COV_COMPARE: Ceres covariance failed to compute (rank-deficient?);"
+                    " equilibrated covariance stands alone." << endl;
+          }
+        }//if( s_compare_cov )
+
         solution.m_covariance.resize( num_pars, vector<double>(num_pars, 0.0) );
-        
         for( size_t row = 0; row < num_pars; ++row )
         {
           for( size_t col = 0; col < num_pars; ++col )
-            solution.m_covariance[row][col] = row_major_covariance[row*num_pars + col];
-        }//for( size_t row = 0; row < num_pars; ++row )
-        
-        for( size_t i = 0; i < num_pars; ++i )
-        {
-          uncerts_squared[i] = solution.m_covariance[i][i];
-          if( uncerts_squared[i] >= 0.0 )
-            uncertainties[i] = sqrt( uncerts_squared[i] );
-          else
-            uncertainties[i] = std::numeric_limits<double>::quiet_NaN();
+            solution.m_covariance[row][col] = cov_ambient(static_cast<int>(row),static_cast<int>(col));
         }
-        
-        solution.m_final_uncertainties = uncertainties;
-        
-        // TODO: check the covariance is actually defined right (like not swapping row/col, calling the right places, etc).
-        auto get_cov_block = [&solution]( const size_t start, const size_t num, vector<vector<double>> &cov ){
-          cov.clear();
-          cov.resize( num, vector<double>(num,0.0) );
-          for( size_t i = start; i < (start + num); ++i )
-          {
-            for( size_t j = start; j < (start + num); ++j )
-              cov[j-start][i-start] = solution.m_covariance[i][j];
-          }
-        };
-        
-        solution.m_rel_eff_covariance.resize( num_rel_eff_curves );
-        solution.m_rel_act_covariance.resize( num_rel_eff_curves );
-        for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+
+        fill_covariance_consumers();
+
+        // Effective DOF for the data-only chi2/dof: the directions genuinely constrained by the
+        //  problem, i.e. the kept (non-collinear) equilibrated directions.  Only trust a count that
+        //  isnt collapsed (a real model degeneracy leaves npar_eff_equil small even after
+        //  equilibration); compare against the FREE-parameter count, not ambient num_pars.
+        if( (npar_eff_equil < 1) || (npar_eff_equil < (num_free_pars/5)) )
+          solution.m_warnings.push_back( "Only computed " + std::to_string(npar_eff_equil)
+                              + " effective DOF, compared to " + std::to_string(num_free_pars)
+                              + " free parameters; using the total number of fit parameters"
+                              " to estimate the degrees of freedom." );
+        else
+          num_effective_paramaters = npar_eff_equil;
+      }catch( std::exception &e )
+      {
+        // Fall back to the Ceres covariance (raw Jacobian), preserving pre-equilibration behavior;
+        //  kappa/rank-count/DOF stay at their defaults.
+        solution.m_warnings.push_back( "Scale-invariant covariance computation failed ('" + string(e.what())
+                                       + "'); falling back to the Ceres covariance." );
+
+        vector<double> row_major_covariance;
+        if( !compute_ceres_covariance( row_major_covariance ) )
         {
-          const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(rel_eff_index);
-          const size_t num_rel_eff_par = cost_functor->rel_eff_eqn_num_parameters(rel_eff_index);
-          vector<vector<double>> &cov = solution.m_rel_eff_covariance[rel_eff_index];
-          
-          get_cov_block( rel_eff_start, num_rel_eff_par, cov );
-          
-          for( size_t par_index = 0; par_index < num_rel_eff_par; ++par_index )
+          cerr << "Failed to compute final covariances!" << endl;
+          solution.m_warnings.push_back( "Failed to compute final covariances." );
+        }else
+        {
+          solution.m_covariance.resize( num_pars, vector<double>(num_pars, 0.0) );
+          for( size_t row = 0; row < num_pars; ++row )
           {
-            const double scale = cost_functor->parameter_scale_factor(rel_eff_start + par_index);
-            for( size_t row = 0; row < num_rel_eff_par; ++row )
-              cov[row][par_index] *= scale;
-            for( size_t col = 0; col < num_rel_eff_par; ++col )
-              cov[par_index][col] *= scale;
+            for( size_t col = 0; col < num_pars; ++col )
+              solution.m_covariance[row][col] = row_major_covariance[row*num_pars + col];
           }
-        
-          const size_t acts_start = cost_functor->rel_act_start_parameter( rel_eff_index );
-          const size_t num_acts_par = cost_functor->rel_act_num_parameters( rel_eff_index );
-          get_cov_block( acts_start, num_acts_par, solution.m_rel_act_covariance[rel_eff_index] );
-        }
-        
-        const size_t fwhm_start = cost_functor->m_fwhm_par_start_index;
-        const size_t num_fwhm_pars = num_parameters(options.fwhm_form);
-        get_cov_block( fwhm_start, num_fwhm_pars, solution.m_fwhm_covariance );
-      }//if( we failed to get covariance ) / else
+
+          fill_covariance_consumers();
+        }//if( Ceres covariance also failed ) / else
+      }//try / catch( scale-invariant covariance )
     }//if( solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success )
-
-
-    // Now we will estimate the effective degrees of freedom by doing SVD on the Jacobian,
-    //  and then looking at how many of the singular values effectively contribute to the
-    //  problem.  This seems to give reasonable answers, but havent strictly evaluated it
-    //  beyond that.
-    size_t num_effective_paramaters = num_pars;
-    try
-    {
-      ceres::Problem::EvaluateOptions evaluate_options;
-      evaluate_options.apply_loss_function = false;
-      ceres::CRSMatrix sparse_jacobian;
-      problem.Evaluate(evaluate_options, nullptr, nullptr, nullptr, &sparse_jacobian);
-
-      if( sparse_jacobian.num_rows == 0 )
-        throw runtime_error( "Failed to evaluate Jacobian" );
-
-      Eigen::MatrixXd jacobian;
-      jacobian.resize(sparse_jacobian.num_rows, sparse_jacobian.num_cols);
-      jacobian.setZero();
-      for( int row = 0; row < sparse_jacobian.num_rows; ++row )
-      {
-        for( int idx = sparse_jacobian.rows[row]; idx < sparse_jacobian.rows[row + 1]; ++idx )
-          jacobian(row, sparse_jacobian.cols[idx]) = sparse_jacobian.values[idx];
-      }//
-
-#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
-      Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
-#else
-      const Eigen::BDCSVD<Eigen::MatrixX<ScalarType>> svd(jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
-#endif
-
-      Eigen::VectorXd singular_values = svd.singularValues();
-
-      // Report the 2-norm condition number kappa(J) = sigma_max / sigma_min of the fit Jacobian - a
-      //  continuous measure of nearness-to-singularity (kappa >~ 1e7 corresponds to the rank-deficiency
-      //  flagged just below).  Set here, before the rank-deficiency `throw`, so it is recorded regardless.
-      {
-        const double sigma_max = singular_values.maxCoeff();
-        const double sigma_min = singular_values.minCoeff();
-        solution.m_jacobian_condition_number = (sigma_min > 0.0)
-                            ? (sigma_max / sigma_min) : std::numeric_limits<double>::infinity();
-      }
-
-      // Raw-Jacobian rank count: this mirrors the conditioning Ceres uses for the reported covariance
-      //  (cov_options.min_reciprocal_condition_number = (1e-7)^2 = 1e-14 drops directions with
-      //  sigma_i/sigma_max < 1e-7), so `m_num_rank_deficient_dirs` and the rank-deficiency warning below
-      //  describe exactly the directions the covariance zeroed.  kappa(J) above is on this same raw
-      //  Jacobian.  These are deliberately NOT scale-invariant - they must track the (scale-sensitive)
-      //  covariance so the uncertainty-widening net keys off what was actually dropped.
-      const double threshold = 1.0e-7 * singular_values.maxCoeff();
-
-      size_t npar_eff_raw = 0;
-      for( int i = 0; i < singular_values.size(); ++i)
-        npar_eff_raw += (singular_values(i) > threshold);
-
-      // Record (and warn about) the near-degenerate directions omitted from the covariance, BEFORE the
-      //  trustworthiness throw below: the derived-uncertainty floor keys off `m_num_rank_deficient_dirs`,
-      //  so it must be set even when the DOF estimate falls back to num_pars.
-      const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
-      solution.m_num_rank_deficient_dirs = (npar_eff_raw < num_free_pars) ? (num_free_pars - npar_eff_raw) : size_t(0);
-      if( npar_eff_raw < num_free_pars )
-        solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff_raw)
-                            + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
-                            " unconstrained by the data (near-degenerate directions).  Per-parameter"
-                            " uncertainties omit these directions; derived quantities (enrichment,"
-                            " relative-efficiency band) that depend on them are flagged and widened instead." );
-
-      // Effective degrees of freedom for the data-only chi2/DOF: a SCALE-INVARIANT count.  Ceres
-      //  parameters are re-parameterized to O(1), but a unit step in a relative-activity parameter moves
-      //  thousands of Poisson-weighted counts while a step in a nuisance parameter (FWHM, age, areal
-      //  density, the branching-ratio-uncertainty params) moves O(1), so the raw Jacobian column norms -
-      //  and hence its singular spectrum - span many orders of magnitude from unit choices alone (e.g.
-      //  kappa ~ 1e18, collapsing the raw count to 2 of 77 on a Pu-239 HPGe fit with additional_br_uncert).
-      //  A single relative cutoff on that spectrum then discards legitimately-constrained-but-small-column
-      //  directions.  Column-equilibrating the Jacobian (van der Sluis: divide each column by its L2 norm)
-      //  before this SVD removes the unit dependence, so the count reflects genuine collinearity.  Used
-      //  ONLY for the DOF estimate; kappa(J) and the rank-deficiency flag above stay on the raw Jacobian.
-      Eigen::MatrixXd jacobian_eq = jacobian;
-      for( int col = 0; col < jacobian_eq.cols(); ++col )
-      {
-        const double col_norm = jacobian_eq.col(col).norm();
-        if( col_norm > 0.0 )
-          jacobian_eq.col(col) /= col_norm;  // zero-norm column (no gradient) left zero -> stays degenerate
-      }
-
-#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
-      const Eigen::JacobiSVD<Eigen::MatrixXd> svd_eq( jacobian_eq );
-#else
-      const Eigen::BDCSVD<Eigen::MatrixXd> svd_eq( jacobian_eq );
-#endif
-      const Eigen::VectorXd singular_values_eq = svd_eq.singularValues();
-      const double threshold_eq = 1.0e-7 * singular_values_eq.maxCoeff();
-
-      size_t npar_eff_equil = 0;
-      for( int i = 0; i < singular_values_eq.size(); ++i )
-        npar_eff_equil += (singular_values_eq(i) > threshold_eq);
-
-      // Only flag a genuinely collapsed problem (a real model degeneracy that survives column-
-      //  equilibration), comparing against the FREE-parameter count (Jacobian columns), not the ambient
-      //  num_pars (which includes manifold-constant parameters that cannot be effective DOF anyway).
-      if( (npar_eff_equil < 1) || (npar_eff_equil < (num_free_pars/5)) )
-        throw runtime_error( "Only computed " + std::to_string(npar_eff_equil)
-                            + " DOF, compared to " + std::to_string(num_free_pars) + " free parameters." );
-
-      num_effective_paramaters = npar_eff_equil;
-    }catch( std::exception &e )
-    {
-      solution.m_warnings.push_back( "Computation of the effective number of parameters failed ('"
-                                    + string(e.what()) + "'), will use total number of fit parameters"
-                                    " to estimate the degrees of freedom." );
-    }//try / catch evaluate NDOF
 
 
     // -------------------------------------------------------------------------------------------
@@ -8200,7 +8613,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *constraint
                                     = mass_fraction_constraint(rel_eff_curve.nuclides[act_num].source, rel_eff_index );
           if( constraint )
+          {
+            // Sigma-block slots: the carrier holds the elements range-constrained TOTAL fraction
+            //  (or the element scale, when every nuclide of the element is constrained) - named
+            //  so a pinned-at-bound warning reads sensibly; the other slots distribute that total.
+            const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( rel_eff_curve.nuclides[act_num].source );
+            const MassFracBlock * const block = nuc ? mass_frac_block( nuc->atomicNumber, rel_eff_index ) : nullptr;
+            if( block && (index == block->carrier_par) )
+            {
+              string el_symbol = nuc->symbol;
+              const size_t digit_pos = el_symbol.find_first_of( "0123456789" );
+              if( digit_pos != string::npos )
+                el_symbol = el_symbol.substr( 0, digit_pos );
+              return (block->spec.all_constrained ? "MTot" : "MFSum") + re_ind + "(" + el_symbol + ")";
+            }
+
             return "MFrac" + re_ind + "(" + rel_eff_curve.nuclides[act_num].name() + ")";
+          }//if( constraint )
 
           return "Act" + re_ind + "(" + rel_eff_curve.nuclides[act_num].name() + ")";
         }
@@ -8433,15 +8862,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
 
   /** Decodes the mass fraction of a single mass-fraction-constrained nuclide - and optionally the
-   element's total constrained mass fraction - through the smooth soft-cap (RelActCalcAuto A16).
+   element's total constrained mass fraction - through the elements exact sigma-block
+   (#MassFracBlock / RelActCalc::decode_mass_frac_block).
 
    Both #relative_activity and #mass_enrichment_fraction route through this one method, so the
-   fraction used in the fit and the fraction reported to the user can never diverge.  Over the
-   element's constrained nuclides it accumulates the constant lower-bound floor `L = Σ lowerᵢ` and
-   the variable demand `S = Σ vᵢ` (vᵢ = gᵢ·(upperᵢ − lowerᵢ) ≥ 0), forms the soft-cap
-   `factor = RelActCalc::mass_fraction_softcap_factor(S, 1−L, eps) ∈ (0,1]`, and returns:
-     - `this_frac        = lower_this + factor·v_this`   (this nuclide's mass fraction, in window), and
-     - `*sum_constrained = L + factor·S`                 (Σ over the element's constrained nuclides; < 1).
+   fraction used in the fit and the fraction reported to the user can never diverge.  Fixed
+   (lower == upper) constraints decode to exactly their pinned fraction; range constraints come
+   from the sigma-block: the carrier slot gives the range-constrained TOTAL
+   `sigma = sig_lo + t*(sig_hi - sig_lo)` (hard-bounded so `fixed_sum + sigma <= 1 - delta` -
+   every window position is exactly reachable, unlike the former soft-cap whose 0.95-of-budget
+   knee compressed high fractions), and the `g_k` slots distribute `sigma` among the windows.
 
    `src` must be a mass-fraction-constrained nuclide and `this_constraint` its constraint.
    */
@@ -8453,43 +8883,82 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                       T &this_frac,
                                       T *sum_constrained = nullptr ) const
   {
-    const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
     const SandiaDecay::Nuclide * const src_nuc = RelActCalcAuto::nuclide(src);
     assert( src_nuc && (this_constraint.nuclide == src_nuc) );
 
-    // Fixed (lower==upper) constraints contribute only to L; their vᵢ == 0, so they are never scaled.
-    double L = 0.0;
-    T S( 0.0 ), v_this( 0.0 );
-    for( const RelActCalcAuto::NucInputInfo &nuclide : rel_eff_curve.nuclides )
+    const MassFracBlock * const block = mass_frac_block( src_nuc->atomicNumber, rel_eff_index );
+    assert( block ); //`src` is constrained, so its element must have a block
+    if( !block )
+      throw std::logic_error( "constrained_element_mass_frac: no sigma-block for constrained nuclide." );
+
+    const size_t num_range = block->range_nucs.size();
+
+    // The range-constrained nuclides total mass fraction, from the carrier parameter (or the
+    //  fixed leftover budget when every nuclide of the element is constrained).
+    T sigma( block->spec.sig_lo );
+    if( block->spec.all_constrained )
     {
-      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(nuclide.source);
-      if( !nuc || (nuc->atomicNumber != src_nuc->atomicNumber) )
-        continue;
+      sigma = T( block->spec.sig_hi ); //== 1 - fixed_sum; the carrier slot holds the element scale instead
+    }else if( num_range > 0 )
+    {
+      const T t = x[block->carrier_par] - RelActAutoCostFcn::sm_activity_par_offset; // box-bounded to [0,1]
+      // +-0.02 slack: numeric differentiation (e.g. the RELACT_GRADIENT_CHECK finite-difference
+      //  probe) steps a bound-pinned parameter slightly outside its box; the decode extends
+      //  smoothly there.  (`x == 0` is the zeroed-parameters uncertainty-evaluation case.)
+      assert( (t >= (0.0 - 2.0E-2)) || (x[block->carrier_par] == 0.0) );
+      assert( (t <= (1.0 + 2.0E-2)) || (x[block->carrier_par] == 0.0) );
+      sigma = block->spec.sig_lo + t*(block->spec.sig_hi - block->spec.sig_lo);
+    }
 
-      const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const mc
-                                                  = mass_fraction_constraint( nuclide.source, rel_eff_index );
-      if( !mc )
-        continue; // unconstrained nuclides of the element are handled by the caller
-
-      const size_t nuc_x_index = nuclide_parameter_index( nuclide.source, rel_eff_index );
-      const T rel_dist = x[nuc_x_index] - RelActAutoCostFcn::sm_activity_par_offset; // box-bounded to [0,1]
-      assert( (rel_dist >= (0.0 - 1.0E-6)) || (x[nuc_x_index] == 0.0) );
-      assert( (rel_dist <= (1.0 + 1.0E-6)) || (x[nuc_x_index] == 0.0) );
-
-      const T v = rel_dist * (mc->upper_mass_fraction - mc->lower_mass_fraction);
-      L += mc->lower_mass_fraction;
-      S += v;
-      if( nuc == src_nuc )
-        v_this = v;
-    }//for( const NucInputInfo &nuclide : rel_eff_curve.nuclides )
-
-    const double budget = 1.0 - L; // > 0 by RelEffCurveInput::check_nuclide_constraints()
-    assert( budget > 0.0 );
-    const T factor = RelActCalc::mass_fraction_softcap_factor( S, T(budget), RelActCalc::ns_mass_frac_softcap_eps );
-
-    this_frac = this_constraint.lower_mass_fraction + factor*v_this;
     if( sum_constrained )
-      *sum_constrained = T(L) + factor*S;
+      *sum_constrained = T(block->spec.fixed_sum) + sigma;
+
+    // Fixed constraints decode to exactly their pinned fraction.
+    for( size_t i = 0; i < block->fixed_nucs.size(); ++i )
+    {
+      if( block->fixed_nucs[i] == src_nuc )
+      {
+        this_frac = T( block->fixed_fractions[i] );
+        return;
+      }
+    }//for( loop over fixed-constrained nuclides )
+
+    assert( num_range > 0 ); //`src` is constrained, and not fixed, so must be a range nuclide
+
+    // Gather the g_k distribution values and decode the block.
+    T gs[8], fractions[9]; //avoid allocation; fall back to vectors for pathological counts
+    std::vector<T> gs_big, fractions_big;
+    T *gs_ptr = gs, *fractions_ptr = fractions;
+    if( num_range > 9 )
+    {
+      gs_big.resize( num_range - 1, T(0.0) );
+      fractions_big.resize( num_range, T(0.0) );
+      gs_ptr = gs_big.data();
+      fractions_ptr = fractions_big.data();
+    }
+
+    for( size_t k = 1; k < num_range; ++k )
+    {
+      const size_t g_index = block->dist_pars[k-1];
+      gs_ptr[k-1] = x[g_index] - RelActAutoCostFcn::sm_activity_par_offset; // box-bounded to [0,1]
+      // +-0.02 slack for numeric-differentiation probing at active bounds - see the `t` note above.
+      assert( (gs_ptr[k-1] >= (0.0 - 2.0E-2)) || (x[g_index] == 0.0) );
+      assert( (gs_ptr[k-1] <= (1.0 + 2.0E-2)) || (x[g_index] == 0.0) );
+    }
+
+    RelActCalc::decode_mass_frac_block( block->spec, sigma, gs_ptr, fractions_ptr );
+
+    for( size_t k = 0; k < num_range; ++k )
+    {
+      if( block->range_nucs[k] == src_nuc )
+      {
+        this_frac = fractions_ptr[k];
+        return;
+      }
+    }//for( loop over range-constrained nuclides )
+
+    assert( 0 ); //`src` is constrained, so must be either a fixed or a range nuclide of the block
+    throw std::logic_error( "constrained_element_mass_frac: constrained nuclide not in its elements sigma-block." );
   }//void constrained_element_mass_frac(...)
 
 
@@ -8560,12 +9029,29 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         assert( mass_fraction_constraint(src,rel_eff_index) == (&mass_frac_constraint) );
 
-        // Decode this nuclide's mass fraction and the element's constrained-fraction sum through the
-        //  smooth soft-cap, so the sum is structurally < 1 - no throw, and the unconstrained remainder
-        //  below stays strictly positive (RelActCalcAuto review item A16).
+        // Decode this nuclide's mass fraction and the element's constrained-fraction sum through
+        //  the exact sigma-block: the sum is `<= 1 - delta` by a hard box bound on the carrier
+        //  parameter - no throw, no soft-cap warp, and the unconstrained remainder below stays
+        //  strictly positive.
         T this_rel_mass_frac, sum_constrained_frac_rel_mass_of_el;
         constrained_element_mass_frac( src, rel_eff_index, x, mass_frac_constraint,
                                        this_rel_mass_frac, &sum_constrained_frac_rel_mass_of_el );
+
+        const MassFracBlock * const block = mass_frac_block( src_nuc->atomicNumber, rel_eff_index );
+        assert( block );
+
+        if( block && block->spec.all_constrained )
+        {
+          // Every nuclide of the element is mass-fraction constrained: there are no unconstrained
+          //  nuclides to carry the element's absolute scale, so the (freed) carrier slot holds the
+          //  element's total relative mass directly.
+          const T el_rel_mass = block->scale_multiple * (x[block->carrier_par] - RelActAutoCostFcn::sm_activity_par_offset);
+          // Lower-bounded at sm_activity_par_offset; the 0.02-relative slack accommodates
+          //  numeric-differentiation probing when the parameter is pinned at that bound.
+          assert( (el_rel_mass >= -2.0E-2*std::fabs(block->scale_multiple)) || (x[block->carrier_par] == 0.0) );
+
+          return el_rel_mass * this_rel_mass_frac * mass_frac_constraint.nuclide->activityPerGram();
+        }//if( every nuclide of the element is constrained )
 
         // Sum the relative masses of the element's *unconstrained* nuclides (rel act / specific
         //  activity); together they make up the `1 - sum_constrained` remainder of the element mass.
@@ -8581,7 +9067,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           sum_unconstrained_rel_mass_of_el += (rel_act / nuclide_nuc->activityPerGram());
         }//for( const NucInputInfo &nuclide : rel_eff_curve.nuclides )
 
-        // sum_constrained < 1 structurally, so this remainder is strictly positive (> eps*budget).
+        // sum_constrained <= 1 - delta by the hard bound, so this remainder is strictly positive.
         const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
         const T total_rel_mass = sum_unconstrained_rel_mass_of_el / unconstrained_rel_mass_frac_of_el;
         const T this_rel_mass = total_rel_mass * this_rel_mass_frac;
@@ -8760,8 +9246,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       if( mass_frac_constraint.nuclide == nuclide )
       {
-        // Decode through the SAME soft-cap helper the fit uses, so the reported fraction equals the
-        //  fraction actually used in `relative_activity` (RelActCalcAuto review item A16).
+        // Decode through the SAME sigma-block helper the fit uses, so the reported fraction equals
+        //  the fraction actually used in `relative_activity`.
         T this_frac;
         constrained_element_mass_frac( src, rel_eff_index, x, mass_frac_constraint, this_frac );
         return this_frac;
@@ -8847,9 +9333,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             continue;
 
           // If we are here, we have a constraint for this source.
-          //Rel Act paramater is constrained within [sm_activity_par_offset, 1+sm_activity_par_offset] (= [1,2]),
-          //  and the nuclide's mass fraction is decoded from it through the soft-cap (constrained_element_mass_frac).
-          //  So we will multiply by d{RelAct}/d{Par[index]} to convert to the multiple for Rel. Act.
+          //The slot holds a sigma-block parameter (the elements constrained-total `t`, a
+          //  distribution `g_k`, or the all-constrained element scale - see #MassFracBlock), and
+          //  the nuclides mass fraction/rel-act is decoded from the block
+          //  (constrained_element_mass_frac).  So we differentiate relative_activity to get
+          //  d{RelAct}/d{Par[index]} - correct for every slot kind - to convert to the Rel. Act. multiple.
           double derivative = std::numeric_limits<double>::infinity();
           const double rel_act = cost_functor->relative_activity(src, rel_eff_index, parameters);
           if( sm_use_auto_diff )
@@ -13390,7 +13878,7 @@ void RelEffCurveInput::check_nuclide_constraints() const
 
   //Now check the mass fraction constraints (we have already checked that the nuclide is not constrained by an act ratio constraint)
   std::map<short int, size_t> num_constrained_nucs_of_el;
-  std::map<short int, double> lower_mass_fraction_sums_of_el;
+  std::map<short int, double> lower_mass_fraction_sums_of_el, upper_mass_fraction_sums_of_el;
   for( size_t index = 0; index < mass_fraction_constraints.size(); ++index )
   {
     const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint = mass_fraction_constraints[index];
@@ -13421,6 +13909,7 @@ void RelEffCurveInput::check_nuclide_constraints() const
     }
 
     lower_mass_fraction_sums_of_el[constraint.nuclide->atomicNumber] += constraint.lower_mass_fraction;
+    upper_mass_fraction_sums_of_el[constraint.nuclide->atomicNumber] += constraint.upper_mass_fraction;
 
     // Check that the constrained nuclide is a nuclide in this RelEffCurve
     size_t num_src_nucs_for_element = 0;
@@ -13454,17 +13943,8 @@ void RelEffCurveInput::check_nuclide_constraints() const
     }//for( size_t i = index + 1; i < mass_fraction_constraints.size(); ++i )
   }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : mass_fraction_constraints )
 
-  // Check that the mass fraction sum of each element is 1.0
-  for( const auto &[el, lower_mass_fraction_sum] : lower_mass_fraction_sums_of_el )
-  {
-    if( lower_mass_fraction_sum >= 1.0 )
-      throw logic_error( "The lower mass fraction sum of element (AN=" + std::to_string(el) 
-                          + ") is above 1.0 (sum=" + std::to_string(lower_mass_fraction_sum) + ")." );
-  }//for( const [const short int &el, const double &lower_mass_fraction_sum] : lower_mass_fraction_sums_of_el )
-
-  // Check that there is at least one nuclide of each element that is not constrained; to do
-  // this we need to count the number of nuclides of each element total, and compare that to the
-  // number of constrained nuclides of that element (num_constrained_nucs_of_el).
+  // Count the number of nuclides of each element, to tell apart elements with unconstrained
+  //  nuclides remaining from fully-constrained ("all-constrained") elements.
   std::map<short int, size_t> num_nucs_of_el;
   for( const NucInputInfo &src : nuclides )
   {
@@ -13472,13 +13952,32 @@ void RelEffCurveInput::check_nuclide_constraints() const
     if( src_nuc )
       num_nucs_of_el[src_nuc->atomicNumber] += 1;
   }
-  
+
+  // Feasibility of each elements constrained windows.  An element with >= 1 unconstrained nuclide
+  //  needs the constrained lower bounds to leave a positive mass remainder; an all-constrained
+  //  element (every nuclide carries a constraint - supported via the sigma-block element-scale
+  //  parameter) instead needs its windows to be able to sum to exactly 1.
   for( const auto &[el, num_constrained_nucs] : num_constrained_nucs_of_el )
   {
     assert( num_nucs_of_el[el] > 0 );
 
-    if( num_nucs_of_el[el] <= num_constrained_nucs )
-      throw logic_error( "For each element with a mass fraction constraint, you must have at least one nuclide which is not constrained." );
+    const double lower_sum = lower_mass_fraction_sums_of_el[el];
+    const double upper_sum = upper_mass_fraction_sums_of_el[el];
+
+    if( num_nucs_of_el[el] > num_constrained_nucs )
+    {
+      if( lower_sum >= (1.0 - 1.0E-6) )
+        throw logic_error( "The lower mass fraction sum of element (AN=" + std::to_string(el)
+                            + ") is " + std::to_string(lower_sum)
+                            + ", which leaves no mass for the elements unconstrained nuclides." );
+    }else
+    {
+      if( (lower_sum > (1.0 + 1.0E-6)) || (upper_sum < (1.0 - 1.0E-6)) )
+        throw logic_error( "All nuclides of element (AN=" + std::to_string(el) + ") are mass-fraction"
+                            " constrained, but the windows can not sum to exactly 1 (sum of lower"
+                            " limits=" + std::to_string(lower_sum) + ", sum of upper limits="
+                            + std::to_string(upper_sum) + ")." );
+    }//if( element has unconstrained nuclides ) / else( all-constrained )
   }//for( const [const short int &el, const size_t &num_nucs] : num_constrained_nucs_of_el )
 
 
