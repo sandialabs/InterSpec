@@ -47,3 +47,16 @@
 .FluxInfoAmount {
   min-width: 225px;
 }
+
+
+/* Holds the "Copy To Clipboard" button and the "Select rows" checkbox */
+.FluxOutputOpts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.FluxOutputOpts .FluxSelectRowsCb span {
+  margin-left: 3px;
+}

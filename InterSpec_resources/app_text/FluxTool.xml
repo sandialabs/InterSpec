@@ -9,6 +9,7 @@
   <message id="ftw-hdr-flux-on-det">Flux on Det. (ɣ/s)</message>
   <message id="ftw-hdr-flux-cm">Flux (ɣ/cm²/s)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-hdr-use">Use</message>
   <message id="ftw-tt-distance">
     Distance from center of source to face of detector. Number must be
     followed by units; valid units are: meters, m, cm, mm, km, feet,
@@ -21,6 +22,13 @@
   <message id="ftw-more">More</message>
   <message id="ftw-copy-btn">Copy To Clipboard</message>
   <message id="ftw-copy-btn-narrow">Copy</message>
+  <message id="ftw-select-rows">Select rows</message>
+  <message id="ftw-select-rows-narrow">Select</message>
+  <message id="ftw-tt-select-rows">
+    Adds a checkbox to each row of the table, so you can choose which rows get copied to
+    the clipboard, or exported to CSV.  Rows start out checked; un-check the ones you dont
+    want in the output.  When this is un-checked, all rows are copied/exported.
+  </message>
   <message id="ftw-invalid-dist">Invalid Distance</message>
   <message id="ftw-no-drf">No Detector Response Function Chosen</message>
   <message id="ftw-no-foreground">No foreground spectrum loaded</message>

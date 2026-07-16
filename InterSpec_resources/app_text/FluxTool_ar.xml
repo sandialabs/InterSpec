@@ -9,6 +9,7 @@
   <message id="ftw-hdr-flux-on-det">التدفق على الكاشف (ɣ/ث)</message>
   <message id="ftw-hdr-flux-cm">التدفق (ɣ/سم²/ث)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/ث</message>
+  <message id="ftw-hdr-use">استخدام</message>
   <message id="ftw-tt-distance">
     المسافة من مركز المصدر إلى وجه الكاشف. الرقم يجب أن يكون
     متبوعًا بوحدات؛ الوحدات الصالحة هي: meters, m, cm, mm, km, feet,
@@ -21,6 +22,13 @@
   <message id="ftw-more">المزيد</message>
   <message id="ftw-copy-btn">نسخ إلى الحافظة</message>
   <message id="ftw-copy-btn-narrow">نسخ</message>
+  <message id="ftw-select-rows">تحديد الصفوف</message>
+  <message id="ftw-select-rows-narrow">تحديد</message>
+  <message id="ftw-tt-select-rows">
+      يضيف مربع اختيار إلى كل صف في الجدول، حتى تتمكن من اختيار الصفوف التي يتم نسخها
+    إلى الحافظة أو تصديرها إلى CSV.  تبدأ الصفوف محددة؛ ألغِ تحديد الصفوف التي لا
+    تريدها في المخرجات.  عند إلغاء تحديد هذا الخيار، يتم نسخ/تصدير جميع الصفوف.
+  </message>
   <message id="ftw-invalid-dist">مسافة غير صالحة</message>
   <message id="ftw-no-drf">لم يتم اختيار دالة استجابة الكاشف</message>
   <message id="ftw-no-foreground">لا يوجد طيف مقدمة محمل</message>
