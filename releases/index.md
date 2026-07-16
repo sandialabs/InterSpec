@@ -1,13 +1,13 @@
-# InterSpec v1.0.14 Release Notes (June 2026)
+# InterSpec v1.0.14 Release Notes (July 2026)
 
 <div style="text-align: right;">SAND2026-21613O</div>
 
-**Release date:** June 2026
+**Release date:** July 2026
 
 **Previous release:** v1.0.13 (March 7, 2025)
 <br/>
 <br/>
-InterSpec v1.0.14 is a significant update spanning approximately 730 commits to InterSpec, 90 commits to SpecUtils, and 4 commits to SandiaDecay. Highlights include a new Simple Activity Calculator, a graphical batch analysis tool for processing multiple spectrum files, major enhancements to the "Isotopics by nuclides" tool (including multiple relative efficiency curves, fluorescent x-rays, reactions, new constraint types, and improved calculations), a new Reference Spectra widget, Voigt peak shape support, improvements to peak fitting, dynamically displayed reference lines, as well as translations into many additional languages.
+InterSpec v1.0.14 is a significant update spanning approximately 750 commits to InterSpec, 100 commits to SpecUtils, and 4 commits to SandiaDecay. Highlights include a new Simple Activity Calculator, a graphical batch analysis tool for processing multiple spectrum files, major enhancements to the "Isotopics by nuclides" tool (including multiple relative efficiency curves, fluorescent x-rays, reactions, new constraint types, and improved calculations), a new Reference Spectra widget, Voigt peak shape support, improvements to peak fitting, dynamically displayed reference lines, as well as translations into many additional languages.
 <br/>
 <br/>
 Nearly all new features, and many fixes are thanks to user requests, feedback, or contributions.
@@ -121,6 +121,7 @@ A beta version of a "Fit Source" capability has been added, accessible from the 
     - Advanced options for controlling continuum type, peak skew, and clustering behavior.
     - Rel. Eff. chart display for the fit results.
 
+Fitting parameters have not yet been fully optimized in this release, sometimes leading to low-quality fits, particularly for low-resolution detectors.  Check the [bleeding edge](https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge) build for updates in the late July to August 2026 timeframe for improvements.
 <div style="clear: both;"></div>
 
 ### Peak Fitting Improvements
