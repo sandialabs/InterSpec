@@ -127,8 +127,12 @@ protected:
                                  const std::string &errmsg,
                                  const int generation_id );
 
-  /** Per-node MC FEP precision from the GUI selection. */
+  /** Per-node MC FEP precision (base target) from the GUI selection. */
   double selectedPrecision() const;
+
+  /** True when the "Balanced" precision option is selected, i.e. use the
+      graded relax_mild precision map (ceelo::PrecisionProfile::RelaxMild). */
+  bool selectedRelaxMild() const;
 
   InterSpec *m_interspec;
   std::shared_ptr<const DetectorPeakResponse> m_seedDrf;
@@ -136,7 +140,7 @@ protected:
   DetectorGeometryInput *m_geometry;
 
   Wt::WComboBox *m_profile;     //Far-field | General | Contact
-  Wt::WComboBox *m_precision;   //Fast (1%) | Normal (0.3%) | Thorough (0.1%) | Custom
+  Wt::WComboBox *m_precision;   //Fast (1%) | Normal (0.3%) | Balanced (relax_mild) | Thorough (0.1%) | Custom
   Wt::WLineEdit *m_customPrecision;
   Wt::WText *m_estimate;
 

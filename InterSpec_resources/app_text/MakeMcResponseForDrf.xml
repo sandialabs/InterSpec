@@ -34,6 +34,7 @@
   <message id="mmr-precision">MC precision:</message>
   <message id="mmr-precision-fast">Fast (1% per node)</message>
   <message id="mmr-precision-normal">Normal (0.3% per node)</message>
+  <message id="mmr-precision-balanced">Balanced (relaxed high-E)</message>
   <message id="mmr-precision-thorough">Thorough (0.1% per node)</message>
   <message id="mmr-precision-custom">Custom...</message>
   <message id="mmr-tt-precision">&lt;p&gt;The per-node Monte-Carlo statistical target: how
@@ -43,6 +44,8 @@
     &lt;ul&gt;
     &lt;li&gt;&lt;b&gt;Fast (1%)&lt;/b&gt; - a quick preview, or small/high-efficiency detectors.&lt;/li&gt;
     &lt;li&gt;&lt;b&gt;Normal (0.3%)&lt;/b&gt; - a good balance for most detectors (default).&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Balanced (relaxed high-E)&lt;/b&gt; - keeps low-energy points tight but relaxes the
+    expensive high-energy points, for about a 2&#215; faster run at nearly the same accuracy.&lt;/li&gt;
     &lt;li&gt;&lt;b&gt;Thorough (0.1%)&lt;/b&gt; - a high-quality reference; noticeably slower.&lt;/li&gt;
     &lt;li&gt;&lt;b&gt;Custom&lt;/b&gt; - enter your own per-node target (e.g. 0.2%).&lt;/li&gt;
     &lt;/ul&gt;

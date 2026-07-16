@@ -244,17 +244,18 @@ if( INTERSPEC_REGEN_CEELO_GOLDENS )
   add_custom_target( regen_ceelo_goldens
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_ceelo_fixture_dir}"
     # High-statistics fixtures: tight per-node precision with raised caps
-    #  (max_events / max_wall_s) so it is actually reached. czt_box is a box
+    #  (max_events / max_cpu_s) so it is actually reached. czt_box is a box
     #  (4x the angular nodes via its phi axis), so a lighter target keeps it
     #  practical. Args: <preset> <dir> <profile> <precision> <n_probes> <seed>
-    #  <max_events> <max_wall_s>.
-    COMMAND $<TARGET_FILE:make_golden_response> nai3x3 "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 60
-    COMMAND $<TARGET_FILE:make_golden_response> hpge_coax "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 60
-    COMMAND $<TARGET_FILE:make_golden_response> czt_box "${_ceelo_fixture_dir}" far-field 0.0015 90 1 200000000 25
+    #  <max_events> <max_cpu_s> (CPU-s summed over worker threads; ~10x the
+    #  old wall-s caps at ~10 threads, so the same budget, load-invariant).
+    COMMAND $<TARGET_FILE:make_golden_response> nai3x3 "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 600
+    COMMAND $<TARGET_FILE:make_golden_response> hpge_coax "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 600
+    COMMAND $<TARGET_FILE:make_golden_response> czt_box "${_ceelo_fixture_dir}" far-field 0.0015 90 1 200000000 250
     # Detective-X-like coax HPGe (public specs), the Act/Shield cascade-truth
     #  detector; grounded to the ORTEC Detective-X_LANL_100cm curve by
     #  test_CascadeSummingFit's --regenerate mode (see test_data/cascade_truth/).
-    COMMAND $<TARGET_FILE:make_golden_response> detective_x "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 60
+    COMMAND $<TARGET_FILE:make_golden_response> detective_x "${_ceelo_fixture_dir}" general 0.001 120 1 200000000 600
     COMMENT "Regenerating CeeLo golden response fixtures (real MC; ~hours at high stats)"
     VERBATIM
   )

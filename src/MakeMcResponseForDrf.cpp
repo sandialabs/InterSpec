@@ -217,10 +217,11 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   WContainerWidget *precRow = optsBox->addNew<WContainerWidget>();
   precRow->addNew<WLabel>( WString::tr("mmr-precision") );
   m_precision = precRow->addNew<WComboBox>();
-  m_precision->addItem( WString::tr("mmr-precision-fast") );      //1%
-  m_precision->addItem( WString::tr("mmr-precision-normal") );    //0.3%
-  m_precision->addItem( WString::tr("mmr-precision-thorough") );  //0.1%
-  m_precision->addItem( WString::tr("mmr-precision-custom") );
+  m_precision->addItem( WString::tr("mmr-precision-fast") );      //idx0: 1%
+  m_precision->addItem( WString::tr("mmr-precision-normal") );    //idx1: 0.3%
+  m_precision->addItem( WString::tr("mmr-precision-balanced") );  //idx2: relax_mild (0.3% base, relaxed high-E)
+  m_precision->addItem( WString::tr("mmr-precision-thorough") );  //idx3: 0.1%
+  m_precision->addItem( WString::tr("mmr-precision-custom") );    //idx4
   m_precision->setCurrentIndex( 1 );
   m_precision->activated().connect( this, &MakeMcResponseForDrf::handlePrecisionChanged );
   HelpSystem::attachToolTipOn( m_precision, WString::tr("mmr-tt-precision"), true );
@@ -312,9 +313,15 @@ void MakeMcResponseForDrf::handleGeometryChanged()
 
 void MakeMcResponseForDrf::handlePrecisionChanged()
 {
-  m_customPrecision->setHidden( m_precision->currentIndex() != 3 );
+  m_customPrecision->setHidden( m_precision->currentIndex() != 4 );
   updateEstimate();
 }//handlePrecisionChanged()
+
+
+bool MakeMcResponseForDrf::selectedRelaxMild() const
+{
+  return (m_precision->currentIndex() == 2);
+}//selectedRelaxMild()
 
 
 double MakeMcResponseForDrf::selectedPrecision() const
@@ -323,7 +330,8 @@ double MakeMcResponseForDrf::selectedPrecision() const
   {
     case 0: return 0.01;
     case 1: return 0.003;
-    case 2: return 0.001;
+    case 2: return 0.003;  //Balanced: relax_mild base precision (0.3%)
+    case 3: return 0.001;
     default:
       break;
   }
@@ -363,6 +371,9 @@ void MakeMcResponseForDrf::updateEstimate()
     const ceelo::GeometryDescriptor gd = m_geometry->toDescriptor();
     ceelo::GenerationOptions opts;
     opts.node_fep_precision = selectedPrecision();
+    opts.precision_profile = selectedRelaxMild()
+                             ? ceelo::PrecisionProfile::RelaxMild
+                             : ceelo::PrecisionProfile::Uniform;
     switch( m_profile->currentIndex() )
     {
       case 1: opts.profile = ceelo::ResponseProfile::FarField; break;
@@ -372,9 +383,11 @@ void MakeMcResponseForDrf::updateEstimate()
     const int nodes = ceelo::ResponseGenerator::estimated_node_count( gd, opts );
 
     // Rough per-node wall time scales with 1/precision^2, capped at the
-    //  per-node ceiling; the constants are ballpark (M1-class laptop).
+    //  per-node ceiling; the constants are ballpark (M1-class laptop). The
+    //  relax_mild map cuts the expensive high-E node share ~2x (D0 memo).
     const double prec = opts.node_fep_precision;
-    const double per_node_s = std::min( 8.0, 0.05 * std::pow( 0.003/prec, 2.0 ) + 0.05 );
+    const double relax = selectedRelaxMild() ? 0.5 : 1.0;
+    const double per_node_s = relax * std::min( 8.0, 0.05 * std::pow( 0.003/prec, 2.0 ) + 0.05 );
     const int total_min = std::max( 1, static_cast<int>( std::ceil( nodes * per_node_s / 60.0 ) ) );
 
     m_estimate->setText( WString::tr("mmr-estimate")
@@ -406,6 +419,9 @@ void MakeMcResponseForDrf::startGeneration()
 
   ceelo::GenerationOptions opts;
   opts.node_fep_precision = selectedPrecision();
+  opts.precision_profile = selectedRelaxMild()
+                           ? ceelo::PrecisionProfile::RelaxMild
+                           : ceelo::PrecisionProfile::Uniform;
   switch( m_profile->currentIndex() )
   {
     case 1: opts.profile = ceelo::ResponseProfile::FarField; break;
