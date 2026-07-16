@@ -472,7 +472,7 @@ BOOST_AUTO_TEST_CASE( sigma_block_hinge_properties )
   {
     const double x = a + k*1.0e-5;  //spans well past both seams
     const double qx = RelActCalc::qmax_hinge( x, a, r );
-    const double true_max = std::max( x, a );
+    const double true_max = (std::max)( x, a );
 
     BOOST_CHECK_MESSAGE( qx >= true_max - 1.0e-15, "qmax below true max at x=" << x );
     BOOST_CHECK_MESSAGE( qx <= true_max + 0.25*r + 1.0e-15, "qmax excess above r/4 at x=" << x );
@@ -480,7 +480,7 @@ BOOST_AUTO_TEST_CASE( sigma_block_hinge_properties )
       BOOST_CHECK_SMALL( qx - true_max, 1.0e-15 );  //exact outside the blend zone
 
     const double qn = RelActCalc::qmin_hinge( x, a, r );
-    const double true_min = std::min( x, a );
+    const double true_min = (std::min)( x, a );
     BOOST_CHECK_MESSAGE( qn <= true_min + 1.0e-15, "qmin above true min at x=" << x );
     BOOST_CHECK_MESSAGE( qn >= true_min - 0.25*r - 1.0e-15, "qmin deficit below -r/4 at x=" << x );
 
@@ -546,7 +546,7 @@ BOOST_AUTO_TEST_CASE( sigma_block_exactness_fuzz )
     {
       const double l = 0.5*unit(rng)/num_range;
       const double u = l + (1.0e-4 + unit(rng))/(1.0 + 2.0*unit(rng)*num_range);
-      windows[k] = { l, std::min(u, 1.0) };
+      windows[k] = { l, (std::min)(u, 1.0) };
       lower_sum += l;
     }
     if( (fixed_sum + lower_sum) >= 0.95 )

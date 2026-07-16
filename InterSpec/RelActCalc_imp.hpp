@@ -187,12 +187,12 @@ inline MassFracBlockSpec make_mass_frac_block_spec( const std::vector<std::pair<
     assert( spec.lower[k] < spec.upper[k] ); //fixed (lower == upper) constraints belong in `fixed_sum`
     lower_sum += spec.lower[k];
     upper_sum += spec.upper[k];
-    min_width = std::min( min_width, spec.upper[k] - spec.lower[k] );
+    min_width = (std::min)( min_width, spec.upper[k] - spec.lower[k] );
   }
 
   // For a mixed element check_nuclide_constraints() guarantees `fixed_sum < 1`; an all-constrained
   //  all-fixed element has `fixed_sum == 1` (to ~1E-6), so clamp the tiny/negative leftover to 0.
-  const double budget = std::max( 1.0 - fixed_sum, 0.0 );
+  const double budget = (std::max)( 1.0 - fixed_sum, 0.0 );
   assert( all_constrained || (budget > 0.0) );
 
   if( all_constrained )
@@ -204,10 +204,10 @@ inline MassFracBlockSpec make_mass_frac_block_spec( const std::vector<std::pair<
   {
     spec.delta = ns_mass_frac_min_remainder_frac * budget;
     spec.sig_lo = lower_sum;
-    spec.sig_hi = std::min( upper_sum, budget - spec.delta );
+    spec.sig_hi = (std::min)( upper_sum, budget - spec.delta );
     // check_nuclide_constraints() guarantees `lower_sum < budget`; keep the box non-inverted in
     //  edge cases anyway (a point box gets its parameter pinned const by the setup code).
-    spec.sig_hi = std::max( spec.sig_hi, spec.sig_lo );
+    spec.sig_hi = (std::max)( spec.sig_hi, spec.sig_lo );
   }
 
   if( num_range > 0 )
@@ -229,7 +229,7 @@ inline MassFracBlockSpec make_mass_frac_block_spec( const std::vector<std::pair<
     for( size_t k = 0; k < num_range; ++k )
       spec.radius[k] = ns_mass_frac_stick_radius_frac * (spec.upper[k] - spec.lower[k]);
 
-    spec.width_radius = std::min( 1.0e-12, ns_mass_frac_stick_radius_frac * min_width );
+    spec.width_radius = (std::min)( 1.0e-12, ns_mass_frac_stick_radius_frac * min_width );
   }//if( num_range > 0 )
 
   return spec;
@@ -305,7 +305,7 @@ inline void invert_mass_frac_block( const MassFracBlockSpec &spec, const double 
   }else
   {
     const double t_raw = (target_sigma - spec.sig_lo) / (spec.sig_hi - spec.sig_lo);
-    const double t = std::min( 1.0 - margin, std::max( margin, t_raw ) );
+    const double t = (std::min)( 1.0 - margin, (std::max)( margin, t_raw ) );
     sigma = spec.sig_lo + t*(spec.sig_hi - spec.sig_lo);
   }
 
@@ -320,7 +320,7 @@ inline void invert_mass_frac_block( const MassFracBlockSpec &spec, const double 
     //  window (never vs an absolute epsilon - tiny windows are legitimate); else the midpoint.
     double g = 0.5;
     if( width > 1.0e-9*(spec.upper[k] - spec.lower[k]) )
-      g = std::min( 1.0 - margin, std::max( margin, (target_fractions[k] - lo)/width ) );
+      g = (std::min)( 1.0 - margin, (std::max)( margin, (target_fractions[k] - lo)/width ) );
 
     gs[k-1] = g;
     rem -= (lo + g*width);
@@ -572,7 +572,7 @@ T eval_physical_model_eqn_imp( const double energy,
       //  ceres::Jet derivative.
       double eval_energy = energy;
       if( (corr_upper_energy > corr_lower_energy) && (corr_lower_energy > 0.0) )
-        eval_energy = std::max( corr_lower_energy, std::min( corr_upper_energy, energy ) );
+        eval_energy = (std::max)( corr_lower_energy, (std::min)( corr_upper_energy, energy ) );
       const double energy_mev = 0.001*eval_energy;
       answer = exp( b_val*log(energy_mev) + log(c_val)/energy_mev );
     }//if( basis ) / else( Hoerl )
