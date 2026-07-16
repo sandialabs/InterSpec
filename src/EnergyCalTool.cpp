@@ -342,7 +342,14 @@ class CalDisplay : public WContainerWidget
   
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
   WPushButton *m_fitCoeffs;
+  WText *m_fitHint;
 #endif
+
+  /** Whether the per-coefficient "Fit" checkboxes are disabled; they are disabled on displays
+   whose checkboxes are never consulted (fitting always uses the foreground displays selections;
+   the checkbox states are kept in sync across all displays).
+   */
+  bool m_fitCbsDisabled;
   
 #if( IMP_CALp_BTN_NEAR_COEFS )
   WPushButton *m_downloadCALp;
@@ -369,8 +376,10 @@ public:
    , m_addPairs( nullptr )
 #endif
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-  , m_fitCoeffs( nullptr )
+  , m_fitCoeffs( nullptr ),
+   m_fitHint( nullptr )
 #endif
+  , m_fitCbsDisabled( false )
 #if( IMP_CALp_BTN_NEAR_COEFS )
   , m_downloadCALp( nullptr )
   , m_uploadCALp( nullptr )
@@ -424,10 +433,20 @@ public:
     
     WContainerWidget *spacer = new WContainerWidget( btndiv );
     spacer->addStyleClass( "Spacer" );
-    
+
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+    // The hint lives inside the flex spacer, absolutely positioned to fill it, so its text wraps
+    //  within the leftover space and can never change the column width or move the button.
+    m_fitHint = new WText( spacer );
+    m_fitHint->addStyleClass( "FitCoefHint" );
+    m_fitHint->hide();
+
     m_fitCoeffs = new WPushButton( WString::tr("ect-fit-coeff-btn"), btndiv );
     m_fitCoeffs->addStyleClass( "CalCoefFitBtn" );
+
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips",
+                                                                      InterSpec::instance() );
+    HelpSystem::attachToolTipOn( m_fitCoeffs, WString::tr("ect-tt-fit-coeff-btn"), showToolTips );
 #endif
     
     layout->addWidget( btndiv, 1, 0 );
@@ -500,7 +519,30 @@ public:
         ww->m_fit->setChecked( fitfor.count(ww->m_order) );
     }//for( auto w : m_coefficients->children() )
   }//void setFitFor( const set<size_t> &fitfor )
-  
+
+
+  /** Enable/disable the per-coefficient "Fit" checkboxes.  They are disabled on displays whose
+   checkboxes are never consulted (fitting always uses the foreground displays selections; the
+   checkbox states are kept in sync across all displays).
+   */
+  void setFitCheckboxesDisabled( const bool disabled )
+  {
+    m_fitCbsDisabled = disabled;
+
+    const WString tip = disabled ? WString::tr("ect-tt-fit-cb-disabled") : WString();
+    for( auto w : m_coefficients->children() )
+    {
+      auto ww = dynamic_cast<CoefDisplay *>( w );
+      assert( ww );
+      if( ww && (ww->m_fit->isDisabled() != disabled) )
+      {
+        ww->m_fit->setDisabled( disabled );
+        ww->m_fit->setToolTip( tip );
+      }
+    }//for( auto w : m_coefficients->children() )
+  }//void setFitCheckboxesDisabled( const bool disabled )
+
+
 #if( HIDE_EMPTY_DEV_PAIRS )
   void showDevPairs()
   {
@@ -602,6 +644,8 @@ public:
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
     if( m_fitCoeffs )
       m_fitCoeffs->setHidden( !fitCoeffsVisible );
+    if( m_fitHint && !fitCoeffsVisible && !m_fitHint->isHidden() )
+      m_fitHint->hide();
 #endif
     
 #if( IMP_CALp_BTN_NEAR_COEFS )
@@ -763,8 +807,13 @@ public:
       const float value = (coefnum < coeffs.size()) ? coeffs[coefnum] : 0.0f;
       disp->m_value->setValue( value );
       disp->m_fit->setChecked( (coefnum < 2) );
-      
-      disp->m_fit->changed().connect( m_tool, &EnergyCalTool::updateFitButtonStatus );
+      if( m_fitCbsDisabled )
+      {
+        disp->m_fit->disable();
+        disp->m_fit->setToolTip( WString::tr("ect-tt-fit-cb-disabled") );
+      }
+
+      disp->m_fit->changed().connect( boost::bind( &EnergyCalTool::fitCheckboxChanged, m_tool, this ) );
       
       /* Note: if the user uses the up.down arrows in a NativeFloatSpinBox to change values, things
                get all messed up (new values get set via c++ messing  up current values, or the
@@ -816,14 +865,23 @@ public:
   }//updateToGui(...)
 
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-  void setFitButtonEnabled( const bool canFitCeofs )
+  /** Sets the "Fit Coeffs" button enabled state, and when disabled, shows a short hint of why
+   fitting isnt possible (pass an empty hint to show nothing).
+   */
+  void setFitStatus( const bool canFitCoefs, const Wt::WString &hint )
   {
     if( !m_cal )
       return;
-      
-    if( m_fitCoeffs->isEnabled() != canFitCeofs )
-      m_fitCoeffs->setEnabled( canFitCeofs );
-  }
+
+    if( m_fitCoeffs->isEnabled() != canFitCoefs )
+      m_fitCoeffs->setEnabled( canFitCoefs );
+
+    const bool showHint = (!canFitCoefs && !hint.empty() && !m_fitCoeffs->isHidden());
+    if( showHint && (m_fitHint->text() != hint) )
+      m_fitHint->setText( hint );
+    if( m_fitHint->isHidden() == showHint )
+      m_fitHint->setHidden( !showHint );
+  }//void setFitStatus( const bool canFitCoefs, const Wt::WString &hint )
   
   Wt::EventSignal<Wt::WMouseEvent> &doFitCoeffs()
   {
@@ -1376,6 +1434,41 @@ vector<EnergyCalImp::CalDisplay *> EnergyCalTool::calDisplays()
   return answer;
 }//vector<EnergyCalImp::CalDisplay *> calDisplays()
 #endif
+
+
+EnergyCalImp::CalDisplay *EnergyCalTool::foregroundFitDisplay( int *menunum, Wt::WMenuItem **item )
+{
+  if( menunum )
+    *menunum = -1;
+  if( item )
+    *item = nullptr;
+
+  const vector<string> displayed
+                       = m_interspec->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+
+  for( int menuIndex = 0; menuIndex < 3; ++menuIndex )
+  {
+    WMenu * const detMenu = m_detectorMenu[menuIndex];
+    for( int i = 0; detMenu && (i < detMenu->count()); ++i )
+    {
+      WMenuItem * const thisitem = detMenu->itemAt(i);
+      auto display = thisitem ? dynamic_cast<EnergyCalImp::CalDisplay *>( thisitem->contents() )
+                              : nullptr;
+      if( display
+          && (display->spectrumType() == SpecUtils::SpectrumType::Foreground)
+          && (std::find(begin(displayed), end(displayed), display->detectorName()) != end(displayed)) )
+      {
+        if( menunum )
+          *menunum = menuIndex;
+        if( item )
+          *item = thisitem;
+        return display;
+      }//if( we found a displayed foreground detector )
+    }//for( loop over the menus items )
+  }//for( loop over the detector menus )
+
+  return nullptr;
+}//EnergyCalImp::CalDisplay *foregroundFitDisplay( int *menunum, Wt::WMenuItem **item )
 
 
 
@@ -3625,36 +3718,34 @@ void EnergyCalTool::specTypeToDisplayForChanged()
 }//void specTypeToDisplayForChanged();
 
 
-bool EnergyCalTool::canDoEnergyFit()
+EnergyCalTool::CanFitCoefStatus EnergyCalTool::canDoEnergyFit()
 {
   // Check that "Apply Changes To" for the "Foreground" is checked, otherwise fitting makes no sense
   if( !m_applyToCbs[ApplyToCbIndex::ApplyToForeground]->isChecked() )
-    return false;
-  
+    return CanFitCoefStatus::ForegroundNotApplied;
+
   // Check if there are any peaks currently showing.
   shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks = m_peakModel->peaks();
   if( !peaks )
-    return false;
-  
+    return CanFitCoefStatus::NoPeaksToUse;
+
   size_t nPeaksToUse = 0;
   for( const PeakModel::PeakShrdPtr &p : *peaks )
     nPeaksToUse += (p && p->useForEnergyCalibration());
-  
+
   if( nPeaksToUse < 1 )
-    return false;
-  
+    return CanFitCoefStatus::NoPeaksToUse;
+
   if( !m_calInfoDisplayStack )
-    return false;
-  
-  // We are actually going to fit the coefficients for the currently showing CalDisplay, so only
-  //  consult the checkboxes on that one display.
+    return CanFitCoefStatus::InternalError;
+
   auto caldisp = dynamic_cast<EnergyCalImp::CalDisplay *>( m_calInfoDisplayStack->currentWidget() );
   if( !caldisp )
-    return false;
-  
+    return CanFitCoefStatus::InternalError;
+
   auto cal = caldisp->lastSetCalibration();
   if( !cal || !cal->valid() )
-    return false;
+    return CanFitCoefStatus::InternalError;
 
   // The peaks used for the fit are the foregrounds peaks, so the calibration being shown must
   //  belong to the foreground - or at least be the foregrounds displayed calibration (e.g., when
@@ -3664,13 +3755,13 @@ bool EnergyCalTool::canDoEnergyFit()
     const shared_ptr<const SpecUtils::Measurement> forehist
                            = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
     if( !forehist || (forehist->energy_calibration() != cal) )
-      return false;
+      return CanFitCoefStatus::NotForegroundCal;
   }//if( the display being shown isnt for the foreground )
 
   switch( cal->type() )
   {
     case SpecUtils::EnergyCalType::InvalidEquationType:
-      return false;
+      return CanFitCoefStatus::InvalidCalType;
 
     case SpecUtils::EnergyCalType::Polynomial:
     case SpecUtils::EnergyCalType::FullRangeFraction:
@@ -3679,19 +3770,35 @@ bool EnergyCalTool::canDoEnergyFit()
       break;
   }//switch( cal->type() )
 
-  const set<size_t> ordersToFit = caldisp->fitForCoefficents();
-  if( ordersToFit.empty() || ordersToFit.size() > nPeaksToUse )
-    return false;
+  // The "Fit" checkboxes actually used for the fit are the foreground fit-source displays (see
+  //  #fitCoefficients), which is `caldisp` itself, unless we are showing a non-foreground display
+  //  that shares the foregrounds calibration.
+  const vector<string> foredets
+                       = m_interspec->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+  if( (caldisp->spectrumType() != SpecUtils::SpectrumType::Foreground)
+      || (std::find(begin(foredets), end(foredets), caldisp->detectorName()) == end(foredets)) )
+  {
+    caldisp = foregroundFitDisplay();
+    if( !caldisp )
+      return CanFitCoefStatus::InternalError;
+  }//if( the shown display isnt a displayed foreground detector )
 
-  return true;
-}//bool canDoEnergyFit()
+  const set<size_t> ordersToFit = caldisp->fitForCoefficents();
+  if( ordersToFit.empty() )
+    return CanFitCoefStatus::NoCoefSelected;
+
+  if( ordersToFit.size() > nPeaksToUse )
+    return CanFitCoefStatus::MorePeaksNeeded;
+
+  return CanFitCoefStatus::CanFit;
+}//CanFitCoefStatus canDoEnergyFit()
 
 
 void EnergyCalTool::fitCoefficients()
 {
   try
   {
-    if( !canDoEnergyFit() )
+    if( canDoEnergyFit() != CanFitCoefStatus::CanFit )
     {
       m_interspec->logMessage( WString::tr("ect-err-not-enough-peaks"), 2 );
       return;
@@ -3719,29 +3826,16 @@ void EnergyCalTool::fitCoefficients()
     if( (caldisp->spectrumType() != SpecUtils::SpectrumType::Foreground)
         || (std::find(begin(displayed), end(displayed), detname) == end(displayed)) )
     {
-      EnergyCalImp::CalDisplay *foredisp = nullptr;
-
-      for( int menunum = 0; !foredisp && (menunum < 3); ++menunum )
-      {
-        WMenu * const detMenu = m_detectorMenu[menunum];
-        for( int i = 0; !foredisp && detMenu && (i < detMenu->count()); ++i )
-        {
-          WMenuItem * const item = detMenu->itemAt(i);
-          auto display = item ? dynamic_cast<EnergyCalImp::CalDisplay *>( item->contents() ) : nullptr;
-          if( display
-              && (display->spectrumType() == SpecUtils::SpectrumType::Foreground)
-              && (std::find(begin(displayed), end(displayed), display->detectorName()) != end(displayed)) )
-          {
-            foredisp = display;
-            // Select the found display, so the user sees the calibration that got fit
-            m_specTypeMenu->select( menunum );
-            item->select();
-          }//if( we found a displayed foreground detector )
-        }//for( loop over the menus items )
-      }//for( loop over the detector menus )
+      int menunum = -1;
+      WMenuItem *item = nullptr;
+      EnergyCalImp::CalDisplay * const foredisp = foregroundFitDisplay( &menunum, &item );
 
       if( !foredisp )
         throw runtime_error( WString::tr("ect-select-cal-of-disp-det").toUTF8() );
+
+      // Select the found display, so the user sees the calibration that got fit
+      m_specTypeMenu->select( menunum );
+      item->select();
 
       caldisp = foredisp;
       detname = caldisp->detectorName();
@@ -3945,14 +4039,41 @@ void EnergyCalTool::fitCoefficients()
       double dof = peakInfos.size() - 1;
       dof -= orders_to_fit.size();
       dof = (dof < 1) ? 1.0 : dof;
-      
+
       char buffer[64];
       snprintf( buffer, sizeof(buffer), " &chi;&sup2;/dof=%.2g", (chi2/dof) );
       msg += buffer;
     }
     */
-    
-    m_interspec->logMessage( WString::tr("ect-fit-successful"), 1 );
+
+    WString msg = WString::tr("ect-fit-successful");
+    try
+    {
+      // Summarize how much the fit improved things: the mean absolute offset of the used peaks
+      //  from their true energies, before and after the fit.
+      double pre_dev = 0.0, post_dev = 0.0;
+      for( const EnergyCal::RecalPeakInfo &info : peakInfos )
+      {
+        pre_dev += fabs( info.peakMean - info.photopeakEnergy );
+        post_dev += fabs( answer->energy_for_channel(info.peakMeanBinNumber) - info.photopeakEnergy );
+      }
+      pre_dev /= peakInfos.size();
+      post_dev /= peakInfos.size();
+
+      char prebuf[32], postbuf[32];
+      snprintf( prebuf, sizeof(prebuf), "%.3g", pre_dev );
+      snprintf( postbuf, sizeof(postbuf), "%.3g", post_dev );
+
+      msg = WString::tr("ect-fit-successful-detail")
+              .arg( static_cast<int>(peakInfos.size()) )
+              .arg( prebuf )
+              .arg( postbuf );
+    }catch( std::exception & )
+    {
+      //energy_for_channel can throw for out-of-range channels - just show the plain message
+    }
+
+    m_interspec->logMessage( msg, 1 );
   }catch( std::exception &e )
   {
     WString msg = WString::tr("ect-fail-fit").arg( e.what() );
@@ -3964,16 +4085,80 @@ void EnergyCalTool::fitCoefficients()
 
 void EnergyCalTool::updateFitButtonStatus()
 {
-  const bool canFit = canDoEnergyFit();
-  
+  const CanFitCoefStatus status = canDoEnergyFit();
+  const bool canFit = (status == CanFitCoefStatus::CanFit);
+
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  WString hint;
+  switch( status )
+  {
+    case CanFitCoefStatus::CanFit:
+      break;
+
+    case CanFitCoefStatus::ForegroundNotApplied:
+      hint = WString::tr("ect-fit-hint-fore-deselected");
+      break;
+
+    case CanFitCoefStatus::NoPeaksToUse:
+      hint = WString::tr("ect-fit-hint-no-peaks");
+      break;
+
+    case CanFitCoefStatus::NotForegroundCal:
+      hint = WString::tr("ect-fit-hint-not-fore-cal");
+      break;
+
+    case CanFitCoefStatus::NoCoefSelected:
+      hint = WString::tr("ect-fit-hint-no-coefs");
+      break;
+
+    case CanFitCoefStatus::MorePeaksNeeded:
+      hint = WString::tr("ect-fit-hint-few-peaks");
+      break;
+
+    case CanFitCoefStatus::InvalidCalType:  //the convert-to-polynomial message covers this
+    case CanFitCoefStatus::InternalError:   //not user-actionable
+      break;
+  }//switch( status )
+
+  // The "Fit" checkboxes are only consulted on the foreground displayed-detector display (the
+  //  "fit source" - see #fitCoefficients), so disable them everywhere else to avoid implying they
+  //  have an independent effect (their states are kept in sync across displays).
+  const vector<string> foredets
+                       = m_interspec->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+
   for( EnergyCalImp::CalDisplay *disp : calDisplays() )
-    disp->setFitButtonEnabled( canFit );
+  {
+    const bool fitSource = (disp->spectrumType() == SpecUtils::SpectrumType::Foreground)
+        && (std::find(begin(foredets), end(foredets), disp->detectorName()) != end(foredets));
+    disp->setFitCheckboxesDisabled( !fitSource );
+    disp->setFitStatus( canFit, hint );
+  }
 #else
   if( canFit != m_fitCalBtn->isEnabled() )
     m_fitCalBtn->setDisabled( !canFit );
 #endif
 }//void updateFitButtonStatus()
+
+
+void EnergyCalTool::fitCheckboxChanged( EnergyCalImp::CalDisplay *display )
+{
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  // The selection of which coefficient orders to fit is a property of the fit itself - not of any
+  //  one detector - since the fit result gets propagated to all applicable detectors; so keep the
+  //  "Fit" checkboxes in sync (by coefficient order) across all displays.
+  if( display )
+  {
+    const set<size_t> fitfor = display->fitForCoefficents();
+    for( EnergyCalImp::CalDisplay *disp : calDisplays() )
+    {
+      if( disp != display )
+        disp->setFitFor( fitfor );
+    }
+  }//if( display )
+#endif
+
+  updateFitButtonStatus();
+}//void fitCheckboxChanged( EnergyCalImp::CalDisplay *display )
 
 
 #if( !IMP_CALp_BTN_NEAR_COEFS )
@@ -4440,7 +4625,7 @@ void EnergyCalTool::doRefreshFromFiles()
     setShowNoCalInfo( true );
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
     for( EnergyCalImp::CalDisplay *disp : calDisplays() )
-      disp->setFitButtonEnabled( false );
+      disp->setFitStatus( false, WString() );  //silent - the whole cal column is hidden anyway
 #else
     m_fitCalBtn->disable();
 #endif

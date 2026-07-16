@@ -27,9 +27,20 @@
   <message id="ect-export-CALp-msg">You can apply this CALp file later to a different spectrum by dragging and dropping the CALp file onto InterSpec.</message>
   <message id="ect-fit-coeff-btn">Fit Coeffs</message>
   <message id="ect-tt-fit-coeff-btn">
-    Uses the expected energy of photopeaks associated with the fit peaks to fit for the energy coefficients.  
-    This button is disabled if no coefficients are selected to fit for, or less peaks than coefficients are selected.
+    Uses the expected photopeak energies of the peaks fit in the foreground spectrum to fit for the
+    selected energy calibration coefficients.
+    The effect of the change is then propagated to all spectra, samples, and detectors selected
+    under &quot;Apply Changes To&quot;: their energy calibrations are each adjusted by the
+    equivalent amount, so that data that lined up in energy before the change still lines up (at
+    the new energies) afterwards - even if their calibration coefficients or types differ.
+    If this button is disabled, the reason is shown to its left.
   </message>
+  <message id="ect-fit-hint-fore-deselected">Fit disabled: &quot;Foreground&quot; de-selected under &quot;Apply Changes To&quot;</message>
+  <message id="ect-fit-hint-no-peaks">No peaks marked to use for energy calibration</message>
+  <message id="ect-fit-hint-not-fore-cal">Fitting uses the foreground calibration</message>
+  <message id="ect-fit-hint-no-coefs">No coefficient selected to fit</message>
+  <message id="ect-fit-hint-few-peaks">Fewer peaks selected than coefficients to fit</message>
+  <message id="ect-tt-fit-cb-disabled">Coefficient fitting always uses the foreground display's "Fit" selections; these checkboxes just mirror them.</message>
   <message id="ect-apply-changes-to">Apply Changes To</message>
   <message id="ect-disp-dets">Displayed Detectors</message>
   <message id="ect-all-dets">All Detectors</message>
@@ -81,6 +92,7 @@
   <message id="ect-no-coeff-selected">You must select at least one coefficient to fit for.</message>
   <message id="ect-fail-min">ErrorMsg Failed to fit energy calibration using both matrix and iterative approaches</message>
   <message id="ect-fit-successful">Energy calibration has been updated from fitting.</message>
+  <message id="ect-fit-successful-detail">Energy calibration has been updated from fitting; the mean offset of the {1} used peaks from their true energies went from {2} keV to {3} keV.</message>
   <message id="ect-fail-fit">Failed calibration by fitting peak means. {1}</message>
   <message id="ect-del-graphical-msg">If you recalibrate again by ALT+CTRL+DRAG on another portion of the spectrum, you will be given the option of preserving the effects of this calibration as well.</message>
   <message id="ect-lc-disp-dets">displayed detectors</message>

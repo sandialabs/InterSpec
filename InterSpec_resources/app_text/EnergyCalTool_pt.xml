@@ -27,9 +27,16 @@
   <message id="ect-export-CALp-msg">Você pode aplicar este arquivo CALp posteriormente a um espectro diferente arrastando e soltando o arquivo CALp no InterSpec.</message>
   <message id="ect-fit-coeff-btn">Ajustar Coef.</message>
   <message id="ect-tt-fit-coeff-btn">
-    Usa a energia esperada de fotopicos associados aos picos ajustados para ajustar os coeficientes de energia.
-    Este botão está desabilitado se nenhum coeficiente está selecionado para ajuste, ou menos picos do que coeficientes estão selecionados.
+    Usa as energias esperadas dos fotopicos dos picos ajustados no espectro de primeiro plano para ajustar os coeficientes de calibração selecionados.
+    O efeito da alteração é então propagado a todos os espectros, amostras e detectores selecionados em "Aplicar Alterações Para": as suas calibrações de energia são ajustadas de forma equivalente, de modo que os dados alinhados em energia antes da alteração continuam alinhados (nas novas energias) depois - mesmo que os seus coeficientes ou tipos de calibração sejam diferentes.
+    Se este botão estiver desativado, o motivo é mostrado à sua esquerda.
   </message>
+  <message id="ect-fit-hint-fore-deselected">Ajuste desativado: "Primeiro Plano" desmarcado em "Aplicar Alterações Para"</message>
+  <message id="ect-fit-hint-no-peaks">Nenhum pico marcado para a calibração de energia</message>
+  <message id="ect-fit-hint-not-fore-cal">O ajuste usa a calibração do primeiro plano</message>
+  <message id="ect-fit-hint-no-coefs">Nenhum coeficiente selecionado para ajustar</message>
+  <message id="ect-fit-hint-few-peaks">Menos picos selecionados do que coeficientes a ajustar</message>
+  <message id="ect-tt-fit-cb-disabled">O ajuste de coeficientes usa sempre as seleções "Ajustar" da vista de primeiro plano; estas caixas apenas as refletem.</message>
   <message id="ect-apply-changes-to">Aplicar Alterações Para</message>
   <message id="ect-disp-dets">Detectores Exibidos</message>
   <message id="ect-all-dets">Todos os Detectores</message>
@@ -76,6 +83,7 @@
   <message id="ect-no-coeff-selected">Você deve selecionar pelo menos um coeficiente para ajustar.</message>
   <message id="ect-fail-min">ErrorMsg Falha ao ajustar calibração de energia usando abordagens de matriz e iterativa</message>
   <message id="ect-fit-successful">A calibração de energia foi atualizada a partir do ajuste.</message>
+  <message id="ect-fit-successful-detail">A calibração de energia foi atualizada a partir do ajuste; o desvio médio dos {1} picos usados em relação às suas energias verdadeiras passou de {2} keV para {3} keV.</message>
   <message id="ect-fail-fit">Falha na calibração ao ajustar médias de picos. {1}</message>
   <message id="ect-del-graphical-msg">Se você recalibrar novamente com ALT+CTRL+ARRASTAR em outra porção do espectro, terá a opção de preservar os efeitos desta calibração também.</message>
   <message id="ect-lc-disp-dets">detectores exibidos</message>

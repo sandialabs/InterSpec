@@ -9253,6 +9253,9 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   {
     WPushButton *button = new WPushButton( "Load Visible Points...", window->footer() );
     WPopupMenu *menu = new WPopupMenu();
+    // A WPopupMenu is owned by the session domRoot, not `button`, so hand its lifetime to the
+    //  (transient) window via addChild() - otherwise it leaks each time the map window is opened.
+    window->addChild( menu );
     menu->setAutoHide( true );
     button->setMenu( menu );
     WMenuItem *item = menu->addItem( "As Foreground" );
@@ -9654,6 +9657,14 @@ void InterSpec::handleTerminalWindowClose()
     AuxWindow::deleteAuxWindow( m_terminalWindow );
   }else
   {
+    // Wt 3.7.1's WTabWidget::closeTab() only hides the tab and emits tabClosed_; it does NOT
+    //  remove the tab from its internal vectors.  We must explicitly removeTab() before
+    //  deleting, otherwise a stale (zombie) tab entry remains and becomes visible the next
+    //  time the tool is reopened (and closing it trips the assert in handleToolTabClosed).
+    //  Guarded by indexOf() so it stays idempotent with the docking path that already removes
+    //  the tab before calling this.
+    if( m_toolsTabs && (m_toolsTabs->indexOf(m_terminal) >= 0) )
+      m_toolsTabs->removeTab( m_terminal );
     delete m_terminal;
     if( m_toolsTabs )
       m_toolsTabs->setCurrentIndex( 2 );

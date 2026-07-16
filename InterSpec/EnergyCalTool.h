@@ -47,6 +47,7 @@ namespace Wt
 {
   class WText;
   class WCheckBox;
+  class WMenuItem;
   class WGridLayout;
   class WPushButton;
   class WStackedWidget;
@@ -196,7 +197,16 @@ public:
   void deleteGraphicalRecalConfirmWindow();
   
   void updateFitButtonStatus();
-  
+
+  /** Called when the user toggles a per-coefficient "Fit" checkbox on `display`.
+
+   The selection of which coefficient orders to fit is a property of the fit itself - not of any
+   one detector - since the fit result gets propagated to all applicable detectors; so this
+   function keeps the "Fit" checkboxes in sync across all displays, then updates the fit button
+   status.
+   */
+  void fitCheckboxChanged( EnergyCalImp::CalDisplay *display );
+
 #if( !IMP_CALp_BTN_NEAR_COEFS )
   void updateCALpButtonsStatus();
 #endif
@@ -346,8 +356,30 @@ protected:
   void specTypeToDisplayForChanged();
   
   void fitCoefficients();
-  bool canDoEnergyFit();
-  
+
+  /** Whether the "Fit Coeffs" button should be enabled, or the reason it shouldnt be. */
+  enum class CanFitCoefStatus : int
+  {
+    CanFit,
+    ForegroundNotApplied,  //"Foreground" unchecked in "Apply Changes To"
+    NoPeaksToUse,          //no peaks, or none marked to use for energy calibration
+    NotForegroundCal,      //shown display isnt showing the foregrounds displayed calibration
+    InvalidCalType,        //InvalidEquationType - no hint shown; the convert-to-poly msg covers it
+    NoCoefSelected,        //no "Fit" checkbox checked on the fit-source display
+    MorePeaksNeeded,       //more coefficients selected to fit than peaks marked to use
+    InternalError          //null stack/display/cal - no hint shown
+  };//enum class CanFitCoefStatus
+
+  CanFitCoefStatus canDoEnergyFit();
+
+  /** Returns the foreground CalDisplay of a displayed detector - the display whose "Fit"
+   checkboxes are consulted when fitting coefficients - or nullptr if there is none.
+   Optionally also gives the menu number and menu item, so the caller can select the display
+   in the GUI.
+   */
+  EnergyCalImp::CalDisplay *foregroundFitDisplay( int *menunum = nullptr,
+                                                  Wt::WMenuItem **item = nullptr );
+
   /** Have #refreshGuiFromFiles only ever get called from #render to avoid current situation
    of calling refreshGuiFromFiles multiple times for a single render (the looping over files can
    get expensive probably)

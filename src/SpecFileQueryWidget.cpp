@@ -1530,6 +1530,12 @@ SpecFileQueryWidget::~SpecFileQueryWidget()
     if( c.second )  //should always be true
       c.second->stop_caching();
   }
+
+  // A PopupDivMenu is owned by the session domRoot, not this widget, so it must be
+  //  manually deleted (guard against session teardown having already freed domRoot).
+  if( m_optionsMenu && wApp && wApp->domRoot() )
+    delete m_optionsMenu;
+  m_optionsMenu = nullptr;
 }//~SpecFileQueryWidget()
 
 

@@ -27,9 +27,16 @@
   <message id="ect-export-CALp-msg">Anda dapat menerapkan file CALp ini nanti ke spektrum yang berbeda dengan menyeret dan melepaskan file CALp ke InterSpec.</message>
   <message id="ect-fit-coeff-btn">Fit Koefisien</message>
   <message id="ect-tt-fit-coeff-btn">
-    Menggunakan energi yang diharapkan dari fotopuncak yang terkait dengan puncak yang di-fit untuk melakukan fitting untuk koefisien energi.  
-    Tombol ini dinonaktifkan jika tidak ada koefisien yang dipilih untuk di-fit, atau puncak yang dipilih kurang dari koefisien.
+    Menggunakan energi fotopuncak yang diharapkan dari puncak-puncak yang telah difit pada spektrum latar depan untuk memfit koefisien kalibrasi energi yang dipilih.
+    Efek perubahan kemudian disebarkan ke semua spektrum, sampel, dan detektor yang dipilih di "Terapkan Perubahan Ke": kalibrasi energi masing-masing disesuaikan secara setara, sehingga data yang sejajar dalam energi sebelum perubahan tetap sejajar (pada energi baru) sesudahnya - meskipun koefisien atau jenis kalibrasinya berbeda.
+    Jika tombol ini nonaktif, alasannya ditampilkan di sebelah kirinya.
   </message>
+  <message id="ect-fit-hint-fore-deselected">Fit dinonaktifkan: "Latar Depan" tidak dipilih di "Terapkan Perubahan Ke"</message>
+  <message id="ect-fit-hint-no-peaks">Tidak ada puncak yang ditandai untuk kalibrasi energi</message>
+  <message id="ect-fit-hint-not-fore-cal">Fitting menggunakan kalibrasi latar depan</message>
+  <message id="ect-fit-hint-no-coefs">Tidak ada koefisien yang dipilih untuk difit</message>
+  <message id="ect-fit-hint-few-peaks">Puncak yang dipilih lebih sedikit daripada koefisien yang akan difit</message>
+  <message id="ect-tt-fit-cb-disabled">Fitting koefisien selalu menggunakan pilihan "Fit" pada tampilan latar depan; kotak centang ini hanya mencerminkannya.</message>
   <message id="ect-apply-changes-to">Terapkan Perubahan Ke</message>
   <message id="ect-disp-dets">Detektor yang Ditampilkan</message>
   <message id="ect-all-dets">Semua Detektor</message>
@@ -76,6 +83,7 @@
   <message id="ect-no-coeff-selected">Anda harus memilih setidaknya satu koefisien untuk di-fit.</message>
   <message id="ect-fail-min">PesanKesalahan Gagal melakukan fitting kalibrasi energi menggunakan pendekatan matriks dan iteratif</message>
   <message id="ect-fit-successful">Kalibrasi energi telah diperbarui dari fitting.</message>
+  <message id="ect-fit-successful-detail">Kalibrasi energi telah diperbarui dari fitting; deviasi rata-rata dari {1} puncak yang digunakan terhadap energi sebenarnya berubah dari {2} keV menjadi {3} keV.</message>
   <message id="ect-fail-fit">Gagal kalibrasi dengan fitting rerata puncak. {1}</message>
   <message id="ect-del-graphical-msg">Jika Anda mengkalibrasi ulang lagi dengan ALT+CTRL+DRAG pada bagian lain dari spektrum, Anda akan diberi opsi untuk mempertahankan efek kalibrasi ini juga.</message>
   <message id="ect-lc-disp-dets">detektor yang ditampilkan</message>

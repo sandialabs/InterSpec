@@ -184,6 +184,7 @@ PeakEdit::PeakEdit( const double energy,
     m_accept( NULL ),
     m_cancel( NULL ),
     m_refit( NULL ),
+    m_refitMenu( NULL ),
     m_otherPeaksDiv( NULL ),
     m_otherPeakTxt( NULL ),
     m_prevPeakInRoi( NULL ),
@@ -585,7 +586,8 @@ void PeakEdit::init()
   if( m_viewer->isMobile() )
   {
     WPopupMenu *menu = new WPopupMenu();
-    
+    m_refitMenu = menu;
+
     WMenuItem *item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-standard") );
     item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::Normal ) );
     item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-independent") );
@@ -599,7 +601,8 @@ void PeakEdit::init()
   }else
   {
     PopupDivMenu *menu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu);
-    
+    m_refitMenu = menu;
+
     PopupDivMenuItem *item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-standard") );
     item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::Normal ) );
     item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-independent") );
@@ -621,6 +624,12 @@ PeakEdit::~PeakEdit()
 {
   if( m_suggestions )
     delete m_suggestions;
+
+  // The refit menu is owned by the session domRoot, not m_refit, so it must be manually
+  //  deleted (guard against session teardown having already freed domRoot).
+  if( m_refitMenu && wApp && wApp->domRoot() )
+    delete m_refitMenu;
+  m_refitMenu = nullptr;
 }//~PeakEdit()
 
 

@@ -124,6 +124,28 @@
 .CalCoefsBtnDiv .Spacer
 {
   flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+}
+
+/* Short explanation of why the "Fit Coeffs" button is disabled, shown to its left.
+   Absolutely positioned to fill the flex spacer, so the text wraps to the available space
+   without ever affecting the column width or the buttons position.
+   Muted via opacity so the color follows the current color-theme. */
+.CalCoefsBtnDiv .FitCoefHint
+{
+  /* Note: Wt writes an inline "display:" style when un-hiding, so dont rely on a display value
+     here - the top:50%/translateY(-50%) centering works regardless. */
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  right: 4px;
+  transform: translateY(-50%);
+  text-align: right;
+  line-height: 1.15;
+  color: var(--interspec-text-color, black);
+  opacity: 0.65;
+  font-size: 66%;
 }
 
 
