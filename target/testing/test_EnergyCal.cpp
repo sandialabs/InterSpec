@@ -1338,7 +1338,9 @@ BOOST_AUTO_TEST_CASE( test_fit_energy_cal_ceres_agrees_with_lls )
   BOOST_REQUIRE_EQUAL( result.coefs.size(), 2u );
   BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[0]) - lls_coefs[0] ), 1.0e-3 );
   BOOST_CHECK_SMALL( fabs( static_cast<double>(result.coefs[1]) - lls_coefs[1] ), 1.0e-6 );
-  BOOST_CHECK_SMALL( fabs( result.chi2 - lls_chi2 ), 1.0e-3*std::max(1.0, lls_chi2) );
+  // Parenthesize std::max so the MSVC <windows.h> max() macro (pulled in by
+  // <boost/test/included/unit_test.hpp>) can't expand it.
+  BOOST_CHECK_SMALL( fabs( result.chi2 - lls_chi2 ), 1.0e-3*(std::max)( 1.0, lls_chi2 ) );
 
   // and the dev pairs should be passed through un-changed
   BOOST_REQUIRE_EQUAL( result.dev_pairs.size(), dev_pairs.size() );
