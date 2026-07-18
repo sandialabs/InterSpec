@@ -4296,6 +4296,11 @@ namespace AnalystChecks
                                                                 //  termination is this many sigma above zero (3x the
                                                                 //  3-sigma detection floor); otherwise termination is
                                                                 //  statistics-limited and the ratio is inconclusive
+  static constexpr double sk_beta_endpoint_slop_frac  = 0.05;   // candidate-nuclide matching slop, as a fraction of
+                                                                //  the termination energy - resolution smearing and
+                                                                //  residual summing can push the observed termination
+                                                                //  slightly past the true endpoint (e.g. Y-90 phantom
+                                                                //  terminating at ~2390 vs the 2280 keV endpoint)
 
   /** (Nearly) pure beta-minus emitters considered as consistency candidates; endpoints are pulled
    from SandiaDecay at runtime (including in-equilibrium daughters, e.g. Sr90 -> Y90). */
@@ -4968,8 +4973,11 @@ namespace AnalystChecks
           const SandiaDecay::Nuclide * const nuc = db->nuclide( name );
           std::string note;
           const double endpoint = max_equilibrium_beta_endpoint( nuc, note );
-          // terminationEnergy is a lower bound on the endpoint; allow one coarse bin of slop.
-          if( nuc && (endpoint >= (*status.terminationEnergy - sk_beta_coarse_bin_kev)) )
+          // terminationEnergy is a lower bound on the endpoint, but resolution smearing and
+          // residual summing can push it slightly past the true endpoint - allow proportional slop.
+          const double slop = std::max( sk_beta_coarse_bin_kev,
+                                        sk_beta_endpoint_slop_frac * (*status.terminationEnergy) );
+          if( nuc && (endpoint >= (*status.terminationEnergy - slop)) )
           {
             BetaContinuumCandidateNuclide candidate;
             candidate.nuclide = nuc->symbol;

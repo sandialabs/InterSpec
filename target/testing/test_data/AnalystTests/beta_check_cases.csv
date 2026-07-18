@@ -15,6 +15,7 @@
 #   min_term_keV     - lower bound on TerminationEnergy, or '-' to skip
 #   max_term_keV     - upper bound on TerminationEnergy, or '-' to skip
 #   note             - free text shown in failure messages
+#   must_contain     - (optional 9th column) a nuclide symbol that must appear in ConsistentPureBetaNuclides ('-' or absent to skip)
 #
 # fore_file, fore_sample, back_file, back_sample, allowed_verdicts, min_term_keV, max_term_keV, note
 BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf,    auto,     BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf,    auto-bkg, BremLike,             500, 2450, Sr-90 unshielded on HPGe
@@ -26,8 +27,8 @@ BetaCheck_Cs137_Sh_DetectiveX_300s.pcf,     auto-bkg, BetaCheck_Cs137_Sh_Detecti
 # DetectiveX_300s repo-benchmark n42 cases (separate fg/bkg files; see scratch/beta_check_failing_cases.md):
 # question_128/214 were tool false-negatives before the count-quantile fit bound - a trace pile-up
 # tail beyond the beta endpoint was stretching the shape gates.
-../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_128.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, P-32 shielded (pile-up tail must not veto)
-../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_214.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike|Ambiguous, -, -,    Y-90 phantom (hard scattered continuum; ambiguous acceptable)
+../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_128.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, P-32 shielded (pile-up tail must not veto), P32
+../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_214.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike|Ambiguous, -, -,    Y-90 phantom (hard scattered continuum; ambiguous acceptable), Y90
 ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_129.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, P-32 unshielded
-../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_167.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, Sr-90 shielded
+../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_167.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, Sr-90 shielded, Sr90
 ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_168.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, Sr-90 unshielded

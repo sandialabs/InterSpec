@@ -944,6 +944,16 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_case_manifest, InterSpecTestFixture
       BOOST_CHECK_MESSAGE( result.terminationEnergy && (*result.terminationEnergy <= std::stod(max_term)),
                            note << ": terminationEnergy above " << max_term << " keV" );
     }
+
+    // Optional 9th column: a nuclide that must appear among the consistency candidates.
+    if( (fields.size() >= 9) && !fields[8].empty() && (fields[8] != "-") )
+    {
+      bool have_candidate = false;
+      for( const AnalystChecks::BetaContinuumCandidateNuclide &candidate : result.candidateNuclides )
+        have_candidate = (have_candidate || (candidate.nuclide == fields[8]));
+      BOOST_CHECK_MESSAGE( have_candidate, note << ": '" << fields[8]
+                           << "' missing from ConsistentPureBetaNuclides" );
+    }
   }//while( manifest rows )
 
   BOOST_TEST_MESSAGE( "[beta manifest] ran " << num_cases << " cases" );
