@@ -9,8 +9,11 @@
 #include <chrono>
 #include <iomanip>
 
+#include <boost/bind/bind.hpp>
+
 #include <Wt/WText>
 #include <Wt/WImage>
+#include <Wt/WAnchor>
 #include <Wt/WResource>
 #include <Wt/WLineEdit>
 #include <Wt/WScrollArea>
@@ -32,6 +35,7 @@
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/LlmConfig.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmConfigWindow.h"
@@ -170,6 +174,57 @@ void LlmToolGui::buildUnconfiguredUi()
 }
 
 
+void LlmToolGui::showWelcomeMessage()
+{
+  if( m_welcomeMessage || !m_conversationContainer )
+    return;
+
+  m_welcomeMessage = new WContainerWidget( m_conversationContainer );
+  m_welcomeMessage->addStyleClass( "LlmWelcome" );
+
+  WText *title = new WText( WString::tr("lcw-welcome-title"), m_welcomeMessage );
+  title->addStyleClass( "LlmWelcomeTitle" );
+
+  WText *summary = new WText( WString::tr("lcw-welcome-summary"), m_welcomeMessage );
+  summary->addStyleClass( "LlmWelcomeSummary" );
+
+  // Empty WLink => an <a> with no href, so the browser does nothing on click while the
+  // server-side clicked() still fires and opens the help window.
+  WAnchor *learnMore = new WAnchor( WLink(), m_welcomeMessage );
+  learnMore->setText( WString::tr("lcw-welcome-learn-more") );
+  learnMore->addStyleClass( "LlmWelcomeLearnMore" );
+  learnMore->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, string("llm-assistant") ) );
+}//showWelcomeMessage()
+
+
+void LlmToolGui::updateWelcomeMessage()
+{
+  if( !m_conversationContainer )   // unconfigured / torn down
+    return;
+
+  const int realMsgs = m_conversationContainer->count() - (m_welcomeMessage ? 1 : 0);
+  if( realMsgs > 0 )
+  {
+    if( m_welcomeMessage )
+    {
+      delete m_welcomeMessage;
+      m_welcomeMessage = nullptr;
+    }
+  }else if( !m_welcomeMessage )
+  {
+    showWelcomeMessage();
+  }
+}//updateWelcomeMessage()
+
+
+void LlmToolGui::clearConversationDisplays()
+{
+  if( m_conversationContainer )
+    m_conversationContainer->clear();  // deletes the welcome panel and all interaction displays
+  m_welcomeMessage = nullptr;          // pointer was just invalidated by clear()
+}//clearConversationDisplays()
+
+
 void LlmToolGui::resetRoot()
 {
   WGridLayout *outer = dynamic_cast<WGridLayout *>( layout() );
@@ -192,6 +247,7 @@ void LlmToolGui::resetRoot()
   // Child widgets owned by the old root are now gone; clear dangling pointers.
   m_layout = nullptr;
   m_conversationContainer = nullptr;
+  m_welcomeMessage = nullptr;
   m_inputEdit = nullptr;
   m_sendButton = nullptr;
   m_menuIcon = nullptr;
@@ -398,6 +454,10 @@ void LlmToolGui::initializeUI()
   PopupDivMenuItem *resetConfigItem = menu->addMenuItem( "Reset LLM Config" );
   resetConfigItem->triggered().connect( this, &LlmToolGui::handleResetLlmConfig );
 
+  // Add "Help" option - opens the standard InterSpec help window on the AI Assistant topic
+  PopupDivMenuItem *helpItem = menu->addMenuItem( WString::tr("lcw-help-menu") );
+  helpItem->triggered().connect( boost::bind( &HelpSystem::createHelpWindow, string("llm-assistant") ) );
+
   // Add benchmark submenu - scan for *_llm_benchmark.xml files in test_datasets/
   {
     const string dataDir = InterSpec::staticDataDirectory();
@@ -474,6 +534,10 @@ void LlmToolGui::initializeUI()
   // Connect signals
   m_inputEdit->enterPressed().connect(this, &LlmToolGui::handleInputSubmit);
   m_sendButton->clicked().connect(this, &LlmToolGui::handleSendButton);
+
+  // Show the getting-started panel when the conversation area is still empty.  Any subsequent
+  // restore of saved history (setConversationHistory) reconciles this away.
+  updateWelcomeMessage();
 }
 
 
@@ -485,9 +549,9 @@ void LlmToolGui::focusInput()
 
 void LlmToolGui::clearHistory()
 {
-  // Clear all interaction displays from the container
-  if( m_conversationContainer )
-    m_conversationContainer->clear();
+  // Clear all interaction displays from the container, then re-show the getting-started panel
+  clearConversationDisplays();
+  updateWelcomeMessage();
 
   // Also clear the LLM interface history
   shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
@@ -678,6 +742,9 @@ void LlmToolGui::sendMessage(const std::string& message)
       // Create display widget for this interaction
       LlmInteractionDisplay *interactionDisplay =
       new LlmInteractionDisplay( convo, m_llmInterface, 0, m_conversationContainer );
+
+      // Remove the getting-started panel now that there is a real interaction
+      updateWelcomeMessage();
 
       // Scroll to bottom
       const string js = "setTimeout(function() {"
@@ -1114,6 +1181,9 @@ void LlmToolGui::handleCompactConversation()
     // Create display widget for the summarization conversation
     new LlmInteractionDisplay( summarizationConvo, m_llmInterface, 0, m_conversationContainer );
 
+    // Remove the getting-started panel now that there is a real interaction
+    updateWelcomeMessage();
+
     // Scroll to bottom
     const string js = "setTimeout(function() {"
     "  var scrollArea = " + m_conversationContainer->jsRef() + ".parentElement;"
@@ -1240,8 +1310,7 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
     return;
 
   // Clear current display
-  if( m_conversationContainer )
-    m_conversationContainer->clear();
+  clearConversationDisplays();
 
   if( history && !history->empty() )
   {
@@ -1263,6 +1332,9 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
     // Clear the history if no valid history provided
     llmHistory->clear();
   }
+
+  // Re-show the getting-started panel if nothing was restored; remove it otherwise
+  updateWelcomeMessage();
 }
 
 void LlmToolGui::clearConversationHistory()
@@ -1274,9 +1346,9 @@ void LlmToolGui::clearConversationHistory()
   if( history )
     history->clear();
 
-  // Clear the display
-  if( m_conversationContainer )
-    m_conversationContainer->clear();
+  // Clear the display, then re-show the getting-started panel
+  clearConversationDisplays();
+  updateWelcomeMessage();
 }
 
 

@@ -202,6 +202,12 @@ private:
   LlmConfigWindow *m_configWindow;
 
   Wt::WContainerWidget *m_conversationContainer;  ///< Container holding LlmInteractionDisplay widgets
+
+  /** Getting-started panel shown inside m_conversationContainer when the conversation is empty;
+   nullptr when hidden.  Managed only via showWelcomeMessage()/updateWelcomeMessage()/
+   clearConversationDisplays() so the pointer can never dangle after a container ->clear(). */
+  Wt::WContainerWidget *m_welcomeMessage = nullptr;
+
   Wt::WLineEdit *m_inputEdit;             ///< Input field for user messages
   Wt::WPushButton *m_sendButton;          ///< Button to send messages
   Wt::WPushButton *m_menuIcon;            ///< Menu icon for conversation-level actions
@@ -248,6 +254,18 @@ private:
 
   /** Build the "not configured" panel (message + a button to open the settings window). */
   void buildUnconfiguredUi();
+
+  /** Build the getting-started panel into m_conversationContainer and store m_welcomeMessage.
+   No-op if it already exists or the container is gone. */
+  void showWelcomeMessage();
+
+  /** Reconcile welcome visibility: shown iff there are zero interaction displays.  Inert when
+   unconfigured (m_conversationContainer == nullptr). Call after any change to the displays. */
+  void updateWelcomeMessage();
+
+  /** The single choke point for emptying m_conversationContainer: clears it and nulls
+   m_welcomeMessage (which ->clear() just freed) so it can't dangle. */
+  void clearConversationDisplays();
 
   /** Tear down m_root and recreate an empty one in the outer layout; nulls child pointers. */
   void resetRoot();

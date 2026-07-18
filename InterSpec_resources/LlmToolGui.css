@@ -482,6 +482,41 @@
 }
 
 /* ============================================ */
+/* Welcome / getting-started panel               */
+/* ============================================ */
+
+/* Shown in the (otherwise empty) conversation area before the first message.  The conversation
+   area has a fixed light background in both themes, so text stays dark; only the link follows the
+   active color theme (via the global --interspec-link-color variable). */
+.LlmWelcome {
+  max-width: 640px;
+  margin: 24px auto;
+  padding: 4px 8px;
+  color: #495057;
+}
+
+.LlmWelcomeTitle {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 10px;
+}
+
+.LlmWelcomeSummary {
+  display: block;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.LlmWelcomeLearnMore {
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--interspec-link-color, #0d6efd);
+}
+
+/* ============================================ */
 /* Dark theme support */
 /* ============================================ */
 

@@ -113,4 +113,10 @@
   <message id="lcw-configure-menu">Configure LLM Provider&#8230;</message>
   <message id="lcw-configure-btn">Configure LLM Provider</message>
   <message id="lcw-not-configured"><![CDATA[The LLM assistant is not configured.<br/>Add an API provider, model, and key to get started.]]></message>
+
+  <!-- Getting-started / welcome panel shown in the empty conversation area (LlmToolGui) -->
+  <message id="lcw-welcome-title">InterSpec AI Assistant</message>
+  <message id="lcw-welcome-summary"><![CDATA[Ask questions about your spectrum in plain language. The assistant can identify nuclides, fit peaks, adjust energy calibration, run analyses, and explain results by driving InterSpec's tools for you.<br/><br/>Type a question below to get started. Use the menu in the upper&#8209;right to clear, compact, export, or reconfigure the conversation.]]></message>
+  <message id="lcw-welcome-learn-more">Learn more about the AI Assistant</message>
+  <message id="lcw-help-menu">Help</message>
 </messages>
