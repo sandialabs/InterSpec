@@ -30,6 +30,7 @@
 #include <atomic>
 #include <memory>
 #include <vector>
+#include <functional>
 
 #include "Minuit2/FCNBase.h"
 
@@ -99,29 +100,59 @@ struct SavitzyGolayCoeffs
 };//struct SavitzyGolayCoeffs
 
 
-//calculateContinuum(...) and findPeaksByRelaxation(...) are adapted
-//  from ROOTS TSpectrum.  See implementation code for credits/details
-enum
-{ //An enum for calculateContinuum and findPeaksByRelaxation
-  kBackOrder2 = 2, kBackOrder4 = 4, kBackOrder6 = 6, kBackOrder8 = 8,
-  kBackIncreasingWindow, kBackDecreasingWindow,
-  kBackSmoothing3, kBackSmoothing5, kBackSmoothing7,
-  kBackSmoothing9, kBackSmoothing11, kBackSmoothing13,kBackSmoothing15
-};//enum
-const char *calculateContinuum( float *spectrum, int ssize,
-                                       int numberIterations,
-                                       int direction, int filterOrder,
-                                       bool smoothing, int smoothWindow,
-                                       bool compton );
-
-//estimateContinuum(): estimates continuum for the data passed in using
-//  "standard" parameters
+/** Estimates a peak-free continuum for the data passed in, using "standard" parameters: SNIP
+ (see the FWHM-aware overload below for the algorithm and references) with a fixed clip
+ half-window of 125 channels (clamped down for very small spectra), order-6 clipping filters,
+ increasing window, no smoothing.
+ */
 std::shared_ptr<SpecUtils::Measurement> estimateContinuum( std::shared_ptr<const SpecUtils::Measurement> data );
 
-std::vector<float> findPeaksByRelaxation( float *source, float *dest, int ssize,
-                                          float sigma, double threshold,
-                                          bool bckgrndRemove, int nIterations,
-                                          bool markov, int averWindow );
+/** Energy/FWHM-aware variant of estimateContinuum(): the SNIP clipping half-window at each
+ channel is `num_fwhm_window * fwhm_at_energy(E_channel)` converted to channels (clamped to
+ [3, nchannel/2 - 1]), instead of the fixed 125 channels of the legacy overload - so the clip
+ scale tracks the detector resolution across the spectrum (the fixed window is ~60 keV on a
+ 16k-channel HPGe spectrum, far too wide there, while roughly right for NaI).
+
+ `filter_order` (2, 4, or 6) selects the clipping filter.  Order 2 clips against the two-sided
+ average at +/-window and erases peaks cleanly when the window is sized to the peak; orders 4/6
+ add curvature-following terms whose taps sit inside a peak of the window's width, so for the
+ ~1-2 FWHM windows this overload uses they leave a residual under strong peaks - order 2 is the
+ sensible default here (the legacy fixed-125-channel overload uses order 6, where the window is
+ far wider than any peak).  Increasing window.
+
+ `presmooth_halfwidth` (0 = off) applies a (2*presmooth_halfwidth+1)-channel boxcar to the
+ working spectrum before clipping, so the min-filter locks onto the local mean rather than the
+ downward Poisson fluctuations - the lever for low-count regions (e.g. sparse high-energy CZT),
+ where a raw min-filter undershoots the true continuum.
+
+ If `lls` is true the clipping runs in log-log-sqrt space (v = ln(ln(sqrt(y+1)+1)+1), the
+ classic SNIP transform of Ryan et al.), which compresses the dynamic range so high-count noise
+ fluctuations bias the min-filter less; the result is transformed back to counts.
+
+ `fwhm_at_energy` should already clamp its argument to its own valid energy range; non-finite or
+ non-positive returns fall back to the nearest channel with a valid window.
+
+ If `restrict_upper_energy > restrict_lower_energy > 0`, the continuum is only estimated within
+ that energy range; channels outside are left equal to the data (so a caller gating on
+ data-minus-continuum sees zero excess there).  This keeps a huge out-of-range feature - e.g. the
+ detector turn-on below the lower spectroscopic extent - from pulling the in-range continuum up.
+ Pass 0 (the default) for both to estimate over the whole spectrum.
+
+ Intended for continuum ESTIMATION/GATING; fitted peak areas should still come from a fitted
+ per-ROI continuum.
+
+ Throws std::exception on invalid input (null data, too few channels, no valid FWHM anywhere,
+ bad filter_order).
+ */
+std::shared_ptr<SpecUtils::Measurement> estimateContinuum(
+                                  std::shared_ptr<const SpecUtils::Measurement> data,
+                                  const std::function<double(double)> &fwhm_at_energy,
+                                  const double num_fwhm_window,
+                                  const int filter_order,
+                                  const int presmooth_halfwidth,
+                                  const bool lls,
+                                  const double restrict_lower_energy = 0.0,
+                                  const double restrict_upper_energy = 0.0 );
 
 std::vector< std::vector<PeakDef> >
          causilyDisconnectedPeaks( const double x0, const double x1,

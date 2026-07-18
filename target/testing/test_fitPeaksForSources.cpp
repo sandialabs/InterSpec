@@ -1795,4 +1795,75 @@ BOOST_AUTO_TEST_CASE( test_select_continuum_order_by_sidebands )
                == PeakContinuum::OffsetType::Linear );
 }//test_select_continuum_order_by_sidebands
 
+
+BOOST_AUTO_TEST_CASE( test_estimate_continuum_snip )
+{
+  // Flat 10 counts/keV continuum + a strong Gaussian (FWHM 10 keV), 1 keV channels.
+  const double fwhm_kev = 10.0;
+  const double sigma = fwhm_kev / 2.35482;
+  const auto spec = make_synthetic_spectrum( 1024, 0.0f, 1.0f,
+      []( double ){ return 10.0; },
+      { { 512.0, sigma, 5000.0 } } );
+
+  const std::function<double(double)> fwhm_at = [fwhm_kev]( double ){ return fwhm_kev; };
+
+  // Order-2 filter, window 1.5*FWHM: taps land at +/-3.5 sigma, so the peak is erased cleanly.
+  const auto cont = estimateContinuum( spec, fwhm_at, 1.5, 2, false, false );
+  BOOST_REQUIRE( cont );
+  BOOST_REQUIRE_EQUAL( cont->num_gamma_channels(), spec->num_gamma_channels() );
+
+  // Min-filter property: never above the data
+  for( size_t i = 0; i < 1024; ++i )
+    BOOST_CHECK_LE( cont->gamma_channel_content(i), spec->gamma_channel_content(i) + 1.0e-3f );
+
+  // Flat regions untouched; peak fully erased (continuum under the peak center ~ true 10)
+  BOOST_CHECK_CLOSE( static_cast<double>(cont->gamma_channel_content(100)), 10.0, 1.0 );
+  BOOST_CHECK( std::fabs( cont->gamma_channel_content(512) - 10.0 ) < 2.0 );
+
+  // Order 6 at the same small window leaves an under-peak residual (the E4/E6 fractional taps
+  // sample inside the peak) - it should sit clearly ABOVE the true continuum at the center.
+  const auto cont_o6 = estimateContinuum( spec, fwhm_at, 1.5, 6, false, false );
+  BOOST_REQUIRE( cont_o6 );
+  BOOST_CHECK( cont_o6->gamma_channel_content(512) > cont->gamma_channel_content(512) + 5.0 );
+
+  // A fwhm function returning a constant 125 keV (= 125 channels here), order 6, reproduces the
+  // legacy fixed-window wrapper.
+  const std::function<double(double)> legacy_win = []( double ){ return 125.0; };
+  const auto cont_a = estimateContinuum( spec, legacy_win, 1.0, 6, false, false );
+  const auto cont_b = estimateContinuum( spec );
+  BOOST_REQUIRE( cont_a && cont_b );
+  for( size_t i = 0; i < 1024; ++i )
+    BOOST_CHECK_SMALL( cont_a->gamma_channel_content(i) - cont_b->gamma_channel_content(i), 1.0e-3f );
+
+  // LLS-space and presmoothed variants (order 2): finite, and still recover the flat continuum
+  // away from (and under) the peak on this noiseless spectrum
+  const auto cont_lls = estimateContinuum( spec, fwhm_at, 1.5, 2, false, true );
+  const auto cont_sm = estimateContinuum( spec, fwhm_at, 1.5, 2, true, false );
+  BOOST_REQUIRE( cont_lls && cont_sm );
+  for( const size_t i : { size_t(100), size_t(512), size_t(900) } )
+  {
+    BOOST_CHECK( std::isfinite( cont_lls->gamma_channel_content(i) ) );
+    BOOST_CHECK( std::isfinite( cont_sm->gamma_channel_content(i) ) );
+    BOOST_CHECK( std::fabs( cont_lls->gamma_channel_content(i) - 10.0 ) < 2.5 );
+    BOOST_CHECK( std::fabs( cont_sm->gamma_channel_content(i) - 10.0 ) < 2.5 );
+  }
+
+  // Energy restriction: channels outside [200, 800] keV are left equal to the data (so a caller
+  // gating on data-minus-continuum sees zero excess there), while the in-range continuum still
+  // erases the 512 keV peak.
+  const auto cont_r = estimateContinuum( spec, fwhm_at, 1.5, 2, false, false, 200.0, 800.0 );
+  BOOST_REQUIRE( cont_r );
+  BOOST_CHECK_EQUAL( cont_r->gamma_channel_content(50), spec->gamma_channel_content(50) );   // <200
+  BOOST_CHECK_EQUAL( cont_r->gamma_channel_content(900), spec->gamma_channel_content(900) );  // >800
+  BOOST_CHECK( cont_r->gamma_channel_content(512) < spec->gamma_channel_content(512) );        // in range, peak clipped
+  BOOST_CHECK( std::fabs( cont_r->gamma_channel_content(512) - 10.0 ) < 2.0 );
+
+  // Invalid inputs throw
+  BOOST_CHECK_THROW( estimateContinuum( nullptr, fwhm_at, 1.5, 2, false, false ), std::exception );
+  BOOST_CHECK_THROW( estimateContinuum( spec, fwhm_at, -1.0, 2, false, false ), std::exception );
+  BOOST_CHECK_THROW( estimateContinuum( spec, fwhm_at, 1.5, 3, false, false ), std::exception );
+  BOOST_CHECK_THROW( estimateContinuum( spec, std::function<double(double)>(), 1.5, 2, false, false ),
+                     std::exception );
+}//test_estimate_continuum_snip
+
 BOOST_AUTO_TEST_SUITE_END() // StatisticalDetailHelpers

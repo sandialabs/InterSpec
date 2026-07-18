@@ -1792,35 +1792,318 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
 }//std::vector<PeakDef> fitPeaksInRange(...)
 
 
+//Defined below; SNIP clipping with a per-channel final clip half-width.
+static const char *calculate_continuum_variable_window( float *spectrum, const int ssize,
+                                                        const std::vector<int> &channel_windows,
+                                                        const int filter_order,
+                                                        const int presmooth_halfwidth,
+                                                        const bool lls,
+                                                        const int clip_begin,
+                                                        const int clip_end );
+
 std::shared_ptr<Measurement> estimateContinuum( std::shared_ptr<const Measurement> data )
 {
   if( !data )
     throw runtime_error( "estimateContinuum: invalid data" );
-  
-  int smoothWindow = kBackSmoothing3;  //can be {3, 5, 7, 9, 11, 13, 15}
-  int filterOrder = 6; //can be {2, 4, 6, 8}
-  const int numIteration = 125; //can be from 1 to 500, roughle
-  const bool compton     = false;
-  const bool smoothing   = false;
-  const int direction    = kBackIncreasingWindow; //kBackDecreasingWindow
-  
+
   const size_t nchannels = data->num_gamma_channels();
-  auto source = std::make_shared<vector<float>>( nchannels ) ;
-  
+
+  auto source = std::make_shared<vector<float>>( nchannels );
   for( size_t i = 0; i < nchannels; ++i )
     (*source)[i] = data->gamma_channel_content(i);
 
-  calculateContinuum( &(source->operator[](0)), static_cast<int>(nchannels), numIteration, direction,
-                     filterOrder, smoothing, smoothWindow, compton );
+  // The fixed clip half-window this app has historically used (was `numIteration` of the
+  // since-removed ROOT-derived calculateContinuum; the clean-room kernel below reproduces it to
+  // float rounding).  Requires 2*window+1 <= nchannels; for very small spectra there is nothing
+  // to clip, so - matching the old wrapper's silent no-op there - return the data unchanged.
+  if( nchannels >= 5 )
+  {
+    const int window = std::min( 125, (static_cast<int>(nchannels) - 1) / 2 );
+    const std::vector<int> windows( nchannels, window );
+    const char *err = calculate_continuum_variable_window( &(source->operator[](0)),
+                          static_cast<int>(nchannels), windows, 6, 0, false,
+                          0, static_cast<int>(nchannels) );
+    assert( !err );
+    (void)err;
+  }//if( nchannels >= 5 )
+
   auto background = make_shared<Measurement>();
   *background = *data;
-  
+
   assert( background->num_gamma_channels() == nchannels );
-  
+
   background->set_gamma_counts( source, data->live_time(), data->real_time() );
-  
+
   return background;
 }//std::shared_ptr<Measurement> estimateContinuum( std::shared_ptr<const Measurement> data )
+
+
+/** SNIP continuum estimator (Statistics-sensitive Non-linear Iterative Peak-clipping),
+ implemented from the published algorithm descriptions - C.G. Ryan et al., Nucl. Instr. Meth.
+ B 34 (1988) 396-402, and M. Morhac et al., Nucl. Instr. Meth. A 401 (1997) 113-132 - with an
+ increasing clip window and the higher-order (up to 6th) clipping filters, generalized here to
+ a per-channel final clip half-width.
+
+ The algorithm: iteratively replace each channel's value v(j) with
+ min( v(j), P_w(j) ), where P_w(j) estimates what a smooth continuum would be at j from
+ symmetric samples a clip half-width w away.  Peaks (narrower than w) are eaten away from the
+ top over the iterations; the smooth continuum under them survives.  The continuum estimates
+ come from requiring the (2p)-th central finite difference of a smooth curve to vanish, then
+ solving for the center value:
+   order 2:  E2 = ( v(j-w) + v(j+w) ) / 2
+   order 4:  E4 = ( 4*(v(j-h2)+v(j+h2)) - (v(j-2*h2)+v(j+2*h2)) ) / 6,      h2 = w/2
+   order 6:  E6 = ( 15*(v(j-h3)+v(j+h3)) - 6*(v(j-2*h3)+v(j+2*h3))
+                    + (v(j-3*h3)+v(j+3*h3)) ) / 20,                          h3 = w/3
+ (the coefficients are the binomial coefficients of the vanishing central difference).
+ `filter_order` selects which estimates enter the composite clip, max(E2[,E4[,E6]]):
+   - order 2 clips against E2 alone.  The taps sit at exactly +/-w, so with w sized to the peak
+     half-width the peak is erased cleanly; the tradeoff is that E2 rounds sharp continuum
+     corners (Compton edges) toward the two-sided average.
+   - order 4/6 add E4/E6, whose taps sit at fractional distances (w/2, and w/3, 2w/3).  Those
+     follow genuine continuum curvature, but for a window sized to ~1-2 FWHM the fractional taps
+     land INSIDE a peak of that width and pull max(...) up, leaving a residual under strong
+     peaks.  Higher orders therefore only pay off when w is much larger than the peak width
+     (e.g. the legacy fixed 125-channel window).  Note E4/E6 also degenerate to v(j) for
+     w < 2 / w < 3 (h2/h3 truncate to 0), so an order 4/6 filter does not clip until w >= 2/3.
+
+ `channel_windows[j]` is the final clip half-width, in channels, for channel j.  Each channel's
+ clip distance grows by +1 per iteration and saturates at its own window:
+ d_j(m) = min( m, channel_windows[j] ) for iteration m = 1..max(channel_windows) (the standard
+ increasing-window schedule, applied per channel).  A channel is only clipped by windows that
+ fully fit inside the spectrum.
+
+ If `presmooth` is true, a 3-channel boxcar is applied to the working spectrum before clipping,
+ so the min-filter does not lock onto the downward noise fluctuations.
+
+ If `lls` is true the clipping is performed in log-log-sqrt space (the LLS operator of Ryan et
+ al., v = ln(ln(sqrt(y+1)+1)+1)), which compresses the dynamic range so high-count noise biases
+ the min-filter less; the result is transformed back to counts.
+
+ Returns nullptr on success, else an error message.
+ */
+static const char *calculate_continuum_variable_window( float *spectrum, const int ssize,
+                                                        const std::vector<int> &channel_windows,
+                                                        const int filter_order,
+                                                        const int presmooth_halfwidth,
+                                                        const bool lls,
+                                                        const int clip_begin,
+                                                        const int clip_end )
+{
+  if( ssize <= 0 )
+    return "Wrong Parameters";
+
+  if( (filter_order != 2) && (filter_order != 4) && (filter_order != 6) )
+    return "filter_order must be 2, 4, or 6";
+
+  if( static_cast<int>(channel_windows.size()) != ssize )
+    return "channel_windows size must match spectrum size";
+
+  // Only channels in [clip_begin, clip_end) are clipped; the rest are left equal to the input
+  // data.  Taps never read outside this range, so a huge feature just outside it (e.g. the
+  // detector turn-on below the lower spectroscopic extent) cannot pull the in-range continuum up.
+  const int cbeg = std::max( 0, clip_begin );
+  const int cend = std::min( ssize, clip_end );
+  if( cbeg >= cend )
+    return nullptr;  // nothing to clip; spectrum left unchanged
+
+  const int span = cend - cbeg;
+
+  int max_window = 0;
+  for( int j = cbeg; j < cend; ++j )
+  {
+    const int w = channel_windows[j];
+    if( w < 1 )
+      return "Width of Clipping Window Must Be Positive";
+    max_window = std::max( max_window, w );
+  }
+
+  if( span < (2*max_window + 1) )
+    return "Too Large Clipping Window";
+
+  // Double buffer: `prev` holds the previous iteration's values the clip filter reads;
+  // `cur` receives this iteration's clipped values.
+  std::vector<float> prev_buf( static_cast<size_t>(ssize) ), cur_buf( static_cast<size_t>(ssize) );
+  float *prev = prev_buf.data(), *cur = cur_buf.data();
+
+  for( int i = 0; i < ssize; i++ )
+    prev[i] = cur[i] = spectrum[i];
+
+  if( presmooth_halfwidth > 0 )
+  {
+    // (2*presmooth_halfwidth+1)-channel boxcar over the clip range, so the min-filter locks onto
+    // the local mean rather than the downward Poisson fluctuations (helps low-count regions).
+    for( int j = cbeg; j < cend; j++ )
+    {
+      float sum = 0.0f, num = 0.0f;
+      for( int w = std::max(j - presmooth_halfwidth, cbeg);
+           w <= std::min(j + presmooth_halfwidth, cend - 1); w++ )
+      {
+        sum += spectrum[w];
+        num += 1.0f;
+      }
+      prev[j] = cur[j] = sum / num;
+    }//for( int j = cbeg; j < cend; j++ )
+  }//if( presmooth_halfwidth > 0 )
+
+  if( lls )
+  {
+    // LLS operator of Ryan et al.: compresses dynamic range so high-count noise biases the
+    // min-filter less; inverted after clipping.
+    for( int j = cbeg; j < cend; j++ )
+    {
+      const float y = std::max( prev[j], 0.0f );
+      prev[j] = cur[j] = std::log( std::log( std::sqrt(y + 1.0f) + 1.0f ) + 1.0f );
+    }
+  }//if( lls )
+
+  for( int m = 1; m <= max_window; m++ )
+  {
+    for( int j = cbeg; j < cend; j++ )
+    {
+      const int w = std::min( m, channel_windows[j] );
+      if( ((j - w) < cbeg) || ((j + w) >= cend) )
+        continue;
+
+      // Continuum estimates at j from symmetric samples, per the vanishing-central-difference
+      // filters described in the function comment.
+      float est = 0.5f * ( prev[j - w] + prev[j + w] );  // E2
+
+      if( filter_order >= 4 )
+      {
+        const int h2 = w / 2;
+        const float e4 = ( 4.0f * (prev[j - h2] + prev[j + h2])
+                           - (prev[j - 2*h2] + prev[j + 2*h2]) ) / 6.0f;
+        est = std::max( est, e4 );
+      }
+
+      if( filter_order >= 6 )
+      {
+        const int h3 = w / 3;
+        const float e6 = ( 15.0f * (prev[j - h3] + prev[j + h3])
+                           - 6.0f * (prev[j - 2*h3] + prev[j + 2*h3])
+                           + (prev[j - 3*h3] + prev[j + 3*h3]) ) / 20.0f;
+        est = std::max( est, e6 );
+      }
+
+      cur[j] = std::min( prev[j], est );
+    }//for( int j = cbeg; j < cend; j++ )
+
+    std::copy( cur + cbeg, cur + cend, prev + cbeg );
+  }//for( int m = 1; m <= max_window; m++ )
+
+  if( lls )
+  {
+    for( int j = cbeg; j < cend; j++ )
+    {
+      const float ee = std::exp( std::exp( cur[j] ) - 1.0f ) - 1.0f;
+      cur[j] = std::max( ee*ee - 1.0f, 0.0f );
+    }
+  }//if( lls )
+
+  std::copy( cur + cbeg, cur + cend, spectrum + cbeg );
+
+  return nullptr;
+}//calculate_continuum_variable_window(...)
+
+
+std::shared_ptr<Measurement> estimateContinuum( std::shared_ptr<const Measurement> data,
+                                                const std::function<double(double)> &fwhm_at_energy,
+                                                const double num_fwhm_window,
+                                                const int filter_order,
+                                                const int presmooth_halfwidth,
+                                                const bool lls,
+                                                const double restrict_lower_energy,
+                                                const double restrict_upper_energy )
+{
+  if( !data )
+    throw runtime_error( "estimateContinuum: invalid data" );
+
+  if( !fwhm_at_energy )
+    throw runtime_error( "estimateContinuum: invalid fwhm function" );
+
+  if( !(num_fwhm_window > 0.0) )
+    throw runtime_error( "estimateContinuum: num_fwhm_window must be positive" );
+
+  const size_t nchannels = data->num_gamma_channels();
+  if( nchannels < 16 )
+    throw runtime_error( "estimateContinuum: too few channels" );
+
+  // Convert num_fwhm_window x FWHM(E) to a per-channel half-window in channels.
+  // Floor of 2 keeps E2's taps distinct from the center; the upper clamp keeps the largest
+  // window valid for the clip loop's edge handling.
+  const int min_window = 2;
+  const int max_window = std::max( min_window, static_cast<int>(nchannels/2) - 1 );
+
+  std::vector<int> windows( nchannels, 0 );  //0 marks "no valid FWHM here" until filled below
+  for( size_t i = 0; i < nchannels; ++i )
+  {
+    const double lower = data->gamma_channel_lower( i );
+    const double upper = data->gamma_channel_upper( i );
+    const double width = upper - lower;
+    const double fwhm = fwhm_at_energy( 0.5*(lower + upper) );
+
+    if( (width > 0.0) && std::isfinite(fwhm) && (fwhm > 0.0) )
+    {
+      const double w = std::round( num_fwhm_window * fwhm / width );
+      windows[i] = std::clamp( static_cast<int>(w), min_window, max_window );
+    }
+  }//for( size_t i = 0; i < nchannels; ++i )
+
+  // Fill channels without a valid FWHM from their nearest valid neighbor.
+  int last_valid = 0;
+  for( size_t i = 0; i < nchannels; ++i )
+  {
+    if( windows[i] > 0 )
+      last_valid = windows[i];
+    else if( last_valid > 0 )
+      windows[i] = last_valid;
+  }
+
+  last_valid = 0;
+  for( size_t i = nchannels; i > 0; --i )
+  {
+    if( windows[i-1] > 0 )
+      last_valid = windows[i-1];
+    else if( last_valid > 0 )
+      windows[i-1] = last_valid;
+  }
+
+  if( windows[0] <= 0 )
+    throw runtime_error( "estimateContinuum: no channel had a valid FWHM" );
+
+  // Optional restriction: clip the continuum only within [restrict_lower_energy,
+  // restrict_upper_energy].  Channels outside are left equal to the data (so a caller that gates
+  // on data-minus-continuum sees zero excess there), which keeps a huge out-of-range feature -
+  // e.g. the detector turn-on below the lower spectroscopic extent - from pulling the in-range
+  // continuum up through the min-filter's taps.
+  int clip_begin = 0, clip_end = static_cast<int>( nchannels );
+  if( (restrict_upper_energy > restrict_lower_energy) && (restrict_lower_energy > 0.0) )
+  {
+    clip_begin = static_cast<int>( data->find_gamma_channel( static_cast<float>(restrict_lower_energy) ) );
+    clip_end = static_cast<int>( data->find_gamma_channel( static_cast<float>(restrict_upper_energy) ) ) + 1;
+    clip_begin = std::clamp( clip_begin, 0, static_cast<int>(nchannels) );
+    clip_end = std::clamp( clip_end, 0, static_cast<int>(nchannels) );
+  }
+
+  auto source = std::make_shared<vector<float>>( nchannels );
+  for( size_t i = 0; i < nchannels; ++i )
+    (*source)[i] = data->gamma_channel_content( i );
+
+  const char *err = calculate_continuum_variable_window( &(source->operator[](0)),
+                              static_cast<int>(nchannels), windows, filter_order,
+                              presmooth_halfwidth, lls, clip_begin, clip_end );
+  if( err )
+    throw runtime_error( "estimateContinuum: " + std::string(err) );
+
+  auto background = make_shared<Measurement>();
+  *background = *data;
+
+  assert( background->num_gamma_channels() == nchannels );
+
+  background->set_gamma_counts( source, data->live_time(), data->real_time() );
+
+  return background;
+}//estimateContinuum( data, fwhm_at_energy, num_fwhm_window, presmooth )
 
 
 
@@ -9105,1231 +9388,6 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
 }//namespace ExperimentalPeakSearch
         
 
-const char *calculateContinuum( float *spectrum, int ssize,
-                               int numberIterations,
-                               int direction, int filterOrder,
-                               bool smoothing,int smoothWindow,
-                               bool compton )
-{
-  
-  //Original Author: Miroslav Morhac   27/05/99
-  //Adapted from TSpectrum  class (specifically the Background function)
-  //  by wcjohnson 20120216, and slowly being converted to multithreaded code...
-  //    basic idea for multithreading:
-  //      -first declare all variables only within scope needed (originally all
-  //       variable decalared at beinging of this funtion) - Mostly done I think
-  //      -break loops up where possible to have each thread work on specific
-  //       portion of the array
-  //      -Will probably want to use a thread_pool to minimize thread overhead
-  //      -Can probably just obptimize the kBackOrder4 portion of the code,
-  //       since this seems to work best anyway
-  //
-  //  See: http://root.cern.ch/root/html/TSpectrum.html for documentation
-  //  ROOT code is licenced under the LGPL, see http://root.cern.ch/root/License.html
-  
-  // April 2012 Notes:
-  // Matthew attempted to optimize/parallelize/thread'ize this function, but
-  // couldn't implement anything that looked like it'd be faster than the serial
-  // version below.  It's not embarassing parallel, and attempts to
-  // parallelize or optimize the parts that are had too much overhead and
-  // ended up slowing things down.  You can continue where Matthew left
-  // off by looking at the following places:
-  // (1) The users/branches/calculateContinuumMt branch, which contains
-  //     code that tried to parallelize the "for" loops.  This slowed things
-  //     down a lot.
-  // (2) Revision -r 6768 in the svn trunk, which contains an attempt to
-  //     add up values in the working_space only once, instead of up to 7
-  //     times. This was slower by about 4x, possible due to sorting the
-  //     fenceposts using insertion sort.  Perhaps a sorting network of
-  //     size 14 or 16 would be faster, but I couldn't find an implementation
-  // There is a "test" called calculateContinuumTest that might be useful
-  // for timing tests and verification of possible data corruption.
-  
-  if (ssize <= 0)
-    return "Wrong Parameters";
-  if (numberIterations < 1)
-    return "Width of Clipping Window Must Be Positive";
-  if (ssize < 2 * numberIterations + 1)
-    return "Too Large Clipping Window";
-  if (smoothing == true && smoothWindow != kBackSmoothing3 && smoothWindow != kBackSmoothing5 && smoothWindow != kBackSmoothing7 && smoothWindow != kBackSmoothing9 && smoothWindow != kBackSmoothing11 && smoothWindow != kBackSmoothing13 && smoothWindow != kBackSmoothing15)
-    return "Incorrect width of smoothing window";
-  
-  
-  float *working_space = new float[2 * ssize];
-  std::unique_ptr<float []> working_space_scoper( working_space );
-  
-  for( int i = 0; i < ssize; i++ )
-  {
-    working_space[i] = spectrum[i];
-    working_space[i + ssize] = spectrum[i];
-  }//for (i = 0; i < ssize; i++)
-  
-  const int bw=(smoothWindow-1)/2;
-  
-  int n_iters = (direction == kBackIncreasingWindow) ? 1 : numberIterations;
-  
-  if (filterOrder == kBackOrder2)
-  {
-    do
-    {
-      for ( int j = n_iters; j < ssize - n_iters; j++)
-      {
-        if (smoothing == false)
-        {
-          float a = working_space[ssize + j];
-          float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
-          if (b < a)
-            a = b;
-          working_space[j] = a;
-        }else //if (smoothing == true)
-        {
-          float a = working_space[ssize + j];
-          float av = 0;
-          float men = 0;
-          for ( int w = j - bw; w <= j + bw; w++)
-          {
-            if ( w >= 0 && w < ssize)
-            {
-              av += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          av = av / men;
-          float b = 0;
-          men = 0;
-          for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
-            if ( w >= 0 && w < ssize){
-              b += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b = b / men;
-          float c = 0;
-          men = 0;
-          for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++)
-          {
-            if ( w >= 0 && w < ssize)
-            {
-              c += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c = c / men;
-          b = (b + c) / 2;
-          if (b < a)
-            av = b;
-          working_space[j]=av;
-        }//if (smoothing == false) / else
-      }//for (j = n_iters; j < ssize - n_iters; j++)
-      
-      for (int j = n_iters; j < ssize - n_iters; j++)
-      working_space[ssize + j] = working_space[j];
-      
-      if (direction == kBackIncreasingWindow)
-        n_iters+=1;
-      else if(direction == kBackDecreasingWindow)
-        n_iters-=1;
-    }while( (direction == kBackIncreasingWindow && n_iters <= numberIterations)
-           || (direction == kBackDecreasingWindow && n_iters >= 1) );
-  }//if (filterOrder == kBackOrder2)
-  
-  else if (filterOrder == kBackOrder4)
-  {
-    cerr << "kBackOrder4" << endl;
-    do{
-      for (int j = n_iters; j < ssize - n_iters; j++) {
-        if (smoothing == false){
-          float a = working_space[ssize + j];
-          float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
-          float c = 0;
-          float ai = n_iters / 2;
-          c -= working_space[ssize + j - (int) (2 * ai)] / 6;
-          c += 4 * working_space[ssize + j - (int) ai] / 6;
-          c += 4 * working_space[ssize + j + (int) ai] / 6;
-          c -= working_space[ssize + j + (int) (2 * ai)] / 6;
-          if (b < c)
-            b = c;
-          if (b < a)
-            a = b;
-          working_space[j] = a;
-        }
-        else if (smoothing == true){
-          float a = working_space[ssize + j];
-          float ai = n_iters / 2;
-          float av = 0;
-          float men = 0;
-          
-          for ( int w = j - bw; w <= j + bw; w++){
-            if ( w >= 0 && w < ssize){
-              av += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          av = av / men;
-          
-          
-          float b = 0;
-          men = 0;
-          for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
-            if ( w >= 0 && w < ssize){
-              b += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b = b / men;
-          
-          float c = 0;
-          men = 0;
-          for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++){
-            if ( w >= 0 && w < ssize){
-              c += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c = c / men;
-          b = (b + c) / 2;
-          
-          
-          float b4 = 0;
-          men = 0;
-          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              b4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b4 = b4 / men;
-          
-          
-          float c4 = 0;
-          men = 0;
-          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              c4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c4 = c4 / men;
-          
-          
-          float d4 = 0;
-          men = 0;
-          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              d4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          d4 = d4 / men;
-          
-          float e4 = 0;
-          men = 0;
-          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              e4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          e4 = e4 / men;
-          b4 = (-b4 + 4 * c4 + 4 * d4 - e4) / 6;
-          if (b < b4)
-            b = b4;
-          if (b < a)
-            av = b;
-          working_space[j]=av;
-        }
-      }
-      for (int j = n_iters; j < ssize - n_iters; j++)
-      working_space[ssize + j] = working_space[j];
-      if (direction == kBackIncreasingWindow)
-        n_iters+=1;
-      else if(direction == kBackDecreasingWindow)
-        n_iters-=1;
-    }while((direction == kBackIncreasingWindow && n_iters <= numberIterations) || (direction == kBackDecreasingWindow && n_iters >= 1));
-  }
-  
-  else if (filterOrder == kBackOrder6) {
-    do{
-      for (int j = n_iters; j < ssize - n_iters; j++) {
-        
-        if (smoothing == false){
-          float a = working_space[ssize + j];
-          float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
-          float c = 0;
-          float ai = n_iters / 2;
-          c -= working_space[ssize + j - (int) (2 * ai)] / 6;
-          c += 4 * working_space[ssize + j - (int) ai] / 6;
-          c += 4 * working_space[ssize + j + (int) ai] / 6;
-          c -= working_space[ssize + j + (int) (2 * ai)] / 6;
-          float d = 0;
-          ai = n_iters / 3;
-          d += working_space[ssize + j - (int) (3 * ai)] / 20;
-          d -= 6 * working_space[ssize + j - (int) (2 * ai)] / 20;
-          d += 15 * working_space[ssize + j - (int) ai] / 20;
-          d += 15 * working_space[ssize + j + (int) ai] / 20;
-          d -= 6 * working_space[ssize + j + (int) (2 * ai)] / 20;
-          d += working_space[ssize + j + (int) (3 * ai)] / 20;
-          if (b < d)
-            b = d;
-          if (b < c)
-            b = c;
-          if (b < a)
-            a = b;
-          working_space[j] = a;
-        }
-        
-        else if (smoothing == true){
-          float a = working_space[ssize + j];
-          float av = 0;
-          float men = 0;
-          for ( int w = j - bw; w <= j + bw; w++){
-            if ( w >= 0 && w < ssize){
-              av += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          av = av / men;
-          float b = 0;
-          men = 0;
-          for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
-            if ( w >= 0 && w < ssize){
-              b += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b = b / men;
-          float c = 0;
-          men = 0;
-          for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++){
-            if ( w >= 0 && w < ssize){
-              c += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c = c / men;
-          b = (b + c) / 2;
-          float ai = n_iters / 2;
-          float b4 = 0;
-          men = 0;
-          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              b4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b4 = b4 / men;
-          float c4 = 0;
-          men = 0;
-          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              c4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c4 = c4 / men;
-          float d4 = 0;
-          men = 0;
-          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              d4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          d4 = d4 / men;
-          float e4 = 0;
-          men = 0;
-          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              e4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          e4 = e4 / men;
-          b4 = (-b4 + 4 * c4 + 4 * d4 - e4) / 6;
-          ai = n_iters / 3;
-          float b6 = 0;
-          men = 0;
-          for ( int w = j - (int)(3 * ai) - bw; w <= j - (int)(3 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              b6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b6 = b6 / men;
-          float c6 = 0;
-          men = 0;
-          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              c6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c6 = c6 / men;
-          float d6 = 0;
-          men = 0;
-          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              d6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          d6 = d6 / men;
-          float e6 = 0;
-          men = 0;
-          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              e6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          e6 = e6 / men;
-          float f6 = 0;
-          men = 0;
-          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              f6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          f6 = f6 / men;
-          float g6 = 0;
-          men = 0;
-          for ( int w = j + (int)(3 * ai) - bw; w <= j + (int)(3 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              g6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          g6 = g6 / men;
-          b6 = (b6 - 6 * c6 + 15 * d6 + 15 * e6 - 6 * f6 + g6) / 20;
-          if (b < b6)
-            b = b6;
-          if (b < b4)
-            b = b4;
-          if (b < a)
-            av = b;
-          working_space[j]=av;
-        }
-      }
-      for (int j = n_iters; j < ssize - n_iters; j++)
-      working_space[ssize + j] = working_space[j];
-      if (direction == kBackIncreasingWindow)
-        n_iters+=1;
-      else if(direction == kBackDecreasingWindow)
-        n_iters-=1;
-    }while((direction == kBackIncreasingWindow && n_iters <= numberIterations) || (direction == kBackDecreasingWindow && n_iters >= 1));
-  }
-  
-  else if (filterOrder == kBackOrder8) {
-    do{
-      for (int j = n_iters; j < ssize - n_iters; j++) {
-        if (smoothing == false){
-          float a = working_space[ssize + j];
-          float b = (working_space[ssize + j - n_iters] + working_space[ssize + j + n_iters]) / 2.0;
-          float c = 0;
-          float ai = n_iters / 2;
-          c -= working_space[ssize + j - (int) (2 * ai)] / 6;
-          c += 4 * working_space[ssize + j - (int) ai] / 6;
-          c += 4 * working_space[ssize + j + (int) ai] / 6;
-          c -= working_space[ssize + j + (int) (2 * ai)] / 6;
-          float d = 0;
-          ai = n_iters / 3;
-          d += working_space[ssize + j - (int) (3 * ai)] / 20;
-          d -= 6 * working_space[ssize + j - (int) (2 * ai)] / 20;
-          d += 15 * working_space[ssize + j - (int) ai] / 20;
-          d += 15 * working_space[ssize + j + (int) ai] / 20;
-          d -= 6 * working_space[ssize + j + (int) (2 * ai)] / 20;
-          d += working_space[ssize + j + (int) (3 * ai)] / 20;
-          float e = 0;
-          ai = n_iters / 4;
-          e -= working_space[ssize + j - (int) (4 * ai)] / 70;
-          e += 8 * working_space[ssize + j - (int) (3 * ai)] / 70;
-          e -= 28 * working_space[ssize + j - (int) (2 * ai)] / 70;
-          e += 56 * working_space[ssize + j - (int) ai] / 70;
-          e += 56 * working_space[ssize + j + (int) ai] / 70;
-          e -= 28 * working_space[ssize + j + (int) (2 * ai)] / 70;
-          e += 8 * working_space[ssize + j + (int) (3 * ai)] / 70;
-          e -= working_space[ssize + j + (int) (4 * ai)] / 70;
-          if (b < e)
-            b = e;
-          if (b < d)
-            b = d;
-          if (b < c)
-            b = c;
-          if (b < a)
-            a = b;
-          working_space[j] = a;
-        }
-        
-        else if (smoothing == true)
-        {
-          float a = working_space[ssize + j];
-          float av = 0;
-          float men = 0;
-          
-          for ( int w = j - bw; w <= j + bw; w++){
-            if ( w >= 0 && w < ssize){
-              av += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          av = av / men;
-          float b = 0;
-          men = 0;
-          for ( int w = j - n_iters - bw; w <= j - n_iters + bw; w++){
-            if ( w >= 0 && w < ssize){
-              b += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b = b / men;
-          float c = 0;
-          men = 0;
-          for ( int w = j + n_iters - bw; w <= j + n_iters + bw; w++){
-            if ( w >= 0 && w < ssize){
-              c += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c = c / men;
-          b = (b + c) / 2;
-          float ai = n_iters / 2;
-          float b4 = 0;
-          men = 0;
-          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              b4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b4 = b4 / men;
-          float c4 = 0;
-          men = 0;
-          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              c4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c4 = c4 / men;
-          float d4 = 0;
-          men = 0;
-          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              d4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          d4 = d4 / men;
-          float e4 = 0;
-          men = 0;
-          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              e4 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          e4 = e4 / men;
-          b4 = (-b4 + 4 * c4 + 4 * d4 - e4) / 6;
-          ai = n_iters / 3;
-          float b6 = 0;
-          men = 0;
-          for ( int w = j - (int)(3 * ai) - bw; w <= j - (int)(3 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              b6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b6 = b6 / men;
-          float c6 = 0;
-          men = 0;
-          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              c6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c6 = c6 / men;
-          float d6 = 0;
-          men = 0;
-          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              d6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          d6 = d6 / men;
-          float e6 = 0;
-          men = 0;
-          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              e6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          e6 = e6 / men;
-          float f6 = 0;
-          men = 0;
-          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              f6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          f6 = f6 / men;
-          float g6 = 0;
-          men = 0;
-          for ( int w = j + (int)(3 * ai) - bw; w <= j + (int)(3 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              g6 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          g6 = g6 / men;
-          b6 = (b6 - 6 * c6 + 15 * d6 + 15 * e6 - 6 * f6 + g6) / 20;
-          ai = n_iters / 4;
-          float b8 = 0;
-          men = 0;
-          for ( int w = j - (int)(4 * ai) - bw; w <= j - (int)(4 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              b8 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          b8 = b8 / men;
-          float c8 = 0;
-          men = 0;
-          for ( int w = j - (int)(3 * ai) - bw; w <= j - (int)(3 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              c8 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          c8 = c8 / men;
-          float d8 = 0;
-          men = 0;
-          for ( int w = j - (int)(2 * ai) - bw; w <= j - (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              d8 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          d8 = d8 / men;
-          float e8 = 0;
-          men = 0;
-          for ( int w = j - (int)ai - bw; w <= j - (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              e8 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          e8 = e8 / men;
-          float f8 = 0;
-          men = 0;
-          for ( int w = j + (int)ai - bw; w <= j + (int)ai + bw; w++){
-            if (w >= 0 && w < ssize){
-              f8 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          f8 = f8 / men;
-          float g8 = 0;
-          men = 0;
-          for ( int w = j + (int)(2 * ai) - bw; w <= j + (int)(2 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              g8 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          g8 = g8 / men;
-          float h8 = 0;
-          men = 0;
-          for ( int w = j + (int)(3 * ai) - bw; w <= j + (int)(3 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              h8 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          h8 = h8 / men;
-          float i8 = 0;
-          men = 0;
-          for ( int w = j + (int)(4 * ai) - bw; w <= j + (int)(4 * ai) + bw; w++){
-            if (w >= 0 && w < ssize){
-              i8 += working_space[ssize + w];
-              men +=1;
-            }
-          }
-          i8 = i8 / men;
-          b8 = ( -b8 + 8 * c8 - 28 * d8 + 56 * e8 - 56 * f8 - 28 * g8 + 8 * h8 - i8)/70;
-          if (b < b8)
-            b = b8;
-          if (b < b6)
-            b = b6;
-          if (b < b4)
-            b = b4;
-          if (b < a)
-            av = b;
-          working_space[j]=av;
-        }
-      }
-      for (int j = n_iters; j < ssize - n_iters; j++)
-      working_space[ssize + j] = working_space[j];
-      if (direction == kBackIncreasingWindow)
-        n_iters += 1;
-      else if(direction == kBackDecreasingWindow)
-        n_iters -= 1;
-    }while((direction == kBackIncreasingWindow && n_iters <= numberIterations) || (direction == kBackDecreasingWindow && n_iters >= 1));
-  }
-  
-  if (compton == true) {
-    int b2 = 0;
-    for (int i = 0; i < ssize; i++){
-      int b1 = b2;
-      float a = working_space[i], b = spectrum[i];
-      
-      //           j = i;
-      
-      if (fabs(a - b) >= 1) {
-        b1 = i - 1;
-        if (b1 < 0)
-          b1 = 0;
-        float yb1 = working_space[b1];
-        float c = 0.0;
-        int priz = 0;
-        for (b2 = b1 + 1; priz == 0 && b2 < ssize; b2++){
-          a = working_space[b2], b = spectrum[b2];
-          c = c + b - yb1;
-          if (fabs(a - b) < 1) {
-            priz = 1;
-            //                    yb2 = b;
-          }
-        }
-        if (b2 == ssize)
-          b2 -= 1;
-        
-        float yb2 = working_space[b2];
-        
-        if (yb1 <= yb2)
-        {
-          c = 0.0;
-          for (int j = b1; j <= b2; j++){
-            b = spectrum[j];
-            c = c + b - yb1;
-          }
-          if (c > 1){
-            c = (yb2 - yb1) / c;
-            float d = 0.0;
-            for (int j = b1; j <= b2 && j < ssize; j++){
-              b = spectrum[j];
-              d = d + b - yb1;
-              a = c * d + yb1;
-              working_space[ssize + j] = a;
-            }
-          }
-        }else
-        {
-          c = 0.0;
-          for (int j = b2; j >= b1; j--){
-            b = spectrum[j];
-            c = c + b - yb2;
-          }
-          if (c > 1){
-            c = (yb1 - yb2) / c;
-            float d = 0.0;
-            for (int j = b2;j >= b1 && j >= 0; j--){
-              b = spectrum[j];
-              d = d + b - yb2;
-              a = c * d + yb2;
-              working_space[ssize + j] = a;
-            }
-          }
-        }
-        i=b2;
-      }
-    }
-  }
-  
-  for (int j = 0; j < ssize; j++)
-  spectrum[j] = working_space[ssize + j];
-  //     delete[]working_space;
-  
-  /*
-   boost::posix_time::ptime endTime = boost::posix_time::microsec_clock::local_time();
-   boost::posix_time::time_duration durationEnd( endTime.time_of_day() );
-   
-   //   std::cout << "start duration is " << durationStart.total_milliseconds() << std::endl;
-   //   std::cout << "end duration is " << durationEnd.total_milliseconds() << std::endl;
-   
-   boost::posix_time::time_duration duration = durationEnd - durationStart;
-   double seconds = duration.total_milliseconds()/1000.0;
-   std::cout << "****duration is " << seconds << " seconds" << std::endl;
-   string command;
-   stringstream out;
-   out << "banner " << seconds;
-   command = out.str();
-   system( command.c_str() );
-   */
-  
-  return 0;
-}//const char *calculateContinuum(...)
-
-
-
-
-
-
-
-vector<float> findPeaksByRelaxation( float *source,float *destVector, int ssize,
-                                    float sigma, double threshold,
-                                    bool backgroundRemove,int deconIterations,
-                                    bool markov, int averWindow )
-{
-  //Author: Miroslav Morhac   27/05/99
-  //Adapted from TSpectrum  class (specifically Background)
-  //  by wcjohnson 20120216.
-  //  See: http://root.cern.ch/root/html/TSpectrum.html for documentation
-  
-#define PEAK_WINDOW 1024
-  const int fMaxPeaks = 100;
-  vector<float> fPositionX;
-  
-  int i, j, numberIterations = (int)(7 * sigma + 0.5);
-  double a, b, c;
-  int k, lindex, posit, imin, imax, jmin, jmax, lh_gold, priz;
-  double lda, ldb, ldc, area, maximum, maximum_decon;
-  int xmin, xmax, l, peak_index = 0, size_ext = ssize + 2 * numberIterations, shift = numberIterations, bw = 2;
-  
-  double maxch;
-  double nom, nip, nim, sp, sm, plocha = 0;
-  double m0low=0,m1low=0,m2low=0,l0low=0,l1low=0,detlow,av,men;
-  if (sigma < 1) {
-    cerr << "findPeaksByRelaxation(...)\n\t"
-    << "Invalid sigma, must be greater than or equal to 1" << endl;
-    return fPositionX;
-  }
-  
-  if(threshold<=0 || threshold>=100){
-    cerr << "findPeaksByRelaxation(...)\n\t"
-    << "Invalid threshold, must be positive and less than 100"
-    << endl;
-    return fPositionX;
-  }
-  
-  j = (int) (5.0 * sigma + 0.5);
-  if (j >= PEAK_WINDOW / 2) {
-    cerr << "findPeaksByRelaxation(...)\n\tToo large sigma" << endl;
-    return fPositionX;
-  }
-  
-  if (markov == true) {
-    if (averWindow <= 0) {
-      cerr << "findPeaksByRelaxation(...)\n\t"
-      << "Averanging window must be positive" << endl;
-      return fPositionX;
-    }
-  }
-  
-  if(backgroundRemove == true){
-    if(ssize < 2 * numberIterations + 1){
-      cerr << "findPeaksByRelaxation(...)\n\t"
-      << "Too large clipping window" << endl;
-      return fPositionX;
-    }
-  }
-  
-  fPositionX.resize( fMaxPeaks, 0.0 );
-  
-  k = int(2 * sigma+0.5);
-  if(k >= 2){
-    for(i = 0;i < k;i++){
-      a = i,b = source[i];
-      m0low += 1,m1low += a,m2low += a * a,l0low += b,l1low += a * b;
-    }
-    detlow = m0low * m2low - m1low * m1low;
-    if(detlow != 0)
-      l1low = (-l0low * m1low + l1low * m0low) / detlow;
-    
-    else
-      l1low = 0;
-    if(l1low > 0)
-      l1low=0;
-  }
-  
-  else{
-    l1low = 0;
-  }
-  
-  i = (int)(7 * sigma + 0.5);
-  i = 2 * i;
-  vector<double> working_space_vec( 7 * (ssize + i), 0.0 );
-  double *working_space = working_space_vec.data();
-  for(i = 0; i < size_ext; i++){
-    if(i < shift){
-      a = i - shift;
-      working_space[i + size_ext] = source[0] + l1low * a;
-      if(working_space[i + size_ext] < 0)
-        working_space[i + size_ext]=0;
-    }
-    
-    else if(i >= ssize + shift){
-      a = i - (ssize - 1 + shift);
-      working_space[i + size_ext] = source[ssize - 1];
-      if(working_space[i + size_ext] < 0)
-        working_space[i + size_ext]=0;
-    }
-    
-    else
-      working_space[i + size_ext] = source[i - shift];
-  }
-  
-  if(backgroundRemove == true){
-    for(i = 1; i <= numberIterations; i++){
-      for(j = i; j < size_ext - i; j++){
-        if(markov == false){
-          a = working_space[size_ext + j];
-          b = (working_space[size_ext + j - i] + working_space[size_ext + j + i]) / 2.0;
-          if(b < a)
-            a = b;
-          
-          working_space[j]=a;
-        }
-        
-        else{
-          a = working_space[size_ext + j];
-          av = 0;
-          men = 0;
-          for ( int w = j - bw; w <= j + bw; w++){
-            if ( w >= 0 && w < size_ext){
-              av += working_space[size_ext + w];
-              men +=1;
-            }
-          }
-          av = av / men;
-          b = 0;
-          men = 0;
-          for ( int w = j - i - bw; w <= j - i + bw; w++){
-            if ( w >= 0 && w < size_ext){
-              b += working_space[size_ext + w];
-              men +=1;
-            }
-          }
-          b = b / men;
-          c = 0;
-          men = 0;
-          for ( int w = j + i - bw; w <= j + i + bw; w++){
-            if ( w >= 0 && w < size_ext){
-              c += working_space[size_ext + w];
-              men +=1;
-            }
-          }
-          c = c / men;
-          b = (b + c) / 2;
-          if (b < a)
-            av = b;
-          working_space[j]=av;
-        }
-      }
-      for(j = i; j < size_ext - i; j++)
-      working_space[size_ext + j] = working_space[j];
-    }
-    for(j = 0;j < size_ext; j++){
-      if(j < shift){
-        a = j - shift;
-        b = source[0] + l1low * a;
-        if (b < 0) b = 0;
-        working_space[size_ext + j] = b - working_space[size_ext + j];
-      }
-      
-      else if(j >= ssize + shift){
-        a = j - (ssize - 1 + shift);
-        b = source[ssize - 1];
-        if (b < 0) b = 0;
-        working_space[size_ext + j] = b - working_space[size_ext + j];
-      }
-      
-      else{
-        working_space[size_ext + j] = source[j - shift] - working_space[size_ext + j];
-      }
-    }
-    for(j = 0;j < size_ext; j++){
-      if(working_space[size_ext + j] < 0) working_space[size_ext + j] = 0;
-    }
-  }
-  
-  for(i = 0; i < size_ext; i++){
-    working_space[i + 6*size_ext] = working_space[i + size_ext];
-  }
-  
-  if(markov == true){
-    for(j = 0; j < size_ext; j++)
-    working_space[2 * size_ext + j] = working_space[size_ext + j];
-    xmin = 0,xmax = size_ext - 1;
-    for(i = 0, maxch = 0; i < size_ext; i++){
-      working_space[i] = 0;
-      if(maxch < working_space[2 * size_ext + i])
-        maxch = working_space[2 * size_ext + i];
-      plocha += working_space[2 * size_ext + i];
-    }
-    if(maxch == 0) {
-      fPositionX.clear();
-      return fPositionX;
-    }
-    
-    nom = 1;
-    working_space[xmin] = 1;
-    for(i = xmin; i < xmax; i++){
-      nip = working_space[2 * size_ext + i] / maxch;
-      nim = working_space[2 * size_ext + i + 1] / maxch;
-      sp = 0,sm = 0;
-      for(l = 1; l <= averWindow; l++){
-        if((i + l) > xmax)
-          a = working_space[2 * size_ext + xmax] / maxch;
-        
-        else
-          a = working_space[2 * size_ext + i + l] / maxch;
-        
-        b = a - nip;
-        if(a + nip <= 0)
-          a=1;
-        
-        else
-          a = sqrt(a + nip);
-        
-        b = b / a;
-        b = exp(b);
-        sp = sp + b;
-        if((i - l + 1) < xmin)
-          a = working_space[2 * size_ext + xmin] / maxch;
-        
-        else
-          a = working_space[2 * size_ext + i - l + 1] / maxch;
-        
-        b = a - nim;
-        if(a + nim <= 0)
-          a = 1;
-        
-        else
-          a = sqrt(a + nim);
-        
-        b = b / a;
-        b = exp(b);
-        sm = sm + b;
-      }
-      a = sp / sm;
-      a = working_space[i + 1] = working_space[i] * a;
-      nom = nom + a;
-    }
-    for(i = xmin; i <= xmax; i++){
-      working_space[i] = working_space[i] / nom;
-    }
-    for(j = 0; j < size_ext; j++)
-    working_space[size_ext + j] = working_space[j] * plocha;
-    for(j = 0; j < size_ext; j++){
-      working_space[2 * size_ext + j] = working_space[size_ext + j];
-    }
-    if(backgroundRemove == true){
-      for(i = 1; i <= numberIterations; i++){
-        for(j = i; j < size_ext - i; j++){
-          a = working_space[size_ext + j];
-          b = (working_space[size_ext + j - i] + working_space[size_ext + j + i]) / 2.0;
-          if(b < a)
-            a = b;
-          working_space[j] = a;
-        }
-        for(j = i; j < size_ext - i; j++)
-        working_space[size_ext + j] = working_space[j];
-      }
-      for(j = 0; j < size_ext; j++){
-        working_space[size_ext + j] = working_space[2 * size_ext + j] - working_space[size_ext + j];
-      }
-    }
-  }
-  //deconvolution starts
-  area = 0;
-  lh_gold = -1;
-  posit = 0;
-  maximum = 0;
-  //generate response vector
-  for(i = 0; i < size_ext; i++){
-    lda = (double)i - 3 * sigma;
-    lda = lda * lda / (2 * sigma * sigma);
-    j = (int)(1000 * exp(-lda));
-    lda = j;
-    if(lda != 0)
-      lh_gold = i + 1;
-    
-    working_space[i] = lda;
-    area = area + lda;
-    if(lda > maximum){
-      maximum = lda;
-      posit = i;
-    }
-  }
-  //read source vector
-  for(i = 0; i < size_ext; i++)
-  working_space[2 * size_ext + i] = fabs(working_space[size_ext + i]);
-  //create matrix at*a(vector b)
-  i = lh_gold - 1;
-  if(i > size_ext)
-    i = size_ext;
-  
-  imin = -i,imax = i;
-  for(i = imin; i <= imax; i++){
-    lda = 0;
-    jmin = 0;
-    if(i < 0)
-      jmin = -i;
-    jmax = lh_gold - 1 - i;
-    if(jmax > (lh_gold - 1))
-      jmax = lh_gold - 1;
-    
-    for(j = jmin;j <= jmax; j++){
-      ldb = working_space[j];
-      ldc = working_space[i + j];
-      lda = lda + ldb * ldc;
-    }
-    working_space[size_ext + i - imin] = lda;
-  }
-  //create vector p
-  i = lh_gold - 1;
-  imin = -i,imax = size_ext + i - 1;
-  for(i = imin; i <= imax; i++){
-    lda = 0;
-    for(j = 0; j <= (lh_gold - 1); j++){
-      ldb = working_space[j];
-      k = i + j;
-      if(k >= 0 && k < size_ext){
-        ldc = working_space[2 * size_ext + k];
-        lda = lda + ldb * ldc;
-      }
-      
-    }
-    working_space[4 * size_ext + i - imin] = lda;
-  }
-  //move vector p
-  for(i = imin; i <= imax; i++)
-  working_space[2 * size_ext + i - imin] = working_space[4 * size_ext + i - imin];
-  //initialization of resulting vector
-  for(i = 0; i < size_ext; i++)
-  working_space[i] = 1;
-  //START OF ITERATIONS
-  for(lindex = 0; lindex < deconIterations; lindex++){
-    for(i = 0; i < size_ext; i++){
-      if(fabs(working_space[2 * size_ext + i]) > 0.00001 && fabs(working_space[i]) > 0.00001){
-        lda=0;
-        jmin = lh_gold - 1;
-        if(jmin > i)
-          jmin = i;
-        
-        jmin = -jmin;
-        jmax = lh_gold - 1;
-        if(jmax > (size_ext - 1 - i))
-          jmax=size_ext-1-i;
-        
-        for(j = jmin; j <= jmax; j++){
-          ldb = working_space[j + lh_gold - 1 + size_ext];
-          ldc = working_space[i + j];
-          lda = lda + ldb * ldc;
-        }
-        ldb = working_space[2 * size_ext + i];
-        if(lda != 0)
-          lda = ldb / lda;
-        
-        else
-          lda = 0;
-        
-        ldb = working_space[i];
-        lda = lda * ldb;
-        working_space[3 * size_ext + i] = lda;
-      }
-    }
-    for(i = 0; i < size_ext; i++){
-      working_space[i] = working_space[3 * size_ext + i];
-    }
-  }
-  //shift resulting spectrum
-  for(i=0;i<size_ext;i++){
-    lda = working_space[i];
-    j = i + posit;
-    j = j % size_ext;
-    working_space[size_ext + j] = lda;
-  }
-  //write back resulting spectrum
-  maximum = 0, maximum_decon = 0;
-  j = lh_gold - 1;
-  for(i = 0; i < size_ext - j; i++){
-    if(i >= shift && i < ssize + shift){
-      working_space[i] = area * working_space[size_ext + i + j];
-      if(maximum_decon < working_space[i])
-        maximum_decon = working_space[i];
-      if(maximum < working_space[6 * size_ext + i])
-        maximum = working_space[6 * size_ext + i];
-    }
-    
-    else
-      working_space[i] = 0;
-  }
-  lda=1;
-  if(lda>threshold)
-    lda=threshold;
-  lda=lda/100;
-  
-  //searching for peaks in deconvolved spectrum
-  for(i = 1; i < size_ext - 1; i++){
-    if(working_space[i] > working_space[i - 1] && working_space[i] > working_space[i + 1]){
-      if(i >= shift && i < ssize + shift){
-        if(working_space[i] > lda*maximum_decon && working_space[6 * size_ext + i] > threshold * maximum / 100.0){
-          for(j = i - 1, a = 0, b = 0; j <= i + 1; j++){
-            a += (double)(j - shift) * working_space[j];
-            b += working_space[j];
-          }
-          a = a / b;
-          if(a < 0)
-            a = 0;
-          
-          if(a >= ssize)
-            a = ssize - 1;
-          if(peak_index == 0){
-            fPositionX[0] = a;
-            peak_index = 1;
-          }
-          
-          else{
-            for(j = 0, priz = 0; j < peak_index && priz == 0; j++){
-              if(working_space[6 * size_ext + shift + (int)a] > working_space[6 * size_ext + shift + (int)fPositionX[j]])
-                priz = 1;
-            }
-            if(priz == 0){
-              if(j < fMaxPeaks){
-                fPositionX[j] = a;
-              }
-            }
-            
-            else{
-              for(k = peak_index; k >= j; k--){
-                if(k < fMaxPeaks){
-                  fPositionX[k] = fPositionX[k - 1];
-                }
-              }
-              fPositionX[j - 1] = a;
-            }
-            if(peak_index < fMaxPeaks)
-              peak_index += 1;
-          }
-        }
-      }
-    }
-  }
-  
-  for(i = 0; i < ssize; i++) destVector[i] = working_space[i + shift];
-  
-  if(peak_index == fMaxPeaks)
-    cerr << "findPeaksByRelaxation(...)\n\tPeak buffer full" << endl;
-  
-  fPositionX.resize( peak_index );
-  
-  return fPositionX;
-}//vector<float> findPeaksByRelaxation(...)
 
 
 
