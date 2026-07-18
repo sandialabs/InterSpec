@@ -81,3 +81,7 @@ target_include_directories( Eu152BackgroundDebug PUBLIC "${CMAKE_CURRENT_SOURCE_
 add_executable( NuclideFitDebug NuclideFitDebug.cpp )
 target_link_libraries( NuclideFitDebug PRIVATE InterSpecLib )
 target_include_directories( NuclideFitDebug PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" )
+
+add_executable( SnipContinuumPlots SnipContinuumPlots.cpp )
+target_link_libraries( SnipContinuumPlots PRIVATE InterSpecLib )
+target_include_directories( SnipContinuumPlots PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" )
