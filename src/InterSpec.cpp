@@ -112,6 +112,7 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/EnergyCalGainMatch.h"
 #include "InterSpec/OneOverR2Calc.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpectrumChart.h"
@@ -12272,8 +12273,18 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     case SpecUtils::SpectrumType::SecondForeground:
       break;
   }//switch( spec_type )
-  
-  
+
+  // For a newly-displayed multi-detector foreground, quickly check whether gain-matching the
+  //  detectors would improve their consistency, and if so offer it via a toast.
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+  if( (spec_type == SpecUtils::SpectrumType::Foreground) && m_dataMeasurement
+      && (m_dataMeasurement->gamma_detector_names().size() > 1) )
+  {
+    checkForDetectorGainMatch( m_dataMeasurement, sample_numbers );
+  }
+#endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
+
+
   //Lets see if there are any parse warnings that we should give to the user.
   if( meas && !sameSpecFile && !(options & InterSpec::SetSpectrumOptions::SkipParseWarnings) )
   {
@@ -13244,6 +13255,135 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
     }//if( server )
   }
 }//void searchForHintPeaks(...)
+
+
+void InterSpec::checkForDetectorGainMatch( const std::shared_ptr<SpecMeas> &meas,
+                                           const std::set<int> &samples )
+{
+  // Only analyze each foreground file once, not on every sample/scale change
+  if( !meas || (meas == m_lastGainMatchChecked.lock()) )
+    return;
+
+  m_lastGainMatchChecked = meas;
+  m_gainMatchSuggestion.reset();
+
+  // Build the per-detector summed spectra here on the session thread (this reads the SpecMeas);
+  //  the returned spectra are fresh/immutable, so the CPU-heavy analysis can then run on a
+  //  worker thread without blocking the UI on load.
+  const std::vector<GainMatchCalc::SpectrumInput> inputs
+                            = GainMatchCalc::buildDetectorInputs( meas, samples );
+  if( inputs.size() < 2 )
+    return;
+
+  Wt::WServer * const server = Wt::WServer::instance();
+  if( !server || !wApp )
+    return;
+
+  const std::string sessionId = wApp->sessionId();
+  std::weak_ptr<SpecMeas> weakMeas = meas;
+  const std::set<int> samplesCopy = samples;
+
+  server->ioService().boost::asio::io_service::post( [inputs, sessionId, weakMeas, samplesCopy, server](){
+    // --- worker thread: the CPU-heavy part (match + resolution peak fit) ---
+    const GainMatchCalc::DetectorMatchResult result = GainMatchCalc::matchDetectorInputs( inputs );
+    if( !result.beneficial )
+      return;
+
+    // --- back on the session thread: store the suggestion and show the toast ---
+    server->post( sessionId, [weakMeas, samplesCopy, result](){
+      InterSpec * const viewer = InterSpec::instance();
+      if( !viewer )
+        return;
+
+      const std::shared_ptr<SpecMeas> fg = weakMeas.lock();
+      if( !fg || (fg != viewer->measurment(SpecUtils::SpectrumType::Foreground)) )
+        return;  // a different foreground was loaded while we were computing
+
+      viewer->showDetectorGainMatchToast( fg, samplesCopy, result );
+    } );
+  } );
+}//void checkForDetectorGainMatch(...)
+
+
+void InterSpec::showDetectorGainMatchToast( const std::shared_ptr<SpecMeas> &meas,
+                                            const std::set<int> &samples,
+                                            const GainMatchCalc::DetectorMatchResult &result )
+{
+  if( !result.beneficial || result.per_detector.empty() )
+    return;
+
+  auto suggestion = std::make_shared<GainMatchCalc::DetectorMatchSuggestion>();
+  suggestion->file = meas;
+  suggestion->type = SpecUtils::SpectrumType::Foreground;
+  suggestion->displayed_samples = samples;
+  suggestion->max_shift_kev = result.max_shift_kev;
+  suggestion->per_detector = result.per_detector;
+  m_gainMatchSuggestion = suggestion;
+
+  WarningWidget * const warnings = warningWidget();
+  if( !warnings )
+    return;
+
+  char shift_buf[32] = { '\0' };
+  snprintf( shift_buf, sizeof(shift_buf), "%.1f", result.max_shift_kev );
+
+  const WString msg = WString::tr("ecgm-toast-msg")
+                        .arg( static_cast<int>(result.per_detector.size()) )
+                        .arg( std::string(shift_buf) );
+
+  Wt::WStringStream js;
+  js << msg.toXhtmlUTF8()
+     <<
+  "<div class=\"GainMatchToastButtons\">"
+  "<div onclick=\"Wt.emit( document.querySelector('.specviewer').id,{name:'miscSignal'}, 'gainMatchAccept');"
+  "try{this.parentElement.parentElement.parentElement.remove();}catch(e){}"
+  "return false;\">" << WString::tr("ecgm-toast-accept").toXhtmlUTF8() << "</div>"
+  "<div onclick=\"Wt.emit( document.querySelector('.specviewer').id,{name:'miscSignal'}, 'gainMatchOpen');"
+  "try{this.parentElement.parentElement.parentElement.remove();}catch(e){}"
+  "return false;\">" << WString::tr("ecgm-toast-open").toXhtmlUTF8() << "</div>"
+  "</div>";
+
+  warnings->addMessageUnsafe( js.str(), WarningWidget::WarningMsgShowOnBoardRiid, 20000 );
+
+  // We are running inside a WServer::post continuation (worker -> session thread), outside the
+  //  normal user-event cycle, so push the toast to the client explicitly.
+  if( wApp )
+    wApp->triggerUpdate();
+}//void showDetectorGainMatchToast(...)
+
+
+void InterSpec::acceptDetectorGainMatchSuggestion()
+{
+  const std::shared_ptr<const GainMatchCalc::DetectorMatchSuggestion> suggestion = m_gainMatchSuggestion;
+  m_gainMatchSuggestion.reset();
+
+  if( !suggestion )
+    return;
+
+  const std::shared_ptr<SpecMeas> meas = suggestion->file.lock();
+  if( !meas || (meas != m_dataMeasurement) )
+  {
+    passMessage( WString::tr("ecgm-file-changed"), WarningWidget::WarningMsgMedium );
+    return;
+  }
+
+  // Apply to every sample of the file, matching the dialogs default "all samples" behavior
+  const size_t num = GainMatchCalc::applyDetectorGains( this, suggestion->type, meas,
+                                              meas->sample_numbers(), suggestion->per_detector );
+  if( num )
+    passMessage( WString::tr("ecgm-applied-toast").arg( static_cast<int>(num) ),
+                 WarningWidget::WarningMsgInfo );
+}//void acceptDetectorGainMatchSuggestion()
+
+
+void InterSpec::showDetectorGainMatchTool()
+{
+  m_gainMatchSuggestion.reset();
+
+  EnergyCalTool * const tool = energyCalTool();
+  if( tool )
+    tool->moreActionBtnClicked( MoreActionsIndex::GainMatch );
+}//void showDetectorGainMatchTool()
 
 
 void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,

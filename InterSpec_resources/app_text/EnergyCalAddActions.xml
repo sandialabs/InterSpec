@@ -7,6 +7,7 @@
   <message id="ecaa-convert-frf-title">Convert to Full Range Fraction Calibration</message>
   <message id="ecaa-convert-poly-title">Convert to Polynomial Calibration</message>
   <message id="ecaa-multi-file-title">Multi-File Calibration</message>
+  <message id="ecaa-gain-match-title">Detector Gain Matching</message>
   
   <!-- Conversion messages -->
   <message id="ecaa-conversion-no-effect">Conversion would not effect any spectra; try selecting more "Apply Changes To" criteria.</message>

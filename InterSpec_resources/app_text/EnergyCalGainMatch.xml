@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecgm- is short for EnergyCalGainMatch -->
+  <message id="ecgm-mode-within">Match detectors within</message>
+  <message id="ecgm-mode-between">Match between displayed spectra</message>
+  <message id="ecgm-energy-range">Energy range:</message>
+  <message id="ecgm-to">to</message>
+  <message id="ecgm-kev">keV</message>
+  <message id="ecgm-no-limit">no limit</message>
+  <message id="ecgm-fit-offset">Also fit offset</message>
+  <message id="ecgm-refine-peaks">Refine with peaks</message>
+  <message id="ecgm-fit-order">Fit:</message>
+  <message id="ecgm-order-linear">Offset + Gain</message>
+  <message id="ecgm-order-quadratic">+ Quadratic</message>
+  <message id="ecgm-order-cubic">+ Cubic</message>
+  <message id="ecgm-num-shared-peaks">{1} shared peaks</message>
+  <message id="ecgm-no-shared-peaks">No peaks common to the detectors were found in this range.</message>
+  <message id="ecgm-peak-found-in">(in {1}/{2})</message>
+  <message id="ecgm-status-refined">peak-refined</message>
+  <message id="ecgm-apply-all-samples">Apply to all samples in file</message>
+  <message id="ecgm-show-original">Show original</message>
+  <message id="ecgm-col-use">Use</message>
+  <message id="ecgm-col-ref">Ref.</message>
+  <message id="ecgm-col-spectrum">Spectrum</message>
+  <message id="ecgm-col-gain">Gain</message>
+  <message id="ecgm-col-offset">Offset (keV)</message>
+  <message id="ecgm-col-status">Status</message>
+  <message id="ecgm-ref-label">reference</message>
+  <message id="ecgm-status-ok">matched</message>
+  <message id="ecgm-warn-low-stats">too few counts in range</message>
+  <message id="ecgm-warn-weak-corr">weak correlation</message>
+  <message id="ecgm-warn-corr-edge">at search limit</message>
+  <message id="ecgm-warn-peak-fit-failed">peak fit failed</message>
+  <message id="ecgm-warn-ambiguous">ambiguous match</message>
+  <message id="ecgm-warn-match-failed">match failed</message>
+  <message id="ecgm-err-calc">Unable to gain-match: {1}</message>
+  <message id="ecgm-match-range">Match range</message>
+  <message id="ecgm-note-refit-peaks">Fit peaks were not adjusted; you may want to re-fit peaks after this change.</message>
+  <message id="ecgm-applied-toast">Updated energy calibration of {1} spectra to gain-match.</message>
+  <message id="ecgm-err-apply">Error applying gain match: {1}</message>
+  <message id="ecgm-file-changed">The displayed spectra changed since this dialog was opened - please close and re-open the tool.</message>
+  <message id="ecgm-toast-msg">This spectrum&apos;s {1} detectors look mis-calibrated by up to {2} keV; gain-matching them may sharpen peaks.</message>
+  <message id="ecgm-toast-accept">Gain-match detectors</message>
+  <message id="ecgm-toast-open">Adjust&#8230;</message>
+</messages>

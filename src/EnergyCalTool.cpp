@@ -1688,7 +1688,12 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
         label = "ect-multi-file";
         tooltip = "ect-tt-multi-file";
         break;
-        
+
+      case MoreActionsIndex::GainMatch:
+        label = "ect-gain-match";
+        tooltip = "ect-tt-gain-match";
+        break;
+
       case MoreActionsIndex::NumMoreActionsIndex:
         assert(0);
         break;
@@ -5429,7 +5434,19 @@ void EnergyCalTool::doRefreshFromFiles()
         aparent->setHidden( nRecordsWithPeaks < 2 );
         break;
       }//case MoreActionsIndex::MultipleFilesCal:
-        
+
+      case MoreActionsIndex::GainMatch:
+      {
+        // Show when the foreground has multiple gamma detectors, or when at least two
+        //  distinct files are being displayed (i.e., there is something to match).
+        bool show = specfiles[0] && (gammaDetectorsForDisplayedSamples(SpecUtils::SpectrumType::Foreground).size() > 1);
+        if( !show && specfiles[0] )
+          show = (specfiles[1] && (specfiles[1] != specfiles[0]))
+                 || (specfiles[2] && (specfiles[2] != specfiles[0]) && (specfiles[2] != specfiles[1]));
+        aparent->setHidden( !show );
+        break;
+      }//case MoreActionsIndex::GainMatch:
+
       case MoreActionsIndex::NumMoreActionsIndex:
         break;
     }//switch( index )

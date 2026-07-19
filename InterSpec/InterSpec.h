@@ -126,6 +126,7 @@ namespace SpecUtils{ enum class SpectrumType : int; }
 namespace SpecUtils{ enum class DetectorType : int; }
 namespace SpecUtils{ enum class OccupancyStatus : int; }
 namespace PeakSearchGuiUtils{ enum class RefitPeakType : int; }
+namespace GainMatchCalc{ struct DetectorMatchResult; struct DetectorMatchSuggestion; }
 
 
 namespace DataBaseUtils
@@ -1264,7 +1265,31 @@ public:
   
   
   void excludePeaksFromRange( double x0, double x1 );
-  
+
+  /** When a multi-detector foreground is displayed, runs a quick gain-match analysis; if
+   matching the detectors would meaningfully improve their consistency, shows a toast
+   offering to apply the result or open the Gain Match tool.  Called when the displayed
+   foreground changes; a no-op for single-detector spectra or files too large to analyze
+   quickly.  Builds the per-detector spectra here (session thread), then runs the analysis
+   on a worker thread and posts #showDetectorGainMatchToast back to the session thread if a
+   suggestion results.  See EnergyCalGainMatch.h / GainMatchCalc.
+   */
+  void checkForDetectorGainMatch( const std::shared_ptr<SpecMeas> &meas,
+                                  const std::set<int> &samples );
+
+  /** Session-thread continuation of #checkForDetectorGainMatch: stores the pending suggestion
+   and shows the toast.  Called via WServer::post from the worker thread.
+   */
+  void showDetectorGainMatchToast( const std::shared_ptr<SpecMeas> &meas,
+                                   const std::set<int> &samples,
+                                   const GainMatchCalc::DetectorMatchResult &result );
+
+  /** Applies the pending auto gain-match suggestion (from the toast "Accept" button). */
+  void acceptDetectorGainMatchSuggestion();
+
+  /** Opens the Gain Match tool (from the toast "Adjust..." button, or elsewhere). */
+  void showDetectorGainMatchTool();
+
   /** Returns if detected this is a mobile device, based on user-agent string, or compile-time
    options.
    
@@ -1829,6 +1854,16 @@ protected:
   bool m_findingHintPeaks;
   std::deque<std::function<void()> > m_hintQueue;
   Wt::Signal<SpecUtils::SpectrumType> m_hintPeaksSet;
+
+  /** Pending auto gain-match suggestion currently offered via a toast; consumed by the
+   toast "Accept" button (#acceptDetectorGainMatchSuggestion), cleared on a new foreground.
+   */
+  std::shared_ptr<const GainMatchCalc::DetectorMatchSuggestion> m_gainMatchSuggestion;
+
+  /** The last foreground checked for auto gain-matching, to avoid re-checking it every time
+   the displayed samples or scale change.
+   */
+  std::weak_ptr<SpecMeas> m_lastGainMatchChecked;
   
   Wt::Signal<std::shared_ptr<const ExternalRidResults>> m_externalRidResultsRecieved;
   

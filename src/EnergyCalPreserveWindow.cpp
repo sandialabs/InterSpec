@@ -296,7 +296,10 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
   WContainerWidget *bottom = footer();
   //bottom->setStyleClass("modal-footer");
   WPushButton *cancel = bottom->addNew<WPushButton>( "No" );
-  cancel->clicked().connect( this, &EnergyCalPreserveWindow::emitReject );
+  // Go through hide() (as the title-bar close icon does), not emitReject() directly:
+  //  emitReject() only emits finished() once the window is hidden (its deferred closure
+  //  bails on !isHidden()), so calling it without hiding first never dismisses the dialog.
+  cancel->clicked().connect( this, [this](){ hide(); } );
   cancel->setWidth( WLength(47.5,WLength::Unit::Percentage) );
   cancel->setFloatSide(Wt::Side::Left);
 

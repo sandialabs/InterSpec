@@ -1,0 +1,143 @@
+/* Styles for EnergyCalGainMatch - the energy-cal "Gain Match" dialog content */
+
+/* Main container: flex column, chart fills top, controls fixed at bottom */
+.EnergyCalGainMatch
+{
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Chart fills the remaining space above the controls */
+.GainMatchChart
+{
+  flex: 1 1 0px;
+  min-height: 175px;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Controls area below the chart - does not grow */
+.GainMatchControls
+{
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  border-top: 1px solid var(--interspec-border-color, #e1e1e1);
+  gap: 4px;
+  overflow-y: auto;
+  max-height: 45%;
+}
+
+/* A row of related controls */
+.GainMatchRow
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.GainMatchRow input[type="text"]
+{
+  width: 5em;
+}
+
+/* Table of selectable spectra: Use | Ref | swatch | name | gain | offset | status */
+.GainMatchTable
+{
+  display: grid;
+  grid-template-columns: auto auto auto minmax(6em, auto) auto auto minmax(8em, 1fr);
+  gap: 1px 10px;
+  align-items: center;
+  overflow-y: auto;
+  max-height: 10em;
+  margin-top: 2px;
+}
+
+.GainMatchTable.HideOffset
+{
+  grid-template-columns: auto auto auto minmax(6em, auto) auto minmax(8em, 1fr);
+}
+
+.GainMatchTable.HideOffset .GainMatchOffsetCell
+{
+  display: none;
+}
+
+.GainMatchHeaderCell
+{
+  font-weight: bold;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.GainMatchSwatch
+{
+  display: inline-block;
+  width: 1.2em;
+  height: 0.75em;
+  border-radius: 2px;
+}
+
+.GainMatchNumCell
+{
+  font-family: monospace;
+  text-align: right;
+}
+
+.GainMatchStatusCell
+{
+  font-size: 11px;
+  color: var(--interspec-secondary-text-color, #777);
+}
+
+.GainMatchStatus
+{
+  font-size: 11px;
+  min-height: 1.2em;
+  color: var(--interspec-warning-text-color, #b45309);
+}
+
+/* Multi-peak refinement controls */
+.GainMatchPeaksRow
+{
+  align-items: center;
+}
+
+.GainMatchPeaksStatus
+{
+  font-size: 11px;
+  color: var(--interspec-secondary-text-color, #777);
+}
+
+/* The shared-peaks table: a wrapping row of "peak (in n/m)" checkboxes */
+.GainMatchPeaksTable
+{
+  display: flex;
+  flex-flow: row wrap;
+  gap: 2px 14px;
+  max-height: 6em;
+  overflow-y: auto;
+  padding: 2px 4px;
+}
+
+.GainMatchPeakRow
+{
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.GainMatchPeakFound
+{
+  color: var(--interspec-secondary-text-color, #999);
+  font-size: 10px;
+}

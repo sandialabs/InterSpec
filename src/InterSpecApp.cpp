@@ -1497,7 +1497,21 @@ void InterSpecApp::miscSignalHandler( const std::string &signal )
     clearSession();
     return;
   }//if( signal == "clearSession" )
-  
+
+  if( signal == "gainMatchAccept" )
+  {
+    if( m_viewer )
+      m_viewer->acceptDetectorGainMatchSuggestion();
+    return;
+  }//if( signal == "gainMatchAccept" )
+
+  if( signal == "gainMatchOpen" )
+  {
+    if( m_viewer )
+      m_viewer->showDetectorGainMatchTool();
+    return;
+  }//if( signal == "gainMatchOpen" )
+
   if( SpecUtils::istarts_with( signal, "showRiidAna" ) )
   {
     SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;

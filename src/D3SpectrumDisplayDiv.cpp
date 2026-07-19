@@ -1054,7 +1054,10 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( m_renderFlags.test(UpdateForegroundSpectrum) )
     renderForegroundToClient();
-  
+
+  if( m_renderFlags.test(UpdateMultiSpectra) )
+    renderMultiSpectraToClient();
+
   if( m_renderFlags.test(UpdateForegroundPeaks) )
     setPeaksToClient( SpecUtils::SpectrumType::Foreground );
   
@@ -2047,6 +2050,68 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
   else
     m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::updateData()
+
+
+void D3SpectrumDisplayDiv::setMultipleSpectra(
+                  std::vector<std::pair<std::shared_ptr<const SpecUtils::Measurement>,
+                                        D3SpectrumExport::D3SpectrumOptions>> spectra,
+                  const bool reset_x_domain )
+{
+  m_multiSpectra = std::move( spectra );
+
+  // This display mode replaces all chart data - dont let the per-type render paths
+  //  re-introduce stale spectra.
+  m_foreground = nullptr;
+  m_secondary = nullptr;
+  m_background = nullptr;
+
+  if( reset_x_domain )
+    m_renderFlags |= ResetXDomain;
+
+  m_renderFlags |= UpdateMultiSpectra;
+  scheduleRender();
+}//void setMultipleSpectra(...)
+
+
+void D3SpectrumDisplayDiv::renderMultiSpectraToClient()
+{
+  const string resetDomain = m_renderFlags.test(ResetXDomain) ? "true" : "false";
+
+  string js;
+
+  if( m_multiSpectra.empty() )
+  {
+    js = m_jsgraph + ".setData(null,true);";
+  }else
+  {
+    std::vector<std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>> measurements;
+    for( const auto &spec : m_multiSpectra )
+    {
+      if( spec.first )
+        measurements.emplace_back( spec.first.get(), spec.second );
+    }
+
+    // Serialize through the same D3SpectrumExport path as the per-type renders, but keep the
+    //  emitted `setData(...)` call (which the JS chart accepts with any number of spectra)
+    //  instead of substituting the one-spectrum-per-type `setSpectrumData(...)`.
+    std::ostringstream ostr;
+    if( D3SpectrumExport::write_and_set_data_for_chart( ostr, id(), measurements ) )
+    {
+      string data = ostr.str();
+      const size_t index = data.find( "spec_chart_" );
+      data = data.substr( 0, index );
+      js = data + m_jsgraph + ".setData(data_" + id() + ", " + resetDomain + ");";
+    }
+  }//if( m_multiSpectra.empty() ) / else
+
+  if( js.empty() )
+    return;
+
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//void renderMultiSpectraToClient()
 
 
 void D3SpectrumDisplayDiv::renderBackgroundToClient()

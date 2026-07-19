@@ -19,6 +19,12 @@
     to perform an energy calibration.  Can especially be useful for
     lower-resolution detectors where each spectrum has a different test source
   </message>
+  <message id="ect-gain-match">Gain Match...</message>
+  <message id="ect-tt-gain-match">
+    Adjusts the energy calibrations of the individual detectors within a file (or of the
+    foreground/background/secondary spectra) so they are consistent with each other, so
+    peaks dont get doubled-up or smeared out when the detectors are summed for display.
+  </message>
   <message id="ect-tt-CALp">Download a .CALp file that contains the current energy calibration.
     You can drag-n-drop this file back onto InterSpec later to re-use this energy calibration.
     This is especially useful if you often use data from a detector whose calibration needs to be

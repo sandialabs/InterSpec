@@ -992,12 +992,12 @@ button.Wt-btn.with-label.LightButton,
     text-align: center;
   }
   
-  .clearsessiontxt, .RemoteRidToastButtons > div
+  .clearsessiontxt, .RemoteRidToastButtons > div, .GainMatchToastButtons > div
   {
     padding: 3px;
     padding-top: 4px;
     border: 1px solid grey;
-    
+
     cursor: pointer;
     -moz-border-radius: 4px;
     -webkit-border-radius: 4px;
@@ -1024,14 +1024,15 @@ button.Wt-btn.with-label.LightButton,
     text-align: center;
   }
 
-  .RemoteRidToastButtons
+  .RemoteRidToastButtons, .GainMatchToastButtons
   {
     padding-top: 7px;
     display: flex;
     flex-flow: row wrap;
+    gap: 6px;
     justify-content: space-evenly;
   }
-  
+
   .RemoteRidToastButtons > div
   {
   }

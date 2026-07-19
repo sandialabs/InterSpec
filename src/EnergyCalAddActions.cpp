@@ -54,6 +54,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/EnergyCalMultiFile.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/EnergyCalGainMatch.h"
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/EnergyCalAddActions.h"
 
@@ -180,7 +181,11 @@ public:
 EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex actionType,
                              const std::vector<MeasToApplyCoefChangeTo> &measToChange,
                              EnergyCalTool *calibrator )
-  : AuxWindow( "&nbsp", (AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse) ),
+  : AuxWindow( "&nbsp",
+      (actionType == MoreActionsIndex::GainMatch)
+        ? (AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse
+            | AuxWindowProperties::EnableResize)
+        : (AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse) ),
     m_actionType( actionType ),
     m_measToChange( make_shared<vector<MeasToApplyCoefChangeTo>>(measToChange)),
     m_calibrator( calibrator )
@@ -226,6 +231,11 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
     case MoreActionsIndex::MultipleFilesCal:
       AuxWindow::setWindowTitle( WString::tr("ecaa-multi-file-title") );
       contents()->addNew<EnergyCalMultiFile>( m_calibrator, this );
+      break;
+
+    case MoreActionsIndex::GainMatch:
+      AuxWindow::setWindowTitle( WString::tr("ecaa-gain-match-title") );
+      contents()->addNew<EnergyCalGainMatch>( m_calibrator, this );
       break;
 
     case MoreActionsIndex::NumMoreActionsIndex:

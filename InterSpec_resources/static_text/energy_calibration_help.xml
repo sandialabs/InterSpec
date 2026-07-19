@@ -364,6 +364,25 @@ Descriptions of each of the possible actions are:
       you to choose which peaks from which spectra to use to fit for the coefficients.
     </td>
   </tr>
+
+  <tr>
+    <th style="padding-right: 10px; padding-bottom: 20px; vertical-align: text-top;">
+      Gain Match...
+    </th>
+    <td style="padding-bottom: 20px;">
+      When a spectrum file contains data from multiple detectors, the detectors are summed together
+      for display and for fitting peaks.  If the detectors&apos; energy calibrations do not quite
+      agree, a peak that should be at a single energy can end up doubled or smeared out in the sum.
+      This tool adjusts the gain (and optionally offset) of each detector&apos;s energy calibration
+      so the individual spectra line up as well as possible.  It first matches the overall spectral
+      shapes over a chosen energy range (each spectrum&apos;s overall count scale is allowed to float
+      freely), and can then optionally refine the match using a chosen photopeak (e.x., K-40, Th-232,
+      Cs-137, or any peak already fit in the spectrum).  You can match the detectors within a single
+      file, or match the displayed foreground/background/secondary spectra to each other.  One
+      spectrum is held fixed as the reference, and the others are matched to it; the preview chart
+      shows each spectrum as a separate line.  No changes are made until you click <b>Use</b>.
+    </td>
+  </tr>
 </table>
 </div>
 

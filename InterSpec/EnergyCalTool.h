@@ -144,6 +144,7 @@ enum class MoreActionsIndex : int
   ConvertToFrf,
   ConvertToPoly,
   MultipleFilesCal,
+  GainMatch,
   //Maybe add sum spectra, although this isnt a energy cal related thing
   //Revert, and revert back to original calibrations.
   NumMoreActionsIndex

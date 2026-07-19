@@ -40,6 +40,7 @@ namespace Wt
 enum class FeatureMarkerType : int;
 namespace SpecUtils{ class Measurement; }
 namespace SpecUtils{ enum class SpectrumType : int; }
+namespace D3SpectrumExport{ struct D3SpectrumOptions; }
 
 /**
  ToDo:
@@ -158,6 +159,30 @@ public:
   void setData( std::shared_ptr<const SpecUtils::Measurement> data_hist, const bool keep_curent_xrange );
   void setSecondData( std::shared_ptr<const SpecUtils::Measurement> hist );
   void setBackground( std::shared_ptr<const SpecUtils::Measurement> background );
+
+  /** Displays an arbitrary number of spectra, one chart line each - the underlying
+   SpectrumChartD3 JS accepts any number of spectra; only the foreground/background/secondary
+   C++ interface is limited to three.
+
+   This replaces ALL chart data: any spectra previously given via
+   setData()/setBackground()/setSecondData() are cleared, and those setters should not be
+   mixed with this call.  Intended for dedicated preview charts (e.g., the energy-cal
+   "Gain Match" dialog), not the primary spectrum display; peaks are not drawn.
+
+   Set each entrys #D3SpectrumExport::D3SpectrumOptions line_color, title, and
+   display_scale_factor as desired; spectrum_type should normally be
+   SpecUtils::SpectrumType::Foreground for every entry (the legend and y-range handle any
+   number of lines, but background-subtraction logic is bypassed this way).
+
+   The Measurement pointers are retained until the next call.  An empty vector clears the
+   chart.
+
+   As with #setData, if you also call #setXAxisRange in the same event loop, pass
+   reset_x_domain false.
+   */
+  void setMultipleSpectra( std::vector<std::pair<std::shared_ptr<const SpecUtils::Measurement>,
+                                                 D3SpectrumExport::D3SpectrumOptions>> spectra,
+                           const bool reset_x_domain );
   
   void scheduleUpdateForeground();
   void scheduleUpdateBackground();
@@ -478,6 +503,7 @@ protected:
 
   //updates the data JSON for the D3 spectrum on the JS side
   void renderForegroundToClient();
+  void renderMultiSpectraToClient();
   void renderBackgroundToClient();
   void renderSecondDataToClient();
   
@@ -528,6 +554,8 @@ protected:
 
     UpdateBackgroundPeaks = 0x0100,
     UpdateSecondaryPeaks  = 0x0200,
+
+    UpdateMultiSpectra = 0x0400,
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   
@@ -542,6 +570,10 @@ protected:
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   float m_secondaryScale;
   float m_backgroundScale;
+
+  /** Spectra set via #setMultipleSpectra; empty unless that (preview-chart) mode is used. */
+  std::vector<std::pair<std::shared_ptr<const SpecUtils::Measurement>,
+                        D3SpectrumExport::D3SpectrumOptions>> m_multiSpectra;
   
   /** Compact axis applies only when the xAxis slider chart is not showing. */
   bool m_compactAxis;
