@@ -482,6 +482,12 @@ protected:
   int selectedFitOrder() const;         //1 = offset+gain, 2 = +quadratic, 3 = +cubic
   void rebuildPeaksTable();             //fills m_peaksTable from m_sharedPeaks
   void applyRefineToRows();             //refineWithSharedPeaks -> each rows updated_cal
+  void launchSharedPeakSearch();        //runs findSharedPeaks on a worker thread
+  //Session-thread continuation of launchSharedPeakSearch(); public so the worker post-back
+  //  (which re-looks-up the widget by id) can call it.  `generation` guards against stale results.
+public:
+  void onSharedPeaksFound( int generation, const std::vector<GainMatchCalc::SharedPeak> &peaks );
+protected:
   float upperEnergyLimit();             // <= lower means no limit
   void doCalcUpdate();
   void doRefineUpdate();
@@ -520,6 +526,8 @@ protected:
   std::vector<GainMatchCalc::SharedPeak> m_sharedPeaks;
   std::vector<Wt::WCheckBox *> m_peakUseCbs;  //parallel to m_sharedPeaks
   bool m_sharedPeaksValid;               //false when the match changed and peaks must be re-found
+  bool m_findingSharedPeaks;             //true while the worker-thread search is in flight
+  int m_refineGeneration;                //bumped per search; the post-back discards stale results
   D3SpectrumDisplayDiv *m_chart;
   size_t m_rangeHighlightId;  //decorative highlight region id; 0 means none
   bool m_chartXRangeSet;      //whether initial x-domain has been sent to client

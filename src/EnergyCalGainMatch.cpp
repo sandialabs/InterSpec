@@ -46,6 +46,8 @@
 #include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WServer.h>
+#include <Wt/WIOService.h>
 #include <Wt/WApplication.h>
 #include <Wt/WButtonGroup.h>
 #include <Wt/WRadioButton.h>
@@ -1651,6 +1653,8 @@ EnergyCalGainMatch::EnergyCalGainMatch( EnergyCalTool *cal, AuxWindow *parent )
     m_sharedPeaks{},
     m_peakUseCbs{},
     m_sharedPeaksValid( false ),
+    m_findingSharedPeaks( false ),
+    m_refineGeneration( 0 ),
     m_chart( nullptr ),
     m_rangeHighlightId( 0 ),
     m_chartXRangeSet( false ),
@@ -2224,36 +2228,22 @@ void EnergyCalGainMatch::doCalcUpdate()
         m_refGroup->setCheckedButton( ref_row.reference );
     }
 
-    // Multi-peak refinement: find peaks common to the detectors (cached until the match
-    //  changes), then fit a per-detector polynomial from the selected ones.
+    // Multi-peak refinement: find peaks common to the detectors (on a worker thread, cached
+    //  until the match changes), then fit a per-detector polynomial from the selected ones.
     if( refineWithPeaksEnabled() )
     {
       if( !m_sharedPeaksValid )
-      {
-        const SpectrumType type = selectedFileType();
-        const shared_ptr<SpecMeas> fmeas = m_interspec->measurment( type );
-        deque<shared_ptr<const PeakDef>> id_peaks;
-        if( fmeas )
-        {
-          const shared_ptr<deque<shared_ptr<const PeakDef>>> p
-                                    = fmeas->peaks( m_interspec->displayedSamples(type) );
-          if( p )
-            id_peaks = *p;
-        }
+        launchSharedPeakSearch();
 
-        m_sharedPeaks = GainMatchCalc::findSharedPeaks( m_lastInputs, m_lastStage2, id_peaks,
-                                                        options.lower_energy, options.upper_energy );
-        m_sharedPeaksValid = true;
-        rebuildPeaksTable();
-
-        m_peaksStatus->setText( m_sharedPeaks.empty() ? WString::tr("ecgm-no-shared-peaks")
-                       : WString::tr("ecgm-num-shared-peaks").arg(static_cast<int>(m_sharedPeaks.size())) );
-      }//if( need to (re)find shared peaks )
-
-      applyRefineToRows();
+      applyRefineToRows();  //uses whatever peaks we already have (none while a search is running)
       have_result = false;
       for( const Row &row : m_rows )
         have_result = (have_result || (row.result.used && row.result.updated_cal));
+
+      // Don't let the user apply the coarse (linear) result while the refinement is still
+      //  computing - they explicitly asked for the peak refinement.
+      if( m_findingSharedPeaks )
+        have_result = false;
     }//if( refineWithPeaksEnabled() )
   }catch( std::exception &e )
   {
@@ -2263,6 +2253,101 @@ void EnergyCalGainMatch::doCalcUpdate()
   m_use->setEnabled( have_result );
   updateResultColumns();
 }//doCalcUpdate()
+
+
+void EnergyCalGainMatch::launchSharedPeakSearch()
+{
+  // Peaks already fit (and possibly nuclide-identified) in the displayed spectrum, so a shared
+  //  peak that matches one can be snapped to the true gamma energy.  Gathered here on the
+  //  session thread; only immutable data crosses to the worker.
+  const SpectrumType type = selectedFileType();
+  const shared_ptr<SpecMeas> fmeas = m_interspec->measurment( type );
+  deque<shared_ptr<const PeakDef>> id_peaks;
+  if( fmeas )
+  {
+    const shared_ptr<deque<shared_ptr<const PeakDef>>> p
+                              = fmeas->peaks( m_interspec->displayedSamples(type) );
+    if( p )
+      id_peaks = *p;
+  }
+
+  m_sharedPeaksValid = true;   //don't relaunch for this same match while the search is in flight
+  m_findingSharedPeaks = true;
+  m_sharedPeaks.clear();
+  rebuildPeaksTable();
+  m_peaksStatus->setText( WString::tr("ecgm-finding-peaks") );
+
+  const int generation = ++m_refineGeneration;
+  const string widgetId = id();
+  const string sessionId = wApp ? wApp->sessionId() : string();
+  const vector<GainMatchCalc::SpectrumInput> inputs = m_lastInputs;
+  const GainMatchCalc::MatchResults stage2 = m_lastStage2;
+  const float lower = m_lowerEnergy->value();
+  const float upper = upperEnergyLimit();
+
+  Wt::WServer * const server = Wt::WServer::instance();
+  if( !server || sessionId.empty() )
+  {
+    // No server (e.g. unusual test context) - fall back to a synchronous search.
+    onSharedPeaksFound( generation,
+                        GainMatchCalc::findSharedPeaks( inputs, stage2, id_peaks, lower, upper ) );
+    return;
+  }
+
+  server->ioService().boost::asio::io_service::post( [=](){
+    // --- worker thread: the CPU-heavy peak search on the (immutable) summed spectra ---
+    const vector<GainMatchCalc::SharedPeak> peaks
+          = GainMatchCalc::findSharedPeaks( inputs, stage2, id_peaks, lower, upper );
+
+    // --- back on the session thread: only the inert widget id crosses the boundary; the widget
+    //     tree lookup happens here, under the applications UpdateLock (see CLAUDE.md) ---
+    server->post( sessionId, [widgetId, generation, peaks](){
+      WApplication * const app = WApplication::instance();
+      if( !app || !app->domRoot() )
+        return;
+      WWidget * const w = app->domRoot()->findById( widgetId );
+      EnergyCalGainMatch * const self = dynamic_cast<EnergyCalGainMatch *>( w );
+      if( self )
+      {
+        self->onSharedPeaksFound( generation, peaks );
+        app->triggerUpdate();
+      }
+    } );
+  } );
+}//launchSharedPeakSearch()
+
+
+void EnergyCalGainMatch::onSharedPeaksFound( int generation,
+                                             const std::vector<GainMatchCalc::SharedPeak> &peaks )
+{
+  if( generation != m_refineGeneration )
+    return;  //a newer search (option change) superseded this result
+
+  m_findingSharedPeaks = false;
+
+  // The user may have turned refinement off (or switched modes) while the search ran.
+  if( !refineWithPeaksEnabled() )
+  {
+    m_peaksTable->setHidden( true );
+    m_peaksStatus->setText( WString() );
+    return;
+  }
+
+  m_sharedPeaks = peaks;
+  rebuildPeaksTable();
+  m_peaksStatus->setText( m_sharedPeaks.empty() ? WString::tr("ecgm-no-shared-peaks")
+                 : WString::tr("ecgm-num-shared-peaks").arg(static_cast<int>(m_sharedPeaks.size())) );
+
+  applyRefineToRows();
+
+  bool have_result = false;
+  for( const Row &row : m_rows )
+    have_result = (have_result || (row.result.used && row.result.updated_cal));
+  m_use->setEnabled( have_result );
+
+  updateResultColumns();
+  updatePreview();
+}//onSharedPeaksFound()
 
 
 void EnergyCalGainMatch::updateResultColumns()

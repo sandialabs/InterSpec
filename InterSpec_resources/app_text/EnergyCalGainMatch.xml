@@ -13,6 +13,7 @@
   <message id="ecgm-order-linear">Offset + Gain</message>
   <message id="ecgm-order-quadratic">+ Quadratic</message>
   <message id="ecgm-order-cubic">+ Cubic</message>
+  <message id="ecgm-finding-peaks">Finding shared peaks&#8230;</message>
   <message id="ecgm-num-shared-peaks">{1} shared peaks</message>
   <message id="ecgm-no-shared-peaks">No peaks common to the detectors were found in this range.</message>
   <message id="ecgm-peak-found-in">(in {1}/{2})</message>

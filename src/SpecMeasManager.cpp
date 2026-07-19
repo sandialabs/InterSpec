@@ -418,7 +418,11 @@ namespace
       m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
       m_fileUpload->uploaded().connect( this, &FileUploadDialog::finishUpload );
       m_fileUpload->fileTooLarge().connect( this, [this]( const ::int64_t size_tried ){ toLarge( size_tried ); } );
-      m_specChangedConection = viewer->displayedSpectrumChanged().connect( this, &AuxWindow::emitReject );
+      // Close this dialog if the displayed spectrum changes while it is open.  Route through
+      //  hide() (not emitReject() directly): emitReject() only emits finished() once the window
+      //  is hidden, and hide() also defers the finished()->userCanceled()->deleteAuxWindow()
+      //  teardown out of the displayedSpectrumChanged emission we are inside.
+      m_specChangedConection = viewer->displayedSpectrumChanged().connect( this, [this](){ hide(); } );
       
       finished().connect( this, &FileUploadDialog::userCanceled );
       
