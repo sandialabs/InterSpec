@@ -199,6 +199,92 @@ namespace detail
     const double core_lo,
     const double core_hi,
     const double aicc_penalty );
+
+
+  /** A single SNIP-based continuum estimate over the whole valid spectroscopic extent, shared by the
+   clustering/gating decisions so they all reason about the SAME B(E) instead of each re-estimating a
+   local two-sideband line (which is unreliable under broad low-resolution peaks on a structured
+   Compton continuum).  Built once (see make_global_continuum) from the FWHM-window SNIP with
+   per-detector-class parameters.  Every consumer MUST fall back to its prior local estimate when
+   `valid()` is false, so an invalid provider reproduces the pre-R1-step2 behaviour exactly. */
+  struct GlobalContinuumEstimate
+  {
+    std::shared_ptr<const SpecUtils::Measurement> snip;        // SNIP continuum (foreground binning)
+    std::shared_ptr<const SpecUtils::Measurement> foreground;  // the data (for the variance bound)
+    bool built = false;
+
+    bool valid() const { return built && snip && foreground; }
+
+    /** Integral of the SNIP continuum over [x0,x1] (counts), clamped >= 0; 0 if invalid or x1<=x0. */
+    double integral( double x0, double x1 ) const;
+
+    /** SNIP continuum density (counts/keV) at energy E; 0 if invalid. */
+    double density_at( double E ) const;
+
+    /** A conservative Poisson variance of the continuum over [x0,x1]: the DATA counts there (an upper
+     bound, largest exactly where peaks make the SNIP least trustworthy).  0 if invalid. */
+    double integral_variance( double x0, double x1 ) const;
+  };
+
+  /** Build a GlobalContinuumEstimate from `foreground` with the FWHM-window SNIP restricted to
+   [restrict_lower_energy, restrict_upper_energy] (the valid spectroscopic extent).  SNIP parameters
+   are selected by detector class: HPGe = 2.0xFWHM / order 2 / 3-ch presmooth / LLS on; else
+   (NaI/LaBr/CZT) = 1.5xFWHM / order 2 / 7-ch presmooth / LLS off.  Returns an invalid estimate
+   (`valid()==false`) on any failure, so callers transparently fall back to local estimation. */
+  GlobalContinuumEstimate make_global_continuum(
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const std::function<double(double)> &fwhm_at_energy,
+    PeakFitUtils::CoarseResolutionType det_type,
+    double restrict_lower_energy,
+    double restrict_upper_energy );
+
+  /** One requested source's in-range photon lines, pre-expanded by the caller so that
+   find_strong_unmodeled_interferers() stays free of SandiaDecay/NuclideMixture dependencies and is
+   unit-testable on synthetic input.  `energies` are already filtered to the valid energy range;
+   `yields` are the parallel per-unit-activity intensities (used for single-line / doublet guards). */
+  struct RequestedSourceGammas
+  {
+    RelActCalcAuto::SrcVariant source;
+    std::vector<double> energies;
+    std::vector<double> yields;
+  };
+
+  /** A detected strong line that interferes with a requested-source gamma but is not in the model. */
+  struct InterfererCandidate
+  {
+    double energy = 0.0;                            // interfering line energy (keV)
+    const SandiaDecay::Nuclide *nuclide = nullptr;  // co-fit nuclide; nullptr => add a floating peak
+    double detection_z = 0.0;                       // area/uncert of the confirming auto-search peak
+    bool from_background_search = false;            // false => foreground NORM-table path
+  };
+
+  /** Find strong lines NOT in the current model that sit within ~`sm_interferer_near_num_fwhm` FWHM
+   of a requested-source gamma and are data-confirmed, so they can be auto co-fit (R6).
+
+   A candidate is a NORM-table (or, in the background path, ambient) line whose parent nuclide is not
+   already modeled and is not itself a requested source, that is not explained by the source's own
+   chain, and that is confirmed by a foreground auto-search peak within `sm_interferer_confirm_num_fwhm`
+   FWHM at area/uncert >= `sm_interferer_min_detect_z`.  Attributable lines yield a nuclide candidate
+   (co-fit on a cloned NORM rel-eff curve); unattributable ones (K-xrays, non-table background lines)
+   yield a floating-peak candidate (`nuclide == nullptr`).
+
+   `background` (with `drf`/`peak_fit_prefs`) enables the supply-a-background path and may be null.
+   If `warnings` is non-null, a human-readable note is appended for each interferer that was detected
+   but deliberately NOT co-fit (e.g. an unresolvable single-line-source vs single-line-interferer
+   doublet), so the caller can surface it.
+   `global_continuum` is a permanent stub for R1 step 2 and is never dereferenced here. */
+  std::vector<InterfererCandidate> find_strong_unmodeled_interferers(
+    const std::vector<RequestedSourceGammas> &source_gammas,
+    const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
+    const std::function<double(double)> &fwhm_at_energy,
+    const bool fit_norm_peaks,
+    const double min_valid_energy,
+    const double max_valid_energy,
+    const std::shared_ptr<const SpecUtils::Measurement> &background,
+    const std::shared_ptr<const DetectorPeakResponse> &drf,
+    const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs,
+    std::vector<std::string> *warnings = nullptr,
+    const GlobalContinuumEstimate *global_continuum = nullptr );
 }//namespace detail
 
 
@@ -218,6 +304,11 @@ struct GammaClusteringSettings
   // A fixed (non-configurable) minimum expected-count floor additionally protects the
   // Gaussian-statistics regime; see sm_keep_gate_min_est_counts in FitPeaksForNuclides.cpp.
   double keep_significance_z;
+
+  // Optional shared SNIP-based global continuum for gating B(E) estimates (R1 step 2).  Non-owning;
+  // NULL => every consumer falls back to its local two-sideband estimate (pre-R1-step2 behaviour).
+  // Lifetime is a synchronous stack frame in fit_peaks_for_nuclides.
+  const detail::GlobalContinuumEstimate *global_continuum = nullptr;
 
   // Adaptive ROI extent (see detail::extend_roi_by_sidebands): always-included core half-extent
   // beyond the outermost gamma, block-consistency z for data-driven sideband extension, and the

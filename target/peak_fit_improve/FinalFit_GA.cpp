@@ -1516,7 +1516,17 @@ FinalFitScore calculate_final_fit_score(
       const double expected_area = nearest_expected_peak->peak_area;
 
       const double area_diff = fabs(found_peak.amplitude() - expected_area);
-      const double area_score = area_diff / sqrt( (expected_area < 1.0) ? 1.0 : expected_area );
+      // Truth 'expected_area' is the analytic full-energy area GADRAS predicts, which can exceed the
+      // counts actually in the ROI (skew; NaI/low-E x-rays - see create_expected_photopeak's
+      // "peak_area > total_area" warning).  A pure Poisson sigma sqrt(A) then over-penalizes a
+      // CORRECT fit and lets bright biased-truth peaks dominate the summed objective, so add a
+      // relative-error floor: the pull saturates near bias/f_rel instead of hitting the cap, and only
+      // large-area (biased) peaks are affected - dim clean peaks are scored by sqrt(A) as before.
+      // f_rel is flat for now; energy-/det-type-aware is the planned reassess. [scoring review R1.1]
+      constexpr double f_rel = 0.05;
+      const double eff_area = (expected_area < 1.0) ? 1.0 : expected_area;
+      const double area_sigma = sqrt( eff_area + (f_rel*eff_area)*(f_rel*eff_area) );
+      const double area_score = area_diff / area_sigma;
       const double width_score = fabs( expected_fwhm - found_fwhm ) / expected_sigma;
       const double position_score = fabs(found_energy - expected_energy) / expected_sigma;
 
@@ -1636,7 +1646,17 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
       const double expected_area = nearest_expected_peak->peak_area;
 
       const double area_diff = fabs(found_peak.amplitude() - expected_area);
-      const double area_score = area_diff / sqrt( (expected_area < 1.0) ? 1.0 : expected_area );
+      // Truth 'expected_area' is the analytic full-energy area GADRAS predicts, which can exceed the
+      // counts actually in the ROI (skew; NaI/low-E x-rays - see create_expected_photopeak's
+      // "peak_area > total_area" warning).  A pure Poisson sigma sqrt(A) then over-penalizes a
+      // CORRECT fit and lets bright biased-truth peaks dominate the summed objective, so add a
+      // relative-error floor: the pull saturates near bias/f_rel instead of hitting the cap, and only
+      // large-area (biased) peaks are affected - dim clean peaks are scored by sqrt(A) as before.
+      // f_rel is flat for now; energy-/det-type-aware is the planned reassess. [scoring review R1.1]
+      constexpr double f_rel = 0.05;
+      const double eff_area = (expected_area < 1.0) ? 1.0 : expected_area;
+      const double area_sigma = sqrt( eff_area + (f_rel*eff_area)*(f_rel*eff_area) );
+      const double area_score = area_diff / area_sigma;
       const double width_score = fabs( expected_fwhm - found_fwhm ) / expected_sigma;
       const double position_score = fabs(found_energy - expected_energy) / expected_sigma;
 

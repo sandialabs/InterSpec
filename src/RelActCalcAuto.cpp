@@ -18284,7 +18284,11 @@ RelActAutoSolution solve( const Options options,
         in_energy_range = ((peak.energy >= roi.lower_energy) && (peak.energy <= roi.upper_energy));
         if( in_energy_range )
         {
-          add_updated_roi( roi, peak.energy );
+          // The floating peak already lies inside a significant-peak ROI, so it is already covered -
+          // nothing to add.  (These ROIs were marked Fixed by add_updated_roi when created above, so
+          // re-calling it here throws "Fixed range_limits_type should not be in this loop"; that latent
+          // crash was previously never reached, but found-peak ROI seeding can place a floating 511/
+          // escape peak inside one of these ranges.)  Peak coverage is all this block must guarantee.
           break;
         }
       }//for( const RoiRange &roi : significant_peak_ranges )

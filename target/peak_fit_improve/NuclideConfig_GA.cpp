@@ -31,6 +31,7 @@
 #include <map>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <cassert>
 #include <iomanip>
@@ -646,6 +647,60 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
 
   return config;
 }//genes_to_settings
+
+
+NuclideConfigSolution settings_to_genes( const PeakFitForNuclideConfig &config )
+{
+  NuclideConfigSolution p;
+
+  p.fwhm_functional_form = static_cast<int>( config.fwhm_functional_form );
+
+  p.rel_eff_manual_base_rel_eff_uncert = config.rel_eff_manual_base_rel_eff_uncert;
+  p.initial_nuc_match_cluster_num_sigma = config.initial_nuc_match_cluster_num_sigma;
+  p.manual_eff_cluster_num_sigma = config.manual_eff_cluster_num_sigma;
+
+  p.manual_releff_aicc_penalty = config.manual_releff_aicc_penalty;
+  p.cont_order_aicc_penalty = config.cont_order_aicc_penalty;
+
+  p.manual_keep_significance_z = config.manual_keep_significance_z;
+  p.manual_rel_eff_sol_min_fwhm_roi = config.manual_rel_eff_sol_min_fwhm_roi;
+  p.manual_rel_eff_sol_max_fwhm = config.manual_rel_eff_sol_max_fwhm;
+  p.manual_roi_core_num_fwhm = config.manual_roi_core_num_fwhm;
+
+  p.fwhm_form = static_cast<int>( config.fwhm_form );
+  p.rel_eff_auto_base_rel_eff_uncert = config.rel_eff_auto_base_rel_eff_uncert;
+  p.auto_rel_eff_cluster_num_sigma = config.auto_rel_eff_cluster_num_sigma;
+  p.auto_keep_significance_z = config.auto_keep_significance_z;
+  p.auto_roi_core_num_fwhm = config.auto_roi_core_num_fwhm;
+  p.roi_extend_z = config.roi_extend_z;
+  p.roi_max_num_fwhm = config.roi_max_num_fwhm;
+  p.auto_rel_eff_sol_max_fwhm = config.auto_rel_eff_sol_max_fwhm;
+  p.auto_rel_eff_sol_min_fwhm_roi = config.auto_rel_eff_sol_min_fwhm_roi;
+
+  p.rel_eff_eqn_type = static_cast<int>( config.rel_eff_eqn_type );
+  p.rel_eff_eqn_order = static_cast<int>( config.rel_eff_eqn_order );
+
+  p.desperation_phys_model_atomic_number = config.desperation_phys_model_atomic_number;
+  p.desperation_phys_model_areal_density_g_per_cm2 = config.desperation_phys_model_areal_density_g_per_cm2;
+
+  p.nucs_of_el_same_age = config.nucs_of_el_same_age ? 1 : 0;
+  p.phys_model_use_hoerl = config.phys_model_use_hoerl ? 1 : 0;
+  p.fit_energy_cal = config.fit_energy_cal ? 1 : 0;
+
+  p.merge_tail_z = config.merge_tail_z;
+  p.merge_clean_gap_fwhm = config.merge_clean_gap_fwhm;
+
+  p.roi_significance_z = config.roi_significance_z;
+  p.observable_peak_initial_significance_threshold = config.observable_peak_initial_significance_threshold;
+  p.observable_peak_final_significance_threshold = config.observable_peak_final_significance_threshold;
+
+  p.step_cont_min_peak_significance = config.step_cont_min_peak_significance;
+  p.step_trial_chi2_margin = config.step_trial_chi2_margin;
+
+  p.initial_manual_rel_eff_max_chi2_dof = config.initial_manual_rel_eff_max_chi2_dof;
+
+  return p;
+}//settings_to_genes
 
 
 void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rnd01 )

@@ -370,7 +370,7 @@ size_t findROILimit( const PeakDef &peak,
   
   const double mean = peak.mean();
   const double sigma = peak.sigma();
-  
+
   const int direction = high ? 1 : -1;
   lowxrange = mean + direction * 7.5*sigma;  //2.3 FWHM
   
@@ -411,7 +411,7 @@ size_t findROILimit( const PeakDef &peak,
   
   //Lets find the bin with the smallest contents, and
   for( indexing_t channel = startchannel + direction*nSideChannel;
-       channel != lastchannel && channel>nSideChannel; channel += direction )
+       channel != lastchannel && channel>nSideChannel && channel < nchannel; channel += direction )
   {
     assert( channel < (dataH->num_gamma_channels() + 100) );
     const float val = contents[channel];
@@ -556,8 +556,14 @@ size_t findROILimit( const PeakDef &peak,
   }//if( direction < 0 && dataH->GetBinCenter(lastbin) < 100.0 )
   
   
+  // Bound `channel` to the valid channel range.  The termination test only checks for reaching
+  // lastchannel/meanchannel, so on a degenerate low-resolution spectrum where the scan direction
+  // points away from both, `channel` would run to INT_MAX and `contents[channel]` below would read
+  // far out of bounds (heap OOB -> SIGBUS).  For valid inputs the loop stops at lastchannel/
+  // meanchannel first, so this bound only affects the runaway case.
   for( indexing_t channel = minChannel + direction*nSideChannel;
-      channel != lastchannel && channel != meanchannel; channel += direction )
+      channel != lastchannel && channel != meanchannel
+        && channel >= 0 && channel < nchannel; channel += direction )
   {
     const float val = contents[channel];
     const float nextval = (channel>1 && (nchannel-channel)>0)  //probably is fine, but we'll check JIC

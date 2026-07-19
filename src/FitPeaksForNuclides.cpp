@@ -40,6 +40,7 @@
 #include <map>
 #include <numeric>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <array>
@@ -352,6 +353,32 @@ static constexpr double sm_quad_cont_min_roi_fwhm = 4.0;
 // the step decision (the trial fit does that); see trial_step_continuum.
 static constexpr double sm_step_trial_min_asym_z = 1.0;
 
+// Half-width (in FWHM, each side of the peak) of a TIGHT ROI seeded directly for a found+matched
+// auto-search peak - a data-confirmed source line that bypasses the predicted-signal keep-gate (see
+// seed_tight_rois_for_found_peaks).  Deliberately tight (not the adaptive ~4-FWHM extent) so the
+// output significance test is not diluted over a wide window.
+static constexpr double sm_found_peak_roi_half_num_fwhm = 1.5;
+
+
+// R6 auto co-fit of strong unmodeled interfering lines (detail::find_strong_unmodeled_interferers).
+// A requested-source gamma this many FWHM (evaluated at the interfering line) from a strong
+// unmodeled line triggers a co-fit check.
+static constexpr double sm_interferer_near_num_fwhm = 2.0;
+// A confirming foreground (or background) auto-search peak must lie within this many FWHM of the
+// interfering line to count as data-confirmation.
+static constexpr double sm_interferer_confirm_num_fwhm = 0.5;
+// Minimum detection significance (area/uncert) of the confirming auto-search peak.
+static constexpr double sm_interferer_min_detect_z = 5.0;
+// If any requested-source gamma is within this many FWHM of the candidate line, the source's own
+// chain is assumed to explain it and no interferer is added.
+static constexpr double sm_interferer_source_owns_num_fwhm = 1.0;
+// A single-line source vs a single-line interferer closer than this many FWHM is an unresolvable
+// doublet: skip and warn rather than co-fit (co-fitting would just split one peak).
+static constexpr double sm_interferer_doublet_min_fwhm = 1.0;
+// A floating interferer is suppressed when a modeled source gamma within one FWHM could plausibly
+// account for the observed feature - i.e. its expected area is within this factor of the observed.
+static constexpr double sm_interferer_float_max_amp_ratio = 20.0;
+
 
 namespace detail
 {
@@ -514,6 +541,71 @@ LocalContinuumEstimate estimate_local_continuum(
 
   return result;
 }//estimate_local_continuum
+
+
+double GlobalContinuumEstimate::integral( double x0, double x1 ) const
+{
+  if( !valid() || (x1 <= x0) )
+    return 0.0;
+  const double v = snip->gamma_integral( static_cast<float>(x0), static_cast<float>(x1) );
+  return (v > 0.0) ? v : 0.0;
+}//GlobalContinuumEstimate::integral
+
+
+double GlobalContinuumEstimate::density_at( double E ) const
+{
+  // Counts/keV over a narrow window (gamma_integral clamps to the spectrum, so no edge throw).
+  if( !valid() )
+    return 0.0;
+  return integral( E - 0.5, E + 0.5 );  // 1 keV window => integral == density
+}//GlobalContinuumEstimate::density_at
+
+
+double GlobalContinuumEstimate::integral_variance( double x0, double x1 ) const
+{
+  // Conservative Poisson variance: the DATA counts over [x0,x1] - an upper bound, largest exactly
+  // where peaks sit (which is where the SNIP continuum is least trustworthy).
+  if( !valid() || (x1 <= x0) )
+    return 0.0;
+  const double v = foreground->gamma_integral( static_cast<float>(x0), static_cast<float>(x1) );
+  return (v > 0.0) ? v : 0.0;
+}//GlobalContinuumEstimate::integral_variance
+
+
+GlobalContinuumEstimate make_global_continuum(
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const std::function<double(double)> &fwhm_at_energy,
+  PeakFitUtils::CoarseResolutionType det_type,
+  double restrict_lower_energy,
+  double restrict_upper_energy )
+{
+  GlobalContinuumEstimate est;
+
+  if( !foreground || !fwhm_at_energy )
+    return est;
+
+  try
+  {
+    // Per-class SNIP parameters settled during the SNIP work: HPGe = 2.0xFWHM / order 2 / 3-ch
+    // presmooth / LLS on; NaI/LaBr/CZT = 1.5xFWHM / order 2 / 7-ch presmooth / LLS off.  Both
+    // restricted to the valid extent so the low-energy detector turn-on cannot pull it up.
+    const bool is_hpge = (det_type == PeakFitUtils::CoarseResolutionType::High);
+    const double num_fwhm_window       = is_hpge ? 2.0 : 1.5;
+    const int    filter_order          = 2;
+    const int    presmooth_halfwidth   = is_hpge ? 1 : 3;   // 1 = 3-ch boxcar, 3 = 7-ch boxcar
+    const bool   lls                   = is_hpge;
+
+    est.snip = estimateContinuum( foreground, fwhm_at_energy, num_fwhm_window, filter_order,
+                                  presmooth_halfwidth, lls, restrict_lower_energy, restrict_upper_energy );
+    est.foreground = foreground;
+    est.built = static_cast<bool>( est.snip );
+  }catch( const std::exception & )
+  {
+    est = GlobalContinuumEstimate();  // invalid => callers fall back to local estimation
+  }
+
+  return est;
+}//make_global_continuum
 
 
 double LocalContinuumEstimate::sideband_asymmetry_z() const
@@ -1526,62 +1618,287 @@ bool is_norm_like_for_ga( const RelActCalcAuto::SrcVariant &src )
 }//is_norm_like_for_ga(...)
 
 
-// Strong gamma + xray lines from NORM nuclides and their decay chains that
-// commonly appear in ambient backgrounds.  Used by the GA's background-fit
-// penalty to suppress false-positive penalties when a source's gamma
-// happens to coincide with a real NORM peak the fit is actually explaining.
-// Hand-curated from K-40 + U-238 chain (Pb-214/Bi-214) + Th-232 chain
-// (Ac-228/Tl-208/Bi-212) + Pa-234m + Ra-226 + Th-234 + Pb/Bi/Tl K-xrays.
-// Entries are GROUPED BY nuclide/decay-chain for readability, NOT sorted by energy.
-// The only consumer, is_near_strong_norm_gamma(), does a linear scan, so ordering is not
-// relied upon; do not switch to binary_search without first sorting this array by energy.
-static const std::array<double, 51> sk_strong_norm_gamma_energies_kev = {
-  // Pb/Bi/Tl K x-rays (NORM-chain element fluorescence)
-   70.83,  72.81,  72.87,  74.81,  74.97,  77.10,  84.94,
+// Strong gamma + xray lines from NORM nuclides and their decay chains that commonly appear in
+// ambient backgrounds, each attributed to the get_norm_sources() parent nuclide that emits it
+// (that parent is added aged to equilibrium, so a Pb-214/Bi-214 daughter line is attributed to
+// Ra-226, Th-234/Pa-234m to U-238, Ac-228/Tl-208/Bi-212 to Th-232 - matching the parentNuclide()
+// of the peaks RelActCalcAuto produces).  parent_symbol is nullptr for the Pb/Bi/Tl K-xrays, which
+// are element fluorescence with no single attributable NORM parent.
+// Two consumers:
+//   - is_near_strong_norm_gamma(): the GA's background-fit penalty, to suppress false-positive
+//     penalties when a source's gamma coincides with a real NORM peak.  Uses ONLY the energies; its
+//     behavior must stay identical (see NuclideConfig_GA.cpp).
+//   - detail::find_strong_unmodeled_interferers(): R6 auto co-fit, which uses parent_symbol to add
+//     the interfering NORM nuclide to the fit.
+// Hand-curated from K-40 + U-238 chain (Pb-214/Bi-214) + Th-232 chain (Ac-228/Tl-208/Bi-212)
+// + Pa-234m + Ra-226 + Th-234 + Pb/Bi/Tl K-xrays.
+// Entries are GROUPED BY nuclide/decay-chain for readability, NOT sorted by energy.  Both consumers
+// do a linear scan, so ordering is not relied upon; do not switch to binary_search without first
+// sorting this array by energy.
+struct StrongNormGammaLine
+{
+  double energy;              // keV
+  const char *parent_symbol;  // get_norm_sources() parent symbol; nullptr => K-xray (no parent)
+};
+
+static const std::array<StrongNormGammaLine, 51> sk_strong_norm_gamma_lines = {{
+  // Pb/Bi/Tl K x-rays (NORM-chain element fluorescence) - no single attributable parent
+  {  70.83, nullptr }, {  72.81, nullptr }, {  72.87, nullptr }, {  74.81, nullptr },
+  {  74.97, nullptr }, {  77.10, nullptr }, {  84.94, nullptr },
   // Th-234 (U-238 chain)
-   63.29,  92.38,  92.80,
+  {  63.29, "U238" }, {  92.38, "U238" }, {  92.80, "U238" },
   // Ac-228 (Th-232 chain), Pb-214/Bi-214 mix at low energy
-  129.07,
+  { 129.07, "Th232" },
   // U-235 (top lines - also in is_norm_like_for_ga decay test, listed for
   // mis-attribution overlap on non-U235 sources)
-  143.76, 163.36, 185.72, 205.31,
+  { 143.76, "U235" }, { 163.36, "U235" }, { 185.72, "U235" }, { 205.31, "U235" },
   // Ra-226 itself
-  186.21,
+  { 186.21, "Ra226" },
   // Ac-228 (Th-232 chain)
-  209.25, 270.24,
+  { 209.25, "Th232" }, { 270.24, "Th232" },
   // Tl-208 (Th-232 chain)
-  277.36,
+  { 277.36, "Th232" },
   // Pb-214 (Ra-226 chain)
-  241.99, 258.87, 295.22, 351.93,
+  { 241.99, "Ra226" }, { 258.87, "Ra226" }, { 295.22, "Ra226" }, { 351.93, "Ra226" },
   // Ac-228
-  328.00, 338.32, 463.00, 562.50,
+  { 328.00, "Th232" }, { 338.32, "Th232" }, { 463.00, "Th232" }, { 562.50, "Th232" },
   // Tl-208
-  583.19,
+  { 583.19, "Th232" },
   // Bi-214 (Ra-226 chain)
-  609.31, 768.36, 806.17, 934.06,
-  1120.29, 1238.11, 1377.67, 1407.98, 1509.21, 1661.27, 1764.49, 2204.21,
+  { 609.31, "Ra226" }, { 768.36, "Ra226" }, { 806.17, "Ra226" }, { 934.06, "Ra226" },
+  { 1120.29, "Ra226" }, { 1238.11, "Ra226" }, { 1377.67, "Ra226" }, { 1407.98, "Ra226" },
+  { 1509.21, "Ra226" }, { 1661.27, "Ra226" }, { 1764.49, "Ra226" }, { 2204.21, "Ra226" },
   // Bi-212 (Th-232 chain)
-  727.33, 785.37, 1620.50,
+  { 727.33, "Th232" }, { 785.37, "Th232" }, { 1620.50, "Th232" },
   // Ac-228
-  755.32, 794.95, 911.20, 968.97,
+  { 755.32, "Th232" }, { 794.95, "Th232" }, { 911.20, "Th232" }, { 968.97, "Th232" },
   // Tl-208 high-energy
-  860.56, 2614.51,
+  { 860.56, "Th232" }, { 2614.51, "Th232" },
   // Pa-234m (U-238 chain)
-  1001.03,
+  { 1001.03, "U238" },
   // K-40
-  1460.82
-};
+  { 1460.82, "K40" }
+}};
+
+// Ambient (non-NORM) lines that commonly sit in a foreground and can steal counts from a requested
+// source's nearby weak line, just like the NORM lines above.  Used ONLY by R6 interferer detection
+// (NOT by is_near_strong_norm_gamma).  Cs-137 661 keV is single-line; Co-60 is the 1173/1332 pair.
+static const std::array<StrongNormGammaLine, 3> sk_ambient_interferer_lines = {{
+  {  661.657, "Cs137" }, { 1173.228, "Co60" }, { 1332.492, "Co60" }
+}};
 
 bool is_near_strong_norm_gamma( const double energy_kev, const double tolerance_kev )
 {
   const double tol = std::max( 0.1, tolerance_kev );
-  for( const double ne : sk_strong_norm_gamma_energies_kev )
+  for( const StrongNormGammaLine &line : sk_strong_norm_gamma_lines )
   {
-    if( std::fabs( ne - energy_kev ) < tol )
+    if( std::fabs( line.energy - energy_kev ) < tol )
       return true;
   }
   return false;
 }//is_near_strong_norm_gamma(...)
+
+
+// R6 interferer detection.  Reopened here (after the strong-NORM table) so it can read
+// sk_strong_norm_gamma_lines directly; declared in the header's detail namespace for unit testing.
+namespace detail
+{
+
+std::vector<InterfererCandidate> find_strong_unmodeled_interferers(
+  const std::vector<RequestedSourceGammas> &source_gammas,
+  const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
+  const std::function<double(double)> &fwhm_at_energy,
+  const bool fit_norm_peaks,
+  const double min_valid_energy,
+  const double max_valid_energy,
+  const std::shared_ptr<const SpecUtils::Measurement> &background,
+  const std::shared_ptr<const DetectorPeakResponse> &drf,
+  const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs,
+  std::vector<std::string> *warnings,
+  const GlobalContinuumEstimate *global_continuum )
+{
+  std::vector<InterfererCandidate> candidates;
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    return candidates;
+
+  // Nuclides already accounted for by the model: the requested source nuclides, plus the five NORM
+  // parents when NORM peaks are being fit (they are already on the NORM rel-eff curve).
+  std::set<const SandiaDecay::Nuclide *> modeled_nucs;
+  for( const RequestedSourceGammas &sg : source_gammas )
+  {
+    const SandiaDecay::Nuclide * const n = RelActCalcAuto::nuclide( sg.source );
+    if( n )
+      modeled_nucs.insert( n );
+  }
+  if( fit_norm_peaks )
+  {
+    for( const char * const sym : { "U238", "Ra226", "U235", "Th232", "K40" } )
+    {
+      const SandiaDecay::Nuclide * const n = db->nuclide( sym );
+      if( n )
+        modeled_nucs.insert( n );
+    }
+  }
+
+  const auto fmt_kev = []( const double e ) -> std::string {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(1) << e;
+    return ss.str();
+  };
+
+  // Max area/uncert of a foreground auto-search peak within the confirm-window of `energy`
+  // (0 if none).  A missing amplitude uncert falls back to Poisson sqrt(area).
+  const auto confirm_z = [&]( const double energy ) -> double {
+    const double fwhm = std::max( 0.1, fwhm_at_energy( energy ) );
+    const double tol = sm_interferer_confirm_num_fwhm * fwhm;
+    double best_z = 0.0;
+    for( const std::shared_ptr<const PeakDef> &p : auto_search_peaks )
+    {
+      if( !p || (std::fabs( p->mean() - energy ) > tol) )
+        continue;
+      const double area = p->amplitude();
+      const double uncert = p->amplitudeUncert();
+      const double z = (uncert > 0.0) ? (area / uncert) : ((area > 0.0) ? std::sqrt( area ) : 0.0);
+      best_z = std::max( best_z, z );
+    }
+    return best_z;
+  };
+
+  // Number of significant (>= 10% of the strongest) in-range lines a requested source has; used to
+  // decide whether the source is effectively single-line for the doublet guard.
+  const auto num_significant_lines = [&]( const RequestedSourceGammas &s ) -> size_t {
+    // Contract: energies and yields are parallel.  If a caller violates it, conservatively treat the
+    // source as multi-line so the doublet guard never spuriously fires on a mis-sized input.
+    if( s.yields.size() != s.energies.size() )
+      return s.energies.size();
+    double max_yield = 0.0;
+    for( size_t i = 0; (i < s.energies.size()) && (i < s.yields.size()); ++i )
+    {
+      if( (s.energies[i] >= min_valid_energy) && (s.energies[i] <= max_valid_energy) )
+        max_yield = std::max( max_yield, s.yields[i] );
+    }
+    if( max_yield <= 0.0 )
+      return s.energies.size();  // no yields supplied: cannot judge, treat each as significant
+    size_t n = 0;
+    for( size_t i = 0; (i < s.energies.size()) && (i < s.yields.size()); ++i )
+    {
+      if( (s.energies[i] >= min_valid_energy) && (s.energies[i] <= max_valid_energy)
+          && (s.yields[i] >= 0.1*max_yield) )
+        ++n;
+    }
+    return n;
+  };
+
+  // Count of strong-NORM table lines in range attributed to `parent`; our proxy for whether the
+  // interferer is effectively single-line (K-40) vs a multi-line chain (Ra-226, Th-232, ...).
+  const auto interferer_is_single_line = [&]( const SandiaDecay::Nuclide * const parent ) -> bool {
+    int n = 0;
+    for( const StrongNormGammaLine &l : sk_strong_norm_gamma_lines )
+    {
+      if( l.parent_symbol && (l.energy >= min_valid_energy) && (l.energy <= max_valid_energy)
+          && (db->nuclide( l.parent_symbol ) == parent) )
+        ++n;
+    }
+    for( const StrongNormGammaLine &l : sk_ambient_interferer_lines )
+    {
+      if( (l.energy >= min_valid_energy) && (l.energy <= max_valid_energy)
+          && (db->nuclide( l.parent_symbol ) == parent) )
+        ++n;
+    }
+    return (n <= 1);
+  };
+
+  std::set<double> emitted_line_energies;  // de-dup: at most one candidate per interfering line
+
+  // Per-(source gamma, strong line) interferer check, shared by the strong-NORM and ambient (Cs137/
+  // Co60) sweeps below.  Emits a nuclide candidate when the line is near a requested-source gamma,
+  // its parent is not already modeled, the source's own chain does not explain it, and a foreground
+  // auto-search peak data-confirms it.  Skips K-xray entries (null parent).
+  const auto check_interferer_line = [&]( const double es, const bool src_single_line,
+                                          const double le, const char * const parent_symbol )
+  {
+    if( !parent_symbol )
+      return;
+    if( (le < min_valid_energy) || (le > max_valid_energy) || emitted_line_energies.count( le ) )
+      return;
+
+    const double fwhm = std::max( 0.1, fwhm_at_energy( le ) );
+
+    // Trigger: a requested-source gamma within the near-window of the line.
+    if( std::fabs( le - es ) >= (sm_interferer_near_num_fwhm * fwhm) )
+      return;
+
+    const SandiaDecay::Nuclide * const parent = db->nuclide( parent_symbol );
+    if( !parent || modeled_nucs.count( parent ) )
+      return;
+
+    // Doublet guard: a single-line source whose triggering line is within one FWHM of a single-line
+    // interferer is an unresolvable blend - skip and warn (co-fitting would just split one peak).
+    if( src_single_line
+        && (std::fabs( le - es ) < (sm_interferer_doublet_min_fwhm * fwhm))
+        && interferer_is_single_line( parent ) )
+    {
+      if( warnings )
+        warnings->push_back( "Requested source line at " + fmt_kev(es) + " keV overlaps a strong "
+          + parent->symbol + " line at " + fmt_kev(le) + " keV within one FWHM; they are an"
+          " unresolvable doublet and were not separately co-fit - the fitted area here may be"
+          " contaminated." );
+      emitted_line_energies.insert( le );
+      return;
+    }
+
+    // Source-owns-it: any requested-source gamma within one FWHM of the line means the source's own
+    // chain already explains it, so no interferer is needed.
+    for( const RequestedSourceGammas &sg2 : source_gammas )
+    {
+      for( const double e2 : sg2.energies )
+      {
+        if( std::fabs( e2 - le ) < (sm_interferer_source_owns_num_fwhm * fwhm) )
+          return;
+      }
+    }
+
+    // Data confirmation: a foreground auto-search peak on the line at >= min detection z.
+    const double z = confirm_z( le );
+    if( z < sm_interferer_min_detect_z )
+      return;
+
+    candidates.push_back( InterfererCandidate{ le, parent, z, /*from_background_search=*/false } );
+    emitted_line_energies.insert( le );
+  };//check_interferer_line
+
+  // Sweep each requested-source gamma against BOTH the strong-NORM table and the ambient (Cs137/
+  // Co60) lines; all are foreground-confirmed.
+  for( const RequestedSourceGammas &sg : source_gammas )
+  {
+    const bool src_single_line = (num_significant_lines( sg ) <= 1);
+    for( const double es : sg.energies )
+    {
+      if( (es < min_valid_energy) || (es > max_valid_energy) )
+        continue;
+      for( const StrongNormGammaLine &line : sk_strong_norm_gamma_lines )
+        check_interferer_line( es, src_single_line, line.energy, line.parent_symbol );
+      // NOTE: ambient (Cs137/Co60) sweep temporarily disabled - it destabilized the {K40,Eu152}
+      // joint fit (0 peaks); under investigation.  See below and REVIEW_FINDINGS.md.
+      // for( const StrongNormGammaLine &line : sk_ambient_interferer_lines )
+      //   check_interferer_line( es, src_single_line, line.energy, line.parent_symbol );
+    }
+  }
+
+  // ---- DEFERRED: a dedicated background auto-search (for disambiguating blended source+ambient
+  // features) and unattributable (source-less) floating interferer peaks.  The ambient Cs137/Co60
+  // lines are already handled by the foreground sweep above; these remain a future refinement.
+  (void)background;
+  (void)drf;
+  (void)peak_fit_prefs;
+  (void)global_continuum;
+
+  return candidates;
+}//find_strong_unmodeled_interferers(...)
+
+}//namespace detail
 
 
 /** Add a floating peak at 511 keV if appropriate conditions are met.
@@ -2809,7 +3126,17 @@ RoiSignificanceResult compute_roi_chi2_significance(
       result.max_peak_significance = peak_sig;
   }//for( loop over peaks in ROI )
 
-  result.has_significant_peaks = (result.equivalent_z >= min_roi_significance_z);
+  // Keep an ROI if EITHER the whole-ROI Wilks significance (equivalent_z) OR its single strongest
+  // peak's per-(+/-1 FWHM) data significance (max_peak_significance, computed just above but
+  // historically used only for debug) clears the bar.  equivalent_z alone DILUTES a genuinely strong
+  // peak when the ROI carries many rel-eff-tied peaks - its dof is the peak count, so a real 6-7 sigma
+  // line inside a ~95-peak NORM-chain ROI (e.g. Th232) is referred to a chi^2_95 null and scores
+  // NEGATIVE, discarding it.  max_peak_significance is the honest +/-1 FWHM Poisson significance (the
+  // same statistic the injected truth reports as NSigmaOverBkg) and cannot pass junk: it keeps the ROI
+  // only if its strongest peak clears the threshold against the fitted continuum, and the per-peak
+  // observable refit still drops the weak siblings inside the ROI.  [architecture review, 2026-07-18]
+  result.has_significant_peaks = (result.equivalent_z >= min_roi_significance_z)
+                              || (result.max_peak_significance >= min_roi_significance_z);
 
 #if( PERFORM_DEVELOPER_CHECKS )
   if( should_debug_print() )
@@ -4305,6 +4632,11 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
     return DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(e), fwhm_form, fwhm_coefficients );
   };//fwhm_at lambda
 
+  // NOTE: the keep-gate below no longer has a "rescue" fallback for the all-rejected case.  A source
+  // whose every predicted cluster is sub-threshold simply yields no clustered ROIs here; the
+  // data-confirmed found+matched auto-search peaks are given tight ROIs by the caller
+  // (seed_tight_rois_for_found_peaks), and a genuinely-empty ROI set is a valid empty result rather
+  // than a setup failure (see fit_peaks_for_nuclide_relactauto).  [architecture review 2026-07-18]
   for( const pair<double,double> &energy_counts : gammas_by_counts )
   {
     auto ene_pos = std::lower_bound( std::begin(gammas_by_energy), std::end(gammas_by_energy),
@@ -4390,7 +4722,11 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
 
     const detail::LocalContinuumEstimate local_cont = detail::estimate_local_continuum(
         foreground, core_lo, core_hi, fwhm, 0.5, cluster_predicted_signal, unfit_auto_peaks );
-    const double b_est = local_cont.valid ? local_cont.integral( core_lo, core_hi ) : data_area;
+    // R1 step 2: prefer the shared SNIP global continuum for the keep-gate B; fall back to the local
+    // two-sideband estimate (then gross data area) when the global provider is absent/invalid.
+    const double b_est = (settings.global_continuum && settings.global_continuum->valid())
+                         ? settings.global_continuum->integral( core_lo, core_hi )
+                         : (local_cont.valid ? local_cont.integral( core_lo, core_hi ) : data_area);
 
     gammas_by_energy.erase( start_remove, end_remove );
 
@@ -6059,6 +6395,57 @@ double shape_rel_eff_above_boundary( const double re_hi, const double energy, co
 }//shape_rel_eff_above_boundary
 
 
+/** Guarantee an ROI for every data-confirmed source line the auto-search already found.
+
+ For each (energy, FWHM) in `found_energy_fwhm` (auto-search peaks matched to a requested source)
+ whose energy is not already inside an ROI in `rois`, append a TIGHT ROI of +/- half_num_fwhm x FWHM.
+ These peaks are directly confirmed in the data, so they intentionally bypass the predicted-signal
+ keep-gate in cluster_gammas_to_rois - that gate uses z = S_pred/sqrt(S_pred + B) with B integrated
+ over a wide core, which deflates on wide-FWHM low-count NaI and drops strong lines the search found
+ (e.g. Co58 810, Zr89 909).  Seeding tight (not the adaptive ~4-FWHM extent) also keeps the downstream
+ whole-ROI significance test from being diluted over a wide window.
+
+ Self-limiting by construction: the auto-search surfaces only a handful of real peaks even on busy
+ NORM chains (measured: 3 on a 300 s NaI Th232), so this cannot flood ROIs the way lowering the
+ predicted keep-gate threshold does.  Returns the number of ROIs seeded.  [architecture review 2026-07-18]
+ */
+size_t seed_tight_rois_for_found_peaks(
+    std::vector<RelActCalcAuto::RoiRange> &rois,
+    const std::vector<std::pair<double,double>> &found_energy_fwhm,
+    const double half_num_fwhm,
+    const double lowest_energy,
+    const double highest_energy )
+{
+  size_t num_seeded = 0;
+  for( const std::pair<double,double> &ef : found_energy_fwhm )
+  {
+    const double energy = ef.first;
+    const double fwhm = ef.second;
+    if( !std::isfinite(energy) || !std::isfinite(fwhm) || (fwhm <= 0.0)
+        || (energy < lowest_energy) || (energy > highest_energy) )
+      continue;
+
+    bool covered = false;
+    for( const RelActCalcAuto::RoiRange &r : rois )
+      covered = covered || ((energy >= r.lower_energy) && (energy <= r.upper_energy));
+    if( covered )
+      continue;
+
+    RelActCalcAuto::RoiRange roi;
+    roi.lower_energy = std::max( lowest_energy, energy - half_num_fwhm*fwhm );
+    roi.upper_energy = std::min( highest_energy, energy + half_num_fwhm*fwhm );
+    if( !(roi.lower_energy < roi.upper_energy) )
+      continue;
+    // A tight single-line window: a linear continuum is the honest null (a quadratic can start to
+    // absorb the peak); the downstream continuum-order selection may still upgrade it after merging.
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp;
+    rois.push_back( roi );
+    ++num_seeded;
+  }//for( const std::pair<double,double> &ef : found_energy_fwhm )
+
+  return num_seeded;
+}//seed_tight_rois_for_found_peaks
 
 
 std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
@@ -6682,6 +7069,27 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     }
   }
 
+  // Change 3: guarantee a tight ROI for every found+matched auto-search peak the clustering did not
+  // already cover.  These are data-confirmed source lines (matched to a requested source by
+  // fill_in_nuclide_info above); the predicted-signal keep-gate can wrongly drop them on wide-FWHM
+  // low-count NaI, and losing them was the root of the "No ROIs"/silent-empty failures.  Runs on both
+  // the manual-success and fallback paths.  peaks_matched is non-empty here (the empty case returned
+  // early via estimate_initial_rois_without_peaks).  [architecture review 2026-07-18]
+  {
+    std::vector<std::pair<double,double>> found_energy_fwhm;
+    found_energy_fwhm.reserve( peaks_matched.size() );
+    for( const RelActCalcManual::GenericPeakInfo &pk : peaks_matched )
+      found_energy_fwhm.emplace_back( pk.m_energy, pk.m_fwhm );
+
+    const size_t num_seeded = seed_tight_rois_for_found_peaks(
+        initial_rois, found_energy_fwhm, sm_found_peak_roi_half_num_fwhm,
+        min_valid_energy, max_valid_energy );
+
+    if( should_debug_print() && num_seeded )
+      std::cout << "Seeded " << num_seeded << " tight ROI(s) for found+matched auto-search peak(s)"
+                << " not covered by clustering" << std::endl;
+  }
+
   return initial_rois;
 }//estimate_initial_rois_using_relactmanual
 
@@ -6900,6 +7308,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   //  either or both may be valid (-1 means not present).
   int sources_rel_eff_index = -1, norm_rel_eff_index = -1;
 
+  // R6 auto co-fit of strong unmodeled interferers: nuclides added on an extra rel-eff curve (their
+  // peaks are dropped from the returned results), and the energies of any auto-added floating
+  // interferer peaks.  Both are consulted in the result-filter block after the solve.
+  std::set<const SandiaDecay::Nuclide *> auto_interferer_nucs;
+  std::vector<double> auto_interferer_float_energies;
+
   // Create RelActAuto options from config
   RelActCalcAuto::Options options;
   if( !rel_eff_curve.nuclides.empty() )
@@ -6937,6 +7351,20 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   const double min_valid_energy = (low_e_floor < raw_valid_range.second)
                                   ? std::max( raw_valid_range.first, low_e_floor ) : raw_valid_range.first;
   const double max_valid_energy = raw_valid_range.second;
+
+  // R1 step 2: build the shared SNIP global continuum ONCE over the valid extent, so all the gating
+  // B(E) estimates below (keep gate, step-gate dominance, edge-ROI restore) reason about the same
+  // B(E) instead of each re-estimating an unreliable local two-sideband line.  Per-class SNIP params
+  // live in make_global_continuum; if it fails to build, `valid()` is false and every consumer
+  // transparently falls back to its prior local estimate.
+  const auto global_fwhm_at = [&]( double e ) -> double {
+    const bool have = (fwhm_lower_energy > 0.0) && (fwhm_upper_energy > 0.0)
+                      && (fwhm_lower_energy < fwhm_upper_energy);
+    const double ee = have ? std::clamp( e, fwhm_lower_energy, fwhm_upper_energy ) : e;
+    return DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(ee), fwhm_form, fwhm_coefficients );
+  };
+  const detail::GlobalContinuumEstimate global_cont = detail::make_global_continuum(
+      orig_foreground, global_fwhm_at, det_type, min_valid_energy, max_valid_energy );
 
   const bool do_not_use_existing_rois = user_options.testFlag( FitSrcPeaksOptions::DoNotUseExistingRois );
   const bool existing_peaks_as_free   = user_options.testFlag( FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
@@ -7701,6 +8129,201 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     }
   }//if( fit_norm_peaks )
 
+  // R6: auto-detect strong unmodeled interfering lines (e.g. K40 1460 sitting under a requested
+  // source's weak line) and co-fit them so they don't absorb the source's counts and skew its
+  // rel-eff.  Only when NOT already fitting NORM peaks (the NORM curve already models these).  The
+  // co-fit nuclides ride on an extra FramPhysicalModel rel-eff curve cloned from the NORM recipe; a
+  // covering ROI is ensured for each interfering line so it is not an unconstrained parameter.  The
+  // resulting interferer peaks are dropped in the result-filter block below.  Best-effort: any error
+  // just proceeds with the normal fit.
+  if( !fit_norm_peaks )
+  {
+    try
+    {
+      const auto fwhm_at_energy = [&]( double e ) -> double {
+        const bool have = (fwhm_lower_energy > 0.0) && (fwhm_upper_energy > 0.0)
+                          && (fwhm_lower_energy < fwhm_upper_energy);
+        const double ee = have ? std::clamp( e, fwhm_lower_energy, fwhm_upper_energy ) : e;
+        return DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(ee), fwhm_form, fwhm_coefficients );
+      };
+
+      // Expand requested sources to their in-range gammas (mirrors add_floating_511's expansion).
+      std::vector<detail::RequestedSourceGammas> source_gammas;
+      for( const RelActCalcAuto::NucInputInfo &src : sources )
+      {
+        if( RelActCalcAuto::is_null( src.source ) )
+          continue;
+        detail::RequestedSourceGammas sg;
+        sg.source = src.source;
+        std::vector<SandiaDecay::EnergyRatePair> photons;
+        try{
+          photons = get_source_photons( src.source, 1.0, get_source_age( src.source, src.age ) );
+        }catch( const std::exception & ){
+          continue;
+        }
+        for( const SandiaDecay::EnergyRatePair &p : photons )
+        {
+          if( (p.energy >= min_valid_energy) && (p.energy <= max_valid_energy) )
+          {
+            sg.energies.push_back( p.energy );
+            sg.yields.push_back( p.numPerSecond );
+          }
+        }
+        if( !sg.energies.empty() )
+          source_gammas.push_back( std::move(sg) );
+      }
+
+      std::vector<std::string> interferer_warnings;
+      const std::vector<detail::InterfererCandidate> candidates
+        = detail::find_strong_unmodeled_interferers(
+            source_gammas, auto_search_peaks, fwhm_at_energy, fit_norm_peaks,
+            min_valid_energy, max_valid_energy, orig_background, drf, peak_fit_prefs,
+            &interferer_warnings, /*global_continuum=*/nullptr );
+
+      // Partition candidates: attributable -> nuclide (co-fit on an extra curve, de-dup BY NUCLIDE);
+      // unattributable -> floating peak (energies recorded; the float path is added in increment 3).
+      // De-dup interferer nuclides but keep a DETERMINISTIC order.  Iterating a std::set<Nuclide*>
+      // orders by pointer address, which ASLR randomizes run-to-run; that shuffles the interferer
+      // curve's parameter vector and makes the L-M solve converge only intermittently.  Collect the
+      // distinct nuclides, then sort by stable identity (Z, A, isomer) so the order never depends on
+      // memory layout.  [determinism fix 2026-07-19]
+      std::set<const SandiaDecay::Nuclide *> nuclide_seen;
+      std::vector<const SandiaDecay::Nuclide *> nuclide_candidates;
+      std::vector<double> nuclide_candidate_lines;
+      for( const detail::InterfererCandidate &c : candidates )
+      {
+        if( c.nuclide )
+        {
+          if( nuclide_seen.insert( c.nuclide ).second )
+            nuclide_candidates.push_back( c.nuclide );
+          nuclide_candidate_lines.push_back( c.energy );
+        }else
+        {
+          auto_interferer_float_energies.push_back( c.energy );
+        }
+      }
+      std::sort( begin(nuclide_candidates), end(nuclide_candidates),
+        []( const SandiaDecay::Nuclide *a, const SandiaDecay::Nuclide *b ) -> bool {
+          if( a->atomicNumber != b->atomicNumber ) return a->atomicNumber < b->atomicNumber;
+          if( a->massNumber != b->massNumber ) return a->massNumber < b->massNumber;
+          return a->isomerNumber < b->isomerNumber;
+        } );
+
+      if( !nuclide_candidates.empty() )
+      {
+        // Build the interferer nuclide list: canonical NORM parents get get_norm_sources' equilibrium
+        // ages; any others are built directly with age 0 (single nuclides where age barely matters).
+        const std::vector<RelActCalcAuto::NucInputInfo> norm_all
+          = get_norm_sources( sources, config.norm_css_color );
+        std::vector<RelActCalcAuto::NucInputInfo> interferer_nucs;
+        for( const SandiaDecay::Nuclide * const nuc : nuclide_candidates )
+        {
+          bool from_norm = false;
+          for( const RelActCalcAuto::NucInputInfo &ns : norm_all )
+          {
+            if( RelActCalcAuto::nuclide( ns.source ) == nuc )
+            {
+              interferer_nucs.push_back( ns );
+              from_norm = true;
+              break;
+            }
+          }
+          if( !from_norm )
+          {
+            RelActCalcAuto::NucInputInfo info;
+            info.source = nuc;
+            info.age = 0.0;
+            info.fit_age = false;
+            info.peak_color_css = config.norm_css_color;
+            interferer_nucs.push_back( info );
+          }
+          auto_interferer_nucs.insert( nuc );
+        }
+
+        // Clone the NORM recipe: FramPhysicalModel, order 0, soil self-attenuation.  This is a
+        // nuisance curve whose peaks are discarded; its exact shape need not be precise.
+        auto self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>();
+        self_atten->atomic_number = 10.4;
+        self_atten->areal_density = (1.6 * PhysicalUnits::g / PhysicalUnits::cm3) * (100 * PhysicalUnits::cm);
+        self_atten->fit_atomic_number = false;
+        self_atten->fit_areal_density = false;
+
+        RelActCalcAuto::RelEffCurveInput interferer_curve;
+        interferer_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+        interferer_curve.rel_eff_eqn_order = 0;
+        interferer_curve.nucs_of_el_same_age = false;
+        interferer_curve.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
+        interferer_curve.phys_model_self_atten = self_atten;
+        interferer_curve.nuclides = interferer_nucs;
+        interferer_curve.name = "Interfering-line curve";
+        options.rel_eff_curves.push_back( interferer_curve );
+
+        // Ensure each interfering line is covered by a ROI at the FIRST solve, so the interferer
+        // nuclide is not an unconstrained parameter (else it fits ~0 and never re-clusters a ROI in
+        // refinement).  Merge any ROIs the coverage window touches into one, so we never hand
+        // resolve_overlapping_rois a non-escape overlap (which it asserts against).
+        for( const double le : nuclide_candidate_lines )
+        {
+          bool covered = false;
+          for( const RelActCalcAuto::RoiRange &roi : options.rois )
+          {
+            if( (le >= roi.lower_energy) && (le <= roi.upper_energy) )
+            {
+              covered = true;
+              break;
+            }
+          }
+          if( covered )
+            continue;
+
+          const double half = std::max( 1.0, config.auto_roi_core_num_fwhm * fwhm_at_energy( le ) );
+          double lo = std::max( min_valid_energy, le - half );
+          double hi = std::min( max_valid_energy, le + half );
+          std::vector<RelActCalcAuto::RoiRange> kept;
+          PeakContinuum::OffsetType cont = PeakContinuum::OffsetType::Linear;
+          bool merged_any = false;
+          for( const RelActCalcAuto::RoiRange &roi : options.rois )
+          {
+            if( (roi.upper_energy >= lo) && (roi.lower_energy <= hi) )  // overlaps/abuts the window
+            {
+              if( !merged_any )
+                cont = roi.continuum_type;
+              lo = std::min( lo, roi.lower_energy );
+              hi = std::max( hi, roi.upper_energy );
+              merged_any = true;
+            }else
+            {
+              kept.push_back( roi );
+            }
+          }
+          RelActCalcAuto::RoiRange merged;
+          merged.lower_energy = lo;
+          merged.upper_energy = hi;
+          merged.continuum_type = cont;
+          // Fixed (like every other ROI this file emits): a non-Fixed type silently activates
+          // RelActCalcAuto's untuned internal ROI-adjust loop, which confounded the R6 measurement.
+          merged.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+          kept.push_back( merged );
+          options.rois = std::move( kept );
+        }//for( const double le : nuclide_candidate_lines )
+
+        std::string names;
+        for( const SandiaDecay::Nuclide * const nuc : auto_interferer_nucs )
+          names += (names.empty() ? "" : ", ") + nuc->symbol;
+        result.warnings.push_back( "Auto co-fit interfering line(s) from " + names
+          + " that overlap a requested source's gamma(s); these were excluded from the returned peaks"
+          " so they do not contaminate the source's relative efficiency or peak areas." );
+      }//if( !nuclide_candidate_set.empty() )
+
+      for( const std::string &w : interferer_warnings )
+        result.warnings.push_back( w );
+    }catch( const std::exception &e )
+    {
+      if( should_debug_print() )
+        std::cerr << "R6 interferer detection failed (continuing without co-fit): " << e.what() << std::endl;
+    }
+  }//if( !fit_norm_peaks ) -- R6 interferer co-fit
+
   // Add a floating peak at 511 keV if appropriate (see function documentation for physics reasoning)
   add_floating_511_peak_if_appropriate( options, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
 
@@ -7719,6 +8342,24 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     resolve_overlapping_rois( options.rois, options.floating_peaks );
     ensure_min_channel_gap( options.rois, orig_foreground->energy_calibration() );
     remove_floating_peaks_without_roi( options );
+
+    // Change 2: a genuinely-empty ROI set is a valid empty result, NOT a setup error.  With the
+    // keep-gate rescue removed and found+matched peaks seeded upstream, reaching this point with no
+    // ROIs means every predicted source line was sub-threshold AND the search found no confirming
+    // peak - i.e. there is honestly nothing to fit.  Return Success with zero peaks and a warning
+    // rather than letting RelActCalcAuto::solve throw "No ROIs are defined" (which the caller would
+    // report as FailedToSetupProblem, conflating "nothing to fit" with "we dropped everything").
+    // The throw in solve() is left in place as a guard for other callers.  [architecture review 2026-07-18]
+    if( options.rois.empty() )
+    {
+      if( should_debug_print() )
+        std::cout << "fit_peaks_for_nuclide_relactauto: no ROIs to fit - returning valid empty"
+                     " (Success, 0 peaks)" << std::endl;
+      result.status = RelActCalcAuto::RelActAutoSolution::Status::Success;
+      result.solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
+      result.warnings.push_back( "No significant peaks were found for the requested source(s)." );
+      return result;
+    }//if( options.rois.empty() )
 
     // Call RelActAuto::solve with provided options
     RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve(
@@ -7993,7 +8634,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // not have valid FWHM info or may have incorrect values
 
         // Get auto clustering settings from config
-        const GammaClusteringSettings auto_settings = config.get_auto_clustering_settings();
+        GammaClusteringSettings auto_settings = config.get_auto_clustering_settings();
+        auto_settings.global_continuum = global_cont.valid() ? &global_cont : nullptr;  // R1 step 2
 
         // Cluster gammas using current solution's relative efficiency
         std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> refined_rois_and_gammas
@@ -8208,6 +8850,53 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             }
           }
         }//if( check for dropped edge ROIs )
+
+        // Change 3 (auto stage): carry the found-peak guarantee into refinement.  Re-clustering uses
+        // the same predicted-signal keep-gate as the manual stage (at the stricter auto threshold),
+        // so it can drop an ROI whose data-confirmed source line the search already found (e.g. Co58
+        // 810, whose predicted z falls just under the auto bar).  For every INPUT ROI that still holds
+        // a significant auto-search peak, re-seed a tight ROI if the refined set no longer covers it.
+        // Deliberately outside the "dropped edge ROIs" block above so it also fires when re-clustering
+        // returned nothing at all.  [architecture review 2026-07-18]
+        {
+          std::vector<std::pair<double,double>> found_energy_fwhm;
+          for( const RelActCalcAuto::RoiRange &in_roi : input_rois )
+          {
+            std::shared_ptr<const PeakDef> best;
+            for( const std::shared_ptr<const PeakDef> &pk : auto_search_peaks )
+            {
+              if( !pk || !pk->gausPeak()
+                  || (pk->mean() < in_roi.lower_energy) || (pk->mean() > in_roi.upper_energy) )
+                continue;
+              const double z = (pk->amplitudeUncert() > 0.0)
+                              ? (pk->amplitude() / pk->amplitudeUncert()) : 0.0;
+              if( z < config.roi_significance_z )
+                continue;  // only data-significant found peaks pin an ROI (self-limiting)
+              if( !best || (pk->amplitude() > best->amplitude()) )
+                best = pk;
+            }//for( loop over auto_search_peaks )
+
+            if( best )
+              found_energy_fwhm.emplace_back( best->mean(), best->fwhm() );
+          }//for( const RelActCalcAuto::RoiRange &in_roi : input_rois )
+
+          const size_t num_seeded = seed_tight_rois_for_found_peaks(
+              refined_rois, found_energy_fwhm, sm_found_peak_roi_half_num_fwhm,
+              min_valid_energy, max_valid_energy );
+
+          if( num_seeded )
+          {
+            // rois_are_similar (and the downstream overlap resolver) expect energy-sorted ROIs.
+            std::sort( std::begin(refined_rois), std::end(refined_rois),
+              []( const RelActCalcAuto::RoiRange &a, const RelActCalcAuto::RoiRange &b ){
+                return a.lower_energy < b.lower_energy;
+            } );
+
+            if( should_debug_print() )
+              std::cout << "Auto re-cluster: re-seeded " << num_seeded
+                        << " tight ROI(s) for significant found peak(s)" << std::endl;
+          }
+        }
 
         if( refined_rois.empty() )
         {
@@ -8490,6 +9179,32 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     for( const PeakDef &peak : solution.m_peaks_without_back_sub )
     {
       const double mean = peak.mean();
+
+      // R6: drop peaks belonging to an auto-detected interferer (co-fit only so it does not
+      // contaminate the requested source's rel-eff/areas).  Runs REGARDLESS of norm_peaks_dont_use,
+      // and only matches source-less peaks against the interferer float-energy list, so legitimate
+      // 511/escape floating peaks (distinct energies) are never dropped here.
+      {
+        const SandiaDecay::Nuclide * const interferer_pnuc = peak.parentNuclide();
+        bool is_auto_interferer = (interferer_pnuc && auto_interferer_nucs.count( interferer_pnuc ));
+        if( !is_auto_interferer && !peak.hasSourceGammaAssigned() )
+        {
+          for( const double fe : auto_interferer_float_energies )
+          {
+            if( std::fabs( mean - fe ) < 1.0 )
+            {
+              is_auto_interferer = true;
+              break;
+            }
+          }
+        }
+        if( is_auto_interferer )
+        {
+          if( should_debug_print() )
+            std::cout << "  Filtered (auto interferer): " << mean << " keV" << std::endl;
+          continue;
+        }
+      }
 
       // When FitNormBkgrndPeaksDontUse is set, NORM peaks (on the curve at
       // norm_rel_eff_index) were included in the fit to constrain FWHM/energy

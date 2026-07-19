@@ -1023,13 +1023,14 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
     BOOST_TEST_MESSAGE( "After Am-241: " << user_peaks.size() << " total peaks" );
   }
 
-  // ---- Step 3: Eu-152 ----
+  // ---- Step 3: Eu-152 (R6 auto co-fits the interfering K40 1460 line) ----
   {
-    BOOST_TEST_MESSAGE( "\n--- Step 3: Eu-152 (+K40) ---" );
+    BOOST_TEST_MESSAGE( "\n--- Step 3: Eu-152 (R6 auto-cofits K40) ---" );
     const vector<shared_ptr<const PeakDef>> pre_peaks = user_peaks;
-    // Fit K40 together with Eu-152: Eu-152's 1457 keV line sits on K40's strong 1460 keV line,
-    // so fitting Eu-152 alone mis-attributes/distorts that ROI and throws off the rel-eff curve.
-    const vector<RelActCalcAuto::SrcVariant> sources = make_sources( {"K40", "Eu152"} );
+    // Eu-152's weak 1457 keV line sits on K40's strong 1460 keV line.  We fit Eu-152 ALONE and rely
+    // on the R6 auto-interferer detection to co-fit (then drop) K40, so the 1460 counts are not
+    // mis-attributed to Eu-152.  (This test previously hand-patched {K40, Eu152}.)
+    const vector<RelActCalcAuto::SrcVariant> sources = make_sources( {"Eu152"} );
 
     const FitPeaksForNuclides::PeakFitResult result
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
@@ -1046,6 +1047,14 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
     BOOST_CHECK( has_peak_near( result.observable_peaks, 778.90, 3.0 ) );
     BOOST_CHECK( has_peak_near( result.observable_peaks, 964.08, 3.0 ) );
     BOOST_CHECK( has_peak_near( result.observable_peaks, 1408.01, 3.0 ) );
+
+    // R6: the co-fit K40 interferer must NOT appear as a returned peak (dropped after co-fit); and
+    // no spurious peak should be attributed to Eu-152 right on K40's 1460.8 keV line.
+    for( const PeakDef &p : result.observable_peaks )
+    {
+      const bool is_k40 = p.parentNuclide() && (p.parentNuclide()->symbol == "K40");
+      BOOST_CHECK_MESSAGE( !is_k40, "Eu-152-alone returned a K40-attributed peak at " << p.mean() << " keV" );
+    }
 
     // Cs-137 and Am-241 peaks should not be removed
     BOOST_CHECK( result.original_peaks_to_remove.empty() );
@@ -1234,10 +1243,10 @@ BOOST_AUTO_TEST_CASE( test_trinitite_do_not_use_existing_sequence )
   const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> opts
     = FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois;
 
-  // Fit each source independently (DoNotUseExistingRois), but fit K40 together with Eu-152:
-  // Eu-152's 1457 keV line overlaps K40's strong 1460 keV line, so they must be fit jointly.
+  // Fit each source independently (DoNotUseExistingRois).  Eu-152's 1457 keV line overlaps K40's
+  // strong 1460 keV line; we fit Eu-152 alone and rely on the R6 auto-interferer co-fit for K40.
   const vector<vector<string>> source_groups = {
-    {"Cs137"}, {"Am241"}, {"K40", "Eu152"}, {"Ba133"}, {"Co60"}
+    {"Cs137"}, {"Am241"}, {"Eu152"}, {"Ba133"}, {"Co60"}
   };
 
   for( const vector<string> &src_group : source_groups )
@@ -1339,6 +1348,80 @@ BOOST_AUTO_TEST_CASE( test_norm_fit_preserves_existing_rois )
           << obs.continuum()->upperEnergy() << "] keV covers retained existing "
           << user_peak->sourceName() << " peak mean at " << mean << " keV" );
       }
+    }
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_eu152_interferer_matches_joint )
+{
+  // R6 fit of Eu-152 ALONE (auto co-fitting the interfering K40 1460 line) should agree with the
+  // hand-patched {K40, Eu152} joint fit, and must not return a K40-attributed peak.
+  const LoadedSpectrum spec = load_test_data_spectrum(
+    "trinitite_sample_b.n42", "trinitite_sample_b_background.n42" );
+  BOOST_REQUIRE( spec.foreground );
+  BOOST_REQUIRE( spec.background );
+
+  const vector<shared_ptr<const PeakDef>> auto_peaks = run_auto_search( spec.foreground, spec.isHPGe );
+  const vector<shared_ptr<const PeakDef>> no_user_peaks;
+
+  const FitPeaksForNuclides::PeakFitResult r_auto
+    = run_fit( spec.foreground, spec.background, auto_peaks,
+               make_sources( {"Eu152"} ), no_user_peaks, spec.isHPGe );
+  const FitPeaksForNuclides::PeakFitResult r_joint
+    = run_fit( spec.foreground, spec.background, auto_peaks,
+               make_sources( {"K40", "Eu152"} ), no_user_peaks, spec.isHPGe );
+
+  BOOST_REQUIRE( r_auto.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( r_joint.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+
+  auto count_src = []( const vector<PeakDef> &peaks, const char *sym ) -> size_t {
+    size_t n = 0;
+    for( const PeakDef &p : peaks )
+      if( p.parentNuclide() && (p.parentNuclide()->symbol == sym) )
+        ++n;
+    return n;
+  };
+
+  BOOST_TEST_MESSAGE( "auto: " << r_auto.observable_peaks.size() << " peaks ("
+    << count_src(r_auto.observable_peaks,"Eu152") << " Eu152, "
+    << count_src(r_auto.observable_peaks,"K40") << " K40); joint: "
+    << r_joint.observable_peaks.size() << " peaks ("
+    << count_src(r_joint.observable_peaks,"Eu152") << " Eu152, "
+    << count_src(r_joint.observable_peaks,"K40") << " K40)" );
+
+  // Diagnostic: dump the 1453-1465 keV region for both fits.
+  for( const PeakDef &p : r_auto.observable_peaks )
+    if( (p.mean() > 1453.0) && (p.mean() < 1465.0) )
+      BOOST_TEST_MESSAGE( "  auto  1460-region peak@" << p.mean() << " area=" << p.amplitude()
+        << " src=" << (p.parentNuclide()?p.parentNuclide()->symbol:string("none")) );
+  for( const PeakDef &p : r_joint.observable_peaks )
+    if( (p.mean() > 1453.0) && (p.mean() < 1465.0) )
+      BOOST_TEST_MESSAGE( "  joint 1460-region peak@" << p.mean() << " area=" << p.amplitude()
+        << " src=" << (p.parentNuclide()?p.parentNuclide()->symbol:string("none")) );
+
+  // Eu-152-alone must not return a K40 peak (the co-fit K40 is dropped from results).
+  BOOST_CHECK_EQUAL( count_src( r_auto.observable_peaks, "K40" ), 0u );
+
+  // Similar Eu-152 peak count between the two fits.
+  const int dcount = (int)count_src(r_auto.observable_peaks,"Eu152")
+                   - (int)count_src(r_joint.observable_peaks,"Eu152");
+  BOOST_CHECK_MESSAGE( std::abs(dcount) <= 3, "Eu152 peak count auto-joint differs by " << dcount );
+
+  // Major Eu-152 lines present in both, with similar area (the whole point: co-fitting K40 keeps the
+  // Eu-152 rel-eff/areas from being skewed by the 1460 region).
+  const double key_lines[] = { 121.78, 344.28, 778.90, 964.08, 1408.01 };
+  for( const double e : key_lines )
+  {
+    const PeakDef * const aa = find_peak_near( r_auto.observable_peaks, e, 3.0 );
+    const PeakDef * const ja = find_peak_near( r_joint.observable_peaks, e, 3.0 );
+    BOOST_CHECK_MESSAGE( aa, "auto missing Eu152 line " << e << " keV" );
+    BOOST_CHECK_MESSAGE( ja, "joint missing Eu152 line " << e << " keV" );
+    if( aa && ja && (ja->amplitude() > 0.0) )
+    {
+      const double ratio = aa->amplitude() / ja->amplitude();
+      BOOST_CHECK_MESSAGE( (ratio > 0.75) && (ratio < 1.34),
+        "Eu152 " << e << " keV area ratio auto/joint = " << ratio );
     }
   }
 }
@@ -1865,5 +1948,121 @@ BOOST_AUTO_TEST_CASE( test_estimate_continuum_snip )
   BOOST_CHECK_THROW( estimateContinuum( spec, std::function<double(double)>(), 1.5, 2, false, false ),
                      std::exception );
 }//test_estimate_continuum_snip
+
+
+BOOST_AUTO_TEST_CASE( test_interferer_detection_unit )
+{
+  using FitPeaksForNuclides::detail::InterfererCandidate;
+  using FitPeaksForNuclides::detail::RequestedSourceGammas;
+  using FitPeaksForNuclides::detail::find_strong_unmodeled_interferers;
+
+  set_data_dir();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  const SandiaDecay::Nuclide * const k40   = db->nuclide( "K40" );
+  const SandiaDecay::Nuclide * const eu152 = db->nuclide( "Eu152" );
+  BOOST_REQUIRE( k40 && eu152 );
+
+  const auto fwhm_at = []( double ){ return 2.0; };  // constant 2 keV FWHM (HPGe-ish near 1460)
+  const double min_e = 50.0, max_e = 3000.0;
+
+  // Multi-line Eu-152 with a weak 1457.6 keV line sitting near K-40's strong 1460.8 keV NORM line.
+  RequestedSourceGammas eu;
+  eu.source   = eu152;
+  eu.energies = { 121.78, 344.28, 1457.64 };
+  eu.yields   = {   0.28,   0.27,   0.005  };
+
+  // Build a synthetic confirming auto-search peak (mean, area, area-uncert).
+  const auto make_peak = []( double mean, double area, double uncert )
+      -> std::shared_ptr<const PeakDef> {
+    auto p = std::make_shared<PeakDef>( mean, 0.85, area );  // sigma ~ FWHM 2.0 keV
+    p->setAmplitudeUncert( uncert );
+    return p;
+  };
+
+  // Case A: K-40 1460.8 confirmed at z=50 -> exactly one K-40 nuclide candidate.
+  {
+    const std::vector<std::shared_ptr<const PeakDef>> peaks = { make_peak( 1460.8, 5000.0, 100.0 ) };
+    const std::vector<InterfererCandidate> c = find_strong_unmodeled_interferers(
+      { eu }, peaks, fwhm_at, /*fit_norm_peaks=*/false, min_e, max_e, nullptr, nullptr, nullptr );
+    BOOST_REQUIRE_EQUAL( c.size(), 1u );
+    BOOST_CHECK_EQUAL( c[0].nuclide, k40 );
+    BOOST_CHECK( !c[0].from_background_search );
+    BOOST_CHECK_CLOSE( c[0].energy, 1460.82, 0.1 );
+    BOOST_CHECK_GT( c[0].detection_z, 5.0 );
+  }
+
+  // Case B: K-40 is itself a requested source -> already modeled, no candidate.
+  {
+    RequestedSourceGammas k40src;
+    k40src.source   = k40;
+    k40src.energies = { 1460.82 };
+    k40src.yields   = { 0.1 };
+    const std::vector<std::shared_ptr<const PeakDef>> peaks = { make_peak( 1460.8, 5000.0, 100.0 ) };
+    const std::vector<InterfererCandidate> c = find_strong_unmodeled_interferers(
+      { eu, k40src }, peaks, fwhm_at, false, min_e, max_e, nullptr, nullptr, nullptr );
+    BOOST_CHECK( c.empty() );
+  }
+
+  // Case C: 1460.8 present but not data-confirmed (z = 2 < 5) -> no candidate.
+  {
+    const std::vector<std::shared_ptr<const PeakDef>> peaks = { make_peak( 1460.8, 40.0, 20.0 ) };
+    const std::vector<InterfererCandidate> c = find_strong_unmodeled_interferers(
+      { eu }, peaks, fwhm_at, false, min_e, max_e, nullptr, nullptr, nullptr );
+    BOOST_CHECK( c.empty() );
+  }
+
+  // Case C2: no confirming peak near the line at all -> no candidate.
+  {
+    const std::vector<std::shared_ptr<const PeakDef>> peaks = { make_peak( 121.78, 5000.0, 100.0 ) };
+    const std::vector<InterfererCandidate> c = find_strong_unmodeled_interferers(
+      { eu }, peaks, fwhm_at, false, min_e, max_e, nullptr, nullptr, nullptr );
+    BOOST_CHECK( c.empty() );
+  }
+
+  // Case D: the source's own chain has a line on 1460.8 (source owns it) -> no candidate.
+  {
+    RequestedSourceGammas eu_owns = eu;
+    eu_owns.energies.push_back( 1460.8 );
+    eu_owns.yields.push_back( 0.004 );
+    const std::vector<std::shared_ptr<const PeakDef>> peaks = { make_peak( 1460.8, 5000.0, 100.0 ) };
+    const std::vector<InterfererCandidate> c = find_strong_unmodeled_interferers(
+      { eu_owns }, peaks, fwhm_at, false, min_e, max_e, nullptr, nullptr, nullptr );
+    BOOST_CHECK( c.empty() );
+  }
+
+  // Case E: fitting NORM peaks -> K-40 already on the NORM curve, no candidate.
+  {
+    const std::vector<std::shared_ptr<const PeakDef>> peaks = { make_peak( 1460.8, 5000.0, 100.0 ) };
+    const std::vector<InterfererCandidate> c = find_strong_unmodeled_interferers(
+      { eu }, peaks, fwhm_at, /*fit_norm_peaks=*/true, min_e, max_e, nullptr, nullptr, nullptr );
+    BOOST_CHECK( c.empty() );
+  }
+
+  // Case F: doublet guard - a single-line source whose only line is < 1 FWHM from single-line K-40
+  // is an unresolvable blend: skip and warn (only source.energies matters for the single-line test).
+  {
+    RequestedSourceGammas single;
+    single.source   = eu152;
+    single.energies = { 1460.3 };   // 0.5 keV from K-40 1460.82, well within 1 FWHM (2.0 keV)
+    single.yields   = { 1.0 };
+    const std::vector<std::shared_ptr<const PeakDef>> peaks = { make_peak( 1460.8, 5000.0, 100.0 ) };
+    std::vector<std::string> warns;
+    const std::vector<InterfererCandidate> c = find_strong_unmodeled_interferers(
+      { single }, peaks, fwhm_at, false, min_e, max_e, nullptr, nullptr, nullptr, &warns );
+    BOOST_CHECK( c.empty() );
+    BOOST_CHECK( !warns.empty() );
+  }
+
+  // (The ambient-line sweep - Cs137/Co60 - is currently DISABLED in the helper because co-fitting an
+  // ambient interferer destabilized the {K40,Eu152} joint fit; its unit test was removed with it.)
+
+  // Regression: the {energy,parent} table refactor must not change is_near_strong_norm_gamma.
+  BOOST_CHECK(  FitPeaksForNuclides::is_near_strong_norm_gamma( 1460.8, 1.0 ) );
+  BOOST_CHECK( !FitPeaksForNuclides::is_near_strong_norm_gamma( 1457.6, 1.0 ) );
+  BOOST_CHECK(  FitPeaksForNuclides::is_near_strong_norm_gamma( 609.31, 0.5 ) );
+  BOOST_CHECK( !FitPeaksForNuclides::is_near_strong_norm_gamma( 500.0,  1.0 ) );
+}//test_interferer_detection_unit
 
 BOOST_AUTO_TEST_SUITE_END() // StatisticalDetailHelpers

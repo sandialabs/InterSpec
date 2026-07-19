@@ -125,16 +125,23 @@ extern std::string sm_checkpoint_options_summary;
  the per-spectrum penalty contribution at 7.5. */
 constexpr double sm_background_fit_penalty_per_spectrum_cap = 30.0;
 
-/** Penalty assigned to a single spectrum's foreground cost when the fit fails
- (non-Success status, or throws).  The GA MINIMIZES the objective, and a successful
- per-spectrum foreground cost is `total_weight - (find_weight + candidate_score)`,
- which ranges roughly from ~ -30 (all source peaks found with good areas) up to ~ +40
- (poor areas and/or many spurious peaks).  This penalty must be strictly worse (larger)
- than any plausible successful cost so the GA is driven away from configs that cannot
- produce a fit at all.
- TODO: normalize per-spectrum costs by expected-peak count so multi-line spectra do not
- dominate the summed objective; the failure penalty would then move to that normalized scale. */
-constexpr double sm_fit_failure_penalty = 100.0;
+/** Penalty assigned to a single spectrum's foreground cost when the fit fails (non-Success status,
+ or throws).
+
+ A "failure" is dominated by GRACEFUL EMPTIES: on the NaI eval-holdout, 40 of 49 failures are
+ FailedToSetupProblem "No ROIs are defined" - the exact same zero-peaks-recovered OUTCOME as a
+ Success that returns 0 observable peaks (which scores at most the total-miss ceiling,
+ sm_miss_penalty_weight).  The old value (100) put failures on a wildly different scale: a handful of
+ status flips dominated the summed objective and set the A/B noise floor to ~100 per flip - ~40x any
+ real algorithm effect (e.g. R1.1 moved the NaI total by ~2.4) - so measuring fitter changes against
+ it was impossible.  It is now scored just above the total-miss ceiling (a small premium so an
+ outright error is still ranked slightly worse than a graceful empty).  Failure RATE is not lost:
+ the per-spectrum TSV emits the status enum, so a failure-prone config stays visible without a cliff
+ that swamps the accuracy signal (the two-axis view of GrossScoring_Review.md R2).
+ TODO: normalize per-spectrum costs by expected-peak count so multi-line spectra do not dominate the
+ summed objective; the failure penalty would then move to that normalized scale.
+ [gross-scoring review R2, 2026-07-18] */
+constexpr double sm_fit_failure_penalty = 7.5;  // ~= 1.5 x total-miss ceiling (sm_miss_penalty_weight)
 
 
 /** Weight for the per-spectrum "missed expected area" penalty term, added to the foreground cost:
@@ -378,6 +385,13 @@ typedef EA::GenerationType<NuclideConfigSolution,NuclideConfigCost> Generation_T
 
 /** Convert GA genes to a PeakFitForNuclideConfig. */
 PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &solution );
+
+/** Inverse of `genes_to_settings`: extract the GA-optimized fields of a config into a gene set.
+ Round-trip exactness caveat: `genes_to_settings` resolves `initial_manual_rel_eff_max_chi2_dof`
+ through `resolve_chi2_dof_cap()`, so the cap gene only round-trips when
+ `sm_rel_eff_chi2_cap_mode == GAOptimized` (or the Fixed value happens to match).
+ Used by NuclideConfigEval's `--config-genes default` to score/dump the production defaults. */
+NuclideConfigSolution settings_to_genes( const PeakFitForNuclideConfig &config );
 
 
 void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rnd01 );

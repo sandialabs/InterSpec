@@ -23,6 +23,12 @@ set( INCLUDE_ANALYSIS_TEST_SUITE ON CACHE BOOL "" )
 
 
 set(BUILD_AS_LOCAL_SERVER OFF CACHE BOOL "")
+# Force STATIC libInterSpec.a (see top-level CMakeLists: SHARED is only chosen when USE_BATCH_CLI_TOOLS
+# or USE_MACOS_QUICK_LOOK is on).  The dev tools here don't use the batch CLI, and a static lib embeds
+# the code directly in each exe -> executable hashes are meaningful, A/B binaries truly freeze, and the
+# InterSpec.dylib-overwrite confusion (a re-run loading whatever dylib is current) cannot happen.
+set(USE_BATCH_CLI_TOOLS OFF CACHE BOOL "")
+set(USE_MACOS_QUICK_LOOK OFF CACHE BOOL "")
 set(USE_DB_TO_STORE_SPECTRA ON CACHE BOOL "")
 set(PERFORM_DEVELOPER_CHECKS ON CACHE BOOL "")
 set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE BOOL "")

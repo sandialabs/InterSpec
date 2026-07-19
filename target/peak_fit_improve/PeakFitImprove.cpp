@@ -33,7 +33,9 @@
 #include <chrono>
 #include <string>
 #include <fstream>
+#include <memory>
 #include <numeric>
+#include <cstdlib>
 #include <iostream>
 #include <thread>
 
@@ -1011,9 +1013,108 @@ static double score_config_over_precomputed(
 {
   const double num_sigma_contribution = 1.5;
 
+  // Optional per-spectrum diagnostics (env PEAKFIT_PERSPEC_TSV) + scoring progress to stderr.  The
+  // NuclideConfigEval path otherwise has no visibility into the (multi-minute) scoring loop, and no
+  // way to see which low-resolution spectra fail / find nothing without rendering the full HTML
+  // gallery.  A total-miss fit scores ~0 cost yet miss_fraction=1 - the row the aggregate mean hides.
+  std::atomic<size_t> num_scored{ 0 };
+  const size_t total_spectra = precomputed.size();
+  std::mutex tsv_mutex;
+  std::shared_ptr<std::ofstream> tsv;
+  if( const char * const tsv_path = std::getenv( "PEAKFIT_PERSPEC_TSV" ) )
+  {
+    tsv = std::make_shared<std::ofstream>( tsv_path );
+    if( tsv->good() )
+      (*tsv) << "source\tdetector\tfg_cost\tstatus\tmiss_fraction\tn_observable\tn_fit\terror\n";
+    else
+      tsv.reset();
+  }
+
+  // Map the solution status enum to a name so failures self-classify in the TSV
+  // (FailedToSetupProblem vs FailToSolveProblem vs a Success that found 0 observable peaks) - the
+  // single most-requested diagnostic from the review panel.
+  const auto status_name = []( const RelActCalcAuto::RelActAutoSolution::Status s ) -> const char *
+  {
+    using S = RelActCalcAuto::RelActAutoSolution::Status;
+    switch( s )
+    {
+      case S::Success:              return "Success";
+      case S::NotInitiated:         return "NotInitiated";
+      case S::FailedToSetupProblem: return "FailedToSetupProblem";
+      case S::FailToSolveProblem:   return "FailToSolveProblem";
+      case S::UserCanceled:         return "UserCanceled";
+    }
+    return "Unknown";
+  };
+
+  const auto record_spectrum = [&]( const NuclideConfig_GA::PrecomputedNuclideData &pd,
+                                    const double fg, const char *status, const double miss_frac,
+                                    const size_t n_observable, const size_t n_fit,
+                                    const std::string &error )
+  {
+    const size_t done = num_scored.fetch_add( 1 ) + 1;
+    if( (done % 25) == 0 || done == total_spectra )
+      std::cerr << "  [score] " << done << " of " << total_spectra << " spectra" << std::endl;
+    if( tsv )
+    {
+      std::string err = error;                       // keep the TSV one-row-per-spectrum
+      for( char &c : err ) if( c=='\t' || c=='\n' || c=='\r' ) c = ' ';
+      if( err.size() > 80 ) err.resize( 80 );
+      std::lock_guard<std::mutex> lock( tsv_mutex );
+      (*tsv) << pd.src_info->src_info.src_name << '\t' << pd.src_info->detector_name << '\t'
+             << fg << '\t' << status << '\t' << miss_frac << '\t'
+             << n_observable << '\t' << n_fit << '\t' << err << '\n';
+      tsv->flush();
+    }
+  };
+
+  // Reliability axis, reported SEPARATELY from the fit-quality cost (user guidance 2026-07-18) - a
+  // failed fit is a robustness bug to fix in the fitter, not something to price into the objective.
+  // Split it two ways, keyed on the total-miss fraction (which is >0 only when the truth actually had
+  // definitely-wanted peaks):
+  //   - MECHANICAL failure: non-Success (or exception) on a spectrum that HAD def-wanted peaks it
+  //     should have recovered - a real bug (the user reports "No ROIs" is usually this).
+  //   - LEGITIMATE empty: non-Success on a genuinely low-statistics spectrum with nothing
+  //     significant to fit - an empty result there is a VALID outcome, not a failure.
+  std::atomic<size_t> num_mechanical_failures{ 0 };
+  std::atomic<size_t> num_legit_empty{ 0 };
+
+  // Fit-quality (accuracy) cost of `fit_peaks` vs this spectrum's truth: area-mismatch cost, minus
+  // the find/candidate rewards, plus the missed-definitely-wanted-area penalty.  openGA MINIMIZES,
+  // so the (higher-is-better) find/candidate rewards are negated (finding correct peaks LOWERS cost,
+  // spurious peaks RAISE it) and total_weight (area mismatch) is already a cost.  The miss term
+  // exists because a missed peak otherwise only forgoes its reward, so a total-miss would score ~0.
+  // With NO peaks (a mechanical failure, or a genuine empty result) this reduces to exactly a
+  // total-miss on the def-wanted area - the same score a Success that recovered nothing gets - and
+  // contains NO mechanical-failure penalty.
+  const auto accuracy_cost = [num_sigma_contribution](
+      const NuclideConfig_GA::PrecomputedNuclideData &pd,
+      const std::vector<PeakDef> &fit_peaks, double &miss_frac_out ) -> double
+  {
+    const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
+    const std::vector<ExpectedPhotopeakInfo> scoring_peaks
+      = PeakFitImproveData::filter_photopeaks_for_scoring( pd.src_info->expected_signal_photopeaks, det_type );
+
+    CombinedPeakFitScore combined_score;
+    combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
+      fit_peaks, scoring_peaks, num_sigma_contribution );
+    combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
+      fit_peaks, scoring_peaks, num_sigma_contribution, det_type );
+    combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
+      fit_peaks, scoring_peaks, det_type );
+    CandidatePeak_GA::correct_score_for_escape_peaks( combined_score.candidate_peak_score, scoring_peaks );
+
+    miss_frac_out = PeakFitImproveData::missed_def_wanted_area_fraction(
+        scoring_peaks, combined_score.candidate_peak_score.def_expected_but_not_detected, det_type );
+    return combined_score.final_fit_score.total_weight
+         - ( combined_score.initial_fit_weights.find_weight + combined_score.candidate_peak_score.score )
+         + NuclideConfig_GA::sm_miss_penalty_weight * miss_frac_out;
+  };
+
   // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
   // Called from both the serial and parallel paths below; safe to invoke concurrently.
-  const auto score_one_spectrum = [&config, num_sigma_contribution](
+  const auto score_one_spectrum = [&config, &record_spectrum, &status_name, &accuracy_cost,
+                                   &num_mechanical_failures, &num_legit_empty](
       const NuclideConfig_GA::PrecomputedNuclideData &pd ) -> std::pair<double,double>
   {
     Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
@@ -1028,57 +1129,38 @@ static double score_config_over_precomputed(
         pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
         pd.background, pd.drf, options, config, pd.peak_fit_prefs );
 
-      if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
-        return { NuclideConfig_GA::sm_fit_failure_penalty, 0.0 };  // Penalty for failed foreground fits, no bg attempted
+      const bool ok = (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success);
 
-      const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
+      // A non-Success fit produced no usable peaks (observable_peaks is empty), so it is scored as
+      // the total-miss its empty result earns - identical to a Success that recovered nothing.  The
+      // mechanical status is recorded separately (the counters + the TSV), never added to the cost.
+      double miss_frac = 0.0;
+      const double fg_score = accuracy_cost( pd, result.observable_peaks, miss_frac );
 
-      // Score against the det-type-appropriate, low-energy-filtered expected peaks (sub-30 keV
-      // for HPGe / sub-50 keV otherwise are unreliable), and pass det_type so the def-wanted
-      // significance/area gates match the detector resolution.
-      const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
-      const std::vector<ExpectedPhotopeakInfo> scoring_peaks
-        = PeakFitImproveData::filter_photopeaks_for_scoring( pd.src_info->expected_signal_photopeaks, det_type );
+      // Split a non-Success into a real mechanical failure (the truth had def-wanted peaks it should
+      // have recovered -> miss_frac > 0) vs a legitimate empty (nothing significant to fit).
+      if( !ok )
+        (miss_frac > 0.0 ? num_mechanical_failures : num_legit_empty).fetch_add( 1, std::memory_order_relaxed );
 
-      CombinedPeakFitScore combined_score;
-      combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
-        fit_peaks, scoring_peaks, num_sigma_contribution );
-      combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
-        fit_peaks, scoring_peaks, num_sigma_contribution, det_type );
-      combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
-        fit_peaks, scoring_peaks, det_type );
-      CandidatePeak_GA::correct_score_for_escape_peaks(
-        combined_score.candidate_peak_score, scoring_peaks );
+      // Background-false-positive penalty (no-op unless the bg-fit trial is enabled); only meaningful
+      // for a successful fit.
+      const double bg_raw = ok ? NuclideConfig_GA::compute_background_fit_penalty(
+          pd, config, NuclideConfig_GA::sm_background_mode, /*detail_out=*/nullptr ) : 0.0;
 
-      // openGA MINIMIZES the objective, so every contribution must be a cost (lower = better).
-      // find_weight and candidate_peak_score.score are higher-is-better rewards (each correct
-      // source peak adds, each spurious/extra peak subtracts), while final_fit_score.total_weight
-      // is already lower-is-better (area mismatch).  Negate the reward terms so finding the
-      // correct source peaks LOWERS the cost and spurious peaks RAISE it.  Mirrors the sibling
-      // InitialFit/CandidatePeak GAs, which negate their scores before returning to openGA.
-      // The final term penalizes missed expected AREA (fraction of definitely-wanted area not
-      // detected, after escape correction): without it a missed peak is "free" (its area error is
-      // never scored), so the GA could drop hard peaks / tolerate total-misses.  See NuclideConfig_GA.h.
-      const double fg_score = combined_score.final_fit_score.total_weight
-                            - ( combined_score.initial_fit_weights.find_weight
-                                + combined_score.candidate_peak_score.score )
-                            + NuclideConfig_GA::sm_miss_penalty_weight
-                                * PeakFitImproveData::missed_def_wanted_area_fraction(
-                                    scoring_peaks,
-                                    combined_score.candidate_peak_score.def_expected_but_not_detected,
-                                    det_type );
-
-      // Background-false-positive penalty.  No-op (returns 0) when
-      // sm_do_background_fit_trial is false or background_auto_search_peaks
-      // is empty for this entry.
-      const double bg_raw = NuclideConfig_GA::compute_background_fit_penalty(
-          pd, config, NuclideConfig_GA::sm_background_mode, /*detail_out=*/nullptr );
-
+      record_spectrum( pd, fg_score, ok ? "Success" : status_name(result.status), miss_frac,
+                       result.observable_peaks.size(), result.fit_peaks.size(),
+                       ok ? std::string() : result.error_message );
       return { fg_score, bg_raw };
     }
-    catch( const std::exception & )
+    catch( const std::exception &e )
     {
-      return { NuclideConfig_GA::sm_fit_failure_penalty, 0.0 };  // Penalty for exceptions
+      // An exception is a mechanical failure with no result at all; score the truth as a total-miss.
+      num_mechanical_failures.fetch_add( 1, std::memory_order_relaxed );
+      double miss_frac = 0.0;
+      const std::vector<PeakDef> no_peaks;
+      const double fg_score = accuracy_cost( pd, no_peaks, miss_frac );
+      record_spectrum( pd, fg_score, "EXCEPTION", miss_frac, 0, 0, e.what() );
+      return { fg_score, 0.0 };
     }
   };//score_one_spectrum lambda
 
@@ -1120,6 +1202,17 @@ static double score_config_over_precomputed(
 
   if( out_fg ) *out_fg = total_fg;
   if( out_bg ) *out_bg = total_bg;
+
+  // Reliability axis, reported separately from the fit-quality cost above: how many spectra the
+  // fitter could not fit at all (scored as total-misses in the cost, but the goal is to drive this
+  // count to zero by fixing the fitter, not by pricing failures).
+  const size_t mech_fail = num_mechanical_failures.load();
+  const size_t legit_empty = num_legit_empty.load();
+  std::cout << "  Mechanical fit failures (non-Success WITH def-wanted peaks - the fitter should fix): "
+            << mech_fail << " of " << precomputed.size()
+            << " (" << (100.0 * mech_fail / std::max<size_t>(1, precomputed.size())) << "%)" << std::endl
+            << "  Legitimate empties (non-Success, nothing significant to fit - a valid outcome): "
+            << legit_empty << std::endl;
 
   return total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg;
 }//score_config_over_precomputed(...)
@@ -2014,50 +2107,70 @@ int main( int argc, char **argv )
         return -8;
       }
 
-      ifstream genes_strm( config_genes_file.c_str(), (ios::binary | ios::in) );
-      if( !genes_strm.good() )
-      {
-        cerr << "Could not open --config-genes file '" << config_genes_file << "'." << endl;
-        return -8;
-      }
-
-      // First non-comment, non-empty line is the gene set.
-      string genes_line;
-      while( std::getline( genes_strm, genes_line ) )
-      {
-        SpecUtils::trim( genes_line );
-        if( !genes_line.empty() && (genes_line[0] != '#') )
-          break;
-        genes_line.clear();
-      }
-
-      if( genes_line.empty() )
-      {
-        cerr << "No gene line found in '" << config_genes_file << "'." << endl;
-        return -8;
-      }
-
-      // Accept either a bare gene line (checkpoint TSV rows) or a line containing a braced gene
-      // list (results-txt rows look like "step<TAB>cost_avg<TAB>cost_best<TAB>{key=value, ...}<TAB>status").
-      const size_t open_brace = genes_line.find( '{' );
-      if( open_brace != string::npos )
-      {
-        const size_t close_brace = genes_line.rfind( '}' );
-        const size_t span_end = (close_brace == string::npos) ? genes_line.size() : close_brace;
-        genes_line = genes_line.substr( open_brace + 1, span_end - open_brace - 1 );
-      }
-
       NuclideConfig_GA::NuclideConfigSolution genes;
-      bool parsed = NuclideConfig_GA::NuclideConfigSolution::from_string( genes_line, "\t", genes );
-      if( !parsed )
-        parsed = NuclideConfig_GA::NuclideConfigSolution::from_string( genes_line, ", ", genes );
 
-      if( !parsed )
+      if( SpecUtils::iequals_ascii( config_genes_file, "default" ) )
       {
-        cerr << "Could not parse gene line from '" << config_genes_file
-             << "' (tried tab and comma-space separators)." << endl;
-        return -8;
-      }
+        // Sentinel: score the production default_config for the selected det type, and dump it as
+        // a hand-editable genes TSV (the starting point for manual tuning iterations).  The
+        // chi2/dof-cap gene only round-trips under GAOptimized mode (genes_to_settings otherwise
+        // overrides it from the CLI cap flags), so force that mode here for an exact round-trip.
+        NuclideConfig_GA::sm_rel_eff_chi2_cap_mode = NuclideConfig_GA::RelEffChi2CapMode::GAOptimized;
+        genes = NuclideConfig_GA::settings_to_genes(
+            FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( selected_det_type ) );
+
+        const string genes_filename = det_type_str + "_default_genes.tsv";
+        ofstream genes_out( genes_filename.c_str() );
+        genes_out << "# Production default_config(" << det_type_str << ") as genes;"
+                  << " hand-edit and pass back via --config-genes.\n"
+                  << genes.to_string( "\t" ) << "\n";
+        cout << "Wrote default-config genes to " << genes_filename << endl;
+      }else
+      {
+        ifstream genes_strm( config_genes_file.c_str(), (ios::binary | ios::in) );
+        if( !genes_strm.good() )
+        {
+          cerr << "Could not open --config-genes file '" << config_genes_file << "'." << endl;
+          return -8;
+        }
+
+        // First non-comment, non-empty line is the gene set.
+        string genes_line;
+        while( std::getline( genes_strm, genes_line ) )
+        {
+          SpecUtils::trim( genes_line );
+          if( !genes_line.empty() && (genes_line[0] != '#') )
+            break;
+          genes_line.clear();
+        }
+
+        if( genes_line.empty() )
+        {
+          cerr << "No gene line found in '" << config_genes_file << "'." << endl;
+          return -8;
+        }
+
+        // Accept either a bare gene line (checkpoint TSV rows) or a line containing a braced gene
+        // list (results-txt rows look like "step<TAB>cost_avg<TAB>cost_best<TAB>{key=value, ...}<TAB>status").
+        const size_t open_brace = genes_line.find( '{' );
+        if( open_brace != string::npos )
+        {
+          const size_t close_brace = genes_line.rfind( '}' );
+          const size_t span_end = (close_brace == string::npos) ? genes_line.size() : close_brace;
+          genes_line = genes_line.substr( open_brace + 1, span_end - open_brace - 1 );
+        }
+
+        bool parsed = NuclideConfig_GA::NuclideConfigSolution::from_string( genes_line, "\t", genes );
+        if( !parsed )
+          parsed = NuclideConfig_GA::NuclideConfigSolution::from_string( genes_line, ", ", genes );
+
+        if( !parsed )
+        {
+          cerr << "Could not parse gene line from '" << config_genes_file
+               << "' (tried tab and comma-space separators)." << endl;
+          return -8;
+        }
+      }//if( "default" sentinel ) / else
 
       // genes_to_settings() starts from default_config(sm_base_det_type), so the non-GA fields
       // (skew_type, etc.) must match the detector class the genes were tuned for.
