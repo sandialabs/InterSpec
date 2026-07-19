@@ -278,6 +278,31 @@ jobs:
             fi
           done
 
+      # TEMPORARY diagnostic: reproduce the softprops PATCH via raw curl so the run
+      # log shows the exact HTTP status + error body (distinguishes a make_latest
+      # conflict from an org-level ruleset/policy). Remove once the release job is green.
+      - name: Diagnose release PATCH permission (temporary)
+        run: |
+          set +e
+          RID="${{ env.release_id }}"
+          echo "===== PATCH release $RID WITHOUT make_latest ====="
+          curl -sS -o body_a.json -w "HTTP %{http_code}\n" -X PATCH \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$RID" \
+            -d '{"prerelease":true}'
+          echo "body:"; cat body_a.json; echo
+          echo "===== PATCH release $RID WITH make_latest=true ====="
+          curl -sS -o body_b.json -w "HTTP %{http_code}\n" -X PATCH \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$RID" \
+            -d '{"prerelease":true,"make_latest":"true"}'
+          echo "body:"; cat body_b.json; echo
+          true
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -289,7 +314,9 @@ jobs:
           draft: false
           generate_release_notes: false
           prerelease: true
-          make_latest: true
+          # NOTE: make_latest removed - a prerelease cannot be the "latest" release, and
+          # forcing it made softprops' update-a-release PATCH fail 403 "Resource not
+          # accessible by integration" (GitHub's default make_latest="legacy" is used instead).
           files: "./artifacts/**"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
