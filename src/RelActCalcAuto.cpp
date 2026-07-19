@@ -5794,11 +5794,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
 #endif
     ceres_options.max_num_iterations = 50000;
-#ifndef NDEBUG
-    ceres_options.max_solver_time_in_seconds = 600.0; //10 minutes!
-#else
-    ceres_options.max_solver_time_in_seconds = 120.0;
-#endif
+    // Wall-clock time limits are a *pathological-case* backstop only; the deterministic terminator
+    //  is `max_num_iterations` (above).  A wall-clock cap that trips during normal optimization makes
+    //  the solve stop after a load-dependent number of iterations, which is a source of run-to-run
+    //  eval nondeterminism (intermittent NO_CONVERGENCE) - so keep the cap large enough that it is
+    //  never reached by a legitimate fit.  [determinism fix 2026-07-19]
+    ceres_options.max_solver_time_in_seconds = 1200.0; //20 minutes; pathological runaway only
 
     // Changing function_tolerance from 1e-9 to 1e-7, and using initial_trust_region_radius=1E5, and use_nonmonotonic_steps=false
     //  - 52.88% enrich, 261 function calls, 64 iterations, Chi2=0.664167 (terminate due to function tol reached)
@@ -5958,12 +5959,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       //  give them a small time/iteration budget so they cannot each burn the full main-solve
       //  budget (review A14). The main solve below keeps the full `ceres_options`.
       ceres::Solver::Options pre_fit_options = ceres_options;
+      // The pre-fit's "small budget" is enforced by its (deterministic) iteration cap of 300; the
+      //  wall-clock cap is only a pathological backstop.  The former 20 s wall cap was the dominant
+      //  source of eval nondeterminism: a NORM-heavy pre-fit would hit 20 s after a load-dependent
+      //  number of iterations (observed 79-252 for the same 20 s), stopping at a different point each
+      //  run and shifting the main solve's start => intermittent NO_CONVERGENCE.  [determinism fix 2026-07-19]
       pre_fit_options.max_num_iterations = 300;
-#ifndef NDEBUG
-      pre_fit_options.max_solver_time_in_seconds = 80.0;   // ~4x the release cap for slow debug builds
-#else
-      pre_fit_options.max_solver_time_in_seconds = 20.0;
-#endif
+      pre_fit_options.max_solver_time_in_seconds = 1200.0; //pathological runaway only; 300 iters finishes far sooner
 
       const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, pre_fit_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
         const vector<double> orig_parameters = parameters;

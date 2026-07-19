@@ -2138,11 +2138,10 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     //  evaluated.
     //  Also, have not checked dependence on number of peaks at all
     options.max_num_iterations = (coFitPeaks.size() > 2) ? 1000 : 500;
-#ifndef NDEBUG
-    options.max_solver_time_in_seconds = (coFitPeaks.size() > 2) ? 180.0 : 120;
-#else
-    options.max_solver_time_in_seconds = (coFitPeaks.size() > 2) ? 30.0 : 150.0;
-#endif
+    // Wall-clock cap is a pathological-case backstop only; the deterministic terminator is
+    //  max_num_iterations.  A cap that trips during a normal fit stops after a load-dependent
+    //  iteration count => run-to-run nondeterminism, so keep it large.  [determinism fix 2026-07-19]
+    options.max_solver_time_in_seconds = 1200.0;
 
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     options.minimizer_progress_to_stdout = true;
@@ -3008,11 +3007,10 @@ static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, cons
   options.min_trust_region_radius = 1e-32;
   options.min_relative_decrease = 1e-3;
   options.max_num_iterations = (total_num_peaks > 2) ? 1000 : 500;
-#ifndef NDEBUG
-  options.max_solver_time_in_seconds = (total_num_peaks > 2) ? 180.0 : 120;
-#else
-  options.max_solver_time_in_seconds = (total_num_peaks > 2) ? 30.0 : 15.0;
-#endif
+  // Wall-clock cap is a pathological-case backstop only; the deterministic terminator is
+  //  max_num_iterations.  A cap that trips during a normal fit stops after a load-dependent
+  //  iteration count => run-to-run nondeterminism, so keep it large.  [determinism fix 2026-07-19]
+  options.max_solver_time_in_seconds = 1200.0;
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
   options.minimizer_progress_to_stdout = true;
   options.logging_type = ceres::PER_MINIMIZER_ITERATION;

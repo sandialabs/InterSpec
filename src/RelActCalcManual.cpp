@@ -5146,7 +5146,10 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   ceres_options.minimizer_progress_to_stdout = true;
 #endif
   ceres_options.max_num_iterations = 1000;
-  ceres_options.max_solver_time_in_seconds = 60.0;
+  // Wall-clock cap is a pathological-case backstop only; the deterministic terminator is
+  //  max_num_iterations.  A cap that trips during a normal solve stops after a load-dependent
+  //  iteration count => run-to-run nondeterminism, so keep it large.  [determinism fix 2026-07-19]
+  ceres_options.max_solver_time_in_seconds = 1200.0;
   //ceres_options.min_trust_region_radius = 1e-10;
   
   ceres_options.use_nonmonotonic_steps = true;
@@ -5176,7 +5179,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   try
   {
     ceres::Solve(ceres_options, &problem, &summary);
-    
+
     solution.m_num_function_eval_solution = static_cast<int>( cost_functor->m_ncalls );
     
     switch( summary.termination_type )
