@@ -968,10 +968,18 @@ BOOST_AUTO_TEST_CASE( response_angle_series_json )
   BOOST_REQUIRE( json != "null" );
 
   // Structural sanity (cheap string checks - the client parses the full JSON).
+  //  Angles are 0, 22.5, 45 and the response's max modeled angle (near grazing,
+  //  ~89 deg for a transfer response's eta grazing edge) - not a hard 90, and
+  //  62.5 was dropped.
   BOOST_CHECK( json.find("\"onAxisSolidAngleFraction\"") != string::npos );
   BOOST_CHECK( json.find("\"thetaDeg\":0") != string::npos );
-  BOOST_CHECK( json.find("\"thetaDeg\":90") != string::npos );
-  BOOST_CHECK( json.find("\"thetaDeg\":62.5") != string::npos );
+  BOOST_CHECK( json.find("\"thetaDeg\":22.5") != string::npos );
+  BOOST_CHECK( json.find("\"thetaDeg\":45") != string::npos );
+  BOOST_CHECK( json.find("\"thetaDeg\":62.5") == string::npos );
+  size_t n_series = 0;
+  for( size_t p = json.find("\"thetaDeg\""); p != string::npos; p = json.find("\"thetaDeg\"", p+1) )
+    ++n_series;
+  BOOST_CHECK_EQUAL( n_series, 4u );
 
   // Every angle evaluates to a finite, positive absolute efficiency (angular
   //  ordering itself is not asserted - oblique incidence can raise FEP

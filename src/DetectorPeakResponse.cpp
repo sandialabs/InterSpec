@@ -6093,7 +6093,18 @@ std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance
                         ? fractionalSolidAngle( diam, dist + detectorSetback() )
                         : 0.0;
 
-  const std::vector<double> angles_deg{ 0.0, 22.5, 45.0, 62.5, 90.0 };
+  // Largest angle the response's angular model actually resolves (the grazing
+  //  edge of the eta table), rather than a hard 90 degrees which is edge-on
+  //  and only reached by extrapolation/clamping.
+  double max_deg = 85.0;
+  const std::vector<double> &cts = m_ceeloResponse->eta_fep.cos_thetas;
+  if( !cts.empty() )
+  {
+    const double ct = std::min( 1.0, std::max( -1.0, cts.front() ) );  //ascending: front = smallest
+    max_deg = std::acos( ct ) * (180.0 / M_PI);
+  }
+
+  const std::vector<double> angles_deg{ 0.0, 22.5, 45.0, max_deg };
   const int n_energy = 80;
 
   std::stringstream json;

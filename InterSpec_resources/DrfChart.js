@@ -626,7 +626,9 @@ DrfChart.prototype.updateAngleSeries = function() {
     return (Math.abs(l - Math.round(l)) < 1e-6) ? d.toExponential(0) : "";
   });
   this.leftYAxisGroup.call(this.leftYAxis);
-  this.leftYAxisLabel.text(this.effMode === "intrinsic" ? "Intrinsic efficiency" : "Absolute efficiency");
+  this.leftYAxisLabel.text(this.effMode === "intrinsic"
+      ? "Intrinsic efficiency"
+      : ("Absolute efficiency @ " + drfChartFormatSigFigs(this.responseSeries.distanceCm, 3) + " cm"));
   this.adjustLeftMargin();
 
   const line = d3.svg.line()
@@ -665,20 +667,26 @@ DrfChart.prototype.drawAngleLegend = function(series) {
   const lg = this.angleLegend;
   lg.selectAll("*").remove();
 
+  const fmtDeg = d => (Math.abs(d - Math.round(d)) < 0.05) ? d.toFixed(0) : d.toFixed(1);
   const rows = series.map(s => ({
-    color: s.color,
-    text: s.thetaDeg + "°" + ((s.worstFlag && s.worstFlag !== "ok") ? " (" + s.worstFlag + ")" : "")
+    color: s.color, cls: null,
+    text: fmtDeg(s.thetaDeg) + "°" + ((s.worstFlag && s.worstFlag !== "ok") ? " (" + s.worstFlag + ")" : "")
   }));
-  rows.push({ color: null, text: (this.effMode === "intrinsic" ? "intrinsic eff." : "absolute eff. @ "
-              + drfChartFormatSigFigs(this.responseSeries.distanceCm, 3) + " cm") });
+  // The dashed flat curve (drawn only in the intrinsic view) is the angle-flat
+  // far-field / infinite-plane reference; give it a matching dashed swatch.
+  if (this.effMode === "intrinsic")
+    rows.push({ color: null, cls: "efficiency-line drf-far-ref", text: "far-field (∞)" });
 
   const x = this.chartAreaWidth - 150, y0 = 6, dy = 14;
   const g = lg.append("g").attr("transform", `translate(${x},${y0})`);
   rows.forEach(function(r, i){
     const row = g.append("g").attr("transform", `translate(0,${i*dy})`);
-    if (r.color)
-      row.append("line").attr("x1", 0).attr("x2", 16).attr("y1", 4).attr("y2", 4)
-        .style("stroke", r.color).style("stroke-width", "2px");
+    const swatch = row.append("line").attr("x1", 0).attr("x2", 16).attr("y1", 4).attr("y2", 4)
+      .style("stroke-width", "2px");
+    if (r.cls)
+      swatch.attr("class", r.cls);          // inherit line color + dash from CSS
+    else
+      swatch.style("stroke", r.color);
     row.append("text").attr("x", 20).attr("y", 8)
       .attr("class", "drf-angle-legend-text").text(r.text);
   });

@@ -127,10 +127,11 @@
   <message id="mmr-chart-distance">at distance:</message>
   <message id="mmr-tt-chart-distance">&lt;p&gt;Source-to-detector distance for the &lt;b&gt;absolute&lt;/b&gt;
     efficiency curves (per emitted gamma).  Each curve is the full-energy-peak
-    efficiency versus energy at a source angle of 0&#176;, 22.5&#176;, 45&#176;,
-    62.5&#176; and 90&#176; from the detector axis; the dashed line is the
-    angle-flat far-field (infinite-plane) reference.  The shaded band around each
-    curve is its 1-sigma uncertainty, and a curve whose legend is annotated
+    efficiency versus energy at a source angle of 0&#176;, 22.5&#176;, 45&#176; and
+    the largest angle the response models (near grazing) from the detector axis.
+    In the &lt;b&gt;intrinsic&lt;/b&gt; view the dashed line is the angle-flat far-field
+    (infinite-plane) reference.  The shaded band around each curve is its 1-sigma
+    uncertainty, and a curve whose legend is annotated
     (e.g. &quot;near-field unmodeled&quot;) is outside the response&apos;s validated
     regime at this distance.  Intrinsic efficiency (per gamma striking the face)
     is distance-independent in the far field.&lt;/p&gt;</message>
