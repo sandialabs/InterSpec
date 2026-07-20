@@ -34,8 +34,14 @@ jobs:
         with:
           submodules: 'true'
 
-      - name: Setup Dev Env 
+      - name: Setup Dev Env
         uses: ./.github/actions/setup_dev_env
+
+      # Fail fast if the curated SBOM component list has drifted from the pinned dependency
+      # versions (target/patches/dep_build_msvc2022.bat) or a listed submodule/vendored path.
+      - name: Validate SBOM component list
+        shell: pwsh
+        run: python "${{ github.workspace }}/target/wxWidgets/sbom/make_sbom.py" --check --repo "${{ github.workspace }}"
 
       - name: Cache wxWidgets config/build
         id: cache-wx-build
@@ -73,6 +79,13 @@ jobs:
           echo "No testing has been performed on this build." >> $notes
           echo "InterSpec code git has SHA: ${{ github.sha }}" >> $notes
           echo "The Edge browser runtime is required to be installed to run; this will typically already be installed on Windows 10, and may be installed on Windows 7, but this hasnt been tested." >> $notes
+          # Generate a CycloneDX SBOM into the install dir so it ships inside the .zip (and the
+          # uploaded install-dir artifact), and thus flows to the "Development Build" release.
+          python "${{ github.workspace }}/target/wxWidgets/sbom/make_sbom.py" `
+            --repo "${{ github.workspace }}" `
+            --git-sha "${{ github.sha }}" `
+            --timestamp "$(Get-Date -AsUTC -Format o)" `
+            --output "InterSpec_app_${{ runner.os }}_WebView_latest/InterSpec_sbom.cdx.json"
           echo "Before zipping, files present for the bbuild are:"
           ls
           Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
