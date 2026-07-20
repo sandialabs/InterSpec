@@ -1,0 +1,155 @@
+<div align="center">
+   <h1 id="energy-cal-guess-gain"><b>Guess Gain</b></h1>
+   <hr />
+</div>
+
+<p>
+  The <b>Guess Gain</b> tool tries to automatically work out a reasonable energy calibration for a
+  spectrum that arrived with <em>no</em> energy calibration, or with a calibration that is clearly
+  wrong.  This most often happens with bare HPGe data that has many peaks but no source or
+  calibration information &mdash; the sort of file where you would normally have to hunt, by hand,
+  for two peaks a familiar distance apart before anything else falls into place.
+</p>
+<p>
+  The tool is opened from the <b>Energy Calibration</b> tab, under the <b>More Actions</b> column.
+  It only ever <em>proposes</em> calibrations; nothing is changed until you select a candidate and
+  press <b>Use</b>.  The applied change is undoable (Ctrl-Z / Cmd-Z).
+</p>
+
+
+<h4>How to use it</h4>
+<ol style="text-align: left; margin-left: 10px;">
+  <li>
+    Open the tool.  It immediately searches the displayed foreground spectrum and fills the table
+    with a ranked list of candidate calibrations.
+  </li>
+  <li>
+    Click a row to preview that calibration on the chart at the top of the window.  The reference
+    lines of the nuclides that candidate implies are drawn over the previewed spectrum, so you can
+    see at a glance whether the peaks line up.
+  </li>
+  <li>
+    If you already suspect one or more nuclides are present, type each into the
+    <b>Candidate nuclide</b> box and press <b>Add</b>.  The search re-runs with those nuclides
+    given extra weight, which usually sharpens the ranking considerably.
+  </li>
+  <li>
+    When a candidate looks right, press <b>Use</b>.  The calibration is applied to the spectrum,
+    the peaks move with it, and the Reference Photopeaks display is switched on for the matched
+    nuclide(s) so you can continue checking the fit.
+  </li>
+</ol>
+<p>
+  The table columns are: the rank, the fitted <b>gain</b> (keV/channel) and <b>offset</b> (keV) of
+  the linear calibration, the fraction of the significant peaks that the candidate
+  <b>explains</b>, the <b>implied nuclides</b>, and the <b>strategy</b> that first suggested that
+  candidate (see below).  A banner warns when even the best candidate explains the spectrum only
+  weakly &mdash; treat those as rough starting points rather than answers.
+</p>
+
+
+<h4>What it tries</h4>
+<p>
+  The tool first finds candidate peaks purely in <em>channel</em> space (it does not trust
+  whatever calibration, if any, the file carried).  It then generates a large number of candidate
+  linear calibrations (offset&nbsp;+&nbsp;gain) from several complementary strategies, and scores
+  every one of them against a library of known lines:
+</p>
+<table style="text-align: left; margin-left: 10px;">
+  <tr>
+    <td style="vertical-align:top; padding-right:12px;"><b>Peak pairs</b></td>
+    <td>
+      For every pair of strong peaks, the <em>ratio</em> of their channel positions is compared to
+      the energy ratios of pairs of known lines.  When the offset is near zero this ratio does not
+      depend on the gain, so a matching pair immediately fixes the gain.  This single mechanism
+      captures the familiar &ldquo;two peaks a known distance apart&rdquo; approach, fluorescence
+      x-ray K&alpha;/K&beta; groups, and taking the highest peak as a specific line.
+    </td>
+  </tr>
+  <tr>
+    <td style="vertical-align:top; padding-right:12px;"><b>Single anchors</b></td>
+    <td>
+      The highest-energy peak is tried as 2614.5&nbsp;keV (Tl-208) or 1460.8&nbsp;keV (K-40); the
+      largest peak as K-40, Cs-137, or U-235; and any peak that is anomalously <em>wide</em>
+      (for HPGe) as the Doppler-broadened 511&nbsp;keV annihilation line.
+    </td>
+  </tr>
+  <tr>
+    <td style="vertical-align:top; padding-right:12px;"><b>Endpoints &amp; common gains</b></td>
+    <td>
+      The right-hand edge of the data is placed at a series of common full-scale energies
+      (e.g.&nbsp;3&nbsp;MeV, 8&nbsp;MeV), and a set of common gains (e.g.&nbsp;1&nbsp;keV/channel)
+      is tried directly.
+    </td>
+  </tr>
+  <tr>
+    <td style="vertical-align:top; padding-right:12px;"><b>Gain scan</b></td>
+    <td>
+      As a backstop, the gain is scanned across the full plausible range in fine steps, so that
+      even a spectrum with a single genuine line can still be caught.
+    </td>
+  </tr>
+</table>
+<p>
+  The line library is built from common NORM, industrial, medical, and special-nuclear-material
+  sources (K-40, the Th-232 / U-238 / U-235 chains, Cs-137, Co-60, Ba-133, Eu-152, Am-241, the
+  Np / Pu isotopes, and others), the fluorescence x-rays of heavy absorbers (W, Pb, Bi, Th, U),
+  the 511&nbsp;keV annihilation line, and any nuclides you add as candidates.
+</p>
+
+
+<h4>How candidates are scored</h4>
+<p>
+  Every hypothesis is judged by one common measure, so unrelated strategies compete on equal
+  footing.  The score rewards:
+</p>
+<ul style="text-align: left; margin-left: 10px;">
+  <li>
+    <b>How much of the spectrum it explains</b> &mdash; the total significance of the peaks matched
+    to a known line, weighted so that explaining <em>all</em> the strong peaks counts for much more
+    than explaining a few.
+  </li>
+  <li>
+    <b>How unlikely each match is to be an accident</b> &mdash; a match in a region crowded with
+    library lines proves little, so it is discounted by the local line density.  This is what
+    prevents a tiny gain from &ldquo;explaining&rdquo; everything by squeezing the whole library
+    below the first few channels.
+  </li>
+  <li>
+    <b>Nuclide self-consistency</b> &mdash; if a nuclide is matched, its <em>other</em> strong
+    lines should also be present.  A candidate that claims Tl-208 from its 583&nbsp;keV line but
+    leaves the 2614&nbsp;keV region empty is penalized.
+  </li>
+  <li>
+    <b>Physically plausible peak widths</b> &mdash; a match implying a peak far narrower than the
+    detector could possibly produce is rejected outright (this, too, kills degenerate small-gain
+    hypotheses); the 511&nbsp;keV line is instead <em>expected</em> to be broad.
+  </li>
+</ul>
+<p>
+  The best-scoring candidates are then refined with a proper linear least-squares fit to their
+  matched peak/line pairs (freeing the offset once at least three lines are matched), re-scored,
+  de-duplicated, and presented in the table.
+</p>
+
+
+<h4>Notes &amp; limitations</h4>
+<ul style="text-align: left; margin-left: 10px;">
+  <li>
+    Only a linear (offset&nbsp;+&nbsp;gain) calibration is produced.  Any residual non-linearity is
+    left for you to correct afterward with the normal energy-calibration controls or a
+    &ldquo;fit coefficients from peaks&rdquo; pass.
+  </li>
+  <li>
+    The tool assumes the full-scale energy of the spectrum is at least a few hundred keV and no
+    more than roughly 13&nbsp;MeV.
+  </li>
+  <li>
+    Low-resolution detectors (NaI, CZT) have few, broad peaks and give more ambiguous results; the
+    reported confidence will (correctly) be lower, and adding candidate nuclides helps most here.
+  </li>
+  <li>
+    Providing the nuclide(s) you suspect are present is the single most effective way to improve
+    the guess.
+  </li>
+</ul>

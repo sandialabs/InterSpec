@@ -1,0 +1,153 @@
+/* Styles for EnergyCalGainGuess - the energy-cal "Guess Gain" dialog content */
+
+/* Main container: flex column, chart fills top, controls fixed at bottom */
+.EnergyCalGainGuess
+{
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Chart fills the remaining space above the controls */
+.GainGuessChart
+{
+  flex: 1 1 0px;
+  min-height: 175px;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Controls area below the chart - does not grow */
+.GainGuessControls
+{
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  border-top: 1px solid var(--interspec-border-color, #e1e1e1);
+  gap: 6px;
+  overflow-y: auto;
+  max-height: 55%;
+}
+
+.GainGuessRow
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.GainGuessNuclideEdit
+{
+  width: 9em;
+}
+
+/* Holder for the added candidate-nuclide chips */
+.GainGuessChips
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Removable candidate-nuclide chips */
+.GainGuessChip
+{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--interspec-border-color, #c4c4c4);
+  border-radius: 9px;
+  background: var(--interspec-input-background, #f2f2f2);
+}
+
+.GainGuessChipClose
+{
+  cursor: pointer;
+  font-weight: bold;
+  padding: 0px 2px;
+}
+
+.GainGuessChipClose:hover
+{
+  color: #c00;   /* semantic danger red - reads in light and dark */
+}
+
+/* Fixed-height, scrollable, bordered frame around the candidate table */
+.GainGuessTableWrap
+{
+  height: 165px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--interspec-border-color, #e1e1e1);
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+
+/* Result table */
+.GainGuessTable
+{
+  border-collapse: collapse;
+  width: 100%;
+  color: var(--interspec-text-color, black);
+}
+
+.GainGuessTable td
+{
+  padding: 2px 10px;
+  border-bottom: 1px solid var(--interspec-border-color, #e1e1e1);
+  white-space: nowrap;
+}
+
+/* Sticky header row so it stays visible while the body scrolls */
+.GainGuessTable .GainGuessHeaderRow td
+{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-weight: bold;
+  background: var(--interspec-input-background, #f2f2f2);
+  border-bottom: 2px solid var(--interspec-border-color, #c4c4c4);
+}
+
+.GainGuessResultRow
+{
+  cursor: pointer;
+}
+
+.GainGuessResultRow:hover td
+{
+  background: rgba(125, 175, 225, 0.15);   /* semantic accent blue */
+}
+
+.GainGuessResultRow.selected td
+{
+  background: rgba(125, 175, 225, 0.35);
+}
+
+/* The implied-nuclides cell can be long - let it wrap */
+.GainGuessTable .GainGuessNucCell
+{
+  white-space: normal;
+}
+
+.GainGuessStatus
+{
+  font-style: italic;
+  padding: 2px 0px;
+  color: var(--interspec-text-color, black);
+}
+
+.GainGuessLowConfidence
+{
+  color: #c00;   /* semantic danger red */
+}

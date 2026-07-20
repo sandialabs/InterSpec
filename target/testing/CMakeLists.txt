@@ -366,6 +366,13 @@ add_test( NAME TEnergyCalGainMatch
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_EnergyCalGainGuess test_EnergyCalGainGuess.cpp )
+target_link_libraries( test_EnergyCalGainGuess PRIVATE InterSpecLib )
+add_test( NAME TEnergyCalGainGuess
+  COMMAND $<TARGET_FILE:test_EnergyCalGainGuess> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_PeakModel test_PeakModel.cpp )
 target_link_libraries( test_PeakModel PRIVATE InterSpecLib )
 add_test( NAME TPeakModel

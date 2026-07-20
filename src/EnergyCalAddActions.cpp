@@ -55,6 +55,7 @@
 #include "InterSpec/EnergyCalMultiFile.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalGainMatch.h"
+#include "InterSpec/EnergyCalGainGuess.h"
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/EnergyCalAddActions.h"
 
@@ -182,7 +183,7 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
                              const std::vector<MeasToApplyCoefChangeTo> &measToChange,
                              EnergyCalTool *calibrator )
   : AuxWindow( "&nbsp",
-      (actionType == MoreActionsIndex::GainMatch)
+      ((actionType == MoreActionsIndex::GainMatch) || (actionType == MoreActionsIndex::GuessGain))
         ? (AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse
             | AuxWindowProperties::EnableResize)
         : (AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse) ),
@@ -236,6 +237,11 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
     case MoreActionsIndex::GainMatch:
       AuxWindow::setWindowTitle( WString::tr("ecaa-gain-match-title") );
       contents()->addNew<EnergyCalGainMatch>( m_calibrator, this );
+      break;
+
+    case MoreActionsIndex::GuessGain:
+      AuxWindow::setWindowTitle( WString::tr("ecaa-guess-gain-title") );
+      contents()->addNew<EnergyCalGainGuess>( m_measToChange, m_calibrator, this );
       break;
 
     case MoreActionsIndex::NumMoreActionsIndex:

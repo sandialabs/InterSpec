@@ -1694,6 +1694,11 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
         tooltip = "ect-tt-gain-match";
         break;
 
+      case MoreActionsIndex::GuessGain:
+        label = "ect-guess-gain";
+        tooltip = "ect-tt-guess-gain";
+        break;
+
       case MoreActionsIndex::NumMoreActionsIndex:
         assert(0);
         break;
@@ -5446,6 +5451,12 @@ void EnergyCalTool::doRefreshFromFiles()
         aparent->setHidden( !show );
         break;
       }//case MoreActionsIndex::GainMatch:
+
+      case MoreActionsIndex::GuessGain:
+        // Useful whenever a foreground is loaded - not only for cal-less files, since a file
+        //  may also carry a *wrong* calibration.
+        aparent->setHidden( !specfiles[0] );
+        break;
 
       case MoreActionsIndex::NumMoreActionsIndex:
         break;

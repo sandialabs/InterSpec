@@ -74,7 +74,16 @@
         "id" : "energy-calibration",
         "title" : "Energy Calibration",
         "help-xml" : "energy_calibration_help.xml",
-        "keywords" : "Energy Calibration Tool Calibrate Adjust Offset Peaks Information Offset Linear Quadratic Normalize"
+        "keywords" : "Energy Calibration Tool Calibrate Adjust Offset Peaks Information Offset Linear Quadratic Normalize",
+        "children":
+        [
+          {
+            "id" : "energy-cal-guess-gain",
+            "title" : "Guess Gain",
+            "help-xml" : "energy_cal_guess_gain_help.xml",
+            "keywords" : "Guess Gain Energy Calibration Uncalibrated Unknown Automatic Peak Search Match Nuclide Offset Gain HPGe"
+          }
+        ]
       },
       {
         "id" : "rel-act-manual",

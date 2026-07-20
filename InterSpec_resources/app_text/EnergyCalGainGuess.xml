@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecgg- is short for EnergyCalGainGuess -->
+  <message id="ecgg-searching">Searching for a plausible energy calibration&#8230;</message>
+  <message id="ecgg-no-results">No plausible calibration found - try adding candidate nuclides you suspect may be present.</message>
+  <message id="ecgg-low-confidence">None of the candidates confidently explain the spectrum - treat these as rough starting points.</message>
+  <message id="ecgg-num-results">Select a candidate calibration to preview it; &#8220;Use&#8221; applies it to the spectrum.</message>
+  <message id="ecgg-nuclide-hint-label">Candidate nuclide:</message>
+  <message id="ecgg-add">Add</message>
+  <message id="ecgg-unknown-nuclide">Could not interpret &#8220;{1}&#8221; as a nuclide.</message>
+  <message id="ecgg-col-rank">#</message>
+  <message id="ecgg-col-gain">Gain (keV/chnl)</message>
+  <message id="ecgg-col-offset">Offset (keV)</message>
+  <message id="ecgg-col-explained">Peaks explained</message>
+  <message id="ecgg-col-nuclides">Implied nuclides</message>
+  <message id="ecgg-col-strategy">Strategy</message>
+  <message id="ecgg-strategy-pair">Peak pair {1}/{2} keV</message>
+  <message id="ecgg-strategy-anchor">Peak at {1} keV</message>
+  <message id="ecgg-strategy-wide511">Wide peak as 511 keV</message>
+  <message id="ecgg-strategy-endpoint">Spectrum ends at {1} keV</message>
+  <message id="ecgg-strategy-common-gain">Common gain</message>
+  <message id="ecgg-strategy-scan">Gain scan</message>
+  <message id="ecgg-apply-fail">Could not apply the calibration: {1}</message>
+  <message id="ecgg-applied-toast">Applied guessed energy calibration; reference lines for {1} are shown - please review the peak line-up.</message>
+</messages>

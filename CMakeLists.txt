@@ -358,6 +358,7 @@ set(sources
     src/EnergyCalPreserveWindow.cpp
     src/EnergyCalMultiFile.cpp
     src/EnergyCalGainMatch.cpp
+    src/EnergyCalGainGuess.cpp
     src/FitPeaksForNuclides.cpp
     src/FitPeaksForNuclidesGui.cpp
     src/SimpleDialog.cpp
@@ -494,6 +495,7 @@ set(headers
     InterSpec/EnergyCalPreserveWindow.h
     InterSpec/EnergyCalMultiFile.h
     InterSpec/EnergyCalGainMatch.h
+    InterSpec/EnergyCalGainGuess.h
     InterSpec/FitPeaksForNuclides.h
     InterSpec/FitPeaksForNuclidesGui.h
     InterSpec/SimpleDialog.h

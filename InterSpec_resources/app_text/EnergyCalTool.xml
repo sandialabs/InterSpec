@@ -25,6 +25,13 @@
     foreground/background/secondary spectra) so they are consistent with each other, so
     peaks dont get doubled-up or smeared out when the detectors are summed for display.
   </message>
+  <message id="ect-guess-gain">Guess Gain...</message>
+  <message id="ect-tt-guess-gain">
+    Tries to automatically determine a reasonable energy calibration (offset and gain) for a
+    spectrum that arrived with no, or an incorrect, energy calibration - by searching for
+    peaks and matching them against the characteristic lines of common (and user-suggested)
+    nuclides, fluorescence x-rays, the 511 keV annihilation line, and common gain values.
+  </message>
   <message id="ect-tt-CALp">Download a .CALp file that contains the current energy calibration.
     You can drag-n-drop this file back onto InterSpec later to re-use this energy calibration.
     This is especially useful if you often use data from a detector whose calibration needs to be
