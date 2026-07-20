@@ -25,11 +25,15 @@
 #include <mutex>
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <random>
+#include <set>
 #include <string>
 #include <vector>
 #include <map>
 #include <cmath>
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -40,6 +44,7 @@
 #include <iostream>
 #include <algorithm>
 #include <functional>
+#include <stdexcept>
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -90,6 +95,230 @@ PeakFitUtils::CoarseResolutionType sm_base_det_type = PeakFitUtils::CoarseResolu
 std::string sm_checkpoint_name;
 std::string sm_resume_path;
 std::string sm_checkpoint_options_summary;
+
+
+namespace ReportDetail
+{
+std::string canonical_spectrum_key( const PrecomputedNuclideData &pd )
+{
+  if( !pd.src_info )
+    return "missing-spectrum-metadata";
+
+  const DataSrcInfo &info = *pd.src_info;
+  return info.detector_name + "/" + info.location_name + "/" + info.live_time_name
+      + "/" + info.src_info.src_name + "|file=" + info.src_info.file_base_path;
+}
+
+
+std::string stable_spectrum_id( const PrecomputedNuclideData &pd )
+{
+  const std::string key = canonical_spectrum_key( pd );
+  uint64_t hash = 14695981039346656037ULL;
+  for( const unsigned char c : key )
+  {
+    hash ^= static_cast<uint64_t>( c );
+    hash *= 1099511628211ULL;
+  }
+
+  std::string slug;
+  slug.reserve( key.size() );
+  bool last_was_dash = false;
+  for( const unsigned char c : key )
+  {
+    const bool allowed = std::isalnum( c );
+    if( allowed )
+    {
+      slug.push_back( static_cast<char>(std::tolower(c)) );
+      last_was_dash = false;
+    }else if( !last_was_dash )
+    {
+      slug.push_back( '-' );
+      last_was_dash = true;
+    }
+  }
+  while( !slug.empty() && slug.back() == '-' )
+    slug.pop_back();
+  if( slug.size() > 52 )
+    slug.resize( 52 );
+
+  std::ostringstream answer;
+  answer << "spectrum-" << std::hex << std::setw(16) << std::setfill('0') << hash
+         << "-" << slug;
+  return answer.str();
+}
+
+
+std::string html_escape( const std::string &text )
+{
+  std::string answer;
+  answer.reserve( text.size() + text.size()/8 );
+  for( const char c : text )
+  {
+    switch( c )
+    {
+      case '&':  answer += "&amp;";  break;
+      case '<':  answer += "&lt;";   break;
+      case '>':  answer += "&gt;";   break;
+      case '"': answer += "&quot;"; break;
+      case '\'': answer += "&#39;";  break;
+      default:   answer.push_back( c ); break;
+    }
+  }
+  return answer;
+}
+
+
+size_t roi_channel_count( const SpecUtils::Measurement &measurement,
+                          const double lower_energy, const double upper_energy )
+{
+  if( (upper_energy <= lower_energy) || (measurement.num_gamma_channels() == 0) )
+    return 0;
+  const size_t lower_channel = measurement.find_gamma_channel( static_cast<float>(lower_energy) );
+  const size_t upper_channel = measurement.find_gamma_channel( static_cast<float>(upper_energy) );
+  return (upper_channel >= lower_channel) ? (1 + upper_channel - lower_channel) : 0;
+}
+
+
+double roi_width_in_fwhm( const double lower_energy, const double upper_energy,
+                          const double representative_fwhm )
+{
+  return ((upper_energy > lower_energy) && (representative_fwhm > 0.0))
+    ? ((upper_energy - lower_energy) / representative_fwhm) : 0.0;
+}
+
+
+void validate_evaluation_coverage( const size_t selected_spectra,
+                                   const ConfigEvaluation &evaluation )
+{
+  if( evaluation.spectra.size() != selected_spectra )
+    throw std::runtime_error( "Evaluation does not contain one record per selected spectrum" );
+  if( (evaluation.successes + evaluation.legitimate_empties
+       + evaluation.mechanical_failures) != selected_spectra )
+    throw std::runtime_error( "Evaluation status counts do not cover every selected spectrum" );
+  std::set<std::string> spectrum_ids;
+  std::set<std::string> anchor_ids;
+  for( const SpectrumEvaluation &spectrum : evaluation.spectra )
+  {
+    if( spectrum.spectrum_id.empty() || spectrum.anchor_id.empty() )
+      throw std::runtime_error( "Evaluation contains a spectrum without stable identifiers" );
+    if( !spectrum_ids.insert(spectrum.spectrum_id).second
+        || !anchor_ids.insert(spectrum.anchor_id).second )
+      throw std::runtime_error( "Evaluation contains duplicate spectrum identifiers" );
+  }
+}
+
+
+FitAccuracyBreakdown score_observable_peaks(
+  const PrecomputedNuclideData &pd,
+  const std::vector<PeakDef> &observable_peaks )
+{
+  constexpr double num_sigma_contribution = 1.5;
+  const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
+  const std::vector<ExpectedPhotopeakInfo> scoring_peaks
+    = PeakFitImproveData::filter_photopeaks_for_scoring(
+        pd.src_info->expected_signal_photopeaks, det_type );
+
+  CombinedPeakFitScore combined_score;
+  combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
+    observable_peaks, scoring_peaks, num_sigma_contribution );
+  combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
+    observable_peaks, scoring_peaks, num_sigma_contribution, det_type );
+  combined_score.candidate_peak_score
+    = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
+        observable_peaks, scoring_peaks, det_type );
+  CandidatePeak_GA::correct_score_for_escape_peaks(
+    combined_score.candidate_peak_score, scoring_peaks );
+
+  FitAccuracyBreakdown answer;
+  answer.area_cost = combined_score.final_fit_score.total_weight;
+  answer.find_reward = combined_score.initial_fit_weights.find_weight;
+  answer.candidate_reward = combined_score.candidate_peak_score.score;
+  answer.miss_fraction = PeakFitImproveData::missed_def_wanted_area_fraction(
+    scoring_peaks, combined_score.candidate_peak_score.def_expected_but_not_detected,
+    det_type );
+  answer.missed_definitely_wanted
+    = combined_score.candidate_peak_score.num_def_wanted_not_found;
+  answer.extra_peaks = combined_score.candidate_peak_score.num_extra_peaks;
+  answer.cost = answer.area_cost - answer.find_reward - answer.candidate_reward
+      + sm_miss_penalty_weight*answer.miss_fraction;
+  return answer;
+}
+
+
+void run_self_tests()
+{
+  const std::string escaped = html_escape( "a<&>\"'b" );
+  if( escaped != "a&lt;&amp;&gt;&quot;&#39;b" )
+    throw std::runtime_error( "HTML escaping regression" );
+
+  DataSrcInfo info;
+  info.detector_name = "Detector <A>";
+  info.location_name = "Location";
+  info.live_time_name = "300_seconds";
+  info.src_info.src_name = "Cs137_Sh";
+  PrecomputedNuclideData pd;
+  pd.src_info = &info;
+  const std::string first = stable_spectrum_id( pd );
+  const std::string second = stable_spectrum_id( pd );
+  if( first != second || first.find("spectrum-") != 0 )
+    throw std::runtime_error( "stable spectrum ID regression" );
+
+  DataSrcInfo other = info;
+  other.location_name = "Other";
+  pd.src_info = &other;
+  if( stable_spectrum_id(pd) == first )
+    throw std::runtime_error( "stable spectrum ID collision in fixture" );
+
+  if( std::fabs(roi_width_in_fwhm(100.0, 112.0, 3.0) - 4.0) > 1.0e-12
+      || roi_width_in_fwhm(112.0, 100.0, 3.0) != 0.0 )
+    throw std::runtime_error( "ROI FWHM measurement regression" );
+
+  // The no-peaks path is the authoritative metric used for both failures and valid empties.
+  pd.src_info = &info;
+  info.det_type = PeakFitUtils::CoarseResolutionType::High;
+  const FitAccuracyBreakdown empty = score_observable_peaks( pd, {} );
+  if( empty.cost != empty.area_cost - empty.find_reward - empty.candidate_reward
+        + sm_miss_penalty_weight*empty.miss_fraction )
+    throw std::runtime_error( "objective component consistency regression" );
+
+  ConfigEvaluation coverage;
+  coverage.spectra.resize( 3 );
+  coverage.spectra[0].spectrum_id = "success";
+  coverage.spectra[0].anchor_id = "success-anchor";
+  coverage.spectra[1].spectrum_id = "empty";
+  coverage.spectra[1].anchor_id = "empty-anchor";
+  coverage.spectra[1].legitimate_empty = true;
+  coverage.spectra[2].spectrum_id = "failure";
+  coverage.spectra[2].anchor_id = "failure-anchor";
+  coverage.spectra[2].mechanical_failure = true;
+  coverage.successes = 1;
+  coverage.legitimate_empties = 1;
+  coverage.mechanical_failures = 1;
+  validate_evaluation_coverage( 3, coverage );
+  ConfigEvaluation duplicate = coverage;
+  duplicate.spectra[2].anchor_id = duplicate.spectra[1].anchor_id;
+  bool rejected_duplicate = false;
+  try
+  {
+    validate_evaluation_coverage( 3, duplicate );
+  }catch( const std::exception & )
+  {
+    rejected_duplicate = true;
+  }
+  if( !rejected_duplicate )
+    throw std::runtime_error( "duplicate report anchor was not rejected" );
+  bool rejected_missing = false;
+  try
+  {
+    validate_evaluation_coverage( 4, coverage );
+  }catch( const std::exception & )
+  {
+    rejected_missing = true;
+  }
+  if( !rejected_missing )
+    throw std::runtime_error( "missing report spectrum was not rejected" );
+}
+}//namespace ReportDetail
 
 // Module-level state for the GA (following InitialFit_GA pattern).
 // The GA evaluator is wrapped to also return the foreground-only and raw
@@ -1164,14 +1393,967 @@ void SO_report_generation( int generation_number,
 }//SO_report_generation
 
 
+namespace
+{
+struct RoiReview
+{
+  const PeakContinuum *continuum = nullptr;
+  std::vector<PeakDef> peaks;
+  double lower = 0.0;
+  double upper = 0.0;
+  double representative_fwhm = 0.0;
+  double width_fwhm = 0.0;
+  size_t channels = 0;
+  double model_pearson_rms = 0.0;
+  double snip_continuum_rms = 0.0;
+};
+
+
+std::vector<RoiReview> review_rois( const PrecomputedNuclideData &pd,
+                                    const SpectrumEvaluation &evaluation )
+{
+  std::vector<RoiReview> answer;
+  if( !evaluation.has_fit_result || !pd.foreground )
+    return answer;
+
+  const PeakFitResult &result = evaluation.fit_result;
+  const std::vector<std::pair<const PeakContinuum *, std::vector<PeakDef>>> groups
+    = group_peaks_by_roi( result.fit_peaks );
+
+  FitPeaksForNuclides::detail::GlobalContinuumEstimate snip;
+  const std::shared_ptr<const DetectorPeakResponse> drf = result.solution.m_drf;
+  if( drf )
+  {
+    const std::function<double(double)> fwhm = [drf]( const double energy ) -> double {
+      return drf->peakResolutionFWHM( static_cast<float>(energy) );
+    };
+    snip = FitPeaksForNuclides::detail::make_global_continuum(
+      pd.foreground, fwhm, pd.det_type, pd.foreground->gamma_energy_min(),
+      pd.foreground->gamma_energy_max() );
+  }
+
+  for( const std::pair<const PeakContinuum *, std::vector<PeakDef>> &group : groups )
+  {
+    if( !group.first )
+      continue;
+    RoiReview roi;
+    roi.continuum = group.first;
+    roi.peaks = group.second;
+    roi.lower = group.first->lowerEnergy();
+    roi.upper = group.first->upperEnergy();
+    roi.channels = ReportDetail::roi_channel_count( *pd.foreground, roi.lower, roi.upper );
+
+    std::vector<double> fwhms;
+    for( const PeakDef &peak : roi.peaks )
+      if( peak.fwhm() > 0.0 )
+        fwhms.push_back( peak.fwhm() );
+    if( !fwhms.empty() )
+    {
+      std::sort( fwhms.begin(), fwhms.end() );
+      roi.representative_fwhm = fwhms[fwhms.size()/2];
+    }
+    roi.width_fwhm = ReportDetail::roi_width_in_fwhm(
+      roi.lower, roi.upper, roi.representative_fwhm );
+
+    const size_t first = pd.foreground->find_gamma_channel( static_cast<float>(roi.lower) );
+    const size_t last = pd.foreground->find_gamma_channel( static_cast<float>(roi.upper) );
+    std::vector<const PeakDef *> peak_ptrs;
+    for( const PeakDef &peak : roi.peaks )
+      peak_ptrs.push_back( &peak );
+    double model_sq = 0.0;
+    double snip_sq = 0.0;
+    size_t used = 0;
+    for( size_t channel = first;
+         channel <= last && channel < pd.foreground->num_gamma_channels(); ++channel )
+    {
+      const double lo = pd.foreground->gamma_channel_lower( channel );
+      const double hi = pd.foreground->gamma_channel_upper( channel );
+      const double data = pd.foreground->gamma_channel_content( channel );
+      const double cont = group.first->offset_integral(
+        lo, hi, pd.foreground, peak_ptrs.data(), peak_ptrs.size() );
+      double model = cont;
+      for( const PeakDef &peak : roi.peaks )
+        model += peak.gauss_integral( lo, hi );
+      const double variance = std::max( 1.0, model );
+      model_sq += (data - model)*(data - model) / variance;
+      if( snip.valid() && snip.snip )
+      {
+        const double snip_count = snip.snip->gamma_integral(
+          static_cast<float>(lo), static_cast<float>(hi) );
+        snip_sq += (cont - snip_count)*(cont - snip_count)
+            / std::max( 1.0, data );
+      }
+      used += 1;
+    }
+    if( used )
+    {
+      roi.model_pearson_rms = std::sqrt( model_sq / used );
+      if( snip.valid() )
+        roi.snip_continuum_rms = std::sqrt( snip_sq / used );
+    }
+    answer.push_back( std::move(roi) );
+  }
+  return answer;
+}
+
+
+bool objective_truth_match( const PeakDef &peak, const ExpectedPhotopeakInfo &truth )
+{
+  const double mean = peak.mean();
+  return ((mean > truth.roi_lower) && (mean < truth.roi_upper))
+      || (((mean + peak.sigma()) > truth.roi_lower)
+          && ((mean - peak.sigma()) < truth.roi_upper));
+}
+
+
+std::string background_mode_name( const BackgroundMode mode )
+{
+  switch( mode )
+  {
+    case BackgroundMode::BackgroundSubtracted: return "Supplied long background subtraction";
+    case BackgroundMode::NoBackground: return "Raw foreground; no supplied background";
+    case BackgroundMode::NoBackgroundFitNorm: return "Raw foreground with explicit NORM co-fit";
+  }
+  return "Unknown";
+}
+
+
+std::string resolution_class_name( const PeakFitUtils::CoarseResolutionType type )
+{
+  using PeakFitUtils::CoarseResolutionType;
+  switch( type )
+  {
+    case CoarseResolutionType::High: return "HPGe/High";
+    case CoarseResolutionType::Low: return "NaI/Low";
+    case CoarseResolutionType::LaBr: return "LaBr";
+    case CoarseResolutionType::CZT: return "CZT";
+    case CoarseResolutionType::MedRes: return "Medium resolution";
+    case CoarseResolutionType::LowOrMedRes: return "Low or medium resolution";
+    case CoarseResolutionType::Unknown: return "Unknown";
+  }
+  return "Unknown";
+}
+
+
+std::string utc_timestamp()
+{
+  const std::time_t now = std::time( nullptr );
+  const std::tm * const utc = std::gmtime( &now );
+  std::ostringstream out;
+  if( utc )
+    out << std::put_time( utc, "%Y-%m-%dT%H:%M:%SZ" );
+  return out.str();
+}
+
+
+void append_reference_line( ReferenceLineInfo &lines, const double energy,
+                            const Wt::WColor &color, const std::string &label )
+{
+  ReferenceLineInfo::RefLine line;
+  line.m_energy = energy;
+  line.m_normalized_intensity = 1.0;
+  line.m_drf_factor = 1.0;
+  line.m_shield_atten = 1.0;
+  line.m_particle_sf_applied = 1.0;
+  line.m_color = color;
+  line.m_decay_intensity = 1.0;
+  line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+  line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+  line.m_attenuation_applies = false;
+  line.m_decaystr = label;
+  lines.m_ref_lines.push_back( line );
+}
+
+
+void write_cached_manual_review_report(
+  const std::vector<PrecomputedNuclideData> &precomputed,
+  const NuclideConfigSolution &genes,
+  const BackgroundMode bg_mode,
+  const std::string &html_filename,
+  const std::string &n42_output_dir,
+  const ConfigEvaluation &evaluation,
+  const std::string &run_metadata )
+{
+  ReportDetail::validate_evaluation_coverage( precomputed.size(), evaluation );
+  for( size_t i = 0; i < precomputed.size(); ++i )
+  {
+    if( evaluation.spectra[i].spectrum_id
+          != ReportDetail::canonical_spectrum_key(precomputed[i])
+        || evaluation.spectra[i].anchor_id
+          != ReportDetail::stable_spectrum_id(precomputed[i]) )
+      throw std::runtime_error( "Evaluation record is not associated with its selected spectrum" );
+  }
+
+  std::ofstream html( html_filename );
+  if( !html.good() )
+    throw std::runtime_error( "Could not open HTML output: " + html_filename );
+  std::ostringstream page_header;
+  D3SpectrumExport::write_html_page_header(
+    page_header, "FitPeaksForNuclides manual-review gallery", "InterSpec_resources" );
+  std::string page_header_text = page_header.str();
+  const size_t head_end = page_header_text.find( "<head>" );
+  if( head_end == std::string::npos )
+    throw std::runtime_error( "D3 HTML page header did not contain a head element" );
+  page_header_text.insert( head_end + 6, "\r\n<meta charset=\"UTF-8\">" );
+  html << page_header_text;
+
+  struct Summary
+  {
+    size_t index = 0;
+    std::string id;
+    double cost = 0.0;
+    double largest_area_error = 0.0;
+    size_t missed = 0;
+    size_t spurious = 0;
+    double widest_fwhm = 0.0;
+    size_t widest_channels = 0;
+    size_t max_peaks_roi = 0;
+    size_t stepped = 0;
+    double continuum_mismatch = 0.0;
+    std::string state;
+    std::vector<RoiReview> rois;
+  };
+  std::vector<Summary> summaries( precomputed.size() );
+  std::set<std::string> detector_models;
+
+  for( size_t i = 0; i < precomputed.size(); ++i )
+  {
+    const PrecomputedNuclideData &pd = precomputed[i];
+    const SpectrumEvaluation &ev = evaluation.spectra[i];
+    detector_models.insert( pd.src_info->detector_name );
+    Summary &summary = summaries[i];
+    summary.index = i;
+    summary.id = ev.anchor_id;
+    summary.cost = ev.accuracy.cost
+        + sm_background_fit_penalty_weight*ev.background_penalty;
+    summary.missed = ev.accuracy.missed_definitely_wanted;
+    summary.spurious = ev.accuracy.extra_peaks;
+    summary.state = ev.mechanical_failure ? "failure"
+      : (ev.legitimate_empty ? "empty" : "success");
+    summary.rois = review_rois( pd, ev );
+    for( const RoiReview &roi : summary.rois )
+    {
+      summary.widest_fwhm = std::max( summary.widest_fwhm, roi.width_fwhm );
+      summary.widest_channels = std::max( summary.widest_channels, roi.channels );
+      summary.max_peaks_roi = std::max( summary.max_peaks_roi, roi.peaks.size() );
+      summary.continuum_mismatch = std::max(
+        summary.continuum_mismatch, roi.snip_continuum_rms );
+      if( roi.continuum && PeakContinuum::is_step_continuum(roi.continuum->type()) )
+        summary.stepped += 1;
+    }
+    if( ev.has_fit_result )
+    {
+      const std::vector<ExpectedPhotopeakInfo> truth
+        = PeakFitImproveData::filter_photopeaks_for_scoring(
+            pd.src_info->expected_signal_photopeaks, pd.det_type );
+      for( const ExpectedPhotopeakInfo &expected : truth )
+      {
+        const PeakDef *best = nullptr;
+        for( const PeakDef &peak : ev.fit_result.observable_peaks )
+        {
+          if( objective_truth_match(peak, expected)
+              && (!best || std::fabs(peak.mean() - expected.effective_energy)
+                    < std::fabs(best->mean() - expected.effective_energy)) )
+            best = &peak;
+        }
+        if( best )
+        {
+          constexpr double f_rel = 0.05;
+          const double area = std::max( 1.0, expected.peak_area );
+          const double sigma = std::sqrt( area + (f_rel*area)*(f_rel*area) );
+          summary.largest_area_error = std::max( summary.largest_area_error,
+            std::fabs(best->amplitude() - expected.peak_area) / sigma );
+        }
+      }
+    }
+  }
+
+  html << "<body><style>"
+       << "body{font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;margin:0;background:#f6f7f9;color:#17202a;}"
+       << "header,.report-block{max-width:1500px;margin:14px auto;padding:14px 18px;background:white;border:1px solid #ccd3da;border-radius:7px;}"
+       << "table{border-collapse:collapse;width:100%;font-size:13px;}th,td{border:1px solid #c8ced5;padding:5px 7px;text-align:right;}th{background:#e9edf2;position:sticky;top:0;}td:first-child,th:first-child{text-align:left;}"
+       << ".summary-table-wrap{max-height:65vh;overflow:auto}.failure{background:#ffe8e8}.empty{background:#fff7d6}.miss{color:#a40000;font-weight:bold}.spurious{color:#8a3d00;font-weight:bold}"
+       << ".roi-review-row{transition:background-color .15s ease,box-shadow .15s ease}.roi-review-row.roi-selected{background:#dcecff;box-shadow:inset 4px 0 #2468b4;font-weight:600}"
+       << ".spectrum{max-width:1500px;margin:12px auto;background:white;border:1px solid #bcc5cf;border-radius:7px;padding:0 12px;}"
+       << ".spectrum>summary{cursor:pointer;padding:12px 4px;font-weight:600}.chart{min-height:300px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:10px}.meta{line-height:1.45}"
+       << ".notice{border-left:5px solid #d17b00;padding:8px 12px;background:#fff7e6}.error{white-space:pre-wrap;color:#8b0000;background:#fff0f0;padding:8px}.warnings{white-space:pre-wrap;background:#fff8dd;padding:8px}"
+       << ".noteable{cursor:pointer}.noteable:hover{outline:2px solid #6b8fd6}.note-button{margin:4px;padding:5px 9px}.mono{font-family:Menlo,monospace;word-break:break-word}"
+       << ".modal{position:fixed;z-index:10000;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}.modal[hidden]{display:none}.modal-card{background:white;border:1px solid #667;border-radius:6px;padding:16px;width:min(650px,90vw);max-height:85vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,.35)}#remark-text,#remark-export-text{box-sizing:border-box;width:100%}#remark-text{height:130px}.controls{display:flex;flex-wrap:wrap;align-items:center}.controls>*{margin:3px 7px 3px 0}"
+       << "</style>\n";
+
+  html << "<header><h1>FitPeaksForNuclides manual-review gallery</h1>"
+       << "<p class=\"notice\"><b>Production vs diagnostics:</b> Plots and tables use the exact cached result returned during command-line evaluation; non-Success partial objects are explicitly labeled diagnostic rather than production. "
+       << "R4 shadow output is not rendered as a fit. The public fitted-total overlay is distinct from objective-observable peaks; both are marked separately. Private solver/nuisance counts are disclosed in the representation audit but are not plotted because they use the solver's fitted-calibration frame. SNIP continuum mismatch is a clearly labeled report-only diagnostic, not an objective term.</p>"
+       << "<div class=\"grid meta\"><div><b>Generated:</b> " << ReportDetail::html_escape(utc_timestamp())
+       << "<br><b>Background mode:</b> " << ReportDetail::html_escape(background_mode_name(bg_mode))
+       << "<br><b>Automatic interferer fitting:</b> "
+       << (sm_disable_auto_interferer_fit ? "DISABLED (source-only baseline)" : "enabled")
+       << "<br><b>Selected spectra:</b> " << evaluation.spectra.size()
+       << "</div><div><b>Successes:</b> " << evaluation.successes
+       << "<br><b>Legitimate empties:</b> " << evaluation.legitimate_empties
+       << "<br><b>Mechanical failures:</b> " << evaluation.mechanical_failures
+       << "<br><b>Objective:</b> " << evaluation.total_cost
+       << " (foreground " << evaluation.total_fg << ", raw background "
+       << evaluation.total_bg_raw << " × " << sm_background_fit_penalty_weight
+       << " = " << (evaluation.total_bg_raw*sm_background_fit_penalty_weight)
+       << ")</div></div>"
+       << "<p><b>Detector models represented:</b> ";
+  for( std::set<std::string>::const_iterator iter = detector_models.begin();
+       iter != detector_models.end(); ++iter )
+  {
+    if( iter != detector_models.begin() )
+      html << ", ";
+    html << ReportDetail::html_escape( *iter );
+  }
+  html << "</p>"
+       << "<p><b>Exact filters / reproduction metadata:</b> <span class=\"mono\">"
+       << ReportDetail::html_escape(run_metadata) << "</span></p>"
+       << "<details><summary>Configuration / gene values</summary><table><tr><th>Gene</th><th>Value</th></tr>";
+  std::vector<std::string> gene_lines;
+  SpecUtils::split( gene_lines, genes.to_string("\n"), "\n" );
+  for( const std::string &line : gene_lines )
+  {
+    const size_t eq = line.find( '=' );
+    if( eq != std::string::npos )
+      html << "<tr><td class=\"mono\">" << ReportDetail::html_escape(line.substr(0,eq))
+           << "</td><td class=\"mono\">" << ReportDetail::html_escape(line.substr(eq+1))
+           << "</td></tr>";
+  }
+  html << "</table></details><details><summary>Aggregate objective components</summary><table>"
+       << "<tr><th>Area cost</th><th>Find reward</th><th>Candidate reward</th><th>Sum miss fractions</th><th>Missed definitely wanted</th><th>Spurious</th></tr><tr>"
+       << "<td>" << evaluation.accuracy_totals.area_cost << "</td><td>"
+       << evaluation.accuracy_totals.find_reward << "</td><td>"
+       << evaluation.accuracy_totals.candidate_reward << "</td><td>"
+       << evaluation.accuracy_totals.miss_fraction << "</td><td>"
+       << evaluation.accuracy_totals.missed_definitely_wanted << "</td><td>"
+       << evaluation.accuracy_totals.extra_peaks << "</td></tr></table></details></header>\n";
+
+  html << "<section class=\"report-block\"><h2>Spectrum index</h2>"
+       << "<p>Diagnostic rankings help find review targets; they are not necessarily optimization-objective terms. Click any row to attach a remark.</p>"
+       << "<div class=\"controls\"><label>Filter <input id=\"summary-filter\" type=\"search\" placeholder=\"source, detector, status\"></label>"
+       << "<label>State <select id=\"state-filter\"><option value=\"\">all</option><option>success</option><option>empty</option><option>failure</option></select></label>"
+       << "<label>Sort <select id=\"summary-sort\"><option value=\"cost\">worst scalar cost</option><option value=\"area\">largest report-only area pull</option><option value=\"missed\">missed peaks</option><option value=\"spurious\">spurious peaks</option><option value=\"fwhm\">widest ROI (FWHM)</option><option value=\"channels\">widest ROI (channels)</option><option value=\"shared\">most peaks sharing ROI</option><option value=\"stepped\">stepped continua</option><option value=\"mismatch\">continuum mismatch</option><option value=\"state\">failures / empties</option></select></label>"
+       << "<button id=\"export-remarks\" class=\"note-button\">Copy/export remarks</button></div>"
+       << "<div class=\"summary-table-wrap\"><table id=\"summary-table\"><thead><tr><th>Spectrum</th><th>Detector</th><th>Location</th><th>Live time</th><th>Status</th><th>Cost</th><th>Report-only max |area pull|</th><th>Missed</th><th>Spurious</th><th>Max ROI FWHM</th><th>Max channels</th><th>Peaks/ROI</th><th>Steps</th><th>SNIP mismatch</th></tr></thead><tbody>";
+  for( const Summary &summary : summaries )
+  {
+    const PrecomputedNuclideData &pd = precomputed[summary.index];
+    const DataSrcInfo &info = *pd.src_info;
+    const SpectrumEvaluation &ev = evaluation.spectra[summary.index];
+    html << "<tr class=\"noteable " << summary.state << "\" data-state=\"" << summary.state
+         << "\" data-cost=\"" << summary.cost << "\" data-area=\"" << summary.largest_area_error
+         << "\" data-missed=\"" << summary.missed << "\" data-spurious=\"" << summary.spurious
+         << "\" data-fwhm=\"" << summary.widest_fwhm << "\" data-channels=\"" << summary.widest_channels
+         << "\" data-shared=\"" << summary.max_peaks_roi << "\" data-stepped=\"" << summary.stepped
+         << "\" data-mismatch=\"" << summary.continuum_mismatch << "\" data-note-context=\""
+         << ReportDetail::html_escape(ev.spectrum_id + " [" + summary.id + "] summary row")
+         << "\"><td><a href=\"#"
+         << summary.id << "\">" << ReportDetail::html_escape(info.src_info.src_name)
+         << "</a><br><small class=\"mono\">" << ReportDetail::html_escape(summary.id)
+         << "</small></td><td>" << ReportDetail::html_escape(info.detector_name)
+         << "</td><td>" << ReportDetail::html_escape(info.location_name)
+         << "</td><td>" << ReportDetail::html_escape(info.live_time_name)
+         << "</td><td>" << summary.state << "</td><td>" << summary.cost
+         << "</td><td>" << summary.largest_area_error << "</td><td>" << summary.missed
+         << "</td><td>" << summary.spurious << "</td><td>" << summary.widest_fwhm
+         << "</td><td>" << summary.widest_channels << "</td><td>" << summary.max_peaks_roi
+         << "</td><td>" << summary.stepped << "</td><td>" << summary.continuum_mismatch
+         << "</td></tr>\n";
+  }
+  html << "</tbody></table></div></section>\n";
+
+  // Every selected spectrum gets a section, including exceptions and legitimate empties.
+  for( const Summary &summary : summaries )
+  {
+    const size_t i = summary.index;
+    const PrecomputedNuclideData &pd = precomputed[i];
+    const DataSrcInfo &info = *pd.src_info;
+    const InjectSourceInfo &src = info.src_info;
+    const SpectrumEvaluation &ev = evaluation.spectra[i];
+    const PeakFitResult * const fit = ev.has_fit_result ? &ev.fit_result : nullptr;
+    const std::string note_context = ev.spectrum_id + " [" + summary.id + "]";
+    const std::string details_id = "spectrum_details_" + std::to_string(i);
+    const std::string chart_id = "spectrum_chart_" + std::to_string(i);
+    const std::string init_fn = "init_spectrum_chart_" + std::to_string(i);
+
+    html << "<details class=\"spectrum " << summary.state << "\" id=\"" << summary.id
+         << "\" data-spectrum-id=\"" << summary.id << "\"><summary>"
+         << ReportDetail::html_escape(src.src_name) << " — "
+         << ReportDetail::html_escape(info.detector_name) << " — "
+         << ReportDetail::html_escape(info.location_name) << " — "
+         << ReportDetail::html_escape(info.live_time_name) << " — "
+         << ReportDetail::html_escape(ev.status) << " — cost " << summary.cost
+         << "</summary><div id=\"" << details_id << "\">"
+         << "<button class=\"note-button add-note\" data-note-context=\""
+         << ReportDetail::html_escape(note_context + " spectrum section") << "\">Add remark</button>"
+         << "<div class=\"grid meta\"><div><b>Stable spectrum ID:</b> <span class=\"mono\">"
+         << ReportDetail::html_escape(summary.id) << "</span><br><b>Corpus key:</b> <span class=\"mono\">"
+         << ReportDetail::html_escape(ev.spectrum_id) << "</span><br><b>Source truth:</b> "
+         << ReportDetail::html_escape(src.src_name) << "<br><b>Detector/class:</b> "
+         << ReportDetail::html_escape(info.detector_name) << " / "
+         << ReportDetail::html_escape(resolution_class_name(info.det_type))
+         << "<br><b>Location:</b> " << ReportDetail::html_escape(info.location_name)
+         << "</div><div><b>Fit status:</b> " << ReportDetail::html_escape(ev.status)
+         << "<br><b>Foreground live time:</b> " << (pd.foreground ? pd.foreground->live_time() : 0.0)
+         << " s<br><b>Background live time:</b> " << (pd.background ? pd.background->live_time() : 0.0)
+         << " s<br><b>Background plot scale:</b> "
+         << ((pd.foreground && pd.background && pd.background->live_time() > 0.0)
+             ? (pd.foreground->live_time()/pd.background->live_time()) : 0.0)
+         << "<br><b>Automatic interferer fit:</b> "
+         << (sm_disable_auto_interferer_fit ? "disabled" : "enabled") << "</div></div>";
+
+    if( !ev.error_message.empty() )
+      html << "<h3>Complete error</h3><div class=\"error noteable\" data-note-context=\""
+           << ReportDetail::html_escape(note_context + " error") << "\">"
+           << ReportDetail::html_escape(ev.error_message) << "</div>";
+    if( fit && !fit->warnings.empty() )
+    {
+      html << "<h3>Warnings</h3><div class=\"warnings noteable\" data-note-context=\""
+           << ReportDetail::html_escape(note_context + " warnings") << "\">";
+      for( const std::string &warning : fit->warnings )
+        html << ReportDetail::html_escape(warning) << "<br>";
+      html << "</div>";
+    }
+
+    html << "<h3>Spectrum and " << (ev.mechanical_failure ? "partial failed result" : "production fit")
+         << "</h3><p>Black: measured foreground. Steel blue: supplied background scaled by live time. The derived background-subtracted foreground is intentionally omitted because the production fit peaks and continua are defined against the original foreground. "
+         << (ev.mechanical_failure
+              ? "The peak overlay is a partial object returned with the failed status; it is diagnostic and is not labeled as a production result. "
+              : "The peak overlay is the combined public production result. ")
+         << "It uses <code>PeakFitResult::fit_peaks</code> and draws that representation's fitted total model and per-ROI fitted continuum. Magenta mean markers show the separately refitted <code>observable_peaks</code> used by the objective; cyan markers show combined public fitted means. Private solver/nuisance means are intentionally not overlaid because they are expressed in the solver's fitted-calibration frame rather than the displayed foreground calibration. "
+         << "Truth markers are green when matched, red only for objective-counted definite misses, amber for other scored-but-unmatched truth, and gray when excluded by the scoring filter. Click a fitted peak shape to highlight its ROI in the diagnostics table.</p>"
+         << "<div id=\"" << chart_id << "\" class=\"chart\" oncontextmenu=\"return false;\"></div>";
+
+    // Chart setup is lazy: hundreds of embedded spectra do not instantiate hundreds of D3 charts
+    // until their collapsible spectrum section is opened.
+    std::map<std::string,std::string> references;
+    ReferenceLineInfo matched_lines, missed_lines, other_unmatched_lines,
+                      excluded_lines, public_peak_lines,
+                      observable_peak_lines;
+    for( ReferenceLineInfo *lines : {&matched_lines, &missed_lines,
+          &other_unmatched_lines, &excluded_lines,
+          &public_peak_lines, &observable_peak_lines} )
+    {
+      lines->m_validity = ReferenceLineInfo::InputValidity::Valid;
+      lines->m_source_type = ReferenceLineInfo::SourceType::OneOffSrcLines;
+      lines->m_has_coincidences = false;
+    }
+    const std::vector<ExpectedPhotopeakInfo> &all_truth
+      = info.expected_signal_photopeaks;
+    const std::vector<ExpectedPhotopeakInfo> scoring_truth
+      = PeakFitImproveData::filter_photopeaks_for_scoring(
+          info.expected_signal_photopeaks, info.det_type );
+    const std::vector<PeakDef> empty_observable_peaks;
+    const std::vector<PeakDef> &observable_peaks
+      = fit ? fit->observable_peaks : empty_observable_peaks;
+    const CandidatePeak_GA::CandidatePeakScore raw_candidate_score
+      = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
+          observable_peaks, scoring_truth, info.det_type );
+    CandidatePeak_GA::CandidatePeakScore corrected_candidate_score
+      = raw_candidate_score;
+    CandidatePeak_GA::correct_score_for_escape_peaks(
+      corrected_candidate_score, scoring_truth );
+    const auto same_truth = []( const ExpectedPhotopeakInfo &lhs,
+                                const ExpectedPhotopeakInfo &rhs ) -> bool {
+      return std::fabs(lhs.effective_energy - rhs.effective_energy) < 1.0e-6
+        && std::fabs(lhs.roi_lower - rhs.roi_lower) < 1.0e-6
+        && std::fabs(lhs.roi_upper - rhs.roi_upper) < 1.0e-6;
+    };
+    const auto contains_truth = [&same_truth](
+      const std::vector<ExpectedPhotopeakInfo> &haystack,
+      const ExpectedPhotopeakInfo &needle ) -> bool {
+      return std::any_of( haystack.begin(), haystack.end(),
+        [&same_truth, &needle]( const ExpectedPhotopeakInfo &candidate ) {
+          return same_truth( candidate, needle );
+        } );
+    };
+    const auto is_scored_truth = [&scoring_truth]( const ExpectedPhotopeakInfo &truth ) -> bool {
+      return std::any_of( scoring_truth.begin(), scoring_truth.end(),
+        [&truth]( const ExpectedPhotopeakInfo &candidate ) {
+          return std::fabs(candidate.effective_energy - truth.effective_energy) < 1.0e-6
+            && std::fabs(candidate.roi_lower - truth.roi_lower) < 1.0e-6
+            && std::fabs(candidate.roi_upper - truth.roi_upper) < 1.0e-6;
+        } );
+    };
+    for( const ExpectedPhotopeakInfo &truth : all_truth )
+    {
+      if( !is_scored_truth(truth) )
+      {
+        append_reference_line( excluded_lines, truth.effective_energy,
+          Wt::WColor(110,110,110), "Truth excluded by objective filter" );
+        continue;
+      }
+      bool matched = false;
+      if( fit )
+        for( const PeakDef &peak : fit->observable_peaks )
+          matched = matched || objective_truth_match( peak, truth );
+      const bool objective_miss = !matched && contains_truth(
+        corrected_candidate_score.def_expected_but_not_detected, truth );
+      ReferenceLineInfo &lines = matched ? matched_lines
+        : (objective_miss ? missed_lines : other_unmatched_lines);
+      append_reference_line( lines, truth.effective_energy,
+        matched ? Wt::WColor(0,128,0)
+                : (objective_miss ? Wt::WColor(220,0,0) : Wt::WColor(190,120,0)),
+        matched ? "Matched truth"
+                : (objective_miss ? "Objective missed truth"
+                                  : "Unmatched truth not counted as definite miss") );
+    }
+    if( fit )
+    {
+      for( const PeakDef &peak : fit->fit_peaks )
+        append_reference_line( public_peak_lines, peak.mean(), Wt::WColor(0,145,170),
+                               "Combined public fitted mean" );
+      for( const PeakDef &peak : fit->observable_peaks )
+        append_reference_line( observable_peak_lines, peak.mean(), Wt::WColor(180,0,180),
+                               "Objective observable fitted mean" );
+    }
+    for( const std::pair<std::string,ReferenceLineInfo *> entry :
+         std::vector<std::pair<std::string,ReferenceLineInfo *>>{
+           {"Matched truth",&matched_lines}, {"Missed truth",&missed_lines},
+           {"Other unmatched truth",&other_unmatched_lines},
+           {"Truth not scored",&excluded_lines},
+           {"Combined public fitted means",&public_peak_lines},
+           {"Objective observable fitted means",&observable_peak_lines} } )
+    {
+      if( !entry.second->m_ref_lines.empty() )
+      {
+        std::string json;
+        entry.second->toJson( json );
+        references[entry.first] = json;
+      }
+    }
+
+    float x_min = pd.foreground ? pd.foreground->gamma_energy_min() : 0.0f;
+    float x_max = pd.foreground ? pd.foreground->gamma_energy_max() : 3000.0f;
+    const D3SpectrumExport::D3SpectrumChartOptions chart_options(
+      "FitPeaksForNuclides review result", "Energy (keV)", "Counts/channel", "",
+      true, false, false, true, true, false, false, false, false, false, false,
+      false, false, false, x_min, x_max, references );
+
+    D3SpectrumExport::D3SpectrumOptions foreground_options;
+    foreground_options.line_color = "black";
+    foreground_options.title = "Measured foreground";
+    foreground_options.spectrum_type = SpecUtils::SpectrumType::Foreground;
+    if( fit )
+    {
+      std::vector<std::shared_ptr<const PeakDef>> ptrs;
+      for( const PeakDef &peak : fit->fit_peaks )
+        ptrs.push_back( std::make_shared<PeakDef>(peak) );
+      foreground_options.peaks_json = PeakDef::peak_json(
+        ptrs, pd.foreground, Wt::WColor(47,111,221), 254 );
+    }
+
+    html << "<script>function " << init_fn << "(){if(window['" << init_fn
+         << "_done'])return;window['" << init_fn << "_done']=true;\n";
+    D3SpectrumExport::write_js_for_chart(
+      html, chart_id, chart_options.m_dataTitle,
+      chart_options.m_xAxisTitle, chart_options.m_yAxisTitle );
+    std::vector<std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>> measurements;
+    if( pd.foreground )
+      measurements.emplace_back( pd.foreground.get(), foreground_options );
+    if( pd.background )
+    {
+      D3SpectrumExport::D3SpectrumOptions options;
+      options.line_color = "steelblue";
+      options.title = "Supplied background (live-time scaled)";
+      options.display_scale_factor = (pd.background->live_time() > 0.0)
+        ? pd.foreground->live_time()/pd.background->live_time() : 1.0;
+      options.spectrum_type = SpecUtils::SpectrumType::Background;
+      measurements.emplace_back( pd.background.get(), options );
+    }
+    D3SpectrumExport::write_and_set_data_for_chart( html, chart_id, measurements );
+    D3SpectrumExport::write_set_options_for_chart( html, chart_id, chart_options );
+    html << "spec_chart_" << chart_id << ".setReferenceLines(reference_lines_" << chart_id
+         << ");spec_chart_" << chart_id << ".chart.style.width='96%';spec_chart_"
+         << chart_id << ".chart.style.height='430px';spec_chart_" << chart_id
+         << ".handleResize();var chartEl=document.getElementById('" << chart_id
+         << "');var section=document.getElementById('" << summary.id
+         << "');chartEl.addEventListener('click',function(event){var path=event.target;if(!path||!path.classList||(!path.classList.contains('peakFill')&&!path.classList.contains('peakOutline')))return;var energy=parseFloat(path.getAttribute('data-energy'));if(!isFinite(energy))return;var rows=section.querySelectorAll('.roi-review-row');var selected=null;for(var i=0;i<rows.length;i++){rows[i].classList.remove('roi-selected');var lower=parseFloat(rows[i].getAttribute('data-lower'));var upper=parseFloat(rows[i].getAttribute('data-upper'));if(energy>=lower&&energy<=upper)selected=rows[i];}if(selected){selected.classList.add('roi-selected');selected.scrollIntoView(false);}},true);}\n"
+         << "document.getElementById('" << summary.id
+         << "').addEventListener('toggle',function(){if(this.open)" << init_fn << "();});</script>";
+
+    html << "<h3>Objective components</h3><table><tr><th>Scalar cost</th><th>Area cost</th><th>Find reward</th><th>Candidate reward</th><th>Miss fraction</th><th>Missed definitely wanted</th><th>Spurious</th><th>Raw bg penalty</th><th>Weighted bg contribution</th></tr><tr><td>"
+         << summary.cost << "</td><td>" << ev.accuracy.area_cost << "</td><td>"
+         << ev.accuracy.find_reward << "</td><td>" << ev.accuracy.candidate_reward
+         << "</td><td>" << ev.accuracy.miss_fraction << "</td><td>"
+         << ev.accuracy.missed_definitely_wanted << "</td><td>" << ev.accuracy.extra_peaks
+         << "</td><td>" << ev.background_penalty << "</td><td>"
+         << (sm_background_fit_penalty_weight*ev.background_penalty)
+         << "</td></tr></table>";
+
+    if( sm_do_background_fit_trial )
+    {
+      html << "<h3>Background false-positive trial</h3><p>Normalized significance is live-time adjusted before the per-peak cap. A non-empty suppression reason means the peak did not contribute to the raw penalty.</p>";
+      if( !ev.background_detail.error_message.empty() )
+        html << "<div class=\"error noteable\" data-note-context=\""
+             << ReportDetail::html_escape(note_context + " background trial error")
+             << "\">" << ReportDetail::html_escape(ev.background_detail.error_message)
+             << "</div>";
+      html << "<table><tr><th>Peak</th><th>Source</th><th>Mean</th><th>Area</th><th>Normalized significance</th><th>Suppression / contribution</th></tr>";
+      for( size_t bg_index = 0;
+           bg_index < ev.background_detail.source_attributed_peaks.size(); ++bg_index )
+      {
+        const PeakDef &peak = ev.background_detail.source_attributed_peaks[bg_index];
+        const double significance
+          = (bg_index < ev.background_detail.normalized_significances.size())
+              ? ev.background_detail.normalized_significances[bg_index] : 0.0;
+        const std::string reason
+          = (bg_index < ev.background_detail.suppression_reasons.size())
+              ? ev.background_detail.suppression_reasons[bg_index] : std::string();
+        html << "<tr class=\"noteable\" data-note-context=\""
+             << ReportDetail::html_escape(note_context + " background peak "
+                  + std::to_string(bg_index+1)) << "\"><td>" << (bg_index+1)
+             << "</td><td>" << ReportDetail::html_escape(peak.sourceName())
+             << "</td><td>" << peak.mean() << "</td><td>" << peak.amplitude()
+             << "</td><td>" << significance << "</td><td>"
+             << ReportDetail::html_escape(reason.empty() ? "contributes" : reason)
+             << "</td></tr>";
+      }
+      if( ev.background_detail.source_attributed_peaks.empty() )
+        html << "<tr><td colspan=\"6\">No source-attributed background peaks.</td></tr>";
+      html << "</table>";
+    }
+
+    html << "<h3>Final public ROI diagnostics</h3><p>Widths and fitted-object bounds come from the shared <code>PeakContinuum</code> objects in <code>fit_peaks</code>. "
+         << "Model Pearson RMS and fitted-continuum-vs-global-SNIP RMS are report-only diagnostics; neither changes the objective.</p>"
+         << "<table><tr><th>ROI</th><th>Lower</th><th>Upper</th><th>Width keV</th><th>Channels</th><th>Width/FWHM</th><th>Peaks</th><th>OffsetType</th><th>Step/reference position</th><th>Model Pearson RMS</th><th>SNIP continuum RMS</th></tr>";
+    for( size_t roi_index = 0; roi_index < summary.rois.size(); ++roi_index )
+    {
+      const RoiReview &roi = summary.rois[roi_index];
+      html << "<tr class=\"noteable roi-review-row\" data-lower=\"" << roi.lower
+           << "\" data-upper=\"" << roi.upper << "\" data-note-context=\""
+           << ReportDetail::html_escape(note_context + " ROI " + std::to_string(roi_index+1))
+           << "\"><td>ROI " << (roi_index+1) << "</td><td>" << roi.lower
+           << "</td><td>" << roi.upper << "</td><td>" << (roi.upper-roi.lower)
+           << "</td><td>" << roi.channels << "</td><td>" << roi.width_fwhm
+           << "</td><td>" << roi.peaks.size() << "</td><td>"
+           << ReportDetail::html_escape(PeakContinuum::offset_type_str(roi.continuum->type()))
+           << "</td><td>" << (PeakContinuum::is_step_continuum(roi.continuum->type())
+                ? std::to_string(roi.continuum->referenceEnergy()) : std::string("—"))
+           << "</td><td>" << roi.model_pearson_rms << "</td><td>"
+           << roi.snip_continuum_rms << "</td></tr>";
+    }
+    if( summary.rois.empty() )
+      html << "<tr><td colspan=\"11\">No public fitted ROIs. The measured chart and truth table remain available for review.</td></tr>";
+    html << "</table>";
+
+    html << "<h3>Fitted peaks</h3><p>This table uses combined public <code>fit_peaks</code>. Observable association is a report-only nearest-position association to <code>observable_peaks</code>; the objective itself uses the observable vector directly.</p>"
+         << "<table><tr><th>Peak</th><th>Source/provenance</th><th>Mean</th><th>Mean uncert</th><th>Area</th><th>Area uncert</th><th>Significance</th><th>ROI</th><th>Observable</th></tr>";
+    if( fit )
+    {
+      for( size_t peak_index = 0; peak_index < fit->fit_peaks.size(); ++peak_index )
+      {
+        const PeakDef &peak = fit->fit_peaks[peak_index];
+        size_t roi_number = 0;
+        for( size_t roi_index = 0; roi_index < summary.rois.size(); ++roi_index )
+          if( summary.rois[roi_index].continuum == peak.continuum().get() )
+            roi_number = roi_index + 1;
+        bool observable = false;
+        for( const PeakDef &obs : fit->observable_peaks )
+          observable = observable || (std::fabs(obs.mean()-peak.mean())
+            <= std::max(0.01,0.25*std::min(obs.fwhm(),peak.fwhm())));
+        const double uncert = peak.amplitudeUncert();
+        const double significance = (uncert > 0.0) ? peak.amplitude()/uncert
+          : ((peak.amplitude() > 0.0) ? std::sqrt(peak.amplitude()) : 0.0);
+        std::string provenance = peak.sourceName();
+        if( provenance.empty() ) provenance = peak.userLabel();
+        if( provenance.empty() ) provenance = "unattributed/floating";
+        html << "<tr class=\"noteable\" data-note-context=\""
+             << ReportDetail::html_escape(note_context + " fitted peak " + std::to_string(peak_index+1))
+             << "\"><td>" << (peak_index+1) << "</td><td>"
+             << ReportDetail::html_escape(provenance) << "</td><td>" << peak.mean()
+             << "</td><td>" << peak.meanUncert() << "</td><td>" << peak.amplitude()
+             << "</td><td>" << peak.amplitudeUncert() << "</td><td>" << significance
+             << "</td><td>" << (roi_number ? std::to_string(roi_number) : "—")
+             << "</td><td>" << (observable ? "yes" : "no") << "</td></tr>";
+      }
+    }
+    if( !fit || fit->fit_peaks.empty() )
+      html << "<tr><td colspan=\"9\">No fitted public peaks.</td></tr>";
+    html << "</table>";
+
+    html << "<h3>Objective observable peaks</h3><p>This is the exact peak vector used by all displayed scalar objective components and Candidate miss/spurious classifications. It may differ from the combined public representation above.</p>"
+         << "<table><tr><th>Peak</th><th>Source/provenance</th><th>Mean</th><th>Mean uncert</th><th>Area</th><th>Area uncert</th><th>Significance</th></tr>";
+    if( fit )
+    {
+      for( size_t peak_index = 0; peak_index < fit->observable_peaks.size(); ++peak_index )
+      {
+        const PeakDef &peak = fit->observable_peaks[peak_index];
+        const double uncert = peak.amplitudeUncert();
+        const double significance = (uncert > 0.0) ? peak.amplitude()/uncert
+          : ((peak.amplitude() > 0.0) ? std::sqrt(peak.amplitude()) : 0.0);
+        std::string provenance = peak.sourceName();
+        if( provenance.empty() ) provenance = peak.userLabel();
+        if( provenance.empty() ) provenance = "unattributed/floating";
+        html << "<tr class=\"noteable\" data-note-context=\""
+             << ReportDetail::html_escape(note_context + " objective observable peak "
+                  + std::to_string(peak_index+1)) << "\"><td>" << (peak_index+1)
+             << "</td><td>" << ReportDetail::html_escape(provenance) << "</td><td>"
+             << peak.mean() << "</td><td>" << peak.meanUncert() << "</td><td>"
+             << peak.amplitude() << "</td><td>" << peak.amplitudeUncert()
+             << "</td><td>" << significance << "</td></tr>";
+      }
+    }
+    if( !fit || fit->observable_peaks.empty() )
+      html << "<tr><td colspan=\"7\">No objective observable peaks.</td></tr>";
+    html << "</table>";
+
+    html << "<h3>Truth comparison and explicit spurious peaks</h3><p>Truth detection and spurious classification use the CandidatePeak objective's expected-ROI / fitted ±1σ overlap rule. The displayed best fitted match is the nearest among objective-compatible peaks. Area pull uses the same 5% truth-relative floor as the area objective.</p>"
+         << "<table><tr><th>Truth energy</th><th>Truth area</th><th>Truth σ over background</th><th>Matched fitted peak</th><th>Energy error</th><th>Normalized area error</th><th>Classification / reason</th></tr>";
+    for( size_t truth_index = 0; truth_index < all_truth.size(); ++truth_index )
+    {
+      const ExpectedPhotopeakInfo &truth = all_truth[truth_index];
+      const bool scored = is_scored_truth( truth );
+      const PeakDef *best = nullptr;
+      if( fit && scored )
+      {
+        for( const PeakDef &peak : fit->observable_peaks )
+          if( objective_truth_match(peak,truth)
+              && (!best || std::fabs(peak.mean()-truth.effective_energy)
+                    < std::fabs(best->mean()-truth.effective_energy)) )
+            best = &peak;
+      }
+      double area_pull = 0.0;
+      if( best )
+      {
+        constexpr double f_rel = 0.05;
+        const double area = std::max(1.0,truth.peak_area);
+        const double sigma = std::sqrt(area + (f_rel*area)*(f_rel*area));
+        area_pull = (best->amplitude()-truth.peak_area)/sigma;
+      }
+      const bool objective_miss = scored && !best && contains_truth(
+        corrected_candidate_score.def_expected_but_not_detected, truth );
+      const bool escape_corrected = scored && !best
+        && contains_truth( raw_candidate_score.def_expected_but_not_detected, truth )
+        && !objective_miss;
+      html << "<tr class=\"noteable" << (objective_miss ? " miss" : "")
+           << "\" data-note-context=\"" << ReportDetail::html_escape(
+                note_context + " truth " + std::to_string(truth.effective_energy) + " keV")
+           << "\"><td>" << truth.effective_energy << "</td><td>" << truth.peak_area
+           << "</td><td>" << truth.nsigma_over_background << "</td><td>"
+           << (best ? std::to_string(best->mean()) : std::string("—")) << "</td><td>"
+           << (best ? std::to_string(best->mean()-truth.effective_energy) : std::string("—"))
+           << "</td><td>" << (best ? std::to_string(area_pull) : std::string("—"))
+           << "</td><td>" << (!scored ? "not scored: detector-specific low-energy filter"
+                : (best ? "matched by objective rule"
+                : (objective_miss ? "MISSED definitely-wanted truth peak"
+                : (escape_corrected ? "not penalized: objective escape-peak correction"
+                                    : "not detected; below definitely-wanted threshold"))))
+           << "</td></tr>";
+    }
+    if( all_truth.empty() )
+      html << "<tr><td colspan=\"7\">No truth peaks are defined for this spectrum.</td></tr>";
+
+    bool used_511_exemption = false;
+    if( fit )
+    {
+      for( const PeakDef &peak : fit->observable_peaks )
+      {
+        bool matched = false;
+        for( const ExpectedPhotopeakInfo &truth : scoring_truth )
+          matched = matched || objective_truth_match(peak,truth);
+        if( matched )
+          continue;
+        const bool exempt_511 = !used_511_exemption && (peak.mean() > 508.0) && (peak.mean() < 514.0);
+        used_511_exemption = used_511_exemption || exempt_511;
+        html << "<tr class=\"noteable " << (exempt_511 ? "" : "spurious")
+             << "\" data-note-context=\"" << ReportDetail::html_escape(
+                  note_context + " spurious fitted peak " + std::to_string(peak.mean()) + " keV")
+             << "\"><td>—</td><td>—</td><td>—</td><td>" << peak.mean()
+             << "</td><td>—</td><td>—</td><td>"
+             << (exempt_511 ? "unexpected 511-keV peak; objective exempts the first one"
+                            : "SPURIOUS by objective CandidatePeak rule")
+             << "</td></tr>";
+      }
+    }
+    html << "</table>";
+
+    if( fit )
+    {
+      html << "<details><summary>Private solver/result representation audit</summary><p>Public combined fit peaks: "
+           << fit->fit_peaks.size() << "; public uncombined peaks: "
+           << fit->uncombined_fit_peaks.size() << "; objective observable peaks: "
+           << fit->observable_peaks.size() << "; private solution peaks (may include hidden R6/NORM nuisance peaks): "
+           << fit->solution.m_peaks_without_back_sub.size() << "; final solver ROI ranges: "
+           << fit->solution.m_final_roi_ranges_in_spectrum_cal.size()
+           << ". Private peaks are disclosed here but are not presented as production output.</p></details>";
+    }
+    html << "</div></details>\n";
+
+    if( !n42_output_dir.empty() && fit )
+    {
+      const std::string detector_dir = SpecUtils::append_path(
+        n42_output_dir, info.detector_name );
+      if( !SpecUtils::is_directory(n42_output_dir) )
+        SpecUtils::create_directory( n42_output_dir );
+      if( !SpecUtils::is_directory(detector_dir) )
+        SpecUtils::create_directory( detector_dir );
+      SpecMeas output;
+      output.remove_measurements( output.measurements() );
+      std::shared_ptr<SpecUtils::Measurement> foreground
+        = std::make_shared<SpecUtils::Measurement>( *pd.foreground );
+      foreground->set_sample_number( 1 );
+      output.add_measurement( foreground, false );
+      std::deque<std::shared_ptr<const PeakDef>> peaks;
+      for( const PeakDef &peak : fit->observable_peaks )
+        peaks.push_back( std::make_shared<PeakDef>(peak) );
+      output.setPeaks( peaks, {1} );
+      const std::string output_path = SpecUtils::append_path(
+        detector_dir, src.src_name + "_nuclide_config_ga.n42" );
+      output.save2012N42File( output_path, [&output_path](){
+        std::cerr << "Failed to write '" << output_path << "'" << std::endl;
+      } );
+    }
+  }
+
+  html << R"html(
+<div id="remark-dialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="remark-title" hidden><div class="modal-card"><h3 id="remark-title">Add review remark</h3><p id="remark-context"></p><textarea id="remark-text"></textarea><div><button type="button" id="remark-cancel">Cancel</button><button type="button" id="remark-accept">Accept</button></div></div></div>
+<div id="remark-export-dialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="remark-export-title" hidden><div class="modal-card"><h3 id="remark-export-title">Aggregated review remarks</h3><p>Copy this text back into the Codex session.</p><textarea id="remark-export-text" style="height:50vh"></textarea><div><button type="button" id="remark-copy">Copy</button><button type="button" id="remark-export-close">Close</button></div></div></div>
+<script>
+(function(){
+  'use strict';
+  var storageKey='interspec-fit-review:' + location.pathname;
+  var activeContext='';
+  var activeSelection='';
+  var dialog=document.getElementById('remark-dialog');
+  function selectedText(){var s=window.getSelection ? String(window.getSelection()) : '';return s.replace(/^\s+|\s+$/g,'');}
+  function showModal(el){el.hidden=false;}function hideModal(el){el.hidden=true;}
+  function openRemark(el){activeContext=el.getAttribute('data-note-context')||'report';activeSelection=selectedText();document.getElementById('remark-context').textContent=activeContext+(activeSelection?' — selected: '+activeSelection:'');document.getElementById('remark-text').value='';showModal(dialog);document.getElementById('remark-text').focus();}
+  Array.prototype.forEach.call(document.querySelectorAll('.noteable,.add-note'),function(el){el.addEventListener('click',function(event){if(event.target.tagName==='A')return;openRemark(el);});});
+  document.getElementById('remark-accept').addEventListener('click',function(){var text=document.getElementById('remark-text').value.replace(/^\s+|\s+$/g,'');if(!text)return;var notes=[];try{notes=JSON.parse(localStorage.getItem(storageKey)||'[]');}catch(e){}notes.push({context:activeContext,selection:activeSelection,remark:text,recorded:new Date().toISOString()});localStorage.setItem(storageKey,JSON.stringify(notes));hideModal(dialog);});
+  document.getElementById('remark-cancel').addEventListener('click',function(){hideModal(dialog);});
+  function exportNotes(){var notes=[];try{notes=JSON.parse(localStorage.getItem(storageKey)||'[]');}catch(e){}var lines=['InterSpec FitPeaksForNuclides review remarks'];for(var i=0;i<notes.length;i++){lines.push('\n['+(i+1)+'] '+notes[i].context+(notes[i].selection?'\nSelected: '+notes[i].selection:'')+'\nRemark: '+notes[i].remark+'\nRecorded: '+notes[i].recorded);}var text=lines.join('\n');document.getElementById('remark-export-text').value=text;showModal(document.getElementById('remark-export-dialog'));}
+  document.getElementById('export-remarks').addEventListener('click',exportNotes);
+  document.getElementById('remark-copy').addEventListener('click',function(){var area=document.getElementById('remark-export-text');area.select();document.execCommand('copy');});
+  document.getElementById('remark-export-close').addEventListener('click',function(){hideModal(document.getElementById('remark-export-dialog'));});
+  document.addEventListener('keydown',function(event){if(event.key==='Escape'){hideModal(dialog);hideModal(document.getElementById('remark-export-dialog'));}});
+  function updateSummary(){var body=document.querySelector('#summary-table tbody');var rows=Array.prototype.slice.call(body.rows);var key=document.getElementById('summary-sort').value;var query=document.getElementById('summary-filter').value.toLowerCase();var state=document.getElementById('state-filter').value;rows.sort(function(a,b){if(key==='state'){var order={failure:2,empty:1,success:0};return order[b.dataset.state]-order[a.dataset.state];}return parseFloat(b.dataset[key]||0)-parseFloat(a.dataset[key]||0);});for(var i=0;i<rows.length;i++){body.appendChild(rows[i]);var text=rows[i].textContent.toLowerCase();rows[i].style.display=((!query||text.indexOf(query)>=0)&&(!state||rows[i].dataset.state===state))?'':'none';}}
+  document.getElementById('summary-sort').addEventListener('change',updateSummary);document.getElementById('summary-filter').addEventListener('input',updateSummary);document.getElementById('state-filter').addEventListener('change',updateSummary);updateSummary();
+  function openHashSpectrum(){if(!location.hash)return;var id;try{id=decodeURIComponent(location.hash.slice(1));}catch(e){return;}var target=document.getElementById(id);if(target&&target.tagName.toLowerCase()==='details'&&target.classList.contains('spectrum')){target.open=true;window.setTimeout(function(){target.scrollIntoView();},0);}}
+  window.addEventListener('hashchange',openHashSpectrum);openHashSpectrum();
+})();
+</script></body></html>)html";
+}
+
+
+ConfigEvaluation evaluate_for_report(
+  const std::vector<PrecomputedNuclideData> &precomputed,
+  const PeakFitForNuclideConfig &config,
+  const BackgroundMode bg_mode )
+{
+  ConfigEvaluation evaluation;
+  evaluation.spectra.resize( precomputed.size() );
+  std::vector<std::pair<double,double>> costs( precomputed.size(), {0.0,0.0} );
+  boost::asio::thread_pool pool(
+    std::max<size_t>(1, PeakFitImprove::sm_num_optimization_threads) );
+
+  for( size_t index = 0; index < precomputed.size(); ++index )
+  {
+    boost::asio::post( pool,
+      [index, &precomputed, &config, bg_mode, &evaluation, &costs]() {
+      const PrecomputedNuclideData &pd = precomputed[index];
+      SpectrumEvaluation &record = evaluation.spectra[index];
+      record.spectrum_id = ReportDetail::canonical_spectrum_key( pd );
+      record.anchor_id = ReportDetail::stable_spectrum_id( pd );
+      Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
+      if( bg_mode == BackgroundMode::NoBackgroundFitNorm )
+        options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
+      if( sm_disable_auto_interferer_fit )
+        options |= FitPeaksForNuclides::DisableAutoInterfererFit;
+
+      try
+      {
+        const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
+        PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
+          pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
+          pd.background, pd.drf, options, config, pd.peak_fit_prefs );
+        FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
+        const bool success
+          = (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success);
+        record.has_fit_result = true;
+        record.accuracy = ReportDetail::score_observable_peaks(
+          pd, result.observable_peaks );
+        record.legitimate_empty = success && result.observable_peaks.empty()
+          && (record.accuracy.missed_definitely_wanted == 0);
+        record.mechanical_failure = !success;
+        record.error_message = result.error_message;
+        using Status = RelActCalcAuto::RelActAutoSolution::Status;
+        switch( result.status )
+        {
+          case Status::Success: record.status = "Success"; break;
+          case Status::NotInitiated: record.status = "NotInitiated"; break;
+          case Status::FailedToSetupProblem: record.status = "FailedToSetupProblem"; break;
+          case Status::FailToSolveProblem: record.status = "FailToSolveProblem"; break;
+          case Status::UserCanceled: record.status = "UserCanceled"; break;
+        }
+        if( success )
+          record.background_penalty = compute_background_fit_penalty(
+            pd, config, bg_mode, &record.background_detail );
+        FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
+        costs[index] = {record.accuracy.cost, record.background_penalty};
+        record.fit_result = std::move( result );
+      }catch( const std::exception &e )
+      {
+        FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
+        record.exception = true;
+        record.mechanical_failure = true;
+        record.status = "EXCEPTION";
+        record.error_message = e.what();
+        record.accuracy = ReportDetail::score_observable_peaks( pd, {} );
+        costs[index] = {record.accuracy.cost,0.0};
+      }
+    } );
+  }
+  pool.join();
+
+  for( size_t index = 0; index < evaluation.spectra.size(); ++index )
+  {
+    const SpectrumEvaluation &record = evaluation.spectra[index];
+    evaluation.total_fg += costs[index].first;
+    evaluation.total_bg_raw += costs[index].second;
+    evaluation.accuracy_totals.area_cost += record.accuracy.area_cost;
+    evaluation.accuracy_totals.find_reward += record.accuracy.find_reward;
+    evaluation.accuracy_totals.candidate_reward += record.accuracy.candidate_reward;
+    evaluation.accuracy_totals.miss_fraction += record.accuracy.miss_fraction;
+    evaluation.accuracy_totals.missed_definitely_wanted
+      += record.accuracy.missed_definitely_wanted;
+    evaluation.accuracy_totals.extra_peaks += record.accuracy.extra_peaks;
+    if( record.mechanical_failure ) evaluation.mechanical_failures += 1;
+    else if( record.legitimate_empty ) evaluation.legitimate_empties += 1;
+    else evaluation.successes += 1;
+  }
+  evaluation.total_cost = evaluation.total_fg
+    + sm_background_fit_penalty_weight*evaluation.total_bg_raw;
+  return evaluation;
+}
+}//anonymous namespace
+
+
 void write_results_html_and_n42(
   const std::vector<PrecomputedNuclideData> &precomputed,
   const PeakFitForNuclideConfig &config,
   const NuclideConfigSolution &genes,
   const BackgroundMode bg_mode,
   const std::string &html_filename,
-  const std::string &n42_output_dir )
+  const std::string &n42_output_dir,
+  const ConfigEvaluation *evaluation,
+  const std::string &run_metadata )
 {
+  if( evaluation )
+  {
+    write_cached_manual_review_report( precomputed, genes, bg_mode, html_filename,
+                                       n42_output_dir, *evaluation, run_metadata );
+    return;
+  }
+  const ConfigEvaluation generated_evaluation
+    = evaluate_for_report( precomputed, config, bg_mode );
+  write_cached_manual_review_report( precomputed, genes, bg_mode, html_filename,
+                                     n42_output_dir, generated_evaluation, run_metadata );
+  return;
+
+#if 0
+  // Superseded reporter retained temporarily for historical comparison.  This is intentionally
+  // excluded from compilation; all callers return through the cached manual-review writer above.
   // Open HTML file
   std::ofstream html_output( html_filename );
 
@@ -1825,6 +3007,7 @@ window.addEventListener('resize', )delim" << bg_resize_fn << R"delim();
   html_output << "</body>" << endl;
   html_output << "</html>" << endl;
   html_output.close();
+#endif
 }//write_results_html_and_n42
 
 

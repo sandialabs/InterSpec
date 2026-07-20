@@ -71,6 +71,10 @@ target_link_libraries( PeakFitImprove PRIVATE InterSpecLib )
 # For some reason ${openGA_SOURCE_DIR} doesnt look to be set - oh well, I'll just hard code things
 target_include_directories( PeakFitImprove PUBLIC "${openGA_SOURCE_DIR}/src" "${CMAKE_CURRENT_BINARY_DIR}/_deps/openga-src/src/" "${CMAKE_CURRENT_SOURCE_DIR}" )
 
+enable_testing()
+add_test( NAME PeakFitImproveReporterSelfTest
+          COMMAND $<TARGET_FILE:PeakFitImprove> --reporter-self-test )
+
 
 if( CMAKE_GENERATOR STREQUAL "Xcode" )
   set_target_properties( PeakFitImprove PROPERTIES

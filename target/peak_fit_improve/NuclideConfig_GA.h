@@ -228,6 +228,77 @@ struct BackgroundFitDetail
 };//struct BackgroundFitDetail
 
 
+/** The exact fit-quality components used by NuclideConfigEval and the GA objective.
+ The objective is `area_cost - find_reward - candidate_reward
+ + sm_miss_penalty_weight*miss_fraction`; the background term is recorded separately. */
+struct FitAccuracyBreakdown
+{
+  double cost = 0.0;
+  double area_cost = 0.0;
+  double find_reward = 0.0;
+  double candidate_reward = 0.0;
+  double miss_fraction = 0.0;
+  size_t missed_definitely_wanted = 0;
+  size_t extra_peaks = 0;
+};
+
+
+/** One authoritative NuclideConfigEval result.  The HTML reporter consumes these cached records
+ instead of fitting the spectrum a second time, so status, errors, peaks, and scores cannot drift
+ from the command-line evaluation. */
+struct SpectrumEvaluation
+{
+  std::string spectrum_id;
+  std::string anchor_id;
+  bool has_fit_result = false;
+  bool exception = false;
+  bool legitimate_empty = false;
+  bool mechanical_failure = false;
+  std::string status;
+  std::string error_message;
+  PeakFitResult fit_result;
+  FitAccuracyBreakdown accuracy;
+  BackgroundFitDetail background_detail;
+  double background_penalty = 0.0;
+};
+
+
+struct ConfigEvaluation
+{
+  std::vector<SpectrumEvaluation> spectra;
+  double total_fg = 0.0;
+  double total_bg_raw = 0.0;
+  double total_cost = 0.0;
+  FitAccuracyBreakdown accuracy_totals;
+  size_t successes = 0;
+  size_t legitimate_empties = 0;
+  size_t mechanical_failures = 0;
+};
+
+
+namespace ReportDetail
+{
+  /** Stable across thread counts and filesystem enumeration order for the same corpus paths. */
+  std::string canonical_spectrum_key( const PrecomputedNuclideData &pd );
+  std::string stable_spectrum_id( const PrecomputedNuclideData &pd );
+  std::string html_escape( const std::string &text );
+  size_t roi_channel_count( const SpecUtils::Measurement &measurement,
+                            double lower_energy, double upper_energy );
+  double roi_width_in_fwhm( double lower_energy, double upper_energy,
+                            double representative_fwhm );
+  void validate_evaluation_coverage( size_t selected_spectra,
+                                     const ConfigEvaluation &evaluation );
+
+  /** The shared objective helper used by both CLI scoring and the HTML reporter. */
+  FitAccuracyBreakdown score_observable_peaks(
+    const PrecomputedNuclideData &pd,
+    const std::vector<PeakDef> &observable_peaks );
+
+  /** Runs inexpensive pure reporter checks.  Throws on failure. */
+  void run_self_tests();
+}//namespace ReportDetail
+
+
 /** Computes the background-fit penalty for a single PrecomputedNuclideData.
 
  Runs `fit_peaks_for_nuclides` against the long_background spectrum (as the
@@ -279,7 +350,9 @@ void write_results_html_and_n42(
   const NuclideConfigSolution &genes,
   const BackgroundMode bg_mode,
   const std::string &html_filename,
-  const std::string &n42_output_dir );
+  const std::string &n42_output_dir,
+  const ConfigEvaluation *evaluation = nullptr,
+  const std::string &run_metadata = std::string() );
 
 
 /** The GA chromosome: maps ~50 genes to PeakFitForNuclideConfig fields. */

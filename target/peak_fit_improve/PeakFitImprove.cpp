@@ -1009,9 +1009,14 @@ static double score_config_over_precomputed(
     const std::vector<NuclideConfig_GA::PrecomputedNuclideData> &precomputed,
     const FitPeaksForNuclides::PeakFitForNuclideConfig &config,
     const size_t num_threads,
-    double *out_fg, double *out_bg )
+    double *out_fg, double *out_bg,
+    NuclideConfig_GA::ConfigEvaluation *report_evaluation = nullptr )
 {
-  const double num_sigma_contribution = 1.5;
+  if( report_evaluation )
+  {
+    *report_evaluation = NuclideConfig_GA::ConfigEvaluation{};
+    report_evaluation->spectra.resize( precomputed.size() );
+  }
 
   // Optional per-spectrum diagnostics (env PEAKFIT_PERSPEC_TSV) + scoring progress to stderr.  The
   // NuclideConfigEval path otherwise has no visibility into the (multi-minute) scoring loop, and no
@@ -1162,76 +1167,33 @@ static double score_config_over_precomputed(
     shadow_tsv->flush();
   };
 
-  // Reliability axis, reported SEPARATELY from the fit-quality cost (user guidance 2026-07-18) - a
-  // failed fit is a robustness bug to fix in the fitter, not something to price into the objective.
-  // Split it two ways, keyed on the total-miss fraction (which is >0 only when the truth actually had
-  // definitely-wanted peaks):
-  //   - MECHANICAL failure: non-Success (or exception) on a spectrum that HAD def-wanted peaks it
-  //     should have recovered - a real bug (the user reports "No ROIs" is usually this).
-  //   - LEGITIMATE empty: non-Success on a genuinely low-statistics spectrum with nothing
-  //     significant to fit - an empty result there is a VALID outcome, not a failure.
+  // Reliability is reported separately from fit-quality cost: any non-Success is a mechanical
+  // failure, while a legitimate empty is a successful fit with no observable or definitely-wanted
+  // missed peak.
   std::atomic<size_t> num_mechanical_failures{ 0 };
   std::atomic<size_t> num_legit_empty{ 0 };
 
-  struct AccuracyBreakdown
-  {
-    double cost = 0.0;
-    double area_cost = 0.0;
-    double find_reward = 0.0;
-    double candidate_reward = 0.0;
-    double miss_fraction = 0.0;
-    size_t missed_definitely_wanted = 0;
-    size_t extra_peaks = 0;
-  };
-
-  std::mutex accuracy_totals_mutex;
-  AccuracyBreakdown accuracy_totals;
-
-  // Fit-quality (accuracy) cost of `fit_peaks` vs this spectrum's truth: area-mismatch cost, minus
-  // the find/candidate rewards, plus the missed-definitely-wanted-area penalty.  openGA MINIMIZES,
-  // so the (higher-is-better) find/candidate rewards are negated (finding correct peaks LOWERS cost,
-  // spurious peaks RAISE it) and total_weight (area mismatch) is already a cost.  The miss term
-  // exists because a missed peak otherwise only forgoes its reward, so a total-miss would score ~0.
-  // With NO peaks (a mechanical failure, or a genuine empty result) this reduces to exactly a
-  // total-miss on the def-wanted area - the same score a Success that recovered nothing gets - and
-  // contains NO mechanical-failure penalty.
-  const auto accuracy_cost = [num_sigma_contribution](
-      const NuclideConfig_GA::PrecomputedNuclideData &pd,
-      const std::vector<PeakDef> &fit_peaks ) -> AccuracyBreakdown
-  {
-    const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
-    const std::vector<ExpectedPhotopeakInfo> scoring_peaks
-      = PeakFitImproveData::filter_photopeaks_for_scoring( pd.src_info->expected_signal_photopeaks, det_type );
-
-    CombinedPeakFitScore combined_score;
-    combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
-      fit_peaks, scoring_peaks, num_sigma_contribution );
-    combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
-      fit_peaks, scoring_peaks, num_sigma_contribution, det_type );
-    combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
-      fit_peaks, scoring_peaks, det_type );
-    CandidatePeak_GA::correct_score_for_escape_peaks( combined_score.candidate_peak_score, scoring_peaks );
-
-    AccuracyBreakdown answer;
-    answer.area_cost = combined_score.final_fit_score.total_weight;
-    answer.find_reward = combined_score.initial_fit_weights.find_weight;
-    answer.candidate_reward = combined_score.candidate_peak_score.score;
-    answer.miss_fraction = PeakFitImproveData::missed_def_wanted_area_fraction(
-        scoring_peaks, combined_score.candidate_peak_score.def_expected_but_not_detected, det_type );
-    answer.missed_definitely_wanted = combined_score.candidate_peak_score.num_def_wanted_not_found;
-    answer.extra_peaks = combined_score.candidate_peak_score.num_extra_peaks;
-    answer.cost = answer.area_cost - (answer.find_reward + answer.candidate_reward)
-        + NuclideConfig_GA::sm_miss_penalty_weight * answer.miss_fraction;
-    return answer;
-  };
+  NuclideConfig_GA::FitAccuracyBreakdown accuracy_totals;
+  std::vector<NuclideConfig_GA::FitAccuracyBreakdown> accuracy_partials(
+    precomputed.size() );
 
   // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
   // Called from both the serial and parallel paths below; safe to invoke concurrently.
-  const auto score_one_spectrum = [&config, &record_spectrum, &record_shadow, &status_name, &accuracy_cost,
+  const auto score_one_spectrum = [&config, &record_spectrum, &record_shadow, &status_name,
                                    &num_mechanical_failures, &num_legit_empty,
-                                   &accuracy_totals_mutex, &accuracy_totals](
+                                   &accuracy_partials,
+                                   &precomputed, report_evaluation](
       const NuclideConfig_GA::PrecomputedNuclideData &pd ) -> std::pair<double,double>
   {
+    const size_t index = static_cast<size_t>( &pd - precomputed.data() );
+    NuclideConfig_GA::SpectrumEvaluation *report = nullptr;
+    if( report_evaluation )
+    {
+      report = &report_evaluation->spectra[index];
+      report->spectrum_id = NuclideConfig_GA::ReportDetail::canonical_spectrum_key( pd );
+      report->anchor_id = NuclideConfig_GA::ReportDetail::stable_spectrum_id( pd );
+    }
+
     Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
     if( NuclideConfig_GA::sm_background_mode == NuclideConfig_GA::BackgroundMode::NoBackgroundFitNorm )
       options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
@@ -1242,7 +1204,7 @@ static double score_config_over_precomputed(
     {
       const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
 
-      const FitPeaksForNuclides::PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
+      FitPeaksForNuclides::PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
         pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
         pd.background, pd.drf, options, config, pd.peak_fit_prefs );
       record_shadow( pd, FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics(),
@@ -1253,35 +1215,45 @@ static double score_config_over_precomputed(
       // A non-Success fit produced no usable peaks (observable_peaks is empty), so it is scored as
       // the total-miss its empty result earns - identical to a Success that recovered nothing.  The
       // mechanical status is recorded separately (the counters + the TSV), never added to the cost.
-      const AccuracyBreakdown breakdown = accuracy_cost( pd, result.observable_peaks );
+      const NuclideConfig_GA::FitAccuracyBreakdown breakdown
+        = NuclideConfig_GA::ReportDetail::score_observable_peaks( pd, result.observable_peaks );
+      accuracy_partials[index] = breakdown;
       const double fg_score = breakdown.cost;
 
-      // Split a non-Success into a real mechanical failure (the truth had def-wanted peaks it should
-      // have recovered -> miss_frac > 0) vs a legitimate empty (nothing significant to fit).
-      if( !ok )
-        (breakdown.miss_fraction > 0.0 ? num_mechanical_failures : num_legit_empty)
-            .fetch_add( 1, std::memory_order_relaxed );
-
-      {
-        std::lock_guard<std::mutex> lock( accuracy_totals_mutex );
-        accuracy_totals.area_cost += breakdown.area_cost;
-        accuracy_totals.find_reward += breakdown.find_reward;
-        accuracy_totals.candidate_reward += breakdown.candidate_reward;
-        accuracy_totals.miss_fraction += breakdown.miss_fraction;
-        accuracy_totals.missed_definitely_wanted += breakdown.missed_definitely_wanted;
-        accuracy_totals.extra_peaks += breakdown.extra_peaks;
-      }
+      // Status and fit quality are separate axes: any non-Success is mechanical even when its empty
+      // result happens to earn no miss penalty.  A legitimate empty must complete successfully.
+      const bool legitimate_empty = ok && result.observable_peaks.empty()
+          && (breakdown.missed_definitely_wanted == 0);
+      const bool mechanical_failure = !ok;
+      if( mechanical_failure )
+        num_mechanical_failures.fetch_add( 1, std::memory_order_relaxed );
+      else if( legitimate_empty )
+        num_legit_empty.fetch_add( 1, std::memory_order_relaxed );
 
       // Background-false-positive penalty (no-op unless the bg-fit trial is enabled); only meaningful
       // for a successful fit.
+      NuclideConfig_GA::BackgroundFitDetail bg_detail;
       const double bg_raw = ok ? NuclideConfig_GA::compute_background_fit_penalty(
-          pd, config, NuclideConfig_GA::sm_background_mode, /*detail_out=*/nullptr ) : 0.0;
+          pd, config, NuclideConfig_GA::sm_background_mode,
+          report ? &bg_detail : nullptr ) : 0.0;
       record_shadow( pd, FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics(),
                      "background trial" );
 
       record_spectrum( pd, fg_score, ok ? "Success" : status_name(result.status), breakdown.miss_fraction,
                        result.observable_peaks.size(), result.fit_peaks.size(),
                        ok ? std::string() : result.error_message );
+      if( report )
+      {
+        report->has_fit_result = true;
+        report->legitimate_empty = legitimate_empty;
+        report->mechanical_failure = mechanical_failure;
+        report->status = ok ? "Success" : status_name(result.status);
+        report->error_message = result.error_message;
+        report->accuracy = breakdown;
+        report->background_detail = std::move( bg_detail );
+        report->background_penalty = bg_raw;
+        report->fit_result = std::move( result );
+      }
       return { fg_score, bg_raw };
     }
     catch( const std::exception &e )
@@ -1290,18 +1262,19 @@ static double score_config_over_precomputed(
       // An exception is a mechanical failure with no result at all; score the truth as a total-miss.
       num_mechanical_failures.fetch_add( 1, std::memory_order_relaxed );
       const std::vector<PeakDef> no_peaks;
-      const AccuracyBreakdown breakdown = accuracy_cost( pd, no_peaks );
+      const NuclideConfig_GA::FitAccuracyBreakdown breakdown
+        = NuclideConfig_GA::ReportDetail::score_observable_peaks( pd, no_peaks );
+      accuracy_partials[index] = breakdown;
       const double fg_score = breakdown.cost;
-      {
-        std::lock_guard<std::mutex> lock( accuracy_totals_mutex );
-        accuracy_totals.area_cost += breakdown.area_cost;
-        accuracy_totals.find_reward += breakdown.find_reward;
-        accuracy_totals.candidate_reward += breakdown.candidate_reward;
-        accuracy_totals.miss_fraction += breakdown.miss_fraction;
-        accuracy_totals.missed_definitely_wanted += breakdown.missed_definitely_wanted;
-        accuracy_totals.extra_peaks += breakdown.extra_peaks;
-      }
       record_spectrum( pd, fg_score, "EXCEPTION", breakdown.miss_fraction, 0, 0, e.what() );
+      if( report )
+      {
+        report->exception = true;
+        report->mechanical_failure = true;
+        report->status = "EXCEPTION";
+        report->error_message = e.what();
+        report->accuracy = breakdown;
+      }
       return { fg_score, 0.0 };
     }
   };//score_one_spectrum lambda
@@ -1342,18 +1315,47 @@ static double score_config_over_precomputed(
     }
   }
 
+  // Reduce all floating-point components in spectrum order, never worker-completion order.
+  for( const NuclideConfig_GA::FitAccuracyBreakdown &partial : accuracy_partials )
+  {
+    accuracy_totals.area_cost += partial.area_cost;
+    accuracy_totals.find_reward += partial.find_reward;
+    accuracy_totals.candidate_reward += partial.candidate_reward;
+    accuracy_totals.miss_fraction += partial.miss_fraction;
+    accuracy_totals.missed_definitely_wanted += partial.missed_definitely_wanted;
+    accuracy_totals.extra_peaks += partial.extra_peaks;
+  }
+
   if( out_fg ) *out_fg = total_fg;
   if( out_bg ) *out_bg = total_bg;
+
+  if( report_evaluation )
+  {
+    report_evaluation->total_fg = total_fg;
+    report_evaluation->total_bg_raw = total_bg;
+    report_evaluation->total_cost = total_fg
+        + NuclideConfig_GA::sm_background_fit_penalty_weight*total_bg;
+    report_evaluation->accuracy_totals = accuracy_totals;
+    for( const NuclideConfig_GA::SpectrumEvaluation &spectrum : report_evaluation->spectra )
+    {
+      if( spectrum.mechanical_failure )
+        report_evaluation->mechanical_failures += 1;
+      else if( spectrum.legitimate_empty )
+        report_evaluation->legitimate_empties += 1;
+      else
+        report_evaluation->successes += 1;
+    }
+  }
 
   // Reliability axis, reported separately from the fit-quality cost above: how many spectra the
   // fitter could not fit at all (scored as total-misses in the cost, but the goal is to drive this
   // count to zero by fixing the fitter, not by pricing failures).
   const size_t mech_fail = num_mechanical_failures.load();
   const size_t legit_empty = num_legit_empty.load();
-  std::cout << "  Mechanical fit failures (non-Success WITH def-wanted peaks - the fitter should fix): "
+  std::cout << "  Mechanical fit failures (any non-Success status; tracked independently of cost): "
             << mech_fail << " of " << precomputed.size()
             << " (" << (100.0 * mech_fail / std::max<size_t>(1, precomputed.size())) << "%)" << std::endl
-            << "  Legitimate empties (non-Success, nothing significant to fit - a valid outcome): "
+            << "  Legitimate empties (successful fit, no observable peak, and no definitely-wanted miss): "
             << legit_empty << std::endl
             << "  Accuracy components (per spectrum): area_cost="
             << (accuracy_totals.area_cost / std::max<size_t>(1, precomputed.size()))
@@ -1404,6 +1406,7 @@ int main( int argc, char **argv )
   size_t holdout_seed = 20260703;
   string config_genes_file;
   string eval_html_file;
+  bool reporter_self_test_arg = false;
 
   po::options_description desc( "Allowed options" );
   desc.add_options()
@@ -1467,7 +1470,9 @@ int main( int argc, char **argv )
        "NuclideConfigEval: file whose first non-comment line is a gene set, in either checkpoint-TSV "
        "(tab-separated) or results-txt (comma-space) key=value format.")
     ("eval-html", po::value<string>( &eval_html_file ),
-       "NuclideConfigEval: optional output HTML report filename for the evaluated config.");
+       "NuclideConfigEval: optional output HTML report filename for the evaluated config.")
+    ("reporter-self-test", po::bool_switch( &reporter_self_test_arg ),
+       "Run focused deterministic-ID, escaping, ROI-measurement, and objective-consistency tests, then exit.");
   
   po::variables_map vm;
   
@@ -1485,6 +1490,20 @@ int main( int argc, char **argv )
   {
     cout << desc << endl;
     return 0;
+  }
+
+  if( reporter_self_test_arg )
+  {
+    try
+    {
+      NuclideConfig_GA::ReportDetail::run_self_tests();
+      cout << "Reporter self-tests passed." << endl;
+      return 0;
+    }catch( const std::exception &e )
+    {
+      cerr << "Reporter self-test failed: " << e.what() << endl;
+      return -25;
+    }
   }
   
   // Validate and set up directories
@@ -1770,6 +1789,16 @@ int main( int argc, char **argv )
 
   const vector<DetectorInjectSet> &inject_sets = std::get<0>( loaded_data );
   vector<DataSrcInfo> input_srcs = std::get<1>( loaded_data );
+
+  // Filesystem directory iteration order is unspecified.  Sort before subsampling so the selected
+  // corpus, stable IDs, CLI totals, and report ordering reproduce across runs and thread counts.
+  std::stable_sort( input_srcs.begin(), input_srcs.end(),
+    []( const DataSrcInfo &lhs, const DataSrcInfo &rhs ) -> bool {
+      return std::tie( lhs.detector_name, lhs.location_name, lhs.live_time_name,
+                       lhs.src_info.src_name, lhs.src_info.file_base_path )
+           < std::tie( rhs.detector_name, rhs.location_name, rhs.live_time_name,
+                       rhs.src_info.src_name, rhs.src_info.file_base_path );
+    } );
 
   // Apply subsampling if requested (before any action uses input_srcs)
   if( vm.count( "subsample" ) )
@@ -2351,8 +2380,10 @@ int main( int argc, char **argv )
                                             PeakFitImprove::sm_num_optimization_threads );
 
       double total_fg = 0.0, total_bg = 0.0;
+      NuclideConfig_GA::ConfigEvaluation report_evaluation;
       const double total = score_config_over_precomputed( precomputed, config, eval_threads,
-                                                          &total_fg, &total_bg );
+                                                          &total_fg, &total_bg,
+                                                          &report_evaluation );
 
       cout << "NuclideConfigEval over " << precomputed.size() << " spectra:" << endl
            << "  total_cost=" << total
@@ -2362,8 +2393,18 @@ int main( int argc, char **argv )
 
       if( !eval_html_file.empty() )
       {
+        ostringstream run_metadata;
+        run_metadata << NuclideConfig_GA::sm_checkpoint_options_summary
+                     << "; static_data_dir=" << datadir
+                     << "; config_genes=" << config_genes_file
+                     << "; eval_threads=" << eval_threads
+                     << "; build_stamp=" << __DATE__ << " " << __TIME__
+                     << "; invocation=";
+        for( int arg_index = 0; arg_index < argc; ++arg_index )
+          run_metadata << (arg_index ? " " : "") << argv[arg_index];
         NuclideConfig_GA::write_results_html_and_n42( precomputed, config, genes,
-            NuclideConfig_GA::sm_background_mode, eval_html_file, /*n42_dir=*/"" );
+            NuclideConfig_GA::sm_background_mode, eval_html_file, /*n42_dir=*/"",
+            &report_evaluation, run_metadata.str() );
         cout << "Wrote HTML report to " << eval_html_file << endl;
       }
 
