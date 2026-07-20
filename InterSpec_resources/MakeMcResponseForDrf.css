@@ -46,6 +46,19 @@
   color: var(--interspec-fainter-text-color, #888);
 }
 
+.MakeMcResponseForDrf .McUpgradeNote
+{
+  font-size: smaller;
+  color: var(--interspec-warning-color, #a35d00);
+  margin: 2px 0 4px 0;
+}
+
+.MakeMcResponseForDrf .McAnchorInfo
+{
+  font-size: smaller;
+  margin: 2px 0;
+}
+
 .MakeMcResponseForDrf .McRunRow
 {
   margin-top: 6px;

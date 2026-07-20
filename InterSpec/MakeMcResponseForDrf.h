@@ -54,21 +54,41 @@ namespace ceelo
   struct GeometryDescriptor;
 }//namespace ceelo
 
-/** Characterizes a detectors response by Monte-Carlo simulation (CeeLo):
- the user enters/edits the detector geometry, picks a characterization
- profile and MC precision, and runs the (worker-thread) generation with a
- progress bar; the parameterized response can then be attached to the
- current DRF ("Use Response") - all off-axis/near-field/uncertainty-aware
- efficiency queries then dispatch to it.
+/** Characterizes a detectors response over its geometry (CeeLo): the user
+ enters/edits the detector geometry and picks how the response is built -
+ full Monte-Carlo characterization, a quick MC-backbone efficiency transfer,
+ or an instant (no-MC) transfer anchored on the DRF's measured efficiency
+ curve; the parameterized response can then be attached to the current DRF
+ ("Use Response") - all off-axis/near-field/uncertainty-aware efficiency
+ queries then dispatch to it.
 
  If the seed DRF carries raw measured efficiency points (from "Make Detector
- Response"), the generated response is grounded to them (k(E) + covariance);
+ Response"), a MC-generated response is grounded to them (k(E) + covariance);
  otherwise, if it has an efficiency curve, the curve is sampled as a
- lower-quality grounding anchor.
+ lower-quality grounding anchor.  The measured-curve transfer method instead
+ uses those same points/curve directly as the transfer anchor (the anchor IS
+ the grounding), and rebuilds automatically as the geometry is edited.
  */
 class MakeMcResponseForDrf : public Wt::WContainerWidget
 {
 public:
+  /** How the response is built - the entries of the "Method" combo. */
+  enum class Method : int
+  {
+    /** Full MC characterization over the selected profile (existing path). */
+    FullMc = 0,
+
+    /** EFFTRAN-style transfer from MC at only the on-axis energy backbone
+     (plus optionally a few cos-theta anchors) - roughly a tenth the MC of a
+     full characterization. */
+    QuickMc = 1,
+
+    /** EFFTRAN-style transfer anchored on the DRF's measured efficiency
+     points/curve - deterministic, no MC, rebuilt automatically on geometry
+     edits. */
+    CurveTransfer = 2
+  };//enum class Method
+
   MakeMcResponseForDrf( InterSpec *viewer,
                         std::shared_ptr<const DetectorPeakResponse> seed_drf );
 
@@ -112,10 +132,18 @@ public:
                             const ceelo::GeometryDescriptor &geom,
                             bool &curve_derived );
 
+  /** The currently selected build method. */
+  Method selectedMethod() const;
+
 protected:
   void handleGeometryChanged();
+  void handleMethodChanged();
   void handlePrecisionChanged();
   void updateEstimate();
+
+  /** Refreshes the measured-curve anchor description row (source label +
+   reference-distance edit) from the seed DRF and current geometry. */
+  void updateAnchorInfo();
 
   void startGeneration();
   void cancelGeneration();
@@ -130,6 +158,11 @@ protected:
   /** Per-node MC FEP precision (base target) from the GUI selection. */
   double selectedPrecision() const;
 
+  /** User-entered measured-curve anchor reference distance, in cm, or a
+   non-positive value when empty/unparseable (meaning: use the automatic
+   distance the curve is pinned at). */
+  double refDistanceOverrideCm() const;
+
   /** True when the "Balanced" precision option is selected, i.e. use the
       graded relax_mild precision map (ceelo::PrecisionProfile::RelaxMild). */
   bool selectedRelaxMild() const;
@@ -139,10 +172,20 @@ protected:
 
   DetectorGeometryInput *m_geometry;
 
+  Wt::WComboBox *m_method;      //Full MC | Quick MC (transfer) | From measured curve
   Wt::WComboBox *m_profile;     //Far-field | General | Contact
   Wt::WComboBox *m_precision;   //Fast (1%) | Normal (0.3%) | Balanced (relax_mild) | Thorough (0.1%) | Custom
   Wt::WLineEdit *m_customPrecision;
+  Wt::WComboBox *m_anchorAngles;    //On-axis only | 3 cos-theta anchors
+  Wt::WText *m_anchorInfo;          //measured-curve anchor source description
+  Wt::WLineEdit *m_refDistance;     //measured-curve anchor reference distance
   Wt::WText *m_estimate;
+
+  //Rows shown/hidden per selected method:
+  Wt::WContainerWidget *m_profileRow;
+  Wt::WContainerWidget *m_precRow;
+  Wt::WContainerWidget *m_anchorAnglesRow;
+  Wt::WContainerWidget *m_anchorRow;
 
   Wt::WPushButton *m_generate;
   Wt::WPushButton *m_cancelBtn;

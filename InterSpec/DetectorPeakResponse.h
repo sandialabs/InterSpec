@@ -772,6 +772,11 @@ public:
     NeedsMc               //refuse-grade query; value is a guess - offer a bespoke MC run
   };//enum class EffFlag
 
+  /** Short human-readable name of an #EffFlag value (e.g. "near-field
+   unmodeled") - for calc logs, fit warnings, and error messages.
+   */
+  static const char *effFlagName( const EffFlag flag );
+
   /** An efficiency evaluation: {value, absolute 1-sigma uncertainty, flag}. */
   struct EffEval
   {

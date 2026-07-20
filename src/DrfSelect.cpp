@@ -3438,13 +3438,28 @@ void DrfSelect::updateDrfContentSummary()
                     .arg( mc->provenance.valid_e_max_keV );
     add_chip( WString::tr("ds-chip-mc"), tip, true );
 
+    // Efficiency-transfer response (quick MC backbone, or anchored on a
+    //  measured curve): geometry-correct by kernel ratio, with the honest
+    //  off-axis/near sigma envelope attached; full MC remains the upgrade.
+    if( mc->model_transfer.has_value() )
+    {
+      const string min_dist = PhysicalUnits::printToBestLengthUnits(
+                            mc->provenance.min_distance_cm * PhysicalUnits::cm );
+      WString transfer_tip = WString::tr("ds-chip-tt-transfer")
+                              .arg( mc->provenance.valid_e_min_keV )
+                              .arg( mc->provenance.valid_e_max_keV )
+                              .arg( min_dist );
+      add_chip( WString::tr("ds-chip-transfer"), transfer_tip, true );
+    }//if( a transfer response )
+
     const bool grounded = !mc->grounding.empty();
     const bool curve_derived = grounded && mc->grounding.curve_derived;
     if( grounded )
       add_chip( WString::tr( curve_derived ? "ds-chip-grounded-curve" : "ds-chip-grounded" ),
                 WString::tr("ds-chip-tt-grounded"), true );
-    else
+    else if( !mc->model_transfer.has_value() )
       add_chip( WString::tr("ds-chip-grounded"), WString::tr("ds-chip-tt-grounded"), false );
+    //(a transfer response IS its anchor - an absent "grounded" chip would only confuse)
   }else
   {
     add_chip( WString::tr("ds-chip-mc"), WString::tr("ds-chip-tt-no-mc"), false );

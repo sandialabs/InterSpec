@@ -2067,6 +2067,78 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
         " model may not describe the data well." );
     }
   }//if( num_peaks > 0 && chi2 > 0 )
+
+  // Detector-efficiency validity flags: a MC/transfer-parameterized response reports when a
+  //  query fell outside its validated regime (near-field below the validity floor, refuse-grade
+  //  off-axis, collimator shadowing, energy clamping).  One message per flag kind, listing the
+  //  affected peak energies - never silently extrapolate.
+  {
+    typedef DetectorPeakResponse::EffFlag EffFlag;
+    map<EffFlag,string> energies_by_flag;
+    for( const pair<double,EffFlag> &eflag : chi2Fcn.peakDrfEffFlags() )
+    {
+      if( eflag.second == EffFlag::Ok )
+        continue;
+      char buf[32] = { '\0' };
+      snprintf( buf, sizeof(buf), "%.1f", eflag.first );
+      string &list = energies_by_flag[eflag.second];
+      list += (list.empty() ? "" : ", ") + string(buf);
+    }
+
+    for( const pair<const EffFlag,string> &flag_list : energies_by_flag )
+    {
+      switch( flag_list.first )
+      {
+        case EffFlag::Ok:
+          break;
+
+        case EffFlag::OutOfRangeClamped:
+          results.warnings.push_back( "The peaks at " + flag_list.second + " keV are outside the"
+            " detector response's validated energy range; their efficiencies were clamped to the"
+            " range edge and may be inaccurate." );
+          break;
+
+        case EffFlag::NearFieldUnmodeled:
+          results.warnings.push_back( "The source is closer than the detector response's validated"
+            " minimum distance for the peaks at " + flag_list.second + " keV; their efficiencies"
+            " are a geometry transfer with honestly inflated uncertainty.  A full MC"
+            " characterization with near-field detail would be more accurate." );
+          break;
+
+        case EffFlag::Shadowed:
+          results.warnings.push_back( "Collimator shadowing dominates the detector response for the"
+            " peaks at " + flag_list.second + " keV; the transferred efficiency cannot represent"
+            " scatter/leakage there, so results may be unreliable." );
+          break;
+
+        case EffFlag::NeedsMc:
+          results.warnings.push_back( "The detector-efficiency queries for the peaks at "
+            + flag_list.second + " keV are outside the regime the detector response can represent"
+            " (e.g. far off-axis); the fitted results should not be trusted - run a full MC"
+            " characterization for this geometry." );
+          break;
+      }//switch( flag_list.first )
+    }//for( each flag kind present )
+  }
+
+  // Legacy far-field DRF used close-in: with only an efficiency curve and a diameter, the model
+  //  is intrinsic-efficiency times point-source solid angle, which loses percent-level accuracy
+  //  once the source is within a few detector diameters.  (1/r-squared handles LARGE distances
+  //  correctly, so only closeness is flagged.)  A DRF with detector geometry attached evaluates
+  //  distance-correctly and is covered by the flag warnings above instead.
+  {
+    const shared_ptr<const DetectorPeakResponse> &drf = chi2Fcn.detector();
+    if( drf && drf->isValid() && !drf->isFixedGeometry() && !drf->ceeloResponse()
+        && (drf->detectorDiameter() > 0.0)
+        && (chi2Fcn.distance() < 3.0*drf->detectorDiameter()) )
+    {
+      results.warnings.push_back( "The source is close to the detector relative to the detector"
+        " size, but the detector efficiency curve assumes a far-field point response, so results"
+        " may be biased.  Consider enabling distance-aware efficiency transfer by entering the"
+        " detector dimensions (Detector Response tool, \"Modify...\", Geometry and MC tab,"
+        " \"From measured curve\" method)." );
+    }
+  }
 }//void check_for_fit_warnings( ModelFitResults & )
 
 

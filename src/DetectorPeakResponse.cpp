@@ -964,6 +964,22 @@ void DetectorPeakResponse::setMeasuredPoints( shared_ptr<const MeasuredDrfPoints
 }//setMeasuredPoints(...)
 
 
+const char *DetectorPeakResponse::effFlagName( const EffFlag flag )
+{
+  switch( flag )
+  {
+    case EffFlag::Ok:                 return "ok";
+    case EffFlag::OutOfRangeClamped:  return "out-of-range clamped";
+    case EffFlag::NearFieldUnmodeled: return "near-field unmodeled";
+    case EffFlag::Shadowed:           return "collimator shadowed";
+    case EffFlag::NeedsMc:            return "needs bespoke MC";
+  }//switch( flag )
+
+  assert( 0 );
+  return "unknown";
+}//effFlagName(...)
+
+
 namespace
 {
   /** Maps the CeeLo provenance flag to the DetectorPeakResponse one. */

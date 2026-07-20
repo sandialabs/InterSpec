@@ -53,6 +53,7 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -172,10 +173,18 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_interspec( viewer ),
     m_seedDrf( seed_drf ),
     m_geometry( nullptr ),
+    m_method( nullptr ),
     m_profile( nullptr ),
     m_precision( nullptr ),
     m_customPrecision( nullptr ),
+    m_anchorAngles( nullptr ),
+    m_anchorInfo( nullptr ),
+    m_refDistance( nullptr ),
     m_estimate( nullptr ),
+    m_profileRow( nullptr ),
+    m_precRow( nullptr ),
+    m_anchorAnglesRow( nullptr ),
+    m_anchorRow( nullptr ),
     m_generate( nullptr ),
     m_cancelBtn( nullptr ),
     m_progress( nullptr ),
@@ -204,9 +213,30 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   WGroupBox *optsBox = addNew<WGroupBox>( WString::tr("mmr-options-title") );
   optsBox->addStyleClass( "McOptsBox" );
 
-  WContainerWidget *profileRow = optsBox->addNew<WContainerWidget>();
-  profileRow->addNew<WLabel>( WString::tr("mmr-profile") );
-  m_profile = profileRow->addNew<WComboBox>();
+  WContainerWidget *methodRow = optsBox->addNew<WContainerWidget>();
+  methodRow->addNew<WLabel>( WString::tr("mmr-method") );
+  m_method = methodRow->addNew<WComboBox>();
+  m_method->addItem( WString::tr("mmr-method-full-mc") );        //Method::FullMc
+  m_method->addItem( WString::tr("mmr-method-quick-mc") );       //Method::QuickMc
+  m_method->addItem( WString::tr("mmr-method-curve-transfer") ); //Method::CurveTransfer
+  m_method->setCurrentIndex( 0 );
+  m_method->activated().connect( this, &MakeMcResponseForDrf::handleMethodChanged );
+  HelpSystem::attachToolTipOn( m_method, WString::tr("mmr-tt-method"), true );
+
+  // When the DRF already carries a quick/transfer response, nudge toward the
+  //  full characterization as the accuracy upgrade.
+  const shared_ptr<const ceelo::DetectorResponse> seed_resp
+                             = m_seedDrf ? m_seedDrf->ceeloResponse() : nullptr;
+  if( seed_resp && seed_resp->model_transfer.has_value() )
+  {
+    WText *upgradeNote = optsBox->addNew<WText>( WString::tr("mmr-upgrade-note") );
+    upgradeNote->addStyleClass( "McUpgradeNote" );
+    upgradeNote->setInline( false );
+  }
+
+  m_profileRow = optsBox->addNew<WContainerWidget>();
+  m_profileRow->addNew<WLabel>( WString::tr("mmr-profile") );
+  m_profile = m_profileRow->addNew<WComboBox>();
   m_profile->addItem( WString::tr("mmr-profile-general") );
   m_profile->addItem( WString::tr("mmr-profile-farfield") );
   m_profile->addItem( WString::tr("mmr-profile-contact") );
@@ -214,9 +244,9 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_profile->activated().connect( this, &MakeMcResponseForDrf::updateEstimate );
   HelpSystem::attachToolTipOn( m_profile, WString::tr("mmr-tt-profile"), true );
 
-  WContainerWidget *precRow = optsBox->addNew<WContainerWidget>();
-  precRow->addNew<WLabel>( WString::tr("mmr-precision") );
-  m_precision = precRow->addNew<WComboBox>();
+  m_precRow = optsBox->addNew<WContainerWidget>();
+  m_precRow->addNew<WLabel>( WString::tr("mmr-precision") );
+  m_precision = m_precRow->addNew<WComboBox>();
   m_precision->addItem( WString::tr("mmr-precision-fast") );      //idx0: 1%
   m_precision->addItem( WString::tr("mmr-precision-normal") );    //idx1: 0.3%
   m_precision->addItem( WString::tr("mmr-precision-balanced") );  //idx2: relax_mild (0.3% base, relaxed high-E)
@@ -226,11 +256,33 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_precision->activated().connect( this, &MakeMcResponseForDrf::handlePrecisionChanged );
   HelpSystem::attachToolTipOn( m_precision, WString::tr("mmr-tt-precision"), true );
 
-  m_customPrecision = precRow->addNew<WLineEdit>();
+  m_customPrecision = m_precRow->addNew<WLineEdit>();
   m_customPrecision->setTextSize( 5 );
   m_customPrecision->setPlaceholderText( "0.3%" );
   m_customPrecision->changed().connect( this, &MakeMcResponseForDrf::updateEstimate );
   m_customPrecision->hide();
+
+  m_anchorAnglesRow = optsBox->addNew<WContainerWidget>();
+  m_anchorAnglesRow->addNew<WLabel>( WString::tr("mmr-anchor-angles") );
+  m_anchorAngles = m_anchorAnglesRow->addNew<WComboBox>();
+  m_anchorAngles->addItem( WString::tr("mmr-anchor-angles-1") );  //on-axis only
+  m_anchorAngles->addItem( WString::tr("mmr-anchor-angles-3") );  //3 cos-theta anchors
+  m_anchorAngles->setCurrentIndex( 1 );  //3 anchors: off-axis FEP + real HPGe total
+  m_anchorAngles->activated().connect( this, &MakeMcResponseForDrf::updateEstimate );
+  HelpSystem::attachToolTipOn( m_anchorAngles, WString::tr("mmr-tt-anchor-angles"), true );
+  m_anchorAnglesRow->hide();
+
+  m_anchorRow = optsBox->addNew<WContainerWidget>();
+  m_anchorInfo = m_anchorRow->addNew<WText>( "" );
+  m_anchorInfo->addStyleClass( "McAnchorInfo" );
+  m_anchorInfo->setInline( false );
+  WContainerWidget *refDistRow = m_anchorRow->addNew<WContainerWidget>();
+  refDistRow->addNew<WLabel>( WString::tr("mmr-ref-distance") );
+  m_refDistance = refDistRow->addNew<WLineEdit>();
+  m_refDistance->setTextSize( 10 );
+  m_refDistance->changed().connect( this, &MakeMcResponseForDrf::handleGeometryChanged );
+  HelpSystem::attachToolTipOn( m_refDistance, WString::tr("mmr-tt-ref-distance"), true );
+  m_anchorRow->hide();
 
   m_estimate = optsBox->addNew<WText>( "" );
   m_estimate->addStyleClass( "McEstimate" );
@@ -252,8 +304,7 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_status->addStyleClass( "McStatus" );
   m_status->setInline( false );
 
-  handleGeometryChanged();
-  updateEstimate();
+  handleMethodChanged();
 }//MakeMcResponseForDrf constructor
 
 
@@ -296,6 +347,51 @@ Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &MakeMcResponseForDrf::updated
 }
 
 
+MakeMcResponseForDrf::Method MakeMcResponseForDrf::selectedMethod() const
+{
+  switch( m_method->currentIndex() )
+  {
+    case 1: return Method::QuickMc;
+    case 2: return Method::CurveTransfer;
+    default: return Method::FullMc;
+  }
+}//selectedMethod()
+
+
+void MakeMcResponseForDrf::handleMethodChanged()
+{
+  const Method method = selectedMethod();
+
+  m_profileRow->setHidden( method != Method::FullMc );
+  m_precRow->setHidden( method == Method::CurveTransfer );
+  m_anchorAnglesRow->setHidden( method != Method::QuickMc );
+  m_anchorRow->setHidden( method != Method::CurveTransfer );
+
+  // The measured-curve transfer is instant and rebuilds automatically - no
+  //  explicit "Generate" step (this is what guarantees that entering geometry
+  //  and accepting the dialog always yields an attached, distance-aware
+  //  response).
+  m_generate->setHidden( method == Method::CurveTransfer );
+
+  // A result from a different method is not what the user is configuring;
+  //  abandon any in-flight generation too (its finish handler is stale-guarded
+  //  and balances the update lock itself), and take back the run-row UI.
+  ++m_generationId;
+  if( m_cancelFlag )
+    m_cancelFlag->store( true );
+  m_progress->hide();
+  m_cancelBtn->hide();
+  if( m_result )
+  {
+    m_result.reset();
+    m_validationChanged.emit( false );
+  }
+  m_status->setText( "" );
+
+  handleGeometryChanged();
+}//handleMethodChanged()
+
+
 void MakeMcResponseForDrf::handleGeometryChanged()
 {
   //Any geometry change invalidates a previously generated response.
@@ -307,8 +403,77 @@ void MakeMcResponseForDrf::handleGeometryChanged()
   }
 
   m_generate->setEnabled( m_geometry->isValid() );
+  updateAnchorInfo();
   updateEstimate();
+
+  // Auto-build the instant transfer whenever the inputs are usable.
+  if( (selectedMethod() == Method::CurveTransfer) && m_geometry->isValid() )
+    startGeneration();
 }//handleGeometryChanged()
+
+
+void MakeMcResponseForDrf::updateAnchorInfo()
+{
+  if( selectedMethod() != Method::CurveTransfer )
+    return;
+
+  if( !m_geometry->isValid() )
+  {
+    m_anchorInfo->setText( "" );
+    return;
+  }
+
+  try
+  {
+    const ceelo::GeometryDescriptor gd = m_geometry->toDescriptor();
+    const CeeLoUtils::TransferAnchor anchor
+          = CeeLoUtils::transferAnchorForDrf( m_seedDrf, gd, refDistanceOverrideCm() );
+
+    const string dist_str = PhysicalUnits::printToBestLengthUnits(
+                                    anchor.ref_distance_cm * PhysicalUnits::cm );
+    const int npoints = static_cast<int>( anchor.curve.energies_keV.size() );
+
+    if( anchor.curve_derived )
+    {
+      // The reference distance is only meaningful input for a sampled curve.
+      m_refDistance->setEnabled( true );
+      if( m_refDistance->text().empty() )
+        m_refDistance->setText( WString::fromUTF8(dist_str) );
+      m_anchorInfo->setText( WString::tr("mmr-anchor-src-curve")
+                              .arg( npoints ).arg( dist_str ) );
+    }else
+    {
+      // Raw measured points pin the distance - display it, read-only.
+      m_refDistance->setEnabled( false );
+      m_refDistance->setText( WString::fromUTF8(dist_str) );
+      m_anchorInfo->setText( WString::tr("mmr-anchor-src-points")
+                              .arg( npoints ).arg( dist_str ) );
+    }
+  }catch( std::exception &e )
+  {
+    m_refDistance->setEnabled( false );
+    m_anchorInfo->setText( WString::tr("mmr-anchor-unusable")
+                            .arg( WString::fromUTF8(e.what()) ) );
+  }
+}//updateAnchorInfo()
+
+
+double MakeMcResponseForDrf::refDistanceOverrideCm() const
+{
+  string txt = m_refDistance->text().toUTF8();
+  SpecUtils::trim( txt );
+  if( txt.empty() )
+    return -1.0;
+
+  try
+  {
+    const double dist = PhysicalUnits::stringToDistance( txt );
+    return (dist > 0.0) ? (dist / PhysicalUnits::cm) : -1.0;
+  }catch( std::exception & )
+  {
+    return -1.0;
+  }
+}//refDistanceOverrideCm()
 
 
 void MakeMcResponseForDrf::handlePrecisionChanged()
@@ -360,6 +525,14 @@ double MakeMcResponseForDrf::selectedPrecision() const
 
 void MakeMcResponseForDrf::updateEstimate()
 {
+  const Method method = selectedMethod();
+
+  if( method == Method::CurveTransfer )
+  {
+    m_estimate->setText( WString::tr("mmr-estimate-instant") );
+    return;
+  }
+
   if( !m_geometry->isValid() )
   {
     m_estimate->setText( "" );
@@ -380,18 +553,40 @@ void MakeMcResponseForDrf::updateEstimate()
       case 2: opts.profile = ceelo::ResponseProfile::Contact; break;
       default: opts.profile = ceelo::ResponseProfile::General; break;
     }
+
+    if( method == Method::QuickMc )
+    {
+      opts.transfer_mode = true;
+      opts.n_anchor_angles = (m_anchorAngles->currentIndex() == 0) ? 1 : 3;
+    }
+
     const int nodes = ceelo::ResponseGenerator::estimated_node_count( gd, opts );
 
     // Rough per-node wall time scales with 1/precision^2, capped at the
     //  per-node ceiling; the constants are ballpark (M1-class laptop). The
-    //  relax_mild map cuts the expensive high-E node share ~2x (D0 memo).
+    //  relax_mild map cuts the expensive high-E node share ~2x (D0 memo) -
+    //  but it only relaxes the angular/near scan stages, and transfer mode is
+    //  (almost) all stage-1 backbone, so no relax credit is taken there.
     const double prec = opts.node_fep_precision;
-    const double relax = selectedRelaxMild() ? 0.5 : 1.0;
+    const double relax = (selectedRelaxMild() && (method == Method::FullMc)) ? 0.5 : 1.0;
     const double per_node_s = relax * std::min( 8.0, 0.05 * std::pow( 0.003/prec, 2.0 ) + 0.05 );
     const int total_min = std::max( 1, static_cast<int>( std::ceil( nodes * per_node_s / 60.0 ) ) );
 
-    m_estimate->setText( WString::tr("mmr-estimate")
-                          .arg( nodes ).arg( total_min ) );
+    if( method == Method::QuickMc )
+    {
+      // Show the saving against a full General-profile characterization.
+      ceelo::GenerationOptions full_opts = opts;
+      full_opts.transfer_mode = false;
+      full_opts.n_anchor_angles = 1;
+      full_opts.profile = ceelo::ResponseProfile::General;
+      const int full_nodes = ceelo::ResponseGenerator::estimated_node_count( gd, full_opts );
+      m_estimate->setText( WString::tr("mmr-estimate-transfer")
+                            .arg( nodes ).arg( total_min ).arg( full_nodes ) );
+    }else
+    {
+      m_estimate->setText( WString::tr("mmr-estimate")
+                            .arg( nodes ).arg( total_min ) );
+    }
   }catch( std::exception & )
   {
     m_estimate->setText( "" );
@@ -417,6 +612,57 @@ void MakeMcResponseForDrf::startGeneration()
   m_result.reset();
   m_validationChanged.emit( false );
 
+  const Method method = selectedMethod();
+
+  if( method == Method::CurveTransfer )
+  {
+    // Instant, deterministic, no MC.  The anchor curves read the DRF, so they
+    //  are built HERE on the session thread; the worker gets only value
+    //  copies and pure-CeeLo inputs.
+    CeeLoUtils::TransferAnchor anchor;
+    try
+    {
+      anchor = CeeLoUtils::transferAnchorForDrf( m_seedDrf, gd, refDistanceOverrideCm() );
+    }catch( std::exception &e )
+    {
+      m_status->setText( WString::tr("mmr-anchor-unusable")
+                          .arg( WString::fromUTF8(e.what()) ) );
+      return;
+    }
+
+    const ceelo::AnchorCurve tot_curve
+                       = CeeLoUtils::totalTransferAnchorForDrf( m_seedDrf, anchor );
+    const string det_name = m_seedDrf ? m_seedDrf->name() : string("user geometry");
+
+    const string sessionId = wApp->sessionId();
+    const string widgetId = id();
+
+    auto worker = [gd,anchor,tot_curve,det_name,sessionId,widgetId,generation_id](){
+      shared_ptr<ceelo::DetectorResponse> response;
+      string errmsg;
+      try
+      {
+        response = CeeLoUtils::makeTransferResponse( gd, anchor, tot_curve, det_name );
+      }catch( std::exception &e )
+      {
+        errmsg = e.what();
+      }
+
+      WServer::instance()->post( sessionId, [widgetId,response,errmsg,generation_id](){
+        auto *tool = dynamic_cast<MakeMcResponseForDrf *>( wApp->domRoot()->findById(widgetId) );
+        if( tool )
+          tool->handleGenerationFinished( response, errmsg, generation_id );
+        wApp->triggerUpdate();
+      } );
+    };//worker
+
+    m_status->setText( WString::tr("mmr-status-transfer-building") );
+
+    wApp->enableUpdates( true );
+    WServer::instance()->ioService().boost::asio::io_service::post( worker );
+    return;
+  }//if( method == Method::CurveTransfer )
+
   ceelo::GenerationOptions opts;
   opts.node_fep_precision = selectedPrecision();
   opts.precision_profile = selectedRelaxMild()
@@ -428,6 +674,16 @@ void MakeMcResponseForDrf::startGeneration()
     case 2: opts.profile = ceelo::ResponseProfile::Contact; break;
     default: opts.profile = ceelo::ResponseProfile::General; break;
   }
+
+  if( method == Method::QuickMc )
+  {
+    // EFFTRAN-style transfer: MC only the on-axis energy backbone (plus a few
+    //  forced cos-theta anchors when selected); the ray-traced kernel carries
+    //  the distance/angle transfer.  generate() forces the FarField profile.
+    opts.transfer_mode = true;
+    opts.n_anchor_angles = (m_anchorAngles->currentIndex() == 0) ? 1 : 3;
+  }
+
   opts.detector_name = m_seedDrf ? m_seedDrf->name() : string("user geometry");
   opts.base_seed = 1;  //deterministic; re-running the same setup reproduces
 
@@ -521,12 +777,16 @@ void MakeMcResponseForDrf::handleGenerationFinished(
                               const std::string &errmsg,
                               const int generation_id )
 {
-  if( generation_id != m_generationId )
-    return;  //stale run
-
+  // Balance the enableUpdates(true) from startGeneration FIRST - every started
+  //  generation posts exactly one finish, including runs made stale by a
+  //  restart or method switch (Wt refcounts the update lock, so a stale
+  //  finish must still decrement it or server push stays on forever).
   wApp->enableUpdates( false );
 
-  m_generate->show();
+  if( generation_id != m_generationId )
+    return;  //stale run - a newer run/state owns the UI
+
+  m_generate->setHidden( selectedMethod() == Method::CurveTransfer );
   m_generate->setEnabled( m_geometry->isValid() );
   m_cancelBtn->hide();
   m_progress->hide();
@@ -546,8 +806,19 @@ void MakeMcResponseForDrf::handleGenerationFinished(
   m_validationChanged.emit( true );
 
   const bool grounded = !result->grounding.empty();
-  m_status->setText( WString::tr( grounded ? "mmr-status-done-grounded"
-                                           : "mmr-status-done" ) );
+  if( result->model_transfer.has_value() )
+  {
+    // A transfer (quick-MC or measured-curve) response: state the validity
+    //  floor - off-axis/near queries carry an honest, inflated uncertainty.
+    const string min_dist = PhysicalUnits::printToBestLengthUnits(
+                    result->provenance.min_distance_cm * PhysicalUnits::cm );
+    m_status->setText( WString::tr("mmr-status-transfer-done")
+                        .arg( min_dist ) );
+  }else
+  {
+    m_status->setText( WString::tr( grounded ? "mmr-status-done-grounded"
+                                             : "mmr-status-done" ) );
+  }
 
   m_responseGenerated.emit( result );
 }//handleGenerationFinished(...)

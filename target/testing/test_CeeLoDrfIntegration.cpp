@@ -58,15 +58,25 @@
 
 #include <rapidxml/rapidxml.hpp>
 
+#include "Minuit2/MnUserParameters.h"
+
 // CeeLo (external_libs/CeeLo/src)
 #include "io/DetectorResponse.h"
 
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "SandiaDecay.h"
+
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorEfficiency.h"
+#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
 using namespace std;
 
@@ -507,3 +517,424 @@ BOOST_AUTO_TEST_CASE( measured_points_covariance )
   BOOST_CHECK_NO_THROW( MeasuredDrfPoints::equalEnough( *points, *points2 ) );
 #endif
 }//measured_points_covariance
+
+
+// ---------------------------------------------------------------------------
+// Efficiency transfer ("quick DRF" / measured-curve -> other distances).
+// MC-free: uses only the geometry descriptors of the golden fixtures.
+// ---------------------------------------------------------------------------
+namespace
+{
+  /** A legacy far-field DRF with a smooth synthetic intrinsic curve over
+   [20,3000] keV (same functional family as real DRFs). */
+  shared_ptr<DetectorPeakResponse> synthetic_curve_drf( const double diam_cm )
+  {
+    auto det = make_shared<DetectorPeakResponse>( "synthetic", "transfer test" );
+    const string fcn = "exp(-0.5 - 0.1*log(x) - 0.05*log(x)^2)";
+    det->setIntrinsicEfficiencyFormula( fcn, diam_cm*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 20.0f, 3000.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    BOOST_REQUIRE( det->isValid() );
+    return det;
+  }//synthetic_curve_drf(...)
+
+
+  ceelo::GeometryDescriptor golden_descriptor( const string &preset )
+  {
+    return drf_with_golden( preset )->ceeloResponse()->descriptor;
+  }
+}//namespace
+
+
+/** The transfer must reproduce its anchor exactly at the anchor position -
+ this fails loudly if the crystal-face/endcap-front frame conversion (or the
+ detector-setback handling) is wrong.
+ */
+BOOST_AUTO_TEST_CASE( transfer_anchor_identity )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double diam_cm = 2.0 * geom.transverse_half_extent();
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( diam_cm );
+
+  const CeeLoUtils::TransferAnchor anchor
+                       = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+  BOOST_CHECK( anchor.curve_derived );
+  BOOST_REQUIRE_GE( anchor.curve.energies_keV.size(), 16u );
+  BOOST_CHECK_GT( anchor.ref_distance_cm, 0.0 );
+
+  const shared_ptr<ceelo::DetectorResponse> resp
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" );
+  BOOST_REQUIRE( resp );
+  BOOST_CHECK( resp->model_transfer.has_value() );
+
+  auto det2 = make_shared<DetectorPeakResponse>( *det );
+  det2->setCeeloResponse( resp );
+
+  const double dist = anchor.ref_distance_cm * PhysicalUnits::cm;
+  for( size_t i = 0; i < anchor.curve.energies_keV.size(); ++i )
+  {
+    const float energy = static_cast<float>( anchor.curve.energies_keV[i] );
+    const DetectorPeakResponse::EffEval eval
+                          = det2->fepEfficiencyEval( energy, 0.0, 0.0, dist );
+    BOOST_CHECK_CLOSE( eval.value, anchor.curve.eff[i], 0.1 );  //percent
+  }
+}//transfer_anchor_identity
+
+
+/** Far-field distance transfer must follow the inverse-square/solid-angle law. */
+BOOST_AUTO_TEST_CASE( transfer_far_field_inverse_square )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double a_cm = geom.transverse_half_extent();
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+
+  const CeeLoUtils::TransferAnchor anchor
+                       = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+  const shared_ptr<ceelo::DetectorResponse> resp
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" );
+  auto det2 = make_shared<DetectorPeakResponse>( *det );
+  det2->setCeeloResponse( resp );
+
+  //The kernel references the interaction DEPTH inside the crystal (a couple
+  //  cm effective for NaI at 662 keV), so face-referenced 1/r^2 is only
+  //  asymptotic: deviation ~ z_eff/d.  Probe far enough out that it is <1%,
+  //  and check it shrinks with distance (i.e. it IS the asymptote).
+  const double d1 = 100.0 * a_cm * PhysicalUnits::cm;
+  const double d2 = 200.0 * a_cm * PhysicalUnits::cm;
+  const double eff1 = det2->fepEfficiencyEval( 661.7f, 0.0, 0.0, d1 ).value;
+  const double eff2 = det2->fepEfficiencyEval( 661.7f, 0.0, 0.0, d2 ).value;
+  BOOST_REQUIRE_GT( eff1, 0.0 );
+  BOOST_REQUIRE_GT( eff2, 0.0 );
+  BOOST_CHECK_CLOSE( eff1/eff2, (d2*d2)/(d1*d1), 1.0 );  //percent
+
+  const double near1 = det2->fepEfficiencyEval( 661.7f, 0.0, 0.0, 0.2*d1 ).value;
+  const double near2 = det2->fepEfficiencyEval( 661.7f, 0.0, 0.0, 0.2*d2 ).value;
+  BOOST_CHECK_LT( std::fabs( eff1/eff2 - 4.0 ), std::fabs( near1/near2 - 4.0 ) );
+}//transfer_far_field_inverse_square
+
+
+/** Near-contact / off-axis / out-of-range queries must flag and inflate sigma
+ - never silently extrapolate.
+ */
+BOOST_AUTO_TEST_CASE( transfer_flags_and_sigma )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double a_cm = geom.transverse_half_extent();
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+
+  const CeeLoUtils::TransferAnchor anchor
+                       = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+  const shared_ptr<ceelo::DetectorResponse> resp
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" );
+  auto det2 = make_shared<DetectorPeakResponse>( *det );
+  det2->setCeeloResponse( resp );
+
+  BOOST_REQUIRE_GT( resp->provenance.min_distance_cm, 0.0 );
+
+  const double far_dist = 10.0 * a_cm * PhysicalUnits::cm;
+  const DetectorPeakResponse::EffEval far_eval
+                    = det2->fepEfficiencyEval( 661.7f, 0.0, 0.0, far_dist );
+  BOOST_CHECK( far_eval.flag == DetectorPeakResponse::EffFlag::Ok );
+
+  //Below the validity floor: flagged, and fractional sigma inflated vs far.
+  const double close_dist = 0.5 * resp->provenance.min_distance_cm * PhysicalUnits::cm;
+  const DetectorPeakResponse::EffEval close_eval
+                    = det2->fepEfficiencyEval( 661.7f, 0.0, 0.0, close_dist );
+  BOOST_CHECK( close_eval.flag == DetectorPeakResponse::EffFlag::NearFieldUnmodeled );
+  BOOST_CHECK_GT( close_eval.sigma/close_eval.value, far_eval.sigma/far_eval.value );
+
+  //Off-axis: the angle-flat transfer carries no angular residual, so the
+  //  SigmaTransferModel must inflate sigma with angle.
+  const DetectorPeakResponse::EffEval off_eval
+                    = det2->fepEfficiencyEval( 661.7f, M_PI/3.0, 0.0, far_dist );
+  BOOST_CHECK_GT( off_eval.sigma/off_eval.value, far_eval.sigma/far_eval.value );
+
+  //Outside the anchored energy span: clamped.
+  const DetectorPeakResponse::EffEval high_e
+                    = det2->fepEfficiencyEval( 3500.0f, 0.0, 0.0, far_dist );
+  BOOST_CHECK( high_e.flag == DetectorPeakResponse::EffFlag::OutOfRangeClamped );
+}//transfer_flags_and_sigma
+
+
+/** Anchor-source selection: raw single-distance measured points beat the
+ curve; mixed distances fall back to the curve; fixed geometry throws.
+ */
+BOOST_AUTO_TEST_CASE( transfer_anchor_source_selection )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double diam_cm = 2.0 * geom.transverse_half_extent();
+
+  auto make_points = []( const bool mixed_distances ){
+    vector<MeasuredEffPoint> pts;
+    size_t idx = 0;
+    for( const double E : {121.78, 344.28, 661.66, 778.9, 1408.01} )
+    {
+      MeasuredEffPoint p;
+      p.energy = static_cast<float>( E );
+      p.efficiency = static_cast<float>( 1.0E-3 * std::exp( -E/2000.0 ) );
+      p.fracStatUncert = 0.01f;
+      p.fracCertUncert = 0.03f;
+      p.sourceKey = "src#0";
+      const double d_cm = (mixed_distances && ((idx++ % 2) == 1)) ? 50.0 : 25.0;
+      p.distance = static_cast<float>( d_cm * PhysicalUnits::cm );
+      pts.push_back( p );
+    }
+    auto points = make_shared<MeasuredDrfPoints>();
+    points->setPoints( pts );
+    return points;
+  };
+
+  //Single-distance points: the raw branch, distance pinned by the points.
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( diam_cm );
+  det->setMeasuredPoints( make_points(false) );
+
+  const CeeLoUtils::TransferAnchor raw_anchor
+                       = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+  BOOST_CHECK( !raw_anchor.curve_derived );
+  BOOST_CHECK_EQUAL( raw_anchor.curve.energies_keV.size(), 5u );
+  BOOST_CHECK_CLOSE( raw_anchor.ref_distance_cm, 25.0, 0.1 );
+  //Per-point sigma: stat and certificate folded together.
+  BOOST_REQUIRE_EQUAL( raw_anchor.curve.frac_sigma.size(), 5u );
+  BOOST_CHECK_CLOSE( raw_anchor.curve.frac_sigma[0],
+                     std::sqrt(0.01*0.01 + 0.03*0.03), 1.0 );
+
+  //Mixed-distance points: falls back to sampling the fitted curve.
+  shared_ptr<DetectorPeakResponse> det_mixed = synthetic_curve_drf( diam_cm );
+  det_mixed->setMeasuredPoints( make_points(true) );
+
+  const CeeLoUtils::TransferAnchor curve_anchor
+                       = CeeLoUtils::transferAnchorForDrf( det_mixed, geom, -1.0 );
+  BOOST_CHECK( curve_anchor.curve_derived );
+  BOOST_CHECK_GE( curve_anchor.curve.energies_keV.size(), 16u );
+
+  //A user-specified reference distance overrides the automatic one.
+  const CeeLoUtils::TransferAnchor override_anchor
+                       = CeeLoUtils::transferAnchorForDrf( det_mixed, geom, 123.0 );
+  BOOST_CHECK_CLOSE( override_anchor.ref_distance_cm, 123.0, 1.0E-6 );
+
+  //Fixed geometry: no source-detector geometry to transfer - must throw.
+  auto fixed = make_shared<DetectorPeakResponse>( "fixed", "" );
+  fixed->setIntrinsicEfficiencyFormula( "0.01", 0.0, PhysicalUnits::keV,
+                    20.0f, 3000.0f,
+                    DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+  BOOST_CHECK_THROW( CeeLoUtils::transferAnchorForDrf( fixed, geom, -1.0 ),
+                     std::exception );
+}//transfer_anchor_source_selection
+
+
+/** DrfExtra (database) round trip of a transfer response: content hash,
+ model_transfer, and evaluations must survive.
+ */
+BOOST_AUTO_TEST_CASE( transfer_drf_round_trip )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double a_cm = geom.transverse_half_extent();
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+
+  const CeeLoUtils::TransferAnchor anchor
+                       = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+  det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
+                                              ceelo::AnchorCurve{}, "test" ) );
+
+  const string extra = det->drfExtraToXmlString();
+  BOOST_REQUIRE( !extra.empty() );
+
+  auto det2 = make_shared<DetectorPeakResponse>( *det );
+  det2->setDrfExtraFromXmlString( extra );
+
+  BOOST_REQUIRE( det2->ceeloResponse() );
+  BOOST_CHECK( det2->ceeloResponse()->model_transfer.has_value() );
+  BOOST_CHECK_EQUAL( det->ceeloResponse()->content_hash(),
+                     det2->ceeloResponse()->content_hash() );
+
+  for( const float energy : {61.0f, 121.8f, 661.7f, 2614.0f} )
+  {
+    const DetectorPeakResponse::EffEval a
+              = det->fepEfficiencyEval( energy, 0.2, 0.0, 40.0*PhysicalUnits::cm );
+    const DetectorPeakResponse::EffEval b
+              = det2->fepEfficiencyEval( energy, 0.2, 0.0, 40.0*PhysicalUnits::cm );
+    BOOST_CHECK_CLOSE( a.value, b.value, 1.0E-9 );
+    BOOST_CHECK_CLOSE( a.sigma, b.sigma, 1.0E-9 );
+  }
+}//transfer_drf_round_trip
+
+
+/** Attaching a transfer response must leave the legacy efficiency entry
+ points bit-identical.
+ */
+BOOST_AUTO_TEST_CASE( transfer_legacy_invariance )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double a_cm = geom.transverse_half_extent();
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+
+  const vector<float> energies{ 59.5f, 121.78f, 661.7f, 1332.5f, 2614.0f };
+  const double dist = 30.0 * PhysicalUnits::cm;
+
+  vector<double> intrinsic_before, eff_before;
+  for( const float energy : energies )
+  {
+    intrinsic_before.push_back( det->intrinsicEfficiency(energy) );
+    eff_before.push_back( det->efficiency( energy, dist ) );
+  }
+
+  const CeeLoUtils::TransferAnchor anchor
+                       = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+  det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
+                                              ceelo::AnchorCurve{}, "test" ) );
+
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    BOOST_CHECK_EQUAL( static_cast<double>(det->intrinsicEfficiency(energies[i])),
+                       intrinsic_before[i] );
+    BOOST_CHECK_EQUAL( det->efficiency( energies[i], dist ), eff_before[i] );
+  }
+}//transfer_legacy_invariance
+
+
+/** Crystal K-edges: the sampled anchor must flank each edge (eta = eff/K
+ jumps at an edge even for a smooth curve), and evaluations near the edge
+ must stay finite/continuous within each segment.
+ */
+BOOST_AUTO_TEST_CASE( transfer_k_edge_handling )
+{
+  //NaI: iodine K-edge at 33.17 keV, inside the [20,3000] synthetic curve span.
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double a_cm = geom.transverse_half_extent();
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+
+  const vector<double> edges = geom.crystal_k_edges( 20.0, 3000.0 );
+  BOOST_REQUIRE_MESSAGE( !edges.empty(), "expected an iodine K-edge in span" );
+
+  const CeeLoUtils::TransferAnchor anchor
+                       = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+
+  for( const double edge : edges )
+  {
+    //A sample just below and just above each edge.
+    bool below = false, above = false;
+    for( const double energy : anchor.curve.energies_keV )
+    {
+      below |= ((energy < edge) && (energy > 0.995*edge));
+      above |= ((energy > edge) && (energy < 1.005*edge));
+    }
+    BOOST_CHECK_MESSAGE( below && above,
+                         "anchor lacks flanking samples at " << edge << " keV" );
+  }
+
+  const shared_ptr<ceelo::DetectorResponse> resp
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" );
+  auto det2 = make_shared<DetectorPeakResponse>( *det );
+  det2->setCeeloResponse( resp );
+
+  //Within-segment continuity just below the first edge, and finite above.
+  const double edge = edges.front();
+  const double dist = 10.0 * a_cm * PhysicalUnits::cm;
+  const double e_below1 = det2->fepEfficiencyEval( static_cast<float>(0.985*edge), 0.0, 0.0, dist ).value;
+  const double e_below2 = det2->fepEfficiencyEval( static_cast<float>(0.995*edge), 0.0, 0.0, dist ).value;
+  const double e_above = det2->fepEfficiencyEval( static_cast<float>(1.005*edge), 0.0, 0.0, dist ).value;
+  BOOST_REQUIRE_GT( e_below1, 0.0 );
+  BOOST_REQUIRE_GT( e_below2, 0.0 );
+  BOOST_REQUIRE_GT( e_above, 0.0 );
+  BOOST_CHECK_LT( std::fabs(e_below2/e_below1 - 1.0), 0.10 );
+}//transfer_k_edge_handling
+
+
+/** ShieldingSourceChi2Fcn::peakDrfEffFlags surfaces the near-field flag for a
+ too-close fit distance - the plumbing the Act/Shield fit warnings use.
+ */
+BOOST_AUTO_TEST_CASE( transfer_fit_flags_surface )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+
+  //A NaI 3x3 transfer DRF (validity floor 2a ~ 8 cm), fit at 3 cm.
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double a_cm = geom.transverse_half_extent();
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+  const CeeLoUtils::TransferAnchor anchor
+                       = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+  det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
+                                              ceelo::AnchorCurve{}, "test" ) );
+
+  const double distance = 3.0 * PhysicalUnits::cm;
+  BOOST_REQUIRE_LT( distance/PhysicalUnits::cm,
+                    det->ceeloResponse()->provenance.min_distance_cm );
+
+  vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions;
+  {
+    ShieldingSourceFitCalc::SourceFitDef cs137_src;
+    cs137_src.nuclide = db->nuclide( "Cs137" );
+    BOOST_REQUIRE( cs137_src.nuclide );
+    cs137_src.activity = PhysicalUnits::microCi;
+    cs137_src.fitActivity = true;
+    cs137_src.age = 180*PhysicalUnits::day;
+    cs137_src.fitAge = false;
+    cs137_src.ageDefiningNuc = nullptr;
+    cs137_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+    src_definitions.push_back( cs137_src );
+  }
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( vector<float>{0.0f, 1.0f, 5.0f, 2.0f, 3.5f} );
+  foreground->set_gamma_counts( spec, 100.0f, 100.0f );
+
+  std::deque<std::shared_ptr<const PeakDef>> foreground_peaks;
+  {
+    auto peak = make_shared<PeakDef>();
+    peak->setMean( 661.0 );
+    peak->setSigma( 10.0 );
+    peak->setPeakArea( 1000.0 );
+    peak->setPeakAreaUncert( sqrt(1000.0) );
+
+    const SandiaDecay::Nuclide * const cs137 = db->nuclide( "Cs137" );
+    const SandiaDecay::Nuclide * const ba137m = db->nuclide( "Ba137m" );
+    BOOST_REQUIRE( cs137 && ba137m );
+    int radParticle = -1;
+    const SandiaDecay::Transition *transition = nullptr;
+    for( size_t i = 0; !transition && (i < ba137m->decaysToChildren.size()); ++i )
+    {
+      const SandiaDecay::Transition * const trans = ba137m->decaysToChildren[i];
+      for( size_t j = 0; !transition && (j < trans->products.size()); ++j )
+      {
+        if( (trans->products[j].type == SandiaDecay::GammaParticle)
+            && (fabs(trans->products[j].energy - 661.657) < 1.0) )
+        {
+          transition = trans;
+          radParticle = static_cast<int>( j );
+        }
+      }
+    }
+    BOOST_REQUIRE( transition && (radParticle >= 0) );
+    peak->setNuclearTransition( cs137, transition, radParticle,
+                                PeakDef::SourceGammaType::NormalGamma );
+    peak->useForShieldingSourceFit( true );
+    foreground_peaks.push_back( peak );
+  }
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  chi_input.config.shieldings = {};
+  chi_input.config.sources = src_definitions;
+  chi_input.config.options = options;
+  chi_input.detector = det;
+  chi_input.foreground = foreground;
+  chi_input.background = nullptr;
+  chi_input.foreground_peaks = foreground_peaks;
+  chi_input.background_peaks = nullptr;
+
+  const pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>,
+             ROOT::Minuit2::MnUserParameters> fcn_pars
+                = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+  BOOST_REQUIRE( fcn_pars.first );
+
+  const vector<pair<double,DetectorPeakResponse::EffFlag>> flags
+                                          = fcn_pars.first->peakDrfEffFlags();
+  BOOST_REQUIRE_EQUAL( flags.size(), 1u );
+  BOOST_CHECK_CLOSE( flags[0].first, 661.657, 0.1 );
+  BOOST_CHECK( flags[0].second == DetectorPeakResponse::EffFlag::NearFieldUnmodeled );
+}//transfer_fit_flags_surface
