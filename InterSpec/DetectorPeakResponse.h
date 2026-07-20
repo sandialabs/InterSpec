@@ -1001,9 +1001,30 @@ public:
 
   /** Generate JSON data for JavaScript detector response */
   std::string toJSON() const;
-  
+
   /** Generate JSON data for JavaScript detector response with custom energy range */
   std::string toJSON(float minEnergy, float maxEnergy) const;
+
+  /** Samples the (Monte-Carlo / transfer parameterized) angular response for
+   the DrfChart visualization: absolute full-energy-peak efficiency vs energy
+   at a set of source angles, for a source at `distance` (in PhysicalUnits).
+
+   Returns "null" when the DRF has no #ceeloResponse (a legacy curve has no
+   angular information to show).  Otherwise a JSON object:
+   \code
+     { "distanceCm": d, "detectorDiameter": diam_cm,
+       "onAxisSolidAngleFraction": f,  // absolute = intrinsic * f (on-axis)
+       "minDistanceCm": floor,         // validity floor; below it, flagged
+       "angles": [ { "thetaDeg": t,
+                     "worstFlag": "ok|near-field unmodeled|...",
+                     "pairs": [ {"energy":E,"eff":a,"sigma":s,"flagged":b}, ... ] },
+                   ... ] }
+   \endcode
+   `eff` is absolute (per emitted gamma); the client divides by
+   `onAxisSolidAngleFraction` for the intrinsic view.  Uses the reference-point
+   / units conventions of #fepEfficiencyEval.
+   */
+  std::string responseAngleSeriesJSON( const double distance ) const;
   
   
   //Some methods to fit detector resolution from data.

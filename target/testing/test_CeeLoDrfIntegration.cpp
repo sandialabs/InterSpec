@@ -938,3 +938,57 @@ BOOST_AUTO_TEST_CASE( transfer_fit_flags_surface )
   BOOST_CHECK_CLOSE( flags[0].first, 661.657, 0.1 );
   BOOST_CHECK( flags[0].second == DetectorPeakResponse::EffFlag::NearFieldUnmodeled );
 }//transfer_fit_flags_surface
+
+
+/** The per-angle response-series JSON (DrfChart visualization source): null for
+ a legacy DRF, and for an MC/transfer DRF a well-formed object with five angle
+ series whose absolute efficiencies fall with angle and match the on-axis
+ solid-angle-scaled intrinsic relationship the client uses.
+ */
+BOOST_AUTO_TEST_CASE( response_angle_series_json )
+{
+  // Legacy DRF (no ceelo response) -> null.
+  auto legacy = make_shared<DetectorPeakResponse>( "legacy", "" );
+  legacy->setIntrinsicEfficiencyFormula( "exp(-1 - 0.1*log(x))", 5.0*PhysicalUnits::cm,
+                  PhysicalUnits::keV, 50.0f, 3000.0f,
+                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  BOOST_CHECK_EQUAL( legacy->responseAngleSeriesJSON( 25.0*PhysicalUnits::cm ), string("null") );
+
+  // MC/transfer DRF: build a transfer response on the nai3x3 geometry.
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double a_cm = geom.transverse_half_extent();
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+  const CeeLoUtils::TransferAnchor anchor
+                       = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+  det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
+                                              ceelo::AnchorCurve{}, "test" ) );
+
+  const double dist = 100.0 * a_cm * PhysicalUnits::cm;  //deep far field
+  const string json = det->responseAngleSeriesJSON( dist );
+  BOOST_REQUIRE( json != "null" );
+
+  // Structural sanity (cheap string checks - the client parses the full JSON).
+  BOOST_CHECK( json.find("\"onAxisSolidAngleFraction\"") != string::npos );
+  BOOST_CHECK( json.find("\"thetaDeg\":0") != string::npos );
+  BOOST_CHECK( json.find("\"thetaDeg\":90") != string::npos );
+  BOOST_CHECK( json.find("\"thetaDeg\":62.5") != string::npos );
+
+  // Every angle evaluates to a finite, positive absolute efficiency (angular
+  //  ordering itself is not asserted - oblique incidence can raise FEP
+  //  efficiency by lengthening the crystal path).
+  const DetectorPeakResponse::EffEval on_axis
+                    = det->fepEfficiencyEval( 661.7f, 0.0, 0.0, dist );
+  const DetectorPeakResponse::EffEval off_axis
+                    = det->fepEfficiencyEval( 661.7f, 60.0*M_PI/180.0, 0.0, dist );
+  BOOST_CHECK_GT( on_axis.value, 0.0 );
+  BOOST_CHECK_GT( off_axis.value, 0.0 );
+
+  // The client's intrinsic view divides by the on-axis solid-angle fraction;
+  //  that must reproduce the far-field on-axis intrinsic to good accuracy.
+  const double frac = DetectorPeakResponse::fractionalSolidAngle(
+                              det->detectorDiameter(), dist + det->detectorSetback() );
+  BOOST_REQUIRE_GT( frac, 0.0 );
+  const double intrinsic_via_abs = on_axis.value / frac;
+  const double intrinsic_direct = det->intrinsicEfficiencyEval( 661.7f ).value;
+  BOOST_CHECK_CLOSE( intrinsic_via_abs, intrinsic_direct, 5.0 );  //percent
+}//response_angle_series_json

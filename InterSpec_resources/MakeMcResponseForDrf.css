@@ -59,6 +59,25 @@
   margin: 2px 0;
 }
 
+.MakeMcResponseForDrf .McChartBox
+{
+  margin-top: 6px;
+}
+
+.MakeMcResponseForDrf .McChartCtrlRow
+{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.MakeMcResponseForDrf .McChart
+{
+  width: 100%;
+  height: 260px;
+}
+
 .MakeMcResponseForDrf .McRunRow
 {
   margin-top: 6px;

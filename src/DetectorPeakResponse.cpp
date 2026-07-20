@@ -6070,3 +6070,77 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
 }//std::string DetectorPeakResponse::toJSON(...)
 
 
+std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance ) const
+{
+  // Only a Monte-Carlo / transfer parameterized response carries angular
+  //  information; a legacy curve is angle-blind (nothing to draw).
+  if( !isValid() || !m_ceeloResponse )
+    return "null";
+
+  // Energy grid: log-spaced over the DRFs validated range (sensible default
+  //  when it has none), matching how the flat efficiency curve is sampled.
+  double e_lo = lowerEnergy(), e_hi = upperEnergy();
+  if( (e_lo <= 0.0) || (e_hi <= (e_lo + 1.0)) )
+  {
+    e_lo = 50.0;
+    e_hi = 3000.0;
+  }
+  e_lo = std::max( e_lo, 10.0 );
+
+  const double diam = detectorDiameter();
+  const double dist = (distance > 0.0) ? distance : (25.0 * PhysicalUnits::cm);
+  const double on_axis_frac = (diam > 0.0)
+                        ? fractionalSolidAngle( diam, dist + detectorSetback() )
+                        : 0.0;
+
+  const std::vector<double> angles_deg{ 0.0, 22.5, 45.0, 62.5, 90.0 };
+  const int n_energy = 80;
+
+  std::stringstream json;
+  json << "{\"distanceCm\":" << (dist / PhysicalUnits::cm)
+       << ",\"detectorDiameter\":" << (diam / PhysicalUnits::cm)
+       << ",\"onAxisSolidAngleFraction\":" << on_axis_frac
+       << ",\"minDistanceCm\":" << m_ceeloResponse->provenance.min_distance_cm
+       << ",\"angles\":[";
+
+  for( size_t a = 0; a < angles_deg.size(); ++a )
+  {
+    if( a )
+      json << ",";
+
+    const double theta = angles_deg[a] * (M_PI / 180.0);
+
+    // Track the most severe non-Ok flag over the curve, for a per-series cue.
+    EffFlag worst = EffFlag::Ok;
+
+    std::stringstream pairs;
+    bool first_pair = true;
+    for( int i = 0; i < n_energy; ++i )
+    {
+      const double energy = e_lo * std::pow( e_hi/e_lo, double(i)/(n_energy-1) );
+      const EffEval eval = fepEfficiencyEval( static_cast<float>(energy), theta, 0.0, dist );
+      if( IsNan(eval.value) || IsInf(eval.value) || (eval.value < 0.0) )
+        continue;
+
+      if( static_cast<int>(eval.flag) > static_cast<int>(worst) )
+        worst = eval.flag;
+
+      const bool flagged = (eval.flag != EffFlag::Ok);
+      if( !first_pair )
+        pairs << ",";
+      first_pair = false;
+      pairs << "{\"energy\":" << energy << ",\"eff\":" << eval.value
+            << ",\"sigma\":" << eval.sigma
+            << ",\"flagged\":" << (flagged ? "true" : "false") << "}";
+    }//for( energy grid )
+
+    json << "{\"thetaDeg\":" << angles_deg[a]
+         << ",\"worstFlag\":\"" << effFlagName( worst ) << "\""
+         << ",\"pairs\":[" << pairs.str() << "]}";
+  }//for( angle )
+
+  json << "]}";
+  return json.str();
+}//std::string DetectorPeakResponse::responseAngleSeriesJSON(...)
+
+

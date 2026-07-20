@@ -52,6 +52,7 @@
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/DrfChart.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/HelpSystem.h"
@@ -189,6 +190,10 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_cancelBtn( nullptr ),
     m_progress( nullptr ),
     m_status( nullptr ),
+    m_chartBox( nullptr ),
+    m_chart( nullptr ),
+    m_chartMode( nullptr ),
+    m_chartDistance( nullptr ),
     m_generationId( 0 ),
     m_cancelFlag( nullptr ),
     m_result( nullptr ),
@@ -304,6 +309,33 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_status->addStyleClass( "McStatus" );
   m_status->setInline( false );
 
+  // Response preview: per-angle efficiency curves for the generated response.
+  //  Hidden until a response exists.
+  m_chartBox = addNew<WGroupBox>( WString::tr("mmr-chart-title") );
+  m_chartBox->addStyleClass( "McChartBox" );
+
+  WContainerWidget *chartCtrlRow = m_chartBox->addNew<WContainerWidget>();
+  chartCtrlRow->addStyleClass( "McChartCtrlRow" );
+  chartCtrlRow->addNew<WLabel>( WString::tr("mmr-chart-mode") );
+  m_chartMode = chartCtrlRow->addNew<WComboBox>();
+  m_chartMode->addItem( WString::tr("mmr-chart-mode-absolute") );   //idx0
+  m_chartMode->addItem( WString::tr("mmr-chart-mode-intrinsic") );  //idx1
+  m_chartMode->setCurrentIndex( 0 );
+  m_chartMode->activated().connect( this, &MakeMcResponseForDrf::updateResponseChart );
+
+  WLabel *distLabel = chartCtrlRow->addNew<WLabel>( WString::tr("mmr-chart-distance") );
+  m_chartDistance = chartCtrlRow->addNew<WLineEdit>( "25 cm" );
+  m_chartDistance->setTextSize( 8 );
+  distLabel->setBuddy( m_chartDistance );
+  m_chartDistance->changed().connect( this, &MakeMcResponseForDrf::updateResponseChart );
+  m_chartDistance->enterPressed().connect( this, &MakeMcResponseForDrf::updateResponseChart );
+  HelpSystem::attachToolTipOn( m_chartDistance, WString::tr("mmr-tt-chart-distance"), true );
+
+  m_chart = m_chartBox->addNew<DrfChart>();
+  m_chart->addStyleClass( "McChart" );
+
+  m_chartBox->hide();
+
   handleMethodChanged();
 }//MakeMcResponseForDrf constructor
 
@@ -400,6 +432,7 @@ void MakeMcResponseForDrf::handleGeometryChanged()
     m_result.reset();
     m_validationChanged.emit( false );
     m_status->setText( WString::tr("mmr-status-stale") );
+    updateResponseChart();
   }
 
   m_generate->setEnabled( m_geometry->isValid() );
@@ -474,6 +507,64 @@ double MakeMcResponseForDrf::refDistanceOverrideCm() const
     return -1.0;
   }
 }//refDistanceOverrideCm()
+
+
+void MakeMcResponseForDrf::updateResponseChart()
+{
+  if( !m_chart || !m_chartBox )
+    return;
+
+  if( !m_result )
+  {
+    m_chartBox->hide();
+    m_chart->updateChart( nullptr );
+    return;
+  }
+
+  // Wrap the generated response in a (throw-away) DetectorPeakResponse so the
+  //  chart can sample it through the normal per-angle API.  Clone the seed/
+  //  foreground DRF when available (keeps diameter / energy range), else a
+  //  minimal far-field shell.
+  shared_ptr<SpecMeas> foreground = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<const DetectorPeakResponse> base = m_seedDrf
+                                        ? m_seedDrf
+                                        : (foreground ? foreground->detector() : nullptr);
+  shared_ptr<DetectorPeakResponse> preview;
+  if( base )
+  {
+    preview = make_shared<DetectorPeakResponse>( *base );
+  }else
+  {
+    const double a_cm = m_result->transverse_half_extent();
+    preview = make_shared<DetectorPeakResponse>( "preview", "" );
+    preview->setIntrinsicEfficiencyFormula( "1.0", 2.0*a_cm*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 0.0f, 0.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  }
+  preview->setCeeloResponse( m_result );
+
+  // Chart source distance (absolute mode); default to 25 cm when unparseable.
+  double dist = 25.0 * PhysicalUnits::cm;
+  try
+  {
+    string txt = m_chartDistance->text().toUTF8();
+    SpecUtils::trim( txt );
+    if( !txt.empty() )
+    {
+      const double d = PhysicalUnits::stringToDistance( txt );
+      if( d > 0.0 )
+        dist = d;
+    }
+  }catch( std::exception & )
+  {
+  }
+
+  m_chart->setShowResponseAngles( true );
+  m_chart->setSourceDistance( dist );
+  m_chart->setIntrinsicEfficiency( m_chartMode->currentIndex() == 1 );
+  m_chart->updateChart( preview );
+  m_chartBox->show();
+}//updateResponseChart()
 
 
 void MakeMcResponseForDrf::handlePrecisionChanged()
@@ -795,6 +886,7 @@ void MakeMcResponseForDrf::handleGenerationFinished(
   {
     m_result.reset();
     m_validationChanged.emit( false );
+    updateResponseChart();
     if( errmsg == "cancelled" )
       m_status->setText( WString::tr("mmr-status-cancelled") );
     else
@@ -804,6 +896,7 @@ void MakeMcResponseForDrf::handleGenerationFinished(
 
   m_result = result;
   m_validationChanged.emit( true );
+  updateResponseChart();
 
   const bool grounded = !result->grounding.empty();
   if( result->model_transfer.has_value() )

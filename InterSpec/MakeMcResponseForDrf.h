@@ -34,6 +34,7 @@
 
 #include "InterSpec/AuxWindow.h"
 
+class DrfChart;
 class InterSpec;
 class DetectorPeakResponse;
 class DetectorGeometryInput;
@@ -41,6 +42,7 @@ class DetectorGeometryInput;
 namespace Wt
 {
   class WText;
+  class WGroupBox;
   class WComboBox;
   class WLineEdit;
   class WPushButton;
@@ -145,6 +147,10 @@ protected:
    reference-distance edit) from the seed DRF and current geometry. */
   void updateAnchorInfo();
 
+  /** Refreshes the response-preview chart (per-angle efficiency curves) from
+   the currently generated response, or hides it when there is none. */
+  void updateResponseChart();
+
   void startGeneration();
   void cancelGeneration();
 
@@ -191,6 +197,13 @@ protected:
   Wt::WPushButton *m_cancelBtn;
   Wt::WProgressBar *m_progress;
   Wt::WText *m_status;
+
+  //Response-preview chart (per-angle efficiency curves), shown once a response
+  // has been generated.
+  Wt::WGroupBox *m_chartBox;
+  DrfChart *m_chart;
+  Wt::WComboBox *m_chartMode;       //Absolute | Intrinsic
+  Wt::WLineEdit *m_chartDistance;   //source distance for the absolute curves
 
   /** Identifies the current generation; results/progress from stale runs
    (user re-started or changed things) are discarded.  Only touched from the
