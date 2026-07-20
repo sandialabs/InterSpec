@@ -29,6 +29,7 @@
 #include <atomic>
 #include <memory>
 #include <utility>
+#include <functional>
 
 #include <Wt/WFlags>
 
@@ -349,6 +350,8 @@ struct FitPeaksResults
         stay fixed and not fit for that peak.  If `std::nullopt` is given for this argument, then the original peaks will be left to what they are, and refit (if they arent fixed)
         and treated as independent from ROI to ROI.
  @param fit_options Options for the fit.  E.g., if you are re-fiiting, then you may want to specify `PeakFitLMOptions::MediumRefinementOnly`, etc
+ @param may_remove_close_pair Optional predicate consulted before the final one-sigma duplicate
+        cull.  Empty preserves the legacy behavior; returning false keeps both fitted peaks.
  */
 FitPeaksResults fit_peaks_in_spectrum_LM( const std::vector<std::shared_ptr<const PeakDef>> input_peaks,
                                std::shared_ptr<const SpecUtils::Measurement> data,
@@ -356,7 +359,9 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const std::vector<std::shared_ptr<cons
                                const double hypothesis_threshold,
                                const std::optional<PeakFitUtils::CoarseResolutionType> resolution_type,
                                const std::optional<PeakDef::SkewType> skew_type = std::nullopt,
-                               const Wt::WFlags<PeakFitLMOptions> fit_options = 0 ) throw();
+                               const Wt::WFlags<PeakFitLMOptions> fit_options = 0,
+                               const std::function<bool(const PeakDef &,const PeakDef &)>
+                                 &may_remove_close_pair = {} ) throw();
   
 }//namespace PeakFitLM
 

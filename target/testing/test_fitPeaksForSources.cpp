@@ -273,6 +273,28 @@ namespace
   }// run_fit
 
 
+  FitPeaksForNuclides::PeakFitResult run_fit_with_config(
+    const shared_ptr<const SpecUtils::Measurement> &foreground,
+    const shared_ptr<const SpecUtils::Measurement> &background,
+    const vector<shared_ptr<const PeakDef>> &auto_search_peaks,
+    const vector<RelActCalcAuto::SrcVariant> &sources,
+    const vector<shared_ptr<const PeakDef>> &user_peaks,
+    const bool isHPGe,
+    const FitPeaksForNuclides::PeakFitForNuclideConfig &config,
+    const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options
+      = Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions>() )
+  {
+    const PeakFitUtils::CoarseResolutionType det_type = isHPGe
+        ? PeakFitUtils::CoarseResolutionType::High
+        : PeakFitUtils::CoarseResolutionType::Low;
+    auto peak_fit_prefs = make_shared<PeakFitDetPrefs>();
+    peak_fit_prefs->m_det_type = det_type;
+    return FitPeaksForNuclides::fit_peaks_for_nuclides(
+      auto_search_peaks, foreground, sources, user_peaks,
+      background, nullptr, options, config, peak_fit_prefs );
+  }//run_fit_with_config(...)
+
+
   // Check that a peak near the given energy exists in the result
   bool has_peak_near( const vector<PeakDef> &peaks, const double energy,
                       const double tolerance_keV = 3.0 )
@@ -303,6 +325,38 @@ namespace
     }
     return best;
   }// find_peak_near
+
+
+  const PeakDef *find_source_gamma( const vector<PeakDef> &peaks, const string &symbol,
+                                    const double gamma_energy,
+                                    const double tolerance_keV = 3.0 )
+  {
+    const PeakDef *best = nullptr;
+    double best_distance = tolerance_keV;
+    for( const PeakDef &peak : peaks )
+    {
+      if( !peak.parentNuclide() || (peak.parentNuclide()->symbol != symbol)
+          || !peak.hasSourceGammaAssigned() )
+        continue;
+      const double distance = std::fabs( peak.gammaParticleEnergy() - gamma_energy );
+      if( distance < best_distance )
+      {
+        best = &peak;
+        best_distance = distance;
+      }
+    }
+    return best;
+  }//find_source_gamma
+
+
+  bool peak_areas_agree( const PeakDef &lhs, const PeakDef &rhs )
+  {
+    const double combined_uncert = std::hypot(
+        std::max( 0.0, lhs.peakAreaUncert() ), std::max( 0.0, rhs.peakAreaUncert() ) );
+    const double tolerance = std::max( 3.0*combined_uncert,
+                                      0.20*std::fabs(rhs.peakArea()) );
+    return std::fabs( lhs.peakArea() - rhs.peakArea() ) <= tolerance;
+  }//peak_areas_agree
 
 
   // Verify that no observable peak ROIs overlap (at least 1 channel gap)
@@ -700,6 +754,221 @@ BOOST_AUTO_TEST_CASE( test_eu152_smoke )
 }
 
 
+BOOST_AUTO_TEST_CASE( test_rescue_recovers_marginal_line )
+{
+  const LoadedSpectrum spec = load_detective_x_spectrum( "Eu152_Unshielded.txt" );
+  vector<shared_ptr<const PeakDef>> auto_peaks = run_auto_search( spec.foreground, spec.isHPGe );
+
+  // Remove one moderate Eu line from the data-confirmed seeding path.  The initial manual solve
+  // still has the source's predicted ROIs, while the deliberately high fitted keep threshold
+  // creates a genuine marginal-reject band for the one bounded R2 pass.
+  const double withheld_energy = 1249.93;
+  auto_peaks.erase( std::remove_if( std::begin(auto_peaks), std::end(auto_peaks),
+    [withheld_energy]( const shared_ptr<const PeakDef> &peak ) {
+      return peak && (std::fabs(peak->mean() - withheld_energy) < 2.0);
+    } ), std::end(auto_peaks) );
+
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config(
+        PeakFitUtils::CoarseResolutionType::High );
+  config.auto_keep_significance_z = 5.5;
+  config.manual_keep_significance_z = 5.5;
+
+  const vector<shared_ptr<const PeakDef>> no_user_peaks;
+  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> no_ecal_options;
+  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal;
+  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal;
+  FitPeaksForNuclides::PeakFitResult result = run_fit_with_config(
+      spec.foreground, spec.background, auto_peaks, make_sources({"Eu152"}),
+      no_user_peaks, spec.isHPGe, config, no_ecal_options );
+  BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  for( const string &warning : result.warnings )
+    BOOST_TEST_MESSAGE( "R2 recovery: " << warning );
+
+  const bool admitted_rescue = std::any_of( std::begin(result.warnings),
+    std::end(result.warnings), []( const string &warning ) {
+      return warning.find("bounded fit-then-prune rescue") != string::npos;
+    } );
+  BOOST_CHECK_MESSAGE( admitted_rescue,
+                       "High keep-z fit did not exercise the bounded rescue path" );
+  BOOST_CHECK_MESSAGE( find_source_gamma(result.observable_peaks, "Eu152", withheld_energy, 0.5),
+                       "The real withheld Eu152 marginal line was not restored" );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  struct RestoreRescue
+  {
+    ~RestoreRescue()
+    {
+      FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( true );
+    }
+  } restore_rescue;
+  FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( false );
+  FitPeaksForNuclides::PeakFitResult control = run_fit_with_config(
+      spec.foreground, spec.background, auto_peaks, make_sources({"Eu152"}),
+      no_user_peaks, spec.isHPGe, config, no_ecal_options );
+  BOOST_REQUIRE( control.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  vector<double> rescued_only_energies;
+  const auto find_rescued_only = [&]() {
+    rescued_only_energies.clear();
+    for( const PeakDef &peak : result.observable_peaks )
+    {
+      if( !peak.parentNuclide() || (peak.parentNuclide()->symbol != "Eu152")
+          || !peak.hasSourceGammaAssigned() )
+        continue;
+      if( !find_source_gamma(control.observable_peaks, "Eu152",
+                             peak.gammaParticleEnergy(), 0.2) )
+        rescued_only_energies.push_back( peak.gammaParticleEnergy() );
+    }
+  };
+  find_rescued_only();
+  for( const double keep_z : { 6.5, 8.0, 10.0, 12.0, 15.0 } )
+  {
+    if( !rescued_only_energies.empty() )
+      break;
+    config.auto_keep_significance_z = keep_z;
+    FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( true );
+    result = run_fit_with_config( spec.foreground, spec.background, auto_peaks,
+        make_sources({"Eu152"}), no_user_peaks, spec.isHPGe, config, no_ecal_options );
+    FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( false );
+    control = run_fit_with_config( spec.foreground, spec.background, auto_peaks,
+        make_sources({"Eu152"}), no_user_peaks, spec.isHPGe, config, no_ecal_options );
+    BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+    BOOST_REQUIRE( control.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+    find_rescued_only();
+  }
+  for( const double energy : rescued_only_energies )
+    BOOST_TEST_MESSAGE( "R2-only recovered Eu152 line at " << energy << " keV" );
+  BOOST_CHECK_MESSAGE( !rescued_only_energies.empty(),
+                       "R2-enabled and R2-disabled controls returned the same source lines" );
+  const PeakDef * const rescued_peak = rescued_only_energies.empty() ? nullptr
+    : find_source_gamma( result.observable_peaks, "Eu152", rescued_only_energies.front(), 0.2 );
+  BOOST_REQUIRE( rescued_peak );
+  BOOST_CHECK_GT( rescued_peak->peakArea(), 0.0 );
+#endif
+}
+
+
+BOOST_AUTO_TEST_CASE( test_rescue_exception_retains_successful_incumbent )
+{
+#if( PERFORM_DEVELOPER_CHECKS )
+  const LoadedSpectrum spec = load_detective_x_spectrum( "Eu152_Unshielded.txt" );
+  vector<shared_ptr<const PeakDef>> auto_peaks = run_auto_search( spec.foreground, spec.isHPGe );
+  const double rescued_energy = 1249.93;
+  auto_peaks.erase( std::remove_if( std::begin(auto_peaks), std::end(auto_peaks),
+    [rescued_energy]( const shared_ptr<const PeakDef> &peak ) {
+      return peak && (std::fabs(peak->mean() - rescued_energy) < 2.0);
+    } ), std::end(auto_peaks) );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config(
+        PeakFitUtils::CoarseResolutionType::High );
+  config.manual_keep_significance_z = 5.5;
+  config.auto_keep_significance_z = 5.5;
+  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> no_ecal_options;
+  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal;
+  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal;
+
+  FitPeaksForNuclides::detail::force_next_bounded_rescue_evaluation_failure_for_test();
+  const FitPeaksForNuclides::PeakFitResult result = run_fit_with_config(
+      spec.foreground, spec.background, auto_peaks, make_sources({"Eu152"}), {},
+      spec.isHPGe, config, no_ecal_options );
+  BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_CHECK( find_source_gamma(result.observable_peaks, "Eu152", 344.28, 0.5) );
+  BOOST_CHECK( !result.observable_peaks.empty() );
+  BOOST_CHECK( std::any_of(std::begin(result.warnings), std::end(result.warnings),
+    []( const string &warning ) {
+      return warning.find("rescue challenger threw") != string::npos;
+    }) );
+#endif
+}
+
+
+BOOST_AUTO_TEST_CASE( test_rescue_is_source_order_and_background_invariant )
+{
+  const LoadedSpectrum spec = load_detective_x_spectrum( "Eu152_Unshielded.txt" );
+  vector<shared_ptr<const PeakDef>> auto_peaks = run_auto_search( spec.foreground, spec.isHPGe );
+  const double rescued_energy = 1249.93;
+  auto_peaks.erase( std::remove_if( std::begin(auto_peaks), std::end(auto_peaks),
+    [rescued_energy]( const shared_ptr<const PeakDef> &peak ) {
+      return peak && (std::fabs(peak->mean() - rescued_energy) < 2.0);
+    } ), std::end(auto_peaks) );
+
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config(
+        PeakFitUtils::CoarseResolutionType::High );
+  config.manual_keep_significance_z = 5.5;
+  config.auto_keep_significance_z = 5.5;
+  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> no_ecal_options;
+  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal;
+  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal;
+
+  const auto fit = [&]( const shared_ptr<const SpecUtils::Measurement> &background,
+                        const vector<string> &source_names ) {
+    return run_fit_with_config( spec.foreground, background, auto_peaks,
+        make_sources(source_names), {}, spec.isHPGe, config, no_ecal_options );
+  };
+  const FitPeaksForNuclides::PeakFitResult results[] = {
+    fit( nullptr, {"Eu152", "Cs137"} ),
+    fit( nullptr, {"Cs137", "Eu152"} ),
+    fit( spec.background, {"Eu152", "Cs137"} ),
+    fit( spec.background, {"Cs137", "Eu152"} )
+  };
+  const char * const labels[] = {
+    "raw Eu152,Cs137", "raw Cs137,Eu152",
+    "supplied-background Eu152,Cs137", "supplied-background Cs137,Eu152"
+  };
+
+  const PeakDef *reference = nullptr;
+  bool observable_presence[4] = { false, false, false, false };
+  for( size_t result_index = 0; result_index < 4; ++result_index )
+  {
+    const FitPeaksForNuclides::PeakFitResult &result = results[result_index];
+    BOOST_TEST_CONTEXT( labels[result_index] )
+    {
+    BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+    const PeakDef * const rescued
+      = find_source_gamma( result.uncombined_fit_peaks, "Eu152", rescued_energy, 0.5 );
+    observable_presence[result_index] = static_cast<bool>(
+      find_source_gamma(result.observable_peaks, "Eu152", rescued_energy, 0.5) );
+    if( !rescued )
+    {
+      for( const string &warning : result.warnings )
+        BOOST_TEST_MESSAGE( labels[result_index] << " warning: " << warning );
+      const auto report_candidate = [&]( const char *name, const vector<PeakDef> &peaks ) {
+        const PeakDef * const candidate
+          = find_source_gamma( peaks, "Eu152", rescued_energy, 0.5 );
+        BOOST_TEST_MESSAGE( labels[result_index] << ' ' << name << " 1249.93-keV peak: "
+          << (candidate ? (std::to_string(candidate->peakArea()) + " +/- "
+              + std::to_string(candidate->peakAreaUncert())) : string("absent")) );
+      };
+      report_candidate( "solution", result.solution.m_peaks_without_back_sub );
+      report_candidate( "uncombined", result.uncombined_fit_peaks );
+      report_candidate( "combined", result.fit_peaks );
+      for( const PeakDef &peak : result.observable_peaks )
+      {
+        if( (peak.mean() < 1240.0) || (peak.mean() > 1260.0) )
+          continue;
+        BOOST_TEST_MESSAGE( labels[result_index] << " observable peak near rescue: mean="
+          << peak.mean() << ", area=" << peak.peakArea() << " +/- " << peak.peakAreaUncert()
+          << ", source=" << peak.sourceName() );
+      }
+    }
+    BOOST_REQUIRE( rescued );
+    BOOST_CHECK( std::any_of(std::begin(result.warnings), std::end(result.warnings),
+      []( const string &warning ) {
+        return warning.find("bounded fit-then-prune rescue") != string::npos;
+      }) );
+    if( reference )
+      BOOST_CHECK_MESSAGE( peak_areas_agree(*reference, *rescued),
+                           "R2 rescued area changed with source order/background mode" );
+    else
+      reference = rescued;
+    }
+  }
+  BOOST_CHECK_EQUAL( observable_presence[0], observable_presence[1] );
+  BOOST_CHECK_EQUAL( observable_presence[2], observable_presence[3] );
+}
+
+
 BOOST_AUTO_TEST_CASE( test_eu152_then_eu154 )
 {
   const LoadedSpectrum spec = load_detective_x_spectrum( "Eu152_Unshielded.txt" );
@@ -1023,13 +1292,13 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
     BOOST_TEST_MESSAGE( "After Am-241: " << user_peaks.size() << " total peaks" );
   }
 
-  // ---- Step 3: Eu-152 (R6 auto co-fits the interfering K40 1460 line) ----
+  // ---- Step 3: Eu-152 with a supplied background (the foreground-only R6 path is disabled) ----
   {
-    BOOST_TEST_MESSAGE( "\n--- Step 3: Eu-152 (R6 auto-cofits K40) ---" );
+    BOOST_TEST_MESSAGE( "\n--- Step 3: Eu-152 (supplied-background path) ---" );
     const vector<shared_ptr<const PeakDef>> pre_peaks = user_peaks;
-    // Eu-152's weak 1457 keV line sits on K40's strong 1460 keV line.  We fit Eu-152 ALONE and rely
-    // on the R6 auto-interferer detection to co-fit (then drop) K40, so the 1460 counts are not
-    // mis-attributed to Eu-152.  (This test previously hand-patched {K40, Eu152}.)
+    // Eu-152's weak 1457 keV line sits on K40's strong 1460 keV line.  This sequence deliberately
+    // supplies the measured background, so it verifies the legacy background-aware path rather than
+    // the foreground-only R6 nuisance search exercised by test_r6_raw_interferer_transaction.
     const vector<RelActCalcAuto::SrcVariant> sources = make_sources( {"Eu152"} );
 
     const FitPeaksForNuclides::PeakFitResult result
@@ -1076,22 +1345,15 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe,
                  FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
 
-    // Eu-154 is not strongly present in trinitite - expect no observable peaks
-    // (but allow them if found)
+    // Eu-154 is absent at useful strength in this spectrum.  This is the established bystander
+    // regression: the bounded rescue pass must not resurrect Eu-154 from already-modeled peaks.
     verify_fit_result( result, user_peaks, spec.foreground,
       FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
     verify_removed_peaks_replaced( result );
-
-    if( result.observable_peaks.empty() )
-    {
-      // When no peaks found, nothing should be removed
-      BOOST_CHECK( result.original_peaks_to_remove.empty() );
-      BOOST_TEST_MESSAGE( "Eu-154: no observable peaks (expected)" );
-    }
-    else
-    {
-      BOOST_TEST_MESSAGE( "Eu-154: " << result.observable_peaks.size() << " peaks found" );
-    }
+    BOOST_CHECK_MESSAGE( result.observable_peaks.empty(),
+                         "Bounded rescue resurrected absent Eu154 in trinitite" );
+    BOOST_CHECK( result.original_peaks_to_remove.empty() );
+    BOOST_TEST_MESSAGE( "Eu-154: no observable peaks (expected)" );
 
     user_peaks = apply_fit_result( user_peaks, result );
     BOOST_TEST_MESSAGE( "After Eu-154: " << user_peaks.size() << " total peaks" );
@@ -1243,8 +1505,8 @@ BOOST_AUTO_TEST_CASE( test_trinitite_do_not_use_existing_sequence )
   const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> opts
     = FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois;
 
-  // Fit each source independently (DoNotUseExistingRois).  Eu-152's 1457 keV line overlaps K40's
-  // strong 1460 keV line; we fit Eu-152 alone and rely on the R6 auto-interferer co-fit for K40.
+  // Fit each source independently (DoNotUseExistingRois) with a supplied background.  Automatic R6
+  // discovery is intentionally inactive here; the raw-spectrum transaction tests cover that path.
   const vector<vector<string>> source_groups = {
     {"Cs137"}, {"Am241"}, {"Eu152"}, {"Ba133"}, {"Co60"}
   };
@@ -1355,8 +1617,9 @@ BOOST_AUTO_TEST_CASE( test_norm_fit_preserves_existing_rois )
 
 BOOST_AUTO_TEST_CASE( test_eu152_interferer_matches_joint )
 {
-  // R6 fit of Eu-152 ALONE (auto co-fitting the interfering K40 1460 line) should agree with the
-  // hand-patched {K40, Eu152} joint fit, and must not return a K40-attributed peak.
+  // With a supplied background, the Eu-152-only fit should agree with an explicit {K40, Eu152}
+  // reference and must not return a K40-attributed public peak.  The active foreground-only R6
+  // comparison is covered more strictly by test_multisource_strong_norm_interferer_is_stable.
   const LoadedSpectrum spec = load_test_data_spectrum(
     "trinitite_sample_b.n42", "trinitite_sample_b_background.n42" );
   BOOST_REQUIRE( spec.foreground );
@@ -1400,7 +1663,7 @@ BOOST_AUTO_TEST_CASE( test_eu152_interferer_matches_joint )
       BOOST_TEST_MESSAGE( "  joint 1460-region peak@" << p.mean() << " area=" << p.amplitude()
         << " src=" << (p.parentNuclide()?p.parentNuclide()->symbol:string("none")) );
 
-  // Eu-152-alone must not return a K40 peak (the co-fit K40 is dropped from results).
+  // Eu-152-alone must not return a K40 peak.
   BOOST_CHECK_EQUAL( count_src( r_auto.observable_peaks, "K40" ), 0u );
 
   // Similar Eu-152 peak count between the two fits.
@@ -1408,8 +1671,7 @@ BOOST_AUTO_TEST_CASE( test_eu152_interferer_matches_joint )
                    - (int)count_src(r_joint.observable_peaks,"Eu152");
   BOOST_CHECK_MESSAGE( std::abs(dcount) <= 3, "Eu152 peak count auto-joint differs by " << dcount );
 
-  // Major Eu-152 lines present in both, with similar area (the whole point: co-fitting K40 keeps the
-  // Eu-152 rel-eff/areas from being skewed by the 1460 region).
+  // Major Eu-152 lines are present in both with similar area.
   const double key_lines[] = { 121.78, 344.28, 778.90, 964.08, 1408.01 };
   for( const double e : key_lines )
   {
@@ -1424,6 +1686,268 @@ BOOST_AUTO_TEST_CASE( test_eu152_interferer_matches_joint )
         "Eu152 " << e << " keV area ratio auto/joint = " << ratio );
     }
   }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_r6_raw_interferer_transaction )
+{
+  const LoadedSpectrum spec = load_test_data_spectrum(
+    "trinitite_sample_b.n42", "trinitite_sample_b_background.n42" );
+  BOOST_REQUIRE( spec.foreground );
+  const vector<shared_ptr<const PeakDef>> auto_peaks
+    = run_auto_search( spec.foreground, spec.isHPGe );
+  const vector<shared_ptr<const PeakDef>> no_user_peaks;
+  const FitPeaksForNuclides::PeakFitResult result = run_fit(
+      spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}),
+      no_user_peaks, spec.isHPGe );
+  BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  for( const string &warning : result.warnings )
+    BOOST_TEST_MESSAGE( warning );
+  BOOST_REQUIRE( find_source_gamma(
+      result.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 ) );
+  BOOST_CHECK( find_source_gamma(result.observable_peaks, "Eu152", 1408.01, 0.5) );
+  BOOST_CHECK( find_source_gamma(result.observable_peaks, "Cs137", 661.657, 0.5) );
+  BOOST_CHECK( !find_source_gamma(result.observable_peaks, "K40", 1460.82, 0.5) );
+
+  std::set<string> nuisance_parents;
+  for( const PeakDef &peak : result.solution.m_peaks_without_back_sub )
+  {
+    if( peak.parentNuclide() && (peak.parentNuclide()->symbol != "Eu152")
+        && (peak.parentNuclide()->symbol != "Cs137") )
+      nuisance_parents.insert( peak.parentNuclide()->symbol );
+  }
+  BOOST_CHECK_EQUAL( nuisance_parents.size(), 2u );
+
+  // The caller must be able to turn the complete automatic R6 path off for controlled tuning and
+  // for supplied-background workflows.  The default result above proves R6 is active; with the
+  // opt-out, the same raw requested-source fit must remain source-only.
+  const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> no_interferer_options
+    = FitPeaksForNuclides::FitSrcPeaksOptions::DisableAutoInterfererFit;
+  const FitPeaksForNuclides::PeakFitResult source_only = run_fit(
+      spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}),
+      no_user_peaks, spec.isHPGe, no_interferer_options );
+  BOOST_REQUIRE( source_only.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_CHECK( !find_source_gamma(
+      source_only.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 ) );
+  BOOST_CHECK( find_source_gamma(source_only.observable_peaks, "Eu152", 1408.01, 0.5) );
+  BOOST_CHECK( find_source_gamma(source_only.observable_peaks, "Cs137", 661.657, 0.5) );
+  for( const PeakDef &peak : source_only.solution.m_peaks_without_back_sub )
+  {
+    BOOST_CHECK_MESSAGE( !peak.parentNuclide()
+                         || (peak.parentNuclide()->symbol == "Eu152")
+                         || (peak.parentNuclide()->symbol == "Cs137"),
+                         "DisableAutoInterfererFit admitted unexpected nuisance "
+                           << peak.parentNuclide()->symbol );
+  }
+
+  // An existing bystander represented as a floating peak at K40 must suppress the K40 nuisance,
+  // avoiding two nearly-identical Gaussian components in the augmented solve.
+  const shared_ptr<const PeakDef> k40_bystander = [&]() -> shared_ptr<const PeakDef> {
+    for( const shared_ptr<const PeakDef> &peak : auto_peaks )
+      if( peak && (std::fabs(peak->mean() - 1460.82) < 0.5) )
+        return peak;
+    return nullptr;
+  }();
+  BOOST_REQUIRE( k40_bystander );
+  const FitPeaksForNuclides::PeakFitResult with_float = run_fit(
+      spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}),
+      { k40_bystander }, spec.isHPGe,
+      FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
+  BOOST_REQUIRE( with_float.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_CHECK( !find_source_gamma(
+      with_float.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 ) );
+  BOOST_CHECK( find_source_gamma(with_float.observable_peaks, "Eu152", 1408.01, 0.5) );
+
+}
+
+
+BOOST_AUTO_TEST_CASE( test_multisource_strong_norm_interferer_is_stable )
+{
+  // Raw trinitite has a strong K40 1460.82-keV line next to Eu152's weak 1457.64-keV line.
+  // Without supplied background this exercises the active R6 nuisance path; with background it
+  // verifies that the already-modeled line does not destabilize either requested-source order.
+  const LoadedSpectrum spec = load_test_data_spectrum(
+    "trinitite_sample_b.n42", "trinitite_sample_b_background.n42" );
+  BOOST_REQUIRE( spec.foreground );
+  BOOST_REQUIRE( spec.background );
+
+  const vector<shared_ptr<const PeakDef>> auto_peaks
+    = run_auto_search( spec.foreground, spec.isHPGe );
+  const vector<shared_ptr<const PeakDef>> no_user_peaks;
+
+  const auto fit = [&]( const shared_ptr<const SpecUtils::Measurement> &background,
+                        const vector<string> &source_names ) {
+    return run_fit( spec.foreground, background, auto_peaks,
+                    make_sources(source_names), no_user_peaks, spec.isHPGe );
+  };
+
+  const FitPeaksForNuclides::PeakFitResult raw_auto_ec
+    = fit( nullptr, {"Eu152", "Cs137"} );
+  const FitPeaksForNuclides::PeakFitResult raw_auto_ce
+    = fit( nullptr, {"Cs137", "Eu152"} );
+  const FitPeaksForNuclides::PeakFitResult raw_joint
+    = fit( nullptr, {"K40", "Eu152", "Cs137"} );
+  const FitPeaksForNuclides::PeakFitResult bg_auto_ec
+    = fit( spec.background, {"Eu152", "Cs137"} );
+  const FitPeaksForNuclides::PeakFitResult bg_auto_ce
+    = fit( spec.background, {"Cs137", "Eu152"} );
+  const FitPeaksForNuclides::PeakFitResult bg_joint
+    = fit( spec.background, {"K40", "Eu152", "Cs137"} );
+
+  const FitPeaksForNuclides::PeakFitResult * const results[] = {
+    &raw_auto_ec, &raw_auto_ce, &raw_joint, &bg_auto_ec, &bg_auto_ce, &bg_joint
+  };
+  for( const FitPeaksForNuclides::PeakFitResult * const result : results )
+  {
+    BOOST_REQUIRE( result->status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+    BOOST_CHECK( !result->observable_peaks.empty() );
+  }
+
+  for( const string &warning : raw_auto_ec.warnings )
+    BOOST_TEST_MESSAGE( "raw auto {Eu,Cs}: " << warning );
+
+  const auto count_source = []( const vector<PeakDef> &peaks, const string &symbol ) {
+    size_t count = 0;
+    for( const PeakDef &peak : peaks )
+      count += (peak.parentNuclide() && (peak.parentNuclide()->symbol == symbol)) ? 1u : 0u;
+    return count;
+  };
+
+  const FitPeaksForNuclides::PeakFitResult * const automatic_results[] = {
+    &raw_auto_ec, &raw_auto_ce, &bg_auto_ec, &bg_auto_ce
+  };
+  const double eu_anchors[] = { 344.28, 778.90, 1408.01 };
+  for( const FitPeaksForNuclides::PeakFitResult * const result : automatic_results )
+  {
+    BOOST_CHECK_EQUAL( count_source(result->uncombined_fit_peaks, "K40"), 0u );
+    BOOST_CHECK_EQUAL( count_source(result->fit_peaks, "K40"), 0u );
+    BOOST_CHECK_EQUAL( count_source(result->observable_peaks, "K40"), 0u );
+    BOOST_CHECK( find_source_gamma(result->observable_peaks, "Cs137", 661.657, 0.5) );
+    for( const double energy : eu_anchors )
+      BOOST_CHECK_MESSAGE( find_source_gamma(result->observable_peaks, "Eu152", energy, 0.5),
+                           "Missing Eu152 anchor at " << energy << " keV" );
+  }
+
+  const auto compare_anchors = [&]( const FitPeaksForNuclides::PeakFitResult &lhs,
+                                    const FitPeaksForNuclides::PeakFitResult &rhs ) {
+    const PeakDef * const lhs_cs
+      = find_source_gamma( lhs.uncombined_fit_peaks, "Cs137", 661.657, 0.5 );
+    const PeakDef * const rhs_cs
+      = find_source_gamma( rhs.uncombined_fit_peaks, "Cs137", 661.657, 0.5 );
+    BOOST_REQUIRE( lhs_cs && rhs_cs );
+    BOOST_CHECK( peak_areas_agree(*lhs_cs, *rhs_cs) );
+    for( const double energy : eu_anchors )
+    {
+      const PeakDef * const lhs_peak
+        = find_source_gamma( lhs.uncombined_fit_peaks, "Eu152", energy, 0.5 );
+      const PeakDef * const rhs_peak
+        = find_source_gamma( rhs.uncombined_fit_peaks, "Eu152", energy, 0.5 );
+      BOOST_REQUIRE( lhs_peak && rhs_peak );
+      BOOST_CHECK_MESSAGE( peak_areas_agree(*lhs_peak, *rhs_peak),
+                           "Area mismatch at Eu152 " << energy << " keV" );
+    }
+  };
+
+  compare_anchors( raw_auto_ec, raw_auto_ce );
+  compare_anchors( raw_auto_ec, raw_joint );
+  compare_anchors( bg_auto_ec, bg_auto_ce );
+  compare_anchors( bg_auto_ec, bg_joint );
+
+  // Prove the foreground-only arm actually retained a strong hidden K40 nuisance in the model.
+  const PeakDef * const fitted_k40 = find_source_gamma(
+      raw_auto_ec.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 );
+  const PeakDef * const fitted_k40_reversed = find_source_gamma(
+      raw_auto_ce.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 );
+  const PeakDef * const fitted_eu1457 = find_source_gamma(
+      raw_auto_ec.solution.m_peaks_without_back_sub, "Eu152", 1457.64, 0.5 );
+  BOOST_REQUIRE( fitted_k40 );
+  BOOST_REQUIRE( fitted_k40_reversed );
+  BOOST_REQUIRE( fitted_eu1457 );
+  BOOST_CHECK_GT( fitted_k40->peakAreaUncert(), 0.0 );
+  BOOST_CHECK_GT( fitted_k40->peakArea() / fitted_k40->peakAreaUncert(), 10.0 );
+  BOOST_CHECK_GT( fitted_k40->peakArea(), 5.0*fitted_eu1457->peakArea() );
+
+  // The observable refit must not inflate the weak Eu152 line after its K40 nuisance is hidden.
+  const PeakDef * const auto_eu1457
+    = find_source_gamma( raw_auto_ec.observable_peaks, "Eu152", 1457.64, 0.5 );
+  const PeakDef * const joint_eu1457
+    = find_source_gamma( raw_joint.uncombined_fit_peaks, "Eu152", 1457.64, 0.5 );
+  BOOST_REQUIRE( joint_eu1457 );
+  BOOST_CHECK_MESSAGE( peak_areas_agree(*fitted_eu1457, *joint_eu1457),
+                       "Solve-stage Eu152 1457-keV areas must agree before testing observable refit" );
+  if( auto_eu1457 )
+  {
+    const double combined_uncert = std::hypot(
+        std::max(0.0, auto_eu1457->peakAreaUncert()),
+        std::max(0.0, joint_eu1457->peakAreaUncert()) );
+    const double tolerance = std::max( 3.0*combined_uncert,
+                                      0.20*std::fabs(joint_eu1457->peakArea()) );
+    BOOST_CHECK_LE( auto_eu1457->peakArea() - joint_eu1457->peakArea(), tolerance );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_rescue_does_not_overfit_on_interferer )
+{
+#if( PERFORM_DEVELOPER_CHECKS )
+  const LoadedSpectrum spec = load_test_data_spectrum(
+    "trinitite_sample_b.n42", "trinitite_sample_b_background.n42" );
+  const vector<shared_ptr<const PeakDef>> auto_peaks
+    = run_auto_search( spec.foreground, spec.isHPGe );
+  FitPeaksForNuclides::PeakFitForNuclideConfig config
+    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config(
+        PeakFitUtils::CoarseResolutionType::High );
+  config.manual_keep_significance_z = 15.0;
+  config.auto_keep_significance_z = 15.0;
+  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> no_ecal_options;
+  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal;
+  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal;
+
+  struct RestoreRescue
+  {
+    ~RestoreRescue()
+    {
+      FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( true );
+    }
+  } restore_rescue;
+  FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( true );
+  const FitPeaksForNuclides::PeakFitResult enabled = run_fit_with_config(
+      spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}), {},
+      spec.isHPGe, config, no_ecal_options );
+  FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( false );
+  const FitPeaksForNuclides::PeakFitResult disabled = run_fit_with_config(
+      spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}), {},
+      spec.isHPGe, config, no_ecal_options );
+
+  const auto did_rescue = []( const FitPeaksForNuclides::PeakFitResult &result ) {
+    return std::any_of(std::begin(result.warnings), std::end(result.warnings),
+      []( const string &warning ) {
+        return warning.find("bounded fit-then-prune rescue") != string::npos;
+      });
+  };
+  BOOST_REQUIRE( enabled.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( disabled.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_CHECK_MESSAGE( !did_rescue(enabled),
+                       "A guarded marginal beside K40 was unexpectedly admitted" );
+  BOOST_CHECK( find_source_gamma(enabled.observable_peaks, "Eu152", 1408.01, 0.5) );
+  BOOST_CHECK( find_source_gamma(enabled.observable_peaks, "Cs137", 661.657, 0.5) );
+  BOOST_CHECK( !find_source_gamma(enabled.observable_peaks, "K40", 1460.82, 0.5) );
+
+  const PeakDef * const enabled_weak = find_source_gamma(
+      enabled.solution.m_peaks_without_back_sub, "Eu152", 1457.64, 0.5 );
+  const PeakDef * const disabled_weak = find_source_gamma(
+      disabled.solution.m_peaks_without_back_sub, "Eu152", 1457.64, 0.5 );
+  if( enabled_weak && disabled_weak )
+  {
+    const double combined_uncert = std::hypot(
+        std::max(0.0, enabled_weak->peakAreaUncert()),
+        std::max(0.0, disabled_weak->peakAreaUncert()) );
+    const double tolerance = std::max( 3.0*combined_uncert,
+                                      0.20*std::fabs(disabled_weak->peakArea()) );
+    BOOST_CHECK_MESSAGE( enabled_weak->peakArea() - disabled_weak->peakArea() <= tolerance,
+                         "R2 inflated Eu152 1457.6-keV area beside strong K40" );
+  }
+#endif
 }
 
 
@@ -1747,6 +2271,141 @@ namespace
 }//namespace
 
 
+BOOST_AUTO_TEST_CASE( test_snip_joint_roi_boundary_shadow )
+{
+  using FitPeaksForNuclides::detail::GlobalContinuumEstimate;
+  using FitPeaksForNuclides::detail::RoiBoundaryShadowGroup;
+  using FitPeaksForNuclides::detail::RoiBoundaryShadowResult;
+  using FitPeaksForNuclides::detail::optimize_roi_boundaries_shadow;
+
+  const auto make_global = []( const shared_ptr<const SpecUtils::Measurement> &spectrum ) {
+    GlobalContinuumEstimate global;
+    global.snip = spectrum;
+    global.foreground = spectrum;
+    global.built = true;
+    return global;
+  };
+  const vector<shared_ptr<const PeakDef>> no_unfit_peaks;
+
+  // A wide, strongly non-polynomial baseline should be split into locally plausible intervals.
+  const auto curved = make_synthetic_spectrum( 240, 0.0f, 1.0f,
+    []( const double energy ) {
+      return 8.0 + 5.0*std::sin(energy/13.0) + 0.00002*std::pow(energy - 120.0, 4.0);
+    } );
+  const auto fwhm4 = []( const double ){ return 4.0; };
+  const vector<RoiBoundaryShadowGroup> wide_groups = {
+    {40.0, 190.0, {60.0}}, {40.0, 190.0, {110.0}}, {40.0, 190.0, {165.0}}
+  };
+  const RoiBoundaryShadowResult curved_result = optimize_roi_boundaries_shadow(
+      wide_groups, curved, make_global(curved), fwhm4, no_unfit_peaks, 50.0 );
+  BOOST_REQUIRE( curved_result.valid );
+  BOOST_CHECK_GE( curved_result.intervals.size(), 2u );
+  BOOST_CHECK( std::isfinite(curved_result.legacy_total_score) );
+  BOOST_CHECK_LT( curved_result.proposed_total_score, curved_result.legacy_total_score );
+  for( size_t i = 0; i < curved_result.intervals.size(); ++i )
+  {
+    const auto &interval = curved_result.intervals[i];
+    BOOST_CHECK_LE( interval.lower, interval.upper );
+    BOOST_CHECK_EQUAL( interval.unmodeled_peak_conflicts, 0u );
+    if( i )
+      BOOST_CHECK_LE( curved_result.intervals[i-1].upper, interval.lower );
+  }
+  for( const RoiBoundaryShadowGroup &group : wide_groups )
+  {
+    const double energy = group.gamma_energies.front();
+    const size_t covering = std::count_if( std::begin(curved_result.intervals),
+      std::end(curved_result.intervals), [energy]( const auto &interval ) {
+        return (energy >= interval.lower) && (energy <= interval.upper);
+      } );
+    BOOST_CHECK_EQUAL( covering, 1u );
+  }
+
+  // Overlapping source cores have no feasible boundary between them and must remain joint.
+  const auto flat = make_synthetic_spectrum( 220, 0.0f, 1.0f,
+      []( const double ){ return 10.0; } );
+  const auto fwhm6 = []( const double ){ return 6.0; };
+  const vector<RoiBoundaryShadowGroup> overlapping = {
+    {85.0, 120.0, {100.0}}, {85.0, 120.0, {104.0}}
+  };
+  const RoiBoundaryShadowResult overlap_result = optimize_roi_boundaries_shadow(
+      overlapping, flat, make_global(flat), fwhm6, no_unfit_peaks, 50.0 );
+  BOOST_REQUIRE( overlap_result.valid );
+  BOOST_CHECK_EQUAL( overlap_result.intervals.size(), 1u );
+
+  // A real baseline discontinuity should select one of the production step families.
+  const auto stepped = make_synthetic_spectrum( 220, 0.0f, 1.0f,
+      []( const double energy ){ return (energy < 100.0) ? 5.0 : 22.0; } );
+  const vector<RoiBoundaryShadowGroup> step_group = { {70.0, 130.0, {100.0}} };
+  const auto raw_step_foreground = make_synthetic_spectrum( 220, 0.0f, 1.0f,
+      []( const double energy ){
+        return ((energy < 100.0) ? 8.0 : 25.0) + 0.005*energy;
+      } );
+  GlobalContinuumEstimate step_global = make_global( stepped );
+  step_global.foreground = raw_step_foreground;
+  const RoiBoundaryShadowResult step_result = optimize_roi_boundaries_shadow(
+      step_group, raw_step_foreground, step_global, fwhm4, no_unfit_peaks, 50.0 );
+  BOOST_REQUIRE( step_result.valid );
+  BOOST_REQUIRE_EQUAL( step_result.intervals.size(), 1u );
+  BOOST_CHECK( (step_result.intervals[0].continuum_type == PeakContinuum::OffsetType::FlatStep)
+               || (step_result.intervals[0].continuum_type
+                    == PeakContinuum::OffsetType::LinearStep) );
+
+  GlobalContinuumEstimate invalid_global;
+  const RoiBoundaryShadowResult fallback = optimize_roi_boundaries_shadow(
+      step_group, stepped, invalid_global, fwhm4, no_unfit_peaks, 50.0 );
+  BOOST_CHECK( !fallback.valid );
+  BOOST_CHECK( !fallback.fallback_reason.empty() );
+
+  // An unmodeled peak creates a one-FWHM exclusion gap.  The proposed intervals may end/start at
+  // its edges but must never contain or bisect it.
+  const shared_ptr<const PeakDef> unmodeled
+    = make_shared<const PeakDef>( 100.0, 2.0, 1000.0 );
+  const vector<RoiBoundaryShadowGroup> separated = {
+    {45.0, 155.0, {60.0}}, {45.0, 155.0, {140.0}}
+  };
+  const RoiBoundaryShadowResult excluded = optimize_roi_boundaries_shadow(
+      separated, flat, make_global(flat), fwhm4, {unmodeled}, 50.0 );
+  BOOST_REQUIRE( excluded.valid );
+  for( const auto &interval : excluded.intervals )
+  {
+    BOOST_CHECK( !((interval.lower < 104.0) && (interval.upper > 96.0)) );
+    BOOST_CHECK_GE( interval.unmodeled_peak_conflicts, 1u );
+    BOOST_CHECK( std::find_if( std::begin(interval.unmodeled_peak_energies),
+      std::end(interval.unmodeled_peak_energies), []( const double energy ) {
+        return std::fabs(energy - 100.0) < 0.1;
+      } ) != std::end(interval.unmodeled_peak_energies) );
+  }
+
+  // Cores are clipped at the spectrum edge, while the configured maximum remains a hard fallback.
+  const vector<RoiBoundaryShadowGroup> edge_group = { {0.0, 20.0, {1.0}} };
+  const RoiBoundaryShadowResult edge_result = optimize_roi_boundaries_shadow(
+      edge_group, flat, make_global(flat), fwhm4, no_unfit_peaks, 50.0 );
+  BOOST_REQUIRE( edge_result.valid );
+  BOOST_CHECK_GE( edge_result.intervals.front().lower, 0.0 );
+  const RoiBoundaryShadowResult width_fallback = optimize_roi_boundaries_shadow(
+      step_group, stepped, make_global(stepped), fwhm4, no_unfit_peaks, 1.0 );
+  BOOST_CHECK( !width_fallback.valid );
+
+  vector<RoiBoundaryShadowGroup> permuted = wide_groups;
+  std::reverse( std::begin(permuted), std::end(permuted) );
+  const RoiBoundaryShadowResult permuted_result = optimize_roi_boundaries_shadow(
+      permuted, curved, make_global(curved), fwhm4, no_unfit_peaks, 50.0 );
+  BOOST_REQUIRE( permuted_result.valid );
+  BOOST_REQUIRE_EQUAL( permuted_result.intervals.size(), curved_result.intervals.size() );
+  for( size_t i = 0; i < curved_result.intervals.size(); ++i )
+  {
+    BOOST_CHECK_SMALL( curved_result.intervals[i].lower
+                       - permuted_result.intervals[i].lower, 0.05 );
+    BOOST_CHECK_SMALL( curved_result.intervals[i].upper
+                       - permuted_result.intervals[i].upper, 0.05 );
+    BOOST_CHECK_EQUAL( curved_result.intervals[i].continuum_type,
+                       permuted_result.intervals[i].continuum_type );
+    BOOST_CHECK_SMALL( curved_result.intervals[i].normalized_continuum_mismatch
+                       - permuted_result.intervals[i].normalized_continuum_mismatch, 1.0e-8 );
+  }
+}
+
+
 BOOST_AUTO_TEST_CASE( test_estimate_local_continuum )
 {
   using FitPeaksForNuclides::detail::LocalContinuumEstimate;
@@ -1991,7 +2650,7 @@ BOOST_AUTO_TEST_CASE( test_interferer_detection_unit )
     BOOST_CHECK( !c[0].from_background_search );
     BOOST_CHECK_CLOSE( c[0].energy, 1460.82, 0.1 );
     BOOST_CHECK_GT( c[0].detection_z, 5.0 );
-  }
+}
 
   // Case B: K-40 is itself a requested source -> already modeled, no candidate.
   {
@@ -2055,6 +2714,25 @@ BOOST_AUTO_TEST_CASE( test_interferer_detection_unit )
     BOOST_CHECK( !warns.empty() );
   }
 
+  // Case F2: geometric overlap alone is not a strong-interferer warning.  Without a confirming
+  // foreground peak, the candidate and the structured R2 guard list must both stay empty.
+  {
+    RequestedSourceGammas single;
+    single.source   = eu152;
+    single.energies = { 1460.3 };
+    single.yields   = { 1.0 };
+    const std::vector<std::shared_ptr<const PeakDef>> peaks
+      = { make_peak( 121.78, 5000.0, 100.0 ) };
+    std::vector<std::string> warns;
+    std::vector<double> guard_energies;
+    const std::vector<InterfererCandidate> c = find_strong_unmodeled_interferers(
+      { single }, peaks, fwhm_at, false, min_e, max_e, nullptr, nullptr, nullptr,
+      &warns, nullptr, &guard_energies );
+    BOOST_CHECK( c.empty() );
+    BOOST_CHECK( warns.empty() );
+    BOOST_CHECK( guard_energies.empty() );
+  }
+
   // (The ambient-line sweep - Cs137/Co60 - is currently DISABLED in the helper because co-fitting an
   // ambient interferer destabilized the {K40,Eu152} joint fit; its unit test was removed with it.)
 
@@ -2064,5 +2742,26 @@ BOOST_AUTO_TEST_CASE( test_interferer_detection_unit )
   BOOST_CHECK(  FitPeaksForNuclides::is_near_strong_norm_gamma( 609.31, 0.5 ) );
   BOOST_CHECK( !FitPeaksForNuclides::is_near_strong_norm_gamma( 500.0,  1.0 ) );
 }//test_interferer_detection_unit
+
+
+BOOST_AUTO_TEST_CASE( test_marginal_keep_classification_preserves_normal_accept_set )
+{
+  using FitPeaksForNuclides::detail::is_marginal_keep_reject;
+
+  const double keep_z = 5.0;
+  BOOST_CHECK( is_marginal_keep_reject( 15.1, 3.5, keep_z ) );
+  BOOST_CHECK( is_marginal_keep_reject( 100.0, 5.0, keep_z ) );
+  BOOST_CHECK( !is_marginal_keep_reject( 15.0, 4.0, keep_z ) );
+  BOOST_CHECK( !is_marginal_keep_reject( 100.0, 3.499, keep_z ) );
+  BOOST_CHECK( !is_marginal_keep_reject( 100.0, 5.001, keep_z ) );
+
+  // The production accept predicate remains the pre-existing strict counts-and-z gate.  No point
+  // can be both normally accepted and classified as marginal.
+  for( const double z : { 0.0, 3.49, 3.5, 4.9, 5.0, 5.01, 8.0 } )
+  {
+    const bool normally_accepted = (100.0 > 15.0) && (z > keep_z);
+    BOOST_CHECK( !(normally_accepted && is_marginal_keep_reject(100.0, z, keep_z)) );
+  }
+}
 
 BOOST_AUTO_TEST_SUITE_END() // StatisticalDetailHelpers

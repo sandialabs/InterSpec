@@ -3203,7 +3203,9 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
                                           const double hypothesis_threshold,
                                           const std::optional<PeakFitUtils::CoarseResolutionType> resolution_type,
                                           const std::optional<PeakDef::SkewType> skew_type,
-                                          const Wt::WFlags<PeakFitLMOptions> fit_options ) throw()
+                                          const Wt::WFlags<PeakFitLMOptions> fit_options,
+                                          const std::function<bool(const PeakDef &,const PeakDef &)>
+                                            &may_remove_close_pair ) throw()
 {
   FitPeaksResults results;
 
@@ -3421,7 +3423,8 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
       const double min_sigma = std::min( this_peak->sigma(), next_peak->sigma() );
       const double mean_diff = next_peak->mean() - this_peak->mean();
 
-      if( (mean_diff / min_sigma) < 1.0 )
+      if( ((mean_diff / min_sigma) < 1.0)
+          && (!may_remove_close_pair || may_remove_close_pair(*this_peak, *next_peak)) )
       {
         // Remove the peak with the worse chi2
         if( this_peak->chi2dof() > next_peak->chi2dof() )

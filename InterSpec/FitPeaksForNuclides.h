@@ -243,6 +243,66 @@ namespace detail
     double restrict_lower_energy,
     double restrict_upper_energy );
 
+  /** One accepted source-gamma group supplied to the R4 shadow boundary optimizer. */
+  struct RoiBoundaryShadowGroup
+  {
+    double legacy_lower = 0.0;
+    double legacy_upper = 0.0;
+    std::vector<double> gamma_energies;
+  };
+
+  /** One interval in the shadow optimizer's proposed partition.  Shadow results never alter the
+   production ROIs; they are diagnostics for paired evaluation and visual review. */
+  struct RoiBoundaryShadowInterval
+  {
+    double lower = 0.0;
+    double upper = 0.0;
+    double legacy_lower = 0.0;
+    double legacy_upper = 0.0;
+    double width_fwhm = 0.0;
+    size_t num_channels = 0;
+    PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Linear;
+    double normalized_continuum_mismatch = 0.0;
+    double interval_score = 0.0;
+    PeakContinuum::OffsetType legacy_continuum_type = PeakContinuum::OffsetType::Linear;
+    double legacy_normalized_continuum_mismatch = 0.0;
+    double legacy_score = 0.0;
+    size_t first_group = 0;
+    size_t last_group = 0;
+    std::vector<double> group_gamma_energies;
+    std::vector<double> profile_energies;
+    std::vector<double> profile_foreground;
+    std::vector<double> profile_snip;
+    std::vector<double> profile_continuum;
+    std::vector<double> unmodeled_peak_energies;
+    size_t unmodeled_peak_conflicts = 0;
+    std::string reason;
+  };
+
+  struct RoiBoundaryShadowResult
+  {
+    bool valid = false;
+    std::string stage;
+    std::string fallback_reason;
+    double legacy_total_score = 0.0;
+    double proposed_total_score = 0.0;
+    std::vector<RoiBoundaryShadowInterval> intervals;
+  };
+
+  /** Jointly optimize a non-overlapping ROI partition against the shared SNIP baseline.  This is
+   shadow-only: callers may inspect the proposal, but production fitting retains its legacy ROIs. */
+  RoiBoundaryShadowResult optimize_roi_boundaries_shadow(
+    const std::vector<RoiBoundaryShadowGroup> &groups,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const GlobalContinuumEstimate &global_continuum,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    double catastrophic_max_fwhm_width,
+    double roi_core_num_fwhm = 1.5 );
+
+  /** Drain shadow diagnostics produced on the calling thread since the previous drain. */
+  std::vector<RoiBoundaryShadowResult> take_roi_boundary_shadow_diagnostics();
+
   /** One requested source's in-range photon lines, pre-expanded by the caller so that
    find_strong_unmodeled_interferers() stays free of SandiaDecay/NuclideMixture dependencies and is
    unit-testable on synthetic input.  `energies` are already filtered to the valid energy range;
@@ -263,21 +323,38 @@ namespace detail
     bool from_background_search = false;            // false => foreground NORM-table path
   };
 
-  /** Find strong lines NOT in the current model that sit within ~`sm_interferer_near_num_fwhm` FWHM
-   of a requested-source gamma and are data-confirmed, so they can be auto co-fit (R6).
+  /** R2 keep-gate classification seam for focused statistical tests.  Returns true only for a
+   counts-floor-passing cluster in [0.7*keep_z, keep_z], i.e. one that the normal strict keep gate
+   rejects but the bounded rescue pass may inspect. */
+  bool is_marginal_keep_reject( double expected_counts, double significance, double keep_z );
 
-   A candidate is a NORM-table (or, in the background path, ambient) line whose parent nuclide is not
-   already modeled and is not itself a requested source, that is not explained by the source's own
-   chain, and that is confirmed by a foreground auto-search peak within `sm_interferer_confirm_num_fwhm`
-   FWHM at area/uncert >= `sm_interferer_min_detect_z`.  Attributable lines yield a nuclide candidate
-   (co-fit on a cloned NORM rel-eff curve); unattributable ones (K-xrays, non-table background lines)
-   yield a floating-peak candidate (`nuclide == nullptr`).
+#if( PERFORM_DEVELOPER_CHECKS )
+  /** Developer-test controls for proving rescue causality and transactional exception fallback. */
+  void set_bounded_rescue_enabled_for_test( bool enabled );
+  void force_next_bounded_rescue_admission_failure_for_test();
+  void force_next_bounded_rescue_evaluation_failure_for_test();
+#endif
 
-   `background` (with `drf`/`peak_fit_prefs`) enables the supply-a-background path and may be null.
+  /** Find strong foreground NORM lines NOT in the current model that sit within
+   ~`sm_interferer_near_num_fwhm` FWHM of a requested-source gamma and are data-confirmed, so they
+   can be considered for auto co-fitting (R6).
+
+   A candidate is a strong-NORM-table line whose parent nuclide is not already modeled and is not
+   itself a requested source, that is not explained by the source's own chain, and that is confirmed
+   by a foreground auto-search peak within `sm_interferer_confirm_num_fwhm` FWHM at area/uncert >=
+   `sm_interferer_min_detect_z`.  The currently active path emits attributable nuclide candidates.
+   Ambient Cs137/Co60 scanning, a dedicated background search, and unattributable floating peaks
+   remain deliberately disabled until the multi-source nuisance-model behavior is validated.
+
    If `warnings` is non-null, a human-readable note is appended for each interferer that was detected
    but deliberately NOT co-fit (e.g. an unresolvable single-line-source vs single-line-interferer
    doublet), so the caller can surface it.
-   `global_continuum` is a permanent stub for R1 step 2 and is never dereferenced here. */
+   If `guard_energies` is non-null, it receives every data-confirmed interfering-line energy,
+   including confirmed doublets that were deliberately not returned as candidates.  This lets the
+   bounded rescue pass avoid those ranges without parsing warning text.
+
+   `background`, `drf`, `peak_fit_prefs`, and `global_continuum` are reserved for the disabled
+   background/residual-confirmation path and are not currently dereferenced. */
   std::vector<InterfererCandidate> find_strong_unmodeled_interferers(
     const std::vector<RequestedSourceGammas> &source_gammas,
     const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
@@ -289,7 +366,8 @@ namespace detail
     const std::shared_ptr<const DetectorPeakResponse> &drf,
     const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs,
     std::vector<std::string> *warnings = nullptr,
-    const GlobalContinuumEstimate *global_continuum = nullptr );
+    const GlobalContinuumEstimate *global_continuum = nullptr,
+    std::vector<double> *guard_energies = nullptr );
 }//namespace detail
 
 
@@ -652,6 +730,19 @@ enum FitSrcPeaksOptions
    but wont return in the solution peaks.
    */
   FitNormBkgrndPeaksDontUse = 0x20,
+
+  /** Disable automatic detection and nuisance co-fitting of strong unmodeled interferers.
+
+   By default the fitter may transactionally add foreground-confirmed strong NORM nuisance
+   nuclides near requested-source lines.  This option disables that entire automatic R6 path:
+   no interferer discovery, warnings, nuisance curves, or nuisance ROIs are added.  Explicitly
+   requested sources and the FitNormBkgrndPeaks options are unaffected.
+
+   This is useful when a representative background spectrum is supplied, and for controlled
+   tuning/evaluation runs that need to measure the requested-source fitter independently of the
+   optional interferer model.
+   */
+  DisableAutoInterfererFit = 0x40,
 };
 
 /** Function to fit all the observable peaks for one or more sources.

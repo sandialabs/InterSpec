@@ -81,6 +81,7 @@ namespace NuclideConfig_GA
 // Runtime flags set from CLI in PeakFitImprove main().  Default values
 // preserve the pre-CLI behavior of these features.
 bool sm_do_background_fit_trial = false;
+bool sm_disable_auto_interferer_fit = false;
 RelEffChi2CapMode sm_rel_eff_chi2_cap_mode = RelEffChi2CapMode::Fixed;
 double sm_rel_eff_chi2_cap_fixed_value = 25.0;
 PeakFitUtils::CoarseResolutionType sm_base_det_type = PeakFitUtils::CoarseResolutionType::Low;
@@ -340,6 +341,8 @@ double compute_background_fit_penalty(
   Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
   if( bg_mode == BackgroundMode::NoBackgroundFitNorm )
     options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
+  if( sm_disable_auto_interferer_fit )
+    options |= FitPeaksForNuclides::DisableAutoInterfererFit;
 
   const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
 
@@ -1184,6 +1187,9 @@ void write_results_html_and_n42(
   }
 
   html_output << "<body>" << endl;
+  html_output << "<p><strong>Automatic interferer fit:</strong> "
+              << (sm_disable_auto_interferer_fit ? "disabled" : "enabled")
+              << "</p>" << endl;
   html_output << "<style>"
     << ".TopLinesTable{ margin-top: 25px; margin-left: auto; margin-right: auto; border-collapse: collapse; border: 1px solid black; }" << endl
     << "table, th, td{ border: 1px solid black; }" << endl
@@ -1285,6 +1291,8 @@ void write_results_html_and_n42(
     Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
     if( bg_mode == BackgroundMode::NoBackgroundFitNorm )
       options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
+    if( sm_disable_auto_interferer_fit )
+      options |= FitPeaksForNuclides::DisableAutoInterfererFit;
 
     try
     {

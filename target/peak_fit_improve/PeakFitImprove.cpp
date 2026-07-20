@@ -1025,9 +1025,26 @@ static double score_config_over_precomputed(
   {
     tsv = std::make_shared<std::ofstream>( tsv_path );
     if( tsv->good() )
-      (*tsv) << "source\tdetector\tfg_cost\tstatus\tmiss_fraction\tn_observable\tn_fit\terror\n";
+      (*tsv) << "spectrum_id\tsource\tdetector\tlocation\tlive_time\tfg_cost\tstatus"
+                "\tmiss_fraction\tn_observable\tn_fit\terror\n";
     else
       tsv.reset();
+  }
+  std::shared_ptr<std::ofstream> shadow_tsv;
+  if( const char * const shadow_path = std::getenv( "PEAKFIT_ROI_SHADOW_TSV" ) )
+  {
+    shadow_tsv = std::make_shared<std::ofstream>( shadow_path );
+    if( shadow_tsv->good() )
+      (*shadow_tsv) << "spectrum_id\tfit_role\tstage\tpass\tvalid\tfallback\tinterval\tlegacy_lower"
+        "\tlegacy_upper\tproposed_lower\tproposed_upper\twidth_fwhm\tchannels"
+        "\tcontinuum\tnormalized_mismatch\tinterval_score\tlegacy_continuum"
+        "\tlegacy_normalized_mismatch\tlegacy_interval_score\tlegacy_total_score"
+        "\tproposed_total_score\ttotal_score_delta\tfirst_group\tlast_group"
+        "\tgroup_gamma_energies\treason\tunmodeled_conflicts"
+        "\tprofile_energies\tprofile_foreground\tprofile_snip\tprofile_continuum"
+        "\tunmodeled_peak_energies\n";
+    else
+      shadow_tsv.reset();
   }
 
   // Map the solution status enum to a name so failures self-classify in the TSV
@@ -1061,11 +1078,88 @@ static double score_config_over_precomputed(
       for( char &c : err ) if( c=='\t' || c=='\n' || c=='\r' ) c = ' ';
       if( err.size() > 80 ) err.resize( 80 );
       std::lock_guard<std::mutex> lock( tsv_mutex );
-      (*tsv) << pd.src_info->src_info.src_name << '\t' << pd.src_info->detector_name << '\t'
+      const std::string spectrum_id = pd.src_info->src_info.file_base_path + "/"
+          + pd.src_info->detector_name + "/"
+          + pd.src_info->location_name + "/" + pd.src_info->live_time_name + "/"
+          + pd.src_info->src_info.src_name;
+      (*tsv) << spectrum_id << '\t' << pd.src_info->src_info.src_name << '\t'
+             << pd.src_info->detector_name << '\t' << pd.src_info->location_name << '\t'
+             << pd.src_info->live_time_name << '\t'
              << fg << '\t' << status << '\t' << miss_frac << '\t'
              << n_observable << '\t' << n_fit << '\t' << err << '\n';
       tsv->flush();
     }
+  };
+
+  const auto record_shadow = [&]( const NuclideConfig_GA::PrecomputedNuclideData &pd,
+      const std::vector<FitPeaksForNuclides::detail::RoiBoundaryShadowResult> &diagnostics,
+      const char * const fit_role )
+  {
+    if( !shadow_tsv )
+      return;
+    const std::string spectrum_id = pd.src_info->src_info.file_base_path + "/"
+        + pd.src_info->detector_name + "/"
+        + pd.src_info->location_name + "/" + pd.src_info->live_time_name + "/"
+        + pd.src_info->src_info.src_name;
+    std::lock_guard<std::mutex> lock( tsv_mutex );
+    for( size_t pass = 0; pass < diagnostics.size(); ++pass )
+    {
+      const FitPeaksForNuclides::detail::RoiBoundaryShadowResult &diagnostic
+        = diagnostics[pass];
+      if( !diagnostic.valid )
+      {
+        (*shadow_tsv) << spectrum_id << '\t' << fit_role << '\t' << diagnostic.stage
+          << '\t' << pass << "\t0\t" << diagnostic.fallback_reason
+          << "\t-1\t0\t0\t0\t0\t0\t0\tUnknown\t0\t0\tUnknown\t0\t0\t"
+          << diagnostic.legacy_total_score << '\t' << diagnostic.proposed_total_score
+          << "\t0\t0\t0\t\tlegacy fallback\t0\t\t\t\t\t\n";
+        continue;
+      }
+      for( size_t interval_index = 0;
+           interval_index < diagnostic.intervals.size(); ++interval_index )
+      {
+        const FitPeaksForNuclides::detail::RoiBoundaryShadowInterval &interval
+          = diagnostic.intervals[interval_index];
+        std::ostringstream gamma_energies;
+        for( size_t gamma_index = 0;
+             gamma_index < interval.group_gamma_energies.size(); ++gamma_index )
+        {
+          if( gamma_index )
+            gamma_energies << ',';
+          gamma_energies << interval.group_gamma_energies[gamma_index];
+        }
+        const auto serialize_values = []( const std::vector<double> &values ) {
+          std::ostringstream stream;
+          for( size_t index = 0; index < values.size(); ++index )
+          {
+            if( index )
+              stream << ',';
+            stream << values[index];
+          }
+          return stream.str();
+        };
+        (*shadow_tsv) << spectrum_id << '\t' << fit_role << '\t' << diagnostic.stage
+          << '\t' << pass << "\t1\t\t" << interval_index
+          << '\t' << interval.legacy_lower << '\t' << interval.legacy_upper
+          << '\t' << interval.lower << '\t' << interval.upper << '\t'
+          << interval.width_fwhm << '\t' << interval.num_channels << '\t'
+          << PeakContinuum::offset_type_str(interval.continuum_type) << '\t'
+          << interval.normalized_continuum_mismatch << '\t' << interval.interval_score << '\t'
+          << PeakContinuum::offset_type_str(interval.legacy_continuum_type) << '\t'
+          << interval.legacy_normalized_continuum_mismatch << '\t' << interval.legacy_score << '\t'
+          << diagnostic.legacy_total_score << '\t' << diagnostic.proposed_total_score << '\t'
+          << (diagnostic.proposed_total_score - diagnostic.legacy_total_score) << '\t'
+          << interval.first_group << '\t' << interval.last_group << '\t'
+          << gamma_energies.str() << '\t' << interval.reason << '\t'
+          << interval.unmodeled_peak_conflicts << '\t'
+          << serialize_values(interval.profile_energies) << '\t'
+          << serialize_values(interval.profile_foreground) << '\t'
+          << serialize_values(interval.profile_snip) << '\t'
+          << serialize_values(interval.profile_continuum) << '\t'
+          << serialize_values(interval.unmodeled_peak_energies) << '\n';
+      }
+    }
+    shadow_tsv->flush();
   };
 
   // Reliability axis, reported SEPARATELY from the fit-quality cost (user guidance 2026-07-18) - a
@@ -1079,6 +1173,20 @@ static double score_config_over_precomputed(
   std::atomic<size_t> num_mechanical_failures{ 0 };
   std::atomic<size_t> num_legit_empty{ 0 };
 
+  struct AccuracyBreakdown
+  {
+    double cost = 0.0;
+    double area_cost = 0.0;
+    double find_reward = 0.0;
+    double candidate_reward = 0.0;
+    double miss_fraction = 0.0;
+    size_t missed_definitely_wanted = 0;
+    size_t extra_peaks = 0;
+  };
+
+  std::mutex accuracy_totals_mutex;
+  AccuracyBreakdown accuracy_totals;
+
   // Fit-quality (accuracy) cost of `fit_peaks` vs this spectrum's truth: area-mismatch cost, minus
   // the find/candidate rewards, plus the missed-definitely-wanted-area penalty.  openGA MINIMIZES,
   // so the (higher-is-better) find/candidate rewards are negated (finding correct peaks LOWERS cost,
@@ -1089,7 +1197,7 @@ static double score_config_over_precomputed(
   // contains NO mechanical-failure penalty.
   const auto accuracy_cost = [num_sigma_contribution](
       const NuclideConfig_GA::PrecomputedNuclideData &pd,
-      const std::vector<PeakDef> &fit_peaks, double &miss_frac_out ) -> double
+      const std::vector<PeakDef> &fit_peaks ) -> AccuracyBreakdown
   {
     const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
     const std::vector<ExpectedPhotopeakInfo> scoring_peaks
@@ -1104,22 +1212,31 @@ static double score_config_over_precomputed(
       fit_peaks, scoring_peaks, det_type );
     CandidatePeak_GA::correct_score_for_escape_peaks( combined_score.candidate_peak_score, scoring_peaks );
 
-    miss_frac_out = PeakFitImproveData::missed_def_wanted_area_fraction(
+    AccuracyBreakdown answer;
+    answer.area_cost = combined_score.final_fit_score.total_weight;
+    answer.find_reward = combined_score.initial_fit_weights.find_weight;
+    answer.candidate_reward = combined_score.candidate_peak_score.score;
+    answer.miss_fraction = PeakFitImproveData::missed_def_wanted_area_fraction(
         scoring_peaks, combined_score.candidate_peak_score.def_expected_but_not_detected, det_type );
-    return combined_score.final_fit_score.total_weight
-         - ( combined_score.initial_fit_weights.find_weight + combined_score.candidate_peak_score.score )
-         + NuclideConfig_GA::sm_miss_penalty_weight * miss_frac_out;
+    answer.missed_definitely_wanted = combined_score.candidate_peak_score.num_def_wanted_not_found;
+    answer.extra_peaks = combined_score.candidate_peak_score.num_extra_peaks;
+    answer.cost = answer.area_cost - (answer.find_reward + answer.candidate_reward)
+        + NuclideConfig_GA::sm_miss_penalty_weight * answer.miss_fraction;
+    return answer;
   };
 
   // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
   // Called from both the serial and parallel paths below; safe to invoke concurrently.
-  const auto score_one_spectrum = [&config, &record_spectrum, &status_name, &accuracy_cost,
-                                   &num_mechanical_failures, &num_legit_empty](
+  const auto score_one_spectrum = [&config, &record_spectrum, &record_shadow, &status_name, &accuracy_cost,
+                                   &num_mechanical_failures, &num_legit_empty,
+                                   &accuracy_totals_mutex, &accuracy_totals](
       const NuclideConfig_GA::PrecomputedNuclideData &pd ) -> std::pair<double,double>
   {
     Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
     if( NuclideConfig_GA::sm_background_mode == NuclideConfig_GA::BackgroundMode::NoBackgroundFitNorm )
       options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
+    if( NuclideConfig_GA::sm_disable_auto_interferer_fit )
+      options |= FitPeaksForNuclides::DisableAutoInterfererFit;
 
     try
     {
@@ -1128,38 +1245,63 @@ static double score_config_over_precomputed(
       const FitPeaksForNuclides::PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
         pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
         pd.background, pd.drf, options, config, pd.peak_fit_prefs );
+      record_shadow( pd, FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics(),
+                     "foreground" );
 
       const bool ok = (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success);
 
       // A non-Success fit produced no usable peaks (observable_peaks is empty), so it is scored as
       // the total-miss its empty result earns - identical to a Success that recovered nothing.  The
       // mechanical status is recorded separately (the counters + the TSV), never added to the cost.
-      double miss_frac = 0.0;
-      const double fg_score = accuracy_cost( pd, result.observable_peaks, miss_frac );
+      const AccuracyBreakdown breakdown = accuracy_cost( pd, result.observable_peaks );
+      const double fg_score = breakdown.cost;
 
       // Split a non-Success into a real mechanical failure (the truth had def-wanted peaks it should
       // have recovered -> miss_frac > 0) vs a legitimate empty (nothing significant to fit).
       if( !ok )
-        (miss_frac > 0.0 ? num_mechanical_failures : num_legit_empty).fetch_add( 1, std::memory_order_relaxed );
+        (breakdown.miss_fraction > 0.0 ? num_mechanical_failures : num_legit_empty)
+            .fetch_add( 1, std::memory_order_relaxed );
+
+      {
+        std::lock_guard<std::mutex> lock( accuracy_totals_mutex );
+        accuracy_totals.area_cost += breakdown.area_cost;
+        accuracy_totals.find_reward += breakdown.find_reward;
+        accuracy_totals.candidate_reward += breakdown.candidate_reward;
+        accuracy_totals.miss_fraction += breakdown.miss_fraction;
+        accuracy_totals.missed_definitely_wanted += breakdown.missed_definitely_wanted;
+        accuracy_totals.extra_peaks += breakdown.extra_peaks;
+      }
 
       // Background-false-positive penalty (no-op unless the bg-fit trial is enabled); only meaningful
       // for a successful fit.
       const double bg_raw = ok ? NuclideConfig_GA::compute_background_fit_penalty(
           pd, config, NuclideConfig_GA::sm_background_mode, /*detail_out=*/nullptr ) : 0.0;
+      record_shadow( pd, FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics(),
+                     "background trial" );
 
-      record_spectrum( pd, fg_score, ok ? "Success" : status_name(result.status), miss_frac,
+      record_spectrum( pd, fg_score, ok ? "Success" : status_name(result.status), breakdown.miss_fraction,
                        result.observable_peaks.size(), result.fit_peaks.size(),
                        ok ? std::string() : result.error_message );
       return { fg_score, bg_raw };
     }
     catch( const std::exception &e )
     {
+      FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
       // An exception is a mechanical failure with no result at all; score the truth as a total-miss.
       num_mechanical_failures.fetch_add( 1, std::memory_order_relaxed );
-      double miss_frac = 0.0;
       const std::vector<PeakDef> no_peaks;
-      const double fg_score = accuracy_cost( pd, no_peaks, miss_frac );
-      record_spectrum( pd, fg_score, "EXCEPTION", miss_frac, 0, 0, e.what() );
+      const AccuracyBreakdown breakdown = accuracy_cost( pd, no_peaks );
+      const double fg_score = breakdown.cost;
+      {
+        std::lock_guard<std::mutex> lock( accuracy_totals_mutex );
+        accuracy_totals.area_cost += breakdown.area_cost;
+        accuracy_totals.find_reward += breakdown.find_reward;
+        accuracy_totals.candidate_reward += breakdown.candidate_reward;
+        accuracy_totals.miss_fraction += breakdown.miss_fraction;
+        accuracy_totals.missed_definitely_wanted += breakdown.missed_definitely_wanted;
+        accuracy_totals.extra_peaks += breakdown.extra_peaks;
+      }
+      record_spectrum( pd, fg_score, "EXCEPTION", breakdown.miss_fraction, 0, 0, e.what() );
       return { fg_score, 0.0 };
     }
   };//score_one_spectrum lambda
@@ -1212,7 +1354,19 @@ static double score_config_over_precomputed(
             << mech_fail << " of " << precomputed.size()
             << " (" << (100.0 * mech_fail / std::max<size_t>(1, precomputed.size())) << "%)" << std::endl
             << "  Legitimate empties (non-Success, nothing significant to fit - a valid outcome): "
-            << legit_empty << std::endl;
+            << legit_empty << std::endl
+            << "  Accuracy components (per spectrum): area_cost="
+            << (accuracy_totals.area_cost / std::max<size_t>(1, precomputed.size()))
+            << ", find_reward="
+            << (accuracy_totals.find_reward / std::max<size_t>(1, precomputed.size()))
+            << ", candidate_reward="
+            << (accuracy_totals.candidate_reward / std::max<size_t>(1, precomputed.size()))
+            << ", miss_fraction="
+            << (accuracy_totals.miss_fraction / std::max<size_t>(1, precomputed.size()))
+            << std::endl
+            << "  Accuracy counts: missed_definitely_wanted="
+            << accuracy_totals.missed_definitely_wanted
+            << ", spurious_extra=" << accuracy_totals.extra_peaks << std::endl;
 
   return total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg;
 }//score_config_over_precomputed(...)
@@ -1281,6 +1435,10 @@ int main( int argc, char **argv )
        "the long_background spectrum with the source(s) and penalize the "
        "score (weighted 0.25x) by source-attributed peaks that survive the "
        "511/<30 keV/NORM-overlap filters.  Default off.")
+    ("disable-auto-interferer-fit",
+       po::bool_switch( &NuclideConfig_GA::sm_disable_auto_interferer_fit ),
+       "Disable automatic strong-interferer discovery and nuisance co-fitting.  Use this for "
+       "source-only manual tuning; the default leaves production interferer handling enabled.")
     ("rel-eff-chi2-cap-mode", po::value<string>( &chi2_cap_mode_str )->default_value( chi2_cap_mode_str ),
        "How initial_manual_rel_eff_max_chi2_dof is treated: 'disabled' (cap "
        "never fires), 'fixed' (use --rel-eff-chi2-cap-value), 'ga-optimized' "
@@ -1404,6 +1562,8 @@ int main( int argc, char **argv )
                  << "; chi2_cap_mode=" << chi2_cap_mode_str
                  << "; chi2_cap_value=" << chi2_cap_fixed_value
                  << "; bg_trial=" << (background_fit_trial_arg ? 1 : 0)
+                 << "; auto_interferer_fit="
+                 << (NuclideConfig_GA::sm_disable_auto_interferer_fit ? 0 : 1)
                  << "; holdout_frac=" << holdout_frac
                  << "; holdout_role=" << holdout_role_str
                  << "; holdout_seed=" << holdout_seed;
@@ -3188,5 +3348,3 @@ int main( int argc, char **argv )
 
   return EXIT_SUCCESS;
 }//int main( int argc, const char * argv[] )
-
-

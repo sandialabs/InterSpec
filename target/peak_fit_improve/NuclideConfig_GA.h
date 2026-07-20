@@ -85,6 +85,10 @@ enum class RelEffChi2CapMode : int { Disabled, Fixed, GAOptimized };
  foreground fit.  Set from CLI in main(). */
 extern bool sm_do_background_fit_trial;
 
+/** Whether tuning/evaluation/report fits pass DisableAutoInterfererFit.  Set from the
+ `--disable-auto-interferer-fit` CLI switch; false preserves the production default. */
+extern bool sm_disable_auto_interferer_fit;
+
 /** Mode for `PeakFitForNuclideConfig::initial_manual_rel_eff_max_chi2_dof`.
  Disabled    - cap is set to a sentinel large value (gate never fires)
  Fixed       - cap = sm_rel_eff_chi2_cap_fixed_value
