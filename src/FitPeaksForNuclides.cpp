@@ -864,7 +864,8 @@ bool find_clean_gap_between(
   const double merge_tail_z,
   const double clean_gap_num_fwhm,
   double *clean_win_lo,
-  double *clean_win_hi )
+  double *clean_win_hi,
+  const GlobalContinuumEstimate *global_continuum )
 {
   if( clean_win_lo )
     *clean_win_lo = 0.0;
@@ -916,8 +917,13 @@ bool find_clean_gap_between(
     // making the old test anti-conservative, i.e. biased toward splitting.)
     const double s_pred = predicted_signal( win_lo, win_hi );
 
+    // R1 step 2: anchor the clean-gap continuum on the single global SNIP continuum when available;
+    // fall back to the tail-subtracted local estimate, then to gross counts.  The predicted-signal
+    // tail term (s_pred) is unchanged.
     double c_est = 0.0;
-    if( cont.valid )
+    if( global_continuum && global_continuum->valid() )
+      c_est = global_continuum->integral( win_lo, win_hi );
+    else if( cont.valid )
       c_est = cont.integral( win_lo, win_hi );
     else if( foreground )
       c_est = foreground->gamma_integral( static_cast<float>(win_lo), static_cast<float>(win_hi) );
@@ -4974,7 +4980,7 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
             std::min( prev_largest_energy, curr_largest_energy ),
             std::max( prev_largest_energy, curr_largest_energy ),
             foreground, fwhm_at, settings.merge_tail_z, settings.merge_clean_gap_fwhm,
-            &clean_win_lo, &clean_win_hi );
+            &clean_win_lo, &clean_win_hi, settings.global_continuum );
 
         if( have_clean_gap && should_debug_print() )
         {
@@ -5495,7 +5501,13 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
       // B: a ROI at a spectrum edge, or with hopelessly contaminated sidebands, never gets a step.
       if( step_cont.valid )
       {
-        const double b_est = step_cont.integral( win_lo, win_hi );
+        // R1 step 2: take Gate-1's dominance background from the single global SNIP continuum when
+        // available (falling back to the local step_cont, still gated on step_cont.valid so a step
+        // still needs a valid sideband estimate - no gross fallback here).  Gate-2's asymmetry test
+        // below stays local: it needs the raw sideband counts SNIP does not provide.
+        const double b_est = (settings.global_continuum && settings.global_continuum->valid())
+            ? settings.global_continuum->integral( win_lo, win_hi )
+            : step_cont.integral( win_lo, win_hi );
         const double est_significance = max_amplitude
             / std::sqrt( std::max( 1.0, max_amplitude + b_est ) );
 
@@ -5579,7 +5591,8 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
     std::vector<InitialRoi> initial_rois,
     const PeakFitForNuclideConfig &config,
     const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks = {},
-    const std::shared_ptr<const SpecUtils::Measurement> &foreground = {} )
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground = {},
+    const detail::GlobalContinuumEstimate *global_continuum = nullptr )
 {
   // Sort by lower_energy for merging
   std::sort( initial_rois.begin(), initial_rois.end(), [](const InitialRoi &a, const InitialRoi &b){
@@ -5655,7 +5668,7 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
           std::min( last_centers.back(), current.center_energy ),
           std::max( last_centers.back(), current.center_energy ),
           foreground, fwhm_at, config.merge_tail_z, config.merge_clean_gap_fwhm,
-          &clean_win_lo, &clean_win_hi );
+          &clean_win_lo, &clean_win_hi, global_continuum );
 
       if( have_clean_gap && should_debug_print() )
       {
@@ -7363,7 +7376,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     const double ee = have ? std::clamp( e, fwhm_lower_energy, fwhm_upper_energy ) : e;
     return DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(ee), fwhm_form, fwhm_coefficients );
   };
-  const detail::GlobalContinuumEstimate global_cont = detail::make_global_continuum(
+  // Not const: when the refinement loop advances the energy calibration, we re-stamp this estimate's
+  // calibration to match the working foreground (see the cal-advance block below).
+  detail::GlobalContinuumEstimate global_cont = detail::make_global_continuum(
       orig_foreground, global_fwhm_at, det_type, min_valid_energy, max_valid_energy );
 
   const bool do_not_use_existing_rois = user_options.testFlag( FitSrcPeaksOptions::DoNotUseExistingRois );
@@ -8106,7 +8121,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         initial_src_norm_info_rois.push_back( roi_info );
       }//for( const RelActCalcAuto::RoiRange &roi : options.rois )
 
-      options.rois = merge_rois( initial_src_norm_info_rois, config, {}, orig_foreground );
+      options.rois = merge_rois( initial_src_norm_info_rois, config, {}, orig_foreground,
+                                 global_cont.valid() ? &global_cont : nullptr );
 
       RelActCalcAuto::RelEffCurveInput norm_rel_eff_curve;
       norm_rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
@@ -8547,6 +8563,18 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           new_foreground->set_energy_calibration( fitted_cal );
           foreground = new_foreground;
 
+          // R1 step 2: keep the shared global SNIP continuum in the SAME (fitted) energy frame as the
+          // working foreground, so its energy->channel lookups match the data the gates now see.  The
+          // fit only re-labels the calibration (never re-bins), so the SNIP's per-channel counts are
+          // invariant - we just re-stamp the calibration instead of recomputing SNIP (cheap + exact).
+          if( global_cont.valid() )
+          {
+            shared_ptr<SpecUtils::Measurement> recal_snip = make_shared<SpecUtils::Measurement>( *global_cont.snip );
+            recal_snip->set_energy_calibration( fitted_cal );
+            global_cont.snip = recal_snip;
+            global_cont.foreground = foreground;  // same original counts, now on the fitted cal
+          }
+
           if( background )
           {
             // Propagate the foreground cal change (orig_fg_cal -> fitted_cal) to
@@ -8725,12 +8753,23 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             {
               const double pk_mean = best_peak->mean();
               const double pk_fwhm = best_peak->fwhm();
-              const detail::LocalContinuumEstimate edge_cont = detail::estimate_local_continuum(
-                  foreground, pk_mean - 2.0*pk_fwhm, pk_mean + 2.0*pk_fwhm, pk_fwhm, 0.5 );
               const double s_est = 0.7607 * best_peak_area;  // Gaussian fraction within +/-1 FWHM
-              const double b_est = edge_cont.valid
-                  ? edge_cont.integral( pk_mean - pk_fwhm, pk_mean + pk_fwhm )
-                  : foreground->gamma_integral( pk_mean - pk_fwhm, pk_mean + pk_fwhm );
+
+              // R1 step 2: prefer the single global SNIP continuum for B here (this is the weakest
+              // local estimator - no signal subtraction/relocation); fall back to the local estimate,
+              // then to gross counts, whenever the global provider is unavailable.
+              double b_est;
+              if( global_cont.valid() )
+              {
+                b_est = global_cont.integral( pk_mean - pk_fwhm, pk_mean + pk_fwhm );
+              }else
+              {
+                const detail::LocalContinuumEstimate edge_cont = detail::estimate_local_continuum(
+                    foreground, pk_mean - 2.0*pk_fwhm, pk_mean + 2.0*pk_fwhm, pk_fwhm, 0.5 );
+                b_est = edge_cont.valid
+                    ? edge_cont.integral( pk_mean - pk_fwhm, pk_mean + pk_fwhm )
+                    : foreground->gamma_integral( pk_mean - pk_fwhm, pk_mean + pk_fwhm );
+              }
               detection_z = s_est / std::sqrt( std::max( 1.0, s_est + b_est ) );
             }
 

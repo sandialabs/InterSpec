@@ -56,6 +56,10 @@ std::pair<double,double> find_valid_energy_range( const std::shared_ptr<const Sp
 // Internal helpers exposed for unit tests and development harnesses; not part of the public API.
 namespace detail
 {
+  // Forward declaration (full definition is GlobalContinuumEstimate, further below) so
+  // find_clean_gap_between can accept an optional pointer to the shared global continuum.
+  struct GlobalContinuumEstimate;
+
   /** A cheap, fit-free estimate of the local continuum: a straight line through averaged channel
    heights at the two edges of a region (the classic two-sideband estimator used for net-area
    determination).  Callers must pad the region beyond any expected peak (~1 FWHM past the
@@ -182,7 +186,8 @@ namespace detail
     const double merge_tail_z,
     const double clean_gap_num_fwhm,
     double *clean_win_lo,
-    double *clean_win_hi );
+    double *clean_win_hi,
+    const GlobalContinuumEstimate *global_continuum = nullptr );
 
   /** Choose Linear vs Quadratic continuum for a ROI by AICc over the ROI's continuum sidebands
    (the channels between the ROI bounds and the peak core [core_lo, core_hi], which are excluded).
