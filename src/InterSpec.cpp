@@ -5795,10 +5795,10 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
     
     const std::set<int> &dispsamples = meas->displayedSampleNumbers();
     
-    setSpectrum( meas, dispsamples, SpecUtils::SpectrumType::Foreground, 0 );
-    
+    setSpectrum( meas, dispsamples, SpecUtils::SpectrumType::Foreground, {} );
+
     if( backgroundsamplenums.size() )
-      setSpectrum( meas, backgroundsamplenums, SpecUtils::SpectrumType::Background, 0 );
+      setSpectrum( meas, backgroundsamplenums, SpecUtils::SpectrumType::Background, {} );
     
     const xml_node<char> *sourcefit = InterSpecNode->first_node( "ShieldingSourceFit" );
     if( sourcefit )
@@ -5926,7 +5926,7 @@ void InterSpec::startStoreTestState()
   WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false);
   closeButton->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
-  WPushButton *save = new WPushButton( WString::tr("Create"), window->footer() );
+  WPushButton *save = window->footer()->addNew<WPushButton>( WString::tr("Create") );
   save->setIcon( "InterSpec_resources/images/disk2.png" );
   
   save->clicked().connect( this, [this, edit, summary, window](){
