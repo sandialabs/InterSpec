@@ -547,6 +547,30 @@ namespace
     verify_fwhm_margin_from_existing( result.observable_peaks, user_peaks,
       result.original_peaks_to_remove, config, foreground );
 
+    // FitPeaksForNuclides finalizes its own automatic geometry.  Every range presented to
+    // RelActAuto must therefore be Fixed and channel-disjoint, closing the solver's generic
+    // CanBeBrokenUp significant-range recombination path for late found/edge/escape additions.
+    const bool policy_enabled
+      = (options & FitPeaksForNuclides::FitSrcPeaksOptions::DisableAutoInterfererFit)
+        || (options & FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks)
+        || (options & FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse);
+    const shared_ptr<const SpecUtils::Measurement> fitted_foreground
+      = result.solution.m_foreground ? result.solution.m_foreground : foreground;
+    for( size_t roi_index = 0;
+         policy_enabled && (roi_index < result.solution.m_options.rois.size()); ++roi_index )
+    {
+      const RelActCalcAuto::RoiRange &roi = result.solution.m_options.rois[roi_index];
+      BOOST_CHECK( roi.range_limits_type
+          == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed );
+      if( roi_index && fitted_foreground )
+      {
+        const RelActCalcAuto::RoiRange &previous
+          = result.solution.m_options.rois[roi_index - 1];
+        BOOST_CHECK_GT( fitted_foreground->find_gamma_channel(roi.lower_energy),
+                        fitted_foreground->find_gamma_channel(previous.upper_energy) );
+      }
+    }
+
     // 5. Mode-specific checks
     if( options & FitPeaksForNuclides::FitSrcPeaksOptions::DoNotUseExistingRois )
     {
@@ -1727,6 +1751,7 @@ BOOST_AUTO_TEST_CASE( test_r6_raw_interferer_transaction )
       spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}),
       no_user_peaks, spec.isHPGe, no_interferer_options );
   BOOST_REQUIRE( source_only.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  verify_fit_result( source_only, no_user_peaks, spec.foreground, no_interferer_options );
   BOOST_CHECK( !find_source_gamma(
       source_only.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 ) );
   BOOST_CHECK( find_source_gamma(source_only.observable_peaks, "Eu152", 1408.01, 0.5) );
@@ -2514,6 +2539,176 @@ BOOST_AUTO_TEST_CASE( test_find_clean_gap_between )
   BOOST_CHECK( find_clean_gap_between( left_e, zero_amp, right_e, zero_amp,
       600.0, 620.0, flat, fwhm_at, 2.0, 1.0, nullptr, nullptr ) );
 }//test_find_clean_gap_between
+
+
+BOOST_AUTO_TEST_CASE( test_central_automatic_roi_boundary_policy )
+{
+  using FitPeaksForNuclides::AutomaticRoiDecision;
+  using FitPeaksForNuclides::detail::AutomaticRoiGroup;
+  using FitPeaksForNuclides::detail::AutomaticRoiPolicyResult;
+  using FitPeaksForNuclides::detail::AutomaticRoiPolicySettings;
+  using FitPeaksForNuclides::detail::GlobalContinuumEstimate;
+  using FitPeaksForNuclides::detail::evaluate_automatic_roi_boundary;
+
+  const auto make_global = []( const shared_ptr<const SpecUtils::Measurement> &foreground,
+                               const shared_ptr<const SpecUtils::Measurement> &snip ) {
+    GlobalContinuumEstimate global;
+    global.foreground = foreground;
+    global.snip = snip;
+    global.built = true;
+    return global;
+  };
+  AutomaticRoiPolicySettings settings;
+  settings.merge_tail_z = 2.0;
+  settings.merge_clean_gap_fwhm = 1.0;
+  settings.continuum_aicc_penalty = 2.0;
+  settings.peak_core_num_fwhm = 1.0;
+  settings.max_width_fwhm = 30.0;
+  settings.stage = "deterministic unit test";
+
+  // Piecewise-linear SNIP is exactly supportable by two child continua but not by any one
+  // production family.  Strong, well-separated peaks therefore retain the credible clean valley.
+  const double fwhm = 4.0;
+  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
+  const auto v_density = []( const double energy ) {
+    return 8.0 + 0.20*std::fabs(energy - 650.0);
+  };
+  const auto clean_foreground = make_synthetic_spectrum( 900, 200.0f, 1.0f, v_density,
+      { {600.0, fwhm/2.35482, 3000.0}, {700.0, fwhm/2.35482, 3000.0} } );
+  const auto clean_snip = make_synthetic_spectrum( 900, 200.0f, 1.0f, v_density );
+  GlobalContinuumEstimate clean_global = make_global( clean_foreground, clean_snip );
+  AutomaticRoiGroup left{550.0, 660.0, {600.0}, {3000.0}, 1, false};
+  AutomaticRoiGroup right{640.0, 750.0, {700.0}, {3000.0}, 1, false};
+  const AutomaticRoiPolicyResult clean = evaluate_automatic_roi_boundary(
+      left, right, clean_foreground, &clean_global, fwhm_at, {}, settings );
+  BOOST_CHECK( clean.decision == AutomaticRoiDecision::KeepSeparate );
+  BOOST_CHECK( clean.diagnostic.sidebands_adequate );
+  BOOST_CHECK_LE( clean.diagnostic.two_roi_aicc, clean.diagnostic.one_roi_aicc );
+  BOOST_CHECK( clean.diagnostic.used_global_continuum );
+
+  // High-statistics overlapping tails leave no defensible continuum window.
+  const double overlap_fwhm = 6.0;
+  const auto overlap_fwhm_at = [overlap_fwhm]( const double ){ return overlap_fwhm; };
+  const auto overlap_foreground = make_synthetic_spectrum( 240, 0.0f, 1.0f,
+      []( const double ){ return 10.0; },
+      { {100.0, overlap_fwhm/2.35482, 1.0e7},
+        {106.0, overlap_fwhm/2.35482, 1.0e7} } );
+  const auto overlap_snip = make_synthetic_spectrum( 240, 0.0f, 1.0f,
+      []( const double ){ return 10.0; } );
+  GlobalContinuumEstimate overlap_global = make_global( overlap_foreground, overlap_snip );
+  AutomaticRoiGroup overlap_left{80.0, 105.0, {100.0}, {1.0e7}, 1, false};
+  AutomaticRoiGroup overlap_right{101.0, 130.0, {106.0}, {1.0e7}, 1, false};
+  const AutomaticRoiPolicyResult overlap = evaluate_automatic_roi_boundary(
+      overlap_left, overlap_right, overlap_foreground, &overlap_global,
+      overlap_fwhm_at, {}, settings );
+  BOOST_CHECK( overlap.decision == AutomaticRoiDecision::MergeInseparable );
+
+  // An unmodeled core in the gap is neither a split point nor permission to merge through it.
+  const shared_ptr<const PeakDef> unmodeled
+    = make_shared<const PeakDef>( 650.0, fwhm/2.35482, 1000.0 );
+  const AutomaticRoiPolicyResult blocked = evaluate_automatic_roi_boundary(
+      left, right, clean_foreground, &clean_global, fwhm_at, {unmodeled}, settings );
+  BOOST_CHECK( blocked.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked );
+  BOOST_CHECK( blocked.diagnostic.unmodeled_core_blocked );
+  BOOST_CHECK_LE( blocked.exclusion_lower, 650.0 - fwhm );
+  BOOST_CHECK_GE( blocked.exclusion_upper, 650.0 + fwhm );
+
+  // Core occupancy is geometric, not a mean-only test: this peak mean is outside the anchor
+  // interval, but its +1-FWHM core crosses the left edge of the proposed gap.
+  const shared_ptr<const PeakDef> crossing_core
+    = make_shared<const PeakDef>( 597.0, fwhm/2.35482, 1000.0 );
+  const AutomaticRoiPolicyResult crossing_blocked = evaluate_automatic_roi_boundary(
+      left, right, clean_foreground, &clean_global, fwhm_at, {crossing_core}, settings );
+  BOOST_CHECK( crossing_blocked.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked );
+
+  // A clean-looking window cannot authorize two ROIs without a valid common-domain continuum
+  // comparison.  In particular, two unavailable sentinel scores must not compare as a tie.
+  const AutomaticRoiPolicyResult no_aicc = evaluate_automatic_roi_boundary(
+      left, right, clean_foreground, nullptr, fwhm_at, {}, settings );
+  BOOST_CHECK( (no_aicc.decision == AutomaticRoiDecision::MergeInseparable)
+               || (no_aicc.decision == AutomaticRoiDecision::MergeInseparableWide) );
+  BOOST_CHECK_EQUAL( no_aicc.diagnostic.two_roi_aicc,
+                     std::numeric_limits<double>::max() );
+
+  const auto invalid_fwhm = []( const double ) {
+    return std::numeric_limits<double>::quiet_NaN();
+  };
+  const AutomaticRoiPolicyResult invalid_resolution = evaluate_automatic_roi_boundary(
+      left, right, clean_foreground, &clean_global, invalid_fwhm, {}, settings );
+  BOOST_CHECK( invalid_resolution.decision == AutomaticRoiDecision::KeepSeparate );
+
+  // Relabeling the same channels with a shifted current calibration preserves the decision and
+  // boundary channel, proving the helper consumes one coherent working frame.
+  const auto shifted_density = []( const double energy ) {
+    return 8.0 + 0.20*std::fabs(energy - 660.0);
+  };
+  const auto shifted_foreground = make_synthetic_spectrum( 900, 210.0f, 1.0f,
+      shifted_density,
+      { {610.0, fwhm/2.35482, 3000.0}, {710.0, fwhm/2.35482, 3000.0} } );
+  const auto shifted_snip = make_synthetic_spectrum( 900, 210.0f, 1.0f, shifted_density );
+  GlobalContinuumEstimate shifted_global = make_global( shifted_foreground, shifted_snip );
+  AutomaticRoiGroup shifted_left{560.0, 670.0, {610.0}, {3000.0}, 1, false};
+  AutomaticRoiGroup shifted_right{650.0, 760.0, {710.0}, {3000.0}, 1, false};
+  const AutomaticRoiPolicyResult shifted = evaluate_automatic_roi_boundary(
+      shifted_left, shifted_right, shifted_foreground, &shifted_global,
+      fwhm_at, {}, settings );
+  BOOST_CHECK( shifted.decision == clean.decision );
+  BOOST_CHECK_EQUAL(
+      shifted_foreground->find_gamma_channel( shifted.boundary_energy ),
+      clean_foreground->find_gamma_channel( clean.boundary_energy ) );
+  BOOST_CHECK_EQUAL( shifted.diagnostic.boundary_channel,
+                     clean.diagnostic.boundary_channel );
+  BOOST_CHECK_EQUAL( shifted.diagnostic.calibration_num_channels,
+                     clean.diagnostic.calibration_num_channels );
+  BOOST_CHECK( shifted.diagnostic.used_global_continuum );
+
+  // Protected mixed/fixed geometry is reported without mutating bounds or continuum metadata.
+  left.protected_geometry = true;
+  const AutomaticRoiGroup protected_before = left;
+  const AutomaticRoiPolicyResult protected_result = evaluate_automatic_roi_boundary(
+      left, right, clean_foreground, &clean_global, fwhm_at, {}, settings );
+  BOOST_CHECK( protected_result.decision == AutomaticRoiDecision::ProtectedGeometry );
+  BOOST_CHECK_EQUAL( left.lower, protected_before.lower );
+  BOOST_CHECK_EQUAL( left.upper, protected_before.upper );
+  BOOST_CHECK_EQUAL_COLLECTIONS( std::begin(left.peak_energies), std::end(left.peak_energies),
+                                 std::begin(protected_before.peak_energies),
+                                 std::end(protected_before.peak_energies) );
+
+  // A causal eleven-group chain accumulates lineage and can exceed the soft onset only through
+  // an explicit wide-inseparable outcome.
+  settings.max_width_fwhm = 8.0;
+  std::vector<std::array<double,3>> chain_gaussians;
+  for( size_t group_index = 0; group_index < 11; ++group_index )
+    chain_gaussians.push_back( {100.0 + 6.0*group_index,
+                                overlap_fwhm/2.35482, 1.0e7} );
+  const auto chain_foreground = make_synthetic_spectrum( 260, 0.0f, 1.0f,
+      []( const double ){ return 10.0; }, chain_gaussians );
+  const auto chain_snip = make_synthetic_spectrum( 260, 0.0f, 1.0f,
+      []( const double ){ return 10.0; } );
+  GlobalContinuumEstimate chain_global = make_global( chain_foreground, chain_snip );
+  AutomaticRoiGroup chain{80.0, 105.0, {100.0}, {1.0e7}, 1, false};
+  AutomaticRoiPolicyResult chain_decision;
+  for( size_t group_index = 1; group_index < 11; ++group_index )
+  {
+    const double energy = 100.0 + 6.0*group_index;
+    AutomaticRoiGroup next{energy - 5.0, energy + 5.0,
+                           {energy}, {1.0e7}, 1, false};
+    chain_decision = evaluate_automatic_roi_boundary(
+        chain, next, chain_foreground, &chain_global, overlap_fwhm_at, {}, settings );
+    BOOST_REQUIRE( (chain_decision.decision == AutomaticRoiDecision::MergeInseparable)
+                   || (chain_decision.decision
+                       == AutomaticRoiDecision::MergeInseparableWide) );
+    chain.upper = next.upper;
+    chain.peak_energies.push_back( energy );
+    chain.peak_areas.push_back( 1.0e7 );
+    chain.joined_groups += 1;
+  }
+  BOOST_CHECK( chain_decision.decision == AutomaticRoiDecision::MergeInseparableWide );
+  BOOST_CHECK_GT( chain_decision.diagnostic.width_pressure, 0.0 );
+  BOOST_CHECK_EQUAL( std::string(FitPeaksForNuclides::automatic_roi_decision_name(
+                         chain_decision.decision)),
+                     "MergeInseparableWide" );
+}//test_central_automatic_roi_boundary_policy
 
 
 BOOST_AUTO_TEST_CASE( test_select_continuum_order_by_sidebands )

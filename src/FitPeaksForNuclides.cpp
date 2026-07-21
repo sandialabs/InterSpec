@@ -184,6 +184,20 @@ void set_debug_printout( bool enable )
   local_debug_printout = enable;
 }
 
+const char *automatic_roi_decision_name( const AutomaticRoiDecision decision )
+{
+  switch( decision )
+  {
+    case AutomaticRoiDecision::KeepSeparate: return "KeepSeparate";
+    case AutomaticRoiDecision::MergeInseparable: return "MergeInseparable";
+    case AutomaticRoiDecision::MergeInseparableWide: return "MergeInseparableWide";
+    case AutomaticRoiDecision::UnmodeledFeatureBlocked: return "UnmodeledFeatureBlocked";
+    case AutomaticRoiDecision::ProtectedGeometry: return "ProtectedGeometry";
+    case AutomaticRoiDecision::R6LegacyBypass: return "R6LegacyBypass";
+  }
+  return "Unknown";
+}
+
 // Anonymous namespace for helper functions
 namespace
 {
@@ -236,6 +250,7 @@ namespace
     double upper;
     std::vector<double> gamma_energies;    // energies of gamma lines in this cluster
     std::vector<double> gamma_amplitudes;  // expected peak areas/amplitudes
+    size_t joined_groups = 1;
   };
 
   struct PredictedGamma
@@ -676,6 +691,19 @@ GlobalContinuumEstimate make_global_continuum(
 namespace
 {
 thread_local std::vector<RoiBoundaryShadowResult> s_roi_boundary_shadow_diagnostics;
+thread_local std::vector<AutomaticRoiDecisionDiagnostic> s_automatic_roi_diagnostics;
+}
+
+void record_automatic_roi_diagnostic( const AutomaticRoiDecisionDiagnostic &diagnostic )
+{
+  s_automatic_roi_diagnostics.push_back( diagnostic );
+}
+
+std::vector<AutomaticRoiDecisionDiagnostic> take_automatic_roi_diagnostics()
+{
+  std::vector<AutomaticRoiDecisionDiagnostic> answer;
+  answer.swap( s_automatic_roi_diagnostics );
+  return answer;
 }
 
 
@@ -1566,6 +1594,322 @@ bool find_clean_gap_between(
 
   return found;
 }//find_clean_gap_between
+
+
+AutomaticRoiPolicyResult evaluate_automatic_roi_boundary(
+  const AutomaticRoiGroup &left,
+  const AutomaticRoiGroup &right,
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const GlobalContinuumEstimate *global_continuum,
+  const std::function<double(double)> &fwhm_at_energy,
+  const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+  const AutomaticRoiPolicySettings &settings )
+{
+  AutomaticRoiPolicyResult result;
+  AutomaticRoiDecisionDiagnostic &diag = result.diagnostic;
+  diag.stage = settings.stage;
+  diag.left_lower = left.lower;
+  diag.left_upper = left.upper;
+  diag.right_lower = right.lower;
+  diag.right_upper = right.upper;
+  diag.calibration_num_channels = foreground ? foreground->num_gamma_channels() : 0;
+  diag.used_global_continuum = global_continuum && global_continuum->valid()
+      && (global_continuum->foreground == foreground);
+
+  if( left.protected_geometry || right.protected_geometry )
+  {
+    result.decision = diag.decision = AutomaticRoiDecision::ProtectedGeometry;
+    diag.reason = "protected user/mixed ROI geometry";
+    return result;
+  }
+
+  if( !foreground || !foreground->energy_calibration()
+      || !foreground->energy_calibration()->valid() || !fwhm_at_energy
+      || left.peak_energies.empty() || right.peak_energies.empty() )
+  {
+    result.decision = diag.decision = AutomaticRoiDecision::KeepSeparate;
+    diag.reason = "insufficient calibrated evidence; conservative separation";
+    return result;
+  }
+
+  const double left_anchor = *std::max_element(
+      std::begin(left.peak_energies), std::end(left.peak_energies) );
+  const double right_anchor = *std::min_element(
+      std::begin(right.peak_energies), std::end(right.peak_energies) );
+  const double midpoint = 0.5*(left_anchor + right_anchor);
+  const double fwhm = fwhm_at_energy( midpoint );
+  if( std::isfinite(fwhm) && (fwhm > 0.0) )
+  {
+    diag.combined_width_fwhm = (std::max(left.upper, right.upper)
+        - std::min(left.lower, right.lower)) / fwhm;
+    const double width_ratio = (settings.max_width_fwhm > 0.0)
+        ? (diag.combined_width_fwhm / settings.max_width_fwhm) : 0.0;
+    const double excess_width = std::max( 0.0, width_ratio - 1.0 );
+    diag.width_pressure = settings.continuum_aicc_penalty * excess_width * excess_width
+        * std::max<size_t>( 1, left.joined_groups + right.joined_groups - 1 );
+  }
+  if( !std::isfinite(fwhm) || !(fwhm > 0.0) )
+  {
+    result.decision = diag.decision = AutomaticRoiDecision::KeepSeparate;
+    diag.reason = "invalid local resolution; conservative separation";
+    return result;
+  }
+  if( !(right_anchor > left_anchor) )
+  {
+    result.decision = diag.decision = (diag.width_pressure > 0.0)
+        ? AutomaticRoiDecision::MergeInseparableWide
+        : AutomaticRoiDecision::MergeInseparable;
+    diag.reason = "modeled peak cores overlap";
+    return result;
+  }
+
+  diag.separation_fwhm = (right_anchor - left_anchor) / fwhm;
+
+  std::vector<double> left_areas = left.peak_areas;
+  std::vector<double> right_areas = right.peak_areas;
+  left_areas.resize( left.peak_energies.size(), 0.0 );
+  right_areas.resize( right.peak_energies.size(), 0.0 );
+
+  double clean_lo = 0.0;
+  double clean_hi = 0.0;
+  const bool have_clean_window = find_clean_gap_between(
+      left.peak_energies, left_areas, right.peak_energies, right_areas,
+      left_anchor, right_anchor, foreground, fwhm_at_energy, settings.merge_tail_z,
+      settings.merge_clean_gap_fwhm, &clean_lo, &clean_hi,
+      diag.used_global_continuum ? global_continuum : nullptr );
+  result.boundary_energy = diag.boundary_energy = have_clean_window
+      ? 0.5*(clean_lo + clean_hi) : midpoint;
+  diag.boundary_channel = foreground->find_gamma_channel(
+      static_cast<float>(result.boundary_energy) );
+
+  // A boundary may not pass through a credible unmodeled +/-1-FWHM core.  Such a feature needs
+  // its own excluded/transactional neighborhood; joining across it would hide that fact.
+  for( const std::shared_ptr<const PeakDef> &peak : unfit_auto_peaks )
+  {
+    if( !peak || !peak->gausPeak() )
+      continue;
+    const double peak_fwhm = fwhm_at_energy( peak->mean() );
+    if( !std::isfinite(peak_fwhm) || !(peak_fwhm > 0.0) )
+      continue;
+    if( (peak->mean() + peak_fwhm) > left_anchor
+        && (peak->mean() - peak_fwhm) < right_anchor )
+    {
+      diag.unmodeled_core_blocked = true;
+      result.exclusion_lower = peak->mean() - peak_fwhm;
+      result.exclusion_upper = peak->mean() + peak_fwhm;
+      result.decision = diag.decision = AutomaticRoiDecision::UnmodeledFeatureBlocked;
+      diag.reason = "unmodeled peak core occupies the proposed gap";
+      return result;
+    }
+  }
+
+  const double valley_lo = have_clean_window ? clean_lo
+      : std::max( left_anchor, midpoint - 0.5*settings.merge_clean_gap_fwhm*fwhm );
+  const double valley_hi = have_clean_window ? clean_hi
+      : std::min( right_anchor, midpoint + 0.5*settings.merge_clean_gap_fwhm*fwhm );
+  if( valley_hi > valley_lo )
+  {
+    diag.observed_valley_counts = foreground->gamma_integral(
+        static_cast<float>(valley_lo), static_cast<float>(valley_hi) );
+    diag.snip_valley_counts = diag.used_global_continuum
+        ? global_continuum->integral( valley_lo, valley_hi )
+        : diag.observed_valley_counts;
+    diag.modeled_tail_counts = predicted_gaussian_counts(
+        left.peak_energies, left_areas, fwhm_at_energy, valley_lo, valley_hi )
+      + predicted_gaussian_counts(
+        right.peak_energies, right_areas, fwhm_at_energy, valley_lo, valley_hi );
+    const double continuum_variance = diag.used_global_continuum
+        ? global_continuum->integral_variance( valley_lo, valley_hi )
+        : diag.observed_valley_counts;
+    const double noise = std::sqrt( std::max( 1.0,
+        continuum_variance + diag.modeled_tail_counts ) );
+    diag.modeled_tail_significance = diag.modeled_tail_counts / noise;
+    diag.unexplained_excess_significance = std::max( 0.0,
+        diag.observed_valley_counts - diag.snip_valley_counts - diag.modeled_tail_counts ) / noise;
+    diag.snip_mismatch_significance = std::fabs(
+        diag.observed_valley_counts - diag.snip_valley_counts ) / noise;
+  }
+
+  const auto count_sideband_channels = [&]( const AutomaticRoiGroup &group,
+                                             const double bound_lo,
+                                             const double bound_hi ) -> size_t {
+    size_t count = 0;
+    const size_t first = foreground->find_gamma_channel( static_cast<float>(bound_lo) );
+    const size_t last = std::min( foreground->find_gamma_channel(
+        static_cast<float>(bound_hi) ), foreground->num_gamma_channels() - 1 );
+    for( size_t channel = first; channel <= last; ++channel )
+    {
+      const double channel_lo = foreground->gamma_channel_lower( channel );
+      const double channel_hi = foreground->gamma_channel_upper( channel );
+      bool core = false;
+      for( const double energy : group.peak_energies )
+      {
+        const double peak_fwhm = fwhm_at_energy( energy );
+        core = core || ((channel_hi > (energy - settings.peak_core_num_fwhm*peak_fwhm))
+            && (channel_lo < (energy + settings.peak_core_num_fwhm*peak_fwhm)));
+      }
+      if( !core )
+        ++count;
+      if( channel == last )
+        break;
+    }
+    return count;
+  };
+  diag.left_sideband_channels = count_sideband_channels(
+      left, left.lower, result.boundary_energy );
+  diag.right_sideband_channels = count_sideband_channels(
+      right, result.boundary_energy, right.upper );
+  diag.sidebands_adequate = (diag.left_sideband_channels >= 8)
+      && (diag.right_sideband_channels >= 8);
+
+  struct ContinuumFit
+  {
+    bool valid = false;
+    double mismatch = std::numeric_limits<double>::max();
+    size_t num_parameters = 0;
+  };
+  const auto continuum_fits = [&]( const size_t first, const size_t last ) {
+    std::vector<ContinuumFit> fits;
+    if( !diag.used_global_continuum || (last < first) )
+      return fits;
+    const size_t nbin = last - first + 1;
+    const std::vector<float> &channel_energies = *foreground->channel_energies();
+    std::vector<float> snip_counts( nbin );
+    std::vector<float> raw_variances( nbin );
+    for( size_t index = 0; index < nbin; ++index )
+    {
+      snip_counts[index] = global_continuum->snip->gamma_channel_content( first + index );
+      raw_variances[index] = static_cast<float>( std::max( 1.0,
+          static_cast<double>(foreground->gamma_channel_content(first + index)) ) );
+    }
+    const PeakContinuum::OffsetType families[] = {
+      PeakContinuum::OffsetType::Linear, PeakContinuum::OffsetType::Quadratic,
+      PeakContinuum::OffsetType::FlatStep, PeakContinuum::OffsetType::LinearStep
+    };
+    const std::vector<double> no_means, no_sigmas;
+    const std::vector<PeakDef> no_fixed_peaks;
+    for( const PeakContinuum::OffsetType family : families )
+    {
+      const size_t k = PeakContinuum::num_parameters( family );
+      if( nbin <= (k + 1) )
+        continue;
+      std::vector<double> amplitudes, coefficients, amplitude_uncerts, coefficient_uncerts;
+      std::vector<double> predictions( nbin, 0.0 );
+      try
+      {
+        static_cast<void>( PeakFit::fit_amp_and_offset_imp<PeakDef,double>(
+            &channel_energies[first], snip_counts.data(), raw_variances.data(), nbin,
+            family, 0.0, midpoint, no_means, no_sigmas, no_fixed_peaks,
+            PeakDef::SkewType::NoSkew, nullptr, amplitudes, coefficients,
+            amplitude_uncerts, coefficient_uncerts, predictions.data() ) );
+      }catch( const std::exception & )
+      {
+        continue;
+      }
+      ContinuumFit fit;
+      fit.valid = (coefficients.size() == k);
+      fit.num_parameters = k;
+      fit.mismatch = 0.0;
+      for( size_t index = 0; fit.valid && (index < nbin); ++index )
+      {
+        const double prediction = predictions[index];
+        if( !std::isfinite(prediction) || (prediction < -1.0e-6) )
+        {
+          fit.valid = false;
+          break;
+        }
+        const double residual = snip_counts[index] - prediction;
+        fit.mismatch += residual*residual / raw_variances[index];
+      }
+      if( fit.valid )
+        fits.push_back( fit );
+    }
+    return fits;
+  };
+  const size_t union_first = foreground->find_gamma_channel(
+      static_cast<float>(std::min(left.lower, right.lower)) );
+  const size_t union_last = std::min( foreground->find_gamma_channel(
+      static_cast<float>(std::max(left.upper, right.upper)) ),
+      foreground->num_gamma_channels() - 1 );
+  const size_t n = union_last - union_first + 1;
+  const auto aicc = [&]( const double mismatch, const size_t k ) -> double {
+    if( n <= (k + 1) )
+      return std::numeric_limits<double>::max();
+    return mismatch + settings.continuum_aicc_penalty*k
+        + settings.continuum_aicc_penalty*k*(k + 1.0)/(n - k - 1.0);
+  };
+  diag.one_roi_aicc = std::numeric_limits<double>::max();
+  for( const ContinuumFit &fit : continuum_fits(union_first, union_last) )
+    diag.one_roi_aicc = std::min( diag.one_roi_aicc,
+        aicc(fit.mismatch, fit.num_parameters) + diag.width_pressure );
+  diag.two_roi_aicc = std::numeric_limits<double>::max();
+  const size_t first_candidate_channel = foreground->find_gamma_channel(
+      static_cast<float>(have_clean_window ? clean_lo : result.boundary_energy) );
+  const size_t last_candidate_channel = foreground->find_gamma_channel(
+      static_cast<float>(have_clean_window ? clean_hi : result.boundary_energy) );
+  for( size_t split_channel = first_candidate_channel;
+       (split_channel <= last_candidate_channel) && (split_channel < union_last);
+       ++split_channel )
+  {
+    if( split_channel < union_first )
+      continue;
+    const double candidate_energy = 0.5*(foreground->gamma_channel_lower(split_channel)
+        + foreground->gamma_channel_upper(split_channel));
+    if( (count_sideband_channels(left, left.lower,
+             foreground->gamma_channel_lower(split_channel)) < 8)
+        || (count_sideband_channels(right,
+             foreground->gamma_channel_upper(split_channel), right.upper) < 8) )
+      continue;
+    const std::vector<ContinuumFit> left_fits = continuum_fits( union_first, split_channel );
+    const std::vector<ContinuumFit> right_fits = continuum_fits( split_channel + 1, union_last );
+    for( const ContinuumFit &left_fit : left_fits )
+      for( const ContinuumFit &right_fit : right_fits )
+      {
+        const double candidate_aicc = aicc(
+            left_fit.mismatch + right_fit.mismatch,
+            left_fit.num_parameters + right_fit.num_parameters );
+        if( candidate_aicc < diag.two_roi_aicc )
+        {
+          diag.two_roi_aicc = candidate_aicc;
+          result.boundary_energy = diag.boundary_energy = candidate_energy;
+          diag.boundary_channel = split_channel;
+          diag.left_sideband_channels = count_sideband_channels(
+              left, left.lower, foreground->gamma_channel_lower(split_channel) );
+          diag.right_sideband_channels = count_sideband_channels(
+              right, foreground->gamma_channel_upper(split_channel), right.upper );
+          diag.sidebands_adequate = (diag.left_sideband_channels >= 8)
+              && (diag.right_sideband_channels >= 8);
+        }
+      }
+  }
+
+  const bool credible_clean_valley = have_clean_window && diag.sidebands_adequate
+      && (diag.modeled_tail_significance <= settings.merge_tail_z)
+      && (diag.unexplained_excess_significance <= settings.merge_tail_z);
+  const double unavailable_score = std::numeric_limits<double>::max();
+  const bool one_score_valid = (diag.one_roi_aicc < unavailable_score);
+  const bool two_score_valid = (diag.two_roi_aicc < unavailable_score);
+  const bool two_no_worse = two_score_valid
+      && (!one_score_valid || (diag.two_roi_aicc <= diag.one_roi_aicc));
+  if( credible_clean_valley && two_no_worse )
+  {
+    result.decision = diag.decision = AutomaticRoiDecision::KeepSeparate;
+    diag.reason = "credible clean valley and two-continuum AICc is no worse";
+  }else
+  {
+    const bool wide = (diag.width_pressure > 0.0);
+    result.decision = diag.decision = wide
+        ? AutomaticRoiDecision::MergeInseparableWide
+        : AutomaticRoiDecision::MergeInseparable;
+    if( !credible_clean_valley )
+      diag.reason = wide ? "no defensible clean boundary; inseparable wide group"
+                         : "no defensible clean boundary; statistically inseparable";
+    else
+      diag.reason = wide ? "one-continuum AICc overcomes width pressure; inseparable wide group"
+                         : "one-continuum AICc favors a shared continuum";
+  }
+  return result;
+}//evaluate_automatic_roi_boundary
 
 
 PeakContinuum::OffsetType select_continuum_order_by_sidebands(
@@ -2934,10 +3278,9 @@ void add_escape_peak_floating_peaks_if_appropriate(
     if( !have_se_roi )
     {
       RelActCalcAuto::RoiRange se_roi;
-      // Set continuum/range-limits explicitly instead of leaving the RoiRange struct defaults
-      // (Quadratic / CanBeBrokenUp): if resolve_overlapping_rois later merges this escape ROI with a
-      // source ROI, the merged region should inherit sensible source-like settings regardless of
-      // which side wins the lower-energy-first merge.
+      // Set continuum/range-limits explicitly instead of leaving the RoiRange struct defaults.
+      // The shared late-boundary policy decides any overlap; Fixed prevents a second generic
+      // RelActAuto recombination after that decision.
       se_roi.continuum_type = PeakContinuum::OffsetType::Linear;
       se_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
       se_roi.lower_energy = se_energy - roi_width_lower;
@@ -3184,6 +3527,267 @@ void resolve_overlapping_rois( std::vector<RelActCalcAuto::RoiRange> &rois,
   
   rois = resolved_rois;
 }//resolve_overlapping_rois(...)
+
+void ensure_min_channel_gap(
+    std::vector<RelActCalcAuto::RoiRange> &rois,
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal );
+
+
+/** Central reconciliation for automatic ranges added after clustering.  The legacy resolver above
+ remains available only to the transactional R6 path. */
+void resolve_automatic_overlapping_rois(
+    std::vector<RelActCalcAuto::RoiRange> &rois,
+    const std::vector<RelActCalcAuto::FloatingPeak> &floating_peaks,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const detail::GlobalContinuumEstimate *global_continuum,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    const PeakFitForNuclideConfig &config,
+    const std::string &stage,
+    std::vector<AutomaticRoiDecisionDiagnostic> *diagnostics,
+    const std::vector<RelActCalcAuto::RoiRange> &protected_ranges = {},
+    const std::vector<std::pair<double,double>> &modeled_peak_candidates = {},
+    const bool use_automatic_roi_policy = true )
+{
+  if( rois.empty() )
+    return;
+  if( !use_automatic_roi_policy )
+  {
+    resolve_overlapping_rois( rois, floating_peaks );
+    ensure_min_channel_gap( rois, foreground ? foreground->energy_calibration() : nullptr );
+    return;
+  }
+  const auto is_protected = [&protected_ranges]( const RelActCalcAuto::RoiRange &roi ) {
+    return std::any_of( std::begin(protected_ranges), std::end(protected_ranges),
+      [&roi]( const RelActCalcAuto::RoiRange &protected_roi ) {
+        return (std::fabs(roi.lower_energy - protected_roi.lower_energy) < 1.0e-6)
+            && (std::fabs(roi.upper_energy - protected_roi.upper_energy) < 1.0e-6)
+            && (roi.continuum_type == protected_roi.continuum_type);
+      } );
+  };
+  std::sort( std::begin(rois), std::end(rois),
+    []( const RelActCalcAuto::RoiRange &lhs, const RelActCalcAuto::RoiRange &rhs ) {
+      return lhs.lower_energy < rhs.lower_energy;
+    } );
+  std::vector<RelActCalcAuto::RoiRange> resolved;
+  std::vector<std::vector<double>> resolved_peaks;
+  std::vector<std::vector<double>> resolved_areas;
+  std::vector<size_t> resolved_joined_groups;
+  for( RelActCalcAuto::RoiRange current : rois )
+  {
+    std::vector<double> current_peaks;
+    std::vector<double> current_areas;
+    for( const std::pair<double,double> &peak : modeled_peak_candidates )
+    {
+      if( (peak.first >= current.lower_energy) && (peak.first <= current.upper_energy) )
+      {
+        current_peaks.push_back( peak.first );
+        current_areas.push_back( peak.second );
+      }
+    }
+    for( const RelActCalcAuto::FloatingPeak &peak : floating_peaks )
+      if( (peak.energy >= current.lower_energy) && (peak.energy <= current.upper_energy) )
+      {
+        double area = 0.0;
+        for( const std::shared_ptr<const PeakDef> &observed : unfit_auto_peaks )
+        {
+          if( !observed || !observed->gausPeak() )
+            continue;
+          const double local_fwhm = fwhm_at_energy( peak.energy );
+          if( std::isfinite(local_fwhm) && (local_fwhm > 0.0)
+              && (std::fabs(observed->mean() - peak.energy) <= 0.75*local_fwhm) )
+            area = std::max( area, observed->amplitude() );
+        }
+        const std::vector<double>::iterator duplicate = std::find_if(
+            std::begin(current_peaks), std::end(current_peaks),
+            [&peak]( const double energy ) { return std::fabs(energy - peak.energy) < 1.0e-6; } );
+        if( duplicate == std::end(current_peaks) )
+        {
+          current_peaks.push_back( peak.energy );
+          current_areas.push_back( area );
+        }else
+        {
+          const size_t index = static_cast<size_t>(duplicate - std::begin(current_peaks));
+          current_areas[index] = std::max( current_areas[index], area );
+        }
+      }
+    if( !is_protected(current) )
+      current.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+
+    const bool channel_disjoint = !resolved.empty()
+        && (foreground->find_gamma_channel(static_cast<float>(current.lower_energy))
+            > foreground->find_gamma_channel(static_cast<float>(resolved.back().upper_energy)));
+    if( resolved.empty() || ((current.lower_energy >= resolved.back().upper_energy)
+                             && channel_disjoint) )
+    {
+      resolved.push_back( current );
+      resolved_peaks.push_back( current_peaks );
+      resolved_areas.push_back( current_areas );
+      resolved_joined_groups.push_back( 1 );
+      continue;
+    }
+
+    RelActCalcAuto::RoiRange &left_roi = resolved.back();
+    std::vector<double> &left_peaks = resolved_peaks.back();
+    std::vector<double> &left_areas = resolved_areas.back();
+    const bool left_protected = is_protected( left_roi );
+    const bool right_protected = is_protected( current );
+    if( left_peaks.empty() || current_peaks.empty() )
+    {
+      AutomaticRoiDecisionDiagnostic insufficient;
+      insufficient.decision = AutomaticRoiDecision::KeepSeparate;
+      insufficient.stage = stage;
+      insufficient.left_lower = left_roi.lower_energy;
+      insufficient.left_upper = left_roi.upper_energy;
+      insufficient.right_lower = current.lower_energy;
+      insufficient.right_upper = current.upper_energy;
+      insufficient.calibration_num_channels = foreground->num_gamma_channels();
+      insufficient.reason = "late ROI lacks modeled peak evidence; rejected automatic addition";
+      if( diagnostics )
+        diagnostics->push_back( insufficient );
+      if( right_protected && !left_protected )
+      {
+        resolved.pop_back();
+        resolved_peaks.pop_back();
+        resolved_areas.pop_back();
+        resolved_joined_groups.pop_back();
+        resolved.push_back( current );
+        resolved_peaks.push_back( current_peaks );
+        resolved_areas.push_back( current_areas );
+        resolved_joined_groups.push_back( 1 );
+      }
+      continue;
+    }
+    detail::AutomaticRoiGroup left_group;
+    left_group.lower = left_roi.lower_energy;
+    left_group.upper = left_roi.upper_energy;
+    left_group.peak_energies = left_peaks;
+    left_group.peak_areas = left_areas;
+    left_group.joined_groups = resolved_joined_groups.back();
+    left_group.protected_geometry = left_protected;
+    detail::AutomaticRoiGroup right_group;
+    right_group.lower = current.lower_energy;
+    right_group.upper = current.upper_energy;
+    right_group.peak_energies = current_peaks;
+    right_group.peak_areas = current_areas;
+    right_group.protected_geometry = right_protected;
+    detail::AutomaticRoiPolicySettings policy_settings;
+    policy_settings.merge_tail_z = config.merge_tail_z;
+    policy_settings.merge_clean_gap_fwhm = config.merge_clean_gap_fwhm;
+    policy_settings.continuum_aicc_penalty = config.cont_order_aicc_penalty;
+    policy_settings.peak_core_num_fwhm = config.auto_roi_core_num_fwhm;
+    policy_settings.max_width_fwhm = config.auto_rel_eff_sol_max_fwhm;
+    policy_settings.stage = stage;
+    std::vector<std::shared_ptr<const PeakDef>> policy_unfit_peaks;
+    for( const std::shared_ptr<const PeakDef> &peak : unfit_auto_peaks )
+    {
+      if( !peak || !peak->gausPeak() )
+        continue;
+      const bool modeled = std::any_of( std::begin(left_peaks), std::end(left_peaks),
+          [&peak, &fwhm_at_energy]( const double energy ) {
+            const double local_fwhm = fwhm_at_energy( energy );
+            return std::isfinite(local_fwhm) && (local_fwhm > 0.0)
+                && (std::fabs(peak->mean() - energy) <= 0.75*local_fwhm);
+          } ) || std::any_of( std::begin(current_peaks), std::end(current_peaks),
+          [&peak, &fwhm_at_energy]( const double energy ) {
+            const double local_fwhm = fwhm_at_energy( energy );
+            return std::isfinite(local_fwhm) && (local_fwhm > 0.0)
+                && (std::fabs(peak->mean() - energy) <= 0.75*local_fwhm);
+          } );
+      if( !modeled )
+        policy_unfit_peaks.push_back( peak );
+    }
+    const detail::AutomaticRoiPolicyResult policy = detail::evaluate_automatic_roi_boundary(
+        left_group, right_group, foreground, global_continuum, fwhm_at_energy,
+        policy_unfit_peaks, policy_settings );
+    if( diagnostics )
+      diagnostics->push_back( policy.diagnostic );
+
+    const bool merge = !left_protected && !right_protected
+        && ((policy.decision == AutomaticRoiDecision::MergeInseparable)
+            || (policy.decision == AutomaticRoiDecision::MergeInseparableWide));
+    if( merge )
+    {
+      left_roi.upper_energy = std::max( left_roi.upper_energy, current.upper_energy );
+      left_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+      left_peaks.insert( std::end(left_peaks), std::begin(current_peaks), std::end(current_peaks) );
+      left_areas.insert( std::end(left_areas), std::begin(current_areas), std::end(current_areas) );
+      resolved_joined_groups.back() += 1;
+      continue;
+    }
+
+    // Keep the policy-selected gap channel out of both children.  A protected range is never
+    // moved; the automatic neighbor alone is trimmed or rejected.
+    double boundary = policy.boundary_energy;
+    if( left_protected )
+      boundary = left_roi.upper_energy;
+    else if( right_protected )
+      boundary = current.lower_energy;
+    size_t lower_boundary_channel = foreground->find_gamma_channel(
+        static_cast<float>(boundary) );
+    size_t upper_boundary_channel = lower_boundary_channel;
+    if( !left_protected && !right_protected
+        && (policy.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked)
+        && (policy.exclusion_upper > policy.exclusion_lower) )
+    {
+      lower_boundary_channel = foreground->find_gamma_channel(
+          static_cast<float>(policy.exclusion_lower) );
+      upper_boundary_channel = foreground->find_gamma_channel(
+          static_cast<float>(policy.exclusion_upper) );
+    }
+    const double lower_edge = foreground->gamma_channel_lower( lower_boundary_channel );
+    const double upper_edge = foreground->gamma_channel_upper( upper_boundary_channel );
+    const double old_left_upper = left_roi.upper_energy;
+    if( !left_protected )
+      left_roi.upper_energy = lower_edge;
+    if( !right_protected )
+      current.lower_energy = upper_edge;
+    const double left_anchor = *std::max_element(std::begin(left_peaks), std::end(left_peaks));
+    const double right_anchor = *std::min_element(std::begin(current_peaks), std::end(current_peaks));
+    const bool left_valid = left_protected || ((left_roi.upper_energy > left_roi.lower_energy)
+        && (left_anchor >= left_roi.lower_energy) && (left_anchor <= left_roi.upper_energy));
+    const bool right_valid = right_protected || ((current.upper_energy > current.lower_energy)
+        && (right_anchor >= current.lower_energy) && (right_anchor <= current.upper_energy));
+    if( !left_valid && !left_protected )
+    {
+      if( right_protected )
+      {
+        resolved.pop_back();
+        resolved_peaks.pop_back();
+        resolved_areas.pop_back();
+        resolved_joined_groups.pop_back();
+        resolved.push_back( current );
+        resolved_peaks.push_back( current_peaks );
+        resolved_areas.push_back( current_areas );
+        resolved_joined_groups.push_back( 1 );
+        continue;
+      }
+      // Prefer the already-retained left child; restore it and reject the new automatic addition.
+      left_roi.upper_energy = old_left_upper;
+      continue;
+    }
+    if( !right_valid )
+    {
+      if( !left_protected )
+        left_roi.upper_energy = old_left_upper;
+      continue;
+    }
+    resolved.push_back( current );
+    resolved_peaks.push_back( current_peaks );
+    resolved_areas.push_back( current_areas );
+    resolved_joined_groups.push_back( 1 );
+  }
+  rois = std::move( resolved );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( size_t index = 1; index < rois.size(); ++index )
+  {
+    assert( rois[index - 1].upper_energy <= rois[index].lower_energy );
+    assert( is_protected(rois[index - 1])
+        || (rois[index - 1].range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed) );
+  }
+#endif
+}//resolve_automatic_overlapping_rois(...)
 
 
 /** Ensure at least one channel gap between consecutive ROIs.
@@ -5322,7 +5926,8 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
     const std::function<double(double)> *fwhm_override = nullptr,
     std::vector<PredictedGamma> *all_predicted_gammas = nullptr,
     const std::string &shadow_stage = std::string(),
-    const detail::GlobalContinuumEstimate *shadow_global_override = nullptr )
+    const detail::GlobalContinuumEstimate *shadow_global_override = nullptr,
+    std::vector<AutomaticRoiDecisionDiagnostic> *roi_policy_diagnostics = nullptr )
 {
   assert( rel_eff_fcns.size() == sources_age_activity_sets.size() );
   if( rel_eff_fcns.size() != sources_age_activity_sets.size() )
@@ -5738,6 +6343,7 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
 
       // Check if an unfit peak lies between the largest gammas of each cluster
       bool unfit_peak_between = false;
+      std::vector<std::shared_ptr<const PeakDef>> blocking_unfit_peaks;
       if( !unfit_auto_peaks.empty() )
       {
         const double between_lo = std::min( prev_largest_energy, curr_largest_energy );
@@ -5746,8 +6352,6 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
         for( const std::shared_ptr<const PeakDef> &peak : unfit_auto_peaks )
         {
           const double peak_mean = peak->mean();
-          if( (peak_mean <= between_lo) || (peak_mean >= between_hi) )
-            continue;
 
           // Check if this unfit peak matches any source gamma - if so, it's not interfering
           bool matches_source = false;
@@ -5767,6 +6371,9 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
           if( matches_source )
             continue;
 
+          blocking_unfit_peaks.push_back( peak );
+          if( (peak_mean <= between_lo) || (peak_mean >= between_hi) )
+            continue;
           unfit_peak_between = true;
 
           if( should_debug_print() )
@@ -5778,7 +6385,6 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
                  << " keV between largest gammas at " << prev_largest_energy
                  << " and " << curr_largest_energy << " keV" << std::endl;
           }
-          break;
         }//for( const auto &peak : unfit_auto_peaks )
       }//if( !unfit_auto_peaks.empty() )
 
@@ -5809,7 +6415,43 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
         }
       }//if( !unfit_peak_between )
 
-      if( unfit_peak_between || have_clean_gap )
+      detail::AutomaticRoiGroup left_group;
+      left_group.lower = prev.lower;
+      left_group.upper = prev.upper;
+      left_group.peak_energies = prev.gamma_energies;
+      left_group.peak_areas = prev.gamma_amplitudes;
+      left_group.joined_groups = prev.joined_groups;
+      detail::AutomaticRoiGroup right_group;
+      right_group.lower = cluster.lower;
+      right_group.upper = cluster.upper;
+      right_group.peak_energies = cluster.gamma_energies;
+      right_group.peak_areas = cluster.gamma_amplitudes;
+      right_group.joined_groups = cluster.joined_groups;
+      detail::AutomaticRoiPolicySettings policy_settings;
+      policy_settings.merge_tail_z = settings.merge_tail_z;
+      policy_settings.merge_clean_gap_fwhm = settings.merge_clean_gap_fwhm;
+      policy_settings.continuum_aicc_penalty = settings.cont_order_aicc_penalty;
+      policy_settings.peak_core_num_fwhm = settings.roi_core_num_fwhm;
+      policy_settings.max_width_fwhm = settings.max_fwhm_width;
+      policy_settings.stage = shadow_stage.empty() ? "automatic clustering" : shadow_stage;
+      detail::AutomaticRoiPolicyResult policy;
+      if( settings.use_automatic_roi_policy )
+      {
+        policy = detail::evaluate_automatic_roi_boundary(
+            left_group, right_group, foreground, settings.global_continuum, fwhm_at,
+            blocking_unfit_peaks, policy_settings );
+        if( roi_policy_diagnostics )
+          roi_policy_diagnostics->push_back( policy.diagnostic );
+        else
+          detail::record_automatic_roi_diagnostic( policy.diagnostic );
+      }
+      const bool keep_separate = settings.use_automatic_roi_policy
+        ? ((policy.decision == AutomaticRoiDecision::KeepSeparate)
+            || (policy.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked)
+            || (policy.decision == AutomaticRoiDecision::ProtectedGeometry))
+        : (unfit_peak_between || have_clean_gap);
+
+      if( keep_separate )
       {
         // Don't merge - find the natural valley in the overlap for the split point.
         // Constrain so both clusters still contain their dominant gamma, and to the clean
@@ -5818,14 +6460,19 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
         const double overlap_hi = merged_clusters.back().upper;
         double split_lo = std::max( overlap_lo, prev_largest_energy );
         double split_hi = std::min( overlap_hi, curr_largest_energy );
-        if( have_clean_gap )
+        if( settings.use_automatic_roi_policy && (policy.boundary_energy > 0.0) )
         {
-          split_lo = std::max( split_lo, clean_win_lo );
-          split_hi = std::min( split_hi, clean_win_hi );
+          split_lo = std::max( split_lo, policy.boundary_energy );
+          split_hi = std::min( split_hi, policy.boundary_energy );
         }
 
         double split_point;
-        if( split_lo >= split_hi )
+        if( settings.use_automatic_roi_policy
+            && (policy.boundary_energy >= split_lo) && (policy.boundary_energy <= split_hi) )
+        {
+          split_point = policy.boundary_energy;
+        }
+        else if( split_lo >= split_hi )
         {
           split_point = 0.5 * (overlap_lo + overlap_hi);
         }
@@ -5841,9 +6488,41 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
               split_lo, split_hi );
         }
 
-        merged_clusters.back().upper = split_point;
         ClusteredGammaInfo adjusted_cluster = cluster;
-        adjusted_cluster.lower = split_point;
+        if( settings.use_automatic_roi_policy
+            && (policy.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked)
+            && (policy.exclusion_upper > policy.exclusion_lower) )
+        {
+          const size_t lower_channel = foreground->find_gamma_channel(
+              static_cast<float>(policy.exclusion_lower) );
+          const size_t upper_channel = foreground->find_gamma_channel(
+              static_cast<float>(policy.exclusion_upper) );
+          merged_clusters.back().upper = foreground->gamma_channel_lower( lower_channel );
+          adjusted_cluster.lower = foreground->gamma_channel_upper( upper_channel );
+        }else if( settings.use_automatic_roi_policy )
+        {
+          const size_t split_channel = foreground->find_gamma_channel(
+              static_cast<float>(split_point) );
+          merged_clusters.back().upper = foreground->gamma_channel_lower( split_channel );
+          adjusted_cluster.lower = foreground->gamma_channel_upper( split_channel );
+        }else
+        {
+          merged_clusters.back().upper = split_point;
+          adjusted_cluster.lower = split_point;
+        }
+        const bool left_valid = (merged_clusters.back().upper > merged_clusters.back().lower)
+            && (prev_largest_energy <= merged_clusters.back().upper);
+        const bool right_valid = (adjusted_cluster.upper > adjusted_cluster.lower)
+            && (curr_largest_energy >= adjusted_cluster.lower);
+        if( !left_valid )
+        {
+          merged_clusters.pop_back();
+          if( right_valid )
+            merged_clusters.push_back( adjusted_cluster );
+          continue;
+        }
+        if( !right_valid )
+          continue;  // retain the anchored left child and reject the new automatic group
         merged_clusters.push_back( adjusted_cluster );
       }
       else
@@ -5866,7 +6545,8 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
           std::begin(cluster.gamma_amplitudes),
           std::end(cluster.gamma_amplitudes)
         );
-      }//if( unfit_peak_between ) / else
+        merged_clusters.back().joined_groups += cluster.joined_groups;
+      }//if( keep_separate ) / else
     }
   }//for( const ClusteredGammaInfo &cluster : clustered_gammas )
 
@@ -5893,8 +6573,14 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
     }
   }
 
-  // Break up ROIs that are too wide
   std::vector<ClusteredGammaInfo> final_clusters;
+  if( settings.use_automatic_roi_policy )
+  {
+    // Width is a soft pressure in the shared policy; an explicitly inseparable wide group is not
+    // overridden by the former synthetic-minimum post-hoc splitter.
+    final_clusters = merged_clusters;
+  }else
+  {
   for( ClusteredGammaInfo &cluster : merged_clusters )
   {
     const double mid_energy = 0.5 * (cluster.lower + cluster.upper);
@@ -6162,7 +6848,8 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
       if( !sub_cluster.gamma_energies.empty() )
         final_clusters.push_back( std::move( sub_cluster ) );
     }
-  }//for( ClusteredGammaInfo &cluster : merged_clusters )
+  }//legacy for( ClusteredGammaInfo &cluster : merged_clusters )
+  }
 
   // Developer check: Validate final_clusters don't overlap
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -6205,27 +6892,19 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
       // emitted ROI, fold the cluster back into it (mirroring merge_rois' under-width fold-back
       // guards) instead of silently dropping gammas the keep decision said were significant.
       const double fold_tol = 0.1 * mid_fwhm;
-      if( !result_rois.empty() && ((roi.lower_energy - previous_roi_upper) <= fold_tol) )
+      if( !settings.use_automatic_roi_policy && !result_rois.empty()
+          && ((roi.lower_energy - previous_roi_upper) <= fold_tol) )
       {
-        std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &prev = result_rois.back();
-        prev.first.upper_energy = std::max( prev.first.upper_energy, roi.upper_energy );
-        prev.second.upper = std::max( prev.second.upper, cluster.upper );
-        prev.second.gamma_energies.insert( std::end(prev.second.gamma_energies),
+        std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &previous = result_rois.back();
+        previous.first.upper_energy = std::max( previous.first.upper_energy, roi.upper_energy );
+        previous.second.upper = std::max( previous.second.upper, cluster.upper );
+        previous.second.gamma_energies.insert( std::end(previous.second.gamma_energies),
             std::begin(cluster.gamma_energies), std::end(cluster.gamma_energies) );
-        prev.second.gamma_amplitudes.insert( std::end(prev.second.gamma_amplitudes),
+        previous.second.gamma_amplitudes.insert( std::end(previous.second.gamma_amplitudes),
             std::begin(cluster.gamma_amplitudes), std::end(cluster.gamma_amplitudes) );
-        previous_roi_upper = prev.first.upper_energy;
-
-        if( should_debug_print() )
-        {
-          std::cerr << "cluster_gammas_to_rois: Folded under-width ROI [" << roi.lower_energy
-               << ", " << roi.upper_energy << "] keV (" << num_fwhm_wide << " FWHM < "
-               << settings.min_fwhm_roi << " min) into previous ROI, now ["
-               << prev.first.lower_energy << ", " << prev.first.upper_energy << "] keV" << std::endl;
-        }
+        previous_roi_upper = previous.first.upper_energy;
         continue;
       }
-
       if( should_debug_print() )
       {
         std::cerr << "cluster_gammas_to_rois: Rejected ROI [" << roi.lower_energy << ", " << roi.upper_energy
@@ -6428,8 +7107,11 @@ struct InitialRoi
    detail::find_clean_gap_between).  Pass 0 when no counts-scale estimate exists (e.g. a bare
    br*efficiency yield): the tail check then degenerates to a pure gap-width test, which is the
    documented "unknown amplitude" behavior rather than a silently-always-passing one.
-   */
+  */
   double estimated_amplitude = 0.0;  // expected peak area in counts (0 = unknown)
+  std::vector<double> modeled_energies;
+  std::vector<double> modeled_areas;
+  size_t joined_groups = 1;
 };
 
 std::vector<RelActCalcAuto::RoiRange> merge_rois(
@@ -6437,7 +7119,11 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
     const PeakFitForNuclideConfig &config,
     const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks = {},
     const std::shared_ptr<const SpecUtils::Measurement> &foreground = {},
-    const detail::GlobalContinuumEstimate *global_continuum = nullptr )
+    const detail::GlobalContinuumEstimate *global_continuum = nullptr,
+    std::vector<AutomaticRoiDecisionDiagnostic> *roi_policy_diagnostics = nullptr,
+    const std::string &policy_stage = "initial ROI merge",
+    const bool use_automatic_roi_policy = true,
+    std::vector<std::pair<double,double>> *merged_modeled_peaks = nullptr )
 {
   // Sort by lower_energy for merging
   std::sort( initial_rois.begin(), initial_rois.end(), [](const InitialRoi &a, const InitialRoi &b){
@@ -6450,6 +7136,18 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
   std::vector<std::vector<double>> merged_centers;  // Track center energies for each merged ROI
   std::vector<std::vector<double>> merged_amplitudes;  // Track amplitude per center for tail check
   std::vector<double> merged_fwhms;  // Track FWHM for validation
+  std::vector<size_t> merged_joined_groups;
+
+  const auto current_centers = []( const InitialRoi &roi ) {
+    return roi.modeled_energies.empty() ? std::vector<double>{roi.center_energy}
+                                        : roi.modeled_energies;
+  };
+  const auto current_areas = []( const InitialRoi &roi ) {
+    std::vector<double> areas = roi.modeled_areas.empty()
+      ? std::vector<double>{roi.estimated_amplitude} : roi.modeled_areas;
+    areas.resize( roi.modeled_energies.empty() ? size_t(1) : roi.modeled_energies.size(), 0.0 );
+    return areas;
+  };
 
   for( size_t roi_idx = 0; roi_idx < initial_rois.size(); ++roi_idx )
   {
@@ -6457,9 +7155,10 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
     if( merged_rois.empty() )
     {
       merged_rois.push_back( current.roi );
-      merged_centers.push_back( {current.center_energy} );
-      merged_amplitudes.push_back( {current.estimated_amplitude} );
+      merged_centers.push_back( current_centers(current) );
+      merged_amplitudes.push_back( current_areas(current) );
       merged_fwhms.push_back( current.fwhm );
+      merged_joined_groups.push_back( current.joined_groups );
       continue;
     }
 
@@ -6475,9 +7174,10 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
     {
       // No overlap - add new ROI
       merged_rois.push_back( current.roi );
-      merged_centers.push_back( {current.center_energy} );
-      merged_amplitudes.push_back( {current.estimated_amplitude} );
+      merged_centers.push_back( current_centers(current) );
+      merged_amplitudes.push_back( current_areas(current) );
       merged_fwhms.push_back( current.fwhm );
+      merged_joined_groups.push_back( current.joined_groups );
       continue;
     }
 
@@ -6505,13 +7205,13 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
     {
       // FWHM varies little between adjacent ROIs; the interpolated mid-point value suffices.
       const auto fwhm_at = [mid_fwhm]( const double ) -> double { return mid_fwhm; };
-      const std::vector<double> right_centers( 1, current.center_energy );
-      const std::vector<double> right_amps( 1, current.estimated_amplitude );
+      const std::vector<double> right_centers = current_centers( current );
+      const std::vector<double> right_amps = current_areas( current );
 
       have_clean_gap = detail::find_clean_gap_between(
           last_centers, last_amps, right_centers, right_amps,
-          std::min( last_centers.back(), current.center_energy ),
-          std::max( last_centers.back(), current.center_energy ),
+          std::min( last_centers.back(), right_centers.front() ),
+          std::max( last_centers.back(), right_centers.front() ),
           foreground, fwhm_at, config.merge_tail_z, config.merge_clean_gap_fwhm,
           &clean_win_lo, &clean_win_hi, global_continuum );
 
@@ -6527,23 +7227,25 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
     // Check if an unfit peak lies between the center energies of the two ROIs.
     // Skip unfit peaks that match a source gamma (center energy) within clustering tolerance.
     bool unfit_peak_between = false;
-    if( width_ok && !have_clean_gap && !unfit_auto_peaks.empty() )
+    std::vector<std::shared_ptr<const PeakDef>> blocking_unfit_peaks;
+    if( !unfit_auto_peaks.empty()
+        && (use_automatic_roi_policy || (width_ok && !have_clean_gap)) )
     {
       // Use the last center energy of the merged ROI and the current center energy
       const double last_center = last_centers.back();
-      const double curr_center = current.center_energy;
+      const std::vector<double> right_centers = current_centers( current );
+      const double curr_center = right_centers.front();
       const double between_lo = std::min( last_center, curr_center );
       const double between_hi = std::max( last_center, curr_center );
 
       // Collect all center energies for source-gamma matching
       std::vector<double> all_centers = last_centers;
-      all_centers.push_back( curr_center );
+      all_centers.insert( std::end(all_centers), std::begin(right_centers),
+                          std::end(right_centers) );
 
       for( const std::shared_ptr<const PeakDef> &peak : unfit_auto_peaks )
       {
         const double peak_mean = peak->mean();
-        if( (peak_mean <= between_lo) || (peak_mean >= between_hi) )
-          continue;
 
         // Check if this unfit peak matches any source gamma (center energy)
         const double peak_sigma = peak->sigma();
@@ -6561,6 +7263,15 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
         if( matches_source )
           continue;
 
+        // The shared policy owns the +/-FWHM core-intersection test.  Passing only peaks whose
+        // means are strictly between the anchors misses a core that crosses into the gap from
+        // just outside it.  Keep the historical mean-only Boolean for the legacy path.
+        if( use_automatic_roi_policy )
+          blocking_unfit_peaks.push_back( peak );
+        if( (peak_mean <= between_lo) || (peak_mean >= between_hi) )
+          continue;
+        if( !use_automatic_roi_policy )
+          blocking_unfit_peaks.push_back( peak );
         unfit_peak_between = true;
 
         if( should_debug_print() )
@@ -6572,16 +7283,54 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
                << " keV between centers at " << last_center
                << " and " << curr_center << " keV" << std::endl;
         }
-        break;
       }//for( const auto &peak : unfit_auto_peaks )
     }//if( width_ok && !unfit_auto_peaks.empty() )
 
-    if( width_ok && !have_clean_gap && !unfit_peak_between )
+    detail::AutomaticRoiPolicyResult policy;
+    if( use_automatic_roi_policy )
+    {
+      const auto fwhm_at = [mid_fwhm]( const double ) -> double { return mid_fwhm; };
+      detail::AutomaticRoiGroup left_group;
+      left_group.lower = last.lower_energy;
+      left_group.upper = last.upper_energy;
+      left_group.peak_energies = last_centers;
+      left_group.peak_areas = last_amps;
+      left_group.joined_groups = merged_joined_groups.back();
+      detail::AutomaticRoiGroup right_group;
+      right_group.lower = current.roi.lower_energy;
+      right_group.upper = current.roi.upper_energy;
+      right_group.peak_energies = current_centers( current );
+      right_group.peak_areas = current_areas( current );
+      right_group.joined_groups = current.joined_groups;
+      detail::AutomaticRoiPolicySettings policy_settings;
+      policy_settings.merge_tail_z = config.merge_tail_z;
+      policy_settings.merge_clean_gap_fwhm = config.merge_clean_gap_fwhm;
+      policy_settings.continuum_aicc_penalty = config.cont_order_aicc_penalty;
+      policy_settings.peak_core_num_fwhm = config.auto_roi_core_num_fwhm;
+      policy_settings.max_width_fwhm = config.auto_rel_eff_sol_max_fwhm;
+      policy_settings.stage = policy_stage;
+      policy = detail::evaluate_automatic_roi_boundary(
+          left_group, right_group, foreground, global_continuum, fwhm_at,
+          blocking_unfit_peaks, policy_settings );
+      if( roi_policy_diagnostics )
+        roi_policy_diagnostics->push_back( policy.diagnostic );
+      else
+        detail::record_automatic_roi_diagnostic( policy.diagnostic );
+    }
+    const bool policy_allows_merge = use_automatic_roi_policy
+      ? ((policy.decision == AutomaticRoiDecision::MergeInseparable)
+          || (policy.decision == AutomaticRoiDecision::MergeInseparableWide))
+      : (width_ok && !have_clean_gap && !unfit_peak_between);
+
+    if( policy_allows_merge )
     {
       // MERGE: Extend last ROI to encompass both
       last.upper_energy = combined_upper;
-      last_centers.push_back( current.center_energy );
-      last_amps.push_back( current.estimated_amplitude );
+      const std::vector<double> centers = current_centers( current );
+      const std::vector<double> areas = current_areas( current );
+      last_centers.insert( std::end(last_centers), std::begin(centers), std::end(centers) );
+      last_amps.insert( std::end(last_amps), std::begin(areas), std::end(areas) );
+      merged_joined_groups.back() += current.joined_groups;
       // Update FWHM to use the average
       merged_fwhms.back() = 0.5 * (last_fwhm + current.fwhm);
 
@@ -6604,15 +7353,29 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
       // additionally constrained to the clean window when one was found.
       double split_constraint_lower = last_centers.empty()
         ? overlap_lower : std::max( overlap_lower, last_centers.back() );
-      double split_constraint_upper = std::min( overlap_upper, current.center_energy );
-      if( have_clean_gap )
+      const std::vector<double> right_centers = current_centers( current );
+      const double right_anchor = *std::min_element(
+          std::begin(right_centers), std::end(right_centers) );
+      double split_constraint_upper = std::min( overlap_upper, right_anchor );
+      if( use_automatic_roi_policy && (policy.boundary_energy > 0.0) )
+      {
+        split_constraint_lower = std::max( split_constraint_lower, policy.boundary_energy );
+        split_constraint_upper = std::min( split_constraint_upper, policy.boundary_energy );
+      }
+      else if( have_clean_gap )
       {
         split_constraint_lower = std::max( split_constraint_lower, clean_win_lo );
         split_constraint_upper = std::min( split_constraint_upper, clean_win_hi );
       }
 
       double split_point;
-      if( split_constraint_lower >= split_constraint_upper )
+      if( use_automatic_roi_policy
+          && (policy.boundary_energy >= split_constraint_lower)
+          && (policy.boundary_energy <= split_constraint_upper) )
+      {
+        split_point = policy.boundary_energy;
+      }
+      else if( split_constraint_lower >= split_constraint_upper )
       {
         // Constraints don't allow a valid range - fall back to overlap midpoint
         split_point = 0.5 * (overlap_lower + overlap_upper);
@@ -6636,9 +7399,22 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
       }
 
       const double original_last_upper = last.upper_energy;
-      last.upper_energy = split_point - half_gap;
       RelActCalcAuto::RoiRange adjusted_current = current.roi;
-      adjusted_current.lower_energy = split_point + half_gap;
+      if( use_automatic_roi_policy
+          && (policy.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked)
+          && (policy.exclusion_upper > policy.exclusion_lower) && foreground )
+      {
+        const size_t lower_channel = foreground->find_gamma_channel(
+            static_cast<float>(policy.exclusion_lower) );
+        const size_t upper_channel = foreground->find_gamma_channel(
+            static_cast<float>(policy.exclusion_upper) );
+        last.upper_energy = foreground->gamma_channel_lower( lower_channel );
+        adjusted_current.lower_energy = foreground->gamma_channel_upper( upper_channel );
+      }else
+      {
+        last.upper_energy = split_point - half_gap;
+        adjusted_current.lower_energy = split_point + half_gap;
+      }
 
       // Validate adjusted last ROI still contains all its center energies and is wide enough
       const double last_width = last.upper_energy - last.lower_energy;
@@ -6654,8 +7430,12 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
 
       // Validate adjusted current ROI is still useful
       const double adjusted_width = adjusted_current.upper_energy - adjusted_current.lower_energy;
-      const bool current_contains_center = (current.center_energy >= adjusted_current.lower_energy)
-                                        && (current.center_energy <= adjusted_current.upper_energy);
+      const bool current_contains_center = std::all_of(
+          std::begin(right_centers), std::end(right_centers),
+          [&adjusted_current]( const double center ) {
+            return (center >= adjusted_current.lower_energy)
+                && (center <= adjusted_current.upper_energy);
+          } );
       const bool current_wide_enough = (adjusted_width >= current.fwhm);
       const bool current_valid = current_contains_center && current_wide_enough;
 
@@ -6668,6 +7448,7 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
         merged_centers.pop_back();
         merged_amplitudes.pop_back();
         merged_fwhms.pop_back();
+        merged_joined_groups.pop_back();
 
         if( should_debug_print() )
         {
@@ -6682,9 +7463,10 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
       {
         // Both ROIs valid - add the split current ROI
         merged_rois.push_back( adjusted_current );
-        merged_centers.push_back( {current.center_energy} );
-        merged_amplitudes.push_back( {current.estimated_amplitude} );
+        merged_centers.push_back( current_centers(current) );
+        merged_amplitudes.push_back( current_areas(current) );
         merged_fwhms.push_back( current.fwhm );
+        merged_joined_groups.push_back( current.joined_groups );
 
         if( should_debug_print() )
         {
@@ -6694,29 +7476,22 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
                << adjusted_current.upper_energy << "]" << std::endl;
         }
       }
-      else if( width_ok )
+      else if( !use_automatic_roi_policy && width_ok )
       {
-        // Current ROI invalid after the split (its center - possibly a real peak mean - landed
-        // inside the overlap, or the sliver is under a FWHM wide), but the combined width is
-        // acceptable: fold current back into last instead of silently dropping its coverage.
-        // Merging is always statistically safe - the clean gap between them merely goes unused.
+        // Preserve the legacy R6-enabled behavior exactly: if a split would invalidate the new
+        // child but the combined range is under the old width limit, fold it back into the left.
         last.upper_energy = combined_upper;
-        last_centers.push_back( current.center_energy );
-        last_amps.push_back( current.estimated_amplitude );
+        const std::vector<double> centers = current_centers( current );
+        const std::vector<double> areas = current_areas( current );
+        last_centers.insert( std::end(last_centers), std::begin(centers), std::end(centers) );
+        last_amps.insert( std::end(last_amps), std::begin(areas), std::end(areas) );
+        merged_joined_groups.back() += current.joined_groups;
         merged_fwhms.back() = 0.5 * (last_fwhm + current.fwhm);
-
-        if( should_debug_print() )
-        {
-          std::cerr << "Adjusted current ROI at " << current.center_energy
-               << " keV invalid after split; folded back into last ROI, now ["
-               << last.lower_energy << ", " << last.upper_energy << "]" << std::endl;
-        }
       }
       else
       {
-        // Current ROI invalid after the split AND merging would exceed the max ROI width:
-        // drop current, but restore last's upper bound (there is no longer anything to make
-        // room for, so leaving it shrunk to the split point would discard usable sideband).
+        // The policy rejected a join, and the new child cannot retain its modeled core.  Reject
+        // the new child instead of silently bypassing the boundary decision.
         last.upper_energy = original_last_upper;
 
         if( should_debug_print() )
@@ -6726,7 +7501,7 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
             std::cerr << "doesn't contain source energy";
           else
             std::cerr << "too narrow (" << adjusted_width << " keV < " << current.fwhm << " keV FWHM)";
-          std::cerr << " (combined width also exceeds the max, so not folding back)" << std::endl;
+          std::cerr << " (automatic ROI policy forbids folding it through the boundary)" << std::endl;
         }
       }
     }
@@ -6768,6 +7543,19 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
          << " final ROIs" << std::endl;
   }
 
+  if( merged_modeled_peaks )
+  {
+    for( size_t roi_index = 0; roi_index < merged_centers.size(); ++roi_index )
+    {
+      for( size_t peak_index = 0; peak_index < merged_centers[roi_index].size(); ++peak_index )
+      {
+        const double area = (peak_index < merged_amplitudes[roi_index].size())
+          ? merged_amplitudes[roi_index][peak_index] : 0.0;
+        merged_modeled_peaks->emplace_back( merged_centers[roi_index][peak_index], area );
+      }
+    }
+  }
+
   return merged_rois;
 }//std::vector<InitialRoi> merge_rois(...)
 
@@ -6783,7 +7571,10 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
   const double min_valid_energy,
   const double max_valid_energy,
   const PeakFitForNuclideConfig &config,
-  const std::shared_ptr<const SpecUtils::Measurement> &foreground = {} )
+  const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground = {},
+  const bool use_automatic_roi_policy = true,
+  std::vector<std::pair<double,double>> *modeled_peak_candidates = nullptr )
 {
   // Step 1: Get or create valid DRF (use generic if nullptr)
   std::shared_ptr<const DetectorPeakResponse> drf_to_use = drf;
@@ -6920,13 +7711,18 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
     roi.lower_energy = std::max( min_valid_energy, gamma.energy - 2.5 * fwhm );
     roi.upper_energy = std::min( max_valid_energy, gamma.energy + 2.5 * fwhm );
     roi.continuum_type = PeakContinuum::OffsetType::Linear;
-    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    roi.range_limits_type = use_automatic_roi_policy
+      ? RelActCalcAuto::RoiRange::RangeLimitsType::Fixed
+      : RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp;
 
     // No activity estimate exists in this no-matched-peaks path, so there is no counts-scale
     // amplitude; pass 0 ("unknown") rather than the dimensionless br*eff yield, which
     // find_clean_gap_between would misinterpret as a (near-zero) count and silently pass the
     // tail-contamination check for every window.
-    initial_rois.push_back( {roi, gamma.energy, fwhm, 0.0} );
+    InitialRoi initial{roi, gamma.energy, fwhm, 0.0};
+    initial.modeled_energies.push_back( gamma.energy );
+    initial.modeled_areas.push_back( 0.0 );
+    initial_rois.push_back( std::move(initial) );
   }
 
   if( initial_rois.empty() )
@@ -6936,11 +7732,26 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
     return {};
   }
 
-  // Forward `foreground` so merge_rois uses real spectrum-valley split points (and channel-width
-  // gaps) instead of the midpoint fallback.  We intentionally do NOT pass auto-search peaks as the
-  // unfit list here: this branch is reached precisely because NO peak matched a source, so nearly
-  // every auto peak would (wrongly) be treated as an interferer and over-suppress merges.
-  return merge_rois( initial_rois, config, {}, foreground );
+  // With no source match, every auto-search core is unmodeled evidence and must remain available
+  // to the shared boundary policy; it may exclude a gap but cannot authorize a merge-through.
+  const auto policy_fwhm = [=, &fwhm_coefficients]( const double energy ) {
+    const double eval_energy = have_fwhm_range
+      ? std::clamp(energy, lower_fwhm_energy, upper_fwhm_energy) : energy;
+    return static_cast<double>( DetectorPeakResponse::peakResolutionFWHM(
+        static_cast<float>(eval_energy), fwhmFnctnlForm, fwhm_coefficients) );
+  };
+  detail::GlobalContinuumEstimate initial_continuum;
+  if( use_automatic_roi_policy )
+  {
+    initial_continuum = detail::make_global_continuum(
+        foreground, policy_fwhm, det_type, min_valid_energy, max_valid_energy );
+  }
+  const std::vector<std::shared_ptr<const PeakDef>> no_unfit_peaks;
+  const std::vector<std::shared_ptr<const PeakDef>> &merge_unfit_peaks
+    = use_automatic_roi_policy ? unfit_auto_peaks : no_unfit_peaks;
+  return merge_rois( initial_rois, config, merge_unfit_peaks, foreground,
+      initial_continuum.valid() ? &initial_continuum : nullptr, nullptr,
+      "no matched peaks", use_automatic_roi_policy, modeled_peak_candidates );
 }//estimate_initial_rois_without_peaks
 
 // Forward declarations (defined below) - used by the shielding-robust fallback rel-eff curve.
@@ -6961,7 +7772,9 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   const std::vector<float> &fwhm_coefficients,
   const double lower_fwhm_energy,
   const double upper_fwhm_energy,
-  const GammaClusteringSettings &settings )
+  const GammaClusteringSettings &settings,
+  const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+  std::vector<std::pair<double,double>> *modeled_peak_candidates = nullptr )
 {
   // Step 1: Get or create valid DRF
   std::shared_ptr<const DetectorPeakResponse> drf_to_use = drf;
@@ -7173,21 +7986,26 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   }
 
   // Step 4: Call cluster_gammas_to_rois with estimated activities
-  detail::GlobalContinuumEstimate initial_shadow_continuum;
-  if( std::getenv("PEAKFIT_ROI_SHADOW_TSV")
-      || std::getenv("INTERSPEC_ROI_BOUNDARY_SHADOW") )
+  const auto policy_fwhm = [=, &fwhm_coefficients]( const double energy ) {
+    const double eval_energy = have_fwhm_range
+      ? std::clamp(energy, lower_fwhm_energy, upper_fwhm_energy) : energy;
+    return static_cast<double>( DetectorPeakResponse::peakResolutionFWHM(
+        static_cast<float>(eval_energy), fwhmFnctnlForm, fwhm_coefficients) );
+  };
+  detail::GlobalContinuumEstimate initial_continuum;
+  if( settings.use_automatic_roi_policy )
   {
-    const auto shadow_fwhm = [=, &fwhm_coefficients]( const double energy ) {
-      const double eval_energy = have_fwhm_range
-        ? std::clamp(energy, lower_fwhm_energy, upper_fwhm_energy) : energy;
-      return static_cast<double>( DetectorPeakResponse::peakResolutionFWHM(
-          static_cast<float>(eval_energy), fwhmFnctnlForm, fwhm_coefficients) );
-    };
-    initial_shadow_continuum = detail::make_global_continuum(
-        foreground, shadow_fwhm, det_type, min_valid_energy, max_valid_energy );
+    initial_continuum = detail::make_global_continuum(
+        foreground, policy_fwhm, det_type, min_valid_energy, max_valid_energy );
   }
-  const detail::GlobalContinuumEstimate * const initial_shadow_ptr
-    = initial_shadow_continuum.valid() ? &initial_shadow_continuum : nullptr;
+  const detail::GlobalContinuumEstimate * const initial_continuum_ptr
+    = initial_continuum.valid() ? &initial_continuum : nullptr;
+  GammaClusteringSettings policy_settings = settings;
+  if( settings.use_automatic_roi_policy )
+    policy_settings.global_continuum = initial_continuum_ptr;
+  const std::vector<std::shared_ptr<const PeakDef>> no_unfit_peaks;
+  const std::vector<std::shared_ptr<const PeakDef>> &clustering_unfit_peaks
+    = settings.use_automatic_roi_policy ? unfit_auto_peaks : no_unfit_peaks;
   const std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> rois_and_gammas
     = cluster_gammas_to_rois(
       {fallback_rel_eff},
@@ -7199,13 +8017,25 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
       upper_fwhm_energy,
       min_valid_energy,
       max_valid_energy,
-      settings, {}, nullptr, nullptr, nullptr, nullptr, "initial fallback", initial_shadow_ptr
+      policy_settings, clustering_unfit_peaks, nullptr, nullptr, nullptr, nullptr,
+      "initial fallback", initial_continuum_ptr
     );
 
   std::vector<RelActCalcAuto::RoiRange> result;
   result.reserve( rois_and_gammas.size() );
   for( const std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &p : rois_and_gammas )
+  {
     result.push_back( p.first );
+    if( modeled_peak_candidates )
+    {
+      for( size_t peak_index = 0; peak_index < p.second.gamma_energies.size(); ++peak_index )
+      {
+        const double area = (peak_index < p.second.gamma_amplitudes.size())
+          ? p.second.gamma_amplitudes[peak_index] : 0.0;
+        modeled_peak_candidates->emplace_back( p.second.gamma_energies[peak_index], area );
+      }
+    }
+  }
 
   return result;
 }//estimate_initial_rois_fallback
@@ -7287,7 +8117,8 @@ size_t seed_tight_rois_for_found_peaks(
     const std::vector<std::pair<double,double>> &found_energy_fwhm,
     const double half_num_fwhm,
     const double lowest_energy,
-    const double highest_energy )
+    const double highest_energy,
+    const bool use_automatic_roi_policy = true )
 {
   size_t num_seeded = 0;
   for( const std::pair<double,double> &ef : found_energy_fwhm )
@@ -7312,7 +8143,11 @@ size_t seed_tight_rois_for_found_peaks(
     // A tight single-line window: a linear continuum is the honest null (a quadratic can start to
     // absorb the peak); the downstream continuum-order selection may still upgrade it after merging.
     roi.continuum_type = PeakContinuum::OffsetType::Linear;
-    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp;
+    // FitPeaksForNuclides owns this automatic boundary; keeping it Fixed prevents RelActAuto's
+    // generic significant-range recombination from silently bypassing the policy.
+    roi.range_limits_type = use_automatic_roi_policy
+      ? RelActCalcAuto::RoiRange::RangeLimitsType::Fixed
+      : RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp;
     rois.push_back( roi );
     ++num_seeded;
   }//for( const std::pair<double,double> &ef : found_energy_fwhm )
@@ -7335,7 +8170,9 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
   const double max_valid_energy,
   const GammaClusteringSettings &manual_settings,
   const PeakFitForNuclideConfig &config,
-  std::string &fallback_warning )
+  const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+  std::string &fallback_warning,
+  std::vector<std::pair<double,double>> *modeled_peak_candidates = nullptr )
 {
   std::vector<RelActCalcAuto::RoiRange> initial_rois;
 
@@ -7436,7 +8273,8 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     return estimate_initial_rois_without_peaks(
       sources, drf, det_type,
       fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
-      min_valid_energy, max_valid_energy, config, foreground );
+      min_valid_energy, max_valid_energy, config, unfit_auto_peaks, foreground,
+      manual_settings.use_automatic_roi_policy, modeled_peak_candidates );
   }
 
   // Step 3: The rel-eff equation form/order is chosen per spectrum by small-sample-corrected AIC
@@ -7897,35 +8735,52 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
 
     // Step 5: Use the reusable clustering function to create ROIs
     {
-      detail::GlobalContinuumEstimate initial_shadow_continuum;
-      if( std::getenv("PEAKFIT_ROI_SHADOW_TSV")
-          || std::getenv("INTERSPEC_ROI_BOUNDARY_SHADOW") )
+      const bool have_policy_fwhm_range = (lower_fwhm_energy > 0.0)
+        && (upper_fwhm_energy > lower_fwhm_energy);
+      const auto policy_fwhm = [=, &fwhm_coefficients]( const double energy ) {
+        const double eval_energy = have_policy_fwhm_range
+          ? std::clamp(energy, lower_fwhm_energy, upper_fwhm_energy) : energy;
+        return static_cast<double>( DetectorPeakResponse::peakResolutionFWHM(
+            static_cast<float>(eval_energy), fwhmFnctnlForm, fwhm_coefficients) );
+      };
+      detail::GlobalContinuumEstimate initial_continuum;
+      if( manual_settings.use_automatic_roi_policy )
       {
-        const bool have_shadow_fwhm_range = (lower_fwhm_energy > 0.0)
-          && (upper_fwhm_energy > lower_fwhm_energy);
-        const auto shadow_fwhm = [=, &fwhm_coefficients]( const double energy ) {
-          const double eval_energy = have_shadow_fwhm_range
-            ? std::clamp(energy, lower_fwhm_energy, upper_fwhm_energy) : energy;
-          return static_cast<double>( DetectorPeakResponse::peakResolutionFWHM(
-              static_cast<float>(eval_energy), fwhmFnctnlForm, fwhm_coefficients) );
-        };
-        initial_shadow_continuum = detail::make_global_continuum(
-            foreground, shadow_fwhm, det_type, min_valid_energy, max_valid_energy );
+        initial_continuum = detail::make_global_continuum(
+            foreground, policy_fwhm, det_type, min_valid_energy, max_valid_energy );
       }
-      const detail::GlobalContinuumEstimate * const initial_shadow_ptr
-        = initial_shadow_continuum.valid() ? &initial_shadow_continuum : nullptr;
+      const detail::GlobalContinuumEstimate * const initial_continuum_ptr
+        = initial_continuum.valid() ? &initial_continuum : nullptr;
+      GammaClusteringSettings policy_settings = manual_settings;
+      if( manual_settings.use_automatic_roi_policy )
+        policy_settings.global_continuum = initial_continuum_ptr;
+      const std::vector<std::shared_ptr<const PeakDef>> no_unfit_peaks;
+      const std::vector<std::shared_ptr<const PeakDef>> &clustering_unfit_peaks
+        = manual_settings.use_automatic_roi_policy ? unfit_auto_peaks : no_unfit_peaks;
       const std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> rois_and_gammas
         = cluster_gammas_to_rois( {manual_rel_eff}, {source_age_and_acts}, foreground,
                                   fwhmFnctnlForm, fwhm_coefficients,
                                   lower_fwhm_energy, upper_fwhm_energy,
                                   min_valid_energy, max_valid_energy,
-                                  manual_settings, {}, nullptr, nullptr, nullptr, nullptr,
-                                  "initial manual", initial_shadow_ptr );
+                                  policy_settings, clustering_unfit_peaks,
+                                  nullptr, nullptr, nullptr, nullptr,
+                                  "initial manual", initial_continuum_ptr );
 
       initial_rois.clear();
       initial_rois.reserve( rois_and_gammas.size() );
       for( const std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &p : rois_and_gammas )
+      {
         initial_rois.push_back( p.first );
+        if( modeled_peak_candidates )
+        {
+          for( size_t peak_index = 0; peak_index < p.second.gamma_energies.size(); ++peak_index )
+          {
+            const double area = (peak_index < p.second.gamma_amplitudes.size())
+              ? p.second.gamma_amplitudes[peak_index] : 0.0;
+            modeled_peak_candidates->emplace_back( p.second.gamma_energies[peak_index], area );
+          }
+        }
+      }
     }
 
     if( should_debug_print() )
@@ -7946,7 +8801,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     initial_rois = estimate_initial_rois_fallback(
       auto_search_peaks, clean_matched_peaks, foreground, sources, drf, det_type,
       fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
-      manual_settings );
+      manual_settings, unfit_auto_peaks, modeled_peak_candidates );
 
     fallback_warning = "RelActManual fitting failed (" + std::string(e.what())
                      + "); used empirical peak-area activity estimation fallback";
@@ -7970,11 +8825,25 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     std::vector<std::pair<double,double>> found_energy_fwhm;
     found_energy_fwhm.reserve( peaks_matched.size() );
     for( const RelActCalcManual::GenericPeakInfo &pk : peaks_matched )
+    {
       found_energy_fwhm.emplace_back( pk.m_energy, pk.m_fwhm );
+      if( modeled_peak_candidates )
+      {
+        const std::vector<std::pair<double,double>>::iterator existing = std::find_if(
+            std::begin(*modeled_peak_candidates), std::end(*modeled_peak_candidates),
+            [&pk]( const std::pair<double,double> &candidate ) {
+              return std::fabs(candidate.first - pk.m_energy) < 1.0e-6;
+            } );
+        if( existing == std::end(*modeled_peak_candidates) )
+          modeled_peak_candidates->emplace_back( pk.m_energy, pk.m_counts );
+        else
+          existing->second = std::max( existing->second, pk.m_counts );
+      }
+    }
 
     const size_t num_seeded = seed_tight_rois_for_found_peaks(
         initial_rois, found_energy_fwhm, sm_found_peak_roi_half_num_fwhm,
-        min_valid_energy, max_valid_energy );
+        min_valid_energy, max_valid_energy, manual_settings.use_automatic_roi_policy );
 
     if( should_debug_print() && num_seeded )
       std::cout << "Seeded " << num_seeded << " tight ROI(s) for found+matched auto-search peak(s)"
@@ -7989,6 +8858,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   const std::shared_ptr<const SpecUtils::Measurement> &orig_foreground,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::vector<RelActCalcAuto::RoiRange> &input_rois,
+  const std::vector<std::pair<double,double>> &initial_modeled_peak_candidates,
   const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &orig_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
@@ -8002,12 +8872,14 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs )
 {
   PeakFitResult result;
+  result.automatic_roi_diagnostics = detail::take_automatic_roi_diagnostics();
 
   const bool fit_norm_peaks = user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaks)
                               || user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse);
   const bool norm_peaks_dont_use = user_options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse);
   const bool disable_auto_interferer_fit
     = user_options.testFlag(FitSrcPeaksOptions::DisableAutoInterfererFit);
+  const bool use_automatic_roi_policy = fit_norm_peaks || disable_auto_interferer_fit;
   const bool apply_energy_cal_between = config.fit_energy_cal
                                         && !user_options.testFlag(FitSrcPeaksOptions::DoNotVaryEnergyCal)
                                         && !user_options.testFlag(FitSrcPeaksOptions::DoNotRefineEnergyCal);
@@ -8327,6 +9199,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   };
 
   vector<ExistingRoiInfo> existing_roi_ranges;
+  std::vector<RelActCalcAuto::RoiRange> protected_mixed_rois;
 
   // In default mode, tracks bystander peaks from mixed ROIs (existing ROIs containing both
   // same-source and other-source peaks). After the fit, these bystanders are updated with
@@ -8437,6 +9310,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           );
 
           options.rois.push_back( mixed_roi );
+          protected_mixed_rois.push_back( mixed_roi );
         }
         // else: all same-source, no trimming needed (fit will replace these peaks)
       }//for( roi_groups )
@@ -8705,23 +9579,43 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   // Lambda to filter a set of ROIs against existing_roi_ranges (populated in DoNotUseExistingRois
   // mode with all user ROIs, or in default mode with other-source-only ROIs).  Used for each
   // iteration of the refinement loop, so that refined ROIs also avoid existing user ROIs.
-  const auto filter_rois_for_existing = [&]( std::vector<RelActCalcAuto::RoiRange> rois )
+  const auto filter_rois_for_existing = [&](
+      std::vector<RelActCalcAuto::RoiRange> rois,
+      const std::shared_ptr<const SpecUtils::Measurement> &working_foreground )
     -> std::vector<RelActCalcAuto::RoiRange>
   {
     if( existing_roi_ranges.empty() )
       return rois;
 
+    std::vector<ExistingRoiInfo> working_existing_roi_ranges = existing_roi_ranges;
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> original_cal
+      = orig_foreground->energy_calibration();
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> working_cal
+      = working_foreground ? working_foreground->energy_calibration() : original_cal;
+    if( original_cal && working_cal && (original_cal != working_cal) )
+    {
+      for( ExistingRoiInfo &existing : working_existing_roi_ranges )
+      {
+        existing.lower_energy = working_cal->energy_for_channel(
+            original_cal->channel_for_energy(existing.lower_energy) );
+        existing.upper_energy = working_cal->energy_for_channel(
+            original_cal->channel_for_energy(existing.upper_energy) );
+        for( double &peak_mean : existing.peak_means )
+          peak_mean = working_cal->energy_for_channel(
+              original_cal->channel_for_energy(peak_mean) );
+      }
+    }
+
     const double overlap_buffer_kev = 1.0;
     const double min_roi_channels = 5.0;
-    const std::shared_ptr<const SpecUtils::EnergyCalibration> energy_cal
-      = orig_foreground->energy_calibration();
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> energy_cal = working_cal;
 
     std::vector<RelActCalcAuto::RoiRange> result_rois;
     result_rois.reserve( rois.size() );
 
     for( RelActCalcAuto::RoiRange roi : rois )
     {
-      for( const ExistingRoiInfo &existing : existing_roi_ranges )
+      for( const ExistingRoiInfo &existing : working_existing_roi_ranges )
       {
         if( !((roi.lower_energy < existing.upper_energy) && (roi.upper_energy > existing.lower_energy)) )
           continue;
@@ -8863,92 +9757,80 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   {
     assert( !do_not_use_existing_rois );
     
-    // For each user peak that falls within one of our candidate ROIs:
-    //   - If the peak has a source matching one of the input sources (or NORM), we ignore it
-    //     in the fit entirely and mark it for removal (it will be replaced by the fit result).
-    //   - Otherwise, we add it as a FloatingPeak so the fit accounts for it, and mark it for
-    //     potential replacement depending on the fit outcome.
+    // Treat a shared user continuum atomically.  A policy boundary may touch only one peak in a
+    // mixed ROI; enrolling that peak alone would resize the continuum out from under its sibling.
+    std::map<const PeakContinuum *, std::vector<std::shared_ptr<const PeakDef>>> roi_groups;
     for( const std::shared_ptr<const PeakDef> &peak : user_peaks )
     {
       assert( peak );
-      if( !peak )
-        continue;
+      if( peak )
+        roi_groups[peak->continuum().get()].push_back( peak );
+    }
 
-      const double peak_energy = peak->mean();
-
-      // Check if this peak falls within any of our candidate ROIs
-      //  TODO: we should probably check if the existing peak is within ~1.5 sigma of the edges of the ROI and include it (combine ROIs) if so (the ~1.5 sigma should be part of PeakFitForNuclideConfig).  When we do this, we will have to be careful we then dont accidentally overlap with other ROIs we've defined.
-      bool in_a_roi = false;
-      for( const RelActCalcAuto::RoiRange &roi : options.rois )
-      {
-        if( (peak_energy >= roi.lower_energy) && (peak_energy <= roi.upper_energy) )
-        {
-          in_a_roi = true;
-          break;
-        }
-      }
-      if( !in_a_roi )
-        continue;
-
-      if( peak_source_is_in_fit(peak) )
-      {
-        // This existing peak is assigned to one of our sources — ignore it in the fit,
-        // and mark it for removal (the fit will produce a replacement peak).
-        existing_peaks_added_as_floating.emplace_back( peak, peak_energy );
-      }else
-      {
-        // Bystander peak: add as a FloatingPeak so the fit can account for it.
-        RelActCalcAuto::FloatingPeak fp;
-        fp.energy = peak_energy;
-        fp.release_fwhm = false;
-        fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum;
-        options.floating_peaks.push_back( fp );
-
-        existing_peaks_added_as_floating.emplace_back( peak, peak_energy );
-      }
-    }// for( user_peaks )
-
-    // For existing ROIs that have NO peaks inside any candidate ROI, add them to
-    //  existing_roi_ranges so the candidate ROIs will be trimmed to avoid overlap.
-    //  (ROIs whose peaks ARE inside candidate ROIs are handled as bystanders above.)
+    for( const std::pair<const PeakContinuum *const,
+             std::vector<std::shared_ptr<const PeakDef>>> &roi_group : roi_groups )
     {
-      std::set<const PeakContinuum *> touched_continuums;
-      for( const auto &orig_and_energy : existing_peaks_added_as_floating )
-        touched_continuums.insert( orig_and_energy.first->continuum().get() );
-
-      std::map<const PeakContinuum *, size_t> seen_continuums;
-      for( const std::shared_ptr<const PeakDef> &peak : user_peaks )
-      {
-        if( !peak || touched_continuums.count( peak->continuum().get() ) )
-          continue;
-
-        const PeakContinuum * const cont = peak->continuum().get();
-        const std::map<const PeakContinuum *, size_t>::const_iterator it = seen_continuums.find( cont );
-        if( it == seen_continuums.end() )
-        {
-          seen_continuums[cont] = existing_roi_ranges.size();
-          ExistingRoiInfo info;
-          info.lower_energy = peak->lowerX();
-          info.upper_energy = peak->upperX();
-          info.peak_means.push_back( peak->mean() );
-          existing_roi_ranges.push_back( info );
-        }
-        else
-        {
-          existing_roi_ranges[it->second].peak_means.push_back( peak->mean() );
-        }
-      }
-
-      // Sort existing_roi_ranges by energy for deterministic trimming order
-      std::sort( existing_roi_ranges.begin(), existing_roi_ranges.end(),
-        []( const ExistingRoiInfo &a, const ExistingRoiInfo &b ) {
-          return a.lower_energy < b.lower_energy;
+      const std::vector<std::shared_ptr<const PeakDef>> &peaks = roi_group.second;
+      assert( !peaks.empty() );
+      const bool touched = std::any_of( std::begin(peaks), std::end(peaks),
+        [&options]( const std::shared_ptr<const PeakDef> &peak ) {
+          return std::any_of( std::begin(options.rois), std::end(options.rois),
+            [&peak]( const RelActCalcAuto::RoiRange &roi ) {
+              return (peak->mean() >= roi.lower_energy) && (peak->mean() <= roi.upper_energy);
+            } );
         } );
 
-      // Re-filter candidate ROIs to avoid overlapping untouched existing ROIs
-      if( !existing_roi_ranges.empty() )
-        options.rois = filter_rois_for_existing( options.rois );
-    }
+      if( !touched )
+      {
+        ExistingRoiInfo info;
+        info.lower_energy = peaks.front()->lowerX();
+        info.upper_energy = peaks.front()->upperX();
+        for( const std::shared_ptr<const PeakDef> &peak : peaks )
+          info.peak_means.push_back( peak->mean() );
+        existing_roi_ranges.push_back( info );
+        continue;
+      }
+
+      bool has_bystander = false;
+      for( const std::shared_ptr<const PeakDef> &peak : peaks )
+      {
+        const double peak_energy = peak->mean();
+        if( !peak_source_is_in_fit(peak) )
+        {
+          has_bystander = true;
+          RelActCalcAuto::FloatingPeak fp;
+          fp.energy = peak_energy;
+          fp.release_fwhm = false;
+          fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum;
+          options.floating_peaks.push_back( fp );
+        }
+        existing_peaks_added_as_floating.emplace_back( peak, peak_energy );
+      }
+
+      if( has_bystander )
+      {
+        RelActCalcAuto::RoiRange protected_roi;
+        protected_roi.lower_energy = peaks.front()->lowerX();
+        protected_roi.upper_energy = peaks.front()->upperX();
+        protected_roi.continuum_type = peaks.front()->continuum()->type();
+        protected_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+        options.rois.erase( std::remove_if( std::begin(options.rois), std::end(options.rois),
+          [&protected_roi]( const RelActCalcAuto::RoiRange &roi ) {
+            return (roi.lower_energy < protected_roi.upper_energy)
+                && (roi.upper_energy > protected_roi.lower_energy);
+          } ), std::end(options.rois) );
+        options.rois.push_back( protected_roi );
+        protected_mixed_rois.push_back( protected_roi );
+      }
+    }//for( roi_groups )
+
+    std::sort( existing_roi_ranges.begin(), existing_roi_ranges.end(),
+      []( const ExistingRoiInfo &a, const ExistingRoiInfo &b ) {
+        return a.lower_energy < b.lower_energy;
+      } );
+
+    if( !existing_roi_ranges.empty() )
+      options.rois = filter_rois_for_existing( options.rois, orig_foreground );
   }// if( existing_peaks_as_free && !user_peaks.empty() )
 
 
@@ -8979,6 +9861,14 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       vector<InitialRoi> initial_src_norm_info_rois;
       for( const RelActCalcAuto::RoiRange &roi : options.rois )
       {
+        const bool protected_geometry = std::any_of(
+            std::begin(protected_mixed_rois), std::end(protected_mixed_rois),
+            [&roi]( const RelActCalcAuto::RoiRange &protected_roi ) {
+              return (std::fabs(roi.lower_energy - protected_roi.lower_energy) < 1.0e-6)
+                  && (std::fabs(roi.upper_energy - protected_roi.upper_energy) < 1.0e-6);
+            } );
+        if( protected_geometry )
+          continue;  // reinsert unchanged after automatic source/NORM reconciliation
         InitialRoi roi_info;
         roi_info.roi = roi;
         roi_info.center_energy = 0.5*(roi.upper_energy + roi.lower_energy);
@@ -9017,11 +9907,32 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           }
         }
 
+        for( const std::pair<double,double> &candidate : initial_modeled_peak_candidates )
+        {
+          if( (candidate.first >= roi.lower_energy) && (candidate.first <= roi.upper_energy) )
+          {
+            roi_info.modeled_energies.push_back( candidate.first );
+            roi_info.modeled_areas.push_back( candidate.second );
+          }
+        }
+        if( !roi_info.modeled_energies.empty() )
+        {
+          const std::vector<double>::const_iterator dominant = std::max_element(
+              std::begin(roi_info.modeled_areas), std::end(roi_info.modeled_areas) );
+          const size_t dominant_index = static_cast<size_t>(
+              dominant - std::begin(roi_info.modeled_areas) );
+          roi_info.center_energy = roi_info.modeled_energies[dominant_index];
+          roi_info.estimated_amplitude = *dominant;
+        }
+
         initial_src_norm_info_rois.push_back( roi_info );
       }//for( const RelActCalcAuto::RoiRange &roi : options.rois )
 
       options.rois = merge_rois( initial_src_norm_info_rois, config, {}, orig_foreground,
-                                 global_cont.valid() ? &global_cont : nullptr );
+                                 global_cont.valid() ? &global_cont : nullptr,
+                                 &result.automatic_roi_diagnostics, "source/NORM merge" );
+      options.rois.insert( std::end(options.rois), std::begin(protected_mixed_rois),
+                           std::end(protected_mixed_rois) );
 
       RelActCalcAuto::RelEffCurveInput norm_rel_eff_curve;
       norm_rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
@@ -9116,8 +10027,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   try
   {
     // Resolve any overlapping ROIs (may occur from escape peak ROIs)
-    resolve_overlapping_rois( options.rois, options.floating_peaks );
-    ensure_min_channel_gap( options.rois, orig_foreground->energy_calibration() );
+    resolve_automatic_overlapping_rois( options.rois, options.floating_peaks,
+        orig_foreground, global_cont.valid() ? &global_cont : nullptr, global_fwhm_at,
+        unfit_auto_peaks, config, "initial escape/overlap finalization",
+        &result.automatic_roi_diagnostics, protected_mixed_rois,
+        initial_modeled_peak_candidates,
+        use_automatic_roi_policy );
     remove_floating_peaks_without_roi( options );
 
     // Change 2: a genuinely-empty ROI set is a valid empty result, NOT a setup error.  With the
@@ -9154,8 +10069,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
       add_floating_511_peak_if_appropriate( no_ecal_opts, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
       add_escape_peak_floating_peaks_if_appropriate( no_ecal_opts, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
-      resolve_overlapping_rois( no_ecal_opts.rois, no_ecal_opts.floating_peaks );
-      ensure_min_channel_gap( no_ecal_opts.rois, orig_foreground->energy_calibration() );
+      resolve_automatic_overlapping_rois( no_ecal_opts.rois, no_ecal_opts.floating_peaks,
+          orig_foreground, global_cont.valid() ? &global_cont : nullptr, global_fwhm_at,
+          unfit_auto_peaks, config, "no-ecal escape/overlap finalization",
+          &result.automatic_roi_diagnostics, protected_mixed_rois,
+          initial_modeled_peak_candidates,
+          use_automatic_roi_policy );
       remove_floating_peaks_without_roi( no_ecal_opts );
 
       RelActCalcAuto::RelActAutoSolution no_ecal_solution = RelActCalcAuto::solve(
@@ -9224,8 +10143,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
         add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
 
-        resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
-        ensure_min_channel_gap( desperation_opts.rois, orig_foreground->energy_calibration() );
+        resolve_automatic_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks,
+            orig_foreground, global_cont.valid() ? &global_cont : nullptr, global_fwhm_at,
+            unfit_auto_peaks, config, "desperation escape/overlap finalization",
+            &result.automatic_roi_diagnostics, protected_mixed_rois,
+            initial_modeled_peak_candidates,
+            use_automatic_roi_policy );
         remove_floating_peaks_without_roi( desperation_opts );
 
         desperation_solution = RelActCalcAuto::solve( desperation_opts, orig_foreground, orig_background, drf, auto_search_peaks, det_type );
@@ -9654,6 +10577,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             } );
           resolve_overlapping_rois( augmented_options.rois, augmented_options.floating_peaks );
           ensure_min_channel_gap( augmented_options.rois, orig_foreground->energy_calibration() );
+          AutomaticRoiDecisionDiagnostic r6_bypass;
+          r6_bypass.decision = AutomaticRoiDecision::R6LegacyBypass;
+          r6_bypass.stage = "R6 transactional coverage union";
+          r6_bypass.reason = "R6 legacy transactional geometry intentionally preserved";
+          result.automatic_roi_diagnostics.push_back( r6_bypass );
           remove_floating_peaks_without_roi( augmented_options );
 
           RelActCalcAuto::Options common_domain_source_options = augmented_options;
@@ -9885,6 +10813,51 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       for( size_t iter = 0; iter < (max_iterations + num_extra_allowed); ++iter )
       {
         bool rescue_solve_this_iteration = false;
+        std::vector<std::shared_ptr<const PeakDef>> current_unfit_auto_peaks;
+        std::vector<RelActCalcAuto::RoiRange> current_protected_mixed_rois;
+        bool calibration_guards_valid = true;
+        const auto refresh_calibrated_guards = [&]() {
+          current_unfit_auto_peaks = unfit_auto_peaks;
+          current_protected_mixed_rois.clear();
+          const std::shared_ptr<const SpecUtils::EnergyCalibration> original_cal
+            = orig_foreground->energy_calibration();
+          const std::shared_ptr<const SpecUtils::EnergyCalibration> working_cal
+            = foreground->energy_calibration();
+          if( original_cal && working_cal && (original_cal != working_cal)
+              && !unfit_auto_peaks.empty() )
+          {
+            try
+            {
+              const std::deque<std::shared_ptr<const PeakDef>> original_peaks(
+                  std::begin(unfit_auto_peaks), std::end(unfit_auto_peaks) );
+              const std::deque<std::shared_ptr<const PeakDef>> translated
+                = EnergyCal::translatePeaksForCalibrationChange(
+                    original_peaks, original_cal, working_cal );
+              current_unfit_auto_peaks.assign( std::begin(translated), std::end(translated) );
+            }catch( const std::exception &error )
+            {
+              calibration_guards_valid = false;
+              current_unfit_auto_peaks.clear();
+              result.warnings.push_back( "Could not transform automatic ROI guards into the"
+                " current calibration; stopped ROI refinement and retained the successful"
+                " incumbent (" + std::string(error.what()) + ")." );
+            }
+          }
+          for( RelActCalcAuto::RoiRange protected_roi : protected_mixed_rois )
+          {
+            if( original_cal && working_cal && (original_cal != working_cal) )
+            {
+              const double lower_channel = original_cal->channel_for_energy(
+                  protected_roi.lower_energy );
+              const double upper_channel = original_cal->channel_for_energy(
+                  protected_roi.upper_energy );
+              protected_roi.lower_energy = working_cal->energy_for_channel( lower_channel );
+              protected_roi.upper_energy = working_cal->energy_for_channel( upper_channel );
+            }
+            current_protected_mixed_rois.push_back( protected_roi );
+          }
+        };
+        refresh_calibrated_guards();
         bool rescue_transaction_failed = false;
         std::vector<RelActCalcAuto::RoiRange> proposed_rescued_rois;
         if( apply_energy_cal_between && config.fit_energy_cal )
@@ -9961,6 +10934,12 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           }
         }//if( apply_energy_cal_between && config.fit_energy_cal )
 
+        // Energy-cal refinement above re-labels foreground/SNIP channels.  Re-materialize every
+        // guard only after that advance so no policy input is left in the prior frame.
+        refresh_calibrated_guards();
+        if( !calibration_guards_valid )
+          break;
+
 
         vector<function<double(double)>> auto_rel_effs;
         vector<vector<tuple<RelActCalcAuto::SrcVariant,double,double>>> source_age_and_acts;
@@ -10036,6 +11015,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
         // Get auto clustering settings from config
         GammaClusteringSettings auto_settings = config.get_auto_clustering_settings();
+        auto_settings.use_automatic_roi_policy = use_automatic_roi_policy;
         auto_settings.global_continuum = global_cont.valid() ? &global_cont : nullptr;  // R1 step 2
 
         // Cluster gammas using current solution's relative efficiency
@@ -10047,11 +11027,36 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               fwhm_form, fwhm_coefficients,
               fwhm_lower_energy, fwhm_upper_energy,
               min_valid_energy, max_valid_energy,
-              auto_settings, unfit_auto_peaks,
+              auto_settings, current_unfit_auto_peaks,
               (!rescue_attempted && (iter == 0)) ? &marginal_rejects : nullptr,
               nullptr, nullptr,
               (!rescue_attempted && (iter == 0)) ? &fitted_cluster_predictions : nullptr,
-              "refinement " + std::to_string(iter) );
+              "refinement " + std::to_string(iter), nullptr,
+              &result.automatic_roi_diagnostics );
+        std::vector<std::pair<double,double>> current_modeled_peak_candidates;
+        for( const std::pair<RelActCalcAuto::RoiRange,ClusteredGammaInfo> &entry
+             : refined_rois_and_gammas )
+        {
+          for( size_t peak_index = 0;
+               peak_index < entry.second.gamma_energies.size(); ++peak_index )
+          {
+            const double area = (peak_index < entry.second.gamma_amplitudes.size())
+                ? entry.second.gamma_amplitudes[peak_index] : 0.0;
+            current_modeled_peak_candidates.emplace_back(
+                entry.second.gamma_energies[peak_index], area );
+          }
+        }
+        for( const std::pair<double,double> &candidate : initial_modeled_peak_candidates )
+        {
+          const bool duplicate = std::any_of(
+              std::begin(current_modeled_peak_candidates),
+              std::end(current_modeled_peak_candidates),
+              [&candidate]( const std::pair<double,double> &current_candidate ) {
+                return std::fabs(current_candidate.first - candidate.first) < 1.0e-6;
+              } );
+          if( !duplicate )
+            current_modeled_peak_candidates.push_back( candidate );
+        }
 
         // Shrink ROIs to avoid interference from unfit auto-search peaks
         const double min_fwhm_above = 0.5*config.auto_rel_eff_sol_min_fwhm_roi;
@@ -10290,23 +11295,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               return a.lower_energy < b.lower_energy;
           } );
 
-          // Restored edge ROIs (above) use their original, pre-shrink bounds and can overlap a
-          //  re-clustered neighbor.  Quietly merge any such overlaps now - extend the earlier ROI to
-          //  cover the later one and drop the later - so they are not later flagged by
-          //  resolve_overlapping_rois as a spurious non-escape-peak overlap.  (Matches that
-          //  function's merge semantics: keep the earlier ROI and widen its upper energy.)
-          for( size_t i = 1; i < refined_rois.size(); )
-          {
-            if( refined_rois[i].lower_energy <= refined_rois[i-1].upper_energy )
-            {
-              refined_rois[i-1].upper_energy = std::max( refined_rois[i-1].upper_energy,
-                                                         refined_rois[i].upper_energy );
-              refined_rois.erase( refined_rois.begin() + i );
-            }else
-            {
-              ++i;
-            }
-          }
+          // Any restored-edge overlap is reconciled by the shared policy after all late additions.
         }//if( check for dropped edge ROIs )
 
         // Change 3 (auto stage): carry the found-peak guarantee into refinement.  Re-clustering uses
@@ -10340,7 +11329,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
           const size_t num_seeded = seed_tight_rois_for_found_peaks(
               refined_rois, found_energy_fwhm, sm_found_peak_roi_half_num_fwhm,
-              min_valid_energy, max_valid_energy );
+              min_valid_energy, max_valid_energy, use_automatic_roi_policy );
 
           if( num_seeded )
           {
@@ -10407,11 +11396,14 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           std::vector<MarginalRejectedCluster> requested_only_marginals;
           if( !requested_rejected_predictions.empty() )
           {
+            GammaClusteringSettings r2_settings = auto_settings;
+            r2_settings.use_automatic_roi_policy = false;
             static_cast<void>( cluster_gammas_to_rois( {}, {}, foreground,
                 fwhm_form, fwhm_coefficients, fwhm_lower_energy, fwhm_upper_energy,
-                min_valid_energy, max_valid_energy, auto_settings, unfit_auto_peaks,
+                min_valid_energy, max_valid_energy, r2_settings, current_unfit_auto_peaks,
                 &requested_only_marginals, &requested_rejected_predictions,
-                &solution_fwhm_at_energy ) );
+                &solution_fwhm_at_energy, nullptr, "R2 requested-only reclassification",
+                nullptr, nullptr ) );
           }
           marginal_rejects = std::move( requested_only_marginals );
 
@@ -10576,6 +11568,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
           GammaClusteringSettings rescue_settings = auto_settings;
           rescue_settings.keep_significance_z = 0.0;
+          rescue_settings.use_automatic_roi_policy = false;
           size_t inspected = 0;
           for( const RankedMarginal &ranked : ranked_marginals )
           {
@@ -10586,8 +11579,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             const std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> candidates
               = cluster_gammas_to_rois( {}, {}, foreground, fwhm_form, fwhm_coefficients,
                   fwhm_lower_energy, fwhm_upper_energy, min_valid_energy, max_valid_energy,
-                  rescue_settings, unfit_auto_peaks, nullptr, &marginal.predicted_gammas,
-                  &solution_fwhm_at_energy );
+                  rescue_settings, current_unfit_auto_peaks, nullptr,
+                  &marginal.predicted_gammas, &solution_fwhm_at_energy, nullptr,
+                  "R2 bounded candidate construction", nullptr, nullptr );
 
             for( const std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &candidate : candidates )
             {
@@ -10707,6 +11701,19 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             } );
         }
 
+        // Retained mixed user ROIs are materialized by channel in the current solve calibration
+        // on every pass, even when automatic re-clustering found nothing.
+        for( const RelActCalcAuto::RoiRange &protected_roi : current_protected_mixed_rois )
+        {
+          const bool present = std::any_of( std::begin(refined_rois), std::end(refined_rois),
+            [&protected_roi]( const RelActCalcAuto::RoiRange &roi ) {
+              return (std::fabs(roi.lower_energy - protected_roi.lower_energy) < 1.0e-6)
+                  && (std::fabs(roi.upper_energy - protected_roi.upper_energy) < 1.0e-6);
+            } );
+          if( !present )
+            refined_rois.push_back( protected_roi );
+        }
+
         if( refined_rois.empty() )
         {
           // If we lost all ROIs and are not already using a PhysicalModel on the sources
@@ -10765,8 +11772,20 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             add_floating_511_peak_if_appropriate( desperation_opts, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
             add_escape_peak_floating_peaks_if_appropriate( desperation_opts, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
 
-            resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
-            ensure_min_channel_gap( desperation_opts.rois, orig_foreground->energy_calibration() );
+            if( auto_interferer_lines.empty() )
+            {
+              resolve_automatic_overlapping_rois( desperation_opts.rois,
+                  desperation_opts.floating_peaks, foreground,
+                  global_cont.valid() ? &global_cont : nullptr, solution_fwhm_at_energy,
+                  current_unfit_auto_peaks, config,
+                  "refinement desperation escape/overlap finalization",
+                  &result.automatic_roi_diagnostics, current_protected_mixed_rois,
+                  current_modeled_peak_candidates, use_automatic_roi_policy );
+            }else
+            {
+              resolve_overlapping_rois( desperation_opts.rois, desperation_opts.floating_peaks );
+              ensure_min_channel_gap( desperation_opts.rois, foreground->energy_calibration() );
+            }
             remove_floating_peaks_without_roi( desperation_opts );
 
             RelActCalcAuto::RelActAutoSolution desperation_solution = RelActCalcAuto::solve(
@@ -10796,6 +11815,25 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           std::cerr << "Have lost all ROIs!  Halting iterations to refine solution." << std::endl;
           break;
         }//if( refined_rois.empty() )
+
+        if( auto_interferer_lines.empty() )
+        {
+          resolve_automatic_overlapping_rois( refined_rois, solution.m_options.floating_peaks,
+              foreground, global_cont.valid() ? &global_cont : nullptr,
+              solution_fwhm_at_energy, current_unfit_auto_peaks, config,
+              "refinement edge/found/rescue reconciliation",
+              &result.automatic_roi_diagnostics, current_protected_mixed_rois,
+              current_modeled_peak_candidates, use_automatic_roi_policy );
+        }else
+        {
+          resolve_overlapping_rois( refined_rois, solution.m_options.floating_peaks );
+          ensure_min_channel_gap( refined_rois, foreground->energy_calibration() );
+          AutomaticRoiDecisionDiagnostic r6_bypass;
+          r6_bypass.decision = AutomaticRoiDecision::R6LegacyBypass;
+          r6_bypass.stage = "R6 refinement neighborhood retention";
+          r6_bypass.reason = "accepted R6 nuisance geometry remains legacy transactional behavior";
+          result.automatic_roi_diagnostics.push_back( r6_bypass );
+        }
         
         // Debug output: print refined ROIs with expected counts
         if( should_debug_print() )
@@ -10842,13 +11880,25 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         RelActCalcAuto::Options refined_options = solution.m_options;
         // Apply DoNotUseExistingRois filtering to refined ROIs as well, so iterative
         // re-clustering can't produce ROIs that land on existing user peaks' locations.
-        refined_options.rois = filter_rois_for_existing( refined_rois );
+        refined_options.rois = filter_rois_for_existing( refined_rois, foreground );
 
         add_floating_511_peak_if_appropriate( refined_options, sources, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy );
         add_escape_peak_floating_peaks_if_appropriate( refined_options, auto_search_peaks, fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
 
-        resolve_overlapping_rois( refined_options.rois, refined_options.floating_peaks );
-        ensure_min_channel_gap( refined_options.rois, orig_foreground->energy_calibration() );
+        if( auto_interferer_lines.empty() )
+        {
+          resolve_automatic_overlapping_rois( refined_options.rois,
+              refined_options.floating_peaks, foreground,
+              global_cont.valid() ? &global_cont : nullptr, solution_fwhm_at_energy,
+              current_unfit_auto_peaks, config,
+              "refined solve escape/overlap finalization",
+              &result.automatic_roi_diagnostics, current_protected_mixed_rois,
+              current_modeled_peak_candidates, use_automatic_roi_policy );
+        }else
+        {
+          resolve_overlapping_rois( refined_options.rois, refined_options.floating_peaks );
+          ensure_min_channel_gap( refined_options.rois, foreground->energy_calibration() );
+        }
         remove_floating_peaks_without_roi( refined_options );
 
         if( !proposed_rescued_rois.empty() )
@@ -12047,6 +13097,9 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<const PeakFitDetPrefs> &peak_fit_prefs )
 {
   assert( peak_fit_prefs );
+  // Diagnostics are per top-level fit; discard any abandoned thread-local construction from a
+  // prior exception before beginning this request.
+  static_cast<void>( detail::take_automatic_roi_diagnostics() );
   const PeakFitUtils::CoarseResolutionType det_type = peak_fit_prefs
     ? peak_fit_prefs->m_det_type
     : PeakFitUtils::coarse_det_type( foreground, nullptr );
@@ -12247,16 +13300,24 @@ PeakFitResult fit_peaks_for_nuclides(
     // - Falls back to estimate_initial_rois_without_peaks() if no peaks match
     // - Fits relative efficiency curve and clusters gammas into ROIs
     // - Falls back to estimate_initial_rois_fallback() if RelActManual fails
-    const GammaClusteringSettings manual_settings = config.get_manual_clustering_settings();
+    GammaClusteringSettings manual_settings = config.get_manual_clustering_settings();
+    const bool r6_enabled = !options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaks)
+        && !options.testFlag(FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse)
+        && !options.testFlag(FitSrcPeaksOptions::DisableAutoInterfererFit);
+    manual_settings.use_automatic_roi_policy = !r6_enabled;
+    const std::vector<std::shared_ptr<const PeakDef>> local_unfit_auto_peaks
+      = compute_unfit_auto_peaks( auto_search_peaks, user_peaks );
 
     string fallback_warning;
+    std::vector<std::pair<double,double>> initial_modeled_peak_candidates;
     const vector<RelActCalcAuto::RoiRange> source_rois = sources.empty()
       ? vector<RelActCalcAuto::RoiRange>{}
       : estimate_initial_rois_using_relactmanual(
           auto_search_peaks, foreground, sources, drf, det_type,
           fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
           min_valid_energy, max_valid_energy, manual_settings,
-          config, fallback_warning
+          config, local_unfit_auto_peaks, fallback_warning,
+          &initial_modeled_peak_candidates
         );
     
     if( !fallback_warning.empty() )
@@ -12280,7 +13341,8 @@ PeakFitResult fit_peaks_for_nuclides(
             auto_search_peaks, foreground, norm_sources, drf, det_type,
             fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
             min_valid_energy, max_valid_energy, manual_settings,
-            config, fallback_warning
+            config, local_unfit_auto_peaks, fallback_warning,
+            &initial_modeled_peak_candidates
           );
           
           if( !fallback_warning.empty() )
@@ -12293,10 +13355,6 @@ PeakFitResult fit_peaks_for_nuclides(
     }//if( use NORM peaks )
     
     
-    // Compute unfit auto-search peaks for preventing merge of ROIs with interfering peaks between
-    const std::vector<std::shared_ptr<const PeakDef>> local_unfit_auto_peaks
-      = compute_unfit_auto_peaks( auto_search_peaks, user_peaks );
-
     vector<RelActCalcAuto::RoiRange> initial_rois;
     {// Begin combine `source_rois` and `norm_rois`
       // Combine source and NORM ROIs, then merge any that overlap
@@ -12344,17 +13402,56 @@ PeakFitResult fit_peaks_for_nuclides(
           }
         }
 
+        if( manual_settings.use_automatic_roi_policy )
+        {
+          for( const std::pair<double,double> &candidate : initial_modeled_peak_candidates )
+          {
+            if( (candidate.first >= roi.lower_energy) && (candidate.first <= roi.upper_energy) )
+            {
+              roi_info.modeled_energies.push_back( candidate.first );
+              roi_info.modeled_areas.push_back( candidate.second );
+            }
+          }
+          if( !roi_info.modeled_energies.empty() )
+          {
+            const std::vector<double>::const_iterator dominant = std::max_element(
+                std::begin(roi_info.modeled_areas), std::end(roi_info.modeled_areas) );
+            const size_t dominant_index = static_cast<size_t>(
+                dominant - std::begin(roi_info.modeled_areas) );
+            roi_info.center_energy = roi_info.modeled_energies[dominant_index];
+            roi_info.estimated_amplitude = *dominant;
+          }
+        }
+
         all_roi_infos.push_back( roi_info );
       }//for( const RelActCalcAuto::RoiRange &roi : all_rois )
 
-      initial_rois = merge_rois( all_roi_infos, config, local_unfit_auto_peaks, foreground );
+      const auto initial_policy_fwhm = [=, &fwhm_coefficients]( const double energy ) {
+        const double eval_energy = have_fwhm_range
+          ? std::clamp(energy, lower_fwhm_energy, upper_fwhm_energy) : energy;
+        return static_cast<double>( DetectorPeakResponse::peakResolutionFWHM(
+            static_cast<float>(eval_energy), fwhmFnctnlForm, fwhm_coefficients) );
+      };
+      detail::GlobalContinuumEstimate initial_merge_continuum;
+      if( manual_settings.use_automatic_roi_policy )
+      {
+        initial_merge_continuum = detail::make_global_continuum(
+            foreground, initial_policy_fwhm, det_type, min_valid_energy, max_valid_energy );
+      }
+      const std::vector<std::shared_ptr<const PeakDef>> no_unfit_peaks;
+      const std::vector<std::shared_ptr<const PeakDef>> &initial_merge_unfit
+        = manual_settings.use_automatic_roi_policy ? local_unfit_auto_peaks : no_unfit_peaks;
+      initial_rois = merge_rois( all_roi_infos, config, initial_merge_unfit, foreground,
+          initial_merge_continuum.valid() ? &initial_merge_continuum : nullptr, nullptr,
+          "initial source/NORM merge", manual_settings.use_automatic_roi_policy );
     }// End combine `source_rois` and `norm_rois`
     
     
     // Call RelActAuto with initial_rois
     result = fit_peaks_for_nuclide_relactauto(
       auto_search_peaks, foreground, sources,
-      initial_rois, user_peaks, long_background, drf, options, config,
+      initial_rois, initial_modeled_peak_candidates, user_peaks, long_background,
+      drf, options, config,
       fwhmFnctnlForm, fwhm_coefficients, det_type,
       lower_fwhm_energy, upper_fwhm_energy,
       peak_fit_prefs
@@ -12368,6 +13465,10 @@ PeakFitResult fit_peaks_for_nuclides(
 
   // Add any local warnings
   result.warnings.insert( end(result.warnings), begin(local_warnings), end(local_warnings) );
+  std::vector<AutomaticRoiDecisionDiagnostic> pending_roi_diagnostics
+    = detail::take_automatic_roi_diagnostics();
+  result.automatic_roi_diagnostics.insert( std::end(result.automatic_roi_diagnostics),
+      std::begin(pending_roi_diagnostics), std::end(pending_roi_diagnostics) );
 
   return result;
 }//fit_peaks_for_nuclides

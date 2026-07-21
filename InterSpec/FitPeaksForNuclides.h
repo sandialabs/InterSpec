@@ -44,6 +44,51 @@ namespace SpecUtils
 namespace FitPeaksForNuclides
 {
 
+/** Outcome of one automatic boundary decision.  These values describe structural policy, not a
+ fitted-peak quality classification. */
+enum class AutomaticRoiDecision
+{
+  KeepSeparate,
+  MergeInseparable,
+  MergeInseparableWide,
+  UnmodeledFeatureBlocked,
+  ProtectedGeometry,
+  R6LegacyBypass
+};
+
+/** Concise, reporter-ready evidence for an automatic ROI join/partition decision. */
+struct AutomaticRoiDecisionDiagnostic
+{
+  AutomaticRoiDecision decision = AutomaticRoiDecision::KeepSeparate;
+  std::string stage;
+  std::string reason;
+  double left_lower = 0.0;
+  double left_upper = 0.0;
+  double right_lower = 0.0;
+  double right_upper = 0.0;
+  double boundary_energy = 0.0;
+  size_t boundary_channel = 0;
+  size_t calibration_num_channels = 0;
+  double separation_fwhm = 0.0;
+  double observed_valley_counts = 0.0;
+  double snip_valley_counts = 0.0;
+  double modeled_tail_counts = 0.0;
+  double modeled_tail_significance = 0.0;
+  double unexplained_excess_significance = 0.0;
+  double snip_mismatch_significance = 0.0;
+  size_t left_sideband_channels = 0;
+  size_t right_sideband_channels = 0;
+  bool sidebands_adequate = false;
+  bool unmodeled_core_blocked = false;
+  bool used_global_continuum = false;
+  double combined_width_fwhm = 0.0;
+  double width_pressure = 0.0;
+  double one_roi_aicc = 0.0;
+  double two_roi_aicc = 0.0;
+};
+
+const char *automatic_roi_decision_name( AutomaticRoiDecision decision );
+
 /** Enable/disable the verbose internal debug trace of `fit_peaks_for_nuclides` (rel-eff fit form/order,
  chi2/dof, gamma-cluster keep/drop decisions, etc.).  For development harnesses ONLY: it is a process-wide
  flag with no synchronization, so it must never be enabled during parallel GA optimization. */
@@ -243,6 +288,47 @@ namespace detail
     double restrict_lower_energy,
     double restrict_upper_energy );
 
+  /** The modeled content and proposed bounds on one side of an automatic ROI boundary. */
+  struct AutomaticRoiGroup
+  {
+    double lower = 0.0;
+    double upper = 0.0;
+    std::vector<double> peak_energies;
+    std::vector<double> peak_areas;
+    size_t joined_groups = 1;
+    bool protected_geometry = false;
+  };
+
+  struct AutomaticRoiPolicySettings
+  {
+    double merge_tail_z = 2.0;
+    double merge_clean_gap_fwhm = 1.0;
+    double continuum_aicc_penalty = 2.0;
+    double peak_core_num_fwhm = 1.0;
+    double max_width_fwhm = 12.0;
+    std::string stage;
+  };
+
+  struct AutomaticRoiPolicyResult
+  {
+    AutomaticRoiDecision decision = AutomaticRoiDecision::KeepSeparate;
+    double boundary_energy = 0.0;
+    double exclusion_lower = 0.0;
+    double exclusion_upper = 0.0;
+    AutomaticRoiDecisionDiagnostic diagnostic;
+  };
+
+  /** Decide whether adjacent automatic groups may share an ROI.  All statistical comparisons use
+   the same foreground channels and the shared current-calibration SNIP estimate. */
+  AutomaticRoiPolicyResult evaluate_automatic_roi_boundary(
+    const AutomaticRoiGroup &left,
+    const AutomaticRoiGroup &right,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const GlobalContinuumEstimate *global_continuum,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    const AutomaticRoiPolicySettings &settings );
+
   /** One accepted source-gamma group supplied to the R4 shadow boundary optimizer. */
   struct RoiBoundaryShadowGroup
   {
@@ -375,6 +461,9 @@ namespace detail
 // for the initial RelActManual stage vs subsequent RelActAuto refinement stages
 struct GammaClusteringSettings
 {
+  // False only for an R6-enabled fit, whose source incumbent and nuisance transaction must retain
+  // their complete legacy geometry behavior.  Not serialized or tuned.
+  bool use_automatic_roi_policy = true;
   double cluster_num_sigma;         // How many sigma to use for clustering gamma lines
 
   // Minimum Poisson detection significance z = S_est / sqrt(S_est + B_est) to keep a cluster,
@@ -450,6 +539,9 @@ struct PeakFitResult
   RelActCalcAuto::RelActAutoSolution::Status status;
   std::string error_message;
   std::vector<std::string> warnings;  // warnings that don't prevent success
+
+  // Structural decisions made while constructing automatic ROIs, in solve-calibration order.
+  std::vector<AutomaticRoiDecisionDiagnostic> automatic_roi_diagnostics;
 
   // Peaks after combining overlapping peaks within ROIs.
   // Peaks that are close together (within 1.5 sigma) or where a smaller peak
