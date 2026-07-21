@@ -2783,6 +2783,7 @@ nlohmann::json executeActivityFit(
   // If we got results back, format and return them using the helper function
   if( fit_results )
   {
+    result["status"] = "success";  // was initialized to "failed" above; the fit completed
     result["message"] = "Activity/Shielding fit completed successfully in GUI.";
 
     // Get detector from foreground spectrum (may be nullptr)
@@ -3430,6 +3431,7 @@ nlohmann::json executeActivityFitOneOff(
   );
 
   // Format results using the comprehensive JSON function
+  result["status"] = "success";  // was initialized to "failed" above; the fit completed
   result["success"] = true;
 
   // Get user preference for Bq vs Ci

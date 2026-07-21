@@ -1490,11 +1490,14 @@ BOOST_AUTO_TEST_CASE( test_executeIsotopics_Br82_EndToEnd )
 
   cout << "Chi2/dof = " << chi2 << " / " << dof << " = " << chi2_per_dof << endl;
 
-  // Verify chi2 and dof are in expected ranges (based on actual run results)
-  // Actual values from run: chi2=4093.1, dof=287, chi2/dof=14.26
-  BOOST_CHECK_CLOSE( chi2, 4093.1, 5.0 );  // within 5%
-  BOOST_CHECK_EQUAL( dof, 287 );
-  BOOST_CHECK_CLOSE( chi2_per_dof, 14.26, 5.0 );  // within 5%
+  // Verify chi2 and dof are in expected ranges (based on actual run results).
+  // Values updated after the master RelActAuto improvements (continuum LLS solved in doubles,
+  //  scale-invariant/equilibrated covariance, smoothed continuum floor): the fit is now much
+  //  better-conditioned - chi2/dof dropped from ~14.3 to ~1.31 (a well-behaved fit).
+  // Actual values from run: chi2=362.68, dof=277, chi2/dof=1.309
+  BOOST_CHECK_CLOSE( chi2, 362.68, 5.0 );  // within 5%
+  BOOST_CHECK_EQUAL( dof, 277 );
+  BOOST_CHECK_CLOSE( chi2_per_dof, 1.309, 5.0 );  // within 5%
 
   // Find and verify Br82 in the results
   BOOST_REQUIRE( calc_result.contains("isotopics") );
@@ -1518,10 +1521,11 @@ BOOST_AUTO_TEST_CASE( test_executeIsotopics_Br82_EndToEnd )
 
       cout << "Br82 relative activity = " << rel_act << " +- " << rel_act_uncert << endl;
 
-      // Verify relative activity is in expected range
-      // Actual value from run: 23.85 +- 0.377
-      BOOST_CHECK_CLOSE( rel_act, 23.85, 5.0 );  // within 5%
-      BOOST_CHECK_CLOSE( rel_act_uncert, 0.377, 10.0 );  // within 10%
+      // Verify relative activity is in expected range.
+      // Updated alongside the chi2/dof values above (master RelActAuto improvements).
+      // Actual value from run: 25.46 +- 0.423
+      BOOST_CHECK_CLOSE( rel_act, 25.46, 5.0 );  // within 5%
+      BOOST_CHECK_CLOSE( rel_act_uncert, 0.423, 10.0 );  // within 10%
 
       // Check that age was not fit (we didn't enable it)
       BOOST_REQUIRE( nuc.contains("age_was_fit") );

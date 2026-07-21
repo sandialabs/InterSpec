@@ -2403,6 +2403,8 @@ nlohmann::json executeGetIsotopicsConfigSchema(
   result["shielding"]["fields"]["fit_atomic_number"] = "If true, atomic number will be fitted. Only valid with 'atomic_number', not 'material'. "
     "Usually not recommended - prefer fitting areal_density instead.";
 
+  result["success"] = true;  // consistent with the other isotopics tools' result envelope
+
   return result;
 }//executeGetIsotopicsConfigSchema()
 

@@ -55,6 +55,8 @@
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
+#include "LlmTestPeakHelpers.h"
+
 using namespace std;
 using namespace boost::unit_test;
 using json = nlohmann::json;
@@ -300,7 +302,7 @@ BOOST_AUTO_TEST_CASE( test_executeMarkPeaksForActivityFit )
     add_peak_params["addToUsersPeaks"] = true;
 
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
   }
 
   // Verify all peaks were added to analysis peaks
@@ -627,15 +629,14 @@ BOOST_AUTO_TEST_CASE( test_executeModifyShieldingSourceConfig )
   {
     fit_br82_params["energy"] = energy;
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", fit_br82_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( fit_br82_params, interspec ) );
     // add_analysis_peak returns {"roi": {...}, "fitPeakEnergy": xxx} on success or {"error": "..."} on failure
     BOOST_CHECK( !add_result.contains("error") );
     BOOST_CHECK( add_result.contains("fitPeakEnergy") );
 
     json edit_peak_params;
     edit_peak_params["energy"] = energy;
-    edit_peak_params["editAction"] = "SetUseForShieldingSourceFit";
-    edit_peak_params["boolValue"] = false;
+    edit_peak_params["useForShieldingSourceFit"] = false;
     json edit_result;
     BOOST_REQUIRE_NO_THROW( edit_result = registry->executeTool( "edit_analysis_peak", edit_peak_params, interspec ) );
     BOOST_CHECK( edit_result.contains("success") );
@@ -711,15 +712,14 @@ BOOST_AUTO_TEST_CASE( test_executeModifyShieldingSourceConfig )
     fit_th232_params["source"] = "Th232";
     fit_th232_params["energy"] = 2614;
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", fit_th232_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( fit_th232_params, interspec ) );
     // add_analysis_peak returns {"roi": {...}, "fitPeakEnergy": xxx} on success or {"error": "..."} on failure
     BOOST_CHECK( !add_result.contains("error") );
     BOOST_CHECK( add_result.contains("fitPeakEnergy") );
 
     json edit_peak_params;
     edit_peak_params["energy"] = 2614;
-    edit_peak_params["editAction"] = "SetUseForShieldingSourceFit";
-    edit_peak_params["boolValue"] = true;
+    edit_peak_params["useForShieldingSourceFit"] = true;
     json edit_result;
     BOOST_REQUIRE_NO_THROW( edit_result = registry->executeTool( "edit_analysis_peak", edit_peak_params, interspec ) );
     BOOST_CHECK( edit_result.contains("success") );
@@ -797,16 +797,21 @@ BOOST_AUTO_TEST_CASE( test_executeModifyShieldingSourceConfig )
     cout << "  ✓ Only Th232 source in fit" << endl;
   }
 
-  // Test remove_source for Th232
-  cout << "Step 5c: Removing Th232 source..." << endl;
-  json remove_th232_params;
-  remove_th232_params["operation"] = "remove_source";
-  remove_th232_params["nuclide"] = "Th232";
-  json remove_th232_result;
-  BOOST_REQUIRE_NO_THROW( remove_th232_result = registry->executeTool( "modify_shielding_source_config", remove_th232_params, interspec ) );
-  BOOST_CHECK_EQUAL( remove_th232_result["success"].get<bool>(), true );
+  // Step 5c: Remove the Th232 source.  The modify_shielding_source_config `remove_source` operation
+  //  was intentionally retired (see LlmActivityFitTool.cpp, 2025-12-08 - adding/removing a source
+  //  directly was deemed too arbitrary); a source is now dropped by unmarking its peaks for the
+  //  shielding/source fit.
+  cout << "Step 5c: Removing Th232 source (by unmarking its peak)..." << endl;
+  {
+    json edit_peak_params;
+    edit_peak_params["energy"] = 2614;
+    edit_peak_params["useForShieldingSourceFit"] = false;
+    json edit_result;
+    BOOST_REQUIRE_NO_THROW( edit_result = registry->executeTool( "edit_analysis_peak", edit_peak_params, interspec ) );
+    BOOST_CHECK_EQUAL( edit_result["success"].get<bool>(), true );
+  }
 
-  // Verify Th232 was removed
+  // Verify Th232 is no longer a source in the fit
   BOOST_REQUIRE_NO_THROW( get_config = registry->executeTool( "get_shielding_source_config", json::object(), interspec ) );
   BOOST_REQUIRE( get_config["config"]["sources"].is_array() );
   BOOST_CHECK_EQUAL( get_config["config"]["sources"].size(), 0 );
@@ -818,8 +823,7 @@ BOOST_AUTO_TEST_CASE( test_executeModifyShieldingSourceConfig )
   {
     json edit_peak_params;
     edit_peak_params["energy"] = energy;
-    edit_peak_params["editAction"] = "SetUseForShieldingSourceFit";
-    edit_peak_params["boolValue"] = true;
+    edit_peak_params["useForShieldingSourceFit"] = true;
     BOOST_REQUIRE_NO_THROW( registry->executeTool( "edit_analysis_peak", edit_peak_params, interspec ) );
   }
   
@@ -996,7 +1000,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_SinglePeak )
   add_peak_params["nuclide"] = "Br82";  // Assign nuclide
 
   json add_result;
-  BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
+  BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
   cout << "Added Br82 peak at 554.35 keV" << endl;
 
   // Test single peak mode - provide peak_energies to tell it which peaks to use
@@ -1191,12 +1195,11 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_WithAge )
   for( const double energy : ba133_peaks_energies )
   {
     fit_ba133_params["energy"] = energy;
-    BOOST_REQUIRE_NO_THROW( registry->executeTool( "add_analysis_peak", fit_ba133_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( LlmTestHelpers::add_analysis_peak_sync( fit_ba133_params, interspec ) );
     
     json edit_peak_params;
     edit_peak_params["energy"] = energy;
-    edit_peak_params["editAction"] = "SetUseForShieldingSourceFit";
-    edit_peak_params["boolValue"] = false;
+    edit_peak_params["useForShieldingSourceFit"] = false;
     BOOST_REQUIRE_NO_THROW( registry->executeTool( "edit_analysis_peak", edit_peak_params, interspec ) );
   }
   
@@ -1309,7 +1312,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_CustomMode )
     add_peak_params["nuclide"] = "Br82";  // Assign nuclide
     
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
     BOOST_REQUIRE( !add_result.contains("error") );
     BOOST_REQUIRE( !add_result.contains("error") );
     BOOST_REQUIRE( add_result.contains("fitPeakEnergy") );
@@ -1548,7 +1551,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_TraceSource )
     add_peak_params["nuclide"] = "Br82";
 
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
     BOOST_REQUIRE( !add_result.contains("error") );
     cout << "Added Br82 peak at " << add_result["fitPeakEnergy"].get<double>() << " keV" << endl;
   }
@@ -1756,7 +1759,7 @@ BOOST_AUTO_TEST_CASE( test_TraceActivityStringParsing )
     add_peak_params["addToUsersPeaks"] = true;
     add_peak_params["nuclide"] = "Br82";
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
   }
 
   // Test 1: "/cm3" format
