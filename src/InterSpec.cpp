@@ -5783,8 +5783,8 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
     
     
     std::shared_ptr<SpecMeas> dummy;
-    setSpectrum( dummy, {}, SpecUtils::SpectrumType::Background, 0 );
-    setSpectrum( dummy, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
+    setSpectrum( dummy, {}, SpecUtils::SpectrumType::Background, {} );
+    setSpectrum( dummy, {}, SpecUtils::SpectrumType::SecondForeground, {} );
     
     string filename = meas->filename();
     if( name && name->value_size() )
