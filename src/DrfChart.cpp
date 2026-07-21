@@ -40,6 +40,7 @@
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
@@ -49,6 +50,9 @@ using namespace Wt;
 DrfChart::DrfChart()
 : WContainerWidget(),
   m_detector( nullptr ),
+  m_showAngles( false ),
+  m_sourceDistance( 25.0 * PhysicalUnits::cm ),
+  m_intrinsic( false ),
   m_jsgraph( jsRef() + ".chart" )
 {
   addStyleClass( "DrfChart" );
@@ -66,7 +70,7 @@ DrfChart::DrfChart()
 void DrfChart::updateChart( std::shared_ptr<const DetectorPeakResponse> det )
 {
   m_detector = det;
-  
+
   // Generate and send detector data using DetectorPeakResponse JSON generation
   string detectorData = (!det || !det->isValid()) ? string("null") : det->toJSON();
   const string detectorJs = m_jsgraph + ".setDetectorData(" + detectorData + ");";
@@ -74,7 +78,48 @@ void DrfChart::updateChart( std::shared_ptr<const DetectorPeakResponse> det )
     doJavaScript( detectorJs );
   else
     m_pendingJs.push_back( detectorJs );
+
+  pushAngleSeries();
 } //DrfChart::updateChart()
+
+
+void DrfChart::pushAngleSeries()
+{
+  const string series = (m_showAngles && m_detector && m_detector->isValid())
+                          ? m_detector->responseAngleSeriesJSON( m_sourceDistance )
+                          : string("null");
+  const string js = m_jsgraph + ".setResponseSeries(" + series + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//DrfChart::pushAngleSeries()
+
+
+void DrfChart::setShowResponseAngles( const bool show )
+{
+  m_showAngles = show;
+  pushAngleSeries();
+}//DrfChart::setShowResponseAngles(...)
+
+
+void DrfChart::setSourceDistance( const double distance )
+{
+  m_sourceDistance = (distance > 0.0) ? distance : m_sourceDistance;
+  pushAngleSeries();
+}//DrfChart::setSourceDistance(...)
+
+
+void DrfChart::setIntrinsicEfficiency( const bool intrinsic )
+{
+  m_intrinsic = intrinsic;
+  const string js = m_jsgraph + ".setEfficiencyMode('"
+                    + string(intrinsic ? "intrinsic" : "absolute") + "');";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//DrfChart::setIntrinsicEfficiency(...)
 
 
 void DrfChart::defineJavaScript()

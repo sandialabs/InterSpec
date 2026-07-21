@@ -46,6 +46,38 @@
   color: var(--interspec-fainter-text-color, #888);
 }
 
+.MakeMcResponseForDrf .McUpgradeNote
+{
+  font-size: smaller;
+  color: var(--interspec-warning-color, #a35d00);
+  margin: 2px 0 4px 0;
+}
+
+.MakeMcResponseForDrf .McAnchorInfo
+{
+  font-size: smaller;
+  margin: 2px 0;
+}
+
+.MakeMcResponseForDrf .McChartBox
+{
+  margin-top: 6px;
+}
+
+.MakeMcResponseForDrf .McChartCtrlRow
+{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.MakeMcResponseForDrf .McChart
+{
+  width: 100%;
+  height: 260px;
+}
+
 .MakeMcResponseForDrf .McRunRow
 {
   margin-top: 6px;

@@ -173,6 +173,11 @@ DrfChart = function (elem, options) {
   this.plotGroup = this.chartArea.append("g")
     .attr("clip-path", "url(#drfchart-clip-" + this.chart.id + ")");
 
+  // Group for the per-angle response curves + uncertainty bands (drawn under
+  // the flat efficiency/FWHM lines).
+  this.angleGroup = this.plotGroup.append("g")
+    .attr("class", "drf-angle-series");
+
   // Add paths for lines
   this.efficiencyPath = this.plotGroup.append("path")
     .attr("class", "efficiency-line")
@@ -180,9 +185,20 @@ DrfChart = function (elem, options) {
     .style("stroke-width", "2px");
 
   this.fwhmPath = this.plotGroup.append("path")
-    .attr("class", "fwhm-line") 
+    .attr("class", "fwhm-line")
     .style("fill", "none")
     .style("stroke-width", "2px");
+
+  // Legend for the per-angle curves (only shown when response angles are set).
+  this.angleLegend = this.chartArea.append("g")
+    .attr("class", "drf-angle-legend");
+
+  // Per-angle response visualization state.
+  this.responseSeries = null;     // parsed {angles, onAxisSolidAngleFraction, ...} or null
+  this.effMode = "absolute";      // "absolute" (per emitted gamma) | "intrinsic"
+  this.effIsLog = false;          // efficiency Y-axis currently logarithmic?
+  // Colors for 0, 22.5, 45, 62.5, 90 degrees.
+  this.angleColors = ["#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd", "#d62728"];
 
   // Initialize mouse interaction variables
   this.leftMouseDown = null;
@@ -350,10 +366,13 @@ DrfChart.prototype.setXAxisRange = function(minEnergy, maxEnergy) {
   
   // Update efficiency line
   this.updateEfficiencyLine();
-  
+
   // Update FWHM line if available
   this.updateFwhmLine();
-  
+
+  // Update the per-angle response curves
+  this.updateAngleSeries();
+
   // Notify C++ of range change if needed
   // this.WtEmit(this.chart.id, {name: 'xRangeChanged'}, minEnergy, maxEnergy);
 };
@@ -382,13 +401,16 @@ DrfChart.prototype.updateYAxisRanges = function() {
   );
   
   if (visibleData.length === 0) return;
-  
-  // Update efficiency scale
-  const efficiencyExtent = d3.extent(visibleData, d => d.efficiency);
-  if (efficiencyExtent[0] !== undefined && efficiencyExtent[1] !== undefined) {
-    this.efficiencyScale.domain( drfChartEfficiencyDomain(efficiencyExtent) );
-    this.leftYAxisGroup.call(this.leftYAxis);
-    this.adjustLeftMargin();
+
+  // Update efficiency scale (skipped in angle mode: updateAngleSeries owns the
+  // logarithmic efficiency axis there).
+  if (!this.responseSeries) {
+    const efficiencyExtent = d3.extent(visibleData, d => d.efficiency);
+    if (efficiencyExtent[0] !== undefined && efficiencyExtent[1] !== undefined) {
+      this.efficiencyScale.domain( drfChartEfficiencyDomain(efficiencyExtent) );
+      this.leftYAxisGroup.call(this.leftYAxis);
+      this.adjustLeftMargin();
+    }
   }
 
   // Update FWHM scale if we have FWHM data
@@ -438,50 +460,236 @@ DrfChart.prototype.setDetectorData = function(detectorData) {
 
 
 DrfChart.prototype.updateEfficiencyLine = function() {
+  // In angle mode the flat curve is the angle-flat (far-field / infinite-plane)
+  // intrinsic reference; it is only meaningful in the intrinsic view, and the
+  // efficiency axis is owned by updateAngleSeries (do not reset it here).
+  const angleMode = !!this.responseSeries;
+  if (angleMode && this.effMode === "absolute") {
+    this.efficiencyPath.style("display", "none");
+    return;
+  }
+
   if (!this.detector || !this.detector.hasEfficiency()) {
     this.efficiencyPath.style("display", "none");
     return;
   }
-  
+
   // Generate efficiency data points
   let efficiencyPoints = [];
-  
+
   // Get current x-axis domain
   const xDomain = this.xScale.domain();
   const minEnergy = xDomain[0];
   const maxEnergy = xDomain[1];
   const numPoints = Math.max(100, Math.min(600, Math.floor(this.chartAreaWidth / 2)));
-  
+
   // Generate points using the detector class
   for (let i = 0; i < numPoints; i++) {
     const energy = minEnergy + (i / (numPoints - 1)) * (maxEnergy - minEnergy);
     const efficiency = this.detector.efficiency(energy);
-    
+
     // Skip invalid efficiency values
     if (efficiency === null || !isFinite(efficiency) || efficiency < 0) {
       continue;
     }
-    
+
     efficiencyPoints.push({ energy: energy, efficiency: efficiency });
   }
-  
+
   if (efficiencyPoints.length === 0) {
     this.efficiencyPath.style("display", "none");
     return;
   }
-  
-  // Update efficiency scale based on the generated points
-  const efficiencyExtent = d3.extent(efficiencyPoints, d => d.efficiency);
-  if (efficiencyExtent[0] !== undefined && efficiencyExtent[1] !== undefined) {
-    this.efficiencyScale.domain( drfChartEfficiencyDomain(efficiencyExtent) );
-    this.leftYAxisGroup.call(this.leftYAxis);
-    this.adjustLeftMargin();
+
+  // Update efficiency scale based on the generated points (linear view only;
+  // in angle mode updateAngleSeries owns the (log) efficiency domain).
+  if (!angleMode) {
+    const efficiencyExtent = d3.extent(efficiencyPoints, d => d.efficiency);
+    if (efficiencyExtent[0] !== undefined && efficiencyExtent[1] !== undefined) {
+      this.efficiencyScale.domain( drfChartEfficiencyDomain(efficiencyExtent) );
+      this.leftYAxisGroup.call(this.leftYAxis);
+      this.adjustLeftMargin();
+    }
   }
 
-  // Update the efficiency line
+  // Update the efficiency line (in intrinsic angle mode this is the far-field
+  // reference; skip points that fall outside a log domain).
+  if (angleMode)
+    efficiencyPoints = efficiencyPoints.filter(d => d.efficiency > 0);
   this.efficiencyPath.datum(efficiencyPoints)
     .attr("d", this.efficiencyLine)
+    .classed("drf-far-ref", angleMode)  // dashed far-field reference in angle mode
     .style("display", null);
+};
+
+
+// --- per-angle response visualization --------------------------------------
+
+// Receives the JSON from DetectorPeakResponse::responseAngleSeriesJSON (or null
+// to clear). Switches the efficiency Y-axis to logarithmic while angle curves
+// are shown (efficiency spans decades), and restores linear otherwise.
+DrfChart.prototype.setResponseSeries = function(series) {
+  const hadSeries = !!this.responseSeries;
+  this.responseSeries = (series && series.angles && series.angles.length) ? series : null;
+  const haveSeries = !!this.responseSeries;
+
+  if (haveSeries !== hadSeries) {
+    // Swap the efficiency scale type; keep its pixel range.
+    const range = this.efficiencyScale.range();
+    this.efficiencyScale = (haveSeries ? d3.scale.log().clamp(true) : d3.scale.linear())
+      .range(range);
+    this.leftYAxis.scale(this.efficiencyScale);
+    this.effIsLog = haveSeries;
+    if (!haveSeries)
+      this.leftYAxis.tickFormat(d => drfChartFormatSigFigs(d, 2));
+  }
+
+  this.updateEfficiencyLine();  // flat reference (intrinsic) / hidden (absolute)
+  this.updateAngleSeries();
+};
+
+
+// Selects intrinsic (per-gamma-striking-face) vs absolute (per-emitted-gamma).
+DrfChart.prototype.setEfficiencyMode = function(mode) {
+  this.effMode = (mode === "intrinsic") ? "intrinsic" : "absolute";
+  this.updateEfficiencyLine();
+  this.updateAngleSeries();
+};
+
+
+// Maps a stored {energy,eff,sigma,flagged} pair to the plotted efficiency for
+// the current mode (absolute as-sampled; intrinsic = absolute / on-axis solid
+// angle fraction).
+DrfChart.prototype.anglePlotValue = function(rawEff) {
+  if (this.effMode !== "intrinsic")
+    return rawEff;
+  const f = this.responseSeries ? this.responseSeries.onAxisSolidAngleFraction : 0;
+  return (f > 0) ? (rawEff / f) : rawEff;
+};
+
+
+DrfChart.prototype.updateAngleSeries = function() {
+  const g = this.angleGroup;
+
+  if (!this.responseSeries) {
+    g.selectAll("*").remove();
+    this.angleLegend.selectAll("*").remove();
+    this.leftYAxisLabel.text("Efficiency");
+    return;
+  }
+
+  const self = this;
+  const xDomain = this.xScale.domain();
+
+  // Build the plotted series (energy, val, lo, hi) within the visible x-range.
+  const series = this.responseSeries.angles.map(function(a, idx) {
+    const pts = [];
+    for (let i = 0; i < a.pairs.length; i++) {
+      const p = a.pairs[i];
+      if (p.energy < xDomain[0] || p.energy > xDomain[1]) continue;
+      const v = self.anglePlotValue(p.eff);
+      if (!(v > 0) || !isFinite(v)) continue;
+      const s = self.anglePlotValue(p.sigma);
+      pts.push({ energy: p.energy, val: v,
+                 lo: Math.max(v - s, v * 0.02), hi: v + s, flagged: p.flagged });
+    }
+    return { thetaDeg: a.thetaDeg, worstFlag: a.worstFlag,
+             color: self.angleColors[idx % self.angleColors.length], pts: pts };
+  }).filter(s => s.pts.length > 1);
+
+  if (series.length === 0) {
+    g.selectAll("*").remove();
+    this.angleLegend.selectAll("*").remove();
+    return;
+  }
+
+  // Efficiency (log) Y-domain over every plotted point (+ its upper band), and
+  // the flat far-field reference when it is shown (intrinsic mode).
+  let vmin = Infinity, vmax = -Infinity;
+  series.forEach(s => s.pts.forEach(function(d){
+    vmin = Math.min(vmin, d.val); vmax = Math.max(vmax, d.hi);
+  }));
+  if (this.effMode === "intrinsic" && this.detector && this.detector.hasEfficiency()) {
+    for (let i = 0; i <= 20; i++) {
+      const e = xDomain[0] + (i/20)*(xDomain[1]-xDomain[0]);
+      const eff = this.detector.efficiency(e);
+      if (eff > 0 && isFinite(eff)) { vmin = Math.min(vmin, eff); vmax = Math.max(vmax, eff); }
+    }
+  }
+  if (!isFinite(vmin) || !isFinite(vmax) || vmax <= 0) {
+    g.selectAll("*").remove(); this.angleLegend.selectAll("*").remove(); return;
+  }
+  vmin = Math.max(vmin, vmax * 1e-4);  // keep the log axis to ~4 decades
+  this.efficiencyScale.domain([vmin, vmax]);
+  this.leftYAxis.tickFormat(function(d){
+    const l = Math.log10(d);
+    return (Math.abs(l - Math.round(l)) < 1e-6) ? d.toExponential(0) : "";
+  });
+  this.leftYAxisGroup.call(this.leftYAxis);
+  this.leftYAxisLabel.text(this.effMode === "intrinsic"
+      ? "Intrinsic efficiency"
+      : ("Absolute efficiency @ " + drfChartFormatSigFigs(this.responseSeries.distanceCm, 3) + " cm"));
+  this.adjustLeftMargin();
+
+  const line = d3.svg.line()
+    .x(d => self.xScale(d.energy))
+    .y(d => self.efficiencyScale(d.val));
+  const band = d3.svg.area()
+    .x(d => self.xScale(d.energy))
+    .y0(d => self.efficiencyScale(Math.max(d.lo, self.efficiencyScale.domain()[0])))
+    .y1(d => self.efficiencyScale(d.hi));
+
+  // Uncertainty bands (accuracy cue), drawn under the lines.
+  const bandSel = g.selectAll("path.drf-angle-band").data(series);
+  bandSel.enter().append("path").attr("class", "drf-angle-band");
+  bandSel.exit().remove();
+  g.selectAll("path.drf-angle-band")
+    .attr("d", d => band(d.pts))
+    .style("fill", d => d.color)
+    .style("stroke", "none")
+    .style("opacity", 0.12);
+
+  // Angle lines.
+  const lineSel = g.selectAll("path.drf-angle-line").data(series);
+  lineSel.enter().append("path").attr("class", "drf-angle-line")
+    .style("fill", "none").style("stroke-width", "1.5px");
+  lineSel.exit().remove();
+  g.selectAll("path.drf-angle-line")
+    .attr("d", d => line(d.pts))
+    .style("stroke", d => d.color);
+
+  this.updateEfficiencyLine();  // reflow the flat reference onto the new scale
+  this.drawAngleLegend(series);
+};
+
+
+DrfChart.prototype.drawAngleLegend = function(series) {
+  const lg = this.angleLegend;
+  lg.selectAll("*").remove();
+
+  const fmtDeg = d => (Math.abs(d - Math.round(d)) < 0.05) ? d.toFixed(0) : d.toFixed(1);
+  const rows = series.map(s => ({
+    color: s.color, cls: null,
+    text: fmtDeg(s.thetaDeg) + "°" + ((s.worstFlag && s.worstFlag !== "ok") ? " (" + s.worstFlag + ")" : "")
+  }));
+  // The dashed flat curve (drawn only in the intrinsic view) is the angle-flat
+  // far-field / infinite-plane reference; give it a matching dashed swatch.
+  if (this.effMode === "intrinsic")
+    rows.push({ color: null, cls: "efficiency-line drf-far-ref", text: "far-field (∞)" });
+
+  const x = this.chartAreaWidth - 150, y0 = 6, dy = 14;
+  const g = lg.append("g").attr("transform", `translate(${x},${y0})`);
+  rows.forEach(function(r, i){
+    const row = g.append("g").attr("transform", `translate(0,${i*dy})`);
+    const swatch = row.append("line").attr("x1", 0).attr("x2", 16).attr("y1", 4).attr("y2", 4)
+      .style("stroke-width", "2px");
+    if (r.cls)
+      swatch.attr("class", r.cls);          // inherit line color + dash from CSS
+    else
+      swatch.style("stroke", r.color);
+    row.append("text").attr("x", 20).attr("y", 8)
+      .attr("class", "drf-angle-legend-text").text(r.text);
+  });
 };
 
 
@@ -653,9 +861,12 @@ DrfChart.prototype.handleResize = function() {
   
   // Update efficiency line
   this.updateEfficiencyLine();
-  
+
   // Update FWHM line
   this.updateFwhmLine();
+
+  // Reflow the per-angle response curves onto the resized scales
+  this.updateAngleSeries();
 };
 
 // Examine all rendered left Y-axis tick labels, find the minimum number of
@@ -664,6 +875,17 @@ DrfChart.prototype.handleResize = function() {
 DrfChart.prototype.reformatLeftYAxisLabels = function() {
   const tickNodes = this.leftYAxisGroup.selectAll("text");
   if (tickNodes.empty()) return 0;
+
+  // In log (angle) mode the axis tickFormat already labels only the decade
+  // ticks (blank elsewhere); leave the labels as-is and just measure width.
+  if (this.effIsLog) {
+    let maxWidth = 0;
+    tickNodes.each(function() {
+      const w = this.getBBox().width;
+      if (w > maxWidth) maxWidth = w;
+    });
+    return maxWidth;
+  }
 
   // Collect the numeric values D3 bound to each tick element.
   const values = [];

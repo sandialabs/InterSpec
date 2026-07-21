@@ -88,6 +88,20 @@ div.DrfChartTooltip {
   fill: var(--d3spec-chart-area-color, transparent);
 }
 
+/* Per-angle response curves + legend (efficiency-transfer visualization).
+   Line/band colors are set inline per angle in DrfChart.js. */
+.DrfChart .drf-angle-legend-text {
+  font-size: 10px;
+  fill: var(--d3spec-axis-color, #333);
+}
+
+/* In intrinsic angle mode the flat "efficiency-line" is the angle-flat
+   far-field / infinite-plane reference: draw it dashed to distinguish it from
+   the per-angle solid curves (class toggled from DrfChart.js). */
+.DrfChart .efficiency-line.drf-far-ref {
+  stroke-dasharray: 4 3;
+}
+
 /* Responsive design considerations */
 @media screen and (max-width: 600px) {
   .DrfChart .axis-label {

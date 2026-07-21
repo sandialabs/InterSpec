@@ -48,7 +48,19 @@ protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   std::shared_ptr<const DetectorPeakResponse> m_detector;
-  
+
+  /** Whether to draw the per-angle response curves (only meaningful when the
+   detector has a Monte-Carlo / transfer parameterized response). */
+  bool m_showAngles;
+
+  /** Source distance (PhysicalUnits) the absolute per-angle curves are drawn
+   at; also where the near-field validity flag is evaluated. */
+  double m_sourceDistance;
+
+  /** True = show intrinsic (per-gamma-striking-face) efficiency; false =
+   absolute (per-emitted-gamma) at #m_sourceDistance. */
+  bool m_intrinsic;
+
   /** The javascript variable name used to refer to the DrfChart object.
    Currently is `jsRef() + ".chart"`.
    */
@@ -68,9 +80,27 @@ public:
   virtual ~DrfChart();
   
   void updateChart( std::shared_ptr<const DetectorPeakResponse> det );
-  
+
   /** Set the x-axis range from C++ */
   void setXAxisRange( double minEnergy, double maxEnergy );
+
+  /** Enables/disables the per-angle response curves (0, 22.5, 45, 62.5, 90
+   degrees) plus the angle-flat far-field reference.  No effect for detectors
+   without a Monte-Carlo / transfer parameterized response. */
+  void setShowResponseAngles( const bool show );
+
+  /** Source distance (in PhysicalUnits) the absolute per-angle curves are
+   evaluated at; re-samples and pushes the angle series. */
+  void setSourceDistance( const double distance );
+
+  /** Selects intrinsic (per-gamma-striking-face) vs absolute
+   (per-emitted-gamma) efficiency for the per-angle curves. */
+  void setIntrinsicEfficiency( const bool intrinsic );
+
+protected:
+  /** Re-samples the per-angle series (at #m_sourceDistance) and pushes it to
+   the client, or clears it when angle curves are disabled / unavailable. */
+  void pushAngleSeries();
 };//class DrfChart
 
 #endif //DrfChart_h

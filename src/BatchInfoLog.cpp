@@ -810,6 +810,12 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                      = SpecUtils::printCompact( 100.0*peak.drfEffFracUncert, 3 );
     }
 
+    // Validity flag of the detector-efficiency query at this energy/geometry;
+    //  present only when the query fell outside the responses validated
+    //  regime (near-field, refuse-grade off-axis, shadowed, clamped).
+    if( peak.drfEffFlag != DetectorPeakResponse::EffFlag::Ok )
+      peak_json["DrfEffFlag"] = DetectorPeakResponse::effFlagName( peak.drfEffFlag );
+
     // True-coincidence (cascade) summing correction applied to the predicted
     //  counts; present only when the `correct_for_cascade_summing` option was
     //  on and this peaks nuclide has coincident emissions.

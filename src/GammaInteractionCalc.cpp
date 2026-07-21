@@ -4824,6 +4824,32 @@ std::vector<double> ShieldingSourceChi2Fcn::peakEffFracUncerts() const
   return uncerts;
 }//peakEffFracUncerts()
 
+
+std::vector<std::pair<double,DetectorPeakResponse::EffFlag>>
+                                 ShieldingSourceChi2Fcn::peakDrfEffFlags() const
+{
+  if( !m_detector || !m_detector->isValid() || m_detector->isFixedGeometry() )
+    return {};
+
+  // Same geometry the forward model evaluates each peak at (see the detector
+  //  fold-in in energy_chi_contributions()).
+  const double off_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
+                                  + m_sourceOffsets[1]*m_sourceOffsets[1] );
+  const double eval_theta = (off_r > 0.0) ? std::atan2(off_r, m_distance) : 0.0;
+  const double eval_phi = (off_r > 0.0) ? std::atan2(m_sourceOffsets[1], m_sourceOffsets[0]) : 0.0;
+  const double true_dist = trueSourceToDetectorDistance();
+
+  std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> answer;
+  for( const double energy : includedPeakEnergies() )
+  {
+    const DetectorPeakResponse::EffEval eval = m_detector->fepEfficiencyEval(
+                    static_cast<float>(energy), eval_theta, eval_phi, true_dist );
+    answer.emplace_back( energy, eval.flag );
+  }
+
+  return answer;
+}//peakDrfEffFlags()
+
 double ShieldingSourceChi2Fcn::backgroundNormalizationFactor() const
 {
   return m_backgroundPeakScale;
@@ -5243,7 +5269,8 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
                                            const std::map<double,double> &energy_count_map,
                                            vector<string> *info,
                                            vector<GammaInteractionCalc::PeakDetail> *log_info,
-                                           const std::vector<double> *eff_frac_uncerts )
+                                           const std::vector<double> *eff_frac_uncerts,
+                                           const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags )
 {
   size_t included_peak_index = 0;  //parallels #includedPeakEnergies ordering
 
@@ -5315,6 +5342,11 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     double eff_frac_uncert = 0.0;
     if( eff_frac_uncerts && (included_peak_index < eff_frac_uncerts->size()) )
       eff_frac_uncert = (*eff_frac_uncerts)[included_peak_index];
+
+    DetectorPeakResponse::EffFlag eff_flag = DetectorPeakResponse::EffFlag::Ok;
+    if( eff_flags && (included_peak_index < eff_flags->size()) )
+      eff_flag = (*eff_flags)[included_peak_index].second;
+
     ++included_peak_index;
     
     if( eff_frac_uncert > 0.0 )
@@ -5388,6 +5420,7 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
           log_peak.observedCounts = observed_counts;
           log_peak.observedUncert = observed_uncertainty;
           log_peak.drfEffFracUncert = eff_frac_uncert;
+          log_peak.drfEffFlag = eff_flag;
           
           log_peak.numSigmaOff = chi;
           log_peak.observedOverExpected = scale;
@@ -6087,22 +6120,26 @@ vector<PeakResultPlotInfo>
 //           << " total efficiency is " << m_detector->efficiency( energy_count.first, m_distance ) << endl;
       
       double eff;
+      DetectorPeakResponse::EffFlag eff_flag = DetectorPeakResponse::EffFlag::Ok;
       if( fixed_geom )
+      {
         eff = m_detector->intrinsicEfficiency( energy_count.first );
-      else if( m_detector->ceeloResponse() )
+      }else if( m_detector->ceeloResponse() )
       {
         // Monte-Carlo-parameterized response: near-field / off-axis aware.
         const double off_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
                                         + m_sourceOffsets[1]*m_sourceOffsets[1] );
         const double eval_theta = (off_r > 0.0) ? std::atan2(off_r, m_distance) : 0.0;
         const double eval_phi = (off_r > 0.0) ? std::atan2(m_sourceOffsets[1], m_sourceOffsets[0]) : 0.0;
-        eff = m_detector->fepEfficiencyEval( energy_count.first, eval_theta,
-                                             eval_phi, trueDist ).value;
+        const DetectorPeakResponse::EffEval eval = m_detector->fepEfficiencyEval(
+                          energy_count.first, eval_theta, eval_phi, trueDist );
+        eff = eval.value;
+        eff_flag = eval.flag;
       }else
       {
         eff = m_detector->efficiency( energy_count.first, trueDist );
       }
-      
+
       if( info )
       {
         if( energy_count.second > 0.0 )
@@ -6114,6 +6151,9 @@ vector<PeakResultPlotInfo>
               << " (solid angle)*(det intrinsic eff) from "
               << energy_count.second*PhysicalUnits::second << " cps "
               << "to " << energy_count.second*PhysicalUnits::second*eff << " cps";
+          if( eff_flag != DetectorPeakResponse::EffFlag::Ok )
+            msg << " [" << DetectorPeakResponse::effFlagName(eff_flag)
+                << ": outside the responses validated regime, uncertainty inflated]";
           info->push_back( msg.str() );
         }else
         {
@@ -6944,10 +6984,15 @@ vector<PeakResultPlotInfo>
   vector<double> eff_frac_uncerts;
   if( m_options.account_for_drf_uncert )
     eff_frac_uncerts = peakEffFracUncerts();
-  
+
+  vector<pair<double,DetectorPeakResponse::EffFlag>> eff_flags;
+  if( log_info )
+    eff_flags = peakDrfEffFlags();
+
   return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map,
                           info, log_info,
-                          eff_frac_uncerts.empty() ? nullptr : &eff_frac_uncerts );
+                          eff_frac_uncerts.empty() ? nullptr : &eff_frac_uncerts,
+                          eff_flags.empty() ? nullptr : &eff_flags );
 }//vector<PeakResultPlotInfo> energy_chi_contributions(...) const
 
   

@@ -43,6 +43,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 class PeakDef;
@@ -541,6 +542,14 @@ struct PeakDetail
    expectedCounts*drfEffFracUncert), matching the GLS-whitened fit.
    */
   double drfEffFracUncert = 0.0;
+
+  /** Detector-efficiency validity flag at this peaks energy and the fit
+   geometry (DetectorPeakResponse::EffFlag; Ok when inside the responses
+   validated regime).  Non-Ok values mean the efficiency is a transfer /
+   extrapolation with honestly inflated uncertainty - surfaced in the fit
+   warnings and the calculation log.
+   */
+  DetectorPeakResponse::EffFlag drfEffFlag = DetectorPeakResponse::EffFlag::Ok;
 
   /** True-coincidence (cascade) summing correction applied to this peaks
    expected counts (`correct_for_cascade_summing` option).  cascadeNetMult is
@@ -1358,6 +1367,16 @@ public:
    */
   std::vector<double> peakEffFracUncerts() const;
 
+  /** Detector-efficiency validity flag for each included peak (same ordering
+   as #includedPeakEnergies), evaluated at the fit geometry (distance and any
+   source offset) - i.e. the DetectorPeakResponse::EffEval::flag the forward
+   model sees.  Non-Ok flags mark queries outside the response's validated
+   regime (near-field below the validity floor, refuse-grade off-axis,
+   collimator shadowing, energy clamping) and should be surfaced as fit
+   warnings.  Empty for fixed-geometry detectors or when no detector is set.
+   */
+  std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> peakDrfEffFlags() const;
+
   double distance() const;
   
   const std::shared_ptr<const DetectorPeakResponse> &detector() const;
@@ -1422,13 +1441,17 @@ public:
   //  displayed chi agrees with the GLS-whitened (Ceres) fit that accounts for
   //  the DRF uncertainty.  Pass null (or when the DRF has no uncertainty info)
   //  for the historical statistics-only behavior.
+  //  `eff_flags`, when non-null, holds the per-peak detector-efficiency
+  //  validity flags (from #peakDrfEffFlags, same inclusion rule and order) to
+  //  record on the PeakDetail log entries.
   static std::vector<PeakResultPlotInfo> expected_observed_chis(
                               const std::vector<PeakDef> &peaks,
                               const std::vector<PeakDef> &backgroundPeaks,
                               const std::map<double,double> &energy_count_map,
                               std::vector<std::string> *info = 0,
                               std::vector<GammaInteractionCalc::PeakDetail> *log_info = nullptr,
-                              const std::vector<double> *eff_frac_uncerts = nullptr );
+                              const std::vector<double> *eff_frac_uncerts = nullptr,
+                              const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags = nullptr );
 protected:
   
   void zombieCallback( const boost::system::error_code &ec );
