@@ -208,6 +208,13 @@ add_test( NAME test_DetectionLimit
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ShieldSourcePullTrend test_ShieldSourcePullTrend.cpp )
+target_link_libraries( test_ShieldSourcePullTrend PRIVATE InterSpecLib )
+add_test( NAME TShieldSourcePullTrend
+  COMMAND $<TARGET_FILE:test_ShieldSourcePullTrend> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_MakeDrfSrcDef test_MakeDrfSrcDef.cpp )
 target_link_libraries( test_MakeDrfSrcDef PRIVATE InterSpecLib )
 add_test( NAME TMakeDrfSrcDef
@@ -300,6 +307,71 @@ add_test( NAME TFitPeaksForSources
   COMMAND $<TARGET_FILE:test_fitPeaksForSources> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+add_executable( test_BackgroundPeakRecovery test_BackgroundPeakRecovery.cpp )
+target_link_libraries( test_BackgroundPeakRecovery PRIVATE InterSpecLib )
+add_test( NAME TBackgroundPeakRecovery
+  COMMAND $<TARGET_FILE:test_BackgroundPeakRecovery> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+if( USE_LLM_INTERFACE )
+  add_executable( test_LlmToolRegistry test_LlmToolRegistry.cpp )
+  target_link_libraries( test_LlmToolRegistry PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmToolRegistry
+    COMMAND $<TARGET_FILE:test_LlmToolRegistry> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmPromptTemplate test_LlmPromptTemplate.cpp )
+  target_link_libraries( test_LlmPromptTemplate PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmPromptTemplate
+    COMMAND $<TARGET_FILE:test_LlmPromptTemplate> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmIsotopicsTool test_LlmIsotopicsTool.cpp )
+  target_link_libraries( test_LlmIsotopicsTool PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmIsotopicsTool
+    COMMAND $<TARGET_FILE:test_LlmIsotopicsTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmActivityFitTool test_LlmActivityFitTool.cpp )
+  target_link_libraries( test_LlmActivityFitTool PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmActivityFitTool
+    COMMAND $<TARGET_FILE:test_LlmActivityFitTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmRelActManualTool test_LlmRelActManualTool.cpp )
+  target_link_libraries( test_LlmRelActManualTool PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmRelActManualTool
+    COMMAND $<TARGET_FILE:test_LlmRelActManualTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmInterface test_LlmInterface.cpp )
+  target_link_libraries( test_LlmInterface PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmInterface
+    COMMAND $<TARGET_FILE:test_LlmInterface> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_AnalystChecks test_AnalystChecks.cpp )
+  target_link_libraries( test_AnalystChecks PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TAnalystChecks
+    COMMAND $<TARGET_FILE:test_AnalystChecks> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmTimeHistoryTools test_LlmTimeHistoryTools.cpp )
+  target_link_libraries( test_LlmTimeHistoryTools PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmTimeHistoryTools
+    COMMAND $<TARGET_FILE:test_LlmTimeHistoryTools> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+endif( USE_LLM_INTERFACE )
 
 add_executable( test_DetectorPeakResponse test_DetectorPeakResponse.cpp )
 target_link_libraries( test_DetectorPeakResponse PRIVATE InterSpecLib )

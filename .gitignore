@@ -23,11 +23,16 @@ infer-out/
 InterSpec_resources/app_text/convert_xml_to_csv.py
 InterSpec_resources/app_text/convert_csv_to_xml.py
 InterSpec_resources/app_text/InterSpec_string*.csv
+ca-bundle.trust-with-zscaler.crt
 GEMINI.md
 CLAUDE.md
 AGENT.md
+renamed_*
+devcontainer_prefix
+*.back
 scratch
 .devcontainer 
+test_datasets/
 
 IDB*
 

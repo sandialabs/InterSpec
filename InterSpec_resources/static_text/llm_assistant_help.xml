@@ -1,0 +1,104 @@
+    <div align="center">
+      <h1 id="llm-assistant">
+            <b>AI Assistant</b>
+      </h1>
+      <hr />
+    </div>
+
+<div style="padding-top: 10px">
+The <b>AI Assistant</b> lets you work with <b>InterSpec</b> by typing questions and
+instructions in plain language.  A large-language-model (LLM) reads your request together with
+context about the currently displayed spectrum, and then drives <b>InterSpec</b>'s own tools on
+your behalf &mdash; fitting peaks, identifying nuclides, calculating decays, adjusting energy
+calibration, running activity/shielding and isotopic analyses, and explaining what it finds.
+</div>
+
+<div style="padding-top: 10px">
+The assistant is opened as a tab (or window) titled &quot;<b>LLM Assistant</b>&quot;.  The large
+area shows the conversation, and you type into the input field at the bottom.  Results, tool
+calls, and the assistant's reasoning appear in the conversation as you go.
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2 id="llm-assistant-configuring"><b>Configuring a Provider</b></h2>
+</div>
+<div>
+<p>
+Before you can chat, the assistant needs an LLM <em>provider</em>, a <em>model</em>, and (for most
+providers) an <em>API key</em>.  If nothing is configured yet, the tool shows a
+&quot;<b>Configure LLM Provider</b>&quot; button; you can also open the settings at any time from
+the menu in the upper-right corner of the tool (&quot;<b>Configure LLM Provider&#8230;</b>&quot;).
+</p>
+<p>
+In the settings window you choose the provider (for example a hosted API endpoint or a locally
+running model), enter the API endpoint and bearer token/key, and pick the model name to use.
+Configuration is validated, and warnings are shown if, for example, the endpoint or key looks
+unset.  Your settings are saved so you do not have to re-enter them each session.
+</p>
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2 id="llm-assistant-using"><b>Asking Questions</b></h2>
+</div>
+<div>
+<p>
+Type a question or instruction and press <b>Enter</b> (or the <b>Send</b> button).  You can refer
+to the spectrum you have loaded and to peaks you have already fit &mdash; the assistant is given
+that context automatically.  Some examples of what you can ask:
+</p>
+<ul>
+  <li>&quot;What nuclides could be producing the peaks in this spectrum?&quot;</li>
+  <li>&quot;Fit the peak near 662 keV and tell me its net area.&quot;</li>
+  <li>&quot;Is the 1460 keV peak consistent with K-40 background?&quot;</li>
+  <li>&quot;Check the energy calibration against the Th-232 and K-40 lines.&quot;</li>
+  <li>&quot;Estimate the U-235 enrichment from these peaks.&quot;</li>
+  <li>&quot;What is the activity of Cs-137, assuming 5&nbsp;cm of steel shielding?&quot;</li>
+</ul>
+<p>
+The assistant works best when the peaks of interest have been fit &mdash; it can fit peaks for
+you, but you can often get better results on difficult regions by fitting them yourself first.
+It may take several tool calls to answer a single question; you will see each step appear in the
+conversation.
+</p>
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2 id="llm-assistant-menu"><b>Conversation Menu</b></h2>
+</div>
+<div>
+<p>
+The menu icon in the upper-right corner of the tool provides conversation-level actions:
+</p>
+<table style="text-align: left; border: 1px solid black; border-collapse: collapse;">
+<tr><th style="border: 1px solid black;"><b><nobr>Export Conversation as JSON</nobr></b></th>
+    <td style="border: 1px solid black;">Save the full conversation (your messages, the assistant's replies, and the tool calls it made) to a JSON file.</td></tr>
+<tr><th style="border: 1px solid black;"><b>Clear Conversation</b></th>
+    <td style="border: 1px solid black;">Discard the current conversation and start fresh.</td></tr>
+<tr><th style="border: 1px solid black;"><b>Compact Conversation</b></th>
+    <td style="border: 1px solid black;">Summarize older parts of the conversation to reduce how much context is sent to the model, while keeping the important results.  Useful for long sessions.</td></tr>
+<tr><th style="border: 1px solid black;"><b><nobr>Configure LLM Provider&#8230;</nobr></b></th>
+    <td style="border: 1px solid black;">Open the provider/model/key settings window.</td></tr>
+<tr><th style="border: 1px solid black;"><b><nobr>Reset LLM Config</nobr></b></th>
+    <td style="border: 1px solid black;">Re-read the configuration from disk and start a new session with it.</td></tr>
+<tr><th style="border: 1px solid black;"><b>Help</b></th>
+    <td style="border: 1px solid black;">Open this help page.</td></tr>
+</table>
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2 id="llm-assistant-privacy"><b>Data &amp; Privacy</b></h2>
+</div>
+<div>
+<p>
+When you send a message, your prompt is sent &mdash; along with context describing the displayed
+spectrum and its fit peaks &mdash; to the LLM provider you configured.  Anything the assistant
+needs to answer (peak energies, areas, nuclide candidates, and similar analysis data) may be
+transmitted to that provider.  Do not use a provider or model that is not approved for the
+sensitivity of the data you are analyzing.  If you need everything to stay local, configure a
+locally hosted model rather than a remote hosted API.
+</p>
+<p>
+The assistant is a tool to accelerate analysis, not a substitute for expert judgment.  Always
+review its suggested identifications and quantitative results before relying on them.
+</p>
+</div>

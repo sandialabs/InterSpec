@@ -25,9 +25,11 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <deque>
 #include <tuple>
 #include <atomic>
+#include <future>
 #include <memory>
 #include <vector>
 #include <string>
@@ -36,6 +38,7 @@
 
 
 //Forward declarations
+class SpecMeas;
 class PeakDef;
 class PeakModel;
 class InterSpec;
@@ -108,6 +111,63 @@ void fit_peak_from_double_click( InterSpec *interspec,
   
 /** Performs the automated search for peaks - setting the results to the GUI. */
 void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks );
+
+
+/** Shared, de-duplicated accessor for a `SpecMeas`'s automated-search peaks.
+
+ Guarantees that exactly one automated peak search runs per (`SpecMeas`, `sample_nums`):
+   - if the peaks are already cached, returns a ready future,
+   - if a search for these sample numbers is already in-flight, returns that same
+     shared_future (the caller blocks on `.get()`; it does NOT launch its own search),
+   - otherwise launches exactly one search on a dedicated thread, registers its
+     shared_future as in-flight, caches the result via `SpecMeas::setAutomatedSearchPeaks`,
+     and returns the future.
+
+ The search runs on its OWN `std::thread` (not the Wt ioService pool), so a caller may block
+ on `.get()` from ANY thread - including an ioService worker - without risk of deadlock, and
+ the accessor works headless (no `WServer`, e.g. unit tests / batch).  The future's value is
+ null on cancellation (`SpecMeas::peak_search_cancel_flag()`) or fit failure, so waiters never
+ hang.
+
+ @param origpeaks Existing peaks to seed the search with (the canonical value is a copy of the
+        user peaks for `sample_nums`).  If null, a copy of `meas->peaks(sample_nums)` is taken -
+        which MUST be done on the main/GUI thread (see the caution on `SpecMeas::peaks`); callers
+        running off the GUI thread must supply their own pre-made copy.
+ */
+std::shared_future<std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>>>
+get_or_launch_automated_search_peaks(
+    const std::shared_ptr<SpecMeas> &meas,
+    const std::set<int> &sample_nums,
+    const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+    const std::shared_ptr<const DetectorPeakResponse> &drf,
+    const bool isHPGe,
+    std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> origpeaks = nullptr );
+
+
+/** Ensures the background `SpecMeas`'s cached automated-search peaks have been augmented with
+ any real peaks recovered underneath the foreground peaks (background-peak recovery), so that
+ non-elevated NORM lines are not mis-flagged as elevated above background.
+
+ Obtains both foreground and background automated-search peaks via
+ `get_or_launch_automated_search_peaks(...)` (blocking on `.get()`), runs
+ `recover_background_peaks_under_foreground(...)`, and - if anything was recovered - persists the
+ augmented set via `SpecMeas::setAutomatedSearchPeaks`.  Guarded to run at most once per
+ (foreground sample numbers) pairing via `SpecMeas::hasRecoveredBackgroundForForeground`.
+
+ May block (it calls `.get()` and fits peaks), so call it either synchronously where blocking is
+ already acceptable (e.g. the analyst/LLM elevation path) or from a worker thread (the proactive
+ on-load path).  Safe to call when either spectrum is missing (it just returns).
+
+ @returns true if the background cache was augmented by this call.
+ */
+bool ensure_background_peaks_recovered(
+    const std::shared_ptr<SpecMeas> &foreground_meas,
+    const std::set<int> &foreground_samples,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground_spectrum,
+    const std::shared_ptr<SpecMeas> &background_meas,
+    const std::set<int> &background_samples,
+    const std::shared_ptr<const SpecUtils::Measurement> &background_spectrum,
+    const bool isHPGe );
 
 /** Uses the currently displayed foreground to estimate the expected FWHM for the wanted energy.
  

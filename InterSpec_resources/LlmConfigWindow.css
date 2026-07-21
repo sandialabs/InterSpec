@@ -1,0 +1,378 @@
+/* InterSpec: LLM Provider Settings window.
+   Card-based layout translated from the "LLM Provider Settings" design mockup.
+
+   Colors are driven by InterSpec's color-theme CSS variables (--interspec-text-color,
+   --interspec-background-color, --interspec-input-background, --interspec-border-color,
+   --interspec-label-color, --interspec-link-color), so the dialog follows light/dark and any custom
+   theme automatically.  Each value keeps the original design color as a fallback.  Only the semantic
+   accent colors (warning/error/success), which the theme does not define, get a small dark override
+   at the bottom. */
+
+.LlmConfigBody
+{
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--interspec-background-color, #f6f7f8);
+  color: var(--interspec-text-color, #23272b);
+  font-size: 12.5px;
+}
+
+.LcwCard
+{
+  border: 1px solid var(--interspec-border-color, #dde1e6);
+  border-radius: 8px;
+  background: var(--interspec-input-background, #fff);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  padding: 11px 12px;
+}
+
+.LcwEnableRow
+{
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.LcwCheck { margin: 0; }
+
+.LcwLabelStack
+{
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.LcwTitle { font-size: 13px; font-weight: 600; color: var(--interspec-text-color, #23272b); }
+.LcwSubtle { font-size: 11px; color: var(--interspec-label-color, #8a9099); opacity: 0.75; }
+
+.LcwActiveSummary
+{
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--interspec-link-color, #2f6fd6);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Section headers (PROVIDERS, MODELS) */
+.LcwSectionHeader
+{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.LcwSectionLabel
+{
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  color: var(--interspec-label-color, #8a9099);
+  opacity: 0.8;
+}
+.LcwModelsHeader { margin-top: 4px; }
+
+/* Providers list */
+.LcwProviders
+{
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.LcwProviderCard
+{
+  border: 1px solid var(--interspec-border-color, #dde1e6);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--interspec-input-background, #fff);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.LcwProviderCard.LcwActive { border-color: var(--interspec-link-color, #9cc2f3); }
+
+.LcwProviderHeader
+{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  background: var(--interspec-input-background, #fafbfc);
+}
+/* Faint accent tint for the active provider/model - layered over the themed background so it reads
+   on both light and dark. */
+.LcwProviderCard.LcwActive > .LcwProviderHeader
+{
+  background-image: linear-gradient(rgba(47,111,214,0.12), rgba(47,111,214,0.12));
+}
+
+.LcwChevron { color: var(--interspec-label-color, #9aa0a8); opacity: 0.7; font-size: 10px; flex: none; }
+
+.LcwProviderTitleStack
+{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.LcwProviderHost
+{
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--interspec-text-color, #23272b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.LcwProviderSub
+{
+  font-size: 11px;
+  color: var(--interspec-label-color, #8a9099);
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.LcwHeaderActive { flex: none; }
+.LcwHeaderActive input { vertical-align: middle; }
+
+/* Flat minus icon for removing a provider/model - matches RelActAutoGui's DeleteEnergyRangeOrNuc. */
+.LcwRemoveIcon, .LcwRemoveIcon:hover
+{
+  opacity: 0.6;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  flex: none;
+  align-self: center;
+}
+.LcwRemoveIcon:hover { opacity: 1.0; }
+.LcwRemoveIcon img { width: 16px; height: 16px; display: block; }
+
+.LcwProviderBody
+{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid var(--interspec-border-color, #eceff2);
+}
+
+/* Fields */
+.LcwFieldLabel
+{
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--interspec-label-color, #5b6066);
+  margin-bottom: 4px;
+}
+.LcwFieldLabelInline { font-size: 11.5px; font-weight: 600; color: var(--interspec-label-color, #5b6066); }
+
+.LcwInput
+{
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  border: 1px solid var(--interspec-border-color, #c4c8cd);
+  border-radius: 5px;
+  background: var(--interspec-input-background, #fff);
+  color: var(--interspec-text-color, #23272b);
+}
+.LcwMono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+.LcwFormatRow
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--interspec-label-color, #71777e);
+  opacity: 0.9;
+}
+.LcwBadge
+{
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--interspec-link-color, #3a6fbf);
+  background-color: var(--interspec-input-background, #e8f0fd);
+  background-image: linear-gradient(rgba(47,111,214,0.12), rgba(47,111,214,0.12));
+  border: 1px solid rgba(47,111,214,0.35);
+  border-radius: 4px;
+  padding: 1px 7px;
+}
+.LcwOverrideWrap
+{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+.LcwSelect
+{
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 11.5px;
+  border: 1px solid var(--interspec-border-color, #c4c8cd);
+  border-radius: 5px;
+  background: var(--interspec-input-background, #fff);
+  color: var(--interspec-text-color, #23272b);
+}
+
+.LcwTokenRow
+{
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.LcwTokenRow .LcwInput { flex: 1; }
+.LcwTokenRow > button { white-space: nowrap; }
+
+/* Semantic accent colors (warning/error/success): translucent boxes that read on any theme; the text
+   color is the one thing tweaked for dark mode at the bottom of this file. */
+.LcwWarn { font-size: 11px; color: #9a6a00; }
+.LcwFetchOk
+{
+  font-size: 11.5px; padding: 6px 9px; border-radius: 5px;
+  background: rgba(63,164,91,0.12); color: #1f7a3d; border: 1px solid rgba(63,164,91,0.35);
+}
+.LcwFetchErr
+{
+  font-size: 11.5px; padding: 6px 9px; border-radius: 5px;
+  background: rgba(214,69,65,0.12); color: #b3261e; border: 1px solid rgba(214,69,65,0.35);
+}
+.LcwNoModels
+{
+  font-size: 12px; color: var(--interspec-label-color, #9aa0a8); opacity: 0.85; text-align: center;
+  padding: 10px; border: 1px dashed var(--interspec-border-color, #d4d8dd); border-radius: 7px;
+}
+
+/* Model editor cards */
+.LcwModelsList { display: flex; flex-direction: column; gap: 9px; }
+.LcwModelCard
+{
+  border: 1px solid var(--interspec-border-color, #e3e6ea);
+  background: var(--interspec-input-background, #fbfcfd);
+  border-radius: 7px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.LcwModelCard.LcwActive
+{
+  border-color: var(--interspec-link-color, #9cc2f3);
+  background-image: linear-gradient(rgba(47,111,214,0.12), rgba(47,111,214,0.12));
+}
+
+.LcwModelRow1 { display: flex; align-items: flex-start; gap: 9px; }
+.LcwModelNameWrap
+{
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.LcwModelNameWrap .LcwInput, .LcwModelNameWrap .LcwSelect { width: 100%; box-sizing: border-box; }
+
+.LcwNumGrid
+{
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.LcwNumCell
+{
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 10.5px; color: var(--interspec-label-color, #71777e); opacity: 0.9; font-weight: 600;
+}
+.LcwNumInput
+{
+  box-sizing: border-box; width: 100%;
+  padding: 5px 7px; font: inherit; font-size: 12px;
+  border: 1px solid var(--interspec-border-color, #c4c8cd); border-radius: 5px;
+  background: var(--interspec-input-background, #fff); color: var(--interspec-text-color, #23272b);
+}
+
+.LcwModelRow3
+{
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  font-size: 12px; color: var(--interspec-text-color, #3a3f44);
+}
+.LcwReasonWrap
+{
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-left: auto; font-size: 11.5px; color: var(--interspec-label-color, #5b6066); font-weight: 600;
+}
+
+.LcwError
+{
+  font-size: 11px; color: #b3261e;
+  background: rgba(214,69,65,0.12); border: 1px solid rgba(214,69,65,0.35); border-radius: 5px; padding: 5px 8px;
+}
+.LcwModelError { margin-top: 2px; }
+
+/* MCP card */
+.LcwMcpCard { display: flex; flex-direction: column; gap: 10px; }
+.LcwMcpDetail { display: flex; flex-direction: column; gap: 5px; }
+
+/* XML preview - a deliberately dark "code" surface in any theme. */
+.LcwXmlPreview { margin: 0; }
+.LcwXmlPre
+{
+  display: block;
+  background: #1e2227; color: #dfe3e8;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px; line-height: 1.5;
+  padding: 12px; border-radius: 8px;
+  overflow: auto; max-height: 260px;
+  white-space: pre;
+  /* Allow the user to select/copy the generated XML. */
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+/* Footer */
+.LcwFooterLeft
+{
+  display: flex; align-items: center; gap: 12px;
+  float: left;
+}
+.LcwValidation { font-size: 11.5px; font-weight: 600; }
+.LcwValidOk { color: #1f7a3d; }
+.LcwValidWarn { color: #9a6a00; }
+
+/* Not-configured panel inside the LLM assistant */
+.LlmNotConfigured
+{
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; height: 100%; min-height: 180px; width: 100%; box-sizing: border-box;
+  padding: 24px; text-align: center;
+}
+.LlmNotConfiguredMsg { font-size: 14px; line-height: 1.5; color: var(--interspec-label-color, #5b6066); max-width: 440px; }
+
+
+/* ============================================================= */
+/* Dark theme: only the semantic accent text colors (the theme    */
+/* variables above handle everything structural), plus the black  */
+/* minus icon which needs inverting.                              */
+/* ============================================================= */
+body.dark-theme .LcwWarn,
+body.dark-theme .LcwValidWarn { color: #ffd43b; }
+body.dark-theme .LcwValidOk,
+body.dark-theme .LcwFetchOk { color: #7fdca0; }
+body.dark-theme .LcwError,
+body.dark-theme .LcwFetchErr { color: #ff8a82; }
+body.dark-theme .LcwRemoveIcon img { filter: invert(1); }

@@ -30,6 +30,7 @@
 #include <ctime>
 #include <tuple>
 #include <mutex>
+#include <thread>
 #include <locale>
 #include <vector>
 #include <string>
@@ -208,6 +209,10 @@
 #include "InterSpec/RelActManualGui.h"
 #endif
 
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
+#endif
 
 #include "js/InterSpec.js"
 
@@ -239,6 +244,9 @@ namespace
 #endif
 #if( USE_REL_ACT_TOOL )
   static const string RelActManualTitleKey(      "app-tab-isotopics" );
+#endif
+#if( USE_LLM_INTERFACE )
+static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
 #endif
 
   // The Reference Photopeak and/or the Search tab need thier widgets loaded,
@@ -482,6 +490,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_decayInfoWindow( nullptr ),
   m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
+#if( USE_LLM_INTERFACE )
+  m_llmToolMenuItem( nullptr ),
+  m_llmTool( nullptr ),
+#endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
 #endif
@@ -494,8 +506,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_currentColorThemeCssFile(),
   m_colorTheme( nullptr ),
   m_colorThemeChanged( this ),
-  m_findingHintPeaks( false ),
-  m_hintQueue{},
   m_hintPeaksSet( this ),
   m_externalRidResultsRecieved( this ),
   m_infoNotificationsMade{}
@@ -3198,7 +3208,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     saveRelActManualStateToForegroundSpecMeas();
     saveRelActAutoStateToForegroundSpecMeas();
 #endif
-    
+#if( USE_LLM_INTERFACE )
+    syncLlmHistoryToSpecMeas();
+#endif
+
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
     
@@ -3493,7 +3506,12 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->simpleMdaUri = m_simpleMdaWindow->tool()->encodeStateToUrl();
     }//if( m_simpleMdaWindow )
 #endif
-        
+    
+#if( USE_LLM_INTERFACE )
+    if( m_llmTool )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingLlmAssistant;
+#endif
+    
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
       entry.modify()->backgroundSubMode = UserState::kBackgorundSubtract;
@@ -3519,6 +3537,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
       else if( txtKey == RelActManualTitleKey )
         entry.modify()->currentTab = UserState::kRelActManualTab;
+#endif
+#if( USE_LLM_INTERFACE )
+      else if( txtKey == LlmAssistantTabTitleKey )
+        entry.modify()->currentTab = UserState::kLlmAssistantTab;
 #endif
     }//if( m_toolsTabs )
     
@@ -4027,7 +4049,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingRelActAuto) )
       relActAutoWindow(true);
 #endif
-        
+    
+#if( USE_LLM_INTERFACE )
+    if( (entry->shownDisplayFeatures & UserState::kShowingLlmAssistant)
+       && LlmToolGui::llmToolIsConfigured() )
+    {
+      createLlmTool();
+    }
+#endif
+    
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
     
@@ -4187,6 +4217,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
         case UserState::kRelActManualTab: titleKey = RelActManualTitleKey;     break;
 #endif
+#if( USE_LLM_INTERFACE )
+        case UserState::kLlmAssistantTab: titleKey = LlmAssistantTabTitleKey;  break;
+#endif
         case UserState::kNoTabs:                                               break;
       };//switch( entry->currentTab )
       
@@ -4220,6 +4253,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           case UserState::kRelActManualTab: 
             if( m_relActManualGui )
               m_toolsTabs->setCurrentWidget( m_relActManualGui );
+            break;
+  #endif
+  #if( USE_LLM_INTERFACE )
+          case UserState::kLlmAssistantTab:
+            if( m_llmTool )
+              m_toolsTabs->setCurrentWidget( m_llmTool );
             break;
   #endif
           case UserState::kNoTabs:  
@@ -5352,7 +5391,10 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
     saveRelActManualStateToForegroundSpecMeas();
     saveRelActAutoStateToForegroundSpecMeas();
   #endif
-    
+  #if( USE_LLM_INTERFACE )
+    syncLlmHistoryToSpecMeas();
+  #endif
+
     SpecMeas meas;
     meas.uniqueCopyContents( *m_dataMeasurement );
     
@@ -5990,7 +6032,10 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
     saveRelActManualStateToForegroundSpecMeas();
     saveRelActAutoStateToForegroundSpecMeas();
   #endif
-    
+  #if( USE_LLM_INTERFACE )
+    syncLlmHistoryToSpecMeas();
+  #endif
+
     return;
   }//if( !saveState || !m_dataMeasurement )
   
@@ -6058,6 +6103,9 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
 #if( USE_REL_ACT_TOOL )
       saveRelActManualStateToForegroundSpecMeas();
       saveRelActAutoStateToForegroundSpecMeas();
+#endif
+#if( USE_LLM_INTERFACE )
+      syncLlmHistoryToSpecMeas();
 #endif
       
       // Get foreground/background/secondary files, and update them to the database..
@@ -6874,9 +6922,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 //  WString tooltip = WString::tr("app-tab-tt-nuc-search");
 //  HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
-    // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
-    //  Activity tool
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
+    // Handle when the user closes the tab for the Math/Command terminal, the Manual Relative
+    //  Activity tool, or the LLM Assistant
     m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
 #endif
     
@@ -8363,6 +8411,7 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
     timestr = timestr.substr(0,ppos);
   filename += "_" + timestr + (asPng ? ".png" : ".svg");
 
+
   string illegal_chars = "\\/:?\"<>|";
   SpecUtils::erase_any_character( filename, illegal_chars.c_str() );
 
@@ -8379,11 +8428,13 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
 void InterSpec::captureSpectrumImage( const std::string &format, int maxLongestSide,
                                        std::optional<std::pair<double,double>> energyRange,
                                        std::optional<bool> yAxisLog,
+                                       std::optional<bool> backgroundSubtract,
                                        std::function<void(std::string, std::string, int, int)> callback )
 {
   if( !m_spectrum )
     throw std::runtime_error( "captureSpectrumImage: no spectrum display available" );
-  m_spectrum->captureChartImage( format, maxLongestSide, energyRange, yAxisLog, std::move( callback ) );
+  m_spectrum->captureChartImage( format, maxLongestSide, energyRange, yAxisLog,
+                                 backgroundSubtract, std::move( callback ) );
 }//captureSpectrumImage(...)
 
 
@@ -9670,8 +9721,8 @@ void InterSpec::handleTerminalWindowClose()
       m_toolsTabs->setCurrentIndex( 2 );
   }
   
-  m_terminal = 0;
-  m_terminalWindow = 0;
+  m_terminal = nullptr;
+  m_terminalWindow = nullptr;
 }//void handleTerminalWindowClose()
 #endif  //#if( USE_TERMINAL_WIDGET )
 
@@ -10037,43 +10088,41 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 #endif //#if( USE_REL_ACT_TOOL )
 
 
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
 void InterSpec::handleToolTabClosed( const int tabnum )
 {
+  // The tabClosed() signal is emitted while the widget is still docked, so widget(tabnum) still
+  //  returns the widget being closed.  Wt 3.7.1's closeTab() does NOT itself remove or delete the
+  //  widget; each per-tool close handler below is responsible for the removeTab()+delete.
+
   assert( m_toolsTabs );
   if( !m_toolsTabs )
     return;
   
   WWidget *w = m_toolsTabs->widget( tabnum );
   
-#if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
-  if( w == m_relActManualGui )
+#if( USE_LLM_INTERFACE )
+  if( w == m_llmTool )
   {
-    handleRelActManualClose();
-  }else if( w == m_terminal )
-  {
-    handleTerminalWindowClose();
-  }else
-  {
-    assert( 0 );
+    handleLlmToolClose();
+    return;
   }
-#elif( USE_TERMINAL_WIDGET )
+#endif
+
+#if( USE_TERMINAL_WIDGET )
   if( w == m_terminal )
   {
     handleTerminalWindowClose();
-  }else
-  {
-    assert( 0 );
+    return;
   }
-#elif( USE_REL_ACT_TOOL )
+#endif
+
+#if( USE_REL_ACT_TOOL )
   if( w == m_relActManualGui )
   {
     handleRelActManualClose();
-  }else
-  {
-    assert( 0 );
+    return;
   }
-  //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
   
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -10190,6 +10239,14 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
+
+#if( USE_LLM_INTERFACE )
+  // Always offer the LLM Assistant; if it is not yet configured, opening it shows a panel with a
+  // button to configure the provider/model (see LlmToolGui).
+  m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
+  HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
+  m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
+#endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -11491,6 +11548,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();
     
+#if( USE_LLM_INTERFACE )
+    // Save LLM conversation history to previous SpecMeas before switching foreground
+    syncLlmHistoryToSpecMeas();
+#endif
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -12131,6 +12192,35 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( showToolTips )
   }//if( passthrough foreground )
    */
+   
+#if( USE_LLM_INTERFACE )
+  // Load LLM conversation history from the new foreground SpecMeas.
+  //  During benchmark SpectrumSequence steps, the conversation must be preserved across
+  //  mid-sequence spectrum loads, so we skip the swap.
+  if( (spec_type == SpecUtils::SpectrumType::Foreground)
+     && meas && m_llmTool && !m_llmTool->shouldPreserveConversation() )
+  {
+    try
+    {
+      // For passthrough/search-mode data, use an empty sample set as the history key
+      //  so that conversation history persists across time range changes.
+      static const std::set<int> s_empty_sample_set;
+      const std::set<int> &currentSamples = meas->passthrough()
+        ? s_empty_sample_set
+        : (sample_numbers.empty() ? displayedSamples( spec_type ) : sample_numbers);
+
+      // Get the LLM history for these sample numbers
+      auto nativeHistoryPtr = meas->llmConversationHistory( currentSamples );
+
+      // Set the conversation history in the LLM tool
+      m_llmTool->setConversationHistory( nativeHistoryPtr );
+    }
+    catch( const std::exception& e )
+    {
+      std::cerr << "Failed to load LLM conversation history from SpecMeas: " << e.what() << std::endl;
+    }
+  }
+#endif
 }//void setSpectrum(...)
 
 
@@ -12280,10 +12370,22 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
   {
     cerr << "Caught exception '" << e.what() << "' when trying to load '"
          << path << "'" << endl;
+
+    // Not a spectrum - give the non-spectrum dispatcher a chance to claim it (DRF, CALp, LLM config,
+    //  etc.), the same way in-app drag-drop does.  Only show the invalid-file message if nothing does.
+    try
+    {
+      if( m_fileManager
+         && m_fileManager->handleNonSpectrumFile( displayFileName, path, SpecUtils::SpectrumType::Foreground ) )
+        return false;
+    }catch( std::exception & )
+    {
+    }
+
     SpecMeasManager::displayInvalidFileMsg( displayFileName, e.what() );
     return false;
   }//try / catch
-  
+
   return true;
 }//bool userOpenFileFromFilesystem( const std::string filepath )
 
@@ -12803,101 +12905,81 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                    const bool isHPGe )
 {
   assert( data );
-  if( !data )
+  if( !data || !spectrum_meas )
     return;
-  
+
+  // Snapshot the existing peaks (on this GUI thread) - used both to seed the search and, in
+  //  setHintPeaks(...), to detect peaks the user added while the search was running.
   shared_ptr<const deque<shared_ptr<const PeakDef>>> origPeaks;
   if( data->sampleNumsWithAutomatedSearchPeaks().count(samples) )
     origPeaks = data->peaks(samples);
   if( origPeaks )
-    origPeaks = make_shared<deque<shared_ptr<const PeakDef>>>( *origPeaks );
-  
-  shared_ptr<vector<shared_ptr<const PeakDef>>> searchresults = make_shared<vector<shared_ptr<const PeakDef>>>();
-  
-  const string sessionId = wApp->sessionId();
-  weak_ptr<const SpecUtils::Measurement> weakdata = spectrum_meas;
-  
-  // Grab the detector
+    origPeaks = make_shared<const deque<shared_ptr<const PeakDef>>>( *origPeaks );
+
+  // Grab the detector.  If this is the background measurement and it doesnt have a detector, try to
+  //  grab it from the foreground.
   shared_ptr<DetectorPeakResponse> drf = data->detector();
-  // If this is the background measurement, and it doesnt have a detector, try to grab it from the foreground
   if( !drf && (data != m_dataMeasurement) && (data == m_backgroundMeasurement) && m_dataMeasurement )
     drf = m_dataMeasurement->detector();
-  
-  weak_ptr<SpecMeas> spectrum = data;
 
-  boost::function<void(void)> callback = wApp->bind( boost::bind(&InterSpec::setHintPeaks,
-                this, spectrum, samples, origPeaks, searchresults
-  ) );
+  // Launch (or coalesce onto) the single shared automated search for these sample numbers.  The
+  //  search runs on its own dedicated thread, caches the result, and is honored by the SpecMeas
+  //  cancel token, so we never launch a duplicate here.
+  const std::shared_future<std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>>> fut
+    = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( data, samples, spectrum_meas, drf,
+                                                               isHPGe, origPeaks );
 
-  // Grab the SpecMeas's persistent cancel token; the worker will check it at
-  //  each cooperative point and inside the Ceres `IterationCallback`.  When
-  //  this `InterSpec` is destroyed (or the SpecMeas itself is destroyed) the
-  //  token is flipped to `true` and the worker bails within ~1 LM iteration.
-  std::shared_ptr<const std::atomic<bool>> cancel_flag = data->peak_search_cancel_flag();
+  Wt::WServer *server = Wt::WServer::instance();
+  if( !server )  //this should always be true
+    return;
 
-  boost::function<void(void)> worker = [=](){
-    PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, false, isHPGe, cancel_flag );
-  };
+  const string sessionId = wApp->sessionId();
+  const weak_ptr<SpecMeas> weak_spectrum = data;
 
+  // Wait for the search on a DEDICATED thread (not the Wt ioService pool - blocking a pool thread on
+  //  .get() for the whole search would risk starving the pool under many concurrent searches), then
+  //  deliver the result back to this session's event loop.  server->post is a no-op if the session
+  //  has gone away, so setHintPeaks only runs while this InterSpec is alive.
+  std::thread( [this, fut, sessionId, weak_spectrum, samples, origPeaks](){
+    const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> found = fut.get();
 
-  if( m_findingHintPeaks )
-  {
-    m_hintQueue.push_back( worker );
-  }else
-  {
     Wt::WServer *server = Wt::WServer::instance();
-    if( server )  //this should always be true
-    {
-      m_findingHintPeaks = true;
-      server->ioService().boost::asio::io_service::post( worker );
-    }//if( server )
-  }
+    if( server )
+      server->post( sessionId, boost::bind( &InterSpec::setHintPeaks, this, weak_spectrum,
+                                            samples, origPeaks, found ) );
+  } ).detach();
 }//void searchForHintPeaks(...)
 
 
 void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
                   std::set<int> samplenums,
                   shared_ptr<const deque< std::shared_ptr<const PeakDef>>> existing,
-                  shared_ptr<vector<std::shared_ptr<const PeakDef>>> resultpeaks )
+                  shared_ptr<const deque<std::shared_ptr<const PeakDef>>> resultpeaks )
 {
 #if( PERFORM_DEVELOPER_CHECKS )
   if( !wApp )
     log_developer_error( __func__, "setHintPeaks() being called from not within the event loop!" );
 #endif
 
-  m_findingHintPeaks = false;
-  
-  if( m_hintQueue.size() )
-  {
-    Wt::WServer *server = Wt::WServer::instance();
-    if( server )  //this should always be true
-    {
-      m_findingHintPeaks = true;
-      boost::function<void()> worker = m_hintQueue.back();
-      m_hintQueue.pop_back();
-      server->ioService().boost::asio::io_service::post( worker );
-    }//if( server )
-  }//if( m_hintQueue.size() )
-  
-
   std::shared_ptr<SpecMeas> spectrum = weak_spectrum.lock();
-  
+
   if( !spectrum || !resultpeaks )
   {
-    cerr << "InterSpec::setHintPeaks(): invalid SpecMeas" << endl;
+    // Null result => the search was canceled or failed; nothing to cache.  Still see if recovery can
+    //  run (both spectra may already have peaks from other paths).
+    startBackgroundPeakRecoveryIfReady();
     return;
-  }//if( !spectrum )
-  
-  
+  }//if( !spectrum || !resultpeaks )
+
+
   shared_ptr<deque<shared_ptr<const PeakDef>>> newpeaks
     = make_shared<deque<shared_ptr<const PeakDef>>>( resultpeaks->begin(), resultpeaks->end() );
-  
+
   //See if the user has added any peaks since we did the automated search
   shared_ptr<deque<shared_ptr<const PeakDef>>> current_user_peaks;
   if( spectrum->sampleNumsWithPeaks().count(samplenums) )
     current_user_peaks = spectrum->peaks(samplenums);
-  
+
   vector<shared_ptr<const PeakDef>> addedpeaks;
   if( current_user_peaks && !existing )
   {
@@ -12908,7 +12990,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
       if( std::find(existing->begin(),existing->end(),p) != existing->end() )
         addedpeaks.push_back( p );
   }
-  
+
   if( addedpeaks.size() )
   {
     for( shared_ptr<const PeakDef> p : addedpeaks )
@@ -12918,16 +13000,74 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
         newpeaks->insert( newpeaks->begin() + pos, p );
     }
   }//if( addedpeaks.size() )
-  
+
   spectrum->setAutomatedSearchPeaks( samplenums, newpeaks );
-  
+
   if( (spectrum == m_dataMeasurement) && (m_displayedSamples == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::Foreground);
   else if( (spectrum == m_backgroundMeasurement) && (m_backgroundSampleNumbers == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::Background);
   else if( (spectrum == m_secondDataMeasurement) && (m_sectondForgroundSampleNumbers == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::SecondForeground);
+
+  // Now that this spectrum has automated-search peaks, run background-peak recovery if both a
+  //  foreground and background are loaded (guarded to run once per pairing).
+  startBackgroundPeakRecoveryIfReady();
 }//void setHintPeaks(...)
+
+
+void InterSpec::startBackgroundPeakRecoveryIfReady()
+{
+  const std::shared_ptr<SpecMeas> fg_meas = m_dataMeasurement;
+  const std::shared_ptr<SpecMeas> bg_meas = m_backgroundMeasurement;
+  if( !fg_meas || !bg_meas || (fg_meas == bg_meas) )
+    return;
+
+  const std::shared_ptr<const SpecUtils::Measurement> fg_spectrum
+      = displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  const std::shared_ptr<const SpecUtils::Measurement> bg_spectrum
+      = displayedHistogram( SpecUtils::SpectrumType::Background );
+  if( !fg_spectrum || !bg_spectrum )
+    return;
+
+  const std::set<int> fg_samples = m_displayedSamples;
+  const std::set<int> bg_samples = m_backgroundSampleNumbers;
+  if( fg_samples.empty() || bg_samples.empty() )
+    return;
+
+  // Only proceed once both foreground and background automated-search peaks are actually cached, so
+  //  the worker below only hits the cache for them (no off-GUI-thread SpecMeas::peaks() snapshot -
+  //  the captured shared_ptrs keep those caches alive) and we dont kick off extra searches here.
+  if( !fg_meas->automatedSearchPeaks(fg_samples) || !bg_meas->automatedSearchPeaks(bg_samples) )
+    return;
+
+  // Guard: run recovery at most once per foreground/background pairing.
+  if( bg_meas->hasRecoveredBackgroundForForeground(fg_samples, bg_samples) )
+    return;
+
+  if( !Wt::WServer::instance() )
+    return;
+
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+  const std::string sessionId = wApp->sessionId();
+
+  // Recovery blocks (it fits peaks), so run it on a DEDICATED thread (not the ioService pool); then
+  //  refresh consumers of the background peaks (dynamic reference lines, shielding-source fit) on the
+  //  session event loop.
+  std::thread(
+    [this, fg_meas, fg_samples, fg_spectrum, bg_meas, bg_samples, bg_spectrum, isHPGe, sessionId]()
+  {
+    const bool changed = PeakSearchGuiUtils::ensure_background_peaks_recovered(
+        fg_meas, fg_samples, fg_spectrum, bg_meas, bg_samples, bg_spectrum, isHPGe );
+
+    if( !changed )
+      return;
+
+    Wt::WServer *server = Wt::WServer::instance();
+    if( server )
+      server->post( sessionId, [this](){ m_hintPeaksSet.emit(SpecUtils::SpectrumType::Background); } );
+  } ).detach();
+}//void startBackgroundPeakRecoveryIfReady()
 
 
 void InterSpec::excludePeaksFromRange( double x0, double x1 )
@@ -13627,3 +13767,138 @@ void InterSpec::displayBackgroundData()
   if( m_hardBackgroundSub->isEnabled() != canSub )
     m_hardBackgroundSub->setDisabled( !canSub );
 }//void displayBackgroundData()
+
+
+
+
+#if( USE_LLM_INTERFACE )
+void InterSpec::createLlmTool()
+{
+  // Note: the tool may be opened even when not configured - LlmToolGui then shows a "not configured"
+  // panel with a button to open the provider settings window.
+
+  if( m_llmTool )
+    return;
+    
+  try
+  {
+    m_llmTool = new LlmToolGui( this );
+    m_llmTool->focusInput();
+
+    // Load any existing LLM conversation history from the foreground SpecMeas
+    std::shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
+    if( meas )
+    {
+      // For passthrough/search-mode data, use an empty sample set as the history key
+      static const std::set<int> s_empty_sample_set;
+      const std::set<int> &samples = meas->passthrough()
+        ? s_empty_sample_set
+        : displayedSamples( SpecUtils::SpectrumType::Foreground );
+      std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history
+        = meas->llmConversationHistory( samples );
+      if( history && !history->empty() )
+        m_llmTool->setConversationHistory( history );
+    }
+
+    if( m_toolsTabs )
+    {
+      WMenuItem *item = m_toolsTabs->addTab( m_llmTool, WString::fromUTF8("LLM Assistant") );
+      item->setCloseable( true );
+      m_toolsTabs->setCurrentWidget( m_llmTool );
+      const int index = m_toolsTabs->currentIndex();
+      m_toolsTabs->setTabToolTip( index, WString::fromUTF8("Chat with the Large Language Model assistant for spectrum analysis help") );
+
+      // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+      //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
+    }
+
+    m_llmToolMenuItem->disable();
+  }catch( const std::exception &e )
+  {
+    std::cout << "Error creating LLM tool: " << e.what() << std::endl;
+    if( m_llmTool )
+    {
+      delete m_llmTool;
+      m_llmTool = nullptr;
+    }//if( m_llmTool )
+  }//try / catch
+}//void createLlmTool()
+
+LlmToolGui *InterSpec::currentLlmTool()
+{
+  return m_llmTool;
+}//LlmToolGui *currentLlmTool();
+
+void InterSpec::openLlmConfigForImport( const std::string &configFilePath )
+{
+  // Make sure the LLM Assistant tool/tab exists so the user lands in the assistant, and so we have
+  //  the save/apply wiring; then open the settings window pre-loaded with the dropped config.
+  createLlmTool();  // creates + switches to the tab on first use; a no-op if already created
+
+  if( !m_llmTool )
+    return;
+
+  // If the tool already existed, the user may be on a different tab - bring the assistant forward.
+  if( m_toolsTabs )
+    m_toolsTabs->setCurrentWidget( m_llmTool );
+
+  m_llmTool->openConfigWindowToImport( configFilePath );
+}//void openLlmConfigForImport( const std::string &configFilePath )
+
+void InterSpec::syncLlmHistoryToSpecMeas()
+{
+  if( !m_llmTool )
+    return;
+
+  std::shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
+  if( !meas )
+    return;
+
+  try
+  {
+    std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history
+      = m_llmTool->getConversationHistory();
+
+    // For passthrough/search-mode data, use an empty sample set as the history key
+    static const std::set<int> s_empty_sample_set;
+    const std::set<int> &samples = meas->passthrough()
+      ? s_empty_sample_set
+      : displayedSamples( SpecUtils::SpectrumType::Foreground );
+
+    if( history && !history->empty() )
+      meas->setLlmConversationHistory( samples, history );
+    else
+      meas->removeLlmConversationHistory( samples );
+  }catch( const std::exception &e )
+  {
+    std::cerr << "Failed to sync LLM history to SpecMeas: " << e.what() << std::endl;
+  }
+}//void syncLlmHistoryToSpecMeas()
+
+
+void InterSpec::handleLlmToolClose()
+{
+  if( !m_llmTool )
+    return;
+
+  syncLlmHistoryToSpecMeas();
+
+  m_llmToolMenuItem->enable();
+
+  // Wt 3.7.1's WTabWidget::closeTab() only hides the tab and emits tabClosed_; it does NOT
+  //  remove the tab from its internal vectors.  We must explicitly removeTab() before
+  //  deleting, otherwise a stale (zombie) tab entry remains and becomes visible the next
+  //  time the tool is reopened (and closing it trips the assert in handleToolTabClosed).
+  //  Guarded by indexOf() so it stays idempotent with the docking path that already removes
+  //  the tab before calling this.
+  if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool) >= 0) )
+    m_toolsTabs->removeTab( m_llmTool );
+  delete m_llmTool;
+
+  m_llmTool = nullptr;
+  
+  if( m_toolsTabs )
+    m_toolsTabs->setCurrentIndex( 2 );
+}
+#endif // USE_LLM_INTERFACE
+
