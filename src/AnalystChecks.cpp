@@ -875,6 +875,21 @@ namespace AnalystChecks
       return;
     }
 
+#if( BUILD_AS_UNIT_TEST_SUITE )
+    // The unit-test build has no GUI event loop to pump the WServer-posted work back through, so
+    //  run the fit synchronously and invoke the callback inline.  This lets the LLM tool test
+    //  suites exercise the async peak-fitting tools through the normal executeTool() path.
+    try
+    {
+      const FitPeakStatus result = fit_user_peak( options, interspec );
+      callback( result );
+    }catch( const std::exception &e )
+    {
+      callback( string("Error in fit_user_peak: ") + e.what() );
+    }
+    return;
+#endif
+
     Wt::WServer *server = Wt::WServer::instance();
     if( !server )
     {
@@ -1728,6 +1743,20 @@ namespace AnalystChecks
       callback( string("No InterSpec session available") );
       return;
     }
+
+#if( BUILD_AS_UNIT_TEST_SUITE )
+    // See fit_user_peak_async: run synchronously in the unit-test build (no GUI event loop) so the
+    //  async tool can be driven through the normal executeTool() path.
+    try
+    {
+      const FitPeaksForNuclideStatus result = fit_peaks_for_nuclides( options, interspec );
+      callback( result );
+    }catch( const std::exception &e )
+    {
+      callback( string("Error in fit_peaks_for_nuclides: ") + e.what() );
+    }
+    return;
+#endif
 
     Wt::WServer *server = Wt::WServer::instance();
     if( !server )

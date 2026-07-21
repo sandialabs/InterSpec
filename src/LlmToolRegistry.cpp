@@ -2968,7 +2968,33 @@ nlohmann::json ToolRegistry::executeTool(const std::string& toolName,
   }
 
   if( tool->isAsync() )
+  {
+#if( BUILD_AS_UNIT_TEST_SUITE )
+    // In the unit-test build the async tools run synchronously (their underlying *_async helpers
+    //  invoke the callback inline - see AnalystChecks::fit_user_peak_async), so we can drive them
+    //  through this synchronous path and return the captured result.  This lets the LLM test suites
+    //  call async tools like add_analysis_peak the same way as any other tool.
+    nlohmann::json captured;
+    std::string error_msg;
+    bool got_result = false;
+    tool->asyncExecutor( parameters, interspec, conversation, history,
+      [&captured, &error_msg, &got_result]( std::variant<nlohmann::json, std::string> result_or_error ){
+        if( const std::string *err = std::get_if<std::string>( &result_or_error ) )
+          error_msg = *err;
+        else
+          captured = std::get<nlohmann::json>( result_or_error );
+        got_result = true;
+      } );
+
+    if( !got_result )
+      throw std::runtime_error( "Async tool '" + toolName + "' did not complete synchronously in the unit-test build." );
+    if( !error_msg.empty() )
+      return nlohmann::json{ {"error", error_msg} };  // mirror the tools' {"error": ...} failure contract
+    return captured;
+#else
     throw std::runtime_error( "Tool '" + toolName + "' is async and should not be called via executeTool; use asyncExecutor instead." );
+#endif
+  }
 
   try
   {

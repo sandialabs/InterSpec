@@ -24,7 +24,6 @@
 #include "InterSpec_config.h"
 
 #include <string>
-#include <limits>
 #include <iostream>
 
 #include <Wt/Utils>
@@ -59,8 +58,6 @@
 #include "InterSpec/FitPeaksForNuclides.h"
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
-
-#include "LlmTestPeakHelpers.h"
 
 using namespace std;
 using namespace boost::unit_test;
@@ -1099,13 +1096,13 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   json fit_params_776;
   fit_params_776["energy"] = 776.52;
   fit_params_776["specType"] = "Foreground";
-  BOOST_REQUIRE_NO_THROW( LlmTestHelpers::add_analysis_peak_sync( fit_params_776, fixture.m_interspec ) );
+  BOOST_REQUIRE_NO_THROW( registry.executeTool("add_analysis_peak", fit_params_776, fixture.m_interspec) );
 
   // Fit peak at 554.35 keV
   json fit_params_554;
   fit_params_554["energy"] = 554.35;
   fit_params_554["specType"] = "Foreground";
-  BOOST_REQUIRE_NO_THROW( LlmTestHelpers::add_analysis_peak_sync( fit_params_554, fixture.m_interspec ) );
+  BOOST_REQUIRE_NO_THROW( registry.executeTool("add_analysis_peak", fit_params_554, fixture.m_interspec) );
 
   //std::cout << "Fitted peaks at 776.52 keV and 554.35 keV\n";
 
@@ -1843,10 +1840,10 @@ BOOST_AUTO_TEST_CASE( test_executeEditAnalysisPeak )
     params = json::object();
     params["energy"] = energy;
     params["specType"] = "Foreground";
-    // Store the actual fitted energy for use in tests.  add_analysis_peak is an async tool, so we
-    //  drive its synchronous fitting core via the shared helper (see LlmTestPeakHelpers.h).
+    // Store the actual fitted energy for use in tests.  add_analysis_peak is an async tool, but in
+    //  the unit-test build executeTool() drives it synchronously (see ToolRegistry::executeTool).
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( params, fixture.m_interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = registry.executeTool("add_analysis_peak", params, fixture.m_interspec) );
     if( add_result.contains("fitPeakEnergy") )
     {
       fitted_peak_energies.push_back( add_result["fitPeakEnergy"].get<double>() );

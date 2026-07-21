@@ -55,7 +55,6 @@
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
-#include "LlmTestPeakHelpers.h"
 
 using namespace std;
 using namespace boost::unit_test;
@@ -302,7 +301,7 @@ BOOST_AUTO_TEST_CASE( test_executeMarkPeaksForActivityFit )
     add_peak_params["addToUsersPeaks"] = true;
 
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
   }
 
   // Verify all peaks were added to analysis peaks
@@ -629,7 +628,7 @@ BOOST_AUTO_TEST_CASE( test_executeModifyShieldingSourceConfig )
   {
     fit_br82_params["energy"] = energy;
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( fit_br82_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", fit_br82_params, interspec ) );
     // add_analysis_peak returns {"roi": {...}, "fitPeakEnergy": xxx} on success or {"error": "..."} on failure
     BOOST_CHECK( !add_result.contains("error") );
     BOOST_CHECK( add_result.contains("fitPeakEnergy") );
@@ -712,7 +711,7 @@ BOOST_AUTO_TEST_CASE( test_executeModifyShieldingSourceConfig )
     fit_th232_params["source"] = "Th232";
     fit_th232_params["energy"] = 2614;
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( fit_th232_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", fit_th232_params, interspec ) );
     // add_analysis_peak returns {"roi": {...}, "fitPeakEnergy": xxx} on success or {"error": "..."} on failure
     BOOST_CHECK( !add_result.contains("error") );
     BOOST_CHECK( add_result.contains("fitPeakEnergy") );
@@ -1000,7 +999,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_SinglePeak )
   add_peak_params["nuclide"] = "Br82";  // Assign nuclide
 
   json add_result;
-  BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
+  BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
   cout << "Added Br82 peak at 554.35 keV" << endl;
 
   // Test single peak mode - provide peak_energies to tell it which peaks to use
@@ -1195,7 +1194,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_WithAge )
   for( const double energy : ba133_peaks_energies )
   {
     fit_ba133_params["energy"] = energy;
-    BOOST_REQUIRE_NO_THROW( LlmTestHelpers::add_analysis_peak_sync( fit_ba133_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( registry->executeTool( "add_analysis_peak", fit_ba133_params, interspec ) );
     
     json edit_peak_params;
     edit_peak_params["energy"] = energy;
@@ -1312,7 +1311,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_CustomMode )
     add_peak_params["nuclide"] = "Br82";  // Assign nuclide
     
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
     BOOST_REQUIRE( !add_result.contains("error") );
     BOOST_REQUIRE( !add_result.contains("error") );
     BOOST_REQUIRE( add_result.contains("fitPeakEnergy") );
@@ -1551,7 +1550,7 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_TraceSource )
     add_peak_params["nuclide"] = "Br82";
 
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
     BOOST_REQUIRE( !add_result.contains("error") );
     cout << "Added Br82 peak at " << add_result["fitPeakEnergy"].get<double>() << " keV" << endl;
   }
@@ -1759,7 +1758,7 @@ BOOST_AUTO_TEST_CASE( test_TraceActivityStringParsing )
     add_peak_params["addToUsersPeaks"] = true;
     add_peak_params["nuclide"] = "Br82";
     json add_result;
-    BOOST_REQUIRE_NO_THROW( add_result = LlmTestHelpers::add_analysis_peak_sync( add_peak_params, interspec ) );
+    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
   }
 
   // Test 1: "/cm3" format
