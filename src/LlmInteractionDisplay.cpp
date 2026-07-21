@@ -214,6 +214,7 @@ LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionT
   : WPanel( parent ),
     m_turn( turn ),
     m_menuIcon( nullptr ),
+    m_menu( nullptr ),
     m_bodyContainer( nullptr ),
     m_bodyCreated( false )
 {
@@ -230,6 +231,10 @@ LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionT
 
 LlmInteractionTurnDisplay::~LlmInteractionTurnDisplay()
 {
+  // PopupDivMenu is owned by the WApplication (addGlobalWidget), not by the
+  // button or this panel, so it must be explicitly deleted or it leaks.
+  delete m_menu;
+  m_menu = nullptr;
 }//~LlmInteractionTurnDisplay()
 
 
@@ -253,14 +258,29 @@ void LlmInteractionTurnDisplay::handleExpansion( bool expanded )
 
 void LlmInteractionTurnDisplay::createMenuIcon()
 {
-  // Create menu button in title bar
+  // Create menu button in title bar.  The menu itself is built lazily on first
+  // click (showMenu), so turns whose menu is never opened cost nothing - which is
+  // every turn during headless/benchmark runs.
   m_menuIcon = new WPushButton( titleBarWidget() );
   m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn" );
   m_menuIcon->clicked().preventPropagation();
+  m_menuIcon->clicked().connect( this, &LlmInteractionTurnDisplay::showMenu );
+}//createMenuIcon()
 
-  // Create popup menu
-  PopupDivMenu *menu = new PopupDivMenu( m_menuIcon, PopupDivMenu::TransientMenu );
 
+void LlmInteractionTurnDisplay::showMenu()
+{
+  if( !m_menu )
+  {
+    m_menu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
+    addMenuItems( m_menu );
+  }
+  m_menu->popup( m_menuIcon );
+}//showMenu()
+
+
+void LlmInteractionTurnDisplay::addMenuItems( PopupDivMenu *menu )
+{
   // Add "Show Full Content" menu item for all turn types
   PopupDivMenuItem *showFullContent = menu->addMenuItem( "Show Full Content" );
   showFullContent->triggered().connect( std::bind( [this]() {
@@ -307,7 +327,7 @@ void LlmInteractionTurnDisplay::createMenuIcon()
       showJsonDialog( "Response JSON", rawContent, true );
     }
   }));
-}//createMenuIcon()
+}//addMenuItems()
 
 
 void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
@@ -1035,22 +1055,10 @@ void LlmToolResultsDisplay::createBodyContent()
 }//createBodyContent()
 
 
-void LlmToolResultsDisplay::createMenuIcon()
+void LlmToolResultsDisplay::addMenuItems( PopupDivMenu *menu )
 {
-  // Call base class implementation first
-  LlmInteractionTurnDisplay::createMenuIcon();
-
-  // Find the popup menu that was created by the base class
-  if( !m_menuIcon )
-    return;
-  
-  
-
-  // Get the popup menu from the button's children
-  PopupDivMenu *menu = dynamic_cast<PopupDivMenu *>( m_menuIcon->menu() );
-  assert( menu );
-  if( !menu )
-    return;
+  // Base items first, then the tool-results-specific item
+  LlmInteractionTurnDisplay::addMenuItems( menu );
 
   // Add "Show Tool Results JSON" menu item
   PopupDivMenuItem *showToolResultsJson = menu->addMenuItem( "Show Tool Results JSON" );
@@ -1098,7 +1106,7 @@ void LlmToolResultsDisplay::createMenuIcon()
     const string jsonStr = resultsJson.dump( 2 );  // Pretty print with 2-space indent
     showJsonDialog( "Tool Results JSON", jsonStr, true );
   }));
-}//createMenuIcon()
+}//addMenuItems()
 
 
 void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTurn> turn,
@@ -1464,6 +1472,7 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     m_statusText( nullptr ),
     m_timerText( nullptr ),
     m_menuIcon( nullptr ),
+    m_menu( nullptr ),
     m_nestingLevel( nestingLevel ),
     m_isFinished( false )
 {
@@ -1598,6 +1607,11 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
 LlmInteractionDisplay::~LlmInteractionDisplay()
 {
   stopStatusTimer();
+
+  // PopupDivMenu is app-global-owned by Wt, not owned by the button/panel, so
+  // delete it explicitly to avoid leaking one menu per interaction.
+  delete m_menu;
+  m_menu = nullptr;
 }//~LlmInteractionDisplay()
 
 
@@ -1989,13 +2003,25 @@ void LlmInteractionDisplay::stopStatusTimer()
 
 void LlmInteractionDisplay::createMenuIcon()
 {
-  // Create menu button in title bar
+  // Create menu button in title bar; the menu is built lazily on first click
+  // (showMenu) so interactions whose menu is never opened cost nothing.
   m_menuIcon = new WPushButton( titleBarWidget() );
   m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn" );
   m_menuIcon->clicked().preventPropagation();
-  
-  // Create popup menu
-  PopupDivMenu *menu = new PopupDivMenu( m_menuIcon, PopupDivMenu::TransientMenu );
+  m_menuIcon->clicked().connect( this, &LlmInteractionDisplay::showMenu );
+}//createMenuIcon()
+
+
+void LlmInteractionDisplay::showMenu()
+{
+  if( m_menu )
+  {
+    m_menu->popup( m_menuIcon );
+    return;
+  }
+
+  PopupDivMenu *menu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
+  m_menu = menu;
 
   // Add "Show Initial Request" option
   PopupDivMenuItem *showInitialRequest = menu->addMenuItem( "Show Initial Request" );
@@ -2055,7 +2081,9 @@ void LlmInteractionDisplay::createMenuIcon()
   } ) );
 
   // Note: "Copy Question" menu item removed - clipboard copy only works via showJsonDialog
-}//createMenuIcon()
+
+  m_menu->popup( m_menuIcon );
+}//showMenu()
 
 
 void LlmInteractionDisplay::showJsonDialog( const WString &title,

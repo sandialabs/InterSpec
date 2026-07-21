@@ -42,6 +42,7 @@ namespace Wt
   class WTextArea;
   class WPushButton;
 }
+class PopupDivMenu;
 class LlmInteraction;
 class LlmInteractionTurn;
 class LlmToolRequest;
@@ -81,10 +82,18 @@ protected:
                       const std::string &jsonStr,
                       bool allowDownload = true );
 
-  /** Create the menu icon and popup menu in the title bar.
-   *  Derived classes can override to add custom menu items.
-   */
+  /** Create the menu icon in the title bar and wire it to lazily show the menu. */
   virtual void createMenuIcon();
+
+  /** Lazily build (first open only) and show the title-bar popup menu.
+   *  PopupDivMenu registers itself as an app-global widget (Wt addGlobalWidget),
+   *  so it is NOT owned by the button or this panel; we own m_menu and delete it
+   *  in the destructor, otherwise one menu leaks per turn for the whole session.
+   */
+  void showMenu();
+
+  /** Populate the (lazily-created) menu; derived classes override to add items. */
+  virtual void addMenuItems( PopupDivMenu *menu );
 
   /** Handle panel expansion - creates body content if not yet created */
   void handleExpansion( bool expanded );
@@ -92,6 +101,7 @@ protected:
 protected:
   std::shared_ptr<LlmInteractionTurn> m_turn;
   Wt::WPushButton *m_menuIcon;
+  PopupDivMenu *m_menu;
   Wt::WContainerWidget *m_bodyContainer;
   bool m_bodyCreated;
 };//class LlmInteractionTurnDisplay
@@ -147,7 +157,7 @@ public:
 protected:
   virtual void createBodyContent() override;
   virtual Wt::WString getTitleText() const override;
-  virtual void createMenuIcon() override;
+  virtual void addMenuItems( PopupDivMenu *menu ) override;
 
   /** Handle sub-agent conversation finishing */
   void handleSubAgentFinished( std::shared_ptr<LlmInteractionTurn> turn,
@@ -258,8 +268,14 @@ protected:
   /** Create the title text with status */
   Wt::WString getTitleWithStatus() const;
 
-  /** Create the menu icon and popup menu in the title bar */
+  /** Create the menu icon in the title bar and wire it to lazily show the menu. */
   void createMenuIcon();
+
+  /** Lazily build (first open only) and show the title-bar popup menu.
+   *  m_menu is app-global-owned by Wt, so we own it and delete it in the
+   *  destructor to avoid leaking one menu per interaction for the whole session.
+   */
+  void showMenu();
 
   /** Show a dialog displaying JSON content */
   void showJsonDialog( const Wt::WString &title,
@@ -274,6 +290,7 @@ private:
   Wt::WText *m_statusText;
   Wt::WText *m_timerText;  // Separate widget for timer display
   Wt::WPushButton *m_menuIcon;
+  PopupDivMenu *m_menu;
 
   int m_nestingLevel;  // For indentation of sub-agents
   bool m_isFinished;
