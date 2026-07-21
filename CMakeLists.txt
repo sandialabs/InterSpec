@@ -321,6 +321,8 @@ set(sources
     src/EnergyCalTool.cpp
     src/EnergyCal.cpp
     src/EnergyCalGraphical.cpp
+    src/EnergyCalUndoRedo.cpp
+    src/EnergyCalDevPairWidget.cpp
     src/EnergyCalAddActions.cpp
     src/EnergyCalPreserveWindow.cpp
     src/EnergyCalMultiFile.cpp
@@ -445,6 +447,8 @@ set(headers
     InterSpec/EnergyCalTool.h
     InterSpec/EnergyCal.h
     InterSpec/EnergyCalGraphical.h
+    InterSpec/EnergyCalUndoRedo.h
+    InterSpec/EnergyCalDevPairWidget.h
     InterSpec/EnergyCalAddActions.h
     InterSpec/EnergyCalPreserveWindow.h
     InterSpec/EnergyCalMultiFile.h

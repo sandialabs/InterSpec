@@ -387,6 +387,13 @@ add_test( NAME TGadrasShieldScatter
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ExportSpecFile test_ExportSpecFile.cpp )
+target_link_libraries( test_ExportSpecFile PRIVATE InterSpecLib )
+add_test( NAME TExportSpecFile
+  COMMAND $<TARGET_FILE:test_ExportSpecFile> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 
 #            debug "${Wt_TEST_DEBUG_LIBRARY}"

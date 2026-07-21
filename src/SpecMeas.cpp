@@ -2771,10 +2771,24 @@ void SpecMeas::cleanup_after_load( const unsigned int flags )
   }//if( !has_specific_info && m_autoSearchPeaks )
 
 
-  if( m_fileWasFromInterSpec && !(flags & SpecFile::ReorderSamplesByTime) )
-  {
-    SpecFile::cleanup_after_load( (flags | SpecFile::DontChangeOrReorderSamples) );
-  }if( has_specific_info )
+  // For files InterSpec previously wrote, keep the sample numbers as-is (unless explicitly
+  //  asked to reorder by time): the InterSpec-specific info (peaks, etc) is keyed off sample
+  //  numbers, and may not have been parsed from the file yet when this cleanup runs.
+  //  Note: prior to 20260714 a missing `else` here caused a second, non-sample-number-preserving
+  //  cleanup to also run, so InterSpec-written N42s with sample numbers not starting near 1
+  //  got renumbered while their peaks stayed keyed to the original sample numbers (orphaning
+  //  the peaks, and causing exceptions when those sample numbers were used).  That bug also
+  //  meant `DontChangeOrReorderSamples` never actually took effect for these files, so note
+  //  the trade-off it brings: `SpecFile::cleanup_after_load` uses that same flag to gate
+  //  `merge_neutron_meas_into_gamma_meas()`, so neutron-only records in an InterSpec-written
+  //  N42 will no longer be merged into their gamma records.  This is accepted: the file we
+  //  wrote was itself already merged (or merging had bailed), so the exposure is limited,
+  //  and preserving sample numbers - hence the users peaks - matters more.
+  const unsigned int use_flags = (m_fileWasFromInterSpec && !(flags & SpecFile::ReorderSamplesByTime))
+                                  ? (flags | SpecFile::DontChangeOrReorderSamples)
+                                  : flags;
+
+  if( has_specific_info )
   {
     // Grab a mapping from Measurement* to sample numbers.
     vector<pair<int,shared_ptr<const SpecUtils::Measurement>>> orig_sample_nums;
@@ -2783,7 +2797,7 @@ void SpecMeas::cleanup_after_load( const unsigned int flags )
       orig_sample_nums.emplace_back( m->sample_number_, m );
 
     // Do cleanup - which _could_ change some of the Measurements sample numbers
-    SpecFile::cleanup_after_load( flags );
+    SpecFile::cleanup_after_load( use_flags );
 
     // Now fixup m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes to use the newly assigned sample numbers
     vector<pair<int,int>> from_to_sample_nums;
@@ -2797,7 +2811,7 @@ void SpecMeas::cleanup_after_load( const unsigned int flags )
       change_sample_numbers_spec_meas_stuff( from_to_sample_nums );
   }else
   {
-    SpecFile::cleanup_after_load( flags );
+    SpecFile::cleanup_after_load( use_flags );
   }
 }//void SpecMeas::cleanup_after_load()
 

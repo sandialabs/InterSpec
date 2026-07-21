@@ -26,9 +26,16 @@
   <message id="ect-export-CALp-msg">Vous pouvez appliquer ce fichier CALp plus tard à un spectre différent en glissant-déposant le fichier CALp sur InterSpec.</message>
   <message id="ect-fit-coeff-btn">Ajuster les coeffs</message>
   <message id="ect-tt-fit-coeff-btn">
-    Utilise l'énergie attendue des photopics associés aux pics ajustés pour ajuster les coefficients d'énergie.
-    Ce bouton est désactivé si aucun coefficient n'est sélectionné pour l'ajustement, ou si moins de pics que de coefficients sont sélectionnés.
+    Utilise les énergies attendues des photopics des pics ajustés dans le spectre de premier plan pour ajuster les coefficients d'étalonnage sélectionnés.
+    L'effet du changement est ensuite propagé à tous les spectres, échantillons et détecteurs sélectionnés sous "Appliquer les modifications à" : leurs étalonnages en énergie sont chacun ajustés de manière équivalente, de sorte que les données alignées en énergie avant le changement restent alignées (aux nouvelles énergies) après - même si leurs coefficients ou types d'étalonnage diffèrent.
+    Si ce bouton est désactivé, la raison est affichée à sa gauche.
   </message>
+  <message id="ect-fit-hint-fore-deselected">Ajustement désactivé : "Premier plan" désélectionné sous "Appliquer les modifications à"</message>
+  <message id="ect-fit-hint-no-peaks">Aucun pic marqué pour l'étalonnage en énergie</message>
+  <message id="ect-fit-hint-not-fore-cal">L'ajustement utilise l'étalonnage du premier plan</message>
+  <message id="ect-fit-hint-no-coefs">Aucun coefficient sélectionné pour l'ajustement</message>
+  <message id="ect-fit-hint-few-peaks">Moins de pics sélectionnés que de coefficients à ajuster</message>
+  <message id="ect-tt-fit-cb-disabled">L'ajustement des coefficients utilise toujours les sélections "Ajuster" de l'affichage du premier plan ; ces cases ne font que les refléter.</message>
   <message id="ect-apply-changes-to">Appliquer les modifications à</message>
   <message id="ect-disp-dets">Détecteurs affichés</message>
   <message id="ect-all-dets">Tous les détecteurs</message>
@@ -72,6 +79,7 @@
   <message id="ect-no-coeff-selected">Vous devez sélectionner au moins un coefficient pour l'ajustement.</message>
   <message id="ect-fail-min">Échec de l'ajustement de l'étalonnage en énergie en utilisant les approches matricielle et itérative</message>
   <message id="ect-fit-successful">L'étalonnage en énergie a été mis à jour à partir de l'ajustement.</message>
+  <message id="ect-fit-successful-detail">L'étalonnage en énergie a été mis à jour à partir de l'ajustement ; l'écart moyen des {1} pics utilisés par rapport à leurs énergies vraies est passé de {2} keV à {3} keV.</message>
   <message id="ect-fail-fit">Échec de l'étalonnage par ajustement des moyennes des pics. {1}</message>
   <message id="ect-del-graphical-msg">Si vous recalibrez à nouveau par ALT+CTRL+GLISSER sur une autre partie du spectre, vous aurez également la possibilité de conserver les effets de cet étalonnage.</message>
   <message id="ect-lc-disp-dets">détecteurs affichés</message>

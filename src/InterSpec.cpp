@@ -9304,6 +9304,9 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   {
     WPushButton *button = new WPushButton( "Load Visible Points...", window->footer() );
     WPopupMenu *menu = new WPopupMenu();
+    // A WPopupMenu is owned by the session domRoot, not `button`, so hand its lifetime to the
+    //  (transient) window via addChild() - otherwise it leaks each time the map window is opened.
+    window->addChild( menu );
     menu->setAutoHide( true );
     button->setMenu( menu );
     WMenuItem *item = menu->addItem( "As Foreground" );
@@ -9705,16 +9708,15 @@ void InterSpec::handleTerminalWindowClose()
     AuxWindow::deleteAuxWindow( m_terminalWindow );
   }else
   {
-    // Check if we need to delete the widget ourselves.
-    // If the widget is still in the tab widget, it means we were called from the tabClosed() signal
-    // which is emitted BEFORE Wt removes/deletes the widget - so we let Wt handle the deletion.
-    // If the widget is NOT in the tab widget, we were called programmatically after removeTab()
-    // was called, so we need to delete it ourselves.
-    const bool inTabWidget = m_toolsTabs && (m_toolsTabs->indexOf( m_terminal ) >= 0);
-    
-    if( !inTabWidget )
-      delete m_terminal;
-    
+    // Wt 3.7.1's WTabWidget::closeTab() only hides the tab and emits tabClosed_; it does NOT
+    //  remove the tab from its internal vectors.  We must explicitly removeTab() before
+    //  deleting, otherwise a stale (zombie) tab entry remains and becomes visible the next
+    //  time the tool is reopened (and closing it trips the assert in handleToolTabClosed).
+    //  Guarded by indexOf() so it stays idempotent with the docking path that already removes
+    //  the tab before calling this.
+    if( m_toolsTabs && (m_toolsTabs->indexOf(m_terminal) >= 0) )
+      m_toolsTabs->removeTab( m_terminal );
+    delete m_terminal;
     if( m_toolsTabs )
       m_toolsTabs->setCurrentIndex( 2 );
   }
@@ -10089,9 +10091,10 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 #if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
 void InterSpec::handleToolTabClosed( const int tabnum )
 {
-  // The tabClosed() signal is emitted BEFORE Wt removes and deletes the widget from the tab.
-  // So widget(tabnum) returns the widget being closed, and we should NOT delete it ourselves.
-  
+  // The tabClosed() signal is emitted while the widget is still docked, so widget(tabnum) still
+  //  returns the widget being closed.  Wt 3.7.1's closeTab() does NOT itself remove or delete the
+  //  widget; each per-tool close handler below is responsible for the removeTab()+delete.
+
   assert( m_toolsTabs );
   if( !m_toolsTabs )
     return;
@@ -13882,16 +13885,16 @@ void InterSpec::handleLlmToolClose()
 
   m_llmToolMenuItem->enable();
 
-  // Check if we need to delete the widget ourselves.
-  // If the widget is still in the tab widget, it means we were called from the tabClosed() signal
-  // which is emitted BEFORE Wt removes/deletes the widget - so we let Wt handle the deletion.
-  // If the widget is NOT in the tab widget, we were called programmatically after removeTab()
-  // was called, so we need to delete it ourselves.
-  const bool inTabWidget = m_toolsTabs && (m_toolsTabs->indexOf( m_llmTool ) >= 0);
-  
-  if( !inTabWidget )
-    delete m_llmTool;
-  
+  // Wt 3.7.1's WTabWidget::closeTab() only hides the tab and emits tabClosed_; it does NOT
+  //  remove the tab from its internal vectors.  We must explicitly removeTab() before
+  //  deleting, otherwise a stale (zombie) tab entry remains and becomes visible the next
+  //  time the tool is reopened (and closing it trips the assert in handleToolTabClosed).
+  //  Guarded by indexOf() so it stays idempotent with the docking path that already removes
+  //  the tab before calling this.
+  if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool) >= 0) )
+    m_toolsTabs->removeTab( m_llmTool );
+  delete m_llmTool;
+
   m_llmTool = nullptr;
   
   if( m_toolsTabs )

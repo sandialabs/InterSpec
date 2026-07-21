@@ -9,6 +9,7 @@
   <message id="ftw-hdr-flux-on-det">Поток на дет. (ɣ/с)</message>
   <message id="ftw-hdr-flux-cm">Поток (ɣ/см²/с)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/с</message>
+  <message id="ftw-hdr-use">Исп.</message>
   <message id="ftw-tt-distance">
     Расстояние от центра источника до поверхности детектора. Число должно быть
     сопровождено единицами измерения; допустимые единицы: meters, m, cm, mm, km, feet,
@@ -21,6 +22,14 @@
   <message id="ftw-more">Больше</message>
   <message id="ftw-copy-btn">Копировать в буфер</message>
   <message id="ftw-copy-btn-narrow">Копировать</message>
+  <message id="ftw-select-rows">Выбрать строки</message>
+  <message id="ftw-select-rows-narrow">Выбрать</message>
+  <message id="ftw-tt-select-rows">
+      Добавляет флажок к каждой строке таблицы, чтобы вы могли выбрать, какие строки
+    копируются в буфер обмена или экспортируются в CSV.  Изначально все строки отмечены;
+    снимите отметку с тех, которые не нужны в выводе.  Если этот флажок снят,
+    копируются/экспортируются все строки.
+  </message>
   <message id="ftw-invalid-dist">Недопустимое расстояние</message>
   <message id="ftw-no-drf">Не выбрана функция отклика детектора</message>
   <message id="ftw-no-foreground">Спектр переднего плана не загружен</message>

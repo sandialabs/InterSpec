@@ -5255,7 +5255,23 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       roiUpper = mean0 + std::max( 2*std::max(rough_fwhm,sigma0), 3.0 );
     }
   }// try / catch
-  
+
+  // Protect against a degenerate ROI from the heuristics above (e.g., a candidate near the
+  //  spectrum edge, of a low-statistics spectrum, can yield inverted limits, or limits that dont
+  //  contain the candidate) - treat as no peak found, rather than feeding an invalid range to the
+  //  peak fit (which will assert on it, in debug builds).
+  if( std::isnan(roiLower) || std::isnan(roiUpper) || (roiUpper <= roiLower)
+      || (mean0 < roiLower) || (mean0 > roiUpper) )
+  {
+#if( PERFORM_DEVELOPER_CHECKS )
+    char buffer[256];
+    snprintf( buffer, sizeof(buffer), "Got degenerate ROI [%f, %f] for candidate peak mean=%f,"
+              " sigma=%f - skipping peak fit.", roiLower, roiUpper, mean0, sigma0 );
+    log_developer_error( __func__, buffer );
+#endif
+    return pair<PeakShrdVec,PeakShrdVec>();
+  }//if( ROI limits are degenerate )
+
   const size_t nFitPeaks = coFitPeaks.size() + 1;
   
   if( coFitPeaks.size() )

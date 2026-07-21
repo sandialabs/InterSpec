@@ -55,7 +55,7 @@ android {
         applicationId "gov.sandia.interspec"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 19
+        versionCode 20
         versionName "1.0.14"
 
         if( hasSigningConfig ) {

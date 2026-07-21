@@ -26,7 +26,9 @@
 #include <tuple>
 #include <vector>
 #include <cassert>
+#include <utility>
 #include <optional>
+#include <algorithm>
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -51,53 +53,279 @@ namespace ceres
 namespace RelActCalc
 {
   
-/** Knee of the mass-fraction soft-cap (as a fraction of the variable budget asymptote): the
- constrained nuclides' variable demand `S` passes through unchanged (`factor == 1`) while it stays
- below `ns_mass_frac_softcap_knee * (1-eps) * B`, so feasible fits are undistorted; above the knee the
- factor bends smoothly.  See #mass_fraction_softcap_factor and RelActCalcAuto review item A16. */
-constexpr double ns_mass_frac_softcap_knee = 0.95;
+/** Fraction of an element's post-fixed-constraint budget (`1 - Σ fixed`) kept in reserve for the
+ element's unconstrained nuclides: the range-constrained nuclides' total mass fraction is
+ hard-bounded (a Ceres box constraint on the carrier parameter) at
+ `1 - fixed_sum - ns_mass_frac_min_remainder_frac*(1 - fixed_sum)`, so the `1/(1 - sum_constrained)`
+ factor in the relative-activity decode can never blow up, with no smooth-cap warping of the
+ feasible region (the old soft-cap knee compressed everything above 95% of budget - a single [0,1]
+ constraint could never decode above ~0.98).  When every nuclide of the element is constrained
+ there is no reserve (the fractions must sum to exactly 1).  See #MassFracBlockSpec. */
+constexpr double ns_mass_frac_min_remainder_frac = 1.0e-6;
 
-/** Default soft-cap margin: the constrained mass-fraction sum is held strictly below `1 - eps*B`, so
- the element's unconstrained nuclides always keep a positive mass remainder (no divide-by-zero). */
-constexpr double ns_mass_frac_softcap_eps = 1.0e-6;
+/** Relative half-width of the quadratic-hinge smoothing zones used when distributing the total
+ constrained mass fraction among the individual windows (#decode_mass_frac_block): each window's
+ conditional feasible interval gets its endpoints smoothed over
+ `ns_mass_frac_stick_radius_frac * (upper - lower)` of that window, so the decode is C1 in every
+ parameter (safe through `ceres::Jet`) while the windows stay exactly respected (see the one-sided
+ bound properties on #qmax_hinge).  Always RELATIVE to the window involved - tiny windows (e.g.
+ U232 in [0, 0.9E-9]) are legitimate, and must never be swamped by an absolute epsilon. */
+constexpr double ns_mass_frac_stick_radius_frac = 1.0e-3;
 
-/** Smooth, throw-free soft-cap factor for element mass-fraction constraints (RelActCalcAuto A16).
 
- For an element whose mass-fraction-constrained nuclides demand a total "variable" mass fraction
- `S = Σ vᵢ ≥ 0` (each `vᵢ = gᵢ·(upperᵢ − lowerᵢ) ≥ 0`) on top of their lower-bound floor
- `L = Σ lowerᵢ`, with remaining budget `B = 1 − L > 0`, this returns a factor ∈ (0,1] so the actual
- constrained sum `L + factor·S` is structurally below 1 (it approaches `1 − eps·B` as `S → ∞`).
-
- The factor is exactly 1 while `S ≤ ns_mass_frac_softcap_knee·(1−eps)·B` (windows respected with no
- distortion), then bends smoothly to its asymptote.  The bend is tangent to the identity line at the
- knee (matching value and slope), so the factor is C¹ everywhere - including at `S = 0`, which sits in
- the flat region - and is therefore safe to evaluate and differentiate through `ceres::Jet`.
-
- @param S    Summed variable mass-fraction demand of the element's constrained nuclides (≥ 0).
- @param B    Variable budget `1 − Σ lowerᵢ` for the element (> 0; check_nuclide_constraints guarantees it).
- @param eps  Small positive margin keeping the constrained sum strictly below 1 (e.g. ns_mass_frac_softcap_eps).
+/** C1 smooth approximation of `max(x, a)` with compact support: exact for `|x - a| >= r`, a
+ quadratic blend inside.  One-sided-bound properties (relied on by #decode_mass_frac_block):
+   - `qmax_hinge(x,a,r) >= a` and `>= x` everywhere (never below the true max);
+   - the excess over `max(x,a)` is at most `r/4` (largest at `x == a`);
+   - value and first derivative are continuous at the seams, so it is safe to evaluate and
+     differentiate through `ceres::Jet` (the branch compares only the scalar part, and both value
+     and slope match across the branch points).
  */
 template<typename T>
-T mass_fraction_softcap_factor( const T &S, const T &B, const double eps )
+T qmax_hinge( const T &x, const double a, const double r )
 {
-  using namespace std;
-  using namespace ceres;
+  assert( r > 0.0 );
 
-  assert( eps > 0.0 );
-
-  const T cap_max = (1.0 - eps) * B;                    // asymptote for the variable sum (< B)
-  const T knee = ns_mass_frac_softcap_knee * cap_max;   // identity (factor == 1) holds for S <= knee
-
-  if( S <= knee )
-    return T( 1.0 );                                    // feasible: no distortion
-
-  // Above the knee, approach `cap_max` exponentially.  The curve is tangent to the identity line
-  //  `cap = S` at the knee (both value and slope match there), so `factor = cap/S` and its derivative
-  //  are continuous across the join (C¹).  `S > knee > 0` here, so the division is safe.
-  const T width = cap_max - knee;                       // > 0
-  const T cap = cap_max - width*exp( -(S - knee)/width );
-  return cap / S;
+  const T d = x - a;
+  if( d >= r )
+    return x;
+  if( d <= -r )
+    return T(a);
+  return a + (d + r)*(d + r) / (4.0*r);
 }
+
+
+/** C1 smooth approximation of `min(x, b)` - the mirror of #qmax_hinge, via
+ `min(x,b) = x + b - max(x,b)`; `qmin_hinge(x,b,r) <= min(x,b)` everywhere, deficit at most `r/4`. */
+template<typename T>
+T qmin_hinge( const T &x, const double b, const double r )
+{
+  return x + b - qmax_hinge( x, b, r );
+}
+
+
+/** Per-element specification of the exact "sigma-block" decode for mass-fraction constraints.
+
+ An element's mass-fraction-constrained nuclides split into FIXED constraints (lower == upper;
+ their parameter stays constant and they contribute only `fixed_sum`), and RANGE constraints
+ (lower < upper; `num_range = lower.size()` of them, in a deterministic order with the "carrier"
+ first).  Each range-constrained nuclide owns exactly one activity slot in the fit:
+
+   - The carrier slot holds `t in [0,1]`, mapped to the range-constrained nuclides' TOTAL mass
+     fraction `sigma = sig_lo + t*(sig_hi - sig_lo)`.  `sig_hi <= 1 - fixed_sum - delta` is a hard
+     Ceres box bound, so the element's constrained sum `fixed_sum + sigma` is structurally below 1
+     with EXACT gradients - no throw, no soft-cap warp; an infeasible demand surfaces as the
+     parameter pinning at its bound (which the existing at-bound warning machinery reports).
+     When `all_constrained` (the element has no unconstrained nuclide), `sigma` is instead the
+     constant `1 - fixed_sum`, and the carrier slot holds the element's total (relative mass)
+     scale.
+   - The remaining `num_range - 1` slots hold `g_k in [0,1]`, distributing `sigma` among the
+     individual windows through sequential conditional intervals (#decode_mass_frac_block); the
+     carrier nuclide takes the exact remainder, in-window by construction.
+ */
+struct MassFracBlockSpec
+{
+  /** Σ of the element's fixed (lower == upper) constrained mass fractions. */
+  double fixed_sum = 0.0;
+
+  /** True when every nuclide of the element carries a mass-fraction constraint. */
+  bool all_constrained = false;
+
+  /** Hard margin below 1 reserved for the element's unconstrained nuclides
+   (`ns_mass_frac_min_remainder_frac * (1 - fixed_sum)`); 0 when `all_constrained`. */
+  double delta = 0.0;
+
+  /** Box for the range-constrained total: `sig_lo = Σ lower`,
+   `sig_hi = min( Σ upper, 1 - fixed_sum - delta )`; both equal `1 - fixed_sum` when
+   `all_constrained`. */
+  double sig_lo = 0.0, sig_hi = 0.0;
+
+  /** Windows of the range-constrained nuclides, carrier first. */
+  std::vector<double> lower, upper;
+
+  /** Suffix window sums over the yet-unassigned set after assigning window k (the carrier plus
+   windows k+1..): `after_lower[k] = lower[0] + Σ_{j>k} lower[j]`, likewise `after_upper[k]`;
+   entries 1..num_range-1 are what the decode uses. */
+  std::vector<double> after_lower, after_upper;
+
+  /** Hinge half-width for window k: `ns_mass_frac_stick_radius_frac * (upper[k] - lower[k])`. */
+  std::vector<double> radius;
+
+  /** Hinge half-width of the pinched-conditional-interval (width) guard - relative to the
+   smallest window in the block, capped at 1E-12. */
+  double width_radius = 1.0e-12;
+};//struct MassFracBlockSpec
+
+
+/** Builds the #MassFracBlockSpec for one element.
+
+ @param range_windows   (lower,upper) of the element's range-constrained (lower < upper) nuclides,
+                        in the deterministic block order - the first entry is the carrier.
+ @param fixed_sum       Σ of the element's fixed (lower == upper) constrained fractions.
+ @param all_constrained Whether every nuclide of the element is mass-fraction constrained.
+
+ Feasibility preconditions are enforced by `check_nuclide_constraints()`:
+ mixed: `fixed_sum + Σ lower < 1`; all-constrained: `fixed_sum + Σ lower <= 1 <= fixed_sum + Σ upper`.
+ */
+inline MassFracBlockSpec make_mass_frac_block_spec( const std::vector<std::pair<double,double>> &range_windows,
+                                                    const double fixed_sum,
+                                                    const bool all_constrained )
+{
+  MassFracBlockSpec spec;
+  spec.fixed_sum = fixed_sum;
+  spec.all_constrained = all_constrained;
+
+  const size_t num_range = range_windows.size();
+  spec.lower.resize( num_range );
+  spec.upper.resize( num_range );
+
+  double lower_sum = 0.0, upper_sum = 0.0, min_width = 1.0;
+  for( size_t k = 0; k < num_range; ++k )
+  {
+    spec.lower[k] = range_windows[k].first;
+    spec.upper[k] = range_windows[k].second;
+    assert( spec.lower[k] < spec.upper[k] ); //fixed (lower == upper) constraints belong in `fixed_sum`
+    lower_sum += spec.lower[k];
+    upper_sum += spec.upper[k];
+    min_width = (std::min)( min_width, spec.upper[k] - spec.lower[k] );
+  }
+
+  // For a mixed element check_nuclide_constraints() guarantees `fixed_sum < 1`; an all-constrained
+  //  all-fixed element has `fixed_sum == 1` (to ~1E-6), so clamp the tiny/negative leftover to 0.
+  const double budget = (std::max)( 1.0 - fixed_sum, 0.0 );
+  assert( all_constrained || (budget > 0.0) );
+
+  if( all_constrained )
+  {
+    // No unconstrained nuclides: the range fractions must sum to exactly the leftover budget.
+    spec.delta = 0.0;
+    spec.sig_lo = spec.sig_hi = budget;
+  }else
+  {
+    spec.delta = ns_mass_frac_min_remainder_frac * budget;
+    spec.sig_lo = lower_sum;
+    spec.sig_hi = (std::min)( upper_sum, budget - spec.delta );
+    // check_nuclide_constraints() guarantees `lower_sum < budget`; keep the box non-inverted in
+    //  edge cases anyway (a point box gets its parameter pinned const by the setup code).
+    spec.sig_hi = (std::max)( spec.sig_hi, spec.sig_lo );
+  }
+
+  if( num_range > 0 )
+  {
+    spec.after_lower.resize( num_range, 0.0 );
+    spec.after_upper.resize( num_range, 0.0 );
+    double l_tail = spec.lower[0], u_tail = spec.upper[0];
+    for( size_t k = num_range - 1; k > 0; --k )
+    {
+      spec.after_lower[k] = l_tail;
+      spec.after_upper[k] = u_tail;
+      l_tail += spec.lower[k];
+      u_tail += spec.upper[k];
+    }
+    spec.after_lower[0] = l_tail; //== Σ all lowers; unused by the decode, but handy for asserts
+    spec.after_upper[0] = u_tail; //== Σ all uppers
+
+    spec.radius.resize( num_range, 0.0 );
+    for( size_t k = 0; k < num_range; ++k )
+      spec.radius[k] = ns_mass_frac_stick_radius_frac * (spec.upper[k] - spec.lower[k]);
+
+    spec.width_radius = (std::min)( 1.0e-12, ns_mass_frac_stick_radius_frac * min_width );
+  }//if( num_range > 0 )
+
+  return spec;
+}//make_mass_frac_block_spec(...)
+
+
+/** Decodes the element's range-constrained mass fractions from the block parameters.
+
+ @param spec      The block specification (#make_mass_frac_block_spec).
+ @param sigma     Total mass fraction of the range-constrained nuclides, in
+                  `[spec.sig_lo, spec.sig_hi]` (from the carrier parameter, or the constant
+                  `1 - fixed_sum` when `spec.all_constrained`).
+ @param gs        The `num_range - 1` distribution values, each in [0,1] (may be nullptr when
+                  `num_range <= 1`).
+ @param fractions Receives the `num_range` decoded fractions, in block order (carrier first).
+
+ Guarantees: `Σ fractions == sigma` exactly; `fractions[k] >= lower[k]` exactly;
+ `fractions[k] <= upper[k] + width_radius/4` (exact to ~2.5E-13); C1 in (sigma, gs), so safe
+ through `ceres::Jet`.
+ */
+template<typename T>
+void decode_mass_frac_block( const MassFracBlockSpec &spec, const T &sigma, const T * const gs,
+                             T * const fractions )
+{
+  const size_t num_range = spec.lower.size();
+  if( num_range == 0 )
+    return;
+
+  T rem = sigma;
+  for( size_t k = 1; k < num_range; ++k )
+  {
+    // The exact conditional feasible interval for f_k, given the remainder and that the
+    //  yet-unassigned windows must still be satisfiable, is
+    //  [max(lower_k, rem - after_upper_k), min(upper_k, rem - after_lower_k)] - non-empty for any
+    //  sigma inside its box; the hinges round its corners so the decode is C1 everywhere.
+    const T lo = qmax_hinge( rem - spec.after_upper[k], spec.lower[k], spec.radius[k] );
+    const T hi = qmin_hinge( rem - spec.after_lower[k], spec.upper[k], spec.radius[k] );
+    const T width = qmax_hinge( hi - lo, 0.0, spec.width_radius );
+
+    fractions[k] = lo + gs[k-1]*width;
+    rem -= fractions[k];
+  }//for( size_t k = 1; k < num_range; ++k )
+
+  fractions[0] = rem; //the carrier absorbs the exact remainder (in-window by construction)
+}//decode_mass_frac_block(...)
+
+
+/** Inverts #decode_mass_frac_block for starting values: given target fractions (e.g., from the
+ manual-solution estimate), computes a `sigma` and `gs` that decode to (approximately) those
+ fractions, each kept strictly inside its box by `margin` (Ceres' projected-gradient steps behave
+ poorly for a parameter that starts exactly on a bound).
+
+ Runs the same smoothed forward decode incrementally, so the start is exactly self-consistent;
+ the clamps absorb any infeasibility of the targets.
+ */
+inline void invert_mass_frac_block( const MassFracBlockSpec &spec, const double * const target_fractions,
+                                    double &sigma, double * const gs, const double margin = 1.0e-3 )
+{
+  const size_t num_range = spec.lower.size();
+  if( num_range == 0 )
+  {
+    sigma = spec.sig_lo;
+    return;
+  }
+
+  double target_sigma = 0.0;
+  for( size_t k = 0; k < num_range; ++k )
+    target_sigma += target_fractions[k];
+
+  if( spec.all_constrained || (spec.sig_hi <= spec.sig_lo) )
+  {
+    sigma = spec.sig_hi; //the all-constrained constant, or a pinched box
+  }else
+  {
+    const double t_raw = (target_sigma - spec.sig_lo) / (spec.sig_hi - spec.sig_lo);
+    const double t = (std::min)( 1.0 - margin, (std::max)( margin, t_raw ) );
+    sigma = spec.sig_lo + t*(spec.sig_hi - spec.sig_lo);
+  }
+
+  double rem = sigma;
+  for( size_t k = 1; k < num_range; ++k )
+  {
+    const double lo = qmax_hinge( rem - spec.after_upper[k], spec.lower[k], spec.radius[k] );
+    const double hi = qmin_hinge( rem - spec.after_lower[k], spec.upper[k], spec.radius[k] );
+    const double width = qmax_hinge( hi - lo, 0.0, spec.width_radius );
+
+    // Solve for g only when the conditional interval has meaningful width RELATIVE to this
+    //  window (never vs an absolute epsilon - tiny windows are legitimate); else the midpoint.
+    double g = 0.5;
+    if( width > 1.0e-9*(spec.upper[k] - spec.lower[k]) )
+      g = (std::min)( 1.0 - margin, (std::max)( margin, (target_fractions[k] - lo)/width ) );
+
+    gs[k-1] = g;
+    rem -= (lo + g*width);
+  }//for( size_t k = 1; k < num_range; ++k )
+}//invert_mass_frac_block(...)
 
 
 template<typename T>
@@ -344,7 +572,7 @@ T eval_physical_model_eqn_imp( const double energy,
       //  ceres::Jet derivative.
       double eval_energy = energy;
       if( (corr_upper_energy > corr_lower_energy) && (corr_lower_energy > 0.0) )
-        eval_energy = std::max( corr_lower_energy, std::min( corr_upper_energy, energy ) );
+        eval_energy = (std::max)( corr_lower_energy, (std::min)( corr_upper_energy, energy ) );
       const double energy_mev = 0.001*eval_energy;
       answer = exp( b_val*log(energy_mev) + log(c_val)/energy_mev );
     }//if( basis ) / else( Hoerl )

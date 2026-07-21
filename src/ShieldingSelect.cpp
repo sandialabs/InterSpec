@@ -1433,6 +1433,7 @@ ShieldingSelect::ShieldingSelect( Wt::WSuggestionPopup *materialSuggest,
   m_materialSummary( nullptr ),
   m_closeIcon( nullptr ),
   m_addIcon( nullptr ),
+  m_addMenu( nullptr ),
   m_addTraceSrcBtn( nullptr ),
   m_fixedGeometry( false ),
   m_dimensionsStack( nullptr ),
@@ -1479,6 +1480,7 @@ ShieldingSelect::ShieldingSelect( SourceFitModel *sourceModel,
     m_materialSummary( nullptr ),
     m_closeIcon( nullptr ),
     m_addIcon( nullptr ),
+    m_addMenu( nullptr ),
     m_addTraceSrcBtn( nullptr ),
     m_fixedGeometry( false ),
     m_dimensionsStack( nullptr ),
@@ -1523,10 +1525,12 @@ void ShieldingSelect::setClosableAndAddable( bool closeable, WGridLayout *layout
     m_addIcon->setStyleClass( "ShieldingAdd Wt-icon" );
     m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.svg");
         
-    PopupDivMenu *popup = new PopupDivMenu( m_addIcon, PopupDivMenu::TransientMenu );
-    PopupDivMenuItem *item = popup->addMenuItem( WString::tr("ss-add-shield-before") );
+    // The menu is owned by the session domRoot, not m_addIcon, so we keep a pointer to
+    //  it in m_addMenu and manually delete it (see destructor and the 'else' branch below).
+    m_addMenu = new PopupDivMenu( m_addIcon, PopupDivMenu::TransientMenu );
+    PopupDivMenuItem *item = m_addMenu->addMenuItem( WString::tr("ss-add-shield-before") );
     item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
-    item = popup->addMenuItem( WString::tr("ss-add-shield-after") );
+    item = m_addMenu->addMenuItem( WString::tr("ss-add-shield-after") );
     item->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
     
     layout->addWidget( m_closeIcon, 0, 2, AlignMiddle | AlignRight );
@@ -1541,6 +1545,10 @@ void ShieldingSelect::setClosableAndAddable( bool closeable, WGridLayout *layout
       m_closeIcon = NULL;
     }
     
+    if( m_addMenu && wApp && wApp->domRoot() )
+      delete m_addMenu;
+    m_addMenu = nullptr;
+
     if( m_addIcon )
     {
       delete m_addIcon;
@@ -2582,7 +2590,12 @@ ShieldingSelect::~ShieldingSelect()
       //  destructed); I think because WApplication::instance() is nullptr, so so is `interspec`
     }
   }//if( m_materialSuggest && m_materialEdit )
-  
+
+  // The add-shield menu is owned by the session domRoot, not this widget, so it must be
+  //  manually deleted (guard against session teardown having already freed domRoot).
+  if( m_addMenu && wApp && wApp->domRoot() )
+    delete m_addMenu;
+  m_addMenu = nullptr;
 }//~ShieldingSelect()
 
 

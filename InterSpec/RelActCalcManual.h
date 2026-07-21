@@ -193,11 +193,19 @@ struct ManualActRatioConstraint
 };//struct ManualActRatioConstraint
 
 
-// As of 20250509 using MassFractionConstraint has not been tested at all, beyond that it compiles - so I'll leave this flag here to help rember to check it out.
+// Mass-fraction constraints solve through a per-element "sigma-block" (an exact reparameterization
+//  shared with RelActCalcAuto - see RelActCalc::MassFracBlockSpec in RelActCalc_imp.hpp), and are
+//  exercised by the RelActCalcAuto mass-fraction tests (every constrained Auto solve pre-solves
+//  through this Manual path).  The flag is kept only to make the feature easy to locate/disable.
 #define USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT 1
 
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-/** A constraint on the mass fraction of an element in a sample.
+/** A constraint on the mass fraction of a nuclide within its element.
+
+ Fixed (lower == upper) constraints pin the fraction exactly; range constraints fit it within
+ [lower, upper].  An element may have every one of its nuclides constrained, in which case the
+ windows must be able to sum to exactly 1, and the elements total (relative mass) is fit instead
+ of any individual activity.
  */
 struct MassFractionConstraint
 {

@@ -9,6 +9,7 @@
   <message id="ftw-hdr-flux-on-det">Fluks pada Det. (ɣ/s)</message>
   <message id="ftw-hdr-flux-cm">Fluks (ɣ/cm²/s)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-hdr-use">Pakai</message>
   <message id="ftw-tt-distance">
     Jarak dari pusat sumber ke muka detektor. Angka harus
     diikuti dengan satuan; satuan yang valid adalah: meters, m, cm, mm, km, feet,
@@ -21,6 +22,14 @@
   <message id="ftw-more">Lebih</message>
   <message id="ftw-copy-btn">Salin Ke Clipboard</message>
   <message id="ftw-copy-btn-narrow">Salin</message>
+  <message id="ftw-select-rows">Pilih baris</message>
+  <message id="ftw-select-rows-narrow">Pilih</message>
+  <message id="ftw-tt-select-rows">
+      Menambahkan kotak centang ke setiap baris tabel, sehingga Anda dapat memilih baris
+    mana yang disalin ke papan klip atau diekspor ke CSV.  Baris awalnya tercentang;
+    hapus centang pada baris yang tidak Anda inginkan dalam keluaran.  Jika ini tidak
+    dicentang, semua baris disalin/diekspor.
+  </message>
   <message id="ftw-invalid-dist">Jarak Tidak Valid</message>
   <message id="ftw-no-drf">Tidak Ada Fungsi Respons Detektor yang Dipilih</message>
   <message id="ftw-no-foreground">Tidak ada spektrum latar depan yang dimuat</message>

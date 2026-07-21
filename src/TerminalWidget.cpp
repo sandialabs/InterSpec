@@ -226,6 +226,16 @@ TerminalWidget::TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
                                               boost::placeholders::_1 ) );
 }//TerminalWidget
 
+
+TerminalWidget::~TerminalWidget()
+{
+  // A PopupDivMenu is owned by the session domRoot, not this widget, so it must be
+  //  manually deleted (guard against session teardown having already freed domRoot).
+  if( m_commandmenu && wApp && wApp->domRoot() )
+    delete m_commandmenu;
+  m_commandmenu = nullptr;
+}//~TerminalWidget()
+
 void TerminalWidget::focusText()
 {
     // Skip on touch devices: focusing pops the on-screen keyboard.  Desktop users still

@@ -26,9 +26,16 @@
   <message id="ect-export-CALp-msg">このCALpファイルをInterSpecにドラッグ&amp;ドロップして、後で異なるスペクトルに適用できます。</message>
   <message id="ect-fit-coeff-btn">係数をフィット</message>
   <message id="ect-tt-fit-coeff-btn">
-    フィットピークに関連するフォトピークの期待エネルギーを使用してエネルギー係数をフィットします。
-    フィットする係数が選択されていない場合、または選択されたピークが係数より少ない場合、このボタンは無効になります。
+    フォアグラウンドスペクトルでフィットしたピークの光電ピーク期待エネルギーを使用して、選択したエネルギー校正係数をフィットします。
+    変更の効果は「変更を適用」で選択されたすべてのスペクトル・サンプル・検出器に伝播されます。それぞれのエネルギー校正が等価に調整されるため、変更前にエネルギーで揃っていたデータは、係数や校正タイプが異なっていても、変更後も（新しいエネルギーで）揃ったままになります。
+    このボタンが無効な場合、理由が左側に表示されます。
   </message>
+  <message id="ect-fit-hint-fore-deselected">フィット無効：「変更を適用」で「フォアグラウンド」が選択されていません</message>
+  <message id="ect-fit-hint-no-peaks">エネルギー校正に使用するピークがありません</message>
+  <message id="ect-fit-hint-not-fore-cal">フィットはフォアグラウンドの校正を使用します</message>
+  <message id="ect-fit-hint-no-coefs">フィットする係数が選択されていません</message>
+  <message id="ect-fit-hint-few-peaks">フィットする係数より選択ピークが少ないです</message>
+  <message id="ect-tt-fit-cb-disabled">係数のフィットは常にフォアグラウンド表示の「フィット」選択を使用します。これらのチェックボックスはそれを反映しているだけです。</message>
   <message id="ect-apply-changes-to">変更を適用</message>
   <message id="ect-disp-dets">表示された検出器</message>
   <message id="ect-all-dets">全ての検出器</message>
@@ -75,6 +82,7 @@
   <message id="ect-no-coeff-selected">フィットする係数を少なくとも1つ選択する必要があります。</message>
   <message id="ect-fail-min">エラーメッセージ 行列および反復アプローチの両方を使用したエネルギー校正のフィットに失敗しました</message>
   <message id="ect-fit-successful">フィットによりエネルギー校正が更新されました。</message>
+  <message id="ect-fit-successful-detail">フィットによりエネルギー校正が更新されました。使用した {1} 個のピークの真のエネルギーからの平均偏差は {2} keV から {3} keV になりました。</message>
   <message id="ect-fail-fit">ピーク平均のフィットによる校正に失敗しました。{1}</message>
   <message id="ect-del-graphical-msg">スペクトルの別の部分でALT+CTRL+ドラッグにより再校正する場合、この校正の効果も保持するオプションが提供されます。</message>
   <message id="ect-lc-disp-dets">表示された検出器</message>

@@ -55,6 +55,7 @@ class TerminalWidget : public Wt::WContainerWidget
 {
   public:
   TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent = 0 );
+  virtual ~TerminalWidget();
   void focusText();
   
   void chartClicked( float energy, float counts, int pageX, int pageY);

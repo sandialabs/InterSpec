@@ -27,9 +27,16 @@
   <message id="ect-export-CALp-msg">Ezt a CALp fájlt később alkalmazhatja más spektrumra a CALp fájl húzd-és-ejtsd módszerrel az InterSpec-re való áthelyezésével.</message>
   <message id="ect-fit-coeff-btn">Koeff. illesztés</message>
   <message id="ect-tt-fit-coeff-btn">
-    Az illesztett csúcsokhoz társított fotocsúcsok várható energiáját használja az energiaegyütthatók illesztéséhez.
-    Ez a gomb le van tiltva, ha nincs kiválasztott együttható az illesztéshez, vagy kevesebb csúcs van kiválasztva, mint együttható.
+    Az előtér-spektrumban illesztett csúcsok várt fotocsúcs-energiáit használja a kiválasztott energiakalibrációs együtthatók illesztéséhez.
+    A változtatás hatása ezután a "Változtatások alkalmazása" alatt kijelölt összes spektrumra, mintára és detektorra átterjed: energiakalibrációik egyenértékű módon igazodnak, így a változtatás előtt energiában egybeeső adatok utána is (az új energiákon) egybeesnek - akkor is, ha kalibrációs együtthatóik vagy típusaik eltérnek.
+    Ha ez a gomb inaktív, az ok a gombtól balra jelenik meg.
   </message>
+  <message id="ect-fit-hint-fore-deselected">Illesztés letiltva: az "Előtér" nincs kijelölve a "Változtatások alkalmazása" alatt</message>
+  <message id="ect-fit-hint-no-peaks">Nincs energiakalibrációhoz megjelölt csúcs</message>
+  <message id="ect-fit-hint-not-fore-cal">Az illesztés az előtér kalibrációját használja</message>
+  <message id="ect-fit-hint-no-coefs">Nincs illesztésre kijelölt együttható</message>
+  <message id="ect-fit-hint-few-peaks">Kevesebb csúcs van kijelölve, mint illesztendő együttható</message>
+  <message id="ect-tt-fit-cb-disabled">Az együttható-illesztés mindig az előtér-nézet "Illesztés" kijelöléseit használja; ezek a jelölőnégyzetek csak tükrözik azokat.</message>
   <message id="ect-apply-changes-to">Változtatások alkalmazása</message>
   <message id="ect-disp-dets">Megjelenített detektorok</message>
   <message id="ect-all-dets">Összes detektor</message>
@@ -76,6 +83,7 @@
   <message id="ect-no-coeff-selected">Legalább egy együtthatót ki kell választani az illesztéshez.</message>
   <message id="ect-fail-min">Hibaüzenet: Nem sikerült az energiakalibrációt illeszteni sem mátrix, sem iteratív módszerrel</message>
   <message id="ect-fit-successful">Az energiakalibráció frissítve lett az illesztés alapján.</message>
+  <message id="ect-fit-successful-detail">Az energiakalibráció frissítve lett az illesztés alapján; a felhasznált {1} csúcs átlagos eltérése a valódi energiáiktól {2} keV-ről {3} keV-re változott.</message>
   <message id="ect-fail-fit">Sikertelen kalibráció csúcsátlagok illesztésével. {1}</message>
   <message id="ect-del-graphical-msg">Ha újrakalibrál ALT+CTRL+húzással a spektrum egy másik részén, lehetősége lesz ennek a kalibrációnak a hatásait is megőrizni.</message>
   <message id="ect-lc-disp-dets">megjelenített detektorok</message>

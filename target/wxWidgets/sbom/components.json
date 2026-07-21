@@ -1,0 +1,210 @@
+{
+  "_comment": [
+    "Curated source of truth for the InterSpec Windows (wxWidgets) SBOM.",
+    "Lists ONLY the third-party and first-party-submodule components that are actually",
+    "compiled/linked into, or shipped alongside, the final Windows build. Anything in the",
+    "source tree that is NOT in that build is intentionally absent (see README.md).",
+    "make_sbom.py turns this into a CycloneDX 1.6 SBOM and --check validates it against the",
+    "authoritative sources (dep_build_msvc2022.bat pins, submodule paths, vendored dirs).",
+    "",
+    "Fields: name, version, type, group?, license(SPDX), url(website/source), vcs?(git repo),",
+    "  purl?(package URL; for git deps the script appends the resolved @<sha>),",
+    "  notes?, and version_source (drives --check):",
+    "    bat:<literal substring expected in dep_build_msvc2022.bat>",
+    "    submodule:<repo-relative path>   (script resolves the commit SHA into version+purl)",
+    "    vendored:<repo-relative path>    (in-tree source; path must exist)",
+    "    runtime:<repo-relative path>     (shipped asset, not linked; path must exist)"
+  ],
+
+  "components": [
+    {
+      "name": "boost",
+      "version": "1.86.0",
+      "type": "library",
+      "license": "BSL-1.0",
+      "url": "https://www.boost.org/",
+      "purl": "pkg:generic/boost@1.86.0",
+      "version_source": "bat:BOOST_DIR=boost_1_86_0"
+    },
+    {
+      "name": "zlib",
+      "version": "1.2.13",
+      "type": "library",
+      "license": "Zlib",
+      "url": "https://zlib.net/",
+      "vcs": "https://github.com/madler/zlib.git",
+      "purl": "pkg:github/madler/zlib@04f42ceca40f73e2978b50e93806c2a18c1281fc",
+      "version_source": "bat:ZLIB_DIR=\"zlib-1.2.13\""
+    },
+    {
+      "name": "wt",
+      "version": "3.7.1",
+      "type": "library",
+      "license": "GPL-2.0-only",
+      "url": "https://www.webtoolkit.eu/wt",
+      "vcs": "https://github.com/emweb/wt.git",
+      "purl": "pkg:github/emweb/wt@b84925215d2b45879cf20c0cb340c4e7960d0c53",
+      "notes": "Locally patched (target/patches/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch). Dual-licensed GPL-2.0 / commercial; built with SSL/FCGI/MySQL/Postgres OFF.",
+      "version_source": "bat:WT_DIR=wt-3.7.1"
+    },
+    {
+      "name": "eigen",
+      "version": "3.4.90+git.2e76277",
+      "type": "library",
+      "license": "MPL-2.0",
+      "url": "https://eigen.tuxfamily.org/",
+      "vcs": "https://gitlab.com/libeigen/eigen.git",
+      "purl": "pkg:generic/eigen@2e76277bd049f7bec36b0f908c69734a42c5234f",
+      "notes": "Built with EIGEN_MPL2_ONLY=1 (MPL-2.0 subset only).",
+      "version_source": "bat:EIGEN_GIT_HASH=2e76277bd049f7bec36b0f908c69734a42c5234f"
+    },
+    {
+      "name": "ceres-solver",
+      "version": "2.2.0",
+      "type": "library",
+      "license": "BSD-3-Clause",
+      "url": "http://ceres-solver.org/",
+      "vcs": "https://github.com/ceres-solver/ceres-solver.git",
+      "purl": "pkg:github/ceres-solver/ceres-solver@85331393dc0dff09f6fb9903ab0c4bfa3e134b01",
+      "notes": "Built MINIGLOG=ON, GFLAGS=OFF, USE_CUDA=OFF, static.",
+      "version_source": "bat:CERES_DIR=\"ceres-solver-2.2.0\""
+    },
+    {
+      "name": "wxwidgets",
+      "version": "3.2.1",
+      "type": "library",
+      "license": "wxWindows",
+      "url": "https://www.wxwidgets.org/",
+      "vcs": "https://github.com/wxWidgets/wxWidgets.git",
+      "purl": "pkg:generic/wxwidgets@3.2.1",
+      "notes": "Static build with wxUSE_WEBVIEW_EDGE=ON.",
+      "version_source": "bat:WX_DIR=\"wxWidgets-3.2.1\""
+    },
+    {
+      "name": "webview2-loader",
+      "version": "1.0.705.50",
+      "group": "Microsoft.Web",
+      "type": "library",
+      "license": "LicenseRef-Microsoft-WebView2",
+      "url": "https://developer.microsoft.com/microsoft-edge/webview2/",
+      "purl": "pkg:nuget/Microsoft.Web.WebView2@1.0.705.50",
+      "notes": "WebView2LoaderStatic.lib (Edge WebView2) linked statically.",
+      "version_source": "bat:Microsoft.Web.WebView2.1.0.705.50"
+    },
+
+    {
+      "name": "SpecUtils",
+      "type": "library",
+      "license": "LGPL-2.1-only",
+      "url": "https://github.com/sandialabs/SpecUtils",
+      "vcs": "https://github.com/sandialabs/SpecUtils.git",
+      "purl_base": "pkg:github/sandialabs/SpecUtils",
+      "notes": "First-party (Sandia) spectrum file I/O library, compiled into the app.",
+      "version_source": "submodule:external_libs/SpecUtils"
+    },
+    {
+      "name": "SandiaDecay",
+      "type": "library",
+      "license": "LGPL-2.1-only",
+      "url": "https://github.com/sandialabs/SandiaDecay",
+      "vcs": "https://github.com/sandialabs/SandiaDecay.git",
+      "purl_base": "pkg:github/sandialabs/SandiaDecay",
+      "notes": "First-party (Sandia) nuclear decay data library, compiled into the app.",
+      "version_source": "submodule:external_libs/SandiaDecay"
+    },
+    {
+      "name": "QR-Code-generator",
+      "type": "library",
+      "license": "MIT",
+      "url": "https://github.com/nayuki/QR-Code-generator",
+      "vcs": "https://github.com/nayuki/QR-Code-generator.git",
+      "purl_base": "pkg:github/nayuki/QR-Code-generator",
+      "notes": "Only the C++ variant (cpp/qrcodegen.cpp) is compiled; the c/java/python/rust/typescript variants are NOT built.",
+      "version_source": "submodule:external_libs/QR-Code-generator"
+    },
+
+    {
+      "name": "Minuit2",
+      "version": "6.34.02",
+      "type": "library",
+      "license": "LGPL-2.1-or-later",
+      "url": "https://root.cern/",
+      "notes": "Vendored CERN/ROOT minimizer; corresponds to ROOT 6.34.02.",
+      "version_source": "vendored:external_libs/Minuit2"
+    },
+    {
+      "name": "cuba",
+      "version": "3.0",
+      "type": "library",
+      "license": "LGPL-3.0-or-later",
+      "url": "https://feynarts.de/cuba/",
+      "notes": "Vendored multidimensional numerical integration library.",
+      "version_source": "vendored:external_libs/Cuba-3.0"
+    },
+    {
+      "name": "muparserx",
+      "version": "4.0.7",
+      "type": "library",
+      "license": "BSD-2-Clause",
+      "url": "https://github.com/beltoforion/muparserx",
+      "notes": "Vendored math expression parser.",
+      "version_source": "vendored:external_libs/muparserx-4.0.7"
+    },
+    {
+      "name": "pugixml",
+      "version": "1.9",
+      "type": "library",
+      "license": "MIT",
+      "url": "https://pugixml.org/",
+      "notes": "Vendored XML parser; linked in the wx build via USE_SPECRUM_FILE_QUERY_WIDGET=ON.",
+      "version_source": "vendored:external_libs/pugixml-1.9"
+    },
+    {
+      "name": "Faddeeva",
+      "version": "2015-05-12",
+      "type": "library",
+      "license": "MIT",
+      "url": "http://ab-initio.mit.edu/faddeeva/",
+      "notes": "Steven G. Johnson's Faddeeva w(z) implementation, vendored (templated) via external_libs/VoigtDistribution.",
+      "version_source": "vendored:external_libs/VoigtDistribution"
+    },
+
+    {
+      "name": "date",
+      "version": "3.0.1",
+      "type": "library",
+      "license": "MIT",
+      "url": "https://github.com/HowardHinnant/date",
+      "notes": "Header-only Howard Hinnant date library, vendored via SpecUtils and compiled in.",
+      "version_source": "vendored:external_libs/SpecUtils/3rdparty/date"
+    },
+    {
+      "name": "nlohmann-json",
+      "version": "3.12.0",
+      "type": "library",
+      "license": "MIT",
+      "url": "https://github.com/nlohmann/json",
+      "notes": "Header-only JSON library, vendored via SpecUtils.",
+      "version_source": "vendored:external_libs/SpecUtils/3rdparty/nlohmann"
+    },
+    {
+      "name": "rapidxml",
+      "version": "1.13",
+      "type": "library",
+      "license": "MIT",
+      "url": "http://rapidxml.sourceforge.net/",
+      "notes": "Header-only XML parser, vendored via SpecUtils/SandiaDecay.",
+      "version_source": "vendored:external_libs/SpecUtils/3rdparty/rapidxml"
+    },
+
+    {
+      "name": "d3",
+      "version": "3.5.17",
+      "type": "library",
+      "license": "BSD-3-Clause",
+      "url": "https://d3js.org/",
+      "notes": "D3.js v3 runtime asset (d3.v3.min.js) shipped in the installer for spectrum charting; not linked into the binary.",
+      "version_source": "runtime:external_libs/SpecUtils/d3_resources/d3.v3.min.js"
+    }
+  ]
+}

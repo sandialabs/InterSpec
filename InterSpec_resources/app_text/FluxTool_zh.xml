@@ -9,6 +9,7 @@
   <message id="ftw-hdr-flux-on-det">探测器上的通量（ɣ/s）</message>
   <message id="ftw-hdr-flux-cm">通量（ɣ/cm²/s）</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-hdr-use">使用</message>
   <message id="ftw-tt-distance">
     从源中心到探测器表面的距离。数字后面必须
     跟单位；有效单位为：meters、m、cm、mm、km、feet、
@@ -21,6 +22,12 @@
   <message id="ftw-more">更多</message>
   <message id="ftw-copy-btn">复制到剪贴板</message>
   <message id="ftw-copy-btn-narrow">复制</message>
+  <message id="ftw-select-rows">选择行</message>
+  <message id="ftw-select-rows-narrow">选择</message>
+  <message id="ftw-tt-select-rows">
+      在表格的每一行添加一个复选框，以便您选择将哪些行复制到剪贴板或导出为 CSV。所有行默认为
+    选中状态；取消勾选不需要输出的行。若未勾选此项，则复制/导出所有行。
+  </message>
   <message id="ftw-invalid-dist">距离无效</message>
   <message id="ftw-no-drf">未选择探测器响应函数</message>
   <message id="ftw-no-foreground">未加载前景谱</message>

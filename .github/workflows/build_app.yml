@@ -34,8 +34,14 @@ jobs:
         with:
           submodules: 'true'
 
-      - name: Setup Dev Env 
+      - name: Setup Dev Env
         uses: ./.github/actions/setup_dev_env
+
+      # Fail fast if the curated SBOM component list has drifted from the pinned dependency
+      # versions (target/patches/dep_build_msvc2022.bat) or a listed submodule/vendored path.
+      - name: Validate SBOM component list
+        shell: pwsh
+        run: python "${{ github.workspace }}/target/wxWidgets/sbom/make_sbom.py" --check --repo "${{ github.workspace }}"
 
       - name: Cache wxWidgets config/build
         id: cache-wx-build
@@ -73,6 +79,13 @@ jobs:
           echo "No testing has been performed on this build." >> $notes
           echo "InterSpec code git has SHA: ${{ github.sha }}" >> $notes
           echo "The Edge browser runtime is required to be installed to run; this will typically already be installed on Windows 10, and may be installed on Windows 7, but this hasnt been tested." >> $notes
+          # Generate a CycloneDX SBOM into the install dir so it ships inside the .zip (and the
+          # uploaded install-dir artifact), and thus flows to the "Development Build" release.
+          python "${{ github.workspace }}/target/wxWidgets/sbom/make_sbom.py" `
+            --repo "${{ github.workspace }}" `
+            --git-sha "${{ github.sha }}" `
+            --timestamp "$(Get-Date -AsUTC -Format o)" `
+            --output "InterSpec_app_${{ runner.os }}_WebView_latest/InterSpec_sbom.cdx.json"
           echo "Before zipping, files present for the bbuild are:"
           ls
           Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
@@ -225,7 +238,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     needs: [build-linux, build-win, macos-build]
-    
+    # Creating/updating the "Development Build" release requires write access to repo contents.
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -256,12 +272,21 @@ jobs:
           RELEASE_ID=${{ env.release_id }}
           PATTERN="InterSpec_app*"
 
+          # No pre-existing "Development Build" release (e.g. it was deleted): nothing
+          # to clean up, and softprops below will create it fresh. Skip so we don't index
+          # an error object with jq (which would fail the whole job under `bash -e`).
+          if [ -z "$RELEASE_ID" ]; then
+            echo "No existing release found; skipping asset cleanup."
+            exit 0
+          fi
+
           # Get all assets for the release
           ASSETS=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets")
 
-          # Loop through assets and delete those matching the pattern
-          echo "$ASSETS" | jq -c '.[]' | while read -r asset; do
+          # Loop through assets and delete those matching the pattern. `.[]?` tolerates a
+          # non-array response (e.g. an error object) without erroring out.
+          echo "$ASSETS" | jq -c '.[]?' | while read -r asset; do
             ASSET_NAME=$(echo "$asset" | jq -r '.name')
             ASSET_ID=$(echo "$asset" | jq -r '.id')
 
@@ -279,12 +304,13 @@ jobs:
         with:
           fail_on_unmatched_files: true
           tag_name: "bleeding-edge"
-          release_name: "Development Build"
+          name: "Development Build"
           body: "An automated, and untested build of the latest code pushed to the repository.<br />Windows version requires Windows 10 or 11, but may work on Windows 7 with the Edge browser runtime installed.<br />Linux version requires `glibc >=2.28` based distro (e.g., Ubuntu 21.04+, RHEL 9+, Debian 11+, Fedora 34+).<br />macOS version requires macOS 10.15 (Catalina) or later."
           draft: false
           generate_release_notes: false
           prerelease: true
-          make_latest: true
+          # NOTE: make_latest intentionally omitted - a prerelease cannot be the repo's
+          # "latest" release, so forcing it is invalid; GitHub's default ("legacy") is used.
           files: "./artifacts/**"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
