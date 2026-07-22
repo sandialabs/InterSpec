@@ -99,14 +99,52 @@ std::string sm_checkpoint_options_summary;
 
 namespace ReportDetail
 {
+namespace
+{
+std::pair<double,double> spectroscopic_extent( const PrecomputedNuclideData &pd )
+{
+  return pd.foreground ? FitPeaksForNuclides::find_valid_energy_range( pd.foreground )
+                       : std::make_pair( 0.0, 0.0 );
+}
+
+
+std::vector<ExpectedPhotopeakInfo> filter_truth_for_extent(
+  const std::vector<ExpectedPhotopeakInfo> &truth,
+  const std::pair<double,double> &extent )
+{
+  if( !(extent.second > extent.first) )
+    return truth;
+
+  std::vector<ExpectedPhotopeakInfo> filtered;
+  filtered.reserve( truth.size() );
+  for( const ExpectedPhotopeakInfo &peak : truth )
+    if( (peak.effective_energy >= extent.first) && (peak.effective_energy <= extent.second) )
+      filtered.push_back( peak );
+  return filtered;
+}
+}//namespace
+
+
+std::vector<ExpectedPhotopeakInfo> filter_truth_for_spectroscopic_extent(
+  const std::vector<ExpectedPhotopeakInfo> &truth,
+  const PrecomputedNuclideData &pd )
+{
+  return filter_truth_for_extent( truth, spectroscopic_extent(pd) );
+}
+
+std::string canonical_spectrum_key( const DataSrcInfo &info )
+{
+  return info.detector_name + "/" + info.location_name + "/" + info.live_time_name
+      + "/" + info.src_info.src_name + "|file=" + info.src_info.file_base_path;
+}
+
+
 std::string canonical_spectrum_key( const PrecomputedNuclideData &pd )
 {
   if( !pd.src_info )
     return "missing-spectrum-metadata";
 
-  const DataSrcInfo &info = *pd.src_info;
-  return info.detector_name + "/" + info.location_name + "/" + info.live_time_name
-      + "/" + info.src_info.src_name + "|file=" + info.src_info.file_base_path;
+  return canonical_spectrum_key( *pd.src_info );
 }
 
 
@@ -214,9 +252,11 @@ FitAccuracyBreakdown score_observable_peaks(
 {
   constexpr double num_sigma_contribution = 1.5;
   const PeakFitUtils::CoarseResolutionType det_type = pd.src_info->det_type;
-  const std::vector<ExpectedPhotopeakInfo> scoring_peaks
+  const std::vector<ExpectedPhotopeakInfo> detector_scoring_peaks
     = PeakFitImproveData::filter_photopeaks_for_scoring(
         pd.src_info->expected_signal_photopeaks, det_type );
+  const std::vector<ExpectedPhotopeakInfo> scoring_peaks
+    = filter_truth_for_spectroscopic_extent( detector_scoring_peaks, pd );
 
   CombinedPeakFitScore combined_score;
   combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
@@ -1800,7 +1840,14 @@ void write_cached_manual_review_report(
          << ((pd.foreground && pd.background && pd.background->live_time() > 0.0)
              ? (pd.foreground->live_time()/pd.background->live_time()) : 0.0)
          << "<br><b>Automatic interferer fit:</b> "
-         << (sm_disable_auto_interferer_fit ? "disabled" : "enabled") << "</div></div>";
+         << (sm_disable_auto_interferer_fit ? "disabled" : "enabled");
+    const std::pair<double,double> spectrum_extent = pd.foreground
+      ? FitPeaksForNuclides::find_valid_energy_range( pd.foreground )
+      : std::make_pair( 0.0, 0.0 );
+    html << "<br><b>Spectroscopic extent:</b> "
+         << ((spectrum_extent.second > spectrum_extent.first)
+               ? (std::to_string(spectrum_extent.first) + "–" + std::to_string(spectrum_extent.second) + " keV")
+               : "unavailable") << "</div></div>";
 
     if( !ev.error_message.empty() )
       html << "<h3>Complete error</h3><div class=\"error noteable\" data-note-context=\""
@@ -1829,10 +1876,10 @@ void write_cached_manual_review_report(
     std::map<std::string,std::string> references;
     ReferenceLineInfo matched_lines, missed_lines, other_unmatched_lines,
                       excluded_lines, public_peak_lines,
-                      observable_peak_lines;
+                      observable_peak_lines, extent_lines;
     for( ReferenceLineInfo *lines : {&matched_lines, &missed_lines,
           &other_unmatched_lines, &excluded_lines,
-          &public_peak_lines, &observable_peak_lines} )
+          &public_peak_lines, &observable_peak_lines, &extent_lines} )
     {
       lines->m_validity = ReferenceLineInfo::InputValidity::Valid;
       lines->m_source_type = ReferenceLineInfo::SourceType::OneOffSrcLines;
@@ -1840,9 +1887,11 @@ void write_cached_manual_review_report(
     }
     const std::vector<ExpectedPhotopeakInfo> &all_truth
       = info.expected_signal_photopeaks;
-    const std::vector<ExpectedPhotopeakInfo> scoring_truth
+    const std::vector<ExpectedPhotopeakInfo> detector_scoring_truth
       = PeakFitImproveData::filter_photopeaks_for_scoring(
           info.expected_signal_photopeaks, info.det_type );
+    const std::vector<ExpectedPhotopeakInfo> scoring_truth
+      = ReportDetail::filter_truth_for_spectroscopic_extent( detector_scoring_truth, pd );
     const std::vector<PeakDef> empty_observable_peaks;
     const std::vector<PeakDef> &observable_peaks
       = fit ? fit->observable_peaks : empty_observable_peaks;
@@ -1898,6 +1947,13 @@ void write_cached_manual_review_report(
                 : (objective_miss ? "Objective missed truth"
                                   : "Unmatched truth not counted as definite miss") );
     }
+    if( spectrum_extent.second > spectrum_extent.first )
+    {
+      append_reference_line( extent_lines, spectrum_extent.first, Wt::WColor(220,120,0),
+                             "Lower spectroscopic extent" );
+      append_reference_line( extent_lines, spectrum_extent.second, Wt::WColor(220,120,0),
+                             "Upper spectroscopic extent" );
+    }
     if( fit )
     {
       for( const PeakDef &peak : fit->fit_peaks )
@@ -1912,6 +1968,7 @@ void write_cached_manual_review_report(
            {"Matched truth",&matched_lines}, {"Missed truth",&missed_lines},
            {"Other unmatched truth",&other_unmatched_lines},
            {"Truth not scored",&excluded_lines},
+           {"Spectroscopic extent",&extent_lines},
            {"Combined public fitted means",&public_peak_lines},
            {"Objective observable fitted means",&observable_peak_lines} } )
     {
@@ -2099,7 +2156,7 @@ void write_cached_manual_review_report(
     html << "</table>";
 
     html << "<h3>Truth comparison and explicit spurious peaks</h3><p>Truth detection and spurious classification use the CandidatePeak objective's expected-ROI / fitted ±1σ overlap rule. The displayed best fitted match is the nearest among objective-compatible peaks. Area pull uses the same 5% truth-relative floor as the area objective.</p>"
-         << "<table><tr><th>Truth energy</th><th>Truth area</th><th>Truth σ over background</th><th>Matched fitted peak</th><th>Energy error</th><th>Normalized area error</th><th>Classification / reason</th></tr>";
+         << "<table><tr><th>Truth energy</th><th>Truth area</th><th>Truth σ over background</th><th>Matched fitted peak</th><th>Fitted area</th><th>Area error (%)</th><th>Energy error</th><th>Normalized area error</th><th>Classification / reason</th></tr>";
     for( size_t truth_index = 0; truth_index < all_truth.size(); ++truth_index )
     {
       const ExpectedPhotopeakInfo &truth = all_truth[truth_index];
@@ -2132,6 +2189,10 @@ void write_cached_manual_review_report(
            << "\"><td>" << truth.effective_energy << "</td><td>" << truth.peak_area
            << "</td><td>" << truth.nsigma_over_background << "</td><td>"
            << (best ? std::to_string(best->mean()) : std::string("—")) << "</td><td>"
+           << (best ? std::to_string(best->amplitude()) : std::string("—")) << "</td><td>"
+           << (best && (truth.peak_area != 0.0)
+                 ? std::to_string(100.0*(best->amplitude()-truth.peak_area)/truth.peak_area)
+                 : std::string("—")) << "</td><td>"
            << (best ? std::to_string(best->mean()-truth.effective_energy) : std::string("—"))
            << "</td><td>" << (best ? std::to_string(area_pull) : std::string("—"))
            << "</td><td>" << (!scored ? "not scored: detector-specific low-energy filter"
@@ -2142,7 +2203,7 @@ void write_cached_manual_review_report(
            << "</td></tr>";
     }
     if( all_truth.empty() )
-      html << "<tr><td colspan=\"7\">No truth peaks are defined for this spectrum.</td></tr>";
+      html << "<tr><td colspan=\"9\">No truth peaks are defined for this spectrum.</td></tr>";
 
     bool used_511_exemption = false;
     if( fit )
@@ -2160,7 +2221,7 @@ void write_cached_manual_review_report(
              << "\" data-note-context=\"" << ReportDetail::html_escape(
                   note_context + " spurious fitted peak " + std::to_string(peak.mean()) + " keV")
              << "\"><td>—</td><td>—</td><td>—</td><td>" << peak.mean()
-             << "</td><td>—</td><td>—</td><td>"
+             << "</td><td>—</td><td>—</td><td>—</td><td>—</td><td>"
              << (exempt_511 ? "unexpected 511-keV peak; objective exempts the first one"
                             : "SPURIOUS by objective CandidatePeak rule")
              << "</td></tr>";
@@ -2327,6 +2388,137 @@ ConfigEvaluation evaluate_for_report(
   return evaluation;
 }
 }//anonymous namespace
+
+
+void write_config_evaluation_tsv(
+  const std::vector<PrecomputedNuclideData> &precomputed,
+  const ConfigEvaluation &evaluation,
+  const std::string &filename )
+{
+  ReportDetail::validate_evaluation_coverage( precomputed.size(), evaluation );
+  std::ifstream existing( filename );
+  if( existing.good() )
+    throw std::runtime_error( "Refusing to overwrite evaluation TSV: " + filename );
+
+  std::ofstream out( filename );
+  if( !out.good() )
+    throw std::runtime_error( "Could not open evaluation TSV output: " + filename );
+  out << std::setprecision(17);
+
+  const auto tsv_text = []( std::string value ) {
+    std::replace( value.begin(), value.end(), '\t', ' ' );
+    std::replace( value.begin(), value.end(), '\r', ' ' );
+    std::replace( value.begin(), value.end(), '\n', ' ' );
+    return value;
+  };
+  const auto join_warnings = [&tsv_text]( const std::vector<std::string> &warnings ) {
+    std::ostringstream value;
+    for( size_t index = 0; index < warnings.size(); ++index )
+    {
+      if( index )
+        value << " | ";
+      value << tsv_text( warnings[index] );
+    }
+    return value.str();
+  };
+
+  out << "spectrum_key\tstable_id\tdetector\tcity\tlive_time\tsource\tfile_base_path"
+      << "\tstatus\tlegitimate_empty\tmechanical_failure\tscalar_cost\tarea_cost"
+      << "\tfind_reward\tcandidate_reward\tmiss_fraction\tdefinite_miss_count\tspurious_count"
+      << "\tfitted_peak_count\tobservable_peak_count\troi_count\tmax_roi_width_kev"
+      << "\tmax_roi_width_channels\tmax_roi_width_fwhm\tmax_peaks_per_roi\tstep_count"
+      << "\tcontinuum_types\tmax_pearson_rms\tmax_snip_mismatch\tmax_report_area_pull"
+      << "\tbackground_contribution\twarnings\terror\n";
+
+  for( size_t index = 0; index < precomputed.size(); ++index )
+  {
+    const PrecomputedNuclideData &pd = precomputed[index];
+    const SpectrumEvaluation &ev = evaluation.spectra[index];
+    if( !pd.src_info || ev.spectrum_id != ReportDetail::canonical_spectrum_key(pd) )
+      throw std::runtime_error( "Evaluation TSV record is not associated with its spectrum" );
+
+    double max_width_kev = 0.0;
+    size_t max_width_channels = 0;
+    double max_width_fwhm = 0.0;
+    size_t max_peaks_per_roi = 0;
+    size_t step_count = 0;
+    double max_pearson_rms = 0.0;
+    double max_snip_mismatch = 0.0;
+    std::set<std::string> continuum_types;
+    const std::vector<RoiReview> rois = review_rois( pd, ev );
+    for( const RoiReview &roi : rois )
+    {
+      max_width_kev = std::max( max_width_kev, roi.upper - roi.lower );
+      max_width_channels = std::max( max_width_channels, roi.channels );
+      max_width_fwhm = std::max( max_width_fwhm, roi.width_fwhm );
+      max_peaks_per_roi = std::max( max_peaks_per_roi, roi.peaks.size() );
+      max_pearson_rms = std::max( max_pearson_rms, roi.model_pearson_rms );
+      max_snip_mismatch = std::max( max_snip_mismatch, roi.snip_continuum_rms );
+      if( roi.continuum )
+      {
+        continuum_types.insert( PeakContinuum::offset_type_str(roi.continuum->type()) );
+        if( PeakContinuum::is_step_continuum(roi.continuum->type()) )
+          step_count += 1;
+      }
+    }
+
+    double max_area_pull = 0.0;
+    if( ev.has_fit_result )
+    {
+      const std::vector<ExpectedPhotopeakInfo> truth
+        = PeakFitImproveData::filter_photopeaks_for_scoring(
+            pd.src_info->expected_signal_photopeaks, pd.det_type );
+      for( const ExpectedPhotopeakInfo &expected : truth )
+      {
+        const PeakDef *best = nullptr;
+        for( const PeakDef &peak : ev.fit_result.observable_peaks )
+        {
+          if( objective_truth_match( peak, expected )
+              && (!best || std::fabs(peak.mean() - expected.effective_energy)
+                    < std::fabs(best->mean() - expected.effective_energy)) )
+            best = &peak;
+        }
+        if( best )
+        {
+          constexpr double f_rel = 0.05;
+          const double area = std::max( 1.0, expected.peak_area );
+          const double sigma = std::sqrt( area + (f_rel*area)*(f_rel*area) );
+          max_area_pull = std::max( max_area_pull,
+            std::fabs(best->amplitude() - expected.peak_area) / sigma );
+        }
+      }
+    }
+
+    std::ostringstream continuum_text;
+    for( std::set<std::string>::const_iterator iter = continuum_types.begin();
+         iter != continuum_types.end(); ++iter )
+    {
+      if( iter != continuum_types.begin() )
+        continuum_text << ',';
+      continuum_text << *iter;
+    }
+    const DataSrcInfo &info = *pd.src_info;
+    const double scalar_cost = ev.accuracy.cost
+      + sm_background_fit_penalty_weight*ev.background_penalty;
+    out << tsv_text(ev.spectrum_id) << '\t' << tsv_text(ev.anchor_id) << '\t'
+        << tsv_text(info.detector_name) << '\t' << tsv_text(info.location_name) << '\t'
+        << tsv_text(info.live_time_name) << '\t' << tsv_text(info.src_info.src_name) << '\t'
+        << tsv_text(info.src_info.file_base_path) << '\t' << tsv_text(ev.status) << '\t'
+        << ev.legitimate_empty << '\t' << ev.mechanical_failure << '\t' << scalar_cost << '\t'
+        << ev.accuracy.area_cost << '\t' << ev.accuracy.find_reward << '\t'
+        << ev.accuracy.candidate_reward << '\t' << ev.accuracy.miss_fraction << '\t'
+        << ev.accuracy.missed_definitely_wanted << '\t' << ev.accuracy.extra_peaks << '\t'
+        << (ev.has_fit_result ? ev.fit_result.fit_peaks.size() : 0) << '\t'
+        << (ev.has_fit_result ? ev.fit_result.observable_peaks.size() : 0) << '\t'
+        << rois.size() << '\t' << max_width_kev << '\t' << max_width_channels << '\t'
+        << max_width_fwhm << '\t' << max_peaks_per_roi << '\t' << step_count << '\t'
+        << continuum_text.str() << '\t' << max_pearson_rms << '\t' << max_snip_mismatch << '\t'
+        << max_area_pull << '\t'
+        << (sm_background_fit_penalty_weight*ev.background_penalty) << '\t'
+        << join_warnings( ev.has_fit_result ? ev.fit_result.warnings : std::vector<std::string>() )
+        << '\t' << tsv_text(ev.error_message) << '\n';
+  }
+}
 
 
 void write_results_html_and_n42(

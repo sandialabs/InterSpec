@@ -29,6 +29,8 @@
 // background subtraction, then translated back to original energy cal.
 #define OBSERVABLE_PEAKS_USING_ORIGINAL_CAL_WITH_BACK_SUB 0
 
+#include <atomic>
+#include <cstdint>
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -194,9 +196,57 @@ const char *automatic_roi_decision_name( const AutomaticRoiDecision decision )
     case AutomaticRoiDecision::UnmodeledFeatureBlocked: return "UnmodeledFeatureBlocked";
     case AutomaticRoiDecision::ProtectedGeometry: return "ProtectedGeometry";
     case AutomaticRoiDecision::R6LegacyBypass: return "R6LegacyBypass";
+    case AutomaticRoiDecision::SourceBridgeRetained: return "SourceBridgeRetained";
+    case AutomaticRoiDecision::SourceBridgeRejectedContinuum:
+      return "SourceBridgeRejectedContinuum";
+    case AutomaticRoiDecision::SourceBridgeRejectedFreeFeature:
+      return "SourceBridgeRejectedFreeFeature";
+    case AutomaticRoiDecision::InfeasiblePartition: return "InfeasiblePartition";
   }
   return "Unknown";
 }
+
+namespace detail
+{
+bool should_try_source_clean_recovery( const size_t num_source_anchors,
+                                       const size_t num_preserved_anchors )
+{
+  return (num_source_anchors >= 2)
+         && ((num_source_anchors - std::min(num_source_anchors, num_preserved_anchors)) >= 2);
+}
+
+bool should_accept_source_clean_challenger( const bool solve_succeeded,
+                                            const size_t incumbent_preserved_anchors,
+                                            const size_t candidate_preserved_anchors,
+                                            const size_t incumbent_fitted_anchors,
+                                            const size_t candidate_fitted_anchors,
+                                            const double incumbent_score,
+                                            const double candidate_score )
+{
+  const double unavailable_score = std::numeric_limits<double>::max();
+  const bool score_improves = std::isfinite( candidate_score )
+      && (candidate_score < unavailable_score)
+      && ((incumbent_score == unavailable_score)
+          || (std::isfinite(incumbent_score) && (candidate_score < incumbent_score)));
+  return solve_succeeded
+      && (candidate_preserved_anchors > incumbent_preserved_anchors)
+      && (candidate_fitted_anchors >= incumbent_fitted_anchors)
+      && score_improves;
+}
+
+double data_only_aicc( const double data_chi2,
+                       const size_t num_data_rows,
+                       const size_t num_parameters,
+                       const double parameter_penalty )
+{
+  if( !std::isfinite(data_chi2) || (data_chi2 < 0.0) || !(parameter_penalty > 0.0)
+      || (num_data_rows <= (num_parameters + 1)) )
+    return std::numeric_limits<double>::max();
+  return data_chi2 + parameter_penalty*num_parameters
+      + parameter_penalty*num_parameters*(num_parameters + 1.0)
+          / (num_data_rows - num_parameters - 1.0);
+}
+}//namespace detail
 
 // Anonymous namespace for helper functions
 namespace
@@ -244,6 +294,14 @@ namespace
     double statistical_significance; // Primary criterion (lower = better breakpoint)
   };
 
+  struct PredictedGamma
+  {
+    double energy;
+    double expected_counts;
+    RelActCalcAuto::SrcVariant source;
+    size_t rel_eff_curve_index;
+  };
+
   struct ClusteredGammaInfo
   {
     double lower;
@@ -251,14 +309,23 @@ namespace
     std::vector<double> gamma_energies;    // energies of gamma lines in this cluster
     std::vector<double> gamma_amplitudes;  // expected peak areas/amplitudes
     size_t joined_groups = 1;
+    // Provisional source groups retain their source/curve provenance until the over-wide local
+    // evidence gate completes.  Atoms are minted only afterward, so a rejected H0/Hf bridge was
+    // never admitted and the exact-once atom transaction remains literal.
+    std::vector<PredictedGamma> predicted_gammas;
+    std::vector<detail::RoiAtom> atoms;
+    uint64_t selected_partition_id = 0;
+    double selected_parent_lower = std::numeric_limits<double>::quiet_NaN();
+    double selected_parent_upper = std::numeric_limits<double>::quiet_NaN();
   };
 
-  struct PredictedGamma
+  struct SelectedRoiComponentPartition
   {
-    double energy;
-    double expected_counts;
-    RelActCalcAuto::SrcVariant source;
-    size_t rel_eff_curve_index;
+    uint64_t id = 0;
+    double parent_lower = 0.0;
+    double parent_upper = 0.0;
+    std::vector<RelActCalcAuto::RoiRange> children;
+    std::shared_ptr<const SpecUtils::EnergyCalibration> calibration;
   };
 
   struct MarginalRejectedCluster
@@ -365,6 +432,115 @@ namespace
 // Gaussian approximation to Poisson statistics (and hence the z-based keep gate) breaks down, and
 // a fit is unlikely to converge meaningfully regardless of significance.
 static constexpr double sm_keep_gate_min_est_counts = 15.0;
+
+namespace
+{
+std::vector<RelActCalcManual::GenericPeakInfo> distinct_significant_source_anchors(
+  const std::vector<RelActCalcManual::GenericPeakInfo> &anchors,
+  const double minimum_z )
+{
+  std::vector<RelActCalcManual::GenericPeakInfo> candidates;
+  for( const RelActCalcManual::GenericPeakInfo &anchor : anchors )
+  {
+    const double z = (anchor.m_counts_uncert > 0.0)
+      ? (anchor.m_counts / anchor.m_counts_uncert) : 0.0;
+    if( (z >= minimum_z) && (anchor.m_counts > 0.0)
+        && std::isfinite(anchor.m_energy) && !anchor.m_source_gammas.empty() )
+      candidates.push_back( anchor );
+  }
+
+  std::sort( std::begin(candidates), std::end(candidates),
+    []( const RelActCalcManual::GenericPeakInfo &lhs,
+        const RelActCalcManual::GenericPeakInfo &rhs ) {
+      const double lhs_z = lhs.m_counts / lhs.m_counts_uncert;
+      const double rhs_z = rhs.m_counts / rhs.m_counts_uncert;
+      return lhs_z > rhs_z;
+    } );
+
+  std::vector<RelActCalcManual::GenericPeakInfo> result;
+  for( const RelActCalcManual::GenericPeakInfo &candidate : candidates )
+  {
+    const bool overlaps_existing = std::any_of( std::begin(result), std::end(result),
+      [&candidate]( const RelActCalcManual::GenericPeakInfo &existing ) {
+        const double candidate_fwhm = std::max( 0.0, candidate.m_fwhm );
+        const double existing_fwhm = std::max( 0.0, existing.m_fwhm );
+        const double required_separation = 0.5*(candidate_fwhm + existing_fwhm);
+        return std::fabs(candidate.m_energy - existing.m_energy) < required_separation;
+      } );
+    if( !overlaps_existing )
+      result.push_back( candidate );
+  }
+
+  std::sort( std::begin(result), std::end(result),
+    []( const RelActCalcManual::GenericPeakInfo &lhs,
+        const RelActCalcManual::GenericPeakInfo &rhs ) {
+      return lhs.m_energy < rhs.m_energy;
+    } );
+  return result;
+}
+
+double predicted_source_anchor_counts(
+  const RelActCalcAuto::RelActAutoSolution &solution,
+  const size_t rel_eff_curve_index,
+  const RelActCalcManual::GenericPeakInfo &anchor,
+  const double live_time )
+{
+  if( (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+      || (rel_eff_curve_index >= solution.m_rel_activities.size())
+      || !(live_time > 0.0) )
+    return 0.0;
+
+  const double rel_eff = solution.relative_efficiency( anchor.m_energy, rel_eff_curve_index );
+  if( !std::isfinite(rel_eff) || !(rel_eff > 0.0) )
+    return 0.0;
+
+  double predicted = 0.0;
+  for( const RelActCalcManual::GenericLineInfo &line : anchor.m_source_gammas )
+  {
+    const std::vector<RelActCalcAuto::NuclideRelAct> &activities
+      = solution.m_rel_activities[rel_eff_curve_index];
+    const std::vector<RelActCalcAuto::NuclideRelAct>::const_iterator found = std::find_if(
+      std::begin(activities), std::end(activities),
+      [&line]( const RelActCalcAuto::NuclideRelAct &activity ) {
+        return activity.name() == line.m_isotope;
+      } );
+    if( found != std::end(activities) )
+      predicted += found->rel_activity * live_time * line.m_yield * rel_eff;
+  }
+  return std::isfinite(predicted) ? std::max( 0.0, predicted ) : 0.0;
+}
+
+size_t preserved_source_anchor_count(
+  const RelActCalcAuto::RelActAutoSolution &solution,
+  const size_t rel_eff_curve_index,
+  const std::vector<RelActCalcManual::GenericPeakInfo> &anchors,
+  const double live_time )
+{
+  return static_cast<size_t>( std::count_if( std::begin(anchors), std::end(anchors),
+    [&solution, rel_eff_curve_index, live_time](
+        const RelActCalcManual::GenericPeakInfo &anchor ) {
+      return predicted_source_anchor_counts( solution, rel_eff_curve_index, anchor, live_time )
+             > sm_keep_gate_min_est_counts;
+    } ) );
+}
+
+std::vector<RelActCalcManual::GenericPeakInfo> preserved_source_anchors(
+  const RelActCalcAuto::RelActAutoSolution &solution,
+  const size_t rel_eff_curve_index,
+  const std::vector<RelActCalcManual::GenericPeakInfo> &anchors,
+  const double live_time )
+{
+  std::vector<RelActCalcManual::GenericPeakInfo> result;
+  std::copy_if( std::begin(anchors), std::end(anchors), std::back_inserter(result),
+    [&solution, rel_eff_curve_index, live_time](
+        const RelActCalcManual::GenericPeakInfo &anchor ) {
+      return predicted_source_anchor_counts( solution, rel_eff_curve_index, anchor, live_time )
+             > sm_keep_gate_min_est_counts;
+    } );
+  return result;
+}
+
+}//namespace
 
 // Minimum detection significance of an auto-search peak for a dropped energy-extreme ROI to be
 // restored on the strength of the data (see the "data should override the model" block).  Replaces
@@ -1596,6 +1772,398 @@ bool find_clean_gap_between(
 }//find_clean_gap_between
 
 
+namespace
+{
+struct MeasuredRoiModelFit
+{
+  bool valid = false;
+  double poisson_deviance = std::numeric_limits<double>::max();
+  double aicc = std::numeric_limits<double>::max();
+  size_t num_parameters = 0;
+  PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Linear;
+  std::vector<double> amplitudes;
+  std::vector<double> amplitude_uncertainties;
+};
+
+
+/** Fit one of the small structural hypotheses used below on an immutable foreground channel
+ domain.  Peak means/widths are fixed; their areas are either linear fit parameters (`means`) or
+ fixed by `fixed_peaks`.  The returned likelihood is always evaluated from the measured counts,
+ even though the linear solve uses the usual Poisson-weighted least-squares initialization. */
+MeasuredRoiModelFit fit_measured_roi_model(
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const size_t first_channel,
+  const size_t last_channel,
+  const double reference_energy,
+  const std::vector<double> &means,
+  const std::vector<double> &sigmas,
+  const std::vector<PeakDef> &fixed_peaks,
+  const double aicc_penalty,
+  std::vector<MeasuredRoiModelFit> *all_fits = nullptr )
+{
+  MeasuredRoiModelFit best;
+  if( all_fits )
+    all_fits->clear();
+  if( !foreground || !foreground->channel_energies()
+      || (first_channel >= foreground->num_gamma_channels())
+      || (last_channel < first_channel) || !(aicc_penalty > 0.0)
+      || (means.size() != sigmas.size()) )
+    return best;
+
+  const size_t nbin = 1 + last_channel - first_channel;
+  const std::vector<float> &channel_energies = *foreground->channel_energies();
+  if( channel_energies.size() <= (first_channel + nbin) )
+    return best;
+
+  std::vector<float> counts( nbin );
+  std::vector<float> variances( nbin );
+  for( size_t index = 0; index < nbin; ++index )
+  {
+    counts[index] = foreground->gamma_channel_content( first_channel + index );
+    variances[index] = std::max( 1.0f, counts[index] );
+  }
+
+  const PeakContinuum::OffsetType families[] = {
+    PeakContinuum::OffsetType::Linear,
+    PeakContinuum::OffsetType::Quadratic,
+    PeakContinuum::OffsetType::FlatStep,
+    PeakContinuum::OffsetType::LinearStep
+  };
+  for( const PeakContinuum::OffsetType family : families )
+  {
+    const size_t num_parameters = PeakContinuum::num_parameters( family ) + means.size();
+    if( nbin <= (num_parameters + 1) )
+      continue;
+
+    std::vector<double> amplitudes, coefficients, amplitude_uncertainties;
+    std::vector<double> coefficient_uncertainties;
+    std::vector<double> predictions( nbin, 0.0 );
+    try
+    {
+      static_cast<void>( PeakFit::fit_amp_and_offset_imp<PeakDef,double>(
+          &channel_energies[first_channel], counts.data(), variances.data(), nbin,
+          family, 0.0, reference_energy, means, sigmas, fixed_peaks,
+          PeakDef::SkewType::NoSkew, nullptr, amplitudes, coefficients,
+          amplitude_uncertainties, coefficient_uncertainties, predictions.data() ) );
+    }catch( const std::exception & )
+    {
+      continue;
+    }
+    if( (coefficients.size() != PeakContinuum::num_parameters(family))
+        || (amplitudes.size() != means.size())
+        || std::any_of( std::begin(amplitudes), std::end(amplitudes),
+             []( const double amplitude ) {
+               return !std::isfinite(amplitude) || (amplitude < 0.0);
+             } ) )
+      continue;
+
+    bool physically_valid = true;
+    double deviance = 0.0;
+    for( size_t index = 0; index < nbin; ++index )
+    {
+      const double observed = std::max( 0.0, static_cast<double>(counts[index]) );
+      double predicted = predictions[index];
+      if( !std::isfinite(predicted) || (predicted < -1.0e-6) )
+      {
+        physically_valid = false;
+        break;
+      }
+      predicted = std::max( 1.0e-9, predicted );
+      deviance += (observed > 0.0)
+        ? 2.0*(predicted - observed + observed*std::log(observed/predicted))
+        : 2.0*predicted;
+    }
+    if( !physically_valid )
+      continue;
+
+    const double score = data_only_aicc( deviance, nbin, num_parameters, aicc_penalty );
+    MeasuredRoiModelFit candidate;
+    candidate.valid = true;
+    candidate.poisson_deviance = deviance;
+    candidate.aicc = score;
+    candidate.num_parameters = num_parameters;
+    candidate.continuum_type = family;
+    candidate.amplitudes = amplitudes;
+    candidate.amplitude_uncertainties = amplitude_uncertainties;
+    if( all_fits )
+      all_fits->push_back( candidate );
+    if( score < best.aicc )
+    {
+      best = std::move( candidate );
+    }
+  }
+  return best;
+}//fit_measured_roi_model
+
+
+/** Fit one nonnegative scale multiplying the exact fixed-ratio source-line template.  Each trial
+ scale re-fits the production continuum families on the same channels; AICc counts the shared scale
+ once, independent of the number of source lines. */
+MeasuredRoiModelFit fit_measured_roi_scaled_source_model(
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const size_t first_channel,
+  const size_t last_channel,
+  const double reference_energy,
+  const std::vector<double> &means,
+  const std::vector<double> &sigmas,
+  const std::vector<double> &weights,
+  const double aicc_penalty )
+{
+  MeasuredRoiModelFit best;
+  if( !foreground || (means.size() != sigmas.size()) || (means.size() != weights.size())
+      || means.empty() || (last_channel < first_channel) )
+    return best;
+
+  const double weight_sum = std::accumulate( std::begin(weights), std::end(weights), 0.0,
+      []( const double sum, const double weight ) {
+        return sum + ((std::isfinite(weight) && (weight > 0.0)) ? weight : 0.0);
+      } );
+  if( !(weight_sum > 0.0) )
+    return best;
+  const size_t num_channels = 1 + last_channel - first_channel;
+  const double gross_counts = foreground->gamma_integral(
+      foreground->gamma_channel_lower(first_channel),
+      foreground->gamma_channel_upper(last_channel) );
+  const double max_area = std::max( 1.0, 4.0*gross_counts );
+
+  const auto evaluate = [&]( const double total_area ) {
+    MeasuredRoiModelFit trial_best;
+    std::vector<PeakDef> fixed_peaks;
+    fixed_peaks.reserve( means.size() );
+    for( size_t index = 0; index < means.size(); ++index )
+    {
+      if( !std::isfinite(means[index]) || !std::isfinite(sigmas[index])
+          || !(sigmas[index] > 0.0) || !std::isfinite(weights[index])
+          || !(weights[index] > 0.0) )
+        continue;
+      fixed_peaks.emplace_back( means[index], sigmas[index],
+          total_area*weights[index]/weight_sum );
+    }
+    if( fixed_peaks.empty() )
+      return trial_best;
+    std::vector<MeasuredRoiModelFit> family_fits;
+    const std::vector<double> no_means, no_sigmas;
+    static_cast<void>( fit_measured_roi_model( foreground, first_channel, last_channel,
+        reference_energy, no_means, no_sigmas, fixed_peaks, aicc_penalty, &family_fits ) );
+    for( MeasuredRoiModelFit &fit : family_fits )
+    {
+      ++fit.num_parameters;  // the one common source-template scale
+      fit.aicc = data_only_aicc( fit.poisson_deviance, num_channels,
+          fit.num_parameters, aicc_penalty );
+      fit.amplitudes = { total_area };
+      if( fit.aicc < trial_best.aicc )
+        trial_best = std::move( fit );
+    }
+    return trial_best;
+  };
+
+  // Coarse bracketing followed by a bounded golden-section refinement.  The best continuum family
+  // may change with scale, so retain the best scored trial rather than assuming differentiability.
+  constexpr size_t num_grid_steps = 16;
+  size_t best_grid = 0;
+  for( size_t index = 0; index <= num_grid_steps; ++index )
+  {
+    const double area = max_area*static_cast<double>(index)
+        / static_cast<double>(num_grid_steps);
+    MeasuredRoiModelFit candidate = evaluate( area );
+    if( candidate.aicc < best.aicc )
+    {
+      best = std::move( candidate );
+      best_grid = index;
+    }
+  }
+  double lower = max_area*static_cast<double>(best_grid > 0 ? best_grid - 1 : 0)
+      / static_cast<double>(num_grid_steps);
+  double upper = max_area*static_cast<double>(std::min(num_grid_steps, best_grid + 1))
+      / static_cast<double>(num_grid_steps);
+  constexpr double inv_phi = 0.6180339887498948482;
+  double left = upper - inv_phi*(upper - lower);
+  double right = lower + inv_phi*(upper - lower);
+  MeasuredRoiModelFit left_fit = evaluate( left );
+  MeasuredRoiModelFit right_fit = evaluate( right );
+  for( size_t iteration = 0; iteration < 14; ++iteration )
+  {
+    if( left_fit.aicc < right_fit.aicc )
+    {
+      upper = right;
+      right = left;
+      right_fit = left_fit;
+      left = upper - inv_phi*(upper - lower);
+      left_fit = evaluate( left );
+    }else
+    {
+      lower = left;
+      left = right;
+      left_fit = right_fit;
+      right = lower + inv_phi*(upper - lower);
+      right_fit = evaluate( right );
+    }
+  }
+  if( left_fit.aicc < best.aicc )
+    best = std::move( left_fit );
+  if( right_fit.aicc < best.aicc )
+    best = std::move( right_fit );
+  return best;
+}//fit_measured_roi_scaled_source_model
+}//namespace
+
+
+SourceClusterEvidenceResult evaluate_source_cluster_evidence(
+  const std::vector<double> &source_energies,
+  const std::vector<double> &source_areas,
+  const double lower_energy,
+  const double upper_energy,
+  const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+  const std::function<double(double)> &fwhm_at_energy,
+  const std::vector<std::shared_ptr<const PeakDef>> &found_peaks,
+  const double significance_z,
+  const double source_core_num_fwhm,
+  const double aicc_penalty )
+{
+  SourceClusterEvidenceResult result;
+  if( !foreground || !foreground->energy_calibration()
+      || !foreground->energy_calibration()->valid() || !fwhm_at_energy
+      || source_energies.empty() || (source_energies.size() != source_areas.size())
+      || !(upper_energy > lower_energy) || !(significance_z > 0.0)
+      || !(source_core_num_fwhm > 0.0)
+      || !(aicc_penalty > 0.0) )
+  {
+    result.reason = "invalid local source-evidence input";
+    return result;
+  }
+
+  const size_t first_channel = foreground->find_gamma_channel(
+      static_cast<float>(lower_energy) );
+  const size_t last_channel = std::min( foreground->find_gamma_channel(
+      static_cast<float>(upper_energy) ), foreground->num_gamma_channels() - 1 );
+  if( last_channel <= (first_channel + 4) )
+  {
+    result.reason = "too few channels for local source-evidence comparison";
+    return result;
+  }
+  const double reference_energy = 0.5*(lower_energy + upper_energy);
+  const std::vector<double> no_means, no_sigmas;
+  const std::vector<PeakDef> no_fixed_peaks;
+  const MeasuredRoiModelFit null_fit = fit_measured_roi_model(
+      foreground, first_channel, last_channel, reference_energy,
+      no_means, no_sigmas, no_fixed_peaks, aicc_penalty );
+
+  // Hs has one local scale parameter multiplying the exact requested-source line mixture.  Its
+  // line energies, widths, and relative areas are fixed, while the shared scale is allowed to
+  // correct an imperfect provisional global activity.
+  std::vector<double> source_means, source_sigmas, source_weights;
+  for( size_t index = 0; index < source_energies.size(); ++index )
+  {
+    const double fwhm = fwhm_at_energy( source_energies[index] );
+    if( !std::isfinite(fwhm) || !(fwhm > 0.0)
+        || !std::isfinite(source_areas[index]) || !(source_areas[index] > 0.0) )
+      continue;
+    source_means.push_back( source_energies[index] );
+    source_sigmas.push_back( fwhm / PhysicalUnits::fwhm_nsigma );
+    source_weights.push_back( source_areas[index] );
+  }
+  if( source_means.empty() )
+  {
+    result.reason = "source hypothesis has no finite positive prediction";
+    return result;
+  }
+  const MeasuredRoiModelFit source_fit = fit_measured_roi_scaled_source_model(
+      foreground, first_channel, last_channel, reference_energy,
+      source_means, source_sigmas, source_weights, aicc_penalty );
+
+  result.null_aicc = null_fit.valid ? null_fit.aicc
+                                    : std::numeric_limits<double>::quiet_NaN();
+  result.source_aicc = source_fit.valid ? source_fit.aicc
+                                        : std::numeric_limits<double>::quiet_NaN();
+  if( !null_fit.valid )
+  {
+    result.reason = "local continuum/source comparison was ill-conditioned";
+    return result;
+  }
+  if( !source_fit.valid )
+  {
+    result.decision = SourceClusterEvidenceDecision::RejectContinuumOnly;
+    result.reason = "no nonnegative source-tied amplitude improves the continuum model";
+    return result;
+  }
+
+  const double source_delta = null_fit.poisson_deviance - source_fit.poisson_deviance;
+  result.source_likelihood_z = std::sqrt( std::max(0.0, source_delta) );
+
+  std::vector<double> free_means, free_sigmas;
+  for( const std::shared_ptr<const PeakDef> &peak : found_peaks )
+  {
+    if( !peak || !peak->gausPeak() || (peak->mean() < lower_energy)
+        || (peak->mean() > upper_energy) )
+      continue;
+    const bool matches_source_core = std::any_of( std::begin(source_means),
+        std::end(source_means), [&peak, &fwhm_at_energy, source_core_num_fwhm](
+            const double source_energy ) {
+          const double source_fwhm = fwhm_at_energy( source_energy );
+          return std::isfinite(source_fwhm) && (source_fwhm > 0.0)
+              && (std::fabs(peak->mean() - source_energy)
+                  < (source_core_num_fwhm*source_fwhm));
+        } );
+    if( matches_source_core )
+      continue;  // a requested line cannot compete against its own fixed-ratio Hs mixture as Hf
+    const double amplitude = peak->amplitude();
+    const double uncertainty = peak->amplitudeUncert();
+    const double found_z = (uncertainty > 0.0) ? (amplitude / uncertainty)
+        : ((amplitude > 0.0) ? std::sqrt(amplitude) : 0.0);
+    if( found_z < significance_z )
+      continue;
+    const double sigma = (peak->sigma() > 0.0)
+        ? peak->sigma() : (fwhm_at_energy(peak->mean()) / PhysicalUnits::fwhm_nsigma);
+    if( !std::isfinite(sigma) || !(sigma > 0.0) )
+      continue;
+    const bool distinct = std::none_of( std::begin(free_means), std::end(free_means),
+        [&peak, &fwhm_at_energy]( const double accepted_mean ) {
+          const double fwhm = fwhm_at_energy( 0.5*(accepted_mean + peak->mean()) );
+          return std::isfinite(fwhm) && (fwhm > 0.0)
+              && (std::fabs(accepted_mean - peak->mean()) < fwhm);
+        } );
+    if( distinct )
+    {
+      free_means.push_back( peak->mean() );
+      free_sigmas.push_back( sigma );
+    }
+  }
+  const MeasuredRoiModelFit best_free_fit = free_means.empty()
+      ? MeasuredRoiModelFit()
+      : fit_measured_roi_model( foreground, first_channel, last_channel, reference_energy,
+          free_means, free_sigmas, no_fixed_peaks, aicc_penalty );
+  if( !free_means.empty() )
+    result.free_feature_energy = free_means.front();
+  result.free_feature_aicc = best_free_fit.valid ? best_free_fit.aicc
+                                                  : std::numeric_limits<double>::quiet_NaN();
+
+  // AICc is the actual transactional selector here: it already requires the one additional source
+  // scale parameter to earn its place on the identical channels.  Requiring the peak-only z to
+  // ALSO exceed the later observable threshold double-penalizes blended source groups.  In dense
+  // forests a real shoulder can win the parameter-penalized comparison while its isolated z is
+  // just below that downstream gate (the U235 90-keV complex is a representative case).  Such a
+  // group is evidence, not a demonstrably empty bridge, so retain it and leave final significance
+  // pruning to the existing observable stage.
+  const bool source_beats_null = (source_fit.aicc < null_fit.aicc);
+  if( !source_beats_null )
+  {
+    result.decision = SourceClusterEvidenceDecision::RejectContinuumOnly;
+    result.reason = "continuum-only model explains the provisional source group";
+    return result;
+  }
+  if( best_free_fit.valid && (best_free_fit.aicc < source_fit.aicc) )
+  {
+    result.decision = SourceClusterEvidenceDecision::RejectFreeFeature;
+    result.reason = "free significant peak beats the source-tied prediction";
+    return result;
+  }
+
+  result.decision = SourceClusterEvidenceDecision::RetainSource;
+  result.reason = "source-tied prediction beats continuum and is not worse than a free feature";
+  return result;
+}//evaluate_source_cluster_evidence
+
+
 AutomaticRoiPolicyResult evaluate_automatic_roi_boundary(
   const AutomaticRoiGroup &left,
   const AutomaticRoiGroup &right,
@@ -1655,6 +2223,17 @@ AutomaticRoiPolicyResult evaluate_automatic_roi_boundary(
     return result;
   }
   if( !(right_anchor > left_anchor) )
+  {
+    result.decision = diag.decision = (diag.width_pressure > 0.0)
+        ? AutomaticRoiDecision::MergeInseparableWide
+        : AutomaticRoiDecision::MergeInseparable;
+    diag.reason = "modeled peak cores overlap";
+    return result;
+  }
+  const bool modeled_cores_overlap = (right_anchor - left_anchor)
+      <= (2.0 * settings.peak_core_num_fwhm * fwhm);
+  if( modeled_cores_overlap
+      && !(settings.allow_overwide_overlap_partition && (diag.width_pressure > 0.0)) )
   {
     result.decision = diag.decision = (diag.width_pressure > 0.0)
         ? AutomaticRoiDecision::MergeInseparableWide
@@ -1832,6 +2411,10 @@ AutomaticRoiPolicyResult evaluate_automatic_roi_boundary(
       static_cast<float>(std::max(left.upper, right.upper)) ),
       foreground->num_gamma_channels() - 1 );
   const size_t n = union_last - union_first + 1;
+  // AICc is a sum over channel observations.  Treat the configured soft-width value as a
+  // per-channel structural pressure too; adding the former dimensionless component-level value to
+  // a channel-summed likelihood made width pressure vanish as ROIs gained channels.
+  diag.width_pressure *= n;
   const auto aicc = [&]( const double mismatch, const size_t k ) -> double {
     if( n <= (k + 1) )
       return std::numeric_limits<double>::max();
@@ -1883,7 +2466,9 @@ AutomaticRoiPolicyResult evaluate_automatic_roi_boundary(
       }
   }
 
-  const bool credible_clean_valley = have_clean_window && diag.sidebands_adequate
+  // This is evidence that no statistically material modeled tail or unexplained peak-like excess
+  // connects the children; it does not require a morphological local minimum in the raw counts.
+  const bool credible_unbridged_boundary = have_clean_window && diag.sidebands_adequate
       && (diag.modeled_tail_significance <= settings.merge_tail_z)
       && (diag.unexplained_excess_significance <= settings.merge_tail_z);
   const double unavailable_score = std::numeric_limits<double>::max();
@@ -1891,25 +2476,1153 @@ AutomaticRoiPolicyResult evaluate_automatic_roi_boundary(
   const bool two_score_valid = (diag.two_roi_aicc < unavailable_score);
   const bool two_no_worse = two_score_valid
       && (!one_score_valid || (diag.two_roi_aicc <= diag.one_roi_aicc));
-  if( credible_clean_valley && two_no_worse )
+  if( credible_unbridged_boundary && two_no_worse )
   {
     result.decision = diag.decision = AutomaticRoiDecision::KeepSeparate;
-    diag.reason = "credible clean valley and two-continuum AICc is no worse";
+    diag.reason = "no significant peak bridge and two-continuum AICc is no worse";
   }else
   {
     const bool wide = (diag.width_pressure > 0.0);
     result.decision = diag.decision = wide
         ? AutomaticRoiDecision::MergeInseparableWide
         : AutomaticRoiDecision::MergeInseparable;
-    if( !credible_clean_valley )
-      diag.reason = wide ? "no defensible clean boundary; inseparable wide group"
-                         : "no defensible clean boundary; statistically inseparable";
+    if( !credible_unbridged_boundary )
+      diag.reason = wide ? "no defensible peak-unbridged boundary; inseparable wide group"
+                         : "no defensible peak-unbridged boundary; statistically inseparable";
     else
       diag.reason = wide ? "one-continuum AICc overcomes width pressure; inseparable wide group"
                          : "one-continuum AICc favors a shared continuum";
   }
   return result;
 }//evaluate_automatic_roi_boundary
+
+
+//=============================================================================================
+// Atom-safe automatic ROI partition layer.
+//
+// evaluate_automatic_roi_boundary (above) remains the pure decision oracle.  The functions below
+// own all geometry materialization for policy-mode ROI split/combine and carry stable atoms with
+// the geometry so ownership is never reconstructed by energy containment.  Every operation is
+// validated to preserve the admitted-atom multiset exactly-once before it can replace incumbent
+// geometry; when no core-safe partition exists the incumbent is retained (merge or unchanged),
+// never a dropped side.
+//=============================================================================================
+
+uint64_t next_roi_atom_id()
+{
+  static std::atomic<uint64_t> s_counter{ 1 };
+  return s_counter.fetch_add( 1, std::memory_order_relaxed );
+}
+
+
+// Clamp an energy to a valid channel index for `fg`.
+static size_t atomlayer_channel_for_energy(
+    const std::shared_ptr<const SpecUtils::Measurement> &fg, const double energy )
+{
+  const size_t nchan = fg->num_gamma_channels();
+  if( nchan == 0 )
+    return 0;
+  size_t ch = fg->find_gamma_channel( static_cast<float>( energy ) );
+  if( ch >= nchan )
+    ch = nchan - 1;
+  return ch;
+}
+
+
+// Core half-width (keV) of an atom: peak_core_num_fwhm * FWHM(energy).  NaN if resolution invalid.
+static double atomlayer_core_halfwidth( const double energy,
+    const std::function<double(double)> &fwhm_at, const double core_num_fwhm )
+{
+  const double f = fwhm_at( energy );
+  if( !std::isfinite(f) || (f <= 0.0) )
+    return std::numeric_limits<double>::quiet_NaN();
+  return core_num_fwhm * f;
+}
+
+
+// True iff the channel band [gap_first, gap_last] can be excluded from both children without
+// cutting any atom core: every atom's +/- core lies wholly below the band's lower edge or wholly
+// above its upper edge, and no atom energy lies within the band.  A core that cannot be evaluated
+// (invalid resolution) makes the band unsafe.
+static bool atomlayer_gap_core_safe( const size_t gap_first, const size_t gap_last,
+    const std::vector<RoiAtom> &atoms,
+    const std::shared_ptr<const SpecUtils::Measurement> &fg,
+    const std::function<double(double)> &fwhm_at, const double core_num_fwhm )
+{
+  if( gap_last < gap_first )
+    return false;
+  const double glo = fg->gamma_channel_lower( gap_first );
+  const double ghi = fg->gamma_channel_upper( gap_last );
+  for( const RoiAtom &a : atoms )
+  {
+    const double hw = atomlayer_core_halfwidth( a.energy, fwhm_at, core_num_fwhm );
+    if( !std::isfinite(hw) )
+      return false;
+    if( a.energy < glo )
+    {
+      if( (a.energy + hw) > glo )
+        return false;
+    }else if( a.energy > ghi )
+    {
+      if( (a.energy - hw) < ghi )
+        return false;
+    }else
+    {
+      return false;  // atom lies inside the excluded band
+    }
+  }
+  return true;
+}
+
+
+// Build a component spanning channels [first_ch, last_ch] with the given atoms, copying
+// pass-through metadata (continuum/range/protected/joined) from `meta`.
+static AutomaticRoiComponent atomlayer_component_by_channels( size_t first_ch, size_t last_ch,
+    std::vector<RoiAtom> atoms, const AutomaticRoiComponent &meta,
+    const std::shared_ptr<const SpecUtils::Measurement> &fg )
+{
+  const size_t nchan = fg->num_gamma_channels();
+  if( nchan )
+  {
+    if( first_ch >= nchan ) first_ch = nchan - 1;
+    if( last_ch >= nchan ) last_ch = nchan - 1;
+  }
+  if( last_ch < first_ch )
+    last_ch = first_ch;
+  AutomaticRoiComponent c;
+  c.first_channel = first_ch;
+  c.last_channel = last_ch;
+  c.lower = fg->gamma_channel_lower( first_ch );
+  c.upper = fg->gamma_channel_upper( last_ch );
+  std::sort( std::begin(atoms), std::end(atoms),
+    []( const RoiAtom &a, const RoiAtom &b ){ return a.energy < b.energy; } );
+  c.atoms = std::move( atoms );
+  c.joined_groups = meta.joined_groups;
+  c.protected_geometry = meta.protected_geometry;
+  c.continuum_type = meta.continuum_type;
+  c.range_limits_type = meta.range_limits_type;
+  return c;
+}
+
+
+// Candidate single-channel boundaries in the anchor gap [search_lo, search_hi] that keep every
+// `constraint_atoms` core intact, ordered nearest-first to `target_energy`.
+static std::vector<size_t> atomlayer_core_safe_boundaries(
+    const std::vector<RoiAtom> &constraint_atoms, const double target_energy,
+    const double search_lo, const double search_hi,
+    const std::shared_ptr<const SpecUtils::Measurement> &fg,
+    const std::function<double(double)> &fwhm_at, const double core_num_fwhm )
+{
+  std::vector<size_t> out;
+  if( !(search_hi > search_lo) )
+    return out;
+  const size_t lo_ch = atomlayer_channel_for_energy( fg, search_lo );
+  const size_t hi_ch = atomlayer_channel_for_energy( fg, search_hi );
+  if( hi_ch < lo_ch )
+    return out;
+  const size_t target_ch = atomlayer_channel_for_energy( fg, target_energy );
+  for( size_t bc = lo_ch; bc <= hi_ch; ++bc )
+  {
+    if( atomlayer_gap_core_safe( bc, bc, constraint_atoms, fg, fwhm_at, core_num_fwhm ) )
+      out.push_back( bc );
+  }
+  std::stable_sort( std::begin(out), std::end(out),
+    [target_ch]( const size_t a, const size_t b ){
+      const size_t da = (a > target_ch) ? (a - target_ch) : (target_ch - a);
+      const size_t db = (b > target_ch) ? (b - target_ch) : (target_ch - b);
+      return da < db;
+    } );
+  return out;
+}
+
+
+// Widen a child's OUTER edge to reach `min_width_fwhm` (never crossing the boundary, a barrier, or
+// the spectrum edge).  Returns true if the child meets the width (or no minimum is imposed / the
+// resolution is unavailable); false if it cannot reach the width outward.
+static bool atomlayer_widen_child( AutomaticRoiComponent &child, const bool extend_lower_edge,
+    const double min_width_fwhm, const double lowest, const double highest,
+    const double left_barrier, const std::shared_ptr<const SpecUtils::Measurement> &fg,
+    const std::function<double(double)> &fwhm_at )
+{
+  if( min_width_fwhm <= 0.0 )
+    return true;
+  double mid = 0.5 * (child.lower + child.upper);
+  double f = fwhm_at( mid );
+  if( !std::isfinite(f) || (f <= 0.0) )
+    return true;
+  const double need = min_width_fwhm * f;
+  if( (child.upper - child.lower) >= need )
+    return true;
+  if( extend_lower_edge )
+  {
+    double target = child.upper - need;
+    double floor_energy = lowest;
+    if( std::isfinite(left_barrier) )
+      floor_energy = std::max( floor_energy, left_barrier );
+    target = std::max( target, floor_energy );
+    size_t fc = atomlayer_channel_for_energy( fg, target );
+    if( std::isfinite(left_barrier) )
+    {
+      const size_t bar_ch = atomlayer_channel_for_energy( fg, left_barrier );
+      if( fc <= bar_ch )
+        fc = bar_ch + 1;
+    }
+    if( fc > child.last_channel )
+      return false;
+    child.first_channel = fc;
+    child.lower = fg->gamma_channel_lower( fc );
+  }else
+  {
+    double target = std::min( child.lower + need, highest );
+    size_t lc = atomlayer_channel_for_energy( fg, target );
+    if( lc < child.first_channel )
+      return false;
+    child.last_channel = lc;
+    child.upper = fg->gamma_channel_upper( lc );
+  }
+  mid = 0.5 * (child.lower + child.upper);
+  f = fwhm_at( mid );
+  if( !std::isfinite(f) || (f <= 0.0) )
+    return true;
+  return (child.upper - child.lower) >= (min_width_fwhm * f - 1.0e-9);
+}
+
+
+// Count atoms that ended up in a different original group than they started (spatial reassignment).
+static size_t atomlayer_count_reassigned( const std::vector<RoiAtom> &orig_left,
+    const std::vector<RoiAtom> &orig_right, const AutomaticRoiComponent &new_left,
+    const AutomaticRoiComponent &new_right )
+{
+  std::set<uint64_t> left_ids, right_ids;
+  for( const RoiAtom &a : orig_left ) left_ids.insert( a.id );
+  for( const RoiAtom &a : orig_right ) right_ids.insert( a.id );
+  size_t moved = 0;
+  for( const RoiAtom &a : new_left.atoms )
+    if( right_ids.count( a.id ) ) ++moved;
+  for( const RoiAtom &a : new_right.atoms )
+    if( left_ids.count( a.id ) ) ++moved;
+  return moved;
+}
+
+
+// Handle a pair where at least one side is protected user/mixed geometry: pin the boundary to the
+// protected edge, trim only the automatic side, book atoms whose cores fall inside the protected
+// range to it (bounds untouched), and orphan any atom whose core straddles the pin.
+static AutomaticRoiPartitionResult atomlayer_partition_protected(
+    const AutomaticRoiComponent &left, const AutomaticRoiComponent &right,
+    const std::shared_ptr<const SpecUtils::Measurement> &fg,
+    const std::function<double(double)> &fwhm_at, const double core_num_fwhm,
+    const std::string &stage )
+{
+  AutomaticRoiPartitionResult result;
+  result.policy.decision = AutomaticRoiDecision::ProtectedGeometry;
+  result.policy.diagnostic.decision = AutomaticRoiDecision::ProtectedGeometry;
+  result.policy.diagnostic.stage = stage;
+  result.policy.diagnostic.left_lower = left.lower;
+  result.policy.diagnostic.left_upper = left.upper;
+  result.policy.diagnostic.right_lower = right.lower;
+  result.policy.diagnostic.right_upper = right.upper;
+
+  // Both protected (should not overlap in practice): keep both unchanged.
+  if( left.protected_geometry && right.protected_geometry )
+  {
+    result.outcome = AutomaticRoiPartitionOutcome::KeptSeparate;
+    result.components = { left, right };
+    result.policy.diagnostic.reason = "both sides protected; retained unchanged";
+    return result;
+  }
+
+  const AutomaticRoiComponent &prot = left.protected_geometry ? left : right;
+  const AutomaticRoiComponent &autom = left.protected_geometry ? right : left;
+  const bool protected_is_left = left.protected_geometry;
+
+  // Distribute the automatic side's atoms: inside the protected range -> booked to protected;
+  // clear of the pin on the automatic side -> stays; straddling the pin -> orphaned.
+  std::vector<RoiAtom> prot_atoms = prot.atoms;
+  std::vector<RoiAtom> auto_atoms;
+  const size_t nchan = fg->num_gamma_channels();
+
+  // Automatic side's retained channel span (channel-disjoint from the protected range).
+  size_t auto_first = autom.first_channel, auto_last = autom.last_channel;
+  if( protected_is_left )
+  {
+    const size_t pin_ch = atomlayer_channel_for_energy( fg, prot.upper );
+    auto_first = std::max( auto_first, pin_ch + 1 );
+  }else
+  {
+    const size_t pin_ch = atomlayer_channel_for_energy( fg, prot.lower );
+    if( pin_ch == 0 )
+    {
+      auto_first = 1;  // no room left of channel 0 -> force an empty automatic span (dissolve)
+      auto_last = 0;
+    }else
+    {
+      auto_last = std::min( auto_last, pin_ch - 1 );
+    }
+  }
+  const bool auto_span_valid = (nchan > 0) && (auto_last >= auto_first) && (auto_first < nchan);
+  const double auto_lower = auto_span_valid ? fg->gamma_channel_lower( auto_first ) : 0.0;
+  const double auto_upper = auto_span_valid ? fg->gamma_channel_upper( auto_last ) : 0.0;
+
+  for( const RoiAtom &a : autom.atoms )
+  {
+    const double hw = atomlayer_core_halfwidth( a.energy, fwhm_at, core_num_fwhm );
+    const double clo = std::isfinite(hw) ? (a.energy - hw) : a.energy;
+    const double chi = std::isfinite(hw) ? (a.energy + hw) : a.energy;
+    if( (clo >= prot.lower) && (chi <= prot.upper) )
+    {
+      prot_atoms.push_back( a );  // core fully inside protected range
+    }else if( auto_span_valid && (clo >= auto_lower) && (chi <= auto_upper) )
+    {
+      auto_atoms.push_back( a );  // core fully clear on the automatic side
+    }else
+    {
+      result.orphaned_atoms.push_back( a );  // straddles the pin / spectrum edge
+    }
+  }
+
+  AutomaticRoiComponent prot_out = atomlayer_component_by_channels(
+      prot.first_channel, prot.last_channel, std::move(prot_atoms), prot, fg );
+  // Protected bounds must remain bit-identical to the input.
+  prot_out.lower = prot.lower;
+  prot_out.upper = prot.upper;
+  prot_out.first_channel = prot.first_channel;
+  prot_out.last_channel = prot.last_channel;
+
+  if( !result.orphaned_atoms.empty() )
+    result.infeasible_reason = "automatic atom core straddles protected boundary";
+
+  if( auto_span_valid && !auto_atoms.empty() )
+  {
+    AutomaticRoiComponent auto_out = atomlayer_component_by_channels(
+        auto_first, auto_last, std::move(auto_atoms), autom, fg );
+    result.outcome = AutomaticRoiPartitionOutcome::KeptSeparate;
+    if( protected_is_left )
+      result.components = { prot_out, auto_out };
+    else
+      result.components = { auto_out, prot_out };
+    result.policy.diagnostic.reason = "protected geometry pinned; automatic side trimmed";
+  }else
+  {
+    // The automatic side dissolved (its atoms went to the protected range or were orphaned).
+    result.outcome = AutomaticRoiPartitionOutcome::Merged;
+    result.components = { prot_out };
+    result.policy.diagnostic.reason = "protected geometry absorbed automatic neighbor";
+  }
+  return result;
+}
+
+
+AutomaticRoiPartitionResult partition_automatic_roi_pair(
+    const AutomaticRoiComponent &left,
+    const AutomaticRoiComponent &right,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const GlobalContinuumEstimate *global_continuum,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    const AutomaticRoiPolicySettings &settings,
+    const AutomaticRoiPartitionConstraints &constraints )
+{
+  const bool have_cal = foreground && foreground->energy_calibration()
+      && foreground->energy_calibration()->valid() && (foreground->num_gamma_channels() > 0);
+
+  // Merge fallback: one component covering both, atoms concatenated - always atom-safe.
+  const auto build_merged = [&]( const AutomaticRoiPolicyResult &policy, const std::string &reason,
+      const bool infeasible ) -> AutomaticRoiPartitionResult
+  {
+    std::vector<RoiAtom> atoms = left.atoms;
+    atoms.insert( std::end(atoms), std::begin(right.atoms), std::end(right.atoms) );
+    AutomaticRoiPartitionResult r;
+    r.outcome = AutomaticRoiPartitionOutcome::Merged;
+    r.policy = policy;
+    r.policy.diagnostic.stage = settings.stage;
+    r.policy.diagnostic.reason = reason;
+    r.policy.diagnostic.partition_infeasible = infeasible;
+    if( have_cal )
+    {
+      const size_t uf = std::min( atomlayer_channel_for_energy( foreground, left.lower ),
+                                  atomlayer_channel_for_energy( foreground, right.lower ) );
+      const size_t ul = std::max( atomlayer_channel_for_energy( foreground, left.upper ),
+                                  atomlayer_channel_for_energy( foreground, right.upper ) );
+      AutomaticRoiComponent merged = atomlayer_component_by_channels( uf, ul, std::move(atoms),
+          left, foreground );
+      merged.joined_groups = left.joined_groups + right.joined_groups;
+      merged.protected_geometry = left.protected_geometry || right.protected_geometry;
+      r.components = { merged };
+    }else
+    {
+      AutomaticRoiComponent merged = left;
+      merged.lower = std::min( left.lower, right.lower );
+      merged.upper = std::max( left.upper, right.upper );
+      std::sort( std::begin(atoms), std::end(atoms),
+        []( const RoiAtom &a, const RoiAtom &b ){ return a.energy < b.energy; } );
+      merged.atoms = std::move( atoms );
+      merged.joined_groups = left.joined_groups + right.joined_groups;
+      merged.protected_geometry = left.protected_geometry || right.protected_geometry;
+      r.components = { merged };
+    }
+    return r;
+  };//build_merged
+
+  // Self-validation wrapper: any result that fails the invariant collapses to the merge fallback
+  // (dev builds assert loudly first).
+  const auto finalize = [&]( AutomaticRoiPartitionResult r ) -> AutomaticRoiPartitionResult
+  {
+    const AutomaticRoiTransactionCheck chk = validate_automatic_roi_transaction(
+        { left, right }, r.components, r.orphaned_atoms, foreground, fwhm_at_energy,
+        constraints.peak_core_num_fwhm );
+    if( chk.valid )
+      return r;
+#if( PERFORM_DEVELOPER_CHECKS )
+    assert( 0 && "partition_automatic_roi_pair produced an invalid transaction" );
+#endif
+    if( left.protected_geometry || right.protected_geometry )
+      return r;  // cannot merge across protected geometry; keep the (flagged) result
+    return build_merged( r.policy, "partition validation failed; merged as fallback", true );
+  };//finalize
+
+  if( !have_cal || left.atoms.empty() || right.atoms.empty() )
+  {
+    AutomaticRoiPolicyResult policy;
+    policy.decision = AutomaticRoiDecision::MergeInseparable;
+    if( left.protected_geometry || right.protected_geometry )
+      return finalize( atomlayer_partition_protected( left, right, foreground, fwhm_at_energy,
+          constraints.peak_core_num_fwhm, settings.stage ) );
+    return finalize( build_merged( policy,
+        have_cal ? "a side carries no atoms; merged" : "no valid calibration; merged", !have_cal ) );
+  }
+
+  if( left.protected_geometry || right.protected_geometry )
+    return finalize( atomlayer_partition_protected( left, right, foreground, fwhm_at_energy,
+        constraints.peak_core_num_fwhm, settings.stage ) );
+
+  // Ask the (unchanged) oracle whether these groups may be separated.
+  AutomaticRoiGroup left_group;
+  left_group.lower = left.lower;
+  left_group.upper = left.upper;
+  left_group.joined_groups = left.joined_groups;
+  for( const RoiAtom &a : left.atoms ){ left_group.peak_energies.push_back( a.energy );
+                                        left_group.peak_areas.push_back( a.area ); }
+  AutomaticRoiGroup right_group;
+  right_group.lower = right.lower;
+  right_group.upper = right.upper;
+  right_group.joined_groups = right.joined_groups;
+  for( const RoiAtom &a : right.atoms ){ right_group.peak_energies.push_back( a.energy );
+                                         right_group.peak_areas.push_back( a.area ); }
+
+  const AutomaticRoiPolicyResult policy = evaluate_automatic_roi_boundary( left_group, right_group,
+      foreground, global_continuum, fwhm_at_energy, unfit_auto_peaks, settings );
+
+  if( (policy.decision == AutomaticRoiDecision::MergeInseparable)
+      || (policy.decision == AutomaticRoiDecision::MergeInseparableWide) )
+    return finalize( build_merged( policy, policy.diagnostic.reason, false ) );
+
+  // KeepSeparate / UnmodeledFeatureBlocked -> materialize a core-safe partition.
+  const size_t union_first = std::min( atomlayer_channel_for_energy( foreground, left.lower ),
+                                       atomlayer_channel_for_energy( foreground, right.lower ) );
+  const size_t union_last = std::max( atomlayer_channel_for_energy( foreground, left.upper ),
+                                      atomlayer_channel_for_energy( foreground, right.upper ) );
+
+  std::vector<RoiAtom> union_atoms = left.atoms;
+  union_atoms.insert( std::end(union_atoms), std::begin(right.atoms), std::end(right.atoms) );
+
+  double left_max = -std::numeric_limits<double>::infinity();
+  for( const RoiAtom &a : left.atoms ) left_max = std::max( left_max, a.energy );
+  double right_min = std::numeric_limits<double>::infinity();
+  for( const RoiAtom &a : right.atoms ) right_min = std::min( right_min, a.energy );
+  double target_boundary = policy.boundary_energy;
+  if( !((target_boundary > left_max) && (target_boundary < right_min)) )
+    target_boundary = 0.5 * (left_max + right_min);
+
+  // Build the two children at a chosen gap band [gap_first, gap_last], assigning atoms spatially
+  // and widening any under-width child outward.  Returns false if a child cannot be materialized.
+  const auto try_build_children = [&]( const size_t gap_first, const size_t gap_last,
+      AutomaticRoiPartitionResult &out ) -> bool
+  {
+    if( (gap_first <= union_first) || (gap_last >= union_last) || (gap_last < gap_first) )
+      return false;
+    const double gap_lo_edge = foreground->gamma_channel_lower( gap_first );
+    const double gap_hi_edge = foreground->gamma_channel_upper( gap_last );
+    std::vector<RoiAtom> left_atoms, right_atoms;
+    for( const RoiAtom &a : union_atoms )
+    {
+      if( a.energy < gap_lo_edge )
+        left_atoms.push_back( a );
+      else if( a.energy > gap_hi_edge )
+        right_atoms.push_back( a );
+      else
+        return false;  // atom inside the excluded band (should be pre-filtered by core-safety)
+    }
+    if( left_atoms.empty() || right_atoms.empty() )
+      return false;
+    AutomaticRoiComponent left_child = atomlayer_component_by_channels( union_first, gap_first - 1,
+        std::move(left_atoms), left, foreground );
+    AutomaticRoiComponent right_child = atomlayer_component_by_channels( gap_last + 1, union_last,
+        std::move(right_atoms), right, foreground );
+    if( !atomlayer_widen_child( left_child, /*extend_lower_edge=*/true, constraints.min_width_fwhm,
+          constraints.lowest_energy, constraints.highest_energy, constraints.left_barrier,
+          foreground, fwhm_at_energy ) )
+      return false;
+    if( !atomlayer_widen_child( right_child, /*extend_lower_edge=*/false, constraints.min_width_fwhm,
+          constraints.lowest_energy, constraints.highest_energy,
+          -std::numeric_limits<double>::infinity(), foreground, fwhm_at_energy ) )
+      return false;
+    out.outcome = AutomaticRoiPartitionOutcome::KeptSeparate;
+    out.components = { left_child, right_child };
+    out.policy = policy;
+    out.policy.diagnostic.stage = settings.stage;
+    out.policy.diagnostic.atoms_reassigned = atomlayer_count_reassigned( left.atoms, right.atoms,
+        left_child, right_child );
+    return true;
+  };//try_build_children
+
+  if( policy.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked )
+  {
+    // Try the exclusion band first, but never carve through an admitted atom core.
+    if( policy.exclusion_upper > policy.exclusion_lower )
+    {
+      const size_t band_first = atomlayer_channel_for_energy( foreground, policy.exclusion_lower );
+      const size_t band_last = atomlayer_channel_for_energy( foreground, policy.exclusion_upper );
+      AutomaticRoiPartitionResult carved;
+      if( atomlayer_gap_core_safe( band_first, band_last, union_atoms, foreground, fwhm_at_energy,
+            constraints.peak_core_num_fwhm )
+          && try_build_children( band_first, band_last, carved ) )
+      {
+        carved.policy.diagnostic.reason = "unmodeled feature excluded between children";
+        return finalize( carved );
+      }
+    }
+    // Fallback: a plain single-channel boundary that clears both admitted cores AND the unmodeled
+    // peaks (added as constraint pseudo-atoms so the boundary avoids their cores too).
+    std::vector<RoiAtom> constraint_atoms = union_atoms;
+    for( const std::shared_ptr<const PeakDef> &pk : unfit_auto_peaks )
+    {
+      if( !pk || !pk->gausPeak() )
+        continue;
+      const double m = pk->mean();
+      if( (m > left_max) && (m < right_min) )
+      {
+        RoiAtom pseudo;
+        pseudo.energy = m;
+        pseudo.kind = RoiAtomKind::FloatingFeature;
+        constraint_atoms.push_back( pseudo );
+      }
+    }
+    const std::vector<size_t> candidates = atomlayer_core_safe_boundaries( constraint_atoms,
+        target_boundary, left_max, right_min, foreground, fwhm_at_energy,
+        constraints.peak_core_num_fwhm );
+    for( const size_t bc : candidates )
+    {
+      AutomaticRoiPartitionResult split;
+      if( try_build_children( bc, bc, split ) )
+      {
+        split.policy.diagnostic.reason = "core-safe boundary avoiding unmodeled feature";
+        return finalize( split );
+      }
+    }
+    return finalize( build_merged( policy,
+        "unmodeled feature inseparable from admitted cores; merged", true ) );
+  }
+
+  // KeepSeparate: pick the core-safe boundary nearest the oracle's boundary energy.
+  const std::vector<size_t> candidates = atomlayer_core_safe_boundaries( union_atoms,
+      target_boundary, left_max, right_min, foreground, fwhm_at_energy,
+      constraints.peak_core_num_fwhm );
+  for( const size_t bc : candidates )
+  {
+    AutomaticRoiPartitionResult split;
+    if( try_build_children( bc, bc, split ) )
+      return finalize( split );
+  }
+
+  // No core-safe boundary exists (or none leaves both children wide enough) -> keep the incumbent
+  // geometry by merging rather than dropping a requested line.
+  return finalize( build_merged( policy, "no core-safe boundary; retained merged", true ) );
+}//partition_automatic_roi_pair
+
+
+AutomaticRoiComponentPartitionResult partition_overwide_automatic_component(
+    const std::vector<AutomaticRoiComponent> &component,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    const AutomaticRoiPolicySettings &settings,
+    const AutomaticRoiPartitionConstraints &constraints )
+{
+  AutomaticRoiComponentPartitionResult out;
+  AutomaticRoiDecisionDiagnostic &diag = out.diagnostic;
+  diag.stage = settings.stage;
+  diag.calibration_num_channels = foreground ? foreground->num_gamma_channels() : 0;
+  if( component.empty() || !foreground || !foreground->energy_calibration()
+      || !foreground->energy_calibration()->valid() || !fwhm_at_energy )
+  {
+    out.failure_reason = diag.reason = "invalid whole-component partition input";
+    return out;
+  }
+  if( std::any_of( std::begin(component), std::end(component),
+        []( const AutomaticRoiComponent &c ) { return c.protected_geometry; } ) )
+  {
+    out.components = component;
+    out.valid = true;
+    diag.decision = AutomaticRoiDecision::ProtectedGeometry;
+    diag.reason = "protected geometry bypasses whole-component partition";
+    return out;
+  }
+
+  size_t union_first = component.front().first_channel;
+  size_t union_last = component.front().last_channel;
+  size_t joined_groups = 0;
+  std::vector<RoiAtom> atoms;
+  for( const AutomaticRoiComponent &c : component )
+  {
+    union_first = std::min( union_first, c.first_channel );
+    union_last = std::max( union_last, c.last_channel );
+    joined_groups += c.joined_groups;
+    atoms.insert( std::end(atoms), std::begin(c.atoms), std::end(c.atoms) );
+  }
+  std::sort( std::begin(atoms), std::end(atoms),
+    []( const RoiAtom &lhs, const RoiAtom &rhs ) { return lhs.energy < rhs.energy; } );
+  AutomaticRoiComponent incumbent = atomlayer_component_by_channels(
+      union_first, union_last, atoms, component.front(), foreground );
+  incumbent.joined_groups = std::max<size_t>( 1, joined_groups );
+  incumbent.protected_geometry = false;
+  out.components = { incumbent };
+  diag.left_lower = incumbent.lower;
+  diag.left_upper = incumbent.upper;
+
+  const double union_mid = 0.5*(incumbent.lower + incumbent.upper);
+  const double union_fwhm = fwhm_at_energy( union_mid );
+  if( !std::isfinite(union_fwhm) || !(union_fwhm > 0.0) || (atoms.size() < 2) )
+  {
+    out.valid = true;
+    diag.decision = AutomaticRoiDecision::MergeInseparableWide;
+    diag.reason = "too few finite anchors for whole-component partition";
+    return out;
+  }
+  diag.combined_width_fwhm = (incumbent.upper - incumbent.lower) / union_fwhm;
+  const size_t union_num_channels = 1 + union_last - union_first;
+  const double union_width_ratio = (settings.max_width_fwhm > 0.0)
+      ? (diag.combined_width_fwhm / settings.max_width_fwhm) : 0.0;
+  const double union_excess = std::max( 0.0, union_width_ratio - 1.0 );
+  diag.width_pressure = settings.continuum_aicc_penalty * union_excess * union_excess
+      * std::max<size_t>( 1, incumbent.joined_groups - 1 ) * union_num_channels;
+  if( !(diag.width_pressure > 0.0) )
+  {
+    out.valid = true;
+    diag.decision = AutomaticRoiDecision::MergeInseparable;
+    diag.reason = "component is below the soft-width onset";
+    return out;
+  }
+
+  struct Anchor
+  {
+    std::vector<RoiAtom> atoms;
+    double mean = 0.0;
+    double sigma = 0.0;
+    double core_lower = 0.0;
+    double core_upper = 0.0;
+  };
+  std::vector<Anchor> anchors;
+  for( const RoiAtom &atom : atoms )
+  {
+    const double half_width = atomlayer_core_halfwidth(
+        atom.energy, fwhm_at_energy, constraints.peak_core_num_fwhm );
+    if( !std::isfinite(half_width) )
+      continue;
+    const double core_lower = atom.energy - half_width;
+    if( anchors.empty() || (core_lower > anchors.back().core_upper) )
+    {
+      Anchor anchor;
+      anchor.atoms.push_back( atom );
+      anchor.core_lower = core_lower;
+      anchor.core_upper = atom.energy + half_width;
+      anchors.push_back( std::move(anchor) );
+    }else
+    {
+      anchors.back().atoms.push_back( atom );
+      anchors.back().core_lower = std::min( anchors.back().core_lower, core_lower );
+      anchors.back().core_upper = std::max(
+          anchors.back().core_upper, atom.energy + half_width );
+    }
+  }
+  for( Anchor &anchor : anchors )
+  {
+    double sum_weights = 0.0;
+    double sum_energy = 0.0;
+    for( const RoiAtom &atom : anchor.atoms )
+    {
+      const double weight = (std::isfinite(atom.area) && (atom.area > 0.0)) ? atom.area : 1.0;
+      sum_weights += weight;
+      sum_energy += weight*atom.energy;
+    }
+    anchor.mean = sum_energy / std::max( 1.0, sum_weights );
+    double sum_variance = 0.0;
+    for( const RoiAtom &atom : anchor.atoms )
+    {
+      const double weight = (std::isfinite(atom.area) && (atom.area > 0.0)) ? atom.area : 1.0;
+      const double sigma = fwhm_at_energy(atom.energy) / PhysicalUnits::fwhm_nsigma;
+      sum_variance += weight*(sigma*sigma + (atom.energy - anchor.mean)*(atom.energy - anchor.mean));
+    }
+    anchor.sigma = std::sqrt( sum_variance / std::max(1.0, sum_weights) );
+  }
+  if( anchors.size() < 2 )
+  {
+    out.valid = true;
+    diag.decision = AutomaticRoiDecision::MergeInseparableWide;
+    diag.reason = "all modeled atoms occupy one FWHM-connected core";
+    return out;
+  }
+  struct SegmentCandidate
+  {
+    size_t first_anchor = 0;
+    size_t last_anchor = 0;
+    size_t first_channel = 0;
+    size_t last_channel = 0;
+    double objective = 0.0;
+    size_t num_parameters = 0;
+    PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Linear;
+  };
+  const auto segment_candidates = [&]( const size_t first_anchor,
+                                        const size_t last_anchor,
+                                        const size_t first,
+                                        const size_t last ) {
+    std::vector<SegmentCandidate> result;
+    if( last <= first )
+      return result;
+    const double lower = foreground->gamma_channel_lower( first );
+    const double upper = foreground->gamma_channel_upper( last );
+    const double midpoint = 0.5*(lower + upper);
+    const double fwhm = fwhm_at_energy( midpoint );
+    if( !std::isfinite(fwhm) || !(fwhm > 0.0) )
+      return result;
+    const double width_fwhm = (upper - lower) / fwhm;
+    if( (constraints.min_width_fwhm > 0.0) && (width_fwhm < constraints.min_width_fwhm) )
+      return result;
+
+    std::vector<double> means, sigmas;
+    for( size_t anchor_index = first_anchor; anchor_index <= last_anchor; ++anchor_index )
+    {
+      means.push_back( anchors[anchor_index].mean );
+      sigmas.push_back( anchors[anchor_index].sigma );
+    }
+    const std::vector<PeakDef> no_fixed_peaks;
+    std::vector<MeasuredRoiModelFit> fits;
+    static_cast<void>( fit_measured_roi_model( foreground, first, last, midpoint,
+        means, sigmas, no_fixed_peaks, settings.continuum_aicc_penalty, &fits ) );
+    const double width_ratio = (settings.max_width_fwhm > 0.0)
+        ? (width_fwhm / settings.max_width_fwhm) : 0.0;
+    const double excess = std::max( 0.0, width_ratio - 1.0 );
+    const size_t joined = 1 + last_anchor - first_anchor;
+    const double width_pressure = settings.continuum_aicc_penalty * excess * excess
+        * std::max<size_t>( 1, joined - 1 ) * (1 + last - first);
+    for( const MeasuredRoiModelFit &fit : fits )
+    {
+      SegmentCandidate candidate;
+      candidate.first_anchor = first_anchor;
+      candidate.last_anchor = last_anchor;
+      candidate.first_channel = first;
+      candidate.last_channel = last;
+      candidate.objective = fit.poisson_deviance + width_pressure;
+      candidate.num_parameters = fit.num_parameters;
+      candidate.continuum_type = fit.continuum_type;
+      result.push_back( candidate );
+    }
+    return result;
+  };
+  double best_incumbent_score = std::numeric_limits<double>::max();
+  double best_partition_score = std::numeric_limits<double>::max();
+  SegmentCandidate best_left, best_right;
+  const std::vector<SegmentCandidate> incumbent_candidates
+    = segment_candidates( 0, anchors.size() - 1, union_first, union_last );
+  for( const SegmentCandidate &candidate : incumbent_candidates )
+  {
+    const double score = data_only_aicc( candidate.objective, union_num_channels,
+        candidate.num_parameters, settings.continuum_aicc_penalty );
+    best_incumbent_score = std::min( best_incumbent_score, score );
+  }
+  if( !(best_incumbent_score < std::numeric_limits<double>::max()) )
+  {
+    out.valid = true;
+    diag.one_roi_aicc = best_incumbent_score;
+    diag.two_roi_aicc = std::numeric_limits<double>::max();
+    diag.decision = AutomaticRoiDecision::MergeInseparableWide;
+    diag.partition_infeasible = true;
+    diag.reason = "over-wide incumbent has no valid common-channel measured-data fit";
+    return out;
+  }
+
+  // Search every channel edge between adjacent, FWHM-distinct source cores.  Candidate children
+  // use exactly the same union channels as the incumbent and no edge may cross an unmodeled peak
+  // core.  The selected structural alternative is exactly two continua, so diagnostics and the
+  // later component transaction can carry it without lossy reconstruction.
+  for( size_t gap = 0; gap + 1 < anchors.size(); ++gap )
+  {
+    for( size_t split_channel = union_first; split_channel < union_last; ++split_channel )
+    {
+      const double edge = foreground->gamma_channel_upper( split_channel );
+      if( (edge < anchors[gap].core_upper) || (edge > anchors[gap + 1].core_lower) )
+        continue;
+      const bool crosses_unmodeled_core = std::any_of( std::begin(unfit_auto_peaks),
+          std::end(unfit_auto_peaks), [&fwhm_at_energy, edge](
+              const std::shared_ptr<const PeakDef> &peak ) {
+            if( !peak || !peak->gausPeak() )
+              return false;
+            const double peak_fwhm = fwhm_at_energy( peak->mean() );
+            return std::isfinite(peak_fwhm) && (peak_fwhm > 0.0)
+                && (edge > (peak->mean() - peak_fwhm))
+                && (edge < (peak->mean() + peak_fwhm));
+          } );
+      if( crosses_unmodeled_core )
+        continue;
+      const std::vector<SegmentCandidate> left_candidates
+        = segment_candidates( 0, gap, union_first, split_channel );
+      const std::vector<SegmentCandidate> right_candidates
+        = segment_candidates( gap + 1, anchors.size() - 1,
+            split_channel + 1, union_last );
+      for( const SegmentCandidate &left : left_candidates )
+      {
+        for( const SegmentCandidate &right : right_candidates )
+        {
+          const double score = data_only_aicc( left.objective + right.objective,
+              union_num_channels, left.num_parameters + right.num_parameters,
+              settings.continuum_aicc_penalty );
+          if( score < best_partition_score )
+          {
+            best_partition_score = score;
+            best_left = left;
+            best_right = right;
+          }
+        }
+      }
+    }
+  }
+  diag.one_roi_aicc = best_incumbent_score;
+  diag.two_roi_aicc = best_partition_score;
+  const bool incumbent_valid = best_incumbent_score < std::numeric_limits<double>::max();
+  const bool partition_valid = best_partition_score < std::numeric_limits<double>::max();
+  if( !incumbent_valid || !partition_valid
+      || !(best_partition_score < best_incumbent_score) )
+  {
+    out.valid = true;
+    diag.decision = AutomaticRoiDecision::MergeInseparableWide;
+    diag.reason = (incumbent_valid && partition_valid)
+        ? "measured-data whole-component AICc retains the over-wide union"
+        : "no feasible measured-data whole-component partition";
+    diag.partition_infeasible = !incumbent_valid || !partition_valid;
+    return out;
+  }
+
+  std::vector<AutomaticRoiComponent> children;
+  const SegmentCandidate selected_segments[] = { best_left, best_right };
+  children.reserve( 2 );
+  for( const SegmentCandidate &segment : selected_segments )
+  {
+    std::vector<RoiAtom> child_atoms;
+    for( size_t anchor_index = segment.first_anchor;
+         anchor_index <= segment.last_anchor; ++anchor_index )
+      child_atoms.insert( std::end(child_atoms), std::begin(anchors[anchor_index].atoms),
+                          std::end(anchors[anchor_index].atoms) );
+    AutomaticRoiComponent child = atomlayer_component_by_channels(
+        segment.first_channel, segment.last_channel, std::move(child_atoms), incumbent, foreground );
+    child.joined_groups = 1 + segment.last_anchor - segment.first_anchor;
+    child.continuum_type = segment.continuum_type;
+    children.push_back( std::move(child) );
+  }
+  const AutomaticRoiTransactionCheck check = validate_automatic_roi_transaction(
+      component, children, {}, foreground, fwhm_at_energy, constraints.peak_core_num_fwhm );
+  if( !check.valid )
+  {
+    out.valid = true;
+    out.changed = false;
+    out.failure_reason = check.failure_reason;
+    diag.decision = AutomaticRoiDecision::MergeInseparableWide;
+    diag.partition_infeasible = true;
+    diag.reason = "whole-component challenger failed atom transaction; retained union";
+    return out;
+  }
+
+  out.components = std::move( children );
+  out.valid = true;
+  out.changed = true;
+  diag.decision = AutomaticRoiDecision::KeepSeparate;
+  diag.reason = "measured-data whole-component AICc and soft width favor a core-safe partition";
+  if( out.components.size() > 1 )
+  {
+    diag.left_lower = out.components.front().lower;
+    diag.left_upper = out.components.front().upper;
+    diag.right_lower = out.components.back().lower;
+    diag.right_upper = out.components.back().upper;
+    diag.boundary_channel = out.components.front().last_channel;
+    diag.boundary_energy = foreground->gamma_channel_upper( diag.boundary_channel );
+  }
+  return out;
+}//partition_overwide_automatic_component
+
+
+AutomaticRoiTransactionCheck validate_automatic_roi_transaction(
+    const std::vector<AutomaticRoiComponent> &before,
+    const std::vector<AutomaticRoiComponent> &after,
+    const std::vector<RoiAtom> &reported_orphans,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const std::function<double(double)> &fwhm_at_energy,
+    const double peak_core_num_fwhm )
+{
+  AutomaticRoiTransactionCheck chk;
+
+  // 1. Atom-ID multiset preserved exactly, and exactly-once ownership after.
+  std::multiset<uint64_t> before_ids, after_ids;
+  for( const AutomaticRoiComponent &c : before )
+    for( const RoiAtom &a : c.atoms ) before_ids.insert( a.id );
+  for( const AutomaticRoiComponent &c : after )
+    for( const RoiAtom &a : c.atoms ) after_ids.insert( a.id );
+  for( const RoiAtom &a : reported_orphans ) after_ids.insert( a.id );
+  if( before_ids != after_ids )
+  {
+    chk.failure_reason = "atom-ID multiset changed across the operation";
+    return chk;
+  }
+  std::set<uint64_t> seen;
+  for( const AutomaticRoiComponent &c : after )
+    for( const RoiAtom &a : c.atoms )
+      if( !seen.insert( a.id ).second )
+      {
+        chk.failure_reason = "an atom is owned by more than one component";
+        return chk;
+      }
+
+  // 2. Components sorted and strictly channel-disjoint.
+  for( size_t i = 1; i < after.size(); ++i )
+  {
+    if( after[i].first_channel <= after[i-1].last_channel )
+    {
+      chk.failure_reason = "components are not channel-disjoint";
+      return chk;
+    }
+  }
+
+  // 3. Atom energy and (clamped) core containment within the owning component.
+  const bool have_cal = foreground && (foreground->num_gamma_channels() > 0);
+  const double spec_lo = have_cal ? foreground->gamma_channel_lower( 0 ) : 0.0;
+  const double spec_hi = have_cal
+      ? foreground->gamma_channel_upper( foreground->num_gamma_channels() - 1 ) : 0.0;
+  for( const AutomaticRoiComponent &c : after )
+  {
+    for( const RoiAtom &a : c.atoms )
+    {
+      if( (a.energy < c.lower - 1.0e-6) || (a.energy > c.upper + 1.0e-6) )
+      {
+        chk.failure_reason = "an atom energy lies outside its component";
+        return chk;
+      }
+      const double hw = atomlayer_core_halfwidth( a.energy, fwhm_at_energy, peak_core_num_fwhm );
+      if( std::isfinite(hw) && have_cal )
+      {
+        const double clo = std::max( a.energy - hw, spec_lo );
+        const double chi = std::min( a.energy + hw, spec_hi );
+        if( (clo < c.lower - 1.0e-6) || (chi > c.upper + 1.0e-6) )
+        {
+          chk.failure_reason = "an atom core lies outside its component";
+          return chk;
+        }
+      }
+    }
+  }
+
+  // 4. Every protected component appears in `after` with bit-identical bounds/metadata.
+  const auto matches = []( const AutomaticRoiComponent &a, const AutomaticRoiComponent &b ){
+    return (std::fabs(a.lower - b.lower) < 1.0e-6) && (std::fabs(a.upper - b.upper) < 1.0e-6)
+        && (a.continuum_type == b.continuum_type) && (a.range_limits_type == b.range_limits_type);
+  };
+  for( const AutomaticRoiComponent &b : before )
+  {
+    if( !b.protected_geometry )
+      continue;
+    const bool found = std::any_of( std::begin(after), std::end(after),
+        [&]( const AutomaticRoiComponent &a ){ return a.protected_geometry && matches(a, b); } );
+    if( !found )
+    {
+      chk.failure_reason = "a protected component's bounds/metadata changed";
+      return chk;
+    }
+  }
+
+  chk.valid = true;
+  return chk;
+}//validate_automatic_roi_transaction
+
+
+AutomaticRoiReconcileResult reconcile_automatic_components(
+    std::vector<AutomaticRoiComponent> components,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const GlobalContinuumEstimate *global_continuum,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    const AutomaticRoiPolicySettings &settings,
+    const AutomaticRoiPartitionConstraints &constraints,
+    std::vector<AutomaticRoiDecisionDiagnostic> *diagnostics )
+{
+  AutomaticRoiReconcileResult out;
+  const std::vector<AutomaticRoiComponent> before = components;
+
+  std::sort( std::begin(components), std::end(components),
+    []( const AutomaticRoiComponent &a, const AutomaticRoiComponent &b ){
+      return a.lower < b.lower;
+    } );
+
+  std::vector<AutomaticRoiComponent> resolved;
+  std::vector<RoiAtom> orphans;
+  for( size_t i = 0; i < components.size(); ++i )
+  {
+    const AutomaticRoiComponent cur = components[i];
+    if( resolved.empty() )
+    {
+      resolved.push_back( cur );
+      continue;
+    }
+    const bool disjoint = (cur.first_channel > resolved.back().last_channel);
+    if( disjoint )
+    {
+      resolved.push_back( cur );
+      continue;
+    }
+
+    // Zero-modeled-evidence collision: preserve the "lacks modeled peak evidence" rejection, but
+    // only ever discard the side that is BOTH empty and non-protected - that side has no atom to
+    // lose.  The non-empty side is always kept (its atoms survive).  When the empty side is
+    // protected it must keep its geometry, so fall through to the partition, which pins the
+    // protected side and never drops the other side's atoms.
+    if( resolved.back().atoms.empty() || cur.atoms.empty() )
+    {
+      const bool back_empty = resolved.back().atoms.empty();
+      const bool cur_empty = cur.atoms.empty();
+      const bool drop_cur = cur_empty && !cur.protected_geometry;
+      const bool drop_back = !drop_cur && back_empty && !resolved.back().protected_geometry;
+      if( drop_cur || drop_back )
+      {
+        if( diagnostics )
+        {
+          AutomaticRoiDecisionDiagnostic insufficient;
+          insufficient.decision = AutomaticRoiDecision::KeepSeparate;
+          insufficient.stage = settings.stage;
+          insufficient.left_lower = resolved.back().lower;
+          insufficient.left_upper = resolved.back().upper;
+          insufficient.right_lower = cur.lower;
+          insufficient.right_upper = cur.upper;
+          insufficient.calibration_num_channels = foreground ? foreground->num_gamma_channels() : 0;
+          insufficient.reason = "late ROI lacks modeled peak evidence; rejected automatic addition";
+          diagnostics->push_back( insufficient );
+        }
+        if( drop_back )
+          resolved.back() = cur;  // keep the non-empty side, discard the empty (non-protected) back
+        continue;
+      }
+      // else: the empty side is protected -> fall through to partition (atom-safe protected pin).
+    }
+
+    AutomaticRoiPartitionConstraints pair_constraints = constraints;
+    pair_constraints.left_barrier = (resolved.size() >= 2)
+        ? resolved[resolved.size() - 2].upper : constraints.left_barrier;
+
+    const AutomaticRoiPartitionResult pr = partition_automatic_roi_pair( resolved.back(), cur,
+        foreground, global_continuum, fwhm_at_energy, unfit_auto_peaks, settings, pair_constraints );
+    if( diagnostics )
+      diagnostics->push_back( pr.policy.diagnostic );
+    for( const RoiAtom &o : pr.orphaned_atoms )
+      orphans.push_back( o );
+
+    if( pr.outcome == AutomaticRoiPartitionOutcome::KeptSeparate && (pr.components.size() == 2) )
+    {
+      resolved.back() = pr.components[0];
+      resolved.push_back( pr.components[1] );
+    }else if( !pr.components.empty() )
+    {
+      resolved.back() = pr.components[0];  // Merged (or dissolved-protected): re-test enlarged back
+    }
+  }
+
+  // A pair fold is useful for protected/late collision handling, but an over-wide merged result
+  // gets one final whole-component transaction so the last pair visited cannot dictate the split.
+  std::vector<AutomaticRoiComponent> jointly_partitioned;
+  for( const AutomaticRoiComponent &component : resolved )
+  {
+    const double midpoint = 0.5*(component.lower + component.upper);
+    const double fwhm = fwhm_at_energy ? fwhm_at_energy(midpoint)
+                                       : std::numeric_limits<double>::quiet_NaN();
+    const bool overwide = settings.allow_overwide_overlap_partition
+        && !component.protected_geometry && std::isfinite(fwhm) && (fwhm > 0.0)
+        && (settings.max_width_fwhm > 0.0)
+        && (((component.upper - component.lower) / fwhm) > settings.max_width_fwhm);
+    if( !overwide )
+    {
+      jointly_partitioned.push_back( component );
+      continue;
+    }
+    AutomaticRoiPartitionConstraints local_constraints = constraints;
+    local_constraints.left_barrier = jointly_partitioned.empty()
+      ? constraints.left_barrier : jointly_partitioned.back().upper;
+    const AutomaticRoiComponentPartitionResult partition
+      = partition_overwide_automatic_component( { component }, foreground, fwhm_at_energy,
+          unfit_auto_peaks, settings, local_constraints );
+    if( diagnostics )
+      diagnostics->push_back( partition.diagnostic );
+    if( partition.valid && partition.changed )
+      jointly_partitioned.insert( std::end(jointly_partitioned),
+          std::begin(partition.components), std::end(partition.components) );
+    else
+      jointly_partitioned.push_back( component );
+  }
+  resolved = std::move( jointly_partitioned );
+
+  const AutomaticRoiTransactionCheck chk = validate_automatic_roi_transaction( before, resolved,
+      orphans, foreground, fwhm_at_energy, constraints.peak_core_num_fwhm );
+  out.components = std::move( resolved );
+  out.orphaned_atoms = std::move( orphans );
+  out.valid = chk.valid;
+  out.failure_reason = chk.failure_reason;
+#if( PERFORM_DEVELOPER_CHECKS )
+  assert( chk.valid );
+#endif
+  return out;
+}//reconcile_automatic_components
+
+
+void assign_atoms_to_disjoint_rois(
+    const std::vector<RoiAtom> &universe,
+    const std::vector<RelActCalcAuto::RoiRange> &rois,
+    std::vector<std::vector<RoiAtom>> &per_roi_atoms,
+    std::vector<RoiAtom> &unowned_atoms )
+{
+  per_roi_atoms.assign( rois.size(), std::vector<RoiAtom>() );
+  unowned_atoms.clear();
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( size_t i = 1; i < rois.size(); ++i )
+    assert( rois[i].lower_energy >= rois[i-1].upper_energy );
+#endif
+
+  for( const RoiAtom &a : universe )
+  {
+    long best = -1;
+    double best_dist = std::numeric_limits<double>::infinity();
+    for( size_t j = 0; j < rois.size(); ++j )
+    {
+      if( (a.energy >= rois[j].lower_energy) && (a.energy <= rois[j].upper_energy) )
+      {
+        const double mid = 0.5 * (rois[j].lower_energy + rois[j].upper_energy);
+        const double dist = std::fabs( a.energy - mid );
+        if( (best < 0) || (dist < best_dist) )
+        {
+          best = static_cast<long>( j );
+          best_dist = dist;
+        }
+      }
+    }
+    if( best >= 0 )
+      per_roi_atoms[static_cast<size_t>(best)].push_back( a );
+    else
+      unowned_atoms.push_back( a );
+  }
+}//assign_atoms_to_disjoint_rois
 
 
 PeakContinuum::OffsetType select_continuum_order_by_sidebands(
@@ -3569,213 +5282,166 @@ void resolve_automatic_overlapping_rois(
     []( const RelActCalcAuto::RoiRange &lhs, const RelActCalcAuto::RoiRange &rhs ) {
       return lhs.lower_energy < rhs.lower_energy;
     } );
-  std::vector<RelActCalcAuto::RoiRange> resolved;
-  std::vector<std::vector<double>> resolved_peaks;
-  std::vector<std::vector<double>> resolved_areas;
-  std::vector<size_t> resolved_joined_groups;
-  for( RelActCalcAuto::RoiRange current : rois )
+
+  // POLICY MODE: reconcile the (possibly overlapping) ROIs through the atom-safe partition layer.
+  // Each modeled candidate and floating feature is assigned EXACTLY ONCE to the input ROI that
+  // contains it (nearest midpoint on ties) - replacing the former inclusive-containment scan that
+  // could claim an atom in two overlapping ROIs - and the reconciler then folds adjacent ROIs
+  // without any pop_back/skip drop path.
+  const bool have_cal = foreground && foreground->energy_calibration()
+      && foreground->energy_calibration()->valid() && (foreground->num_gamma_channels() > 0);
+  if( !have_cal )
   {
-    std::vector<double> current_peaks;
-    std::vector<double> current_areas;
-    for( const std::pair<double,double> &peak : modeled_peak_candidates )
-    {
-      if( (peak.first >= current.lower_energy) && (peak.first <= current.upper_energy) )
-      {
-        current_peaks.push_back( peak.first );
-        current_areas.push_back( peak.second );
-      }
-    }
-    for( const RelActCalcAuto::FloatingPeak &peak : floating_peaks )
-      if( (peak.energy >= current.lower_energy) && (peak.energy <= current.upper_energy) )
-      {
-        double area = 0.0;
-        for( const std::shared_ptr<const PeakDef> &observed : unfit_auto_peaks )
-        {
-          if( !observed || !observed->gausPeak() )
-            continue;
-          const double local_fwhm = fwhm_at_energy( peak.energy );
-          if( std::isfinite(local_fwhm) && (local_fwhm > 0.0)
-              && (std::fabs(observed->mean() - peak.energy) <= 0.75*local_fwhm) )
-            area = std::max( area, observed->amplitude() );
-        }
-        const std::vector<double>::iterator duplicate = std::find_if(
-            std::begin(current_peaks), std::end(current_peaks),
-            [&peak]( const double energy ) { return std::fabs(energy - peak.energy) < 1.0e-6; } );
-        if( duplicate == std::end(current_peaks) )
-        {
-          current_peaks.push_back( peak.energy );
-          current_areas.push_back( area );
-        }else
-        {
-          const size_t index = static_cast<size_t>(duplicate - std::begin(current_peaks));
-          current_areas[index] = std::max( current_areas[index], area );
-        }
-      }
-    if( !is_protected(current) )
-      current.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    // No usable calibration for a channel-aligned partition; fall back to the legacy resolver.
+    resolve_overlapping_rois( rois, floating_peaks );
+    ensure_min_channel_gap( rois, foreground ? foreground->energy_calibration() : nullptr );
+    return;
+  }
 
-    const bool channel_disjoint = !resolved.empty()
-        && (foreground->find_gamma_channel(static_cast<float>(current.lower_energy))
-            > foreground->find_gamma_channel(static_cast<float>(resolved.back().upper_energy)));
-    if( resolved.empty() || ((current.lower_energy >= resolved.back().upper_energy)
-                             && channel_disjoint) )
+  const size_t nroi = rois.size();
+  const auto assign_to_roi = [&rois, nroi]( const double energy ) -> long {
+    long best = -1;
+    double best_dist = std::numeric_limits<double>::infinity();
+    for( size_t j = 0; j < nroi; ++j )
     {
-      resolved.push_back( current );
-      resolved_peaks.push_back( current_peaks );
-      resolved_areas.push_back( current_areas );
-      resolved_joined_groups.push_back( 1 );
-      continue;
-    }
-
-    RelActCalcAuto::RoiRange &left_roi = resolved.back();
-    std::vector<double> &left_peaks = resolved_peaks.back();
-    std::vector<double> &left_areas = resolved_areas.back();
-    const bool left_protected = is_protected( left_roi );
-    const bool right_protected = is_protected( current );
-    if( left_peaks.empty() || current_peaks.empty() )
-    {
-      AutomaticRoiDecisionDiagnostic insufficient;
-      insufficient.decision = AutomaticRoiDecision::KeepSeparate;
-      insufficient.stage = stage;
-      insufficient.left_lower = left_roi.lower_energy;
-      insufficient.left_upper = left_roi.upper_energy;
-      insufficient.right_lower = current.lower_energy;
-      insufficient.right_upper = current.upper_energy;
-      insufficient.calibration_num_channels = foreground->num_gamma_channels();
-      insufficient.reason = "late ROI lacks modeled peak evidence; rejected automatic addition";
-      if( diagnostics )
-        diagnostics->push_back( insufficient );
-      if( right_protected && !left_protected )
+      if( (energy >= rois[j].lower_energy) && (energy <= rois[j].upper_energy) )
       {
-        resolved.pop_back();
-        resolved_peaks.pop_back();
-        resolved_areas.pop_back();
-        resolved_joined_groups.pop_back();
-        resolved.push_back( current );
-        resolved_peaks.push_back( current_peaks );
-        resolved_areas.push_back( current_areas );
-        resolved_joined_groups.push_back( 1 );
+        const double mid = 0.5 * (rois[j].lower_energy + rois[j].upper_energy);
+        const double d = std::fabs( energy - mid );
+        if( (best < 0) || (d < best_dist) ){ best = static_cast<long>(j); best_dist = d; }
       }
-      continue;
     }
-    detail::AutomaticRoiGroup left_group;
-    left_group.lower = left_roi.lower_energy;
-    left_group.upper = left_roi.upper_energy;
-    left_group.peak_energies = left_peaks;
-    left_group.peak_areas = left_areas;
-    left_group.joined_groups = resolved_joined_groups.back();
-    left_group.protected_geometry = left_protected;
-    detail::AutomaticRoiGroup right_group;
-    right_group.lower = current.lower_energy;
-    right_group.upper = current.upper_energy;
-    right_group.peak_energies = current_peaks;
-    right_group.peak_areas = current_areas;
-    right_group.protected_geometry = right_protected;
-    detail::AutomaticRoiPolicySettings policy_settings;
-    policy_settings.merge_tail_z = config.merge_tail_z;
-    policy_settings.merge_clean_gap_fwhm = config.merge_clean_gap_fwhm;
-    policy_settings.continuum_aicc_penalty = config.cont_order_aicc_penalty;
-    policy_settings.peak_core_num_fwhm = config.auto_roi_core_num_fwhm;
-    policy_settings.max_width_fwhm = config.auto_rel_eff_sol_max_fwhm;
-    policy_settings.stage = stage;
-    std::vector<std::shared_ptr<const PeakDef>> policy_unfit_peaks;
-    for( const std::shared_ptr<const PeakDef> &peak : unfit_auto_peaks )
+    return best;
+  };//assign_to_roi
+
+  std::vector<std::vector<detail::RoiAtom>> roi_atoms( nroi );
+  for( const std::pair<double,double> &peak : modeled_peak_candidates )
+  {
+    const long j = assign_to_roi( peak.first );
+    if( j < 0 )
+      continue;  // a candidate outside every ROI has no owner here (pre-existing floater)
+    detail::RoiAtom atom;
+    atom.id = detail::next_roi_atom_id();
+    atom.energy = peak.first;
+    atom.area = peak.second;
+    atom.kind = detail::RoiAtomKind::ModeledGamma;
+    roi_atoms[static_cast<size_t>(j)].push_back( atom );
+  }
+  for( const RelActCalcAuto::FloatingPeak &peak : floating_peaks )
+  {
+    const long j = assign_to_roi( peak.energy );
+    if( j < 0 )
+      continue;
+    double area = 0.0;
+    for( const std::shared_ptr<const PeakDef> &observed : unfit_auto_peaks )
     {
-      if( !peak || !peak->gausPeak() )
+      if( !observed || !observed->gausPeak() )
         continue;
-      const bool modeled = std::any_of( std::begin(left_peaks), std::end(left_peaks),
-          [&peak, &fwhm_at_energy]( const double energy ) {
-            const double local_fwhm = fwhm_at_energy( energy );
-            return std::isfinite(local_fwhm) && (local_fwhm > 0.0)
-                && (std::fabs(peak->mean() - energy) <= 0.75*local_fwhm);
-          } ) || std::any_of( std::begin(current_peaks), std::end(current_peaks),
-          [&peak, &fwhm_at_energy]( const double energy ) {
-            const double local_fwhm = fwhm_at_energy( energy );
-            return std::isfinite(local_fwhm) && (local_fwhm > 0.0)
-                && (std::fabs(peak->mean() - energy) <= 0.75*local_fwhm);
-          } );
-      if( !modeled )
-        policy_unfit_peaks.push_back( peak );
+      const double local_fwhm = fwhm_at_energy( peak.energy );
+      if( std::isfinite(local_fwhm) && (local_fwhm > 0.0)
+          && (std::fabs(observed->mean() - peak.energy) <= 0.75*local_fwhm) )
+        area = std::max( area, observed->amplitude() );
     }
-    const detail::AutomaticRoiPolicyResult policy = detail::evaluate_automatic_roi_boundary(
-        left_group, right_group, foreground, global_continuum, fwhm_at_energy,
-        policy_unfit_peaks, policy_settings );
-    if( diagnostics )
-      diagnostics->push_back( policy.diagnostic );
-
-    const bool merge = !left_protected && !right_protected
-        && ((policy.decision == AutomaticRoiDecision::MergeInseparable)
-            || (policy.decision == AutomaticRoiDecision::MergeInseparableWide));
-    if( merge )
+    std::vector<detail::RoiAtom> &atoms = roi_atoms[static_cast<size_t>(j)];
+    const std::vector<detail::RoiAtom>::iterator dup = std::find_if( std::begin(atoms),
+        std::end(atoms), [&peak]( const detail::RoiAtom &a ){
+          return std::fabs(a.energy - peak.energy) < 1.0e-6; } );
+    if( dup == std::end(atoms) )
     {
-      left_roi.upper_energy = std::max( left_roi.upper_energy, current.upper_energy );
-      left_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
-      left_peaks.insert( std::end(left_peaks), std::begin(current_peaks), std::end(current_peaks) );
-      left_areas.insert( std::end(left_areas), std::begin(current_areas), std::end(current_areas) );
-      resolved_joined_groups.back() += 1;
+      detail::RoiAtom atom;
+      atom.id = detail::next_roi_atom_id();
+      atom.energy = peak.energy;
+      atom.area = area;
+      atom.kind = detail::RoiAtomKind::FloatingFeature;
+      atoms.push_back( atom );
+    }else
+    {
+      dup->area = std::max( dup->area, area );  // keep the modeled atom identity, strongest area
+    }
+  }
+
+  std::vector<detail::AutomaticRoiComponent> comps;
+  comps.reserve( nroi );
+  for( size_t j = 0; j < nroi; ++j )
+  {
+    detail::AutomaticRoiComponent c;
+    c.lower = rois[j].lower_energy;
+    c.upper = rois[j].upper_energy;
+    c.first_channel = foreground->find_gamma_channel( static_cast<float>(rois[j].lower_energy) );
+    c.last_channel = foreground->find_gamma_channel( static_cast<float>(rois[j].upper_energy) );
+    c.continuum_type = rois[j].continuum_type;
+    c.range_limits_type = rois[j].range_limits_type;
+    c.protected_geometry = is_protected( rois[j] );
+    c.joined_groups = 1;
+    c.atoms = std::move( roi_atoms[j] );
+    comps.push_back( std::move(c) );
+  }
+
+  // Unfit peaks coinciding with a modeled/floating atom are not interfering features.
+  std::vector<std::shared_ptr<const PeakDef>> filtered_unfit;
+  for( const std::shared_ptr<const PeakDef> &pk : unfit_auto_peaks )
+  {
+    if( !pk || !pk->gausPeak() )
       continue;
-    }
-
-    // Keep the policy-selected gap channel out of both children.  A protected range is never
-    // moved; the automatic neighbor alone is trimmed or rejected.
-    double boundary = policy.boundary_energy;
-    if( left_protected )
-      boundary = left_roi.upper_energy;
-    else if( right_protected )
-      boundary = current.lower_energy;
-    size_t lower_boundary_channel = foreground->find_gamma_channel(
-        static_cast<float>(boundary) );
-    size_t upper_boundary_channel = lower_boundary_channel;
-    if( !left_protected && !right_protected
-        && (policy.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked)
-        && (policy.exclusion_upper > policy.exclusion_lower) )
+    bool matches = false;
+    for( const detail::AutomaticRoiComponent &c : comps )
     {
-      lower_boundary_channel = foreground->find_gamma_channel(
-          static_cast<float>(policy.exclusion_lower) );
-      upper_boundary_channel = foreground->find_gamma_channel(
-          static_cast<float>(policy.exclusion_upper) );
-    }
-    const double lower_edge = foreground->gamma_channel_lower( lower_boundary_channel );
-    const double upper_edge = foreground->gamma_channel_upper( upper_boundary_channel );
-    const double old_left_upper = left_roi.upper_energy;
-    if( !left_protected )
-      left_roi.upper_energy = lower_edge;
-    if( !right_protected )
-      current.lower_energy = upper_edge;
-    const double left_anchor = *std::max_element(std::begin(left_peaks), std::end(left_peaks));
-    const double right_anchor = *std::min_element(std::begin(current_peaks), std::end(current_peaks));
-    const bool left_valid = left_protected || ((left_roi.upper_energy > left_roi.lower_energy)
-        && (left_anchor >= left_roi.lower_energy) && (left_anchor <= left_roi.upper_energy));
-    const bool right_valid = right_protected || ((current.upper_energy > current.lower_energy)
-        && (right_anchor >= current.lower_energy) && (right_anchor <= current.upper_energy));
-    if( !left_valid && !left_protected )
-    {
-      if( right_protected )
+      for( const detail::RoiAtom &a : c.atoms )
       {
-        resolved.pop_back();
-        resolved_peaks.pop_back();
-        resolved_areas.pop_back();
-        resolved_joined_groups.pop_back();
-        resolved.push_back( current );
-        resolved_peaks.push_back( current_peaks );
-        resolved_areas.push_back( current_areas );
-        resolved_joined_groups.push_back( 1 );
-        continue;
+        const double f = fwhm_at_energy( a.energy );
+        if( std::isfinite(f) && (f > 0.0) && (std::fabs(pk->mean() - a.energy) <= 0.75*f) )
+        {
+          matches = true;
+          break;
+        }
       }
-      // Prefer the already-retained left child; restore it and reject the new automatic addition.
-      left_roi.upper_energy = old_left_upper;
-      continue;
+      if( matches )
+        break;
     }
-    if( !right_valid )
-    {
-      if( !left_protected )
-        left_roi.upper_energy = old_left_upper;
-      continue;
-    }
-    resolved.push_back( current );
-    resolved_peaks.push_back( current_peaks );
-    resolved_areas.push_back( current_areas );
-    resolved_joined_groups.push_back( 1 );
+    if( !matches )
+      filtered_unfit.push_back( pk );
+  }
+
+  detail::AutomaticRoiPolicySettings policy_settings;
+  policy_settings.merge_tail_z = config.merge_tail_z;
+  policy_settings.merge_clean_gap_fwhm = config.merge_clean_gap_fwhm;
+  policy_settings.continuum_aicc_penalty = config.cont_order_aicc_penalty;
+  policy_settings.peak_core_num_fwhm = config.auto_roi_core_num_fwhm;
+  policy_settings.max_width_fwhm = config.auto_rel_eff_sol_max_fwhm;
+  policy_settings.stage = stage;
+
+  detail::AutomaticRoiPartitionConstraints cons;
+  cons.lowest_energy = foreground->gamma_channel_lower( 0 );
+  cons.highest_energy = foreground->gamma_channel_upper( foreground->num_gamma_channels() - 1 );
+  cons.left_barrier = -std::numeric_limits<double>::infinity();
+  cons.min_width_fwhm = 0.0;  // resolve imposes no minimum width (avoid geometry drift)
+  cons.peak_core_num_fwhm = config.auto_roi_core_num_fwhm;
+
+  const detail::AutomaticRoiReconcileResult rr = detail::reconcile_automatic_components(
+      std::move(comps), foreground, global_continuum, fwhm_at_energy, filtered_unfit,
+      policy_settings, cons, diagnostics );
+
+  if( !rr.valid )
+  {
+    // The transaction failed its own invariant check (should not happen; a dev build already
+    // asserted).  Honor the all-or-nothing contract: retain incumbent geometry via the legacy
+    // resolver, which still guarantees channel-disjoint output.
+    resolve_overlapping_rois( rois, floating_peaks );
+    ensure_min_channel_gap( rois, foreground ? foreground->energy_calibration() : nullptr );
+    return;
+  }
+
+  std::vector<RelActCalcAuto::RoiRange> resolved;
+  resolved.reserve( rr.components.size() );
+  for( const detail::AutomaticRoiComponent &c : rr.components )
+  {
+    RelActCalcAuto::RoiRange roi;
+    roi.lower_energy = c.lower;
+    roi.upper_energy = c.upper;
+    roi.continuum_type = c.continuum_type;
+    roi.range_limits_type = c.protected_geometry
+        ? c.range_limits_type : RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    resolved.push_back( roi );
   }
   rois = std::move( resolved );
 
@@ -4533,6 +6199,169 @@ FixedRoiModelScore fixed_roi_model_score(
   result.valid = std::isfinite(deviance);
   return result;
 }//fixed_roi_model_score(...)
+
+
+size_t solution_data_row_count( const RelActCalcAuto::RelActAutoSolution &solution )
+{
+  const std::shared_ptr<const SpecUtils::Measurement> &data = solution.m_foreground;
+  if( !data || (data->num_gamma_channels() == 0) )
+    return 0;
+  const bool have_spec_cal_rois
+    = (solution.m_final_roi_ranges_in_spectrum_cal.size() == solution.m_final_roi_ranges.size());
+  const std::vector<RelActCalcAuto::RoiRange> &rois = have_spec_cal_rois
+    ? solution.m_final_roi_ranges_in_spectrum_cal : solution.m_final_roi_ranges;
+  size_t rows = 0;
+  for( const RelActCalcAuto::RoiRange &roi : rois )
+  {
+    const size_t first = data->find_gamma_channel( static_cast<float>(roi.lower_energy) );
+    const size_t last = std::min( data->find_gamma_channel(
+        static_cast<float>(roi.upper_energy) ), data->num_gamma_channels() - 1 );
+    if( last >= first )
+      rows += last - first + 1;
+  }
+  return rows;
+}
+
+
+/** Data-only AICc on immutable, FWHM-local channel windows around the same source anchors.
+ The effective parameter count is derived from the solution's data rows and m_dof_data. */
+double source_anchor_data_aicc(
+  const RelActCalcAuto::RelActAutoSolution &solution,
+  const std::vector<RelActCalcManual::GenericPeakInfo> &anchors,
+  const double aicc_penalty )
+{
+  const std::shared_ptr<const SpecUtils::Measurement> &data = solution.m_foreground;
+  if( (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+      || !data || anchors.empty() || !(aicc_penalty > 0.0) )
+    return std::numeric_limits<double>::max();
+
+  std::vector<std::shared_ptr<const PeakDef>> model_peaks;
+  model_peaks.reserve( solution.m_peaks_without_back_sub.size() );
+  for( const PeakDef &peak : solution.m_peaks_without_back_sub )
+    model_peaks.push_back( std::make_shared<const PeakDef>(peak) );
+
+  double deviance = 0.0;
+  size_t common_rows = 0;
+  for( const RelActCalcManual::GenericPeakInfo &anchor : anchors )
+  {
+    const double half_width = 0.5 * anchor.m_fwhm;
+    if( !(half_width > 0.0) )
+      return std::numeric_limits<double>::max();
+    const double lower = anchor.m_energy - half_width;
+    const double upper = anchor.m_energy + half_width;
+    const size_t first = data->find_gamma_channel( static_cast<float>(lower) );
+    const size_t last = std::min( data->find_gamma_channel(
+        static_cast<float>(upper) ), data->num_gamma_channels() - 1 );
+    const FixedRoiModelScore score = fixed_roi_model_score(
+        model_peaks, data, first, last, lower, upper );
+    if( !score.valid )
+      return std::numeric_limits<double>::max();
+    deviance += score.poisson_deviance;
+    common_rows += score.num_channels;
+  }
+
+  const size_t all_data_rows = solution_data_row_count( solution );
+  if( (all_data_rows < solution.m_dof_data) || (common_rows == 0) )
+    return std::numeric_limits<double>::max();
+  const size_t num_parameters = all_data_rows - solution.m_dof_data;
+  return detail::data_only_aicc(
+      deviance, common_rows, num_parameters, aicc_penalty );
+}
+
+
+std::vector<PeakDef> distinct_significant_requested_source_peaks(
+  const RelActCalcAuto::RelActAutoSolution &fit,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
+  const double minimum_z,
+  const std::function<double(double)> &fwhm_at_energy )
+{
+  std::vector<const PeakDef *> candidates;
+  for( const PeakDef &peak : fit.m_peaks_without_back_sub )
+  {
+    const bool requested = std::any_of( std::begin(sources), std::end(sources),
+      [&peak]( const RelActCalcAuto::NucInputInfo &source ) {
+        return (peak.parentNuclide()
+            && (peak.parentNuclide() == RelActCalcAuto::nuclide(source.source)))
+          || (peak.xrayElement()
+            && (peak.xrayElement() == RelActCalcAuto::element(source.source)))
+          || (peak.reaction()
+            && (peak.reaction() == RelActCalcAuto::reaction(source.source)));
+      } );
+    const double uncertainty = peak.amplitudeUncert();
+    const double significance = (uncertainty > 0.0)
+      ? (peak.amplitude() / uncertainty)
+      : ((peak.amplitude() > 0.0) ? std::sqrt(peak.amplitude()) : 0.0);
+    if( requested && (significance >= minimum_z) )
+      candidates.push_back( &peak );
+  }
+  std::sort( std::begin(candidates), std::end(candidates),
+    []( const PeakDef *lhs, const PeakDef *rhs ) {
+      const double lhs_uncertainty = lhs->amplitudeUncert();
+      const double rhs_uncertainty = rhs->amplitudeUncert();
+      const double lhs_significance = (lhs_uncertainty > 0.0)
+        ? (lhs->amplitude() / lhs_uncertainty) : std::sqrt(lhs->amplitude());
+      const double rhs_significance = (rhs_uncertainty > 0.0)
+        ? (rhs->amplitude() / rhs_uncertainty) : std::sqrt(rhs->amplitude());
+      return lhs_significance > rhs_significance;
+    } );
+  std::vector<const PeakDef *> distinct;
+  for( const PeakDef *candidate : candidates )
+  {
+    const bool overlaps = std::any_of( std::begin(distinct), std::end(distinct),
+      [candidate, &fwhm_at_energy]( const PeakDef *existing ) {
+        return std::fabs(candidate->mean() - existing->mean())
+            < 0.5*(fwhm_at_energy(candidate->mean()) + fwhm_at_energy(existing->mean()));
+      } );
+    if( !overlaps )
+      distinct.push_back( candidate );
+  }
+  std::vector<PeakDef> result;
+  result.reserve( distinct.size() );
+  for( const PeakDef *peak : distinct )
+    result.push_back( *peak );
+  return result;
+}
+
+
+size_t significant_requested_source_anchor_count(
+  const RelActCalcAuto::RelActAutoSolution &candidate,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
+  const std::vector<RelActCalcManual::GenericPeakInfo> &anchors,
+  const double minimum_z,
+  const std::function<double(double)> &fwhm_at_energy )
+{
+  const std::vector<PeakDef> candidate_lines
+    = distinct_significant_requested_source_peaks(
+        candidate, sources, minimum_z, fwhm_at_energy );
+  return static_cast<size_t>( std::count_if( std::begin(anchors), std::end(anchors),
+    [&candidate_lines, &fwhm_at_energy](
+        const RelActCalcManual::GenericPeakInfo &anchor ) {
+      const double anchor_center = std::isfinite(anchor.m_mean)
+        ? anchor.m_mean : anchor.m_energy;
+      return std::any_of( std::begin(candidate_lines), std::end(candidate_lines),
+        [anchor_center, &anchor, &fwhm_at_energy]( const PeakDef &candidate_line ) {
+          const double candidate_fwhm = fwhm_at_energy( candidate_line.mean() );
+          if( !std::isfinite(candidate_fwhm) || !(candidate_fwhm > 0.0) )
+            return false;
+          const double anchor_fwhm = (std::isfinite(anchor.m_fwhm) && (anchor.m_fwhm > 0.0))
+            ? anchor.m_fwhm : candidate_fwhm;
+          return std::fabs(candidate_line.mean() - anchor_center)
+            < (0.5 * (anchor_fwhm + candidate_fwhm));
+        } );
+    } ) );
+}
+
+
+bool significant_requested_source_anchors_preserved(
+  const RelActCalcAuto::RelActAutoSolution &candidate,
+  const std::vector<RelActCalcAuto::NucInputInfo> &sources,
+  const std::vector<RelActCalcManual::GenericPeakInfo> &anchors,
+  const double minimum_z,
+  const std::function<double(double)> &fwhm_at_energy )
+{
+  return significant_requested_source_anchor_count(
+      candidate, sources, anchors, minimum_z, fwhm_at_energy ) == anchors.size();
+}
 
 
 /** Average chi2 per CHANNEL (not per fitted dof) over the solution's ROIs that contain
@@ -5927,7 +7756,8 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
     std::vector<PredictedGamma> *all_predicted_gammas = nullptr,
     const std::string &shadow_stage = std::string(),
     const detail::GlobalContinuumEstimate *shadow_global_override = nullptr,
-    std::vector<AutomaticRoiDecisionDiagnostic> *roi_policy_diagnostics = nullptr )
+    std::vector<AutomaticRoiDecisionDiagnostic> *roi_policy_diagnostics = nullptr,
+    const bool use_source_evidence_pruning = false )
 {
   assert( rel_eff_fcns.size() == sources_age_activity_sets.size() );
   if( rel_eff_fcns.size() != sources_age_activity_sets.size() )
@@ -6166,11 +7996,34 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
     const bool passes_counts = (counts_in_region > sm_keep_gate_min_est_counts);
     const bool passes_signif = (signif > settings.keep_significance_z);
 
+    // Marginal R2 candidates are already past their provisional gate and may mint immediately.
+    // Normally accepted clusters defer minting until the over-wide H0/Hs/Hf bridge check below;
+    // this makes "rejected before admission" an exact atom-ledger statement rather than a waiver.
+    const auto make_cluster_atoms = [&settings]( const std::vector<PredictedGamma> &predictions )
+        -> std::vector<detail::RoiAtom> {
+      std::vector<detail::RoiAtom> atoms;
+      atoms.reserve( predictions.size() );
+      for( const PredictedGamma &pg : predictions )
+      {
+        detail::RoiAtom atom;
+        atom.id = detail::next_roi_atom_id();
+        atom.energy = pg.energy;
+        atom.area = pg.expected_counts;
+        atom.kind = detail::RoiAtomKind::ModeledGamma;
+        atom.source = pg.source;
+        atom.rel_eff_curve_index = pg.rel_eff_curve_index;
+        atom.admission = settings.cluster_admission_stage;
+        atoms.push_back( atom );
+      }
+      return atoms;
+    };//make_cluster_atoms
+
     if( passes_counts && passes_signif )
     {
       ClusteredGammaInfo cluster_info;
       cluster_info.lower = lower;
       cluster_info.upper = upper;
+      cluster_info.predicted_gammas = std::move( predicted_gammas_in_cluster );
       cluster_info.gamma_energies = std::move( gamma_energies_in_cluster );
       cluster_info.gamma_amplitudes = std::move( gamma_amplitudes_in_cluster );
       clustered_gammas.push_back( std::move( cluster_info ) );
@@ -6180,6 +8033,7 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
       MarginalRejectedCluster marginal;
       marginal.cluster.lower = lower;
       marginal.cluster.upper = upper;
+      marginal.cluster.atoms = make_cluster_atoms( predicted_gammas_in_cluster );
       marginal.cluster.gamma_energies = gamma_energies_in_cluster;
       marginal.cluster.gamma_amplitudes = gamma_amplitudes_in_cluster;
       marginal.predicted_gammas = std::move( predicted_gammas_in_cluster );
@@ -6305,6 +8159,146 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
       << " (sidebands " << extent.sideband_lower_kev << " / " << extent.sideband_upper_kev << " keV)" << std::endl;
     }
   }//for( ClusteredGammaInfo &cluster : clustered_gammas )
+
+  // Predicted significance admits provisional source groups, but it cannot establish that the
+  // measured spectrum contains them.  After the source-collapse gate has fired, and in an
+  // over-wide transitive overlap component only, compare each provisional group transactionally on
+  // its own fixed channels: continuum-only (H0), one local scale multiplying the exact source-line
+  // mixture (Hs), and all FWHM-distinct significant found features together (Hf).  Rejected groups
+  // have not minted atoms yet, so they cannot become artificial bridges and exact-once ownership
+  // begins only after this evidence gate.  At least two supported groups must survive or the whole
+  // local rejection set is rolled back.
+  if( settings.use_automatic_roi_policy && use_source_evidence_pruning
+      && (clustered_gammas.size() >= 2) )
+  {
+    std::vector<bool> retain( clustered_gammas.size(), true );
+    size_t component_first = 0;
+    while( component_first < clustered_gammas.size() )
+    {
+      size_t component_last = component_first;
+      double component_upper = clustered_gammas[component_first].upper;
+      while( (component_last + 1 < clustered_gammas.size())
+             && (clustered_gammas[component_last + 1].lower <= component_upper) )
+      {
+        ++component_last;
+        component_upper = std::max( component_upper, clustered_gammas[component_last].upper );
+      }
+      const double component_lower = clustered_gammas[component_first].lower;
+      const double midpoint = 0.5*(component_lower + component_upper);
+      const double fwhm = fwhm_at( midpoint );
+      const bool overwide = (component_last > component_first) && std::isfinite(fwhm)
+          && (fwhm > 0.0) && (settings.max_fwhm_width > 0.0)
+          && (((component_upper - component_lower) / fwhm) > settings.max_fwhm_width);
+      if( overwide )
+      {
+        struct PendingEvidence
+        {
+          size_t cluster_index = 0;
+          detail::SourceClusterEvidenceResult evidence;
+        };
+        std::vector<PendingEvidence> pending;
+        size_t supported = 0;
+        for( size_t index = component_first; index <= component_last; ++index )
+        {
+          PendingEvidence item;
+          item.cluster_index = index;
+          const ClusteredGammaInfo &cluster = clustered_gammas[index];
+          item.evidence = detail::evaluate_source_cluster_evidence(
+              cluster.gamma_energies, cluster.gamma_amplitudes, cluster.lower, cluster.upper,
+              foreground, fwhm_at, unfit_auto_peaks, settings.keep_significance_z,
+              settings.roi_core_num_fwhm,
+              settings.cont_order_aicc_penalty );
+          const bool rejected = (item.evidence.decision
+                  == detail::SourceClusterEvidenceDecision::RejectContinuumOnly)
+              || (item.evidence.decision
+                  == detail::SourceClusterEvidenceDecision::RejectFreeFeature);
+          if( !rejected )
+            ++supported;
+          pending.push_back( std::move(item) );
+        }
+        const bool apply_rejections = (supported >= 2);
+        for( const PendingEvidence &item : pending )
+        {
+          const detail::SourceClusterEvidenceResult &evidence = item.evidence;
+          const bool rejected_continuum = (evidence.decision
+              == detail::SourceClusterEvidenceDecision::RejectContinuumOnly);
+          const bool rejected_free = (evidence.decision
+              == detail::SourceClusterEvidenceDecision::RejectFreeFeature);
+          const bool rejected = apply_rejections && (rejected_continuum || rejected_free);
+          retain[item.cluster_index] = !rejected;
+
+          AutomaticRoiDecisionDiagnostic diagnostic;
+          diagnostic.stage = shadow_stage.empty() ? "automatic clustering source evidence"
+                                                   : shadow_stage + " source evidence";
+          diagnostic.left_lower = clustered_gammas[item.cluster_index].lower;
+          diagnostic.left_upper = clustered_gammas[item.cluster_index].upper;
+          diagnostic.calibration_num_channels = foreground->num_gamma_channels();
+          diagnostic.combined_width_fwhm = (component_upper - component_lower) / fwhm;
+          diagnostic.source_evidence_tested = true;
+          diagnostic.source_null_aicc = evidence.null_aicc;
+          diagnostic.source_tied_aicc = evidence.source_aicc;
+          diagnostic.free_feature_aicc = evidence.free_feature_aicc;
+          diagnostic.source_likelihood_z = evidence.source_likelihood_z;
+          diagnostic.free_feature_energy = evidence.free_feature_energy;
+          if( rejected_continuum && apply_rejections )
+            diagnostic.decision = AutomaticRoiDecision::SourceBridgeRejectedContinuum;
+          else if( rejected_free && apply_rejections )
+            diagnostic.decision = AutomaticRoiDecision::SourceBridgeRejectedFreeFeature;
+          else
+            diagnostic.decision = AutomaticRoiDecision::SourceBridgeRetained;
+          diagnostic.reason = (!apply_rejections && (rejected_continuum || rejected_free))
+              ? "local source-evidence rejection rolled back: fewer than two supported anchors"
+              : evidence.reason;
+          if( roi_policy_diagnostics )
+            roi_policy_diagnostics->push_back( diagnostic );
+          else
+            detail::record_automatic_roi_diagnostic( diagnostic );
+
+          if( should_debug_print() )
+          {
+            std::cerr << "cluster_gammas_to_rois: "
+              << automatic_roi_decision_name(diagnostic.decision)
+              << " provisional group [" << diagnostic.left_lower << ", "
+              << diagnostic.left_upper << "] keV: H0=" << diagnostic.source_null_aicc
+              << ", Hs=" << diagnostic.source_tied_aicc
+              << ", Hf=" << diagnostic.free_feature_aicc
+              << ", source_z=" << diagnostic.source_likelihood_z
+              << "; " << diagnostic.reason << std::endl;
+          }
+        }
+      }
+      component_first = component_last + 1;
+    }
+    std::vector<ClusteredGammaInfo> evidence_filtered;
+    evidence_filtered.reserve( clustered_gammas.size() );
+    for( size_t index = 0; index < clustered_gammas.size(); ++index )
+      if( retain[index] )
+        evidence_filtered.push_back( std::move(clustered_gammas[index]) );
+    clustered_gammas = std::move( evidence_filtered );
+  }
+
+  // Atom admission starts here, after every provisional bridge decision.  Preserve source and
+  // rel-eff-curve provenance exactly for the retained groups.
+  if( settings.use_automatic_roi_policy )
+  {
+    for( ClusteredGammaInfo &cluster : clustered_gammas )
+    {
+      cluster.atoms.clear();
+      cluster.atoms.reserve( cluster.predicted_gammas.size() );
+      for( const PredictedGamma &prediction : cluster.predicted_gammas )
+      {
+        detail::RoiAtom atom;
+        atom.id = detail::next_roi_atom_id();
+        atom.energy = prediction.energy;
+        atom.area = prediction.expected_counts;
+        atom.kind = detail::RoiAtomKind::ModeledGamma;
+        atom.source = prediction.source;
+        atom.rel_eff_curve_index = prediction.rel_eff_curve_index;
+        atom.admission = settings.cluster_admission_stage;
+        cluster.atoms.push_back( std::move(atom) );
+      }
+    }
+  }
   
   // Collect all source gamma energies for checking if an unfit peak matches a source gamma;
   // used during merge prevention below.
@@ -6315,6 +8309,48 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
       all_source_gamma_energies.insert( all_source_gamma_energies.end(),
         c.gamma_energies.begin(), c.gamma_energies.end() );
   }
+
+  // Atom-safe conversions between a cluster and a partition component (policy mode only).  The
+  // cluster's atom ledger is authoritative; gamma_energies/gamma_amplitudes are regenerated from it
+  // after every partition so the downstream emit sees a consistent view.
+  const auto cluster_to_component = [&]( const ClusteredGammaInfo &c ) -> detail::AutomaticRoiComponent {
+    detail::AutomaticRoiComponent comp;
+    comp.lower = c.lower;
+    comp.upper = c.upper;
+    comp.first_channel = foreground->find_gamma_channel( static_cast<float>(c.lower) );
+    comp.last_channel = foreground->find_gamma_channel( static_cast<float>(c.upper) );
+    comp.joined_groups = c.joined_groups;
+    comp.protected_geometry = false;
+    comp.continuum_type = PeakContinuum::OffsetType::Linear;
+    comp.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    comp.atoms = c.atoms;
+    if( comp.atoms.empty() )  // defensive: synthesize provenance-less atoms from the flat view
+    {
+      for( size_t i = 0; i < c.gamma_energies.size(); ++i )
+      {
+        detail::RoiAtom atom;
+        atom.id = detail::next_roi_atom_id();
+        atom.energy = c.gamma_energies[i];
+        atom.area = (i < c.gamma_amplitudes.size()) ? c.gamma_amplitudes[i] : 0.0;
+        atom.admission = settings.cluster_admission_stage;
+        comp.atoms.push_back( atom );
+      }
+    }
+    return comp;
+  };//cluster_to_component
+  const auto component_to_cluster = []( const detail::AutomaticRoiComponent &comp ) -> ClusteredGammaInfo {
+    ClusteredGammaInfo c;
+    c.lower = comp.lower;
+    c.upper = comp.upper;
+    c.joined_groups = comp.joined_groups;
+    c.atoms = comp.atoms;
+    for( const detail::RoiAtom &a : comp.atoms )
+    {
+      c.gamma_energies.push_back( a.energy );
+      c.gamma_amplitudes.push_back( a.area );
+    }
+    return c;
+  };//component_to_cluster
 
   // Merge overlapping clusters, but prevent merging when an unfit auto-search peak lies between
   // the largest gammas of each cluster (the interfering peak would contaminate the combined ROI).
@@ -6415,6 +8451,52 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
         }
       }//if( !unfit_peak_between )
 
+      if( settings.use_automatic_roi_policy )
+      {
+        // POLICY MODE: replace the greedy split/merge below with ONE atom-safe partition of this
+        // adjacent pair.  No admitted gamma can be clipped-and-dropped; when no core-safe boundary
+        // exists the pair merges (never a dropped side).  The legacy split/merge code below runs
+        // only for R6-enabled fits (use_automatic_roi_policy == false).
+        detail::AutomaticRoiPolicySettings policy_settings;
+        policy_settings.merge_tail_z = settings.merge_tail_z;
+        policy_settings.merge_clean_gap_fwhm = settings.merge_clean_gap_fwhm;
+        policy_settings.continuum_aicc_penalty = settings.cont_order_aicc_penalty;
+        policy_settings.peak_core_num_fwhm = settings.roi_core_num_fwhm;
+        policy_settings.max_width_fwhm = settings.max_fwhm_width;
+        policy_settings.stage = shadow_stage.empty() ? "automatic clustering" : shadow_stage;
+
+        detail::AutomaticRoiPartitionConstraints cons;
+        cons.lowest_energy = lowest_energy;
+        cons.highest_energy = highest_energy;
+        cons.left_barrier = (merged_clusters.size() >= 2)
+            ? merged_clusters[merged_clusters.size() - 2].upper
+            : -std::numeric_limits<double>::infinity();
+        cons.min_width_fwhm = settings.min_fwhm_roi;
+        cons.peak_core_num_fwhm = settings.roi_core_num_fwhm;
+
+        const detail::AutomaticRoiComponent left_comp = cluster_to_component( merged_clusters.back() );
+        const detail::AutomaticRoiComponent right_comp = cluster_to_component( cluster );
+        const detail::AutomaticRoiPartitionResult pr = detail::partition_automatic_roi_pair(
+            left_comp, right_comp, foreground, settings.global_continuum, fwhm_at,
+            blocking_unfit_peaks, policy_settings, cons );
+        if( roi_policy_diagnostics )
+          roi_policy_diagnostics->push_back( pr.policy.diagnostic );
+        else
+          detail::record_automatic_roi_diagnostic( pr.policy.diagnostic );
+        assert( pr.orphaned_atoms.empty() );  // clustering has no protected geometry -> no orphans
+
+        if( (pr.outcome == detail::AutomaticRoiPartitionOutcome::KeptSeparate)
+            && (pr.components.size() == 2) )
+        {
+          merged_clusters.back() = component_to_cluster( pr.components[0] );
+          merged_clusters.push_back( component_to_cluster( pr.components[1] ) );
+        }else if( !pr.components.empty() )
+        {
+          merged_clusters.back() = component_to_cluster( pr.components[0] );  // Merged
+        }
+        continue;
+      }//if( settings.use_automatic_roi_policy )
+
       detail::AutomaticRoiGroup left_group;
       left_group.lower = prev.lower;
       left_group.upper = prev.upper;
@@ -6433,6 +8515,7 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
       policy_settings.continuum_aicc_penalty = settings.cont_order_aicc_penalty;
       policy_settings.peak_core_num_fwhm = settings.roi_core_num_fwhm;
       policy_settings.max_width_fwhm = settings.max_fwhm_width;
+      policy_settings.allow_overwide_overlap_partition = use_source_evidence_pruning;
       policy_settings.stage = shadow_stage.empty() ? "automatic clustering" : shadow_stage;
       detail::AutomaticRoiPolicyResult policy;
       if( settings.use_automatic_roi_policy )
@@ -6553,14 +8636,90 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
   // Validate merged clusters - ensure merge didn't introduce NaN values
   merged_clusters.erase(
     std::remove_if( std::begin(merged_clusters), std::end(merged_clusters),
-      []( const ClusteredGammaInfo &cluster ) {
+      [&]( const ClusteredGammaInfo &cluster ) {
         const bool invalid = !std::isfinite(cluster.lower) || !std::isfinite(cluster.upper) || (cluster.lower >= cluster.upper);
         if( invalid && should_debug_print() )
           std::cerr << "Warning: Removing invalid merged cluster with bounds [" << cluster.lower << ", " << cluster.upper << "]" << std::endl;
+        // A validated atom-safe partition never yields NaN/inverted bounds, so an erased cluster in
+        // policy mode would be a silent atom loss - assert it carries no atoms.
+        assert( !invalid || !settings.use_automatic_roi_policy || cluster.atoms.empty() );
         return invalid;
       } ),
     std::end(merged_clusters)
   );
+
+  // Greedy overlap collection establishes the transitive component, but after a measured
+  // source-anchor collapse it is not allowed to choose that component's final boundaries.  Keep
+  // this geometry fallback inside the same evidence-gated recovery trial; applying it during the
+  // initial ordinary solve changed unrelated dense/unshielded spectra before any collapse existed.
+  // For every over-wide union in that trial, score the full component and transactionally replace
+  // it only when the best core-safe two-ROI partition beats the union plus soft-width pressure.
+  if( settings.use_automatic_roi_policy && use_source_evidence_pruning )
+  {
+    std::vector<ClusteredGammaInfo> jointly_partitioned;
+    for( const ClusteredGammaInfo &cluster : merged_clusters )
+    {
+      const double cluster_midpoint = 0.5*(cluster.lower + cluster.upper);
+      const double cluster_fwhm = fwhm_at( cluster_midpoint );
+      const bool overwide = std::isfinite(cluster_fwhm) && (cluster_fwhm > 0.0)
+          && (settings.max_fwhm_width > 0.0)
+          && (((cluster.upper - cluster.lower) / cluster_fwhm) > settings.max_fwhm_width);
+      if( !overwide )
+      {
+        jointly_partitioned.push_back( cluster );
+        continue;
+      }
+      const detail::AutomaticRoiComponent component = cluster_to_component( cluster );
+      detail::AutomaticRoiPolicySettings policy_settings;
+      policy_settings.merge_tail_z = settings.merge_tail_z;
+      policy_settings.merge_clean_gap_fwhm = settings.merge_clean_gap_fwhm;
+      policy_settings.continuum_aicc_penalty = settings.cont_order_aicc_penalty;
+      policy_settings.peak_core_num_fwhm = settings.roi_core_num_fwhm;
+      policy_settings.max_width_fwhm = settings.max_fwhm_width;
+      policy_settings.stage = shadow_stage.empty() ? "automatic clustering whole component"
+                                                   : shadow_stage + " whole component";
+      detail::AutomaticRoiPartitionConstraints constraints;
+      constraints.lowest_energy = lowest_energy;
+      constraints.highest_energy = highest_energy;
+      constraints.left_barrier = jointly_partitioned.empty()
+        ? -std::numeric_limits<double>::infinity() : jointly_partitioned.back().upper;
+      constraints.min_width_fwhm = settings.min_fwhm_roi;
+      constraints.peak_core_num_fwhm = settings.roi_core_num_fwhm;
+      const detail::AutomaticRoiComponentPartitionResult partition
+        = detail::partition_overwide_automatic_component( { component }, foreground, fwhm_at,
+            unfit_auto_peaks, policy_settings, constraints );
+      if( roi_policy_diagnostics )
+        roi_policy_diagnostics->push_back( partition.diagnostic );
+      else
+        detail::record_automatic_roi_diagnostic( partition.diagnostic );
+      if( partition.valid && partition.changed )
+      {
+        const uint64_t partition_id = detail::next_roi_atom_id();
+        for( const detail::AutomaticRoiComponent &child : partition.components )
+        {
+          ClusteredGammaInfo materialized = component_to_cluster( child );
+          materialized.selected_partition_id = partition_id;
+          materialized.selected_parent_lower = cluster.lower;
+          materialized.selected_parent_upper = cluster.upper;
+          jointly_partitioned.push_back( std::move(materialized) );
+        }
+      }else
+      {
+        jointly_partitioned.push_back( cluster );
+      }
+      if( should_debug_print() && (partition.diagnostic.width_pressure > 0.0) )
+      {
+        std::cerr << "cluster_gammas_to_rois: whole-component "
+          << automatic_roi_decision_name(partition.diagnostic.decision)
+          << " [" << cluster.lower << ", " << cluster.upper << "] keV: union_AICc="
+          << partition.diagnostic.one_roi_aicc << ", partition_AICc="
+          << partition.diagnostic.two_roi_aicc << ", width_pressure="
+          << partition.diagnostic.width_pressure << "; "
+          << partition.diagnostic.reason << std::endl;
+      }
+    }
+    merged_clusters = std::move( jointly_partitioned );
+  }
 
   if( should_debug_print() )
   {
@@ -6892,8 +9051,7 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
       // emitted ROI, fold the cluster back into it (mirroring merge_rois' under-width fold-back
       // guards) instead of silently dropping gammas the keep decision said were significant.
       const double fold_tol = 0.1 * mid_fwhm;
-      if( !settings.use_automatic_roi_policy && !result_rois.empty()
-          && ((roi.lower_energy - previous_roi_upper) <= fold_tol) )
+      if( !result_rois.empty() && ((roi.lower_energy - previous_roi_upper) <= fold_tol) )
       {
         std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo> &previous = result_rois.back();
         previous.first.upper_energy = std::max( previous.first.upper_energy, roi.upper_energy );
@@ -6902,16 +9060,32 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> cluster_gam
             std::begin(cluster.gamma_energies), std::end(cluster.gamma_energies) );
         previous.second.gamma_amplitudes.insert( std::end(previous.second.gamma_amplitudes),
             std::begin(cluster.gamma_amplitudes), std::end(cluster.gamma_amplitudes) );
+        // Carry the atom ledger too, so a policy-mode fold never loses admitted provenance
+        // (a no-op in legacy mode, where clusters carry no atoms).
+        previous.second.atoms.insert( std::end(previous.second.atoms),
+            std::begin(cluster.atoms), std::end(cluster.atoms) );
         previous_roi_upper = previous.first.upper_energy;
         continue;
       }
-      if( should_debug_print() )
+      if( settings.use_automatic_roi_policy )
       {
-        std::cerr << "cluster_gammas_to_rois: Rejected ROI [" << roi.lower_energy << ", " << roi.upper_energy
-             << "] keV: too narrow (" << num_fwhm_wide << " FWHM < " << settings.min_fwhm_roi << " min)" << std::endl;
+        // The atom-safe partition already enforced the minimum width and channel-disjointness, so a
+        // residual sliver here is a rare clamp/rounding artifact.  Emit it (fall through) rather
+        // than drop the admitted gammas - dropping a requested line is exactly the regression this
+        // work removes.
+        if( should_debug_print() )
+          std::cerr << "cluster_gammas_to_rois: emitting narrow policy ROI [" << roi.lower_energy
+               << ", " << roi.upper_energy << "] keV rather than dropping its atoms" << std::endl;
+      }else
+      {
+        if( should_debug_print() )
+        {
+          std::cerr << "cluster_gammas_to_rois: Rejected ROI [" << roi.lower_energy << ", " << roi.upper_energy
+               << "] keV: too narrow (" << num_fwhm_wide << " FWHM < " << settings.min_fwhm_roi << " min)" << std::endl;
+        }
+        // Don't update previous_roi_upper since we're not adding this ROI
+        continue;
       }
-      // Don't update previous_roi_upper since we're not adding this ROI
-      continue;
     }
 
     roi.continuum_type = PeakContinuum::OffsetType::Linear;
@@ -7148,6 +9322,129 @@ std::vector<RelActCalcAuto::RoiRange> merge_rois(
     areas.resize( roi.modeled_energies.empty() ? size_t(1) : roi.modeled_energies.size(), 0.0 );
     return areas;
   };
+
+  // POLICY MODE: reconcile ALL ROIs at once through the atom-safe partition layer, which cannot
+  // drop or duplicate a modeled line (the legacy per-pair split/merge below has pop_back/skip drop
+  // paths).  Atoms are minted from each ROI's modeled lines for this call; the reconciler carries
+  // them exactly-once.  The legacy loop still runs for R6-enabled fits, or when there is no usable
+  // calibration for the channel-aligned partition.
+  const bool policy_ok = use_automatic_roi_policy && foreground
+      && foreground->energy_calibration() && foreground->energy_calibration()->valid()
+      && (foreground->num_gamma_channels() > 0);
+  if( policy_ok )
+  {
+    // FWHM(E) from the nearest ROI center (FWHM varies slowly; the legacy path used a single
+    // per-pair mid-FWHM, which this strictly improves on).
+    const auto fwhm_at = [&initial_rois]( const double energy ) -> double {
+      double best_fwhm = std::numeric_limits<double>::quiet_NaN();
+      double best_dist = std::numeric_limits<double>::infinity();
+      for( const InitialRoi &ir : initial_rois )
+      {
+        if( !std::isfinite(ir.fwhm) || (ir.fwhm <= 0.0) )
+          continue;
+        const double d = std::fabs( energy - ir.center_energy );
+        if( d < best_dist ){ best_dist = d; best_fwhm = ir.fwhm; }
+      }
+      return best_fwhm;
+    };//fwhm_at
+
+    std::vector<detail::AutomaticRoiComponent> comps;
+    comps.reserve( initial_rois.size() );
+    for( const InitialRoi &ir : initial_rois )
+    {
+      detail::AutomaticRoiComponent c;
+      c.lower = ir.roi.lower_energy;
+      c.upper = ir.roi.upper_energy;
+      c.first_channel = foreground->find_gamma_channel( static_cast<float>(ir.roi.lower_energy) );
+      c.last_channel = foreground->find_gamma_channel( static_cast<float>(ir.roi.upper_energy) );
+      c.continuum_type = ir.roi.continuum_type;
+      c.range_limits_type = ir.roi.range_limits_type;
+      c.joined_groups = ir.joined_groups;
+      c.protected_geometry = false;
+      const std::vector<double> centers = current_centers( ir );
+      const std::vector<double> areas = current_areas( ir );
+      const bool is_modeled = !ir.modeled_energies.empty();
+      for( size_t i = 0; i < centers.size(); ++i )
+      {
+        detail::RoiAtom atom;
+        atom.id = detail::next_roi_atom_id();
+        atom.energy = centers[i];
+        atom.area = (i < areas.size()) ? areas[i] : 0.0;
+        atom.kind = is_modeled ? detail::RoiAtomKind::ModeledGamma
+                               : detail::RoiAtomKind::FoundPeakEvidence;
+        c.atoms.push_back( atom );
+      }
+      comps.push_back( std::move(c) );
+    }
+
+    // Unfit auto-search peaks that coincide with a modeled line are not interfering features; drop
+    // them so the policy's unmodeled-feature test only sees genuine unmodeled peaks (matches the
+    // resolve-stage filter).
+    std::vector<std::shared_ptr<const PeakDef>> filtered_unfit;
+    for( const std::shared_ptr<const PeakDef> &pk : unfit_auto_peaks )
+    {
+      if( !pk || !pk->gausPeak() )
+        continue;
+      bool matches_modeled = false;
+      for( const detail::AutomaticRoiComponent &c : comps )
+      {
+        for( const detail::RoiAtom &a : c.atoms )
+        {
+          const double f = fwhm_at( a.energy );
+          if( std::isfinite(f) && (f > 0.0) && (std::fabs(pk->mean() - a.energy) <= 0.75*f) )
+          {
+            matches_modeled = true;
+            break;
+          }
+        }
+        if( matches_modeled )
+          break;
+      }
+      if( !matches_modeled )
+        filtered_unfit.push_back( pk );
+    }
+
+    detail::AutomaticRoiPolicySettings policy_settings;
+    policy_settings.merge_tail_z = config.merge_tail_z;
+    policy_settings.merge_clean_gap_fwhm = config.merge_clean_gap_fwhm;
+    policy_settings.continuum_aicc_penalty = config.cont_order_aicc_penalty;
+    policy_settings.peak_core_num_fwhm = config.auto_roi_core_num_fwhm;
+    policy_settings.max_width_fwhm = config.auto_rel_eff_sol_max_fwhm;
+    policy_settings.stage = policy_stage;
+
+    detail::AutomaticRoiPartitionConstraints cons;
+    cons.lowest_energy = foreground->gamma_channel_lower( 0 );
+    cons.highest_energy = foreground->gamma_channel_upper( foreground->num_gamma_channels() - 1 );
+    cons.left_barrier = -std::numeric_limits<double>::infinity();
+    cons.min_width_fwhm = 1.0;  // matches the legacy "child width >= FWHM" validity check
+    cons.peak_core_num_fwhm = config.auto_roi_core_num_fwhm;
+
+    // Route diagnostics to the caller's vector, or to the thread-local sink when it passed none
+    // (matching the legacy path, which the whole-fit result later drains).
+    std::vector<AutomaticRoiDecisionDiagnostic> local_diags;
+    std::vector<AutomaticRoiDecisionDiagnostic> *diag_sink
+        = roi_policy_diagnostics ? roi_policy_diagnostics : &local_diags;
+    const detail::AutomaticRoiReconcileResult rr = detail::reconcile_automatic_components(
+        std::move(comps), foreground, global_continuum, fwhm_at, filtered_unfit,
+        policy_settings, cons, diag_sink );
+    if( !roi_policy_diagnostics )
+      for( const AutomaticRoiDecisionDiagnostic &d : local_diags )
+        detail::record_automatic_roi_diagnostic( d );
+
+    for( const detail::AutomaticRoiComponent &c : rr.components )
+    {
+      RelActCalcAuto::RoiRange roi;
+      roi.lower_energy = c.lower;
+      roi.upper_energy = c.upper;
+      roi.continuum_type = c.continuum_type;
+      roi.range_limits_type = c.range_limits_type;
+      merged_rois.push_back( roi );
+      if( merged_modeled_peaks )
+        for( const detail::RoiAtom &a : c.atoms )
+          merged_modeled_peaks->emplace_back( a.energy, a.area );
+    }
+    return merged_rois;
+  }//if( policy_ok )
 
   for( size_t roi_idx = 0; roi_idx < initial_rois.size(); ++roi_idx )
   {
@@ -8172,7 +10469,9 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
   const PeakFitForNuclideConfig &config,
   const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
   std::string &fallback_warning,
-  std::vector<std::pair<double,double>> *modeled_peak_candidates = nullptr )
+  std::vector<std::pair<double,double>> *modeled_peak_candidates = nullptr,
+  std::vector<RelActCalcManual::GenericPeakInfo> *source_anchor_candidates = nullptr,
+  std::vector<RelActCalcAuto::RoiRange> *clean_source_rois = nullptr )
 {
   std::vector<RelActCalcAuto::RoiRange> initial_rois;
 
@@ -8476,8 +10775,10 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
       // Fitted-parameter count: curve coefficients plus one activity per matched nuclide (the
       // Hoerl modifier adds two).  kappa absorbs any small miscount.
       const double num_par = is_physical
-          ? (static_cast<double>(num_distinct_nuclides) + (cand_input.phys_model_use_hoerl ? 2.0 : 0.0))
-          : (static_cast<double>(cand.order) + 1.0 + static_cast<double>(num_distinct_nuclides));
+          ? (static_cast<double>(num_distinct_nuclides)
+             + (cand_input.phys_model_use_hoerl ? 2.0 : 0.0))
+          : (static_cast<double>(cand.order) + 1.0
+             + static_cast<double>(num_distinct_nuclides));
       const double num_data = terms.num_included;
 
       // AICc = chi2 + kappa*k + kappa*k*(k+1)/(n-k-1); the correction term requires n > k+1.
@@ -8520,6 +10821,8 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     {
       std::cout << "Manual rel-eff ladder winner: form=" << RelActCalc::to_str( manual_solution.m_input.eqn_form )
                 << ", order=" << manual_solution.m_input.eqn_order
+                << (manual_solution.m_input.phys_model_external_attens.empty()
+                    ? "" : ", external attenuation")
                 << ", judged chi2/dof=" << chi2_dof << std::endl;
     }
 
@@ -8822,6 +11125,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
   // the manual-success and fallback paths.  peaks_matched is non-empty here (the empty case returned
   // early via estimate_initial_rois_without_peaks).  [architecture review 2026-07-18]
   {
+    const std::vector<RelActCalcAuto::RoiRange> clustered_rois = initial_rois;
     std::vector<std::pair<double,double>> found_energy_fwhm;
     found_energy_fwhm.reserve( peaks_matched.size() );
     for( const RelActCalcManual::GenericPeakInfo &pk : peaks_matched )
@@ -8848,7 +11152,21 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     if( should_debug_print() && num_seeded )
       std::cout << "Seeded " << num_seeded << " tight ROI(s) for found+matched auto-search peak(s)"
                 << " not covered by clustering" << std::endl;
+
+    if( clean_source_rois && manual_settings.use_automatic_roi_policy )
+    {
+      *clean_source_rois = clustered_rois;
+      std::vector<std::pair<double,double>> clean_energy_fwhm;
+      clean_energy_fwhm.reserve( clean_matched_peaks.size() );
+      for( const RelActCalcManual::GenericPeakInfo &pk : clean_matched_peaks )
+        clean_energy_fwhm.emplace_back( pk.m_energy, pk.m_fwhm );
+      seed_tight_rois_for_found_peaks( *clean_source_rois, clean_energy_fwhm,
+          sm_found_peak_roi_half_num_fwhm, min_valid_energy, max_valid_energy, true );
+    }
   }
+
+  if( source_anchor_candidates )
+    *source_anchor_candidates = clean_matched_peaks;
 
   return initial_rois;
 }//estimate_initial_rois_using_relactmanual
@@ -8858,7 +11176,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   const std::shared_ptr<const SpecUtils::Measurement> &orig_foreground,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::vector<RelActCalcAuto::RoiRange> &input_rois,
+  const std::vector<RelActCalcAuto::RoiRange> &clean_source_rois,
   const std::vector<std::pair<double,double>> &initial_modeled_peak_candidates,
+  const std::vector<RelActCalcManual::GenericPeakInfo> &source_anchor_candidates,
   const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &orig_background,
   const std::shared_ptr<const DetectorPeakResponse> &drf,
@@ -10058,6 +12378,104 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       options, orig_foreground, orig_background, drf, auto_search_peaks, det_type
     );
 
+    const std::vector<RelActCalcManual::GenericPeakInfo> significant_source_anchors
+      = use_automatic_roi_policy
+        ? distinct_significant_source_anchors(
+            source_anchor_candidates, config.roi_significance_z )
+        : std::vector<RelActCalcManual::GenericPeakInfo>();
+    const size_t initial_source_anchors_preserved
+      = (use_automatic_roi_policy && (sources_rel_eff_index >= 0)
+          && (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success))
+        ? preserved_source_anchor_count( solution,
+            static_cast<size_t>(sources_rel_eff_index), significant_source_anchors,
+            orig_foreground->live_time() )
+        : significant_source_anchors.size();
+    const bool source_anchor_collapse_detected = use_automatic_roi_policy
+        && detail::should_try_source_clean_recovery(
+            significant_source_anchors.size(), initial_source_anchors_preserved );
+    std::vector<RelActCalcManual::GenericPeakInfo> recovered_source_anchors;
+
+    // The manual matcher can associate a real found peak with the requested source even when the
+    // fitted source curve says that source explains only a small fraction of its area.  Those
+    // contaminant-like matches used to receive unconditional tight ROIs, and a dense set of them
+    // could pull the first empirical curve into the collapsed solution.  Retry transactionally with
+    // only the manual stage's source-accounted-for seeds.  Ordinary spectra retain the incumbent;
+    // the challenger is considered only after the source-evidence collapse gate fires.
+    if( source_anchor_collapse_detected && !clean_source_rois.empty()
+        && !fit_norm_peaks && user_peaks.empty()
+        && (sources_rel_eff_index >= 0) )
+    {
+      const size_t diagnostic_checkpoint = result.automatic_roi_diagnostics.size();
+      bool retained_challenger = false;
+      try
+      {
+        RelActCalcAuto::Options clean_options = options;
+        clean_options.rois = clean_source_rois;
+        add_floating_511_peak_if_appropriate( clean_options, sources, fit_norm_peaks,
+            det_type, min_valid_energy, max_valid_energy );
+        add_escape_peak_floating_peaks_if_appropriate( clean_options, auto_search_peaks,
+            fit_norm_peaks, det_type, min_valid_energy, max_valid_energy, config );
+        resolve_automatic_overlapping_rois( clean_options.rois,
+            clean_options.floating_peaks, orig_foreground,
+            global_cont.valid() ? &global_cont : nullptr, global_fwhm_at,
+            unfit_auto_peaks, config, "source-clean seed challenger finalization",
+            &result.automatic_roi_diagnostics, protected_mixed_rois,
+            initial_modeled_peak_candidates, use_automatic_roi_policy );
+        remove_floating_peaks_without_roi( clean_options );
+
+        RelActCalcAuto::RelActAutoSolution clean_solution = RelActCalcAuto::solve(
+            clean_options, orig_foreground, orig_background, drf,
+            auto_search_peaks, det_type );
+        const size_t clean_preserved = preserved_source_anchor_count(
+            clean_solution, static_cast<size_t>(sources_rel_eff_index),
+            significant_source_anchors, orig_foreground->live_time() );
+        const double incumbent_score = source_anchor_data_aicc(
+            solution, significant_source_anchors, config.manual_releff_aicc_penalty );
+        const double clean_score = (clean_solution.m_status
+                == RelActCalcAuto::RelActAutoSolution::Status::Success)
+            ? source_anchor_data_aicc( clean_solution, significant_source_anchors,
+                config.manual_releff_aicc_penalty )
+            : std::numeric_limits<double>::max();
+        const size_t incumbent_fit_anchors
+          = significant_requested_source_anchor_count( solution, sources,
+              significant_source_anchors, config.roi_significance_z, global_fwhm_at );
+        const size_t clean_fit_anchors
+          = significant_requested_source_anchor_count( clean_solution, sources,
+              significant_source_anchors, config.roi_significance_z, global_fwhm_at );
+        const bool accept = detail::should_accept_source_clean_challenger(
+            clean_solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,
+            initial_source_anchors_preserved, clean_preserved,
+            incumbent_fit_anchors, clean_fit_anchors, incumbent_score, clean_score );
+        if( should_debug_print() )
+        {
+          std::cerr << "Source-clean seed challenger: anchors="
+                    << significant_source_anchors.size() << ", preserved="
+                    << initial_source_anchors_preserved << "->" << clean_preserved
+                    << ", fitted anchors=" << incumbent_fit_anchors
+                    << "->" << clean_fit_anchors
+                    << ", common-anchor data AICc=" << incumbent_score << "->" << clean_score
+                    << ", accepted=" << accept << std::endl;
+        }
+        if( accept )
+        {
+          options = std::move( clean_options );
+          solution = std::move( clean_solution );
+          recovered_source_anchors = preserved_source_anchors( solution,
+              static_cast<size_t>(sources_rel_eff_index), significant_source_anchors,
+              orig_foreground->live_time() );
+          retained_challenger = true;
+          result.warnings.push_back( "Replaced contaminant-like found-peak seeds after they"
+            " collapsed multiple significant requested-source anchors." );
+        }
+      }catch( const std::exception &error )
+      {
+        result.warnings.push_back( "The source-clean seed challenger failed; retained the"
+          " successful incumbent fit: " + std::string(error.what()) );
+      }
+      if( !retained_challenger )
+        result.automatic_roi_diagnostics.resize( diagnostic_checkpoint );
+    }
+
     // As of 20260103, energy calibration adjustments may cause failure to fit the correct solution sometimes,
     //  so if our current solution failed, or is really bad, we'll try without fitting energy cal
     if( ( options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit )
@@ -10156,8 +12574,30 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
       // Keep the best of {original (ecal), no-ecal, desperation}: a successful candidate replaces
       // `solution` when `solution` failed or the candidate has a lower reduced chi2.
-      const auto is_better_than_solution = [&solution]( const RelActCalcAuto::RelActAutoSolution &cand ) -> bool {
+      const auto preserves_recovered_evidence
+        = [&]( const RelActCalcAuto::RelActAutoSolution &candidate ) -> bool {
+        if( recovered_source_anchors.empty() )
+          return true;
+        if( (candidate.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+            || (sources_rel_eff_index < 0) )
+          return false;
+        const bool predicted_preserved = std::all_of(
+            std::begin(recovered_source_anchors), std::end(recovered_source_anchors),
+            [&candidate, sources_rel_eff_index, &orig_foreground](
+                const RelActCalcManual::GenericPeakInfo &anchor ) {
+              return predicted_source_anchor_counts( candidate,
+                  static_cast<size_t>(sources_rel_eff_index), anchor,
+                  orig_foreground->live_time() ) > sm_keep_gate_min_est_counts;
+            } );
+        return predicted_preserved && significant_requested_source_anchors_preserved(
+            candidate, sources, recovered_source_anchors,
+            config.roi_significance_z, global_fwhm_at );
+      };
+      const auto is_better_than_solution
+        = [&solution, &preserves_recovered_evidence](
+            const RelActCalcAuto::RelActAutoSolution &cand ) -> bool {
         return (cand.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success)
+               && preserves_recovered_evidence( cand )
                && ( (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
                    || (reduced_chi2(solution) > reduced_chi2(cand)) );
       };
@@ -10292,6 +12732,97 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       }
       return true;
     };
+    const auto observable_requested_peaks
+      = [&]( const RelActCalcAuto::RelActAutoSolution &candidate ) {
+        std::vector<size_t> insignificant_indices;
+        compute_filtered_chi2_per_channel(
+            candidate, config.roi_significance_z, insignificant_indices );
+        const bool have_spectrum_ranges
+          = (candidate.m_final_roi_ranges_in_spectrum_cal.size()
+              == candidate.m_final_roi_ranges.size());
+        const std::vector<RelActCalcAuto::RoiRange> &ranges = have_spectrum_ranges
+          ? candidate.m_final_roi_ranges_in_spectrum_cal : candidate.m_final_roi_ranges;
+
+        std::vector<PeakDef> fitted;
+        for( const PeakDef &peak : candidate.m_peaks_without_back_sub )
+        {
+          if( !is_requested_peak(peak) || !peak.continuum() )
+            continue;
+          const double lower = peak.continuum()->lowerEnergy();
+          const double upper = peak.continuum()->upperEnergy();
+          bool in_insignificant_roi = false;
+          for( const size_t index : insignificant_indices )
+          {
+            if( index >= ranges.size() )
+              continue;
+            const RelActCalcAuto::RoiRange &range = ranges[index];
+            if( (std::fabs(lower - range.lower_energy) < 1.0)
+                && (std::fabs(upper - range.upper_energy) < 1.0) )
+            {
+              in_insignificant_roi = true;
+              break;
+            }
+          }
+          if( in_insignificant_roi )
+            continue;
+          bool mean_in_significant_roi = false;
+          for( size_t index = 0; index < ranges.size(); ++index )
+          {
+            if( std::find( std::begin(insignificant_indices),
+                    std::end(insignificant_indices), index )
+                != std::end(insignificant_indices) )
+              continue;
+            const RelActCalcAuto::RoiRange &range = ranges[index];
+            if( (peak.mean() >= range.lower_energy)
+                && (peak.mean() <= range.upper_energy) )
+            {
+              mean_in_significant_roi = true;
+              break;
+            }
+          }
+          if( mean_in_significant_roi && (peak.mean() >= lower) && (peak.mean() <= upper) )
+            fitted.push_back( peak );
+        }
+        std::vector<PeakDef> combined = combine_overlapping_peaks_in_rois( fitted );
+        return compute_observable_peaks(
+            combined, candidate.m_foreground, det_type, config );
+      };
+    const auto observable_requested_anchors_preserved
+      = [&]( const RelActCalcAuto::RelActAutoSolution &incumbent,
+             const RelActCalcAuto::RelActAutoSolution &challenger ) {
+        const std::vector<PeakDef> incumbent_observable
+          = observable_requested_peaks( incumbent );
+        const std::vector<PeakDef> challenger_observable
+          = observable_requested_peaks( challenger );
+        for( const PeakDef &anchor : incumbent_observable )
+        {
+          const bool found = std::any_of( std::begin(challenger_observable),
+              std::end(challenger_observable),
+              [&anchor, &same_gamma_identity, &solution_fwhm_at_energy](
+                  const PeakDef &candidate_peak ) {
+                if( same_gamma_identity(anchor, candidate_peak) )
+                  return true;
+                if( anchor.hasSourceGammaAssigned()
+                    || candidate_peak.hasSourceGammaAssigned() )
+                  return false;
+                const double anchor_fwhm = solution_fwhm_at_energy( anchor.mean() );
+                const double candidate_fwhm
+                  = solution_fwhm_at_energy( candidate_peak.mean() );
+                return std::isfinite(anchor_fwhm) && (anchor_fwhm > 0.0)
+                    && std::isfinite(candidate_fwhm) && (candidate_fwhm > 0.0)
+                    && (std::fabs(anchor.mean() - candidate_peak.mean())
+                      < 0.5*(anchor_fwhm + candidate_fwhm));
+              } );
+          if( !found )
+          {
+            if( should_debug_print() )
+              std::cerr << "Observable-anchor guard: lost requested peak at "
+                        << anchor.mean() << " keV" << std::endl;
+            return false;
+          }
+        }
+        return true;
+      };
     const auto requested_anchors_catastrophically_removed
       = [&]( const RelActCalcAuto::RelActAutoSolution &incumbent,
              const RelActCalcAuto::RelActAutoSolution &challenger ) -> bool {
@@ -11021,6 +13552,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // Cluster gammas using current solution's relative efficiency
         std::vector<MarginalRejectedCluster> marginal_rejects;
         std::vector<PredictedGamma> fitted_cluster_predictions;
+        const std::string refinement_stage = "refinement " + std::to_string(iter);
         std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> refined_rois_and_gammas
           = cluster_gammas_to_rois(
               auto_rel_effs, source_age_and_acts, foreground,
@@ -11031,8 +13563,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               (!rescue_attempted && (iter == 0)) ? &marginal_rejects : nullptr,
               nullptr, nullptr,
               (!rescue_attempted && (iter == 0)) ? &fitted_cluster_predictions : nullptr,
-              "refinement " + std::to_string(iter), nullptr,
-              &result.automatic_roi_diagnostics );
+              refinement_stage, nullptr,
+              &result.automatic_roi_diagnostics,
+              !recovered_source_anchors.empty() );
         std::vector<std::pair<double,double>> current_modeled_peak_candidates;
         for( const std::pair<RelActCalcAuto::RoiRange,ClusteredGammaInfo> &entry
              : refined_rois_and_gammas )
@@ -11058,7 +13591,44 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             current_modeled_peak_candidates.push_back( candidate );
         }
 
-        // Shrink ROIs to avoid interference from unfit auto-search peaks
+        // Carry the exact measured-data partition that was selected in this calibration frame.
+        // Capture it before the ordinary interference-shrinking pass below: the local transaction
+        // must solve the identical channel bins that won the measured-data AICc comparison, not a
+        // later edge refinement that was never scored by that comparison.  This is deliberately
+        // independent of diagnostics: rollback must not reconstruct geometry from a reason string
+        // or one representative boundary.
+        std::vector<SelectedRoiComponentPartition> selected_component_partitions;
+        std::map<uint64_t,size_t> selected_partition_indices;
+        for( const std::pair<RelActCalcAuto::RoiRange,ClusteredGammaInfo> &entry
+             : refined_rois_and_gammas )
+        {
+          const ClusteredGammaInfo &cluster = entry.second;
+          if( cluster.selected_partition_id == 0 )
+            continue;
+          const auto inserted = selected_partition_indices.emplace(
+              cluster.selected_partition_id, selected_component_partitions.size() );
+          if( inserted.second )
+          {
+            SelectedRoiComponentPartition record;
+            record.id = cluster.selected_partition_id;
+            record.parent_lower = cluster.selected_parent_lower;
+            record.parent_upper = cluster.selected_parent_upper;
+            record.calibration = foreground->energy_calibration();
+            selected_component_partitions.push_back( std::move(record) );
+          }
+          selected_component_partitions[inserted.first->second].children.push_back( entry.first );
+        }
+        selected_component_partitions.erase( std::remove_if(
+            std::begin(selected_component_partitions), std::end(selected_component_partitions),
+            []( const SelectedRoiComponentPartition &record ) {
+              return (record.children.size() != 2)
+                  || !std::isfinite(record.parent_lower)
+                  || !std::isfinite(record.parent_upper)
+                  || !(record.parent_upper > record.parent_lower);
+            } ), std::end(selected_component_partitions) );
+
+        // Shrink ordinary refinement ROIs to avoid interference from unfit auto-search peaks.  The
+        // exact selected-component challenger above intentionally retains its pre-shrink bounds.
         const double min_fwhm_above = 0.5*config.auto_rel_eff_sol_min_fwhm_roi;
         const double min_fwhm_below = 0.5*config.auto_rel_eff_sol_min_fwhm_roi;
         shrink_rois_for_interfering_peaks( refined_rois_and_gammas, unfit_auto_peaks,
@@ -11952,17 +14522,315 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
         const std::vector<double> anchor_exclusions = rescue_solve_this_iteration
             ? std::vector<double>() : auto_interferer_lines;
-        const bool anchor_failure = rescue_solve_this_iteration
-          ? requested_anchors_catastrophically_removed(solution, refined_solution)
-          : (!auto_interferer_lines.empty()
-              && !requested_anchors_preserved(solution, refined_solution, anchor_exclusions));
+        bool recovered_anchor_failure = false;
+        if( !recovered_source_anchors.empty() )
+        {
+          const bool predicted_preserved = (sources_rel_eff_index >= 0)
+            && std::all_of( std::begin(recovered_source_anchors),
+                std::end(recovered_source_anchors),
+                [&refined_solution, sources_rel_eff_index, &orig_foreground](
+                    const RelActCalcManual::GenericPeakInfo &anchor ) {
+                  return predicted_source_anchor_counts( refined_solution,
+                      static_cast<size_t>(sources_rel_eff_index), anchor,
+                      orig_foreground->live_time() ) > sm_keep_gate_min_est_counts;
+                } );
+          const bool fitted_preserved = significant_requested_source_anchors_preserved(
+              refined_solution, sources, recovered_source_anchors,
+              config.roi_significance_z, solution_fwhm_at_energy );
+          if( should_debug_print() && (!predicted_preserved || !fitted_preserved) )
+          {
+            const std::vector<PeakDef> fitted_lines
+              = distinct_significant_requested_source_peaks( refined_solution, sources,
+                  config.roi_significance_z, solution_fwhm_at_energy );
+            std::cerr << "Recovered source-anchor check: predicted=" << predicted_preserved
+                      << ", observed=" << fitted_preserved << std::endl;
+            for( const RelActCalcManual::GenericPeakInfo &anchor : recovered_source_anchors )
+            {
+              const double center = std::isfinite(anchor.m_mean) ? anchor.m_mean : anchor.m_energy;
+              const bool observed = std::any_of( std::begin(fitted_lines), std::end(fitted_lines),
+                [center, &anchor, &solution_fwhm_at_energy]( const PeakDef &line ) {
+                  const double line_fwhm = solution_fwhm_at_energy( line.mean() );
+                  const double anchor_fwhm = (std::isfinite(anchor.m_fwhm)
+                      && (anchor.m_fwhm > 0.0)) ? anchor.m_fwhm : line_fwhm;
+                  return std::isfinite(line_fwhm) && (line_fwhm > 0.0)
+                      && (std::fabs(line.mean() - center)
+                          < 0.5*(anchor_fwhm + line_fwhm));
+                } );
+              const double predicted = (sources_rel_eff_index >= 0)
+                ? predicted_source_anchor_counts( refined_solution,
+                    static_cast<size_t>(sources_rel_eff_index), anchor,
+                    orig_foreground->live_time() ) : 0.0;
+              if( !observed || !(predicted > sm_keep_gate_min_est_counts) )
+                std::cerr << "  missing clean anchor at " << anchor.m_energy
+                          << " keV (observed mean " << center << ", predicted "
+                          << predicted << " counts, observed=" << observed << ")" << std::endl;
+            }
+          }
+          recovered_anchor_failure = !predicted_preserved || !fitted_preserved;
+        }
+        const bool refinement_observable_failure = !recovered_source_anchors.empty()
+            && !observable_requested_anchors_preserved( solution, refined_solution );
+        bool anchor_failure = recovered_anchor_failure || refinement_observable_failure
+          || (rescue_solve_this_iteration
+            ? requested_anchors_catastrophically_removed(solution, refined_solution)
+            : (!auto_interferer_lines.empty()
+                && !requested_anchors_preserved(solution, refined_solution, anchor_exclusions)));
+
+        // Apply a locally selected structural change as its own transaction.  The exact parent and
+        // two child ROIs are carried from the measured-data decision, in its calibration frame;
+        // unrelated re-clustering geometry is never imported.  Translating by channel into the
+        // original spectrum frame makes the local solve use the identical bins that won AICc.
+        bool retained_component_transaction = false;
+        bool attempted_component_transaction = false;
+        const auto label_component_proposal
+          = [&]( const double affected_lower, const double affected_upper,
+                 const bool accepted, const std::string &reason ) {
+            const std::string stage_prefix = refinement_stage;
+            const double midpoint = 0.5*(affected_lower + affected_upper);
+            const double local_fwhm = solution_fwhm_at_energy( midpoint );
+            const double tolerance = std::max( 1.0,
+                (std::isfinite(local_fwhm) && (local_fwhm > 0.0)) ? local_fwhm : 0.0 );
+            for( AutomaticRoiDecisionDiagnostic &diagnostic
+                 : result.automatic_roi_diagnostics )
+            {
+              if( diagnostic.stage.compare(0, stage_prefix.size(), stage_prefix) != 0 )
+                continue;
+              double diagnostic_lower = diagnostic.left_lower;
+              double diagnostic_upper = diagnostic.left_upper;
+              if( diagnostic.right_upper > diagnostic.right_lower )
+              {
+                diagnostic_lower = std::min( diagnostic_lower, diagnostic.right_lower );
+                diagnostic_upper = std::max( diagnostic_upper, diagnostic.right_upper );
+              }
+              const bool overlaps = (diagnostic_lower < (affected_upper + tolerance))
+                  && (diagnostic_upper > (affected_lower - tolerance));
+              if( !overlaps )
+                continue;
+              const std::string status = accepted
+                  ? "accepted component transaction"
+                  : "rolled-back component proposal";
+              if( diagnostic.stage.find(status) == std::string::npos )
+                diagnostic.stage += " [" + status + "]";
+              const std::string prior_decision
+                = automatic_roi_decision_name( diagnostic.decision );
+              const std::string prior_reason = diagnostic.reason;
+              diagnostic.reason = reason + "; proposed " + prior_decision
+                  + (prior_reason.empty() ? std::string() : ": " + prior_reason);
+              if( !accepted )
+                diagnostic.decision = AutomaticRoiDecision::MergeInseparableWide;
+            }
+            if( should_debug_print() )
+            {
+              std::cerr << "Component-local diagnostic status [" << affected_lower
+                        << ", " << affected_upper << "] keV: "
+                        << (accepted ? "accepted" : "rolled back")
+                        << "; " << reason << std::endl;
+            }
+          };
+        if( use_automatic_roi_policy && auto_interferer_lines.empty()
+            && !rescue_solve_this_iteration && !selected_component_partitions.empty() )
+        {
+          attempted_component_transaction = true;
+          try
+          {
+            const std::shared_ptr<const SpecUtils::EnergyCalibration> original_cal
+              = orig_foreground->energy_calibration();
+            if( !original_cal || !original_cal->valid() )
+              throw std::runtime_error( "original calibration is unavailable" );
+            const auto to_original_energy = [&original_cal](
+                const std::shared_ptr<const SpecUtils::EnergyCalibration> &from,
+                const double energy ) {
+              if( !from || !from->valid() )
+                throw std::runtime_error( "partition calibration is unavailable" );
+              return original_cal->energy_for_channel( from->channel_for_energy( energy ) );
+            };
+
+            std::vector<SelectedRoiComponentPartition> translated_partitions;
+            translated_partitions.reserve( selected_component_partitions.size() );
+            for( const SelectedRoiComponentPartition &record : selected_component_partitions )
+            {
+              SelectedRoiComponentPartition translated = record;
+              translated.parent_lower = to_original_energy(
+                  record.calibration, record.parent_lower );
+              translated.parent_upper = to_original_energy(
+                  record.calibration, record.parent_upper );
+              translated.calibration = original_cal;
+              for( RelActCalcAuto::RoiRange &child : translated.children )
+              {
+                child.lower_energy = to_original_energy(
+                    record.calibration, child.lower_energy );
+                child.upper_energy = to_original_energy(
+                    record.calibration, child.upper_energy );
+              }
+              if( (translated.children.size() != 2)
+                  || !(translated.parent_upper > translated.parent_lower)
+                  || !(translated.children[0].upper_energy
+                      <= translated.children[1].lower_energy) )
+                throw std::runtime_error( "translated partition is not a two-child transaction" );
+              translated_partitions.push_back( std::move(translated) );
+            }
+
+            RelActCalcAuto::RelActAutoSolution working_solution = solution;
+            size_t retained_partitions = 0;
+            const auto mark_partition_rolled_back
+              = [&]( const double affected_lower, const double affected_upper,
+                     const std::string &reason ) {
+                label_component_proposal(
+                    affected_lower, affected_upper, false, reason );
+              };
+            for( size_t partition_index = 0;
+                 partition_index < translated_partitions.size(); ++partition_index )
+            {
+              const SelectedRoiComponentPartition &record
+                = translated_partitions[partition_index];
+              RelActCalcAuto::Options local_options = working_solution.m_options;
+              std::vector<RelActCalcAuto::RoiRange> local_rois;
+              bool matched_partition = false;
+              double affected_lower = std::numeric_limits<double>::max();
+              double affected_upper = -std::numeric_limits<double>::max();
+              for( const RelActCalcAuto::RoiRange &incumbent : local_options.rois )
+              {
+                const bool overlaps = (incumbent.lower_energy < record.parent_upper)
+                    && (incumbent.upper_energy > record.parent_lower);
+                if( overlaps )
+                {
+                  matched_partition = true;
+                  affected_lower = std::min( affected_lower, incumbent.lower_energy );
+                  affected_upper = std::max( affected_upper, incumbent.upper_energy );
+                }else
+                {
+                  local_rois.push_back( incumbent );
+                }
+              }
+              if( !matched_partition )
+              {
+                if( should_debug_print() )
+                  std::cerr << "Component-local partition did not match an incumbent component"
+                            << std::endl;
+                mark_partition_rolled_back( record.parent_lower, record.parent_upper,
+                    "whole-component partition rolled back: no matching incumbent component" );
+                continue;
+              }
+              local_rois.insert( std::end(local_rois), std::begin(record.children),
+                  std::end(record.children) );
+              std::sort( std::begin(local_rois), std::end(local_rois),
+                []( const RelActCalcAuto::RoiRange &lhs,
+                    const RelActCalcAuto::RoiRange &rhs ) {
+                  return lhs.lower_energy < rhs.lower_energy;
+                } );
+              const bool disjoint = std::adjacent_find( std::begin(local_rois),
+                  std::end(local_rois),
+                  []( const RelActCalcAuto::RoiRange &lhs,
+                      const RelActCalcAuto::RoiRange &rhs ) {
+                    return rhs.lower_energy < lhs.upper_energy;
+                  } ) == std::end(local_rois);
+              if( !disjoint )
+              {
+                if( should_debug_print() )
+                  std::cerr << "Component-local partition overlapped an unchanged incumbent ROI"
+                            << std::endl;
+                mark_partition_rolled_back( affected_lower, affected_upper,
+                    "whole-component partition rolled back: child overlapped incumbent geometry" );
+                continue;
+              }
+
+              local_options.rois = std::move( local_rois );
+              remove_floating_peaks_without_roi( local_options );
+              RelActCalcAuto::RelActAutoSolution local_solution = RelActCalcAuto::solve(
+                  local_options, orig_foreground, orig_background,
+                  drf, auto_search_peaks, det_type );
+              const bool solved = local_solution.m_status
+                  == RelActCalcAuto::RelActAutoSolution::Status::Success;
+              const bool local_predicted = solved && (recovered_source_anchors.empty()
+                  || ((sources_rel_eff_index >= 0)
+                    && std::all_of( std::begin(recovered_source_anchors),
+                        std::end(recovered_source_anchors),
+                        [&local_solution, sources_rel_eff_index, &orig_foreground](
+                            const RelActCalcManual::GenericPeakInfo &anchor ) {
+                          return predicted_source_anchor_counts( local_solution,
+                              static_cast<size_t>(sources_rel_eff_index), anchor,
+                              orig_foreground->live_time() ) > sm_keep_gate_min_est_counts;
+                        } )));
+              const bool local_observed = local_predicted
+                  && (recovered_source_anchors.empty()
+                    || significant_requested_source_anchors_preserved( local_solution, sources,
+                        recovered_source_anchors, config.roi_significance_z,
+                        solution_fwhm_at_energy ));
+              const bool incumbent_observed = local_observed
+                  && observable_requested_anchors_preserved(
+                      working_solution, local_solution );
+              if( should_debug_print() )
+              {
+                std::cerr << "Component-local challenger [" << record.parent_lower
+                          << ", " << record.parent_upper << "] keV: status="
+                          << static_cast<int>(local_solution.m_status)
+                          << ", predicted=" << local_predicted
+                          << ", clean anchors observed=" << local_observed
+                          << ", incumbent anchors observed=" << incumbent_observed << std::endl;
+              }
+              if( local_predicted && local_observed && incumbent_observed )
+              {
+                working_solution = std::move( local_solution );
+                ++retained_partitions;
+                label_component_proposal( affected_lower, affected_upper, true,
+                    "whole-component partition retained by its component-local solve" );
+              }else
+              {
+                mark_partition_rolled_back( affected_lower, affected_upper,
+                    "whole-component partition rolled back by its component-local solve" );
+              }
+            }
+            if( retained_partitions > 0 )
+            {
+              solution = std::move( working_solution );
+              retained_component_transaction = true;
+              result.warnings.push_back( "Retained "
+                  + std::to_string(retained_partitions)
+                  + " measured-data ROI component partition(s) while transactionally"
+                    " retaining all unrelated incumbent geometry." );
+            }
+          }
+          catch( const std::exception &error )
+          {
+            if( should_debug_print() )
+              std::cerr << "Component-local partition challenger failed: "
+                        << error.what() << std::endl;
+          }
+        }
+        const auto mark_component_partitions_rolled_back
+          = [&]( const std::string &reason ) {
+            label_component_proposal(
+                min_valid_energy, max_valid_energy, false, reason );
+          };
+        if( retained_component_transaction )
+          break;
+        if( attempted_component_transaction )
+        {
+          // A selected component is evaluated only through the exact local transaction above.
+          // Falling through would let the enclosing all-ROI refinement import that same rejected
+          // geometry (and unrelated re-clustering changes), defeating transactional rollback.
+          mark_component_partitions_rolled_back(
+              "whole-component partition rolled back because its local transaction was rejected" );
+          result.warnings.push_back( "Rejected a measured-data ROI component partition because"
+            " its component-local solve failed or removed an observable requested-source anchor;"
+            " retained the prior accepted solution." );
+          break;
+        }
         if( anchor_failure )
         {
-          result.warnings.push_back( rescue_solve_this_iteration
-            ? "Rejected the bounded marginal-line rescue because it removed a significant"
-              " requested-source anchor; retained the incumbent source fit."
-            : "Rejected a post-interferer ROI refinement because it removed a significant"
-              " requested-source anchor; retained the prior accepted solution." );
+          mark_component_partitions_rolled_back(
+              "whole-component partition rolled back with rejected refinement" );
+          result.warnings.push_back( refinement_observable_failure
+            ? "Rejected ROI refinement because it removed an observable requested-source"
+              " anchor; retained the prior accepted solution."
+            : (recovered_anchor_failure
+              ? "Rejected ROI refinement because it removed source evidence recovered by the"
+                " source-clean challenger; retained the prior accepted solution."
+            : (rescue_solve_this_iteration
+              ? "Rejected the bounded marginal-line rescue because it removed a significant"
+                " requested-source anchor; retained the incumbent source fit."
+              : "Rejected a post-interferer ROI refinement because it removed a significant"
+                " requested-source anchor; retained the prior accepted solution.") ) );
           break;
         }
 
@@ -12006,6 +14874,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // Check if chi2/channel improved
         if( !rescue_solve_this_iteration && (new_chi2_dof >= old_chi2_dof) )
         {
+          mark_component_partitions_rolled_back(
+              "whole-component partition rolled back because the enclosing solve did not improve" );
           if( should_debug_print() )
           {
             std::cout << "Iteration " << iter << " did not improve filtered chi2/channel ("
@@ -13310,6 +16180,8 @@ PeakFitResult fit_peaks_for_nuclides(
 
     string fallback_warning;
     std::vector<std::pair<double,double>> initial_modeled_peak_candidates;
+    std::vector<RelActCalcManual::GenericPeakInfo> source_anchor_candidates;
+    std::vector<RelActCalcAuto::RoiRange> clean_source_rois;
     const vector<RelActCalcAuto::RoiRange> source_rois = sources.empty()
       ? vector<RelActCalcAuto::RoiRange>{}
       : estimate_initial_rois_using_relactmanual(
@@ -13317,7 +16189,7 @@ PeakFitResult fit_peaks_for_nuclides(
           fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
           min_valid_energy, max_valid_energy, manual_settings,
           config, local_unfit_auto_peaks, fallback_warning,
-          &initial_modeled_peak_candidates
+          &initial_modeled_peak_candidates, &source_anchor_candidates, &clean_source_rois
         );
     
     if( !fallback_warning.empty() )
@@ -13342,7 +16214,7 @@ PeakFitResult fit_peaks_for_nuclides(
             fwhmFnctnlForm, fwhm_coefficients, lower_fwhm_energy, upper_fwhm_energy,
             min_valid_energy, max_valid_energy, manual_settings,
             config, local_unfit_auto_peaks, fallback_warning,
-            &initial_modeled_peak_candidates
+            &initial_modeled_peak_candidates, nullptr
           );
           
           if( !fallback_warning.empty() )
@@ -13450,7 +16322,9 @@ PeakFitResult fit_peaks_for_nuclides(
     // Call RelActAuto with initial_rois
     result = fit_peaks_for_nuclide_relactauto(
       auto_search_peaks, foreground, sources,
-      initial_rois, initial_modeled_peak_candidates, user_peaks, long_background,
+      initial_rois, norm_rois.empty() ? clean_source_rois : initial_rois,
+      initial_modeled_peak_candidates, source_anchor_candidates,
+      user_peaks, long_background,
       drf, options, config,
       fwhmFnctnlForm, fwhm_coefficients, det_type,
       lower_fwhm_energy, upper_fwhm_energy,

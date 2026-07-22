@@ -279,6 +279,7 @@ struct ConfigEvaluation
 namespace ReportDetail
 {
   /** Stable across thread counts and filesystem enumeration order for the same corpus paths. */
+  std::string canonical_spectrum_key( const DataSrcInfo &info );
   std::string canonical_spectrum_key( const PrecomputedNuclideData &pd );
   std::string stable_spectrum_id( const PrecomputedNuclideData &pd );
   std::string html_escape( const std::string &text );
@@ -290,6 +291,9 @@ namespace ReportDetail
                                      const ConfigEvaluation &evaluation );
 
   /** The shared objective helper used by both CLI scoring and the HTML reporter. */
+  std::vector<ExpectedPhotopeakInfo> filter_truth_for_spectroscopic_extent(
+    const std::vector<ExpectedPhotopeakInfo> &truth,
+    const PrecomputedNuclideData &pd );
   FitAccuracyBreakdown score_observable_peaks(
     const PrecomputedNuclideData &pd,
     const std::vector<PeakDef> &observable_peaks );
@@ -297,6 +301,14 @@ namespace ReportDetail
   /** Runs inexpensive pure reporter checks.  Throws on failure. */
   void run_self_tests();
 }//namespace ReportDetail
+
+
+/** Export the same cached evaluation records and report-only ROI diagnostics consumed by the
+ manual-review HTML.  Throws rather than overwriting an existing artifact. */
+void write_config_evaluation_tsv(
+  const std::vector<PrecomputedNuclideData> &precomputed,
+  const ConfigEvaluation &evaluation,
+  const std::string &filename );
 
 
 /** Computes the background-fit penalty for a single PrecomputedNuclideData.

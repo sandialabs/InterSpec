@@ -27,6 +27,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <set>
 #include <deque>
 #include <mutex>
 #include <atomic>
@@ -1406,6 +1407,8 @@ int main( int argc, char **argv )
   size_t holdout_seed = 20260703;
   string config_genes_file;
   string eval_html_file;
+  string spectrum_key_file;
+  string eval_results_tsv_file;
   bool reporter_self_test_arg = false;
 
   po::options_description desc( "Allowed options" );
@@ -1471,6 +1474,12 @@ int main( int argc, char **argv )
        "(tab-separated) or results-txt (comma-space) key=value format.")
     ("eval-html", po::value<string>( &eval_html_file ),
        "NuclideConfigEval: optional output HTML report filename for the evaluated config.")
+    ("spectrum-key-file", po::value<string>( &spectrum_key_file ),
+       "Exact canonical spectrum keys to evaluate, one per line. Blank lines and # comments are ignored; "
+       "duplicates, unknown keys, and an empty selection are errors.")
+    ("eval-results-tsv", po::value<string>( &eval_results_tsv_file ),
+       "NuclideConfigEval: write the exact cached evaluation and ROI diagnostics used by --eval-html. "
+       "Refuses to overwrite an existing file.")
     ("reporter-self-test", po::bool_switch( &reporter_self_test_arg ),
        "Run focused deterministic-ID, escaping, ROI-measurement, and objective-consistency tests, then exit.");
   
@@ -1876,6 +1885,72 @@ int main( int argc, char **argv )
          << ", seed=" << holdout_seed << ")." << endl;
     input_srcs = std::move( split_srcs );
   }//if( holdout split requested )
+
+  if( !spectrum_key_file.empty() )
+  {
+    ifstream keys_file( spectrum_key_file );
+    if( !keys_file.good() )
+    {
+      cerr << "Could not open --spectrum-key-file: " << spectrum_key_file << endl;
+      return -21;
+    }
+
+    set<string> wanted_keys;
+    string line;
+    size_t line_number = 0;
+    while( getline( keys_file, line ) )
+    {
+      ++line_number;
+      const size_t comment = line.find( '#' );
+      if( comment != string::npos )
+        line.erase( comment );
+      const size_t first = line.find_first_not_of( " \t\r\n" );
+      if( first == string::npos )
+        continue;
+      const size_t last = line.find_last_not_of( " \t\r\n" );
+      const string key = line.substr( first, last - first + 1 );
+      if( !wanted_keys.insert(key).second )
+      {
+        cerr << "Duplicate canonical spectrum key in " << spectrum_key_file
+             << " at line " << line_number << ": " << key << endl;
+        return -22;
+      }
+    }
+    if( wanted_keys.empty() )
+    {
+      cerr << "--spectrum-key-file selected no spectrum keys: " << spectrum_key_file << endl;
+      return -23;
+    }
+
+    set<string> matched_keys;
+    vector<DataSrcInfo> selected;
+    selected.reserve( input_srcs.size() );
+    for( DataSrcInfo &info : input_srcs )
+    {
+      const string key = NuclideConfig_GA::ReportDetail::canonical_spectrum_key( info );
+      if( wanted_keys.count(key) )
+      {
+        matched_keys.insert( key );
+        selected.push_back( std::move(info) );
+      }
+    }
+    if( matched_keys != wanted_keys )
+    {
+      cerr << "Unknown canonical spectrum key(s) in " << spectrum_key_file << ":" << endl;
+      for( const string &key : wanted_keys )
+        if( !matched_keys.count(key) )
+          cerr << "  " << key << endl;
+      return -24;
+    }
+    if( selected.empty() )
+    {
+      cerr << "--spectrum-key-file selected no usable spectra: " << spectrum_key_file << endl;
+      return -25;
+    }
+    cout << "Spectrum-key allowlist: kept " << selected.size() << " of "
+         << input_srcs.size() << " corpus entries from " << spectrum_key_file << endl;
+    input_srcs = std::move( selected );
+  }
 
   // Handle --create-compact-data: write compact format, then round-trip verify
   if( vm.count( "create-compact-data" ) )
@@ -2390,6 +2465,13 @@ int main( int argc, char **argv )
            << " (fg=" << total_fg << ", raw_bg=" << total_bg
            << ", bg_weight=" << NuclideConfig_GA::sm_background_fit_penalty_weight << ")" << endl
            << "  per-spectrum avg cost=" << (total / static_cast<double>(precomputed.size())) << endl;
+
+      if( !eval_results_tsv_file.empty() )
+      {
+        NuclideConfig_GA::write_config_evaluation_tsv(
+          precomputed, report_evaluation, eval_results_tsv_file );
+        cout << "Wrote cached evaluation TSV to " << eval_results_tsv_file << endl;
+      }
 
       if( !eval_html_file.empty() )
       {

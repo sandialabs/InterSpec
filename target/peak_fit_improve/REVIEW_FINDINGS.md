@@ -1419,6 +1419,30 @@ misses and zero spurious/failure changes. Its meaningful change was Eu152_Unsh (
 not the targeted U238 manual/fallback path. The 1.5 arm regressed to -147.092, again retained all four
 misses, and reduced find/candidate reward. Neither arm meets the recovery criterion; do not retain either.
 
+### E006 automatic ROI policy diagnostic regression — classification, 2026-07-21
+
+E006 (`f3ce6c99`) is not corpus-validated. Against E000R on the frozen 11 Detective-X/Baltimore/300 s
+diagnostic spectra it regressed from 4 to 11 definite misses (cost -147.782 to -132.075), with 11/11
+mechanical Success and no spurious peaks. The net seven-count change is **eight new Am241_Sh misses offset
+by recovery of the prior U238_Sh miss**, not seven independent affected spectra. The new Am241_Sh definite
+misses are 98.97, 102.98, 146.55, 322.52, 332.35, 376.65, 383.81, and 419.33 keV; 169.56 keV was already
+missed in E000R. These lines have strong truth significance (about 8--28 sigma for the low-energy group and
+about 6--27 sigma for the 322--419 keV group), so this is not low-statistics ambiguity. The policy does
+reduce the previous 30.37-FWHM / 11-peak Am ROI to smaller ROIs, but the quality loss is unacceptable.
+
+Source trace classifies the dominant cause as a **policy-integration/model-evidence propagation defect**,
+not a default-weight choice. In `cluster_gammas_to_rois`, the policy-separated path chooses a boundary using
+only each adjacent group's largest-amplitude gamma as its anchor. Its `left_valid` / `right_valid` checks
+then verify only those dominant anchors. A boundary can therefore retain those two anchors while clipping
+other requested gammas belonging to either multi-line group; the later under-width path can discard the
+clipped automatic cluster. The existing non-policy fold-back guard is explicitly disabled when
+`use_automatic_roi_policy` is true, so it cannot preserve the previously admitted gamma. A correct policy
+split must preserve *every* requested gamma in both groups (or decline that split/repartition before any
+geometry is committed); it must never use dropping an admitted group as a way to satisfy separation.
+
+The U238_Sh recovery is a separate favorable result but does not compensate for the Am correctness failure.
+Do not tune policy weights until strict full-group preservation is added, focused-tested, and E006 is rerun.
+
 ### Planned final-ROI guard redesign (not implemented)
 
 **Purpose.** Enforce a final automatic-ROI width rail after all ordinary refinement, escape/511 additions,
@@ -1570,3 +1594,504 @@ Acceptance is 11/11 successes, no new empty/failure/spurious event, no increase 
 misses, manual inspection of all plots, and removal of the silent Am241_Sh 292--344-keV/30.37-FWHM ROI.  Any
 remaining wide ROI must carry a convincing `MergeInseparableWide` diagnostic and be visually defensible
 before proceeding to the sentinel panel.
+
+---
+
+# 2026-07-21 — Atom-safe automatic ROI split/combine layer (replaces the E006 policy; NOT corpus-validated)
+
+Supersedes the E006 regression classified above. All changes in the working tree, NOT committed. The
+uncommitted 38-line single-site preservation patch was reverted first (saved to scratch) and superseded.
+
+## Architecture
+
+Every automatic (policy-mode) ROI split/combine now operates on stable **atoms** — one per admitted
+modeled gamma line (or found/floating feature) — carried WITH the geometry instead of reconstructed from
+a flat `(energy,area)` list by geometric containment. New `detail::` layer (header
+`InterSpec/FitPeaksForNuclides.h`, impl `src/FitPeaksForNuclides.cpp`):
+
+- `RoiAtom{id,energy,area,kind,source,rel_eff_curve_index,admission}` + `next_roi_atom_id()` (atomic).
+- `AutomaticRoiComponent` — channel-aligned bounds + its exactly-once atoms + pass-through
+  continuum/range/protected metadata.
+- `partition_automatic_roi_pair(...)` — materializes one adjacent pair into channel-aligned children
+  (spatial atom assignment) or a merge, using the UNCHANGED `evaluate_automatic_roi_boundary` oracle for
+  the decision. Owns: core-safe boundary-channel search (a boundary may never cut an atom's
+  ±peak_core_num_fwhm·FWHM core), min-width outward widening, channel-aligned unmodeled-exclusion carves
+  (declined when they would clip an admitted core), and protected-edge pinning. No core-safe partition ⇒
+  MERGE (or, for a protected pin, retain) — never a dropped side.
+- `reconcile_automatic_components(...)` — the single left-fold driver over energy-sorted (possibly
+  overlapping) components; folds each adjacent pair, re-examines an enlarged component after a merge;
+  validates the whole-stage transaction, works all-or-nothing on a copy (valid==false ⇒ caller retains
+  incumbent).
+- `validate_automatic_roi_transaction(...)` — always-run: atom-ID multiset preserved exactly-once
+  (before == after ∪ orphans), sorted channel-disjoint, atom energy + clamped-core containment (core
+  containment is dev-hard / release-soft, since materialized children satisfy it by construction and only
+  a pass-through input narrower than its own core can trip it — energy containment, the loss-safety
+  property, always holds), bit-identical protected bounds/metadata.
+- `assign_atoms_to_disjoint_rois(...)` — exact-once snapshot assignment for a disjoint-ROI bridge.
+
+Additive-only diagnostics: `AutomaticRoiDecision::InfeasiblePartition` (appended);
+`AutomaticRoiDecisionDiagnostic{atoms_reassigned, partition_infeasible}`. NO gene / serialized field /
+CLI option / default numeric value changed. New `GammaClusteringSettings::cluster_admission_stage`
+(diagnostics-only enum, not serialized/tuned).
+
+## Routed policy call sites (all three)
+
+1. `cluster_gammas_to_rois` — atoms minted at the keep-gate accept (and on `MarginalRejectedCluster` for
+   R2), carried on `ClusteredGammaInfo`. Policy-mode merge loop calls `partition_automatic_roi_pair` per
+   adjacent pair (then `continue`), bypassing the prior split/valley/carve code and its
+   pop_back/continue drop paths. The under-width emit path folds-with-atoms into an abutting previous ROI
+   or emits the narrow ROI — never `continue`-drops admitted atoms in policy mode.
+2. `merge_rois` — a policy branch reconciles all ROIs at once (atoms minted from each ROI's modeled
+   lines), replacing the per-pair split/merge with its pop_back+reprocess / skip-current drop paths.
+3. `resolve_automatic_overlapping_rois` — a policy path assigns each modeled candidate and floating
+   feature EXACTLY ONCE to its containing ROI (nearest-midpoint on ties, replacing the inclusive
+   containment scan that double-claimed atoms across overlapping ROIs), then reconciles; the
+   insufficient-evidence / invalid-child continue drop paths are gone. Honors the reconcile `valid`
+   verdict: on failure it retains incumbent geometry via the legacy channel-disjoint resolver.
+
+## Preserved / explicit remaining bypasses
+
+- `use_automatic_roi_policy == false` (R6-enabled fits): byte-identical legacy split/merge and legacy
+  `resolve_overlapping_rois`+`ensure_min_channel_gap` in all three functions; also the no-calibration
+  fallback for policy mode.
+- R2 rescue admission rule + its private `use_automatic_roi_policy=false` re-clustering: unchanged.
+- Escape/511/found-peak-seed insertion + admission: unchanged; they participate as floating/evidence
+  atoms during resolve exactly as their flat-list evidence did before.
+- R4 shadow optimizer: still disabled/diagnostics-only.
+
+## Exact-once preservation argument
+
+Within each policy operation the atom-ID multiset is conserved: `partition_automatic_roi_pair`
+concatenates all atoms on merge, and on split assigns every union atom to exactly one child by energy
+across a gap that (by the core-safe test) contains no atom; orphans arise only from a protected-boundary
+straddle and are reported, never silently discarded. The reconcile driver validates
+`before == after ∪ orphans` (each id once) and rejects any non-disjoint result; the zero-atom collision
+branch only ever discards an empty, non-protected side (the non-empty side is always kept), and defers a
+protected-empty collision to the protected pin. Dev builds assert on any invalid transaction; release
+degrades to the merge fallback or retains incumbent — never a crash.
+
+## Adversarial review (subagent) — 2 findings, both fixed
+
+1. HIGH — the reconcile zero-atom branch used an OR guard that could `continue`-drop the NON-empty side
+   when the wider ROI was fully starved of atoms by a nearer overlapping ROI (a real exposure of the new
+   exact-once nearest-midpoint assignment); callers also ignored the `valid` verdict. FIXED: the branch
+   now discards only the empty non-protected side and keeps the atom-bearing side; `resolve` honors
+   `rr.valid` (legacy-resolver fallback). Regression test `test_reconcile_starved_wide_roi_keeps_atom`.
+2. LOW — `atomlayer_partition_protected` at a protected ROI whose lower edge is spectrum channel 0 could
+   emit a channel-0 overlap. FIXED: that degenerate case now dissolves the (zero-room) automatic span.
+
+## Tests
+
+Ten new deterministic `AutomaticRoiPartition`/reconcile unit tests (in `StatisticalDetailHelpers`), each
+asserting no atom loss/duplication via a shared `check_exact_once`: spatial reassignment of a
+non-dominant multi-line member (the Am241 shape), channel-rounding boundary, no-core-safe-channel→merge,
+under-width child at the spectrum edge, exclusion-band-clips-core declined, protected-geometry pinning +
+straddle-orphan, overlapping-ROI exact-once ownership, the starved-wide-ROI regression, evidence-only
+survival, and a seeded 300-iteration randomized exact-once sweep. `verify_fit_result` additionally
+asserts every `partition_infeasible` diagnostic carries a reason (plus the existing Fixed +
+channel-disjoint policy-ROI checks).
+
+## Pragmatic scope note (residual limitation)
+
+`merge_rois` and `resolve` mint fresh atoms per call from their existing modeled inputs rather than
+threading atom IDENTITY end-to-end through `fit_peaks_for_nuclide_relactauto`'s signature. Each policy
+operation is therefore independently exact-once (satisfying the required no-loss/no-dup/no-misassign
+invariant), but cross-stage provenance for equal-energy lines from different sources is not carried
+between stages. The top-level source+NORM `InitialRoi` build still associates the flat candidate list by
+containment — exact-once over the disjoint cluster/merge output, but could double-count a candidate lying
+in an overlap between a source ROI and a NORM ROI before `merge_rois` folds them (a pre-existing edge
+case, not the E006 regression). Full identity threading is a deferred follow-up.
+
+## Verification status
+
+- `cmake --build target/peak_fit_improve/build_vscode` — clean.
+- `cmake --build target/testing/build_test --target test_fitPeaksForSources` — clean.
+- `ctest -R '^PeakFitImproveReporterSelfTest$'` — 1/1 passed.
+- Full `test_fitPeaksForSources` (PERFORM_DEVELOPER_CHECKS=ON) — 44/44 cases, "No errors detected".
+- `git diff --check` — clean. No GA or corpus evaluation run.
+
+Diff summary: `InterSpec/FitPeaksForNuclides.h` (+170), `src/FitPeaksForNuclides.cpp` (~+1400/-203),
+`target/testing/test_fitPeaksForSources.cpp` (+520). Tuning-harness + untracked artifacts preserved; no
+commit.
+
+**Per-detector-class manual re-evaluation + user visual review are required before these policy-mode
+geometries are trusted** — the partition materializes boundaries differently (core-safe channel vs
+valley split) and now merges-rather-than-drops where the old policy dropped. GA remains deferred.
+
+## Risks
+
+- Policy-mode ROI geometry changes intentionally vs `f3ce6c99`; only the user-owned frozen E006 rerun
+  confirms Am241_Sh recovery.
+- `merge_rois` min-width expressed at the child midpoint vs the old per-side `width>=FWHM` (policy-only,
+  semantically equivalent, not bit-equal).
+- Cross-stage atom identity not threaded (see scope note).
+
+## Exact frozen E006 command the primary session should run next
+
+The E006 command block recorded above (Detective-X / Baltimore / 300 s diagnostic panel, supplied
+background, R6 disabled, E000R genes) is unchanged; rerun it and diff against E000R with
+`compare_nuclide_eval.py`. Acceptance: 11/11 Success, ≤4 definite misses (recover the eight Am241_Sh
+98.97–419.33 keV misses), no new spurious/failure/empty, and the silent 30.37-FWHM Am241_Sh ROI gone or
+carrying a visually defensible `MergeInseparableWide` diagnostic.
+
+### E006 rerun with the atom-safe layer (2026-07-21) — NO recovery; regression is a SPLIT-DECISION problem, not atom-safety
+
+Ran the exact frozen E006 command above (atom-safe binary, R6 off, E000R genes, 11-spectrum
+Detective-X/Baltimore/300 s panel). Result is essentially IDENTICAL to the buggy `f3ce6c99` E006:
+
+| metric | E000R (parent) | buggy E006 (`f3ce6c99`) | atom-safe |
+|---|---:|---:|---:|
+| scalar_cost | -147.782 | -132.075 | **-133.373** |
+| definite_miss_count | 4 | 11 | **11** |
+| success / spurious | 11 / 0 | 11 / 0 | 11 / 0 |
+
+Per-spectrum: the net is unchanged — **Am241_Sh Δmiss = +8**, U238_Sh Δmiss = -1, all others 0. On
+Am241_Sh the atom-safe layer DID shrink the pathological ROI (max ROI 30.4→15.6 FWHM, 52→30 keV,
+11→6 peaks/ROI) but that shrink is exactly what loses the lines: observable peaks 23→14, fitted peaks
+52→26, definite misses 1→9.
+
+**Diagnosis — the E006 root-cause classification (atom drops in `cluster_gammas_to_rois`) was
+INCOMPLETE.** The atom-safe layer provably keeps every admitted line in a channel-disjoint ROI (the
+invariant holds; full suite green with dev-checks ON), yet the Am241 misses persist. The lines are NOT
+dropped from the ROI set — they are pruned by the FIT/observable filter once the wide multi-line Am241
+ROI is split into narrower ones. The pathological 30-FWHM Am241 ROI, while visually ugly, was
+FUNCTIONALLY NECESSARY: co-fitting its ~11 lines on one shared continuum + rel-eff curve is what made
+the weak 98–419 keV lines observable. The policy's decision to split it (the oracle sees clean valleys
+between the well-separated HPGe lines and returns KeepSeparate) is the real regression driver, and the
+atom-safe layer faithfully executes that split without dropping atoms — same misses.
+
+**Consequence / next direction.** Atom-safety is necessary but NOT sufficient to recover E006. The fix
+to pursue is the split DECISION for weak multi-line sources: the policy must recognize that splitting a
+group whose weak members are only findable via the shared rel-eff/continuum is harmful, and keep it
+merged (or the observable-peak filter must credit rel-eff-anchored weak lines the way the wide ROI did).
+This is model/decision work on `evaluate_automatic_roi_boundary` (or the post-fit observability test),
+not further atom-safety plumbing. The one genuine improvement here is U238_Sh (-1 miss, +1 observable).
+
+Artifacts (temp): `/private/tmp/E006-atom-safe-rerun/diagnostic/` — `results.tsv`, `gallery.html`
+(4.96 MB SpectrumChartD3 gallery), `comparison/` (aggregate + per-spectrum delta vs E000R). The
+`resolve_overlapping_rois` overlap warning at 1457–1464 keV is pre-existing (present in the buggy E006
+`developer_errors.log`), not introduced by this change.
+
+### Am241_Sh miss mechanism traced (2026-07-21) — CORRECTS the direction above: policy OVER-MERGES, collapsing the activity solve
+
+Traced the three user-flagged strong lines (322.5, 376.6, 383.8 keV; truth 16–20 sigma) with
+`NuclideFitDebug --det HPGe --src Am241 --disable-interferer --trace` (added a `--disable-interferer`
+flag to that untracked tool to reproduce the eval's policy mode). The debug run reproduces the eval
+exactly (observable=14, fit=26).
+
+**They are NOT lost to any atom-drop path** — all pass the initial keep-gate at z=11–14 and are in ROIs
+at initial clustering. The exact exclusion point is the **refinement re-clustering keep-gate**
+(`cluster_gammas_to_rois`, the `est_counts > sm_keep_gate_min_est_counts`=15 floor): after the first
+solve the fitted Am241 activity **collapses to 16.6M Bq** (correct value ~130M), so the refinement
+predicts sub-floor counts (376.6: est_counts 363→3.5; 322.5→1.0; 383.8→0.8; 332.4→1.3) and rejects them;
+the final solve then has no peak for them at all.
+
+**Root cause = policy OVER-MERGE, not a split.** Initial ROIs, same binary, same spectrum:
+- Policy merges 293–348 keV into ONE 30.1-FWHM Quadratic ROI (17 gammas) and 361–391 into one 15.5-FWHM
+  ROI. That wide flexible ROI collapses the RelActCalcAuto activity solve.
+- Legacy (R6 path) splits the same region into FIVE narrow ROIs (6–7 FWHM) + three at 361–391, keeps the
+  activity STABLE at 131→126→127M, and finds all seven lines with correct areas (observable=23).
+
+The eval's "policy shrank the ROI to 15.6 FWHM" is the DAMAGED post-collapse remnant (refinement dropped
+most lines, shrinking the ROI), NOT a healthy split. This corrects the earlier note that read the wide
+ROI as "functionally necessary" — it is the opposite: the wide ROI is what breaks the fit.
+
+**Mechanism of the over-merge.** `f3ce6c99` disabled the `break-too-wide` splitter in policy mode
+(`final_clusters = merged_clusters`), relying on the oracle's `max_width_fwhm` as a SOFT width pressure.
+For the dense Am241 forest the clean-gap test fails (weak lines contaminate the gaps) so the oracle
+MERGES, and with no hard width cap the ROI grows to 30 FWHM. **Fix direction: a hard width cap /
+`break-too-wide` equivalent in policy mode (the "final-ROI width guard" already sketched above), so the
+forest is split into solve-stable narrow ROIs.** The atom-safe layer is the correct prerequisite (it
+guarantees the split won't drop lines); the width cap is the missing decision piece.
+
+## Shielded-source automatic recovery experiments and retained change — 2026-07-21
+
+### Corrected boundary semantics: absence of a significant peak bridge
+
+The phrase “credible clean valley” was too morphological.  A noisy or low-statistics spectrum need not
+show a literal local minimum when the peaks on both sides are insignificant.  The boundary evidence is
+now documented and diagnosed as **no significant peak bridge**: predicted Gaussian-tail content from
+both modeled groups must be insignificant over the proposed boundary window, sidebands must support the
+shared-continuum estimate, and there must be no statistically significant positive unexplained
+peak-like excess over it.  This is positive evidence that significant peak counts do not connect the
+ROIs; it is not a demand for a low raw-count trough.  The existing statistics and thresholds are
+unchanged; only the interpretation/name was corrected.
+
+This also corrects the causal framing of the 52.45-keV / 30.32-FWHM Am241_Sh union.  Shielding does not
+create that low-energy union.  The seed/merge/boundary mechanism fails to repair it.  Shielding makes the
+bad geometry much more damaging because the empirical rel-eff/activity solve is ill-conditioned and the
+over-wide flexible continuum can swallow the high-energy anchors, causing the later 15-count keep-gate
+collapse.
+
+### Frozen evidence
+
+- Pre-change working-tree patch: `/private/tmp/shielded-source-recovery-baseline/prechange-working-tree.diff`.
+- Frozen comparable Detective-X/Baltimore/300-s corpus (205 spectra):
+  `/private/tmp/shielded-source-recovery-baseline/full_baltimore_300/results.tsv`: 80 definite misses,
+  7 spurious, 0 mechanical failures, 5 legitimate empties, scalar cost -2860.70220327.
+- Frozen atom-safe 11-spectrum panel:
+  `/private/tmp/E006-atom-safe-rerun/diagnostic/results.tsv`: 11 definite misses, 0 spurious.
+- Legacy Am241 trace stayed at 131.1 -> 126.2 -> 127.5 MBq with 23 observable / 51 fitted peaks.
+  The final legacy trace has the same behavior.  The observable N42s are identical after ignoring only
+  `n42DocDateTime`; the private fit N42 writer changes continuum/peak serialization order, but a
+  structure-aware comparison found identical multisets of all 20 continua and all 305 peaks.  Thus the
+  requested byte comparison is semantically exact; literal bytes are precluded only by timestamp and
+  nondeterministic serialization order, not a fit difference.
+
+### Experiment ladder
+
+1. **External-attenuation physical manual candidate — rejected.**  The fixed-Z shielding candidate
+   reused the configured shielding material, areal-density bounds, Hoerl eligibility, and AICc parameter
+   accounting.  On Am241_Sh it drove the activity to about 4.17 GBq (rather than the 126–131 MBq legacy
+   reference) with attenuation/Hoerl terms pinned at bounds.  It did not establish a physically stable
+   root fix, so all production shielding-candidate code was removed.  No fit-Z parameter, GA gene, or
+   source-specific switch was added.
+2. **Whole-union scored geometry challenger — rejected.**  Width pressure was evaluated before the
+   overlapping-anchor short circuit and core-safe partitions were scored with the existing global-
+   continuum AICc plus soft width term.  It helped the diagnostic panel, but the 205-spectrum corpus
+   introduced broader regressions.  The experiment, its tests, and its materializer/scorer changes were
+   reverted; the authoritative atom-safe geometry is otherwise unchanged.
+3. **Internal over-wide single-component splitter — rejected.**  A second geometry trial also recovered
+   the exemplar but did not pass the broad gates.  It was fully removed; the legacy hard splitter and a
+   new width constant were not introduced.
+4. **Broad all-significant-anchor refinement protection — rejected.**  Keeping all significant anchors
+   through refinement produced a new Pu238_Sh spurious peak and a U235 regression.  This demonstrated
+   why blanket found-peak protection is unsafe.  The experiment was removed rather than stacked.
+5. **Source-clean transactional seed challenger — retained.**  This is the smallest candidate that
+   passes the panel and improves the comparable full corpus.  The manual stage carries a separate,
+   contaminant-pruned set of data-significant, FWHM-distinct requested-source anchors and source-clean
+   alternate ROIs.  Normal initial ROIs still contain the original found/matched seeds.
+
+### Retained automatic-only transaction
+
+After the first empirical automatic solve, recovery is attempted only when at least two independent
+clean requested-source anchors that were observed significantly would fall below the existing strict
+`predicted counts > 15` refinement gate.  The clean alternate initial ROIs are then solved as a
+transactional challenger.  It replaces the incumbent only when all of the following hold:
+
+- the solve succeeds and preserves strictly more predicted clean anchors above the existing keep gate;
+- it preserves at least as many FWHM-distinct significant fitted requested-source peaks, preventing one
+  fitted peak from satisfying multiple close anchors; and
+- it improves data-only AICc on identical immutable +/-0.5-FWHM windows around the same clean anchors.
+  The score uses Poisson deviance and obtains the effective parameter count from
+  `solution_data_row_count - m_dof_data`, with the existing manual rel-eff AICc penalty.  A finite
+  challenger may replace an incumbent for which the common-channel score is unavailable; two
+  unavailable scores reject.
+
+Rejected challenger diagnostics are rolled back to a vector checkpoint.  Once accepted, both recovered
+predicted-anchor and fitted-source-evidence floors remain in force for the no-energy-cal/physical retries
+and ordinary refinement, so a later empirical solve cannot immediately undo the recovery.  The code is
+inside `use_automatic_roi_policy == true`; R6 legacy, R2 admission, protected/user/mixed geometry, NORM
+geometry, and atom ownership are unchanged.  There is no production API/serialization change and no new
+tunable threshold.
+
+Focused coverage exercises collapse triggering (two losses required), non-collapse/non-shielded
+rejection, failed-solve rejection, strict anchor improvement, fitted-source-evidence preservation,
+finite/unavailable AICc behavior, and the data-only AICc parameter calculation.
+
+### Mechanistic and corpus evidence
+
+Final Am241_Sh trace (`/private/tmp/aicc_am.{out,err}`): 17 clean anchors; predicted anchors 6 -> 17;
+FWHM-distinct fitted source evidence 39 -> 145; common-anchor data-only AICc 7833.7 -> 567.6; challenger
+accepted.  The accepted activity is 108.486 MBq, within a factor of two of the 126–131 MBq legacy
+reference instead of the original 16.6-MBq collapse.  The eight missed lines are observable at
+98.915, 102.943, 146.381, 322.577, 332.290, 376.673, 383.931, and 419.101 keV; in particular the
+322/376/383-keV anchors remain above re-clustering and survive observable refit.  Final result: 25
+observable / 59 fitted peaks.  A U238_Sh guard trace had two anchors but improved only 0 -> 1 predicted
+anchor while reducing fitted evidence 11 -> 6 and having unavailable common scores, so it was correctly
+rejected.
+
+Final sentinel traces on the identity-guard build also completed successfully without invoking the
+source-clean challenger: Am241_Unsh (1 observable / 1 fitted), Eu152_Sh (17 / 27), Eu152_Unsh
+(29 / 48), and Cs137_Unsh (1 / 1).  Their traces are `/private/tmp/identity_<source>.{out,err}`.
+
+Final 11-spectrum panel (`/private/tmp/shielded-source-recovery-retained3/diagnostic`): 11/11 Success,
+3 definite misses, 0 spurious, 0 failure, scalar cost -150.520649585.  Versus atom-safe E006 this is
+-8 misses, all from Am241_Sh, with no new miss/spurious on the other ten.  Versus E000R it is one fewer
+miss (3 vs 4), no spurious/failure, and a 2.738 lower scalar cost.  The U238_Sh improvement is retained.
+Comparisons are in `comparison_atomsafe_final/` and `comparison_e000r_final/`; the complete gallery is
+`gallery.html`.
+
+Final comparable 205-spectrum corpus
+(`/private/tmp/shielded-source-recovery-retained3/full_baltimore_300`): definite misses 80 -> 71,
+spurious 7 -> 7, mechanical failures 0 -> 0, legitimate empties 5 -> 5, and scalar cost
+-2860.70220327 -> -2878.16818763 (improvement 17.46598435).  Miss changes are Am241_Sh -8,
+U235_Unsh_9000 -2, and U235_Unsh_8000 +1; there are no spurious-count changes.  This therefore improves
+beyond the single shielded exemplar by eliminating the same anchor-collapse class in U235_Unsh_9000.
+The comparison and full gallery are `comparison/aggregate_comparison.md` and `gallery.html`.
+
+The compact external corpus now enumerates 1,819 usable Detective-X spectra across additional cities
+and live times; the frozen apples-to-apples “full” gate available for this task is the established 205
+Detective-X/Baltimore/300-s set.  An accidental 1,819-spectrum precompute was stopped before evaluation
+and produced no comparison result.  The stable 205-spectrum gallery, not a partial expanded run, is the
+evidence cited here.
+
+### Adversarial review and residual risk
+
+The requested independent adversarial review found five substantive issues, all addressed before the
+final panel/corpus reruns:
+
+1. later retries/refinement could undo an accepted recovery — fixed with persistent predicted/fitted
+   evidence floors;
+2. the first AICc comparison used each solution's own channels — fixed with identical anchor-local
+   channels and parameter counts from data rows/`m_dof_data`;
+3. one fitted peak could appear to support multiple close anchors — fixed by counting FWHM-distinct
+   requested fitted evidence exactly once; and
+4. rejected challenger diagnostics leaked — fixed with checkpoint/resize rollback; and
+5. downstream floors initially preserved only cardinality, allowing one recovered line to be exchanged
+   for another — fixed by retaining and checking every above-gate anchor and every FWHM-distinct fitted
+   requested gamma by identity.  The final identity-guard panel and corpus TSVs are byte-identical to
+   the preceding accepted run.
+
+The final reviewer re-check found no remaining HIGH or MEDIUM correctness/isolation issue.  A LOW
+theoretical caveat remains for fitted lines without an assigned theoretical gamma: the identity guard
+uses all-of/any-of rather than consumed-candidate matching, so an unusually large change in the fitted
+resolution could in principle let one unassigned line match two required identities.  Assigned gamma
+energies and the FWHM-distinct construction prevent this for the normal requested-nuclide path.  The
+focused selection tests do not inject an end-to-end throwing challenger or an identity-swap refinement;
+the transactional rollback and identity guards are covered by review plus the byte-identical panel/full
+reruns rather than a dedicated forced-failure fixture.
+
+Residuals requiring visual/user review: U235_Unsh_8000 gains one definite miss while U235_Unsh_9000
+loses two; the largest scalar regressions are U235_Unsh_2000 +2.794, U235_Unsh_8000 +2.013, and W187_Sh
++1.356.  Some very wide Am241 ROIs remain because geometry experiments failed the full gate; the
+retained fix prevents their flexible continua from erasing source evidence but does not claim to solve
+all ROI aesthetics.  The private fit N42 serializer remains order-nondeterministic.  The implementation
+retains the existing 15-count gate and AICc penalty, so detector classes beyond this HPGe corpus still
+need their normal per-class manual evaluation.
+
+Final verification on the retained identity-guard build:
+
+- both focused CMake targets rebuilt successfully;
+- `test_fitPeaksForSources`: 45/45 cases (the prior 44 plus the new source-clean/AICc case),
+  `*** No errors detected` (`/private/tmp/shielded_source_final_tests2.out`);
+- `PeakFitImproveReporterSelfTest`: 1/1 passed;
+- the final panel and 205-spectrum result TSVs are byte-identical to the pre-identity-guard accepted
+  run, while the legacy observable N42 is identical after timestamp normalization and its private fit
+  contains the same 20-continuum / 305-peak structural multiset; and
+- `git diff --check` is clean.  Nothing was staged or committed.
+
+## E007 — source-evidence-gated component ROI recovery (2026-07-21)
+
+### Why the retained root fix was not enough
+
+The retained source-clean challenger fixed the rel-eff/activity collapse, but its Am241_Sh result still
+fit the unsupported 300.46/312-keV predictions in one 293--348-keV ROI with the real 322/332/335-keV
+structure.  That remaining defect is geometric.  Shielding does **not** create the 52.45-keV-wide /
+30.32-FWHM union; the seed/merge/boundary mechanism fails to repair it.  Shielding only makes the bad
+union more damaging by destabilizing the rel-eff/activity solve and allowing its continuum to swallow
+real high-energy anchors.
+
+The boundary rule is consequently expressed as **no significant peak bridge**, not a literal clean
+valley.  A boundary is supported when modeled tails and positive unexplained peak-like counts are both
+insignificant on the boundary channels, with adequate continuum sidebands.  Low-statistics data need not
+show a morphological trough to establish that significant peak counts do not connect two ROIs.
+
+### Retained evidence and geometry transactions
+
+The following work remains gated behind an already accepted multi-anchor source-collapse recovery.  It
+does not run in ordinary initial policy fits or the R6/legacy path.
+
+1. Each provisional source group in an over-wide overlap component is compared on identical measured
+   foreground channels under H0 (production continuum only), Hs (the exact fixed-ratio requested-source
+   line mixture with one nonnegative common scale), and Hf (all FWHM-distinct significant found features
+   outside every requested-source core, fitted jointly).  Linear, Quadratic, FlatStep, and LinearStep
+   continua are re-fit for every hypothesis.  Conditional/quasi-AICc counts every continuum parameter,
+   the one Hs scale, and every Hf amplitude.  Upstream found-peak means/widths are conditioned on rather
+   than re-estimated, and weighted least-squares estimates are scored by measured Poisson deviance; this
+   is deliberately not described as a fully free maximum-likelihood AICc.
+2. Rejected provisional groups do not mint atoms and therefore cannot act as artificial bridges.  The
+   rejection set is transactional: at least two supported groups must survive, otherwise all local
+   rejections are rolled back.
+3. For a remaining over-wide union, the whole component is scored at every atom-core-safe channel edge.
+   The challenger is exactly two channel-disjoint peak-plus-continuum ROIs on the incumbent union's
+   channels.  Its measured-data AICc includes the existing configured soft-width pressure; there is no
+   hard splitter or new width constant.
+4. The selected parent, two exact channel-aligned children, calibration, and atom ownership are carried
+   as provenance.  They are captured before ordinary interference-edge shrinking, translated into the
+   original calibration through channel coordinates, and applied one component at a time.  Each local
+   solve must preserve recovered predicted anchors, significant clean-source anchors, and every
+   incumbent observable requested-source peak.  A failed component rolls back without vetoing an
+   independent accepted component or importing unrelated re-clustering geometry.
+5. Diagnostics are finalized over the actual incumbent ROI range affected by the transaction.  Every
+   overlapping H0/Hs/Hf, pair, and whole-component diagnostic is labeled as an accepted transaction or
+   a rolled-back proposal; rollback reports `MergeInseparableWide` while retaining the proposed decision
+   and reason as evidence.  Preliminary trace lines remain chronological proposals and are followed by
+   the explicit final component disposition.
+
+No blanket found-peak protection was retained.  The earlier fixed-Z external-attenuation candidate,
+unconditionally broad geometry candidates, and broad anchor protection remain rejected.  Intermediate
+geometry builds reached 61--78 full-corpus misses but introduced new U235/Ir192/Th232/Np and other
+regressions; a partially guarded build still had 76 misses.  The root cause was applying whole-component
+geometry before a collapse existed, allowing rejected local geometry to fall through to global
+refinement, and coupling multiple component partitions into one all-or-nothing solve.  Source-collapse
+gating plus exact per-component transactions removed those regressions.
+
+### Am241_Sh mechanism
+
+Final trace: `/private/tmp/shielded-source-recovery-roi-final13/traces/Am241_Sh.{out,err}`.
+
+- Source-clean recovery retains 17 anchors and activity 108.2 MBq, within a factor of two of the
+  126--131 MBq legacy reference rather than the original order-of-magnitude collapse.
+- H0/Hs for 300.46 keV are 25.5/27.9 and for 312 keV are 40.2/42.6, so both unsupported groups are
+  rejected.  The 322-, 332-, and 335-keV groups beat H0 and remain.
+- The target whole component scores union AICc 726.2 versus partition AICc 723.8 with 9.6 width pressure.
+  Its exact local transaction replaces the affected 293.5--348.1-keV incumbent with fit ROIs
+  `[315.0,327.1]` and `[327.1,341.3]` keV.  The observable refit tightens these to approximately
+  `[318.2,326.9]` and `[328.4,339.5]` keV.  There is no fitted 300/312-keV peak; 322.6 keV is isolated
+  from the 332.3/335.3-keV cluster.
+- The independent 93--133-keV proposal is rolled back because its local solve loses the real
+  114.1-keV observable anchor.  It does not prevent the high-energy component from being accepted.
+- Final output is 24 observable / 55 fitted peaks.  The eight new Am241_Sh misses from E006 are all
+  recovered, including 322/376/383 keV through observable refit; the one remaining Am241_Sh definite
+  miss predates this recovery.
+
+### Final panel and corpus evidence
+
+Stable 11-spectrum panel and gallery:
+`/private/tmp/shielded-source-recovery-roi-final13/diagnostic/`.
+
+- 11/11 Success, 3 definite misses, 0 spurious, 0 failure, scalar cost -150.155776563.
+- Versus the retained root fix, the other ten spectra are byte-identical; Am241_Sh has the same
+  miss/spurious result, four fewer private fitted peaks, one fewer observable peak, two more final ROIs,
+  and a 14.64-keV / 7.22-FWHM reduction in the formerly dominant target union.  Scalar cost changes by
+  +0.365 because the objective does not directly reward this visibly necessary geometry correction.
+- Versus atom-safe E006: 11 -> 3 misses, 0 spurious unchanged.  Versus E000R: 4 -> 3 misses, 0 spurious
+  unchanged, with scalar cost improving by 2.373.  Comparisons are `compare_e006_atom_safe/`,
+  `compare_retained_root/`, and `compare_e000r/`.
+
+Stable comparable 205-spectrum Detective-X/Baltimore/300-s corpus and complete gallery:
+`/private/tmp/shielded-source-recovery-roi-final13/full_baltimore_300/`; comparison to the retained root
+fix: `/private/tmp/shielded-source-recovery-roi-final13/full_compare/`.
+
+- Definite misses 71 -> 70, spurious 7 -> 7, Success 200 -> 200, legitimate empties 5 -> 5, mechanical
+  failures 0 -> 0, scalar cost -2878.16818763 -> -2881.92299705.
+- No individual spectrum gains a definite miss or spurious peak.  Pu238_Sh loses one definite miss, so
+  the retained geometry improves beyond Am241_Sh.  Named Am241_Unsh, Eu152_Sh/Unsh, Cs137_Unsh and the
+  other ten panel sentinels retain their prior hard results.
+- The exact-provenance/diagnostic corrections produce byte-identical panel and full result TSVs to the
+  preceding accepted geometry build, while the full HTML gallery was regenerated from the corrected
+  executable for user review.
+
+### Isolation, review, and residual risk
+
+The current R6/legacy Am241 observable N42 is byte-identical to the frozen baseline after normalizing
+only `n42DocDateTime`.  The nondeterministically ordered private-fit N42 has identical structural
+multisets of all 20 continua and all 305 peaks.  The four named non-collapse policy sentinels were also
+byte-identical after timestamp normalization before the final provenance-only correction, and the final
+panel/full TSVs remain byte-identical across that correction.  R2 admission and protected mixed/user
+geometry continue to be exercised by the full source-fit suite.
+
+The final adversarial re-review closed both medium findings: selected children are now captured before
+unscored shrinking, and rollback/acceptance labels cover every related diagnostic over the actual
+affected incumbent.  It found no remaining release-blocking code issue.  A low statistical caveat
+remains: Hf is a conditional structural challenger because upstream peak locations/widths are reused;
+the strong corpus gate, narrow activation condition, and final observable refit bound that risk.
+
+Final verification on this exact build:
+
+- focused `StatisticalDetailHelpers`: 22/22 passed;
+- `PeakFitImproveReporterSelfTest`: 1/1 passed;
+- full `test_fitPeaksForSources` with developer checks: 47/47 passed, `No errors detected`
+  (`/private/tmp/shielded-source-recovery-roi-final13/full_tests.out` and `full_tests.err`);
+- `git diff --check`: clean; nothing staged or committed.

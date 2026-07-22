@@ -27,6 +27,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <cstdint>
+#include <limits>
 #include <functional>
 
 #include "InterSpec/PeakDef.h"
@@ -53,7 +55,19 @@ enum class AutomaticRoiDecision
   MergeInseparableWide,
   UnmodeledFeatureBlocked,
   ProtectedGeometry,
-  R6LegacyBypass
+  R6LegacyBypass,
+  /** A provisionally admitted source group in an over-wide overlap component was retained by the
+   measured-data continuum/source/free-feature comparison. */
+  SourceBridgeRetained,
+  /** The local continuum-only model explained a provisional source group; it was rejected before
+   atom admission, so it cannot bridge otherwise distinct ROIs. */
+  SourceBridgeRejectedContinuum,
+  /** A free data-peak explanation beat the requested-source-tied model; the provisional source
+   group was rejected before atom admission and the found feature remains unmodeled evidence. */
+  SourceBridgeRejectedFreeFeature,
+  /** No core-safe partition existed, so the atom-safe layer retained the incumbent geometry
+   (merged the pair or left it unchanged) rather than dropping a requested line. */
+  InfeasiblePartition
 };
 
 /** Concise, reporter-ready evidence for an automatic ROI join/partition decision. */
@@ -85,6 +99,21 @@ struct AutomaticRoiDecisionDiagnostic
   double width_pressure = 0.0;
   double one_roi_aicc = 0.0;
   double two_roi_aicc = 0.0;
+  /** Local H0/Hs/Hf evidence values for a provisional source group in an over-wide component.
+   Unavailable hypotheses are NaN; these fields are meaningful only when
+   `source_evidence_tested` is true. */
+  bool source_evidence_tested = false;
+  double source_null_aicc = 0.0;
+  double source_tied_aicc = 0.0;
+  double free_feature_aicc = 0.0;
+  double source_likelihood_z = 0.0;
+  double free_feature_energy = 0.0;
+  /** Number of admitted atoms that the atom-safe partition assigned to a different child than
+   their original group membership (spatial reassignment).  Purely informational. */
+  size_t atoms_reassigned = 0;
+  /** True when the atom-safe layer could not find a core-safe partition and retained the
+   incumbent geometry (see AutomaticRoiDecision::InfeasiblePartition). */
+  bool partition_infeasible = false;
 };
 
 const char *automatic_roi_decision_name( AutomaticRoiDecision decision );
@@ -203,15 +232,19 @@ namespace detail
     const double lowest_energy,
     const double highest_energy );
 
-  /** Search for a "clean gap" between two peak groups: a contiguous window at least
+  /** Search for a statistically unbridged boundary between two peak groups: a window at least
    `clean_gap_num_fwhm` x FWHM wide, between the two anchor energies, where the predicted Gaussian
    tail contamination from BOTH groups is statistically negligible compared to the local continuum
    noise, tested at WINDOW level: S_pred over the window / sqrt(B_est over the window)
    < merge_tail_z.  (A former per-~0.25-FWHM-block form understated the window-level contamination
    by ~sqrt(block/window), biasing toward splitting.)  The local continuum estimate has both
    groups' predicted tails subtracted from its sideband samples, so strong close peaks no longer
-   inflate B_est and spuriously pass the test.  If no clean window exists, the continuum between
-   the peaks cannot be independently anchored and the ROIs should share one continuum (merge).
+   inflate B_est and spuriously pass the test.  The eventual boundary decision also rejects an
+   unexplained peak-like excess over the shared continuum.  Thus this is positive evidence for a
+   lack of statistically significant peak content connecting the groups, not a requirement that
+   the noisy raw spectrum contain a morphological local minimum.  If no such window exists, the
+   continuum between the peaks cannot be independently anchored and the ROIs should share one
+   continuum (merge).
    This replaces an amplitude-relative tail-fraction merge test that ignored counting statistics:
    a 0.5% tail matters on a high-statistics spectrum and is invisible on a low-statistics one -
    the noise-relative form transfers across live-times.
@@ -288,6 +321,26 @@ namespace detail
     double restrict_lower_energy,
     double restrict_upper_energy );
 
+  /** Source-clean seed recovery is warranted only when at least two independent, significant
+   source anchors would be lost by the current predicted-count keep gate. */
+  bool should_try_source_clean_recovery( size_t num_source_anchors,
+                                         size_t num_preserved_anchors );
+
+  /** Transactional source-clean acceptance: recover predicted anchors, preserve the incumbent's
+   FWHM-distinct significant fitted source evidence, and improve the filtered data score.  A valid
+   candidate may replace an incumbent for which no significant-ROI score was available. */
+  bool should_accept_source_clean_challenger( bool solve_succeeded,
+                                              size_t incumbent_preserved_anchors,
+                                              size_t candidate_preserved_anchors,
+                                              size_t incumbent_fitted_anchors,
+                                              size_t candidate_fitted_anchors,
+                                              double incumbent_score,
+                                              double candidate_score );
+
+  /** Small-sample-corrected data-only information criterion used for common-channel challengers. */
+  double data_only_aicc( double data_chi2, size_t num_data_rows,
+                         size_t num_parameters, double parameter_penalty );
+
   /** The modeled content and proposed bounds on one side of an automatic ROI boundary. */
   struct AutomaticRoiGroup
   {
@@ -306,6 +359,9 @@ namespace detail
     double continuum_aicc_penalty = 2.0;
     double peak_core_num_fwhm = 1.0;
     double max_width_fwhm = 12.0;
+    /** Permit an over-wide recovery component to continue past the ordinary overlapping-core
+     short-circuit and seek a scored boundary.  False preserves the initial atom-safe policy. */
+    bool allow_overwide_overlap_partition = false;
     std::string stage;
   };
 
@@ -318,6 +374,44 @@ namespace detail
     AutomaticRoiDecisionDiagnostic diagnostic;
   };
 
+  enum class SourceClusterEvidenceDecision
+  {
+    RetainSource,
+    RejectContinuumOnly,
+    RejectFreeFeature,
+    InsufficientEvidence
+  };
+
+  /** Result of the local, common-channel H0/Hs/Hf comparison used only for provisional source
+   groups inside over-wide transitive overlap components.  H0 is continuum-only; Hs adds one
+   locally scaled, fixed-ratio mixture of the requested source lines; Hf jointly adds every
+   FWHM-distinct significant found peak outside all requested-line cores. */
+  struct SourceClusterEvidenceResult
+  {
+    SourceClusterEvidenceDecision decision = SourceClusterEvidenceDecision::InsufficientEvidence;
+    double null_aicc = std::numeric_limits<double>::quiet_NaN();
+    double source_aicc = std::numeric_limits<double>::quiet_NaN();
+    double free_feature_aicc = std::numeric_limits<double>::quiet_NaN();
+    double source_likelihood_z = 0.0;
+    double free_feature_energy = 0.0;
+    std::string reason;
+  };
+
+  /** Transactionally classify one provisional source cluster on identical measured-data channels.
+   No source names or shielding labels participate.  An unavailable/ill-conditioned comparison is
+   conservative (`InsufficientEvidence`) and callers retain the provisional source group. */
+  SourceClusterEvidenceResult evaluate_source_cluster_evidence(
+    const std::vector<double> &source_energies,
+    const std::vector<double> &source_areas,
+    double lower_energy,
+    double upper_energy,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &found_peaks,
+    double significance_z,
+    double source_core_num_fwhm,
+    double aicc_penalty );
+
   /** Decide whether adjacent automatic groups may share an ROI.  All statistical comparisons use
    the same foreground channels and the shared current-calibration SNIP estimate. */
   AutomaticRoiPolicyResult evaluate_automatic_roi_boundary(
@@ -328,6 +422,184 @@ namespace detail
     const std::function<double(double)> &fwhm_at_energy,
     const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
     const AutomaticRoiPolicySettings &settings );
+
+
+  //=========================================================================================
+  // Atom-safe automatic ROI partition layer.
+  //
+  // Every automatic (policy-mode) ROI split/combine operates on stable "atoms" - one per
+  // admitted modeled gamma line (or line-like evidence) - carried WITH the ROI geometry rather
+  // than reconstructed from a flat energy list by geometric containment.  The layer guarantees,
+  // for each operation, that every admitted atom is represented exactly once afterward, no atom
+  // is lost/duplicated/silently reassigned, each atom's core lies within its assigned ROI, the
+  // resulting automatic ROIs are channel-disjoint, protected user/mixed geometry is untouched,
+  // and unmodeled-exclusion regions are never split or merged through.  When no core-safe
+  // partition exists it retains the incumbent geometry (merge or unchanged) instead of dropping
+  // a side.  `use_automatic_roi_policy == false` (R6 legacy) paths never enter this layer.
+  //=========================================================================================
+
+  /** Kind of evidence an atom represents.  All kinds act as anchors for boundary decisions and
+   are preserved exactly-once; the kind records provenance for diagnostics/tuning. */
+  enum class RoiAtomKind
+  {
+    ModeledGamma,       // a requested/NORM/interferer source gamma line
+    FoundPeakEvidence,  // a data-confirmed found+matched auto-search seed / user peak
+    FloatingFeature     // an escape/511/floating-peak feature (no source)
+  };
+
+  /** The pipeline stage that first admitted an atom (diagnostics/tuning only). */
+  enum class RoiAtomAdmission
+  {
+    InitialCluster, FallbackEstimate, NoPeakEstimate, FoundPeakSeed,
+    UserPeak, RefinementCluster, R2Rescue, EscapeOr511
+  };
+
+  /** Stable identity + payload for one admitted modeled line.  IDs are unique per process
+   (see next_roi_atom_id) and compared only within a single fit. */
+  struct RoiAtom
+  {
+    uint64_t id = 0;
+    double energy = 0.0;                 // keV
+    double area = 0.0;                    // expected counts (0 => unknown)
+    RoiAtomKind kind = RoiAtomKind::ModeledGamma;
+    RelActCalcAuto::SrcVariant source{};  // monostate for evidence/floating atoms
+    size_t rel_eff_curve_index = 0;
+    RoiAtomAdmission admission = RoiAtomAdmission::InitialCluster;
+  };
+
+  /** Mint the next unique atom id (thread-safe; safe under GA parallelism). */
+  uint64_t next_roi_atom_id();
+
+  /** One materialized automatic component: channel-aligned bounds plus its exactly-once atoms. */
+  struct AutomaticRoiComponent
+  {
+    double lower = 0.0;                   // == gamma_channel_lower(first_channel)
+    double upper = 0.0;                   // == gamma_channel_upper(last_channel)
+    size_t first_channel = 0;
+    size_t last_channel = 0;
+    std::vector<RoiAtom> atoms;           // sorted by energy; exactly-once ownership
+    size_t joined_groups = 1;
+    bool protected_geometry = false;
+    PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Linear;  // pass-through
+    RelActCalcAuto::RoiRange::RangeLimitsType range_limits_type
+        = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;                        // pass-through
+  };
+
+  /** Stage-independent geometric constraints governing materialization of a partition. */
+  struct AutomaticRoiPartitionConstraints
+  {
+    double lowest_energy = 0.0;           // valid spectroscopic extent (widening clamp)
+    double highest_energy = 0.0;
+    double left_barrier = -std::numeric_limits<double>::infinity();  // may not widen below this
+    double min_width_fwhm = 0.0;          // 0 => impose no minimum child width
+    double peak_core_num_fwhm = 1.0;      // atom core half-width, in FWHM
+  };
+
+  enum class AutomaticRoiPartitionOutcome { KeptSeparate, Merged, Infeasible };
+
+  struct AutomaticRoiPartitionResult
+  {
+    AutomaticRoiPartitionOutcome outcome = AutomaticRoiPartitionOutcome::Infeasible;
+    std::vector<AutomaticRoiComponent> components;  // 2 (KeptSeparate) | 1 (Merged) | 0 (Infeasible)
+    /** Atoms with no legal owner (protected-boundary straddle or spectrum edge only); each is
+     accompanied by infeasible_reason and a diagnostic.  Empty in the normal case. */
+    std::vector<RoiAtom> orphaned_atoms;
+    std::string infeasible_reason;
+    AutomaticRoiPolicyResult policy;      // underlying decision + diagnostic (unchanged oracle)
+  };
+
+  struct AutomaticRoiTransactionCheck
+  {
+    bool valid = false;
+    std::string failure_reason;
+  };
+
+  /** Partition (or merge) one adjacent automatic pair into fully-materialized, channel-aligned
+   components with spatially-assigned atoms, or report an explicit infeasible/merge fallback.
+   Uses evaluate_automatic_roi_boundary as the decision oracle (unchanged) and owns all geometry
+   materialization: core-safe channel boundary search, spatial atom assignment, min-width
+   widening, exclusion-band carves, and protected-edge pinning.  Never drops an atom. */
+  AutomaticRoiPartitionResult partition_automatic_roi_pair(
+    const AutomaticRoiComponent &left,
+    const AutomaticRoiComponent &right,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const GlobalContinuumEstimate *global_continuum,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    const AutomaticRoiPolicySettings &settings,
+    const AutomaticRoiPartitionConstraints &constraints );
+
+  struct AutomaticRoiReconcileResult
+  {
+    std::vector<AutomaticRoiComponent> components;   // channel-disjoint, sorted, atom-complete
+    std::vector<RoiAtom> orphaned_atoms;             // aggregated; each carries a diagnostic
+    bool valid = false;                              // whole-stage transaction validated
+    std::string failure_reason;
+  };
+
+  /** Result of the measured-data whole-component partition search.  `components` is always a
+   transactionally valid replacement when `valid`; `changed` says that the scored optimum has more
+   than one child.  A declined or infeasible challenger returns the explicit merged incumbent. */
+  struct AutomaticRoiComponentPartitionResult
+  {
+    std::vector<AutomaticRoiComponent> components;
+    bool valid = false;
+    bool changed = false;
+    std::string failure_reason;
+    AutomaticRoiDecisionDiagnostic diagnostic;
+  };
+
+  /** Jointly score every core-safe channel boundary producing two children from one over-wide
+   transitive component.  Segment scores fit FWHM-distinct peaks plus a production continuum to
+   the measured foreground; global AICc is evaluated on the identical union channels and includes
+   the existing soft-width pressure.  The atom ledger is preserved exactly once or the incumbent
+   merge is retained. */
+  AutomaticRoiComponentPartitionResult partition_overwide_automatic_component(
+    const std::vector<AutomaticRoiComponent> &component,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    const AutomaticRoiPolicySettings &settings,
+    const AutomaticRoiPartitionConstraints &constraints );
+
+  /** The single policy-mode reconciliation driver: a left-fold over energy-sorted (possibly
+   overlapping) components, folding each adjacent pair through partition_automatic_roi_pair and
+   re-examining an enlarged component after a merge.  Validates the whole-stage transaction and
+   works all-or-nothing on a copy, so a validation failure leaves `valid == false` and the caller
+   retains its incumbent geometry. */
+  AutomaticRoiReconcileResult reconcile_automatic_components(
+    std::vector<AutomaticRoiComponent> components,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const GlobalContinuumEstimate *global_continuum,
+    const std::function<double(double)> &fwhm_at_energy,
+    const std::vector<std::shared_ptr<const PeakDef>> &unfit_auto_peaks,
+    const AutomaticRoiPolicySettings &settings,
+    const AutomaticRoiPartitionConstraints &constraints,
+    std::vector<AutomaticRoiDecisionDiagnostic> *diagnostics );
+
+  /** Verify a proposed replacement transaction preserves every invariant: atom-ID multiset
+   (before == after together with reported orphans, each exactly once), sorted channel-disjoint
+   components, atom energy + clamped-core containment, bit-identical protected bounds/metadata,
+   and orphan reasons restricted to protected-straddle / spectrum-edge.  Cheap; always run. */
+  AutomaticRoiTransactionCheck validate_automatic_roi_transaction(
+    const std::vector<AutomaticRoiComponent> &before,
+    const std::vector<AutomaticRoiComponent> &after,
+    const std::vector<RoiAtom> &reported_orphans,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+    const std::function<double(double)> &fwhm_at_energy,
+    const double peak_core_num_fwhm );
+
+  /** Exact-once snapshot assignment of an atom universe onto already channel-disjoint ROIs (the
+   bridge at the two points where geometry lives in RelActCalcAuto::Options::rois, which cannot
+   carry atoms).  Each atom goes to the single ROI containing its energy; ties resolve to the
+   nearest-midpoint ROI then lowest index.  Atoms outside every ROI are returned in `unowned`
+   (pre-existing floaters, not losses of this operation).  `rois` must be disjoint (dev-asserted).*/
+  void assign_atoms_to_disjoint_rois(
+    const std::vector<RoiAtom> &universe,
+    const std::vector<RelActCalcAuto::RoiRange> &rois,
+    std::vector<std::vector<RoiAtom>> &per_roi_atoms,
+    std::vector<RoiAtom> &unowned_atoms );
+
 
   /** One accepted source-gamma group supplied to the R4 shadow boundary optimizer. */
   struct RoiBoundaryShadowGroup
@@ -530,6 +802,10 @@ struct GammaClusteringSettings
   // chi2 comparison with this tunable bias against the step).  Replaces the former left-vs-right
   // probe-window nsigma test, which self-vetoed on tight ROIs and read neighbor peaks as steps.
   double step_trial_chi2_margin = 4.0;
+
+  // Provenance stage stamped on atoms minted at the keep-gate (diagnostics only; not serialized or
+  // tuned).  Refinement re-clustering sets this to RefinementCluster.
+  detail::RoiAtomAdmission cluster_admission_stage = detail::RoiAtomAdmission::InitialCluster;
 };
 
 
